@@ -1,0 +1,75 @@
+@host = http://localhost:5000
+
+### Health - full report
+GET {{host}}/api/health
+
+### Health - ping
+GET {{host}}/api/health/ping
+
+### Health - ASP.NET built-in
+GET {{host}}/health
+
+### Health - liveness
+GET {{host}}/alive
+
+### Diagnostics - masked config values
+GET {{host}}/api/diag
+
+### ─── Connect Five ──────────────────────────────────
+
+### Get player stats (ConnectFive)
+GET {{host}}/api/ConnectFive/players/TestPlayer/stats
+
+### Save player stats (ConnectFive)
+PUT {{host}}/api/ConnectFive/players/TestPlayer/stats
+Content-Type: application/json
+
+{
+  "playerId": "test-1",
+  "playerName": "TestPlayer",
+  "easy": { "wins": 3, "losses": 1, "draws": 0, "totalGames": 4, "winStreak": 2, "winRate": 0.75 },
+  "medium": { "wins": 0, "losses": 0, "draws": 0, "totalGames": 0, "winStreak": 0, "winRate": 0 },
+  "hard": { "wins": 0, "losses": 0, "draws": 0, "totalGames": 0, "winStreak": 0, "winRate": 0 },
+  "totalWins": 3,
+  "totalLosses": 1,
+  "totalDraws": 0,
+  "totalGames": 4,
+  "winRate": 0.75,
+  "overallWinRate": 0.75,
+  "createdAt": "2026-01-01T00:00:00Z",
+  "updatedAt": "2026-02-15T00:00:00Z"
+}
+
+### Leaderboard (ConnectFive)
+GET {{host}}/api/ConnectFive/statistics/leaderboard?limit=10
+
+### ─── Tic Tac Toe ───────────────────────────────────
+
+### Get player stats (TicTacToe)
+GET {{host}}/api/TicTacToe/players/TestPlayer/stats
+
+### Save player stats (TicTacToe)
+PUT {{host}}/api/TicTacToe/players/TestPlayer/stats
+Content-Type: application/json
+
+{
+  "playerId": "test-1",
+  "playerName": "TestPlayer",
+  "easy": { "wins": 5, "losses": 2, "draws": 1, "totalGames": 8, "winStreak": 3, "winRate": 0.625 },
+  "medium": { "wins": 0, "losses": 0, "draws": 0, "totalGames": 0, "winStreak": 0, "winRate": 0 },
+  "hard": { "wins": 0, "losses": 0, "draws": 0, "totalGames": 0, "winStreak": 0, "winRate": 0 },
+  "totalWins": 5,
+  "totalLosses": 2,
+  "totalDraws": 1,
+  "totalGames": 8,
+  "winRate": 0.625,
+  "overallWinRate": 0.625,
+  "createdAt": "2026-01-01T00:00:00Z",
+  "updatedAt": "2026-02-15T00:00:00Z"
+}
+
+### Leaderboard (TicTacToe)
+GET {{host}}/api/TicTacToe/statistics/leaderboard?limit=10
+
+### All stats across all games
+GET {{host}}/api/statistics

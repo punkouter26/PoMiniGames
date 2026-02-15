@@ -1,0 +1,197 @@
+# ApplicationFlow.mmd - Auth Flow + User Journey
+
+## Simplified Version (AI-Friendly)
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant UI as React App
+    participant API as .NET API
+    participant Store as Azure Table
+    
+    User->>UI: Opens Home Page
+    UI->>User: Displays Game Selection
+    
+    User->>UI: Clicks Tic-Tac-Toe
+    UI->>User: Shows Game Board
+    
+    User->>UI: Enters Player Name
+    UI->>Store: GET /api/tictactoe/players/{name}/stats
+    Store-->>UI: Player Stats (or 404)
+    
+    User->>UI: Makes Move
+    UI->>UI: Validates Move (Local AI)
+    
+    User->>UI: Game Ends (Win/Loss/Draw)
+    UI->>Store: PUT /api/tictactoe/players/{name}/stats
+    Store-->>UI: Confirm Save
+```
+
+## Detailed Version (Human Developers)
+
+### User Journey Flow
+
+```mermaid
+flowchart TB
+    Start([User Opens App]) --> Home[Home Page]
+    Home --> Select[Select Game]
+    
+    subgraph TicTacToe["Tic-Tac-Toe Flow"]
+        Select --> TTT1[Enter Player Name]
+        TTT1 --> TTT2[Choose Difficulty]
+        TTT2 --> TTT3[Choose: PvP or PvAI]
+        TTT3 --> TTT4[Play Game]
+        TTT4 --> TTT5[Game Over]
+        TTT5 --> TTT6[View Stats]
+        TTT6 --> TTT7[View Leaderboard]
+    end
+    
+    subgraph ConnectFive["Connect Five Flow"]
+        Select --> CF1[Enter Player Name]
+        CF1 --> CF2[Choose Difficulty]
+        CF2 --> CF3[Choose: PvP or PvAI]
+        CF3 --> CF4[Play Game]
+        CF4 --> CF5[Game Over]
+        CF5 --> CF6[View Stats]
+        CF6 --> CF7[View Leaderboard]
+    end
+    
+    Select -->|Tic-Tac-Toe| TicTacToe
+    Select -->|Connect Five| ConnectFive
+    
+    TTT7 --> Home
+    CF7 --> Home
+    
+    style Start fill:#ff9800
+    style Home fill:#4caf50
+    style Select fill:#2196f3
+```
+
+### Authentication Flow
+
+```mermaid
+sequenceDiagram
+    participant Browser
+    participant API
+    participant KeyVault
+    participant Tables
+    
+    Browser->>API: Request with Origin
+    
+    alt Development Environment
+        API->>API: Read appsettings.Development.json
+        API->>API: Use Azurite Connection String
+    else Production Environment
+        API->>KeyVault: Fetch Secrets
+        KeyVault-->>API: Return Connection String
+    end
+    
+    API->>Tables: Initialize TableClient
+    Tables-->>API: Connection Established
+    
+    API-->>Browser: CORS Allow Origin
+    
+    Note over Browser,API: No Authentication Required<br/>Stats tracked by Player Name
+```
+
+### Game State Machine
+
+```mermaid
+stateDiagram-v2
+    [*] --> Idle
+    Idle --> Playing: Start Game
+    Playing --> Playing: Make Move
+    Playing --> Win: 3 in a Row
+    Playing --> Loss: Opponent Wins
+    Playing --> Draw: Board Full
+    Win --> Idle: View Results
+    Loss --> Idle: View Results
+    Draw --> Idle: View Results
+    
+    note right of Playing
+        State includes:
+        - Current Player
+        - Board State
+        - Difficulty Level
+    end note
+```
+
+### API Request Flow
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant API
+    participant Middleware
+    participant Service
+    participant Storage
+    
+    Client->>API: GET /api/tictactoe/players/John/stats
+    
+    rect rgb(240, 248, 255)
+        Note over Middleware: CORS Check
+    end
+    
+    Middleware->>Middleware: Validate Origin
+    
+    rect rgb(255, 250, 240)
+        Note over Middleware: Auth Check (Future)
+    end
+    
+    Middleware->>Service: GetPlayerStats("tictactoe", "John")
+    
+    Service->>Storage: Query Table
+    alt Player Found
+        Storage-->>Service: PlayerStats Entity
+        Service-->>API: PlayerStats object
+        API-->>Client: 200 OK + JSON
+    else Player Not Found
+        Storage-->>Service: null
+        Service-->>API: null
+        API-->>Client: 404 Not Found
+    end
+```
+
+### Leaderboard Flow
+
+```mermaid
+flowchart LR
+    subgraph Request
+        C[Client] -->|GET /api/{game}/statistics/leaderboard| A[API]
+    end
+    
+    subgraph Processing
+        A -->|Query Table| S[Storage Service]
+        S -->|Filter Top N| T[Azure Table]
+        T -->|Return Results| S
+        S -->|Sort by Win Rate| R[Sorted Results]
+    end
+    
+    subgraph Response
+        R -->|JSON Array| A
+        A -->|200 OK| C
+    end
+    
+    style Request fill:#e3f2fd
+    style Processing fill:#fff3e0
+    style Response fill:#e8f5e8
+```
+
+### Stats Update Flow
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant API
+    participant Storage
+    
+    Client->>API: PUT /api/tictactoe/players/John/stats
+    Note over Client,API: Body: { Easy: {Wins:1, Losses:0, ...} }
+    
+    API->>Storage: Upsert Entity
+    Storage-->>API: Entity Updated
+    
+    API-->>Client: 204 No Content
+    
+    Note over Client: Fire-and-forget<br/>UI continues immediately
+```

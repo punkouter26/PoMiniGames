@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/PoMiniGames/PoMiniGames/PoMiniGames.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/PoMiniGames.IntegrationTests/PoMiniGames.IntegrationTests.csproj" />
+    <Project Path="tests/PoMiniGames.UnitTests/PoMiniGames.UnitTests.csproj" />
+  </Folder>
+</Solution>

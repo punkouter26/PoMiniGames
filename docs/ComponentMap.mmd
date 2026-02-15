@@ -1,0 +1,301 @@
+# ComponentMap.mmd - Component Tree + Service Dependencies
+
+## Simplified Version (AI-Friendly)
+
+```mermaid
+flowchart TB
+    subgraph Client["React Client"]
+        App[App.tsx]
+        Layout[Layout.tsx]
+        Home[Home.tsx]
+        TicTacToe[TicTacToePage.tsx]
+        ConnectFive[ConnectFivePage.tsx]
+    end
+    
+    subgraph Services["Services"]
+        API[apiService.ts]
+        Storage[localStorageService.ts]
+        Stats[statsService.ts]
+    end
+    
+    subgraph Games["Game Logic"]
+        TTTBoard[TicTacToeBoard.ts]
+        TTTAI[TicTacToeAI.ts]
+        CFFive[ConnectFiveBoard.ts]
+        CFAI[ConnectFiveAI.ts]
+    end
+    
+    App --> Layout
+    Layout --> Home
+    Layout --> TicTacToe
+    Layout --> ConnectFive
+    TicTacToe --> TTTBoard
+    TicTacToe --> TTTAI
+    ConnectFive --> CFFive
+    ConnectFive --> CFAI
+    TicTacToe --> API
+    ConnectFive --> API
+    
+    style Client fill:#e1f5fe
+    style Services fill:#e8f5e8
+    style Games fill:#fff3e0
+```
+
+## Detailed Version (Human Developers)
+
+### React Component Tree
+
+```mermaid
+flowchart TB
+    subgraph Root["Root"]
+        Browser[BrowserRouter]
+    end
+    
+    subgraph App["App Component"]
+        App[App.tsx]
+    end
+    
+    subgraph Routes["Routes"]
+        Routes[Routes]
+    end
+    
+    subgraph Layout["Layout Components"]
+        Layout[Layout.tsx]
+        Header[Header]
+        Nav[Navigation]
+        Footer[Footer]
+    end
+    
+    subgraph Pages["Page Components"]
+        Home[Home.tsx]
+        TicTacToe[TicTacToePage.tsx]
+        ConnectFive[ConnectFivePage.tsx]
+    end
+    
+    subgraph GameComponents["Game Components"]
+        TTTBoard[TicTacToe Board]
+        TTTStatus[Game Status]
+        TTTSquare[Square Button]
+        CFBoard[Connect Five Board]
+        CFColumn[Column]
+        CFCell[Cell]
+    end
+    
+    Browser --> App
+    App --> Routes
+    Routes --> Layout
+    Layout --> Home
+    Layout --> TicTacToe
+    Layout --> ConnectFive
+    TicTacToe --> TTTBoard
+    TicTacToe --> TTTStatus
+    TTTBoard --> TTTSquare
+    ConnectFive --> CFBoard
+    CFBoard --> CFColumn
+    CFColumn --> CFCell
+    
+    style Root fill:#ff9800
+    style App fill:#4caf50
+    style Layout fill:#2196f3
+    style Pages fill:#9c27b0
+    style GameComponents fill:#00bcd4
+```
+
+### Backend Component Tree
+
+```mermaid
+flowchart TB
+    subgraph Program["Program.cs"]
+        Config[Configuration]
+        Services[Service Registration]
+        Middleware[Middleware Pipeline]
+    end
+    
+    subgraph Features["Feature Modules"]
+        Health[Health Endpoints]
+        Leaderboard[Leaderboard Endpoints]
+    end
+    
+    subgraph Services2["Business Services"]
+        Storage[StorageService]
+    end
+    
+    subgraph Infrastructure["Infrastructure"]
+        TableClient[Azure Table Client]
+        HealthCheck[Health Checks]
+    end
+    
+    Program --> Features
+    Features --> Services2
+    Services2 --> Infrastructure
+    
+    style Program fill:#e1f5fe
+    style Features fill:#e8f5e8
+    style Services2 fill:#fff3e0
+    style Infrastructure fill:#fce4ec
+```
+
+### Service Dependencies
+
+```mermaid
+flowchart TB
+    subgraph Client["Client Side"]
+        API[apiService]
+        LS[localStorageService]
+        Stats[statsService]
+    end
+    
+    subgraph Game["Game Logic"]
+        TTT[TicTacToe Board]
+        TTTAI[TicTacToe AI]
+        CF[Connect Five Board]
+        CFAI[Connect Five AI]
+    end
+    
+    subgraph Backend["Backend Services"]
+        Endpoint[API Endpoints]
+        Storage[Storage Service]
+    end
+    
+    subgraph External["External Services"]
+        Azure[Azure Table Storage]
+        Azurite[Azurite (Dev)]
+    end
+    
+    API --> Endpoint
+    Stats --> LS
+    Stats --> API
+    TTT --> TTTAI
+    CF --> CFAI
+    Endpoint --> Storage
+    Storage --> Azure
+    Storage --> Azurite
+    
+    style Client fill:#e1f5fe
+    style Game fill:#e8f5e8
+    style Backend fill:#fff3e0
+    style External fill:#fce4ec
+```
+
+### API Endpoints
+
+```mermaid
+flowchart TB
+    subgraph Endpoints["API Endpoints"]
+        Health1[GET /api/health/ping]
+        Health2[GET /api/health]
+        Stats1[GET /api/{game}/players/{player}/stats]
+        Stats2[PUT /api/{game}/players/{player}/stats]
+        Leader1[GET /api/{game}/statistics/leaderboard]
+        Leader2[GET /api/{game}/statistics/all]
+    end
+    
+    subgraph Response["Responses"]
+        Pong["pong: true"]
+        Player["PlayerStatsDto"]
+        Updated["204 No Content"]
+        Leaderboard["PlayerStatsDto[]"]
+    end
+    
+    Health1 --> Pong
+    Health2 --> Pong
+    Stats1 --> Player
+    Stats2 --> Updated
+    Leader1 --> Leaderboard
+    Leader2 --> Leaderboard
+    
+    style Endpoints fill:#e1f5fe
+    style Response fill:#e8f5e8
+```
+
+### Data Flow Diagram
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Component
+    participant Service
+    participant API
+    participant DB
+    
+    User->>Component: Interact
+    
+    rect rgb(240, 248, 255)
+        Note over Component: React Component
+    end
+    
+    Component->>Service: Call Method
+    
+    rect rgb(255, 250, 240)
+        Note over Service: Service Layer
+    end
+    
+    alt Local Operation
+        Service->>Service: Process Locally
+    else Remote Operation
+        Service->>API: HTTP Request
+        API->>DB: Query/Update
+        DB-->>API: Result
+        API-->>Service: Response
+    end
+    
+    Service-->>Component: Result
+    Component-->>User: Update UI
+```
+
+### External API Dependencies
+
+```mermaid
+flowchart TB
+    subgraph React["React Dependencies"]
+        RR[react-router-dom]
+        Hooks[React Hooks]
+    end
+    
+    subgraph Vite["Build Dependencies"]
+        ViteConf[vite.config.ts]
+        TS[TypeScript]
+    end
+    
+    subgraph DotNet[.NET Dependencies"]
+        AzureTables[Azure.Data.Tables]
+        Serilog[Serilog]
+        Identity[Azure.Identity]
+    end
+    
+    subgraph Testing["Testing"]
+        Playwright[Playwright]
+        Xunit[xUnit]
+    end
+    
+    style React fill:#e1f5fe
+    style Vite fill:#e8f5e8
+    style DotNet fill:#fff3e0
+    style Testing fill:#fce4ec
+```
+
+### Component Communication
+
+```mermaid
+flowchart LR
+    subgraph Props["Props Down"]
+        Parent[Parent] -->|props| Child[Child]
+    end
+    
+    subgraph Events["Events Up"]
+        Child -->|event| Parent
+    end
+    
+    subgraph Context["Context"]
+        Provider[Provider] -.->|context| Consumer[Consumer]
+    end
+    
+    subgraph State["State Management"]
+        State1[useState] -->|setState| ReRender[Re-render]
+    end
+    
+    style Props fill:#e1f5fe
+    style Events fill:#e8f5e8
+    style Context fill:#fff3e0
+    style State fill:#fce4ec
+```

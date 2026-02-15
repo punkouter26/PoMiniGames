@@ -1,0 +1,294 @@
+/* ===========================================
+   Tic Tac Toe Page - Using Design System
+   =========================================== */
+
+/* ─── Page Header ───────────────────────────────────────── */
+.game-header {
+  text-align: center;
+  margin-bottom: var(--space-6);
+  animation: fadeIn var(--transition-slow) ease-out;
+}
+
+.game-header h1 {
+  font-size: var(--font-size-3xl);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+}
+
+.game-header .game-icon {
+  display: flex;
+  gap: var(--space-1);
+}
+
+/* ─── Board ─────────────────────────────────────────────── */
+.ttt-board {
+  display: grid;
+  grid-template-columns: repeat(6, 56px);
+  grid-template-rows: repeat(6, 56px);
+  gap: var(--space-1);
+  margin: var(--space-6) auto;
+  width: fit-content;
+  padding: var(--space-3);
+  background: var(--color-surface);
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--color-border);
+}
+
+.ttt-cell {
+  width: 56px;
+  height: 56px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.8rem;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  position: relative;
+  overflow: hidden;
+}
+
+.ttt-cell:hover:not(.disabled) {
+  background: var(--color-primary-dim);
+  border-color: var(--color-primary);
+  transform: scale(1.02);
+}
+
+.ttt-cell.disabled {
+  cursor: default;
+}
+
+.ttt-cell .piece {
+  animation: scaleIn var(--transition-bounce);
+}
+
+.ttt-cell.win-cell {
+  background: rgba(0, 229, 255, 0.15);
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-glow);
+  animation: glow 1.5s ease-in-out infinite;
+}
+
+/* ─── Controls ──────────────────────────────────────────── */
+.game-controls {
+  display: flex;
+  gap: var(--space-4);
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: var(--space-6);
+  padding: var(--space-4);
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+}
+
+.game-controls label {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.game-controls input,
+.game-controls select {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  transition: all var(--transition-fast);
+}
+
+.game-controls input:focus,
+.game-controls select:focus {
+  border-color: var(--color-primary);
+  outline: none;
+  box-shadow: 0 0 0 3px var(--color-primary-dim);
+}
+
+.game-controls button {
+  padding: var(--space-2) var(--space-5);
+  border: 2px solid var(--color-primary);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-primary);
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-sm);
+  transition: all var(--transition-base);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.game-controls button:hover {
+  background: var(--color-primary);
+  color: var(--color-bg-dark);
+  box-shadow: var(--shadow-glow);
+  transform: translateY(-2px);
+}
+
+/* ─── Status banner ─────────────────────────────────────── */
+.game-status {
+  text-align: center;
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-semibold);
+  margin-bottom: var(--space-6);
+  min-height: 2.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+}
+
+.game-status .status-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.game-status.win {
+  color: var(--color-success);
+  text-shadow: var(--shadow-glow-success);
+}
+
+.game-status.loss {
+  color: var(--color-error);
+  text-shadow: var(--shadow-glow-error);
+}
+
+.game-status.draw {
+  color: var(--color-warning);
+}
+
+.game-status.turn {
+  color: var(--color-text-muted);
+}
+
+.game-status.thinking {
+  color: var(--color-primary);
+}
+
+.game-status.thinking .thinking-indicator {
+  animation: pulse 1s ease-in-out infinite;
+}
+
+/* ─── Stats panel ───────────────────────────────────────── */
+.stats-panel {
+  margin-top: var(--space-8);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  max-width: 500px;
+  margin-left: auto;
+  margin-right: auto;
+  overflow: hidden;
+}
+
+.stats-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-4) var(--space-5);
+  cursor: pointer;
+  user-select: none;
+  transition: background var(--transition-fast);
+}
+
+.stats-panel-header:hover {
+  background: var(--color-surface-hover);
+}
+
+.stats-panel-header h3 {
+  color: var(--color-primary);
+  margin: 0;
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.stats-panel-toggle {
+  color: var(--color-text-disabled);
+  font-size: var(--font-size-sm);
+  transition: transform var(--transition-fast);
+}
+
+.stats-panel.collapsed .stats-panel-toggle {
+  transform: rotate(-90deg);
+}
+
+.stats-panel:not(.collapsed) .stats-panel-toggle {
+  transform: rotate(0deg);
+}
+
+.stats-panel-content {
+  padding: var(--space-4) var(--space-5) var(--space-5);
+  animation: fadeIn var(--transition-base) ease-out;
+}
+
+.stats-panel.collapsed .stats-panel-content {
+  display: none;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-3);
+  text-align: center;
+}
+
+.stats-grid .stat-item {
+  padding: var(--space-3);
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: var(--radius-md);
+}
+
+.stats-grid .stat-label {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-disabled);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: var(--space-1);
+}
+
+.stats-grid .stat-value {
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-primary);
+  font-family: var(--font-family-mono);
+}
+
+/* ─── Responsive ─────────────────────────────────────────── */
+@media (max-width: 480px) {
+  .ttt-board {
+    grid-template-columns: repeat(6, 44px);
+    grid-template-rows: repeat(6, 44px);
+    gap: 2px;
+    padding: var(--space-2);
+  }
+  
+  .ttt-cell {
+    width: 44px;
+    height: 44px;
+    font-size: 1.4rem;
+  }
+  
+  .game-controls {
+    gap: var(--space-3);
+    padding: var(--space-3);
+  }
+  
+  .game-header h1 {
+    font-size: var(--font-size-2xl);
+  }
+}

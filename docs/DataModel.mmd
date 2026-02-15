@@ -1,0 +1,252 @@
+# DataModel.mmd - Database Schema + State Transitions
+
+## Simplified Version (AI-Friendly)
+
+```mermaid
+erDiagram
+    PLAYER_STATS {
+        string PlayerId PK
+        string PlayerName
+        string Game
+        object Easy
+        object Medium
+        object Hard
+        datetime CreatedAt
+        datetime UpdatedAt
+    }
+    
+    DIFFICULTY_STATS {
+        int Wins
+        int Losses
+        int Draws
+        int TotalGames
+        int WinStreak
+    }
+    
+    PLAYER_STATS ||--o{ DIFFICULTY_STATS : "has"
+```
+
+## Detailed Version (Human Developers)
+
+### Entity Relationship Diagram
+
+```mermaid
+erDiagram
+    PLAYER_STATS {
+        string PartitionKey "Game name (tictactoe/connectfive)"
+        string RowKey "PlayerName"
+        string PlayerId "Hash of player name"
+        object Easy "DifficultyStats JSON"
+        object Medium "DifficultyStats JSON"
+        object Hard "DifficultyStats JSON"
+        datetime CreatedAt "UTC timestamp"
+        datetime UpdatedAt "UTC timestamp"
+    }
+    
+    DIFFICULTY_STATS {
+        int Wins
+        int Losses
+        int Draws
+        int TotalGames
+        int WinStreak
+    }
+    
+    PLAYER_STATS {
+        int TotalWins "Computed: Easy+Medium+Hard"
+        int TotalLosses "Computed: Easy+Medium+Hard"
+        int TotalDraws "Computed: Easy+Medium+Hard"
+        int TotalGames "Computed: Easy+Medium+Hard"
+        double WinRate "Computed: TotalWins/TotalGames"
+    }
+    
+    PLAYER_STATS ||--o{ DIFFICULTY_STATS : "per difficulty"
+```
+
+### Database Schema (Azure Table Storage)
+
+```mermaid
+classDiagram
+    class PlayerStats {
+        +string PartitionKey
+        +string RowKey
+        +string PlayerId
+        +DifficultyStats Easy
+        +DifficultyStats Medium
+        +DifficultyStats Hard
+        +DateTime CreatedAt
+        +DateTime UpdatedAt
+        +int TotalWins
+        +int TotalLosses
+        +int TotalDraws
+        +int TotalGames
+        +double WinRate
+    }
+    
+    class DifficultyStats {
+        +int Wins
+        +int Losses
+        +int Draws
+        +int TotalGames
+        +int WinStreak
+        +double WinRate
+    }
+    
+    PlayerStats --> DifficultyStats
+```
+
+### State Transitions
+
+```mermaid
+stateDiagram-v2
+    [*] --> NewPlayer: First Game
+    
+    state NewPlayer {
+        [*] --> EmptyStats
+        EmptyStats: Easy: {Wins:0, Losses:0, Draws:0}
+        EmptyStats: Medium: {Wins:0, Losses:0, Draws:0}
+        EmptyStats: Hard: {Wins:0, Losses:0, Draws:0}
+    }
+    
+    NewPlayer --> Playing: Start Game
+    
+    state Playing {
+        [*] --> TurnX
+        TurnX --> TurnO: X Makes Move
+        TurnO --> TurnX: O Makes Move
+    }
+    
+    Playing --> Win: Win Game
+    Playing --> Loss: Lose Game
+    Playing --> Draw: Draw Game
+    
+    Win --> UpdateStats: +1 Win
+    Loss --> UpdateStats: +1 Loss
+    Draw --> UpdateStats: +1 Draw
+    
+    UpdateStats --> Playing: Next Game
+    UpdateStats --> [*]: View Leaderboard
+```
+
+### Game State Transitions
+
+```mermaid
+flowchart TB
+    subgraph TicTacToe
+        T1[Empty Board] --> T2[X Plays]
+        T2 --> T3[O Plays]
+        T3 --> T4{Win?}
+        T4 -->|Yes| T5[Game Over]
+        T4 -->|No| T6{Board Full?}
+        T6 -->|Yes| T7[Draw]
+        T6 -->|No| T2
+        T5 --> T8[Update Stats]
+        T7 --> T8
+        T8 --> T1
+    end
+    
+    subgraph ConnectFive
+        C1[Empty Board] --> C2[Player 1]
+        C2 --> C3[Player 2]
+        C3 --> C4{5 in Row?}
+        C4 -->|Yes| C5[Game Over]
+        C4 -->|No| C6{Board Full?}
+        C6 -->|Yes| C7[Draw]
+        C6 -->|No| C2
+        C5 --> C8[Update Stats]
+        C7 --> C8
+        C8 --> C1
+    end
+```
+
+### Difficulty Levels
+
+```mermaid
+flowchart LR
+    subgraph Easy
+        E1[Random moves<br/>No strategy]
+    end
+    
+    subgraph Medium
+        M1[Block wins<br/>Some offense]
+    end
+    
+    subgraph Hard
+        H1[Minimax algorithm<br/>Unbeatable]
+    end
+    
+    E1 --> M1 --> H1
+    
+    style Easy fill:#c8e6c9
+    style Medium fill:#fff9c4
+    style Hard fill:#ffcdd2
+```
+
+### Stats Lifecycle
+
+```mermaid
+sequenceDiagram
+    participant UI
+    participant LocalStorage
+    participant API
+    participant Table
+    
+    UI->>LocalStorage: Get cached stats
+    LocalStorage-->>UI: Return cached
+    
+    UI->>API: Fetch latest stats
+    API->>Table: Query by PlayerName
+    
+    alt Found in Table
+        Table-->>API: PlayerStats
+        API-->>UI: Return stats
+        UI->>LocalStorage: Update cache
+    else Not Found
+        Table-->>API: null
+        API-->>UI: 404 Not Found
+        UI->>LocalStorage: Create new stats
+    end
+    
+    Note over UI: Game Play
+    
+    UI->>LocalStorage: Update local stats
+    
+    UI->>API: Save stats (fire-and-forget)
+    API->>Table: Upsert Entity
+    Table-->>API: Confirm
+```
+
+### Data Validation Rules
+
+```mermaid
+flowchart TB
+    subgraph Input
+        I1[Player Name]
+        I2[Game Result]
+    end
+    
+    subgraph Validation
+        V1{Valid Name?}
+        V2{Valid Result?}
+        V3{Valid Stats?}
+    end
+    
+    subgraph Actions
+        A1[Create New]
+        A2[Update Existing]
+        A3[Return Error]
+    end
+    
+    I1 --> V1
+    I2 --> V2
+    
+    V1 -->|No| A3
+    V1 -->|Yes| V3
+    V2 -->|No| A3
+    V2 -->|Yes| V3
+    V3 -->|New| A1
+    V3 -->|Exists| A2
+    
+    style Input fill:#e3f2fd
+    style Validation fill:#fff3e0
+    style Actions fill:#e8f5e8
+```

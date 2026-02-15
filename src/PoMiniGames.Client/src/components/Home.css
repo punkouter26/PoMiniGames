@@ -1,0 +1,143 @@
+/* ===========================================
+   Home Component - Using Design System
+   =========================================== */
+
+.home-container {
+  text-align: center;
+  padding: var(--space-8) 0;
+  animation: fadeIn var(--transition-slow) ease-out;
+}
+
+.home-title {
+  font-size: var(--font-size-4xl);
+  font-weight: var(--font-weight-bold);
+  background: linear-gradient(90deg, var(--color-primary), var(--color-secondary));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: var(--space-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+}
+
+.home-title-icon {
+  display: inline-flex;
+  animation: bounce 2s ease-in-out infinite;
+}
+
+.home-subtitle {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-lg);
+  margin-bottom: var(--space-12);
+}
+
+.game-cards {
+  display: flex;
+  gap: var(--space-8);
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.game-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  padding: var(--space-10) var(--space-8);
+  width: 340px;
+  color: var(--color-text-secondary);
+  transition: all var(--transition-base);
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+}
+
+.game-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--color-primary), var(--color-secondary));
+  transform: scaleX(0);
+  transition: transform var(--transition-base);
+}
+
+.game-card:hover {
+  transform: translateY(-8px);
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-lg), 0 0 40px var(--color-primary-glow);
+}
+
+.game-card:hover::before {
+  transform: scaleX(1);
+}
+
+.game-icon {
+  font-size: 3.5rem;
+  margin-bottom: var(--space-4);
+  display: flex;
+  justify-content: center;
+  gap: var(--space-2);
+}
+
+.game-card h2 {
+  font-size: var(--font-size-2xl);
+  font-weight: var(--font-weight-bold);
+  margin-bottom: var(--space-2);
+  color: var(--color-text-primary);
+}
+
+.game-card p {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-base);
+  margin-bottom: var(--space-6);
+  line-height: 1.6;
+}
+
+.play-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-6);
+  border: 2px solid var(--color-primary);
+  border-radius: var(--radius-lg);
+  color: var(--color-primary);
+  font-weight: var(--font-weight-semibold);
+  transition: all var(--transition-base);
+}
+
+.game-card:hover .play-btn {
+  background: var(--color-primary);
+  color: var(--color-bg-dark);
+  box-shadow: var(--shadow-glow);
+}
+
+.play-btn-icon {
+  transition: transform var(--transition-base);
+}
+
+.game-card:hover .play-btn-icon {
+  transform: translateX(4px);
+}
+
+/* ─── Responsive ─────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .home-title {
+    font-size: var(--font-size-3xl);
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+  
+  .game-cards {
+    flex-direction: column;
+    align-items: center;
+  }
+  
+  .game-card {
+    width: 100%;
+    max-width: 360px;
+  }
+}

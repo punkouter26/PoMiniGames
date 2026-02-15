@@ -1,0 +1,340 @@
+# DataPipeline.mmd - Data Workflow + User Workflow
+
+## Simplified Version (AI-Friendly)
+
+```mermaid
+flowchart LR
+    subgraph Input
+        Play[User Plays Game]
+        Name[Enter Player Name]
+    end
+    
+    subgraph Process
+        Game[Game Logic]
+        AI[AI Move Calculation]
+        Win[Determine Winner]
+    end
+    
+    subgraph Output
+        Stats[Update Stats]
+        Save[Save to API]
+        Show[Show Leaderboard]
+    end
+    
+    Play --> Name --> Game --> AI --> Win --> Stats --> Save --> Show
+    
+    style Input fill:#e1f5fe
+    style Process fill:#e8f5e8
+    style Output fill:#fff3e0
+```
+
+## Detailed Version (Human Developers)
+
+### User Workflow - Game Play
+
+```mermaid
+flowchart TB
+    Start([Start]) --> Home[Home Page]
+    Home --> Select[Select Game]
+    
+    Select --> TTT[Tic-Tac-Toe]
+    Select --> CF[Connect Five]
+    
+    subgraph TicTacToeFlow
+        TTT --> Name1[Enter Name]
+        Name1 --> Diff1[Choose Difficulty]
+        Diff1 --> Mode1[PvP or PvAI]
+        Mode1 --> Play1[Play Game]
+        Play1 --> End1{Game Over?}
+        End1 -->|Win| Win1[Win]
+        End1 -->|Loss| Loss1[Loss]
+        End1 -->|Draw| Draw1[Draw]
+    end
+    
+    subgraph ConnectFiveFlow
+        CF --> Name2[Enter Name]
+        Name2 --> Diff2[Choose Difficulty]
+        Diff2 --> Mode2[PvP or PvAI]
+        Mode2 --> Play2[Play Game]
+        Play2 --> End2{Game Over?}
+        End2 -->|Win| Win2[Win]
+        End2 -->|Loss| Loss2[Loss]
+        End2 -->|Draw| Draw2[Draw]
+    end
+    
+    Win1 --> Stats1[Update Stats]
+    Loss1 --> Stats1
+    Draw1 --> Stats1
+    
+    Win2 --> Stats2[Update Stats]
+    Loss2 --> Stats2
+    Draw2 --> Stats2
+    
+    Stats1 --> Leader1[View Leaderboard]
+    Stats2 --> Leader2[View Leaderboard]
+    
+    Leader1 --> Home
+    Leader2 --> Home
+    
+    style Start fill:#ff9800
+    style Home fill:#4caf50
+```
+
+### Data Pipeline - Stats Management
+
+```mermaid
+flowchart TB
+    subgraph Client["Client Side"]
+        Input[User Input]
+        Validate[Validate Input]
+        Cache[Cache in LocalStorage]
+    end
+    
+    subgraph Service["Service Layer"]
+        Merge[Merge Stats]
+        Transform[Transform Data]
+        Queue[Queue for Save]
+    end
+    
+    subgraph API["API Layer"]
+        Receive[Receive Request]
+        Auth[Check CORS]
+        Route[Route to Handler]
+    end
+    
+    subgraph Storage["Storage Layer"]
+        Query[Query Table]
+        Upsert[Upsert Entity]
+        Return[Return Result]
+    end
+    
+    Input --> Validate
+    Validate --> Cache
+    Cache --> Merge
+    Merge --> Transform
+    Transform --> Queue
+    Queue --> Receive
+    Receive --> Auth
+    Auth --> Route
+    Route --> Query
+    Query --> Upsert
+    Upsert --> Return
+    
+    style Client fill:#e1f5fe
+    style Service fill:#e8f5e8
+    style API fill:#fff3e0
+    style Storage fill:#fce4ec
+```
+
+### CRUD Operations
+
+```mermaid
+flowchart TB
+    subgraph Create
+        C1[New Player]
+        C2[Initialize Stats]
+        C3[Save to API]
+    end
+    
+    subgraph Read
+        R1[View Stats]
+        R2[Fetch from API]
+        R3[Display Stats]
+    end
+    
+    subgraph Update
+        U1[Game Ends]
+        U2[Calculate New Stats]
+        U3[Save to API]
+    end
+    
+    subgraph Delete
+        D1[Clear Stats]
+        D2[Not Implemented]
+    end
+    
+    C1 --> C2 --> C3
+    R1 --> R2 --> R3
+    U1 --> U2 --> U3
+    
+    style Create fill:#c8e6c9
+    style Read fill:#bbdefb
+    style Update fill:#fff9c4
+    style Delete fill:#ffcdd2
+```
+
+### API Data Flow
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant UI
+    participant API
+    participant Service
+    participant Table
+    
+    User->>UI: Play Game
+    
+    rect rgb(240, 248, 255)
+        Note over UI: Game Logic
+    end
+    
+    UI->>UI: Check Win/Loss/Draw
+    
+    alt Game Over
+        UI->>UI: Calculate New Stats
+        
+        rect rgb(255, 250, 240)
+            Note over UI: Stats Update
+        end
+        
+        UI->>Service: Prepare Stats Data
+        
+        Service->>API: PUT /api/{game}/players/{name}/stats
+        
+        rect rgb(255, 245, 230)
+            Note over API: Upsert Operation
+        end
+        
+        API->>Service: Validate Data
+        Service->>Table: UpsertEntity
+        
+        Table-->>Service: Success
+        Service-->>API: 204 No Content
+        API-->>UI: 204
+    end
+    
+    UI->>User: Show Updated Stats
+    
+    Note over User: Fire-and-forget<br/>UI doesn't wait
+```
+
+### Leaderboard Pipeline
+
+```mermaid
+flowchart TB
+    subgraph Request
+        R1[User Clicks Leaderboard]
+        R2[API GET Request]
+    end
+    
+    subgraph Query
+        Q1[Storage Service]
+        Q2[Table Query]
+        Q3[Filter by Game]
+    end
+    
+    subgraph Sort
+        S1[Sort by Win Rate]
+        S2[Sort by Total Wins]
+        S3[Limit Results]
+    end
+    
+    subgraph Response
+        R3[Return JSON]
+        R4[Display Table]
+    end
+    
+    R1 --> R2 --> Q1 --> Q2 --> Q3 --> S1 --> S2 --> S3 --> R3 --> R4
+    
+    style Request fill:#e1f5fe
+    style Query fill:#e8f5e8
+    style Sort fill:#fff3e0
+    style Response fill:#fce4ec
+```
+
+### Error Handling Pipeline
+
+```mermaid
+flowchart TB
+    subgraph Error
+        E1[API Error]
+        E2[Network Error]
+        E3[Validation Error]
+    end
+    
+    subgraph Handle
+        H1[Catch Exception]
+        H2[Log Error]
+        H3[Fallback to Cache]
+    end
+    
+    subgraph Recover
+        R1[Show Error Message]
+        R2[Use Local Data]
+        R3[Retry Later]
+    end
+    
+    E1 --> H1
+    E2 --> H1
+    E3 --> H1
+    
+    H1 --> H2
+    H2 --> H3
+    
+    H3 --> R1
+    H3 --> R2
+    H3 --> R3
+    
+    style Error fill:#ffcdd2
+    style Handle fill:#fff9c4
+    style Recover fill:#c8e6c9
+```
+
+### Batch Processing
+
+```mermaid
+sequenceDiagram
+    participant Batch
+    participant Queue
+    participant Process
+    participant Storage
+    
+    loop Multiple Saves
+        Batch->>Queue: Queue Stats Update
+    end
+    
+    Queue->>Process: Batch Process
+    
+    rect rgb(240, 248, 255)
+        Note over Process: Current: Fire-and-Forget
+    end
+    
+    Process->>Storage: Upsert
+    Storage-->>Process: Confirm
+    Process-->>Batch: Complete
+    
+    Note over Batch,Storage: Currently single entity upserts
+```
+
+### Data Synchronization
+
+```mermaid
+flowchart TB
+    subgraph Local["Local State"]
+        L1[LocalStorage]
+        L2[React State]
+    end
+    
+    subgraph Sync["Sync Layer"]
+        S1[Compare Versions]
+        S2[Merge Changes]
+        S3[Resolve Conflicts]
+    end
+    
+    subgraph Remote["Remote State"]
+        R1[API Server]
+        R2[Azure Table]
+    end
+    
+    L1 --> S1
+    L2 --> S1
+    S1 --> S2
+    S2 --> S3
+    S3 --> R1
+    R1 --> R2
+    
+    style Local fill:#e1f5fe
+    style Sync fill:#e8f5e8
+    style Remote fill:#fff3e0
+```

@@ -1,0 +1,52 @@
+# .NET
+bin/
+obj/
+*.dll
+*.exe
+*.pdb
+*.user
+*.suo
+*.cache
+*.log
+.vs/
+*.nupkg
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Build results
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+
+# NuGet
+*.nupkg
+packages/
+project.lock.json
+
+# Test Results
+TestResults/
+coverage/
+*.coverage
+*.coveragexml
+
+# Node
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# OS
+Thumbs.db
+.DS_Store
+
+# App specific
+.potune-state.json

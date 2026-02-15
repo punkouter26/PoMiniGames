@@ -1,0 +1,115 @@
+/* ===========================================
+   Layout Component - Using Design System
+   =========================================== */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  animation: fadeIn var(--transition-slow) ease-out;
+}
+
+/* ─── Top bar ─────────────────────────────────────────────── */
+.top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-6);
+  background: var(--color-surface);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--color-border);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.top-bar .brand {
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-primary);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.top-bar .brand-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: linear-gradient(135deg, var(--color-primary), var(--color-secondary));
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-lg);
+}
+
+.top-bar nav {
+  display: flex;
+  gap: var(--space-5);
+}
+
+.top-bar nav a {
+  color: var(--color-text-muted);
+  font-weight: var(--font-weight-medium);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  transition: all var(--transition-base);
+  position: relative;
+}
+
+.top-bar nav a::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  width: 0;
+  height: 2px;
+  background: var(--color-primary);
+  transition: all var(--transition-base);
+  transform: translateX(-50%);
+  border-radius: var(--radius-full);
+}
+
+.top-bar nav a:hover,
+.top-bar nav a.active {
+  color: var(--color-primary);
+}
+
+.top-bar nav a:hover::after,
+.top-bar nav a.active::after {
+  width: 60%;
+}
+
+/* ─── Content ─────────────────────────────────────────────── */
+.content {
+  flex: 1;
+  padding: var(--content-padding);
+  max-width: var(--max-width);
+  margin: 0 auto;
+  width: 100%;
+}
+
+/* ─── Responsive ─────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .top-bar {
+    padding: var(--space-2) var(--space-4);
+  }
+  
+  .top-bar .brand {
+    font-size: var(--font-size-lg);
+  }
+  
+  .top-bar nav {
+    gap: var(--space-2);
+  }
+  
+  .top-bar nav a {
+    padding: var(--space-1) var(--space-2);
+    font-size: var(--font-size-sm);
+  }
+  
+  .content {
+    padding: var(--space-4);
+  }
+}

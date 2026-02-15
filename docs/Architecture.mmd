@@ -1,0 +1,165 @@
+# Architecture.mmd - System Context + Container Architecture
+
+## Simplified Version (AI-Friendly)
+
+```mermaid
+flowchart TB
+    subgraph Client["PoMiniGames Client (Blazor/React)"]
+        UI[User Interface]
+        Router[React Router]
+        State[State Management]
+    end
+    
+    subgraph Server["PoMiniGames API (.NET 10)"]
+        API[Minimal API Endpoints]
+        Auth[Authorization]
+        Cors[CORS Middleware]
+    end
+    
+    subgraph Storage["Azure Storage"]
+        Tables[Azure Table Storage]
+        KeyVault[Azure Key Vault]
+    end
+    
+    subgraph Local["Local Development"]
+        Azurite[Azurite Emulator]
+        Docker[Docker Compose]
+    end
+    
+    User --> Client
+    Client -->|HTTP| Server
+    Server -->|Table SDK| Storage
+    Server -->|Secret Manager| KeyVault
+    Server -->|Dev Storage| Azurite
+    
+    style Client fill:#e1f5fe
+    style Server fill:#e8f5e8
+    style Storage fill:#fff3e0
+    style Local fill:#fce4ec
+```
+
+## Detailed Version (Human Developers)
+
+```mermaid
+flowchart TB
+    subgraph External["External Systems"]
+        User((User))
+    end
+    
+    subgraph ClientTier["Client Tier"]
+        direction TB
+        Browser[Web Browser]
+        SPA[Single Page App<br/>React + TypeScript]
+        Vite[Vite Build Tool]
+    end
+    
+    subgraph APITier["API Tier"]
+        direction TB
+        NetApp[.NET 10 Web App]
+        Middleware[Custom Middleware]
+        Endpoints[Minimal API Endpoints]
+        Swagger[Swagger/OpenAPI]
+    end
+    
+    subgraph DataTier["Data Tier"]
+        direction TB
+        TableClient[Azure Table Client]
+        StorageService[Storage Service]
+        HealthCheck[Storage Health Check]
+    end
+    
+    subgraph Infrastructure["Infrastructure"]
+        direction TB
+        AzureTables[Azure Table Storage]
+        AzureKV[Azure Key Vault]
+        Azurite[Azurite (Local)]
+        LogFiles[Serilog File Logs]
+    end
+    
+    subgraph DevOps["DevOps & CI/CD"]
+        Docker[Docker Compose]
+        GitHub[GitHub Actions]
+        Tests[Integration Tests]
+    end
+    
+    User -->|HTTPS| Browser
+    Browser -->|HTTP/WebSocket| SPA
+    SPA -->|REST API| NetApp
+    NetApp -->|Configure| Middleware
+    Middleware -->|Route| Endpoints
+    Endpoints -->|Call| StorageService
+    StorageService -->|SDK| TableClient
+    TableClient -->|Connection| AzureTables
+    TableClient -->|Dev Connection| Azurite
+    NetApp -->|Retrieve Secrets| AzureKV
+    NetApp -->|Log| LogFiles
+    
+    style ClientTier fill:#e1f5fe
+    style APITier fill:#e8f5e8
+    style DataTier fill:#fff3e0
+    style Infrastructure fill:#f3e5f5
+    style DevOps fill:#fce4ec
+```
+
+## System Components
+
+| Component | Technology | Purpose |
+|-----------|------------|---------|
+| Frontend | React 18 + TypeScript | UI Framework |
+| Build Tool | Vite | Development & Build |
+| Routing | React Router v6 | Client-side routing |
+| Backend | .NET 10 Minimal API | REST API |
+| Storage | Azure Table Storage | Persistent storage |
+| Auth | Azure Identity | Managed identity |
+| Logging | Serilog | Structured logging |
+| Health | ASP.NET Health Checks | Observability |
+| Testing | xUnit + Playwright | Integration/E2E |
+
+## Environment Configuration
+
+```mermaid
+flowchart LR
+    subgraph Environments
+        Dev[Development]
+        Stage[Staging]
+        Prod[Production]
+    end
+    
+    subgraph Config
+        EnvVars[Environment Variables]
+        KeyVault[Key Vault Secrets]
+        appsettings[appsettings.json]
+    end
+    
+    Dev -->|Local Storage| EnvVars
+    Stage -->|Azure KV| KeyVault
+    Prod -->|Azure KV| KeyVault
+    EnvVars --> appsettings
+    KeyVault --> appsettings
+```
+
+## Deployment Architecture
+
+```mermaid
+flowchart TB
+    subgraph Cloud["Azure Cloud"]
+        subgraph AppService["Azure App Service"]
+            Container[Container Instance]
+        end
+        subgraph StorageAccount["Azure Storage"]
+            Tables[Table Service]
+        end
+        subgraph KeyVault["Azure Key Vault"]
+            Secrets[Secrets]
+        end
+    end
+    
+    Internet((Internet)) --> AppService
+    AppService --> Tables
+    AppService --> Secrets
+    
+    style Cloud fill:#e3f2fd
+    style AppService fill:#bbdefb
+    style StorageAccount fill:#c8e6c9
+    style KeyVault fill:#ffecb3
+```

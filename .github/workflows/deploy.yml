@@ -71,14 +71,15 @@ jobs:
           az bicep build --file infra/main.bicep
 
       - name: Deploy Infrastructure
+        shell: bash
         run: |
           DEPLOYMENT_NAME="PoMiniGames-$(date +%s)"
           az deployment sub create \
             --name "$DEPLOYMENT_NAME" \
-            --location "${{ env.AZURE_LOCATION }}" \
+            --location "$AZURE_LOCATION" \
             --template-file infra/main.bicep \
             --parameters infra/main.parameters.json \
-            --parameters name="${{ env.AZURE_ENV_NAME }}"
+            --parameters name="$AZURE_ENV_NAME"
 
   deploy-services:
     needs: deploy-infra
@@ -110,6 +111,7 @@ jobs:
 
       - name: Get App Service Name
         id: app-info
+        shell: bash
         run: |
           APP_NAME=$(az resource list -g PoMiniGames --resource-type "Microsoft.Web/sites" --query "[?tags.'azd-service-name'=='api'].name" -o tsv 2>/dev/null || echo "")
           if [ -z "$APP_NAME" ]; then

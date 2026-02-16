@@ -109,26 +109,32 @@ jobs:
       - name: Get App Service Name
         id: app-info
         run: |
-          APP_NAME=$(az resource list -g PoMiniGames --resource-type "Microsoft.Web/sites" --query "[?tags.'azd-service-name'=='api'].name" -o tsv)
+          APP_NAME=$(az resource list -g PoMiniGames --resource-type "Microsoft.Web/sites" --query "[?tags.'azd-service-name'=='api'].name" -o tsv 2>/dev/null || echo "")
+          if [ -z "$APP_NAME" ]; then
+            echo "Error: App Service not found in PoMiniGames resource group"
+            exit 1
+          fi
           echo "app-name=$APP_NAME" >> $GITHUB_OUTPUT
-          SWA_NAME=$(az resource list -g PoMiniGames --resource-type "Microsoft.Web/staticSites" --query "[0].name" -o tsv)
-          echo "swa-name=$SWA_NAME" >> $GITHUB_OUTPUT
+          echo "API App Service: $APP_NAME"
 
       - name: Deploy API to App Service
         run: |
+          cd ./publish
+          zip -r ../api-deploy.zip .
+          cd ..
           az webapp deployment source config-zip \
-            -g PoMiniGames \
-            -n "${{ steps.app-info.outputs.app-name }}" \
-            --src <(cd ./publish && zip -r - .)
+            --resource-group PoMiniGames \
+            --name "${{ steps.app-info.outputs.app-name }}" \
+            --src api-deploy.zip
+        shell: bash
 
-      - name: Deploy Static Web App
-        uses: Azure/static-web-apps-deploy@v1
-        with:
-          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_TOKEN }}
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          action: "upload"
-          app_location: "./client-build"
-          skip_app_build: true
+      - name: Deploy Client Build to App Service wwwroot
+        run: |
+          az webapp deployment source config-zip \
+            --resource-group PoMiniGames \
+            --name "${{ steps.app-info.outputs.app-name }}" \
+            --src <(cd ./client-build && zip -r - .)
+        shell: bash
 
   health-check:
     needs: deploy-services

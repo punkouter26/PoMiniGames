@@ -15,7 +15,7 @@ if (!string.IsNullOrEmpty(keyVaultUri))
     builder.Configuration.AddAzureKeyVault(
         new Uri(keyVaultUri),
         new DefaultAzureCredential(),
-        new Azure.Extensions.AspNetCore.Configuration.Secrets.KeyVaultSecretManager());
+        new PrefixKeyVaultSecretManager("PoMiniGames"));
 }
 
 // ─── Simple Serilog configuration ─────────────────────────────────────
@@ -151,3 +151,16 @@ finally
 
 /// <summary>Partial class anchor for WebApplicationFactory in tests.</summary>
 public partial class Program { }
+
+public class PrefixKeyVaultSecretManager : Azure.Extensions.AspNetCore.Configuration.Secrets.KeyVaultSecretManager
+{
+    private readonly string _prefix;
+    public PrefixKeyVaultSecretManager(string prefix) => _prefix = $"{prefix}--";
+
+    public override bool Load(Azure.Security.KeyVault.Secrets.SecretProperties properties) => properties.Name.StartsWith(_prefix, StringComparison.OrdinalIgnoreCase);
+
+    public override string GetKey(Azure.Security.KeyVault.Secrets.KeyVaultSecret secret)
+    {
+        return secret.Name.Substring(_prefix.Length).Replace("--", ConfigurationPath.KeyDelimiter);
+    }
+}

@@ -1,0 +1,131 @@
+<?xml version="1.0"?>
+<doc>
+    <assembly>
+        <name>PoMiniGames</name>
+    </assembly>
+    <members>
+        <member name="T:PoMiniGames.DTOs.PlayerStatsDto">
+            <summary>
+            Data transfer object for player statistics.
+            </summary>
+        </member>
+        <member name="T:PoMiniGames.Features.Health.HealthEndpoints">
+            <summary>
+            Minimal API health endpoints.
+            GET /api/health  → structured health report
+            GET /api/health/ping → simple OK
+            </summary>
+        </member>
+        <member name="T:PoMiniGames.Features.Leaderboard.GetAllPlayerStatisticsEndpoint">
+            <summary>Retrieve statistics for all players across all games.</summary>
+        </member>
+        <member name="T:PoMiniGames.Features.Leaderboard.GetLeaderboardEndpoint">
+            <summary>Retrieve leaderboard for a specific game.</summary>
+        </member>
+        <member name="T:PoMiniGames.Features.Leaderboard.GetPlayerStatsEndpoint">
+            <summary>Retrieve a single player's stats for a specific game.</summary>
+        </member>
+        <member name="T:PoMiniGames.Features.Leaderboard.SavePlayerStatsEndpoint">
+            <summary>Save or update player statistics for a specific game.</summary>
+        </member>
+        <member name="T:PoMiniGames.HealthChecks.StorageHealthCheck">
+            <summary>
+            Health check that verifies Azure Table Storage connectivity
+            by attempting to create/query a test table.
+            </summary>
+        </member>
+        <member name="T:PoMiniGames.Models.DifficultyStats">
+            <summary>
+            Statistics for a specific difficulty level.
+            </summary>
+        </member>
+        <member name="P:PoMiniGames.Models.DifficultyStats.WinRate">
+            <summary>Computed win rate - no need to store.</summary>
+        </member>
+        <member name="T:PoMiniGames.Models.PlayerStats">
+            <summary>
+            Player statistics stored in Azure Table Storage.
+            </summary>
+        </member>
+        <member name="T:PoMiniGames.Services.PlayerStatsEntity">
+            <summary>
+            Azure Table Storage entity for player statistics.
+            PartitionKey encodes game type; RowKey is the player name.
+            </summary>
+        </member>
+        <member name="P:PoMiniGames.Services.PlayerStatsEntity.StatsJson">
+            <summary>Complex stats serialised as JSON.</summary>
+        </member>
+        <member name="T:PoMiniGames.Services.StorageService">
+            <summary>
+            Facade for Azure Table Storage operations.
+            Supports multi-game leaderboards via PartitionKey = game name.
+            </summary>
+        </member>
+        <member name="M:PoMiniGames.Services.StorageService.GetAllPlayerStatsAsync">
+            <summary>Retrieve all player stats across every game.</summary>
+        </member>
+        <member name="M:PoMiniGames.Services.StorageService.GetPlayerStatsAsync(System.String,System.String)">
+            <summary>Retrieve stats for one player in a specific game.</summary>
+        </member>
+        <member name="M:PoMiniGames.Services.StorageService.SavePlayerStatsAsync(System.String,System.String,PoMiniGames.Models.PlayerStats)">
+            <summary>Upsert player stats for a specific game.</summary>
+        </member>
+        <member name="M:PoMiniGames.Services.StorageService.GetLeaderboardAsync(System.String,System.Int32)">
+            <summary>Top players for a given game, sorted by win rate.</summary>
+        </member>
+        <member name="M:PoMiniGames.Services.StorageService.SanitizeKey(System.String)">
+            <summary>
+            Sanitises a string for use as Azure Table Storage key.
+            Removes: / \ # ? and control characters.
+            </summary>
+        </member>
+        <member name="T:Program">
+            <summary>Partial class anchor for WebApplicationFactory in tests.</summary>
+        </member>
+        <member name="M:Microsoft.AspNetCore.OpenApi.Generated.DocumentationCommentIdHelper.CreateDocumentationId(System.Type)">
+            <summary>
+            Generates a documentation comment ID for a type.
+            Example: T:Namespace.Outer+Inner`1 becomes T:Namespace.Outer.Inner`1
+            </summary>
+        </member>
+        <member name="M:Microsoft.AspNetCore.OpenApi.Generated.DocumentationCommentIdHelper.CreateDocumentationId(System.Reflection.PropertyInfo)">
+            <summary>
+            Generates a documentation comment ID for a property.
+            Example: P:Namespace.ContainingType.PropertyName or for an indexer P:Namespace.ContainingType.Item(System.Int32)
+            </summary>
+        </member>
+        <member name="M:Microsoft.AspNetCore.OpenApi.Generated.DocumentationCommentIdHelper.CreateDocumentationId(System.Type,System.String)">
+            <summary>
+            Generates a documentation comment ID for a property given its container type and property name.
+            Example: P:Namespace.ContainingType.PropertyName
+            </summary>
+        </member>
+        <member name="M:Microsoft.AspNetCore.OpenApi.Generated.DocumentationCommentIdHelper.CreateDocumentationId(System.Reflection.MethodInfo)">
+            <summary>
+            Generates a documentation comment ID for a method (or constructor).
+            For example:
+              M:Namespace.ContainingType.MethodName(ParamType1,ParamType2)~ReturnType
+              M:Namespace.ContainingType.#ctor(ParamType)
+            </summary>
+        </member>
+        <member name="M:Microsoft.AspNetCore.OpenApi.Generated.DocumentationCommentIdHelper.GetTypeDocId(System.Type,System.Boolean,System.Boolean)">
+            <summary>
+            Generates a documentation ID string for a type.
+            This method handles nested types (replacing '+' with '.'),
+            generic types, arrays, pointers, by-ref types, and generic parameters.
+            The <paramref name="includeGenericArguments"/> flag controls whether
+            constructed generic type arguments are emitted, while <paramref name="omitGenericArity"/>
+            controls whether the generic arity marker (e.g. "`1") is appended.
+            </summary>
+        </member>
+        <member name="M:Microsoft.AspNetCore.OpenApi.Generated.DocumentationCommentIdHelper.NormalizeDocId(System.String)">
+            <summary>
+            Normalizes a documentation comment ID to match the compiler-style format.
+            Strips the return type suffix for ordinary methods but retains it for conversion operators.
+            </summary>
+            <param name="docId">The documentation comment ID to normalize.</param>
+            <returns>The normalized documentation comment ID.</returns>
+        </member>
+    </members>
+</doc>

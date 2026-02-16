@@ -6,7 +6,9 @@ import { type PlayerStats, type PlayerStatsDto } from './types';
  * The app works fully without the API.
  */
 
-const API_BASE = '/api';
+const API_BASE = window.location.hostname.includes('localhost')
+  ? '/api'
+  : 'https://app-ume6l7vbfm6e2.azurewebsites.net/api';
 const TIMEOUT_MS = 5000;
 
 async function safeFetch(url: string, init?: RequestInit): Promise<Response | null> {

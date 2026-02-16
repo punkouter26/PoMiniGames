@@ -4,9 +4,9 @@ import { test, expect } from '@playwright/test';
 test.describe('Home page', () => {
   test('shows game selector cards', async ({ page }) => {
     await page.goto('/');
-    await expect(page.locator('text=PoMiniGames')).toBeVisible();
-    await expect(page.locator('text=Connect Five')).toBeVisible();
-    await expect(page.locator('text=Tic Tac Toe')).toBeVisible();
+    await expect(page.locator('h1.home-title:has-text("PoMiniGames")')).toBeVisible();
+    await expect(page.locator('h2:has-text("Connect Five")')).toBeVisible();
+    await expect(page.locator('h2:has-text("Tic Tac Toe")')).toBeVisible();
   });
 
   test('navigates to Connect Five', async ({ page }) => {

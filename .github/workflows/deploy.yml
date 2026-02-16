@@ -23,16 +23,34 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Build API
+        run: dotnet build src/PoMiniGames/PoMiniGames/PoMiniGames.csproj
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Build Client
+        run: |
+          cd src/PoMiniGames.Client
+          npm install
+          npm run build
+
       - name: Install azd
         uses: Azure/setup-azd@v2
 
-      - name: Log in with Azure (Federated Credentials)
-        if: ${{ env.AZURE_CLIENT_ID != '' }}
-        run: |
-          azd auth login `
-            --client-id "$AZURE_CLIENT_ID" `
-            --tenant-id "$AZURE_TENANT_ID" `
-            --federated-credential-provider "github"
+      - name: Log in with Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Provision Infrastructure
         run: azd provision --no-prompt
@@ -41,6 +59,7 @@ jobs:
         run: azd deploy --no-prompt
 
       - name: Final Health Check
+        if: ${{ env.AZURE_CLIENT_ID != '' }}
         run: |
           $API_URL = (azd env get-values --output json | ConvertFrom-Json).API_URI
           echo "Checking health at $API_URL/api/health"

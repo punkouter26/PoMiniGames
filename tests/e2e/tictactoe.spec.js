@@ -14,18 +14,16 @@ test.describe('Tic Tac Toe game', () => {
   test('player can place X by clicking empty cell', async ({ page }) => {
     const firstCell = page.locator('.ttt-cell').first();
     await firstCell.click();
-    await expect(firstCell).toContainText('❌');
+    await expect(firstCell).toHaveAttribute('aria-label', 'X');
   });
 
   test('AI responds after player move', async ({ page }) => {
     const firstCell = page.locator('.ttt-cell').first();
     await firstCell.click();
 
-    // Wait for AI to make a move
-    await page.waitForTimeout(500);
-
-    const oCount = await page.getByText('⭕').count();
-    expect(oCount).toBeGreaterThanOrEqual(1);
+    // Wait for AI to make a move (O)
+    const oCell = page.locator('.ttt-cell[aria-label="O"]');
+    await expect(oCell.first()).toBeVisible();
   });
 
   test('new game button resets board', async ({ page }) => {
@@ -35,8 +33,8 @@ test.describe('Tic Tac Toe game', () => {
 
     await page.click('text=New Game');
 
-    const xCount = await page.locator('.ttt-cell').filter({ hasText: '❌' }).count();
-    const oCount = await page.locator('.ttt-cell').filter({ hasText: '⭕' }).count();
+    const xCount = await page.locator('.ttt-cell[aria-label="X"]').count();
+    const oCount = await page.locator('.ttt-cell[aria-label="O"]').count();
     expect(xCount + oCount).toBe(0);
   });
 

@@ -22,8 +22,10 @@ public sealed class StorageHealthCheck : IHealthCheck
     {
         try
         {
-            // Lightweight connectivity test: list tables with a prefix
-            await foreach (var _ in _client.QueryAsync(filter: "TableName eq 'PlayerStats'", cancellationToken: cancellationToken))
+            var tableClient = _client.GetTableClient("PlayerStats");
+            await tableClient.CreateIfNotExistsAsync(cancellationToken);
+            
+            await foreach (var _ in tableClient.QueryAsync<TableEntity>(maxPerPage: 1, cancellationToken: cancellationToken))
             {
                 break;
             }

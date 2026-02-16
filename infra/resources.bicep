@@ -87,6 +87,14 @@ resource webApp 'Microsoft.Web/sites@2022-09-01' = {
           name: 'KeyVault__Uri'
           value: sharedKeyVault.properties.vaultUri
         }
+        {
+          name: 'Cors__AllowedOrigins__0'
+          value: 'https://${staticWebApp.properties.defaultHostname}'
+        }
+        {
+          name: 'Cors__AllowedOrigins__1'
+          value: 'http://localhost:5173'
+        }
       ]
     }
     httpsOnly: true

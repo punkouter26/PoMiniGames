@@ -72,7 +72,9 @@ jobs:
 
       - name: Deploy Infrastructure
         run: |
+          DEPLOYMENT_NAME="PoMiniGames-$(date +%s)"
           az deployment sub create \
+            --name "$DEPLOYMENT_NAME" \
             --location "${{ env.AZURE_LOCATION }}" \
             --template-file infra/main.bicep \
             --parameters infra/main.parameters.json \

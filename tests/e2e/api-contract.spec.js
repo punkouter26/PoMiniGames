@@ -9,11 +9,15 @@ test.describe('API contract', () => {
     expect(text).toContain('pong');
   });
 
-  test('diag endpoint returns JSON with environment', async ({ request }) => {
-    const response = await request.get('/api/diag');
+  test('diag endpoint returns JSON with config keys', async ({ request }) => {
+    const response = await request.get('/diag');
     expect(response.ok()).toBeTruthy();
     const json = await response.json();
-    expect(json.environment).toBeDefined();
+    // Verify that some known configuration keys exist (case-insensitive or mapped)
+    const hasStorage = json.AZURE_STORAGE_ACCOUNT_NAME !== undefined || 
+                       json["ConnectionStrings:Tables"] !== undefined ||
+                       json["PoMiniGames:StorageAccountName"] !== undefined;
+    expect(hasStorage).toBeTruthy();
   });
 
   test('leaderboard endpoint returns 200', async ({ request }) => {

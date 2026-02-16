@@ -9,7 +9,9 @@ using Serilog;
 var builder = WebApplication.CreateBuilder(args);
 
 // ─── Azure Key Vault (cloud only) ────────────────────────────────────
-var keyVaultUri = builder.Configuration["KeyVault:Uri"];
+var keyVaultUri = builder.Configuration["PoMiniGames:KeyVault:Uri"]
+    ?? builder.Configuration["KeyVault:Uri"];
+
 if (!string.IsNullOrEmpty(keyVaultUri))
 {
     builder.Configuration.AddAzureKeyVault(
@@ -125,6 +127,7 @@ app.UseAuthorization();
 
 // ─── Minimal API endpoints (direct service calls) ────────────────────
 app.MapHealthEndpoints();
+app.MapDiagEndpoints();
 app.MapGetPlayerStats();
 app.MapSavePlayerStats();
 app.MapGetLeaderboard();
@@ -161,6 +164,7 @@ public class PrefixKeyVaultSecretManager : Azure.Extensions.AspNetCore.Configura
 
     public override string GetKey(Azure.Security.KeyVault.Secrets.KeyVaultSecret secret)
     {
-        return secret.Name.Substring(_prefix.Length).Replace("--", ConfigurationPath.KeyDelimiter);
+        // Don't strip the prefix, so it becomes PoMiniGames:Key in configuration
+        return secret.Name.Replace("--", ConfigurationPath.KeyDelimiter);
     }
 }

@@ -9,7 +9,7 @@ public static class GetLeaderboardEndpoint
     public static IEndpointRouteBuilder MapGetLeaderboard(this IEndpointRouteBuilder app)
     {
         app.MapGet("/api/{game}/statistics/leaderboard",
-            async (string game, int limit, StorageService storage) =>
+            async (string game, StorageService storage, int limit = 10) =>
         {
             var board = await storage.GetLeaderboardAsync(game, limit);
             var result = board

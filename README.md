@@ -13,6 +13,9 @@ PoMiniGames is a full-stack web application built with .NET 10 and React 18. It 
 - **Difficulty Levels**: Easy, Medium, and Hard AI opponents
 - **Player Statistics**: Track wins, losses, draws, and win streaks
 - **Leaderboards**: Compete with other players
+- **Health & Diagnostics**: Integrated health monitoring and diagnostic endpoints:
+    - `/api/health`: Comprehensive system health status (Azure Table Storage, etc.)
+    - `/diag`: Filtered configuration and secrets visibility (masked for security)
 - **Offline Support**: Works without internet using local storage
 
 ## Tech Stack

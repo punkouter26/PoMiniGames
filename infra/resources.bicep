@@ -72,27 +72,27 @@ resource webApp 'Microsoft.Web/sites@2022-09-01' = {
       minTlsVersion: '1.2'
       appSettings: [
         {
-          name: 'AZURE_STORAGE_ACCOUNT_NAME'
+          name: 'PoMiniGames__StorageAccountName'
           value: storage.name
         }
         {
-          name: 'ConnectionStrings__Tables'
+          name: 'PoMiniGames__ConnectionStrings__Tables'
           value: 'DefaultEndpointsProtocol=https;AccountName=${storage.name};AccountKey=${storage.listKeys().keys[0].value};EndpointSuffix=${environment().suffixes.storage}'
         }
         {
-          name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
+          name: 'PoMiniGames__ApplicationInsights__ConnectionString'
           value: sharedAppInsights.properties.ConnectionString
         }
         {
-          name: 'KeyVault__Uri'
+          name: 'PoMiniGames__KeyVault__Uri'
           value: sharedKeyVault.properties.vaultUri
         }
         {
-          name: 'Cors__AllowedOrigins__0'
+          name: 'PoMiniGames__Cors__AllowedOrigins__0'
           value: 'https://${staticWebApp.properties.defaultHostname}'
         }
         {
-          name: 'Cors__AllowedOrigins__1'
+          name: 'PoMiniGames__Cors__AllowedOrigins__1'
           value: 'http://localhost:5173'
         }
       ]

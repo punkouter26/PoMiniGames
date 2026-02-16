@@ -4,5 +4,6 @@
   "storageAccount": "st",
   "resourceGroup": "rg-",
   "logAnalytics": "log-",
-  "applicationInsights": "appi-"
+  "applicationInsights": "appi-",
+  "staticWebApp": "stapp-"
 }

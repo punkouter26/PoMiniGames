@@ -131,5 +131,5 @@ output API_URI string = 'https://${webApp.properties.defaultHostName}'
 output WEB_APP_NAME string = webApp.name
 output WEB_APP_PRINCIPAL_ID string = webApp.identity.principalId
 output STATIC_WEB_APP_NAME string = staticWebApp.name
-output STATIC_WEB_APP_DEFAULT_HOSTNAME string = staticWebApp.properties.defaultHostName
+output STATIC_WEB_APP_DEFAULT_HOSTNAME string = staticWebApp.properties.defaultHostname
 output AZURE_STORAGE_ACCOUNT_NAME string = storage.name

@@ -22,8 +22,11 @@ public sealed class StorageHealthCheck : IHealthCheck
     {
         try
         {
-            // Attempt to get service properties — lightweight connectivity test
-            await _client.GetPropertiesAsync(cancellationToken);
+            // Lightweight connectivity test: list tables with a prefix
+            await foreach (var _ in _client.QueryAsync(filter: "TableName eq 'PlayerStats'", cancellationToken: cancellationToken))
+            {
+                break;
+            }
             return HealthCheckResult.Healthy("Azure Table Storage is reachable.");
         }
         catch (Exception ex)

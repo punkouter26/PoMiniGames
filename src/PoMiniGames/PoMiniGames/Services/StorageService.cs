@@ -32,7 +32,6 @@ public class StorageService
     public StorageService(TableServiceClient tableServiceClient)
     {
         _tableClient = tableServiceClient.GetTableClient(TableName);
-        _tableClient.CreateIfNotExists();
     }
 
     // ─── Read ──────────────────────────────────────────────────

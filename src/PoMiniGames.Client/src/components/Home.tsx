@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { CircleDot, Grid3X3, ArrowRight, Gamepad2 } from 'lucide-react';
+import { CircleDot, ArrowRight, Gamepad2 } from 'lucide-react';
 import './Home.css';
 
 export default function Home() {

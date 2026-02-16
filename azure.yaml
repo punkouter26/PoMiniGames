@@ -1,0 +1,12 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+
+name: PoMiniGames
+services:
+  api:
+    project: src/PoMiniGames/PoMiniGames/PoMiniGames.csproj
+    host: appservice
+    language: dotnet
+  web:
+    project: src/PoMiniGames.Client
+    host: staticwebapp
+    language: js

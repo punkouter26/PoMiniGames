@@ -44,10 +44,24 @@ builder.Host.UseSerilog((context, configuration) =>
 });
 
 // ─── Azure Table Storage ─────────────────────────────────────────────
-var tableConnectionString = builder.Configuration.GetConnectionString("Tables")
-    ?? builder.Configuration["ConnectionStrings:AzureTableStorage"]
-    ?? "UseDevelopmentStorage=true";
-builder.Services.AddSingleton(_ => new TableServiceClient(tableConnectionString));
+var storageAccountName = builder.Configuration["PoMiniGames:StorageAccountName"] 
+    ?? builder.Configuration["AZURE_STORAGE_ACCOUNT_NAME"];
+TableServiceClient tableServiceClient;
+
+if (!string.IsNullOrEmpty(storageAccountName))
+{
+    var tableUri = new Uri($"https://{storageAccountName}.table.{builder.Configuration["Azure:EndpointSuffix"] ?? "core.windows.net"}");
+    tableServiceClient = new TableServiceClient(tableUri, new DefaultAzureCredential());
+}
+else
+{
+    var tableConnectionString = builder.Configuration.GetConnectionString("Tables")
+        ?? builder.Configuration["ConnectionStrings:AzureTableStorage"]
+        ?? "UseDevelopmentStorage=true";
+    tableServiceClient = new TableServiceClient(tableConnectionString);
+}
+
+builder.Services.AddSingleton(tableServiceClient);
 builder.Services.AddSingleton<StorageService>();
 
 // ─── CORS ────────────────────────────────────────────────────────────

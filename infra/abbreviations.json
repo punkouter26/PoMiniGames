@@ -1,0 +1,8 @@
+{
+  "appServicePlan": "plan-",
+  "webApp": "app-",
+  "storageAccount": "st",
+  "resourceGroup": "rg-",
+  "logAnalytics": "log-",
+  "applicationInsights": "appi-"
+}

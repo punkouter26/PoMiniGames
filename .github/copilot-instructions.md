@@ -28,6 +28,11 @@ Create http endpoints for all main functions so it can easily be tested  via cur
 
 
 
+React + .NET 10 API (Static Web App / App Service)
+Progressive Dev: Start client-only; use client-side storage for local data.
+Integration: Use .NET API for data (leaderboards) once integrated.
+Resilience: Ensure the app remains functional if the API is offline
+Code the react client app in such a way so that it is still functional if not API exists or it cannot connect to an API
 
 
 
@@ -36,10 +41,3 @@ Create http endpoints for all main functions so it can easily be tested  via cur
 
 
 
-
-
-
-App Stacks
-Blazor Web App (Azure App Service)
-Framework: .NET 10 Unified (SSR + WASM).
-Architecture: Vertical Slice (VSA)—group DTOs, logic, and endpoints by feature.

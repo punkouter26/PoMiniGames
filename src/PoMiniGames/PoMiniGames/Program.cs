@@ -1,8 +1,5 @@
 using Azure.Data.Tables;
 using Azure.Identity;
-using Microsoft.ApplicationInsights.Channel;
-using Microsoft.ApplicationInsights.DataContracts;
-using Microsoft.ApplicationInsights.Extensibility;
 using PoMiniGames.Features.Health;
 using PoMiniGames.Features.Leaderboard;
 using PoMiniGames.HealthChecks;
@@ -21,8 +18,6 @@ if (!string.IsNullOrEmpty(appInsightsConnString))
     {
         opts.ConnectionString = appInsightsConnString;
     });
-    
-    builder.Services.AddApplicationInsightsTelemetryProcessor<HealthCheckFilter>();
 }
 
 // ─── Azure Key Vault (cloud only) ────────────────────────────────────

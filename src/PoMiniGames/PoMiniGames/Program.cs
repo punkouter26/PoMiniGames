@@ -1,5 +1,8 @@
 using Azure.Data.Tables;
 using Azure.Identity;
+using Microsoft.ApplicationInsights.Channel;
+using Microsoft.ApplicationInsights.DataContracts;
+using Microsoft.ApplicationInsights.Extensibility;
 using PoMiniGames.Features.Health;
 using PoMiniGames.Features.Leaderboard;
 using PoMiniGames.HealthChecks;
@@ -7,6 +10,20 @@ using PoMiniGames.Services;
 using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// ─── Application Insights ─────────────────────────────────────────────
+var appInsightsConnString = builder.Configuration["PoMiniGames:ApplicationInsights:ConnectionString"] 
+    ?? builder.Configuration["APPINSIGHTS_CONNECTIONSTRING"];
+
+if (!string.IsNullOrEmpty(appInsightsConnString))
+{
+    builder.Services.AddApplicationInsightsTelemetry(opts => 
+    {
+        opts.ConnectionString = appInsightsConnString;
+    });
+    
+    builder.Services.AddApplicationInsightsTelemetryProcessor<HealthCheckFilter>();
+}
 
 // ─── Azure Key Vault (cloud only) ────────────────────────────────────
 var keyVaultUri = builder.Configuration["PoMiniGames:KeyVault:Uri"]

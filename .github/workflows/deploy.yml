@@ -7,18 +7,11 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 jobs:
-  build-and-deploy:
+  build:
     runs-on: ubuntu-latest
-    env:
-      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-      AZURE_ENV_NAME: ${{ vars.AZURE_ENV_NAME || 'pomini-prod' }}
-      AZURE_LOCATION: ${{ vars.AZURE_LOCATION || 'westus2' }}
-
+    
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -42,24 +35,129 @@ jobs:
           npm install
           npm run build
 
-      - name: Install azd
-        uses: Azure/setup-azd@v2
+      - name: Publish API
+        run: dotnet publish src/PoMiniGames/PoMiniGames/PoMiniGames.csproj -c Release -o ./publish
 
-      - name: Log in with Azure
+      - name: Upload API Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-publish
+          path: ./publish
+
+      - name: Upload Client Build
+        uses: actions/upload-artifact@v4
+        with:
+          name: client-build
+          path: ./src/PoMiniGames/PoMiniGames/wwwroot
+
+  deploy-infra:
+    needs: build
+    runs-on: ubuntu-latest
+    env:
+      AZURE_ENV_NAME: ${{ vars.AZURE_ENV_NAME || 'pomini' }}
+      AZURE_LOCATION: ${{ vars.AZURE_LOCATION || 'westus2' }}
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Azure Login
         uses: azure/login@v2
         with:
           creds: ${{ format('{{"clientId":"{0}","clientSecret":"{1}","subscriptionId":"{2}","tenantId":"{3}"}}', secrets.AZURE_CLIENT_ID, secrets.AZURE_CLIENT_SECRET, secrets.AZURE_SUBSCRIPTION_ID, secrets.AZURE_TENANT_ID) }}
 
-      - name: Provision Infrastructure
-        run: azd provision --no-prompt
-
-      - name: Deploy Services
-        run: azd deploy --no-prompt
-
-      - name: Final Health Check
-        if: ${{ env.AZURE_CLIENT_ID != '' }}
+      - name: Validate Bicep
         run: |
-          $API_URL = (azd env get-values --output json | ConvertFrom-Json).API_URI
-          echo "Checking health at $API_URL/api/health"
-          curl -f "$API_URL/api/health"
-        shell: pwsh
+          az bicep build --file infra/main.bicep
+
+      - name: Deploy Infrastructure
+        run: |
+          az deployment sub create \
+            --location "${{ env.AZURE_LOCATION }}" \
+            --template-file infra/main.bicep \
+            --parameters infra/main.parameters.json \
+            --parameters name="${{ env.AZURE_ENV_NAME }}"
+
+  deploy-services:
+    needs: deploy-infra
+    runs-on: ubuntu-latest
+    env:
+      AZURE_ENV_NAME: ${{ vars.AZURE_ENV_NAME || 'pomini' }}
+      AZURE_LOCATION: ${{ vars.AZURE_LOCATION || 'westus2' }}
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ format('{{"clientId":"{0}","clientSecret":"{1}","subscriptionId":"{2}","tenantId":"{3}"}}', secrets.AZURE_CLIENT_ID, secrets.AZURE_CLIENT_SECRET, secrets.AZURE_SUBSCRIPTION_ID, secrets.AZURE_TENANT_ID) }}
+
+      - name: Download API Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: api-publish
+          path: ./publish
+
+      - name: Download Client Build
+        uses: actions/download-artifact@v4
+        with:
+          name: client-build
+          path: ./client-build
+
+      - name: Get App Service Name
+        id: app-info
+        run: |
+          APP_NAME=$(az resource list -g PoMiniGames --resource-type "Microsoft.Web/sites" --query "[?tags.'azd-service-name'=='api'].name" -o tsv)
+          echo "app-name=$APP_NAME" >> $GITHUB_OUTPUT
+          SWA_NAME=$(az resource list -g PoMiniGames --resource-type "Microsoft.Web/staticSites" --query "[0].name" -o tsv)
+          echo "swa-name=$SWA_NAME" >> $GITHUB_OUTPUT
+
+      - name: Deploy API to App Service
+        run: |
+          az webapp deployment source config-zip \
+            -g PoMiniGames \
+            -n "${{ steps.app-info.outputs.app-name }}" \
+            --src <(cd ./publish && zip -r - .)
+
+      - name: Deploy Static Web App
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_TOKEN }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          action: "upload"
+          app_location: "./client-build"
+          skip_app_build: true
+
+  health-check:
+    needs: deploy-services
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ format('{{"clientId":"{0}","clientSecret":"{1}","subscriptionId":"{2}","tenantId":"{3}"}}', secrets.AZURE_CLIENT_ID, secrets.AZURE_CLIENT_SECRET, secrets.AZURE_SUBSCRIPTION_ID, secrets.AZURE_TENANT_ID) }}
+
+      - name: Get API URL
+        id: api-url
+        run: |
+          APP_NAME=$(az resource list -g PoMiniGames --resource-type "Microsoft.Web/sites" --query "[?tags.'azd-service-name'=='api'].name" -o tsv)
+          API_URL="https://${APP_NAME}.azurewebsites.net"
+          echo "url=$API_URL" >> $GITHUB_OUTPUT
+
+      - name: Health Check
+        run: |
+          echo "Waiting for API to be ready..."
+          for i in {1..30}; do
+            RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" "${{ steps.api-url.outputs.url }}/api/health" || echo "000")
+            if [ "$RESPONSE" == "200" ]; then
+              echo "✓ API health check passed"
+              exit 0
+            fi
+            echo "Attempt $i/30: HTTP $RESPONSE"
+            sleep 10
+          done
+          echo "✗ API health check failed after 5 minutes"
+          exit 1

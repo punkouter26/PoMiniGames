@@ -4,7 +4,7 @@ param name string
 param location string
 
 @description('The name of the resource group to create')
-param resourceGroupName string = ''
+param resourceGroupName string = 'PoMiniGames'
 
 @description('The name of the existing shared resource group')
 param sharedResourceGroupName string = 'PoShared'
@@ -14,7 +14,7 @@ var tags = {
 }
 
 resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
-  name: !empty(resourceGroupName) ? resourceGroupName : 'rg-${name}'
+  name: resourceGroupName
   location: location
   tags: tags
 }

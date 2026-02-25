@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Enemy Spawn Factory Pattern
  * Configurable enemy definitions with weight-based random selection

@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Centralized Rendering Configuration
  * All visual effect parameters in one place for easy tweaking

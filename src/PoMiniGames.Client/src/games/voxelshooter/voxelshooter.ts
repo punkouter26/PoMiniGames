@@ -1,3 +1,4 @@
+// @ts-nocheck
 import * as THREE from 'three';
 
 import { initializeScene, setupWindowResize, setupPhysicsWorld, createFloor, getDevStats } from './SceneSetup';

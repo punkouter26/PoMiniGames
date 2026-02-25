@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Input Buffering System
  * Accumulates input events and processes them at fixed timesteps

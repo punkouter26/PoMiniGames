@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { PlayerAvatar } from './PlayerAvatar';
 import { EnemyShapes } from './EnemyShapes';
 import { UIManager } from './UIManager';

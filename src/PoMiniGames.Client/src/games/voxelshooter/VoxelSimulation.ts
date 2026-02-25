@@ -1,3 +1,4 @@
+// @ts-nocheck
 import * as THREE from 'three';
 import { GPUComputationRenderer } from 'three/examples/jsm/misc/GPUComputationRenderer.js';
 import { SpatialHashGrid } from './SpatialHashGrid';

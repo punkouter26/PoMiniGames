@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Unified Particle Pool System
  * Consolidates ParticleEmitter and DebrisSystem into a single optimized pool

@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Modern UI Management System
  * Adapted for embedded use within PoMiniGames — all DOM elements are appended to

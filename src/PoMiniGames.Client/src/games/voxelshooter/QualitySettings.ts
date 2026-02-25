@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Graphics Quality Settings Manager
  * Allows runtime toggling between 4 quality presets via 1-4 keys

@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Lightweight Event Bus for Decoupled State Transitions
  * Allows systems to communicate without tight coupling

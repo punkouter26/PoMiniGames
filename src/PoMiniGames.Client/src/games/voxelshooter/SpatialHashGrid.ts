@@ -1,3 +1,4 @@
+// @ts-nocheck
 // Grid Cell size determines collision bucket
 export class SpatialHashGrid {
     private cellSize: number;

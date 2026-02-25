@@ -89,10 +89,12 @@ jobs:
           cd ./publish
           zip -r ../api-deploy.zip .
           cd ..
-          az webapp deployment source config-zip \
+          az webapp deploy \
             --resource-group rg-PoMiniGames-prod \
             --name "${{ steps.app-info.outputs.app-name }}" \
-            --src api-deploy.zip
+            --src-path api-deploy.zip \
+            --type zip \
+            --async false
 
       - name: Download Client Build
         uses: actions/download-artifact@v4

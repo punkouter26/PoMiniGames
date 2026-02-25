@@ -16,6 +16,7 @@ export default function Layout() {
           <NavLink to="/" end>Home</NavLink>
           <NavLink to="/connectfive">Connect 5</NavLink>
           <NavLink to="/tictactoe">Tic Tac Toe</NavLink>
+          <NavLink to="/voxelshooter">Voxel Shooter</NavLink>
         </nav>
       </header>
       <main className="content">

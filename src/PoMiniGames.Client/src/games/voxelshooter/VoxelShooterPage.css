@@ -1,0 +1,729 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700;800&family=Inter:wght@300;400;600;700&family=Courier+Prime:wght@400;700&display=swap');
+
+/* ===== PAGE CONTAINER ===== */
+.voxel-page-container {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: #000;
+  overflow: hidden;
+  font-family: 'Inter', sans-serif;
+
+  --color-black: #000000;
+  --color-white: #ffffff;
+  --color-cyan: #00D9FF;
+  --color-purple: #B224EF;
+  --color-red: #FF3366;
+  --color-yellow: #FFD700;
+  --color-green: #4ade80;
+  --color-dark-bg: rgba(0, 0, 0, 0.85);
+  --color-panel-bg: rgba(0, 0, 0, 0.8);
+  --glow-cyan: 0 0 10px rgba(0, 217, 255, 0.6), 0 0 20px rgba(0, 217, 255, 0.3);
+  --glow-purple: 0 0 10px rgba(178, 36, 239, 0.6), 0 0 20px rgba(178, 36, 239, 0.3);
+  --glow-red: 0 0 10px rgba(255, 51, 102, 0.6), 0 0 20px rgba(255, 51, 102, 0.3);
+  --transition-fast: 200ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  --transition-smooth: 300ms ease-out;
+}
+
+/* ===== CANVAS ===== */
+.voxel-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  outline: none;
+}
+
+/* ===== ANIMATIONS ===== */
+@keyframes voxel-fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes voxel-slideInDown {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes voxel-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+@keyframes voxel-glowPulse {
+  0%, 100% {
+    box-shadow: var(--glow-cyan);
+  }
+  50% {
+    box-shadow: var(--glow-cyan), inset 0 0 10px rgba(0, 217, 255, 0.3);
+  }
+}
+
+@keyframes voxel-fillProgress {
+  from { width: 0%; }
+  to { width: var(--progress-value); }
+}
+
+/* ===== MAIN MENU ===== */
+.voxel-page-container .menu-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: var(--color-dark-bg);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+  pointer-events: auto;
+  animation: voxel-fadeIn var(--transition-smooth);
+}
+
+.voxel-page-container .menu-content {
+  text-align: center;
+  max-width: 600px;
+  padding: 40px;
+}
+
+.voxel-page-container .menu-title {
+  font-family: 'Poppins', sans-serif;
+  font-size: 4rem;
+  font-weight: 800;
+  margin-bottom: 20px;
+  background: linear-gradient(135deg, var(--color-cyan), var(--color-purple));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  letter-spacing: 3px;
+  text-shadow: 0 0 30px rgba(0, 217, 255, 0.4);
+  animation: voxel-slideInDown var(--transition-smooth);
+}
+
+.voxel-page-container .menu-subtitle {
+  font-family: 'Inter', sans-serif;
+  font-size: 1.2rem;
+  color: var(--color-cyan);
+  margin-bottom: 40px;
+  animation: voxel-slideInDown calc(var(--transition-smooth) + 100ms);
+}
+
+.voxel-page-container .menu-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  justify-content: center;
+  margin-bottom: 30px;
+}
+
+.voxel-page-container .menu-button {
+  padding: 16px 40px;
+  font-family: 'Poppins', sans-serif;
+  font-size: 1.1rem;
+  font-weight: 600;
+  border: 2px solid var(--color-cyan);
+  background: rgba(0, 217, 255, 0.1);
+  color: var(--color-cyan);
+  cursor: pointer;
+  border-radius: 8px;
+  transition: all var(--transition-fast);
+  box-shadow: var(--glow-cyan);
+  letter-spacing: 1px;
+  pointer-events: auto;
+  animation: voxel-slideInDown calc(var(--transition-smooth) + 200ms);
+}
+
+.voxel-page-container .menu-button:hover {
+  background: rgba(0, 217, 255, 0.2);
+  box-shadow: var(--glow-cyan), inset 0 0 10px rgba(0, 217, 255, 0.3);
+  transform: scale(1.08);
+}
+
+.voxel-page-container .menu-button:active {
+  transform: scale(0.95);
+  box-shadow: var(--glow-cyan), inset 0 0 15px rgba(0, 217, 255, 0.5);
+}
+
+.voxel-page-container .menu-controls {
+  font-family: 'Courier Prime', monospace;
+  font-size: 0.95rem;
+  color: var(--color-white);
+  line-height: 1.8;
+  margin-top: 30px;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.5);
+  border-left: 3px solid var(--color-purple);
+  animation: voxel-slideInDown calc(var(--transition-smooth) + 300ms);
+}
+
+.voxel-page-container .menu-controls strong {
+  color: var(--color-cyan);
+}
+
+/* ===== GAME HUD ===== */
+.voxel-page-container .game-hud {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  right: 10px;
+  pointer-events: none;
+  text-align: left;
+  z-index: 100;
+}
+
+.voxel-page-container .hud-panel {
+  background: var(--color-panel-bg);
+  border: 1px solid var(--color-cyan);
+  border-radius: 8px;
+  padding: 10px 15px;
+  box-shadow: var(--glow-cyan);
+  animation: voxel-slideInDown var(--transition-smooth);
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 20px;
+  justify-content: space-between;
+}
+
+.voxel-page-container .hud-section {
+  margin-bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.voxel-page-container .hud-section:last-child {
+  margin-bottom: 0;
+}
+
+.voxel-page-container .timer-label {
+  font-family: 'Inter', sans-serif;
+  font-size: 0.5rem;
+  color: var(--color-cyan);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 0;
+  display: none;
+}
+
+.voxel-page-container .timer-display {
+  font-family: 'Poppins', sans-serif;
+  font-size: 1rem;
+  font-weight: 700;
+  background: linear-gradient(90deg, var(--color-cyan), var(--color-white));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: 0;
+  white-space: nowrap;
+}
+
+.voxel-page-container .progress-bar-container {
+  width: 120px;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  border: 1px solid var(--color-cyan);
+  overflow: hidden;
+  box-shadow: inset 0 0 5px rgba(0, 0, 0, 0.5);
+}
+
+.voxel-page-container .progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--color-cyan), var(--color-purple));
+  width: 0%;
+  transition: width 100ms linear, background 300ms ease;
+  box-shadow: 0 0 10px rgba(0, 217, 255, 0.8);
+}
+
+.voxel-page-container .progress-bar-fill.critical {
+  background: linear-gradient(90deg, var(--color-yellow), var(--color-red));
+  box-shadow: 0 0 10px rgba(255, 51, 102, 0.8);
+}
+
+.voxel-page-container .objective-label {
+  font-family: 'Poppins', sans-serif;
+  font-size: 0.6rem;
+  color: var(--color-cyan);
+  margin-top: 0;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
+.voxel-page-container .score-display {
+  font-family: 'Poppins', sans-serif;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--color-green);
+  margin-top: 0;
+  white-space: nowrap;
+}
+
+.voxel-page-container .message-display {
+  font-family: 'Poppins', sans-serif;
+  font-size: 1.75rem;
+  font-weight: 800;
+  margin-top: 10px;
+  text-shadow: 0 0 30px rgba(0, 217, 255, 0.6), 2px 2px 8px rgba(0, 0, 0, 0.9);
+  animation: voxel-slideInDown var(--transition-smooth);
+}
+
+/* ===== CROSSHAIR ===== */
+.voxel-page-container .crosshair {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 12px;
+  height: 12px;
+  background: var(--color-cyan);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  box-shadow: var(--glow-cyan);
+  mix-blend-mode: screen;
+}
+
+.voxel-page-container .crosshair::before,
+.voxel-page-container .crosshair::after {
+  content: '';
+  position: absolute;
+  background: var(--color-cyan);
+}
+
+.voxel-page-container .crosshair::before {
+  width: 20px;
+  height: 2px;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.voxel-page-container .crosshair::after {
+  width: 2px;
+  height: 20px;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+
+/* ===== MODAL MENUS ===== */
+.voxel-page-container .modal-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+  pointer-events: auto;
+  animation: voxel-fadeIn var(--transition-smooth);
+}
+
+.voxel-page-container .modal-content {
+  background: var(--color-panel-bg);
+  border: 2px solid var(--color-cyan);
+  border-radius: 16px;
+  padding: 40px;
+  max-width: 500px;
+  text-align: center;
+  box-shadow: 0 0 30px rgba(0, 217, 255, 0.4), 0 0 60px rgba(178, 36, 239, 0.2);
+  animation: voxel-slideInDown var(--transition-smooth);
+}
+
+.voxel-page-container .modal-title {
+  font-family: 'Poppins', sans-serif;
+  font-size: 2.5rem;
+  font-weight: 800;
+  margin-bottom: 20px;
+  background: linear-gradient(135deg, var(--color-cyan), var(--color-purple));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.voxel-page-container .modal-message {
+  font-family: 'Inter', sans-serif;
+  font-size: 1.1rem;
+  color: var(--color-white);
+  margin-bottom: 30px;
+  line-height: 1.6;
+}
+
+.voxel-page-container .modal-stats {
+  font-family: 'Courier Prime', monospace;
+  font-size: 0.95rem;
+  color: var(--color-cyan);
+  margin: 20px 0;
+  text-align: left;
+  background: rgba(0, 217, 255, 0.1);
+  padding: 15px;
+  border-radius: 8px;
+  border-left: 3px solid var(--color-purple);
+}
+
+.voxel-page-container .modal-buttons {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin-top: 30px;
+}
+
+.voxel-page-container .modal-button {
+  padding: 12px 28px;
+  font-family: 'Poppins', sans-serif;
+  font-size: 1rem;
+  font-weight: 600;
+  border: 2px solid var(--color-cyan);
+  background: rgba(0, 217, 255, 0.1);
+  color: var(--color-cyan);
+  cursor: pointer;
+  border-radius: 8px;
+  transition: all var(--transition-fast);
+  box-shadow: var(--glow-cyan);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  pointer-events: auto;
+  flex: 1;
+}
+
+.voxel-page-container .modal-button:hover {
+  background: rgba(0, 217, 255, 0.2);
+  box-shadow: var(--glow-cyan), inset 0 0 10px rgba(0, 217, 255, 0.3);
+  transform: scale(1.05);
+}
+
+.voxel-page-container .modal-button:active {
+  transform: scale(0.95);
+}
+
+.voxel-page-container .modal-button.secondary {
+  border-color: var(--color-purple);
+  color: var(--color-purple);
+  box-shadow: var(--glow-purple);
+  background: rgba(178, 36, 239, 0.1);
+}
+
+.voxel-page-container .modal-button.secondary:hover {
+  background: rgba(178, 36, 239, 0.2);
+  box-shadow: var(--glow-purple), inset 0 0 10px rgba(178, 36, 239, 0.3);
+}
+
+/* ===== PAUSE MENU ===== */
+.voxel-page-container .pause-menu {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+  pointer-events: auto;
+  animation: voxel-fadeIn var(--transition-smooth);
+}
+
+.voxel-page-container .pause-content {
+  text-align: center;
+  background: var(--color-panel-bg);
+  border: 2px solid var(--color-cyan);
+  border-radius: 16px;
+  padding: 50px;
+  box-shadow: 0 0 30px rgba(0, 217, 255, 0.4);
+}
+
+.voxel-page-container .pause-title {
+  font-family: 'Poppins', sans-serif;
+  font-size: 4rem;
+  font-weight: 800;
+  margin-bottom: 20px;
+  color: var(--color-cyan);
+  animation: voxel-pulse 2s;
+}
+
+.voxel-page-container .pause-hint {
+  font-family: 'Inter', sans-serif;
+  font-size: 1.1rem;
+  color: var(--color-white);
+  margin-top: 20px;
+}
+
+.voxel-page-container .pause-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  margin-top: 30px;
+}
+
+.voxel-page-container .pause-button {
+  padding: 14px 32px;
+  font-family: 'Poppins', sans-serif;
+  font-size: 1rem;
+  font-weight: 600;
+  border: 2px solid var(--color-cyan);
+  background: rgba(0, 217, 255, 0.1);
+  color: var(--color-cyan);
+  cursor: pointer;
+  border-radius: 8px;
+  transition: all var(--transition-fast);
+  box-shadow: var(--glow-cyan);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  pointer-events: auto;
+}
+
+.voxel-page-container .pause-button:hover {
+  background: rgba(0, 217, 255, 0.2);
+  box-shadow: var(--glow-cyan), inset 0 0 10px rgba(0, 217, 255, 0.3);
+  transform: scale(1.08);
+}
+
+.voxel-page-container .pause-button:active {
+  transform: scale(0.95);
+}
+
+/* ===== SETTINGS ICON ===== */
+.voxel-page-container .settings-icon {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background: rgba(178, 36, 239, 0.1);
+  border: 2px solid var(--color-purple);
+  color: var(--color-purple);
+  font-size: 1.5rem;
+  cursor: pointer;
+  z-index: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-fast);
+  box-shadow: var(--glow-purple);
+  pointer-events: auto;
+}
+
+.voxel-page-container .settings-icon:hover {
+  background: rgba(178, 36, 239, 0.2);
+  box-shadow: var(--glow-purple), inset 0 0 10px rgba(178, 36, 239, 0.3);
+  transform: scale(1.1);
+}
+
+/* ===== SETTINGS OVERLAY ===== */
+.voxel-page-container .settings-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 950;
+  pointer-events: auto;
+  animation: voxel-fadeIn var(--transition-smooth);
+}
+
+.voxel-page-container .settings-panel {
+  background: var(--color-panel-bg);
+  border: 2px solid var(--color-purple);
+  border-radius: 12px;
+  padding: 25px;
+  width: 90%;
+  max-width: 350px;
+  box-shadow: 0 0 30px rgba(178, 36, 239, 0.4);
+  animation: voxel-slideInDown var(--transition-smooth);
+}
+
+.voxel-page-container .settings-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  border-bottom: 1px solid rgba(178, 36, 239, 0.3);
+  padding-bottom: 15px;
+}
+
+.voxel-page-container .settings-header h3 {
+  font-family: 'Poppins', sans-serif;
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--color-purple);
+  margin: 0;
+}
+
+.voxel-page-container .settings-close {
+  background: none;
+  border: none;
+  color: var(--color-purple);
+  font-size: 1.8rem;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  padding: 0;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.voxel-page-container .settings-close:hover {
+  color: var(--color-red);
+  transform: scale(1.2);
+}
+
+.voxel-page-container .settings-group {
+  margin-bottom: 20px;
+}
+
+.voxel-page-container .settings-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-family: 'Poppins', sans-serif;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--color-cyan);
+  margin-bottom: 10px;
+}
+
+.voxel-page-container .settings-label span {
+  flex: 1;
+}
+
+.voxel-page-container .settings-label input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  cursor: pointer;
+  accent-color: var(--color-cyan);
+  margin-left: 10px;
+}
+
+.voxel-page-container .settings-value {
+  color: var(--color-yellow);
+  font-weight: 700;
+  margin-left: 10px;
+}
+
+.voxel-page-container .settings-slider {
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(0, 217, 255, 0.2);
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.voxel-page-container .settings-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--color-cyan);
+  cursor: pointer;
+  box-shadow: var(--glow-cyan);
+  transition: all var(--transition-fast);
+}
+
+.voxel-page-container .settings-slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--color-cyan);
+  cursor: pointer;
+  box-shadow: var(--glow-cyan);
+  transition: all var(--transition-fast);
+  border: none;
+}
+
+/* ===== QUALITY DISPLAY ===== */
+.voxel-page-container .quality-display {
+  position: absolute;
+  bottom: 10px;
+  right: 10px;
+  font-family: 'Courier Prime', monospace;
+  font-size: 0.75rem;
+  color: rgba(0, 217, 255, 0.5);
+  pointer-events: none;
+  z-index: 50;
+}
+
+/* ===== HINT SYSTEM ===== */
+.voxel-page-container .hint-message {
+  position: absolute;
+  bottom: 30px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--color-panel-bg);
+  border: 1px solid var(--color-cyan);
+  border-radius: 8px;
+  padding: 15px 25px;
+  color: var(--color-cyan);
+  font-family: 'Inter', sans-serif;
+  font-size: 0.95rem;
+  text-align: center;
+  z-index: 200;
+  pointer-events: none;
+  max-width: 400px;
+  box-shadow: var(--glow-cyan);
+  animation: voxel-slideInDown var(--transition-smooth);
+}
+
+.voxel-page-container .hint-message.fade-out {
+  animation: none;
+  opacity: 0;
+  transition: opacity 500ms ease-out;
+}
+
+/* ===== DIFFICULTY SELECTOR ===== */
+.voxel-page-container .difficulty-options {
+  display: flex;
+  gap: 12px;
+  margin: 20px 0;
+  justify-content: center;
+}
+
+.voxel-page-container .difficulty-button {
+  padding: 10px 24px;
+  font-family: 'Poppins', sans-serif;
+  font-size: 0.95rem;
+  font-weight: 600;
+  border: 2px solid var(--color-purple);
+  background: rgba(178, 36, 239, 0.1);
+  color: var(--color-purple);
+  cursor: pointer;
+  border-radius: 8px;
+  transition: all var(--transition-fast);
+  box-shadow: var(--glow-purple);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  pointer-events: auto;
+}
+
+.voxel-page-container .difficulty-button:hover {
+  background: rgba(178, 36, 239, 0.2);
+  box-shadow: var(--glow-purple), inset 0 0 10px rgba(178, 36, 239, 0.3);
+  transform: scale(1.08);
+}
+
+.voxel-page-container .difficulty-button.selected {
+  background: rgba(0, 217, 255, 0.2);
+  border-color: var(--color-cyan);
+  color: var(--color-cyan);
+  box-shadow: var(--glow-cyan);
+}

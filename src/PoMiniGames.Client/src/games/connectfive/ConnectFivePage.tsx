@@ -1,26 +1,24 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import { Piece, Difficulty, GameResult } from '../shared/types';
 import { statsService } from '../shared/statsService';
 import { ConnectFiveBoard } from './ConnectFiveBoard';
 import { ConnectFiveAI } from './ConnectFiveAI';
+import { usePlayerName } from '../../context/PlayerNameContext';
 import { CircleDot, Circle, RotateCcw, Loader2, Trophy, Users, BarChart3, ChevronDown } from 'lucide-react';
 import './ConnectFivePage.css';
 
 const GAME_KEY = 'connectfive';
 
 export default function ConnectFivePage() {
+  const { playerName } = usePlayerName();
   const [board, setBoard] = useState(() => new ConnectFiveBoard());
   const [difficulty, setDifficulty] = useState(Difficulty.Medium);
-  const [playerName, setPlayerName] = useState(() => localStorage.getItem('pomini_player') ?? 'Player');
   const [gameResult, setGameResult] = useState(GameResult.InProgress);
   const [winCells, setWinCells] = useState<[number, number][]>([]);
   const [isAiTurn, setIsAiTurn] = useState(false);
   const [stats, setStats] = useState(() => statsService.getStats(GAME_KEY, playerName));
   const [showStats, setShowStats] = useState(true);
   const [hoveredCol, setHoveredCol] = useState<number | null>(null);
-
-  useEffect(() => { localStorage.setItem('pomini_player', playerName); }, [playerName]);
-  useEffect(() => { setStats(statsService.getStats(GAME_KEY, playerName)); }, [playerName]);
 
   const resetGame = useCallback(() => {
     setBoard(new ConnectFiveBoard());
@@ -121,18 +119,13 @@ export default function ConnectFivePage() {
           </span>
           Connect Five
         </h1>
+        <span className="game-header-player">
+          <Users size={14} />
+          {playerName}
+        </span>
       </div>
 
       <div className="game-controls">
-        <label>
-          <Users size={16} />
-          Name:
-          <input
-            value={playerName}
-            onChange={(e) => setPlayerName(e.target.value || 'Player')}
-            aria-label="Player name"
-          />
-        </label>
         <label>
           <BarChart3 size={16} />
           Difficulty:
@@ -199,8 +192,14 @@ export default function ConnectFivePage() {
                 role="gridcell"
                 aria-label={piece === Piece.Red ? 'Red piece' : piece === Piece.Yellow ? 'Yellow piece' : 'Empty cell'}
               >
-                {piece === Piece.Red && <Circle size={28} className="piece" stroke="none" fill="#f44336" />}
-                {piece === Piece.Yellow && <Circle size={28} className="piece" stroke="none" fill="#ffeb3b" />}
+                {piece === Piece.Red && (
+                  <Circle size={28} className="piece" stroke="none" fill="#f44336"
+                    style={{ '--drop-rows': r + 1 } as React.CSSProperties} />
+                )}
+                {piece === Piece.Yellow && (
+                  <Circle size={28} className="piece" stroke="none" fill="#ffeb3b"
+                    style={{ '--drop-rows': r + 1 } as React.CSSProperties} />
+                )}
               </div>
             );
           }),

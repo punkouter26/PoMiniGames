@@ -11,7 +11,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -48,7 +48,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: client-build
-          path: ./src/PoMiniGames/PoMiniGames/wwwroot
+          path: ./src/PoMiniGames.Client/dist
 
   deploy-infra:
     needs: build
@@ -56,7 +56,7 @@ jobs:
     env:
       AZURE_ENV_NAME: ${{ vars.AZURE_ENV_NAME || 'pomini' }}
       AZURE_LOCATION: ${{ vars.AZURE_LOCATION || 'westus2' }}
-    
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -84,14 +84,8 @@ jobs:
   deploy-services:
     needs: deploy-infra
     runs-on: ubuntu-latest
-    env:
-      AZURE_ENV_NAME: ${{ vars.AZURE_ENV_NAME || 'pomini' }}
-      AZURE_LOCATION: ${{ vars.AZURE_LOCATION || 'westus2' }}
-    
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
 
+    steps:
       - name: Azure Login
         uses: azure/login@v2
         with:
@@ -103,47 +97,54 @@ jobs:
           name: api-publish
           path: ./publish
 
-      - name: Download Client Build
-        uses: actions/download-artifact@v4
-        with:
-          name: client-build
-          path: ./client-build
-
       - name: Get App Service Name
         id: app-info
         shell: bash
         run: |
-          APP_NAME=$(az resource list -g PoMiniGames --resource-type "Microsoft.Web/sites" --query "[?tags.'azd-service-name'=='api'].name" -o tsv 2>/dev/null || echo "")
+          APP_NAME=$(az resource list -g rg-PoMiniGames-prod \
+            --resource-type "Microsoft.Web/sites" \
+            --query "[?tags.'azd-service-name'=='api'].name" -o tsv 2>/dev/null || echo "")
           if [ -z "$APP_NAME" ]; then
-            echo "Error: App Service not found in PoMiniGames resource group"
+            APP_NAME=$(az webapp list -g rg-PoMiniGames-prod --query "[0].name" -o tsv)
+          fi
+          if [ -z "$APP_NAME" ]; then
+            echo "Error: App Service not found in rg-PoMiniGames-prod"
             exit 1
           fi
           echo "app-name=$APP_NAME" >> $GITHUB_OUTPUT
           echo "API App Service: $APP_NAME"
 
       - name: Deploy API to App Service
+        shell: bash
         run: |
           cd ./publish
           zip -r ../api-deploy.zip .
           cd ..
           az webapp deployment source config-zip \
-            --resource-group PoMiniGames \
+            --resource-group rg-PoMiniGames-prod \
             --name "${{ steps.app-info.outputs.app-name }}" \
             --src api-deploy.zip
-        shell: bash
 
-      - name: Deploy Client Build to App Service wwwroot
-        run: |
-          az webapp deployment source config-zip \
-            --resource-group PoMiniGames \
-            --name "${{ steps.app-info.outputs.app-name }}" \
-            --src <(cd ./client-build && zip -r - .)
-        shell: bash
+      - name: Download Client Build
+        uses: actions/download-artifact@v4
+        with:
+          name: client-build
+          path: ./client-build
+
+      - name: Deploy Client to Static Web App
+        uses: azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          action: "upload"
+          app_location: "/"
+          output_location: "client-build"
+          skip_app_build: true
 
   health-check:
     needs: deploy-services
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Azure Login
         uses: azure/login@v2
@@ -153,7 +154,10 @@ jobs:
       - name: Get API URL
         id: api-url
         run: |
-          APP_NAME=$(az resource list -g PoMiniGames --resource-type "Microsoft.Web/sites" --query "[?tags.'azd-service-name'=='api'].name" -o tsv)
+          APP_NAME=$(az resource list -g rg-PoMiniGames-prod \
+            --resource-type "Microsoft.Web/sites" \
+            --query "[?tags.'azd-service-name'=='api'].name" -o tsv 2>/dev/null || \
+            az webapp list -g rg-PoMiniGames-prod --query "[0].name" -o tsv)
           API_URL="https://${APP_NAME}.azurewebsites.net"
           echo "url=$API_URL" >> $GITHUB_OUTPUT
 

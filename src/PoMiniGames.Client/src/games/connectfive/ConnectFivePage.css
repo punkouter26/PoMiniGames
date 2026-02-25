@@ -7,6 +7,22 @@
   text-align: center;
   margin-bottom: var(--space-6);
   animation: fadeIn var(--transition-slow) ease-out;
+  position: relative;
+}
+
+.game-header-player {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  padding: var(--space-1) var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full, 9999px);
+  color: var(--color-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.02em;
 }
 
 .game-header h1 {
@@ -36,6 +52,7 @@
   background: var(--color-surface);
   border-radius: var(--radius-xl);
   border: 1px solid var(--color-border);
+  --cf-cell-stride: 55px; /* 52px cell + 3px gap */
 }
 
 .cf-cell {
@@ -64,7 +81,12 @@
 }
 
 .cf-cell .piece {
-  animation: dropIn var(--transition-bounce);
+  animation: cf-slide-down 0.3s ease-in both;
+}
+
+@keyframes cf-slide-down {
+  from { transform: translateY(calc(-1 * var(--drop-rows, 1) * var(--cf-cell-stride, 55px))); }
+  to   { transform: translateY(0); }
 }
 
 .cf-cell.red {
@@ -328,6 +350,7 @@
     grid-template-rows: repeat(9, 40px);
     gap: 2px;
     padding: var(--space-2);
+    --cf-cell-stride: 42px; /* 40px cell + 2px gap */
   }
   
   .cf-cell {

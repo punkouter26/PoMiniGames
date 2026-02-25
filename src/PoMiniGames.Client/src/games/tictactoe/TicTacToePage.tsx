@@ -1,28 +1,23 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import { CellValue, Difficulty, GameResult } from '../shared/types';
 import { statsService } from '../shared/statsService';
 import { TicTacToeBoard } from './TicTacToeBoard';
 import { TicTacToeAI } from './TicTacToeAI';
+import { usePlayerName } from '../../context/PlayerNameContext';
 import { CircleDot, X, RotateCcw, Loader2, Trophy, Users, BarChart3 } from 'lucide-react';
 import './TicTacToePage.css';
 
 const GAME_KEY = 'tictactoe';
 
 export default function TicTacToePage() {
+  const { playerName } = usePlayerName();
   const [board, setBoard] = useState(() => new TicTacToeBoard());
   const [difficulty, setDifficulty] = useState(Difficulty.Medium);
-  const [playerName, setPlayerName] = useState(() => localStorage.getItem('pomini_player') ?? 'Player');
   const [gameResult, setGameResult] = useState(GameResult.InProgress);
   const [winCells, setWinCells] = useState<[number, number][]>([]);
   const [isAiTurn, setIsAiTurn] = useState(false);
   const [stats, setStats] = useState(() => statsService.getStats(GAME_KEY, playerName));
   const [showStats, setShowStats] = useState(true);
-
-  // Persist player name
-  useEffect(() => { localStorage.setItem('pomini_player', playerName); }, [playerName]);
-
-  // Refresh stats when name changes
-  useEffect(() => { setStats(statsService.getStats(GAME_KEY, playerName)); }, [playerName]);
 
   const resetGame = useCallback(() => {
     setBoard(new TicTacToeBoard());
@@ -126,18 +121,13 @@ export default function TicTacToePage() {
           </span>
           Tic Tac Toe
         </h1>
+        <span className="game-header-player">
+          <Users size={14} />
+          {playerName}
+        </span>
       </div>
 
       <div className="game-controls">
-        <label>
-          <Users size={16} />
-          Name:
-          <input
-            value={playerName}
-            onChange={(e) => setPlayerName(e.target.value || 'Player')}
-            aria-label="Player name"
-          />
-        </label>
         <label>
           <BarChart3 size={16} />
           Difficulty:

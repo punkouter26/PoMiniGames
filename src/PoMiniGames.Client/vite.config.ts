@@ -19,7 +19,7 @@ export default defineConfig({
     },
   },
   build: {
-    outDir: '../../src/PoMiniGames/PoMiniGames/wwwroot',
+    outDir: 'dist',
     emptyOutDir: true,
   },
 });

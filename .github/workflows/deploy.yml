@@ -53,9 +53,6 @@ jobs:
   deploy-infra:
     needs: build
     runs-on: ubuntu-latest
-    env:
-      AZURE_ENV_NAME: ${{ vars.AZURE_ENV_NAME || 'pomini' }}
-      AZURE_LOCATION: ${{ vars.AZURE_LOCATION || 'westus2' }}
 
     steps:
       - name: Checkout Code
@@ -76,10 +73,9 @@ jobs:
           DEPLOYMENT_NAME="PoMiniGames-$(date +%s)"
           az deployment sub create \
             --name "$DEPLOYMENT_NAME" \
-            --location "$AZURE_LOCATION" \
+            --location "westus2" \
             --template-file infra/main.bicep \
-            --parameters infra/main.parameters.json \
-            --parameters name="$AZURE_ENV_NAME"
+            --parameters infra/main.parameters.json
 
   deploy-services:
     needs: deploy-infra

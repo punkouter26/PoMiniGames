@@ -73,7 +73,7 @@ builder.Services.AddCors(options =>
 
 // ─── Health checks ───────────────────────────────────────────────────
 builder.Services.AddHealthChecks()
-    .AddCheck<StorageHealthCheck>("AzureTableStorage");
+    .AddCheck<StorageHealthCheck>("SqliteStorage");
 
 // ─── Swagger / OpenAPI ───────────────────────────────────────────────
 builder.Services.AddAuthorization();

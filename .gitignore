@@ -12,7 +12,6 @@ obj/
 *.nupkg
 
 # IDE
-.vscode/
 .idea/
 *.swp
 *.swo

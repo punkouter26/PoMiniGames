@@ -15,14 +15,16 @@
     <PackageReference Include="Microsoft.Data.Sqlite" />
     <!-- API -->
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
-    <PackageReference Include="Swashbuckle.AspNetCore" />
+    <PackageReference Include="Scalar.AspNetCore" />
     <!-- Logging / Telemetry -->
     <PackageReference Include="Microsoft.ApplicationInsights.AspNetCore" />
+    <PackageReference Include="Azure.Monitor.OpenTelemetry.AspNetCore" />
     <PackageReference Include="Serilog.AspNetCore" />
+    <PackageReference Include="Serilog.Sinks.ApplicationInsights" />
     <PackageReference Include="Serilog.Sinks.Console" />
     <PackageReference Include="Serilog.Sinks.File" />
     <PackageReference Include="Serilog.Enrichers.Environment" />
-    <!-- Health Checks -->
+    <PackageReference Include="Serilog.Enrichers.Thread" />
   </ItemGroup>
 
 </Project>

@@ -1,0 +1,31 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "API + Client (F5)",
+            "type": "dotnet",
+            "request": "launch",
+            "projectPath": "${workspaceFolder}/src/PoMiniGames/PoMiniGames/PoMiniGames.csproj",
+            "preLaunchTask": "prelaunch",
+            "env": {
+                "ASPNETCORE_ENVIRONMENT": "Development"
+            },
+            "launchBrowser": {
+                "enabled": true,
+                "args": "http://localhost:5173",
+                "windows": {
+                    "command": "cmd.exe",
+                    "args": "/C start microsoft-edge:http://localhost:5173"
+                },
+                "linux": {
+                    "command": "xdg-open",
+                    "args": "http://localhost:5173"
+                },
+                "osx": {
+                    "command": "open",
+                    "args": "http://localhost:5173"
+                }
+            }
+        }
+    ]
+}

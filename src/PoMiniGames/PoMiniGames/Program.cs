@@ -1,9 +1,12 @@
 using Azure.Identity;
+using Azure.Monitor.OpenTelemetry.AspNetCore;
 using PoMiniGames.Features.Health;
 using PoMiniGames.Features.Leaderboard;
 using PoMiniGames.HealthChecks;
 using PoMiniGames.Services;
+using Scalar.AspNetCore;
 using Serilog;
+using Serilog.Sinks.ApplicationInsights.TelemetryConverters;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -19,6 +22,9 @@ if (!string.IsNullOrEmpty(appInsightsConnString))
     });
 }
 
+// ─── OpenTelemetry ───────────────────────────────────────────────────
+builder.Services.AddOpenTelemetry().UseAzureMonitor();
+
 // ─── Azure Key Vault (cloud only) ────────────────────────────────────
 var keyVaultUri = builder.Configuration["PoMiniGames:KeyVault:Uri"]
     ?? builder.Configuration["KeyVault:Uri"];
@@ -32,12 +38,16 @@ if (!string.IsNullOrEmpty(keyVaultUri))
 }
 
 // ─── Simple Serilog configuration ─────────────────────────────────────
-builder.Host.UseSerilog((context, configuration) =>
+builder.Host.UseSerilog((context, services, configuration) =>
 {
     configuration
         .ReadFrom.Configuration(context.Configuration)
+        .ReadFrom.Services(services)
         .Enrich.FromLogContext()
-        .Enrich.WithEnvironmentName();
+        .Enrich.WithEnvironmentName()
+        .Enrich.WithMachineName()
+        .Enrich.WithThreadId()
+        .Enrich.WithProperty("Application", "PoMiniGames");
 
     if (context.HostingEnvironment.IsDevelopment())
     {
@@ -47,12 +57,15 @@ builder.Host.UseSerilog((context, configuration) =>
     }
     else
     {
+        var tc = services.GetService<Microsoft.ApplicationInsights.Extensibility.TelemetryConfiguration>();
         configuration
             .WriteTo.Console()
             .WriteTo.File(
                 path: "logs/pomini-.log",
                 rollingInterval: RollingInterval.Day,
                 retainedFileCountLimit: 7);
+        if (tc != null)
+            configuration.WriteTo.ApplicationInsights(tc, TelemetryConverter.Traces);
     }
 });
 
@@ -77,8 +90,7 @@ builder.Services.AddHealthChecks()
 
 // ─── Swagger / OpenAPI ───────────────────────────────────────────────
 builder.Services.AddAuthorization();
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddOpenApi();
 
 var app = builder.Build();
 
@@ -102,10 +114,11 @@ else
     app.UseDeveloperExceptionPage();
 }
 
-app.UseSwagger();
-app.UseSwaggerUI(o =>
+app.MapOpenApi();
+app.MapScalarApiReference(options =>
 {
-    o.SwaggerEndpoint("/swagger/v1/swagger.json", "PoMiniGames API v1");
+    options.Title = "PoMiniGames API";
+    options.Theme = ScalarTheme.Purple;
 });
 
 app.UseCors();

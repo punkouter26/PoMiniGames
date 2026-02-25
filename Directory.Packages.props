@@ -21,7 +21,7 @@
     <!-- API -->
     <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.3" />
     <PackageVersion Include="Microsoft.OpenApi" Version="2.3.0" />
-    <PackageVersion Include="Swashbuckle.AspNetCore" Version="10.0.0" />
+    <PackageVersion Include="Scalar.AspNetCore" Version="2.12.47" />
 
     <!-- Logging / Telemetry -->
     <PackageVersion Include="Microsoft.ApplicationInsights.AspNetCore" Version="2.23.0" />

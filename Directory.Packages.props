@@ -5,10 +5,12 @@
   </PropertyGroup>
   <ItemGroup>
     <!-- Azure -->
-    <PackageVersion Include="Azure.Data.Tables" Version="12.11.0" />
     <PackageVersion Include="Azure.Identity" Version="1.17.0" />
     <PackageVersion Include="Azure.Extensions.AspNetCore.Configuration.Secrets" Version="1.4.0" />
     <PackageVersion Include="Azure.Monitor.OpenTelemetry.AspNetCore" Version="1.4.0" />
+
+    <!-- SQLite -->
+    <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.3" />
 
     <!-- CQRS -->
     <PackageVersion Include="MediatR" Version="14.0.0" />
@@ -32,7 +34,6 @@
     <PackageVersion Include="Serilog.Enrichers.Process" Version="3.0.0" />
 
     <!-- Health Checks -->
-    <PackageVersion Include="AspNetCore.HealthChecks.AzureStorage" Version="7.0.0" />
 
     <!-- Testing -->
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />

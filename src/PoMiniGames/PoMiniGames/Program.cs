@@ -1,4 +1,3 @@
-using Azure.Data.Tables;
 using Azure.Identity;
 using PoMiniGames.Features.Health;
 using PoMiniGames.Features.Leaderboard;
@@ -57,31 +56,7 @@ builder.Host.UseSerilog((context, configuration) =>
     }
 });
 
-// ─── Azure Table Storage ─────────────────────────────────────────────
-var storageAccountName = builder.Configuration["PoMiniGames:StorageAccountName"] 
-    ?? builder.Configuration["AZURE_STORAGE_ACCOUNT_NAME"];
-
-TableServiceClient tableServiceClient;
-
-// Prefer Connection String if provided (v2 deployment passes it)
-var connectionString = builder.Configuration.GetConnectionString("Tables")
-    ?? builder.Configuration["ConnectionStrings:AzureTableStorage"];
-
-if (!string.IsNullOrEmpty(connectionString))
-{
-    tableServiceClient = new TableServiceClient(connectionString);
-}
-else if (!string.IsNullOrEmpty(storageAccountName))
-{
-    var tableUri = new Uri($"https://{storageAccountName}.table.{builder.Configuration["Azure:EndpointSuffix"] ?? "core.windows.net"}");
-    tableServiceClient = new TableServiceClient(tableUri, new DefaultAzureCredential());
-}
-else
-{
-    tableServiceClient = new TableServiceClient("UseDevelopmentStorage=true");
-}
-
-builder.Services.AddSingleton(tableServiceClient);
+// ─── SQLite Storage ──────────────────────────────────────────────────
 builder.Services.AddSingleton<StorageService>();
 
 // ─── CORS ────────────────────────────────────────────────────────────

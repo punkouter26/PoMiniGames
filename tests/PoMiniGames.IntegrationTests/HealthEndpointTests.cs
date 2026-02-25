@@ -23,10 +23,10 @@ public sealed class HealthEndpointTests : IClassFixture<TestWebApplicationFactor
     [Fact]
     public async Task DiagEndpoint_ReturnsOk()
     {
-        var response = await _client.GetAsync("/api/diag");
+        var response = await _client.GetAsync("/diag");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var body = await response.Content.ReadAsStringAsync();
-        body.Should().Contain("environment");
+        body.Should().Contain("Sqlite");
     }
 }

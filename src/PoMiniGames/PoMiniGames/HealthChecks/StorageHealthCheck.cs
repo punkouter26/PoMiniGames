@@ -1,19 +1,20 @@
-using Azure.Data.Tables;
+using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using PoMiniGames.Services;
 
 namespace PoMiniGames.HealthChecks;
 
 /// <summary>
-/// Health check that verifies Azure Table Storage connectivity
-/// by attempting to create/query a test table.
+/// Health check that verifies SQLite storage is accessible
+/// by opening a connection to the data directory.
 /// </summary>
 public sealed class StorageHealthCheck : IHealthCheck
 {
-    private readonly TableServiceClient _client;
+    private readonly StorageService _storage;
 
-    public StorageHealthCheck(TableServiceClient client)
+    public StorageHealthCheck(StorageService storage)
     {
-        _client = client;
+        _storage = storage;
     }
 
     public async Task<HealthCheckResult> CheckHealthAsync(
@@ -22,19 +23,14 @@ public sealed class StorageHealthCheck : IHealthCheck
     {
         try
         {
-            var tableClient = _client.GetTableClient("PlayerStats");
-            await tableClient.CreateIfNotExistsAsync(cancellationToken);
-            
-            await foreach (var _ in tableClient.QueryAsync<TableEntity>(maxPerPage: 1, cancellationToken: cancellationToken))
-            {
-                break;
-            }
-            return HealthCheckResult.Healthy("Azure Table Storage is reachable.");
+            // Try a read on the health-check probe database
+            await _storage.GetLeaderboardAsync("healthcheck", 1);
+            return HealthCheckResult.Healthy("SQLite storage is accessible.");
         }
         catch (Exception ex)
         {
-            return HealthCheckResult.Unhealthy(
-                "Azure Table Storage unreachable.", ex);
+            return HealthCheckResult.Unhealthy("SQLite storage is unavailable.", ex);
         }
     }
 }
+

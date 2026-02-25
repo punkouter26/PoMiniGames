@@ -9,9 +9,10 @@
 
   <ItemGroup>
     <!-- Azure -->
-    <PackageReference Include="Azure.Data.Tables" />
     <PackageReference Include="Azure.Identity" />
     <PackageReference Include="Azure.Extensions.AspNetCore.Configuration.Secrets" />
+    <!-- SQLite -->
+    <PackageReference Include="Microsoft.Data.Sqlite" />
     <!-- API -->
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
     <PackageReference Include="Swashbuckle.AspNetCore" />
@@ -22,7 +23,6 @@
     <PackageReference Include="Serilog.Sinks.File" />
     <PackageReference Include="Serilog.Enrichers.Environment" />
     <!-- Health Checks -->
-    <PackageReference Include="AspNetCore.HealthChecks.AzureStorage" />
   </ItemGroup>
 
 </Project>

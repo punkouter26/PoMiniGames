@@ -17,37 +17,6 @@ param sharedResourceGroupName string = 'PoShared'
 var abbreviations = loadJsonContent('./abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, name, location))
 
-// Storage Account
-resource storage 'Microsoft.Storage/storageAccounts@2023-01-01' = {
-  name: '${abbreviations.storageAccount}${resourceToken}'
-  location: location
-  tags: tags
-  kind: 'StorageV2'
-  sku: {
-    name: 'Standard_LRS'
-  }
-  properties: {
-    minimumTlsVersion: 'TLS1_2'
-    allowBlobPublicAccess: false
-    networkAcls: {
-      bypass: 'AzureServices'
-      defaultAction: 'Allow'
-    }
-  }
-}
-
-// Table Service
-resource tableService 'Microsoft.Storage/storageAccounts/tableServices@2023-01-01' = {
-  parent: storage
-  name: 'default'
-}
-
-// Highscores Table
-resource highscoresTable 'Microsoft.Storage/storageAccounts/tableServices/tables@2023-01-01' = {
-  parent: tableService
-  name: 'PlayerStats'
-}
-
 // Existing App Service Plan in PoShared
 resource appServicePlan 'Microsoft.Web/serverfarms@2022-09-01' existing = {
   name: sharedAppServicePlanName
@@ -72,12 +41,8 @@ resource webApp 'Microsoft.Web/sites@2022-09-01' = {
       minTlsVersion: '1.2'
       appSettings: [
         {
-          name: 'PoMiniGames__StorageAccountName'
-          value: storage.name
-        }
-        {
-          name: 'PoMiniGames__ConnectionStrings__Tables'
-          value: 'DefaultEndpointsProtocol=https;AccountName=${storage.name};AccountKey=${storage.listKeys().keys[0].value};EndpointSuffix=${environment().suffixes.storage}'
+          name: 'Sqlite__DataDirectory'
+          value: '/home/data'
         }
         {
           name: 'PoMiniGames__ApplicationInsights__ConnectionString'
@@ -112,17 +77,6 @@ resource sharedAppInsights 'Microsoft.Insights/components@2020-02-02' existing =
   scope: resourceGroup(sharedResourceGroupName)
 }
 
-// RBAC: App Service can access Storage Tables
-resource storageTableRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(storage.id, webApp.id, 'StorageTableDataContributor')
-  scope: storage
-  properties: {
-    principalId: webApp.identity.principalId
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3') // Storage Table Data Contributor
-    principalType: 'ServicePrincipal'
-  }
-}
-
 // Static Web App (React)
 resource staticWebApp 'Microsoft.Web/staticSites@2022-09-01' = {
   name: '${abbreviations.staticWebApp}${resourceToken}'
@@ -140,4 +94,3 @@ output WEB_APP_NAME string = webApp.name
 output WEB_APP_PRINCIPAL_ID string = webApp.identity.principalId
 output STATIC_WEB_APP_NAME string = staticWebApp.name
 output STATIC_WEB_APP_DEFAULT_HOSTNAME string = staticWebApp.properties.defaultHostname
-output AZURE_STORAGE_ACCOUNT_NAME string = storage.name

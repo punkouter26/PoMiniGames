@@ -13,11 +13,10 @@ test.describe('API contract', () => {
     const response = await request.get('/diag');
     expect(response.ok()).toBeTruthy();
     const json = await response.json();
-    // Verify that some known configuration keys exist (case-insensitive or mapped)
-    const hasStorage = json.AZURE_STORAGE_ACCOUNT_NAME !== undefined || 
-                       json["ConnectionStrings:Tables"] !== undefined ||
-                       json["PoMiniGames:StorageAccountName"] !== undefined;
-    expect(hasStorage).toBeTruthy();
+    // Verify SQLite config key is present
+    const hasSqlite = json['Sqlite:DataDirectory'] !== undefined ||
+                      json['Sqlite__DataDirectory'] !== undefined;
+    expect(hasSqlite).toBeTruthy();
   });
 
   test('leaderboard endpoint returns 200', async ({ request }) => {

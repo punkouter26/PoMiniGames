@@ -30,15 +30,6 @@ module resources './resources.bicep' = {
   }
 }
 
-module kvSecrets './kv-secrets.bicep' = {
-  name: 'kv-secrets'
-  scope: resourceGroup(sharedResourceGroupName)
-  params: {
-    keyVaultName: 'kv-poshared'
-    storageAccountName: resources.outputs.AZURE_STORAGE_ACCOUNT_NAME
-  }
-}
-
 module kvAccess './kv-access.bicep' = {
   name: 'kv-access'
   scope: resourceGroup(sharedResourceGroupName)

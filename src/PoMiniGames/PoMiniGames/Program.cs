@@ -10,20 +10,18 @@ using Serilog.Sinks.ApplicationInsights.TelemetryConverters;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// ─── Application Insights ─────────────────────────────────────────────
-var appInsightsConnString = builder.Configuration["PoMiniGames:ApplicationInsights:ConnectionString"] 
+// ─── OpenTelemetry + Application Insights ───────────────────────────
+var appInsightsConnString = builder.Configuration["PoMiniGames:ApplicationInsights:ConnectionString"]
+    ?? builder.Configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"]
     ?? builder.Configuration["APPINSIGHTS_CONNECTIONSTRING"];
 
 if (!string.IsNullOrEmpty(appInsightsConnString))
 {
-    builder.Services.AddApplicationInsightsTelemetry(opts => 
+    builder.Services.AddOpenTelemetry().UseAzureMonitor(opts =>
     {
         opts.ConnectionString = appInsightsConnString;
     });
 }
-
-// ─── OpenTelemetry ───────────────────────────────────────────────────
-builder.Services.AddOpenTelemetry().UseAzureMonitor();
 
 // ─── Azure Key Vault (cloud only) ────────────────────────────────────
 var keyVaultUri = builder.Configuration["PoMiniGames:KeyVault:Uri"]
@@ -57,15 +55,22 @@ builder.Host.UseSerilog((context, services, configuration) =>
     }
     else
     {
-        var tc = services.GetService<Microsoft.ApplicationInsights.Extensibility.TelemetryConfiguration>();
         configuration
             .WriteTo.Console()
             .WriteTo.File(
                 path: "logs/pomini-.log",
                 rollingInterval: RollingInterval.Day,
                 retainedFileCountLimit: 7);
-        if (tc != null)
+
+        var aiCs = context.Configuration["PoMiniGames:ApplicationInsights:ConnectionString"]
+            ?? context.Configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"]
+            ?? context.Configuration["APPINSIGHTS_CONNECTIONSTRING"];
+        if (!string.IsNullOrEmpty(aiCs))
+        {
+            var tc = new Microsoft.ApplicationInsights.Extensibility.TelemetryConfiguration
+                { ConnectionString = aiCs };
             configuration.WriteTo.ApplicationInsights(tc, TelemetryConverter.Traces);
+        }
     }
 });
 

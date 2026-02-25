@@ -56,11 +56,7 @@ builder.Host.UseSerilog((context, services, configuration) =>
     else
     {
         configuration
-            .WriteTo.Console()
-            .WriteTo.File(
-                path: "logs/pomini-.log",
-                rollingInterval: RollingInterval.Day,
-                retainedFileCountLimit: 7);
+            .WriteTo.Console();
 
         var aiCs = context.Configuration["PoMiniGames:ApplicationInsights:ConnectionString"]
             ?? context.Configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"]

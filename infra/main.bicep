@@ -4,7 +4,7 @@ param name string
 param location string
 
 @description('The name of the resource group to create')
-param resourceGroupName string = 'rg-PoMiniGames-prod'
+param resourceGroupName string = 'PoMiniGames'
 
 @description('The name of the existing shared resource group')
 param sharedResourceGroupName string = 'PoShared'

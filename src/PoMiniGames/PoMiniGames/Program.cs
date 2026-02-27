@@ -86,7 +86,8 @@ builder.Services.AddCors(options =>
     options.AddDefaultPolicy(policy =>
     {
         var origins = builder.Configuration
-            .GetSection("Cors:AllowedOrigins").Get<string[]>()
+            .GetSection("PoMiniGames:Cors:AllowedOrigins").Get<string[]>()
+            ?? builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
             ?? ["http://localhost:5000", "http://localhost:5173"];
         policy.WithOrigins(origins).AllowAnyMethod().AllowAnyHeader().AllowCredentials();
     });

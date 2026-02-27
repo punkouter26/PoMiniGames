@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { initVoxelShooter } from './voxelshooter';
+import { GamePageShell } from '../shared/GamePageShell';
 import './VoxelShooterPage.css';
 
 export default function VoxelShooterPage() {
@@ -21,8 +22,10 @@ export default function VoxelShooterPage() {
   }, [navigate]);
 
   return (
-    <div className="voxel-page-container" ref={containerRef}>
-      <canvas ref={canvasRef} className="voxel-canvas" />
-    </div>
+    <GamePageShell title="Voxel Shooter" fullscreen>
+      <div className="voxel-page-container" ref={containerRef}>
+        <canvas ref={canvasRef} className="voxel-canvas" />
+      </div>
+    </GamePageShell>
   );
 }

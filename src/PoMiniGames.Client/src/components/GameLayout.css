@@ -1,0 +1,176 @@
+/* ===========================================
+   GameLayout — slim nav + full-viewport content
+   Ideas 1 (slim), 4 (no max-width/pad), 6 (calc height), 8 (route-aware)
+   =========================================== */
+
+:root {
+  --gl-nav-height: 44px;
+}
+
+/* ─── Page shell ─────────────────────────────────────────── */
+.gl-page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ─── Slim top bar (Idea 1) ──────────────────────────────── */
+.gl-top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: var(--gl-nav-height);
+  padding: 0 var(--space-4);
+  background: var(--color-surface);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+  z-index: 200;
+}
+
+/* brand */
+.gl-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-primary);
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.gl-brand-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  background: linear-gradient(135deg, var(--color-primary), var(--color-secondary));
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+
+/* ─── Desktop nav ─────────────────────────────────────────── */
+.gl-nav-desktop {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+  overflow-x: auto;
+  scrollbar-width: none;
+  flex: 1;
+  justify-content: flex-end;
+  padding-left: var(--space-4);
+}
+
+.gl-nav-desktop::-webkit-scrollbar {
+  display: none;
+}
+
+.gl-nav-desktop a {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-md);
+  transition: color var(--transition-base), background var(--transition-base);
+  white-space: nowrap;
+}
+
+.gl-nav-desktop a:hover,
+.gl-nav-desktop a.active {
+  color: var(--color-primary);
+  background: var(--color-primary-dim);
+}
+
+/* ─── Hamburger button ────────────────────────────────────── */
+.gl-hamburger {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  padding: var(--space-1);
+  border-radius: var(--radius-md);
+  transition: color var(--transition-base);
+  flex-shrink: 0;
+}
+
+.gl-hamburger:hover {
+  color: var(--color-primary);
+}
+
+/* ─── Mobile drawer ───────────────────────────────────────── */
+.gl-drawer-backdrop {
+  position: fixed;
+  inset: var(--gl-nav-height) 0 0 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 199;
+  backdrop-filter: blur(3px);
+  animation: fadeIn var(--transition-fast) ease-out;
+}
+
+.gl-drawer {
+  display: flex;
+  flex-direction: column;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  padding: var(--space-2) var(--space-3) var(--space-3);
+  gap: 2px;
+}
+
+.gl-drawer a {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-medium);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  transition: color var(--transition-base), background var(--transition-base);
+}
+
+.gl-drawer a:hover,
+.gl-drawer a.active {
+  color: var(--color-primary);
+  background: var(--color-primary-dim);
+}
+
+/* ─── Game content area ───────────────────────────────────── */
+.gl-content {
+  position: relative;     /* positioning context for absolute children (e.g. voxel) */
+  flex: 1;
+  min-height: 0;          /* crucial: lets flex child shrink below content size */
+  width: 100%;
+  overflow: auto;         /* home page can scroll; game pages set overflow:hidden themselves */
+  padding: 0;
+}
+
+/* ─── Mobile: swap to hamburger ───────────────────────────── */
+@media (max-width: 768px) {
+  .gl-nav-desktop {
+    display: none;
+  }
+
+  .gl-hamburger {
+    display: flex;
+  }
+
+  .gl-top-bar {
+    padding: 0 var(--space-3);
+  }
+}
+
+/* ─── Very small screens (portrait phone) ────────────────── */
+@media (max-width: 400px) {
+  .gl-brand-text {
+    display: none; /* icon only on tiniest screens */
+  }
+
+  .gl-brand-icon {
+    width: 30px;
+    height: 30px;
+  }
+}

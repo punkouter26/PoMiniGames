@@ -6,86 +6,177 @@ using PoMiniGames.Models;
 namespace PoMiniGames.Services;
 
 /// <summary>
-/// SQLite-backed storage service.
-/// Each game has its own database file: {DataDirectory}/{game}.db
+/// SQLite-backed storage service using a single shared database file.
 /// </summary>
 public class StorageService
 {
-    private readonly string _dataDir;
+    private readonly string _dbPath;
+    private readonly string _dbFileName;
 
     private const string CreateTableSql = """
         CREATE TABLE IF NOT EXISTS PlayerStats (
-            PlayerName TEXT NOT NULL PRIMARY KEY,
+            Game       TEXT NOT NULL,
+            PlayerName TEXT NOT NULL,
             StatsJson  TEXT NOT NULL,
             CreatedAt  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
-            UpdatedAt  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+            UpdatedAt  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+            PRIMARY KEY (Game, PlayerName)
+        );
+        """;
+
+    private const string CreateMigrationsTableSql = """
+        CREATE TABLE IF NOT EXISTS _Migrations (
+            Name      TEXT NOT NULL PRIMARY KEY,
+            AppliedAt TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
         );
         """;
 
     public StorageService(IConfiguration configuration)
     {
-        _dataDir = configuration["Sqlite:DataDirectory"]
+        var dataDir = configuration["Sqlite:DataDirectory"]
             ?? Path.Combine(AppContext.BaseDirectory, "data");
-        Directory.CreateDirectory(_dataDir);
+
+        Directory.CreateDirectory(dataDir);
+
+        var databaseFileName = configuration["Sqlite:DatabaseFileName"];
+        if (string.IsNullOrWhiteSpace(databaseFileName))
+            databaseFileName = "pominigames.db";
+
+        _dbFileName = Path.GetFileName(databaseFileName);
+        _dbPath = Path.Combine(dataDir, _dbFileName);
+
+        using var _ = OpenConnection();
+        MigrateLegacyPerGameDatabases(dataDir);
     }
 
-    // --- Connection -----------------------------------------------------------
-
-    private SqliteConnection OpenConnection(string game)
+    private void MigrateLegacyPerGameDatabases(string dataDir)
     {
-        var dbPath = Path.Combine(_dataDir, $"{SanitizeName(game)}.db");
-        var conn = new SqliteConnection($"Data Source={dbPath}");
+        const string migrationName = "LegacyPerGameImport";
+
+        using var conn = OpenConnection();
+
+        // Skip if already applied on a previous startup.
+        using var checkCmd = conn.CreateCommand();
+        checkCmd.CommandText = "SELECT COUNT(*) FROM _Migrations WHERE Name = $name";
+        checkCmd.Parameters.AddWithValue("$name", migrationName);
+        if ((long)(checkCmd.ExecuteScalar() ?? 0L) > 0)
+            return;
+
+        var legacyFiles = Directory
+            .GetFiles(dataDir, "*.db", SearchOption.TopDirectoryOnly)
+            .Where(f => !string.Equals(Path.GetFileName(f), _dbFileName, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        foreach (var legacyFile in legacyFiles)
+        {
+            var game = SanitizeName(Path.GetFileNameWithoutExtension(legacyFile));
+            if (string.IsNullOrWhiteSpace(game))
+                continue;
+
+            try
+            {
+                using var legacyConn = new SqliteConnection($"Data Source={legacyFile}");
+                legacyConn.Open();
+
+                using var legacyCmd = legacyConn.CreateCommand();
+                legacyCmd.CommandText = "SELECT PlayerName, StatsJson FROM PlayerStats";
+
+                using var reader = legacyCmd.ExecuteReader();
+                while (reader.Read())
+                {
+                    var playerName = SanitizeName(reader.GetString(0));
+                    if (string.IsNullOrWhiteSpace(playerName))
+                        continue;
+
+                    var statsJson = reader.GetString(1);
+
+                    using var insertCmd = conn.CreateCommand();
+                    insertCmd.CommandText = """
+                        INSERT INTO PlayerStats (Game, PlayerName, StatsJson, CreatedAt, UpdatedAt)
+                        VALUES ($game, $name, $json, strftime('%Y-%m-%dT%H:%M:%SZ','now'), strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+                        ON CONFLICT(Game, PlayerName) DO UPDATE SET
+                            StatsJson = excluded.StatsJson,
+                            UpdatedAt = excluded.UpdatedAt;
+                        """;
+                    insertCmd.Parameters.AddWithValue("$game", game);
+                    insertCmd.Parameters.AddWithValue("$name", playerName);
+                    insertCmd.Parameters.AddWithValue("$json", statsJson);
+                    insertCmd.ExecuteNonQuery();
+                }
+            }
+            catch
+            {
+                // Ignore invalid or non-legacy DB files in the data folder.
+            }
+        }
+
+        // Mark migration as applied regardless of whether any legacy files were found.
+        using var recordCmd = conn.CreateCommand();
+        recordCmd.CommandText = "INSERT OR IGNORE INTO _Migrations (Name) VALUES ($name)";
+        recordCmd.Parameters.AddWithValue("$name", migrationName);
+        recordCmd.ExecuteNonQuery();
+    }
+
+    private SqliteConnection OpenConnection()
+    {
+        var conn = new SqliteConnection($"Data Source={_dbPath}");
         conn.Open();
+
         using var cmd = conn.CreateCommand();
-        cmd.CommandText = CreateTableSql;
+        cmd.CommandText = CreateTableSql + CreateMigrationsTableSql;
         cmd.ExecuteNonQuery();
+
         return conn;
     }
 
-    // --- Read -----------------------------------------------------------------
-
-    /// <summary>Retrieve all player stats across every game.</summary>
     public async Task<List<PlayerStatsDto>> GetAllPlayerStatsAsync()
     {
         var result = new List<PlayerStatsDto>();
-        var dbFiles = Directory.GetFiles(_dataDir, "*.db");
 
-        foreach (var file in dbFiles)
+        using var conn = OpenConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT Game, PlayerName, StatsJson FROM PlayerStats";
+
+        using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
         {
-            var game = Path.GetFileNameWithoutExtension(file);
-            using var conn = new SqliteConnection($"Data Source={file}");
-            await conn.OpenAsync();
-
-            using var cmd = conn.CreateCommand();
-            cmd.CommandText = "SELECT PlayerName, StatsJson FROM PlayerStats";
-            using var reader = await cmd.ExecuteReaderAsync();
-            while (await reader.ReadAsync())
+            var stats = JsonSerializer.Deserialize<PlayerStats>(reader.GetString(2)) ?? new PlayerStats();
+            result.Add(new PlayerStatsDto
             {
-                var stats = JsonSerializer.Deserialize<PlayerStats>(reader.GetString(1)) ?? new PlayerStats();
-                result.Add(new PlayerStatsDto { Name = reader.GetString(0), Game = game, Stats = stats });
-            }
+                Game = reader.GetString(0),
+                Name = reader.GetString(1),
+                Stats = stats,
+            });
         }
 
         return result;
     }
 
-    /// <summary>Retrieve stats for one player in a specific game.</summary>
     public async Task<PlayerStats?> GetPlayerStatsAsync(string game, string playerName)
     {
-        using var conn = OpenConnection(game);
+        var sanitizedGame = SanitizeName(game);
+        var sanitizedName = SanitizeName(playerName);
+        if (string.IsNullOrWhiteSpace(sanitizedGame) || string.IsNullOrWhiteSpace(sanitizedName))
+            return null;
+
+        using var conn = OpenConnection();
         using var cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT StatsJson FROM PlayerStats WHERE PlayerName = $name";
-        cmd.Parameters.AddWithValue("$name", SanitizeName(playerName));
+        cmd.CommandText = "SELECT StatsJson FROM PlayerStats WHERE Game = $game AND PlayerName = $name";
+        cmd.Parameters.AddWithValue("$game", sanitizedGame);
+        cmd.Parameters.AddWithValue("$name", sanitizedName);
+
         var raw = (string?)await cmd.ExecuteScalarAsync();
         return raw is null ? null : JsonSerializer.Deserialize<PlayerStats>(raw);
     }
 
-    // --- Write ----------------------------------------------------------------
-
-    /// <summary>Upsert player stats for a specific game.</summary>
     public async Task SavePlayerStatsAsync(string game, string playerName, PlayerStats stats)
     {
+        var sanitizedGame = SanitizeName(game);
         var sanitizedName = SanitizeName(playerName);
+
+        if (string.IsNullOrWhiteSpace(sanitizedGame))
+            throw new ArgumentException("Game cannot be empty", nameof(game));
+
         if (string.IsNullOrWhiteSpace(sanitizedName))
             throw new ArgumentException("Player name cannot be empty", nameof(playerName));
 
@@ -93,31 +184,37 @@ public class StorageService
         var json = JsonSerializer.Serialize(stats);
         var now = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ");
 
-        using var conn = OpenConnection(game);
+        using var conn = OpenConnection();
         using var cmd = conn.CreateCommand();
         cmd.CommandText = """
-            INSERT INTO PlayerStats (PlayerName, StatsJson, CreatedAt, UpdatedAt)
-            VALUES ($name, $json, $now, $now)
-            ON CONFLICT(PlayerName) DO UPDATE SET
+            INSERT INTO PlayerStats (Game, PlayerName, StatsJson, CreatedAt, UpdatedAt)
+            VALUES ($game, $name, $json, $now, $now)
+            ON CONFLICT(Game, PlayerName) DO UPDATE SET
                 StatsJson = excluded.StatsJson,
                 UpdatedAt = excluded.UpdatedAt;
             """;
+
+        cmd.Parameters.AddWithValue("$game", sanitizedGame);
         cmd.Parameters.AddWithValue("$name", sanitizedName);
         cmd.Parameters.AddWithValue("$json", json);
         cmd.Parameters.AddWithValue("$now", now);
+
         await cmd.ExecuteNonQueryAsync();
     }
 
-    // --- Leaderboard ----------------------------------------------------------
-
-    /// <summary>Top players for a given game, sorted by win rate then total games.</summary>
     public async Task<List<(string Name, PlayerStats Stats)>> GetLeaderboardAsync(string game, int limit)
     {
+        var sanitizedGame = SanitizeName(game);
+        if (string.IsNullOrWhiteSpace(sanitizedGame))
+            return [];
+
         var allPlayers = new List<(string Name, PlayerStats Stats)>();
 
-        using var conn = OpenConnection(game);
+        using var conn = OpenConnection();
         using var cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT PlayerName, StatsJson FROM PlayerStats";
+        cmd.CommandText = "SELECT PlayerName, StatsJson FROM PlayerStats WHERE Game = $game";
+        cmd.Parameters.AddWithValue("$game", sanitizedGame);
+
         using var reader = await cmd.ExecuteReaderAsync();
         while (await reader.ReadAsync())
         {
@@ -132,9 +229,6 @@ public class StorageService
             .ToList();
     }
 
-    // --- Helpers --------------------------------------------------------------
-
-    /// <summary>Strips characters unsafe for file names.</summary>
     private static string SanitizeName(string input)
     {
         if (string.IsNullOrEmpty(input))
@@ -150,6 +244,7 @@ public class StorageService
             if (!invalidChars.Contains(c) && c >= 0x20)
                 sb.Append(c);
         }
+
         return sb.ToString().Trim();
     }
 }

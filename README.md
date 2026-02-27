@@ -102,6 +102,15 @@ Comprehensive documentation is available in the `docs/` folder:
    npm run dev
    ```
 
+   Optional: configure external game URLs before `npm run dev`:
+   ```bash
+   # src/PoMiniGames.Client/.env.local
+   VITE_GAME_URL_POFIGHT=http://localhost:5174
+   VITE_GAME_URL_PODROPSQUARE=http://localhost:5280
+   VITE_GAME_URL_POBABYTOUCH=http://localhost:5180
+   VITE_GAME_URL_PORACERAGDOLL=http://localhost:3000
+   ```
+
 4. **Open the app:** http://localhost:5173
 
 ## API Endpoints
@@ -128,6 +137,12 @@ Comprehensive documentation is available in the `docs/` folder:
 - **Grid**: 6 columns × 5 rows
 - **Win Condition**: 5 in a row
 - **AI Levels**: Same as Tic-Tac-Toe
+
+### Integrated External Games
+- **PoFight**: `/pofight`
+- **PoDropSquare**: `/podropsquare`
+- **PoBabyTouch**: `/pobabytouch`
+- **PoRaceRagdoll**: `/poraceragdoll`
 
 ## Testing
 

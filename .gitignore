@@ -49,3 +49,9 @@ Thumbs.db
 
 # App specific
 .potune-state.json
+
+# Test results / screenshots
+test-results/
+
+# Local SQLite data
+src/PoMiniGames/PoMiniGames/data/

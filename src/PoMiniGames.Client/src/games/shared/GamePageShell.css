@@ -1,0 +1,314 @@
+/* ================================================================
+   GamePageShell — consistent info bar + full-height game area
+   All game pages use this shell for a uniform layout:
+     [top nav (GameLayout)] 44px
+     [info bar (GamePageShell)] ~52px  ← ALL controls / stats here
+     [game area (GamePageShell children)] fills rest of screen
+   ================================================================ */
+
+.gps-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+}
+
+/* ── Info bar ──────────────────────────────────────────────── */
+.gps-info-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0 var(--space-4);
+  min-height: 52px;
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid var(--color-border);
+}
+
+/* ── Left: title + player badge ────────────────────────────── */
+.gps-info-left {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+  padding-right: var(--space-3);
+  border-right: 1px solid var(--color-border);
+}
+
+.gps-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-primary);
+  white-space: nowrap;
+}
+
+.gps-player {
+  font-size: var(--font-size-xs);
+  color: var(--color-primary);
+  background: var(--color-primary-dim);
+  border: 1px solid rgba(0, 229, 255, 0.25);
+  border-radius: var(--radius-full);
+  padding: 2px var(--space-2);
+  white-space: nowrap;
+}
+
+/* ── Center: status badge + controls ───────────────────────── */
+.gps-info-center {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex: 1;
+  min-width: 0;
+  padding-right: var(--space-3);
+  border-right: 1px solid var(--color-border);
+  flex-wrap: wrap;
+}
+
+/* ── Status badge ────────────────────────────────────────────  */
+.gps-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  padding: 3px var(--space-3);
+  border-radius: var(--radius-full);
+  white-space: nowrap;
+  border: 1px solid transparent;
+  flex-shrink: 0;
+}
+
+.gps-status-badge.win {
+  color: var(--color-success);
+  background: rgba(0, 230, 118, 0.12);
+  border-color: rgba(0, 230, 118, 0.35);
+}
+
+.gps-status-badge.loss {
+  color: var(--color-error);
+  background: rgba(255, 82, 82, 0.12);
+  border-color: rgba(255, 82, 82, 0.35);
+}
+
+.gps-status-badge.draw {
+  color: var(--color-warning);
+  background: rgba(255, 193, 7, 0.1);
+  border-color: rgba(255, 193, 7, 0.35);
+}
+
+.gps-status-badge.turn {
+  color: var(--color-text-secondary);
+  background: rgba(255, 255, 255, 0.05);
+  border-color: var(--color-border);
+}
+
+.gps-status-badge.thinking {
+  color: var(--color-info);
+  background: rgba(64, 196, 255, 0.1);
+  border-color: rgba(64, 196, 255, 0.3);
+}
+
+.thinking-indicator {
+  animation: gps-spin 1s linear infinite;
+}
+
+@keyframes gps-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Controls ─────────────────────────────────────────────── */
+.gps-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+/* compact select */
+.gps-controls select {
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 3px var(--space-2);
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+  outline: none;
+  transition: border-color var(--transition-base);
+}
+
+.gps-controls select:hover,
+.gps-controls select:focus {
+  border-color: var(--color-primary);
+}
+
+/* compact buttons */
+.gps-controls button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 3px var(--space-3);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition: color var(--transition-base), border-color var(--transition-base),
+    background var(--transition-base);
+  white-space: nowrap;
+}
+
+.gps-controls button:hover {
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+  background: var(--color-primary-dim);
+}
+
+.gps-controls button.btn-win {
+  color: var(--color-success);
+  border-color: rgba(0, 230, 118, 0.3);
+}
+.gps-controls button.btn-win:hover {
+  background: rgba(0, 230, 118, 0.12);
+  border-color: var(--color-success);
+}
+
+.gps-controls button.btn-loss {
+  color: var(--color-error);
+  border-color: rgba(255, 82, 82, 0.3);
+}
+.gps-controls button.btn-loss:hover {
+  background: rgba(255, 82, 82, 0.12);
+  border-color: var(--color-error);
+}
+
+.gps-controls button.btn-draw {
+  color: var(--color-warning);
+  border-color: rgba(255, 193, 7, 0.3);
+}
+.gps-controls button.btn-draw:hover {
+  background: rgba(255, 193, 7, 0.12);
+  border-color: var(--color-warning);
+}
+
+/* compact link button (open in new tab) */
+.gps-controls a.gps-open-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 3px var(--space-3);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition: color var(--transition-base), border-color var(--transition-base);
+  white-space: nowrap;
+  text-decoration: none;
+}
+
+.gps-controls a.gps-open-link:hover {
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+/* ── Right: stats strip ────────────────────────────────────── */
+.gps-info-right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-shrink: 0;
+  padding-left: var(--space-3);
+}
+
+.gps-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.2;
+  min-width: 28px;
+}
+
+.gps-stat-value {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-primary);
+}
+
+.gps-stat-label {
+  font-size: 0.6rem;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* ── Game area ─────────────────────────────────────────────── */
+.gps-game-area {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: var(--space-4);
+}
+
+/* fullscreen variant — for canvas / iframe games */
+.gps-game-area--fullscreen {
+  padding: 0;
+  overflow: hidden;
+  align-items: stretch;
+}
+
+/* No-URL placeholder for external games */
+.gps-missing-url {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  width: 100%;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  text-align: center;
+  padding: var(--space-8);
+}
+
+.gps-missing-url strong {
+  color: var(--color-primary);
+}
+
+/* ── Mobile ─────────────────────────────────────────────────  */
+@media (max-width: 768px) {
+  .gps-info-bar {
+    flex-wrap: wrap;
+    padding: var(--space-2) var(--space-3);
+    gap: var(--space-2);
+  }
+
+  .gps-info-left,
+  .gps-info-center {
+    border-right: none;
+    padding-right: 0;
+  }
+
+  .gps-info-right {
+    width: 100%;
+    border-top: 1px solid var(--color-border);
+    padding-top: var(--space-2);
+    padding-left: 0;
+    justify-content: space-around;
+  }
+
+  .gps-game-area {
+    padding: var(--space-3);
+  }
+}

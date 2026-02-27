@@ -1,0 +1,115 @@
+.external-game-page {
+  display: flex;
+  flex-direction: column;
+  /* fill full gl-content height so iframe can flex-grow */
+  height: 100%;
+  gap: var(--space-3);
+}
+
+.external-game-subtitle {
+  color: var(--color-text-muted);
+  flex-shrink: 0;
+}
+
+.external-game-controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.external-game-difficulty {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.external-game-difficulty label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-text-muted);
+}
+
+.external-game-difficulty select {
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+}
+
+.external-game-results {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.external-game-results button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-alt);
+  color: var(--color-text-secondary);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+
+.external-game-results button:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.external-game-embed-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-3);
+  overflow: hidden;
+}
+
+.external-game-launch-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: var(--space-2);
+}
+
+.external-game-launch-row a {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-primary);
+}
+
+.external-game-frame {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  border: none;
+  background: var(--color-bg-dark);
+  display: block;
+}
+
+/* portrait phone: taller iframe relative to screen */
+@media (max-width: 500px) {
+  .external-game-frame {
+    min-height: 240px;
+  }
+}
+
+.external-game-missing-url {
+  color: var(--color-text-muted);
+  padding: var(--space-6);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-md);
+}

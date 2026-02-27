@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
-import { CircleDot, ArrowRight, Gamepad2, Crosshair, User } from 'lucide-react';
+import { CircleDot, ArrowRight, Gamepad2, Crosshair, User, Swords, Square, Baby, Car } from 'lucide-react';
 import { usePlayerName } from '../context/PlayerNameContext';
+import HomeHighScores from './HomeHighScores';
 import './Home.css';
 
 export default function Home() {
@@ -66,7 +67,54 @@ export default function Home() {
             Play <ArrowRight size={18} className="play-btn-icon" />
           </span>
         </Link>
+        <Link to="/pofight" className="game-card" aria-label="Play PoFight">
+          <div className="game-icon">
+            <Swords size={48} color="#00D9FF" />
+          </div>
+          <h2>PoFight</h2>
+          <p>Battle in PoFight and keep your stats synced with PoMiniGames.</p>
+          <span className="play-btn">
+            Play <ArrowRight size={18} className="play-btn-icon" />
+          </span>
+        </Link>
+
+        <Link to="/podropsquare" className="game-card" aria-label="Play PoDropSquare">
+          <div className="game-icon">
+            <Square size={48} color="#00D9FF" />
+          </div>
+          <h2>PoDropSquare</h2>
+          <p>Launch PoDropSquare from the hub and track your outcomes here.</p>
+          <span className="play-btn">
+            Play <ArrowRight size={18} className="play-btn-icon" />
+          </span>
+        </Link>
+
+        <Link to="/pobabytouch" className="game-card" aria-label="Play PoBabyTouch">
+          <div className="game-icon">
+            <Baby size={48} color="#00D9FF" />
+          </div>
+          <h2>PoBabyTouch</h2>
+          <p>Open PoBabyTouch in the unified hub and record your game results.</p>
+          <span className="play-btn">
+            Play <ArrowRight size={18} className="play-btn-icon" />
+          </span>
+        </Link>
+
+        <Link to="/poraceragdoll" className="game-card" aria-label="Play PoRaceRagdoll">
+          <div className="game-icon">
+            <Car size={48} color="#00D9FF" />
+          </div>
+          <h2>PoRaceRagdoll</h2>
+          <p>Race with ragdoll physics and keep shared stats in PoMiniGames.</p>
+          <span className="play-btn">
+            Play <ArrowRight size={18} className="play-btn-icon" />
+          </span>
+        </Link>
       </div>
+
+      <HomeHighScores />
     </div>
   );
 }
+
+

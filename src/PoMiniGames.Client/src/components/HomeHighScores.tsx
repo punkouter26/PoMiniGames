@@ -12,6 +12,7 @@ const GAMES = [
   { id: 'podropsquare', label: 'PoDropSquare' },
   { id: 'pobabytouch', label: 'PoBabyTouch' },
   { id: 'poraceragdoll', label: 'PoRaceRagdoll' },
+  // PoSnakeGame has its own score-based leaderboard on the game page
 ] as const;
 
 function toPercent(value: number | undefined): string {

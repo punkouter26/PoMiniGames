@@ -1,10 +1,12 @@
-import { useState } from 'react';
-import { ExternalLink, Trophy, XCircle, Handshake } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { ExternalLink, Trophy, XCircle, Handshake, Loader2, ServerOff, RefreshCw } from 'lucide-react';
 import { Difficulty, GameResult } from './types';
 import { statsService } from './statsService';
 import { usePlayerName } from '../../context/PlayerNameContext';
 import { GamePageShell, type StatItem } from './GamePageShell';
 import './ExternalGamePage.css';
+
+type ServerStatus = 'checking' | 'online' | 'offline';
 
 interface ExternalGamePageProps {
   gameKey: string;
@@ -12,6 +14,27 @@ interface ExternalGamePageProps {
   subtitle?: string;
   gameUrl?: string;
   gameUrlEnvVar: string;
+}
+
+function useServerStatus(gameUrl: string | undefined): [ServerStatus, () => void] {
+  const [status, setStatus] = useState<ServerStatus>('checking');
+  const counterRef = useRef(0);
+
+  const check = () => {
+    if (!gameUrl) return;
+    const id = ++counterRef.current;
+    setStatus('checking');
+    fetch(gameUrl, { mode: 'no-cors', cache: 'no-store' })
+      .then(() => { if (counterRef.current === id) setStatus('online'); })
+      .catch(() => { if (counterRef.current === id) setStatus('offline'); });
+  };
+
+  useEffect(() => {
+    check();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gameUrl]);
+
+  return [status, check];
 }
 
 export default function ExternalGamePage({
@@ -25,6 +48,7 @@ export default function ExternalGamePage({
   const [stats, setStats] = useState(() => statsService.getStats(gameKey, playerName));
 
   const hasGameUrl = Boolean(gameUrl && gameUrl.trim().length > 0);
+  const [serverStatus, retryCheck] = useServerStatus(hasGameUrl ? gameUrl : undefined);
   const diffBucket = statsService.getDifficultyBucket(stats, difficulty);
 
   const recordResult = async (result: GameResult) => {
@@ -39,6 +63,47 @@ export default function ExternalGamePage({
     { value: diffBucket.winStreak, label: 'Str' },
     { value: `${(diffBucket.winRate * 100).toFixed(0)}%`, label: 'Rate' },
   ];
+
+  function renderGameArea() {
+    if (!hasGameUrl) {
+      return (
+        <div className="egp-missing-url">
+          Configure <strong>{gameUrlEnvVar}</strong> in your PoMiniGames client environment to embed this game.
+        </div>
+      );
+    }
+    if (serverStatus === 'checking') {
+      return (
+        <div className="egp-status">
+          <Loader2 size={32} className="egp-spin" />
+          <p>Connecting to game server…</p>
+        </div>
+      );
+    }
+    if (serverStatus === 'offline') {
+      return (
+        <div className="egp-status egp-offline">
+          <ServerOff size={40} />
+          <p className="egp-status-title">Game server not running</p>
+          <p className="egp-status-sub">
+            Start the <strong>{title}</strong> server at{' '}
+            <code>{gameUrl}</code>, then retry.
+          </p>
+          <button className="egp-retry" onClick={retryCheck}>
+            <RefreshCw size={14} /> Retry
+          </button>
+        </div>
+      );
+    }
+    return (
+      <iframe
+        title={title}
+        src={gameUrl}
+        className="external-game-frame"
+        loading="lazy"
+      />
+    );
+  }
 
   return (
     <GamePageShell
@@ -74,18 +139,7 @@ export default function ExternalGamePage({
       stats={statItems}
       fullscreen={hasGameUrl}
     >
-      {hasGameUrl ? (
-        <iframe
-          title={title}
-          src={gameUrl}
-          className="external-game-frame"
-          loading="lazy"
-        />
-      ) : (
-        <div className="gps-missing-url">
-          Configure <strong>{gameUrlEnvVar}</strong> in your PoMiniGames client environment to embed this game.
-        </div>
-      )}
+      {renderGameArea()}
     </GamePageShell>
   );
 }

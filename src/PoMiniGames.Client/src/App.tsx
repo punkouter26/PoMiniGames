@@ -8,6 +8,7 @@ import PoFightPage from './games/pofight/PoFightPage';
 import PoDropSquarePage from './games/podropsquare/PoDropSquarePage';
 import PoBabyTouchPage from './games/pobabytouch/PoBabyTouchPage';
 import PoRaceRagdollPage from './games/poraceragdoll/PoRaceRagdollPage';
+import PoSnakeGamePage from './games/posnakegame/PoSnakeGamePage';
 import { PlayerNameProvider } from './context/PlayerNameContext';
 
 export default function App() {
@@ -25,6 +26,7 @@ export default function App() {
             <Route path="podropsquare" element={<PoDropSquarePage />} />
             <Route path="pobabytouch" element={<PoBabyTouchPage />} />
             <Route path="poraceragdoll" element={<PoRaceRagdollPage />} />
+            <Route path="posnakegame" element={<PoSnakeGamePage />} />
           </Route>
         </Routes>
       </BrowserRouter>

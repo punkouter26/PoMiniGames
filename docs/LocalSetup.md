@@ -16,6 +16,18 @@ dotnet run
 cd src/PoMiniGames.Client
 npm install
 npm run dev
+
+# 4. (Optional) Start PoDropSquare game server — terminal 3
+cd src/PoDropSquare/src/PoDropSquare.Api
+dotnet run
+
+# 5. (Optional) Start PoRaceRagdoll API — terminal 4
+cd src/PoRaceRagdoll/src/PoRaceRagdoll.Api
+dotnet run
+
+# 6. (Optional) Start PoRaceRagdoll frontend — terminal 5
+cd src/PoRaceRagdoll/src/poraceragdoll-web
+npm install && npm run dev
 ```
 
 Open http://localhost:5173
@@ -107,7 +119,40 @@ npm run dev
 
 The client will start on `http://localhost:5173`
 
-### Step 5: Verify Everything Works
+### Step 5: Start External Game Servers (Optional)
+
+These games run as separate servers embedded in iframes. They are optional — the PoMiniGames shell still works without them (you'll see a "server not running" message for each).
+
+#### PoDropSquare (Blazor WebAssembly game — http://localhost:5010)
+
+```bash
+# Requires: Azurite running (see Step 2) for leaderboard persistence
+cd src/PoDropSquare/src/PoDropSquare.Api
+dotnet run
+```
+
+The game will be available at `http://localhost:5010`.
+
+#### PoRaceRagdoll (Next.js 3D racing game — http://localhost:3002)
+
+**Terminal A — Start the API:**
+```bash
+cd src/PoRaceRagdoll/src/PoRaceRagdoll.Api
+dotnet run
+```
+The API will start on `http://localhost:5002`.
+
+> **Note:** The PoRaceRagdoll API connects to Azure Key Vault by default. For local-only development without Key Vault access the game still runs in offline mode (no leaderboard persistence).
+
+**Terminal B — Start the Next.js frontend:**
+```bash
+cd src/PoRaceRagdoll/src/poraceragdoll-web
+npm install
+npm run dev
+```
+The game frontend will start on `http://localhost:3002`.
+
+### Step 6: Verify Everything Works
 
 1. Open http://localhost:5173 in your browser
 2. Click on "Tic-Tac-Toe" or "Connect Five"
@@ -120,23 +165,25 @@ The client will start on `http://localhost:5173`
 ```
 PoMiniGames/
 ├── docs/                    # Documentation
-├── screenshots/              # App screenshots
 ├── src/
-│   ├── PoMiniGames/        # .NET API project
-│   │   └── PoMiniGames/
-│   │       ├── Features/   # API endpoints
-│   │       ├── Models/     # Data models
-│   │       ├── Services/   # Business logic
-│   │       └── Program.cs # Entry point
-│   └── PoMiniGames.Client # React frontend
-│       └── src/
-│           ├── components/ # UI components
-│           ├── games/     # Game logic
-│           └── services/  # API services
-├── tests/                   # Integration tests
-├── docker-compose.yml       # Local services
+│   ├── PoMiniGames/        # .NET API (main hub — port 5000)
+│   ├── PoMiniGames.Client  # React frontend (port 5173)
+│   ├── PoDropSquare/       # Blazor WASM physics game (port 5010)
+│   │   ├── src/
+│   │   │   ├── PoDropSquare.Api/    # API + Blazor host
+│   │   │   ├── PoDropSquare.Blazor/ # Blazor WASM SPA
+│   │   │   ├── PoDropSquare.Core/   # Domain model
+│   │   │   └── PoDropSquare.Data/   # Azure Table Storage
+│   │   └── tests/
+│   └── PoRaceRagdoll/      # 3D ragdoll racing game
+│       ├── src/
+│       │   ├── PoRaceRagdoll.Api/   # .NET 10 API (port 5002)
+│       │   └── poraceragdoll-web/   # Next.js frontend (port 3002)
+│       └── tests/
+├── tests/                   # PoMiniGames integration/unit tests
+├── docker-compose.yml       # Local services (Azurite)
 ├── Directory.Build.props    # Build configuration
-└── PoMiniGames.slnx        # Solution file
+└── PoMiniGames.slnx        # Solution file (all .NET projects)
 ```
 
 ## Running Tests
@@ -223,6 +270,15 @@ dotnet run --project src/PoMiniGames/PoMiniGames
 # 3. Start Client (terminal 2)
 cd src/PoMiniGames.Client
 npm run dev
+
+# 4. (Optional) Start PoDropSquare (terminal 3)
+dotnet run --project src/PoDropSquare/src/PoDropSquare.Api
+
+# 5. (Optional) Start PoRaceRagdoll API (terminal 4)
+dotnet run --project src/PoRaceRagdoll/src/PoRaceRagdoll.Api
+
+# 6. (Optional) Start PoRaceRagdoll frontend (terminal 5)
+cd src/PoRaceRagdoll/src/poraceragdoll-web && npm run dev
 ```
 
 ### Making Changes
@@ -290,6 +346,17 @@ export default defineConfig({
 | `docker-compose up -d` | Start Azurite |
 | `docker-compose down` | Stop Azurite |
 | `dotnet build` | Build solution |
+
+## Port Reference
+
+| Service | Port | URL |
+|---------|------|-----|
+| PoMiniGames API | 5000 | http://localhost:5000 |
+| PoMiniGames Client | 5173 | http://localhost:5173 |
+| PoDropSquare (API + Blazor WASM) | 5010 | http://localhost:5010 |
+| PoRaceRagdoll API | 5002 | http://localhost:5002 |
+| PoRaceRagdoll Next.js frontend | 3002 | http://localhost:3002 |
+| Azurite Table Storage | 10002 | — |
 
 ## Next Steps
 

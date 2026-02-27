@@ -1,0 +1,13 @@
+{
+  "navigationFallback": {
+    "rewrite": "/index.html",
+    "exclude": ["/images/*.{png,jpg,gif}", "/css/*"]
+  },
+  "routes": [
+    {
+      "route": "/api/*",
+      "methods": ["GET", "POST", "PUT", "DELETE", "HEAD", "OPTIONS"],
+      "rewrite": "https://app-5ln5hfdrvof5u.azurewebsites.net/api/*"
+    }
+  ]
+}

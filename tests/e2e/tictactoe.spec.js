@@ -1,5 +1,5 @@
 // @ts-check
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 
 test.describe('Tic Tac Toe game', () => {
   test.beforeEach(async ({ page }) => {

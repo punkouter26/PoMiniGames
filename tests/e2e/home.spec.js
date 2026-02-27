@@ -1,5 +1,5 @@
 // @ts-check
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 
 // ---------------------------------------------------------------------------
 // Shared data
@@ -12,6 +12,7 @@ const GAME_CARDS = [
   { label: 'PoDropSquare',  ariaLabel: 'Play PoDropSquare',  route: /podropsquare/ },
   { label: 'PoBabyTouch',   ariaLabel: 'Play PoBabyTouch',   route: /pobabytouch/  },
   { label: 'PoRaceRagdoll', ariaLabel: 'Play PoRaceRagdoll', route: /poraceragdoll/},
+  { label: 'PoSnakeGame',   ariaLabel: 'Play PoSnakeGame',   route: /posnakegame/  },
 ];
 
 const HIGH_SCORE_GAMES = [
@@ -41,7 +42,7 @@ test.describe('Home page – page load', () => {
     await expect(input).toBeEditable();
   });
 
-  test('renders all 7 game card headings', async ({ page }) => {
+  test('renders all 8 game card headings', async ({ page }) => {
     for (const game of GAME_CARDS) {
       await expect(page.locator(`h2:has-text("${game.label}")`)).toBeVisible();
     }
@@ -65,7 +66,7 @@ test.describe('Home page – game selection', () => {
     await page.goto('/');
     await page.click('[aria-label="Play Connect Five"]');
     await expect(page).toHaveURL(/connectfive/);
-    await expect(page.locator('h1')).toContainText('Connect Five');
+    await expect(page.locator('.gps-title')).toContainText('Connect Five');
     await page.goBack();
     await expect(page).toHaveURL('/');
     await expect(page.locator('h1.home-title')).toContainText('PoMiniGames');
@@ -75,7 +76,7 @@ test.describe('Home page – game selection', () => {
     await page.goto('/');
     await page.click('[aria-label="Play Tic Tac Toe"]');
     await expect(page).toHaveURL(/tictactoe/);
-    await expect(page.locator('h1')).toContainText('Tic Tac Toe');
+    await expect(page.locator('.gps-title')).toContainText('Tic Tac Toe');
     await page.goBack();
     await expect(page).toHaveURL('/');
   });

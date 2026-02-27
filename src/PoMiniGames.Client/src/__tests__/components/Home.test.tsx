@@ -29,6 +29,7 @@ const ALL_GAMES = [
   { label: 'PoDropSquare', href: '/podropsquare', ariaLabel: 'Play PoDropSquare' },
   { label: 'PoBabyTouch', href: '/pobabytouch', ariaLabel: 'Play PoBabyTouch' },
   { label: 'PoRaceRagdoll', href: '/poraceragdoll', ariaLabel: 'Play PoRaceRagdoll' },
+  { label: 'PoSnakeGame', href: '/posnakegame', ariaLabel: 'Play PoSnakeGame' },
 ];
 
 describe('Home – page structure', () => {
@@ -88,13 +89,13 @@ describe('Home – game cards', () => {
     renderHome();
   });
 
-  it('renders all 7 game cards', () => {
+  it('renders all 8 game cards', () => {
     for (const game of ALL_GAMES) {
       expect(screen.getByRole('heading', { name: game.label })).toBeInTheDocument();
     }
   });
 
-  it('renders exactly 7 game card links', () => {
+  it('renders exactly 8 game card links', () => {
     const links = screen.getAllByRole('link');
     expect(links).toHaveLength(ALL_GAMES.length);
   });

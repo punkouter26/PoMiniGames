@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { CircleDot, ArrowRight, Gamepad2, Crosshair, User, Swords, Square, Baby, Car } from 'lucide-react';
+import { CircleDot, ArrowRight, Gamepad2, Crosshair, User, Swords, Square, Baby, Car, Activity } from 'lucide-react';
 import { usePlayerName } from '../context/PlayerNameContext';
 import HomeHighScores from './HomeHighScores';
 import './Home.css';
@@ -106,6 +106,17 @@ export default function Home() {
           </div>
           <h2>PoRaceRagdoll</h2>
           <p>Race with ragdoll physics and keep shared stats in PoMiniGames.</p>
+          <span className="play-btn">
+            Play <ArrowRight size={18} className="play-btn-icon" />
+          </span>
+        </Link>
+
+        <Link to="/posnakegame" className="game-card" aria-label="Play PoSnakeGame">
+          <div className="game-icon">
+            <Activity size={48} color="#00D9FF" />
+          </div>
+          <h2>PoSnakeGame</h2>
+          <p>Battle Royale Snake — compete against AI opponents and track your results here.</p>
           <span className="play-btn">
             Play <ArrowRight size={18} className="play-btn-icon" />
           </span>

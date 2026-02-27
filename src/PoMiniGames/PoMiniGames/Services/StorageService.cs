@@ -31,6 +31,18 @@ public class StorageService
         );
         """;
 
+    private const string CreateSnakeHighScoresTableSql = """
+        CREATE TABLE IF NOT EXISTS SnakeHighScores (
+            Id           INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+            Initials     TEXT NOT NULL,
+            Score        INTEGER NOT NULL,
+            Date         TEXT NOT NULL,
+            GameDuration REAL NOT NULL DEFAULT 30,
+            SnakeLength  INTEGER NOT NULL DEFAULT 0,
+            FoodEaten    INTEGER NOT NULL DEFAULT 0
+        );
+        """;
+
     public StorageService(IConfiguration configuration)
     {
         var dataDir = configuration["Sqlite:DataDirectory"]
@@ -123,7 +135,7 @@ public class StorageService
         conn.Open();
 
         using var cmd = conn.CreateCommand();
-        cmd.CommandText = CreateTableSql + CreateMigrationsTableSql;
+        cmd.CommandText = CreateTableSql + CreateMigrationsTableSql + CreateSnakeHighScoresTableSql;
         cmd.ExecuteNonQuery();
 
         return conn;
@@ -227,6 +239,66 @@ public class StorageService
             .ThenByDescending(p => p.Stats.TotalGames)
             .Take(limit)
             .ToList();
+    }
+
+    // ── PoSnakeGame high scores ───────────────────────────────────────────
+
+    public async Task<List<SnakeHighScore>> GetSnakeHighScoresAsync(int limit = 10)
+    {
+        var result = new List<SnakeHighScore>();
+
+        using var conn = OpenConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT Initials, Score, Date, GameDuration, SnakeLength, FoodEaten
+            FROM SnakeHighScores
+            ORDER BY Score DESC
+            LIMIT $limit
+            """;
+        cmd.Parameters.AddWithValue("$limit", limit);
+
+        using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            result.Add(new SnakeHighScore
+            {
+                Initials     = reader.GetString(0),
+                Score        = reader.GetInt32(1),
+                Date         = reader.GetString(2),
+                GameDuration = (float)reader.GetDouble(3),
+                SnakeLength  = reader.GetInt32(4),
+                FoodEaten    = reader.GetInt32(5),
+            });
+        }
+
+        return result;
+    }
+
+    public async Task<SnakeHighScore> SaveSnakeHighScoreAsync(SnakeHighScore entry)
+    {
+        var sanitized = entry with
+        {
+            Initials = entry.Initials.Trim().ToUpperInvariant(),
+            Date     = string.IsNullOrWhiteSpace(entry.Date)
+                           ? DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
+                           : entry.Date,
+        };
+
+        using var conn = OpenConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO SnakeHighScores (Initials, Score, Date, GameDuration, SnakeLength, FoodEaten)
+            VALUES ($initials, $score, $date, $duration, $snakeLen, $foodEaten)
+            """;
+        cmd.Parameters.AddWithValue("$initials", sanitized.Initials);
+        cmd.Parameters.AddWithValue("$score",    sanitized.Score);
+        cmd.Parameters.AddWithValue("$date",     sanitized.Date);
+        cmd.Parameters.AddWithValue("$duration", sanitized.GameDuration);
+        cmd.Parameters.AddWithValue("$snakeLen", sanitized.SnakeLength);
+        cmd.Parameters.AddWithValue("$foodEaten", sanitized.FoodEaten);
+        await cmd.ExecuteNonQueryAsync();
+
+        return sanitized;
     }
 
     private static string SanitizeName(string input)

@@ -107,9 +107,74 @@
   }
 }
 
-.external-game-missing-url {
+.egp-missing-url {
   color: var(--color-text-muted);
   padding: var(--space-6);
   border: 1px dashed var(--color-border);
   border-radius: var(--radius-md);
+}
+
+/* status overlay (checking / offline) */
+.egp-status {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  color: var(--color-text-muted);
+  padding: var(--space-6);
+  text-align: center;
+}
+
+.egp-offline {
+  color: var(--color-text-secondary);
+}
+
+.egp-status-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.egp-status-sub {
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+  margin: 0;
+}
+
+.egp-status-sub code {
+  background: var(--color-surface-alt);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  font-size: 0.8rem;
+}
+
+.egp-retry {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  font-size: 0.875rem;
+  transition: border-color 0.15s;
+}
+
+.egp-retry:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+@keyframes egp-spin {
+  to { transform: rotate(360deg); }
+}
+
+.egp-spin {
+  animation: egp-spin 1s linear infinite;
 }

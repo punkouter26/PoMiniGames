@@ -2,6 +2,8 @@ using Azure.Identity;
 using Azure.Monitor.OpenTelemetry.AspNetCore;
 using PoMiniGames.Features.Health;
 using PoMiniGames.Features.Leaderboard;
+using PoMiniGames.Features.PoRaceRagdoll;
+using PoMiniGames.Features.SnakeHighScores;
 using PoMiniGames.HealthChecks;
 using PoMiniGames.Services;
 using Scalar.AspNetCore;
@@ -73,6 +75,11 @@ builder.Host.UseSerilog((context, services, configuration) =>
 // ─── SQLite Storage ──────────────────────────────────────────────────
 builder.Services.AddSingleton<StorageService>();
 
+// ─── PoRaceRagdoll Services ──────────────────────────────────────────
+builder.Services.AddSingleton<IOddsService, OddsService>();
+builder.Services.AddSingleton<IRacerService, RacerService>();
+builder.Services.AddSingleton<IGameSessionService, GameSessionService>();
+
 // ─── CORS ────────────────────────────────────────────────────────────
 builder.Services.AddCors(options =>
 {
@@ -91,6 +98,7 @@ builder.Services.AddHealthChecks()
 
 // ─── Swagger / OpenAPI ───────────────────────────────────────────────
 builder.Services.AddAuthorization();
+builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
@@ -133,6 +141,11 @@ app.MapGetPlayerStats();
 app.MapSavePlayerStats();
 app.MapGetLeaderboard();
 app.MapGetAllPlayerStatistics();
+app.MapGetSnakeHighScores();
+app.MapSaveSnakeHighScore();
+
+// ─── MVC Controllers (PoRaceRagdoll game API) ────────────────────────
+app.MapControllers();
 
 app.MapHealthChecks("/health");
 

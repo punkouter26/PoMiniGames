@@ -17,7 +17,6 @@ interface ExternalGamePageProps {
 export default function ExternalGamePage({
   gameKey,
   title,
-  subtitle,
   gameUrl,
   gameUrlEnvVar,
 }: ExternalGamePageProps) {

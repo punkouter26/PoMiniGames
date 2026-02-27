@@ -31,6 +31,11 @@ jobs:
           node-version: '20'
 
       - name: Build Client
+        env:
+          VITE_GAME_URL_POBABYTOUCH: https://proud-pebble-00337fb0f.2.azurestaticapps.net
+          VITE_GAME_URL_POFIGHT: https://gray-coast-079ec100f.2.azurestaticapps.net
+          VITE_GAME_URL_PORACERAGDOLL: https://icy-moss-0136cfa0f.6.azurestaticapps.net
+          VITE_GAME_URL_PODROPSQUARE: https://app-podropsquare-api.azurewebsites.net
         run: |
           cd src/PoMiniGames.Client
           npm install

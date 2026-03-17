@@ -10,6 +10,7 @@ PoMiniGames is a full-stack web application built with .NET 10 and React 18. It 
 
 - **Tic-Tac-Toe**: Classic 3x3 grid game with AI opponents
 - **Connect Five**: Connect 5 in a row on a 6x5 grid
+- **PoSnakeGame — Battle Arena**: Real-time 2-player snake survival game with live opponent synchronization
 - **Difficulty Levels**: Easy, Medium, and Hard AI opponents
 - **Player Statistics**: Track wins, losses, draws, and win streaks
 - **Leaderboards**: Compete with other players

@@ -13,6 +13,16 @@ public static class MultiplayerEndpoints
             .WithTags("Multiplayer")
             .WithSummary("Returns the games currently available for online multiplayer.");
 
+        app.MapGet("/api/multiplayer/matches/active", [Authorize] (
+            IMultiplayerService service) =>
+        {
+            var matches = service.GetActiveMatches();
+            return Results.Ok(matches);
+        })
+        .WithName("GetActiveMultiplayerMatches")
+        .WithTags("Multiplayer")
+        .WithSummary("Returns all active multiplayer matches (for spectator listing).");
+
         app.MapPost("/api/multiplayer/queue", [Authorize] async (
             QueueMatchRequest request,
             HttpContext context,

@@ -10,6 +10,33 @@ import { getStoredAccessToken } from '../../context/authStorage';
 import { apiService } from './apiService';
 import type { MultiplayerMatchSnapshot } from './multiplayerTypes';
 
+/**
+ * Match statuses ranked by progression.  A snapshot for the same matchId should
+ * never downgrade to a lower rank (e.g. InProgress → WaitingForOpponent), which
+ * can happen when the SignalR MatchUpdated event beats the joinQueue HTTP response.
+ */
+const STATUS_RANK: Record<string, number> = {
+  WaitingForOpponent: 0,
+  InProgress: 1,
+  Completed: 2,
+  Abandoned: 2,
+};
+
+function mergeSnapshot(
+  prev: MultiplayerMatchSnapshot | null,
+  next: MultiplayerMatchSnapshot,
+): MultiplayerMatchSnapshot {
+  if (
+    prev !== null &&
+    prev.matchId === next.matchId &&
+    (STATUS_RANK[prev.status] ?? 0) > (STATUS_RANK[next.status] ?? 0)
+  ) {
+    // Keep the higher-ranked snapshot; ignore stale downgrade.
+    return prev;
+  }
+  return next;
+}
+
 interface UseTurnBasedMultiplayerResult {
   match: MultiplayerMatchSnapshot | null;
   isBusy: boolean;
@@ -24,6 +51,8 @@ export function useTurnBasedMultiplayer(gameKey: string): UseTurnBasedMultiplaye
   const { isAuthenticated, isConfigured, user } = useAuth();
   const connectionRef = useRef<HubConnection | null>(null);
   const [match, setMatch] = useState<MultiplayerMatchSnapshot | null>(null);
+  const matchRef = useRef(match);
+  matchRef.current = match;
   const [isBusy, setIsBusy] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -59,7 +88,8 @@ export function useTurnBasedMultiplayer(gameKey: string): UseTurnBasedMultiplaye
         }
 
         if (snapshot.participants.some(participant => participant.userId === user?.userId)) {
-          setMatch(snapshot);
+          console.log('[MU] MatchUpdated:', snapshot.status, 'currentTurn:', snapshot.currentTurnUserId, 'user:', user?.userId);
+          setMatch(prev => mergeSnapshot(prev, snapshot));
         }
       });
 
@@ -72,8 +102,9 @@ export function useTurnBasedMultiplayer(gameKey: string): UseTurnBasedMultiplaye
       connection.onreconnected(async () => {
         if (disposed) return;
         setIsConnected(true);
-        if (match?.matchId) {
-          const latest = await apiService.getMultiplayerMatch(match.matchId);
+        const currentMatchId = matchRef.current?.matchId;
+        if (currentMatchId) {
+          const latest = await apiService.getMultiplayerMatch(currentMatchId);
           if (latest && !disposed) {
             setMatch(latest);
           }
@@ -100,7 +131,7 @@ export function useTurnBasedMultiplayer(gameKey: string): UseTurnBasedMultiplaye
         void connection.stop();
       }
     };
-  }, [gameKey, isAuthenticated, isConfigured, match?.matchId, user?.userId]);
+  }, [gameKey, isAuthenticated, isConfigured, user?.userId]);
 
   const joinQueue = async () => {
     setError(null);
@@ -112,7 +143,8 @@ export function useTurnBasedMultiplayer(gameKey: string): UseTurnBasedMultiplaye
         return;
       }
 
-      setMatch(snapshot);
+      setMatch(prev => mergeSnapshot(prev, snapshot));
+      console.log('[JQ] joinQueue result:', snapshot.status, 'isBusy will → false');
     } finally {
       setIsBusy(false);
     }

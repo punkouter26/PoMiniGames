@@ -65,6 +65,34 @@
   gap: 0.75rem;
 }
 
+.psg-2p-hud {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 0.5rem;
+  width: 100%;
+  align-items: center;
+  max-width: min(100%, calc(48 * 14px + 2rem));
+}
+
+.psg-2p-timer-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 80px;
+  gap: 0.25rem;
+}
+
+.psg-2p-alive-count {
+  font-size: 0.65rem;
+  color: #888;
+}
+
+.psg-hud-p1,
+.psg-hud-p2 {
+  border: 1px solid;
+}
+
 .psg-hud-box {
   display: flex;
   align-items: center;
@@ -118,6 +146,70 @@
   border-radius: 0.75rem;
   border: 1px solid rgba(255, 255, 255, 0.1);
   box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5);
+}
+
+.psg-countdown-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.6);
+  border-radius: 0.5rem;
+}
+
+.psg-countdown-text {
+  font-size: 6rem;
+  color: var(--psg-green);
+  font-weight: 700;
+  text-shadow: 0 0 30px var(--psg-green);
+}
+
+.psg-winner-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.82);
+  border-radius: 0.5rem;
+  gap: 1rem;
+  padding: 2rem;
+}
+
+.psg-winner-title {
+  font-size: 2rem;
+  margin: 0;
+  font-weight: 700;
+}
+
+.psg-winner-draw {
+  color: var(--psg-yellow);
+  text-shadow: 0 0 20px var(--psg-yellow);
+}
+
+.psg-winner-win {
+  color: var(--psg-green);
+  text-shadow: 0 0 20px var(--psg-green);
+}
+
+.psg-winner-lose {
+  color: #ff4444;
+  text-shadow: 0 0 20px #ff4444;
+}
+
+.psg-winner-desc {
+  color: #ccc;
+  margin: 0;
+  text-align: center;
+  font-size: 0.95rem;
+}
+
+.psg-winner-buttons {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
 }
 
 .psg-score-pop {
@@ -318,6 +410,69 @@
 .psg-confetti-piece { position: absolute; top: 0; border-radius: 2px; animation: psg-confetti-fall 1.5s ease-out forwards; }
 
 /* ── Leaderboard section ─────────────────────────────────────────────── */
+.psg-mode-tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.psg-mode-tab {
+  padding: 0.5rem 1.25rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.05);
+  color: #cbd5e1;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.psg-mode-tab:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.psg-mode-tab--active {
+  border-color: var(--psg-green);
+  background: rgba(0, 255, 127, 0.1);
+  color: var(--psg-green);
+}
+
+/* ── Online Panel Styles ──────────────────────────────────────────────── */
+.psg-online-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 2rem;
+}
+
+.psg-connection-status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.psg-status-connected { color: var(--psg-green); }
+.psg-status-disconnected { color: #ff6b6b; }
+
+.psg-error-msg {
+  color: #ff6b6b;
+  margin: 0;
+}
+
+.psg-waiting-msg {
+  color: #ccc;
+  margin: 0;
+}
+
+.psg-hint-text { color: #888; font-size: 0.8rem; margin: 0; }
+
+.psg-waiting-msg { color: #ccc; margin: 0; }
+
+.psg-match-ended-text { color: #ccc; margin: 0; }
+
 .psg-leaderboard {
   width: 100%;
   border-radius: 0.75rem;

@@ -70,5 +70,26 @@ public sealed class MultiplayerHub : Hub
             payload = envelope.Payload,
             sentAt = DateTimeOffset.UtcNow,
         });
+
+        // Fan out to spectators in the same match
+        await Clients.Group($"spectators-{matchId}").SendAsync("RealtimeInput", new
+        {
+            matchId = envelope.MatchId,
+            fromUserId = envelope.FromUserId,
+            fromDisplayName = envelope.FromDisplayName,
+            payload = envelope.Payload,
+            sentAt = DateTimeOffset.UtcNow,
+        });
+    }
+
+    public async Task JoinSpectatorGroup(string matchId)
+    {
+        if (!AuthenticatedUser.TryCreate(Context.User, out var user) || user is null)
+        {
+            throw new HubException("The current connection is not authenticated.");
+        }
+
+        _logger.LogInformation("User {UserId} joined spectator group for match {MatchId}", user.UserId, matchId);
+        await Groups.AddToGroupAsync(Context.ConnectionId, $"spectators-{matchId}");
     }
 }

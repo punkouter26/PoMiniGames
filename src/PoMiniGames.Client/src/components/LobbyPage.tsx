@@ -8,6 +8,7 @@ import './LobbyPage.css';
 const GAME_OPTIONS = [
   { key: 'tictactoe', label: 'Tic Tac Toe — 6×6, get 4 in a row' },
   { key: 'connectfive', label: 'Connect Five — 9×9, get 5 in a row' },
+  { key: 'posnakegame', label: 'PoSnakeGame — Battle Arena, survive longest' },
 ] as const;
 
 export default function LobbyPage() {

@@ -104,7 +104,14 @@ builder.Services.Configure<MicrosoftAuthOptions>(microsoftAuthSection);
 var microsoftAuthOptions = microsoftAuthSection.Get<MicrosoftAuthOptions>() ?? new MicrosoftAuthOptions();
 var devLoginEnabled = builder.Environment.IsDevelopment();
 
-builder.Services.AddAuthentication(options =>
+// When DevBypass is enabled (Development only), every request is auto-authenticated
+// as a local dev user — no explicit login step is required (mirrors Blazor's
+// TestAuthStateProvider pattern).  The DevCookie / JWT schemes remain usable for
+// calls that already carry credentials.
+var devBypassEnabled = builder.Environment.IsDevelopment()
+    && (builder.Configuration.GetValue<bool?>("PoMiniGames:DevBypassAuth") ?? true);
+
+var authBuilder = builder.Services.AddAuthentication(options =>
     {
         options.DefaultAuthenticateScheme = AuthSchemes.Composite;
         options.DefaultChallengeScheme = AuthSchemes.Composite;
@@ -126,6 +133,17 @@ builder.Services.AddAuthentication(options =>
                 return JwtBearerDefaults.AuthenticationScheme;
             }
 
+            // Developer bypass: prefer an existing DevCookie session (set by
+            // POST /api/auth/dev-bypass?user=Name) so different browser tabs can
+            // hold distinct identities.  Fall back to the auto-handler when no
+            // cookie is present yet.
+            if (devBypassEnabled)
+            {
+                return context.Request.Cookies.ContainsKey("PoMiniGames.DevAuth")
+                    ? AuthSchemes.DevCookie
+                    : AuthSchemes.DevBypass;
+            }
+
             if (devLoginEnabled)
             {
                 return AuthSchemes.DevCookie;
@@ -133,7 +151,15 @@ builder.Services.AddAuthentication(options =>
 
             return JwtBearerDefaults.AuthenticationScheme;
         };
-    })
+    });
+
+// Register the bypass handler only in Development — never ships to production
+if (devBypassEnabled)
+{
+    authBuilder.AddScheme<AuthenticationSchemeOptions, DevBypassAuthHandler>(AuthSchemes.DevBypass, _ => { });
+}
+
+authBuilder
     .AddCookie(AuthSchemes.DevCookie, options =>
     {
         options.Cookie.Name = "PoMiniGames.DevAuth";

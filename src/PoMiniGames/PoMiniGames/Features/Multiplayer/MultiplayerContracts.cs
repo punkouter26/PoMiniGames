@@ -69,6 +69,8 @@ public interface IMultiplayerService
     IReadOnlyCollection<MultiplayerMatchSnapshot> SetPresence(AuthenticatedUser user, bool connected);
 
     RealtimeRelayEnvelope? BuildRealtimeEnvelope(string matchId, AuthenticatedUser user, JsonElement payload);
+
+    IReadOnlyCollection<MultiplayerMatchSnapshot> GetActiveMatches();
 }
 
 internal interface IMultiplayerGameAdapter

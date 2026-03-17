@@ -310,9 +310,9 @@ test.describe('TicTacToe ad-lib 2-player match', () => {
         page1.locator('.gps-status-badge', { hasText: 'Your turn (X)' }),
       ).toBeVisible({ timeout: 10_000 });
 
-      // P1 clicks a cell
+      // P1 clicks a cell — wait for ≥1 enabled empty cell with an explicit timeout
       const enabledCells1 = page1.locator('.ttt-cell[aria-label="Empty cell"]:not(.disabled)');
-      await expect(enabledCells1.first()).toBeVisible();
+      await expect(enabledCells1.first()).toBeVisible({ timeout: 15_000 });
       await enabledCells1.nth(Math.min(4, (await enabledCells1.count()) - 1)).click();
 
       // After P1's move, P2 should now have their turn
@@ -325,6 +325,7 @@ test.describe('TicTacToe ad-lib 2-player match', () => {
 
       // P2 makes a move
       const enabledCells2 = page2.locator('.ttt-cell[aria-label="Empty cell"]:not(.disabled)');
+      await expect(enabledCells2.first()).toBeVisible({ timeout: 15_000 });
       await enabledCells2.first().click();
 
       // Back to P1's turn

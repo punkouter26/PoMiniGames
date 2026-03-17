@@ -1,4 +1,4 @@
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, CircleDot, Crosshair, Swords, Square, Baby, Car, Activity, Loader2, LogIn, UserRoundCheck } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import './SinglePlayerPage.css';
@@ -165,17 +165,18 @@ export default function SinglePlayerPage() {
 
         <div className="sp-game-grid">
           {SINGLE_PLAYER_GAMES.map((game) => (
-            <Link
+            <button
               key={game.key}
-              to={game.to}
+              type="button"
               className="sp-game-card"
               aria-label={game.ariaLabel}
               style={{ '--accent': game.accent, '--accent-glow': game.accentGlow } as React.CSSProperties}
+              onClick={() => navigate(game.to)}
             >
               <div className="sp-game-icon">{game.icon}</div>
               <h2>{game.title}</h2>
               <p>{game.description}</p>
-            </Link>
+            </button>
           ))}
         </div>
       </div>

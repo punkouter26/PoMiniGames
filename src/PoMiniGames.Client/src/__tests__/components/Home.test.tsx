@@ -4,13 +4,13 @@ import { MemoryRouter } from 'react-router-dom';
 import { PlayerNameProvider } from '../../context/PlayerNameContext';
 import Home from '../../components/Home';
 
-const { mockDevLogin, mockAuthState } = vi.hoisted(() => {
-  const devLogin = vi.fn();
+const { mockDevBypass, mockAuthState } = vi.hoisted(() => {
+  const devBypass = vi.fn();
   return {
-    mockDevLogin: devLogin,
+    mockDevBypass: devBypass,
     mockAuthState: {
       config: null as any,
-      devLogin,
+      devBypass,
       isLoading: false,
     },
   };
@@ -60,8 +60,8 @@ describe('Home – page structure', () => {
     localStorage.clear();
     mockAuthState.config = null;
     mockAuthState.isLoading = false;
-    mockDevLogin.mockReset();
-    mockDevLogin.mockResolvedValue(null);
+    mockDevBypass.mockReset();
+    mockDevBypass.mockResolvedValue(null);
   });
 
   it('renders the main PoMiniGames heading', () => {
@@ -115,8 +115,8 @@ describe('Home – workflow options', () => {
     localStorage.clear();
     mockAuthState.config = null;
     mockAuthState.isLoading = false;
-    mockDevLogin.mockReset();
-    mockDevLogin.mockResolvedValue(null);
+    mockDevBypass.mockReset();
+    mockDevBypass.mockResolvedValue(null);
     renderHome();
   });
 
@@ -146,26 +146,32 @@ describe('Home – workflow options', () => {
   });
 });
 
-describe('Home – dev login helpers', () => {
+describe('Home – developer bypass helpers', () => {
   beforeEach(() => {
     localStorage.clear();
-    mockDevLogin.mockReset();
+    mockDevBypass.mockReset();
     mockAuthState.isLoading = false;
     mockAuthState.config = {
       devLoginEnabled: true,
     };
-    mockDevLogin.mockResolvedValue({ userId: 'dev-user', displayName: 'Dev User', email: null });
+    mockDevBypass.mockResolvedValue({ userId: 'dev-bypass-user', displayName: 'Dev Admin', email: 'devadmin@local.dev' });
     renderHome();
   });
 
-  it('shows dev login buttons for 2P and 1P cards when dev login is enabled', () => {
-    expect(screen.getByRole('button', { name: /Dev login for 2 player/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Dev login for 1 player/i })).toBeInTheDocument();
+  it('shows developer bypass buttons for 2P and 1P when dev login is enabled', () => {
+    expect(screen.getByRole('button', { name: /Developer bypass for 2 player/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Developer bypass for 1 player/i })).toBeInTheDocument();
   });
 
-  it('clicking a dev login helper triggers dev login', () => {
-    mockDevLogin.mockResolvedValueOnce(null);
-    fireEvent.click(screen.getByRole('button', { name: /Dev login for 2 player/i }));
-    expect(mockDevLogin).toHaveBeenCalledTimes(1);
+  it('clicking bypass 2P triggers devBypass', () => {
+    mockDevBypass.mockResolvedValueOnce(null);
+    fireEvent.click(screen.getByRole('button', { name: /Developer bypass for 2 player/i }));
+    expect(mockDevBypass).toHaveBeenCalledTimes(1);
+  });
+
+  it('clicking bypass 1P triggers devBypass', () => {
+    mockDevBypass.mockResolvedValueOnce(null);
+    fireEvent.click(screen.getByRole('button', { name: /Developer bypass for 1 player/i }));
+    expect(mockDevBypass).toHaveBeenCalledTimes(1);
   });
 });

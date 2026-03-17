@@ -6,23 +6,26 @@ import {
 } from '@azure/msal-browser';
 import { useCallback, useRef } from 'react';
 import { apiService, type AuthClientConfiguration, type AuthenticatedUserProfile } from '../games/shared/apiService';
-import { setPendingReturnUrl, setStoredAccessToken } from './authStorage';
+import { setStoredAccessToken } from './authStorage';
+
+const POPUP_CONFIG_KEY = 'msal_popup_config';
 
 export function useMsalAuth(config: AuthClientConfiguration | null) {
   const clientRef = useRef<PublicClientApplication | null>(null);
+  const signingInRef = useRef(false);
 
-  const initialize = useCallback(async (): Promise<{
+  const initialize = useCallback(async (authConfig: AuthClientConfiguration): Promise<{
     user: AuthenticatedUserProfile | null;
     accessToken: string | null;
     error: string | null;
   }> => {
-    if (!config?.microsoftEnabled) return { user: null, accessToken: null, error: null };
+    if (!authConfig?.microsoftEnabled) return { user: null, accessToken: null, error: null };
 
-    const redirectUri = new URL(config.redirectPath, window.location.origin).toString();
+    const redirectUri = new URL(authConfig.redirectPath, window.location.origin).toString();
     const client = new PublicClientApplication({
       auth: {
-        clientId: config.clientId,
-        authority: config.authority,
+        clientId: authConfig.clientId,
+        authority: authConfig.authority,
         redirectUri,
         postLogoutRedirectUri: window.location.origin,
       },
@@ -43,7 +46,7 @@ export function useMsalAuth(config: AuthClientConfiguration | null) {
       if (!account) return { user: null, accessToken: null, error: null };
 
       client.setActiveAccount(account);
-      return await acquireToken(client, config, account, redirectResult ?? undefined);
+      return await acquireToken(client, authConfig, account, redirectResult ?? undefined);
     } catch (err) {
       return {
         user: null,
@@ -51,15 +54,31 @@ export function useMsalAuth(config: AuthClientConfiguration | null) {
         error: err instanceof Error ? err.message : 'Failed to initialize Microsoft sign-in.',
       };
     }
-  }, [config]);
+  }, []);
 
-  const signIn = useCallback(async () => {
-    if (!config?.microsoftEnabled || !clientRef.current) return;
-    setPendingReturnUrl(`${window.location.pathname}${window.location.search}`);
-    await clientRef.current.loginRedirect({
-      scopes: [config.scope],
-      redirectUri: new URL(config.redirectPath, window.location.origin).toString(),
-    });
+  const signIn = useCallback(async (): Promise<{ user: AuthenticatedUserProfile | null; accessToken: string | null; error: string | null }> => {
+    if (!config?.microsoftEnabled || !clientRef.current) return { user: null, accessToken: null, error: null };
+    if (signingInRef.current) return { user: null, accessToken: null, error: null };
+
+    // Clear any stale MSAL interaction status left by a previous cancelled/failed popup
+    for (const key of Object.keys(sessionStorage)) {
+      if (key.includes('interaction.status')) sessionStorage.removeItem(key);
+    }
+
+    // Store config so popup-redirect.ts can initialize MSAL in the popup window
+    localStorage.setItem(POPUP_CONFIG_KEY, JSON.stringify({ clientId: config.clientId, authority: config.authority }));
+
+    signingInRef.current = true;
+    try {
+      const result = await clientRef.current.loginPopup({
+        scopes: [config.scope],
+        redirectUri: `${window.location.origin}/popup.html`,
+      });
+      clientRef.current.setActiveAccount(result.account);
+      return acquireToken(clientRef.current, config, result.account, result);
+    } finally {
+      signingInRef.current = false;
+    }
   }, [config]);
 
   const signOut = useCallback(async () => {

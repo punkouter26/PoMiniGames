@@ -16,6 +16,15 @@ import { type PlayerStats, type PlayerStatsDto } from './types';
 const API_BASE = '/api';
 const TIMEOUT_MS = 5000;
 
+/**
+ * Returns the ?user= query param from the current browser URL.
+ * e.g. localhost:5173/?user=Alice  →  "Alice"
+ */
+export function getDevUserFromUrl(): string | null {
+  if (typeof window === 'undefined') return null;
+  return new URLSearchParams(window.location.search).get('user');
+}
+
 async function safeFetch(url: string, init?: RequestInit): Promise<Response | null> {
   try {
     const controller = new AbortController();
@@ -120,6 +129,21 @@ export const apiService = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(request ?? {}),
     });
+    return safeJson<AuthenticatedUserProfile>(res);
+  },
+
+  /**
+   * Developer Bypass — creates a cookie session keyed to the ?user= URL param.
+   * localhost:5173/?user=Alice  →  authenticated as Alice.
+   * localhost:5173/?user=Bob    →  authenticated as Bob.
+   * Falls back to "Dev Admin" when no param is present.
+   */
+  async devBypass(userName?: string): Promise<AuthenticatedUserProfile | null> {
+    const name = userName ?? getDevUserFromUrl() ?? 'Dev Admin';
+    const res = await safeFetch(
+      `${API_BASE}/auth/dev-bypass?user=${encodeURIComponent(name)}`,
+      { method: 'POST' },
+    );
     return safeJson<AuthenticatedUserProfile>(res);
   },
 

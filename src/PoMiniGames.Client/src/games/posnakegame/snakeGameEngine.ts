@@ -14,6 +14,7 @@ export interface Snake {
   score: number;
   foodEaten: number;
   isPlayer: boolean;
+  playerId?: string;
 }
 
 export interface GameState {
@@ -128,6 +129,74 @@ export function initializeGame(): GameState {
   };
 }
 
+export function initializeTwoPlayerGame(p1Id: string, p2Id: string): GameState {
+  const snakes: Snake[] = [];
+  const foods: Position[] = [];
+
+  // Player 1 – left side, facing right, green
+  snakes.push({
+    segments: [createPosition(Math.floor(ARENA_WIDTH / 8), Math.floor(ARENA_HEIGHT / 2))],
+    direction: 'right',
+    color: '#00FF00',
+    isAlive: true,
+    score: 0,
+    foodEaten: 0,
+    isPlayer: true,
+    playerId: p1Id,
+  });
+
+  // Player 2 – right side, facing left, cyan
+  snakes.push({
+    segments: [createPosition(Math.floor(ARENA_WIDTH * 7 / 8), Math.floor(ARENA_HEIGHT / 2))],
+    direction: 'left',
+    color: '#00FFFF',
+    isAlive: true,
+    score: 0,
+    foodEaten: 0,
+    isPlayer: true,
+    playerId: p2Id,
+  });
+
+  // 15 CPU snakes – spread across middle/right area avoiding player start positions
+  for (let i = 0; i < CPU_COUNT; i++) {
+    let x: number, y: number;
+    let attempts = 0;
+    do {
+      x = Math.floor(ARENA_WIDTH * 0.3) + Math.floor(Math.random() * (ARENA_WIDTH * 0.4));
+      y = Math.floor(Math.random() * ARENA_HEIGHT);
+      attempts++;
+    } while (attempts < 20 && snakes.some(s => s.segments.some(seg => seg.x === x && seg.y === y)));
+    const dirs: Direction[] = ['up', 'down', 'left', 'right'];
+    snakes.push({
+      segments: [createPosition(x, y)],
+      direction: dirs[Math.floor(Math.random() * 4)]!,
+      color: PERSONALITY_COLORS[i % PERSONALITY_COLORS.length]!,
+      isAlive: true,
+      score: 0,
+      foodEaten: 0,
+      isPlayer: false,
+    });
+  }
+
+  for (let i = 0; i < INITIAL_FOOD_COUNT; i++) {
+    foods.push(createPosition(
+      Math.floor(Math.random() * ARENA_WIDTH),
+      Math.floor(Math.random() * ARENA_HEIGHT),
+    ));
+  }
+
+  return {
+    snakes,
+    foods,
+    arenaWidth: ARENA_WIDTH,
+    arenaHeight: ARENA_HEIGHT,
+    timeRemaining: GAME_DURATION,
+    isRunning: false,
+    isGameOver: false,
+    countdown: 3,
+  };
+}
+
 export function updateCPUSnake(snake: Snake, state: GameState): Direction {
   const head = snake.segments[0]!;
   const validDirs = (['up', 'down', 'left', 'right'] as Direction[]).filter(
@@ -203,8 +272,8 @@ export function updateGame(state: GameState): GameState {
     }
   });
 
-  const player = newSnakes.find(s => s.isPlayer);
-  const isGameOver = !player?.isAlive || state.timeRemaining <= 0;
+  const players = newSnakes.filter(s => s.isPlayer);
+  const isGameOver = (players.length > 0 && players.some(p => !p.isAlive)) || state.timeRemaining <= 0;
   return { ...state, snakes: newSnakes, foods: newFoods, isGameOver };
 }
 
@@ -246,8 +315,8 @@ export function drawGame(ctx: CanvasRenderingContext2D, state: GameState, cellSi
       const isHead = i === 0;
 
       if (snake.isPlayer && isHead) {
-        ctx.shadowColor = '#00FF00'; ctx.shadowBlur = cs * 0.6;
-        ctx.fillStyle = '#00FF00';
+        ctx.shadowColor = snake.color; ctx.shadowBlur = cs * 0.6;
+        ctx.fillStyle = snake.color;
         ctx.fillRect(seg.x * cs + 0.5, seg.y * cs + 0.5, cs - 1, cs - 1);
         ctx.shadowBlur = 0;
         ctx.fillStyle = '#ffffff';
@@ -255,8 +324,10 @@ export function drawGame(ctx: CanvasRenderingContext2D, state: GameState, cellSi
         ctx.beginPath(); ctx.arc(seg.x * cs + cs * 0.35, seg.y * cs + cs * 0.4, dotR, 0, Math.PI * 2); ctx.fill();
         ctx.beginPath(); ctx.arc(seg.x * cs + cs * 0.65, seg.y * cs + cs * 0.4, dotR, 0, Math.PI * 2); ctx.fill();
       } else if (snake.isPlayer) {
-        ctx.fillStyle = '#00DD00';
+        ctx.fillStyle = snake.color;
+        ctx.globalAlpha = 0.85;
         ctx.fillRect(seg.x * cs + 1.5, seg.y * cs + 1.5, cs - 3, cs - 3);
+        ctx.globalAlpha = 1;
       } else if (isHead) {
         ctx.fillStyle = snake.color;
         ctx.fillRect(seg.x * cs + 1, seg.y * cs + 1, cs - 2, cs - 2);

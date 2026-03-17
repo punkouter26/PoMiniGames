@@ -4,6 +4,7 @@ import GameLayout from './components/GameLayout';
 import Home from './components/Home';
 import LobbyPage from './components/LobbyPage';
 import SinglePlayerPage from './components/SinglePlayerPage';
+import MultiplayerPage from './components/MultiplayerPage';
 import DemoModePage from './components/DemoModePage';
 import { AuthProvider } from './context/AuthContext';
 import TicTacToePage from './games/tictactoe/TicTacToePage';
@@ -27,6 +28,7 @@ export default function App() {
               <Route index element={<Home />} />
               <Route path="auth/callback" element={<AuthCallbackPage />} />
               <Route path="lobby" element={<LobbyPage />} />
+              <Route path="multiplayer" element={<MultiplayerPage />} />
               <Route path="single-player" element={<SinglePlayerPage />} />
               <Route path="demo" element={<DemoModePage />} />
               <Route path="tictactoe" element={<TicTacToePage />} />

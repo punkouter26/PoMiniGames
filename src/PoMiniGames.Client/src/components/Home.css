@@ -200,13 +200,103 @@
 .home-mode-btn--demo .home-mode-icon { color: #f59e0b; }
 .home-mode-btn--demo:hover { border-color: #f59e0b; box-shadow: var(--shadow-lg), 0 0 36px rgba(245, 158, 11, 0.3); }
 
-/* ─── Dev login row ──────────────────────────────────────── */
-.home-dev-logins {
+/* ─── Developer Bypass section ──────────────────────────── */
+.home-dev-bypass-section {
+  margin-bottom: var(--space-6);
+  padding: var(--space-4) var(--space-5);
+  background: rgba(245, 158, 11, 0.04);
+  border: 1px dashed rgba(245, 158, 11, 0.35);
+  border-radius: var(--radius-lg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  max-width: 520px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.home-dev-bypass-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: #f59e0b;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-bold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* Identity badge shown when ?user= param is in the URL */
+.home-dev-bypass-identity {
+  margin-left: var(--space-2);
+  padding: 1px var(--space-2);
+  background: rgba(245, 158, 11, 0.18);
+  border: 1px solid rgba(245, 158, 11, 0.5);
+  border-radius: var(--radius-full, 999px);
+  color: #fbbf24;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.04em;
+  text-transform: none;
+}
+
+.home-dev-bypass-desc {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  margin: 0;
+  text-align: center;
+  line-height: 1.6;
+}
+
+.home-dev-bypass-desc code {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: var(--radius-sm);
+  padding: 1px 5px;
+  font-family: monospace;
+  color: #e2e8f0;
+  font-size: 0.85em;
+}
+
+.home-dev-bypass-url-example {
+  display: block;
+  margin-top: var(--space-1);
+  opacity: 0.7;
+}
+
+.home-dev-bypass-actions {
   display: flex;
   gap: var(--space-3);
   justify-content: center;
   flex-wrap: wrap;
-  margin-bottom: var(--space-8);
+}
+
+.home-dev-bypass-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  border: 1px solid rgba(245, 158, 11, 0.5);
+  background: rgba(245, 158, 11, 0.08);
+  color: #f59e0b;
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-4);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.home-dev-bypass-btn:hover {
+  background: rgba(245, 158, 11, 0.16);
+  border-color: #f59e0b;
+  box-shadow: 0 0 14px rgba(245, 158, 11, 0.25);
+  color: #fbbf24;
+}
+
+.home-dev-bypass-btn:focus-visible {
+  outline: 2px solid #f59e0b;
+  outline-offset: 2px;
 }
 
 /* legacy game-cards kept for zero-waste — no longer rendered */
@@ -229,25 +319,6 @@
   cursor: pointer;
   position: relative;
   overflow: hidden;
-}
-
-.home-dev-login-btn {
-  border: 1px dashed var(--color-border);
-  background: var(--color-surface-2);
-  color: var(--color-text-secondary);
-  border-radius: var(--radius-md);
-  padding: var(--space-2) var(--space-3);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
-  letter-spacing: 0.02em;
-  cursor: pointer;
-  transition: all var(--transition-fast);
-}
-
-.home-dev-login-btn:hover {
-  border-color: var(--color-primary);
-  color: var(--color-text-primary);
-  box-shadow: 0 0 14px var(--color-primary-glow);
 }
 
 .game-card::before {

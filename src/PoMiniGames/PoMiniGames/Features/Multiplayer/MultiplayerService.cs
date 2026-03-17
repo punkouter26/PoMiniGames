@@ -179,6 +179,15 @@ internal sealed class MultiplayerService : IMultiplayerService
                 else
                 {
                     match.ConnectedUserIds.Remove(user.UserId);
+
+                    // If the player was the sole occupant waiting for an opponent, remove the
+                    // queue entry so it cannot accidentally absorb players from later matches.
+                    if (match.Status == MultiplayerMatchStatus.WaitingForOpponent
+                        && string.Equals(match.PlayerOne.UserId, user.UserId, StringComparison.Ordinal))
+                    {
+                        _matches.Remove(match.MatchId);
+                        continue;
+                    }
                 }
 
                 match.UpdatedAt = DateTimeOffset.UtcNow;
@@ -237,6 +246,18 @@ internal sealed class MultiplayerService : IMultiplayerService
         }
 
         _lastCleanupAt = now;
+    }
+
+    public IReadOnlyCollection<MultiplayerMatchSnapshot> GetActiveMatches()
+    {
+        lock (_lock)
+        {
+            CleanupExpiredMatches();
+            return _matches.Values
+                .Where(m => m.Status == MultiplayerMatchStatus.InProgress)
+                .Select(CreateSnapshot)
+                .ToList();
+        }
     }
 
     private MultiplayerMatchSnapshot CreateSnapshot(MutableMultiplayerMatch match)

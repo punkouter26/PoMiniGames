@@ -6,17 +6,20 @@ import HomeHighScores from '../../components/HomeHighScores';
 // Mock the apiService so these tests never hit the network
 vi.mock('../../games/shared/apiService', () => ({
   apiService: {
+    isAvailable: vi.fn(),
     getLeaderboard: vi.fn(),
   },
 }));
 
 // Import the mocked version so we can set return values per test
 const { apiService } = await import('../../games/shared/apiService');
+const mockIsAvailable = vi.mocked(apiService.isAvailable);
 const mockGetLeaderboard = vi.mocked(apiService.getLeaderboard);
 
 // Reset mocks between every test so call-count assertions stay isolated
 beforeEach(() => {
   vi.clearAllMocks();
+  mockIsAvailable.mockResolvedValue(true);
 });
 
 const GAME_IDS = [
@@ -55,7 +58,6 @@ function makeEntry(name: string, wins: number, total: number): PlayerStatsDto {
       totalDraws: 0,
       totalGames: total,
       winRate: rate,
-      overallWinRate: rate,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     },
@@ -65,7 +67,7 @@ function makeEntry(name: string, wins: number, total: number): PlayerStatsDto {
 describe('HomeHighScores – loading state', () => {
   it('shows "Loading high scores…" before data arrives', () => {
     // Never resolves so component stays in loading state
-    mockGetLeaderboard.mockReturnValue(new Promise(() => {}));
+    mockIsAvailable.mockReturnValue(new Promise(() => {}));
     render(<HomeHighScores />);
     expect(screen.getByText(/Loading high scores/i)).toBeInTheDocument();
   });
@@ -125,9 +127,25 @@ describe('HomeHighScores – game labels', () => {
     await waitFor(() => {
       expect(mockGetLeaderboard).toHaveBeenCalledTimes(GAME_IDS.length);
     });
+    expect(mockIsAvailable).toHaveBeenCalledTimes(1);
     for (const id of GAME_IDS) {
       expect(mockGetLeaderboard).toHaveBeenCalledWith(id, 10);
     }
+  });
+});
+
+describe('HomeHighScores – offline mode', () => {
+  it('skips leaderboard requests when the API is unavailable', async () => {
+    mockIsAvailable.mockResolvedValue(false);
+
+    render(<HomeHighScores />);
+
+    await waitFor(() => {
+      const noEntries = screen.getAllByText(/No entries yet\./i);
+      expect(noEntries).toHaveLength(GAME_IDS.length);
+    });
+
+    expect(mockGetLeaderboard).not.toHaveBeenCalled();
   });
 });
 

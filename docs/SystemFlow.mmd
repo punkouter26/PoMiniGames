@@ -1,0 +1,45 @@
+sequenceDiagram
+    actor Player as Player
+    participant SWA as React SPA
+    participant API as .NET 10 API
+    participant MSID as Microsoft Identity
+    participant DB as SQLite
+    participant KV as Key Vault
+
+    Note over API,KV: Startup — secrets bootstrap
+    API->>KV: GetSecrets (Managed Identity)
+    KV-->>API: ClientId, AppInsights connection string
+
+    Note over Player,MSID: Auth Flow — Microsoft OAuth2
+    Player->>SWA: Open app
+    SWA->>MSID: Redirect GET /auth/login (OAuth2 code flow)
+    MSID-->>Player: Microsoft login prompt
+    Player->>MSID: Credentials
+    MSID-->>SWA: Auth code at /auth/callback
+    SWA->>API: POST /api/auth/callback (exchange code)
+    API->>MSID: Validate JWT Bearer token
+    MSID-->>API: Token claims (userId, name)
+    API-->>SWA: Set DevCookie + 200 OK
+
+    Note over Player,DB: Game Stats — Save Result
+    Player->>SWA: Completes game (Win/Loss/Draw)
+    SWA->>API: PUT /api/{game}/players/{id}/stats (Bearer JWT)
+    API->>DB: Upsert PlayerStats + DifficultyStats (Easy/Medium/Hard)
+    DB-->>API: Updated record
+    API-->>SWA: 200 OK + PlayerStats JSON
+
+    Note over Player,DB: Leaderboard — View Rankings
+    Player->>SWA: Open leaderboard tab
+    SWA->>API: GET /api/{game}/statistics/leaderboard
+    Note right of API: Rate limit: 10 req/min/IP (fixed window)
+    API->>DB: SELECT top 10 by TotalWins
+    DB-->>API: Ranked player records
+    API-->>SWA: JSON leaderboard array
+
+    Note over Player,API: Real-time Multiplayer — SignalR
+    Player->>API: WS connect /api/hubs/lobby (JWT auth required)
+    API-->>Player: Lobby state + available rooms
+    Player->>API: Join or create room
+    API-->>Player: Room joined → redirect to /api/hubs/multiplayer
+    API-->>Player: Real-time game events (moves, turns, results)
+    API-->>Player: Win/Loss recorded + stats trigger PUT

@@ -1,0 +1,18 @@
+flowchart LR
+    Player["Player\nBrowser"]
+    Client["React SPA\nStatic Web App"]
+    API[".NET 10 API\nApp Service"]
+    Data["SQLite\nKey Vault\nApp Insights"]
+    Auth["Microsoft\nIdentity"]
+
+    Player --> Client
+    Client -->|"REST + SignalR"| API
+    API --> Data
+    Client -.->|"OAuth2"| Auth
+    API -.->|"JWT"| Auth
+
+    style Player fill:#1a1a2e,stroke:#4e9af1,color:#fff
+    style Client fill:#0078d4,stroke:#005a9e,color:#fff
+    style API fill:#005a9e,stroke:#003567,color:#fff
+    style Data fill:#2d6a4f,stroke:#1b4332,color:#fff
+    style Auth fill:#2c3e50,stroke:#16213e,color:#fff

@@ -6,7 +6,6 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <AnalysisLevel>latest</AnalysisLevel>
-    <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <NoWarn>$(NoWarn);1591;NU1902;NU1903;ASPDEPR002</NoWarn>
+    <NoWarn>$(NoWarn);NU1902;NU1903;ASPDEPR002</NoWarn>
   </PropertyGroup>
 </Project>

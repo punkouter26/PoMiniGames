@@ -1,4 +1,4 @@
-import type { SnakeHighScore } from './api';
+import type { SnakeHighScore } from './snakeService';
 
 interface HighScoreTableProps {
   scores: SnakeHighScore[];

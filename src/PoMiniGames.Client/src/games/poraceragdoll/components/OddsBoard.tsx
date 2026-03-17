@@ -46,7 +46,7 @@ export default function OddsBoard() {
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
-            if (gameState !== 'BETTING') return;
+            if (gameState !== 'Betting') return;
             const num = parseInt(e.key);
             if (num >= 1 && num <= 8) {
                 const racer = racers[num - 1];
@@ -57,7 +57,7 @@ export default function OddsBoard() {
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [gameState, racers, handleRacerClick]);
 
-    if (gameState !== 'BETTING') return null;
+    if (gameState !== 'Betting') return null;
 
     const totalWins = roundHistory.filter(r => r.playerWon).length;
     const totalPlayed = roundHistory.length;

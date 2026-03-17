@@ -8,40 +8,16 @@ namespace PoMiniGames.Services;
 /// <summary>
 /// SQLite-backed storage service using a single shared database file.
 /// </summary>
-public class StorageService
+public class StorageService : IStorageService
 {
     private readonly string _dbPath;
     private readonly string _dbFileName;
+    private readonly string _dataDir;
 
-    private const string CreateTableSql = """
-        CREATE TABLE IF NOT EXISTS PlayerStats (
-            Game       TEXT NOT NULL,
-            PlayerName TEXT NOT NULL,
-            StatsJson  TEXT NOT NULL,
-            CreatedAt  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
-            UpdatedAt  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
-            PRIMARY KEY (Game, PlayerName)
-        );
-        """;
-
-    private const string CreateMigrationsTableSql = """
-        CREATE TABLE IF NOT EXISTS _Migrations (
-            Name      TEXT NOT NULL PRIMARY KEY,
-            AppliedAt TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
-        );
-        """;
-
-    private const string CreateSnakeHighScoresTableSql = """
-        CREATE TABLE IF NOT EXISTS SnakeHighScores (
-            Id           INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-            Initials     TEXT NOT NULL,
-            Score        INTEGER NOT NULL,
-            Date         TEXT NOT NULL,
-            GameDuration REAL NOT NULL DEFAULT 30,
-            SnakeLength  INTEGER NOT NULL DEFAULT 0,
-            FoodEaten    INTEGER NOT NULL DEFAULT 0
-        );
-        """;
+    internal static readonly HashSet<char> _invalidChars =
+        Path.GetInvalidFileNameChars()
+            .Concat(new[] { '\'', '"', ';', '\\', '/' })
+            .ToHashSet();
 
     public StorageService(IConfiguration configuration)
     {
@@ -56,88 +32,23 @@ public class StorageService
 
         _dbFileName = Path.GetFileName(databaseFileName);
         _dbPath = Path.Combine(dataDir, _dbFileName);
-
-        using var _ = OpenConnection();
-        MigrateLegacyPerGameDatabases(dataDir);
+        _dataDir = dataDir;
     }
 
-    private void MigrateLegacyPerGameDatabases(string dataDir)
+    /// <summary>
+    /// Runs schema initialization and legacy migration. Called once at application
+    /// startup (after DI build) so blocking I/O does not stall the constructor thread.
+    /// </summary>
+    public void Initialize()
     {
-        const string migrationName = "LegacyPerGameImport";
-
-        using var conn = OpenConnection();
-
-        // Skip if already applied on a previous startup.
-        using var checkCmd = conn.CreateCommand();
-        checkCmd.CommandText = "SELECT COUNT(*) FROM _Migrations WHERE Name = $name";
-        checkCmd.Parameters.AddWithValue("$name", migrationName);
-        if ((long)(checkCmd.ExecuteScalar() ?? 0L) > 0)
-            return;
-
-        var legacyFiles = Directory
-            .GetFiles(dataDir, "*.db", SearchOption.TopDirectoryOnly)
-            .Where(f => !string.Equals(Path.GetFileName(f), _dbFileName, StringComparison.OrdinalIgnoreCase))
-            .ToList();
-
-        foreach (var legacyFile in legacyFiles)
-        {
-            var game = SanitizeName(Path.GetFileNameWithoutExtension(legacyFile));
-            if (string.IsNullOrWhiteSpace(game))
-                continue;
-
-            try
-            {
-                using var legacyConn = new SqliteConnection($"Data Source={legacyFile}");
-                legacyConn.Open();
-
-                using var legacyCmd = legacyConn.CreateCommand();
-                legacyCmd.CommandText = "SELECT PlayerName, StatsJson FROM PlayerStats";
-
-                using var reader = legacyCmd.ExecuteReader();
-                while (reader.Read())
-                {
-                    var playerName = SanitizeName(reader.GetString(0));
-                    if (string.IsNullOrWhiteSpace(playerName))
-                        continue;
-
-                    var statsJson = reader.GetString(1);
-
-                    using var insertCmd = conn.CreateCommand();
-                    insertCmd.CommandText = """
-                        INSERT INTO PlayerStats (Game, PlayerName, StatsJson, CreatedAt, UpdatedAt)
-                        VALUES ($game, $name, $json, strftime('%Y-%m-%dT%H:%M:%SZ','now'), strftime('%Y-%m-%dT%H:%M:%SZ','now'))
-                        ON CONFLICT(Game, PlayerName) DO UPDATE SET
-                            StatsJson = excluded.StatsJson,
-                            UpdatedAt = excluded.UpdatedAt;
-                        """;
-                    insertCmd.Parameters.AddWithValue("$game", game);
-                    insertCmd.Parameters.AddWithValue("$name", playerName);
-                    insertCmd.Parameters.AddWithValue("$json", statsJson);
-                    insertCmd.ExecuteNonQuery();
-                }
-            }
-            catch
-            {
-                // Ignore invalid or non-legacy DB files in the data folder.
-            }
-        }
-
-        // Mark migration as applied regardless of whether any legacy files were found.
-        using var recordCmd = conn.CreateCommand();
-        recordCmd.CommandText = "INSERT OR IGNORE INTO _Migrations (Name) VALUES ($name)";
-        recordCmd.Parameters.AddWithValue("$name", migrationName);
-        recordCmd.ExecuteNonQuery();
+        DbInitializer.InitializeSchema(_dbPath);
+        DbInitializer.MigrateLegacyPerGameDatabases(_dbPath, _dbFileName, _dataDir);
     }
 
     private SqliteConnection OpenConnection()
     {
         var conn = new SqliteConnection($"Data Source={_dbPath}");
         conn.Open();
-
-        using var cmd = conn.CreateCommand();
-        cmd.CommandText = CreateTableSql + CreateMigrationsTableSql + CreateSnakeHighScoresTableSql;
-        cmd.ExecuteNonQuery();
-
         return conn;
     }
 
@@ -235,7 +146,7 @@ public class StorageService
         }
 
         return allPlayers
-            .OrderByDescending(p => p.Stats.OverallWinRate)
+            .OrderByDescending(p => p.Stats.WinRate)
             .ThenByDescending(p => p.Stats.TotalGames)
             .Take(limit)
             .ToList();
@@ -265,7 +176,7 @@ public class StorageService
                 Initials     = reader.GetString(0),
                 Score        = reader.GetInt32(1),
                 Date         = reader.GetString(2),
-                GameDuration = (float)reader.GetDouble(3),
+                GameDuration = reader.GetDouble(3),
                 SnakeLength  = reader.GetInt32(4),
                 FoodEaten    = reader.GetInt32(5),
             });
@@ -301,22 +212,95 @@ public class StorageService
         return sanitized;
     }
 
-    private static string SanitizeName(string input)
+    // ── PoDropSquare high scores ────────────────────────────────────────
+
+    public async Task<List<PoDropSquareHighScore>> GetPoDropSquareHighScoresAsync(int limit = 10)
+    {
+        var result = new List<PoDropSquareHighScore>();
+
+        using var conn = OpenConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT PlayerInitials, SurvivalTime, Date, PlayerName
+            FROM PoDropSquareHighScores
+            ORDER BY SurvivalTime ASC, Date ASC
+            LIMIT $limit
+            """;
+        cmd.Parameters.AddWithValue("$limit", limit);
+
+        using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            result.Add(new PoDropSquareHighScore
+            {
+                PlayerInitials = reader.GetString(0),
+                SurvivalTime = reader.GetDouble(1),
+                Date = reader.GetString(2),
+                PlayerName = reader.IsDBNull(3) ? null : reader.GetString(3),
+            });
+        }
+
+        return result;
+    }
+
+    public async Task<PoDropSquareHighScore> SavePoDropSquareHighScoreAsync(PoDropSquareHighScore entry)
+    {
+        var sanitizedInitials = SanitizeName(entry.PlayerInitials)
+            .ToUpperInvariant();
+        if (sanitizedInitials.Length > 3)
+            sanitizedInitials = sanitizedInitials[..3];
+
+        var sanitized = entry with
+        {
+            PlayerInitials = sanitizedInitials,
+            Date = string.IsNullOrWhiteSpace(entry.Date)
+                ? DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
+                : entry.Date,
+            PlayerName = string.IsNullOrWhiteSpace(entry.PlayerName)
+                ? null
+                : SanitizeName(entry.PlayerName),
+        };
+
+        using var conn = OpenConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO PoDropSquareHighScores (PlayerInitials, SurvivalTime, Date, PlayerName)
+            VALUES ($initials, $survivalTime, $date, $playerName)
+            """;
+        cmd.Parameters.AddWithValue("$initials", sanitized.PlayerInitials);
+        cmd.Parameters.AddWithValue("$survivalTime", sanitized.SurvivalTime);
+        cmd.Parameters.AddWithValue("$date", sanitized.Date);
+        cmd.Parameters.AddWithValue("$playerName", (object?)sanitized.PlayerName ?? DBNull.Value);
+        await cmd.ExecuteNonQueryAsync();
+
+        return sanitized;
+    }
+
+    internal static string SanitizeName(string input)
     {
         if (string.IsNullOrEmpty(input))
             return string.Empty;
 
-        var invalidChars = Path.GetInvalidFileNameChars()
-            .Concat(new[] { '\'', '"', ';', '\\', '/' })
-            .ToHashSet();
-
         var sb = new System.Text.StringBuilder(input.Length);
         foreach (var c in input)
         {
-            if (!invalidChars.Contains(c) && c >= 0x20)
+            if (!_invalidChars.Contains(c) && c >= 0x20)
                 sb.Append(c);
         }
 
         return sb.ToString().Trim();
+    }
+}
+
+/// <summary>
+/// Runs <see cref="StorageService.Initialize"/> eagerly at application startup,
+/// ensuring SQLite schema and migrations complete before any request is served.
+/// </summary>
+public sealed class StorageServiceInitializer(StorageService storage) : BackgroundService
+{
+    protected override Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        storage.Initialize();
+        return Task.CompletedTask;
     }
 }

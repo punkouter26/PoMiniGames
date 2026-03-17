@@ -1,4 +1,5 @@
 // @ts-nocheck
+// TODO: Remove @ts-nocheck and add proper TypeScript types (type-safety technical debt)
 /**
  * Lightweight Event Bus for Decoupled State Transitions
  * Allows systems to communicate without tight coupling

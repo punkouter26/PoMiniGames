@@ -49,7 +49,6 @@ export interface PlayerStats {
   totalDraws: number;
   totalGames: number;
   winRate: number;
-  overallWinRate: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -79,7 +78,6 @@ export function emptyPlayerStats(playerName = '', playerId = ''): PlayerStats {
     totalDraws: 0,
     totalGames: 0,
     winRate: 0,
-    overallWinRate: 0,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };

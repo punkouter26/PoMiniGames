@@ -1,165 +1,42 @@
-# Architecture.mmd - System Context + Container Architecture
+flowchart TD
+    Player["Browser / Player\nDesktop + Mobile"]
 
-## Simplified Version (AI-Friendly)
-
-```mermaid
-flowchart TB
-    subgraph Client["PoMiniGames Client (Blazor/React)"]
-        UI[User Interface]
-        Router[React Router]
-        State[State Management]
-    end
-    
-    subgraph Server["PoMiniGames API (.NET 10)"]
-        API[Minimal API Endpoints]
-        Auth[Authorization]
-        Cors[CORS Middleware]
-    end
-    
-    subgraph Storage["Azure Storage"]
-        Tables[Azure Table Storage]
-        KeyVault[Azure Key Vault]
-    end
-    
-    subgraph Local["Local Development"]
-        Azurite[Azurite Emulator]
-        Docker[Docker Compose]
-    end
-    
-    User --> Client
-    Client -->|HTTP| Server
-    Server -->|Table SDK| Storage
-    Server -->|Secret Manager| KeyVault
-    Server -->|Dev Storage| Azurite
-    
-    style Client fill:#e1f5fe
-    style Server fill:#e8f5e8
-    style Storage fill:#fff3e0
-    style Local fill:#fce4ec
-```
-
-## Detailed Version (Human Developers)
-
-```mermaid
-flowchart TB
-    subgraph External["External Systems"]
-        User((User))
-    end
-    
-    subgraph ClientTier["Client Tier"]
-        direction TB
-        Browser[Web Browser]
-        SPA[Single Page App<br/>React + TypeScript]
-        Vite[Vite Build Tool]
-    end
-    
-    subgraph APITier["API Tier"]
-        direction TB
-        NetApp[.NET 10 Web App]
-        Middleware[Custom Middleware]
-        Endpoints[Minimal API Endpoints]
-        Swagger[Swagger/OpenAPI]
-    end
-    
-    subgraph DataTier["Data Tier"]
-        direction TB
-        TableClient[Azure Table Client]
-        StorageService[Storage Service]
-        HealthCheck[Storage Health Check]
-    end
-    
-    subgraph Infrastructure["Infrastructure"]
-        direction TB
-        AzureTables[Azure Table Storage]
-        AzureKV[Azure Key Vault]
-        Azurite[Azurite (Local)]
-        LogFiles[Serilog File Logs]
-    end
-    
-    subgraph DevOps["DevOps & CI/CD"]
-        Docker[Docker Compose]
-        GitHub[GitHub Actions]
-        Tests[Integration Tests]
-    end
-    
-    User -->|HTTPS| Browser
-    Browser -->|HTTP/WebSocket| SPA
-    SPA -->|REST API| NetApp
-    NetApp -->|Configure| Middleware
-    Middleware -->|Route| Endpoints
-    Endpoints -->|Call| StorageService
-    StorageService -->|SDK| TableClient
-    TableClient -->|Connection| AzureTables
-    TableClient -->|Dev Connection| Azurite
-    NetApp -->|Retrieve Secrets| AzureKV
-    NetApp -->|Log| LogFiles
-    
-    style ClientTier fill:#e1f5fe
-    style APITier fill:#e8f5e8
-    style DataTier fill:#fff3e0
-    style Infrastructure fill:#f3e5f5
-    style DevOps fill:#fce4ec
-```
-
-## System Components
-
-| Component | Technology | Purpose |
-|-----------|------------|---------|
-| Frontend | React 18 + TypeScript | UI Framework |
-| Build Tool | Vite | Development & Build |
-| Routing | React Router v6 | Client-side routing |
-| Backend | .NET 10 Minimal API | REST API |
-| Storage | Azure Table Storage | Persistent storage |
-| Auth | Azure Identity | Managed identity |
-| Logging | Serilog | Structured logging |
-| Health | ASP.NET Health Checks | Observability |
-| Testing | xUnit + Playwright | Integration/E2E |
-
-## Environment Configuration
-
-```mermaid
-flowchart LR
-    subgraph Environments
-        Dev[Development]
-        Stage[Staging]
-        Prod[Production]
-    end
-    
-    subgraph Config
-        EnvVars[Environment Variables]
-        KeyVault[Key Vault Secrets]
-        appsettings[appsettings.json]
-    end
-    
-    Dev -->|Local Storage| EnvVars
-    Stage -->|Azure KV| KeyVault
-    Prod -->|Azure KV| KeyVault
-    EnvVars --> appsettings
-    KeyVault --> appsettings
-```
-
-## Deployment Architecture
-
-```mermaid
-flowchart TB
-    subgraph Cloud["Azure Cloud"]
-        subgraph AppService["Azure App Service"]
-            Container[Container Instance]
+    subgraph AzureCloud["Azure Cloud — Subscription: Punkouter26 (Bbb8dfbe)"]
+        subgraph PoMiniGamesRG["rg-PoMiniGames"]
+            SWA["Azure Static Web App\nReact 18 + TypeScript + Vite\nFree Tier — Global CDN Edge"]
+            AS["Azure App Service (Linux)\n.NET 10 Minimal API\nDOTNETCORE|10.0 — SystemAssigned Identity"]
+            DB[("SQLite Database\npominigames.db\n/home/data/ persistent volume")]
         end
-        subgraph StorageAccount["Azure Storage"]
-            Tables[Table Service]
-        end
-        subgraph KeyVault["Azure Key Vault"]
-            Secrets[Secrets]
+        subgraph PoSharedRG["rg-PoShared (Shared Resources)"]
+            KV["Azure Key Vault\nkv-poshared\nAuth ClientId · AppInsights key"]
+            AI["Application Insights\npoappideinsights8f9c9a4e\nOTel Traces · Metrics · Logs"]
+            ASP["App Service Plan\nasp-poshared-linux\nShared Linux B1 Plan"]
         end
     end
-    
-    Internet((Internet)) --> AppService
-    AppService --> Tables
-    AppService --> Secrets
-    
-    style Cloud fill:#e3f2fd
-    style AppService fill:#bbdefb
-    style StorageAccount fill:#c8e6c9
-    style KeyVault fill:#ffecb3
-```
+
+    MSID["Microsoft Identity Platform\nOAuth 2.0 + MSAL + JWT Bearer\nTenant: common/v2.0"]
+    GHA["GitHub Actions\nCI/CD Pipeline\n.github/workflows/deploy.yml"]
+
+    Player -->|"HTTPS + CDN"| SWA
+    SWA -->|"REST API :5000/:5001\nSignalR WebSockets"| AS
+    AS --- DB
+    AS -.->|"Managed Identity\nGetSecrets"| KV
+    AS -->|"OTel OTLP\nSerilog AI Sink"| AI
+    SWA -.->|"OAuth2 Redirect\n/auth/login"| MSID
+    AS -.->|"JWT Token Validation"| MSID
+    AS --- ASP
+    GHA -->|"azd deploy\ndotnet publish"| AS
+    GHA -->|"SWA CLI\nnpm run build"| SWA
+
+    style Player fill:#1a1a2e,stroke:#4e9af1,color:#fff
+    style SWA fill:#0078d4,stroke:#005a9e,color:#fff
+    style AS fill:#005a9e,stroke:#003567,color:#fff
+    style DB fill:#2d6a4f,stroke:#1b4332,color:#fff
+    style KV fill:#7b2d8b,stroke:#4a1660,color:#fff
+    style AI fill:#b5179e,stroke:#7b0f6e,color:#fff
+    style ASP fill:#3a86ff,stroke:#1a56d0,color:#fff
+    style MSID fill:#2c3e50,stroke:#16213e,color:#fff
+    style GHA fill:#24292e,stroke:#586069,color:#fff
+    style AzureCloud fill:#e8f4fd,stroke:#90b4d0,color:#000
+    style PoMiniGamesRG fill:#daeaf7,stroke:#5b9bd5,color:#000
+    style PoSharedRG fill:#f0e6ff,stroke:#9b5bd5,color:#000

@@ -9,7 +9,6 @@ public interface IRacerService
 public sealed class RacerService : IRacerService
 {
     private readonly IOddsService _oddsService;
-    private readonly Random _random = new();
 
     private static readonly Dictionary<string, string[]> NamePools = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -45,8 +44,8 @@ public sealed class RacerService : IRacerService
 
         for (var i = 0; i < 8; i++)
         {
-            var species = AvailableSpecies[_random.Next(AvailableSpecies.Count)];
-            var massVariance = (_random.NextDouble() * 10) - 5;
+            var species = AvailableSpecies[Random.Shared.Next(AvailableSpecies.Count)];
+            var massVariance = (Random.Shared.NextDouble() * 10) - 5;
             var finalMass = Math.Max(10, species.Mass + massVariance);
             var odds = _oddsService.CalculateOdds(finalMass, GameConfig.SlopeAngle);
 
@@ -69,7 +68,8 @@ public sealed class RacerService : IRacerService
         if (!NamePools.TryGetValue(species.Type, out var names) || names.Length == 0)
             return $"{species.Name} {laneNumber}";
 
-        var baseName = names[_random.Next(names.Length)];
+        var baseName = names[Random.Shared.Next(names.Length)];
         return $"{baseName} the {species.Name} ({laneNumber})";
     }
 }
+

@@ -16,7 +16,7 @@ export default function PoRaceRagdollPage() {
 
   if (!isHydrated) {
     return (
-      <GamePageShell title="PoRaceRagdoll" fullscreen>
+      <GamePageShell title="PoRaceRagdoll" backTo="/" fullscreen>
         <div className="w-full h-full flex items-center justify-center bg-[#0a0a0a]">
           <div className="flex flex-col items-center gap-4">
             <div className="w-12 h-12 border-4 border-white/10 border-t-[#F72585] rounded-full animate-spin" />
@@ -30,6 +30,7 @@ export default function PoRaceRagdollPage() {
   return (
     <GamePageShell
       title="🏁 PoRaceRagdoll"
+      backTo="/"
       stats={[
         { value: `$${balance.toLocaleString()}`, label: 'Balance' },
         { value: `${round}/${maxRounds}`, label: 'Round' },
@@ -38,7 +39,7 @@ export default function PoRaceRagdollPage() {
     >
       <div className="relative w-full h-full overflow-hidden bg-[#0a0a0a]">
         {/* 3D Race Canvas — rendered behind the UI */}
-        {gameState !== 'BETTING' && (
+        {gameState !== 'Betting' && (
           <div className="absolute inset-0 z-0">
             <Suspense fallback={
               <div className="w-full h-full flex items-center justify-center">
@@ -51,7 +52,7 @@ export default function PoRaceRagdollPage() {
         )}
 
         {/* Dark background when in betting phase */}
-        {gameState === 'BETTING' && (
+        {gameState === 'Betting' && (
           <div className="absolute inset-0 z-0 bg-gradient-to-br from-[#0a0a1a] via-[#0d0d22] to-[#0a0a1a]" />
         )}
 

@@ -46,4 +46,16 @@ test.describe('Tic Tac Toe game', () => {
     await select.selectOption('Hard');
     await expect(select).toHaveValue('Hard');
   });
+
+  test('demo mode auto-plays both sides', async ({ page }) => {
+    await page.goto('/tictactoe?demo=1');
+
+    await expect(page.getByRole('button', { name: 'Demo CPU vs CPU' })).toHaveAttribute('aria-pressed', 'true');
+
+    await expect.poll(async () => {
+      const xCount = await page.locator('.ttt-cell[aria-label="X"]').count();
+      const oCount = await page.locator('.ttt-cell[aria-label="O"]').count();
+      return xCount > 0 && oCount > 0;
+    }, { timeout: 8000 }).toBe(true);
+  });
 });

@@ -1,10 +1,11 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
-import { submitHighScore, getHighScores, type SnakeHighScore } from './api';
+import { submitHighScore, getHighScores, type SnakeHighScore } from './snakeService';
 
 interface HighScoreModalProps {
   score: number;
   snakeLength: number;
   foodEaten: number;
+  gameDuration: number;
   onClose: () => void;
   onSubmitted: () => void;
 }
@@ -45,6 +46,7 @@ export function HighScoreModal({
   score,
   snakeLength,
   foodEaten,
+  gameDuration,
   onClose,
   onSubmitted,
 }: HighScoreModalProps) {
@@ -68,15 +70,22 @@ export function HighScoreModal({
     setIsSubmitting(true);
     setError(null);
     try {
-      const result = await submitHighScore({ initials, score, gameDuration: 30, snakeLength, foodEaten });
-      if (result) onSubmitted();
-      else setError('Failed to submit. Please try again.');
+      const result = await submitHighScore({ initials, score, gameDuration, snakeLength, foodEaten });
+      if (result) {
+        // Recompute rank from fresh leaderboard data after submission
+        const freshScores = await getHighScores();
+        const confirmedRank = freshScores.filter((s: SnakeHighScore) => s.score > score).length + 1;
+        setRank(confirmedRank);
+        setTimeout(onSubmitted, 1200);
+      } else {
+        setError('Failed to submit. Please try again.');
+      }
     } catch {
       setError('An error occurred. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
-  }, [initials, score, snakeLength, foodEaten, onSubmitted]);
+  }, [initials, score, gameDuration, snakeLength, foodEaten, onSubmitted]);
 
   return (
     <div className="psg-modal-backdrop">

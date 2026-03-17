@@ -1,4 +1,5 @@
 // @ts-nocheck
+// TODO: Remove @ts-nocheck and add proper TypeScript types (type-safety technical debt)
 /**
  * Input Buffering System
  * Accumulates input events and processes them at fixed timesteps

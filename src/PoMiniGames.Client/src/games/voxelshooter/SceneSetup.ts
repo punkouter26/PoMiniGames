@@ -1,4 +1,5 @@
 // @ts-nocheck
+// TODO: Remove @ts-nocheck and add proper TypeScript types (type-safety technical debt)
 import * as THREE from 'three';
 import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockControls.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';

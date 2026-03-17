@@ -51,7 +51,7 @@ export const localStorageService = {
       .getAllStats()
       .filter((s) => s.game === game)
       .sort((a, b) => {
-        const wr = (b.stats.overallWinRate || 0) - (a.stats.overallWinRate || 0);
+        const wr = (b.stats.winRate || 0) - (a.stats.winRate || 0);
         return wr !== 0 ? wr : (b.stats.totalGames || 0) - (a.stats.totalGames || 0);
       })
       .slice(0, limit)

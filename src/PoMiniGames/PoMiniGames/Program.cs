@@ -1,7 +1,17 @@
 using Azure.Identity;
 using Azure.Monitor.OpenTelemetry.AspNetCore;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.IdentityModel.Tokens;
+using System.Threading.RateLimiting;
+using PoMiniGames.Features.Auth;
 using PoMiniGames.Features.Health;
 using PoMiniGames.Features.Leaderboard;
+using PoMiniGames.Features.Lobby;
+using PoMiniGames.Features.Multiplayer;
+using PoMiniGames.Features.PoDropSquareHighScores;
 using PoMiniGames.Features.PoRaceRagdoll;
 using PoMiniGames.Features.SnakeHighScores;
 using PoMiniGames.HealthChecks;
@@ -51,7 +61,18 @@ builder.Host.UseSerilog((context, services, configuration) =>
 
     if (context.HostingEnvironment.IsDevelopment())
     {
+        var logsPath = Path.Combine(context.HostingEnvironment.ContentRootPath, "logs");
+        Directory.CreateDirectory(logsPath);
+
         configuration
+            .WriteTo.File(
+                Path.Combine(logsPath, "pominigames-.log"),
+                rollingInterval: RollingInterval.Day,
+                retainedFileCountLimit: 7,
+                shared: true,
+                flushToDiskInterval: TimeSpan.FromSeconds(1),
+                outputTemplate:
+                    "[{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} {Level:u3}] {Message:lj} {NewLine}{Exception}")
             .WriteTo.Console(outputTemplate:
                 "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj} {NewLine}{Exception}");
     }
@@ -74,11 +95,115 @@ builder.Host.UseSerilog((context, services, configuration) =>
 
 // ─── SQLite Storage ──────────────────────────────────────────────────
 builder.Services.AddSingleton<StorageService>();
+builder.Services.AddSingleton<IStorageService>(sp => sp.GetRequiredService<StorageService>());
+builder.Services.AddHostedService<StorageServiceInitializer>();
+
+// ─── Microsoft identity platform auth ────────────────────────────────
+var microsoftAuthSection = builder.Configuration.GetSection(MicrosoftAuthOptions.SectionName);
+builder.Services.Configure<MicrosoftAuthOptions>(microsoftAuthSection);
+var microsoftAuthOptions = microsoftAuthSection.Get<MicrosoftAuthOptions>() ?? new MicrosoftAuthOptions();
+var devLoginEnabled = builder.Environment.IsDevelopment();
+
+builder.Services.AddAuthentication(options =>
+    {
+        options.DefaultAuthenticateScheme = AuthSchemes.Composite;
+        options.DefaultChallengeScheme = AuthSchemes.Composite;
+    })
+    .AddPolicyScheme(AuthSchemes.Composite, AuthSchemes.Composite, options =>
+    {
+        options.ForwardDefaultSelector = context =>
+        {
+            var authHeader = context.Request.Headers.Authorization.ToString();
+            if (!string.IsNullOrWhiteSpace(authHeader)
+                && authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+            {
+                return JwtBearerDefaults.AuthenticationScheme;
+            }
+
+            if (context.Request.Query.ContainsKey("access_token")
+                && !string.IsNullOrWhiteSpace(context.Request.Query["access_token"]))
+            {
+                return JwtBearerDefaults.AuthenticationScheme;
+            }
+
+            if (devLoginEnabled)
+            {
+                return AuthSchemes.DevCookie;
+            }
+
+            return JwtBearerDefaults.AuthenticationScheme;
+        };
+    })
+    .AddCookie(AuthSchemes.DevCookie, options =>
+    {
+        options.Cookie.Name = "PoMiniGames.DevAuth";
+        options.Cookie.HttpOnly = true;
+        options.Cookie.SameSite = SameSiteMode.Lax;
+        options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+        options.Events = new CookieAuthenticationEvents
+        {
+            OnRedirectToLogin = context =>
+            {
+                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                return Task.CompletedTask;
+            },
+            OnRedirectToAccessDenied = context =>
+            {
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                return Task.CompletedTask;
+            },
+        };
+    })
+    .AddJwtBearer(options =>
+    {
+        var authority = microsoftAuthOptions.Authority;
+        var audience = microsoftAuthOptions.ApiClientId;
+
+        options.MapInboundClaims = false;
+        options.RequireHttpsMetadata = !builder.Environment.IsDevelopment();
+
+        if (!string.IsNullOrWhiteSpace(authority))
+        {
+            options.Authority = authority;
+        }
+
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = false,
+            ValidateAudience = !string.IsNullOrWhiteSpace(audience),
+            ValidAudience = audience,
+            NameClaimType = "name",
+            RoleClaimType = "roles",
+        };
+
+        options.Events = new JwtBearerEvents
+        {
+            OnMessageReceived = context =>
+            {
+                var accessToken = context.Request.Query["access_token"];
+                var path = context.HttpContext.Request.Path;
+                if (!string.IsNullOrWhiteSpace(accessToken) && path.StartsWithSegments("/api/hubs"))
+                {
+                    context.Token = accessToken;
+                }
+
+                return Task.CompletedTask;
+            },
+        };
+    });
 
 // ─── PoRaceRagdoll Services ──────────────────────────────────────────
 builder.Services.AddSingleton<IOddsService, OddsService>();
 builder.Services.AddSingleton<IRacerService, RacerService>();
 builder.Services.AddSingleton<IGameSessionService, GameSessionService>();
+
+// ─── Shared multiplayer platform ─────────────────────────────────────
+builder.Services.AddSignalR();
+builder.Services.AddSingleton<IMultiplayerGameRegistry, MultiplayerGameRegistry>();
+builder.Services.AddSingleton<IMultiplayerService, MultiplayerService>();
+
+// ─── Lobby ───────────────────────────────────────────────────────────
+builder.Services.AddSingleton<ILobbyService, LobbyService>();
 
 // ─── CORS ────────────────────────────────────────────────────────────
 builder.Services.AddCors(options =>
@@ -91,6 +216,23 @@ builder.Services.AddCors(options =>
             ?? ["http://localhost:5000", "http://localhost:5173"];
         policy.WithOrigins(origins).AllowAnyMethod().AllowAnyHeader().AllowCredentials();
     });
+});
+
+// ─── Rate Limiting ───────────────────────────────────────────────────
+builder.Services.AddRateLimiter(opts =>
+{
+    opts.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    opts.AddPolicy("highscores", ctx =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                Window            = TimeSpan.FromMinutes(1),
+                PermitLimit       = 10,
+                AutoReplenishment = true,
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                QueueLimit        = 0,
+            }));
 });
 
 // ─── Health checks ───────────────────────────────────────────────────
@@ -133,17 +275,26 @@ app.MapScalarApiReference(options =>
 
 app.UseCors();
 app.UseStaticFiles();
+app.UseAuthentication();
+app.UseRateLimiter();
 app.UseAuthorization();
 
 // ─── Minimal API endpoints (direct service calls) ────────────────────
+app.MapAuthEndpoints();
 app.MapHealthEndpoints();
 app.MapDiagEndpoints();
 app.MapGetPlayerStats();
 app.MapSavePlayerStats();
 app.MapGetLeaderboard();
 app.MapGetAllPlayerStatistics();
+app.MapMultiplayerEndpoints();
+app.MapLobbyEndpoints();
+app.MapGetPoDropSquareHighScores();
+app.MapSavePoDropSquareHighScore();
 app.MapGetSnakeHighScores();
 app.MapSaveSnakeHighScore();
+app.MapHub<MultiplayerHub>("/api/hubs/multiplayer").RequireAuthorization();
+app.MapHub<LobbyHub>("/api/hubs/lobby").RequireAuthorization();
 
 // ─── MVC Controllers (PoRaceRagdoll game API) ────────────────────────
 app.MapControllers();

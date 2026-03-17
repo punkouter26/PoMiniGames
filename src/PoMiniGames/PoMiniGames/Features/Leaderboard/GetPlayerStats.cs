@@ -10,7 +10,7 @@ public static class GetPlayerStatsEndpoint
     public static IEndpointRouteBuilder MapGetPlayerStats(this IEndpointRouteBuilder app)
     {
         app.MapGet("/api/{game}/players/{playerName}/stats",
-            async (string game, string playerName, StorageService storage) =>
+            async (string game, string playerName, IStorageService storage) =>
         {
             var stats = await storage.GetPlayerStatsAsync(game, playerName);
             if (stats == null)
@@ -32,3 +32,4 @@ public static class GetPlayerStatsEndpoint
         return app;
     }
 }
+

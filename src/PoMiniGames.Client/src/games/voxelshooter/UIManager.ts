@@ -1,4 +1,5 @@
 // @ts-nocheck
+// TODO: Remove @ts-nocheck and add proper TypeScript types (type-safety technical debt)
 /**
  * Modern UI Management System
  * Adapted for embedded use within PoMiniGames — all DOM elements are appended to

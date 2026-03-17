@@ -12,8 +12,8 @@ GET {{host}}/health
 ### Health - liveness
 GET {{host}}/alive
 
-### Diagnostics - masked config values
-GET {{host}}/api/diag
+### Diagnostics - development summary only
+GET {{host}}/diag
 
 ### ─── Connect Five ──────────────────────────────────
 

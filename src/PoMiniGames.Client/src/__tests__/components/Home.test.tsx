@@ -4,6 +4,22 @@ import { MemoryRouter } from 'react-router-dom';
 import { PlayerNameProvider } from '../../context/PlayerNameContext';
 import Home from '../../components/Home';
 
+const { mockDevLogin, mockAuthState } = vi.hoisted(() => {
+  const devLogin = vi.fn();
+  return {
+    mockDevLogin: devLogin,
+    mockAuthState: {
+      config: null as any,
+      devLogin,
+      isLoading: false,
+    },
+  };
+});
+
+vi.mock('../../context/AuthContext', () => ({
+  useAuth: () => mockAuthState,
+}));
+
 // Stub out HomeHighScores to keep these tests focused on Home itself
 vi.mock('../../components/HomeHighScores', () => ({
   default: () => (
@@ -21,20 +37,31 @@ function renderHome(initialPath = '/') {
   );
 }
 
-const ALL_GAMES = [
-  { label: 'Connect Five', href: '/connectfive', ariaLabel: 'Play Connect Five' },
-  { label: 'Tic Tac Toe', href: '/tictactoe', ariaLabel: 'Play Tic Tac Toe' },
-  { label: 'Voxel Shooter', href: '/voxelshooter', ariaLabel: 'Play Voxel Shooter' },
-  { label: 'PoFight', href: '/pofight', ariaLabel: 'Play PoFight' },
-  { label: 'PoDropSquare', href: '/podropsquare', ariaLabel: 'Play PoDropSquare' },
-  { label: 'PoBabyTouch', href: '/pobabytouch', ariaLabel: 'Play PoBabyTouch' },
-  { label: 'PoRaceRagdoll', href: '/poraceragdoll', ariaLabel: 'Play PoRaceRagdoll' },
-  { label: 'PoSnakeGame', href: '/posnakegame', ariaLabel: 'Play PoSnakeGame' },
+const WORKFLOW_OPTIONS = [
+  {
+    label: 'Microsoft Login + Play 2 Players',
+    href: '/lobby',
+    ariaLabel: 'Microsoft login and play 2 players',
+  },
+  {
+    label: 'Microsoft Login + Play 1 Player',
+    href: '/single-player',
+    ariaLabel: 'Microsoft login and play 1 player',
+  },
+  {
+    label: 'DEMO MODE',
+    href: '/demo',
+    ariaLabel: 'Demo mode computer plays both players',
+  },
 ];
 
 describe('Home – page structure', () => {
   beforeEach(() => {
     localStorage.clear();
+    mockAuthState.config = null;
+    mockAuthState.isLoading = false;
+    mockDevLogin.mockReset();
+    mockDevLogin.mockResolvedValue(null);
   });
 
   it('renders the main PoMiniGames heading', () => {
@@ -42,9 +69,9 @@ describe('Home – page structure', () => {
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('PoMiniGames');
   });
 
-  it('renders the "Choose a game to play" subtitle', () => {
+  it('renders the "Choose how you want to play" subtitle', () => {
     renderHome();
-    expect(screen.getByText(/Choose a game to play/i)).toBeInTheDocument();
+    expect(screen.getByText(/Choose how you want to play/i)).toBeInTheDocument();
   });
 
   it('renders the player name label', () => {
@@ -83,37 +110,62 @@ describe('Home – page structure', () => {
   });
 });
 
-describe('Home – game cards', () => {
+describe('Home – workflow options', () => {
   beforeEach(() => {
     localStorage.clear();
+    mockAuthState.config = null;
+    mockAuthState.isLoading = false;
+    mockDevLogin.mockReset();
+    mockDevLogin.mockResolvedValue(null);
     renderHome();
   });
 
-  it('renders all 8 game cards', () => {
-    for (const game of ALL_GAMES) {
+  it('renders exactly 3 mode cards', () => {
+    for (const game of WORKFLOW_OPTIONS) {
       expect(screen.getByRole('heading', { name: game.label })).toBeInTheDocument();
     }
   });
 
-  it('renders exactly 8 game card links', () => {
+  it('renders exactly 3 option links', () => {
     const links = screen.getAllByRole('link');
-    expect(links).toHaveLength(ALL_GAMES.length);
+    expect(links).toHaveLength(WORKFLOW_OPTIONS.length);
   });
 
-  it.each(ALL_GAMES)('$label card has correct href', ({ ariaLabel, href }) => {
+  it.each(WORKFLOW_OPTIONS)('$label card has correct href', ({ ariaLabel, href }) => {
     expect(screen.getByLabelText(ariaLabel)).toHaveAttribute('href', href);
   });
 
-  it('each game card has a Play button text', () => {
-    const playButtons = screen.getAllByText(/Play/);
-    expect(playButtons.length).toBeGreaterThanOrEqual(ALL_GAMES.length);
+  it('renders expected action labels', () => {
+    expect(screen.getByText(/Enter Lobby/i)).toBeInTheDocument();
+    expect(screen.getByText(/Choose Game/i)).toBeInTheDocument();
+    expect(screen.getByText(/Start Demo/i)).toBeInTheDocument();
   });
 
-  it('Connect Five card describes the game', () => {
-    expect(screen.getByText(/9×9 board/i)).toBeInTheDocument();
+  it('demo mode card describes cpu-vs-cpu behavior', () => {
+    expect(screen.getByText(/computer randomly picks a game/i)).toBeInTheDocument();
+  });
+});
+
+describe('Home – dev login helpers', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockDevLogin.mockReset();
+    mockAuthState.isLoading = false;
+    mockAuthState.config = {
+      devLoginEnabled: true,
+    };
+    mockDevLogin.mockResolvedValue({ userId: 'dev-user', displayName: 'Dev User', email: null });
+    renderHome();
   });
 
-  it('Tic Tac Toe card describes the game', () => {
-    expect(screen.getByText(/6×6 board/i)).toBeInTheDocument();
+  it('shows dev login buttons for 2P and 1P cards when dev login is enabled', () => {
+    expect(screen.getByRole('button', { name: /Dev login for 2 player/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Dev login for 1 player/i })).toBeInTheDocument();
+  });
+
+  it('clicking a dev login helper triggers dev login', () => {
+    mockDevLogin.mockResolvedValueOnce(null);
+    fireEvent.click(screen.getByRole('button', { name: /Dev login for 2 player/i }));
+    expect(mockDevLogin).toHaveBeenCalledTimes(1);
   });
 });

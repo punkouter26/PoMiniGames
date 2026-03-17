@@ -52,7 +52,6 @@ export const statsService = {
     stats.totalDraws = stats.easy.draws + stats.medium.draws + stats.hard.draws;
     stats.totalGames = stats.easy.totalGames + stats.medium.totalGames + stats.hard.totalGames;
     stats.winRate = stats.totalGames > 0 ? stats.totalWins / stats.totalGames : 0;
-    stats.overallWinRate = stats.winRate;
     stats.playerName = playerName;
     stats.playerId = stats.playerId || getOrCreatePlayerId(); // Track identity
 

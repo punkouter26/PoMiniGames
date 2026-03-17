@@ -84,4 +84,30 @@ public sealed class LeaderboardEndpointTests : IClassFixture<TestWebApplicationF
         var post = await _client.PostAsJsonAsync("/api/snake/highscores", entry);
         post.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.Created);
     }
+
+    [Fact]
+    public async Task GetPoDropSquareHighScores_ReturnsOk_WhenEmpty()
+    {
+        var response = await _client.GetAsync("/api/podropsquare/highscores");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task PostPoDropSquareHighScore_ThenGet_ContainsEntry()
+    {
+        var entry = new
+        {
+            PlayerInitials = "DSP",
+            SurvivalTime = 12.34,
+            Date = DateTime.UtcNow.ToString("o"),
+            PlayerName = "DropSquare Tester",
+        };
+
+        var post = await _client.PostAsJsonAsync("/api/podropsquare/highscores", entry);
+        post.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.Created);
+
+        var scores = await _client.GetFromJsonAsync<List<dynamic>>("/api/podropsquare/highscores");
+        scores.Should().NotBeNull();
+        scores!.Should().NotBeEmpty();
+    }
 }

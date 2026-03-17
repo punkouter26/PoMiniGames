@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Direction } from './GameCanvas';
+import type { Direction } from './snakeGameEngine';
 
 interface TouchControlsProps {
   onDirection: (direction: Direction) => void;

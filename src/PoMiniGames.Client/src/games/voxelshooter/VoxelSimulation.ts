@@ -1,4 +1,5 @@
 // @ts-nocheck
+// TODO: Remove @ts-nocheck and add proper TypeScript types (type-safety technical debt)
 import * as THREE from 'three';
 import { GPUComputationRenderer } from 'three/examples/jsm/misc/GPUComputationRenderer.js';
 import { SpatialHashGrid } from './SpatialHashGrid';

@@ -46,7 +46,7 @@ export default function GameUI() {
     const isWinner = winnerId === selectedRacerId;
 
     useEffect(() => {
-        if (gameState === 'FINISHED') {
+        if (gameState === 'Finished') {
             if (isWinner) {
                 audioManager.playWin();
                 setShowConfetti(true);
@@ -65,7 +65,7 @@ export default function GameUI() {
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
-            if (e.key === 'Enter' && gameState === 'BETTING' && selectedRacerId !== null) {
+            if (e.key === 'Enter' && gameState === 'Betting' && selectedRacerId !== null) {
                 handlePlaceBet();
             }
         };
@@ -74,7 +74,7 @@ export default function GameUI() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [gameState, selectedRacerId]);
 
-    const isGameOver = gameState === 'FINISHED' && round >= maxRounds;
+    const isGameOver = gameState === 'Finished' && round >= maxRounds;
     const totalPnL = roundHistory.reduce((acc, r) => acc + r.payout, 0);
 
     return (
@@ -119,7 +119,7 @@ export default function GameUI() {
             )}
 
             {/* RESULT MODAL */}
-            {gameState === 'FINISHED' && (
+            {gameState === 'Finished' && (
                 <div data-testid="result-modal" className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-md pointer-events-auto z-50 animate-in fade-in zoom-in duration-300">
                     <div className="flex flex-col items-center text-center p-12 glass-panel rounded-[2.5rem] border border-white/10 shadow-2xl relative overflow-hidden max-w-lg w-full mx-4">
                         <div className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 rounded-full blur-[100px] z-0 ${isWinner ? 'bg-green-500/20' : 'bg-red-500/20'}`} />
@@ -183,7 +183,7 @@ export default function GameUI() {
 
             {/* BOTTOM BAR */}
             <div className="flex justify-center items-end pb-8">
-                {gameState === 'BETTING' && (
+                {gameState === 'Betting' && (
                     <button onClick={handlePlaceBet} disabled={selectedRacerId === null}
                         data-testid="place-bet-button"
                         className={`pointer-events-auto px-16 py-5 font-bold text-lg uppercase tracking-[0.2em] transition-all duration-300 rounded-2xl ${selectedRacerId !== null

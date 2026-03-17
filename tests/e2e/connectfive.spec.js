@@ -49,4 +49,16 @@ test.describe('Connect Five game', () => {
     await select.selectOption('Hard');
     await expect(select).toHaveValue('Hard');
   });
+
+  test('demo mode auto-plays both sides', async ({ page }) => {
+    await page.goto('/connectfive?demo=1');
+
+    await expect(page.getByRole('button', { name: 'Demo CPU vs CPU' })).toHaveAttribute('aria-pressed', 'true');
+
+    await expect.poll(async () => {
+      const redCount = await page.locator('.cf-cell.red').count();
+      const yellowCount = await page.locator('.cf-cell.yellow').count();
+      return redCount > 0 && yellowCount > 0;
+    }, { timeout: 10000 }).toBe(true);
+  });
 });

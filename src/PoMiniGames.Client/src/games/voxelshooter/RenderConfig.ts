@@ -1,4 +1,5 @@
 // @ts-nocheck
+// TODO: Remove @ts-nocheck and add proper TypeScript types (type-safety technical debt)
 /**
  * Centralized Rendering Configuration
  * All visual effect parameters in one place for easy tweaking

@@ -1,5 +1,9 @@
 .home-highscores {
   margin-top: var(--space-10);
+  max-width: 640px;
+  margin-left: auto;
+  margin-right: auto;
+  width: 100%;
 }
 
 .home-highscores-title {
@@ -8,29 +12,52 @@
   gap: var(--space-2);
   font-size: var(--font-size-2xl);
   color: var(--color-text-primary);
-  margin-bottom: var(--space-5);
+  margin-bottom: var(--space-4);
 }
 
-.home-highscores-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-  gap: var(--space-4);
+/* ── Tab pills ─────────────────────────────────────────── */
+.home-highscores-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
 }
 
-.home-highscores-card {
-  text-align: left;
+.home-highscores-tab {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  padding: var(--space-1) var(--space-3);
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+}
+
+.home-highscores-tab:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.home-highscores-tab.active {
+  background: var(--color-primary-dim);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  font-weight: var(--font-weight-semibold);
+}
+
+/* ── Panel ─────────────────────────────────────────────── */
+.home-highscores-panel {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   padding: var(--space-4);
+  min-height: 80px;
 }
 
-.home-highscores-game {
-  margin: 0 0 var(--space-3) 0;
-  color: var(--color-primary);
-  font-size: var(--font-size-lg);
-}
-
+/* ── List ──────────────────────────────────────────────── */
 .home-highscores-list {
   list-style: none;
   margin: 0;
@@ -41,41 +68,71 @@
 
 .home-highscores-row {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: 2.2rem 1fr auto;
   gap: var(--space-3);
   align-items: center;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: var(--space-2) var(--space-3);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+
+.home-highscores-row:last-child {
+  border-bottom: none;
 }
 
 .home-highscores-rank {
   color: var(--color-warning);
   font-family: var(--font-family-mono);
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-xs);
+  text-align: right;
+}
+
+/* name + bar column */
+.home-highscores-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
 }
 
 .home-highscores-name {
   color: var(--color-text-primary);
   font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-sm);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.home-highscores-bar-wrap {
+  height: 4px;
+  background: rgba(255,255,255,0.06);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.home-highscores-bar {
+  height: 100%;
+  width: var(--bar-w, 0%);
+  background: linear-gradient(90deg, var(--color-primary), var(--color-secondary));
+  border-radius: 2px;
+  animation: barGrow 0.6s var(--transition-bounce) forwards;
+  transform-origin: left;
+}
+
+@keyframes barGrow {
+  from { width: 0%; }
+  to   { width: var(--bar-w, 0%); }
 }
 
 .home-highscores-metric {
   color: var(--color-text-muted);
   font-size: var(--font-size-xs);
   white-space: nowrap;
+  font-family: var(--font-family-mono);
 }
 
 .home-highscores-empty {
   color: var(--color-text-muted);
   margin: 0;
-}
-
-@media (max-width: 768px) {
-  .home-highscores-grid {
-    grid-template-columns: 1fr;
-  }
+  font-size: var(--font-size-sm);
 }

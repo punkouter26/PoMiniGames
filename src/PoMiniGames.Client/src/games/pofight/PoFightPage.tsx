@@ -1,4 +1,5 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Difficulty, GameResult } from '../shared/types';
 import { statsService } from '../shared/statsService';
 import { usePlayerName } from '../../context/PlayerNameContext';
@@ -9,7 +10,6 @@ import { Home } from './components/game/Home';
 import { CharacterSelect } from './components/game/CharacterSelect';
 import Stage from './components/game/Stage';
 import { GameErrorBoundary } from './components/GameErrorBoundary';
-import './pofight.css';
 
 type Screen = 'HOME' | 'SELECT' | 'GAME';
 type GameMode = 'PvCPU' | 'CPUvCPU';
@@ -23,12 +23,24 @@ const DIFFICULTY_LEVELS: Record<Difficulty, number> = {
 };
 
 export default function PoFightPage() {
+  const [searchParams] = useSearchParams();
+  const isDemoMode = searchParams.get('demo') === '1';
   const { playerName } = usePlayerName();
-  const [screen, setScreen] = useState<Screen>('HOME');
-  const [gameMode, setGameMode] = useState<GameMode>('PvCPU');
+  const [screen, setScreen] = useState<Screen>(isDemoMode ? 'SELECT' : 'HOME');
+  const [gameMode, setGameMode] = useState<GameMode>(isDemoMode ? 'CPUvCPU' : 'PvCPU');
   const [difficulty, setDifficulty] = useState(Difficulty.Medium);
   const [stats, setStats] = useState(() => statsService.getStats(GAME_KEY, playerName));
   const [lastResult, setLastResult] = useState<GameResult | null>(null);
+
+  useEffect(() => {
+    if (!isDemoMode) {
+      return;
+    }
+
+    setGameMode('CPUvCPU');
+    setScreen('SELECT');
+    setLastResult(null);
+  }, [isDemoMode]);
 
   const handleSelectMode = (mode: GameMode) => {
     setGameMode(mode);
@@ -45,10 +57,16 @@ export default function PoFightPage() {
   const handleGameEnd = useCallback(async (result: 'win' | 'loss') => {
     const gameResult = result === 'win' ? GameResult.Win : GameResult.Loss;
     setLastResult(gameResult);
+
+    if (gameMode === 'CPUvCPU') {
+      setScreen(isDemoMode ? 'SELECT' : 'HOME');
+      return;
+    }
+
     const updated = await statsService.recordResult(GAME_KEY, playerName, difficulty, gameResult);
     setStats(updated);
     setScreen('HOME');
-  }, [playerName, difficulty]);
+  }, [difficulty, gameMode, isDemoMode, playerName]);
 
   const handleManualResult = async (result: GameResult) => {
     setLastResult(result);
@@ -82,6 +100,7 @@ export default function PoFightPage() {
       title="PoFight"
       player={playerName}
       status={statusNode}
+      backTo="/"
       controls={
         <>
           <select
@@ -92,7 +111,7 @@ export default function PoFightPage() {
             <option value={Difficulty.Medium}>Medium</option>
             <option value={Difficulty.Hard}>Hard</option>
           </select>
-          {screen === 'GAME' && (
+          {screen === 'GAME' && gameMode === 'PvCPU' && (
             <>
               <button className="btn-win" onClick={() => handleManualResult(GameResult.Win)}>
                 <Trophy size={12} /> Win

@@ -7,3 +7,4 @@ public static class GameConfig
     public const int TotalRounds = 5;
     public const double SlopeAngle = 20.0;
 }
+

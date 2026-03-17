@@ -9,7 +9,7 @@ public static class GetSnakeHighScoresEndpoint
     public static IEndpointRouteBuilder MapGetSnakeHighScores(this IEndpointRouteBuilder app)
     {
         app.MapGet("/api/snake/highscores",
-            async (StorageService storage, int count = 10) =>
+            async (IStorageService storage, int count = 10) =>
             {
                 var scores = await storage.GetSnakeHighScoresAsync(count);
                 return Results.Ok(scores);
@@ -22,3 +22,4 @@ public static class GetSnakeHighScoresEndpoint
         return app;
     }
 }
+

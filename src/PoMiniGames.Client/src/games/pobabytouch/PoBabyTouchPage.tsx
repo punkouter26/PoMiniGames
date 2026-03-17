@@ -213,6 +213,7 @@ export default function PoBabyTouchPage() {
     <GamePageShell
       title="PoBabyTouch"
       player={playerName}
+      backTo="/"
       controls={
         <select
           value={difficulty}

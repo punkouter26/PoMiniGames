@@ -9,12 +9,69 @@
   margin: 0 auto;
   width: 100%;
   animation: fadeIn var(--transition-slow) ease-out;
+  position: relative;
+}
+
+/* ── Animated ambient hero background ────────────────── */
+.home-container::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: -1;
+  background:
+    radial-gradient(ellipse 700px 500px at 12% 18%, rgba(0, 229, 255, 0.07) 0%, transparent 70%),
+    radial-gradient(ellipse 600px 450px at 88% 78%, rgba(224, 64, 251, 0.07) 0%, transparent 65%),
+    radial-gradient(ellipse 500px 350px at 55% 45%, rgba(48, 43, 99, 0.15) 0%, transparent 80%);
+  animation: homeBgPulse 12s ease-in-out infinite alternate;
+}
+
+@keyframes homeBgPulse {
+  0%   { opacity: 0.5; }
+  100% { opacity: 1; }
+}
+
+/* ── Star particle field ─────────────────────────────── */
+.home-container::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: -1;
+  background-image:
+    radial-gradient(1px 1px at 10% 15%, rgba(255,255,255,0.45) 0%, transparent 100%),
+    radial-gradient(1px 1px at 25% 40%, rgba(255,255,255,0.3) 0%, transparent 100%),
+    radial-gradient(1.5px 1.5px at 38% 8%, rgba(255,255,255,0.5) 0%, transparent 100%),
+    radial-gradient(1px 1px at 52% 60%, rgba(255,255,255,0.25) 0%, transparent 100%),
+    radial-gradient(1.5px 1.5px at 65% 22%, rgba(255,255,255,0.4) 0%, transparent 100%),
+    radial-gradient(1px 1px at 78% 75%, rgba(255,255,255,0.35) 0%, transparent 100%),
+    radial-gradient(1px 1px at 88% 12%, rgba(255,255,255,0.3) 0%, transparent 100%),
+    radial-gradient(1.5px 1.5px at 94% 50%, rgba(255,255,255,0.45) 0%, transparent 100%),
+    radial-gradient(1px 1px at 5% 85%, rgba(255,255,255,0.3) 0%, transparent 100%),
+    radial-gradient(1px 1px at 45% 90%, rgba(255,255,255,0.25) 0%, transparent 100%),
+    radial-gradient(1px 1px at 72% 95%, rgba(255,255,255,0.35) 0%, transparent 100%),
+    radial-gradient(1.5px 1.5px at 18% 65%, rgba(0,229,255,0.3) 0%, transparent 100%),
+    radial-gradient(1px 1px at 60% 35%, rgba(167,139,250,0.3) 0%, transparent 100%),
+    radial-gradient(1.5px 1.5px at 82% 42%, rgba(0,229,255,0.25) 0%, transparent 100%),
+    radial-gradient(1px 1px at 33% 78%, rgba(167,139,250,0.25) 0%, transparent 100%),
+    radial-gradient(1px 1px at 91% 28%, rgba(255,255,255,0.4) 0%, transparent 100%),
+    radial-gradient(1px 1px at 47% 55%, rgba(255,255,255,0.2) 0%, transparent 100%),
+    radial-gradient(1.5px 1.5px at 3% 45%, rgba(255,255,255,0.35) 0%, transparent 100%),
+    radial-gradient(1px 1px at 70% 5%, rgba(255,255,255,0.4) 0%, transparent 100%),
+    radial-gradient(1px 1px at 15% 30%, rgba(245,158,11,0.2) 0%, transparent 100%);
+  animation: starDrift 20s ease-in-out infinite alternate;
+}
+
+@keyframes starDrift {
+  0%   { transform: translateY(0px); opacity: 0.7; }
+  100% { transform: translateY(-12px); opacity: 1; }
 }
 
 .home-title {
   font-size: var(--font-size-4xl);
   font-weight: var(--font-weight-bold);
-  background: linear-gradient(90deg, var(--color-primary), var(--color-secondary));
+  background: linear-gradient(270deg, var(--color-primary), var(--color-secondary), #a78bfa, var(--color-primary));
+  background-size: 300% 100%;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -23,6 +80,13 @@
   align-items: center;
   justify-content: center;
   gap: var(--space-4);
+  animation: gradientShift 6s ease-in-out infinite;
+}
+
+@keyframes gradientShift {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
 }
 
 .home-title-icon {
@@ -36,48 +100,122 @@
   margin-bottom: var(--space-6);
 }
 
-.home-player-row {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-3);
-  margin-bottom: var(--space-10);
-  padding: var(--space-3) var(--space-5);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-}
-
-.home-player-label {
+/* ─── Mode selection buttons ─────────────────────────────── */
+.home-modes {
   display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  color: var(--color-text-muted);
-  font-size: var(--font-size-sm);
-  white-space: nowrap;
-}
-
-.home-player-input {
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid var(--color-border);
-  color: var(--color-text-primary);
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-md);
-  font-size: var(--font-size-sm);
-  width: 160px;
-  transition: all var(--transition-fast);
-}
-
-.home-player-input:focus {
-  border-color: var(--color-primary);
-  outline: none;
-  box-shadow: 0 0 0 3px var(--color-primary-dim);
-}
-
-.game-cards {
-  display: flex;
-  gap: var(--space-8);
+  gap: var(--space-5);
   justify-content: center;
   flex-wrap: wrap;
+  margin-bottom: var(--space-6);
+}
+
+.home-mode-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-8) var(--space-8);
+  min-width: 180px;
+  /* glassmorphism */
+  background: rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04), 0 4px 24px rgba(0,0,0,0.3);
+  border-radius: var(--radius-xl);
+  color: var(--color-text-secondary);
+  text-decoration: none;
+  transition: all var(--transition-base);
+  position: relative;
+  overflow: hidden;
+  animation: cardSlideUp 0.45s var(--transition-bounce) both;
+}
+
+.home-mode-btn:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 3px;
+}
+
+.home-mode-btn::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  transform: scaleX(0);
+  transition: transform var(--transition-base);
+}
+
+.home-mode-btn:hover {
+  transform: translateY(-6px);
+  box-shadow: var(--shadow-lg), 0 0 36px var(--color-primary-glow);
+}
+
+.home-mode-btn:hover::before {
+  transform: scaleX(1);
+}
+
+.home-mode-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.9;
+}
+
+.home-mode-label {
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-primary);
+}
+
+.home-mode-desc {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  text-align: center;
+}
+
+/* 2P — purple */
+.home-mode-btn--2p {
+  border-color: rgba(167, 139, 250, 0.35);
+  animation-delay: 0.08s;
+}
+.home-mode-btn--2p::before { background: linear-gradient(90deg, #a78bfa, #60a5fa); }
+.home-mode-btn--2p .home-mode-icon { color: #a78bfa; }
+.home-mode-btn--2p:hover { border-color: #a78bfa; box-shadow: var(--shadow-lg), 0 0 36px rgba(167, 139, 250, 0.3); }
+
+/* 1P — cyan */
+.home-mode-btn--1p {
+  border-color: rgba(0, 229, 255, 0.2);
+  animation-delay: 0.16s;
+}
+.home-mode-btn--1p::before { background: linear-gradient(90deg, var(--color-primary), #40c4ff); }
+.home-mode-btn--1p .home-mode-icon { color: var(--color-primary); }
+.home-mode-btn--1p:hover { border-color: var(--color-primary); }
+
+/* Demo — amber */
+.home-mode-btn--demo {
+  border-color: rgba(245, 158, 11, 0.2);
+  animation-delay: 0.24s;
+}
+.home-mode-btn--demo::before { background: linear-gradient(90deg, #f59e0b, #ef4444); }
+.home-mode-btn--demo .home-mode-icon { color: #f59e0b; }
+.home-mode-btn--demo:hover { border-color: #f59e0b; box-shadow: var(--shadow-lg), 0 0 36px rgba(245, 158, 11, 0.3); }
+
+/* ─── Dev login row ──────────────────────────────────────── */
+.home-dev-logins {
+  display: flex;
+  gap: var(--space-3);
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-bottom: var(--space-8);
+}
+
+/* legacy game-cards kept for zero-waste — no longer rendered */
+.game-cards {
+  display: none;
+}
+
+.game-option-group {
+  display: none;
 }
 
 .game-card {
@@ -91,6 +229,25 @@
   cursor: pointer;
   position: relative;
   overflow: hidden;
+}
+
+.home-dev-login-btn {
+  border: 1px dashed var(--color-border);
+  background: var(--color-surface-2);
+  color: var(--color-text-secondary);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.home-dev-login-btn:hover {
+  border-color: var(--color-primary);
+  color: var(--color-text-primary);
+  box-shadow: 0 0 14px var(--color-primary-glow);
 }
 
 .game-card::before {
@@ -163,6 +320,77 @@
   transform: translateX(4px);
 }
 
+/* ─── Online lobby card highlight ──────────────── */
+.game-card--online {
+  border-color: rgba(167, 139, 250, 0.35);
+}
+
+.game-card--online::before {
+  background: linear-gradient(90deg, #a78bfa, #60a5fa);
+}
+
+.game-card--online:hover {
+  border-color: #a78bfa;
+  box-shadow: var(--shadow-lg), 0 0 40px rgba(167, 139, 250, 0.25);
+}
+
+.game-card--online .play-btn {
+  border-color: #a78bfa;
+  color: #a78bfa;
+}
+
+.game-card--online:hover .play-btn {
+  background: #a78bfa;
+  color: var(--color-bg-dark);
+}
+/* ─── Solo card (cyan theme) ──────────────────────────── */
+.game-card--solo {
+  border-color: rgba(0, 229, 255, 0.2);
+}
+
+.game-card--solo::before {
+  background: linear-gradient(90deg, var(--color-primary), #40c4ff);
+}
+
+/* ─── Demo card (amber theme) ─────────────────────────── */
+.game-card--demo {
+  border-color: rgba(245, 158, 11, 0.2);
+}
+
+.game-card--demo::before {
+  background: linear-gradient(90deg, #f59e0b, #ef4444);
+}
+
+.game-card--demo .play-btn {
+  border-color: #f59e0b;
+  color: #f59e0b;
+}
+
+.game-card--demo:hover {
+  border-color: #f59e0b;
+  box-shadow: var(--shadow-lg), 0 0 40px rgba(245, 158, 11, 0.3);
+}
+
+.game-card--demo:hover .play-btn {
+  background: #f59e0b;
+  color: var(--color-bg-dark);
+  box-shadow: 0 0 20px rgba(245, 158, 11, 0.4);
+}
+
+/* ─── Card entrance stagger ────────────────────────────── */
+.game-option-group {
+  animation: cardSlideUp 0.5s var(--transition-bounce) both;
+}
+
+.game-option-group:nth-child(1) { animation-delay: 0.08s; }
+.game-option-group:nth-child(2) { animation-delay: 0.18s; }
+.game-card--demo { animation: cardSlideUp 0.5s var(--transition-bounce) 0.28s both; }
+
+@keyframes cardSlideUp {
+  from { transform: translateY(28px); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+
 /* ─── Responsive ─────────────────────────────────────────── */
 @media (max-width: 768px) {
   .home-title {
@@ -170,14 +398,23 @@
     flex-direction: column;
     gap: var(--space-2);
   }
-  
-  .game-cards {
+
+  .home-modes {
     flex-direction: column;
     align-items: center;
   }
-  
-  .game-card {
+
+  .home-mode-btn {
     width: 100%;
-    max-width: 360px;
+    max-width: 320px;
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: var(--space-4);
+    padding: var(--space-5) var(--space-6);
+    text-align: left;
+  }
+
+  .home-mode-desc {
+    text-align: left;
   }
 }

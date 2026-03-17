@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { Trophy } from 'lucide-react';
 import { apiService } from '../games/shared/apiService';
 import type { PlayerStatsDto } from '../games/shared/types';
@@ -15,43 +15,43 @@ const GAMES = [
   // PoSnakeGame has its own score-based leaderboard on the game page
 ] as const;
 
-function toPercent(value: number | undefined): string {
-  return `${Math.round((value ?? 0) * 100)}%`;
-}
+type GameId = typeof GAMES[number]['id'];
 
 export default function HomeHighScores() {
-  const [leaderboards, setLeaderboards] = useState<Record<string, PlayerStatsDto[]>>({});
-  const [isLoading, setIsLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<GameId>(GAMES[0].id);
+  const [cache, setCache] = useState<Partial<Record<GameId, PlayerStatsDto[]>>>({});
+  const [isLoading, setIsLoading] = useState(false);
+  const [apiAvailable, setApiAvailable] = useState<boolean | null>(null);
 
+  // Check API availability once on mount
   useEffect(() => {
     let mounted = true;
-
-    const load = async () => {
-      setIsLoading(true);
-      const results = await Promise.all(
-        GAMES.map(async (game) => ({
-          gameId: game.id,
-          entries: (await apiService.getLeaderboard(game.id, 10)) ?? [],
-        })),
-      );
-
-      if (!mounted) return;
-
-      const next: Record<string, PlayerStatsDto[]> = {};
-      for (const result of results) {
-        next[result.gameId] = result.entries;
-      }
-
-      setLeaderboards(next);
-      setIsLoading(false);
-    };
-
-    void load();
-
-    return () => {
-      mounted = false;
-    };
+    apiService.isAvailable().then(ok => { if (mounted) setApiAvailable(ok); });
+    return () => { mounted = false; };
   }, []);
+
+  const loadTab = useCallback(async (id: GameId) => {
+    if (apiAvailable === false) {
+      setCache(prev => ({ ...prev, [id]: [] }));
+      return;
+    }
+    if (apiAvailable === null) return; // availability check not done yet
+    if (cache[id] !== undefined) return; // already cached
+
+    setIsLoading(true);
+    const entries = (await apiService.getLeaderboard(id, 10)) ?? [];
+    setCache(prev => ({ ...prev, [id]: entries }));
+    setIsLoading(false);
+  }, [apiAvailable, cache]);
+
+  useEffect(() => {
+    void loadTab(activeTab);
+  }, [activeTab, loadTab]);
+
+  const entries = cache[activeTab] ?? null;
+  const topWinRate = entries && entries.length > 0
+    ? Math.max(...entries.map(e => e.stats.winRate ?? 0))
+    : 1;
 
   return (
     <section className="home-highscores" aria-label="Top 10 high scores per game">
@@ -60,39 +60,56 @@ export default function HomeHighScores() {
         Top 10 High Scores
       </h2>
 
-      {isLoading ? (
-        <p className="home-highscores-empty">Loading high scores...</p>
-      ) : (
-        <div className="home-highscores-grid">
-          {GAMES.map((game) => {
-            const entries = leaderboards[game.id] ?? [];
-            return (
-              <article key={game.id} className="home-highscores-card">
-                <h3 className="home-highscores-game">{game.label}</h3>
+      {/* Tab pills */}
+      <div className="home-highscores-tabs" role="tablist">
+        {GAMES.map(game => (
+          <button
+            key={game.id}
+            role="tab"
+            aria-selected={activeTab === game.id}
+            className={`home-highscores-tab${activeTab === game.id ? ' active' : ''}`}
+            onClick={() => setActiveTab(game.id)}
+          >
+            {game.label}
+          </button>
+        ))}
+      </div>
 
-                {entries.length === 0 ? (
-                  <p className="home-highscores-empty">No entries yet.</p>
-                ) : (
-                  <ol className="home-highscores-list">
-                    {entries.map((entry, index) => (
-                      <li
-                        key={`${game.id}-${entry.name}-${entry.stats.playerId}-${index}`}
-                        className="home-highscores-row"
-                      >
-                        <span className="home-highscores-rank">#{index + 1}</span>
-                        <span className="home-highscores-name">{entry.name}</span>
-                        <span className="home-highscores-metric">
-                          {toPercent(entry.stats.overallWinRate)} • {entry.stats.totalGames}G • {entry.stats.totalWins}W
-                        </span>
-                      </li>
-                    ))}
-                  </ol>
-                )}
-              </article>
-            );
-          })}
-        </div>
-      )}
+      {/* Leaderboard panel */}
+      <div className="home-highscores-panel" role="tabpanel">
+        {apiAvailable === null || (isLoading && entries === null) ? (
+          <p className="home-highscores-empty">Loading...</p>
+        ) : entries === null || entries.length === 0 ? (
+          <p className="home-highscores-empty">No entries yet.</p>
+        ) : (
+          <ol className="home-highscores-list">
+            {entries.map((entry, index) => {
+              const pct = Math.round((entry.stats.winRate ?? 0) * 100);
+              const barWidth = topWinRate > 0 ? Math.round(((entry.stats.winRate ?? 0) / topWinRate) * 100) : 0;
+              return (
+                <li
+                  key={`${activeTab}-${entry.name}-${entry.stats.playerId}-${index}`}
+                  className="home-highscores-row"
+                >
+                  <span className="home-highscores-rank">#{index + 1}</span>
+                  <div className="home-highscores-info">
+                    <span className="home-highscores-name">{entry.name}</span>
+                    <div className="home-highscores-bar-wrap">
+                      <div
+                        className="home-highscores-bar"
+                        style={{ '--bar-w': `${barWidth}%` } as React.CSSProperties}
+                      />
+                    </div>
+                  </div>
+                  <span className="home-highscores-metric">
+                    {pct}% · {entry.stats.totalGames}G
+                  </span>
+                </li>
+              );
+            })}
+          </ol>
+        )}
+      </div>
     </section>
   );
 }

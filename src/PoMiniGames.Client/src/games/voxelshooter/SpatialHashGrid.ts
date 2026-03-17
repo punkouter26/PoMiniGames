@@ -1,4 +1,5 @@
 // @ts-nocheck
+// TODO: Remove @ts-nocheck and add proper TypeScript types (type-safety technical debt)
 // Grid Cell size determines collision bucket
 export class SpatialHashGrid {
     private cellSize: number;

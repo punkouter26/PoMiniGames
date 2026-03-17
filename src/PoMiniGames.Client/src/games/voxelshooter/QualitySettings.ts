@@ -1,4 +1,5 @@
 // @ts-nocheck
+// TODO: Remove @ts-nocheck and add proper TypeScript types (type-safety technical debt)
 /**
  * Graphics Quality Settings Manager
  * Allows runtime toggling between 4 quality presets via 1-4 keys

@@ -1,126 +1,23 @@
-import { useState, useCallback } from 'react';
-import { Piece, Difficulty, GameResult } from '../shared/types';
-import { statsService } from '../shared/statsService';
+import { Circle, CircleDot, RotateCcw, Users } from 'lucide-react';
+import { Difficulty, GameResult, Piece } from '../shared/types';
+import { GamePageShell } from '../shared/GamePageShell';
 import { ConnectFiveBoard } from './ConnectFiveBoard';
-import { ConnectFiveAI } from './ConnectFiveAI';
-import { usePlayerName } from '../../context/PlayerNameContext';
-import { GamePageShell, type StatItem } from '../shared/GamePageShell';
-import { CircleDot, Circle, RotateCcw, Loader2, Trophy, Users } from 'lucide-react';
+import { useConnectFiveGame } from './useConnectFiveGame';
 import './ConnectFivePage.css';
 
-const GAME_KEY = 'connectfive';
-
 export default function ConnectFivePage() {
-  const { playerName } = usePlayerName();
-  const [board, setBoard] = useState(() => new ConnectFiveBoard());
-  const [difficulty, setDifficulty] = useState(Difficulty.Medium);
-  const [gameResult, setGameResult] = useState(GameResult.InProgress);
-  const [winCells, setWinCells] = useState<[number, number][]>([]);
-  const [isAiTurn, setIsAiTurn] = useState(false);
-  const [stats, setStats] = useState(() => statsService.getStats(GAME_KEY, playerName));
-  const [hoveredCol, setHoveredCol] = useState<number | null>(null);
-
-  const resetGame = useCallback(() => {
-    setBoard(new ConnectFiveBoard());
-    setGameResult(GameResult.InProgress);
-    setWinCells([]);
-    setIsAiTurn(false);
-  }, []);
-
-  const handleDrop = useCallback(
-    (col: number) => {
-      if (gameResult !== GameResult.InProgress || isAiTurn) return;
-      if (board.getTargetRow(col) < 0) return;
-
-      // Player drop
-      let next = board.drop(col, Piece.Red);
-
-      const playerWin = next.checkWin(Piece.Red);
-      if (playerWin.won) {
-        setBoard(next);
-        setGameResult(GameResult.Win);
-        setWinCells(playerWin.cells);
-        statsService.recordResult(GAME_KEY, playerName, difficulty, GameResult.Win)
-          .then(setStats);
-        return;
-      }
-
-      if (next.isFull()) {
-        setBoard(next);
-        setGameResult(GameResult.Draw);
-        statsService.recordResult(GAME_KEY, playerName, difficulty, GameResult.Draw)
-          .then(setStats);
-        return;
-      }
-
-      // AI drop
-      setBoard(next);
-      setIsAiTurn(true);
-
-      setTimeout(() => {
-        const aiCol = ConnectFiveAI.getMove(next, Piece.Yellow, difficulty);
-        next = next.drop(aiCol, Piece.Yellow);
-
-        const aiWin = next.checkWin(Piece.Yellow);
-        if (aiWin.won) {
-          setBoard(next);
-          setGameResult(GameResult.Loss);
-          setWinCells(aiWin.cells);
-          setIsAiTurn(false);
-          statsService.recordResult(GAME_KEY, playerName, difficulty, GameResult.Loss)
-            .then(setStats);
-          return;
-        }
-
-        if (next.isFull()) {
-          setBoard(next);
-          setGameResult(GameResult.Draw);
-          setIsAiTurn(false);
-          statsService.recordResult(GAME_KEY, playerName, difficulty, GameResult.Draw)
-            .then(setStats);
-          return;
-        }
-
-        setBoard(next);
-        setIsAiTurn(false);
-      }, 250);
-    },
-    [board, gameResult, isAiTurn, difficulty, playerName],
-  );
-
-  const isWinCell = (r: number, c: number) =>
-    winCells.some(([wr, wc]) => wr === r && wc === c);
-
-  const getStatusContent = () => {
-    switch (gameResult) {
-      case GameResult.Win: 
-        return { icon: <Trophy size={14} />, text: 'You Win!', className: 'win' };
-      case GameResult.Loss: 
-        return { icon: <CircleDot size={14} />, text: 'AI Wins!', className: 'loss' };
-      case GameResult.Draw: 
-        return { icon: <Users size={14} />, text: 'Draw!', className: 'draw' };
-      default: 
-        return isAiTurn 
-          ? { icon: <Loader2 size={14} className="thinking-indicator" />, text: 'AI thinking...', className: 'thinking' }
-          : { icon: <CircleDot size={14} color="#f44336" />, text: 'Your turn (Red)', className: 'turn' };
-    }
-  };
-
-  const status = getStatusContent();
-  const diffBucket = statsService.getDifficultyBucket(stats, difficulty);
-
-  const statItems: StatItem[] = [
-    { value: diffBucket.wins, label: 'W' },
-    { value: diffBucket.losses, label: 'L' },
-    { value: diffBucket.draws, label: 'D' },
-    { value: diffBucket.winStreak, label: 'Str' },
-    { value: `${(diffBucket.winRate * 100).toFixed(0)}%`, label: 'Rate' },
-  ];
+  const {
+    board, boardToRender, difficulty, setDifficulty, gameResult, isAiTurn,
+    hoveredCol, setHoveredCol, playMode, setPlayMode, resetGame, handleDrop,
+    isWinCell, opponent, isMyTurnOnline, status, statItems, multiplayer,
+    isAuthenticated, isConfigured, signIn, playerName,
+  } = useConnectFiveGame();
 
   return (
     <GamePageShell
       title={<><CircleDot size={14} color="#f44336" /> Connect Five</>}
       player={playerName}
+      backTo="/"
       status={
         <span className={`gps-status-badge ${status.className}`}>
           {status.icon} {status.text}
@@ -128,29 +25,102 @@ export default function ConnectFivePage() {
       }
       controls={
         <>
-          <select
-            value={difficulty}
-            onChange={(e) => { setDifficulty(e.target.value as Difficulty); resetGame(); }}
-            aria-label="Select difficulty"
+          <button
+            type="button"
+            aria-pressed={playMode === 'ai'}
+            onClick={() => {
+              if (playMode === 'online' && multiplayer.match) void multiplayer.leaveMatch();
+              setPlayMode('ai');
+              resetGame();
+            }}
           >
-            <option value={Difficulty.Easy}>Easy</option>
-            <option value={Difficulty.Medium}>Medium</option>
-            <option value={Difficulty.Hard}>Hard</option>
-          </select>
-          <button onClick={resetGame}>
-            <RotateCcw size={12} /> New Game
+            Vs AI
           </button>
+          <button
+            type="button"
+            aria-pressed={playMode === 'online'}
+            onClick={() => {
+              if (playMode === 'demo') resetGame();
+              setPlayMode('online');
+            }}
+          >
+            Online 2P
+          </button>
+          <button
+            type="button"
+            aria-pressed={playMode === 'demo'}
+            onClick={() => {
+              if (playMode === 'online' && multiplayer.match) void multiplayer.leaveMatch();
+              setPlayMode('demo');
+              resetGame();
+            }}
+          >
+            Demo CPU vs CPU
+          </button>
+          {playMode === 'ai' ? (
+            <>
+              <select
+                value={difficulty}
+                onChange={(e) => { setDifficulty(e.target.value as Difficulty); resetGame(); }}
+                aria-label="Select difficulty"
+              >
+                <option value={Difficulty.Easy}>Easy</option>
+                <option value={Difficulty.Medium}>Medium</option>
+                <option value={Difficulty.Hard}>Hard</option>
+              </select>
+              <button onClick={resetGame}><RotateCcw size={12} /> New Game</button>
+            </>
+          ) : playMode === 'demo' ? (
+            <>
+              <select
+                value={difficulty}
+                onChange={(e) => { setDifficulty(e.target.value as Difficulty); resetGame(); }}
+                aria-label="Select difficulty"
+              >
+                <option value={Difficulty.Easy}>Easy</option>
+                <option value={Difficulty.Medium}>Medium</option>
+                <option value={Difficulty.Hard}>Hard</option>
+              </select>
+              <button onClick={resetGame}><RotateCcw size={12} /> Restart Demo</button>
+            </>
+          ) : !isConfigured ? null : !isAuthenticated ? (
+            <button onClick={() => void signIn()}><Users size={12} /> Sign In</button>
+          ) : multiplayer.match ? (
+            <button onClick={() => void multiplayer.leaveMatch()}><RotateCcw size={12} /> Leave Match</button>
+          ) : (
+            <button onClick={() => void multiplayer.joinQueue()} disabled={multiplayer.isBusy}>
+              <Users size={12} /> Find Opponent
+            </button>
+          )}
         </>
       }
       stats={statItems}
     >
+      {playMode === 'online' && opponent && (
+        <div style={{ marginBottom: '0.75rem', color: 'var(--color-text-secondary)', textAlign: 'center' }}>
+          Playing against {opponent.displayName}
+        </div>
+      )}
+      {playMode === 'online' && multiplayer.error && (
+        <div style={{ marginBottom: '0.75rem', color: '#fca5a5', textAlign: 'center' }}>
+          {multiplayer.error}
+        </div>
+      )}
       {/* Column drop buttons */}
       <div className="cf-drop-row">
         {Array.from({ length: ConnectFiveBoard.Cols }, (_, c) => (
           <button
             key={c}
             className={`cf-drop-btn ${hoveredCol === c && gameResult === GameResult.InProgress && !isAiTurn ? 'active-column' : ''}`}
-            disabled={gameResult !== GameResult.InProgress || isAiTurn || board.getTargetRow(c) < 0}
+            disabled={playMode === 'online'
+              ? !multiplayer.match
+                || multiplayer.match.status !== 'InProgress'
+                || !isMyTurnOnline
+                || boardToRender.getTargetRow(c) < 0
+                || multiplayer.isBusy
+              : playMode === 'demo'
+                ? true
+                : gameResult !== GameResult.InProgress || isAiTurn || board.getTargetRow(c) < 0}
             onClick={() => handleDrop(c)}
             onMouseEnter={() => setHoveredCol(c)}
             onMouseLeave={() => setHoveredCol(null)}
@@ -160,26 +130,23 @@ export default function ConnectFivePage() {
           </button>
         ))}
       </div>
-
       {/* Board grid */}
-      <div 
-        className="cf-board" 
-        role="grid" 
-        aria-label="Connect Five game board"
-      >
+      <div className="cf-board" role="grid" aria-label="Connect Five game board">
         {Array.from({ length: ConnectFiveBoard.Rows }, (_, r) =>
           Array.from({ length: ConnectFiveBoard.Cols }, (_, c) => {
-            const piece = board.get(r, c);
+            const piece = boardToRender.get(r, c);
             const cls = [
               'cf-cell',
               piece === Piece.Red ? 'red' : piece === Piece.Yellow ? 'yellow' : '',
               isWinCell(r, c) ? 'win-cell' : '',
-              gameResult !== GameResult.InProgress ? 'disabled' : '',
+              playMode === 'online'
+                ? multiplayer.match?.status !== 'InProgress' ? 'disabled' : ''
+                : gameResult !== GameResult.InProgress ? 'disabled' : '',
             ].filter(Boolean).join(' ');
             return (
-              <div 
-                key={`${r}-${c}`} 
-                className={cls} 
+              <div
+                key={`${r}-${c}`}
+                className={cls}
                 onClick={() => handleDrop(c)}
                 onMouseEnter={() => setHoveredCol(c)}
                 onMouseLeave={() => setHoveredCol(null)}
@@ -202,3 +169,5 @@ export default function ConnectFivePage() {
     </GamePageShell>
   );
 }
+
+

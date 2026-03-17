@@ -53,89 +53,35 @@
   flex-shrink: 0;
 }
 
-/* ─── Desktop nav ─────────────────────────────────────────── */
-.gl-nav-desktop {
+.gl-auth {
   display: flex;
-  gap: 2px;
   align-items: center;
-  overflow-x: auto;
-  scrollbar-width: none;
-  flex: 1;
-  justify-content: flex-end;
-  padding-left: var(--space-4);
+  gap: var(--space-2);
+  margin-left: var(--space-3);
 }
 
-.gl-nav-desktop::-webkit-scrollbar {
-  display: none;
-}
-
-.gl-nav-desktop a {
-  color: var(--color-text-muted);
+.gl-auth-user {
+  color: var(--color-text-secondary);
   font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-medium);
-  padding: var(--space-1) var(--space-2);
-  border-radius: var(--radius-md);
-  transition: color var(--transition-base), background var(--transition-base);
   white-space: nowrap;
 }
 
-.gl-nav-desktop a:hover,
-.gl-nav-desktop a.active {
-  color: var(--color-primary);
-  background: var(--color-primary-dim);
-}
-
-/* ─── Hamburger button ────────────────────────────────────── */
-.gl-hamburger {
-  display: none;
+.gl-auth-button {
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
-  background: none;
-  border: none;
-  color: var(--color-text-muted);
-  cursor: pointer;
-  padding: var(--space-1);
-  border-radius: var(--radius-md);
-  transition: color var(--transition-base);
-  flex-shrink: 0;
-}
-
-.gl-hamburger:hover {
-  color: var(--color-primary);
-}
-
-/* ─── Mobile drawer ───────────────────────────────────────── */
-.gl-drawer-backdrop {
-  position: fixed;
-  inset: var(--gl-nav-height) 0 0 0;
-  background: rgba(0, 0, 0, 0.55);
-  z-index: 199;
-  backdrop-filter: blur(3px);
-  animation: fadeIn var(--transition-fast) ease-out;
-}
-
-.gl-drawer {
-  display: flex;
-  flex-direction: column;
-  background: var(--color-surface);
-  border-bottom: 1px solid var(--color-border);
-  padding: var(--space-2) var(--space-3) var(--space-3);
-  gap: 2px;
-}
-
-.gl-drawer a {
+  gap: var(--space-1);
+  border: 1px solid var(--color-border);
+  background: transparent;
   color: var(--color-text-secondary);
-  font-size: var(--font-size-base);
+  font-size: var(--font-size-xs);
   font-weight: var(--font-weight-medium);
-  padding: var(--space-3) var(--space-4);
+  padding: 0.35rem 0.55rem;
   border-radius: var(--radius-md);
-  transition: color var(--transition-base), background var(--transition-base);
 }
 
-.gl-drawer a:hover,
-.gl-drawer a.active {
+.gl-auth-button:hover {
   color: var(--color-primary);
-  background: var(--color-primary-dim);
+  border-color: var(--color-primary);
 }
 
 /* ─── Game content area ───────────────────────────────────── */
@@ -148,14 +94,10 @@
   padding: 0;
 }
 
-/* ─── Mobile: swap to hamburger ───────────────────────────── */
+/* ─── Mobile ─────────────────────────────────────────────── */
 @media (max-width: 768px) {
-  .gl-nav-desktop {
+  .gl-auth-user {
     display: none;
-  }
-
-  .gl-hamburger {
-    display: flex;
   }
 
   .gl-top-bar {
@@ -172,5 +114,48 @@
   .gl-brand-icon {
     width: 30px;
     height: 30px;
+  }
+}
+
+/* ─── Player name chip in nav ──────────────────────────── */
+.gl-player-chip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full);
+  padding: 2px var(--space-2);
+  background: var(--color-surface);
+  transition: border-color var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.gl-player-chip:focus-within {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px var(--color-primary-dim);
+}
+
+.gl-player-chip-icon {
+  color: var(--color-text-muted);
+  flex-shrink: 0;
+}
+
+.gl-player-input {
+  background: transparent;
+  border: none;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+  width: 80px;
+  outline: none;
+  font-family: inherit;
+}
+
+.gl-player-input::placeholder {
+  color: var(--color-text-disabled);
+}
+
+@media (max-width: 768px) {
+  .gl-player-chip {
+    display: none;
   }
 }

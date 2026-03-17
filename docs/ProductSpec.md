@@ -1,161 +1,135 @@
-# ProductSpec.md - PRD + Success Metrics
+# ProductSpec.md — PRD + Success Metrics
 
-## Simplified Version (AI-Friendly)
-
-**Project Name:** PoMiniGames  
-**Type:** Web-based Mini Games Platform  
-**Core Feature:** Tic-Tac-Toe & Connect Five with AI opponents and leaderboards
-
-### Goals
-- Provide fun, playable mini-games
-- Track player statistics across difficulty levels
-- Enable competitive leaderboards
-- Work offline with local storage fallback
-
-### Success Metrics
-- Games load under 2 seconds
-- Stats persist correctly
-- Leaderboard displays accurate rankings
+**Project:** PoMiniGames | **Status:** Active | **Stack:** React 18 + .NET 10 + Azure
 
 ---
 
-## Detailed Version (Human Developers)
+## Why This Exists
 
-### 1. Product Overview
+PoMiniGames gives players a single destination for casual, low-friction mini-games with:
+- Instant play (no install, no account required for solo play)
+- Competitive stats and leaderboards to drive retention
+- Offline resilience — the app degrades gracefully when the API is unavailable
+- AI opponents at three difficulty tiers to serve all skill levels
 
-**Project Name:** PoMiniGames  
-**Version:** 1.0.0  
-**Type:** Web Application (SPA + REST API)  
-**Target Users:** Casual gamers looking for quick, fun browser games
+---
 
-### 2. Problem Statement
+## Games Catalog
 
-Players want:
-1. Quick, fun games they can play anytime
-2. Challenge against AI opponents at various difficulty levels
-3. Track their progress and compete on leaderboards
-4. A seamless experience that works offline
+| Game | Grid / Mode | Difficulty | Multiplayer | Storage |
+|---|---|---|---|---|
+| Tic-Tac-Toe | 3×3 grid | Easy/Medium/Hard | Online PvP + Demo | PlayerStats (SQLite) |
+| Connect Five | 6×5 grid — 5-in-a-row | Easy/Medium/Hard | Online PvP + Demo | PlayerStats (SQLite) |
+| PoFight | 2D fighting — PvCPU/CPUvCPU | Easy/Medium/Hard | CPUvCPU Demo | PlayerStats (SQLite) |
+| Po Snake Game | Multi-snake 30 s arena | N/A | N/A | SnakeHighScore (SQLite) |
+| PoDropSquare | Physics block survival | N/A | N/A | PoDropSquareHighScore (SQLite) |
+| PoBabyTouch | Bubble-pop tap sensory | N/A | N/A | Local storage only |
+| PoRaceRagdoll | Physics ragdoll racing + betting | N/A | Betting lobby | RaceSession (in-memory) |
+| Voxel Shooter | FPS voxel shooting (WebGL) | N/A | N/A | Local storage only |
 
-### 3. Product Vision
+---
 
-A modern, responsive mini-games platform featuring classic games with intelligent AI opponents, persistent player statistics, and competitive leaderboards.
+## Game Modes
 
-### 4. Core Features
+| Mode | Description |
+|---|---|
+| PvAI | Single player vs AI (Easy/Medium/Hard) |
+| Online PvP | Real-time 2P via SignalR lobby + multiplayer hub |
+| Demo / CPUvCPU | Watch two AI agents play — no stats recorded |
 
-#### 4.1 Games
+---
 
-| Game | Description | Difficulty Levels |
-|------|-------------|-------------------|
-| Tic-Tac-Toe | Classic 3x3 grid game | Easy, Medium, Hard |
-| Connect Five | Connect 5 in a row on 6x5 grid | Easy, Medium, Hard |
+## Stats Tracked
 
-#### 4.2 Game Modes
-- **PvP:** Player vs Player (local)
-- **PvAI:** Player vs Computer
+| Scope | Fields |
+|---|---|
+| Per player per game per difficulty | Wins, Losses, Draws, TotalGames, WinStreak, WinRate |
+| Aggregate per player per game | TotalWins, TotalLosses, TotalDraws, TotalGames, WinRate |
+| Snake | Score, SnakeLength, FoodEaten, GameDuration |
+| PoDropSquare | SurvivalTime, PlayerInitials |
+| Race | WinnerName, RaceSession metadata |
 
-#### 4.3 Statistics Tracking
-- Wins, Losses, Draws per difficulty
-- Win streak tracking
-- Overall statistics aggregation
+Stats sync to the API on each game result. If the API is unavailable, results are queued in local storage and retried.
 
-#### 4.4 Leaderboards
-- Top players by win rate
-- Filtered by game
-- Real-time updates
+---
 
-### 5. User Stories
+## Architecture Overview
 
+```mermaid
+flowchart LR
+    Player["Player\nBrowser"] --> Client["React SPA\nStatic Web App"]
+    Client -->|"REST + SignalR"| API[".NET 10 API\nApp Service"]
+    API --> Data["SQLite\nKey Vault\nApp Insights"]
+    Client -.->|"OAuth2"| Auth["Microsoft\nIdentity"]
+    API -.->|"JWT"| Auth
 ```
-As a player,
-I want to play Tic-Tac-Toe against the computer,
-So I can practice and improve my strategy
 
-As a player,
-I want to see my statistics across all difficulty levels,
-So I can track my progress
+---
 
-As a player,
-I want to compete on a leaderboard,
-So I can see how I rank against other players
-```
+## API Surface
 
-### 6. Success Metrics
+| Method | Endpoint | Auth | Description |
+|---|---|---|---|
+| GET | `/api/health/ping` | None | Liveness check |
+| GET | `/api/health` | None | Full health with dependency status |
+| GET | `/diag` | None | Masked config dump (dev only) |
+| GET | `/api/{game}/players/{id}/stats` | None | Get player stats |
+| PUT | `/api/{game}/players/{id}/stats` | JWT Bearer | Save/update player stats |
+| GET | `/api/{game}/statistics/leaderboard` | None | Top 10 leaderboard (rate-limited) |
+| GET | `/api/{game}/statistics/all` | None | All player stats |
+| GET | `/api/podropsquare/highscores` | None | PoDropSquare top scores |
+| POST | `/api/podropsquare/highscores` | None | Submit PoDropSquare score |
+| GET | `/api/snake/highscores` | None | Snake top scores |
+| POST | `/api/snake/highscores` | None | Submit Snake score |
+| WS | `/api/hubs/lobby` | JWT required | SignalR lobby hub |
+| WS | `/api/hubs/multiplayer` | JWT required | SignalR game hub |
+| * | `/api/raceragdoll/*` | None | MVC controller for race management |
 
-#### 6.1 Performance
-| Metric | Target | Measurement |
-|--------|--------|-------------|
-| First Contentful Paint | < 1.5s | Lighthouse |
-| Time to Interactive | < 3s | Lighthouse |
-| API Response Time | < 200ms | Application Insights |
-| Uptime | > 99.9% | Azure Monitor |
+**Rate Limiting:** `highscores` policy — 10 requests/min per IP (fixed window)
 
-#### 6.2 Functionality
-| Metric | Target | Measurement |
-|--------|--------|-------------|
-| Game Completion Rate | > 95% | Analytics |
-| Stats Save Success | > 99% | Error tracking |
-| Leaderboard Accuracy | 100% | Integration tests |
+---
 
-#### 6.3 User Engagement
-| Metric | Target | Measurement |
-|--------|--------|-------------|
-| Daily Active Users | Growing | Analytics |
-| Avg Games per Session | > 3 | Analytics |
-| Return Rate | > 40% | Analytics |
+## Security Model
 
-### 7. Technical Requirements
+| Layer | Mechanism |
+|---|---|
+| Authentication | JWT Bearer (MSAL) + DevCookie scheme (dev only) |
+| Authorization | Policy-based: JWT header → Bearer; Cookie → DevCookie |
+| Secrets | Azure Key Vault via Managed Identity; dotnet user-secrets locally |
+| CORS | Allowlist: localhost:5000, 5001, 5173 (configurable) |
+| Transport | HTTPS-only on App Service; HTTP allowed locally |
 
-#### 7.1 Frontend
-- React 18+ with TypeScript
-- Vite for build tooling
-- React Router for navigation
-- CSS Modules for styling
+---
 
-#### 7.2 Backend
-- .NET 10 Minimal API
-- Azure Table Storage for persistence
-- Azure Key Vault for secrets
-- Serilog for logging
+## Offline Resilience
 
-#### 7.3 Infrastructure
-- Azure App Service (containerized)
-- Azure Storage Account
-- Azure Key Vault
-- GitHub Actions for CI/CD
+The React client operates fully without an API connection for single-player games:
+- Stats are written to `localStorage` keys: `pomini_stats_{game}_{player}`
+- Failed API syncs are queued and retried via `statsService.ts`
+- Leaderboard falls back to local data gracefully
+- No API = no multiplayer; lobby and multiplayer pages require auth
 
-### 8. Non-Functional Requirements
+---
 
-#### 8.1 Security
-- CORS configuration for allowed origins
-- No sensitive data in client-side code
-- Azure Managed Identity for production
+## Performance Targets
 
-#### 8.2 Reliability
-- Graceful degradation when API unavailable
-- Local storage fallback for stats
-- Health checks for monitoring
+| Metric | Target |
+|---|---|
+| First Contentful Paint | < 1.5 s |
+| Time to Interactive | < 3.0 s |
+| API P95 response time | < 200 ms |
+| Availability (uptime) | > 99.9% |
+| Leaderboard cache TTL | 60 s (rate-limited at source) |
 
-#### 8.3 Accessibility
-- WCAG 2.1 AA compliance target
-- Keyboard navigation support
-- Screen reader friendly
+---
 
-### 9. Future Enhancements
+## Success Metrics
 
-| Feature | Priority | Description |
-|---------|----------|-------------|
-| User Authentication | Medium | Sign up/login functionality |
-| Multiplayer | Medium | Online PvP |
-| More Games | Low | Additional mini-games |
-| Social Features | Low | Friends, challenges |
-
-### 10. Success Criteria Checklist
-
-- [ ] Both games are fully playable
-- [ ] AI opponents work at all difficulty levels
-- [ ] Statistics persist across sessions
-- [ ] Leaderboards display correctly
-- [ ] Application works offline (gracefully)
-- [ ] API has health checks
-- [ ] CI/CD pipeline is functional
-- [ ] Documentation is complete
+| Metric | Definition | Target |
+|---|---|---|
+| DAU (Daily Active Users) | Unique players per day | 50+ |
+| Avg games per session | Games started / sessions | ≥ 2 |
+| Stats sync rate | API PUT successes / game results | > 95% |
+| Auth conversion | Players who log in / total visitors | > 40% |
+| P95 API latency | 95th percentile API response | < 200 ms |
+| Zero-downtime deploys | Deploy without >0 dropped requests | 100% |

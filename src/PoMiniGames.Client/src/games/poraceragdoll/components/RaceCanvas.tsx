@@ -359,7 +359,7 @@ export default function RaceCanvas() {
             win.__RACE_PACK_POSITIONS__ = packPositions.map((p) => ({ x: p.x, y: p.y, z: p.z }));
         }
 
-        if (!raceFinishedRef.current && gameStateRef.current === 'RACING') {
+        if (!raceFinishedRef.current && gameStateRef.current === 'Racing') {
             racersRef.current.forEach((racer, index) => {
                 const t = racer.headBody.translation();
                 if (t.z >= track.finishZ) {

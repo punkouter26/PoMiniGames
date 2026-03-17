@@ -23,6 +23,21 @@
   gap: 0.75rem;
 }
 
+.psg-home-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.25rem 0.625rem;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 0.5rem;
+  color: #fff;
+  font-size: 1rem;
+  text-decoration: none;
+  transition: background 0.15s;
+}
+.psg-home-btn:hover { background: rgba(255, 255, 255, 0.14); }
+
 .psg-title {
   font-size: 1.25rem;
   font-weight: 700;
@@ -174,11 +189,11 @@
   width: 100%;
   max-width: 26rem;
   overflow: hidden;
-  border-radius: 1rem;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(30, 27, 75, 0.97);
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-mid);
   padding: 1.5rem;
-  box-shadow: 0 25px 50px rgba(0, 0, 0, 0.7);
+  box-shadow: var(--shadow-lg), 0 0 40px rgba(0, 0, 0, 0.5);
   animation: psg-slide-up 0.2s ease;
 }
 
@@ -194,7 +209,7 @@
 }
 
 .psg-modal-rank          { text-align: center; margin-bottom: 1rem; font-size: 0.875rem; }
-.psg-modal-rank-badge    { background: rgba(0, 255, 127, 0.15); color: var(--psg-green); font-weight: 700; padding: 0.25rem 0.75rem; border-radius: 9999px; }
+.psg-modal-rank-badge    { background: var(--color-primary-dim); color: var(--color-primary); border: 1px solid rgba(0, 229, 255, 0.35); font-weight: 700; padding: 0.25rem 0.75rem; border-radius: 9999px; }
 .psg-modal-rank-plain    { color: #94a3b8; }
 
 .psg-stats-grid {
@@ -231,7 +246,7 @@
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 .psg-initials-input::placeholder { color: #334155; }
-.psg-initials-input:focus { border-color: var(--psg-green); box-shadow: 0 0 0 1px rgba(0,255,127,0.3); }
+.psg-initials-input:focus { border-color: var(--color-primary); box-shadow: 0 0 0 3px var(--color-primary-dim); }
 
 .psg-modal-error {
   margin-bottom: 1rem;

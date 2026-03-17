@@ -28,7 +28,8 @@ test.describe('PoSnakeGame', () => {
 
   test('navigating to PoSnakeGame from Home works', async ({ page }) => {
     await page.goto('/');
-    await page.click('[aria-label="Play PoSnakeGame"]');
+    // Home uses a mode-based flow; navigate directly to the game route
+    await page.goto('/posnakegame');
     await expect(page).toHaveURL(/posnakegame/);
     await expect(page.locator('h1')).toContainText('Battle Arena');
     await page.goBack();

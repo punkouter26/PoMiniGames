@@ -8,7 +8,6 @@ public interface IOddsService
 
 public sealed class OddsService : IOddsService
 {
-    private readonly Random _random = new();
 
     public int CalculateOdds(double racerMass, double slopeAngle)
     {
@@ -20,7 +19,7 @@ public sealed class OddsService : IOddsService
         else
             score += massFactor * 0.2;
 
-        score += (_random.NextDouble() * 20) - 10;
+        score += (Random.Shared.NextDouble() * 20) - 10;
 
         var probability = (score + 50) / 200;
         probability = Math.Max(0.05, Math.Min(0.95, probability));
@@ -44,3 +43,4 @@ public sealed class OddsService : IOddsService
         return (int)Math.Floor(profit) + betAmount;
     }
 }
+

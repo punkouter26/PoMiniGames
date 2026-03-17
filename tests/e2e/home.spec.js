@@ -1,18 +1,10 @@
 // @ts-check
 import { test, expect } from './fixtures';
 
-// ---------------------------------------------------------------------------
-// Shared data
-// ---------------------------------------------------------------------------
-const GAME_CARDS = [
-  { label: 'Connect Five',  ariaLabel: 'Play Connect Five',  route: /connectfive/  },
-  { label: 'Tic Tac Toe',   ariaLabel: 'Play Tic Tac Toe',   route: /tictactoe/   },
-  { label: 'Voxel Shooter', ariaLabel: 'Play Voxel Shooter', route: /voxelshooter/ },
-  { label: 'PoFight',       ariaLabel: 'Play PoFight',       route: /pofight/      },
-  { label: 'PoDropSquare',  ariaLabel: 'Play PoDropSquare',  route: /podropsquare/ },
-  { label: 'PoBabyTouch',   ariaLabel: 'Play PoBabyTouch',   route: /pobabytouch/  },
-  { label: 'PoRaceRagdoll', ariaLabel: 'Play PoRaceRagdoll', route: /poraceragdoll/},
-  { label: 'PoSnakeGame',   ariaLabel: 'Play PoSnakeGame',   route: /posnakegame/  },
+const WORKFLOW_OPTIONS = [
+  { label: '2 Players', ariaLabel: 'Play 2 players', route: /\/lobby/ },
+  { label: '1 Player', ariaLabel: 'Play 1 player', route: /\/single-player/ },
+  { label: 'Demo Mode', ariaLabel: 'Play demo mode' },
 ];
 
 const HIGH_SCORE_GAMES = [
@@ -20,10 +12,7 @@ const HIGH_SCORE_GAMES = [
   'PoFight', 'PoDropSquare', 'PoBabyTouch', 'PoRaceRagdoll',
 ];
 
-// ---------------------------------------------------------------------------
-// Home page – page load
-// ---------------------------------------------------------------------------
-test.describe('Home page – page load', () => {
+test.describe('Home page', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
   });
@@ -33,7 +22,7 @@ test.describe('Home page – page load', () => {
   });
 
   test('displays the subtitle', async ({ page }) => {
-    await expect(page.locator('.home-subtitle')).toContainText('Choose a game to play');
+    await expect(page.locator('.home-subtitle')).toContainText('Choose how you want to play');
   });
 
   test('displays the player name input', async ({ page }) => {
@@ -42,86 +31,44 @@ test.describe('Home page – page load', () => {
     await expect(input).toBeEditable();
   });
 
-  test('renders all 8 game card headings', async ({ page }) => {
-    for (const game of GAME_CARDS) {
-      await expect(page.locator(`h2:has-text("${game.label}")`)).toBeVisible();
+  test('renders exactly the 3 workflow options', async ({ page }) => {
+    for (const option of WORKFLOW_OPTIONS) {
+      await expect(page.getByRole('link', { name: option.ariaLabel })).toBeVisible();
+    }
+    await expect(page.locator('.home-mode-btn')).toHaveCount(3);
+  });
+
+  test('option cards have correct links', async ({ page }) => {
+    for (const option of WORKFLOW_OPTIONS) {
+      const card = page.getByRole('link', { name: option.ariaLabel });
+      await expect(card).toBeVisible();
     }
   });
 
-  test('each game card has a Play button', async ({ page }) => {
-    const playBtns = page.locator('.play-btn');
-    await expect(playBtns).toHaveCount(GAME_CARDS.length);
-  });
-
   test('game grid is visible', async ({ page }) => {
-    await expect(page.locator('.game-cards')).toBeVisible();
+    await expect(page.locator('.home-modes')).toBeVisible();
+  });
+
+  test('option 1 opens lobby flow', async ({ page }) => {
+    await page.goto('/');
+    await page.click('[aria-label="Play 2 players"]');
+    await expect(page).toHaveURL(/\/lobby/);
+  });
+
+  test('option 2 opens single-player flow', async ({ page }) => {
+    await page.goto('/');
+    await page.click('[aria-label="Play 1 player"]');
+    await expect(page).toHaveURL(/\/single-player/);
+  });
+
+  test('option 3 randomly launches a demo game route', async ({ page }) => {
+    await page.goto('/');
+    await page.click('[aria-label="Play demo mode"]');
+
+    await expect(page).toHaveURL(/\/(tictactoe|connectfive|pofight)\?demo=1/, { timeout: 10_000 });
   });
 });
 
-// ---------------------------------------------------------------------------
-// Home page – game selection / navigation
-// ---------------------------------------------------------------------------
-test.describe('Home page – game selection', () => {
-  test('navigates to Connect Five and back', async ({ page }) => {
-    await page.goto('/');
-    await page.click('[aria-label="Play Connect Five"]');
-    await expect(page).toHaveURL(/connectfive/);
-    await expect(page.locator('.gps-title')).toContainText('Connect Five');
-    await page.goBack();
-    await expect(page).toHaveURL('/');
-    await expect(page.locator('h1.home-title')).toContainText('PoMiniGames');
-  });
-
-  test('navigates to Tic Tac Toe and back', async ({ page }) => {
-    await page.goto('/');
-    await page.click('[aria-label="Play Tic Tac Toe"]');
-    await expect(page).toHaveURL(/tictactoe/);
-    await expect(page.locator('.gps-title')).toContainText('Tic Tac Toe');
-    await page.goBack();
-    await expect(page).toHaveURL('/');
-  });
-
-  test('navigates to Voxel Shooter', async ({ page }) => {
-    await page.goto('/');
-    await page.click('[aria-label="Play Voxel Shooter"]');
-    await expect(page).toHaveURL(/voxelshooter/);
-  });
-
-  test('navigates to PoFight', async ({ page }) => {
-    await page.goto('/');
-    await page.click('[aria-label="Play PoFight"]');
-    await expect(page).toHaveURL(/pofight/);
-  });
-
-  test('navigates to PoDropSquare', async ({ page }) => {
-    await page.goto('/');
-    await page.click('[aria-label="Play PoDropSquare"]');
-    await expect(page).toHaveURL(/podropsquare/);
-  });
-
-  test('navigates to PoBabyTouch', async ({ page }) => {
-    await page.goto('/');
-    await page.click('[aria-label="Play PoBabyTouch"]');
-    await expect(page).toHaveURL(/pobabytouch/);
-  });
-
-  test('navigates to PoRaceRagdoll', async ({ page }) => {
-    await page.goto('/');
-    await page.click('[aria-label="Play PoRaceRagdoll"]');
-    await expect(page).toHaveURL(/poraceragdoll/);
-  });
-
-  test('game card links are keyboard-focusable', async ({ page }) => {
-    await page.goto('/');
-    const firstCard = page.getByLabel('Play Connect Five');
-    await firstCard.focus();
-    await expect(firstCard).toBeFocused();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Home page – high scores
-// ---------------------------------------------------------------------------
 test.describe('Home page – high scores', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
@@ -138,12 +85,9 @@ test.describe('Home page – high scores', () => {
   });
 
   test('shows a game card for every game in the leaderboard', async ({ page }) => {
-    // Wait for loading to finish
-    await page.waitForSelector('.home-highscores-card, .home-highscores-empty', {
-      timeout: 10_000,
-    });
+    // Tab buttons render immediately; no need to wait for API data
     for (const label of HIGH_SCORE_GAMES) {
-      await expect(page.locator(`.home-highscores-game:has-text("${label}")`)).toBeVisible();
+      await expect(page.locator(`.home-highscores-tab:has-text("${label}")`)).toBeVisible();
     }
   });
 
@@ -160,9 +104,6 @@ test.describe('Home page – high scores', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Home page – player name
-// ---------------------------------------------------------------------------
 test.describe('Home page – player name', () => {
   test('player name can be typed', async ({ page }) => {
     await page.goto('/');
@@ -174,7 +115,7 @@ test.describe('Home page – player name', () => {
   test('player name persists after navigating to a game and back', async ({ page }) => {
     await page.goto('/');
     await page.getByLabel('Player name').fill('PersistMe');
-    await page.click('[aria-label="Play Connect Five"]');
+    await page.click('[aria-label="Play 1 player"]');
     await page.goBack();
     await expect(page.getByLabel('Player name')).toHaveValue('PersistMe');
   });

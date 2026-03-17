@@ -8,7 +8,7 @@ public static class GetAllPlayerStatisticsEndpoint
 {
     public static IEndpointRouteBuilder MapGetAllPlayerStatistics(this IEndpointRouteBuilder app)
     {
-        app.MapGet("/api/statistics", async (StorageService storage) =>
+        app.MapGet("/api/statistics", async (IStorageService storage) =>
         {
             var result = await storage.GetAllPlayerStatsAsync();
             return Results.Ok(result);
@@ -21,3 +21,4 @@ public static class GetAllPlayerStatisticsEndpoint
         return app;
     }
 }
+

@@ -22,7 +22,7 @@ export default function VoxelShooterPage() {
   }, [navigate]);
 
   return (
-    <GamePageShell title="Voxel Shooter" fullscreen>
+    <GamePageShell title="Voxel Shooter" backTo="/" fullscreen>
       <div className="voxel-page-container" ref={containerRef}>
         <canvas ref={canvasRef} className="voxel-canvas" />
       </div>

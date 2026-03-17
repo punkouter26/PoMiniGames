@@ -43,3 +43,4 @@ public static class HealthEndpoints
         return app;
     }
 }
+

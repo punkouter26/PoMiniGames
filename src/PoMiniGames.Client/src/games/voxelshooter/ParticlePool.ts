@@ -1,4 +1,5 @@
 // @ts-nocheck
+// TODO: Remove @ts-nocheck and add proper TypeScript types (type-safety technical debt)
 /**
  * Unified Particle Pool System
  * Consolidates ParticleEmitter and DebrisSystem into a single optimized pool

@@ -56,7 +56,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     balance: INITIAL_BALANCE,
     round: 1,
     maxRounds: TOTAL_ROUNDS,
-    state: 'BETTING',
+    state: 'Betting',
     racers: [],
     selectedRacerId: null,
     betAmount: INITIAL_BET,
@@ -101,7 +101,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
     placeBet: async () => {
         const { isOnline, sessionId, selectedRacerId, balance, betAmount, state: gameState } = get();
-        if (gameState !== 'BETTING' || selectedRacerId === null) return;
+        if (gameState !== 'Betting' || selectedRacerId === null) return;
         if (balance < betAmount) return;
 
         if (isOnline && sessionId) {
@@ -113,7 +113,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
                 set({ error: 'Failed to place bet', isLoading: false });
             }
         } else {
-            set({ balance: balance - betAmount, state: 'RACING' });
+            set({ balance: balance - betAmount, state: 'Racing' });
         }
     },
 
@@ -148,7 +148,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
             const selectedRacer = currentRacers.find(r => r.id === selectedId);
 
             set({
-                state: 'FINISHED',
+                state: 'Finished',
                 winnerId,
                 balance: newBalance,
                 lastPayout: payout,
@@ -191,7 +191,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
                     round: 1,
                     balance: INITIAL_BALANCE,
                     racers: generateRacers(),
-                    state: 'BETTING',
+                    state: 'Betting',
                     selectedRacerId: null,
                     winnerId: null,
                     lastResult: null,
@@ -202,7 +202,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
                 set({
                     round: round + 1,
                     racers: generateRacers(),
-                    state: 'BETTING',
+                    state: 'Betting',
                     selectedRacerId: null,
                     winnerId: null,
                     lastResult: null,

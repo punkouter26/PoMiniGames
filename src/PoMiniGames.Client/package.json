@@ -12,7 +12,9 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
+    "@azure/msal-browser": "^5.5.0",
     "@dimforge/rapier3d-compat": "^0.19.3",
+    "@microsoft/signalr": "^10.0.0",
     "@tailwindcss/vite": "^4.2.1",
     "@types/matter-js": "^0.20.2",
     "cannon-es": "^0.20.0",

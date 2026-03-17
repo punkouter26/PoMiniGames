@@ -1,0 +1,31 @@
+erDiagram
+    PLAYER_STATS {
+        string PlayerId PK
+        string PlayerName
+        int TotalGames
+        float WinRate
+        datetime UpdatedAt
+    }
+
+    DIFFICULTY_STATS {
+        string PlayerId FK
+        string Difficulty
+        int Wins
+        int WinStreak
+    }
+
+    HIGH_SCORES {
+        string GameType
+        string Initials
+        int Score
+        string Date
+    }
+
+    RACE_SESSION {
+        string SessionId PK
+        string Status
+        datetime CreatedAt
+    }
+
+    PLAYER_STATS ||--o{ DIFFICULTY_STATS : "tracks per difficulty"
+    RACE_SESSION ||--o{ HIGH_SCORES : "generates"

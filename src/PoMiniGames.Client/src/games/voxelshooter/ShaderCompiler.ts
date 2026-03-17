@@ -1,4 +1,5 @@
 // @ts-nocheck
+// TODO: Remove @ts-nocheck and add proper TypeScript types (type-safety technical debt)
 /**
  * Shader Compiler Abstraction Layer
  * Provides compatibility between WebGL (GLSL) and WebGPU (WGSL)

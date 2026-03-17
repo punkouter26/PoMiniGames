@@ -3,12 +3,15 @@ import { Trophy, RotateCcw, Star, Flame, ChevronRight } from 'lucide-react';
 import { GamePageShell } from '../shared/GamePageShell';
 import { usePlayerName } from '../../context/PlayerNameContext';
 import { useDropSquarePhysics, type PhysicsCallbacks } from './useDropSquarePhysics';
+import { isLocalDevelopmentHost } from '../shared/runtimeEnvironment';
 import './PoDropSquarePage.css';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 type GameState = 'idle' | 'playing' | 'victory';
 
-const API_BASE = import.meta.env.VITE_GAME_URL_PODROPSQUARE as string | undefined;
+const API_ROOT = isLocalDevelopmentHost()
+  ? ''
+  : 'https://app-5ln5hfdrvof5u.azurewebsites.net';
 
 // ─── Main component ──────────────────────────────────────────────────────────
 export default function PoDropSquarePage() {
@@ -102,14 +105,10 @@ export default function PoDropSquarePage() {
 
   // ── Top-10 check ──────────────────────────────────────────────────────────
   async function checkTop10(t: number) {
-    if (!API_BASE) { setTop10Checked(true); return; }
     try {
-      const res = await fetch(`${API_BASE}/api/scores?top=10`);
+      const res = await fetch(`${API_ROOT}/api/podropsquare/highscores?count=10`);
       if (!res.ok) { setTop10Checked(true); return; }
-      const data = await res.json() as {
-        leaderboard?: { survivalTime: number }[];
-      };
-      const board = data.leaderboard ?? [];
+      const board = await res.json() as { survivalTime: number }[];
       const tenthEntry = board[9];
       const qualifies = board.length < 10 || (tenthEntry !== undefined && t < tenthEntry.survivalTime);
       setIsTop10(qualifies);
@@ -119,10 +118,10 @@ export default function PoDropSquarePage() {
 
   // ── Score submission ──────────────────────────────────────────────────────
   async function submitScore() {
-    if (!API_BASE || !initials.trim() || submitted) return;
+    if (!initials.trim() || submitted) return;
     setSubmitting(true);
     try {
-      await fetch(`${API_BASE}/api/scores`, {
+      await fetch(`${API_ROOT}/api/podropsquare/highscores`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -156,6 +155,7 @@ export default function PoDropSquarePage() {
       title={<><Star size={16} />{'  '}Drop Square</>}
       player={playerName || undefined}
       stats={stats}
+      backTo="/"
       fullscreen
     >
       {/* ── Canvas wrapper ──────────────────────────────────── */}
@@ -228,7 +228,7 @@ export default function PoDropSquarePage() {
               <p className="dsq-overlay-score">Score: {score}</p>
 
               {/* Leaderboard submission */}
-              {API_BASE && top10Checked && isTop10 && !submitted && (
+              {top10Checked && isTop10 && !submitted && (
                 <div className="dsq-submit">
                   <p className="dsq-submit-label">🏆 You made the Top 10!</p>
                   <input

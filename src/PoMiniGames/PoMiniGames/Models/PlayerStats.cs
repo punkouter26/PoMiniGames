@@ -32,7 +32,6 @@ public sealed class PlayerStats
     public int TotalDraws => Easy.Draws + Medium.Draws + Hard.Draws;
     public int TotalGames => Easy.TotalGames + Medium.TotalGames + Hard.TotalGames;
     public double WinRate => TotalGames > 0 ? (double)TotalWins / TotalGames : 0;
-    public double OverallWinRate => WinRate;
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;

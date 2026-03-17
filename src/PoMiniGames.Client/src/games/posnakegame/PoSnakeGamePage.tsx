@@ -1,8 +1,9 @@
 import { useState, useCallback, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { GameCanvas } from './GameCanvas';
 import { HighScoreModal } from './HighScoreModal';
 import { HighScoreTable } from './HighScoreTable';
-import { getHighScores, type SnakeHighScore } from './api';
+import { getHighScores, type SnakeHighScore } from './snakeService';
 import './posnakegame.css';
 
 export default function PoSnakeGamePage() {
@@ -12,6 +13,7 @@ export default function PoSnakeGamePage() {
     score: number;
     snakeLength: number;
     foodEaten: number;
+    gameDuration: number;
   } | null>(null);
   const [scores, setScores] = useState<SnakeHighScore[]>([]);
   const [loadingScores, setLoadingScores] = useState(true);
@@ -24,8 +26,8 @@ export default function PoSnakeGamePage() {
     getHighScores().then(setScores);
   }, []);
 
-  const handleGameOver = useCallback((score: number, snakeLength: number, foodEaten: number) => {
-    setGameResult({ score, snakeLength, foodEaten });
+  const handleGameOver = useCallback((score: number, snakeLength: number, foodEaten: number, gameDuration: number) => {
+    setGameResult({ score, snakeLength, foodEaten, gameDuration });
     setShowModal(true);
   }, []);
 
@@ -45,6 +47,7 @@ export default function PoSnakeGamePage() {
   return (
     <div className="psg-page">
       <div className="psg-page-header">
+        <Link to="/" className="psg-home-btn" aria-label="Back to home">←</Link>
         <h1 className="psg-title">Battle Arena 🐍</h1>
         <button className="psg-new-game-btn" onClick={handlePlayAgain}>New Game</button>
       </div>
@@ -68,6 +71,7 @@ export default function PoSnakeGamePage() {
           score={gameResult.score}
           snakeLength={gameResult.snakeLength}
           foodEaten={gameResult.foodEaten}
+          gameDuration={gameResult.gameDuration}
           onClose={handlePlayAgain}
           onSubmitted={handleScoreSubmitted}
         />

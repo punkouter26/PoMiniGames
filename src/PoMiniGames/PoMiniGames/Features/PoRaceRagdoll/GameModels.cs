@@ -1,5 +1,8 @@
 namespace PoMiniGames.Features.PoRaceRagdoll;
 
+[System.Text.Json.Serialization.JsonConverter(typeof(System.Text.Json.Serialization.JsonStringEnumConverter))]
+public enum GamePhase { Betting, Racing, Finished }
+
 public record RacerSpecies(
     string Name,
     string Type,
@@ -30,7 +33,7 @@ public record GameState(
     int Balance,
     int Round,
     int MaxRounds,
-    string State, // BETTING, RACING, FINISHED
+    GamePhase State,
     IReadOnlyList<Racer> Racers,
     int? SelectedRacerId,
     int BetAmount,
@@ -40,3 +43,4 @@ public record GameState(
 public record PlaceBetRequest(int RacerId);
 
 public record FinishRaceRequest(int WinnerId);
+

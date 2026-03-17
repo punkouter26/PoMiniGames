@@ -9,10 +9,13 @@ public static class SaveSnakeHighScoreEndpoint
     public static IEndpointRouteBuilder MapSaveSnakeHighScore(this IEndpointRouteBuilder app)
     {
         app.MapPost("/api/snake/highscores",
-            async (SnakeHighScore entry, StorageService storage) =>
+            async (SnakeHighScore entry, IStorageService storage) =>
             {
                 if (string.IsNullOrWhiteSpace(entry.Initials))
                     return Results.BadRequest(new { error = "Initials are required" });
+
+                if (entry.Initials.Trim().Length > 3)
+                    return Results.BadRequest(new { error = "Initials must be 3 characters or fewer" });
 
                 if (entry.Score < 0)
                     return Results.BadRequest(new { error = "Score must be non-negative" });
@@ -23,8 +26,10 @@ public static class SaveSnakeHighScoreEndpoint
             .WithName("SaveSnakeHighScore")
             .WithTags("SnakeHighScores")
             .WithSummary("Submit a new PoSnakeGame high score")
-            .Produces<SnakeHighScore>(StatusCodes.Status201Created);
+            .Produces<SnakeHighScore>(StatusCodes.Status201Created)
+            .RequireRateLimiting("highscores");
 
         return app;
     }
 }
+

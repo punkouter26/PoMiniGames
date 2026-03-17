@@ -9,7 +9,7 @@ public static class SavePlayerStatsEndpoint
     public static IEndpointRouteBuilder MapSavePlayerStats(this IEndpointRouteBuilder app)
     {
         app.MapPut("/api/{game}/players/{playerName}/stats",
-            async (string game, string playerName, PlayerStats stats, StorageService storage) =>
+            async (string game, string playerName, PlayerStats stats, IStorageService storage) =>
         {
             // Validate player name
             if (string.IsNullOrWhiteSpace(playerName))
@@ -44,3 +44,4 @@ public static class SavePlayerStatsEndpoint
         return ds.Wins >= 0 && ds.Losses >= 0 && ds.Draws >= 0 && ds.TotalGames >= 0 && ds.WinStreak >= 0;
     }
 }
+

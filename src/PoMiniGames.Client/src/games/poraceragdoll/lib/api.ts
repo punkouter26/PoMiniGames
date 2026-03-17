@@ -1,4 +1,8 @@
-const API_BASE_URL = import.meta.env.VITE_GAME_URL_PORACERAGDOLL || 'http://localhost:5002';
+import { isLocalDevelopmentHost } from '../../shared/runtimeEnvironment';
+
+const API_ROOT = isLocalDevelopmentHost()
+    ? ''
+    : 'https://app-5ln5hfdrvof5u.azurewebsites.net';
 
 /**
  * Timeout duration for API requests in milliseconds.
@@ -21,7 +25,7 @@ export interface GameState {
     balance: number;
     round: number;
     maxRounds: number;
-    state: 'BETTING' | 'RACING' | 'FINISHED';
+    state: 'Betting' | 'Racing' | 'Finished';
     racers: Racer[];
     selectedRacerId: number | null;
     betAmount: number;
@@ -62,7 +66,7 @@ async function fetchWithTimeout(url: string, options: RequestInit = {}): Promise
 export const api = {
     async checkHealth(): Promise<boolean> {
         try {
-            const res = await fetchWithTimeout(`${API_BASE_URL}/health`);
+            const res = await fetchWithTimeout(`${API_ROOT}/api/health/ping`);
             return res.ok;
         } catch {
             return false;
@@ -70,7 +74,7 @@ export const api = {
     },
 
     async createSession(): Promise<SessionResponse> {
-        const res = await fetchWithTimeout(`${API_BASE_URL}/api/game/session`, {
+        const res = await fetchWithTimeout(`${API_ROOT}/api/game/session`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
         });
@@ -79,7 +83,7 @@ export const api = {
     },
 
     async placeBet(sessionId: string, racerId: number): Promise<GameState> {
-        const res = await fetchWithTimeout(`${API_BASE_URL}/api/game/session/${sessionId}/bet`, {
+        const res = await fetchWithTimeout(`${API_ROOT}/api/game/session/${sessionId}/bet`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ racerId }),
@@ -89,7 +93,7 @@ export const api = {
     },
 
     async finishRace(sessionId: string, winnerId: number): Promise<{ state: GameState; result: RaceResult }> {
-        const res = await fetchWithTimeout(`${API_BASE_URL}/api/game/session/${sessionId}/finish`, {
+        const res = await fetchWithTimeout(`${API_ROOT}/api/game/session/${sessionId}/finish`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ winnerId }),
@@ -99,7 +103,7 @@ export const api = {
     },
 
     async nextRound(sessionId: string): Promise<GameState> {
-        const res = await fetchWithTimeout(`${API_BASE_URL}/api/game/session/${sessionId}/next`, {
+        const res = await fetchWithTimeout(`${API_ROOT}/api/game/session/${sessionId}/next`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
         });

@@ -49,6 +49,23 @@
             "group": "build"
         },
         {
+            "label": "smoke-local",
+            "type": "shell",
+            "command": "powershell",
+            "args": [
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                "${workspaceFolder}/scripts/smoke-local.ps1"
+            ],
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            }
+        },
+        {
             "label": "prelaunch",
             "dependsOn": ["kill-dotnet", "start-client"],
             "dependsOrder": "sequence",

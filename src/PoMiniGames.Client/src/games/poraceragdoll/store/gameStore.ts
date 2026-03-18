@@ -2,6 +2,27 @@ import { create } from 'zustand';
 import { api, type GameState, type Racer, type RaceResult } from '../lib/api';
 import { INITIAL_BALANCE, INITIAL_BET, TOTAL_ROUNDS, RACER_SPECIES } from '../lib/config';
 
+const SESSION_STORAGE_KEY = 'poraceragdoll-session';
+
+/**
+ * Ports OddsService.CalculateOdds from C# so offline mode produces meaningful
+ * per-racer odds instead of a flat 1:1 for every participant.
+ * Mirrors the fixed >= 20 slope branch (audit item #1).
+ */
+function calculateOdds(mass: number): number {
+    const slopeAngle = 20.0;
+    let score = 50.0;
+    const massFactor = mass * 2;
+    score += massFactor * (slopeAngle >= 20 ? 0.5 : 0.2);
+    score += (Math.random() * 20) - 10;
+    let probability = (score + 50) / 200;
+    probability = Math.max(0.05, Math.min(0.95, probability));
+    if (probability >= 0.5) {
+        return -Math.round((probability / (1 - probability)) * 100);
+    }
+    return Math.round(((1 - probability) / probability) * 100);
+}
+
 const generateRacers = (): Racer[] => {
     const racers: Racer[] = [];
     for (let i = 0; i < 8; i++) {
@@ -17,7 +38,7 @@ const generateRacers = (): Racer[] => {
             type: species.type,
             color: species.color,
             mass: Math.round(finalMass * 10) / 10,
-            odds: 100
+            odds: calculateOdds(finalMass),
         });
     }
     return racers;
@@ -41,6 +62,10 @@ interface GameStore extends GameState {
     isHydrated: boolean;
     roundHistory: RoundResult[];
     lastPayout: number;
+    /** True while waiting for the server to confirm the race winner. Shown as a
+     * "Deciding winner..." overlay so the physics animation never shows an
+     * incorrect winner before the server responds (audit item #7). */
+    isResolvingResult: boolean;
 
     initSession: () => Promise<void>;
     selectRacer: (id: number) => void;
@@ -49,6 +74,8 @@ interface GameStore extends GameState {
     nextRound: () => Promise<void>;
     setOnlineMode: (online: boolean) => void;
     hydrate: () => void;
+    /** Restores an existing server session from sessionStorage without creating a new one. */
+    restoreSession: (sessionId: string) => Promise<void>;
 }
 
 export const useGameStore = create<GameStore>((set, get) => ({
@@ -68,6 +95,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     isHydrated: false,
     roundHistory: [],
     lastPayout: 0,
+    isResolvingResult: false,
 
     hydrate: () => {
         const { isHydrated } = get();
@@ -75,11 +103,28 @@ export const useGameStore = create<GameStore>((set, get) => ({
             set({ racers: generateRacers(), isHydrated: true });
             api.checkHealth().then(healthy => {
                 if (healthy) {
-                    get().setOnlineMode(true);
+                    // Try to restore a previous session from the same browser tab (#8).
+                    const savedId = sessionStorage.getItem(SESSION_STORAGE_KEY);
+                    if (savedId) {
+                        get().restoreSession(savedId);
+                    } else {
+                        get().setOnlineMode(true);
+                    }
                 }
             }).catch(() => {
                 // API not available, offline mode
             });
+        }
+    },
+
+    restoreSession: async (sessionId: string) => {
+        try {
+            const state = await api.getSession(sessionId);
+            set({ sessionId, ...state, isOnline: true });
+        } catch {
+            // Session expired server-side; discard and create fresh.
+            sessionStorage.removeItem(SESSION_STORAGE_KEY);
+            get().setOnlineMode(true);
         }
     },
 
@@ -89,6 +134,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         set({ isLoading: true, error: null });
         try {
             const { sessionId, state } = await api.createSession();
+            sessionStorage.setItem(SESSION_STORAGE_KEY, sessionId);
             set({ sessionId, ...state, isLoading: false });
         } catch {
             set({ error: 'Failed to connect to server. Running in offline mode.', isOnline: false, isLoading: false });
@@ -121,12 +167,14 @@ export const useGameStore = create<GameStore>((set, get) => ({
         const { isOnline, sessionId, selectedRacerId, racers, betAmount, balance } = get();
 
         if (isOnline && sessionId) {
-            set({ isLoading: true });
+            // Show resolving overlay immediately so physics winner animation is not
+            // mistaken for the authoritative result before the server responds (#7).
+            set({ isLoading: true, isResolvingResult: true });
             try {
-                const { state, result } = await api.finishRace(sessionId, winnerId);
-                set({ ...state, lastResult: result, isLoading: false });
+                const { state, result } = await api.finishRace(sessionId);
+                set({ ...state, lastResult: result, isLoading: false, isResolvingResult: false });
             } catch {
-                set({ error: 'Failed to finish race', isLoading: false });
+                set({ error: 'Failed to finish race', isLoading: false, isResolvingResult: false });
             }
         } else {
             const winner = racers.find(r => r.id === winnerId);

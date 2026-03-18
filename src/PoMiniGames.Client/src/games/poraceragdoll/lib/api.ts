@@ -1,8 +1,4 @@
-import { isLocalDevelopmentHost } from '../../shared/runtimeEnvironment';
-
-const API_ROOT = isLocalDevelopmentHost()
-    ? ''
-    : 'https://app-5ln5hfdrvof5u.azurewebsites.net';
+const API_ROOT = '';
 
 /**
  * Timeout duration for API requests in milliseconds.
@@ -82,6 +78,12 @@ export const api = {
         return res.json();
     },
 
+    async getSession(sessionId: string): Promise<GameState> {
+        const res = await fetchWithTimeout(`${API_ROOT}/api/game/session/${sessionId}`);
+        if (!res.ok) throw new Error(`Session not found: ${res.status}`);
+        return res.json();
+    },
+
     async placeBet(sessionId: string, racerId: number): Promise<GameState> {
         const res = await fetchWithTimeout(`${API_ROOT}/api/game/session/${sessionId}/bet`, {
             method: 'POST',
@@ -92,11 +94,10 @@ export const api = {
         return res.json();
     },
 
-    async finishRace(sessionId: string, winnerId: number): Promise<{ state: GameState; result: RaceResult }> {
+    async finishRace(sessionId: string): Promise<{ state: GameState; result: RaceResult }> {
+        // Winner is sealed server-side at PlaceBet time; no body needed.
         const res = await fetchWithTimeout(`${API_ROOT}/api/game/session/${sessionId}/finish`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ winnerId }),
         });
         if (!res.ok) throw new Error(`Failed to finish race: ${res.status}`);
         return res.json();

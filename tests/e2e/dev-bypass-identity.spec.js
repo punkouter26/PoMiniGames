@@ -15,7 +15,7 @@
  * The second browser context simulates an incognito tab by using a fresh context.
  */
 
-const { test, expect } = require('@playwright/test');
+import { test, expect } from './fixtures';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -32,9 +32,10 @@ const BASE_URL = 'http://localhost:5173';
  */
 async function gotoAsUser(page, userName) {
   await page.goto(`/?user=${encodeURIComponent(userName)}`);
-  // Wait for the identity badge that Home.tsx renders only after URL-param auth
+  // Wait until auth initialization completes — the nav bar shows the authenticated
+  // username in .gl-auth-user only after the devBypass cookie is confirmed by the API
   await expect(
-    page.locator('.home-dev-bypass-identity', { hasText: userName }),
+    page.locator('.gl-auth-user', { hasText: userName }),
   ).toBeVisible({ timeout: 15_000 });
 }
 
@@ -62,18 +63,16 @@ test.describe('Dev-Bypass URL identity', () => {
     try {
       await gotoAsUser(page, 'Alice');
 
-      // Identity badge chip must be shown in the Developer Bypass panel
+      // Identity is shown inside the dev pill toggle (shows "Dev • Alice")
       await expect(
-        page.locator('.home-dev-bypass-identity'),
-      ).toHaveText('Alice');
+        page.locator('.home-dev-pill-toggle'),
+      ).toContainText('Alice');
 
-      // Panel description must use the auto-authenticated variant
+      // Expand the pill to verify bypass buttons are personalised for the URL user
+      await page.locator('.home-dev-pill-toggle').click();
       await expect(
-        page.locator('.home-dev-bypass-desc'),
-      ).toContainText('Auto-authenticated as');
-      await expect(
-        page.locator('.home-dev-bypass-desc strong'),
-      ).toHaveText('Alice');
+        page.locator('[aria-label="Developer bypass for 2 player"]'),
+      ).toContainText('Alice → 2P');
     } finally {
       await ctx.close();
     }
@@ -103,13 +102,8 @@ test.describe('Dev-Bypass URL identity', () => {
 
     try {
       await page.goto('/');
-      // No identity badge when no ?user= param
-      await expect(page.locator('.home-dev-bypass-identity')).toHaveCount(0);
-
-      // The panel description fallback must mention URL usage instructions
-      await expect(
-        page.locator('.home-dev-bypass-desc'),
-      ).toContainText('?user=Name');
+      // No URL user → dev pill shows generic icon without a personalised name
+      await expect(page.locator('.home-dev-pill-toggle')).not.toContainText('Dev •');
 
       // API still returns a valid dev user via the DevBypassAuthHandler fallback
       // (it may be "Dev Admin" from the handler, or the prior cookie if one exists;
@@ -156,6 +150,7 @@ test.describe('Dev-Bypass URL identity', () => {
 
     try {
       await gotoAsUser(page, 'LobbyTester');
+      await page.locator('.home-dev-pill-toggle').click();
 
       // Button label is personalised: "LobbyTester → 2P"
       const btn = page.locator('[aria-label="Developer bypass for 2 player"]');
@@ -175,6 +170,7 @@ test.describe('Dev-Bypass URL identity', () => {
 
     try {
       await gotoAsUser(page, 'SoloBypasser');
+      await page.locator('.home-dev-pill-toggle').click();
 
       const btn = page.locator('[aria-label="Developer bypass for 1 player"]');
       await expect(btn).toBeVisible();

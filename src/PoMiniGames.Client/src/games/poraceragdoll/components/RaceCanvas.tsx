@@ -361,7 +361,13 @@ export default function RaceCanvas() {
 
         if (!raceFinishedRef.current && gameStateRef.current === 'Racing') {
             racersRef.current.forEach((racer, index) => {
-                const t = racer.headBody.translation();
+                // Use the torso body (bodies[0]) rather than the loose headBody.
+                // The headBody is a small ball-jointed part that can swing 0.5-1.5 units
+                // ahead of the visible ragdoll, causing the winner to be declared before
+                // the racer visually crosses the red finish line.
+                const torso = racer.bodies[0];
+                if (!torso) return;
+                const t = torso.translation();
                 if (t.z >= track.finishZ) {
                     raceFinishedRef.current = true;
                     if (typeof window !== 'undefined') {
@@ -383,7 +389,8 @@ export default function RaceCanvas() {
                     let timeoutLeadIdx = 0;
                     let bestZ = -Infinity;
                     racersRef.current.forEach((racer, index) => {
-                        const z = racer.headBody.translation().z;
+                        const torso = racer.bodies[0];
+                        const z = torso ? torso.translation().z : racer.headBody.translation().z;
                         if (z > bestZ) { bestZ = z; timeoutLeadIdx = index; }
                     });
                     raceFinishedRef.current = true;

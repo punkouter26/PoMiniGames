@@ -1,0 +1,29 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - link "PoMiniGames" [ref=e5] [cursor=pointer]:
+      - /url: /
+      - img [ref=e7]
+      - generic [ref=e9]: PoMiniGames
+    - generic [ref=e10]:
+      - img [ref=e11]
+      - textbox "Player name" [ref=e14]:
+        - /placeholder: Your name
+        - text: Player
+    - generic [ref=e15]:
+      - generic "dev-player1@local.dev" [ref=e16]: Player1
+      - button "Sign out" [ref=e17] [cursor=pointer]:
+        - img [ref=e18]
+        - text: Sign out
+  - main [ref=e21]:
+    - generic [ref=e23]:
+      - generic [ref=e24]:
+        - button "Home" [ref=e25] [cursor=pointer]:
+          - img [ref=e26]
+          - text: Home
+        - heading "Online Lobby" [level=1] [ref=e28]:
+          - img [ref=e29]
+          - text: Online Lobby
+      - generic [ref=e34]:
+        - heading "Players (0)" [level=2] [ref=e35]
+        - paragraph [ref=e36]: Waiting for players to join...
+        - paragraph [ref=e37]: Waiting for at least 1 more player...

@@ -57,10 +57,10 @@ const GameCanvas = memo(function GameCanvas({ manager }: { manager: FightManager
     );
 });
 
-const HUDOverlay = memo(function HUDOverlay({ manager }: { manager: FightManager }) {
+const HUDOverlay = memo(function HUDOverlay({ manager, gameMode }: { manager: FightManager, gameMode: 'PvCPU' | 'CPUvCPU' }) {
     return (
         <div className="absolute top-0 left-0 w-full h-full pointer-events-none">
-            <HUD player={manager.player} cpu={manager.cpu} />
+            <HUD player={manager.player} cpu={manager.cpu} gameMode={gameMode} />
         </div>
     );
 });
@@ -89,7 +89,7 @@ export default function Stage({ gameMode = 'PvCPU', onGameEnd }: { gameMode?: 'P
     return (
         <div className="flex items-center justify-center w-full h-full bg-zinc-900 border-4 border-zinc-800 rounded-lg overflow-hidden shadow-2xl relative">
             <GameCanvas manager={manager} />
-            <HUDOverlay manager={manager} />
+            <HUDOverlay manager={manager} gameMode={gameMode} />
         </div>
     );
 }

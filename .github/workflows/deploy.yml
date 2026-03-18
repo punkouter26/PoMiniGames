@@ -22,13 +22,22 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
+      - name: Cache NuGet Packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', 'Directory.Packages.props') }}
+          restore-keys: nuget-${{ runner.os }}-
+
       - name: Build API
-        run: dotnet build src/PoMiniGames/PoMiniGames/PoMiniGames.csproj
+        run: dotnet build src/PoMiniGames/PoMiniGames/PoMiniGames.csproj --configuration Release
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: src/PoMiniGames.Client/package-lock.json
 
       - name: Build Client
         env:
@@ -36,7 +45,7 @@ jobs:
           VITE_GAME_URL_POFIGHT: https://gray-coast-079ec100f.2.azurestaticapps.net
         run: |
           cd src/PoMiniGames.Client
-          npm install
+          npm ci
           npm run build
 
       - name: Publish API
@@ -47,12 +56,14 @@ jobs:
         with:
           name: api-publish
           path: ./publish
+          retention-days: 3
 
       - name: Upload Client Build
         uses: actions/upload-artifact@v4
         with:
           name: client-build
           path: ./src/PoMiniGames.Client/dist
+          retention-days: 3
 
   deploy-services:
     needs: build
@@ -99,8 +110,7 @@ jobs:
             --resource-group PoMiniGames \
             --name "${{ steps.app-info.outputs.app-name }}" \
             --src-path api-deploy.zip \
-            --type zip \
-            --async true
+            --type zip
 
       - name: Download Client Build
         uses: actions/download-artifact@v4
@@ -117,4 +127,22 @@ jobs:
           app_location: "client-build"
           skip_app_build: true
           output_location: ""
+
+      - name: Health Check API
+        shell: bash
+        run: |
+          APP_URL="https://${{ steps.app-info.outputs.app-name }}.azurewebsites.net"
+          echo "Waiting for app to warm up..."
+          sleep 20
+          for i in 1 2 3 4 5; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$APP_URL/health" --max-time 30 || echo "000")
+            echo "Health check attempt $i: HTTP $STATUS"
+            if [ "$STATUS" = "200" ]; then
+              echo "Health check passed!"
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "Health check failed after 5 attempts"
+          exit 1
 

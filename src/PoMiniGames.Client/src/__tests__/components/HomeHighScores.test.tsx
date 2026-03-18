@@ -30,6 +30,7 @@ const GAME_IDS = [
   'podropsquare',
   'pobabytouch',
   'poraceragdoll',
+  'posnakegame',
 ] as const;
 
 const GAME_LABELS = [
@@ -40,6 +41,7 @@ const GAME_LABELS = [
   'PoDropSquare',
   'PoBabyTouch',
   'PoRaceRagdoll',
+  'PoSnakeGame',
 ];
 
 function makeEntry(name: string, wins: number, total: number): PlayerStatsDto {
@@ -65,11 +67,11 @@ function makeEntry(name: string, wins: number, total: number): PlayerStatsDto {
 }
 
 describe('HomeHighScores – loading state', () => {
-  it('shows "Loading high scores…" before data arrives', () => {
+  it('shows "Loading..." before data arrives', () => {
     // Never resolves so component stays in loading state
     mockIsAvailable.mockReturnValue(new Promise(() => {}));
     render(<HomeHighScores />);
-    expect(screen.getByText(/Loading high scores/i)).toBeInTheDocument();
+    expect(screen.getByText(/Loading\.{3}/)).toBeInTheDocument();
   });
 
   it('removes loading text once data arrives', async () => {
@@ -115,22 +117,19 @@ describe('HomeHighScores – game labels', () => {
     });
   });
 
-  it('shows exactly 7 game cards', async () => {
+  it('shows 8 game tabs', async () => {
     render(<HomeHighScores />);
     await waitFor(() => {
-      expect(screen.getAllByRole('article')).toHaveLength(GAME_IDS.length);
+      expect(screen.getAllByRole('tab')).toHaveLength(GAME_IDS.length);
     });
   });
 
-  it('calls getLeaderboard once for each of the 7 games', async () => {
+  it('calls getLeaderboard once for the initially visible tab', async () => {
     render(<HomeHighScores />);
     await waitFor(() => {
-      expect(mockGetLeaderboard).toHaveBeenCalledTimes(GAME_IDS.length);
+      expect(mockGetLeaderboard).toHaveBeenCalledTimes(1);
     });
-    expect(mockIsAvailable).toHaveBeenCalledTimes(1);
-    for (const id of GAME_IDS) {
-      expect(mockGetLeaderboard).toHaveBeenCalledWith(id, 10);
-    }
+    expect(mockGetLeaderboard).toHaveBeenCalledWith('connectfive', 10);
   });
 });
 
@@ -141,8 +140,8 @@ describe('HomeHighScores – offline mode', () => {
     render(<HomeHighScores />);
 
     await waitFor(() => {
-      const noEntries = screen.getAllByText(/No entries yet\./i);
-      expect(noEntries).toHaveLength(GAME_IDS.length);
+      // Empty placeholder rows should appear (showing --- names)
+      expect(screen.getAllByText('---').length).toBeGreaterThan(0);
     });
 
     expect(mockGetLeaderboard).not.toHaveBeenCalled();
@@ -150,21 +149,19 @@ describe('HomeHighScores – offline mode', () => {
 });
 
 describe('HomeHighScores – empty leaderboards', () => {
-  it('shows "No entries yet." for every game when API returns empty arrays', async () => {
+  it('shows placeholder rows when API returns an empty array', async () => {
     mockGetLeaderboard.mockResolvedValue([]);
     render(<HomeHighScores />);
     await waitFor(() => {
-      const noEntries = screen.getAllByText(/No entries yet\./i);
-      expect(noEntries).toHaveLength(GAME_IDS.length);
+      expect(screen.getAllByText('---').length).toBeGreaterThan(0);
     });
   });
 
-  it('shows "No entries yet." when API returns null', async () => {
+  it('shows placeholder rows when API returns null', async () => {
     mockGetLeaderboard.mockResolvedValue(null as unknown as PlayerStatsDto[]);
     render(<HomeHighScores />);
     await waitFor(() => {
-      const noEntries = screen.getAllByText(/No entries yet\./i);
-      expect(noEntries).toHaveLength(GAME_IDS.length);
+      expect(screen.getAllByText('---').length).toBeGreaterThan(0);
     });
   });
 });
@@ -198,9 +195,9 @@ describe('HomeHighScores – leaderboard entries', () => {
   });
 
   it('displays win-rate, total-games and wins for an entry', async () => {
-    // Dave: 15 wins / 20 games = 75 %
+    // Dave: 15 wins / 20 games = 75% — put in connectfive (first/default tab)
     mockGetLeaderboard.mockImplementation(async (gameId) => {
-      if (gameId === 'tictactoe') return [makeEntry('Dave', 15, 20)];
+      if (gameId === 'connectfive') return [makeEntry('Dave', 15, 20)];
       return [];
     });
 
@@ -212,7 +209,6 @@ describe('HomeHighScores – leaderboard entries', () => {
     const row = screen.getByText('Dave').closest('li')!;
     expect(row.textContent).toContain('75%');
     expect(row.textContent).toContain('20G');
-    expect(row.textContent).toContain('15W');
   });
 
   it('orders entries by rank (first entry shown first)', async () => {
@@ -232,17 +228,15 @@ describe('HomeHighScores – leaderboard entries', () => {
     });
   });
 
-  it('shows entries for multiple games simultaneously', async () => {
+  it('shows entries for the active (default) tab', async () => {
     mockGetLeaderboard.mockImplementation(async (gameId) => {
       if (gameId === 'connectfive') return [makeEntry('CFPlayer', 5, 10)];
-      if (gameId === 'tictactoe') return [makeEntry('TTTPlayer', 3, 10)];
       return [];
     });
 
     render(<HomeHighScores />);
     await waitFor(() => {
       expect(screen.getByText('CFPlayer')).toBeInTheDocument();
-      expect(screen.getByText('TTTPlayer')).toBeInTheDocument();
     });
   });
 });

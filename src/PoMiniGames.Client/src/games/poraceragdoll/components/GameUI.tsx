@@ -37,7 +37,7 @@ export default function GameUI() {
     const {
         balance, round, maxRounds, state: gameState,
         placeBet, selectedRacerId, nextRound, winnerId,
-        racers, lastPayout, roundHistory, betAmount,
+        racers, lastPayout, roundHistory, betAmount, isResolvingResult,
     } = useGameStore();
 
     const [showConfetti, setShowConfetti] = useState(false);
@@ -118,6 +118,16 @@ export default function GameUI() {
                 </div>
             )}
 
+            {/* DECIDING WINNER OVERLAY (online mode: awaiting server result) */}
+            {gameState === 'Racing' && isResolvingResult && (
+                <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm z-50 pointer-events-auto">
+                    <div className="glass-panel px-10 py-6 rounded-2xl text-center border border-white/10">
+                        <div className="w-10 h-10 border-2 border-white/20 border-t-yellow-400 rounded-full animate-spin mx-auto mb-3" />
+                        <p className="text-white/70 text-sm font-bold uppercase tracking-[0.3em]">Deciding winner&hellip;</p>
+                    </div>
+                </div>
+            )}
+
             {/* RESULT MODAL */}
             {gameState === 'Finished' && (
                 <div data-testid="result-modal" className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-md pointer-events-auto z-50 animate-in fade-in zoom-in duration-300">
@@ -173,7 +183,7 @@ export default function GameUI() {
                             )}
 
                             <button onClick={nextRound} data-testid="next-round-button"
-                                className="btn-primary px-14 py-4 text-lg w-full rounded-2xl shadow-xl hover:shadow-2xl hover:scale-[1.02] active:scale-[0.98]">
+                                className="rr-btn-primary px-14 py-4 text-lg w-full rounded-2xl shadow-xl hover:shadow-2xl hover:scale-[1.02] active:scale-[0.98]">
                                 {isGameOver ? 'Play Again' : 'Next Round'}
                             </button>
                         </div>
@@ -187,7 +197,7 @@ export default function GameUI() {
                     <button onClick={handlePlaceBet} disabled={selectedRacerId === null}
                         data-testid="place-bet-button"
                         className={`pointer-events-auto px-16 py-5 font-bold text-lg uppercase tracking-[0.2em] transition-all duration-300 rounded-2xl ${selectedRacerId !== null
-                            ? 'btn-primary shadow-[0_0_50px_rgba(247,37,133,0.4)] active:scale-95'
+                            ? 'rr-btn-primary shadow-[0_0_50px_rgba(247,37,133,0.4)] active:scale-95'
                             : 'bg-white/5 text-white/10 border border-white/5 cursor-not-allowed backdrop-blur-sm'}`}>
                         {selectedRacerId !== null ? `Race! — $${betAmount}` : 'Pick a Racer'}
                     </button>

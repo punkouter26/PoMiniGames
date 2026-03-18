@@ -23,6 +23,16 @@ GET {{baseUrl}}/diag
 
 ###
 
+### ASP.NET built-in health middleware
+GET {{baseUrl}}/health
+
+###
+
+### Liveness probe (lightweight)
+GET {{baseUrl}}/alive
+
+###
+
 # ─── OpenAPI / Scalar ──────────────────────────────────────────────────────────
 
 ### OpenAPI spec (JSON)
@@ -73,5 +83,12 @@ GET {{baseUrl}}/api/tictactoe/statistics/all
 
 ### All statistics for connectfive
 GET {{baseUrl}}/api/connectfive/statistics/all
+
+###
+
+# ─── Global Statistics ─────────────────────────────────────────────────────────
+
+### All player stats across all games
+GET {{baseUrl}}/api/statistics
 
 ###

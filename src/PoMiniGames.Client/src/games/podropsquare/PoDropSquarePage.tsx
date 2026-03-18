@@ -3,15 +3,12 @@ import { Trophy, RotateCcw, Star, Flame, ChevronRight } from 'lucide-react';
 import { GamePageShell } from '../shared/GamePageShell';
 import { usePlayerName } from '../../context/PlayerNameContext';
 import { useDropSquarePhysics, type PhysicsCallbacks } from './useDropSquarePhysics';
-import { isLocalDevelopmentHost } from '../shared/runtimeEnvironment';
 import './PoDropSquarePage.css';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 type GameState = 'idle' | 'playing' | 'victory';
 
-const API_ROOT = isLocalDevelopmentHost()
-  ? ''
-  : 'https://app-5ln5hfdrvof5u.azurewebsites.net';
+const API_ROOT = '';
 
 // ─── Main component ──────────────────────────────────────────────────────────
 export default function PoDropSquarePage() {
@@ -164,41 +161,46 @@ export default function PoDropSquarePage() {
         className="dsq-wrapper"
         onClick={handleCanvasClick}
       >
-        <canvas ref={canvasRef} className="dsq-canvas" />
+        {/* Canvas container: maintains 3:2 aspect ratio via container queries.
+            object-fit: contain does NOT work on <canvas> — this wrapper does
+            the same job by constraining to min(100cqw, 100cqh × 1.5). */}
+        <div className="dsq-canvas-container">
+          <canvas ref={canvasRef} className="dsq-canvas" />
 
-        {/* HUD: stability (bottom-left) */}
-        {gameState === 'playing' && blocksPlaced > 0 && (
-          <div className="dsq-hud dsq-hud-bl">
-            <span className="dsq-hud-label">STABILITY</span>
-            <div className="dsq-bar-track">
-              <div
-                className="dsq-bar-fill"
-                style={{ width: `${stabilityPct}%`, background: stabilityColor }}
-              />
-            </div>
-            <span className="dsq-hud-value" style={{ color: stabilityColor }}>
-              {stabilityPct}%
-            </span>
-          </div>
-        )}
-
-        {/* HUD: danger countdown (bottom-right) */}
-        {isDanger && (
-          <div className="dsq-hud dsq-hud-br dsq-danger">
-            <Flame size={14} />
-            <div className="dsq-danger-ring">
-              <svg viewBox="0 0 36 36" className="dsq-ring-svg">
-                <circle cx="18" cy="18" r="14" className="dsq-ring-bg" />
-                <circle
-                  cx="18" cy="18" r="14"
-                  className="dsq-ring-progress"
-                  strokeDasharray={`${dangerProgress * 88} 88`}
+          {/* HUD: stability (bottom-left) — positioned relative to canvas area */}
+          {gameState === 'playing' && blocksPlaced > 0 && (
+            <div className="dsq-hud dsq-hud-bl">
+              <span className="dsq-hud-label">STABILITY</span>
+              <div className="dsq-bar-track">
+                <div
+                  className="dsq-bar-fill"
+                  style={{ width: `${stabilityPct}%`, background: stabilityColor }}
                 />
-              </svg>
-              <span className="dsq-ring-label">HOLD!</span>
+              </div>
+              <span className="dsq-hud-value" style={{ color: stabilityColor }}>
+                {stabilityPct}%
+              </span>
             </div>
-          </div>
-        )}
+          )}
+
+          {/* HUD: danger countdown (bottom-right) */}
+          {isDanger && (
+            <div className="dsq-hud dsq-hud-br dsq-danger">
+              <Flame size={14} />
+              <div className="dsq-danger-ring">
+                <svg viewBox="0 0 36 36" className="dsq-ring-svg">
+                  <circle cx="18" cy="18" r="14" className="dsq-ring-bg" />
+                  <circle
+                    cx="18" cy="18" r="14"
+                    className="dsq-ring-progress"
+                    strokeDasharray={`${dangerProgress * 88} 88`}
+                  />
+                </svg>
+                <span className="dsq-ring-label">HOLD!</span>
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* ── Start overlay ──────────────────────────────────── */}
         {gameState === 'idle' && (

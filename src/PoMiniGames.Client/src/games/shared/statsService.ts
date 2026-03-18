@@ -8,8 +8,6 @@ import {
 import { localStorageService } from './localStorageService';
 import { apiService } from './apiService';
 
-const PENDING_SYNC_KEY = 'pomini_pending_sync';
-
 /**
  * Unified stats service. Reads/writes to localStorage immediately, then
  * attempts to sync with .NET API in the background. The app is fully
@@ -58,62 +56,10 @@ export const statsService = {
     // 4. Save to localStorage immediately
     localStorageService.saveStats(game, playerName, stats);
 
-    // 5. Sync to API with retry queue support
-    await statsService.syncToApiWithRetry(game, playerName, stats);
+    // 5. Fire-and-forget sync to API (app works fully offline)
+    void apiService.savePlayerStats(game, playerName, stats);
 
     return stats;
-  },
-
-  /** Sync stats to API with retry queue for offline support. */
-  async syncToApiWithRetry(game: string, playerName: string, stats: PlayerStats): Promise<void> {
-    const success = await apiService.savePlayerStats(game, playerName, stats);
-    if (!success) {
-      // Queue for retry
-      const pending = statsService.getPendingSyncs();
-      pending.push({ game, playerName, stats, timestamp: Date.now() });
-      localStorage.setItem(PENDING_SYNC_KEY, JSON.stringify(pending));
-    }
-  },
-
-  /** Get all pending syncs. */
-  getPendingSyncs(): { game: string; playerName: string; stats: PlayerStats; timestamp: number }[] {
-    try {
-      const raw = localStorage.getItem(PENDING_SYNC_KEY);
-      return raw ? JSON.parse(raw) : [];
-    } catch {
-      return [];
-    }
-  },
-
-  /** Clear pending syncs. */
-  clearPendingSyncs(): void {
-    localStorage.removeItem(PENDING_SYNC_KEY);
-  },
-
-  /** Attempt to flush pending syncs to API. Call on app load or when online. */
-  async flushPendingSyncs(): Promise<number> {
-    const pending = statsService.getPendingSyncs();
-    if (pending.length === 0) return 0;
-
-    let successCount = 0;
-    const remaining: typeof pending = [];
-
-    for (const item of pending) {
-      const success = await apiService.savePlayerStats(item.game, item.playerName, item.stats);
-      if (success) {
-        successCount++;
-      } else {
-        remaining.push(item);
-      }
-    }
-
-    if (remaining.length > 0) {
-      localStorage.setItem(PENDING_SYNC_KEY, JSON.stringify(remaining));
-    } else {
-      statsService.clearPendingSyncs();
-    }
-
-    return successCount;
   },
 
   /** Get stats for display. Reads from localStorage (instant). */

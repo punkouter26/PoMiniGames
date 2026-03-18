@@ -1,12 +1,12 @@
-const { test, expect } = require('@playwright/test');
+import { test, expect } from './fixtures';
 
 test('home page exposes the current game navigation', async ({ page }) => {
   await page.goto('/');
 
   await expect(page.getByRole('heading', { name: 'PoMiniGames' })).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Play 2 players' })).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Play 1 player' })).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Play demo mode' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Play 2 players' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Play 1 player' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Play demo mode' })).toBeVisible();
 });
 
 test('PoDropSquare route loads game content', async ({ page }) => {

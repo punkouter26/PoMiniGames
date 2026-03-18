@@ -1,72 +1,115 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Crown, Loader2, LogIn, Users, Gamepad2, ArrowLeft } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { usePlayerName } from '../context/PlayerNameContext';
 import { useLobby } from '../games/shared/useLobby';
+import { apiService } from '../games/shared/apiService';
 import './LobbyPage.css';
 
-const GAME_OPTIONS = [
-  { key: 'tictactoe', label: 'Tic Tac Toe — 6×6, get 4 in a row' },
-  { key: 'connectfive', label: 'Connect Five — 9×9, get 5 in a row' },
-  { key: 'posnakegame', label: 'PoSnakeGame — Battle Arena, survive longest' },
-] as const;
+type GameOption = { key: string; label: string };
+
+// Fallback list shown while the API loads or if offline.
+const FALLBACK_GAME_OPTIONS: GameOption[] = [
+  { key: 'tictactoe', label: 'Tic Tac Toe' },
+  { key: 'connectfive', label: 'Connect Five' },
+  { key: 'posnakegame', label: 'PoSnakeGame' },
+];
 
 export default function LobbyPage() {
   const navigate = useNavigate();
-  const { config, isAuthenticated, isConfigured, isLoading: authLoading, signIn, user } = useAuth();
+  const { config, isAuthenticated, isLoading: authLoading, signIn, devBypass, user } = useAuth();
+  const { playerName, setPlayerName } = usePlayerName();
   const { players, hostUserId, isConnected, isBusy, error, startGame } = useLobby();
-  const [selectedGame, setSelectedGame] = useState<string>(GAME_OPTIONS[0].key);
+  const [gameOptions, setGameOptions] = useState<GameOption[]>(FALLBACK_GAME_OPTIONS);
+  const [selectedGame, setSelectedGame] = useState<string>('tictactoe');
+  const [joiningName, setJoiningName] = useState(playerName);
+  const [isJoining, setIsJoining] = useState(false);
+
+  const canUseAnon = window.location.hostname === 'localhost' || Boolean(config?.devLoginEnabled);
+  const canUseMicrosoft = Boolean(config?.microsoftEnabled);
+
+  useEffect(() => {
+    apiService.getSupportedMultiplayerGames().then(games => {
+      if (!games || games.length === 0) return;
+      const opts = games
+        .filter(g => g.enabledForQueue)
+        .map(g => ({ key: g.gameKey, label: g.displayName }));
+      if (opts.length > 0) {
+        setGameOptions(opts);
+        setSelectedGame(prev =>
+          opts.some(o => o.key === prev) ? prev : opts[0]!.key,
+        );
+      }
+    }).catch(() => { /* keep fallback list on error */ });
+  }, []);
 
   const isHost = user?.userId === hostUserId;
   const canStart = isHost && players.length >= 2 && isConnected && !isBusy;
-  const signInLabel = config?.microsoftEnabled ? 'Sign in with Microsoft' : 'Sign in';
-  const signInDescription = config?.microsoftEnabled
-    ? 'Sign in with your Microsoft account to join the lobby and play against others.'
-    : 'Sign in to join the lobby and play against others.';
 
-  // ── Not configured ──────────────────────────────────────────────────────────
-  if (!isConfigured && !authLoading) {
-    return (
-      <div className="lobby-page">
-        <div className="lobby-card">
-          <Gamepad2 size={40} className="lobby-icon" />
-          <h1 className="lobby-title">Play Online</h1>
-          <p className="lobby-subtitle">
-            Online sign-in is not available right now.
-          </p>
-          <button className="lobby-btn-secondary" onClick={() => navigate('/')}>
-            <ArrowLeft size={16} /> Back to Home
-          </button>
-        </div>
-      </div>
-    );
-  }
+  const handleAnonJoin = async () => {
+    const name = joiningName.trim() || playerName;
+    setIsJoining(true);
+    setPlayerName(name);
+    await devBypass(name);
+    setIsJoining(false);
+  };
 
-  // ── Loading auth ────────────────────────────────────────────────────────────
+  // ── Pre-auth gate ────────────────────────────────────────────────────────────
   if (authLoading) {
     return (
       <div className="lobby-page">
-        <div className="lobby-card">
+        <div className="lobby-card lobby-card--centered">
           <Loader2 size={32} className="lobby-spin" />
-          <p className="lobby-subtitle">Loading...</p>
+          <p className="lobby-subtitle">Connecting...</p>
         </div>
       </div>
     );
   }
 
-  // ── Not signed in ───────────────────────────────────────────────────────────
   if (!isAuthenticated) {
     return (
       <div className="lobby-page">
-        <div className="lobby-card">
+        <div className="lobby-card lobby-card--centered">
           <Gamepad2 size={40} className="lobby-icon" />
-          <h1 className="lobby-title">Play Online</h1>
-          <p className="lobby-subtitle">{signInDescription}</p>
-          <button className="lobby-btn-primary" onClick={() => void signIn()}>
-            <LogIn size={16} /> {signInLabel}
-          </button>
+          <h1 className="lobby-title">2 Player Lobby</h1>
+          <p className="lobby-subtitle">Pick a name and jump in — no account needed.</p>
+
+          {canUseAnon && (
+            <div className="lobby-anon-join">
+              <input
+                className="lobby-anon-input"
+                type="text"
+                placeholder="Your name"
+                value={joiningName}
+                maxLength={20}
+                onChange={e => setJoiningName(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') void handleAnonJoin(); }}
+                autoFocus
+              />
+              <button
+                className="lobby-btn-primary lobby-btn-join"
+                disabled={isJoining}
+                onClick={() => void handleAnonJoin()}
+              >
+                {isJoining ? <Loader2 size={16} className="lobby-spin" /> : <Users size={16} />}
+                Join Lobby
+              </button>
+            </div>
+          )}
+
+          {canUseMicrosoft && (
+            <button className="lobby-btn-microsoft" onClick={() => void signIn()}>
+              <LogIn size={16} /> Sign in with Microsoft
+            </button>
+          )}
+
+          {!canUseAnon && !canUseMicrosoft && (
+            <p className="lobby-subtitle">Online play is not available right now.</p>
+          )}
+
           <button className="lobby-btn-secondary" onClick={() => navigate('/')}>
-            <ArrowLeft size={16} /> Back to Home
+            <ArrowLeft size={16} /> Back
           </button>
         </div>
       </div>
@@ -128,7 +171,7 @@ export default function LobbyPage() {
           <div className="lobby-start-section">
             <h2 className="lobby-section-title">Choose a Game</h2>
             <div className="lobby-game-options">
-              {GAME_OPTIONS.map((g) => (
+              {gameOptions.map((g) => (
                 <label
                   key={g.key}
                   className={`lobby-game-option${selectedGame === g.key ? ' lobby-game-option--selected' : ''}`}

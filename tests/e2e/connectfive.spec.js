@@ -42,7 +42,7 @@ test.describe('Connect Five game', () => {
   });
 
   test('difficulty selector works', async ({ page }) => {
-    const select = page.locator('select');
+    const select = page.locator('select[aria-label="Select difficulty"]');
     await select.selectOption('Easy');
     await expect(select).toHaveValue('Easy');
 

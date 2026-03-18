@@ -5,6 +5,24 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# ─── Dist freshness guard ─────────────────────────────────────────────────────
+$distIndex = Join-Path $PSScriptRoot '..' 'src' 'PoMiniGames.Client' 'dist' 'index.html'
+$srcRoot   = Join-Path $PSScriptRoot '..' 'src' 'PoMiniGames.Client' 'src'
+
+if (Test-Path $distIndex) {
+    $distTime = (Get-Item $distIndex).LastWriteTimeUtc
+    $newestSrc = Get-ChildItem $srcRoot -Recurse -Include '*.ts','*.tsx' |
+        Sort-Object LastWriteTimeUtc -Descending |
+        Select-Object -First 1
+    if ($newestSrc -and $newestSrc.LastWriteTimeUtc -gt $distTime) {
+        Write-Warning "SPA dist may be stale: '$($newestSrc.Name)' ($($newestSrc.LastWriteTimeUtc)) is newer than dist/index.html ($distTime). Run 'npm run build' in src/PoMiniGames.Client."
+    } else {
+        Write-Host '[PASS] SPA dist is up-to-date'
+    }
+} else {
+    Write-Warning 'dist/index.html not found — SPA has not been built. Run ''npm run build'' in src/PoMiniGames.Client.'
+}
+
 $checks = @(
     @{ Name = 'API ping'; Url = "$ApiBase/api/health/ping"; Expected = @('pong') },
     @{ Name = 'API health'; Url = "$ApiBase/api/health"; Expected = @('"status":"Healthy"', 'SqliteStorage') },

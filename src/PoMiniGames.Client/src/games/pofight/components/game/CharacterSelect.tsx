@@ -2,6 +2,19 @@
 import React from 'react';
 import { useGameStore } from '../../store/gameState';
 
+const LEVEL_LABELS: Record<number, string> = { 1: 'Easy', 3: 'Medium', 5: 'Hard' };
+
+function DifficultyBadge() {
+    const currentLevel = useGameStore(s => s.currentLevel);
+    const label = LEVEL_LABELS[currentLevel] ?? String(currentLevel);
+    const colour = currentLevel === 1 ? 'text-green-400' : currentLevel === 3 ? 'text-yellow-400' : 'text-red-400';
+    return (
+        <p className={`mt-6 text-lg font-bold uppercase tracking-widest ${colour}`}>
+            Difficulty: {label}
+        </p>
+    );
+}
+
 const FIGHTERS = [
     { id: 'player', name: 'Ryu-ish', color: 'bg-blue-500', desc: 'Balanced fighter with fireballs.' },
     { id: 'fighter2', name: 'Ken-ish', color: 'bg-red-500', desc: 'Aggressive fighter with flaming kicks.' },
@@ -92,12 +105,15 @@ export const CharacterSelect = ({ onStart, mode = 'PvCPU' }: { onStart: () => vo
             </div>
 
             {mode === 'PvCPU' && (
-                <button
-                    onClick={onStart}
-                    className="mt-12 px-12 py-4 bg-gradient-to-r from-blue-600 to-blue-400 text-2xl font-black italic skew-x-[-12deg] hover:scale-105 hover:rotate-1 transition-transform shadow-lg border-b-4 border-blue-800 active:border-0 active:translate-y-1"
-                >
-                    FIGHT!
-                </button>
+                <>
+                    <DifficultyBadge />
+                    <button
+                        onClick={onStart}
+                        className="mt-4 px-12 py-4 bg-gradient-to-r from-blue-600 to-blue-400 text-2xl font-black italic skew-x-[-12deg] hover:scale-105 hover:rotate-1 transition-transform shadow-lg border-b-4 border-blue-800 active:border-0 active:translate-y-1"
+                    >
+                        FIGHT!
+                    </button>
+                </>
             )}
         </div>
     );

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { CircleDot, Loader2, Trophy, Users } from 'lucide-react';
 import { Piece, Difficulty, GameResult } from '../shared/types';
@@ -7,7 +7,7 @@ import { useAuth } from '../../context/AuthContext';
 import { ConnectFiveBoard } from './ConnectFiveBoard';
 import { ConnectFiveAI } from './ConnectFiveAI';
 import { usePlayerName } from '../../context/PlayerNameContext';
-import { type ConnectFiveMultiplayerState } from '../shared/apiService';
+import { type ConnectFiveMultiplayerState } from '../shared/multiplayerTypes';
 import { type StatItem } from '../shared/GamePageShell';
 import { useTurnBasedMultiplayer } from '../shared/useTurnBasedMultiplayer';
 
@@ -31,6 +31,41 @@ export function useConnectFiveGame() {
   const [playMode, setPlayMode] = useState<PlayMode>(
     shouldAutoDemo ? 'demo' : shouldAutoOnline ? 'online' : 'ai',
   );
+
+  // Web worker for AI computation — keeps heavy minimax off the main thread.
+  type PendingAI = { board: ConnectFiveBoard; playerName: string; difficulty: Difficulty };
+  const workerRef = useRef<Worker | null>(null);
+  const pendingAiRef = useRef<PendingAI | null>(null);
+
+  useEffect(() => {
+    const worker = new Worker(
+      new URL('./connectfive.worker.ts', import.meta.url),
+      { type: 'module' },
+    );
+    worker.onmessage = (e: MessageEvent<number>) => {
+      const pending = pendingAiRef.current;
+      if (!pending) return;
+      pendingAiRef.current = null;
+
+      const aiCol = e.data;
+      let next = pending.board.drop(aiCol, Piece.Yellow);
+      const aiWin = next.checkWin(Piece.Yellow);
+      if (aiWin.won) {
+        setBoard(next); setGameResult(GameResult.Loss); setWinCells(aiWin.cells); setIsAiTurn(false);
+        statsService.recordResult(GAME_KEY, pending.playerName, pending.difficulty, GameResult.Loss).then(setStats);
+        return;
+      }
+      if (next.isFull()) {
+        setBoard(next); setGameResult(GameResult.Draw); setIsAiTurn(false);
+        statsService.recordResult(GAME_KEY, pending.playerName, pending.difficulty, GameResult.Draw).then(setStats);
+        return;
+      }
+      setBoard(next);
+      setIsAiTurn(false);
+    };
+    workerRef.current = worker;
+    return () => { worker.terminate(); workerRef.current = null; };
+  }, []);
 
   const resetGame = useCallback(() => {
     setBoard(new ConnectFiveBoard());
@@ -105,23 +140,12 @@ export function useConnectFiveGame() {
 
       setBoard(next);
       setIsAiTurn(true);
-      setTimeout(() => {
-        const aiCol = ConnectFiveAI.getMove(next, Piece.Yellow, difficulty);
-        next = next.drop(aiCol, Piece.Yellow);
-        const aiWin = next.checkWin(Piece.Yellow);
-        if (aiWin.won) {
-          setBoard(next); setGameResult(GameResult.Loss); setWinCells(aiWin.cells); setIsAiTurn(false);
-          statsService.recordResult(GAME_KEY, playerName, difficulty, GameResult.Loss).then(setStats);
-          return;
-        }
-        if (next.isFull()) {
-          setBoard(next); setGameResult(GameResult.Draw); setIsAiTurn(false);
-          statsService.recordResult(GAME_KEY, playerName, difficulty, GameResult.Draw).then(setStats);
-          return;
-        }
-        setBoard(next);
-        setIsAiTurn(false);
-      }, 250);
+      // Serialize the board and dispatch to the worker to avoid blocking the main thread.
+      const cells: Piece[][] = Array.from({ length: ConnectFiveBoard.Rows }, (_, r) =>
+        Array.from({ length: ConnectFiveBoard.Cols }, (_, c) => next.get(r, c)),
+      );
+      pendingAiRef.current = { board: next, playerName, difficulty };
+      workerRef.current?.postMessage({ cells, player: Piece.Yellow, difficulty });
     },
     [board, difficulty, gameResult, isAiTurn, multiplayer, playMode, playerName],
   );
@@ -163,7 +187,15 @@ export function useConnectFiveGame() {
         }
       }
       return isMyTurnOnline
-        ? { icon: <CircleDot size={14} color="#f44336" />, text: 'Your turn (Red)', className: 'turn' }
+        ? (() => {
+            // onlineState may be briefly undefined while hydrating after reconnect;
+            // fall back to generic text rather than guessing the wrong piece colour.
+            if (!onlineState) {
+              return { icon: <CircleDot size={14} />, text: 'Your turn', className: 'turn' };
+            }
+            const isRed = onlineState.redUserId === activeUserId;
+            return { icon: <CircleDot size={14} color={isRed ? '#f44336' : '#ffeb3b'} />, text: `Your turn (${isRed ? 'Red' : 'Yellow'})`, className: 'turn' };
+          })()
         : { icon: <Loader2 size={14} className="thinking-indicator" />, text: `${opponent?.displayName ?? 'Opponent'} is choosing a column...`, className: 'thinking' };
     }
 

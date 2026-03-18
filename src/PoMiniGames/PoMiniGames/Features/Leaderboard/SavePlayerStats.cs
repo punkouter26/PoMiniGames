@@ -22,10 +22,12 @@ public static class SavePlayerStatsEndpoint
             await storage.SavePlayerStatsAsync(game, playerName, stats);
             return Results.NoContent();
         })
+        .RequireAuthorization()
         .WithName("SavePlayerStats")
         .WithTags("Players")
         .WithSummary("Save or update player statistics for a game")
-        .Produces(StatusCodes.Status204NoContent);
+        .Produces(StatusCodes.Status204NoContent)
+        .ProducesProblem(StatusCodes.Status401Unauthorized);
 
         return app;
     }

@@ -50,9 +50,22 @@ Thumbs.db
 # App specific
 .potune-state.json
 
+# Playwright MCP session data
+.playwright-mcp/
+
 # Test results / screenshots
 test-results/
 tests/e2e/test-results/
+tests/e2e/*.png
+
+# Adhoc test run screenshot directories
+docs/screenshots/adhoc-*/
+
+# Screenshot artifacts from e2e / debug sessions
+docs/screenshots/*.png
+docs/screenshots/*.jpg
+docs/screenshots/*.jpeg
+docs/screenshots/*.webp
 
 # Local SQLite data
 src/PoMiniGames/PoMiniGames/data/

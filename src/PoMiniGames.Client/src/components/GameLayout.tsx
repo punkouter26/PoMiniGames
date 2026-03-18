@@ -1,9 +1,11 @@
+import { Suspense } from 'react';
 import { NavLink, Outlet, useNavigate, useSearchParams } from 'react-router-dom';
 import { useEffect } from 'react';
 import { Gamepad2, LogIn, LogOut, User } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { usePlayerName } from '../context/PlayerNameContext';
 import Toast, { showToast } from './Toast';
+import { pickRandomDemoRoute } from '../constants/demoRoutes';
 import './GameLayout.css';
 
 export default function GameLayout() {
@@ -17,12 +19,12 @@ export default function GameLayout() {
     if (error) showToast(error, 'error');
   }, [error]);
 
-  // Kiosk demo cycling: navigate back to /demo after 45 s so a new random game is picked
+  // Kiosk demo cycling: navigate to a new random game after 60 s
   useEffect(() => {
     if (!searchParams.get('demo_return')) return;
     const timer = window.setTimeout(() => {
-      void navigate('/demo', { replace: true });
-    }, 45_000);
+      void navigate(pickRandomDemoRoute(), { replace: true });
+    }, 60_000);
     return () => window.clearTimeout(timer);
   }, [searchParams, navigate]);
   return (
@@ -64,7 +66,9 @@ export default function GameLayout() {
       </header>
 
       <main className="gl-content">
-        <Outlet />
+        <Suspense fallback={<div className="flex items-center justify-center min-h-screen text-white/60">Loading…</div>}>
+          <Outlet />
+        </Suspense>
       </main>
       <Toast />
     </div>

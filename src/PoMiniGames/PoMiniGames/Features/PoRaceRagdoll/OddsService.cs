@@ -14,7 +14,7 @@ public sealed class OddsService : IOddsService
         var score = 50.0;
         var massFactor = racerMass * 2;
 
-        if (slopeAngle > 20)
+        if (slopeAngle >= 20)
             score += massFactor * 0.5;
         else
             score += massFactor * 0.2;

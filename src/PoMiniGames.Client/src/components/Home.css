@@ -200,69 +200,73 @@
 .home-mode-btn--demo .home-mode-icon { color: #f59e0b; }
 .home-mode-btn--demo:hover { border-color: #f59e0b; box-shadow: var(--shadow-lg), 0 0 36px rgba(245, 158, 11, 0.3); }
 
-/* ─── Developer Bypass section ──────────────────────────── */
-.home-dev-bypass-section {
-  margin-bottom: var(--space-6);
-  padding: var(--space-4) var(--space-5);
-  background: rgba(245, 158, 11, 0.04);
-  border: 1px dashed rgba(245, 158, 11, 0.35);
-  border-radius: var(--radius-lg);
+/* ── Mobile portrait: stack buttons vertically ──────────────── */
+@media (max-width: 540px) {
+  .home-container {
+    padding: var(--space-5) var(--space-4);
+  }
+
+  .home-modes {
+    flex-direction: column;
+    gap: var(--space-3);
+    align-items: stretch;
+  }
+
+  .home-mode-btn {
+    min-width: unset;
+    flex-direction: row;
+    padding: var(--space-5) var(--space-5);
+    gap: var(--space-4);
+    text-align: left;
+  }
+
+  .home-mode-icon {
+    flex-shrink: 0;
+  }
+
+  .home-mode-label {
+    font-size: var(--font-size-lg);
+  }
+
+  .home-title {
+    font-size: var(--font-size-3xl);
+  }
+}
+.home-dev-pill-wrap {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--space-3);
-  max-width: 520px;
-  margin-left: auto;
-  margin-right: auto;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
 }
 
-.home-dev-bypass-header {
-  display: flex;
+.home-dev-pill-toggle {
+  display: inline-flex;
   align-items: center;
-  gap: var(--space-1);
+  gap: 5px;
+  padding: 3px var(--space-3);
+  background: rgba(245, 158, 11, 0.07);
+  border: 1px dashed rgba(245, 158, 11, 0.4);
+  border-radius: var(--radius-full);
   color: #f59e0b;
   font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-bold);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-/* Identity badge shown when ?user= param is in the URL */
-.home-dev-bypass-identity {
-  margin-left: var(--space-2);
-  padding: 1px var(--space-2);
-  background: rgba(245, 158, 11, 0.18);
-  border: 1px solid rgba(245, 158, 11, 0.5);
-  border-radius: var(--radius-full, 999px);
-  color: #fbbf24;
-  font-size: var(--font-size-xs);
   font-weight: var(--font-weight-semibold);
-  letter-spacing: 0.04em;
-  text-transform: none;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  transition: all var(--transition-fast);
 }
 
-.home-dev-bypass-desc {
-  color: var(--color-text-muted);
-  font-size: var(--font-size-xs);
-  margin: 0;
-  text-align: center;
-  line-height: 1.6;
+.home-dev-pill-toggle:hover {
+  background: rgba(245, 158, 11, 0.14);
+  border-color: #f59e0b;
 }
 
-.home-dev-bypass-desc code {
-  background: rgba(255,255,255,0.06);
-  border: 1px solid rgba(255,255,255,0.1);
-  border-radius: var(--radius-sm);
-  padding: 1px 5px;
-  font-family: monospace;
-  color: #e2e8f0;
-  font-size: 0.85em;
+.home-dev-pill-chevron {
+  transition: transform var(--transition-fast);
 }
 
-.home-dev-bypass-url-example {
-  display: block;
-  margin-top: var(--space-1);
-  opacity: 0.7;
+.home-dev-pill-chevron.open {
+  transform: rotate(180deg);
 }
 
 .home-dev-bypass-actions {
@@ -270,6 +274,7 @@
   gap: var(--space-3);
   justify-content: center;
   flex-wrap: wrap;
+  animation: fadeIn var(--transition-fast) ease-out;
 }
 
 .home-dev-bypass-btn {
@@ -297,6 +302,39 @@
 .home-dev-bypass-btn:focus-visible {
   outline: 2px solid #f59e0b;
   outline-offset: 2px;
+}
+
+/* ─── Mobile portrait: stack mode buttons vertically ──── */
+@media (max-width: 540px) {
+  .home-container {
+    padding: var(--space-5) var(--space-4);
+  }
+
+  .home-modes {
+    flex-direction: column;
+    gap: var(--space-3);
+    align-items: stretch;
+  }
+
+  .home-mode-btn {
+    min-width: unset;
+    flex-direction: row;
+    padding: var(--space-5) var(--space-5);
+    gap: var(--space-4);
+    text-align: left;
+  }
+
+  .home-mode-icon {
+    flex-shrink: 0;
+  }
+
+  .home-mode-label {
+    font-size: var(--font-size-lg);
+  }
+
+  .home-title {
+    font-size: var(--font-size-3xl);
+  }
 }
 
 /* legacy game-cards kept for zero-waste — no longer rendered */

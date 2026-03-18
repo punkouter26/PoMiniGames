@@ -1,9 +1,7 @@
 import { getStoredAccessToken } from '../../context/authStorage';
 import {
-  type ConnectFiveMultiplayerState,
   type MultiplayerMatchSnapshot,
   type SupportedMultiplayerGame,
-  type TicTacToeMultiplayerState,
 } from './multiplayerTypes';
 import { type PlayerStats, type PlayerStatsDto } from './types';
 
@@ -204,5 +202,3 @@ export const apiService = {
       return safeJson<SnakeHighScore>(res);
     },
 };
-
-export type { MultiplayerMatchSnapshot, SupportedMultiplayerGame, TicTacToeMultiplayerState, ConnectFiveMultiplayerState };

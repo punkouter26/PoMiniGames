@@ -135,7 +135,9 @@ public class StorageService : IStorageService
 
         using var conn = OpenConnection();
         using var cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT PlayerName, StatsJson FROM PlayerStats WHERE Game = $game";
+        // Safety ceiling: fetch at most 1000 rows before in-memory sort+Take so an
+        // unexpectedly large table can never cause an unbounded memory allocation.
+        cmd.CommandText = "SELECT PlayerName, StatsJson FROM PlayerStats WHERE Game = $game LIMIT 1000";
         cmd.Parameters.AddWithValue("$game", sanitizedGame);
 
         using var reader = await cmd.ExecuteReaderAsync();

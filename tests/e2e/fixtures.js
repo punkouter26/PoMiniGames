@@ -1,26 +1,49 @@
 // @ts-check
 import { test as base, expect } from '@playwright/test';
 
+const ALLOWED_CONSOLE_ERRORS = Symbol('allowedConsoleErrors');
+
+export function allowConsoleErrors(page, patterns) {
+  page[ALLOWED_CONSOLE_ERRORS] = patterns;
+}
+
 /**
- * Extended test fixture that automatically fails any test in which the browser
- * reports a JavaScript page-level error (window.onerror / unhandled rejections).
+ * Shared fixture that fails tests on browser runtime faults.
  *
- * Import `test` and `expect` from this file instead of `@playwright/test`
- * in every E2E spec to get automatic JS-error detection for free.
+ * It captures both uncaught runtime exceptions (`pageerror`) and
+ * console-level errors (`console.error`) to keep failure signals consistent.
  */
 export const test = base.extend({
   page: async ({ page }, use) => {
-    /** @type {Error[]} */
-    const jsErrors = [];
-    page.on('pageerror', (err) => jsErrors.push(err));
+    /** @type {string[]} */
+    const browserErrors = [];
+
+    page.on('pageerror', (err) => {
+      browserErrors.push(`[pageerror] ${err.message}`);
+    });
+
+    page.on('console', (msg) => {
+      if (msg.type() !== 'error') {
+        return;
+      }
+
+      const text = msg.text();
+      const allowed = page[ALLOWED_CONSOLE_ERRORS] ?? [];
+      const isAllowed = allowed.some((pattern) => (
+        typeof pattern === 'string' ? text.includes(pattern) : pattern.test(text)
+      ));
+
+      if (!isAllowed) {
+        browserErrors.push(`[console.error] ${text}`);
+      }
+    });
 
     await use(page);
 
-    // Report any errors collected during the test
-    if (jsErrors.length > 0) {
+    if (browserErrors.length > 0) {
       throw new Error(
-        `${jsErrors.length} browser JS error(s) detected during test:\n` +
-          jsErrors.map((e) => `  • ${e.message}`).join('\n'),
+        `${browserErrors.length} browser error(s) detected during test:\n` +
+          browserErrors.map((entry) => `  • ${entry}`).join('\n'),
       );
     }
   },

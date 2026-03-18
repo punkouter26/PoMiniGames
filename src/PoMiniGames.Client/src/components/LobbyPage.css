@@ -253,3 +253,123 @@
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
+
+/* Dev Login Panel */
+.lobby-dev-panel {
+  margin-top: var(--space-5);
+  padding: var(--space-4) var(--space-5);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-md);
+  background: rgba(250,204,21,0.04);
+  width: 100%;
+}
+
+.lobby-dev-panel__label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--font-size-xs, 0.75rem);
+  font-weight: var(--font-weight-semibold);
+  color: #fbbf24;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin: 0 0 var(--space-3) 0;
+}
+
+.lobby-dev-panel__row {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.lobby-dev-panel__input {
+  flex: 1;
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-surface-raised, #1e2130);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+}
+
+.lobby-dev-panel__input:focus {
+  outline: none;
+  border-color: #fbbf24;
+}
+
+/* ── Centered card variant (pre-auth state) ────────────────────── */
+.lobby-card--centered {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--space-4);
+}
+
+/* ── Anonymous join block ──────────────────────────────── */
+.lobby-anon-join {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: 100%;
+  max-width: 340px;
+}
+
+.lobby-anon-input {
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-base);
+  text-align: center;
+  width: 100%;
+  transition: border-color var(--transition-fast);
+}
+
+.lobby-anon-input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-dim);
+}
+
+.lobby-btn-join {
+  width: 100%;
+  padding: var(--space-3) var(--space-6);
+  font-size: var(--font-size-base);
+}
+
+.lobby-btn-microsoft {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-6);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+  background: rgba(0,120,212,0.15);
+  border: 1px solid rgba(0,120,212,0.4);
+  color: #60a5fa;
+  transition: all var(--transition-fast);
+  width: 100%;
+  max-width: 340px;
+}
+
+.lobby-btn-microsoft:hover {
+  background: rgba(0,120,212,0.25);
+  border-color: #60a5fa;
+}
+
+/* ── Mobile portrait ─────────────────────────────────────── */
+@media (max-width: 480px) {
+  .lobby-page {
+    padding: var(--space-4) var(--space-3);
+    align-items: flex-start;
+  }
+
+  .lobby-card {
+    padding: var(--space-6) var(--space-5);
+    max-width: 100%;
+  }
+}

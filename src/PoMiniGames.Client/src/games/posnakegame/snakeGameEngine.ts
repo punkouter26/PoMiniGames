@@ -125,7 +125,7 @@ export function initializeGame(): GameState {
     timeRemaining: GAME_DURATION,
     isRunning: false,
     isGameOver: false,
-    countdown: 3,
+    countdown: 30,
   };
 }
 
@@ -193,7 +193,7 @@ export function initializeTwoPlayerGame(p1Id: string, p2Id: string): GameState {
     timeRemaining: GAME_DURATION,
     isRunning: false,
     isGameOver: false,
-    countdown: 3,
+    countdown: 30,
   };
 }
 
@@ -349,7 +349,7 @@ export function drawGame(ctx: CanvasRenderingContext2D, state: GameState, cellSi
     ctx.font = `bold ${Math.round(cs * 5)}px system-ui, sans-serif`;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.shadowColor = '#00FF00'; ctx.shadowBlur = 30;
-    ctx.fillText(state.countdown.toString(), canvasW / 2, canvasH / 2);
+    ctx.fillText(Math.ceil(state.countdown / 10).toString(), canvasW / 2, canvasH / 2);
     ctx.shadowBlur = 0;
   }
 }

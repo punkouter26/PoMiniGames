@@ -1,45 +1,49 @@
 sequenceDiagram
-    actor Player as Player
-    participant SWA as React SPA
-    participant API as .NET 10 API
-    participant MSID as Microsoft Identity
-    participant DB as SQLite
-    participant KV as Key Vault
-
-    Note over API,KV: Startup — secrets bootstrap
-    API->>KV: GetSecrets (Managed Identity)
-    KV-->>API: ClientId, AppInsights connection string
-
-    Note over Player,MSID: Auth Flow — Microsoft OAuth2
-    Player->>SWA: Open app
-    SWA->>MSID: Redirect GET /auth/login (OAuth2 code flow)
-    MSID-->>Player: Microsoft login prompt
-    Player->>MSID: Credentials
-    MSID-->>SWA: Auth code at /auth/callback
-    SWA->>API: POST /api/auth/callback (exchange code)
-    API->>MSID: Validate JWT Bearer token
-    MSID-->>API: Token claims (userId, name)
-    API-->>SWA: Set DevCookie + 200 OK
-
-    Note over Player,DB: Game Stats — Save Result
-    Player->>SWA: Completes game (Win/Loss/Draw)
-    SWA->>API: PUT /api/{game}/players/{id}/stats (Bearer JWT)
-    API->>DB: Upsert PlayerStats + DifficultyStats (Easy/Medium/Hard)
-    DB-->>API: Updated record
-    API-->>SWA: 200 OK + PlayerStats JSON
-
-    Note over Player,DB: Leaderboard — View Rankings
-    Player->>SWA: Open leaderboard tab
-    SWA->>API: GET /api/{game}/statistics/leaderboard
-    Note right of API: Rate limit: 10 req/min/IP (fixed window)
-    API->>DB: SELECT top 10 by TotalWins
-    DB-->>API: Ranked player records
-    API-->>SWA: JSON leaderboard array
-
-    Note over Player,API: Real-time Multiplayer — SignalR
-    Player->>API: WS connect /api/hubs/lobby (JWT auth required)
-    API-->>Player: Lobby state + available rooms
-    Player->>API: Join or create room
-    API-->>Player: Room joined → redirect to /api/hubs/multiplayer
-    API-->>Player: Real-time game events (moves, turns, results)
-    API-->>Player: Win/Loss recorded + stats trigger PUT
+    participant B as "Browser (React SPA)"
+    participant API as ".NET 10 API (App Service)"
+    participant MSID as "Microsoft Identity"
+    participant KV as "Key Vault (PoShared)"
+    participant DB as "SQLite (/home/data)"
+    participant HUB as "SignalR Hub"
+    Note over API,KV: API Startup — resolve secrets via Managed Identity
+    API->>KV: GetSecret(MicrosoftAuth--ClientId)
+    API->>KV: GetSecret(MicrosoftAuth--ApiClientId)
+    API->>KV: GetSecret(ApplicationInsights--ConnectionString)
+    KV-->>API: Secrets injected into IConfiguration
+    Note over B,MSID: Authentication Flow (Microsoft OAuth2 — MSAL popup)
+    B->>MSID: GET /authorize (MSAL popup redirect)
+    MSID-->>B: authorization_code returned
+    B->>MSID: POST /token (code + PKCE exchange)
+    MSID-->>B: JWT access_token + id_token (12h TTL)
+    B->>API: GET /api/auth/me  [Authorization: Bearer JWT]
+    API->>MSID: Validate JWT (signature, audience, issuer)
+    MSID-->>API: Claims verified
+    API-->>B: 200 {userId, displayName, email}
+    Note over B,DB: Game Stats — Create / Update / Read
+    B->>API: PUT /api/tictactoe/players/{name}/stats  [Bearer]
+    API->>DB: UPSERT PlayerStats (Game=tictactoe, PlayerName, StatsJson)
+    DB-->>API: OK
+    API-->>B: 200 updated stats
+    B->>API: GET /api/tictactoe/statistics/leaderboard?limit=10
+    API->>DB: SELECT Game, PlayerName, StatsJson ORDER BY WinRate DESC LIMIT 10
+    DB-->>API: top 10 rows
+    API-->>B: [{name, winRate, totalGames, totalWins}]
+    Note over B,HUB: High Scores (Snake / PoDropSquare)
+    B->>API: POST /api/snake/highscores  {initials, score, duration, length, food}
+    API->>DB: INSERT SnakeHighScores
+    DB-->>API: OK
+    API-->>B: 201 saved entry
+    B->>API: GET /api/snake/highscores?count=10
+    DB-->>API: top 10 by Score DESC
+    API-->>B: [{initials, score, date, gameDuration}]
+    Note over B,HUB: Multiplayer — Lobby + Real-time SignalR
+    B->>API: POST /api/multiplayer/queue  {gameKey: "tictactoe"}  [Bearer]
+    API-->>B: {matchId, status: "waiting"}
+    B->>HUB: WS /api/hubs/lobby?access_token=JWT
+    HUB-->>B: LobbyUpdated {players, host, isStarting}
+    B->>HUB: StartGame("tictactoe")  [host only]
+    HUB-->>B: GameStarting {gameKey}  [broadcast all]
+    B->>HUB: WS /api/hubs/multiplayer?access_token=JWT
+    HUB-->>B: Connected — JoinGroup(matchId)
+    B->>HUB: SendRealtimeInput(matchId, {col: 2, row: 1})
+    HUB-->>B: RealtimeInput {fromUserId, fromDisplayName, payload, sentAt}

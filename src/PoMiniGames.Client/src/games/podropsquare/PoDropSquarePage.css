@@ -2,11 +2,12 @@
    Canvas world: 300 × 200 (3:2 ratio, CSS-stretched)
    ─────────────────────────────────────────────────── */
 
-/* ── Wrapper: fill the game area, maintain 3:2 ratio ── */
+/* ── Wrapper: fill the game area with flex, center content ── */
 .dsq-wrapper {
   position: relative;
+  flex: 1;
+  min-height: 0;
   width: 100%;
-  height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -14,16 +15,26 @@
   cursor: crosshair;
   overflow: hidden;
   user-select: none;
+  /* Enable container query units (cqw / cqh) for children */
+  container-type: size;
 }
 
-/* ── Canvas stretches to fill, keeping aspect ratio ─── */
+/* ── Canvas container: constrained to 3:2 ratio within the wrapper ── */
+/* object-fit: contain does NOT work on <canvas> — use this wrapper instead. */
+.dsq-canvas-container {
+  position: relative;
+  /* Pick the smaller constraint: full width OR height × (300/200) */
+  width: min(100cqw, calc(100cqh * 1.5));
+  aspect-ratio: 300 / 200;
+  flex-shrink: 0;
+}
+
+/* ── Canvas fills its container exactly ───────────────────────── */
 .dsq-canvas {
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: contain;
   image-rendering: pixelated;
-  max-height: 100%;
 }
 
 /* ─────────────────────────────────────────────────────

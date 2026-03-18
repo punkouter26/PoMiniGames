@@ -12,9 +12,12 @@ describe('PlayerNameContext – initial value', () => {
     localStorage.clear();
   });
 
-  it('defaults to "Player" when localStorage has no entry', () => {
+  it('generates a random name when localStorage has no entry', () => {
     const { result } = renderHook(() => usePlayerName(), { wrapper });
-    expect(result.current.playerName).toBe('Player');
+    // Should be a non-empty, non-default random name saved to storage
+    expect(result.current.playerName).toBeTruthy();
+    expect(result.current.playerName.length).toBeGreaterThan(0);
+    expect(localStorage.getItem('pomini_player')).toBe(result.current.playerName);
   });
 
   it('loads the saved value from localStorage on first render', () => {

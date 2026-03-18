@@ -1,48 +1,37 @@
-flowchart TD
-    Player["Player"]
-
-    subgraph AuthGroup["Authentication"]
-        A1["Microsoft OAuth2\nlogin + JWT token"]
-    end
-
-    subgraph GamePlay["Game Play"]
-        G1["Select game\nSet difficulty"]
-        G2["Play vs AI\nor Online PvP"]
-        G3["Record result\nWin/Loss/Draw"]
-    end
-
-    subgraph DataSync["Stats and Leaderboard"]
-        D1["PUT stats to API\nBearer JWT"]
-        D2["SQLite upsert\nPlayerStats"]
-        D3["GET leaderboard\nrate-limited 10 per min"]
-    end
-
-    subgraph Realtime["Real-time Multiplayer"]
-        R1["SignalR lobby\n/api/hubs/lobby"]
-        R2["SignalR game\n/api/hubs/multiplayer"]
-    end
-
-    Player --> AuthGroup
-    AuthGroup --> GamePlay
-    G1 --> G2
-    G2 --> G3
-    G3 --> DataSync
-    D1 --> D2
-    D3 --> Player
-    Player --> Realtime
-    R1 --> R2
-
-    style Player fill:#1a1a2e,stroke:#4e9af1,color:#fff
-    style A1 fill:#2c3e50,stroke:#16213e,color:#fff
-    style G1 fill:#005a9e,stroke:#003567,color:#fff
-    style G2 fill:#005a9e,stroke:#003567,color:#fff
-    style G3 fill:#005a9e,stroke:#003567,color:#fff
-    style D1 fill:#2d6a4f,stroke:#1b4332,color:#fff
-    style D2 fill:#2d6a4f,stroke:#1b4332,color:#fff
-    style D3 fill:#2d6a4f,stroke:#1b4332,color:#fff
-    style R1 fill:#7b2d8b,stroke:#4a1660,color:#fff
-    style R2 fill:#7b2d8b,stroke:#4a1660,color:#fff
-    style AuthGroup fill:#e8f0fe,stroke:#90a4ae,color:#000
-    style GamePlay fill:#daeaf7,stroke:#5b9bd5,color:#000
-    style DataSync fill:#e6f0e6,stroke:#5b9b5b,color:#000
-    style Realtime fill:#f0e6ff,stroke:#9b5bd5,color:#000
+flowchart LR
+    A["Player Opens App"]
+    B["Load SPA\nfrom CDN Edge"]
+    C{"Auth\nRequired?"}
+    D["Solo Play\nor Leaderboard\n(no login)"]
+    E["MSAL Popup\nMicrosoft OAuth2"]
+    F["JWT Access Token\n+ User Profile"]
+    G["Multiplayer\nor Stats Sync"]
+    H["API: PUT /{game}/stats\n(fire-and-forget)"]
+    I[("SQLite\nPlayerStats")]
+    J["POST /multiplayer/queue"]
+    K["SignalR WSS\n/api/hubs/multiplayer"]
+    L["Real-time PvP\nMove Exchange"]
+    A --> B
+    B --> C
+    C -- "No" --> D
+    C -- "Yes" --> E
+    E --> F
+    F --> G
+    D --> H
+    G --> H
+    H --> I
+    G --> J
+    J --> K
+    K --> L
+    style A fill:#1a6b8a,stroke:#0d4a66,color:#fff
+    style B fill:#0078d4,stroke:#005a9e,color:#fff
+    style C fill:#7a3b00,stroke:#4f2700,color:#fff
+    style D fill:#107c10,stroke:#0a5c0a,color:#fff
+    style E fill:#7719aa,stroke:#4e0f72,color:#fff
+    style F fill:#7719aa,stroke:#4e0f72,color:#fff
+    style G fill:#107c10,stroke:#0a5c0a,color:#fff
+    style H fill:#0078d4,stroke:#005a9e,color:#fff
+    style I fill:#2d5e1e,stroke:#1a3d10,color:#fff
+    style J fill:#0078d4,stroke:#005a9e,color:#fff
+    style K fill:#c43d1c,stroke:#8c2a12,color:#fff
+    style L fill:#c43d1c,stroke:#8c2a12,color:#fff

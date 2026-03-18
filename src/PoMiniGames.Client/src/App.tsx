@@ -1,44 +1,59 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { lazy, useEffect } from 'react';
+import { BrowserRouter, Navigate, Routes, Route } from 'react-router-dom';
 import AuthCallbackPage from './components/AuthCallbackPage';
 import GameLayout from './components/GameLayout';
 import Home from './components/Home';
 import LobbyPage from './components/LobbyPage';
 import SinglePlayerPage from './components/SinglePlayerPage';
-import MultiplayerPage from './components/MultiplayerPage';
-import DemoModePage from './components/DemoModePage';
-import { AuthProvider } from './context/AuthContext';
-import TicTacToePage from './games/tictactoe/TicTacToePage';
-import ConnectFivePage from './games/connectfive/ConnectFivePage';
-import VoxelShooterPage from './games/voxelshooter/VoxelShooterPage';
-import PoFightPage from './games/pofight/PoFightPage';
-import PoDropSquarePage from './games/podropsquare/PoDropSquarePage';
-import PoBabyTouchPage from './games/pobabytouch/PoBabyTouchPage';
-import PoRaceRagdollPage from './games/poraceragdoll/PoRaceRagdollPage';
-import PoSnakeGamePage from './games/posnakegame/PoSnakeGamePage';
-import { PlayerNameProvider } from './context/PlayerNameContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
+import { PlayerNameProvider, usePlayerName } from './context/PlayerNameContext';
+
+// Code-split each game so users only download the chunk(s) they actually play.
+// Heavy vendors (three, rapier, cannon-es) are further separated via manualChunks in vite.config.ts.
+const TicTacToePage = lazy(() => import('./games/tictactoe/TicTacToePage'));
+const ConnectFivePage = lazy(() => import('./games/connectfive/ConnectFivePage'));
+const VoxelShooterPage = lazy(() => import('./games/voxelshooter/VoxelShooterPage'));
+const PoFightPage = lazy(() => import('./games/pofight/PoFightPage'));
+const PoDropSquarePage = lazy(() => import('./games/podropsquare/PoDropSquarePage'));
+const PoBabyTouchPage = lazy(() => import('./games/pobabytouch/PoBabyTouchPage'));
+const PoRaceRagdollPage = lazy(() => import('./games/poraceragdoll/PoRaceRagdollPage'));
+const PoSnakeGamePage = lazy(() => import('./games/posnakegame/PoSnakeGamePage'));
+
+/** Sync Microsoft OAuth display name / email into the player name slot. */
+function AuthNameSync() {
+  const { user } = useAuth();
+  const { setPlayerName } = usePlayerName();
+  useEffect(() => {
+    if (user?.email || user?.displayName) {
+      setPlayerName(user.email ?? user.displayName);
+    }
+  }, [user, setPlayerName]);
+  return null;
+}
 
 export default function App() {
   return (
     <AuthProvider>
       <PlayerNameProvider>
         <BrowserRouter>
+          <AuthNameSync />
           <Routes>
             {/* All pages — compact nav */}
             <Route element={<GameLayout />}>
               <Route index element={<Home />} />
               <Route path="auth/callback" element={<AuthCallbackPage />} />
               <Route path="lobby" element={<LobbyPage />} />
-              <Route path="multiplayer" element={<MultiplayerPage />} />
+              {/* /multiplayer consolidated into /lobby */}
+              <Route path="multiplayer" element={<Navigate to="/lobby" replace />} />
               <Route path="single-player" element={<SinglePlayerPage />} />
-              <Route path="demo" element={<DemoModePage />} />
               <Route path="tictactoe" element={<TicTacToePage />} />
-              <Route path="connectfive" element={<ConnectFivePage />} />
-              <Route path="voxelshooter" element={<VoxelShooterPage />} />
-              <Route path="pofight" element={<PoFightPage />} />
-              <Route path="podropsquare" element={<PoDropSquarePage />} />
-              <Route path="pobabytouch" element={<PoBabyTouchPage />} />
-              <Route path="poraceragdoll" element={<PoRaceRagdollPage />} />
-              <Route path="posnakegame" element={<PoSnakeGamePage />} />
+                <Route path="connectfive" element={<ConnectFivePage />} />
+                <Route path="voxelshooter" element={<VoxelShooterPage />} />
+                <Route path="pofight" element={<PoFightPage />} />
+                <Route path="podropsquare" element={<PoDropSquarePage />} />
+                <Route path="pobabytouch" element={<PoBabyTouchPage />} />
+                <Route path="poraceragdoll" element={<PoRaceRagdollPage />} />
+                <Route path="posnakegame" element={<PoSnakeGamePage />} />
             </Route>
           </Routes>
         </BrowserRouter>

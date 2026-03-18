@@ -1,5 +1,4 @@
-// @ts-nocheck
-// TODO: Remove @ts-nocheck and add proper TypeScript types (type-safety technical debt)
+// TODO: Remove @ts-nocheck from remaining VoxelShooter modules (UIManager, GameLogic, PlayerAvatar, etc.)
 import * as THREE from 'three';
 
 import { initializeScene, setupWindowResize, setupPhysicsWorld, createFloor, getDevStats } from './SceneSetup';
@@ -119,7 +118,9 @@ export function initVoxelShooter(
 
   // Wire up UI callbacks
   ui.onStartGame = (difficulty: string) => {
+    cancelAnimationFrame(rafId); // guard against double-click
     initializeGame(difficulty);
+    tick(); // start the render loop only when a game actually begins
   };
 
   ui.onResumeGame = () => {
@@ -128,6 +129,8 @@ export function initVoxelShooter(
 
   ui.onMainMenu = () => {
     gameActive = false;
+    cancelAnimationFrame(rafId);
+    rafId = 0;
     cleanupEnemies();
     onReturnToMenu();
   };
@@ -184,8 +187,9 @@ export function initVoxelShooter(
   // Setup window resize handling
   const removeResize = setupWindowResize(canvas, camera, renderer, composer, csm);
 
-  // Start loop
-  tick();
+  // Render the menu background once without starting the full RAF loop.
+  // The loop starts in ui.onStartGame so the GPU is idle while the menu is shown.
+  composer.render();
 
   // Return cleanup function
   return () => {

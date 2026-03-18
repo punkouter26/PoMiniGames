@@ -28,7 +28,7 @@ interface AuthContextType {
   error: string | null;
   signIn: () => Promise<AuthenticatedUserProfile | null>;
   /** Developer Bypass: no login call — server auto-authenticates via DevBypassAuthHandler. Dev-only. */
-  devBypass: () => Promise<AuthenticatedUserProfile | null>;
+  devBypass: (userName?: string) => Promise<AuthenticatedUserProfile | null>;
   signOut: () => Promise<void>;
   consumeReturnUrl: () => string | null;
 }
@@ -42,7 +42,7 @@ const AuthContext = createContext<AuthContextType>({
   isLoading: true,
   error: null,
   signIn: async () => null,
-  devBypass: async () => null,
+  devBypass: async (_userName?: string) => null,
   signOut: async () => {},
   consumeReturnUrl: () => null,
 });
@@ -76,22 +76,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      if (!authConfig.microsoftEnabled && authConfig.devLoginEnabled) {
+      if (authConfig.devLoginEnabled) {
         setStoredAccessToken(null);
         setAccessToken(null);
 
-        // If ?user=Name is in the URL, auto-create a cookie session for that
-        // identity so two tabs with different ?user= params act as different
-        // players (no manual button click required).
+        // URL param: auto-create a personalised cookie session regardless of MSAL config.
+        // e.g. /?user=Alice → authenticated as Alice in two separate tabs.
         const urlUser = getDevUserFromUrl();
-        const profile = urlUser
-          ? await apiService.devBypass(urlUser)
-          : await devAuth.getUser();
-        if (cancelled) return;
+        if (urlUser) {
+          const profile = await apiService.devBypass(urlUser);
+          if (cancelled) return;
+          setUser(profile);
+          setIsLoading(false);
+          return;
+        }
 
-        setUser(profile);
-        setIsLoading(false);
-        return;
+        // Check for an existing DevCookie session (or DevBypass auto-auth in Development).
+        // This allows dev-login / dev-bypass cookies to be recognised even when MSAL is configured.
+        const existingProfile = await devAuth.getUser();
+        if (existingProfile) {
+          if (cancelled) return;
+          setUser(existingProfile);
+          setIsLoading(false);
+          return;
+        }
+
+        // No session found and no URL user — fall through to MSAL only if it is configured.
+        if (!authConfig.microsoftEnabled) {
+          if (cancelled) return;
+          setUser(null);
+          setIsLoading(false);
+          return;
+        }
+        // Fall through to MSAL initialization below.
       }
 
       try {
@@ -155,12 +172,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    * No ?user= param             →  authenticated as "Dev Admin".
    * Only active in Development (devLoginEnabled).
    */
-  const devBypass = async (): Promise<AuthenticatedUserProfile | null> => {
-    if (!config?.devLoginEnabled) {
+  const devBypass = async (userName?: string): Promise<AuthenticatedUserProfile | null> => {
+    if (!config?.devLoginEnabled && window.location.hostname !== 'localhost') {
       setError('Developer Bypass is not available outside Development.');
       return null;
     }
-    const profile = await apiService.devBypass();
+    const profile = await apiService.devBypass(userName);
     if (profile) {
       setError(null);
       setAccessToken(null);

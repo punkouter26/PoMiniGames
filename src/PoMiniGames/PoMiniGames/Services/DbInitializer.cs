@@ -48,6 +48,10 @@ internal static class DbInitializer
         );
         """;
 
+    private const string CreateIndexesSql = """
+        CREATE INDEX IF NOT EXISTS idx_playerstats_game ON PlayerStats(Game);
+        """;
+
     internal static void InitializeSchema(string dbPath)
     {
         using var conn = new SqliteConnection($"Data Source={dbPath}");
@@ -56,7 +60,8 @@ internal static class DbInitializer
         cmd.CommandText = CreateTableSql
             + CreateMigrationsTableSql
             + CreateSnakeHighScoresTableSql
-            + CreatePoDropSquareHighScoresTableSql;
+            + CreatePoDropSquareHighScoresTableSql
+            + CreateIndexesSql;
         cmd.ExecuteNonQuery();
     }
 

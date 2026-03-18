@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.Extensions.FileProviders;
 using Microsoft.IdentityModel.Tokens;
 using System.Threading.RateLimiting;
 using PoMiniGames.Features.Auth;
@@ -11,9 +12,8 @@ using PoMiniGames.Features.Health;
 using PoMiniGames.Features.Leaderboard;
 using PoMiniGames.Features.Lobby;
 using PoMiniGames.Features.Multiplayer;
-using PoMiniGames.Features.PoDropSquareHighScores;
+using PoMiniGames.Features.HighScores;
 using PoMiniGames.Features.PoRaceRagdoll;
-using PoMiniGames.Features.SnakeHighScores;
 using PoMiniGames.HealthChecks;
 using PoMiniGames.Services;
 using Scalar.AspNetCore;
@@ -224,7 +224,14 @@ builder.Services.AddSingleton<IRacerService, RacerService>();
 builder.Services.AddSingleton<IGameSessionService, GameSessionService>();
 
 // ─── Shared multiplayer platform ─────────────────────────────────────
-builder.Services.AddSignalR();
+builder.Services.AddSignalR().AddJsonProtocol(options =>
+{
+    options.PayloadSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
+});
+builder.Services.ConfigureHttpJsonOptions(options =>
+{
+    options.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
+});
 builder.Services.AddSingleton<IMultiplayerGameRegistry, MultiplayerGameRegistry>();
 builder.Services.AddSingleton<IMultiplayerService, MultiplayerService>();
 
@@ -266,8 +273,8 @@ builder.Services.AddHealthChecks()
     .AddCheck<StorageHealthCheck>("SqliteStorage");
 
 // ─── Swagger / OpenAPI ───────────────────────────────────────────────
+builder.Services.AddProblemDetails();
 builder.Services.AddAuthorization();
-builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
@@ -276,19 +283,24 @@ var app = builder.Build();
 app.UseSerilogRequestLogging();
 if (!app.Environment.IsDevelopment())
 {
-    app.UseExceptionHandler(errorApp =>
-    {
-        errorApp.Run(async context =>
-        {
-            context.Response.StatusCode = 500;
-            context.Response.ContentType = "text/html";
-            await context.Response.WriteAsync("<html><body><h1>An error occurred. Please try again later.</h1></body></html>");
-        });
-    });
+    app.UseExceptionHandler();   // Returns RFC 9457 application/problem+json via IProblemDetailsService
     app.UseHsts();
 }
 else
 {
+    // Swallow BadHttpRequestException (e.g. invalid request headers from scanners) silently in dev
+    // so Serilog doesn't flood the output with ERROR-level stack traces.
+    app.Use(async (ctx, next) =>
+    {
+        try { await next(ctx); }
+        catch (Microsoft.AspNetCore.Http.BadHttpRequestException ex)
+        {
+            if (!ctx.Response.HasStarted)
+            {
+                ctx.Response.StatusCode = ex.StatusCode;
+            }
+        }
+    });
     app.UseDeveloperExceptionPage();
 }
 
@@ -299,8 +311,87 @@ app.MapScalarApiReference(options =>
     options.Theme = ScalarTheme.Purple;
 });
 
+var spaDistPath = Path.GetFullPath(Path.Combine(app.Environment.ContentRootPath, "..", "..", "PoMiniGames.Client", "dist"));
+var hasSpaDist = Directory.Exists(spaDistPath);
+PhysicalFileProvider? spaDistProvider = hasSpaDist ? new PhysicalFileProvider(spaDistPath) : null;
+
+if (hasSpaDist)
+{
+    Log.Information("Serving SPA assets from {SpaDistPath}", spaDistPath);
+
+    // Warn if the dist may be stale (any .ts/.tsx source file is newer than dist/index.html).
+    var distIndex = new FileInfo(Path.Combine(spaDistPath, "index.html"));
+    if (distIndex.Exists)
+    {
+        var srcRoot = Path.Combine(spaDistPath, "..", "..", "src");
+        var newestSrc = Directory.Exists(srcRoot)
+            ? new DirectoryInfo(Path.GetFullPath(srcRoot))
+                .EnumerateFiles("*.ts", SearchOption.AllDirectories)
+                .Concat(new DirectoryInfo(Path.GetFullPath(srcRoot)).EnumerateFiles("*.tsx", SearchOption.AllDirectories))
+                .OrderByDescending(f => f.LastWriteTimeUtc)
+                .FirstOrDefault()
+            : null;
+        if (newestSrc is not null && newestSrc.LastWriteTimeUtc > distIndex.LastWriteTimeUtc)
+        {
+            Log.Warning("SPA dist may be stale: {Src} (modified {SrcTime}) is newer than dist/index.html ({DistTime}). Run 'npm run build'.",
+                newestSrc.Name, newestSrc.LastWriteTimeUtc, distIndex.LastWriteTimeUtc);
+        }
+    }
+}
+else
+{
+    Log.Warning("SPA dist directory not found at {SpaDistPath}; serving default wwwroot assets", spaDistPath);
+}
+
 app.UseCors();
-app.UseStaticFiles();
+
+if (spaDistProvider is not null)
+{
+    // Cache-Control strategy:
+    // - Entry-point bundles (main-*.js, popup-*.js): no-store, because Vite finalises
+    //   the __vite__mapDeps chunk map AFTER computing the file hash, so the same hash
+    //   can appear with different lazy-chunk references across builds.  Caching these
+    //   as "immutable" causes the browser to serve a stale bundle that points to lazy
+    //   chunks that no longer exist in the new build.
+    // - All other /assets/* files (lazy chunks, CSS, images): immutable — Vite's
+    //   content-hash guarantees they never change for a given URL.
+    // - HTML and navigation paths: no-store so the browser always fetches the latest
+    //   index.html with correct asset references.
+    app.Use(async (ctx, next) =>
+    {
+        var path = ctx.Request.Path.Value ?? "";
+        if (ctx.Request.Path.StartsWithSegments("/assets"))
+        {
+            var fileName = System.IO.Path.GetFileName(path);
+            // Entry bundles share the "main-" or "popup-" prefix; treat them as mutable.
+            var isEntryBundle = (fileName.StartsWith("main-", StringComparison.OrdinalIgnoreCase)
+                              || fileName.StartsWith("popup-", StringComparison.OrdinalIgnoreCase))
+                             && fileName.EndsWith(".js", StringComparison.OrdinalIgnoreCase);
+            ctx.Response.Headers.CacheControl = isEntryBundle
+                ? "no-store"
+                : "public, max-age=31536000, immutable";
+        }
+        else if (!path.Contains('.') || path.EndsWith(".html", StringComparison.OrdinalIgnoreCase))
+        {
+            ctx.Response.Headers.CacheControl = "no-store";
+        }
+        await next(ctx);
+    });
+    app.UseDefaultFiles(new DefaultFilesOptions
+    {
+        FileProvider = spaDistProvider,
+    });
+
+    app.UseStaticFiles(new StaticFileOptions
+    {
+        FileProvider = spaDistProvider,
+    });
+}
+else
+{
+    app.UseStaticFiles();
+}
+
 app.UseAuthentication();
 app.UseRateLimiter();
 app.UseAuthorization();
@@ -315,20 +406,25 @@ app.MapGetLeaderboard();
 app.MapGetAllPlayerStatistics();
 app.MapMultiplayerEndpoints();
 app.MapLobbyEndpoints();
-app.MapGetPoDropSquareHighScores();
-app.MapSavePoDropSquareHighScore();
-app.MapGetSnakeHighScores();
-app.MapSaveSnakeHighScore();
+app.MapHighScoresEndpoints();
+app.MapGameEndpoints();
 app.MapHub<MultiplayerHub>("/api/hubs/multiplayer").RequireAuthorization();
 app.MapHub<LobbyHub>("/api/hubs/lobby").RequireAuthorization();
-
-// ─── MVC Controllers (PoRaceRagdoll game API) ────────────────────────
-app.MapControllers();
 
 app.MapHealthChecks("/health");
 
 // ─── SPA fallback (serves React build from wwwroot) ─────────────────
-app.MapFallbackToFile("index.html");
+if (spaDistProvider is not null)
+{
+    app.MapFallbackToFile("index.html", new StaticFileOptions
+    {
+        FileProvider = spaDistProvider,
+    });
+}
+else
+{
+    app.MapFallbackToFile("index.html");
+}
 
 try
 {

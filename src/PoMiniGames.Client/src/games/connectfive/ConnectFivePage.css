@@ -5,28 +5,30 @@
 /* ─── Board ─────────────────────────────────────────────── */
 .cf-board {
   display: grid;
-  grid-template-columns: repeat(9, 52px);
-  grid-template-rows: repeat(9, 52px);
+  grid-template-columns: repeat(9, var(--cf-cell));
+  grid-template-rows: repeat(9, var(--cf-cell));
   gap: 3px;
-  margin: var(--space-6) auto;
+  margin: var(--space-4) auto;
   width: fit-content;
   padding: var(--space-3);
   background: var(--color-surface);
   border-radius: var(--radius-xl);
   border: 1px solid var(--color-border);
-  --cf-cell-stride: 55px; /* 52px cell + 3px gap */
+  /* fill the available vertical space */
+  --cf-cell: clamp(38px, calc((100vh - 230px) / 9), 56px);
+  --cf-cell-stride: calc(var(--cf-cell) + 3px);
 }
 
 .cf-cell {
-  width: 52px;
-  height: 52px;
+  width: var(--cf-cell);
+  height: var(--cf-cell);
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid var(--color-border);
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1.4rem;
+  font-size: clamp(1rem, 3vmin, 1.6rem);
   cursor: pointer;
   transition: all var(--transition-fast);
   position: relative;
@@ -72,7 +74,7 @@
 /* ─── Column drop indicators ───────────────────────────── */
 .cf-drop-row {
   display: grid;
-  grid-template-columns: repeat(9, 52px);
+  grid-template-columns: repeat(9, var(--cf-cell, 48px));
   gap: 3px;
   margin: 0 auto var(--space-4);
   width: fit-content;
@@ -80,7 +82,7 @@
 }
 
 .cf-drop-btn {
-  width: 52px;
+  width: var(--cf-cell, 48px);
   height: 32px;
   background: var(--color-primary-dim);
   border: 1px solid var(--color-border);

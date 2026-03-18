@@ -42,5 +42,8 @@ public record GameState(
 
 public record PlaceBetRequest(int RacerId);
 
-public record FinishRaceRequest(int WinnerId);
+/// <summary>Discriminated outcome for <see cref="IGameSessionService.PlaceBet"/>.</summary>
+public enum PlaceBetOutcome { Success, NotFound, WrongPhase, InsufficientBalance, InvalidRacer }
+
+// FinishRaceRequest removed — the server now seals the winner at PlaceBet time, so no
 

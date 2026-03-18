@@ -24,13 +24,13 @@ public static class MultiplayerEndpoints
         .WithSummary("Returns all active multiplayer matches (for spectator listing).");
 
         app.MapPost("/api/multiplayer/queue", [Authorize] async (
-            QueueMatchRequest request,
+            QueueMatchRequest? request,
             HttpContext context,
             IMultiplayerService service,
             IMultiplayerGameRegistry registry,
             IHubContext<MultiplayerHub> hubContext) =>
         {
-            if (string.IsNullOrWhiteSpace(request.GameKey))
+            if (request is null || string.IsNullOrWhiteSpace(request.GameKey))
             {
                 return Results.BadRequest(new { error = "Game key is required." });
             }

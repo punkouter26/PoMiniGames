@@ -8,8 +8,6 @@ import { useCallback, useRef } from 'react';
 import { apiService, type AuthClientConfiguration, type AuthenticatedUserProfile } from '../games/shared/apiService';
 import { setStoredAccessToken } from './authStorage';
 
-const POPUP_CONFIG_KEY = 'msal_popup_config';
-
 export function useMsalAuth(config: AuthClientConfiguration | null) {
   const clientRef = useRef<PublicClientApplication | null>(null);
   const signingInRef = useRef(false);
@@ -64,9 +62,6 @@ export function useMsalAuth(config: AuthClientConfiguration | null) {
     for (const key of Object.keys(sessionStorage)) {
       if (key.includes('interaction.status')) sessionStorage.removeItem(key);
     }
-
-    // Store config so popup-redirect.ts can initialize MSAL in the popup window
-    localStorage.setItem(POPUP_CONFIG_KEY, JSON.stringify({ clientId: config.clientId, authority: config.authority }));
 
     signingInRef.current = true;
     try {

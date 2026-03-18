@@ -159,3 +159,34 @@
     display: none;
   }
 }
+
+/* ─── Quick-jump game picker ─────────────────────────────── */
+.gl-game-picker {
+  appearance: none;
+  background: var(--color-surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%236b7280'/%3E%3C/svg%3E") no-repeat right 8px center;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: var(--font-size-xs);
+  height: 28px;
+  margin: 0 var(--space-3);
+  padding: 0 28px 0 var(--space-2);
+  transition: border-color var(--transition-fast), color var(--transition-fast);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.gl-game-picker:hover,
+.gl-game-picker:focus {
+  border-color: var(--color-primary);
+  color: var(--color-text-primary);
+  outline: none;
+}
+
+@media (max-width: 480px) {
+  .gl-game-picker {
+    display: none;
+  }
+}

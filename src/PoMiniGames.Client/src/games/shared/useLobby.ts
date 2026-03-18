@@ -81,14 +81,16 @@ export function useLobby(): UseLobbyResult {
       });
 
       try {
+        // Set ref BEFORE start so cleanup always has a reference to call stop().
+        connectionRef.current = connection;
         await connection.start();
         if (disposed) {
           await connection.stop();
           return;
         }
-        connectionRef.current = connection;
         setIsConnected(true);
       } catch (err) {
+        connectionRef.current = null;
         if (!disposed) {
           setError('Failed to connect to the lobby.');
         }

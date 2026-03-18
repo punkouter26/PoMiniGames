@@ -5,6 +5,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UserSecretsId>pomini-games-secret-id</UserSecretsId>
+    <SpaRoot>..\..\PoMiniGames.Client</SpaRoot>
   </PropertyGroup>
 
   <ItemGroup>
@@ -26,5 +27,11 @@
     <PackageReference Include="Serilog.Enrichers.Environment" />
     <PackageReference Include="Serilog.Enrichers.Thread" />
   </ItemGroup>
+
+  <Target Name="BuildReactClient" BeforeTargets="Build">
+    <Message Importance="high" Text="Building React client in $(SpaRoot)" />
+    <Exec WorkingDirectory="$(SpaRoot)" Command="npm install" Condition="!Exists('$(SpaRoot)\node_modules')" />
+    <Exec WorkingDirectory="$(SpaRoot)" Command="npm run build" />
+  </Target>
 
 </Project>

@@ -1,9 +1,10 @@
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, CircleDot, Crosshair, Swords, Square, Baby, Car, Activity, Loader2, LogIn, UserRoundCheck } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { GameCardGrid, type GameCardItem } from './GameCardGrid';
 import './SinglePlayerPage.css';
 
-const SINGLE_PLAYER_GAMES = [
+const SINGLE_PLAYER_GAMES: GameCardItem[] = [
   {
     key: 'connectfive',
     to: '/connectfive',
@@ -164,20 +165,7 @@ export default function SinglePlayerPage() {
         <p className="sp-subtitle">Choose any game below and jump in.</p>
 
         <div className="sp-game-grid">
-          {SINGLE_PLAYER_GAMES.map((game) => (
-            <button
-              key={game.key}
-              type="button"
-              className="sp-game-card"
-              aria-label={game.ariaLabel}
-              style={{ '--accent': game.accent, '--accent-glow': game.accentGlow } as React.CSSProperties}
-              onClick={() => navigate(game.to)}
-            >
-              <div className="sp-game-icon">{game.icon}</div>
-              <h2>{game.title}</h2>
-              <p>{game.description}</p>
-            </button>
-          ))}
+          <GameCardGrid games={SINGLE_PLAYER_GAMES} />
         </div>
       </div>
     </div>

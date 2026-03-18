@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 
 test.describe('2-Player PoSnakeGame Online Mode', () => {
   test('solo mode still works (backward compat)', async ({ page }) => {

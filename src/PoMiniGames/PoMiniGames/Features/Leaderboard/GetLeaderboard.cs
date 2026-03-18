@@ -11,6 +11,8 @@ public static class GetLeaderboardEndpoint
         app.MapGet("/api/{game}/statistics/leaderboard",
             async (string game, IStorageService storage, int limit = 10) =>
         {
+            // Prevent client from triggering unbounded work via ?limit=999999
+            limit = Math.Clamp(limit, 1, 100);
             var board = await storage.GetLeaderboardAsync(game, limit);
             var result = board
                 .Select(p => new PlayerStatsDto { Name = p.Name, Game = game, Stats = p.Stats })

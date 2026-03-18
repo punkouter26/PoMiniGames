@@ -72,7 +72,7 @@ export class UIManager {
 
     const subtitle = document.createElement('p');
     subtitle.className = 'menu-subtitle';
-    subtitle.textContent = 'Survive 60 seconds. Click to shoot.';
+    subtitle.textContent = 'Survive 100 seconds. Click to shoot.';
 
     const qualityInfo = document.createElement('p');
     qualityInfo.style.cssText = `

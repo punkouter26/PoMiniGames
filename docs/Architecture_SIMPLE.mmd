@@ -1,18 +1,23 @@
-flowchart LR
-    Player["Player\nBrowser"]
-    Client["React SPA\nStatic Web App"]
-    API[".NET 10 API\nApp Service"]
-    Data["SQLite\nKey Vault\nApp Insights"]
-    Auth["Microsoft\nIdentity"]
-
-    Player --> Client
-    Client -->|"REST + SignalR"| API
-    API --> Data
-    Client -.->|"OAuth2"| Auth
-    API -.->|"JWT"| Auth
-
-    style Player fill:#1a1a2e,stroke:#4e9af1,color:#fff
-    style Client fill:#0078d4,stroke:#005a9e,color:#fff
-    style API fill:#005a9e,stroke:#003567,color:#fff
-    style Data fill:#2d6a4f,stroke:#1b4332,color:#fff
-    style Auth fill:#2c3e50,stroke:#16213e,color:#fff
+flowchart TD
+    Player["Player\n(Browser)"]
+    SWA["Azure Static Web App\nReact 18 · CDN Edge"]
+    API["Azure App Service\n.NET 10 API · SignalR"]
+    DB[("SQLite\n/home/data")]
+    Shared["PoShared\nKey Vault + App Insights"]
+    MSID["Microsoft Identity\nOAuth2 / OIDC"]
+    GH["GitHub Actions\nCI/CD — master push"]
+    Player --> SWA
+    Player -- "WSS Multiplayer" --> API
+    SWA -- "REST + WSS" --> API
+    API --> DB
+    API --> Shared
+    API --> MSID
+    GH -- "Deploy React" --> SWA
+    GH -- "Deploy .NET" --> API
+    style Player fill:#1a6b8a,stroke:#0d4a66,color:#fff
+    style SWA fill:#0078d4,stroke:#005a9e,color:#fff
+    style API fill:#0078d4,stroke:#005a9e,color:#fff
+    style DB fill:#107c10,stroke:#0a5c0a,color:#fff
+    style Shared fill:#7a3b00,stroke:#4f2700,color:#fff
+    style MSID fill:#7719aa,stroke:#4e0f72,color:#fff
+    style GH fill:#24292e,stroke:#111111,color:#fff

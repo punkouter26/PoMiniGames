@@ -27,11 +27,17 @@ public static class AuthEndpoints
         .WithTags("Auth")
         .WithSummary("Returns the public Microsoft sign-in configuration for the SPA.");
 
-        app.MapPost("/api/auth/dev-login", [AllowAnonymous] async (HttpContext context, DevLoginRequest? request, IWebHostEnvironment environment) =>
+        app.MapPost("/api/auth/dev-login", [AllowAnonymous] async (HttpContext context, HttpRequest httpRequest, IWebHostEnvironment environment) =>
         {
             if (!environment.IsDevelopment())
             {
                 return Results.NotFound();
+            }
+
+            DevLoginRequest? request = null;
+            if (httpRequest.HasJsonContentType())
+            {
+                request = await httpRequest.ReadFromJsonAsync<DevLoginRequest>();
             }
 
             var userId = string.IsNullOrWhiteSpace(request?.UserId)

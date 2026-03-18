@@ -23,15 +23,30 @@ public sealed class DevBypassAuthHandler : AuthenticationHandler<AuthenticationS
 
     protected override Task<AuthenticateResult> HandleAuthenticateAsync()
     {
+        // Try to get user from ?user= query parameter
+        var displayName = "Dev Admin";
+        var email = "devadmin@local.dev";
+        var userId = "dev-bypass-user";
+
+        if (Request.Query.TryGetValue("user", out var userParam) && !string.IsNullOrEmpty(userParam.ToString()))
+        {
+            var userValue = userParam.ToString()!.Trim();
+            displayName = userValue;
+            // Normalize for userId/email (lowercase, remove spaces)
+            var normalized = userValue.ToLowerInvariant().Replace(" ", "");
+            userId = $"dev-{normalized}";
+            email = $"dev-{normalized}@local.dev";
+        }
+
         // Create a fake identity with the claims the app expects
         var claims = new[]
         {
-            new Claim("oid",                       "dev-bypass-user"),
-            new Claim(ClaimTypes.NameIdentifier,   "dev-bypass-user"),
-            new Claim(ClaimTypes.Name,             "Dev Admin"),
-            new Claim("name",                      "Dev Admin"),
-            new Claim("preferred_username",        "devadmin@local.dev"),
-            new Claim(ClaimTypes.Email,            "devadmin@local.dev"),
+            new Claim("oid",                       userId),
+            new Claim(ClaimTypes.NameIdentifier,   userId),
+            new Claim(ClaimTypes.Name,             displayName),
+            new Claim("name",                      displayName),
+            new Claim("preferred_username",        email),
+            new Claim(ClaimTypes.Email,            email),
         };
 
         var identity  = new ClaimsIdentity(claims, AuthSchemes.DevBypass);

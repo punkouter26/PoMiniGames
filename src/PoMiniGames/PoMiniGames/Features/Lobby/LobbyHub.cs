@@ -28,8 +28,18 @@ public sealed class LobbyHub : Hub
         if (AuthenticatedUser.TryCreate(Context.User, out var user) && user is not null)
         {
             _logger.LogInformation("Lobby connected: {UserId} ({DisplayName})", user.UserId, user.DisplayName);
-            var snapshot = _lobbyService.AddPlayer(user.UserId, user.DisplayName);
-            await Clients.All.SendAsync("LobbyUpdated", snapshot);
+
+            // If a game is already starting, redirect the late joiner instead of adding them to the lobby.
+            if (_lobbyService.IsStarting)
+            {
+                _logger.LogInformation("Late joiner {UserId} redirected to in-progress game '{GameKey}'", user.UserId, _lobbyService.StartingGameKey);
+                await Clients.Caller.SendAsync("GameAlreadyStarted", new { gameKey = _lobbyService.StartingGameKey });
+            }
+            else
+            {
+                var snapshot = _lobbyService.AddPlayer(user.UserId, user.DisplayName);
+                await Clients.All.SendAsync("LobbyUpdated", snapshot);
+            }
         }
 
         await base.OnConnectedAsync();
@@ -74,6 +84,11 @@ public sealed class LobbyHub : Hub
         }
 
         _logger.LogInformation("Host {UserId} started game '{GameKey}' from lobby", user.UserId, gameKey);
+
+        // Mark lobby as starting BEFORE broadcast so any connection racing with this
+        // broadcast is caught in OnConnectedAsync and redirected rather than seeing a
+        // phantom lobby with ghost players.
+        _lobbyService.SetStarting(gameKey);
 
         // Broadcast to all connected lobby clients — each client will navigate to the game page + auto-join
         await Clients.All.SendAsync("GameStarting", new { gameKey });

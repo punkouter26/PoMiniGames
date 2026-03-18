@@ -70,21 +70,21 @@ describe('SinglePlayerPage', () => {
 
     renderPage();
 
-    const expectedGames = [
-      ['Play Connect Five single player', '/connectfive'],
-      ['Play Tic Tac Toe single player', '/tictactoe'],
-      ['Play Voxel Shooter single player', '/voxelshooter'],
-      ['Play PoFight single player', '/pofight'],
-      ['Play PoDropSquare single player', '/podropsquare'],
-      ['Play PoBabyTouch single player', '/pobabytouch'],
-      ['Play PoRaceRagdoll single player', '/poraceragdoll'],
-      ['Play PoSnakeGame single player', '/posnakegame'],
+    const expectedAriaLabels = [
+      'Play Connect Five single player',
+      'Play Tic Tac Toe single player',
+      'Play Voxel Shooter single player',
+      'Play PoFight single player',
+      'Play PoDropSquare single player',
+      'Play PoBabyTouch single player',
+      'Play PoRaceRagdoll single player',
+      'Play PoSnakeGame single player',
     ] as const;
 
-    for (const [ariaLabel, href] of expectedGames) {
-      expect(screen.getByLabelText(ariaLabel)).toHaveAttribute('href', href);
+    for (const ariaLabel of expectedAriaLabels) {
+      expect(screen.getByLabelText(ariaLabel)).toBeInTheDocument();
     }
 
-    expect(screen.getAllByRole('link')).toHaveLength(expectedGames.length);
+    expect(screen.getAllByRole('button', { name: /play/i })).toHaveLength(expectedAriaLabels.length);
   });
 });

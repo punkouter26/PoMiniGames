@@ -8,6 +8,7 @@ namespace PoMiniGames.IntegrationTests;
 /// <summary>
 /// WebApplicationFactory that keeps the production auth pipeline intact while
 /// running in Development so local dev-login endpoints can be tested.
+/// Explicitly disables DevBypass to enforce proper authentication for tests.
 /// </summary>
 public class LocalAuthWebApplicationFactory : WebApplicationFactory<Program>
 {
@@ -21,6 +22,8 @@ public class LocalAuthWebApplicationFactory : WebApplicationFactory<Program>
             cfg.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["Sqlite:DataDirectory"] = _tempDir,
+                // Disable DevBypass to enforce auth enforcement in tests
+                ["PoMiniGames:DevBypassAuth"] = "false",
             });
         });
     }

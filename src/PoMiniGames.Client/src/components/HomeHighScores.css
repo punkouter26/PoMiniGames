@@ -84,7 +84,13 @@
   font-family: var(--font-family-mono);
   font-size: var(--font-size-xs);
   text-align: right;
+  font-size: 1.1rem;
+  line-height: 1;
 }
+
+.home-highscores-row--rank1 .home-highscores-rank { filter: drop-shadow(0 0 6px rgba(245,158,11,0.7)); }
+.home-highscores-row--rank2 .home-highscores-rank { filter: drop-shadow(0 0 4px rgba(148,163,184,0.5)); }
+.home-highscores-row--rank3 .home-highscores-rank { filter: drop-shadow(0 0 4px rgba(205,127,50,0.4)); }
 
 /* name + bar column */
 .home-highscores-info {
@@ -135,4 +141,29 @@
   color: var(--color-text-muted);
   margin: 0;
   font-size: var(--font-size-sm);
+}
+
+/* Empty placeholder rows (no scores yet) */
+.home-highscores-row--empty .home-highscores-name {
+  color: var(--color-text-disabled);
+  font-weight: var(--font-weight-normal);
+}
+
+.home-highscores-row--empty .home-highscores-metric {
+  color: var(--color-text-disabled);
+}
+
+/* Mobile: allow tabs to scroll horizontally with 8 games */
+@media (max-width: 540px) {
+  .home-highscores-tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: var(--space-1);
+    gap: var(--space-1);
+  }
+
+  .home-highscores-tab {
+    flex-shrink: 0;
+  }
 }

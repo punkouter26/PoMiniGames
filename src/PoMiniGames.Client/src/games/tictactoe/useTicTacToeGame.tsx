@@ -7,7 +7,7 @@ import { useAuth } from '../../context/AuthContext';
 import { TicTacToeBoard } from './TicTacToeBoard';
 import { TicTacToeAI } from './TicTacToeAI';
 import { usePlayerName } from '../../context/PlayerNameContext';
-import { type TicTacToeMultiplayerState } from '../shared/apiService';
+import { type TicTacToeMultiplayerState } from '../shared/multiplayerTypes';
 import { type StatItem } from '../shared/GamePageShell';
 import { useTurnBasedMultiplayer } from '../shared/useTurnBasedMultiplayer';
 
@@ -162,7 +162,18 @@ export function useTicTacToeGame() {
         }
       }
       return isMyTurnOnline
-        ? { icon: <X size={14} />, text: 'Your turn (X)', className: 'turn' }
+        ? (() => {
+            // onlineState may be briefly undefined while hydrating after reconnect;
+            // fall back to generic text rather than guessing the wrong piece.
+            const myPiece = onlineState
+              ? (onlineState.xUserId === activeUserId ? 'X' : 'O')
+              : null;
+            return {
+              icon: <X size={14} />,
+              text: myPiece ? `Your turn (${myPiece})` : 'Your turn',
+              className: 'turn',
+            };
+          })()
         : { icon: <Loader2 size={14} className="thinking-indicator" />, text: `${opponent?.displayName ?? 'Opponent'} is thinking...`, className: 'thinking' };
     }
 

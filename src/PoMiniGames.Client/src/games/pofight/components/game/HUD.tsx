@@ -2,6 +2,9 @@
 import { memo } from 'react';
 import { Signal } from '../../engine/Signals';
 import { useSignal } from '../../hooks/useSignal';
+import { useGameStore } from '../../store/gameState';
+
+const LEVEL_LABELS: Record<number, string> = { 1: 'Easy', 3: 'Medium', 5: 'Hard' };
 
 export const HealthBar = memo(function HealthBar({ health, color = 'bg-blue-500' }: { health: Signal<number>, color?: string }) {
     const healthValue = useSignal(health);
@@ -61,17 +64,19 @@ const CpuLabel = memo(function CpuLabel({ level }: { level: string }) {
     );
 });
 
-export const HUD = memo(function HUD({ player, cpu }: { player: Fighter, cpu: Fighter }) {
+export const HUD = memo(function HUD({ player, cpu, gameMode = 'PvCPU' }: { player: Fighter, cpu: Fighter, gameMode?: 'PvCPU' | 'CPUvCPU' }) {
+    const currentLevel = useGameStore(s => s.currentLevel);
+    const levelLabel = LEVEL_LABELS[currentLevel] ?? String(currentLevel);
     return (
         <div className="absolute top-0 left-0 w-full p-12 flex justify-between pointer-events-none">
             <div className="flex flex-col gap-2 items-start">
-                <PlayerLabel />
+                {gameMode === 'CPUvCPU' ? <CpuLabel level="1" /> : <PlayerLabel />}
                 <HealthBar health={player.health} color="bg-cyan-500 shadow-[0_0_20px_rgba(6,182,212,0.6)]" />
                 <PowerBar chargeLevel={player.chargeLevel} label="Power" />
             </div>
 
             <div className="flex flex-col gap-2 items-end">
-                <CpuLabel level={cpu.id === 'cpu' ? '?' : '1'} />
+                <CpuLabel level={levelLabel} />
                 <HealthBar health={cpu.health} color="bg-red-600 shadow-[0_0_20px_rgba(220,38,38,0.6)]" />
                 <PowerBar chargeLevel={cpu.chargeLevel} label="CPU" />
             </div>

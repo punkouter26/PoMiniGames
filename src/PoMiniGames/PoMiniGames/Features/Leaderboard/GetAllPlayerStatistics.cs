@@ -13,10 +13,12 @@ public static class GetAllPlayerStatisticsEndpoint
             var result = await storage.GetAllPlayerStatsAsync();
             return Results.Ok(result);
         })
+        .RequireAuthorization()
         .WithName("GetAllPlayerStatistics")
         .WithTags("Statistics")
         .WithSummary("All player statistics across every game")
-        .Produces<IEnumerable<PlayerStatsDto>>(StatusCodes.Status200OK);
+        .Produces<IEnumerable<PlayerStatsDto>>(StatusCodes.Status200OK)
+        .ProducesProblem(StatusCodes.Status401Unauthorized);
 
         return app;
     }

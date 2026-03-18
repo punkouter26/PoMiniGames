@@ -2,6 +2,12 @@
    PoMiniGames Design System - 2025/2026
    =========================================== */
 
+/* ─── Tailwind v4 (required by PoRaceRagdoll & utility classes) ─ */
+@import "tailwindcss";
+
+/* ─── Inter font from Google Fonts ────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
 :root {
   /* ─── Color Palette ─────────────────────────────────────── */
   /* Primary - Cyan */
@@ -25,6 +31,7 @@
   --color-bg-mid: #302b63;
   --color-bg-light: #24243e;
   --color-surface: rgba(255, 255, 255, 0.06);
+  --color-surface-2: rgba(255, 255, 255, 0.04);
   --color-surface-hover: rgba(255, 255, 255, 0.08);
   --color-border: rgba(255, 255, 255, 0.1);
   --color-border-hover: rgba(255, 255, 255, 0.15);

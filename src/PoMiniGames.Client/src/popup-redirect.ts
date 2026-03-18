@@ -26,7 +26,7 @@ interface PopupConfig {
       authority: cfg.authority,
       redirectUri: `${window.location.origin}/popup.html`,
     },
-    cache: { cacheLocation: 'localStorage' },
+      cache: { cacheLocation: 'localStorage' },
   });
 
   await client.initialize();

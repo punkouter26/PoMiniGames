@@ -1,9 +1,11 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, CircleDot, Loader2, LogIn, Users } from 'lucide-react';
+import { ArrowLeft, CircleDot, Loader2, LogIn, Users, Zap } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { GameCardGrid, type GameCardItem } from './GameCardGrid';
 import './SinglePlayerPage.css';
 
-const MULTIPLAYER_GAMES = [
+const MULTIPLAYER_GAMES: GameCardItem[] = [
   {
     key: 'tictactoe',
     to: '/tictactoe?online=1',
@@ -53,9 +55,11 @@ const MULTIPLAYER_GAMES = [
 
 export default function MultiplayerPage() {
   const navigate = useNavigate();
-  const { config, isAuthenticated, isConfigured, isLoading, signIn } = useAuth();
+  const { config, isAuthenticated, isConfigured, isLoading, signIn, devBypass } = useAuth();
+  const [devName, setDevName] = useState('');
 
   const signInLabel = config?.microsoftEnabled ? 'Sign in with Microsoft' : 'Sign in';
+  const showDevPanel = window.location.hostname === 'localhost' || Boolean(config?.devLoginEnabled);
   const signInDescription = config?.microsoftEnabled
     ? 'Sign in with your Microsoft account to play online multiplayer.'
     : 'Sign in to play online multiplayer.';
@@ -94,13 +98,37 @@ export default function MultiplayerPage() {
           <h1 className="sp-title">Multiplayer</h1>
           <p className="sp-subtitle">{signInDescription}</p>
           <div className="sp-auth-banner-actions">
-            <button className="sp-btn-primary" onClick={() => void signIn()}>
-              <LogIn size={16} /> {signInLabel}
-            </button>
+            {config?.microsoftEnabled && (
+              <button className="sp-btn-primary" onClick={() => void signIn()}>
+                <LogIn size={16} /> {signInLabel}
+              </button>
+            )}
             <button className="sp-btn-secondary" onClick={() => navigate('/')}>
               <ArrowLeft size={16} /> Home
             </button>
           </div>
+          {showDevPanel && (
+            <div className="lobby-dev-panel">
+              <p className="lobby-dev-panel__label"><Zap size={13} /> Dev Login — no OAuth needed</p>
+              <div className="lobby-dev-panel__row">
+                <input
+                  className="lobby-dev-panel__input"
+                  type="text"
+                  placeholder="Your name (e.g. Player1)"
+                  value={devName}
+                  onChange={e => setDevName(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter' && devName.trim()) void devBypass(devName.trim()); }}
+                />
+                <button
+                  className="sp-btn-primary"
+                  disabled={!devName.trim()}
+                  onClick={() => void devBypass(devName.trim())}
+                >
+                  <Zap size={14} /> Login
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -119,20 +147,7 @@ export default function MultiplayerPage() {
         <p className="sp-subtitle">Choose a game and find an opponent online.</p>
 
         <div className="sp-game-grid">
-          {MULTIPLAYER_GAMES.map((game) => (
-            <button
-              key={game.key}
-              type="button"
-              className="sp-game-card"
-              aria-label={game.ariaLabel}
-              style={{ '--accent': game.accent, '--accent-glow': game.accentGlow } as React.CSSProperties}
-              onClick={() => navigate(game.to)}
-            >
-              <div className="sp-game-icon">{game.icon}</div>
-              <h2>{game.title}</h2>
-              <p>{game.description}</p>
-            </button>
-          ))}
+          <GameCardGrid games={MULTIPLAYER_GAMES} />
         </div>
       </div>
     </div>

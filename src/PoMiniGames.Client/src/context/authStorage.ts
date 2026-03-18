@@ -16,11 +16,6 @@ export function setStoredAccessToken(token: string | null) {
   window.localStorage.removeItem(ACCESS_TOKEN_KEY);
 }
 
-export function setPendingReturnUrl(path: string) {
-  if (typeof window === 'undefined') return;
-  window.sessionStorage.setItem(RETURN_URL_KEY, path);
-}
-
 export function consumePendingReturnUrl(): string | null {
   if (typeof window === 'undefined') return null;
   const value = window.sessionStorage.getItem(RETURN_URL_KEY);

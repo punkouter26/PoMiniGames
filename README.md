@@ -1,111 +1,126 @@
 # PoMiniGames
 
-A modern web-based mini-games platform featuring classic games with AI opponents, persistent player statistics, and competitive leaderboards.
+Instant-play mini-games platform — 8 games, AI opponents, real-time 2P multiplayer, global leaderboards. Built with .NET 10 + React 18 + SignalR. Offline-resilient: every game works without an API connection.
 
-## Overview
+## Games
 
-PoMiniGames is a full-stack web application built with .NET 10 and React 18. It provides an engaging platform for players to enjoy classic games like Tic-Tac-Toe and Connect Five against AI opponents at various difficulty levels.
-
-### Key Features
-
-- **Tic-Tac-Toe**: Classic 3x3 grid game with AI opponents
-- **Connect Five**: Connect 5 in a row on a 6x5 grid
-- **PoSnakeGame — Battle Arena**: Real-time 2-player snake survival game with live opponent synchronization
-- **Difficulty Levels**: Easy, Medium, and Hard AI opponents
-- **Player Statistics**: Track wins, losses, draws, and win streaks
-- **Leaderboards**: Compete with other players
-- **Health & Diagnostics**: Integrated health monitoring and diagnostic endpoints:
-    - `/api/health`: Comprehensive system health status (Azure Table Storage, etc.)
-    - `/diag`: Filtered configuration and secrets visibility (masked for security)
-- **Offline Support**: Works without internet using local storage
-- **Online Multiplayer**: Real-time 2P via SignalR (`/api/hubs/lobby` + `/api/hubs/multiplayer`)
+| Game | AI | Multiplayer | Leaderboard |
+|---|---|---|---|
+| **Tic-Tac-Toe** | Easy / Medium / Hard | Online PvP | Win rate |
+| **Connect Five** | Easy / Medium / Hard | Online PvP | Win rate |
+| **PoFight** | CPU | Online PvP | Win rate |
+| **Po Snake Game** | — | 2P live sync | High scores |
+| **PoDropSquare** | — | — | Survival time |
+| **PoBabyTouch** | — | — | Offline only |
+| **PoRaceRagdoll** | CPU racers | Betting lobby | Session |
+| **Voxel Shooter** | — | — | Offline only |
 
 ## Tech Stack
 
 | Layer | Technology |
 |---|---|
-| Frontend | React 18 + TypeScript + Vite |
+| Frontend | React 18 + TypeScript + Vite + Tailwind CSS v4 |
 | Routing | React Router v6 |
-| Real-time | SignalR (WebSockets) |
-| Backend | .NET 10 Minimal API + MVC (PoRaceRagdoll) |
-| Storage | SQLite via Microsoft.Data.Sqlite |
-| Auth | Microsoft Identity (MSAL) — JWT Bearer + DevCookie |
-| Logging | Serilog (file + console + App Insights sink) |
+| Real-time | SignalR WebSockets (`@microsoft/signalr` v10) |
+| 3D / Physics | Three.js · Cannon-ES · Matter.js |
+| Backend | .NET 10 Minimal API + MVC |
+| Storage | SQLite (`/home/data/pominigames.db`) |
+| Auth | Microsoft MSAL (OAuth2 JWT Bearer) + DevCookie |
+| Logging | Serilog → file + console + App Insights |
 | Telemetry | OpenTelemetry → Azure Application Insights |
-| Secrets | Azure Key Vault (Managed Identity) + dotnet user-secrets |
+| Secrets | Azure Key Vault (Managed Identity) + `dotnet user-secrets` |
 | IaC | Azure Bicep + `azd` |
-| Testing | xUnit + Testcontainers (integration) + Playwright (E2E) |
+| Testing | xUnit · Testcontainers · Playwright · Vitest |
 
 ## Architecture
 
 ```mermaid
-flowchart LR
-    Player["Player\nBrowser"] --> Client["React SPA\nStatic Web App"]
-    Client -->|"REST + SignalR"| API[".NET 10 API\nApp Service"]
-    API --> Data["SQLite\nKey Vault\nApp Insights"]
-    Client -.->|"OAuth2"| Auth["Microsoft\nIdentity"]
-    API -.->|"JWT"| Auth
+flowchart TD
+    Player["Player (Browser)"] --> SWA["Azure Static Web App\nReact 18 · CDN Edge"]
+    Player -- "WSS Multiplayer" --> API["Azure App Service\n.NET 10 API · SignalR"]
+    SWA -- "REST + WSS" --> API
+    API --> DB[("SQLite\n/home/data")]
+    API --> Shared["PoShared\nKey Vault + App Insights"]
+    API --> MSID["Microsoft Identity\nOAuth2 / OIDC"]
+    GH["GitHub Actions\nCI/CD"] -- "Deploy React" --> SWA
+    GH -- "Deploy .NET" --> API
 ```
 
-**Source layout:**
+## Source Layout
+
 ```
 src/
 ├── PoMiniGames/           # .NET 10 Backend API
 │   ├── Features/          # Minimal API endpoints + SignalR hubs
-│   ├── Models/            # Domain models (PlayerStats, HighScores)
+│   │   ├── Auth/          # /api/auth/* + dev bypass
+│   │   ├── Health/        # /api/health + /diag
+│   │   ├── Leaderboard/   # /api/{game}/statistics/*
+│   │   ├── HighScores/    # /api/snake/highscores + podropsquare
+│   │   ├── Multiplayer/   # /api/multiplayer/* + MultiplayerHub
+│   │   ├── Lobby/         # /api/lobby + LobbyHub
+│   │   └── PoRaceRagdoll/ # /api/game/* race sessions
+│   ├── Models/            # PlayerStats, SnakeHighScore, PoDropSquareHighScore
 │   ├── DTOs/              # API contracts
-│   ├── Services/          # Storage, auth, multiplayer services
+│   ├── Services/          # StorageService, MultiplayerService, LobbyService
 │   └── HealthChecks/      # /api/health checks
 tests/
-│   ├── PoMiniGames.UnitTests/       # Pure logic tests
-│   ├── PoMiniGames.IntegrationTests/ # API + DB via Testcontainers
-│   └── e2e/                         # Playwright E2E
+├── PoMiniGames.UnitTests/        # Pure logic tests (xUnit)
+├── PoMiniGames.IntegrationTests/ # API + DB via Testcontainers
+└── e2e/                          # Playwright E2E (Chromium)
 src/PoMiniGames.Client/    # React 18 + TypeScript + Vite
-    ├── components/        # Shared UI components
-    ├── context/           # AuthContext, PlayerNameContext
-    └── games/             # Per-game modules (8 games)
+    ├── components/        # Shared UI (Home, Lobby, GameLayout)
+    ├── context/           # AuthContext (MSAL), PlayerNameContext
+    └── games/             # 8 game modules + shared apiService
+```
+
+## Quick Start
+
+```bash
+# Install deps
+dotnet restore
+cd src/PoMiniGames.Client && npm install && cd ../..
+
+# Set dev secrets
+cd src/PoMiniGames/PoMiniGames
+dotnet user-secrets set "PoMiniGames:MicrosoftAuth:ClientId" "<client-id>"
+dotnet user-secrets set "PoMiniGames:MicrosoftAuth:ApiClientId" "<api-client-id>"
+cd ../../..
+
+# Launch (F5 in VS Code — kills dotnet, starts Vite, then API)
+# API: http://localhost:5000  |  Client dev server: http://localhost:5173
 ```
 
 ## Documentation
 
-Comprehensive documentation is available in the `docs/` folder:
-
-### Architecture & Design
-
-| Document | Description |
-|----------|-------------|
-| [docs/Architecture.mmd](./docs/Architecture.mmd) | System Context + Container Architecture |
-| [docs/ApplicationFlow.mmd](./docs/ApplicationFlow.mmd) | Auth Flow + User Journey |
-| [docs/DataModel.mmd](./docs/DataModel.mmd) | Database Schema + State Transitions |
-| [docs/ComponentMap.mmd](./docs/ComponentMap.mmd) | Component Tree + Dependencies |
-| [docs/DataPipeline.mmd](./docs/DataPipeline.mmd) | Data Workflow + User Workflow |
-
-### Product & API
-
-| Document | Description |
-|----------|-------------|
-| [docs/ProductSpec.md](./docs/ProductSpec.md) | PRD + Success Metrics |
-| [docs/ApiContract.md](./docs/ApiContract.md) | API Specs + Error Handling |
-
-### Operations
-
-| Document | Description |
-|----------|-------------|
-| [docs/DevOps.md](./docs/DevOps.md) | Deployment Pipeline + Secrets |
-| [docs/LocalSetup.md](./docs/LocalSetup.md) | Day 1 Guide + Docker |
-
----
-
-> **Consolidated docs** — the tables above are superseded by the high-density files in `docs/`:
-
 | File | Type | Description |
 |---|---|---|
-| [docs/Architecture.mmd](./docs/Architecture.mmd) | Mermaid | Full Azure deployment topology (C4 Level 1) |
-| [docs/Architecture_SIMPLE.mmd](./docs/Architecture_SIMPLE.mmd) | Mermaid | High-level 5-node context |
-| [docs/SystemFlow.mmd](./docs/SystemFlow.mmd) | Mermaid | Auth + Stats + Leaderboard + Multiplayer sequence |
-| [docs/SystemFlow_SIMPLE.mmd](./docs/SystemFlow_SIMPLE.mmd) | Mermaid | Simplified 4-flow lanes |
-| [docs/DataModel.mmd](./docs/DataModel.mmd) | Mermaid | Full ERD — all entities and relationships |
-| [docs/DataModel_SIMPLE.mmd](./docs/DataModel_SIMPLE.mmd) | Mermaid | Core entities only |
+| [docs/Architecture.mmd](./docs/Architecture.mmd) | Mermaid C4Context | Full Azure deployment topology (C4 Level 1) |
+| [docs/Architecture_SIMPLE.mmd](./docs/Architecture_SIMPLE.mmd) | Mermaid flowchart | 7-node high-level context |
+| [docs/SystemFlow.mmd](./docs/SystemFlow.mmd) | Mermaid sequenceDiagram | Auth + CRUD + SignalR multiplayer flow |
+| [docs/SystemFlow_SIMPLE.mmd](./docs/SystemFlow_SIMPLE.mmd) | Mermaid flowchart | Simplified 4-path player journey |
+| [docs/DataModel.mmd](./docs/DataModel.mmd) | Mermaid erDiagram | Full ERD — all entities and relationships |
+| [docs/DataModel_SIMPLE.mmd](./docs/DataModel_SIMPLE.mmd) | Mermaid erDiagram | Core tables only |
+| [docs/ProductSpec.md](./docs/ProductSpec.md) | Markdown | PRD — Why, features, business rules, success metrics |
+| [docs/DevOps.md](./docs/DevOps.md) | Markdown | CI/CD, secrets, Docker Compose, Day 1 onboarding |
+
+## Screenshots
+
+| Lobby | Multiplayer |
+|---|---|
+| ![Lobby](./docs/screenshots/multiplayer-step9-lobby-current.png) | ![Multiplayer](./docs/screenshots/multiplayer-dom-debug-home.png) |
+
+## Key Endpoints
+
+| Endpoint | Description |
+|---|---|
+| `GET /api/health/ping` | Liveness probe — returns `"pong"` |
+| `GET /api/health` | Structured health report (SQLite status) |
+| `GET /diag` | Masked config dump (dev/staging only) |
+| `GET /scalar` | OpenAPI UI (Scalar — purple theme) |
+| `GET /api/auth/me` | Authenticated user profile |
+| `GET /api/{game}/statistics/leaderboard` | Top 10 by win rate |
+| `WS /api/hubs/lobby` | Pre-game lobby (SignalR) |
+| `WS /api/hubs/multiplayer` | Real-time game moves (SignalR) |
 | [docs/ProductSpec.md](./docs/ProductSpec.md) | Markdown | PRD, game catalog, API surface, success metrics |
 | [docs/DevOps.md](./docs/DevOps.md) | Markdown | CI/CD, secrets, Docker Compose, blast radius |
 | [docs/screenshots/](./docs/screenshots/) | Images | App screenshots for visual reference |
@@ -119,22 +134,24 @@ Comprehensive documentation is available in the `docs/` folder:
 
 ### Local Development
 
-1. **Start the Backend API:**
+1. **Start the Backend API (hosts the React client):**
    ```bash
    cd src/PoMiniGames/PoMiniGames
    dotnet run
    ```
 
-2. **Start the Frontend (new terminal):**
+2. **Open the app:** http://localhost:5000
+
+3. **Optional hot-reload frontend mode (new terminal):**
    ```bash
    cd src/PoMiniGames.Client
    npm install
    npm run dev
    ```
 
-3. **Open the app:** http://localhost:5173
+4. **Hot-reload app URL:** http://localhost:5173
 
-4. **Run the local smoke check:** use the VS Code task `smoke-local` after the client and API are running.
+5. **Run the local smoke check:** use the VS Code task `smoke-local` after the client and API are running.
 
 ## API Endpoints
 

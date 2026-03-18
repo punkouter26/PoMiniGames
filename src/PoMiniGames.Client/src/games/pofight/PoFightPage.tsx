@@ -6,12 +6,11 @@ import { usePlayerName } from '../../context/PlayerNameContext';
 import { GamePageShell, type StatItem } from '../shared/GamePageShell';
 import { Trophy, XCircle, RotateCcw } from 'lucide-react';
 import { useGameStore } from './store/gameState';
-import { Home } from './components/game/Home';
 import { CharacterSelect } from './components/game/CharacterSelect';
 import Stage from './components/game/Stage';
 import { GameErrorBoundary } from './components/GameErrorBoundary';
 
-type Screen = 'HOME' | 'SELECT' | 'GAME';
+type Screen = 'SELECT' | 'GAME';
 type GameMode = 'PvCPU' | 'CPUvCPU';
 
 const GAME_KEY = 'pofight';
@@ -25,48 +24,36 @@ const DIFFICULTY_LEVELS: Record<Difficulty, number> = {
 export default function PoFightPage() {
   const [searchParams] = useSearchParams();
   const isDemoMode = searchParams.get('demo') === '1';
+  const gameMode: GameMode = isDemoMode ? 'CPUvCPU' : 'PvCPU';
   const { playerName } = usePlayerName();
-  const [screen, setScreen] = useState<Screen>(isDemoMode ? 'SELECT' : 'HOME');
-  const [gameMode, setGameMode] = useState<GameMode>(isDemoMode ? 'CPUvCPU' : 'PvCPU');
+  const [screen, setScreen] = useState<Screen>('SELECT');
   const [difficulty, setDifficulty] = useState(Difficulty.Medium);
   const [stats, setStats] = useState(() => statsService.getStats(GAME_KEY, playerName));
   const [lastResult, setLastResult] = useState<GameResult | null>(null);
 
+  // Keep game store in sync so CharacterSelect badge always reflects current selection
   useEffect(() => {
-    if (!isDemoMode) {
-      return;
-    }
-
-    setGameMode('CPUvCPU');
-    setScreen('SELECT');
-    setLastResult(null);
-  }, [isDemoMode]);
-
-  const handleSelectMode = (mode: GameMode) => {
-    setGameMode(mode);
-    setScreen('SELECT');
-  };
+    useGameStore.getState().setCurrentLevel(DIFFICULTY_LEVELS[difficulty]);
+  }, [difficulty]);
 
   const handleStartGame = useCallback(() => {
-    // Set AI level in game store before starting
-    useGameStore.getState().setCurrentLevel(DIFFICULTY_LEVELS[difficulty]);
     setScreen('GAME');
     setLastResult(null);
-  }, [difficulty]);
+  }, []);
 
   const handleGameEnd = useCallback(async (result: 'win' | 'loss') => {
     const gameResult = result === 'win' ? GameResult.Win : GameResult.Loss;
     setLastResult(gameResult);
 
     if (gameMode === 'CPUvCPU') {
-      setScreen(isDemoMode ? 'SELECT' : 'HOME');
+      setScreen('SELECT');
       return;
     }
 
     const updated = await statsService.recordResult(GAME_KEY, playerName, difficulty, gameResult);
     setStats(updated);
-    setScreen('HOME');
-  }, [difficulty, gameMode, isDemoMode, playerName]);
+    setScreen('SELECT');
+  }, [difficulty, gameMode, playerName]);
 
   const handleManualResult = async (result: GameResult) => {
     setLastResult(result);
@@ -74,8 +61,8 @@ export default function PoFightPage() {
     setStats(updated);
   };
 
-  const resetToHome = () => {
-    setScreen('HOME');
+  const resetToSelect = () => {
+    setScreen('SELECT');
     setLastResult(null);
   };
 
@@ -100,10 +87,11 @@ export default function PoFightPage() {
       title="PoFight"
       player={playerName}
       status={statusNode}
-      backTo="/"
+      backTo="/single-player"
       controls={
         <>
           <select
+            aria-label="Difficulty"
             value={difficulty}
             onChange={(e) => setDifficulty(e.target.value as Difficulty)}
           >
@@ -119,7 +107,7 @@ export default function PoFightPage() {
               <button className="btn-loss" onClick={() => handleManualResult(GameResult.Loss)}>
                 <XCircle size={12} /> Loss
               </button>
-              <button className="gps-open-link" onClick={resetToHome}>
+              <button className="gps-open-link" onClick={resetToSelect}>
                 <RotateCcw size={12} /> Quit
               </button>
             </>
@@ -130,9 +118,6 @@ export default function PoFightPage() {
       fullscreen
     >
       <GameErrorBoundary>
-        {screen === 'HOME' && (
-          <Home onSelectMode={handleSelectMode} />
-        )}
         {screen === 'SELECT' && (
           <CharacterSelect onStart={handleStartGame} mode={gameMode} />
         )}

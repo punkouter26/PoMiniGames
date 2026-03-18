@@ -12,7 +12,7 @@
  * Prerequisites: .NET API on :5000 + Vite client on :5173 must be running.
  */
 
-const { test, expect } = require('@playwright/test');
+import { test, expect } from './fixtures';
 
 // Run all tests in this file sequentially — multiplayer tests share a global
 // matchmaking queue and parallel execution would let players from different

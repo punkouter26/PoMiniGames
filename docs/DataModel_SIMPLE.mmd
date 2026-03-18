@@ -1,31 +1,26 @@
 erDiagram
     PLAYER_STATS {
-        string PlayerId PK
-        string PlayerName
-        int TotalGames
-        float WinRate
-        datetime UpdatedAt
+        string Game PK
+        string PlayerName PK
+        string StatsJson "JSON: Easy/Medium/Hard DifficultyStats"
+        string UpdatedAt
     }
-
-    DIFFICULTY_STATS {
-        string PlayerId FK
-        string Difficulty
-        int Wins
-        int WinStreak
-    }
-
-    HIGH_SCORES {
-        string GameType
+    SNAKE_HIGH_SCORES {
         string Initials
         int Score
-        string Date
+        float GameDuration
     }
-
+    PODROPSQUARE_HIGH_SCORES {
+        string PlayerInitials
+        float SurvivalTime
+    }
+    MULTIPLAYER_MATCH {
+        string MatchId PK
+        string GameKey
+        string Status "waiting | active | finished"
+    }
     RACE_SESSION {
         string SessionId PK
-        string Status
-        datetime CreatedAt
+        string Status "created | betting | racing | finished"
     }
-
-    PLAYER_STATS ||--o{ DIFFICULTY_STATS : "tracks per difficulty"
-    RACE_SESSION ||--o{ HIGH_SCORES : "generates"
+    PLAYER_STATS ||--o{ MULTIPLAYER_MATCH : "referenced by"

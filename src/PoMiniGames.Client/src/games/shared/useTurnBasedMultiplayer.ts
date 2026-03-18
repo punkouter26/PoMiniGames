@@ -4,7 +4,7 @@ import {
   LogLevel,
   type HubConnection,
 } from '@microsoft/signalr';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { getStoredAccessToken } from '../../context/authStorage';
 import { apiService } from './apiService';
@@ -102,11 +102,20 @@ export function useTurnBasedMultiplayer(gameKey: string): UseTurnBasedMultiplaye
       connection.onreconnected(async () => {
         if (disposed) return;
         setIsConnected(true);
+        setError(null);
         const currentMatchId = matchRef.current?.matchId;
         if (currentMatchId) {
-          const latest = await apiService.getMultiplayerMatch(currentMatchId);
-          if (latest && !disposed) {
-            setMatch(latest);
+          try {
+            const latest = await apiService.getMultiplayerMatch(currentMatchId);
+            if (latest && !disposed) {
+              // Use mergeSnapshot so a stale REST response cannot down-rank a
+              // concurrent MatchUpdated event that arrived just after reconnect.
+              setMatch(prev => mergeSnapshot(prev, latest));
+            }
+          } catch {
+            if (!disposed) {
+              setError('Reconnected but failed to sync match state. Please refresh.');
+            }
           }
         }
       });
@@ -133,7 +142,9 @@ export function useTurnBasedMultiplayer(gameKey: string): UseTurnBasedMultiplaye
     };
   }, [gameKey, isAuthenticated, isConfigured, user?.userId]);
 
-  const joinQueue = async () => {
+  // Stable function references via useCallback so callers' useEffect dependency
+  // arrays only re-run when logic-relevant values change, not on every render.
+  const joinQueue = useCallback(async () => {
     setError(null);
     setIsBusy(true);
     try {
@@ -148,32 +159,32 @@ export function useTurnBasedMultiplayer(gameKey: string): UseTurnBasedMultiplaye
     } finally {
       setIsBusy(false);
     }
-  };
+  }, [gameKey]);
 
-  const leaveMatch = async () => {
-    if (!match) {
-      return;
-    }
+  // Read match state via matchRef so these functions stay stable even as
+  // match state changes (avoids new function refs on every match update).
+  const leaveMatch = useCallback(async () => {
+    const currentMatch = matchRef.current;
+    if (!currentMatch) return;
 
     setError(null);
     setIsBusy(true);
     try {
-      await apiService.leaveMultiplayerMatch(match.matchId);
+      await apiService.leaveMultiplayerMatch(currentMatch.matchId);
       setMatch(null);
     } finally {
       setIsBusy(false);
     }
-  };
+  }, []);
 
-  const submitTurn = async (action: Record<string, number>) => {
-    if (!match) {
-      return;
-    }
+  const submitTurn = useCallback(async (action: Record<string, number>) => {
+    const currentMatch = matchRef.current;
+    if (!currentMatch) return;
 
     setError(null);
     setIsBusy(true);
     try {
-      const snapshot = await apiService.submitTurn(match.matchId, action);
+      const snapshot = await apiService.submitTurn(currentMatch.matchId, action);
       if (!snapshot) {
         setError('That move could not be applied.');
         return;
@@ -183,7 +194,7 @@ export function useTurnBasedMultiplayer(gameKey: string): UseTurnBasedMultiplaye
     } finally {
       setIsBusy(false);
     }
-  };
+  }, []);
 
   return {
     match,

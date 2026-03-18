@@ -179,6 +179,12 @@ export default function OddsBoard() {
                     })}
                 </div>
             </div>
+        {/* American-odds legend — helps casual users decode +/- notation */}
+        <div className="flex-shrink-0 pb-3 px-6 text-center">
+            <p className="text-[10px] text-white/30 tracking-wide">
+                American odds: <span className="text-red-400">−200</span> = favorite (bet $200 → win $100) &bull; <span className="text-green-400">+150</span> = underdog (bet $100 → win $150)
+            </p>
         </div>
+    </div>
     );
 }

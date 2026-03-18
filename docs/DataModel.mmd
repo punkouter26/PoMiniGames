@@ -1,59 +1,77 @@
 erDiagram
     PLAYER_STATS {
-        string PlayerId PK "Unique player identifier"
-        string PlayerName "Display name"
-        int TotalWins "Computed: Easy+Medium+Hard wins"
-        int TotalLosses "Computed aggregate"
-        int TotalDraws "Computed aggregate"
-        int TotalGames "Computed aggregate"
-        float WinRate "TotalWins/TotalGames"
-        datetime CreatedAt
-        datetime UpdatedAt
+        string Game PK "tictactoe | connectfive | pofight"
+        string PlayerName PK "Display name — sanitized (no special chars)"
+        string PlayerId "Microsoft OID or dev userId"
+        string StatsJson "JSON-serialized PlayerStats object (Easy/Medium/Hard DifficultyStats)"
+        string CreatedAt "ISO 8601 UTC"
+        string UpdatedAt "ISO 8601 UTC"
     }
-
-    DIFFICULTY_STATS {
-        string PlayerId FK "References PLAYER_STATS"
-        string Difficulty "Easy | Medium | Hard"
+    DIFFICULTY_STATS_EASY {
         int Wins
         int Losses
         int Draws
-        int TotalGames
+        int TotalGames "Wins + Losses + Draws"
         int WinStreak "Current consecutive wins"
-        float WinRate "Wins/TotalGames"
+        float WinRate "Wins / TotalGames (computed)"
     }
-
-    SNAKE_HIGH_SCORE {
-        string Initials "1-3 char player initials"
-        string Date "ISO date string"
+    DIFFICULTY_STATS_MEDIUM {
+        int Wins
+        int Losses
+        int Draws
+        int TotalGames "Wins + Losses + Draws"
+        int WinStreak "Current consecutive wins"
+        float WinRate "Wins / TotalGames (computed)"
+    }
+    DIFFICULTY_STATS_HARD {
+        int Wins
+        int Losses
+        int Draws
+        int TotalGames "Wins + Losses + Draws"
+        int WinStreak "Current consecutive wins"
+        float WinRate "Wins / TotalGames (computed)"
+    }
+    SNAKE_HIGH_SCORES {
+        string Initials "Player initials up to 3 chars"
         int Score "Final score"
-        int SnakeLength "Length at game end"
+        string Date "ISO 8601 timestamp"
+        float GameDuration "Seconds — default 30"
+        int SnakeLength "Final snake body length"
         int FoodEaten "Total food consumed"
-        float GameDuration "Seconds played"
     }
-
-    PO_DROP_SQUARE_HIGH_SCORE {
-        string PlayerInitials "1-3 char player initials"
-        string Date "ISO date string"
+    PODROPSQUARE_HIGH_SCORES {
+        string PlayerInitials "3-char identifier"
         float SurvivalTime "Seconds survived"
-        string PlayerName "Optional full name"
+        string Date "ISO 8601 timestamp"
+        string PlayerName "Optional full display name"
     }
-
-    RACER {
-        int Id PK "Racer identifier"
-        string Name "Racer display name"
-        string Color "Hex color for rendering"
-        float OddsToWin "Betting odds multiplier"
-        float Speed "Base speed parameter"
-        float Position "Current race position 0-1"
+    MULTIPLAYER_MATCH {
+        string MatchId PK "GUID"
+        string GameKey "tictactoe | connectfive"
+        string Player1Id "UserId (Microsoft OID)"
+        string Player2Id "UserId (Microsoft OID)"
+        string Status "waiting | active | finished"
+        string GameState "JSON-serialized board state"
+        string CreatedAt "ISO 8601 UTC"
+        string UpdatedAt "ISO 8601 UTC"
     }
-
+    LOBBY_PLAYER {
+        string UserId PK "Microsoft OID"
+        string DisplayName "OAuth display name"
+        string ConnectionId "SignalR connection ID"
+        bool IsHost "First player to join becomes host"
+    }
     RACE_SESSION {
-        string SessionId PK "Unique session GUID"
-        string Status "Lobby | Betting | Racing | Finished"
-        datetime CreatedAt
+        string SessionId PK "GUID"
+        string Status "created | betting | racing | finished"
         int CurrentRound "Round number"
-        string WinnerName "Populated on Finished"
+        string RacersJson "JSON array of racer species"
+        string BetsJson "JSON map of racerId to bet amount"
+        string WinnerId "Winning racer ID"
     }
-
-    PLAYER_STATS ||--o{ DIFFICULTY_STATS : "tracks per difficulty"
-    RACE_SESSION ||--o{ RACER : "contains racers"
+    PLAYER_STATS ||--|| DIFFICULTY_STATS_EASY : "Easy stats embedded in StatsJson"
+    PLAYER_STATS ||--|| DIFFICULTY_STATS_MEDIUM : "Medium stats embedded in StatsJson"
+    PLAYER_STATS ||--|| DIFFICULTY_STATS_HARD : "Hard stats embedded in StatsJson"
+    MULTIPLAYER_MATCH }o--|| PLAYER_STATS : "Player1 references"
+    MULTIPLAYER_MATCH }o--|| PLAYER_STATS : "Player2 references"
+    LOBBY_PLAYER }o--o{ MULTIPLAYER_MATCH : "transitions into match"

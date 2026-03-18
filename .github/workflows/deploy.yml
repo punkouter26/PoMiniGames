@@ -52,14 +52,14 @@ jobs:
         run: dotnet publish src/PoMiniGames/PoMiniGames/PoMiniGames.csproj -c Release -r linux-x64 --no-self-contained -o ./publish
 
       - name: Upload API Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: api-publish
           path: ./publish
           retention-days: 3
 
       - name: Upload Client Build
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: client-build
           path: ./src/PoMiniGames.Client/dist
@@ -78,7 +78,7 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Download API Artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: api-publish
           path: ./publish
@@ -113,7 +113,7 @@ jobs:
             --type zip
 
       - name: Download Client Build
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: client-build
           path: ./client-build

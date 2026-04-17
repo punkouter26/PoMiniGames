@@ -69,14 +69,14 @@ describe('Home – mode buttons', () => {
     renderHome();
     expect(screen.getByLabelText(/Play 2 players/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/Play 1 player/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/Play demo mode/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/View leaderboards/i)).toBeInTheDocument();
   });
 
-  it('shows labels: 2 Players, 1 Player, Demo Mode', () => {
+  it('shows labels: 2 Players, 1 Player, Leaderboard', () => {
     renderHome();
     expect(screen.getByText('2 Players')).toBeInTheDocument();
     expect(screen.getByText('1 Player')).toBeInTheDocument();
-    expect(screen.getByText('Demo Mode')).toBeInTheDocument();
+    expect(screen.getByText('Leaderboard')).toBeInTheDocument();
   });
 
   it('clicking 2 Players navigates to /lobby', () => {
@@ -91,11 +91,9 @@ describe('Home – mode buttons', () => {
     expect(mockNavigate).toHaveBeenCalledWith('/single-player');
   });
 
-  it('clicking Demo Mode navigates to a demo route', () => {
+  it('clicking Leaderboard keeps the user on the home page', () => {
     renderHome();
-    fireEvent.click(screen.getByLabelText(/Play demo mode/i));
-    expect(mockNavigate).toHaveBeenCalledTimes(1);
-    const route = mockNavigate.mock.calls[0]?.[0] as string;
-    expect(route).toMatch(/demo=1/);
+    fireEvent.click(screen.getByLabelText(/View leaderboards/i));
+    expect(mockNavigate).not.toHaveBeenCalled();
   });
 });

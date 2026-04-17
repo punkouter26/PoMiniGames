@@ -1,0 +1,58 @@
+flowchart TD
+    Player["Player\n(Browser — Chrome / Safari / Mobile)"]
+
+    subgraph Edge["Edge Delivery (Azure CDN — westus2)"]
+        SWA["Static Web App\nReact 18 + TypeScript + Vite\nTailwind v4 · 8 game routes\npomin.azurestaticapps.net"]
+    end
+
+    subgraph Compute["Compute Tier (App Service Linux B1 — westus2)"]
+        API[".NET 10 Minimal API\nSerilog + OpenTelemetry\nSystemAssigned Managed Identity\nMSAL JWT validation"]
+        LobbyHub["LobbyHub\nWSS /api/hubs/lobby\nHost mgmt · match formation\nGameStarting broadcast"]
+        MPHub["MultiplayerHub\nWSS /api/hubs/multiplayer\nSendRealtimeInput · Broadcast\nSpectator group support"]
+    end
+
+    subgraph DataTier["Data Persistence (App Service disk)"]
+        SQLite[("SQLite\n/home/data/pominigames.db\nPlayerStats · SnakeHighScores\nPoDropSquareHighScores · MultiplayerMatch")]
+    end
+
+    subgraph PoShared["PoShared (rg-PoShared)"]
+        KV["Key Vault (kv-poshared)\nMicrosoftAuth--ClientId\nMicrosoftAuth--ApiClientId\nApplicationInsights--ConnectionString"]
+        AppIns["Application Insights\nOpenTelemetry OTLP sink\nTraces · Exceptions · Metrics · Logs"]
+    end
+
+    subgraph Identity["Microsoft Identity Platform"]
+        MSID["OAuth2 / OIDC provider\nJWT Bearer tokens (12h TTL)\nPKCE flow via MSAL popup"]
+    end
+
+    subgraph CICD["CI/CD (GitHub Actions)"]
+        GH["deploy.yml\nTrigger: push to master\nOIDC federation — no stored credentials"]
+        BuildJob["Build Job (ubuntu-latest)\ndotnet build Release · npm run build\nxUnit + Vitest + Playwright"]
+        DeployJob["Deploy Job\nzip-deploy App Service (linux-x64)\nSWA deployment token"]
+    end
+
+    Player -- "HTTPS games · leaderboards · auth" --> SWA
+    Player -- "WSS SignalR multiplayer" --> API
+    SWA -- "REST + WSS handshake" --> API
+    API --- LobbyHub
+    API --- MPHub
+    API --> SQLite
+    API -- "Fetch secrets at startup\n(Managed Identity)" --> KV
+    API -- "OTLP push" --> AppIns
+    API -- "Validate JWT Bearer" --> MSID
+    GH --> BuildJob
+    BuildJob --> DeployJob
+    DeployJob -- "React bundle" --> SWA
+    DeployJob -- "zip-deploy binaries" --> API
+
+    style Player fill:#1a6b8a,stroke:#0d4a66,color:#fff
+    style SWA fill:#0078d4,stroke:#005a9e,color:#fff
+    style API fill:#0078d4,stroke:#005a9e,color:#fff
+    style LobbyHub fill:#004578,stroke:#003366,color:#fff
+    style MPHub fill:#004578,stroke:#003366,color:#fff
+    style SQLite fill:#107c10,stroke:#0a5c0a,color:#fff
+    style KV fill:#7a3b00,stroke:#4f2700,color:#fff
+    style AppIns fill:#7a3b00,stroke:#4f2700,color:#fff
+    style MSID fill:#7719aa,stroke:#4e0f72,color:#fff
+    style GH fill:#24292e,stroke:#111111,color:#fff
+    style BuildJob fill:#24292e,stroke:#111111,color:#fff
+    style DeployJob fill:#24292e,stroke:#111111,color:#fff

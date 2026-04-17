@@ -1,0 +1,22 @@
+stateDiagram-v2
+    state "Match" as Match {
+        [*] --> Waiting
+        Waiting --> Active
+        Active --> Finished
+        Active --> Abandoned
+        Finished --> [*]
+        Abandoned --> [*]
+    }
+
+    state "Race Session" as Race {
+        [*] --> Betting
+        Betting --> Racing
+        Racing --> Finished
+        Finished --> [*]
+    }
+
+    state "Player Stats" as Stats {
+        [*] --> LocalOnly
+        LocalOnly --> Synced
+        Synced --> Synced
+    }

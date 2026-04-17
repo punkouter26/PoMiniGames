@@ -29,99 +29,23 @@ public static class AuthEndpoints
 
         app.MapPost("/api/auth/dev-login", [AllowAnonymous] async (HttpContext context, HttpRequest httpRequest, IWebHostEnvironment environment) =>
         {
-            if (!environment.IsDevelopment())
-            {
-                return Results.NotFound();
-            }
-
             DevLoginRequest? request = null;
             if (httpRequest.HasJsonContentType())
             {
                 request = await httpRequest.ReadFromJsonAsync<DevLoginRequest>();
             }
 
-            var userId = string.IsNullOrWhiteSpace(request?.UserId)
-                ? "dev-user"
-                : request.UserId.Trim();
-
-            var displayName = string.IsNullOrWhiteSpace(request?.DisplayName)
-                ? "Local Developer"
-                : request.DisplayName.Trim();
-
-            var email = string.IsNullOrWhiteSpace(request?.Email)
-                ? $"{displayName.Replace(" ", string.Empty, StringComparison.Ordinal)}@local.dev"
-                : request.Email.Trim();
-
-            var claims = new[]
-            {
-                new Claim("oid", userId),
-                new Claim(ClaimTypes.NameIdentifier, userId),
-                new Claim(ClaimTypes.Name, displayName),
-                new Claim("name", displayName),
-                new Claim("preferred_username", email),
-                new Claim(ClaimTypes.Email, email),
-            };
-
-            var identity = new ClaimsIdentity(claims, AuthSchemes.DevCookie);
-            var principal = new ClaimsPrincipal(identity);
-
-            await context.SignInAsync(AuthSchemes.DevCookie, principal, new AuthenticationProperties
-            {
-                IsPersistent = true,
-                ExpiresUtc = DateTimeOffset.UtcNow.AddHours(12),
-                AllowRefresh = true,
-            });
-
-            return Results.Ok(new AuthenticatedUserProfile(userId, displayName, email));
+            return await SignInDevelopmentUserAsync(context, environment, request, null);
         })
         .WithName("DevLogin")
         .WithTags("Auth")
         .WithSummary("Creates a local development auth session without Microsoft OAuth.");
 
-        // ─── Developer Bypass (Identity via URL) ────────────────────────────────
-        // Open /?user=Alice in one tab, /?user=Bob in incognito → each gets a unique
-        // cookie session.  SignalR hubs work because the DevCookie is sent with every
-        // WebSocket upgrade request.
-        app.MapPost("/api/auth/dev-bypass", [AllowAnonymous] async (HttpContext context, string? user, IWebHostEnvironment environment) =>
-        {
-            if (!environment.IsDevelopment())
-            {
-                return Results.NotFound();
-            }
-
-            // Sanitise: only allow letters, digits, spaces and hyphens to prevent injection
-            var rawName = string.IsNullOrWhiteSpace(user) ? "Dev Admin" : user.Trim();
-            var displayName = new string(rawName.Where(c => char.IsLetterOrDigit(c) || c == ' ' || c == '-').ToArray());
-            if (string.IsNullOrWhiteSpace(displayName)) displayName = "Dev Admin";
-
-            var userId = $"dev-{displayName.ToLowerInvariant().Replace(" ", "-", StringComparison.Ordinal)}";
-            var email  = $"{userId}@local.dev";
-
-            var claims = new[]
-            {
-                new Claim("oid",                       userId),
-                new Claim(ClaimTypes.NameIdentifier,   userId),
-                new Claim(ClaimTypes.Name,             displayName),
-                new Claim("name",                      displayName),
-                new Claim("preferred_username",        email),
-                new Claim(ClaimTypes.Email,            email),
-            };
-
-            var identity  = new ClaimsIdentity(claims, AuthSchemes.DevCookie);
-            var principal = new ClaimsPrincipal(identity);
-
-            await context.SignInAsync(AuthSchemes.DevCookie, principal, new AuthenticationProperties
-            {
-                IsPersistent = true,
-                ExpiresUtc   = DateTimeOffset.UtcNow.AddHours(12),
-                AllowRefresh = true,
-            });
-
-            return Results.Ok(new AuthenticatedUserProfile(userId, displayName, email));
-        })
-        .WithName("DevBypass")
-        .WithTags("Auth")
-        .WithSummary("Creates a dev session keyed to the ?user= URL param — no Microsoft OAuth needed.");
+        app.MapPost("/api/auth/dev-bypass", [AllowAnonymous] (HttpContext context, string? user, IWebHostEnvironment environment) =>
+                SignInDevelopmentUserAsync(context, environment, null, user))
+            .WithName("DevBypass")
+            .WithTags("Auth")
+            .WithSummary("Creates a dev session keyed to the selected display name.");
 
         app.MapPost("/api/auth/dev-logout", [AllowAnonymous] async (HttpContext context, IWebHostEnvironment environment) =>
         {
@@ -153,6 +77,58 @@ public static class AuthEndpoints
         .Produces(StatusCodes.Status401Unauthorized);
 
         return app;
+    }
+
+    private static async Task<IResult> SignInDevelopmentUserAsync(
+        HttpContext context,
+        IWebHostEnvironment environment,
+        DevLoginRequest? request,
+        string? userName)
+    {
+        if (!environment.IsDevelopment())
+        {
+            return Results.NotFound();
+        }
+
+        var profile = BuildDevelopmentProfile(request, userName);
+        var claims = new[]
+        {
+            new Claim("oid", profile.UserId),
+            new Claim(ClaimTypes.NameIdentifier, profile.UserId),
+            new Claim(ClaimTypes.Name, profile.DisplayName),
+            new Claim("name", profile.DisplayName),
+            new Claim("preferred_username", profile.Email ?? string.Empty),
+            new Claim(ClaimTypes.Email, profile.Email ?? string.Empty),
+        };
+
+        var identity = new ClaimsIdentity(claims, AuthSchemes.DevCookie);
+        var principal = new ClaimsPrincipal(identity);
+
+        await context.SignInAsync(AuthSchemes.DevCookie, principal, new AuthenticationProperties
+        {
+            IsPersistent = true,
+            ExpiresUtc = DateTimeOffset.UtcNow.AddHours(12),
+            AllowRefresh = true,
+        });
+
+        return Results.Ok(profile);
+    }
+
+    private static AuthenticatedUserProfile BuildDevelopmentProfile(DevLoginRequest? request, string? userName)
+    {
+        var fallbackName = string.IsNullOrWhiteSpace(userName) ? "Local Developer" : "Dev Admin";
+        var displayName = SanitizeDisplayName(request?.DisplayName ?? userName, fallbackName);
+        var slug = displayName.ToLowerInvariant().Replace(" ", "-", StringComparison.Ordinal);
+        var userId = string.IsNullOrWhiteSpace(request?.UserId) ? $"dev-{slug}" : request!.UserId!.Trim();
+        var email = string.IsNullOrWhiteSpace(request?.Email) ? $"{slug}@local.dev" : request!.Email!.Trim();
+        return new AuthenticatedUserProfile(userId, displayName, email);
+    }
+
+    private static string SanitizeDisplayName(string? rawName, string fallback)
+    {
+        var source = string.IsNullOrWhiteSpace(rawName) ? fallback : rawName.Trim();
+        var cleaned = new string(source.Where(c => char.IsLetterOrDigit(c) || c == ' ' || c == '-').ToArray());
+        return string.IsNullOrWhiteSpace(cleaned) ? fallback : cleaned;
     }
 }
 

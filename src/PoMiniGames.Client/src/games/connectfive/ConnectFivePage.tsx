@@ -18,6 +18,8 @@ export default function ConnectFivePage() {
       title={<><CircleDot size={14} color="#f44336" /> Connect Five</>}
       player={playerName}
       backTo="/"
+      gameOver={gameResult !== GameResult.InProgress && playMode !== 'demo'}
+      onPlayAgain={resetGame}
       status={
         <span className={`gps-status-badge ${status.className}`}>
           {status.icon} {status.text}

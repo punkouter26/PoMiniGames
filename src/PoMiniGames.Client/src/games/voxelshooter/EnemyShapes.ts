@@ -1,5 +1,3 @@
-// @ts-nocheck
-// TODO: Remove @ts-nocheck and add proper TypeScript types (type-safety technical debt)
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 
@@ -49,7 +47,7 @@ export class EnemyShapes {
 
         // Move shapes towards the player (Origin 0,0,0)
         for (let i = this.shapes.length - 1; i >= 0; i--) {
-            const shape = this.shapes[i];
+            const shape = this.shapes[i]!;
 
             // Calculate direction to center
             const dir = new THREE.Vector3(0, 0, 0).sub(shape.body.position as any).normalize();
@@ -154,7 +152,7 @@ export class EnemyShapes {
             if (shape.health <= 0) {
                 for (let i = 0; i < shape.grid.length; i++) {
                     if (shape.grid[i] !== -1) {
-                        const instanceId = shape.grid[i];
+                        const instanceId = shape.grid[i]!;
                         mesh.getMatrixAt(instanceId, dummyMatrix);
                         dummyMatrix.decompose(position, quaternion, scale);
                         const wp = position.clone().applyMatrix4(mesh.matrixWorld);
@@ -252,7 +250,7 @@ export class EnemyShapes {
 
                 let head = 0;
                 while (head < queue.length) {
-                    const curr = queue[head++];
+                    const curr = queue[head++]!;
                     comp.push(curr);
 
                     const gx = curr % size;
@@ -267,7 +265,7 @@ export class EnemyShapes {
                     ];
 
                     for (const n of neighbors) {
-                        const nx = n[0], ny = n[1], nz = n[2];
+                        const nx = n[0]!, ny = n[1]!, nz = n[2]!;
                         if (nx >= 0 && nx < size && ny >= 0 && ny < size && nz >= 0 && nz < size) {
                             const nIndex = nx + nz * size + ny * size * size;
                             if (grid[nIndex] !== -1 && visited[nIndex] === 0) {
@@ -284,10 +282,10 @@ export class EnemyShapes {
         // If multiple components exist, keep the largest and destroy the rest
         if (components.length > 1) {
             let largestIdx = 0;
-            let maxLen = components[0].length;
+            let maxLen = components[0]!.length;
             for (let i = 1; i < components.length; i++) {
-                if (components[i].length > maxLen) {
-                    maxLen = components[i].length;
+                if (components[i]!.length > maxLen) {
+                    maxLen = components[i]!.length;
                     largestIdx = i;
                 }
             }
@@ -300,9 +298,9 @@ export class EnemyShapes {
             for (let i = 0; i < components.length; i++) {
                 if (i === largestIdx) continue;
 
-                const comp = components[i];
+                const comp = components[i]!;
                 for (const idx of comp) {
-                    const instanceId = grid[idx];
+                    const instanceId = grid[idx]!;
 
                     shape.mesh.getMatrixAt(instanceId, dummyMatrix);
                     dummyMatrix.decompose(position, quaternion, scale);
@@ -322,7 +320,7 @@ export class EnemyShapes {
 
     private spawnRandomShape() {
         const types = ['asteroid', 'ship'];
-        const type = types[Math.floor(Math.random() * types.length)];
+        const type = types[Math.floor(Math.random() * types.length)]!;
 
         // Pick a random angle around the full 360 circle
         const angle = Math.random() * Math.PI * 2;
@@ -359,15 +357,15 @@ export class EnemyShapes {
 
     private buildShapeFromTemplate(template: number[][][], rootPos: CANNON.Vec3, type: string, material: THREE.Material) {
         let maxY = template.length;
-        let maxZ = template[0].length;
-        let maxX = template[0][0].length;
+        let maxZ = template[0]!.length;
+        let maxX = template[0]![0]!.length;
 
         // First, count total active voxels to allocate InstancedMesh
         let instanceCount = 0;
         for (let y = 0; y < maxY; y++) {
             for (let z = 0; z < maxZ; z++) {
                 for (let x = 0; x < maxX; x++) {
-                    if (template[y][z][x] === 1) instanceCount++;
+                    if (template[y]![z]![x]! === 1) instanceCount++;
                 }
             }
         }
@@ -392,7 +390,7 @@ export class EnemyShapes {
         for (let y = 0; y < maxY; y++) {
             for (let z = 0; z < maxZ; z++) {
                 for (let x = 0; x < maxX; x++) {
-                    if (template[y][z][x] === 1) {
+                    if (template[y]![z]![x]! === 1) {
                         const lx = (x - maxX / 2) * this.voxelSize;
                         const ly = (y - maxY / 2) * this.voxelSize;
                         const lz = (z - maxZ / 2) * this.voxelSize;

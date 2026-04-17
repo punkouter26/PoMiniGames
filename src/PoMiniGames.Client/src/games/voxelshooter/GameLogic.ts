@@ -1,5 +1,3 @@
-// @ts-nocheck
-// TODO: Remove @ts-nocheck and add proper TypeScript types (type-safety technical debt)
 import { PlayerAvatar } from './PlayerAvatar';
 import { EnemyShapes } from './EnemyShapes';
 import { UIManager } from './UIManager';

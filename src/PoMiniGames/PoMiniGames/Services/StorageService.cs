@@ -36,12 +36,19 @@ public class StorageService : IStorageService
     }
 
     /// <summary>
-    /// Runs schema initialization and legacy migration. Called once at application
-    /// startup (after DI build) so blocking I/O does not stall the constructor thread.
+    /// Ensures the shared SQLite schema exists before the app serves requests.
     /// </summary>
     public void Initialize()
     {
         DbInitializer.InitializeSchema(_dbPath);
+    }
+
+    /// <summary>
+    /// One-time compatibility import for older per-game databases.
+    /// Invoke this explicitly when migrating from a legacy build.
+    /// </summary>
+    public void RunLegacyMigration()
+    {
         DbInitializer.MigrateLegacyPerGameDatabases(_dbPath, _dbFileName, _dataDir);
     }
 
@@ -103,6 +110,9 @@ public class StorageService : IStorageService
         if (string.IsNullOrWhiteSpace(sanitizedName))
             throw new ArgumentException("Player name cannot be empty", nameof(playerName));
 
+        // Compute ELO ratings server-side before persisting so the stored JSON is always current.
+        EloCalculator.ApplyAll(stats);
+
         stats.UpdatedAt = DateTime.UtcNow;
         var json = JsonSerializer.Serialize(stats);
         var now = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ");
@@ -125,33 +135,77 @@ public class StorageService : IStorageService
         await cmd.ExecuteNonQueryAsync();
     }
 
-    public async Task<List<(string Name, PlayerStats Stats)>> GetLeaderboardAsync(string game, int limit)
+    public async Task<List<(string Name, PlayerStats Stats)>> GetLeaderboardAsync(string game, int limit, string? difficulty = null)
     {
         var sanitizedGame = SanitizeName(game);
         if (string.IsNullOrWhiteSpace(sanitizedGame))
             return [];
 
-        var allPlayers = new List<(string Name, PlayerStats Stats)>();
+        // Normalise the difficulty string: null / empty / "all" → aggregate ranking.
+        var diff = difficulty?.Trim().ToLowerInvariant();
 
+        // Push ORDER BY and LIMIT into SQLite using json_extract() so only the top-N rows
+        // are deserialised instead of loading the entire table into memory.
         using var conn = OpenConnection();
         using var cmd = conn.CreateCommand();
-        // Safety ceiling: fetch at most 1000 rows before in-memory sort+Take so an
-        // unexpectedly large table can never cause an unbounded memory allocation.
-        cmd.CommandText = "SELECT PlayerName, StatsJson FROM PlayerStats WHERE Game = $game LIMIT 1000";
-        cmd.Parameters.AddWithValue("$game", sanitizedGame);
+        cmd.CommandText = diff switch
+        {
+            "easy" => """
+                SELECT PlayerName, StatsJson
+                FROM PlayerStats
+                WHERE Game = $game
+                  AND CAST(COALESCE(json_extract(StatsJson, '$.Easy.TotalGames'), 0) AS INTEGER) > 0
+                ORDER BY CAST(COALESCE(json_extract(StatsJson, '$.Easy.EloRating'),   0) AS REAL) DESC,
+                         CAST(COALESCE(json_extract(StatsJson, '$.Easy.TotalGames'),  0) AS INTEGER) DESC
+                LIMIT $limit
+                """,
+            "medium" => """
+                SELECT PlayerName, StatsJson
+                FROM PlayerStats
+                WHERE Game = $game
+                  AND CAST(COALESCE(json_extract(StatsJson, '$.Medium.TotalGames'), 0) AS INTEGER) > 0
+                ORDER BY CAST(COALESCE(json_extract(StatsJson, '$.Medium.EloRating'),   0) AS REAL) DESC,
+                         CAST(COALESCE(json_extract(StatsJson, '$.Medium.TotalGames'),  0) AS INTEGER) DESC
+                LIMIT $limit
+                """,
+            "hard" => """
+                SELECT PlayerName, StatsJson
+                FROM PlayerStats
+                WHERE Game = $game
+                  AND CAST(COALESCE(json_extract(StatsJson, '$.Hard.TotalGames'), 0) AS INTEGER) > 0
+                ORDER BY CAST(COALESCE(json_extract(StatsJson, '$.Hard.EloRating'),   0) AS REAL) DESC,
+                         CAST(COALESCE(json_extract(StatsJson, '$.Hard.TotalGames'),  0) AS INTEGER) DESC
+                LIMIT $limit
+                """,
+            // "all" or unrecognised: aggregate win-rate ranking.
+            _ => """
+                SELECT PlayerName, StatsJson
+                FROM PlayerStats
+                WHERE Game = $game
+                ORDER BY CAST(COALESCE(json_extract(StatsJson, '$.WinRate'),    0) AS REAL) DESC,
+                         CAST(COALESCE(json_extract(StatsJson, '$.TotalGames'), 0) AS INTEGER) DESC
+                LIMIT $limit
+                """,
+        };
 
+        cmd.Parameters.AddWithValue("$game", sanitizedGame);
+        cmd.Parameters.AddWithValue("$limit", limit);
+
+        var result = new List<(string Name, PlayerStats Stats)>();
         using var reader = await cmd.ExecuteReaderAsync();
         while (await reader.ReadAsync())
         {
             var stats = JsonSerializer.Deserialize<PlayerStats>(reader.GetString(1)) ?? new PlayerStats();
-            allPlayers.Add((reader.GetString(0), stats));
+            // Backfill ELO for legacy records where EloRating was not yet stored.
+            if (stats.TotalGames > 0 &&
+                stats.Easy.EloRating == 0 && stats.Medium.EloRating == 0 && stats.Hard.EloRating == 0)
+            {
+                EloCalculator.ApplyAll(stats);
+            }
+            result.Add((reader.GetString(0), stats));
         }
 
-        return allPlayers
-            .OrderByDescending(p => p.Stats.WinRate)
-            .ThenByDescending(p => p.Stats.TotalGames)
-            .Take(limit)
-            .ToList();
+        return result;
     }
 
     // ── PoSnakeGame high scores ───────────────────────────────────────────
@@ -291,18 +345,5 @@ public class StorageService : IStorageService
         }
 
         return sb.ToString().Trim();
-    }
-}
-
-/// <summary>
-/// Runs <see cref="StorageService.Initialize"/> eagerly at application startup,
-/// ensuring SQLite schema and migrations complete before any request is served.
-/// </summary>
-public sealed class StorageServiceInitializer(StorageService storage) : BackgroundService
-{
-    protected override Task ExecuteAsync(CancellationToken stoppingToken)
-    {
-        storage.Initialize();
-        return Task.CompletedTask;
     }
 }

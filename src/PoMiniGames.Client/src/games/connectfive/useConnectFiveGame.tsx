@@ -20,7 +20,11 @@ export function useConnectFiveGame() {
   const shouldAutoDemo = searchParams.get('demo') === '1';
   const { isAuthenticated, isConfigured, signIn, user } = useAuth();
   const { playerName } = usePlayerName();
-  const multiplayer = useTurnBasedMultiplayer(GAME_KEY);
+  // Declare playMode first so it can gate the multiplayer SignalR connection.
+  const [playMode, setPlayMode] = useState<PlayMode>(
+    shouldAutoDemo ? 'demo' : shouldAutoOnline ? 'online' : 'ai',
+  );
+  const multiplayer = useTurnBasedMultiplayer(GAME_KEY, playMode === 'online');
   const [board, setBoard] = useState(() => new ConnectFiveBoard());
   const [difficulty, setDifficulty] = useState(Difficulty.Medium);
   const [gameResult, setGameResult] = useState(GameResult.InProgress);
@@ -28,14 +32,15 @@ export function useConnectFiveGame() {
   const [isAiTurn, setIsAiTurn] = useState(false);
   const [stats, setStats] = useState(() => statsService.getStats(GAME_KEY, playerName));
   const [hoveredCol, setHoveredCol] = useState<number | null>(null);
-  const [playMode, setPlayMode] = useState<PlayMode>(
-    shouldAutoDemo ? 'demo' : shouldAutoOnline ? 'online' : 'ai',
-  );
 
   // Web worker for AI computation — keeps heavy minimax off the main thread.
   type PendingAI = { board: ConnectFiveBoard; playerName: string; difficulty: Difficulty };
   const workerRef = useRef<Worker | null>(null);
   const pendingAiRef = useRef<PendingAI | null>(null);
+  /** Timestamp (ms) when the AI turn began — used to enforce a minimum thinking delay. */
+  const aiTurnStartRef = useRef<number>(0);
+  /** Minimum ms the "AI thinking…" indicator is shown so it doesn't flash and disappear. */
+  const AI_MIN_THINK_MS = 350;
 
   useEffect(() => {
     const worker = new Worker(
@@ -48,24 +53,35 @@ export function useConnectFiveGame() {
       pendingAiRef.current = null;
 
       const aiCol = e.data;
-      let next = pending.board.drop(aiCol, Piece.Yellow);
-      const aiWin = next.checkWin(Piece.Yellow);
-      if (aiWin.won) {
-        setBoard(next); setGameResult(GameResult.Loss); setWinCells(aiWin.cells); setIsAiTurn(false);
-        statsService.recordResult(GAME_KEY, pending.playerName, pending.difficulty, GameResult.Loss).then(setStats);
-        return;
+      const elapsed = performance.now() - aiTurnStartRef.current;
+      const remaining = Math.max(0, AI_MIN_THINK_MS - elapsed);
+
+      const applyMove = () => {
+        let next = pending.board.drop(aiCol, Piece.Yellow);
+        const aiWin = next.checkWin(Piece.Yellow);
+        if (aiWin.won) {
+          setBoard(next); setGameResult(GameResult.Loss); setWinCells(aiWin.cells); setIsAiTurn(false);
+          statsService.recordResult(GAME_KEY, pending.playerName, pending.difficulty, GameResult.Loss).then(setStats);
+          return;
+        }
+        if (next.isFull()) {
+          setBoard(next); setGameResult(GameResult.Draw); setIsAiTurn(false);
+          statsService.recordResult(GAME_KEY, pending.playerName, pending.difficulty, GameResult.Draw).then(setStats);
+          return;
+        }
+        setBoard(next);
+        setIsAiTurn(false);
+      };
+
+      if (remaining > 0) {
+        window.setTimeout(applyMove, remaining);
+      } else {
+        applyMove();
       }
-      if (next.isFull()) {
-        setBoard(next); setGameResult(GameResult.Draw); setIsAiTurn(false);
-        statsService.recordResult(GAME_KEY, pending.playerName, pending.difficulty, GameResult.Draw).then(setStats);
-        return;
-      }
-      setBoard(next);
-      setIsAiTurn(false);
     };
     workerRef.current = worker;
     return () => { worker.terminate(); workerRef.current = null; };
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const resetGame = useCallback(() => {
     setBoard(new ConnectFiveBoard());
@@ -140,6 +156,7 @@ export function useConnectFiveGame() {
 
       setBoard(next);
       setIsAiTurn(true);
+      aiTurnStartRef.current = performance.now();
       // Serialize the board and dispatch to the worker to avoid blocking the main thread.
       const cells: Piece[][] = Array.from({ length: ConnectFiveBoard.Rows }, (_, r) =>
         Array.from({ length: ConnectFiveBoard.Cols }, (_, c) => next.get(r, c)),
@@ -226,6 +243,7 @@ export function useConnectFiveGame() {
     { value: diffBucket.draws, label: 'D' },
     { value: diffBucket.winStreak, label: 'Str' },
     { value: `${(diffBucket.winRate * 100).toFixed(0)}%`, label: 'Rate' },
+    { value: diffBucket.eloRating ?? 1000, label: 'ELO' },
   ];
 
   return {

@@ -4,6 +4,7 @@ import {
   Difficulty,
   GameResult,
   getOrCreatePlayerId,
+  computeEloRating,
 } from './types';
 import { localStorageService } from './localStorageService';
 import { apiService } from './apiService';
@@ -44,6 +45,11 @@ export const statsService = {
     }
     bucket.winRate = bucket.totalGames > 0 ? bucket.wins / bucket.totalGames : 0;
 
+    // Compute ELO client-side (mirrors server-side EloCalculator).
+    stats.easy.eloRating   = computeEloRating(stats.easy,   800);
+    stats.medium.eloRating = computeEloRating(stats.medium, 1200);
+    stats.hard.eloRating   = computeEloRating(stats.hard,   1600);
+
     // 3. Recompute aggregates
     stats.totalWins = stats.easy.wins + stats.medium.wins + stats.hard.wins;
     stats.totalLosses = stats.easy.losses + stats.medium.losses + stats.hard.losses;
@@ -56,10 +62,30 @@ export const statsService = {
     // 4. Save to localStorage immediately
     localStorageService.saveStats(game, playerName, stats);
 
-    // 5. Fire-and-forget sync to API (app works fully offline)
-    void apiService.savePlayerStats(game, playerName, stats);
+    // 5. Fire-and-forget sync to API; enqueue locally if it fails so a retry
+    //    can be attempted when the user is next authenticated.
+    apiService.savePlayerStats(game, playerName, stats).then(result => {
+      if (!result.ok) {
+        localStorageService.enqueuePendingSync(game, playerName, stats);
+      }
+    });
 
     return stats;
+  },
+
+  /** Flush pending stats syncs. Safe to call at any time; silently skips if nothing queued. */
+  async flushPendingSync(): Promise<void> {
+    const pending = localStorageService.getPendingSync();
+    if (pending.length === 0) return;
+
+    const remaining: typeof pending = [];
+    for (const entry of pending) {
+      const result = await apiService.savePlayerStats(entry.game, entry.playerName, entry.stats);
+      if (!result.ok) {
+        remaining.push(entry);
+      }
+    }
+    localStorageService.setPendingSync(remaining);
   },
 
   /** Get stats for display. Reads from localStorage (instant). */
@@ -68,13 +94,13 @@ export const statsService = {
   },
 
   /** Get leaderboard. Tries API first, falls back to localStorage. */
-  async getLeaderboard(game: string, limit = 10) {
-    const apiResult = await apiService.getLeaderboard(game, limit);
+  async getLeaderboard(game: string, limit = 10, difficulty?: string) {
+    const apiResult = await apiService.getLeaderboard(game, limit, difficulty);
     if (apiResult && apiResult.length > 0) {
       return apiResult.map((dto) => ({ name: dto.name, stats: dto.stats }));
     }
     // Fallback to localStorage
-    return localStorageService.getLeaderboard(game, limit);
+    return localStorageService.getLeaderboard(game, limit, difficulty);
   },
 
   getDifficultyBucket(stats: PlayerStats, difficulty: Difficulty): DifficultyStats {

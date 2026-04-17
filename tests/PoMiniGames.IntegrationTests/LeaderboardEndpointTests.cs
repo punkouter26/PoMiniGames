@@ -211,4 +211,61 @@ public sealed class LeaderboardEndpointTests : IClassFixture<TestWebApplicationF
         // This test ensures the endpoint doesn't dump raw connection strings
         content.Should().NotContain("User Id=", because: "connection strings should be masked");
     }
+
+    // ── Per-difficulty leaderboard + ELO ──────────────────────────────────
+
+    [Fact]
+    public async Task GetLeaderboard_All_ReturnsOk()
+    {
+        var response = await _client.GetAsync("/api/tictactoe/statistics/leaderboard");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Theory]
+    [InlineData("easy")]
+    [InlineData("medium")]
+    [InlineData("hard")]
+    [InlineData("all")]
+    public async Task GetLeaderboard_WithDifficultyParam_ReturnsOk(string difficulty)
+    {
+        var response = await _client.GetAsync(
+            $"/api/tictactoe/statistics/leaderboard?difficulty={difficulty}");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task GetLeaderboard_AfterSavingStats_ReturnsEloRating()
+    {
+        // Arrange – 10 wins, 0 losses on Easy → ELO = 1000 + 10*K*(1-E)
+        // where E = 1/(1+10^((800-1000)/400)) ≈ 0.760, so each win ≈ +7.68 → ~1077
+        var stats = new
+        {
+            PlayerId = "elo-test-player",
+            PlayerName = "EloTester",
+            Easy = new { Wins = 10, Losses = 0, Draws = 0, TotalGames = 10, WinStreak = 10 },
+            Medium = new { Wins = 0, Losses = 0, Draws = 0, TotalGames = 0, WinStreak = 0 },
+            Hard = new { Wins = 0, Losses = 0, Draws = 0, TotalGames = 0, WinStreak = 0 },
+        };
+
+        var putResp = await _client.PutAsJsonAsync(
+            "/api/tictactoe/players/EloTester/stats", stats);
+        putResp.StatusCode.Should().Be(HttpStatusCode.NoContent,
+            because: "saving valid stats should return 204");
+
+        // Act – fetch Easy leaderboard (sorted by ELO).
+        var entries = await _client.GetFromJsonAsync<List<System.Text.Json.JsonElement>>(
+            "/api/tictactoe/statistics/leaderboard?difficulty=easy");
+
+        // Assert – at least one entry, and EloRating is above baseline.
+        entries.Should().NotBeNull();
+        entries!.Should().NotBeEmpty();
+        var first = entries[0];
+        var eloRating = first
+            .GetProperty("stats")
+            .GetProperty("easy")
+            .GetProperty("eloRating")
+            .GetInt32();
+        eloRating.Should().BeGreaterThan(1000,
+            because: "10 wins with 0 losses on Easy should push ELO above the 1000 baseline");
+    }
 }

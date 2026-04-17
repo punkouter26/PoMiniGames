@@ -1,0 +1,61 @@
+sequenceDiagram
+    participant B as "Browser (React SPA)"
+    participant API as ".NET 10 API (App Service)"
+    participant MSID as "Microsoft Identity"
+    participant KV as "Key Vault (kv-poshared)"
+    participant DB as "SQLite (/home/data)"
+    participant Lobby as "LobbyHub (WSS)"
+    participant MP as "MultiplayerHub (WSS)"
+    participant AI as "Application Insights"
+
+    Note over API,KV: API Startup — resolve secrets via Managed Identity
+    API->>KV: GetSecret(MicrosoftAuth--ClientId)
+    API->>KV: GetSecret(MicrosoftAuth--ApiClientId)
+    API->>KV: GetSecret(ApplicationInsights--ConnectionString)
+    KV-->>API: Secrets injected into IConfiguration
+
+    Note over B,MSID: Auth Flow (MSAL popup — OAuth2 PKCE)
+    B->>MSID: GET /authorize (MSAL popup redirect)
+    MSID-->>B: authorization_code
+    B->>MSID: POST /token (code + PKCE exchange)
+    MSID-->>B: JWT access_token + id_token (12h TTL)
+    B->>API: GET /api/auth/me [Authorization: Bearer JWT]
+    API->>MSID: Validate JWT (signature · audience · issuer)
+    MSID-->>API: Claims verified
+    API-->>B: 200 {userId, displayName, email}
+    API->>AI: Trace: auth.me (userId, latency)
+
+    Note over B,DB: Solo Game — Stats CRUD
+    B->>API: PUT /api/tictactoe/players/{name}/stats [Bearer]
+    API->>DB: UPSERT PlayerStats (Game=tictactoe, PlayerName, StatsJson)
+    DB-->>API: OK
+    API-->>B: 200 updated stats
+    API->>AI: Trace: stats.upsert (game, userId, latency)
+    B->>API: GET /api/tictactoe/statistics/leaderboard?limit=10
+    API->>DB: SELECT PlayerName, StatsJson ORDER BY WinRate DESC LIMIT 10
+    DB-->>API: top 10 rows
+    API-->>B: 200 [{name, winRate, totalGames, totalWins}]
+
+    Note over B,DB: High Scores (Snake / PoDropSquare)
+    B->>API: POST /api/snake/highscores {initials, score, duration, length, food}
+    API->>DB: INSERT SnakeHighScores
+    DB-->>API: OK
+    API-->>B: 201 Created
+    B->>API: GET /api/snake/highscores?count=10
+    API->>DB: SELECT top 10 by Score DESC
+    DB-->>API: top 10 rows
+    API-->>B: 200 [{initials, score, date, gameDuration}]
+
+    Note over B,MP: Multiplayer — Lobby + SignalR
+    B->>API: POST /api/multiplayer/queue {gameKey: "tictactoe"} [Bearer]
+    API-->>B: {matchId: "uuid", status: "waiting"}
+    B->>Lobby: WSS connect + JoinGroup(matchId) [?access_token=JWT]
+    Lobby-->>B: LobbyUpdated {isHost: true, players: [P1]}
+    Note over Lobby: Second player joins same matchId
+    Lobby-->>B: LobbyUpdated {players: [P1, P2]}
+    B->>Lobby: StartGame("tictactoe") [host only]
+    Lobby-->>B: GameStarting {gameKey: "tictactoe"} [broadcast all]
+    B->>MP: WSS connect + JoinGroup(matchId) [?access_token=JWT]
+    B->>MP: SendRealtimeInput(matchId, {row: 0, col: 1})
+    MP-->>B: RealtimeInput {fromUserId, fromDisplayName, payload, sentAt}
+    API->>AI: Trace: multiplayer.input (matchId, latency)

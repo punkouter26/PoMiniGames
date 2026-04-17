@@ -4,7 +4,7 @@
 
 .home-container {
   text-align: center;
-  padding: var(--space-8) var(--content-padding);
+  padding: var(--space-5) var(--content-padding);
   max-width: var(--max-width);
   margin: 0 auto;
   width: 100%;
@@ -31,7 +31,7 @@
   100% { opacity: 1; }
 }
 
-/* ── Star particle field ─────────────────────────────── */
+/* ── Static star particle field (no drift — orbs provide motion) ── */
 .home-container::after {
   content: '';
   position: fixed;
@@ -49,7 +49,7 @@
     radial-gradient(1.5px 1.5px at 94% 50%, rgba(255,255,255,0.45) 0%, transparent 100%),
     radial-gradient(1px 1px at 5% 85%, rgba(255,255,255,0.3) 0%, transparent 100%),
     radial-gradient(1px 1px at 45% 90%, rgba(255,255,255,0.25) 0%, transparent 100%),
-    radial-gradient(1px 1px at 72% 95%, rgba(255,255,255,0.35) 0%, transparent 100%),
+    radial-gradient(1.5px 1.5px at 72% 95%, rgba(255,255,255,0.35) 0%, transparent 100%),
     radial-gradient(1.5px 1.5px at 18% 65%, rgba(0,229,255,0.3) 0%, transparent 100%),
     radial-gradient(1px 1px at 60% 35%, rgba(167,139,250,0.3) 0%, transparent 100%),
     radial-gradient(1.5px 1.5px at 82% 42%, rgba(0,229,255,0.25) 0%, transparent 100%),
@@ -59,16 +59,85 @@
     radial-gradient(1.5px 1.5px at 3% 45%, rgba(255,255,255,0.35) 0%, transparent 100%),
     radial-gradient(1px 1px at 70% 5%, rgba(255,255,255,0.4) 0%, transparent 100%),
     radial-gradient(1px 1px at 15% 30%, rgba(245,158,11,0.2) 0%, transparent 100%);
-  animation: starDrift 20s ease-in-out infinite alternate;
+  opacity: 0.85;
 }
 
-@keyframes starDrift {
-  0%   { transform: translateY(0px); opacity: 0.7; }
-  100% { transform: translateY(-12px); opacity: 1; }
+/* ── Floating parallax orbs ───────────────────────────── */
+.home-orb {
+  position: fixed;
+  border-radius: 50%;
+  filter: blur(90px);
+  pointer-events: none;
+  z-index: -1;
+}
+
+.home-orb--1 {
+  width: 480px; height: 480px;
+  background: radial-gradient(circle, var(--color-primary) 0%, transparent 70%);
+  opacity: 0.07;
+  top: -80px; left: -60px;
+  animation: orbFloat1 22s ease-in-out infinite alternate;
+}
+
+.home-orb--2 {
+  width: 400px; height: 400px;
+  background: radial-gradient(circle, var(--color-secondary) 0%, transparent 70%);
+  opacity: 0.07;
+  top: 20%; right: -80px;
+  animation: orbFloat2 18s ease-in-out infinite alternate;
+}
+
+.home-orb--3 {
+  width: 360px; height: 360px;
+  background: radial-gradient(circle, #a78bfa 0%, transparent 70%);
+  opacity: 0.06;
+  bottom: 15%; left: 10%;
+  animation: orbFloat3 26s ease-in-out infinite alternate;
+}
+
+.home-orb--4 {
+  width: 300px; height: 300px;
+  background: radial-gradient(circle, #facc15 0%, transparent 70%);
+  opacity: 0.05;
+  bottom: 5%; right: 15%;
+  animation: orbFloat4 20s ease-in-out infinite alternate;
+}
+
+.home-orb--5 {
+  width: 260px; height: 260px;
+  background: radial-gradient(circle, #40c4ff 0%, transparent 70%);
+  opacity: 0.06;
+  top: 55%; left: 40%;
+  animation: orbFloat5 30s ease-in-out infinite alternate;
+}
+
+@keyframes orbFloat1 {
+  0%   { transform: translate(0px,  0px) scale(1); }
+  100% { transform: translate(40px, 60px) scale(1.08); }
+}
+@keyframes orbFloat2 {
+  0%   { transform: translate(0px,   0px) scale(1); }
+  100% { transform: translate(-50px, 40px) scale(0.92); }
+}
+@keyframes orbFloat3 {
+  0%   { transform: translate(0px,  0px) scale(1); }
+  100% { transform: translate(30px, -50px) scale(1.1); }
+}
+@keyframes orbFloat4 {
+  0%   { transform: translate(0px, 0px) scale(1); }
+  100% { transform: translate(-30px, -40px) scale(0.95); }
+}
+@keyframes orbFloat5 {
+  0%   { transform: translate(0px, 0px) scale(1); }
+  100% { transform: translate(20px, 35px) scale(1.05); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-orb { animation: none; }
 }
 
 .home-title {
-  font-size: var(--font-size-4xl);
+  font-size: var(--font-size-3xl);
   font-weight: var(--font-weight-bold);
   background: linear-gradient(270deg, var(--color-primary), var(--color-secondary), #a78bfa, var(--color-primary));
   background-size: 300% 100%;
@@ -97,7 +166,7 @@
 .home-subtitle {
   color: var(--color-text-muted);
   font-size: var(--font-size-lg);
-  margin-bottom: var(--space-6);
+  margin-bottom: var(--space-3);
 }
 
 /* ─── Mode selection buttons ─────────────────────────────── */
@@ -106,16 +175,17 @@
   gap: var(--space-5);
   justify-content: center;
   flex-wrap: wrap;
-  margin-bottom: var(--space-6);
+  margin-bottom: var(--space-3);
 }
 
-.home-mode-btn {
+.home-mode-btn,
+.home-nav-btn {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: var(--space-3);
-  padding: var(--space-8) var(--space-8);
-  min-width: 180px;
+  padding: var(--space-5) var(--space-6);
+  min-width: 160px;
   /* glassmorphism */
   background: rgba(255, 255, 255, 0.04);
   backdrop-filter: blur(16px);
@@ -131,12 +201,14 @@
   animation: cardSlideUp 0.45s var(--transition-bounce) both;
 }
 
-.home-mode-btn:focus-visible {
+.home-mode-btn:focus-visible,
+.home-nav-btn:focus-visible {
   outline: 2px solid var(--color-primary);
   outline-offset: 3px;
 }
 
-.home-mode-btn::before {
+.home-mode-btn::before,
+.home-nav-btn::before {
   content: '';
   position: absolute;
   top: 0; left: 0; right: 0;
@@ -145,12 +217,14 @@
   transition: transform var(--transition-base);
 }
 
-.home-mode-btn:hover {
+.home-mode-btn:hover,
+.home-nav-btn:hover {
   transform: translateY(-6px);
   box-shadow: var(--shadow-lg), 0 0 36px var(--color-primary-glow);
 }
 
-.home-mode-btn:hover::before {
+.home-mode-btn:hover::before,
+.home-nav-btn:hover::before {
   transform: scaleX(1);
 }
 
@@ -191,14 +265,21 @@
 .home-mode-btn--1p .home-mode-icon { color: var(--color-primary); }
 .home-mode-btn--1p:hover { border-color: var(--color-primary); }
 
-/* Demo — amber */
-.home-mode-btn--demo {
-  border-color: rgba(245, 158, 11, 0.2);
-  animation-delay: 0.24s;
+.home-mode-btn--leaderboard {
+  border-color: rgba(250, 204, 21, 0.2);
+  animation-delay: 0.32s;
 }
-.home-mode-btn--demo::before { background: linear-gradient(90deg, #f59e0b, #ef4444); }
-.home-mode-btn--demo .home-mode-icon { color: #f59e0b; }
-.home-mode-btn--demo:hover { border-color: #f59e0b; box-shadow: var(--shadow-lg), 0 0 36px rgba(245, 158, 11, 0.3); }
+.home-mode-btn--leaderboard::before { background: linear-gradient(90deg, #facc15, #f59e0b); }
+.home-mode-btn--leaderboard .home-mode-icon { color: #facc15; }
+.home-mode-btn--leaderboard:hover { border-color: #facc15; box-shadow: var(--shadow-lg), 0 0 36px rgba(250, 204, 21, 0.3); }
+
+.home-mode-btn--demo {
+  border-color: rgba(168, 85, 247, 0.2);
+  animation-delay: 0.44s;
+}
+.home-mode-btn--demo::before { background: linear-gradient(90deg, #a855f7, #7c3aed); }
+.home-mode-btn--demo .home-mode-icon { color: #a855f7; }
+.home-mode-btn--demo:hover { border-color: #a855f7; box-shadow: var(--shadow-lg), 0 0 36px rgba(168, 85, 247, 0.3); }
 
 /* ── Mobile portrait: stack buttons vertically ──────────────── */
 @media (max-width: 540px) {
@@ -335,6 +416,27 @@
   .home-title {
     font-size: var(--font-size-3xl);
   }
+}
+
+/* ── Scroll hint below mode cards ──────────────────────────── */
+.home-scroll-hint {
+  display: flex;
+  justify-content: center;
+  margin-bottom: var(--space-4);
+}
+
+.home-scroll-chevron {
+  color: var(--color-text-muted);
+  animation: scrollBounce 2.2s ease-in-out infinite;
+}
+
+@keyframes scrollBounce {
+  0%, 100% { transform: translateY(0); opacity: 0.35; }
+  50% { transform: translateY(7px); opacity: 0.75; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-scroll-chevron { animation: none; }
 }
 
 /* legacy game-cards kept for zero-waste — no longer rendered */

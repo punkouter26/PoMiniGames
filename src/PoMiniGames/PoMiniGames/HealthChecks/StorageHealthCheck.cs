@@ -1,4 +1,3 @@
-using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using PoMiniGames.Services;
 
@@ -10,9 +9,9 @@ namespace PoMiniGames.HealthChecks;
 /// </summary>
 public sealed class StorageHealthCheck : IHealthCheck
 {
-    private readonly IStorageService _storage;
+    private readonly IPlayerStatsStorage _storage;
 
-    public StorageHealthCheck(IStorageService storage)
+    public StorageHealthCheck(IPlayerStatsStorage storage)
     {
         _storage = storage;
     }

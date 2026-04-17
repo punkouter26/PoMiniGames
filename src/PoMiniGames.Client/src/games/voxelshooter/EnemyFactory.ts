@@ -1,5 +1,3 @@
-// @ts-nocheck
-// TODO: Remove @ts-nocheck and add proper TypeScript types (type-safety technical debt)
 /**
  * Enemy Spawn Factory Pattern
  * Configurable enemy definitions with weight-based random selection
@@ -43,7 +41,7 @@ export class EnemyFactory {
     }
 
     // Fallback to last definition
-    return this.definitions[this.definitions.length - 1].type;
+    return this.definitions[this.definitions.length - 1]!.type;
   }
 
   /**

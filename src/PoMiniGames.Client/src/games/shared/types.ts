@@ -35,6 +35,31 @@ export interface DifficultyStats {
   totalGames: number;
   winStreak: number;
   winRate: number;
+  /** ELO-style performance rating computed by the server; also computed client-side for offline display. */
+  eloRating: number;
+}
+
+/**
+ * Computes a deterministic ELO-style rating for a difficulty bucket.
+ * Mirrors the server-side EloCalculator formula exactly so the client can
+ * display ELO instantly without waiting for the API response.
+ *
+ * AI virtual ELO: Easy=800 | Medium=1200 | Hard=1600
+ * Player reference ELO: 1000 (fixed)  K=32
+ */
+export function computeEloRating(
+  ds: Pick<DifficultyStats, 'wins' | 'losses' | 'draws' | 'totalGames'>,
+  aiElo: 800 | 1200 | 1600,
+): number {
+  if (ds.totalGames === 0) return 1000;
+  const K = 32;
+  const expected = 1 / (1 + Math.pow(10, (aiElo - 1000) / 400));
+  const elo =
+    1000 +
+    ds.wins   * K * (1.0 - expected) +
+    ds.draws  * K * (0.5 - expected) +
+    ds.losses * K * (0.0 - expected);
+  return Math.max(0, Math.round(elo));
 }
 
 /** Player statistics stored in localStorage / synced to API. */
@@ -62,7 +87,7 @@ export interface PlayerStatsDto {
 
 /** Create empty difficulty stats. */
 export function emptyDifficultyStats(): DifficultyStats {
-  return { wins: 0, losses: 0, draws: 0, totalGames: 0, winStreak: 0, winRate: 0 };
+  return { wins: 0, losses: 0, draws: 0, totalGames: 0, winStreak: 0, winRate: 0, eloRating: 1000 };
 }
 
 /** Create empty player stats. */

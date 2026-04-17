@@ -23,7 +23,17 @@ export function getDevUserFromUrl(): string | null {
   return new URLSearchParams(window.location.search).get('user');
 }
 
-async function safeFetch(url: string, init?: RequestInit): Promise<Response | null> {
+/**
+ * Result returned by every safeFetch call.
+ * `response` is set only when the server returned a 2xx status.
+ * `status` is the HTTP status code, or 0 for network / timeout errors.
+ */
+export interface FetchResult {
+  response: Response | null;
+  status: number;
+}
+
+async function safeFetch(url: string, init?: RequestInit): Promise<FetchResult> {
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
@@ -35,16 +45,18 @@ async function safeFetch(url: string, init?: RequestInit): Promise<Response | nu
 
     const res = await fetch(url, { ...init, headers, signal: controller.signal, credentials: 'include' });
     clearTimeout(timer);
-    return res.ok ? res : null;
+    return res.ok
+      ? { response: res, status: res.status }
+      : { response: null, status: res.status };
   } catch {
-    return null;
+    return { response: null, status: 0 };
   }
 }
 
-async function safeJson<T>(response: Response | null): Promise<T | null> {
-  if (!response) return null;
+async function safeJson<T>(result: FetchResult): Promise<T | null> {
+  if (!result.response) return null;
   try {
-    return (await response.json()) as T;
+    return (await result.response.json()) as T;
   } catch {
     return null;
   }
@@ -81,11 +93,14 @@ export interface DevLoginRequest {
   email?: string;
 }
 
+/** Module-level cache so parallel callers share the same in-flight request. */
+let _authConfigPromise: Promise<AuthClientConfiguration | null> | null = null;
+
 export const apiService = {
   /** Check if the API is reachable. */
   async isAvailable(): Promise<boolean> {
-    const res = await safeFetch(`${API_BASE}/health/ping`);
-    return res !== null;
+    const { response } = await safeFetch(`${API_BASE}/health/ping`);
+    return response !== null;
   },
 
   /** Get player stats from API. */
@@ -94,25 +109,30 @@ export const apiService = {
     return safeJson<PlayerStatsDto>(res);
   },
 
-  /** Save player stats to API (fire-and-forget). */
-  async savePlayerStats(game: string, playerName: string, stats: PlayerStats): Promise<boolean> {
-    const res = await safeFetch(`${API_BASE}/${game}/players/${encodeURIComponent(playerName)}/stats`, {
+  /** Save player stats to API. Returns ok=true on success; status=0 means network error, 401=unauthenticated. */
+  async savePlayerStats(game: string, playerName: string, stats: PlayerStats): Promise<{ ok: boolean; status: number }> {
+    const { response, status } = await safeFetch(`${API_BASE}/${game}/players/${encodeURIComponent(playerName)}/stats`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(stats),
     });
-    return res !== null;
+    return { ok: response !== null, status };
   },
 
-  /** Get leaderboard from API. */
-  async getLeaderboard(game: string, limit = 10): Promise<PlayerStatsDto[] | null> {
-    const res = await safeFetch(`${API_BASE}/${game}/statistics/leaderboard?limit=${limit}`);
+  /** Get leaderboard from API. Optionally filter by difficulty: 'easy' | 'medium' | 'hard' | 'all'. */
+  async getLeaderboard(game: string, limit = 10, difficulty?: string): Promise<PlayerStatsDto[] | null> {
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (difficulty && difficulty !== 'all') params.set('difficulty', difficulty);
+    const res = await safeFetch(`${API_BASE}/${game}/statistics/leaderboard?${params.toString()}`);
     return safeJson<PlayerStatsDto[]>(res);
   },
 
   async getAuthConfiguration(): Promise<AuthClientConfiguration | null> {
-    const res = await safeFetch(`${API_BASE}/auth/config`);
-    return safeJson<AuthClientConfiguration>(res);
+    // Share one in-flight request across all concurrent callers (e.g. AuthContext + GamePageShell).
+    if (!_authConfigPromise) {
+      _authConfigPromise = safeFetch(`${API_BASE}/auth/config`).then(safeJson<AuthClientConfiguration>);
+    }
+    return _authConfigPromise;
   },
 
   async getAuthenticatedUser(accessToken?: string): Promise<AuthenticatedUserProfile | null> {
@@ -131,25 +151,24 @@ export const apiService = {
   },
 
   /**
-   * Developer Bypass — creates a cookie session keyed to the ?user= URL param.
-   * localhost:5173/?user=Alice  →  authenticated as Alice.
-   * localhost:5173/?user=Bob    →  authenticated as Bob.
-   * Falls back to "Dev Admin" when no param is present.
+   * Developer Bypass — keeps the simple name-based sign-in experience,
+   * but now reuses the shared dev-login endpoint under the hood.
    */
   async devBypass(userName?: string): Promise<AuthenticatedUserProfile | null> {
     const name = userName ?? getDevUserFromUrl() ?? 'Dev Admin';
-    const res = await safeFetch(
-      `${API_BASE}/auth/dev-bypass?user=${encodeURIComponent(name)}`,
-      { method: 'POST' },
-    );
-    return safeJson<AuthenticatedUserProfile>(res);
+    const slug = name.trim().toLowerCase().replace(/\s+/g, '-');
+    return this.devLogin({
+      userId: `dev-${slug}`,
+      displayName: name,
+      email: `${slug}@local.dev`,
+    });
   },
 
   async devLogout(): Promise<boolean> {
-    const res = await safeFetch(`${API_BASE}/auth/dev-logout`, {
+    const { response } = await safeFetch(`${API_BASE}/auth/dev-logout`, {
       method: 'POST',
     });
-    return res !== null;
+    return response !== null;
   },
 
   async getSupportedMultiplayerGames(): Promise<SupportedMultiplayerGame[] | null> {

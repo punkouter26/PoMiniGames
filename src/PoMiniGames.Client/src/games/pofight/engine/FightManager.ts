@@ -124,7 +124,6 @@ export class FightManager {
             soundManager.playBlock();
             particleSystem.emit((attacker.x.value + defender.x.value) / 2, defender.y.value - 100, 5, '#60a5fa');
             defender.health.value = Math.max(0, defender.health.value - chipDamage);
-            console.log(`${defender.id} BLOCKED! Chip: ${chipDamage}`);
             return;
         }
 
@@ -180,7 +179,6 @@ export class FightManager {
         const nextLevel = store.currentLevel + 1;
         store.unlockLevel(nextLevel);
         store.setHighScore(store.currentLevel, this.player.health.value * 100);
-        console.log('YOU WIN');
         setTimeout(() => {
             this.onGameEnd?.('win');
         }, 1500);
@@ -189,7 +187,6 @@ export class FightManager {
     handleLoss() {
         this.gameEnded = true;
         this.gameLoop.stop();
-        console.log('GAME OVER');
         setTimeout(() => {
             this.onGameEnd?.('loss');
         }, 1500);

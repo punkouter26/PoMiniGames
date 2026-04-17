@@ -47,7 +47,12 @@ interface UseTurnBasedMultiplayerResult {
   submitTurn: (action: Record<string, number>) => Promise<void>;
 }
 
-export function useTurnBasedMultiplayer(gameKey: string): UseTurnBasedMultiplayerResult {
+/**
+ * @param gameKey  Identifies the game on the server (e.g. "connectfive").
+ * @param enabled  Set to false to skip connecting entirely (e.g. when in AI or demo mode).
+ *                 Defaults to true so existing callers are unaffected.
+ */
+export function useTurnBasedMultiplayer(gameKey: string, enabled = true): UseTurnBasedMultiplayerResult {
   const { isAuthenticated, isConfigured, user } = useAuth();
   const connectionRef = useRef<HubConnection | null>(null);
   const [match, setMatch] = useState<MultiplayerMatchSnapshot | null>(null);
@@ -61,6 +66,16 @@ export function useTurnBasedMultiplayer(gameKey: string): UseTurnBasedMultiplaye
     let disposed = false;
 
     async function ensureConnection() {
+      // Do not connect when the feature is deliberately disabled (AI/demo mode).
+      if (!enabled) {
+        if (connectionRef.current) {
+          await connectionRef.current.stop();
+          connectionRef.current = null;
+        }
+        setIsConnected(false);
+        return;
+      }
+
       if (!isConfigured || !isAuthenticated) {
         setIsConnected(false);
         if (connectionRef.current) {
@@ -74,8 +89,9 @@ export function useTurnBasedMultiplayer(gameKey: string): UseTurnBasedMultiplaye
         return;
       }
 
+      const hubBase = (import.meta.env.VITE_HUB_BASE_URL as string | undefined) ?? '';
       const connection = new HubConnectionBuilder()
-        .withUrl('/api/hubs/multiplayer', {
+        .withUrl(`${hubBase}/api/hubs/multiplayer`, {
           accessTokenFactory: async () => getStoredAccessToken() ?? '',
         })
         .withAutomaticReconnect()
@@ -88,7 +104,6 @@ export function useTurnBasedMultiplayer(gameKey: string): UseTurnBasedMultiplaye
         }
 
         if (snapshot.participants.some(participant => participant.userId === user?.userId)) {
-          console.log('[MU] MatchUpdated:', snapshot.status, 'currentTurn:', snapshot.currentTurnUserId, 'user:', user?.userId);
           setMatch(prev => mergeSnapshot(prev, snapshot));
         }
       });
@@ -140,7 +155,7 @@ export function useTurnBasedMultiplayer(gameKey: string): UseTurnBasedMultiplaye
         void connection.stop();
       }
     };
-  }, [gameKey, isAuthenticated, isConfigured, user?.userId]);
+  }, [enabled, gameKey, isAuthenticated, isConfigured, user?.userId]);
 
   // Stable function references via useCallback so callers' useEffect dependency
   // arrays only re-run when logic-relevant values change, not on every render.
@@ -155,7 +170,6 @@ export function useTurnBasedMultiplayer(gameKey: string): UseTurnBasedMultiplaye
       }
 
       setMatch(prev => mergeSnapshot(prev, snapshot));
-      console.log('[JQ] joinQueue result:', snapshot.status, 'isBusy will → false');
     } finally {
       setIsBusy(false);
     }

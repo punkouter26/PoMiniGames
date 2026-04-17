@@ -6,13 +6,39 @@
   width: 100%;
 }
 
+.home-highscores-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+  flex-wrap: wrap;
+}
+
 .home-highscores-title {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
   font-size: var(--font-size-2xl);
   color: var(--color-text-primary);
-  margin-bottom: var(--space-4);
+  margin-bottom: 0;
+}
+
+.home-highscores-filter-toggle {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  padding: var(--space-1) var(--space-3);
+  transition: all var(--transition-fast);
+}
+
+.home-highscores-filter-toggle:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
 }
 
 /* ── Tab pills ─────────────────────────────────────────── */
@@ -20,7 +46,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
-  margin-bottom: var(--space-4);
+  margin-bottom: var(--space-2);
 }
 
 .home-highscores-tab {
@@ -45,6 +71,38 @@
   background: var(--color-primary-dim);
   border-color: var(--color-primary);
   color: var(--color-primary);
+  font-weight: var(--font-weight-semibold);
+}
+
+/* ── Difficulty subtab pills ───────────────────────────── */
+.home-highscores-diff-tabs {
+  display: flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+
+.home-highscores-diff-tab {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-full);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-size: calc(var(--font-size-xs) * 0.9);
+  font-weight: var(--font-weight-medium);
+  padding: 2px var(--space-2);
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+}
+
+.home-highscores-diff-tab:hover {
+  border-color: var(--color-accent, #00bcd4);
+  color: var(--color-accent, #00bcd4);
+}
+
+.home-highscores-diff-tab.active {
+  background: rgba(0, 188, 212, 0.12);
+  border-color: var(--color-accent, #00bcd4);
+  color: var(--color-accent, #00bcd4);
   font-weight: var(--font-weight-semibold);
 }
 
@@ -121,7 +179,8 @@
   width: var(--bar-w, 0%);
   background: linear-gradient(90deg, var(--color-primary), var(--color-secondary));
   border-radius: 2px;
-  animation: barGrow 0.6s var(--transition-bounce) forwards;
+  animation: barGrow 0.55s cubic-bezier(0.34, 1.2, 0.64, 1) both;
+  animation-delay: var(--bar-delay, 0ms);
   transform-origin: left;
 }
 
@@ -135,6 +194,8 @@
   font-size: var(--font-size-xs);
   white-space: nowrap;
   font-family: var(--font-family-mono);
+  font-feature-settings: "tnum";
+  font-variant-numeric: tabular-nums;
 }
 
 .home-highscores-empty {

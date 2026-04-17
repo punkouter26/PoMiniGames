@@ -3,36 +3,20 @@ erDiagram
         string Game PK "tictactoe | connectfive | pofight"
         string PlayerName PK "Display name — sanitized (no special chars)"
         string PlayerId "Microsoft OID or dev userId"
-        string StatsJson "JSON-serialized PlayerStats object (Easy/Medium/Hard DifficultyStats)"
+        string StatsJson "JSON: {Easy: DiffStats, Medium: DiffStats, Hard: DiffStats}"
         string CreatedAt "ISO 8601 UTC"
         string UpdatedAt "ISO 8601 UTC"
     }
-    DIFFICULTY_STATS_EASY {
+    DIFFICULTY_STATS {
         int Wins
         int Losses
         int Draws
         int TotalGames "Wins + Losses + Draws"
         int WinStreak "Current consecutive wins"
-        float WinRate "Wins / TotalGames (computed)"
-    }
-    DIFFICULTY_STATS_MEDIUM {
-        int Wins
-        int Losses
-        int Draws
-        int TotalGames "Wins + Losses + Draws"
-        int WinStreak "Current consecutive wins"
-        float WinRate "Wins / TotalGames (computed)"
-    }
-    DIFFICULTY_STATS_HARD {
-        int Wins
-        int Losses
-        int Draws
-        int TotalGames "Wins + Losses + Draws"
-        int WinStreak "Current consecutive wins"
-        float WinRate "Wins / TotalGames (computed)"
+        float WinRate "Wins / TotalGames * 100 (computed — not stored)"
     }
     SNAKE_HIGH_SCORES {
-        string Initials "Player initials up to 3 chars"
+        string Initials "Player initials — up to 3 chars"
         int Score "Final score"
         string Date "ISO 8601 timestamp"
         float GameDuration "Seconds — default 30"
@@ -47,31 +31,34 @@ erDiagram
     }
     MULTIPLAYER_MATCH {
         string MatchId PK "GUID"
-        string GameKey "tictactoe | connectfive"
+        string GameKey "tictactoe | connectfive | pofight | posnakegame"
         string Player1Id "UserId (Microsoft OID)"
         string Player2Id "UserId (Microsoft OID)"
-        string Status "waiting | active | finished"
-        string GameState "JSON-serialized board state"
+        string Status "waiting | active | finished | abandoned"
+        string GameState "JSON-serialized board or arena state"
         string CreatedAt "ISO 8601 UTC"
         string UpdatedAt "ISO 8601 UTC"
     }
     LOBBY_PLAYER {
         string UserId PK "Microsoft OID"
         string DisplayName "OAuth display name"
-        string ConnectionId "SignalR connection ID"
+        string ConnectionId "SignalR connection ID (transient)"
         bool IsHost "First player to join becomes host"
+        string MatchId FK "References MULTIPLAYER_MATCH.MatchId"
     }
     RACE_SESSION {
         string SessionId PK "GUID"
         string Status "created | betting | racing | finished"
-        int CurrentRound "Round number"
+        int CurrentRound "Round number (1-based)"
         string RacersJson "JSON array of racer species"
         string BetsJson "JSON map of racerId to bet amount"
         string WinnerId "Winning racer ID"
+        string CreatedAt "ISO 8601 UTC"
     }
-    PLAYER_STATS ||--|| DIFFICULTY_STATS_EASY : "Easy stats embedded in StatsJson"
-    PLAYER_STATS ||--|| DIFFICULTY_STATS_MEDIUM : "Medium stats embedded in StatsJson"
-    PLAYER_STATS ||--|| DIFFICULTY_STATS_HARD : "Hard stats embedded in StatsJson"
-    MULTIPLAYER_MATCH }o--|| PLAYER_STATS : "Player1 references"
-    MULTIPLAYER_MATCH }o--|| PLAYER_STATS : "Player2 references"
-    LOBBY_PLAYER }o--o{ MULTIPLAYER_MATCH : "transitions into match"
+
+    PLAYER_STATS ||--|| DIFFICULTY_STATS : "Easy embedded in StatsJson"
+    PLAYER_STATS ||--|| DIFFICULTY_STATS : "Medium embedded in StatsJson"
+    PLAYER_STATS ||--|| DIFFICULTY_STATS : "Hard embedded in StatsJson"
+    MULTIPLAYER_MATCH }o--|| PLAYER_STATS : "Player1 references by PlayerName+Game"
+    MULTIPLAYER_MATCH }o--|| PLAYER_STATS : "Player2 references by PlayerName+Game"
+    LOBBY_PLAYER }o--o{ MULTIPLAYER_MATCH : "transitions into match on StartGame"

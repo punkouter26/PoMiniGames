@@ -20,16 +20,17 @@ export function useTicTacToeGame() {
   const shouldAutoDemo = searchParams.get('demo') === '1';
   const { isAuthenticated, isConfigured, signIn, user } = useAuth();
   const { playerName } = usePlayerName();
-  const multiplayer = useTurnBasedMultiplayer(GAME_KEY);
+  // Declare playMode first so it can gate the multiplayer SignalR connection.
+  const [playMode, setPlayMode] = useState<PlayMode>(
+    shouldAutoDemo ? 'demo' : shouldAutoOnline ? 'online' : 'ai',
+  );
+  const multiplayer = useTurnBasedMultiplayer(GAME_KEY, playMode === 'online');
   const [board, setBoard] = useState(() => new TicTacToeBoard());
   const [difficulty, setDifficulty] = useState(Difficulty.Medium);
   const [gameResult, setGameResult] = useState(GameResult.InProgress);
   const [winCells, setWinCells] = useState<[number, number][]>([]);
   const [isAiTurn, setIsAiTurn] = useState(false);
   const [stats, setStats] = useState(() => statsService.getStats(GAME_KEY, playerName));
-  const [playMode, setPlayMode] = useState<PlayMode>(
-    shouldAutoDemo ? 'demo' : shouldAutoOnline ? 'online' : 'ai',
-  );
 
   const resetGame = useCallback(() => {
     setBoard(new TicTacToeBoard());
@@ -204,6 +205,7 @@ export function useTicTacToeGame() {
     { value: diffBucket.draws, label: 'D' },
     { value: diffBucket.winStreak, label: 'Str' },
     { value: `${(diffBucket.winRate * 100).toFixed(0)}%`, label: 'Rate' },
+    { value: diffBucket.eloRating ?? 1000, label: 'ELO' },
   ];
 
   return {

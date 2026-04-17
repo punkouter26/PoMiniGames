@@ -50,7 +50,13 @@ internal static class DbInitializer
 
     private const string CreateIndexesSql = """
         CREATE INDEX IF NOT EXISTS idx_playerstats_game ON PlayerStats(Game);
+        CREATE INDEX IF NOT EXISTS idx_ps_game_winrate   ON PlayerStats(Game, json_extract(StatsJson, '$.WinRate')          DESC);
+        CREATE INDEX IF NOT EXISTS idx_ps_game_totalg    ON PlayerStats(Game, json_extract(StatsJson, '$.TotalGames')       DESC);
+        CREATE INDEX IF NOT EXISTS idx_ps_game_easy_elo  ON PlayerStats(Game, json_extract(StatsJson, '$.Easy.EloRating')   DESC);
+        CREATE INDEX IF NOT EXISTS idx_ps_game_med_elo   ON PlayerStats(Game, json_extract(StatsJson, '$.Medium.EloRating') DESC);
+        CREATE INDEX IF NOT EXISTS idx_ps_game_hard_elo  ON PlayerStats(Game, json_extract(StatsJson, '$.Hard.EloRating')   DESC);
         """;
+
 
     internal static void InitializeSchema(string dbPath)
     {

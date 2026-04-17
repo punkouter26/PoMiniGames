@@ -6,6 +6,24 @@
      [game area (GamePageShell children)] fills rest of screen
    ================================================================ */
 
+/* ── Offline badge ─────────────────────────────────────────── */
+.gps-offline-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: var(--radius-full, 9999px);
+  padding: 2px 8px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  margin-left: auto; /* push to far right before the settings gear */
+}
+
 .gps-shell {
   display: flex;
   flex-direction: column;
@@ -262,7 +280,7 @@
   letter-spacing: 0.05em;
 }
 
-/* ── Game area ─────────────────────────────────────────────── */
+/* ── Game area (item 4: ensure design-system font is inherited) ─ */
 .gps-game-area {
   flex: 1;
   min-height: 0;
@@ -273,6 +291,7 @@
   overflow-y: auto;
   overflow-x: hidden;
   padding: var(--space-4);
+  font-family: var(--font-family);
 }
 
 /* fullscreen variant — for canvas / iframe games */
@@ -340,6 +359,61 @@
 }
 
 .gps-missing-url strong {
+  color: var(--color-primary);
+}
+
+/* ── UX #6: Play Again bar ───────────────────────────────── */
+.gps-play-again-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-top: 1px solid var(--color-border);
+  flex-shrink: 0;
+  animation: playAgainSlide 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+@keyframes playAgainSlide {
+  from { transform: translateY(100%); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+
+.gps-play-again-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-5);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  border: 1px solid transparent;
+}
+
+.gps-play-again-btn--primary {
+  background: var(--color-primary);
+  color: var(--color-bg-dark);
+  border-color: var(--color-primary);
+}
+
+.gps-play-again-btn--primary:hover {
+  filter: brightness(1.1);
+  box-shadow: 0 0 16px var(--color-primary-glow);
+}
+
+.gps-play-again-btn--secondary {
+  background: transparent;
+  color: var(--color-text-secondary);
+  border-color: var(--color-border);
+}
+
+.gps-play-again-btn--secondary:hover {
+  border-color: var(--color-primary);
   color: var(--color-primary);
 }
 

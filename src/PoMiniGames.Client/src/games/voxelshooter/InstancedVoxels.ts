@@ -1,5 +1,3 @@
-// @ts-nocheck
-// TODO: Remove @ts-nocheck and add proper TypeScript types (type-safety technical debt)
 import * as THREE from 'three';
 import { VoxelSimulation } from './VoxelSimulation';
 

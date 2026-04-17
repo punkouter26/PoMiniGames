@@ -1,0 +1,35 @@
+stateDiagram-v2
+    state "Multiplayer Match Lifecycle" as Match {
+        [*] --> Waiting : POST /api/multiplayer/queue (first player)
+        Waiting --> Active : Both players joined + Host calls StartGame()
+        Active --> Finished : Win/Loss/Draw result determined
+        Active --> Abandoned : Player disconnects mid-game
+        Finished --> [*] : Stats recorded — Wins/Losses/Draws UPSERT
+        Abandoned --> [*] : No stats recorded (business rule: completed games only)
+    }
+
+    state "Lobby Session Lifecycle" as LobbyState {
+        [*] --> Empty
+        Empty --> HasHost : First player connects to LobbyHub WSS
+        HasHost --> HasBothPlayers : Second player connects to LobbyHub WSS
+        HasBothPlayers --> Starting : Host calls StartGame()
+        HasHost --> Empty : Host disconnects — lobby reset
+        HasBothPlayers --> HasHost : Non-host disconnects
+        Starting --> [*] : Transitions to Match.Active
+    }
+
+    state "Race Session (PoRaceRagdoll)" as Race {
+        [*] --> Created : POST /api/game/session
+        Created --> Betting : Session initialized with racers JSON
+        Betting --> Racing : All bets placed — race begins
+        Racing --> RaceFinished : Winner determined
+        RaceFinished --> [*] : Results stored — SessionId persisted
+    }
+
+    state "Player Stats Lifecycle" as PlayerStats {
+        [*] --> NoStats : First visit — anonymous
+        NoStats --> LocalOnly : Play game (offline or pre-auth)
+        LocalOnly --> Synced : Authenticate + PUT /api/{game}/players/stats
+        Synced --> Synced : Subsequent games — UPSERT merges diffs
+        LocalOnly --> LocalOnly : Continue playing offline
+    }

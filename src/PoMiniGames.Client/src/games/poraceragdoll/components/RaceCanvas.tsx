@@ -56,7 +56,6 @@ export default function RaceCanvas() {
                 await RAPIER.init();
                 if (mounted) {
                     setIsPhysicsReady(true);
-                    console.log('Rapier Physics Initialized');
                 }
             } catch (err) {
                 console.error('Failed to init Rapier:', err);

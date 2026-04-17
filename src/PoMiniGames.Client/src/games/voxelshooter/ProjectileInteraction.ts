@@ -1,5 +1,3 @@
-// @ts-nocheck
-// TODO: Remove @ts-nocheck and add proper TypeScript types (type-safety technical debt)
 import * as THREE from 'three';
 import { VoxelSimulation } from './VoxelSimulation';
 import { EnemyShapes } from './EnemyShapes';
@@ -86,7 +84,7 @@ export class ProjectileInteraction {
         this.enemyMeshes = this.enemies.shapes.map(s => s.mesh);
 
         for (let i = this.bullets.length - 1; i >= 0; i--) {
-            const bullet = this.bullets[i];
+            const bullet = this.bullets[i]!;
 
             bullet.lastPos.copy(bullet.mesh.position);
             bullet.mesh.position.addScaledVector(bullet.velocity, delta);
@@ -103,8 +101,8 @@ export class ProjectileInteraction {
                 const intersects = this.raycaster.intersectObjects(this.enemyMeshes, false);
 
                 if (intersects.length > 0) {
-                    const hitPoint = intersects[0].point;
-                    const meshHit = intersects[0].object as THREE.InstancedMesh;
+                    const hitPoint = intersects[0]!.point;
+                    const meshHit = intersects[0]!.object as THREE.InstancedMesh;
 
                     const index = this.enemies.shapes.findIndex(s => s.mesh === meshHit);
 

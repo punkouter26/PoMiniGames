@@ -68,15 +68,27 @@ export function useLobby(): UseLobbyResult {
         void navigate(`/${data.gameKey}?online=1`);
       });
 
+      connection.on('GameAlreadyStarted', (data: { gameKey: string }) => {
+        if (disposed) return;
+        // Late joiner: game already started — navigate directly into it
+        void navigate(`/${data.gameKey}?online=1`);
+      });
+
       connection.onclose(() => {
         if (!disposed) {
           setIsConnected(false);
         }
       });
 
-      connection.onreconnected(() => {
+      connection.onreconnected(async () => {
         if (!disposed) {
           setIsConnected(true);
+          // Re-fetch fresh snapshot so the player list and host are not stale
+          try {
+            await connection.invoke('RequestSnapshot');
+          } catch {
+            // Server will push LobbyUpdated shortly; ignore if invoke fails
+          }
         }
       });
 

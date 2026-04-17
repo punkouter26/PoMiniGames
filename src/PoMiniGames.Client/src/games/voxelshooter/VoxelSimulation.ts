@@ -1,5 +1,3 @@
-// @ts-nocheck
-// TODO: Remove @ts-nocheck and add proper TypeScript types (type-safety technical debt)
 import * as THREE from 'three';
 import { GPUComputationRenderer } from 'three/examples/jsm/misc/GPUComputationRenderer.js';
 import { SpatialHashGrid } from './SpatialHashGrid';
@@ -185,10 +183,10 @@ export class VoxelSimulation {
 
     for (let i = 0; i < len; i++) {
       const idx = i * 4;
-      const x = this.readBuffer[idx];
-      const y = this.readBuffer[idx + 1];
-      const z = this.readBuffer[idx + 2];
-      const timer = this.readBuffer[idx + 3];
+      const x = this.readBuffer[idx]!;
+      const y = this.readBuffer[idx + 1]!;
+      const z = this.readBuffer[idx + 2]!;
+      const timer = this.readBuffer[idx + 3]!;
       const isDynamic = timer > 0.005 && timer < 10.0;
 
       if (isDynamic) {
@@ -205,9 +203,9 @@ export class VoxelSimulation {
 
     for (let currentId of activeIndices) {
       const idx = currentId * 4;
-      const x = this.readBuffer[idx];
-      const y = this.readBuffer[idx + 1];
-      const z = this.readBuffer[idx + 2];
+      const x = this.readBuffer[idx]!;
+      const y = this.readBuffer[idx + 1]!;
+      const z = this.readBuffer[idx + 2]!;
 
       const neighbors = this.grid.getNearby(x, y, z);
       let fx = 0, fy = 0, fz = 0;
@@ -216,9 +214,9 @@ export class VoxelSimulation {
         if (neighborId === currentId) continue;
 
         const nIdx = neighborId * 4;
-        const nx = this.readBuffer[nIdx];
-        const ny = this.readBuffer[nIdx + 1];
-        const nz = this.readBuffer[nIdx + 2];
+        const nx = this.readBuffer[nIdx]!;
+        const ny = this.readBuffer[nIdx + 1]!;
+        const nz = this.readBuffer[nIdx + 2]!;
 
         const dx = x - nx;
         const dy = y - ny;

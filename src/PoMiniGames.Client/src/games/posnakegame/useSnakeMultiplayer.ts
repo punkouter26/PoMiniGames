@@ -164,8 +164,9 @@ export function useSnakeMultiplayer(): UseSnakeMultiplayerResult {
 
       if (connectionRef.current?.state === HubConnectionState.Connected) return;
 
+      const hubBase = (import.meta.env.VITE_HUB_BASE_URL as string | undefined) ?? '';
       const connection = new HubConnectionBuilder()
-        .withUrl('/api/hubs/multiplayer', {
+        .withUrl(`${hubBase}/api/hubs/multiplayer`, {
           accessTokenFactory: async () => getStoredAccessToken() ?? '',
         })
         .withAutomaticReconnect()

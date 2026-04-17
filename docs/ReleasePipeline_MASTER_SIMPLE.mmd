@@ -1,0 +1,20 @@
+flowchart LR
+    Feature["Feature Branch"]
+    Master["master (push trigger)"]
+    Build["Build + Test\n.NET 10 + React 18\nxUnit + Playwright"]
+    Artifacts["Artifacts\napi-publish · client-build"]
+    Deploy["Deploy\nApp Service + Static Web App"]
+    Prod["Production (westus2)\nApp Service + CDN Edge"]
+
+    Feature -- "PR merge" --> Master
+    Master -- "trigger" --> Build
+    Build -- "all tests pass" --> Artifacts
+    Artifacts --> Deploy
+    Deploy --> Prod
+
+    style Feature fill:#24292e,stroke:#111111,color:#fff
+    style Master fill:#24292e,stroke:#111111,color:#fff
+    style Build fill:#1a6b8a,stroke:#0d4a66,color:#fff
+    style Artifacts fill:#107c10,stroke:#0a5c0a,color:#fff
+    style Deploy fill:#0078d4,stroke:#005a9e,color:#fff
+    style Prod fill:#0078d4,stroke:#005a9e,color:#fff

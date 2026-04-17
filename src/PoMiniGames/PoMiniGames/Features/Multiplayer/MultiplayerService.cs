@@ -1,21 +1,24 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using PoMiniGames.Features.Auth;
 
 namespace PoMiniGames.Features.Multiplayer;
 
-internal sealed class MultiplayerService : IMultiplayerService
+internal sealed class MultiplayerService : IMultiplayerService, IDisposable
 {
     private static readonly TimeSpan MatchLifetime = TimeSpan.FromMinutes(30);
     private static readonly TimeSpan CleanupInterval = TimeSpan.FromMinutes(5);
 
-    private readonly object _lock = new();
-    private readonly Dictionary<string, MutableMultiplayerMatch> _matches = new(StringComparer.Ordinal);
+    /// <summary>Protects queue-scan operations that create or search across all matches.</summary>
+    private readonly object _queueLock = new();
+    private readonly ConcurrentDictionary<string, MutableMultiplayerMatch> _matches = new(StringComparer.Ordinal);
     private readonly IMultiplayerGameRegistry _gameRegistry;
-    private DateTimeOffset _lastCleanupAt = DateTimeOffset.MinValue;
+    private readonly Timer _cleanupTimer;
 
     public MultiplayerService(IMultiplayerGameRegistry gameRegistry)
     {
         _gameRegistry = gameRegistry;
+        _cleanupTimer = new Timer(_ => CleanupExpiredMatches(), null, CleanupInterval, CleanupInterval);
     }
 
     public IReadOnlyCollection<SupportedMultiplayerGame> GetSupportedGames() =>
@@ -28,10 +31,8 @@ internal sealed class MultiplayerService : IMultiplayerService
             throw new InvalidOperationException($"Unsupported multiplayer game '{gameKey}'.");
         }
 
-        lock (_lock)
+        lock (_queueLock)
         {
-            CleanupExpiredMatches();
-
             var existing = _matches.Values.FirstOrDefault(match =>
                 string.Equals(match.GameKey, adapter.GameKey, StringComparison.OrdinalIgnoreCase)
                 && match.Status is MultiplayerMatchStatus.WaitingForOpponent or MultiplayerMatchStatus.InProgress
@@ -86,27 +87,24 @@ internal sealed class MultiplayerService : IMultiplayerService
 
     public MultiplayerMatchSnapshot? GetMatch(string matchId, AuthenticatedUser user)
     {
-        lock (_lock)
-        {
-            CleanupExpiredMatches();
-            if (!_matches.TryGetValue(matchId, out var match) || !match.ContainsUser(user.UserId))
-            {
-                return null;
-            }
+        if (!_matches.TryGetValue(matchId, out var match) || !match.ContainsUser(user.UserId))
+            return null;
 
-            return CreateSnapshot(match);
+        lock (match.Lock)
+        {
+            return match.ContainsUser(user.UserId) ? CreateSnapshot(match) : null;
         }
     }
 
     public MultiplayerMatchSnapshot? LeaveMatch(string matchId, AuthenticatedUser user)
     {
-        lock (_lock)
+        if (!_matches.TryGetValue(matchId, out var match) || !match.ContainsUser(user.UserId))
+            return null;
+
+        lock (match.Lock)
         {
-            CleanupExpiredMatches();
-            if (!_matches.TryGetValue(matchId, out var match) || !match.ContainsUser(user.UserId))
-            {
+            if (!match.ContainsUser(user.UserId))
                 return null;
-            }
 
             match.Status = MultiplayerMatchStatus.Abandoned;
             match.WinnerUserId = ResolveOtherUserId(match, user.UserId);
@@ -123,13 +121,13 @@ internal sealed class MultiplayerService : IMultiplayerService
 
     public MultiplayerActionResult SubmitTurn(string matchId, AuthenticatedUser user, JsonElement action)
     {
-        lock (_lock)
+        if (!_matches.TryGetValue(matchId, out var match) || !match.ContainsUser(user.UserId))
+            return new MultiplayerActionResult(false, "Match not found.", null, true);
+
+        lock (match.Lock)
         {
-            CleanupExpiredMatches();
-            if (!_matches.TryGetValue(matchId, out var match) || !match.ContainsUser(user.UserId))
-            {
+            if (!match.ContainsUser(user.UserId))
                 return new MultiplayerActionResult(false, "Match not found.", null, true);
-            }
 
             if (match.Status != MultiplayerMatchStatus.InProgress)
             {
@@ -165,13 +163,14 @@ internal sealed class MultiplayerService : IMultiplayerService
 
     public IReadOnlyCollection<MultiplayerMatchSnapshot> SetPresence(AuthenticatedUser user, bool connected)
     {
-        lock (_lock)
+        var changedMatches = new List<MultiplayerMatchSnapshot>();
+        foreach (var match in _matches.Values.Where(match => match.ContainsUser(user.UserId)))
         {
-            CleanupExpiredMatches();
-
-            var changedMatches = new List<MultiplayerMatchSnapshot>();
-            foreach (var match in _matches.Values.Where(match => match.ContainsUser(user.UserId)))
+            lock (match.Lock)
             {
+                if (!match.ContainsUser(user.UserId))
+                    continue;
+
                 if (connected)
                 {
                     match.ConnectedUserIds.Add(user.UserId);
@@ -180,12 +179,10 @@ internal sealed class MultiplayerService : IMultiplayerService
                 {
                     match.ConnectedUserIds.Remove(user.UserId);
 
-                    // If the player was the sole occupant waiting for an opponent, remove the
-                    // queue entry so it cannot accidentally absorb players from later matches.
                     if (match.Status == MultiplayerMatchStatus.WaitingForOpponent
                         && string.Equals(match.PlayerOne.UserId, user.UserId, StringComparison.Ordinal))
                     {
-                        _matches.Remove(match.MatchId);
+                        _matches.TryRemove(match.MatchId, out _);
                         continue;
                     }
                 }
@@ -193,18 +190,20 @@ internal sealed class MultiplayerService : IMultiplayerService
                 match.UpdatedAt = DateTimeOffset.UtcNow;
                 changedMatches.Add(CreateSnapshot(match));
             }
-
-            return changedMatches;
         }
+
+        return changedMatches;
     }
 
     public RealtimeRelayEnvelope? BuildRealtimeEnvelope(string matchId, AuthenticatedUser user, JsonElement payload)
     {
-        lock (_lock)
+        if (!_matches.TryGetValue(matchId, out var match)
+            || !match.ContainsUser(user.UserId))
+            return null;
+
+        lock (match.Lock)
         {
-            CleanupExpiredMatches();
-            if (!_matches.TryGetValue(matchId, out var match)
-                || !match.ContainsUser(user.UserId)
+            if (!match.ContainsUser(user.UserId)
                 || match.Status != MultiplayerMatchStatus.InProgress
                 || match.Mode != MultiplayerTransportMode.Realtime)
             {
@@ -227,36 +226,21 @@ internal sealed class MultiplayerService : IMultiplayerService
         }
     }
 
+    public IReadOnlyCollection<MultiplayerMatchSnapshot> GetActiveMatches()
+    {
+        // ConcurrentDictionary snapshot is safe to iterate without an explicit lock.
+        return _matches.Values
+            .Where(m => m.Status == MultiplayerMatchStatus.InProgress)
+            .Select(CreateSnapshot)
+            .ToList();
+    }
+
     private void CleanupExpiredMatches()
     {
         var now = DateTimeOffset.UtcNow;
-        if (now - _lastCleanupAt < CleanupInterval)
+        foreach (var match in _matches.Values.Where(match => now - match.UpdatedAt > MatchLifetime))
         {
-            return;
-        }
-
-        var expiredIds = _matches.Values
-            .Where(match => now - match.UpdatedAt > MatchLifetime)
-            .Select(match => match.MatchId)
-            .ToArray();
-
-        foreach (var matchId in expiredIds)
-        {
-            _matches.Remove(matchId);
-        }
-
-        _lastCleanupAt = now;
-    }
-
-    public IReadOnlyCollection<MultiplayerMatchSnapshot> GetActiveMatches()
-    {
-        lock (_lock)
-        {
-            CleanupExpiredMatches();
-            return _matches.Values
-                .Where(m => m.Status == MultiplayerMatchStatus.InProgress)
-                .Select(CreateSnapshot)
-                .ToList();
+            _matches.TryRemove(match.MatchId, out _);
         }
     }
 
@@ -299,5 +283,10 @@ internal sealed class MultiplayerService : IMultiplayerService
         }
 
         return match.PlayerTwo?.UserId;
+    }
+
+    public void Dispose()
+    {
+        _cleanupTimer.Dispose();
     }
 }

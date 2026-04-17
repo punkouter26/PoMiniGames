@@ -1,13 +1,15 @@
-import { createContext, useContext, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useState, type ReactNode } from 'react';
 
 interface PlayerNameContextType {
   playerName: string;
   setPlayerName: (name: string) => void;
+  setPlayerNameFromAuth: (name: string) => void;
 }
 
 const PlayerNameContext = createContext<PlayerNameContextType>({
   playerName: 'Player',
   setPlayerName: () => {},
+  setPlayerNameFromAuth: () => {},
 });
 
 const ADJ = ['Swift', 'Bold', 'Brave', 'Cool', 'Fast', 'Wild', 'Sharp', 'Calm', 'Sly', 'Keen'];
@@ -20,22 +22,19 @@ function generateRandomName(): string {
 }
 
 export function PlayerNameProvider({ children }: { children: ReactNode }) {
-  const [playerName, setPlayerNameState] = useState(() => {
-    const stored = localStorage.getItem('pomini_player');
-    if (stored && stored !== 'Player') return stored;
-    const name = generateRandomName();
-    localStorage.setItem('pomini_player', name);
-    return name;
-  });
+  // Fresh random name every session — no persistence per design (casual/anon play)
+  const [playerName, setPlayerNameState] = useState(() => generateRandomName());
 
-  const setPlayerName = (name: string) => {
+  const setPlayerName = useCallback((name: string) => {
     const trimmed = name.trim() || 'Player';
     setPlayerNameState(trimmed);
-    localStorage.setItem('pomini_player', trimmed);
-  };
+  }, []);
+
+  // No-op kept for API compatibility — auth name sync removed
+  const setPlayerNameFromAuth = useCallback((_name: string) => {}, []);
 
   return (
-    <PlayerNameContext.Provider value={{ playerName, setPlayerName }}>
+    <PlayerNameContext.Provider value={{ playerName, setPlayerName, setPlayerNameFromAuth }}>
       {children}
     </PlayerNameContext.Provider>
   );

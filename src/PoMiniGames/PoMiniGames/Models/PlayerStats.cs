@@ -13,6 +13,13 @@ public sealed class DifficultyStats
 
     /// <summary>Computed win rate - no need to store.</summary>
     public double WinRate => TotalGames > 0 ? (double)Wins / TotalGames : 0;
+
+    /// <summary>
+    /// ELO-style performance rating for this difficulty tier. Computed server-side
+    /// on every save and backfilled on leaderboard reads for legacy records.
+    /// Starts at 1000; beats against harder AI tiers yield larger gains.
+    /// </summary>
+    public int EloRating { get; set; }
 }
 
 /// <summary>

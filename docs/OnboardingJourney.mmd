@@ -1,0 +1,42 @@
+flowchart TD
+    Start(["New User\narrives at pominigames.app"])
+    CDN["CDN serves React SPA\nno install · no account needed\ntarget: sub-1s cold load"]
+    Home["Home Page\n8 game tiles visible\nanonymous access permitted"]
+    PickGame["Select a game\ne.g. Tic-Tac-Toe"]
+    ChooseDiff["Choose difficulty\nEasy / Medium / Hard"]
+    PlayAI["Play vs AI\nclient-side minimax logic\n100% offline-resilient"]
+    GameResult["Game Result\nWin / Loss / Draw"]
+    LocalSave["Stats saved to localStorage\nno API call required\nno account needed"]
+    AhaMoment{"Want more?\nLeaderboard or Multiplayer?"}
+    KeepPlaying["Explore all 8 games\nno friction required"]
+    SignIn["Click Sign In\nMSAL popup opens"]
+    MSConsent["Microsoft OAuth2\nPKCE consent screen\nno password stored by app"]
+    AuthSuccess["Authenticated\nDisplayName shown in header\nJWT stored in memory (12h)"]
+    SyncStats["Sync localStorage stats to API\nPUT /api/{game}/players/{name}/stats\n[Bearer JWT]"]
+    LeaderboardView["View Leaderboard\nGET /api/tictactoe/statistics/leaderboard\nTop 10 by WinRate"]
+    JoinLobby["Join Multiplayer Lobby\nWSS /api/hubs/lobby\n?access_token=JWT"]
+    Aha(["Aha Moment!\nReal-time PvP vs friend\nno server-side latency for moves"])
+
+    Start --> CDN --> Home --> PickGame --> ChooseDiff --> PlayAI --> GameResult --> LocalSave --> AhaMoment
+    AhaMoment -- "No — keep playing" --> KeepPlaying
+    AhaMoment -- "Yes" --> SignIn --> MSConsent --> AuthSuccess
+    AuthSuccess --> SyncStats --> LeaderboardView
+    AuthSuccess --> JoinLobby --> Aha
+
+    style Start fill:#107c10,stroke:#0a5c0a,color:#fff
+    style CDN fill:#0078d4,stroke:#005a9e,color:#fff
+    style Home fill:#1a6b8a,stroke:#0d4a66,color:#fff
+    style PickGame fill:#1a6b8a,stroke:#0d4a66,color:#fff
+    style ChooseDiff fill:#1a6b8a,stroke:#0d4a66,color:#fff
+    style PlayAI fill:#1a6b8a,stroke:#0d4a66,color:#fff
+    style GameResult fill:#1a6b8a,stroke:#0d4a66,color:#fff
+    style LocalSave fill:#107c10,stroke:#0a5c0a,color:#fff
+    style AhaMoment fill:#7a3b00,stroke:#4f2700,color:#fff
+    style KeepPlaying fill:#1a6b8a,stroke:#0d4a66,color:#fff
+    style SignIn fill:#7719aa,stroke:#4e0f72,color:#fff
+    style MSConsent fill:#7719aa,stroke:#4e0f72,color:#fff
+    style AuthSuccess fill:#7719aa,stroke:#4e0f72,color:#fff
+    style SyncStats fill:#0078d4,stroke:#005a9e,color:#fff
+    style LeaderboardView fill:#0078d4,stroke:#005a9e,color:#fff
+    style JoinLobby fill:#0078d4,stroke:#005a9e,color:#fff
+    style Aha fill:#107c10,stroke:#0a5c0a,color:#fff

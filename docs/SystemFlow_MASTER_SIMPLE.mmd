@@ -1,0 +1,30 @@
+flowchart LR
+    subgraph AuthFlow["Auth Flow"]
+        Login["MSAL Popup\nOAuth2 PKCE"]
+        JWT["JWT Bearer\n12h TTL"]
+    end
+
+    subgraph StatsFlow["Stats Flow"]
+        Play["Play Game\n(AI or multiplayer)"]
+        Save["UPSERT Stats\nSQLite via API"]
+        View["View Leaderboard\nTop 10 WinRate"]
+    end
+
+    subgraph MultiplayerFlow["Multiplayer Flow"]
+        Queue["Queue match\nPOST /api/multiplayer/queue"]
+        LobbyHub["Lobby SignalR\nWSS hub"]
+        GameHub["Real-time game\nSendRealtimeInput"]
+    end
+
+    Login --> JWT --> Play
+    Play --> Save --> View
+    Queue --> LobbyHub --> GameHub
+
+    style Login fill:#7719aa,stroke:#4e0f72,color:#fff
+    style JWT fill:#7719aa,stroke:#4e0f72,color:#fff
+    style Play fill:#1a6b8a,stroke:#0d4a66,color:#fff
+    style Save fill:#107c10,stroke:#0a5c0a,color:#fff
+    style View fill:#0078d4,stroke:#005a9e,color:#fff
+    style Queue fill:#1a6b8a,stroke:#0d4a66,color:#fff
+    style LobbyHub fill:#0078d4,stroke:#005a9e,color:#fff
+    style GameHub fill:#0078d4,stroke:#005a9e,color:#fff

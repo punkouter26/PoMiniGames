@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { Trophy } from 'lucide-react';
 import { apiService } from '../games/shared/apiService';
+import { localStorageService } from '../games/shared/localStorageService';
 import type { PlayerStatsDto } from '../games/shared/types';
 import './HomeHighScores.css';
 
@@ -16,55 +17,93 @@ const GAMES = [
 ] as const;
 
 type GameId = typeof GAMES[number]['id'];
+type Difficulty = 'all' | 'easy' | 'medium' | 'hard';
+
+const DIFFICULTIES: { id: Difficulty; label: string }[] = [
+  { id: 'all',    label: 'All' },
+  { id: 'easy',   label: 'Easy' },
+  { id: 'medium', label: 'Medium' },
+  { id: 'hard',   label: 'Hard' },
+];
+
+type CacheKey = `${GameId}:${Difficulty}`;
+
+function cacheKey(game: GameId, diff: Difficulty): CacheKey {
+  return `${game}:${diff}`;
+}
+
+function getRowMetric(entry: PlayerStatsDto, diff: Difficulty): { label: string; barFraction: number } {
+  if (diff === 'all') {
+    const pct = Math.round((entry.stats.winRate ?? 0) * 100);
+    return { label: `${pct}% · ${entry.stats.totalGames}G`, barFraction: entry.stats.winRate ?? 0 };
+  }
+  const bucket = entry.stats[diff];
+  const elo = bucket?.eloRating ?? 1000;
+  const games = bucket?.totalGames ?? 0;
+  return { label: `ELO ${elo} · ${games}G`, barFraction: Math.min(elo / 2000, 1) };
+}
 
 export default function HomeHighScores() {
   const [activeTab, setActiveTab] = useState<GameId>(GAMES[0].id);
-  const [cache, setCache] = useState<Partial<Record<GameId, PlayerStatsDto[]>>>({});
+  const [activeDiff, setActiveDiff] = useState<Difficulty>('all');
+  const [showDifficultyFilters, setShowDifficultyFilters] = useState(false);
+  const [cache, setCache] = useState<Partial<Record<CacheKey, PlayerStatsDto[]>>>({});
   const [isLoading, setIsLoading] = useState(false);
   const [apiAvailable, setApiAvailable] = useState<boolean | null>(null);
-  const loadedRef = useRef<Set<GameId>>(new Set());
+  const loadedRef = useRef<Set<CacheKey>>(new Set());
 
-  // Check API availability once on mount
   useEffect(() => {
     let mounted = true;
     apiService.isAvailable().then(ok => { if (mounted) setApiAvailable(ok); });
     return () => { mounted = false; };
   }, []);
 
-  const loadTab = useCallback(async (id: GameId) => {
-    if (apiAvailable === false) {
-      setCache(prev => ({ ...prev, [id]: [] }));
-      return;
+  const loadCombo = useCallback(async (id: GameId, diff: Difficulty) => {
+    const key = cacheKey(id, diff);
+    if (!cache[key]) {
+      const localDiff = diff !== 'all' ? diff : undefined;
+      const localEntries = localStorageService
+        .getLeaderboard(id, 10, localDiff)
+        .map(({ name, stats }) => ({ name, game: id, stats }) satisfies PlayerStatsDto);
+      setCache(prev => ({ ...prev, [key]: localEntries }));
     }
-    if (apiAvailable === null) return; // availability check not done yet
-    if (loadedRef.current.has(id)) return; // already loaded
-
-    loadedRef.current.add(id);
+    if (apiAvailable === false || apiAvailable === null) return;
+    if (loadedRef.current.has(key)) return;
+    loadedRef.current.add(key);
     setIsLoading(true);
-    const entries = (await apiService.getLeaderboard(id, 10)) ?? [];
-    setCache(prev => ({ ...prev, [id]: entries }));
+    const entries = await apiService.getLeaderboard(id, 10, diff);
+    if (entries !== null) setCache(prev => ({ ...prev, [key]: entries }));
     setIsLoading(false);
-  }, [apiAvailable]);
+  }, [apiAvailable, cache]);
 
   useEffect(() => {
-    void loadTab(activeTab);
-  }, [activeTab, loadTab]);
+    void loadCombo(activeTab, activeDiff);
+  }, [activeTab, activeDiff, loadCombo]);
 
-  const rawEntries = cache[activeTab] ?? null;
+  const key = cacheKey(activeTab, activeDiff);
+  const rawEntries = cache[key] ?? null;
   const entries = rawEntries && rawEntries.length === 0 ? null : rawEntries;
-  const topWinRate = entries && entries.length > 0
-    ? Math.max(...entries.map(e => e.stats.winRate ?? 0))
+  const topBarFraction = entries && entries.length > 0
+    ? Math.max(...entries.map(e => getRowMetric(e, activeDiff).barFraction))
     : 1;
 
   return (
-    <section className="home-highscores" aria-label="Top 10 high scores per game">
-      <h2 className="home-highscores-title">
-        <Trophy size={20} />
-        Top 10 High Scores
-      </h2>
+    <section id="highscores" className="home-highscores" aria-label="Top 10 high scores per game">
+      <div className="home-highscores-heading">
+        <h2 className="home-highscores-title">
+          <Trophy size={20} />
+          Top 10 High Scores
+        </h2>
+        <button
+          type="button"
+          className="home-highscores-filter-toggle"
+          onClick={() => setShowDifficultyFilters(v => !v)}
+        >
+          {showDifficultyFilters ? 'Hide difficulty' : 'Filter by difficulty'}
+        </button>
+      </div>
 
-      {/* Tab pills */}
-      <div className="home-highscores-tabs" role="tablist">
+      <div className="home-highscores-tabs" role="tablist" aria-label="Game">
         {GAMES.map(game => (
           <button
             key={game.id}
@@ -78,12 +117,26 @@ export default function HomeHighScores() {
         ))}
       </div>
 
-      {/* Leaderboard panel */}
+      {showDifficultyFilters && (
+        <div className="home-highscores-diff-tabs" role="tablist" aria-label="Difficulty">
+          {DIFFICULTIES.map(d => (
+            <button
+              key={d.id}
+              role="tab"
+              aria-selected={activeDiff === d.id}
+              className={`home-highscores-diff-tab${activeDiff === d.id ? ' active' : ''}`}
+              onClick={() => setActiveDiff(d.id)}
+            >
+              {d.label}
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className="home-highscores-panel" role="tabpanel">
-        {apiAvailable === null || (isLoading && entries === null) ? (
+        {isLoading && entries === null ? (
           <p className="home-highscores-empty">Loading...</p>
         ) : entries === null ? (
-          // No entries yet — show 10 placeholder rows with zero scores
           <ol className="home-highscores-list">
             {Array.from({ length: 10 }, (_, i) => (
               <li key={i} className="home-highscores-row home-highscores-row--empty">
@@ -91,39 +144,37 @@ export default function HomeHighScores() {
                 <div className="home-highscores-info">
                   <span className="home-highscores-name">---</span>
                   <div className="home-highscores-bar-wrap">
-                    <div className="home-highscores-bar" style={{ '--bar-w': '0%' } as React.CSSProperties} />
+                    <div className="home-highscores-bar" style={{ '--bar-w': '0%', '--bar-delay': `${i * 60}ms` } as React.CSSProperties} />
                   </div>
                 </div>
-                <span className="home-highscores-metric">0% · 0G</span>
+                <span className="home-highscores-metric">
+                  {activeDiff === 'all' ? '0% · 0G' : 'ELO 1000 · 0G'}
+                </span>
               </li>
             ))}
           </ol>
         ) : (
           <ol className="home-highscores-list">
             {entries.map((entry, index) => {
-              const pct = Math.round((entry.stats.winRate ?? 0) * 100);
-              const barWidth = topWinRate > 0 ? Math.round(((entry.stats.winRate ?? 0) / topWinRate) * 100) : 0;
+              const { label: metricLabel, barFraction } = getRowMetric(entry, activeDiff);
+              const barWidth = topBarFraction > 0 ? Math.round((barFraction / topBarFraction) * 100) : 0;
               const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : null;
               return (
                 <li
-                  key={`${activeTab}-${entry.name}-${entry.stats.playerId}-${index}`}
+                  key={`${activeTab}-${activeDiff}-${entry.name}-${entry.stats.playerId}-${index}`}
                   className={`home-highscores-row${medal ? ` home-highscores-row--rank${index + 1}` : ''}`}
                 >
-                  <span className="home-highscores-rank">
-                    {medal ?? `#${index + 1}`}
-                  </span>
+                  <span className="home-highscores-rank">{medal ?? `#${index + 1}`}</span>
                   <div className="home-highscores-info">
                     <span className="home-highscores-name">{entry.name}</span>
                     <div className="home-highscores-bar-wrap">
                       <div
                         className="home-highscores-bar"
-                        style={{ '--bar-w': `${barWidth}%` } as React.CSSProperties}
+                        style={{ '--bar-w': `${barWidth}%`, '--bar-delay': `${index * 60}ms` } as React.CSSProperties}
                       />
                     </div>
                   </div>
-                  <span className="home-highscores-metric">
-                    {pct}% · {entry.stats.totalGames}G
-                  </span>
+                  <span className="home-highscores-metric">{metricLabel}</span>
                 </li>
               );
             })}
@@ -133,3 +184,4 @@ export default function HomeHighScores() {
     </section>
   );
 }
+

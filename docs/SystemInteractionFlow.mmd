@@ -1,0 +1,52 @@
+sequenceDiagram
+    participant P1 as "Player 1 (Host Browser)"
+    participant P2 as "Player 2 (Browser)"
+    participant API as ".NET 10 API"
+    participant Lobby as "LobbyHub (WSS)"
+    participant MP as "MultiplayerHub (WSS)"
+    participant DB as "SQLite"
+
+    Note over P1,API: Matchmaking Queue
+    P1->>API: POST /api/multiplayer/queue {gameKey:"tictactoe"} [Bearer]
+    API-->>P1: {matchId:"uuid-1", status:"waiting"}
+    P2->>API: POST /api/multiplayer/queue {gameKey:"tictactoe"} [Bearer]
+    API-->>P2: {matchId:"uuid-1", status:"waiting"}
+
+    Note over P1,Lobby: Lobby Formation via LobbyHub
+    P1->>Lobby: Connect WSS + JoinGroup(matchId) [?access_token=JWT]
+    Lobby-->>P1: LobbyUpdated {isHost:true, players:[P1], matchId}
+    P2->>Lobby: Connect WSS + JoinGroup(matchId) [?access_token=JWT]
+    Lobby-->>P1: LobbyUpdated {players:[P1,P2]}
+    Lobby-->>P2: LobbyUpdated {players:[P1,P2]}
+
+    Note over P1,Lobby: Host Starts Game (host-only operation)
+    P1->>Lobby: StartGame("tictactoe")
+    Lobby-->>P1: GameStarting {gameKey:"tictactoe"}
+    Lobby-->>P2: GameStarting {gameKey:"tictactoe"}
+
+    Note over P1,MP: Real-time Move Sync via MultiplayerHub
+    P1->>MP: Connect WSS /api/hubs/multiplayer [?access_token=JWT]
+    P2->>MP: Connect WSS /api/hubs/multiplayer [?access_token=JWT]
+    MP-->>P1: Connected — JoinGroup(matchId)
+    MP-->>P2: Connected — JoinGroup(matchId)
+
+    P1->>MP: SendRealtimeInput(matchId, {row:0, col:1})
+    MP-->>P2: RealtimeInput {fromUserId:P1, fromDisplayName, payload:{row:0,col:1}, sentAt}
+    P2->>MP: SendRealtimeInput(matchId, {row:1, col:1})
+    MP-->>P1: RealtimeInput {fromUserId:P2, fromDisplayName, payload:{row:1,col:1}, sentAt}
+
+    Note over P1,P2: Conflict resolution: each client applies opponent moves locally
+    Note over P1,P2: No server-side state arbitration — eventual consistency model
+
+    Note over P1,DB: Game Complete — Record Stats (both players)
+    P1->>API: PUT /api/tictactoe/players/{name}/stats [Bearer]
+    API->>DB: UPSERT PlayerStats (Game=tictactoe, winner stats)
+    DB-->>API: OK
+    API-->>P1: 200 updated stats
+    P2->>API: PUT /api/tictactoe/players/{name}/stats [Bearer]
+    API->>DB: UPSERT PlayerStats (Game=tictactoe, loser stats)
+    DB-->>API: OK
+    API-->>P2: 200 updated stats
+
+    Note over MP: Spectator flow: any authenticated user
+    Note over MP: JoinSpectatorGroup(matchId) receives all RealtimeInput events read-only

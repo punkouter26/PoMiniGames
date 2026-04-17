@@ -52,9 +52,9 @@ function makeEntry(name: string, wins: number, total: number): PlayerStatsDto {
     stats: {
       playerId: `id-${name}`,
       playerName: name,
-      easy: { wins, losses: total - wins, draws: 0, totalGames: total, winStreak: 0, winRate: rate },
-      medium: { wins: 0, losses: 0, draws: 0, totalGames: 0, winStreak: 0, winRate: 0 },
-      hard: { wins: 0, losses: 0, draws: 0, totalGames: 0, winStreak: 0, winRate: 0 },
+      easy: { wins, losses: total - wins, draws: 0, totalGames: total, winStreak: 0, winRate: rate, eloRating: 1000 },
+      medium: { wins: 0, losses: 0, draws: 0, totalGames: 0, winStreak: 0, winRate: 0, eloRating: 1000 },
+      hard: { wins: 0, losses: 0, draws: 0, totalGames: 0, winStreak: 0, winRate: 0, eloRating: 1000 },
       totalWins: wins,
       totalLosses: total - wins,
       totalDraws: 0,
@@ -129,7 +129,7 @@ describe('HomeHighScores – game labels', () => {
     await waitFor(() => {
       expect(mockGetLeaderboard).toHaveBeenCalledTimes(1);
     });
-    expect(mockGetLeaderboard).toHaveBeenCalledWith('connectfive', 10);
+    expect(mockGetLeaderboard).toHaveBeenCalledWith('connectfive', 10, 'all');
   });
 });
 

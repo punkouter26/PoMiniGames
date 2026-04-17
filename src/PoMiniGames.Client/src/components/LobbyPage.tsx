@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Crown, Loader2, LogIn, Users, Gamepad2, ArrowLeft } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { usePlayerName } from '../context/PlayerNameContext';
@@ -18,11 +18,13 @@ const FALLBACK_GAME_OPTIONS: GameOption[] = [
 
 export default function LobbyPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const preselectedGame = searchParams.get('game') ?? 'tictactoe';
   const { config, isAuthenticated, isLoading: authLoading, signIn, devBypass, user } = useAuth();
   const { playerName, setPlayerName } = usePlayerName();
   const { players, hostUserId, isConnected, isBusy, error, startGame } = useLobby();
   const [gameOptions, setGameOptions] = useState<GameOption[]>(FALLBACK_GAME_OPTIONS);
-  const [selectedGame, setSelectedGame] = useState<string>('tictactoe');
+  const [selectedGame, setSelectedGame] = useState<string>(preselectedGame);
   const [joiningName, setJoiningName] = useState(playerName);
   const [isJoining, setIsJoining] = useState(false);
 
@@ -98,7 +100,8 @@ export default function LobbyPage() {
             </div>
           )}
 
-          {canUseMicrosoft && (
+          {/* Microsoft sign-in only shown in production (when anon is unavailable) */}
+          {canUseMicrosoft && !canUseAnon && (
             <button className="lobby-btn-microsoft" onClick={() => void signIn()}>
               <LogIn size={16} /> Sign in with Microsoft
             </button>
@@ -166,43 +169,26 @@ export default function LobbyPage() {
           )}
         </div>
 
-        {/* Game picker — host only, 2+ players */}
-        {isHost && players.length >= 2 && (
+        {/* Game badge — always visible once 2+ players are in lobby */}
+        {players.length >= 2 && (
           <div className="lobby-start-section">
-            <h2 className="lobby-section-title">Choose a Game</h2>
-            <div className="lobby-game-options">
-              {gameOptions.map((g) => (
-                <label
-                  key={g.key}
-                  className={`lobby-game-option${selectedGame === g.key ? ' lobby-game-option--selected' : ''}`}
-                >
-                  <input
-                    type="radio"
-                    name="game"
-                    value={g.key}
-                    checked={selectedGame === g.key}
-                    onChange={() => setSelectedGame(g.key)}
-                  />
-                  <span>{g.label}</span>
-                </label>
-              ))}
+            <h2 className="lobby-section-title">Selected Game</h2>
+            <div className="lobby-selected-game-badge">
+              <Gamepad2 size={16} />
+              <span>{gameOptions.find(g => g.key === selectedGame)?.label ?? selectedGame}</span>
             </div>
-            <button
-              className="lobby-btn-primary lobby-btn-start"
-              disabled={!canStart}
-              onClick={() => void startGame(selectedGame)}
-            >
-              {isBusy ? <Loader2 size={16} className="lobby-spin" /> : <Gamepad2 size={16} />}
-              Start Game →
-            </button>
-          </div>
-        )}
-
-        {/* Waiting for host — non-host, 2+ players */}
-        {!isHost && players.length >= 2 && (
-          <div className="lobby-waiting-start">
-            <Loader2 size={16} className="lobby-spin" />
-            <span>Waiting for the host to start the game...</span>
+            {isHost ? (
+              <button
+                className="lobby-btn-primary lobby-btn-start"
+                disabled={!canStart}
+                onClick={() => void startGame(selectedGame)}
+              >
+                {isBusy ? <Loader2 size={16} className="lobby-spin" /> : <Gamepad2 size={16} />}
+                Start Game →
+              </button>
+            ) : (
+              <p className="lobby-waiting-hint">Waiting for the host to start&hellip;</p>
+            )}
           </div>
         )}
 

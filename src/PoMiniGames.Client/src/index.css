@@ -2,11 +2,11 @@
    PoMiniGames Design System - 2025/2026
    =========================================== */
 
-/* ─── Tailwind v4 (required by PoRaceRagdoll & utility classes) ─ */
-@import "tailwindcss";
-
 /* ─── Inter font from Google Fonts ────────────────────────────── */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+/* ─── Tailwind v4 (required by PoRaceRagdoll & utility classes) ─ */
+@import "tailwindcss";
 
 :root {
   /* ─── Color Palette ─────────────────────────────────────── */

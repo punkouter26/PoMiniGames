@@ -1,7 +1,28 @@
-import type { ReactNode } from 'react';
+import { useRef, useState, useEffect, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Home, RefreshCw, Settings, WifiOff } from 'lucide-react';
+import { apiService } from './apiService';
 import './GamePageShell.css';
+
+export interface StatItem {
+  value: number | string;
+  label: string;
+}
+
+/** Pings the backend once on mount; re-checks every 15 s while the tab is visible. */
+function useIsOffline(): boolean {
+  const [offline, setOffline] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    const check = () =>
+      apiService.isAvailable().then(ok => { if (!cancelled) setOffline(!ok); });
+
+    void check();
+    const id = window.setInterval(check, 15_000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, []);
+  return offline;
+}
 
 export interface StatItem {
   value: number | string;
@@ -25,6 +46,10 @@ interface GamePageShellProps {
   backTo?: string;
   /** Brief keyboard hint shown in info bar e.g. "WASD · ESC Pause" */
   keyboardHint?: string;
+  /** When true, shows a "Play Again / Home" bar at the bottom */
+  gameOver?: boolean;
+  /** Called when user taps "Play Again" */
+  onPlayAgain?: () => void;
   children: ReactNode;
 }
 
@@ -37,13 +62,45 @@ export function GamePageShell({
   fullscreen = false,
   backTo,
   keyboardHint,
+  gameOver = false,
+  onPlayAgain,
   children,
 }: GamePageShellProps) {
   const navigate = useNavigate();
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const drawerRef = useRef<HTMLDivElement>(null);
+  const isOffline = useIsOffline();
+
+  // Close drawer on outside click
+  useEffect(() => {
+    if (!drawerOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (!drawerRef.current?.contains(e.target as Node)) {
+        setDrawerOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [drawerOpen]);
+
+  // UX #10: Escape key navigates back
+  useEffect(() => {
+    if (!backTo) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !drawerOpen) {
+        void navigate(backTo);
+      }
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [backTo, navigate, drawerOpen]);
+
+  const hasDrawerContent = !!(controls || (stats && stats.length > 0) || keyboardHint);
+
   return (
     <div className="gps-shell">
       <div className="gps-info-bar">
-        {/* ── Left: back button + title + player ───────────────── */}
+        {/* Left: back button + title + player */}
         <div className="gps-info-left">
           {backTo && (
             <button className="gps-back-btn" onClick={() => navigate(backTo)} aria-label="Go back">
@@ -54,34 +111,78 @@ export function GamePageShell({
           {player && <span className="gps-player">{player}</span>}
         </div>
 
-        {/* ── Center: status + controls ───────────────────── */}
-        {(status || controls) && (
+        {/* Center: status only */}
+        {status && (
           <div className="gps-info-center">
             {status}
-            {controls && <div className="gps-controls">{controls}</div>}
           </div>
         )}
 
-        {/* ── Right: stats + keyboard hint ────────────────────── */}
-        {((stats && stats.length > 0) || keyboardHint) && (
-          <div className="gps-info-right">
-            {stats?.map((s) => (
-              <div key={s.label} className="gps-stat">
-                <span className="gps-stat-value">{s.value}</span>
-                <span className="gps-stat-label">{s.label}</span>
+        {/* Offline indicator — shown when the API is not reachable */}
+        {isOffline && (
+          <span className="gps-offline-badge" title="Server offline — scores won't sync">
+            <WifiOff size={11} />
+            Offline
+          </span>
+        )}
+
+        {/* Right: settings gear + slide-out drawer for controls & stats */}
+        {hasDrawerContent && (
+          <div className="gps-settings-wrap" ref={drawerRef}>
+            <button
+              className={`gps-settings-btn${drawerOpen ? ' active' : ''}`}
+              onClick={() => setDrawerOpen(v => !v)}
+              aria-label="Game settings and stats"
+              aria-expanded={drawerOpen}
+            >
+              <Settings size={15} />
+            </button>
+
+            {drawerOpen && (
+              <div className="gps-settings-drawer" role="dialog" aria-label="Game settings">
+                {stats && stats.length > 0 && (
+                  <div className="gps-drawer-stats">
+                    {stats.map((s) => (
+                      <div key={s.label} className="gps-stat">
+                        {/* keying on value causes React to remount the span, re-triggering pop animation */}
+                        <span key={String(s.value)} className="gps-stat-value">{s.value}</span>
+                        <span className="gps-stat-label">{s.label}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {controls && (
+                  <div className="gps-drawer-controls gps-controls">{controls}</div>
+                )}
+                {keyboardHint && (
+                  <div className="gps-drawer-kbd">{keyboardHint}</div>
+                )}
               </div>
-            ))}
-            {keyboardHint && (
-              <span className="gps-kbd-hint">{keyboardHint}</span>
             )}
           </div>
         )}
       </div>
 
-      {/* ── Game area ─────────────────────────────────────── */}
+      {/* Game area */}
       <div className={`gps-game-area${fullscreen ? ' gps-game-area--fullscreen' : ''}`}>
         {children}
       </div>
+
+      {/* UX #6: Play Again bar — slides up when game ends */}
+      {gameOver && (
+        <div className="gps-play-again-bar" role="complementary" aria-label="Game over actions">
+          {onPlayAgain && (
+            <button className="gps-play-again-btn gps-play-again-btn--primary" onClick={onPlayAgain}>
+              <RefreshCw size={15} /> Play Again
+            </button>
+          )}
+          {backTo && (
+            <button className="gps-play-again-btn gps-play-again-btn--secondary" onClick={() => void navigate(backTo)}>
+              <Home size={15} /> Home
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -1,0 +1,84 @@
+flowchart TD
+    subgraph ClientLayer["Client Layer (Browser)"]
+        ReactApp["React 18 SPA\nVite + TypeScript + Tailwind v4"]
+        MSALLib["@azure/msal-browser\nOAuth2 PKCE · in-memory token cache"]
+        SignalRLib["@microsoft/signalr v10\nWSS connection lifecycle · auto-reconnect"]
+        APIService["apiService.ts\nfetch() wrapper + offline fallback\nerror boundary + retry"]
+        LocalStore["localStorage\noffline stats cache · sync queue"]
+    end
+
+    subgraph APILayer["API Layer (.NET 10 — App Service B1)"]
+        MinAPI["Minimal API Router\nEndpoint routing + middleware stack\nSerilog · OpenTelemetry · Rate limiting"]
+        AuthF["Auth Feature\nGET /api/auth/me\nPOST /api/auth/dev-login (dev only)"]
+        LeaderF["Leaderboard Feature\nGET /api/{game}/statistics/leaderboard\nPUT /api/{game}/players/{name}/stats"]
+        HSF["HighScore Feature\nGET|POST /api/snake/highscores\nGET|POST /api/podropsquare/highscores"]
+        MPF["Multiplayer Feature\nPOST /api/multiplayer/queue"]
+        LobbyF["Lobby Feature\n/api/lobby endpoints"]
+        RaceF["PoRaceRagdoll Feature\n/api/game/* session endpoints"]
+        HealthF["Health Feature\nGET /api/health\nGET /api/health/ping\nGET /diag (dev only)"]
+        LobbyHubSvc["LobbyHub\nWSS /api/hubs/lobby\nHost election · GameStarting · LobbyUpdated"]
+        MPHubSvc["MultiplayerHub\nWSS /api/hubs/multiplayer\nSendRealtimeInput · RealtimeInput broadcast\nJoinSpectatorGroup"]
+    end
+
+    subgraph ServiceLayer["Application Services"]
+        StorageSvc["StorageService\nSQLite ADO.NET\nUPSERT PlayerStats · INSERT HighScores"]
+        MPSvc["MultiplayerService\nIn-memory match state\nqueue management · matchId allocation"]
+        LobbySvc["LobbyService\nIn-memory lobby state\nhost election · connection tracking"]
+    end
+
+    subgraph ExternalDeps["External Dependencies"]
+        SQLiteDB[("SQLite\n/home/data/pominigames.db\nshared App Service disk")]
+        KeyVaultExt["Azure Key Vault\nkv-poshared\nManaged Identity — no credentials stored"]
+        AppInsExt["Application Insights\nOpenTelemetry OTLP\nTraces · Exceptions · Metrics"]
+        MSIDExt["Microsoft Identity\nJWT Bearer validation\nOAuth2 / OIDC token endpoint"]
+    end
+
+    ReactApp --> APIService
+    ReactApp --> MSALLib
+    ReactApp --> SignalRLib
+    MSALLib --> MSIDExt
+    APIService --> LocalStore
+    APIService --> MinAPI
+    SignalRLib --> LobbyHubSvc
+    SignalRLib --> MPHubSvc
+    MinAPI --> AuthF
+    MinAPI --> LeaderF
+    MinAPI --> HSF
+    MinAPI --> MPF
+    MinAPI --> LobbyF
+    MinAPI --> RaceF
+    MinAPI --> HealthF
+    AuthF --> MSIDExt
+    LeaderF --> StorageSvc
+    HSF --> StorageSvc
+    MPF --> MPSvc
+    LobbyF --> LobbySvc
+    LobbyHubSvc --> LobbySvc
+    MPHubSvc --> MPSvc
+    StorageSvc --> SQLiteDB
+    MPSvc --> SQLiteDB
+    MinAPI -- "startup: fetch secrets" --> KeyVaultExt
+    MinAPI -- "OTLP traces + metrics" --> AppInsExt
+
+    style ReactApp fill:#1a6b8a,stroke:#0d4a66,color:#fff
+    style MSALLib fill:#7719aa,stroke:#4e0f72,color:#fff
+    style SignalRLib fill:#0078d4,stroke:#005a9e,color:#fff
+    style APIService fill:#1a6b8a,stroke:#0d4a66,color:#fff
+    style LocalStore fill:#7a3b00,stroke:#4f2700,color:#fff
+    style MinAPI fill:#0078d4,stroke:#005a9e,color:#fff
+    style AuthF fill:#0078d4,stroke:#005a9e,color:#fff
+    style LeaderF fill:#0078d4,stroke:#005a9e,color:#fff
+    style HSF fill:#0078d4,stroke:#005a9e,color:#fff
+    style MPF fill:#0078d4,stroke:#005a9e,color:#fff
+    style LobbyF fill:#0078d4,stroke:#005a9e,color:#fff
+    style RaceF fill:#0078d4,stroke:#005a9e,color:#fff
+    style HealthF fill:#0078d4,stroke:#005a9e,color:#fff
+    style LobbyHubSvc fill:#004578,stroke:#003366,color:#fff
+    style MPHubSvc fill:#004578,stroke:#003366,color:#fff
+    style StorageSvc fill:#107c10,stroke:#0a5c0a,color:#fff
+    style MPSvc fill:#107c10,stroke:#0a5c0a,color:#fff
+    style LobbySvc fill:#107c10,stroke:#0a5c0a,color:#fff
+    style SQLiteDB fill:#107c10,stroke:#0a5c0a,color:#fff
+    style KeyVaultExt fill:#7a3b00,stroke:#4f2700,color:#fff
+    style AppInsExt fill:#7a3b00,stroke:#4f2700,color:#fff
+    style MSIDExt fill:#7719aa,stroke:#4e0f72,color:#fff

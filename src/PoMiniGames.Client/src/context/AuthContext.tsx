@@ -17,6 +17,7 @@ import {
 } from './authStorage';
 import { useDevAuth } from './useDevAuth';
 import { useMsalAuth } from './useMsalAuth';
+import { statsService } from '../games/shared/statsService';
 
 interface AuthContextType {
   config: AuthClientConfiguration | null;
@@ -56,6 +57,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const msalAuth = useMsalAuth(config);
   const devAuth = useDevAuth(config);
+
+  // Flush any stats syncs that failed while the user was offline or unauthenticated.
+  useEffect(() => {
+    if (user) {
+      void statsService.flushPendingSync();
+    }
+  }, [user]);
 
   useEffect(() => {
     let cancelled = false;

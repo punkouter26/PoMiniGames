@@ -88,6 +88,9 @@ internal interface IMultiplayerGameAdapter
 
 internal sealed class MutableMultiplayerMatch
 {
+    /// <summary>Per-match synchronisation primitive for match-specific operations.</summary>
+    public readonly object Lock = new();
+
     public required string MatchId { get; init; }
 
     public required string GameKey { get; init; }

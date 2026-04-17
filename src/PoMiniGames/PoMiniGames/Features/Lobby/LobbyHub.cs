@@ -98,5 +98,22 @@ public sealed class LobbyHub : Hub
         _multiplayerService.GetSupportedGames()
             .Any(g => string.Equals(g.GameKey, gameKey, StringComparison.OrdinalIgnoreCase)
                       && g.EnabledForQueue);
+
+    /// <summary>
+    /// Called by a reconnected client to pull a fresh lobby snapshot without waiting
+    /// for the next server-initiated push.
+    /// </summary>
+    public async Task RequestSnapshot()
+    {
+        if (_lobbyService.IsStarting)
+        {
+            await Clients.Caller.SendAsync("GameAlreadyStarted", new { gameKey = _lobbyService.StartingGameKey });
+        }
+        else
+        {
+            var snapshot = _lobbyService.GetSnapshot();
+            await Clients.Caller.SendAsync("LobbyUpdated", snapshot);
+        }
+    }
 }
 

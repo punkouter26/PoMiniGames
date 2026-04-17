@@ -1,5 +1,3 @@
-// @ts-nocheck
-// TODO: Remove @ts-nocheck and add proper TypeScript types (type-safety technical debt)
 /**
  * Graphics Quality Settings Manager
  * Allows runtime toggling between 4 quality presets via 1-4 keys
@@ -73,9 +71,10 @@ export class QualitySettings {
         '1': 'low',
       };
 
-      if (keyMap[event.key]) {
+      const level = keyMap[event.key];
+      if (level) {
         event.preventDefault();
-        this.setQuality(keyMap[event.key]);
+        this.setQuality(level);
       }
     });
   }
@@ -88,8 +87,6 @@ export class QualitySettings {
 
     // Notify all listeners (UIManager, Renderer, etc.)
     this.listeners.forEach(callback => callback(level, preset));
-
-    console.log(`[Graphics] Quality changed to ${level.toUpperCase()}`, preset);
   }
 
   public getQuality(): QualityLevel {

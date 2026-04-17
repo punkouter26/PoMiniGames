@@ -1,5 +1,3 @@
-// @ts-nocheck
-// TODO: Remove @ts-nocheck and add proper TypeScript types (type-safety technical debt)
 /**
  * Modern UI Management System
  * Adapted for embedded use within PoMiniGames — all DOM elements are appended to
@@ -372,7 +370,7 @@ export class UIManager {
     const qualityNames = ['Low', 'Medium', 'High'];
     graphicsSlider.onchange = (e: Event) => {
       const val = parseInt((e.target as HTMLInputElement).value);
-      graphicsValue.textContent = qualityNames[val];
+      graphicsValue.textContent = qualityNames[val] ?? '';
     };
     graphicsGroup.appendChild(graphicsSlider);
 

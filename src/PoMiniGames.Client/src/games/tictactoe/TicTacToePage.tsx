@@ -18,6 +18,8 @@ export default function TicTacToePage() {
       title={<><X size={14} color="#ff5252" strokeWidth={2.5} /> Tic Tac Toe</>}
       player={playerName}
       backTo="/"
+      gameOver={gameResult !== GameResult.InProgress && playMode !== 'demo'}
+      onPlayAgain={resetGame}
       status={
         <span className={`gps-status-badge ${status.className}`}>
           {status.icon} {status.text}

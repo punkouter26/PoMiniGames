@@ -1,0 +1,78 @@
+flowchart LR
+    subgraph Ingestion["Ingestion (Client-Side Events)"]
+        GameMove["Game Move\nclient-side logic\nresult computed locally"]
+        StatEvent["Stat Event\nPUT /api/{game}/players/{name}/stats\n[Bearer JWT required]"]
+        HSEvent["High Score Event\nPOST /api/snake|podropsquare/highscores\n[rate-limited 10 req/min/IP]"]
+        MPInput["SignalR Input\nSendRealtimeInput(matchId, payload)\n[JWT via ?access_token]"]
+        LocalCache["localStorage Buffer\noffline stats cache\nsync queue for recovery"]
+    end
+
+    subgraph Processing["Processing (API Layer — .NET 10)"]
+        RateCheck["Rate Limiter\n10 req/min/IP fixed window\nHTTP 429 on exceed"]
+        AuthCheck["JWT Validation\nMicrosoft Identity token check\nHTTP 401 on fail"]
+        InputSan["Input Sanitization\nSQL injection char check\nHTTP 400 on violation"]
+        UpsertOp["UPSERT PlayerStats\nGame + PlayerName composite PK\nStatsJson per difficulty merged"]
+        InsertOp["INSERT HighScore\nSnake or PoDropSquare table\nvalidated payload"]
+        BroadcastOp["SignalR Broadcast\nRealtimeInput to match group\nall connected clients"]
+        ComputeWR["Compute WinRate\nWins / TotalGames * 100\ncomputed on read — not stored"]
+        TelEmit["Telemetry Emit\nOpenTelemetry trace + metrics\nlatency · userId · operation"]
+    end
+
+    subgraph Persistence["Persistence (SQLite on App Service disk)"]
+        PlayerStatsT[("PlayerStats\nGame+PlayerName PK\nStatsJson blob")]
+        SnakeHST[("SnakeHighScores\nScore DESC index")]
+        DropHST[("PoDropSquareHighScores\nSurvivalTime DESC index")]
+        MatchT[("MultiplayerMatch\nMatchId PK\nStatus + GameState JSON")]
+    end
+
+    subgraph Egress["Egress (API Responses + Real-time Push)"]
+        LeaderboardOut["GET /leaderboard\nTop 10 WinRate DESC\nJSON array response"]
+        HSOut["GET /highscores\nTop 10 Score DESC\nJSON array response"]
+        RealtimeOut["SignalR broadcast\nRealtimeInput event\nto all match clients"]
+        AppInsOut["Application Insights\nTraces · Exceptions · Metrics\nvia OpenTelemetry OTLP"]
+    end
+
+    GameMove --> LocalCache
+    LocalCache -- "online sync" --> StatEvent
+    StatEvent --> RateCheck
+    HSEvent --> RateCheck
+    MPInput --> AuthCheck
+    RateCheck --> AuthCheck
+    AuthCheck --> InputSan
+    InputSan --> UpsertOp
+    InputSan --> InsertOp
+    AuthCheck --> BroadcastOp
+    UpsertOp --> ComputeWR
+    ComputeWR --> PlayerStatsT
+    InsertOp --> SnakeHST
+    InsertOp --> DropHST
+    BroadcastOp --> MatchT
+    BroadcastOp --> RealtimeOut
+    UpsertOp --> TelEmit
+    InsertOp --> TelEmit
+    TelEmit --> AppInsOut
+    PlayerStatsT --> LeaderboardOut
+    SnakeHST --> HSOut
+    DropHST --> HSOut
+
+    style GameMove fill:#1a6b8a,stroke:#0d4a66,color:#fff
+    style StatEvent fill:#1a6b8a,stroke:#0d4a66,color:#fff
+    style HSEvent fill:#1a6b8a,stroke:#0d4a66,color:#fff
+    style MPInput fill:#1a6b8a,stroke:#0d4a66,color:#fff
+    style LocalCache fill:#7a3b00,stroke:#4f2700,color:#fff
+    style RateCheck fill:#d83b01,stroke:#a52b00,color:#fff
+    style AuthCheck fill:#7719aa,stroke:#4e0f72,color:#fff
+    style InputSan fill:#d83b01,stroke:#a52b00,color:#fff
+    style UpsertOp fill:#0078d4,stroke:#005a9e,color:#fff
+    style InsertOp fill:#0078d4,stroke:#005a9e,color:#fff
+    style BroadcastOp fill:#0078d4,stroke:#005a9e,color:#fff
+    style ComputeWR fill:#0078d4,stroke:#005a9e,color:#fff
+    style TelEmit fill:#7a3b00,stroke:#4f2700,color:#fff
+    style PlayerStatsT fill:#107c10,stroke:#0a5c0a,color:#fff
+    style SnakeHST fill:#107c10,stroke:#0a5c0a,color:#fff
+    style DropHST fill:#107c10,stroke:#0a5c0a,color:#fff
+    style MatchT fill:#107c10,stroke:#0a5c0a,color:#fff
+    style LeaderboardOut fill:#0078d4,stroke:#005a9e,color:#fff
+    style HSOut fill:#0078d4,stroke:#005a9e,color:#fff
+    style RealtimeOut fill:#0078d4,stroke:#005a9e,color:#fff
+    style AppInsOut fill:#7a3b00,stroke:#4f2700,color:#fff

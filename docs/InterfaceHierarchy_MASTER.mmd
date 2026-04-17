@@ -1,0 +1,100 @@
+flowchart TD
+    subgraph AppRoot["App Root"]
+        AppTsx["App.tsx\nReact Router v6 BrowserRouter\nRoute definitions + lazy loading"]
+        AuthCtx["AuthContext\nMSAL instance · isAuthenticated\ndisplayName · token · PlayerNameContext"]
+    end
+
+    subgraph RouteViews["Route Views (8 games + home)"]
+        HomeR["/ Home\nGameTile x8 grid\nAuthButton + player name input"]
+        TicR["/tictactoe\nBoard + AI selector + Leaderboard"]
+        ConR["/connectfive\n6x5 grid + AI + Leaderboard"]
+        FightR["/pofight\n2D arena (external SWA iframe)"]
+        SnakeR["/posnakegame\nCanvas + Lobby + live sync"]
+        DropR["/podropsquare\nMatter.js physics board"]
+        BabyR["/pobabytouch\nBubble pop (external SWA iframe)"]
+        RaceR["/poraceragdoll\nCannon.js track + betting lobby"]
+        VoxelR["/voxelshooter\nThree.js WebGL 3D map"]
+    end
+
+    subgraph SharedUI["Shared Components (components/)"]
+        GameLayout["GameLayout\nheader + nav + footer wrapper\nconsistent chrome across all games"]
+        LobbyComp["Lobby Component\nSignalR WSS connection\nhost controls + player list"]
+        LeaderComp["Leaderboard Component\nGET /api/{game}/statistics/leaderboard\nTop 10 WinRate table"]
+        AuthBtn["AuthButton\nMSAL popup trigger\nsign-in / sign-out"]
+    end
+
+    subgraph GameMods["Game Modules (games/)"]
+        TicGame["tictactoe/\nMinimaxAI (Hard)\nHeuristicAI (Med/Easy)\n3x3 board logic"]
+        ConGame["connectfive/\nHeuristic win-detect AI\n6x5 grid + gravity logic"]
+        FightGame["pofight/\nCPU fighter opponent\nproud-pebble SWA"]
+        SnakeGame["posnakegame/\nCanvas renderer\n30s battle arena + multiplayer sync"]
+        DropGame["podropsquare/\nMatter.js physics\nSurvival timer + high score"]
+        BabyGame["pobabytouch/\nBubble pop tap game\ngray-coast SWA"]
+        RaceGame["poraceragdoll/\nCannon-ES physics track\nBetting system + lobby"]
+        VoxelGame["voxelshooter/\nThree.js + WebGL\nFPS-style 3D map"]
+    end
+
+    subgraph StateLayer["State + API Layer"]
+        APISvc["apiService.ts\nfetch() with offline fallback\nlocalStorage cache + error boundary"]
+        SignalRHook["useSignalR hook\nWSS connection lifecycle\nauto-reconnect + event subscriptions"]
+        LocalSt["localStorage\nstats cache · sync queue\noffline-resilient buffer"]
+    end
+
+    AppTsx --> AuthCtx
+    AuthCtx --> HomeR
+    AuthCtx --> TicR
+    AuthCtx --> ConR
+    AuthCtx --> FightR
+    AuthCtx --> SnakeR
+    AuthCtx --> DropR
+    AuthCtx --> BabyR
+    AuthCtx --> RaceR
+    AuthCtx --> VoxelR
+    HomeR --> GameLayout
+    HomeR --> AuthBtn
+    TicR --> GameLayout
+    TicR --> TicGame
+    TicR --> LeaderComp
+    ConR --> ConGame
+    ConR --> LeaderComp
+    FightR --> FightGame
+    SnakeR --> SnakeGame
+    SnakeR --> LobbyComp
+    DropR --> DropGame
+    BabyR --> BabyGame
+    RaceR --> RaceGame
+    RaceR --> LobbyComp
+    VoxelR --> VoxelGame
+    TicGame --> APISvc
+    ConGame --> APISvc
+    SnakeGame --> SignalRHook
+    RaceGame --> SignalRHook
+    LobbyComp --> SignalRHook
+    APISvc --> LocalSt
+
+    style AppTsx fill:#1a6b8a,stroke:#0d4a66,color:#fff
+    style AuthCtx fill:#7719aa,stroke:#4e0f72,color:#fff
+    style HomeR fill:#1a6b8a,stroke:#0d4a66,color:#fff
+    style TicR fill:#1a6b8a,stroke:#0d4a66,color:#fff
+    style ConR fill:#1a6b8a,stroke:#0d4a66,color:#fff
+    style FightR fill:#1a6b8a,stroke:#0d4a66,color:#fff
+    style SnakeR fill:#1a6b8a,stroke:#0d4a66,color:#fff
+    style DropR fill:#1a6b8a,stroke:#0d4a66,color:#fff
+    style BabyR fill:#1a6b8a,stroke:#0d4a66,color:#fff
+    style RaceR fill:#1a6b8a,stroke:#0d4a66,color:#fff
+    style VoxelR fill:#1a6b8a,stroke:#0d4a66,color:#fff
+    style GameLayout fill:#0078d4,stroke:#005a9e,color:#fff
+    style LobbyComp fill:#0078d4,stroke:#005a9e,color:#fff
+    style LeaderComp fill:#0078d4,stroke:#005a9e,color:#fff
+    style AuthBtn fill:#7719aa,stroke:#4e0f72,color:#fff
+    style TicGame fill:#107c10,stroke:#0a5c0a,color:#fff
+    style ConGame fill:#107c10,stroke:#0a5c0a,color:#fff
+    style FightGame fill:#107c10,stroke:#0a5c0a,color:#fff
+    style SnakeGame fill:#107c10,stroke:#0a5c0a,color:#fff
+    style DropGame fill:#107c10,stroke:#0a5c0a,color:#fff
+    style BabyGame fill:#107c10,stroke:#0a5c0a,color:#fff
+    style RaceGame fill:#107c10,stroke:#0a5c0a,color:#fff
+    style VoxelGame fill:#107c10,stroke:#0a5c0a,color:#fff
+    style APISvc fill:#0078d4,stroke:#005a9e,color:#fff
+    style SignalRHook fill:#0078d4,stroke:#005a9e,color:#fff
+    style LocalSt fill:#7a3b00,stroke:#4f2700,color:#fff

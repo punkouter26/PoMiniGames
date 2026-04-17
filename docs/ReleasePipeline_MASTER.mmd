@@ -1,0 +1,57 @@
+flowchart LR
+    subgraph Source["Source Control (GitHub)"]
+        FeatBranch["Feature Branch\nlocal development"]
+        PR["Pull Request\ncode review + lint"]
+        Master["master branch\nprotected · source of truth"]
+    end
+
+    subgraph BuildStage["Build Stage (ubuntu-latest)"]
+        Checkout["Checkout + Cache\nNuGet packages · npm deps"]
+        BuildAPI["dotnet build\n.NET 10 Release\nTreatWarningsAsErrors=true\nNullable=enable"]
+        BuildClient["npm run build\nReact 18 + Vite\nVITE_GAME_URL env vars injected"]
+        RunTests["Test Gate\nxUnit unit tests\nTestcontainers integration\nPlaywright E2E (Chromium)"]
+        ArtifactAPI["Artifact: api-publish\n.NET linux-x64 binaries\n3-day retention"]
+        ArtifactClient["Artifact: client-build\nVite dist bundle\n3-day retention"]
+    end
+
+    subgraph DeployStage["Deploy Stage (needs: build)"]
+        AzLogin["Azure Login\nOIDC federation\nno stored credentials\nclient-id + tenant-id from secrets"]
+        ZipDeploy["App Service zip-deploy\nlinux-x64 · asp-poshared-linux\napp-pominigames"]
+        SWADeploy["Static Web App deploy\ndeployment token\npomin"]
+    end
+
+    subgraph Production["Production (westus2)"]
+        AppSvc["App Service B1\n.NET 10 API + SignalR\nhttp://localhost:5000 (local)\napp-pominigames.azurewebsites.net"]
+        StaticApp["Static Web App\nReact SPA + CDN\npomin.azurestaticapps.net"]
+    end
+
+    FeatBranch -- "PR + review" --> PR
+    PR -- "squash merge" --> Master
+    Master -- "push trigger" --> Checkout
+    Checkout --> BuildAPI
+    Checkout --> BuildClient
+    BuildAPI --> RunTests
+    BuildClient --> RunTests
+    RunTests -- "all pass" --> ArtifactAPI
+    RunTests -- "all pass" --> ArtifactClient
+    ArtifactAPI --> AzLogin
+    ArtifactClient --> AzLogin
+    AzLogin --> ZipDeploy
+    AzLogin --> SWADeploy
+    ZipDeploy --> AppSvc
+    SWADeploy --> StaticApp
+
+    style FeatBranch fill:#24292e,stroke:#111111,color:#fff
+    style PR fill:#24292e,stroke:#111111,color:#fff
+    style Master fill:#24292e,stroke:#111111,color:#fff
+    style Checkout fill:#1a6b8a,stroke:#0d4a66,color:#fff
+    style BuildAPI fill:#1a6b8a,stroke:#0d4a66,color:#fff
+    style BuildClient fill:#1a6b8a,stroke:#0d4a66,color:#fff
+    style RunTests fill:#d83b01,stroke:#a52b00,color:#fff
+    style ArtifactAPI fill:#107c10,stroke:#0a5c0a,color:#fff
+    style ArtifactClient fill:#107c10,stroke:#0a5c0a,color:#fff
+    style AzLogin fill:#7a3b00,stroke:#4f2700,color:#fff
+    style ZipDeploy fill:#0078d4,stroke:#005a9e,color:#fff
+    style SWADeploy fill:#0078d4,stroke:#005a9e,color:#fff
+    style AppSvc fill:#0078d4,stroke:#005a9e,color:#fff
+    style StaticApp fill:#0078d4,stroke:#005a9e,color:#fff

@@ -69,7 +69,6 @@ export default function Stage({ gameMode = 'PvCPU', onGameEnd }: { gameMode?: 'P
     const [manager, setManager] = useState<FightManager | null>(null);
 
     useEffect(() => {
-        console.log('Stage: Mount Effect');
         const mgr = new FightManager(gameLoop, gameMode, onGameEnd);
         // eslint-disable-next-line react-hooks/set-state-in-effect
         setManager(mgr);
@@ -78,7 +77,6 @@ export default function Stage({ gameMode = 'PvCPU', onGameEnd }: { gameMode?: 'P
         gameLoop.start();
 
         return () => {
-            console.log('Stage: Cleanup');
             gameLoop.stop();
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -8,8 +8,10 @@
 }
 
 .lobby-card {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: var(--radius-xl);
   padding: var(--space-10) var(--space-10);
   width: 100%;
@@ -17,6 +19,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-6);
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255,255,255,0.07);
 }
 
 .lobby-header {
@@ -242,6 +245,22 @@
   font-size: var(--font-size-sm);
   text-align: center;
   margin: 0;
+}
+
+/* Selected game read-only badge */
+.lobby-selected-game-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  background: var(--color-primary-dim);
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius-md);
+  color: var(--color-primary);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+  padding: var(--space-2) var(--space-4);
+  width: 100%;
+  justify-content: center;
 }
 
 /* Spinner */

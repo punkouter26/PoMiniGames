@@ -87,8 +87,6 @@ export class WebGPURenderer {
         await this.createPipelines();
         this.createBuffers();
         this.createBindGroups();
-
-        console.log("WebGPU Initialized");
     }
 
     private async createPipelines() {

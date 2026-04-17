@@ -85,6 +85,7 @@ describe('SinglePlayerPage', () => {
       expect(screen.getByLabelText(ariaLabel)).toBeInTheDocument();
     }
 
-    expect(screen.getAllByRole('button', { name: /play/i })).toHaveLength(expectedAriaLabels.length);
+    expect(screen.getByRole('button', { name: /Play games/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Watch demos/i })).toBeInTheDocument();
   });
 });

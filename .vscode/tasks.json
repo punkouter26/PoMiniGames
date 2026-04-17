@@ -36,6 +36,26 @@
             }
         },
         {
+            "label": "start-api",
+            "type": "shell",
+            "command": "dotnet run --project ${workspaceFolder}/src/PoMiniGames/PoMiniGames/PoMiniGames.csproj",
+            "isBackground": true,
+            "problemMatcher": {
+                "pattern": {
+                    "regexp": "^$"
+                },
+                "background": {
+                    "activeOnStart": true,
+                    "beginsPattern": "Starting PoMiniGames",
+                    "endsPattern": "Application started"
+                }
+            },
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            }
+        },
+        {
             "label": "build",
             "command": "dotnet",
             "type": "process",
@@ -66,8 +86,22 @@
             }
         },
         {
+            "label": "build-client",
+            "type": "shell",
+            "command": "npm run build",
+            "options": {
+                "cwd": "${workspaceFolder}/src/PoMiniGames.Client"
+            },
+            "group": "build",
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            }
+        },
+        {
             "label": "prelaunch",
-            "dependsOn": ["kill-dotnet", "start-client"],
+            "dependsOn": ["kill-dotnet", "start-client", "start-api"],
             "dependsOrder": "sequence",
             "problemMatcher": []
         }

@@ -148,8 +148,6 @@ export class Fighter {
 
         soundManager.playPunch(isHeavy ? 'HEAVY' : 'JAB');
 
-        console.log(`Attack released! Type: ${type}, Charge: ${charge.toFixed(2)}. Max? ${isHeavy}`);
-
         // Reset to idle after attack duration + recovery
         const totalMs = (frameData.duration + frameData.recovery) * 1000;
         setTimeout(() => {

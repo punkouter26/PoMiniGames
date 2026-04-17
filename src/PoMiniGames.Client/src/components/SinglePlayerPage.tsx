@@ -1,8 +1,12 @@
-import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, CircleDot, Crosshair, Swords, Square, Baby, Car, Activity, Loader2, LogIn, UserRoundCheck } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { ArrowLeft, CircleDot, Crosshair, Swords, Square, Baby, Car, Activity, Search, WifiOff } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { GameCardGrid, type GameCardItem } from './GameCardGrid';
+import HomeHighScores from './HomeHighScores';
 import './SinglePlayerPage.css';
+
+type PageMode = 'play' | 'demo';
 
 const SINGLE_PLAYER_GAMES: GameCardItem[] = [
   {
@@ -13,6 +17,7 @@ const SINGLE_PLAYER_GAMES: GameCardItem[] = [
     ariaLabel: 'Play Connect Five single player',
     accent: '#f44336',
     accentGlow: 'rgba(244,67,54,0.28)',
+    modes: ['1P', '2P', 'Demo'],
     icon: (
       <>
         <CircleDot size={44} color="#f44336" />
@@ -28,6 +33,7 @@ const SINGLE_PLAYER_GAMES: GameCardItem[] = [
     ariaLabel: 'Play Tic Tac Toe single player',
     accent: '#ef4444',
     accentGlow: 'rgba(239,68,68,0.28)',
+    modes: ['1P', '2P', 'Demo'],
     icon: (
       <>
         <CircleDot size={40} stroke="none" fill="#ef4444" />
@@ -43,6 +49,7 @@ const SINGLE_PLAYER_GAMES: GameCardItem[] = [
     ariaLabel: 'Play Voxel Shooter single player',
     accent: '#00D9FF',
     accentGlow: 'rgba(0,217,255,0.28)',
+    modes: ['1P'],
     icon: <Crosshair size={44} color="#00D9FF" />,
   },
   {
@@ -53,6 +60,7 @@ const SINGLE_PLAYER_GAMES: GameCardItem[] = [
     ariaLabel: 'Play PoFight single player',
     accent: '#f97316',
     accentGlow: 'rgba(249,115,22,0.28)',
+    modes: ['1P', '2P', 'Demo'],
     icon: <Swords size={44} color="#f97316" />,
   },
   {
@@ -63,6 +71,7 @@ const SINGLE_PLAYER_GAMES: GameCardItem[] = [
     ariaLabel: 'Play PoDropSquare single player',
     accent: '#a78bfa',
     accentGlow: 'rgba(167,139,250,0.28)',
+    modes: ['1P'],
     icon: <Square size={44} color="#a78bfa" />,
   },
   {
@@ -73,6 +82,7 @@ const SINGLE_PLAYER_GAMES: GameCardItem[] = [
     ariaLabel: 'Play PoBabyTouch single player',
     accent: '#ec4899',
     accentGlow: 'rgba(236,72,153,0.28)',
+    modes: ['1P'],
     icon: <Baby size={44} color="#ec4899" />,
   },
   {
@@ -83,6 +93,7 @@ const SINGLE_PLAYER_GAMES: GameCardItem[] = [
     ariaLabel: 'Play PoRaceRagdoll single player',
     accent: '#22c55e',
     accentGlow: 'rgba(34,197,94,0.28)',
+    modes: ['1P', 'Demo'],
     icon: <Car size={44} color="#22c55e" />,
   },
   {
@@ -93,80 +104,182 @@ const SINGLE_PLAYER_GAMES: GameCardItem[] = [
     ariaLabel: 'Play PoSnakeGame single player',
     accent: '#4ade80',
     accentGlow: 'rgba(74,222,128,0.28)',
+    modes: ['1P', '2P'],
     icon: <Activity size={44} color="#4ade80" />,
+  },
+] as const;
+
+const DEMO_GAMES: GameCardItem[] = [
+  {
+    key: 'tictactoe-demo',
+    to: '/tictactoe?demo=1&demo_return=1',
+    title: 'Tic Tac Toe Demo',
+    description: 'Watch CPU vs CPU battle it out.',
+    ariaLabel: 'Watch Tic Tac Toe demo',
+    accent: '#ef4444',
+    accentGlow: 'rgba(239,68,68,0.28)',
+    icon: (
+      <>
+        <CircleDot size={40} stroke="none" fill="#ef4444" />
+        <CircleDot size={40} stroke="none" fill="#f59e0b" />
+      </>
+    ),
+  },
+  {
+    key: 'connectfive-demo',
+    to: '/connectfive?demo=1&demo_return=1',
+    title: 'Connect Five Demo',
+    description: 'Watch the CPU auto-play on a 9x9 board.',
+    ariaLabel: 'Watch Connect Five demo',
+    accent: '#f44336',
+    accentGlow: 'rgba(244,67,54,0.28)',
+    icon: (
+      <>
+        <CircleDot size={44} color="#f44336" />
+        <CircleDot size={44} color="#facc15" />
+      </>
+    ),
+  },
+  {
+    key: 'pofight-demo',
+    to: '/pofight?demo=1&demo_return=1',
+    title: 'PoFight Demo',
+    description: 'Arcade fighter in CPU vs CPU kiosk mode.',
+    ariaLabel: 'Watch PoFight demo',
+    accent: '#f97316',
+    accentGlow: 'rgba(249,115,22,0.28)',
+    icon: <Swords size={44} color="#f97316" />,
+  },
+  {
+    key: 'poraceragdoll-demo',
+    to: '/poraceragdoll',
+    title: 'PoRaceRagdoll',
+    description: 'Enjoy the chaos and place a bet on the racers.',
+    ariaLabel: 'Watch PoRaceRagdoll demo',
+    accent: '#22c55e',
+    accentGlow: 'rgba(34,197,94,0.28)',
+    icon: <Car size={44} color="#22c55e" />,
   },
 ] as const;
 
 export default function SinglePlayerPage() {
   const navigate = useNavigate();
-  const { config, isAuthenticated, isConfigured, isLoading, signIn } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { isLoading } = useAuth();
+  const [searchQuery, setSearchQuery] = useState('');
+  const [apiOnline, setApiOnline] = useState<boolean | null>(null);
 
-  const signInLabel = config?.microsoftEnabled ? 'Sign in with Microsoft' : 'Sign in';
-  const signInDescription = config?.microsoftEnabled
-    ? 'Sign in with your Microsoft account to choose and play a single-player game.'
-    : 'Sign in to choose and play a single-player game.';
+  // Detect whether the API is reachable (fire-and-forget, no blocking)
+  useEffect(() => {
+    const ctrl = new AbortController();
+    fetch('/api/health/ping', { signal: ctrl.signal })
+      .then(() => setApiOnline(true))
+      .catch(() => setApiOnline(false));
+    return () => ctrl.abort();
+  }, []);
 
-  if (!isConfigured && !isLoading) {
-    return (
-      <div className="sp-page">
-        <div className="sp-card sp-card--centered">
-          <UserRoundCheck size={40} className="sp-icon" />
-          <h1 className="sp-title">Single Player</h1>
-          <p className="sp-subtitle">Online sign-in is not available right now.</p>
-          <button className="sp-btn-secondary" onClick={() => navigate('/')}>
-            <ArrowLeft size={16} /> Back to Home
-          </button>
-        </div>
-      </div>
-    );
-  }
+  const mode: PageMode = searchParams.get('mode') === 'demo' ? 'demo' : 'play';
+
+  const setMode = (nextMode: PageMode) => {
+    setSearchParams(nextMode === 'demo' ? { mode: 'demo' } : {});
+  };
 
   if (isLoading) {
     return (
       <div className="sp-page">
-        <div className="sp-card sp-card--centered">
-          <Loader2 size={32} className="sp-spin" />
-          <p className="sp-subtitle">Loading...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!isAuthenticated) {
-    return (
-      <div className="sp-page">
-        <div className="sp-card sp-card--centered">
-          <UserRoundCheck size={40} className="sp-icon" />
-          <h1 className="sp-title">Single Player</h1>
-          <p className="sp-subtitle">{signInDescription}</p>
-          <div className="sp-auth-banner-actions">
-            <button className="sp-btn-primary" onClick={() => void signIn()}>
-              <LogIn size={16} /> {signInLabel}
-            </button>
-            <button className="sp-btn-secondary" onClick={() => navigate('/')}>
-              <ArrowLeft size={16} /> Home
-            </button>
+        <div className="sp-card">
+          <div className="sp-skeleton-header" />
+          <div className="sp-game-grid">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="sp-skeleton-card">
+                <div className="sp-skeleton-preview" />
+                <div className="sp-skeleton-body">
+                  <div className="sp-skeleton-line sp-skeleton-line--title" />
+                  <div className="sp-skeleton-line sp-skeleton-line--desc" />
+                  <div className="sp-skeleton-line sp-skeleton-line--desc sp-skeleton-line--short" />
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       </div>
     );
   }
 
+
+
+  const games = mode === 'demo' ? DEMO_GAMES : SINGLE_PLAYER_GAMES;
+  const title = mode === 'demo' ? 'Pick a Demo Game' : 'Pick a Single-Player Game';
+  const subtitle = mode === 'demo'
+    ? 'Watch CPU-driven matches with no sign-in required.'
+    : 'Choose any game below and jump in.';
+
+  const filteredGames = searchQuery.trim() === ''
+    ? games
+    : games.filter(g =>
+        g.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        g.description.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+
   return (
     <div className="sp-page">
+      {/* Offline banner — amber bar, auto-visible when API unreachable */}
+      {apiOnline === false && (
+        <div className="sp-offline-banner" role="alert">
+          <WifiOff size={14} />
+          Offline mode — scores won&apos;t sync until the server is reachable
+        </div>
+      )}
+
       <div className="sp-card">
         <div className="sp-header">
           <button className="sp-back" onClick={() => navigate('/')}>
             <ArrowLeft size={16} /> Home
           </button>
-          <h1 className="sp-title">Pick a Single-Player Game</h1>
+          <h1 className="sp-title">{title}</h1>
         </div>
 
-        <p className="sp-subtitle">Choose any game below and jump in.</p>
+        <div className="sp-auth-banner-actions" style={{ marginBottom: '1rem' }}>
+          <button
+            className={mode === 'play' ? 'sp-btn-primary' : 'sp-btn-secondary'}
+            onClick={() => setMode('play')}
+          >
+            Play games
+          </button>
+          <button
+            className={mode === 'demo' ? 'sp-btn-primary' : 'sp-btn-secondary'}
+            onClick={() => setMode('demo')}
+          >
+            Watch demos
+          </button>
+        </div>
+
+        <p className="sp-subtitle">{subtitle}</p>
+
+        {/* Search filter */}
+        <div className="sp-search-wrap">
+          <Search size={14} className="sp-search-icon" aria-hidden="true" />
+          <input
+            className="sp-search"
+            type="search"
+            placeholder="Search games…"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            aria-label="Search games"
+          />
+        </div>
 
         <div className="sp-game-grid">
-          <GameCardGrid games={SINGLE_PLAYER_GAMES} />
+          {filteredGames.length > 0
+            ? <GameCardGrid games={filteredGames} />
+            : (
+              <p className="sp-no-results">No games match &ldquo;{searchQuery}&rdquo;</p>
+            )
+          }
         </div>
+
+        {/* Leaderboard — shown in play mode below the game grid */}
+        {mode === 'play' && <HomeHighScores />}
       </div>
     </div>
   );

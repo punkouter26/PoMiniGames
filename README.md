@@ -92,12 +92,58 @@ cd ../../..
 
 ## Documentation
 
+All diagrams are in [`/docs`](./docs). Every file has a full `_MASTER` version and a `_SIMPLE` stakeholder variant.
+
+### 1. Architecture & CI/CD
+
 | File | Type | Description |
 |---|---|---|
-| [docs/Architecture.mmd](./docs/Architecture.mmd) | Mermaid C4Context | Full Azure deployment topology (C4 Level 1) |
-| [docs/Architecture_SIMPLE.mmd](./docs/Architecture_SIMPLE.mmd) | Mermaid flowchart | 7-node high-level context |
-| [docs/SystemFlow.mmd](./docs/SystemFlow.mmd) | Mermaid sequenceDiagram | Auth + CRUD + SignalR multiplayer flow |
-| [docs/SystemFlow_SIMPLE.mmd](./docs/SystemFlow_SIMPLE.mmd) | Mermaid flowchart | Simplified 4-path player journey |
+| [docs/Architecture_MASTER.mmd](./docs/Architecture_MASTER.mmd) | flowchart | Hybrid C4 L1/L2 — Edge, Compute, Data, Identity, CI/CD |
+| [docs/Architecture_MASTER_SIMPLE.mmd](./docs/Architecture_MASTER_SIMPLE.mmd) | flowchart | 7-node Azure topology at a glance |
+| [docs/ReleasePipeline_MASTER.mmd](./docs/ReleasePipeline_MASTER.mmd) | flowchart | Feature → Build → Test → Artifact → Deploy → Prod |
+| [docs/ReleasePipeline_MASTER_SIMPLE.mmd](./docs/ReleasePipeline_MASTER_SIMPLE.mmd) | flowchart | 5-step pipeline overview |
+
+### 2. User Usage & Behavioral Flowcharts
+
+| File | Type | Description |
+|---|---|---|
+| [docs/OnboardingJourney.mmd](./docs/OnboardingJourney.mmd) | flowchart | New user path — anonymous play → auth → Aha moment |
+| [docs/OnboardingJourney_SIMPLE.mmd](./docs/OnboardingJourney_SIMPLE.mmd) | flowchart | 5-step onboarding summary |
+| [docs/PrimaryValueFlow.mmd](./docs/PrimaryValueFlow.mmd) | flowchart | Happy path — visit → select → play → stats → leaderboard |
+| [docs/PrimaryValueFlow_SIMPLE.mmd](./docs/PrimaryValueFlow_SIMPLE.mmd) | flowchart | 5-node happy path |
+| [docs/ExceptionUserFlows.mmd](./docs/ExceptionUserFlows.mmd) | flowchart | Auth errors · offline resilience · multiplayer disconnection · rate limiting |
+| [docs/ExceptionUserFlows_SIMPLE.mmd](./docs/ExceptionUserFlows_SIMPLE.mmd) | flowchart | 4 exception categories at a glance |
+
+### 3. Logic & State Dynamics
+
+| File | Type | Description |
+|---|---|---|
+| [docs/SystemFlow_MASTER.mmd](./docs/SystemFlow_MASTER.mmd) | sequenceDiagram | Full system — Startup secrets → Auth → Stats CRUD → Multiplayer |
+| [docs/SystemFlow_MASTER_SIMPLE.mmd](./docs/SystemFlow_MASTER_SIMPLE.mmd) | flowchart | Auth · Stats · Multiplayer lanes |
+| [docs/StateDynamics_MASTER.mmd](./docs/StateDynamics_MASTER.mmd) | stateDiagram-v2 | Match · Lobby · Race Session · PlayerStats lifecycles |
+| [docs/StateDynamics_MASTER_SIMPLE.mmd](./docs/StateDynamics_MASTER_SIMPLE.mmd) | stateDiagram-v2 | Core state transitions only |
+
+### 4. Data & Security Schema
+
+| File | Type | Description |
+|---|---|---|
+| [docs/DataModel.mmd](./docs/DataModel.mmd) | erDiagram | Full ERD — PlayerStats · HighScores · Match · Lobby · Race with PKs and enums |
+| [docs/DataModel_SIMPLE.mmd](./docs/DataModel_SIMPLE.mmd) | erDiagram | 5 main entities |
+| [docs/AccessControl_MATRIX.mmd](./docs/AccessControl_MATRIX.mmd) | flowchart | Roles (Anonymous · Auth · Host · Dev) mapped to every endpoint group |
+| [docs/AccessControl_MATRIX_SIMPLE.mmd](./docs/AccessControl_MATRIX_SIMPLE.mmd) | flowchart | 4 roles → 4 endpoint groups |
+| [docs/DataLifecycle_MASTER.mmd](./docs/DataLifecycle_MASTER.mmd) | flowchart | Ingest → Rate-limit → Auth → Sanitize → UPSERT → Store → Serve |
+| [docs/DataLifecycle_MASTER_SIMPLE.mmd](./docs/DataLifecycle_MASTER_SIMPLE.mmd) | flowchart | 4-stage data pipeline |
+
+### 5. Dependency & UI Hierarchy
+
+| File | Type | Description |
+|---|---|---|
+| [docs/SystemInteractionFlow.mmd](./docs/SystemInteractionFlow.mmd) | sequenceDiagram | Real-time multiplayer — queue → lobby → SignalR move sync → stats |
+| [docs/SystemInteractionFlow_SIMPLE.mmd](./docs/SystemInteractionFlow_SIMPLE.mmd) | flowchart | 5-step multiplayer lifecycle |
+| [docs/ServiceMap_MASTER.mmd](./docs/ServiceMap_MASTER.mmd) | flowchart | Full service dependency graph — source of truth for blast radius assessment |
+| [docs/ServiceMap_MASTER_SIMPLE.mmd](./docs/ServiceMap_MASTER_SIMPLE.mmd) | flowchart | Client → API → SignalR → DB → External |
+| [docs/InterfaceHierarchy_MASTER.mmd](./docs/InterfaceHierarchy_MASTER.mmd) | flowchart | React component tree — routes · shared components · game modules · state layer |
+| [docs/InterfaceHierarchy_MASTER_SIMPLE.mmd](./docs/InterfaceHierarchy_MASTER_SIMPLE.mmd) | flowchart | 5-node frontend structure |
 | [docs/DataModel.mmd](./docs/DataModel.mmd) | Mermaid erDiagram | Full ERD — all entities and relationships |
 | [docs/DataModel_SIMPLE.mmd](./docs/DataModel_SIMPLE.mmd) | Mermaid erDiagram | Core tables only |
 | [docs/ProductSpec.md](./docs/ProductSpec.md) | Markdown | PRD — Why, features, business rules, success metrics |

@@ -4,7 +4,7 @@ import { test, expect } from './fixtures';
 const WORKFLOW_OPTIONS = [
   { label: '2 Players', ariaLabel: 'Play 2 players', route: /\/lobby/ },
   { label: '1 Player', ariaLabel: 'Play 1 player', route: /\/single-player/ },
-  { label: 'Demo Mode', ariaLabel: 'Play demo mode' },
+  { label: 'Leaderboard', ariaLabel: 'View leaderboards', route: /\/$/ },
 ];
 
 const HIGH_SCORE_GAMES = [
@@ -33,47 +33,37 @@ test.describe('Home page', () => {
   test('renders exactly the 3 workflow options', async ({ page }) => {
     await expect(page.getByRole('button', { name: 'Play 2 players' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Play 1 player' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Play demo mode' })).toBeVisible();
-    await expect(page.locator('.home-mode-btn')).toHaveCount(3);
+    await expect(page.getByRole('button', { name: 'View leaderboards' })).toBeVisible();
+    await expect(page.locator('.home-modes button')).toHaveCount(3);
   });
 
-  test('option cards have correct links', async ({ page }) => {
+  test('option cards are visible', async ({ page }) => {
     await expect(page.getByRole('button', { name: 'Play 2 players' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Play 1 player' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Play demo mode' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'View leaderboards' })).toBeVisible();
   });
 
   test('game grid is visible', async ({ page }) => {
     await expect(page.locator('.home-modes')).toBeVisible();
   });
 
-  test('option 1 opens lobby flow', async ({ page }) => {
-    await page.locator('.home-dev-pill-toggle').click();
-    const bypass2p = page.getByRole('button', { name: /Developer bypass for 2 player/i });
-
+  test('option 1 opens the lobby flow', async ({ page }) => {
     await Promise.all([
       page.waitForURL(/\/lobby/, { timeout: 15_000 }),
-      bypass2p.click(),
+      page.getByRole('button', { name: 'Play 2 players' }).click(),
     ]);
   });
 
   test('option 2 opens single-player flow', async ({ page }) => {
-    await page.locator('.home-dev-pill-toggle').click();
-    const bypass1p = page.getByRole('button', { name: /Developer bypass for 1 player/i });
-
     await Promise.all([
       page.waitForURL(/\/single-player/, { timeout: 15_000 }),
-      bypass1p.click(),
+      page.getByRole('button', { name: 'Play 1 player' }).click(),
     ]);
   });
 
-  test('option 3 randomly launches a demo game route', async ({ page }) => {
-    const playDemo = page.getByRole('button', { name: 'Play demo mode' });
-
-    await Promise.all([
-      page.waitForURL(/\/(tictactoe|connectfive|pofight)/, { timeout: 15_000 }),
-      playDemo.click(),
-    ]);
+  test('option 3 keeps the leaderboard section in view', async ({ page }) => {
+    await page.getByRole('button', { name: 'View leaderboards' }).click();
+    await expect(page.locator('[aria-label="Top 10 high scores per game"]')).toBeVisible();
   });
 });
 
@@ -124,11 +114,9 @@ test.describe('Home page – player name', () => {
     await page.goto('/');
     await page.getByLabel('Player name').fill('PersistMe');
 
-    // Use dev bypass to navigate — avoids MSAL auth requirement when microsoftEnabled=true
-    await page.locator('.home-dev-pill-toggle').click();
     await Promise.all([
       page.waitForURL(/\/single-player/, { timeout: 15_000 }),
-      page.getByRole('button', { name: /Developer bypass for 1 player/i }).click(),
+      page.getByRole('button', { name: 'Play 1 player' }).click(),
     ]);
 
     await page.goBack();

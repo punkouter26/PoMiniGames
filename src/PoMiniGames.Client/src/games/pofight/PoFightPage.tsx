@@ -8,7 +8,7 @@ import { Trophy, XCircle, RotateCcw } from 'lucide-react';
 import { useGameStore } from './store/gameState';
 import { CharacterSelect } from './components/game/CharacterSelect';
 import Stage from './components/game/Stage';
-import { GameErrorBoundary } from './components/GameErrorBoundary';
+import { GameErrorBoundary } from '../../components/GameErrorBoundary';
 
 type Screen = 'SELECT' | 'GAME';
 type GameMode = 'PvCPU' | 'CPUvCPU';
@@ -117,7 +117,7 @@ export default function PoFightPage() {
       stats={statItems}
       fullscreen
     >
-      <GameErrorBoundary>
+      <GameErrorBoundary gameName="PoFight">
         {screen === 'SELECT' && (
           <CharacterSelect onStart={handleStartGame} mode={gameMode} />
         )}

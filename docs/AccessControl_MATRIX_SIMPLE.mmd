@@ -1,0 +1,25 @@
+flowchart LR
+    Anon["Anonymous"]
+    Auth["Authenticated\n(JWT Bearer)"]
+    Host["Lobby Host"]
+    Dev["Dev Only"]
+
+    Public["Public Endpoints\nHealth · Leaderboard · Game UI · HighScores (GET)"]
+    Protected["Protected Endpoints\nStats write · Queue · SignalR Hubs"]
+    HostOps["Host Operations\nStartGame()"]
+    DevOps["Dev-Only\ndev-login · dev-bypass · /diag"]
+
+    Anon --> Public
+    Auth --> Public
+    Auth --> Protected
+    Host --> HostOps
+    Dev --> DevOps
+
+    style Anon fill:#1a6b8a,stroke:#0d4a66,color:#fff
+    style Auth fill:#7719aa,stroke:#4e0f72,color:#fff
+    style Host fill:#107c10,stroke:#0a5c0a,color:#fff
+    style Dev fill:#d83b01,stroke:#a52b00,color:#fff
+    style Public fill:#107c10,stroke:#0a5c0a,color:#fff
+    style Protected fill:#7719aa,stroke:#4e0f72,color:#fff
+    style HostOps fill:#107c10,stroke:#0a5c0a,color:#fff
+    style DevOps fill:#d83b01,stroke:#a52b00,color:#fff

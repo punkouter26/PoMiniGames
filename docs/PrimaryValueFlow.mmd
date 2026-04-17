@@ -1,0 +1,32 @@
+flowchart TD
+    Visit(["Player visits pominigames.app"])
+    Load["CDN delivers React SPA\nLazy-loaded game bundles\ntarget: sub-1s cold start"]
+    Home["Home Page\n8 game tiles\nno auth required"]
+    SelectGame["Select Game\ne.g. Tic-Tac-Toe"]
+    SelectDiff["Select Difficulty\nEasy · Medium · Hard"]
+    PlayVsAI["Play vs AI\nMinimax (Hard) or heuristic (Med)\nAll moves computed client-side\nzero API round-trips during play"]
+    GameEnd["Game ends\nResult: Win / Loss / Draw\n(forfeit = no stat recorded)"]
+    StatsSaved["Stats saved\nlocalStorage (always)\n+ PUT /api/{game}/players/{name}/stats\n(if online + authed: Bearer JWT)"]
+    Leaderboard["Fetch Leaderboard\nGET /api/tictactoe/statistics/leaderboard?limit=10\nrate: GET unrestricted"]
+    LeaderView["Top 10 WinRate table\nname · winRate · totalGames · totalWins\np95 target: less than 200ms"]
+    PlayAgain{"Play again?"}
+    SameGame["Same game\ndifferent difficulty"]
+    NewGame["Pick another game\nfrom Home"]
+
+    Visit --> Load --> Home --> SelectGame --> SelectDiff --> PlayVsAI --> GameEnd --> StatsSaved --> Leaderboard --> LeaderView --> PlayAgain
+    PlayAgain -- "Yes — same game" --> SameGame --> SelectDiff
+    PlayAgain -- "Yes — new game" --> NewGame --> SelectGame
+
+    style Visit fill:#107c10,stroke:#0a5c0a,color:#fff
+    style Load fill:#0078d4,stroke:#005a9e,color:#fff
+    style Home fill:#1a6b8a,stroke:#0d4a66,color:#fff
+    style SelectGame fill:#1a6b8a,stroke:#0d4a66,color:#fff
+    style SelectDiff fill:#1a6b8a,stroke:#0d4a66,color:#fff
+    style PlayVsAI fill:#1a6b8a,stroke:#0d4a66,color:#fff
+    style GameEnd fill:#1a6b8a,stroke:#0d4a66,color:#fff
+    style StatsSaved fill:#107c10,stroke:#0a5c0a,color:#fff
+    style Leaderboard fill:#0078d4,stroke:#005a9e,color:#fff
+    style LeaderView fill:#0078d4,stroke:#005a9e,color:#fff
+    style PlayAgain fill:#7a3b00,stroke:#4f2700,color:#fff
+    style SameGame fill:#1a6b8a,stroke:#0d4a66,color:#fff
+    style NewGame fill:#1a6b8a,stroke:#0d4a66,color:#fff

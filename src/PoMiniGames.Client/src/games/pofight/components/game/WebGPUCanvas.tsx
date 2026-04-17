@@ -14,7 +14,6 @@ export const WebGPUCanvas = ({ fighters, onError, onRendererReady }: WebGPUCanva
 
     useEffect(() => {
         if (!canvasRef.current) return;
-        console.log('WebGPUCanvas mounted');
 
         const init = async () => {
             const renderer = new WebGPURenderer(canvasRef.current!);
@@ -22,7 +21,6 @@ export const WebGPUCanvas = ({ fighters, onError, onRendererReady }: WebGPUCanva
                 await renderer.initialize();
                 rendererRef.current = renderer;
                 renderer.setFighters(fighters);
-                console.log('WebGPU renderer initialized');
                 if (onRendererReady) onRendererReady(renderer);
             } catch (e) {
                 // Expected on some machines, warning only

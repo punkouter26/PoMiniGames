@@ -2,8 +2,7 @@ erDiagram
     PLAYER_STATS {
         string Game PK
         string PlayerName PK
-        string StatsJson "JSON: Easy/Medium/Hard DifficultyStats"
-        string UpdatedAt
+        string StatsJson "Easy/Med/Hard difficulty stats"
     }
     SNAKE_HIGH_SCORES {
         string Initials
@@ -17,10 +16,13 @@ erDiagram
     MULTIPLAYER_MATCH {
         string MatchId PK
         string GameKey
-        string Status "waiting | active | finished"
+        string Status "waiting|active|finished|abandoned"
     }
     RACE_SESSION {
         string SessionId PK
-        string Status "created | betting | racing | finished"
+        string Status "created|betting|racing|finished"
+        string WinnerId
     }
-    PLAYER_STATS ||--o{ MULTIPLAYER_MATCH : "referenced by"
+
+    PLAYER_STATS ||--o{ MULTIPLAYER_MATCH : "referenced by players"
+    LOBBY_PLAYER }o--o{ MULTIPLAYER_MATCH : "transitions into match"

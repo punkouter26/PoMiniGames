@@ -1,5 +1,3 @@
-// @ts-nocheck
-// TODO: Remove @ts-nocheck and add proper TypeScript types (type-safety technical debt)
 /**
  * Unified Particle Pool System
  * Consolidates ParticleEmitter and DebrisSystem into a single optimized pool
@@ -34,11 +32,9 @@ export class ParticlePool {
 
   private heightMap: Map<string, number> = new Map();
   private dummy = new THREE.Object3D();
-  private csm: any;
 
-  constructor(scene: THREE.Scene, csm: any = null) {
+  constructor(scene: THREE.Scene, _csm: any = null) {
     this.scene = scene;
-    this.csm = csm;
 
     const sparkGeo = new THREE.BufferGeometry();
     this.positions = new Float32Array(this.maxParticles * 3);
@@ -83,7 +79,7 @@ export class ParticlePool {
       if (this.activeSparkCount >= 5000) return;
 
       const idx = this.activeSparkCount;
-      const particle = this.particles[idx];
+      const particle = this.particles[idx]!;
 
       particle.type = 0;
       particle.age = 0;
@@ -111,7 +107,7 @@ export class ParticlePool {
       this.activeSparkCount++;
     }
 
-    this.sparkPoints.geometry.attributes.position.needsUpdate = true;
+    this.sparkPoints.geometry.attributes.position!.needsUpdate = true;
     this.sparkPoints.visible = this.activeSparkCount > 0;
   }
 
@@ -125,7 +121,7 @@ export class ParticlePool {
       if (this.activeDebrisCount >= this.maxParticles - 5000) return;
 
       const idx = 5000 + this.activeDebrisCount;
-      const particle = this.particles[idx];
+      const particle = this.particles[idx]!;
 
       particle.type = 1;
       particle.age = 0;
@@ -176,7 +172,7 @@ export class ParticlePool {
 
     // Update sparks
     for (let i = 0; i < this.activeSparkCount; i++) {
-      const particle = this.particles[i];
+      const particle = this.particles[i]!;
       particle.age += delta;
 
       if (particle.age > particle.maxAge) {
@@ -184,23 +180,23 @@ export class ParticlePool {
       }
 
       // Gravity
-      this.velocities[i * 3 + 1] -= 90.0 * delta;
+      this.velocities[i * 3 + 1] = this.velocities[i * 3 + 1]! - 90.0 * delta;
 
-      this.positions[i * 3] += this.velocities[i * 3] * delta;
-      this.positions[i * 3 + 1] += this.velocities[i * 3 + 1] * delta;
-      this.positions[i * 3 + 2] += this.velocities[i * 3 + 2] * delta;
+      this.positions[i * 3] = this.positions[i * 3]! + this.velocities[i * 3]! * delta;
+      this.positions[i * 3 + 1] = this.positions[i * 3 + 1]! + this.velocities[i * 3 + 1]! * delta;
+      this.positions[i * 3 + 2] = this.positions[i * 3 + 2]! + this.velocities[i * 3 + 2]! * delta;
 
       sparkNeedsUpdate = true;
     }
 
     if (sparkNeedsUpdate) {
-      this.sparkPoints.geometry.attributes.position.needsUpdate = true;
+      this.sparkPoints.geometry.attributes.position!.needsUpdate = true;
     }
 
     // Update debris
     for (let i = 0; i < this.activeDebrisCount; i++) {
       const idx = 5000 + i;
-      const particle = this.particles[idx];
+      const particle = this.particles[idx]!
 
       particle.age += delta;
 
@@ -217,35 +213,35 @@ export class ParticlePool {
       }
 
       if (!(particle.settled)) {
-        this.velocities[idx * 3 + 1] -= 29.8 * delta;
+        this.velocities[idx * 3 + 1] = this.velocities[idx * 3 + 1]! - 29.8 * delta;
 
-        this.positions[idx * 3] += this.velocities[idx * 3] * delta;
-        this.positions[idx * 3 + 1] += this.velocities[idx * 3 + 1] * delta;
-        this.positions[idx * 3 + 2] += this.velocities[idx * 3 + 2] * delta;
+        this.positions[idx * 3] = this.positions[idx * 3]! + this.velocities[idx * 3]! * delta;
+        this.positions[idx * 3 + 1] = this.positions[idx * 3 + 1]! + this.velocities[idx * 3 + 1]! * delta;
+        this.positions[idx * 3 + 2] = this.positions[idx * 3 + 2]! + this.velocities[idx * 3 + 2]! * delta;
 
-        const gx = Math.round(this.positions[idx * 3] / 0.45);
-        const gz = Math.round(this.positions[idx * 3 + 2] / 0.45);
+        const gx = Math.round(this.positions[idx * 3]! / 0.45);
+        const gz = Math.round(this.positions[idx * 3 + 2]! / 0.45);
         const key = gx + '_' + gz;
 
         const hitHeight = (this.heightMap.get(key) || 0) + 0.225;
 
-        if (this.positions[idx * 3 + 1] <= hitHeight) {
+        if (this.positions[idx * 3 + 1]! <= hitHeight) {
           this.positions[idx * 3 + 1] = hitHeight;
 
-          if (Math.abs(this.velocities[idx * 3 + 1]) < 8.0) {
+          if (Math.abs(this.velocities[idx * 3 + 1]!) < 8.0) {
             particle.settled = true;
             this.heightMap.set(key, hitHeight + 0.45);
             this.velocities[idx * 3] = 0;
             this.velocities[idx * 3 + 1] = 0;
             this.velocities[idx * 3 + 2] = 0;
           } else {
-            this.velocities[idx * 3 + 1] *= -0.3;
-            this.velocities[idx * 3] *= 0.5;
-            this.velocities[idx * 3 + 2] *= 0.5;
+            this.velocities[idx * 3 + 1] = this.velocities[idx * 3 + 1]! * -0.3;
+            this.velocities[idx * 3] = this.velocities[idx * 3]! * 0.5;
+            this.velocities[idx * 3 + 2] = this.velocities[idx * 3 + 2]! * 0.5;
           }
         }
 
-        pos.set(this.positions[idx * 3], this.positions[idx * 3 + 1], this.positions[idx * 3 + 2]);
+        pos.set(this.positions[idx * 3]!, this.positions[idx * 3 + 1]!, this.positions[idx * 3 + 2]!);
         this.dummy.position.copy(pos);
         this.dummy.updateMatrix();
         this.debrisMesh.setMatrixAt(idx, this.dummy.matrix);

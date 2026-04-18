@@ -9,10 +9,17 @@ export interface StatItem {
   label: string;
 }
 
-/** Pings the backend once on mount; re-checks every 15 s while the tab is visible. */
-function useIsOffline(): boolean {
-  const [offline, setOffline] = useState(false);
+/** Pings the backend once on mount; re-checks every 15 s while the tab is visible.
+ * For offline-first games, polling can be skipped and the badge shown immediately.
+ */
+function useIsOffline(skipPing = false): boolean {
+  const [offline, setOffline] = useState(skipPing);
   useEffect(() => {
+    if (skipPing) {
+      setOffline(true);
+      return;
+    }
+
     let cancelled = false;
     const check = () =>
       apiService.isAvailable().then(ok => { if (!cancelled) setOffline(!ok); });
@@ -20,7 +27,7 @@ function useIsOffline(): boolean {
     void check();
     const id = window.setInterval(check, 15_000);
     return () => { cancelled = true; clearInterval(id); };
-  }, []);
+  }, [skipPing]);
   return offline;
 }
 
@@ -46,6 +53,8 @@ interface GamePageShellProps {
   backTo?: string;
   /** Brief keyboard hint shown in info bar e.g. "WASD · ESC Pause" */
   keyboardHint?: string;
+  /** Offline-first games can skip server status polling and just show the badge. */
+  offlineFriendly?: boolean;
   /** When true, shows a "Play Again / Home" bar at the bottom */
   gameOver?: boolean;
   /** Called when user taps "Play Again" */
@@ -62,6 +71,7 @@ export function GamePageShell({
   fullscreen = false,
   backTo,
   keyboardHint,
+  offlineFriendly = false,
   gameOver = false,
   onPlayAgain,
   children,
@@ -69,7 +79,7 @@ export function GamePageShell({
   const navigate = useNavigate();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const drawerRef = useRef<HTMLDivElement>(null);
-  const isOffline = useIsOffline();
+  const isOffline = useIsOffline(offlineFriendly);
 
   // Close drawer on outside click
   useEffect(() => {

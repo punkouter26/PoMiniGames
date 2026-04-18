@@ -15,6 +15,11 @@
     "@azure/msal-browser": "^5.5.0",
     "@dimforge/rapier3d-compat": "^0.19.3",
     "@microsoft/signalr": "^10.0.0",
+    "@react-spring/three": "^10.0.3",
+    "@react-three/drei": "^10.7.7",
+    "@react-three/fiber": "^9.6.0",
+    "@react-three/postprocessing": "^3.0.4",
+    "@react-three/rapier": "^2.2.0",
     "@tailwindcss/vite": "^4.2.1",
     "@types/matter-js": "^0.20.2",
     "cannon-es": "^0.20.0",
@@ -27,6 +32,7 @@
     "react-router-dom": "^7.6.1",
     "tailwindcss": "^4.2.1",
     "three": "^0.183.1",
+    "tone": "^15.1.22",
     "zustand": "^5.0.11"
   },
   "devDependencies": {

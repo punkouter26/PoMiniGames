@@ -9,9 +9,14 @@ permissions:
   contents: read
   id-token: write
 
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
       - name: Checkout Code
@@ -30,7 +35,13 @@ jobs:
           restore-keys: nuget-${{ runner.os }}-
 
       - name: Build API
-        run: dotnet build src/PoMiniGames/PoMiniGames/PoMiniGames.csproj --configuration Release
+        run: dotnet build src/PoMiniGames/PoMiniGames/PoMiniGames.csproj --configuration Release --no-restore
+
+      - name: Run Unit Tests
+        run: dotnet test tests/PoMiniGames.UnitTests/PoMiniGames.UnitTests.csproj --configuration Release --verbosity normal
+
+      - name: Run Integration Tests
+        run: dotnet test tests/PoMiniGames.IntegrationTests/PoMiniGames.IntegrationTests.csproj --configuration Release --verbosity normal
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -68,6 +79,7 @@ jobs:
   deploy-services:
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
       - name: Azure Login
@@ -132,17 +144,35 @@ jobs:
         shell: bash
         run: |
           APP_URL="https://${{ steps.app-info.outputs.app-name }}.azurewebsites.net"
+          SWA_URL=$(az staticwebapp list -g PoMiniGames --query "[0].defaultHostname" -o tsv)
           echo "Waiting for app to warm up..."
           sleep 20
-          for i in 1 2 3 4 5; do
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$APP_URL/health" --max-time 30 || echo "000")
-            echo "Health check attempt $i: HTTP $STATUS"
-            if [ "$STATUS" = "200" ]; then
-              echo "Health check passed!"
-              exit 0
+
+          check_endpoint () {
+            local url="$1"
+            for i in 1 2 3 4 5; do
+              STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$url" --max-time 30 || echo "000")
+              echo "Health check attempt $i for $url: HTTP $STATUS"
+              if [ "$STATUS" = "200" ]; then
+                return 0
+              fi
+              sleep 15
+            done
+            return 1
+          }
+
+          check_endpoint "$APP_URL/health"
+          check_endpoint "$APP_URL/api/health/ping"
+
+          {
+            echo "## Deployment Summary"
+            echo "- API: $APP_URL"
+            echo "- Health: $APP_URL/health"
+            echo "- Ping: $APP_URL/api/health/ping"
+            if [ -n "$SWA_URL" ]; then
+              echo "- Web: https://$SWA_URL"
             fi
-            sleep 15
-          done
-          echo "Health check failed after 5 attempts"
-          exit 1
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "Health checks passed."
 

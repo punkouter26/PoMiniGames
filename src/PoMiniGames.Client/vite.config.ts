@@ -8,6 +8,11 @@ export default defineConfig({
   server: {
     host: true,
     port: 5173,
+    headers: {
+      // Required for Rapier SharedArrayBuffer (WASM physics engine).
+      'Cross-Origin-Opener-Policy': 'same-origin',
+      'Cross-Origin-Embedder-Policy': 'require-corp',
+    },
     proxy: {
       '/api': {
         target: 'http://localhost:5000',
@@ -21,6 +26,10 @@ export default defineConfig({
         secure: false,
       },
     },
+  },
+  optimizeDeps: {
+    // @react-three/rapier ships its own WASM loader; pre-bundling breaks it.
+    exclude: ['@react-three/rapier'],
   },
   build: {
     outDir: 'dist',
@@ -40,6 +49,12 @@ export default defineConfig({
           'vendor-cannon': ['cannon-es'],
           'vendor-matter': ['matter-js'],
           'vendor-signalr': ['@microsoft/signalr'],
+          'vendor-r3f': ['@react-three/fiber'],
+          'vendor-drei': ['@react-three/drei'],
+          'vendor-r3f-rapier': ['@react-three/rapier'],
+          'vendor-r3f-postprocessing': ['@react-three/postprocessing'],
+          'vendor-r3f-spring': ['@react-spring/three'],
+          'vendor-tone': ['tone'],
         },
       },
     },

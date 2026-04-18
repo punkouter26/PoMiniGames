@@ -100,3 +100,14 @@ src/PoMiniGames/PoMiniGames/data/pominigames.db
 
 # Playwright run metadata
 tests/e2e/.last-run.json
+playwright-report/
+blob-report/
+
+# Azure Developer CLI / local deployment state
+.azd/
+.azure/
+
+# Additional test and build artifacts
+artifacts/
+*.trx
+*.snap

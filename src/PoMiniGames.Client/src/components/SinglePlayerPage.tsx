@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, CircleDot, Crosshair, Swords, Square, Baby, Car, Activity, Search, WifiOff } from 'lucide-react';
+import { ArrowLeft, CircleDot, Crosshair, Swords, Square, Baby, Car, Activity, Search, WifiOff, PersonStanding } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { GameCardGrid, type GameCardItem } from './GameCardGrid';
 import HomeHighScores from './HomeHighScores';
@@ -107,6 +107,17 @@ const SINGLE_PLAYER_GAMES: GameCardItem[] = [
     modes: ['1P', '2P'],
     icon: <Activity size={44} color="#4ade80" />,
   },
+  {
+    key: 'pohorserace',
+    to: '/pohorserace',
+    title: 'PoHorseRace',
+    description: 'Carnival arcade horse race — swipe to roll, score to win!',
+    ariaLabel: 'Play PoHorseRace single player',
+    accent: '#f59e0b',
+    accentGlow: 'rgba(245,158,11,0.28)',
+    modes: ['1P', 'Demo'],
+    icon: <PersonStanding size={44} color="#f59e0b" />,
+  },
 ] as const;
 
 const DEMO_GAMES: GameCardItem[] = [
@@ -159,6 +170,16 @@ const DEMO_GAMES: GameCardItem[] = [
     accent: '#22c55e',
     accentGlow: 'rgba(34,197,94,0.28)',
     icon: <Car size={44} color="#22c55e" />,
+  },
+  {
+    key: 'pohorserace-demo',
+    to: '/pohorserace',
+    title: 'PoHorseRace Demo',
+    description: 'Watch all 8 lanes auto-race in arcade demo mode.',
+    ariaLabel: 'Watch PoHorseRace demo',
+    accent: '#f59e0b',
+    accentGlow: 'rgba(245,158,11,0.28)',
+    icon: <PersonStanding size={44} color="#f59e0b" />,
   },
 ] as const;
 

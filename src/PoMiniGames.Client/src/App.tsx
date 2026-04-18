@@ -21,6 +21,7 @@ const PoDropSquarePage = lazy(() => import('./games/podropsquare/PoDropSquarePag
 const PoBabyTouchPage = lazy(() => import('./games/pobabytouch/PoBabyTouchPage'));
 const PoRaceRagdollPage = lazy(() => import('./games/poraceragdoll/PoRaceRagdollPage'));
 const PoSnakeGamePage = lazy(() => import('./games/posnakegame/PoSnakeGamePage'));
+const PoHorseRacePage = lazy(() => import('./games/pohorserace/PoHorseRacePage'));
 
 export default function App() {
   return (
@@ -48,6 +49,7 @@ export default function App() {
                 <Route path="pobabytouch" element={<GameErrorBoundary gameName="PoBabyTouch"><PoBabyTouchPage /></GameErrorBoundary>} />
                 <Route path="poraceragdoll" element={<GameErrorBoundary gameName="PoRaceRagdoll"><PoRaceRagdollPage /></GameErrorBoundary>} />
                 <Route path="posnakegame" element={<GameErrorBoundary gameName="PoSnakeGame"><PoSnakeGamePage /></GameErrorBoundary>} />
+                <Route path="pohorserace" element={<GameErrorBoundary gameName="PoHorseRace"><PoHorseRacePage /></GameErrorBoundary>} />
                 <Route path="diag" element={<DiagPage />} />
             </Route>
           </Routes>

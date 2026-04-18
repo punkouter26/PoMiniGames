@@ -126,7 +126,8 @@ jobs:
             --name "${{ steps.app-info.outputs.app-name }}" \
             --src-path api-deploy.zip \
             --type zip \
-            --async true
+            --async true \
+            --track-status false
 
       - name: Download Client Build
         uses: actions/download-artifact@v5

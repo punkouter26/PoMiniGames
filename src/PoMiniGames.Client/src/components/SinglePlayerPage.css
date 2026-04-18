@@ -376,7 +376,7 @@
   }
 }
 
-/* Dev Login Panel (shared with LobbyPage) */
+/* Dev login panel */
 .lobby-dev-panel {
   margin-top: var(--space-5);
   padding: var(--space-4) var(--space-5);

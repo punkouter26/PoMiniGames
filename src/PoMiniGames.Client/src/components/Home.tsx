@@ -28,19 +28,16 @@ export default function Home() {
         <button type="button" className="home-mode-btn home-mode-btn--2p" aria-label="Play 2 players" autoFocus onClick={() => void navigate('/multi-player-select')}>
           <span className="home-mode-icon"><Users size={32} /></span>
           <span className="home-mode-label">2 Players</span>
-          <span className="home-mode-desc">Online multiplayer</span>
         </button>
 
         <button type="button" className="home-mode-btn home-mode-btn--1p" aria-label="Play 1 player" onClick={() => void navigate('/single-player')}>
           <span className="home-mode-icon"><UserRoundCheck size={32} /></span>
           <span className="home-mode-label">1 Player</span>
-          <span className="home-mode-desc">Solo &amp; leaderboards</span>
         </button>
 
         <button type="button" className="home-mode-btn home-mode-btn--demo" aria-label="Watch demo mode" onClick={() => void navigate(DEMO_START_URL)}>
           <span className="home-mode-icon"><MonitorPlay size={32} /></span>
           <span className="home-mode-label">Demo</span>
-          <span className="home-mode-desc">Autoplay all games</span>
         </button>
       </div>
     </div>

@@ -110,7 +110,7 @@ async function acquireToken(
     setStoredAccessToken(null);
     const error =
       err instanceof InteractionRequiredAuthError
-        ? 'Sign in is required to access online multiplayer.'
+        ? 'Sign in is required to continue.'
         : err instanceof Error
           ? err.message
           : 'Unable to load the signed-in Microsoft account.';

@@ -67,18 +67,17 @@ function makeEntry(name: string, wins: number, total: number): PlayerStatsDto {
 }
 
 describe('HomeHighScores – loading state', () => {
-  it('shows "Loading..." before data arrives', () => {
-    // Never resolves so component stays in loading state
+  it('shows placeholder rows while API availability is still pending', () => {
     mockIsAvailable.mockReturnValue(new Promise(() => {}));
     render(<HomeHighScores />);
-    expect(screen.getByText(/Loading\.{3}/)).toBeInTheDocument();
+    expect(screen.getAllByText('---').length).toBeGreaterThan(0);
   });
 
-  it('removes loading text once data arrives', async () => {
+  it('does not show loading text once data arrives', async () => {
     mockGetLeaderboard.mockResolvedValue([]);
     render(<HomeHighScores />);
     await waitFor(() => {
-      expect(screen.queryByText(/Loading high scores/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Loading\.{3}/i)).not.toBeInTheDocument();
     });
   });
 });

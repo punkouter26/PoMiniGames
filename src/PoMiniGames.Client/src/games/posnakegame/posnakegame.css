@@ -438,41 +438,6 @@
   color: var(--psg-green);
 }
 
-/* ── Online Panel Styles ──────────────────────────────────────────────── */
-.psg-online-panel {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1.5rem;
-  padding: 2rem;
-}
-
-.psg-connection-status {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 0.85rem;
-}
-
-.psg-status-connected { color: var(--psg-green); }
-.psg-status-disconnected { color: #ff6b6b; }
-
-.psg-error-msg {
-  color: #ff6b6b;
-  margin: 0;
-}
-
-.psg-waiting-msg {
-  color: #ccc;
-  margin: 0;
-}
-
-.psg-hint-text { color: #888; font-size: 0.8rem; margin: 0; }
-
-.psg-waiting-msg { color: #ccc; margin: 0; }
-
-.psg-match-ended-text { color: #ccc; margin: 0; }
-
 .psg-leaderboard {
   width: 100%;
   border-radius: 0.75rem;

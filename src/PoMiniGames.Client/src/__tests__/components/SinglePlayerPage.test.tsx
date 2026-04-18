@@ -3,19 +3,11 @@ import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import SinglePlayerPage from '../../components/SinglePlayerPage';
 
-const { mockSignIn, mockAuthState } = vi.hoisted(() => {
-  const signIn = vi.fn();
-  return {
-    mockSignIn: signIn,
-    mockAuthState: {
-      config: { microsoftEnabled: true },
-      isAuthenticated: false,
-      isConfigured: true,
-      isLoading: false,
-      signIn,
-    },
-  };
-});
+const { mockAuthState } = vi.hoisted(() => ({
+  mockAuthState: {
+    isLoading: false,
+  },
+}));
 
 vi.mock('../../context/AuthContext', () => ({
   useAuth: () => mockAuthState,
@@ -31,43 +23,25 @@ function renderPage() {
 
 describe('SinglePlayerPage', () => {
   beforeEach(() => {
-    mockSignIn.mockReset();
-    mockAuthState.config = { microsoftEnabled: true };
-    mockAuthState.isAuthenticated = false;
-    mockAuthState.isConfigured = true;
     mockAuthState.isLoading = false;
-    mockAuthState.signIn = mockSignIn;
   });
 
-  it('shows unavailable state when auth is not configured', () => {
-    mockAuthState.isConfigured = false;
-
-    renderPage();
-
-    expect(screen.getByRole('heading', { name: /Single Player/i })).toBeInTheDocument();
-    expect(screen.getByText(/sign-in is not available/i)).toBeInTheDocument();
-  });
-
-  it('shows loading state while auth is loading', () => {
+  it('shows skeleton cards while the page is loading', () => {
     mockAuthState.isLoading = true;
+    const { container } = renderPage();
 
-    renderPage();
-
-    expect(screen.getByText(/Loading.../i)).toBeInTheDocument();
+    expect(container.querySelectorAll('.sp-skeleton-card')).toHaveLength(6);
   });
 
-  it('shows sign-in gate when user is not authenticated', () => {
-    mockAuthState.isAuthenticated = false;
-
+  it('renders the current single-player heading and mode buttons', () => {
     renderPage();
 
-    expect(screen.getByRole('heading', { name: /Single Player/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Sign in with Microsoft/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /Pick a Single-Player Game/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Play games/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Watch demos/i })).toBeInTheDocument();
   });
 
-  it('shows all single-player games when authenticated', () => {
-    mockAuthState.isAuthenticated = true;
-
+  it('shows all single-player games', () => {
     renderPage();
 
     const expectedAriaLabels = [
@@ -79,13 +53,20 @@ describe('SinglePlayerPage', () => {
       'Play PoBabyTouch single player',
       'Play PoRaceRagdoll single player',
       'Play PoSnakeGame single player',
+      'Play PoHorseRace single player',
     ] as const;
 
     for (const ariaLabel of expectedAriaLabels) {
       expect(screen.getByLabelText(ariaLabel)).toBeInTheDocument();
     }
+  });
 
-    expect(screen.getByRole('button', { name: /Play games/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Watch demos/i })).toBeInTheDocument();
+  it('only advertises 2P for games that support local two-player mode', () => {
+    renderPage();
+
+    expect(screen.getByLabelText('Play Connect Five single player')).toHaveTextContent('2P');
+    expect(screen.getByLabelText('Play Tic Tac Toe single player')).toHaveTextContent('2P');
+    expect(screen.getByLabelText('Play PoFight single player')).not.toHaveTextContent('2P');
+    expect(screen.getByLabelText('Play PoSnakeGame single player')).not.toHaveTextContent('2P');
   });
 });

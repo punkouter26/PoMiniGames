@@ -2,8 +2,6 @@ using Microsoft.Extensions.FileProviders;
 using PoMiniGames.Features.Auth;
 using PoMiniGames.Features.Health;
 using PoMiniGames.Features.Leaderboard;
-using PoMiniGames.Features.Lobby;
-using PoMiniGames.Features.Multiplayer;
 using PoMiniGames.Features.HighScores;
 using PoMiniGames.Features.PoRaceRagdoll;
 using PoMiniGames.Infrastructure;
@@ -162,12 +160,8 @@ app.MapGetPlayerStats();
 app.MapSavePlayerStats();
 app.MapGetLeaderboard();
 app.MapGetAllPlayerStatistics();
-app.MapMultiplayerEndpoints();
-app.MapLobbyEndpoints();
 app.MapHighScoresEndpoints();
 app.MapGameEndpoints();
-app.MapHub<MultiplayerHub>("/api/hubs/multiplayer").RequireAuthorization();
-app.MapHub<LobbyHub>("/api/hubs/lobby").RequireAuthorization();
 
 app.MapHealthChecks("/health");
 

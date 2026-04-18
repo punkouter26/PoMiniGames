@@ -4,13 +4,6 @@ import { MemoryRouter } from 'react-router-dom';
 import { PlayerNameProvider } from '../../context/PlayerNameContext';
 import Home from '../../components/Home';
 
-// Stub out HomeHighScores to keep these tests focused on Home itself
-vi.mock('../../components/HomeHighScores', () => ({
-  default: () => (
-    <section aria-label="Top 10 high scores per game" data-testid="mock-high-scores" />
-  ),
-}));
-
 const mockNavigate = vi.fn();
 vi.mock('react-router-dom', async (importOriginal) => ({
   ...(await importOriginal<typeof import('react-router-dom')>()),
@@ -43,9 +36,11 @@ describe('Home – page structure', () => {
     expect(screen.getByText(/Choose how you want to play/i)).toBeInTheDocument();
   });
 
-  it('includes the high scores section', () => {
+  it('shows the three main home choices', () => {
     renderHome();
-    expect(screen.getByTestId('mock-high-scores')).toBeInTheDocument();
+    expect(screen.getByText('2 Players')).toBeInTheDocument();
+    expect(screen.getByText('1 Player')).toBeInTheDocument();
+    expect(screen.getByText('Demo')).toBeInTheDocument();
   });
 
   it('does not show a player name input (it lives in the nav bar)', () => {
@@ -69,20 +64,20 @@ describe('Home – mode buttons', () => {
     renderHome();
     expect(screen.getByLabelText(/Play 2 players/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/Play 1 player/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/View leaderboards/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Watch demo mode/i)).toBeInTheDocument();
   });
 
-  it('shows labels: 2 Players, 1 Player, Leaderboard', () => {
+  it('shows labels: 2 Players, 1 Player, Demo', () => {
     renderHome();
     expect(screen.getByText('2 Players')).toBeInTheDocument();
     expect(screen.getByText('1 Player')).toBeInTheDocument();
-    expect(screen.getByText('Leaderboard')).toBeInTheDocument();
+    expect(screen.getByText('Demo')).toBeInTheDocument();
   });
 
-  it('clicking 2 Players navigates to /lobby', () => {
+  it('clicking 2 Players navigates to the local 2-player picker', () => {
     renderHome();
     fireEvent.click(screen.getByLabelText(/Play 2 players/i));
-    expect(mockNavigate).toHaveBeenCalledWith('/lobby');
+    expect(mockNavigate).toHaveBeenCalledWith('/multi-player-select');
   });
 
   it('clicking 1 Player navigates to /single-player', () => {
@@ -91,9 +86,9 @@ describe('Home – mode buttons', () => {
     expect(mockNavigate).toHaveBeenCalledWith('/single-player');
   });
 
-  it('clicking Leaderboard keeps the user on the home page', () => {
+  it('clicking Demo opens the demo flow', () => {
     renderHome();
-    fireEvent.click(screen.getByLabelText(/View leaderboards/i));
-    expect(mockNavigate).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByLabelText(/Watch demo mode/i));
+    expect(mockNavigate).toHaveBeenCalled();
   });
 });

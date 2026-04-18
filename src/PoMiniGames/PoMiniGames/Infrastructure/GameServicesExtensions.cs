@@ -1,11 +1,9 @@
-using PoMiniGames.Features.Lobby;
-using PoMiniGames.Features.Multiplayer;
 using PoMiniGames.Features.PoRaceRagdoll;
 
 namespace PoMiniGames.Infrastructure;
 
 /// <summary>
-/// Registers all game-specific services: PoRaceRagdoll, SignalR multiplayer, and the Lobby.
+/// Registers all game-specific services used by the local-only app.
 /// </summary>
 internal static class GameServicesExtensions
 {
@@ -16,22 +14,11 @@ internal static class GameServicesExtensions
         services.AddSingleton<IRacerService, RacerService>();
         services.AddSingleton<IGameSessionService, GameSessionService>();
 
-        // Multiplayer
-        services.AddSignalR().AddJsonProtocol(options =>
-        {
-            options.PayloadSerializerOptions.Converters.Add(
-                new System.Text.Json.Serialization.JsonStringEnumConverter());
-        });
         services.ConfigureHttpJsonOptions(options =>
         {
             options.SerializerOptions.Converters.Add(
                 new System.Text.Json.Serialization.JsonStringEnumConverter());
         });
-        services.AddSingleton<IMultiplayerGameRegistry, MultiplayerGameRegistry>();
-        services.AddSingleton<IMultiplayerService, MultiplayerService>();
-
-        // Lobby
-        services.AddSingleton<ILobbyService, LobbyService>();
 
         return services;
     }

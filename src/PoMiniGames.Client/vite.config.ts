@@ -42,19 +42,27 @@ export default defineConfig({
       output: {
         // Separate large vendor libs so game chunks stay lean and the browser
         // can cache them independently from application code.
-        manualChunks: {
-          'vendor-react': ['react', 'react-dom'],
-          'vendor-three': ['three'],
-          'vendor-rapier': ['@dimforge/rapier3d-compat'],
-          'vendor-cannon': ['cannon-es'],
-          'vendor-matter': ['matter-js'],
-          'vendor-signalr': ['@microsoft/signalr'],
-          'vendor-r3f': ['@react-three/fiber'],
-          'vendor-drei': ['@react-three/drei'],
-          'vendor-r3f-rapier': ['@react-three/rapier'],
-          'vendor-r3f-postprocessing': ['@react-three/postprocessing'],
-          'vendor-r3f-spring': ['@react-spring/three'],
-          'vendor-tone': ['tone'],
+        manualChunks(id: string) {
+          // Physics engines — heaviest; isolate each so the browser can cache separately
+          if (id.includes('@react-three/rapier') || id.includes('@dimforge/rapier3d-compat')) {
+            return 'vendor-r3f-rapier';
+          }
+          // Three.js core + R3F ecosystem
+          if (id.includes('@react-three/postprocessing')) return 'vendor-r3f-postprocessing';
+          if (id.includes('@react-spring/three'))         return 'vendor-r3f-spring';
+          if (id.includes('@react-three/drei'))           return 'vendor-drei';
+          if (id.includes('@react-three/fiber'))          return 'vendor-r3f';
+          if (id.includes('three'))                       return 'vendor-three';
+          // Audio
+          if (id.includes('tone'))                        return 'vendor-tone';
+          // Physics (non-Rapier)
+          if (id.includes('cannon-es'))                   return 'vendor-cannon';
+          if (id.includes('matter-js'))                   return 'vendor-matter';
+          // React core — kept tiny so it loads first
+          if (id.includes('react-dom') || id.includes('react-router')) return 'vendor-react';
+          if (id.includes('/react/'))                     return 'vendor-react';
+          // Lucide icons — share across all game cards
+          if (id.includes('lucide-react'))                return 'vendor-lucide';
         },
       },
     },

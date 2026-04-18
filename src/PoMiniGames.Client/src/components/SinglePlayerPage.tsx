@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, CircleDot, Crosshair, Swords, Square, Baby, Car, Activity, Search, WifiOff, PersonStanding } from 'lucide-react';
+import { ArrowLeft, CircleDot, Crosshair, Swords, Square, Baby, Car, Activity, Search, WifiOff, PersonStanding, Users } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { GameCardGrid, type GameCardItem } from './GameCardGrid';
 import HomeHighScores from './HomeHighScores';
 import './SinglePlayerPage.css';
 
-type PageMode = 'play' | 'demo';
+type PageMode = 'play' | 'local-2p' | 'demo';
 
 const SINGLE_PLAYER_GAMES: GameCardItem[] = [
   {
@@ -60,7 +60,7 @@ const SINGLE_PLAYER_GAMES: GameCardItem[] = [
     ariaLabel: 'Play PoFight single player',
     accent: '#f97316',
     accentGlow: 'rgba(249,115,22,0.28)',
-    modes: ['1P', '2P', 'Demo'],
+    modes: ['1P', 'Demo'],
     icon: <Swords size={44} color="#f97316" />,
   },
   {
@@ -104,7 +104,7 @@ const SINGLE_PLAYER_GAMES: GameCardItem[] = [
     ariaLabel: 'Play PoSnakeGame single player',
     accent: '#4ade80',
     accentGlow: 'rgba(74,222,128,0.28)',
-    modes: ['1P', '2P'],
+    modes: ['1P'],
     icon: <Activity size={44} color="#4ade80" />,
   },
   {
@@ -193,16 +193,24 @@ export default function SinglePlayerPage() {
   // Detect whether the API is reachable (fire-and-forget, no blocking)
   useEffect(() => {
     const ctrl = new AbortController();
-    fetch('/api/health/ping', { signal: ctrl.signal })
-      .then(() => setApiOnline(true))
-      .catch(() => setApiOnline(false));
+    (async () => {
+      try {
+        await fetch('/api/health/ping', { signal: ctrl.signal });
+        setApiOnline(true);
+      } catch (err) {
+        if (err instanceof Error && err.name === 'AbortError') return;
+        setApiOnline(false);
+      }
+    })();
     return () => ctrl.abort();
   }, []);
 
-  const mode: PageMode = searchParams.get('mode') === 'demo' ? 'demo' : 'play';
+  const rawMode = searchParams.get('mode');
+  const mode: PageMode = rawMode === 'demo' ? 'demo' : rawMode === 'local-2p' ? 'local-2p' : 'play';
 
   const setMode = (nextMode: PageMode) => {
-    setSearchParams(nextMode === 'demo' ? { mode: 'demo' } : {});
+    if (nextMode === 'play') setSearchParams({});
+    else setSearchParams({ mode: nextMode });
   };
 
   if (isLoading) {
@@ -229,11 +237,15 @@ export default function SinglePlayerPage() {
 
 
 
-  const games = mode === 'demo' ? DEMO_GAMES : SINGLE_PLAYER_GAMES;
-  const title = mode === 'demo' ? 'Pick a Demo Game' : 'Pick a Single-Player Game';
+  const LOCAL_2P_GAMES: GameCardItem[] = SINGLE_PLAYER_GAMES.filter(g => g.modes?.includes('2P'));
+
+  const games = mode === 'demo' ? DEMO_GAMES : mode === 'local-2p' ? LOCAL_2P_GAMES : SINGLE_PLAYER_GAMES;
+  const title = mode === 'demo' ? 'Pick a Demo Game' : mode === 'local-2p' ? 'Local 2-Player Games' : 'Pick a Single-Player Game';
   const subtitle = mode === 'demo'
     ? 'Watch CPU-driven matches with no sign-in required.'
-    : 'Choose any game below and jump in.';
+    : mode === 'local-2p'
+      ? 'All games below support pass-and-play on this device.'
+      : 'Choose any game below and jump in.';
 
   const filteredGames = searchQuery.trim() === ''
     ? games
@@ -266,6 +278,12 @@ export default function SinglePlayerPage() {
             onClick={() => setMode('play')}
           >
             Play games
+          </button>
+          <button
+            className={mode === 'local-2p' ? 'sp-btn-primary' : 'sp-btn-secondary'}
+            onClick={() => setMode('local-2p')}
+          >
+            <Users size={13} /> Local 2P
           </button>
           <button
             className={mode === 'demo' ? 'sp-btn-primary' : 'sp-btn-secondary'}

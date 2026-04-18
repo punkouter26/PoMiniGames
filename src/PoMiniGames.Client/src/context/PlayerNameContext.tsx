@@ -12,8 +12,10 @@ const PlayerNameContext = createContext<PlayerNameContextType>({
   setPlayerNameFromAuth: () => {},
 });
 
+const STORAGE_KEY = 'pomini_player';
 const ADJ = ['Swift', 'Bold', 'Brave', 'Cool', 'Fast', 'Wild', 'Sharp', 'Calm', 'Sly', 'Keen'];
 const NOUN = ['Fox', 'Bear', 'Wolf', 'Hawk', 'Panda', 'Tiger', 'Lynx', 'Raven', 'Otter', 'Gecko'];
+
 function generateRandomName(): string {
   const adj = ADJ[Math.floor(Math.random() * ADJ.length)]!;
   const noun = NOUN[Math.floor(Math.random() * NOUN.length)]!;
@@ -21,17 +23,46 @@ function generateRandomName(): string {
   return `${adj}${noun}${num}`;
 }
 
+function readInitialName(): string {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY)?.trim();
+    if (saved) return saved;
+  } catch {
+    // Ignore storage read issues and fall back to a generated name.
+  }
+
+  const generated = generateRandomName();
+  try {
+    localStorage.setItem(STORAGE_KEY, generated);
+  } catch {
+    // Ignore storage write issues.
+  }
+  return generated;
+}
+
+function persistName(name: string) {
+  try {
+    localStorage.setItem(STORAGE_KEY, name);
+  } catch {
+    // Ignore storage write issues.
+  }
+}
+
 export function PlayerNameProvider({ children }: { children: ReactNode }) {
-  // Fresh random name every session — no persistence per design (casual/anon play)
-  const [playerName, setPlayerNameState] = useState(() => generateRandomName());
+  const [playerName, setPlayerNameState] = useState(readInitialName);
 
   const setPlayerName = useCallback((name: string) => {
     const trimmed = name.trim() || 'Player';
     setPlayerNameState(trimmed);
+    persistName(trimmed);
   }, []);
 
-  // No-op kept for API compatibility — auth name sync removed
-  const setPlayerNameFromAuth = useCallback((_name: string) => {}, []);
+  const setPlayerNameFromAuth = useCallback((name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setPlayerNameState(trimmed);
+    persistName(trimmed);
+  }, []);
 
   return (
     <PlayerNameContext.Provider value={{ playerName, setPlayerName, setPlayerNameFromAuth }}>

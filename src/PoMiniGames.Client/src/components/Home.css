@@ -241,12 +241,6 @@
   color: var(--color-text-primary);
 }
 
-.home-mode-desc {
-  font-size: var(--font-size-xs);
-  color: var(--color-text-muted);
-  text-align: center;
-}
-
 /* 2P — purple */
 .home-mode-btn--2p {
   border-color: rgba(167, 139, 250, 0.35);
@@ -531,29 +525,6 @@
   transform: translateX(4px);
 }
 
-/* ─── Online lobby card highlight ──────────────── */
-.game-card--online {
-  border-color: rgba(167, 139, 250, 0.35);
-}
-
-.game-card--online::before {
-  background: linear-gradient(90deg, #a78bfa, #60a5fa);
-}
-
-.game-card--online:hover {
-  border-color: #a78bfa;
-  box-shadow: var(--shadow-lg), 0 0 40px rgba(167, 139, 250, 0.25);
-}
-
-.game-card--online .play-btn {
-  border-color: #a78bfa;
-  color: #a78bfa;
-}
-
-.game-card--online:hover .play-btn {
-  background: #a78bfa;
-  color: var(--color-bg-dark);
-}
 /* ─── Solo card (cyan theme) ──────────────────────────── */
 .game-card--solo {
   border-color: rgba(0, 229, 255, 0.2);
@@ -622,10 +593,6 @@
     justify-content: flex-start;
     gap: var(--space-4);
     padding: var(--space-5) var(--space-6);
-    text-align: left;
-  }
-
-  .home-mode-desc {
     text-align: left;
   }
 }

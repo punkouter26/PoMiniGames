@@ -1,8 +1,4 @@
 import { getStoredAccessToken } from '../../context/authStorage';
-import {
-  type MultiplayerMatchSnapshot,
-  type SupportedMultiplayerGame,
-} from './multiplayerTypes';
 import { type PlayerStats, type PlayerStatsDto } from './types';
 
 /**
@@ -171,42 +167,7 @@ export const apiService = {
     return response !== null;
   },
 
-  async getSupportedMultiplayerGames(): Promise<SupportedMultiplayerGame[] | null> {
-    const res = await safeFetch(`${API_BASE}/multiplayer/games`);
-    return safeJson<SupportedMultiplayerGame[]>(res);
-  },
-
-  async joinMultiplayerQueue(gameKey: string): Promise<MultiplayerMatchSnapshot | null> {
-    const res = await safeFetch(`${API_BASE}/multiplayer/queue`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ gameKey }),
-    });
-    return safeJson<MultiplayerMatchSnapshot>(res);
-  },
-
-  async getMultiplayerMatch(matchId: string): Promise<MultiplayerMatchSnapshot | null> {
-    const res = await safeFetch(`${API_BASE}/multiplayer/matches/${encodeURIComponent(matchId)}`);
-    return safeJson<MultiplayerMatchSnapshot>(res);
-  },
-
-  async leaveMultiplayerMatch(matchId: string): Promise<MultiplayerMatchSnapshot | null> {
-    const res = await safeFetch(`${API_BASE}/multiplayer/matches/${encodeURIComponent(matchId)}`, {
-      method: 'DELETE',
-    });
-    return safeJson<MultiplayerMatchSnapshot>(res);
-  },
-
-  async submitTurn(matchId: string, action: Record<string, number>): Promise<MultiplayerMatchSnapshot | null> {
-    const res = await safeFetch(`${API_BASE}/multiplayer/matches/${encodeURIComponent(matchId)}/turn`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action }),
-    });
-    return safeJson<MultiplayerMatchSnapshot>(res);
-  },
-  
-    async getSnakeHighScores(limit = 10): Promise<SnakeHighScore[] | null> {
+  async getSnakeHighScores(limit = 10): Promise<SnakeHighScore[] | null> {
       const res = await safeFetch(`${API_BASE}/snake/highscores?count=${limit}`);
       return safeJson<SnakeHighScore[]>(res);
     },

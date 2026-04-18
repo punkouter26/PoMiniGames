@@ -34,6 +34,9 @@ jobs:
           key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', 'Directory.Packages.props') }}
           restore-keys: nuget-${{ runner.os }}-
 
+      - name: Restore .NET Dependencies
+        run: dotnet restore src/PoMiniGames/PoMiniGames/PoMiniGames.csproj
+
       - name: Build API
         run: dotnet build src/PoMiniGames/PoMiniGames/PoMiniGames.csproj --configuration Release --no-restore
 

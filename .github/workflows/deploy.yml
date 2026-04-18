@@ -125,7 +125,8 @@ jobs:
             --resource-group PoMiniGames \
             --name "${{ steps.app-info.outputs.app-name }}" \
             --src-path api-deploy.zip \
-            --type zip
+            --type zip \
+            --async true
 
       - name: Download Client Build
         uses: actions/download-artifact@v5
@@ -153,7 +154,7 @@ jobs:
 
           check_endpoint () {
             local url="$1"
-            for i in 1 2 3 4 5; do
+            for i in $(seq 1 20); do
               STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$url" --max-time 30 || echo "000")
               echo "Health check attempt $i for $url: HTTP $STATUS"
               if [ "$STATUS" = "200" ]; then

@@ -1,0 +1,195 @@
+@page "/single-player"
+@using PoMiniGamesClient.Services
+@inject NavigationManager NavigationManager
+@inject ApiService ApiService
+@inject AuthStateService AuthState
+@inject HttpClient Http
+
+<div class="sp-page">
+    @if (_apiOnline == false)
+    {
+        <div class="sp-offline-banner" role="alert">
+            ⚠️ Offline mode — scores won't sync until the server is reachable
+        </div>
+    }
+
+    <div class="sp-card">
+        <div class="sp-header">
+            <button class="sp-back" @onclick="() => NavigationManager.NavigateTo(\"/\")">
+                ← Home
+            </button>
+            <h1 class="sp-title">@_title</h1>
+        </div>
+
+        <div class="sp-auth-banner-actions" style="margin-bottom:1rem">
+            <button class="@(_mode == "play" ? "sp-btn-primary" : "sp-btn-secondary")" @onclick="() => SetMode(\"play\")">
+                Play games
+            </button>
+            <button class="@(_mode == "local-2p" ? "sp-btn-primary" : "sp-btn-secondary")" @onclick="() => SetMode(\"local-2p\")">
+                👥 Local 2P
+            </button>
+            <button class="@(_mode == "demo" ? "sp-btn-primary" : "sp-btn-secondary")" @onclick="() => SetMode(\"demo\")">
+                Watch demos
+            </button>
+        </div>
+
+        <p class="sp-subtitle">@_subtitle</p>
+
+        <div class="sp-search-wrap">
+            <span class="sp-search-icon">🔍</span>
+            <input class="sp-search" type="search" placeholder="Search games…"
+                   @bind="SearchQuery" @bind:event="oninput" aria-label="Search games" />
+        </div>
+
+        <div class="sp-game-grid">
+            @if (_filteredGames.Length > 0)
+            {
+                foreach (var game in _filteredGames)
+                {
+                    <button type="button" class="sp-game-card"
+                            aria-label="@game.AriaLabel"
+                            style="--accent:@game.Accent;--accent-glow:@game.AccentGlow"
+                            @onclick="() => NavigationManager.NavigateTo(game.To)">
+                        <div class="sp-game-card-preview" aria-hidden="true">
+                            <div class="sp-game-icon">@game.Icon</div>
+                        </div>
+                        <div class="sp-game-card-body">
+                            <h2>@game.Title</h2>
+                            <p>@game.Description</p>
+                            @if (game.Modes.Length > 0)
+                            {
+                                <div class="sp-game-modes" aria-label="Available modes">
+                                    @foreach (var m in game.Modes)
+                                    {
+                                        <span class="sp-mode-pill sp-mode-pill--@m.ToLowerInvariant()">@m</span>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    </button>
+                }
+            }
+            else
+            {
+                <p class="sp-no-results">No games match "@SearchQuery"</p>
+            }
+        </div>
+
+        @if (_mode == "play")
+        {
+            <HomeHighScores />
+        }
+    </div>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "mode")]
+    public string? QueryMode { get; set; }
+
+    private string _mode = "play";
+    private string _title = "Pick a Single-Player Game";
+    private string _subtitle = "Choose any game below and jump in.";
+    private string SearchQuery { get; set; } = "";
+    private bool? _apiOnline;
+
+    private record GameCardData(string Key, string To, string Title, string Description, string AriaLabel, string Accent, string AccentGlow, string[] Modes, string Icon);
+
+    private static readonly GameCardData[] SinglePlayerGames =
+    [
+        new("connectfive", "/connectfive", "Connect Five", "Drop pieces on a 9x9 board. Get 5 in a row to win.",
+            "Play Connect Five single player", "#f44336", "rgba(244,67,54,0.28)", ["1P","2P","Demo"], "🔴🟡"),
+        new("tictactoe", "/tictactoe", "Tic Tac Toe", "Classic game on a 6x6 board. Get 4 in a row to win.",
+            "Play Tic Tac Toe single player", "#ef4444", "rgba(239,68,68,0.28)", ["1P","2P","Demo"], "❌⭕"),
+        new("voxelshooter", "/voxelshooter", "Voxel Shooter", "Blast voxel enemies and survive the full round.",
+            "Play Voxel Shooter single player", "#00D9FF", "rgba(0,217,255,0.28)", ["1P"], "🎯"),
+        new("pofight", "/pofight", "PoFight", "Arcade fighter with PvCPU and CPU demo options.",
+            "Play PoFight single player", "#f97316", "rgba(249,115,22,0.28)", ["1P","Demo"], "⚔️"),
+        new("podropsquare", "/podropsquare", "PoDropSquare", "Stack falling blocks and clear lines to score.",
+            "Play PoDropSquare single player", "#a78bfa", "rgba(167,139,250,0.28)", ["1P"], "⬜"),
+        new("pobabytouch", "/pobabytouch", "PoBabyTouch", "Tap matching shapes before they disappear.",
+            "Play PoBabyTouch single player", "#ec4899", "rgba(236,72,153,0.28)", ["1P"], "👶"),
+        new("poraceragdoll", "/poraceragdoll", "PoRaceRagdoll", "Bet on ragdoll racers and watch the chaos unfold.",
+            "Play PoRaceRagdoll single player", "#22c55e", "rgba(34,197,94,0.28)", ["1P","Demo"], "🚗"),
+        new("posnakegame", "/posnakegame", "PoSnakeGame", "Battle royale snake — outlast all opponents.",
+            "Play PoSnakeGame single player", "#4ade80", "rgba(74,222,128,0.28)", ["1P"], "🐍"),
+        new("pohorserace", "/pohorserace", "PoHorseRace", "Carnival arcade horse race — swipe to roll, score to win!",
+            "Play PoHorseRace single player", "#f59e0b", "rgba(245,158,11,0.28)", ["1P","Demo"], "🏇"),
+        new("porunner", "/porunner?mode=1p", "PoRunner", "Type T-Y-G-H to sprint past opponents! Race to the finish.",
+            "Play PoRunner single player", "#fcd34d", "rgba(252,211,77,0.28)", ["1P","2P","Demo","Multi"], "⚡"),
+    ];
+
+    private static readonly GameCardData[] DemoGames =
+    [
+        new("tictactoe-demo", "/tictactoe?demo=1&demo_return=1", "Tic Tac Toe Demo", "Watch CPU vs CPU battle it out.",
+            "Watch Tic Tac Toe demo", "#ef4444", "rgba(239,68,68,0.28)", [], "❌⭕"),
+        new("connectfive-demo", "/connectfive?demo=1&demo_return=1", "Connect Five Demo", "Watch the CPU auto-play on a 9x9 board.",
+            "Watch Connect Five demo", "#f44336", "rgba(244,67,54,0.28)", [], "🔴🟡"),
+        new("pofight-demo", "/pofight?demo=1&demo_return=1", "PoFight Demo", "Arcade fighter in CPU vs CPU kiosk mode.",
+            "Watch PoFight demo", "#f97316", "rgba(249,115,22,0.28)", [], "⚔️"),
+        new("poraceragdoll-demo", "/poraceragdoll", "PoRaceRagdoll", "Enjoy the chaos and place a bet on the racers.",
+            "Watch PoRaceRagdoll demo", "#22c55e", "rgba(34,197,94,0.28)", [], "🚗"),
+        new("pohorserace-demo", "/pohorserace", "PoHorseRace Demo", "Watch all 8 lanes auto-race in arcade demo mode.",
+            "Watch PoHorseRace demo", "#f59e0b", "rgba(245,158,11,0.28)", [], "🏇"),
+        new("porunner-demo", "/porunner?mode=demo", "PoRunner Demo", "Watch 8 CPU bots race to the finish line.",
+            "Watch PoRunner demo", "#fcd34d", "rgba(252,211,77,0.28)", [], "⚡"),
+    ];
+
+    private GameCardData[] _filteredGames = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        _mode = QueryMode == "demo" ? "demo" : QueryMode == "local-2p" ? "local-2p" : "play";
+        UpdateState();
+
+        _ = Task.Run(async () =>
+        {
+            _apiOnline = await ApiService.IsAvailableAsync();
+            await InvokeAsync(StateHasChanged);
+        });
+    }
+
+    protected override void OnParametersSet()
+    {
+        UpdateState();
+    }
+
+    private void UpdateState()
+    {
+        var games = _mode switch
+        {
+            "demo" => DemoGames,
+            "local-2p" => SinglePlayerGames.Where(g => g.Modes.Contains("2P")).ToArray(),
+            _ => SinglePlayerGames
+        };
+
+        _title = _mode switch
+        {
+            "demo" => "Pick a Demo Game",
+            "local-2p" => "Local 2-Player Games",
+            _ => "Pick a Single-Player Game"
+        };
+
+        _subtitle = _mode switch
+        {
+            "demo" => "Watch CPU-driven matches with no sign-in required.",
+            "local-2p" => "All games below support pass-and-play on this device.",
+            _ => "Choose any game below and jump in."
+        };
+
+        _filteredGames = string.IsNullOrWhiteSpace(SearchQuery)
+            ? games
+            : games.Where(g =>
+                g.Title.Contains(SearchQuery, StringComparison.OrdinalIgnoreCase) ||
+                g.Description.Contains(SearchQuery, StringComparison.OrdinalIgnoreCase))
+              .ToArray();
+    }
+
+    private void SetMode(string mode)
+    {
+        _mode = mode;
+        UpdateState();
+        NavigationManager.NavigateTo(mode == "play"
+            ? "/single-player"
+            : $"/single-player?mode={mode}");
+    }
+}

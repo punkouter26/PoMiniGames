@@ -1,0 +1,20 @@
+@page "/auth/callback"
+@using PoMiniGamesClient.Services
+@inject NavigationManager NavigationManager
+@inject AuthStateService AuthState
+
+<div style="min-height:60vh;display:grid;place-items:center">
+    <div style="display:flex;align-items:center;gap:0.75rem;color:var(--color-text-secondary,#aaa)">
+        <span class="thinking-indicator">⏳</span>
+        Completing Microsoft sign-in...
+    </div>
+</div>
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        // After auth callback, redirect home
+        await Task.Delay(500);
+        NavigationManager.NavigateTo("/", replace: true);
+    }
+}

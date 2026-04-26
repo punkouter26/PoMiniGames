@@ -1,0 +1,92 @@
+@page "/diag"
+@using PoMiniGamesClient.Services
+@using System.Text.Json
+@inject ApiService ApiService
+@inject AuthStateService AuthState
+@inject HttpClient Http
+
+<div style="padding:2rem;max-width:860px;margin:0 auto;font-family:monospace;color:#cdd5e0">
+    <h1 style="font-size:1.5rem;margin-bottom:0.25rem;color:#fff">🔧 /diag</h1>
+    <p style="color:#64748b;margin-bottom:2rem;font-size:0.8rem">Diagnostic page</p>
+
+    <section style="margin-bottom:1.5rem">
+        <h2 style="font-size:0.75rem;text-transform:uppercase;letter-spacing:0.1em;color:#94a3b8;border-bottom:1px solid #1e293b;padding-bottom:0.4rem;margin-bottom:0.75rem">API Status</h2>
+        <div style="display:grid;gap:0.25rem;font-size:0.8rem">
+            <div style="display:grid;grid-template-columns:260px 1fr;gap:1rem"><span style="color:#64748b">Backend</span><span style="color:#e2e8f0">@_apiStatus</span></div>
+            <div style="display:grid;grid-template-columns:260px 1fr;gap:1rem"><span style="color:#64748b">Auth configured</span><span style="color:#e2e8f0">@AuthState.IsConfigured</span></div>
+            <div style="display:grid;grid-template-columns:260px 1fr;gap:1rem"><span style="color:#64748b">Auth loading</span><span style="color:#e2e8f0">@AuthState.IsLoading</span></div>
+        </div>
+    </section>
+
+    <section style="margin-bottom:1.5rem">
+        <h2 style="font-size:0.75rem;text-transform:uppercase;letter-spacing:0.1em;color:#94a3b8;border-bottom:1px solid #1e293b;padding-bottom:0.4rem;margin-bottom:0.75rem">Auth</h2>
+        <div style="display:grid;gap:0.25rem;font-size:0.8rem">
+            <div style="display:grid;grid-template-columns:260px 1fr;gap:1rem"><span style="color:#64748b">Authenticated</span><span style="color:#e2e8f0">@AuthState.IsAuthenticated</span></div>
+            <div style="display:grid;grid-template-columns:260px 1fr;gap:1rem"><span style="color:#64748b">User ID</span><span style="color:#e2e8f0">@(AuthState.User?.UserId ?? "—")</span></div>
+            <div style="display:grid;grid-template-columns:260px 1fr;gap:1rem"><span style="color:#64748b">Display name</span><span style="color:#e2e8f0">@(AuthState.User?.DisplayName ?? "—")</span></div>
+            <div style="display:grid;grid-template-columns:260px 1fr;gap:1rem"><span style="color:#64748b">Email</span><span style="color:#e2e8f0">@Mask(AuthState.User?.Email)</span></div>
+        </div>
+    </section>
+
+    <section style="margin-bottom:1.5rem">
+        <h2 style="font-size:0.75rem;text-transform:uppercase;letter-spacing:0.1em;color:#94a3b8;border-bottom:1px solid #1e293b;padding-bottom:0.4rem;margin-bottom:0.75rem">Backend /diag</h2>
+        @if (_backendError != null)
+        {
+            <p style="color:#ef4444;margin:0">@_backendError</p>
+        }
+        else if (_backendDiag == null)
+        {
+            <p style="color:#64748b;margin:0">@(_apiStatus == "offline" ? "API offline" : "Loading…")</p>
+        }
+        else
+        {
+            <pre style="margin:0;white-space:pre-wrap;word-break:break-all;font-size:0.75rem">@_backendDiagRaw</pre>
+        }
+    </section>
+</div>
+
+@code {
+    private string _apiStatus = "checking";
+    private string? _backendDiagRaw;
+    private string? _backendError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _apiStatus = await ApiService.IsAvailableAsync() ? "online" : "offline";
+
+        if (_apiStatus == "online")
+        {
+            try
+            {
+                var response = await Http.GetAsync("/diag");
+                if (response.IsSuccessStatusCode)
+                {
+                    var json = await response.Content.ReadAsStringAsync();
+                    try
+                    {
+                        var obj = JsonSerializer.Deserialize<JsonElement>(json);
+                        _backendDiagRaw = JsonSerializer.Serialize(obj, new JsonSerializerOptions { WriteIndented = true });
+                    }
+                    catch
+                    {
+                        _backendDiagRaw = json;
+                    }
+                }
+                else
+                {
+                    _backendError = $"HTTP {(int)response.StatusCode}";
+                }
+            }
+            catch (Exception ex)
+            {
+                _backendError = ex.Message;
+            }
+        }
+    }
+
+    private static string Mask(string? value)
+    {
+        if (string.IsNullOrEmpty(value) || value.Length <= 8) return "***";
+        return value[..4] + "****" + value[^4..];
+    }
+}

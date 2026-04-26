@@ -1,0 +1,49 @@
+@page "/multi-player-select"
+@inject NavigationManager NavigationManager
+
+<div class="sp-page">
+    <div class="sp-card">
+        <div class="sp-header">
+            <button class="sp-back" @onclick="() => NavigationManager.NavigateTo(\"/\")">← Home</button>
+            <h1 class="sp-title">👥 Pick a 2-Player Game</h1>
+            <button class="sp-btn-secondary" @onclick="() => NavigationManager.NavigateTo(\"/single-player?mode=local-2p\")">🎮 All 2P games</button>
+        </div>
+        <p class="sp-subtitle">Choose a game for local 2-player couch play on this device.</p>
+        <div class="sp-game-grid">
+            @foreach (var game in Local2PlayerGames)
+            {
+                <button type="button" class="sp-game-card" aria-label="@game.AriaLabel"
+                        style="--accent:@game.Accent;--accent-glow:@game.AccentGlow"
+                        @onclick="() => NavigationManager.NavigateTo(game.To)">
+                    <div class="sp-game-card-preview" aria-hidden="true">
+                        <div class="sp-game-icon">@game.Icon</div>
+                    </div>
+                    <div class="sp-game-card-body">
+                        <h2>@game.Title</h2>
+                        <p>@game.Description</p>
+                        <div class="sp-game-modes" aria-label="Available modes">
+                            @foreach (var m in game.Modes)
+                            {
+                                <span class="sp-mode-pill sp-mode-pill--@m.ToLowerInvariant()">@m</span>
+                            }
+                        </div>
+                    </div>
+                </button>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private record GameCard(string Title, string Description, string AriaLabel, string Accent, string AccentGlow, string[] Modes, string Icon, string To);
+
+    private static readonly GameCard[] Local2PlayerGames =
+    [
+        new("Tic Tac Toe", "Local pass-and-play on one device. Take turns as X and O.",
+            "Play Tic Tac Toe local 2 player", "#ef4444", "rgba(239,68,68,0.28)", ["2P"], "❌⭕", "/tictactoe?local=1"),
+        new("Connect Five", "Local couch play on one device. Alternate drops to make 5 in a row.",
+            "Play Connect Five local 2 player", "#f44336", "rgba(244,67,54,0.28)", ["2P"], "🔴🟡", "/connectfive?local=1"),
+        new("PoRunner", "P1 (T-Y-G-H) vs P2 (Q-W-E-R). First to the finish wins!",
+            "Play PoRunner local 2 player", "#fcd34d", "rgba(252,211,77,0.28)", ["2P"], "⚡", "/porunner?mode=2p"),
+    ];
+}

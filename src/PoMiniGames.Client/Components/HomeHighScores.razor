@@ -1,0 +1,189 @@
+@using PoMiniGamesClient.Services
+@using PoMiniGamesClient.Models
+@inject ApiService ApiService
+
+<section id="highscores" class="home-highscores" aria-label="Top 10 high scores per game">
+    <div class="home-highscores-heading">
+        <h2 class="home-highscores-title">🏆 Top 10 High Scores</h2>
+        <button type="button" class="home-highscores-filter-toggle" @onclick="ToggleDifficultyFilter">
+            @(_showDifficultyFilters ? "Hide difficulty" : "Filter by difficulty")
+        </button>
+    </div>
+
+    <div class="home-highscores-tabs" role="tablist" aria-label="Game">
+        @foreach (var game in Games)
+        {
+            <button role="tab" aria-selected="@(ActiveGame == game.Id)"
+                    class="home-highscores-tab@(ActiveGame == game.Id ? " active" : "")"
+                    @onclick="() => SelectGame(game.Id)">
+                @game.Label
+            </button>
+        }
+    </div>
+
+    @if (_showDifficultyFilters)
+    {
+        <div class="home-highscores-diff-tabs" role="tablist" aria-label="Difficulty">
+            @foreach (var diff in Difficulties)
+            {
+                <button role="tab" aria-selected="@(ActiveDifficulty == diff.Id)"
+                        class="home-highscores-diff-tab@(ActiveDifficulty == diff.Id ? " active" : "")"
+                        @onclick="() => SelectDifficulty(diff.Id)">
+                    @diff.Label
+                </button>
+            }
+        </div>
+    }
+
+    <div class="home-highscores-panel" role="tabpanel">
+        @if (_isLoading && _entries == null)
+        {
+            <p class="home-highscores-empty">Loading...</p>
+        }
+        else if (_entries == null || _entries.Count == 0)
+        {
+            <ol class="home-highscores-list">
+                @for (int i = 0; i < 10; i++)
+                {
+                    <li class="home-highscores-row home-highscores-row--empty">
+                        <span class="home-highscores-rank">#@(i + 1)</span>
+                        <div class="home-highscores-info">
+                            <span class="home-highscores-name">---</span>
+                            <div class="home-highscores-bar-wrap">
+                                <div class="home-highscores-bar" style="--bar-w:0%;--bar-delay:@(i * 60)ms"></div>
+                            </div>
+                        </div>
+                        <span class="home-highscores-metric">@(ActiveDifficulty == "all" ? "0% · 0G" : "ELO 1000 · 0G")</span>
+                    </li>
+                }
+            </ol>
+        }
+        else
+        {
+            <ol class="home-highscores-list">
+                @{
+                    double topBarFraction = 1;
+                    if (_entries.Count > 0)
+                    {
+                        topBarFraction = _entries.Max(e => GetBarFraction(e));
+                    }
+                }
+                @for (int i = 0; i < _entries.Count; i++)
+                {
+                    var entry = _entries[i];
+                    var (metricLabel, barFraction) = GetRowMetric(entry);
+                    var barWidth = topBarFraction > 0 ? (int)Math.Round(barFraction / topBarFraction * 100) : 0;
+                    var medal = i == 0 ? "🥇" : i == 1 ? "🥈" : i == 2 ? "🥉" : null;
+                    var rowClass = medal != null ? $" home-highscores-row--rank{i + 1}" : "";
+                    <li class="home-highscores-row@rowClass">
+                        <span class="home-highscores-rank">@(medal ?? $"#{i + 1}")</span>
+                        <div class="home-highscores-info">
+                            <span class="home-highscores-name">@entry.Name</span>
+                            <div class="home-highscores-bar-wrap">
+                                <div class="home-highscores-bar" style="--bar-w:@(barWidth)%;--bar-delay:@(i * 60)ms"></div>
+                            </div>
+                        </div>
+                        <span class="home-highscores-metric">@metricLabel</span>
+                    </li>
+                }
+            </ol>
+        }
+    </div>
+</section>
+
+@code {
+    private static readonly (string Id, string Label)[] Games =
+    [
+        ("connectfive", "Connect Five"),
+        ("tictactoe", "Tic Tac Toe"),
+        ("pofight", "PoFight"),
+        ("posnakegame", "PoSnakeGame"),
+        ("pobabytouch", "PoBabyTouch"),
+        ("podropsquare", "PoDropSquare"),
+        ("voxelshooter", "Voxel Shooter"),
+        ("poraceragdoll", "PoRaceRagdoll"),
+    ];
+
+    private static readonly (string Id, string Label)[] Difficulties =
+    [
+        ("all", "All"),
+        ("easy", "Easy"),
+        ("medium", "Medium"),
+        ("hard", "Hard"),
+    ];
+
+    private string ActiveGame = "connectfive";
+    private string ActiveDifficulty = "all";
+    private bool _showDifficultyFilters;
+    private List<PlayerStatsDto>? _entries;
+    private bool _isLoading;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadLeaderboard();
+    }
+
+    private async Task LoadLeaderboard()
+    {
+        _isLoading = true;
+        StateHasChanged();
+
+        _entries = (await ApiService.GetLeaderboardAsync(ActiveGame, 10,
+            ActiveDifficulty == "all" ? null : ActiveDifficulty))?.ToList();
+
+        _isLoading = false;
+        StateHasChanged();
+    }
+
+    private async Task SelectGame(string gameId)
+    {
+        ActiveGame = gameId;
+        await LoadLeaderboard();
+    }
+
+    private async Task SelectDifficulty(string diffId)
+    {
+        ActiveDifficulty = diffId;
+        await LoadLeaderboard();
+    }
+
+    private void ToggleDifficultyFilter()
+    {
+        _showDifficultyFilters = !_showDifficultyFilters;
+    }
+
+    private double GetBarFraction(PlayerStatsDto entry)
+    {
+        if (ActiveDifficulty == "all")
+            return entry.Stats.WinRate;
+
+        var bucket = ActiveDifficulty switch
+        {
+            "easy" => entry.Stats.Easy,
+            "medium" => entry.Stats.Medium,
+            "hard" => entry.Stats.Hard,
+            _ => null
+        };
+        if (bucket == null) return 0;
+        return Math.Min(bucket.EloRating / 2000.0, 1.0);
+    }
+
+    private (string Label, double Fraction) GetRowMetric(PlayerStatsDto entry)
+    {
+        if (ActiveDifficulty == "all")
+        {
+            var pct = (int)Math.Round(entry.Stats.WinRate * 100);
+            return ($"{pct}% · {entry.Stats.TotalGames}G", entry.Stats.WinRate);
+        }
+
+        var bucket = ActiveDifficulty switch
+        {
+            "easy" => entry.Stats.Easy,
+            "medium" => entry.Stats.Medium,
+            "hard" => entry.Stats.Hard,
+            _ => null
+        };
+        if (bucket == null) return ("ELO 1000 · 0G", 0);
+        return ($"ELO {bucket.EloRating} · {bucket.TotalGames}G", Math.Min(bucket.EloRating / 2000.0, 1.0));
+    }
+}

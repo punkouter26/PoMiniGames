@@ -1,0 +1,62 @@
+﻿@inherits LayoutComponentBase
+@inject AuthStateService AuthState
+@inject ToastService ToastService
+
+<div class="gl-page">
+    <header class="gl-top-bar">
+        <a href="/" class="gl-brand">
+            <span class="gl-brand-icon">🎮</span>
+            <span class="gl-brand-text">PoMiniGames</span>
+        </a>
+
+        <div class="gl-auth">
+            @if (AuthState.IsConfigured && AuthState.User != null)
+            {
+                <span class="gl-auth-user" title="@(AuthState.User.Email ?? AuthState.User.DisplayName)">
+                    @AuthState.User.DisplayName
+                </span>
+            }
+            @if (AuthState.IsConfigured && !AuthState.IsLoading)
+            {
+                <button class="gl-auth-button" @onclick="AuthState.IsAuthenticated ? SignOut : SignIn">
+                    @(AuthState.IsAuthenticated ? "Sign out" : "Sign in")
+                </button>
+            }
+        </div>
+    </header>
+
+    <main class="gl-content">
+        @Body
+    </main>
+
+    @if (ToastService.Toasts.Count > 0)
+    {
+        <div class="toast-stack" role="log" aria-live="polite" aria-label="Notifications">
+            @foreach (var toast in ToastService.Toasts)
+            {
+                <div class="toast toast--@toast.Type.ToString().ToLowerInvariant()" role="alert">
+                    <span class="toast-msg">@toast.Message</span>
+                    <button class="toast-close" @onclick="() => ToastService.Dismiss(toast.Id)" aria-label="Dismiss">×</button>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        await AuthState.InitializeAsync();
+        AuthState.StateChanged += () => InvokeAsync(StateHasChanged);
+    }
+
+    private async Task SignIn()
+    {
+        await AuthState.SignInAsync();
+    }
+
+    private async Task SignOut()
+    {
+        await AuthState.SignOutAsync();
+    }
+}

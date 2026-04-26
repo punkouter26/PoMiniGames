@@ -10,8 +10,8 @@ export interface GameCardItem {
   accent: string;
   accentGlow: string;
   icon: ReactNode;
-  /** Which modes this game supports: '1P', '2P', 'Demo' */
-  modes?: Array<'1P' | '2P' | 'Demo'>;
+  /** Which modes this game supports: '1P', '2P', 'Demo', 'Multi' */
+  modes?: Array<'1P' | '2P' | 'Demo' | 'Multi'>;
 }
 
 interface GameCardGridProps {

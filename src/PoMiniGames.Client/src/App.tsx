@@ -6,6 +6,7 @@ import { GameErrorBoundary } from './components/GameErrorBoundary';
 import GameLayout from './components/GameLayout';
 import Home from './components/Home';
 import MultiPlayerSelectPage from './components/MultiPlayerSelectPage';
+import OnlineMultiplayerPage from './components/OnlineMultiplayerPage';
 import SinglePlayerPage from './components/SinglePlayerPage';
 import { AuthProvider } from './context/AuthContext';
 import { PlayerNameProvider } from './context/PlayerNameContext';
@@ -19,6 +20,7 @@ const PoBabyTouchPage = lazy(() => import('./games/pobabytouch/PoBabyTouchPage')
 const PoRaceRagdollPage = lazy(() => import('./games/poraceragdoll/PoRaceRagdollPage'));
 const PoSnakeGamePage = lazy(() => import('./games/posnakegame/PoSnakeGamePage'));
 const PoHorseRacePage = lazy(() => import('./games/pohorserace/PoHorseRacePage'));
+const PoRunnerPage = lazy(() => import('./games/porunner/PoRunnerPage'));
 
 export default function App() {
   return (
@@ -31,6 +33,7 @@ export default function App() {
               <Route path="auth/callback" element={<AuthCallbackPage />} />
               <Route path="lobby" element={<Navigate to="/multi-player-select" replace />} />
               <Route path="multi-player-select" element={<MultiPlayerSelectPage />} />
+              <Route path="online-multiplayer" element={<OnlineMultiplayerPage />} />
               <Route path="single-player" element={<SinglePlayerPage />} />
               <Route path="leaderboard" element={<Navigate to="/" replace />} />
               <Route path="multi-player" element={<Navigate to="/multi-player-select" replace />} />
@@ -45,6 +48,7 @@ export default function App() {
               <Route path="poraceragdoll" element={<GameErrorBoundary gameName="PoRaceRagdoll"><PoRaceRagdollPage /></GameErrorBoundary>} />
               <Route path="posnakegame" element={<GameErrorBoundary gameName="PoSnakeGame"><PoSnakeGamePage /></GameErrorBoundary>} />
               <Route path="pohorserace" element={<GameErrorBoundary gameName="PoHorseRace"><PoHorseRacePage /></GameErrorBoundary>} />
+              <Route path="porunner" element={<GameErrorBoundary gameName="PoRunner"><PoRunnerPage /></GameErrorBoundary>} />
               <Route path="diag" element={<DiagPage />} />
             </Route>
           </Routes>

@@ -118,6 +118,17 @@ const SINGLE_PLAYER_GAMES: GameCardItem[] = [
     modes: ['1P', 'Demo'],
     icon: <PersonStanding size={44} color="#f59e0b" />,
   },
+  {
+    key: 'porunner',
+    to: '/porunner?mode=1p',
+    title: 'PoRunner',
+    description: 'Type T-Y-G-H to sprint past opponents! Race to the finish.',
+    ariaLabel: 'Play PoRunner single player',
+    accent: '#fcd34d',
+    accentGlow: 'rgba(252,211,77,0.28)',
+    modes: ['1P', '2P', 'Demo', 'Multi'],
+    icon: <Activity size={44} color="#fcd34d" />,
+  },
 ] as const;
 
 const DEMO_GAMES: GameCardItem[] = [
@@ -180,6 +191,16 @@ const DEMO_GAMES: GameCardItem[] = [
     accent: '#f59e0b',
     accentGlow: 'rgba(245,158,11,0.28)',
     icon: <PersonStanding size={44} color="#f59e0b" />,
+  },
+  {
+    key: 'porunner-demo',
+    to: '/porunner?mode=demo',
+    title: 'PoRunner Demo',
+    description: 'Watch 8 CPU bots race to the finish line.',
+    ariaLabel: 'Watch PoRunner demo',
+    accent: '#fcd34d',
+    accentGlow: 'rgba(252,211,77,0.28)',
+    icon: <Activity size={44} color="#fcd34d" />,
   },
 ] as const;
 

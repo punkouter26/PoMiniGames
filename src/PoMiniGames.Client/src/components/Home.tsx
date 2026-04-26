@@ -1,8 +1,6 @@
-import { Gamepad2, MonitorPlay, Users, UserRoundCheck } from 'lucide-react';
+import { Gamepad2, Globe, MonitorPlay, Users, UserRoundCheck } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import './Home.css';
-
-const DEMO_START_URL = '/tictactoe?demo=1&demo_rotation=1&demo_idx=0';
 
 export default function Home() {
   const navigate = useNavigate();
@@ -25,17 +23,22 @@ export default function Home() {
       <p className="home-subtitle">Choose how you want to play</p>
 
       <div className="home-modes">
-        <button type="button" className="home-mode-btn home-mode-btn--2p" aria-label="Play 2 players" autoFocus onClick={() => void navigate('/multi-player-select')}>
-          <span className="home-mode-icon"><Users size={32} /></span>
-          <span className="home-mode-label">2 Players</span>
-        </button>
-
-        <button type="button" className="home-mode-btn home-mode-btn--1p" aria-label="Play 1 player" onClick={() => void navigate('/single-player')}>
+        <button type="button" className="home-mode-btn home-mode-btn--1p" aria-label="Play 1 player" autoFocus onClick={() => void navigate('/single-player')}>
           <span className="home-mode-icon"><UserRoundCheck size={32} /></span>
           <span className="home-mode-label">1 Player</span>
         </button>
 
-        <button type="button" className="home-mode-btn home-mode-btn--demo" aria-label="Watch demo mode" onClick={() => void navigate(DEMO_START_URL)}>
+        <button type="button" className="home-mode-btn home-mode-btn--2p" aria-label="Play 2 players locally" onClick={() => void navigate('/multi-player-select')}>
+          <span className="home-mode-icon"><Users size={32} /></span>
+          <span className="home-mode-label">2 Player (local)</span>
+        </button>
+
+        <button type="button" className="home-mode-btn home-mode-btn--multi" aria-label="Play online multiplayer" onClick={() => void navigate('/online-multiplayer')}>
+          <span className="home-mode-icon"><Globe size={32} /></span>
+          <span className="home-mode-label">Multi player (online)</span>
+        </button>
+
+        <button type="button" className="home-mode-btn home-mode-btn--demo" aria-label="Watch demo mode" onClick={() => void navigate('/single-player?mode=demo')}>
           <span className="home-mode-icon"><MonitorPlay size={32} /></span>
           <span className="home-mode-label">Demo</span>
         </button>

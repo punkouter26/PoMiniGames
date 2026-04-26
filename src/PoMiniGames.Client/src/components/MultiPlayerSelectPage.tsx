@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, CircleDot, Users, Gamepad2 } from 'lucide-react';
+import { ArrowLeft, CircleDot, Users, Gamepad2, Activity } from 'lucide-react';
 import { GameCardGrid, type GameCardItem } from './GameCardGrid';
 import './SinglePlayerPage.css';
 
@@ -35,6 +35,17 @@ const LOCAL_TWO_PLAYER_GAMES: GameCardItem[] = [
         <CircleDot size={44} color="#facc15" />
       </>
     ),
+  },
+  {
+    key: 'porunner-local',
+    to: '/porunner?mode=2p',
+    title: 'PoRunner',
+    description: 'P1 (T-Y-G-H) vs P2 (Q-W-E-R). First to the finish wins!',
+    ariaLabel: 'Play PoRunner local 2 player',
+    accent: '#fcd34d',
+    accentGlow: 'rgba(252,211,77,0.28)',
+    modes: ['2P'],
+    icon: <Activity size={44} color="#fcd34d" />,
   },
 ] as const;
 

@@ -4,6 +4,7 @@ using PoMiniGames.Features.Health;
 using PoMiniGames.Features.Leaderboard;
 using PoMiniGames.Features.HighScores;
 using PoMiniGames.Features.PoRaceRagdoll;
+using PoMiniGames.Features.PoRunner;
 using PoMiniGames.Infrastructure;
 using PoMiniGames.Services;
 using Scalar.AspNetCore;
@@ -24,6 +25,21 @@ builder.Services
     .AddPoMiniGamesGameServices()
     .AddPoMiniGamesCors(builder.Configuration)
     .AddPoMiniGamesRateLimiting();
+
+// ─── PoRunner SignalR ────────────────────────────────────────────────
+builder.Services.AddSignalR(options =>
+{
+    options.EnableDetailedErrors = true;
+}).AddJsonProtocol(options =>
+{
+    options.PayloadSerializerOptions.Converters.Add(
+        new System.Text.Json.Serialization.JsonStringEnumConverter(
+            System.Text.Json.JsonNamingPolicy.CamelCase));
+});
+builder.Services.Configure<GameOptions>(
+    builder.Configuration.GetSection(GameOptions.SectionName));
+builder.Services.AddSingleton<IGameSessionManager, GameSessionManager>();
+builder.Services.AddHostedService(provider => (GameSessionManager)provider.GetRequiredService<IGameSessionManager>());
 
 // ─── Swagger / OpenAPI ───────────────────────────────────────────────
 builder.Services.AddProblemDetails();
@@ -103,23 +119,12 @@ app.UseCors();
 
 if (spaDistProvider is not null)
 {
-    // Cache-Control strategy:
-    // - Entry-point bundles (main-*.js, popup-*.js): no-store, because Vite finalises
-    //   the __vite__mapDeps chunk map AFTER computing the file hash, so the same hash
-    //   can appear with different lazy-chunk references across builds.  Caching these
-    //   as "immutable" causes the browser to serve a stale bundle that points to lazy
-    //   chunks that no longer exist in the new build.
-    // - All other /assets/* files (lazy chunks, CSS, images): immutable — Vite's
-    //   content-hash guarantees they never change for a given URL.
-    // - HTML and navigation paths: no-store so the browser always fetches the latest
-    //   index.html with correct asset references.
     app.Use(async (ctx, next) =>
     {
         var path = ctx.Request.Path.Value ?? "";
         if (ctx.Request.Path.StartsWithSegments("/assets"))
         {
             var fileName = System.IO.Path.GetFileName(path);
-            // Entry bundles share the "main-" or "popup-" prefix; treat them as mutable.
             var isEntryBundle = (fileName.StartsWith("main-", StringComparison.OrdinalIgnoreCase)
                               || fileName.StartsWith("popup-", StringComparison.OrdinalIgnoreCase))
                              && fileName.EndsWith(".js", StringComparison.OrdinalIgnoreCase);
@@ -165,7 +170,10 @@ app.MapGameEndpoints();
 
 app.MapHealthChecks("/health");
 
-// ─── SPA fallback (serves React build from wwwroot) ─────────────────
+// ─── PoRunner SignalR hub ────────────────────────────────────────────
+app.MapHub<GameHub>("/porunner/gamehub");
+
+// ─── SPA fallback ────────────────────────────────────────────────────
 if (spaDistProvider is not null)
 {
     app.MapFallbackToFile("index.html", new StaticFileOptions
@@ -204,7 +212,6 @@ public class PrefixKeyVaultSecretManager : Azure.Extensions.AspNetCore.Configura
 
     public override string GetKey(Azure.Security.KeyVault.Secrets.KeyVaultSecret secret)
     {
-        // Don't strip the prefix, so it becomes PoMiniGames:Key in configuration
         return secret.Name.Replace("--", ConfigurationPath.KeyDelimiter);
     }
 }

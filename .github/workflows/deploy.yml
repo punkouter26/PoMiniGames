@@ -80,6 +80,21 @@ jobs:
           name: app-publish
           path: ./publish
 
+      - name: Locate Publish Output
+        id: publish-path
+        shell: bash
+        run: |
+          PUBLISH_DLL=$(find ./publish -type f -name "PoMiniGames.dll" | head -n 1)
+          if [ -z "$PUBLISH_DLL" ]; then
+            echo "Error: PoMiniGames.dll not found in downloaded artifact."
+            find ./publish -maxdepth 4 -type f | head -n 100
+            exit 1
+          fi
+
+          PUBLISH_DIR=$(dirname "$PUBLISH_DLL")
+          echo "publish-dir=$PUBLISH_DIR" >> "$GITHUB_OUTPUT"
+          echo "Resolved publish directory: $PUBLISH_DIR"
+
       - name: Get App Service Name
         id: app-info
         shell: bash
@@ -100,7 +115,7 @@ jobs:
       - name: Deploy to App Service
         shell: bash
         run: |
-          cd ./publish
+          cd "${{ steps.publish-path.outputs.publish-dir }}"
           zip -r ../app-deploy.zip .
           cd ..
           az webapp deploy \
@@ -108,8 +123,7 @@ jobs:
             --name "${{ steps.app-info.outputs.app-name }}" \
             --src-path app-deploy.zip \
             --type zip \
-            --async true \
-            --track-status false
+            --track-status true
 
       - name: Health Check
         shell: bash

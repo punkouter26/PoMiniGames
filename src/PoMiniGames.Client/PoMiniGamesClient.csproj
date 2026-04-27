@@ -4,12 +4,10 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <OverrideHtmlAssetPlaceholders>true</OverrideHtmlAssetPlaceholders>
   </PropertyGroup>
 
   <PropertyGroup>
     <WasmEnableWebcilProtectedResources>false</WasmEnableWebcilProtectedResources>
-    <StaticWebAssetsFingerprintingEnabled>false</StaticWebAssetsFingerprintingEnabled>
   </PropertyGroup>
 
   <ItemGroup>

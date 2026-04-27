@@ -109,6 +109,9 @@ app.MapGameEndpoints();
 // ─── PoRunner SignalR hub ────────────────────────────────────────────
 app.MapHub<GameHub>("/porunner/gamehub");
 
+// ─── Static assets (fingerprint-aware, reads staticwebassets.endpoints.json) ──
+app.MapStaticAssets();
+
 // ─── SPA fallback ────────────────────────────────────────────────────
 app.MapFallbackToFile("index.html");
 

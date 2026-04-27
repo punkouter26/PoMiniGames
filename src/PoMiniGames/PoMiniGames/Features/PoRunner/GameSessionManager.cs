@@ -58,7 +58,8 @@ public class GameSessionManager : IHostedService, IGameSessionManager, IDisposab
 
     public Task StopAsync(CancellationToken cancellationToken)
     {
-        _tickCts?.Cancel();
+        try { _tickCts?.Cancel(); }
+        catch (ObjectDisposedException) { /* already disposed during shutdown */ }
         return _tickTask ?? Task.CompletedTask;
     }
 

@@ -4,7 +4,18 @@
 
 <section id="highscores" class="home-highscores" aria-label="Top 10 high scores per game">
     <div class="home-highscores-heading">
-        <h2 class="home-highscores-title">🏆 Top 10 High Scores</h2>
+        <h2 class="home-highscores-title">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:0.4rem">
+                <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5C7 4 6 9 6 9z"/>
+                <path d="M18 9h1.5a2.5 2.5 0 0 0 0-5C17 4 18 9 18 9z"/>
+                <path d="M4 22h16"/>
+                <path d="M10 22V9h4v13"/>
+                <path d="M8 22V8"/>
+                <path d="M16 22V8"/>
+                <path d="M12 2v4m-2-2h4"/>
+            </svg>
+            Top 10 High Scores
+        </h2>
         <button type="button" class="home-highscores-filter-toggle" @onclick="ToggleDifficultyFilter">
             @(_showDifficultyFilters ? "Hide difficulty" : "Filter by difficulty")
         </button>
@@ -38,25 +49,25 @@
     <div class="home-highscores-panel" role="tabpanel">
         @if (_isLoading && _entries == null)
         {
-            <p class="home-highscores-empty">Loading...</p>
+            <div class="home-highscores-empty">
+                <svg class="home-highscores-empty-icon" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <circle cx="40" cy="40" r="30" stroke="var(--color-border)" stroke-width="4" stroke-dasharray="8 4">
+                        <animateTransform attributeName="transform" type="rotate" values="0 40 40;360 40 40" dur="2s" repeatCount="indefinite"/>
+                    </circle>
+                </svg>
+                <span>Loading scores...</span>
+            </div>
         }
         else if (_entries == null || _entries.Count == 0)
         {
-            <ol class="home-highscores-list">
-                @for (int i = 0; i < 10; i++)
-                {
-                    <li class="home-highscores-row home-highscores-row--empty">
-                        <span class="home-highscores-rank">#@(i + 1)</span>
-                        <div class="home-highscores-info">
-                            <span class="home-highscores-name">---</span>
-                            <div class="home-highscores-bar-wrap">
-                                <div class="home-highscores-bar" style="--bar-w:0%;--bar-delay:@(i * 60)ms"></div>
-                            </div>
-                        </div>
-                        <span class="home-highscores-metric">@(ActiveDifficulty == "all" ? "0% · 0G" : "ELO 1000 · 0G")</span>
-                    </li>
-                }
-            </ol>
+            <div class="home-highscores-empty">
+                <svg class="home-highscores-empty-icon" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect x="15" y="35" width="50" height="35" rx="4" stroke="var(--color-border)" stroke-width="3"/>
+                    <circle cx="40" cy="40" r="12" stroke="var(--color-border)" stroke-width="3"/>
+                    <path d="M40 34v12m-6-6h12" stroke="var(--color-border)" stroke-width="3" stroke-linecap="round"/>
+                </svg>
+                <span>No scores yet for this game. Play now to appear on the leaderboard!</span>
+            </div>
         }
         else
         {

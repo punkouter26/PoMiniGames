@@ -1,5 +1,7 @@
 @page "/single-player"
+@using System
 @using PoMiniGamesClient.Services
+@implements IDisposable
 @inject NavigationManager NavigationManager
 @inject ApiService ApiService
 @inject AuthStateService AuthState
@@ -9,14 +11,22 @@
     @if (_apiOnline == false)
     {
         <div class="sp-offline-banner" role="alert">
-            ⚠️ Offline mode — scores won't sync until the server is reachable
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:0.3rem">
+                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                <line x1="12" y1="9" x2="12" y2="13"/>
+                <line x1="12" y1="17" x2="12.01" y2="17"/>
+            </svg>
+            Offline mode — scores won't sync until the server is reachable
         </div>
     }
 
     <div class="sp-card">
         <div class="sp-header">
             <button class="sp-back" @onclick='() => NavigationManager.NavigateTo("/")'>
-                ← Home
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:0.2rem">
+                    <polyline points="15 18 9 12 15 6"/>
+                </svg>
+                Home
             </button>
             <h1 class="sp-title">@_title</h1>
         </div>
@@ -26,29 +36,66 @@
                 Play games
             </button>
             <button class="@(_mode == "local-2p" ? "sp-btn-primary" : "sp-btn-secondary")" @onclick='() => SetMode("local-2p")'>
-                👥 Local 2P
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:0.2rem">
+                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                    <circle cx="9" cy="7" r="4"/>
+                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                    <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                </svg>
+                Local 2P
             </button>
             <button class="@(_mode == "demo" ? "sp-btn-primary" : "sp-btn-secondary")" @onclick='() => SetMode("demo")'>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:0.2rem">
+                    <polygon points="5 3 19 12 5 21 5 3"/>
+                </svg>
                 Watch demos
             </button>
         </div>
 
         <p class="sp-subtitle">@_subtitle</p>
 
-        <div class="sp-search-wrap">
-            <span class="sp-search-icon">🔍</span>
+        <div class="sp-search-wrap @(string.IsNullOrEmpty(_searchQuery) ? "" : "has-text")">
+            <span class="sp-search-icon">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="11" cy="11" r="8"/>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                </svg>
+            </span>
             <input class="sp-search" type="search" placeholder="Search games…"
-                   @bind="SearchQuery" @bind:event="oninput" aria-label="Search games" />
+                   value="@_searchQuery"
+                   @oninput="OnSearchInput"
+                   aria-label="Search games" />
+            @if (!string.IsNullOrEmpty(_searchQuery))
+            {
+                <button class="sp-search-clear" @onclick="ClearSearch" aria-label="Clear search">✕</button>
+            }
         </div>
 
+        @if (!string.IsNullOrEmpty(_searchQuery))
+        {
+            <div class="sp-search-result-count">@_filteredGames.Length of @_allGames.Length games match</div>
+        }
+
         <div class="sp-game-grid">
-            @if (_filteredGames.Length > 0)
+            @if (_isLoading)
+            {
+                @for (int i = 0; i < 6; i++)
+                {
+                    <div class="sp-game-card" style="padding:0">
+                        <div class="skeleton skeleton--card" style="border-radius:0.75rem;height:200px"></div>
+                    </div>
+                }
+            }
+            else if (_filteredGames.Length > 0)
             {
                 foreach (var game in _filteredGames)
                 {
                     <button type="button" class="sp-game-card"
                             aria-label="@game.AriaLabel"
                             style="--accent:@game.Accent;--accent-glow:@game.AccentGlow"
+                            @onmouseenter="(e) => OnCardEnter(e)"
+                            @onmousemove="(e) => OnCardMove(e)"
+                            @onmouseleave="(e) => OnCardLeave(e)"
                             @onclick="() => NavigationManager.NavigateTo(game.To)">
                         <div class="sp-game-card-preview" aria-hidden="true">
                             <div class="sp-game-icon">@game.Icon</div>
@@ -71,7 +118,17 @@
             }
             else
             {
-                <p class="sp-no-results">No games match "@SearchQuery"</p>
+                <div class="sp-empty-state">
+                    <svg class="sp-empty-svg" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <circle cx="50" cy="50" r="30" stroke="var(--color-border)" stroke-width="4"/>
+                        <line x1="72" y1="72" x2="95" y2="95" stroke="var(--color-border)" stroke-width="6" stroke-linecap="round"/>
+                        <circle cx="50" cy="50" r="12" stroke="var(--color-border)" stroke-width="3"/>
+                    </svg>
+                    <p class="sp-empty-text">No games match "@_searchQuery"</p>
+                    <div class="sp-empty-actions">
+                        <button class="sp-btn-secondary" @onclick="ClearSearch">Clear search</button>
+                    </div>
+                </div>
             }
         </div>
 
@@ -89,8 +146,12 @@
     private string _mode = "play";
     private string _title = "Pick a Single-Player Game";
     private string _subtitle = "Choose any game below and jump in.";
-    private string SearchQuery { get; set; } = "";
+    private string _searchQuery = "";
     private bool? _apiOnline;
+    private bool _isLoading = true;
+    private CancellationTokenSource? _debounceCts;
+    private GameCardData[] _filteredGames = [];
+    private GameCardData[] _allGames = [];
 
     private record GameCardData(string Key, string To, string Title, string Description, string AriaLabel, string Accent, string AccentGlow, string[] Modes, string Icon);
 
@@ -134,8 +195,6 @@
             "Watch PoRunner demo", "#fcd34d", "rgba(252,211,77,0.28)", [], "⚡"),
     ];
 
-    private GameCardData[] _filteredGames = [];
-
     protected override async Task OnInitializedAsync()
     {
         _mode = QueryMode == "demo" ? "demo" : QueryMode == "local-2p" ? "local-2p" : "play";
@@ -146,6 +205,10 @@
             _apiOnline = await ApiService.IsAvailableAsync();
             await InvokeAsync(StateHasChanged);
         });
+
+        // Show skeleton briefly
+        await Task.Delay(200);
+        _isLoading = false;
     }
 
     protected override void OnParametersSet()
@@ -162,6 +225,8 @@
             _ => SinglePlayerGames
         };
 
+        _allGames = games;
+
         _title = _mode switch
         {
             "demo" => "Pick a Demo Game",
@@ -176,11 +241,16 @@
             _ => "Choose any game below and jump in."
         };
 
-        _filteredGames = string.IsNullOrWhiteSpace(SearchQuery)
-            ? games
-            : games.Where(g =>
-                g.Title.Contains(SearchQuery, StringComparison.OrdinalIgnoreCase) ||
-                g.Description.Contains(SearchQuery, StringComparison.OrdinalIgnoreCase))
+        ApplyFilter();
+    }
+
+    private void ApplyFilter()
+    {
+        _filteredGames = string.IsNullOrWhiteSpace(_searchQuery)
+            ? _allGames
+            : _allGames.Where(g =>
+                g.Title.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase) ||
+                g.Description.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase))
               .ToArray();
     }
 
@@ -191,5 +261,56 @@
         NavigationManager.NavigateTo(mode == "play"
             ? "/single-player"
             : $"/single-player?mode={mode}");
+    }
+
+    // Debounced search (Suggestion #7)
+    private void OnSearchInput(ChangeEventArgs e)
+    {
+        _debounceCts?.Cancel();
+        _debounceCts = new CancellationTokenSource();
+        var token = _debounceCts.Token;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(150, token);
+                _searchQuery = e.Value?.ToString() ?? "";
+                await InvokeAsync(() =>
+                {
+                    ApplyFilter();
+                    StateHasChanged();
+                });
+            }
+            catch (TaskCanceledException) { }
+        });
+    }
+
+    private void ClearSearch()
+    {
+        _searchQuery = "";
+        ApplyFilter();
+        StateHasChanged();
+    }
+
+    // 3D tilt effect handlers (Suggestion #3)
+    private void OnCardEnter(Microsoft.AspNetCore.Components.Web.MouseEventArgs e)
+    {
+        // handled by CSS perspective approach
+    }
+
+    private void OnCardMove(Microsoft.AspNetCore.Components.Web.MouseEventArgs e)
+    {
+        // Could be used for JS-interop pixel-perfect tilt
+    }
+
+    private void OnCardLeave(Microsoft.AspNetCore.Components.Web.MouseEventArgs e)
+    {
+        // Card returns to natural position via CSS transition
+    }
+
+    public void Dispose()
+    {
+        _debounceCts?.Cancel();
+        _debounceCts?.Dispose();
     }
 }

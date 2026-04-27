@@ -71,7 +71,7 @@
         {
             try
             {
-                var response = await Http.GetAsync("/diag");
+                var response = await Http.GetAsync("/api/diag");
                 if (response.IsSuccessStatusCode)
                 {
                     var json = await response.Content.ReadAsStringAsync();

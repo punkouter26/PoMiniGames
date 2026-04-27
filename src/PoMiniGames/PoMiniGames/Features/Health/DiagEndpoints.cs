@@ -10,7 +10,7 @@ public static class DiagEndpoints
 {
     public static IEndpointRouteBuilder MapDiagEndpoints(this IEndpointRouteBuilder app)
     {
-        app.MapGet("/diag", async (IConfiguration configuration, IHostEnvironment environment, IDiagnosticsSnapshotProvider diagnosticsProvider) =>
+        app.MapGet("/api/diag", async (IConfiguration configuration, IHostEnvironment environment, IDiagnosticsSnapshotProvider diagnosticsProvider) =>
         {
             var diagnosticsEnabled = configuration.GetValue("FeatureFlags:EnableDiagnostics", environment.IsDevelopment());
             if (!diagnosticsEnabled)

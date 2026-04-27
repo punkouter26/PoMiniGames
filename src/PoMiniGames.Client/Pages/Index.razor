@@ -1,38 +1,92 @@
 @page "/"
 @inject NavigationManager NavigationManager
+@implements IAsyncDisposable
 
 <div class="home-container">
-    <span class="home-orb home-orb--1" aria-hidden="true"></span>
-    <span class="home-orb home-orb--2" aria-hidden="true"></span>
-    <span class="home-orb home-orb--3" aria-hidden="true"></span>
-    <span class="home-orb home-orb--4" aria-hidden="true"></span>
-    <span class="home-orb home-orb--5" aria-hidden="true"></span>
+    <span class="home-mesh" aria-hidden="true"></span>
 
-    <h1 class="home-title">
-        <span class="home-title-icon">🎮</span>
-        PoMiniGames
-    </h1>
-    <p class="home-subtitle">Choose how you want to play</p>
+    @if (_isLoading)
+    {
+        <div class="home-modes" style="gap:1rem;z-index:1">
+            <div class="skeleton skeleton--btn"></div>
+            <div class="skeleton skeleton--btn"></div>
+            <div class="skeleton skeleton--btn"></div>
+            <div class="skeleton skeleton--btn"></div>
+        </div>
+    }
+    else
+    {
+        <h1 class="home-title">
+            <span class="home-title-icon">
+                <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect x="3" y="5" width="14" height="14" rx="2" fill="currentColor" opacity="0.8"/>
+                    <rect x="23" y="5" width="14" height="14" rx="2" fill="currentColor" opacity="0.5"/>
+                    <rect x="3" y="23" width="14" height="14" rx="2" fill="currentColor" opacity="0.5"/>
+                    <rect x="23" y="23" width="14" height="14" rx="2" fill="currentColor" opacity="0.8"/>
+                </svg>
+            </span>
+            PoMiniGames
+        </h1>
+        <p class="home-subtitle">Choose how you want to play</p>
 
-    <div class="home-modes">
-        <button type="button" class="home-mode-btn home-mode-btn--1p" aria-label="Play 1 player" autofocus @onclick='() => NavigationManager.NavigateTo("/single-player")'>
-            <span class="home-mode-icon">👤</span>
-            <span class="home-mode-label">1 Player</span>
-        </button>
+        <div class="home-modes">
+            <button type="button" class="home-mode-btn home-mode-btn--1p" aria-label="Play 1 player" autofocus @onclick='() => NavigationManager.NavigateTo("/single-player")'>
+                <span class="home-mode-icon">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                        <circle cx="12" cy="7" r="4"/>
+                    </svg>
+                </span>
+                <span class="home-mode-label">1 Player</span>
+            </button>
 
-        <button type="button" class="home-mode-btn home-mode-btn--2p" aria-label="Play 2 players locally" @onclick='() => NavigationManager.NavigateTo("/single-player?mode=local-2p")'>
-            <span class="home-mode-icon">👥</span>
-            <span class="home-mode-label">2 Player (local)</span>
-        </button>
+            <button type="button" class="home-mode-btn home-mode-btn--2p" aria-label="Play 2 players locally" @onclick='() => NavigationManager.NavigateTo("/single-player?mode=local-2p")'>
+                <span class="home-mode-icon">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                        <circle cx="9" cy="7" r="4"/>
+                        <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                        <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                    </svg>
+                </span>
+                <span class="home-mode-label">2 Player (local)</span>
+            </button>
 
-        <button type="button" class="home-mode-btn home-mode-btn--multi" aria-label="Play online multiplayer" @onclick='() => NavigationManager.NavigateTo("/porunner?mode=multi")'>
-            <span class="home-mode-icon">🌐</span>
-            <span class="home-mode-label">Multi player (online)</span>
-        </button>
+            <button type="button" class="home-mode-btn home-mode-btn--multi" aria-label="Play online multiplayer" @onclick='() => NavigationManager.NavigateTo("/porunner?mode=multi")'>
+                <span class="home-mode-icon">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="10"/>
+                        <path d="M2 12h20"/>
+                        <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+                    </svg>
+                </span>
+                <span class="home-mode-label">Multi player (online)</span>
+            </button>
 
-        <button type="button" class="home-mode-btn home-mode-btn--demo" aria-label="Watch demo mode" @onclick='() => NavigationManager.NavigateTo("/single-player?mode=demo")'>
-            <span class="home-mode-icon">🖥️</span>
-            <span class="home-mode-label">Demo</span>
-        </button>
-    </div>
+            <button type="button" class="home-mode-btn home-mode-btn--demo" aria-label="Watch demo mode" @onclick='() => NavigationManager.NavigateTo("/single-player?mode=demo")'>
+                <span class="home-mode-icon">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polygon points="5 3 19 12 5 21 5 3"/>
+                    </svg>
+                </span>
+                <span class="home-mode-label">Demo</span>
+            </button>
+        </div>
+    }
 </div>
+
+@code {
+    private bool _isLoading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Simulate Blazor WASM startup delay with skeleton
+        await Task.Delay(100);
+        _isLoading = false;
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        return ValueTask.CompletedTask;
+    }
+}

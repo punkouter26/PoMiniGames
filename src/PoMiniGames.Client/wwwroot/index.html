@@ -7,19 +7,28 @@
     <title>PoMiniGames</title>
     <base href="/" />
     <link rel="preload" id="webassembly" />
-    <link rel="stylesheet" href="lib/bootstrap/dist/css/bootstrap.min.css" />
+
+    <!-- Typography: Inter variable font (Suggestion #4) -->
+    <link rel="preconnect" href="https://rsms.me/" />
+    <link rel="preload" href="https://rsms.me/inter/inter.css" as="style" />
+    <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
+
+    <!-- Remove Bootstrap – all styles are custom (payload savings ~187KB) -->
     <link rel="stylesheet" href="css/app.css" />
     <link rel="stylesheet" href="css/games.css" />
     <link rel="icon" type="image/png" href="favicon.png" />
     <link href="PoMiniGamesClient.styles.css" rel="stylesheet" />
     <script type="importmap"></script>
+
+    <!-- View Transitions + App enhancements (Suggestion #5) -->
+    <script src="scripts/app.js" defer></script>
 </head>
 
 <body>
     <div id="app">
-        <svg class="loading-progress">
-            <circle r="40%" cx="50%" cy="50%" />
-            <circle r="40%" cx="50%" cy="50%" />
+        <svg class="loading-progress" viewBox="0 0 100 100">
+            <circle r="40" cx="50" cy="50" />
+            <circle r="40" cx="50" cy="50" />
         </svg>
         <div class="loading-progress-text"></div>
     </div>

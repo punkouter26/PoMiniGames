@@ -1,13 +1,41 @@
 ﻿@inherits LayoutComponentBase
 @inject AuthStateService AuthState
 @inject ToastService ToastService
+@inject NavigationManager NavigationManager
 
 <div class="gl-page">
     <header class="gl-top-bar">
-        <a href="/" class="gl-brand">
-            <span class="gl-brand-icon">🎮</span>
-            <span class="gl-brand-text">PoMiniGames</span>
-        </a>
+        <div class="gl-top-bar-left">
+            <a href="/" class="gl-brand">
+                <span class="gl-brand-icon">
+                    <svg width="22" height="22" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <rect x="3" y="5" width="14" height="14" rx="2" fill="currentColor" opacity="0.8"/>
+                        <rect x="23" y="5" width="14" height="14" rx="2" fill="currentColor" opacity="0.5"/>
+                        <rect x="3" y="23" width="14" height="14" rx="2" fill="currentColor" opacity="0.5"/>
+                        <rect x="23" y="23" width="14" height="14" rx="2" fill="currentColor" opacity="0.8"/>
+                    </svg>
+                </span>
+                <span class="gl-brand-text">PoMiniGames</span>
+            </a>
+
+            @if (_breadcrumbs.Count > 0)
+            {
+                <nav class="gl-breadcrumbs" aria-label="Breadcrumb">
+                    @foreach (var crumb in _breadcrumbs)
+                    {
+                        if (crumb != _breadcrumbs.Last())
+                        {
+                            <a href="@crumb.Url" class="gl-breadcrumb-item">@crumb.Label</a>
+                            <span class="gl-breadcrumb-sep">/</span>
+                        }
+                        else
+                        {
+                            <span class="gl-breadcrumb-item--current" aria-current="page">@crumb.Label</span>
+                        }
+                    }
+                </nav>
+            }
+        </div>
 
         <div class="gl-auth">
             @if (AuthState.IsConfigured && AuthState.User != null)
@@ -48,10 +76,63 @@
 </div>
 
 @code {
+    private List<Breadcrumb> _breadcrumbs = [];
+
+    public record Breadcrumb(string Label, string Url);
+
     protected override async Task OnInitializedAsync()
     {
         await AuthState.InitializeAsync();
         AuthState.StateChanged += () => InvokeAsync(StateHasChanged);
+        NavigationManager.LocationChanged += OnLocationChanged;
+        UpdateBreadcrumbs();
+    }
+
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        UpdateBreadcrumbs();
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void UpdateBreadcrumbs()
+    {
+        var uri = NavigationManager.ToBaseRelativePath(NavigationManager.Uri).ToLowerInvariant();
+        var segments = uri.Split('/', StringSplitOptions.RemoveEmptyEntries);
+
+        _breadcrumbs = [];
+
+        if (segments.Length == 0 || (segments.Length == 1 && segments[0] == ""))
+        {
+            // Home page - no breadcrumbs
+            return;
+        }
+
+        // Always start with Home
+        _breadcrumbs.Add(new Breadcrumb("Home", "/"));
+
+        foreach (var seg in segments)
+        {
+            var label = seg switch
+            {
+                "single-player" => "Single Player",
+                "multi-player-select" => "Local 2P",
+                "online-multiplayer" => "Online",
+                "connectfive" => "Connect Five",
+                "tictactoe" => "Tic Tac Toe",
+                "voxelshooter" => "Voxel Shooter",
+                "pofight" => "PoFight",
+                "podropsquare" => "PoDropSquare",
+                "pobabytouch" => "PoBabyTouch",
+                "poraceragdoll" => "PoRaceRagdoll",
+                "posnakegame" => "PoSnakeGame",
+                "pohorserace" => "PoHorseRace",
+                "porunner" => "PoRunner",
+                "diagpage" => "Diagnostics",
+                "authcallbackpage" => "Auth",
+                _ => seg
+            };
+            _breadcrumbs.Add(new Breadcrumb(label, "/" + string.Join("/", segments[..(segments.IndexOf(seg) + 1)])));
+        }
     }
 
     private async Task SignIn()
@@ -67,5 +148,10 @@
     private async Task SignInAnon()
     {
         await AuthState.DevBypassAsync("ANON");
+    }
+
+    public void Dispose()
+    {
+        NavigationManager.LocationChanged -= OnLocationChanged;
     }
 }

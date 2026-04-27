@@ -8,6 +8,7 @@
 
   <PropertyGroup>
     <WasmEnableWebcilProtectedResources>false</WasmEnableWebcilProtectedResources>
+    <StaticWebAssetsFingerprintingEnabled>false</StaticWebAssetsFingerprintingEnabled>
   </PropertyGroup>
 
   <ItemGroup>

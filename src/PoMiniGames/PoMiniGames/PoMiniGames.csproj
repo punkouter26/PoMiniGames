@@ -6,6 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UserSecretsId>pomini-games-secret-id</UserSecretsId>
     <SpaRoot>..\..\PoMiniGames.Client</SpaRoot>
+    <StaticWebAssetsFingerprintingEnabled>false</StaticWebAssetsFingerprintingEnabled>
   </PropertyGroup>
 
   <ItemGroup>

@@ -1,13 +1,21 @@
-
 @page "/fight"
 @page "/pofight"
-@using PoMiniGamesClient.Components
-@using PoMiniGamesClient.Enums
-@using PoMiniGamesClient.Models
-@using PoMiniGamesClient.Services
-@inject PlayerNameService PlayerNameService
+@using PoMiniGamesClient.Components;
+@using PoMiniGamesClient.Enums;
+@using PoMiniGamesClient.Models;
+@using PoMiniGamesClient.Services;
+@inject PlayerNameService PlayerNameService;
+@inject NavigationManager Navigation;
 
-<GameShell Title=@TitleContent Player="@_playerName" BackTo="/single-player" GameOver="@(_playerHp <= 0 || _enemyHp <= 0)" OnPlayAgain="ResetGame" ShowSettings="true" Stats="@_statItems" Controls="@ControlsContent">
+<GameShell Title=@TitleContent 
+           Player="@_playerName"
+           BackTo="/single-player"
+           GameOver="@(_playerHp <= 0 || _enemyHp <= 0)"
+           OnPlayAgain="ResetGame"
+           ShowSettings="true"
+           IsOffline="@_isOffline"
+           Stats="@_statItems"
+           Controls="@ControlsContent">
     <div class="fight-wrapper">
         <div class="fight-arena">
             <div class="fighter player">
@@ -37,6 +45,9 @@
     private int _playerHp = 100;
     private int _enemyHp = 100;
     private readonly List<string> _combatLog = new();
+    private bool _isOffline = false;
+    private PlayerStats _stats = new();
+    private readonly GameStatsService _gameStats = new();
 
     private RenderFragment ControlsContent => @<div class="gps-controls">
         <button @onclick="() => Attack(15, 25)">⚔️ Attack</button>
@@ -45,11 +56,13 @@
         <button @onclick="ResetGame">🔄 Reset</button>
     </div>;
 
-    private RenderFragment TitleContent => @<span>⚔️ Fight</span>;
+    private RenderFragment TitleContent => @<span>⚔️ PoFight</span>;
 
     protected override void OnInitialized()
     {
         _playerName = PlayerNameService.GetPlayerName();
+        _stats = _gameStats.GetStats("pofight", _playerName);
+        UpdateStats();
     }
 
     private void Attack(int minDmg, int maxDmg)
@@ -61,6 +74,9 @@
         if (_enemyHp <= 0)
         {
             _combatLog.Add("You won!");
+            _ = _gameStats.RecordResult("pofight", _playerName, Difficulty.Medium, GameResult.Win);
+            _gameStats.SaveLastPlayedGame("pofight");
+            UpdateStats();
         }
         else
         {
@@ -95,6 +111,9 @@
         if (_playerHp <= 0)
         {
             _combatLog.Add("You lost!");
+            _ = _gameStats.RecordResult("pofight", _playerName, Difficulty.Medium, GameResult.Loss);
+            _gameStats.SaveLastPlayedGame("pofight");
+            UpdateStats();
         }
     }
 
@@ -103,5 +122,19 @@
         _playerHp = 100;
         _enemyHp = 100;
         _combatLog.Clear();
+    }
+
+    private void UpdateStats()
+    {
+        var bucket = _gameStats.GetDifficultyBucket(_stats, Difficulty.Medium);
+        _statItems = new List<StatItem>
+        {
+            new() { Value = bucket.Wins.ToString(), Label = "W" },
+            new() { Value = bucket.Losses.ToString(), Label = "L" },
+            new() { Value = bucket.Draws.ToString(), Label = "D" },
+            new() { Value = bucket.WinStreak.ToString(), Label = "Str" },
+            new() { Value = $"{bucket.WinRate * 100:F0}%", Label = "Rate" },
+            new() { Value = bucket.EloRating.ToString(), Label = "ELO" }
+        };
     }
 }

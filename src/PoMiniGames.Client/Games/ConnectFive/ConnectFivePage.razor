@@ -1,13 +1,13 @@
 @page "/connectfive"
 @page "/connectfive/{Demo:int}"
-@implements IDisposable
-@using PoMiniGamesClient.Components
-@using PoMiniGamesClient.Enums
-@using PoMiniGamesClient.Models
-@using PoMiniGamesClient.Games.ConnectFive
-@using PoMiniGamesClient.Services
-@inject NavigationManager Navigation
-@inject PlayerNameService PlayerNameService
+@implements IDisposable;
+@using PoMiniGamesClient.Components;
+@using PoMiniGamesClient.Enums;
+@using PoMiniGamesClient.Models;
+@using PoMiniGamesClient.Games.ConnectFive;
+@using PoMiniGamesClient.Services;
+@inject NavigationManager Navigation;
+@inject PlayerNameService PlayerNameService;
 
 <GameShell 
     Title=@TitleContent 
@@ -26,7 +26,7 @@
             {
                 var col = c;
                 <button class="cf-drop-btn @(_hoveredCol == col && _gameResult == GameResult.InProgress && !_isAiTurn ? "active-column" : "")"
-                        disabled="@(PlayMode == "demo" ? true : _gameResult != GameResult.InProgress || _isAiTurn || _board.GetTargetRow(col) < 0)"
+                        disabled="@(PlayMode == "demo" ? true : _gameResult != GameResult.InProgress || _isAiTurn)"
                         @onclick="() => HandleDrop(col)"
                         @onmouseenter="() => _hoveredCol = col"
                         @onmouseleave="() => _hoveredCol = -1"
@@ -123,6 +123,8 @@
     protected override void OnInitialized()
     {
         _playerName = PlayerNameService.GetPlayerName();
+        _stats = _gameStats.GetStats("connectfive", _playerName);
+        UpdateStats();
         ResetGame();
     }
 
@@ -141,10 +143,16 @@
         _hoveredCol = -1;
         _stats = _gameStats.GetStats("connectfive", _playerName);
         UpdateStats();
+        
         if (PlayMode == "demo")
         {
             _demoCts = new CancellationTokenSource();
             _ = RunDemoLoop(_demoCts.Token);
+        }
+        else
+        {
+            // Save last played game (UX 10)
+            _gameStats.SaveLastPlayedGame("connectfive");
         }
     }
 

@@ -8,6 +8,7 @@ public class GameStatsService
 {
     private static readonly Dictionary<string, PlayerStats> _statsCache = new();
     private const string StorageKeyPrefix = "pomini_stats_";
+    private const string LastGameKey = "pomini_last_game";
 
     public PlayerStats GetStats(string gameKey, string playerName)
     {
@@ -76,6 +77,38 @@ public class GameStatsService
         var storageKey = $"{StorageKeyPrefix}{gameKey}";
         LocalStorageService.SetItem(storageKey, stats);
     }
+
+    // UX 10: Offline-First - Track last played game
+    public GameCard? GetLastPlayedGame()
+    {
+        var lastGameKey = LocalStorageService.GetItem<string>(LastGameKey);
+        if (string.IsNullOrEmpty(lastGameKey))
+            return null;
+
+        var gameTitle = lastGameKey switch
+        {
+            "connectfive" => "Connect Five",
+            "tictactoe" => "Tic Tac Toe",
+            "voxelshooter" => "Voxel Shooter",
+            "pofight" => "PoFight",
+            "podropsquare" => "PoDropSquare",
+            "pobabytouch" => "PoBabyTouch",
+            "poraceragdoll" => "PoRaceRagdoll",
+            "posnakegame" => "PoSnakeGame",
+            "pohorserace" => "PoHorseRace",
+            "porunner" => "PoRunner",
+            _ => lastGameKey
+        };
+
+        return new GameCard(gameTitle, $"/{lastGameKey}");
+    }
+
+    public void SaveLastPlayedGame(string gameKey)
+    {
+        LocalStorageService.SetItem(LastGameKey, gameKey);
+    }
+
+    public record GameCard(string Title, string Url);
 
     private int ComputeEloRating(DifficultyStats ds, Difficulty difficulty)
     {

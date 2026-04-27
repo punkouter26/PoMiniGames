@@ -1,22 +1,30 @@
 @page "/porunner"
 @page "/porunner/{ModeParam}"
-@using PoMiniGamesClient.Components
-@using PoMiniGamesClient.Services
-@using PoMiniGamesClient.Games.PoRunner
-@inject PlayerNameService PlayerNameService
-@inject NavigationManager Navigation
-@inject IJSRuntime JSRuntime
+@using PoMiniGamesClient.Components;
+@using PoMiniGamesClient.Services;
+@using PoMiniGamesClient.Games.PoRunner;
+@inject PlayerNameService PlayerNameService;
+@inject NavigationManager Navigation;
+@inject IJSRuntime JSRuntime;
 
-<div class="pr-container" tabindex="0" @onkeydown="HandleKeyDown" @ref="_gameContainer">
-    <GameShell Title=@TitleContent BackTo="/single-player" Fullscreen="true" ShowSettings="true" Controls="@ControlsContent">
+<GameShell Title=@TitleContent 
+           Player="@_playerName"
+           BackTo="@_backTo"
+           GameOver="@(_state.GameStatus == GameStatus.GameOver)"
+           OnPlayAgain="ReturnToLobby"
+           ShowSettings="true"
+           IsOffline="@_isOffline"
+           Stats="@_statItems"
+           Controls="@ControlsContent">
+    <div class="pr-container" tabindex="0" @onkeydown="HandleKeyDown" @ref="_gameContainer">
         <div id="game-container" class="pr-game-container">
             <canvas id="gameCanvas" class="pr-canvas" style="image-rendering: pixelated;"></canvas>
-
+            
             @* Mobile keyboard warning *@
             <div id="mobile-warning" class="pr-mobile-warning hidden">
                 ⌨️ PoRunner requires a keyboard — best played on desktop.
             </div>
-
+            
             @* Error Screen *@
             <div id="ui-error" class="pr-screen hidden">
                 <div class="pr-glass">
@@ -25,24 +33,24 @@
                     <button class="pr-btn primary" @onclick="Reconnect">RECONNECT</button>
                 </div>
             </div>
-
+            
             @* Lobby Screen *@
             <div id="ui-lobby" class="pr-screen @(IsLobbyVisible ? "" : "hidden")">
                 <div class="pr-glass" style="text-align: center;">
                     <h1 class="pr-glow-text">🍌 PoRunner</h1>
-
+                    
                     <div id="player-badge" class="pr-player-badge @(HasLocalPlayer ? "" : "hidden")">
                         <span id="player-badge-icon"></span>
                         <span id="player-badge-label">@GetPlayerBadgeLabel()</span>
                     </div>
-
+                    
                     <div id="lobby-slots" class="pr-lobby-slots"></div>
-
+                    
                     <div class="pr-spinner" id="lobby-spinner" style="@(_showSpinner ? "" : "display: none;")"></div>
-                    <p id="lobby-status-line" class="pr-blink">@GetLobbyStatusText()</p>
-
+                    <p id="lobby-status-line" class="pr-link">@GetLobbyStatusText()</p>
+                    
                     <p id="lobby-connection-warning" class="pr-connection-warning hidden">@_connectionError</p>
-
+                    
                     @if (_mode == PoRunnerGameMode.Multiplayer)
                     {
                         <button id="btn-ready" class="pr-btn primary" @onclick="ToggleReady">
@@ -50,7 +58,7 @@
                         </button>
                     }
                     <p id="ready-status-text" class="pr-status-text hidden">✅ Ready! Waiting for opponent&hellip;</p>
-
+                    
                     <div class="pr-leaderboard-preview">
                         <p class="pr-leaderboard-title">🏅 Top Scores</p>
                         <table class="pr-leaderboard-table">
@@ -72,12 +80,12 @@
                     </div>
                 </div>
             </div>
-
+            
             @* Countdown Screen *@
             <div id="ui-countdown" class="pr-screen @(IsCountdownVisible ? "" : "hidden")">
                 <p id="countdown-text" class="pr-huge-text pr-glow-text">@_countdownValue</p>
             </div>
-
+            
             @* Playing HUD *@
             <div id="ui-playing" class="pr-hud @(IsPlayingVisible ? "" : "hidden")">
                 <div id="hud-timer" class="pr-timer">@_elapsedTime.ToString("0.000")s</div>
@@ -105,7 +113,7 @@
                     </p>
                 </div>
             </div>
-
+            
             @* Game Over Screen *@
             <div id="ui-gameover" class="pr-screen shadow-bg @(IsGameOverVisible ? "" : "hidden")">
                 <div class="pr-glass pr-gameover-card" style="text-align: center;">
@@ -113,7 +121,7 @@
                     <h2 id="winner-text" class="pr-glow-text pr-winner-reveal">@_winnerText</h2>
                     <div id="final-time-text" class="pr-timer">@((_lastRaceTimeMs / 1000.0).ToString("0.000"))s</div>
                     <button class="pr-btn primary pr-sticky-cta" @onclick="ReturnToLobby">RETURN TO LOBBY</button>
-
+                    
                     <div id="gameover-details" class="pr-gameover-details">
                         <div id="player-stats" class="pr-player-stats @(HasStatsData ? "" : "hidden")">
                             <div class="pr-stats-row">
@@ -133,7 +141,7 @@
                                 <span id="stats-streak-fire" class="@(_profile.WinStreak >= 2 ? "" : "hidden")">🔥</span>
                             </div>
                         </div>
-
+                        
                         <div id="initials-form" class="pr-initials-form @(ShouldShowInitialsForm ? "" : "hidden")">
                             <h3 class="pr-initials-title">🏅 New High Score! Enter Initials</h3>
                             <div class="pr-initials-boxes">
@@ -146,7 +154,7 @@
                             </div>
                             <button id="btn-submit-initials" class="pr-btn primary" @onclick="SubmitInitials">SUBMIT</button>
                         </div>
-
+                        
                         <div id="leaderboard" class="pr-leaderboard">
                             <button id="btn-toggle-leaderboard" class="pr-btn-leaderboard-toggle" @onclick="ToggleLeaderboard">
                                 🏅 View Top 10 ▸
@@ -177,8 +185,8 @@
                 </div>
             </div>
         </div>
-    </GameShell>
-</div>
+    </div>
+</GameShell>
 
 @code {
     [Parameter] public string? ModeParam { get; set; }
@@ -191,6 +199,9 @@
     private List<DemoBot> _bots = new();
     private List<HighScoreEntry> _topScores = new();
     private PlayerProfile _profile = new();
+    private List<StatItem> _statItems = new();
+    private PlayerStats _stats = new();
+    private readonly GameStatsService _gameStats = new();
     
     // UI state
     private bool _showSpinner = false;
@@ -205,6 +216,7 @@
     private long? _personalBest = null;
     private int _countdownValue = 3;
     private double _elapsedTime;
+    private bool _isOffline = false;
     
     // Demo mode
     private long _demoAutoRestartAt;
@@ -213,9 +225,11 @@
     private System.Threading.Timer? _gameTimer;
     private long _lastFrameTime;
     
+    private string _backTo => _mode == PoRunnerGameMode.Multiplayer ? "/online-multiplayer" : "/single-player";
+    
     private RenderFragment TitleContent => @<span>🍌 PoRunner</span>;
     
-    private RenderFragment ControlsContent => @<div class="pr-controls">
+    private RenderFragment ControlsContent => @<div class="gps-controls">
         <button @onclick="StartLocalRace" disabled="@(_state.GameStatus != GameStatus.Waiting && _state.GameStatus != GameStatus.ReadyCheck)">
             🚀 Start Race
         </button>
@@ -238,6 +252,16 @@
         _state.Mode = _mode;
         _state.DemoMode = _mode == PoRunnerGameMode.Demo;
         _state.HintDismissed = _mode == PoRunnerGameMode.Demo;
+        
+        // Initialize stats
+        _stats = _gameStats.GetStats("porunner", PlayerNameService.GetPlayerName());
+        _profile = new PlayerProfile
+        {
+            Wins = _stats.Easy.Wins + _stats.Medium.Wins + _stats.Hard.Wins,
+            Losses = _stats.Easy.Losses + _stats.Medium.Losses + _stats.Hard.Losses,
+            WinStreak = Math.Max(_stats.Easy.WinStreak, Math.Max(_stats.Medium.WinStreak, _stats.Hard.WinStreak))
+        };
+        UpdateStats();
         
         // Initialize mock scores
         _topScores = new List<HighScoreEntry>
@@ -429,7 +453,7 @@
         _state.RaceTimedOut = false;
         _state.ConfettiParticles.Clear();
         _state.GameOverAnim = null;
-        _state.CountdownGunFired = false;
+        _state.CountdownFired = false;
         _state.CameraX = 0;
         _state.HintDismissed = false;
         _state.LeaderboardExpanded = false;
@@ -739,9 +763,16 @@
         _isLocalWin = playerId == _state.ConnectionId;
         _lastRaceTimeMs = raceTimeMs;
         
+        // Save last played game (UX 10)
+        _gameStats.SaveLastPlayedGame("porunner");
+        
         if (_mode == PoRunnerGameMode.OnePlayer)
         {
             _state.QualifiesForHighScore = true;
+            
+            // Record result for stats
+            _ = _gameStats.RecordResult("porunner", PlayerNameService.GetPlayerName(), Difficulty.Medium, GameResult.Win);
+            UpdateStats();
         }
     }
     
@@ -778,6 +809,10 @@
         _winnerText = "TIME'S UP!";
         _isLocalWin = false;
         _lastRaceTimeMs = PoRunnerConstants.MaxRaceDurationMs;
+        
+        // Record result for stats
+        _ = _gameStats.RecordResult("porunner", PlayerNameService.GetPlayerName(), Difficulty.Medium, GameResult.Loss);
+        UpdateStats();
     }
     
     private void SpawnConfetti()
@@ -911,9 +946,23 @@
     
     private void ReturnToLobby()
     {
-        Navigation.NavigateTo("/single-player");
+        Navigation.NavigateTo(_backTo);
     }
     
-    // Property for canvas reference
+    // Property for canvas reference.
     private PoRunnerGameState GameState => _state;
+    
+    private void UpdateStats()
+    {
+        var bucket = _gameStats.GetDifficultyBucket(_stats, Difficulty.Medium);
+        _statItems = new List<StatItem>
+        {
+            new() { Value = bucket.Wins.ToString(), Label = "W" },
+            new() { Value = bucket.Losses.ToString(), Label = "L" },
+            new() { Value = bucket.Draws.ToString(), Label = "D" },
+            new() { Value = bucket.WinStreak.ToString(), Label = "Str" },
+            new() { Value = $"{bucket.WinRate * 100:F0}%", Label = "Rate" },
+            new() { Value = bucket.EloRating.ToString(), Label = "ELO" }
+        };
+    }
 }

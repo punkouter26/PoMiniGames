@@ -1,0 +1,45 @@
+{
+  "workspaces": [
+    {
+      "name": "src",
+      "path": "src",
+      "areas": [
+        {
+          "name": "PoShared",
+          "applyTo": "PoShared/**"
+        },
+        {
+          "name": "PoMiniGames.Domain",
+          "applyTo": "PoMiniGames.Domain/**"
+        },
+        {
+          "name": "PoMiniGames.Application",
+          "applyTo": "PoMiniGames.Application/**"
+        },
+        {
+          "name": "PoMiniGames.Infrastructure",
+          "applyTo": "PoMiniGames.Infrastructure/**"
+        },
+        {
+          "name": "PoMiniGames.Client",
+          "applyTo": "PoMiniGames.Client/**"
+        }
+      ]
+    },
+    {
+      "name": "tests",
+      "path": "tests",
+      "areas": [
+        {
+          "name": "PoMiniGames.IntegrationTests",
+          "applyTo": "PoMiniGames.IntegrationTests/**"
+        },
+        {
+          "name": "PoMiniGames.UnitTests",
+          "applyTo": "PoMiniGames.UnitTests/**"
+        }
+      ]
+    }
+  ],
+  "strategy": "flat"
+}

@@ -1,12 +1,21 @@
 @page "/horserace"
 @page "/pohorserace"
-@using PoMiniGamesClient.Components
-@using PoMiniGamesClient.Enums
-@using PoMiniGamesClient.Models
-@using PoMiniGamesClient.Services
-@inject PlayerNameService PlayerNameService
+@using PoMiniGamesClient.Components;
+@using PoMiniGamesClient.Enums;
+@using PoMiniGamesClient.Models;
+@using PoMiniGamesClient.Services;
+@inject PlayerNameService PlayerNameService;
+@inject NavigationManager Navigation;
 
-<GameShell Title=@TitleContent Player="@_playerName" BackTo="/single-player" GameOver="@_finished" OnPlayAgain="ResetGame" ShowSettings="true" Stats="@_statItems" Controls="@ControlsContent">
+<GameShell Title=@TitleContent 
+           Player="@_playerName"
+           BackTo="/single-player"
+           GameOver="@_finished"
+           OnPlayAgain="ResetGame"
+           ShowSettings="true"
+           IsOffline="@_isOffline"
+           Stats="@_statItems"
+           Controls="@ControlsContent">
     <div class="horse-race-wrapper">
         <div class="race-track">
             @for (int i = 0; i < 4; i++)
@@ -41,6 +50,9 @@
     private string _result = "";
     private int _selectedHorse;
     private System.Threading.Timer? _timer;
+    private bool _isOffline = false;
+    private PlayerStats _stats = new();
+    private readonly GameStatsService _gameStats = new();
 
     private RenderFragment ControlsContent => @<div class="gps-controls">
         <button @onclick="StartRace" disabled="@(_timer != null)">🏁 Start Race</button>
@@ -53,6 +65,8 @@
     protected override void OnInitialized()
     {
         _playerName = PlayerNameService.GetPlayerName();
+        _stats = _gameStats.GetStats("pohorserace", _playerName);
+        UpdateStats();
     }
 
     private void SelectHorse(int horse)
@@ -69,6 +83,9 @@
         _horsePositions = new double[] { 0, 0, 0, 0 };
         
         _timer = new System.Threading.Timer(_ => InvokeAsync(Tick), null, 100, 100);
+        
+        // Save last played game (UX 10)
+        _gameStats.SaveLastPlayedGame("pohorserace");
     }
 
     private void Tick()
@@ -91,10 +108,15 @@
                 _timer = null;
                 _finished = true;
                 _result = i == _selectedHorse ? "You won!" : $"Horse {i + 1} won!";
+                
+                // Record result
+                var result = i == _selectedHorse ? GameResult.Win : GameResult.Loss;
+                _ = _gameStats.RecordResult("pohorserace", _playerName, Difficulty.Easy, result);
+                UpdateStats();
                 break;
             }
         }
-        StateHasChanged();
+        InvokeAsync(StateHasChanged);
     }
 
     private string GetHorseEmoji(int horse)
@@ -116,5 +138,19 @@
         _result = "";
         _horsePositions = new double[] { 0, 0, 0, 0 };
         _selectedHorse = 0;
+    }
+
+    private void UpdateStats()
+    {
+        var bucket = _gameStats.GetDifficultyBucket(_stats, Difficulty.Easy);
+        _statItems = new List<StatItem>
+        {
+            new() { Value = bucket.Wins.ToString(), Label = "W" },
+            new() { Value = bucket.Losses.ToString(), Label = "L" },
+            new() { Value = bucket.Draws.ToString(), Label = "D" },
+            new() { Value = bucket.WinStreak.ToString(), Label = "Str" },
+            new() { Value = $"{bucket.WinRate * 100:F0}%", Label = "Rate" },
+            new() { Value = bucket.EloRating.ToString(), Label = "ELO" }
+        };
     }
 }

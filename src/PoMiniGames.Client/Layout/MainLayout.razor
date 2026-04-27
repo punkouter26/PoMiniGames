@@ -73,10 +73,64 @@
             }
         </div>
     }
+
+    <!-- Mobile Bottom Navigation (UI 1) -->
+    <div class="gl-bottom-nav">
+        <a href="/" class="gl-bottom-nav-item @(IsNavActive("/") ? "active" : "")">
+            <span class="gl-bottom-nav-icon">
+                <svg width="22" height="22" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect x="3" y="5" width="14" height="14" rx="2" fill="currentColor" opacity="0.8"/>
+                    <rect x="23" y="5" width="14" height="14" rx="2" fill="currentColor" opacity="0.5"/>
+                    <rect x="3" y="23" width="14" height="14" rx="2" fill="currentColor" opacity="0.5"/>
+                    <rect x="23" y="23" width="14" height="14" rx="2" fill="currentColor" opacity="0.8"/>
+                </svg>
+            </span>
+            <span>Home</span>
+        </a>
+        <a href="/single-player" class="gl-bottom-nav-item @(IsNavActive("/single-player") ? "active" : "")">
+            <span class="gl-bottom-nav-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                    <circle cx="12" cy="7" r="4"/>
+                </svg>
+            </span>
+            <span>1P</span>
+        </a>
+        <a href="/single-player?mode=local-2p" class="gl-bottom-nav-item @(IsNavActive("/single-player?mode=local-2p") ? "active" : "")">
+            <span class="gl-bottom-nav-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                    <circle cx="9" cy="7" r="4"/>
+                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                    <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                </svg>
+            </span>
+            <span>2P</span>
+        </a>
+        <a href="/online-multiplayer" class="gl-bottom-nav-item @(IsNavActive("/online-multiplayer") ? "active" : "")">
+            <span class="gl-bottom-nav-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"/>
+                    <path d="M2 12h20"/>
+                    <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+                </svg>
+            </span>
+            <span>Online</span>
+        </a>
+        <a href="/single-player?mode=demo" class="gl-bottom-nav-item @(IsNavActive("/single-player?mode=demo") ? "active" : "")">
+            <span class="gl-bottom-nav-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polygon points="5 3 19 12 5 21 5 3"/>
+                </svg>
+            </span>
+            <span>Demo</span>
+        </a>
+    </div>
 </div>
 
 @code {
     private List<Breadcrumb> _breadcrumbs = [];
+    private string _currentUrl = "";
 
     public record Breadcrumb(string Label, string Url);
 
@@ -133,6 +187,13 @@
             };
             _breadcrumbs.Add(new Breadcrumb(label, "/" + string.Join("/", segments[..(segments.IndexOf(seg) + 1)])));
         }
+
+        _currentUrl = NavigationManager.Uri;
+    }
+
+    private bool IsNavActive(string url)
+    {
+        return NavigationManager.ToBaseRelativePath(NavigationManager.Uri).Equals(url, StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task SignIn()

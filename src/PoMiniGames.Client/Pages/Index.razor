@@ -1,5 +1,7 @@
 @page "/"
 @inject NavigationManager NavigationManager
+@inject GameStatsService GameStatsService
+@inject ApiService ApiService
 @implements IAsyncDisposable
 
 <div class="home-container">
@@ -16,6 +18,21 @@
     }
     else
     {
+        <!-- Quick Play Button (UI 2) -->
+        <button class="home-quick-play" @onclick="QuickPlay">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polygon points="5 3 19 12 5 21 5 3"/>
+            </svg>
+            @if (_lastGame != null)
+            {
+                <span>Continue: @_lastGame.Title</span>
+            }
+            else
+            {
+                <span>Quick Play</span>
+            }
+        </button>
+
         <h1 class="home-title">
             <span class="home-title-icon">
                 <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -72,21 +89,166 @@
                 <span class="home-mode-label">Demo</span>
             </button>
         </div>
+
+        <!-- High Scores Preview Carousel (UI 2) -->
+        <section class="home-scores-preview">
+            <h2 class="home-scores-title">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:0.4rem">
+                    <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5C7 4 6 9 6 9z"/>
+                    <path d="M18 9h1.5a2.5 2.5 0 0 0 0-5C17 4 18 9 18 9z"/>
+                    <path d="M4 22h16"/>
+                    <path d="M10 22V9h4v13"/>
+                    <path d="M8 22V8"/>
+                    <path d="M16 22V8"/>
+                    <path d="M12 2v4m-2-2h4"/>
+                </svg>
+                Top Scores
+            </h2>
+            <div class="home-scores-carousel">
+                @foreach (var game in _topGames)
+                {
+                    <div class="home-score-card" @onclick="() => NavigationManager.NavigateTo(game.Url)">
+                        <h3>@game.Title</h3>
+                        <ol class="home-score-mini-list">
+                            @foreach (var entry in game.Top3)
+                            {
+                                <li>@entry.Name: @entry.Score</li>
+                            }
+                        </ol>
+                    </div>
+                }
+            </div>
+        </section>
+
+        <!-- Auto-Rotating Demo Preview (UI 3) -->
+        <section class="home-demo-section">
+            <h2 class="home-demo-title">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:0.4rem">
+                    <polygon points="5 3 19 12 5 21 5 3"/>
+                </svg>
+                Now Playing: @_demoGames[_currentDemoIndex].Title
+            </h2>
+            <div class="home-demo-viewport">
+                <iframe src="@_demoGames[_currentDemoIndex].Url" @ref="_demoFrame"></iframe>
+            </div>
+            <div class="home-demo-info">
+                <span>Next: @_demoGames[(_currentDemoIndex + 1) % _demoGames.Length].Title</span>
+                <button class="home-demo-btn" @onclick="ToggleDemoFull">Watch Full Screen</button>
+            </div>
+        </section>
     }
 </div>
 
 @code {
     private bool _isLoading = true;
+    private GameCard? _lastGame;
+    private List<TopGamePreview> _topGames = [];
+    private DemoGame[] _demoGames = [
+        new("Tic Tac Toe Demo", "/tictactoe?demo=1&demo_return=1"),
+        new("Connect Five Demo", "/connectfive?demo=1&demo_return=1"),
+        new("PoFight Demo", "/pofight?demo=1&demo_return=1"),
+        new("PoRaceRagdoll Demo", "/poraceragdoll"),
+        new("PoHorseRace Demo", "/pohorserace"),
+        new("PoRunner Demo", "/porunner?mode=demo")
+    ];
+    private int _currentDemoIndex = 0;
+    private ElementReference _demoFrame;
+    private CancellationTokenSource _demoCts = new();
+    private bool _disposed;
+
+    private record GameCard(string Title, string Url);
+    private record TopGamePreview(string Title, string Url, List<ScoreEntry> Top3);
+    private record ScoreEntry(string Name, string Score);
 
     protected override async Task OnInitializedAsync()
     {
         // Simulate Blazor WASM startup delay with skeleton
         await Task.Delay(100);
+        
+        // Load last game
+        _lastGame = await GameStatsService.GetLastPlayedGame();
+        
+        // Load top games with scores
+        await LoadTopGames();
+        
         _isLoading = false;
+        
+        // Start demo rotation
+        StartDemoRotation();
+    }
+
+    private async Task LoadTopGames()
+    {
+        var gameKeys = new[] { "connectfive", "tictactoe", "pofight", "poraceragdoll", "pohorserace" };
+        _topGames = [];
+        
+        foreach (var key in gameKeys)
+        {
+            var leaderboard = await ApiService.GetLeaderboardAsync(key, 3);
+            if (leaderboard != null && leaderboard.Any())
+            {
+                var gameTitle = key switch
+                {
+                    "connectfive" => "Connect Five",
+                    "tictactoe" => "Tic Tac Toe",
+                    "pofight" => "PoFight",
+                    "poraceragdoll" => "PoRaceRagdoll",
+                    "pohorserace" => "PoHorseRace",
+                    _ => key
+                };
+                
+                _topGames.Add(new TopGamePreview(
+                    gameTitle,
+                    $"/{key}",
+                    leaderboard.Select(e => new ScoreEntry(e.Name, $"{e.Stats.WinRate:P0}")).ToList()
+                ));
+            }
+        }
+    }
+
+    private void StartDemoRotation()
+    {
+        Task.Run(async () =>
+        {
+            while (!_disposed)
+            {
+                try
+                {
+                    await Task.Delay(60000, _demoCts.Token); // 60 seconds
+                    _currentDemoIndex = (_currentDemoIndex + 1) % _demoGames.Length;
+                    await InvokeAsync(StateHasChanged);
+                }
+                catch (TaskCanceledException) { break; }
+            }
+        });
+    }
+
+    private void QuickPlay()
+    {
+        if (_lastGame != null)
+        {
+            NavigationManager.NavigateTo(_lastGame.Url);
+        }
+        else
+        {
+            // Random game
+            var games = new[] { "/connectfive", "/tictactoe", "/voxelshooter", "/pofight" };
+            var rnd = new Random();
+            NavigationManager.NavigateTo(games[rnd.Next(games.Length)]);
+        }
+    }
+
+    private void ToggleDemoFull()
+    {
+        var currentDemo = _demoGames[_currentDemoIndex];
+        NavigationManager.NavigateTo(currentDemo.Url);
     }
 
     public ValueTask DisposeAsync()
     {
+        _disposed = true;
+        _demoCts.Cancel();
+        _demoCts.Dispose();
         return ValueTask.CompletedTask;
     }
 }

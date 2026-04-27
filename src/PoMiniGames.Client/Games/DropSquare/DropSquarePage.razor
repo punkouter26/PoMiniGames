@@ -1,12 +1,21 @@
 @page "/dropsquare"
 @page "/podropsquare"
-@using PoMiniGamesClient.Components
-@using PoMiniGamesClient.Enums
-@using PoMiniGamesClient.Models
-@using PoMiniGamesClient.Services
-@inject PlayerNameService PlayerNameService
+@using PoMiniGamesClient.Components;
+@using PoMiniGamesClient.Enums;
+@using PoMiniGamesClient.Models;
+@using PoMiniGamesClient.Services;
+@inject PlayerNameService PlayerNameService;
+@inject NavigationManager Navigation;
 
-<GameShell Title=@TitleContent Player="@_playerName" BackTo="/single-player" GameOver="@_isGameOver" OnPlayAgain="ResetGame" ShowSettings="true" Stats="@_statItems" Controls="@ControlsContent">
+<GameShell Title=@TitleContent 
+           Player="@_playerName"
+           BackTo="/single-player"
+           GameOver="@_isGameOver"
+           OnPlayAgain="ResetGame"
+           ShowSettings="true"
+           IsOffline="@_isOffline"
+           Stats="@_statItems"
+           Controls="@ControlsContent">
     <div class="drop-square-wrapper">
         <div class="drop-square-board">
             @for (int r = 0; r < _rows; r++)
@@ -32,6 +41,7 @@
     private string _playerName = "";
     private List<StatItem> _statItems = new();
     private bool _isGameOver;
+    private bool _isOffline = false;
     private int _score;
     private int _lines;
     private int _currentPiece;
@@ -50,6 +60,8 @@
         new[] { new[] { 0, 1, 1 }, new[] { 1, 1, 0 } }, // S
         new[] { new[] { 1, 1, 0 }, new[] { 0, 1, 1 } }, // Z
     };
+    private PlayerStats _stats = new();
+    private readonly GameStatsService _gameStats = new();
 
     private RenderFragment ControlsContent => @<div class="gps-controls">
         <button @onclick="StartGame" disabled="@(_timer != null)">▶ Start</button>
@@ -65,21 +77,27 @@
     {
         _playerName = PlayerNameService.GetPlayerName();
         for (int r = 0; r < _rows; r++) _board[r] = new int[_cols];
+        _stats = _gameStats.GetStats("podropsquare", _playerName);
+        UpdateStats();
     }
 
     private void StartGame()
     {
         _isGameOver = false;
+        _isOffline = false;
         _score = 0;
         _lines = 0;
         NewPiece();
         _timer = new System.Threading.Timer(_ => InvokeAsync(Tick), null, 500, 500);
+        
+        // Save last played game (UX 10)
+        _gameStats.SaveLastPlayedGame("podropsquare");
     }
 
     private void Tick()
     {
         MovePiece(0);
-        StateHasChanged();
+        InvokeAsync(StateHasChanged);
     }
 
     private void NewPiece()
@@ -107,7 +125,16 @@
 
     public void DropPiece(int col = -1)
     {
+        if (col >= 0)
+        {
+            _currentX = col;
+        }
         // Drop to bottom
+        while (CanPlace(_currentPiece, _currentRotation, _currentX, _currentY + 1))
+        {
+            _currentY++;
+        }
+        LockPiece();
     }
 
     private bool CanPlace(int piece, int rotation, int x, int y)
@@ -132,6 +159,10 @@
         _isGameOver = true;
         _timer?.Dispose();
         _timer = null;
+        
+        // Record result
+        _ = _gameStats.RecordResult("podropsquare", _playerName, Difficulty.Easy, GameResult.Loss);
+        UpdateStats();
     }
 
     private string GetCellClass(int row, int col)
@@ -158,5 +189,19 @@
         for (int r = 0; r < _rows; r++)
             for (int c = 0; c < _cols; c++)
                 _board[r][c] = 0;
+    }
+
+    private void UpdateStats()
+    {
+        var bucket = _gameStats.GetDifficultyBucket(_stats, Difficulty.Easy);
+        _statItems = new List<StatItem>
+        {
+            new() { Value = _score.ToString(), Label = "Score" },
+            new() { Value = bucket.Wins.ToString(), Label = "W" },
+            new() { Value = bucket.Losses.ToString(), Label = "L" },
+            new() { Value = bucket.Draws.ToString(), Label = "D" },
+            new() { Value = $"{bucket.WinRate * 100:F0}%", Label = "Rate" },
+            new() { Value = bucket.EloRating.ToString(), Label = "ELO" }
+        };
     }
 }

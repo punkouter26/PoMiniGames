@@ -1,13 +1,14 @@
 @page "/tictactoe"
 @page "/tictactoe/{Demo:int}"
-@implements IDisposable
-@using PoMiniGamesClient.Components
-@using PoMiniGamesClient.Enums
-@using PoMiniGamesClient.Models
-@using PoMiniGamesClient.Games.TicTacToe
-@using PoMiniGamesClient.Services
-@inject NavigationManager Navigation
-@inject PlayerNameService PlayerNameService
+@implements IDisposable;
+@using PoMiniGamesClient.Components;
+@using PoMiniGamesClient.Enums;
+@using PoMiniGamesClient.Models;
+@using PoMiniGamesClient.Games.TicTacToe;
+@using PoMiniGamesClient.Services;
+@inject NavigationManager Navigation;
+@inject PlayerNameService PlayerNameService;
+@inject IJSRuntime JSRuntime;
 
 <GameShell 
     Title=@TitleContent 
@@ -53,7 +54,7 @@
 
 @code {
     [Parameter] public int? Demo { get; set; }
-
+    
     private TicTacToeBoard _board = new();
     private TicTacToeAI _ai = new();
     private Difficulty _difficulty = Difficulty.Medium;
@@ -67,12 +68,12 @@
     private PlayerStats _stats = new();
     private readonly GameStatsService _gameStats = new();
     private CancellationTokenSource? _demoCts;
-
+    
     private string _backTo => Demo == 1 ? "/single-player?mode=demo" : "/single-player";
     private bool _isGameOver => _gameResult != GameResult.InProgress && PlayMode != "demo";
-
+    
     private RenderFragment TitleContent => @<span>❌ Tic Tac Toe</span>;
-
+    
     private RenderFragment ControlsContent => @<div class="gps-controls">
         @if (PlayMode != "demo")
         {
@@ -102,22 +103,22 @@
             </select>
         }
     </div>;
-
+    
     private RenderFragment StatusContent => @<span class="@GetStatusClass()">
         @((MarkupString)GetStatusIcon()) @GetStatusText()
     </span>;
-
+    
     protected override void OnInitialized()
     {
         _playerName = PlayerNameService.GetPlayerName();
         ResetGame();
     }
-
+    
     private void SetPlayMode(string mode)
     {
         ResetGame();
     }
-
+    
     private void ResetGame()
     {
         _demoCts?.Cancel();
@@ -127,13 +128,19 @@
         _isAiTurn = false;
         _stats = _gameStats.GetStats("tictactoe", _playerName);
         UpdateStats();
+        
         if (PlayMode == "demo")
         {
             _demoCts = new CancellationTokenSource();
             _ = RunDemoLoop(_demoCts.Token);
         }
+        else
+        {
+            // Save last played game (UX 10)
+            _gameStats.SaveLastPlayedGame("tictactoe");
+        }
     }
-
+    
     private async Task RunDemoLoop(CancellationToken ct)
     {
         await Task.Delay(700, ct);
@@ -148,7 +155,7 @@
             await InvokeAsync(StateHasChanged);
             if (_gameResult != GameResult.InProgress) break;
             await Task.Delay(600, ct);
-
+            
             // O (CPU2) move
             var (or2, oc2) = _ai.GetMove(_board, CellValue.O, _difficulty);
             _board = _board.Place(or2, oc2, CellValue.O);
@@ -166,9 +173,9 @@
                 await InvokeAsync(ResetGame);
         }
     }
-
+    
     public void Dispose() => _demoCts?.Cancel();
-
+    
     private void UpdateStats()
     {
         var bucket = _gameStats.GetDifficultyBucket(_stats, _difficulty);
@@ -182,16 +189,16 @@
             new() { Value = bucket.EloRating.ToString(), Label = "ELO" }
         };
     }
-
+    
     private void HandleCellClick(int row, int col)
     {
         if (PlayMode == "demo") return;
         if (_gameResult != GameResult.InProgress || _isAiTurn) return;
         if (_board.Get(row, col) != CellValue.None) return;
-
+        
         var currentToken = CellValue.X;
         _board = _board.Place(row, col, currentToken);
-
+        
         var winCheck = _board.CheckWin(currentToken);
         if (winCheck.Won)
         {
@@ -201,7 +208,7 @@
             UpdateStats();
             return;
         }
-
+        
         if (_board.IsFull())
         {
             _gameResult = GameResult.Draw;
@@ -209,11 +216,11 @@
             UpdateStats();
             return;
         }
-
+        
         // AI turn
         _isAiTurn = true;
         StateHasChanged();
-
+        
         _ = Task.Delay(200).ContinueWith(_ =>
         {
             var (ar, ac) = _ai.GetMove(_board, CellValue.O, _difficulty);
@@ -240,25 +247,25 @@
             InvokeAsync(StateHasChanged);
         });
     }
-
+    
     private string GetCellAriaLabel(CellValue value) => value switch
     {
         CellValue.X => "X",
         CellValue.O => "O",
         _ => "Empty cell"
     };
-
+    
     private string GetStatusIcon()
     {
         return _gameResult switch
         {
             GameResult.Win => "🏆",
-            GameResult.Loss => "🤖",
+            GameResult.Loss => "😤",
             GameResult.Draw => "👥",
             _ => _isAiTurn ? "🤔" : "❌"
         };
     }
-
+    
     private string GetStatusText()
     {
         return _gameResult switch
@@ -269,7 +276,7 @@
             _ => _isAiTurn ? "AI thinking..." : "Your turn (X)"
         };
     }
-
+    
     private string GetStatusClass()
     {
         return _gameResult switch

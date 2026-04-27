@@ -5,8 +5,16 @@
 @using PoMiniGamesClient.Models
 @using PoMiniGamesClient.Services
 @inject PlayerNameService PlayerNameService
+@inject NavigationManager Navigation;
 
-<GameShell Title=@TitleContent Player="@_playerName" BackTo="/single-player" GameOver="@(_timeLeft <= 0)" OnPlayAgain="ResetGame" ShowSettings="true" Stats="@_statItems" Controls="@ControlsContent">
+<GameShell Title=@TitleContent 
+           Player="@_playerName"
+           BackTo="/single-player"
+           GameOver="@(_timeLeft <= 0)"
+           OnPlayAgain="ResetGame"
+           ShowSettings="true"
+           Stats="@_statItems"
+           Controls="@ControlsContent">
     <div class="baby-touch-wrapper">
         <div class="baby-touch-timer">Time: @_timeLeft</div>
         <div class="baby-touch-score">Score: @_score</div>
@@ -33,6 +41,8 @@
     private int _timeLeft = 30;
     private List<Bubble> _bubbles = new();
     private System.Threading.Timer? _timer;
+    private PlayerStats _stats = new();
+    private readonly GameStatsService _gameStats = new();
 
     private RenderFragment ControlsContent => @<div class="gps-controls">
         <button @onclick="StartGame" disabled="@(_timer != null)">▶ Start</button>
@@ -45,6 +55,8 @@
     {
         _playerName = PlayerNameService.GetPlayerName();
         _bubbles = new List<Bubble>();
+        _stats = _gameStats.GetStats("pobabytouch", _playerName);
+        UpdateStats();
     }
 
     private void StartGame()
@@ -62,13 +74,18 @@
         {
             _timer?.Dispose();
             _timer = null;
+            // Save last played game (UX 10)
+            _gameStats.SaveLastPlayedGame("pobabytouch");
+            // Record result
+            _ = _gameStats.RecordResult("pobabytouch", _playerName, Difficulty.Easy, GameResult.Win);
+            UpdateStats();
         }
         else
         {
             if (Random.Shared.NextDouble() < 0.3)
                 SpawnBubbles();
         }
-        StateHasChanged();
+        InvokeAsync(StateHasChanged);
     }
 
     private void SpawnBubbles()
@@ -106,6 +123,20 @@
         _score = 0;
         _timeLeft = 30;
         _bubbles.Clear();
+    }
+
+    private void UpdateStats()
+    {
+        var bucket = _gameStats.GetDifficultyBucket(_stats, Difficulty.Easy);
+        _statItems = new List<StatItem>
+        {
+            new() { Value = _score.ToString(), Label = "Score" },
+            new() { Value = bucket.Wins.ToString(), Label = "W" },
+            new() { Value = bucket.Losses.ToString(), Label = "L" },
+            new() { Value = bucket.WinStreak.ToString(), Label = "Str" },
+            new() { Value = $"{bucket.WinRate * 100:F0}%", Label = "Rate" },
+            new() { Value = bucket.EloRating.ToString(), Label = "ELO" }
+        };
     }
 
     private class Bubble

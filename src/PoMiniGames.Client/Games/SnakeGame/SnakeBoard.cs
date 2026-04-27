@@ -83,10 +83,13 @@ public class SnakeBoard
         
         var ate = _cells[newHead.Row][newHead.Col] == SnakeCell.Food;
         
-        // Remove tail
-        var tail = _snake[^1];
-        _cells[tail.Row][tail.Col] = SnakeCell.Empty;
-        _snake.RemoveAt(_snake.Count - 1);
+        // Only remove tail if NOT eating (snake grows when eating)
+        if (!ate)
+        {
+            var tail = _snake[^1];
+            _cells[tail.Row][tail.Col] = SnakeCell.Empty;
+            _snake.RemoveAt(_snake.Count - 1);
+        }
         
         // Add new head
         _snake.Insert(0, newHead);

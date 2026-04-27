@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+
 namespace PoMiniGames.Features.PoRaceRagdoll;
 
 public interface IGameSessionService
@@ -12,25 +14,30 @@ public interface IGameSessionService
 public sealed class GameSessionService : IGameSessionService
 {
     private readonly IRacerService _racerService;
-    private readonly IOddsService _oddsService;
     private readonly ILogger<GameSessionService> _logger;
-    private readonly Dictionary<string, MutableGameState> _sessions = new();
-    private readonly Lock _lock = new();
+    private readonly TimeProvider _timeProvider;
+    private readonly ConcurrentDictionary<string, MutableGameState> _sessions = new();
+    private readonly ConcurrentDictionary<string, object> _sessionLocks = new();
+    private readonly object _createLock = new();
     private readonly TimeSpan _sessionTimeout = TimeSpan.FromMinutes(30);
     private readonly TimeSpan _cleanupInterval = TimeSpan.FromMinutes(5);
     private readonly TimeSpan _raceTimeout = TimeSpan.FromMinutes(5);
-    private DateTime _lastCleanup = DateTime.UtcNow;
+    private DateTime _lastCleanup;
 
-    public GameSessionService(IRacerService racerService, IOddsService oddsService, ILogger<GameSessionService> logger)
+    public GameSessionService(IRacerService racerService, ILogger<GameSessionService> logger, TimeProvider? timeProvider = null)
     {
         _racerService = racerService;
-        _oddsService = oddsService;
         _logger = logger;
+        _timeProvider = timeProvider ?? TimeProvider.System;
+        _lastCleanup = _timeProvider.GetUtcNow().UtcDateTime;
     }
+
+    private object GetSessionLock(string sessionId) =>
+        _sessionLocks.GetOrAdd(sessionId, _ => new object());
 
     private void CleanupOldSessions()
     {
-        var now = DateTime.UtcNow;
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
         if (now - _lastCleanup < _cleanupInterval) return;
 
         _lastCleanup = now;
@@ -42,7 +49,10 @@ public sealed class GameSessionService : IGameSessionService
             .ToList();
 
         foreach (var key in keysToRemove)
-            _sessions.Remove(key);
+        {
+            _sessions.TryRemove(key, out _);
+            _sessionLocks.TryRemove(key, out _);
+        }
 
         if (keysToRemove.Count > 0)
             _logger.LogInformation("Cleaned up {Count} expired race sessions", keysToRemove.Count);
@@ -52,8 +62,9 @@ public sealed class GameSessionService : IGameSessionService
     {
         var sessionId = Guid.NewGuid().ToString("N");
         var racers = _racerService.GenerateRacers();
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
 
-        lock (_lock)
+        lock (_createLock)
         {
             CleanupOldSessions();
             _sessions[sessionId] = new MutableGameState
@@ -64,7 +75,7 @@ public sealed class GameSessionService : IGameSessionService
                 State = GamePhase.Betting,
                 Racers = racers.ToList(),
                 BetAmount = GameConfig.InitialBet,
-                LastAccessed = DateTime.UtcNow
+                LastAccessed = now
             };
         }
 
@@ -73,30 +84,31 @@ public sealed class GameSessionService : IGameSessionService
 
     public GameState? GetSession(string sessionId)
     {
-        lock (_lock)
+        lock (GetSessionLock(sessionId))
         {
             if (!_sessions.TryGetValue(sessionId, out var state)) return null;
 
             ResolveStaleRace(sessionId, state);
 
-            state.LastAccessed = DateTime.UtcNow;
+            state.LastAccessed = _timeProvider.GetUtcNow().UtcDateTime;
             return state.ToImmutable();
         }
     }
 
     public (GameState? State, PlaceBetOutcome Outcome) PlaceBet(string sessionId, int racerId)
     {
-        lock (_lock)
+        lock (GetSessionLock(sessionId))
         {
             if (!_sessions.TryGetValue(sessionId, out var state)) return (null, PlaceBetOutcome.NotFound);
             if (state.State != GamePhase.Betting) return (state.ToImmutable(), PlaceBetOutcome.WrongPhase);
             if (state.Balance < state.BetAmount) return (state.ToImmutable(), PlaceBetOutcome.InsufficientBalance);
+            if (state.BetAmount <= 0) return (state.ToImmutable(), PlaceBetOutcome.InsufficientBalance);
             if (racerId < 0 || racerId >= state.Racers.Count) return (state.ToImmutable(), PlaceBetOutcome.InvalidRacer);
 
             state.SelectedRacerId = racerId;
             state.Balance -= state.BetAmount;
             state.State = GamePhase.Racing;
-            state.RaceStartedAt = DateTime.UtcNow;
+            state.RaceStartedAt = _timeProvider.GetUtcNow().UtcDateTime;
             // Seal the winner server-side so the client cannot spoof the outcome.
             state.ServerWinnerId = PickServerWinner(state.Racers);
             return (state.ToImmutable(), PlaceBetOutcome.Success);
@@ -105,7 +117,7 @@ public sealed class GameSessionService : IGameSessionService
 
     public (GameState? State, RaceResult? Result) FinishRace(string sessionId)
     {
-        lock (_lock)
+        lock (GetSessionLock(sessionId))
         {
             if (!_sessions.TryGetValue(sessionId, out var state)) return (null, null);
             if (state.State != GamePhase.Racing) return (state.ToImmutable(), null);
@@ -115,7 +127,7 @@ public sealed class GameSessionService : IGameSessionService
             if (winner is null) return (state.ToImmutable(), null);
 
             var playerWon = state.SelectedRacerId == state.ServerWinnerId.Value;
-            var payout = _oddsService.CalculatePayout(state.BetAmount, winner.Odds, playerWon);
+            var payout = _racerService.CalculatePayout(state.BetAmount, winner.Odds, playerWon);
 
             state.Balance += payout;
             state.WinnerId = state.ServerWinnerId.Value;
@@ -135,7 +147,7 @@ public sealed class GameSessionService : IGameSessionService
 
     public GameState? NextRound(string sessionId)
     {
-        lock (_lock)
+        lock (GetSessionLock(sessionId))
         {
             if (!_sessions.TryGetValue(sessionId, out var state)) return null;
             if (state.State != GamePhase.Finished) return state.ToImmutable();
@@ -188,7 +200,7 @@ public sealed class GameSessionService : IGameSessionService
     {
         if (state.State != GamePhase.Racing || !state.RaceStartedAt.HasValue) return;
 
-        var elapsed = DateTime.UtcNow - state.RaceStartedAt.Value;
+        var elapsed = _timeProvider.GetUtcNow().UtcDateTime - state.RaceStartedAt.Value;
         if (elapsed <= _raceTimeout) return;
 
         _logger.LogWarning(
@@ -231,4 +243,3 @@ public sealed class GameSessionService : IGameSessionService
         return racers[^1].Id;
     }
 }
-

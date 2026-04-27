@@ -11,9 +11,6 @@ internal static class StorageExtensions
     {
         services.AddSingleton<StorageService>();
         services.AddSingleton<IStorageService>(sp => sp.GetRequiredService<StorageService>());
-        services.AddSingleton<IPlayerStatsStorage>(sp => sp.GetRequiredService<StorageService>());
-        services.AddSingleton<ISnakeStorage>(sp => sp.GetRequiredService<StorageService>());
-        services.AddSingleton<IPoDropSquareStorage>(sp => sp.GetRequiredService<StorageService>());
 
         services.AddHealthChecks()
             .AddCheck<StorageHealthCheck>(

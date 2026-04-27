@@ -9,9 +9,9 @@ namespace PoMiniGames.HealthChecks;
 /// </summary>
 public sealed class StorageHealthCheck : IHealthCheck
 {
-    private readonly IPlayerStatsStorage _storage;
+    private readonly IStorageService _storage;
 
-    public StorageHealthCheck(IPlayerStatsStorage storage)
+    public StorageHealthCheck(IStorageService storage)
     {
         _storage = storage;
     }

@@ -14,14 +14,16 @@ public class StorageService : IStorageService
     private readonly string _dbPath;
     private readonly string _dbFileName;
     private readonly string _dataDir;
+    private readonly EloCalculator _eloCalculator;
 
     internal static readonly HashSet<char> _invalidChars =
         Path.GetInvalidFileNameChars()
             .Concat(new[] { '\'', '"', ';', '\\', '/' })
             .ToHashSet();
 
-    public StorageService(IConfiguration configuration)
+    public StorageService(IConfiguration configuration, EloCalculator eloCalculator)
     {
+        _eloCalculator = eloCalculator;
         var dataDir = configuration["Sqlite:DataDirectory"]
             ?? Path.Combine(AppContext.BaseDirectory, "data");
 
@@ -44,15 +46,6 @@ public class StorageService : IStorageService
     public void Initialize()
     {
         DbInitializer.InitializeSchema(_dbPath);
-    }
-
-    /// <summary>
-    /// One-time compatibility import for older per-game databases.
-    /// Invoke this explicitly when migrating from a legacy build.
-    /// </summary>
-    public void RunLegacyMigration()
-    {
-        DbInitializer.MigrateLegacyPerGameDatabases(_dbPath, _dbFileName, _dataDir);
     }
 
     private SqliteConnection OpenConnection()
@@ -120,7 +113,7 @@ public class StorageService : IStorageService
         }
 
         // Compute ELO ratings server-side before persisting so the stored JSON is always current.
-        EloCalculator.ApplyAll(stats);
+        _eloCalculator.ApplyAll(stats);
 
         stats.UpdatedAt = DateTime.UtcNow;
         var json = JsonSerializer.Serialize(stats);
@@ -211,7 +204,7 @@ public class StorageService : IStorageService
             if (stats.TotalGames > 0 &&
                 stats.Easy.EloRating == 0 && stats.Medium.EloRating == 0 && stats.Hard.EloRating == 0)
             {
-                EloCalculator.ApplyAll(stats);
+                _eloCalculator.ApplyAll(stats);
             }
 
             result.Add((reader.GetString(0), stats));

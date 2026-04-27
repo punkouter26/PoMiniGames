@@ -1,8 +1,12 @@
 using System.Collections.Concurrent;
+using System.Threading.Channels;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Options;
 
 namespace PoMiniGames.Features.PoRunner;
+
+public enum TickEventType { CountdownElapsed, RaceTimeout }
+public sealed record TickEvent(string RoomId, TickEventType Type, long TriggerTimeMs);
 
 public class GameSessionManager : IHostedService, IGameSessionManager, IDisposable
 {
@@ -10,14 +14,23 @@ public class GameSessionManager : IHostedService, IGameSessionManager, IDisposab
     private readonly ConcurrentDictionary<string, string> _playerToRoomMap = new();
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _pendingRemovals = new();
     private readonly IServiceProvider _serviceProvider;
+    private readonly TimeProvider _timeProvider;
     private readonly TimeSpan _gracePeriod;
     private readonly TimeSpan _countdownDuration;
     private readonly TimeSpan _maxRaceDuration;
-    private readonly PeriodicTimer _periodicTimer = new(TimeSpan.FromMilliseconds(100));
     private Task? _tickTask;
     private CancellationTokenSource? _tickCts;
     private readonly ILogger<GameSessionManager>? _logger;
     private long _roomCounter = 0;
+
+    // Channel-based event queue: replaces polling PeriodicTimer with push-based events
+    private readonly Channel<TickEvent> _eventChannel = Channel.CreateBounded<TickEvent>(
+        new BoundedChannelOptions(256)
+        {
+            FullMode = BoundedChannelFullMode.DropOldest,
+            SingleWriter = false,
+            SingleReader = true
+        });
 
     private static readonly PlayerColor[] _colorOrder =
     [
@@ -29,6 +42,7 @@ public class GameSessionManager : IHostedService, IGameSessionManager, IDisposab
     {
         _serviceProvider = serviceProvider;
         _logger = logger;
+        _timeProvider = TimeProvider.System;
         var opts = options?.Value ?? new GameOptions();
         _gracePeriod = gracePeriod ?? TimeSpan.FromMilliseconds(opts.GracePeriodMs);
         _countdownDuration = TimeSpan.FromMilliseconds(opts.CountdownDurationMs);
@@ -45,7 +59,6 @@ public class GameSessionManager : IHostedService, IGameSessionManager, IDisposab
     public Task StopAsync(CancellationToken cancellationToken)
     {
         _tickCts?.Cancel();
-        _periodicTimer.Dispose();
         return _tickTask ?? Task.CompletedTask;
     }
 
@@ -54,78 +67,114 @@ public class GameSessionManager : IHostedService, IGameSessionManager, IDisposab
         if (_tickCts is not null && !_tickCts.IsCancellationRequested)
             _tickCts.Cancel();
         _tickCts?.Dispose();
-        _periodicTimer.Dispose();
     }
 
+    /// <summary>Posts an event to trigger time-based state transitions.</summary>
+    private void PostEvent(string roomId, TickEventType type, long triggerTimeMs)
+    {
+        if (!_eventChannel.Writer.TryWrite(new TickEvent(roomId, type, triggerTimeMs)))
+        {
+            _logger?.LogWarning("[TickEvent] Channel full, dropping event: {RoomId} {Type}", roomId, type);
+        }
+    }
+
+    /// <summary>
+    /// Event-driven tick loop — waits for events from the channel instead of
+    /// polling all rooms every 100ms. Events are posted when countdowns start
+    /// or race timeouts need scheduling, reducing CPU usage to near-zero when idle.
+    /// </summary>
     private async Task RunTickLoopAsync(CancellationToken ct)
     {
         try
         {
-            while (await _periodicTimer.WaitForNextTickAsync(ct))
-                await ServerTickAsync();
+            // Process events as they arrive, with a small timeout to handle concurrent
+            // modifications (e.g. race finished before timeout fires).
+            var reader = _eventChannel.Reader;
+            var timeout = TimeSpan.FromMilliseconds(100);
+
+            while (await reader.WaitToReadAsync(ct).ConfigureAwait(false))
+            {
+                while (reader.TryRead(out var evt))
+                {
+                    var nowMs = _timeProvider.GetTimestamp();
+
+                    // Process the event only if its trigger time has passed
+                    if (nowMs < evt.TriggerTimeMs)
+                    {
+                        // Re-post with delay via a Task.Delay-based timer
+                        _ = ScheduleDelayedEventAsync(evt, ct);
+                        continue;
+                    }
+
+                    if (!_rooms.TryGetValue(evt.RoomId, out var room))
+                        continue;
+
+                    await ProcessTickEventAsync(evt, room);
+                }
+            }
         }
         catch (OperationCanceledException) { }
     }
 
-    private async Task ServerTickAsync()
+    /// <summary>Schedules a deferred event using Task.Delay for accurate timing.</summary>
+    private async Task ScheduleDelayedEventAsync(TickEvent evt, CancellationToken ct)
+    {
+        try
+        {
+            var delay = TimeSpan.FromMilliseconds(
+                Math.Max(0, evt.TriggerTimeMs - _timeProvider.GetTimestamp()));
+            await Task.Delay(delay, ct).ConfigureAwait(false);
+            _eventChannel.Writer.TryWrite(evt);
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    private async Task ProcessTickEventAsync(TickEvent evt, GameRoom room)
     {
         try
         {
             using var scope = _serviceProvider.CreateScope();
             var hubContext = scope.ServiceProvider.GetRequiredService<IHubContext<GameHub>>();
-            var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
-            foreach (var room in _rooms.Values)
+            switch (evt.Type)
             {
-                bool stateChanged = false;
-
-                if (room.Status == GameStatus.Countdown)
-                {
-                    if (nowMs >= room.RaceStartTimeMs)
+                case TickEventType.CountdownElapsed:
+                    if (room.Status == GameStatus.Countdown)
                     {
                         room.Status = GameStatus.Playing;
-                        stateChanged = true;
+                        await BroadcastRoomState(hubContext, room);
                     }
-                }
+                    break;
 
-                if (room.Status == GameStatus.Playing)
-                {
-                    var elapsedMs = nowMs - room.RaceStartTimeMs;
-                    if (elapsedMs >= (long)_maxRaceDuration.TotalMilliseconds)
+                case TickEventType.RaceTimeout:
+                    bool triggered = false;
+                    lock (room.FinishLock)
                     {
-                        bool triggered = false;
-                        lock (room.FinishLock)
+                        if (room.Status == GameStatus.Playing)
                         {
-                            if (room.Status == GameStatus.Playing)
-                            {
-                                room.Status = GameStatus.GameOver;
-                                room.FinishedPlayerId = string.Empty;
-                                room.FinishTimeMs = (long)_maxRaceDuration.TotalMilliseconds;
-                                triggered = true;
-                            }
-                        }
-                        if (triggered)
-                        {
-                            await hubContext.Clients.Group(room.RoomId).SendAsync("gameOver", new
-                            {
-                                winnerId = (string?)null,
-                                timeMs = room.FinishTimeMs,
-                                players = room.Players,
-                                qualifiesForHighScore = false,
-                                timedOut = true
-                            });
-                            continue;
+                            room.Status = GameStatus.GameOver;
+                            room.FinishedPlayerId = string.Empty;
+                            room.FinishTimeMs = (long)_maxRaceDuration.TotalMilliseconds;
+                            triggered = true;
                         }
                     }
-                }
-
-                if (stateChanged)
-                    await BroadcastRoomState(hubContext, room);
+                    if (triggered)
+                    {
+                        await hubContext.Clients.Group(room.RoomId).SendAsync("gameOver", new
+                        {
+                            winnerId = (string?)null,
+                            timeMs = room.FinishTimeMs,
+                            players = room.Players,
+                            qualifiesForHighScore = false,
+                            timedOut = true
+                        });
+                    }
+                    break;
             }
         }
         catch (Exception ex)
         {
-            _logger?.LogError(ex, "[GameSessionManager] Error in server tick");
+            _logger?.LogError(ex, "[GameSessionManager] Error processing tick event for {RoomId}", evt.RoomId);
         }
     }
 
@@ -197,6 +246,13 @@ public class GameSessionManager : IHostedService, IGameSessionManager, IDisposab
 
         if (useGrace && _gracePeriod > TimeSpan.Zero)
         {
+            // Dispose any existing pending removal CTS for this connection to prevent memory leaks
+            if (_pendingRemovals.TryRemove(connectionId, out var existingCts))
+            {
+                existingCts.Cancel();
+                existingCts.Dispose();
+            }
+
             var graceCts = new CancellationTokenSource();
             _pendingRemovals[connectionId] = graceCts;
 
@@ -290,8 +346,9 @@ public class GameSessionManager : IHostedService, IGameSessionManager, IDisposab
     {
         if (!_rooms.TryGetValue(roomId, out var room)) return;
         room.Status = GameStatus.Countdown;
-        room.CountdownStartTimeMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        room.RaceStartTimeMs = room.CountdownStartTimeMs + (long)_countdownDuration.TotalMilliseconds;
+        var nowMs = _timeProvider.GetTimestamp();
+        room.CountdownStartTimeMs = nowMs;
+        room.RaceStartTimeMs = nowMs + (long)_countdownDuration.TotalMilliseconds;
         room.FinishedPlayerId = "";
         room.FinishTimeMs = 0;
 
@@ -306,6 +363,10 @@ public class GameSessionManager : IHostedService, IGameSessionManager, IDisposab
                 p.IsReady = false;
             }
         }
+
+        // Post events for countdown elapsed and race timeout
+        PostEvent(roomId, TickEventType.CountdownElapsed, room.RaceStartTimeMs);
+        PostEvent(roomId, TickEventType.RaceTimeout, room.RaceStartTimeMs + (long)_maxRaceDuration.TotalMilliseconds);
     }
 
     public void FinishRace(string connectionId)
@@ -318,7 +379,7 @@ public class GameSessionManager : IHostedService, IGameSessionManager, IDisposab
             if (room.Status == GameStatus.GameOver) return;
             room.Status = GameStatus.GameOver;
             room.FinishedPlayerId = connectionId;
-            room.FinishTimeMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - room.RaceStartTimeMs;
+            room.FinishTimeMs = _timeProvider.GetTimestamp() - room.RaceStartTimeMs;
         }
     }
 

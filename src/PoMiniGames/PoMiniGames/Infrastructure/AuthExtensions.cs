@@ -7,8 +7,7 @@ using PoMiniGames.Features.Auth;
 namespace PoMiniGames.Infrastructure;
 
 /// <summary>
-/// Registers the composite authentication scheme (DevBypass / DevCookie / JWT Bearer)
-/// appropriate for the current environment.
+/// Registers the authentication scheme (DevCookie / JWT Bearer) for the current environment.
 /// </summary>
 internal static class AuthExtensions
 {
@@ -22,8 +21,6 @@ internal static class AuthExtensions
         var microsoftAuthOptions = microsoftAuthSection.Get<MicrosoftAuthOptions>() ?? new MicrosoftAuthOptions();
 
         var devLoginEnabled = env.IsDevelopment();
-        var devBypassEnabled = env.IsDevelopment()
-            && (configuration.GetValue<bool?>("PoMiniGames:DevBypassAuth") ?? true);
 
         var authBuilder = services.AddAuthentication(options =>
             {
@@ -47,13 +44,6 @@ internal static class AuthExtensions
                         return JwtBearerDefaults.AuthenticationScheme;
                     }
 
-                    if (devBypassEnabled)
-                    {
-                        return context.Request.Cookies.ContainsKey("PoMiniGames.DevAuth")
-                            ? AuthSchemes.DevCookie
-                            : AuthSchemes.DevBypass;
-                    }
-
                     if (devLoginEnabled)
                     {
                         return AuthSchemes.DevCookie;
@@ -62,11 +52,6 @@ internal static class AuthExtensions
                     return JwtBearerDefaults.AuthenticationScheme;
                 };
             });
-
-        if (devBypassEnabled)
-        {
-            authBuilder.AddScheme<AuthenticationSchemeOptions, DevBypassAuthHandler>(AuthSchemes.DevBypass, _ => { });
-        }
 
         authBuilder
             .AddCookie(AuthSchemes.DevCookie, options =>

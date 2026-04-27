@@ -1,3 +1,4 @@
+using PoMiniGames.Configuration;
 using PoMiniGames.Models;
 
 namespace PoMiniGames.Services;
@@ -24,46 +25,43 @@ namespace PoMiniGames.Services;
 ///
 /// EloRating is floored at 0.
 /// </summary>
-public static class EloCalculator
+public sealed class EloCalculator
 {
-    // AI virtual ELO ratings used as fixed opponents.
-    private const int EasyAiElo = 800;
-    private const int MediumAiElo = 1200;
-    private const int HardAiElo = 1600;
+    private readonly EloOptions _options;
 
-    // Baseline player reference ELO (fixed — not adjusted per player).
-    private const int PlayerReferenceElo = 1000;
-
-    private const int K = 32;
+    public EloCalculator(EloOptions options)
+    {
+        _options = options;
+    }
 
     /// <summary>
     /// Computes and sets EloRating on all three difficulty buckets of the given stats object.
     /// Safe to call repeatedly — always deterministic.
     /// </summary>
-    public static void ApplyAll(PlayerStats stats)
+    public void ApplyAll(PlayerStats stats)
     {
-        stats.Easy.EloRating = Compute(stats.Easy, EasyAiElo);
-        stats.Medium.EloRating = Compute(stats.Medium, MediumAiElo);
-        stats.Hard.EloRating = Compute(stats.Hard, HardAiElo);
+        stats.Easy.EloRating = Compute(stats.Easy, _options.EasyAiElo);
+        stats.Medium.EloRating = Compute(stats.Medium, _options.MediumAiElo);
+        stats.Hard.EloRating = Compute(stats.Hard, _options.HardAiElo);
     }
 
     /// <summary>
     /// Computes ELO for a single difficulty bucket against an AI of the given virtual rating.
     /// </summary>
-    public static int Compute(DifficultyStats ds, int aiElo)
+    public int Compute(DifficultyStats ds, int aiElo)
     {
         if (ds.TotalGames == 0)
         {
-            return PlayerReferenceElo;
+            return _options.PlayerReferenceElo;
         }
 
         // Expected score for the player at the reference ELO vs this AI tier.
-        double expected = 1.0 / (1.0 + Math.Pow(10, (aiElo - PlayerReferenceElo) / 400.0));
+        double expected = 1.0 / (1.0 + Math.Pow(10, (aiElo - _options.PlayerReferenceElo) / 400.0));
 
-        double elo = PlayerReferenceElo
-            + ds.Wins * K * (1.0 - expected) // Win actual=1
-            + ds.Draws * K * (0.5 - expected) // Draw actual=0.5
-            + ds.Losses * K * (0.0 - expected); // Loss actual=0
+        double elo = _options.PlayerReferenceElo
+            + ds.Wins * _options.K * (1.0 - expected) // Win actual=1
+            + ds.Draws * _options.K * (0.5 - expected) // Draw actual=0.5
+            + ds.Losses * _options.K * (0.0 - expected); // Loss actual=0
 
         return Math.Max(0, (int)Math.Round(elo));
     }

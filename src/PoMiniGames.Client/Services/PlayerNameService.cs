@@ -1,3 +1,5 @@
+using Microsoft.JSInterop;
+
 namespace PoMiniGamesClient.Services;
 
 public class PlayerNameService
@@ -7,6 +9,7 @@ public class PlayerNameService
     private static readonly string[] Nouns = ["Fox", "Bear", "Wolf", "Hawk", "Panda", "Tiger", "Lynx", "Raven", "Otter", "Gecko"];
 
     private string _playerName = string.Empty;
+    private IJSRuntime? _jsRuntime;
 
     public string PlayerName
     {
@@ -23,16 +26,41 @@ public class PlayerNameService
 
     public event Action? StateChanged;
 
-    public PlayerNameService()
+    public PlayerNameService(IJSRuntime jsRuntime)
     {
-        _playerName = ReadInitialName();
+        _jsRuntime = jsRuntime;
+        _ = InitializeAsync();
+    }
+
+    public async Task InitializeAsync()
+    {
+        try
+        {
+            if (_jsRuntime is not null)
+            {
+                _playerName = await GetItemAsync<string>(StorageKey) ?? "Player";
+                if (string.IsNullOrEmpty(_playerName) || _playerName == "Player")
+                {
+                    var generated = GenerateRandomName();
+                    _playerName = generated;
+                    await SetItemAsync(StorageKey, generated);
+                }
+                StateChanged?.Invoke();
+                return;
+            }
+        }
+        catch
+        {
+            // JS interop not available (e.g. pre-render)
+        }
+        _playerName = "Player";
     }
 
     public void SetPlayerName(string name)
     {
         var trimmed = string.IsNullOrWhiteSpace(name) ? "Player" : name.Trim();
         PlayerName = trimmed;
-        PersistName(trimmed);
+        _ = PersistName(trimmed);
     }
 
     public void SetPlayerNameFromAuth(string name)
@@ -40,7 +68,7 @@ public class PlayerNameService
         var trimmed = name.Trim();
         if (string.IsNullOrEmpty(trimmed)) return;
         PlayerName = trimmed;
-        PersistName(trimmed);
+        _ = PersistName(trimmed);
     }
 
     private static string GenerateRandomName()
@@ -51,42 +79,55 @@ public class PlayerNameService
         return $"{adj}{noun}{num}";
     }
 
-    private static string ReadInitialName()
-    {
-        try
-        {
-            // This runs in the browser via JS interop
-            return "Player";
-        }
-        catch
-        {
-            var generated = GenerateRandomName();
-            return generated;
-        }
-    }
-
     public string GetPlayerName() => PlayerName;
 
     public string GetOrReadInitialName()
     {
-        if (_playerName == "Player")
+        if (_playerName == "Player" || string.IsNullOrEmpty(_playerName))
         {
             var generated = GenerateRandomName();
             _playerName = generated;
-            PersistName(generated);
+            _ = PersistName(generated);
         }
         return _playerName;
     }
 
-    private static void PersistName(string name)
+    private async Task PersistName(string name)
     {
         try
         {
-            // localStorage handled via JS interop
+            if (_jsRuntime is not null)
+            {
+                await SetItemAsync(StorageKey, name);
+            }
         }
         catch
         {
             // ignore
         }
+    }
+
+    private async Task<T?> GetItemAsync<T>(string key)
+    {
+        if (_jsRuntime is null) return default;
+        try
+        {
+            return await _jsRuntime.InvokeAsync<T>("window.localStorage.getItem", key);
+        }
+        catch
+        {
+            return default;
+        }
+    }
+
+    private async Task SetItemAsync<T>(string key, T value)
+    {
+        if (_jsRuntime is null) return;
+        try
+        {
+            var json = System.Text.Json.JsonSerializer.Serialize(value);
+            await _jsRuntime.InvokeVoidAsync("window.localStorage.setItem", key, json);
+        }
+        catch { }
     }
 }

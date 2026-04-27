@@ -10,7 +10,7 @@ public static class HighScoresEndpoints
     {
         // ─── PoSnakeGame ──────────────────────────────────────────────────────
         app.MapGet("/api/snake/highscores",
-            async (ISnakeStorage storage, int count = 10) =>
+            async (IStorageService storage, int count = 10) =>
             {
                 var scores = await storage.GetSnakeHighScoresAsync(count);
                 return Results.Ok(scores);
@@ -21,7 +21,7 @@ public static class HighScoresEndpoints
             .Produces<IEnumerable<SnakeHighScore>>(StatusCodes.Status200OK);
 
         app.MapPost("/api/snake/highscores",
-            async (SnakeHighScore entry, ISnakeStorage storage) =>
+            async (SnakeHighScore entry, IStorageService storage) =>
             {
                 if (string.IsNullOrWhiteSpace(entry.Initials))
                     return Results.BadRequest(new { error = "Initials are required" });
@@ -43,7 +43,7 @@ public static class HighScoresEndpoints
 
         // ─── PoDropSquare ─────────────────────────────────────────────────────
         app.MapGet("/api/podropsquare/highscores",
-            async (IPoDropSquareStorage storage, int count = 10) =>
+            async (IStorageService storage, int count = 10) =>
             {
                 var scores = await storage.GetPoDropSquareHighScoresAsync(count);
                 return Results.Ok(scores);
@@ -54,7 +54,7 @@ public static class HighScoresEndpoints
             .Produces<IEnumerable<PoDropSquareHighScore>>(StatusCodes.Status200OK);
 
         app.MapPost("/api/podropsquare/highscores",
-            async (PoDropSquareHighScore entry, IPoDropSquareStorage storage) =>
+            async (PoDropSquareHighScore entry, IStorageService storage) =>
             {
                 if (string.IsNullOrWhiteSpace(entry.PlayerInitials))
                     return Results.BadRequest(new { error = "Player initials are required" });

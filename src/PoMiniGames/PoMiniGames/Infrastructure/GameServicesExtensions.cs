@@ -1,4 +1,6 @@
+using PoMiniGames.Configuration;
 using PoMiniGames.Features.PoRaceRagdoll;
+using PoMiniGames.Services;
 
 namespace PoMiniGames.Infrastructure;
 
@@ -10,9 +12,19 @@ internal static class GameServicesExtensions
     public static IServiceCollection AddPoMiniGamesGameServices(this IServiceCollection services)
     {
         // PoRaceRagdoll
-        services.AddSingleton<IOddsService, OddsService>();
         services.AddSingleton<IRacerService, RacerService>();
         services.AddSingleton<IGameSessionService, GameSessionService>();
+
+        // Elo calculation with configurable options
+        services.Configure<EloOptions>(options =>
+        {
+            // Default values from EloOptions class will be used unless overridden in config
+        });
+        services.AddSingleton(sp =>
+        {
+            var config = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<EloOptions>>();
+            return new EloCalculator(config.Value);
+        });
 
         services.ConfigureHttpJsonOptions(options =>
         {

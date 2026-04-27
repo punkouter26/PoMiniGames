@@ -12,7 +12,7 @@ public static class PlayerStatsEndpoints
     public static IEndpointRouteBuilder MapGetPlayerStats(this IEndpointRouteBuilder app)
     {
         app.MapGet("/api/{game}/players/{playerName}/stats",
-            async (string game, string playerName, IPlayerStatsStorage storage) =>
+            async (string game, string playerName, IStorageService storage) =>
             {
                 var stats = await storage.GetPlayerStatsAsync(game, playerName);
                 if (stats is null)
@@ -38,7 +38,7 @@ public static class PlayerStatsEndpoints
     public static IEndpointRouteBuilder MapSavePlayerStats(this IEndpointRouteBuilder app)
     {
         app.MapPut("/api/{game}/players/{playerName}/stats",
-            async (string game, string playerName, PlayerStats stats, IPlayerStatsStorage storage) =>
+            async (string game, string playerName, PlayerStats stats, IStorageService storage) =>
             {
                 if (string.IsNullOrWhiteSpace(playerName))
                 {
@@ -66,7 +66,7 @@ public static class PlayerStatsEndpoints
     public static IEndpointRouteBuilder MapGetLeaderboard(this IEndpointRouteBuilder app)
     {
         app.MapGet("/api/{game}/statistics/leaderboard",
-            async (string game, IPlayerStatsStorage storage, int limit = 10, string? difficulty = null) =>
+            async (string game, IStorageService storage, int limit = 10, string? difficulty = null) =>
             {
                 limit = Math.Clamp(limit, 1, 100);
                 var board = await storage.GetLeaderboardAsync(game, limit, difficulty);
@@ -85,7 +85,7 @@ public static class PlayerStatsEndpoints
 
     public static IEndpointRouteBuilder MapGetAllPlayerStatistics(this IEndpointRouteBuilder app)
     {
-        app.MapGet("/api/statistics", async (IPlayerStatsStorage storage) =>
+        app.MapGet("/api/statistics", async (IStorageService storage) =>
             {
                 var result = await storage.GetAllPlayerStatsAsync();
                 return Results.Ok(result);

@@ -1,10 +1,24 @@
+using PoMiniGames.DTOs;
+using PoMiniGames.Models;
+
 namespace PoMiniGames.Services;
 
 /// <summary>
-/// Unified storage abstraction. Features should prefer the narrower
-/// <see cref="IPlayerStatsStorage"/>, <see cref="ISnakeStorage"/>, or
-/// <see cref="IPoDropSquareStorage"/> interfaces where possible.
+/// Unified storage abstraction for player stats, snake high scores, and PoDropSquare high scores.
 /// </summary>
-public interface IStorageService : IPlayerStatsStorage, ISnakeStorage, IPoDropSquareStorage
+public interface IStorageService
 {
+    // Player Stats
+    Task<List<PlayerStatsDto>> GetAllPlayerStatsAsync();
+    Task<PlayerStats?> GetPlayerStatsAsync(string game, string playerName);
+    Task SavePlayerStatsAsync(string game, string playerName, PlayerStats stats);
+    Task<List<(string Name, PlayerStats Stats)>> GetLeaderboardAsync(string game, int limit, string? difficulty = null);
+
+    // Snake High Scores
+    Task<List<SnakeHighScore>> GetSnakeHighScoresAsync(int limit = 10);
+    Task<SnakeHighScore> SaveSnakeHighScoreAsync(SnakeHighScore entry);
+
+    // PoDropSquare High Scores
+    Task<List<PoDropSquareHighScore>> GetPoDropSquareHighScoresAsync(int limit = 10);
+    Task<PoDropSquareHighScore> SavePoDropSquareHighScoreAsync(PoDropSquareHighScore entry);
 }

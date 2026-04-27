@@ -20,48 +20,50 @@
     Stats="@_statItems"
     Controls="@ControlsContent">
     
-    <div class="cf-drop-row">
-        @for (int c = 0; c < ConnectFiveBoard.Cols; c++)
-        {
-            var col = c;
-            <button class="cf-drop-btn @(_hoveredCol == col && _gameResult == GameResult.InProgress && !_isAiTurn ? "active-column" : "")"
-                    disabled="@(PlayMode == "demo" ? true : _gameResult != GameResult.InProgress || _isAiTurn || _board.GetTargetRow(col) < 0)"
-                    @onclick="() => HandleDrop(col)"
-                    @onmouseenter="() => _hoveredCol = col"
-                    @onmouseleave="() => _hoveredCol = -1"
-                    aria-label="@($"Drop piece in column {col + 1}")">
-                ▼
-            </button>
-        }
-    </div>
-
-    <div class="cf-board" role="grid" aria-label="Connect Five game board">
-        @for (int r = 0; r < ConnectFiveBoard.Rows; r++)
-        {
+    <div class="cf-layout">
+        <div class="cf-drop-row">
             @for (int c = 0; c < ConnectFiveBoard.Cols; c++)
             {
-                var row = r;
                 var col = c;
-                var piece = _board.Get(r, c);
-                var isWinCell = _winCells.Any(wc => wc.Row == r && wc.Col == c);
-                
-                <div class="cf-cell @GetPieceClass(piece) @(isWinCell ? "win-cell" : "") @(_gameResult != GameResult.InProgress ? "disabled" : "")"
-                     @onclick="() => HandleDrop(col)"
-                     @onmouseenter="() => _hoveredCol = col"
-                     @onmouseleave="() => _hoveredCol = -1"
-                     role="gridcell"
-                     aria-label="@GetPieceAriaLabel(piece)">
-                    @if (piece == Piece.Red)
-                    {
-                        <span class="piece red-piece">🔴</span>
-                    }
-                    else if (piece == Piece.Yellow)
-                    {
-                        <span class="piece yellow-piece">🟡</span>
-                    }
-                </div>
+                <button class="cf-drop-btn @(_hoveredCol == col && _gameResult == GameResult.InProgress && !_isAiTurn ? "active-column" : "")"
+                        disabled="@(PlayMode == "demo" ? true : _gameResult != GameResult.InProgress || _isAiTurn || _board.GetTargetRow(col) < 0)"
+                        @onclick="() => HandleDrop(col)"
+                        @onmouseenter="() => _hoveredCol = col"
+                        @onmouseleave="() => _hoveredCol = -1"
+                        aria-label="@($"Drop piece in column {col + 1}")">
+                    ▼
+                </button>
             }
-        }
+        </div>
+
+        <div class="cf-board" role="grid" aria-label="Connect Five game board">
+            @for (int r = 0; r < ConnectFiveBoard.Rows; r++)
+            {
+                @for (int c = 0; c < ConnectFiveBoard.Cols; c++)
+                {
+                    var row = r;
+                    var col = c;
+                    var piece = _board.Get(r, c);
+                    var isWinCell = _winCells.Any(wc => wc.Row == r && wc.Col == c);
+
+                    <div class="cf-cell @GetPieceClass(piece) @(isWinCell ? "win-cell" : "") @(_gameResult != GameResult.InProgress ? "disabled" : "")"
+                         @onclick="() => HandleDrop(col)"
+                         @onmouseenter="() => _hoveredCol = col"
+                         @onmouseleave="() => _hoveredCol = -1"
+                         role="gridcell"
+                         aria-label="@GetPieceAriaLabel(piece)">
+                        @if (piece == Piece.Red)
+                        {
+                            <span class="piece red-piece">🔴</span>
+                        }
+                        else if (piece == Piece.Yellow)
+                        {
+                            <span class="piece yellow-piece">🟡</span>
+                        }
+                    </div>
+                }
+            }
+        </div>
     </div>
 </GameShell>
 

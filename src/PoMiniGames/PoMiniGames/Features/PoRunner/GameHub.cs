@@ -106,13 +106,18 @@ public class GameHub : Hub
         { await Clients.Caller.SendAsync("error", "Cannot submit score: game is not over."); return; }
         if (room.FinishedPlayerId != Context.ConnectionId)
         { await Clients.Caller.SendAsync("error", "Only the winner can submit a high score."); return; }
-        if (room.HighScoreSubmitted) return;
 
         var sanitized = new string((initials ?? "").ToUpperInvariant().Where(char.IsLetter).Take(3).ToArray());
         if (sanitized.Length != 3)
         { await Clients.Caller.SendAsync("error", "Initials must be exactly 3 letters (A-Z)."); return; }
 
-        room.HighScoreSubmitted = true;
+        // Thread-safe check-and-set to prevent duplicate submissions from concurrent calls
+        lock (room.FinishLock)
+        {
+            if (room.HighScoreSubmitted) return;
+            room.HighScoreSubmitted = true;
+        }
+
         _logger.LogInformation("[Socket] High score submitted: {TimeMs}ms for \"{Initials}\"", room.FinishTimeMs, sanitized);
 
         // Acknowledge submission to the client

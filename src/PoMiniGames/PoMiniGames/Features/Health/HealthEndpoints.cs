@@ -11,17 +11,24 @@ public static class HealthEndpoints
 {
     public static IEndpointRouteBuilder MapHealthEndpoints(this IEndpointRouteBuilder app)
     {
-        app.MapGet("/api/health", async (HealthCheckService healthCheckService) =>
+        async Task<IResult> healthHandler(HealthCheckService healthCheckService)
         {
             var report = await healthCheckService.CheckHealthAsync();
             var response = CreateHealthResponse(report);
             return report.Status != HealthStatus.Unhealthy
                 ? Results.Ok(response)
                 : Results.Json(response, statusCode: StatusCodes.Status503ServiceUnavailable);
-        })
+        }
+
+        app.MapGet("/api/health", healthHandler)
         .WithName("HealthCheck")
         .WithTags("Health")
         .WithSummary("Structured health report for all dependencies");
+
+        app.MapGet("/health", healthHandler)
+        .WithName("HealthCheckRoot")
+        .WithTags("Health")
+        .WithSummary("Structured health report (root alias)");
 
         app.MapGet("/api/health/ping", () => Results.Ok("pong"))
             .WithName("HealthPing")

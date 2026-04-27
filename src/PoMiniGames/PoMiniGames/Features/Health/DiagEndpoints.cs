@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
@@ -10,7 +11,7 @@ public static class DiagEndpoints
 {
     public static IEndpointRouteBuilder MapDiagEndpoints(this IEndpointRouteBuilder app)
     {
-        app.MapGet("/api/diag", async (IConfiguration configuration, IHostEnvironment environment, IDiagnosticsSnapshotProvider diagnosticsProvider) =>
+        async Task<IResult> diagHandler(IConfiguration configuration, IHostEnvironment environment, IDiagnosticsSnapshotProvider diagnosticsProvider)
         {
             var diagnosticsEnabled = configuration.GetValue("FeatureFlags:EnableDiagnostics", environment.IsDevelopment());
             if (!diagnosticsEnabled)
@@ -22,10 +23,17 @@ public static class DiagEndpoints
             // is delegated to an application-facing provider for Onion-style separation.
             var diagData = await diagnosticsProvider.BuildSnapshotAsync();
             return Results.Ok(diagData);
-        })
+        }
+
+        app.MapGet("/api/diag", diagHandler)
         .WithName("GetDiagnostics")
         .WithTags("Health")
         .WithSummary("Exposes a development-focused diagnostic summary without raw secret values");
+
+        app.MapGet("/diag", diagHandler)
+        .WithName("GetDiagnosticsRoot")
+        .WithTags("Health")
+        .WithSummary("Diagnostic summary (root alias)");
 
         return app;
     }

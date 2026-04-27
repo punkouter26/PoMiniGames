@@ -38,6 +38,7 @@ resource webApp 'Microsoft.Web/sites@2022-09-01' = {
     serverFarmId: appServicePlan.id
     siteConfig: {
       linuxFxVersion: 'DOTNETCORE|10.0'
+      appCommandLine: 'dotnet PoMiniGames.dll'
       alwaysOn: false
       ftpsState: 'FtpsOnly'
       minTlsVersion: '1.2'

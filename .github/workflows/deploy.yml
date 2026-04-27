@@ -112,6 +112,14 @@ jobs:
           echo "app-name=$APP_NAME" >> $GITHUB_OUTPUT
           echo "Deploying to: $APP_NAME"
 
+      - name: Set Startup Command
+        shell: bash
+        run: |
+          az webapp config set \
+            --resource-group PoMiniGames \
+            --name "${{ steps.app-info.outputs.app-name }}" \
+            --startup-file "dotnet PoMiniGames.dll"
+
       - name: Deploy to App Service
         shell: bash
         run: |

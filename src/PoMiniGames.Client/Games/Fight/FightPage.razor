@@ -1,0 +1,107 @@
+
+@page "/fight"
+@page "/pofight"
+@using PoMiniGamesClient.Components
+@using PoMiniGamesClient.Enums
+@using PoMiniGamesClient.Models
+@using PoMiniGamesClient.Services
+@inject PlayerNameService PlayerNameService
+
+<GameShell Title=@TitleContent Player="@_playerName" BackTo="/single-player" GameOver="@(_playerHp <= 0 || _enemyHp <= 0)" OnPlayAgain="ResetGame" ShowSettings="true" Stats="@_statItems" Controls="@ControlsContent">
+    <div class="fight-wrapper">
+        <div class="fight-arena">
+            <div class="fighter player">
+                <div class="fighter-name">Player</div>
+                <div class="fighter-hp-bar"><div class="hp-fill" style="width: @(_playerHp)%"></div></div>
+                <div class="fighter-hp">@_playerHp HP</div>
+            </div>
+            <div class="vs">VS</div>
+            <div class="fighter enemy">
+                <div class="fighter-name">Enemy</div>
+                <div class="fighter-hp-bar"><div class="hp-fill enemy" style="width: @(_enemyHp)%"></div></div>
+                <div class="fighter-hp">@_enemyHp HP</div>
+            </div>
+        </div>
+        <div class="fight-log">
+            @foreach (var log in _combatLog.TakeLast(5))
+            {
+                <div class="log-entry">@log</div>
+            }
+        </div>
+    </div>
+</GameShell>
+
+@code {
+    private string _playerName = "";
+    private List<StatItem> _statItems = new();
+    private int _playerHp = 100;
+    private int _enemyHp = 100;
+    private readonly List<string> _combatLog = new();
+
+    private RenderFragment ControlsContent => @<div class="gps-controls">
+        <button @onclick="() => Attack(15, 25)">⚔️ Attack</button>
+        <button @onclick="() => Defend()">🛡️ Defend</button>
+        <button @onclick="() => Heal()">💚 Heal</button>
+        <button @onclick="ResetGame">🔄 Reset</button>
+    </div>;
+
+    private RenderFragment TitleContent => @<span>⚔️ Fight</span>;
+
+    protected override void OnInitialized()
+    {
+        _playerName = PlayerNameService.GetPlayerName();
+    }
+
+    private void Attack(int minDmg, int maxDmg)
+    {
+        var dmg = Random.Shared.Next(minDmg, maxDmg + 1);
+        _enemyHp = Math.Max(0, _enemyHp - dmg);
+        _combatLog.Add($"You dealt {dmg} damage!");
+        
+        if (_enemyHp <= 0)
+        {
+            _combatLog.Add("You won!");
+        }
+        else
+        {
+            EnemyTurn();
+        }
+        StateHasChanged();
+    }
+
+    private void Defend()
+    {
+        _combatLog.Add("You defended!");
+        EnemyTurn(true);
+        StateHasChanged();
+    }
+
+    private void Heal()
+    {
+        var heal = Random.Shared.Next(10, 20);
+        _playerHp = Math.Min(100, _playerHp + heal);
+        _combatLog.Add($"You healed {heal} HP!");
+        EnemyTurn();
+        StateHasChanged();
+    }
+
+    private void EnemyTurn(bool defending = false)
+    {
+        var dmg = Random.Shared.Next(8, 18);
+        if (defending) dmg /= 2;
+        _playerHp = Math.Max(0, _playerHp - dmg);
+        _combatLog.Add($"Enemy dealt {dmg} damage!");
+        
+        if (_playerHp <= 0)
+        {
+            _combatLog.Add("You lost!");
+        }
+    }
+
+    private void ResetGame()
+    {
+        _playerHp = 100;
+        _enemyHp = 100;
+        _combatLog.Clear();
+    }
+}

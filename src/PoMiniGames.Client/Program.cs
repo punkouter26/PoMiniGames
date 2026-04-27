@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
 using PoMiniGamesClient;
 using PoMiniGamesClient.Services;
+using Radzen;
 
 var builder = WebAssemblyHostBuilder.CreateDefault(args);
 builder.RootComponents.Add<App>("#app");
@@ -12,5 +13,6 @@ builder.Services.AddScoped<ApiService>();
 builder.Services.AddScoped<AuthStateService>();
 builder.Services.AddScoped<PlayerNameService>();
 builder.Services.AddScoped<ToastService>();
+builder.Services.AddRadzenComponents();
 
 await builder.Build().RunAsync();

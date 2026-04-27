@@ -1,28 +1,13 @@
 namespace PoMiniGamesClient.Models;
 
-public enum Difficulty
-{
-    Easy,
-    Medium,
-    Hard
-}
-
-public enum GameResult
-{
-    InProgress,
-    Win,
-    Loss,
-    Draw
-}
-
 public class DifficultyStats
 {
     public int Wins { get; set; }
     public int Losses { get; set; }
     public int Draws { get; set; }
-    public int TotalGames { get; set; }
+    public int TotalGames => Wins + Losses + Draws;
     public int WinStreak { get; set; }
-    public double WinRate { get; set; }
+    public double WinRate => TotalGames > 0 ? (double)Wins / TotalGames : 0;
     public int EloRating { get; set; } = 1000;
 }
 
@@ -33,13 +18,30 @@ public class PlayerStats
     public DifficultyStats Easy { get; set; } = new();
     public DifficultyStats Medium { get; set; } = new();
     public DifficultyStats Hard { get; set; } = new();
-    public int TotalWins { get; set; }
-    public int TotalLosses { get; set; }
-    public int TotalDraws { get; set; }
-    public int TotalGames { get; set; }
-    public double WinRate { get; set; }
-    public string CreatedAt { get; set; } = "";
-    public string UpdatedAt { get; set; } = "";
+    public int TotalWins => Easy.Wins + Medium.Wins + Hard.Wins;
+    public int TotalLosses => Easy.Losses + Medium.Losses + Hard.Losses;
+    public int TotalDraws => Easy.Draws + Medium.Draws + Hard.Draws;
+    public int TotalGames => TotalWins + TotalLosses + TotalDraws;
+    public double WinRate => TotalGames > 0 ? (double)TotalWins / TotalGames : 0;
+}
+
+public class StatItem
+{
+    public string Value { get; set; } = "";
+    public string Label { get; set; } = "";
+}
+
+public class StatusInfo
+{
+    public string Icon { get; set; } = "";
+    public string Text { get; set; } = "";
+    public string ClassName { get; set; } = "";
+}
+
+public class WinResult
+{
+    public bool Won { get; set; }
+    public List<(int Row, int Col)> Cells { get; set; } = new();
 }
 
 public class PlayerStatsDto

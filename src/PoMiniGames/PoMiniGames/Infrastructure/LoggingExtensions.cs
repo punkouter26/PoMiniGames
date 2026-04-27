@@ -1,4 +1,6 @@
 using Serilog;
+using Serilog.Events;
+using Serilog.Exceptions;
 using Serilog.Sinks.ApplicationInsights.TelemetryConverters;
 
 namespace PoMiniGames.Infrastructure;
@@ -14,6 +16,7 @@ internal static class LoggingExtensions
                 .ReadFrom.Configuration(context.Configuration)
                 .ReadFrom.Services(services)
                 .Enrich.FromLogContext()
+                .Enrich.WithExceptionDetails()
                 .Enrich.WithEnvironmentName()
                 .Enrich.WithMachineName()
                 .Enrich.WithThreadId()
@@ -53,5 +56,40 @@ internal static class LoggingExtensions
         });
 
         return builder;
+    }
+
+    public static IApplicationBuilder UsePoMiniGamesRequestLogging(this IApplicationBuilder app)
+    {
+        return app.UseSerilogRequestLogging(options =>
+        {
+            options.GetLevel = (httpContext, elapsed, ex) =>
+            {
+                if (ex is not null || httpContext.Response.StatusCode >= 500)
+                {
+                    return LogEventLevel.Error;
+                }
+
+                return LogEventLevel.Information;
+            };
+
+            options.EnrichDiagnosticContext = (diagnosticsContext, httpContext) =>
+            {
+                var userId = httpContext.User?.Identity?.IsAuthenticated == true
+                    ? httpContext.User.Identity?.Name
+                    : "anonymous";
+                var correlationId = httpContext.TraceIdentifier;
+                var sessionId = httpContext.Items[RequestLogContextMiddleware.SessionItemKey]?.ToString() ?? "none";
+
+                diagnosticsContext.Set("UserId", userId ?? "anonymous");
+                diagnosticsContext.Set("CorrelationId", correlationId);
+                diagnosticsContext.Set("SessionId", sessionId);
+                diagnosticsContext.Set("Environment", app.ApplicationServices
+                    .GetRequiredService<IHostEnvironment>()
+                    .EnvironmentName);
+                diagnosticsContext.Set("RequestPath", httpContext.Request.Path.Value ?? string.Empty);
+                diagnosticsContext.Set("RequestMethod", httpContext.Request.Method);
+                diagnosticsContext.Set("StatusCode", httpContext.Response.StatusCode);
+            };
+        });
     }
 }

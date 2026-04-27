@@ -15,7 +15,8 @@ internal static class StorageExtensions
         services.AddSingleton<IPoDropSquareStorage>(sp => sp.GetRequiredService<StorageService>());
 
         services.AddHealthChecks()
-            .AddCheck<StorageHealthCheck>("SqliteStorage");
+            .AddCheck<StorageHealthCheck>("SqliteStorage")
+            .AddCheck<AzureTableStorageHealthCheck>("AzureTableStorage");
 
         return services;
     }

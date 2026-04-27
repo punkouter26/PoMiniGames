@@ -1,0 +1,63 @@
+using Azure;
+using Azure.Data.Tables;
+using Azure.Identity;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Configuration;
+
+namespace PoMiniGames.HealthChecks;
+
+/// <summary>
+/// Optional health check for Azure Table Storage or Azurite-backed table endpoints.
+/// </summary>
+public sealed class AzureTableStorageHealthCheck : IHealthCheck
+{
+    private readonly IConfiguration _configuration;
+
+    public AzureTableStorageHealthCheck(IConfiguration configuration)
+    {
+        _configuration = configuration;
+    }
+
+    public async Task<HealthCheckResult> CheckHealthAsync(
+        HealthCheckContext context,
+        CancellationToken cancellationToken = default)
+    {
+        var tableName = _configuration["PoMiniGames:Storage:TableService:TableName"] ?? "pominigameshealth";
+        var connectionString = _configuration["PoMiniGames:Storage:TableService:ConnectionString"];
+        var endpoint = _configuration["PoMiniGames:Storage:TableService:Endpoint"];
+        var accountName = _configuration["PoMiniGames:Storage:TableService:AccountName"];
+
+        if (string.IsNullOrWhiteSpace(connectionString) && string.IsNullOrWhiteSpace(endpoint) && string.IsNullOrWhiteSpace(accountName))
+        {
+            return HealthCheckResult.Healthy("Table storage is not configured for this environment.");
+        }
+
+        try
+        {
+            TableServiceClient serviceClient;
+
+            if (!string.IsNullOrWhiteSpace(connectionString))
+            {
+                serviceClient = new TableServiceClient(connectionString);
+            }
+            else
+            {
+                var serviceUri = !string.IsNullOrWhiteSpace(endpoint)
+                    ? new Uri(endpoint)
+                    : new Uri($"https://{accountName}.table.core.windows.net");
+                serviceClient = new TableServiceClient(serviceUri, new DefaultAzureCredential());
+            }
+
+            var tableClient = serviceClient.GetTableClient(tableName);
+            await tableClient.CreateIfNotExistsAsync(cancellationToken: cancellationToken);
+
+            await tableClient.GetAccessPoliciesAsync(cancellationToken: cancellationToken);
+
+            return HealthCheckResult.Healthy("Table storage is reachable.");
+        }
+        catch (Exception ex)
+        {
+            return HealthCheckResult.Unhealthy("Table storage is unavailable.", ex);
+        }
+    }
+}

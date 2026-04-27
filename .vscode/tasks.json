@@ -15,10 +15,7 @@
         {
             "label": "start-client",
             "type": "shell",
-            "command": "npm run dev",
-            "options": {
-                "cwd": "${workspaceFolder}/src/PoMiniGames.Client"
-            },
+            "command": "dotnet run --project ${workspaceFolder}/src/PoMiniGames.Client/PoMiniGamesClient.csproj",
             "isBackground": true,
             "problemMatcher": {
                 "pattern": {
@@ -26,8 +23,8 @@
                 },
                 "background": {
                     "activeOnStart": true,
-                    "beginsPattern": "VITE",
-                    "endsPattern": "Local:.*localhost"
+                    "beginsPattern": "Now listening on",
+                    "endsPattern": "Application started"
                 }
             },
             "presentation": {
@@ -87,13 +84,16 @@
         },
         {
             "label": "build-client",
-            "type": "shell",
-            "command": "npm run build",
-            "options": {
-                "cwd": "${workspaceFolder}/src/PoMiniGames.Client"
-            },
+            "command": "dotnet",
+            "type": "process",
+            "args": [
+                "build",
+                "${workspaceFolder}/src/PoMiniGames.Client/PoMiniGamesClient.csproj",
+                "/property:GenerateFullPaths=true",
+                "/consoleloggerparameters:NoSummary"
+            ],
             "group": "build",
-            "problemMatcher": [],
+            "problemMatcher": "$msCompile",
             "presentation": {
                 "reveal": "always",
                 "panel": "dedicated"
@@ -101,7 +101,7 @@
         },
         {
             "label": "prelaunch",
-            "dependsOn": ["kill-dotnet", "start-client", "start-api"],
+            "dependsOn": ["kill-dotnet", "start-api"],
             "dependsOrder": "sequence",
             "problemMatcher": []
         }

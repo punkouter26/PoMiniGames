@@ -1,0 +1,121 @@
+@namespace PoMiniGamesClient.Components
+
+<div class="gps-shell">
+    <div class="gps-info-bar">
+        <div class="gps-info-left">
+            @if (!string.IsNullOrEmpty(BackTo))
+            {
+                <button class="gps-back-btn" @onclick="NavigateBack" aria-label="Go back">
+                    ←
+                </button>
+            }
+            <span class="gps-title">@Title</span>
+            @if (!string.IsNullOrEmpty(Player))
+            {
+                <span class="gps-player">@Player</span>
+            }
+        </div>
+
+        <div class="gps-info-center">
+            @Status
+        </div>
+
+        @if (IsOffline)
+        {
+            <span class="gps-offline-badge" title="Server offline — scores won't sync">
+                ⚠️ Offline
+            </span>
+        }
+
+        @if (ShowSettings)
+        {
+            <div class="gps-settings-wrap">
+                <button class="gps-settings-btn @(_settingsOpen ? "active" : "")"
+                        @onclick="ToggleSettings"
+                        aria-label="Game settings and stats"
+                        aria-expanded="@_settingsOpen">
+                    ⚙️
+                </button>
+
+                @if (_settingsOpen)
+                {
+                    <div class="gps-settings-drawer" role="dialog" aria-label="Game settings">
+                        @if (Stats != null && Stats.Any())
+                        {
+                            <div class="gps-drawer-stats">
+                                @foreach (var stat in Stats)
+                                {
+                                    <div class="gps-stat">
+                                        <span class="gps-stat-value">@stat.Value</span>
+                                        <span class="gps-stat-label">@stat.Label</span>
+                                    </div>
+                                }
+                            </div>
+                        }
+                        @Controls
+                    </div>
+                }
+            </div>
+        }
+    </div>
+
+    <div class="gps-game-area @(Fullscreen ? "gps-game-area--fullscreen" : "")">
+        @ChildContent
+    </div>
+
+    @if (GameOver && ShowPlayAgain)
+    {
+        <div class="gps-play-again-bar" role="complementary" aria-label="Game over actions">
+            @if (OnPlayAgain.HasDelegate)
+            {
+                <button class="gps-play-again-btn gps-play-again-btn--primary" @onclick="OnPlayAgain">
+                    🔄 Play Again
+                </button>
+            }
+            @if (!string.IsNullOrEmpty(BackTo))
+            {
+                <button class="gps-play-again-btn gps-play-again-btn--secondary" @onclick="NavigateBack">
+                    🏠 Home
+                </button>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public RenderFragment Title { get; set; } = null!;
+    [Parameter] public string? Player { get; set; }
+    [Parameter] public RenderFragment? Status { get; set; }
+    [Parameter] public RenderFragment? Controls { get; set; }
+    [Parameter] public List<Models.StatItem>? Stats { get; set; }
+    [Parameter] public bool Fullscreen { get; set; }
+    [Parameter] public string? BackTo { get; set; }
+    [Parameter] public bool GameOver { get; set; }
+    [Parameter] public EventCallback OnPlayAgain { get; set; }
+    [Parameter] public bool ShowSettings { get; set; } = true;
+    [Parameter] public bool ShowPlayAgain { get; set; } = true;
+    [Parameter] public bool IsOffline { get; set; }
+    [Parameter] public RenderFragment ChildContent { get; set; } = null!;
+
+    [Inject] private NavigationManager Navigation { get; set; } = null!;
+
+    private bool _settingsOpen = false;
+
+    private void ToggleSettings()
+    {
+        _settingsOpen = !_settingsOpen;
+    }
+
+    private void NavigateBack()
+    {
+        if (!string.IsNullOrEmpty(BackTo))
+        {
+            Navigation.NavigateTo(BackTo);
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        // Register keyboard handler for Escape key
+    }
+}

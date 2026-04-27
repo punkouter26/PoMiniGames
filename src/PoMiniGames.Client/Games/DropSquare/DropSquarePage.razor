@@ -1,0 +1,162 @@
+@page "/dropsquare"
+@page "/podropsquare"
+@using PoMiniGamesClient.Components
+@using PoMiniGamesClient.Enums
+@using PoMiniGamesClient.Models
+@using PoMiniGamesClient.Services
+@inject PlayerNameService PlayerNameService
+
+<GameShell Title=@TitleContent Player="@_playerName" BackTo="/single-player" GameOver="@_isGameOver" OnPlayAgain="ResetGame" ShowSettings="true" Stats="@_statItems" Controls="@ControlsContent">
+    <div class="drop-square-wrapper">
+        <div class="drop-square-board">
+            @for (int r = 0; r < _rows; r++)
+            {
+                @for (int c = 0; c < _cols; c++)
+                {
+                    var row = r;
+                    var col = c;
+                    <div class="drop-square-cell @(GetCellClass(row, col))" @onclick="() => DropPiece(col)"></div>
+                }
+            }
+        </div>
+        <div class="drop-square-score">
+            <span>Score: @_score</span>
+            <span>Lines: @_lines</span>
+        </div>
+    </div>
+</GameShell>
+
+@code {
+    private const int _rows = 20;
+    private const int _cols = 10;
+    private string _playerName = "";
+    private List<StatItem> _statItems = new();
+    private bool _isGameOver;
+    private int _score;
+    private int _lines;
+    private int _currentPiece;
+    private int _currentRotation;
+    private int _currentX;
+    private int _currentY;
+    private readonly int[][] _board = new int[_rows][];
+    private System.Threading.Timer? _timer;
+    private readonly int[][][] _pieces = new[]
+    {
+        new[] { new[] { 1, 1, 1, 1 } }, // I
+        new[] { new[] { 1, 1 }, new[] { 1, 1 } }, // O
+        new[] { new[] { 0, 1, 0 }, new[] { 1, 1, 1 } }, // T
+        new[] { new[] { 1, 0, 0 }, new[] { 1, 1, 1 } }, // L
+        new[] { new[] { 0, 0, 1 }, new[] { 1, 1, 1 } }, // J
+        new[] { new[] { 0, 1, 1 }, new[] { 1, 1, 0 } }, // S
+        new[] { new[] { 1, 1, 0 }, new[] { 0, 1, 1 } }, // Z
+    };
+
+    private RenderFragment ControlsContent => @<div class="gps-controls">
+        <button @onclick="StartGame" disabled="@(_timer != null)">▶ Start</button>
+        <button @onclick="ResetGame">🔄 Reset</button>
+        <button @onclick="() => MovePiece(-1)">◀</button>
+        <button @onclick="() => MovePiece(1)">▶</button>
+        <button @onclick="() => DropPiece()">⬇</button>
+    </div>;
+
+    private RenderFragment TitleContent => @<span>🟦 Drop Square</span>;
+
+    protected override void OnInitialized()
+    {
+        _playerName = PlayerNameService.GetPlayerName();
+        for (int r = 0; r < _rows; r++) _board[r] = new int[_cols];
+    }
+
+    private void StartGame()
+    {
+        _isGameOver = false;
+        _score = 0;
+        _lines = 0;
+        NewPiece();
+        _timer = new System.Threading.Timer(_ => InvokeAsync(Tick), null, 500, 500);
+    }
+
+    private void Tick()
+    {
+        MovePiece(0);
+        StateHasChanged();
+    }
+
+    private void NewPiece()
+    {
+        _currentPiece = Random.Shared.Next(_pieces.Length);
+        _currentRotation = 0;
+        _currentX = _cols / 2;
+        _currentY = 0;
+    }
+
+    private void MovePiece(int dx)
+    {
+        if (_isGameOver) return;
+        var newX = _currentX + dx;
+        if (CanPlace(_currentPiece, _currentRotation, newX, _currentY + 1))
+        {
+            if (dx != 0) _currentX = newX;
+            else _currentY++;
+        }
+        else if (dx == 0)
+        {
+            LockPiece();
+        }
+    }
+
+    public void DropPiece(int col = -1)
+    {
+        // Drop to bottom
+    }
+
+    private bool CanPlace(int piece, int rotation, int x, int y)
+    {
+        var shape = _pieces[piece];
+        for (int r = 0; r < shape.Length; r++)
+        {
+            for (int c = 0; c < shape[r].Length; c++)
+            {
+                if (shape[r][c] == 0) continue;
+                var px = x + c;
+                var py = y + r;
+                if (px < 0 || px >= _cols || py >= _rows) return false;
+                if (py >= 0 && _board[py][px] != 0) return false;
+            }
+        }
+        return true;
+    }
+
+    private void LockPiece()
+    {
+        _isGameOver = true;
+        _timer?.Dispose();
+        _timer = null;
+    }
+
+    private string GetCellClass(int row, int col)
+    {
+        if (_board[row][col] != 0) return $"color-{_board[row][col]}";
+        if (!_isGameOver && row >= _currentY && row < _currentY + 4 && col >= _currentX && col < _currentX + 4)
+        {
+            var shape = _pieces[_currentPiece];
+            var localR = row - _currentY;
+            var localC = col - _currentX;
+            if (localR < shape.Length && localC < shape[localR].Length && shape[localR][localC] != 0)
+                return "color-current";
+        }
+        return "";
+    }
+
+    private void ResetGame()
+    {
+        _timer?.Dispose();
+        _timer = null;
+        _isGameOver = false;
+        _score = 0;
+        _lines = 0;
+        for (int r = 0; r < _rows; r++)
+            for (int c = 0; c < _cols; c++)
+                _board[r][c] = 0;
+    }
+}

@@ -21,6 +21,10 @@
                 <button class="gl-auth-button" @onclick="AuthState.IsAuthenticated ? SignOut : SignIn">
                     @(AuthState.IsAuthenticated ? "Sign out" : "Sign in")
                 </button>
+                @if (!AuthState.IsAuthenticated)
+                {
+                    <button class="gl-auth-button" @onclick="SignInAnon">ANON</button>
+                }
             }
         </div>
     </header>
@@ -58,5 +62,10 @@
     private async Task SignOut()
     {
         await AuthState.SignOutAsync();
+    }
+
+    private async Task SignInAnon()
+    {
+        await AuthState.DevBypassAsync("ANON");
     }
 }

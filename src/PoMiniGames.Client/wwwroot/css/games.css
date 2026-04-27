@@ -1,0 +1,413 @@
+/* ── Game Shell Styles ── */
+.gps-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background: var(--color-bg);
+}
+
+.gps-info-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1.5rem;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.gps-info-left {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.gps-back-btn {
+  background: transparent;
+  border: none;
+  color: var(--color-text-secondary);
+  font-size: 1.25rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.gps-back-btn:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-text-primary);
+}
+
+.gps-title {
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+.gps-player {
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+  padding: 0.2rem 0.6rem;
+  background: var(--color-surface-hover);
+  border-radius: 9999px;
+}
+
+.gps-info-center {
+  flex: 1;
+  text-align: center;
+}
+
+.gps-offline-badge {
+  font-size: 0.75rem;
+  padding: 0.2rem 0.5rem;
+  background: rgba(245, 158, 11, 0.2);
+  color: var(--color-warning);
+  border-radius: 4px;
+}
+
+.gps-settings-wrap {
+  position: relative;
+}
+
+.gps-settings-btn {
+  background: transparent;
+  border: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+  padding: 0.35rem 0.6rem;
+  border-radius: 6px;
+  font-size: 1rem;
+  transition: all 0.2s;
+}
+
+.gps-settings-btn:hover,
+.gps-settings-btn.active {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.gps-settings-drawer {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  right: 0;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 1rem;
+  min-width: 200px;
+  z-index: 50;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+.gps-drawer-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.gps-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.gps-stat-value {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.gps-stat-label {
+  font-size: 0.65rem;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+}
+
+.gps-controls {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.gps-controls button {
+  padding: 0.35rem 0.75rem;
+  background: var(--color-surface-hover);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+  border-radius: 6px;
+  font-size: 0.8rem;
+  transition: all 0.2s;
+}
+
+.gps-controls button:hover {
+  border-color: var(--color-accent);
+  color: var(--color-text-primary);
+}
+
+.gps-controls button.active {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: white;
+}
+
+.gps-controls select {
+  padding: 0.35rem 0.75rem;
+  background: var(--color-surface-hover);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+  border-radius: 6px;
+  font-size: 0.8rem;
+}
+
+.gps-game-area {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+
+.gps-game-area--fullscreen {
+  padding: 0;
+}
+
+.gps-play-again-bar {
+  display: flex;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 1rem;
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border);
+}
+
+.gps-play-again-btn {
+  padding: 0.6rem 1.25rem;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+
+.gps-play-again-btn--primary {
+  background: var(--color-accent);
+  border: none;
+  color: white;
+}
+
+.gps-play-again-btn--primary:hover {
+  filter: brightness(1.1);
+}
+
+.gps-play-again-btn--secondary {
+  background: transparent;
+  border: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+}
+
+.gps-play-again-btn--secondary:hover {
+  border-color: var(--color-text-secondary);
+  color: var(--color-text-primary);
+}
+
+.gps-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.75rem;
+  border-radius: 9999px;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.gps-status-badge.win { background: rgba(34, 197, 94, 0.2); color: #22c55e; }
+.gps-status-badge.loss { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
+.gps-status-badge.draw { background: rgba(148, 163, 184, 0.2); color: #94a3b8; }
+.gps-status-badge.thinking { background: rgba(99, 102, 241, 0.2); color: #6366f1; }
+.gps-status-badge.turn { background: rgba(0, 229, 255, 0.2); color: #00e5ff; }
+
+/* ── Tic Tac Toe Styles ── */
+.ttt-board {
+  display: grid;
+  grid-template-columns: repeat(6, var(--ttt-cell));
+  grid-template-rows: repeat(6, var(--ttt-cell));
+  gap: 4px;
+  margin: 1rem auto;
+  width: fit-content;
+  padding: 12px;
+  background: var(--color-surface);
+  border-radius: 12px;
+  border: 1px solid var(--color-border);
+  --ttt-cell: clamp(44px, calc((100vh - 200px) / 6), 80px);
+}
+
+.ttt-cell {
+  width: var(--ttt-cell);
+  height: var(--ttt-cell);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: clamp(1.2rem, 3.5vmin, 2rem);
+  cursor: pointer;
+  transition: all 0.15s;
+  position: relative;
+  overflow: hidden;
+}
+
+.ttt-cell:hover:not(.disabled) {
+  background: rgba(0, 229, 255, 0.1);
+  border-color: #00e5ff;
+  transform: scale(1.02);
+}
+
+.ttt-cell.disabled { cursor: default; }
+
+.ttt-cell .piece { animation: scaleIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); }
+
+.ttt-cell.win-cell {
+  background: rgba(0, 229, 255, 0.15);
+  border-color: #00e5ff;
+  box-shadow: 0 0 15px rgba(0, 229, 255, 0.4);
+  animation: glow 1.5s ease-in-out infinite;
+}
+
+.x-piece, .o-piece { font-size: inherit; }
+
+@keyframes scaleIn {
+  from { transform: scale(0); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+@keyframes glow {
+  0%, 100% { box-shadow: 0 0 15px rgba(0, 229, 255, 0.4); }
+  50% { box-shadow: 0 0 25px rgba(0, 229, 255, 0.7); }
+}
+
+/* ── Connect Five Styles ── */
+.cf-board {
+  display: grid;
+  grid-template-columns: repeat(9, var(--cf-cell));
+  grid-template-rows: repeat(9, var(--cf-cell));
+  gap: 3px;
+  margin: 1rem auto;
+  width: fit-content;
+  padding: 12px;
+  background: var(--color-surface);
+  border-radius: 12px;
+  border: 1px solid var(--color-border);
+  --cf-cell: clamp(38px, calc((100vh - 230px) / 9), 56px);
+  --cf-cell-stride: calc(var(--cf-cell) + 3px);
+}
+
+.cf-cell {
+  width: var(--cf-cell);
+  height: var(--cf-cell);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--color-border);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: clamp(1rem, 3vmin, 1.6rem);
+  cursor: pointer;
+  transition: all 0.15s;
+  position: relative;
+  overflow: hidden;
+}
+
+.cf-cell:hover:not(.disabled) {
+  background: rgba(0, 229, 255, 0.1);
+  border-color: #00e5ff;
+}
+
+.cf-cell.disabled { cursor: default; }
+
+.cf-cell .piece { animation: cf-slide-down 0.3s ease-in both; }
+
+@keyframes cf-slide-down {
+  from { transform: translateY(calc(-1 * var(--drop-rows, 1) * var(--cf-cell-stride, 55px))); }
+  to { transform: translateY(0); }
+}
+
+.cf-cell.red {
+  background: rgba(244, 67, 54, 0.7);
+  border-color: #f44336;
+  box-shadow: inset 0 -3px 6px rgba(0, 0, 0, 0.3);
+}
+
+.cf-cell.yellow {
+  background: rgba(255, 235, 59, 0.7);
+  border-color: #ffeb3b;
+  box-shadow: inset 0 -3px 6px rgba(0, 0, 0, 0.2);
+}
+
+.cf-cell.win-cell {
+  box-shadow: 0 0 20px rgba(0, 229, 255, 0.5);
+  border-color: #00e5ff;
+  animation: glow 1.5s ease-in-out infinite;
+}
+
+.cf-drop-row {
+  display: grid;
+  grid-template-columns: repeat(9, var(--cf-cell, 48px));
+  gap: 3px;
+  margin: 0 auto 1rem;
+  width: fit-content;
+  padding: 0 12px;
+}
+
+.cf-drop-btn {
+  width: var(--cf-cell, 48px);
+  height: 32px;
+  background: rgba(0, 229, 255, 0.1);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  color: #00e5ff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cf-drop-btn:hover:not(:disabled) {
+  background: rgba(0, 229, 255, 0.25);
+  border-color: #00e5ff;
+  transform: translateY(-4px);
+  box-shadow: 0 4px 14px rgba(0, 229, 255, 0.3);
+}
+
+.cf-drop-btn:disabled { opacity: 0.3; cursor: default; }
+
+.cf-drop-btn.active-column {
+  background: #00e5ff;
+  color: var(--color-bg);
+  box-shadow: 0 0 16px rgba(0, 229, 255, 0.5);
+  animation: pulse 1s ease-in-out infinite;
+}
+
+/* ── Responsive Game Styles ── */
+@media (max-width: 640px) {
+  .ttt-board {
+    --ttt-cell: clamp(38px, 13vw, 48px);
+    gap: 2px;
+    padding: 8px;
+  }
+  .cf-board {
+    grid-template-columns: repeat(9, 40px);
+    grid-template-rows: repeat(9, 40px);
+    gap: 2px;
+    padding: 8px;
+    --cf-cell-stride: 42px;
+  }
+  .cf-cell { width: 40px; height: 40px; font-size: 1rem; }
+  .cf-drop-row { grid-template-columns: repeat(9, 40px); gap: 2px; padding: 0 8px; }
+  .cf-drop-btn { width: 40px; height: 24px; }
+}

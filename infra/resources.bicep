@@ -16,6 +16,8 @@ param sharedResourceGroupName string = 'PoShared'
 
 var abbreviations = loadJsonContent('./abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, name, location))
+var storageAccountName = toLower('st${take(resourceToken, 22)}')
+var storageTableDataContributorRoleId = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3')
 
 // Existing App Service Plan in PoShared
 resource appServicePlan 'Microsoft.Web/serverfarms@2022-09-01' existing = {
@@ -60,6 +62,18 @@ resource webApp 'Microsoft.Web/sites@2022-09-01' = {
           name: 'PoMiniGames__Cors__AllowedOrigins__1'
           value: 'http://localhost:5173'
         }
+        {
+          name: 'PoMiniGames__Storage__TableService__AccountName'
+          value: storageAccount.name
+        }
+        {
+          name: 'PoMiniGames__Storage__TableService__Endpoint'
+          value: 'https://${storageAccount.name}.table.core.windows.net'
+        }
+        {
+          name: 'PoMiniGames__Storage__TableService__TableName'
+          value: appTable.name
+        }
       ]
     }
     httpsOnly: true
@@ -87,6 +101,41 @@ resource staticWebApp 'Microsoft.Web/staticSites@2022-09-01' = {
     tier: 'Free'
   }
   properties: {}
+}
+
+resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = {
+  name: storageAccountName
+  location: location
+  tags: union(tags, { 'azd-service-name': 'storage' })
+  kind: 'StorageV2'
+  sku: {
+    name: 'Standard_LRS'
+  }
+  properties: {
+    minimumTlsVersion: 'TLS1_2'
+    allowBlobPublicAccess: false
+    supportsHttpsTrafficOnly: true
+  }
+}
+
+resource tableService 'Microsoft.Storage/storageAccounts/tableServices@2023-05-01' = {
+  name: 'default'
+  parent: storageAccount
+}
+
+resource appTable 'Microsoft.Storage/storageAccounts/tableServices/tables@2023-05-01' = {
+  name: 'pominigames'
+  parent: tableService
+}
+
+resource webAppTableRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(storageAccount.id, webApp.identity.principalId, storageTableDataContributorRoleId)
+  scope: storageAccount
+  properties: {
+    principalId: webApp.identity.principalId
+    roleDefinitionId: storageTableDataContributorRoleId
+    principalType: 'ServicePrincipal'
+  }
 }
 
 output API_URI string = 'https://${webApp.properties.defaultHostName}'

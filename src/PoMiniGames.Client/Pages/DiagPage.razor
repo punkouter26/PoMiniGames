@@ -1,9 +1,11 @@
 @page "/diag"
 @using PoMiniGamesClient.Services
 @using System.Text.Json
+@using Radzen.Blazor
 @inject ApiService ApiService
 @inject AuthStateService AuthState
 @inject HttpClient Http
+@inject IWebAssemblyHostEnvironment HostEnvironment
 
 <div style="padding:2rem;max-width:860px;margin:0 auto;font-family:monospace;color:#cdd5e0">
     <h1 style="font-size:1.5rem;margin-bottom:0.25rem;color:#fff">🔧 /diag</h1>
@@ -34,7 +36,7 @@
         {
             <p style="color:#ef4444;margin:0">@_backendError</p>
         }
-        else if (_backendDiag == null)
+        else if (_backendDiagRaw == null)
         {
             <p style="color:#64748b;margin:0">@(_apiStatus == "offline" ? "API offline" : "Loading…")</p>
         }
@@ -43,12 +45,23 @@
             <pre style="margin:0;white-space:pre-wrap;word-break:break-all;font-size:0.75rem">@_backendDiagRaw</pre>
         }
     </section>
+
+    <section style="margin-bottom:1.5rem">
+        <h2 style="font-size:0.75rem;text-transform:uppercase;letter-spacing:0.1em;color:#94a3b8;border-bottom:1px solid #1e293b;padding-bottom:0.4rem;margin-bottom:0.75rem">Diagnostic Top-Level Keys</h2>
+        <RadzenDataGrid Data="@_diagRows" TItem="DiagRow" AllowPaging="false" AllowSorting="false" ColumnWidth="220px">
+            <Columns>
+                <RadzenDataGridColumn TItem="DiagRow" Property="Key" Title="Key" />
+                <RadzenDataGridColumn TItem="DiagRow" Property="Summary" Title="Summary" />
+            </Columns>
+        </RadzenDataGrid>
+    </section>
 </div>
 
 @code {
     private string _apiStatus = "checking";
     private string? _backendDiagRaw;
     private string? _backendError;
+    private readonly List<DiagRow> _diagRows = [];
 
     protected override async Task OnInitializedAsync()
     {
@@ -66,6 +79,7 @@
                     {
                         var obj = JsonSerializer.Deserialize<JsonElement>(json);
                         _backendDiagRaw = JsonSerializer.Serialize(obj, new JsonSerializerOptions { WriteIndented = true });
+                        BuildRows(obj);
                     }
                     catch
                     {
@@ -79,8 +93,34 @@
             }
             catch (Exception ex)
             {
-                _backendError = ex.Message;
+                _backendError = HostEnvironment.IsDevelopment() ? ex.ToString() : ex.Message;
             }
+        }
+    }
+
+    private void BuildRows(JsonElement root)
+    {
+        _diagRows.Clear();
+        if (root.ValueKind != JsonValueKind.Object)
+        {
+            return;
+        }
+
+        foreach (var property in root.EnumerateObject())
+        {
+            var summary = property.Value.ValueKind switch
+            {
+                JsonValueKind.Object => "Object",
+                JsonValueKind.Array => "Array",
+                JsonValueKind.String => property.Value.GetString() ?? string.Empty,
+                JsonValueKind.Number => property.Value.ToString(),
+                JsonValueKind.True => "true",
+                JsonValueKind.False => "false",
+                JsonValueKind.Null => "null",
+                _ => property.Value.ToString()
+            };
+
+            _diagRows.Add(new DiagRow(property.Name, summary));
         }
     }
 
@@ -89,4 +129,6 @@
         if (string.IsNullOrEmpty(value) || value.Length <= 8) return "***";
         return value[..4] + "****" + value[^4..];
     }
+
+    private sealed record DiagRow(string Key, string Summary);
 }

@@ -65,6 +65,8 @@ public class PlayerNameService
         }
     }
 
+    public string GetPlayerName() => PlayerName;
+
     public string GetOrReadInitialName()
     {
         if (_playerName == "Player")

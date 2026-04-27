@@ -33,6 +33,35 @@ GET {{baseUrl}}/alive
 
 ###
 
+# ─── Auth / Dev Bypass ────────────────────────────────────────────────────────
+
+### Public auth configuration
+GET {{baseUrl}}/api/auth/config
+
+###
+
+### Dev login (cookie-based) - use for local testing only
+POST {{baseUrl}}/api/auth/dev-login
+Content-Type: application/json
+
+{
+  "userId": "dev-anon",
+  "displayName": "ANON",
+  "email": "anon@local.dev"
+}
+
+###
+
+### Current authenticated profile
+GET {{baseUrl}}/api/auth/me
+
+###
+
+### Dev logout
+POST {{baseUrl}}/api/auth/dev-logout
+
+###
+
 # ─── OpenAPI / Scalar ──────────────────────────────────────────────────────────
 
 ### OpenAPI spec (JSON)

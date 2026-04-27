@@ -1,5 +1,6 @@
 name: Deploy to Azure
 
+# Blazor WASM hosted on App Service — single artifact, no separate SWA deploy needed.
 on:
   push:
     branches: [ master ]
@@ -9,7 +10,6 @@ permissions:
   contents: read
   id-token: write
 
-# Opt into Node.js 24 runner for all actions before the June 2026 forced migration
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
@@ -38,55 +38,33 @@ jobs:
           key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', 'Directory.Packages.props') }}
           restore-keys: nuget-${{ runner.os }}-
 
-      - name: Restore .NET Dependencies
-        run: dotnet restore src/PoMiniGames/PoMiniGames/PoMiniGames.csproj
+      - name: Restore
+        run: dotnet restore PoMiniGames.slnx
 
-      - name: Build API
-        run: dotnet build src/PoMiniGames/PoMiniGames/PoMiniGames.csproj --configuration Release --no-restore
+      - name: Build
+        run: dotnet build PoMiniGames.slnx --configuration Release --no-restore
 
-      - name: Run Unit Tests
-        run: dotnet test tests/PoMiniGames.UnitTests/PoMiniGames.UnitTests.csproj --configuration Release --verbosity normal
+      - name: Unit Tests
+        run: dotnet test tests/PoMiniGames.UnitTests/PoMiniGames.UnitTests.csproj --configuration Release --no-build --verbosity normal
 
-      - name: Run Integration Tests
-        run: dotnet test tests/PoMiniGames.IntegrationTests/PoMiniGames.IntegrationTests.csproj --configuration Release --verbosity normal
+      - name: Integration Tests
+        run: dotnet test tests/PoMiniGames.IntegrationTests/PoMiniGames.IntegrationTests.csproj --configuration Release --no-build --verbosity normal
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-          cache: 'npm'
-          cache-dependency-path: src/PoMiniGames.Client/package-lock.json
-
-      - name: Build Client
-        env:
-          VITE_GAME_URL_POBABYTOUCH: https://proud-pebble-00337fb0f.2.azurestaticapps.net
-          VITE_GAME_URL_POFIGHT: https://gray-coast-079ec100f.2.azurestaticapps.net
-        run: |
-          cd src/PoMiniGames.Client
-          npm ci
-          npm run build
-
-      - name: Publish API
+      # Publish API — Blazor WASM client is automatically embedded in wwwroot by the project reference
+      - name: Publish
         run: dotnet publish src/PoMiniGames/PoMiniGames/PoMiniGames.csproj -c Release -r linux-x64 --no-self-contained -o ./publish
 
-      - name: Upload API Artifact
-        uses: actions/upload-artifact@v5
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
         with:
-          name: api-publish
+          name: app-publish
           path: ./publish
           retention-days: 3
 
-      - name: Upload Client Build
-        uses: actions/upload-artifact@v5
-        with:
-          name: client-build
-          path: ./src/PoMiniGames.Client/dist
-          retention-days: 3
-
-  deploy-services:
+  deploy:
     needs: build
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
 
     steps:
       - name: Azure Login
@@ -96,10 +74,10 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Download API Artifact
-        uses: actions/download-artifact@v5
+      - name: Download Artifact
+        uses: actions/download-artifact@v4
         with:
-          name: api-publish
+          name: app-publish
           path: ./publish
 
       - name: Get App Service Name
@@ -113,47 +91,30 @@ jobs:
             APP_NAME=$(az webapp list -g PoMiniGames --query "[0].name" -o tsv)
           fi
           if [ -z "$APP_NAME" ]; then
-            echo "Error: App Service not found in PoMiniGames"
+            echo "Error: App Service not found in resource group PoMiniGames"
             exit 1
           fi
           echo "app-name=$APP_NAME" >> $GITHUB_OUTPUT
-          echo "API App Service: $APP_NAME"
+          echo "Deploying to: $APP_NAME"
 
-      - name: Deploy API to App Service
+      - name: Deploy to App Service
         shell: bash
         run: |
           cd ./publish
-          zip -r ../api-deploy.zip .
+          zip -r ../app-deploy.zip .
           cd ..
           az webapp deploy \
             --resource-group PoMiniGames \
             --name "${{ steps.app-info.outputs.app-name }}" \
-            --src-path api-deploy.zip \
+            --src-path app-deploy.zip \
             --type zip \
             --async true \
             --track-status false
 
-      - name: Download Client Build
-        uses: actions/download-artifact@v5
-        with:
-          name: client-build
-          path: ./client-build
-
-      - name: Deploy Client to Static Web App
-        uses: azure/static-web-apps-deploy@v1
-        with:
-          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          action: "upload"
-          app_location: "client-build"
-          skip_app_build: true
-          output_location: ""
-
-      - name: Health Check API
+      - name: Health Check
         shell: bash
         run: |
           APP_URL="https://${{ steps.app-info.outputs.app-name }}.azurewebsites.net"
-          SWA_URL=$(az staticwebapp list -g PoMiniGames --query "[0].defaultHostname" -o tsv)
           echo "Waiting for app to warm up..."
           sleep 20
 
@@ -167,6 +128,7 @@ jobs:
               fi
               sleep 15
             done
+            echo "Health check failed: $url"
             return 1
           }
 
@@ -175,12 +137,10 @@ jobs:
 
           {
             echo "## Deployment Summary"
-            echo "- API: $APP_URL"
-            echo "- Health: $APP_URL/health"
-            echo "- Ping: $APP_URL/api/health/ping"
-            if [ -n "$SWA_URL" ]; then
-              echo "- Web: https://$SWA_URL"
-            fi
+            echo "- **App**: $APP_URL"
+            echo "- **Health**: $APP_URL/health ✅"
+            echo "- **Ping**: $APP_URL/api/health/ping ✅"
+            echo "- **Diag**: $APP_URL/diag"
           } >> "$GITHUB_STEP_SUMMARY"
 
           echo "Health checks passed."

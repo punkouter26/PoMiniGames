@@ -4,9 +4,9 @@
 <div class="sp-page">
     <div class="sp-card">
         <div class="sp-header">
-            <button class="sp-back" @onclick="() => NavigationManager.NavigateTo(\"/\")">← Home</button>
+            <button class="sp-back" @onclick='() => NavigationManager.NavigateTo("/")'>← Home</button>
             <h1 class="sp-title">👥 Pick a 2-Player Game</h1>
-            <button class="sp-btn-secondary" @onclick="() => NavigationManager.NavigateTo(\"/single-player?mode=local-2p\")">🎮 All 2P games</button>
+            <button class="sp-btn-secondary" @onclick='() => NavigationManager.NavigateTo("/single-player?mode=local-2p")'>🎮 All 2P games</button>
         </div>
         <p class="sp-subtitle">Choose a game for local 2-player couch play on this device.</p>
         <div class="sp-game-grid">

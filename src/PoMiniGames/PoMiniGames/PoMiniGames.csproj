@@ -12,11 +12,10 @@
     <!-- Azure -->
     <PackageReference Include="Azure.Identity" />
     <PackageReference Include="Azure.Extensions.AspNetCore.Configuration.Secrets" />
-    <!-- SQLite -->
-    <PackageReference Include="Microsoft.Data.Sqlite" />
     <!-- API -->
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" />
     <PackageReference Include="Scalar.AspNetCore" />
     <!-- Logging / Telemetry -->
     <PackageReference Include="Azure.Monitor.OpenTelemetry.AspNetCore" />
@@ -26,12 +25,15 @@
     <PackageReference Include="Serilog.Sinks.File" />
     <PackageReference Include="Serilog.Enrichers.Environment" />
     <PackageReference Include="Serilog.Enrichers.Thread" />
+    <PackageReference Include="Serilog.Exceptions" />
   </ItemGroup>
 
-  <Target Name="BuildReactClient" BeforeTargets="Build">
-    <Message Importance="high" Text="Building React client in $(SpaRoot)" />
-    <Exec WorkingDirectory="$(SpaRoot)" Command="npm install" Condition="!Exists('$(SpaRoot)\node_modules')" />
-    <Exec WorkingDirectory="$(SpaRoot)" Command="npm run build" />
-  </Target>
+  <!-- React client build removed - now using Blazor WASM -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\PoShared\PoShared.csproj" />
+    <ProjectReference Include="..\..\PoMiniGames.Application\PoMiniGames.Application.csproj" />
+    <ProjectReference Include="..\..\PoMiniGames.Infrastructure\PoMiniGames.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\PoMiniGames.Client\PoMiniGamesClient.csproj" />
+  </ItemGroup>
 
 </Project>

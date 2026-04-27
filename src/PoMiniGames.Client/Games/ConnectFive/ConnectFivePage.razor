@@ -1,0 +1,271 @@
+@page "/connectfive"
+@page "/connectfive/{Demo:int}"
+@implements IDisposable
+@using PoMiniGamesClient.Components
+@using PoMiniGamesClient.Enums
+@using PoMiniGamesClient.Models
+@using PoMiniGamesClient.Games.ConnectFive
+@using PoMiniGamesClient.Services
+@inject NavigationManager Navigation
+@inject PlayerNameService PlayerNameService
+
+<GameShell 
+    Title=@TitleContent 
+    Player="@_playerName"
+    BackTo="@_backTo"
+    GameOver="@_isGameOver"
+    OnPlayAgain="ResetGame"
+    ShowSettings="true"
+    IsOffline="@_isOffline"
+    Stats="@_statItems"
+    Controls="@ControlsContent">
+    
+    <div class="cf-drop-row">
+        @for (int c = 0; c < ConnectFiveBoard.Cols; c++)
+        {
+            var col = c;
+            <button class="cf-drop-btn @(_hoveredCol == col && _gameResult == GameResult.InProgress && !_isAiTurn ? "active-column" : "")"
+                    disabled="@(PlayMode == "demo" ? true : _gameResult != GameResult.InProgress || _isAiTurn || _board.GetTargetRow(col) < 0)"
+                    @onclick="() => HandleDrop(col)"
+                    @onmouseenter="() => _hoveredCol = col"
+                    @onmouseleave="() => _hoveredCol = -1"
+                    aria-label="@($"Drop piece in column {col + 1}")">
+                ▼
+            </button>
+        }
+    </div>
+
+    <div class="cf-board" role="grid" aria-label="Connect Five game board">
+        @for (int r = 0; r < ConnectFiveBoard.Rows; r++)
+        {
+            @for (int c = 0; c < ConnectFiveBoard.Cols; c++)
+            {
+                var row = r;
+                var col = c;
+                var piece = _board.Get(r, c);
+                var isWinCell = _winCells.Any(wc => wc.Row == r && wc.Col == c);
+                
+                <div class="cf-cell @GetPieceClass(piece) @(isWinCell ? "win-cell" : "") @(_gameResult != GameResult.InProgress ? "disabled" : "")"
+                     @onclick="() => HandleDrop(col)"
+                     @onmouseenter="() => _hoveredCol = col"
+                     @onmouseleave="() => _hoveredCol = -1"
+                     role="gridcell"
+                     aria-label="@GetPieceAriaLabel(piece)">
+                    @if (piece == Piece.Red)
+                    {
+                        <span class="piece red-piece">🔴</span>
+                    }
+                    else if (piece == Piece.Yellow)
+                    {
+                        <span class="piece yellow-piece">🟡</span>
+                    }
+                </div>
+            }
+        }
+    </div>
+</GameShell>
+
+@code {
+    [Parameter] public int? Demo { get; set; }
+
+    private ConnectFiveBoard _board = new();
+    private ConnectFiveAI _ai = new();
+    private Difficulty _difficulty = Difficulty.Medium;
+    private GameResult _gameResult = GameResult.InProgress;
+    private bool _isAiTurn;
+    private int _hoveredCol = -1;
+    private string PlayMode => Demo == 1 ? "demo" : "ai";
+    private string _playerName = "";
+    private bool _isOffline = false;
+    private List<(int Row, int Col)> _winCells = new();
+    private List<StatItem> _statItems = new();
+    private PlayerStats _stats = new();
+    private readonly GameStatsService _gameStats = new();
+    private CancellationTokenSource? _demoCts;
+
+    private string _backTo => Demo == 1 ? "/single-player?mode=demo" : "/single-player";
+    private bool _isGameOver => _gameResult != GameResult.InProgress && PlayMode != "demo";
+
+    private RenderFragment TitleContent => @<span>🔴 Connect Five</span>;
+
+    private RenderFragment ControlsContent => @<div class="gps-controls">
+        @if (PlayMode != "demo")
+        {
+            <button type="button" 
+                    class="@(PlayMode == "ai" ? "active" : "")"
+                    @onclick='() => SetPlayMode("ai")'>
+                Vs AI
+            </button>
+        }
+        @if (PlayMode == "demo")
+        {
+            <button type="button" 
+                    class="@(PlayMode == "demo" ? "active" : "")"
+                    @onclick="() => {}">
+                Demo CPU vs CPU
+            </button>
+        }
+        <button @onclick="ResetGame">
+            🔄 @(PlayMode == "demo" ? "Restart Demo" : "New Game")
+        </button>
+        @if (PlayMode != "demo")
+        {
+            <select @bind="_difficulty" @bind:after="ResetGame" aria-label="Select difficulty">
+                <option value="@Difficulty.Easy">Easy</option>
+                <option value="@Difficulty.Medium">Medium</option>
+                <option value="@Difficulty.Hard">Hard</option>
+            </select>
+        }
+    </div>;
+
+    protected override void OnInitialized()
+    {
+        _playerName = PlayerNameService.GetPlayerName();
+        ResetGame();
+    }
+
+    private void SetPlayMode(string mode)
+    {
+        ResetGame();
+    }
+
+    private void ResetGame()
+    {
+        _demoCts?.Cancel();
+        _board = new ConnectFiveBoard();
+        _gameResult = GameResult.InProgress;
+        _winCells = new();
+        _isAiTurn = false;
+        _hoveredCol = -1;
+        _stats = _gameStats.GetStats("connectfive", _playerName);
+        UpdateStats();
+        if (PlayMode == "demo")
+        {
+            _demoCts = new CancellationTokenSource();
+            _ = RunDemoLoop(_demoCts.Token);
+        }
+    }
+
+    private async Task RunDemoLoop(CancellationToken ct)
+    {
+        await Task.Delay(700, ct);
+        while (!ct.IsCancellationRequested && _gameResult == GameResult.InProgress)
+        {
+            // Red (CPU1) move
+            var (rr, rc) = _ai.GetMove(_board, Piece.Red, _difficulty);
+            _board = _board.Place(rr, rc, Piece.Red);
+            var redWin = _board.CheckWin(Piece.Red);
+            if (redWin.Won) { _gameResult = GameResult.Win; _winCells = redWin.Cells; }
+            else if (_board.IsFull()) { _gameResult = GameResult.Draw; }
+            await InvokeAsync(StateHasChanged);
+            if (_gameResult != GameResult.InProgress) break;
+            await Task.Delay(500, ct);
+
+            // Yellow (CPU2) move
+            var (yr, yc) = _ai.GetMove(_board, Piece.Yellow, _difficulty);
+            _board = _board.Place(yr, yc, Piece.Yellow);
+            var yellowWin = _board.CheckWin(Piece.Yellow);
+            if (yellowWin.Won) { _gameResult = GameResult.Loss; _winCells = yellowWin.Cells; }
+            else if (_board.IsFull()) { _gameResult = GameResult.Draw; }
+            await InvokeAsync(StateHasChanged);
+            if (_gameResult != GameResult.InProgress) break;
+            await Task.Delay(500, ct);
+        }
+        if (!ct.IsCancellationRequested && _gameResult != GameResult.InProgress)
+        {
+            await Task.Delay(3000, ct);
+            if (!ct.IsCancellationRequested)
+                await InvokeAsync(ResetGame);
+        }
+    }
+
+    public void Dispose() => _demoCts?.Cancel();
+
+    private void UpdateStats()
+    {
+        var bucket = _gameStats.GetDifficultyBucket(_stats, _difficulty);
+        _statItems = new List<StatItem>
+        {
+            new() { Value = bucket.Wins.ToString(), Label = "W" },
+            new() { Value = bucket.Losses.ToString(), Label = "L" },
+            new() { Value = bucket.Draws.ToString(), Label = "D" },
+            new() { Value = bucket.WinStreak.ToString(), Label = "Str" },
+            new() { Value = $"{bucket.WinRate * 100:F0}%", Label = "Rate" },
+            new() { Value = bucket.EloRating.ToString(), Label = "ELO" }
+        };
+    }
+
+    private void HandleDrop(int col)
+    {
+        if (PlayMode == "demo") return;
+        if (_gameResult != GameResult.InProgress || _isAiTurn) return;
+        
+        var targetRow = _board.GetTargetRow(col);
+        if (targetRow < 0) return;
+
+        _board = _board.Place(targetRow, col, Piece.Red);
+        
+        var winCheck = _board.CheckWin(Piece.Red);
+        if (winCheck.Won)
+        {
+            _gameResult = GameResult.Win;
+            _winCells = winCheck.Cells;
+            _ = _gameStats.RecordResult("connectfive", _playerName, _difficulty, GameResult.Win);
+            UpdateStats();
+            return;
+        }
+
+        if (_board.IsFull())
+        {
+            _gameResult = GameResult.Draw;
+            _ = _gameStats.RecordResult("connectfive", _playerName, _difficulty, GameResult.Draw);
+            UpdateStats();
+            return;
+        }
+
+        // AI turn
+        _isAiTurn = true;
+        _hoveredCol = -1;
+        StateHasChanged();
+
+        _ = Task.Delay(300).ContinueWith(_ =>
+        {
+            var (ar, ac) = _ai.GetMove(_board, Piece.Yellow, _difficulty);
+            _board = _board.Place(ar, ac, Piece.Yellow);
+            var aiWin = _board.CheckWin(Piece.Yellow);
+            if (aiWin.Won)
+            {
+                _gameResult = GameResult.Loss;
+                _winCells = aiWin.Cells;
+                _isAiTurn = false;
+                _ = _gameStats.RecordResult("connectfive", _playerName, _difficulty, GameResult.Loss);
+            }
+            else if (_board.IsFull())
+            {
+                _gameResult = GameResult.Draw;
+                _isAiTurn = false;
+                _ = _gameStats.RecordResult("connectfive", _playerName, _difficulty, GameResult.Draw);
+            }
+            else
+            {
+                _isAiTurn = false;
+            }
+            UpdateStats();
+            InvokeAsync(StateHasChanged);
+        });
+    }
+
+    private string GetPieceClass(Piece piece) => piece switch
+    {
+        Piece.Red => "red",
+        Piece.Yellow => "yellow",
+        _ => ""
+    };
+
+    private string GetPieceAriaLabel(Piece piece) => piece switch
+    {
+        Piece.Red => "Red piece",
+        Piece.Yellow => "Yellow piece",
+        _ => "Empty cell"
+    };
+}

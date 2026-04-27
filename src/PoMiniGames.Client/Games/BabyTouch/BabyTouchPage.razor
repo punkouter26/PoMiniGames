@@ -1,0 +1,119 @@
+@page "/babytouch"
+@page "/pobabytouch"
+@using PoMiniGamesClient.Components
+@using PoMiniGamesClient.Enums
+@using PoMiniGamesClient.Models
+@using PoMiniGamesClient.Services
+@inject PlayerNameService PlayerNameService
+
+<GameShell Title=@TitleContent Player="@_playerName" BackTo="/single-player" GameOver="@(_timeLeft <= 0)" OnPlayAgain="ResetGame" ShowSettings="true" Stats="@_statItems" Controls="@ControlsContent">
+    <div class="baby-touch-wrapper">
+        <div class="baby-touch-timer">Time: @_timeLeft</div>
+        <div class="baby-touch-score">Score: @_score</div>
+        <div class="baby-touch-board" @onclick="HandleBoardClick">
+            @foreach (var bubble in _bubbles)
+            {
+                <div class="bubble @(bubble.Popped ? "popped" : "")" 
+                     style="left: @bubble.X%; top: @bubble.Y%;"
+                     @onclick="() => PopBubble(bubble)">
+                    @if (!bubble.Popped)
+                    {
+                        <span>@bubble.Value</span>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+</GameShell>
+
+@code {
+    private string _playerName = "";
+    private List<StatItem> _statItems = new();
+    private int _score;
+    private int _timeLeft = 30;
+    private List<Bubble> _bubbles = new();
+    private System.Threading.Timer? _timer;
+
+    private RenderFragment ControlsContent => @<div class="gps-controls">
+        <button @onclick="StartGame" disabled="@(_timer != null)">▶ Start</button>
+        <button @onclick="ResetGame">🔄 Reset</button>
+    </div>;
+
+    private RenderFragment TitleContent => @<span>👶 Baby Touch</span>;
+
+    protected override void OnInitialized()
+    {
+        _playerName = PlayerNameService.GetPlayerName();
+        _bubbles = new List<Bubble>();
+    }
+
+    private void StartGame()
+    {
+        _score = 0;
+        _timeLeft = 30;
+        SpawnBubbles();
+        _timer = new System.Threading.Timer(_ => InvokeAsync(Tick), null, 1000, 1000);
+    }
+
+    private void Tick()
+    {
+        _timeLeft--;
+        if (_timeLeft <= 0)
+        {
+            _timer?.Dispose();
+            _timer = null;
+        }
+        else
+        {
+            if (Random.Shared.NextDouble() < 0.3)
+                SpawnBubbles();
+        }
+        StateHasChanged();
+    }
+
+    private void SpawnBubbles()
+    {
+        if (_bubbles.Count >= 10) return;
+        var bubble = new Bubble
+        {
+            Id = Guid.NewGuid(),
+            X = Random.Shared.Next(10, 90),
+            Y = Random.Shared.Next(10, 80),
+            Value = Random.Shared.Next(1, 10),
+            Popped = false
+        };
+        _bubbles.Add(bubble);
+    }
+
+    private void PopBubble(Bubble bubble)
+    {
+        if (bubble.Popped || _timer == null) return;
+        bubble.Popped = true;
+        _score += bubble.Value;
+        _bubbles.Remove(bubble);
+        StateHasChanged();
+    }
+
+    private void HandleBoardClick()
+    {
+        // Board click handling
+    }
+
+    private void ResetGame()
+    {
+        _timer?.Dispose();
+        _timer = null;
+        _score = 0;
+        _timeLeft = 30;
+        _bubbles.Clear();
+    }
+
+    private class Bubble
+    {
+        public Guid Id { get; set; }
+        public int X { get; set; }
+        public int Y { get; set; }
+        public int Value { get; set; }
+        public bool Popped { get; set; }
+    }
+}

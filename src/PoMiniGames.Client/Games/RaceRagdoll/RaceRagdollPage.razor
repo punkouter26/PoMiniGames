@@ -1,0 +1,221 @@
+@page "/poraceragdoll"
+@page "/raceragdoll"
+@using PoMiniGamesClient.Components
+@using PoMiniGamesClient.Enums
+@using PoMiniGamesClient.Models
+@using PoMiniGamesClient.Services
+@inject PlayerNameService PlayerNameService
+
+<GameShell Title=@TitleContent Player="@_playerName" BackTo="/single-player" ShowSettings="true" Stats="@_statItems" Controls="@ControlsContent">
+    <div class="ragdoll-wrapper">
+        <div class="ragdoll-arena">
+            @if (_gameState == "betting")
+            {
+                <div class="betting-phase">
+                    <h2>Place Your Bet!</h2>
+                    <div class="balance">Balance: $@_balance</div>
+                    <div class="racers">
+                        @for (int i = 0; i < _racers.Count; i++)
+                        {
+                            var idx = i;
+                            <div class="racer-card @(idx == _selectedRacer ? "selected" : "")" @onclick="() => SelectRacer(idx)">
+                                <div class="racer-name">@_racers[idx].Name</div>
+                                <div class="racer-odds">Odds: @_racers[idx].Odds:1</div>
+                            </div>
+                        }
+                    </div>
+                    <div class="bet-controls">
+                        <button @onclick="() => PlaceBet(10)">$10</button>
+                        <button @onclick="() => PlaceBet(25)">$25</button>
+                        <button @onclick="() => PlaceBet(50)">$50</button>
+                        <button @onclick="() => PlaceBet(100)">$100</button>
+                    </div>
+                    <div class="current-bet">Bet: $@_currentBet on @(_selectedRacer >= 0 ? _racers[_selectedRacer].Name : "None")</div>
+                    <button class="start-race-btn" @onclick="StartRace" disabled="@(_currentBet == 0)">Start Race!</button>
+                </div>
+            }
+            else
+            {
+                <div class="racing-phase">
+                    <div class="race-track">
+                        @for (int i = 0; i < _racers.Count; i++)
+                        {
+                            <div class="race-lane">
+                                <span>@_racers[i].Name</span>
+                                <div class="race-progress">
+                                    <div class="progress-fill" style="width: @(_racers[i].Progress)%; background: @GetRacerColor(i)"></div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                    <div class="race-info">
+                        <div>Round @(_round)/@_maxRounds</div>
+                        @if (_raceFinished)
+                        {
+                            <div class="race-result">@_winnerName wins!</div>
+                            @if (_won)
+                            {
+                                <div class="payout">You won $@_payout!</div>
+                            }
+                            <button @onclick="ResetRace">Next Race</button>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+</GameShell>
+
+@code {
+    private string _playerName = "";
+    private List<StatItem> _statItems = new();
+    private string _gameState = "betting";
+    private int _balance = 1000;
+    private int _currentBet = 0;
+    private int _selectedRacer = -1;
+    private int _round = 1;
+    private int _maxRounds = 5;
+    private bool _raceFinished;
+    private string _winnerName = "";
+    private int _payout;
+    private bool _won;
+    private List<Racer> _racers = new();
+    private System.Threading.Timer? _timer;
+
+    private RenderFragment ControlsContent => @<div class="gps-controls">
+        <span>Balance: $@_balance</span>
+        <button @onclick="ResetGame">🔄 New Game</button>
+    </div>;
+
+    private RenderFragment TitleContent => @<span>🏁 Ragdoll Racing</span>;
+
+    protected override void OnInitialized()
+    {
+        _playerName = PlayerNameService.GetPlayerName();
+        InitializeRacers();
+    }
+
+    private void InitializeRacers()
+    {
+        _racers = new List<Racer>
+        {
+            new() { Name = "Speedy", Odds = 2 },
+            new() { Name = "Flash", Odds = 3 },
+            new() { Name = "Turbo", Odds = 4 },
+            new() { Name = "Rocket", Odds = 6 }
+        };
+    }
+
+    private void SelectRacer(int idx)
+    {
+        _selectedRacer = idx;
+    }
+
+    private void PlaceBet(int amount)
+    {
+        if (amount <= _balance)
+        {
+            _currentBet = amount;
+        }
+    }
+
+    private void StartRace()
+    {
+        if (_currentBet == 0 || _selectedRacer < 0) return;
+        _balance -= _currentBet;
+        _gameState = "racing";
+        _raceFinished = false;
+        
+        foreach (var r in _racers)
+            r.Progress = 0;
+        
+        _timer = new System.Threading.Timer(_ => InvokeAsync(Tick), null, 50, 50);
+    }
+
+    private void Tick()
+    {
+        bool allFinished = true;
+        string? winner = null;
+        
+        foreach (var r in _racers)
+        {
+            if (r.Progress < 100)
+            {
+                r.Progress += Random.Shared.NextDouble() * r.Odds * 1.5;
+                if (r.Progress >= 100)
+                {
+                    r.Progress = 100;
+                    if (winner == null) winner = r.Name;
+                }
+                else
+                {
+                    allFinished = false;
+                }
+            }
+        }
+
+        if (allFinished || winner != null)
+        {
+            _timer?.Dispose();
+            _timer = null;
+            _raceFinished = true;
+            _winnerName = winner ?? "Nobody";
+            _won = winner == _racers[_selectedRacer].Name;
+            if (_won)
+            {
+                _payout = _currentBet * _racers[_selectedRacer].Odds;
+                _balance += _payout;
+            }
+        }
+        
+        StateHasChanged();
+    }
+
+    private void ResetRace()
+    {
+        if (_balance <= 0)
+        {
+            ResetGame();
+            return;
+        }
+        
+        _gameState = "betting";
+        _currentBet = 0;
+        _selectedRacer = -1;
+        _round++;
+        
+        if (_round > _maxRounds)
+        {
+            ResetGame();
+        }
+    }
+
+    private void ResetGame()
+    {
+        _timer?.Dispose();
+        _timer = null;
+        _balance = 1000;
+        _currentBet = 0;
+        _selectedRacer = -1;
+        _round = 1;
+        _gameState = "betting";
+        _raceFinished = false;
+        InitializeRacers();
+    }
+
+    private string GetRacerColor(int idx) => idx switch
+    {
+        0 => "#F72585",
+        1 => "#4CC9F0",
+        2 => "#7209B7",
+        3 => "#3A0CA3",
+        _ => "#FFFFFF"
+    };
+
+    private class Racer
+    {
+        public string Name { get; set; } = "";
+        public int Odds { get; set; }
+        public double Progress { get; set; }
+    }
+}

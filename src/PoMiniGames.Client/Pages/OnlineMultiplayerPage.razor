@@ -4,14 +4,14 @@
 <div class="sp-page">
     <div class="sp-card">
         <div class="sp-header">
-            <button class="sp-back" @onclick="() => NavigationManager.NavigateTo(\"/\")">← Home</button>
+            <button class="sp-back" @onclick='() => NavigationManager.NavigateTo("/")'>← Home</button>
             <h1 class="sp-title">🌐 Online Multiplayer</h1>
         </div>
         <p class="sp-subtitle">Connect online and compete against real players in real time.</p>
         <div class="sp-game-grid">
             <button type="button" class="sp-game-card" aria-label="Play PoRunner online multiplayer"
                     style="--accent:#fcd34d;--accent-glow:rgba(252,211,77,0.28)"
-                    @onclick="() => NavigationManager.NavigateTo(\"/porunner?mode=multi\")">
+                    @onclick='() => NavigationManager.NavigateTo("/porunner?mode=multi")'>
                 <div class="sp-game-card-preview" aria-hidden="true">
                     <div class="sp-game-icon">⚡</div>
                 </div>

@@ -27,6 +27,20 @@ public sealed class HealthEndpointTests : IClassFixture<TestWebApplicationFactor
     }
 
     [Fact]
+    public async Task RootHealthEndpoint_ReturnsStructuredJson()
+    {
+        var response = await _client.GetAsync("/health");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var body = await response.Content.ReadAsStringAsync();
+        var json = JsonNode.Parse(body);
+
+        json.Should().NotBeNull();
+        json!["status"]!.GetValue<string>().Should().NotBeNullOrWhiteSpace();
+        json["checks"].Should().NotBeNull();
+    }
+
+    [Fact]
     public async Task DiagEndpoint_ReturnsOk()
     {
         var response = await _client.GetAsync("/diag");

@@ -15,20 +15,20 @@
 
     <div class="sp-card">
         <div class="sp-header">
-            <button class="sp-back" @onclick="() => NavigationManager.NavigateTo(\"/\")">
+            <button class="sp-back" @onclick='() => NavigationManager.NavigateTo("/")'>
                 ← Home
             </button>
             <h1 class="sp-title">@_title</h1>
         </div>
 
         <div class="sp-auth-banner-actions" style="margin-bottom:1rem">
-            <button class="@(_mode == "play" ? "sp-btn-primary" : "sp-btn-secondary")" @onclick="() => SetMode(\"play\")">
+            <button class="@(_mode == "play" ? "sp-btn-primary" : "sp-btn-secondary")" @onclick='() => SetMode("play")'>
                 Play games
             </button>
-            <button class="@(_mode == "local-2p" ? "sp-btn-primary" : "sp-btn-secondary")" @onclick="() => SetMode(\"local-2p\")">
+            <button class="@(_mode == "local-2p" ? "sp-btn-primary" : "sp-btn-secondary")" @onclick='() => SetMode("local-2p")'>
                 👥 Local 2P
             </button>
-            <button class="@(_mode == "demo" ? "sp-btn-primary" : "sp-btn-secondary")" @onclick="() => SetMode(\"demo\")">
+            <button class="@(_mode == "demo" ? "sp-btn-primary" : "sp-btn-secondary")" @onclick='() => SetMode("demo")'>
                 Watch demos
             </button>
         </div>

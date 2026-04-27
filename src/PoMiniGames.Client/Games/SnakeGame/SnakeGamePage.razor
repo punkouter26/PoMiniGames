@@ -1,0 +1,208 @@
+@page "/snakegame"
+@page "/posnakegame"
+@using PoMiniGamesClient.Components
+@using PoMiniGamesClient.Enums
+@using PoMiniGamesClient.Models
+@using PoMiniGamesClient.Games.SnakeGame
+@using PoMiniGamesClient.Services
+@inject NavigationManager Navigation
+@inject PlayerNameService PlayerNameService
+@inject IJSRuntime JSRuntime
+
+<GameShell 
+    Title=@TitleContent 
+    Player="@_playerName"
+    BackTo="/single-player"
+    GameOver="@(_gameResult != GameResult.InProgress)"
+    OnPlayAgain="ResetGame"
+    ShowSettings="true"
+    Stats="@_statItems"
+    Controls="@ControlsContent">
+    
+    <div class="snake-game-wrapper" tabindex="0" @onkeydown="HandleKeyDown" @ref="_gameWrapper">
+        <div class="snake-board" style="--cols: @SnakeBoard.Cols; --rows: @SnakeBoard.Rows;">
+            @for (int r = 0; r < SnakeBoard.Rows; r++)
+            {
+                @for (int c = 0; c < SnakeBoard.Cols; c++)
+                {
+                    var row = r;
+                    var col = c;
+                    <div class="snake-cell @GetCellClass(row, col)"
+                         @onclick="() => HandleCellClick(row, col)">
+                    </div>
+                }
+            }
+        </div>
+        
+        <div class="snake-score-display">
+            <div class="snake-score-label">Score</div>
+            <div class="snake-score-value">@_score</div>
+        </div>
+        
+        <div class="snake-instructions">
+            <p>Use Arrow Keys or WASD to move</p>
+            <p>Click Start to begin</p>
+        </div>
+    </div>
+</GameShell>
+
+@code {
+    private SnakeBoard _board = new();
+    private int _score => _board.Score;
+    private string _playerName = "";
+    private List<StatItem> _statItems = new();
+    private PlayerStats _stats = new();
+    private readonly GameStatsService _gameStats = new();
+    private GameResult _gameResult = GameResult.InProgress;
+    private Difficulty _difficulty = Difficulty.Medium;
+    private System.Threading.Timer? _gameTimer;
+    private bool _gameStarted;
+    private ElementReference _gameWrapper;
+
+    private RenderFragment TitleContent => @<span>🐍 Snake Game</span>;
+
+    private RenderFragment ControlsContent => @<div class="gps-controls">
+        <button @onclick="StartGame" disabled="@_gameStarted">▶ Start</button>
+        <button @onclick="PauseGame" disabled="@(!_gameStarted || _gameResult != GameResult.InProgress)">⏸ Pause</button>
+        <button @onclick="ResetGame">🔄 Reset</button>
+        <select @bind="_difficulty" @bind:after="OnDifficultyChanged" aria-label="Select difficulty">
+            <option value="@Difficulty.Easy">Easy</option>
+            <option value="@Difficulty.Medium">Medium</option>
+            <option value="@Difficulty.Hard">Hard</option>
+        </select>
+    </div>;
+
+    protected override void OnInitialized()
+    {
+        _playerName = PlayerNameService.GetPlayerName();
+        _stats = _gameStats.GetStats("snakegame", _playerName);
+        UpdateStats();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await JSRuntime.InvokeVoidAsync("eval", "document.querySelector('.snake-game-wrapper')?.focus()");
+        }
+    }
+
+    private void OnDifficultyChanged()
+    {
+        if (_gameStarted)
+            ResetGame();
+    }
+
+    private void StartGame()
+    {
+        if (_gameStarted) return;
+        _gameStarted = true;
+        _gameResult = GameResult.InProgress;
+
+        var interval = _difficulty switch
+        {
+            Difficulty.Easy => 250,
+            Difficulty.Medium => 150,
+            Difficulty.Hard => 80,
+            _ => 150
+        };
+
+        _gameTimer = new System.Threading.Timer(_ => InvokeAsync(Tick), null, interval, interval);
+    }
+
+    private void PauseGame()
+    {
+        _gameTimer?.Dispose();
+        _gameTimer = null;
+    }
+
+    private void Tick()
+    {
+        if (_gameResult != GameResult.InProgress) return;
+
+        var result = _board.Move();
+        if (result == MoveResult.GameOver)
+        {
+            _gameResult = GameResult.Loss;
+            _gameTimer?.Dispose();
+            _gameTimer = null;
+            _gameStarted = false;
+            _ = _gameStats.RecordResult("snakegame", _playerName, _difficulty, GameResult.Loss);
+            UpdateStats();
+        }
+        StateHasChanged();
+    }
+
+    private void HandleCellClick(int row, int col)
+    {
+        // For touch/click controls - could add direction based on tap position
+    }
+
+    private void HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (_gameResult != GameResult.InProgress) return;
+
+        switch (e.Key.ToLower())
+        {
+            case "arrowup":
+            case "w":
+                _board.SetDirection(-1, 0);
+                if (!_gameStarted) StartGame();
+                break;
+            case "arrowdown":
+            case "s":
+                _board.SetDirection(1, 0);
+                if (!_gameStarted) StartGame();
+                break;
+            case "arrowleft":
+            case "a":
+                _board.SetDirection(0, -1);
+                if (!_gameStarted) StartGame();
+                break;
+            case "arrowright":
+            case "d":
+                _board.SetDirection(0, 1);
+                if (!_gameStarted) StartGame();
+                break;
+            case " ":
+                if (!_gameStarted && _gameResult == GameResult.InProgress)
+                    PauseGame();
+                else
+                    StartGame();
+                break;
+        }
+    }
+
+    private void ResetGame()
+    {
+        _gameTimer?.Dispose();
+        _gameTimer = null;
+        _gameStarted = false;
+        _board = new SnakeBoard();
+        _gameResult = GameResult.InProgress;
+        UpdateStats();
+    }
+
+    private void UpdateStats()
+    {
+        var bucket = _gameStats.GetDifficultyBucket(_stats, _difficulty);
+        _statItems = new List<StatItem>
+        {
+            new() { Value = bucket.Wins.ToString(), Label = "W" },
+            new() { Value = bucket.Losses.ToString(), Label = "L" },
+            new() { Value = _score.ToString(), Label = "Score" },
+            new() { Value = bucket.EloRating.ToString(), Label = "ELO" }
+        };
+    }
+
+    private string GetCellClass(int row, int col)
+    {
+        var cell = _board.GetCell(row, col);
+        return cell switch
+        {
+            SnakeCell.Snake => "snake-cell--snake",
+            SnakeCell.Food => "snake-cell--food",
+            _ => ""
+        };
+    }
+}

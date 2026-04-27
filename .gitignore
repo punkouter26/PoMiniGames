@@ -13,6 +13,7 @@ obj/
 
 # IDE
 .idea/
+.vscode/
 *.swp
 *.swo
 
@@ -51,6 +52,19 @@ Thumbs.db
 
 # App specific
 .potune-state.json
+
+# Legacy React code (archived, has its own .git — keep out of main repo)
+legacy-react/
+
+# E2E test dependencies (generated, not source)
+tests/e2e/node_modules/
+tests/e2e/package-lock.json
+tests/e2e/playwright-report/
+tests/e2e/.playwright/
+
+# Playwright state
+.auth/
+playwright/.cache/
 
 # Playwright MCP session data
 .playwright-mcp/

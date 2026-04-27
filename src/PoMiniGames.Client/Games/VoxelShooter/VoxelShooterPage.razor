@@ -1,0 +1,221 @@
+@page "/voxelshooter"
+@page "/voxelshooter/{Demo:int}"
+@using PoMiniGamesClient.Components
+@using PoMiniGamesClient.Enums
+@using PoMiniGamesClient.Models
+@using PoMiniGamesClient.Services
+@inject PlayerNameService PlayerNameService
+@inject IJSRuntime JSRuntime
+
+<GameShell Title=@TitleContent Player="@_playerName" BackTo="/single-player" ShowSettings="true">
+    <div class="voxel-wrapper">
+        @if (_isLoading)
+        {
+            <div class="voxel-loading">
+                <div class="spinner"></div>
+                <p>Loading 3D Engine...</p>
+            </div>
+        }
+        else if (!_gameStarted)
+        {
+            <div class="voxel-menu">
+                <h2>🎯 Voxel Shooter</h2>
+                <p>Destroy enemies in a 3D voxel world!</p>
+                <div class="voxel-controls-info">
+                    <p>WASD - Move | Mouse - Aim | Click - Shoot</p>
+                </div>
+                <div class="voxel-features">
+                    <span>🌟 3D Graphics</span>
+                    <span>🎯 Target Practice</span>
+                    <span>💥 Particle Effects</span>
+                    <span>🏆 High Scores</span>
+                </div>
+                <button class="start-btn" @onclick="StartGame">▶ Start Game</button>
+            </div>
+        }
+        else
+        {
+            <div class="voxel-game-area">
+                <div class="voxel-hud">
+                    <span>Score: @_score</span>
+                    <span>Wave: @_wave</span>
+                    <span>Health: @_health</span>
+                </div>
+                <div class="voxel-placeholder-3d">
+                    <p>3D Game Area</p>
+                    <p>WebGL Canvas Would Render Here</p>
+                    <button @onclick="EndGame">End Game</button>
+                </div>
+            </div>
+        }
+    </div>
+</GameShell>
+
+@code {
+    [Parameter] public int? Demo { get; set; }
+
+    private string _playerName = "";
+    private bool _isLoading = true;
+    private bool _gameStarted;
+    private int _score;
+    private int _wave = 1;
+    private int _health = 100;
+
+    private RenderFragment TitleContent => @<span>🎯 Voxel Shooter</span>;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _playerName = PlayerNameService.GetPlayerName();
+        await Task.Delay(1000); // Simulate loading
+        _isLoading = false;
+        if (Demo == 1)
+            StartGame();
+    }
+
+    private void StartGame()
+    {
+        _gameStarted = true;
+        _score = 0;
+        _wave = 1;
+        _health = 100;
+    }
+
+    private void EndGame()
+    {
+        _gameStarted = false;
+    }
+}
+
+<style>
+    .voxel-wrapper {
+        width: 100%;
+        height: calc(100vh - 150px);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .voxel-loading {
+        text-align: center;
+    }
+
+    .spinner {
+        width: 48px;
+        height: 48px;
+        border: 4px solid rgba(99, 102, 241, 0.2);
+        border-top-color: #6366f1;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+        margin: 0 auto 1rem;
+    }
+
+    @@keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+
+    .voxel-menu {
+        text-align: center;
+        padding: 2rem;
+        background: rgba(17, 24, 39, 0.8);
+        border: 1px solid var(--color-border);
+        border-radius: 12px;
+        max-width: 500px;
+    }
+
+    .voxel-menu h2 {
+        font-size: 2rem;
+        margin-bottom: 0.5rem;
+        color: var(--color-primary);
+    }
+
+    .voxel-menu p {
+        color: var(--color-text-secondary);
+        margin-bottom: 1rem;
+    }
+
+    .voxel-controls-info {
+        background: rgba(99, 102, 241, 0.1);
+        padding: 0.75rem;
+        border-radius: 8px;
+        margin-bottom: 1rem;
+        font-size: 0.85rem;
+        color: var(--color-text-secondary);
+    }
+
+    .voxel-features {
+        display: flex;
+        gap: 0.5rem;
+        justify-content: center;
+        flex-wrap: wrap;
+        margin-bottom: 1.5rem;
+    }
+
+    .voxel-features span {
+        padding: 0.4rem 0.8rem;
+        background: rgba(99, 102, 241, 0.2);
+        border-radius: 16px;
+        font-size: 0.8rem;
+    }
+
+    .start-btn {
+        padding: 0.75rem 2rem;
+        background: var(--color-accent);
+        border: none;
+        border-radius: 8px;
+        color: white;
+        font-size: 1rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+
+    .start-btn:hover {
+        filter: brightness(1.1);
+        transform: translateY(-2px);
+    }
+
+    .voxel-game-area {
+        width: 100%;
+        height: 100%;
+    }
+
+    .voxel-hud {
+        display: flex;
+        gap: 2rem;
+        justify-content: center;
+        padding: 1rem;
+        background: rgba(17, 24, 39, 0.9);
+        border-radius: 8px;
+        margin-bottom: 1rem;
+        font-weight: 600;
+    }
+
+    .voxel-placeholder-3d {
+        background: linear-gradient(135deg, #1a1a2e, #16213e);
+        border: 1px solid var(--color-border);
+        border-radius: 12px;
+        height: calc(100% - 80px);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        color: var(--color-text-secondary);
+    }
+
+    .voxel-placeholder-3d p:first-child {
+        font-size: 1.5rem;
+        margin-bottom: 0.5rem;
+    }
+
+    .voxel-placeholder-3d button {
+        margin-top: 1rem;
+        padding: 0.5rem 1.5rem;
+        background: var(--color-error);
+        border: none;
+        border-radius: 6px;
+        color: white;
+        cursor: pointer;
+    }
+</style>

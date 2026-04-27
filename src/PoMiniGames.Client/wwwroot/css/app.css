@@ -20,6 +20,22 @@ html, body, #app {
   font-family: system-ui, -apple-system, sans-serif;
 }
 
+#blazor-error-ui {
+  display: none;
+  position: fixed;
+  bottom: 1rem;
+  right: 1rem;
+  background: #7f1d1d;
+  color: #fca5a5;
+  border: 1px solid #ef4444;
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  font-size: 0.875rem;
+  z-index: 9999;
+}
+#blazor-error-ui .reload { color: #fca5a5; text-decoration: underline; margin-left: 0.5rem; }
+#blazor-error-ui .dismiss { margin-left: 0.75rem; cursor: pointer; }
+
 a { color: var(--color-accent); text-decoration: none; }
 button { cursor: pointer; }
 

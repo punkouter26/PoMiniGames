@@ -13,8 +13,9 @@ public static class HealthEndpoints
     {
         app.MapGet("/api/health", async (HealthCheckService healthCheckService) =>
         {
-            var response = await CreateHealthResponseAsync(healthCheckService);
-            return response.status == HealthStatus.Healthy.ToString()
+            var report = await healthCheckService.CheckHealthAsync();
+            var response = CreateHealthResponse(report);
+            return report.Status != HealthStatus.Unhealthy
                 ? Results.Ok(response)
                 : Results.Json(response, statusCode: StatusCodes.Status503ServiceUnavailable);
         })
@@ -24,8 +25,9 @@ public static class HealthEndpoints
 
         app.MapGet("/health", async (HealthCheckService healthCheckService) =>
         {
-            var response = await CreateHealthResponseAsync(healthCheckService);
-            return response.status == HealthStatus.Healthy.ToString()
+            var report = await healthCheckService.CheckHealthAsync();
+            var response = CreateHealthResponse(report);
+            return report.Status != HealthStatus.Unhealthy
                 ? Results.Ok(response)
                 : Results.Json(response, statusCode: StatusCodes.Status503ServiceUnavailable);
         })
@@ -46,9 +48,8 @@ public static class HealthEndpoints
         return app;
     }
 
-    private static async Task<dynamic> CreateHealthResponseAsync(HealthCheckService healthCheckService)
+    private static dynamic CreateHealthResponse(HealthReport report)
     {
-        var report = await healthCheckService.CheckHealthAsync();
         return new
         {
             status = report.Status.ToString(),

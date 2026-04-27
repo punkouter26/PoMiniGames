@@ -1,0 +1,23 @@
+erDiagram
+    PLAYER_STATS {
+        string Game PK
+        string PlayerName PK
+        string StatsJson
+    }
+    SNAKE_HIGH_SCORES {
+        int Id PK
+        string Initials
+        int Score
+    }
+    PODROPSQUARE_HIGH_SCORES {
+        int Id PK
+        string Initials
+        float SurvivalTime
+    }
+    MULTIPLAYER_MATCH {
+        string MatchId PK
+        string Status
+    }
+    
+    PLAYER_STATS ||--|| PLAYER_STATS : "Easy/Med/Hard"
+    PLAYER_STATS ||--o{ MULTIPLAYER_MATCH : "players"

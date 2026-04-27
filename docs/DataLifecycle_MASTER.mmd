@@ -33,7 +33,7 @@ flowchart LR
     end
 
     GameMove --> LocalCache
-    LocalCache -- "online sync" --> StatEvent
+    LocalCache -->|"online sync"| StatEvent
     StatEvent --> RateCheck
     HSEvent --> RateCheck
     MPInput --> AuthCheck

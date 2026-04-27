@@ -1,6 +1,6 @@
 flowchart TD
     Visit(["Player visits pominigames.app"])
-    Load["CDN delivers React SPA\nLazy-loaded game bundles\ntarget: sub-1s cold start"]
+    Load["CDN delivers Blazor WASM\nLazy-loaded game bundles\ntarget: sub-1s cold start"]
     Home["Home Page\n8 game tiles\nno auth required"]
     SelectGame["Select Game\ne.g. Tic-Tac-Toe"]
     SelectDiff["Select Difficulty\nEasy · Medium · Hard"]
@@ -14,8 +14,8 @@ flowchart TD
     NewGame["Pick another game\nfrom Home"]
 
     Visit --> Load --> Home --> SelectGame --> SelectDiff --> PlayVsAI --> GameEnd --> StatsSaved --> Leaderboard --> LeaderView --> PlayAgain
-    PlayAgain -- "Yes — same game" --> SameGame --> SelectDiff
-    PlayAgain -- "Yes — new game" --> NewGame --> SelectGame
+    PlayAgain -->|"Yes — same game"| SameGame --> SelectDiff
+    PlayAgain -->|"Yes — new game"| NewGame --> SelectGame
 
     style Visit fill:#107c10,stroke:#0a5c0a,color:#fff
     style Load fill:#0078d4,stroke:#005a9e,color:#fff

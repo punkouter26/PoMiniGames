@@ -1,9 +1,9 @@
 flowchart TD
     subgraph ClientLayer["Client Layer (Browser)"]
-        ReactApp["React 18 SPA\nVite + TypeScript + Tailwind v4"]
-        MSALLib["@azure/msal-browser\nOAuth2 PKCE · in-memory token cache"]
-        SignalRLib["@microsoft/signalr v10\nWSS connection lifecycle · auto-reconnect"]
-        APIService["apiService.ts\nfetch() wrapper + offline fallback\nerror boundary + retry"]
+        BlazorApp["Blazor WebAssembly\nC# runtime in browser\nRadzen UI components"]
+        MSALLib["MSAL Client\nOAuth2 PKCE · in-memory token cache"]
+        SignalRLib["Microsoft.AspNetCore.SignalR.Client\nWSS connection lifecycle · auto-reconnect"]
+        ApiService["ApiService\nHttpClient wrapper + offline fallback\nerror boundary + retry"]
         LocalStore["localStorage\noffline stats cache · sync queue"]
     end
 
@@ -33,12 +33,12 @@ flowchart TD
         MSIDExt["Microsoft Identity\nJWT Bearer validation\nOAuth2 / OIDC token endpoint"]
     end
 
-    ReactApp --> APIService
-    ReactApp --> MSALLib
-    ReactApp --> SignalRLib
+    BlazorApp --> ApiService
+    BlazorApp --> MSALLib
+    BlazorApp --> SignalRLib
     MSALLib --> MSIDExt
-    APIService --> LocalStore
-    APIService --> MinAPI
+    ApiService --> LocalStore
+    ApiService --> MinAPI
     SignalRLib --> LobbyHubSvc
     SignalRLib --> MPHubSvc
     MinAPI --> AuthF
@@ -57,13 +57,13 @@ flowchart TD
     MPHubSvc --> MPSvc
     StorageSvc --> SQLiteDB
     MPSvc --> SQLiteDB
-    MinAPI -- "startup: fetch secrets" --> KeyVaultExt
-    MinAPI -- "OTLP traces + metrics" --> AppInsExt
+    MinAPI -->|"startup: fetch secrets"| KeyVaultExt
+    MinAPI -->|"OTLP traces + metrics"| AppInsExt
 
-    style ReactApp fill:#1a6b8a,stroke:#0d4a66,color:#fff
+    style BlazorApp fill:#1a6b8a,stroke:#0d4a66,color:#fff
     style MSALLib fill:#7719aa,stroke:#4e0f72,color:#fff
     style SignalRLib fill:#0078d4,stroke:#005a9e,color:#fff
-    style APIService fill:#1a6b8a,stroke:#0d4a66,color:#fff
+    style ApiService fill:#1a6b8a,stroke:#0d4a66,color:#fff
     style LocalStore fill:#7a3b00,stroke:#4f2700,color:#fff
     style MinAPI fill:#0078d4,stroke:#005a9e,color:#fff
     style AuthF fill:#0078d4,stroke:#005a9e,color:#fff

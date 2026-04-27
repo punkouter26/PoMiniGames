@@ -1,0 +1,46 @@
+flowchart LR
+    subgraph In["Ingestion"]
+        Move["Game Move"]
+        Stats["Stat Event"]
+        HS["High Score"]
+    end
+    
+    subgraph Process["Processing"]
+        Rate["Rate Limit"]
+        Auth["JWT Check"]
+        San["Sanitize"]
+        DB["UPSERT/INSERT"]
+    end
+    
+    subgraph Store["Persistence"]
+        PStats["PlayerStats"]
+        HS_T["HighScores"]
+        Match["Match"]
+    end
+    
+    subgraph Out["Egress"]
+        Board["Leaderboard"]
+        HS_Out["High Score List"]
+        Realtime["SignalR"]
+    end
+    
+    Move --> Stats --> Rate --> Auth --> San --> DB
+    HS --> Rate --> Auth --> San --> DB
+    DB --> PStats & HS_T & Match
+    PStats --> Board
+    HS_T --> HS_Out
+    Match --> Realtime
+    
+    style Move fill:#1a6b8a,stroke:#0d4a66,color:#fff
+    style Stats fill:#1a6b8a,stroke:#0d4a66,color:#fff
+    style HS fill:#1a6b8a,stroke:#0d4a66,color:#fff
+    style Rate fill:#d83b01,stroke:#a52b00,color:#fff
+    style Auth fill:#7719aa,stroke:#4e0f72,color:#fff
+    style San fill:#d83b01,stroke:#a52b00,color:#fff
+    style DB fill:#0078d4,stroke:#005a9e,color:#fff
+    style PStats fill:#107c10,stroke:#0a5c0a,color:#fff
+    style HS_T fill:#107c10,stroke:#0a5c0a,color:#fff
+    style Match fill:#107c10,stroke:#0a5c0a,color:#fff
+    style Board fill:#0078d4,stroke:#005a9e,color:#fff
+    style HS_Out fill:#0078d4,stroke:#005a9e,color:#fff
+    style Realtime fill:#0078d4,stroke:#005a9e,color:#fff

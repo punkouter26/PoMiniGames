@@ -6,34 +6,34 @@ flowchart LR
     end
 
     subgraph BuildStage["Build Stage (ubuntu-latest)"]
-        Checkout["Checkout + Cache\nNuGet packages · npm deps"]
-        BuildAPI["dotnet build\n.NET 10 Release\nTreatWarningsAsErrors=true\nNullable=enable"]
-        BuildClient["npm run build\nReact 18 + Vite\nVITE_GAME_URL env vars injected"]
-        RunTests["Test Gate\nxUnit unit tests\nTestcontainers integration\nPlaywright E2E (Chromium)"]
+        Checkout["Checkout + Cache\nNuGet packages"]
+        BuildAPI["dotnet build\n.NET 10 Release\nTreatWarningsAsErrors=true"]
+        BuildClient["dotnet build\nBlazor WebAssembly\nVite optimization"]
+        RunTests["Test Gate\nxUnit unit tests\nxUnit integration\nPlaywright E2E"]
         ArtifactAPI["Artifact: api-publish\n.NET linux-x64 binaries\n3-day retention"]
-        ArtifactClient["Artifact: client-build\nVite dist bundle\n3-day retention"]
+        ArtifactClient["Artifact: client-build\nBlazor WASM bundle\n3-day retention"]
     end
 
     subgraph DeployStage["Deploy Stage (needs: build)"]
-        AzLogin["Azure Login\nOIDC federation\nno stored credentials\nclient-id + tenant-id from secrets"]
+        AzLogin["Azure Login\nOIDC federation\nno stored credentials"]
         ZipDeploy["App Service zip-deploy\nlinux-x64 · asp-poshared-linux\napp-pominigames"]
         SWADeploy["Static Web App deploy\ndeployment token\npomin"]
     end
 
-    subgraph Production["Production (westus2)"]
-        AppSvc["App Service B1\n.NET 10 API + SignalR\nhttp://localhost:5000 (local)\napp-pominigames.azurewebsites.net"]
-        StaticApp["Static Web App\nReact SPA + CDN\npomin.azurestaticapps.net"]
+    subgraph ProductionEnv["Production (westus2)"]
+        AppSvc["App Service B1\n.NET 10 API + SignalR\napp-pominigames.azurewebsites.net"]
+        StaticApp["Static Web App\nBlazor WASM SPA\npomin.azurestaticapps.net"]
     end
 
-    FeatBranch -- "PR + review" --> PR
-    PR -- "squash merge" --> Master
-    Master -- "push trigger" --> Checkout
+    FeatBranch -->|"PR + review"| PR
+    PR -->|"squash merge"| Master
+    Master -->|"push trigger"| Checkout
     Checkout --> BuildAPI
     Checkout --> BuildClient
     BuildAPI --> RunTests
     BuildClient --> RunTests
-    RunTests -- "all pass" --> ArtifactAPI
-    RunTests -- "all pass" --> ArtifactClient
+    RunTests -->|"all pass"| ArtifactAPI
+    RunTests -->|"all pass"| ArtifactClient
     ArtifactAPI --> AzLogin
     ArtifactClient --> AzLogin
     AzLogin --> ZipDeploy

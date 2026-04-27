@@ -1,0 +1,24 @@
+flowchart TD
+    Start["New User"] --> CDN["CDN Load"] --> Home["Home Page"]
+    Home --> Play["Play Game"] --> Result["Game Result"]
+    Result --> Local["localStorage Save"]
+    Local --> Aha{"Want more?"}
+    Aha -->|"No"| Explore["Explore Games"]
+    Aha -->|"Yes"| Sign["Sign In"] --> Auth["Authenticated"]
+    Auth --> Sync["Sync Stats"] --> Leader["Leaderboard"]
+    Auth --> Lobby["Join Lobby"] --> AhaM["Aha Moment!"]
+    
+    style Start fill:#107c10,stroke:#0a5c0a,color:#fff
+    style CDN fill:#0078d4,stroke:#005a9e,color:#fff
+    style Home fill:#1a6b8a,stroke:#0d4a66,color:#fff
+    style Play fill:#1a6b8a,stroke:#0d4a66,color:#fff
+    style Result fill:#1a6b8a,stroke:#0d4a66,color:#fff
+    style Local fill:#107c10,stroke:#0a5c0a,color:#fff
+    style Aha fill:#7a3b00,stroke:#4f2700,color:#fff
+    style Explore fill:#1a6b8a,stroke:#0d4a66,color:#fff
+    style Sign fill:#7719aa,stroke:#4e0f72,color:#fff
+    style Auth fill:#7719aa,stroke:#4e0f72,color:#fff
+    style Sync fill:#0078d4,stroke:#005a9e,color:#fff
+    style Leader fill:#0078d4,stroke:#005a9e,color:#fff
+    style Lobby fill:#0078d4,stroke:#005a9e,color:#fff
+    style AhaM fill:#107c10,stroke:#0a5c0a,color:#fff

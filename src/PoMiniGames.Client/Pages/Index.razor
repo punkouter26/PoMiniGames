@@ -120,43 +120,13 @@
             </div>
         </section>
 
-        <!-- Auto-Rotating Demo Preview (UI 3) -->
-        <section class="home-demo-section">
-            <h2 class="home-demo-title">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:0.4rem">
-                    <polygon points="5 3 19 12 5 21 5 3"/>
-                </svg>
-                Now Playing: @_demoGames[_currentDemoIndex].Title
-            </h2>
-            <div class="home-demo-viewport">
-                <iframe src="@_demoGames[_currentDemoIndex].Url" @ref="_demoFrame"></iframe>
-            </div>
-            <div class="home-demo-info">
-                <span>Next: @_demoGames[(_currentDemoIndex + 1) % _demoGames.Length].Title</span>
-                <button class="home-demo-btn" @onclick="ToggleDemoFull">Watch Full Screen</button>
-            </div>
-        </section>
     }
 </div>
 
 @code {
     private bool _isLoading = true;
-    private GameCard? _lastGame;
+    private GameStatsService.GameCard? _lastGame;
     private List<TopGamePreview> _topGames = [];
-    private DemoGame[] _demoGames = [
-        new("Tic Tac Toe Demo", "/tictactoe?demo=1&demo_return=1"),
-        new("Connect Five Demo", "/connectfive?demo=1&demo_return=1"),
-        new("PoFight Demo", "/pofight?demo=1&demo_return=1"),
-        new("PoRaceRagdoll Demo", "/poraceragdoll"),
-        new("PoHorseRace Demo", "/pohorserace"),
-        new("PoRunner Demo", "/porunner?mode=demo")
-    ];
-    private int _currentDemoIndex = 0;
-    private ElementReference _demoFrame;
-    private CancellationTokenSource _demoCts = new();
-    private bool _disposed;
-
-    private record GameCard(string Title, string Url);
     private record TopGamePreview(string Title, string Url, List<ScoreEntry> Top3);
     private record ScoreEntry(string Name, string Score);
 
@@ -166,15 +136,12 @@
         await Task.Delay(100);
         
         // Load last game
-        _lastGame = await GameStatsService.GetLastPlayedGame();
+        _lastGame = GameStatsService.GetLastPlayedGame();
         
         // Load top games with scores
         await LoadTopGames();
         
         _isLoading = false;
-        
-        // Start demo rotation
-        StartDemoRotation();
     }
 
     private async Task LoadTopGames()
@@ -206,23 +173,6 @@
         }
     }
 
-    private void StartDemoRotation()
-    {
-        Task.Run(async () =>
-        {
-            while (!_disposed)
-            {
-                try
-                {
-                    await Task.Delay(60000, _demoCts.Token); // 60 seconds
-                    _currentDemoIndex = (_currentDemoIndex + 1) % _demoGames.Length;
-                    await InvokeAsync(StateHasChanged);
-                }
-                catch (TaskCanceledException) { break; }
-            }
-        });
-    }
-
     private void QuickPlay()
     {
         if (_lastGame != null)
@@ -238,17 +188,5 @@
         }
     }
 
-    private void ToggleDemoFull()
-    {
-        var currentDemo = _demoGames[_currentDemoIndex];
-        NavigationManager.NavigateTo(currentDemo.Url);
-    }
-
-    public ValueTask DisposeAsync()
-    {
-        _disposed = true;
-        _demoCts.Cancel();
-        _demoCts.Dispose();
-        return ValueTask.CompletedTask;
-    }
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }

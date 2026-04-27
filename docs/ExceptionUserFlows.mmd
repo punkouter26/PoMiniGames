@@ -10,16 +10,16 @@ flowchart TD
         AuthDone(["Auth complete\nBearer JWT in memory"])
 
         LoginClick --> PopupQ
-        PopupQ -- "blocked" --> PopupRedirect --> AuthDone
-        PopupQ -- "allowed" --> PopupOK --> TokenExpQ
-        TokenExpQ -- "expired" --> SilentRefresh
-        SilentRefresh -- "success" --> AuthDone
-        SilentRefresh -- "fail" --> ReLogin --> LoginClick
-        TokenExpQ -- "valid" --> AuthDone
+        PopupQ -->|"blocked"| PopupRedirect --> AuthDone
+        PopupQ -->|"allowed"| PopupOK --> TokenExpQ
+        TokenExpQ -->|"expired"| SilentRefresh
+        SilentRefresh -->|"success"| AuthDone
+        SilentRefresh -->|"fail"| ReLogin --> LoginClick
+        TokenExpQ -->|"valid"| AuthDone
     end
 
     subgraph OfflineErrors["API Offline / Offline Resilience"]
-        GameInit["Load game\n(React SPA served from CDN)"]
+        GameInit["Load game\n(Blazor WASM served from CDN)"]
         APIReach{"API reachable?\nfetch /api/health/ping"}
         OfflineMode["Offline mode\nGame runs 100% client-side\nAI + physics fully local"]
         OnlineMode["Online mode\nStats sync enabled"]
@@ -28,8 +28,8 @@ flowchart TD
         SyncQ["API recovers:\nOpportunistic sync\nlocalStorage queue to API"]
 
         GameInit --> APIReach
-        APIReach -- "unreachable" --> OfflineMode --> LocalSave2 --> SyncQ
-        APIReach -- "reachable" --> OnlineMode --> DBSave
+        APIReach -->|"unreachable"| OfflineMode --> LocalSave2 --> SyncQ
+        APIReach -->|"reachable"| OnlineMode --> DBSave
     end
 
     subgraph MPErrors["Multiplayer Disconnection Flows"]
@@ -42,10 +42,10 @@ flowchart TD
         GameFinish(["Game completes\nstats submitted to API"])
 
         LobbyJoin --> HostQ
-        HostQ -- "yes — lobby reset" --> LobbyReset --> LobbyJoin
-        HostQ -- "no" --> GameStart --> MidGameQ
-        MidGameQ -- "yes" --> MatchAbandoned
-        MidGameQ -- "no" --> GameFinish
+        HostQ -->|"yes — lobby reset"| LobbyReset --> LobbyJoin
+        HostQ -->|"no"| GameStart --> MidGameQ
+        MidGameQ -->|"yes"| MatchAbandoned
+        MidGameQ -->|"no"| GameFinish
     end
 
     subgraph ValidationErrors["Input Validation + Rate Limiting"]
@@ -57,10 +57,10 @@ flowchart TD
         Saved(["HTTP 201 Created\nor 200 OK\nScore persisted to SQLite"])
 
         Submit --> RateQ
-        RateQ -- "exceeded" --> HTTP429
-        RateQ -- "within limit" --> InputQ
-        InputQ -- "invalid chars" --> HTTP400
-        InputQ -- "clean input" --> Saved
+        RateQ -->|"exceeded"| HTTP429
+        RateQ -->|"within limit"| InputQ
+        InputQ -->|"invalid chars"| HTTP400
+        InputQ -->|"clean input"| Saved
     end
 
     style LoginClick fill:#1a6b8a,stroke:#0d4a66,color:#fff

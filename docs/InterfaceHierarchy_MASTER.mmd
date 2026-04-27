@@ -1,100 +1,87 @@
 flowchart TD
     subgraph AppRoot["App Root"]
-        AppTsx["App.tsx\nReact Router v6 BrowserRouter\nRoute definitions + lazy loading"]
-        AuthCtx["AuthContext\nMSAL instance · isAuthenticated\ndisplayName · token · PlayerNameContext"]
+        AppRazor["App.razor\nBlazor WebAssembly router\nRoute definitions + layout"]
+        Program["Program.cs\nDI container configuration\nRadzen component registration"]
     end
 
     subgraph RouteViews["Route Views (8 games + home)"]
-        HomeR["/ Home\nGameTile x8 grid\nAuthButton + player name input"]
-        TicR["/tictactoe\nBoard + AI selector + Leaderboard"]
-        ConR["/connectfive\n6x5 grid + AI + Leaderboard"]
-        FightR["/pofight\n2D arena (external SWA iframe)"]
-        SnakeR["/posnakegame\nCanvas + Lobby + live sync"]
-        DropR["/podropsquare\nMatter.js physics board"]
-        BabyR["/pobabytouch\nBubble pop (external SWA iframe)"]
-        RaceR["/poraceragdoll\nCannon.js track + betting lobby"]
-        VoxelR["/voxelshooter\nThree.js WebGL 3D map"]
+        HomeP["/ Home\nIndex.razor\nGameTile x8 grid + AuthButton"]
+        SinglePlayerP["/singleplayer SinglePlayerPage\nGame picker for AI matches"]
+        OnlineMultiplayerP["/multiplayer OnlineMultiplayer\n2P lobby + live game"]
+        MultiSelectP["/multiplayer/select MultiPlayerSelect\nGame mode picker"]
+        AuthCB["/auth-callback AuthCallback\nMSAL OAuth2 redirect handler"]
+        DiagP["/diag DiagPage\nFrontend diagnostics view"]
     end
 
-    subgraph SharedUI["Shared Components (components/)"]
-        GameLayout["GameLayout\nheader + nav + footer wrapper\nconsistent chrome across all games"]
-        LobbyComp["Lobby Component\nSignalR WSS connection\nhost controls + player list"]
-        LeaderComp["Leaderboard Component\nGET /api/{game}/statistics/leaderboard\nTop 10 WinRate table"]
+    subgraph SharedComponents["Shared Components (Components/)"]
+        GameShell["GameShell\nheader + nav + footer wrapper\nconsistent chrome across all games"]
+        LobbyComp["LobbyComponent\nSignalR WSS connection\nhost controls + player list"]
+        LeaderBoard["LeaderboardComponent\nGET /api/{game}/statistics/leaderboard\nTop 10 WinRate table"]
         AuthBtn["AuthButton\nMSAL popup trigger\nsign-in / sign-out"]
+        ToastNotif["ToastService\nUI notification bus"]
     end
 
-    subgraph GameMods["Game Modules (games/)"]
-        TicGame["tictactoe/\nMinimaxAI (Hard)\nHeuristicAI (Med/Easy)\n3x3 board logic"]
-        ConGame["connectfive/\nHeuristic win-detect AI\n6x5 grid + gravity logic"]
-        FightGame["pofight/\nCPU fighter opponent\nproud-pebble SWA"]
-        SnakeGame["posnakegame/\nCanvas renderer\n30s battle arena + multiplayer sync"]
-        DropGame["podropsquare/\nMatter.js physics\nSurvival timer + high score"]
-        BabyGame["pobabytouch/\nBubble pop tap game\ngray-coast SWA"]
-        RaceGame["poraceragdoll/\nCannon-ES physics track\nBetting system + lobby"]
-        VoxelGame["voxelshooter/\nThree.js + WebGL\nFPS-style 3D map"]
+    subgraph GameModules["Game Modules (Games/)"]
+        TicTacToe["TicTacToe/\nMinimaxAI (Hard depth 4)\nHeuristicAI (Med/Easy)\n3x3 board logic"]
+        ConnectFive["ConnectFive/\nHeuristic win-detect AI\n15x15 grid + gravity logic"]
+        SnakeGame["SnakeGame/\nCanvas renderer\n30s battle arena + multiplayer sync"]
+        PoRunner["PoRunner/\nSide-scroller state machine\nphysics-driven gameplay"]
     end
 
-    subgraph StateLayer["State + API Layer"]
-        APISvc["apiService.ts\nfetch() with offline fallback\nlocalStorage cache + error boundary"]
-        SignalRHook["useSignalR hook\nWSS connection lifecycle\nauto-reconnect + event subscriptions"]
-        LocalSt["localStorage\nstats cache · sync queue\noffline-resilient buffer"]
+    subgraph ClientServices["Client Services (Services/)"]
+        ApiSvc["ApiService\nHttpClient calls to backend\n5s timeout · typed JSON"]
+        AuthStateSvc["AuthStateService\nMSAL state machine\nconfig fetch → PKCE popup"]
+        GameStatsSvc["GameStatsService\nLocal game result aggregation\nAPI sync + localStorage"]
+        PlayerNameSvc["PlayerNameService\nPersistent player name\nbrowser localStorage"]
     end
 
-    AppTsx --> AuthCtx
-    AuthCtx --> HomeR
-    AuthCtx --> TicR
-    AuthCtx --> ConR
-    AuthCtx --> FightR
-    AuthCtx --> SnakeR
-    AuthCtx --> DropR
-    AuthCtx --> BabyR
-    AuthCtx --> RaceR
-    AuthCtx --> VoxelR
-    HomeR --> GameLayout
-    HomeR --> AuthBtn
-    TicR --> GameLayout
-    TicR --> TicGame
-    TicR --> LeaderComp
-    ConR --> ConGame
-    ConR --> LeaderComp
-    FightR --> FightGame
-    SnakeR --> SnakeGame
-    SnakeR --> LobbyComp
-    DropR --> DropGame
-    BabyR --> BabyGame
-    RaceR --> RaceGame
-    RaceR --> LobbyComp
-    VoxelR --> VoxelGame
-    TicGame --> APISvc
-    ConGame --> APISvc
-    SnakeGame --> SignalRHook
-    RaceGame --> SignalRHook
-    LobbyComp --> SignalRHook
-    APISvc --> LocalSt
+    subgraph StateLayer["State + Persistence"]
+        localStorage["localStorage\nstats cache · sync queue\noffline-resilient buffer"]
+    end
 
-    style AppTsx fill:#1a6b8a,stroke:#0d4a66,color:#fff
-    style AuthCtx fill:#7719aa,stroke:#4e0f72,color:#fff
-    style HomeR fill:#1a6b8a,stroke:#0d4a66,color:#fff
-    style TicR fill:#1a6b8a,stroke:#0d4a66,color:#fff
-    style ConR fill:#1a6b8a,stroke:#0d4a66,color:#fff
-    style FightR fill:#1a6b8a,stroke:#0d4a66,color:#fff
-    style SnakeR fill:#1a6b8a,stroke:#0d4a66,color:#fff
-    style DropR fill:#1a6b8a,stroke:#0d4a66,color:#fff
-    style BabyR fill:#1a6b8a,stroke:#0d4a66,color:#fff
-    style RaceR fill:#1a6b8a,stroke:#0d4a66,color:#fff
-    style VoxelR fill:#1a6b8a,stroke:#0d4a66,color:#fff
-    style GameLayout fill:#0078d4,stroke:#005a9e,color:#fff
+    AppRazor --> Program
+    AppRazor --> HomeP
+    AppRazor --> SinglePlayerP
+    AppRazor --> OnlineMultiplayerP
+    AppRazor --> MultiSelectP
+    AppRazor --> AuthCB
+    AppRazor --> DiagP
+    HomeP --> GameShell
+    HomeP --> AuthBtn
+    SinglePlayerP --> GameShell
+    OnlineMultiplayerP --> GameShell
+    OnlineMultiplayerP --> LobbyComp
+    TicTacToe --> LeaderBoard
+    ConnectFive --> LeaderBoard
+    TicTacToe --> ApiSvc
+    ConnectFive --> ApiSvc
+    SnakeGame --> ApiSvc
+    PoRunner --> ApiSvc
+    LobbyComp --> ApiSvc
+    ApiSvc --> AuthStateSvc
+    ApiSvc --> GameStatsSvc
+    GameStatsSvc --> localStorage
+    PlayerNameSvc --> localStorage
+
+    style AppRazor fill:#1a6b8a,stroke:#0d4a66,color:#fff
+    style Program fill:#7719aa,stroke:#4e0f72,color:#fff
+    style HomeP fill:#1a6b8a,stroke:#0d4a66,color:#fff
+    style SinglePlayerP fill:#1a6b8a,stroke:#0d4a66,color:#fff
+    style OnlineMultiplayerP fill:#1a6b8a,stroke:#0d4a66,color:#fff
+    style MultiSelectP fill:#1a6b8a,stroke:#0d4a66,color:#fff
+    style AuthCB fill:#1a6b8a,stroke:#0d4a66,color:#fff
+    style DiagP fill:#1a6b8a,stroke:#0d4a66,color:#fff
+    style GameShell fill:#0078d4,stroke:#005a9e,color:#fff
     style LobbyComp fill:#0078d4,stroke:#005a9e,color:#fff
-    style LeaderComp fill:#0078d4,stroke:#005a9e,color:#fff
+    style LeaderBoard fill:#0078d4,stroke:#005a9e,color:#fff
     style AuthBtn fill:#7719aa,stroke:#4e0f72,color:#fff
-    style TicGame fill:#107c10,stroke:#0a5c0a,color:#fff
-    style ConGame fill:#107c10,stroke:#0a5c0a,color:#fff
-    style FightGame fill:#107c10,stroke:#0a5c0a,color:#fff
+    style ToastNotif fill:#0078d4,stroke:#005a9e,color:#fff
+    style TicTacToe fill:#107c10,stroke:#0a5c0a,color:#fff
+    style ConnectFive fill:#107c10,stroke:#0a5c0a,color:#fff
     style SnakeGame fill:#107c10,stroke:#0a5c0a,color:#fff
-    style DropGame fill:#107c10,stroke:#0a5c0a,color:#fff
-    style BabyGame fill:#107c10,stroke:#0a5c0a,color:#fff
-    style RaceGame fill:#107c10,stroke:#0a5c0a,color:#fff
-    style VoxelGame fill:#107c10,stroke:#0a5c0a,color:#fff
-    style APISvc fill:#0078d4,stroke:#005a9e,color:#fff
-    style SignalRHook fill:#0078d4,stroke:#005a9e,color:#fff
-    style LocalSt fill:#7a3b00,stroke:#4f2700,color:#fff
+    style PoRunner fill:#107c10,stroke:#0a5c0a,color:#fff
+    style ApiSvc fill:#0078d4,stroke:#005a9e,color:#fff
+    style AuthStateSvc fill:#7719aa,stroke:#4e0f72,color:#fff
+    style GameStatsSvc fill:#0078d4,stroke:#005a9e,color:#fff
+    style PlayerNameSvc fill:#0078d4,stroke:#005a9e,color:#fff
+    style localStorage fill:#7a3b00,stroke:#4f2700,color:#fff

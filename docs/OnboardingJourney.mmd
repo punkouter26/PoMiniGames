@@ -1,6 +1,6 @@
 flowchart TD
     Start(["New User\narrives at pominigames.app"])
-    CDN["CDN serves React SPA\nno install · no account needed\ntarget: sub-1s cold load"]
+    CDN["CDN serves Blazor WASM\nno install · no account needed\ntarget: sub-1s cold load"]
     Home["Home Page\n8 game tiles visible\nanonymous access permitted"]
     PickGame["Select a game\ne.g. Tic-Tac-Toe"]
     ChooseDiff["Choose difficulty\nEasy / Medium / Hard"]
@@ -18,8 +18,8 @@ flowchart TD
     Aha(["Aha Moment!\nReal-time PvP vs friend\nno server-side latency for moves"])
 
     Start --> CDN --> Home --> PickGame --> ChooseDiff --> PlayAI --> GameResult --> LocalSave --> AhaMoment
-    AhaMoment -- "No — keep playing" --> KeepPlaying
-    AhaMoment -- "Yes" --> SignIn --> MSConsent --> AuthSuccess
+    AhaMoment -->|"No — keep playing"| KeepPlaying
+    AhaMoment -->|"Yes"| SignIn --> MSConsent --> AuthSuccess
     AuthSuccess --> SyncStats --> LeaderboardView
     AuthSuccess --> JoinLobby --> Aha
 

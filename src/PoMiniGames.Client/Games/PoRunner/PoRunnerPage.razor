@@ -3,6 +3,7 @@
 @using PoMiniGamesClient.Components;
 @using PoMiniGamesClient.Services;
 @using PoMiniGamesClient.Games.PoRunner;
+@using PoMiniGamesClient.Enums;
 @inject PlayerNameService PlayerNameService;
 @inject NavigationManager Navigation;
 @inject IJSRuntime JSRuntime;
@@ -194,6 +195,7 @@
     private ElementReference _gameContainer;
     
     // Game state
+    private string _playerName = string.Empty;
     private PoRunnerGameMode _mode = PoRunnerGameMode.OnePlayer;
     private PoRunnerGameState _state = new();
     private List<DemoBot> _bots = new();
@@ -254,7 +256,8 @@
         _state.HintDismissed = _mode == PoRunnerGameMode.Demo;
         
         // Initialize stats
-        _stats = _gameStats.GetStats("porunner", PlayerNameService.GetPlayerName());
+        _playerName = PlayerNameService.GetPlayerName();
+        _stats = _gameStats.GetStats("porunner", _playerName);
         _profile = new PlayerProfile
         {
             Wins = _stats.Easy.Wins + _stats.Medium.Wins + _stats.Hard.Wins,
@@ -453,7 +456,7 @@
         _state.RaceTimedOut = false;
         _state.ConfettiParticles.Clear();
         _state.GameOverAnim = null;
-        _state.CountdownFired = false;
+        _state.CountdownGunFired = false;
         _state.CameraX = 0;
         _state.HintDismissed = false;
         _state.LeaderboardExpanded = false;

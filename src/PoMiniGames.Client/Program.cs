@@ -13,6 +13,7 @@ builder.Services.AddScoped<ApiService>();
 builder.Services.AddScoped<AuthStateService>();
 builder.Services.AddScoped<PlayerNameService>();
 builder.Services.AddScoped<ToastService>();
+builder.Services.AddScoped<GameStatsService>();
 builder.Services.AddRadzenComponents();
 
 await builder.Build().RunAsync();

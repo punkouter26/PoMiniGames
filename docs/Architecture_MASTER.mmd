@@ -2,7 +2,7 @@ flowchart TD
     Player["Player\n(Browser — Chrome / Safari / Mobile)"]
 
     subgraph Edge["Edge Delivery (Azure CDN — westus2)"]
-        SWA["Static Web App\nReact 18 + TypeScript + Vite\nTailwind v4 · 8 game routes\npomin.azurestaticapps.net"]
+        SWA["Static Web App\nBlazor WebAssembly\n.NET 10 Runtime\n8 game routes"]
     end
 
     subgraph Compute["Compute Tier (App Service Linux B1 — westus2)"]
@@ -15,34 +15,34 @@ flowchart TD
         SQLite[("SQLite\n/home/data/pominigames.db\nPlayerStats · SnakeHighScores\nPoDropSquareHighScores · MultiplayerMatch")]
     end
 
-    subgraph PoShared["PoShared (rg-PoShared)"]
+    subgraph PoSharedLayer["PoShared (rg-PoShared)"]
         KV["Key Vault (kv-poshared)\nMicrosoftAuth--ClientId\nMicrosoftAuth--ApiClientId\nApplicationInsights--ConnectionString"]
         AppIns["Application Insights\nOpenTelemetry OTLP sink\nTraces · Exceptions · Metrics · Logs"]
     end
 
-    subgraph Identity["Microsoft Identity Platform"]
+    subgraph IdentityLayer["Microsoft Identity Platform"]
         MSID["OAuth2 / OIDC provider\nJWT Bearer tokens (12h TTL)\nPKCE flow via MSAL popup"]
     end
 
-    subgraph CICD["CI/CD (GitHub Actions)"]
+    subgraph CICDLayer["CI/CD (GitHub Actions)"]
         GH["deploy.yml\nTrigger: push to master\nOIDC federation — no stored credentials"]
-        BuildJob["Build Job (ubuntu-latest)\ndotnet build Release · npm run build\nxUnit + Vitest + Playwright"]
-        DeployJob["Deploy Job\nzip-deploy App Service (linux-x64)\nSWA deployment token"]
+        BuildJob["Build Job (ubuntu-latest)\ndotnet build Release · dotnet test\nxUnit + Playwright"]
+        DeployJob["Deploy Job\nzip-deploy App Service (linux-x64)\nStatic Web App deployment"]
     end
 
-    Player -- "HTTPS games · leaderboards · auth" --> SWA
-    Player -- "WSS SignalR multiplayer" --> API
-    SWA -- "REST + WSS handshake" --> API
-    API --- LobbyHub
-    API --- MPHub
+    Player -->|"HTTPS games · leaderboards · auth"| SWA
+    Player -->|"WSS SignalR multiplayer"| API
+    SWA -->|"REST + WSS handshake"| API
+    API -.-> LobbyHub
+    API -.-> MPHub
     API --> SQLite
-    API -- "Fetch secrets at startup\n(Managed Identity)" --> KV
-    API -- "OTLP push" --> AppIns
-    API -- "Validate JWT Bearer" --> MSID
+    API -->|"Fetch secrets at startup\n(Managed Identity)"| KV
+    API -->|"OTLP push"| AppIns
+    API -->|"Validate JWT Bearer"| MSID
     GH --> BuildJob
     BuildJob --> DeployJob
-    DeployJob -- "React bundle" --> SWA
-    DeployJob -- "zip-deploy binaries" --> API
+    DeployJob -->|"React bundle"| SWA
+    DeployJob -->|"zip-deploy binaries"| API
 
     style Player fill:#1a6b8a,stroke:#0d4a66,color:#fff
     style SWA fill:#0078d4,stroke:#005a9e,color:#fff

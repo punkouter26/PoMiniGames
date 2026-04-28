@@ -18,12 +18,13 @@
   // Listen for Blazor navigation via the NavigationManager
   var originalPushState = history.pushState;
   history.pushState = function () {
+    var args = arguments;
     if (document.startViewTransition) {
-      var transition = document.startViewTransition(function () {
-        return originalPushState.apply(history, arguments);
+      document.startViewTransition(function () {
+        return originalPushState.apply(history, args);
       });
     } else {
-      return originalPushState.apply(history, arguments);
+      return originalPushState.apply(history, args);
     }
   };
 })();

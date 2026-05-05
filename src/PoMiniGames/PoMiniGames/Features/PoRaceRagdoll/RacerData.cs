@@ -6,14 +6,14 @@ internal static class RacerData
     internal static readonly Dictionary<string, string[]> NamePools =
         new(StringComparer.OrdinalIgnoreCase)
         {
-            ["human"]   = ["Dash", "Blaze", "Ryder", "Skye", "Nova", "Ace", "Milo", "Zara"],
-            ["spider"]  = ["Silk", "Fang", "Orbit", "Webber", "Hex", "Thread", "Nox", "Spinner"],
-            ["dog"]     = ["Bolt", "Rex", "Scout", "Buddy", "Mochi", "Duke", "Koda", "Piper"],
-            ["snake"]   = ["Viper", "Slither", "Cobra", "Jade", "Sly", "Mamba", "Onyx", "Slink"],
-            ["crab"]    = ["Clawdia", "Snap", "Shelly", "Pinch", "Coral", "Tide", "Reef", "Crush"],
-            ["dino"]    = ["Rexa", "Stomp", "Spike", "Giga", "Cretor", "Roar", "Boulder", "Titan"],
+            ["human"] = ["Dash", "Blaze", "Ryder", "Skye", "Nova", "Ace", "Milo", "Zara"],
+            ["spider"] = ["Silk", "Fang", "Orbit", "Webber", "Hex", "Thread", "Nox", "Spinner"],
+            ["dog"] = ["Bolt", "Rex", "Scout", "Buddy", "Mochi", "Duke", "Koda", "Piper"],
+            ["snake"] = ["Viper", "Slither", "Cobra", "Jade", "Sly", "Mamba", "Onyx", "Slink"],
+            ["crab"] = ["Clawdia", "Snap", "Shelly", "Pinch", "Coral", "Tide", "Reef", "Crush"],
+            ["dino"] = ["Rexa", "Stomp", "Spike", "Giga", "Cretor", "Roar", "Boulder", "Titan"],
             ["penguin"] = ["Waddle", "Chill", "Pebble", "Frost", "Nippy", "Flipper", "Icy", "Skate"],
-            ["alien"]   = ["Zorb", "Quark", "Nebula", "Xeno", "Orion", "Vega", "Cosmo", "Pulse"]
+            ["alien"] = ["Zorb", "Quark", "Nebula", "Xeno", "Orion", "Vega", "Cosmo", "Pulse"]
         };
 
     internal static readonly IReadOnlyList<RacerSpecies> AvailableSpecies =

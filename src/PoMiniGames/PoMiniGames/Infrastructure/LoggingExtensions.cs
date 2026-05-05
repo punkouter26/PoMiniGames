@@ -49,7 +49,7 @@ internal static class LoggingExtensions
                 if (!string.IsNullOrEmpty(aiCs))
                 {
                     var tc = new Microsoft.ApplicationInsights.Extensibility.TelemetryConfiguration
-                        { ConnectionString = aiCs };
+                    { ConnectionString = aiCs };
                     configuration.WriteTo.ApplicationInsights(tc, TelemetryConverter.Traces);
                 }
             }

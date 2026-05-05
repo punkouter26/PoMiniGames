@@ -18,7 +18,7 @@ public class ConnectFiveAI
     private (int, int) EasyMove(ConnectFiveBoard board, Piece player)
     {
         var opponent = player == Piece.Red ? Piece.Yellow : Piece.Red;
-        
+
         // 30% chance to block
         if (Random.Shared.NextDouble() < 0.3)
         {
@@ -47,7 +47,7 @@ public class ConnectFiveAI
         // 3. Center preference
         var cols = board.GetAvailableCols();
         if (cols.Count == 0) return (0, 0);
-        
+
         var centerCol = ConnectFiveBoard.Cols / 2;
         if (cols.Contains(centerCol))
         {
@@ -91,7 +91,7 @@ public class ConnectFiveAI
                 {
                     int mine = 0, theirs = 0, empty = 0;
                     bool valid = true;
-                    
+
                     for (int i = 0; i < ConnectFiveBoard.WinLength; i++)
                     {
                         var nr = r + dr * i;
@@ -106,7 +106,7 @@ public class ConnectFiveAI
                         else if (cell == opponent) theirs++;
                         else empty++;
                     }
-                    
+
                     if (!valid) continue;
                     if (theirs == 0 && mine > 0) score += mine * mine * 10;
                     if (mine == 0 && theirs > 0) score -= theirs * theirs * 10;

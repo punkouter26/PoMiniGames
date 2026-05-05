@@ -38,11 +38,11 @@ public static class GameEndpoints
 
                 return outcome switch
                 {
-                    PlaceBetOutcome.NotFound       => Results.NotFound(new { error = "Session not found" }),
-                    PlaceBetOutcome.WrongPhase     => Results.Conflict(new { error = "A bet has already been placed for this round." }),
+                    PlaceBetOutcome.NotFound => Results.NotFound(new { error = "Session not found" }),
+                    PlaceBetOutcome.WrongPhase => Results.Conflict(new { error = "A bet has already been placed for this round." }),
                     PlaceBetOutcome.InsufficientBalance => Results.BadRequest(new { error = "Insufficient balance." }),
-                    PlaceBetOutcome.InvalidRacer   => Results.BadRequest(new { error = "Invalid racer ID." }),
-                    _                              => Results.Ok(state),
+                    PlaceBetOutcome.InvalidRacer => Results.BadRequest(new { error = "Invalid racer ID." }),
+                    _ => Results.Ok(state),
                 };
             })
             .WithName("PlaceBet")

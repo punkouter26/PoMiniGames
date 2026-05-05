@@ -37,14 +37,14 @@ public class PoRunnerGameState
     public bool DemoMode { get; set; }
     public bool LocalCrossedFinish2 { get; set; }
     public long LocalFinishTimeMs2 { get; set; }
-    
+
     public int FinishLineX => WorldWidth - PoRunnerConstants.StartLineX;
 }
 
 public class PoRunnerProfileService
 {
     private const string ProfileKey = "porunner_profile";
-    
+
     public PlayerProfile GetProfile()
     {
         try
@@ -64,7 +64,7 @@ public class PoRunnerProfileService
             return new PlayerProfile();
         }
     }
-    
+
     public void SaveProfile(PlayerProfile profile)
     {
         // Would need JS interop to save to localStorage
@@ -74,14 +74,14 @@ public class PoRunnerProfileService
 public class PoRunnerSoundService
 {
     private SoundTheme _currentTheme = SoundTheme.Default;
-    
+
     public SoundTheme GetTheme() => _currentTheme;
-    
+
     public void SetTheme(SoundTheme theme)
     {
         _currentTheme = theme;
     }
-    
+
     public SoundTheme CycleTheme()
     {
         var themes = Enum.GetValues<SoundTheme>();
@@ -90,14 +90,14 @@ public class PoRunnerSoundService
         _currentTheme = themes[nextIndex];
         return _currentTheme;
     }
-    
+
     public void SetRandomTheme()
     {
         var random = new Random();
         var themes = new[] { SoundTheme.Default, SoundTheme.Jungle, SoundTheme.Retro };
         _currentTheme = themes[random.Next(themes.Length)];
     }
-    
+
     public void PlaySound(string type)
     {
         // Web Audio would be implemented via JS interop

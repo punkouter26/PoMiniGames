@@ -7,7 +7,7 @@ public class TicTacToeBoard
 {
     public const int Size = 6;
     public const int WinLength = 4;
-    
+
     private readonly CellValue[][] _cells;
 
     public TicTacToeBoard()
@@ -27,7 +27,7 @@ public class TicTacToeBoard
         {
             throw new Exception($"Cell ({row}, {col}) is already occupied");
         }
-        
+
         var newBoard = new TicTacToeBoard();
         for (int r = 0; r < Size; r++)
         {
@@ -43,7 +43,7 @@ public class TicTacToeBoard
     public WinResult CheckWin(CellValue player)
     {
         var directions = new[] { (0, 1), (1, 0), (1, 1), (1, -1) };
-        
+
         for (int r = 0; r < Size; r++)
         {
             for (int c = 0; c < Size; c++)

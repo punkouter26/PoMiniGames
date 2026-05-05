@@ -129,7 +129,7 @@ public class AuthDevLoginEndpointsTests : IClassFixture<LocalAuthWebApplicationF
 
         // Dev logout endpoint should be accessible
         var logoutResponse = await client.PostAsync("/api/auth/dev-logout", content: null);
-        
+
         // Should return OK or similar success code in dev mode
         logoutResponse.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NoContent);
     }

@@ -46,13 +46,22 @@ jobs:
       - name: Build
         run: dotnet build PoMiniGames.slnx --configuration Release --no-restore
 
+      - name: Verify formatting
+        run: dotnet format PoMiniGames.slnx --verify-no-changes --verbosity minimal
+
       - name: Unit Tests
-        run: dotnet test tests/PoMiniGames.UnitTests/PoMiniGames.UnitTests.csproj --configuration Release --no-build --verbosity normal
+        run: dotnet test tests/PoMiniGames.UnitTests/PoMiniGames.UnitTests.csproj --configuration Release --no-build --verbosity normal --logger "trx;LogFileName=unit-tests.trx"
 
       - name: Integration Tests
-        run: dotnet test tests/PoMiniGames.IntegrationTests/PoMiniGames.IntegrationTests.csproj --configuration Release --no-build --verbosity normal
+        run: dotnet test tests/PoMiniGames.IntegrationTests/PoMiniGames.IntegrationTests.csproj --configuration Release --no-build --verbosity normal --logger "trx;LogFileName=integration-tests.trx"
 
-      # Publish API — Blazor WASM client is automatically embedded in wwwroot by the project reference
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: "**/*.trx"
+
       - name: Publish
         run: dotnet publish src/PoMiniGames/PoMiniGames/PoMiniGames.csproj -c Release -r linux-x64 --no-self-contained -o ./publish
 
@@ -70,6 +79,8 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     environment:
       name: production
+
+    steps:
       - name: Azure Login
         uses: azure/login@v2
         with:

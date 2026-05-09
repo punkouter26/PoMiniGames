@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -34,6 +35,50 @@ public static class DiagEndpoints
         .WithName("GetDiagnosticsRoot")
         .WithTags("Health")
         .WithSummary("Diagnostic summary (root alias)");
+
+        // ─── Log tail endpoint for dev diagnostics ───────────────────────
+        async Task<IResult> logsTailHandler(IConfiguration config, IHostEnvironment environment, int? lines = 50)
+        {
+            var diagnosticsEnabled = config.GetValue("FeatureFlags:EnableDiagnostics", environment.IsDevelopment());
+            if (!diagnosticsEnabled)
+                return Results.NotFound();
+
+            try
+            {
+                var logsDir = Path.Combine(environment.ContentRootPath, "logs");
+                if (!Directory.Exists(logsDir))
+                    return Results.Ok(new { message = "No logs directory found", entries = Array.Empty<string>() });
+
+                var latestLog = Directory.GetFiles(logsDir, "*.log")
+                    .OrderByDescending(f => File.GetLastWriteTime(f))
+                    .FirstOrDefault();
+
+                if (latestLog == null)
+                    return Results.Ok(new { message = "No log files found", entries = Array.Empty<string>() });
+
+                var lineCount = lines ?? 50;
+                var entries = File.ReadAllLines(latestLog)
+                    .TakeLast(lineCount)
+                    .ToArray();
+
+                return Results.Ok(new
+                {
+                    file = Path.GetFileName(latestLog),
+                    totalLines = File.ReadLines(latestLog).Count(),
+                    shownLines = entries.Length,
+                    entries = entries
+                });
+            }
+            catch (Exception ex)
+            {
+                return Results.Ok(new { error = ex.Message });
+            }
+        }
+
+        app.MapGet("/api/logs/tail", logsTailHandler)
+        .WithName("GetLogsTail")
+        .WithTags("Health")
+        .WithSummary("Tail the latest development log file (dev-only)");
 
         return app;
     }

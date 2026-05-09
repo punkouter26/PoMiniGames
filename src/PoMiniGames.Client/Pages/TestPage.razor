@@ -1,0 +1,148 @@
+@page "/test"
+@using PoMiniGamesClient.Services
+@inject NavigationManager NavigationManager
+@inject ApiService ApiService
+@inject ToastService ToastService
+
+<div class="sp-page">
+    <div class="sp-card">
+        <div class="sp-header">
+            <button class="sp-back" @onclick='() => NavigationManager.NavigateTo("/")'>← Home</button>
+            <h1 class="sp-title">🧪 Test Harness</h1>
+        </div>
+        <p class="sp-subtitle">Local-only debugging tools for offline & rendering validation.</p>
+
+        <div class="test-section">
+            <h2>Offline Mode Testing</h2>
+            <button class="test-btn" @onclick='TestOfflineMode'>
+                📵 Test Offline Mode
+            </button>
+            <p class="test-desc">
+                Games should remain fully playable without API connectivity.
+                Scores won't sync until you go back online.
+            </p>
+        </div>
+
+        <div class="test-section">
+            <h2>Render Pipeline Diagnostics</h2>
+            <button class="test-btn" @onclick='() => NavigationManager.NavigateTo("/dropsquare")'>
+                🖼️ Test Canvas (DropSquare)
+            </button>
+            <button class="test-btn" @onclick='() => NavigationManager.NavigateTo("/voxelshooter")'>
+                🎮 Test WebGL (Voxel Shooter)
+            </button>
+            <p class="test-desc">
+                Check DevTools → Performance to diagnose render delays and paint jank.
+            </p>
+        </div>
+
+        <div class="test-section">
+            <h2>API Timeout Handling</h2>
+            <button class="test-btn" @onclick='TestApiTimeout'>
+                ⏱️ Trigger Slow API (8s delay)
+            </button>
+            <p class="test-desc">
+                Client timeout is 5s. Verify error toast appears gracefully.
+            </p>
+        </div>
+
+        <div class="test-section">
+            <h2>Available Endpoints</h2>
+            <ul class="test-endpoints">
+                <li><code>/test/offline-mode</code> — Instructions for testing offline</li>
+                <li><code>/test/keyboard-events</code> — Debug keyboard input capture</li>
+                <li><code>/test/render-diagnostics</code> — Canvas/WebGL diagnostics</li>
+                <li><code>/test/api-timeout</code> — Simulates slow API response</li>
+                <li><code>/api/logs/tail</code> — Tail development log file</li>
+            </ul>
+        </div>
+    </div>
+</div>
+
+<style>
+    .test-section {
+        margin: 20px 0;
+        padding: 16px;
+        background: rgba(99, 102, 241, 0.05);
+        border-left: 4px solid #6366f1;
+        border-radius: 4px;
+    }
+
+    .test-section h2 {
+        margin: 0 0 12px 0;
+        font-size: 14px;
+        font-weight: 600;
+        color: #6366f1;
+    }
+
+    .test-btn {
+        display: inline-block;
+        padding: 8px 12px;
+        margin: 4px 4px 4px 0;
+        background: #6366f1;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        font-size: 13px;
+        cursor: pointer;
+        transition: background 0.2s;
+    }
+
+    .test-btn:hover {
+        background: #4f46e5;
+    }
+
+    .test-desc {
+        margin: 8px 0 0 0;
+        font-size: 12px;
+        color: #666;
+    }
+
+    .test-endpoints {
+        list-style: none;
+        padding: 0;
+        margin: 8px 0;
+    }
+
+    .test-endpoints li {
+        padding: 4px 0;
+        font-size: 12px;
+    }
+
+    code {
+        background: #f3f4f6;
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-family: monospace;
+    }
+</style>
+
+@code {
+    private async Task TestOfflineMode()
+    {
+        var result = await ApiService.IsAvailableAsync();
+        if (result)
+        {
+            ToastService.Show("API is online. Open DevTools console and type: localStorage.setItem('_offline_test', 'true')", ToastType.Info);
+        }
+        else
+        {
+            ToastService.Show("API is already offline! Try playing a game.", ToastType.Success);
+        }
+    }
+
+    private async Task TestApiTimeout()
+    {
+        try
+        {
+            ToastService.Show("Calling slow endpoint (8s)...", ToastType.Info);
+            // This will timeout since client timeout is 5s
+            var response = await ApiService.GetAuthConfigurationAsync();
+            ToastService.Show("Request completed (unexpected)", ToastType.Success);
+        }
+        catch (Exception ex)
+        {
+            ToastService.Show($"Timeout as expected: {ex.Message}", ToastType.Error);
+        }
+    }
+}

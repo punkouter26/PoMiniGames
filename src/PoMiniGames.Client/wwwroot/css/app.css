@@ -505,6 +505,12 @@ button { cursor: pointer; font-family: var(--font-body); }
   opacity: 1;
 }
 
+.sp-game-card--loading {
+  opacity: 0.6;
+  cursor: wait;
+  pointer-events: none;
+}
+
 .sp-game-card-preview {
   padding: 1.5rem 1.5rem 0;
   position: relative;

@@ -99,6 +99,7 @@ app.UseAuthorization();
 app.MapAuthEndpoints();
 app.MapHealthEndpoints();
 app.MapDiagEndpoints();
+app.MapTestHarnessEndpoints(app.Environment);
 app.MapGetPlayerStats();
 app.MapSavePlayerStats();
 app.MapGetLeaderboard();

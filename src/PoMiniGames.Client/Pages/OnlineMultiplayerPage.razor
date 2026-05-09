@@ -1,5 +1,7 @@
 @page "/online-multiplayer"
 @inject NavigationManager NavigationManager
+@inject ApiService ApiService
+@inject ToastService ToastService
 
 <div class="sp-page">
     <div class="sp-card">
@@ -9,15 +11,18 @@
         </div>
         <p class="sp-subtitle">Connect online and compete against real players in real time.</p>
         <div class="sp-game-grid">
-            <button type="button" class="sp-game-card" aria-label="Play PoRunner online multiplayer"
+            <button type="button" 
+                    class="sp-game-card @(_isLoading ? "sp-game-card--loading" : "")" 
+                    aria-label="Play PoRunner online multiplayer"
+                    disabled="@_isLoading"
                     style="--accent:#fcd34d;--accent-glow:rgba(252,211,77,0.28)"
-                    @onclick='() => NavigationManager.NavigateTo("/porunner?mode=multi")'>
+                    @onclick='OnPlayOnlinePoRunner'>
                 <div class="sp-game-card-preview" aria-hidden="true">
-                    <div class="sp-game-icon">⚡</div>
+                    <div class="sp-game-icon">@(_isLoading ? "⏳" : "⚡")</div>
                 </div>
                 <div class="sp-game-card-body">
                     <h2>PoRunner</h2>
-                    <p>Type T-Y-G-H to sprint past opponents! Race to the finish online against real players.</p>
+                    <p>@(_isLoading ? "Connecting to server..." : "Type T-Y-G-H to sprint past opponents! Race to the finish online against real players.")</p>
                     <div class="sp-game-modes" aria-label="Available modes">
                         <span class="sp-mode-pill sp-mode-pill--multi">Multi</span>
                     </div>
@@ -26,3 +31,34 @@
         </div>
     </div>
 </div>
+
+@code {
+    private bool _isLoading = false;
+
+    [Inject] private ApiService Api { get; set; } = null!;
+
+    private async Task OnPlayOnlinePoRunner()
+    {
+        _isLoading = true;
+        try
+        {
+            // Check API health before navigating (5s timeout)
+            var isAvailable = await Api.IsAvailableAsync();
+            if (!isAvailable)
+            {
+                ToastService.Show("Server unavailable. Try Single Player or Demo mode.", ToastType.Error);
+                return;
+            }
+
+            NavigationManager.NavigateTo("/porunner?mode=multi");
+        }
+        catch (Exception ex)
+        {
+            ToastService.Show($"Failed to connect: {ex.Message}", ToastType.Error);
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+}}

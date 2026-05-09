@@ -44,4 +44,3 @@ output API_URI string = resources.outputs.API_URI
 output AZURE_LOCATION string = location
 output AZURE_TENANT_ID string = tenant().tenantId
 output WEB_APP_NAME string = resources.outputs.WEB_APP_NAME
-output STATIC_WEB_APP_NAME string = resources.outputs.STATIC_WEB_APP_NAME

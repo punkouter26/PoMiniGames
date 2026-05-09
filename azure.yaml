@@ -6,7 +6,3 @@ services:
     project: src/PoMiniGames/PoMiniGames/PoMiniGames.csproj
     host: appservice
     language: dotnet
-  web:
-    project: src/PoMiniGames.Client
-    host: staticwebapp
-    language: js

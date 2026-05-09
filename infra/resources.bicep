@@ -57,7 +57,7 @@ resource webApp 'Microsoft.Web/sites@2022-09-01' = {
         }
         {
           name: 'PoMiniGames__Cors__AllowedOrigins__0'
-          value: 'https://${staticWebApp.properties.defaultHostname}'
+          value: 'https://${abbreviations.webApp}${resourceToken}.azurewebsites.net'
         }
         {
           name: 'PoMiniGames__Cors__AllowedOrigins__1'
@@ -92,18 +92,6 @@ resource sharedAppInsights 'Microsoft.Insights/components@2020-02-02' existing =
   scope: resourceGroup(sharedResourceGroupName)
 }
 
-// Static Web App (React)
-resource staticWebApp 'Microsoft.Web/staticSites@2022-09-01' = {
-  name: '${abbreviations.staticWebApp}${resourceToken}'
-  location: location // SWA location is specific, but usually 'westus2' works or 'centralus'
-  tags: union(tags, { 'azd-service-name': 'web' })
-  sku: {
-    name: 'Free'
-    tier: 'Free'
-  }
-  properties: {}
-}
-
 resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = {
   name: storageAccountName
   location: location
@@ -130,7 +118,7 @@ resource appTable 'Microsoft.Storage/storageAccounts/tableServices/tables@2023-0
 }
 
 resource webAppTableRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(storageAccount.id, webApp.identity.principalId, storageTableDataContributorRoleId)
+  name: guid(storageAccount.id, webApp.id, storageTableDataContributorRoleId)
   scope: storageAccount
   properties: {
     principalId: webApp.identity.principalId
@@ -142,5 +130,3 @@ resource webAppTableRoleAssignment 'Microsoft.Authorization/roleAssignments@2022
 output API_URI string = 'https://${webApp.properties.defaultHostName}'
 output WEB_APP_NAME string = webApp.name
 output WEB_APP_PRINCIPAL_ID string = webApp.identity.principalId
-output STATIC_WEB_APP_NAME string = staticWebApp.name
-output STATIC_WEB_APP_DEFAULT_HOSTNAME string = staticWebApp.properties.defaultHostname

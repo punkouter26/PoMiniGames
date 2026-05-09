@@ -110,6 +110,7 @@ agentrc.eval.json
 publish/
 publish-api/
 api-deploy.zip
+app-deploy.zip
 
 # Root-level playwright config (moved to tests/e2e/)
 package.json

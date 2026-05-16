@@ -26,7 +26,7 @@ public sealed class AzuriteHealthIntegrationTests : IAsyncLifetime
         {
             _azurite = new TestcontainersBuilder<TestcontainersContainer>()
                 .WithImage("mcr.microsoft.com/azure-storage/azurite:3.33.0")
-                .WithCommand("azurite-table --tableHost 0.0.0.0 --tablePort 10002")
+                .WithCommand("azurite-table", "--tableHost", "0.0.0.0", "--tablePort", "10002")
                 .WithPortBinding(10002, assignRandomHostPort: true)
                 .WithWaitStrategy(Wait.ForUnixContainer().UntilPortIsAvailable(10002))
                 .Build();

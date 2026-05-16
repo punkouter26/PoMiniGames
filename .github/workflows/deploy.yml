@@ -52,12 +52,6 @@ jobs:
       - name: Unit Tests
         run: dotnet test tests/PoMiniGames.UnitTests/PoMiniGames.UnitTests.csproj --configuration Release --no-build --verbosity normal --logger "trx;LogFileName=unit-tests.trx"
 
-      - name: Start Azurite (Table Storage emulator for integration tests)
-        run: |
-          npm install -g azurite --silent
-          azurite-table --silent &
-          sleep 3
-
       - name: Integration Tests
         run: dotnet test tests/PoMiniGames.IntegrationTests/PoMiniGames.IntegrationTests.csproj --configuration Release --no-build --verbosity normal --logger "trx;LogFileName=integration-tests.trx"
 

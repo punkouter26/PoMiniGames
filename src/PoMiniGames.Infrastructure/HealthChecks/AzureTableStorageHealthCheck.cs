@@ -51,7 +51,13 @@ public sealed class AzureTableStorageHealthCheck : IHealthCheck
             var tableClient = serviceClient.GetTableClient(tableName);
             await tableClient.CreateIfNotExistsAsync(cancellationToken: cancellationToken);
 
-            await tableClient.GetAccessPoliciesAsync(cancellationToken: cancellationToken);
+            // Verify data-plane access with a lightweight query (compatible with managed identity / RBAC)
+            await foreach (var _ in tableClient.QueryAsync<TableEntity>(
+                filter: "PartitionKey eq '__healthcheck__'", maxPerPage: 1,
+                cancellationToken: cancellationToken))
+            {
+                break;
+            }
 
             return HealthCheckResult.Healthy("Table storage is reachable.");
         }

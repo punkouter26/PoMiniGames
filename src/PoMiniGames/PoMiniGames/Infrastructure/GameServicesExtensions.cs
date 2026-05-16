@@ -1,6 +1,6 @@
-using PoMiniGames.Configuration;
+using PoMiniGames.Domain.Services;
 using PoMiniGames.Features.PoRaceRagdoll;
-using PoMiniGames.Services;
+using PoMiniGames.Infrastructure.Services;
 
 namespace PoMiniGames.Infrastructure;
 

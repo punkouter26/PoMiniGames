@@ -1,5 +1,5 @@
-using PoMiniGames.Models;
-using PoMiniGames.Services;
+using PoMiniGames.Application.Services;
+using PoMiniGames.Domain.Models;
 
 namespace PoMiniGames.Features.HighScores;
 

@@ -1,6 +1,6 @@
 using Microsoft.Data.Sqlite;
 
-namespace PoMiniGames.Services;
+namespace PoMiniGames.Infrastructure.Services;
 
 /// <summary>
 /// Handles SQLite schema creation.

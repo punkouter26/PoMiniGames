@@ -1,7 +1,6 @@
-using PoMiniGames.Configuration;
-using PoMiniGames.Models;
+using PoMiniGames.Domain.Models;
 
-namespace PoMiniGames.Services;
+namespace PoMiniGames.Domain.Services;
 
 /// <summary>
 /// Computes deterministic ELO-style ratings per difficulty tier.

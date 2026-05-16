@@ -18,6 +18,8 @@
     ShowSettings="true"
     IsOffline="@_isOffline"
     Stats="@_statItems"
+    Status="@StatusContent"
+    GameSummary="@GameSummaryContent"
     Controls="@ControlsContent">
     
     <div class="cf-layout">
@@ -69,6 +71,7 @@
 
 @code {
     [Parameter] public int? Demo { get; set; }
+    [SupplyParameterFromQuery(Name = "kiosk")] public int KioskNext { get; set; } = -1;
 
     private ConnectFiveBoard _board = new();
     private ConnectFiveAI _ai = new();
@@ -84,11 +87,31 @@
     private PlayerStats _stats = new();
     private readonly GameStatsService _gameStats = new();
     private CancellationTokenSource? _demoCts;
+    private System.Threading.Timer? _kioskTimer;
 
     private string _backTo => Demo == 1 ? "/single-player?mode=demo" : "/single-player";
     private bool _isGameOver => _gameResult != GameResult.InProgress && PlayMode != "demo";
 
     private RenderFragment TitleContent => @<span>🔴 Connect Five</span>;
+
+    private RenderFragment StatusContent => PlayMode == "demo" ? @<span class="cf-status cf-status--demo">🎮 Demo mode</span>
+        : _gameResult == GameResult.InProgress
+            ? (_isAiTurn
+                ? @<span class="cf-status cf-status--ai">🤖 AI thinking…</span>
+                : @<span class="cf-status cf-status--player">🔴 Your turn</span>)
+            : _gameResult == GameResult.Win
+                ? @<span class="cf-status cf-status--win">🎉 You win!</span>
+                : _gameResult == GameResult.Loss
+                    ? @<span class="cf-status cf-status--loss">🤖 AI wins</span>
+                    : @<span class="cf-status cf-status--draw">🤝 Draw!</span>;
+
+    private RenderFragment? GameSummaryContent => _isGameOver ? _gameResult switch
+    {
+        GameResult.Win  => @<div class="cf-result cf-result--win">🎉 You won! Great game, @_playerName!</div>,
+        GameResult.Loss => @<div class="cf-result cf-result--loss">🤖 AI wins this round — try again!</div>,
+        GameResult.Draw => @<div class="cf-result cf-result--draw">🤝 It’s a draw!</div>,
+        _               => null
+    } : null;
 
     private RenderFragment ControlsContent => @<div class="gps-controls">
         @if (PlayMode != "demo")
@@ -148,6 +171,15 @@
         {
             _demoCts = new CancellationTokenSource();
             _ = RunDemoLoop(_demoCts.Token);
+            if (KioskNext >= 0)
+            {
+                _kioskTimer?.Dispose();
+                _kioskTimer = new System.Threading.Timer(_ =>
+                {
+                    _demoCts?.Cancel();
+                    InvokeAsync(() => Navigation.NavigateTo($"/single-player?mode=demo&kiosk={KioskNext}"));
+                }, null, 60_000, Timeout.Infinite);
+            }
         }
         else
         {
@@ -189,7 +221,11 @@
         }
     }
 
-    public void Dispose() => _demoCts?.Cancel();
+    public void Dispose()
+    {
+        _demoCts?.Cancel();
+        _kioskTimer?.Dispose();
+    }
 
     private void UpdateStats()
     {

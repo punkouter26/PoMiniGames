@@ -1,7 +1,7 @@
-using PoMiniGames.DTOs;
-using PoMiniGames.Models;
+using PoMiniGames.Application.DTOs;
+using PoMiniGames.Domain.Models;
 
-namespace PoMiniGames.Services;
+namespace PoMiniGames.Application.Services;
 
 /// <summary>
 /// Unified storage abstraction for player stats, snake high scores, and PoDropSquare high scores.

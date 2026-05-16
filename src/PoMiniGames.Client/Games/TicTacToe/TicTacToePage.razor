@@ -54,7 +54,8 @@
 
 @code {
     [Parameter] public int? Demo { get; set; }
-    
+    [SupplyParameterFromQuery(Name = "kiosk")] public int KioskNext { get; set; } = -1;
+
     private TicTacToeBoard _board = new();
     private TicTacToeAI _ai = new();
     private Difficulty _difficulty = Difficulty.Medium;
@@ -68,7 +69,8 @@
     private PlayerStats _stats = new();
     private readonly GameStatsService _gameStats = new();
     private CancellationTokenSource? _demoCts;
-    
+    private System.Threading.Timer? _kioskTimer;
+
     private string _backTo => Demo == 1 ? "/single-player?mode=demo" : "/single-player";
     private bool _isGameOver => _gameResult != GameResult.InProgress && PlayMode != "demo";
     
@@ -133,6 +135,15 @@
         {
             _demoCts = new CancellationTokenSource();
             _ = RunDemoLoop(_demoCts.Token);
+            // Start 60s kiosk exit timer if in auto-cycle mode
+            if (KioskNext >= 0)
+            {
+                _kioskTimer = new System.Threading.Timer(_ =>
+                {
+                    _demoCts?.Cancel();
+                    InvokeAsync(() => Navigation.NavigateTo($"/single-player?mode=demo&kiosk={KioskNext}"));
+                }, null, 60_000, Timeout.Infinite);
+            }
         }
         else
         {
@@ -174,7 +185,11 @@
         }
     }
     
-    public void Dispose() => _demoCts?.Cancel();
+    public void Dispose()
+    {
+        _demoCts?.Cancel();
+        _kioskTimer?.Dispose();
+    }
     
     private void UpdateStats()
     {

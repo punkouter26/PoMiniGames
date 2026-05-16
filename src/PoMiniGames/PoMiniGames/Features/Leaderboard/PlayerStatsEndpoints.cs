@@ -1,6 +1,6 @@
-using PoMiniGames.DTOs;
-using PoMiniGames.Models;
-using PoMiniGames.Services;
+using PoMiniGames.Application.DTOs;
+using PoMiniGames.Application.Services;
+using PoMiniGames.Domain.Models;
 
 namespace PoMiniGames.Features.Leaderboard;
 

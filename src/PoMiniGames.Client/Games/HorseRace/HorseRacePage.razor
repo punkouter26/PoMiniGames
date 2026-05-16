@@ -4,6 +4,7 @@
 @using PoMiniGamesClient.Enums;
 @using PoMiniGamesClient.Models;
 @using PoMiniGamesClient.Services;
+@implements IDisposable
 @inject PlayerNameService PlayerNameService;
 @inject NavigationManager Navigation;
 
@@ -53,6 +54,10 @@
     private bool _isOffline = false;
     private PlayerStats _stats = new();
     private readonly GameStatsService _gameStats = new();
+    private System.Threading.Timer? _kioskTimer;
+
+    [SupplyParameterFromQuery(Name = "demo")] public int DemoMode { get; set; } = 0;
+    [SupplyParameterFromQuery(Name = "kiosk")] public int KioskNext { get; set; } = -1;
 
     private RenderFragment ControlsContent => @<div class="gps-controls">
         <button @onclick="StartRace" disabled="@(_timer != null)">🏁 Start Race</button>
@@ -67,6 +72,19 @@
         _playerName = PlayerNameService.GetPlayerName();
         _stats = _gameStats.GetStats("pohorserace", _playerName);
         UpdateStats();
+        if (DemoMode == 1)
+        {
+            _selectedHorse = Random.Shared.Next(4);
+            StartRace();
+            if (KioskNext >= 0)
+            {
+                _kioskTimer = new System.Threading.Timer(_ =>
+                {
+                    _timer?.Dispose();
+                    InvokeAsync(() => Navigation.NavigateTo($"/single-player?mode=demo&kiosk={KioskNext}"));
+                }, null, 60_000, Timeout.Infinite);
+            }
+        }
     }
 
     private void SelectHorse(int horse)
@@ -113,6 +131,20 @@
                 var result = i == _selectedHorse ? GameResult.Win : GameResult.Loss;
                 _ = _gameStats.RecordResult("pohorserace", _playerName, Difficulty.Easy, result);
                 UpdateStats();
+
+                // In demo mode: auto-restart after 2s
+                if (DemoMode == 1)
+                {
+                    _ = Task.Delay(2000).ContinueWith(_ => InvokeAsync(() =>
+                    {
+                        if (_kioskTimer == null) // not navigating away
+                        {
+                            _selectedHorse = Random.Shared.Next(4);
+                            ResetGame();
+                            StartRace();
+                        }
+                    }));
+                }
                 break;
             }
         }
@@ -152,5 +184,11 @@
             new() { Value = $"{bucket.WinRate * 100:F0}%", Label = "Rate" },
             new() { Value = bucket.EloRating.ToString(), Label = "ELO" }
         };
+    }
+
+    public void Dispose()
+    {
+        _timer?.Dispose();
+        _kioskTimer?.Dispose();
     }
 }

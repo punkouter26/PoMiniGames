@@ -4,7 +4,7 @@ using Azure.Identity;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Configuration;
 
-namespace PoMiniGames.HealthChecks;
+namespace PoMiniGames.Infrastructure.HealthChecks;
 
 /// <summary>
 /// Optional health check for Azure Table Storage or Azurite-backed table endpoints.

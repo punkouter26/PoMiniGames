@@ -1,0 +1,336 @@
+/* ══════════════════════════════════════════════
+   Profile Page
+   ══════════════════════════════════════════════ */
+
+.prf-page {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 1.5rem 1rem 5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+/* ── Hero ── */
+.prf-hero {
+    display: flex;
+    align-items: center;
+    gap: 1.25rem;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 1rem;
+    padding: 1.5rem;
+}
+
+.prf-avatar {
+    flex-shrink: 0;
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #6366f1, #ec4899);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 0 20px rgba(99,102,241,0.35);
+}
+
+.prf-avatar-text {
+    font-size: 1.5rem;
+    font-weight: 800;
+    color: #fff;
+    letter-spacing: -0.05em;
+    font-family: var(--font-display);
+}
+
+.prf-hero-body {
+    flex: 1;
+    min-width: 0;
+}
+
+.prf-name {
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin-bottom: 0.75rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.prf-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.prf-chip {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: 0.6rem;
+    padding: 0.4rem 0.75rem;
+    min-width: 60px;
+}
+
+.prf-chip-val {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--color-text-primary);
+    line-height: 1.2;
+}
+
+.prf-chip-lbl {
+    font-size: 0.65rem;
+    color: var(--color-text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-top: 1px;
+}
+
+/* ── Charts row ── */
+.prf-charts {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+}
+
+@media (max-width: 560px) {
+    .prf-charts { grid-template-columns: 1fr; }
+}
+
+.prf-chart-card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 1rem;
+    padding: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.prf-chart-title {
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--color-text-secondary);
+    align-self: flex-start;
+}
+
+.prf-radar {
+    width: 100%;
+    max-width: 240px;
+}
+
+.prf-donut {
+    width: 100%;
+    max-width: 180px;
+}
+
+.prf-donut-legend {
+    display: flex;
+    gap: 0.75rem;
+    font-size: 0.75rem;
+    color: var(--color-text-secondary);
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+.prf-legend-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+}
+
+.prf-legend-win  { background: #22c55e; }
+.prf-legend-draw { background: #f59e0b; }
+.prf-legend-loss { background: #ef4444; }
+
+/* ── Callouts ── */
+.prf-callouts {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.prf-callout {
+    flex: 1;
+    min-width: 200px;
+    display: flex;
+    align-items: center;
+    gap: 0.875rem;
+    padding: 1rem 1.25rem;
+    border-radius: 0.875rem;
+    border: 1px solid;
+}
+
+.prf-callout--best {
+    background: rgba(34, 197, 94, 0.08);
+    border-color: rgba(34, 197, 94, 0.3);
+}
+
+.prf-callout--nemesis {
+    background: rgba(239, 68, 68, 0.08);
+    border-color: rgba(239, 68, 68, 0.3);
+}
+
+.prf-callout-icon {
+    font-size: 1.75rem;
+    flex-shrink: 0;
+}
+
+.prf-callout-lbl {
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--color-text-secondary);
+    margin-bottom: 1px;
+}
+
+.prf-callout-val {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--color-text-primary);
+}
+
+.prf-callout-sub {
+    font-size: 0.75rem;
+    color: var(--color-text-secondary);
+    margin-top: 1px;
+}
+
+/* ── Section ── */
+.prf-section { }
+
+.prf-section-title {
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--color-text-secondary);
+    margin-bottom: 0.875rem;
+}
+
+/* ── Game grid ── */
+.prf-game-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 0.75rem;
+}
+
+.prf-game-card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 0.875rem;
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    transition: border-color 0.2s;
+}
+
+.prf-game-card:not(.prf-game-card--unplayed):hover {
+    border-color: rgba(99,102,241,0.4);
+}
+
+.prf-game-card--unplayed {
+    opacity: 0.55;
+}
+
+.prf-game-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.prf-game-icon {
+    font-size: 1.1rem;
+    flex-shrink: 0;
+}
+
+.prf-game-name {
+    flex: 1;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--color-text-primary);
+}
+
+.prf-game-wr {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: #22c55e;
+    background: rgba(34,197,94,0.1);
+    border-radius: 0.35rem;
+    padding: 0.1rem 0.4rem;
+}
+
+/* ── W/L/D bar ── */
+.prf-bar {
+    height: 5px;
+    border-radius: 999px;
+    background: var(--color-bg);
+    display: flex;
+    overflow: hidden;
+}
+
+.prf-bar-win  { background: #22c55e; transition: width 0.4s ease; }
+.prf-bar-draw { background: #f59e0b; transition: width 0.4s ease; }
+.prf-bar-loss { background: #ef4444; transition: width 0.4s ease; }
+
+/* ── Difficulty rows ── */
+.prf-diffs {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+}
+
+.prf-diff-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.72rem;
+    flex-wrap: wrap;
+}
+
+.prf-diff-name {
+    font-weight: 700;
+    border-radius: 0.25rem;
+    padding: 0.05rem 0.35rem;
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.prf-diff-easy   { background: rgba(34,197,94,0.15);  color: #4ade80; }
+.prf-diff-medium { background: rgba(245,158,11,0.15); color: #fbbf24; }
+.prf-diff-hard   { background: rgba(239,68,68,0.15);  color: #f87171; }
+
+.prf-diff-wld {
+    color: var(--color-text-secondary);
+    flex: 1;
+}
+
+.prf-diff-elo {
+    color: #818cf8;
+    font-weight: 600;
+    font-size: 0.68rem;
+    background: rgba(99,102,241,0.12);
+    border-radius: 0.25rem;
+    padding: 0.05rem 0.3rem;
+}
+
+.prf-game-unplayed {
+    font-size: 0.75rem;
+    color: var(--color-text-secondary);
+    font-style: italic;
+}
+
+.prf-game-note {
+    font-size: 0.72rem;
+    color: var(--color-text-secondary);
+    font-style: italic;
+}

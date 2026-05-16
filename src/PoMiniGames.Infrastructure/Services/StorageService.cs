@@ -1,10 +1,12 @@
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Configuration;
-using PoMiniGames.DTOs;
-using PoMiniGames.Models;
+using PoMiniGames.Application.DTOs;
+using PoMiniGames.Application.Services;
+using PoMiniGames.Domain.Models;
+using PoMiniGames.Domain.Services;
 
-namespace PoMiniGames.Services;
+namespace PoMiniGames.Infrastructure.Services;
 
 /// <summary>
 /// SQLite-backed storage service using a single shared database file.

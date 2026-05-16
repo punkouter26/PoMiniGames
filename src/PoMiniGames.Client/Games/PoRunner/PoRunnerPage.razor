@@ -4,6 +4,7 @@
 @using PoMiniGamesClient.Services;
 @using PoMiniGamesClient.Games.PoRunner;
 @using PoMiniGamesClient.Enums;
+@implements IDisposable
 @inject PlayerNameService PlayerNameService;
 @inject NavigationManager Navigation;
 @inject IJSRuntime JSRuntime;
@@ -191,6 +192,7 @@
 
 @code {
     [Parameter] public string? ModeParam { get; set; }
+    [SupplyParameterFromQuery(Name = "kiosk")] public int KioskNext { get; set; } = -1;
     
     private ElementReference _gameContainer;
     
@@ -222,6 +224,7 @@
     
     // Demo mode
     private long _demoAutoRestartAt;
+    private System.Threading.Timer? _kioskTimer;
     
     // Timer
     private System.Threading.Timer? _gameTimer;
@@ -279,6 +282,14 @@
         if (_mode == PoRunnerGameMode.Demo)
         {
             StartDemo();
+            if (KioskNext >= 0)
+            {
+                _kioskTimer = new System.Threading.Timer(_ =>
+                {
+                    _gameTimer?.Dispose();
+                    InvokeAsync(() => Navigation.NavigateTo($"/single-player?mode=demo&kiosk={KioskNext}"));
+                }, null, 60_000, Timeout.Infinite);
+            }
         }
         else if (_mode == PoRunnerGameMode.OnePlayer || _mode == PoRunnerGameMode.TwoPlayer)
         {
@@ -967,5 +978,11 @@
             new() { Value = $"{bucket.WinRate * 100:F0}%", Label = "Rate" },
             new() { Value = bucket.EloRating.ToString(), Label = "ELO" }
         };
+    }
+
+    public void Dispose()
+    {
+        _gameTimer?.Dispose();
+        _kioskTimer?.Dispose();
     }
 }

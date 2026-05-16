@@ -57,7 +57,7 @@ public sealed class AzureTableStorageHealthCheck : IHealthCheck
         }
         catch (Exception ex)
         {
-            return HealthCheckResult.Unhealthy("Table storage is unavailable.", ex);
+            return HealthCheckResult.Degraded("Table storage is unavailable.", ex);
         }
     }
 }

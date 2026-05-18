@@ -117,7 +117,17 @@ public static class AuthEndpoints
     private static AuthenticatedUserProfile BuildDevelopmentProfile(DevLoginRequest? request, string? userName)
     {
         var fallbackName = string.IsNullOrWhiteSpace(userName) ? "Local Developer" : "Dev Admin";
-        var displayName = SanitizeDisplayName(request?.DisplayName ?? userName, fallbackName);
+        var rawName = request?.DisplayName ?? userName;
+        var displayName = SanitizeDisplayName(rawName, fallbackName);
+
+        // Append a random 6-digit suffix for ANON logins so each session is unique (e.g. ANON463443).
+        // This satisfies the requirement that ANON users are distinguishable in the leaderboard.
+        if (string.Equals(displayName, "ANON", StringComparison.OrdinalIgnoreCase))
+        {
+            var suffix = Random.Shared.Next(100_000, 999_999);
+            displayName = $"ANON{suffix}";
+        }
+
         var slug = displayName.ToLowerInvariant().Replace(" ", "-", StringComparison.Ordinal);
         var userId = string.IsNullOrWhiteSpace(request?.UserId) ? $"dev-{slug}" : request!.UserId!.Trim();
         var email = string.IsNullOrWhiteSpace(request?.Email) ? $"{slug}@local.dev" : request!.Email!.Trim();

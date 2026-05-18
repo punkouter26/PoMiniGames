@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Diagnostics.HealthChecks;
-using PoMiniGames.Services;
+using PoMiniGames.Application.Services;
 
-namespace PoMiniGames.HealthChecks;
+namespace PoMiniGames.Infrastructure.HealthChecks;
 
 /// <summary>
 /// Health check that verifies SQLite storage is accessible

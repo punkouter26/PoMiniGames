@@ -1,7 +1,6 @@
 using FluentAssertions;
-using PoMiniGames.Configuration;
-using PoMiniGames.Models;
-using PoMiniGames.Services;
+using PoMiniGames.Domain.Models;
+using PoMiniGames.Domain.Services;
 
 namespace PoMiniGames.UnitTests;
 

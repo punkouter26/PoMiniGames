@@ -1,10 +1,7 @@
 name: Deploy to Azure
 
-# Blazor WASM hosted on App Service — single artifact, no separate SWA deploy needed.
 on:
   push:
-    branches: [ master ]
-  pull_request:
     branches: [ master ]
   workflow_dispatch:
 
@@ -12,20 +9,17 @@ permissions:
   contents: read
   id-token: write
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 concurrency:
   group: deploy-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  build:
+  deploy:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
     steps:
-      - name: Checkout Code
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Setup .NET
@@ -33,151 +27,23 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      - name: Cache NuGet Packages
-        uses: actions/cache@v4
-        with:
-          path: ~/.nuget/packages
-          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', 'Directory.Packages.props') }}
-          restore-keys: nuget-${{ runner.os }}-
-
-      - name: Restore
-        run: dotnet restore PoMiniGames.slnx
-
-      - name: Build
-        run: dotnet build PoMiniGames.slnx --configuration Release --no-restore
-
-      - name: Verify formatting
-        run: dotnet format PoMiniGames.slnx --verify-no-changes --verbosity minimal
-
-      - name: Unit Tests
-        run: dotnet test tests/PoMiniGames.UnitTests/PoMiniGames.UnitTests.csproj --configuration Release --no-build --verbosity normal --logger "trx;LogFileName=unit-tests.trx"
-
-      - name: Integration Tests
-        run: dotnet test tests/PoMiniGames.IntegrationTests/PoMiniGames.IntegrationTests.csproj --configuration Release --no-build --verbosity normal --logger "trx;LogFileName=integration-tests.trx"
-
-      - name: Upload test results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-results
-          path: "**/*.trx"
-
       - name: Publish
         run: dotnet publish src/PoMiniGames/PoMiniGames/PoMiniGames.csproj -c Release -r linux-x64 --no-self-contained -o ./publish
 
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: app-publish
-          path: ./publish
-          retention-days: 3
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-    environment:
-      name: production
-
-    steps:
       - name: Azure Login
         uses: azure/login@v2
         with:
-          client-id: ${{ vars.AZURE_CLIENT_ID }}
-          tenant-id: ${{ vars.AZURE_TENANT_ID }}
-          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Download Artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: app-publish
-          path: ./publish
-
-      - name: Locate Publish Output
-        id: publish-path
-        shell: bash
-        run: |
-          PUBLISH_DLL=$(find ./publish -type f -name "PoMiniGames.dll" | head -n 1)
-          if [ -z "$PUBLISH_DLL" ]; then
-            echo "Error: PoMiniGames.dll not found in downloaded artifact."
-            find ./publish -maxdepth 4 -type f | head -n 100
-            exit 1
-          fi
-
-          PUBLISH_DIR=$(dirname "$PUBLISH_DLL")
-          echo "publish-dir=$PUBLISH_DIR" >> "$GITHUB_OUTPUT"
-          echo "Resolved publish directory: $PUBLISH_DIR"
-
-      - name: Get App Service Name
-        id: app-info
-        shell: bash
-        run: |
-          APP_NAME=$(az resource list -g PoMiniGames \
-            --resource-type "Microsoft.Web/sites" \
-            --query "[?tags.'azd-service-name'=='api'].name" -o tsv 2>/dev/null || echo "")
-          if [ -z "$APP_NAME" ]; then
-            APP_NAME=$(az webapp list -g PoMiniGames --query "[0].name" -o tsv)
-          fi
-          if [ -z "$APP_NAME" ]; then
-            echo "Error: App Service not found in resource group PoMiniGames"
-            exit 1
-          fi
-          echo "app-name=$APP_NAME" >> $GITHUB_OUTPUT
-          echo "Deploying to: $APP_NAME"
-
-      - name: Set Startup Command
-        shell: bash
-        run: |
-          az webapp config set \
-            --resource-group PoMiniGames \
-            --name "${{ steps.app-info.outputs.app-name }}" \
-            --startup-file "dotnet PoMiniGames.dll"
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Deploy to App Service
         shell: bash
         run: |
-          cd "${{ steps.publish-path.outputs.publish-dir }}"
-          zip -r ../app-deploy.zip .
-          cd ..
+          zip -r app-deploy.zip ./publish
           az webapp deploy \
             --resource-group PoMiniGames \
-            --name "${{ steps.app-info.outputs.app-name }}" \
+            --name app-5ln5hfdrvof5u \
             --src-path app-deploy.zip \
             --type zip \
             --track-status true
-
-      - name: Health Check
-        shell: bash
-        run: |
-          APP_URL="https://${{ steps.app-info.outputs.app-name }}.azurewebsites.net"
-          echo "Waiting for app to warm up..."
-          sleep 20
-
-          check_endpoint () {
-            local url="$1"
-            for i in $(seq 1 20); do
-              STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$url" --max-time 30 || echo "000")
-              echo "Health check attempt $i for $url: HTTP $STATUS"
-              if [ "$STATUS" = "200" ]; then
-                return 0
-              fi
-              sleep 15
-            done
-            echo "Health check failed: $url"
-            return 1
-          }
-
-          check_endpoint "$APP_URL/health"
-          check_endpoint "$APP_URL/api/health/ping"
-
-          {
-            echo "## Deployment Summary"
-            echo "- **App**: $APP_URL"
-            echo "- **Health**: $APP_URL/health ✅"
-            echo "- **Ping**: $APP_URL/api/health/ping ✅"
-            echo "- **Diag**: $APP_URL/diag"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-          echo "Health checks passed."
-

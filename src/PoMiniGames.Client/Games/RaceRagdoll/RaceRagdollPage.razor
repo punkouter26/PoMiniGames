@@ -4,7 +4,9 @@
 @using PoMiniGamesClient.Enums
 @using PoMiniGamesClient.Models
 @using PoMiniGamesClient.Services
+@implements IDisposable
 @inject PlayerNameService PlayerNameService
+@inject NavigationManager Navigation
 
 <GameShell Title=@TitleContent Player="@_playerName" BackTo="/single-player" ShowSettings="true" Stats="@_statItems" Controls="@ControlsContent">
     <div class="ragdoll-wrapper">
@@ -81,6 +83,10 @@
     private bool _won;
     private List<Racer> _racers = new();
     private System.Threading.Timer? _timer;
+    private System.Threading.Timer? _kioskTimer;
+
+    [SupplyParameterFromQuery(Name = "demo")] public int DemoMode { get; set; } = 0;
+    [SupplyParameterFromQuery(Name = "kiosk")] public int KioskNext { get; set; } = -1;
 
     private RenderFragment ControlsContent => @<div class="gps-controls">
         <span>Balance: $@_balance</span>
@@ -93,6 +99,22 @@
     {
         _playerName = PlayerNameService.GetPlayerName();
         InitializeRacers();
+        if (DemoMode == 1)
+        {
+            _selectedRacer = 0;
+            _currentBet = 100;
+            _balance -= _currentBet;
+            _gameState = "racing";
+            _timer = new System.Threading.Timer(_ => InvokeAsync(Tick), null, 50, 50);
+            if (KioskNext >= 0)
+            {
+                _kioskTimer = new System.Threading.Timer(_ =>
+                {
+                    _timer?.Dispose();
+                    InvokeAsync(() => Navigation.NavigateTo($"/single-player?mode=demo&kiosk={KioskNext}"));
+                }, null, 60_000, Timeout.Infinite);
+            }
+        }
     }
 
     private void InitializeRacers()
@@ -166,6 +188,23 @@
                 _payout = _currentBet * _racers[_selectedRacer].Odds;
                 _balance += _payout;
             }
+            // Demo: auto-restart after 2.5s
+            if (DemoMode == 1)
+            {
+                _ = Task.Delay(2500).ContinueWith(_ => InvokeAsync(() =>
+                {
+                    if (_kioskTimer != null) return; // navigating away
+                    InitializeRacers();
+                    _selectedRacer = Random.Shared.Next(_racers.Count);
+                    _currentBet = 100;
+                    _raceFinished = false;
+                    _winnerName = "";
+                    _gameState = "racing";
+                    foreach (var r in _racers) r.Progress = 0;
+                    _timer = new System.Threading.Timer(_ => InvokeAsync(Tick), null, 50, 50);
+                    StateHasChanged();
+                }));
+            }
         }
         
         StateHasChanged();
@@ -211,6 +250,12 @@
         3 => "#3A0CA3",
         _ => "#FFFFFF"
     };
+
+    public void Dispose()
+    {
+        _timer?.Dispose();
+        _kioskTimer?.Dispose();
+    }
 
     private class Racer
     {

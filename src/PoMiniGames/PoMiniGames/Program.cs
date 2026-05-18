@@ -6,7 +6,7 @@ using PoMiniGames.Features.PoRaceRagdoll;
 using PoMiniGames.Features.PoRunner;
 using PoMiniGames.Application.Diagnostics;
 using PoMiniGames.Infrastructure;
-using PoMiniGames.Services;
+using PoMiniGames.Infrastructure.Services;
 using Scalar.AspNetCore;
 using Serilog;
 

@@ -66,18 +66,24 @@
     @if (GameOver && ShowPlayAgain)
     {
         <div class="gps-play-again-bar" role="complementary" aria-label="Game over actions">
-            @if (OnPlayAgain.HasDelegate)
+            @if (GameSummary != null)
             {
-                <button class="gps-play-again-btn gps-play-again-btn--primary" @onclick="OnPlayAgain">
-                    🔄 Play Again
-                </button>
+                <div class="gps-game-summary">@GameSummary</div>
             }
-            @if (!string.IsNullOrEmpty(BackTo))
-            {
-                <button class="gps-play-again-btn gps-play-again-btn--secondary" @onclick="NavigateBack">
-                    🏠 Home
-                </button>
-            }
+            <div class="gps-play-again-actions">
+                @if (OnPlayAgain.HasDelegate)
+                {
+                    <button class="gps-play-again-btn gps-play-again-btn--primary" @onclick="OnPlayAgain">
+                        🔄 Play Again
+                    </button>
+                }
+                @if (!string.IsNullOrEmpty(BackTo))
+                {
+                    <button class="gps-play-again-btn gps-play-again-btn--secondary" @onclick="NavigateBack">
+                        🏠 Home
+                    </button>
+                }
+            </div>
         </div>
     }
 </div>
@@ -95,6 +101,7 @@
     [Parameter] public bool ShowSettings { get; set; } = true;
     [Parameter] public bool ShowPlayAgain { get; set; } = true;
     [Parameter] public bool IsOffline { get; set; }
+    [Parameter] public RenderFragment? GameSummary { get; set; }
     [Parameter] public RenderFragment ChildContent { get; set; } = null!;
 
     [Inject] private NavigationManager Navigation { get; set; } = null!;

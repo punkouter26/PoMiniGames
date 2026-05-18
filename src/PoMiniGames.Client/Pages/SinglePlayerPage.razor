@@ -53,6 +53,15 @@
         </div>
 
         <p class="sp-subtitle">@_subtitle</p>
+        @if (_mode == "demo")
+        {
+            <div style="text-align:center;margin-bottom:1rem">
+                <button class="sp-btn-primary" @onclick="StartKiosk" style="gap:0.4rem;display:inline-flex;align-items:center">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="flex-shrink:0"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                    Watch All Demos (auto-cycle)
+                </button>
+            </div>
+        }
 
         <div class="sp-search-wrap @(string.IsNullOrEmpty(_searchQuery) ? "" : "has-text")">
             <span class="sp-search-icon">
@@ -143,6 +152,9 @@
     [SupplyParameterFromQuery(Name = "mode")]
     public string? QueryMode { get; set; }
 
+    [SupplyParameterFromQuery(Name = "kiosk")]
+    public int KioskIndex { get; set; } = -1;
+
     private string _mode = "play";
     private string _title = "Pick a Single-Player Game";
     private string _subtitle = "Choose any game below and jump in.";
@@ -181,17 +193,17 @@
 
     private static readonly GameCardData[] DemoGames =
     [
-        new("tictactoe-demo", "/tictactoe?demo=1&demo_return=1", "Tic Tac Toe Demo", "Watch CPU vs CPU battle it out.",
+        new("tictactoe-demo", "/tictactoe/1", "Tic Tac Toe Demo", "Watch CPU vs CPU battle it out.",
             "Watch Tic Tac Toe demo", "#ef4444", "rgba(239,68,68,0.28)", [], "❌⭕"),
-        new("connectfive-demo", "/connectfive?demo=1&demo_return=1", "Connect Five Demo", "Watch the CPU auto-play on a 9x9 board.",
+        new("connectfive-demo", "/connectfive/1", "Connect Five Demo", "Watch the CPU auto-play on a 9x9 board.",
             "Watch Connect Five demo", "#f44336", "rgba(244,67,54,0.28)", [], "🔴🟡"),
-        new("pofight-demo", "/pofight?demo=1&demo_return=1", "PoFight Demo", "Arcade fighter in CPU vs CPU kiosk mode.",
+        new("pofight-demo", "/pofight/1", "PoFight Demo", "Arcade fighter in CPU vs CPU kiosk mode.",
             "Watch PoFight demo", "#f97316", "rgba(249,115,22,0.28)", [], "⚔️"),
-        new("poraceragdoll-demo", "/poraceragdoll", "PoRaceRagdoll", "Enjoy the chaos and place a bet on the racers.",
+        new("poraceragdoll-demo", "/poraceragdoll?demo=1", "PoRaceRagdoll", "Enjoy the chaos and place a bet on the racers.",
             "Watch PoRaceRagdoll demo", "#22c55e", "rgba(34,197,94,0.28)", [], "🚗"),
-        new("pohorserace-demo", "/pohorserace", "PoHorseRace Demo", "Watch all 8 lanes auto-race in arcade demo mode.",
+        new("pohorserace-demo", "/pohorserace?demo=1", "PoHorseRace Demo", "Watch all 8 lanes auto-race in arcade demo mode.",
             "Watch PoHorseRace demo", "#f59e0b", "rgba(245,158,11,0.28)", [], "🏇"),
-        new("porunner-demo", "/porunner?mode=demo", "PoRunner Demo", "Watch 8 CPU bots race to the finish line.",
+        new("porunner-demo", "/porunner/demo", "PoRunner Demo", "Watch 8 CPU bots race to the finish line.",
             "Watch PoRunner demo", "#fcd34d", "rgba(252,211,77,0.28)", [], "⚡"),
     ];
 
@@ -199,6 +211,16 @@
     {
         _mode = QueryMode == "demo" ? "demo" : QueryMode == "local-2p" ? "local-2p" : "play";
         UpdateState();
+
+        // Kiosk auto-rotation: when kiosk index is present, immediately navigate to that demo game
+        if (_mode == "demo" && KioskIndex >= 0)
+        {
+            var game = DemoGames[KioskIndex % DemoGames.Length];
+            var nextIndex = (KioskIndex + 1) % DemoGames.Length;
+            var sep = game.To.Contains('?') ? '&' : '?';
+            NavigationManager.NavigateTo($"{game.To}{sep}kiosk={nextIndex}");
+            return;
+        }
 
         _ = Task.Run(async () =>
         {
@@ -306,6 +328,11 @@
     private void OnCardLeave(Microsoft.AspNetCore.Components.Web.MouseEventArgs e)
     {
         // Card returns to natural position via CSS transition
+    }
+
+    private void StartKiosk()
+    {
+        NavigationManager.NavigateTo("/single-player?mode=demo&kiosk=0");
     }
 
     public void Dispose()

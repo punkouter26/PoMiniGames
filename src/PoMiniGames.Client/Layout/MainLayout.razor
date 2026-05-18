@@ -40,8 +40,9 @@
         <div class="gl-auth">
             @if (AuthState.IsConfigured && AuthState.User != null)
             {
+                @* Show "Playing as Guest" for anonymous dev sessions; show email for real Microsoft accounts *@
                 <span class="gl-auth-user" title="@(AuthState.User.Email ?? AuthState.User.DisplayName)">
-                    @AuthState.User.DisplayName
+                    @(IsAnonUser(AuthState.User.DisplayName) ? "Playing as Guest" : (AuthState.User.Email ?? AuthState.User.DisplayName))
                 </span>
             }
             @if (AuthState.IsConfigured && !AuthState.IsLoading)
@@ -87,7 +88,7 @@
             </span>
             <span>Home</span>
         </a>
-        <a href="/single-player" class="gl-bottom-nav-item @(IsNavActive("/single-player") ? "active" : "")">
+        <a href="/single-player" class="gl-bottom-nav-item @(IsSinglePlayerActive() ? "active" : "")">
             <span class="gl-bottom-nav-icon">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
@@ -117,13 +118,15 @@
             </span>
             <span>Online</span>
         </a>
-        <a href="/single-player?mode=demo" class="gl-bottom-nav-item @(IsNavActive("/single-player?mode=demo") ? "active" : "")">
+        <a href="/profile" class="gl-bottom-nav-item @(IsNavActive("/profile") ? "active" : "")">
             <span class="gl-bottom-nav-icon">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <polygon points="5 3 19 12 5 21 5 3"/>
+                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                    <circle cx="12" cy="7" r="4"/>
+                    <path d="M17 11l2 2 4-4"/>
                 </svg>
             </span>
-            <span>Demo</span>
+            <span>Profile</span>
         </a>
     </div>
 </div>
@@ -164,8 +167,9 @@
         // Always start with Home
         _breadcrumbs.Add(new Breadcrumb("Home", "/"));
 
-        foreach (var seg in segments)
+        foreach (var rawSeg in segments)
         {
+            var seg = rawSeg.Split('?')[0]; // strip query string before matching
             var label = seg switch
             {
                 "single-player" => "Single Player",
@@ -183,9 +187,13 @@
                 "porunner" => "PoRunner",
                 "diagpage" => "Diagnostics",
                 "authcallbackpage" => "Auth",
+                "profile" => "My Profile",
+                "demo" => "Demo Mode",
+                "1" => "Demo",
                 _ => seg
             };
-            _breadcrumbs.Add(new Breadcrumb(label, "/" + string.Join("/", segments[..(segments.IndexOf(seg) + 1)])));
+            var rawIdx = Array.IndexOf(segments, rawSeg);
+            _breadcrumbs.Add(new Breadcrumb(label, "/" + string.Join("/", segments[..(rawIdx + 1)])));
         }
 
         _currentUrl = NavigationManager.Uri;
@@ -193,8 +201,22 @@
 
     private bool IsNavActive(string url)
     {
-        return NavigationManager.ToBaseRelativePath(NavigationManager.Uri).Equals(url, StringComparison.OrdinalIgnoreCase);
+        var current = NavigationManager.ToBaseRelativePath(NavigationManager.Uri).TrimStart('/');
+        var target = url.TrimStart('/');
+        return current.Equals(target, StringComparison.OrdinalIgnoreCase);
     }
+
+    /// <summary>Active for /single-player in any mode EXCEPT local-2p (which has its own nav item).</summary>
+    private bool IsSinglePlayerActive()
+    {
+        var current = NavigationManager.ToBaseRelativePath(NavigationManager.Uri).TrimStart('/');
+        return current.StartsWith("single-player", StringComparison.OrdinalIgnoreCase)
+            && !current.Contains("mode=local-2p", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Returns true when the display name looks like an ANON session (e.g. ANON463443).</summary>
+    private static bool IsAnonUser(string? displayName) =>
+        displayName is not null && displayName.StartsWith("ANON", StringComparison.OrdinalIgnoreCase);
 
     private async Task SignIn()
     {

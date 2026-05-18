@@ -1,4 +1,4 @@
-namespace PoMiniGames.Models;
+namespace PoMiniGames.Domain.Models;
 
 /// <summary>
 /// Statistics for a specific difficulty level.

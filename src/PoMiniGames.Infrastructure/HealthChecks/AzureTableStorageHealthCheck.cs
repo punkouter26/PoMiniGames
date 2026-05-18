@@ -4,7 +4,7 @@ using Azure.Identity;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Configuration;
 
-namespace PoMiniGames.HealthChecks;
+namespace PoMiniGames.Infrastructure.HealthChecks;
 
 /// <summary>
 /// Optional health check for Azure Table Storage or Azurite-backed table endpoints.
@@ -51,13 +51,19 @@ public sealed class AzureTableStorageHealthCheck : IHealthCheck
             var tableClient = serviceClient.GetTableClient(tableName);
             await tableClient.CreateIfNotExistsAsync(cancellationToken: cancellationToken);
 
-            await tableClient.GetAccessPoliciesAsync(cancellationToken: cancellationToken);
+            // Verify data-plane access with a lightweight query (compatible with managed identity / RBAC)
+            await foreach (var _ in tableClient.QueryAsync<TableEntity>(
+                filter: "PartitionKey eq '__healthcheck__'", maxPerPage: 1,
+                cancellationToken: cancellationToken))
+            {
+                break;
+            }
 
             return HealthCheckResult.Healthy("Table storage is reachable.");
         }
         catch (Exception ex)
         {
-            return HealthCheckResult.Unhealthy("Table storage is unavailable.", ex);
+            return HealthCheckResult.Degraded("Table storage is unavailable.", ex);
         }
     }
 }

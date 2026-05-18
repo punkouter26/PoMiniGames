@@ -1,5 +1,6 @@
-using PoMiniGames.HealthChecks;
-using PoMiniGames.Services;
+using PoMiniGames.Application.Services;
+using PoMiniGames.Infrastructure.HealthChecks;
+using PoMiniGames.Infrastructure.Services;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 namespace PoMiniGames.Infrastructure;

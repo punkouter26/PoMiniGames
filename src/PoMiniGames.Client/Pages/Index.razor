@@ -18,21 +18,6 @@
     }
     else
     {
-        <!-- Quick Play Button (UI 2) -->
-        <button class="home-quick-play" @onclick="QuickPlay">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polygon points="5 3 19 12 5 21 5 3"/>
-            </svg>
-            @if (_lastGame != null)
-            {
-                <span>Continue: @_lastGame.Title</span>
-            }
-            else
-            {
-                <span>Quick Play</span>
-            }
-        </button>
-
         <h1 class="home-title">
             <span class="home-title-icon">
                 <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -88,6 +73,17 @@
                 </span>
                 <span class="home-mode-label">Demo</span>
             </button>
+
+            <button type="button" class="home-mode-btn home-mode-btn--profile" aria-label="View my stats profile" @onclick='() => NavigationManager.NavigateTo("/profile")'>
+                <span class="home-mode-icon">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                        <circle cx="12" cy="7" r="4"/>
+                        <path d="M17 11l2 2 4-4"/>
+                    </svg>
+                </span>
+                <span class="home-mode-label">My Stats</span>
+            </button>
         </div>
 
         <!-- High Scores Preview Carousel (UI 2) -->
@@ -105,6 +101,18 @@
                 Top Scores
             </h2>
             <div class="home-scores-carousel">
+                @if (_topGames.Count == 0)
+                {
+                    <div class="home-scores-empty">
+                        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="opacity:0.3">
+                            <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5C7 4 6 9 6 9z"/>
+                            <path d="M18 9h1.5a2.5 2.5 0 0 0 0-5C17 4 18 9 18 9z"/>
+                            <path d="M4 22h16M10 22V9h4v13M8 22V8M16 22V8"/>
+                        </svg>
+                        <span>Play a game to appear here!</span>
+                        <button class="home-scores-empty-cta" @onclick='() => NavigationManager.NavigateTo("/single-player")'>Pick a game →</button>
+                    </div>
+                }
                 @foreach (var game in _topGames)
                 {
                     <div class="home-score-card" @onclick="() => NavigationManager.NavigateTo(game.Url)">
@@ -125,7 +133,6 @@
 
 @code {
     private bool _isLoading = true;
-    private GameStatsService.GameCard? _lastGame;
     private List<TopGamePreview> _topGames = [];
     private record TopGamePreview(string Title, string Url, List<ScoreEntry> Top3);
     private record ScoreEntry(string Name, string Score);
@@ -134,9 +141,6 @@
     {
         // Simulate Blazor WASM startup delay with skeleton
         await Task.Delay(100);
-        
-        // Load last game
-        _lastGame = GameStatsService.GetLastPlayedGame();
         
         // Load top games with scores
         await LoadTopGames();
@@ -170,21 +174,6 @@
                     leaderboard.Select(e => new ScoreEntry(e.Name, $"{e.Stats.WinRate:P0}")).ToList()
                 ));
             }
-        }
-    }
-
-    private void QuickPlay()
-    {
-        if (_lastGame != null)
-        {
-            NavigationManager.NavigateTo(_lastGame.Url);
-        }
-        else
-        {
-            // Random game
-            var games = new[] { "/connectfive", "/tictactoe", "/voxelshooter", "/pofight" };
-            var rnd = new Random();
-            NavigationManager.NavigateTo(games[rnd.Next(games.Length)]);
         }
     }
 

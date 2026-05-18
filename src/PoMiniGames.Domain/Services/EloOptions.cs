@@ -1,4 +1,4 @@
-namespace PoMiniGames.Configuration;
+namespace PoMiniGames.Domain.Services;
 
 /// <summary>
 /// Configuration options for ELO rating computation.

@@ -1,4 +1,4 @@
-namespace PoMiniGames.Models;
+namespace PoMiniGames.Domain.Models;
 
 /// <summary>A single PoDropSquare high-score entry stored in SQLite.</summary>
 public sealed record PoDropSquareHighScore

@@ -1,0 +1,378 @@
+@page "/profile"
+@using PoMiniGamesClient.Models
+@using PoMiniGamesClient.Services
+@inject PlayerNameService PlayerNameService
+@inject GameStatsService GameStatsService
+@inject NavigationManager NavigationManager
+@implements IDisposable
+
+<div class="prf-page">
+
+    <!-- ── Hero ── -->
+    <div class="prf-hero">
+        <div class="prf-avatar" aria-hidden="true">
+            <span class="prf-avatar-text">@_initials</span>
+        </div>
+        <div class="prf-hero-body">
+            <h1 class="prf-name">@_playerName</h1>
+            <div class="prf-chips">
+                <div class="prf-chip">
+                    <span class="prf-chip-val">@_totalGames</span>
+                    <span class="prf-chip-lbl">Games</span>
+                </div>
+                <div class="prf-chip">
+                    <span class="prf-chip-val">@(_totalGames > 0 ? $"{_totalWins * 100 / _totalGames}%" : "—")</span>
+                    <span class="prf-chip-lbl">Win Rate</span>
+                </div>
+                <div class="prf-chip">
+                    <span class="prf-chip-val">@(_bestStreak > 0 ? _bestStreak.ToString() : "—")</span>
+                    <span class="prf-chip-lbl">Best Streak</span>
+                </div>
+                <div class="prf-chip">
+                    <span class="prf-chip-val">@(_topElo > 1000 ? _topElo.ToString() : "—")</span>
+                    <span class="prf-chip-lbl">Top ELO</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Charts row ── -->
+    <div class="prf-charts">
+        <div class="prf-chart-card">
+            <h2 class="prf-chart-title">Win Rate by Game</h2>
+            @((MarkupString)BuildRadarSvg())
+        </div>
+        <div class="prf-chart-card">
+            <h2 class="prf-chart-title">Overall Record</h2>
+            @((MarkupString)BuildDonutSvg())
+            <div class="prf-donut-legend">
+                <span class="prf-legend-dot prf-legend-win"></span><span>Wins&nbsp;@_totalWins</span>
+                <span class="prf-legend-dot prf-legend-draw"></span><span>Draws&nbsp;@_totalDraws</span>
+                <span class="prf-legend-dot prf-legend-loss"></span><span>Losses&nbsp;@_totalLosses</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Callouts ── -->
+    @if (_bestEntry != null || _nemesisEntry != null)
+    {
+        <div class="prf-callouts">
+            @if (_bestEntry != null)
+            {
+                <div class="prf-callout prf-callout--best">
+                    <span class="prf-callout-icon">🏆</span>
+                    <div>
+                        <div class="prf-callout-lbl">Best Game</div>
+                        <div class="prf-callout-val">@_bestEntry.Label</div>
+                        <div class="prf-callout-sub">@(_bestEntry.WinRate.ToString("P0")) win rate · @_bestEntry.TotalGames played</div>
+                    </div>
+                </div>
+            }
+            @if (_nemesisEntry != null)
+            {
+                <div class="prf-callout prf-callout--nemesis">
+                    <span class="prf-callout-icon">💀</span>
+                    <div>
+                        <div class="prf-callout-lbl">Nemesis Game</div>
+                        <div class="prf-callout-val">@_nemesisEntry.Label</div>
+                        <div class="prf-callout-sub">@(_nemesisEntry.WinRate.ToString("P0")) win rate · @_nemesisEntry.TotalGames played</div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+
+    <!-- ── Game Breakdown ── -->
+    <div class="prf-section">
+        <h2 class="prf-section-title">Game Breakdown</h2>
+        <div class="prf-game-grid">
+            @foreach (var g in _entries)
+            {
+                <div class="prf-game-card @(g.TotalGames == 0 ? "prf-game-card--unplayed" : "")">
+                    <div class="prf-game-header">
+                        <span class="prf-game-icon">@g.Icon</span>
+                        <span class="prf-game-name">@g.Label</span>
+                        @if (g.TotalGames > 0)
+                        {
+                            <span class="prf-game-wr">@g.WinRate.ToString("P0")</span>
+                        }
+                    </div>
+                    @if (g.TotalGames > 0)
+                    {
+                        <div class="prf-bar" title="Win / Draw / Loss">
+                            <div class="prf-bar-win"  style="width:@((int)g.WinPercent)%"></div>
+                            <div class="prf-bar-draw" style="width:@((int)g.DrawPercent)%"></div>
+                            <div class="prf-bar-loss" style="width:@((int)g.LossPercent)%"></div>
+                        </div>
+                        <div class="prf-diffs">
+                            @foreach (var d in g.Difficulties.Where(x => x.TotalGames > 0))
+                            {
+                                <div class="prf-diff-row">
+                                    <span class="prf-diff-name prf-diff-@d.Name.ToLowerInvariant()">@d.Name</span>
+                                    <span class="prf-diff-wld">@d.Wins W · @d.Losses L · @d.Draws D</span>
+                                    @if (d.EloRating != 1000)
+                                    {
+                                        <span class="prf-diff-elo">ELO @d.EloRating</span>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
+                    else if (g.IsHighScoreOnly)
+                    {
+                        <p class="prf-game-note">Score-based — see leaderboard</p>
+                    }
+                    else if (g.IsOfflineOnly)
+                    {
+                        <p class="prf-game-note">Offline only · no stats tracked</p>
+                    }
+                    else
+                    {
+                        <p class="prf-game-unplayed">Not played yet</p>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+
+</div>
+
+@code {
+    // ── Data model ──────────────────────────────────────────────
+    private sealed class DiffEntry
+    {
+        public string Name { get; init; } = "";
+        public int Wins { get; init; }
+        public int Losses { get; init; }
+        public int Draws { get; init; }
+        public int EloRating { get; init; }
+        public int TotalGames => Wins + Losses + Draws;
+    }
+
+    private sealed class GameEntry
+    {
+        public string Key { get; init; } = "";
+        public string Label { get; init; } = "";
+        public string Icon { get; init; } = "";
+        public bool IsHighScoreOnly { get; init; }
+        public bool IsOfflineOnly { get; init; }
+        public int TotalWins { get; set; }
+        public int TotalLosses { get; set; }
+        public int TotalDraws { get; set; }
+        public int TotalGames => TotalWins + TotalLosses + TotalDraws;
+        public double WinRate => TotalGames > 0 ? (double)TotalWins / TotalGames : 0;
+        public double WinPercent => TotalGames > 0 ? TotalWins * 100.0 / TotalGames : 0;
+        public double DrawPercent => TotalGames > 0 ? TotalDraws * 100.0 / TotalGames : 0;
+        public double LossPercent => TotalGames > 0 ? TotalLosses * 100.0 / TotalGames : 0;
+        public List<DiffEntry> Difficulties { get; init; } = new();
+    }
+
+    // ── Game definitions (order determines radar axis order) ──
+    private static readonly (string Key, string Label, string Icon, bool HsOnly, bool OfflineOnly)[] GameDefs =
+    {
+        ("tictactoe",    "Tic Tac Toe",   "✖",  false, false),
+        ("connectfive",  "Connect Five",  "🔵", false, false),
+        ("pofight",      "PoFight",       "⚔️", false, false),
+        ("porunner",     "PoRunner",      "⚡", false, false),
+        ("poraceragdoll","Race Ragdoll",  "🏎", false, false),
+        ("pohorserace",  "Horse Race",    "🐎", false, false),
+        ("posnakegame",  "Snake Game",    "🐍", true,  false),
+        ("podropsquare", "Drop Square",   "🟦", true,  false),
+        ("voxelshooter", "Voxel Shooter", "🎯", false, true),
+        ("pobabytouch",  "Baby Touch",    "🍭", false, true),
+    };
+
+    // ── State ────────────────────────────────────────────────────
+    private string _playerName = "Player";
+    private string _initials   = "P";
+    private int _totalGames, _totalWins, _totalLosses, _totalDraws;
+    private int _bestStreak, _topElo = 1000;
+    private GameEntry? _bestEntry, _nemesisEntry;
+    private List<GameEntry> _entries = new();
+
+    // ── Lifecycle ────────────────────────────────────────────────
+    protected override void OnInitialized()
+    {
+        _playerName = PlayerNameService.GetPlayerName();
+        PlayerNameService.StateChanged += OnNameChanged;
+        LoadStats();
+    }
+
+    public void Dispose() => PlayerNameService.StateChanged -= OnNameChanged;
+
+    private void OnNameChanged()
+    {
+        _playerName = PlayerNameService.GetPlayerName();
+        LoadStats();
+        InvokeAsync(StateHasChanged);
+    }
+
+    // ── Stats loading ────────────────────────────────────────────
+    private void LoadStats()
+    {
+        _initials = BuildInitials(_playerName);
+        _entries = new();
+        _totalGames = _totalWins = _totalLosses = _totalDraws = 0;
+        _bestStreak = 0;
+        _topElo = 1000;
+
+        foreach (var (key, label, icon, hsOnly, offlineOnly) in GameDefs)
+        {
+            PlayerStats stats = hsOnly || offlineOnly
+                ? new PlayerStats()
+                : GameStatsService.GetStats(key, _playerName);
+
+            var entry = new GameEntry
+            {
+                Key          = key,
+                Label        = label,
+                Icon         = icon,
+                IsHighScoreOnly = hsOnly,
+                IsOfflineOnly   = offlineOnly,
+                TotalWins    = stats.TotalWins,
+                TotalLosses  = stats.TotalLosses,
+                TotalDraws   = stats.TotalDraws,
+                Difficulties =
+                [
+                    new DiffEntry { Name = "Easy",   Wins = stats.Easy.Wins,   Losses = stats.Easy.Losses,   Draws = stats.Easy.Draws,   EloRating = stats.Easy.EloRating   },
+                    new DiffEntry { Name = "Medium", Wins = stats.Medium.Wins, Losses = stats.Medium.Losses, Draws = stats.Medium.Draws, EloRating = stats.Medium.EloRating },
+                    new DiffEntry { Name = "Hard",   Wins = stats.Hard.Wins,   Losses = stats.Hard.Losses,   Draws = stats.Hard.Draws,   EloRating = stats.Hard.EloRating   },
+                ]
+            };
+
+            _entries.Add(entry);
+
+            if (!hsOnly && !offlineOnly)
+            {
+                _totalGames   += entry.TotalGames;
+                _totalWins    += entry.TotalWins;
+                _totalLosses  += entry.TotalLosses;
+                _totalDraws   += entry.TotalDraws;
+                _bestStreak    = Math.Max(_bestStreak,
+                                    Math.Max(stats.Easy.WinStreak,
+                                        Math.Max(stats.Medium.WinStreak, stats.Hard.WinStreak)));
+                _topElo        = Math.Max(_topElo,
+                                    Math.Max(stats.Easy.EloRating,
+                                        Math.Max(stats.Medium.EloRating, stats.Hard.EloRating)));
+            }
+        }
+
+        var played = _entries.Where(e => e.TotalGames > 0).ToList();
+        _bestEntry   = played.OrderByDescending(e => e.WinRate).ThenByDescending(e => e.TotalGames).FirstOrDefault();
+        _nemesisEntry = played.Count > 1
+            ? played.OrderBy(e => e.WinRate).ThenByDescending(e => e.TotalGames).First()
+            : null;
+        if (_bestEntry == _nemesisEntry) _nemesisEntry = null;
+    }
+
+    private static string BuildInitials(string name)
+    {
+        var parts = name.Split([' ', '-', '_'], StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length >= 2
+            ? $"{parts[0][0]}{parts[1][0]}".ToUpperInvariant()
+            : (name.Length >= 2 ? name[..2].ToUpperInvariant() : name.ToUpperInvariant());
+    }
+
+    // ── Radar SVG ────────────────────────────────────────────────
+    private string BuildRadarSvg()
+    {
+        const double cx = 150, cy = 150, maxR = 90;
+        const int n = 10;
+        const double step = 2 * Math.PI / n;
+        const double startAngle = -Math.PI / 2;
+
+        string Pt(double r, int i)
+        {
+            var a = startAngle + step * i;
+            return $"{cx + r * Math.Cos(a):F1},{cy + r * Math.Sin(a):F1}";
+        }
+
+        string RingPoly(double frac) =>
+            string.Join(" ", Enumerable.Range(0, n).Select(i => Pt(maxR * frac, i)));
+
+        var dataPoly = string.Join(" ", _entries.Select((e, i) => Pt(maxR * e.WinRate, i)));
+
+        var sb = new System.Text.StringBuilder();
+        sb.Append("<svg viewBox=\"0 0 300 300\" class=\"prf-radar\" aria-hidden=\"true\">");
+
+        // Background rings
+        foreach (var frac in new[] { 0.25, 0.5, 0.75, 1.0 })
+            sb.Append($"<polygon points=\"{RingPoly(frac)}\" fill=\"none\" stroke=\"rgba(255,255,255,0.06)\" stroke-width=\"1\"/>");
+
+        // Axis lines
+        for (int i = 0; i < n; i++)
+        {
+            var a = startAngle + step * i;
+            sb.Append($"<line x1=\"{cx:F1}\" y1=\"{cy:F1}\" x2=\"{cx + maxR * Math.Cos(a):F1}\" y2=\"{cy + maxR * Math.Sin(a):F1}\" stroke=\"rgba(255,255,255,0.07)\" stroke-width=\"1\"/>");
+        }
+
+        // Data polygon
+        sb.Append($"<polygon points=\"{dataPoly}\" fill=\"rgba(99,102,241,0.22)\" stroke=\"rgba(99,102,241,0.85)\" stroke-width=\"2\" stroke-linejoin=\"round\"/>");
+
+        // Dots on played games
+        foreach (var (e, i) in _entries.Select((e, i) => (e, i)))
+        {
+            if (e.TotalGames == 0) continue;
+            var a = startAngle + step * i;
+            var r = maxR * e.WinRate;
+            sb.Append($"<circle cx=\"{cx + r * Math.Cos(a):F1}\" cy=\"{cy + r * Math.Sin(a):F1}\" r=\"3.5\" fill=\"#6366f1\"/>");
+        }
+
+        // Labels
+        for (int i = 0; i < n; i++)
+        {
+            var a = startAngle + step * i;
+            var lx = cx + (maxR + 22) * Math.Cos(a);
+            var ly = cy + (maxR + 22) * Math.Sin(a);
+            var anchor = lx < cx - 5 ? "end" : lx > cx + 5 ? "start" : "middle";
+            var label = _entries[i].Label.Split(' ')[0]; // first word only
+            sb.Append($"<text x=\"{lx:F1}\" y=\"{ly:F1}\" text-anchor=\"{anchor}\" dominant-baseline=\"middle\" fill=\"rgba(148,163,184,0.75)\" font-size=\"8.5\" font-family=\"system-ui,sans-serif\">{System.Web.HttpUtility.HtmlEncode(label)}</text>");
+        }
+
+        sb.Append("</svg>");
+        return sb.ToString();
+    }
+
+    // ── Donut SVG ────────────────────────────────────────────────
+    private string BuildDonutSvg()
+    {
+        const double r = 60, cx = 100, cy = 100;
+        double circ = 2 * Math.PI * r;
+
+        if (_totalGames == 0)
+        {
+            return $"<svg viewBox=\"0 0 200 200\" class=\"prf-donut\" aria-hidden=\"true\">" +
+                   $"<circle cx=\"{cx}\" cy=\"{cy}\" r=\"{r}\" fill=\"none\" stroke=\"rgba(255,255,255,0.08)\" stroke-width=\"20\"/>" +
+                   $"<text x=\"{cx}\" y=\"{cy - 8}\" text-anchor=\"middle\" dominant-baseline=\"middle\" fill=\"rgba(148,163,184,0.5)\" font-size=\"13\" font-family=\"system-ui,sans-serif\">No</text>" +
+                   $"<text x=\"{cx}\" y=\"{cy + 10}\" text-anchor=\"middle\" dominant-baseline=\"middle\" fill=\"rgba(148,163,184,0.5)\" font-size=\"13\" font-family=\"system-ui,sans-serif\">games</text>" +
+                   "</svg>";
+        }
+
+        double winLen   = _totalWins   / (double)_totalGames * circ;
+        double drawLen  = _totalDraws  / (double)_totalGames * circ;
+        double lossLen  = _totalLosses / (double)_totalGames * circ;
+
+        string Seg(double len, double cumOffset, string color) =>
+            $"<circle cx=\"{cx}\" cy=\"{cy}\" r=\"{r}\" fill=\"none\" stroke=\"{color}\" stroke-width=\"20\" " +
+            $"stroke-dasharray=\"{len:F2} {circ - len:F2}\" stroke-dashoffset=\"{circ - cumOffset:F2}\" " +
+            $"transform=\"rotate(-90 {cx} {cy})\"/>";
+
+        var sb = new System.Text.StringBuilder();
+        sb.Append("<svg viewBox=\"0 0 200 200\" class=\"prf-donut\" aria-hidden=\"true\">");
+
+        // Background ring
+        sb.Append($"<circle cx=\"{cx}\" cy=\"{cy}\" r=\"{r}\" fill=\"none\" stroke=\"rgba(255,255,255,0.04)\" stroke-width=\"20\"/>");
+
+        double cum = 0;
+        if (winLen  > 0) { sb.Append(Seg(winLen,  cum, "#22c55e")); cum += winLen; }
+        if (drawLen > 0) { sb.Append(Seg(drawLen, cum, "#f59e0b")); cum += drawLen; }
+        if (lossLen > 0) { sb.Append(Seg(lossLen, cum, "#ef4444")); }
+
+        // Centre label
+        sb.Append($"<text x=\"{cx}\" y=\"{cy - 7}\" text-anchor=\"middle\" fill=\"#f1f5f9\" font-size=\"18\" font-weight=\"700\" font-family=\"system-ui,sans-serif\">{_totalGames}</text>");
+        sb.Append($"<text x=\"{cx}\" y=\"{cy + 12}\" text-anchor=\"middle\" fill=\"rgba(148,163,184,0.7)\" font-size=\"10\" font-family=\"system-ui,sans-serif\">GAMES</text>");
+
+        sb.Append("</svg>");
+        return sb.ToString();
+    }
+}

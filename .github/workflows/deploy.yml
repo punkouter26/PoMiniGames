@@ -20,7 +20,8 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  deploy:
+  build-and-test:
+    name: Build & Test
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -31,7 +32,7 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '10.0.x'
+          dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Cache NuGet packages
         uses: actions/cache@v4
@@ -41,15 +42,64 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nuget-
 
+      - name: Restore
+        run: dotnet restore PoMiniGames.slnx
+
+      - name: Build
+        run: dotnet build PoMiniGames.slnx --no-restore --configuration Release
+
+      - name: Verify formatting
+        run: dotnet format PoMiniGames.slnx --verify-no-changes --verbosity minimal
+
+      - name: Unit tests
+        run: dotnet test tests/PoMiniGames.UnitTests --no-build --configuration Release --logger "trx;LogFileName=unit-results.trx"
+
+      - name: Integration tests
+        run: dotnet test tests/PoMiniGames.IntegrationTests --no-build --configuration Release --logger "trx;LogFileName=integration-results.trx"
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: "**/*.trx"
+
       - name: Publish
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
         run: dotnet publish src/PoMiniGames/PoMiniGames/PoMiniGames.csproj -c Release -r linux-x64 --no-self-contained -o ./publish
+
+      - name: Upload publish artifact
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-publish
+          path: ./publish
+
+  deploy:
+    name: Deploy to Azure App Service
+    needs: build-and-test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: production
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Download publish artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: api-publish
+          path: ./publish
 
       - name: Azure Login
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
       - name: Deploy to App Service
         shell: bash

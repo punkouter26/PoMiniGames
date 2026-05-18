@@ -1,7 +1,6 @@
 using Serilog;
 using Serilog.Events;
 using Serilog.Exceptions;
-using Serilog.Sinks.ApplicationInsights.TelemetryConverters;
 
 namespace PoMiniGames.Infrastructure;
 
@@ -43,15 +42,7 @@ internal static class LoggingExtensions
             {
                 configuration.WriteTo.Console();
 
-                var aiCs = context.Configuration["PoMiniGames:ApplicationInsights:ConnectionString"]
-                    ?? context.Configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"]
-                    ?? context.Configuration["APPINSIGHTS_CONNECTIONSTRING"];
-                if (!string.IsNullOrEmpty(aiCs))
-                {
-                    var tc = new Microsoft.ApplicationInsights.Extensibility.TelemetryConfiguration
-                    { ConnectionString = aiCs };
-                    configuration.WriteTo.ApplicationInsights(tc, TelemetryConverter.Traces);
-                }
+                // AppInsights telemetry handled by UseAzureMonitor() OTel pipeline.
             }
         });
 

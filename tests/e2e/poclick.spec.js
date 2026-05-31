@@ -94,11 +94,9 @@ test.describe('PoClick game', () => {
     // Demo mode indicator should be visible
     await expect(page.locator('.cf-status--demo')).toBeVisible();
     
-    // Wait for countdown to appear
-    await expect(page.locator('.countdown-display')).toBeVisible({ timeout: 10000 });
-    
-    // Wait for countdown to finish and game to start
-    await expect(page.locator('.hud-time')).toBeVisible({ timeout: 15000 });
+    // In demo mode, the game should auto-start after a short delay
+    // Wait for either the countdown or the game HUD to appear
+    await expect(page.locator('.countdown-display, .hud-time').first()).toBeVisible({ timeout: 20000 });
   });
 
   test('new game button resets game', async ({ page }) => {

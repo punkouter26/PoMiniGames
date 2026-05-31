@@ -1,0 +1,615 @@
+@page "/poclick"
+@page "/poclick/{Demo:int}"
+@implements IDisposable
+@using PoMiniGamesClient.Components
+@using PoMiniGamesClient.Enums
+@using PoMiniGamesClient.Models
+@using PoMiniGamesClient.Services
+@inject NavigationManager Navigation
+@inject PlayerNameService PlayerNameService
+@inject IJSRuntime JSRuntime
+
+<GameShell 
+    Title=@TitleContent 
+    Player="@_playerName"
+    BackTo="@_backTo"
+    GameOver="@_isGameOver"
+    OnPlayAgain="ResetGame"
+    ShowSettings="true"
+    IsOffline="@_isOffline"
+    Stats="@_statItems"
+    Status="@StatusContent"
+    GameSummary="@GameSummaryContent"
+    Controls="@ControlsContent">
+    
+    @if (!isPlaying && !isCountingDown)
+    {
+        <!-- Landing / Configuration Screen -->
+        <div class="row justify-content-center">
+            <div class="col-md-8 col-lg-6 text-center">
+                <BpmConfigCard Bpm="@bpm" BpmChanged="@SetBpmAsync"
+                               Duration="@_duration" DurationChanged="@SetDurationAsync"
+                               IsPreviewPlaying="@_isPreviewPlaying"
+                               OnStartCountdown="StartCountdown"
+                               OnPreviewToggle="TogglePreviewAsync" />
+            </div>
+        </div>
+    }
+    else if (isCountingDown)
+    {
+        <!-- Countdown Screen -->
+        <div class="row justify-content-center align-items-center countdown-screen">
+            <div class="col-md-6 text-center">
+                <div class="countdown-display">
+                    @countdownValue
+                </div>
+                <div class="text-uppercase text-secondary font-monospace mt-3 countdown-hint">
+                    Prepare your spacebar...
+                </div>
+            </div>
+        </div>
+    }
+    else
+    {
+        <!-- Game Play Screen -->
+        <GameHud Bpm="@bpm" TimeLeft="@timeLeft"
+                 CurrentStreak="@currentStreak" RunningScore="@runningScore"
+                 PerfectCount="@perfectCount" MissCount="@missCount"
+                 IsFlashing="@isFlashing" ShowFeedback="@showFeedback"
+                 FeedbackText="@feedbackText" FeedbackClass="@feedbackClass"
+                 LastOffsetMs="@lastOffsetMs"
+                 StreakGlow="@_streakGlow" ScoreGlow="@_scoreGlow"
+                 PerfectsGlow="@_perfectsGlow" MissesGlow="@_missesGlow"
+                 MissFlash="@_missFlash"
+                 OnAbort="StopGame" OnTap="HandleTapAsync" />
+    }
+</GameShell>
+
+@code {
+    [Parameter] public int? Demo { get; set; }
+    [SupplyParameterFromQuery(Name = "kiosk")] public int KioskNext { get; set; } = -1;
+
+    private int bpm = 100;
+    private bool isPlaying = false;
+    private bool isCountingDown = false;
+    private bool _isFinishing = false;
+    private int countdownValue = 3;
+    private int timeLeft = 10;
+
+    // HUD stats
+    private int currentStreak = 0;
+    private int maxStreak = 0;
+    private int runningScore = 0;
+    private int perfectCount = 0;
+    private int goodCount = 0;
+    private int okayCount = 0;
+    private int missCount = 0;
+
+    // Feedback visual states
+    private bool isFlashing = false;
+    private bool showFeedback = false;
+    private string feedbackText = "";
+    private string feedbackClass = "";
+    private double lastOffsetMs = 0;
+
+    // Data structures for tracking high-res timing
+    private class TargetBeat
+    {
+        public int Index { get; set; }
+        public double TargetTimeMs { get; set; }
+        public bool HasTapped { get; set; }
+    }
+
+    private List<TargetBeat> scheduledBeats = new();
+    private List<object> playerAttempts = new();
+
+    private PeriodicTimer? _periodicTimer;
+    private Task? _gameLoopTask;
+    private DotNetObjectReference<PoClickPage>? dotNetHelper;
+
+    // UI-5: HUD reactive glow flags
+    private bool _streakGlow   = false;
+    private bool _scoreGlow    = false;
+    private bool _perfectsGlow = false;
+    private bool _missesGlow   = false;
+    private bool _missFlash    = false;
+
+    // UX-6: post-game result overlay
+    private bool    _showResultOverlay = false;
+    private double  _estimatedScore    = 0;
+
+    // UX-5: duration selector
+    private int _duration = 10;
+
+    // UX-7: accept BPM pre-fill from URL query string (?bpm=120)
+    [Parameter, SupplyParameterFromQuery]
+    public int? Bpm { get; set; }
+
+    // UX-9: BPM preview mode
+    private bool _isPreviewPlaying = false;
+
+    private string _playerName = "";
+    private bool _isOffline = false;
+    private List<StatItem> _statItems = new();
+    private PlayerStats _stats = new();
+    private readonly GameStatsService _gameStats = new();
+    private CancellationTokenSource? _demoCts;
+
+    private string _backTo => Demo == 1 ? "/single-player?mode=demo" : "/single-player";
+    private bool _isGameOver => !isPlaying && !isCountingDown && _showResultOverlay;
+
+    private RenderFragment TitleContent => @<span>🥁 PoClick</span>;
+
+    private RenderFragment StatusContent => Demo == 1 ? @<span class="cf-status cf-status--demo">🎮 Demo mode</span>
+        : isCountingDown ? @<span class="cf-status cf-status--player">Get ready...</span>
+        : isPlaying ? @<span class="cf-status cf-status--player">🥁 Playing... (BPM: @bpm)</span>
+        : _estimatedScore > 0 ? @<span class="cf-status cf-status--win">Score: @(_estimatedScore.ToString("0.#")) / 100</span>
+        : @<span class="cf-status">Ready to play</span>;
+
+    private RenderFragment? GameSummaryContent => !isPlaying && !isCountingDown && _showResultOverlay ? @<div class="cf-result cf-result--win">
+        <div>Final Score: @(_estimatedScore.ToString("0.#")) / 100</div>
+        <div>Perfect: @perfectCount | Good: @goodCount | Okay: @okayCount | Miss: @missCount</div>
+        <div>Max Streak: @maxStreak</div>
+    </div> : null;
+
+    private RenderFragment ControlsContent => @<div class="gps-controls">
+        @if (Demo != 1)
+        {
+            <button @onclick="ResetGame">
+                🔄 @(isPlaying ? "Abort" : "New Game")
+            </button>
+        }
+        @if (Demo == 1)
+        {
+            <button type="button" 
+                    class="active"
+                    @onclick="() => {}">
+                Demo Mode
+            </button>
+        }
+    </div>;
+
+    protected override void OnInitialized()
+    {
+        _playerName = PlayerNameService.GetPlayerName();
+        _stats = _gameStats.GetStats("poclick", _playerName);
+        UpdateStats();
+        
+        if (Bpm.HasValue && Bpm.Value >= 40 && Bpm.Value <= 200)
+            bpm = Bpm.Value;
+        
+        // Auto-start demo mode if Demo parameter is set
+        if (Demo == 1)
+        {
+            ResetGame();
+        }
+    }
+
+    private void UpdateStats()
+    {
+        var bucket = _gameStats.GetDifficultyBucket(_stats, Difficulty.Medium);
+        _statItems = new List<StatItem>
+        {
+            new() { Value = perfectCount.ToString(), Label = "Perfect" },
+            new() { Value = goodCount.ToString(), Label = "Good" },
+            new() { Value = okayCount.ToString(), Label = "Okay" },
+            new() { Value = missCount.ToString(), Label = "Miss" },
+            new() { Value = maxStreak.ToString(), Label = "Best Streak" },
+            new() { Value = $"{_estimatedScore:F0}%", Label = "Last Score" }
+        };
+    }
+
+    private async Task StartCountdown()
+    {
+        // UX-9: stop preview before starting the real game
+        if (_isPreviewPlaying)
+        {
+            _isPreviewPlaying = false;
+            await JSRuntime.InvokeVoidAsync("poclickAudio.stopPreview");
+        }
+
+        isCountingDown = true;
+        countdownValue = 3;
+        StateHasChanged();
+
+        for (int i = 3; i > 0; i--)
+        {
+            countdownValue = i;
+            StateHasChanged();
+            await Task.Delay(1000);
+        }
+
+        isCountingDown = false;
+        await StartGame();
+    }
+
+    private async Task StartGame()
+    {
+        isPlaying = true;
+        _isFinishing = false;
+        timeLeft = _duration;
+        currentStreak = 0;
+        maxStreak = 0;
+        runningScore = 0;
+        perfectCount = 0;
+        goodCount = 0;
+        okayCount = 0;
+        missCount = 0;
+        
+        scheduledBeats.Clear();
+        playerAttempts.Clear();
+        
+        dotNetHelper = DotNetObjectReference.Create(this);
+
+        // Start metronome and register key listener in JS
+        await JSRuntime.InvokeVoidAsync("poclickAudio.startMetronome", bpm, dotNetHelper);
+        await JSRuntime.InvokeVoidAsync("poclickAudio.registerSpaceListener", dotNetHelper);
+
+        // Start C# countdown timer
+        _periodicTimer = new PeriodicTimer(TimeSpan.FromSeconds(1));
+        _gameLoopTask = RunGameLoopAsync(_periodicTimer);
+        StateHasChanged();
+    }
+
+    private async Task RunGameLoopAsync(PeriodicTimer timer)
+    {
+        while (await timer.WaitForNextTickAsync())
+        {
+            timeLeft--;
+            if (timeLeft <= 0 && !_isFinishing)
+            {
+                _isFinishing = true;
+                await FinishGame();
+                break;
+            }
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    [JSInvokable]
+    public void OnMetronomeBeat(int beatIndex, double beatTimeMs)
+    {
+        InvokeAsync(() =>
+        {
+            // Add beat to scheduled list
+            scheduledBeats.Add(new TargetBeat
+            {
+                Index = beatIndex,
+                TargetTimeMs = beatTimeMs,
+                HasTapped = false
+            });
+
+            // Pulse the UI
+            isFlashing = true;
+            StateHasChanged();
+
+            // Reset visual flash in 80ms
+            Task.Run(async () =>
+            {
+                await Task.Delay(80);
+                await InvokeAsync(() =>
+                {
+                    isFlashing = false;
+                    StateHasChanged();
+                });
+            });
+
+            // Miss detection: Check beats that passed.
+            // If a beat is older than 200ms and has not been tapped, it is a Miss.
+            double threshold = beatTimeMs - 250;
+            var missedBeats = scheduledBeats
+                .Where(b => b.TargetTimeMs < threshold && !b.HasTapped)
+                .ToList();
+
+            foreach (var beat in missedBeats)
+            {
+                beat.HasTapped = true; // prevent double misses
+                RegisterMiss(beat.Index, beat.TargetTimeMs);
+            }
+        });
+    }
+
+    [JSInvokable]
+    public void OnSpacePressed(double tapTimeMs)
+    {
+        InvokeAsync(() =>
+        {
+            if (!isPlaying) return;
+
+            // Find the closest untapped scheduled beat
+            var closestBeat = scheduledBeats
+                .Where(b => !b.HasTapped)
+                .OrderBy(b => Math.Abs(tapTimeMs - b.TargetTimeMs))
+                .FirstOrDefault();
+
+            // If we found a beat within reasonable window (e.g. 350ms offset)
+            if (closestBeat != null && Math.Abs(tapTimeMs - closestBeat.TargetTimeMs) < 350)
+            {
+                closestBeat.HasTapped = true;
+                double offset = tapTimeMs - closestBeat.TargetTimeMs;
+                RegisterAttempt(closestBeat.Index, closestBeat.TargetTimeMs, tapTimeMs, offset);
+            }
+            else
+            {
+                // Unscheduled tap counts as a wild miss
+                RegisterWildMiss(tapTimeMs);
+            }
+        });
+    }
+
+    private void RegisterAttempt(int beatIndex, double targetTime, double actualTime, double offset)
+    {
+        double absOffset = Math.Abs(offset);
+        string rating;
+        string displayRating;
+        string css;
+        int points = 0;
+        string clue = offset < 0 ? "EARLY" : "LATE";
+
+        if (absOffset <= 25)
+        {
+            rating = "perfect";
+            displayRating = "PERFECT";
+            css = "rating-perfect";
+            perfectCount++;
+            currentStreak++;
+            points = 100;
+        }
+        else if (absOffset <= 60)
+        {
+            rating = "good";
+            displayRating = $"GOOD ({clue})";
+            css = "rating-good";
+            goodCount++;
+            currentStreak++;
+            points = 75;
+        }
+        else if (absOffset <= 120)
+        {
+            rating = "okay";
+            displayRating = $"OKAY ({clue})";
+            css = "rating-okay";
+            okayCount++;
+            currentStreak = 0; // Break perfect/good streak
+            points = 40;
+        }
+        else
+        {
+            rating = "miss";
+            displayRating = $"MISS ({clue})";
+            css = "rating-miss";
+            missCount++;
+            currentStreak = 0;
+            points = 0;
+        }
+
+        if (currentStreak > maxStreak)
+        {
+            maxStreak = currentStreak;
+        }
+
+        runningScore += points;
+        lastOffsetMs = offset;
+
+        TriggerFeedbackHUD(displayRating, css);
+
+        // UI-5: pulse reactive HUD items on each tap
+        PulseScore();
+        if (rating is "perfect" or "good") PulseStreak();
+        if (rating == "perfect") PulsePerfects();
+        if (rating == "miss")    PulseMisses();
+
+        playerAttempts.Add(new { beatIndex, targetTime, actualTime, offset, rating });
+    }
+
+    private void RegisterMiss(int beatIndex, double targetTime)
+    {
+        missCount++;
+        currentStreak = 0;
+        TriggerFeedbackHUD("MISS", "rating-miss");
+        lastOffsetMs = 0;
+        PulseMisses(); // UI-5
+
+        playerAttempts.Add(new { beatIndex, targetTime, actualTime = targetTime + 250, offset = 250.0, rating = "miss" });
+    }
+
+    private void RegisterWildMiss(double tapTimeMs)
+    {
+        missCount++;
+        currentStreak = 0;
+        TriggerFeedbackHUD("MISS", "rating-miss");
+        lastOffsetMs = 0;
+        PulseMisses(); // UI-5
+
+        playerAttempts.Add(new { beatIndex = -1, targetTime = tapTimeMs - 250, actualTime = tapTimeMs, offset = 250.0, rating = "miss" });
+    }
+
+    private void TriggerFeedbackHUD(string text, string cssClass)
+    {
+        feedbackText = text;
+        feedbackClass = cssClass;
+        showFeedback = true;
+        StateHasChanged();
+
+        // Clear splash feedback after 350ms
+        Task.Run(async () =>
+        {
+            await Task.Delay(350);
+            await InvokeAsync(() =>
+            {
+                showFeedback = false;
+                StateHasChanged();
+            });
+        });
+    }
+
+    private async Task StopGame()
+    {
+        isPlaying = false;
+        isCountingDown = false;
+
+        _periodicTimer?.Dispose();
+        _periodicTimer = null;
+
+        await JSRuntime.InvokeVoidAsync("poclickAudio.stopMetronome");
+        await JSRuntime.InvokeVoidAsync("poclickAudio.unregisterSpaceListener");
+
+        if (dotNetHelper != null)
+        {
+            dotNetHelper.Dispose();
+            dotNetHelper = null;
+        }
+        StateHasChanged();
+    }
+
+    private async Task FinishGame()
+    {
+        await StopGame();
+
+        // Estimate normalized score for overlay (max 100 per tap)
+        double maxPoints = playerAttempts.Count > 0 ? playerAttempts.Count * 100.0 : 1;
+        _estimatedScore = Math.Round(runningScore / maxPoints * 100, 1);
+
+        // Record stats
+        _ = _gameStats.RecordResult("poclick", _playerName, Difficulty.Medium, 
+            _estimatedScore > 70 ? GameResult.Win : _estimatedScore > 40 ? GameResult.Draw : GameResult.Loss);
+        
+        _stats = _gameStats.GetStats("poclick", _playerName);
+        UpdateStats();
+
+        // UX-6: show animated result overlay
+        _showResultOverlay = true;
+        StateHasChanged();
+        
+        if (Demo == 1)
+        {
+            // Demo mode - auto restart after delay
+            await Task.Delay(3000);
+            if (_showResultOverlay)
+            {
+                ResetGame();
+            }
+        }
+        else
+        {
+            await Task.Delay(2000);
+            _showResultOverlay = false;
+            StateHasChanged();
+        }
+    }
+
+    private void ResetGame()
+    {
+        _demoCts?.Cancel();
+        isPlaying = false;
+        isCountingDown = false;
+        _showResultOverlay = false;
+        currentStreak = 0;
+        maxStreak = 0;
+        runningScore = 0;
+        perfectCount = 0;
+        goodCount = 0;
+        okayCount = 0;
+        missCount = 0;
+        scheduledBeats.Clear();
+        playerAttempts.Clear();
+        _estimatedScore = 0;
+        
+        _stats = _gameStats.GetStats("poclick", _playerName);
+        UpdateStats();
+        
+        if (Demo == 1)
+        {
+            _demoCts = new CancellationTokenSource();
+            _ = RunDemoLoop(_demoCts.Token);
+        }
+        else
+        {
+            // Save last played game
+            _gameStats.SaveLastPlayedGame("poclick");
+        }
+    }
+
+    private async Task RunDemoLoop(CancellationToken ct)
+    {
+        await Task.Delay(700, ct);
+        while (!ct.IsCancellationRequested && !isPlaying)
+        {
+            await StartCountdown();
+            await Task.Delay(3000, ct);
+        }
+    }
+
+    // UX-8: handle tap from mouse click or mobile touch on visualizer
+    private async Task HandleTapAsync()
+    {
+        if (!isPlaying) return;
+        await JSRuntime.InvokeVoidAsync("poclickAudio.playPlayerTap");
+        var tapTime = await JSRuntime.InvokeAsync<double>("poclickAudio.getTapTime");
+        OnSpacePressed(tapTime);
+    }
+
+    private void SetDurationAsync(int d)
+    {
+        _duration = d;
+    }
+
+    // UX-9: BPM helpers — update preview when tempo changes
+    private async Task SetBpmAsync(int newBpm)
+    {
+        bpm = newBpm;
+        if (_isPreviewPlaying)
+            await JSRuntime.InvokeVoidAsync("poclickAudio.startPreview", bpm);
+    }
+
+    private async Task TogglePreviewAsync()
+    {
+        _isPreviewPlaying = !_isPreviewPlaying;
+        if (_isPreviewPlaying)
+            await JSRuntime.InvokeVoidAsync("poclickAudio.startPreview", bpm);
+        else
+            await JSRuntime.InvokeVoidAsync("poclickAudio.stopPreview");
+    }
+
+    // UI-5: HUD item reactive glow pulse
+    private void PulseStreak()   { _streakGlow   = true; _ = ResetGlowAsync("streak"); }
+    private void PulseScore()    { _scoreGlow    = true; _ = ResetGlowAsync("score"); }
+    private void PulsePerfects() { _perfectsGlow = true; _ = ResetGlowAsync("perfects"); }
+    private void PulseMisses()   { _missesGlow   = true; _missFlash = true; _ = ResetGlowAsync("misses"); }
+
+    private async Task ResetGlowAsync(string which)
+    {
+        await Task.Delay(650);
+        await InvokeAsync(() =>
+        {
+            switch (which)
+            {
+                case "streak":   _streakGlow   = false; break;
+                case "score":    _scoreGlow    = false; break;
+                case "perfects": _perfectsGlow = false; break;
+                case "misses":   _missesGlow   = false; _missFlash = false; break;
+            }
+            StateHasChanged();
+        });
+    }
+
+    public void Dispose()
+    {
+        _demoCts?.Cancel();
+
+        _periodicTimer?.Dispose();
+
+        try
+        {
+            _ = JSRuntime.InvokeVoidAsync("poclickAudio.stopMetronome");
+            _ = JSRuntime.InvokeVoidAsync("poclickAudio.unregisterSpaceListener");
+            _ = JSRuntime.InvokeVoidAsync("poclickAudio.stopPreview");
+        }
+        catch { }
+
+        if (dotNetHelper != null)
+        {
+            dotNetHelper.Dispose();
+        }
+    }
+}

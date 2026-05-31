@@ -1,0 +1,96 @@
+@* BPM configuration card for PoClick - adapted from PoClick *@
+
+<div class="cyber-card mb-4 mt-2" style="--bpm-interval: @(60.0 / _bpm)s;">
+    <div class="bpm-ambient-bg"></div>
+    <div class="bpm-ambient-content">
+        <h1 class="display-5 mb-3 font-heading glow-title">
+            Timing Trainer
+        </h1>
+        <p class="text-secondary mb-4">
+            Test your internal metronome. Listen to the steady beat and tap the <strong>SPACEBAR</strong> precisely on the click.
+            Maintain a steady rhythm for @_duration seconds to get your stability profile and score.
+        </p>
+
+        <!-- BPM selector -->
+        <div class="mb-4 text-start">
+            <label class="form-label text-muted text-uppercase font-monospace label-sm mb-2">
+                Select Tempo: <span class="text-white font-weight-bold font-heading bpm-display-value">@_bpm BPM</span>
+            </label>
+
+            <div class="d-flex align-items-center gap-3 mb-3">
+                <input type="range" class="form-range" min="40" max="200" step="1" value="@_bpm" @onchange="OnSliderChanged" style="flex: 1;" />
+            </div>
+
+            <div class="d-flex justify-content-between gap-2">
+                @foreach (var speed in new int[] { 60, 80, 100, 120, 140 })
+                {
+                    var s = speed;
+                    <button type="button" class="btn btn-outline-info flex-fill font-monospace btn-tempo @(_bpm == s ? "active" : "")"
+                            @onclick="async () => await SetBpmAsync(s)">
+                        @s
+                    </button>
+                }
+            </div>
+        </div>
+
+        <!-- Duration selector -->
+        <div class="d-flex gap-2 mb-2 mt-2">
+            @foreach (var d in new int[] { 10, 30, 60 })
+            {
+                var dur = d;
+                <button type="button" class="btn flex-fill font-monospace btn-duration @(_duration == dur ? "active" : "")"
+                        @onclick="() => SetDurationAsync(dur)">
+                    @dur<span style="font-size: 0.7em; opacity: 0.75;">s</span>
+                </button>
+            }
+        </div>
+        <div class="d-flex gap-2 mt-1">
+            <button class="cyber-btn flex-fill py-3" @onclick="OnStartCountdown">
+                Start @(_duration)s Trainer
+            </button>
+            <button class="preview-toggle @(IsPreviewPlaying ? "active" : "")" @onclick="OnPreviewToggle" title="Preview tempo at selected BPM">
+                @(IsPreviewPlaying ? "⏹" : "▶") Preview
+            </button>
+        </div>
+    </div><!-- /bpm-ambient-content -->
+</div>
+
+@code {
+    [Parameter] public int Bpm { get; set; }
+    [Parameter] public EventCallback<int> BpmChanged { get; set; }
+    [Parameter] public int Duration { get; set; } = 10;
+    [Parameter] public EventCallback<int> DurationChanged { get; set; }
+    [Parameter] public bool IsPreviewPlaying { get; set; }
+    [Parameter] public EventCallback OnStartCountdown { get; set; }
+    [Parameter] public EventCallback OnPreviewToggle { get; set; }
+
+    private int _bpm;
+    private int _duration;
+
+    protected override void OnParametersSet()
+    {
+        _bpm = Bpm;
+        _duration = Duration;
+    }
+
+    private async Task OnSliderChanged(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var newBpm))
+        {
+            _bpm = newBpm;
+            await BpmChanged.InvokeAsync(_bpm);
+        }
+    }
+
+    private async Task SetBpmAsync(int bpm)
+    {
+        _bpm = bpm;
+        await BpmChanged.InvokeAsync(bpm);
+    }
+
+    private async Task SetDurationAsync(int d)
+    {
+        _duration = d;
+        await DurationChanged.InvokeAsync(d);
+    }
+}

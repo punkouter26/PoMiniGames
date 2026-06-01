@@ -1,0 +1,143 @@
+@* Training history and leaderboard panels side-by-side *@
+@inject PoClickHistoryService HistoryService
+
+<div class="poclick-leaderboard-row">
+    <!-- Training History -->
+    <div class="poclick-leaderboard-col">
+        <div class="cyber-card h-100">
+            <h3 class="poclick-section-heading">My Training History</h3>
+
+            @if (!_loaded)
+            {
+                <div class="poclick-loading">
+                    <div class="poclick-spinner"></div>
+                </div>
+            }
+            else if (!_history.Any())
+            {
+                <div class="poclick-empty-state">
+                    <p>No sessions recorded yet.<br/>Start training to save your stats!</p>
+                    <a href="/poclick" class="cyber-btn" style="font-size:0.75rem;padding:0.5rem 1.5rem;">→ Start Trainer</a>
+                </div>
+            }
+            else
+            {
+                <div class="poclick-table-wrap">
+                    <table class="poclick-table">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>BPM</th>
+                                <th>Score</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var s in _history)
+                            {
+                                <tr class="poclick-table-row" @onclick="() => OnSelectSession.InvokeAsync(s.Id)">
+                                    <td>@s.CreatedAt.ToLocalTime().ToString("MM/dd/yy HH:mm")</td>
+                                    <td>@s.Bpm</td>
+                                    <td>@($"{s.Score:0.#}")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+
+    <!-- Leaderboard (Top 10) -->
+    <div class="poclick-leaderboard-col">
+        <div class="cyber-card h-100">
+            <h3 class="poclick-section-heading poclick-section-heading--gold">Top 10 High Scores</h3>
+
+            @if (!_loaded)
+            {
+                <div class="poclick-loading">
+                    <div class="poclick-spinner poclick-spinner--gold"></div>
+                </div>
+            }
+            else if (!_leaderboard.Any())
+            {
+                <div class="poclick-empty-state">
+                    <p>No high scores recorded yet.<br/>Be the first to top the charts!</p>
+                </div>
+            }
+            else
+            {
+                <div class="poclick-table-wrap">
+                    <table class="poclick-table">
+                        <thead>
+                            <tr>
+                                <th>Rank</th>
+                                <th>Player</th>
+                                <th>BPM</th>
+                                <th>Score</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var (entry, idx) in _leaderboard.Select((s, i) => (s, i)))
+                            {
+                                var rank = idx + 1;
+                                <tr class="poclick-table-row">
+                                    <td>
+                                        @if (rank == 1)
+                                        {
+                                            <span class="poclick-rank-medal poclick-rank-gold">🥇</span>
+                                        }
+                                        else if (rank == 2)
+                                        {
+                                            <span class="poclick-rank-medal poclick-rank-silver">🥈</span>
+                                        }
+                                        else if (rank == 3)
+                                        {
+                                            <span class="poclick-rank-medal poclick-rank-bronze">🥉</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="poclick-rank-other">#@rank</span>
+                                        }
+                                    </td>
+                                    <td>@TruncateName(entry.PlayerName)</td>
+                                    <td>@entry.Bpm</td>
+                                    <td>@($"{entry.Score:0.#}")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public string? PlayerName { get; set; }
+    [Parameter] public EventCallback<string> OnSelectSession { get; set; }
+
+    private bool _loaded;
+    private List<PoClickSession> _history = new();
+    private List<PoClickSession> _leaderboard = new();
+
+    protected override void OnInitialized()
+    {
+        LoadData();
+    }
+
+    private void LoadData()
+    {
+        if (!string.IsNullOrEmpty(PlayerName))
+            _history = HistoryService.GetPlayerHistory(PlayerName);
+
+        _leaderboard = HistoryService.GetLeaderboard(10);
+        _loaded = true;
+    }
+
+    private static string TruncateName(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return "—";
+        if (name.Length <= 12) return name;
+        return name[..4] + "…" + name[^4..];
+    }
+}

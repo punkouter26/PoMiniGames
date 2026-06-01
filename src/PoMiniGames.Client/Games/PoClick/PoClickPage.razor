@@ -8,6 +8,7 @@
 @inject NavigationManager Navigation
 @inject PlayerNameService PlayerNameService
 @inject IJSRuntime JSRuntime
+@inject PoClickHistoryService HistoryService
 
 <GameShell 
     Title=@TitleContent 
@@ -34,6 +35,9 @@
                                OnPreviewToggle="TogglePreviewAsync" />
             </div>
         </div>
+
+        <!-- Leaderboard & History (below config) -->
+        <LeaderboardPanel PlayerName="@_playerName" />
     }
     else if (isCountingDown)
     {
@@ -101,7 +105,7 @@
     }
 
     private List<TargetBeat> scheduledBeats = new();
-    private List<object> playerAttempts = new();
+    private List<PoClickAttempt> playerAttempts = new();
 
     private PeriodicTimer? _periodicTimer;
     private Task? _gameLoopTask;
@@ -117,6 +121,7 @@
     // UX-6: post-game result overlay
     private bool    _showResultOverlay = false;
     private double  _estimatedScore    = 0;
+    private string  _lastSessionId     = "";
 
     // UX-5: duration selector
     private int _duration = 10;
@@ -399,7 +404,7 @@
         if (rating == "perfect") PulsePerfects();
         if (rating == "miss")    PulseMisses();
 
-        playerAttempts.Add(new { beatIndex, targetTime, actualTime, offset, rating });
+        playerAttempts.Add(new PoClickAttempt(beatIndex, targetTime, actualTime, offset, rating));
     }
 
     private void RegisterMiss(int beatIndex, double targetTime)
@@ -410,7 +415,7 @@
         lastOffsetMs = 0;
         PulseMisses(); // UI-5
 
-        playerAttempts.Add(new { beatIndex, targetTime, actualTime = targetTime + 250, offset = 250.0, rating = "miss" });
+        playerAttempts.Add(new PoClickAttempt(beatIndex, targetTime, targetTime + 250, 250.0, "miss"));
     }
 
     private void RegisterWildMiss(double tapTimeMs)
@@ -421,7 +426,7 @@
         lastOffsetMs = 0;
         PulseMisses(); // UI-5
 
-        playerAttempts.Add(new { beatIndex = -1, targetTime = tapTimeMs - 250, actualTime = tapTimeMs, offset = 250.0, rating = "miss" });
+        playerAttempts.Add(new PoClickAttempt(-1, tapTimeMs - 250, tapTimeMs, 250.0, "miss"));
     }
 
     private void TriggerFeedbackHUD(string text, string cssClass)
@@ -477,6 +482,23 @@
         _stats = _gameStats.GetStats("poclick", _playerName);
         UpdateStats();
 
+        // Save session with full analytics to local history
+        var session = new PoClickSession
+        {
+            PlayerName = _playerName,
+            Bpm = bpm,
+            DurationSeconds = _duration,
+            Attempts = playerAttempts,
+            PerfectCount = perfectCount,
+            GoodCount = goodCount,
+            OkayCount = okayCount,
+            MissCount = missCount,
+            MaxStreak = maxStreak,
+            Score = _estimatedScore
+        };
+        HistoryService.SaveSession(session);
+        _lastSessionId = session.Id;
+
         // UX-6: show animated result overlay
         _showResultOverlay = true;
         StateHasChanged();
@@ -493,8 +515,8 @@
         else
         {
             await Task.Delay(2000);
-            _showResultOverlay = false;
-            StateHasChanged();
+            // Navigate to detailed stats page
+            Navigation.NavigateTo($"/poclick/stats/{session.Id}");
         }
     }
 

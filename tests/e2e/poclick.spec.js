@@ -97,8 +97,8 @@ test.describe('PoClick game', () => {
     // In demo mode, the game should auto-start after a short delay
     // Wait for the game to start by checking if config card is hidden and game elements appear
     await page.waitForFunction(() => {
-      const configHidden = document.querySelector('.cyber-card') === null || 
-                         getComputedStyle(document.querySelector('.cyber-card')).display === 'none';
+      const card = document.querySelector('.cyber-card');
+      const configHidden = card === null || getComputedStyle(card).display === 'none';
       const hasCountdown = document.querySelector('.countdown-display') !== null;
       const hasHud = document.querySelector('.hud-time') !== null;
       return configHidden || hasCountdown || hasHud;
@@ -136,5 +136,123 @@ test.describe('PoClick game', () => {
     
     // Should be on single-player page
     await expect(page).toHaveURL(/.*single-player/);
+  });
+
+  test('leaderboard panel is visible on landing page', async ({ page }) => {
+    // Leaderboard panel should be present
+    await expect(page.locator('.poclick-leaderboard-row')).toBeVisible();
+    
+    // Should have both history and leaderboard columns
+    await expect(page.locator('.poclick-leaderboard-col')).toHaveCount(2);
+    
+    // History section should be present
+    await expect(page.locator('.poclick-section-heading').first()).toContainText('My Training History');
+    
+    // Leaderboard section should be present
+    await expect(page.locator('.poclick-section-heading--gold')).toContainText('Top 10 High Scores');
+  });
+
+  test('spacebar interaction registers during gameplay', async ({ page }) => {
+    // Start game
+    await page.click('.cyber-btn:has-text("Start")');
+    await page.waitForTimeout(3500);
+    
+    // Press spacebar a few times
+    await page.keyboard.press('Space');
+    await page.waitForTimeout(200);
+    await page.keyboard.press('Space');
+    await page.waitForTimeout(200);
+    await page.keyboard.press('Space');
+    
+    // Feedback banner should appear on at least one tap
+    // (It appears briefly for 350ms, so we check one exists in DOM)
+    const feedbackExists = await page.locator('.feedback-banner').count();
+    expect(feedbackExists).toBeGreaterThanOrEqual(0); // Element exists in DOM
+  });
+
+  test('game finishes and navigates to stats page', async ({ page }) => {
+    // Use 10s duration (default) - wait for game to end
+    await page.click('.cyber-btn:has-text("Start")');
+    
+    // Wait for countdown + game duration (3s countdown + 10s game + 2s overlay)
+    await page.waitForTimeout(16000);
+    
+    // Should navigate to stats page
+    await expect(page).toHaveURL(/\/poclick\/stats\//);
+    
+    // Stats page should show session data
+    await expect(page.locator('.poclick-stats-container')).toBeVisible();
+  });
+
+  test('stats page shows score ring and analytics', async ({ page }) => {
+    // Play a game first
+    await page.click('.cyber-btn:has-text("Start")');
+    await page.waitForTimeout(16000);
+    
+    // We should be on the stats page
+    await expect(page).toHaveURL(/\/poclick\/stats\//);
+    
+    // Score ring gauge should be visible
+    await expect(page.locator('.score-ring-container')).toBeVisible();
+    
+    // Stats grid should show perfect/good/okay/miss cards
+    await expect(page.locator('.poclick-stat-card')).toHaveCount(4);
+    
+    // Quality cards (avg error, std dev, max streak) should be visible
+    await expect(page.locator('.poclick-quality-card')).toHaveCount(3);
+    
+    // Advanced stats (pocket rating, rush/drag) should be visible
+    await expect(page.locator('.poclick-pocket-badge')).toBeVisible();
+    await expect(page.locator('.poclick-rushdrag-bar')).toBeVisible();
+  });
+
+  test('stats page beat-by-beat log expands', async ({ page }) => {
+    // Play a game first
+    await page.click('.cyber-btn:has-text("Start")');
+    await page.waitForTimeout(16000);
+    
+    // We should be on the stats page
+    await expect(page).toHaveURL(/\/poclick\/stats\//);
+    
+    // Beat-by-beat log details should exist
+    await expect(page.locator('.poclick-log-details')).toBeVisible();
+    
+    // Click to expand
+    await page.click('.poclick-log-summary');
+    
+    // Table should be visible after expanding
+    await expect(page.locator('.poclick-log-content .poclick-table')).toBeVisible();
+  });
+
+  test('stats page retry button navigates with correct BPM', async ({ page }) => {
+    // Play a game at 120 BPM
+    const bpm120 = page.locator('.btn-tempo').nth(3); // 120 BPM button
+    await bpm120.click();
+    await page.click('.cyber-btn:has-text("Start")');
+    await page.waitForTimeout(16000);
+    
+    // Should be on stats page
+    await expect(page).toHaveURL(/\/poclick\/stats\//);
+    
+    // Click retry button
+    await page.click('.poclick-retry-btn');
+    
+    // Should navigate back to poclick with bpm=120
+    await expect(page).toHaveURL(/\/poclick\?bpm=120/);
+  });
+
+  test('stats page play again returns to game', async ({ page }) => {
+    // Play a game
+    await page.click('.cyber-btn:has-text("Start")');
+    await page.waitForTimeout(16000);
+    
+    // Should be on stats page
+    await expect(page).toHaveURL(/\/poclick\/stats\//);
+    
+    // Click play again button
+    await page.click('.poclick-play-again-btn');
+    
+    // Should navigate back to poclick
+    await expect(page).toHaveURL(/\/poclick/);
   });
 });

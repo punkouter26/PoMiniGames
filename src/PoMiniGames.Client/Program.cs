@@ -14,6 +14,7 @@ builder.Services.AddScoped<AuthStateService>();
 builder.Services.AddScoped<PlayerNameService>();
 builder.Services.AddScoped<ToastService>();
 builder.Services.AddScoped<GameStatsService>();
+builder.Services.AddScoped<PoClickHistoryService>();
 builder.Services.AddRadzenComponents();
 
 await builder.Build().RunAsync();

@@ -192,6 +192,7 @@
 
 @code {
     [Parameter] public string? ModeParam { get; set; }
+    [SupplyParameterFromQuery(Name = "mode")] public string? ModeQueryParam { get; set; }
     [SupplyParameterFromQuery(Name = "kiosk")] public int KioskNext { get; set; } = -1;
     
     private ElementReference _gameContainer;
@@ -245,7 +246,9 @@
     
     protected override void OnInitialized()
     {
-        _mode = ModeParam switch
+        // Path-based mode (/porunner/multi) takes precedence, then query string (?mode=multi)
+        var modeValue = ModeParam ?? ModeQueryParam;
+        _mode = modeValue switch
         {
             "1p" => PoRunnerGameMode.OnePlayer,
             "2p" => PoRunnerGameMode.TwoPlayer,

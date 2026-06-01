@@ -17,4 +17,9 @@ builder.Services.AddScoped<GameStatsService>();
 builder.Services.AddScoped<PoClickHistoryService>();
 builder.Services.AddRadzenComponents();
 
-await builder.Build().RunAsync();
+var host = builder.Build();
+
+// Initialize LocalStorageService with the JS runtime so all localStorage operations work
+LocalStorageService.SetJSRuntime(host.Services.GetRequiredService<IJSRuntime>());
+
+await host.RunAsync();

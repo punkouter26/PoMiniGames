@@ -7,7 +7,7 @@
   --color-surface-hover: #1f2937;
   --color-border: #1f2937;
   --color-text-primary: #f1f5f9;
-  --color-text-secondary: #94a3b8;
+  --color-text-secondary: #b0bec5;
   --color-accent: #6366f1;
   --color-warning: #f59e0b;
   --color-error: #ef4444;
@@ -587,7 +587,7 @@ button { cursor: pointer; font-family: var(--font-body); }
 .sp-empty-svg {
   width: 120px;
   height: 120px;
-  opacity: 0.4;
+  opacity: 0.6;
 }
 
 .sp-empty-text {
@@ -691,7 +691,7 @@ button { cursor: pointer; font-family: var(--font-body); }
 .home-highscores-empty-icon {
   width: 80px;
   height: 80px;
-  opacity: 0.3;
+  opacity: 0.5;
 }
 
 .home-highscores-list {
@@ -840,7 +840,7 @@ button { cursor: pointer; font-family: var(--font-body); }
 
 @keyframes pulse {
   0%, 100% { opacity: 1; }
-  50% { opacity: 0.3; }
+  50% { opacity: 0.5; }
 }
 
 .demo-bar__next { color: var(--color-text-secondary); font-size: 0.7rem; }

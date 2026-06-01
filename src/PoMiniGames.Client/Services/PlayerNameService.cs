@@ -109,9 +109,25 @@ public class PlayerNameService
 
     private async Task<T?> GetItemAsync<T>(string key)
     {
-        if (_jsRuntime is null) return default;
+        if (_jsRuntime == null) return default;
         try
         {
+            // For string types, read raw and strip JSON encoding if present
+            if (typeof(T) == typeof(string))
+            {
+                var raw = await _jsRuntime.InvokeAsync<string>("window.localStorage.getItem", key);
+                if (raw is null) return default;
+                // If the stored value is a JSON-encoded string (e.g. "\"CalmTiger42\""), decode it
+                if (raw.Length >= 2 && raw[0] == '"' && raw[^1] == '"')
+                {
+                    try
+                    {
+                        return (T)(object)System.Text.Json.JsonSerializer.Deserialize<string>(raw)!;
+                    }
+                    catch { /* fall through to raw */ }
+                }
+                return (T)(object)raw;
+            }
             return await _jsRuntime.InvokeAsync<T>("window.localStorage.getItem", key);
         }
         catch
@@ -122,11 +138,19 @@ public class PlayerNameService
 
     private async Task SetItemAsync<T>(string key, T value)
     {
-        if (_jsRuntime is null) return;
+        if (_jsRuntime == null) return;
         try
         {
-            var json = System.Text.Json.JsonSerializer.Serialize(value);
-            await _jsRuntime.InvokeVoidAsync("window.localStorage.setItem", key, json);
+            // For string values, store the raw string to avoid double-encoding on read
+            if (value is string s)
+            {
+                await _jsRuntime.InvokeVoidAsync("window.localStorage.setItem", key, s);
+            }
+            else
+            {
+                var json = System.Text.Json.JsonSerializer.Serialize(value);
+                await _jsRuntime.InvokeVoidAsync("window.localStorage.setItem", key, json);
+            }
         }
         catch { }
     }

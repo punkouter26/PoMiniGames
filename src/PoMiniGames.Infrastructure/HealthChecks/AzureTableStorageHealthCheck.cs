@@ -8,10 +8,12 @@ namespace PoMiniGames.Infrastructure.HealthChecks;
 
 /// <summary>
 /// Optional health check for Azure Table Storage or Azurite-backed table endpoints.
+/// Uses a short timeout so the health endpoint responds quickly when storage is unreachable.
 /// </summary>
 public sealed class AzureTableStorageHealthCheck : IHealthCheck
 {
     private readonly IConfiguration _configuration;
+    private static readonly TimeSpan s_timeout = TimeSpan.FromMilliseconds(500);
 
     public AzureTableStorageHealthCheck(IConfiguration configuration)
     {
@@ -27,13 +29,23 @@ public sealed class AzureTableStorageHealthCheck : IHealthCheck
         var endpoint = _configuration["PoMiniGames:Storage:TableService:Endpoint"];
         var accountName = _configuration["PoMiniGames:Storage:TableService:AccountName"];
 
+        // Treat "UseDevelopmentStorage=true" without a running Azurite as "not configured"
         if (string.IsNullOrWhiteSpace(connectionString) && string.IsNullOrWhiteSpace(endpoint) && string.IsNullOrWhiteSpace(accountName))
+        {
+            return HealthCheckResult.Healthy("Table storage is not configured for this environment.");
+        }
+
+        // Also treat the default dev connection string as "not configured" — Azurite must be explicitly running
+        if (connectionString == "UseDevelopmentStorage=true" && string.IsNullOrWhiteSpace(endpoint))
         {
             return HealthCheckResult.Healthy("Table storage is not configured for this environment.");
         }
 
         try
         {
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeoutCts.CancelAfter(s_timeout);
+
             TableServiceClient serviceClient;
 
             if (!string.IsNullOrWhiteSpace(connectionString))
@@ -49,17 +61,20 @@ public sealed class AzureTableStorageHealthCheck : IHealthCheck
             }
 
             var tableClient = serviceClient.GetTableClient(tableName);
-            await tableClient.CreateIfNotExistsAsync(cancellationToken: cancellationToken);
+            await tableClient.CreateIfNotExistsAsync(cancellationToken: timeoutCts.Token);
 
-            // Verify data-plane access with a lightweight query (compatible with managed identity / RBAC)
             await foreach (var _ in tableClient.QueryAsync<TableEntity>(
                 filter: "PartitionKey eq '__healthcheck__'", maxPerPage: 1,
-                cancellationToken: cancellationToken))
+                cancellationToken: timeoutCts.Token))
             {
                 break;
             }
 
             return HealthCheckResult.Healthy("Table storage is reachable.");
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return HealthCheckResult.Degraded("Table storage timed out (not reachable within 500ms).");
         }
         catch (Exception ex)
         {

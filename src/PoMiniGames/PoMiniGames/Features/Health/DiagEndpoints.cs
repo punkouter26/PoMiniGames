@@ -31,10 +31,8 @@ public static class DiagEndpoints
         .WithTags("Health")
         .WithSummary("Exposes a development-focused diagnostic summary without raw secret values");
 
-        app.MapGet("/diag", diagHandler)
-        .WithName("GetDiagnosticsRoot")
-        .WithTags("Health")
-        .WithSummary("Diagnostic summary (root alias)");
+        // Note: /diag is NOT registered as an API endpoint to avoid conflicting with
+        // the Blazor page route at /diag. Use /api/diag for programmatic access.
 
         // ─── Log tail endpoint for dev diagnostics ───────────────────────
         async Task<IResult> logsTailHandler(IConfiguration config, IHostEnvironment environment, int? lines = 50)

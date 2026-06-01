@@ -148,3 +148,38 @@ blob-report/
 artifacts/
 *.trx
 *.snap
+
+# SQLite runtime files
+*.sqlite3
+*.db-shm
+*.db-wal
+
+# JetBrains Rider
+*.sln.docstates
+*.rsuser
+*.DotSettings.user
+
+# Backup and temporary files
+*.orig
+*.bak
+*.tmp
+*.swp
+
+# Windows Thumbnails
+Thumbs.db
+ehthumbs.db
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Linux
+.directory
+.directory~
+.hidden
+.nfs*
+
+# Build tool caches
+.cmake/
+CMakeCache.txt

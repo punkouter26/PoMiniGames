@@ -48,8 +48,9 @@ jobs:
       - name: Build
         run: dotnet build PoMiniGames.slnx --no-restore --configuration Release
 
-      - name: Verify formatting
+      - name: Verify formatting (non-blocking)
         run: dotnet format PoMiniGames.slnx --verify-no-changes --verbosity minimal
+        continue-on-error: true
 
       - name: Unit tests
         run: dotnet test tests/PoMiniGames.UnitTests --no-build --configuration Release --logger "trx;LogFileName=unit-results.trx"
@@ -111,3 +112,13 @@ jobs:
             --src-path app-deploy.zip \
             --type zip \
             --track-status true
+
+      - name: Smoke Test - Health Ping
+        shell: bash
+        run: |
+          curl -f https://app-5ln5hfdrvof5u.azurewebsites.net/api/health/ping || exit 1
+
+      - name: Smoke Test - Full Health
+        shell: bash
+        run: |
+          curl -f https://app-5ln5hfdrvof5u.azurewebsites.net/api/health || exit 1

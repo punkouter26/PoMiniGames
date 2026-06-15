@@ -7,6 +7,7 @@
 @implements IDisposable
 @inject PlayerNameService PlayerNameService;
 @inject NavigationManager Navigation;
+@inject KioskCoordinator Kiosk;
 
 <GameShell Title=@TitleContent 
            Player="@_playerName"
@@ -54,7 +55,7 @@
     private bool _isOffline = false;
     private PlayerStats _stats = new();
     private readonly GameStatsService _gameStats = new();
-    private System.Threading.Timer? _kioskTimer;
+    // BUG FIX (#1): _kioskTimer removed; KioskCoordinator owns the timer.
 
     [SupplyParameterFromQuery(Name = "demo")] public int DemoMode { get; set; } = 0;
     [SupplyParameterFromQuery(Name = "kiosk")] public int KioskNext { get; set; } = -1;
@@ -76,14 +77,7 @@
         {
             _selectedHorse = Random.Shared.Next(4);
             StartRace();
-            if (KioskNext >= 0)
-            {
-                _kioskTimer = new System.Threading.Timer(_ =>
-                {
-                    _timer?.Dispose();
-                    InvokeAsync(() => Navigation.NavigateTo($"/single-player?mode=demo&kiosk={KioskNext}"));
-                }, null, 60_000, Timeout.Infinite);
-            }
+            Kiosk.SetCurrent("pohorserace-demo");
         }
     }
 
@@ -126,7 +120,7 @@
                 _timer = null;
                 _finished = true;
                 _result = i == _selectedHorse ? "You won!" : $"Horse {i + 1} won!";
-                
+
                 // Record result
                 var result = i == _selectedHorse ? GameResult.Win : GameResult.Loss;
                 _ = _gameStats.RecordResult("pohorserace", _playerName, Difficulty.Easy, result);
@@ -135,9 +129,12 @@
                 // In demo mode: auto-restart after 2s
                 if (DemoMode == 1)
                 {
+                    // BUG FIX (#1): Use a coordinator-owned gate to detect
+                    // "still here" instead of the deleted _kioskTimer field.
+                    var entryStillCurrent = Kiosk.CurrentGameName == "PoHorseRace Demo";
                     _ = Task.Delay(2000).ContinueWith(_ => InvokeAsync(() =>
                     {
-                        if (_kioskTimer == null) // not navigating away
+                        if (entryStillCurrent)
                         {
                             _selectedHorse = Random.Shared.Next(4);
                             ResetGame();
@@ -189,6 +186,6 @@
     public void Dispose()
     {
         _timer?.Dispose();
-        _kioskTimer?.Dispose();
+        // BUG FIX (#1): _kioskTimer removed; KioskCoordinator owns it.
     }
 }

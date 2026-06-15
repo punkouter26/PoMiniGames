@@ -6,6 +6,7 @@
 @inject ApiService ApiService
 @inject AuthStateService AuthState
 @inject HttpClient Http
+@inject KioskCoordinator Kiosk
 
 <div class="sp-page">
     @if (_apiOnline == false)
@@ -191,6 +192,8 @@
             "Play PoHorseRace single player", "#f59e0b", "rgba(245,158,11,0.28)", ["1P","Demo"], "🏇"),
         new("porunner", "/porunner?mode=1p", "PoRunner", "Type T-Y-G-H to sprint past opponents! Race to the finish.",
             "Play PoRunner single player", "#fcd34d", "rgba(252,211,77,0.28)", ["1P","2P","Demo","Multi"], "⚡"),
+        new("poracer", "/poracer", "PoRacer", "Top-down arcade racing. 8 cars, 3 laps, drift to win!",
+            "Play PoRacer single player", "#4ec3ff", "rgba(78,195,255,0.28)", ["1P","Multi"], "🏎️"),
     ];
 
     private static readonly GameCardData[] DemoGames =
@@ -209,6 +212,8 @@
             "Watch PoHorseRace demo", "#f59e0b", "rgba(245,158,11,0.28)", [], "🏇"),
         new("porunner-demo", "/porunner/demo", "PoRunner Demo", "Watch 8 CPU bots race to the finish line.",
             "Watch PoRunner demo", "#fcd34d", "rgba(252,211,77,0.28)", [], "⚡"),
+        new("poracer-demo", "/poracer/demo", "PoRacer Demo", "Watch 8 CPU racers battle it out to the finish!",
+            "Watch PoRacer demo", "#4ec3ff", "rgba(78,195,255,0.28)", [], "🏎️"),
     ];
 
     protected override async Task OnInitializedAsync()
@@ -216,12 +221,25 @@
         _mode = QueryMode == "demo" ? "demo" : QueryMode == "local-2p" ? "local-2p" : "play";
         UpdateState();
 
-        // Kiosk auto-rotation: when kiosk index is present, immediately navigate to that demo game
+        // BUG FIX (#1, #4, #5): Kiosk flow is now driven by the singleton
+        // KioskCoordinator. We register the demo entries once and let the
+        // coordinator own the 20s advance timer. The coordinator's
+        // LocationChanged handler disposes the timer if the user
+        // navigates manually, which fixes the timer-leak bug.
+        Kiosk.RegisterEntries(DemoGames.Select(g => new DemoEntry(
+            Key: g.Key,
+            Path: g.To,
+            DisplayName: g.Title,
+            Icon: g.Icon)));
+
+        // Kiosk auto-rotation: when kiosk index is present, immediately
+        // navigate to that demo game and let the coordinator start ticking.
         if (_mode == "demo" && KioskIndex >= 0)
         {
             var game = DemoGames[KioskIndex % DemoGames.Length];
             var nextIndex = (KioskIndex + 1) % DemoGames.Length;
             var sep = game.To.Contains('?') ? '&' : '?';
+            Kiosk.Start(nextIndex);
             NavigationManager.NavigateTo($"{game.To}{sep}kiosk={nextIndex}");
             return;
         }
@@ -336,6 +354,7 @@
 
     private void StartKiosk()
     {
+        Kiosk.Start(0);
         NavigationManager.NavigateTo("/single-player?mode=demo&kiosk=0");
     }
 

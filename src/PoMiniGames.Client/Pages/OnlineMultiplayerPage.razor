@@ -28,6 +28,22 @@
                     </div>
                 </div>
             </button>
+            <button type="button" 
+                    class="sp-game-card"
+                    aria-label="Play PoRacer online multiplayer"
+                    style="--accent:#4ec3ff;--accent-glow:rgba(78,195,255,0.28)"
+                    @onclick='OnPlayOnlinePoRacer'>
+                <div class="sp-game-card-preview" aria-hidden="true">
+                    <div class="sp-game-icon">🏎️</div>
+                </div>
+                <div class="sp-game-card-body">
+                    <h2>PoRacer</h2>
+                    <p>Top-down arcade racing! Join a lobby and race against real players online.</p>
+                    <div class="sp-game-modes" aria-label="Available modes">
+                        <span class="sp-mode-pill sp-mode-pill--multi">Multi</span>
+                    </div>
+                </div>
+            </button>
         </div>
     </div>
 </div>
@@ -42,7 +58,6 @@
         _isLoading = true;
         try
         {
-            // Check API health before navigating (5s timeout)
             var isAvailable = await Api.IsAvailableAsync();
             if (!isAvailable)
             {
@@ -51,6 +66,30 @@
             }
 
             NavigationManager.NavigateTo("/porunner/multi");
+        }
+        catch (Exception ex)
+        {
+            ToastService.Show($"Failed to connect: {ex.Message}", ToastType.Error);
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task OnPlayOnlinePoRacer()
+    {
+        _isLoading = true;
+        try
+        {
+            var isAvailable = await Api.IsAvailableAsync();
+            if (!isAvailable)
+            {
+                ToastService.Show("Server unavailable. Try Single Player mode.", ToastType.Error);
+                return;
+            }
+
+            NavigationManager.NavigateTo("/poracer/lobby");
         }
         catch (Exception ex)
         {

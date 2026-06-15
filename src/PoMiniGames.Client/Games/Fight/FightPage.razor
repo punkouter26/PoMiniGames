@@ -8,8 +8,9 @@
 @implements IDisposable
 @inject PlayerNameService PlayerNameService;
 @inject NavigationManager Navigation;
+@inject KioskCoordinator Kiosk;
 
-<GameShell Title=@TitleContent 
+<GameShell Title=@TitleContent
            Player="@_playerName"
            BackTo="@_backTo"
            GameOver="@(_playerHp <= 0 || _enemyHp <= 0)"
@@ -24,22 +25,39 @@
             <div class="fight-demo-badge">🎮 Demo — CPU vs CPU</div>
         }
         <div class="fight-arena">
-            <div class="fighter player">
+            <div class="fighter player @(_playerHit ? "hit" : "")">
+                <div class="fighter-avatar" aria-hidden="true">🥷</div>
                 <div class="fighter-name">@(Demo == 1 ? "CPU Red" : "Player")</div>
-                <div class="fighter-hp-bar"><div class="hp-fill" style="width: @(_playerHp)%"></div></div>
+                <div class="fighter-hp-bar"><div class="hp-fill @(_playerHp < 30 ? "low" : "")" style="width: @(_playerHp)%"></div></div>
                 <div class="fighter-hp">@_playerHp HP</div>
+                @if (_lastEnemyDmg > 0)
+                {
+                    <div class="damage-num" key="@_dmgKey">-@_lastEnemyDmg</div>
+                }
             </div>
-            <div class="vs">VS</div>
-            <div class="fighter enemy">
+            <div class="vs" aria-hidden="true">VS</div>
+            <div class="fighter enemy @(_enemyHit ? "hit" : "")">
+                <div class="fighter-avatar" aria-hidden="true">🤖</div>
                 <div class="fighter-name">@(Demo == 1 ? "CPU Blue" : "Enemy")</div>
-                <div class="fighter-hp-bar"><div class="hp-fill enemy" style="width: @(_enemyHp)%"></div></div>
+                <div class="fighter-hp-bar"><div class="hp-fill enemy @(_enemyHp < 30 ? "low" : "")" style="width: @(_enemyHp)%"></div></div>
                 <div class="fighter-hp">@_enemyHp HP</div>
+                @if (_lastPlayerDmg > 0)
+                {
+                    <div class="damage-num enemy" key="@_dmgKey">-@_lastPlayerDmg</div>
+                }
             </div>
         </div>
-        <div class="fight-log">
+        @if (_playerHp <= 0 || _enemyHp <= 0)
+        {
+            <div class="fight-ko" aria-live="polite">@(_playerHp <= 0 ? "BLUE WINS!" : "RED WINS!")</div>
+        }
+        <div class="fight-log" aria-live="polite" aria-label="Combat log">
             @foreach (var log in _combatLog.TakeLast(5))
             {
-                <div class="log-entry">@log</div>
+                var cls = log.Contains("wins", StringComparison.OrdinalIgnoreCase)
+                    ? (_playerHp <= 0 ? "lose" : "win")
+                    : "";
+                <div class="log-entry @cls">@log</div>
             }
         </div>
     </div>
@@ -58,7 +76,13 @@
     private PlayerStats _stats = new();
     private readonly GameStatsService _gameStats = new();
     private System.Threading.Timer? _demoTimer;
-    private System.Threading.Timer? _kioskTimer;
+
+    // BUG FIX (#6): damage-number + hit-flash transient state. 2026 polish.
+    private int _lastPlayerDmg;
+    private int _lastEnemyDmg;
+    private bool _playerHit;
+    private bool _enemyHit;
+    private int _dmgKey;
 
     private string _backTo => Demo == 1 ? "/single-player?mode=demo" : "/single-player";
 
@@ -79,7 +103,15 @@
         _playerName = PlayerNameService.GetPlayerName();
         _stats = _gameStats.GetStats("pofight", _playerName);
         UpdateStats();
-        if (Demo == 1) StartDemoLoop();
+        if (Demo == 1)
+        {
+            StartDemoLoop();
+            // BUG FIX (#1, #4): Tell the shared coordinator we're the
+            // current demo. It owns the 20s advance timer, which it
+            // disposes on any LocationChanged — fixing the infinite-
+            // pofight-loop and the "stale timer hijacks navigation" bug.
+            Kiosk.SetCurrent("pofight-demo");
+        }
     }
 
     private void StartDemoLoop()
@@ -87,22 +119,14 @@
         _demoTimer?.Dispose();
         // Alternate CPU turns every 1.2s
         _demoTimer = new System.Threading.Timer(_ => InvokeAsync(DemoTick), null, 1200, 1200);
-        if (KioskNext >= 0)
-        {
-            _kioskTimer?.Dispose();
-            _kioskTimer = new System.Threading.Timer(_ =>
-            {
-                _demoTimer?.Dispose();
-                InvokeAsync(() => Navigation.NavigateTo($"/single-player?mode=demo&kiosk={KioskNext}"));
-            }, null, 60_000, Timeout.Infinite);
-        }
     }
 
-    private void DemoTick()
+    private async Task DemoTick()
     {
         if (_playerHp <= 0 || _enemyHp <= 0)
         {
-            // Game over — restart after a short pause
+            // Game over — restart after a short pause.  No local kiosk
+            // timer; the coordinator owns the 20s advance to the next demo.
             _demoTimer?.Dispose();
             _demoTimer = new System.Threading.Timer(_ => InvokeAsync(ResetDemo), null, 2000, Timeout.Infinite);
             return;
@@ -111,14 +135,25 @@
         // CPU Red attacks
         var dmg1 = Random.Shared.Next(8, 22);
         _enemyHp = Math.Max(0, _enemyHp - dmg1);
+        _lastPlayerDmg = dmg1;
+        _enemyHit = true;
         _combatLog.Add($"CPU Red deals {dmg1} damage!");
+        _dmgKey++;
+        await Task.Delay(120);
+        _enemyHit = false;
 
         if (_enemyHp > 0)
         {
+            await Task.Delay(900);
             // CPU Blue retaliates
             var dmg2 = Random.Shared.Next(8, 22);
             _playerHp = Math.Max(0, _playerHp - dmg2);
+            _lastEnemyDmg = dmg2;
+            _playerHit = true;
             _combatLog.Add($"CPU Blue deals {dmg2} damage!");
+            _dmgKey++;
+            await Task.Delay(120);
+            _playerHit = false;
         }
 
         if (_playerHp <= 0) _combatLog.Add("CPU Blue wins!");
@@ -131,6 +166,8 @@
     {
         _playerHp = 100;
         _enemyHp = 100;
+        _lastPlayerDmg = 0;
+        _lastEnemyDmg = 0;
         _combatLog.Clear();
         StartDemoLoop();
         StateHasChanged();
@@ -141,8 +178,11 @@
         if (Demo == 1) return;
         var dmg = Random.Shared.Next(minDmg, maxDmg + 1);
         _enemyHp = Math.Max(0, _enemyHp - dmg);
+        _lastPlayerDmg = dmg;
+        _dmgKey++;
+        _enemyHit = true;
         _combatLog.Add($"You dealt {dmg} damage!");
-        
+
         if (_enemyHp <= 0)
         {
             _combatLog.Add("You won!");
@@ -155,6 +195,7 @@
             EnemyTurn();
         }
         StateHasChanged();
+        _ = Task.Delay(240).ContinueWith(_ => InvokeAsync(() => { _enemyHit = false; StateHasChanged(); }));
     }
 
     private void Defend()
@@ -180,8 +221,11 @@
         var dmg = Random.Shared.Next(8, 18);
         if (defending) dmg /= 2;
         _playerHp = Math.Max(0, _playerHp - dmg);
+        _lastEnemyDmg = dmg;
+        _dmgKey++;
+        _playerHit = true;
         _combatLog.Add($"Enemy dealt {dmg} damage!");
-        
+
         if (_playerHp <= 0)
         {
             _combatLog.Add("You lost!");
@@ -189,12 +233,15 @@
             _gameStats.SaveLastPlayedGame("pofight");
             UpdateStats();
         }
+        _ = Task.Delay(240).ContinueWith(_ => InvokeAsync(() => { _playerHit = false; StateHasChanged(); }));
     }
 
     private void ResetGame()
     {
         _playerHp = 100;
         _enemyHp = 100;
+        _lastPlayerDmg = 0;
+        _lastEnemyDmg = 0;
         _combatLog.Clear();
         if (Demo == 1) StartDemoLoop();
     }
@@ -216,6 +263,7 @@
     public void Dispose()
     {
         _demoTimer?.Dispose();
-        _kioskTimer?.Dispose();
+        // BUG FIX (#1): No more local _kioskTimer. The KioskCoordinator
+        // owns the advance timer and disposes it on LocationChanged.
     }
 }

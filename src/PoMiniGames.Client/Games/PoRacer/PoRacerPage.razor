@@ -1,0 +1,2584 @@
+@using System.Diagnostics
+@using PoMiniGamesClient.Games.PoRacer
+@using PoMiniGamesClient.Services
+@using PoShared.Games
+@*
+    PoRacer — Top-down arcade racing game (single-file Blazor WebAssembly).
+    ---------------------------------------------------------------------
+    Inspired by Atari "Indy 500" and NES "R.C. Pro-Am".
+    Integrated into PoMiniGames from the standalone PoRacerMiniMaxM3 project.
+
+    Controls: WASD or Arrow keys. Space = handbrake (sharp drift).
+*@
+
+@page "/poracer"
+@page "/poracer/demo"
+@layout PoMiniGamesClient.Layout.EmptyLayout
+@inject IJSRuntime JS
+@inject PoRacerScoreApiClient Scores
+@inject AuthStateService AuthState
+@inject NavigationManager Nav
+@inject GameStatsService GameStats
+@inject KioskCoordinator Kiosk
+@implements IAsyncDisposable
+
+<PageTitle>PoRacer — Arcade Racing</PageTitle>
+
+<div class="racer-root @(_crtOn ? "crt-enabled" : "") po-page-transition" tabindex="0">
+    <div style="width: 100%; height: 100%; position: absolute; inset: 0; pointer-events: none;">
+        <canvas id="racerCanvas" class="racer-canvas" style="pointer-events: auto;"></canvas>
+    </div>
+
+    <!-- Settings Drawer Toggle Button -->
+    <button class="settings-drawer-toggle" @onclick="ToggleSettings" title="Game Settings">⚙️ Settings</button>
+
+    <!-- Settings Drawer -->
+    <div class="settings-drawer @(_settingsOpen ? "open" : "")">
+        <div class="settings-drawer-header">
+            <h3>Game Settings</h3>
+            <button class="settings-drawer-close" @onclick="ToggleSettings">×</button>
+        </div>
+        <div class="settings-group">
+            <div class="settings-label">Display Effects</div>
+            <button class="po-btn po-btn--secondary settings-control" @onclick="ToggleCrt">
+                CRT Screen Shader: @(_crtOn ? "ON" : "OFF")
+            </button>
+            <button class="po-btn po-btn--secondary settings-control" @onclick="ToggleBloom">
+                Bloom Lighting: @(_bloomOn ? "ON" : "OFF")
+            </button>
+        </div>
+        <div class="settings-group">
+            <div class="settings-label">Weather Selection</div>
+            <select class="po-select" @bind="_weatherConfig">
+                <option value="Auto">Auto (Cycle)</option>
+                <option value="Clear">Clear</option>
+                <option value="Rain">Rainy / Storm</option>
+                <option value="Snow">Snowy</option>
+            </select>
+        </div>
+        <div style="margin-top: auto; font-size: 11px; color: var(--muted); text-align: center;">
+            PoRacer v1.0.0 · Onion Architecture
+        </div>
+    </div>
+
+    @if (_crtOn)
+    {
+        <div class="crt-overlay">
+            <div class="crt-roll-bar"></div>
+            <div class="crt-flicker-overlay"></div>
+            <div class="crt-bezel"></div>
+        </div>
+    }
+
+    @* #10 — minimap canvas is rendered OUTSIDE the @if blocks so Blazor
+       doesn't recreate it on every phase change. JS draws to it via
+       PoRacerRender.maybeDrawMinimap(); we just toggle visibility. *@
+    <div class="racer-minimap" style="display:@(Phase == GamePhase.Racing ? "block" : "none")">
+        <canvas id="minimapCanvas" width="180" height="180"></canvas>
+    </div>
+
+    @* -------- Touch controls (coarse-pointer devices only; see CSS) --------
+       data-po-input wires straight into the JS input state via event
+       delegation in racingInterop.js — no per-render interop needed. *@
+    <div class="racer-touch @(Phase == GamePhase.Racing ? "is-active" : "")" aria-hidden="true">
+        <div class="touch-cluster">
+            <button type="button" class="touch-btn" data-po-input="left">◀</button>
+            <button type="button" class="touch-btn" data-po-input="right">▶</button>
+        </div>
+        <div class="touch-cluster">
+            <button type="button" class="touch-btn touch-btn--pill" data-po-input="space">DRIFT</button>
+            <button type="button" class="touch-btn" data-po-input="down">▼</button>
+            <button type="button" class="touch-btn touch-btn--accel" data-po-input="up">▲</button>
+        </div>
+    </div>
+
+    @* -------- Start screen -------- *@
+    @if (Phase == GamePhase.Start)
+    {
+        <div class="racer-overlay racer-start">
+            <div class="racer-card">
+                <div class="racer-title">PoRacer</div>
+                <div class="racer-subtitle">Top-Down Arcade Racing</div>
+                <div class="racer-controls">
+                    <div><kbd>W</kbd> / <kbd>↑</kbd> Accelerate</div>
+                    <div><kbd>S</kbd> / <kbd>↓</kbd> Brake / Reverse</div>
+                    <div><kbd>A</kbd> <kbd>D</kbd> / <kbd>←</kbd> <kbd>→</kbd> Steer</div>
+                    <div><kbd>Space</kbd> Handbrake (drift)</div>
+                    <div><kbd>R</kbd> Restart after the race</div>
+                </div>
+                <div style="display: flex; gap: 12px; justify-content: center; align-items: center; margin: 0 auto 10px;">
+                    <button class="racer-btn" @onclick="StartRace">Start Race</button>
+                    <button class="racer-btn-secondary" style="padding: 14px 20px; font-size: 15px;" @onclick="ToggleSettings" title="Game Settings">⚙️ Settings</button>
+                </div>
+                <div class="racer-hint">8 cars · 3 laps · first across the line wins</div>
+            </div>
+        </div>
+    }
+
+    @* -------- In-game HUD -------- *@
+    @if (Phase == GamePhase.Racing)
+    {
+        <!-- Drift progress bar and perfect drift indicator -->
+        @if (_driftProgress > 0)
+        {
+            <div class="hud-drift-container" aria-live="polite">
+                <div class="hud-drift-glow"></div>
+                <div class="hud-drift-label">DRIFTING</div>
+                <div class="hud-drift-bar">
+                    <div class="hud-drift-fill" style="width: @((int)_driftProgress)%"></div>
+                </div>
+            </div>
+        }
+        @if (_perfectDriftTimer > 0)
+        {
+            <div class="hud-perfect-toast">
+                <span>⚡ PERFECT DRIFT! ⚡</span>
+            </div>
+        }
+
+        <div class="racer-hud" aria-live="polite" aria-atomic="false">
+            <div class="hud-panel hud-left">
+                <div class="hud-label">Position</div>
+                <div class="hud-value big">@Ordinal(Player.Position) <span class="hud-of">/ @Cars.Count</span></div>
+
+                <div class="hud-label">Lap</div>
+                <div class="hud-value">@Player.Lap <span class="hud-of">/ @TotalLaps</span></div>
+
+                <div class="hud-label">Speed</div>
+                <div class="hud-value">@((int)Player.SpeedKph) <span class="hud-of">km/h</span></div>
+                <div class="hud-speed-bar">
+                    <div class="hud-speed-fill" style="width:@(Math.Min(100, Player.SpeedKph / 3.4))%"></div>
+                </div>
+
+                <div class="hud-label">Time</div>
+                <div class="hud-value">@FormatTime(_elapsedRaceTime)</div>
+
+                <div class="hud-label">FPS</div>
+                <div class="hud-value hud-fps" style="color:@FpsColor">@_fpsDisplay</div>
+            </div>
+
+            <div class="hud-panel hud-right">
+                <div class="hud-label">Standings</div>
+                @if (_isDemo)
+                {
+                    <div class="hud-row" style="color:var(--accent-warm);font-weight:700">🤖 DEMO MODE</div>
+                }
+                @foreach (var c in Standings.Take(8))
+                {
+                    <div class="hud-row @(c.IsPlayer ? "is-player" : "")">
+                        <span class="hud-dot" style="background:@c.Color"></span>
+                        <span class="hud-pos">@Ordinal(c.Position)</span>
+                        <span class="hud-name">@c.Name</span>
+                        <span class="hud-laps">L@(c.Lap)</span>
+                    </div>
+                }
+            </div>
+
+            <div class="hud-panel hud-right" style="top: 140px;">
+                <div class="hud-label">Splits</div>
+                @for (int s = 0; s < _sectorTimes.Count; s++)
+                {
+                    var delta = GetSectorDelta(s);
+                    <div class="hud-row" @key="@($"split-{s}")">
+                        <span class="hud-pos">S@(s + 1)</span>
+                        <span class="hud-name">@FormatTime(_sectorTimes[s])</span>
+                        <span class="hud-laps" style="color:@(delta > 0 ? "#ff6b6b" : delta < 0 ? "#6bff6b" : "#9bb1cc")">
+                            @(delta > 0 ? "+" : delta < 0 ? "-" : "")@FormatTime(Math.Abs(delta))
+                        </span>
+                    </div>
+                    <div class="sector-sparkline" @key="@($"spark-{s}")">
+                        <div class="sparkline-bar" style="height:@(GetSparklineHeight(s))%; background:@(delta > 0 ? "#ff6b6b" : delta < 0 ? "#6bff6b" : "#9bb1cc")"></div>
+                    </div>
+                }
+            </div>
+        </div>
+        @* #10 — minimap is rendered at the top of the page; JS controls it. *@
+    }
+
+    @* -------- Feature 9: Time-of-day indicator -------- *@
+    @if (Phase == GamePhase.Racing)
+    {
+        <div class="hud-tod">
+            @if (_timeOfDay > 0.6) { <span>☀️ Day</span> }
+            else if (_timeOfDay > 0.4) { <span>🌤️ Dawn/Dusk</span> }
+            else { <span>🌙 Night</span> }
+        </div>
+    }
+
+    @* -------- Feature 9: Lap flash -------- *@
+    @if (Phase == GamePhase.Racing && _lapFlashTimer > 0)
+    {
+        <div class="hud-lap-flash">
+            @(Player.Lap > TotalLaps ? "🏁 FINISH!" : $"LAP {Player.Lap}")
+        </div>
+    }
+
+    @* -------- Leaderboard -------- *@
+    @if (Phase == GamePhase.Finished)
+    {
+        <div class="racer-overlay racer-end">
+            <div class="racer-card">
+                <div class="racer-title small">Race Complete</div>
+                <div class="racer-subtitle">
+                    @if (_isDemo)
+                    {
+                        <span>🤖 CPU Race — @Cars.FirstOrDefault(c => c.Position == 1)?.Name wins!</span>
+                    }
+                    else if (Player.Position == 1)
+                    {
+                        <span>🏆 You won!</span>
+                    }
+                    else
+                    {
+                        <span>You finished @Ordinal(Player.Position)</span>
+                    }
+                </div>
+
+                @if (!_isDemo)
+                {
+                <!-- Achievements Grid -->
+                <div class="achievements-grid">
+                    @if (_wallHitsCount == 0)
+                    {
+                        <div class="achievement-badge" title="No wall hits recorded during the race">
+                            <span class="achievement-icon">🛡️</span>
+                            <span class="achievement-title">Clean Racer</span>
+                        </div>
+                    }
+                    @if (_maxPlayerSpeed >= 200.0)
+                    {
+                        <div class="achievement-badge" title="Exceeded 200 km/h speed threshold">
+                            <span class="achievement-icon">⚡</span>
+                            <span class="achievement-title">Speed Demon</span>
+                        </div>
+                    }
+                    @if (_didPerfectDrift)
+                    {
+                        <div class="achievement-badge" title="Completed at least one perfect drift">
+                            <span class="achievement-icon">🌀</span>
+                            <span class="achievement-title">Drift King</span>
+                        </div>
+                    }
+                    @if (FinishedCloseCall())
+                    {
+                        <div class="achievement-badge" title="Finished within 0.75 seconds of another car">
+                            <span class="achievement-icon">🏁</span>
+                            <span class="achievement-title">Close Call</span>
+                        </div>
+                    }
+                </div>
+                }
+                <div class="leaderboard" aria-live="polite">
+                    @foreach (var c in Standings)
+                    {
+                        <div class="lb-row @(c.IsPlayer ? "is-player" : "")">
+                            <span class="lb-pos">@Ordinal(c.Position)</span>
+                            <span class="hud-dot" style="background:@c.Color"></span>
+                            <span class="lb-name">@c.Name</span>
+                            <span class="lb-time">@(c.FinishTime > 9e8 || c.FinishTime < 0 ? "DNF" : FormatTime(c.FinishTime))</span>
+                        </div>
+                    }
+                </div>
+                @if (!_isDemo)
+                {
+                <div class="lb-status" role="status">
+                    @if (_submitState == SubmitState.Submitting)
+                    {
+                        <span class="lb-status-text">Submitting score...</span>
+                    }
+                    else if (_submitState == SubmitState.Failed)
+                    {
+                        <span class="lb-status-text error">@_submitError</span>
+                        <button class="racer-btn-secondary" @onclick="SubmitPlayerScoreAsync">Retry</button>
+                    }
+                    else if (_submitState == SubmitState.Saved)
+                    {
+                        <span class="lb-status-text ok">✓ Score saved</span>
+                    }
+                </div>
+                }
+                <div class="lb-actions">
+                    <button class="racer-btn" @onclick="StartRace">@(_isDemo ? "Restart Demo" : "Race Again")</button>
+                    @if (!_isDemo)
+                    {
+                        <button class="racer-btn-secondary" @onclick="GoToLeaderboard">View leaderboard</button>
+                    }
+                </div>
+                @if (_isDemo && _demoRestartAt > 0)
+                {
+                    <div class="racer-hint" style="margin-top:10px">Auto-restarting in @(Math.Max(0, (int)(_demoRestartAt - Now())))s...</div>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+<style>
+    /* ===========================================================
+       PoRacer component-level styles (HUD, overlays, buttons)
+       =========================================================== */
+    .racer-root {
+        position: fixed;
+        inset: 0;
+        background: #05070d;
+        outline: none;
+    }
+    
+    /* CRT Mode styles */
+    .racer-root.crt-enabled {
+        overflow: hidden;
+        border-radius: 32px;
+        box-shadow: 0 0 0 10px #151821, 0 20px 50px rgba(0,0,0,0.8);
+        transition: border-radius 0.3s ease, box-shadow 0.3s ease;
+    }
+
+    .crt-overlay {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        z-index: 9999;
+    }
+
+    /* Vignette, phosphor grid scanlines, and RGB shadow mask */
+    .crt-overlay::before {
+        content: " ";
+        display: block;
+        position: absolute;
+        inset: 0;
+        background: 
+            radial-gradient(circle at center, rgba(18, 16, 16, 0) 0%, rgba(0, 0, 0, 0.2) 60%, rgba(0, 0, 0, 0.7) 100%),
+            repeating-linear-gradient(rgba(18, 16, 16, 0) 0px, rgba(18, 16, 16, 0) 1px, rgba(0, 0, 0, 0.35) 2px, rgba(0, 0, 0, 0.35) 3px),
+            repeating-linear-gradient(90deg, rgba(255, 0, 0, 0.04) 0px, rgba(255, 0, 0, 0.04) 1px, rgba(0, 255, 0, 0.02) 2px, rgba(0, 255, 0, 0.02) 3px, rgba(0, 0, 255, 0.04) 4px, rgba(0, 0, 255, 0.04) 5px);
+        background-size: 100% 100%, 100% 4px, 6px 100%;
+        opacity: 0.85;
+    }
+
+    /* Screen glare reflection */
+    .crt-overlay::after {
+        content: " ";
+        display: block;
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(circle at 50% 15%, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0) 60%);
+    }
+
+    /* CRT roll bar */
+    @@keyframes crt-roll {
+        0% { transform: translateY(-100%); }
+        100% { transform: translateY(100%); }
+    }
+    .crt-roll-bar {
+        position: absolute;
+        top: 0; left: 0; right: 0;
+        height: 100px;
+        background: linear-gradient(to bottom, rgba(255,255,255,0), rgba(255,255,255,0.03) 10%, rgba(255,255,255,0.05) 50%, rgba(255,255,255,0.03) 90%, rgba(255,255,255,0));
+        animation: crt-roll 15s linear infinite;
+        pointer-events: none;
+    }
+
+    /* Screen flicker */
+    @@keyframes crt-flicker {
+        0% { opacity: 0.98; }
+        50% { opacity: 0.995; }
+        100% { opacity: 0.98; }
+    }
+    .crt-flicker-overlay {
+        position: absolute;
+        inset: 0;
+        background: rgba(18, 16, 16, 0.015);
+        animation: crt-flicker 0.12s infinite;
+        pointer-events: none;
+    }
+
+    /* Rounded corner bezel shadow */
+    .crt-bezel {
+        position: absolute;
+        inset: 0;
+        box-shadow: inset 0 0 60px rgba(0,0,0,0.95), inset 0 0 10px rgba(0,0,0,0.9);
+        z-index: 10000;
+        pointer-events: none;
+        border-radius: 32px;
+        border: 2px solid rgba(255,255,255,0.03);
+    }
+    .racer-canvas {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        display: block;
+    }
+
+    .racer-overlay {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: radial-gradient(ellipse at center, rgba(10,20,40,0.7), rgba(2,4,10,0.95));
+        backdrop-filter: blur(6px);
+        z-index: 10;
+    }
+    .racer-card {
+        background: linear-gradient(180deg, rgba(20,28,48,0.95), rgba(10,16,28,0.95));
+        border: 1px solid rgba(120,200,255,0.25);
+        border-radius: 18px;
+        padding: 36px 44px;
+        box-shadow: 0 20px 60px rgba(0,0,0,0.6), 0 0 60px rgba(80,160,255,0.12) inset;
+        text-align: center;
+        min-width: 380px;
+    }
+    .racer-title {
+        font-family: 'Orbitron', sans-serif;
+        font-weight: 900;
+        font-size: 64px;
+        letter-spacing: 4px;
+        background: linear-gradient(180deg, #ffffff 0%, #4ec3ff 60%, #1d6fa5 100%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+        text-shadow: 0 0 40px rgba(80,180,255,0.4);
+    }
+    .racer-title.small { font-size: 36px; }
+    .racer-subtitle {
+        font-family: 'Orbitron', sans-serif;
+        color: #9bb1cc;
+        font-size: 14px;
+        letter-spacing: 3px;
+        text-transform: uppercase;
+        margin-bottom: 20px;
+    }
+    .racer-controls {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px 18px;
+        margin: 18px 0 26px;
+        color: #cfe0ff;
+        font-size: 14px;
+        text-align: left;
+    }
+    .racer-controls kbd {
+        display: inline-block;
+        background: rgba(80,140,200,0.18);
+        border: 1px solid rgba(120,200,255,0.3);
+        border-bottom-width: 2px;
+        border-radius: 4px;
+        padding: 1px 6px;
+        font-family: 'Orbitron', monospace;
+        font-size: 11px;
+        color: #eaf6ff;
+    }
+    .racer-btn {
+        font-family: 'Orbitron', sans-serif;
+        font-weight: 700;
+        font-size: 18px;
+        letter-spacing: 3px;
+        text-transform: uppercase;
+        padding: 14px 38px;
+        color: #051018;
+        background: linear-gradient(180deg, #7fd4ff 0%, #2a90d8 100%);
+        border: none;
+        border-radius: 10px;
+        cursor: pointer;
+        box-shadow: 0 6px 0 #1c5d92, 0 8px 24px rgba(80,180,255,0.4);
+        transition: transform 0.08s ease, box-shadow 0.08s ease;
+    }
+    .racer-btn:hover { transform: translateY(-1px); }
+    .racer-btn:active { transform: translateY(3px); box-shadow: 0 3px 0 #1c5d92, 0 4px 12px rgba(80,180,255,0.3); }
+    .racer-btn-secondary {
+        font-family: 'Orbitron', sans-serif; font-weight: 700; font-size: 13px;
+        letter-spacing: 2px; text-transform: uppercase;
+        padding: 10px 18px; color: var(--text);
+        background: transparent; border: 1px solid rgba(120,200,255,0.35);
+        border-radius: 10px; cursor: pointer; transition: background 0.15s, transform 0.08s;
+    }
+    .racer-btn-secondary:hover { background: rgba(80,180,255,0.12); transform: translateY(-1px); }
+    .racer-hint { color: #6c87a8; font-size: 12px; margin-top: 14px; letter-spacing: 1px; }
+
+    /* Fix #10: launchpad polish — animated reveal + radial background. */
+    @@keyframes poracer-reveal {
+        0%   { clip-path: inset(0 100% 0 0); opacity: 0; }
+        60%  { opacity: 1; }
+        100% { clip-path: inset(0 0 0 0);    opacity: 1; }
+    }
+    @@keyframes poracer-glow {
+        0%, 100% { transform: translate(-50%, -50%) scale(1);   opacity: 0.55; }
+        50%      { transform: translate(-50%, -50%) scale(1.08); opacity: 0.75; }
+    }
+    .racer-start .racer-card { position: relative; overflow: hidden; }
+    .racer-start .racer-card::before {
+        content: ""; position: absolute; left: 50%; top: 50%;
+        width: 520px; height: 520px; border-radius: 50%;
+        background: radial-gradient(circle, rgba(80,180,255,0.45), rgba(80,180,255,0) 60%);
+        filter: blur(20px); pointer-events: none;
+        animation: poracer-glow 6s ease-in-out infinite;
+    }
+    /* Keep the reveal snappy: at the old 1.2s + staggered delays the card
+       looked like a black screen for the first second after navigation.
+       Only the title keeps the clip reveal; everything else (including the
+       Start Race CTA) does a fast fade so the screen is actionable at once. */
+    @@keyframes poracer-fade {
+        from { opacity: 0; }
+        to   { opacity: 1; }
+    }
+    .racer-start .racer-title {
+        position: relative; animation: poracer-reveal 0.45s cubic-bezier(.2,.8,.2,1) both;
+    }
+    .racer-start .racer-subtitle,
+    .racer-start .racer-controls,
+    .racer-start .racer-btn,
+    .racer-start .racer-hint {
+        position: relative; animation: poracer-fade 0.25s ease-out both;
+    }
+
+    /* Fix #2/#4: leaderboard submit status + dual actions. */
+    .lb-status { min-height: 24px; margin: 6px 0 4px; display: flex; gap: 12px; justify-content: center; align-items: center; }
+    .lb-status-text { font-family: 'Orbitron', sans-serif; font-size: 12px; letter-spacing: 2px; color: var(--muted); }
+    .lb-status-text.ok    { color: #6bff9c; }
+    .lb-status-text.error { color: #ff6b6b; }
+    .lb-actions { display: flex; gap: 12px; justify-content: center; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+
+    /* Fix #10: respect reduced-motion + haptic affordance. */
+    @@media (prefers-reduced-motion: reduce) {
+        .racer-start .racer-title,
+        .racer-start .racer-subtitle,
+        .racer-start .racer-controls,
+        .racer-start .racer-btn,
+        .racer-start .racer-hint { animation: none; }
+        .racer-start .racer-card::before { animation: none; }
+    }
+
+    /* -------- HUD -------- */
+    .racer-hud {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        z-index: 5;
+    }
+    .hud-panel {
+        position: absolute;
+        top: 18px;
+        background: var(--hud-bg);
+        border: 1px solid var(--hud-border);
+        border-radius: 12px;
+        padding: 12px 16px;
+        backdrop-filter: blur(8px);
+        box-shadow: var(--hud-glow);
+        color: var(--text);
+        min-width: 160px;
+    }
+    .hud-left  { left: 18px; }
+    .hud-right { right: 18px; min-width: 220px; }
+    .hud-label {
+        font-family: 'Orbitron', sans-serif;
+        font-size: 10px;
+        letter-spacing: 2px;
+        color: var(--muted);
+        text-transform: uppercase;
+        margin-top: 6px;
+    }
+    .hud-label:first-child { margin-top: 0; }
+    .hud-value {
+        font-family: 'Orbitron', sans-serif;
+        font-weight: 700;
+        font-size: 20px;
+        color: #ffffff;
+    }
+    .hud-value.big { font-size: 34px; color: var(--accent); text-shadow: 0 0 16px rgba(80,180,255,0.6); }
+    .hud-of { color: var(--muted); font-size: 14px; font-weight: 500; }
+    .hud-bloom-btn { margin-left: 6px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.25); border-radius: 4px; color: #9bb1cc; font-size: 10px; padding: 1px 5px; cursor: pointer; vertical-align: middle; }
+    .hud-bloom-btn:hover { background: rgba(255,255,255,0.2); }
+
+    .hud-row {
+        display: grid;
+        grid-template-columns: 12px 24px 1fr auto;
+        gap: 6px;
+        align-items: center;
+        font-size: 12px;
+        padding: 2px 0;
+        color: #cfe0ff;
+    }
+    .hud-row.is-player { color: #ffffff; font-weight: 600; }
+    .hud-dot { width: 10px; height: 10px; border-radius: 50%; box-shadow: 0 0 6px currentColor; }
+    .hud-pos { font-family: 'Orbitron', sans-serif; font-size: 11px; }
+    .hud-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .hud-laps { font-family: 'Orbitron', sans-serif; color: var(--muted); font-size: 10px; }
+
+    /* -------- Feature 9: Animated HUD -------- */
+    /* Smooth speed bar with gradient fill */
+    .hud-speed-bar {
+        width: 100%;
+        height: 6px;
+        background: rgba(120,200,255,0.12);
+        border-radius: 3px;
+        margin-top: 6px;
+        overflow: hidden;
+        position: relative;
+    }
+    .hud-speed-fill {
+        height: 100%;
+        border-radius: 3px;
+        transition: width 0.15s ease-out;
+        background: linear-gradient(90deg, #4ec3ff, #7fd4ff, #ff944d);
+        box-shadow: 0 0 8px rgba(78,195,255,0.5);
+    }
+
+    /* Position change animation */
+    .hud-value.big {
+        transition: transform 0.3s ease, color 0.3s ease;
+    }
+    .hud-value.big.pos-up { transform: translateY(-2px); color: #6bff9c; }
+    .hud-value.big.pos-down { transform: translateY(2px); color: #ff6b6b; }
+
+    /* Standings row slide animation */
+    .hud-row {
+        transition: transform 0.2s ease, opacity 0.2s ease;
+    }
+    .hud-row.row-enter { opacity: 0; transform: translateX(10px); }
+
+    /* Lap flash animation */
+    @@keyframes lap-flash {
+        0% { opacity: 0; transform: scale(0.8); }
+        20% { opacity: 1; transform: scale(1.1); }
+        100% { opacity: 0; transform: scale(1); }
+    }
+    .hud-lap-flash {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        font-family: 'Orbitron', sans-serif;
+        font-size: 48px;
+        font-weight: 900;
+        color: #4ec3ff;
+        text-shadow: 0 0 30px rgba(78,195,255,0.6);
+        pointer-events: none;
+        animation: lap-flash 1.5s ease-out forwards;
+        z-index: 20;
+    }
+
+    /* Time-of-day indicator */
+    .hud-tod {
+        position: absolute;
+        top: 18px;
+        left: 50%;
+        transform: translateX(-50%);
+        font-family: 'Orbitron', sans-serif;
+        font-size: 10px;
+        letter-spacing: 2px;
+        color: var(--muted);
+        text-transform: uppercase;
+        background: var(--hud-bg);
+        border: 1px solid var(--hud-border);
+        border-radius: 8px;
+        padding: 4px 12px;
+        backdrop-filter: blur(8px);
+    }
+
+    /* -------- Sector Sparkline (Feature 11) -------- */
+    .sector-sparkline {
+        height: 4px;
+        background: rgba(120,200,255,0.12);
+        border-radius: 2px;
+        margin-top: 4px;
+        overflow: hidden;
+    }
+    .sector-sparkline .sparkline-bar {
+        height: 100%;
+        width: 100%;
+        border-radius: 2px;
+        transition: height 0.3s ease, background 0.3s ease;
+        min-height: 2px;
+    }
+
+    /* -------- Touch controls (mobile) -------- */
+    .racer-touch {
+        position: absolute;
+        left: 0; right: 0; bottom: 0;
+        padding: 0 18px calc(18px + env(safe-area-inset-bottom));
+        display: none;
+        justify-content: space-between;
+        align-items: flex-end;
+        z-index: 25;
+        pointer-events: none;
+    }
+    .touch-cluster { display: flex; gap: 14px; align-items: flex-end; }
+    .touch-btn {
+        pointer-events: auto;
+        touch-action: none;
+        user-select: none;
+        -webkit-user-select: none;
+        -webkit-tap-highlight-color: transparent;
+        width: 64px; height: 64px;
+        border-radius: 50%;
+        border: 1px solid rgba(120,200,255,0.45);
+        background: rgba(10,14,24,0.55);
+        color: #cfe0ff;
+        font-size: 22px;
+        font-family: 'Orbitron', sans-serif;
+        backdrop-filter: blur(6px);
+        box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+    }
+    .touch-btn--accel {
+        width: 80px; height: 80px;
+        border-color: rgba(107,255,156,0.5);
+        color: #6bff9c;
+    }
+    .touch-btn--pill {
+        width: auto; height: 48px;
+        border-radius: 999px;
+        padding: 0 16px;
+        font-size: 11px;
+        letter-spacing: 2px;
+    }
+    .touch-btn.is-pressed {
+        background: rgba(80,180,255,0.35);
+        box-shadow: 0 0 18px rgba(80,180,255,0.5);
+        transform: scale(0.94);
+    }
+    @@media (pointer: coarse), (any-pointer: coarse) {
+        .racer-touch.is-active { display: flex; }
+        /* Lift the minimap clear of the steer cluster. */
+        .racer-minimap { bottom: 130px; }
+        /* The right-hand standings/splits panels crowd a phone screen. */
+        .hud-right { display: none; }
+    }
+
+    /* -------- Small screens: keep the start/finish card on-screen -------- */
+    @@media (max-width: 480px) {
+        .racer-card {
+            min-width: 0;
+            width: min(92vw, 380px);
+            padding: 24px 18px;
+        }
+        .racer-title { font-size: 40px; }
+        .racer-controls { grid-template-columns: 1fr; }
+    }
+
+    /* -------- Minimap -------- */
+    .racer-minimap {
+        position: absolute;
+        left: 18px;
+        bottom: 18px;
+        background: var(--hud-bg);
+        border: 1px solid var(--hud-border);
+        border-radius: 12px;
+        padding: 6px;
+        z-index: 5;
+        box-shadow: var(--hud-glow);
+    }
+    .racer-minimap canvas { display: block; border-radius: 8px; }
+
+    /* -------- Leaderboard -------- */
+    .leaderboard { margin: 12px 0 22px; text-align: left; }
+    .lb-row {
+        display: grid;
+        grid-template-columns: 36px 16px 1fr 80px;
+        gap: 8px;
+        align-items: center;
+        padding: 6px 8px;
+        border-bottom: 1px solid rgba(120,200,255,0.08);
+        color: #cfe0ff;
+        font-size: 13px;
+    }
+    .lb-row.is-player { color: #ffffff; background: rgba(80,180,255,0.08); border-radius: 6px; }
+    .lb-pos { font-family: 'Orbitron', sans-serif; font-weight: 700; }
+    .lb-time { font-family: 'Orbitron', sans-serif; color: var(--accent-warm); text-align: right; }
+
+    /* Settings Drawer styles */
+    .settings-drawer-toggle {
+        position: absolute;
+        top: clamp(10px, 2vw, 20px);
+        right: clamp(10px, 2vw, 20px);
+        z-index: 40;
+        background: rgba(10, 14, 24, 0.75);
+        border: 1px solid rgba(120, 200, 255, 0.35);
+        border-radius: 8px;
+        color: var(--text);
+        padding: 8px 14px;
+        font-family: 'Orbitron', sans-serif;
+        font-size: 13px;
+        font-weight: 700;
+        cursor: pointer;
+        backdrop-filter: blur(8px);
+        box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+        transition: all 0.2s ease;
+    }
+    .settings-drawer-toggle:hover {
+        background: rgba(80, 180, 255, 0.25);
+        border-color: var(--accent);
+        box-shadow: 0 0 15px rgba(80, 180, 255, 0.4);
+    }
+    .settings-drawer {
+        position: absolute;
+        top: 0;
+        right: 0;
+        width: 280px;
+        height: 100%;
+        background: rgba(8, 11, 20, 0.95);
+        border-left: 1px solid rgba(120, 200, 255, 0.25);
+        z-index: 999;
+        padding: 24px 20px;
+        transform: translateX(100%);
+        transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        backdrop-filter: blur(12px);
+        box-shadow: -8px 0 32px rgba(0, 0, 0, 0.7);
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+    }
+    .settings-drawer.open {
+        transform: translateX(0);
+    }
+    .settings-drawer-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 1px solid rgba(120, 200, 255, 0.15);
+        padding-bottom: 12px;
+    }
+    .settings-drawer-header h3 {
+        margin: 0;
+        font-family: 'Orbitron', sans-serif;
+        font-size: 16px;
+        color: var(--accent);
+        letter-spacing: 1px;
+    }
+    .settings-drawer-close {
+        background: none;
+        border: none;
+        color: var(--muted);
+        font-size: 24px;
+        cursor: pointer;
+        padding: 0 5px;
+        line-height: 1;
+    }
+    .settings-drawer-close:hover {
+        color: #fff;
+    }
+    .settings-group {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+    .settings-label {
+        font-size: 11px;
+        color: var(--muted);
+        text-transform: uppercase;
+        font-family: 'Orbitron', sans-serif;
+        letter-spacing: 1px;
+    }
+    .settings-control {
+        width: 100%;
+        text-align: left;
+    }
+
+    /* Drift progress and perfect drift styles */
+    .hud-drift-container {
+        position: absolute;
+        bottom: 30px;
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 6px;
+        z-index: 30;
+        pointer-events: none;
+    }
+    .hud-drift-glow {
+        position: absolute;
+        top: -10px;
+        left: -10px;
+        right: -10px;
+        bottom: -10px;
+        background: radial-gradient(circle, rgba(78, 195, 255, 0.2) 0%, transparent 70%);
+        filter: blur(8px);
+        z-index: -1;
+    }
+    .hud-drift-label {
+        font-family: 'Orbitron', sans-serif;
+        font-size: 12px;
+        font-weight: 900;
+        letter-spacing: 2px;
+        color: var(--accent);
+        text-shadow: 0 0 8px rgba(78, 195, 255, 0.8);
+    }
+    .hud-drift-bar {
+        width: 200px;
+        height: 10px;
+        background: rgba(10, 14, 24, 0.85);
+        border: 1px solid rgba(120, 200, 255, 0.4);
+        border-radius: 999px;
+        overflow: hidden;
+        box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+    }
+    .hud-drift-fill {
+        height: 100%;
+        background: linear-gradient(90deg, var(--accent) 0%, #a6e3ff 100%);
+        box-shadow: 0 0 12px var(--accent);
+        transition: width 0.05s ease-out;
+    }
+    .hud-perfect-toast {
+        position: absolute;
+        top: 35%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        font-family: 'Orbitron', sans-serif;
+        font-size: 28px;
+        font-weight: 900;
+        letter-spacing: 3px;
+        color: #6bff9c;
+        text-shadow: 0 0 15px rgba(107, 255, 156, 0.9), 0 0 30px rgba(107, 255, 156, 0.5);
+        z-index: 35;
+        pointer-events: none;
+        animation: toast-pulse-entry 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+    @@keyframes toast-pulse-entry {
+        0% { transform: translate(-50%, -50%) scale(0.5); opacity: 0; }
+        50% { transform: translate(-50%, -50%) scale(1.1); }
+        100% { transform: translate(-50%, -50%) scale(1.0); opacity: 1; }
+    }
+
+    /* Achievements styles */
+    .achievements-grid {
+        display: flex;
+        justify-content: center;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin: 10px 0 15px;
+    }
+    .achievement-badge {
+        background: rgba(80, 180, 255, 0.08);
+        border: 1px solid rgba(120, 200, 255, 0.25);
+        border-radius: 8px;
+        padding: 6px 12px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        backdrop-filter: blur(6px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        animation: badge-scale-in 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) both;
+    }
+    .achievement-badge:nth-child(2) { animation-delay: 0.1s; }
+    .achievement-badge:nth-child(3) { animation-delay: 0.2s; }
+    .achievement-badge:nth-child(4) { animation-delay: 0.3s; }
+
+    .achievement-icon {
+        font-size: 16px;
+    }
+    .achievement-title {
+        font-family: 'Orbitron', sans-serif;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.5px;
+        color: var(--accent);
+        text-transform: uppercase;
+    }
+    @@keyframes badge-scale-in {
+        0% { transform: scale(0.6); opacity: 0; }
+        100% { transform: scale(1.0); opacity: 1; }
+    }
+</style>
+
+@code {
+    // =============================================================
+    //  Game phase / lifecycle
+    // =============================================================
+    private enum GamePhase { Start, Racing, Finished }
+    private GamePhase Phase = GamePhase.Start;
+    private bool _disposed;
+    private bool _isDemo;
+    private double _demoRestartAt;
+
+    [SupplyParameterFromQuery(Name = "kiosk")]
+    public int KioskNext { get; set; } = -1;
+    // BUG FIX (#1): _kioskTimer removed; KioskCoordinator owns the timer.
+
+    // Public so JS can call back; protected with [JSInvokable] methods below.
+    private DotNetObjectReference<PoRacerPage>? _selfRef;
+
+    protected override Task OnInitializedAsync()
+    {
+        _isDemo = Nav.Uri.Contains("/poracer/demo", StringComparison.OrdinalIgnoreCase);
+        try
+        {
+            var stored = LocalStorageService.GetItem<string>("PoRacer.CrtShader");
+            _crtOn = bool.TryParse(stored, out var val) && val;
+        }
+        catch
+        {
+            _crtOn = false;
+        }
+        GameStats.SaveLastPlayedGame("poracer");
+        return Task.CompletedTask;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+
+        _selfRef = DotNetObjectReference.Create(this);
+        await JS.InvokeVoidAsync("PoRacer.start", "racerCanvas", _selfRef);
+
+        if (_isDemo)
+        {
+            await StartRace();
+            Kiosk.SetCurrent("poracer-demo");
+        }
+    }
+
+    /// <summary>
+    /// Called by JS once a race starts, after the static world (centerline,
+    /// walls, track width) is built. The JS side caches these and never
+    /// re-requests them — we used to ship them every frame.
+    /// </summary>
+    [JSInvokable]
+    public Task PushStaticWorld()
+    {
+        // Build the static payload as flat typed arrays.
+        int n = _centerline.Count;
+        var centerXY = new double[n * 2];
+        for (int i = 0; i < n; i++)
+        {
+            centerXY[i * 2] = _centerline[i].X;
+            centerXY[i * 2 + 1] = _centerline[i].Y;
+        }
+        int m = _walls.Count;
+        var wallsXY = new double[m * 4];
+        for (int i = 0; i < m; i++)
+        {
+            wallsXY[i * 4]     = _walls[i].a.X;
+            wallsXY[i * 4 + 1] = _walls[i].a.Y;
+            wallsXY[i * 4 + 2] = _walls[i].b.X;
+            wallsXY[i * 4 + 3] = _walls[i].b.Y;
+        }
+        return JS.InvokeVoidAsync("PoRacerRender.setStatic",
+            centerXY, _trackWidth, wallsXY).AsTask();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _disposed = true;
+        // BUG FIX (#1): _kioskTimer removed; KioskCoordinator owns it.
+        try { await JS.InvokeVoidAsync("PoRacer.stop"); } catch { }
+        _selfRef?.Dispose();
+    }
+
+    // =============================================================
+    //  Tick — called by JS every animation frame.
+    // =============================================================
+    [JSInvokable]
+    public async Task Tick(double dt, int canvasW, int canvasH, InputState input)
+    {
+        if (_disposed) return;
+        // Early-out for huge gaps (backgrounded tab returning) — already
+        // clamped in JS, but defence in depth.
+        if (dt > 0.25) dt = 0.016;
+        _canvasW = canvasW;
+        _canvasH = canvasH;
+        // Smoothed FPS via exponential moving average (α=0.1 → ~10-frame window).
+        // Guard dt == 0 (two rAF callbacks can share a timestamp): 1/0 turns the
+        // EMA into Infinity and the HUD then shows int.MinValue.
+        if (dt > 0.0001)
+        {
+            _fps = _fps == 0 ? 1.0 / dt : _fps * 0.9 + (1.0 / dt) * 0.1;
+        }
+        try
+        {
+            Update(dt, input);
+            // Only render the canvas once a race exists; the start screen
+            // overlay covers the canvas anyway.
+            if (Phase != GamePhase.Start)
+            {
+                await Render(dt);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Tick error: {ex}");
+        }
+        // Throttle HTML re-render: 10Hz is plenty for the HUD. We also
+        // skip it entirely during the start screen (nothing to update).
+        if (Phase != GamePhase.Start)
+        {
+            _elapsedHudTime += dt;
+            if (_elapsedHudTime >= 0.1)
+            {
+                _elapsedHudTime = 0;
+                _fpsDisplay = ((int)Math.Clamp(Math.Round(_fps), 0, 999)).ToString();
+                _hudDirty = true;
+            }
+            if (_hudDirty)
+            {
+                _hudDirty = false;
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+    }
+    private double _elapsedHudTime;
+    private bool _hudDirty = true;
+    private double _fps;
+    private string _fpsDisplay = "--";
+    private string FpsColor => _fps >= 55 ? "#6bff6b" : _fps >= 30 ? "#ffd24e" : "#ff6b6b";
+    private bool _bloomOn = true;
+    private async Task ToggleBloom()
+    {
+        _bloomOn = !_bloomOn;
+        await JS.InvokeVoidAsync("PoRacerRender.setBloom", _bloomOn);
+    }
+
+    private bool _crtOn = false;
+    private async Task ToggleCrt()
+    {
+        _crtOn = !_crtOn;
+        try
+        {
+            LocalStorageService.SetItem("PoRacer.CrtShader", _crtOn ? "true" : "false");
+        }
+        catch { }
+    }
+
+    private bool _settingsOpen = false;
+    private string _weatherConfig = "Auto";
+    private double _driftProgress = 0;
+    private bool _perfectDriftActive = false;
+    private double _perfectDriftTimer = 0;
+    private int _wallHitsCount = 0;
+    private double _maxPlayerSpeed = 0;
+    private bool _didPerfectDrift = false;
+
+    private void ToggleSettings()
+    {
+        _settingsOpen = !_settingsOpen;
+        _hudDirty = true;
+    }
+
+    private bool FinishedCloseCall()
+    {
+        if (Player == null) return false;
+        if (Player.FinishTime <= 0 || double.IsInfinity(Player.FinishTime)) return false;
+        foreach (var c in Cars)
+        {
+            if (c.IsPlayer) continue;
+            if (c.FinishTime > 0 && !double.IsInfinity(c.FinishTime))
+            {
+                if (Math.Abs(c.FinishTime - Player.FinishTime) <= 0.75)
+                {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private int _canvasW = 1024;
+    private int _canvasH = 768;
+
+    // =============================================================
+    //  Public input shape (matches what JS sends).
+    // =============================================================
+    public class InputState
+    {
+        public bool up { get; set; }
+        public bool down { get; set; }
+        public bool left { get; set; }
+        public bool right { get; set; }
+        public bool w { get; set; }
+        public bool a { get; set; }
+        public bool s { get; set; }
+        public bool d { get; set; }
+        public bool space { get; set; }
+        public bool r { get; set; }
+    }
+
+    // =============================================================
+    //  Race configuration
+    // =============================================================
+    private const int TotalLaps = 3;
+    private static readonly string[] DriverNames =
+    {
+        "You", "Vega", "Kairo", "Nyx", "Rocco", "Sable", "Jinx", "Echo"
+    };
+    // Distinct, vibrant car colours (player first).
+    private static readonly string[] CarColors =
+    {
+        "#4ec3ff", // player — cyan
+        "#ff5d6c", "#ffd24e", "#7eff8a", "#c47bff",
+        "#ff944d", "#5ee7ff", "#ff77c8"
+    };
+
+    // =============================================================
+    //  Track — a closed loop defined by a polyline of centerline
+    //  points, with a constant width.  Designed in "world" units.
+    //  The renderer scales this to fit the canvas.
+    // =============================================================
+    /// <remarks>
+    /// PERF: <see cref="Vec2"/> is a <c>readonly struct</c> (value type) rather
+    /// than a class. The per-frame physics, AI, collision and trail code creates
+    /// thousands of vectors; as a struct these live on the stack / inline in
+    /// arrays and queues, eliminating the heap allocations and GC pressure that
+    /// caused frame-time stutter on the Blazor WASM (Mono) runtime. Because it is
+    /// immutable, callers reassign whole values (e.g. <c>c.Pos = c.Pos.Add(...)</c>)
+    /// instead of mutating <c>.X</c>/<c>.Y</c> in place.
+    /// </remarks>
+    public readonly struct Vec2
+    {
+        public readonly double X, Y;
+        public Vec2(double x, double y) { X = x; Y = y; }
+        public Vec2 Add(double dx, double dy) => new(X + dx, Y + dy);
+    }
+
+    // Hand-tuned, smooth figure-8-ish oval for fun top-down racing.
+    private static readonly (double x, double y)[] _centerlineRaw =
+    {
+        (0,    0),
+        (600,  -120),
+        (1200, -300),
+        (1700, -200),
+        (2050,  120),
+        (2050,  520),
+        (1700,  800),
+        (1100,  900),
+        (500,   820),
+        (-50,   700),
+        (-350,  400),
+        (-350,  100),
+        (-150, -150)
+    };
+
+    private List<Vec2> _centerline = new();
+    private List<(Vec2 a, Vec2 b)> _walls = new();
+    private double _trackWidth = 240;
+    private (double minX, double minY, double maxX, double maxY) _trackBbox;
+
+    private void BuildTrack()
+    {
+        // 1) Resample centerline with Catmull-Rom-ish smoothing.
+        var raw = _centerlineRaw.Select(p => new Vec2(p.x, p.y)).ToList();
+        _centerline = ResampleClosedSpline(raw, 12);
+        _trackBbox = BoundingBox(_centerline, _trackWidth);
+
+        // 2) Build wall segments (left & right offsets of the centerline).
+        _walls.Clear();
+        for (int i = 0; i < _centerline.Count; i++)
+        {
+            var a = _centerline[i];
+            var b = _centerline[(i + 1) % _centerline.Count];
+            var n = Normal(a, b);
+            var hw = _trackWidth * 0.5;
+            var la = new Vec2(a.X - n.X * hw, a.Y - n.Y * hw);
+            var lb = new Vec2(b.X - n.X * hw, b.Y - n.Y * hw);
+            var ra = new Vec2(a.X + n.X * hw, a.Y + n.Y * hw);
+            var rb = new Vec2(b.X + n.X * hw, b.Y + n.Y * hw);
+            _walls.Add((la, lb));
+            _walls.Add((ra, rb));
+        }
+    }
+
+    /// <summary>
+    /// Catmull-Rom centripetal-style smoothing over a CLOSED polyline.
+    /// Produces a smooth, even-spaced centerline.
+    /// </summary>
+    private static List<Vec2> ResampleClosedSpline(List<Vec2> pts, int subdivisions)
+    {
+        var result = new List<Vec2>(pts.Count * subdivisions);
+        int n = pts.Count;
+        for (int i = 0; i < n; i++)
+        {
+            var p0 = pts[(i - 1 + n) % n];
+            var p1 = pts[i];
+            var p2 = pts[(i + 1) % n];
+            var p3 = pts[(i + 2) % n];
+            for (int s = 0; s < subdivisions; s++)
+            {
+                double t = s / (double)subdivisions;
+                result.Add(CatmullRom(p0, p1, p2, p3, t));
+            }
+        }
+        return result;
+    }
+
+    private static Vec2 CatmullRom(Vec2 p0, Vec2 p1, Vec2 p2, Vec2 p3, double t)
+    {
+        double t2 = t * t, t3 = t2 * t;
+        double x = 0.5 * ((2 * p1.X) +
+                          (-p0.X + p2.X) * t +
+                          (2 * p0.X - 5 * p1.X + 4 * p2.X - p3.X) * t2 +
+                          (-p0.X + 3 * p1.X - 3 * p2.X + p3.X) * t3);
+        double y = 0.5 * ((2 * p1.Y) +
+                          (-p0.Y + p2.Y) * t +
+                          (2 * p0.Y - 5 * p1.Y + 4 * p2.Y - p3.Y) * t2 +
+                          (-p0.Y + 3 * p1.Y - 3 * p2.Y + p3.Y) * t3);
+        return new Vec2(x, y);
+    }
+
+    private static Vec2 Normal(Vec2 a, Vec2 b)
+    {
+        var dx = b.X - a.X; var dy = b.Y - a.Y;
+        var len = Math.Sqrt(dx * dx + dy * dy);
+        if (len < 1e-6) return new Vec2(0, 0);
+        return new Vec2(-dy / len, dx / len);
+    }
+
+    /// <summary>Closest point on the centerline polyline.  Returns (index, t, point, distance).</summary>
+    /// <remarks>
+    /// PERF: when <paramref name="hint"/> is &gt;= 0 (the car's last known
+    /// segment) only a small window of segments around it is searched instead of
+    /// the whole ~156-segment polyline. Distances are compared squared so the
+    /// per-segment <c>Math.Sqrt</c> is avoided; the sqrt is taken once at the end.
+    /// </remarks>
+    private (int idx, double t, Vec2 point, double dist) ClosestOnCenterline(Vec2 p, int hint = -1)
+    {
+        int n = _centerline.Count;
+        double bestSq = double.MaxValue;
+        int bestIdx = 0; double bestT = 0; Vec2 bestPt = default;
+
+        if (hint >= 0 && n > 0)
+        {
+            // Search a window centered on the hint (wrapping around the loop).
+            const int window = 6; // ±6 segments is ample for one frame of motion
+            for (int k = -window; k <= window; k++)
+            {
+                int i = ((hint + k) % n + n) % n;
+                var a = _centerline[i];
+                var b = _centerline[(i + 1) % n];
+                var (pt, t) = ClosestPointOnSegment(p, a, b);
+                double ddx = p.X - pt.X, ddy = p.Y - pt.Y;
+                double sq = ddx * ddx + ddy * ddy;
+                if (sq < bestSq) { bestSq = sq; bestIdx = i; bestT = t; bestPt = pt; }
+            }
+            return (bestIdx, bestT, bestPt, Math.Sqrt(bestSq));
+        }
+
+        // Full scan (used when there is no valid hint yet).
+        for (int i = 0; i < n; i++)
+        {
+            var a = _centerline[i];
+            var b = _centerline[(i + 1) % n];
+            var (pt, t) = ClosestPointOnSegment(p, a, b);
+            double ddx = p.X - pt.X, ddy = p.Y - pt.Y;
+            double sq = ddx * ddx + ddy * ddy;
+            if (sq < bestSq) { bestSq = sq; bestIdx = i; bestT = t; bestPt = pt; }
+        }
+        return (bestIdx, bestT, bestPt, Math.Sqrt(bestSq));
+    }
+
+    private static (Vec2 pt, double t) ClosestPointOnSegment(Vec2 p, Vec2 a, Vec2 b)
+    {
+        var abx = b.X - a.X; var aby = b.Y - a.Y;
+        var len2 = abx * abx + aby * aby;
+        if (len2 < 1e-9) return (a, 0);
+        var t = ((p.X - a.X) * abx + (p.Y - a.Y) * aby) / len2;
+        t = Math.Clamp(t, 0, 1);
+        return (new Vec2(a.X + abx * t, a.Y + aby * t), t);
+    }
+
+    /// <summary>Project a car onto the centerline and produce a signed cross-track offset.</summary>
+    private (int idx, double t, double sideOffset) ProjectToTrack(Car c)
+    {
+        // Use the car's last segment as a search hint to window the scan.
+        var (idx, t, _, _) = ClosestOnCenterline(c.Pos, c.LastCheckpoint);
+        // Signed offset using the centerline normal.
+        var a = _centerline[idx];
+        var b = _centerline[(idx + 1) % _centerline.Count];
+        var n = Normal(a, b);
+        var dx = c.Pos.X - a.X; var dy = c.Pos.Y - a.Y;
+        var side = dx * n.X + dy * n.Y; // signed
+        return (idx, t, side);
+    }
+
+    // =============================================================
+    //  Car
+    // =============================================================
+    /// <summary>
+    /// Per-car state. Implements the <b>Strategy (GoF)</b> pattern via the
+    /// <see cref="Aggression"/> / <see cref="CorneringSkill"/> fields —
+    /// the AI in <c>UpdateAI</c> swaps the steering behaviour based on
+    /// those numbers, so each car is a different concrete strategy
+    /// without needing a class hierarchy (SOLID — Open/Closed).
+    /// </summary>
+    public class Car
+    {
+        public int Id;
+        public string Name = "";
+        public string Color = "#ffffff";
+        public string ColorDark = "#222222";
+        public Vec2 Pos = new(0, 0);
+        public double Heading;     // radians, 0 = +X
+        public double Speed;       // along heading (units / second)
+        public double Steer;       // current steering angle (rad)
+        public bool IsPlayer;
+        public bool IsAI;
+        public bool Alive = true;
+
+        // AI personality
+        public double Aggression;       // 0..1 — closer corner cutting, harder braking
+        public double CorneringSkill;   // 0..1 — how well they take the racing line
+        public double MaxSpeed;
+        public double Acceleration;
+        public double Handling;         // steering rate multiplier
+
+        // Race progress
+        public int Lap = 1;
+        public int LastCheckpoint = -1;
+        public double CheckpointT;      // t along the last visited segment
+        public double DistanceAlongTrack; // continuously accumulated (for tiebreaks)
+        public double FinishTime = -1;
+        public int Position = 0;        // filled in by ComputeStandings
+
+        // PERF: centerline projection cached once per frame (see Update). Wall
+        // collision and race-progress both need it; computing it twice per car
+        // per frame was the dominant CPU cost. ProjIdx/ProjT/ProjSide are the
+        // result of the most recent ProjectToTrack for this car.
+        public int ProjIdx;
+        public double ProjT;
+        public double ProjSide;
+
+        // Visual state
+        public double SkidIntensity;    // 0..1
+        public double BoostGlow;        // 0..1
+        public double Damage;           // 0..1 — Feature 7: visual damage accumulation
+        public int ColorPacked;         // PackColor(Color) — cached to avoid per-frame hex parsing
+        public int ColorDarkPacked;     // PackColor(ColorDark)
+
+        // Motion trail for Feature 5 (speed lines)
+        public readonly Queue<Vec2> Trail = new();
+
+        // Computed
+        public double SpeedKph => Math.Abs(Speed) * 1.2; // rough units→km/h for display
+    }
+
+    private List<Car> Cars = new();
+    private Car Player => Cars[0];
+
+    // Smoke and skid events queued per-frame in C#, consumed by JS which owns the pools.
+    // Eliminates ~5600 floats of per-frame WASM↔JS marshalling.
+    private const int MaxSmokeEvents = 32;
+    private float[] _smokeEventsBuf = new float[MaxSmokeEvents * 6]; // x,y,vx,vy,size,life
+    private int _smokeEventsN = 0;
+    private const int MaxSkidEvents = 20;
+    private float[] _skidEventsBuf = new float[MaxSkidEvents * 5]; // x1,y1,x2,y2,alpha
+    private int _skidEventsN = 0;
+
+    private double _raceStartTime;
+    private double _elapsedRaceTime;
+
+    // Bug-fix #1: real wall-clock for the race timer. Started by
+    // StartRace() and reset on every (re)start so the timer never freezes.
+    private readonly Stopwatch _raceClock = new();
+    // Bug-fix #4: one-shot guard for the score POST.
+    private bool _playerFinished;
+    private SubmitState _submitState = SubmitState.Idle;
+    private string _submitError = "";
+    private enum SubmitState { Idle, Submitting, Saved, Failed }
+
+    // Camera (smoothly follows the player).
+    private double _camX, _camY;
+    private double _camShakeIntensity;
+
+    // Feature 10: Time-of-day (0..1, 0.5 = noon)
+    private double _timeOfDay = 0.5;
+    private double _timeOfDayAccumulator;
+
+    // Feature 10: Fog density (0..1)
+    private double _fogDensity;
+
+    // Feature 3: Screen shake timer
+    private double _shakeTimer;
+
+    // Feature 9: Lap flash
+    private int _lastLapNotified = 1;
+    private double _lapFlashTimer;
+
+    // JS canvas/context handles (acquired once; the JS draw function
+    // receives the *string* canvas id, not a marshalled IJSObjectReference,
+    // so it can use the real Canvas2D context from JS land).
+    private bool _jsReady;
+    private bool _isStarting;
+
+    // =============================================================
+    //  Game init
+    // =============================================================
+    private async Task StartRace()
+    {
+        if (_isStarting) return;
+        _isStarting = true;
+        try
+        {
+            BuildTrack();
+            Cars.Clear();
+            // Bug-fix #1: (re)start the wall-clock and reset submit guard.
+            _raceClock.Restart();
+            _raceStartTime = 0;        // will be re-seeded on the first Tick
+            _elapsedRaceTime = 0;
+            _playerFinished = false;
+            _submitState = SubmitState.Idle;
+            _submitError = "";
+            _driftProgress = 0;
+            _perfectDriftActive = false;
+            _perfectDriftTimer = 0;
+            _wallHitsCount = 0;
+            _maxPlayerSpeed = 0;
+            _didPerfectDrift = false;
+
+            // Spawn grid along the start/finish straight.
+            // Find a long-ish straight: the first centerline segment, going in the +X direction.
+            var startA = _centerline[0];
+            var startB = _centerline[1];
+            var dir = new Vec2(startB.X - startA.X, startB.Y - startA.Y);
+            var dlen = Math.Sqrt(dir.X * dir.X + dir.Y * dir.Y);
+            dir = new Vec2(dir.X / dlen, dir.Y / dlen);
+            var nrm = new Vec2(-dir.Y, dir.X);
+
+            // Per-car personality profiles.
+            var profiles = new (double aggression, double skill, double maxSpeed, double accel, double handling)[]
+            {
+                (0.5, 0.7, 320, 220, 1.0),  // You (balanced)
+                (0.85,0.55,335, 235, 0.95), // Vega — aggressive
+                (0.3, 0.9, 305, 200, 1.05), // Kairo — smooth
+                (0.7, 0.6, 320, 215, 1.0),  // Nyx
+                (0.2, 0.95,295, 195, 1.1),  // Rocco — consistent
+                (0.9, 0.5, 340, 245, 0.92), // Sable — fast but sloppy
+                (0.6, 0.65,315, 215, 1.0),  // Jinx
+                (0.4, 0.85,310, 210, 1.05), // Echo
+            };
+
+            // Make sure we ship the static world (track + walls) to JS exactly
+            // once per race, and that the next frame only contains dynamic data.
+            await PushStaticWorld();
+
+            for (int i = 0; i < 8; i++)
+            {
+                var row = i / 2;
+                var col = i % 2;
+                // 2 columns × 4 rows.
+                double fwdOffset = 60 + row * 38;
+                double sideOffset = (col == 0 ? -28 : 28) - (row * 4);
+                var pos = new Vec2(
+                    startA.X + dir.X * fwdOffset + nrm.X * sideOffset,
+                    startA.Y + dir.Y * fwdOffset + nrm.Y * sideOffset);
+
+                var p = profiles[i];
+                var car = new Car
+                {
+                    Id = i,
+                    Name = _isDemo && i == 0 ? "CPU-0" : DriverNames[i],
+                    Color = CarColors[i],
+                    ColorDark = Darken(CarColors[i]),
+                    Pos = pos,
+                    Heading = Math.Atan2(dir.Y, dir.X),
+                    MaxSpeed = p.maxSpeed,
+                    Acceleration = p.accel,
+                    Handling = p.handling,
+                    Aggression = p.aggression,
+                    CorneringSkill = p.skill,
+                    IsPlayer = i == 0 && !_isDemo,
+                    IsAI = i != 0 || _isDemo,
+                };
+                car.ColorPacked = PackColor(car.Color);
+                car.ColorDarkPacked = PackColor(car.ColorDark);
+                Cars.Add(car);
+            }
+
+            // Reset particle event buffers (JS particle pools cleared via clearParticles).
+            _smokeEventsN = 0;
+            _skidEventsN = 0;
+            _ = JS.InvokeVoidAsync("PoRacerRender.clearParticles");
+
+            // Reset visual state
+            _camX = Player.Pos.X; _camY = Player.Pos.Y;
+            _camShakeIntensity = 0;
+            _shakeTimer = 0;
+            _timeOfDay = 0.5;
+            _timeOfDayAccumulator = 0;
+            _fogDensity = 0;
+            _demoRestartAt = 0;
+
+            // Reset car damage
+            foreach (var car in Cars) car.Damage = 0;
+            _lastLapNotified = 1;
+            _lapFlashTimer = 0;
+            _raceStartTime = 0; // set on first Update tick
+            ComputeStandings(); // populate positions so HUD shows 1st/2nd/... immediately
+            _hudDirty = true;
+            Phase = GamePhase.Racing;
+        }
+        finally
+        {
+            _isStarting = false;
+        }
+    }
+
+    private static string Darken(string hex)
+    {
+        // crude: darken to ~35% brightness
+        if (hex.StartsWith("#") && hex.Length == 7)
+        {
+            int r = Convert.ToInt32(hex.Substring(1, 2), 16);
+            int g = Convert.ToInt32(hex.Substring(3, 2), 16);
+            int b = Convert.ToInt32(hex.Substring(5, 2), 16);
+            r = (int)(r * 0.35); g = (int)(g * 0.35); b = (int)(b * 0.35);
+            return $"#{r:X2}{g:X2}{b:X2}";
+        }
+        return "#222";
+    }
+
+    // =============================================================
+    //  Game loop
+    // =============================================================
+    private void Update(double dt, InputState input)
+    {
+        if (Phase == GamePhase.Start)
+        {
+            // No world update, but keep drawing a backdrop.
+            return;
+        }
+        if (Phase == GamePhase.Finished)
+        {
+            // Allow R to restart.
+            if (input.r) { _ = StartRace(); }
+            // Demo auto-restart
+            if (_isDemo)
+            {
+                if (_demoRestartAt == 0) _demoRestartAt = Now() + 5;
+                if (Now() >= _demoRestartAt) { _demoRestartAt = 0; _ = StartRace(); return; }
+            }
+            // Still update particles/visuals for a calm final frame.
+            UpdateParticles(dt);
+            UpdateCamera(dt);
+            return;
+        }
+
+        // Bug-fix #1: race timer was frozen because _raceStartTime was seeded
+        // from _elapsedRaceTime (== 0) and then subtracted from itself.
+        // Now we use a real wall-clock (Stopwatch started by StartRace()).
+        if (_raceStartTime == 0) _raceStartTime = Now();
+        _elapsedRaceTime = Now() - _raceStartTime;
+        _smokeEventsN = 0;
+        _skidEventsN = 0;
+
+        // R restarts any time (fire-and-forget; static world is the only await).
+        if (input.r) { _ = StartRace(); return; }
+
+        // -------- Player input --------
+        bool accel = input.up || input.w;
+        bool brake = input.down || input.s;
+        bool left  = input.left || input.a;
+        bool right = input.right || input.d;
+        bool handbrake = input.space;
+
+        ApplyCarControl(Player, dt, accel, brake, left, right, handbrake);
+
+        // Track maximum speed
+        _maxPlayerSpeed = Math.Max(_maxPlayerSpeed, Player.SpeedKph);
+
+        // Drift tracking
+        bool isPlayerDrifting = handbrake || (Math.Abs(Player.Steer) > 0.35 && Math.Abs(Player.Speed) > Player.MaxSpeed * 0.55);
+        if (isPlayerDrifting && Math.Abs(Player.Speed) > 10.0 && Phase == GamePhase.Racing)
+        {
+            _driftProgress = Math.Min(100.0, _driftProgress + dt * 66.6); // 1.5s to fill
+            if (_driftProgress >= 100.0 && !_perfectDriftActive)
+            {
+                _perfectDriftActive = true;
+                _didPerfectDrift = true;
+                _perfectDriftTimer = 2.0; // 2s toast
+                QueueSparks(Player.Pos.X, Player.Pos.Y, 30);
+            }
+        }
+        else
+        {
+            _perfectDriftActive = false;
+            _driftProgress = Math.Max(0.0, _driftProgress - dt * 100.0);
+        }
+
+        // Update perfect drift toast timer
+        if (_perfectDriftTimer > 0)
+        {
+            _perfectDriftTimer -= dt;
+        }
+
+        // -------- AI --------
+        foreach (var c in Cars)
+        {
+            if (c.IsPlayer) continue;
+            UpdateAI(c, dt);
+        }
+
+        // -------- Collisions --------
+        ResolveCarCollisions(dt);
+
+        // PERF: project every car onto the centerline ONCE per frame and cache
+        // it. Both wall-collision and lap/checkpoint logic consume it below;
+        // computing it twice per car per frame was the hottest path. The wall
+        // clamp only nudges a car perpendicular to the track, so the segment
+        // index/t used for progress is unaffected by re-using this projection.
+        foreach (var c in Cars)
+        {
+            var (pIdx, pT, pSide) = ProjectToTrack(c);
+            c.ProjIdx = pIdx; c.ProjT = pT; c.ProjSide = pSide;
+        }
+
+        // -------- Track wall collisions (bounce + slow) --------
+        foreach (var c in Cars) ResolveWallCollision(c);
+
+        // -------- Lap / checkpoint logic --------
+        foreach (var c in Cars) UpdateRaceProgress(c);
+
+        // -------- Weather (Feature 13) --------
+        UpdateWeather(dt);
+
+        // -------- Motion trails (Feature 5) --------
+        UpdateMotionTrails(dt);
+
+        // -------- Camera --------
+        UpdateCamera(dt);
+
+        // -------- Feature 3: Screen shake decay --------
+        if (_shakeTimer > 0) _shakeTimer -= dt;
+        _camShakeIntensity = Math.Max(0, _shakeTimer);
+
+        // -------- Feature 10: Time-of-day cycle --------
+        _timeOfDayAccumulator += dt;
+        if (_timeOfDayAccumulator > 120) _timeOfDayAccumulator = 0; // full cycle every 2 min
+        _timeOfDay = 0.5 + 0.5 * Math.Sin(_timeOfDayAccumulator * Math.PI * 2 / 120);
+
+        // -------- Feature 10: Fog based on weather --------
+        // (fog density is now set inside UpdateWeather)
+
+        // -------- Feature 9: Lap flash --------
+        if (Player.Lap > _lastLapNotified)
+        {
+            _lastLapNotified = Player.Lap;
+            _lapFlashTimer = 1.5;
+            _hudDirty = true;
+        }
+        if (_lapFlashTimer > 0) { _lapFlashTimer -= dt; if (_lapFlashTimer <= 0) _hudDirty = true; }
+
+        // -------- End condition --------
+        // Bug-fix #8: wait for the *player* to finish (or all AI to finish)
+        // before flipping to Finished. With the timer fixed, lap counters
+        // actually advance now; we end either when the player crosses the
+        // line, or when all 8 cars have finished, whichever comes first.
+        int finished = 0;
+        for (int i = 0; i < Cars.Count; i++) if (Cars[i].Lap > TotalLaps) finished++;
+        bool playerDone = Player.Lap > TotalLaps;
+        if (playerDone || finished >= Cars.Count)
+        {
+            // Save best sector times before race ends (Feature 15)
+            SaveBestSectors();
+            // Anyone still on track who hasn't finished gets a sentinel so
+            // the leaderboard can render them as DNF (> 9e8 means DNF).
+            for (int i = 0; i < Cars.Count; i++)
+                if (Cars[i].FinishTime < 0) Cars[i].FinishTime = double.PositiveInfinity;
+            // Bug-fix #4: race-ending path also POSTs the player's score
+            // (the per-lap path in UpdateRaceProgress already handles the
+            // happy case; this catches the rare "all AI finished, player
+            // ran out of laps" branch).
+            if (playerDone && !_playerFinished)
+            {
+                _playerFinished = true;
+                _ = SubmitPlayerScoreAsync();
+            }
+            Phase = GamePhase.Finished;
+            _hudDirty = true;
+        }
+
+        // Recompute standings for HUD/leaderboard. Only invalidate the
+        // HTML render when the order actually changes (cheap compare).
+        ComputeStandings();
+        if (!_standingsOrderValid || !StandingsEqual(_lastStandings, _standings))
+        {
+            _lastStandings.Clear();
+            _lastStandings.AddRange(_standings);
+            _standingsOrderValid = true;
+            _hudDirty = true;
+        }
+    }
+    private List<Standing> _lastStandings = new();
+    private bool _standingsOrderValid;
+
+    private static bool StandingsEqual(List<Standing> a, List<Standing> b)
+    {
+        if (a.Count != b.Count) return false;
+        for (int i = 0; i < a.Count; i++)
+        {
+            if (a[i].Position != b[i].Position) return false;
+            if (a[i].Name != b[i].Name) return false;
+        }
+        return true;
+    }
+
+    // Bug-fix #1: Now() is a real wall-clock, not a self-referential
+    // accumulator. _raceStartTime is the *epoch* captured on tick 1, and
+    // _elapsedRaceTime is computed from that epoch on every subsequent tick.
+    private double Now() => _raceClock.Elapsed.TotalSeconds;
+
+    // Bug-fix #2 / #4: POST the player's result to /api/scores. Idempotent
+    // thanks to the _playerFinished + SubmitState guards; safe to call from
+    // both the per-lap path and the end-of-race path.
+    private async Task SubmitPlayerScoreAsync()
+    {
+        if (_submitState == SubmitState.Submitting) return;
+        if (!AuthState.IsConfigured) return;
+        _submitState = SubmitState.Submitting;
+        _submitError = "";
+        _hudDirty = true;
+        try
+        {
+            var dto = new PoRacerScoreDto
+            {
+                PlayerDisplayName = AuthState.User?.DisplayName ?? "Player",
+                TotalTimeSeconds  = Player.FinishTime > 0 && Player.FinishTime < 9e8 ? Player.FinishTime : _elapsedRaceTime,
+                FinalPosition     = Player.Position <= 0 ? Cars.Count : Player.Position,
+                IsGuest           = !AuthState.IsAuthenticated,
+            };
+            await Scores.SubmitAsync(dto);
+            _submitState = SubmitState.Saved;
+        }
+        catch (Exception ex)
+        {
+            _submitState = SubmitState.Failed;
+            _submitError = ex.Message;
+        }
+        finally
+        {
+            _hudDirty = true;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void GoToLeaderboard() => Nav.NavigateTo("/single-player");
+
+    // =============================================================
+    //  Car physics
+    // =============================================================
+    private void ApplyCarControl(Car c, double dt, bool accel, bool brake, bool left, bool right, bool handbrake)
+    {
+        double steerInput = (right ? 1 : 0) - (left ? 1 : 0);
+        double steerRate = 3.0 * c.Handling; // rad/sec
+        double maxSteer = 0.55;               // ~31°
+
+        // Steer toward input
+        c.Steer += (steerInput - c.Steer / maxSteer * 1.0) * steerRate * dt;
+        c.Steer = Math.Clamp(c.Steer, -maxSteer, maxSteer);
+
+        // Auto-center steering slowly when no input (for AI smoothness too).
+        if (steerInput == 0)
+        {
+            c.Steer *= Math.Max(0, 1 - 2.0 * dt);
+        }
+
+        // Engine force
+        double engine = 0;
+        if (accel)  engine += c.Acceleration;
+        if (brake)
+        {
+            if (c.Speed > 1)  engine -= c.Acceleration * 1.6;     // brake
+            else              engine -= c.Acceleration * 0.6;     // reverse
+        }
+
+        // Apply engine
+        c.Speed += engine * dt;
+
+        // Drag
+        double drag = (0.6 + Math.Abs(c.Speed) * 0.004);
+        c.Speed -= Math.Sign(c.Speed) * drag * dt;
+        if (Math.Abs(c.Speed) < 0.5 && !accel && !brake) c.Speed = 0;
+
+        // Handbrake → bigger drag + more sliding
+        if (handbrake)
+        {
+            c.Speed *= Math.Max(0, 1 - 3.0 * dt);
+        }
+
+        // Speed limit
+        c.Speed = Math.Clamp(c.Speed, -c.MaxSpeed * 0.4, c.MaxSpeed);
+
+        // Steering effectiveness scales with speed (low speed = pivot, high speed = wide).
+        double speedFactor = Math.Min(1, Math.Abs(c.Speed) / 80);
+        double turnRate = (c.Speed / 60.0) * c.Steer * (1.0 - 0.3 * speedFactor);
+
+        // Drift model: at high speed with sharp steer + handbrake, the car's
+        // heading rotates less than its velocity vector → slide.
+        double desiredHeading = c.Heading + turnRate * dt;
+        // "slip" = difference between heading and where the velocity actually points
+        var velAngle = Math.Abs(c.Speed) > 0.1 ? Math.Atan2(Math.Sin(c.Heading) * c.Speed, Math.Cos(c.Heading) * c.Speed) : c.Heading;
+        double slip = ShortAngleDiff(desiredHeading, velAngle);
+
+        bool drifting =
+            handbrake ||
+            (Math.Abs(c.Steer) > 0.35 && Math.Abs(c.Speed) > c.MaxSpeed * 0.55);
+
+        if (drifting)
+        {
+            // Heading rotates less than commanded → car "slides"
+            double slideStrength = handbrake ? 0.7 : 0.4;
+            c.Heading = desiredHeading * (1 - slideStrength) + c.Heading * slideStrength;
+            c.SkidIntensity = Math.Min(1, c.SkidIntensity + dt * 4);
+        }
+        else
+        {
+            c.Heading = desiredHeading;
+            c.SkidIntensity *= Math.Max(0, 1 - 3 * dt);
+        }
+
+        // Move
+        c.Pos = c.Pos.Add(Math.Cos(c.Heading) * c.Speed * dt, Math.Sin(c.Heading) * c.Speed * dt);
+
+        // Boost glow from sustained accel at high speed
+        c.BoostGlow *= Math.Max(0, 1 - 2 * dt);
+        if (accel && Math.Abs(c.Speed) > c.MaxSpeed * 0.85) c.BoostGlow = Math.Min(1, c.BoostGlow + dt * 2);
+
+        // Particles
+        if (c.SkidIntensity > 0.15)
+        {
+            EmitSkid(c);
+            EmitSmoke(c, 0.5 + c.SkidIntensity * 0.5);
+        }
+        else if (accel && Math.Abs(c.Speed) > c.MaxSpeed * 0.7)
+        {
+            // Light exhaust from acceleration
+            EmitSmoke(c, 0.15);
+        }
+
+        _ = slip; // (kept for future handling tweaks)
+    }
+
+
+    // =============================================================
+    //  AI
+    // =============================================================
+    private void UpdateAI(Car c, double dt)
+    {
+        // Look ahead: take a target point some distance down the centerline.
+        // The further we look, the smoother (but sloppier) the line.
+        int n = _centerline.Count;
+        int lookAhead = (int)(8 + c.CorneringSkill * 14); // 8..22 segments
+        int targetIdx = (c.LastCheckpoint + lookAhead) % n;
+
+        var target = _centerline[targetIdx];
+
+        // Add a "racing line" offset: aim slightly toward inside of upcoming curve.
+        var prev = _centerline[(targetIdx - 1 + n) % n];
+        var next = _centerline[(targetIdx + 1) % n];
+        var curve = ShortAngleDiff(Math.Atan2(next.Y - prev.Y, next.X - prev.X), Math.Atan2(target.Y - prev.Y, target.X - prev.X));
+        // Positive curve = turning right; aim right of the line for right turn (outside) for tight turns.
+        double lineOffset = -Math.Sign(curve) * 18 * (1 - c.CorneringSkill);
+        var nrm = Normal(prev, next);
+        target = new Vec2(target.X + nrm.X * lineOffset, target.Y + nrm.Y * lineOffset);
+
+        // Steering: aim at target.
+        var dx = target.X - c.Pos.X;
+        var dy = target.Y - c.Pos.Y;
+        var desired = Math.Atan2(dy, dx);
+        double diff = ShortAngleDiff(desired, c.Heading);
+
+        bool accel = true, brake = false, handbrake = false;
+        if (Math.Abs(diff) > 0.6) brake = true;            // big angle → lift off
+        if (Math.Abs(diff) > 1.0) handbrake = c.Aggression > 0.6; // aggressive AI powerslides
+
+        bool left = diff < -0.05, right = diff > 0.05;
+        ApplyCarControl(c, dt, accel, brake, left, right, handbrake);
+
+        // Slight randomness for personality ("rubberbanding-free" chaos).
+        if (Random.Shared.NextDouble() < 0.002)
+        {
+            c.Steer += (Random.Shared.NextDouble() - 0.5) * 0.2;
+        }
+    }
+
+    // =============================================================
+    //  Collisions
+    // =============================================================
+    private void ResolveCarCollisions(double dt)
+    {
+        const double carRadius = 18;
+        for (int i = 0; i < Cars.Count; i++)
+        {
+            for (int j = i + 1; j < Cars.Count; j++)
+            {
+                var a = Cars[i]; var b = Cars[j];
+                var dx = b.Pos.X - a.Pos.X; var dy = b.Pos.Y - a.Pos.Y;
+                var d = Math.Sqrt(dx * dx + dy * dy);
+                var minD = carRadius * 2;
+                if (d < minD && d > 1e-3)
+                {
+                    var overlap = (minD - d) * 0.5;
+                    var nx = dx / d; var ny = dy / d;
+                    a.Pos = a.Pos.Add(-nx * overlap, -ny * overlap);
+                    b.Pos = b.Pos.Add(nx * overlap, ny * overlap);
+
+                    // Elastic-ish exchange of velocity along the contact normal.
+                    var aVel = ProjectVelocity(a, nx, ny);
+                    var bVel = ProjectVelocity(b, nx, ny);
+                    var rel = aVel - bVel;
+                    var impulse = -rel * 0.6;
+                    a.Speed += impulse * 0.4;
+                    b.Speed -= impulse * 0.4;
+                    // Nudge headings away from the impact side (torque simulation)
+                    var aFx = Math.Cos(a.Heading);
+                    var aFy = Math.Sin(a.Heading);
+                    var aCross = aFx * ny - aFy * nx; // cross product: forward x normal
+                    a.Heading += -Math.Sign(aCross) * 0.05;
+
+                    var bFx = Math.Cos(b.Heading);
+                    var bFy = Math.Sin(b.Heading);
+                    var bCross = bFx * -ny - bFy * -nx; // b's normal is (-nx, -ny)
+                    b.Heading += -Math.Sign(bCross) * 0.05;
+                    // Feature 7: Damage on collision
+                    a.Damage = Math.Min(1, a.Damage + 0.03);
+                    b.Damage = Math.Min(1, b.Damage + 0.03);
+                    if (a.IsPlayer || b.IsPlayer)
+                    {
+                        _shakeTimer = Math.Max(_shakeTimer, 0.25);
+                    }
+                    // Feature 2: Sparks on collision — queued for batch flush in Render()
+                    var cx = (a.Pos.X + b.Pos.X) * 0.5;
+                    var cy = (a.Pos.Y + b.Pos.Y) * 0.5;
+                    QueueSparks(cx, cy, 8);
+                    _ = dt;
+                }
+            }
+        }
+    }
+
+    private static double ProjectVelocity(Car c, double nx, double ny)
+    {
+        var vx = Math.Cos(c.Heading) * c.Speed;
+        var vy = Math.Sin(c.Heading) * c.Speed;
+        return vx * nx + vy * ny;
+    }
+
+    private void ResolveWallCollision(Car c)
+    {
+        const double carRadius = 18;
+        var (projIdx, projT, side) = (c.ProjIdx, c.ProjT, c.ProjSide); // cached in Update
+        var hw = _trackWidth * 0.5;
+        var limit = hw - carRadius;
+        if (Math.Abs(side) > limit)
+        {
+            var sign = Math.Sign(side);
+            var a = _centerline[projIdx];
+            var b = _centerline[(projIdx + 1) % _centerline.Count];
+            var n = Normal(a, b);
+            var closest = new Vec2(
+                a.X + (b.X - a.X) * projT,
+                a.Y + (b.Y - a.Y) * projT);
+            c.Pos = new Vec2(closest.X + n.X * sign * limit, closest.Y + n.Y * sign * limit);
+
+            // Bounce: decompose velocity into normal/tangential and apply sliding physics
+            var dx = b.X - a.X;
+            var dy = b.Y - a.Y;
+            var len = Math.Sqrt(dx * dx + dy * dy);
+            var tx = len > 1e-6 ? dx / len : 1.0;
+            var ty = len > 1e-6 ? dy / len : 0.0;
+            var nx = n.X * sign;
+            var ny = n.Y * sign;
+
+            var vx = Math.Cos(c.Heading) * c.Speed;
+            var vy = Math.Sin(c.Heading) * c.Speed;
+
+            var vInto = vx * nx + vy * ny;
+            var vTangent = vx * tx + vy * ty;
+
+            // Reflect the normal component (inward), reduce the tangent component (friction)
+            var vNormalNew = -Math.Abs(vInto) * 0.15; // Ensure it bounces inward (along -nx, -ny)
+            var vTangentNew = vTangent * 0.7;
+
+            var vxNew = vTangentNew * tx + vNormalNew * nx;
+            var vyNew = vTangentNew * ty + vNormalNew * ny;
+
+            c.Speed = Math.Sqrt(vxNew * vxNew + vyNew * vyNew);
+            c.Heading = Math.Atan2(vyNew, vxNew);
+
+            c.Heading += sign * 0.2; // steer back in
+            c.SkidIntensity = 1.0;
+            c.Damage = Math.Min(1, c.Damage + 0.08); // Feature 7: accumulate damage
+            EmitSmoke(c, 1.0);
+            if (c.IsPlayer)
+            {
+                _shakeTimer = 0.4;
+            }
+            // Feature 2: Spark particles on wall hit — queued for batch flush in Render()
+            QueueSparks(c.Pos.X, c.Pos.Y, 12);
+
+            if (c.IsPlayer && Math.Abs(vInto) > 5.0)
+            {
+                _wallHitsCount++;
+            }
+        }
+    }
+
+    // =============================================================
+    //  Lap / checkpoint tracking
+    // =============================================================
+    // Bug-fix #6: forward-only lap detection. Previously a car passing
+    // segment idx=N-1 back to idx=0 always counted as a lap, so a 180°
+    // spin at the start/finish line or a jostle at the start could clock
+    // phantom laps. Now we require t to decrease (the car is moving
+    // along the centerline in the canonical forward direction).
+    private void UpdateRaceProgress(Car c)
+    {
+        var (idx, t) = (c.ProjIdx, c.ProjT); // cached in Update
+        if (c.LastCheckpoint >= 0)
+        {
+            int prev = c.LastCheckpoint;
+            double prevT = c.CheckpointT;
+            bool wrappedForward = prev > n() - 3 && idx <= 1;
+            bool withinSegmentForward = idx == prev && t + 0.5 < prevT;
+            if (wrappedForward || withinSegmentForward)
+            {
+                c.Lap++;
+                if (c.Lap > TotalLaps && c.FinishTime < 0)
+                {
+                    c.FinishTime = _elapsedRaceTime;
+                    // Bug-fix #8: also record AI finish times the first time
+                    // *any* car crosses the line, so DNFs aren't ambiguous.
+                    if (c.IsPlayer) { _playerFinished = true; _ = SubmitPlayerScoreAsync(); }
+                }
+            }
+        }
+        c.LastCheckpoint = idx;
+        c.CheckpointT = t;
+        c.DistanceAlongTrack = c.Lap * 100000 + idx * 1000 + t * 1000; // for ranking
+
+        // Track sector times for split comparison (Feature 15)
+        UpdateSectorProgress(c);
+    }
+    private int n() => _centerline.Count;
+
+    // =============================================================
+    //  Particles
+    // =============================================================
+    private void EmitSmoke(Car c, double intensity)
+    {
+        double rx = c.Pos.X - Math.Cos(c.Heading) * 14;
+        double ry = c.Pos.Y - Math.Sin(c.Heading) * 14;
+        int count = (int)(intensity * 3);
+        for (int i = 0; i < count; i++)
+        {
+            int o = _smokeEventsN * 6;
+            if (o + 6 > _smokeEventsBuf.Length) break;
+            _smokeEventsBuf[o]     = (float)(rx + (Random.Shared.NextDouble() - 0.5) * 6);
+            _smokeEventsBuf[o + 1] = (float)(ry + (Random.Shared.NextDouble() - 0.5) * 6);
+            _smokeEventsBuf[o + 2] = (float)((Random.Shared.NextDouble() - 0.5) * 30 - Math.Cos(c.Heading) * 10);
+            _smokeEventsBuf[o + 3] = (float)((Random.Shared.NextDouble() - 0.5) * 30 - Math.Sin(c.Heading) * 10);
+            _smokeEventsBuf[o + 4] = (float)(4 + Random.Shared.NextDouble() * 6);
+            _smokeEventsBuf[o + 5] = (float)(0.8 + Random.Shared.NextDouble() * 0.6);
+            _smokeEventsN++;
+        }
+    }
+
+    private void EmitSkid(Car c)
+    {
+        double rx = c.Pos.X - Math.Cos(c.Heading) * 14;
+        double ry = c.Pos.Y - Math.Sin(c.Heading) * 14;
+        var nrm = new Vec2(-Math.Sin(c.Heading), Math.Cos(c.Heading));
+        for (int s = -1; s <= 1; s += 2)
+        {
+            int o = _skidEventsN * 5;
+            if (o + 5 > _skidEventsBuf.Length) break;
+            _skidEventsBuf[o]     = (float)(rx + nrm.X * 6 * s);
+            _skidEventsBuf[o + 1] = (float)(ry + nrm.Y * 6 * s);
+            _skidEventsBuf[o + 2] = (float)(rx - Math.Cos(c.Heading) * 2 + nrm.X * 6 * s);
+            _skidEventsBuf[o + 3] = (float)(ry - Math.Sin(c.Heading) * 2 + nrm.Y * 6 * s);
+            _skidEventsBuf[o + 4] = (float)Math.Min(0.9, 0.4 + c.SkidIntensity * 0.5);
+            _skidEventsN++;
+        }
+    }
+
+    private void UpdateParticles(double dt) { _ = dt; } // no-op: particles owned by JS
+
+    // =============================================================
+    //  Motion trails (Feature 5 - speed lines)
+    // =============================================================
+    private void UpdateMotionTrails(double dt)
+    {
+        foreach (var c in Cars)
+        {
+            // Add current position to trail (Vec2 is a value type, so the
+            // queue stores a copy automatically — no Clone() allocation needed).
+            c.Trail.Enqueue(c.Pos);
+
+            // Keep trail at max 10 points
+            while (c.Trail.Count > 10)
+                c.Trail.Dequeue();
+        }
+    }
+
+    // =============================================================
+    //  Camera
+    // =============================================================
+    private void UpdateCamera(double dt)
+    {
+        // Feature 4: Camera smoothly tracks the player with easing.
+        // Uses exponential decay for buttery-smooth follow.
+        var focus = Player;
+        // Faster lerp at high speed for more dynamic feel
+        double speedFactor = Math.Min(1.5, Math.Abs(Player.Speed) / 200.0);
+        double lerp = 1 - Math.Exp(-(4 + speedFactor * 4) * dt);
+        _camX += (focus.Pos.X - _camX) * lerp;
+        _camY += (focus.Pos.Y - _camY) * lerp;
+
+        // Feature 4: Subtle look-ahead in heading direction
+        double lookAhead = 30 + speedFactor * 60;
+        _camX += Math.Cos(Player.Heading) * lookAhead * lerp * 0.3;
+        _camY += Math.Sin(Player.Heading) * lookAhead * lerp * 0.3;
+    }
+
+    // =============================================================
+    //  Standings (for HUD / leaderboard)
+    // =============================================================
+    public class Standing
+    {
+        public int Position;
+        public string Name = "";
+        public string Color = "#fff";
+        public int Lap;
+        public double FinishTime;
+        public bool IsPlayer;
+    }
+    private List<Standing> _standings = new();
+    private IEnumerable<Standing> Standings => _standings;
+
+    private void ComputeStandings()
+    {
+        // #9 — replace Linq OrderByDescending().ThenByDescending() with a
+        // tight O(n²) sort. With n=8 cars and this running every frame
+        // (60+ Hz), the savings from skipping the Linq allocation graph
+        // are measurable. Use a stack-allocated scratch list.
+        _standings.Clear();
+        var scratch = _standingsScratch;
+        scratch.Clear();
+        for (int i = 0; i < Cars.Count; i++) scratch.Add(Cars[i]);
+
+        // Insertion sort by (Lap desc, DistanceAlongTrack desc).
+        for (int i = 1; i < scratch.Count; i++)
+        {
+            var cur = scratch[i];
+            double curKey = cur.DistanceAlongTrack;
+            int curLap = cur.Lap;
+            int j = i - 1;
+            while (j >= 0)
+            {
+                var other = scratch[j];
+                if (other.Lap > curLap ||
+                    (other.Lap == curLap && other.DistanceAlongTrack >= curKey))
+                    break;
+                scratch[j + 1] = other;
+                j--;
+            }
+            scratch[j + 1] = cur;
+        }
+
+        for (int i = 0; i < scratch.Count; i++)
+        {
+            var c = scratch[i];
+            _standings.Add(new Standing
+            {
+                Position = i + 1,
+                Name = c.Name,
+                Color = c.Color,
+                Lap = Math.Min(c.Lap, TotalLaps),
+                FinishTime = c.FinishTime,
+                IsPlayer = c.IsPlayer
+            });
+            c.Position = i + 1;
+        }
+    }
+    private readonly List<Car> _standingsScratch = new(8);
+
+
+    // =============================================================
+    //  Sector split time tracking (Feature 15)
+    // =============================================================
+    private readonly List<double> _sectorTimes = new();
+    private readonly List<double> _bestSectorTimes = new();
+    private int _lastSectorCheckpoint = -1;
+    private const int SectorCount = 3; // Divide track into 3 sectors
+
+    /// <summary>
+    /// Records sector times and compares against personal best.
+    /// </summary>
+    private void UpdateSectorProgress(Car c)
+    {
+        var sector = c.LastCheckpoint * SectorCount / _centerline.Count;
+        if (sector != _lastSectorCheckpoint && c.IsPlayer)
+        {
+            while (_sectorTimes.Count <= sector)
+                _sectorTimes.Add(0);
+            _sectorTimes[sector] = _elapsedRaceTime;
+            _lastSectorCheckpoint = sector;
+        }
+    }
+
+    /// <summary>
+    /// Gets delta time for current sector vs best.
+    /// </summary>
+    private double GetSectorDelta(int sector)
+    {
+        if (_sectorTimes.Count <= sector || _bestSectorTimes.Count <= sector)
+            return 0;
+        return _sectorTimes[sector] - _bestSectorTimes[sector];
+    }
+
+    /// <summary>
+    /// Saves best sector times when race is finished.
+    /// </summary>
+    private void SaveBestSectors()
+    {
+        if (_bestSectorTimes.Count == 0)
+        {
+            _bestSectorTimes.AddRange(_sectorTimes);
+        }
+        else
+        {
+            for (int i = 0; i < _sectorTimes.Count && i < _bestSectorTimes.Count; i++)
+            {
+                if (_sectorTimes[i] > 0 && _sectorTimes[i] < _bestSectorTimes[i])
+                    _bestSectorTimes[i] = _sectorTimes[i];
+            }
+        }
+    }
+
+    /// <summary>
+    /// Gets sparkline bar height percentage for sector visualization (Feature 11).
+    /// Normalizes sector time against best time for visual comparison.
+    /// </summary>
+    private int GetSparklineHeight(int sector)
+    {
+        if (_sectorTimes.Count <= sector || _bestSectorTimes.Count <= sector)
+            return 50;
+        var current = _sectorTimes[sector];
+        var best = _bestSectorTimes[sector];
+        if (best <= 0) return 50;
+        // Scale: best time = 100%, slower = lower height (inverted for visual impact)
+        var ratio = Math.Min(1.0, current / best);
+        return Math.Max(15, (int)(ratio * 100));
+    }
+
+    // =============================================================
+    //  Weather (Feature 13) — particles owned by JS; C# tracks type only
+    // =============================================================
+    private WeatherType _currentWeather = WeatherType.Clear;
+    private double _weatherAccumulator = 0;
+
+    private enum WeatherType { Clear, LightRain, HeavyRain, Snow }
+
+    /// <summary>
+    /// Cycles weather type every ~45 s. Particle emission moved to JS.
+    /// </summary>
+    private void UpdateWeather(double dt)
+    {
+        if (_weatherConfig != "Auto")
+        {
+            var targetWeather = _weatherConfig switch {
+                "Clear" => WeatherType.Clear,
+                "Rain" => WeatherType.HeavyRain,
+                "Snow" => WeatherType.Snow,
+                _ => WeatherType.Clear
+            };
+            if (_currentWeather != targetWeather)
+            {
+                _currentWeather = targetWeather;
+            }
+            _fogDensity = _currentWeather switch { WeatherType.LightRain => 0.15, WeatherType.HeavyRain => 0.3, WeatherType.Snow => 0.25, _ => 0 };
+            return;
+        }
+
+        _weatherAccumulator += dt;
+        if (_weatherAccumulator > 45)
+        {
+            _weatherAccumulator = 0;
+            var roll = Random.Shared.NextDouble();
+            _currentWeather = roll switch
+            {
+                < 0.1 => WeatherType.Snow,
+                < 0.3 => WeatherType.HeavyRain,
+                < 0.6 => WeatherType.LightRain,
+                _ => WeatherType.Clear
+            };
+        }
+        // Fog based on weather
+        _fogDensity = _currentWeather switch { WeatherType.LightRain => 0.15, WeatherType.HeavyRain => 0.3, WeatherType.Snow => 0.25, _ => 0 };
+    }
+
+    // =============================================================
+    //  Rendering — pure C# data → JS canvas commands via JSInterop.
+    //  We build a frame payload in C# and hand it to JS for drawing.
+    //
+    //  Performance: instead of building a List<Dictionary<string,object>>
+    //  of draw commands every frame (which the GC hates), we ship typed
+    //  arrays. The static world (track, walls) is sent ONCE per race via
+    //  PushStaticWorld(); the per-frame payload is just:
+    //    - a small header object (W, H, CamX, CamY, Scale)
+    //    - cars  : Float32Array, 8 cars × 6 floats
+    //    - carCols: int[] of 8 packed car colours (so the JS side can do
+    //              per-car gradients without a string allocation)
+    //    - smoke : Float32Array of active particles (x,y,r,a)
+    //    - skids : Float32Array of active skid segments (x1,y1,x2,y2,a)
+    //  All scratch buffers are pooled so the steady state allocates zero.
+    // =============================================================
+    private async Task Render(double dt)
+    {
+        if (!_jsReady) _jsReady = true;
+        // Camera & scale
+        var size = GetCanvasSize();
+        var (minX, minY, maxX, maxY) = _trackBbox;
+        double trackW = maxX - minX;
+        double trackH = maxY - minY;
+        double zoomX = size.w / trackW;
+        double zoomY = size.h / trackH;
+        double scale = Math.Min(zoomX, zoomY) * 0.85;
+        scale = Math.Min(scale, 1.1);
+        bool follow = size.w >= 900 && size.h >= 600;
+        float camX, camY;
+        if (follow)
+        {
+            camX = (float)_camX; camY = (float)_camY;
+            scale = Math.Min(1.2, Math.Min(size.w, size.h) / 700.0);
+        }
+        else
+        {
+            camX = (float)((minX + maxX) / 2);
+            camY = (float)((minY + maxY) / 2);
+        }
+
+        // Pack cars (sorted by Y for painter's algorithm).
+        var drawOrder = _carDrawOrder;
+        drawOrder.Clear();
+        drawOrder.AddRange(Cars);
+        drawOrder.Sort(_carByY);
+
+        if (_carBuf.Length < drawOrder.Count * 6)
+            _carBuf = new float[drawOrder.Count * 6];
+        if (_carCols.Length < drawOrder.Count)
+            _carCols = new int[drawOrder.Count];
+        for (int i = 0; i < drawOrder.Count; i++)
+        {
+            var c = drawOrder[i];
+            int o = i * 6;
+            _carBuf[o + 0] = (float)c.Pos.X;
+            _carBuf[o + 1] = (float)c.Pos.Y;
+            _carBuf[o + 2] = (float)c.Heading;
+            _carBuf[o + 3] = (float)c.BoostGlow;
+            _carBuf[o + 4] = c.IsPlayer ? 1f : 0f;
+            _carBuf[o + 5] = (float)c.SkidIntensity;
+            _carCols[i] = c.ColorPacked;
+            _carDark[i] = c.ColorDarkPacked;
+        }
+        int carCount = drawOrder.Count;
+
+        // Pack motion trails (Feature 5)
+        int trailN = 0;
+        for (int i = 0; i < drawOrder.Count; i++)
+        {
+            var c = drawOrder[i];
+            foreach (var pt in c.Trail)
+            {
+                if (trailN + 2 > _trailBuf.Length) break;
+                _trailBuf[trailN++] = (float)pt.X;
+                _trailBuf[trailN++] = (float)pt.Y;
+            }
+        }
+
+        // Flush batched sparks (queued zero-allocation during Update())
+        if (_sparksN > 0)
+        {
+            await JS.InvokeVoidAsync("PoRacerRender.sparksBatch", _sparksBuf, _sparksN);
+            _sparksN = 0;
+        }
+
+        await JS.InvokeVoidAsync("PoRacerRender.draw",
+            "racerCanvas", "minimapCanvas",
+            size.w, size.h, camX, camY, (float)scale,
+            _carBuf, carCount, _carCols, _carDark,
+            _trailBuf, trailN,
+            _smokeEventsBuf, _smokeEventsN,
+            _skidEventsBuf, _skidEventsN,
+            (float)dt,
+            (int)_currentWeather,
+            (float)_camShakeIntensity,
+            (float)_timeOfDay,
+            (float)_fogDensity);
+    }
+
+    // Pooled scratch buffers (sized for the steady state).
+    private float[] _carBuf   = new float[8 * 6];
+    private int[]   _carCols  = new int[8];
+    // Pending sparks: (x, y, count) triples queued during Update(), flushed in Render()
+    private float[] _sparksBuf = new float[64 * 3]; // max 64 spark events per frame
+    private int _sparksN = 0;
+    private int[]   _carDark  = new int[8];
+    private float[] _trailBuf = new float[8 * 10 * 2]; // 8 cars, 10 trail points, 2 coords
+    private readonly List<Car> _carDrawOrder = new(8);
+    private static readonly Comparison<Car> _carByY = (a, b) => a.Pos.Y.CompareTo(b.Pos.Y);
+
+    /// <summary>Pack #RRGGBB into a single int (0xRRGGBB) for cheap marshalling.</summary>
+    private static int PackColor(string hex)
+    {
+        if (string.IsNullOrEmpty(hex) || hex[0] != '#' || hex.Length < 7) return 0xffffff;
+        try
+        {
+            return (Convert.ToInt32(hex.Substring(1, 2), 16) << 16)
+                 | (Convert.ToInt32(hex.Substring(3, 2), 16) << 8)
+                 |  Convert.ToInt32(hex.Substring(5, 2), 16);
+        }
+        catch { return 0xffffff; }
+    }
+
+    private (int w, int h) GetCanvasSize() => (_canvasW, _canvasH);
+
+    private void QueueSparks(double x, double y, int count)
+    {
+        int o = _sparksN * 3;
+        if (o + 3 > _sparksBuf.Length) return;
+        _sparksBuf[o] = (float)x;
+        _sparksBuf[o + 1] = (float)y;
+        _sparksBuf[o + 2] = count;
+        _sparksN++;
+    }
+
+    private static (double minX, double minY, double maxX, double maxY) BoundingBox(List<Vec2> pts, double pad)
+    {
+        double minX = double.MaxValue, minY = double.MaxValue;
+        double maxX = double.MinValue, maxY = double.MinValue;
+        foreach (var p in pts)
+        {
+            if (p.X < minX) minX = p.X; if (p.X > maxX) maxX = p.X;
+            if (p.Y < minY) minY = p.Y; if (p.Y > maxY) maxY = p.Y;
+        }
+        return (minX - pad, minY - pad, maxX + pad, maxY + pad);
+    }
+
+    private static string Ordinal(int n)
+    {
+        if (n <= 0) return n.ToString();
+        var mod100 = n % 100;
+        if (mod100 is >= 11 and <= 13) return $"{n}th";
+        return (n % 10) switch
+        {
+            1 => $"{n}st",
+            2 => $"{n}nd",
+            3 => $"{n}rd",
+            _ => $"{n}th"
+        };
+    }
+
+    private static string FormatTime(double seconds)
+    {
+        if (double.IsNaN(seconds) || double.IsInfinity(seconds) || seconds < 0)
+            return "--:--.---";
+        var mins = (int)(seconds / 60);
+        var secs = seconds % 60;
+        return $"{mins}:{secs:00.000}";
+    }
+
+    private static double ShortAngleDiff(double a, double b)
+    {
+        var diff = (a - b) % (2 * Math.PI);
+        if (diff > Math.PI) diff -= 2 * Math.PI;
+        if (diff < -Math.PI) diff += 2 * Math.PI;
+        return diff;
+    }
+}

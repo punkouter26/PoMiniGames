@@ -109,7 +109,7 @@
                             <path d="M18 9h1.5a2.5 2.5 0 0 0 0-5C17 4 18 9 18 9z"/>
                             <path d="M4 22h16M10 22V9h4v13M8 22V8M16 22V8"/>
                         </svg>
-                        <span>Play a game to appear here!</span>
+                        <span>@(_topScoresError ? "Backend offline — play offline and scores will sync later." : "Play a game to appear here!")</span>
                         <button class="home-scores-empty-cta" @onclick='() => NavigationManager.NavigateTo("/single-player")'>Pick a game →</button>
                     </div>
                 }
@@ -134,6 +134,7 @@
 @code {
     private bool _isLoading = true;
     private List<TopGamePreview> _topGames = [];
+    private bool _topScoresError = false;
     private record TopGamePreview(string Title, string Url, List<ScoreEntry> Top3);
     private record ScoreEntry(string Name, string Score);
 
@@ -141,39 +142,59 @@
     {
         // Simulate Blazor WASM startup delay with skeleton
         await Task.Delay(100);
-        
-        // Load top games with scores
+
+        // BUG FIX (#8): Load top games in parallel instead of sequentially.
+        // The previous foreach/await chain took ~30-150ms × 5 games when
+        // the API was unreachable. Now all 5 leaderboard calls fire
+        // concurrently and the total wall-time is dominated by the slowest.
+        // Also surfaces a distinct "backend offline" state instead of the
+        // confusing "Play a game to appear here!" empty message.
         await LoadTopGames();
-        
+
         _isLoading = false;
     }
 
     private async Task LoadTopGames()
     {
-        var gameKeys = new[] { "connectfive", "tictactoe", "pofight", "poraceragdoll", "pohorserace" };
-        _topGames = [];
-        
-        foreach (var key in gameKeys)
+        var gameKeys = new[]
         {
-            var leaderboard = await ApiService.GetLeaderboardAsync(key, 3);
-            if (leaderboard != null && leaderboard.Any())
+            ("connectfive",    "Connect Five"),
+            ("tictactoe",      "Tic Tac Toe"),
+            ("pofight",        "PoFight"),
+            ("poraceragdoll",  "PoRaceRagdoll"),
+            ("pohorserace",    "PoHorseRace"),
+        };
+
+        // Fire all 5 leaderboard calls in parallel
+        var tasks = gameKeys.Select(async kv =>
+        {
+            try
             {
-                var gameTitle = key switch
-                {
-                    "connectfive" => "Connect Five",
-                    "tictactoe" => "Tic Tac Toe",
-                    "pofight" => "PoFight",
-                    "poraceragdoll" => "PoRaceRagdoll",
-                    "pohorserace" => "PoHorseRace",
-                    _ => key
-                };
-                
-                _topGames.Add(new TopGamePreview(
-                    gameTitle,
-                    $"/{key}",
-                    leaderboard.Select(e => new ScoreEntry(e.Name, $"{e.Stats.WinRate:P0}")).ToList()
-                ));
+                var lb = await ApiService.GetLeaderboardAsync(kv.Item1, 3);
+                return (Key: kv.Item1, Title: kv.Item2, Leaderboard: lb);
             }
+            catch
+            {
+                return (Key: kv.Item1, Title: kv.Item2, Leaderboard: (System.Collections.Generic.IEnumerable<PoMiniGamesClient.Models.PlayerStatsDto>?)null);
+            }
+        }).ToList();
+
+        var results = await Task.WhenAll(tasks);
+        _topGames = results
+            .Where(r => r.Leaderboard != null && r.Leaderboard.Any())
+            .Select(r => new TopGamePreview(
+                r.Title,
+                $"/{r.Key}",
+                r.Leaderboard!.Select(e => new ScoreEntry(e.Name, $"{e.Stats.WinRate:P0}")).ToList()))
+            .ToList();
+
+        // If every call came back empty AND the API isn't reachable, mark the
+        // error state so the empty UI can show "Backend offline" instead of
+        // the misleading "Play a game to appear here!" prompt.
+        if (_topGames.Count == 0)
+        {
+            try { _topScoresError = !await ApiService.IsAvailableAsync(); }
+            catch { _topScoresError = true; }
         }
     }
 

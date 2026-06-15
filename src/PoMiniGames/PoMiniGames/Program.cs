@@ -4,6 +4,7 @@ using PoMiniGames.Features.Leaderboard;
 using PoMiniGames.Features.HighScores;
 using PoMiniGames.Features.PoRaceRagdoll;
 using PoMiniGames.Features.PoRunner;
+using PoMiniGames.Features.PoRacer;
 using PoMiniGames.Application.Diagnostics;
 using PoMiniGames.Infrastructure;
 using PoMiniGames.Infrastructure.Services;
@@ -109,6 +110,10 @@ app.MapGameEndpoints();
 
 // ─── PoRunner SignalR hub ────────────────────────────────────────────
 app.MapHub<GameHub>("/porunner/gamehub");
+
+// ─── PoRacer SignalR lobby + scores ─────────────────────────────────
+app.MapHub<PoRacerLobbyHub>("/poracer/lobby-hub");
+app.MapPoRacerScoreEndpoints();
 
 // ─── SPA fallback ────────────────────────────────────────────────────
 app.MapFallbackToFile("index.html");

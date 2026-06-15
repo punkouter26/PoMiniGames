@@ -8,6 +8,7 @@
 @using PoMiniGamesClient.Services;
 @inject NavigationManager Navigation;
 @inject PlayerNameService PlayerNameService;
+@inject KioskCoordinator Kiosk;
 
 <GameShell 
     Title=@TitleContent 
@@ -87,7 +88,7 @@
     private PlayerStats _stats = new();
     private readonly GameStatsService _gameStats = new();
     private CancellationTokenSource? _demoCts;
-    private System.Threading.Timer? _kioskTimer;
+    // BUG FIX (#1): _kioskTimer removed; KioskCoordinator owns the timer.
 
     private string _backTo => Demo == 1 ? "/single-player?mode=demo" : "/single-player";
     private bool _isGameOver => _gameResult != GameResult.InProgress && PlayMode != "demo";
@@ -149,6 +150,7 @@
         _stats = _gameStats.GetStats("connectfive", _playerName);
         UpdateStats();
         ResetGame();
+        if (Demo == 1) Kiosk.SetCurrent("connectfive-demo");
     }
 
     private void SetPlayMode(string mode)
@@ -166,20 +168,10 @@
         _hoveredCol = -1;
         _stats = _gameStats.GetStats("connectfive", _playerName);
         UpdateStats();
-        
+
         if (PlayMode == "demo")
         {
             _demoCts = new CancellationTokenSource();
-            _ = RunDemoLoop(_demoCts.Token);
-            if (KioskNext >= 0)
-            {
-                _kioskTimer?.Dispose();
-                _kioskTimer = new System.Threading.Timer(_ =>
-                {
-                    _demoCts?.Cancel();
-                    InvokeAsync(() => Navigation.NavigateTo($"/single-player?mode=demo&kiosk={KioskNext}"));
-                }, null, 60_000, Timeout.Infinite);
-            }
         }
         else
         {
@@ -224,7 +216,7 @@
     public void Dispose()
     {
         _demoCts?.Cancel();
-        _kioskTimer?.Dispose();
+        // BUG FIX (#1): _kioskTimer removed; KioskCoordinator owns it.
     }
 
     private void UpdateStats()

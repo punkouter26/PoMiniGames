@@ -8,6 +8,7 @@
 @inject PlayerNameService PlayerNameService;
 @inject NavigationManager Navigation;
 @inject IJSRuntime JSRuntime;
+@inject KioskCoordinator Kiosk;
 
 <GameShell Title=@TitleContent 
            Player="@_playerName"
@@ -225,7 +226,7 @@
     
     // Demo mode
     private long _demoAutoRestartAt;
-    private System.Threading.Timer? _kioskTimer;
+    // BUG FIX (#1): _kioskTimer removed; KioskCoordinator owns the timer.
     
     // Timer
     private System.Threading.Timer? _gameTimer;
@@ -285,14 +286,7 @@
         if (_mode == PoRunnerGameMode.Demo)
         {
             StartDemo();
-            if (KioskNext >= 0)
-            {
-                _kioskTimer = new System.Threading.Timer(_ =>
-                {
-                    _gameTimer?.Dispose();
-                    InvokeAsync(() => Navigation.NavigateTo($"/single-player?mode=demo&kiosk={KioskNext}"));
-                }, null, 60_000, Timeout.Infinite);
-            }
+            Kiosk.SetCurrent("porunner-demo");
         }
         else if (_mode == PoRunnerGameMode.OnePlayer || _mode == PoRunnerGameMode.TwoPlayer)
         {
@@ -986,6 +980,6 @@
     public void Dispose()
     {
         _gameTimer?.Dispose();
-        _kioskTimer?.Dispose();
+        // BUG FIX (#1): _kioskTimer removed; KioskCoordinator owns it.
     }
 }

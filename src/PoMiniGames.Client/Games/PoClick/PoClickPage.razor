@@ -108,6 +108,10 @@
     private List<PoClickAttempt> playerAttempts = new();
 
     private PeriodicTimer? _periodicTimer;
+    // BUG FIX (#1): No local _kioskTimer. The shared KioskCoordinator
+    // owns the 20s advance timer and disposes it on LocationChanged,
+    // which fixes the "stale timer hijacks navigation" bug.
+    @inject KioskCoordinator Kiosk;
     private Task? _gameLoopTask;
     private DotNetObjectReference<PoClickPage>? dotNetHelper;
 
@@ -187,6 +191,7 @@
         if (Demo == 1)
         {
             ResetGame();
+            Kiosk.SetCurrent("poclick-demo");
         }
     }
 
@@ -620,6 +625,7 @@
         _demoCts?.Cancel();
 
         _periodicTimer?.Dispose();
+        // BUG FIX (#1): _kioskTimer removed; KioskCoordinator owns it.
 
         try
         {

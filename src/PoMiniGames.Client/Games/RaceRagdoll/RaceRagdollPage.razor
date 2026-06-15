@@ -7,6 +7,7 @@
 @implements IDisposable
 @inject PlayerNameService PlayerNameService
 @inject NavigationManager Navigation
+@inject KioskCoordinator Kiosk
 
 <GameShell Title=@TitleContent Player="@_playerName" BackTo="/single-player" ShowSettings="true" Stats="@_statItems" Controls="@ControlsContent">
     <div class="ragdoll-wrapper">
@@ -83,7 +84,7 @@
     private bool _won;
     private List<Racer> _racers = new();
     private System.Threading.Timer? _timer;
-    private System.Threading.Timer? _kioskTimer;
+    // BUG FIX (#1): _kioskTimer removed; KioskCoordinator owns the timer.
 
     [SupplyParameterFromQuery(Name = "demo")] public int DemoMode { get; set; } = 0;
     [SupplyParameterFromQuery(Name = "kiosk")] public int KioskNext { get; set; } = -1;
@@ -106,14 +107,7 @@
             _balance -= _currentBet;
             _gameState = "racing";
             _timer = new System.Threading.Timer(_ => InvokeAsync(Tick), null, 50, 50);
-            if (KioskNext >= 0)
-            {
-                _kioskTimer = new System.Threading.Timer(_ =>
-                {
-                    _timer?.Dispose();
-                    InvokeAsync(() => Navigation.NavigateTo($"/single-player?mode=demo&kiosk={KioskNext}"));
-                }, null, 60_000, Timeout.Infinite);
-            }
+            Kiosk.SetCurrent("poraceragdoll-demo");
         }
     }
 
@@ -191,9 +185,11 @@
             // Demo: auto-restart after 2.5s
             if (DemoMode == 1)
             {
+                // BUG FIX (#1): Coordinator owns the gate.
+                var entryStillCurrent = Kiosk.CurrentGameName == "PoRaceRagdoll";
                 _ = Task.Delay(2500).ContinueWith(_ => InvokeAsync(() =>
                 {
-                    if (_kioskTimer != null) return; // navigating away
+                    if (!entryStillCurrent) return;
                     InitializeRacers();
                     _selectedRacer = Random.Shared.Next(_racers.Count);
                     _currentBet = 100;
@@ -206,7 +202,7 @@
                 }));
             }
         }
-        
+
         StateHasChanged();
     }
 
@@ -254,7 +250,7 @@
     public void Dispose()
     {
         _timer?.Dispose();
-        _kioskTimer?.Dispose();
+        // BUG FIX (#1): _kioskTimer removed; KioskCoordinator owns it.
     }
 
     private class Racer

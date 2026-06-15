@@ -1,5 +1,4 @@
 @page "/voxelshooter"
-@page "/voxelshooter/{Demo:int}"
 @using PoMiniGamesClient.Components
 @using PoMiniGamesClient.Enums
 @using PoMiniGamesClient.Models
@@ -9,9 +8,9 @@
 @inject IJSRuntime JSRuntime
 @inject NavigationManager Navigation
 
-<GameShell Title=@TitleContent 
-           Player="@_playerName" 
-           BackTo="/single-player" 
+<GameShell Title=@TitleContent
+           Player="@_playerName"
+           BackTo="/single-player"
            GameOver="@_gameOver"
            OnPlayAgain="ResetGame"
            ShowSettings="true"
@@ -22,7 +21,10 @@
 </GameShell>
 
 @code {
-    [Parameter] public int? Demo { get; set; }
+    // BUG FIX (#9): Removed unused `Demo` route parameter. The previous
+    // page accepted /voxelshooter/{Demo:int} but the demo logic was never
+    // implemented and the route is not linked from the UI. The single
+    // route /voxelshooter is enough.
 
     private string _playerName = "";
     private bool _gameOver;

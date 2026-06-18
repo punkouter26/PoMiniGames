@@ -4,6 +4,10 @@
 @inject NavigationManager NavigationManager
 
 <div class="gl-page">
+    @if (AuthState.UsingMockData)
+    {
+        <div class="gl-mock-banner" role="status" aria-live="polite">USING MOCK DATA</div>
+    }
     <header class="gl-top-bar">
         <div class="gl-top-bar-left">
             <a href="/" class="gl-brand">

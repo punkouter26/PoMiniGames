@@ -41,8 +41,8 @@ public sealed class ConfigurationDiagnosticsSnapshotProvider : IDiagnosticsSnaps
             },
             ["storage"] = new
             {
-                dataDirectory = SecretMasker.MaskMiddle(_configuration["Sqlite:DataDirectory"]),
-                databaseFileName = _configuration["Sqlite:DatabaseFileName"] ?? "(null)",
+                provider = "AzureTableStorage",
+                tableServiceConnection = SecretMasker.MaskMiddle(_configuration["PoMiniGames:Storage:TableService:ConnectionString"]),
                 tableServiceEndpoint = SecretMasker.MaskMiddle(_configuration["PoMiniGames:Storage:TableService:Endpoint"]),
                 tableServiceAccount = SecretMasker.MaskMiddle(_configuration["PoMiniGames:Storage:TableService:AccountName"]),
                 tableServiceTable = _configuration["PoMiniGames:Storage:TableService:TableName"] ?? "(null)",

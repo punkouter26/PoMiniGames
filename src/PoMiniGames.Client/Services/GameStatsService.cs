@@ -98,6 +98,7 @@ public class GameStatsService
             "pohorserace" => "PoHorseRace",
             "porunner" => "PoRunner",
             "poracer" => "PoRacer",
+            "pomarblerace" => "PoMarbleRace",
             _ => lastGameKey
         };
 

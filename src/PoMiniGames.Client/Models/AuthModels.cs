@@ -9,6 +9,7 @@ public class AuthClientConfiguration
     public string RedirectPath { get; set; } = "";
     public bool MicrosoftEnabled { get; set; }
     public bool DevLoginEnabled { get; set; }
+    public bool UsingMockData { get; set; }
 }
 
 public class AuthenticatedUserProfile

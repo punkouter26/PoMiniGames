@@ -23,7 +23,7 @@ Instant-play mini-games platform — 8 games, AI opponents, real-time 2P multipl
 | Routing | Blazor Router |
 | Real-time | SignalR WebSockets (`Microsoft.AspNetCore.SignalR.Client`) |
 | Backend | .NET 10 Minimal API |
-| Storage | SQLite (`/home/data/pominigames.db`) |
+| Storage | Azure Table Storage (Azurite emulator in dev) |
 | Auth | Microsoft MSAL (OAuth2 JWT Bearer) + DevCookie |
 | Logging | Serilog → file + console + App Insights |
 | Telemetry | OpenTelemetry → Azure Application Insights |
@@ -43,7 +43,7 @@ flowchart TD
     
     subgraph Compute["Compute Tier"]
         API[".NET 10 API\nSignalR Hubs"]
-        SQLite[("SQLite DB")]
+        Tables[("Azure Table Storage\n(Azurite in dev)")]
     end
     
     subgraph Infra["Infrastructure"]
@@ -59,7 +59,7 @@ flowchart TD
     Player --> SWA
     Player --> API
     SWA --> API
-    API --> SQLite
+    API --> Tables
     API --> KV
     API --> AppIns
     API --> MSID
@@ -201,8 +201,8 @@ Player progress tracking across difficulty levels:
 
 - Per-game statistics: Wins, Losses, Draws, TotalGames, WinStreak
 - ELO rating computation (deterministic, recomputable from W/L/D counts)
-- JSON column storage strategy for flexible schema evolution
-- Leaderboard queries optimized via SQLite json_extract indexes
+- JSON property storage strategy for flexible schema evolution
+- Leaderboards ranked in-memory from a single Table Storage partition scan (small data sets)
 
 #### 3.5 Authentication
 
@@ -272,7 +272,7 @@ All timestamps stored as ISO 8601 UTC. PlayerStats uses JSON column strategy ena
 
 ### 7. Deployment
 
-- **API**: Azure App Service Linux B1 with `/home/data` SQLite storage
+- **API**: Azure App Service Linux B1 backed by an Azure Storage account (Table Storage)
 - **Client**: Azure Static Web App with CDN distribution
 - **CI/CD**: GitHub Actions with OIDC federation (no stored credentials)
 - **Secrets**: Azure Key Vault with System Managed Identity
@@ -292,6 +292,10 @@ All timestamps stored as ISO 8601 UTC. PlayerStats uses JSON column strategy ena
 dotnet restore
 cd src/PoMiniGames.Client && npm install && cd ../..
 
+# Start the storage emulator (Azurite) — the API persists to Azure Table Storage,
+# emulated locally by Azurite. The dev connection string is "UseDevelopmentStorage=true".
+docker compose up -d azurite        # Table service on localhost:10002, data in a named volume
+
 # Set dev secrets
 cd src/PoMiniGames/PoMiniGames
 dotnet user-secrets set "PoMiniGames:MicrosoftAuth:ClientId" "<client-id>"
@@ -301,6 +305,20 @@ cd ../../..
 # Launch (F5 in VS Code — kills dotnet, starts Vite, then API)
 # API: http://localhost:5000  |  Client dev server: http://localhost:5173
 ```
+
+### Storage (Azure Table Storage + Azurite)
+
+- The app persists player stats and high scores to **Azure Table Storage**. Tables
+  (`PlayerStats`, `SnakeHighScores`, `PoDropSquareHighScores`, `MarbleRaceHighScores`) are
+  created automatically on startup.
+- **Local dev** uses the **Azurite** emulator via `docker compose up -d azurite`. Configured by
+  `PoMiniGames:Storage:TableService:ConnectionString = "UseDevelopmentStorage=true"` in
+  `appsettings.Development.json`.
+- **Production** points at a real Azure Storage account — set either a `ConnectionString`, or an
+  `Endpoint`/`AccountName` (used with Managed Identity via `DefaultAzureCredential`) under
+  `PoMiniGames:Storage:TableService`.
+- Integration tests spin up a throwaway Azurite container automatically via Testcontainers
+  (requires Docker).
 
 ## Testing
 
@@ -330,7 +348,7 @@ azd up
 | Endpoint | Description |
 |---|---|
 | `GET /api/health/ping` | Liveness probe — returns `"pong"` |
-| `GET /api/health` | Structured health report (SQLite status) |
+| `GET /api/health` | Structured health report (Table Storage status) |
 | `GET /diag` | Masked config dump (dev/staging only) |
 | `GET /scalar` | OpenAPI UI (Scalar — purple theme) |
 | `GET /api/auth/me` | Authenticated user profile |

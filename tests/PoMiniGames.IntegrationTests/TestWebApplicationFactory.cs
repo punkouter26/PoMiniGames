@@ -4,9 +4,9 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
-using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using PoMiniGames.Features.Auth;
 
 namespace PoMiniGames.IntegrationTests;
 
@@ -20,7 +20,6 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>, IAsyncL
     private const string AzuriteAccountKey =
         "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==";
 
-    private readonly string _tempDir = Path.Combine(Path.GetTempPath(), $"pomini-test-{Guid.NewGuid()}");
     private TestcontainersContainer? _azurite;
     private string? _azuriteConnectionString;
 
@@ -51,15 +50,19 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>, IAsyncL
     Task IAsyncLifetime.DisposeAsync() =>
         _azurite is null ? Task.CompletedTask : _azurite.DisposeAsync().AsTask();
 
+    // Captured at app-configuration time so it reflects the FINAL resolved environment, even when
+    // a test overrides it to Production via WithWebHostBuilder(builder => builder.UseEnvironment(...)).
+    private bool _finalEnvIsProduction;
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Development");
-        builder.ConfigureAppConfiguration((_, cfg) =>
+        builder.ConfigureAppConfiguration((context, cfg) =>
         {
-            var overrides = new Dictionary<string, string?>
-            {
-                ["Sqlite:DataDirectory"] = _tempDir,
-            };
+            _finalEnvIsProduction = string.Equals(
+                context.HostingEnvironment.EnvironmentName, "Production", StringComparison.OrdinalIgnoreCase);
+
+            var overrides = new Dictionary<string, string?>();
 
             if (_azuriteConnectionString is not null)
             {
@@ -71,24 +74,32 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>, IAsyncL
         });
         builder.ConfigureTestServices(services =>
         {
+            // Rule §2: register the FakeAuth scheme additively in the test host. Tests assert
+            // identity variations by injecting X-Fake-User / X-Fake-Roles per request.
+            // Never register it when a test simulates Production — the runtime production guard
+            // (Program.cs) forbids fake auth there, and a faithful harness must honour that.
+            if (_finalEnvIsProduction)
+            {
+                return;
+            }
+
             services.AddAuthentication(options =>
             {
-                options.DefaultAuthenticateScheme = TestAuthHandler.SchemeName;
-                options.DefaultChallengeScheme = TestAuthHandler.SchemeName;
-                options.DefaultScheme = TestAuthHandler.SchemeName;
+                options.DefaultAuthenticateScheme = FakeAuthHandler.SchemeName;
+                options.DefaultChallengeScheme = FakeAuthHandler.SchemeName;
+                options.DefaultScheme = FakeAuthHandler.SchemeName;
             })
-            .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(TestAuthHandler.SchemeName, _ => { });
+            .AddScheme<AuthenticationSchemeOptions, FakeAuthHandler>(FakeAuthHandler.SchemeName, _ => { });
         });
     }
 
-    protected override void Dispose(bool disposing)
+    /// <summary>
+    /// Every test client is authenticated by default as "test-user" via the FakeAuth header.
+    /// Individual tests can override or remove this header to assert other identities / anonymous access.
+    /// </summary>
+    protected override void ConfigureClient(HttpClient client)
     {
-        base.Dispose(disposing);
-        if (disposing && Directory.Exists(_tempDir))
-        {
-            SqliteConnection.ClearAllPools();
-            try { Directory.Delete(_tempDir, recursive: true); }
-            catch { /* best-effort cleanup */ }
-        }
+        client.DefaultRequestHeaders.Add(FakeAuthHandler.UserHeader, "test-user");
+        base.ConfigureClient(client);
     }
 }

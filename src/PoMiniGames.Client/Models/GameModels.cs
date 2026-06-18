@@ -60,3 +60,11 @@ public class SnakeHighScore
     public int SnakeLength { get; set; }
     public int FoodEaten { get; set; }
 }
+
+public class MarbleRaceHighScore
+{
+    public string PlayerInitials { get; set; } = "";
+    public int BestScore { get; set; }
+    public string Date { get; set; } = "";
+    public double GameDuration { get; set; }
+}

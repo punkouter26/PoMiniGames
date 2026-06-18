@@ -21,4 +21,8 @@ public interface IStorageService
     // PoDropSquare High Scores
     Task<List<PoDropSquareHighScore>> GetPoDropSquareHighScoresAsync(int limit = 10);
     Task<PoDropSquareHighScore> SavePoDropSquareHighScoreAsync(PoDropSquareHighScore entry);
+
+    // PoMarbleRace High Scores
+    Task<List<MarbleRaceHighScore>> GetMarbleRaceHighScoresAsync(int limit = 10);
+    Task<MarbleRaceHighScore> SaveMarbleRaceHighScoreAsync(MarbleRaceHighScore entry);
 }

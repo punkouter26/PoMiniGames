@@ -44,10 +44,6 @@ resource webApp 'Microsoft.Web/sites@2022-09-01' = {
       minTlsVersion: '1.2'
       appSettings: [
         {
-          name: 'Sqlite__DataDirectory'
-          value: '/home/data'
-        }
-        {
           name: 'PoMiniGames__ApplicationInsights__ConnectionString'
           value: sharedAppInsights.properties.ConnectionString
         }

@@ -28,7 +28,9 @@
     <script type="importmap">
     {
       "imports": {
-        "three": "https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js"
+        "three": "https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/",
+        "cannon-es": "https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js"
       }
     }
     </script>
@@ -53,6 +55,7 @@
     </div>
     <script src="_framework/blazor.webassembly.js"></script>
     <script type="module" src="js/voxelshooter.js"></script>
+    <script type="module" src="js/marblerace/index.js"></script>
     <script src="js/audio.js"></script>
     <script src="js/racingInterop.js"></script>
 </body>

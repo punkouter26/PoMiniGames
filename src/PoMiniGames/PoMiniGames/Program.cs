@@ -24,7 +24,6 @@ builder.Services
     .AddPoMiniGamesStorage()
     .AddPoMiniGamesAuth(builder.Environment, builder.Configuration)
     .AddPoMiniGamesGameServices()
-    .AddPoMiniGamesCors(builder.Configuration)
     .AddPoMiniGamesRateLimiting();
 builder.Services.AddSingleton<IDiagnosticsSnapshotProvider, ConfigurationDiagnosticsSnapshotProvider>();
 
@@ -40,6 +39,7 @@ builder.Services.AddSignalR(options =>
 });
 builder.Services.Configure<GameOptions>(
     builder.Configuration.GetSection(GameOptions.SectionName));
+builder.Services.AddSingleton<IGameBroadcaster, SignalRGameBroadcaster>();
 builder.Services.AddSingleton<IGameSessionManager, GameSessionManager>();
 builder.Services.AddHostedService(provider => (GameSessionManager)provider.GetRequiredService<IGameSessionManager>());
 
@@ -49,6 +49,27 @@ builder.Services.AddAuthorization();
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
+
+// ─── Production safety guards ─────────────────────────────────────────
+// Hard guard: the fake auth scheme must NEVER be registered in Production.
+if (app.Environment.IsProduction())
+{
+    var schemeProvider = app.Services.GetRequiredService<Microsoft.AspNetCore.Authentication.IAuthenticationSchemeProvider>();
+    if (await schemeProvider.GetSchemeAsync(PoMiniGames.Features.Auth.FakeAuthHandler.SchemeName) is not null)
+    {
+        throw new InvalidOperationException(
+            $"SECURITY: '{PoMiniGames.Features.Auth.FakeAuthHandler.SchemeName}' authentication scheme is registered in a Production environment. This is forbidden.");
+    }
+}
+
+// Graceful degradation: warn loudly (but do not crash) when real OAuth is unconfigured.
+var microsoftAuth = app.Services
+    .GetRequiredService<Microsoft.Extensions.Options.IOptions<PoMiniGames.Features.Auth.MicrosoftAuthOptions>>().Value;
+if (!microsoftAuth.Enabled)
+{
+    app.Logger.LogWarning(
+        "Microsoft OAuth is NOT configured (missing ClientId/ApiClientId). The app will boot, but /api/auth/me will report OAuth as unconfigured and real sign-in is unavailable.");
+}
 
 // Initialize storage eagerly so the database is ready before the first request.
 app.Services.GetRequiredService<StorageService>().Initialize();
@@ -86,8 +107,6 @@ app.MapScalarApiReference(options =>
     options.Theme = ScalarTheme.Purple;
 });
 
-app.UseCors();
-
 // ─── Blazor WASM hosting ─────────────────────────────────────────────
 app.UseBlazorFrameworkFiles();
 app.UseStaticFiles();
@@ -106,6 +125,7 @@ app.MapSavePlayerStats();
 app.MapGetLeaderboard();
 app.MapGetAllPlayerStatistics();
 app.MapHighScoresEndpoints();
+app.MapMarbleRaceHighScoresEndpoints();
 app.MapGameEndpoints();
 
 // ─── PoRunner SignalR hub ────────────────────────────────────────────

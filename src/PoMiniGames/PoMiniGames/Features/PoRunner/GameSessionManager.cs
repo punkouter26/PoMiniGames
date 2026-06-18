@@ -1,6 +1,5 @@
 using System.Collections.Concurrent;
 using System.Threading.Channels;
-using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Options;
 
 namespace PoMiniGames.Features.PoRunner;
@@ -13,7 +12,7 @@ public class GameSessionManager : IHostedService, IGameSessionManager, IDisposab
     private readonly ConcurrentDictionary<string, GameRoom> _rooms = new();
     private readonly ConcurrentDictionary<string, string> _playerToRoomMap = new();
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _pendingRemovals = new();
-    private readonly IServiceProvider _serviceProvider;
+    private readonly IGameBroadcaster _broadcaster;
     private readonly TimeProvider _timeProvider;
     private readonly TimeSpan _gracePeriod;
     private readonly TimeSpan _countdownDuration;
@@ -38,9 +37,9 @@ public class GameSessionManager : IHostedService, IGameSessionManager, IDisposab
         PlayerColor.Purple, PlayerColor.Orange, PlayerColor.Pink, PlayerColor.Teal
     ];
 
-    public GameSessionManager(IServiceProvider serviceProvider, ILogger<GameSessionManager>? logger = null, IOptions<GameOptions>? options = null, TimeSpan? gracePeriod = null)
+    public GameSessionManager(IGameBroadcaster broadcaster, ILogger<GameSessionManager>? logger = null, IOptions<GameOptions>? options = null, TimeSpan? gracePeriod = null)
     {
-        _serviceProvider = serviceProvider;
+        _broadcaster = broadcaster;
         _logger = logger;
         _timeProvider = TimeProvider.System;
         var opts = options?.Value ?? new GameOptions();
@@ -134,16 +133,13 @@ public class GameSessionManager : IHostedService, IGameSessionManager, IDisposab
     {
         try
         {
-            using var scope = _serviceProvider.CreateScope();
-            var hubContext = scope.ServiceProvider.GetRequiredService<IHubContext<GameHub>>();
-
             switch (evt.Type)
             {
                 case TickEventType.CountdownElapsed:
                     if (room.Status == GameStatus.Countdown)
                     {
                         room.Status = GameStatus.Playing;
-                        await BroadcastRoomState(hubContext, room);
+                        await _broadcaster.BroadcastRoomStateAsync(room);
                     }
                     break;
 
@@ -161,14 +157,8 @@ public class GameSessionManager : IHostedService, IGameSessionManager, IDisposab
                     }
                     if (triggered)
                     {
-                        await hubContext.Clients.Group(room.RoomId).SendAsync("gameOver", new
-                        {
-                            winnerId = (string?)null,
-                            timeMs = room.FinishTimeMs,
-                            players = room.Players,
-                            qualifiesForHighScore = false,
-                            timedOut = true
-                        });
+                        await _broadcaster.BroadcastGameOverAsync(
+                            room, winnerId: null, timedOut: true, qualifiesForHighScore: false);
                     }
                     break;
             }
@@ -177,18 +167,6 @@ public class GameSessionManager : IHostedService, IGameSessionManager, IDisposab
         {
             _logger?.LogError(ex, "[GameSessionManager] Error processing tick event for {RoomId}", evt.RoomId);
         }
-    }
-
-    private static async Task BroadcastRoomState(IHubContext<GameHub> hubContext, GameRoom room)
-    {
-        await hubContext.Clients.Group(room.RoomId).SendAsync("gameState", new
-        {
-            players = room.Players,
-            status = room.Status.ToString().ToLowerInvariant(),
-            countdownStartTimeMs = room.CountdownStartTimeMs,
-            raceStartTimeMs = room.RaceStartTimeMs,
-            finishedPlayerId = room.FinishedPlayerId
-        });
     }
 
     public GameRoom? GetRoomForPlayer(string connectionId)
@@ -267,9 +245,7 @@ public class GameSessionManager : IHostedService, IGameSessionManager, IDisposab
                 {
                     try
                     {
-                        using var scope = _serviceProvider.CreateScope();
-                        var hubContext = scope.ServiceProvider.GetRequiredService<IHubContext<GameHub>>();
-                        await BroadcastRoomState(hubContext, room);
+                        await _broadcaster.BroadcastRoomStateAsync(room);
                     }
                     catch (Exception ex)
                     {

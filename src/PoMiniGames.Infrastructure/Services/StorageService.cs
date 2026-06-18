@@ -1,5 +1,7 @@
 using System.Text.Json;
-using Microsoft.Data.Sqlite;
+using Azure;
+using Azure.Data.Tables;
+using Azure.Identity;
 using Microsoft.Extensions.Configuration;
 using PoMiniGames.Application.DTOs;
 using PoMiniGames.Application.Services;
@@ -9,70 +11,103 @@ using PoMiniGames.Domain.Services;
 namespace PoMiniGames.Infrastructure.Services;
 
 /// <summary>
-/// SQLite-backed storage service using a single shared database file.
+/// Azure Table Storage-backed storage service. In development this points at the
+/// Azurite emulator (connection string "UseDevelopmentStorage=true"); in production it
+/// uses a real Azure Storage account via a connection string or managed identity.
 /// </summary>
 public class StorageService : IStorageService
 {
-    private readonly string _dbPath;
-    private readonly string _dbFileName;
-    private readonly string _dataDir;
+    private const string PlayerStatsTable = "PlayerStats";
+    private const string SnakeTable = "SnakeHighScores";
+    private const string DropSquareTable = "PoDropSquareHighScores";
+    private const string MarbleRaceTable = "MarbleRaceHighScores";
+
+    // High scores share a single partition per game so a leaderboard is one partition scan.
+    private const string SnakePartition = "snake";
+    private const string DropSquarePartition = "podropsquare";
+    private const string MarbleRacePartition = "marblerace";
+
+    private readonly TableServiceClient _serviceClient;
     private readonly EloCalculator _eloCalculator;
+    private readonly HashSet<string> _ensuredTables = new();
+    private readonly object _ensureLock = new();
 
     internal static readonly HashSet<char> _invalidChars =
         Path.GetInvalidFileNameChars()
-            .Concat(new[] { '\'', '"', ';', '\\', '/' })
+            .Concat(new[] { '\'', '"', ';', '\\', '/', '#', '?', '\t', '\n', '\r' })
             .ToHashSet();
 
     public StorageService(IConfiguration configuration, EloCalculator eloCalculator)
     {
         _eloCalculator = eloCalculator;
-        var dataDir = configuration["Sqlite:DataDirectory"]
-            ?? Path.Combine(AppContext.BaseDirectory, "data");
 
-        Directory.CreateDirectory(dataDir);
+        var section = configuration.GetSection("PoMiniGames:Storage:TableService");
+        var connectionString = section["ConnectionString"];
+        var endpoint = section["Endpoint"];
+        var accountName = section["AccountName"];
 
-        var databaseFileName = configuration["Sqlite:DatabaseFileName"];
-        if (string.IsNullOrWhiteSpace(databaseFileName))
+        if (!string.IsNullOrWhiteSpace(connectionString))
         {
-            databaseFileName = "pominigames.db";
+            _serviceClient = new TableServiceClient(connectionString);
         }
-
-        _dbFileName = Path.GetFileName(databaseFileName);
-        _dbPath = Path.Combine(dataDir, _dbFileName);
-        _dataDir = dataDir;
+        else if (!string.IsNullOrWhiteSpace(endpoint) || !string.IsNullOrWhiteSpace(accountName))
+        {
+            var serviceUri = !string.IsNullOrWhiteSpace(endpoint)
+                ? new Uri(endpoint!)
+                : new Uri($"https://{accountName}.table.core.windows.net");
+            _serviceClient = new TableServiceClient(serviceUri, new DefaultAzureCredential());
+        }
+        else
+        {
+            // Default to the Azurite emulator so local dev works out of the box.
+            _serviceClient = new TableServiceClient("UseDevelopmentStorage=true");
+        }
     }
 
     /// <summary>
-    /// Ensures the shared SQLite schema exists before the app serves requests.
+    /// Best-effort eager creation of all tables at startup. If storage is briefly unreachable
+    /// the app still starts; tables are also ensured lazily on first use (see <see cref="Table"/>).
     /// </summary>
     public void Initialize()
     {
-        DbInitializer.InitializeSchema(_dbPath);
+        foreach (var table in new[] { PlayerStatsTable, SnakeTable, DropSquareTable, MarbleRaceTable })
+        {
+            try { Table(table); } catch { /* ensured lazily on first use */ }
+        }
     }
 
-    private SqliteConnection OpenConnection()
+    // Returns the client, creating the table once per name (cached).
+    private TableClient Table(string name)
     {
-        var conn = new SqliteConnection($"Data Source={_dbPath}");
-        conn.Open();
-        return conn;
+        var client = _serviceClient.GetTableClient(name);
+        bool firstTime;
+        lock (_ensureLock)
+        {
+            firstTime = _ensuredTables.Add(name);
+        }
+        if (firstTime)
+        {
+            client.CreateIfNotExists();
+        }
+        return client;
     }
+
+    // ── Player stats ──────────────────────────────────────────────────────
 
     public async Task<List<PlayerStatsDto>> GetAllPlayerStatsAsync()
     {
         var result = new List<PlayerStatsDto>();
+        var table = Table(PlayerStatsTable);
 
-        using var conn = OpenConnection();
-        using var cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT Game, PlayerName, StatsJson FROM PlayerStats";
-
-        using var reader = await cmd.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
+        await foreach (var entity in table.QueryAsync<TableEntity>())
         {
-            var stats = JsonSerializer.Deserialize<PlayerStats>(reader.GetString(2)) ?? new PlayerStats();
+            var json = entity.GetString("StatsJson");
+            if (string.IsNullOrEmpty(json)) continue;
+            var stats = JsonSerializer.Deserialize<PlayerStats>(json) ?? new PlayerStats();
             result.Add(new PlayerStatsDto
             {
-                Game = reader.GetString(0),
-                Name = reader.GetString(1),
+                Game = entity.PartitionKey,
+                Name = entity.RowKey,
                 Stats = stats,
             });
         }
@@ -89,14 +124,16 @@ public class StorageService : IStorageService
             return null;
         }
 
-        using var conn = OpenConnection();
-        using var cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT StatsJson FROM PlayerStats WHERE Game = $game AND PlayerName = $name";
-        cmd.Parameters.AddWithValue("$game", sanitizedGame);
-        cmd.Parameters.AddWithValue("$name", sanitizedName);
-
-        var raw = (string?)await cmd.ExecuteScalarAsync();
-        return raw is null ? null : JsonSerializer.Deserialize<PlayerStats>(raw);
+        try
+        {
+            var response = await Table(PlayerStatsTable).GetEntityAsync<TableEntity>(sanitizedGame, sanitizedName);
+            var json = response.Value.GetString("StatsJson");
+            return json is null ? null : JsonSerializer.Deserialize<PlayerStats>(json);
+        }
+        catch (RequestFailedException ex) when (ex.Status == 404)
+        {
+            return null;
+        }
     }
 
     public async Task SavePlayerStatsAsync(string game, string playerName, PlayerStats stats)
@@ -116,27 +153,15 @@ public class StorageService : IStorageService
 
         // Compute ELO ratings server-side before persisting so the stored JSON is always current.
         _eloCalculator.ApplyAll(stats);
-
         stats.UpdatedAt = DateTime.UtcNow;
-        var json = JsonSerializer.Serialize(stats);
-        var now = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ");
 
-        using var conn = OpenConnection();
-        using var cmd = conn.CreateCommand();
-        cmd.CommandText = """
-            INSERT INTO PlayerStats (Game, PlayerName, StatsJson, CreatedAt, UpdatedAt)
-            VALUES ($game, $name, $json, $now, $now)
-            ON CONFLICT(Game, PlayerName) DO UPDATE SET
-                StatsJson = excluded.StatsJson,
-                UpdatedAt = excluded.UpdatedAt;
-            """;
+        var entity = new TableEntity(sanitizedGame, sanitizedName)
+        {
+            ["StatsJson"] = JsonSerializer.Serialize(stats),
+            ["UpdatedAt"] = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"),
+        };
 
-        cmd.Parameters.AddWithValue("$game", sanitizedGame);
-        cmd.Parameters.AddWithValue("$name", sanitizedName);
-        cmd.Parameters.AddWithValue("$json", json);
-        cmd.Parameters.AddWithValue("$now", now);
-
-        await cmd.ExecuteNonQueryAsync();
+        await Table(PlayerStatsTable).UpsertEntityAsync(entity, TableUpdateMode.Replace);
     }
 
     public async Task<List<(string Name, PlayerStats Stats)>> GetLeaderboardAsync(string game, int limit, string? difficulty = null)
@@ -147,61 +172,16 @@ public class StorageService : IStorageService
             return [];
         }
 
-        // Normalise the difficulty string: null / empty / "all" → aggregate ranking.
-        var diff = difficulty?.Trim().ToLowerInvariant();
-
-        // Push ORDER BY and LIMIT into SQLite using json_extract() so only the top-N rows
-        // are deserialised instead of loading the entire table into memory.
-        using var conn = OpenConnection();
-        using var cmd = conn.CreateCommand();
-        cmd.CommandText = diff switch
+        // Table Storage has no server-side ordering, so scan the game's partition and rank in
+        // memory. Leaderboards are small, so this is cheap.
+        var rows = new List<(string Name, PlayerStats Stats)>();
+        await foreach (var entity in Table(PlayerStatsTable).QueryAsync<TableEntity>(
+            filter: $"PartitionKey eq '{sanitizedGame.Replace("'", "''")}'"))
         {
-            "easy" => """
-                SELECT PlayerName, StatsJson
-                FROM PlayerStats
-                WHERE Game = $game
-                  AND CAST(COALESCE(json_extract(StatsJson, '$.Easy.TotalGames'), 0) AS INTEGER) > 0
-                ORDER BY CAST(COALESCE(json_extract(StatsJson, '$.Easy.EloRating'),   0) AS REAL) DESC,
-                         CAST(COALESCE(json_extract(StatsJson, '$.Easy.TotalGames'),  0) AS INTEGER) DESC
-                LIMIT $limit
-                """,
-            "medium" => """
-                SELECT PlayerName, StatsJson
-                FROM PlayerStats
-                WHERE Game = $game
-                  AND CAST(COALESCE(json_extract(StatsJson, '$.Medium.TotalGames'), 0) AS INTEGER) > 0
-                ORDER BY CAST(COALESCE(json_extract(StatsJson, '$.Medium.EloRating'),   0) AS REAL) DESC,
-                         CAST(COALESCE(json_extract(StatsJson, '$.Medium.TotalGames'),  0) AS INTEGER) DESC
-                LIMIT $limit
-                """,
-            "hard" => """
-                SELECT PlayerName, StatsJson
-                FROM PlayerStats
-                WHERE Game = $game
-                  AND CAST(COALESCE(json_extract(StatsJson, '$.Hard.TotalGames'), 0) AS INTEGER) > 0
-                ORDER BY CAST(COALESCE(json_extract(StatsJson, '$.Hard.EloRating'),   0) AS REAL) DESC,
-                         CAST(COALESCE(json_extract(StatsJson, '$.Hard.TotalGames'),  0) AS INTEGER) DESC
-                LIMIT $limit
-                """,
-            // "all" or unrecognised: aggregate win-rate ranking.
-            _ => """
-                SELECT PlayerName, StatsJson
-                FROM PlayerStats
-                WHERE Game = $game
-                ORDER BY CAST(COALESCE(json_extract(StatsJson, '$.WinRate'),    0) AS REAL) DESC,
-                         CAST(COALESCE(json_extract(StatsJson, '$.TotalGames'), 0) AS INTEGER) DESC
-                LIMIT $limit
-                """,
-        };
+            var json = entity.GetString("StatsJson");
+            if (string.IsNullOrEmpty(json)) continue;
+            var stats = JsonSerializer.Deserialize<PlayerStats>(json) ?? new PlayerStats();
 
-        cmd.Parameters.AddWithValue("$game", sanitizedGame);
-        cmd.Parameters.AddWithValue("$limit", limit);
-
-        var result = new List<(string Name, PlayerStats Stats)>();
-        using var reader = await cmd.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
-        {
-            var stats = JsonSerializer.Deserialize<PlayerStats>(reader.GetString(1)) ?? new PlayerStats();
             // Backfill ELO for legacy records where EloRating was not yet stored.
             if (stats.TotalGames > 0 &&
                 stats.Easy.EloRating == 0 && stats.Medium.EloRating == 0 && stats.Hard.EloRating == 0)
@@ -209,137 +189,175 @@ public class StorageService : IStorageService
                 _eloCalculator.ApplyAll(stats);
             }
 
-            result.Add((reader.GetString(0), stats));
+            rows.Add((entity.RowKey, stats));
         }
 
-        return result;
-    }
-
-    // ── PoSnakeGame high scores ───────────────────────────────────────────
-
-    public async Task<List<SnakeHighScore>> GetSnakeHighScoresAsync(int limit = 10)
-    {
-        var result = new List<SnakeHighScore>();
-
-        using var conn = OpenConnection();
-        using var cmd = conn.CreateCommand();
-        cmd.CommandText = """
-            SELECT Initials, Score, Date, GameDuration, SnakeLength, FoodEaten
-            FROM SnakeHighScores
-            ORDER BY Score DESC
-            LIMIT $limit
-            """;
-        cmd.Parameters.AddWithValue("$limit", limit);
-
-        using var reader = await cmd.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
+        var diff = difficulty?.Trim().ToLowerInvariant();
+        IEnumerable<(string Name, PlayerStats Stats)> ranked = diff switch
         {
-            result.Add(new SnakeHighScore
-            {
-                Initials = reader.GetString(0),
-                Score = reader.GetInt32(1),
-                Date = reader.GetString(2),
-                GameDuration = reader.GetDouble(3),
-                SnakeLength = reader.GetInt32(4),
-                FoodEaten = reader.GetInt32(5),
-            });
-        }
-
-        return result;
-    }
-
-    public async Task<SnakeHighScore> SaveSnakeHighScoreAsync(SnakeHighScore entry)
-    {
-        var sanitized = entry with
-        {
-            Initials = entry.Initials.Trim().ToUpperInvariant(),
-            Date = string.IsNullOrWhiteSpace(entry.Date)
-                           ? DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
-                           : entry.Date,
+            "easy" => rows.Where(r => r.Stats.Easy.TotalGames > 0)
+                          .OrderByDescending(r => r.Stats.Easy.EloRating)
+                          .ThenByDescending(r => r.Stats.Easy.TotalGames),
+            "medium" => rows.Where(r => r.Stats.Medium.TotalGames > 0)
+                          .OrderByDescending(r => r.Stats.Medium.EloRating)
+                          .ThenByDescending(r => r.Stats.Medium.TotalGames),
+            "hard" => rows.Where(r => r.Stats.Hard.TotalGames > 0)
+                          .OrderByDescending(r => r.Stats.Hard.EloRating)
+                          .ThenByDescending(r => r.Stats.Hard.TotalGames),
+            _ => rows.OrderByDescending(r => r.Stats.WinRate)
+                     .ThenByDescending(r => r.Stats.TotalGames),
         };
 
-        using var conn = OpenConnection();
-        using var cmd = conn.CreateCommand();
-        cmd.CommandText = """
-            INSERT INTO SnakeHighScores (Initials, Score, Date, GameDuration, SnakeLength, FoodEaten)
-            VALUES ($initials, $score, $date, $duration, $snakeLen, $foodEaten)
-            """;
-        cmd.Parameters.AddWithValue("$initials", sanitized.Initials);
-        cmd.Parameters.AddWithValue("$score", sanitized.Score);
-        cmd.Parameters.AddWithValue("$date", sanitized.Date);
-        cmd.Parameters.AddWithValue("$duration", sanitized.GameDuration);
-        cmd.Parameters.AddWithValue("$snakeLen", sanitized.SnakeLength);
-        cmd.Parameters.AddWithValue("$foodEaten", sanitized.FoodEaten);
-        await cmd.ExecuteNonQueryAsync();
+        return ranked.Take(limit).ToList();
+    }
 
+    // ── High scores ───────────────────────────────────────────────────────
+    // Each game is one descriptor; the save/get flow below is shared by all of them.
+
+    private static readonly HighScoreDescriptor<SnakeHighScore> SnakeScores = new(
+        Table: SnakeTable,
+        Partition: SnakePartition,
+        Sanitize: e => e with
+        {
+            Initials = e.Initials.Trim().ToUpperInvariant(),
+            Date = DefaultDate(e.Date),
+        },
+        ToFields: e => new Dictionary<string, object?>
+        {
+            ["Initials"] = e.Initials,
+            ["Score"] = e.Score,
+            ["Date"] = e.Date,
+            ["GameDuration"] = e.GameDuration,
+            ["SnakeLength"] = e.SnakeLength,
+            ["FoodEaten"] = e.FoodEaten,
+        },
+        FromEntity: e => new SnakeHighScore
+        {
+            Initials = e.GetString("Initials") ?? "",
+            Score = e.GetInt32("Score") ?? 0,
+            Date = e.GetString("Date") ?? "",
+            GameDuration = e.GetDouble("GameDuration") ?? 30d,
+            SnakeLength = e.GetInt32("SnakeLength") ?? 0,
+            FoodEaten = e.GetInt32("FoodEaten") ?? 0,
+        },
+        // Highest score wins.
+        Rank: s => s.OrderByDescending(x => x.Score));
+
+    private static readonly HighScoreDescriptor<PoDropSquareHighScore> DropSquareScores = new(
+        Table: DropSquareTable,
+        Partition: DropSquarePartition,
+        Sanitize: e => e with
+        {
+            PlayerInitials = Initials3(e.PlayerInitials),
+            Date = DefaultDate(e.Date),
+            PlayerName = string.IsNullOrWhiteSpace(e.PlayerName) ? null : SanitizeName(e.PlayerName),
+        },
+        ToFields: e => new Dictionary<string, object?>
+        {
+            ["PlayerInitials"] = e.PlayerInitials,
+            ["SurvivalTime"] = e.SurvivalTime,
+            ["Date"] = e.Date,
+            ["PlayerName"] = e.PlayerName,
+        },
+        FromEntity: e => new PoDropSquareHighScore
+        {
+            PlayerInitials = e.GetString("PlayerInitials") ?? "",
+            SurvivalTime = e.GetDouble("SurvivalTime") ?? 0d,
+            Date = e.GetString("Date") ?? "",
+            PlayerName = e.GetString("PlayerName"),
+        },
+        // Lowest survival time wins, oldest first as the tiebreaker.
+        Rank: s => s.OrderBy(x => x.SurvivalTime).ThenBy(x => x.Date));
+
+    private static readonly HighScoreDescriptor<MarbleRaceHighScore> MarbleRaceScores = new(
+        Table: MarbleRaceTable,
+        Partition: MarbleRacePartition,
+        Sanitize: e => e with
+        {
+            PlayerInitials = Initials3(e.PlayerInitials),
+            Date = DefaultDate(e.Date),
+        },
+        ToFields: e => new Dictionary<string, object?>
+        {
+            ["PlayerInitials"] = e.PlayerInitials,
+            ["BestScore"] = e.BestScore,
+            ["Date"] = e.Date,
+            ["GameDuration"] = e.GameDuration,
+        },
+        FromEntity: e => new MarbleRaceHighScore
+        {
+            PlayerInitials = e.GetString("PlayerInitials") ?? "",
+            BestScore = e.GetInt32("BestScore") ?? 0,
+            Date = e.GetString("Date") ?? "",
+            GameDuration = e.GetDouble("GameDuration") ?? 0d,
+        },
+        // Highest score wins, oldest first as the tiebreaker.
+        Rank: s => s.OrderByDescending(x => x.BestScore).ThenBy(x => x.Date));
+
+    public Task<List<SnakeHighScore>> GetSnakeHighScoresAsync(int limit = 10) =>
+        GetHighScoresAsync(SnakeScores, limit);
+
+    public Task<SnakeHighScore> SaveSnakeHighScoreAsync(SnakeHighScore entry) =>
+        SaveHighScoreAsync(SnakeScores, entry);
+
+    public Task<List<PoDropSquareHighScore>> GetPoDropSquareHighScoresAsync(int limit = 10) =>
+        GetHighScoresAsync(DropSquareScores, limit);
+
+    public Task<PoDropSquareHighScore> SavePoDropSquareHighScoreAsync(PoDropSquareHighScore entry) =>
+        SaveHighScoreAsync(DropSquareScores, entry);
+
+    public Task<List<MarbleRaceHighScore>> GetMarbleRaceHighScoresAsync(int limit = 10) =>
+        GetHighScoresAsync(MarbleRaceScores, limit);
+
+    public Task<MarbleRaceHighScore> SaveMarbleRaceHighScoreAsync(MarbleRaceHighScore entry) =>
+        SaveHighScoreAsync(MarbleRaceScores, entry);
+
+    // The one shared high-score read: scan the game's partition, rebuild entries, rank, take.
+    private async Task<List<T>> GetHighScoresAsync<T>(HighScoreDescriptor<T> descriptor, int limit)
+    {
+        var scores = new List<T>();
+        await foreach (var e in Table(descriptor.Table).QueryAsync<TableEntity>(
+            filter: $"PartitionKey eq '{descriptor.Partition}'"))
+        {
+            scores.Add(descriptor.FromEntity(e));
+        }
+
+        return descriptor.Rank(scores).Take(limit).ToList();
+    }
+
+    // The one shared high-score write: normalise, map to a row, append.
+    private async Task<T> SaveHighScoreAsync<T>(HighScoreDescriptor<T> descriptor, T entry)
+    {
+        var sanitized = descriptor.Sanitize(entry);
+
+        var entity = new TableEntity(descriptor.Partition, NewRowKey());
+        foreach (var (key, value) in descriptor.ToFields(sanitized))
+        {
+            entity[key] = value;
+        }
+
+        await Table(descriptor.Table).AddEntityAsync(entity);
         return sanitized;
     }
 
-    // ── PoDropSquare high scores ────────────────────────────────────────
+    // ── Helpers ─────────────────────────────────────────────────────────
 
-    public async Task<List<PoDropSquareHighScore>> GetPoDropSquareHighScoresAsync(int limit = 10)
+    private static string DefaultDate(string? date) =>
+        string.IsNullOrWhiteSpace(date)
+            ? DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
+            : date;
+
+    // Uppercased, sanitized initials truncated to 3 characters.
+    private static string Initials3(string raw)
     {
-        var result = new List<PoDropSquareHighScore>();
-
-        using var conn = OpenConnection();
-        using var cmd = conn.CreateCommand();
-        cmd.CommandText = """
-            SELECT PlayerInitials, SurvivalTime, Date, PlayerName
-            FROM PoDropSquareHighScores
-            ORDER BY SurvivalTime ASC, Date ASC
-            LIMIT $limit
-            """;
-        cmd.Parameters.AddWithValue("$limit", limit);
-
-        using var reader = await cmd.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
-        {
-            result.Add(new PoDropSquareHighScore
-            {
-                PlayerInitials = reader.GetString(0),
-                SurvivalTime = reader.GetDouble(1),
-                Date = reader.GetString(2),
-                PlayerName = reader.IsDBNull(3) ? null : reader.GetString(3),
-            });
-        }
-
-        return result;
+        var s = SanitizeName(raw).ToUpperInvariant();
+        return s.Length > 3 ? s[..3] : s;
     }
 
-    public async Task<PoDropSquareHighScore> SavePoDropSquareHighScoreAsync(PoDropSquareHighScore entry)
-    {
-        var sanitizedInitials = SanitizeName(entry.PlayerInitials)
-            .ToUpperInvariant();
-        if (sanitizedInitials.Length > 3)
-        {
-            sanitizedInitials = sanitizedInitials[..3];
-        }
 
-        var sanitized = entry with
-        {
-            PlayerInitials = sanitizedInitials,
-            Date = string.IsNullOrWhiteSpace(entry.Date)
-                ? DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
-                : entry.Date,
-            PlayerName = string.IsNullOrWhiteSpace(entry.PlayerName)
-                ? null
-                : SanitizeName(entry.PlayerName),
-        };
-
-        using var conn = OpenConnection();
-        using var cmd = conn.CreateCommand();
-        cmd.CommandText = """
-            INSERT INTO PoDropSquareHighScores (PlayerInitials, SurvivalTime, Date, PlayerName)
-            VALUES ($initials, $survivalTime, $date, $playerName)
-            """;
-        cmd.Parameters.AddWithValue("$initials", sanitized.PlayerInitials);
-        cmd.Parameters.AddWithValue("$survivalTime", sanitized.SurvivalTime);
-        cmd.Parameters.AddWithValue("$date", sanitized.Date);
-        cmd.Parameters.AddWithValue("$playerName", (object?)sanitized.PlayerName ?? DBNull.Value);
-        await cmd.ExecuteNonQueryAsync();
-
-        return sanitized;
-    }
+    // Descending-time RowKey keeps newest first within a partition and stays unique.
+    private static string NewRowKey() =>
+        $"{(DateTime.MaxValue.Ticks - DateTime.UtcNow.Ticks):D19}-{Guid.NewGuid():N}";
 
     internal static string SanitizeName(string input)
     {

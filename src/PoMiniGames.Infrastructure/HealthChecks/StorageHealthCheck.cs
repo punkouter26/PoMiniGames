@@ -4,8 +4,8 @@ using PoMiniGames.Application.Services;
 namespace PoMiniGames.Infrastructure.HealthChecks;
 
 /// <summary>
-/// Health check that verifies SQLite storage is accessible
-/// by opening a connection to the data directory.
+/// Health check that verifies the storage backend is accessible
+/// by performing a lightweight leaderboard read.
 /// </summary>
 public sealed class StorageHealthCheck : IHealthCheck
 {
@@ -22,13 +22,13 @@ public sealed class StorageHealthCheck : IHealthCheck
     {
         try
         {
-            // Try a read on the health-check probe database
+            // Try a read on the health-check probe partition
             await _storage.GetLeaderboardAsync("healthcheck", 1);
-            return HealthCheckResult.Healthy("SQLite storage is accessible.");
+            return HealthCheckResult.Healthy("Storage is accessible.");
         }
         catch (Exception ex)
         {
-            return HealthCheckResult.Unhealthy("SQLite storage is unavailable.", ex);
+            return HealthCheckResult.Unhealthy("Storage is unavailable.", ex);
         }
     }
 }

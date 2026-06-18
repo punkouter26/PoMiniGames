@@ -1,6 +1,5 @@
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Configuration;
 
 namespace PoMiniGames.IntegrationTests;
@@ -12,8 +11,6 @@ namespace PoMiniGames.IntegrationTests;
 /// </summary>
 public class LocalAuthWebApplicationFactory : WebApplicationFactory<Program>
 {
-    private readonly string _tempDir = Path.Combine(Path.GetTempPath(), $"pomini-local-auth-test-{Guid.NewGuid()}");
-
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Development");
@@ -21,21 +18,9 @@ public class LocalAuthWebApplicationFactory : WebApplicationFactory<Program>
         {
             cfg.AddInMemoryCollection(new Dictionary<string, string?>
             {
-                ["Sqlite:DataDirectory"] = _tempDir,
                 // Disable DevBypass to enforce auth enforcement in tests
                 ["PoMiniGames:DevBypassAuth"] = "false",
             });
         });
-    }
-
-    protected override void Dispose(bool disposing)
-    {
-        base.Dispose(disposing);
-        if (disposing && Directory.Exists(_tempDir))
-        {
-            SqliteConnection.ClearAllPools();
-            try { Directory.Delete(_tempDir, recursive: true); }
-            catch { }
-        }
     }
 }

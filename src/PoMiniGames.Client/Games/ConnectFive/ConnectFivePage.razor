@@ -222,15 +222,7 @@
     private void UpdateStats()
     {
         var bucket = _gameStats.GetDifficultyBucket(_stats, _difficulty);
-        _statItems = new List<StatItem>
-        {
-            new() { Value = bucket.Wins.ToString(), Label = "W" },
-            new() { Value = bucket.Losses.ToString(), Label = "L" },
-            new() { Value = bucket.Draws.ToString(), Label = "D" },
-            new() { Value = bucket.WinStreak.ToString(), Label = "Str" },
-            new() { Value = $"{bucket.WinRate * 100:F0}%", Label = "Rate" },
-            new() { Value = bucket.EloRating.ToString(), Label = "ELO" }
-        };
+        _statItems = GameStatsPanel.Build(bucket);
     }
 
     private void HandleDrop(int col)

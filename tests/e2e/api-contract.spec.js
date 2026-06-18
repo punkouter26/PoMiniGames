@@ -13,10 +13,8 @@ test.describe('API contract', () => {
     const response = await request.get('/diag');
     expect(response.ok()).toBeTruthy();
     const json = await response.json();
-    // Verify SQLite config key is present
-    const hasSqlite = json['Sqlite:DataDirectory'] !== undefined ||
-                      json['Sqlite__DataDirectory'] !== undefined;
-    expect(hasSqlite).toBeTruthy();
+    // Verify the storage config section is present
+    expect(json['storage'] !== undefined).toBeTruthy();
   });
 
   test('leaderboard endpoint returns 200', async ({ request }) => {

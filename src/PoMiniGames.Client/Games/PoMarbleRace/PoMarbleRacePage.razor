@@ -1,0 +1,273 @@
+@page "/pomarblerace"
+@using System.Text.Json
+@using PoMiniGamesClient.Components
+@using PoMiniGamesClient.Enums
+@using PoMiniGamesClient.Models
+@using PoMiniGamesClient.Services
+@implements IAsyncDisposable
+@inject PlayerNameService PlayerNameService
+@inject ApiService ApiService
+@inject GameResultService GameResults
+@inject IJSRuntime JSRuntime
+@inject NavigationManager Navigation
+
+<GameShell Title=@TitleContent
+           Player="@_playerName"
+           BackTo="/single-player"
+           ShowPlayAgain="false"
+           ShowSettings="true"
+           Stats="@_statItems"
+           Controls="@ControlsContent">
+    <div class="mr-wrap">
+        <div id="marble-race-container" class="mr-canvas-host"></div>
+
+        @* Scoreboard / HUD *@
+        <div class="mr-hud">
+            <div class="mr-score-row">
+                <div class="mr-score"><span class="mr-score-label">SCORE</span><span class="mr-score-value">@_score</span></div>
+                <div class="mr-score"><span class="mr-score-label">BEST</span><span class="mr-score-value">@_best</span></div>
+            </div>
+            <div class="mr-progress" title="Race progress">
+                <div class="mr-progress-fill" style="width:@($"{(int)(_progress * 100)}%")"></div>
+            </div>
+            <ol class="mr-leaderboard">
+                @foreach (var row in _leaderboard)
+                {
+                    <li class="@(row.IsPlayer ? "mr-lb-row mr-lb-you" : "mr-lb-row")">
+                        <span class="mr-lb-place">@row.Place</span>
+                        <span class="mr-lb-dot" style="background:@row.Color"></span>
+                        <span class="mr-lb-speed">@row.Speed.ToString("0.0")</span>
+                        @if (row.IsPlayer)
+                        {
+                            <span class="mr-lb-you-tag">YOU</span>
+                        }
+                        @if (row.Finished)
+                        {
+                            <span class="mr-lb-fin">✓</span>
+                        }
+                    </li>
+                }
+            </ol>
+            <div class="mr-hint">Press <kbd>R</kbd> for a new track</div>
+        </div>
+
+        @* Pick overlay *@
+        @if (_phase == "pick" && !_demo)
+        {
+            <div class="mr-overlay">
+                <div class="mr-pick-card">
+                    <h2 class="mr-pick-title">Pick your marble</h2>
+                    <p class="mr-pick-sub">Top 3 finish = +1 point. Watch your marble race!</p>
+                    <div class="mr-pick-grid">
+                        @for (int i = 0; i < 8; i++)
+                        {
+                            var idx = i;
+                            <button class="mr-pick-marble" style="--c:@Colors[idx]" @onclick="() => Pick(idx)" aria-label="@($"Pick marble {idx + 1}")">
+                                <span class="mr-pick-ball"></span>
+                            </button>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+
+        @* Result banner *@
+        @if (_phase == "result")
+        {
+            <div class="mr-result @(_lastWon ? "mr-result-win" : "mr-result-lose")">
+                @if (_lastWon)
+                {
+                    <span>🏆 Your marble placed @Ordinal(_lastPlace) — +1!</span>
+                }
+                else
+                {
+                    <span>Your marble placed @Ordinal(_lastPlace)</span>
+                }
+            </div>
+        }
+    </div>
+</GameShell>
+
+@code {
+    [SupplyParameterFromQuery(Name = "demo")]
+    public int Demo { get; set; }
+
+    private string _playerName = "";
+    private bool _demo;
+    private string _phase = "pick";
+    private int _score;
+    private int _best;
+    private double _progress;
+    private bool _lastWon;
+    private int _lastPlace;
+    private int _submittedBest;
+
+    private List<LbRow> _leaderboard = new();
+    private List<StatItem> _statItems = new();
+    private PlayerStats _stats = new();
+    private readonly GameStatsService _gameStats = new();
+    private DotNetObjectReference<PoMarbleRacePage>? _ref;
+    private bool _engineStarted;
+
+    private static readonly string[] Colors =
+    {
+        "#22d3ee", "#e879f9", "#a3e635", "#fb923c",
+        "#f87171", "#60a5fa", "#fde047", "#f472b6"
+    };
+
+    private RenderFragment TitleContent => @<span>🔮 PoMarbleRace</span>;
+
+    private RenderFragment ControlsContent => @<div class="gps-controls">
+        <button @onclick="ToggleMute">@(_muted ? "🔇 Unmute" : "🔊 Mute")</button>
+        <button @onclick="NewTrack">🔄 New track</button>
+    </div>;
+
+    private bool _muted;
+
+    protected override void OnInitialized()
+    {
+        _demo = Demo == 1;
+        _playerName = PlayerNameService.GetPlayerName();
+        _stats = _gameStats.GetStats("pomarblerace", _playerName);
+        UpdateStats();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !_engineStarted)
+        {
+            _engineStarted = true;
+            _ref = DotNetObjectReference.Create(this);
+            try
+            {
+                await JSRuntime.InvokeVoidAsync("PoMarbleRace.start", "marble-race-container", _ref, _demo);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[PoMarbleRace] JS init failed: {ex.Message}");
+            }
+        }
+    }
+
+    private async Task Pick(int index)
+    {
+        try { await JSRuntime.InvokeVoidAsync("PoMarbleRace.pick", index); } catch { }
+    }
+
+    private async Task NewTrack()
+    {
+        try { await JSRuntime.InvokeVoidAsync("PoMarbleRace.regenerate"); } catch { }
+    }
+
+    private async Task ToggleMute()
+    {
+        _muted = !_muted;
+        try { await JSRuntime.InvokeVoidAsync("PoMarbleRace.setMuted", _muted); } catch { }
+    }
+
+    [JSInvokable]
+    public void OnPhase(string phase, int chosen, int score, int best)
+    {
+        _phase = phase;
+        _score = score;
+        _best = best;
+        if (phase == "pick")
+        {
+            _progress = 0;
+            _leaderboard.Clear();
+        }
+        InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public void OnRaceTick(string json, double progress)
+    {
+        _progress = progress;
+        try
+        {
+            var rows = JsonSerializer.Deserialize<List<LbRow>>(json, JsonOpts);
+            if (rows != null) _leaderboard = rows;
+        }
+        catch { }
+        InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public async Task OnRaceResult(bool won, int place, int score)
+    {
+        _lastWon = won;
+        _lastPlace = place;
+        _score = score;
+        _phase = "result";
+
+        if (!_demo)
+        {
+            _gameStats.SaveLastPlayedGame("pomarblerace");
+
+            // A new personal best is submitted to the global board (debounced by _submittedBest).
+            MarbleRaceHighScore? best = null;
+            if (score > _submittedBest && score > 0)
+            {
+                _submittedBest = score;
+                best = new MarbleRaceHighScore
+                {
+                    PlayerInitials = Initials(_playerName),
+                    BestScore = score,
+                    GameDuration = 0,
+                };
+            }
+
+            // One intake records local stats and submits the high score together — no desync.
+            _stats = await GameResults.RecordAndSubmitMarbleRaceAsync(
+                _playerName, won ? GameResult.Win : GameResult.Loss, best);
+            UpdateStats();
+        }
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void UpdateStats()
+    {
+        var bucket = _gameStats.GetDifficultyBucket(_stats, Difficulty.Medium);
+        // Marble race shows Score + Best and has no draws/streak column.
+        _statItems = new List<StatItem>
+        {
+            new() { Value = _score.ToString(), Label = "Score" },
+            new() { Value = _best.ToString(), Label = "Best" },
+            new() { Value = bucket.Wins.ToString(), Label = "W" },
+            new() { Value = bucket.Losses.ToString(), Label = "L" },
+            new() { Value = $"{bucket.WinRate * 100:F0}%", Label = "Rate" },
+            new() { Value = bucket.EloRating.ToString(), Label = "ELO" }
+        };
+    }
+
+    private static string Initials(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return "PO";
+        var letters = new string(name.Where(char.IsLetterOrDigit).ToArray());
+        if (letters.Length == 0) return "PO";
+        return letters[..Math.Min(3, letters.Length)].ToUpperInvariant();
+    }
+
+    private static string Ordinal(int n) => n switch
+    {
+        1 => "1st", 2 => "2nd", 3 => "3rd",
+        _ => $"{n}th"
+    };
+
+    private static readonly JsonSerializerOptions JsonOpts = new() { PropertyNameCaseInsensitive = true };
+
+    public async ValueTask DisposeAsync()
+    {
+        try { await JSRuntime.InvokeVoidAsync("PoMarbleRace.stop"); } catch { }
+        _ref?.Dispose();
+    }
+
+    private sealed class LbRow
+    {
+        public int Place { get; set; }
+        public string Color { get; set; } = "#fff";
+        public double Speed { get; set; }
+        public bool IsPlayer { get; set; }
+        public bool Finished { get; set; }
+    }
+}

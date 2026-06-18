@@ -22,6 +22,11 @@ internal static class AuthExtensions
 
         var devLoginEnabled = env.IsDevelopment();
 
+        // Fake auth is a Dev-only convenience, gated behind an explicit flag. It is NEVER
+        // registered in Production (a startup guard in Program.cs enforces this).
+        var fakeAuthEnabled = env.IsDevelopment()
+            && configuration.GetValue<bool>("Auth:EnableFakeAuth");
+
         var authBuilder = services.AddAuthentication(options =>
             {
                 options.DefaultAuthenticateScheme = AuthSchemes.Composite;
@@ -44,6 +49,11 @@ internal static class AuthExtensions
                         return JwtBearerDefaults.AuthenticationScheme;
                     }
 
+                    if (fakeAuthEnabled && context.Request.Headers.ContainsKey(FakeAuthHandler.UserHeader))
+                    {
+                        return FakeAuthHandler.SchemeName;
+                    }
+
                     if (devLoginEnabled)
                     {
                         return AuthSchemes.DevCookie;
@@ -52,6 +62,12 @@ internal static class AuthExtensions
                     return JwtBearerDefaults.AuthenticationScheme;
                 };
             });
+
+        if (fakeAuthEnabled)
+        {
+            authBuilder.AddScheme<AuthenticationSchemeOptions, FakeAuthHandler>(
+                FakeAuthHandler.SchemeName, _ => { });
+        }
 
         authBuilder
             .AddCookie(AuthSchemes.DevCookie, options =>

@@ -174,4 +174,31 @@ public class ApiService
             return null;
         }
     }
+
+    public async Task<MarbleRaceHighScore[]?> GetMarbleRaceHighScoresAsync(int count = 10)
+    {
+        try
+        {
+            return await _http.GetFromJsonAsync<MarbleRaceHighScore[]>(
+                $"/api/marblerace/highscores?count={count}", JsonOptions);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public async Task<MarbleRaceHighScore?> SubmitMarbleRaceHighScoreAsync(MarbleRaceHighScore entry)
+    {
+        try
+        {
+            entry.Date = DateTime.UtcNow.ToString("O");
+            var response = await _http.PostAsJsonAsync("/api/marblerace/highscores", entry, JsonOptions);
+            return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<MarbleRaceHighScore>(JsonOptions) : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
 }

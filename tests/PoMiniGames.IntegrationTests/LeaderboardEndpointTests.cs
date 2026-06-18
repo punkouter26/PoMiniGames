@@ -195,7 +195,7 @@ public sealed class LeaderboardEndpointTests : IClassFixture<TestWebApplicationF
         // Verify no plaintext sensitive keys (e.g., "Password", "Secret", "Key" should be masked)
         // Check that the response contains data without exposing full secrets
         var jsonString = json.RootElement.GetRawText();
-        jsonString.Should().Contain("Sqlite");
+        jsonString.Should().Contain("storage");
     }
 
     [Fact]

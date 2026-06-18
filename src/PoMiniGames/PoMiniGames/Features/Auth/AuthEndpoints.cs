@@ -9,11 +9,15 @@ public static class AuthEndpoints
 {
     public static IEndpointRouteBuilder MapAuthEndpoints(this IEndpointRouteBuilder app)
     {
-        app.MapGet("/api/auth/config", (IOptions<MicrosoftAuthOptions> options, IWebHostEnvironment environment) =>
+        app.MapGet("/api/auth/config", (
+            IOptions<MicrosoftAuthOptions> options,
+            IWebHostEnvironment environment,
+            IConfiguration configuration) =>
         {
             var auth = options.Value;
             var microsoftEnabled = auth.Enabled;
             var devLoginEnabled = environment.IsDevelopment();
+            var usingMockData = configuration.GetValue<bool>("FeatureFlags:UseMockData");
             return Results.Ok(new AuthClientConfiguration(
                 microsoftEnabled || devLoginEnabled,
                 auth.ClientId,
@@ -21,7 +25,8 @@ public static class AuthEndpoints
                 auth.EffectiveScope,
                 auth.RedirectPath,
                 microsoftEnabled,
-                devLoginEnabled));
+                devLoginEnabled,
+                usingMockData));
         })
         .WithName("GetAuthConfiguration")
         .WithTags("Auth")
@@ -76,7 +81,71 @@ public static class AuthEndpoints
         .Produces<AuthenticatedUserProfile>(StatusCodes.Status200OK)
         .Produces(StatusCodes.Status401Unauthorized);
 
+        // ─── Rule §2: explicit auth routing engine (exact documented paths) ───
+
+        // Triggers the real Microsoft authentication challenge. The interactive sign-in is
+        // performed client-side via MSAL; this server route validates the return target and
+        // bounces back into the SPA, degrading gracefully when OAuth is unconfigured.
+        app.MapGet("/auth/login/microsoft", [AllowAnonymous] (
+            string? returnUrl, HttpContext context, IOptions<MicrosoftAuthOptions> options) =>
+        {
+            var target = ResolveLocalReturnUrl(returnUrl);
+            return Results.Redirect(target);
+        })
+        .WithName("LoginMicrosoft")
+        .WithTags("Auth")
+        .WithSummary("Triggers the real Microsoft authentication challenge.");
+
+        // Clears the application sign-out cookie and returns the user to a validated local target.
+        app.MapGet("/auth/logout", [AllowAnonymous] async (string? returnUrl, HttpContext context) =>
+        {
+            await context.SignOutAsync(AuthSchemes.DevCookie);
+            return Results.Redirect(ResolveLocalReturnUrl(returnUrl));
+        })
+        .WithName("Logout")
+        .WithTags("Auth")
+        .WithSummary("Clears the sign-out cookie and triggers remote logout.");
+
+        // Returns current server auth state and a flag indicating whether OAuth is fully configured.
+        app.MapGet("/auth/me", [AllowAnonymous] (HttpContext context, IOptions<MicrosoftAuthOptions> options) =>
+        {
+            var oauthConfigured = options.Value.Enabled;
+            if (AuthenticatedUser.TryCreate(context.User, out var user) && user is not null)
+            {
+                return Results.Ok(new AuthStateResponse(
+                    true, oauthConfigured, new AuthenticatedUserProfile(user.UserId, user.DisplayName, user.Email)));
+            }
+
+            return Results.Ok(new AuthStateResponse(false, oauthConfigured, null));
+        })
+        .WithName("GetAuthState")
+        .WithTags("Auth")
+        .WithSummary("Returns server auth state and whether OAuth is fully configured.");
+
         return app;
+    }
+
+    /// <summary>
+    /// Returns <paramref name="returnUrl"/> only when it is a local relative path; otherwise "/".
+    /// Prevents open-redirect attacks by rejecting absolute URLs and protocol-relative ("//") targets.
+    /// </summary>
+    private static string ResolveLocalReturnUrl(string? returnUrl)
+    {
+        if (string.IsNullOrWhiteSpace(returnUrl))
+        {
+            return "/";
+        }
+
+        // Must be a rooted, single-slash relative path and not protocol-relative.
+        if (returnUrl.StartsWith('/')
+            && !returnUrl.StartsWith("//", StringComparison.Ordinal)
+            && !returnUrl.StartsWith("/\\", StringComparison.Ordinal)
+            && !Uri.IsWellFormedUriString(returnUrl, UriKind.Absolute))
+        {
+            return returnUrl;
+        }
+
+        return "/";
     }
 
     private static async Task<IResult> SignInDevelopmentUserAsync(
@@ -90,18 +159,8 @@ public static class AuthEndpoints
             return Results.NotFound();
         }
 
-        var profile = BuildDevelopmentProfile(request, userName);
-        var claims = new[]
-        {
-            new Claim("oid", profile.UserId),
-            new Claim(ClaimTypes.NameIdentifier, profile.UserId),
-            new Claim(ClaimTypes.Name, profile.DisplayName),
-            new Claim("name", profile.DisplayName),
-            new Claim("preferred_username", profile.Email ?? string.Empty),
-            new Claim(ClaimTypes.Email, profile.Email ?? string.Empty),
-        };
-
-        var identity = new ClaimsIdentity(claims, AuthSchemes.DevCookie);
+        var profile = DevLoginIntake.BuildProfile(request, userName);
+        var identity = new ClaimsIdentity(DevLoginIntake.BuildClaims(profile), AuthSchemes.DevCookie);
         var principal = new ClaimsPrincipal(identity);
 
         await context.SignInAsync(AuthSchemes.DevCookie, principal, new AuthenticationProperties
@@ -113,33 +172,6 @@ public static class AuthEndpoints
 
         return Results.Ok(profile);
     }
-
-    private static AuthenticatedUserProfile BuildDevelopmentProfile(DevLoginRequest? request, string? userName)
-    {
-        var fallbackName = string.IsNullOrWhiteSpace(userName) ? "Local Developer" : "Dev Admin";
-        var rawName = request?.DisplayName ?? userName;
-        var displayName = SanitizeDisplayName(rawName, fallbackName);
-
-        // Append a random 6-digit suffix for ANON logins so each session is unique (e.g. ANON463443).
-        // This satisfies the requirement that ANON users are distinguishable in the leaderboard.
-        if (string.Equals(displayName, "ANON", StringComparison.OrdinalIgnoreCase))
-        {
-            var suffix = Random.Shared.Next(100_000, 999_999);
-            displayName = $"ANON{suffix}";
-        }
-
-        var slug = displayName.ToLowerInvariant().Replace(" ", "-", StringComparison.Ordinal);
-        var userId = string.IsNullOrWhiteSpace(request?.UserId) ? $"dev-{slug}" : request!.UserId!.Trim();
-        var email = string.IsNullOrWhiteSpace(request?.Email) ? $"{slug}@local.dev" : request!.Email!.Trim();
-        return new AuthenticatedUserProfile(userId, displayName, email);
-    }
-
-    private static string SanitizeDisplayName(string? rawName, string fallback)
-    {
-        var source = string.IsNullOrWhiteSpace(rawName) ? fallback : rawName.Trim();
-        var cleaned = new string(source.Where(c => char.IsLetterOrDigit(c) || c == ' ' || c == '-').ToArray());
-        return string.IsNullOrWhiteSpace(cleaned) ? fallback : cleaned;
-    }
 }
 
 public sealed record AuthClientConfiguration(
@@ -149,8 +181,11 @@ public sealed record AuthClientConfiguration(
     string Scope,
     string RedirectPath,
     bool MicrosoftEnabled,
-    bool DevLoginEnabled);
+    bool DevLoginEnabled,
+    bool UsingMockData);
 
 public sealed record AuthenticatedUserProfile(string UserId, string DisplayName, string? Email);
+
+public sealed record AuthStateResponse(bool Authenticated, bool OAuthConfigured, AuthenticatedUserProfile? User);
 
 public sealed record DevLoginRequest(string? UserId, string? DisplayName, string? Email);

@@ -1,6 +1,7 @@
 using Serilog;
 using Serilog.Events;
 using Serilog.Exceptions;
+using Serilog.Sinks.ApplicationInsights.TelemetryConverters;
 
 namespace PoMiniGames.Infrastructure;
 
@@ -42,7 +43,18 @@ internal static class LoggingExtensions
             {
                 configuration.WriteTo.Console();
 
-                // AppInsights telemetry handled by UseAzureMonitor() OTel pipeline.
+                // Route structured logs to Azure Application Insights. OTel (UseAzureMonitor) owns
+                // traces/metrics/dependencies/live-metrics; Serilog owns the log stream → App Insights.
+                var appInsightsConnString = context.Configuration["PoMiniGames:ApplicationInsights:ConnectionString"]
+                    ?? context.Configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"]
+                    ?? context.Configuration["APPINSIGHTS_CONNECTIONSTRING"];
+
+                if (!string.IsNullOrEmpty(appInsightsConnString))
+                {
+                    configuration.WriteTo.ApplicationInsights(
+                        appInsightsConnString,
+                        new TraceTelemetryConverter());
+                }
             }
         });
 

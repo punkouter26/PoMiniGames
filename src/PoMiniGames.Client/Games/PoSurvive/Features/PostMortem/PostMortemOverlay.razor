@@ -1,0 +1,123 @@
+@using PoSurvive.Client.Store
+@using PoSurvive.Shared.Constants
+@using System.Text.Json
+
+@* T068: PostMortemOverlay — full-screen post-mortem screen shown when simulation ends *@
+@inherits Fluxor.Blazor.Web.Components.FluxorComponent
+@inject IState<SimulationState> SimState
+@inject IDispatcher Dispatcher
+@inject IJSRuntime JS
+
+@if (SimState.Value.ShowPostMortem)
+{
+    <div class="postmortem-overlay" data-testid="postmortem-overlay" role="dialog" aria-modal="true">
+        <div class="postmortem-overlay__inner">
+
+            <h1 class="postmortem__title">
+                @if (SimState.Value.Outcome == "Draw")
+                {
+                    <text>⚠ DRAW — NO SURVIVORS</text>
+                }
+                else
+                {
+                    <text>VICTORY: @SimState.Value.WinningTeam?.ToUpperInvariant() FACTION</text>
+                }
+            </h1>
+
+            @* Narrative *@
+            <div class="postmortem__narrative" data-testid="narrative-text">
+                @SimState.Value.NarrativeText
+            </div>
+
+            @* Final standings *@
+            <div class="postmortem__standings" data-testid="standings-table">
+                <h2>FINAL STANDINGS</h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID</th><th>TEAM</th><th>HP</th><th>KILLS</th>
+                            <th>FOOD</th><th>DAMAGE</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var a in SimState.Value.Agents.OrderBy(a => a.Team).ThenBy(a => a.Id))
+                        {
+                            <tr class="@(a.Team == "Red" ? "text-red" : "text-blue")">
+                                <td>@a.Id</td>
+                                <td>@a.Team</td>
+                                <td>@a.Hp</td>
+                                <td>@a.KillCount</td>
+                                <td>@a.FoodConsumed</td>
+                                <td>@a.TotalDamageDealt</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                <p class="postmortem__totals">
+                    TOTAL TURNS: @SimState.Value.TurnNumber
+                </p>
+            </div>
+
+            <div class="postmortem__actions">
+                <button class="c64-btn"
+                        @onclick="ReviewTimeline"
+                        data-testid="btn-review-timeline">
+                    [ REVIEW TIMELINE ]
+                </button>
+                <button class="c64-btn"
+                        @onclick="ExportPostMortemJsonAsync"
+                        data-testid="btn-export-postmortem">
+                    [ EXPORT JSON ]
+                </button>
+                <button class="c64-btn c64-btn--primary"
+                        @onclick="NewSimulation"
+                        data-testid="btn-new-simulation">
+                    [ NEW SIMULATION ]
+                </button>
+            </div>
+
+        </div>
+    </div>
+}
+
+@code {
+    private void NewSimulation() => Dispatcher.Dispatch(new ResetSimulationAction());
+
+    private void ReviewTimeline()
+        => Dispatcher.Dispatch(new HidePostMortemAction());
+
+    private async Task ExportPostMortemJsonAsync()
+    {
+        var payload = new
+        {
+            sessionId = SimState.Value.SessionId,
+            turns = SimState.Value.TurnNumber,
+            outcome = SimState.Value.Outcome,
+            winner = SimState.Value.WinningTeam,
+            generatedAtUtc = DateTimeOffset.UtcNow,
+            narrative = SimState.Value.NarrativeText,
+            standings = SimState.Value.Agents
+                .OrderBy(a => a.Team)
+                .ThenBy(a => a.Id)
+                .Select(a => new
+                {
+                    a.Id,
+                    a.Team,
+                    a.Hp,
+                    a.KillCount,
+                    a.FoodConsumed,
+                    a.TotalDamageDealt,
+                    a.SurvivalTurns,
+                })
+                .ToList(),
+        };
+
+        var fileName = $"postmortem-{SimState.Value.SessionId}.json";
+        var json = JsonSerializer.Serialize(payload, new JsonSerializerOptions
+        {
+            WriteIndented = true,
+        });
+
+        await JS.InvokeVoidAsync("downloadTextFile", fileName, json);
+    }
+}

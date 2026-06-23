@@ -16,10 +16,13 @@
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" PrivateAssets="all" />
     <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" />
     <PackageReference Include="Radzen.Blazor" />
+    <PackageReference Include="Fluxor.Blazor.Web" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\PoShared\PoShared.csproj" />
+    <!-- PoSurvive: simulation domain/application logic runs in the browser -->
+    <ProjectReference Include="..\PoMiniGames.Application\PoMiniGames.Application.csproj" />
   </ItemGroup>
 
 </Project>

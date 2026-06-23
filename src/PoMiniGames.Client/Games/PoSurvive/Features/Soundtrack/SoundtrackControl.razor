@@ -1,0 +1,253 @@
+@* Soundtrack Composer — layered audio mixer UI panel *@
+@implements IDisposable
+@inject IJSRuntime JS
+@inject PoSurvive.Client.Services.AudioService Audio
+
+<div class="soundtrack-control app-fade-in" data-testid="soundtrack-control">
+    <div class="soundtrack-control__header">
+        <span class="soundtrack-control__title">SOUNDTRACK COMPOSER</span>
+        <button class="soundtrack-control__toggle c64-btn c64-btn--small"
+                @onclick="ToggleExpanded"
+                title="@(_expanded ? "Collapse" : "Expand")">
+            @(_expanded ? "[-]" : "[+]")
+        </button>
+    </div>
+
+    @if (_expanded)
+    {
+        <div class="soundtrack-control__body">
+
+            @* ─── Theme Presets ──────────────────────────────────────────── *@
+            <div class="soundtrack-control__section">
+                <span class="soundtrack-control__label">THEME</span>
+                <div class="soundtrack-control__theme-row">
+                    @foreach (var theme in _themes)
+                    {
+                        <button class="c64-btn @(_currentTheme == theme ? "c64-btn--active" : "")"
+                                @onclick="() => SetTheme(theme)"
+                                data-testid="theme-btn-@theme">
+                            @theme.ToUpperInvariant()
+                        </button>
+                    }
+                </div>
+            </div>
+
+            @* ─── Master Volume ─────────────────────────────────────────── *@
+            <div class="soundtrack-control__section">
+                <div class="soundtrack-control__slider-row">
+                    <span class="soundtrack-control__label">MASTER</span>
+                    <input type="range"
+                           class="soundtrack-control__slider"
+                           min="0" max="100" step="1"
+                           value="@((int)(_masterVolume * 100))"
+                           @oninput="OnMasterVolumeChange"
+                           data-testid="master-volume-slider"
+                           aria-label="Master volume" />
+                    <span class="soundtrack-control__pct">@((int)(_masterVolume * 100))%</span>
+                </div>
+            </div>
+
+            @* ─── Per-Layer Volume Sliders ───────────────────────────────── *@
+            <div class="soundtrack-control__section">
+                <span class="soundtrack-control__label">LAYERS</span>
+
+                @* Ambient layer *@
+                <div class="soundtrack-control__slider-row">
+                    <span class="soundtrack-control__layer-name @(_ambientRunning ? "" : "soundtrack-control__layer-name--muted")">
+                        AMBIENT
+                    </span>
+                    <input type="range"
+                           class="soundtrack-control__slider"
+                           min="0" max="100" step="1"
+                           value="@((int)(_ambientVolume * 100))"
+                           @oninput="OnAmbientVolumeChange"
+                           data-testid="ambient-volume-slider"
+                           aria-label="Ambient volume" />
+                    <span class="soundtrack-control__pct">@((int)(_ambientVolume * 100))%</span>
+                    <button class="c64-btn c64-btn--small @(_ambientRunning ? "c64-btn--active" : "")"
+                            @onclick="ToggleAmbient"
+                            data-testid="toggle-ambient"
+                            title="@(_ambientRunning ? "Stop ambient" : "Start ambient")">
+                        @(_ambientRunning ? "ON" : "OFF")
+                    </button>
+                </div>
+
+                @* Combat / Heartbeat layer *@
+                <div class="soundtrack-control__slider-row">
+                    <span class="soundtrack-control__layer-name @(_heartbeatRunning ? "" : "soundtrack-control__layer-name--muted")">
+                        COMBAT
+                    </span>
+                    <input type="range"
+                           class="soundtrack-control__slider"
+                           min="0" max="100" step="1"
+                           value="@((int)(_combatVolume * 100))"
+                           @oninput="OnCombatVolumeChange"
+                           data-testid="combat-volume-slider"
+                           aria-label="Combat volume" />
+                    <span class="soundtrack-control__pct">@((int)(_combatVolume * 100))%</span>
+                    <button class="c64-btn c64-btn--small @(_heartbeatRunning ? "c64-btn--active" : "")"
+                            @onclick="ToggleHeartbeat"
+                            data-testid="toggle-heartbeat"
+                            title="@(_heartbeatRunning ? "Stop heartbeat" : "Start heartbeat")">
+                        @(_heartbeatRunning ? "ON" : "OFF")
+                    </button>
+                </div>
+
+                @* Fanfare layer *@
+                <div class="soundtrack-control__slider-row">
+                    <span class="soundtrack-control__layer-name">FANFARE</span>
+                    <input type="range"
+                           class="soundtrack-control__slider"
+                           min="0" max="100" step="1"
+                           value="@((int)(_fanfareVolume * 100))"
+                           @oninput="OnFanfareVolumeChange"
+                           data-testid="fanfare-volume-slider"
+                           aria-label="Fanfare volume" />
+                    <span class="soundtrack-control__pct">@((int)(_fanfareVolume * 100))%</span>
+                </div>
+            </div>
+
+            @* ─── Dynamic Intensity Meter ────────────────────────────────── *@
+            <div class="soundtrack-control__section">
+                <span class="soundtrack-control__label">INTENSITY</span>
+                <div class="soundtrack-control__intensity-bar">
+                    <div class="soundtrack-control__intensity-fill"
+                         style="width:@((int)(_dynamicIntensity * 100))%"
+                         data-testid="intensity-fill"></div>
+                </div>
+                <span class="soundtrack-control__pct">@((int)(_dynamicIntensity * 100))%</span>
+            </div>
+
+        </div>
+    }
+</div>
+
+@code {
+    private bool _expanded;
+    private string _currentTheme = "tense";
+    private string[] _themes = ["tense", "calm", "epic"];
+
+    private float _masterVolume = 0.5f;
+    private float _ambientVolume = 0.3f;
+    private float _combatVolume = 0.4f;
+    private float _fanfareVolume = 0.5f;
+    private float _dynamicIntensity = 0.05f;
+    private bool _ambientRunning;
+    private bool _heartbeatRunning;
+
+    private readonly PeriodicTimer _pollTimer = new(TimeSpan.FromSeconds(1));
+    private CancellationTokenSource? _pollCts;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _pollCts = new CancellationTokenSource();
+
+        // Load initial state from JS
+        try
+        {
+            _currentTheme = await Audio.GetThemeAsync();
+            _themes = await Audio.GetAvailableThemesAsync();
+            if (_themes.Length == 0) _themes = ["tense", "calm", "epic"];
+        }
+        catch { }
+
+        _ = PollStateAsync(_pollCts.Token);
+    }
+
+    private async Task PollStateAsync(CancellationToken ct)
+    {
+        try
+        {
+            while (await _pollTimer.WaitForNextTickAsync(ct))
+            {
+                _ambientRunning = await Audio.IsAmbientRunningAsync();
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    private void ToggleExpanded()
+    {
+        _expanded = !_expanded;
+    }
+
+    private async Task SetTheme(string theme)
+    {
+        _currentTheme = theme;
+        await Audio.SetThemeAsync(theme);
+    }
+
+    private async Task SetMasterVolume(float v)
+    {
+        _masterVolume = v;
+        await Audio.SetLayerVolumeAsync("master", v);
+    }
+
+    private async Task SetAmbientVolume(float v)
+    {
+        _ambientVolume = v;
+        await Audio.SetLayerVolumeAsync("ambient", v);
+    }
+
+    private async Task SetCombatVolume(float v)
+    {
+        _combatVolume = v;
+        await Audio.SetLayerVolumeAsync("combat", v);
+    }
+
+    private async Task SetFanfareVolume(float v)
+    {
+        _fanfareVolume = v;
+        await Audio.SetLayerVolumeAsync("fanfare", v);
+    }
+
+    private async Task OnMasterVolumeChange(ChangeEventArgs e)
+    {
+        if (float.TryParse(e.Value?.ToString(), out var pct))
+            await SetMasterVolume(pct / 100f);
+    }
+
+    private async Task OnAmbientVolumeChange(ChangeEventArgs e)
+    {
+        if (float.TryParse(e.Value?.ToString(), out var pct))
+            await SetAmbientVolume(pct / 100f);
+    }
+
+    private async Task OnCombatVolumeChange(ChangeEventArgs e)
+    {
+        if (float.TryParse(e.Value?.ToString(), out var pct))
+            await SetCombatVolume(pct / 100f);
+    }
+
+    private async Task OnFanfareVolumeChange(ChangeEventArgs e)
+    {
+        if (float.TryParse(e.Value?.ToString(), out var pct))
+            await SetFanfareVolume(pct / 100f);
+    }
+
+    private async Task ToggleAmbient()
+    {
+        if (_ambientRunning)
+            await Audio.StopAmbientAsync();
+        else
+            await Audio.StartAmbientAsync();
+        _ambientRunning = !_ambientRunning;
+    }
+
+    private async Task ToggleHeartbeat()
+    {
+        if (_heartbeatRunning)
+            await Audio.StopHeartbeatAsync();
+        else
+            await Audio.StartHeartbeatAsync(_dynamicIntensity);
+        _heartbeatRunning = !_heartbeatRunning;
+    }
+
+    public void Dispose()
+    {
+        _pollCts?.Cancel();
+        _pollCts?.Dispose();
+        _pollTimer.Dispose();
+    }
+}

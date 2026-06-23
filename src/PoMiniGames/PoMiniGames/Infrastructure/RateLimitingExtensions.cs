@@ -22,6 +22,19 @@ internal static class RateLimitingExtensions
                         QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
                         QueueLimit = 0,
                     }));
+
+            // PoSurvive: cloud inference relay (POST /api/infer) — 10 req/s per IP.
+            opts.AddPolicy("infer", ctx =>
+                RateLimitPartition.GetFixedWindowLimiter(
+                    partitionKey: ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                    factory: _ => new FixedWindowRateLimiterOptions
+                    {
+                        Window = TimeSpan.FromSeconds(1),
+                        PermitLimit = 10,
+                        AutoReplenishment = true,
+                        QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                        QueueLimit = 0,
+                    }));
         });
 
         return services;

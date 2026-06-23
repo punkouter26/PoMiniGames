@@ -5,6 +5,7 @@ using PoMiniGames.Features.HighScores;
 using PoMiniGames.Features.PoRaceRagdoll;
 using PoMiniGames.Features.PoRunner;
 using PoMiniGames.Features.PoRacer;
+using PoMiniGames.Features.PoSurvive;
 using PoMiniGames.Application.Diagnostics;
 using PoMiniGames.Infrastructure;
 using PoMiniGames.Infrastructure.Services;
@@ -24,7 +25,8 @@ builder.Services
     .AddPoMiniGamesStorage()
     .AddPoMiniGamesAuth(builder.Environment, builder.Configuration)
     .AddPoMiniGamesGameServices()
-    .AddPoMiniGamesRateLimiting();
+    .AddPoMiniGamesRateLimiting()
+    .AddPoSurvive(builder.Configuration);
 builder.Services.AddSingleton<IDiagnosticsSnapshotProvider, ConfigurationDiagnosticsSnapshotProvider>();
 
 // ─── PoRunner SignalR ────────────────────────────────────────────────
@@ -134,6 +136,9 @@ app.MapHub<GameHub>("/porunner/gamehub");
 // ─── PoRacer SignalR lobby + scores ─────────────────────────────────
 app.MapHub<PoRacerLobbyHub>("/poracer/lobby-hub");
 app.MapPoRacerScoreEndpoints();
+
+// ─── PoSurvive (agent survival simulation) ───────────────────────────
+app.MapPoSurviveEndpoints(app.Configuration);
 
 // ─── SPA fallback ────────────────────────────────────────────────────
 app.MapFallbackToFile("index.html");

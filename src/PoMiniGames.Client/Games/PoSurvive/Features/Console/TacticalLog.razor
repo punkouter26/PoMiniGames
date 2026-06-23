@@ -1,0 +1,169 @@
+﻿@using PoSurvive.Client.Store
+
+@inherits Fluxor.Blazor.Web.Components.FluxorComponent
+@inject IState<SimulationState> SimState
+@inject IDispatcher Dispatcher
+
+<div class="tactical-log" data-testid="tactical-log" role="log" aria-label="Tactical console">
+
+    <div class="tactical-log__header">
+        @if (SimState.Value.ConsoleLog.Count > 0)
+        {
+            <div class="tactical-log__filter-chips" role="group" aria-label="Log filter presets">
+                @foreach (var f in _filters)
+                {
+                    <button class="log-chip @(CurrentEventFilter == f.Key ? "log-chip--active" : string.Empty)"
+                            @onclick="() => SetFilter(f.Key)"
+                            data-testid="filter-chip-@f.Key">
+                        @f.Label
+                    </button>
+                }
+                @if (CurrentEventFilter != "all" || SimState.Value.SelectedAgentId is not null)
+                {
+                    <button class="log-chip"
+                            @onclick="ClearFilters"
+                            data-testid="filter-chip-clear">
+                        CLEAR
+                    </button>
+                }
+            </div>
+        }
+        @if (SimState.Value.SelectedAgentId is not null)
+        {
+            <span class="tactical-log__filter-badge">
+                FOLLOWING: @SimState.Value.SelectedAgentId
+            </span>
+        }
+    </div>
+
+    <div class="tactical-log__scroll">
+        @if (SimState.Value.ConsoleLog.Count == 0)
+        {
+            <p class="tactical-log__empty">No events yet. Start the simulation to see agent decisions.</p>
+        }
+        @foreach (var row in GroupedEntries)
+        {
+            var severity = GetSeverity(row.Entry);
+            var isDeferred = row.Entry.Thought.StartsWith("Inference", StringComparison.OrdinalIgnoreCase)
+                             && row.Entry.Thought.EndsWith("Standing by.", StringComparison.OrdinalIgnoreCase);
+            <div class="log-entry log-entry--@(row.Entry.Team.ToLowerInvariant()) app-log-entry @(isDeferred ? "log-entry--deferred" : string.Empty)"
+                 data-testid="log-entry-@row.Entry.AgentId">
+                <span class="log-entry__turn">[T@(row.Entry.TurnNumber)]</span>
+                <span class="log-entry__agent @(row.Entry.Team == "Red" ? "text-red" : "text-blue")">[@row.Entry.AgentId]</span>
+                <span class="log-entry__severity log-entry__severity--@severity">@severity.ToUpperInvariant()</span>
+                <span class="log-entry__thought" title="@row.Entry.Thought">@row.Entry.Thought</span>
+                <span class="log-entry__action">@row.Entry.Action.ToUpperInvariant()</span>
+                @if (row.RepeatCount > 1)
+                {
+                    <span class="log-entry__repeat" title="Consecutive repeated events">x@row.RepeatCount</span>
+                }
+            </div>
+        }
+    </div>
+
+</div>
+
+@code {
+    private string CurrentEventFilter => string.IsNullOrWhiteSpace(SimState.Value.EventFilter)
+        ? "all"
+        : SimState.Value.EventFilter;
+
+    private record FilterOption(string Key, string Label);
+
+    private static readonly FilterOption[] _filters =
+    [
+        new("all",    "ALL"),
+        new("errors", "ERRORS"),
+        new("attack", "ATTACK"),
+        new("forage", "FORAGE"),
+        new("flee",   "FLEE"),
+        new("idle",   "IDLE"),
+    ];
+
+    private IEnumerable<ConsoleEntry> FilteredEntries
+    {
+        get
+        {
+            var source = SimState.Value.SelectedAgentId is null
+                ? SimState.Value.ConsoleLog
+                : SimState.Value.ConsoleLog.Where(e => e.AgentId == SimState.Value.SelectedAgentId);
+
+            if (CurrentEventFilter == "all") return source;
+
+            return CurrentEventFilter switch
+            {
+                "errors" => source.Where(e => GetSeverity(e) == "warn"),
+                "attack" => source.Where(e => e.Action.Equals("Attack", StringComparison.OrdinalIgnoreCase)),
+                "forage" => source.Where(e => e.Action.Equals("Forage", StringComparison.OrdinalIgnoreCase)),
+                "flee"   => source.Where(e => e.Action.Equals("Flee",   StringComparison.OrdinalIgnoreCase)),
+                "idle"   => source.Where(e => e.Action.Equals("Idle",   StringComparison.OrdinalIgnoreCase)),
+                _        => source,
+            };
+        }
+    }
+
+    private IEnumerable<GroupedLogEntry> GroupedEntries
+        => BuildLogRows(FilteredEntries);
+
+    private static string GetSeverity(ConsoleEntry entry)
+    {
+        if (entry.Thought.Contains("error",       StringComparison.OrdinalIgnoreCase)
+            || entry.Thought.Contains("timed out",  StringComparison.OrdinalIgnoreCase)
+            || entry.Thought.Contains("timeout",    StringComparison.OrdinalIgnoreCase)
+            || entry.Thought.Contains("unavailable",StringComparison.OrdinalIgnoreCase))
+        {
+            return "warn";
+        }
+        return "info";
+    }
+
+    private void SetFilter(string key)
+        => Dispatcher.Dispatch(new LogEventFilterChangedAction(key));
+
+    private void ClearFilters()
+    {
+        Dispatcher.Dispatch(new LogEventFilterChangedAction("all"));
+        Dispatcher.Dispatch(new GodClickClearedAction());
+    }
+
+    private static IEnumerable<GroupedLogEntry> BuildLogRows(IEnumerable<ConsoleEntry> entries)
+    {
+        GroupedLogEntry? current = null;
+
+        foreach (var entry in entries)
+        {
+            if (current is null)
+            {
+                current = new GroupedLogEntry(entry, 1);
+                continue;
+            }
+
+            if (IsSameBurst(current.Entry, entry))
+            {
+                current = current with { RepeatCount = current.RepeatCount + 1 };
+                continue;
+            }
+
+            yield return current;
+            current = new GroupedLogEntry(entry, 1);
+        }
+
+        if (current is not null)
+            yield return current;
+    }
+
+    private static bool IsSameBurst(ConsoleEntry a, ConsoleEntry b)
+    {
+        return a.AgentId == b.AgentId
+               && a.Action.Equals(b.Action, StringComparison.OrdinalIgnoreCase)
+               && NormalizeThought(a.Thought) == NormalizeThought(b.Thought);
+    }
+
+    private static string NormalizeThought(string thought)
+    {
+        var normalized = thought.Trim().ToLowerInvariant();
+        return normalized.Length <= 80 ? normalized : normalized[..80];
+    }
+
+    private sealed record GroupedLogEntry(ConsoleEntry Entry, int RepeatCount);
+}

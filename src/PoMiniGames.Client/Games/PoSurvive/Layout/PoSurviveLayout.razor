@@ -1,0 +1,465 @@
+@using PoSurvive.Client.Features.Grid
+@using PoSurvive.Client.Features.Inspector
+@using PoSurvive.Client.Features.Sidebar
+@using PoSurvive.Client.Features.Console
+@using PoSurvive.Client.Features.PostMortem
+@using PoSurvive.Client.Features.Soundtrack
+@using PoSurvive.Client.Services
+@using PoSurvive.Client.Store
+@using PoSurvive.Shared.Constants
+@using PoSurvive.Shared.Models
+@using Microsoft.AspNetCore.Components.WebAssembly.Hosting
+@inherits Fluxor.Blazor.Web.Components.FluxorLayout
+@implements IDisposable
+@inject IState<SimulationState> SimState
+@inject IState<BootState>       BootState
+@inject IDispatcher             Dispatcher
+@inject SessionLogService       LogService
+@inject SimulationLaunchService LaunchService
+@inject IJSRuntime              JS
+@inject NavigationManager       Nav
+@inject IWebAssemblyHostEnvironment HostEnv
+
+@if (BootState.Value.IsDegradedMode)
+{
+    <div class="mock-banner mock-banner--degraded" role="alert" data-testid="degraded-banner">DEGRADED MODE - fallback tactics active; real LLM inference unavailable</div>
+}
+else if (SimState.Value.IsMockProvider || BootState.Value.IsMockProvider)
+{
+    <div class="mock-banner" role="alert" data-testid="mock-banner">⚠ MOCK DATA - real LLM inference disabled</div>
+}
+
+<header class="toolbar app-reveal" data-testid="toolbar">
+    <div class="toolbar__identity">
+        <a class="toolbar__brand" href="/" aria-label="PoSurvive home">PoSurvive</a>
+        <span class="toolbar__subtitle">AGENT SURVIVAL COMMAND DECK</span>
+    </div>
+
+    <div class="toolbar__status-lane">
+        <span class="toolbar__inference @InferenceIndicatorClass"
+              data-testid="inference-indicator"
+              title="Model ID: @BootState.Value.ModelId">
+            @BootState.Value.ProviderKind | @BootState.Value.ModelLabel
+        </span>
+        @if (BootState.Value.IsDegradedMode)
+        {
+            <span class="toolbar__inference-status toolbar__inference-status--warn"
+                  data-testid="inference-status-degraded"
+                  title="@DegradedModeSummary">
+                DEGRADED MODE
+            </span>
+            <span class="toolbar__inference-detail" data-testid="inference-detail">
+                @DegradedModeSummary
+            </span>
+        }
+        else if (HasInferenceIssue)
+        {
+            <span class="toolbar__inference-status toolbar__inference-status--error"
+                  data-testid="inference-status"
+                  title="@InferenceIssueSummary">
+                INFERENCE: ISSUE
+            </span>
+            <span class="toolbar__inference-detail" data-testid="inference-detail">
+                @InferenceIssueSummary
+            </span>
+        }
+        else
+        {
+            <span class="toolbar__inference-status toolbar__inference-status--ok"
+                  data-testid="inference-status-ok"
+                  title="Inference is available.">
+                INFERENCE: READY
+            </span>
+        }
+    </div>
+
+    <div class="toolbar__controls">
+        @if (!IsBootRoute && BootCanStartSimulation && !SimState.Value.IsRunning && !SimState.Value.IsPaused && SimState.Value.Outcome is null && !SimState.Value.ShowPostMortem)
+        {
+            <button class="c64-btn c64-btn--primary"
+                    id="start-sim-button"
+                    @onclick="StartSimulation"
+                    data-testid="btn-start">
+                [ START ]
+            </button>
+        }
+
+        @if (SimState.Value.IsRunning && !SimState.Value.IsPaused)
+        {
+            <button class="c64-btn"
+                    @onclick="PauseSimulation"
+                    data-testid="btn-pause"
+                    title="Pause simulation">
+                [ PAUSE ]
+            </button>
+        }
+
+        @if (SimState.Value.IsPaused)
+        {
+            <button class="c64-btn c64-btn--primary"
+                    @onclick="ResumeSimulation"
+                    data-testid="btn-resume"
+                    title="Resume simulation">
+                [ RESUME ]
+            </button>
+        }
+
+        @if (!SimState.Value.IsRunning && !SimState.Value.IsPaused && SimState.Value.TurnNumber > 0)
+        {
+            <button class="c64-btn"
+                    @onclick="ResetSimulation"
+                    data-testid="btn-restart">
+                [ NEW RUN ]
+            </button>
+        }
+
+        <label class="toolbar__label">SPEED</label>
+        <input type="range"
+               class="toolbar__slider"
+               min="@SimulationDefaults.HeartbeatMinMs"
+               max="@SimulationDefaults.HeartbeatMaxMs"
+               step="50"
+               value="@SimState.Value.SpeedMs"
+               @oninput="OnSpeedChange"
+               data-testid="speed-slider"
+               aria-label="Simulation speed" />
+        <span class="toolbar__speed-label">@SimState.Value.SpeedMs ms</span>
+
+        <button class="c64-btn @(SimState.Value.SpeedMs == 350 ? "c64-btn--active" : string.Empty)"
+                @onclick="() => SetSpeedPreset(350)"
+                title="Fast playback"
+                data-testid="btn-speed-fast">
+            FAST
+        </button>
+        <button class="c64-btn @(SimState.Value.SpeedMs == 900 ? "c64-btn--active" : string.Empty)"
+                @onclick="() => SetSpeedPreset(900)"
+                title="Balanced playback"
+                data-testid="btn-speed-balanced">
+            BAL
+        </button>
+        <button class="c64-btn @(SimState.Value.SpeedMs == 1500 ? "c64-btn--active" : string.Empty)"
+                @onclick="() => SetSpeedPreset(1500)"
+                title="Inspect mode"
+                data-testid="btn-speed-inspect">
+            INSPECT
+        </button>
+
+        <button class="c64-btn"
+                @onclick="DownloadLog"
+                disabled="@(SimState.Value.TurnNumber == 0)"
+                data-testid="btn-download">
+            [ DOWNLOAD LOG ]
+        </button>
+    </div>
+</header>
+
+@if (SimState.Value.IsRunning || SimState.Value.Agents.Count > 0 || SimState.Value.ConsoleLog.Count > 0)
+{
+    <div class="mobile-pane-switch app-reveal" role="tablist" aria-label="Mobile panes">
+        <button class='c64-btn @(_activePane == "grid" ? "c64-btn--active" : string.Empty)'
+                @onclick='() => SetActivePane("grid")'
+                aria-selected='@(_activePane == "grid")'>
+            GRID
+        </button>
+        <button class='c64-btn @(_activePane == "agents" ? "c64-btn--active" : string.Empty)'
+                @onclick='() => SetActivePane("agents")'
+                aria-selected='@(_activePane == "agents")'>
+            AGENTS
+        </button>
+        <button class='c64-btn @(_activePane == "log" ? "c64-btn--active" : string.Empty)'
+                @onclick='() => SetActivePane("log")'
+                aria-selected='@(_activePane == "log")'>
+            LOG
+        </button>
+    </div>
+}
+
+@if (_downloadToastVisible)
+{
+    <div class="app-toast app-toast--@_downloadToastKind" role="status" aria-live="polite" data-testid="download-toast">
+        @_downloadToastMessage
+    </div>
+}
+
+@if (StalledAtTurnZero)
+{
+    <div class="runtime-alert" role="alert" data-testid="runtime-watchdog-alert">
+        <span class="runtime-alert__title">INFERENCE WATCHDOG:</span>
+        <span class="runtime-alert__text">No heartbeat progress for @StalledTurnThresholdSec seconds. Runtime may be degraded.</span>
+        <button class="c64-btn runtime-alert__btn"
+                @onclick="RecoverFromInferenceStall"
+                data-testid="btn-recover-stall">
+            [ RECOVER ]
+        </button>
+    </div>
+}
+
+@if (SimState.Value.TurnNumber > 0 || SimState.Value.IsRunning)
+{
+    <div class="statsbar" data-testid="statsbar">
+        <span class="statsbar__item statsbar__item--time" title="Elapsed wall-clock time since simulation start">⏱ @ElapsedFormatted</span>
+        <span class="statsbar__sep">|</span>
+        <span class="statsbar__item" title="Current simulation turn">TURN <strong>@SimState.Value.TurnNumber</strong></span>
+        <span class="statsbar__sep">|</span>
+        <span class="statsbar__item statsbar__item--red" title="Alive Red agents">🔴 @AliveRed alive</span>
+        <span class="statsbar__item statsbar__item--blue" title="Alive Blue agents">🔵 @AliveBlue alive</span>
+        <span class="statsbar__sep">|</span>
+        <span class="statsbar__item" title="Total kills this session">☠ @TotalKills kills</span>
+        <span class="statsbar__sep">|</span>
+        <span class="statsbar__item" title="Average HP across all alive agents">❤ @AvgHp% avg HP</span>
+        <span class="statsbar__sep">|</span>
+        <span class="statsbar__item" title="Food items currently on the grid">🍎 @SimState.Value.FoodNodes.Count food</span>
+        @if (SecsPerTurn > 0)
+        {
+            <span class="statsbar__sep">|</span>
+            <span class="statsbar__item statsbar__item--dim" title="Estimated seconds per turn based on elapsed time">~@SecsPerTurn s/turn</span>
+        }
+        @if (SimState.Value.Outcome is not null)
+        {
+            <span class="statsbar__sep">|</span>
+            <span class="statsbar__item statsbar__item--outcome">@SimState.Value.Outcome.ToUpperInvariant()</span>
+        }
+        @if (SimState.Value.IsRunning && BootState.Value.ProviderKind == "REMOTE")
+        {
+            <span class="statsbar__sep">|</span>
+            <span class="statsbar__item statsbar__item--querying" title="Azure OpenAI inference is active this turn">⚡ QUERYING AI</span>
+        }
+        @if (SimState.Value.IsPaused)
+        {
+            <span class="statsbar__sep">|</span>
+            <span class="statsbar__item statsbar__item--paused">⏸ PAUSED</span>
+        }
+    </div>
+}
+
+<div class="simulation-layout simulation-layout--@_activePane" data-testid="main-layout">
+    <main class="simulation-layout__grid app-reveal">
+        <div class="pane-header">BATTLE GRID</div>
+        <div class="pane-body pane-body--grid">
+            @Body
+        </div>
+    </main>
+
+    <aside class="simulation-layout__sidebar app-reveal">
+        <div class="pane-header pane-header--sidebar">DECISION + AGENT INTEL</div>
+        <div class="pane-body pane-body--sidebar">
+            @if (SimState.Value.IsRunning || SimState.Value.Agents.Count > 0)
+            {
+                <DecisionInspector />
+                <SoundtrackControl />
+                <AgentSidebar />
+            }
+        </div>
+    </aside>
+
+    <footer class="simulation-layout__console app-reveal">
+        <div class="pane-header pane-header--console">TACTICAL LOG</div>
+        <div class="pane-body pane-body--console">
+            @if (SimState.Value.IsRunning || SimState.Value.ConsoleLog.Count > 0)
+            {
+                <TacticalLog />
+            }
+        </div>
+    </footer>
+</div>
+
+<PostMortemOverlay />
+
+<ErrorBoundary>
+    <ChildContent>@((MarkupString)"")</ChildContent>
+    <ErrorContent Context="ex">
+        @if (IsDev)
+        {
+            <div class="dev-error-overlay" role="alert">
+                <h3>UNHANDLED EXCEPTION (DEV MODE)</h3>
+                <pre>@ex.ToString()</pre>
+            </div>
+        }
+    </ErrorContent>
+</ErrorBoundary>
+
+@code {
+    private const int StalledTurnThresholdSec = 20;
+    private string _activePane = "grid";
+
+    private string InferenceIndicatorClass => BootState.Value.ProviderKind switch
+    {
+        "LOCAL"  => "toolbar__inference--local",
+        "REMOTE" => "toolbar__inference--remote",
+        "MOCK"   => "toolbar__inference--mock",
+        _         => string.Empty,
+    };
+
+    private bool StalledAtTurnZero
+        => SimState.Value.IsRunning
+            && !SimState.Value.IsMockProvider
+            && SimState.Value.TurnNumber == 0
+            && SimState.Value.StartedAt != default
+            && (DateTimeOffset.UtcNow - SimState.Value.StartedAt).TotalSeconds >= StalledTurnThresholdSec;
+
+    private bool HasInferenceIssue
+        => BootState.Value.HasInferenceInitError
+            || StalledAtTurnZero
+            || (BootState.Value.ProviderKind == "LOCAL"
+                && BootState.Value.IsReady
+                && BootState.Value.TotalBytes > 0
+                && BootState.Value.BytesLoaded == 0);
+
+    private bool IsBootRoute => Nav.Uri.Contains("/boot", StringComparison.OrdinalIgnoreCase);
+
+    private bool BootCanStartSimulation => BootState.Value.IsReady || BootState.Value.IsDegradedMode;
+
+    private string DegradedModeSummary
+        => "Fallback tactics are active because real inference is unavailable.";
+
+    private string InferenceIssueSummary
+        => StalledAtTurnZero
+            ? $"Turn watchdog triggered (>{StalledTurnThresholdSec}s at turn 0)."
+            : BootState.Value.InferenceInitError is { Length: > 0 }
+            ? SummarizeIssue(BootState.Value.InferenceInitError)
+            : "Inference is unavailable.";
+
+    private static string SummarizeIssue(string detail)
+    {
+        var clean = detail.Trim();
+        if (clean.StartsWith("Inference error:", StringComparison.OrdinalIgnoreCase))
+            clean = clean["Inference error:".Length..].Trim();
+
+        const int max = 96;
+        return clean.Length <= max ? clean : clean[..max] + "...";
+    }
+
+    private bool IsDev => HostEnv.IsDevelopment();
+
+    private System.Threading.Timer? _clockTimer;
+
+    protected override void OnInitialized()
+    {
+        base.OnInitialized();
+        _clockTimer = new System.Threading.Timer(_ => InvokeAsync(StateHasChanged), null, 1000, 1000);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        await base.OnAfterRenderAsync(firstRender);
+        if (firstRender)
+        {
+            // Inject PoSurvive's stylesheets only while this layout is mounted so its
+            // global CSS resets don't leak into the rest of the PoMiniGames platform.
+            await JS.InvokeVoidAsync("PoSurviveTheme.load");
+        }
+    }
+
+    private int AliveRed  => SimState.Value.Agents.Count(a => a.IsAlive && a.Team == "Red");
+    private int AliveBlue => SimState.Value.Agents.Count(a => a.IsAlive && a.Team == "Blue");
+    private int TotalKills => SimState.Value.Agents.Sum(a => a.KillCount);
+    private int AvgHp => SimState.Value.Agents.Any(a => a.IsAlive)
+        ? (int)SimState.Value.Agents.Where(a => a.IsAlive).Average(a => a.Hp)
+        : 0;
+
+    private string ElapsedFormatted
+    {
+        get
+        {
+            if (SimState.Value.StartedAt == default) return "0:00";
+            var elapsed = DateTimeOffset.UtcNow - SimState.Value.StartedAt;
+            return elapsed.TotalHours >= 1
+                ? $"{(int)elapsed.TotalHours}:{elapsed.Minutes:D2}:{elapsed.Seconds:D2}"
+                : $"{elapsed.Minutes}:{elapsed.Seconds:D2}";
+        }
+    }
+
+    private int SecsPerTurn
+    {
+        get
+        {
+            if (SimState.Value.TurnNumber < 2 || SimState.Value.StartedAt == default) return 0;
+            var elapsed = (DateTimeOffset.UtcNow - SimState.Value.StartedAt).TotalSeconds;
+            return (int)(elapsed / SimState.Value.TurnNumber);
+        }
+    }
+
+    private void SetActivePane(string pane)
+    {
+        _activePane = pane;
+    }
+
+    private async Task StartSimulation()
+    {
+        var config = await LaunchService.BuildConfigAsync();
+
+        Dispatcher.Dispatch(new StartSimulationAction(config, BootState.Value.IsMockProvider || BootState.Value.IsDegradedMode));
+    }
+
+    private void OnSpeedChange(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var ms))
+            Dispatcher.Dispatch(new SpeedChangedAction(ms));
+    }
+
+    private void SetSpeedPreset(int speedMs)
+        => Dispatcher.Dispatch(new SpeedChangedAction(speedMs));
+
+    private string _downloadToastMessage = string.Empty;
+    private string _downloadToastKind = "info";
+    private bool _downloadToastVisible;
+    private CancellationTokenSource? _downloadToastCts;
+
+    private async Task DownloadLog()
+    {
+        var result = await LogService.DownloadLogAsync();
+        ShowDownloadToast(result.Message, result.Success ? "success" : "error");
+    }
+
+    private void ShowDownloadToast(string message, string kind)
+    {
+        _downloadToastMessage = message;
+        _downloadToastKind = kind;
+        _downloadToastVisible = true;
+
+        _downloadToastCts?.Cancel();
+        _downloadToastCts?.Dispose();
+        _downloadToastCts = new CancellationTokenSource();
+
+        _ = DismissToastAsync(_downloadToastCts.Token);
+    }
+
+    private async Task DismissToastAsync(CancellationToken ct)
+    {
+        try
+        {
+            await Task.Delay(3200, ct);
+            _downloadToastVisible = false;
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private void ResetSimulation()
+        => Dispatcher.Dispatch(new ResetSimulationAction());
+
+    private void PauseSimulation()
+        => Dispatcher.Dispatch(new PauseSimulationAction());
+
+    private void ResumeSimulation()
+        => Dispatcher.Dispatch(new ResumeSimulationAction());
+
+    private async Task RecoverFromInferenceStall()
+    {
+        Dispatcher.Dispatch(new ResetSimulationAction());
+        await Task.Yield();
+        await StartSimulation();
+    }
+
+    void IDisposable.Dispose()
+    {
+        _clockTimer?.Dispose();
+        _downloadToastCts?.Cancel();
+        _downloadToastCts?.Dispose();
+        // Remove PoSurvive's stylesheets so the platform's styling is restored on exit.
+        _ = JS.InvokeVoidAsync("PoSurviveTheme.unload");
+    }
+
+}

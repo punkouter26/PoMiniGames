@@ -1,0 +1,275 @@
+@* Evolution Lab — UI for viewing/manipulating LLM-Powered Agent Evolution *@
+@using PoSurvive.Shared.Models
+@implements IDisposable
+@inject PoSurvive.Client.Services.EvolutionClientService EvolutionClient
+
+<div class="evolution-lab app-fade-in" data-testid="evolution-lab">
+    <div class="evolution-lab__header">
+        <span class="evolution-lab__title">EVOLUTION LAB</span>
+        <button class="c64-btn c64-btn--small"
+                @onclick="ToggleExpanded"
+                title="@(_expanded ? "Collapse" : "Expand")">
+            @(_expanded ? "[-]" : "[+]")
+        </button>
+    </div>
+
+    @if (_expanded)
+    {
+        <div class="evolution-lab__body">
+
+            @* ─── Summary Dashboard ─────────────────────────────────────── *@
+            @if (_summary is not null)
+            {
+                <div class="evolution-lab__section">
+                    <span class="evolution-lab__label">LINEAGE STATS</span>
+                    <div class="evolution-lab__stats-grid">
+                        <div class="evolution-lab__stat">
+                            <span class="evolution-lab__stat-value">@_summary.TotalLineages</span>
+                            <span class="evolution-lab__stat-label">Lineages</span>
+                        </div>
+                        <div class="evolution-lab__stat">
+                            <span class="evolution-lab__stat-value">@_summary.TotalGenerations</span>
+                            <span class="evolution-lab__stat-label">Generations</span>
+                        </div>
+                        <div class="evolution-lab__stat">
+                            <span class="evolution-lab__stat-value">@_summary.UniqueDnaCount</span>
+                            <span class="evolution-lab__stat-label">Unique DNAs</span>
+                        </div>
+                        <div class="evolution-lab__stat">
+                            <span class="evolution-lab__stat-value">@(_summary.AverageWinRate * 100).ToString("F0")%</span>
+                            <span class="evolution-lab__stat-label">Avg Win Rate</span>
+                        </div>
+                        <div class="evolution-lab__stat">
+                            <span class="evolution-lab__stat-value">@_summary.TopArchetype</span>
+                            <span class="evolution-lab__stat-label">Top Archetype</span>
+                        </div>
+                        <div class="evolution-lab__stat">
+                            <span class="evolution-lab__stat-value">@_summary.TopDominantTrait</span>
+                            <span class="evolution-lab__stat-label">Top Trait</span>
+                        </div>
+                    </div>
+                </div>
+            }
+
+            @* ─── Actions ───────────────────────────────────────────────── *@
+            <div class="evolution-lab__section">
+                <span class="evolution-lab__label">ACTIONS</span>
+                <div class="evolution-lab__action-row">
+                    <button class="c64-btn" @onclick="SeedDna" disabled="@_loading">
+                        [ SEED 8 DNA ]
+                    </button>
+                    <button class="c64-btn" @onclick="LoadData" disabled="@_loading">
+                        [ REFRESH ]
+                    </button>
+                    <button class="c64-btn c64-btn--danger" @onclick="ResetEvolution" disabled="@_loading">
+                        [ RESET ]
+                    </button>
+                </div>
+            </div>
+
+            @* ─── Evolution Tree ────────────────────────────────────────── *@
+            @if (_tree is not null && _tree.Nodes.Count > 0)
+            {
+                <div class="evolution-lab__section">
+                    <EvolutionTree Tree="_tree" />
+                </div>
+            }
+
+            @* ─── Top Performers ────────────────────────────────────────── *@
+            @if (_states is not null && _states.Count > 0)
+            {
+                <div class="evolution-lab__section">
+                    <span class="evolution-lab__label">DNA LINEAGES</span>
+                    <div class="evolution-lab__dna-list">
+                        @foreach (var state in _states
+                            .OrderByDescending(s => s.WinRate)
+                            .ThenByDescending(s => s.TotalSessions)
+                            .Take(10))
+                        {
+                            <div class="evolution-lab__dna-row @(state.WinRate >= 0.6f ? "evolution-lab__dna-row--top" : "")"
+                                 data-testid="dna-row-@state.DnaId">
+                                <div class="evolution-lab__dna-left">
+                                    <span class="evolution-lab__dna-archetype">@(state.Archetype ?? state.DominantTrait)</span>
+                                    <span class="evolution-lab__dna-gen">G@(state.Generation)</span>
+                                    @if (state.ParentDnaIds.Count > 0)
+                                    {
+                                        <span class="evolution-lab__dna-parents" title="Parents: @string.Join(", ", state.ParentDnaIds.Select(p => p.Length > 30 ? p[..30] + "..." : p))">
+                                            @state.ParentDnaIds.Count parent(s)
+                                        </span>
+                                    }
+                                </div>
+                                <div class="evolution-lab__dna-traits">
+                                    <span class="dna-trait" title="Predatory">PRE @(state.Predatory * 100).ToString("F0")%</span>
+                                    <span class="dna-trait" title="Scavenger">SCV @(state.Scavenger * 100).ToString("F0")%</span>
+                                    <span class="dna-trait" title="Paranoid">PAR @(state.Paranoid * 100).ToString("F0")%</span>
+                                    <span class="dna-trait" title="Altruistic">ALT @(state.Altruistic * 100).ToString("F0")%</span>
+                                    <span class="dna-trait" title="Methodical">MTH @(state.Methodical * 100).ToString("F0")%</span>
+                                </div>
+                                <div class="evolution-lab__dna-stats">
+                                    <span class="evolution-lab__dna-winrate @(state.WinRate >= 0.6f ? "text-green" : state.WinRate >= 0.3f ? "text-yellow" : "text-red")">
+                                        @((state.WinRate * 100).ToString("F0"))%
+                                    </span>
+                                    <span class="evolution-lab__dna-sessions">@state.WinCount/@state.TotalSessions wins</span>
+                                </div>
+                                <div class="evolution-lab__dna-actions">
+                                    <button class="c64-btn c64-btn--small"
+                                            @onclick="() => EvolveDna(state.DnaId)"
+                                            disabled="@_loading"
+                                            title="Evolve a child from this DNA">
+                                        [MUTATE]
+                                    </button>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+
+            @if (_loading)
+            {
+                <div class="evolution-lab__loading">Loading evolution data...</div>
+            }
+
+            @if (_statusMessage is not null)
+            {
+                <div class="evolution-lab__toast" role="status">@_statusMessage</div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private bool _expanded;
+    private bool _loading;
+
+    private EvolutionSummaryDto? _summary;
+    private EvolutionTreeDto? _tree;
+    private IReadOnlyList<EvolutionStateDto>? _states;
+    private string? _statusMessage;
+
+    private CancellationTokenSource? _toastCts;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Auto-load data on first expand
+    }
+
+    private void ToggleExpanded()
+    {
+        _expanded = !_expanded;
+        if (_expanded && _summary is null)
+        {
+            _ = LoadData();
+        }
+    }
+
+    private async Task LoadData()
+    {
+        _loading = true;
+        try
+        {
+            _summary = await EvolutionClient.GetSummaryAsync();
+            _tree = await EvolutionClient.GetTreeAsync();
+            _states = await EvolutionClient.GetAllStatesAsync();
+        }
+        catch
+        {
+            ShowToast("Failed to load evolution data.");
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task SeedDna()
+    {
+        _loading = true;
+        try
+        {
+            await EvolutionClient.SeedAsync(8);
+            ShowToast("Seeded 8 initial DNA lineages.");
+            await LoadData();
+        }
+        catch
+        {
+            ShowToast("Failed to seed DNA.");
+            _loading = false;
+        }
+    }
+
+    private async Task ResetEvolution()
+    {
+        _loading = true;
+        try
+        {
+            await EvolutionClient.ResetAsync();
+            ShowToast("Evolution data reset.");
+            _summary = null;
+            _tree = null;
+            _states = null;
+        }
+        catch
+        {
+            ShowToast("Failed to reset evolution data.");
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task EvolveDna(string parentDnaId)
+    {
+        _loading = true;
+        try
+        {
+            var child = await EvolutionClient.EvolveAsync(parentDnaId);
+            if (child is not null)
+            {
+                ShowToast($"Evolved child DNA: {child.Archetype} Gen {child.Generation}");
+                await LoadData();
+            }
+            else
+            {
+                ShowToast("Evolution failed.");
+            }
+        }
+        catch
+        {
+            ShowToast("Evolution failed.");
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void ShowToast(string message)
+    {
+        _statusMessage = message;
+        _toastCts?.Cancel();
+        _toastCts?.Dispose();
+        _toastCts = new CancellationTokenSource();
+        _ = DismissToastAsync(_toastCts.Token);
+    }
+
+    private async Task DismissToastAsync(CancellationToken ct)
+    {
+        try
+        {
+            await Task.Delay(3000, ct);
+            _statusMessage = null;
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    public void Dispose()
+    {
+        _toastCts?.Cancel();
+        _toastCts?.Dispose();
+    }
+}

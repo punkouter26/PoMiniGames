@@ -6,5 +6,6 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\PoMiniGames.Domain\PoMiniGames.Domain.csproj" />
+    <ProjectReference Include="..\PoShared\PoShared.csproj" />
   </ItemGroup>
 </Project>

@@ -1,0 +1,56 @@
+@using PoSurvive.Shared.Models
+
+@* T054: GridTile renders one cell — terrain, food, or agent *@
+
+<div class="@CssClasses"
+     role="gridcell"
+     aria-label="@AriaLabel"
+     title="(@X,@Y)@(Agent is not null ? $" — {Agent.Id} HP:{Agent.Hp}" : "")"
+     @onclick="HandleClick">
+
+    @if (Agent is not null)
+    {
+        <span class="tile__agent @(Agent.Team == "Red" ? "tile__agent--red" : "tile__agent--blue")
+                     @(Agent.IsFading ? "tile__agent--dying" : "")">
+            @Agent.Id
+        </span>
+    }
+    else if (HasFood)
+    {
+        <span class="tile__food">✦</span>
+    }
+
+</div>
+
+@code {
+    [Parameter] public int     X             { get; set; }
+    [Parameter] public int     Y             { get; set; }
+    [Parameter] public bool    IsRock        { get; set; }
+    [Parameter] public bool    HasFood       { get; set; }
+    [Parameter] public AgentDto? Agent       { get; set; }
+    [Parameter] public bool    IsSelected    { get; set; }
+    [Parameter] public EventCallback<string> OnAgentClicked  { get; set; }
+    [Parameter] public EventCallback         OnEmptyClicked  { get; set; }
+
+    private string CssClasses =>
+        "grid-tile" +
+        (IsRock     ? " grid-tile--rock"     : "") +
+        (HasFood    ? " grid-tile--food"     : "") +
+        (Agent is not null ? " grid-tile--occupied" : "") +
+        (IsSelected ? " grid-tile--selected" : "") +
+        (Agent?.IsAlive == false ? " grid-tile--dead" : "");
+
+    private string AriaLabel =>
+        IsRock        ? "Rock"
+        : Agent != null ? $"Agent {Agent.Id}, HP {Agent.Hp}"
+        : HasFood     ? "Food"
+        : $"Empty ({X},{Y})";
+
+    private async Task HandleClick()
+    {
+        if (Agent is not null)
+            await OnAgentClicked.InvokeAsync(Agent.Id);
+        else
+            await OnEmptyClicked.InvokeAsync();
+    }
+}

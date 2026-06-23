@@ -1,0 +1,277 @@
+﻿@page "/posurvive"
+@layout PoSurviveLayout
+@using PoSurvive.Client.Features.Grid
+@using PoSurvive.Client.Services
+@using PoSurvive.Client.Store
+@inherits Fluxor.Blazor.Web.Components.FluxorComponent
+@implements IDisposable
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@inject IDispatcher Dispatcher
+@inject IState<BootState>       BootState
+@inject IState<SimulationState> SimState
+@inject IInferenceService        InferenceService
+@inject InferenceRouter?         InferenceRouterOrNull
+@inject LocalModelBootstrapService ModelBootstrap
+
+<div data-testid="grid-container">
+    @if (!SimState.Value.IsRunning && SimState.Value.Agents.Count == 0 && !SimState.Value.ShowPostMortem)
+    {
+        <div class="idle-screen app-reveal">
+            <div class="launch-card">
+                <h2 class="launch-card__title">MISSION CONTROL</h2>
+                <p class="launch-card__subtitle">Prepare the simulation in three quick steps.</p>
+
+                <div class="launch-health" role="status" aria-live="polite" data-testid="home-launch-health">
+                    <span class="launch-health__chip @(BootState.Value.ProviderKind == "REMOTE" ? "launch-health__chip--remote" : BootState.Value.ProviderKind == "LOCAL" ? "launch-health__chip--local" : string.Empty)">@ProviderChipLabel</span>
+                    <span class="launch-health__chip @(CanLaunchSimulation ? "launch-health__chip--ok" : "launch-health__chip--warn")">@LaunchReadinessLabel</span>
+                    <span class="launch-health__chip">MODEL @BootState.Value.ModelLabel</span>
+                </div>
+
+                <ol class="launch-steps" aria-label="Simulation launch steps">
+                    <li class="launch-steps__item launch-steps__item--done">Inference engine online.</li>
+                    <li class="launch-steps__item @(CanLaunchSimulation ? "launch-steps__item--done" : string.Empty)">Ensure selected model is loaded.</li>
+                    <li class="launch-steps__item @(CanLaunchSimulation ? "launch-steps__item--done" : string.Empty)">Press [ START ] on the command bar to launch the arena.</li>
+                </ol>
+
+                <div class="launch-model-picker" data-testid="home-model-picker">
+                    <label class="launch-model-picker__label" for="model-picker-select">ACTIVE MODEL</label>
+                    <select id="model-picker-select"
+                            class="launch-model-picker__select @(IsSelectedModelRemote ? "launch-model-picker__select--remote" : "launch-model-picker__select--local")"
+                            @bind="_selectedModelId"
+                            disabled="@CanNotSwitchModels"
+                            aria-label="Select inference model">
+                        @if (_modelOptions.Any(o => !o.IsRemote))
+                        {
+                            <optgroup label="── LOCAL (WebLLM) ──">
+                                @foreach (var option in _modelOptions.Where(o => !o.IsRemote))
+                                {
+                                    <option value="@option.Id">@option.Label</option>
+                                }
+                            </optgroup>
+                        }
+                        @if (_modelOptions.Any(o => o.IsRemote))
+                        {
+                            <optgroup label="── REMOTE (Azure OpenAI) ──">
+                                @foreach (var option in _modelOptions.Where(o => o.IsRemote))
+                                {
+                                    <option value="@option.Id">@option.Label</option>
+                                }
+                            </optgroup>
+                        }
+                    </select>
+                    <p class="launch-model-picker__description">@SelectedModelDescription</p>
+
+                    <div class="launch-model-picker__status" data-testid="home-model-status">
+                        @if (BootState.Value.HasInferenceInitError)
+                        {
+                            <span class="launch-model-picker__status-error">INFERENCE ISSUE: @InferenceIssueSummary</span>
+                        }
+                        else if (IsInferenceLoading)
+                        {
+                            @if (IsSelectedModelRemote)
+                            {
+                                <span class="launch-model-picker__status-loading">CONNECTING TO AZURE OPENAI…</span>
+                            }
+                            else
+                            {
+                                <span class="launch-model-picker__status-loading">LOADING @FormatBytes(BootState.Value.BytesLoaded) / @FormatBytes(BootState.Value.TotalBytes)</span>
+                            }
+                        }
+                        else if (BootState.Value.IsReady)
+                        {
+                            <span class="launch-model-picker__status-ready">READY: @BootState.Value.ModelLabel</span>
+                        }
+                        else
+                        {
+                            <span class="launch-model-picker__status-idle">Select a model and load it.</span>
+                        }
+                    </div>
+
+                    <button class="c64-btn"
+                            @onclick="LoadSelectedModelAsync"
+                            disabled="@CanNotSwitchModels"
+                            data-testid="btn-load-model">
+                        [ @LoadModelLabel ]
+                    </button>
+                </div>
+
+                <div class="launch-card__actions">
+                    <button class="c64-btn c64-btn--primary"
+                            @onclick="FocusStartControl"
+                            disabled="@(!CanLaunchSimulation)"
+                            title="@LaunchButtonHint">
+                        [ FOCUS START ]
+                    </button>
+                </div>
+
+                <p class="launch-card__hint" data-testid="home-launch-hint">@LaunchButtonHint</p>
+
+                <details class="launch-card__advanced">
+                    <summary>Advanced options</summary>
+                    <button class="c64-btn" @onclick="GoBoot">[ RETURN TO BOOT ]</button>
+                </details>
+            </div>
+        </div>
+    }
+    else
+    {
+        <GridBoard />
+    }
+</div>
+
+@code {
+    private bool _switchingModel;
+    private string _selectedModelId = string.Empty;
+    private List<ModelOption> _modelOptions = [];
+    private DotNetObjectReference<PoSurvivePage>? _bridgeCallbacksRef;
+
+    protected override void OnInitialized()
+    {
+        base.OnInitialized();
+        _modelOptions    = ModelBootstrap.ReadAllModelOptions();
+        _selectedModelId = ModelBootstrap.ResolveDefaultSelectedModelIdFromAll(BootState.Value.ModelId, _modelOptions);
+    }
+
+    protected override void OnParametersSet()
+    {
+        base.OnParametersSet();
+
+        if (_switchingModel || _modelOptions.Count == 0)
+            return;
+
+        _selectedModelId = ModelBootstrap.ResolveDefaultSelectedModelIdFromAll(BootState.Value.ModelId, _modelOptions);
+    }
+
+    private bool CanNotSwitchModels
+        => _switchingModel || SimState.Value.IsRunning || _modelOptions.Count == 0;
+
+    private bool IsSelectedModelRemote
+        => _modelOptions.FirstOrDefault(o => o.Id == _selectedModelId)?.IsRemote ?? false;
+
+    private bool IsInferenceLoading
+        => !BootState.Value.HasInferenceInitError
+           && (_switchingModel || (BootState.Value.TotalBytes > 0 && BootState.Value.BytesLoaded < BootState.Value.TotalBytes));
+
+    private bool CanLaunchSimulation
+        => BootState.Value.IsReady || BootState.Value.IsDegradedMode;
+
+    private string ProviderChipLabel
+        => string.IsNullOrWhiteSpace(BootState.Value.ProviderKind)
+            ? "PROVIDER UNKNOWN"
+            : $"PROVIDER {BootState.Value.ProviderKind}";
+
+    private string LaunchReadinessLabel
+        => CanLaunchSimulation ? "SYSTEM READY" : "SYSTEM NOT READY";
+
+    private string LoadModelLabel
+        => _switchingModel ? "LOADING..." : "LOAD MODEL";
+
+    private string LaunchButtonHint
+        => CanLaunchSimulation
+            ? "Press [ FOCUS START ] then use [ START ] in the top command bar."
+            : "Load a model first, or enable degraded mode from boot.";
+
+    private string InferenceIssueSummary
+        => string.IsNullOrWhiteSpace(BootState.Value.InferenceInitError)
+            ? "Unable to initialise inference."
+            : BootState.Value.InferenceInitError!;
+
+    private string SelectedModelDescription
+        => _modelOptions.FirstOrDefault(o => o.Id == _selectedModelId)?.Description
+           ?? "No description available for this model.";
+
+    private async Task LoadSelectedModelAsync()
+    {
+        if (CanNotSwitchModels)
+            return;
+
+        var selected = _modelOptions.FirstOrDefault(o => o.Id == _selectedModelId);
+        if (selected is null)
+            return;
+
+        _switchingModel = true;
+
+        Dispatcher.Dispatch(new ResetInferenceBootstrapAction());
+
+        var isMock       = InferenceService is MockInferenceService;
+        var providerKind = ModelBootstrap.ResolveProviderKind(isMock, selected.IsRemote);
+
+        // Point the router at the correct backend
+        if (!isMock && InferenceRouterOrNull is { } router)
+        {
+            if (selected.IsRemote)
+                router.UseRemote(selected.Id);
+            else
+                router.UseLocal();
+        }
+
+        Dispatcher.Dispatch(new InferenceConfiguredAction(
+            ProviderKind: providerKind,
+            ModelId:      selected.Id,
+            ModelLabel:   selected.Label));
+
+        // Mock or remote models need no local download — mark ready immediately
+        if (isMock || selected.IsRemote)
+        {
+            Dispatcher.Dispatch(new BootReadyAction());
+            _switchingModel = false;
+            return;
+        }
+
+        // Local WebLLM model — start JS worker bootstrap
+        try
+        {
+            _bridgeCallbacksRef?.Dispose();
+            _bridgeCallbacksRef = DotNetObjectReference.Create(this);
+            await ModelBootstrap.InitModelAsync(_bridgeCallbacksRef, selected.Id);
+        }
+        catch (Exception ex)
+        {
+            Dispatcher.Dispatch(new InferenceInitFailedAction(ex.Message));
+            _switchingModel = false;
+        }
+    }
+
+    private async Task FocusStartControl()
+    {
+        await JS.InvokeVoidAsync("PoSurviveUi.focusElementById", "start-sim-button");
+        await JS.InvokeVoidAsync("PoSurviveUi.flashElement", "start-sim-button");
+    }
+
+    private void GoBoot()
+    {
+        Nav.NavigateTo("/boot");
+    }
+
+    [JSInvokable]
+    public void OnModelProgress(long bytesLoaded, long totalBytes)
+        => Dispatcher.Dispatch(new ModelLoadProgressAction(bytesLoaded, totalBytes));
+
+    [JSInvokable]
+    public void OnModelReady()
+    {
+        Dispatcher.Dispatch(new BootReadyAction());
+        _switchingModel = false;
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public void OnModelInitError(string error)
+    {
+        Dispatcher.Dispatch(new InferenceInitFailedAction(error));
+        _switchingModel = false;
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private static string FormatBytes(long bytes)
+        => LocalModelBootstrapService.FormatBytes(bytes);
+
+    public void Dispose()
+    {
+        _bridgeCallbacksRef?.Dispose();
+        _bridgeCallbacksRef = null;
+    }
+
+}
+

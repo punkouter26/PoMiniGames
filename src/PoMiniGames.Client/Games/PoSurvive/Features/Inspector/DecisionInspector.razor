@@ -1,0 +1,179 @@
+@using PoSurvive.Client.Store
+@using PoSurvive.Shared.Models
+
+@inherits Fluxor.Blazor.Web.Components.FluxorComponent
+@inject IState<SimulationState> SimState
+@inject IDispatcher Dispatcher
+@inject DecisionInsightService InsightService
+
+<section class="decision-inspector app-reveal" data-testid="decision-inspector">
+    <div class="decision-inspector__header">
+        <h3 class="decision-inspector__title">DECISION INSPECTOR</h3>
+        @if (SimState.Value.SelectedAgentId is not null)
+        {
+            <button class="c64-btn decision-inspector__clear-follow"
+                    @onclick="ClearFollow"
+                    data-testid="btn-clear-follow">
+                CLEAR FOLLOW
+            </button>
+        }
+    </div>
+
+    @if (CurrentEntry is null)
+    {
+        <p class="decision-inspector__empty">Run a simulation to inspect why each move is chosen.</p>
+    }
+    else
+    {
+        <div class="decision-inspector__meta">
+            <span class="decision-inspector__chip">@($"T{CurrentEntry.TurnNumber}")</span>
+            <span class="decision-inspector__chip @(CurrentEntry.Team == "Red" ? "decision-inspector__chip--red" : "decision-inspector__chip--blue")">@CurrentEntry.AgentId</span>
+            <span class="decision-inspector__chip">@CurrentEntry.Action.ToUpperInvariant()</span>
+            <span class="decision-inspector__chip @(CurrentSeverity == "warn" ? "decision-inspector__chip--warn" : "decision-inspector__chip--info")">@CurrentSeverity.ToUpperInvariant()</span>
+            @if (CurrentAgent is not null)
+            {
+                <span class="decision-inspector__chip" title="Confidence score: how certain the model was about this action. Computed from momentum, HP, and trait alignment.">CONF @CurrentConfidence%</span>
+            }
+        </div>
+
+        <p class="decision-inspector__summary">
+            @if (SimState.Value.SelectedAgentId is not null)
+            {
+                <span>Following @CurrentEntry.AgentId. Event filter: @CurrentEventFilter.ToUpperInvariant().</span>
+            }
+            else
+            {
+                <span>Auto-tracking latest acting agent. Event filter: @CurrentEventFilter.ToUpperInvariant().</span>
+            }
+        </p>
+
+        <blockquote class="decision-inspector__thought" title="@CurrentEntry.Thought">@CurrentEntry.Thought</blockquote>
+
+        @if (CurrentAgent is not null)
+        {
+            <div class="decision-inspector__section-title">Decision Causality</div>
+            <div class="decision-inspector__causality-grid">
+                @foreach (var factor in CausalityFactors)
+                {
+                    <article class="decision-inspector__cause-card @(factor.Polarity == "risk" ? "decision-inspector__cause-card--risk" : "decision-inspector__cause-card--drive")">
+                        <div class="decision-inspector__cause-title">@factor.Title</div>
+                        <div class="decision-inspector__cause-value">@factor.Value</div>
+                        <div class="decision-inspector__cause-detail">@factor.Detail</div>
+                    </article>
+                }
+            </div>
+
+            <div class="decision-inspector__section-title">Counterfactual Move Fit</div>
+            <div class="decision-inspector__alternatives" data-testid="decision-alternatives">
+                @foreach (var option in ActionOptions)
+                {
+                    <div class="decision-inspector__option-row @(option.IsCurrent ? "decision-inspector__option-row--current" : string.Empty)">
+                        <div class="decision-inspector__option-head">
+                            <span class="decision-inspector__option-name">@option.ActionName.ToUpperInvariant()</span>
+                            <span class="decision-inspector__option-score">@option.Score</span>
+                        </div>
+                        <div class="decision-inspector__option-track">
+                            <div class="decision-inspector__option-fill" style="width:@option.Score%"></div>
+                        </div>
+                        <div class="decision-inspector__option-why">@option.Rationale</div>
+                    </div>
+                }
+            </div>
+
+            <div class="decision-inspector__motivation">
+                <div class="decision-inspector__motivation-title">Motivation Profile</div>
+                @foreach (var trait in InsightService.GetSortedTraits(CurrentAgent).Take(3))
+                {
+                    <div class="decision-inspector__trait-row">
+                        <span class="decision-inspector__trait-label">@trait.Key</span>
+                        <div class="decision-inspector__trait-track">
+                            <div class="decision-inspector__trait-fill" style="width:@trait.Value%"></div>
+                        </div>
+                        <span class="decision-inspector__trait-value">@trait.Value%</span>
+                    </div>
+                }
+            </div>
+
+            @if (CurrentAgentHistory.Count > 1)
+            {
+                <div class="decision-inspector__section-title">Recent Decision Sequence</div>
+                <div class="decision-inspector__history-list" data-testid="decision-history">
+                    @foreach (var item in CurrentAgentHistory)
+                    {
+                        <div class="decision-inspector__history-item">
+                            <span class="decision-inspector__history-turn">@($"T{item.TurnNumber}")</span>
+                            <span class="decision-inspector__history-action">@item.Action.ToUpperInvariant()</span>
+                            <span class="decision-inspector__history-thought" title="@item.Thought">@Shorten(item.Thought, 70)</span>
+                        </div>
+                    }
+                </div>
+            }
+
+            <details class="decision-inspector__advanced">
+                <summary>Advanced diagnostics</summary>
+                <div class="decision-inspector__advanced-grid">
+                    <div>HP: @CurrentAgent.Hp</div>
+                    <div>Hunger: @Math.Round(CurrentAgent.Hunger, 2)</div>
+                    <div>Kills: @CurrentAgent.KillCount</div>
+                    <div>Food: @CurrentAgent.FoodConsumed</div>
+                    <div>Survival turns: @CurrentAgent.SurvivalTurns</div>
+                    <div>Position: (@CurrentAgent.X,@CurrentAgent.Y)</div>
+                </div>
+            </details>
+        }
+    }
+</section>
+
+@code {
+    private string CurrentEventFilter => string.IsNullOrWhiteSpace(SimState.Value.EventFilter)
+        ? "all"
+        : SimState.Value.EventFilter;
+
+    private ConsoleEntry? CurrentEntry
+    {
+        get
+        {
+            if (SimState.Value.ConsoleLog.Count == 0)
+                return null;
+
+            if (SimState.Value.SelectedAgentId is not null)
+                return SimState.Value.ConsoleLog.LastOrDefault(e => e.AgentId == SimState.Value.SelectedAgentId)
+                       ?? SimState.Value.ConsoleLog.Last();
+
+            return SimState.Value.ConsoleLog.Last();
+        }
+    }
+
+    private AgentDto? CurrentAgent
+        => CurrentEntry is null
+            ? null
+            : SimState.Value.Agents.FirstOrDefault(a => a.Id == CurrentEntry.AgentId);
+
+    private IReadOnlyList<ConsoleEntry> CurrentAgentHistory
+        => CurrentEntry is null
+            ? []
+            : SimState.Value.ConsoleLog
+                .Where(e => e.AgentId == CurrentEntry.AgentId)
+                .TakeLast(5)
+                .ToList();
+
+    private int CurrentConfidence
+        => InsightService.ComputeConfidence(CurrentAgent, CurrentEntry, CurrentAgentHistory);
+
+    private IReadOnlyList<DecisionFactor> CausalityFactors
+        => InsightService.BuildCausalityFactors(CurrentAgent, CurrentEntry, CurrentAgentHistory);
+
+    private IReadOnlyList<ActionOption> ActionOptions
+        => CurrentAgent is null || CurrentEntry is null
+            ? []
+            : InsightService.BuildActionOptions(CurrentAgent, CurrentEntry, CurrentAgentHistory);
+
+    private string CurrentSeverity
+        => CurrentEntry is null ? "info" : InsightService.GetSeverity(CurrentEntry);
+
+    private static string Shorten(string text, int maxLen)
+        => text.Length <= maxLen ? text : text[..(maxLen - 3)] + "...";
+
+    private void ClearFollow()
+        => Dispatcher.Dispatch(new GodClickClearedAction());
+}

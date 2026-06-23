@@ -1,0 +1,132 @@
+﻿@using PoSurvive.Client.Store
+@using PoSurvive.Shared.Models
+@implements IDisposable
+
+@inherits Fluxor.Blazor.Web.Components.FluxorComponent
+@inject IState<SimulationState> SimState
+@inject IDispatcher Dispatcher
+
+<div class="agent-sidebar" data-testid="agent-sidebar">
+
+    @foreach (var agent in SimState.Value.Agents.OrderBy(a => a.Team).ThenBy(a => a.Id))
+    {
+        var isSelected = SimState.Value.SelectedAgentId == agent.Id;
+        var isExpanded = _expandedAgents.Contains(agent.Id);
+        <div class="sidebar__agent @(isSelected ? "sidebar__agent--selected" : string.Empty) @(agent.IsAlive ? string.Empty : "sidebar__agent--dead")"
+             data-testid="agent-panel-@agent.Id"
+             @onclick="() => OnAgentClick(agent.Id)">
+
+            <div class="sidebar__agent-header">
+                <span class="sidebar__agent-id @(agent.Team == "Red" ? "text-red" : "text-blue")">@agent.Id</span>
+                <span class="sidebar__agent-status">
+                    @if (agent.IsAlive)
+                    {
+                        <span class="agent-hp-pill agent-hp-pill--@HpClass(agent.Hp)">HP @agent.Hp</span>
+                    }
+                    else
+                    {
+                        <span class="agent-dead-badge">DEAD</span>
+                    }
+                </span>
+                @if (agent.IsAlive)
+                {
+                    <button class="agent-expand-btn"
+                            @onclick:stopPropagation
+                            @onclick="() => ToggleExpand(agent.Id)"
+                            title="@(isExpanded ? "Collapse" : "Expand details")">
+                        @(isExpanded ? "[-]" : "[+]")
+                    </button>
+                }
+            </div>
+
+            @if (agent.IsAlive)
+            {
+                <div class="sidebar__hp-bar">
+                    <div class="hp-bar hp-bar--@(agent.Team == "Red" ? "red" : "blue")"
+                         style="width:@agent.Hp%"></div>
+                </div>
+
+                @if (isExpanded)
+                {
+                    <div class="sidebar__detail-panel app-fade-in">
+                        <div class="sidebar__dna">
+                            <DnaBar Label="PRE" Value="@agent.Predatory" />
+                            <DnaBar Label="SCV" Value="@agent.Scavenger" />
+                            <DnaBar Label="PAR" Value="@agent.Paranoid" />
+                            <DnaBar Label="ALT" Value="@agent.Altruistic" />
+                            <DnaBar Label="MTH" Value="@agent.Methodical" />
+                        </div>
+                        <div class="sidebar__stats">
+                            <div class="stat-row">
+                                <span class="stat-label">Action:</span>
+                                <span class="stat-value">@(agent.LastAction ?? "Idle")</span>
+                            </div>
+                            <div class="stat-row">
+                                <span class="stat-label">Kills:</span>
+                                <span class="stat-value">@agent.KillCount</span>
+                            </div>
+                            <div class="stat-row">
+                                <span class="stat-label">Food:</span>
+                                <span class="stat-value">@agent.FoodConsumed</span>
+                            </div>
+                        </div>
+                        @if (agent.LastThought is not null)
+                        {
+                            <div class="sidebar__thought" title="@agent.LastThought">@agent.LastThought</div>
+                        }
+                    </div>
+                }
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private readonly HashSet<string> _expandedAgents = [];
+    private readonly PeriodicTimer _clock = new(TimeSpan.FromSeconds(1));
+    private readonly CancellationTokenSource _clockCts = new();
+
+    protected override void OnInitialized()
+    {
+        base.OnInitialized();
+        _ = TickClockAsync();
+    }
+
+    private void OnAgentClick(string agentId)
+    {
+        if (SimState.Value.SelectedAgentId == agentId)
+            Dispatcher.Dispatch(new GodClickClearedAction());
+        else
+            Dispatcher.Dispatch(new GodClickSelectedAction(agentId));
+    }
+
+    private void ToggleExpand(string agentId)
+    {
+        if (!_expandedAgents.Remove(agentId))
+            _expandedAgents.Add(agentId);
+    }
+
+    private static string HpClass(int hp) => hp switch
+    {
+        >= 66 => "high",
+        >= 33 => "mid",
+        _     => "low",
+    };
+
+    private async Task TickClockAsync()
+    {
+        try
+        {
+            while (await _clock.WaitForNextTickAsync(_clockCts.Token))
+                await InvokeAsync(StateHasChanged);
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    public void Dispose()
+    {
+        _clockCts.Cancel();
+        _clock.Dispose();
+        _clockCts.Dispose();
+    }
+}

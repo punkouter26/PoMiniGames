@@ -78,12 +78,17 @@
                     try
                     {
                         var obj = JsonSerializer.Deserialize<JsonElement>(json);
-                        _backendDiagRaw = JsonSerializer.Serialize(obj, new JsonSerializerOptions { WriteIndented = true });
+                        // The raw JSON may include connection strings / client IDs.
+                        // Only show it verbatim when running in Development; otherwise
+                        // point users at the masked table below.
+                        _backendDiagRaw = HostEnvironment.IsDevelopment()
+                            ? JsonSerializer.Serialize(obj, new JsonSerializerOptions { WriteIndented = true })
+                            : "(see masked table below — raw payload hidden outside Development)";
                         BuildRows(obj);
                     }
                     catch
                     {
-                        _backendDiagRaw = json;
+                        _backendDiagRaw = HostEnvironment.IsDevelopment() ? json : "(hidden outside Development)";
                     }
                 }
                 else
@@ -98,6 +103,22 @@
         }
     }
 
+    // Property names whose string values are sensitive and must be masked in the
+    // diagnostic table (the raw JSON in the previous section is shown only in
+    // Development, and the API already returns masked values for these keys).
+    private static readonly HashSet<string> SensitiveKeys = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "keyVaultUri",
+        "applicationInsights",
+        "microsoftClientId",
+        "microsoftApiClientId",
+        "tableServiceConnection",
+        "tableServiceEndpoint",
+        "tableServiceAccount",
+        "tableServiceTable",
+        "clientSecret",
+    };
+
     private void BuildRows(JsonElement root)
     {
         _diagRows.Clear();
@@ -108,11 +129,11 @@
 
         foreach (var property in root.EnumerateObject())
         {
-            var summary = property.Value.ValueKind switch
+            string summary = property.Value.ValueKind switch
             {
                 JsonValueKind.Object => "Object",
                 JsonValueKind.Array => "Array",
-                JsonValueKind.String => property.Value.GetString() ?? string.Empty,
+                JsonValueKind.String => MaskIfSensitive(property.Name, property.Value.GetString() ?? string.Empty),
                 JsonValueKind.Number => property.Value.ToString(),
                 JsonValueKind.True => "true",
                 JsonValueKind.False => "false",
@@ -122,6 +143,15 @@
 
             _diagRows.Add(new DiagRow(property.Name, summary));
         }
+    }
+
+    private static string MaskIfSensitive(string key, string value)
+    {
+        if (SensitiveKeys.Contains(key))
+        {
+            return string.IsNullOrEmpty(value) || value.Length <= 8 ? "***" : value[..4] + "****" + value[^4..];
+        }
+        return value;
     }
 
     private static string Mask(string? value)

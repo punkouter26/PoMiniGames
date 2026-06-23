@@ -144,7 +144,7 @@
     private readonly GameStatsService _gameStats = new();
     private CancellationTokenSource? _demoCts;
 
-    private string _backTo => Demo == 1 ? "/single-player?mode=demo" : "/single-player";
+    private string _backTo => "/";
     private bool _isGameOver => !isPlaying && !isCountingDown && _showResultOverlay;
 
     private RenderFragment TitleContent => @<span>🥁 PoClick</span>;

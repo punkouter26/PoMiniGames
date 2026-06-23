@@ -42,6 +42,7 @@ builder.Services.AddScoped<PlayerNameService>();
 builder.Services.AddScoped<ToastService>();
 builder.Services.AddScoped<GameStatsService>();
 builder.Services.AddScoped<GameResultService>();
+builder.Services.AddScoped<MatchHistoryService>();
 builder.Services.AddScoped<PoClickHistoryService>();
 builder.Services.AddScoped<PoRacerScoreApiClient>();
 // Singleton — manages the shared "Watch All Demos" auto-rotation timer

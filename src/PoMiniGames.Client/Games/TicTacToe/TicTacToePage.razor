@@ -8,11 +8,12 @@
 @using PoMiniGamesClient.Services;
 @inject NavigationManager Navigation;
 @inject PlayerNameService PlayerNameService;
+@inject MatchHistoryService MatchHistory;
 @inject IJSRuntime JSRuntime;
 @inject KioskCoordinator Kiosk;
 
-<GameShell 
-    Title=@TitleContent 
+<GameShell
+    Title=@TitleContent
     Player="@_playerName"
     BackTo="@_backTo"
     GameOver="@_isGameOver"
@@ -20,6 +21,7 @@
     ShowSettings="true"
     IsOffline="@_isOffline"
     Stats="@_statItems"
+    Status="@StatusContent"
     Controls="@ControlsContent">
     <div class="ttt-board" role="grid" aria-label="Tic Tac Toe game board">
         @for (int r = 0; r < TicTacToeBoard.Size; r++)
@@ -56,14 +58,22 @@
 @code {
     [Parameter] public int? Demo { get; set; }
     [SupplyParameterFromQuery(Name = "kiosk")] public int KioskNext { get; set; } = -1;
+    [SupplyParameterFromQuery(Name = "mode")] public string? ModeQuery { get; set; }
 
     private TicTacToeBoard _board = new();
     private TicTacToeAI _ai = new();
     private Difficulty _difficulty = Difficulty.Medium;
     private GameResult _gameResult = GameResult.InProgress;
     private bool _isAiTurn;
-    private string PlayMode => Demo == 1 ? "demo" : "ai";
+    // "ai" (vs CPU) or "2p" (local pass-and-play); "demo" is driven by the route param.
+    private string _playMode = "ai";
+    private string PlayMode => Demo == 1 ? "demo" : _playMode;
+    private CellValue _current2pToken = CellValue.X; // whose turn in 2-player mode
+    private string _player2Name = "Player 2";
+    private bool _matchRecorded;
     private string _playerName = "";
+    // Player 1's display name resolves asynchronously; fall back to "Player 1" until it does.
+    private string P1Name => string.IsNullOrWhiteSpace(_playerName) ? "Player 1" : _playerName;
     private bool _isOffline = false;
     private List<(int Row, int Col)> _winCells = new();
     private List<StatItem> _statItems = new();
@@ -72,7 +82,7 @@
     private CancellationTokenSource? _demoCts;
     // BUG FIX (#1): _kioskTimer removed; KioskCoordinator owns the timer.
 
-    private string _backTo => Demo == 1 ? "/single-player?mode=demo" : "/single-player";
+    private string _backTo => "/";
     private bool _isGameOver => _gameResult != GameResult.InProgress && PlayMode != "demo";
     
     private RenderFragment TitleContent => @<span>❌ Tic Tac Toe</span>;
@@ -80,15 +90,20 @@
     private RenderFragment ControlsContent => @<div class="gps-controls">
         @if (PlayMode != "demo")
         {
-            <button type="button" 
+            <button type="button"
                     class="@(PlayMode == "ai" ? "active" : "")"
                     @onclick='() => SetPlayMode("ai")'>
                 Vs AI
             </button>
+            <button type="button"
+                    class="@(PlayMode == "2p" ? "active" : "")"
+                    @onclick='() => SetPlayMode("2p")'>
+                2 Player
+            </button>
         }
         @if (PlayMode == "demo")
         {
-            <button type="button" 
+            <button type="button"
                     class="@(PlayMode == "demo" ? "active" : "")"
                     @onclick="() => {}">
                 Demo CPU vs CPU
@@ -97,13 +112,18 @@
         <button @onclick="ResetGame">
             🔄 @(PlayMode == "demo" ? "Restart Demo" : "New Game")
         </button>
-        @if (PlayMode != "demo")
+        @if (PlayMode == "ai")
         {
             <select @bind="_difficulty" @bind:after="ResetGame" aria-label="Select difficulty">
                 <option value="@Difficulty.Easy">Easy</option>
                 <option value="@Difficulty.Medium">Medium</option>
                 <option value="@Difficulty.Hard">Hard</option>
             </select>
+        }
+        @if (PlayMode == "2p")
+        {
+            <input class="gps-name-input" value="@_player2Name" @onchange="OnPlayer2NameChange"
+                   maxlength="24" placeholder="Player 2 name" aria-label="Player 2 name" />
         }
     </div>;
     
@@ -114,15 +134,24 @@
     protected override void OnInitialized()
     {
         _playerName = PlayerNameService.GetPlayerName();
+        if (Demo != 1 && string.Equals(ModeQuery, "2p", StringComparison.OrdinalIgnoreCase))
+            _playMode = "2p";
         ResetGame();
         if (PlayMode == "demo") Kiosk.SetCurrent("tictactoe-demo");
     }
-    
+
     private void SetPlayMode(string mode)
     {
+        _playMode = mode;
         ResetGame();
     }
-    
+
+    private void OnPlayer2NameChange(ChangeEventArgs e)
+    {
+        var name = e.Value?.ToString();
+        _player2Name = string.IsNullOrWhiteSpace(name) ? "Player 2" : name.Trim();
+    }
+
     private void ResetGame()
     {
         _demoCts?.Cancel();
@@ -130,6 +159,8 @@
         _gameResult = GameResult.InProgress;
         _winCells = new();
         _isAiTurn = false;
+        _current2pToken = CellValue.X;
+        _matchRecorded = false;
         _stats = _gameStats.GetStats("tictactoe", _playerName);
         UpdateStats();
 
@@ -194,7 +225,9 @@
         if (PlayMode == "demo") return;
         if (_gameResult != GameResult.InProgress || _isAiTurn) return;
         if (_board.Get(row, col) != CellValue.None) return;
-        
+
+        if (PlayMode == "2p") { HandleTwoPlayerMove(row, col); return; }
+
         var currentToken = CellValue.X;
         _board = _board.Place(row, col, currentToken);
         
@@ -247,6 +280,46 @@
         });
     }
     
+    // Local pass-and-play: X = Player 1 (the local player), O = Player 2.
+    private void HandleTwoPlayerMove(int row, int col)
+    {
+        var token = _current2pToken;
+        _board = _board.Place(row, col, token);
+
+        var winCheck = _board.CheckWin(token);
+        if (winCheck.Won)
+        {
+            _winCells = winCheck.Cells;
+            _gameResult = token == CellValue.X ? GameResult.Win : GameResult.Loss;
+            RecordLocalMatch();
+            return;
+        }
+
+        if (_board.IsFull())
+        {
+            _gameResult = GameResult.Draw;
+            RecordLocalMatch();
+            return;
+        }
+
+        _current2pToken = token == CellValue.X ? CellValue.O : CellValue.X;
+    }
+
+    // Record the 2-player outcome to the head-to-head history (owner's perspective:
+    // Win = Player 1 won, Loss = Player 2 won). Local vs-AI stats are left untouched.
+    private void RecordLocalMatch()
+    {
+        if (_matchRecorded) return;
+        _matchRecorded = true;
+        var outcome = _gameResult switch
+        {
+            GameResult.Win => MatchOutcome.Win,
+            GameResult.Loss => MatchOutcome.Loss,
+            _ => MatchOutcome.Draw
+        };
+        _ = MatchHistory.RecordAsync("tictactoe", MatchMode.Local2P, _player2Name, outcome);
+    }
+
     private string GetCellAriaLabel(CellValue value) => value switch
     {
         CellValue.X => "X",
@@ -256,6 +329,15 @@
     
     private string GetStatusIcon()
     {
+        if (PlayMode == "2p")
+        {
+            return _gameResult switch
+            {
+                GameResult.Win or GameResult.Loss => "🏆",
+                GameResult.Draw => "👥",
+                _ => _current2pToken == CellValue.X ? "❌" : "⭕"
+            };
+        }
         return _gameResult switch
         {
             GameResult.Win => "🏆",
@@ -264,9 +346,19 @@
             _ => _isAiTurn ? "🤔" : "❌"
         };
     }
-    
+
     private string GetStatusText()
     {
+        if (PlayMode == "2p")
+        {
+            return _gameResult switch
+            {
+                GameResult.Win => $"{P1Name} wins!",
+                GameResult.Loss => $"{_player2Name} wins!",
+                GameResult.Draw => "Draw!",
+                _ => _current2pToken == CellValue.X ? $"{P1Name}'s turn (❌)" : $"{_player2Name}'s turn (⭕)"
+            };
+        }
         return _gameResult switch
         {
             GameResult.Win => "You Win!",
@@ -275,9 +367,18 @@
             _ => _isAiTurn ? "AI thinking..." : "Your turn (X)"
         };
     }
-    
+
     private string GetStatusClass()
     {
+        if (PlayMode == "2p")
+        {
+            return _gameResult switch
+            {
+                GameResult.Win or GameResult.Loss => "gps-status-badge win",
+                GameResult.Draw => "gps-status-badge draw",
+                _ => "gps-status-badge turn"
+            };
+        }
         return _gameResult switch
         {
             GameResult.Win => "gps-status-badge win",

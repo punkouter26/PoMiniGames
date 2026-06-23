@@ -3,6 +3,7 @@
 @using PoMiniGamesClient.Components
 @inject CoupleQuizHubService Hub
 @inject PlayerNameService PlayerNameService
+@inject MatchHistoryService MatchHistory
 @inject NavigationManager Navigation
 @implements IAsyncDisposable
 
@@ -138,6 +139,21 @@
     {
         _gameOver = p;
         _phase = "GameOver";
+        _ = RecordOutcomesAsync(p);
+    }
+
+    // Record a head-to-head result against every other player, scored by final points.
+    private async Task RecordOutcomesAsync(CoupleQuizGameOverPayload p)
+    {
+        if (!p.FinalScores.TryGetValue(_playerName, out var myScore)) return;
+        foreach (var (name, score) in p.FinalScores)
+        {
+            if (name == _playerName) continue;
+            var outcome = myScore > score ? MatchOutcome.Win
+                        : myScore < score ? MatchOutcome.Loss
+                        : MatchOutcome.Draw;
+            await MatchHistory.RecordAsync("pocouplequiz", MatchMode.Multiplayer, name, outcome);
+        }
     }
 
     private async Task Submit()

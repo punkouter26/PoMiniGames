@@ -23,7 +23,16 @@
     <link rel="stylesheet" href="css/games.css" />
     <link rel="stylesheet" href="css/poclick.css" />
     <link rel="stylesheet" href="css/fight.css" />
-    <link rel="icon" type="image/png" href="favicon.png" />
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+    <link rel="alternate icon" type="image/png" href="favicon.png" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <meta name="theme-color" content="#0f172a" />
+    <meta name="description" content="PoMiniGames — instant-play mini-games with AI opponents, real-time 2P multiplayer, and global leaderboards. Offline-resilient." />
+    <meta property="og:title" content="PoMiniGames" />
+    <meta property="og:description" content="Instant-play mini-games · AI opponents · real-time 2P multiplayer · leaderboards." />
+    <meta property="og:type" content="website" />
+    <meta property="og:image" content="og-image.svg" />
+    <meta name="twitter:card" content="summary_large_image" />
     <link href="PoMiniGamesClient.styles.css" rel="stylesheet" />
     <script type="importmap">
     {
@@ -39,6 +48,12 @@
     <script src="scripts/app.js" defer></script>
     <!-- PoFace webcam capture (consolidation import) -->
     <script src="js/webcam.js" defer></script>
+    <!-- Microsoft sign-in (MSAL.js + interop wrapper). Loaded eagerly so the
+         login gate can call poAuth.* during startup when OAuth is configured.
+         NOTE: consider pinning a Subresource Integrity hash for this CDN script
+         before production. -->
+    <script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.4/lib/msal-browser.min.js" crossorigin="anonymous"></script>
+    <script src="js/poauth.js"></script>
 </head>
 
 <body>

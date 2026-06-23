@@ -10,6 +10,7 @@ public class AuthClientConfiguration
     public bool MicrosoftEnabled { get; set; }
     public bool DevLoginEnabled { get; set; }
     public bool UsingMockData { get; set; }
+    public bool AutoGuestLogin { get; set; }
 }
 
 public class AuthenticatedUserProfile

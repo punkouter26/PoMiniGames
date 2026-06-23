@@ -23,6 +23,17 @@ public class ApiService
         _http = http;
     }
 
+    /// <summary>
+    /// Attaches (or clears) the Microsoft access token as the default bearer for every
+    /// subsequent API call, so authenticated endpoints work after MSAL sign-in.
+    /// </summary>
+    public void SetBearer(string? token)
+    {
+        _http.DefaultRequestHeaders.Authorization = string.IsNullOrEmpty(token)
+            ? null
+            : new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+    }
+
     public async Task<bool> IsAvailableAsync()
     {
         try
@@ -195,6 +206,34 @@ public class ApiService
             entry.Date = DateTime.UtcNow.ToString("O");
             var response = await _http.PostAsJsonAsync("/api/marblerace/highscores", entry, JsonOptions);
             return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<MarbleRaceHighScore>(JsonOptions) : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    // ─── Head-to-head match history ──────────────────────────────────────
+
+    public async Task<bool> RecordMatchAsync(MatchRecordRequest request)
+    {
+        try
+        {
+            var response = await _http.PostAsJsonAsync("/api/matches", request, JsonOptions);
+            return response.IsSuccessStatusCode;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    public async Task<MatchRecordDto[]?> GetMatchesAsync(string owner, int limit = 500)
+    {
+        try
+        {
+            return await _http.GetFromJsonAsync<MatchRecordDto[]>(
+                $"/api/matches?owner={Uri.EscapeDataString(owner)}&limit={limit}", JsonOptions);
         }
         catch
         {

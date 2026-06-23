@@ -18,6 +18,10 @@ public static class AuthEndpoints
             var microsoftEnabled = auth.Enabled;
             var devLoginEnabled = environment.IsDevelopment();
             var usingMockData = configuration.GetValue<bool>("FeatureFlags:UseMockData");
+            // Test harness flag: when set (e.g. by the E2E-UI fixture) the SPA silently
+            // signs in as a Guest via the dev bypass so browser tests never hit the
+            // login wall. Only honoured in Development, where the dev bypass exists.
+            var autoGuestLogin = devLoginEnabled && configuration.GetValue<bool>("Auth:AutoGuestLogin");
             return Results.Ok(new AuthClientConfiguration(
                 microsoftEnabled || devLoginEnabled,
                 auth.ClientId,
@@ -26,7 +30,8 @@ public static class AuthEndpoints
                 auth.RedirectPath,
                 microsoftEnabled,
                 devLoginEnabled,
-                usingMockData));
+                usingMockData,
+                autoGuestLogin));
         })
         .WithName("GetAuthConfiguration")
         .WithTags("Auth")
@@ -182,7 +187,8 @@ public sealed record AuthClientConfiguration(
     string RedirectPath,
     bool MicrosoftEnabled,
     bool DevLoginEnabled,
-    bool UsingMockData);
+    bool UsingMockData,
+    bool AutoGuestLogin);
 
 public sealed record AuthenticatedUserProfile(string UserId, string DisplayName, string? Email);
 

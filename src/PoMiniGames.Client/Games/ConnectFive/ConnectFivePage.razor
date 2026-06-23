@@ -8,6 +8,7 @@
 @using PoMiniGamesClient.Services;
 @inject NavigationManager Navigation;
 @inject PlayerNameService PlayerNameService;
+@inject MatchHistoryService MatchHistory;
 @inject KioskCoordinator Kiosk;
 
 <GameShell 
@@ -73,6 +74,7 @@
 @code {
     [Parameter] public int? Demo { get; set; }
     [SupplyParameterFromQuery(Name = "kiosk")] public int KioskNext { get; set; } = -1;
+    [SupplyParameterFromQuery(Name = "mode")] public string? ModeQuery { get; set; }
 
     private ConnectFiveBoard _board = new();
     private ConnectFiveAI _ai = new();
@@ -80,8 +82,15 @@
     private GameResult _gameResult = GameResult.InProgress;
     private bool _isAiTurn;
     private int _hoveredCol = -1;
-    private string PlayMode => Demo == 1 ? "demo" : "ai";
+    // "ai" (vs CPU) or "2p" (local pass-and-play); "demo" is driven by the route param.
+    private string _playMode = "ai";
+    private string PlayMode => Demo == 1 ? "demo" : _playMode;
+    private Piece _current2pPiece = Piece.Red; // whose turn in 2-player mode
+    private string _player2Name = "Player 2";
+    private bool _matchRecorded;
     private string _playerName = "";
+    // Player 1's display name resolves asynchronously; fall back to "Player 1" until it does.
+    private string P1Name => string.IsNullOrWhiteSpace(_playerName) ? "Player 1" : _playerName;
     private bool _isOffline = false;
     private List<(int Row, int Col)> _winCells = new();
     private List<StatItem> _statItems = new();
@@ -90,42 +99,63 @@
     private CancellationTokenSource? _demoCts;
     // BUG FIX (#1): _kioskTimer removed; KioskCoordinator owns the timer.
 
-    private string _backTo => Demo == 1 ? "/single-player?mode=demo" : "/single-player";
+    private string _backTo => "/";
     private bool _isGameOver => _gameResult != GameResult.InProgress && PlayMode != "demo";
 
     private RenderFragment TitleContent => @<span>🔴 Connect Five</span>;
 
     private RenderFragment StatusContent => PlayMode == "demo" ? @<span class="cf-status cf-status--demo">🎮 Demo mode</span>
-        : _gameResult == GameResult.InProgress
-            ? (_isAiTurn
-                ? @<span class="cf-status cf-status--ai">🤖 AI thinking…</span>
-                : @<span class="cf-status cf-status--player">🔴 Your turn</span>)
-            : _gameResult == GameResult.Win
-                ? @<span class="cf-status cf-status--win">🎉 You win!</span>
-                : _gameResult == GameResult.Loss
-                    ? @<span class="cf-status cf-status--loss">🤖 AI wins</span>
-                    : @<span class="cf-status cf-status--draw">🤝 Draw!</span>;
+        : PlayMode == "2p"
+            ? (_gameResult == GameResult.InProgress
+                ? (_current2pPiece == Piece.Red
+                    ? @<span class="cf-status cf-status--player">🔴 @P1Name's turn</span>
+                    : @<span class="cf-status cf-status--ai">🟡 @_player2Name's turn</span>)
+                : _gameResult == GameResult.Win
+                    ? @<span class="cf-status cf-status--win">🎉 @P1Name wins!</span>
+                    : _gameResult == GameResult.Loss
+                        ? @<span class="cf-status cf-status--win">🎉 @_player2Name wins!</span>
+                        : @<span class="cf-status cf-status--draw">🤝 Draw!</span>)
+            : _gameResult == GameResult.InProgress
+                ? (_isAiTurn
+                    ? @<span class="cf-status cf-status--ai">🤖 AI thinking…</span>
+                    : @<span class="cf-status cf-status--player">🔴 Your turn</span>)
+                : _gameResult == GameResult.Win
+                    ? @<span class="cf-status cf-status--win">🎉 You win!</span>
+                    : _gameResult == GameResult.Loss
+                        ? @<span class="cf-status cf-status--loss">🤖 AI wins</span>
+                        : @<span class="cf-status cf-status--draw">🤝 Draw!</span>;
 
-    private RenderFragment? GameSummaryContent => _isGameOver ? _gameResult switch
+    private RenderFragment? GameSummaryContent => _isGameOver ? (PlayMode == "2p" ? _gameResult switch
+    {
+        GameResult.Win  => @<div class="cf-result cf-result--win">🔴 @P1Name won! Nice game.</div>,
+        GameResult.Loss => @<div class="cf-result cf-result--win">🟡 @_player2Name won! Nice game.</div>,
+        GameResult.Draw => @<div class="cf-result cf-result--draw">🤝 It’s a draw!</div>,
+        _               => null
+    } : _gameResult switch
     {
         GameResult.Win  => @<div class="cf-result cf-result--win">🎉 You won! Great game, @_playerName!</div>,
         GameResult.Loss => @<div class="cf-result cf-result--loss">🤖 AI wins this round — try again!</div>,
         GameResult.Draw => @<div class="cf-result cf-result--draw">🤝 It’s a draw!</div>,
         _               => null
-    } : null;
+    }) : null;
 
     private RenderFragment ControlsContent => @<div class="gps-controls">
         @if (PlayMode != "demo")
         {
-            <button type="button" 
+            <button type="button"
                     class="@(PlayMode == "ai" ? "active" : "")"
                     @onclick='() => SetPlayMode("ai")'>
                 Vs AI
             </button>
+            <button type="button"
+                    class="@(PlayMode == "2p" ? "active" : "")"
+                    @onclick='() => SetPlayMode("2p")'>
+                2 Player
+            </button>
         }
         @if (PlayMode == "demo")
         {
-            <button type="button" 
+            <button type="button"
                     class="@(PlayMode == "demo" ? "active" : "")"
                     @onclick="() => {}">
                 Demo CPU vs CPU
@@ -134,7 +164,7 @@
         <button @onclick="ResetGame">
             🔄 @(PlayMode == "demo" ? "Restart Demo" : "New Game")
         </button>
-        @if (PlayMode != "demo")
+        @if (PlayMode == "ai")
         {
             <select @bind="_difficulty" @bind:after="ResetGame" aria-label="Select difficulty">
                 <option value="@Difficulty.Easy">Easy</option>
@@ -142,11 +172,18 @@
                 <option value="@Difficulty.Hard">Hard</option>
             </select>
         }
+        @if (PlayMode == "2p")
+        {
+            <input class="gps-name-input" value="@_player2Name" @onchange="OnPlayer2NameChange"
+                   maxlength="24" placeholder="Player 2 name" aria-label="Player 2 name" />
+        }
     </div>;
 
     protected override void OnInitialized()
     {
         _playerName = PlayerNameService.GetPlayerName();
+        if (Demo != 1 && string.Equals(ModeQuery, "2p", StringComparison.OrdinalIgnoreCase))
+            _playMode = "2p";
         _stats = _gameStats.GetStats("connectfive", _playerName);
         UpdateStats();
         ResetGame();
@@ -155,7 +192,14 @@
 
     private void SetPlayMode(string mode)
     {
+        _playMode = mode;
         ResetGame();
+    }
+
+    private void OnPlayer2NameChange(ChangeEventArgs e)
+    {
+        var name = e.Value?.ToString();
+        _player2Name = string.IsNullOrWhiteSpace(name) ? "Player 2" : name.Trim();
     }
 
     private void ResetGame()
@@ -166,6 +210,8 @@
         _winCells = new();
         _isAiTurn = false;
         _hoveredCol = -1;
+        _current2pPiece = Piece.Red;
+        _matchRecorded = false;
         _stats = _gameStats.GetStats("connectfive", _playerName);
         UpdateStats();
 
@@ -229,9 +275,11 @@
     {
         if (PlayMode == "demo") return;
         if (_gameResult != GameResult.InProgress || _isAiTurn) return;
-        
+
         var targetRow = _board.GetTargetRow(col);
         if (targetRow < 0) return;
+
+        if (PlayMode == "2p") { HandleTwoPlayerDrop(targetRow, col); return; }
 
         _board = _board.Place(targetRow, col, Piece.Red);
         
@@ -283,6 +331,47 @@
             UpdateStats();
             InvokeAsync(StateHasChanged);
         });
+    }
+
+    // Local pass-and-play: Red = Player 1 (the local player), Yellow = Player 2.
+    private void HandleTwoPlayerDrop(int targetRow, int col)
+    {
+        var piece = _current2pPiece;
+        _board = _board.Place(targetRow, col, piece);
+        _hoveredCol = -1;
+
+        var winCheck = _board.CheckWin(piece);
+        if (winCheck.Won)
+        {
+            _winCells = winCheck.Cells;
+            _gameResult = piece == Piece.Red ? GameResult.Win : GameResult.Loss;
+            RecordLocalMatch();
+            return;
+        }
+
+        if (_board.IsFull())
+        {
+            _gameResult = GameResult.Draw;
+            RecordLocalMatch();
+            return;
+        }
+
+        _current2pPiece = piece == Piece.Red ? Piece.Yellow : Piece.Red;
+    }
+
+    // Record the 2-player outcome to the head-to-head history (owner's perspective:
+    // Win = Player 1 won, Loss = Player 2 won). Local vs-AI stats are left untouched.
+    private void RecordLocalMatch()
+    {
+        if (_matchRecorded) return;
+        _matchRecorded = true;
+        var outcome = _gameResult switch
+        {
+            GameResult.Win => MatchOutcome.Win,
+            GameResult.Loss => MatchOutcome.Loss,
+            _ => MatchOutcome.Draw
+        };
+        _ = MatchHistory.RecordAsync("connectfive", MatchMode.Local2P, _player2Name, outcome);
     }
 
     private string GetPieceClass(Piece piece) => piece switch

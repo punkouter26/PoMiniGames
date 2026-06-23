@@ -84,7 +84,7 @@
     private bool _enemyHit;
     private int _dmgKey;
 
-    private string _backTo => Demo == 1 ? "/single-player?mode=demo" : "/single-player";
+    private string _backTo => "/";
 
     private RenderFragment ControlsContent => @<div class="gps-controls">
         @if (Demo != 1)

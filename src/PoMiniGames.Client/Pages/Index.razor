@@ -2,6 +2,7 @@
 @inject NavigationManager NavigationManager
 @inject GameStatsService GameStatsService
 @inject ApiService ApiService
+@inject KioskCoordinator Kiosk
 @implements IAsyncDisposable
 
 <div class="home-container">
@@ -31,50 +32,97 @@
         </h1>
         <p class="home-subtitle">Choose how you want to play</p>
 
-        <div class="home-modes">
-            <button type="button" class="home-mode-btn home-mode-btn--1p" aria-label="Play 1 player" autofocus @onclick='() => NavigationManager.NavigateTo("/single-player")'>
-                <span class="home-mode-icon">
-                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-                        <circle cx="12" cy="7" r="4"/>
-                    </svg>
-                </span>
-                <span class="home-mode-label">1 Player</span>
-            </button>
+        <div class="home-sections">
+            <section class="home-section">
+                <div class="home-mode-btn home-mode-btn--1p home-mode-btn--static">
+                    <span class="home-mode-icon">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                            <circle cx="12" cy="7" r="4"/>
+                        </svg>
+                    </span>
+                    <span class="home-mode-label">1 Player</span>
+                </div>
+                <div class="home-section-games">
+                    @foreach (var g in GameCatalog.SinglePlayer)
+                    {
+                        <a class="home-game-chip" href="@g.Url"><span class="home-game-chip-icon">@g.Icon</span>@g.Title</a>
+                    }
+                </div>
+            </section>
 
-            <button type="button" class="home-mode-btn home-mode-btn--2p" aria-label="Play 2 players locally" @onclick='() => NavigationManager.NavigateTo("/single-player?mode=local-2p")'>
-                <span class="home-mode-icon">
-                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-                        <circle cx="9" cy="7" r="4"/>
-                        <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
-                        <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-                    </svg>
-                </span>
-                <span class="home-mode-label">2 Player (local)</span>
-            </button>
+            <section class="home-section">
+                <div class="home-mode-btn home-mode-btn--2p home-mode-btn--static">
+                    <span class="home-mode-icon">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                            <circle cx="9" cy="7" r="4"/>
+                            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                            <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                        </svg>
+                    </span>
+                    <span class="home-mode-label">2 Player (local)</span>
+                </div>
+                <div class="home-section-games">
+                    @foreach (var g in GameCatalog.LocalTwoPlayer)
+                    {
+                        <a class="home-game-chip" href="@g.Url"><span class="home-game-chip-icon">@g.Icon</span>@g.Title</a>
+                    }
+                </div>
+            </section>
 
-            <button type="button" class="home-mode-btn home-mode-btn--multi" aria-label="Play online multiplayer" @onclick='() => NavigationManager.NavigateTo("/porunner?mode=multi")'>
-                <span class="home-mode-icon">
-                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <circle cx="12" cy="12" r="10"/>
-                        <path d="M2 12h20"/>
-                        <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
-                    </svg>
-                </span>
-                <span class="home-mode-label">Multi player (online)</span>
-            </button>
+            <section class="home-section">
+                <div class="home-mode-btn home-mode-btn--multi home-mode-btn--static">
+                    <span class="home-mode-icon">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="10"/>
+                            <path d="M2 12h20"/>
+                            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+                        </svg>
+                    </span>
+                    <span class="home-mode-label">Multi player (online)</span>
+                </div>
+                <div class="home-section-games">
+                    @foreach (var g in GameCatalog.Multiplayer)
+                    {
+                        <a class="home-game-chip" href="@g.Url"><span class="home-game-chip-icon">@g.Icon</span>@g.Title</a>
+                    }
+                </div>
+            </section>
 
-            <button type="button" class="home-mode-btn home-mode-btn--demo" aria-label="Watch demo mode" @onclick='() => NavigationManager.NavigateTo("/single-player?mode=demo")'>
-                <span class="home-mode-icon">
-                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <polygon points="5 3 19 12 5 21 5 3"/>
-                    </svg>
-                </span>
-                <span class="home-mode-label">Demo</span>
-            </button>
+            <section class="home-section">
+                <button type="button" class="home-mode-btn home-mode-btn--demo @(Kiosk.IsActive ? "home-mode-btn--active" : null)"
+                        aria-label="@(Kiosk.IsActive ? "Stop auto-cycling demos" : "Watch all demos (auto-cycle)")"
+                        aria-pressed="@Kiosk.IsActive"
+                        @onclick="OnDemoButtonClick">
+                    <span class="home-mode-icon">
+                        @if (Kiosk.IsActive)
+                        {
+                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="6" y="5" width="4" height="14"/>
+                                <rect x="14" y="5" width="4" height="14"/>
+                            </svg>
+                        }
+                        else
+                        {
+                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <polygon points="5 3 19 12 5 21 5 3"/>
+                            </svg>
+                        }
+                    </span>
+                    <span class="home-mode-label">@(Kiosk.IsActive ? "Stop" : "Demo")</span>
+                </button>
+                <div class="home-section-games">
+                    @foreach (var g in GameCatalog.Demo)
+                    {
+                        <a class="home-game-chip" href="@g.Url"><span class="home-game-chip-icon">@g.Icon</span>@g.Title</a>
+                    }
+                </div>
+            </section>
+        </div>
 
-            <button type="button" class="home-mode-btn home-mode-btn--profile" aria-label="View my stats profile" @onclick='() => NavigationManager.NavigateTo("/profile")'>
+        <div class="home-stats-cta">
+            <button type="button" class="home-mode-btn home-mode-btn--profile" aria-label="View my stats" @onclick='() => NavigationManager.NavigateTo("/profile")'>
                 <span class="home-mode-icon">
                     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
@@ -110,7 +158,7 @@
                             <path d="M4 22h16M10 22V9h4v13M8 22V8M16 22V8"/>
                         </svg>
                         <span>@(_topScoresError ? "Backend offline — play offline and scores will sync later." : "Play a game to appear here!")</span>
-                        <button class="home-scores-empty-cta" @onclick='() => NavigationManager.NavigateTo("/single-player")'>Pick a game →</button>
+                        <button class="home-scores-empty-cta" @onclick='() => NavigationManager.NavigateTo("/")'>Pick a game →</button>
                     </div>
                 }
                 @foreach (var game in _topGames)
@@ -143,6 +191,10 @@
         // Simulate Blazor WASM startup delay with skeleton
         await Task.Delay(100);
 
+        // Subscribe to kiosk state so the Demo button (Start ↔ Stop) updates
+        // reactively when the coordinator starts/stops/pauses/advances.
+        Kiosk.Changed += OnKioskStateChanged;
+
         // BUG FIX (#8): Load top games in parallel instead of sequentially.
         // The previous foreach/await chain took ~30-150ms × 5 games when
         // the API was unreachable. Now all 5 leaderboard calls fire
@@ -153,6 +205,8 @@
 
         _isLoading = false;
     }
+
+    private void OnKioskStateChanged() => InvokeAsync(StateHasChanged);
 
     private async Task LoadTopGames()
     {
@@ -198,5 +252,41 @@
         }
     }
 
-    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    // Start the "Watch All Demos" auto-cycle directly from the home Demo tile: register
+    // the demo roster with the coordinator, arm the advance timer, and jump to the first
+    // demo. The coordinator then rotates game→game on its own (see KioskCoordinator).
+    private void StartDemoKiosk()
+    {
+        var demos = GameCatalog.Demo;
+        if (demos.Count == 0) return;
+
+        Kiosk.RegisterEntries(demos.Select(d => new DemoEntry(d.Key, d.Url, d.Title, d.Icon)));
+
+        var first = demos[0];
+        var sep = first.Url.Contains('?') ? '&' : '?';
+        Kiosk.Start(1); // advanceIndex 1 → after this demo the coordinator moves to demos[1]
+        NavigationManager.NavigateTo($"{first.Url}{sep}kiosk=1");
+    }
+
+    // The Demo button is a toggle: it starts the auto-cycle when idle and
+    // stops it (and returns home) when the cycle is already running. This
+    // makes the kiosk mode cancelable from the home view — no need to
+    // navigate into a running demo just to find the exit control.
+    private void OnDemoButtonClick()
+    {
+        if (Kiosk.IsActive)
+        {
+            Kiosk.Stop();
+        }
+        else
+        {
+            StartDemoKiosk();
+        }
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        Kiosk.Changed -= OnKioskStateChanged;
+        return ValueTask.CompletedTask;
+    }
 }

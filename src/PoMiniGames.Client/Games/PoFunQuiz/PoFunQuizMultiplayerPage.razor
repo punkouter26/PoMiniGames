@@ -3,6 +3,7 @@
 @using PoMiniGamesClient.Games.PoFunQuiz.Services
 @inject FunQuizHubService Hub
 @inject PlayerNameService PlayerNameService
+@inject MatchHistoryService MatchHistory
 @inject NavigationManager Navigation
 @implements IAsyncDisposable
 
@@ -162,7 +163,25 @@
         _state = _state with { Players = updated };
     }
 
-    private void HandleFinished(FunQuizGameFinishedDto f) => _finished = f;
+    private void HandleFinished(FunQuizGameFinishedDto f)
+    {
+        _finished = f;
+        _ = RecordOutcomesAsync(f);
+    }
+
+    // Record a head-to-head result against every other player, scored by final points.
+    private async Task RecordOutcomesAsync(FunQuizGameFinishedDto f)
+    {
+        if (!f.FinalScores.TryGetValue(_playerName, out var myScore)) return;
+        foreach (var (name, score) in f.FinalScores)
+        {
+            if (name == _playerName) continue;
+            var outcome = myScore > score ? MatchOutcome.Win
+                        : myScore < score ? MatchOutcome.Loss
+                        : MatchOutcome.Draw;
+            await MatchHistory.RecordAsync("pofunquiz", MatchMode.Multiplayer, name, outcome);
+        }
+    }
 
     private void HandleError(FunQuizLobbyErrorDto e) => _error = e.Message;
 

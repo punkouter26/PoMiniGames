@@ -1,6 +1,7 @@
 ﻿@using Microsoft.AspNetCore.Components.Authorization
 
 <CascadingAuthenticationState>
+    <AuthGate>
     <Router AppAssembly="@typeof(App).Assembly">
         <Found Context="routeData">
             @* §2.3: AuthorizeRouteView prevents page flashing on routes that opt into
@@ -30,4 +31,5 @@
             </LayoutView>
         </NotFound>
     </Router>
+    </AuthGate>
 </CascadingAuthenticationState>

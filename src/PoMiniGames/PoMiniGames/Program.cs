@@ -150,6 +150,7 @@ app.MapGetAllPlayerStatistics();
 app.MapHighScoresEndpoints();
 app.MapMarbleRaceHighScoresEndpoints();
 app.MapGameEndpoints();
+PoMiniGames.Features.MatchHistory.MatchHistoryEndpoints.MapMatchHistoryEndpoints(app);
 
 // ─── PoRunner SignalR hub ────────────────────────────────────────────
 app.MapHub<GameHub>("/porunner/gamehub");

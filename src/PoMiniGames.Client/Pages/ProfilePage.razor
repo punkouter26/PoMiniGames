@@ -3,6 +3,8 @@
 @using PoMiniGamesClient.Services
 @inject PlayerNameService PlayerNameService
 @inject GameStatsService GameStatsService
+@inject ApiService ApiService
+@inject MatchHistoryService MatchHistory
 @inject NavigationManager NavigationManager
 @implements IDisposable
 
@@ -34,6 +36,64 @@
                 </div>
             </div>
         </div>
+    </div>
+
+    <!-- ── 1-Player high scores (best available per game) ── -->
+    <div class="prf-section">
+        <h2 class="prf-section-title">High Scores · 1 Player</h2>
+        <div class="prf-hs-grid">
+            @foreach (var h in _highScores)
+            {
+                <div class="prf-hs-card @(h.HasValue ? "" : "prf-hs-card--empty")">
+                    <span class="prf-hs-icon">@h.Icon</span>
+                    <div class="prf-hs-body">
+                        <div class="prf-hs-game">@h.Game</div>
+                        <div class="prf-hs-value">@h.Value</div>
+                        <div class="prf-hs-sub">@h.Sub</div>
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+
+    <!-- ── Head-to-head record vs named opponents ── -->
+    <div class="prf-section">
+        <h2 class="prf-section-title">Head-to-Head · People You Played</h2>
+        @if (_matchesLoading)
+        {
+            <p class="prf-h2h-note">Loading match history…</p>
+        }
+        else if (_localOpponents.Count == 0 && _onlineOpponents.Count == 0)
+        {
+            <p class="prf-h2h-note">No head-to-head matches recorded yet. Play an online multiplayer or local 2-player match and your record against each opponent shows up here.</p>
+        }
+        else
+        {
+            <div class="prf-h2h-cols">
+                <div class="prf-h2h-col">
+                    <h3 class="prf-h2h-mode">👥 2-Player (local)</h3>
+                    @if (_localOpponents.Count == 0)
+                    {
+                        <p class="prf-h2h-note">No local 2-player matches yet.</p>
+                    }
+                    else
+                    {
+                        @RenderOpponentTable(_localOpponents)
+                    }
+                </div>
+                <div class="prf-h2h-col">
+                    <h3 class="prf-h2h-mode">🌐 Online Multiplayer</h3>
+                    @if (_onlineOpponents.Count == 0)
+                    {
+                        <p class="prf-h2h-note">No online multiplayer matches yet.</p>
+                    }
+                    else
+                    {
+                        @RenderOpponentTable(_onlineOpponents)
+                    }
+                </div>
+            </div>
+        }
     </div>
 
     <!-- ── Charts row ── -->
@@ -190,12 +250,47 @@
     private GameEntry? _bestEntry, _nemesisEntry;
     private List<GameEntry> _entries = new();
 
+    // ── High scores (best available per 1P game) ──────────────────
+    private sealed record HighScoreEntry(string Game, string Icon, string Value, string Sub, bool HasValue);
+    private List<HighScoreEntry> _highScores = new();
+
+    private static readonly (string Key, string Title, string Icon, string Kind)[] HsDefs =
+    {
+        ("posnakegame",  "PoSnakeGame",   "🐍", "snake"),
+        ("pomarblerace", "PoMarbleRace",  "🔮", "marble"),
+        ("tictactoe",    "Tic Tac Toe",   "❌", "ai"),
+        ("connectfive",  "Connect Five",  "🔴", "ai"),
+        ("pofight",      "PoFight",        "⚔️", "ai"),
+        ("porunner",     "PoRunner",       "⚡", "ai"),
+        ("poraceragdoll","Race Ragdoll",   "🚗", "ai"),
+        ("pohorserace",  "Horse Race",     "🏇", "ai"),
+    };
+
+    // ── Head-to-head record vs named opponents ────────────────────
+    private sealed class OpponentRecord
+    {
+        public string Name { get; init; } = "";
+        public string Type { get; init; } = "guest";
+        public int Wins, Losses, Draws;
+        public int Total => Wins + Losses + Draws;
+    }
+    private bool _matchesLoading = true;
+    private List<OpponentRecord> _localOpponents = new();
+    private List<OpponentRecord> _onlineOpponents = new();
+
     // ── Lifecycle ────────────────────────────────────────────────
     protected override void OnInitialized()
     {
         _playerName = PlayerNameService.GetPlayerName();
         PlayerNameService.StateChanged += OnNameChanged;
         LoadStats();
+        BuildLocalHighScores();
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadHighScoresAsync();
+        await LoadMatchesAsync();
     }
 
     public void Dispose() => PlayerNameService.StateChanged -= OnNameChanged;
@@ -204,8 +299,124 @@
     {
         _playerName = PlayerNameService.GetPlayerName();
         LoadStats();
+        BuildLocalHighScores();
+        _ = LoadHighScoresAsync();
+        _ = LoadMatchesAsync();
         InvokeAsync(StateHasChanged);
     }
+
+    // ── High scores ──────────────────────────────────────────────
+    // Build the synchronous parts (AI-game personal bests from local stats) first
+    // so the section renders immediately; the API-backed numeric scores fill in
+    // once LoadHighScoresAsync completes.
+    private void BuildLocalHighScores()
+    {
+        var list = new List<HighScoreEntry>();
+        foreach (var (key, title, icon, kind) in HsDefs)
+        {
+            if (kind == "ai")
+            {
+                var s = GameStatsService.GetStats(key, _playerName);
+                if (s.TotalGames > 0)
+                {
+                    var bestElo = Math.Max(s.Easy.EloRating, Math.Max(s.Medium.EloRating, s.Hard.EloRating));
+                    list.Add(new HighScoreEntry(title, icon, $"ELO {bestElo}",
+                        $"{s.WinRate:P0} · {s.TotalWins}W {s.TotalLosses}L", true));
+                }
+                else
+                {
+                    list.Add(new HighScoreEntry(title, icon, "—", "Not played yet", false));
+                }
+            }
+            else
+            {
+                // Numeric-score games: placeholder until the API responds.
+                list.Add(new HighScoreEntry(title, icon, "…", "Loading…", false));
+            }
+        }
+        _highScores = list;
+    }
+
+    private async Task LoadHighScoresAsync()
+    {
+        var snakeTask = ApiService.GetSnakeHighScoresAsync(1);
+        var marbleTask = ApiService.GetMarbleRaceHighScoresAsync(1);
+        var snake = await snakeTask;
+        var marble = await marbleTask;
+
+        HighScoreEntry SnakeEntry()
+        {
+            var top = snake is { Length: > 0 } ? snake[0] : null;
+            return top is not null
+                ? new HighScoreEntry("PoSnakeGame", "🐍", top.Score.ToString("N0"), $"by {top.Initials}", true)
+                : new HighScoreEntry("PoSnakeGame", "🐍", "—", "No scores yet", false);
+        }
+        HighScoreEntry MarbleEntry()
+        {
+            var top = marble is { Length: > 0 } ? marble[0] : null;
+            return top is not null
+                ? new HighScoreEntry("PoMarbleRace", "🔮", top.BestScore.ToString("N0"), $"by {top.PlayerInitials}", true)
+                : new HighScoreEntry("PoMarbleRace", "🔮", "—", "No scores yet", false);
+        }
+
+        for (var i = 0; i < _highScores.Count; i++)
+        {
+            if (_highScores[i].Game == "PoSnakeGame") _highScores[i] = SnakeEntry();
+            else if (_highScores[i].Game == "PoMarbleRace") _highScores[i] = MarbleEntry();
+        }
+        StateHasChanged();
+    }
+
+    // ── Head-to-head ─────────────────────────────────────────────
+    private async Task LoadMatchesAsync()
+    {
+        _matchesLoading = true;
+        var matches = await MatchHistory.GetMyMatchesAsync();
+        _localOpponents = Aggregate(matches.Where(m => m.Mode == "local-2p"));
+        _onlineOpponents = Aggregate(matches.Where(m => m.Mode != "local-2p"));
+        _matchesLoading = false;
+        StateHasChanged();
+    }
+
+    private static List<OpponentRecord> Aggregate(IEnumerable<MatchRecordDto> matches)
+    {
+        return matches
+            .GroupBy(m => m.OpponentName, StringComparer.OrdinalIgnoreCase)
+            .Select(g => new OpponentRecord
+            {
+                Name = g.Key,
+                Type = g.Any(x => x.OpponentType == "microsoft") ? "microsoft" : "guest",
+                Wins = g.Count(x => x.Outcome == "win"),
+                Losses = g.Count(x => x.Outcome == "loss"),
+                Draws = g.Count(x => x.Outcome == "draw"),
+            })
+            .OrderByDescending(o => o.Total)
+            .ToList();
+    }
+
+    private RenderFragment RenderOpponentTable(List<OpponentRecord> opponents) => __builder =>
+    {
+        <table class="prf-h2h-table">
+            <thead>
+                <tr><th>Opponent</th><th>W</th><th>L</th><th>D</th><th>Record</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var o in opponents)
+                {
+                    <tr>
+                        <td class="prf-h2h-name">
+                            <span class="prf-h2h-badge prf-h2h-badge--@o.Type" title="@(o.Type == "microsoft" ? "Microsoft account" : "Guest")">@(o.Type == "microsoft" ? "MS" : "G")</span>
+                            @o.Name
+                        </td>
+                        <td class="prf-h2h-w">@o.Wins</td>
+                        <td class="prf-h2h-l">@o.Losses</td>
+                        <td class="prf-h2h-d">@o.Draws</td>
+                        <td>@o.Wins–@o.Losses–@o.Draws</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    };
 
     // ── Stats loading ────────────────────────────────────────────
     private void LoadStats()

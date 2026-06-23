@@ -9,7 +9,7 @@
 @inject NavigationManager Navigation
 @inject KioskCoordinator Kiosk
 
-<GameShell Title=@TitleContent Player="@_playerName" BackTo="/single-player" ShowSettings="true" Stats="@_statItems" Controls="@ControlsContent">
+<GameShell Title=@TitleContent Player="@_playerName" BackTo="/" ShowSettings="true" Stats="@_statItems" Controls="@ControlsContent">
     <div class="ragdoll-wrapper">
         <div class="ragdoll-arena">
             @if (_gameState == "betting")

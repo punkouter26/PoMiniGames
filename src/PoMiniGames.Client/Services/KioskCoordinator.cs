@@ -34,7 +34,7 @@ public sealed class KioskCoordinator : IDisposable
     private string? _currentKey;
     private int _currentIndex;
     private bool _isPaused;
-    private int _advanceIndex; // index passed to /single-player?mode=demo&kiosk=N
+    private int _advanceIndex; // index of the demo to jump to on the next advance
     private bool _disposed;
 
     public event Action? Changed;
@@ -104,7 +104,7 @@ public sealed class KioskCoordinator : IDisposable
     public void Exit()
     {
         Stop();
-        _navigation.NavigateTo("/single-player?mode=demo", forceLoad: false);
+        _navigation.NavigateTo("/", forceLoad: false);
     }
 
     private void OnTick()

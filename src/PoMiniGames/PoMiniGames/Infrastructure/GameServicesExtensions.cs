@@ -43,6 +43,10 @@ internal static class GameServicesExtensions
         // Ensures all per-game tables and blob containers exist at host startup.
         services.AddSingleton<StorageInitializer>();
 
+        // MatchHistory — cross-game head-to-head record (local 2P + online multiplayer).
+        // Writes to the MatchHistory table (PartitionKey = owner identity, RowKey = reverse-time).
+        services.AddSingleton<PoMiniGames.Features.MatchHistory.MatchHistoryRepository>();
+
         // Fail-fast startup validator: throws in Production if any consolidated game's
         // required Azure OpenAI secrets are missing. See PoFunQuiz StartupSecretValidator
         // (2026-06-13 mock-data fix) for the original pattern.

@@ -61,6 +61,9 @@ public sealed class KestrelServerFixture : WebApplicationFactory<Program>
             cfg.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["Auth:EnableFakeAuth"] = "true",
+                // Browser tests run against the login-gated SPA; auto-sign-in as Guest so
+                // the home page renders without a manual auth step.
+                ["Auth:AutoGuestLogin"] = "true",
                 ["PoMiniGames:Storage:TableService:ConnectionString"] = AzuriteConnectionString,
                 ["PoMiniGames:Storage:TableService:TableName"] = "pominigames-e2eui",
             });

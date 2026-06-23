@@ -1,0 +1,41 @@
+@namespace PoMiniGamesClient.Components
+@using PoMiniGamesClient.Services
+@inject AuthStateService AuthState
+@inject NavigationManager Navigation
+@implements IDisposable
+
+@if (AuthState.IsLoading)
+{
+    <div class="login-page">
+        <span class="login-mesh" aria-hidden="true"></span>
+        <div class="login-card">
+            <div class="login-spinner" aria-label="Loading"></div>
+            <p class="login-sub">Checking sign-in…</p>
+        </div>
+    </div>
+}
+else if (AuthState.IsAuthenticated)
+{
+    @ChildContent
+}
+else
+{
+    <LoginScreen />
+}
+
+@code {
+    // The whole app is gated: nothing renders until the player is signed in (Microsoft
+    // in any environment, or Guest in Development; the test harness auto-signs-in as Guest).
+    [Parameter] public RenderFragment ChildContent { get; set; } = default!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        AuthState.StateChanged += OnAuthStateChanged;
+        var query = new Uri(Navigation.Uri).Query;
+        await AuthState.InitializeAsync(query);
+    }
+
+    private void OnAuthStateChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose() => AuthState.StateChanged -= OnAuthStateChanged;
+}

@@ -91,6 +91,53 @@ public static class CoupleQuizEndpoints
         })
         .WithName("CoupleQuiz_GetTeam");
 
+        // GET counterpart of the PUT /teams/{name}/stats route. Returns a flat
+        // stats payload so the leaderboard UI can fetch a single team's
+        // summary without downloading the full team record. Returns 404 when
+        // the team has never played.
+        group.MapGet("/teams/{name}/stats", async (string name, ITeamsRepository repo, CancellationToken ct) =>
+        {
+            var team = await repo.GetTeamAsync(name, ct);
+            if (team is null) return Results.NotFound(new { error = $"Team '{name}' not found" });
+            var accuracy = team.TotalQuestionsAnswered > 0
+                ? Math.Round((double)team.CorrectAnswers / team.TotalQuestionsAnswered, 3)
+                : 0d;
+            return Results.Ok(new
+            {
+                name = team.Name,
+                highScore = team.HighScore,
+                totalQuestionsAnswered = team.TotalQuestionsAnswered,
+                correctAnswers = team.CorrectAnswers,
+                accuracy,
+                lastPlayed = team.LastPlayed,
+            });
+        })
+        .WithName("CoupleQuiz_GetTeamStats")
+        .WithSummary("Get a single team's PoCoupleQuiz stats summary");
+
+        // Leaderboard view: all teams ordered by HighScore DESC, then accuracy.
+        group.MapGet("/teams/leaderboard", async (ITeamsRepository repo, int limit = 25, CancellationToken ct = default) =>
+        {
+            var teams = await repo.GetAllTeamsAsync(ct);
+            var rows = teams
+                .OrderByDescending(t => t.HighScore)
+                .ThenByDescending(t => t.TotalQuestionsAnswered == 0 ? 0 : (double)t.CorrectAnswers / t.TotalQuestionsAnswered)
+                .Take(Math.Clamp(limit, 1, 100))
+                .Select((t, i) => new
+                {
+                    rank = i + 1,
+                    name = t.Name,
+                    highScore = t.HighScore,
+                    totalQuestionsAnswered = t.TotalQuestionsAnswered,
+                    correctAnswers = t.CorrectAnswers,
+                    accuracy = t.TotalQuestionsAnswered == 0 ? 0d : Math.Round((double)t.CorrectAnswers / t.TotalQuestionsAnswered, 3),
+                    lastPlayed = t.LastPlayed,
+                });
+            return Results.Ok(rows);
+        })
+        .WithName("CoupleQuiz_TeamLeaderboard")
+        .WithSummary("Top PoCoupleQuiz teams ordered by high score (tie-break: accuracy)");
+
         group.MapPost("/teams", async (Team team, ITeamsRepository repo, CancellationToken ct) =>
         {
             if (string.IsNullOrWhiteSpace(team.Name)) return Results.BadRequest(new { error = "Name is required" });

@@ -102,6 +102,18 @@ public sealed class TeamsRepository : ITeamsRepository
 
     public async Task SaveTeamAsync(Team team, CancellationToken cancellationToken = default)
     {
+        // Azure Table Storage requires DateTime values to be UTC. New Team
+        // instances arrive with LastPlayed = DateTime.MinValue (Unspecified),
+        // which the SDK rejects. Stamp UTC on the way in so any uninitialised
+        // LastPlayed becomes a valid sentinel value.
+        if (team.LastPlayed == default || team.LastPlayed.Kind == DateTimeKind.Unspecified)
+        {
+            team.LastPlayed = DateTime.UtcNow;
+        }
+        else if (team.LastPlayed.Kind == DateTimeKind.Local)
+        {
+            team.LastPlayed = team.LastPlayed.ToUniversalTime();
+        }
         await _table.UpsertEntityAsync(TeamTableEntity.From(team), TableUpdateMode.Replace, cancellationToken);
     }
 

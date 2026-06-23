@@ -6,6 +6,14 @@ namespace PoMiniGames.Infrastructure;
 /// Pushes per-request properties into Serilog LogContext so all logs in the request pipeline
 /// include user/session/environment/correlation metadata.
 /// </summary>
+/// <remarks>
+/// Pattern: Chain of Responsibility (Gamma et al., 1994). Each middleware in the pipeline
+/// owns a single concern (request logging, exception handling, auth) and pushes a scoped
+/// property into the ambient <c>LogContext</c>; the next middleware in the chain sees a
+/// fully-decorated context. This is the textual-log equivalent of OpenTelemetry's
+/// <c>Activity.Current</c> bag — a side-channel that survives the request lifetime without
+/// polluting method signatures.
+/// </remarks>
 internal sealed class RequestLogContextMiddleware
 {
     public const string SessionItemKey = "PoMiniGames.SessionId";

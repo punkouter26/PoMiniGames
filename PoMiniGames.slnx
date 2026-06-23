@@ -7,7 +7,9 @@
     <Project Path="src/PoMiniGames.Client/PoMiniGamesClient.csproj" />
     <Project Path="src/PoMiniGames/PoMiniGames/PoMiniGames.csproj" />
   </Folder>
+  <Folder Name="/src/PoMiniGames/" />
   <Folder Name="/tests/">
+    <Project Path="tests/PoMiniGames.E2ETests/PoMiniGames.E2ETests.csproj" />
     <Project Path="tests/PoMiniGames.IntegrationTests/PoMiniGames.IntegrationTests.csproj" />
     <Project Path="tests/PoMiniGames.UnitTests/PoMiniGames.UnitTests.csproj" />
   </Folder>

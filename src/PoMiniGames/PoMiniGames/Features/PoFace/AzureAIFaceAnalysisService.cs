@@ -23,6 +23,13 @@ namespace PoMiniGames.Features.PoFace;
 /// </summary>
 public sealed class AzureAIFaceAnalysisService : IFaceAnalysisService
 {
+    /// <summary>
+    /// The HttpClient name registered in <see cref="PoMiniGames.Infrastructure.GameServicesExtensions"/>.
+    /// Use this constant (not <c>nameof(this)</c>) when calling
+    /// <c>IHttpClientFactory.CreateClient</c> so a rename of the class doesn't break wiring.
+    /// </summary>
+    public const string HttpClientName = "PoFace.AzOpenAI";
+
     public bool IsMock => false;
 
     private readonly IConfiguration _configuration;
@@ -40,7 +47,7 @@ public sealed class AzureAIFaceAnalysisService : IFaceAnalysisService
         _configuration = configuration;
         _environment = environment;
         _logger = logger;
-        _http = httpClientFactory.CreateClient(nameof(AzureAIFaceAnalysisService));
+        _http = httpClientFactory.CreateClient(HttpClientName);
 
         var endpoint = configuration["PoFace:AzureOpenAI:Endpoint"];
         var apiKey = configuration["PoFace:AzureOpenAI:ApiKey"];

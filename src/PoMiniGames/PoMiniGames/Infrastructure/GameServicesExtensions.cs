@@ -78,7 +78,15 @@ internal static class GameServicesExtensions
         // The AzureAIFaceAnalysisService uses the shared multimodal deployment on
         // po-aiservices-shared; the StubFaceAnalysisService implements IFaceAnalysisService
         // and reports IsMock=true (drives the per-game "USING MOCK DATA" banner).
-        services.AddHttpClient();
+        // §3.4: typed HttpClient via IHttpClientFactory + standard resilience handler
+        // (retry x3 with exponential backoff + jitter, circuit breaker at 30% failure,
+        // 30s total request timeout). The named client below is the one consumed by
+        // AzureAIFaceAnalysisService.
+        services.AddHttpClient(AzureAIFaceAnalysisService.HttpClientName, client =>
+            {
+                client.Timeout = TimeSpan.FromSeconds(60);
+            })
+            .AddStandardResilienceHandler();
         services.AddSingleton<IFaceAnalysisService, AzureAIFaceAnalysisService>();
         services.AddSingleton<StubFaceAnalysisService>();
         services.AddSingleton<PoMiniGames.Features.PoFace.Storage.IGameSessionRepository, FaceGameSessionRepository>();

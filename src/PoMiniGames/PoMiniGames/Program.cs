@@ -21,6 +21,11 @@ builder
     .AddPoMiniGamesKeyVault()
     .AddPoMiniGamesLogging();
 
+// ─── Data Protection (§2.2 encrypted cookies) ──────────────────────
+// Pinned BEFORE auth so AddCookie picks up the configured IDataProtector.
+var storageAccountName = builder.Configuration["PoMiniGames:Storage:TableService:AccountName"];
+builder.Services.AddPoMiniGamesDataProtection(builder.Environment, storageAccountName);
+
 // ─── Application services ────────────────────────────────────────────
 builder.Services
     .Configure<PoMiniGames.Features.PoCoupleQuiz.CoupleQuizOptions>(

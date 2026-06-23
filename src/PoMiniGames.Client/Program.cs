@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
 using Microsoft.JSInterop;
@@ -30,6 +31,9 @@ builder.Services.AddScoped(sp => new HttpClient
 });
 builder.Services.AddScoped<ApiService>();
 builder.Services.AddScoped<AuthStateService>();
+// §2.3: BFF-aware AuthenticationStateProvider wired into <AuthorizeRouteView>.
+builder.Services.AddScoped<AuthenticationStateProvider, BffAuthenticationStateProvider>();
+builder.Services.AddAuthorizationCore();
 builder.Services.AddScoped<PlayerNameService>();
 builder.Services.AddScoped<ToastService>();
 builder.Services.AddScoped<GameStatsService>();

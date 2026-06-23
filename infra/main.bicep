@@ -36,7 +36,6 @@ module kvAccess './kv-access.bicep' = {
   params: {
     keyVaultName: 'kv-poshared'
     principalId: resources.outputs.WEB_APP_PRINCIPAL_ID
-    tenantId: tenant().tenantId
   }
 }
 

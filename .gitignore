@@ -98,6 +98,11 @@ docs/screenshots/*.jpg
 docs/screenshots/*.jpeg
 docs/screenshots/*.webp
 
+# Data-protection key ring (Microsoft.AspNetCore.DataProtection) — written
+# under <contentroot>/keys in Development. Contains XML-wrapped key material
+# that MUST NOT be committed (would let anyone forge the BFF's cookies).
+**/keys/
+
 # Local SQLite data
 src/PoMiniGames/PoMiniGames/data/
 

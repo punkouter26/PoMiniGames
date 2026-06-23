@@ -9,4 +9,17 @@
     <AnalysisLevel>latest</AnalysisLevel>
     <NoWarn>$(NoWarn);NU1902;NU1903;ASPDEPR002</NoWarn>
   </PropertyGroup>
+  <!-- §1.2 MinVer. The MinVer .targets are pulled in via PackageReference in the host
+       project (or any MSBuild-aware project). The properties below document the
+       contract; changing them changes the version every assembly is stamped with. -->
+  <PropertyGroup>
+    <MinVerTagPrefix>v</MinVerTagPrefix>
+    <MinVerMinimumMajorVersion>1</MinVerMinimumMajorVersion>
+    <MinVerDefaultPreReleaseIdentifiers>preview.0</MinVerDefaultPreReleaseIdentifiers>
+    <MinVerSkipNonTagged>true</MinVerSkipNonTagged>
+    <Version>$(MinVerVersion)</Version>
+    <AssemblyVersion>$(MinVerVersion)</AssemblyVersion>
+    <FileVersion>$(MinVerVersion)</FileVersion>
+    <InformationalVersion>$(MinVerVersion)</InformationalVersion>
+  </PropertyGroup>
 </Project>

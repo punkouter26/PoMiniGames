@@ -7,7 +7,10 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <AnalysisLevel>latest</AnalysisLevel>
-    <NoWarn>$(NoWarn);NU1902;NU1903;ASPDEPR002</NoWarn>
+    <!-- NU1902/NU1903 (package vulnerability audit) are intentionally NOT suppressed:
+         a real CVE must break the build, not slip through green. -->
+    <NuGetAudit>true</NuGetAudit>
+    <NuGetAuditMode>all</NuGetAuditMode>
   </PropertyGroup>
   <!-- §1.2 MinVer. The MinVer .targets are pulled in via PackageReference in the host
        project (or any MSBuild-aware project). The properties below document the

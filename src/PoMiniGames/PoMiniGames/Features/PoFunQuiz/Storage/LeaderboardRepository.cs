@@ -24,15 +24,10 @@ public interface ILeaderboardRepository
     Task<IReadOnlyList<LeaderboardEntry>> GetTopAsync(QuestionCategory category, int top, CancellationToken cancellationToken = default);
 }
 
-public sealed class LeaderboardRepository : ILeaderboardRepository
+public sealed class LeaderboardRepository(TableServiceClient tableServiceClient) : ILeaderboardRepository
 {
     private const string TableName = "PoFunQuizPlayers";
-    private readonly TableClient _table;
-
-    public LeaderboardRepository(TableServiceClient tableServiceClient)
-    {
-        _table = tableServiceClient.GetTableClient(TableName);
-    }
+    private readonly TableClient _table = tableServiceClient.GetTableClient(TableName);
 
     public async Task SubmitAsync(LeaderboardEntry entry, CancellationToken cancellationToken = default)
     {

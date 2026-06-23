@@ -1,5 +1,4 @@
-using DotNet.Testcontainers.Builders;
-using DotNet.Testcontainers.Containers;
+using Testcontainers.Azurite;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -17,29 +16,19 @@ namespace PoMiniGames.IntegrationTests;
 /// </summary>
 public class TestWebApplicationFactory : WebApplicationFactory<Program>, IAsyncLifetime
 {
-    private const string AzuriteAccountKey =
-        "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==";
-
-    private TestcontainersContainer? _azurite;
+    private AzuriteContainer? _azurite;
     private string? _azuriteConnectionString;
 
     public async Task InitializeAsync()
     {
         try
         {
-            _azurite = new TestcontainersBuilder<TestcontainersContainer>()
-                .WithImage("mcr.microsoft.com/azure-storage/azurite:3.33.0")
-                .WithCommand("azurite-table", "--tableHost", "0.0.0.0", "--tablePort", "10002")
-                .WithPortBinding(10002, assignRandomHostPort: true)
-                .WithWaitStrategy(Wait.ForUnixContainer().UntilPortIsAvailable(10002))
+            _azurite = new AzuriteBuilder("mcr.microsoft.com/azure-storage/azurite:3.33.0")
                 .Build();
 
             await _azurite.StartAsync();
 
-            var port = _azurite.GetMappedPublicPort(10002);
-            _azuriteConnectionString =
-                $"DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey={AzuriteAccountKey};"
-                + $"TableEndpoint=http://127.0.0.1:{port}/devstoreaccount1;";
+            _azuriteConnectionString = _azurite.GetConnectionString();
         }
         catch
         {

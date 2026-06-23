@@ -11,26 +11,21 @@ public interface IGameSessionService
     GameState? NextRound(string sessionId);
 }
 
-public sealed class GameSessionService : IGameSessionService
+public sealed class GameSessionService(
+    IRacerService racerService,
+    ILogger<GameSessionService> logger,
+    TimeProvider? timeProvider = null) : IGameSessionService
 {
-    private readonly IRacerService _racerService;
-    private readonly ILogger<GameSessionService> _logger;
-    private readonly TimeProvider _timeProvider;
+    private readonly IRacerService _racerService = racerService;
+    private readonly ILogger<GameSessionService> _logger = logger;
+    private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     private readonly ConcurrentDictionary<string, MutableGameState> _sessions = new();
     private readonly ConcurrentDictionary<string, object> _sessionLocks = new();
     private readonly object _createLock = new();
     private readonly TimeSpan _sessionTimeout = TimeSpan.FromMinutes(30);
     private readonly TimeSpan _cleanupInterval = TimeSpan.FromMinutes(5);
     private readonly TimeSpan _raceTimeout = TimeSpan.FromMinutes(5);
-    private DateTime _lastCleanup;
-
-    public GameSessionService(IRacerService racerService, ILogger<GameSessionService> logger, TimeProvider? timeProvider = null)
-    {
-        _racerService = racerService;
-        _logger = logger;
-        _timeProvider = timeProvider ?? TimeProvider.System;
-        _lastCleanup = _timeProvider.GetUtcNow().UtcDateTime;
-    }
+    private DateTime _lastCleanup = (timeProvider ?? TimeProvider.System).GetUtcNow().UtcDateTime;
 
     private object GetSessionLock(string sessionId) =>
         _sessionLocks.GetOrAdd(sessionId, _ => new object());

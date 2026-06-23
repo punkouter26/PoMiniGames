@@ -1,7 +1,7 @@
-using System.ClientModel;
 using System.Text.Json;
 using Azure;
 using Azure.AI.OpenAI;
+using Microsoft.Extensions.Caching.Hybrid;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -25,6 +25,7 @@ public sealed class AzureOpenAIQuestionService : IQuestionService
     private readonly IOptionsMonitor<CoupleQuizOptions> _optionsMonitor;
     private readonly ILogger<AzureOpenAIQuestionService> _logger;
     private readonly IHostEnvironment _environment;
+    private readonly HybridCache _cache;
     private readonly Lazy<ChatClient?> _chatClient;
     private readonly string? _configErrorMessage;
 
@@ -32,10 +33,12 @@ public sealed class AzureOpenAIQuestionService : IQuestionService
         IOptionsMonitor<CoupleQuizOptions> optionsMonitor,
         IConfiguration configuration,
         IHostEnvironment environment,
+        HybridCache cache,
         ILogger<AzureOpenAIQuestionService> logger)
     {
         _optionsMonitor = optionsMonitor;
         _environment = environment;
+        _cache = cache;
         _logger = logger;
 
         var endpoint = configuration["PoCoupleQuiz:AzureOpenAI:Endpoint"];
@@ -130,6 +133,18 @@ public sealed class AzureOpenAIQuestionService : IQuestionService
             throw new InvalidOperationException(_configErrorMessage);
         }
 
+        // Similarity scoring is deterministic for a given unordered answer pair, so memoize it.
+        var (a, b) = string.CompareOrdinal(answer1, answer2) <= 0 ? (answer1, answer2) : (answer2, answer1);
+        var cacheKey = $"couplequiz:sim:{a.Trim().ToLowerInvariant()}|{b.Trim().ToLowerInvariant()}";
+        return await _cache.GetOrCreateAsync(
+            cacheKey,
+            (Service: this, a, b),
+            static (state, ct) => state.Service.ScoreSimilarityAsync(state.a, state.b, ct),
+            cancellationToken: cancellationToken);
+    }
+
+    private async ValueTask<float> ScoreSimilarityAsync(string answer1, string answer2, CancellationToken cancellationToken)
+    {
         var systemPrompt = "You score semantic similarity between two short answers on a 0.0-1.0 scale. " +
                            "Respond with a JSON object: {\"score\":<float between 0.0 and 1.0>}. " +
                            "1.0 means identical meaning; 0.0 means unrelated.";
@@ -143,7 +158,8 @@ public sealed class AzureOpenAIQuestionService : IQuestionService
                 new UserChatMessage(userPrompt)
             };
             var chatOptions = new ChatCompletionOptions { ResponseFormat = ChatResponseFormat.CreateJsonObjectFormat() };
-            var completion = await _chatClient.Value.CompleteChatAsync(messages, chatOptions, cancellationToken);
+            // Non-null: callers (CheckAnswerSimilarityAsync) guard _chatClient.Value before invoking.
+            var completion = await _chatClient.Value!.CompleteChatAsync(messages, chatOptions, cancellationToken);
 
             var json = completion.Value.Content[0].Text;
             using var doc = JsonDocument.Parse(json);

@@ -1,16 +1,10 @@
-using PoMiniGames.Features.Auth;
-using PoMiniGames.Features.Health;
-using PoMiniGames.Features.Leaderboard;
-using PoMiniGames.Features.HighScores;
-using PoMiniGames.Features.PoRaceRagdoll;
-using PoMiniGames.Features.PoRunner;
-using PoMiniGames.Features.PoRacer;
-using PoMiniGames.Features.PoSurvive;
+using PoMiniGames.Features.PoRunner;   // GameOptions + SignalR session types (registered below)
+using PoMiniGames.Features.PoSurvive;  // AddPoSurvive
 using PoMiniGames.Application.Diagnostics;
 using PoMiniGames.Infrastructure;
 using PoMiniGames.Infrastructure.Services;
-// Note: PoCoupleQuiz types are referenced via fully-qualified names to avoid ambiguity
-// with the identically-named IGameSessionManager in PoMiniGames.Features.PoRunner.
+// Note: the full endpoint/hub route table is registered via app.MapPoMiniGamesEndpoints()
+// (EndpointRouteExtensions); per-slice types there are referenced in that file, not here.
 using Scalar.AspNetCore;
 using Serilog;
 
@@ -138,45 +132,9 @@ app.UseAuthentication();
 app.UseRateLimiter();
 app.UseAuthorization();
 
-// ─── Minimal API endpoints (direct service calls) ────────────────────
-app.MapAuthEndpoints();
-app.MapHealthEndpoints();
-app.MapDiagEndpoints();
-app.MapTestHarnessEndpoints(app.Environment);
-app.MapGetPlayerStats();
-app.MapSavePlayerStats();
-app.MapGetLeaderboard();
-app.MapGetAllPlayerStatistics();
-app.MapHighScoresEndpoints();
-app.MapMarbleRaceHighScoresEndpoints();
-app.MapGameEndpoints();
-PoMiniGames.Features.MatchHistory.MatchHistoryEndpoints.MapMatchHistoryEndpoints(app);
-
-// ─── PoRunner SignalR hub ────────────────────────────────────────────
-app.MapHub<GameHub>("/porunner/gamehub");
-
-// ─── PoCoupleQuiz endpoints + hub (Phase 1) ──────────────────────────
-PoMiniGames.Features.PoCoupleQuiz.CoupleQuizEndpoints.MapCoupleQuizEndpoints(app);
-app.MapHub<PoMiniGames.Features.PoCoupleQuiz.CoupleQuizHub>("/couplequiz/hubs/game");
-
-// ─── PoFunQuiz endpoints (Phase 2) ──────────────────────────────────
-PoMiniGames.Features.PoFunQuiz.FunQuizEndpoints.MapFunQuizEndpoints(app);
-app.MapHub<PoMiniGames.Features.PoFunQuiz.FunQuizHub>("/funquiz/gamehub");
-// The full multiplayer hub (CreateGame / JoinGame / Lobby / etc.) ships as a follow-up;
-// the Solo-mode HTTP path is the MVP for Phase 2.
-
-// ─── PoFace endpoints (Phase 3) ─────────────────────────────────────
-PoMiniGames.Features.PoFace.FaceEndpoints.MapFaceEndpoints(app);
-// PoFace ships with HTTP-only endpoints in the consolidation MVP (no SignalR hub).
-// JS interop (webcam capture), Google Vision hybrid mode, and blob-backed
-// session recaps are follow-up work.
-
-// ─── PoRacer SignalR lobby + scores ─────────────────────────────────
-app.MapHub<PoRacerLobbyHub>("/poracer/lobby-hub");
-app.MapPoRacerScoreEndpoints();
-
-// ─── PoSurvive (agent survival simulation) ───────────────────────────
-app.MapPoSurviveEndpoints(app.Configuration);
+// ─── Minimal API endpoints + SignalR hubs (one ordered registration) ──
+// The whole route table lives in EndpointRouteExtensions.MapPoMiniGamesEndpoints.
+app.MapPoMiniGamesEndpoints();
 
 // ─── SPA fallback ────────────────────────────────────────────────────
 app.MapFallbackToFile("index.html");

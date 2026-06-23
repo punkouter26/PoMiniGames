@@ -1,9 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
-  </PropertyGroup>
+  <!-- TFM / Nullable / ImplicitUsings inherited from Directory.Build.props -->
   <ItemGroup>
     <ProjectReference Include="..\PoMiniGames.Domain\PoMiniGames.Domain.csproj" />
     <ProjectReference Include="..\PoShared\PoShared.csproj" />

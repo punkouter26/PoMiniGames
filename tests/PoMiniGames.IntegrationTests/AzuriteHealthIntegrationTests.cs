@@ -1,7 +1,6 @@
 using System.Net;
 using System.Text.Json.Nodes;
-using DotNet.Testcontainers.Builders;
-using DotNet.Testcontainers.Containers;
+using Testcontainers.Azurite;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
@@ -13,10 +12,7 @@ namespace PoMiniGames.IntegrationTests;
 /// </summary>
 public sealed class AzuriteHealthIntegrationTests : IAsyncLifetime
 {
-    private const string DevStoreAccountName = "devstoreaccount1";
-    private const string DevStoreAccountKey = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==";
-
-    private TestcontainersContainer? _azurite;
+    private AzuriteContainer? _azurite;
 
     private bool _dockerAvailable = true;
 
@@ -24,11 +20,7 @@ public sealed class AzuriteHealthIntegrationTests : IAsyncLifetime
     {
         try
         {
-            _azurite = new TestcontainersBuilder<TestcontainersContainer>()
-                .WithImage("mcr.microsoft.com/azure-storage/azurite:3.33.0")
-                .WithCommand("azurite-table", "--tableHost", "0.0.0.0", "--tablePort", "10002")
-                .WithPortBinding(10002, assignRandomHostPort: true)
-                .WithWaitStrategy(Wait.ForUnixContainer().UntilPortIsAvailable(10002))
+            _azurite = new AzuriteBuilder("mcr.microsoft.com/azure-storage/azurite:3.33.0")
                 .Build();
 
             await _azurite.StartAsync();
@@ -49,9 +41,7 @@ public sealed class AzuriteHealthIntegrationTests : IAsyncLifetime
             return;
         }
 
-        var tablePort = _azurite!.GetMappedPublicPort(10002);
-        var connectionString =
-            $"DefaultEndpointsProtocol=http;AccountName={DevStoreAccountName};AccountKey={DevStoreAccountKey};TableEndpoint=http://127.0.0.1:{tablePort}/{DevStoreAccountName};";
+        var connectionString = _azurite!.GetConnectionString();
 
         using var baseFactory = new TestWebApplicationFactory();
         using var factory = baseFactory.WithWebHostBuilder(builder =>

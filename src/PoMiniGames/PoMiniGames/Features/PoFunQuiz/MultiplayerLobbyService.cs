@@ -8,18 +8,12 @@ namespace PoMiniGames.Features.PoFunQuiz;
 /// sufficient. The reaper background service is intentionally not included —
 /// idle rooms are cleaned up when the host disconnects.
 /// </summary>
-public class MultiplayerLobbyService
+public class MultiplayerLobbyService(IOpenAIService ai, ILogger<MultiplayerLobbyService> logger)
 {
     private readonly ConcurrentDictionary<string, MultiplayerGame> _games = new();
     private readonly ConcurrentDictionary<string, string> _connectionToGame = new();
-    private readonly IOpenAIService _ai;
-    private readonly ILogger<MultiplayerLobbyService> _logger;
-
-    public MultiplayerLobbyService(IOpenAIService ai, ILogger<MultiplayerLobbyService> logger)
-    {
-        _ai = ai;
-        _logger = logger;
-    }
+    private readonly IOpenAIService _ai = ai;
+    private readonly ILogger<MultiplayerLobbyService> _logger = logger;
 
     public async Task<MultiplayerGame> CreateAsync(string hostConnectionId, string hostName, QuestionCategory category, int questionCount, CancellationToken ct)
     {

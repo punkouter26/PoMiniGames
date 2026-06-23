@@ -1,9 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- TFM / Nullable / ImplicitUsings inherited from Directory.Build.props -->
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
     <!-- §5 E2E-API: pure HTTP-contract tests. Boots the host in-process through

@@ -1,12 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <!-- §1.7 Trimming Safeguards. PoShared is consumed by the WASM client; any
+    <!-- TFM / Nullable / ImplicitUsings inherited from Directory.Build.props.
+         §1.7 Trimming Safeguards. PoShared is consumed by the WASM client; any
          non-trim-safe API in a public type will surface here at build time. -->
     <IsTrimmable>true</IsTrimmable>
     <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
-    <NoWarn>$(NoWarn);IL2026;IL2091;IL2110;IL2111</NoWarn>
   </PropertyGroup>
 </Project>

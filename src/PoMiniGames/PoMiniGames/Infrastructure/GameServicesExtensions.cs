@@ -1,6 +1,8 @@
 using PoMiniGames.Domain.Services;
 using PoMiniGames.Features.PoCoupleQuiz;
 using PoMiniGames.Features.PoCoupleQuiz.Storage;
+using PoMiniGames.Features.PoFunQuiz;
+using PoMiniGames.Features.PoFunQuiz.Storage;
 using PoMiniGames.Features.PoRaceRagdoll;
 using PoMiniGames.Infrastructure.Services;
 
@@ -50,6 +52,14 @@ internal static class GameServicesExtensions
         services.AddSingleton<MockQuestionService>();
         services.AddSingleton<ITeamsRepository, TeamsRepository>();
         services.AddSingleton<IGameHistoryRepository, GameHistoryRepository>();
+
+        // PoFunQuiz — Phase 2 of the consolidation. See Features/PoFunQuiz/.
+        // AzureOpenAIService is the production path; mock fallback is gated to Dev/Test
+        // inside the service. The leaderboard repository writes to the
+        // PoFunQuizPlayers table (PartitionKey = Category, RowKey = Guid).
+        services.AddMemoryCache();
+        services.AddSingleton<IOpenAIService, AzureOpenAIService>();
+        services.AddSingleton<ILeaderboardRepository, LeaderboardRepository>();
 
         services.ConfigureHttpJsonOptions(options =>
         {

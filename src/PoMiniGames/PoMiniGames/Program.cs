@@ -151,6 +151,11 @@ app.MapHub<GameHub>("/porunner/gamehub");
 PoMiniGames.Features.PoCoupleQuiz.CoupleQuizEndpoints.MapCoupleQuizEndpoints(app);
 app.MapHub<PoMiniGames.Features.PoCoupleQuiz.CoupleQuizHub>("/couplequiz/hubs/game");
 
+// ─── PoFunQuiz endpoints (Phase 2) ──────────────────────────────────
+PoMiniGames.Features.PoFunQuiz.FunQuizEndpoints.MapFunQuizEndpoints(app);
+// The full multiplayer hub (CreateGame / JoinGame / Lobby / etc.) ships as a follow-up;
+// the Solo-mode HTTP path is the MVP for Phase 2.
+
 // ─── PoRacer SignalR lobby + scores ─────────────────────────────────
 app.MapHub<PoRacerLobbyHub>("/poracer/lobby-hub");
 app.MapPoRacerScoreEndpoints();

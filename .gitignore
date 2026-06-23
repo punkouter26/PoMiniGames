@@ -1,3 +1,6 @@
+# Graphify knowledge-graph cache (regenerated artifact, never commit)
+graphify-out/
+
 # .NET
 bin/
 obj/

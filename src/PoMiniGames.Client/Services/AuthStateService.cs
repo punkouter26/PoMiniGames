@@ -19,6 +19,7 @@ public class AuthStateService
     public bool IsAuthenticated => _user != null;
     public bool IsLoading => !_initialized;
     public bool MicrosoftEnabled => _config?.MicrosoftEnabled == true;
+    public bool MicrosoftConfigured => _config?.MicrosoftConfigured == true;
     public bool DevLoginEnabled => _config?.DevLoginEnabled == true;
     public string? AccessToken { get; private set; }
     public string? Error { get; private set; }
@@ -152,6 +153,19 @@ public class AuthStateService
 
         if (_config.MicrosoftEnabled)
         {
+            // If the App Registration client IDs are not yet wired (e.g. dev just flipped
+            // the Enabled flag but hasn't run `dotnet user-secrets set`), surface a clear,
+            // actionable error instead of letting MSAL throw a confusing browser-side one.
+            if (!_config.MicrosoftConfigured)
+            {
+                Error = "Microsoft sign-in is not fully configured. " +
+                        "Set PoMiniGames:MicrosoftAuth:ClientId and ApiClientId via " +
+                        "`dotnet user-secrets set` (see appsettings.Development.json for the path). " +
+                        "Or continue as a Guest for now.";
+                NotifyStateChanged();
+                return;
+            }
+
             try
             {
                 await EnsureMsalInitializedAsync();
@@ -163,6 +177,22 @@ public class AuthStateService
                 else
                 {
                     Error = "Sign-in was cancelled.";
+                }
+            }
+            catch (Exception ex) when (ex.Message.Contains("popup_window_error", StringComparison.OrdinalIgnoreCase)
+                                      || ex.Message.Contains("SecurityError", StringComparison.OrdinalIgnoreCase))
+            {
+                // Popup flow is blocked (e.g. embedded sandboxed iframes). Fall back to
+                // a full-page redirect — this never throws back to .NET because the
+                // browser navigates away, but it works everywhere a popup would.
+                try
+                {
+                    await _js.InvokeVoidAsync("poAuth.signInRedirect", _config.Scope);
+                }
+                catch (Exception redirectEx)
+                {
+                    Error = $"Microsoft sign-in failed (redirect fallback also failed: {redirectEx.Message}). " +
+                            "Try opening the app in a regular browser tab.";
                 }
             }
             catch (Exception ex)

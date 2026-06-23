@@ -15,20 +15,30 @@ public static class AuthEndpoints
             IConfiguration configuration) =>
         {
             var auth = options.Value;
+            // microsoftEnabled = dev opted in (config flag OR dev environment short-circuit).
+            // microsoftConfigured = real sign-in will actually complete (ClientId + ApiClientId set).
             var microsoftEnabled = auth.Enabled;
+            var microsoftConfigured = auth.FullyConfigured;
             var devLoginEnabled = environment.IsDevelopment();
             var usingMockData = configuration.GetValue<bool>("FeatureFlags:UseMockData");
             // Test harness flag: when set (e.g. by the E2E-UI fixture) the SPA silently
             // signs in as a Guest via the dev bypass so browser tests never hit the
             // login wall. Only honoured in Development, where the dev bypass exists.
             var autoGuestLogin = devLoginEnabled && configuration.GetValue<bool>("Auth:AutoGuestLogin");
+            // MSAL.js appends `/v2.0/.well-known/openid-configuration` to the authority
+            // automatically. If we hand it an authority that already includes `/v2.0`
+            // (e.g. `https://login.microsoftonline.com/common/v2.0`), MSAL doubles the
+            // path and `init()` throws `endpoints_resolution_error`. Strip the trailing
+            // `/v2.0` so MSAL composes the discovery URL correctly.
+            var msalAuthority = NormalizeAuthorityForMsal(auth.Authority);
             return Results.Ok(new AuthClientConfiguration(
                 microsoftEnabled || devLoginEnabled,
                 auth.ClientId,
-                auth.Authority,
+                msalAuthority,
                 auth.EffectiveScope,
                 auth.RedirectPath,
                 microsoftEnabled,
+                microsoftConfigured,
                 devLoginEnabled,
                 usingMockData,
                 autoGuestLogin));
@@ -153,6 +163,24 @@ public static class AuthEndpoints
         return "/";
     }
 
+    /// <summary>
+    /// Strips a trailing <c>/v2.0</c> from the authority URL so MSAL.js can compose
+    /// the discovery URL (<c>{authority}/v2.0/.well-known/openid-configuration</c>)
+    /// without doubling the segment. Returns the input unchanged if it doesn't match
+    /// the common v2.0 pattern, so custom authority values still flow through.
+    /// </summary>
+    internal static string NormalizeAuthorityForMsal(string? authority)
+    {
+        if (string.IsNullOrWhiteSpace(authority)) return string.Empty;
+        var trimmed = authority.TrimEnd('/');
+        const string suffix = "/v2.0";
+        if (trimmed.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+        {
+            return trimmed[..^suffix.Length];
+        }
+        return trimmed;
+    }
+
     private static async Task<IResult> SignInDevelopmentUserAsync(
         HttpContext context,
         IWebHostEnvironment environment,
@@ -186,6 +214,7 @@ public sealed record AuthClientConfiguration(
     string Scope,
     string RedirectPath,
     bool MicrosoftEnabled,
+    bool MicrosoftConfigured,
     bool DevLoginEnabled,
     bool UsingMockData,
     bool AutoGuestLogin);

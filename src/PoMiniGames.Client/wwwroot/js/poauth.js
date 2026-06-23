@@ -50,14 +50,25 @@
         init: function (clientId, authority, redirectPath) {
             ensureLib();
             apiScope = null;
+            // Stash for the in-flight-lock recovery path in signIn().
+            window.__poAuthLastClientId = clientId;
+            window.__poAuthLastAuthority = authority;
+            window.__poAuthLastRedirectPath = redirectPath;
             const origin = window.location.origin;
             const redirectUri = redirectPath
                 ? origin + (redirectPath.startsWith("/") ? redirectPath : "/" + redirectPath)
                 : origin;
+            // MSAL.js appends `/v2.0/.well-known/openid-configuration` to the authority.
+            // If the server-supplied authority already ends in `/v2.0`, MSAL will double
+            // the segment and throw `endpoints_resolution_error` on init. Strip it here
+            // as a defense-in-depth (the server should already normalize, but if a
+            // future config slips through, MSAL still works).
+            let safeAuthority = authority || "";
+            safeAuthority = safeAuthority.replace(/\/v2\.0\/?$/i, "");
             app = new msal.PublicClientApplication({
                 auth: {
                     clientId: clientId,
-                    authority: authority,
+                    authority: safeAuthority,
                     redirectUri: redirectUri,
                     postLogoutRedirectUri: origin
                 },
@@ -70,22 +81,72 @@
             if (!app) return null;
             apiScope = scope;
             const accounts = app.getAllAccounts();
-            if (!accounts || accounts.length === 0) return null;
+            if (!accounts || accounts.length === 0) {
+                // Auto-retry after a self-induced reload (used to clear a stale
+                // `interaction_in_progress` lock). Only retries once.
+                if (sessionStorage.getItem("poAuth.retryAfterReload") === "1") {
+                    sessionStorage.removeItem("poAuth.retryAfterReload");
+                    const retryScope = sessionStorage.getItem("poAuth.retryScope") || scope;
+                    sessionStorage.removeItem("poAuth.retryScope");
+                    try {
+                        var retryRes = await app.loginRedirect({ scopes: loginScopes(retryScope) });
+                    } catch (e) { /* swallowed; navigation in progress */ }
+                }
+                return null;
+            }
             const account = accounts[0];
             const token = await acquireToken(account, scope);
             return toResult(account, token);
         },
 
-        // Interactive popup sign-in.
+        // Interactive popup sign-in. Handles a stale "interaction in progress" lock
+        // by reloading the page (which clears MSAL's module-level state). Without this,
+        // a blocked popup leaves the lock set and every subsequent attempt fails until
+        // the user manually refreshes.
         signIn: async function (scope) {
             ensureLib();
             apiScope = scope;
-            const res = await app.loginPopup({ scopes: loginScopes(scope) });
+            try {
+                var res = await app.loginPopup({ scopes: loginScopes(scope) });
+            }
+            catch (e) {
+                // If MSAL is locked OR the popup was blocked, try the redirect flow.
+                // loginRedirect also clears any cross-frame sandbox issue.
+                try {
+                    await app.loginRedirect({ scopes: loginScopes(scope) });
+                    return; // browser navigates away
+                }
+                catch (e2) {
+                    // If loginRedirect also failed with interaction_in_progress, the
+                    // only remaining cure is to reload the page so MSAL's module-level
+                    // lock resets. Tell the user once and reload after a short delay.
+                    if (e2 && (e2.errorCode === "interaction_in_progress"
+                              || (e2.message && e2.message.indexOf("interaction_in_progress") !== -1))) {
+                        // Mark the next reload so we retry the sign-in automatically.
+                        sessionStorage.setItem("poAuth.retryAfterReload", "1");
+                        sessionStorage.setItem("poAuth.retryScope", scope || "");
+                        // Show a brief inline notice by reloading after the user has time to read.
+                        setTimeout(function () { window.location.reload(); }, 1500);
+                        throw new Error("Microsoft sign-in was previously interrupted. Reloading…");
+                    }
+                    throw e2;
+                }
+            }
             const account = res.account || (app.getAllAccounts()[0]);
             if (!account) return null;
             app.setActiveAccount(account);
             const token = await acquireToken(account, scope);
             return toResult(account, token);
+        },
+
+        // Fallback: full-page redirect (works in sandboxed iframes / browsers that
+        // block popups). Returns a promise that never resolves — the browser
+        // navigates away before the .NET continuation runs. Use when popup flow
+        // throws `popup_window_error`.
+        signInRedirect: async function (scope) {
+            ensureLib();
+            apiScope = scope;
+            await app.loginRedirect({ scopes: loginScopes(scope) });
         },
 
         signOut: async function () {

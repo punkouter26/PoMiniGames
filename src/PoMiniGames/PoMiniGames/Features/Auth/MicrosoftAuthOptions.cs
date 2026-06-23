@@ -21,7 +21,22 @@ public sealed class MicrosoftAuthOptions
     /// </summary>
     public string[] AllowedTenantIds { get; init; } = Array.Empty<string>();
 
-    public bool Enabled => !string.IsNullOrWhiteSpace(ClientId) && !string.IsNullOrWhiteSpace(ApiClientId);
+    /// <summary>
+    /// Explicit dev override. Setting <c>PoMiniGames:MicrosoftAuth:Enabled=true</c> in
+    /// <c>appsettings.Development.json</c> (or user-secrets) is enough to surface the
+    /// Microsoft sign-in button in dev — even before the App Registration client IDs
+    /// are wired. Real sign-in still requires <see cref="ClientId"/> + <see cref="ApiClientId"/>
+    /// to be non-empty, but this lets a dev confirm the wiring is live before the
+    /// Entra app is fully provisioned.
+    /// </summary>
+    public bool Enabled { get; init; }
+
+    /// <summary>
+    /// Returns <c>true</c> when sign-in can actually complete (the App Registration
+    /// client IDs are present). Use this in the SPA to decide whether the Microsoft
+    /// button is enabled vs. visible-but-disabled.
+    /// </summary>
+    public bool FullyConfigured => !string.IsNullOrWhiteSpace(ClientId) && !string.IsNullOrWhiteSpace(ApiClientId);
 
     public string EffectiveScope => !string.IsNullOrWhiteSpace(Scope)
         ? Scope

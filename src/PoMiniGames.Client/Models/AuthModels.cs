@@ -8,6 +8,7 @@ public class AuthClientConfiguration
     public string Scope { get; set; } = "";
     public string RedirectPath { get; set; } = "";
     public bool MicrosoftEnabled { get; set; }
+    public bool MicrosoftConfigured { get; set; }
     public bool DevLoginEnabled { get; set; }
     public bool UsingMockData { get; set; }
     public bool AutoGuestLogin { get; set; }

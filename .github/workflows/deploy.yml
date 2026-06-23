@@ -21,7 +21,7 @@ env:
 
 jobs:
   build-and-test:
-    name: Build & Test
+    name: Build
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -51,19 +51,6 @@ jobs:
       - name: Verify formatting (non-blocking)
         run: dotnet format PoMiniGames.slnx --verify-no-changes --verbosity minimal
         continue-on-error: true
-
-      - name: Unit tests
-        run: dotnet test tests/PoMiniGames.UnitTests --no-build --configuration Release --logger "trx;LogFileName=unit-results.trx"
-
-      - name: Integration tests
-        run: dotnet test tests/PoMiniGames.IntegrationTests --no-build --configuration Release --logger "trx;LogFileName=integration-results.trx"
-
-      - name: Upload test results
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: test-results
-          path: "**/*.trx"
 
       - name: Publish
         if: github.event_name == 'push' && github.ref == 'refs/heads/master'

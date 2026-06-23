@@ -21,6 +21,9 @@ public sealed class HomePageApiTests : IClassFixture<TestWebApplicationFactory>
         "podropsquare",
         "pobabytouch",
         "poraceragdoll",
+        "pocouplequiz",
+        "pofunquiz",
+        "poface",
     ];
 
     private readonly HttpClient _client;
@@ -40,6 +43,9 @@ public sealed class HomePageApiTests : IClassFixture<TestWebApplicationFactory>
     [InlineData("podropsquare")]
     [InlineData("pobabytouch")]
     [InlineData("poraceragdoll")]
+    [InlineData("pocouplequiz")]
+    [InlineData("pofunquiz")]
+    [InlineData("poface")]
     public async Task GetLeaderboard_ReturnsOk_ForEachGame(string gameId)
     {
         var response = await _client.GetAsync($"/api/{gameId}/statistics/leaderboard");

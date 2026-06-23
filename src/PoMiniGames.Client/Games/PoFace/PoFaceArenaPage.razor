@@ -1,0 +1,217 @@
+@page "/face/arena"
+@using PoMiniGamesClient.Components
+@implements IAsyncDisposable
+@inject HttpClient Http
+@inject IJSRuntime JS
+@inject NavigationManager Navigation
+
+<GameShell Title=@TitleContent BackTo="/face" ShowSettings="false">
+    @if (_phase == "Init")
+    {
+        <p>Initializing camera…</p>
+    }
+    else if (_phase == "PermissionDenied")
+    {
+        <div class="pf-perm">
+            <h2>Camera permission denied</h2>
+            <p>The PoFace game needs access to your webcam to score facial expressions. Please allow camera access in your browser settings and reload.</p>
+            <button class="pf-btn pf-btn-secondary" @onclick="ActivateStubMode">Continue without camera (stub mode)</button>
+        </div>
+    }
+    else if (_phase == "NoCamera")
+    {
+        <div class="pf-perm">
+            <h2>No camera detected</h2>
+            <p>We couldn't find a webcam on this device. You can continue in stub mode (no real scoring).</p>
+            <button class="pf-btn pf-btn-secondary" @onclick="ActivateStubMode">Continue in stub mode</button>
+        </div>
+    }
+    else if (_phase == "Ready")
+    {
+        <div class="pf-ready">
+            <h2>Round @(_currentRound + 1) of 5</h2>
+            <p class="pf-prompt">Make this face: <strong>@_currentEmotion</strong></p>
+            <video id="pf-webcam-preview" autoplay playsinline muted style="max-width:100%;border-radius:8px;"></video>
+            <div id="pf-frozen-overlay" class="pf-frozen-overlay"></div>
+            <div class="pf-actions">
+                <button class="pf-btn pf-btn-primary" @onclick="CaptureAndScore">📸 Capture</button>
+            </div>
+        </div>
+    }
+    else if (_phase == "Scoring")
+    {
+        <p>Analyzing your expression…</p>
+    }
+    else if (_phase == "Reveal")
+    {
+        <div class="pf-reveal">
+            <h2>Round @(_currentRound + 1) result</h2>
+            <p>Target: <strong>@_currentEmotion</strong></p>
+            <p>Confidence: @((_lastScore?.Confidence * 100)?.ToString("F0"))%</p>
+            <p>Head pose valid: @(_lastScore?.HeadPoseValid == true ? "✅" : "❌")</p>
+            <p>Score: <strong>@_lastScore?.Score</strong></p>
+            <p>Total: <strong>@_lastScore?.TotalScore</strong></p>
+            <button class="pf-btn pf-btn-primary" @onclick="NextRound">@(_currentRound + 1 < 5 ? "Next round" : "See results")</button>
+        </div>
+    }
+    else if (_phase == "GameOver")
+    {
+        <div class="pf-gameover">
+            <h2>🎉 Game over</h2>
+            <p>Total score: <strong>@_finalTotal</strong> / 50</p>
+            <a class="pf-btn pf-btn-primary" href="@($"/face/recap/{_sessionId}")">View recap</a>
+        </div>
+    }
+
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <p class="pf-error">@_error</p>
+    }
+</GameShell>
+
+@code {
+    private RenderFragment TitleContent => @<span>🙂 PoFace · Arena</span>;
+
+    private string _phase = "Init";
+    private string? _sessionId;
+    private int _currentRound;
+    private string _currentEmotion = "Happiness";
+    private ScoreResponse? _lastScore;
+    private int _finalTotal;
+    private string? _error;
+
+    private static readonly string[] RoundOrder = { "Happiness", "Surprise", "Anger", "Sadness", "Fear" };
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var resp = await Http.PostAsync("/api/face/sessions", content: null);
+            if (!resp.IsSuccessStatusCode)
+            {
+                _error = $"Failed to start session: {(int)resp.StatusCode}. Make sure you're signed in.";
+                _phase = "Init";
+                return;
+            }
+            var session = await resp.Content.ReadFromJsonAsync<SessionDto>();
+            _sessionId = session!.SessionId;
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+            return;
+        }
+
+        // Try to initialize the camera. If denied/unavailable, show the fallback UI.
+        try
+        {
+            var status = await JS.InvokeAsync<string>("webcamInterop.initCamera", "pf-webcam-preview");
+            _phase = status switch
+            {
+                "ok" => "Ready",
+                "permission-denied" => "PermissionDenied",
+                "camera-unavailable" => "NoCamera",
+                _ => "NoCamera",
+            };
+        }
+        catch (Exception ex)
+        {
+            _error = $"Camera init failed: {ex.Message}";
+            _phase = "NoCamera";
+        }
+        _currentEmotion = RoundOrder[0];
+    }
+
+    private async Task ActivateStubMode()
+    {
+        await JS.InvokeVoidAsync("webcamInterop.activateStubMode");
+        _phase = "Ready";
+    }
+
+    private async Task CaptureAndScore()
+    {
+        if (_sessionId is null) return;
+        _phase = "Scoring";
+        _error = null;
+        try
+        {
+            // Visual feedback: white-flash the overlay.
+            await JS.InvokeVoidAsync("webcamInterop.flashShutter", "pf-frozen-overlay");
+
+            var dataUrl = await JS.InvokeAsync<string>("webcamInterop.captureFrame", "pf-webcam-preview");
+            if (!dataUrl.StartsWith("data:image/jpeg;base64,", StringComparison.OrdinalIgnoreCase))
+            {
+                _error = "Camera capture failed.";
+                _phase = "Ready";
+                return;
+            }
+            var base64 = dataUrl.Substring("data:image/jpeg;base64,".Length);
+            var bytes = Convert.FromBase64String(base64);
+
+            using var content = new MultipartFormDataContent();
+            var imageContent = new ByteArrayContent(bytes);
+            imageContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/jpeg");
+            content.Add(imageContent, "image", $"round-{_currentRound}.jpg");
+
+            var resp = await Http.PostAsync($"/api/face/sessions/{_sessionId}/rounds/{_currentRound}/score", content);
+            if (!resp.IsSuccessStatusCode)
+            {
+                var body = await resp.Content.ReadAsStringAsync();
+                _error = $"Score endpoint returned {(int)resp.StatusCode}: {body}";
+                _phase = "Ready";
+                return;
+            }
+            _lastScore = await resp.Content.ReadFromJsonAsync<ScoreResponse>();
+            _phase = "Reveal";
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+            _phase = "Ready";
+        }
+    }
+
+    private void NextRound()
+    {
+        _currentRound++;
+        if (_currentRound >= 5)
+        {
+            _phase = "GameOver";
+            _finalTotal = _lastScore?.TotalScore ?? 0;
+            return;
+        }
+        _currentEmotion = RoundOrder[_currentRound];
+        _phase = "Ready";
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try { await JS.InvokeVoidAsync("webcamInterop.releaseCamera"); } catch { /* ignore */ }
+    }
+
+    public class SessionDto
+    {
+        public string SessionId { get; set; } = string.Empty;
+        public string UserId { get; set; } = string.Empty;
+        public List<RoundDto> Rounds { get; set; } = new();
+    }
+
+    public class RoundDto
+    {
+        public int RoundNumber { get; set; }
+        public string TargetEmotion { get; set; } = string.Empty;
+    }
+
+    public class ScoreResponse
+    {
+        public string SessionId { get; set; } = string.Empty;
+        public int RoundNumber { get; set; }
+        public string TargetEmotion { get; set; } = string.Empty;
+        public bool FaceDetected { get; set; }
+        public float Confidence { get; set; }
+        public bool HeadPoseValid { get; set; }
+        public int Score { get; set; }
+        public int TotalScore { get; set; }
+        public string? ImageUrl { get; set; }
+    }
+}

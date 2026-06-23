@@ -1,0 +1,97 @@
+@page "/face"
+@using PoMiniGamesClient.Components
+@inject HttpClient Http
+@inject NavigationManager Navigation
+
+<GameShell Title=@TitleContent BackTo="/" ShowSettings="false">
+    <div class="pf-home">
+        <h2>🙂 PoFace</h2>
+        <p>Five rounds of facial-expression detection. Make the right face, score the points.</p>
+        <p>This is a <strong>proof-of-pattern</strong> page for the consolidation. The full game requires camera permission and a multimodal Azure OpenAI deployment.</p>
+
+        @if (_apiOnline != true)
+        {
+            <p class="pf-warning">⚠️ The /api/face/status endpoint is not reachable from this build. Make sure the API is running.</p>
+        }
+        else
+        {
+            <p>API: <strong>@(_isMock ? "Stub (no real AI)" : "Azure OpenAI")</strong></p>
+            <button class="pf-btn pf-btn-primary" @onclick="StartSession">Start new session</button>
+            <a class="pf-btn pf-btn-secondary" href="/face/arena">Go to arena (5-round game)</a>
+            @if (_lastSessionId is not null)
+            {
+                <p>Last session: <code>@_lastSessionId</code> · total: @_lastTotal</p>
+            }
+            @if (!string.IsNullOrEmpty(_error))
+            {
+                <p class="pf-error">@_error</p>
+            }
+        }
+    </div>
+</GameShell>
+
+@code {
+    private RenderFragment TitleContent => @<span>🙂 PoFace</span>;
+
+    private bool? _apiOnline;
+    private bool _isMock;
+    private string? _lastSessionId;
+    private int _lastTotal;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var status = await Http.GetFromJsonAsync<StatusDto>("/api/face/status");
+            _apiOnline = status is not null;
+            _isMock = status?.IsMockFaceApi ?? true;
+        }
+        catch
+        {
+            _apiOnline = false;
+        }
+    }
+
+    private async Task StartSession()
+    {
+        _error = null;
+        try
+        {
+            var resp = await Http.PostAsync("/api/face/sessions", content: null);
+            if (!resp.IsSuccessStatusCode)
+            {
+                _error = $"Start session returned {(int)resp.StatusCode}. Check that you're signed in.";
+                return;
+            }
+            var session = await resp.Content.ReadFromJsonAsync<SessionDto>();
+            if (session is null) { _error = "Empty session response."; return; }
+            _lastSessionId = session.SessionId;
+            _lastTotal = 0;
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    public class StatusDto
+    {
+        public string Game { get; set; } = "poface";
+        public bool IsMockFaceApi { get; set; }
+        public string Environment { get; set; } = string.Empty;
+    }
+
+    public class SessionDto
+    {
+        public string SessionId { get; set; } = string.Empty;
+        public string UserId { get; set; } = string.Empty;
+        public List<RoundDto> Rounds { get; set; } = new();
+    }
+
+    public class RoundDto
+    {
+        public int RoundNumber { get; set; }
+        public string TargetEmotion { get; set; } = string.Empty;
+    }
+}

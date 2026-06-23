@@ -1,8 +1,11 @@
 using Fluxor;
+using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
 using Microsoft.JSInterop;
 using PoMiniGamesClient;
+using PoMiniGamesClient.Games.PoCoupleQuiz.Services;
+using PoMiniGamesClient.Games.PoFunQuiz.Services;
 using PoMiniGamesClient.Games.PoRacer;
 using PoMiniGamesClient.Services;
 using PoSurvive.Application.Services;
@@ -32,6 +35,9 @@ builder.Services.AddScoped(sp => new HttpClient
 });
 builder.Services.AddScoped<ApiService>();
 builder.Services.AddScoped<AuthStateService>();
+// §2.3: BFF-aware AuthenticationStateProvider wired into <AuthorizeRouteView>.
+builder.Services.AddScoped<AuthenticationStateProvider, BffAuthenticationStateProvider>();
+builder.Services.AddAuthorizationCore();
 builder.Services.AddScoped<PlayerNameService>();
 builder.Services.AddScoped<ToastService>();
 builder.Services.AddScoped<GameStatsService>();
@@ -42,6 +48,10 @@ builder.Services.AddScoped<PoRacerScoreApiClient>();
 // across the lifetime of the Blazor session. Fixes the timer-leak /
 // hijack-navigation bug (QA finding #1 + #4).
 builder.Services.AddSingleton<KioskCoordinator>();
+// PoCoupleQuiz Phase 1: SignalR client wrapper for the /couplequiz/hubs/game hub.
+builder.Services.AddScoped<CoupleQuizHubService>();
+// PoFunQuiz Phase 2 follow-up: SignalR client wrapper for /funquiz/gamehub.
+builder.Services.AddScoped<FunQuizHubService>();
 builder.Services.AddRadzenComponents();
 
 // ─── PoSurvive (agent survival simulation) ───────────────────────────

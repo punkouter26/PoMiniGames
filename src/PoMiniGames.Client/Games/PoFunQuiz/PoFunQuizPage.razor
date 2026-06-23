@@ -1,0 +1,182 @@
+@page "/funquiz"
+@using PoMiniGamesClient.Components
+@using PoMiniGamesClient.Services
+@inject ApiService Api
+@inject PlayerNameService PlayerNameService
+@inject NavigationManager Navigation
+@inject HttpClient Http
+
+<GameShell Title=@TitleContent Player="@_playerName" BackTo="/" ShowSettings="false">
+    @if (_questions.Count == 0 && !_isLoading)
+    {
+        <div class="fq-join">
+            <h2>Solo PoFunQuiz</h2>
+            <p>10 trivia questions, AI-generated. Try to get as many right as you can.</p>
+            <label>
+                Your name: <input type="text" @bind="_playerName" maxlength="24" />
+            </label>
+            <label>
+                Category:
+                <select @bind="_category">
+                    <option value="General" selected>General</option>
+                    <option value="Science">Science</option>
+                    <option value="History">History</option>
+                    <option value="Geography">Geography</option>
+                    <option value="Sports">Sports</option>
+                    <option value="Entertainment">Entertainment</option>
+                    <option value="Technology">Technology</option>
+                    <option value="ArtCulture">Art &amp; Culture</option>
+                </select>
+            </label>
+            <button class="fq-btn fq-btn-primary" @onclick="StartSolo">Start solo</button>
+            @if (!string.IsNullOrEmpty(_error))
+            {
+                <p class="fq-error">@_error</p>
+            }
+        </div>
+    }
+    else if (_isLoading)
+    {
+        <p>Loading questions…</p>
+    }
+    else if (_currentIndex < _questions.Count)
+    {
+        var q = _questions[_currentIndex];
+        <div class="fq-question">
+            <h2>Question @(_currentIndex + 1) of @_questions.Count</h2>
+            <p class="fq-text">@q.Text</p>
+            <div class="fq-options">
+                @for (var i = 0; i < q.Options.Count; i++)
+                {
+                    var captured = i;
+                    <button class="fq-option @(HasAnswered(captured) ? (captured == _selected[captured].selected ? "fq-option--selected" : "") : "")"
+                            disabled="@HasAnswered(captured)"
+                            @onclick="() => SelectAnswer(captured)">
+                        @q.Options[i]
+                    </button>
+                }
+            </div>
+            <p>Score: @_score · Streak: @_streak</p>
+        </div>
+    }
+    else
+    {
+        <div class="fq-results">
+            <h2>Done!</h2>
+            <p>Final score: <strong>@_score</strong></p>
+            <p>Max streak: @_maxStreak</p>
+            <button class="fq-btn fq-btn-secondary" @onclick="Reset">Play again</button>
+        </div>
+    }
+</GameShell>
+
+@code {
+    private RenderFragment TitleContent => @<span>🧠 PoFunQuiz</span>;
+
+    private string _playerName = string.Empty;
+    private string _category = "General";
+    private string? _error;
+    private bool _isLoading;
+    private List<QuizQuestion> _questions = new();
+    private int _currentIndex;
+    private int _score;
+    private int _streak;
+    private int _maxStreak;
+    private readonly Dictionary<int, (int selected, bool correct)> _selected = new();
+
+    protected override void OnInitialized()
+    {
+        _playerName = PlayerNameService.GetPlayerName();
+    }
+
+    private async Task StartSolo()
+    {
+        if (string.IsNullOrWhiteSpace(_playerName))
+        {
+            _error = "Please enter a name.";
+            return;
+        }
+        PlayerNameService.SetPlayerName(_playerName);
+        _error = null;
+        _isLoading = true;
+        try
+        {
+            var url = $"/api/funquiz/quiz/questions?count=10&category={Uri.EscapeDataString(_category)}";
+            var questions = await Http.GetFromJsonAsync<List<QuizQuestion>>(url);
+            if (questions is null || questions.Count == 0)
+            {
+                _error = "No questions available. Try a different category.";
+                _isLoading = false;
+                return;
+            }
+            _questions = questions;
+            _currentIndex = 0;
+            _score = 0;
+            _streak = 0;
+            _maxStreak = 0;
+            _selected.Clear();
+        }
+        catch (Exception ex)
+        {
+            _error = $"Failed to load questions: {ex.Message}";
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private void SelectAnswer(int option)
+    {
+        if (_currentIndex >= _questions.Count) return;
+        var q = _questions[_currentIndex];
+        if (_selected.ContainsKey(_currentIndex)) return;
+        var correct = option == q.CorrectOptionIndex;
+        _selected[_currentIndex] = (option, correct);
+        if (correct)
+        {
+            _score += q.BasePoints + StreakBonus();
+            _streak++;
+            if (_streak > _maxStreak) _maxStreak = _streak;
+        }
+        else
+        {
+            _streak = 0;
+        }
+        _currentIndex++;
+    }
+
+    private int StreakBonus() => _streak switch
+    {
+        >= 5 => 3,
+        >= 3 => 2,
+        >= 2 => 1,
+        _ => 0
+    };
+
+    private bool HasAnswered(int option)
+    {
+        if (_currentIndex >= _questions.Count) return true;
+        return _selected.ContainsKey(_currentIndex);
+    }
+
+    private void Reset()
+    {
+        _questions = new();
+        _currentIndex = 0;
+        _score = 0;
+        _streak = 0;
+        _maxStreak = 0;
+        _selected.Clear();
+        _error = null;
+    }
+
+    public class QuizQuestion
+    {
+        public string Text { get; set; } = string.Empty;
+        public List<string> Options { get; set; } = new();
+        public int CorrectOptionIndex { get; set; }
+        public string Category { get; set; } = "General";
+        public int BasePoints { get; set; } = 2;
+    }
+}

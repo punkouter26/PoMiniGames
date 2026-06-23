@@ -9,6 +9,8 @@ using PoMiniGames.Features.PoSurvive;
 using PoMiniGames.Application.Diagnostics;
 using PoMiniGames.Infrastructure;
 using PoMiniGames.Infrastructure.Services;
+// Note: PoCoupleQuiz types are referenced via fully-qualified names to avoid ambiguity
+// with the identically-named IGameSessionManager in PoMiniGames.Features.PoRunner.
 using Scalar.AspNetCore;
 using Serilog;
 
@@ -20,9 +22,16 @@ builder
     .AddPoMiniGamesKeyVault()
     .AddPoMiniGamesLogging();
 
+// ─── Data Protection (§2.2 encrypted cookies) ──────────────────────
+// Pinned BEFORE auth so AddCookie picks up the configured IDataProtector.
+var storageAccountName = builder.Configuration["PoMiniGames:Storage:TableService:AccountName"];
+builder.Services.AddPoMiniGamesDataProtection(builder.Environment, storageAccountName);
+
 // ─── Application services ────────────────────────────────────────────
 builder.Services
-    .AddPoMiniGamesStorage()
+    .Configure<PoMiniGames.Features.PoCoupleQuiz.CoupleQuizOptions>(
+        builder.Configuration.GetSection(PoMiniGames.Features.PoCoupleQuiz.CoupleQuizOptions.SectionName))
+    .AddPoMiniGamesStorage(builder.Configuration)
     .AddPoMiniGamesAuth(builder.Environment, builder.Configuration)
     .AddPoMiniGamesGameServices()
     .AddPoMiniGamesRateLimiting()
@@ -75,6 +84,18 @@ if (!microsoftAuth.Enabled)
 
 // Initialize storage eagerly so the database is ready before the first request.
 app.Services.GetRequiredService<StorageService>().Initialize();
+
+// Ensure the additional tables and blob containers for the consolidated games
+// (PoCoupleQuiz, PoFunQuiz, PoFace) exist. Runs idempotently; failures are logged
+// but never block startup.
+try
+{
+    await app.Services.GetRequiredService<StorageInitializer>().InitializeAsync();
+}
+catch (Exception ex)
+{
+    app.Logger.LogWarning(ex, "StorageInitializer reported an error; per-game tables/containers will be retried lazily on first use");
+}
 
 // ─── Exception handling & developer tooling ──────────────────────────
 app.UseMiddleware<RequestLogContextMiddleware>();
@@ -132,6 +153,22 @@ app.MapGameEndpoints();
 
 // ─── PoRunner SignalR hub ────────────────────────────────────────────
 app.MapHub<GameHub>("/porunner/gamehub");
+
+// ─── PoCoupleQuiz endpoints + hub (Phase 1) ──────────────────────────
+PoMiniGames.Features.PoCoupleQuiz.CoupleQuizEndpoints.MapCoupleQuizEndpoints(app);
+app.MapHub<PoMiniGames.Features.PoCoupleQuiz.CoupleQuizHub>("/couplequiz/hubs/game");
+
+// ─── PoFunQuiz endpoints (Phase 2) ──────────────────────────────────
+PoMiniGames.Features.PoFunQuiz.FunQuizEndpoints.MapFunQuizEndpoints(app);
+app.MapHub<PoMiniGames.Features.PoFunQuiz.FunQuizHub>("/funquiz/gamehub");
+// The full multiplayer hub (CreateGame / JoinGame / Lobby / etc.) ships as a follow-up;
+// the Solo-mode HTTP path is the MVP for Phase 2.
+
+// ─── PoFace endpoints (Phase 3) ─────────────────────────────────────
+PoMiniGames.Features.PoFace.FaceEndpoints.MapFaceEndpoints(app);
+// PoFace ships with HTTP-only endpoints in the consolidation MVP (no SignalR hub).
+// JS interop (webcam capture), Google Vision hybrid mode, and blob-backed
+// session recaps are follow-up work.
 
 // ─── PoRacer SignalR lobby + scores ─────────────────────────────────
 app.MapHub<PoRacerLobbyHub>("/poracer/lobby-hub");

@@ -105,7 +105,14 @@ internal static class AuthExtensions
 
                 options.TokenValidationParameters = new TokenValidationParameters
                 {
-                    ValidateIssuer = false,
+                    // §2.2: ValidateIssuer must be true. A custom IssuerValidator
+                    // allow-lists the well-known public authorities (common / organizations /
+                    // consumers) plus any tenant IDs configured under
+                    // PoMiniGames:MicrosoftAuth:AllowedTenantIds.
+                    ValidateIssuer = true,
+                    ValidIssuer = authority,
+                    IssuerValidator = (issuer, token, parameters) =>
+                        MicrosoftAuthIssuerValidator.Validate(issuer, microsoftAuthOptions.AllowedTenantIds),
                     ValidateAudience = !string.IsNullOrWhiteSpace(audience),
                     ValidAudience = audience,
                     NameClaimType = "name",

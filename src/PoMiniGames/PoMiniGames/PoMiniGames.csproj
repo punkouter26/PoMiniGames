@@ -10,12 +10,22 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- §1.2 MinVer: brings in the .targets that compute the version at restore/build
+         time. No actual code reference; the only side effect is version stamping. -->
+    <PackageReference Include="MinVer" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Azure -->
     <PackageReference Include="Azure.Identity" />
     <PackageReference Include="Azure.Extensions.AspNetCore.Configuration.Secrets" />
+    <PackageReference Include="Azure.Data.Tables" />
+    <PackageReference Include="Azure.Storage.Blobs" />
+    <PackageReference Include="Azure.AI.OpenAI" />
     <!-- API -->
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+    <PackageReference Include="Microsoft.Extensions.Http.Resilience" />
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" />
     <PackageReference Include="Scalar.AspNetCore" />
     <!-- Logging / Telemetry -->

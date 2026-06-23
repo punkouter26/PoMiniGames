@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <!-- §5 Test isolation: the e2e project boots the host through
+         WebApplicationFactory (TestServer) so the entire stack runs in-process.
+         The browser-level Playwright tests use the same Microsoft.Playwright
+         NuGet that the JS specs used to require, so a future maintainer can
+         restore UI coverage without changing the package set. -->
+    <UserSecretsId>pomini-games-e2e-secret-id</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <PackageReference Include="Microsoft.Playwright" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- §5: spin the real host in-process (no separate Vite on :5173 anymore
+         — the Blazor WASM client is BFF-served by the host on :5000). -->
+    <ProjectReference Include="..\..\src\PoMiniGames\PoMiniGames\PoMiniGames.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+    <Using Include="FluentAssertions" />
+  </ItemGroup>
+
+</Project>

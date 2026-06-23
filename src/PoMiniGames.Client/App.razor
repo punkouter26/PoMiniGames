@@ -1,12 +1,33 @@
-﻿<Router AppAssembly="@typeof(App).Assembly">
-    <Found Context="routeData">
-        <RouteView RouteData="@routeData" DefaultLayout="@typeof(Layout.MainLayout)" />
-        <FocusOnNavigate RouteData="@routeData" Selector="h1" />
-    </Found>
-    <NotFound>
-        <PageTitle>Not found</PageTitle>
-        <LayoutView Layout="@typeof(Layout.MainLayout)">
-            <p style="color:#cdd5e0;text-align:center;padding:3rem">Sorry, there's nothing at this address.</p>
-        </LayoutView>
-    </NotFound>
-</Router>
+﻿@using Microsoft.AspNetCore.Components.Authorization
+
+<CascadingAuthenticationState>
+    <Router AppAssembly="@typeof(App).Assembly">
+        <Found Context="routeData">
+            @* §2.3: AuthorizeRouteView prevents page flashing on routes that opt into
+                 [Authorize]. Routes that do not opt in render normally (the default
+                 for the public games suite). *@
+            <AuthorizeRouteView RouteData="@routeData" DefaultLayout="@typeof(Layout.MainLayout)">
+                <NotAuthorized>
+                    <PageTitle>Not authorized</PageTitle>
+                    <LayoutView Layout="@typeof(Layout.MainLayout)">
+                        <div style="max-width:480px;margin:4rem auto;text-align:center;padding:1.5rem;border-radius:12px;background:#1d2230;color:#cdd5e0">
+                            <h1 style="margin:0 0 .5rem 0">Sign in required</h1>
+                            <p style="margin:0 0 1rem 0;line-height:1.45">
+                                This page is only available to signed-in players. Use the
+                                <strong>Sign in</strong> button in the top bar to continue.
+                            </p>
+                            <a href="/" style="color:#7eb6ff;text-decoration:none">← Back to home</a>
+                        </div>
+                    </LayoutView>
+                </NotAuthorized>
+            </AuthorizeRouteView>
+            <FocusOnNavigate RouteData="@routeData" Selector="h1" />
+        </Found>
+        <NotFound>
+            <PageTitle>Not found</PageTitle>
+            <LayoutView Layout="@typeof(Layout.MainLayout)">
+                <p style="color:#cdd5e0;text-align:center;padding:3rem">Sorry, there's nothing at this address.</p>
+            </LayoutView>
+        </NotFound>
+    </Router>
+</CascadingAuthenticationState>

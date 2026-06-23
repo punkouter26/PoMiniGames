@@ -14,6 +14,13 @@ public sealed class MicrosoftAuthOptions
 
     public string RedirectPath { get; init; } = "/auth/callback";
 
+    /// <summary>
+    /// Additional tenant IDs allowed to issue tokens for this API. Combine with the well-known
+    /// public authorities (common / organizations / consumers) which are always allowed.
+    /// Example: <c>[ "11111111-1111-1111-1111-111111111111" ]</c>.
+    /// </summary>
+    public string[] AllowedTenantIds { get; init; } = Array.Empty<string>();
+
     public bool Enabled => !string.IsNullOrWhiteSpace(ClientId) && !string.IsNullOrWhiteSpace(ApiClientId);
 
     public string EffectiveScope => !string.IsNullOrWhiteSpace(Scope)

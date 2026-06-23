@@ -1,0 +1,90 @@
+@page "/face/leaderboard"
+@using PoMiniGamesClient.Components
+@inject HttpClient Http
+
+<GameShell Title=@TitleContent BackTo="/face" ShowSettings="false">
+    <div class="pf-leaderboard">
+        <h2>Top PoFace scores (@_year)</h2>
+        <div class="pf-year-picker">
+            <label>Year: <input type="number" @bind="_year" min="2024" max="2100" /></label>
+            <button class="pf-btn pf-btn-secondary" @onclick="Load">Load</button>
+        </div>
+        @if (_isLoading)
+        {
+            <p>Loading…</p>
+        }
+        else if (!string.IsNullOrEmpty(_error))
+        {
+            <p class="pf-error">@_error</p>
+        }
+        else if (_entries.Count == 0)
+        {
+            <p>No entries yet for @_year. Be the first!</p>
+        }
+        else
+        {
+            <table class="pf-table">
+                <thead>
+                    <tr><th>#</th><th>Player</th><th>Score</th><th>Date</th></tr>
+                </thead>
+                <tbody>
+                    @{
+                        var rank = 1;
+                    }
+                    @foreach (var e in _entries)
+                    {
+                        <tr>
+                            <td>@(rank++)</td>
+                            <td>@(MaskUserId(e.UserId))</td>
+                            <td>@e.Score</td>
+                            <td>@e.AchievedAt.ToString("yyyy-MM-dd")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+</GameShell>
+
+@code {
+    private RenderFragment TitleContent => @<span>🙂 PoFace · Leaderboard</span>;
+
+    private int _year = DateTime.UtcNow.Year;
+    private bool _isLoading = true;
+    private string? _error;
+    private List<EntryDto> _entries = new();
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task Load()
+    {
+        _isLoading = true;
+        _error = null;
+        try
+        {
+            var entries = await Http.GetFromJsonAsync<List<EntryDto>>($"/api/face/leaderboard?year={_year}&top=100");
+            _entries = entries ?? new();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private static string MaskUserId(string userId) =>
+        string.IsNullOrEmpty(userId) ? "?" :
+        userId.Length <= 6 ? userId :
+        $"{userId[..3]}***{userId[^2..]}";
+
+    public class EntryDto
+    {
+        public string UserId { get; set; } = string.Empty;
+        public int Score { get; set; }
+        public int Year { get; set; }
+        public DateTime AchievedAt { get; set; }
+    }
+}

@@ -1,0 +1,194 @@
+@page "/funquiz/multiplayer"
+@using PoMiniGamesClient.Components
+@using PoMiniGamesClient.Games.PoFunQuiz.Services
+@inject FunQuizHubService Hub
+@inject PlayerNameService PlayerNameService
+@inject NavigationManager Navigation
+@implements IAsyncDisposable
+
+<GameShell Title=@TitleContent Player="@_playerName" BackTo="/funquiz" ShowSettings="false">
+    @if (!_isConnected)
+    {
+        <p>Connecting…</p>
+    }
+    else if (_state is null)
+    {
+        <div class="fq-join">
+            <h2>Two-player PoFunQuiz</h2>
+            <label>Your name: <input @bind="_playerName" maxlength="24" /></label>
+            <label>Category:
+                <select @bind="_category">
+                    <option value="General" selected>General</option>
+                    <option value="Science">Science</option>
+                    <option value="History">History</option>
+                    <option value="Sports">Sports</option>
+                    <option value="Entertainment">Entertainment</option>
+                </select>
+            </label>
+            <label>Game code (optional):
+                <input @bind="_joinCode" maxlength="6" />
+            </label>
+            <div class="fq-actions">
+                <button class="fq-btn fq-btn-primary" @onclick="OnCreate">Create new game</button>
+                <button class="fq-btn fq-btn-secondary" @onclick="OnJoin" disabled="@string.IsNullOrWhiteSpace(_joinCode)">Join by code</button>
+            </div>
+            @if (!string.IsNullOrEmpty(_error))
+            {
+                <p class="fq-error">@_error</p>
+            }
+        </div>
+    }
+    else
+    {
+        <div class="fq-multi">
+            <h2>Game <code>@_state.GameId</code> · @_state.State</h2>
+            <h3>Players</h3>
+            <ul>
+                @foreach (var p in _state.Players)
+                {
+                    <li>@p.Name — @p.Score @(p.Name == _state.HostName ? "👑" : "")</li>
+                }
+            </ul>
+            @if (_state.State == "Waiting" && _playerName == _state.HostName && _state.Players.Count >= 2)
+            {
+                <button class="fq-btn fq-btn-primary" @onclick="OnStart">Start game</button>
+            }
+            @if (_state.State == "InProgress" && _currentQuestion is not null)
+            {
+                <div class="fq-question">
+                    <h3>Question @(_state.CurrentQuestionIndex + 1) of @_state.Questions.Count</h3>
+                    <p>@_currentQuestion.Text</p>
+                    <div class="fq-options">
+                        @for (var i = 0; i < _currentQuestion.Options.Count; i++)
+                        {
+                            var captured = i;
+                            <button class="fq-option @(HasAnswered(captured) ? "fq-option--selected" : "")"
+                                    disabled="@_hasAnswered"
+                                    @onclick="() => Select(captured)">
+                                @_currentQuestion.Options[i]
+                            </button>
+                        }
+                    </div>
+                    @if (_hasAnswered)
+                    {
+                        <p>Answered. Waiting for opponent…</p>
+                    }
+                </div>
+            }
+            @if (_finished is not null)
+            {
+                <div class="fq-gameover">
+                    <h2>🏁 @(_finished.IsTie ? "It's a tie!" : _finished.Winner?.Name + " wins!")</h2>
+                    <ul>
+                        @foreach (var kv in _finished.FinalScores.OrderByDescending(x => x.Value))
+                        {
+                            <li>@kv.Key — @kv.Value</li>
+                        }
+                    </ul>
+                    <a class="fq-btn fq-btn-primary" href="/funquiz/leaderboard">View leaderboard</a>
+                </div>
+            }
+        </div>
+    }
+</GameShell>
+
+@code {
+    private RenderFragment TitleContent => @<span>🧠 PoFunQuiz · Multiplayer</span>;
+
+    private string _playerName = string.Empty;
+    private string _category = "General";
+    private string? _joinCode;
+    private string? _error;
+    private bool _isConnected;
+    private FunQuizGameStateDto? _state;
+    private FunQuizGameFinishedDto? _finished;
+    private FunQuizQuestionDto? _currentQuestion;
+    private bool _hasAnswered;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _playerName = PlayerNameService.GetPlayerName();
+        Hub.OnGameCreated += HandleState;
+        Hub.OnGameJoined += HandleState;
+        Hub.OnGameUpdated += HandleState;
+        Hub.OnGameStarted += HandleState;
+        Hub.OnScoreUpdated += HandleScoreUpdate;
+        Hub.OnGameFinished += HandleFinished;
+        Hub.OnLobbyError += HandleError;
+        try
+        {
+            await Hub.ConnectAsync();
+            _isConnected = true;
+        }
+        catch (Exception ex)
+        {
+            _error = $"Could not connect: {ex.Message}";
+        }
+    }
+
+    private async Task OnCreate()
+    {
+        if (string.IsNullOrWhiteSpace(_playerName)) { _error = "Enter a name."; return; }
+        PlayerNameService.SetPlayerName(_playerName);
+        await Hub.CreateGame(_playerName, _category, 10);
+    }
+
+    private async Task OnJoin()
+    {
+        if (string.IsNullOrWhiteSpace(_joinCode)) { _error = "Enter a code."; return; }
+        PlayerNameService.SetPlayerName(_playerName);
+        await Hub.JoinGame(_joinCode.Trim().ToUpperInvariant(), _playerName);
+    }
+
+    private async Task OnStart()
+    {
+        if (_state is null) return;
+        await Hub.StartGame(_state.GameId);
+    }
+
+    private void HandleState(FunQuizGameStateDto s)
+    {
+        _state = s;
+        _currentQuestion = s.Questions.Count > s.CurrentQuestionIndex ? s.Questions[s.CurrentQuestionIndex] : null;
+        _hasAnswered = false;
+    }
+
+    private void HandleScoreUpdate(FunQuizScoreUpdateDto u)
+    {
+        if (_state is null) return;
+        var updated = _state.Players.Select(p => p.Name == u.PlayerName
+            ? new FunQuizPlayerStateDto(p.Name, u.TotalScore, u.Streak)
+            : p).ToList();
+        _state = _state with { Players = updated };
+    }
+
+    private void HandleFinished(FunQuizGameFinishedDto f) => _finished = f;
+
+    private void HandleError(FunQuizLobbyErrorDto e) => _error = e.Message;
+
+    private bool HasAnswered(int _option) => _hasAnswered;
+
+    private async Task Select(int option)
+    {
+        if (_state is null || _currentQuestion is null || _hasAnswered) return;
+        var isCorrect = option == _currentQuestion.CorrectOptionIndex;
+        _hasAnswered = true;
+        // For the consolidation MVP we treat every answer as 1.0× speed (no timer running yet).
+        await Hub.UpdateScore(_state.GameId, isCorrect, speedMultiplier: 1.0, secondsRemaining: 0);
+        // Mark the local player as finished for this question — both players finishing
+        // triggers GameFinished on the server.
+        await Hub.PlayerFinished(_state.GameId);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        Hub.OnGameCreated -= HandleState;
+        Hub.OnGameJoined -= HandleState;
+        Hub.OnGameUpdated -= HandleState;
+        Hub.OnGameStarted -= HandleState;
+        Hub.OnScoreUpdated -= HandleScoreUpdate;
+        Hub.OnGameFinished -= HandleFinished;
+        Hub.OnLobbyError -= HandleError;
+        await Hub.DisposeAsync();
+    }
+}

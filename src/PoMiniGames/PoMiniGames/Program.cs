@@ -30,7 +30,7 @@ builder.Services.AddPoMiniGamesDataProtection(builder.Environment, storageAccoun
 builder.Services
     .Configure<PoMiniGames.Features.PoCoupleQuiz.CoupleQuizOptions>(
         builder.Configuration.GetSection(PoMiniGames.Features.PoCoupleQuiz.CoupleQuizOptions.SectionName))
-    .AddPoMiniGamesStorage()
+    .AddPoMiniGamesStorage(builder.Configuration)
     .AddPoMiniGamesAuth(builder.Environment, builder.Configuration)
     .AddPoMiniGamesGameServices()
     .AddPoMiniGamesRateLimiting();

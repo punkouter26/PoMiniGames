@@ -8,6 +8,8 @@ using PoMiniGames.Features.PoRacer;
 using PoMiniGames.Application.Diagnostics;
 using PoMiniGames.Infrastructure;
 using PoMiniGames.Infrastructure.Services;
+// Note: PoCoupleQuiz types are referenced via fully-qualified names to avoid ambiguity
+// with the identically-named IGameSessionManager in PoMiniGames.Features.PoRunner.
 using Scalar.AspNetCore;
 using Serilog;
 
@@ -21,6 +23,8 @@ builder
 
 // ─── Application services ────────────────────────────────────────────
 builder.Services
+    .Configure<PoMiniGames.Features.PoCoupleQuiz.CoupleQuizOptions>(
+        builder.Configuration.GetSection(PoMiniGames.Features.PoCoupleQuiz.CoupleQuizOptions.SectionName))
     .AddPoMiniGamesStorage()
     .AddPoMiniGamesAuth(builder.Environment, builder.Configuration)
     .AddPoMiniGamesGameServices()
@@ -73,6 +77,18 @@ if (!microsoftAuth.Enabled)
 
 // Initialize storage eagerly so the database is ready before the first request.
 app.Services.GetRequiredService<StorageService>().Initialize();
+
+// Ensure the additional tables and blob containers for the consolidated games
+// (PoCoupleQuiz, PoFunQuiz, PoFace) exist. Runs idempotently; failures are logged
+// but never block startup.
+try
+{
+    await app.Services.GetRequiredService<StorageInitializer>().InitializeAsync();
+}
+catch (Exception ex)
+{
+    app.Logger.LogWarning(ex, "StorageInitializer reported an error; per-game tables/containers will be retried lazily on first use");
+}
 
 // ─── Exception handling & developer tooling ──────────────────────────
 app.UseMiddleware<RequestLogContextMiddleware>();
@@ -130,6 +146,10 @@ app.MapGameEndpoints();
 
 // ─── PoRunner SignalR hub ────────────────────────────────────────────
 app.MapHub<GameHub>("/porunner/gamehub");
+
+// ─── PoCoupleQuiz endpoints + hub (Phase 1) ──────────────────────────
+PoMiniGames.Features.PoCoupleQuiz.CoupleQuizEndpoints.MapCoupleQuizEndpoints(app);
+app.MapHub<PoMiniGames.Features.PoCoupleQuiz.CoupleQuizHub>("/couplequiz/hubs/game");
 
 // ─── PoRacer SignalR lobby + scores ─────────────────────────────────
 app.MapHub<PoRacerLobbyHub>("/poracer/lobby-hub");

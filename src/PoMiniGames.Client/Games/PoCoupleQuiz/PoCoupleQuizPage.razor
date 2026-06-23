@@ -1,0 +1,180 @@
+@page "/couplequiz"
+@using PoMiniGamesClient.Games.PoCoupleQuiz.Services
+@using PoMiniGamesClient.Components
+@inject CoupleQuizHubService Hub
+@inject PlayerNameService PlayerNameService
+@inject NavigationManager Navigation
+@implements IAsyncDisposable
+
+<GameShell Title=@TitleContent Player="@_playerName" BackTo="/" ShowSettings="false">
+    @if (!_isConnected)
+    {
+        <div class="cq-connecting">
+            <p>Connecting to the game server…</p>
+        </div>
+    }
+    else if (_lobby is null)
+    {
+        <div class="cq-join">
+            <h2>Join the PoCoupleQuiz lobby</h2>
+            <p>Two or more players answer questions about each other. The "King" types the secret answer; the rest try to match — scored by AI.</p>
+            <label>
+                Your name:
+                <input type="text" @bind="_playerName" maxlength="24" />
+            </label>
+            <label>
+                Difficulty:
+                <select @bind="_difficulty">
+                    <option value="Easy">Easy (3 rounds)</option>
+                    <option value="Medium" selected>Medium (5 rounds)</option>
+                    <option value="Hard">Hard (7 rounds)</option>
+                </select>
+            </label>
+            <label>
+                Game code (optional — leave blank to auto-join a shared lobby):
+                <input type="text" @bind="_joinCode" maxlength="6" />
+            </label>
+            <div class="cq-actions">
+                <button class="cq-btn cq-btn-primary" @onclick="OnJoinOrCreate">Find or create a lobby</button>
+                <button class="cq-btn cq-btn-secondary" @onclick="OnJoinByCode" disabled="@string.IsNullOrWhiteSpace(_joinCode)">Join by code</button>
+            </div>
+            @if (!string.IsNullOrEmpty(_error))
+            {
+                <p class="cq-error">@_error</p>
+            }
+        </div>
+    }
+    else
+    {
+        <div class="cq-lobby">
+            <h2>Lobby <code>@_lobby.GameCode</code></h2>
+            <p>Difficulty: <strong>@_lobby.Difficulty</strong> · AI mode: <strong>@_lobby.AiMode</strong></p>
+            <p>Host: <strong>@_lobby.HostName</strong></p>
+            <h3>Players</h3>
+            <ul>
+                @foreach (var p in _lobby.Players)
+                {
+                    <li>@p @(p == _lobby.HostName ? "👑" : "")</li>
+                }
+            </ul>
+            <h3>Ready</h3>
+            <ul>
+                @foreach (var p in _lobby.ReadyPlayers)
+                {
+                    <li>✓ @p</li>
+                }
+            </ul>
+            <div class="cq-actions">
+                <button class="cq-btn cq-btn-primary" @onclick="OnReady">I'm ready</button>
+            </div>
+            @if (_lobby.IsHost && _lobby.Players.Count >= 2)
+            {
+                <div class="cq-actions">
+                    <button class="cq-btn cq-btn-secondary" @onclick="OnStart">Start game</button>
+                </div>
+            }
+        </div>
+    }
+</GameShell>
+
+@code {
+    private RenderFragment TitleContent => @<span>💕 PoCoupleQuiz</span>;
+
+    private string _playerName = string.Empty;
+    private string _difficulty = "Medium";
+    private string? _joinCode;
+    private string? _error;
+    private bool _isConnected;
+    private CoupleQuizLobbyEventPayload? _lobby;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _playerName = PlayerNameService.GetPlayerName();
+        Hub.OnLobbyCreated += HandleLobbyCreated;
+        Hub.OnLobbyJoined += HandleLobbyJoined;
+        Hub.OnLobbyUpdated += HandleLobbyUpdated;
+        Hub.OnLobbyError += HandleError;
+        Hub.OnGameStarted += HandleGameStarted;
+        Hub.OnGameError += HandleError;
+
+        try
+        {
+            await Hub.ConnectAsync();
+            _isConnected = true;
+        }
+        catch (Exception ex)
+        {
+            _error = $"Could not connect to the game server: {ex.Message}";
+        }
+    }
+
+    private async Task OnJoinOrCreate()
+    {
+        if (string.IsNullOrWhiteSpace(_playerName))
+        {
+            _error = "Please enter a name.";
+            return;
+        }
+        PlayerNameService.SetPlayerName(_playerName);
+        await Hub.JoinOrCreateAsync(_playerName, _difficulty);
+    }
+
+    private async Task OnJoinByCode()
+    {
+        if (string.IsNullOrWhiteSpace(_playerName) || string.IsNullOrWhiteSpace(_joinCode))
+        {
+            _error = "Please enter both a name and a game code.";
+            return;
+        }
+        PlayerNameService.SetPlayerName(_playerName);
+        await Hub.JoinLobbyAsync(_joinCode.Trim().ToUpperInvariant(), _playerName);
+    }
+
+    private async Task OnReady()
+    {
+        if (_lobby is null) return;
+        await Hub.SetReadyAsync(_lobby.GameCode);
+    }
+
+    private async Task OnStart()
+    {
+        if (_lobby is null) return;
+        await Hub.StartGameAsync(_lobby.GameCode);
+    }
+
+    private void HandleLobbyCreated(CoupleQuizLobbyEventPayload p) => _lobby = p;
+    private void HandleLobbyJoined(CoupleQuizLobbyEventPayload p) => _lobby = p;
+    private void HandleLobbyUpdated(CoupleQuizLobbyUpdatedPayload p)
+    {
+        if (_lobby is not null && _lobby.GameCode == p.GameCode)
+        {
+            _lobby = _lobby with
+            {
+                Players = p.Players,
+                ReadyPlayers = p.ReadyPlayers,
+                HostName = p.HostName,
+                Difficulty = p.Difficulty ?? _lobby.Difficulty,
+                AiMode = p.AiMode ?? _lobby.AiMode
+            };
+        }
+    }
+    private void HandleError(string message) => _error = message;
+
+    private void HandleGameStarted(CoupleQuizGameStartedPayload p)
+    {
+        // The full game UI is a follow-up. For now, show the in-flight question.
+        _lobby = null;
+        _error = $"Game started! Round {p.RoundIndex + 1} of {p.MaxRounds}. Question: {p.QuestionText}";
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        Hub.OnLobbyCreated -= HandleLobbyCreated;
+        Hub.OnLobbyJoined -= HandleLobbyJoined;
+        Hub.OnLobbyUpdated -= HandleLobbyUpdated;
+        Hub.OnLobbyError -= HandleError;
+        Hub.OnGameStarted -= HandleGameStarted;
+        Hub.OnGameError -= HandleError;
+        await Hub.DisposeAsync();
+    }
+}

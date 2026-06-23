@@ -1,0 +1,168 @@
+using System.ClientModel;
+using System.Text.Json;
+using Azure;
+using Azure.AI.OpenAI;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using OpenAI.Chat;
+
+namespace PoMiniGames.Features.PoCoupleQuiz;
+
+/// <summary>
+/// Wraps a single deployment of Azure OpenAI (the shared <c>po-aiservices-shared</c>
+/// gpt-5-nano account) for question generation and answer-similarity scoring.
+///
+/// <para><b>Mock fallback</b>: per the 2026-06-13 mock-data fix (see user memory
+/// <c>pofunquiz-mock-data-fix.md</c>), the fallback to <see cref="MockQuestionService"/>
+/// is gated on <c>IsDevelopment() || IsEnvironment("Test")</c> AND the explicit
+/// <c>PoCoupleQuiz:Features:UseMockAi</c> flag. In Production, missing config
+/// causes an <see cref="InvalidOperationException"/> on first call rather than
+/// silently serving fabricated data.</para>
+/// </summary>
+public sealed class AzureOpenAIQuestionService : IQuestionService
+{
+    private readonly IOptionsMonitor<CoupleQuizOptions> _optionsMonitor;
+    private readonly ILogger<AzureOpenAIQuestionService> _logger;
+    private readonly IHostEnvironment _environment;
+    private readonly Lazy<ChatClient?> _chatClient;
+    private readonly string? _configErrorMessage;
+
+    public AzureOpenAIQuestionService(
+        IOptionsMonitor<CoupleQuizOptions> optionsMonitor,
+        IConfiguration configuration,
+        IHostEnvironment environment,
+        ILogger<AzureOpenAIQuestionService> logger)
+    {
+        _optionsMonitor = optionsMonitor;
+        _environment = environment;
+        _logger = logger;
+
+        var endpoint = configuration["PoCoupleQuiz:AzureOpenAI:Endpoint"];
+        var apiKey = configuration["PoCoupleQuiz:AzureOpenAI:ApiKey"];
+        var deploymentName = configuration["PoCoupleQuiz:AzureOpenAI:DeploymentName"];
+
+        if (string.IsNullOrWhiteSpace(endpoint) || string.IsNullOrWhiteSpace(apiKey) || string.IsNullOrWhiteSpace(deploymentName))
+        {
+            _configErrorMessage = "PoCoupleQuiz:AzureOpenAI:Endpoint/ApiKey/DeploymentName are not configured.";
+            _chatClient = new Lazy<ChatClient?>(() => null);
+            return;
+        }
+
+        var client = new AzureOpenAIClient(new Uri(endpoint), new AzureKeyCredential(apiKey));
+        _chatClient = new Lazy<ChatClient?>(() => client.GetChatClient(deploymentName));
+    }
+
+    public async Task<Question> GenerateQuestionAsync(DifficultyLevel difficulty, QuestionCategory? category = null, CancellationToken cancellationToken = default)
+    {
+        var options = _optionsMonitor.CurrentValue;
+        if (options.Features.UseMockAi && IsNonProduction())
+        {
+            _logger.LogWarning("PoCoupleQuiz: UseMockAi=true in {Environment}; serving mock question (non-prod only).", _environment.EnvironmentName);
+            return await new MockQuestionService().GenerateQuestionAsync(difficulty, category, cancellationToken);
+        }
+
+        if (_chatClient.Value is null)
+        {
+            if (IsNonProduction())
+            {
+                _logger.LogWarning("PoCoupleQuiz: Azure OpenAI not configured; serving mock question in {Environment}.", _environment.EnvironmentName);
+                return await new MockQuestionService().GenerateQuestionAsync(difficulty, category, cancellationToken);
+            }
+            throw new InvalidOperationException(_configErrorMessage);
+        }
+
+        var categoryHint = category?.ToString() ?? "any category";
+        var systemPrompt = "You generate short, playful trivia questions for couples. " +
+                           "Respond with a JSON object: {\"text\":\"<question>\",\"category\":\"<Relationships|Hobbies|Childhood|Future|Preferences|Values>\"}. " +
+                           "Keep the question under 12 words. No explanations.";
+        var userPrompt = $"Difficulty: {difficulty}. Category preference: {categoryHint}. " +
+                          "Generate one question appropriate for the King to answer, then have the other players guess.";
+
+        try
+        {
+            var messages = new List<ChatMessage>
+            {
+                new SystemChatMessage(systemPrompt),
+                new UserChatMessage(userPrompt)
+            };
+            var chatOptions = new ChatCompletionOptions { ResponseFormat = ChatResponseFormat.CreateJsonObjectFormat() };
+            var completion = await _chatClient.Value.CompleteChatAsync(messages, chatOptions, cancellationToken);
+
+            var json = completion.Value.Content[0].Text;
+            using var doc = JsonDocument.Parse(json);
+            var text = doc.RootElement.GetProperty("text").GetString() ?? "What's your favorite thing about us?";
+            var cat = doc.RootElement.TryGetProperty("category", out var c) && Enum.TryParse<QuestionCategory>(c.GetString(), out var parsed)
+                ? parsed
+                : QuestionCategory.Preferences;
+            return new Question { Text = text, Category = cat };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "PoCoupleQuiz: Azure OpenAI question generation failed.");
+            if (IsNonProduction())
+            {
+                return await new MockQuestionService().GenerateQuestionAsync(difficulty, category, cancellationToken);
+            }
+            throw;
+        }
+    }
+
+    public async Task<float> CheckAnswerSimilarityAsync(string answer1, string answer2, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(answer1) || string.IsNullOrWhiteSpace(answer2))
+        {
+            return 0f;
+        }
+
+        var options = _optionsMonitor.CurrentValue;
+        if (options.Features.UseMockAi && IsNonProduction())
+        {
+            return await new MockQuestionService().CheckAnswerSimilarityAsync(answer1, answer2, cancellationToken);
+        }
+
+        if (_chatClient.Value is null)
+        {
+            if (IsNonProduction())
+            {
+                return await new MockQuestionService().CheckAnswerSimilarityAsync(answer1, answer2, cancellationToken);
+            }
+            throw new InvalidOperationException(_configErrorMessage);
+        }
+
+        var systemPrompt = "You score semantic similarity between two short answers on a 0.0-1.0 scale. " +
+                           "Respond with a JSON object: {\"score\":<float between 0.0 and 1.0>}. " +
+                           "1.0 means identical meaning; 0.0 means unrelated.";
+        var userPrompt = $"Answer A: {answer1}\nAnswer B: {answer2}\nReturn only the JSON.";
+
+        try
+        {
+            var messages = new List<ChatMessage>
+            {
+                new SystemChatMessage(systemPrompt),
+                new UserChatMessage(userPrompt)
+            };
+            var chatOptions = new ChatCompletionOptions { ResponseFormat = ChatResponseFormat.CreateJsonObjectFormat() };
+            var completion = await _chatClient.Value.CompleteChatAsync(messages, chatOptions, cancellationToken);
+
+            var json = completion.Value.Content[0].Text;
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("score", out var s) && s.TryGetSingle(out var v))
+            {
+                return Math.Clamp(v, 0f, 1f);
+            }
+            return 0f;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "PoCoupleQuiz: Azure OpenAI similarity scoring failed.");
+            if (IsNonProduction())
+            {
+                return await new MockQuestionService().CheckAnswerSimilarityAsync(answer1, answer2, cancellationToken);
+            }
+            throw;
+        }
+    }
+
+    private bool IsNonProduction() => _environment.IsDevelopment() || _environment.IsEnvironment("Test");
+}

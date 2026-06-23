@@ -28,7 +28,7 @@
                     </div>
                 </div>
             </button>
-            <button type="button" 
+            <button type="button"
                     class="sp-game-card"
                     aria-label="Play PoRacer online multiplayer"
                     style="--accent:#4ec3ff;--accent-glow:rgba(78,195,255,0.28)"
@@ -39,6 +39,38 @@
                 <div class="sp-game-card-body">
                     <h2>PoRacer</h2>
                     <p>Top-down arcade racing! Join a lobby and race against real players online.</p>
+                    <div class="sp-game-modes" aria-label="Available modes">
+                        <span class="sp-mode-pill sp-mode-pill--multi">Multi</span>
+                    </div>
+                </div>
+            </button>
+            <button type="button"
+                    class="sp-game-card"
+                    aria-label="Play PoCoupleQuiz online multiplayer"
+                    style="--accent:#ec4899;--accent-glow:rgba(236,72,153,0.28)"
+                    @onclick='OnPlayOnlinePoCoupleQuiz'>
+                <div class="sp-game-card-preview" aria-hidden="true">
+                    <div class="sp-game-icon">💕</div>
+                </div>
+                <div class="sp-game-card-body">
+                    <h2>PoCoupleQuiz</h2>
+                    <p>Two-player couple trivia. One is the King, the rest match — AI scores similarity.</p>
+                    <div class="sp-game-modes" aria-label="Available modes">
+                        <span class="sp-mode-pill sp-mode-pill--multi">Multi</span>
+                    </div>
+                </div>
+            </button>
+            <button type="button"
+                    class="sp-game-card"
+                    aria-label="Play PoFunQuiz online multiplayer"
+                    style="--accent:#10b981;--accent-glow:rgba(16,185,129,0.28)"
+                    @onclick='OnPlayOnlinePoFunQuiz'>
+                <div class="sp-game-card-preview" aria-hidden="true">
+                    <div class="sp-game-icon">🧠</div>
+                </div>
+                <div class="sp-game-card-body">
+                    <h2>PoFunQuiz</h2>
+                    <p>Multiplayer trivia battle with shared quick lobby. Streak, speed, and time bonuses.</p>
                     <div class="sp-game-modes" aria-label="Available modes">
                         <span class="sp-mode-pill sp-mode-pill--multi">Multi</span>
                     </div>
@@ -90,6 +122,56 @@
             }
 
             NavigationManager.NavigateTo("/poracer/lobby");
+        }
+        catch (Exception ex)
+        {
+            ToastService.Show($"Failed to connect: {ex.Message}", ToastType.Error);
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task OnPlayOnlinePoCoupleQuiz()
+    {
+        _isLoading = true;
+        try
+        {
+            var isAvailable = await Api.IsAvailableAsync();
+            if (!isAvailable)
+            {
+                ToastService.Show("Server unavailable. Try Single Player mode.", ToastType.Error);
+                return;
+            }
+
+            // PoCoupleQuiz lobby route is added in Phase 1.
+            NavigationManager.NavigateTo("/couplequiz/lobby");
+        }
+        catch (Exception ex)
+        {
+            ToastService.Show($"Failed to connect: {ex.Message}", ToastType.Error);
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task OnPlayOnlinePoFunQuiz()
+    {
+        _isLoading = true;
+        try
+        {
+            var isAvailable = await Api.IsAvailableAsync();
+            if (!isAvailable)
+            {
+                ToastService.Show("Server unavailable. Try Single Player mode.", ToastType.Error);
+                return;
+            }
+
+            // PoFunQuiz lobby route is added in Phase 2.
+            NavigationManager.NavigateTo("/funquiz/lobby");
         }
         catch (Exception ex)
         {

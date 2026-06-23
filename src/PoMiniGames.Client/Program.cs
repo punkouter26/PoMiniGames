@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
 using Microsoft.JSInterop;
 using PoMiniGamesClient;
+using PoMiniGamesClient.Games.PoCoupleQuiz.Services;
 using PoMiniGamesClient.Games.PoRacer;
 using PoMiniGamesClient.Services;
 using Radzen;
@@ -38,6 +39,8 @@ builder.Services.AddScoped<PoRacerScoreApiClient>();
 // across the lifetime of the Blazor session. Fixes the timer-leak /
 // hijack-navigation bug (QA finding #1 + #4).
 builder.Services.AddSingleton<KioskCoordinator>();
+// PoCoupleQuiz Phase 1: SignalR client wrapper for the /couplequiz/hubs/game hub.
+builder.Services.AddScoped<CoupleQuizHubService>();
 builder.Services.AddRadzenComponents();
 
 var host = builder.Build();

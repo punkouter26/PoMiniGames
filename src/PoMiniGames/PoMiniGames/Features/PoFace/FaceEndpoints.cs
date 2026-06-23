@@ -59,6 +59,7 @@ public static class FaceEndpoints
             HttpContext ctx,
             IGameSessionRepository sessions,
             IFaceAnalysisService analyzer,
+            IBlobImageRepository blob,
             CancellationToken cancellationToken) =>
         {
             var userId = ctx.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value
@@ -131,6 +132,10 @@ public static class FaceEndpoints
             capture.Score = score;
             capture.CapturedAt = DateTime.UtcNow;
 
+            // Best-effort blob upload for the recap page.
+            var blobUri = await blob.UploadAsync(userId, id, n, imageJpeg!, cancellationToken);
+            capture.ImageUrl = blobUri;
+
             await sessions.SaveAsync(session, cancellationToken);
 
             return Results.Ok(new
@@ -142,7 +147,8 @@ public static class FaceEndpoints
                 confidence = analysis.TargetEmotionConfidence,
                 headPoseValid,
                 score,
-                totalScore = session.TotalScore
+                totalScore = session.TotalScore,
+                imageUrl = blobUri
             });
         })
         .RequireAuthorization()

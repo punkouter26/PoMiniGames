@@ -1,0 +1,73 @@
+@page "/face/recap/{SessionId}"
+@using PoMiniGamesClient.Components
+@inject HttpClient Http
+@inject NavigationManager Navigation
+
+<GameShell Title=@TitleContent BackTo="/face" ShowSettings="false">
+    @if (_isLoading)
+    {
+        <p>Loading recap…</p>
+    }
+    else
+    {
+        <div class="pf-recap">
+            <h2>PoFace recap</h2>
+            <p>Session: <code>@SessionId</code></p>
+            <h3>Rounds</h3>
+            <div class="pf-recap-grid">
+                @foreach (var c in _captures)
+                {
+                    <div class="pf-recap-card">
+                        <img src="@ResolveImage(c)" alt="Round @(c.Round + 1) capture" />
+                        <h4>Round @(c.Round + 1) — @c.Emotion</h4>
+                        <p>Score: <strong>@c.Score</strong></p>
+                        <p>Confidence: @((c.Confidence * 100).ToString("F0"))%</p>
+                    </div>
+                }
+            </div>
+            <a class="pf-btn pf-btn-primary" href="/face/leaderboard">View leaderboard</a>
+        </div>
+    }
+</GameShell>
+
+@code {
+    private RenderFragment TitleContent => @<span>🙂 PoFace · Recap</span>;
+
+    [Parameter] public string SessionId { get; set; } = string.Empty;
+
+    private bool _isLoading = true;
+    private List<CaptureRow> _captures = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        // The recap endpoint reads the session from table storage. For the consolidation
+        // MVP we don't have a GET /api/face/sessions/{id} endpoint, so we synthesize a
+        // 5-round empty recap and show "no captures" placeholders. The full implementation
+        // adds a GET endpoint that returns the saved round captures (see follow-up).
+        await Task.CompletedTask;
+        for (var i = 0; i < 5; i++)
+        {
+            _captures.Add(new CaptureRow
+            {
+                Round = i,
+                Emotion = new[] { "Happiness", "Surprise", "Anger", "Sadness", "Fear" }[i],
+                Score = 0,
+                Confidence = 0f,
+                ImageUrl = null
+            });
+        }
+        _isLoading = false;
+    }
+
+    private string ResolveImage(CaptureRow c) =>
+        string.IsNullOrEmpty(c.ImageUrl) ? "/images/placeholder-round.jpg" : c.ImageUrl;
+
+    public class CaptureRow
+    {
+        public int Round { get; set; }
+        public string Emotion { get; set; } = string.Empty;
+        public int Score { get; set; }
+        public float Confidence { get; set; }
+        public string? ImageUrl { get; set; }
+    }
+}

@@ -34,6 +34,10 @@ public class RoundCapture
     public bool HeadPoseValid { get; set; }
     public int Score { get; set; }
     public DateTime CapturedAt { get; set; } = DateTime.UtcNow;
+    /// <summary>URI of the round-capture JPEG in the poface-captures blob container.
+    /// Used by the recap page to display the captured frame. Null when blob
+    /// storage was unavailable at scoring time.</summary>
+    public string? ImageUrl { get; set; }
 }
 
 public class GameSession

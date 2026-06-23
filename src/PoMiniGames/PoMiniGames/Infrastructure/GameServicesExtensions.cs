@@ -84,6 +84,11 @@ internal static class GameServicesExtensions
         services.AddSingleton<PoMiniGames.Features.PoFace.Storage.IGameSessionRepository, FaceGameSessionRepository>();
         services.AddSingleton<PoMiniGames.Features.PoFace.Storage.ILeaderboardRepository, FaceLeaderboardRepository>();
         services.AddSingleton<PoMiniGames.Features.PoFace.Storage.IPlayerStatsRepository, FacePlayerStatsRepository>();
+        // Blob storage for the poface-captures container (round-capture JPEGs).
+        // Best-effort: when the blob endpoint is missing or unreachable, the round
+        // score is still recorded in table storage and the recap page shows a
+        // placeholder image.
+        services.AddSingleton<PoMiniGames.Features.PoFace.Storage.IBlobImageRepository, PoMiniGames.Features.PoFace.Storage.BlobImageRepository>();
 
         services.ConfigureHttpJsonOptions(options =>
         {

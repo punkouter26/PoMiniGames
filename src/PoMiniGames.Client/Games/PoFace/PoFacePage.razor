@@ -17,6 +17,7 @@
         {
             <p>API: <strong>@(_isMock ? "Stub (no real AI)" : "Azure OpenAI")</strong></p>
             <button class="pf-btn pf-btn-primary" @onclick="StartSession">Start new session</button>
+            <a class="pf-btn pf-btn-secondary" href="/face/arena">Go to arena (5-round game)</a>
             @if (_lastSessionId is not null)
             {
                 <p>Last session: <code>@_lastSessionId</code> · total: @_lastTotal</p>

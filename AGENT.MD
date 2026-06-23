@@ -20,7 +20,7 @@ Mobile-first **Blazor WebAssembly** mini-games suite, hosted inside an **ASP.NET
 ## Build & run
 - Target framework **net10.0**, pinned via `global.json`. Central settings in `Directory.Build.props` (Nullable + TreatWarningsAsErrors **on** — warnings break the build) and CPM in `Directory.Packages.props`.
 - Run: `dotnet run --project src/PoMiniGames/PoMiniGames`. Hardcoded ports **HTTP 5000 / HTTPS 5001**.
-- `F5` in VS Code uses `.vscode/launch.json` + `tasks.json` (the `kill-dotnet` task frees ports first).
+- `F5` in VS Code uses `.vscode/launch.json` + `tasks.json`. The `prelaunch` task runs in sequence: `kill-dotnet` (frees port 5000) → `start-azurite` (`docker compose up -d azurite`, so local storage is always the Docker container) → `start-api`. Disable any non-Docker Azurite (e.g. the VS Code Azurite extension) so the `pominigames` container can bind ports 10000–10002.
 - First-run setup: `scripts/setup.ps1` (WinGet installs, Azurite container, `az login` check).
 
 ## Data & local dev

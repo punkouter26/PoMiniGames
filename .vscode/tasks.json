@@ -13,6 +13,17 @@
             "problemMatcher": []
         },
         {
+            "label": "start-azurite",
+            "type": "shell",
+            "command": "docker compose -f \"${workspaceFolder}/docker-compose.yml\" up -d azurite",
+            "presentation": {
+                "reveal": "silent",
+                "panel": "dedicated",
+                "close": true
+            },
+            "problemMatcher": []
+        },
+        {
             "label": "start-client",
             "type": "shell",
             "command": "dotnet run --project ${workspaceFolder}/src/PoMiniGames.Client/PoMiniGamesClient.csproj",
@@ -101,7 +112,7 @@
         },
         {
             "label": "prelaunch",
-            "dependsOn": ["kill-dotnet", "start-api"],
+            "dependsOn": ["kill-dotnet", "start-azurite", "start-api"],
             "dependsOrder": "sequence",
             "problemMatcher": []
         }

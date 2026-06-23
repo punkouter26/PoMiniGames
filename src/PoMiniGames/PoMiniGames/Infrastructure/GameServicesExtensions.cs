@@ -1,10 +1,19 @@
 using PoMiniGames.Domain.Services;
 using PoMiniGames.Features.PoCoupleQuiz;
 using PoMiniGames.Features.PoCoupleQuiz.Storage;
+using PoMiniGames.Features.PoFace;
+using PoMiniGames.Features.PoFace.Storage;
 using PoMiniGames.Features.PoFunQuiz;
 using PoMiniGames.Features.PoFunQuiz.Storage;
 using PoMiniGames.Features.PoRaceRagdoll;
 using PoMiniGames.Infrastructure.Services;
+
+// Aliases to disambiguate the identically-named ILeaderboardRepository and
+// IGameSessionRepository in the per-game Storage namespaces.
+using FaceLeaderboardRepository = PoMiniGames.Features.PoFace.Storage.LeaderboardRepository;
+using FaceLeaderboardEntry = PoMiniGames.Features.PoFace.LeaderboardEntry;
+using FaceGameSessionRepository = PoMiniGames.Features.PoFace.Storage.GameSessionRepository;
+using FacePlayerStatsRepository = PoMiniGames.Features.PoFace.Storage.PlayerStatsRepository;
 
 namespace PoMiniGames.Infrastructure;
 
@@ -59,7 +68,19 @@ internal static class GameServicesExtensions
         // PoFunQuizPlayers table (PartitionKey = Category, RowKey = Guid).
         services.AddMemoryCache();
         services.AddSingleton<IOpenAIService, AzureOpenAIService>();
-        services.AddSingleton<ILeaderboardRepository, LeaderboardRepository>();
+        services.AddSingleton<PoMiniGames.Features.PoFunQuiz.Storage.ILeaderboardRepository,
+            PoMiniGames.Features.PoFunQuiz.Storage.LeaderboardRepository>();
+
+        // PoFace — Phase 3 of the consolidation. See Features/PoFace/.
+        // The AzureAIFaceAnalysisService uses the shared multimodal deployment on
+        // po-aiservices-shared; the StubFaceAnalysisService implements IFaceAnalysisService
+        // and reports IsMock=true (drives the per-game "USING MOCK DATA" banner).
+        services.AddHttpClient();
+        services.AddSingleton<IFaceAnalysisService, AzureAIFaceAnalysisService>();
+        services.AddSingleton<StubFaceAnalysisService>();
+        services.AddSingleton<PoMiniGames.Features.PoFace.Storage.IGameSessionRepository, FaceGameSessionRepository>();
+        services.AddSingleton<PoMiniGames.Features.PoFace.Storage.ILeaderboardRepository, FaceLeaderboardRepository>();
+        services.AddSingleton<PoMiniGames.Features.PoFace.Storage.IPlayerStatsRepository, FacePlayerStatsRepository>();
 
         services.ConfigureHttpJsonOptions(options =>
         {

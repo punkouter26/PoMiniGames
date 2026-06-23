@@ -156,6 +156,12 @@ PoMiniGames.Features.PoFunQuiz.FunQuizEndpoints.MapFunQuizEndpoints(app);
 // The full multiplayer hub (CreateGame / JoinGame / Lobby / etc.) ships as a follow-up;
 // the Solo-mode HTTP path is the MVP for Phase 2.
 
+// ─── PoFace endpoints (Phase 3) ─────────────────────────────────────
+PoMiniGames.Features.PoFace.FaceEndpoints.MapFaceEndpoints(app);
+// PoFace ships with HTTP-only endpoints in the consolidation MVP (no SignalR hub).
+// JS interop (webcam capture), Google Vision hybrid mode, and blob-backed
+// session recaps are follow-up work.
+
 // ─── PoRacer SignalR lobby + scores ─────────────────────────────────
 app.MapHub<PoRacerLobbyHub>("/poracer/lobby-hub");
 app.MapPoRacerScoreEndpoints();

@@ -1,0 +1,44 @@
+using Microsoft.Playwright;
+
+namespace PoMiniGames.E2EUI;
+
+/// <summary>
+/// §5 E2E-UI smoke tests. Drives a real Chromium browser via Microsoft.Playwright
+/// against the live-Kestrel host, asserting the Blazor WASM client actually
+/// renders (not just that the HTTP shell is served — that is E2E-API's job).
+/// </summary>
+/// <remarks>
+/// Requires Playwright browsers installed once per machine:
+/// <c>pwsh tests/PoMiniGames.E2EUI/bin/Debug/net10.0/playwright.ps1 install chromium</c>.
+/// </remarks>
+[Collection(KestrelServerCollection.Name)]
+public class HomePageUiTests
+{
+    private readonly KestrelServerFixture _fixture;
+
+    public HomePageUiTests(KestrelServerFixture fixture) => _fixture = fixture;
+
+    [Fact]
+    public async Task Home_RendersBlazorClient_AndShowsAppName()
+    {
+        using var playwright = await Playwright.CreateAsync();
+        await using var browser = await playwright.Chromium.LaunchAsync(
+            new BrowserTypeLaunchOptions { Headless = true });
+        var page = await browser.NewPageAsync();
+
+        await page.GotoAsync(_fixture.ServerAddress, new PageGotoOptions
+        {
+            WaitUntil = WaitUntilState.NetworkIdle,
+        });
+
+        // The WASM bootstrap replaces the #app loading placeholder once Blazor
+        // has started; assert the page title carries the Po* identity.
+        var title = await page.TitleAsync();
+        title.Should().Contain("PoMiniGames");
+
+        // The Blazor router mounts content into #app; after NetworkIdle it must
+        // contain rendered markup, proving the WASM runtime booted.
+        var appHtml = await page.Locator("#app").InnerHTMLAsync();
+        appHtml.Should().NotBeNullOrWhiteSpace();
+    }
+}

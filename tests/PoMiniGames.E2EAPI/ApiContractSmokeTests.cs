@@ -1,6 +1,6 @@
 using System.Net;
 
-namespace PoMiniGames.E2ETests;
+namespace PoMiniGames.E2EAPI;
 
 /// <summary>
 /// §5 API contract smoke tests. C# port of <c>api-contract.spec.js</c> (deleted

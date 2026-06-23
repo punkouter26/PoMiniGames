@@ -14,7 +14,8 @@ Mobile-first **Blazor WebAssembly** mini-games suite, hosted inside an **ASP.NET
 - `src/PoShared` — shared models/business logic used by both client and API (the `.Shared` library).
 - `tests/PoMiniGames.UnitTests` — xUnit unit tests.
 - `tests/PoMiniGames.IntegrationTests` — `WebApplicationFactory` + Testcontainers (Azurite).
-- `tests/e2e` — Playwright UI/API specs.
+- `tests/PoMiniGames.E2EAPI` — C# end-to-end **API** tests: in-process host via `WebApplicationFactory`, pure HTTP-contract asserts (no browser).
+- `tests/PoMiniGames.E2EUI` — C# end-to-end **UI** tests: Microsoft.Playwright drives a real browser against the host on a live Kestrel port.
 
 ## Build & run
 - Target framework **net10.0**, pinned via `global.json`. Central settings in `Directory.Build.props` (Nullable + TreatWarningsAsErrors **on** — warnings break the build) and CPM in `Directory.Packages.props`.

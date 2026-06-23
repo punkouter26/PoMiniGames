@@ -1,4 +1,4 @@
-namespace PoMiniGames.E2ETests;
+namespace PoMiniGames.E2EAPI;
 
 /// <summary>
 /// §5 Home page smoke tests. C# port of the top-of-funnel tests from

@@ -1,4 +1,4 @@
-namespace PoMiniGames.E2ETests;
+namespace PoMiniGames.E2EAPI;
 
 /// <summary>
 /// §5 Deployment smoke tests. C# port of <c>deployment-smoke.spec.js</c>

@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace PoMiniGames.E2ETests;
+namespace PoMiniGames.E2EAPI;
 
 /// <summary>
 /// Spins the real host in-process via <see cref="WebApplicationFactory{TEntryPoint}"/>

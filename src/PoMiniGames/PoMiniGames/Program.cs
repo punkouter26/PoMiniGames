@@ -153,6 +153,7 @@ app.MapHub<PoMiniGames.Features.PoCoupleQuiz.CoupleQuizHub>("/couplequiz/hubs/ga
 
 // ─── PoFunQuiz endpoints (Phase 2) ──────────────────────────────────
 PoMiniGames.Features.PoFunQuiz.FunQuizEndpoints.MapFunQuizEndpoints(app);
+app.MapHub<PoMiniGames.Features.PoFunQuiz.FunQuizHub>("/funquiz/gamehub");
 // The full multiplayer hub (CreateGame / JoinGame / Lobby / etc.) ships as a follow-up;
 // the Solo-mode HTTP path is the MVP for Phase 2.
 

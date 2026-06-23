@@ -1,0 +1,164 @@
+@page "/couplequiz/game"
+@using PoMiniGamesClient.Games.PoCoupleQuiz.Services
+@using PoMiniGamesClient.Components
+@inject CoupleQuizHubService Hub
+@inject PlayerNameService PlayerNameService
+@inject NavigationManager Navigation
+@implements IAsyncDisposable
+
+<GameShell Title=@TitleContent Player="@_playerName" BackTo="/couplequiz" ShowSettings="false">
+    @if (_gameStarted is null)
+    {
+        <p>Waiting for the round to start…</p>
+    }
+    else
+    {
+        <div class="cq-game">
+            <h2>Round @(_gameStarted.RoundIndex + 1) of @_gameStarted.MaxRounds</h2>
+            @if (_isKing)
+            {
+                <p class="cq-king">👑 You are the King. Type your secret answer below — the others will try to match.</p>
+            }
+            <p class="cq-question">@_currentQuestion</p>
+            <input @bind="_myAnswer" placeholder="@(_isKing ? "Your secret answer (1-2 words)" : "Your guess")" maxlength="60" />
+            <div class="cq-actions">
+                <button class="cq-btn cq-btn-primary" @onclick="Submit" disabled="@string.IsNullOrWhiteSpace(_myAnswer)">Submit</button>
+            </div>
+
+            @if (_phase == "Results")
+            {
+                <div class="cq-results">
+                    <h3>Round result</h3>
+                    <p>King's answer: <strong>@(_lastKingAnswer ?? "?")</strong></p>
+                    @if (_lastResult is not null)
+                    {
+                        <p>Matched: @string.Join(", ", _lastResult.MatchedPlayers)</p>
+                        <h4>Scores</h4>
+                        <ul>
+                            @foreach (var kv in _lastResult.Scores.OrderByDescending(x => x.Value))
+                            {
+                                <li>@kv.Key — @kv.Value</li>
+                            }
+                        </ul>
+                    }
+                </div>
+                @if (_isHost)
+                {
+                    <button class="cq-btn cq-btn-primary" @onclick="NextRound">Next round</button>
+                }
+                else
+                {
+                    <p>Waiting for the host to start the next round…</p>
+                }
+            }
+
+            @if (_phase == "GameOver")
+            {
+                <div class="cq-gameover">
+                    <h2>🎉 Game over</h2>
+                    <h3>Final scores</h3>
+                    <ol>
+                        @foreach (var kv in (_gameOver?.FinalScores ?? new Dictionary<string, int>()).OrderByDescending(x => x.Value))
+                        {
+                            <li>@kv.Key — @kv.Value</li>
+                        }
+                    </ol>
+                    <a class="cq-btn cq-btn-primary" href="/couplequiz/leaderboard">View leaderboard</a>
+                </div>
+            }
+        </div>
+    }
+</GameShell>
+
+@code {
+    private RenderFragment TitleContent => @<span>💕 PoCoupleQuiz · Game</span>;
+
+    private string _playerName = string.Empty;
+    private string _myAnswer = string.Empty;
+    private bool _isKing;
+    private bool _isHost;
+    private string _phase = "Answering"; // Answering | Results | GameOver
+    private string _currentQuestion = string.Empty;
+    private string? _lastKingAnswer;
+    private CoupleQuizGameStartedPayload? _gameStarted;
+    private CoupleQuizRoundResultPayload? _lastResult;
+    private CoupleQuizGameOverPayload? _gameOver;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _playerName = PlayerNameService.GetPlayerName();
+        Hub.OnGameStarted += HandleGameStarted;
+        Hub.OnRoundStarted += HandleRoundStarted;
+        Hub.OnAnswerRecorded += HandleAnswerRecorded;
+        Hub.OnRoundResult += HandleRoundResult;
+        Hub.OnGameOver += HandleGameOver;
+        Hub.OnGameError += msg => Console.Error.WriteLine($"[PoCoupleQuiz] {msg}");
+        try
+        {
+            await Hub.ConnectAsync();
+        }
+        catch
+        {
+            // If the hub isn't connected we just sit at "waiting for round to start".
+        }
+    }
+
+    private void HandleGameStarted(CoupleQuizGameStartedPayload p)
+    {
+        _gameStarted = p;
+        _currentQuestion = p.QuestionText;
+        _isKing = _playerName == p.KingPlayerName;
+        _isHost = _playerName == p.Players[0].Name; // first to join = host per the server's design
+        _phase = "Answering";
+        _myAnswer = string.Empty;
+    }
+
+    private void HandleRoundStarted(CoupleQuizRoundStartedPayload p)
+    {
+        _currentQuestion = p.QuestionText;
+        _isKing = _playerName == p.KingPlayerName;
+        _phase = "Answering";
+        _myAnswer = string.Empty;
+    }
+
+    private void HandleAnswerRecorded(CoupleQuizAnswerRecordedPayload p)
+    {
+        // No-op; the round result arrives separately. The page can show a "waiting" hint
+        // when all-but-the-current-player have answered — left as a future enhancement.
+    }
+
+    private void HandleRoundResult(CoupleQuizRoundResultPayload p)
+    {
+        _lastResult = p;
+        _lastKingAnswer = p.KingAnswer;
+        _phase = "Results";
+    }
+
+    private void HandleGameOver(CoupleQuizGameOverPayload p)
+    {
+        _gameOver = p;
+        _phase = "GameOver";
+    }
+
+    private async Task Submit()
+    {
+        if (_gameStarted is null || string.IsNullOrWhiteSpace(_myAnswer) || string.IsNullOrEmpty(_gameStarted.GameCode)) return;
+        await Hub.SubmitAnswerAsync(_gameStarted.GameCode, _myAnswer.Trim(), _gameStarted.RoundIndex);
+    }
+
+    private async Task NextRound()
+    {
+        if (_gameStarted is null) return;
+        await Hub.RequestNextRoundAsync(_gameStarted.GameCode);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        Hub.OnGameStarted -= HandleGameStarted;
+        Hub.OnRoundStarted -= HandleRoundStarted;
+        Hub.OnAnswerRecorded -= HandleAnswerRecorded;
+        Hub.OnRoundResult -= HandleRoundResult;
+        Hub.OnGameOver -= HandleGameOver;
+        await Hub.DisposeAsync();
+    }
+}

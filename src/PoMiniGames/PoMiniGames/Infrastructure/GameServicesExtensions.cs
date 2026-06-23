@@ -66,10 +66,13 @@ internal static class GameServicesExtensions
         // AzureOpenAIService is the production path; mock fallback is gated to Dev/Test
         // inside the service. The leaderboard repository writes to the
         // PoFunQuizPlayers table (PartitionKey = Category, RowKey = Guid).
+        // MultiplayerLobbyService is the in-memory registry for the SignalR hub
+        // (CreateGame/JoinGame/StartGame/UpdateScore/PlayerFinished).
         services.AddMemoryCache();
         services.AddSingleton<IOpenAIService, AzureOpenAIService>();
         services.AddSingleton<PoMiniGames.Features.PoFunQuiz.Storage.ILeaderboardRepository,
             PoMiniGames.Features.PoFunQuiz.Storage.LeaderboardRepository>();
+        services.AddSingleton<MultiplayerLobbyService>();
 
         // PoFace — Phase 3 of the consolidation. See Features/PoFace/.
         // The AzureAIFaceAnalysisService uses the shared multimodal deployment on

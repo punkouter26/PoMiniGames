@@ -105,6 +105,15 @@ public static class FunQuizEndpoints
         })
         .WithName("FunQuiz_RuntimeStatus");
 
+        // ── Open games (lobby browser) ─────────────────────────────────────
+
+        group.MapGet("/lobby/open", (MultiplayerLobbyService lobby) =>
+        {
+            return Results.Ok(lobby.ListOpen());
+        })
+        .WithName("FunQuiz_ListOpenGames")
+        .WithSummary("List PoFunQuiz games waiting for a second player");
+
         return app;
     }
 }

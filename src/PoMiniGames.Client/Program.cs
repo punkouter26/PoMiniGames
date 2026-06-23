@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
 using Microsoft.JSInterop;
 using PoMiniGamesClient;
 using PoMiniGamesClient.Games.PoCoupleQuiz.Services;
+using PoMiniGamesClient.Games.PoFunQuiz.Services;
 using PoMiniGamesClient.Games.PoRacer;
 using PoMiniGamesClient.Services;
 using Radzen;
@@ -41,6 +42,8 @@ builder.Services.AddScoped<PoRacerScoreApiClient>();
 builder.Services.AddSingleton<KioskCoordinator>();
 // PoCoupleQuiz Phase 1: SignalR client wrapper for the /couplequiz/hubs/game hub.
 builder.Services.AddScoped<CoupleQuizHubService>();
+// PoFunQuiz Phase 2 follow-up: SignalR client wrapper for /funquiz/gamehub.
+builder.Services.AddScoped<FunQuizHubService>();
 builder.Services.AddRadzenComponents();
 
 var host = builder.Build();

@@ -1,0 +1,85 @@
+@page "/couplequiz/leaderboard"
+@using PoMiniGamesClient.Components
+@inject HttpClient Http
+@inject NavigationManager Navigation
+
+<GameShell Title=@TitleContent BackTo="/couplequiz" ShowSettings="false">
+    <div class="cq-leaderboard">
+        <h2>Top PoCoupleQuiz teams</h2>
+        @if (_isLoading)
+        {
+            <p>Loading…</p>
+        }
+        else if (!string.IsNullOrEmpty(_error))
+        {
+            <p class="cq-error">@_error</p>
+        }
+        else if (_teams.Count == 0)
+        {
+            <p>No teams have played yet. Be the first!</p>
+        }
+        else
+        {
+            <table class="cq-table">
+                <thead>
+                    <tr><th>#</th><th>Team</th><th>High score</th><th>Total questions</th><th>Correct</th><th>Accuracy</th></tr>
+                </thead>
+                <tbody>
+                    @{
+                        var rank = 1;
+                    }
+                    @foreach (var t in _teams)
+                    {
+                        var accuracy = t.TotalQuestionsAnswered > 0
+                            ? $"{100.0 * t.CorrectAnswers / t.TotalQuestionsAnswered:F0}%"
+                            : "—";
+                        <tr>
+                            <td>@(rank++)</td>
+                            <td>@t.Name</td>
+                            <td>@t.HighScore</td>
+                            <td>@t.TotalQuestionsAnswered</td>
+                            <td>@t.CorrectAnswers</td>
+                            <td>@accuracy</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+        <a class="cq-btn cq-btn-primary" href="/couplequiz">Play again</a>
+    </div>
+</GameShell>
+
+@code {
+    private RenderFragment TitleContent => @<span>💕 PoCoupleQuiz · Leaderboard</span>;
+
+    private bool _isLoading = true;
+    private string? _error;
+    private List<TeamRow> _teams = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var teams = await Http.GetFromJsonAsync<List<TeamRow>>("/api/couplequiz/teams");
+            _teams = teams ?? new();
+            _teams = _teams.OrderByDescending(t => t.HighScore).ToList();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    public class TeamRow
+    {
+        public string Name { get; set; } = string.Empty;
+        public int HighScore { get; set; }
+        public int TotalQuestionsAnswered { get; set; }
+        public int CorrectAnswers { get; set; }
+        public DateTime LastPlayed { get; set; }
+    }
+}

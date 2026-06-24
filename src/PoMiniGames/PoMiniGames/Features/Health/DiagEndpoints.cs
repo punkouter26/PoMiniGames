@@ -161,6 +161,12 @@ public static class DiagEndpoints
         // log without taking a competing lock.
             async Task<IResult> logsTailHandler(IConfiguration config, IWebHostEnvironment environment, int? lines = 50)
         {
+            // Raw log tails are dev-only: unlike /api/diag (masked projection) this
+            // streams unmasked log content, so it must never be reachable in Production
+            // even when diagnostics are enabled for the masked /api/diag snapshot.
+            if (!environment.IsDevelopment())
+                return Results.NotFound();
+
             var diagnosticsEnabled = config.GetValue("FeatureFlags:EnableDiagnostics", environment.IsDevelopment());
             if (!diagnosticsEnabled)
                 return Results.NotFound();

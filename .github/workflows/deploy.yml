@@ -92,10 +92,19 @@ jobs:
       - name: Deploy to App Service
         shell: bash
         run: |
-          zip -r app-deploy.zip ./publish
+          # Self-healing target resolution: discover the API web app from its
+          # resource group instead of hard-coding a name. A future resource
+          # rename can no longer silently 404 the deploy (the original failure mode).
+          APP_NAME=$(az webapp list --resource-group PoMiniGames --query "[0].name" -o tsv)
+          if [ -z "$APP_NAME" ]; then echo "::error::No web app found in resource group PoMiniGames"; exit 1; fi
+          echo "Resolved App Service: $APP_NAME"
+          echo "APP_NAME=$APP_NAME" >> "$GITHUB_ENV"
+          # Zip the publish *contents* (not the parent folder) so the host finds
+          # PoMiniGames.dll at the deployment root, not nested under publish/.
+          ( cd publish && zip -qr ../app-deploy.zip . )
           az webapp deploy \
             --resource-group PoMiniGames \
-            --name app-5ln5hfdrvof5u-f1win \
+            --name "$APP_NAME" \
             --src-path app-deploy.zip \
             --type zip \
             --track-status true
@@ -103,9 +112,18 @@ jobs:
       - name: Smoke Test - Health Ping
         shell: bash
         run: |
-          curl -f https://app-5ln5hfdrvof5u-f1win.azurewebsites.net/api/health/ping || exit 1
+          # Retry to absorb F1 cold-start latency after a fresh deploy.
+          curl -fsS --retry 6 --retry-all-errors --retry-delay 10 \
+            "https://${APP_NAME}.azurewebsites.net/api/health/ping" || exit 1
 
       - name: Smoke Test - Full Health
         shell: bash
         run: |
-          curl -f https://app-5ln5hfdrvof5u-f1win.azurewebsites.net/api/health || exit 1
+          curl -fsS --retry 6 --retry-all-errors --retry-delay 10 \
+            "https://${APP_NAME}.azurewebsites.net/api/health" || exit 1
+
+      - name: Smoke Test - Diag (masked KV + subsystem integrations)
+        shell: bash
+        run: |
+          curl -fsS --retry 6 --retry-all-errors --retry-delay 10 \
+            "https://${APP_NAME}.azurewebsites.net/api/diag" || exit 1

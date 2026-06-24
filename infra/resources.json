@@ -1,0 +1,195 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.43.8.12551",
+      "templateHash": "10647666701118634068"
+    }
+  },
+  "parameters": {
+    "name": {
+      "type": "string"
+    },
+    "location": {
+      "type": "string"
+    },
+    "tags": {
+      "type": "object"
+    },
+    "sharedKeyVaultName": {
+      "type": "string",
+      "defaultValue": "kv-poshared",
+      "metadata": {
+        "description": "The name of the existing Key Vault in PoShared"
+      }
+    },
+    "sharedAppInsightsName": {
+      "type": "string",
+      "defaultValue": "poappideinsights8f9c9a4e",
+      "metadata": {
+        "description": "The name of the existing App Insights in PoShared"
+      }
+    },
+    "sharedResourceGroupName": {
+      "type": "string",
+      "defaultValue": "PoShared",
+      "metadata": {
+        "description": "The name of the resource group containing shared resources"
+      }
+    }
+  },
+  "variables": {
+    "$fxv#0": {
+      "appServicePlan": "plan-",
+      "webApp": "app-",
+      "storageAccount": "st",
+      "resourceGroup": "rg-",
+      "logAnalytics": "log-",
+      "applicationInsights": "appi-",
+      "staticWebApp": "stapp-"
+    },
+    "abbreviations": "[variables('$fxv#0')]",
+    "resourceToken": "[toLower(uniqueString(subscription().id, parameters('name'), parameters('location')))]",
+    "storageAccountName": "[toLower(format('st{0}', take(variables('resourceToken'), 22)))]",
+    "storageTableDataContributorRoleId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3')]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Web/serverfarms",
+      "apiVersion": "2022-09-01",
+      "name": "[format('{0}{1}', variables('abbreviations').appServicePlan, variables('resourceToken'))]",
+      "location": "[parameters('location')]",
+      "tags": "[union(parameters('tags'), createObject('tier', 'F1', 'os', 'windows'))]",
+      "kind": "app",
+      "sku": {
+        "name": "F1",
+        "tier": "Free",
+        "capacity": 1
+      },
+      "properties": {
+        "reserved": false
+      }
+    },
+    {
+      "type": "Microsoft.Web/sites",
+      "apiVersion": "2022-09-01",
+      "name": "[format('{0}{1}', variables('abbreviations').webApp, variables('resourceToken'))]",
+      "location": "[parameters('location')]",
+      "tags": "[union(parameters('tags'), createObject('azd-service-name', 'api', 'tier', 'F1', 'os', 'windows'))]",
+      "kind": "app",
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "properties": {
+        "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', format('{0}{1}', variables('abbreviations').appServicePlan, variables('resourceToken')))]",
+        "httpsOnly": true,
+        "siteConfig": {
+          "netFrameworkVersion": "v10.0",
+          "alwaysOn": false,
+          "ftpsState": "FtpsOnly",
+          "minTlsVersion": "1.2",
+          "metadata": [
+            {
+              "name": "CURRENT_STACK",
+              "value": "dotnet"
+            }
+          ],
+          "appSettings": [
+            {
+              "name": "ASPNETCORE_ENVIRONMENT",
+              "value": "Production"
+            },
+            {
+              "name": "PoMiniGames__ApplicationInsights__ConnectionString",
+              "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('sharedResourceGroupName')), 'Microsoft.Insights/components', parameters('sharedAppInsightsName')), '2020-02-02').ConnectionString]"
+            },
+            {
+              "name": "PoMiniGames__KeyVault__Uri",
+              "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('sharedResourceGroupName')), 'Microsoft.KeyVault/vaults', parameters('sharedKeyVaultName')), '2023-02-01').vaultUri]"
+            },
+            {
+              "name": "PoMiniGames__Storage__TableService__AccountName",
+              "value": "[variables('storageAccountName')]"
+            },
+            {
+              "name": "PoMiniGames__Storage__TableService__Endpoint",
+              "value": "[format('https://{0}.table.{1}', variables('storageAccountName'), environment().suffixes.storage)]"
+            },
+            {
+              "name": "PoMiniGames__Storage__TableService__TableName",
+              "value": "pominigames"
+            }
+          ]
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/serverfarms', format('{0}{1}', variables('abbreviations').appServicePlan, variables('resourceToken')))]",
+        "[resourceId('Microsoft.Storage/storageAccounts/tableServices/tables', variables('storageAccountName'), 'default', 'pominigames')]",
+        "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts",
+      "apiVersion": "2023-05-01",
+      "name": "[variables('storageAccountName')]",
+      "location": "[parameters('location')]",
+      "tags": "[union(parameters('tags'), createObject('azd-service-name', 'storage'))]",
+      "kind": "StorageV2",
+      "sku": {
+        "name": "Standard_LRS"
+      },
+      "properties": {
+        "minimumTlsVersion": "TLS1_2",
+        "allowBlobPublicAccess": false,
+        "supportsHttpsTrafficOnly": true
+      }
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/tableServices",
+      "apiVersion": "2023-05-01",
+      "name": "[format('{0}/{1}', variables('storageAccountName'), 'default')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/tableServices/tables",
+      "apiVersion": "2023-05-01",
+      "name": "[format('{0}/{1}/{2}', variables('storageAccountName'), 'default', 'pominigames')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts/tableServices', variables('storageAccountName'), 'default')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]",
+      "name": "[guid(resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName')), resourceId('Microsoft.Web/sites', format('{0}{1}', variables('abbreviations').webApp, variables('resourceToken'))), variables('storageTableDataContributorRoleId'))]",
+      "properties": {
+        "principalId": "[reference(resourceId('Microsoft.Web/sites', format('{0}{1}', variables('abbreviations').webApp, variables('resourceToken'))), '2022-09-01', 'full').identity.principalId]",
+        "roleDefinitionId": "[variables('storageTableDataContributorRoleId')]",
+        "principalType": "ServicePrincipal"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]",
+        "[resourceId('Microsoft.Web/sites', format('{0}{1}', variables('abbreviations').webApp, variables('resourceToken')))]"
+      ]
+    }
+  ],
+  "outputs": {
+    "API_URI": {
+      "type": "string",
+      "value": "[format('https://{0}', reference(resourceId('Microsoft.Web/sites', format('{0}{1}', variables('abbreviations').webApp, variables('resourceToken'))), '2022-09-01').defaultHostName)]"
+    },
+    "WEB_APP_NAME": {
+      "type": "string",
+      "value": "[format('{0}{1}', variables('abbreviations').webApp, variables('resourceToken'))]"
+    },
+    "WEB_APP_PRINCIPAL_ID": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Web/sites', format('{0}{1}', variables('abbreviations').webApp, variables('resourceToken'))), '2022-09-01', 'full').identity.principalId]"
+    }
+  }
+}

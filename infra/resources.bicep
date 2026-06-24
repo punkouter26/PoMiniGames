@@ -8,9 +8,6 @@ param sharedKeyVaultName string = 'kv-poshared'
 @description('The name of the existing App Insights in PoShared')
 param sharedAppInsightsName string = 'poappideinsights8f9c9a4e'
 
-@description('The name of the existing App Service Plan in PoShared')
-param sharedAppServicePlanName string = 'asp-poshared-linux'
-
 @description('The name of the resource group containing shared resources')
 param sharedResourceGroupName string = 'PoShared'
 
@@ -19,30 +16,54 @@ var resourceToken = toLower(uniqueString(subscription().id, name, location))
 var storageAccountName = toLower('st${take(resourceToken, 22)}')
 var storageTableDataContributorRoleId = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3')
 
-// Existing App Service Plan in PoShared
-resource appServicePlan 'Microsoft.Web/serverfarms@2022-09-01' existing = {
-  name: sharedAppServicePlanName
-  scope: resourceGroup(sharedResourceGroupName)
+// Zero-waste compute: a single dedicated F1 (Free) Windows plan for this app.
+// F1 is the lowest tier (no idle cost); SKU/OS are expressed as tags, never
+// baked into the resource name (CAF best practice — names stay stable across
+// tier changes). F1 cannot enable alwaysOn, so cold-starts are expected.
+resource appServicePlan 'Microsoft.Web/serverfarms@2022-09-01' = {
+  name: '${abbreviations.appServicePlan}${resourceToken}'
+  location: location
+  tags: union(tags, { tier: 'F1', os: 'windows' })
+  kind: 'app'
+  sku: {
+    name: 'F1'
+    tier: 'Free'
+    capacity: 1
+  }
+  properties: {
+    reserved: false // Windows
+  }
 }
 
-// Web App
+// Web App — Windows .NET 10, single-origin host (Blazor WASM served from
+// wwwroot; no CORS). Forced PROD profile via ASPNETCORE_ENVIRONMENT.
 resource webApp 'Microsoft.Web/sites@2022-09-01' = {
   name: '${abbreviations.webApp}${resourceToken}'
   location: location
-  tags: union(tags, { 'azd-service-name': 'api' })
-  kind: 'app,linux'
+  tags: union(tags, { 'azd-service-name': 'api', tier: 'F1', os: 'windows' })
+  kind: 'app'
   identity: {
     type: 'SystemAssigned'
   }
   properties: {
     serverFarmId: appServicePlan.id
+    httpsOnly: true
     siteConfig: {
-      linuxFxVersion: 'DOTNETCORE|10.0'
-      appCommandLine: 'dotnet PoMiniGames.dll'
-      alwaysOn: false
+      netFrameworkVersion: 'v10.0'
+      alwaysOn: false // F1 does not support alwaysOn
       ftpsState: 'FtpsOnly'
       minTlsVersion: '1.2'
+      metadata: [
+        {
+          name: 'CURRENT_STACK'
+          value: 'dotnet'
+        }
+      ]
       appSettings: [
+        {
+          name: 'ASPNETCORE_ENVIRONMENT'
+          value: 'Production'
+        }
         {
           name: 'PoMiniGames__ApplicationInsights__ConnectionString'
           value: sharedAppInsights.properties.ConnectionString
@@ -52,20 +73,12 @@ resource webApp 'Microsoft.Web/sites@2022-09-01' = {
           value: sharedKeyVault.properties.vaultUri
         }
         {
-          name: 'PoMiniGames__Cors__AllowedOrigins__0'
-          value: 'https://${abbreviations.webApp}${resourceToken}.azurewebsites.net'
-        }
-        {
-          name: 'PoMiniGames__Cors__AllowedOrigins__1'
-          value: 'http://localhost:5173'
-        }
-        {
           name: 'PoMiniGames__Storage__TableService__AccountName'
           value: storageAccount.name
         }
         {
           name: 'PoMiniGames__Storage__TableService__Endpoint'
-          value: 'https://${storageAccount.name}.table.core.windows.net'
+          value: 'https://${storageAccount.name}.table.${environment().suffixes.storage}'
         }
         {
           name: 'PoMiniGames__Storage__TableService__TableName'
@@ -73,7 +86,6 @@ resource webApp 'Microsoft.Web/sites@2022-09-01' = {
         }
       ]
     }
-    httpsOnly: true
   }
 }
 

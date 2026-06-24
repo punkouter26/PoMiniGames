@@ -1,6 +1,7 @@
 using System.Reflection;
 using Azure.Identity;
 using Azure.Monitor.OpenTelemetry.AspNetCore;
+using OpenTelemetry.Instrumentation.AspNetCore;
 using OpenTelemetry.Resources;
 
 namespace PoMiniGames.Infrastructure;
@@ -38,6 +39,21 @@ internal static class TelemetryExtensions
                     // QuickPulse / Live Metrics stays enabled globally (distro default).
                     opts.EnableLiveMetrics = true;
                 });
+
+            // Ingestion-budget guard: never record request traces for the
+            // high-frequency, low-value probe endpoints (load-balancer health
+            // pings, CI smoke tests, uptime monitors). These would otherwise
+            // dominate the F1-tier ingestion budget with zero diagnostic value.
+            // Exceptions and non-probe traffic remain governed by SamplingRatio.
+            builder.Services.Configure<AspNetCoreTraceInstrumentationOptions>(o =>
+            {
+                o.Filter = context =>
+                {
+                    var path = context.Request.Path.Value ?? string.Empty;
+                    return !(path.StartsWith("/health", StringComparison.OrdinalIgnoreCase)
+                          || path.StartsWith("/api/health", StringComparison.OrdinalIgnoreCase));
+                };
+            });
         }
 
         return builder;

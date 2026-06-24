@@ -159,7 +159,7 @@ import * as THREE from 'three';
            <h1 style="font-size:2rem;letter-spacing:4px;margin:0 0 8px">VOXEL DISINTEGRATOR</h1>
            <p style="color:#aaa;margin:0 0 4px">Survive ${this.GAME_DURATION} seconds. Click to shoot.</p>
            <p style="color:#555;font-size:11px;margin:0 0 24px">
-             WASD · Move &nbsp;|&nbsp; Mouse · Aim &nbsp;|&nbsp; Click · Shoot &nbsp;|&nbsp; ESC · Pause &nbsp;|&nbsp; 1–4 · Quality
+             WASD · Move &nbsp;|&nbsp; Move mouse · Aim &nbsp;|&nbsp; Click · Shoot &nbsp;|&nbsp; L · Mouse-look &nbsp;|&nbsp; ESC · Pause &nbsp;|&nbsp; 1–4 · Quality
            </p>
            <button id="_vsStart" style="${BTN_PRIMARY}">▶ START</button>
          </div>`;
@@ -239,7 +239,9 @@ import * as THREE from 'three';
       this.hudBar.style.display  = 'flex';
       this.crosshair.style.display = 'block';
       this.tracers = [];
-      this.renderer.domElement.requestPointerLock();
+      // Default to cursor-position aim (no pointer lock auto-request, which can
+      // emit an un-catchable console error in embedded/automation contexts).
+      // Players can opt into immersive mouse-look with the L key.
     }
 
     _pause() {
@@ -257,7 +259,23 @@ import * as THREE from 'three';
       this.state = 'playing';
       this.overlay.style.display = 'none';
       this.crosshair.style.display = 'block';
-      this.renderer.domElement.requestPointerLock();
+    }
+
+    _toggleLock() {
+      if (this.isLocked) { try { document.exitPointerLock(); } catch (e) { /* ignore */ } }
+      else this._requestLock();
+    }
+
+    // Best-effort pointer lock. Returns silently if the environment forbids it
+    // (e.g. sandboxed iframe / no user-gesture). The modern API returns a
+    // Promise that can reject — swallow it so it never hits the console, and
+    // the cursor-position fallback aim in _mm takes over automatically.
+    _requestLock() {
+      try {
+        const el = this.renderer.domElement;
+        const p = el.requestPointerLock ? el.requestPointerLock() : null;
+        if (p && typeof p.catch === 'function') p.catch(() => {});
+      } catch (e) { /* pointer lock unavailable — fallback aim is used */ }
     }
 
     _clearEnemies() {
@@ -275,6 +293,7 @@ import * as THREE from 'three';
         if (e.code === 'KeyA') this.input.a = true;
         if (e.code === 'KeyD') this.input.d = true;
         if (e.code === 'Escape') { if (this.state === 'playing') this._pause(); else if (this.state === 'paused') this._resume(); }
+        if (e.code === 'KeyL' && this.state === 'playing') this._toggleLock();
         if (e.key === '4') this.renderer.setPixelRatio(Math.min(window.devicePixelRatio * 1.5, 3));
         if (e.key === '3') this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         if (e.key === '2') this.renderer.setPixelRatio(1);
@@ -287,14 +306,28 @@ import * as THREE from 'three';
         if (e.code === 'KeyD') this.input.d = false;
       };
       this._mm = e => {
-        if (!this.isLocked || this.state !== 'playing') return;
-        this.yaw   -= e.movementX * 0.002;
-        this.pitch -= e.movementY * 0.002;
+        if (this.state !== 'playing') return;
+        if (this.isLocked) {
+          // Relative mouse-look (pointer lock active).
+          this.yaw   -= e.movementX * 0.002;
+          this.pitch -= e.movementY * 0.002;
+        } else {
+          // Fallback aim: map the cursor's position within the canvas to a
+          // look direction so the game is fully playable without pointer lock.
+          const rect = this.renderer.domElement.getBoundingClientRect();
+          if (!rect.width || !rect.height) return;
+          const nx = (e.clientX - rect.left) / rect.width  - 0.5;
+          const ny = (e.clientY - rect.top)  / rect.height - 0.5;
+          this.yaw   = -nx * 2.2;
+          this.pitch = -ny * 1.6;
+        }
         this.pitch = Math.max(-1.1, Math.min(1.1, this.pitch));
       };
       this._click = () => {
-        if (this.state === 'playing' && this.isLocked) this._shoot();
-        else if (this.state === 'playing') this.renderer.domElement.requestPointerLock();
+        if (this.state !== 'playing') return;
+        // Always shoot (the crosshair is screen-centre and the camera is aimed
+        // there in both lock modes). Pointer lock is opt-in via the L key.
+        this._shoot();
       };
       this._plc = () => { this.isLocked = document.pointerLockElement === this.renderer.domElement; };
       this._rsz = () => this._resize();

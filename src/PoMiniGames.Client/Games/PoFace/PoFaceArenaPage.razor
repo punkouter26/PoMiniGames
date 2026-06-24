@@ -28,15 +28,33 @@
     }
     else if (_phase == "Ready")
     {
-        <div class="pf-ready">
-            <h2>Round @(_currentRound + 1) of 5</h2>
-            <p class="pf-prompt">Make this face: <strong>@_currentEmotion</strong></p>
-            <video id="pf-webcam-preview" autoplay playsinline muted style="max-width:100%;border-radius:8px;"></video>
-            <div id="pf-frozen-overlay" class="pf-frozen-overlay"></div>
-            <div class="pf-actions">
-                <button class="pf-btn pf-btn-primary" @onclick="CaptureAndScore">📸 Capture</button>
+        @if (_stub)
+        {
+            <div class="pf-ready">
+                <h2>Round @(_currentRound + 1) of 5</h2>
+                <p class="pf-prompt">Tap the face that shows: <strong>@_currentEmotion</strong></p>
+                <div class="pf-choice-grid" style="display:flex;flex-wrap:wrap;gap:0.75rem;justify-content:center;margin:1rem 0;">
+                    @foreach (var emo in _choices)
+                    {
+                        var choice = emo;
+                        <button class="pf-btn pf-face-choice" style="font-size:2.5rem;padding:0.5rem 0.9rem;" @onclick="() => PickEmotion(choice)">@EmojiFor(choice)</button>
+                    }
+                </div>
+                <p class="pf-score-line">Score: <strong>@_localTotal</strong></p>
             </div>
-        </div>
+        }
+        else
+        {
+            <div class="pf-ready">
+                <h2>Round @(_currentRound + 1) of 5</h2>
+                <p class="pf-prompt">Make this face: <strong>@_currentEmotion</strong></p>
+                <video id="pf-webcam-preview" autoplay playsinline muted style="max-width:100%;border-radius:8px;"></video>
+                <div id="pf-frozen-overlay" class="pf-frozen-overlay"></div>
+                <div class="pf-actions">
+                    <button class="pf-btn pf-btn-primary" @onclick="CaptureAndScore">📸 Capture</button>
+                </div>
+            </div>
+        }
     }
     else if (_phase == "Scoring")
     {
@@ -44,22 +62,48 @@
     }
     else if (_phase == "Reveal")
     {
-        <div class="pf-reveal">
-            <h2>Round @(_currentRound + 1) result</h2>
-            <p>Target: <strong>@_currentEmotion</strong></p>
-            <p>Confidence: @((_lastScore?.Confidence * 100)?.ToString("F0"))%</p>
-            <p>Head pose valid: @(_lastScore?.HeadPoseValid == true ? "✅" : "❌")</p>
-            <p>Score: <strong>@_lastScore?.Score</strong></p>
-            <p>Total: <strong>@_lastScore?.TotalScore</strong></p>
-            <button class="pf-btn pf-btn-primary" @onclick="NextRound">@(_currentRound + 1 < 5 ? "Next round" : "See results")</button>
-        </div>
+        @if (_stub)
+        {
+            <div class="pf-reveal">
+                <h2>Round @(_currentRound + 1) result</h2>
+                <p>Target: <strong>@_currentEmotion @EmojiFor(_currentEmotion)</strong></p>
+                <p>You picked: <strong style="font-size:1.6rem;">@EmojiFor(_picked)</strong></p>
+                <p>@(_lastCorrect ? $"✅ Correct! +{_lastPoints} (speed bonus)" : "❌ Not quite")</p>
+                @if (_streak > 1)
+                {
+                    <p>🔥 Streak: <strong>@_streak</strong></p>
+                }
+                <p>Total: <strong>@_localTotal</strong></p>
+                <button class="pf-btn pf-btn-primary" @onclick="NextRound">@(_currentRound + 1 < 5 ? "Next round" : "See results")</button>
+            </div>
+        }
+        else
+        {
+            <div class="pf-reveal">
+                <h2>Round @(_currentRound + 1) result</h2>
+                <p>Target: <strong>@_currentEmotion</strong></p>
+                <p>Confidence: @((_lastScore?.Confidence * 100)?.ToString("F0"))%</p>
+                <p>Head pose valid: @(_lastScore?.HeadPoseValid == true ? "✅" : "❌")</p>
+                <p>Score: <strong>@_lastScore?.Score</strong></p>
+                <p>Total: <strong>@_lastScore?.TotalScore</strong></p>
+                <button class="pf-btn pf-btn-primary" @onclick="NextRound">@(_currentRound + 1 < 5 ? "Next round" : "See results")</button>
+            </div>
+        }
     }
     else if (_phase == "GameOver")
     {
         <div class="pf-gameover">
             <h2>🎉 Game over</h2>
             <p>Total score: <strong>@_finalTotal</strong> / 50</p>
-            <a class="pf-btn pf-btn-primary" href="@($"/face/recap/{_sessionId}")">View recap</a>
+            @if (_stub)
+            {
+                <button class="pf-btn pf-btn-primary" @onclick="ResetStub">Play again</button>
+                <a class="pf-btn pf-btn-secondary" href="/face">Back</a>
+            }
+            else
+            {
+                <a class="pf-btn pf-btn-primary" href="@($"/face/recap/{_sessionId}")">View recap</a>
+            }
         </div>
     }
 
@@ -80,6 +124,16 @@
     private int _finalTotal;
     private string? _error;
 
+    // Offline ("stub") mode: a real, camera-free emoji-matching mini-game.
+    private bool _stub;
+    private int _localTotal;
+    private bool _lastCorrect;
+    private string? _picked;
+    private string[] _choices = Array.Empty<string>();
+    private DateTime _roundShownAt = DateTime.UtcNow;
+    private int _streak;
+    private int _lastPoints;
+
     private static readonly string[] RoundOrder = { "Happiness", "Surprise", "Anger", "Sadness", "Fear" };
 
     protected override async Task OnInitializedAsync()
@@ -89,16 +143,17 @@
             var resp = await Http.PostAsync("/api/face/sessions", content: null);
             if (!resp.IsSuccessStatusCode)
             {
-                _error = $"Failed to start session: {(int)resp.StatusCode}. Make sure you're signed in.";
-                _phase = "Init";
+                // No backend session (e.g. not signed in / API unavailable) — the
+                // offline emoji-match mini-game still works, so offer it.
+                _phase = "NoCamera";
                 return;
             }
             var session = await resp.Content.ReadFromJsonAsync<SessionDto>();
             _sessionId = session!.SessionId;
         }
-        catch (Exception ex)
+        catch
         {
-            _error = ex.Message;
+            _phase = "NoCamera";
             return;
         }
 
@@ -124,9 +179,61 @@
 
     private async Task ActivateStubMode()
     {
-        await JS.InvokeVoidAsync("webcamInterop.activateStubMode");
+        try { await JS.InvokeVoidAsync("webcamInterop.activateStubMode"); } catch { /* offline mode needs no camera */ }
+        ResetStub();
+    }
+
+    // Camera-free mini-game: show a target emotion, player taps the matching emoji.
+    private void PickEmotion(string choice)
+    {
+        _picked = choice;
+        _lastCorrect = string.Equals(choice, _currentEmotion, StringComparison.Ordinal);
+        if (_lastCorrect)
+        {
+            // Base 6 for a correct answer + up to 4 for speed (answer within ~1s
+            // for the full bonus). Caps at 10/round so the total stays out of 50.
+            var elapsed = (DateTime.UtcNow - _roundShownAt).TotalSeconds;
+            var speedBonus = Math.Clamp(4 - (int)elapsed, 0, 4);
+            _lastPoints = 6 + speedBonus;
+            _localTotal += _lastPoints;
+            _streak++;
+        }
+        else
+        {
+            _lastPoints = 0;
+            _streak = 0;
+        }
+        _phase = "Reveal";
+    }
+
+    private void BuildChoices()
+    {
+        _choices = RoundOrder.OrderBy(_ => Random.Shared.Next()).ToArray();
+        _roundShownAt = DateTime.UtcNow;
+    }
+
+    private void ResetStub()
+    {
+        _stub = true;
+        _localTotal = 0;
+        _currentRound = 0;
+        _lastScore = null;
+        _picked = null;
+        _streak = 0;
+        _currentEmotion = RoundOrder[0];
+        BuildChoices();
         _phase = "Ready";
     }
+
+    private static string EmojiFor(string? emotion) => emotion switch
+    {
+        "Happiness" => "😄",
+        "Surprise" => "😲",
+        "Anger" => "😠",
+        "Sadness" => "😢",
+        "Fear" => "😱",
+        _ => "❓"
+    };
 
     private async Task CaptureAndScore()
     {
@@ -177,10 +284,11 @@
         if (_currentRound >= 5)
         {
             _phase = "GameOver";
-            _finalTotal = _lastScore?.TotalScore ?? 0;
+            _finalTotal = _stub ? _localTotal : (_lastScore?.TotalScore ?? 0);
             return;
         }
         _currentEmotion = RoundOrder[_currentRound];
+        if (_stub) BuildChoices();
         _phase = "Ready";
     }
 

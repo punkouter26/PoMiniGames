@@ -7,7 +7,48 @@
 @implements IAsyncDisposable
 
 <GameShell Title=@TitleContent Player="@_playerName" BackTo="/" ShowSettings="false">
-    @if (!_isConnected)
+    @if (_solo)
+    {
+        <div class="cq-solo">
+            @if (!_soloFinished)
+            {
+                <h2>💕 PoCoupleQuiz · Solo</h2>
+                <p>Round @(_soloRound + 1) of @_soloQuestions.Count · Score: <strong>@_soloScore</strong></p>
+                <p class="cq-solo-question"><strong>@CurrentSoloQuestion.Text</strong></p>
+                @if (!_soloRevealed)
+                {
+                    <div class="cq-actions" style="flex-wrap:wrap;">
+                        @for (int i = 0; i < CurrentSoloQuestion.Options.Length; i++)
+                        {
+                            var idx = i;
+                            <button class="cq-btn cq-btn-secondary" @onclick="() => SoloPick(idx)">@CurrentSoloQuestion.Options[idx]</button>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <p>Your partner picked: <strong>@CurrentSoloQuestion.Options[CurrentSoloQuestion.PartnerIndex]</strong></p>
+                    <p>@(_soloLastMatch ? $"💞 Match! +{_soloLastPoints}" : "💔 No match")</p>
+                    @if (_soloStreak > 1)
+                    {
+                        <p>🔥 Streak: <strong>@_soloStreak</strong></p>
+                    }
+                    <button class="cq-btn cq-btn-primary" @onclick="SoloNext">@(_soloRound + 1 < _soloQuestions.Count ? "Next" : "See results")</button>
+                }
+            }
+            else
+            {
+                <h2>💕 Results</h2>
+                <p>You matched your partner <strong>@_soloMatches</strong> / @_soloQuestions.Count times.</p>
+                <p>Score: <strong>@_soloScore</strong></p>
+                <div class="cq-actions">
+                    <button class="cq-btn cq-btn-primary" @onclick="StartSolo">Play again</button>
+                    <button class="cq-btn cq-btn-secondary" @onclick="ExitSolo">Back to lobby</button>
+                </div>
+            }
+        </div>
+    }
+    else if (!_isConnected)
     {
         <div class="cq-connecting">
             <p>Connecting to the game server…</p>
@@ -37,6 +78,10 @@
             <div class="cq-actions">
                 <button class="cq-btn cq-btn-primary" @onclick="OnJoinOrCreate">Find or create a lobby</button>
                 <button class="cq-btn cq-btn-secondary" @onclick="OnJoinByCode" disabled="@string.IsNullOrWhiteSpace(_joinCode)">Join by code</button>
+            </div>
+            <p class="cq-solo-hint">No second player? <strong>Play solo</strong> against an AI partner — guess what they'd pick.</p>
+            <div class="cq-actions">
+                <button class="cq-btn cq-btn-secondary" @onclick="StartSolo">Play solo (vs AI partner)</button>
             </div>
             @if (!string.IsNullOrEmpty(_error))
             {
@@ -86,6 +131,40 @@
     private string? _error;
     private bool _isConnected;
     private CoupleQuizLobbyEventPayload? _lobby;
+
+    // ── Solo mode (offline, no hub, no AI service) ───────────────────────────
+    private bool _solo;
+    private int _soloRound;
+    private int _soloScore;
+    private int _soloMatches;
+    private int _soloStreak;
+    private int _soloLastPoints;
+    private bool _soloRevealed;
+    private bool _soloLastMatch;
+    private bool _soloFinished;
+    private List<SoloQ> _soloQuestions = new();
+
+    private SoloQ CurrentSoloQuestion => _soloQuestions[_soloRound];
+
+    private static readonly SoloQ[] SoloBank =
+    {
+        new("Your ideal first date?", new[] { "Dinner & a movie", "Hiking adventure", "Cozy night in", "Theme park" }, 2),
+        new("Favourite way to relax together?", new[] { "Binge a series", "Cook a meal", "Go for a walk", "Play games" }, 1),
+        new("Dream vacation?", new[] { "Beach resort", "City exploring", "Mountain cabin", "Road trip" }, 0),
+        new("Pet you'd adopt together?", new[] { "Dog", "Cat", "Something exotic", "No pets" }, 0),
+        new("Saturday morning vibe?", new[] { "Sleep in", "Farmers market", "Gym session", "Big breakfast" }, 3),
+        new("Go-to date snack?", new[] { "Popcorn", "Ice cream", "Chocolate", "Chips" }, 1),
+        new("Music for a road trip?", new[] { "Pop hits", "Classic rock", "Lo-fi chill", "Throwback 90s" }, 2),
+        new("Best gift to receive?", new[] { "Handwritten note", "Tech gadget", "Experience day", "Something cosy" }, 0),
+        new("How do you settle a disagreement?", new[] { "Rock paper scissors", "Talk it out", "Coin flip", "Compromise" }, 3),
+        new("The perfect evening ends with?", new[] { "Stargazing", "Late-night snack", "A good movie", "Dancing" }, 0),
+        new("Favourite season for a date?", new[] { "Spring", "Summer", "Autumn", "Winter" }, 2),
+        new("Coffee order of choice?", new[] { "Black coffee", "Latte", "Tea instead", "Hot chocolate" }, 1),
+        new("Dream night out?", new[] { "Concert", "Comedy club", "Fancy dinner", "Game night" }, 0),
+        new("Most-used emoji?", new[] { "😂", "❤️", "👍", "🔥" }, 1),
+        new("Ideal weekend trip?", new[] { "Camping", "Spa retreat", "City break", "Stay home" }, 2),
+        new("Who picks the movie?", new[] { "You", "Them", "Take turns", "Flip for it" }, 2),
+    };
 
     protected override async Task OnInitializedAsync()
     {
@@ -159,6 +238,54 @@
         }
     }
     private void HandleError(string message) => _error = message;
+
+    // ── Solo mode handlers ───────────────────────────────────────────────────
+    private void StartSolo()
+    {
+        var rounds = _difficulty switch { "Easy" => 3, "Hard" => 7, _ => 5 };
+        rounds = Math.Min(rounds, SoloBank.Length);
+        _soloQuestions = SoloBank.OrderBy(_ => Random.Shared.Next()).Take(rounds).ToList();
+        _soloRound = 0;
+        _soloScore = 0;
+        _soloMatches = 0;
+        _soloStreak = 0;
+        _soloLastPoints = 0;
+        _soloRevealed = false;
+        _soloLastMatch = false;
+        _soloFinished = false;
+        _solo = true;
+    }
+
+    private void SoloPick(int idx)
+    {
+        if (_soloRevealed) return;
+        _soloLastMatch = idx == CurrentSoloQuestion.PartnerIndex;
+        if (_soloLastMatch)
+        {
+            _soloStreak++;
+            _soloMatches++;
+            // 10 per match, plus a growing streak bonus (capped) for consecutive hits.
+            _soloLastPoints = 10 + Math.Min((_soloStreak - 1) * 5, 15);
+            _soloScore += _soloLastPoints;
+        }
+        else
+        {
+            _soloStreak = 0;
+            _soloLastPoints = 0;
+        }
+        _soloRevealed = true;
+    }
+
+    private void SoloNext()
+    {
+        if (_soloRound + 1 >= _soloQuestions.Count) { _soloFinished = true; return; }
+        _soloRound++;
+        _soloRevealed = false;
+    }
+
+    private void ExitSolo() => _solo = false;
+
+    private sealed record SoloQ(string Text, string[] Options, int PartnerIndex);
 
     private void HandleGameStarted(CoupleQuizGameStartedPayload p)
     {

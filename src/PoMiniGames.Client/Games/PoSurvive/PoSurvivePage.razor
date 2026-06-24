@@ -105,6 +105,18 @@
                     </button>
                 </div>
 
+                @if (!CanLaunchSimulation)
+                {
+                    <div class="launch-card__actions">
+                        <button class="c64-btn"
+                                @onclick="EnterDegradedMode"
+                                data-testid="btn-degraded-home"
+                                title="Play immediately using built-in fallback tactics — no model download required.">
+                            [ PLAY NOW — FALLBACK AI (no download) ]
+                        </button>
+                    </div>
+                }
+
                 <p class="launch-card__hint" data-testid="home-launch-hint">@LaunchButtonHint</p>
 
                 <details class="launch-card__advanced">
@@ -242,6 +254,16 @@
     private void GoBoot()
     {
         Nav.NavigateTo("/boot");
+    }
+
+    // Enable degraded mode straight from Mission Control so the game is playable
+    // without the multi-hundred-MB WebLLM download. Fallback tactics drive the
+    // agents; then point the user at the top-bar START control.
+    private async Task EnterDegradedMode()
+    {
+        Dispatcher.Dispatch(new ContinueDegradedModeAction());
+        await Task.Yield();
+        await FocusStartControl();
     }
 
     [JSInvokable]

@@ -41,8 +41,23 @@
         </div>
         
         <div class="snake-instructions">
-            <p>Use Arrow Keys or WASD to move</p>
-            <p>Click Start to begin</p>
+            @if (!_gameStarted && _gameResult == GameResult.InProgress)
+            {
+                <button class="snake-start-btn" style="font-size:1.1rem;padding:0.5rem 1.4rem;margin-bottom:0.4rem;cursor:pointer;" @onclick="StartGame">▶ Start</button>
+                <p>Press an arrow key / WASD, or use the buttons below</p>
+            }
+            else
+            {
+                <p>Arrow Keys / WASD or the buttons below</p>
+            }
+            <div class="snake-dpad" style="display:flex;flex-direction:column;align-items:center;gap:0.35rem;margin-top:0.4rem;">
+                <button class="snake-dpad-btn" style="width:3rem;height:3rem;font-size:1.2rem;cursor:pointer;" @onclick="@(() => Steer(-1, 0))" aria-label="Up">▲</button>
+                <div style="display:flex;gap:0.35rem;">
+                    <button class="snake-dpad-btn" style="width:3rem;height:3rem;font-size:1.2rem;cursor:pointer;" @onclick="@(() => Steer(0, -1))" aria-label="Left">◀</button>
+                    <button class="snake-dpad-btn" style="width:3rem;height:3rem;font-size:1.2rem;cursor:pointer;" @onclick="@(() => Steer(1, 0))" aria-label="Down">▼</button>
+                    <button class="snake-dpad-btn" style="width:3rem;height:3rem;font-size:1.2rem;cursor:pointer;" @onclick="@(() => Steer(0, 1))" aria-label="Right">▶</button>
+                </div>
+            </div>
         </div>
     </div>
 </GameShell>
@@ -152,23 +167,19 @@
         {
             case "arrowup":
             case "w":
-                _board.SetDirection(-1, 0);
-                if (!_gameStarted) StartGame();
+                Steer(-1, 0);
                 break;
             case "arrowdown":
             case "s":
-                _board.SetDirection(1, 0);
-                if (!_gameStarted) StartGame();
+                Steer(1, 0);
                 break;
             case "arrowleft":
             case "a":
-                _board.SetDirection(0, -1);
-                if (!_gameStarted) StartGame();
+                Steer(0, -1);
                 break;
             case "arrowright":
             case "d":
-                _board.SetDirection(0, 1);
-                if (!_gameStarted) StartGame();
+                Steer(0, 1);
                 break;
             case " ":
                 if (!_gameStarted && _gameResult == GameResult.InProgress)
@@ -177,6 +188,15 @@
                     StartGame();
                 break;
         }
+    }
+
+    // Shared steering entry point for keyboard and the on-screen D-pad buttons.
+    // Starts the game on the first directional input.
+    private void Steer(int dRow, int dCol)
+    {
+        if (_gameResult != GameResult.InProgress) return;
+        _board.SetDirection(dRow, dCol);
+        if (!_gameStarted) StartGame();
     }
 
     private void ResetGame()

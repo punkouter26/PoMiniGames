@@ -6,18 +6,14 @@
 <GameShell Title=@TitleContent BackTo="/" ShowSettings="false">
     <div class="pf-home">
         <h2>🙂 PoFace</h2>
-        <p>Five rounds of facial-expression detection. Make the right face, score the points.</p>
-        <p>This is a <strong>proof-of-pattern</strong> page for the consolidation. The full game requires camera permission and a multimodal Azure OpenAI deployment.</p>
+        <p>Five rounds of expression matching. With a webcam + Azure OpenAI you make the face on camera; otherwise play the camera-free emoji-match mode — both score out of 50.</p>
 
-        @if (_apiOnline != true)
+        <a class="pf-btn pf-btn-primary" href="/face/arena">▶ Play (5 rounds)</a>
+
+        @if (_apiOnline == true)
         {
-            <p class="pf-warning">⚠️ The /api/face/status endpoint is not reachable from this build. Make sure the API is running.</p>
-        }
-        else
-        {
-            <p>API: <strong>@(_isMock ? "Stub (no real AI)" : "Azure OpenAI")</strong></p>
-            <button class="pf-btn pf-btn-primary" @onclick="StartSession">Start new session</button>
-            <a class="pf-btn pf-btn-secondary" href="/face/arena">Go to arena (5-round game)</a>
+            <p>Camera scoring API: <strong>@(_isMock ? "Stub (no real AI)" : "Azure OpenAI")</strong></p>
+            <button class="pf-btn pf-btn-secondary" @onclick="StartSession">Start new session</button>
             @if (_lastSessionId is not null)
             {
                 <p>Last session: <code>@_lastSessionId</code> · total: @_lastTotal</p>
@@ -26,6 +22,10 @@
             {
                 <p class="pf-error">@_error</p>
             }
+        }
+        else
+        {
+            <p class="pf-note">Camera scoring API isn't reachable — the arena will run in offline emoji-match mode.</p>
         }
     </div>
 </GameShell>

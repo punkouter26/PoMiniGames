@@ -35,6 +35,16 @@
                 </div>
             }
         </div>
+        @if (_timer != null)
+        {
+            <div class="race-boost" style="text-align:center;margin:0.6rem 0;">
+                <button class="cq-btn cq-btn-primary" style="font-size:1.1rem;padding:0.5rem 1.4rem;cursor:pointer;"
+                        @onclick="Boost" disabled="@(_boostsLeft <= 0)">
+                    ⚡ Boost Horse @(_selectedHorse + 1)
+                </button>
+                <span style="margin-left:0.6rem;">Boosts left: <strong>@_boostsLeft</strong></span>
+            </div>
+        }
         <div class="race-result">
             @if (_finished)
             {
@@ -48,9 +58,11 @@
     private string _playerName = "";
     private List<StatItem> _statItems = new();
     private double[] _horsePositions = { 0, 0, 0, 0 };
+    private double[] _horseSpeeds = { 1, 1, 1, 1 };
     private bool _finished;
     private string _result = "";
     private int _selectedHorse;
+    private int _boostsLeft;
     private System.Threading.Timer? _timer;
     private bool _isOffline = false;
     private PlayerStats _stats = new();
@@ -63,6 +75,7 @@
     private RenderFragment ControlsContent => @<div class="gps-controls">
         <button @onclick="StartRace" disabled="@(_timer != null)">🏁 Start Race</button>
         <button @onclick="ResetGame">🔄 Reset</button>
+        <button @onclick="Boost" disabled="@(_timer == null || _boostsLeft <= 0)">⚡ Boost</button>
         <span>Selected: Horse @(_selectedHorse + 1)</span>
     </div>;
 
@@ -87,13 +100,26 @@
         _selectedHorse = horse;
     }
 
+    // Active gameplay: spend a boost to nudge your chosen horse forward.
+    private void Boost()
+    {
+        if (_timer == null || _finished || _boostsLeft <= 0) return;
+        _boostsLeft--;
+        _horsePositions[_selectedHorse] = Math.Min(100, _horsePositions[_selectedHorse] + 2.5);
+    }
+
     private void StartRace()
     {
         if (_timer != null) return;
         _finished = false;
         _result = "";
         _horsePositions = new double[] { 0, 0, 0, 0 };
-        
+        _boostsLeft = 12;
+        // Give each horse a distinct pace for this race so the lead actually
+        // changes hands and a pick feels less predetermined.
+        _horseSpeeds = new double[4];
+        for (int i = 0; i < 4; i++) _horseSpeeds[i] = 0.7 + Random.Shared.NextDouble() * 0.7;
+
         _timer = new System.Threading.Timer(_ => InvokeAsync(Tick), null, 100, 100);
         
         // Save last played game (UX 10)
@@ -104,7 +130,7 @@
     {
         for (int i = 0; i < 4; i++)
         {
-            _horsePositions[i] += Random.Shared.NextDouble() * 3;
+            _horsePositions[i] += Random.Shared.NextDouble() * 3 * _horseSpeeds[i];
             if (_horsePositions[i] >= 100)
             {
                 _horsePositions[i] = 100;

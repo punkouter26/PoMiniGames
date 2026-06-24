@@ -1,0 +1,52 @@
+@* PoJoker — single joke card (setup / AI guess / punchline). Ported from the standalone app. *@
+
+<div class="joke-card @(IsTriumph == true ? "triumph" : (ShowResult ? "defeat" : ""))">
+    @if (ShowCategory && Joke is not null)
+    {
+        <div class="joke-category">
+            <span class="badge">@Joke.Category</span>
+        </div>
+    }
+
+    @if (ShowSetup && Joke is not null)
+    {
+        <div class="joke-setup">
+            <p>@Joke.Setup</p>
+        </div>
+    }
+
+    @if (!string.IsNullOrEmpty(AiGuess))
+    {
+        <div class="ai-guess">
+            <span class="label">🎭 Jester's Guess:</span>
+            <p>@AiGuess</p>
+        </div>
+    }
+    else if (IsThinking)
+    {
+        <div class="ai-guess ai-guess--thinking" aria-label="Jester is thinking..." aria-live="polite">
+            <span class="label">🎭 Jester's Guess:</span>
+            <div class="skeleton-line skeleton-line--long"></div>
+            <div class="skeleton-line skeleton-line--short"></div>
+        </div>
+    }
+
+    @if (ShowPunchline && Joke is not null)
+    {
+        <div class="joke-punchline">
+            <span class="label">📜 Actual Punchline:</span>
+            <p>@Joke.Punchline</p>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public JokeDto? Joke { get; set; }
+    [Parameter] public bool ShowSetup { get; set; }
+    [Parameter] public bool ShowPunchline { get; set; }
+    [Parameter] public bool ShowCategory { get; set; }
+    [Parameter] public string? AiGuess { get; set; }
+    [Parameter] public bool? IsTriumph { get; set; }
+    [Parameter] public bool ShowResult { get; set; }
+    [Parameter] public bool IsThinking { get; set; }
+}

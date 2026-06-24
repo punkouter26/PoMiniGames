@@ -59,5 +59,6 @@ public static class GameCatalog
         new(GameKeys.PoRunner, "PoRunner", "⚡", "/porunner/demo"),
         new(GameKeys.PoRacer, "PoRacer", "🏎️", "/poracer/demo"),
         new(GameKeys.PoMarbleRace, "PoMarbleRace", "🔮", "/pomarblerace?demo=1"),
+        new(GameKeys.PoJoker, "PoJoker", "🃏", "/pojoker"),
     ];
 }

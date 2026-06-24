@@ -6,6 +6,7 @@ using PoMiniGames.Features.MatchHistory;
 using PoMiniGames.Features.PoCoupleQuiz;
 using PoMiniGames.Features.PoFace;
 using PoMiniGames.Features.PoFunQuiz;
+using PoMiniGames.Features.PoJoker;
 using PoMiniGames.Features.PoRaceRagdoll;
 using PoMiniGames.Features.PoRacer;
 using PoMiniGames.Features.PoRunner;
@@ -53,6 +54,9 @@ internal static class EndpointRouteExtensions
 
         // ── PoFace (HTTP-only in the consolidation MVP) ────────────────────
         app.MapFaceEndpoints();
+
+        // ── PoJoker (demo-only autonomous comedy show; HTTP-only) ──────────
+        app.MapPoJokerEndpoints();
 
         // ── PoRunner (SignalR) ─────────────────────────────────────────────
         app.MapHub<GameHub>("/porunner/gamehub");

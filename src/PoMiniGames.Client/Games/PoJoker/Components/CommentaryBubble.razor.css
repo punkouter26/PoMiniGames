@@ -1,0 +1,81 @@
+.commentary-bubble {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 1rem 1.25rem;
+    margin: 1rem 0;
+    background: rgba(26, 26, 46, 0.95);
+    border: 2px solid var(--color-gold, #d4af37);
+    border-radius: 16px;
+    position: relative;
+    animation: bubble-appear 0.5s ease-out;
+}
+
+.commentary-bubble::before {
+    content: '';
+    position: absolute;
+    bottom: -10px;
+    left: 24px;
+    width: 0;
+    height: 0;
+    border-left: 10px solid transparent;
+    border-right: 10px solid transparent;
+    border-top: 10px solid var(--color-gold, #d4af37);
+}
+
+.commentary-bubble::after {
+    content: '';
+    position: absolute;
+    bottom: -6px;
+    left: 26px;
+    width: 0;
+    height: 0;
+    border-left: 8px solid transparent;
+    border-right: 8px solid transparent;
+    border-top: 8px solid rgba(26, 26, 46, 0.95);
+}
+
+.jester-icon {
+    font-size: 2rem;
+    flex-shrink: 0;
+}
+
+.commentary-text {
+    font-family: var(--font-body, 'MedievalSharp', serif);
+    color: var(--color-text, #e0e0e0);
+    font-size: 1rem;
+    line-height: 1.5;
+    font-style: italic;
+}
+
+/* Triumph state - golden glow */
+.commentary-bubble.triumph {
+    border-color: #ffd700;
+    box-shadow: 0 0 20px rgba(255, 215, 0, 0.4);
+    background: linear-gradient(135deg, rgba(26, 26, 46, 0.95) 0%, rgba(40, 40, 60, 0.95) 100%);
+}
+
+.commentary-bubble.triumph .commentary-text {
+    color: #ffd700;
+}
+
+/* Defeat state - purple/melancholic */
+.commentary-bubble.defeat {
+    border-color: #8a5dc6;
+    box-shadow: 0 0 15px rgba(138, 93, 198, 0.3);
+}
+
+.commentary-bubble.defeat .commentary-text {
+    color: #b39ddb;
+}
+
+@keyframes bubble-appear {
+    0% {
+        opacity: 0;
+        transform: translateY(10px) scale(0.95);
+    }
+    100% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}

@@ -1,0 +1,84 @@
+@page "/pojoker/leaderboard"
+@using System.Net.Http
+@using System.Net.Http.Json
+@using Radzen
+@using Radzen.Blazor
+@using PoMiniGamesClient.Components
+@using LeaderboardEntryDto = PoShared.Games.PoJoker.LeaderboardEntryDto
+@inject HttpClient Http
+
+<PageTitle>PoJoker — Hall of Champions</PageTitle>
+
+<GameShell Title="@TitleContent"
+           BackTo="/pojoker"
+           ShowSettings="false"
+           ShowPlayAgain="false">
+    <div class="pojoker-root">
+        <header class="leaderboard-header">
+            <h1>🏆 Hall of Champions</h1>
+            <p class="subtitle">The greatest Jesters in the realm</p>
+        </header>
+
+        <div class="leaderboard-controls">
+            <RadzenButton Text="Refresh" Icon="refresh" Click="@(async _ => await LoadLeaderboard())" />
+        </div>
+
+        <div class="leaderboard-container">
+            @if (_isLoading)
+            {
+                <div class="loading-state"><p>Consulting the royal records...</p></div>
+            }
+            else if (_entries.Count == 0)
+            {
+                <div class="empty-state">
+                    <p>🎭 No champions yet!</p>
+                    <p class="subtitle">Be the first to claim glory on the stage.</p>
+                    <a href="/pojoker" class="pojoker-link">Begin Performance</a>
+                </div>
+            }
+            else
+            {
+                <RadzenDataGrid Data="@_entries" TItem="LeaderboardEntryDto" AllowPaging="true" PageSize="10" AllowSorting="true">
+                    <Columns>
+                        <RadzenDataGridColumn TItem="LeaderboardEntryDto" Property="Rank" Title="Rank" Width="80px" />
+                        <RadzenDataGridColumn TItem="LeaderboardEntryDto" Property="SessionId" Title="Session" />
+                        <RadzenDataGridColumn TItem="LeaderboardEntryDto" Property="Triumphs" Title="Triumphs" />
+                        <RadzenDataGridColumn TItem="LeaderboardEntryDto" Property="TriumphRate" Title="Success %">
+                            <Template Context="entry">@entry.TriumphRate.ToString("P1")</Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="LeaderboardEntryDto" Property="Score" Title="Score">
+                            <Template Context="entry">@entry.Score.ToString("F1")</Template>
+                        </RadzenDataGridColumn>
+                    </Columns>
+                </RadzenDataGrid>
+            }
+        </div>
+    </div>
+</GameShell>
+
+@code {
+    private List<LeaderboardEntryDto> _entries = [];
+    private bool _isLoading = true;
+
+    private readonly RenderFragment TitleContent = builder => builder.AddContent(0, "🏆 PoJoker Leaderboard");
+
+    protected override async Task OnInitializedAsync() => await LoadLeaderboard();
+
+    private async Task LoadLeaderboard()
+    {
+        _isLoading = true;
+        StateHasChanged();
+        try
+        {
+            _entries = await Http.GetFromJsonAsync<List<LeaderboardEntryDto>>("/api/joker/leaderboard?sortBy=Triumph&top=25") ?? [];
+        }
+        catch
+        {
+            _entries = [];
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+}

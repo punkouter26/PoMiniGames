@@ -1,0 +1,24 @@
+@page "/pojoker"
+@using PoMiniGamesClient.Components
+@using PoMiniGamesClient.Games.PoJoker.Components
+
+<PageTitle>PoJoker — The Digital Jester</PageTitle>
+
+<GameShell Title="@TitleContent"
+           BackTo="/"
+           ShowSettings="false"
+           ShowPlayAgain="false">
+    <div class="pojoker-root">
+        <div class="pojoker-toolbar">
+            <a href="/pojoker/leaderboard" class="pojoker-link">🏆 Hall of Champions</a>
+        </div>
+        <JesterStage AutoStart="true" />
+    </div>
+</GameShell>
+
+@code {
+    private readonly RenderFragment TitleContent = builder =>
+    {
+        builder.AddContent(0, "🃏 PoJoker");
+    };
+}

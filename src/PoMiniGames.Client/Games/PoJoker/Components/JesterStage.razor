@@ -1,0 +1,99 @@
+@using System.Net.Http
+@inject HttpClient Http
+@inject IJokerSpeechService SpeechService
+@inject IJokerAudioService AudioService
+@inject PerformanceSettings PerformanceSettings
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+<NetworkAwaiting IsVisible="@_orchestrator.ShowNetworkOverlay"
+                 Message="Connection lost. Retrying."
+                 StatusText="@_orchestrator.NetworkStatusText"
+                 IsRetrying="@_orchestrator.IsRetrying"
+                 RetryCount="@_orchestrator.RetryCount" />
+
+<div class="jester-stage">
+    <div class="stage-header">
+        <h2>🎭 The Digital Jester</h2>
+    </div>
+
+    <PerformanceDisplay CurrentState="@_orchestrator.CurrentState"
+                        CurrentJoke="@_orchestrator.CurrentJoke"
+                        CurrentAnalysis="@_orchestrator.CurrentAnalysis"
+                        JokesDisplayed="@_orchestrator.JokesDisplayed"
+                        TopJokes="@_orchestrator.TopJokes"
+                        SessionTriumphs="@_orchestrator.SessionTriumphs"
+                        OnReplay="@ReplayPerformance" />
+
+    <PerformanceControls IsRunning="@_orchestrator.IsRunning"
+                         OnStart="@StartPerformance"
+                         OnStop="@StopPerformance" />
+</div>
+
+@code {
+    private PerformanceOrchestrator _orchestrator = null!;
+
+    /// <summary>When true, the show starts automatically on first render (demo mode).</summary>
+    [Parameter] public bool AutoStart { get; set; } = true;
+
+    protected override void OnInitialized()
+    {
+        _orchestrator = new PerformanceOrchestrator(Http, SpeechService, AudioService, PerformanceSettings);
+        _orchestrator.StateChanged += OnStateChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await JS.InvokeVoidAsync("eval", @"window.__pojokerBeforeUnload = function(e) {
+                if (window.__pojokerShowRunning) { e.preventDefault(); e.returnValue = ''; }
+            };
+            window.addEventListener('beforeunload', window.__pojokerBeforeUnload);");
+
+            if (AutoStart && !_orchestrator.IsRunning)
+            {
+                _ = StartPerformance();
+            }
+        }
+    }
+
+    private async Task StartPerformance()
+    {
+        _orchestrator.SelectedCategory = "Any";
+        _orchestrator.SelectedSafeMode = false;
+        _orchestrator.SelectedMoodLabel = "Random";
+        await JS.InvokeVoidAsync("eval", "window.__pojokerShowRunning = true;");
+        await _orchestrator.StartAsync();
+        await JS.InvokeVoidAsync("eval", "window.__pojokerShowRunning = false;");
+    }
+
+    private async Task ReplayPerformance()
+    {
+        _orchestrator.ResetForNewShow();
+        await StartPerformance();
+    }
+
+    private async Task StopPerformance()
+    {
+        await JS.InvokeVoidAsync("eval", "window.__pojokerShowRunning = false;");
+        await _orchestrator.StopAsync();
+    }
+
+    private void OnStateChanged() => InvokeAsync(StateHasChanged);
+
+    async ValueTask IAsyncDisposable.DisposeAsync()
+    {
+        if (_orchestrator != null)
+        {
+            _orchestrator.StateChanged -= OnStateChanged;
+            await _orchestrator.DisposeAsync();
+        }
+        try
+        {
+            await JS.InvokeVoidAsync("eval",
+                "window.__pojokerShowRunning = false; window.removeEventListener('beforeunload', window.__pojokerBeforeUnload);");
+        }
+        catch { /* JS interop may be unavailable during teardown */ }
+    }
+}

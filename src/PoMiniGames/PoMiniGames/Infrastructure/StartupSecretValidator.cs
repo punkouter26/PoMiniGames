@@ -35,6 +35,7 @@ public sealed class StartupSecretValidator : IHostedService
         "PoCoupleQuiz:AzureOpenAI",
         "PoFunQuiz:AzureOpenAI",
         "PoFace:AzureOpenAI",
+        "PoJoker:AzureOpenAI",
     };
 
     private readonly IHostEnvironment _environment;

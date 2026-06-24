@@ -1,0 +1,20 @@
+@* PoJoker — network-loss overlay shown while the courier finds a path to the server. *@
+
+<div class="network-awaiting @(IsVisible ? "visible" : "")">
+    <div class="network-content">
+        <p class="network-message">@Message</p>
+        <p class="status-text">@StatusText</p>
+        @if (IsRetrying)
+        {
+            <p class="retry-count">Attempting to reconnect... (@RetryCount)</p>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public bool IsVisible { get; set; }
+    [Parameter] public string Message { get; set; } = "The royal messenger has lost their way. Please wait while we dispatch another courier.";
+    [Parameter] public string StatusText { get; set; } = "Searching for a path to the server...";
+    [Parameter] public bool IsRetrying { get; set; }
+    [Parameter] public int RetryCount { get; set; }
+}

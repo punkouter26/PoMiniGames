@@ -1,0 +1,132 @@
+.joke-card {
+    background: rgba(31, 31, 56, 0.4);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(184, 149, 106, 0.2);
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin: 1rem 0;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+}
+
+.joke-card:hover {
+    transform: translateY(-3px) scale(1.01);
+    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(12px);
+}
+
+.joke-category {
+    margin-bottom: 1rem;
+}
+
+.joke-category .badge {
+    background: var(--gold-accent);
+    color: var(--bg-primary);
+    padding: 0.25rem 0.75rem;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.joke-setup {
+    font-size: 1.25rem;
+    color: var(--text-primary);
+    margin-bottom: 1.5rem;
+    line-height: 1.6;
+}
+
+.joke-setup p {
+    margin: 0;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+}
+
+.ai-guess {
+    background: rgba(148, 122, 214, 0.15);
+    border-left: 4px solid var(--jester-purple);
+    padding: 1rem;
+    margin: 1rem 0;
+    border-radius: 0 8px 8px 0;
+}
+
+.ai-guess .label {
+    color: var(--jester-purple);
+    font-weight: 600;
+    display: block;
+    margin-bottom: 0.5rem;
+}
+
+.ai-guess p {
+    margin: 0;
+    color: var(--text-secondary);
+    font-style: italic;
+}
+
+/* Skeleton shimmer for while AI is thinking */
+.skeleton-line {
+    height: 14px;
+    border-radius: 6px;
+    background: linear-gradient(90deg,
+        rgba(148, 122, 214, 0.15) 25%,
+        rgba(148, 122, 214, 0.35) 50%,
+        rgba(148, 122, 214, 0.15) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.4s ease-in-out infinite;
+    margin-bottom: 0.5rem;
+}
+
+.skeleton-line--long  { width: 88%; }
+.skeleton-line--short { width: 55%; margin-bottom: 0; }
+
+@keyframes shimmer {
+    0%   { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+.joke-punchline {
+    background: rgba(198, 168, 87, 0.15);
+    border-left: 4px solid var(--gold-accent);
+    padding: 1rem;
+    margin-top: 1rem;
+    border-radius: 0 8px 8px 0;
+}
+
+.joke-punchline .label {
+    color: var(--gold-accent);
+    font-weight: 600;
+    display: block;
+    margin-bottom: 0.5rem;
+}
+
+.joke-punchline p {
+    margin: 0;
+    color: var(--text-primary);
+    font-weight: 500;
+}
+
+/* Triumph animation */
+.joke-card.triumph {
+    animation: triumphPulse 0.6s ease-out;
+    border-color: var(--success-color);
+    background: linear-gradient(135deg, var(--card-bg), rgba(39, 174, 96, 0.1));
+}
+
+@keyframes triumphPulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.02); }
+    100% { transform: scale(1); }
+}
+
+/* Defeat animation */
+.joke-card.defeat {
+    animation: defeatShake 0.4s ease-out;
+    border-color: var(--error-color);
+    background: linear-gradient(135deg, var(--card-bg), rgba(231, 76, 60, 0.1));
+}
+
+@keyframes defeatShake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-5px); }
+    75% { transform: translateX(5px); }
+}

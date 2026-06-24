@@ -40,6 +40,9 @@ public sealed class StorageInitializer
         "EvolutionRecords",
         "PoSurviveSessions",
         "PoSurviveHeartbeats",
+        // PoJoker (demo-only): per-session joke-performance records that back the
+        // /api/joker/leaderboard surface (PartitionKey = SessionId).
+        "PoJokerPerformances",
     ];
 
     /// <summary>Blob containers used by the consolidated games (PoFace needs webcam capture blobs).</summary>

@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
 using Microsoft.JSInterop;
+using Radzen;
 using PoMiniGamesClient;
 using PoMiniGamesClient.Games.PoCoupleQuiz.Services;
 using PoMiniGamesClient.Games.PoFunQuiz.Services;
@@ -59,6 +60,17 @@ builder.Services.AddSingleton<KioskCoordinator>();
 builder.Services.AddScoped<CoupleQuizHubService>();
 // PoFunQuiz Phase 2 follow-up: SignalR client wrapper for /funquiz/gamehub.
 builder.Services.AddScoped<FunQuizHubService>();
+
+// ─── PoJoker (demo-only autonomous comedy show) ──────────────────────
+// Radzen powers the leaderboard DataGrid. TTS + Web-Audio effects run via JS interop
+// (pojoker-speech-interop.js / pojoker-audio-interop.js). PerformanceSettings is a plain
+// singleton consumed by JesterStage when it constructs the PerformanceOrchestrator.
+builder.Services.AddRadzenComponents();
+builder.Services.AddScoped<PoMiniGamesClient.Games.PoJoker.IJokerSpeechService,
+    PoMiniGamesClient.Games.PoJoker.JokerSpeechService>();
+builder.Services.AddScoped<PoMiniGamesClient.Games.PoJoker.IJokerAudioService,
+    PoMiniGamesClient.Games.PoJoker.JokerAudioService>();
+builder.Services.AddSingleton<PoShared.Games.PoJoker.PerformanceSettings>();
 
 // ─── PoSurvive (agent survival simulation) ───────────────────────────
 // Fluxor (Redux) state management — scans this client assembly for the

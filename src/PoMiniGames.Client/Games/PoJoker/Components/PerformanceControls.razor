@@ -1,0 +1,23 @@
+@* PoJoker — Start/Stop control panel for the comedy show. *@
+<div class="stage-controls">
+    <div class="controls-primary">
+        @if (!IsRunning)
+        {
+            <button class="btn btn-primary btn-large" @onclick="OnStart" aria-label="Begin comedy show">
+                ▶️ Begin
+            </button>
+        }
+        else
+        {
+            <button class="btn btn-danger" @onclick="OnStop" aria-label="Stop performance">
+                ⏹️ Stop
+            </button>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public bool IsRunning { get; set; }
+    [Parameter] public EventCallback OnStart { get; set; }
+    [Parameter] public EventCallback OnStop { get; set; }
+}

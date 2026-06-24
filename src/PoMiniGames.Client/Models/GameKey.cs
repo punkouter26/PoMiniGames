@@ -45,4 +45,5 @@ public static class GameKeys
     public static readonly GameKey PoCoupleQuiz = new("pocouplequiz");
     public static readonly GameKey PoFunQuiz = new("pofunquiz");
     public static readonly GameKey PoFace = new("poface");
+    public static readonly GameKey PoJoker = new("pojoker");
 }

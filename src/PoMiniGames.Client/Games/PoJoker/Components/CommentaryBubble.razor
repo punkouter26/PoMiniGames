@@ -1,0 +1,26 @@
+@* PoJoker — AI Jester commentary bubble. *@
+
+<div class="commentary-bubble @StateClass">
+    <span class="jester-icon">🃏</span>
+    <div class="commentary-text">
+        @if (!string.IsNullOrEmpty(Commentary))
+        {
+            @Commentary
+        }
+    </div>
+</div>
+
+@code {
+    /// <summary>The AI Jester's commentary text to display.</summary>
+    [Parameter] public string? Commentary { get; set; }
+
+    /// <summary>Whether the jester triumphed (true) or was defeated (false).</summary>
+    [Parameter] public bool? IsTriumph { get; set; }
+
+    private string StateClass => IsTriumph switch
+    {
+        true => "triumph",
+        false => "defeat",
+        null => ""
+    };
+}

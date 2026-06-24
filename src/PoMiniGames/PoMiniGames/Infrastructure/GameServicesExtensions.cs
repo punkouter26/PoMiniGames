@@ -5,6 +5,8 @@ using PoMiniGames.Features.PoFace;
 using PoMiniGames.Features.PoFace.Storage;
 using PoMiniGames.Features.PoFunQuiz;
 using PoMiniGames.Features.PoFunQuiz.Storage;
+using PoMiniGames.Features.PoJoker;
+using PoMiniGames.Features.PoJoker.Storage;
 using PoMiniGames.Features.PoRaceRagdoll;
 using PoMiniGames.Infrastructure.Services;
 
@@ -112,6 +114,25 @@ internal static class GameServicesExtensions
         // score is still recorded in table storage and the recap page shows a
         // placeholder image.
         services.AddSingleton<PoMiniGames.Features.PoFace.Storage.IBlobImageRepository, PoMiniGames.Features.PoFace.Storage.BlobImageRepository>();
+
+        // PoJoker — demo-only autonomous comedy show. See Features/PoJoker/.
+        // AiJesterService is the production path (shared Azure OpenAI resilience); it
+        // falls back to MockAnalysisService in Dev/Test when PoJoker:AzureOpenAI is
+        // unconfigured, and throws in Production (StartupSecretValidator fails fast).
+        // The joke fetch is a typed HttpClient to JokeAPI.dev with the standard
+        // resilience handler; the storage client writes to the PoJokerPerformances
+        // table (PartitionKey = SessionId) ensured by StorageInitializer.
+        services.AddHttpClient(JokeApiClient.HttpClientName, client =>
+            {
+                client.Timeout = TimeSpan.FromSeconds(15);
+            })
+            .AddStandardResilienceHandler();
+        services.AddSingleton<IJokeApiClient>(sp => new JokeApiClient(
+            sp.GetRequiredService<IHttpClientFactory>().CreateClient(JokeApiClient.HttpClientName),
+            sp.GetRequiredService<ILogger<JokeApiClient>>()));
+        services.AddSingleton<MockAnalysisService>();
+        services.AddSingleton<IAnalysisService, AiJesterService>();
+        services.AddSingleton<IJokeStorageClient, JokeStorageClient>();
 
         services.ConfigureHttpJsonOptions(options =>
         {

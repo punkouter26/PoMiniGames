@@ -1,0 +1,172 @@
+.network-awaiting {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(10, 10, 15, 0.95);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.5s ease, visibility 0.5s ease;
+}
+
+.network-awaiting.visible {
+    opacity: 1;
+    visibility: visible;
+}
+
+.network-content {
+    text-align: center;
+    max-width: 500px;
+    padding: 3rem;
+    background: linear-gradient(145deg, #1a1a2e, #16213e);
+    border: 3px solid #4a90a4;
+    border-radius: 20px;
+    box-shadow: 
+        0 0 30px rgba(74, 144, 164, 0.3),
+        inset 0 0 60px rgba(0, 0, 0, 0.5);
+    animation: network-appear 0.5s ease-out;
+}
+
+@keyframes network-appear {
+    from {
+        transform: translateY(20px);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+.courier-icon {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+    display: flex;
+    justify-content: center;
+    gap: 0.5rem;
+    animation: courier-ride 2s ease-in-out infinite;
+}
+
+@keyframes courier-ride {
+    0%, 100% { transform: translateX(-10px); }
+    50% { transform: translateX(10px); }
+}
+
+.courier-horse {
+    animation: horse-bounce 0.5s ease-in-out infinite alternate;
+}
+
+@keyframes horse-bounce {
+    from { transform: translateY(0); }
+    to { transform: translateY(-5px); }
+}
+
+.courier-rider {
+    animation: rider-bounce 0.5s ease-in-out infinite alternate-reverse;
+}
+
+@keyframes rider-bounce {
+    from { transform: translateY(0) rotate(-5deg); }
+    to { transform: translateY(-3px) rotate(5deg); }
+}
+
+.network-title {
+    font-family: 'Cinzel', 'Times New Roman', serif;
+    color: #4a90a4;
+    font-size: 1.6rem;
+    margin-bottom: 1rem;
+    text-shadow: 0 0 10px rgba(74, 144, 164, 0.4);
+}
+
+.network-message {
+    color: #b0b0b0;
+    font-size: 1rem;
+    margin-bottom: 1.5rem;
+    line-height: 1.6;
+}
+
+.connection-status {
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid #4a4a4a;
+    border-radius: 10px;
+    padding: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.status-dots {
+    display: flex;
+    justify-content: center;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #3a3a3a;
+    transition: background 0.3s ease, box-shadow 0.3s ease;
+}
+
+.dot.active {
+    background: #4a90a4;
+    box-shadow: 0 0 10px rgba(74, 144, 164, 0.6);
+}
+
+.status-text {
+    color: #6a6a6a;
+    font-size: 0.85rem;
+    margin: 0;
+    font-style: italic;
+}
+
+.retry-button {
+    background: linear-gradient(145deg, #1f3d2d, #1a2e1a);
+    border: 2px solid #4a90a4;
+    color: #4a90a4;
+    padding: 0.8rem 2rem;
+    font-size: 1rem;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    font-family: 'Cinzel', 'Times New Roman', serif;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.retry-button:hover:not(:disabled) {
+    background: linear-gradient(145deg, #2f4d3d, #2a3e2a);
+    box-shadow: 0 0 20px rgba(74, 144, 164, 0.3);
+    transform: translateY(-2px);
+}
+
+.retry-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.retry-icon {
+    font-size: 1.2rem;
+}
+
+.retry-spinner {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+.retry-count {
+    color: #5a5a5a;
+    font-size: 0.8rem;
+    margin-top: 1rem;
+    margin-bottom: 0;
+}

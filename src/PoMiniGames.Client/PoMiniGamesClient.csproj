@@ -26,6 +26,8 @@
     <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" />
     <PackageReference Include="Microsoft.AspNetCore.Components.Authorization" />
     <PackageReference Include="Fluxor.Blazor.Web" />
+    <!-- PoJoker demo game: Radzen DataGrid powers the leaderboard view. -->
+    <PackageReference Include="Radzen.Blazor" />
   </ItemGroup>
 
   <ItemGroup>

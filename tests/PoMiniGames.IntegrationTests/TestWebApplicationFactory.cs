@@ -51,7 +51,13 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>, IAsyncL
             _finalEnvIsProduction = string.Equals(
                 context.HostingEnvironment.EnvironmentName, "Production", StringComparison.OrdinalIgnoreCase);
 
-            var overrides = new Dictionary<string, string?>();
+            var overrides = new Dictionary<string, string?>
+            {
+                // Budget guardrail: force every AI boundary to its in-process mock so the
+                // suite can never spend live tokens, even if a runner has real keys present.
+                ["PoFunQuiz:Features:UseMockAI"] = "true",
+                ["PoCoupleQuiz:Features:UseMockAI"] = "true",
+            };
 
             if (_azuriteConnectionString is not null)
             {

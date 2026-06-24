@@ -43,14 +43,16 @@ public sealed class HealthEndpointTests : IClassFixture<TestWebApplicationFactor
     [Fact]
     public async Task DiagEndpoint_ReturnsOk()
     {
-        var response = await _client.GetAsync("/diag");
+        // The programmatic snapshot lives at /api/diag; bare /diag is the Blazor page route
+        // (it would fall through to the SPA index.html fallback and return HTML, not JSON).
+        var response = await _client.GetAsync("/api/diag");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var body = await response.Content.ReadAsStringAsync();
         var json = JsonNode.Parse(body);
 
         json.Should().NotBeNull();
-        json!["storage"]!["databaseFileName"]!.GetValue<string>().Should().Be("pominigames.db");
+        json!["storage"]!["provider"]!.GetValue<string>().Should().Be("AzureTableStorage");
         json["logging"]!["devLogFile"]!.GetValue<string>().Should().Be("logs/pominigames-.log");
         body.Should().NotContain("APPLICATIONINSIGHTS_CONNECTION_STRING");
         body.Should().NotContain("InstrumentationKey", because: "diag should not expose raw secret values");
@@ -62,6 +64,14 @@ public sealed class HealthEndpointTests : IClassFixture<TestWebApplicationFactor
         using var productionFactory = _factory.WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Production");
+
+            // The Production fail-fast guard reads the storage AccountName EAGERLY at
+            // host-builder time (Program.cs, before Build), so it must come through web-host
+            // configuration via UseSetting — an in-memory app-configuration source is applied
+            // post-Build and lands too late. The BlobContainerClient is constructed lazily and
+            // never contacted by a diagnostics-disabled 404, so no real Azure call is made.
+            builder.UseSetting("PoMiniGames:Storage:TableService:AccountName", "devstoreaccount1");
+
             builder.ConfigureAppConfiguration((_, cfg) =>
             {
                 cfg.AddInMemoryCollection(new Dictionary<string, string?>
@@ -72,7 +82,7 @@ public sealed class HealthEndpointTests : IClassFixture<TestWebApplicationFactor
         });
 
         using var client = productionFactory.CreateClient();
-        var response = await client.GetAsync("/diag");
+        var response = await client.GetAsync("/api/diag");
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }

@@ -79,9 +79,26 @@ public class AuthStateService
             }
 
             // Test harness: silently sign in as Guest so browser tests skip the login wall.
-            if (config.AutoGuestLogin)
+            // §5 of QA report: the original implementation minted the identity with no UI
+            // confirmation, which is a footgun on any non-dev environment. The flag is now
+            // (a) requires an explicit `?autoGuest=1` URL param so the only way to land
+            // here is by deliberate navigation, and (b) marks the user with a `*` suffix
+            // so the nav bar shows the auto-guest state clearly.
+            if (config.AutoGuestLogin && IsAutoGuestOptIn(queryString))
             {
-                _user = await _api.DevBypassAsync("Guest");
+                var profile = await _api.DevBypassAsync("Guest");
+                // Mark the auto-guest state visibly in the nav bar so a developer can
+                // tell at a glance that the session was minted without user interaction.
+                _user = profile is null
+                    ? new AuthenticatedUserProfile { UserId = "dev-Guest", DisplayName = "Guest (auto)" }
+                    : new AuthenticatedUserProfile
+                    {
+                        UserId = profile.UserId,
+                        DisplayName = profile.DisplayName + " (auto)",
+                        Email = profile.Email
+                    };
+                Console.Error.WriteLine("[AuthStateService] WRN: AutoGuestLogin minted a session without user interaction. " +
+                                        "This is gated to Development via the server-side Production guard in Program.cs.");
                 _initialized = true;
                 NotifyStateChanged();
                 return;
@@ -235,6 +252,18 @@ public class AuthStateService
         queryString = queryString.TrimStart('?');
         var pairs = System.Web.HttpUtility.ParseQueryString(queryString);
         return pairs["user"];
+    }
+
+    // §5 of QA report: AutoGuestLogin now requires an explicit `?autoGuest=1` URL
+    // parameter in addition to the server-side flag. This is a deliberate opt-in so
+    // the silent bypass can never be hit by accident (e.g. bookmarked URL, deep link).
+    private static bool IsAutoGuestOptIn(string? queryString)
+    {
+        if (string.IsNullOrEmpty(queryString)) return false;
+        queryString = queryString.TrimStart('?');
+        var pairs = System.Web.HttpUtility.ParseQueryString(queryString);
+        var v = pairs["autoGuest"];
+        return v == "1" || string.Equals(v, "true", StringComparison.OrdinalIgnoreCase);
     }
 
     public async Task SignInAsync()

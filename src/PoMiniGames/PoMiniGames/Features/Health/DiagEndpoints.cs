@@ -8,11 +8,45 @@ using PoMiniGames.Application.Diagnostics;
 
 namespace PoMiniGames.Features.Health;
 
+/// <summary>
+/// Wire-format DTO for <c>/api/diag</c>. The snapshot provider may surface a
+/// wider, internal-only object graph (reflection helpers, type manifests, etc.);
+/// this projection restricts the over-the-wire payload to the fields safe to
+/// expose to dev tools and CI. See <see cref="DiagEndpoints.diagHandler"/>.
+/// </summary>
+internal sealed record DiagResponse(
+    DiagIdentity Identity,
+    DiagEnvironment Environment,
+    IReadOnlyList<DiagIntegration> Integrations);
+
+internal sealed record DiagIdentity(
+    string Solution,
+    string AppPrefix,
+    DiagPorts Ports);
+
+internal sealed record DiagPorts(int Http, int Https);
+
+internal sealed record DiagEnvironment(
+    string Name,
+    string ApplicationName,
+    string ApplicationInsights,
+    string KeyVaultUri,
+    IReadOnlyDictionary<string, string> TelemetryFlags);
+
+internal sealed record DiagIntegration(
+    string Name,
+    string Status,
+    string? Description);
+
 public static class DiagEndpoints
 {
+    private const int MaxLogFileBytes = 512 * 1024;       // 512 KB upper bound on a log-tail response.
+    private const int MaxTailLines = 500;                  // Cap rows per call to keep the response bounded.
+    private const int MaxPayloadBytes = 8 * 1024 * 1024;   // 8 MB upper bound on the /api/diag payload.
+
     public static IEndpointRouteBuilder MapDiagEndpoints(this IEndpointRouteBuilder app)
     {
-        async Task<IResult> diagHandler(IConfiguration configuration, IHostEnvironment environment, IDiagnosticsSnapshotProvider diagnosticsProvider)
+        async Task<IResult> diagHandler(IConfiguration configuration, IWebHostEnvironment environment, IDiagnosticsSnapshotProvider diagnosticsProvider, CancellationToken ct)
         {
             var diagnosticsEnabled = configuration.GetValue("FeatureFlags:EnableDiagnostics", environment.IsDevelopment());
             if (!diagnosticsEnabled)
@@ -22,8 +56,93 @@ public static class DiagEndpoints
 
             // Adapter-style endpoint: transport concerns stay here, while diagnostics assembly
             // is delegated to an application-facing provider for Onion-style separation.
-            var diagData = await diagnosticsProvider.BuildSnapshotAsync();
-            return Results.Ok(diagData);
+            // We project the wide provider payload down to a strict, documented DTO so
+            // reflection helpers / type graphs never leak to dev tooling (§9 of QA report).
+            var raw = await diagnosticsProvider.BuildSnapshotAsync();
+            var projection = ProjectDiagnostics(raw, configuration, environment);
+            var json = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(projection, new System.Text.Json.JsonSerializerOptions
+            {
+                WriteIndented = false,
+                DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
+            });
+            if (json.Length > MaxPayloadBytes)
+            {
+                return Results.Problem(
+                    statusCode: StatusCodes.Status503ServiceUnavailable,
+                    title: "Diag payload too large",
+                    detail: $"Diag snapshot projected to {json.Length} bytes exceeds the {MaxPayloadBytes}-byte safety cap.");
+            }
+            return Results.File(json, "application/json");
+        }
+
+        // Internal projection: take whatever the provider produced and pull out the
+        // well-known scalar fields. Unknown / nested type-graph entries are dropped
+        // so a future change to the provider cannot widen the response surface.
+        static DiagResponse ProjectDiagnostics(object raw, IConfiguration config, IWebHostEnvironment env)
+        {
+            var dict = raw as IDictionary<string, object?>
+                       ?? (raw is string s ? new Dictionary<string, object?>() { ["raw"] = s } : new Dictionary<string, object?>());
+            string Get(params string[] path)
+            {
+                object? cur = dict;
+                foreach (var key in path)
+                {
+                    if (cur is IDictionary<string, object?> d && d.TryGetValue(key, out var v)) { cur = v; continue; }
+                    return string.Empty;
+                }
+                return cur?.ToString() ?? string.Empty;
+            }
+
+            var ports = new DiagPorts(
+                Http: int.TryParse(Get("identity", "ports", "http"), out var hp) ? hp : 5000,
+                Https: int.TryParse(Get("identity", "ports", "https"), out var xp) ? xp : 5001);
+
+            var identity = new DiagIdentity(
+                Solution: Get("identity", "solution"),
+                AppPrefix: Get("identity", "appPrefix"),
+                Ports: ports);
+
+            var telemetryFlags = new Dictionary<string, string>
+            {
+                ["enableDiagnostics"] = config.GetValue("FeatureFlags:EnableDiagnostics", env.IsDevelopment()).ToString(),
+                ["autoGuestLogin"] = config.GetValue("Auth:AutoGuestLogin", false).ToString(),
+                ["useMockData"] = config.GetValue("FeatureFlags:UseMockData", false).ToString(),
+            };
+            // If Application Insights is configured, surface a non-secret indicator only.
+            var ai = config.GetValue<string>("ApplicationInsights:ConnectionString")
+                  ?? config.GetValue<string>("APPLICATIONINSIGHTS_CONNECTION_STRING")
+                  ?? string.Empty;
+            if (!string.IsNullOrEmpty(ai)) { telemetryFlags["applicationInsightsConfigured"] = "true"; }
+
+            var environment = new DiagEnvironment(
+                Name: env.EnvironmentName,
+                ApplicationName: env.ApplicationName,
+                ApplicationInsights: ai.Length > 0 ? "configured" : string.Empty,
+                KeyVaultUri: config.GetValue<string>("KeyVault:Uri") ?? string.Empty,
+                TelemetryFlags: telemetryFlags);
+
+            // Project the integrations array (if the provider returned one) to a
+            // strict list of name/status/description strings. The provider historically
+            // returns System.* reflection data — that lives in /diag only after we
+            // explicitly re-add it; for now we project safely.
+            var integrations = new List<DiagIntegration>();
+            if (dict.TryGetValue("integrations", out var integ) && integ is IEnumerable<object?> items)
+            {
+                foreach (var item in items)
+                {
+                    if (item is IDictionary<string, object?> d
+                        && d.TryGetValue("name", out var n)
+                        && d.TryGetValue("status", out var st))
+                    {
+                        integrations.Add(new DiagIntegration(
+                            n?.ToString() ?? string.Empty,
+                            st?.ToString() ?? string.Empty,
+                            d.TryGetValue("description", out var desc) ? desc?.ToString() : null));
+                    }
+                }
+            }
+
+            return new DiagResponse(identity, environment, integrations);
         }
 
         app.MapGet("/api/diag", diagHandler)
@@ -35,7 +154,12 @@ public static class DiagEndpoints
         // the Blazor page route at /diag. Use /api/diag for programmatic access.
 
         // ─── Log tail endpoint for dev diagnostics ───────────────────────
-        async Task<IResult> logsTailHandler(IConfiguration config, IHostEnvironment environment, int? lines = 50)
+        // Bug fix (§2 of QA report): Serilog's File sink acquires an exclusive handle
+        // on the log file by default. Reading via `File.ReadAllLines` then throws
+        // "The process cannot access the file …". We now open with FileShare.ReadWrite
+        // (and a tight 512 KB byte budget) so the tail endpoint can serve the rolling
+        // log without taking a competing lock.
+            async Task<IResult> logsTailHandler(IConfiguration config, IWebHostEnvironment environment, int? lines = 50)
         {
             var diagnosticsEnabled = config.GetValue("FeatureFlags:EnableDiagnostics", environment.IsDevelopment());
             if (!diagnosticsEnabled)
@@ -54,18 +178,48 @@ public static class DiagEndpoints
                 if (latestLog == null)
                     return Results.Ok(new { message = "No log files found", entries = Array.Empty<string>() });
 
-                var lineCount = lines ?? 50;
-                var entries = File.ReadAllLines(latestLog)
-                    .TakeLast(lineCount)
-                    .ToArray();
+                var lineCount = Math.Clamp(lines ?? 50, 1, MaxTailLines);
+
+                // Use FileStream with FileShare.ReadWrite so we can read while Serilog
+                // is also writing to the file. Read from the end to stay within the
+                // byte cap on large files.
+                string[] entries;
+                int totalLines;
+                using (var fs = new FileStream(latestLog, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+                {
+                    if (fs.Length > MaxLogFileBytes)
+                    {
+                        fs.Seek(-MaxLogFileBytes, SeekOrigin.End);
+                        // Skip the first (likely partial) line so we don't return a
+                        // truncated row at the top of the tail.
+                        var discard = new byte[1];
+                        while (fs.Read(discard, 0, 1) == 1 && discard[0] != (byte)'\n') { }
+                    }
+                    using var sr = new StreamReader(fs);
+                    var content = sr.ReadToEnd();
+                    entries = content.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                                     .Select(l => l.TrimEnd('\r'))
+                                     .TakeLast(lineCount)
+                                     .ToArray();
+                    totalLines = content.Count(c => c == '\n') + 1;
+                }
 
                 return Results.Ok(new
                 {
                     file = Path.GetFileName(latestLog),
-                    totalLines = File.ReadLines(latestLog).Count(),
+                    totalLines,
                     shownLines = entries.Length,
-                    entries = entries
+                    entries
                 });
+            }
+            catch (FileNotFoundException)
+            {
+                // Serilog's rolling sink may have moved the file out from under us.
+                return Results.Ok(new { message = "Log file rolled during read; retry." });
+            }
+            catch (IOException ex)
+            {
+                return Results.Ok(new { error = ex.Message, hint = "File is locked by another process; open with FileShare.ReadWrite." });
             }
             catch (Exception ex)
             {

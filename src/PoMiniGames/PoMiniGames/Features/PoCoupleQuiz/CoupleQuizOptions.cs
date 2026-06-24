@@ -34,8 +34,9 @@ public sealed class CoupleQuizOptions
 public sealed class CoupleQuizFeatures
 {
     /// <summary>If true, the in-process mock question service is used even when Azure OpenAI
-    /// is reachable. NEVER set this in Production — it bypasses real AI scoring.</summary>
-    public bool UseMockAi { get; set; } = false;
+    /// is reachable. NEVER set this in Production — it bypasses real AI scoring.
+    /// Canonical key: <c>PoCoupleQuiz:Features:UseMockAI</c> (matches PoFunQuiz casing).</summary>
+    public bool UseMockAI { get; set; } = false;
 
     /// <summary>Default AI engine presented to the client ("Remote" Azure OpenAI, or
     /// "Browser" in-browser Transformers.js).</summary>

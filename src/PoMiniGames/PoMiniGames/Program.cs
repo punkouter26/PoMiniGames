@@ -145,6 +145,22 @@ app.UseAuthorization();
 // The whole route table lives in EndpointRouteExtensions.MapPoMiniGamesEndpoints.
 app.MapPoMiniGamesEndpoints();
 
+// ─── Fake /api/* fallback (§4 of QA report) ───────────────────────────
+// The SPA fallback below (`MapFallbackToFile("index.html")`) intercepts every
+// unmatched path and returns the Blazor shell. That is correct for client
+// routes like /leaderboards, but it silently converts undefined /api/* paths
+// (e.g. /api/face/sessions, /api/species, /api/couplequiz/game-history,
+// /api/game/session) into a 200 OK with a 5019-byte HTML body, which clients
+// may deserialise as data and corrupt state. The handler below short-circuits
+// any /api/* path that fell through to a typed 404 JSON before the SPA
+// fallback runs.
+app.Map("/api/{*rest:nonfile}", () => Results.NotFound(new
+{
+    error = "no_such_endpoint",
+    detail = "The requested /api/* path is not mapped. Check the OpenAPI document at /openapi/v1.json for the live route table."
+}))
+.ExcludeFromDescription(); // §7 of QA report: keep the catch-all out of the OpenAPI surface.
+
 // ─── SPA fallback ────────────────────────────────────────────────────
 app.MapFallbackToFile("index.html");
 

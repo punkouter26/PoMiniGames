@@ -416,8 +416,32 @@ button { cursor: pointer; font-family: var(--font-body); }
   z-index: 1;
 }
 
+/* §10 of QA report — on mobile, pin "My Stats" to the bottom of the viewport so
+   the CTA is always reachable inside thumb range. The 56 px bottom inset leaves
+   room for iOS Safari's address bar. */
 @media (max-width: 640px) {
   .home-section { grid-template-columns: 1fr; gap: 0.85rem; }
+  .home-stats-cta {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: max(env(safe-area-inset-bottom, 0px), 8px);
+    margin: 0;
+    padding: 0.5rem 0.75rem;
+    background: linear-gradient(180deg, rgba(11,15,25,0) 0%, rgba(11,15,25,0.85) 40%, rgba(11,15,25,0.95) 100%);
+    z-index: 10;
+  }
+  .home-stats-cta .home-mode-btn {
+    width: 100%;
+    max-width: 360px;
+  }
+  /* Reserve space at the bottom of the scroll container so the fixed CTA never
+     covers the last row of game chips. */
+  .home-container { padding-bottom: 6rem; }
+  /* Honour the user's OS-level reduce-motion preference. */
+  @media (prefers-reduced-motion: reduce) {
+    .home-score-card { transition: none; }
+  }
 }
 
 /* ── Single Player Page ── */

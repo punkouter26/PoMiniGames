@@ -184,7 +184,7 @@ public static class CoupleQuizEndpoints
 
         group.MapGet("/runtime/status", (IHostEnvironment env, IConfiguration cfg) =>
         {
-            var useMockAi = cfg.GetValue<bool>("PoCoupleQuiz:Features:UseMockAi");
+            var useMockAi = cfg.GetValue<bool>("PoCoupleQuiz:Features:UseMockAI");
             return Results.Ok(new
             {
                 game = "pocouplequiz",

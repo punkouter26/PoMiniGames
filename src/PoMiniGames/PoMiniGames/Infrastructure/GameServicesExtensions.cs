@@ -53,7 +53,7 @@ internal static class GameServicesExtensions
         services.AddHostedService<StartupSecretValidator>();
 
         // PoCoupleQuiz — Phase 1 of the consolidation. See Features/PoCoupleQuiz/.
-        // The question service resolves to the mock in Dev/Test when UseMockAi=true
+        // The question service resolves to the mock in Dev/Test when UseMockAI=true
         // or Azure OpenAI is not configured; in Production it always uses the real
         // service (StartupSecretValidator fails-fast if the secrets are missing).
         // CoupleQuizOptions is bound in Program.cs before AddPoMiniGamesGameServices.

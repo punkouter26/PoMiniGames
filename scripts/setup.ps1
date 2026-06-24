@@ -75,6 +75,23 @@ Write-Step 'Restoring and building the solution'
 dotnet restore (Join-Path $repoRoot 'PoMiniGames.slnx')
 dotnet build   (Join-Path $repoRoot 'PoMiniGames.slnx') -c Debug --no-restore
 
+# ── 5. Playwright browsers (E2E-UI tier) ─────────────────────────────────
+# The E2E-UI tier drives a real Chromium via Microsoft.Playwright; the pinned
+# browser build must be present or those tests fail at launch. The install
+# script ships next to the built E2E-UI assembly and is a no-op if already present.
+Write-Step 'Installing Playwright browsers (Chromium) for the E2E-UI tier'
+$playwrightScript = Join-Path $repoRoot 'tests/PoMiniGames.E2EUI/bin/Debug/net10.0/playwright.ps1'
+if (Test-Path $playwrightScript) {
+    try {
+        & $playwrightScript install chromium
+        Write-Ok 'Playwright Chromium ready'
+    } catch {
+        Write-Warn "Could not install Playwright browsers: $($_.Exception.Message)"
+    }
+} else {
+    Write-Warn "Playwright bootstrap script not found at $playwrightScript (build the E2E-UI project first)."
+}
+
 Write-Host "`nSetup complete. Run the app with:" -ForegroundColor Cyan
 Write-Host "  dotnet run --project src/PoMiniGames/PoMiniGames" -ForegroundColor Gray
 Write-Host "Then it is available at http://localhost:5000`n" -ForegroundColor Gray

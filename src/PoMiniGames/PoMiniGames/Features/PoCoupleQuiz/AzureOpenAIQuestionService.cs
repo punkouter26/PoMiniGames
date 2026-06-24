@@ -16,7 +16,7 @@ namespace PoMiniGames.Features.PoCoupleQuiz;
 /// <para><b>Mock fallback</b>: per the 2026-06-13 mock-data fix (see user memory
 /// <c>pofunquiz-mock-data-fix.md</c>), the fallback to <see cref="MockQuestionService"/>
 /// is gated on <c>IsDevelopment() || IsEnvironment("Test")</c> AND the explicit
-/// <c>PoCoupleQuiz:Features:UseMockAi</c> flag. In Production, missing config
+/// <c>PoCoupleQuiz:Features:UseMockAI</c> flag. In Production, missing config
 /// causes an <see cref="InvalidOperationException"/> on first call rather than
 /// silently serving fabricated data.</para>
 /// </summary>
@@ -60,9 +60,9 @@ public sealed class AzureOpenAIQuestionService : IQuestionService
     public async Task<Question> GenerateQuestionAsync(DifficultyLevel difficulty, QuestionCategory? category = null, CancellationToken cancellationToken = default)
     {
         var options = _optionsMonitor.CurrentValue;
-        if (options.Features.UseMockAi && IsNonProduction())
+        if (options.Features.UseMockAI && IsNonProduction())
         {
-            _logger.LogWarning("PoCoupleQuiz: UseMockAi=true in {Environment}; serving mock question (non-prod only).", _environment.EnvironmentName);
+            _logger.LogWarning("PoCoupleQuiz: UseMockAI=true in {Environment}; serving mock question (non-prod only).", _environment.EnvironmentName);
             return await new MockQuestionService().GenerateQuestionAsync(difficulty, category, cancellationToken);
         }
 
@@ -120,7 +120,7 @@ public sealed class AzureOpenAIQuestionService : IQuestionService
         }
 
         var options = _optionsMonitor.CurrentValue;
-        if (options.Features.UseMockAi && IsNonProduction())
+        if (options.Features.UseMockAI && IsNonProduction())
         {
             return await new MockQuestionService().CheckAnswerSimilarityAsync(answer1, answer2, cancellationToken);
         }

@@ -8,8 +8,45 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Testcontainers.Azurite;
 
 namespace PoMiniGames.E2EUI;
+
+/// <summary>
+/// One hermetic Azurite container shared by every E2E-UI fixture for the lifetime of the
+/// test process. Browser E2E is heavy; starting a separate container per fixture multiplied
+/// Docker startup cost and starved WASM-boot timing. A single dedicated container (still NOT
+/// the shared dev <c>pominigames</c> container, so cross-run state stays clean) keeps the tier
+/// hermetic AND fast. Testcontainers' resource reaper removes it on process exit.
+/// </summary>
+internal static class E2EUiAzurite
+{
+    private static readonly SemaphoreSlim Gate = new(1, 1);
+    private static AzuriteContainer? _container;
+
+    public static async Task<string> GetConnectionStringAsync()
+    {
+        if (_container is not null)
+            return _container.GetConnectionString();
+
+        await Gate.WaitAsync();
+        try
+        {
+            if (_container is null)
+            {
+                var c = new AzuriteBuilder("mcr.microsoft.com/azure-storage/azurite:3.33.0").Build();
+                await c.StartAsync();
+                _container = c;
+            }
+        }
+        finally
+        {
+            Gate.Release();
+        }
+
+        return _container.GetConnectionString();
+    }
+}
 
 /// <summary>
 /// Boots the real host on a live Kestrel port so Playwright can drive it over
@@ -20,21 +57,28 @@ namespace PoMiniGames.E2EUI;
 /// its bound address via <see cref="ServerAddress"/>.
 /// </summary>
 /// <remarks>
-/// <para>Pattern: Test Fixture (xUnit) + Server Façade. Mirrors the Azurite /
-/// FakeAuth configuration of the E2E-API fixture so the rendered app talks to
-/// the same dev storage. Requires Azurite reachable on <c>127.0.0.1:10002</c>
-/// and Playwright browsers installed (<c>pwsh bin/Debug/net10.0/playwright.ps1
-/// install</c>). See README.md.</para>
+/// <para>Pattern: Test Fixture (xUnit) + Server Façade. Storage is fully hermetic:
+/// the fixture starts its <b>own</b> Azurite container via Testcontainers (like the
+/// integration tier) rather than binding the shared host container on a fixed port.
+/// This eliminates stale cross-run state and removes the manual "docker compose up"
+/// precondition. Requires Docker and Playwright browsers installed
+/// (<c>pwsh bin/Debug/net10.0/playwright.ps1 install</c>). See README.md.</para>
 /// </remarks>
-public sealed class KestrelServerFixture : WebApplicationFactory<Program>
+public class KestrelServerFixture : WebApplicationFactory<Program>, IAsyncLifetime
 {
-    public const string AzuriteConnectionString =
-        "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;" +
-        "AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;" +
-        "TableEndpoint=http://127.0.0.1:10002/devstoreaccount1;" +
-        "BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;";
-
+    private string _azuriteConnectionString = string.Empty;
     private IHost? _kestrelHost;
+
+    /// <summary>
+    /// When true, the host boots with <c>FeatureFlags:UseMockData=true</c> so the
+    /// "USING MOCK DATA" nav banner renders. Overridden by the mock-data fixture.
+    /// </summary>
+    protected virtual bool UseMockDataBanner => false;
+
+    public async Task InitializeAsync() =>
+        _azuriteConnectionString = await E2EUiAzurite.GetConnectionStringAsync();
+
+    Task IAsyncLifetime.DisposeAsync() => Task.CompletedTask;
 
     /// <summary>The base URL Playwright should navigate to (e.g. http://127.0.0.1:51234).</summary>
     public string ServerAddress
@@ -64,15 +108,20 @@ public sealed class KestrelServerFixture : WebApplicationFactory<Program>
                 // Browser tests run against the login-gated SPA; auto-sign-in as Guest so
                 // the home page renders without a manual auth step.
                 ["Auth:AutoGuestLogin"] = "true",
-                ["PoMiniGames:Storage:TableService:ConnectionString"] = AzuriteConnectionString,
+                ["PoMiniGames:Storage:TableService:ConnectionString"] = _azuriteConnectionString,
                 ["PoMiniGames:Storage:TableService:TableName"] = "pominigames-e2eui",
+                // Budget guardrail: force every AI boundary to its in-process mock so the
+                // suite can never spend live tokens, even if a runner has real keys present.
+                ["PoFunQuiz:Features:UseMockAI"] = "true",
+                ["PoCoupleQuiz:Features:UseMockAI"] = "true",
+                ["FeatureFlags:UseMockData"] = UseMockDataBanner ? "true" : "false",
             });
         });
 
         builder.ConfigureTestServices(services =>
         {
-            services.AddSingleton(_ => new TableServiceClient(AzuriteConnectionString));
-            services.AddSingleton(_ => new BlobServiceClient(AzuriteConnectionString));
+            services.AddSingleton(_ => new TableServiceClient(_azuriteConnectionString));
+            services.AddSingleton(_ => new BlobServiceClient(_azuriteConnectionString));
         });
     }
 
@@ -81,8 +130,12 @@ public sealed class KestrelServerFixture : WebApplicationFactory<Program>
         // The in-memory host the base class wires up (kept so DI/seed still runs).
         var testHost = builder.Build();
 
-        // A second host bound to a real (dynamic) Kestrel port for the browser.
-        builder.ConfigureWebHost(webHostBuilder => webHostBuilder.UseKestrel());
+        // A second host bound to a real, OS-assigned (port 0) Kestrel port for the browser.
+        // An explicit dynamic port avoids colliding on the host's default :5000 when multiple
+        // fixtures (e.g. the mock-data variant) boot in parallel collections.
+        builder.ConfigureWebHost(webHostBuilder => webHostBuilder
+            .UseKestrel()
+            .UseUrls("http://127.0.0.1:0"));
         _kestrelHost = builder.Build();
         _kestrelHost.Start();
 
@@ -106,4 +159,21 @@ public sealed class KestrelServerFixture : WebApplicationFactory<Program>
 public sealed class KestrelServerCollection : ICollectionFixture<KestrelServerFixture>
 {
     public const string Name = "PoMiniGames.E2EUI";
+}
+
+/// <summary>
+/// Variant fixture that boots with <c>FeatureFlags:UseMockData=true</c> so UI tests can
+/// assert the prominent "USING MOCK DATA" nav banner is injected into the render tree.
+/// Separate collection (and separate Azurite container) to keep banner-on / banner-off
+/// states fully isolated.
+/// </summary>
+public sealed class MockDataKestrelServerFixture : KestrelServerFixture
+{
+    protected override bool UseMockDataBanner => true;
+}
+
+[CollectionDefinition(Name)]
+public sealed class MockDataKestrelServerCollection : ICollectionFixture<MockDataKestrelServerFixture>
+{
+    public const string Name = "PoMiniGames.E2EUI.MockData";
 }

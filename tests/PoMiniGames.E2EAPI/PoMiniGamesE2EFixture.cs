@@ -52,6 +52,10 @@ public sealed class PoMiniGamesE2EFixture : WebApplicationFactory<Program>
                 ["Auth:EnableFakeAuth"] = "true",
                 ["PoMiniGames:Storage:TableService:ConnectionString"] = AzuriteConnectionString,
                 ["PoMiniGames:Storage:TableService:TableName"] = "pominigames-e2e",
+                // Budget guardrail: force every AI boundary to its in-process mock so the
+                // suite can never spend live tokens, even if a runner has real keys present.
+                ["PoFunQuiz:Features:UseMockAI"] = "true",
+                ["PoCoupleQuiz:Features:UseMockAI"] = "true",
             });
         });
 

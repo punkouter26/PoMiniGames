@@ -16,17 +16,20 @@ var builder = WebAssemblyHostBuilder.CreateDefault(args);
 builder.RootComponents.Add<App>("#app");
 builder.RootComponents.Add<HeadOutlet>("head::after");
 
-// BUG FIX (#3, #7): BaseAddress now points to the API in Development so
-// HttpClient calls hit the actual backend, not the SPA fallback. In any
-// other environment (Production, Staging) we still use the host origin
-// because the API is reverse-proxied under the same origin.
+// The host serves both the WASM client and the API on the SAME origin (no separate
+// frontend server, no CORS — see AGENT.MD), so the origin the app was served from is
+// always where the API lives. Use it directly. This is correct in every scenario:
+//   • dev run on :5000  -> served from :5000 -> API on :5000
+//   • E2E-UI / any host on a dynamic port -> served from that port -> API on that port
+//   • Production/Staging -> same origin
+// A previous hardcode of http://localhost:5000 broke any host not on :5000 (including
+// the dynamic-port E2E-UI Kestrel host: the SPA called :5000 and got ERR_CONNECTION_REFUSED).
+// An explicit PoMiniGames:ApiBaseAddress override remains for split dev-server setups.
 var apiBase = builder.Configuration["PoMiniGames:ApiBaseAddress"]
               ?? builder.Configuration["ApiBaseAddress"];
 if (string.IsNullOrWhiteSpace(apiBase))
 {
-    apiBase = builder.HostEnvironment.IsDevelopment()
-        ? "http://localhost:5000/"
-        : builder.HostEnvironment.BaseAddress;
+    apiBase = builder.HostEnvironment.BaseAddress;
 }
 builder.Services.AddScoped(sp => new HttpClient
 {

@@ -100,27 +100,51 @@ public static class PlayerStatsEndpoints
         // Documented cross-game save surface (POST /api/statistics). Resolves
         // gameId + playerName from the JSON body and delegates to the
         // existing per-game PUT handler so there's exactly one persistence path.
+        // §6 of QA report: accept BOTH `gameId` (canonical, OpenAPI-documented) and
+        // `gameKey` (legacy alias used by some pre-consolidation clients) and
+        // surface a precise validation error naming which field was missing.
         app.MapPost("/api/statistics",
-            async (HttpContext context, PlayerStatsSubmission submission, IStorageService storage) =>
+            async (HttpContext context, PlayerStatsSubmissionRaw raw, IStorageService storage) =>
             {
-                if (submission is null
-                    || string.IsNullOrWhiteSpace(submission.GameId)
-                    || string.IsNullOrWhiteSpace(submission.PlayerName))
+                if (raw is null)
                 {
-                    return Results.BadRequest(new { error = "gameId and playerName are required" });
+                    return Results.BadRequest(new { error = "request body is required" });
                 }
-                if (submission.Stats is null)
+                var gameId = !string.IsNullOrWhiteSpace(raw.GameId) ? raw.GameId : raw.GameKey;
+                var playerName = !string.IsNullOrWhiteSpace(raw.PlayerName) ? raw.PlayerName : raw.Player;
+                var missing = new List<string>();
+                if (string.IsNullOrWhiteSpace(gameId)) missing.Add("gameId");
+                if (string.IsNullOrWhiteSpace(playerName)) missing.Add("playerName");
+                if (raw.Stats is null && raw.Score is null) missing.Add("stats");
+                if (missing.Count > 0)
                 {
-                    return Results.BadRequest(new { error = "stats payload is required" });
+                    return Results.BadRequest(new
+                    {
+                        error = "validation_failed",
+                        missing,
+                        hint = "POST { gameId, playerName, stats } to /api/statistics. `gameKey` is accepted as a legacy alias of `gameId`."
+                    });
                 }
-
-                await storage.SavePlayerStatsAsync(submission.GameId, submission.PlayerName, submission.Stats);
+                var stats = raw.Stats ?? new PlayerStats();
+                // If the client sent a flat { score, outcome } shape, fold it into
+                // the default difficulty bucket so simple callers don't have to
+                // supply the full nested schema. WinRate / TotalWins / TotalGames
+                // are computed properties on PlayerStats, so only the mutable
+                // counter fields are set.
+                if (raw.Score is not null)
+                {
+                    var won = raw.Outcome?.Equals("win", StringComparison.OrdinalIgnoreCase) == true;
+                    stats.Easy.Wins = won ? 1 : 0;
+                    stats.Easy.Losses = won ? 0 : 1;
+                    stats.Easy.TotalGames = 1;
+                }
+                await storage.SavePlayerStatsAsync(gameId!, playerName!, stats);
                 return Results.NoContent();
             })
             .RequireAuthorization()
             .WithName("SavePlayerStatistics")
             .WithTags("Statistics")
-            .WithSummary("Save or upsert a player's stats for a single game (body supplies gameId + playerName)")
+            .WithSummary("Save or upsert a player's stats for a single game (body supplies gameId + playerName + stats). gameKey is accepted as a legacy alias.")
             .Produces(StatusCodes.Status204NoContent)
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status401Unauthorized);
@@ -128,8 +152,20 @@ public static class PlayerStatsEndpoints
         return app;
     }
 
-    /// <summary>Wire format for <c>POST /api/statistics</c>.</summary>
-    public sealed record PlayerStatsSubmission(string GameId, string PlayerName, PlayerStats Stats);
+    /// <summary>
+    /// Wire format for <c>POST /api/statistics</c>. Accepts both the canonical
+    /// <c>gameId</c> and the legacy <c>gameKey</c>; either suffices. The flat
+    /// <c>score</c> / <c>outcome</c> shape is folded into the easy-difficulty
+    /// bucket so simple callers don't need to send the full nested schema.
+    /// </summary>
+    public sealed record PlayerStatsSubmissionRaw(
+        [property: System.Text.Json.Serialization.JsonPropertyName("gameId")] string? GameId,
+        [property: System.Text.Json.Serialization.JsonPropertyName("gameKey")] string? GameKey,
+        [property: System.Text.Json.Serialization.JsonPropertyName("playerName")] string? PlayerName,
+        [property: System.Text.Json.Serialization.JsonPropertyName("player")] string? Player,
+        [property: System.Text.Json.Serialization.JsonPropertyName("stats")] PlayerStats? Stats,
+        [property: System.Text.Json.Serialization.JsonPropertyName("score")] double? Score,
+        [property: System.Text.Json.Serialization.JsonPropertyName("outcome")] string? Outcome);
 
     private static bool IsValidStats(PlayerStats? stats)
     {

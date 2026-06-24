@@ -19,6 +19,7 @@
     <PackageReference Include="FluentAssertions" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
     <PackageReference Include="Microsoft.Playwright" />
+    <PackageReference Include="Testcontainers.Azurite" />
   </ItemGroup>
 
   <ItemGroup>

@@ -182,7 +182,7 @@ public sealed class LeaderboardEndpointTests : IClassFixture<TestWebApplicationF
     [Fact]
     public async Task GetDiag_ReturnsMaskedConfigJson()
     {
-        var response = await _client.GetAsync("/diag");
+        var response = await _client.GetAsync("/api/diag");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var content = await response.Content.ReadAsStringAsync();
@@ -201,7 +201,7 @@ public sealed class LeaderboardEndpointTests : IClassFixture<TestWebApplicationF
     [Fact]
     public async Task GetDiag_ShouldNotExposePlaintextSecrets()
     {
-        var response = await _client.GetAsync("/diag");
+        var response = await _client.GetAsync("/api/diag");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var content = await response.Content.ReadAsStringAsync();

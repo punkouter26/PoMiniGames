@@ -3,7 +3,15 @@
   <PropertyGroup>
     <!-- TFM / Nullable / ImplicitUsings inherited from Directory.Build.props -->
     <UserSecretsId>pomini-games-secret-id</UserSecretsId>
-    <SpaRoot>..\..\PoMiniGames.Client</SpaRoot>
+    <!--
+      Hosting the Blazor WebAssembly client inside this API project (§ Architecture).
+      The Microsoft.NET.Sdk.Web glue picks up the referenced Client's static web
+      assets via the static-web-assets manifest (`obj/.../staticwebassets.build.json`)
+      and exposes them through `UseStaticFiles()` / `UseBlazorFrameworkFiles()`.
+      `SpaRoot` is intentionally NOT set — that is the legacy npm/gulp SPA-template
+      hook which tries to run `npm install/build` on startup and breaks the
+      BlazorWasm static-asset pipeline. `SpaProxyUrl` is similarly unused.
+    -->
     <StaticWebAssetsFingerprintingEnabled>false</StaticWebAssetsFingerprintingEnabled>
   </PropertyGroup>
 
@@ -38,12 +46,39 @@
     <PackageReference Include="Serilog.Exceptions" />
   </ItemGroup>
 
-  <!-- React client build removed - now using Blazor WASM -->
+  <!-- Blazor WASM hosting glue: pull the Client's static web assets (the
+       `wwwroot/_framework/` directory produced at build time) into the host's
+       own `bin/Debug/net10.0/wwwroot/` so `UseBlazorFrameworkFiles()` and
+       `UseStaticFiles()` can serve them in `dotnet run` (F5) as well as in
+       `dotnet publish`. The SDK normally does this at publish time, but the
+       `dotnet run` pipeline skips the file-system copy in some environments —
+       the ProjectReference below makes the copy deterministic in dev. -->
   <ItemGroup>
     <ProjectReference Include="..\..\PoShared\PoShared.csproj" />
     <ProjectReference Include="..\..\PoMiniGames.Application\PoMiniGames.Application.csproj" />
     <ProjectReference Include="..\..\PoMiniGames.Infrastructure\PoMiniGames.Infrastructure.csproj" />
     <ProjectReference Include="..\..\PoMiniGames.Client\PoMiniGamesClient.csproj" />
   </ItemGroup>
+
+  <!--
+    Stage the Client's wwwroot output into the host's wwwroot at build time.
+    This is the safety net: even if the static-web-assets manifest pipeline
+    is bypassed (e.g. when running with no-build), the framework files
+    (blazor.webassembly.js, dotnet.runtime.*.js, the .wasm payload and
+    the SRI-bearing blazor.boot.json shim) are present on disk so
+    UseBlazorFrameworkFiles() and UseStaticFiles() can find them.
+
+    Source uses a wildcard so the staging rule is re-evaluated on every build
+    (no incremental tracking staleness).
+  -->
+  <Target Name="StageBlazorClientStaticWebAssets" AfterTargets="Build">
+    <ItemGroup>
+      <_BlazorClientWwwroot Include="..\..\PoMiniGames.Client\bin\$(Configuration)\net10.0\wwwroot\**\*.*" />
+    </ItemGroup>
+    <Copy
+      SourceFiles="@(_BlazorClientWwwroot)"
+      DestinationFiles="@(_BlazorClientWwwroot->'$(MSBuildThisFileDirectory)bin\$(Configuration)\net10.0\wwwroot\%(RecursiveDir)%(Filename)%(Extension)')"
+      SkipUnchangedFiles="true" />
+  </Target>
 
 </Project>

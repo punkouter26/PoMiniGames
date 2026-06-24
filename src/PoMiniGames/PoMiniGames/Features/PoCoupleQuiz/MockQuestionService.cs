@@ -2,9 +2,9 @@ namespace PoMiniGames.Features.PoCoupleQuiz;
 
 /// <summary>
 /// Deterministic, no-AI question service for tests and the in-Development
-/// <c>UseMockAi = true</c> flag. Never registered in Production (the
+/// <c>UseMockAI = true</c> flag. Never registered in Production (the
 /// <c>StartupSecretValidator</c> ensures Azure OpenAI secrets are present;
-/// mock service registration is gated on <c>UseMockAi</c>).
+/// mock service registration is gated on <c>UseMockAI</c>).
 /// </summary>
 /// <remarks>
 /// Pattern: Strategy (interchangeable with <see cref="AzureOpenAIQuestionService"/>).

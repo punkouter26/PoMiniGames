@@ -32,6 +32,14 @@ public sealed class StorageInitializer
         "PoFaceLeaderboard",
         "PoFacePlayerStats",
         "PoFacePlayers",
+        // PoSurvive persistence (§3 of QA report): the Evolution, Session and
+        // Heartbeat tables are required by the /api/evolution/* and /api/posurvive/*
+        // surfaces. Without eager creation those endpoints return 500 with
+        // "No Azure Table…". Adding them here closes the loop with the same
+        // idempotent, best-effort pattern used for the consolidated games above.
+        "EvolutionRecords",
+        "PoSurviveSessions",
+        "PoSurviveHeartbeats",
     ];
 
     /// <summary>Blob containers used by the consolidated games (PoFace needs webcam capture blobs).</summary>

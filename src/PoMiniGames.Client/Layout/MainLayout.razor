@@ -4,6 +4,7 @@
 @inject ToastService ToastService
 @inject NavigationManager NavigationManager
 @inject KioskCoordinator Kiosk
+@inject ScoreSyncService ScoreSync
 
 <div class="gl-page">
     @if (AuthState.UsingMockData)
@@ -46,6 +47,18 @@
         @* Center: app-wide primary action — kiosk demo toggle reachable from any
            page (one-tap), completing the Left–Center–Right spatial contract. *@
         <div class="gl-top-bar-center">
+            @* Pending-sync pill: turns silent score-submit failures into honest, reassuring
+               status. Only shows when scores are parked offline; tapping it retries now. *@
+            @if (_pendingScores > 0)
+            {
+                <button type="button"
+                        class="gl-sync-pill"
+                        aria-label="@_pendingScores score(s) waiting to sync — tap to retry now"
+                        @onclick="FlushScoresAsync">
+                    ⟳ <span class="gl-sync-count">@_pendingScores</span>
+                    <span class="gl-center-action-label">pending</span>
+                </button>
+            }
             <button type="button"
                     class="gl-center-action @(Kiosk.IsActive ? "gl-center-action--active" : null)"
                     aria-pressed="@Kiosk.IsActive"
@@ -102,6 +115,8 @@
     private List<Breadcrumb> _breadcrumbs = [];
     private string _currentUrl = "";
     private Action? _onAuthStateChanged;
+    private Action? _onSyncChanged;
+    private int _pendingScores;
 
     public record Breadcrumb(string Label, string Url);
 
@@ -115,7 +130,31 @@
         AuthState.StateChanged += _onAuthStateChanged;
         NavigationManager.LocationChanged += OnLocationChanged;
         Kiosk.Changed += OnKioskChanged;
+        // Reflect queue changes live (a game enqueues a failed score, or a flush drains it).
+        _onSyncChanged = () => InvokeAsync(() => { _pendingScores = ScoreSync.PendingCount; StateHasChanged(); });
+        ScoreSync.Changed += _onSyncChanged;
         UpdateBreadcrumbs();
+    }
+
+    // localStorage + the flusher both need JS interop, so do the first read and the
+    // startup sync after the first render rather than in OnInitialized.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+
+        _pendingScores = ScoreSync.PendingCount;
+        if (_pendingScores > 0) StateHasChanged();
+
+        // Best-effort flush of anything parked from a previous offline session.
+        await ScoreSync.FlushAsync();
+        _pendingScores = ScoreSync.PendingCount;
+        StateHasChanged();
+    }
+
+    private async Task FlushScoresAsync()
+    {
+        await ScoreSync.FlushAsync();
+        _pendingScores = ScoreSync.PendingCount;
     }
 
     private void OnKioskChanged() => InvokeAsync(StateHasChanged);
@@ -221,6 +260,10 @@
         if (_onAuthStateChanged is not null)
         {
             AuthState.StateChanged -= _onAuthStateChanged;
+        }
+        if (_onSyncChanged is not null)
+        {
+            ScoreSync.Changed -= _onSyncChanged;
         }
     }
 }

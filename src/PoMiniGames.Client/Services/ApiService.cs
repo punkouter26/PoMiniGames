@@ -170,6 +170,34 @@ public class ApiService
         }
     }
 
+    /// <summary>Normalized leaderboards for every game in one round-trip (home preview, /leaderboards hub).</summary>
+    public async Task<GameLeaderboardDto[]?> GetAllLeaderboardsAsync(int limit = 5)
+    {
+        try
+        {
+            return await _http.GetFromJsonAsync<GameLeaderboardDto[]>(
+                $"/api/leaderboards?limit={limit}", JsonOptions);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Normalized leaderboard for a single game.</summary>
+    public async Task<GameLeaderboardDto?> GetGameLeaderboardAsync(string game, int limit = 10)
+    {
+        try
+        {
+            return await _http.GetFromJsonAsync<GameLeaderboardDto>(
+                $"/api/leaderboards/{game}?limit={limit}", JsonOptions);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     public async Task<SnakeHighScore[]?> GetSnakeHighScoresAsync(int count = 10)
     {
         try
@@ -187,7 +215,11 @@ public class ApiService
     {
         try
         {
-            entry.Date = DateTime.UtcNow.ToString("O");
+            // Stamp the play time once. Preserving it across a timeout-then-resync keeps the
+            // server's content-hash RowKey stable, so a requeued score upserts onto the same
+            // row instead of duplicating the leaderboard entry.
+            if (string.IsNullOrEmpty(entry.Date))
+                entry.Date = DateTime.UtcNow.ToString("O");
             var response = await _http.PostAsJsonAsync("/api/snake/highscores", entry, JsonOptions);
             return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<SnakeHighScore>(JsonOptions) : null;
         }
@@ -214,7 +246,9 @@ public class ApiService
     {
         try
         {
-            entry.Date = DateTime.UtcNow.ToString("O");
+            // Stamp once; preserve across resync so the deterministic RowKey stays stable (no duplicates).
+            if (string.IsNullOrEmpty(entry.Date))
+                entry.Date = DateTime.UtcNow.ToString("O");
             var response = await _http.PostAsJsonAsync("/api/marblerace/highscores", entry, JsonOptions);
             return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<MarbleRaceHighScore>(JsonOptions) : null;
         }

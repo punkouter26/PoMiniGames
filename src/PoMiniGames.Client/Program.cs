@@ -40,6 +40,10 @@ builder.Services.AddAuthorizationCore();
 builder.Services.AddScoped<PlayerNameService>();
 builder.Services.AddScoped<ToastService>();
 builder.Services.AddScoped<GameStatsService>();
+// Offline score resilience: durable localStorage queue + flusher behind GameResultService,
+// so a failed leaderboard submit is parked and synced on reconnect rather than lost.
+builder.Services.AddScoped<PendingScoreStore>();
+builder.Services.AddScoped<ScoreSyncService>();
 builder.Services.AddScoped<GameResultService>();
 builder.Services.AddScoped<MatchHistoryService>();
 builder.Services.AddScoped<PoClickHistoryService>();

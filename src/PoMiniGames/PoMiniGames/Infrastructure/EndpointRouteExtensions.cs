@@ -34,6 +34,7 @@ internal static class EndpointRouteExtensions
         app.MapGetPlayerStats();
         app.MapSavePlayerStats();
         app.MapGetLeaderboard();
+        app.MapUnifiedLeaderboardEndpoints();
         app.MapGetAllPlayerStatistics();
         app.MapHighScoresEndpoints();
         app.MapMarbleRaceHighScoresEndpoints();

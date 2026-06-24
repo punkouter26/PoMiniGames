@@ -1,0 +1,127 @@
+@page "/leaderboards"
+@inject ApiService ApiService
+@inject NavigationManager NavigationManager
+
+<PageTitle>Leaderboards · PoMiniGames</PageTitle>
+
+<div class="lb-page">
+    <header class="lb-head">
+        <h1 class="lb-title">Leaderboards</h1>
+        @if (!_loading && _boards.Count > 0)
+        {
+            <span class="lb-count">@_boards.Count games</span>
+        }
+    </header>
+
+    @if (_loading)
+    {
+        <div class="lb-skeletons">
+            @for (var i = 0; i < 6; i++)
+            {
+                <div class="lb-skel"></div>
+            }
+        </div>
+    }
+    else if (_error)
+    {
+        <div class="lb-empty">
+            <p>Backend offline — leaderboards can't load right now.</p>
+            <button class="lb-retry" @onclick="Load">Retry</button>
+        </div>
+    }
+    else if (_boards.Count == 0)
+    {
+        <div class="lb-empty">
+            <p>No scores yet. Be the first on the board!</p>
+            <button class="lb-retry" @onclick='() => NavigationManager.NavigateTo("/")'>Pick a game →</button>
+        </div>
+    }
+    else
+    {
+        <nav class="lb-chips" aria-label="Filter by game">
+            @foreach (var b in _boards)
+            {
+                <button type="button"
+                        class="lb-chip @(b.GameKey == _selected ? "lb-chip--on" : null)"
+                        @onclick="() => Select(b.GameKey)">
+                    @b.Title
+                    <span class="lb-chip-n">@b.Entries.Count</span>
+                </button>
+            }
+        </nav>
+
+        <section class="lb-board" aria-live="polite">
+            <div class="lb-board-head">
+                <h2>@SelectedBoard.Title</h2>
+                <span class="lb-unit">@SelectedBoard.Unit</span>
+            </div>
+
+            @if (SelectedBoard.Entries.Count == 0)
+            {
+                <p class="lb-board-empty">No scores yet — play @SelectedBoard.Title to claim #1.</p>
+            }
+            else
+            {
+                <ol class="lb-rows">
+                    @foreach (var e in SelectedBoard.Entries)
+                    {
+                        <li class="lb-row @(e.Rank <= 3 ? $"lb-row--top lb-row--{e.Rank}" : null)">
+                            <span class="lb-rank">@e.Rank</span>
+                            <span class="lb-name">@e.Name</span>
+                            <span class="lb-value">@e.DisplayValue</span>
+                        </li>
+                    }
+                </ol>
+            }
+
+            <button class="lb-play" @onclick="() => Play(SelectedBoard.GameKey)">Play @SelectedBoard.Title →</button>
+        </section>
+    }
+</div>
+
+@code {
+    private bool _loading = true;
+    private bool _error;
+    private List<GameLeaderboardDto> _boards = [];
+    private string _selected = "";
+
+    /// <summary>The board for the active chip, falling back to the first board.</summary>
+    private GameLeaderboardDto SelectedBoard =>
+        _boards.FirstOrDefault(b => b.GameKey == _selected) ?? _boards[0];
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task Load()
+    {
+        _loading = true;
+        _error = false;
+        StateHasChanged();
+
+        var boards = await ApiService.GetAllLeaderboardsAsync(limit: 10);
+        if (boards is null)
+        {
+            _error = true;
+        }
+        else
+        {
+            _boards = boards.ToList();
+            if (_boards.Count > 0 && string.IsNullOrEmpty(_selected))
+            {
+                // Default to the first board that actually has entries.
+                _selected = (_boards.FirstOrDefault(b => b.Entries.Count > 0) ?? _boards[0]).GameKey;
+            }
+        }
+
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private void Select(string gameKey) => _selected = gameKey;
+
+    // Map a leaderboard game key to its primary play route via the shared catalog.
+    private void Play(string gameKey)
+    {
+        var match = GameCatalog.SinglePlayer.FirstOrDefault(g => string.Equals(g.Key, gameKey, StringComparison.OrdinalIgnoreCase));
+        NavigationManager.NavigateTo(match is not null ? match.Url : $"/{gameKey}");
+    }
+}

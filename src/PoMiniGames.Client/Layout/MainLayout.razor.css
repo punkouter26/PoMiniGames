@@ -155,6 +155,38 @@
     background: rgba(245, 158, 11, 0.14);
 }
 
+/* Pending-sync pill: amber, gently pulsing so unsynced scores are noticed, not alarming. */
+.gl-sync-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.35rem 0.7rem;
+    border-radius: var(--radius-pill);
+    border: 1px solid var(--color-warning, #f59e0b);
+    background: rgba(245, 158, 11, 0.14);
+    color: #fcd34d;
+    font-size: var(--text-sm);
+    font-weight: 600;
+    animation: gl-sync-pulse 2s ease-in-out infinite;
+}
+
+.gl-sync-pill:hover {
+    background: rgba(245, 158, 11, 0.24);
+}
+
+.gl-sync-count {
+    font-variant-numeric: tabular-nums;
+}
+
+@keyframes gl-sync-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .gl-sync-pill { animation: none; }
+}
+
 .gl-content {
     flex: 1;
     display: flex;
@@ -178,8 +210,9 @@
         display: none;
     }
 
-    /* Center action collapses to icon-only to stay one-tap without crowding. */
-    .gl-center-action .gl-center-action-label {
+    /* Center action + sync pill collapse to icon-only to stay one-tap without crowding. */
+    .gl-center-action .gl-center-action-label,
+    .gl-sync-pill .gl-center-action-label {
         display: none;
     }
 }

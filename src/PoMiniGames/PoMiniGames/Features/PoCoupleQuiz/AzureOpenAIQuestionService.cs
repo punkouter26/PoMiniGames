@@ -52,7 +52,8 @@ public sealed class AzureOpenAIQuestionService : IQuestionService
             return;
         }
 
-        var client = new AzureOpenAIClient(new Uri(endpoint), new AzureKeyCredential(apiKey));
+        var client = new AzureOpenAIClient(new Uri(endpoint), new AzureKeyCredential(apiKey),
+            PoMiniGames.Infrastructure.AI.AzureOpenAIResilience.DefaultOptions());
         _chatClient = new Lazy<ChatClient?>(() => client.GetChatClient(deploymentName));
     }
 

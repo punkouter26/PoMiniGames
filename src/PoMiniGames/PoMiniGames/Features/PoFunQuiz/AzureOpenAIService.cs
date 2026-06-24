@@ -46,7 +46,8 @@ public sealed class AzureOpenAIService : IOpenAIService
             return;
         }
 
-        var client = new AzureOpenAIClient(new Uri(endpoint), new AzureKeyCredential(apiKey));
+        var client = new AzureOpenAIClient(new Uri(endpoint), new AzureKeyCredential(apiKey),
+            PoMiniGames.Infrastructure.AI.AzureOpenAIResilience.DefaultOptions());
         _chatClient = new Lazy<ChatClient?>(() => client.GetChatClient(deploymentName));
     }
 
@@ -59,7 +60,7 @@ public sealed class AzureOpenAIService : IOpenAIService
         var useMock = _configuration.GetValue<bool>("PoFunQuiz:Features:UseMockAI");
         if (useMock && IsNonProduction())
         {
-            _logger.LogWarning("PoFunQuiz: UseMockAI=true in {Environment}; serving mock questions.", _environment.EnvironmentName);
+            _logger.MockEnabled(_environment.EnvironmentName);
             return MockOpenAIService.GenerateQuestions(category, count);
         }
 
@@ -67,7 +68,7 @@ public sealed class AzureOpenAIService : IOpenAIService
         {
             if (IsNonProduction())
             {
-                _logger.LogWarning("PoFunQuiz: Azure OpenAI not configured; serving mock questions in {Environment}.", _environment.EnvironmentName);
+                _logger.NotConfigured(_environment.EnvironmentName);
                 return MockOpenAIService.GenerateQuestions(category, count);
             }
             throw new InvalidOperationException(_configErrorMessage);
@@ -92,7 +93,7 @@ public sealed class AzureOpenAIService : IOpenAIService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "PoFunQuiz: Azure OpenAI question generation failed.");
+            _logger.GenerationFailed(ex, category, count);
             if (IsNonProduction()) return MockOpenAIService.GenerateQuestions(category, count);
             throw;
         }

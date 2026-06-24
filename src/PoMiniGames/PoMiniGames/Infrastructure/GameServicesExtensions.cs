@@ -90,10 +90,17 @@ internal static class GameServicesExtensions
         // (retry x3 with exponential backoff + jitter, circuit breaker at 30% failure,
         // 30s total request timeout). The named client below is the one consumed by
         // AzureAIFaceAnalysisService.
+        // CorrelationPropagationHandler needs the ambient HttpContext to read the
+        // request's correlation/session ids and forward them upstream.
+        services.AddHttpContextAccessor();
+        services.AddTransient<CorrelationPropagationHandler>();
         services.AddHttpClient(AzureAIFaceAnalysisService.HttpClientName, client =>
             {
-                client.Timeout = TimeSpan.FromSeconds(60);
+                // 30s, not 60s: this serves a real-time game; a request that hasn't
+                // returned in 30s is already a failed round from the player's view.
+                client.Timeout = TimeSpan.FromSeconds(30);
             })
+            .AddHttpMessageHandler<CorrelationPropagationHandler>()
             .AddStandardResilienceHandler();
         services.AddSingleton<IFaceAnalysisService, AzureAIFaceAnalysisService>();
         services.AddSingleton<StubFaceAnalysisService>();

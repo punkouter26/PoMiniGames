@@ -181,6 +181,16 @@ public static class AuthEndpoints
         return trimmed;
     }
 
+    /// <summary>
+    /// True when the request peer is the loopback interface (or absent, as with the
+    /// in-memory <c>TestServer</c> used by integration tests, which has no real socket).
+    /// </summary>
+    private static bool IsLoopback(HttpContext context)
+    {
+        var remote = context.Connection.RemoteIpAddress;
+        return remote is null || System.Net.IPAddress.IsLoopback(remote);
+    }
+
     private static async Task<IResult> SignInDevelopmentUserAsync(
         HttpContext context,
         IWebHostEnvironment environment,
@@ -188,6 +198,15 @@ public static class AuthEndpoints
         string? userName)
     {
         if (!environment.IsDevelopment())
+        {
+            return Results.NotFound();
+        }
+
+        // Defense-in-depth: even within Development, an unauthenticated sign-in that
+        // mints an arbitrary identity must never be reachable from off-box. Requiring a
+        // loopback peer closes remote abuse and the cross-site request vector (a remote
+        // page cannot make the browser originate from 127.0.0.1).
+        if (!IsLoopback(context))
         {
             return Results.NotFound();
         }

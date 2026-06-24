@@ -65,6 +65,15 @@ if (app.Environment.IsProduction())
         throw new InvalidOperationException(
             $"SECURITY: '{PoMiniGames.Features.Auth.FakeAuthHandler.SchemeName}' authentication scheme is registered in a Production environment. This is forbidden.");
     }
+
+    // Fail fast if a dev-only auth shortcut leaked into Production config. The dev-login
+    // endpoints are also gated on IsDevelopment(), but this guard catches the dangerous
+    // case where the config flag is set regardless of how the environment is resolved.
+    if (app.Configuration.GetValue<bool>("Auth:AutoGuestLogin"))
+    {
+        throw new InvalidOperationException(
+            "SECURITY: 'Auth:AutoGuestLogin' is enabled in a Production environment. This silently bypasses sign-in and is forbidden.");
+    }
 }
 
 // Graceful degradation: warn loudly (but do not crash) when real OAuth is unconfigured.

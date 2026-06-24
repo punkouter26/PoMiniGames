@@ -43,7 +43,8 @@ public static class PoSurviveServiceExtensions
                     deploymentMap[id!] = deployment!;
             }
 
-            services.AddSingleton(_ => new AzureOpenAIClient(new Uri(endpoint), new AzureKeyCredential(apiKey)));
+            services.AddSingleton(_ => new AzureOpenAIClient(new Uri(endpoint), new AzureKeyCredential(apiKey),
+                PoMiniGames.Infrastructure.AI.AzureOpenAIResilience.DefaultOptions()));
             services.AddSingleton<IInferenceService>(sp =>
                 new AzureOpenAIInferenceService(
                     openAiClient: sp.GetRequiredService<AzureOpenAIClient>(),

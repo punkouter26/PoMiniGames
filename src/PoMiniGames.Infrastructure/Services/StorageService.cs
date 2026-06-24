@@ -99,7 +99,9 @@ public class StorageService : IStorageService
         var result = new List<PlayerStatsDto>();
         var table = Table(PlayerStatsTable);
 
-        await foreach (var entity in table.QueryAsync<TableEntity>())
+        // Bound the per-network-call working set; the full-table scan still streams,
+        // but never buffers more than one page of raw entities at a time.
+        await foreach (var entity in table.QueryAsync<TableEntity>(maxPerPage: 1000))
         {
             var json = entity.GetString("StatsJson");
             if (string.IsNullOrEmpty(json)) continue;
@@ -325,19 +327,34 @@ public class StorageService : IStorageService
         return descriptor.Rank(scores).Take(limit).ToList();
     }
 
-    // The one shared high-score write: normalise, map to a row, append.
+    // The one shared high-score write: normalise, map to a row, upsert idempotently.
+    // The RowKey is derived deterministically from the row's content so a duplicate
+    // HTTP request or a retry-after-timeout collapses onto the same row instead of
+    // inflating the leaderboard with a second identical entry. Ranking is done in
+    // memory (see GetHighScoresAsync), so RowKey ordering is irrelevant to correctness.
     private async Task<T> SaveHighScoreAsync<T>(HighScoreDescriptor<T> descriptor, T entry)
     {
         var sanitized = descriptor.Sanitize(entry);
+        var fields = descriptor.ToFields(sanitized);
 
-        var entity = new TableEntity(descriptor.Partition, NewRowKey());
-        foreach (var (key, value) in descriptor.ToFields(sanitized))
+        var entity = new TableEntity(descriptor.Partition, DeterministicRowKey(fields));
+        foreach (var (key, value) in fields)
         {
             entity[key] = value;
         }
 
-        await Table(descriptor.Table).AddEntityAsync(entity);
+        await Table(descriptor.Table).UpsertEntityAsync(entity, TableUpdateMode.Replace);
         return sanitized;
+    }
+
+    // Stable content hash over the row's fields → idempotent, retry-safe RowKey.
+    private static string DeterministicRowKey(IDictionary<string, object?> fields)
+    {
+        var canonical = string.Join("", fields
+            .OrderBy(kv => kv.Key, StringComparer.Ordinal)
+            .Select(kv => $"{kv.Key}={Convert.ToString(kv.Value, System.Globalization.CultureInfo.InvariantCulture)}"));
+        var hash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(canonical));
+        return Convert.ToHexStringLower(hash);
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────
@@ -354,10 +371,6 @@ public class StorageService : IStorageService
         return s.Length > 3 ? s[..3] : s;
     }
 
-
-    // Descending-time RowKey keeps newest first within a partition and stays unique.
-    private static string NewRowKey() =>
-        $"{(DateTime.MaxValue.Ticks - DateTime.UtcNow.Ticks):D19}-{Guid.NewGuid():N}";
 
     internal static string SanitizeName(string input)
     {

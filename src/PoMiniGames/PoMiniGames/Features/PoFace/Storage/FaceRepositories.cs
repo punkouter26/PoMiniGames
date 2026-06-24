@@ -1,5 +1,6 @@
 using Azure;
 using Azure.Data.Tables;
+using PoMiniGames.Infrastructure.Storage;
 
 namespace PoMiniGames.Features.PoFace.Storage;
 
@@ -103,20 +104,21 @@ public sealed class LeaderboardRepository : ILeaderboardRepository
     public async Task UpsertBestAsync(LeaderboardEntry entry, CancellationToken cancellationToken = default)
     {
         // BestMatchUpsertStrategy: a strictly higher score replaces the existing one.
-        try
-        {
-            var existing = await _table.GetEntityAsync<LeaderboardEntity>(entry.Year.ToString(), entry.UserId, cancellationToken: cancellationToken);
-            if (existing.Value.Score >= entry.Score) return; // existing is better or equal — no-op
-        }
-        catch (RequestFailedException ex) when (ex.Status == 404) { /* first time */ }
-        var entity = new LeaderboardEntity
-        {
-            PartitionKey = entry.Year.ToString(),
-            RowKey = entry.UserId,
-            Score = entry.Score,
-            AchievedAt = entry.AchievedAt == default ? DateTime.UtcNow : entry.AchievedAt
-        };
-        await _table.UpsertEntityAsync(entity, TableUpdateMode.Replace, cancellationToken);
+        // Done under optimistic concurrency so a concurrent higher score is never silently
+        // overwritten by a lower one (the previous read-then-blind-upsert allowed inversion).
+        await TableConcurrency.UpdateWithRetryAsync<LeaderboardEntity>(
+            _table,
+            partitionKey: entry.Year.ToString(),
+            rowKey: entry.UserId,
+            factory: () => new LeaderboardEntity { Score = int.MinValue },
+            mutate: e =>
+            {
+                if (entry.Score <= e.Score) return false; // existing is better or equal — no write
+                e.Score = entry.Score;
+                e.AchievedAt = entry.AchievedAt == default ? DateTime.UtcNow : entry.AchievedAt;
+                return true;
+            },
+            cancellationToken);
     }
 
     public async Task<IReadOnlyList<LeaderboardEntry>> GetTopAsync(int year, int top, CancellationToken cancellationToken = default)

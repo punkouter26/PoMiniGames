@@ -86,14 +86,18 @@
 @code {
     private List<Breadcrumb> _breadcrumbs = [];
     private string _currentUrl = "";
+    private Action? _onAuthStateChanged;
 
     public record Breadcrumb(string Label, string Url);
 
     protected override void OnInitialized()
     {
         // Auth is initialized by <AuthGate> before MainLayout ever renders, so here we
-        // only subscribe for live updates (e.g. sign-out) and wire breadcrumbs.
-        AuthState.StateChanged += () => InvokeAsync(StateHasChanged);
+        // only subscribe for live updates (e.g. sign-out) and wire breadcrumbs. The handler
+        // is held in a field so Dispose can detach it — an inline lambda could never be
+        // unsubscribed and would leak this component on every re-creation.
+        _onAuthStateChanged = () => InvokeAsync(StateHasChanged);
+        AuthState.StateChanged += _onAuthStateChanged;
         NavigationManager.LocationChanged += OnLocationChanged;
         UpdateBreadcrumbs();
     }
@@ -120,8 +124,9 @@
         // Always start with Home
         _breadcrumbs.Add(new Breadcrumb("Home", "/"));
 
-        foreach (var rawSeg in segments)
+        for (var i = 0; i < segments.Length; i++)
         {
+            var rawSeg = segments[i];
             var seg = rawSeg.Split('?')[0]; // strip query string before matching
             var label = seg switch
             {
@@ -146,8 +151,7 @@
                 "1" => "Demo",
                 _ => seg
             };
-            var rawIdx = Array.IndexOf(segments, rawSeg);
-            _breadcrumbs.Add(new Breadcrumb(label, "/" + string.Join("/", segments[..(rawIdx + 1)])));
+            _breadcrumbs.Add(new Breadcrumb(label, "/" + string.Join("/", segments[..(i + 1)])));
         }
 
         _currentUrl = NavigationManager.Uri;
@@ -175,5 +179,9 @@
     public void Dispose()
     {
         NavigationManager.LocationChanged -= OnLocationChanged;
+        if (_onAuthStateChanged is not null)
+        {
+            AuthState.StateChanged -= _onAuthStateChanged;
+        }
     }
 }

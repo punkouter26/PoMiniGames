@@ -1,6 +1,7 @@
 using Azure;
 using Azure.Data.Tables;
 using PoMiniGames.Infrastructure;
+using PoMiniGames.Infrastructure.Storage;
 
 namespace PoMiniGames.Features.PoCoupleQuiz.Storage;
 
@@ -119,11 +120,23 @@ public sealed class TeamsRepository : ITeamsRepository
 
     public async Task UpdateStatsAsync(string teamName, int score, int questionsAnswered, int correctAnswers, CancellationToken cancellationToken = default)
     {
-        var team = await GetTeamAsync(teamName, cancellationToken) ?? new Team { Name = teamName };
-        if (score > team.HighScore) team.HighScore = score;
-        team.TotalQuestionsAnswered += questionsAnswered;
-        team.CorrectAnswers += correctAnswers;
-        team.LastPlayed = DateTime.UtcNow;
-        await SaveTeamAsync(team, cancellationToken);
+        // Running totals: read-modify-write under optimistic concurrency so two concurrent
+        // game finishes for the same team cannot lose each other's increments.
+        var rowKey = teamName.ToLowerInvariant();
+        await TableConcurrency.UpdateWithRetryAsync<TeamTableEntity>(
+            _table,
+            partitionKey: "Team",
+            rowKey: rowKey,
+            factory: () => new TeamTableEntity { Name = teamName },
+            mutate: e =>
+            {
+                if (string.IsNullOrEmpty(e.Name)) e.Name = teamName;
+                if (score > e.HighScore) e.HighScore = score;
+                e.TotalQuestionsAnswered += questionsAnswered;
+                e.CorrectAnswers += correctAnswers;
+                e.LastPlayed = DateTime.UtcNow;
+                return true;
+            },
+            cancellationToken);
     }
 }

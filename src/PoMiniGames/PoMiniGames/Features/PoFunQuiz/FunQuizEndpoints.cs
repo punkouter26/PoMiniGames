@@ -46,6 +46,7 @@ public static class FunQuizEndpoints
             }
             return Results.Ok(cached);
         })
+        .RequireRateLimiting("ai-generation")
         .WithName("FunQuiz_GetQuestions")
         .WithSummary("Generate PoFunQuiz questions (gpt-5-nano on the shared po-aiservices-shared account)");
 

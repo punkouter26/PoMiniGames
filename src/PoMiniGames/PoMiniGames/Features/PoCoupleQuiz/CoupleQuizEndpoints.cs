@@ -61,6 +61,7 @@ public static class CoupleQuizEndpoints
             var question = await questionService.GenerateQuestionAsync(difficulty, category, cancellationToken);
             return Results.Ok(new { text = question.Text, category = question.Category.ToString() });
         })
+        .RequireRateLimiting("ai-generation")
         .WithName("CoupleQuiz_GenerateQuestion")
         .WithSummary("Generate a single PoCoupleQuiz question (Remote AI engine)");
 
@@ -72,6 +73,7 @@ public static class CoupleQuizEndpoints
             var score = await questionService.CheckAnswerSimilarityAsync(request.Answer1, request.Answer2, cancellationToken);
             return Results.Ok(new { score });
         })
+        .RequireRateLimiting("ai-generation")
         .WithName("CoupleQuiz_CheckSimilarity")
         .WithSummary("Score semantic similarity between two short answers (0.0-1.0)");
 

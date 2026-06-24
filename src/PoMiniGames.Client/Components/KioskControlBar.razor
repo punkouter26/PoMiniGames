@@ -98,5 +98,8 @@
     {
         Kiosk.Changed -= OnKioskChanged;
         _hideTimer?.Dispose();
+        // Release the JS→.NET callback handle; without this the DotNetObjectReference
+        // (and the captured component instance) leaks for the lifetime of the page.
+        _dotNetRef?.Dispose();
     }
 }

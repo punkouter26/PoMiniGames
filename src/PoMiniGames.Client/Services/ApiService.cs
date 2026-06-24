@@ -10,13 +10,24 @@ public class ApiService
 {
     private readonly HttpClient _http;
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(5);
-    private static readonly JsonSerializerOptions JsonOptions = new()
+    private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
+
+    private static JsonSerializerOptions CreateJsonOptions()
     {
-        PropertyNameCaseInsensitive = true,
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) }
-    };
+        var options = new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true,
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+            Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) }
+        };
+        // Fast path: source-generated metadata for the known API DTOs, with the reflection
+        // resolver chained behind it so any unlisted type still serializes. Must be set
+        // before the options are first used (after that the chain is frozen).
+        options.TypeInfoResolverChain.Insert(0, ApiJsonContext.Default);
+        options.TypeInfoResolverChain.Add(new System.Text.Json.Serialization.Metadata.DefaultJsonTypeInfoResolver());
+        return options;
+    }
 
     public ApiService(HttpClient http)
     {

@@ -43,6 +43,35 @@ internal static class RateLimitingExtensions
                         QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
                         QueueLimit = 0,
                     }));
+
+            // Azure OpenAI text generation (PoFunQuiz / PoCoupleQuiz question generation).
+            // These calls are billed per token, so cap them tightly per IP to bound cost
+            // and block prompt-spam amplification — 5 generations / minute.
+            opts.AddPolicy("ai-generation", ctx =>
+                RateLimitPartition.GetFixedWindowLimiter(
+                    partitionKey: ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                    factory: _ => new FixedWindowRateLimiterOptions
+                    {
+                        Window = TimeSpan.FromMinutes(1),
+                        PermitLimit = 5,
+                        AutoReplenishment = true,
+                        QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                        QueueLimit = 0,
+                    }));
+
+            // PoFace scoring: image upload + Azure multimodal analysis + blob + table write.
+            // The most expensive request in the app — 2 submissions / 10s per IP.
+            opts.AddPolicy("face-analysis", ctx =>
+                RateLimitPartition.GetFixedWindowLimiter(
+                    partitionKey: ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                    factory: _ => new FixedWindowRateLimiterOptions
+                    {
+                        Window = TimeSpan.FromSeconds(10),
+                        PermitLimit = 2,
+                        AutoReplenishment = true,
+                        QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                        QueueLimit = 0,
+                    }));
         });
 
         return services;

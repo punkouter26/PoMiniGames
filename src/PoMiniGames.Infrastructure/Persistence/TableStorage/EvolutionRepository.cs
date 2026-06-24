@@ -84,6 +84,7 @@ public sealed class EvolutionRepository : IEvolutionRepository
         var results = new List<EvolutionRecord>();
         var pages = tableClient.QueryAsync<TableEntity>(
             filter: "PartitionKey eq 'evolution'",
+            maxPerPage: 1000,
             cancellationToken: ct);
 
         await foreach (var page in pages)
@@ -106,6 +107,7 @@ public sealed class EvolutionRepository : IEvolutionRepository
         var results = new List<EvolutionRecord>();
         var pages = tableClient.QueryAsync<TableEntity>(
             filter: $"PartitionKey eq 'evolution' and Generation eq {generation}",
+            maxPerPage: 1000,
             cancellationToken: ct);
 
         await foreach (var page in pages)
@@ -121,9 +123,27 @@ public sealed class EvolutionRepository : IEvolutionRepository
         var tableClient = _tableService.GetTableClient(TableName);
         var all = await GetAllAsync(ct);
 
+        // Delete in transactional batches (max 100 actions, single partition) so the
+        // operation is all-or-nothing per batch instead of a loop that can fail halfway
+        // and leave the table in a partially-cleared state.
+        const int batchSize = 100;
+        var batch = new List<TableTransactionAction>(batchSize);
         foreach (var record in all)
         {
-            await tableClient.DeleteEntityAsync("evolution", record.DnaId, cancellationToken: ct);
+            batch.Add(new TableTransactionAction(
+                TableTransactionActionType.Delete,
+                new TableEntity("evolution", record.DnaId) { ETag = ETag.All }));
+
+            if (batch.Count == batchSize)
+            {
+                await tableClient.SubmitTransactionAsync(batch, ct);
+                batch.Clear();
+            }
+        }
+
+        if (batch.Count > 0)
+        {
+            await tableClient.SubmitTransactionAsync(batch, ct);
         }
     }
 

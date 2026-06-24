@@ -152,6 +152,7 @@ public static class FaceEndpoints
             });
         })
         .RequireAuthorization()
+        .RequireRateLimiting("face-analysis")
         .WithName("Face_ScoreRound");
 
         group.MapPost("/sessions/{id}/complete", async (
@@ -167,6 +168,18 @@ public static class FaceEndpoints
             var session = await sessions.GetAsync(userId, id, cancellationToken);
             if (session is null) return Results.NotFound();
             if (session.UserId != userId) return Results.StatusCode(StatusCodes.Status403Forbidden);
+            // Idempotency: a duplicate/retried complete must not double-count leaderboard
+            // and player-stat aggregates. Return the already-finalised result instead.
+            if (session.IsComplete)
+            {
+                return Results.Ok(new
+                {
+                    sessionId = session.SessionId,
+                    totalScore = session.TotalScore,
+                    perRound = session.Captures.Select(c => new { round = c.RoundNumber, emotion = c.TargetEmotion.ToString(), score = c.Score }).ToList(),
+                    alreadyComplete = true
+                });
+            }
             if (session.Captures.Count(c => c.CapturedAt > DateTime.MinValue) < FaceRoundOrder.Order.Count)
             {
                 return Results.UnprocessableEntity(new { error = "All 5 rounds must be captured before completing" });

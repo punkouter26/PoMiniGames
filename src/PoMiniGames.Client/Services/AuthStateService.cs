@@ -106,9 +106,13 @@ public class AuthStateService
                     await ApplyMicrosoftSessionAsync(restored);
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                // No silent session available; the login screen will offer Microsoft sign-in.
+                // No silent session available; the login screen will still offer Microsoft
+                // sign-in. We deliberately do NOT surface this as a blocking Error (a missing
+                // silent session is the normal first-visit case), but we keep the reason so
+                // a genuine MSAL misconfiguration is diagnosable instead of vanishing.
+                Console.Error.WriteLine($"[AuthStateService] Silent MSAL restore failed: {ex.Message}");
             }
         }
 

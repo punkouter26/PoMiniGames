@@ -16,13 +16,16 @@ namespace PoMiniGamesClient.Services;
 ///
 /// Design contract:
 ///   • Only ONE kiosk timer exists for the lifetime of the Blazor session.
-///   • Demo pages <c>Register</c> themselves and report the game URL on
-///     advance. The coordinator owns the timer, so canceling or stopping
-///     is centralized.
-///   • On any <see cref="NavigationManager.LocationChanged"/> the
-///     coordinator stops the active timer and lets the new page
-///     re-register. This prevents stale timers from hijacking manual
-///     navigation.
+///   • Demo pages <c>Register</c> themselves (catalog) and call
+///     <c>SetCurrent(key)</c> to report which demo is on screen. The
+///     coordinator owns the timer, so canceling or stopping is centralized.
+///   • On any <see cref="NavigationManager.LocationChanged"/>:
+///       – Kiosk-internal navigations carry <c>?kiosk=N</c> in the URL.
+///         The coordinator re-targets the timer to the new index and keeps
+///         ticking, so the auto-rotation actually rotates.
+///       – Any other navigation (Home, single-player, etc.) cancels the
+///         active timer to prevent a stale timer from yanking the user
+///         back into the kiosk cycle.
 ///   • Users can Pause/Resume/Skip/Exit via the on-screen kiosk control
 ///     bar (see <c>KioskControlBar.razor</c>).
 /// </summary>
@@ -128,16 +131,52 @@ public sealed class KioskCoordinator : IDisposable
 
     private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
     {
-        // Any location change cancels the auto-tick. The new page is
-        // responsible for calling Start() again if it wants to continue
-        // the cycle. This is what stops the "stale timer hijacks
-        // navigation" bug.
+        // Kiosk-internal navigations carry ?kiosk=N in the query string —
+        // these are emitted by the coordinator itself (Start, OnTick,
+        // SkipNext) and must NOT cancel the timer, otherwise the very first
+        // call to Start() followed by NavigateTo(...) would dispose the
+        // timer before the first tick. Re-target the countdown to the new
+        // index and (re)arm the timer if the previous non-kiosk navigation
+        // had killed it.
+        if (TryGetKioskIndex(e.Location, out var kioskIndex))
+        {
+            _advanceIndex = kioskIndex;
+            SecondsUntilAdvance = AdvanceSeconds;
+            if (_timer is null && !_disposed)
+            {
+                _timer = new System.Threading.Timer(_ => OnTick(), null, 1000, 1000);
+            }
+            Changed?.Invoke();
+            return;
+        }
+
+        // Any non-kiosk location change cancels the auto-tick. This is what
+        // stops the "stale timer hijacks manual navigation" bug — if the
+        // user clicks Home or a single-player game, the kiosk cycle stops
+        // instead of yanking them back 20s later.
         if (_timer is not null)
         {
             _timer.Dispose();
             _timer = null;
             Changed?.Invoke();
         }
+    }
+
+    // Parses ?kiosk=N (or &kiosk=N) from a URL. Returns true and the index
+    // when present and a non-negative integer; false otherwise.
+    private static bool TryGetKioskIndex(string url, out int index)
+    {
+        index = 0;
+        var qIdx = url.IndexOf('?');
+        if (qIdx < 0) return false;
+        foreach (var part in url[(qIdx + 1)..].Split('&'))
+        {
+            var eq = part.IndexOf('=');
+            if (eq <= 0) continue;
+            if (!string.Equals(part[..eq], "kiosk", StringComparison.OrdinalIgnoreCase)) continue;
+            return int.TryParse(part[(eq + 1)..], out index) && index >= 0;
+        }
+        return false;
     }
 
     public void Dispose()

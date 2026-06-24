@@ -21,11 +21,21 @@ development.
 | Web redirect URIs | `http://localhost:5000/auth/callback`, `http://localhost:5000`, `http://localhost:5000/signin-oidc` |
 | ID token issuance | enabled |
 | Scope | `access_as_user` (user-consent, enabled) |
-| Client secret | stored in `dotnet user-secrets` (2-year expiry, regenerates on 2028-06-23) |
+
+> **No client secret is used by this app.** The Blazor WASM client signs in via
+> MSAL as a *public client* (PKCE), and the API validates the resulting JWT. There
+> is no confidential-client / authorization-code-with-secret flow, so
+> `MicrosoftAuthOptions` has no `ClientSecret` property. **Never put a client secret
+> in this repo, appsettings, or this doc** — secret scanning will (correctly) block
+> the push. If a future feature needs one, store it per the
+> [Secrets & configuration](#secrets--configuration) section below, never inline.
 
 ---
 
 ## `dotnet user-secrets` (already wired)
+
+These are non-secret public identifiers (a Client ID is not a secret), kept in
+user-secrets purely so they don't ship in the committed `appsettings.json`:
 
 ```text
 PoMiniGames:MicrosoftAuth:Authority     = https://login.microsoftonline.com/common/v2.0
@@ -33,14 +43,72 @@ PoMiniGames:MicrosoftAuth:RedirectPath  = /auth/callback
 PoMiniGames:MicrosoftAuth:Scope         = api://195ac6ba-cd1a-48bf-900d-df7715cc921a/access_as_user
 PoMiniGames:MicrosoftAuth:ClientId      = 195ac6ba-cd1a-48bf-900d-df7715cc921a
 PoMiniGames:MicrosoftAuth:ApiClientId   = 195ac6ba-cd1a-48bf-900d-df7715cc921a
-PoMiniGames:MicrosoftAuth:ClientSecret  = REDACTED-store-in-user-secrets-or-Key-Vault
 ```
 
-> Inspect or rotate with:
+> Inspect with:
 > ```bash
-> dotnet user-secrets list   --project src/PoMiniGames/PoMiniGames/PoMiniGames.csproj
-> dotnet user-secrets remove PoMiniGames:MicrosoftAuth:ClientSecret --project src/PoMiniGames/PoMiniGames/PoMiniGames.csproj
+> dotnet user-secrets list --project src/PoMiniGames/PoMiniGames/PoMiniGames.csproj
 > ```
+
+---
+
+## Secrets & configuration
+
+The app reads every real secret from configuration providers, **never from
+committed files**. Resolution order (last wins): `appsettings.json` →
+`appsettings.{Env}.json` → user-secrets (dev) / Azure Key Vault (cloud) →
+environment variables / App Service application settings.
+
+**Actual secrets consumed by the app** (these are the only values that must be
+protected — the Microsoft IDs above are public):
+
+| Config key | What it is |
+|---|---|
+| `PoMiniGames:Storage:TableService:ConnectionString` / `PoSurvive-TableStorageConnectionString` | Azure Table Storage connection string |
+| `PoFunQuiz:AzureOpenAI:ApiKey` | Azure OpenAI key (PoFunQuiz) |
+| `PoCoupleQuiz:AzureOpenAI:ApiKey` | Azure OpenAI key (PoCoupleQuiz) |
+| `PoFace:AzureOpenAI:ApiKey` | Azure OpenAI / Face key (PoFace) |
+| `Inference:ApiKey` | Azure OpenAI key (PoSurvive relay) |
+| `PoMiniGames:ApplicationInsights:ConnectionString` / `AppInsights-ConnectionString` | App Insights connection string |
+
+### Dev environment
+
+Local secrets go in **user-secrets** (never in `appsettings.Development.json`):
+
+```bash
+P=src/PoMiniGames/PoMiniGames/PoMiniGames.csproj
+dotnet user-secrets set "PoFunQuiz:AzureOpenAI:ApiKey"   "<key>"   --project $P
+dotnet user-secrets set "PoCoupleQuiz:AzureOpenAI:ApiKey" "<key>"  --project $P
+dotnet user-secrets set "PoFace:AzureOpenAI:ApiKey"      "<key>"   --project $P
+dotnet user-secrets set "Inference:ApiKey"               "<key>"   --project $P
+```
+
+A shared **dev Key Vault** can be used instead by setting `PoMiniGames:KeyVault:Uri`
+(or `KeyVault:Uri`) — secrets named `PoMiniGames--<Section>--<Key>` are loaded and
+`--` is mapped to `:` (see `PrefixKeyVaultSecretManager` in `Program.cs`).
+
+### Prod environment
+
+Store every secret in **Key Vault** and let the App Service reach it via its
+**managed identity** + the `PoMiniGames:KeyVault:Uri` application setting:
+
+```bash
+VAULT=<your-keyvault-name>
+# '--' in the secret name becomes ':' in config (PrefixKeyVaultSecretManager)
+az keyvault secret set --vault-name $VAULT --name "PoMiniGames--PoFunQuiz--AzureOpenAI--ApiKey"    --value "<key>"
+az keyvault secret set --vault-name $VAULT --name "PoMiniGames--PoCoupleQuiz--AzureOpenAI--ApiKey" --value "<key>"
+az keyvault secret set --vault-name $VAULT --name "PoMiniGames--PoFace--AzureOpenAI--ApiKey"       --value "<key>"
+az keyvault secret set --vault-name $VAULT --name "PoMiniGames--Inference--ApiKey"                 --value "<key>"
+az keyvault secret set --vault-name $VAULT --name "PoMiniGames--Storage--TableService--ConnectionString" --value "<conn>"
+
+# App Service: point the app at the vault (identity already granted 'get/list' on secrets)
+az webapp config appsettings set -g <rg> -n <app> --settings \
+  "PoMiniGames__KeyVault__Uri=https://$VAULT.vault.azure.net/"
+```
+
+> The `__` (double underscore) form is the env-var/App-Service spelling of the
+> `:` config delimiter. Prefer Key Vault for the values above; reserve plain App
+> Service application settings for non-secret config.
 
 ---
 

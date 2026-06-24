@@ -11,7 +11,6 @@ using PoMiniGamesClient.Services;
 using PoSurvive.Application.Services;
 using PoSurvive.Client.Services;
 using PoSurvive.Shared.Interfaces;
-using Radzen;
 
 var builder = WebAssemblyHostBuilder.CreateDefault(args);
 builder.RootComponents.Add<App>("#app");
@@ -53,7 +52,6 @@ builder.Services.AddSingleton<KioskCoordinator>();
 builder.Services.AddScoped<CoupleQuizHubService>();
 // PoFunQuiz Phase 2 follow-up: SignalR client wrapper for /funquiz/gamehub.
 builder.Services.AddScoped<FunQuizHubService>();
-builder.Services.AddRadzenComponents();
 
 // ─── PoSurvive (agent survival simulation) ───────────────────────────
 // Fluxor (Redux) state management — scans this client assembly for the

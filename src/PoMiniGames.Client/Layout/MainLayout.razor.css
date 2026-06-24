@@ -1,77 +1,185 @@
-.page {
-    position: relative;
+/* App shell — scoped to MainLayout. These classes only appear in this
+   component's markup, so scoping keeps them off the global style-recalc path.
+   Design tokens (--color-*, --radius-*, --surface-*, --dur-*) are inherited
+   from the global :root in css/app.css. */
+
+.gl-page {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+}
+
+/* Highly visible banner shown when mock (IMockable) services are active —
+   the top-navigation "USING MOCK DATA" guard (Layout Spatial Contract). */
+.gl-mock-banner {
+    width: 100%;
+    text-align: center;
+    padding: var(--space-2) var(--space-4);
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #1a1a00;
+    background-color: #ffd400;
+    border-bottom: 2px solid #111;
+    position: sticky;
+    top: 0;
+    z-index: 1000;
+}
+
+/* Spatial contract: Left (branding) — Center (actions) — Right (session). */
+.gl-top-bar {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    padding: 0.6rem var(--space-5);
+    background: var(--surface-bar);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--color-border);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    gap: var(--space-4);
+}
+
+.gl-top-bar-left {
+    display: flex;
+    align-items: center;
+    gap: var(--space-5);
+    min-width: 0;
+}
+
+/* Center: app-wide primary actions, kept visually centered between the rails. */
+.gl-top-bar-center {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+}
+
+.gl-brand {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    color: var(--color-text-primary);
+    text-decoration: none;
+    font-weight: 700;
+    font-size: 1.1rem;
+    white-space: nowrap;
+}
+
+.gl-brand-icon {
+    font-size: 1.3rem;
+}
+
+/* Breadcrumbs */
+.gl-breadcrumbs {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: var(--text-xs);
+    color: var(--color-text-secondary);
+    min-width: 0;
+    overflow: hidden;
+}
+
+.gl-breadcrumb-item {
+    color: var(--color-text-secondary);
+    transition: color var(--dur-base) var(--ease-standard);
+    white-space: nowrap;
+    font-family: var(--font-body);
+}
+
+.gl-breadcrumb-item:hover {
+    color: var(--color-text-primary);
+}
+
+.gl-breadcrumb-item--current {
+    color: var(--color-text-primary);
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.gl-breadcrumb-sep {
+    color: var(--color-border);
+    font-size: 0.7rem;
+}
+
+.gl-auth {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--space-3);
+    min-width: 0;
+}
+
+.gl-auth-user {
+    font-size: var(--text-sm);
+    color: var(--color-text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.gl-auth-button,
+.gl-center-action {
+    background: transparent;
+    border: 1px solid var(--color-border);
+    color: var(--color-text-secondary);
+    padding: 0.35rem 0.85rem;
+    border-radius: var(--radius-pill);
+    font-size: var(--text-sm);
+    transition: border-color var(--dur-base) var(--ease-standard),
+                color var(--dur-base) var(--ease-standard),
+                background var(--dur-base) var(--ease-standard);
+}
+
+.gl-auth-button:hover,
+.gl-center-action:hover {
+    border-color: var(--color-text-secondary);
+    color: var(--color-text-primary);
+}
+
+/* Active state when the kiosk demo auto-cycle is running. */
+.gl-center-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-weight: 600;
+}
+
+.gl-center-action--active {
+    border-color: var(--color-warning);
+    color: #fcd34d;
+    background: rgba(245, 158, 11, 0.14);
+}
+
+.gl-content {
+    flex: 1;
     display: flex;
     flex-direction: column;
 }
 
-main {
-    flex: 1;
-}
-
-.sidebar {
-    background-image: linear-gradient(180deg, rgb(5, 39, 103) 0%, #3a0647 70%);
-}
-
-.top-row {
-    background-color: #f7f7f7;
-    border-bottom: 1px solid #d6d5d5;
-    justify-content: flex-end;
-    height: 3.5rem;
-    display: flex;
-    align-items: center;
-}
-
-    .top-row ::deep a, .top-row ::deep .btn-link {
-        white-space: nowrap;
-        margin-left: 1.5rem;
-        text-decoration: none;
+/* ── Mobile portrait audit ── */
+@media (max-width: 640px) {
+    .gl-top-bar {
+        padding: 0.6rem var(--space-4);
+        gap: var(--space-2);
     }
 
-    .top-row ::deep a:hover, .top-row ::deep .btn-link:hover {
-        text-decoration: underline;
+    .gl-top-bar-left {
+        gap: var(--space-3);
     }
 
-    .top-row ::deep a:first-child {
-        overflow: hidden;
-        text-overflow: ellipsis;
+    /* Reclaim horizontal space on small screens. */
+    .gl-breadcrumbs,
+    .gl-auth-user {
+        display: none;
     }
 
-@media (max-width: 640.98px) {
-    .top-row {
-        justify-content: space-between;
-    }
-
-    .top-row ::deep a, .top-row ::deep .btn-link {
-        margin-left: 0;
-    }
-}
-
-@media (min-width: 641px) {
-    .page {
-        flex-direction: row;
-    }
-
-    .sidebar {
-        width: 250px;
-        height: 100vh;
-        position: sticky;
-        top: 0;
-    }
-
-    .top-row {
-        position: sticky;
-        top: 0;
-        z-index: 1;
-    }
-
-    .top-row.auth ::deep a:first-child {
-        flex: 1;
-        text-align: right;
-        width: 0;
-    }
-
-    .top-row, article {
-        padding-left: 2rem !important;
-        padding-right: 1.5rem !important;
+    /* Center action collapses to icon-only to stay one-tap without crowding. */
+    .gl-center-action .gl-center-action-label {
+        display: none;
     }
 }

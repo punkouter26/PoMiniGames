@@ -1,7 +1,9 @@
 ﻿@inherits LayoutComponentBase
+@implements IDisposable
 @inject AuthStateService AuthState
 @inject ToastService ToastService
 @inject NavigationManager NavigationManager
+@inject KioskCoordinator Kiosk
 
 <div class="gl-page">
     @if (AuthState.UsingMockData)
@@ -39,6 +41,19 @@
                     }
                 </nav>
             }
+        </div>
+
+        @* Center: app-wide primary action — kiosk demo toggle reachable from any
+           page (one-tap), completing the Left–Center–Right spatial contract. *@
+        <div class="gl-top-bar-center">
+            <button type="button"
+                    class="gl-center-action @(Kiosk.IsActive ? "gl-center-action--active" : null)"
+                    aria-pressed="@Kiosk.IsActive"
+                    aria-label="@(Kiosk.IsActive ? "Stop auto-cycling demos" : "Watch all demos")"
+                    @onclick="ToggleDemoKiosk">
+                @(Kiosk.IsActive ? "■" : "▸")
+                <span class="gl-center-action-label">@(Kiosk.IsActive ? "Stop demo" : "Demos")</span>
+            </button>
         </div>
 
         <div class="gl-auth">
@@ -99,7 +114,30 @@
         _onAuthStateChanged = () => InvokeAsync(StateHasChanged);
         AuthState.StateChanged += _onAuthStateChanged;
         NavigationManager.LocationChanged += OnLocationChanged;
+        Kiosk.Changed += OnKioskChanged;
         UpdateBreadcrumbs();
+    }
+
+    private void OnKioskChanged() => InvokeAsync(StateHasChanged);
+
+    // App-wide demo toggle (center slot). Starts the "Watch All Demos" auto-cycle
+    // from anywhere, or stops it if already running — mirrors the home Demo tile.
+    private void ToggleDemoKiosk()
+    {
+        if (Kiosk.IsActive)
+        {
+            Kiosk.Stop();
+            return;
+        }
+
+        var demos = GameCatalog.Demo;
+        if (demos.Count == 0) return;
+
+        Kiosk.RegisterEntries(demos.Select(d => new DemoEntry(d.Key, d.Url, d.Title, d.Icon)));
+        var first = demos[0];
+        var sep = first.Url.Contains('?') ? '&' : '?';
+        Kiosk.Start(1);
+        NavigationManager.NavigateTo($"{first.Url}{sep}kiosk=1");
     }
 
     private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
@@ -179,6 +217,7 @@
     public void Dispose()
     {
         NavigationManager.LocationChanged -= OnLocationChanged;
+        Kiosk.Changed -= OnKioskChanged;
         if (_onAuthStateChanged is not null)
         {
             AuthState.StateChanged -= _onAuthStateChanged;

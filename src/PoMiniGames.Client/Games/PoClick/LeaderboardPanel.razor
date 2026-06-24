@@ -32,14 +32,15 @@
                             </tr>
                         </thead>
                         <tbody>
-                            @foreach (var s in _history)
-                            {
+                            @* Virtualized: a player's full training history is unbounded,
+                               so only the visible rows are realized into the DOM. *@
+                            <Virtualize Items="_history" Context="s" ItemSize="37">
                                 <tr class="poclick-table-row" @onclick="() => OnSelectSession.InvokeAsync(s.Id)">
                                     <td>@s.CreatedAt.ToLocalTime().ToString("MM/dd/yy HH:mm")</td>
                                     <td>@s.Bpm</td>
                                     <td>@($"{s.Score:0.#}")</td>
                                 </tr>
-                            }
+                            </Virtualize>
                         </tbody>
                     </table>
                 </div>

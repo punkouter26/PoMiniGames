@@ -1,0 +1,8 @@
+/* Scoped to LeaderboardPanel. A bounded, scrollable viewport gives <Virtualize>
+   a window to measure against (and stops a long training history from pushing
+   the whole page down on mobile portrait). */
+.poclick-table-wrap {
+    max-height: 320px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}

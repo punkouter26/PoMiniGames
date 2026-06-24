@@ -8,15 +8,24 @@
     <base href="/" />
     <!-- Blazor runtime loads automatically, preload not needed -->
 
-    <!-- Typography: Inter variable font (Suggestion #4) -->
+    <!-- Typography (non-render-blocking): fonts load async so first paint is not
+         gated on three third-party stylesheets. system-ui renders immediately and
+         swaps to the webfont when ready (the type tokens fall back to system-ui). -->
     <link rel="preconnect" href="https://rsms.me/" />
-    <link rel="preload" href="https://rsms.me/inter/inter.css" as="style" />
-    <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
-
-    <!-- PoClick fonts: Orbitron (headings) and Outfit (body) -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+
+    <!-- Inter (display) -->
+    <link rel="preload" href="https://rsms.me/inter/inter.css" as="style"
+          onload="this.onload=null;this.rel='stylesheet'" />
+    <!-- PoClick: Orbitron (headings) + Outfit (body) -->
+    <link rel="preload"
+          href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Outfit:wght@300;400;600;800&display=swap"
+          as="style" onload="this.onload=null;this.rel='stylesheet'" />
+    <noscript>
+        <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Outfit:wght@300;400;600;800&display=swap" />
+    </noscript>
 
     <!-- Remove Bootstrap – all styles are custom (payload savings ~187KB) -->
     <link rel="stylesheet" href="css/app.css" />
@@ -46,6 +55,8 @@
 
     <!-- View Transitions + App enhancements (Suggestion #5) -->
     <script src="scripts/app.js" defer></script>
+    <!-- Native Web Audio micro-feedback on tap targets (Suggestion #9) -->
+    <script src="js/uiFeedback.js" defer></script>
     <!-- PoFace webcam capture (consolidation import) -->
     <script src="js/webcam.js" defer></script>
     <!-- Microsoft sign-in (MSAL.js + interop wrapper). Loaded eagerly so the

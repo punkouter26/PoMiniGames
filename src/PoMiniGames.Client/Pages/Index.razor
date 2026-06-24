@@ -10,7 +10,7 @@
 
     @if (_isLoading)
     {
-        <div class="home-modes" style="gap:1rem;z-index:1">
+        <div class="home-modes">
             <div class="skeleton skeleton--btn"></div>
             <div class="skeleton skeleton--btn"></div>
             <div class="skeleton skeleton--btn"></div>
@@ -137,7 +137,7 @@
         <!-- High Scores Preview Carousel (UI 2) -->
         <section class="home-scores-preview">
             <h2 class="home-scores-title">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:0.4rem">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5C7 4 6 9 6 9z"/>
                     <path d="M18 9h1.5a2.5 2.5 0 0 0 0-5C17 4 18 9 18 9z"/>
                     <path d="M4 22h16"/>
@@ -152,7 +152,7 @@
                 @if (_topGames.Count == 0)
                 {
                     <div class="home-scores-empty">
-                        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="opacity:0.3">
+                        <svg class="home-scores-empty-icon" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                             <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5C7 4 6 9 6 9z"/>
                             <path d="M18 9h1.5a2.5 2.5 0 0 0 0-5C17 4 18 9 18 9z"/>
                             <path d="M4 22h16M10 22V9h4v13M8 22V8M16 22V8"/>
@@ -188,9 +188,6 @@
 
     protected override async Task OnInitializedAsync()
     {
-        // Simulate Blazor WASM startup delay with skeleton
-        await Task.Delay(100);
-
         // Subscribe to kiosk state so the Demo button (Start ↔ Stop) updates
         // reactively when the coordinator starts/stops/pauses/advances.
         Kiosk.Changed += OnKioskStateChanged;

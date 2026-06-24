@@ -1,59 +1,63 @@
 @page "/diag"
 @using PoMiniGamesClient.Services
 @using System.Text.Json
-@using Radzen.Blazor
 @inject ApiService ApiService
 @inject AuthStateService AuthState
 @inject HttpClient Http
 @inject IWebAssemblyHostEnvironment HostEnvironment
 
-<div style="padding:2rem;max-width:860px;margin:0 auto;font-family:monospace;color:#cdd5e0">
-    <h1 style="font-size:1.5rem;margin-bottom:0.25rem;color:#fff">🔧 /diag</h1>
-    <p style="color:#64748b;margin-bottom:2rem;font-size:0.8rem">Diagnostic page</p>
+<div class="diag">
+    <h1 class="diag-h1">🔧 /diag</h1>
+    <p class="diag-lead">Diagnostic page</p>
 
-    <section style="margin-bottom:1.5rem">
-        <h2 style="font-size:0.75rem;text-transform:uppercase;letter-spacing:0.1em;color:#94a3b8;border-bottom:1px solid #1e293b;padding-bottom:0.4rem;margin-bottom:0.75rem">API Status</h2>
-        <div style="display:grid;gap:0.25rem;font-size:0.8rem">
-            <div style="display:grid;grid-template-columns:260px 1fr;gap:1rem"><span style="color:#64748b">Backend</span><span style="color:#e2e8f0">@_apiStatus</span></div>
-            <div style="display:grid;grid-template-columns:260px 1fr;gap:1rem"><span style="color:#64748b">Auth configured</span><span style="color:#e2e8f0">@AuthState.IsConfigured</span></div>
-            <div style="display:grid;grid-template-columns:260px 1fr;gap:1rem"><span style="color:#64748b">Auth loading</span><span style="color:#e2e8f0">@AuthState.IsLoading</span></div>
+    <section class="diag-section">
+        <h2 class="diag-h2">API Status</h2>
+        <div class="diag-kv-list">
+            <div class="diag-kv"><span class="diag-k">Backend</span><span class="diag-v">@_apiStatus</span></div>
+            <div class="diag-kv"><span class="diag-k">Auth configured</span><span class="diag-v">@AuthState.IsConfigured</span></div>
+            <div class="diag-kv"><span class="diag-k">Auth loading</span><span class="diag-v">@AuthState.IsLoading</span></div>
         </div>
     </section>
 
-    <section style="margin-bottom:1.5rem">
-        <h2 style="font-size:0.75rem;text-transform:uppercase;letter-spacing:0.1em;color:#94a3b8;border-bottom:1px solid #1e293b;padding-bottom:0.4rem;margin-bottom:0.75rem">Auth</h2>
-        <div style="display:grid;gap:0.25rem;font-size:0.8rem">
-            <div style="display:grid;grid-template-columns:260px 1fr;gap:1rem"><span style="color:#64748b">Authenticated</span><span style="color:#e2e8f0">@AuthState.IsAuthenticated</span></div>
-            <div style="display:grid;grid-template-columns:260px 1fr;gap:1rem"><span style="color:#64748b">User ID</span><span style="color:#e2e8f0">@(AuthState.User?.UserId ?? "—")</span></div>
-            <div style="display:grid;grid-template-columns:260px 1fr;gap:1rem"><span style="color:#64748b">Display name</span><span style="color:#e2e8f0">@(AuthState.User?.DisplayName ?? "—")</span></div>
-            <div style="display:grid;grid-template-columns:260px 1fr;gap:1rem"><span style="color:#64748b">Email</span><span style="color:#e2e8f0">@Mask(AuthState.User?.Email)</span></div>
+    <section class="diag-section">
+        <h2 class="diag-h2">Auth</h2>
+        <div class="diag-kv-list">
+            <div class="diag-kv"><span class="diag-k">Authenticated</span><span class="diag-v">@AuthState.IsAuthenticated</span></div>
+            <div class="diag-kv"><span class="diag-k">User ID</span><span class="diag-v">@(AuthState.User?.UserId ?? "—")</span></div>
+            <div class="diag-kv"><span class="diag-k">Display name</span><span class="diag-v">@(AuthState.User?.DisplayName ?? "—")</span></div>
+            <div class="diag-kv"><span class="diag-k">Email</span><span class="diag-v">@Mask(AuthState.User?.Email)</span></div>
         </div>
     </section>
 
-    <section style="margin-bottom:1.5rem">
-        <h2 style="font-size:0.75rem;text-transform:uppercase;letter-spacing:0.1em;color:#94a3b8;border-bottom:1px solid #1e293b;padding-bottom:0.4rem;margin-bottom:0.75rem">Backend /diag</h2>
+    <section class="diag-section">
+        <h2 class="diag-h2">Backend /diag</h2>
         @if (_backendError != null)
         {
-            <p style="color:#ef4444;margin:0">@_backendError</p>
+            <p class="diag-error">@_backendError</p>
         }
         else if (_backendDiagRaw == null)
         {
-            <p style="color:#64748b;margin:0">@(_apiStatus == "offline" ? "API offline" : "Loading…")</p>
+            <p class="diag-muted">@(_apiStatus == "offline" ? "API offline" : "Loading…")</p>
         }
         else
         {
-            <pre style="margin:0;white-space:pre-wrap;word-break:break-all;font-size:0.75rem">@_backendDiagRaw</pre>
+            <pre class="diag-pre">@_backendDiagRaw</pre>
         }
     </section>
 
-    <section style="margin-bottom:1.5rem">
-        <h2 style="font-size:0.75rem;text-transform:uppercase;letter-spacing:0.1em;color:#94a3b8;border-bottom:1px solid #1e293b;padding-bottom:0.4rem;margin-bottom:0.75rem">Diagnostic Top-Level Keys</h2>
-        <RadzenDataGrid Data="@_diagRows" TItem="DiagRow" AllowPaging="false" AllowSorting="false" ColumnWidth="220px">
-            <Columns>
-                <RadzenDataGridColumn TItem="DiagRow" Property="Key" Title="Key" />
-                <RadzenDataGridColumn TItem="DiagRow" Property="Summary" Title="Summary" />
-            </Columns>
-        </RadzenDataGrid>
+    <section class="diag-section">
+        <h2 class="diag-h2">Diagnostic Top-Level Keys</h2>
+        <table class="diag-table">
+            <thead>
+                <tr><th>Key</th><th>Summary</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var row in _diagRows)
+                {
+                    <tr><td>@row.Key</td><td>@row.Summary</td></tr>
+                }
+            </tbody>
+        </table>
     </section>
 </div>
 

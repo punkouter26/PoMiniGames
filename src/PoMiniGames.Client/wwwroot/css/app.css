@@ -25,6 +25,40 @@
   --text-2xl: 2rem;
   --text-3xl: 3rem;
 
+  /* Translucent surfaces (single source of truth — replaces scattered raw rgba) */
+  --surface-1: rgba(17,24,39,0.55);   /* low-emphasis panels */
+  --surface-2: rgba(17,24,39,0.8);    /* tiles / cards */
+  --surface-3: rgba(15,23,42,0.6);    /* nested cards */
+  --surface-bar: rgba(17,24,39,0.85); /* sticky chrome (top bar / demo bar) */
+  --surface-raised: rgba(30,41,59,0.7);
+
+  /* Radius scale (Design Token Unification) */
+  --radius-sm: 0.5rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.25rem;
+  --radius-pill: 9999px;
+
+  /* Elevation scale */
+  --elevation-1: 0 4px 20px rgba(0,0,0,0.3);
+  --elevation-2: 0 8px 30px rgba(99,102,241,0.15);
+  --elevation-3: 0 20px 60px rgba(0,0,0,0.35);
+
+  /* Spacing scale */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+
+  /* Motion tokens (paired with the prefers-reduced-motion guard below) */
+  --dur-fast: 0.15s;
+  --dur-base: 0.25s;
+  --dur-slow: 0.4s;
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+
   /* Toast colors */
   --toast-info-bg: #1e3a5f;
   --toast-info-border: #3b82f6;
@@ -105,124 +139,11 @@ button { cursor: pointer; font-family: var(--font-body); }
   to { opacity: 1; }
 }
 
-/* ── Layout ── */
-.gl-page {
-  display: flex;
-  flex-direction: column;
-  min-height: 100vh;
-}
-
-/* Highly visible banner shown when mock (IMockable) services are active. */
-.gl-mock-banner {
-  width: 100%;
-  text-align: center;
-  padding: 0.4rem 1rem;
-  font-weight: 800;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: #1a1a00;
-  background-color: #ffd400;
-  border-bottom: 2px solid #111;
-  position: sticky;
-  top: 0;
-  z-index: 1000;
-}
-
-.gl-top-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.6rem 1.5rem;
-  background: rgba(17,24,39,0.85);
-  backdrop-filter: blur(12px);
-  border-bottom: 1px solid var(--color-border);
-  position: sticky;
-  top: 0;
-  z-index: 100;
-  gap: 1rem;
-}
-
-.gl-top-bar-left {
-  display: flex;
-  align-items: center;
-  gap: 1.5rem;
-  flex: 1;
-  min-width: 0;
-}
-
-.gl-brand {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  color: var(--color-text-primary);
-  text-decoration: none;
-  font-weight: 700;
-  font-size: 1.1rem;
-  white-space: nowrap;
-}
-
-.gl-brand-icon { font-size: 1.3rem; }
-
-/* Breadcrumbs (Suggestion #8) */
-.gl-breadcrumbs {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  font-size: 0.75rem;
-  color: var(--color-text-secondary);
-  min-width: 0;
-  overflow: hidden;
-}
-.gl-breadcrumb-item {
-  color: var(--color-text-secondary);
-  transition: color 0.2s;
-  white-space: nowrap;
-  font-family: var(--font-body);
-}
-.gl-breadcrumb-item:hover { color: var(--color-text-primary); }
-.gl-breadcrumb-item--current {
-  color: var(--color-text-primary);
-  font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.gl-breadcrumb-sep {
-  color: var(--color-border);
-  font-size: 0.7rem;
-}
-
-.gl-auth {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  flex-shrink: 0;
-}
-
-.gl-auth-user {
-  font-size: 0.85rem;
-  color: var(--color-text-secondary);
-}
-
-.gl-auth-button {
-  background: transparent;
-  border: 1px solid var(--color-border);
-  color: var(--color-text-secondary);
-  padding: 0.35rem 0.85rem;
-  border-radius: 9999px;
-  font-size: 0.8rem;
-  transition: all 0.2s;
-}
-.gl-auth-button:hover {
-  border-color: var(--color-text-secondary);
-  color: var(--color-text-primary);
-}
-
-.gl-content {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-}
+/* ── Layout ──
+   The app shell (.gl-page / .gl-mock-banner / .gl-top-bar* / .gl-brand* /
+   .gl-breadcrumb* / .gl-auth* / .gl-content) now lives in the scoped
+   MainLayout.razor.css — those classes only ever appear in MainLayout markup,
+   so scoping them removes them from the global style-recalc surface. */
 
 /* ── Home Page (Suggestion #1: Morphing Mesh)── */
 .home-container {
@@ -246,6 +167,9 @@ button { cursor: pointer; font-family: var(--font-body); }
     radial-gradient(ellipse at 60% 30%, rgba(245,158,11,0.08) 0%, transparent 50%);
   animation: meshShift 20s ease-in-out infinite alternate;
   pointer-events: none;
+  /* Promote to its own GPU layer so the scale/rotate never repaints siblings. */
+  will-change: transform;
+  transform: translateZ(0);
 }
 
 @keyframes meshShift {
@@ -878,6 +802,11 @@ button { cursor: pointer; font-family: var(--font-body); }
   height: 80px;
   opacity: 0.5;
 }
+.home-highscores-empty-link {
+  margin-top: var(--space-2);
+  font-size: var(--text-sm);
+  opacity: 0.8;
+}
 
 .home-highscores-list {
   list-style: none;
@@ -938,6 +867,25 @@ button { cursor: pointer; font-family: var(--font-body); }
 .home-highscores-row--rank1 .home-highscores-name { color: #f59e0b; }
 .home-highscores-row--rank2 .home-highscores-name { color: #94a3b8; }
 .home-highscores-row--rank3 .home-highscores-name { color: #cd853f; }
+
+/* ── Router fallbacks (App.razor: NotAuthorized / NotFound) ── */
+.app-fallback {
+  max-width: 480px;
+  margin: 4rem auto;
+  text-align: center;
+  padding: var(--space-5);
+  border-radius: var(--radius-lg);
+  background: #1d2230;
+  color: #cdd5e0;
+}
+.app-fallback h1 { margin: 0 0 var(--space-2) 0; }
+.app-fallback p { margin: 0 0 var(--space-4) 0; line-height: 1.45; }
+.app-fallback-link { color: #7eb6ff; text-decoration: none; }
+.app-fallback--plain {
+  color: #cdd5e0;
+  text-align: center;
+  padding: 3rem;
+}
 
 /* ── Toast ── */
 .toast-stack {
@@ -1058,66 +1006,11 @@ button { cursor: pointer; font-family: var(--font-body); }
   .sp-game-grid { grid-template-columns: 1fr; }
   .sp-page { padding: 1rem; }
   .sp-card { padding: 1.25rem; }
-  .gl-top-bar-left { gap: 0.75rem; }
-  .gl-breadcrumbs { display: none; }
 }
 
-/* ── Mobile Bottom Navigation (UI 1) — nav removed; rules below are inert ── */
-@media (max-width: 768px) {
-  .gl-bottom-nav {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    height: 60px;
-    background: rgba(17, 24, 39, 0.95);
-    backdrop-filter: blur(12px);
-    display: flex;
-    justify-content: space-around;
-    align-items: center;
-    border-top: 1px solid var(--color-border);
-    z-index: 100;
-    padding: 0 0.5rem;
-  }
-  .gl-bottom-nav-item {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 3px;
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: var(--color-text-secondary, #64748b);
-    text-decoration: none;
-    padding: 0.5rem;
-    border-radius: 0.5rem;
-    transition: all 0.2s;
-    min-width: 44px;
-    min-height: 44px;
-    justify-content: center;
-  }
-  .gl-bottom-nav-item.active {
-    color: var(--color-accent);
-    background: rgba(99, 102, 241, 0.12);
-    font-weight: 700;
-  }
-  .gl-bottom-nav-item:hover,
-  .gl-bottom-nav-item:active {
-    background: rgba(99, 102, 241, 0.1);
-  }
-  .gl-bottom-nav-icon {
-    font-size: 1.35rem;
-    line-height: 1;
-  }
-  .gl-top-bar {
-    padding: 0.6rem 1rem;
-  }
-  .gl-auth {
-    gap: 0.5rem;
-  }
-  .gl-auth-user {
-    display: none;
-  }
-}
+/* (Removed: dead .gl-bottom-nav block — the bottom nav was deleted long ago and
+   these rules matched nothing. The live mobile top-bar tweaks moved to the
+   scoped MainLayout.razor.css.) */
 
 /* ── Home Scores Preview Carousel (UI 2) ── */
 .home-scores-preview {
@@ -1161,6 +1054,7 @@ button { cursor: pointer; font-family: var(--font-body); }
   text-align: center;
   width: 100%;
 }
+.home-scores-empty-icon { opacity: 0.3; }
 .home-scores-empty-cta {
   background: transparent;
   border: 1px solid var(--color-border);
@@ -1311,9 +1205,21 @@ button { cursor: pointer; font-family: var(--font-body); }
 
 /* ── Mobile-Optimized Gradient Mesh (UI 5) ── */
 @media (max-width: 768px) {
+  /* The animated full-viewport mesh is the most expensive thing on a phone GPU,
+     especially under all the translucent blurred panels. Freeze it (static
+     gradient only) and strip the stacked backdrop-filters on the many small
+     surfaces — keep blur only on the sticky top bar. (GPU-Accelerated audit) */
   .home-mesh {
-    animation-duration: 40s;
-    opacity: 0.7;
+    animation: none;
+    opacity: 0.6;
+  }
+  .home-mode-btn,
+  .home-section,
+  .sp-card,
+  .login-card,
+  .toast,
+  .demo-bar {
+    backdrop-filter: none;
   }
 }
 
@@ -1345,4 +1251,22 @@ button { cursor: pointer; font-family: var(--font-body); }
   .sp-page {
     padding-bottom: 120px;
   }
+}
+
+/* ── Accessibility: honor reduced-motion (Zero-Waste Motion) ──
+   One global guard so every animation/transition/scroll respects the OS
+   setting. Individual components no longer need their own opt-out. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  .home-mesh,
+  .login-mesh,
+  .demo-bar__dot,
+  .skeleton { animation: none !important; }
 }

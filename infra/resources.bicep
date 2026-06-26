@@ -9,7 +9,7 @@ param sharedKeyVaultName string = 'kv-poshared'
 param sharedAppInsightsName string = 'poappideinsights8f9c9a4e'
 
 @description('The name of the existing Azure AI Foundry hub in PoShared')
-param sharedAIFoundryName string = 'cog-pominigames-shared'
+param sharedAIFoundryName string = 'po-aiservices-shared'
 
 @description('The name of the resource group containing shared resources')
 param sharedResourceGroupName string = 'PoShared'
@@ -24,6 +24,9 @@ var storageAccountName = toLower('stpominigames${take(resourceToken, 10)}')
 var planName           = 'plan-pominigames-${resourceToken}'
 var webAppName         = 'app-pominigames-${resourceToken}'
 var storageTableDataContributorRoleId = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3')
+// Storage Blob Data Contributor covers both the table writes (it includes table perms) and
+// the blob container CreateIfNotExists that DataProtection uses for key escrow.
+var storageBlobDataContributorRoleId = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
 // Built-in role: Cognitive Services User. Data-plane inference calls on the
 // AI Foundry hub require this; the control plane (deployments, model management)
 // remains on a separate Contributor role held by humans, not the Web App.
@@ -176,6 +179,20 @@ resource webAppTableRoleAssignment 'Microsoft.Authorization/roleAssignments@2022
   properties: {
     principalId: webApp.identity.principalId
     roleDefinitionId: storageTableDataContributorRoleId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// Storage Blob Data Contributor — needed by AzureBlobXmlRepository
+// (Microsoft.AspNetCore.DataProtection.AzureStorage) for the data-protection
+// key escrow blob container. Without this the app fails to start with a
+// 403 on Container.CreateIfNotExists.
+resource webAppBlobRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(storageAccount.id, webApp.id, storageBlobDataContributorRoleId)
+  scope: storageAccount
+  properties: {
+    principalId: webApp.identity.principalId
+    roleDefinitionId: storageBlobDataContributorRoleId
     principalType: 'ServicePrincipal'
   }
 }

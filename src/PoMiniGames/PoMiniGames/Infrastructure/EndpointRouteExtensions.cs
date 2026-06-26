@@ -1,4 +1,5 @@
 using PoMiniGames.Features.Auth;
+using PoMiniGames.Features.Diagnostics;
 using PoMiniGames.Features.Health;
 using PoMiniGames.Features.HighScores;     // HighScores + MarbleRace mappers
 using PoMiniGames.Features.Leaderboard;
@@ -29,6 +30,7 @@ internal static class EndpointRouteExtensions
         app.MapAuthEndpoints();
         app.MapHealthEndpoints();
         app.MapDiagEndpoints();
+        app.MapMockablesEndpoints();
         app.MapTestHarnessEndpoints(app.Environment);
 
         // ── Stats, leaderboards & cross-game history ───────────────────────

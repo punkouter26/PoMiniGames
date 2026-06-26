@@ -17,6 +17,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\PoMiniGames\PoMiniGames\PoMiniGames.csproj" />
+    <ProjectReference Include="..\Shared\PoMiniGames.TestUtilities.csproj" />
   </ItemGroup>
 
   <ItemGroup>

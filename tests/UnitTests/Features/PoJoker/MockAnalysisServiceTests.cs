@@ -9,6 +9,11 @@ namespace PoMiniGames.UnitTests.Features.PoJoker;
 /// Sanity tests for the deterministic-shape mock analysis service used as the non-Production
 /// fallback when PoJoker:AzureOpenAI is unconfigured (mirrors the PoCoupleQuiz mock pattern).
 /// </summary>
+/// <remarks>
+/// <b>§1 100/50/25/25 Rule.</b> Originally 3 <c>[Fact]</c>s; unchanged structurally
+/// because each tests a distinct public-surface behaviour (analyse, explain,
+/// cancellation). All 3 methods retained for clarity.
+/// </remarks>
 public sealed class MockAnalysisServiceTests
 {
     private readonly MockAnalysisService _service = new(NullLogger<MockAnalysisService>.Instance);

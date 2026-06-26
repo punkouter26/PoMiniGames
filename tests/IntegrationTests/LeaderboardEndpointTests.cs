@@ -192,10 +192,11 @@ public sealed class LeaderboardEndpointTests : IClassFixture<TestWebApplicationF
         var json = System.Text.Json.JsonDocument.Parse(content);
         json.RootElement.ValueKind.Should().Be(System.Text.Json.JsonValueKind.Object);
 
-        // Verify no plaintext sensitive keys (e.g., "Password", "Secret", "Key" should be masked)
-        // Check that the response contains data without exposing full secrets
+        // The DiagResponse DTO has Identity / Environment / Integrations
+        // (PascalCase preserved by the default System.Text.Json policy).
         var jsonString = json.RootElement.GetRawText();
-        jsonString.Should().Contain("storage");
+        jsonString.Should().Contain("Identity");
+        jsonString.Should().Contain("Environment");
     }
 
     [Fact]

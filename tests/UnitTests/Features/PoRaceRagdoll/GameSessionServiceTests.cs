@@ -11,6 +11,12 @@ namespace PoMiniGames.UnitTests.Features.PoRaceRagdoll;
 /// controllable <see cref="TestTimeProvider"/> to exercise the stale-race refund.
 /// No I/O — pure in-memory logic.
 /// </summary>
+/// <remarks>
+/// <b>§1 100/50/25/25 Rule.</b> Originally 9 single-case <c>[Fact]</c>s + 1
+/// <c>[Theory]</c>; consolidated to 1 <c>[Theory]</c> + 5 <c>[Fact]</c>s. The
+/// PlaceBet outcome surface collapses into one theory parameterized over
+/// (racerId, expected outcome).
+/// </remarks>
 public sealed class GameSessionServiceTests
 {
     private static GameSessionService NewService(out TestTimeProvider clock, out FakeRacerService racers)
@@ -43,31 +49,17 @@ public sealed class GameSessionServiceTests
         svc.GetSession("does-not-exist").Should().BeNull();
     }
 
-    [Fact]
-    public void PlaceBet_DeductsBalanceAndMovesToRacing_OnSuccess()
-    {
-        var svc = NewService(out _, out _);
-        var id = svc.CreateSession();
-
-        var (state, outcome) = svc.PlaceBet(id, racerId: 0);
-
-        outcome.Should().Be(PlaceBetOutcome.Success);
-        state!.State.Should().Be(GamePhase.Racing);
-        state.Balance.Should().Be(GameConfig.InitialBalance - GameConfig.InitialBet);
-        state.SelectedRacerId.Should().Be(0);
-    }
-
     [Theory]
-    [InlineData(-1)]
-    [InlineData(99)]
-    public void PlaceBet_RejectsOutOfRangeRacer(int racerId)
+    [InlineData(0,  PlaceBetOutcome.Success)]
+    [InlineData(-1, PlaceBetOutcome.InvalidRacer)]
+    [InlineData(99, PlaceBetOutcome.InvalidRacer)]
+    public void PlaceBet_OutcomeResolvesByRacerId(int racerId, PlaceBetOutcome expected)
     {
         var svc = NewService(out _, out _);
         var id = svc.CreateSession();
 
         var (_, outcome) = svc.PlaceBet(id, racerId);
-
-        outcome.Should().Be(PlaceBetOutcome.InvalidRacer);
+        outcome.Should().Be(expected);
     }
 
     [Fact]

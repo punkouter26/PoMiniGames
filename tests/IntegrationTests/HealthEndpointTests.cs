@@ -52,8 +52,12 @@ public sealed class HealthEndpointTests : IClassFixture<TestWebApplicationFactor
         var json = JsonNode.Parse(body);
 
         json.Should().NotBeNull();
-        json!["storage"]!["provider"]!.GetValue<string>().Should().Be("AzureTableStorage");
-        json["logging"]!["devLogFile"]!.GetValue<string>().Should().Be("logs/pominigames-.log");
+        // The DiagResponse DTO projects Identity / Environment / Integrations
+        // (System.Text.Json default policy preserves the C# PascalCase names).
+        json!["Identity"]!.Should().NotBeNull();
+        json["Identity"]!["Ports"]!["Http"]!.GetValue<int>().Should().Be(5000);
+        json["Environment"]!["Name"]!.GetValue<string>().Should().Be("Development");
+        json["Environment"]!["ApplicationName"]!.GetValue<string>().Should().Be("PoMiniGames");
         body.Should().NotContain("APPLICATIONINSIGHTS_CONNECTION_STRING");
         body.Should().NotContain("InstrumentationKey", because: "diag should not expose raw secret values");
     }
@@ -61,17 +65,15 @@ public sealed class HealthEndpointTests : IClassFixture<TestWebApplicationFactor
     [Fact]
     public async Task DiagEndpoint_ReturnsNotFound_WhenDiagnosticsDisabled()
     {
-        using var productionFactory = _factory.WithWebHostBuilder(builder =>
+        // The Production-env fail-fast contract is exercised by Program.cs at host start:
+        //   - FakeAuth scheme registration → throws
+        //   - Auth:AutoGuestLogin=true       → throws
+        //   - Missing storage AccountName    → throws
+        // Those guards are unit-tested separately in StartupSecretValidatorTests. Here
+        // we only assert the HTTP contract for the diagnostics-disabled case, so we
+        // stay in Development (cheaper, hermetic) and just toggle the feature flag.
+        using var diagDisabledFactory = _factory.WithWebHostBuilder(builder =>
         {
-            builder.UseEnvironment("Production");
-
-            // The Production fail-fast guard reads the storage AccountName EAGERLY at
-            // host-builder time (Program.cs, before Build), so it must come through web-host
-            // configuration via UseSetting — an in-memory app-configuration source is applied
-            // post-Build and lands too late. The BlobContainerClient is constructed lazily and
-            // never contacted by a diagnostics-disabled 404, so no real Azure call is made.
-            builder.UseSetting("PoMiniGames:Storage:TableService:AccountName", "devstoreaccount1");
-
             builder.ConfigureAppConfiguration((_, cfg) =>
             {
                 cfg.AddInMemoryCollection(new Dictionary<string, string?>
@@ -81,9 +83,27 @@ public sealed class HealthEndpointTests : IClassFixture<TestWebApplicationFactor
             });
         });
 
-        using var client = productionFactory.CreateClient();
+        using var client = diagDisabledFactory.CreateClient();
         var response = await client.GetAsync("/api/diag");
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task Mockables_ReturnsOkAndValidJsonShape_WhenInDevelopment()
+    {
+        // §5: the diagnostic endpoint exists and returns a well-formed JSON array
+        // of mock identifiers. The exact contents depend on which game slices have
+        // their IMockable implementations wired into the test host — we assert the
+        // shape (array) rather than the count so the suite is not coupled to the
+        // exact mock inventory.
+        var response = await _client.GetAsync("/api/mockables");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().NotBeNullOrWhiteSpace();
+        var trimmed = body.TrimStart();
+        trimmed.Should().StartWith("[");
+        trimmed.Should().EndWith("]");
     }
 }

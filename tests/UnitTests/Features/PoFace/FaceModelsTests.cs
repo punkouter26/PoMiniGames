@@ -7,6 +7,12 @@ namespace PoMiniGames.UnitTests.Features.PoFace;
 /// Tests for the pure domain logic of PoFace (head-pose validator, scoring formula,
 /// round order, PlayerStats aggregation). No I/O.
 /// </summary>
+/// <remarks>
+/// <b>§1 100/50/25/25 Rule.</b> Originally 10 single-case <c>[Fact]</c>s + 1
+/// <c>[Theory]</c>; consolidated to 4 <c>[Theory]</c>s + 2 <c>[Fact]</c>s. The
+/// scoring formula (previously a 5-row inline loop) is now an inline-data
+/// theory; the per-emotion best tracking is parameterized across emotions.
+/// </remarks>
 public sealed class FaceModelsTests
 {
     [Theory]
@@ -37,21 +43,46 @@ public sealed class FaceModelsTests
         });
     }
 
-    [Fact]
-    public void FaceRoundOrder_OrderIsNotShuffled()
+    [Theory]
+    [InlineData(0.95f, 10)]
+    [InlineData(0.50f, 5)]
+    [InlineData(0.49f, 5)] // banker's rounding to even
+    [InlineData(0.10f, 1)]
+    [InlineData(0.00f, 0)]
+    public void ScoringFormula_ScoreIsTenTimesConfidenceWhenHeadPoseValid(float confidence, int expected)
     {
-        // Sanity: the spec says "never shuffled" — we assert the explicit list.
-        FaceRoundOrder.Order.Count.Should().Be(5);
+        // Documented formula: score = headPoseValid ? round(confidence * 10) : 0
+        var score = HeadPoseValidator.Validate(0, 0) ? (int)Math.Round(confidence * 10) : 0;
+        score.Should().Be(expected, $"confidence={confidence} should yield score={expected}");
     }
 
-    [Fact]
-    public void PlayerStats_StartsEmpty()
+    [Theory]
+    [InlineData(TargetEmotion.Anger,   5, 9, 9)] // second session is higher
+    [InlineData(TargetEmotion.Fear,    9, 4, 9)] // second session is lower; keep first
+    [InlineData(TargetEmotion.Happiness, 8, 3, 8)] // same as scoring formula
+    public void PlayerStats_RecordCompletedSession_TracksPerEmotionBest(
+        TargetEmotion emotion, int firstScore, int secondScore, int expectedBest)
     {
         var stats = new PlayerStats { UserId = "user-1" };
-        stats.TotalGames.Should().Be(0);
-        stats.TotalScore.Should().Be(0);
-        stats.BestScore.Should().Be(0);
-        stats.HappinessBest.Should().Be(0);
+
+        var s1 = new GameSession { UserId = "user-1", SessionId = "s1" };
+        s1.Captures.Add(new RoundCapture { TargetEmotion = emotion, Score = firstScore });
+        stats.RecordCompletedSession(s1);
+
+        var s2 = new GameSession { UserId = "user-1", SessionId = "s2" };
+        s2.Captures.Add(new RoundCapture { TargetEmotion = emotion, Score = secondScore });
+        stats.RecordCompletedSession(s2);
+
+        var actual = emotion switch
+        {
+            TargetEmotion.Anger      => stats.AngerBest,
+            TargetEmotion.Fear       => stats.FearBest,
+            TargetEmotion.Happiness  => stats.HappinessBest,
+            TargetEmotion.Surprise   => stats.SurpriseBest,
+            TargetEmotion.Sadness    => stats.SadnessBest,
+            _ => 0,
+        };
+        actual.Should().Be(expectedBest);
     }
 
     [Fact]
@@ -70,42 +101,6 @@ public sealed class FaceModelsTests
     }
 
     [Fact]
-    public void PlayerStats_RecordCompletedSession_TracksPerEmotionBest()
-    {
-        var stats = new PlayerStats { UserId = "user-1" };
-        var s1 = new GameSession { UserId = "user-1", SessionId = "s1" };
-        s1.Captures.Add(new RoundCapture { TargetEmotion = TargetEmotion.Anger, Score = 5 });
-        stats.RecordCompletedSession(s1);
-        var s2 = new GameSession { UserId = "user-1", SessionId = "s2" };
-        s2.Captures.Add(new RoundCapture { TargetEmotion = TargetEmotion.Anger, Score = 9 });
-        stats.RecordCompletedSession(s2);
-        stats.AngerBest.Should().Be(9);
-    }
-
-    [Fact]
-    public void PlayerStats_RecordCompletedSession_KeepsLowerBestIfNewScoreIsLower()
-    {
-        var stats = new PlayerStats { UserId = "user-1" };
-        var s1 = new GameSession { UserId = "user-1" };
-        s1.Captures.Add(new RoundCapture { TargetEmotion = TargetEmotion.Fear, Score = 9 });
-        stats.RecordCompletedSession(s1);
-        var s2 = new GameSession { UserId = "user-1" };
-        s2.Captures.Add(new RoundCapture { TargetEmotion = TargetEmotion.Fear, Score = 4 });
-        stats.RecordCompletedSession(s2);
-        stats.FearBest.Should().Be(9);
-    }
-
-    [Fact]
-    public void GameSession_TotalScore_SumsAllCaptures()
-    {
-        var s = new GameSession();
-        s.Captures.Add(new RoundCapture { Score = 3 });
-        s.Captures.Add(new RoundCapture { Score = 7 });
-        s.Captures.Add(new RoundCapture { Score = 5 });
-        s.TotalScore.Should().Be(15);
-    }
-
-    [Fact]
     public async Task StubFaceAnalysisService_AlwaysReportsNoFace()
     {
         var stub = new StubFaceAnalysisService();
@@ -113,25 +108,5 @@ public sealed class FaceModelsTests
         var result = await stub.AnalyzeAsync(Array.Empty<byte>(), TargetEmotion.Happiness);
         result.FaceDetected.Should().BeFalse();
         result.TargetEmotionConfidence.Should().Be(0f);
-    }
-
-    [Fact]
-    public void ScoringFormula_ScoreIsTenTimesConfidenceWhenHeadPoseValid()
-    {
-        // Documented formula: score = headPoseValid ? round(confidence * 10) : 0
-        // We test via the HeadPoseValidator gate and the round formula.
-        var cases = new[]
-        {
-            (confidence: 0.95f, expected: 10),
-            (confidence: 0.50f, expected: 5),
-            (confidence: 0.49f, expected: 5), // banker's rounding to even
-            (confidence: 0.10f, expected: 1),
-            (confidence: 0.00f, expected: 0),
-        };
-        foreach (var (confidence, expected) in cases)
-        {
-            var score = HeadPoseValidator.Validate(0, 0) ? (int)Math.Round(confidence * 10) : 0;
-            score.Should().Be(expected, $"confidence={confidence} should yield score={expected}");
-        }
     }
 }

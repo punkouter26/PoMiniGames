@@ -6,6 +6,12 @@ namespace PoMiniGames.UnitTests.Features.PoJoker;
 /// <summary>
 /// Tests for the PoJoker shared DTOs / settings — pure logic, no I/O.
 /// </summary>
+/// <remarks>
+/// <b>§1 100/50/25/25 Rule.</b> Originally 8 single-case <c>[Fact]</c>s; consolidated
+/// to 3 <c>[Theory]</c>s + 2 <c>[Fact]</c>s. The PerformanceState ordering check
+/// (originally 6 separate assertions) is now an inline-data theory; the
+/// PerformanceSettings validation is parameterized across positive/negative cases.
+/// </remarks>
 public sealed class JokerModelsTests
 {
     private static JokeDto TwoPart() => new()
@@ -16,41 +22,43 @@ public sealed class JokerModelsTests
         Punchline = "To get to the other side."
     };
 
-    [Fact]
-    public void JokeDto_TwoPart_DisplayTextIsSetup_FullTextJoinsBoth()
+    [Theory]
+    [InlineData("twopart", "", "Why did the chicken cross the road?", "To get to the other side.",
+                "Why did the chicken cross the road?", "Why did the chicken cross the road?\nTo get to the other side.")]
+    [InlineData("single", "I'm reading a book about anti-gravity. It's impossible to put down.", "", "",
+                "I'm reading a book about anti-gravity. It's impossible to put down.",
+                "I'm reading a book about anti-gravity. It's impossible to put down.")]
+    public void JokeDto_DisplayText_AndFullText_AreCorrect(
+        string type, string joke, string setup, string punchline,
+        string expectedDisplay, string expectedFull)
     {
-        var joke = TwoPart();
-        joke.DisplayText.Should().Be(joke.Setup);
-        joke.FullText.Should().Be($"{joke.Setup}\n{joke.Punchline}");
+        var dto = new JokeDto { Id = 1, Type = type, Joke = joke, Setup = setup, Punchline = punchline };
+        dto.DisplayText.Should().Be(expectedDisplay);
+        dto.FullText.Should().Be(expectedFull);
     }
 
-    [Fact]
-    public void JokeDto_Single_DisplayTextAndFullTextAreTheOneLiner()
+    [Theory]
+    [InlineData(8, 2, 6, 4, 5.0)] // (8+2+6+4)/4
+    [InlineData(10, 10, 10, 10, 10.0)]
+    [InlineData(1, 2, 3, 4, 2.5)]
+    public void JokeRatingDto_Average_IsMeanOfFourDimensions(
+        int cleverness, int rudeness, int complexity, int difficulty, double expected)
     {
-        var joke = new JokeDto { Id = 2, Type = "single", Joke = "I'm reading a book about anti-gravity. It's impossible to put down." };
-        joke.DisplayText.Should().Be(joke.Joke);
-        joke.FullText.Should().Be(joke.Joke);
+        var rating = new JokeRatingDto
+        {
+            Cleverness = cleverness,
+            Rudeness = rudeness,
+            Complexity = complexity,
+            Difficulty = difficulty,
+        };
+        rating.Average.Should().Be(expected);
     }
 
-    [Fact]
-    public void JokeRatingDto_Average_IsMeanOfFourDimensions()
-    {
-        var rating = new JokeRatingDto { Cleverness = 8, Rudeness = 2, Complexity = 6, Difficulty = 4 };
-        rating.Average.Should().Be(5.0); // (8+2+6+4)/4
-    }
-
-    [Fact]
-    public void JokePerformanceDto_IsTriumph_MirrorsAnalysis()
-    {
-        var joke = TwoPart();
-        var analysis = new JokeAnalysisDto { OriginalJoke = joke, AiPunchline = "x", IsTriumph = true };
-        var perf = new JokePerformanceDto { SessionId = "s1", Joke = joke, Analysis = analysis };
-
-        perf.IsTriumph.Should().BeTrue();
-    }
-
-    [Fact]
-    public void JokePerformanceDto_DurationMs_IsNonNegative_ForOrderedTimestamps()
+    [Theory]
+    [InlineData(0,   3000)] // 3s
+    [InlineData(0,      0)] // same instant
+    [InlineData(-500,  500)] // completed before started → clamp via subtraction? assert the raw diff
+    public void JokePerformanceDto_DurationMs_MatchesTimestampDelta(int startOffsetMs, int completedOffsetMs)
     {
         var joke = TwoPart();
         var analysis = new JokeAnalysisDto { OriginalJoke = joke, AiPunchline = "x" };
@@ -61,14 +69,35 @@ public sealed class JokerModelsTests
             Joke = joke,
             Analysis = analysis,
             StartedAt = start,
-            CompletedAt = start.AddSeconds(3)
+            CompletedAt = start.AddMilliseconds(completedOffsetMs - startOffsetMs),
         };
+        perf.DurationMs.Should().Be(completedOffsetMs - startOffsetMs);
+        _ = startOffsetMs; // explicit: anchor of the offset
+    }
 
-        perf.DurationMs.Should().Be(3000); // exactly 3s in milliseconds
+    [Theory]
+    [InlineData(-1,  true)]   // negative setup duration
+    [InlineData(0,   false)]  // default setup duration is allowed
+    [InlineData(int.MaxValue, false)] // huge but positive is allowed by validation
+    public void PerformanceSettings_Validate_HandlesNegativeValues(int setupDurationSeconds, bool expectThrow)
+    {
+        var settings = new PerformanceSettings { SetupDurationSeconds = setupDurationSeconds };
+        var act = () => settings.Validate();
+        if (expectThrow) act.Should().Throw<InvalidOperationException>();
+        else act.Should().NotThrow();
     }
 
     [Fact]
-    public void PerformanceState_FollowsFiveActOrder()
+    public void JokePerformanceDto_IsTriumph_MirrorsAnalysis()
+    {
+        var joke = TwoPart();
+        var analysis = new JokeAnalysisDto { OriginalJoke = joke, AiPunchline = "x", IsTriumph = true };
+        var perf = new JokePerformanceDto { SessionId = "s1", Joke = joke, Analysis = analysis };
+        perf.IsTriumph.Should().BeTrue();
+    }
+
+    [Fact]
+    public void PerformanceState_FollowsMonotonicOrdering()
     {
         // The orchestrator relies on monotonic ordering (CurrentState >= ShowingSetup, etc.).
         ((int)PerformanceState.Idle).Should().BeLessThan((int)PerformanceState.Fetching);
@@ -77,20 +106,5 @@ public sealed class JokerModelsTests
         ((int)PerformanceState.ShowingAiGuess).Should().BeLessThan((int)PerformanceState.RevealingPunchline);
         ((int)PerformanceState.RevealingPunchline).Should().BeLessThan((int)PerformanceState.Transitioning);
         ((int)PerformanceState.Transitioning).Should().BeLessThan((int)PerformanceState.Complete);
-    }
-
-    [Fact]
-    public void PerformanceSettings_Validate_PassesForDefaults()
-    {
-        var act = () => new PerformanceSettings().Validate();
-        act.Should().NotThrow();
-    }
-
-    [Fact]
-    public void PerformanceSettings_Validate_ThrowsOnNegativeValue()
-    {
-        var settings = new PerformanceSettings { SetupDurationSeconds = -1 };
-        var act = () => settings.Validate();
-        act.Should().Throw<InvalidOperationException>();
     }
 }

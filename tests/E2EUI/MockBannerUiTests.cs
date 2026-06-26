@@ -21,13 +21,20 @@ public class MockBannerUiTests
         using var playwright = await Playwright.CreateAsync();
         await using var browser = await playwright.Chromium.LaunchAsync(
             new BrowserTypeLaunchOptions { Headless = true });
-        // Mobile portrait — the banner is part of the mobile-first nav shell.
-        var page = await browser.NewPageAsync(new BrowserNewPageOptions
+        // §3 BFF Header Overrides: attach FakeAuth headers so every request carries
+        // identity without depending on the cookie flow.
+        var context = await browser.NewContextAsync(new BrowserNewContextOptions
         {
             ViewportSize = new ViewportSize { Width = 390, Height = 844 },
+            ExtraHTTPHeaders = new Dictionary<string, string>
+            {
+                ["X-Fake-User"] = "test-user",
+                ["X-Fake-Roles"] = "Player",
+            },
         });
+        var page = await context.NewPageAsync();
 
-        await page.GotoAsync(_fixture.ServerAddress, new PageGotoOptions
+        await page.GotoAsync($"{_fixture.ServerAddress}?autoGuest=1", new PageGotoOptions
         {
             WaitUntil = WaitUntilState.NetworkIdle,
             Timeout = 60_000,

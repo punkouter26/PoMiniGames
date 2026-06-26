@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using PoMiniGames.Features.Auth;
+using PoMiniGames.TestUtilities;
 
 namespace PoMiniGames.IntegrationTests;
 
@@ -51,18 +52,18 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>, IAsyncL
             _finalEnvIsProduction = string.Equals(
                 context.HostingEnvironment.EnvironmentName, "Production", StringComparison.OrdinalIgnoreCase);
 
-            var overrides = new Dictionary<string, string?>
-            {
-                // Budget guardrail: force every AI boundary to its in-process mock so the
-                // suite can never spend live tokens, even if a runner has real keys present.
-                ["PoFunQuiz:Features:UseMockAI"] = "true",
-                ["PoCoupleQuiz:Features:UseMockAI"] = "true",
-            };
+            var overrides = new Dictionary<string, string?>(TestBudgetGuard.Overrides);
 
             if (_azuriteConnectionString is not null)
             {
-                overrides["PoMiniGames:Storage:TableService:ConnectionString"] = _azuriteConnectionString;
-                overrides["PoMiniGames:Storage:TableService:TableName"] = "pominigames";
+                // §6 + §3: mirror the Azurite connection string into BOTH the
+                // TableService and BlobService sections so per-game blob repositories
+                // (e.g. BlobImageRepository for PoFace captures) bind to the
+                // emulator rather than falling through to DefaultAzureCredential.
+                foreach (var (k, v) in TestBudgetGuard.StorageOverrides(_azuriteConnectionString, "pominigames"))
+                {
+                    overrides[k] = v;
+                }
             }
 
             cfg.AddInMemoryCollection(overrides);

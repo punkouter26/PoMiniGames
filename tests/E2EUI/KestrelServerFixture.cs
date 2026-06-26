@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using PoMiniGames.TestUtilities;
 using Testcontainers.Azurite;
 
 namespace PoMiniGames.E2EUI;
@@ -102,20 +103,24 @@ public class KestrelServerFixture : WebApplicationFactory<Program>, IAsyncLifeti
 
         builder.ConfigureAppConfiguration((_, cfg) =>
         {
-            cfg.AddInMemoryCollection(new Dictionary<string, string?>
+            var overrides = new Dictionary<string, string?>(TestBudgetGuard.Overrides);
+
+            // §3 BFF Header Overrides: enable the FakeAuth scheme so e2e tests can
+            // inject identity variations through X-Fake-User / X-Fake-Roles headers.
+            overrides["Auth:EnableFakeAuth"] = "true";
+            // Browser tests run against the login-gated SPA; auto-sign-in as Guest so
+            // the home page renders without a manual auth step.
+            overrides["Auth:AutoGuestLogin"] = "true";
+            // §6 + §3: mirror Azurite to BOTH TableService and BlobService sections.
+            foreach (var (k, v) in TestBudgetGuard.StorageOverrides(_azuriteConnectionString, "pominigames-e2eui"))
             {
-                ["Auth:EnableFakeAuth"] = "true",
-                // Browser tests run against the login-gated SPA; auto-sign-in as Guest so
-                // the home page renders without a manual auth step.
-                ["Auth:AutoGuestLogin"] = "true",
-                ["PoMiniGames:Storage:TableService:ConnectionString"] = _azuriteConnectionString,
-                ["PoMiniGames:Storage:TableService:TableName"] = "pominigames-e2eui",
-                // Budget guardrail: force every AI boundary to its in-process mock so the
-                // suite can never spend live tokens, even if a runner has real keys present.
-                ["PoFunQuiz:Features:UseMockAI"] = "true",
-                ["PoCoupleQuiz:Features:UseMockAI"] = "true",
-                ["FeatureFlags:UseMockData"] = UseMockDataBanner ? "true" : "false",
-            });
+                overrides[k] = v;
+            }
+            // FeatureFlags.UseMockData drives the "USING MOCK DATA" banner — driven
+            // by the fixture variant (banner-on vs banner-off) for the two suites.
+            overrides["FeatureFlags:UseMockData"] = UseMockDataBanner ? "true" : "false";
+
+            cfg.AddInMemoryCollection(overrides);
         });
 
         builder.ConfigureTestServices(services =>

@@ -154,12 +154,16 @@ public sealed class AzureAIFaceAnalysisService : IFaceAnalysisService
 /// <summary>
 /// Deterministic stub used in Dev/Test and as a fallback when Azure OpenAI
 /// is unreachable. Always reports no face detected — score is always 0.
-/// Marked with the IMockable-equivalent <see cref="IFaceAnalysisService.IsMock"/>
-/// so the runtime-status endpoint can drive the "USING MOCK DATA" banner.
+/// Implements <see cref="PoShared.Interfaces.IMockable"/> so the
+/// <c>GET /api/mockables</c> diagnostic can enumerate every in-process mock
+/// without per-service knowledge.
 /// </summary>
-public sealed class StubFaceAnalysisService : IFaceAnalysisService
+public sealed class StubFaceAnalysisService : IFaceAnalysisService, PoShared.Interfaces.IMockable
 {
     public bool IsMock => true;
+
+    /// <summary>Stable identifier surfaced on /api/mockables.</summary>
+    string PoShared.Interfaces.IMockable.MockId => "IFaceAnalysisService:Stub";
 
     public Task<FaceAnalysisResult> AnalyzeAsync(byte[] imageJpeg, TargetEmotion target, CancellationToken cancellationToken = default)
     {

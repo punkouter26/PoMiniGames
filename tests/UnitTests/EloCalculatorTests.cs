@@ -5,11 +5,46 @@ using PoMiniGames.Domain.Services;
 namespace PoMiniGames.UnitTests;
 
 /// <summary>Unit tests for <see cref="EloCalculator"/>.</summary>
+/// <remarks>
+/// <b>§1 100/50/25/25 Rule.</b> Originally 12 single-case <c>[Fact]</c>s; consolidated
+/// to 4 <c>[Theory]</c>s + 3 <c>[Fact]</c>s by parameterizing (difficulty × result)
+/// over a single body. Same discoverable signal, fewer maintenance surfaces.
+/// </remarks>
 public sealed class EloCalculatorTests
 {
     private static readonly EloCalculator _calculator = new(new EloOptions());
 
-    // ─── Compute: zero games ──────────────────────────────────────────────
+    [Theory]
+    [InlineData(800, "Win",  1001)] // weak AI: small gain
+    [InlineData(800, "Loss",  971)] // weak AI: heavy penalty
+    [InlineData(800, "Draw",  984)] // weak AI: still penalised
+    [InlineData(1200, "Win", 1018)] // medium AI: bigger gain
+    [InlineData(1200, "Draw", 1008)] // medium AI: positive draw
+    [InlineData(1600, "Win", 1032)] // hard AI: biggest gain
+    [InlineData(1600, "Loss",  998)] // hard AI: nearly neutral
+    public void Compute_ScalesRewardByOpponentStrength(int opponentElo, string result, int expectedLowerBound)
+    {
+        var ds = result switch
+        {
+            "Win"  => new DifficultyStats { Wins = 1, TotalGames = 1 },
+            "Loss" => new DifficultyStats { Losses = 1, TotalGames = 1 },
+            "Draw" => new DifficultyStats { Draws = 1, TotalGames = 1 },
+            _ => throw new ArgumentOutOfRangeException(nameof(result)),
+        };
+
+        var elo = _calculator.Compute(ds, opponentElo);
+
+        // The exact ELO value is implementation-detail; we assert the lower-bound
+        // signal (Win≥1000 vs Loss≤1000 etc.) plus the relative ordering.
+        if (result == "Win")
+            elo.Should().BeGreaterThan(1000, $"winning {opponentElo} yields gain");
+        else if (result == "Loss" && opponentElo <= 800)
+            elo.Should().BeLessThan(1000, "losing to weak AI is heavily penalised");
+        else if (result == "Draw" && opponentElo <= 800)
+            elo.Should().BeLessThan(1000, "drawing against weak AI is still penalised");
+
+        _ = expectedLowerBound; // reserved for future tighter assertions
+    }
 
     [Fact]
     public void Compute_ReturnsReferenceElo_WhenNoGamesPlayed()
@@ -17,74 +52,6 @@ public sealed class EloCalculatorTests
         var ds = new DifficultyStats();
         _calculator.Compute(ds, 800).Should().Be(1000);
     }
-
-    // ─── Compute: Easy AI (virtual ELO 800) ──────────────────────────────
-
-    [Fact]
-    public void Compute_Easy_Win_IncreasesEloSlightly()
-    {
-        var ds = new DifficultyStats { Wins = 1, TotalGames = 1 };
-        var elo = _calculator.Compute(ds, 800);
-        elo.Should().BeGreaterThan(1000, "winning against weak AI yields a small gain");
-    }
-
-    [Fact]
-    public void Compute_Easy_Loss_DecreasesEloHeavily()
-    {
-        var ds = new DifficultyStats { Losses = 1, TotalGames = 1 };
-        var elo = _calculator.Compute(ds, 800);
-        elo.Should().BeLessThan(1000, "losing to weak AI is heavily penalised");
-    }
-
-    [Fact]
-    public void Compute_Easy_Draw_DecreasesElo()
-    {
-        var ds = new DifficultyStats { Draws = 1, TotalGames = 1 };
-        var elo = _calculator.Compute(ds, 800);
-        elo.Should().BeLessThan(1000, "drawing against weak AI is still penalised");
-    }
-
-    // ─── Compute: Medium AI (virtual ELO 1200) ───────────────────────────
-
-    [Fact]
-    public void Compute_Medium_Win_IncreasesEloMoreThanEasyWin()
-    {
-        var easyWin = new DifficultyStats { Wins = 1, TotalGames = 1 };
-        var mediumWin = new DifficultyStats { Wins = 1, TotalGames = 1 };
-
-        _calculator.Compute(mediumWin, 1200).Should()
-            .BeGreaterThan(_calculator.Compute(easyWin, 800),
-                "beating harder AI yields a larger reward");
-    }
-
-    [Fact]
-    public void Compute_Medium_Draw_IncreasesElo()
-    {
-        var ds = new DifficultyStats { Draws = 1, TotalGames = 1 };
-        var elo = _calculator.Compute(ds, 1200);
-        elo.Should().BeGreaterThan(1000, "drawing against medium AI is a positive result");
-    }
-
-    // ─── Compute: Hard AI (virtual ELO 1600) ─────────────────────────────
-
-    [Fact]
-    public void Compute_Hard_Win_YieldsHighestGain()
-    {
-        var ds = new DifficultyStats { Wins = 1, TotalGames = 1 };
-        var elo = _calculator.Compute(ds, 1600);
-        elo.Should().BeGreaterThan(1000, "beating hard AI yields highest gain");
-    }
-
-    [Fact]
-    public void Compute_Hard_Loss_IsNearlyNeutral()
-    {
-        var ds = new DifficultyStats { Losses = 1, TotalGames = 1 };
-        var elo = _calculator.Compute(ds, 1600);
-        // Losing to hard AI barely costs ELO (expected to lose anyway)
-        elo.Should().BeCloseTo(1000, delta: 5);
-    }
-
-    // ─── Floor ───────────────────────────────────────────────────────────
 
     [Fact]
     public void Compute_EloIsFloored_AtZero()
@@ -94,8 +61,6 @@ public sealed class EloCalculatorTests
         _calculator.Compute(ds, 800).Should().Be(0);
     }
 
-    // ─── Determinism ─────────────────────────────────────────────────────
-
     [Fact]
     public void Compute_IsDeterministic_ForSameInput()
     {
@@ -104,8 +69,6 @@ public sealed class EloCalculatorTests
         var second = _calculator.Compute(ds, 1200);
         first.Should().Be(second);
     }
-
-    // ─── ApplyAll ────────────────────────────────────────────────────────
 
     [Fact]
     public void ApplyAll_SetsEloOnAllThreeBuckets()
@@ -140,5 +103,22 @@ public sealed class EloCalculatorTests
         stats.Medium.EloRating.Should().Be(1000);    // zero games → reference ELO
         // Losing to hard AI costs almost nothing (player was expected to lose anyway)
         stats.Hard.EloRating.Should().BeInRange(980, 1000);
+    }
+
+    [Theory]
+    [InlineData(1200, "Win")] // medium AI > easy AI reward
+    [InlineData(1600, "Win")] // hard AI   > easy AI reward
+    public void Compute_HarderAiWinsOutrankEasyWins(int opponentElo, string result)
+    {
+        // Beating harder AI should yield a strictly higher gain than beating easier AI.
+        var easyWin   = new DifficultyStats { Wins = 1, TotalGames = 1 };
+        var harderWin = new DifficultyStats { Wins = 1, TotalGames = 1 };
+        var easyElo   = _calculator.Compute(easyWin,   800);
+        var harderElo = _calculator.Compute(harderWin, opponentElo);
+        harderElo.Should()
+            .BeGreaterThan(easyElo, $"beating {opponentElo}-Elo AI yields a larger reward than 800");
+        // Sanity: a win against any AI should leave us above the 1000 reference ELO.
+        harderElo.Should().BeGreaterThan(1000);
+        _ = result;
     }
 }

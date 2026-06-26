@@ -80,9 +80,27 @@ internal static class DataProtectionExtensions
                 opts.XmlRepository = new AzureBlobXmlRepository(containerClient, Microsoft.Extensions.Logging.Abstractions.NullLogger<AzureBlobXmlRepository>.Instance);
             });
         }
+        else if (env.IsEnvironment("Test"))
+        {
+            // Zero-waste: the Test tier simulates the Production fail-fast contracts
+            // (auth scheme guards, AutoGuestLogin guard, diag-404 guard) by forcing
+            // UseEnvironment("Production") in individual tests. Those boots must NOT
+            // try to authenticate against the real PoShared storage account (the
+            // developer's CLI credential may be a personal-account token with no
+            // rights on the tenant — see AADSTS50020). Use a per-test ephemeral
+            // temp-folder key ring so the host starts cleanly and tests stay
+            // hermetic. Tests that specifically need persistent keys can override
+            // the directory via the PERSISTED_DATA_PROTECTION_KEYS env var.
+            var persistedRoot = Environment.GetEnvironmentVariable("PERSISTED_DATA_PROTECTION_KEYS");
+            var keysPath = !string.IsNullOrWhiteSpace(persistedRoot)
+                ? persistedRoot
+                : Path.Combine(Path.GetTempPath(), $"pominigames-test-keys-{Guid.NewGuid():N}");
+            Directory.CreateDirectory(keysPath);
+            builder.PersistKeysToFileSystem(new DirectoryInfo(keysPath));
+        }
         else
         {
-            // Local-dev/test: on-disk key ring under <contentroot>/keys.
+            // Local-dev (Development): on-disk key ring under <contentroot>/keys.
             // The folder is created lazily by the framework if missing.
             var keysPath = Path.Combine(env.ContentRootPath, "keys");
             builder.PersistKeysToFileSystem(new DirectoryInfo(keysPath));

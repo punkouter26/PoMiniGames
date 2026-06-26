@@ -24,6 +24,7 @@
     <!-- §5: spin the real host in-process (the Blazor WASM client is BFF-served
          by the host on :5000; no separate Vite/Node). -->
     <ProjectReference Include="..\..\src\PoMiniGames\PoMiniGames\PoMiniGames.csproj" />
+    <ProjectReference Include="..\Shared\PoMiniGames.TestUtilities.csproj" />
   </ItemGroup>
 
   <ItemGroup>

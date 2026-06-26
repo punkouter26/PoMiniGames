@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- TFM / Nullable / ImplicitUsings inherited from Directory.Build.props -->
+    <!-- Shared utilities referenced by UnitTests, IntegrationTests, E2EAPI, and E2EUI.
+         Must be net10.0 to align with every test host it serves. -->
+    <IsPackable>false</IsPackable>
+    <IsTestProject>false</IsTestProject>
+  </PropertyGroup>
+
+</Project>

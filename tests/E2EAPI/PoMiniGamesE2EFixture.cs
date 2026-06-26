@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using PoMiniGames.TestUtilities;
 
 namespace PoMiniGames.E2EAPI;
 
@@ -47,16 +48,14 @@ public sealed class PoMiniGamesE2EFixture : WebApplicationFactory<Program>
         // service registration), not in app configuration.
         builder.ConfigureAppConfiguration((_, cfg) =>
         {
-            cfg.AddInMemoryCollection(new Dictionary<string, string?>
+            var overrides = new Dictionary<string, string?>(TestBudgetGuard.Overrides);
+            overrides["Auth:EnableFakeAuth"] = "true";
+            // §6 + §3: mirror Azurite to BOTH TableService and BlobService sections.
+            foreach (var (k, v) in TestBudgetGuard.StorageOverrides(AzuriteConnectionString, "pominigames-e2e"))
             {
-                ["Auth:EnableFakeAuth"] = "true",
-                ["PoMiniGames:Storage:TableService:ConnectionString"] = AzuriteConnectionString,
-                ["PoMiniGames:Storage:TableService:TableName"] = "pominigames-e2e",
-                // Budget guardrail: force every AI boundary to its in-process mock so the
-                // suite can never spend live tokens, even if a runner has real keys present.
-                ["PoFunQuiz:Features:UseMockAI"] = "true",
-                ["PoCoupleQuiz:Features:UseMockAI"] = "true",
-            });
+                overrides[k] = v;
+            }
+            cfg.AddInMemoryCollection(overrides);
         });
 
         builder.ConfigureTestServices(services =>

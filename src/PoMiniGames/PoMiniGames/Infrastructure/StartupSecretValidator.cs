@@ -63,6 +63,7 @@ public sealed class StartupSecretValidator : IHostedService
             var fakeScheme = await _schemeProvider.GetSchemeAsync(FakeAuthHandler.SchemeName);
             if (fakeScheme is not null)
             {
+                _logger.FakeAuthSchemeInProduction(FakeAuthHandler.SchemeName);
                 throw new InvalidOperationException(
                     $"FATAL: authentication scheme '{FakeAuthHandler.SchemeName}' is registered while running in " +
                     "Production. Fake authentication must never be enabled in Production.");
@@ -72,6 +73,7 @@ public sealed class StartupSecretValidator : IHostedService
             // Production regardless of how the config was sourced.
             if (_configuration.GetValue<bool>("Auth:AutoGuestLogin"))
             {
+                _logger.AutoGuestLoginInProduction();
                 throw new InvalidOperationException(
                     "FATAL: 'Auth:AutoGuestLogin' is enabled in a Production environment. " +
                     "This silently bypasses sign-in and is forbidden.");
@@ -81,7 +83,7 @@ public sealed class StartupSecretValidator : IHostedService
         // Test environment uses mock services (registered by feature-specific wiring) — skip.
         if (_environment.IsEnvironment("Test"))
         {
-            _logger.LogInformation("Startup secret validation skipped in Test environment");
+            _logger.StartupValidationSkippedForTest();
             return;
         }
 
@@ -163,9 +165,7 @@ public sealed class StartupSecretValidator : IHostedService
 
         if (missing.Count == 0)
         {
-            _logger.LogInformation(
-                "Startup secret validation passed for {Environment}",
-                _environment.EnvironmentName);
+            _logger.StartupValidationPassed(_environment.EnvironmentName);
             return;
         }
 
@@ -174,29 +174,11 @@ public sealed class StartupSecretValidator : IHostedService
 
         if (_environment.IsProduction())
         {
-            // Fail fast in Production — a misconfigured deployment must not start and
-            // silently serve fabricated fallback data to real players.
-            // Static template (CA2254): never vary the format string between calls.
-            _logger.LogCritical(
-                "Required secrets are missing for environment {Environment}: {Missing}. " +
-                "The application will NOT start. Configure these secrets via Azure Key Vault " +
-                "(kv-poshared) under the PoMiniGames--<Section>--* secret names. {Message}",
-                _environment.EnvironmentName,
-                joined,
-                message);
+            _logger.RequiredSecretsMissing(_environment.EnvironmentName, joined);
             throw new InvalidOperationException(message);
         }
 
-        // In Development: warn loud but keep running so local dev iteration is not blocked.
-        _logger.LogWarning(
-            "Required secrets are missing for environment {Environment}: {Missing}. " +
-            "Continuing in {Environment} because non-Production environments are allowed to " +
-            "run with missing secrets. The relevant games will refuse to serve AI requests " +
-            "until the keys are set. {Message}",
-            _environment.EnvironmentName,
-            joined,
-            _environment.EnvironmentName,
-            message);
+        _logger.RequiredSecretsMissingNonProduction(_environment.EnvironmentName, joined);
     }
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;

@@ -3,10 +3,14 @@
 @inject GameStatsService GameStatsService
 @inject ApiService ApiService
 @inject KioskCoordinator Kiosk
+@inject IJSRuntime JS
 @implements IAsyncDisposable
 
 <div class="home-container">
     <span class="home-mesh" aria-hidden="true"></span>
+    @* §4 GPU-accelerated ambient particle field. WebGL2-only; falls back to the
+       CSS gradient on browsers without WebGL2 (Safari TP, etc.). *@
+    <canvas @ref="_ambientCanvas" class="home-ambient" aria-hidden="true"></canvas>
 
     @if (_isLoading)
     {
@@ -161,6 +165,9 @@
     private bool _isLoading = true;
     private List<TopGamePreview> _topGames = [];
     private bool _topScoresError = false;
+    private ElementReference _ambientCanvas;
+    private IJSObjectReference? _ambientModule;
+    private bool _ambientStarted;
     private record TopGamePreview(string Title, string Url, string Unit, List<ScoreEntry> Top3);
     private record ScoreEntry(string Name, string Score);
 
@@ -173,6 +180,27 @@
         await LoadTopGames();
 
         _isLoading = false;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // Lazy WebGL bootstrap — only on first paint so we don't ship the
+        // JS payload during SSR / prerender.
+        if (firstRender && !_ambientStarted)
+        {
+            _ambientStarted = true;
+            try
+            {
+                _ambientModule = await JS.InvokeAsync<IJSObjectReference>(
+                    "import", "./js/ambientParticles.js");
+                await _ambientModule.InvokeVoidAsync("start", _ambientCanvas);
+            }
+            catch
+            {
+                // WebGL2 unavailable — the CSS gradient behind the canvas is the fallback.
+                _ambientModule = null;
+            }
+        }
     }
 
     private void OnKioskStateChanged() => InvokeAsync(StateHasChanged);
@@ -209,9 +237,18 @@
         return match is not null ? match.Url : $"/{gameKey}";
     }
 
-    public ValueTask DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
         Kiosk.Changed -= OnKioskStateChanged;
-        return ValueTask.CompletedTask;
+        if (_ambientModule is not null)
+        {
+            try
+            {
+                await _ambientModule.InvokeVoidAsync("stop");
+                await _ambientModule.DisposeAsync();
+            }
+            catch { /* module never loaded — fine */ }
+            _ambientModule = null;
+        }
     }
 }

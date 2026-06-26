@@ -8,6 +8,7 @@ using PoMiniGames.Features.PoFunQuiz.Storage;
 using PoMiniGames.Features.PoJoker;
 using PoMiniGames.Features.PoJoker.Storage;
 using PoMiniGames.Features.PoRaceRagdoll;
+using PoMiniGames.Infrastructure.AI;
 using PoMiniGames.Infrastructure.Services;
 
 // Aliases to disambiguate the identically-named ILeaderboardRepository and
@@ -49,6 +50,9 @@ internal static class GameServicesExtensions
         });
         services.AddSingleton<PoMiniGames.AI.AIFoundryClientFactory>();
         services.AddSingleton<PoMiniGames.AI.AIFoundryChatClientCache>();
+        // §3: register the resilience pipeline (retry + circuit breaker + outer timeout)
+        // used by every AI Foundry consumer. Idempotent — safe to call multiple times.
+        services.AddAzureOpenAIResilience();
         // PoRaceRagdoll
         services.AddSingleton<IRacerService, RacerService>();
         services.AddSingleton<IGameSessionService, GameSessionService>();

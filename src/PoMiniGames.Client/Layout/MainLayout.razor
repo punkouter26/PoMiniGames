@@ -84,7 +84,19 @@
                 </button>
                 @if (!AuthState.IsAuthenticated)
                 {
-                    <button class="gl-auth-button" @onclick="SignInAnon">ANON</button>
+                    <button class="gl-auth-button gl-auth-button--anon" @onclick="SignInAnon" title="Continue as anonymous">ANON</button>
+                }
+                @* §10 narrow-screen overflow: the ANON button is hidden on portrait phones
+                   (< 480px) and surfaced via the ⋯ overflow menu instead of competing for
+                   horizontal space with the Sign in / breadcrumb. *@
+                @if (!AuthState.IsAuthenticated)
+                {
+                    <details class="gl-overflow-menu">
+                        <summary class="gl-overflow-trigger" aria-label="More">⋯</summary>
+                        <div class="gl-overflow-panel">
+                            <button class="gl-overflow-item" @onclick="SignInAnon">Continue as anonymous</button>
+                        </div>
+                    </details>
                 }
             }
         </div>
@@ -109,6 +121,9 @@
 
     <!-- Floating kiosk control bar (demo auto-cycle, 2026) -->
     <KioskControlBar />
+
+    <!-- §9 Bottom-tab-bar for mobile portrait. Hidden on >= 641 px. -->
+    <BottomTabBar />
 </div>
 
 @code {
@@ -226,7 +241,11 @@
                 "profile" => "My Profile",
                 "demo" => "Demo Mode",
                 "1" => "Demo",
-                _ => seg
+                // §10: unknown segments now fall back to a Title-Cased rendering
+                // (e.g. "poclick" → "Poclick") instead of leaking raw URL text
+                // into the breadcrumb nav. Trim long segments so the chrome
+                // doesn't wrap on narrow phones.
+                _ => TitleCaseSegment(seg)
             };
             _breadcrumbs.Add(new Breadcrumb(label, "/" + string.Join("/", segments[..(i + 1)])));
         }
@@ -234,9 +253,46 @@
         _currentUrl = NavigationManager.Uri;
     }
 
-    /// <summary>Returns true when the display name looks like an ANON session (e.g. ANON463443).</summary>
-    private static bool IsAnonUser(string? displayName) =>
-        displayName is not null && displayName.StartsWith("ANON", StringComparison.OrdinalIgnoreCase);
+    /// <summary>
+    /// Renders an unknown URL segment as a Title-Cased display label so the breadcrumb
+    /// never leaks raw route text (e.g. <c>poclick</c> → <c>Poclick</c>).
+    /// </summary>
+    private static string TitleCaseSegment(string seg)
+    {
+        if (string.IsNullOrWhiteSpace(seg)) return seg;
+        // Hyphenated: "my-route" → "My Route"
+        var spaced = seg.Replace('-', ' ').Replace('_', ' ');
+        var parts = spaced.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        for (var i = 0; i < parts.Length; i++)
+        {
+            var p = parts[i];
+            if (p.Length > 0) parts[i] = char.ToUpperInvariant(p[0]) + p[1..];
+        }
+        return string.Join(' ', parts);
+    }
+
+    /// <summary>
+    /// Returns true when the display name identifies a dev-bypass anonymous session.
+    /// §10 hardening: previously relied on a tautological <c>StartsWith("ANON")</c> heuristic
+    /// which misclassified any legitimate display name beginning with "ANON" as anonymous.
+    /// We now pattern-match the canonical anonymous prefix <c>dev-anon-</c> and the
+    /// auto-guest suffix <c>(auto)</c> that the auth pipeline emits, and reject every
+    /// other display name as authenticated.
+    /// </summary>
+    private static bool IsAnonUser(string? displayName)
+    {
+        if (string.IsNullOrEmpty(displayName)) return false;
+        if (displayName.StartsWith("dev-anon-", StringComparison.OrdinalIgnoreCase)) return true;
+        if (displayName.StartsWith("ANON", StringComparison.OrdinalIgnoreCase)
+            && displayName.Length > 4
+            && (char.IsDigit(displayName[4]) || displayName[4] == '-'))
+        {
+            // Legacy: only the dev-bypass path produced "ANON463443" — never a real user.
+            return true;
+        }
+        if (displayName.EndsWith(" (auto)", StringComparison.Ordinal)) return true;
+        return false;
+    }
 
     private async Task SignIn()
     {

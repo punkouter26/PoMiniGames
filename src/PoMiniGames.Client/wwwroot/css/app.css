@@ -44,13 +44,31 @@
   --elevation-2: 0 8px 30px rgba(99,102,241,0.15);
   --elevation-3: 0 20px 60px rgba(0,0,0,0.35);
 
-  /* Spacing scale */
+  /* Spacing scale (extended — §3 design-token unification) */
+  --space-0: 0;
   --space-1: 0.25rem;
   --space-2: 0.5rem;
   --space-3: 0.75rem;
   --space-4: 1rem;
   --space-5: 1.5rem;
   --space-6: 2rem;
+  --space-7: 2.5rem;
+  --space-8: 3rem;
+
+  /* Z-index scale (single source of truth — replaces scattered raw z-index values) */
+  --z-base: 1;
+  --z-sticky: 50;
+  --z-dropdown: 100;
+  --z-overlay: 500;
+  --z-modal: 1000;
+  --z-banner: 2000;
+  --z-toast: 3000;
+
+  /* Glassmorphism primitives (§3 — one source of truth for translucent chrome) */
+  --glass-1: blur(8px) saturate(140%);
+  --glass-2: blur(12px) saturate(160%);
+  --glass-3: blur(20px) saturate(180%);
+  --glass-tint: rgba(15, 23, 42, 0.6);
 
   /* Motion tokens (paired with the prefers-reduced-motion guard below) */
   --dur-fast: 0.15s;
@@ -78,6 +96,23 @@ html, body, #app {
   height: 100%;
   background: var(--color-bg);
   color: var(--color-text-primary);
+}
+
+/* §7 Cross-document navigation transition — uses the browser's native
+   View Transitions API where supported (Chrome/Edge 111+, Safari TP) for a
+   zero-JS page-change animation. Falls back to the .gl-page-enter keyframe
+   in MainLayout.razor.css on browsers that don't support it. */
+@view-transition {
+  navigation: auto;
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: var(--dur-fast);
+  animation-timing-function: var(--ease-standard);
+}
+
+body {
   font-family: var(--font-body);
 }
 

@@ -10,7 +10,10 @@
 }
 
 /* Highly visible banner shown when mock (IMockable) services are active —
-   the top-navigation "USING MOCK DATA" guard (Layout Spatial Contract). */
+   the top-navigation "USING MOCK DATA" guard (Layout Spatial Contract).
+   §10 GPU-only shimmer: a linear-gradient with background-position shift runs
+   on the compositor thread (no JS, no per-frame work). respects
+   prefers-reduced-motion. */
 .gl-mock-banner {
     width: 100%;
     text-align: center;
@@ -19,11 +22,27 @@
     letter-spacing: 0.12em;
     text-transform: uppercase;
     color: #1a1a00;
-    background-color: #ffd400;
+    background: linear-gradient(90deg,
+        #ffd400 0%,
+        #fff36e 35%,
+        #ffd400 65%,
+        #fff36e 100%);
+    background-size: 200% 100%;
     border-bottom: 2px solid #111;
     position: sticky;
     top: 0;
-    z-index: 1000;
+    z-index: var(--z-banner);
+    animation: gl-mock-shimmer 3.5s linear infinite;
+    will-change: background-position;
+}
+
+@keyframes gl-mock-shimmer {
+    from { background-position: 200% 0; }
+    to   { background-position: -200% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .gl-mock-banner { animation: none; }
 }
 
 /* Spatial contract: Left (branding) — Center (actions) — Right (session). */
@@ -33,11 +52,11 @@
     align-items: center;
     padding: 0.6rem var(--space-5);
     background: var(--surface-bar);
-    backdrop-filter: blur(12px);
+    backdrop-filter: var(--glass-2);
     border-bottom: 1px solid var(--color-border);
     position: sticky;
     top: 0;
-    z-index: 100;
+    z-index: var(--z-sticky);
     gap: var(--space-4);
 }
 
@@ -193,6 +212,77 @@
     flex-direction: column;
 }
 
+/* §7 Page-entry animation — GPU-only transform/opacity, runs on the compositor.
+   Pairs with the @view-transition block in wwwroot/css/app.css for browsers
+   that support the cross-document navigation API. */
+@media (prefers-reduced-motion: no-preference) {
+    .gl-page {
+        animation: gl-page-enter var(--dur-base) var(--ease-out) both;
+    }
+    @keyframes gl-page-enter {
+        from { opacity: 0; transform: translateY(6px); }
+        to   { opacity: 1; transform: translateY(0); }
+    }
+}
+
+/* §9 Bottom-tab-bar for portrait phones. Hidden on >= 641 px so the desktop /
+   landscape layout keeps the L-C-R top-bar contract intact. */
+.bottom-tab-bar {
+    display: none;
+}
+
+/* ── §10 overflow menu: ANON button is the redundant text path on wide screens,
+     the ⋯ trigger is the canonical path on narrow portrait phones. ─────────── */
+.gl-overflow-menu {
+    position: relative;
+    display: none;
+}
+
+.gl-overflow-trigger {
+    list-style: none;
+    cursor: pointer;
+    background: transparent;
+    border: 1px solid var(--color-border, rgba(255, 255, 255, 0.2));
+    border-radius: 8px;
+    padding: 0.35rem 0.6rem;
+    color: inherit;
+    font-size: 1rem;
+    line-height: 1;
+}
+
+.gl-overflow-trigger::-webkit-details-marker { display: none; }
+
+.gl-overflow-panel {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 0.4rem);
+    background: var(--color-surface, #1a1a24);
+    border: 1px solid var(--color-border, rgba(255, 255, 255, 0.2));
+    border-radius: 10px;
+    padding: 0.4rem;
+    min-width: 12rem;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+    z-index: 50;
+}
+
+.gl-overflow-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: transparent;
+    border: 0;
+    padding: 0.55rem 0.75rem;
+    color: inherit;
+    font: inherit;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.gl-overflow-item:hover,
+.gl-overflow-item:focus {
+    background: var(--color-surface-hover, rgba(255, 255, 255, 0.08));
+}
+
 /* ── Mobile portrait audit ── */
 @media (max-width: 640px) {
     .gl-top-bar {
@@ -215,4 +305,24 @@
     .gl-sync-pill .gl-center-action-label {
         display: none;
     }
+
+    /* Hide the standalone ANON button on narrow screens; the ⋯ overflow menu takes over. */
+    .gl-auth-button--anon { display: none; }
+    .gl-overflow-menu { display: inline-block; }
+
+    /* Collapse the sync pill to a single icon glyph with a numeric badge so the
+       kiosk button doesn't get pushed off-screen on sub-360px devices. */
+    .gl-sync-pill { padding: 0.35rem 0.55rem; }
+
+    /* §9: leave room for the fixed bottom-tab-bar so the last row of content
+       isn't covered by the bar's 56 px + safe-area inset. */
+    .gl-content {
+        padding-bottom: calc(56px + env(safe-area-inset-bottom, 0) + var(--space-3));
+    }
+}
+
+/* Wider than portrait phones: hide the overflow trigger so the standalone ANON
+   button remains the canonical path. */
+@media (min-width: 641px) {
+    .gl-overflow-menu { display: none !important; }
 }

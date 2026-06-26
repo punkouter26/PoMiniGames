@@ -1,0 +1,43 @@
+/* PoClick Stats page — bar fill + rush/drag strip styles. These classes are
+   referenced from PoClickStatsPage.razor with CSS-var bindings (--pct) on the
+   element style so per-instance widths flow through scoped CSS rather than
+   inline pixel/percent declarations. */
+
+.poclick-bar-track {
+    background: var(--color-bg);
+    border-radius: var(--radius-pill);
+    overflow: hidden;
+    height: 6px;
+    width: 100%;
+}
+
+.poclick-bar-fill {
+    height: 100%;
+    width: var(--pct, 0);
+    transition: width var(--dur-base) var(--ease-standard);
+}
+
+.poclick-bar-fill--green  { background: var(--accent-green,  #22c55e); }
+.poclick-bar-fill--yellow { background: var(--accent-yellow, #f59e0b); }
+.poclick-bar-fill--orange { background: var(--accent-orange, #fb923c); }
+.poclick-bar-fill--red    { background: var(--accent-red,    #ef4444); }
+
+.poclick-rushdrag-bar {
+    display: flex;
+    height: 6px;
+    background: var(--color-bg);
+    border-radius: var(--radius-pill);
+    overflow: hidden;
+}
+
+.poclick-rushdrag-early {
+    background: var(--accent-green, #22c55e);
+    width: var(--pct, 0);
+    transition: width var(--dur-base) var(--ease-standard);
+}
+
+.poclick-rushdrag-late {
+    background: var(--accent-orange, #fb923c);
+    width: var(--pct, 0);
+    transition: width var(--dur-base) var(--ease-standard);
+}

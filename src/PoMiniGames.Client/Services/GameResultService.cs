@@ -18,12 +18,18 @@ public sealed class GameResultService
     private readonly GameStatsService _stats;
     private readonly ApiService _api;
     private readonly ScoreSyncService _sync;
+    private readonly UiFeedbackService _feedback;
 
-    public GameResultService(GameStatsService stats, ApiService api, ScoreSyncService sync)
+    public GameResultService(
+        GameStatsService stats,
+        ApiService api,
+        ScoreSyncService sync,
+        UiFeedbackService feedback)
     {
         _stats = stats;
         _api = api;
         _sync = sync;
+        _feedback = feedback;
     }
 
     /// <summary>Records a local-only outcome (the common path for games without a server board).</summary>
@@ -42,10 +48,20 @@ public sealed class GameResultService
         {
             // If the server board can't be reached, park the score so it syncs on reconnect
             // instead of being silently lost — the leaderboard is the platform's North Star.
-            if (await _api.SubmitMarbleRaceHighScoreAsync(highScore) is null)
+            var submitted = await _api.SubmitMarbleRaceHighScoreAsync(highScore);
+            if (submitted is null)
             {
                 _sync.EnqueueMarbleRace(highScore);
+                await _feedback.ErrorAsync();
             }
+            else
+            {
+                await _feedback.CompleteAsync();
+            }
+        }
+        else
+        {
+            await _feedback.TapAsync();
         }
         return stats;
     }
@@ -57,10 +73,20 @@ public sealed class GameResultService
         var stats = await _stats.RecordResult("posnakegame", playerName, difficulty, result);
         if (highScore is not null)
         {
-            if (await _api.SubmitSnakeHighScoreAsync(highScore) is null)
+            var submitted = await _api.SubmitSnakeHighScoreAsync(highScore);
+            if (submitted is null)
             {
                 _sync.EnqueueSnake(highScore);
+                await _feedback.ErrorAsync();
             }
+            else
+            {
+                await _feedback.CompleteAsync();
+            }
+        }
+        else
+        {
+            await _feedback.TapAsync();
         }
         return stats;
     }

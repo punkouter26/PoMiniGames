@@ -3,6 +3,7 @@ namespace PoSurvive.Infrastructure.Persistence.TableStorage;
 using System.Text.Json;
 using Azure.Data.Tables;
 using Microsoft.Extensions.Configuration;
+using PoMiniGames.Infrastructure.Storage;
 using PoSurvive.Application.Interfaces;
 using PoSurvive.Domain.Entities;
 using PoSurvive.Shared.Models;
@@ -36,21 +37,31 @@ public sealed class SessionRepository : ISessionRepository
         var tableClient = _tableService.GetTableClient(SessionsTable);
         await tableClient.CreateIfNotExistsAsync(ct);
 
-        var entity = new TableEntity("session", session.SessionId.ToString())
-        {
-            ["Outcome"]             = session.Outcome.ToString(),
-            ["WinningTeam"]         = session.WinningTeam?.ToString(),
-            ["TotalTurns"]          = session.TotalTurns,
-            ["TotalFoodConsumed"]   = session.TotalFoodConsumed,
-            ["TotalDamageDealt"]    = session.TotalDamageDealt,
-            ["StartedAt"]           = session.StartedAt.ToString("O"),
-            ["EndedAt"]             = session.EndedAt?.ToString("O"),
-            ["TeamSize"]            = session.Config.TeamSize,
-            ["AgentSnapshotsJson"]  = JsonSerializer.Serialize(session.AgentSnapshots),
-            ["ConfigJson"]          = JsonSerializer.Serialize(session.Config),
-        };
-
-        await tableClient.UpsertEntityAsync(entity, TableUpdateMode.Replace, ct);
+        // §1: optimistic-concurrency save. Sessions accumulate counters during a run
+        // (TotalFoodConsumed, TotalDamageDealt, TotalTurns) so two progress saves cannot
+        // overwrite each other when the orchestrator emits them in parallel.
+        var partition = "session";
+        var rowKey = session.SessionId.ToString();
+        await TableConcurrency.UpdateWithRetryAsync<TableEntity>(
+            tableClient,
+            partitionKey: partition,
+            rowKey: rowKey,
+            factory: () => new TableEntity(partition, rowKey),
+            mutate: e =>
+            {
+                e["Outcome"]             = session.Outcome.ToString();
+                e["WinningTeam"]         = session.WinningTeam?.ToString();
+                e["TotalTurns"]          = session.TotalTurns;
+                e["TotalFoodConsumed"]   = session.TotalFoodConsumed;
+                e["TotalDamageDealt"]    = session.TotalDamageDealt;
+                e["StartedAt"]           = session.StartedAt.ToString("O");
+                e["EndedAt"]             = session.EndedAt?.ToString("O");
+                e["TeamSize"]            = session.Config.TeamSize;
+                e["AgentSnapshotsJson"]  = JsonSerializer.Serialize(session.AgentSnapshots);
+                e["ConfigJson"]          = JsonSerializer.Serialize(session.Config);
+                return true;
+            },
+            ct);
     }
 
     public async Task SaveHeartbeatBatchAsync(
@@ -64,7 +75,11 @@ public sealed class SessionRepository : ISessionRepository
         {
             // RowKey: "{turnNumber:D6}-{agentId}"  e.g. "000042-R1"
             var rowKey = $"{ev.TurnNumber:D6}-{ev.AgentId}";
-            var entity = new TableEntity(ev.SessionId.ToString(), rowKey)
+            var partition = ev.SessionId.ToString();
+            // Heartbeats are append-only per (turn, agent) tuple — switch to AddEntity
+            // and tolerate a 409 as the idempotent-retry path so a network blip can't
+            // duplicate a heartbeat row.
+            var entity = new TableEntity(partition, rowKey)
             {
                 ["AgentId"]      = ev.AgentId,
                 ["Team"]         = ev.Team,
@@ -78,7 +93,14 @@ public sealed class SessionRepository : ISessionRepository
                 ["GridSnapshot"] = ev.GridSnapshot,
             };
 
-            await tableClient.UpsertEntityAsync(entity, TableUpdateMode.Replace, ct);
+            try
+            {
+                await tableClient.AddEntityAsync(entity, ct);
+            }
+            catch (Azure.RequestFailedException ex) when (ex.Status == 409)
+            {
+                // Already persisted; treat as success.
+            }
         }
     }
 }

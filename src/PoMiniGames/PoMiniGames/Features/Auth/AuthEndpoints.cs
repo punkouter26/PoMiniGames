@@ -163,6 +163,47 @@ public static class AuthEndpoints
         .WithName("GetAuthState")
         .WithTags("Auth")
         .WithSummary("Returns server auth state and whether OAuth is fully configured.");
+        // §6: single-RTT auth handshake. The SPA used to fetch /api/auth/config and
+        // /api/auth/me in sequence — two round-trips plus a frame of layout shift.
+        // This endpoint collapses both into one response so AuthGate can hydrate
+        // BffAuthenticationStateProvider in a single awaited call.
+        app.MapGet("/api/auth/handshake", [AllowAnonymous] (
+            HttpContext context,
+            IOptions<MicrosoftAuthOptions> authOptions,
+            IWebHostEnvironment environment,
+            IConfiguration configuration) =>
+        {
+            var auth = authOptions.Value;
+            var microsoftEnabled = auth.Enabled;
+            var microsoftConfigured = auth.FullyConfigured;
+            var devLoginEnabled = environment.IsDevelopment();
+            var usingMockData = configuration.GetValue<bool>("FeatureFlags:UseMockData");
+            var autoGuestLogin = devLoginEnabled && configuration.GetValue<bool>("Auth:AutoGuestLogin");
+            var msalAuthority = NormalizeAuthorityForMsal(auth.Authority);
+
+            var clientConfig = new AuthClientConfiguration(
+                microsoftEnabled || devLoginEnabled,
+                auth.ClientId,
+                msalAuthority,
+                auth.EffectiveScope,
+                auth.RedirectPath,
+                microsoftEnabled,
+                microsoftConfigured,
+                devLoginEnabled,
+                usingMockData,
+                autoGuestLogin);
+
+            AuthenticatedUserProfile? profile = null;
+            if (AuthenticatedUser.TryCreate(context.User, out var user) && user is not null)
+            {
+                profile = new AuthenticatedUserProfile(user.UserId, user.DisplayName, user.Email);
+            }
+
+            return Results.Ok(new AuthHandshakeResponse(clientConfig, profile));
+        })
+        .WithName("GetAuthHandshake")
+        .WithTags("Auth")
+        .WithSummary("Single-roundtrip auth state: client config + current user profile (or null).");
 
         return app;
     }
@@ -270,3 +311,8 @@ public sealed record AuthenticatedUserProfile(string UserId, string DisplayName,
 public sealed record AuthStateResponse(bool Authenticated, bool OAuthConfigured, AuthenticatedUserProfile? User);
 
 public sealed record DevLoginRequest(string? UserId, string? DisplayName, string? Email);
+
+/// <summary>Single-response shape returned by <c>/api/auth/handshake</c>.</summary>
+public sealed record AuthHandshakeResponse(
+    AuthClientConfiguration Config,
+    AuthenticatedUserProfile? User);

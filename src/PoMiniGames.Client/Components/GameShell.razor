@@ -1,5 +1,8 @@
 @namespace PoMiniGamesClient.Components
+@* §6 Wrap the whole shell in a SwipeBack so every game gets a leftward
+   swipe-back gesture without each game page having to wire it. *@
 
+<SwipeBack BackTo="@BackTo" Class="gps-shell-wrap">
 <div class="gps-shell">
     <div class="gps-info-bar">
         <div class="gps-info-left">
@@ -87,6 +90,7 @@
         </div>
     }
 </div>
+</SwipeBack>
 
 @code {
     [Parameter] public RenderFragment Title { get; set; } = null!;

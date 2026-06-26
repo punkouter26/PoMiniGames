@@ -19,9 +19,17 @@ internal static class RateLimitingExtensions
         services.AddRateLimiter(opts =>
         {
             opts.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+            // §9.2 chaos-engineering hardening: every policy now keys on a compound
+            // (IP + identity) partition. The previous IP-only design let a single
+            // attacker behind a corporate NAT — or a single AutoGuest browser on a
+            // shared connection — saturate the bucket for every legitimate user
+            // behind that NAT. The compound partition keeps anonymous bursts from
+            // poisoning authenticated traffic and lets DevCookie / JWT identities
+            // get their own bucket on top of an IP-level bucket for anon traffic.
             opts.AddPolicy("highscores", ctx =>
                 RateLimitPartition.GetFixedWindowLimiter(
-                    partitionKey: ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                    partitionKey: BuildPartitionKey(ctx),
                     factory: _ => new FixedWindowRateLimiterOptions
                     {
                         Window = TimeSpan.FromMinutes(1),
@@ -31,10 +39,9 @@ internal static class RateLimitingExtensions
                         QueueLimit = 0,
                     }));
 
-            // PoSurvive: cloud inference relay (POST /api/infer) — 10 req/s per IP.
             opts.AddPolicy("infer", ctx =>
                 RateLimitPartition.GetFixedWindowLimiter(
-                    partitionKey: ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                    partitionKey: BuildPartitionKey(ctx),
                     factory: _ => new FixedWindowRateLimiterOptions
                     {
                         Window = TimeSpan.FromSeconds(1),
@@ -44,12 +51,9 @@ internal static class RateLimitingExtensions
                         QueueLimit = 0,
                     }));
 
-            // Azure OpenAI text generation (PoFunQuiz / PoCoupleQuiz question generation).
-            // These calls are billed per token, so cap them tightly per IP to bound cost
-            // and block prompt-spam amplification — 5 generations / minute.
             opts.AddPolicy("ai-generation", ctx =>
                 RateLimitPartition.GetFixedWindowLimiter(
-                    partitionKey: ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                    partitionKey: BuildPartitionKey(ctx),
                     factory: _ => new FixedWindowRateLimiterOptions
                     {
                         Window = TimeSpan.FromMinutes(1),
@@ -59,11 +63,9 @@ internal static class RateLimitingExtensions
                         QueueLimit = 0,
                     }));
 
-            // PoFace scoring: image upload + Azure multimodal analysis + blob + table write.
-            // The most expensive request in the app — 2 submissions / 10s per IP.
             opts.AddPolicy("face-analysis", ctx =>
                 RateLimitPartition.GetFixedWindowLimiter(
-                    partitionKey: ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                    partitionKey: BuildPartitionKey(ctx),
                     factory: _ => new FixedWindowRateLimiterOptions
                     {
                         Window = TimeSpan.FromSeconds(10),
@@ -75,5 +77,24 @@ internal static class RateLimitingExtensions
         });
 
         return services;
+    }
+
+    /// <summary>
+    /// Compound partition key: <c>{ip}|{identity-or-anon}</c>. The authenticated
+    /// user id (oid / NameIdentifier claim) — or <c>anon</c> when absent — is
+    /// appended to the remote IP, so two distinct identities sharing an IP get
+    /// separate buckets. The cookie session id (resolved by the auth middleware)
+    /// is used as a fallback identity for unauthenticated DevCookie requests.
+    /// </summary>
+    private static string BuildPartitionKey(HttpContext ctx)
+    {
+        var ip = ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        var identity = ctx.User?.Identity?.IsAuthenticated == true
+            ? (ctx.User.FindFirst("oid")?.Value
+               ?? ctx.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+               ?? ctx.User.Identity.Name
+               ?? "auth")
+            : "anon";
+        return $"{ip}|{identity}";
     }
 }

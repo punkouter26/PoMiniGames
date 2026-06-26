@@ -1,5 +1,6 @@
 using PoMiniGames.Features.PoRunner;   // GameOptions + SignalR session types (registered below)
 using PoMiniGames.Features.PoSurvive;  // AddPoSurvive
+using PoMiniGames.Features.Auth;       // Source-generated AuthLog
 using PoMiniGames.Application.Diagnostics;
 using PoMiniGames.Infrastructure;
 using PoMiniGames.Infrastructure.Services;
@@ -79,8 +80,7 @@ var microsoftAuth = app.Services
     .GetRequiredService<Microsoft.Extensions.Options.IOptions<PoMiniGames.Features.Auth.MicrosoftAuthOptions>>().Value;
 if (!microsoftAuth.Enabled)
 {
-    app.Logger.LogWarning(
-        "Microsoft OAuth is NOT configured (missing ClientId/ApiClientId). The app will boot, but /api/auth/me will report OAuth as unconfigured and real sign-in is unavailable.");
+    app.Logger.MicrosoftOAuthNotConfigured();
 }
 
 // Initialize storage eagerly so the database is ready before the first request.
@@ -95,7 +95,7 @@ try
 }
 catch (Exception ex)
 {
-    app.Logger.LogWarning(ex, "StorageInitializer reported an error; per-game tables/containers will be retried lazily on first use");
+    app.Logger.StorageInitializerError(ex);
 }
 
 // ─── Exception handling & developer tooling ──────────────────────────

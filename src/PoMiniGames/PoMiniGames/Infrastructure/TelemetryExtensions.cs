@@ -87,9 +87,18 @@ internal static class TelemetryExtensions
 
         if (!string.IsNullOrEmpty(keyVaultUri))
         {
+            // §4 chaos-engineering hardening: pin a 3-attempt / 3-second-per-attempt budget
+            // on the DefaultAzureCredential chain. Without this, a hung network during
+            // cold start (a flaky VPN, the AAD STS being slow) means AddAzureKeyVault
+            // blocks forever waiting for the first GetPropertiesOfSecrets enumeration —
+            // a silent DoS on app startup.
+            var credential = new DefaultAzureCredential(new DefaultAzureCredentialOptions
+            {
+                Retry = { MaxRetries = 2, NetworkTimeout = TimeSpan.FromSeconds(3) },
+            });
             builder.Configuration.AddAzureKeyVault(
                 new Uri(keyVaultUri),
-                new DefaultAzureCredential(),
+                credential,
                 new PrefixKeyVaultSecretManager("PoMiniGames"));
         }
 

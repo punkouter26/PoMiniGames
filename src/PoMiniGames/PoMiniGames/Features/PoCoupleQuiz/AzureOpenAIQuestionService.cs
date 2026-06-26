@@ -51,7 +51,7 @@ public sealed class AzureOpenAIQuestionService : IQuestionService
         var options = _optionsMonitor.CurrentValue;
         if (options.Features.UseMockAI && IsNonProduction())
         {
-            _logger.LogWarning("PoCoupleQuiz: UseMockAI=true in {Environment}; serving mock question (non-prod only).", _environment.EnvironmentName);
+            _logger.UsingMockQuestion(_environment.EnvironmentName);
             return await _mock.GenerateQuestionAsync(difficulty, category, cancellationToken);
         }
 
@@ -60,7 +60,7 @@ public sealed class AzureOpenAIQuestionService : IQuestionService
         {
             if (IsNonProduction())
             {
-                _logger.LogWarning("PoCoupleQuiz: AIFoundry not configured; serving mock question in {Environment}.", _environment.EnvironmentName);
+                _logger.FoundryUnconfiguredUsingMock(_environment.EnvironmentName);
                 return await _mock.GenerateQuestionAsync(difficulty, category, cancellationToken);
             }
             throw new InvalidOperationException(
@@ -94,7 +94,7 @@ public sealed class AzureOpenAIQuestionService : IQuestionService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "PoCoupleQuiz: Azure OpenAI question generation failed.");
+            _logger.QuestionGenerationFailed(ex);
             if (IsNonProduction())
             {
                 return await _mock.GenerateQuestionAsync(difficulty, category, cancellationToken);
@@ -165,7 +165,7 @@ public sealed class AzureOpenAIQuestionService : IQuestionService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "PoCoupleQuiz: Azure OpenAI similarity scoring failed.");
+            _logger.SimilarityScoringFailed(ex);
             if (IsNonProduction())
             {
                 return await _mock.CheckAnswerSimilarityAsync(answer1, answer2, cancellationToken);

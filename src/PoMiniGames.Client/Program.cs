@@ -52,6 +52,9 @@ builder.Services.AddScoped<GameResultService>();
 builder.Services.AddScoped<MatchHistoryService>();
 builder.Services.AddScoped<PoClickHistoryService>();
 builder.Services.AddScoped<PoRacerScoreApiClient>();
+// §5 Native Web Audio micro-feedback — shared across every game so the platform
+// has a consistent sound vocabulary. Lazily resolves the AudioContext on first call.
+builder.Services.AddScoped<UiFeedbackService>();
 // Singleton — manages the shared "Watch All Demos" auto-rotation timer
 // across the lifetime of the Blazor session. Fixes the timer-leak /
 // hijack-navigation bug (QA finding #1 + #4).

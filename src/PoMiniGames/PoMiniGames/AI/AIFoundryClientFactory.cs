@@ -1,5 +1,6 @@
 using Azure.AI.OpenAI;
 using Microsoft.Extensions.Options;
+using PoMiniGames.Features.Auth;
 
 namespace PoMiniGames.AI;
 
@@ -46,16 +47,11 @@ public sealed class AIFoundryClientFactory
             var opts = optionsMonitor.CurrentValue;
             if (!opts.IsConfigured)
             {
-                logger.LogWarning(
-                    "AIFoundry not configured (Endpoint or DefaultDeployment missing); " +
-                    "AI-consuming services will fall back to mock implementations in non-Production only.");
+                logger.AIFoundryNotConfigured();
                 return null;
             }
 
-            logger.LogInformation(
-                "AIFoundryClientFactory initialised: endpoint={Endpoint}, defaultDeployment={DefaultDeployment}",
-                opts.Endpoint,
-                opts.DefaultDeployment);
+            logger.AIFoundryInitialised(opts.Endpoint, opts.DefaultDeployment);
 
             return new AzureOpenAIClient(
                 new Uri(opts.Endpoint),

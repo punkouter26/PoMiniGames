@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Microsoft.JSInterop;
 using PoMiniGamesClient.Models;
 
@@ -7,6 +8,7 @@ public class AuthStateService
 {
     private readonly ApiService _api;
     private readonly IJSRuntime _js;
+    private readonly ILogger<AuthStateService> _logger;
     private AuthClientConfiguration? _config;
     private AuthenticatedUserProfile? _user;
     private bool _initialized;
@@ -26,10 +28,11 @@ public class AuthStateService
 
     public event Action? StateChanged;
 
-    public AuthStateService(ApiService api, IJSRuntime js)
+    public AuthStateService(ApiService api, IJSRuntime js, ILogger<AuthStateService> logger)
     {
         _api = api;
         _js = js;
+        _logger = logger;
     }
 
     /// <summary>Wire format for the MSAL JS interop result (see wwwroot/js/poauth.js).</summary>
@@ -41,83 +44,88 @@ public class AuthStateService
         Error = null;
         NotifyStateChanged();
 
-        var config = await _api.GetAuthConfigurationAsync();
-        _config = config;
+        // §6: single-RTT auth handshake. The previous implementation fetched config
+        // then user profile in two round-trips, causing one extra paint of the spinner.
+        var handshake = await _api.GetAuthHandshakeAsync();
+        if (handshake is null)
+        {
+            _user = null;
+            _config = null;
+            _initialized = true;
+            NotifyStateChanged();
+            return;
+        }
+        _config = handshake.Config;
+        _user = handshake.User;
 
-        if (config == null || !config.Enabled)
+        if (_config == null || !_config.Enabled)
         {
             AccessToken = null;
-            _user = null;
             _initialized = true;
             NotifyStateChanged();
             return;
         }
 
-        if (config.DevLoginEnabled)
+        if (_config.DevLoginEnabled)
         {
             AccessToken = null;
 
-            // Check for ?user= query param
+            // Check for ?user= query param (explicit dev-bypass entry).
             var urlUser = GetDevUserFromQuery(queryString);
             if (!string.IsNullOrEmpty(urlUser))
             {
                 var profile = await _api.DevBypassAsync(urlUser);
-                _user = profile;
+                if (profile is not null) _user = profile;
                 _initialized = true;
                 NotifyStateChanged();
                 return;
             }
 
-            // Check existing session
-            var existing = await _api.GetAuthenticatedUserAsync();
-            if (existing != null)
+            // Handshake already populated _user from the server-side cookie.
+            if (_user is not null)
             {
-                _user = existing;
                 _initialized = true;
                 NotifyStateChanged();
                 return;
             }
 
-            // Test harness: silently sign in as Guest so browser tests skip the login wall.
-            // §5 of QA report: the original implementation minted the identity with no UI
-            // confirmation, which is a footgun on any non-dev environment. The flag is now
-            // (a) requires an explicit `?autoGuest=1` URL param so the only way to land
-            // here is by deliberate navigation, and (b) marks the user with a `*` suffix
-            // so the nav bar shows the auto-guest state clearly.
-            if (config.AutoGuestLogin && IsAutoGuestOptIn(queryString))
+            // §9.3 chaos-engineering hardening: every auto-guest session gets a unique
+            // per-tab suffix so the rate limiter can't collapse two different kiosk
+            // browsers into the same bucket (which previously let one browser's burst
+            // DOS another browser's legitimate guest actions).
+            if (_config.AutoGuestLogin && IsAutoGuestOptIn(queryString))
             {
-                var profile = await _api.DevBypassAsync("Guest");
-                // Mark the auto-guest state visibly in the nav bar so a developer can
-                // tell at a glance that the session was minted without user interaction.
+                var sessionTag = await JsSessionTagAsync();
+                var profile = await _api.DevBypassAsync($"Guest-{sessionTag}");
                 _user = profile is null
-                    ? new AuthenticatedUserProfile { UserId = "dev-Guest", DisplayName = "Guest (auto)" }
+                    ? new AuthenticatedUserProfile { UserId = $"dev-Guest-{sessionTag}", DisplayName = $"Guest (auto · {sessionTag[..Math.Min(6, sessionTag.Length)]})" }
                     : new AuthenticatedUserProfile
                     {
                         UserId = profile.UserId,
                         DisplayName = profile.DisplayName + " (auto)",
                         Email = profile.Email
                     };
-                Console.Error.WriteLine("[AuthStateService] WRN: AutoGuestLogin minted a session without user interaction. " +
-                                        "This is gated to Development via the server-side Production guard in Program.cs.");
+                _logger.AutoGuestSessionMinted();
                 _initialized = true;
                 NotifyStateChanged();
                 return;
             }
 
-            // No session — the login screen will offer Microsoft + Guest.
-            _user = null;
             _initialized = true;
             NotifyStateChanged();
             return;
         }
 
-        // Microsoft OAuth (MSAL) mode — try to silently restore an existing session.
-        if (config.MicrosoftEnabled)
+        // Microsoft OAuth (MSAL) mode — the handshake can't fetch an MSAL-restored
+        // session (it's all client-side IndexedDB); do that here, but only after we
+        // know the handshake succeeded so we never block on a hung MSAL init when the
+        // user already has a server-side cookie.
+        if (_config.MicrosoftEnabled)
         {
             try
             {
                 await EnsureMsalInitializedAsync();
-                var restored = await _js.InvokeAsync<MsalResult?>("poAuth.tryRestore", config.Scope);
+                var restored = await _js.InvokeAsync<MsalResult?>("poAuth.tryRestore", _config.Scope);
                 if (restored is not null)
                 {
                     await ApplyMicrosoftSessionAsync(restored);
@@ -125,16 +133,32 @@ public class AuthStateService
             }
             catch (Exception ex)
             {
-                // No silent session available; the login screen will still offer Microsoft
-                // sign-in. We deliberately do NOT surface this as a blocking Error (a missing
-                // silent session is the normal first-visit case), but we keep the reason so
-                // a genuine MSAL misconfiguration is diagnosable instead of vanishing.
-                Console.Error.WriteLine($"[AuthStateService] Silent MSAL restore failed: {ex.Message}");
+                _logger.SilentMsalRestoreFailed(ex.Message, ex);
             }
         }
 
         _initialized = true;
         NotifyStateChanged();
+    }
+
+    /// <summary>
+    /// Per-tab unique tag stored in sessionStorage. Auto-guest identities embed this tag
+    /// so two tabs (or two kiosks behind the same NAT) get distinct rate-limit buckets.
+    /// </summary>
+    private async Task<string> JsSessionTagAsync()
+    {
+        try
+        {
+            var existing = await _js.InvokeAsync<string?>("sessionStorage.getItem", "poAutoGuestTag");
+            if (!string.IsNullOrWhiteSpace(existing)) return existing!;
+            var fresh = Guid.NewGuid().ToString("N")[..8];
+            await _js.InvokeVoidAsync("sessionStorage.setItem", "poAutoGuestTag", fresh);
+            return fresh;
+        }
+        catch
+        {
+            return Guid.NewGuid().ToString("N")[..8];
+        }
     }
 
     private async Task EnsureMsalInitializedAsync()
@@ -179,6 +203,7 @@ public class AuthStateService
             // actionable error instead of letting MSAL throw a confusing browser-side one.
             if (!_config.MicrosoftConfigured)
             {
+                _logger.MicrosoftSignInNotConfigured();
                 Error = "Microsoft sign-in is not fully configured. " +
                         "Set PoMiniGames:MicrosoftAuth:ClientId and ApiClientId via " +
                         "`dotnet user-secrets set` (see appsettings.Development.json for the path). " +
@@ -197,6 +222,7 @@ public class AuthStateService
                 }
                 else
                 {
+                    _logger.SignInCancelled();
                     Error = "Sign-in was cancelled.";
                 }
             }

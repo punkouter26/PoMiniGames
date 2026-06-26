@@ -277,9 +277,9 @@
     overflow: hidden;
 }
 
-.prf-bar-win  { background: #22c55e; transition: width 0.4s ease; }
-.prf-bar-draw { background: #f59e0b; transition: width 0.4s ease; }
-.prf-bar-loss { background: #ef4444; transition: width 0.4s ease; }
+.prf-bar-win  { background: #22c55e; width: var(--win-pct, 0); transition: width 0.4s ease; }
+.prf-bar-draw { background: #f59e0b; width: var(--draw-pct, 0); transition: width 0.4s ease; }
+.prf-bar-loss { background: #ef4444; width: var(--loss-pct, 0); transition: width 0.4s ease; }
 
 /* ── Difficulty rows ── */
 .prf-diffs {
@@ -390,6 +390,19 @@
     border-bottom: 1px solid var(--color-border);
 }
 .prf-h2h-table td { padding: 0.4rem 0.5rem; border-bottom: 1px solid rgba(255,255,255,0.04); }
+
+/* §2 Virtualizer wrapper for the opponent table: bounded height + overscroll
+   containment so a long head-to-head history doesn't push the page down on
+   mobile portrait. The Virtualize component recycles rows in 48 px slots. */
+.prf-h2h-vwrap {
+    max-height: 360px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    contain: layout paint;
+}
 .prf-h2h-table th:not(:first-child), .prf-h2h-table td:not(:first-child) { text-align: center; width: 2.5rem; }
 .prf-h2h-name { display: flex; align-items: center; gap: 0.45rem; font-weight: 500; }
 .prf-h2h-w { color: #22c55e; font-weight: 600; }

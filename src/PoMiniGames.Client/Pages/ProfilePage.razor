@@ -159,10 +159,10 @@
                     </div>
                     @if (g.TotalGames > 0)
                     {
-                        <div class="prf-bar" title="Win / Draw / Loss">
-                            <div class="prf-bar-win"  style="width:@((int)g.WinPercent)%"></div>
-                            <div class="prf-bar-draw" style="width:@((int)g.DrawPercent)%"></div>
-                            <div class="prf-bar-loss" style="width:@((int)g.LossPercent)%"></div>
+                        <div class="prf-bar" title="Win / Draw / Loss" style="--win-pct:@((int)g.WinPercent)%;--draw-pct:@((int)g.DrawPercent)%;--loss-pct:@((int)g.LossPercent)%">
+                            <div class="prf-bar-win"></div>
+                            <div class="prf-bar-draw"></div>
+                            <div class="prf-bar-loss"></div>
                         </div>
                         <div class="prf-diffs">
                             @foreach (var d in g.Difficulties.Where(x => x.TotalGames > 0))
@@ -396,26 +396,33 @@
 
     private RenderFragment RenderOpponentTable(List<OpponentRecord> opponents) => __builder =>
     {
-        <table class="prf-h2h-table">
-            <thead>
-                <tr><th>Opponent</th><th>W</th><th>L</th><th>D</th><th>Record</th></tr>
-            </thead>
-            <tbody>
-                @foreach (var o in opponents)
-                {
-                    <tr>
-                        <td class="prf-h2h-name">
-                            <span class="prf-h2h-badge prf-h2h-badge--@o.Type" title="@(o.Type == "microsoft" ? "Microsoft account" : "Guest")">@(o.Type == "microsoft" ? "MS" : "G")</span>
-                            @o.Name
-                        </td>
-                        <td class="prf-h2h-w">@o.Wins</td>
-                        <td class="prf-h2h-l">@o.Losses</td>
-                        <td class="prf-h2h-d">@o.Draws</td>
-                        <td>@o.Wins–@o.Losses–@o.Draws</td>
-                    </tr>
-                }
-            </tbody>
-        </table>
+        @*
+            §2: <Virtualize> wraps the opponent table body. A player's full head-to-head
+            history is unbounded (each new opponent is a new row), so without virtualization
+            a profile page with 200+ opponents scrolls janky and allocates a DOM node per
+            opponent. The virtualizer recycles rows in a 48 px slot, keeping the DOM flat.
+        *@
+        <div class="prf-h2h-vwrap">
+            <table class="prf-h2h-table">
+                <thead>
+                    <tr><th>Opponent</th><th>W</th><th>L</th><th>D</th><th>Record</th></tr>
+                </thead>
+                <tbody>
+                    <Virtualize Items="opponents" Context="o" ItemSize="48">
+                        <tr>
+                            <td class="prf-h2h-name">
+                                <span class="prf-h2h-badge prf-h2h-badge--@o.Type" title="@(o.Type == "microsoft" ? "Microsoft account" : "Guest")">@(o.Type == "microsoft" ? "MS" : "G")</span>
+                                @o.Name
+                            </td>
+                            <td class="prf-h2h-w">@o.Wins</td>
+                            <td class="prf-h2h-l">@o.Losses</td>
+                            <td class="prf-h2h-d">@o.Draws</td>
+                            <td>@o.Wins–@o.Losses–@o.Draws</td>
+                        </tr>
+                    </Virtualize>
+                </tbody>
+            </table>
+        </div>
     };
 
     // ── Stats loading ────────────────────────────────────────────

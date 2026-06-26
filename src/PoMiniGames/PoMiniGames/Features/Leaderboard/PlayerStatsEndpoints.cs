@@ -1,3 +1,4 @@
+using System.Text.Json;
 using PoMiniGames.Application.DTOs;
 using PoMiniGames.Application.Services;
 using PoMiniGames.Domain.Models;
@@ -85,10 +86,19 @@ public static class PlayerStatsEndpoints
 
     public static IEndpointRouteBuilder MapGetAllPlayerStatistics(this IEndpointRouteBuilder app)
     {
-        app.MapGet("/api/statistics", async (IStorageService storage) =>
+        app.MapGet("/api/statistics", async (HttpContext ctx, IStorageService storage, CancellationToken ct) =>
             {
-                var result = await storage.GetAllPlayerStatsAsync();
-                return Results.Ok(result);
+                // §8: stream the response so the network and heap track page size, not row count.
+                // Uses the typed JsonContent / IAsyncEnumerable pattern to avoid buffering.
+                ctx.Response.ContentType = "application/json; charset=utf-8";
+                await using var writer = new Utf8JsonWriter(ctx.Response.Body, new JsonWriterOptions { Indented = false });
+                writer.WriteStartArray();
+                await foreach (var dto in storage.GetAllPlayerStatsAsync(ct))
+                {
+                    JsonSerializer.Serialize(writer, dto);
+                }
+                writer.WriteEndArray();
+                await writer.FlushAsync(ct);
             })
             .RequireAuthorization()
             .WithName("GetAllPlayerStatistics")

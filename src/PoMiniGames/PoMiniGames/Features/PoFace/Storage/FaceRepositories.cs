@@ -49,7 +49,28 @@ public sealed class GameSessionRepository : IGameSessionRepository
 
     public async Task SaveAsync(GameSession session, CancellationToken cancellationToken = default)
     {
-        await _table.UpsertEntityAsync(GameSessionEntity.From(session), TableUpdateMode.Replace, cancellationToken);
+        // §1: optimistic-concurrency save so a concurrent capture-arrival and a round-end
+        // score update cannot clobber each other's fields on the same session row.
+        var partition = session.UserId;
+        var rowKey = session.SessionId;
+        await TableConcurrency.UpdateWithRetryAsync<GameSessionEntity>(
+            _table,
+            partitionKey: partition,
+            rowKey: rowKey,
+            factory: () => new GameSessionEntity { UserId = session.UserId, SessionId = session.SessionId },
+            mutate: e =>
+            {
+                var fromEntity = GameSessionEntity.From(session);
+                e.UserId = fromEntity.UserId;
+                e.SessionId = fromEntity.SessionId;
+                e.TotalScore = fromEntity.TotalScore;
+                e.IsComplete = fromEntity.IsComplete;
+                e.CapturesJson = fromEntity.CapturesJson;
+                e.CreatedAt = fromEntity.CreatedAt;
+                e.ExpiresAt = fromEntity.ExpiresAt;
+                return true;
+            },
+            cancellationToken);
     }
 
     public async Task<GameSession?> GetAsync(string userId, string sessionId, CancellationToken cancellationToken = default)
@@ -189,23 +210,30 @@ public sealed class PlayerStatsRepository : IPlayerStatsRepository
 
     public async Task SaveAsync(PlayerStats stats, CancellationToken cancellationToken = default)
     {
+        // §1: read-modify-write under optimistic concurrency. PlayerStats carries
+        // counters (TotalGames, TotalScore, BestScore) so two games finishing at the
+        // same instant cannot lose an increment to a blind Replace.
         var partition = ShardOf(stats.UserId);
-        var entity = new PlayerStatsEntity
-        {
-            PartitionKey = partition,
-            RowKey = stats.UserId,
-            UserId = stats.UserId,
-            TotalGames = stats.TotalGames,
-            TotalScore = stats.TotalScore,
-            BestScore = stats.BestScore,
-            HappinessBest = stats.HappinessBest,
-            SurpriseBest = stats.SurpriseBest,
-            AngerBest = stats.AngerBest,
-            SadnessBest = stats.SadnessBest,
-            FearBest = stats.FearBest,
-            UpdatedAt = stats.UpdatedAt
-        };
-        await _table.UpsertEntityAsync(entity, TableUpdateMode.Replace, cancellationToken);
+        await TableConcurrency.UpdateWithRetryAsync<PlayerStatsEntity>(
+            _table,
+            partitionKey: partition,
+            rowKey: stats.UserId,
+            factory: () => new PlayerStatsEntity { UserId = stats.UserId },
+            mutate: e =>
+            {
+                e.UserId = stats.UserId;
+                e.TotalGames = stats.TotalGames;
+                e.TotalScore = stats.TotalScore;
+                e.BestScore = Math.Max(e.BestScore, stats.BestScore);
+                e.HappinessBest = Math.Max(e.HappinessBest, stats.HappinessBest);
+                e.SurpriseBest = Math.Max(e.SurpriseBest, stats.SurpriseBest);
+                e.AngerBest = Math.Max(e.AngerBest, stats.AngerBest);
+                e.SadnessBest = Math.Max(e.SadnessBest, stats.SadnessBest);
+                e.FearBest = Math.Max(e.FearBest, stats.FearBest);
+                e.UpdatedAt = stats.UpdatedAt;
+                return true;
+            },
+            cancellationToken);
     }
 
     private static string ShardOf(string userId) =>

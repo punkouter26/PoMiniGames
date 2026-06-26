@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Runtime.CompilerServices;
 using Azure;
 using Azure.Data.Tables;
 using Azure.Identity;
@@ -7,6 +8,7 @@ using PoMiniGames.Application.DTOs;
 using PoMiniGames.Application.Services;
 using PoMiniGames.Domain.Models;
 using PoMiniGames.Domain.Services;
+using PoMiniGames.Infrastructure.Storage;
 
 namespace PoMiniGames.Infrastructure.Services;
 
@@ -94,27 +96,30 @@ public class StorageService : IStorageService
 
     // ── Player stats ──────────────────────────────────────────────────────
 
-    public async Task<List<PlayerStatsDto>> GetAllPlayerStatsAsync()
+    /// <summary>
+    /// Streams every player-stats row in the table as an async sequence. The previous
+    /// <c>List&lt;PlayerStatsDto&gt;</c> shape materialised the full table in memory; for
+    /// the public <c>/api/statistics</c> endpoint the JSON response is also streamed
+    /// (see <c>PlayerStatsEndpoints.MapGetAllPlayerStatistics</c>) so the network and
+    /// the heap pressure track the page size, not the row count.
+    /// </summary>
+    public async IAsyncEnumerable<PlayerStatsDto> GetAllPlayerStatsAsync(
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        var result = new List<PlayerStatsDto>();
         var table = Table(PlayerStatsTable);
-
-        // Bound the per-network-call working set; the full-table scan still streams,
-        // but never buffers more than one page of raw entities at a time.
-        await foreach (var entity in table.QueryAsync<TableEntity>(maxPerPage: 1000))
+        await foreach (var entity in table.QueryAsync<TableEntity>(maxPerPage: 1000, cancellationToken: cancellationToken))
         {
             var json = entity.GetString("StatsJson");
             if (string.IsNullOrEmpty(json)) continue;
-            var stats = JsonSerializer.Deserialize<PlayerStats>(json) ?? new PlayerStats();
-            result.Add(new PlayerStatsDto
+            var stats = JsonSerializer.Deserialize<PlayerStats>(json);
+            if (stats is null) continue;
+            yield return new PlayerStatsDto
             {
                 Game = entity.PartitionKey,
                 Name = entity.RowKey,
                 Stats = stats,
-            });
+            };
         }
-
-        return result;
     }
 
     public async Task<PlayerStats?> GetPlayerStatsAsync(string game, string playerName)
@@ -157,13 +162,24 @@ public class StorageService : IStorageService
         _eloCalculator.ApplyAll(stats);
         stats.UpdatedAt = DateTime.UtcNow;
 
-        var entity = new TableEntity(sanitizedGame, sanitizedName)
-        {
-            ["StatsJson"] = JsonSerializer.Serialize(stats),
-            ["UpdatedAt"] = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"),
-        };
-
-        await Table(PlayerStatsTable).UpsertEntityAsync(entity, TableUpdateMode.Replace);
+        // §1: read-modify-write under optimistic concurrency so two players finishing
+        // the same game at the same instant cannot lose each other's stat increments.
+        var statsJson = JsonSerializer.Serialize(stats);
+        var partition = sanitizedGame;
+        var rowKey = sanitizedName;
+        await TableConcurrency.UpdateWithRetryAsync<TableEntity>(
+            Table(PlayerStatsTable),
+            partitionKey: partition,
+            rowKey: rowKey,
+            factory: () => new TableEntity(partition, rowKey),
+            mutate: e =>
+            {
+                var existing = e.GetString("StatsJson");
+                if (existing == statsJson) return false; // idempotent no-op
+                e["StatsJson"] = statsJson;
+                e["UpdatedAt"] = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ");
+                return true;
+            });
     }
 
     public async Task<List<(string Name, PlayerStats Stats)>> GetLeaderboardAsync(string game, int limit, string? difficulty = null)
@@ -337,22 +353,59 @@ public class StorageService : IStorageService
         var sanitized = descriptor.Sanitize(entry);
         var fields = descriptor.ToFields(sanitized);
 
-        var entity = new TableEntity(descriptor.Partition, DeterministicRowKey(fields));
-        foreach (var (key, value) in fields)
-        {
-            entity[key] = value;
-        }
+        // §9.1 chaos-engineering hardening: hash the *immutable* content fields only
+        // (initials, score, game-specific measurements). Including timestamps here would
+        // mean two near-simultaneous submissions of the same score produce two distinct
+        // rows — a duplicate the leaderboard then has to dedupe at read time, and a
+        // vector for cheap score-flooding via bursty retries.
+        var immutableKey = DeterministicRowKeyFieldsKey(descriptor);
+        var rowKey = DeterministicRowKey(fields, immutableKey);
 
-        await Table(descriptor.Table).UpsertEntityAsync(entity, TableUpdateMode.Replace);
+        // Concurrency-safe upsert: read existing, merge, write with ETag. Bounded retry on
+        // 412/409 (see TableConcurrency).
+        await TableConcurrency.UpdateWithRetryAsync<TableEntity>(
+            Table(descriptor.Table),
+            partitionKey: descriptor.Partition,
+            rowKey: rowKey,
+            factory: () => new TableEntity(descriptor.Partition, rowKey),
+            mutate: e =>
+            {
+                var changed = false;
+                foreach (var (key, value) in fields)
+                {
+                    if (!e.TryGetValue(key, out var existing) || !Equals(existing, value))
+                    {
+                        e[key] = value;
+                        changed = true;
+                    }
+                }
+                return changed;
+            });
         return sanitized;
     }
 
-    // Stable content hash over the row's fields → idempotent, retry-safe RowKey.
-    private static string DeterministicRowKey(IDictionary<string, object?> fields)
+    // Which fields of a high-score descriptor should be hashed to form the RowKey.
+    // Excludes mutable metadata (Date, timestamps) so duplicate retries collapse onto
+    // the same row.
+    private static readonly HashSet<string> HighScoreRowKeyImmutableFields = new(StringComparer.Ordinal)
     {
-        var canonical = string.Join("", fields
-            .OrderBy(kv => kv.Key, StringComparer.Ordinal)
-            .Select(kv => $"{kv.Key}={Convert.ToString(kv.Value, System.Globalization.CultureInfo.InvariantCulture)}"));
+        "Initials", "Score", "SurvivalTime", "BestScore",
+        "GameDuration", "SnakeLength", "FoodEaten", "PlayerInitials", "PlayerName",
+    };
+
+    private static string[] DeterministicRowKeyFieldsKey<T>(HighScoreDescriptor<T> descriptor)
+    {
+        // The descriptor's first row in ToFields defines the available field names.
+        // We intersect with the known immutable set so we don't depend on iteration order.
+        var sample = descriptor.ToFields(default!);
+        return sample.Keys.Where(HighScoreRowKeyImmutableFields.Contains).OrderBy(s => s, StringComparer.Ordinal).ToArray();
+    }
+
+// Stable content hash over the row's immutable fields → idempotent, retry-safe RowKey.
+    private static string DeterministicRowKey(IDictionary<string, object?> fields, string[] immutableFields)
+    {
+        var canonical = string.Join("", immutableFields
+            .Select(k => fields.TryGetValue(k, out var v) ? $"{k}={Convert.ToString(v, System.Globalization.CultureInfo.InvariantCulture)}" : $"{k}="));
         var hash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(canonical));
         return Convert.ToHexStringLower(hash);
     }

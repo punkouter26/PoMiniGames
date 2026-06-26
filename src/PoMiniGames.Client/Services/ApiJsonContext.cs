@@ -32,6 +32,10 @@ namespace PoMiniGamesClient.Services;
 [JsonSerializable(typeof(MatchRecordRequest))]
 [JsonSerializable(typeof(MatchRecordDto))]
 [JsonSerializable(typeof(MatchRecordDto[]))]
+[JsonSerializable(typeof(AuthHandshake))]
 internal sealed partial class ApiJsonContext : JsonSerializerContext
 {
 }
+
+/// <summary>§6 wire shape for the single-RTT <c>/api/auth/handshake</c> endpoint.</summary>
+public sealed record AuthHandshake(AuthClientConfiguration Config, AuthenticatedUserProfile? User);

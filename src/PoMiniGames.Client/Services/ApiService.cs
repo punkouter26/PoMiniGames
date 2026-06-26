@@ -71,6 +71,23 @@ public class ApiService
         }
     }
 
+    /// <summary>
+    /// §6: Single round-trip that returns the auth client config + (when a session
+    /// cookie exists) the canonical user profile. Replaces the legacy two-call
+    /// (config + me) handshake so AuthGate can hydrate with one RTT.
+    /// </summary>
+    public async Task<AuthHandshake?> GetAuthHandshakeAsync()
+    {
+        try
+        {
+            return await _http.GetFromJsonAsync<AuthHandshake>("/api/auth/handshake", JsonOptions);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     public async Task<AuthenticatedUserProfile?> DevLoginAsync(DevLoginRequest? request = null)
     {
         try

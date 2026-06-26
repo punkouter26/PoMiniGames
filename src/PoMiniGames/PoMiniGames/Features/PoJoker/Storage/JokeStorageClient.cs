@@ -25,11 +25,19 @@ public sealed class JokeStorageClient : IJokeStorageClient
 
     public async Task SavePerformanceAsync(JokePerformanceDto performance, CancellationToken cancellationToken = default)
     {
+        // §1: performances are append-only so an AddEntity is the correct semantic,
+        // but a duplicate Id (retry-after-OK) would 409 and surface to the caller. Wrap
+        // in a tolerant insert-or-noop so the demo orchestrator can safely re-publish.
         var entity = MapToEntity(performance);
         try
         {
-            await _tableClient.UpsertEntityAsync(entity, TableUpdateMode.Replace, cancellationToken);
+            await _tableClient.AddEntityAsync(entity, cancellationToken);
             _logger.LogDebug("Saved performance {PerformanceId} for session {SessionId}", performance.Id, performance.SessionId);
+        }
+        catch (RequestFailedException ex) when (ex.Status == 409)
+        {
+            // Already exists — idempotent retry path.
+            _logger.LogDebug("Performance {PerformanceId} already persisted; treating duplicate submit as success.", performance.Id);
         }
         catch (RequestFailedException ex)
         {

@@ -105,7 +105,10 @@ docs/screenshots/*.webp
 # under <contentroot>/keys in Development. Contains XML-wrapped key material
 # that MUST NOT be committed (would let anyone forge the BFF's cookies).
 **/keys/
-
+# Azure App Service runtime artifacts (kudu dump of LogFiles/ + deployments/).
+# These come from `az webapp log download` or kudu-extract; they pollute the
+# working tree on every local `dotnet run`. Never source.
+app-logs/
 # Local SQLite data
 src/PoMiniGames/PoMiniGames/data/
 

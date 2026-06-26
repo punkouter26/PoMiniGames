@@ -27,6 +27,7 @@ public sealed class AzureOpenAIQuestionService : IQuestionService
     private readonly IHostEnvironment _environment;
     private readonly HybridCache _cache;
     private readonly AIFoundryChatClientCache _chatClientCache;
+    private readonly MockQuestionService _mock;
 
     public AzureOpenAIQuestionService(
         IOptionsMonitor<CoupleQuizOptions> optionsMonitor,
@@ -34,13 +35,15 @@ public sealed class AzureOpenAIQuestionService : IQuestionService
         IHostEnvironment environment,
         HybridCache cache,
         ILogger<AzureOpenAIQuestionService> logger,
-        AIFoundryChatClientCache chatClientCache)
+        AIFoundryChatClientCache chatClientCache,
+        MockQuestionService mock)
     {
         _optionsMonitor = optionsMonitor;
         _environment = environment;
         _cache = cache;
         _logger = logger;
         _chatClientCache = chatClientCache;
+        _mock = mock;
     }
 
     public async Task<Question> GenerateQuestionAsync(DifficultyLevel difficulty, QuestionCategory? category = null, CancellationToken cancellationToken = default)
@@ -49,7 +52,7 @@ public sealed class AzureOpenAIQuestionService : IQuestionService
         if (options.Features.UseMockAI && IsNonProduction())
         {
             _logger.LogWarning("PoCoupleQuiz: UseMockAI=true in {Environment}; serving mock question (non-prod only).", _environment.EnvironmentName);
-            return await new MockQuestionService().GenerateQuestionAsync(difficulty, category, cancellationToken);
+            return await _mock.GenerateQuestionAsync(difficulty, category, cancellationToken);
         }
 
         var chatClient = _chatClientCache.Resolve(AIFoundryOptions.Games.CoupleQuiz);
@@ -58,7 +61,7 @@ public sealed class AzureOpenAIQuestionService : IQuestionService
             if (IsNonProduction())
             {
                 _logger.LogWarning("PoCoupleQuiz: AIFoundry not configured; serving mock question in {Environment}.", _environment.EnvironmentName);
-                return await new MockQuestionService().GenerateQuestionAsync(difficulty, category, cancellationToken);
+                return await _mock.GenerateQuestionAsync(difficulty, category, cancellationToken);
             }
             throw new InvalidOperationException(
                 $"PoCoupleQuiz: AIFoundry not configured. Set {AIFoundryOptions.SectionName} in Key Vault (kv-poshared).");
@@ -94,7 +97,7 @@ public sealed class AzureOpenAIQuestionService : IQuestionService
             _logger.LogError(ex, "PoCoupleQuiz: Azure OpenAI question generation failed.");
             if (IsNonProduction())
             {
-                return await new MockQuestionService().GenerateQuestionAsync(difficulty, category, cancellationToken);
+                return await _mock.GenerateQuestionAsync(difficulty, category, cancellationToken);
             }
             throw;
         }
@@ -110,14 +113,14 @@ public sealed class AzureOpenAIQuestionService : IQuestionService
         var options = _optionsMonitor.CurrentValue;
         if (options.Features.UseMockAI && IsNonProduction())
         {
-            return await new MockQuestionService().CheckAnswerSimilarityAsync(answer1, answer2, cancellationToken);
+            return await _mock.CheckAnswerSimilarityAsync(answer1, answer2, cancellationToken);
         }
 
         if (_chatClientCache.Resolve(AIFoundryOptions.Games.CoupleQuiz) is null)
         {
             if (IsNonProduction())
             {
-                return await new MockQuestionService().CheckAnswerSimilarityAsync(answer1, answer2, cancellationToken);
+                return await _mock.CheckAnswerSimilarityAsync(answer1, answer2, cancellationToken);
             }
             throw new InvalidOperationException(
                 $"PoCoupleQuiz: AIFoundry not configured. Set {AIFoundryOptions.SectionName} in Key Vault (kv-poshared).");
@@ -165,7 +168,7 @@ public sealed class AzureOpenAIQuestionService : IQuestionService
             _logger.LogError(ex, "PoCoupleQuiz: Azure OpenAI similarity scoring failed.");
             if (IsNonProduction())
             {
-                return await new MockQuestionService().CheckAnswerSimilarityAsync(answer1, answer2, cancellationToken);
+                return await _mock.CheckAnswerSimilarityAsync(answer1, answer2, cancellationToken);
             }
             throw;
         }

@@ -28,14 +28,16 @@ the shared Infrastructure project unless the data is genuinely cross-slice.
   endpoints + SignalR hubs, serves the WASM client). Acts as the `.API` project. The full route
   table is registered in one place: `Infrastructure/EndpointRouteExtensions.MapPoMiniGamesEndpoints`.
 - `src/PoMiniGames.Client` — Blazor WASM client. **`wwwroot` lives only here.**
+  - `Games/` — **11 client-only mini-games** with no server slice (no Features/ counterpart, no telemetry, no leaderboard back-end). Pure local-first: `BabyTouch`, `ConnectFive`, `DropSquare`, `Fight`, `HorseRace`, `PoMarbleRace`, `PoRacer` (UI only — scores post to `/api/leaderboard`), `PoRunner`, `SnakeGame`, `TicTacToe`, `VoxelShooter`. Keep them in the client project; do **not** mirror them under `src/PoMiniGames/PoMiniGames/Features/`.
 - `src/PoMiniGames.Application` — application services, DTOs, diagnostics contracts.
 - `src/PoMiniGames.Domain` — domain models / services.
-- `src/PoMiniGames.Infrastructure` — shared platform persistence + health checks (Azure Table Storage).
-- `src/PoShared` — shared models/business logic used by both client and API (the `.Shared` library). Trim-clean (no IL suppressions).
+- `src/PoMiniGames.Infrastructure` — shared platform persistence + health checks (Azure Table Storage) **and the legacy PoSurvive `AI/` resilience helpers** (`AzureOpenAIResilience.DefaultOptions()` is consumed by both PoSurvive's direct Azure OpenAI client and the new `PoMiniGames.AI.AIFoundryClientFactory`). Two AI namespaces exist by design during the PoSurvive → Foundry migration window; new code goes in `src/PoMiniGames/PoMiniGames/AI/`.
+- `src/PoShared` — shared models/business logic used by both client and API (the `.Shared` library). Trim-clean (no IL suppressions). `PoShared/Games/` holds game-agnostic DTOs (e.g. `PoJoker/JokeDtos.cs`, `PoRacerShared.cs`) shared between client and host.
 - `tests/UnitTests` — xUnit unit tests, mirrored under `Features/<Slice>/`. (Folder renamed 2026-06-26; namespace `PoMiniGames.UnitTests` unchanged for assembly stability.)
 - `tests/IntegrationTests` — `WebApplicationFactory` + **Testcontainers.Azurite** (v4 module). (Namespace `PoMiniGames.IntegrationTests` unchanged.)
 - `tests/E2EAPI` — C# end-to-end **API** tests: in-process host via `WebApplicationFactory`, pure HTTP-contract asserts (no browser). (Namespace `PoMiniGames.E2EAPI` unchanged.)
 - `tests/E2EUI` — C# end-to-end **UI** tests: Microsoft.Playwright drives a real browser against the host on a live Kestrel port. (Namespace `PoMiniGames.E2EUI` unchanged.)
+- `tests/Shared/` (`PoMiniGames.TestUtilities.csproj`) — shared test utilities (assertion helpers, budget guards) referenced by all four test projects.
 
 ## Build & run
 - Target framework **net10.0**, pinned via `global.json`. Central settings in `Directory.Build.props` (Nullable + TreatWarningsAsErrors **on** — warnings break the build; TFM/Nullable/ImplicitUsings are inherited, **do not redeclare them in csproj**) and CPM in `Directory.Packages.props`.

@@ -55,26 +55,24 @@ builder.Services.AddOpenApi();
 
 var app = builder.Build();
 
-// ─── Production safety guards ─────────────────────────────────────────
-// Hard guard: the fake auth scheme must NEVER be registered in Production.
+// Production only: bind the singleton AzureBlobXmlRepository into the
+// framework's KeyManagementOptions so DataProtection reads the same key-ring
+// instance the rest of the app sees. Done here (post-Build) because we need
+// the service provider to resolve the singleton; BuildServiceProvider from a
+// raw IServiceCollection creates a duplicate container and is explicitly
+// discouraged by Microsoft. Test/Dev skip this — they use the on-disk
+// PersistKeysToFileSystem path configured inside AddPoMiniGamesDataProtection.
 if (app.Environment.IsProduction())
 {
-    var schemeProvider = app.Services.GetRequiredService<Microsoft.AspNetCore.Authentication.IAuthenticationSchemeProvider>();
-    if (await schemeProvider.GetSchemeAsync(PoMiniGames.Features.Auth.FakeAuthHandler.SchemeName) is not null)
-    {
-        throw new InvalidOperationException(
-            $"SECURITY: '{PoMiniGames.Features.Auth.FakeAuthHandler.SchemeName}' authentication scheme is registered in a Production environment. This is forbidden.");
-    }
-
-    // Fail fast if a dev-only auth shortcut leaked into Production config. The dev-login
-    // endpoints are also gated on IsDevelopment(), but this guard catches the dangerous
-    // case where the config flag is set regardless of how the environment is resolved.
-    if (app.Configuration.GetValue<bool>("Auth:AutoGuestLogin"))
-    {
-        throw new InvalidOperationException(
-            "SECURITY: 'Auth:AutoGuestLogin' is enabled in a Production environment. This silently bypasses sign-in and is forbidden.");
-    }
+    var xmlRepo = app.Services.GetRequiredService<AzureBlobXmlRepository>();
+    app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<Microsoft.AspNetCore.DataProtection.KeyManagement.KeyManagementOptions>>()
+        .Value.XmlRepository = xmlRepo;
 }
+
+// ─── Production safety guards ─────────────────────────────────────────
+// All Production-fail-fast checks live in StartupSecretValidator (IHostedService
+// that runs before the first HTTP request). Single source of truth — see
+// src/PoMiniGames/PoMiniGames/Infrastructure/StartupSecretValidator.cs.
 
 // Graceful degradation: warn loudly (but do not crash) when real OAuth is unconfigured.
 var microsoftAuth = app.Services

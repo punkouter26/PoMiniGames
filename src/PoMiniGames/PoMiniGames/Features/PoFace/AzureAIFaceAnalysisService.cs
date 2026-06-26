@@ -39,13 +39,15 @@ public sealed class AzureAIFaceAnalysisService : IFaceAnalysisService
     private readonly HttpClient _http;
     private readonly AIFoundryOptions _foundryOptions;
     private readonly bool _foundryConfigured;
+    private readonly StubFaceAnalysisService _stub;
 
     public AzureAIFaceAnalysisService(
         IConfiguration configuration,
         IHostEnvironment environment,
         ILogger<AzureAIFaceAnalysisService> logger,
         IHttpClientFactory httpClientFactory,
-        IOptionsMonitor<AIFoundryOptions> foundryOptions)
+        IOptionsMonitor<AIFoundryOptions> foundryOptions,
+        StubFaceAnalysisService stub)
     {
         _configuration = configuration;
         _environment = environment;
@@ -53,6 +55,7 @@ public sealed class AzureAIFaceAnalysisService : IFaceAnalysisService
         _http = httpClientFactory.CreateClient(HttpClientName);
         _foundryOptions = foundryOptions.CurrentValue;
         _foundryConfigured = _foundryOptions.IsConfigured;
+        _stub = stub;
 
         var apiVersion = configuration["PoFace:AzureOpenAI:ApiVersion"] ?? "2025-01-01-preview";
 
@@ -82,7 +85,7 @@ public sealed class AzureAIFaceAnalysisService : IFaceAnalysisService
         if (!useReal && IsNonProduction())
         {
             _logger.LogWarning("PoFace: UseRealFaceApi=false in {Environment}; serving stub analysis.", _environment.EnvironmentName);
-            return StubFaceAnalysisService.Analyze(target);
+            return await _stub.AnalyzeAsync(imageJpeg, target, cancellationToken);
         }
 
         if (!_foundryConfigured)
@@ -90,7 +93,7 @@ public sealed class AzureAIFaceAnalysisService : IFaceAnalysisService
             if (IsNonProduction())
             {
                 _logger.LogWarning("PoFace: AIFoundry not configured; serving stub analysis in {Environment}.", _environment.EnvironmentName);
-                return StubFaceAnalysisService.Analyze(target);
+                return await _stub.AnalyzeAsync(imageJpeg, target, cancellationToken);
             }
             throw new InvalidOperationException(
                 $"PoFace: AIFoundry not configured. Set {AIFoundryOptions.SectionName} in Key Vault (kv-poshared).");
@@ -145,7 +148,7 @@ public sealed class AzureAIFaceAnalysisService : IFaceAnalysisService
             _logger.LogError(ex, "PoFace: Azure OpenAI face analysis failed.");
             if (IsNonProduction())
             {
-                return StubFaceAnalysisService.Analyze(target);
+                return await _stub.AnalyzeAsync(imageJpeg, target, cancellationToken);
             }
             throw;
         }
@@ -173,7 +176,4 @@ public sealed class StubFaceAnalysisService : IFaceAnalysisService, PoShared.Int
         // Deterministic: no face detected in stub mode. Score = 0.
         return Task.FromResult(new FaceAnalysisResult(false, 0f, 0f, 0f, 0f));
     }
-
-    public static FaceAnalysisResult Analyze(TargetEmotion target) =>
-        new(false, 0f, 0f, 0f, 0f);
 }

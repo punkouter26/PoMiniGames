@@ -28,16 +28,13 @@
         <!-- Landing / Configuration Screen -->
         <div class="row justify-content-center">
             <div class="col-md-8 col-lg-6 text-center">
-                <BpmConfigCard Bpm="@bpm" BpmChanged="@SetBpmAsync"
+                <BpmConfigCard Bpm="@bpm"
                                Duration="@_duration" DurationChanged="@SetDurationAsync"
                                IsPreviewPlaying="@_isPreviewPlaying"
                                OnStartCountdown="StartCountdown"
                                OnPreviewToggle="TogglePreviewAsync" />
             </div>
         </div>
-
-        <!-- Leaderboard & History (below config) -->
-        <LeaderboardPanel PlayerName="@_playerName" />
     }
     else if (isCountingDown)
     {
@@ -183,10 +180,10 @@
         _playerName = PlayerNameService.GetPlayerName();
         _stats = _gameStats.GetStats("poclick", _playerName);
         UpdateStats();
-        
-        if (Bpm.HasValue && Bpm.Value >= 40 && Bpm.Value <= 200)
-            bpm = Bpm.Value;
-        
+
+        // BPM is hardcoded to 100 — the Bpm query param is intentionally ignored.
+        bpm = 100;
+
         // Auto-start demo mode if Demo parameter is set
         if (Demo == 1)
         {
@@ -581,14 +578,7 @@
         _duration = d;
     }
 
-    // UX-9: BPM helpers — update preview when tempo changes
-    private async Task SetBpmAsync(int newBpm)
-    {
-        bpm = newBpm;
-        if (_isPreviewPlaying)
-            await JSRuntime.InvokeVoidAsync("poclickAudio.startPreview", bpm);
-    }
-
+    // BPM is locked at 100; only the preview toggle is wired up.
     private async Task TogglePreviewAsync()
     {
         _isPreviewPlaying = !_isPreviewPlaying;

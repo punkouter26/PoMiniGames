@@ -74,11 +74,17 @@ internal static class DataProtectionExtensions
                 $"https://{storageAccountName}.blob.core.windows.net/{ProdKeyRingContainer}");
             var containerClient = new BlobContainerClient(blobUri, new Azure.Identity.DefaultAzureCredential());
 
-            services.AddSingleton(sp => new AzureBlobXmlRepository(containerClient, sp.GetRequiredService<ILogger<AzureBlobXmlRepository>>()));
-            services.Configure<KeyManagementOptions>(opts =>
-            {
-                opts.XmlRepository = new AzureBlobXmlRepository(containerClient, Microsoft.Extensions.Logging.Abstractions.NullLogger<AzureBlobXmlRepository>.Instance);
-            });
+            // Single repository instance shared by both the DI container and the
+            // KeyManagementOptions binding. KeyManagementOptions is configured
+            // separately inside the host after the container is built (see
+            // Program.cs DataProtection wire-up) so we don't need a Configure
+            // hook here at all — the host reads the singleton back out of the
+            // container. This replaces the previous code that `new`'d a second
+            // AzureBlobXmlRepository with a NullLogger inside Configure, which
+            // double-enumerated the key blobs on every startup.
+            services.AddSingleton(sp => new AzureBlobXmlRepository(
+                containerClient,
+                sp.GetRequiredService<ILogger<AzureBlobXmlRepository>>()));
         }
         else if (env.IsEnvironment("Test"))
         {

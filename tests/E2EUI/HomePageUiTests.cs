@@ -9,7 +9,7 @@ namespace PoMiniGames.E2EUI;
 /// </summary>
 /// <remarks>
 /// Requires Playwright browsers installed once per machine:
-/// <c>pwsh tests/PoMiniGames.E2EUI/bin/Debug/net10.0/playwright.ps1 install chromium</c>.
+/// <c>pwsh tests/E2EUI/bin/Debug/net10.0/playwright.ps1 install chromium</c>.
 /// </remarks>
 [Collection(KestrelServerCollection.Name)]
 public class HomePageUiTests

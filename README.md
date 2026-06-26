@@ -83,9 +83,10 @@ src/
 ├── PoMiniGames/               # .NET 10 API Host
 ├── PoShared/                  # Shared utilities (Identity, Diagnostics)
 tests/
-├── PoMiniGames.UnitTests/        # Pure logic tests (xUnit)
-├── PoMiniGames.IntegrationTests/ # API + DB integration tests
-└── e2e/                          # Playwright E2E tests
+├── UnitTests/                 # Pure logic tests (xUnit)
+├── IntegrationTests/          # API + DB integration tests (Testcontainers.Azurite)
+├── E2EAPI/                    # Pure HTTP-contract API tests (WebApplicationFactory)
+└── E2EUI/                     # Playwright-driven UI tests
 ```
 
 ## Documentation
@@ -324,15 +325,16 @@ cd ../../..
 
 ```bash
 # Run unit tests
-dotnet test tests/PoMiniGames.UnitTests
+dotnet test tests/UnitTests/UnitTests.csproj
 
 # Run integration tests
-dotnet test tests/PoMiniGames.IntegrationTests
+dotnet test tests/IntegrationTests/IntegrationTests.csproj
 
-# Run E2E tests
-cd tests/e2e
-npm install
-npx playwright test
+# Run E2E API tests (pure HTTP)
+dotnet test tests/E2EAPI/E2EAPI.csproj
+
+# Run E2E UI tests (Playwright)
+dotnet test tests/E2EUI/E2EUI.csproj
 ```
 
 ## Deployment

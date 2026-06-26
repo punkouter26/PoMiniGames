@@ -70,6 +70,15 @@ public sealed class StartupSecretValidator : IHostedService
                     $"FATAL: authentication scheme '{FakeAuthHandler.SchemeName}' is registered while running in " +
                     "Production. Fake authentication must never be enabled in Production.");
             }
+
+            // AutoGuestLogin is a silent sign-in bypass. It must NEVER be enabled in
+            // Production regardless of how the config was sourced.
+            if (_configuration.GetValue<bool>("Auth:AutoGuestLogin"))
+            {
+                throw new InvalidOperationException(
+                    "FATAL: 'Auth:AutoGuestLogin' is enabled in a Production environment. " +
+                    "This silently bypasses sign-in and is forbidden.");
+            }
         }
 
         // Test environment uses mock services (registered by feature-specific wiring) — skip.
@@ -81,6 +90,42 @@ public sealed class StartupSecretValidator : IHostedService
 
         var missing = new List<string>();
 
+        // ── Platform-level secrets (Production-mandatory) ──────────────
+        // These are required for the app to function correctly in Production regardless
+        // of which game slices are enabled. Local dev may omit KeyVault:Uri because the
+        // dev config sources secrets from user-secrets + appsettings.Development.json.
+        if (_environment.IsProduction())
+        {
+            var kvUri = _configuration["PoMiniGames:KeyVault:Uri"] ?? _configuration["KeyVault:Uri"];
+            if (string.IsNullOrWhiteSpace(kvUri))
+            {
+                missing.Add("PoMiniGames:KeyVault:Uri");
+            }
+
+            var storageEndpoint = _configuration["PoMiniGames:Storage:TableService:Endpoint"]
+                ?? _configuration["PoMiniGames:Storage:TableService:ConnectionString"];
+            if (string.IsNullOrWhiteSpace(storageEndpoint))
+            {
+                missing.Add("PoMiniGames:Storage:TableService:Endpoint");
+            }
+
+            // OAuth wiring: in Production the Entra app registration IDs must be present
+            // (either inline or via Key Vault). The full fail-fast here complements the
+            // /api/auth/config "microsoftConfigured" flag — the boot guard ensures we
+            // never accept traffic in a half-configured state.
+            var clientId = _configuration["PoMiniGames:MicrosoftAuth:ClientId"];
+            var apiClientId = _configuration["PoMiniGames:MicrosoftAuth:ApiClientId"];
+            if (string.IsNullOrWhiteSpace(clientId))
+            {
+                missing.Add("PoMiniGames:MicrosoftAuth:ClientId");
+            }
+            if (string.IsNullOrWhiteSpace(apiClientId))
+            {
+                missing.Add("PoMiniGames:MicrosoftAuth:ApiClientId");
+            }
+        }
+
+        // ── Per-game Azure OpenAI secrets ──────────────────────────────
         foreach (var sectionPath in GameSections)
         {
             var section = _configuration.GetSection(sectionPath);
@@ -121,7 +166,7 @@ public sealed class StartupSecretValidator : IHostedService
             _logger.LogCritical(
                 "Required secrets are missing for environment {Environment}: {Missing}. " +
                 "The application will NOT start. Configure these secrets via Azure Key Vault " +
-                "(kv-poshared) under the PoMiniGames--<Game>--AzureOpenAI--* secret names. {Message}",
+                "(kv-poshared) under the PoMiniGames--<Section>--* secret names. {Message}",
                 _environment.EnvironmentName,
                 joined,
                 message);

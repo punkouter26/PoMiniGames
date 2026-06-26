@@ -20,10 +20,15 @@ internal static class AuthExtensions
         services.Configure<MicrosoftAuthOptions>(microsoftAuthSection);
         var microsoftAuthOptions = microsoftAuthSection.Get<MicrosoftAuthOptions>() ?? new MicrosoftAuthOptions();
 
-        var devLoginEnabled = env.IsDevelopment();
+        // Dev + Test environments get the dev-login pathway so the test harness can
+        // sign in as Guest without going through the MSAL/OAuth handshake. Production
+        // NEVER gets this — a startup guard in Program.cs enforces that even if the
+        // config flag slips in (see FakeAuthHandler + StartupSecretValidator).
+        var devLoginEnabled = env.IsDevelopment() || env.IsEnvironment("Test");
 
-        // Fake auth is a Dev-only convenience, gated behind an explicit flag. It is NEVER
-        // registered in Production (a startup guard in Program.cs enforces this).
+        // Fake auth (header-driven) is Dev-only convenience, gated behind an explicit
+        // config flag. Test environments use the cookie-based dev-login instead so
+        // the tests can assert identity via real HTTP request flow.
         var fakeAuthEnabled = env.IsDevelopment()
             && configuration.GetValue<bool>("Auth:EnableFakeAuth");
 

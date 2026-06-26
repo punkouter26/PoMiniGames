@@ -1,5 +1,11 @@
 name: Deploy to Azure
 
+# CI/CD policy (2026-06-26):
+#   - Build-only. Tests are deliberately NOT run here (Integration/E2E tests require
+#     Azurite + Playwright browsers, which are out-of-band on the GitHub runner).
+#     The full tiered suite runs locally via scripts/test-all.ps1.
+#   - master is the only branch that triggers deploy. Local + remote feature
+#     branches are merged into master via PRs.
 on:
   push:
     branches: [ master ]
@@ -20,8 +26,8 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  build-and-test:
-    name: Build
+  build:
+    name: Build (master only — no tests)
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -45,6 +51,9 @@ jobs:
       - name: Restore
         run: dotnet restore PoMiniGames.slnx
 
+      # Compile every project in the solution — src + tests — so a broken test
+      # file cannot slip into master. TreatWarningsAsErrors=true (Directory.Build.props)
+      # ensures zero warnings reach the artifact stage.
       - name: Build
         run: dotnet build PoMiniGames.slnx --no-restore --configuration Release
 
@@ -65,7 +74,7 @@ jobs:
 
   deploy:
     name: Deploy to Azure App Service
-    needs: build-and-test
+    needs: build
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     timeout-minutes: 20

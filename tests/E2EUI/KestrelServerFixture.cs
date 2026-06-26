@@ -159,6 +159,7 @@ public class KestrelServerFixture : WebApplicationFactory<Program>, IAsyncLifeti
 public sealed class KestrelServerCollection : ICollectionFixture<KestrelServerFixture>
 {
     public const string Name = "PoMiniGames.E2EUI";
+    // Folder renamed to tests/E2EUI in 2026-06-26 cleanup; namespace kept stable for cross-assembly refs.
 }
 
 /// <summary>
@@ -176,4 +177,5 @@ public sealed class MockDataKestrelServerFixture : KestrelServerFixture
 public sealed class MockDataKestrelServerCollection : ICollectionFixture<MockDataKestrelServerFixture>
 {
     public const string Name = "PoMiniGames.E2EUI.MockData";
+    // Folder renamed to tests/E2EUI in 2026-06-26 cleanup; namespace kept stable for cross-assembly refs.
 }

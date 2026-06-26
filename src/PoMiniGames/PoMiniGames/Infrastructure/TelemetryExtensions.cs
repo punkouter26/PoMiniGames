@@ -1,4 +1,3 @@
-using System.Reflection;
 using Azure.Identity;
 using Azure.Monitor.OpenTelemetry.AspNetCore;
 using OpenTelemetry.Instrumentation.AspNetCore;
@@ -12,6 +11,12 @@ namespace PoMiniGames.Infrastructure;
 /// </summary>
 internal static class TelemetryExtensions
 {
+    /// <summary>Constant <c>cloud_RoleName</c> for App Insights. Bound at compile time so the
+    /// resource service.name never collapses to <c>unknown_service:dotnet</c>. Only the API host
+    /// sets this; the Blazor WASM client does not call <c>AddPoMiniGamesTelemetry()</c>, so the
+    /// reflection guard ("don't execute this in Blazor WASM") becomes a structural one.</summary>
+    public const string CloudRoleName = "PoMiniGames";
+
     /// <summary>Adds Azure Monitor / OpenTelemetry when an App Insights connection string is present.</summary>
     public static WebApplicationBuilder AddPoMiniGamesTelemetry(this WebApplicationBuilder builder)
     {
@@ -21,10 +26,9 @@ internal static class TelemetryExtensions
 
         if (!string.IsNullOrEmpty(appInsightsConnString))
         {
-            // Map cloud_RoleName to the executing assembly name (never "unknown_service:dotnet").
-            // Under the Azure Monitor OTel distro the classic ITelemetryInitializer is replaced by
-            // the OTel Resource service.name, which Azure Monitor surfaces as cloud_RoleName.
-            var roleName = Assembly.GetExecutingAssembly().GetName().Name ?? "PoMiniGames";
+            // cloud_RoleName is bound to a constant — never reflect against the executing
+            // assembly at runtime (which can collide on trimming / single-file publish).
+            var roleName = CloudRoleName;
 
             // Adaptive sampling profile: full fidelity in Dev/Test, ~10% ceiling in Production.
             // Exceptions are always emitted at Error level so failures remain fully visible.

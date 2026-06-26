@@ -32,10 +32,10 @@ the shared Infrastructure project unless the data is genuinely cross-slice.
 - `src/PoMiniGames.Domain` — domain models / services.
 - `src/PoMiniGames.Infrastructure` — shared platform persistence + health checks (Azure Table Storage).
 - `src/PoShared` — shared models/business logic used by both client and API (the `.Shared` library). Trim-clean (no IL suppressions).
-- `tests/PoMiniGames.UnitTests` — xUnit unit tests, mirrored under `Features/<Slice>/`.
-- `tests/PoMiniGames.IntegrationTests` — `WebApplicationFactory` + **Testcontainers.Azurite** (v4 module).
-- `tests/PoMiniGames.E2EAPI` — C# end-to-end **API** tests: in-process host via `WebApplicationFactory`, pure HTTP-contract asserts (no browser).
-- `tests/PoMiniGames.E2EUI` — C# end-to-end **UI** tests: Microsoft.Playwright drives a real browser against the host on a live Kestrel port.
+- `tests/UnitTests` — xUnit unit tests, mirrored under `Features/<Slice>/`. (Folder renamed 2026-06-26; namespace `PoMiniGames.UnitTests` unchanged for assembly stability.)
+- `tests/IntegrationTests` — `WebApplicationFactory` + **Testcontainers.Azurite** (v4 module). (Namespace `PoMiniGames.IntegrationTests` unchanged.)
+- `tests/E2EAPI` — C# end-to-end **API** tests: in-process host via `WebApplicationFactory`, pure HTTP-contract asserts (no browser). (Namespace `PoMiniGames.E2EAPI` unchanged.)
+- `tests/E2EUI` — C# end-to-end **UI** tests: Microsoft.Playwright drives a real browser against the host on a live Kestrel port. (Namespace `PoMiniGames.E2EUI` unchanged.)
 
 ## Build & run
 - Target framework **net10.0**, pinned via `global.json`. Central settings in `Directory.Build.props` (Nullable + TreatWarningsAsErrors **on** — warnings break the build; TFM/Nullable/ImplicitUsings are inherited, **do not redeclare them in csproj**) and CPM in `Directory.Packages.props`.
@@ -43,6 +43,11 @@ the shared Infrastructure project unless the data is genuinely cross-slice.
 - Run: `dotnet run --project src/PoMiniGames/PoMiniGames`. Hardcoded ports **HTTP 5000 / HTTPS 5001**.
 - `F5` in VS Code uses `.vscode/launch.json` + `tasks.json`. The `prelaunch` task runs in sequence: `kill-dotnet` (frees port 5000) → `start-azurite` (`docker compose up -d azurite`, so local storage is always the Docker container) → `start-api`. Disable any non-Docker Azurite (e.g. the VS Code Azurite extension) so the `pominigames` container can bind ports 10000–10002.
 - First-run setup: `scripts/setup.ps1` (WinGet installs, Azurite container, `az login` check).
+
+## Branches
+- **master is the only branch.** No local or remote feature branches. All work lands
+  directly on `master` via PRs. Delete any branch (local or remote) the moment a
+  change is merged.
 
 ## Data & local dev
 - Persistence: **Azure Table Storage** via `Azure.Data.Tables` (`StorageService`). DTOs are POCOs converted to `TableEntity` at the persistence boundary.
@@ -52,16 +57,47 @@ the shared Infrastructure project unless the data is genuinely cross-slice.
   calls (PoCoupleQuiz answer-similarity scoring). Non-deterministic generations (questions) stay uncached.
 
 ## Auth (see `Features/Auth/` + `Infrastructure/AuthExtensions.cs`)
-- Real auth: Microsoft OAuth (JWT bearer). `ValidateIssuer = false` for `common`/`organizations`/`consumers`.
-- Dev/Test: **`FakeAuthHandler`** (scheme `FakeAuth`, headers `X-Fake-User` / `X-Fake-Roles`). Dev runtime registration is gated on `IsDevelopment() && Auth:EnableFakeAuth`. Tests register it additively in `TestWebApplicationFactory`.
-- **Production guard**: Program.cs throws at startup if the `FakeAuth` scheme is ever registered while `IsProduction()`.
-- Routes: `/auth/login/microsoft`, `/auth/logout`, `/auth/me` (reports auth state + whether OAuth is configured; `returnUrl` must be a local relative path). Legacy `/api/auth/*` dev-login routes remain.
-- Missing OAuth config degrades gracefully (boots + logs a warning).
+- Real auth: Microsoft OAuth (JWT bearer). `ValidateIssuer = true` with a custom
+  `MicrosoftAuthIssuerValidator` that allow-lists `common`/`organizations`/`consumers`
+  plus any tenant IDs in `PoMiniGames:MicrosoftAuth:AllowedTenantIds`.
+- **Authority**: `https://login.microsoftonline.com/common/v2.0` (multitenant + personal).
+  AAD app registration must be created with
+  `--sign-in-audience AzureADandPersonalMicrosoftAccount`. See [`docs/auth/README.md`](docs/auth/README.md).
+- Dev: **`FakeAuthHandler`** (scheme `FakeAuth`, headers `X-Fake-User` / `X-Fake-Roles`),
+  gated on `IsDevelopment() && Auth:EnableFakeAuth`. Tests register it additively in
+  `TestWebApplicationFactory`.
+- Dev/Test: **DevCookie** (scheme `PoMiniGames.DevAuth`, HttpOnly, SameSite=Lax) +
+  `/auth/login/fake` route mints a guest identity. Gated on `IsDevelopment() || IsEnvironment("Test")`
+  **and** loopback peer — 404 in Production and from non-loopback clients.
+- **Production guards**:
+  1. `Program.cs` throws if `FakeAuth` scheme is registered in Production.
+  2. `Program.cs` throws if `Auth:AutoGuestLogin` is `true` in Production.
+  3. `StartupSecretValidator` throws if `PoMiniGames:KeyVault:Uri`,
+     `PoMiniGames:Storage:TableService:Endpoint`, `MicrosoftAuth:ClientId`, or
+     `MicrosoftAuth:ApiClientId` are missing in Production.
+- Routes: `/auth/login/microsoft`, `/auth/login/fake` (Dev/Test), `/auth/logout`,
+  `/auth/me` (reports auth state + `oauthConfigured` flag; `returnUrl` must be a
+  local relative path). Legacy `/api/auth/*` dev-login routes remain.
 
 ## Observability
 - Serilog → Console + File (dev) + **Application Insights** (non-dev when a connection string is present). Enriched with `UserId` / `SessionId` / `CorrelationId`.
-- OpenTelemetry via `UseAzureMonitor` for traces/metrics/dependencies + **Live Metrics**. `service.name` (→ `cloud_RoleName`) is set to the assembly name. Sampling: 100% in dev/test, ~10% in prod; errors always logged.
-- Diagnostics: `/health` (clean JSON) and `/diag` (masked keys + integration status, feature-flag gated). OpenAPI via **Scalar**. `.http` files in the host project.
+- OpenTelemetry via `UseAzureMonitor` for traces/metrics/dependencies + **Live Metrics**.
+  `cloud_RoleName` is bound to the compile-time constant `TelemetryExtensions.CloudRoleName`
+  = `"PoMiniGames"` — never reflect against the executing assembly (which can collide on
+  trimming / single-file publish). Sampling: 100% in dev/test, ~10% in prod; errors always logged.
+- Diagnostics: `/health` (clean JSON) and `/diag` (masked keys + integration status,
+  feature-flag gated; the SPA only shows raw JSON in Development). OpenAPI via **Scalar**.
+  `.http` files in the host project.
+
+## CI/CD
+- `.github/workflows/deploy.yml` is **build-only** — no tests run in CI. Tests are
+  environment-coupled (Azurite, Playwright Chromium) and execute locally via
+  `scripts/test-all.ps1` (tiered Unit → Integration → E2E-API → E2E-UI).
+- Build job compiles every project in the solution (src + tests) under
+  `TreatWarningsAsErrors=true`, so a broken test file fails the build.
+- Deploy job needs `build`, publishes the host, resolves the App Service by RG name
+  (self-healing), zips `publish/`, then runs the three curl smoke tests
+  (`/api/health/ping`, `/api/health`, `/api/diag`).
 
 ## Conventions
 - Solution prefix `Po`. New games are split across multiple files (mirroring existing games), never one mega-file.

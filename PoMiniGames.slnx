@@ -9,9 +9,9 @@
   </Folder>
   <Folder Name="/src/PoMiniGames/" />
   <Folder Name="/tests/">
-    <Project Path="tests/PoMiniGames.E2EAPI/PoMiniGames.E2EAPI.csproj" />
-    <Project Path="tests/PoMiniGames.E2EUI/PoMiniGames.E2EUI.csproj" />
-    <Project Path="tests/PoMiniGames.IntegrationTests/PoMiniGames.IntegrationTests.csproj" />
-    <Project Path="tests/PoMiniGames.UnitTests/PoMiniGames.UnitTests.csproj" />
+    <Project Path="tests/E2EAPI/E2EAPI.csproj" />
+    <Project Path="tests/E2EUI/E2EUI.csproj" />
+    <Project Path="tests/IntegrationTests/IntegrationTests.csproj" />
+    <Project Path="tests/UnitTests/UnitTests.csproj" />
   </Folder>
 </Solution>

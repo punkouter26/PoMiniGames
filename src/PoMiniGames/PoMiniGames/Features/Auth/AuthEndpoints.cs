@@ -111,6 +111,33 @@ public static class AuthEndpoints
         .WithTags("Auth")
         .WithSummary("Triggers the real Microsoft authentication challenge.");
 
+        // Explicit "fake" login route (Dev/Test only). This is the canonical
+        // name documented in §2.3 (Dev/Test: split page showing both Microsoft
+        // OAuth and "Continue as Guest"). It mints a guest identity using the
+        // same DevCookie pathway as the legacy /api/auth/dev-bypass endpoint,
+        // but is reachable from the SPA via a clean /auth/login/fake URL.
+        // Hard-guarded: 404 unless Development/Test AND loopback peer.
+        app.MapGet("/auth/login/fake", [AllowAnonymous] async (
+            string? user,
+            string? returnUrl,
+            HttpContext context,
+            IWebHostEnvironment environment) =>
+        {
+            if (!environment.IsDevelopment() && !environment.IsEnvironment("Test"))
+            {
+                return Results.NotFound();
+            }
+            if (!IsLoopback(context))
+            {
+                return Results.NotFound();
+            }
+            await SignInDevelopmentUserAsync(context, environment, null, string.IsNullOrWhiteSpace(user) ? "Guest" : user);
+            return Results.Redirect(ResolveLocalReturnUrl(returnUrl));
+        })
+        .WithName("LoginFake")
+        .WithTags("Auth")
+        .WithSummary("Mints a guest identity (Dev/Test only). Reachable only from loopback.");
+
         // Clears the application sign-out cookie and returns the user to a validated local target.
         app.MapGet("/auth/logout", [AllowAnonymous] async (string? returnUrl, HttpContext context) =>
         {

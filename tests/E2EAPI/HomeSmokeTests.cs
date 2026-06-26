@@ -7,7 +7,7 @@ namespace PoMiniGames.E2EAPI;
 /// These tests assert the HTML shape of the home route because the Blazor
 /// WASM client is now BFF-served (no separate Vite/Node). The deeper
 /// component-level coverage (button clicks, navigation, game-specific
-/// selectors) lives in the unit tests under PoMiniGames.UnitTests/Features
+/// selectors) lives in the unit tests under tests/UnitTests/Features
 /// via bUnit-style assertions; the e2e project only asserts the
 /// public-facing HTTP contract here.
 /// </summary>

@@ -179,7 +179,7 @@ filter bar, sessionStorage-persisted filter, "back to top" FAB.
 
 ## #10 — E2E-UI gate in CI
 
-**Goal:** `tests/PoMiniGames.E2EUI` runs on every PR and fails the build on
+**Goal:** `tests/E2EUI` runs on every PR and fails the build on
 any client-side console error, any 4xx/5xx, or any DOM overflow.
 
 **Pre-reqs**
@@ -188,7 +188,7 @@ any client-side console error, any 4xx/5xx, or any DOM overflow.
 
 **Steps**
 
-1. Add a `pwsh` smoke step that the existing `tests/PoMiniGames.E2EUI` project
+1. Add a `pwsh` smoke step that the existing `tests/E2EUI` project
    can call:
    ```yaml
    # azure-pipelines.yml
@@ -201,7 +201,7 @@ any client-side console error, any 4xx/5xx, or any DOM overflow.
      displayName: "E2E UI tests"
      inputs:
        command: test
-       projects: tests/PoMiniGames.E2EUI
+       projects: tests/E2EUI/E2EUI.csproj
        arguments: --logger "console;verbosity=detailed"
    ```
 
@@ -218,5 +218,9 @@ any client-side console error, any 4xx/5xx, or any DOM overflow.
 
 4. Verify locally:
    ```bash
-   dotnet test tests/PoMiniGames.E2EUI
+   dotnet test tests/E2EUI/E2EUI.csproj
    ```
+
+> **E2E tests are NOT run in CI** (per repo UPDATES). This gate is for a
+> future PR-flow integration only; the current `.github/workflows/deploy.yml`
+> stays build-only.

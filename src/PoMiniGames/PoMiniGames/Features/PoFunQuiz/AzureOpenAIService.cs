@@ -1,16 +1,16 @@
 using System.ClientModel;
 using System.Text.Json;
-using Azure;
-using Azure.AI.OpenAI;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using OpenAI.Chat;
+using PoMiniGames.AI;
 
 namespace PoMiniGames.Features.PoFunQuiz;
 
 /// <summary>
 /// Server-side Azure OpenAI question generator for PoFunQuiz. Backed by the shared
-/// <c>po-aiservices-shared</c> gpt-5-nano deployment.
+/// Azure AI Foundry hub in the <c>PoShared</c> resource group; the <c>funquiz</c>
+/// deployment name is resolved through <see cref="AIFoundryChatClientCache"/>.
 ///
 /// <para><b>Mock fallback</b>: gated on <c>IsDevelopment() || IsEnvironment("Test")</c>
 /// AND the explicit <c>UseMockAI</c> flag. In Production, missing config causes an
@@ -23,32 +23,21 @@ public sealed class AzureOpenAIService : IOpenAIService
     private readonly IConfiguration _configuration;
     private readonly IHostEnvironment _environment;
     private readonly ILogger<AzureOpenAIService> _logger;
-    private readonly Lazy<ChatClient?> _chatClient;
-    private readonly string? _configErrorMessage;
+    private readonly AIFoundryChatClientCache _chatClientCache;
+    private readonly AIFoundryOptions _foundryOptions;
 
     public AzureOpenAIService(
         IConfiguration configuration,
         IHostEnvironment environment,
-        ILogger<AzureOpenAIService> logger)
+        ILogger<AzureOpenAIService> logger,
+        AIFoundryChatClientCache chatClientCache,
+        Microsoft.Extensions.Options.IOptionsMonitor<AIFoundryOptions> foundryOptions)
     {
         _configuration = configuration;
         _environment = environment;
         _logger = logger;
-
-        var endpoint = configuration["PoFunQuiz:AzureOpenAI:Endpoint"];
-        var apiKey = configuration["PoFunQuiz:AzureOpenAI:ApiKey"];
-        var deploymentName = configuration["PoFunQuiz:AzureOpenAI:DeploymentName"];
-
-        if (string.IsNullOrWhiteSpace(endpoint) || string.IsNullOrWhiteSpace(apiKey) || string.IsNullOrWhiteSpace(deploymentName))
-        {
-            _configErrorMessage = "PoFunQuiz:AzureOpenAI:Endpoint/ApiKey/DeploymentName are not configured.";
-            _chatClient = new Lazy<ChatClient?>(() => null);
-            return;
-        }
-
-        var client = new AzureOpenAIClient(new Uri(endpoint), new AzureKeyCredential(apiKey),
-            PoMiniGames.Infrastructure.AI.AzureOpenAIResilience.DefaultOptions());
-        _chatClient = new Lazy<ChatClient?>(() => client.GetChatClient(deploymentName));
+        _chatClientCache = chatClientCache;
+        _foundryOptions = foundryOptions.CurrentValue;
     }
 
     public async Task<IReadOnlyList<QuizQuestion>> GenerateQuizQuestionsAsync(
@@ -64,14 +53,16 @@ public sealed class AzureOpenAIService : IOpenAIService
             return MockOpenAIService.GenerateQuestions(category, count);
         }
 
-        if (_chatClient.Value is null)
+        var chatClient = _chatClientCache.Resolve(AIFoundryOptions.Games.FunQuiz);
+        if (chatClient is null)
         {
             if (IsNonProduction())
             {
                 _logger.NotConfigured(_environment.EnvironmentName);
                 return MockOpenAIService.GenerateQuestions(category, count);
             }
-            throw new InvalidOperationException(_configErrorMessage);
+            throw new InvalidOperationException(
+                $"PoFunQuiz: AIFoundry not configured. Set {AIFoundryOptions.SectionName} in Key Vault (kv-poshared).");
         }
 
         var systemPrompt = "You generate multiple-choice trivia questions. Respond with a JSON object: " +
@@ -87,7 +78,7 @@ public sealed class AzureOpenAIService : IOpenAIService
                 new UserChatMessage(userPrompt)
             };
             var options = new ChatCompletionOptions { ResponseFormat = ChatResponseFormat.CreateJsonObjectFormat() };
-            var completion = await _chatClient.Value.CompleteChatAsync(messages, options, cancellationToken);
+            var completion = await chatClient.CompleteChatAsync(messages, options, cancellationToken);
             var json = completion.Value.Content[0].Text;
             return ParseQuestions(json, category, count);
         }

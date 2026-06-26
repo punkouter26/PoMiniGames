@@ -8,20 +8,35 @@ param sharedKeyVaultName string = 'kv-poshared'
 @description('The name of the existing App Insights in PoShared')
 param sharedAppInsightsName string = 'poappideinsights8f9c9a4e'
 
+@description('The name of the existing Azure AI Foundry hub in PoShared')
+param sharedAIFoundryName string = 'cog-pominigames-shared'
+
 @description('The name of the resource group containing shared resources')
 param sharedResourceGroupName string = 'PoShared'
 
 var abbreviations = loadJsonContent('./abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, name, location))
-var storageAccountName = toLower('st${take(resourceToken, 22)}')
+// Solution identity baked into names per Azure Cloud Adoption Framework guidance.
+// Names stay stable across SKU/region changes; only the suffix varies.
+// Storage account cap: 24 chars lowercase. 'stpominigames' = 14 chars,
+// leaving 10 chars for the unique token suffix.
+var storageAccountName = toLower('stpominigames${take(resourceToken, 10)}')
+var planName           = 'plan-pominigames-${resourceToken}'
+var webAppName         = 'app-pominigames-${resourceToken}'
 var storageTableDataContributorRoleId = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3')
+// Built-in role: Cognitive Services User. Data-plane inference calls on the
+// AI Foundry hub require this; the control plane (deployments, model management)
+// remains on a separate Contributor role held by humans, not the Web App.
+var cognitiveServicesUserRoleId = subscriptionResourceId(
+  'Microsoft.Authorization/roleDefinitions',
+  'a97b65f3-24c7-47ba-9cc6-fcb3e1e0d1cf')
 
 // Zero-waste compute: a single dedicated F1 (Free) Windows plan for this app.
 // F1 is the lowest tier (no idle cost); SKU/OS are expressed as tags, never
 // baked into the resource name (CAF best practice — names stay stable across
 // tier changes). F1 cannot enable alwaysOn, so cold-starts are expected.
 resource appServicePlan 'Microsoft.Web/serverfarms@2022-09-01' = {
-  name: '${abbreviations.appServicePlan}${resourceToken}'
+  name: planName
   location: location
   tags: union(tags, { tier: 'F1', os: 'windows' })
   kind: 'app'
@@ -38,7 +53,7 @@ resource appServicePlan 'Microsoft.Web/serverfarms@2022-09-01' = {
 // Web App — Windows .NET 10, single-origin host (Blazor WASM served from
 // wwwroot; no CORS). Forced PROD profile via ASPNETCORE_ENVIRONMENT.
 resource webApp 'Microsoft.Web/sites@2022-09-01' = {
-  name: '${abbreviations.webApp}${resourceToken}'
+  name: webAppName
   location: location
   tags: union(tags, { 'azd-service-name': 'api', tier: 'F1', os: 'windows' })
   kind: 'app'
@@ -60,6 +75,23 @@ resource webApp 'Microsoft.Web/sites@2022-09-01' = {
         }
       ]
       appSettings: [
+        // WEBSITE_RUN_FROM_PACKAGE = 1 → atomic mount of the deploy zip. Cuts
+        // F1 cold-start from ~60s (file copy + iisnode boot) to ~10s (mount + boot).
+        // SCM_DO_BUILD_DURING_DEPLOYMENT=false is mandatory once WEBSITE_RUN_FROM_PACKAGE
+        // is enabled: building inside Kudu is redundant (CI already published a Release
+        // build) and actively slows the first-request path.
+        {
+          name: 'WEBSITE_RUN_FROM_PACKAGE'
+          value: '1'
+        }
+        {
+          name: 'SCM_DO_BUILD_DURING_DEPLOYMENT'
+          value: 'false'
+        }
+        {
+          name: 'WEBSITE_NODE_DEFAULT_VERSION'
+          value: ''
+        }
         {
           name: 'ASPNETCORE_ENVIRONMENT'
           value: 'Production'
@@ -84,6 +116,10 @@ resource webApp 'Microsoft.Web/sites@2022-09-01' = {
           name: 'PoMiniGames__Storage__TableService__TableName'
           value: appTable.name
         }
+        {
+          name: 'PoMiniGames__AI__FoundryEndpoint'
+          value: sharedAIFoundry.properties.endpoint
+        }
       ]
     }
   }
@@ -97,6 +133,15 @@ resource sharedKeyVault 'Microsoft.KeyVault/vaults@2023-02-01' existing = {
 
 resource sharedAppInsights 'Microsoft.Insights/components@2020-02-02' existing = {
   name: sharedAppInsightsName
+  scope: resourceGroup(sharedResourceGroupName)
+}
+
+// Centralized Azure AI Foundry hub (PoShared RG). Single endpoint, single
+// audit, single quota surface for every game. The shared resource was
+// deployed with `disableLocalAuth: true` so only AAD bearer auth works;
+// the Web App's MI is granted Cognitive Services User below.
+resource sharedAIFoundry 'Microsoft.CognitiveServices/accounts@2023-05-01' existing = {
+  name: sharedAIFoundryName
   scope: resourceGroup(sharedResourceGroupName)
 }
 
@@ -135,6 +180,23 @@ resource webAppTableRoleAssignment 'Microsoft.Authorization/roleAssignments@2022
   }
 }
 
+// Web App MI → Cognitive Services User on the shared AI Foundry hub.
+// This is the ONLY AI resource assignment — every game routes through
+// this single hub. A future deployment that splits into multiple apps
+// reuses the same role assignment (no per-game sprawl).
+resource webAppAIFoundryRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(sharedAIFoundry.id, webApp.id, cognitiveServicesUserRoleId)
+  scope: sharedAIFoundry
+  properties: {
+    principalId: webApp.identity.principalId
+    roleDefinitionId: cognitiveServicesUserRoleId
+    principalType: 'ServicePrincipal'
+  }
+}
+
 output API_URI string = 'https://${webApp.properties.defaultHostName}'
 output WEB_APP_NAME string = webApp.name
 output WEB_APP_PRINCIPAL_ID string = webApp.identity.principalId
+output STORAGE_ACCOUNT_NAME string = storageAccount.name
+output AI_FOUNDRY_NAME string = sharedAIFoundry.name
+output AI_FOUNDRY_ENDPOINT string = sharedAIFoundry.properties.endpoint

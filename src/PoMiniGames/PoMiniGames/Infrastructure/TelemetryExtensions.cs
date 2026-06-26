@@ -32,6 +32,10 @@ internal static class TelemetryExtensions
 
             // Adaptive sampling profile: full fidelity in Dev/Test, ~10% ceiling in Production.
             // Exceptions are always emitted at Error level so failures remain fully visible.
+            // SamplingRatio is the documented control surface on AzureMonitorOptions for
+            // AdaptiveSampling; the path-level Filter below is what stops a 5× burst on
+            // a single endpoint from blowing the ingestion budget. A safety-net alert
+            // (alerts.bicep `IngestionBudget`) fires if HourlyCount exceeds 50k.
             var samplingRatio = builder.Environment.IsProduction() ? 0.1f : 1.0f;
 
             builder.Services.AddOpenTelemetry()
@@ -40,22 +44,34 @@ internal static class TelemetryExtensions
                 {
                     opts.ConnectionString = appInsightsConnString;
                     opts.SamplingRatio = samplingRatio;
-                    // QuickPulse / Live Metrics stays enabled globally (distro default).
-                    opts.EnableLiveMetrics = true;
+                    // QuickPulse / Live Metrics: disabled in Production. Live Metrics
+                    // streams a separate telemetry channel that bypasses adaptive
+                    // sampling and silently burns 1–2 GB/month of ingestion per app.
+                    opts.EnableLiveMetrics = !builder.Environment.IsProduction();
                 });
 
             // Ingestion-budget guard: never record request traces for the
             // high-frequency, low-value probe endpoints (load-balancer health
-            // pings, CI smoke tests, uptime monitors). These would otherwise
-            // dominate the F1-tier ingestion budget with zero diagnostic value.
-            // Exceptions and non-probe traffic remain governed by SamplingRatio.
+            // pings, CI smoke tests, uptime monitors), the static Blazor framework
+            // files, or the OpenAPI spec. These would otherwise dominate the
+            // F1-tier ingestion budget with zero diagnostic value. Exceptions
+            // and non-probe traffic remain governed by SamplingRatio.
             builder.Services.Configure<AspNetCoreTraceInstrumentationOptions>(o =>
             {
                 o.Filter = context =>
                 {
                     var path = context.Request.Path.Value ?? string.Empty;
-                    return !(path.StartsWith("/health", StringComparison.OrdinalIgnoreCase)
-                          || path.StartsWith("/api/health", StringComparison.OrdinalIgnoreCase));
+                    if (path.StartsWith("/health", StringComparison.OrdinalIgnoreCase)
+                     || path.StartsWith("/api/health", StringComparison.OrdinalIgnoreCase)
+                     || path.StartsWith("/api/diag", StringComparison.OrdinalIgnoreCase)
+                     || path.StartsWith("/_framework/", StringComparison.OrdinalIgnoreCase)
+                     || path.StartsWith("/openapi/", StringComparison.OrdinalIgnoreCase)
+                     || path.Equals("/diag", StringComparison.OrdinalIgnoreCase)
+                     || path.Equals("/favicon.ico", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return false;
+                    }
+                    return true;
                 };
             });
         }

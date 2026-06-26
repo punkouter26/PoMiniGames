@@ -30,13 +30,10 @@ public sealed class StartupSecretValidator : IHostedService
     /// <summary>Per-game configuration section names. The validator only enforces a section
     /// that is *present* (even if empty) — that is the operator's signal that they intend to
     /// host the game and are ready to provide the keys.</summary>
-    public static readonly IReadOnlyList<string> GameSections = new[]
-    {
-        "PoCoupleQuiz:AzureOpenAI",
-        "PoFunQuiz:AzureOpenAI",
-        "PoFace:AzureOpenAI",
-        "PoJoker:AzureOpenAI",
-    };
+    /// <remarks>Deprecated since the centralization on the Azure AI Foundry hub in PoShared.
+    /// Retained for compatibility with deployments that still ship per-game sections
+    /// during the migration window (2026-Q3).</remarks>
+    public static readonly IReadOnlyList<string> GameSections = Array.Empty<string>();
 
     private readonly IHostEnvironment _environment;
     private readonly IConfiguration _configuration;
@@ -125,7 +122,24 @@ public sealed class StartupSecretValidator : IHostedService
             }
         }
 
-        // ── Per-game Azure OpenAI secrets ──────────────────────────────
+        // ── Centralized Azure AI Foundry secrets (production-mandatory) ──
+        // Replaces the legacy per-game AzureOpenAI sections. The KV contract:
+        //   PoMiniGames--AI--FoundryEndpoint  (e.g. https://cog-pominigames-xxx.openai.azure.com)
+        //   PoMiniGames--AI--DefaultDeployment (e.g. gpt-4o-mini)
+        // The DefaultAzureCredential on the Web App's system-assigned MI provides
+        // the AAD bearer; no API key is required (or stored) by design.
+        if (_environment.IsProduction())
+        {
+            var foundryEndpoint = _configuration["PoMiniGames:AI:FoundryEndpoint"]
+                ?? _configuration["PoMiniGames:AI:Endpoint"];
+            var foundryDeployment = _configuration["PoMiniGames:AI:DefaultDeployment"];
+            if (string.IsNullOrWhiteSpace(foundryEndpoint))
+                missing.Add("PoMiniGames:AI:FoundryEndpoint");
+            if (string.IsNullOrWhiteSpace(foundryDeployment))
+                missing.Add("PoMiniGames:AI:DefaultDeployment");
+        }
+
+        // ── Legacy per-game Azure OpenAI secrets (compatibility window) ──
         foreach (var sectionPath in GameSections)
         {
             var section = _configuration.GetSection(sectionPath);

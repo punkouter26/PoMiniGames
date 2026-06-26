@@ -1,18 +1,19 @@
-using Azure;
-using Azure.AI.OpenAI;
 using Microsoft.Extensions.Hosting;
 using OpenAI.Chat;
+using PoMiniGames.AI;
 using PoShared.Games.PoJoker;
 
 namespace PoMiniGames.Features.PoJoker;
 
 /// <summary>
-/// AI-powered joke analysis service using Azure OpenAI.
+/// AI-powered joke analysis service backed by the centralized Azure AI Foundry hub
+/// in the <c>PoShared</c> resource group. The <c>joker</c> deployment is resolved
+/// through <see cref="AIFoundryChatClientCache"/>.
 ///
-/// <para><b>Mock fallback</b> follows the PoCoupleQuiz pattern: when the
-/// <c>PoJoker:AzureOpenAI</c> section is not fully configured, the service falls back to
-/// <see cref="MockAnalysisService"/> in non-Production environments and throws in Production
-/// (so a misconfigured deployment never silently serves fabricated data). The shared
+/// <para><b>Mock fallback</b> follows the PoCoupleQuiz pattern: when the foundry is
+/// not configured, the service falls back to <see cref="MockAnalysisService"/> in
+/// non-Production environments and throws in Production (so a misconfigured deployment
+/// never silently serves fabricated data). The shared
 /// <see cref="PoMiniGames.Infrastructure.AI.AzureOpenAIResilience"/> options bound the
 /// per-attempt network timeout and retry count.</para>
 /// </summary>
@@ -21,9 +22,8 @@ public sealed class AiJesterService : IAnalysisService
     private readonly ILogger<AiJesterService> _logger;
     private readonly IHostEnvironment _environment;
     private readonly MockAnalysisService _mock;
-    private readonly Lazy<ChatClient?> _chatClient;
+    private readonly AIFoundryChatClientCache _chatClientCache;
     private readonly int _timeoutSeconds;
-    private readonly string? _configErrorMessage;
 
     private const string SystemPrompt = """
         You are a Digital Jester - an AI that tries to predict punchlines to jokes.
@@ -37,45 +37,34 @@ public sealed class AiJesterService : IAnalysisService
         IConfiguration configuration,
         IHostEnvironment environment,
         MockAnalysisService mock,
-        ILogger<AiJesterService> logger)
+        ILogger<AiJesterService> logger,
+        AIFoundryChatClientCache chatClientCache)
     {
         _logger = logger;
         _environment = environment;
         _mock = mock;
-
-        var endpoint = configuration["PoJoker:AzureOpenAI:Endpoint"];
-        var apiKey = configuration["PoJoker:AzureOpenAI:ApiKey"];
-        var deploymentName = configuration["PoJoker:AzureOpenAI:DeploymentName"];
+        _chatClientCache = chatClientCache;
         _timeoutSeconds = configuration.GetValue("PoJoker:AzureOpenAI:TimeoutSeconds", 30);
-
-        if (string.IsNullOrWhiteSpace(endpoint) || string.IsNullOrWhiteSpace(apiKey) || string.IsNullOrWhiteSpace(deploymentName))
-        {
-            _configErrorMessage = "PoJoker:AzureOpenAI:Endpoint/ApiKey/DeploymentName are not configured.";
-            _chatClient = new Lazy<ChatClient?>(() => null);
-            return;
-        }
-
-        var client = new AzureOpenAIClient(new Uri(endpoint), new AzureKeyCredential(apiKey),
-            PoMiniGames.Infrastructure.AI.AzureOpenAIResilience.DefaultOptions());
-        _chatClient = new Lazy<ChatClient?>(() => client.GetChatClient(deploymentName));
     }
 
     private bool IsNonProduction() => _environment.IsDevelopment() || _environment.IsEnvironment("Test");
 
     public async Task<(JokeAnalysisDto Analysis, JokeRatingDto Rating)> AnalyzeJokeAsync(JokeDto joke, CancellationToken cancellationToken = default)
     {
-        if (_chatClient.Value is null)
+        var chatClient = _chatClientCache.Resolve(AIFoundryOptions.Games.Joker);
+        if (chatClient is null)
         {
             if (IsNonProduction())
             {
-                _logger.LogWarning("PoJoker: Azure OpenAI not configured; serving mock analysis in {Environment}.", _environment.EnvironmentName);
+                _logger.LogWarning("PoJoker: AIFoundry not configured; serving mock analysis in {Environment}.", _environment.EnvironmentName);
                 return await _mock.AnalyzeJokeAsync(joke, cancellationToken);
             }
-            throw new InvalidOperationException(_configErrorMessage);
+            throw new InvalidOperationException(
+                $"PoJoker: AIFoundry not configured. Set {AIFoundryOptions.SectionName} in Key Vault (kv-poshared).");
         }
 
-        var analysisTask = PredictPunchlineAsync(_chatClient.Value, joke, cancellationToken);
-        var ratingTask = RateJokeAsync(_chatClient.Value, joke, cancellationToken);
+        var analysisTask = PredictPunchlineAsync(chatClient, joke, cancellationToken);
+        var ratingTask = RateJokeAsync(chatClient, joke, cancellationToken);
         await Task.WhenAll(analysisTask, ratingTask);
         return (analysisTask.Result, ratingTask.Result);
     }
@@ -234,13 +223,15 @@ public sealed class AiJesterService : IAnalysisService
 
     public async Task<string> ExplainJokeAsync(JokeDto joke, CancellationToken cancellationToken = default)
     {
-        if (_chatClient.Value is null)
+        var chat = _chatClientCache.Resolve(AIFoundryOptions.Games.Joker);
+        if (chat is null)
         {
             if (IsNonProduction())
             {
                 return await _mock.ExplainJokeAsync(joke, cancellationToken);
             }
-            throw new InvalidOperationException(_configErrorMessage);
+            throw new InvalidOperationException(
+                $"PoJoker: AIFoundry not configured. Set {AIFoundryOptions.SectionName} in Key Vault (kv-poshared).");
         }
 
         try
@@ -254,7 +245,7 @@ public sealed class AiJesterService : IAnalysisService
                 new UserChatMessage($"Setup: \"{joke.Setup}\"\nPunchline: \"{joke.Punchline}\"")
             };
 
-            var response = await _chatClient.Value.CompleteChatAsync(messages, cancellationToken: cts.Token);
+            var response = await chat.CompleteChatAsync(messages, cancellationToken: cts.Token);
 
             if (response.Value.FinishReason == ChatFinishReason.ContentFilter)
                 return "The Royal Censor has deemed this joke's mechanism too dangerous to explain.";

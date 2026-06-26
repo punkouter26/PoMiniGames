@@ -39,7 +39,21 @@ module kvAccess './kv-access.bicep' = {
   }
 }
 
+// Mirror the storage account name and AI Foundry endpoint into Key Vault so
+// the app reads them via the centralized PrefixKeyVaultSecretManager at
+// startup, and so secrets-rotation scripts have a single source of truth.
+module kvSecrets './kv-secrets.bicep' = {
+  name: 'kv-secrets'
+  scope: resourceGroup(sharedResourceGroupName)
+  params: {
+    keyVaultName: 'kv-poshared'
+    storageAccountName: resources.outputs.STORAGE_ACCOUNT_NAME
+    aiFoundryEndpoint: resources.outputs.AI_FOUNDRY_ENDPOINT
+  }
+}
+
 output API_URI string = resources.outputs.API_URI
 output AZURE_LOCATION string = location
 output AZURE_TENANT_ID string = tenant().tenantId
 output WEB_APP_NAME string = resources.outputs.WEB_APP_NAME
+output AI_FOUNDRY_ENDPOINT string = resources.outputs.AI_FOUNDRY_ENDPOINT

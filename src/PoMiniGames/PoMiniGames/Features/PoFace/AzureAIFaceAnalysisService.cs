@@ -3,14 +3,15 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using PoMiniGames.AI;
 
 namespace PoMiniGames.Features.PoFace;
 
 /// <summary>
-/// Server-side Azure OpenAI multimodal face analyzer. Calls the shared
-/// <c>po-aiservices-shared</c> account's multimodal deployment (e.g.
-/// <c>gpt-5-nano</c>) and asks the model to score the target emotion in
-/// a frame. Model returns JSON; we deserialize and clamp.
+/// Server-side Azure OpenAI multimodal face analyzer. Calls the centralized
+/// Azure AI Foundry hub's multimodal deployment (e.g. <c>gpt-4o</c>) and asks the
+/// model to score the target emotion in a frame. Model returns JSON; we deserialize and clamp.
 ///
 /// <para>The head-pose estimate is model-generated (not measured geometry)
 /// — same caveat as the source PoFace code. The <see cref="HeadPoseValidator"/>
@@ -36,36 +37,37 @@ public sealed class AzureAIFaceAnalysisService : IFaceAnalysisService
     private readonly IHostEnvironment _environment;
     private readonly ILogger<AzureAIFaceAnalysisService> _logger;
     private readonly HttpClient _http;
-    private readonly string? _configErrorMessage;
+    private readonly AIFoundryOptions _foundryOptions;
+    private readonly bool _foundryConfigured;
 
     public AzureAIFaceAnalysisService(
         IConfiguration configuration,
         IHostEnvironment environment,
         ILogger<AzureAIFaceAnalysisService> logger,
-        IHttpClientFactory httpClientFactory)
+        IHttpClientFactory httpClientFactory,
+        IOptionsMonitor<AIFoundryOptions> foundryOptions)
     {
         _configuration = configuration;
         _environment = environment;
         _logger = logger;
         _http = httpClientFactory.CreateClient(HttpClientName);
+        _foundryOptions = foundryOptions.CurrentValue;
+        _foundryConfigured = _foundryOptions.IsConfigured;
 
-        var endpoint = configuration["PoFace:AzureOpenAI:Endpoint"];
-        var apiKey = configuration["PoFace:AzureOpenAI:ApiKey"];
-        var deployment = configuration["PoFace:AzureOpenAI:DeploymentName"];
         var apiVersion = configuration["PoFace:AzureOpenAI:ApiVersion"] ?? "2025-01-01-preview";
 
-        if (string.IsNullOrWhiteSpace(endpoint) || string.IsNullOrWhiteSpace(apiKey) || string.IsNullOrWhiteSpace(deployment))
+        if (!_foundryConfigured)
         {
-            _configErrorMessage = "PoFace:AzureOpenAI:Endpoint/ApiKey/DeploymentName are not configured.";
+            // Caller path (AnalyzeAsync) raises InvalidOperationException in Production
+            // and falls back to StubFaceAnalysisService in Dev/Test.
             return;
         }
 
-        if (!string.IsNullOrWhiteSpace(apiKey))
-        {
-            _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
-        }
-        _http.BaseAddress = new Uri(endpoint.TrimEnd('/') + $"/openai/deployments/{deployment}/");
-        // The api-version is a query string on the request URL; stash it.
+        // Foundry uses AAD bearer (DefaultAzureCredential), not API keys. Stash
+        // the deployment-specific URL on BaseAddress so a code-only call site
+        // can build the request path without re-resolving config.
+        var deployment = _foundryOptions.ResolveDeployment(AIFoundryOptions.Games.Face);
+        _http.BaseAddress = new Uri(_foundryOptions.Endpoint.TrimEnd('/') + $"/openai/deployments/{deployment}/");
         _http.DefaultRequestHeaders.Add("Api-Version-Querystring", apiVersion);
     }
 
@@ -83,14 +85,15 @@ public sealed class AzureAIFaceAnalysisService : IFaceAnalysisService
             return StubFaceAnalysisService.Analyze(target);
         }
 
-        if (_configErrorMessage is not null)
+        if (!_foundryConfigured)
         {
             if (IsNonProduction())
             {
-                _logger.LogWarning("PoFace: Azure OpenAI not configured; serving stub analysis in {Environment}.", _environment.EnvironmentName);
+                _logger.LogWarning("PoFace: AIFoundry not configured; serving stub analysis in {Environment}.", _environment.EnvironmentName);
                 return StubFaceAnalysisService.Analyze(target);
             }
-            throw new InvalidOperationException(_configErrorMessage);
+            throw new InvalidOperationException(
+                $"PoFace: AIFoundry not configured. Set {AIFoundryOptions.SectionName} in Key Vault (kv-poshared).");
         }
 
         try

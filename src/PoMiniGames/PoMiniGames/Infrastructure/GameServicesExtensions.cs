@@ -26,6 +26,29 @@ internal static class GameServicesExtensions
 {
     public static IServiceCollection AddPoMiniGamesGameServices(this IServiceCollection services)
     {
+        // ─── Centralized Azure AI Foundry hub (PoShared RG) ─────────────────
+        // One shared AzureOpenAIClient + per-deployment ChatClient cache. Every
+        // game that needs an AI model resolves through AIFoundryChatClientCache
+        // with its game key (couplequiz, funquiz, face, joker, survive).
+        // Replaces the legacy per-game PoFunQuiz:AzureOpenAI, PoCoupleQuiz:AzureOpenAI,
+        // PoFace:AzureOpenAI, PoJoker:AzureOpenAI, Inference:* sections.
+        services.Configure<PoMiniGames.AI.AIFoundryOptions>(opts =>
+        {
+            // Belt-and-braces fallback if KV hasn't resolved before the first
+            // request. The host's environment variables (PoMiniGames__AI__FoundryEndpoint
+            // etc.) act as a development override; production should always source
+            // from kv-poshared.
+            var endpoint = Environment.GetEnvironmentVariable("PoMiniGames__AI__FoundryEndpoint");
+            var defaultDeployment = Environment.GetEnvironmentVariable("PoMiniGames__AI__DefaultDeployment")
+                ?? "gpt-4o-mini";
+            if (!string.IsNullOrWhiteSpace(endpoint))
+            {
+                opts.Endpoint = endpoint!;
+            }
+            opts.DefaultDeployment = defaultDeployment;
+        });
+        services.AddSingleton<PoMiniGames.AI.AIFoundryClientFactory>();
+        services.AddSingleton<PoMiniGames.AI.AIFoundryChatClientCache>();
         // PoRaceRagdoll
         services.AddSingleton<IRacerService, RacerService>();
         services.AddSingleton<IGameSessionService, GameSessionService>();
@@ -86,8 +109,9 @@ internal static class GameServicesExtensions
 
         // PoFace — Phase 3 of the consolidation. See Features/PoFace/.
         // The AzureAIFaceAnalysisService uses the shared multimodal deployment on
-        // po-aiservices-shared; the StubFaceAnalysisService implements IFaceAnalysisService
-        // and reports IsMock=true (drives the per-game "USING MOCK DATA" banner).
+        // the centralized Azure AI Foundry hub (PoShared RG); the StubFaceAnalysisService
+        // implements IFaceAnalysisService and reports IsMock=true (drives the per-game
+        // "USING MOCK DATA" banner).
         // §3.4: typed HttpClient via IHttpClientFactory + standard resilience handler
         // (retry x3 with exponential backoff + jitter, circuit breaker at 30% failure,
         // 30s total request timeout). The named client below is the one consumed by
@@ -96,6 +120,7 @@ internal static class GameServicesExtensions
         // request's correlation/session ids and forward them upstream.
         services.AddHttpContextAccessor();
         services.AddTransient<CorrelationPropagationHandler>();
+        services.AddTransient<PoMiniGames.AI.AIFoundryBearerTokenHandler>();
         services.AddHttpClient(AzureAIFaceAnalysisService.HttpClientName, client =>
             {
                 // 30s, not 60s: this serves a real-time game; a request that hasn't
@@ -103,6 +128,7 @@ internal static class GameServicesExtensions
                 client.Timeout = TimeSpan.FromSeconds(30);
             })
             .AddHttpMessageHandler<CorrelationPropagationHandler>()
+            .AddHttpMessageHandler<PoMiniGames.AI.AIFoundryBearerTokenHandler>()
             .AddStandardResilienceHandler();
         services.AddSingleton<IFaceAnalysisService, AzureAIFaceAnalysisService>();
         services.AddSingleton<StubFaceAnalysisService>();

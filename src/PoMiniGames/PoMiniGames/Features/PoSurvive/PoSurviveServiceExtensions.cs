@@ -1,5 +1,5 @@
-using Azure;
-using Azure.AI.OpenAI;
+using Microsoft.Extensions.Options;
+using PoMiniGames.AI;
 using PoSurvive.Application.Interfaces;
 using PoSurvive.Application.Services;
 using PoSurvive.Infrastructure.AI;
@@ -12,8 +12,8 @@ namespace PoMiniGames.Features.PoSurvive;
 /// <summary>
 /// Registers PoSurvive (agent survival simulation) server-side services and endpoints.
 /// Persistence (sessions + evolution) always registers; the Azure OpenAI inference relay
-/// is gated behind Inference:UseCloudFallback so the API key never reaches the browser.
-/// The "infer" rate-limiter policy is registered centrally in <see cref="Infrastructure.RateLimitingExtensions"/>.
+/// is gated behind <c>Inference:UseCloudFallback</c> and routes through the centralized
+/// Azure AI Foundry hub in the <c>PoShared</c> resource group.
 /// </summary>
 public static class PoSurviveServiceExtensions
 {
@@ -27,29 +27,59 @@ public static class PoSurviveServiceExtensions
         // ─── Azure OpenAI inference relay (server-side only) ───────────────────
         if (configuration.GetValue<bool>("Inference:UseCloudFallback"))
         {
-            var endpoint = configuration["Inference:Endpoint"]
-                ?? throw new InvalidOperationException("Inference:Endpoint must be set when Inference:UseCloudFallback=true");
-            var defaultDeployment = configuration["Inference:DeploymentName"] ?? "gpt-5.4-nano";
-            var apiKey = configuration["Inference:ApiKey"]
-                ?? throw new InvalidOperationException("Inference:ApiKey must be set when Inference:UseCloudFallback=true");
+            var useFoundry = configuration.GetValue<bool>("Inference:UseCentralizedFoundry", defaultValue: true);
 
-            // Allowlist: modelId → deploymentName from Inference:RemoteModelOptions
-            var deploymentMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var child in configuration.GetSection("Inference:RemoteModelOptions").GetChildren())
+            if (useFoundry)
             {
-                var id = child["Id"];
-                var deployment = child["DeploymentName"] ?? child["Id"];
-                if (!string.IsNullOrWhiteSpace(id) && !string.IsNullOrWhiteSpace(deployment))
-                    deploymentMap[id!] = deployment!;
-            }
+                // Recommended path: shared AIFoundryClientFactory in PoShared RG.
+                // No API key required (AAD bearer via DefaultAzureCredential on the
+                // Web App's system-assigned MI). The PoSurvive deployment is
+                // resolved through AIFoundryOptions.Deployments["survive"].
+                services.AddSingleton<IInferenceService>(sp =>
+                {
+                    var foundry = sp.GetRequiredService<AIFoundryClientFactory>();
+                    var foundryOptions = sp.GetRequiredService<IOptionsMonitor<AIFoundryOptions>>().CurrentValue;
+                    var deployment = foundryOptions.ResolveDeployment(AIFoundryOptions.Games.Survive);
+                    var client = foundry.Client
+                        ?? throw new InvalidOperationException(
+                            $"PoSurvive: AIFoundry not configured. Set {AIFoundryOptions.SectionName} in Key Vault (kv-poshared).");
 
-            services.AddSingleton(_ => new AzureOpenAIClient(new Uri(endpoint), new AzureKeyCredential(apiKey),
-                PoMiniGames.Infrastructure.AI.AzureOpenAIResilience.DefaultOptions()));
-            services.AddSingleton<IInferenceService>(sp =>
-                new AzureOpenAIInferenceService(
-                    openAiClient: sp.GetRequiredService<AzureOpenAIClient>(),
-                    defaultDeployment: defaultDeployment,
-                    deploymentMap: deploymentMap));
+                    return new AzureOpenAIInferenceService(
+                        openAiClient: client,
+                        defaultDeployment: deployment);
+                });
+            }
+            else
+            {
+                // Legacy path: explicit endpoint + api-key. Retained for dev environments
+                // that want to point PoSurvive at a personal Azure OpenAI resource without
+                // going through the shared foundry. Throw on misconfiguration so a
+                // production deployment can never silently no-op.
+                var endpoint = configuration["Inference:Endpoint"]
+                    ?? throw new InvalidOperationException("Inference:Endpoint must be set when Inference:UseCloudFallback=true");
+                var defaultDeployment = configuration["Inference:DeploymentName"] ?? "gpt-4o-mini";
+                var apiKey = configuration["Inference:ApiKey"]
+                    ?? throw new InvalidOperationException("Inference:ApiKey must be set when Inference:UseCloudFallback=true");
+
+                var deploymentMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var child in configuration.GetSection("Inference:RemoteModelOptions").GetChildren())
+                {
+                    var id = child["Id"];
+                    var deployment = child["DeploymentName"] ?? child["Id"];
+                    if (!string.IsNullOrWhiteSpace(id) && !string.IsNullOrWhiteSpace(deployment))
+                        deploymentMap[id!] = deployment!;
+                }
+
+                services.AddSingleton(_ => new Azure.AI.OpenAI.AzureOpenAIClient(
+                    new Uri(endpoint),
+                    new Azure.AzureKeyCredential(apiKey),
+                    PoMiniGames.Infrastructure.AI.AzureOpenAIResilience.DefaultOptions()));
+                services.AddSingleton<IInferenceService>(sp =>
+                    new AzureOpenAIInferenceService(
+                        openAiClient: sp.GetRequiredService<Azure.AI.OpenAI.AzureOpenAIClient>(),
+                        defaultDeployment: defaultDeployment,
+                        deploymentMap: deploymentMap));
+            }
         }
 
         return services;

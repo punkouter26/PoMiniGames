@@ -173,3 +173,51 @@ AppServiceResponseTime
 
 // Output the action group ID for use in other deployments
 output actionGroupId string = actionGroup.id
+
+// Ingestion-budget alert: flags hourly spike > 50k items so a runaway loop
+// can't silently exhaust the App Insights budget. The hard ceiling
+// (MaxTelemetryItemsPerSecond = 5 in Production, set in TelemetryExtensions.cs)
+// is the primary control; this alert is the safety net for misconfiguration.
+resource ingestionBudgetAlert 'Microsoft.Insights/scheduledQueryRules@2021-02-01-preview' = {
+  name: '${appName}-IngestionBudget'
+  location: location
+  properties: {
+    enabled: true
+    frequency: 15
+    windowSize: 60
+    severity: 3 // Warning — not critical; the budget cap will still shed load
+    evaluationFrequency: 15
+    criteria: {
+      allOf: [
+        {
+          query: '''
+AppMetrics
+| where TimeGenerated > ago(1h)
+| where Name == "traceCount" or Name == "requestCount"
+| summarize HourlyCount = sum(Sum) by bin(TimeGenerated, 1h), Name
+| where HourlyCount > 50000
+'''
+          timeAggregation: 'Count'
+          operator: 'GreaterThanOrEqual'
+          threshold: 1
+          failingPeriods: {
+            numberOfEvaluationPeriods: 1
+            minFailingPeriodsToAlert: 1
+          }
+        }
+      ]
+    }
+    actions: [
+      {
+        actionGroupId: actionGroup.id
+      }
+    ]
+    scopes: [
+      subscription().id
+    ]
+    targetResourceTypes: [
+      'Microsoft.Insights/components'
+    ]
+    autoMitigate: true
+  }
+}

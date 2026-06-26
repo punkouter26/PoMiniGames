@@ -69,6 +69,7 @@ public sealed class ConfigurationDiagnosticsSnapshotProvider : IDiagnosticsSnaps
                 microsoftAuthConfigured = HasConfiguredValue(
                     "PoMiniGames:MicrosoftAuth:ClientId",
                     "PoMiniGames:MicrosoftAuth:ApiClientId"),
+                aiFoundryConfigured = HasConfiguredValue("PoMiniGames:AI:FoundryEndpoint", "PoMiniGames:AI:Endpoint"),
             },
             ["keys"] = new
             {
@@ -79,10 +80,8 @@ public sealed class ConfigurationDiagnosticsSnapshotProvider : IDiagnosticsSnaps
                     ?? _configuration["APPINSIGHTS_CONNECTIONSTRING"]),
                 microsoftClientId = SecretMasker.MaskMiddle(_configuration["PoMiniGames:MicrosoftAuth:ClientId"]),
                 microsoftApiClientId = SecretMasker.MaskMiddle(_configuration["PoMiniGames:MicrosoftAuth:ApiClientId"]),
-            },
-            ["cors"] = new
-            {
-                allowedOrigins = ReadOrigins(),
+                aiFoundryEndpoint = SecretMasker.MaskMiddle(_configuration["PoMiniGames:AI:FoundryEndpoint"] ?? _configuration["PoMiniGames:AI:Endpoint"]),
+                aiDefaultDeployment = _configuration["PoMiniGames:AI:DefaultDeployment"] ?? "(null)",
             },
             ["health"] = new
             {
@@ -111,17 +110,5 @@ public sealed class ConfigurationDiagnosticsSnapshotProvider : IDiagnosticsSnaps
         }
 
         return false;
-    }
-
-    private string[] ReadOrigins()
-    {
-        var origins = _configuration.GetSection("PoMiniGames:Cors:AllowedOrigins").Get<string[]>()
-            ?? _configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
-            ?? [];
-
-        return origins
-            .Where(origin => !string.IsNullOrWhiteSpace(origin))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
     }
 }

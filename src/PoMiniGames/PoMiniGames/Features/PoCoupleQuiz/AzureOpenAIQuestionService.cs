@@ -1,17 +1,17 @@
 using System.Text.Json;
-using Azure;
-using Azure.AI.OpenAI;
 using Microsoft.Extensions.Caching.Hybrid;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using OpenAI.Chat;
+using PoMiniGames.AI;
 
 namespace PoMiniGames.Features.PoCoupleQuiz;
 
 /// <summary>
-/// Wraps a single deployment of Azure OpenAI (the shared <c>po-aiservices-shared</c>
-/// gpt-5-nano account) for question generation and answer-similarity scoring.
+/// Wraps the centralized Azure AI Foundry hub for PoCoupleQuiz question generation
+/// and answer-similarity scoring. The <c>couplequiz</c> deployment is resolved through
+/// <see cref="AIFoundryChatClientCache"/>.
 ///
 /// <para><b>Mock fallback</b>: per the 2026-06-13 mock-data fix (see user memory
 /// <c>pofunquiz-mock-data-fix.md</c>), the fallback to <see cref="MockQuestionService"/>
@@ -26,35 +26,21 @@ public sealed class AzureOpenAIQuestionService : IQuestionService
     private readonly ILogger<AzureOpenAIQuestionService> _logger;
     private readonly IHostEnvironment _environment;
     private readonly HybridCache _cache;
-    private readonly Lazy<ChatClient?> _chatClient;
-    private readonly string? _configErrorMessage;
+    private readonly AIFoundryChatClientCache _chatClientCache;
 
     public AzureOpenAIQuestionService(
         IOptionsMonitor<CoupleQuizOptions> optionsMonitor,
         IConfiguration configuration,
         IHostEnvironment environment,
         HybridCache cache,
-        ILogger<AzureOpenAIQuestionService> logger)
+        ILogger<AzureOpenAIQuestionService> logger,
+        AIFoundryChatClientCache chatClientCache)
     {
         _optionsMonitor = optionsMonitor;
         _environment = environment;
         _cache = cache;
         _logger = logger;
-
-        var endpoint = configuration["PoCoupleQuiz:AzureOpenAI:Endpoint"];
-        var apiKey = configuration["PoCoupleQuiz:AzureOpenAI:ApiKey"];
-        var deploymentName = configuration["PoCoupleQuiz:AzureOpenAI:DeploymentName"];
-
-        if (string.IsNullOrWhiteSpace(endpoint) || string.IsNullOrWhiteSpace(apiKey) || string.IsNullOrWhiteSpace(deploymentName))
-        {
-            _configErrorMessage = "PoCoupleQuiz:AzureOpenAI:Endpoint/ApiKey/DeploymentName are not configured.";
-            _chatClient = new Lazy<ChatClient?>(() => null);
-            return;
-        }
-
-        var client = new AzureOpenAIClient(new Uri(endpoint), new AzureKeyCredential(apiKey),
-            PoMiniGames.Infrastructure.AI.AzureOpenAIResilience.DefaultOptions());
-        _chatClient = new Lazy<ChatClient?>(() => client.GetChatClient(deploymentName));
+        _chatClientCache = chatClientCache;
     }
 
     public async Task<Question> GenerateQuestionAsync(DifficultyLevel difficulty, QuestionCategory? category = null, CancellationToken cancellationToken = default)
@@ -66,14 +52,16 @@ public sealed class AzureOpenAIQuestionService : IQuestionService
             return await new MockQuestionService().GenerateQuestionAsync(difficulty, category, cancellationToken);
         }
 
-        if (_chatClient.Value is null)
+        var chatClient = _chatClientCache.Resolve(AIFoundryOptions.Games.CoupleQuiz);
+        if (chatClient is null)
         {
             if (IsNonProduction())
             {
-                _logger.LogWarning("PoCoupleQuiz: Azure OpenAI not configured; serving mock question in {Environment}.", _environment.EnvironmentName);
+                _logger.LogWarning("PoCoupleQuiz: AIFoundry not configured; serving mock question in {Environment}.", _environment.EnvironmentName);
                 return await new MockQuestionService().GenerateQuestionAsync(difficulty, category, cancellationToken);
             }
-            throw new InvalidOperationException(_configErrorMessage);
+            throw new InvalidOperationException(
+                $"PoCoupleQuiz: AIFoundry not configured. Set {AIFoundryOptions.SectionName} in Key Vault (kv-poshared).");
         }
 
         var categoryHint = category?.ToString() ?? "any category";
@@ -91,7 +79,7 @@ public sealed class AzureOpenAIQuestionService : IQuestionService
                 new UserChatMessage(userPrompt)
             };
             var chatOptions = new ChatCompletionOptions { ResponseFormat = ChatResponseFormat.CreateJsonObjectFormat() };
-            var completion = await _chatClient.Value.CompleteChatAsync(messages, chatOptions, cancellationToken);
+            var completion = await chatClient.CompleteChatAsync(messages, chatOptions, cancellationToken);
 
             var json = completion.Value.Content[0].Text;
             using var doc = JsonDocument.Parse(json);
@@ -125,13 +113,14 @@ public sealed class AzureOpenAIQuestionService : IQuestionService
             return await new MockQuestionService().CheckAnswerSimilarityAsync(answer1, answer2, cancellationToken);
         }
 
-        if (_chatClient.Value is null)
+        if (_chatClientCache.Resolve(AIFoundryOptions.Games.CoupleQuiz) is null)
         {
             if (IsNonProduction())
             {
                 return await new MockQuestionService().CheckAnswerSimilarityAsync(answer1, answer2, cancellationToken);
             }
-            throw new InvalidOperationException(_configErrorMessage);
+            throw new InvalidOperationException(
+                $"PoCoupleQuiz: AIFoundry not configured. Set {AIFoundryOptions.SectionName} in Key Vault (kv-poshared).");
         }
 
         // Similarity scoring is deterministic for a given unordered answer pair, so memoize it.
@@ -159,8 +148,9 @@ public sealed class AzureOpenAIQuestionService : IQuestionService
                 new UserChatMessage(userPrompt)
             };
             var chatOptions = new ChatCompletionOptions { ResponseFormat = ChatResponseFormat.CreateJsonObjectFormat() };
-            // Non-null: callers (CheckAnswerSimilarityAsync) guard _chatClient.Value before invoking.
-            var completion = await _chatClient.Value!.CompleteChatAsync(messages, chatOptions, cancellationToken);
+            // Non-null: callers (CheckAnswerSimilarityAsync) guard the cached client before invoking.
+            var chat = _chatClientCache.Resolve(AIFoundryOptions.Games.CoupleQuiz)!;
+            var completion = await chat.CompleteChatAsync(messages, chatOptions, cancellationToken);
 
             var json = completion.Value.Content[0].Text;
             using var doc = JsonDocument.Parse(json);

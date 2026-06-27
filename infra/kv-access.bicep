@@ -14,7 +14,11 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-02-01' existing = {
 // prefix via `GetPropertiesOfSecrets`).
 resource kvSecretsAccessPolicy 'Microsoft.KeyVault/vaults/accessPolicies@2023-02-01' = {
   parent: keyVault
-  name: 'add-${uniqueString(principalId, keyVault.id)}'
+  // `name` must be the literal operation identifier ('add'|'remove'|'replace')
+  // per Microsoft.KeyVault/vaults/accessPolicies@2023-02-01. Interpolated
+  // names trigger BCP036. The `uniqueString` previously used here added no
+  // value — duplicate `add` operations on the same vault are merged by ARM.
+  name: 'add'
   properties: {
     accessPolicies: [
       {

@@ -14,7 +14,6 @@ param sharedAIFoundryName string = 'po-aiservices-shared'
 @description('The name of the resource group containing shared resources')
 param sharedResourceGroupName string = 'PoShared'
 
-var abbreviations = loadJsonContent('./abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, name, location))
 // Solution identity baked into names per Azure Cloud Adoption Framework guidance.
 // Names stay stable across SKU/region changes; only the suffix varies.
@@ -27,12 +26,9 @@ var storageTableDataContributorRoleId = subscriptionResourceId('Microsoft.Author
 // Storage Blob Data Contributor covers both the table writes (it includes table perms) and
 // the blob container CreateIfNotExists that DataProtection uses for key escrow.
 var storageBlobDataContributorRoleId = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
-// Built-in role: Cognitive Services User. Data-plane inference calls on the
-// AI Foundry hub require this; the control plane (deployments, model management)
-// remains on a separate Contributor role held by humans, not the Web App.
-var cognitiveServicesUserRoleId = subscriptionResourceId(
-  'Microsoft.Authorization/roleDefinitions',
-  'a97b65f3-24c7-47ba-9cc6-fcb3e1e0d1cf')
+// Cognitive Services User role id was moved to shared-rbac.bicep — that
+// assignment is cross-RG (PoMiniGames MI → PoShared AI Foundry hub) so it
+// can't be declared here at RG scope (BCP139).
 
 // Zero-waste compute: a single dedicated F1 (Free) Windows plan for this app.
 // F1 is the lowest tier (no idle cost); SKU/OS are expressed as tags, never
@@ -193,20 +189,6 @@ resource webAppBlobRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-
   properties: {
     principalId: webApp.identity.principalId
     roleDefinitionId: storageBlobDataContributorRoleId
-    principalType: 'ServicePrincipal'
-  }
-}
-
-// Web App MI → Cognitive Services User on the shared AI Foundry hub.
-// This is the ONLY AI resource assignment — every game routes through
-// this single hub. A future deployment that splits into multiple apps
-// reuses the same role assignment (no per-game sprawl).
-resource webAppAIFoundryRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(sharedAIFoundry.id, webApp.id, cognitiveServicesUserRoleId)
-  scope: sharedAIFoundry
-  properties: {
-    principalId: webApp.identity.principalId
-    roleDefinitionId: cognitiveServicesUserRoleId
     principalType: 'ServicePrincipal'
   }
 }

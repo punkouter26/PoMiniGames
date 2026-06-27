@@ -39,6 +39,23 @@ module kvAccess './kv-access.bicep' = {
   }
 }
 
+// Cross-RG role assignments live in their own module deployed at
+// subscription scope. resources.bicep is RG-scoped (PoMiniGames), so a
+// `scope: <PoShared-resource>` on a resource declaration there triggers
+// BCP139. The role-assignment module declares `targetScope='subscription'`
+// so it can grant on PoShared resources from a subscription-scoped
+// deployment while still being orchestrated by main.bicep (also
+// subscription-scoped). See shared-rbac.bicep header.
+module sharedRbac './shared-rbac.bicep' = {
+  name: 'shared-rbac'
+  scope: subscription()
+  params: {
+    sharedResourceGroupName: sharedResourceGroupName
+    sharedAIFoundryName: resources.outputs.AI_FOUNDRY_NAME
+    webAppPrincipalId: resources.outputs.WEB_APP_PRINCIPAL_ID
+  }
+}
+
 // Mirror the storage account name and AI Foundry endpoint into Key Vault so
 // the app reads them via the centralized PrefixKeyVaultSecretManager at
 // startup, and so secrets-rotation scripts have a single source of truth.

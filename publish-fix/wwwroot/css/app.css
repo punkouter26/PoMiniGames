@@ -1,0 +1,1376 @@
+/* ── Reset & Base ── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --color-bg: #0b0f19;
+  --color-surface: #111827;
+  --color-surface-hover: #1f2937;
+  --color-border: #1f2937;
+  --color-text-primary: #f1f5f9;
+  --color-text-secondary: #b0bec5;
+  --color-accent: #6366f1;
+  --color-warning: #f59e0b;
+  --color-error: #ef4444;
+
+  /* Typography (Suggestion #4) */
+  --font-display: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-body: system-ui, -apple-system, sans-serif;
+
+  /* Type scale */
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.25rem;
+  --text-xl: 1.5rem;
+  --text-2xl: 2rem;
+  --text-3xl: 3rem;
+
+  /* Translucent surfaces (single source of truth — replaces scattered raw rgba) */
+  --surface-1: rgba(17,24,39,0.55);   /* low-emphasis panels */
+  --surface-2: rgba(17,24,39,0.8);    /* tiles / cards */
+  --surface-3: rgba(15,23,42,0.6);    /* nested cards */
+  --surface-bar: rgba(17,24,39,0.85); /* sticky chrome (top bar / demo bar) */
+  --surface-raised: rgba(30,41,59,0.7);
+
+  /* Radius scale (Design Token Unification) */
+  --radius-sm: 0.5rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.25rem;
+  --radius-pill: 9999px;
+
+  /* Elevation scale */
+  --elevation-1: 0 4px 20px rgba(0,0,0,0.3);
+  --elevation-2: 0 8px 30px rgba(99,102,241,0.15);
+  --elevation-3: 0 20px 60px rgba(0,0,0,0.35);
+
+  /* Spacing scale (extended — §3 design-token unification) */
+  --space-0: 0;
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 2.5rem;
+  --space-8: 3rem;
+
+  /* Z-index scale (single source of truth — replaces scattered raw z-index values) */
+  --z-base: 1;
+  --z-sticky: 50;
+  --z-dropdown: 100;
+  --z-overlay: 500;
+  --z-modal: 1000;
+  --z-banner: 2000;
+  --z-toast: 3000;
+
+  /* Glassmorphism primitives (§3 — one source of truth for translucent chrome) */
+  --glass-1: blur(8px) saturate(140%);
+  --glass-2: blur(12px) saturate(160%);
+  --glass-3: blur(20px) saturate(180%);
+  --glass-tint: rgba(15, 23, 42, 0.6);
+
+  /* Motion tokens (paired with the prefers-reduced-motion guard below) */
+  --dur-fast: 0.15s;
+  --dur-base: 0.25s;
+  --dur-slow: 0.4s;
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+
+  /* Toast colors */
+  --toast-info-bg: #1e3a5f;
+  --toast-info-border: #3b82f6;
+  --toast-info-text: #bfdbfe;
+  --toast-error-bg: #450a0a;
+  --toast-error-border: #ef4444;
+  --toast-error-text: #fecaca;
+  --toast-success-bg: #052e16;
+  --toast-success-border: #22c55e;
+  --toast-success-text: #bbf7d0;
+  --toast-warning-bg: #451a03;
+  --toast-warning-border: #f59e0b;
+  --toast-warning-text: #fde68a;
+}
+
+html, body, #app {
+  height: 100%;
+  background: var(--color-bg);
+  color: var(--color-text-primary);
+}
+
+/* §7 Cross-document navigation transition — uses the browser's native
+   View Transitions API where supported (Chrome/Edge 111+, Safari TP) for a
+   zero-JS page-change animation. Falls back to the .gl-page-enter keyframe
+   in MainLayout.razor.css on browsers that don't support it. */
+@view-transition {
+  navigation: auto;
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: var(--dur-fast);
+  animation-timing-function: var(--ease-standard);
+}
+
+body {
+  font-family: var(--font-body);
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-display);
+}
+
+#blazor-error-ui {
+  display: none;
+  position: fixed;
+  bottom: 1rem;
+  right: 1rem;
+  background: #7f1d1d;
+  color: #fca5a5;
+  border: 1px solid #ef4444;
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  font-size: 0.875rem;
+  z-index: 9999;
+}
+#blazor-error-ui .reload { color: #fca5a5; text-decoration: underline; margin-left: 0.5rem; }
+#blazor-error-ui .dismiss { margin-left: 0.75rem; cursor: pointer; }
+
+a { color: var(--color-accent); text-decoration: none; }
+button { cursor: pointer; font-family: var(--font-body); }
+
+/* ── Skeleton Loading (Suggestion #6) ── */
+.skeleton {
+  background: linear-gradient(90deg, var(--color-surface) 25%, var(--color-surface-hover) 50%, var(--color-surface) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 0.5rem;
+}
+.skeleton--card { height: 200px; width: 100%; }
+.skeleton--text { height: 1rem; width: 60%; margin-bottom: 0.5rem; }
+.skeleton--text-short { height: 0.8rem; width: 40%; }
+.skeleton--btn { height: 3rem; width: 160px; border-radius: 1rem; }
+.skeleton--search { height: 2.5rem; width: 100%; border-radius: 0.5rem; }
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ── View Transitions (Suggestion #5) ── */
+::view-transition-old(root) {
+  animation: viewFadeOut 0.3s ease-out;
+}
+::view-transition-new(root) {
+  animation: viewFadeIn 0.3s ease-in;
+}
+
+@keyframes viewFadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+@keyframes viewFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* ── Layout ──
+   The app shell (.gl-page / .gl-mock-banner / .gl-top-bar* / .gl-brand* /
+   .gl-breadcrumb* / .gl-auth* / .gl-content) now lives in the scoped
+   MainLayout.razor.css — those classes only ever appear in MainLayout markup,
+   so scoping them removes them from the global style-recalc surface. */
+
+/* ── Home Page (Suggestion #1: Morphing Mesh)── */
+.home-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: calc(100vh - 56px);
+  position: relative;
+  overflow: hidden;
+  padding: 2rem;
+}
+
+.home-mesh {
+  position: absolute;
+  inset: -50%;
+  background:
+    radial-gradient(ellipse at 20% 50%, rgba(99,102,241,0.15) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 20%, rgba(236,72,153,0.12) 0%, transparent 50%),
+    radial-gradient(ellipse at 40% 80%, rgba(6,182,212,0.1) 0%, transparent 50%),
+    radial-gradient(ellipse at 60% 30%, rgba(245,158,11,0.08) 0%, transparent 50%);
+  animation: meshShift 20s ease-in-out infinite alternate;
+  pointer-events: none;
+  /* Promote to its own GPU layer so the scale/rotate never repaints siblings. */
+  will-change: transform;
+  transform: translateZ(0);
+}
+
+@keyframes meshShift {
+  0% { transform: scale(1) rotate(0deg); }
+  50% { transform: scale(1.1) rotate(2deg); }
+  100% { transform: scale(1) rotate(-1deg); }
+}
+
+.home-title {
+  font-size: var(--text-3xl);
+  font-weight: 800;
+  margin-bottom: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  z-index: 1;
+}
+
+.home-title-icon {
+  font-size: 2.5rem;
+  filter: drop-shadow(0 0 20px rgba(99,102,241,0.4));
+}
+
+.home-subtitle {
+  color: var(--color-text-secondary);
+  font-size: 1.15rem;
+  margin-bottom: 2.5rem;
+  z-index: 1;
+}
+
+.home-modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  justify-content: center;
+  z-index: 1;
+}
+
+.home-mode-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1.5rem 2rem;
+  border: 1px solid var(--color-border);
+  border-radius: 1rem;
+  background: rgba(17,24,39,0.8);
+  color: var(--color-text-primary);
+  min-width: 160px;
+  transition: all 0.25s;
+  backdrop-filter: blur(8px);
+  position: relative;
+  overflow: hidden;
+}
+.home-mode-btn::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  background: linear-gradient(135deg, rgba(99,102,241,0.1), transparent);
+  transition: opacity 0.25s;
+}
+.home-mode-btn:hover {
+  border-color: var(--color-accent);
+  background: rgba(30,41,59,0.8);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 30px rgba(99,102,241,0.15);
+}
+.home-mode-btn:hover::before {
+  opacity: 1;
+}
+
+.home-mode-btn--1p::before { background: linear-gradient(135deg, rgba(99,102,241,0.12), transparent); }
+.home-mode-btn--2p::before { background: linear-gradient(135deg, rgba(34,197,94,0.12), transparent); }
+.home-mode-btn--multi::before { background: linear-gradient(135deg, rgba(236,72,153,0.12), transparent); }
+.home-mode-btn--demo::before { background: linear-gradient(135deg, rgba(245,158,11,0.12), transparent); }
+.home-mode-btn--profile::before { background: linear-gradient(135deg, rgba(6,182,212,0.12), transparent); }
+
+.home-mode-icon { font-size: 2rem; }
+.home-mode-label { font-size: 0.95rem; font-weight: 600; }
+
+/* Active state for the Demo tile while the kiosk auto-cycle is running (shows "Stop"). */
+.home-mode-btn--active {
+  border-color: #f59e0b;
+  background: rgba(245,158,11,0.14);
+  box-shadow: 0 0 0 1px rgba(245,158,11,0.35), 0 8px 30px rgba(245,158,11,0.18);
+}
+.home-mode-btn--active:hover {
+  border-color: #fbbf24;
+  background: rgba(245,158,11,0.2);
+}
+.home-mode-btn--active .home-mode-icon,
+.home-mode-btn--active .home-mode-label { color: #fcd34d; }
+
+/* ── Login gate ── */
+.login-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+  padding: 2rem;
+}
+.login-mesh {
+  position: absolute;
+  inset: -50%;
+  background:
+    radial-gradient(ellipse at 20% 50%, rgba(99,102,241,0.15) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 20%, rgba(236,72,153,0.12) 0%, transparent 50%),
+    radial-gradient(ellipse at 40% 80%, rgba(6,182,212,0.1) 0%, transparent 50%);
+  pointer-events: none;
+}
+.login-card {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 380px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 2.25rem 2rem;
+  border: 1px solid var(--color-border);
+  border-radius: 1.25rem;
+  background: rgba(17,24,39,0.82);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 20px 60px rgba(0,0,0,0.35);
+  text-align: center;
+}
+.login-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--color-text-primary);
+}
+.login-sub {
+  color: var(--color-text-secondary);
+  font-size: 0.95rem;
+  margin: 0 0 0.5rem 0;
+}
+.login-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  padding: 0.8rem 1.25rem;
+  border-radius: 0.7rem;
+  border: 1px solid var(--color-border);
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.18s;
+}
+.login-btn:hover:not(:disabled) { transform: translateY(-1px); }
+.login-btn:disabled { opacity: 0.6; cursor: default; }
+.login-btn--ms {
+  background: #ffffff;
+  color: #1f2937;
+  border-color: #ffffff;
+}
+.login-btn--ms:hover:not(:disabled) { background: #f3f4f6; }
+.login-btn--guest {
+  background: rgba(30,41,59,0.8);
+  color: var(--color-text-primary);
+}
+.login-btn--guest:hover:not(:disabled) { border-color: var(--color-accent); background: rgba(51,65,85,0.9); }
+.login-error { color: #fca5a5; font-size: 0.82rem; margin: 0.25rem 0 0 0; }
+.login-env-note { color: var(--color-text-secondary); font-size: 0.72rem; margin: 0.5rem 0 0 0; }
+.login-spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid rgba(255,255,255,0.15);
+  border-top-color: var(--color-accent);
+  border-radius: 50%;
+  animation: login-spin 0.8s linear infinite;
+}
+@keyframes login-spin { to { transform: rotate(360deg); } }
+
+/* ── Home sections (mode button + its game list) ── */
+.home-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  width: 100%;
+  max-width: 920px;
+  z-index: 1;
+}
+.home-section {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: 1.25rem;
+  align-items: center;
+  padding: 1rem;
+  border: 1px solid var(--color-border);
+  border-radius: 1rem;
+  background: rgba(17,24,39,0.55);
+  backdrop-filter: blur(8px);
+}
+.home-section .home-mode-btn { width: 100%; min-width: 0; cursor: pointer; }
+/* Section-header variant: the mode tiles are now labels, not links (the game
+   chips beside them do the navigating), so suppress the interactive affordances. */
+.home-mode-btn--static { cursor: default; }
+.home-mode-btn--static:hover {
+  transform: none;
+  border-color: var(--color-border);
+  background: rgba(17,24,39,0.8);
+  box-shadow: none;
+}
+.home-mode-btn--static:hover::before { opacity: 0; }
+.home-section-games {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-content: center;
+}
+.home-game-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 0.8rem;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: rgba(30,41,59,0.7);
+  color: var(--color-text-primary);
+  font-size: 0.85rem;
+  font-weight: 500;
+  text-decoration: none;
+  transition: all 0.18s;
+}
+.home-game-chip:hover {
+  border-color: var(--color-accent);
+  background: rgba(51,65,85,0.9);
+  transform: translateY(-1px);
+}
+.home-game-chip-icon { font-size: 1rem; line-height: 1; }
+.home-stats-cta {
+  display: flex;
+  justify-content: center;
+  margin-top: 1.75rem;
+  z-index: 1;
+}
+
+/* §10 of QA report — on mobile, pin "My Stats" to the bottom of the viewport so
+   the CTA is always reachable inside thumb range. The 56 px bottom inset leaves
+   room for iOS Safari's address bar. */
+@media (max-width: 640px) {
+  .home-section { grid-template-columns: 1fr; gap: 0.85rem; }
+  .home-stats-cta {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: max(env(safe-area-inset-bottom, 0px), 8px);
+    margin: 0;
+    padding: 0.5rem 0.75rem;
+    background: linear-gradient(180deg, rgba(11,15,25,0) 0%, rgba(11,15,25,0.85) 40%, rgba(11,15,25,0.95) 100%);
+    z-index: 10;
+  }
+  .home-stats-cta .home-mode-btn {
+    width: 100%;
+    max-width: 360px;
+  }
+  /* Reserve space at the bottom of the scroll container so the fixed CTA never
+     covers the last row of game chips. */
+  .home-container { padding-bottom: 6rem; }
+  /* Honour the user's OS-level reduce-motion preference. */
+  @media (prefers-reduced-motion: reduce) {
+    .home-score-card { transition: none; }
+  }
+}
+
+/* ── Single Player Page ── */
+.sp-page {
+  padding: 2rem 1.5rem;
+  max-width: 1200px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.sp-card {
+  background: rgba(17,24,39,0.6);
+  border: 1px solid var(--color-border);
+  border-radius: 1rem;
+  padding: 2rem;
+  backdrop-filter: blur(12px);
+}
+
+.sp-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+
+.sp-back {
+  background: transparent;
+  border: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+  padding: 0.4rem 0.85rem;
+  border-radius: 9999px;
+  font-size: 0.8rem;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  transition: all 0.2s;
+}
+.sp-back:hover { border-color: var(--color-text-secondary); color: var(--color-text-primary); }
+
+.sp-title {
+  font-size: var(--text-xl);
+  font-weight: 700;
+  font-family: var(--font-display);
+}
+
+.sp-subtitle {
+  color: var(--color-text-secondary);
+  font-size: 0.9rem;
+  margin-bottom: 1.5rem;
+}
+
+.sp-auth-banner-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.sp-btn-primary {
+  background: var(--color-accent);
+  border: none;
+  color: #fff;
+  padding: 0.45rem 1.2rem;
+  border-radius: 9999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  transition: filter 0.2s, transform 0.15s;
+}
+.sp-btn-primary:hover {
+  filter: brightness(1.15);
+  transform: translateY(-1px);
+}
+
+.sp-btn-secondary {
+  background: transparent;
+  border: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+  padding: 0.45rem 1.2rem;
+  border-radius: 9999px;
+  font-size: 0.8rem;
+  transition: all 0.2s;
+}
+.sp-btn-secondary:hover { border-color: var(--color-text-secondary); color: var(--color-text-primary); }
+
+.sp-offline-banner {
+  background: #78350f;
+  border: 1px solid #b45309;
+  color: #fde68a;
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  margin-bottom: 1rem;
+  font-size: 0.8rem;
+}
+
+/* Search (Suggestion #7 enhancements) */
+.sp-search-wrap {
+  position: relative;
+  margin-bottom: 1.5rem;
+}
+.sp-search-icon {
+  position: absolute;
+  left: 0.75rem;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.9rem;
+  z-index: 1;
+}
+.sp-search {
+  width: 100%;
+  background: rgba(15,23,42,0.8);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+  padding: 0.6rem 2.5rem 0.6rem 2.5rem;
+  border-radius: 0.5rem;
+  font-size: 0.9rem;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  font-family: var(--font-body);
+}
+.sp-search:focus {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px rgba(99,102,241,0.15);
+}
+
+.sp-search-clear {
+  position: absolute;
+  right: 0.5rem;
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent;
+  border: none;
+  color: var(--color-text-secondary);
+  font-size: 1.1rem;
+  padding: 0.25rem;
+  border-radius: 50%;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.sp-search-wrap.has-text .sp-search-clear {
+  opacity: 1;
+}
+.sp-search-clear:hover { color: var(--color-text-primary); }
+
+.sp-search-result-count {
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+  margin-top: -1rem;
+  margin-bottom: 1rem;
+  text-align: right;
+}
+
+/* ── Game Card Grid (Suggestion #3: 3D Tilt) ── */
+.sp-game-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1rem;
+}
+
+.sp-game-card {
+  display: grid;
+  grid-template-columns: 60px 1fr;
+  gap: 1rem;
+  align-items: center;
+  min-height: 120px;
+  background: rgba(15,23,42,0.6);
+  border: 1px solid var(--color-border);
+  border-radius: 0.75rem;
+  overflow: hidden;
+  text-align: left;
+  color: var(--color-text-primary);
+  transition: all 0.25s;
+  animation: fadeInUp 0.4s ease-out both;
+  perspective: 800px;
+  transform-style: preserve-3d;
+  position: relative;
+}
+.sp-game-card:hover {
+  border-color: var(--accent, var(--color-accent));
+  transform: var(--tilt, perspective(800px) rotateX(2deg) rotateY(0deg)) translateY(-4px);
+  box-shadow: 0 8px 30px var(--accent-glow, rgba(99,102,241,0.2));
+}
+
+.sp-game-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at var(--ripple-x, 50%) var(--ripple-y, 50%), rgba(255,255,255,0.2) 0%, transparent 70%);
+  opacity: 0;
+  transition: opacity 0.3s;
+  pointer-events: none;
+}
+.sp-game-card:active::after {
+  opacity: 1;
+}
+
+.sp-game-card--loading {
+  opacity: 0.6;
+  cursor: wait;
+  pointer-events: none;
+}
+
+.sp-game-card-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.75rem;
+  min-height: 60px;
+  position: relative;
+}
+.sp-game-card-preview::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 100%;
+  background: linear-gradient(135deg, var(--accent, var(--color-accent)), transparent 70%);
+  opacity: 0.1;
+  border-radius: 0;
+  transition: opacity 0.25s;
+}
+.sp-game-card:hover .sp-game-card-preview::before {
+  opacity: 0.2;
+}
+
+.sp-game-icon { font-size: 2.5rem; display: flex; gap: 0.3rem; position: relative; z-index: 1; }
+
+.sp-game-card-body {
+  padding: 1rem 1.5rem 1.5rem;
+  position: relative;
+  z-index: 1;
+}
+.sp-game-card-body h2 {
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin-bottom: 0.35rem;
+  font-family: var(--font-display);
+}
+.sp-game-card-body p {
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+  line-height: 1.4;
+}
+
+.sp-game-modes {
+  display: flex;
+  gap: 0.35rem;
+  margin-top: 0.75rem;
+}
+
+.sp-mode-pill {
+  font-size: 0.68rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 9999px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.sp-mode-pill--1p { background: rgba(99,102,241,0.2); color: #a5b4fc; }
+.sp-mode-pill--2p { background: rgba(34,197,94,0.2); color: #86efac; }
+.sp-mode-pill--demo { background: rgba(245,158,11,0.2); color: #fcd34d; }
+.sp-mode-pill--multi { background: rgba(236,72,153,0.2); color: #f9a8d4; }
+
+/* ── Empty State (Suggestion #9) ── */
+.sp-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  padding: 3rem 1rem;
+  text-align: center;
+}
+
+.sp-empty-svg {
+  width: 120px;
+  height: 120px;
+  opacity: 0.6;
+}
+
+.sp-empty-text {
+  color: var(--color-text-secondary);
+  font-size: 0.9rem;
+  max-width: 300px;
+}
+
+.sp-empty-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+/* ── High Scores (Suggestion #9: empty states) ── */
+.home-highscores {
+  margin-top: 2rem;
+  background: rgba(15,23,42,0.4);
+  border: 1px solid var(--color-border);
+  border-radius: 0.75rem;
+  padding: 1.5rem;
+}
+
+.home-highscores-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
+.home-highscores-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--font-display);
+}
+
+.home-highscores-filter-toggle {
+  background: transparent;
+  border: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+  padding: 0.3rem 0.75rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+}
+.home-highscores-filter-toggle:hover { border-color: var(--color-text-secondary); }
+
+.home-highscores-tabs {
+  display: flex;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+}
+
+.home-highscores-tab {
+  background: transparent;
+  border: none;
+  color: var(--color-text-secondary);
+  font-size: 0.75rem;
+  padding: 0.3rem 0.75rem;
+  border-radius: 0.35rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.home-highscores-tab:hover { color: var(--color-text-primary); }
+.home-highscores-tab.active { background: rgba(99,102,241,0.15); color: var(--color-accent); }
+
+.home-highscores-diff-tabs {
+  display: flex;
+  gap: 0.25rem;
+  margin-bottom: 0.75rem;
+}
+
+.home-highscores-diff-tab {
+  background: transparent;
+  border: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+  font-size: 0.7rem;
+  padding: 0.2rem 0.65rem;
+  border-radius: 9999px;
+  transition: all 0.2s;
+}
+.home-highscores-diff-tab.active { background: rgba(99,102,241,0.15); border-color: var(--color-accent); color: var(--color-accent); }
+.home-highscores-diff-tab:hover { border-color: var(--color-text-secondary); color: var(--color-text-primary); }
+
+.home-highscores-panel { min-height: 200px; }
+
+.home-highscores-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  color: var(--color-text-secondary);
+  text-align: center;
+  padding: 3rem 1rem;
+  font-size: 0.85rem;
+}
+
+.home-highscores-empty-icon {
+  width: 80px;
+  height: 80px;
+  opacity: 0.5;
+}
+.home-highscores-empty-link {
+  margin-top: var(--space-2);
+  font-size: var(--text-sm);
+  opacity: 0.8;
+}
+
+.home-highscores-list {
+  list-style: none;
+}
+
+.home-highscores-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.4rem 0;
+}
+
+.home-highscores-rank {
+  width: 36px;
+  text-align: right;
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+  flex-shrink: 0;
+}
+
+.home-highscores-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.home-highscores-name {
+  font-size: 0.85rem;
+  display: block;
+  margin-bottom: 0.2rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-highscores-bar-wrap {
+  height: 4px;
+  background: rgba(255,255,255,0.06);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.home-highscores-bar {
+  height: 100%;
+  background: var(--color-accent);
+  border-radius: 2px;
+  width: var(--bar-w, 0%);
+  transition: width 0.6s ease var(--bar-delay, 0ms);
+}
+
+.home-highscores-metric {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  width: 110px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.home-highscores-row--rank1 .home-highscores-name { color: #f59e0b; }
+.home-highscores-row--rank2 .home-highscores-name { color: #94a3b8; }
+.home-highscores-row--rank3 .home-highscores-name { color: #cd853f; }
+
+/* ── Router fallbacks (App.razor: NotAuthorized / NotFound) ── */
+.app-fallback {
+  max-width: 480px;
+  margin: 4rem auto;
+  text-align: center;
+  padding: var(--space-5);
+  border-radius: var(--radius-lg);
+  background: #1d2230;
+  color: #cdd5e0;
+}
+.app-fallback h1 { margin: 0 0 var(--space-2) 0; }
+.app-fallback p { margin: 0 0 var(--space-4) 0; line-height: 1.45; }
+.app-fallback-link { color: #7eb6ff; text-decoration: none; }
+.app-fallback--plain {
+  color: #cdd5e0;
+  text-align: center;
+  padding: 3rem;
+}
+
+/* ── Toast ── */
+.toast-stack {
+  position: fixed;
+  bottom: 1.5rem;
+  right: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  z-index: 9999;
+  max-width: 380px;
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  font-size: 0.85rem;
+  animation: slideInRight 0.3s ease-out;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+}
+.toast--info { background: var(--toast-info-bg); border: 1px solid var(--toast-info-border); color: var(--toast-info-text); }
+.toast--error { background: var(--toast-error-bg); border: 1px solid var(--toast-error-border); color: var(--toast-error-text); }
+.toast--success { background: var(--toast-success-bg); border: 1px solid var(--toast-success-border); color: var(--toast-success-text); }
+.toast--warning { background: var(--toast-warning-bg); border: 1px solid var(--toast-warning-border); color: var(--toast-warning-text); }
+
+.toast-msg { flex: 1; }
+.toast-close {
+  background: transparent;
+  border: none;
+  color: inherit;
+  opacity: 0.6;
+  font-size: 1.1rem;
+  line-height: 1;
+}
+.toast-close:hover { opacity: 1; }
+
+@keyframes slideInRight {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+/* ── Demo Bar ── */
+.demo-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.5rem 1.5rem;
+  background: rgba(17,24,39,0.95);
+  border-top: 1px solid var(--color-border);
+  backdrop-filter: blur(8px);
+  font-size: 0.8rem;
+  z-index: 100;
+}
+
+.demo-bar__progress {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 2px;
+  background: var(--color-accent);
+  transition: width 1s linear;
+}
+
+.demo-bar__label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--color-text-secondary);
+}
+
+.demo-bar__dot {
+  width: 6px;
+  height: 6px;
+  background: var(--color-accent);
+  border-radius: 50%;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.demo-bar__next { color: var(--color-text-secondary); font-size: 0.7rem; }
+
+.demo-bar__stop {
+  margin-left: auto;
+  background: transparent;
+  border: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+  padding: 0.2rem 0.65rem;
+  border-radius: 9999px;
+  font-size: 0.7rem;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+.demo-bar__stop:hover { border-color: #ef4444; color: #ef4444; }
+
+/* ── Animations ── */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Responsive ── */
+@media (max-width: 640px) {
+  /* Reclaim the fold: shrink the decorative hero so live scores sit above it. */
+  .home-title { font-size: 1.25rem; margin-bottom: 0.1rem; }
+  .home-title-icon { display: none; }
+  .home-subtitle { display: none; }
+  .home-modes { flex-direction: column; width: 100%; }
+  .home-mode-btn { width: 100%; padding: 1rem 1.5rem; min-height: 44px; }
+  .sp-game-grid { grid-template-columns: 1fr; }
+  .sp-page { padding: 1rem; }
+  .sp-card { padding: 1.25rem; }
+
+  /* Scores carousel goes edge-to-edge and left-aligned for thumb scrolling. */
+  .home-scores-preview { margin-top: 0.5rem; }
+  .home-scores-carousel { justify-content: flex-start; }
+  .home-score-card { flex: 0 0 78%; }
+}
+
+/* (Removed: dead .gl-bottom-nav block — the bottom nav was deleted long ago and
+   these rules matched nothing. The live mobile top-bar tweaks moved to the
+   scoped MainLayout.razor.css.) */
+
+/* ── Home Scores Preview Carousel (UI 2) — now score-first, leads the page ── */
+.home-scores-preview {
+  margin-top: 1rem;
+  z-index: 1;
+  width: 100%;
+  max-width: 920px;
+  margin-left: auto;
+  margin-right: auto;
+}
+.home-scores-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+.home-scores-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.home-scores-all {
+  font-size: 0.8rem;
+  color: var(--color-accent);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.home-scores-all:hover { text-decoration: underline; }
+.home-scores-carousel {
+  display: flex;
+  gap: 1rem;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 0.5rem;
+  scrollbar-width: none;
+  justify-content: center;
+}
+.home-scores-carousel::-webkit-scrollbar {
+  display: none;
+}
+.home-scores-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 2rem 1rem;
+  color: var(--color-text-secondary);
+  font-size: 0.85rem;
+  text-align: center;
+  width: 100%;
+}
+.home-scores-empty-icon { opacity: 0.3; }
+.home-scores-empty-cta {
+  background: transparent;
+  border: 1px solid var(--color-border);
+  color: var(--color-accent);
+  padding: 0.35rem 0.9rem;
+  border-radius: 9999px;
+  font-size: 0.8rem;
+  transition: all 0.2s;
+}
+.home-scores-empty-cta:hover {
+  border-color: var(--color-accent);
+  background: rgba(99, 102, 241, 0.1);
+}
+.home-score-card {
+  flex: 0 0 250px;
+  scroll-snap-align: start;
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid var(--color-border);
+  border-radius: 0.75rem;
+  padding: 1rem;
+  cursor: pointer;
+  transition: all 0.25s;
+  min-height: 44px;
+}
+.home-score-card:hover {
+  border-color: var(--color-accent);
+  transform: translateY(-2px);
+}
+.home-score-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+.home-score-card h3 {
+  font-size: 0.9rem;
+  font-weight: 600;
+  font-family: var(--font-display);
+}
+.home-score-unit {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+.home-score-mini-list {
+  list-style: none;
+  font-size: 0.78rem;
+  color: var(--color-text-secondary);
+}
+.home-score-mini-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.2rem 0;
+}
+.home-score-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.home-score-val {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  white-space: nowrap;
+}
+
+/* ── Home Demo Preview (UI 3) ── */
+.home-demo-section {
+  margin-top: 2rem;
+  z-index: 1;
+  width: 100%;
+  max-width: 800px;
+}
+.home-demo-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.home-demo-viewport {
+  position: relative;
+  width: 100%;
+  padding-top: 56.25%;
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid var(--color-border);
+  border-radius: 0.75rem;
+  overflow: hidden;
+}
+.home-demo-viewport iframe {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  border: none;
+}
+.home-demo-info {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 0.75rem;
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+}
+.home-demo-btn {
+  background: var(--color-accent);
+  border: none;
+  color: #fff;
+  padding: 0.45rem 1.2rem;
+  border-radius: 9999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: filter 0.2s;
+  min-height: 44px;
+}
+.home-demo-btn:hover {
+  filter: brightness(1.15);
+}
+
+/* ── Quick Play Button (UI 2 enhancement) ── */
+.home-quick-play {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.5rem;
+  background: linear-gradient(135deg, var(--color-accent), rgba(99, 102, 241, 0.7));
+  border: none;
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 600;
+  border-radius: 9999px;
+  cursor: pointer;
+  transition: all 0.25s;
+  z-index: 1;
+  margin-bottom: 1rem;
+  min-height: 44px;
+}
+.home-quick-play:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 30px rgba(99, 102, 241, 0.3);
+}
+
+/* ── Enhanced Game Card Touch Feedback (UI 4) ── */
+@media (max-width: 768px) {
+  .sp-game-card {
+    min-height: 80px;
+    padding: 1rem;
+    grid-template-columns: 50px 1fr;
+    gap: 0.75rem;
+  }
+  .sp-game-card h2 {
+    font-size: 1rem;
+  }
+  .sp-mode-pill {
+    font-size: 0.7rem;
+    padding: 0.2rem 0.5rem;
+  }
+  .sp-game-card,
+  .sp-back,
+  .sp-btn-primary,
+  .sp-btn-secondary {
+    min-height: 44px;
+  }
+}
+
+/* ── Mobile-Optimized Gradient Mesh (UI 5) ── */
+@media (max-width: 768px) {
+  /* The animated full-viewport mesh is the most expensive thing on a phone GPU,
+     especially under all the translucent blurred panels. Freeze it (static
+     gradient only) and strip the stacked backdrop-filters on the many small
+     surfaces — keep blur only on the sticky top bar. (GPU-Accelerated audit) */
+  .home-mesh {
+    animation: none;
+    opacity: 0.6;
+  }
+  .home-mode-btn,
+  .home-section,
+  .sp-card,
+  .login-card,
+  .toast,
+  .demo-bar {
+    backdrop-filter: none;
+  }
+}
+
+/* ── Thumb-Friendly Mode Toggle (UI 4 enhancement) ── */
+@media (max-width: 768px) {
+  .sp-auth-banner-actions {
+    position: fixed;
+    bottom: 70px;
+    left: 0;
+    right: 0;
+    display: flex;
+    background: rgba(17, 24, 39, 0.95);
+    backdrop-filter: blur(12px);
+    padding: 0.5rem;
+    z-index: 99;
+    justify-content: center;
+    gap: 0.5rem;
+    border-top: 1px solid var(--color-border);
+  }
+  .sp-auth-banner-actions .sp-btn-primary,
+  .sp-auth-banner-actions .sp-btn-secondary {
+    flex: 1;
+    max-width: 150px;
+    justify-content: center;
+    display: flex;
+    align-items: center;
+    min-height: 44px;
+  }
+  .sp-page {
+    padding-bottom: 120px;
+  }
+}
+
+/* ── Accessibility: honor reduced-motion (Zero-Waste Motion) ──
+   One global guard so every animation/transition/scroll respects the OS
+   setting. Individual components no longer need their own opt-out. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  .home-mesh,
+  .login-mesh,
+  .demo-bar__dot,
+  .skeleton { animation: none !important; }
+}

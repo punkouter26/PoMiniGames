@@ -22,14 +22,23 @@ public sealed class MicrosoftAuthOptions
     public string[] AllowedTenantIds { get; init; } = Array.Empty<string>();
 
     /// <summary>
-    /// Explicit dev override. Setting <c>PoMiniGames:MicrosoftAuth:Enabled=true</c> in
-    /// <c>appsettings.Development.json</c> (or user-secrets) is enough to surface the
-    /// Microsoft sign-in button in dev — even before the App Registration client IDs
-    /// are wired. Real sign-in still requires <see cref="ClientId"/> + <see cref="ApiClientId"/>
-    /// to be non-empty, but this lets a dev confirm the wiring is live before the
-    /// Entra app is fully provisioned.
+    /// Controls whether the Microsoft sign-in button surfaces in the SPA. The legacy
+    /// intent was an opt-in flag (set <c>Enabled=true</c> in dev even before the App
+    /// Registration is wired). The 2026-06-26 prod regression taught us that this
+    /// flag is brittle in production: a deployment with <see cref="ClientId"/> +
+    /// <see cref="ApiClientId"/> correctly populated must NOT require a separate
+    /// <c>Enabled=true</c> secret in KV to function — otherwise the user sees the
+    /// "Authentication is not configured" screen even though every required value is
+    /// present.
+    /// <para>
+    /// Resolution: when the option is deserialised from configuration, the
+    /// <see cref="MicrosoftAuthOptionsBinder"/> post-processor treats the field as
+    /// <c>true</c> when <see cref="FullyConfigured"/> is true AND no explicit
+    /// <c>Enabled</c> value was supplied. An explicit <c>Enabled=false</c> still wins
+    /// (e.g. for a deliberate kill-switch during an outage).
+    /// </para>
     /// </summary>
-    public bool Enabled { get; init; }
+    public bool Enabled { get; set; }
 
     /// <summary>
     /// Returns <c>true</c> when sign-in can actually complete (the App Registration

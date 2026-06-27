@@ -1,0 +1,95 @@
+/*
+   PoJoker "medieval-dark" theme. Every rule is scoped under .pojoker-root so it cannot
+   leak into the rest of the PoMiniGames app. The standalone PoJoker app defined these as
+   global :root custom properties; here they live on .pojoker-root and inherit down to
+   every child component's isolated CSS (custom properties inherit through the DOM normally,
+   independent of Blazor's scope attributes). Loaded via index.html.
+*/
+.pojoker-root {
+    /* Backgrounds */
+    --bg-primary: #1a1a2e;
+    --bg-secondary: #16213e;
+    --card-bg: #1f1f38;
+
+    /* Accents */
+    --color-accent-gold: #b8956a;
+    --gold-accent: #d4af37;
+    --jester-purple: #4a0080;
+
+    /* Text */
+    --text-primary: #e8e8e8;
+    --text-secondary: #b8b8b8;
+
+    /* Status */
+    --success-color: #2e7d32;
+    --error-color: #c62828;
+
+    /* Typography */
+    --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Helvetica Neue', sans-serif;
+
+    display: block;
+    min-height: 100%;
+    padding: 1rem;
+    background: radial-gradient(circle at 50% 0%, #20203c 0%, var(--bg-primary) 60%);
+    color: var(--text-primary);
+    font-family: var(--font-body);
+}
+
+.pojoker-root .pojoker-toolbar {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 0.5rem;
+}
+
+.pojoker-root .pojoker-link {
+    display: inline-block;
+    color: var(--gold-accent);
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 0.9rem;
+    padding: 0.35rem 0.8rem;
+    border: 1px solid rgba(212, 175, 55, 0.4);
+    border-radius: 8px;
+    transition: background 150ms ease;
+}
+
+.pojoker-root .pojoker-link:hover {
+    background: rgba(212, 175, 55, 0.12);
+}
+
+/* ── Leaderboard page ─────────────────────────────────────────────── */
+.pojoker-root .leaderboard-header {
+    text-align: center;
+    margin-bottom: 1rem;
+}
+
+.pojoker-root .leaderboard-header h1 {
+    color: var(--gold-accent);
+    margin-bottom: 0.25rem;
+}
+
+.pojoker-root .leaderboard-header .subtitle {
+    color: var(--text-secondary);
+}
+
+.pojoker-root .leaderboard-controls {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 1rem;
+}
+
+.pojoker-root .leaderboard-container {
+    max-width: 900px;
+    margin: 0 auto;
+}
+
+.pojoker-root .loading-state,
+.pojoker-root .empty-state {
+    text-align: center;
+    padding: 2rem;
+    color: var(--text-secondary);
+}
+
+.pojoker-root .empty-state .subtitle {
+    margin-bottom: 1rem;
+}

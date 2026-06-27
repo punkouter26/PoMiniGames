@@ -1,9 +1,10 @@
 using PoMiniGames.Features.PoRunner;   // GameOptions + SignalR session types (registered below)
 using PoMiniGames.Features.PoSurvive;  // AddPoSurvive
-using PoMiniGames.Features.Auth;       // Source-generated AuthLog
+using PoMiniGames.Features.Auth;       // Source-generated AuthLog + MicrosoftAuthOptionsBinder
 using PoMiniGames.Application.Diagnostics;
 using PoMiniGames.Infrastructure;
 using PoMiniGames.Infrastructure.Services;
+using Microsoft.Extensions.Options;
 // Note: the full endpoint/hub route table is registered via app.MapPoMiniGamesEndpoints()
 // (EndpointRouteExtensions); per-slice types there are referenced in that file, not here.
 using Scalar.AspNetCore;
@@ -26,7 +27,18 @@ builder.Services.AddPoMiniGamesDataProtection(builder.Environment, storageAccoun
 builder.Services
     .Configure<PoMiniGames.Features.PoCoupleQuiz.CoupleQuizOptions>(
         builder.Configuration.GetSection(PoMiniGames.Features.PoCoupleQuiz.CoupleQuizOptions.SectionName))
-    .AddPoMiniGamesStorage(builder.Configuration)
+    // §2026-06-26 prod regression fix: MicrosoftAuthOptions.Enabled defaults to true
+    // whenever ClientId + ApiClientId are present, even without an explicit Enabled=true
+    // secret in KV. The post-configure binder only fires when Enabled is absent from
+    // configuration; explicit true/false in KV or env var still wins.
+    .AddOptions<PoMiniGames.Features.Auth.MicrosoftAuthOptions>()
+    .Bind(builder.Configuration.GetSection(PoMiniGames.Features.Auth.MicrosoftAuthOptions.SectionName));
+
+// Register the post-configure binder explicitly (it depends on IConfiguration).
+builder.Services.AddSingleton<MicrosoftAuthOptionsBinder>();
+builder.Services.AddSingleton<IPostConfigureOptions<PoMiniGames.Features.Auth.MicrosoftAuthOptions>>(
+    sp => sp.GetRequiredService<MicrosoftAuthOptionsBinder>());
+builder.Services.AddPoMiniGamesStorage(builder.Configuration)
     .AddPoMiniGamesAuth(builder.Environment, builder.Configuration)
     .AddPoMiniGamesGameServices()
     .AddPoMiniGamesRateLimiting()

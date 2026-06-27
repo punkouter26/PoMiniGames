@@ -24,6 +24,10 @@ concurrency:
 env:
   DOTNET_VERSION: '10.0.x'
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  # `az deployment sub what-if` requires --location (the deployment record
+  # region; *not* the resource region, which lives in main.parameters.json).
+  # Must also match infra/main.bicep targetScope='subscription'.
+  AZURE_LOCATION: 'westus2'
 
 jobs:
   build:
@@ -107,8 +111,20 @@ jobs:
     permissions:
       id-token: write
       contents: read
+    env:
+      # Override at job scope in case the workflow env is overridden by a
+      # caller (workflow_dispatch with custom inputs).
+      AZURE_LOCATION: 'westus2'
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Required for Bicep what-if: the deploy job otherwise only has the
+          # api-publish artifact and `infra/main.bicep` doesn't exist on the
+          # runner (run 28288927457 failed with ENOENT on it).
+          fetch-depth: 0
+
       - name: Download publish artifact
         uses: actions/download-artifact@v4
         with:

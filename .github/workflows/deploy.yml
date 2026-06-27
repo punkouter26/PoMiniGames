@@ -46,6 +46,11 @@ jobs:
           # MinVer stamps the assembly version from the nearest v* tag.
           # Without a tag, every build is "0.0.0-alpha.0.0" — App Insights
           # can't separate prod builds, rollbacks are guess-work.
+          #
+          # Re-fetch tags here: actions/checkout's initial fetch races with
+          # `git push origin <tag>` (tags created milliseconds after a master
+          # push were missed by the checkout step in 28273282051 / 28273448975).
+          git fetch --tags --force origin '+refs/tags/*:refs/tags/*'
           TAGS=$(git tag --points-at HEAD | grep -E '^v[0-9]' || true)
           if [ -z "$TAGS" ]; then
             echo "::error::No v* tag at HEAD ($(git rev-parse --short HEAD)). MinVer would stamp every artifact as 0.0.0-alpha.0.0."

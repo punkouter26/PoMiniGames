@@ -39,7 +39,11 @@ public sealed class PoMiniGamesE2EFixture : WebApplicationFactory<Program>
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        builder.UseEnvironment("Development");
+        // §CI/CD policy (2026-06-27): E2E tests run under the "Test" environment
+        // so AuthExtensions' DevCookie scheme is registered (StartupSecretValidator
+        // skips its secrets check) and the FakeAuth header pathway is opt-in via
+        // Auth:EnableFakeAuth below.
+        builder.UseEnvironment("Test");
 
         // §2.3: enable the header-driven fake-auth scheme so e2e tests can
         // assert identity variations without performing a real OAuth handshake.

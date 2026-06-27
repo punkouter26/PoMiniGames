@@ -75,8 +75,8 @@ if (-not $SkipPlaywrightInstall) {
 # ── Tiered run ───────────────────────────────────────────────────────────────
 # Tier name -> @{ Project; Ceiling } per the 100/50/25/25 Rule.
 $tiers = [ordered]@{
-    'Unit'        = @{ Project = 'tests/UnitTests/UnitTests.csproj';              Ceiling = 100 }
-    'Integration' = @{ Project = 'tests/IntegrationTests/IntegrationTests.csproj'; Ceiling = 50 }
+    'Unit'        = @{ Project = 'tests/PoMiniGames.Unit/PoMiniGames.Unit.csproj';                       Ceiling = 100 }
+    'Integration' = @{ Project = 'tests/PoMiniGames.Integration/PoMiniGames.Integration.csproj';         Ceiling = 50 }
     'E2EAPI'      = @{ Project = 'tests/E2EAPI/E2EAPI.csproj';                  Ceiling = 25 }
     'E2EUI'       = @{ Project = 'tests/E2EUI/E2EUI.csproj';                    Ceiling = 25 }
 }

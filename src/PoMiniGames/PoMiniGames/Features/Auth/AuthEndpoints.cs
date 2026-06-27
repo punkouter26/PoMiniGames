@@ -19,11 +19,14 @@ public static class AuthEndpoints
             // microsoftConfigured = real sign-in will actually complete (ClientId + ApiClientId set).
             var microsoftEnabled = auth.Enabled;
             var microsoftConfigured = auth.FullyConfigured;
-            var devLoginEnabled = environment.IsDevelopment();
+            // §CI/CD policy (2026-06-27): Dev + Test envs expose the Guest dev-bypass
+            // path so the SPA can auto-sign-in as Guest without OAuth. Prod exposes MS
+            // OAuth only (Guest button hidden, AutoGuestLogin forbidden).
+            var devLoginEnabled = environment.IsDevelopment() || environment.IsEnvironment("Test");
             var usingMockData = configuration.GetValue<bool>("FeatureFlags:UseMockData");
             // Test harness flag: when set (e.g. by the E2E-UI fixture) the SPA silently
             // signs in as a Guest via the dev bypass so browser tests never hit the
-            // login wall. Only honoured in Development, where the dev bypass exists.
+            // login wall. Only honoured in Development/Test, where the dev bypass exists.
             var autoGuestLogin = devLoginEnabled && configuration.GetValue<bool>("Auth:AutoGuestLogin");
             // MSAL.js appends `/v2.0/.well-known/openid-configuration` to the authority
             // automatically. If we hand it an authority that already includes `/v2.0`
@@ -176,7 +179,9 @@ public static class AuthEndpoints
             var auth = authOptions.Value;
             var microsoftEnabled = auth.Enabled;
             var microsoftConfigured = auth.FullyConfigured;
-            var devLoginEnabled = environment.IsDevelopment();
+            // §CI/CD policy (2026-06-27): Dev + Test envs expose the Guest dev-bypass
+            // path so the SPA can auto-sign-in as Guest without OAuth.
+            var devLoginEnabled = environment.IsDevelopment() || environment.IsEnvironment("Test");
             var usingMockData = configuration.GetValue<bool>("FeatureFlags:UseMockData");
             var autoGuestLogin = devLoginEnabled && configuration.GetValue<bool>("Auth:AutoGuestLogin");
             var msalAuthority = NormalizeAuthorityForMsal(auth.Authority);
@@ -265,7 +270,11 @@ public static class AuthEndpoints
         DevLoginRequest? request,
         string? userName)
     {
-        if (!environment.IsDevelopment())
+        // §CI/CD policy (2026-06-27): Dev + Test envs can mint dev identities. Prod
+        // never reaches here — Program.cs only maps these endpoints in non-Production
+        // environments, and the StartupSecretValidator fails-fast in Prod if
+        // AutoGuestLogin or FakeAuth scheme slip through.
+        if (!environment.IsDevelopment() && !environment.IsEnvironment("Test"))
         {
             return Results.NotFound();
         }

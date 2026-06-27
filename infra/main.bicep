@@ -9,6 +9,24 @@ param resourceGroupName string = 'PoMiniGames'
 @description('The name of the existing shared resource group')
 param sharedResourceGroupName string = 'PoShared'
 
+// ── Microsoft (Entra ID) OAuth configuration ─────────────────────────────
+// Wire the SPA client ID + API audience as Bicep parameters so the App Service
+// App Settings surface the real production values. Microsoft "client IDs" are
+// public identifiers (not secrets) — they belong in App Settings, not in
+// Key Vault. Override per environment via main.parameters.json or
+// `azd env set PoMiniGamesMicrosoftAuthClientId <APP_ID>`.
+//
+// Defaults are empty: a deploy that ships with no ClientId will be caught
+// by StartupSecretValidator (fail-fast: throws InvalidOperationException).
+@description('Entra ID SPA app registration client ID (PoMiniGames__MicrosoftAuth__ClientId)')
+param microsoftAuthClientId string = ''
+
+@description('Entra ID API audience / scope (PoMiniGames__MicrosoftAuth__ApiClientId)')
+param microsoftAuthApiClientId string = ''
+
+@description('Entra ID tenant id used to compose the authority URL (defaults to the deploying tenant)')
+param microsoftAuthTenantId string = tenant().tenantId
+
 var tags = {
   'azd-env-name': name
 }
@@ -27,6 +45,9 @@ module resources './resources.bicep' = {
     location: location
     tags: tags
     sharedResourceGroupName: sharedResourceGroupName
+    microsoftAuthClientId: microsoftAuthClientId
+    microsoftAuthApiClientId: microsoftAuthApiClientId
+    microsoftAuthTenantId: microsoftAuthTenantId
   }
 }
 

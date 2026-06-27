@@ -17,7 +17,7 @@
 
 .EXAMPLE
   pwsh scripts/coverage-matrix.ps1
-  pwsh scripts/coverage-matrix.ps1 -TierProject tests/UnitTests
+  pwsh scripts/coverage-matrix.ps1 -TierProject tests/PoMiniGames.Unit
 #>
 
 [CmdletBinding()]
@@ -30,8 +30,8 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $repoRoot
 
 $tiers = [ordered]@{
-    'Unit'        = 'tests/UnitTests'
-    'Integration' = 'tests/IntegrationTests'
+    'Unit'        = 'tests/PoMiniGames.Unit'
+    'Integration' = 'tests/PoMiniGames.Integration'
     'E2EAPI'      = 'tests/E2EAPI'
     'E2EUI'       = 'tests/E2EUI'
 }

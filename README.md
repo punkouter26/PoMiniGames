@@ -83,8 +83,8 @@ src/
 ├── PoMiniGames/               # .NET 10 API Host
 ├── PoShared/                  # Shared utilities (Identity, Diagnostics)
 tests/
-├── UnitTests/                 # Pure logic tests (xUnit)
-├── IntegrationTests/          # API + DB integration tests (Testcontainers.Azurite)
+├── PoMiniGames.Unit/          # Pure logic tests (xUnit) — namespace PoMiniGames.Unit
+├── PoMiniGames.Integration/   # API + DB integration tests (Testcontainers.Azurite) — namespace PoMiniGames.Integration
 ├── E2EAPI/                    # Pure HTTP-contract API tests (WebApplicationFactory)
 └── E2EUI/                     # Playwright-driven UI tests
 ```
@@ -325,10 +325,10 @@ cd ../../..
 
 ```bash
 # Run unit tests
-dotnet test tests/UnitTests/UnitTests.csproj
+dotnet test tests/PoMiniGames.Unit/PoMiniGames.Unit.csproj
 
 # Run integration tests
-dotnet test tests/IntegrationTests/IntegrationTests.csproj
+dotnet test tests/PoMiniGames.Integration/PoMiniGames.Integration.csproj
 
 # Run E2E API tests (pure HTTP)
 dotnet test tests/E2EAPI/E2EAPI.csproj

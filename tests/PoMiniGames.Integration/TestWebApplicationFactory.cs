@@ -8,7 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 using PoMiniGames.Features.Auth;
 using PoMiniGames.TestUtilities;
 
-namespace PoMiniGames.IntegrationTests;
+namespace PoMiniGames.Integration;
 
 /// <summary>
 /// Custom <see cref="WebApplicationFactory{TEntryPoint}"/> that points SQLite storage at a

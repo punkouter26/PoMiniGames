@@ -5,7 +5,7 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 
-namespace PoMiniGames.IntegrationTests;
+namespace PoMiniGames.Integration;
 
 /// <summary>
 /// Verifies the API can check Azure Table Storage health against a real Azurite container.

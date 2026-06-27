@@ -33,8 +33,8 @@ the shared Infrastructure project unless the data is genuinely cross-slice.
 - `src/PoMiniGames.Domain` — domain models / services.
 - `src/PoMiniGames.Infrastructure` — shared platform persistence + health checks (Azure Table Storage) **and the legacy PoSurvive `AI/` resilience helpers** (`AzureOpenAIResilience.DefaultOptions()` is consumed by both PoSurvive's direct Azure OpenAI client and the new `PoMiniGames.AI.AIFoundryClientFactory`). Two AI namespaces exist by design during the PoSurvive → Foundry migration window; new code goes in `src/PoMiniGames/PoMiniGames/AI/`.
 - `src/PoShared` — shared models/business logic used by both client and API (the `.Shared` library). Trim-clean (no IL suppressions). `PoShared/Games/` holds game-agnostic DTOs (e.g. `PoJoker/JokeDtos.cs`, `PoRacerShared.cs`) shared between client and host.
-- `tests/UnitTests` — xUnit unit tests, mirrored under `Features/<Slice>/`. (Folder renamed 2026-06-26; namespace `PoMiniGames.UnitTests` unchanged for assembly stability.)
-- `tests/IntegrationTests` — `WebApplicationFactory` + **Testcontainers.Azurite** (v4 module). (Namespace `PoMiniGames.IntegrationTests` unchanged.)
+- `tests/PoMiniGames.Unit` — xUnit unit tests, mirrored under `Features/<Slice>/`. Project name = `PoMiniGames.Unit`, namespace `PoMiniGames.Unit.*` (`<sln>.<Tier>` convention).
+- `tests/PoMiniGames.Integration` — `WebApplicationFactory` + **Testcontainers.Azurite** (v4 module). Project name = `PoMiniGames.Integration`, namespace `PoMiniGames.Integration.*`.
 - `tests/E2EAPI` — C# end-to-end **API** tests: in-process host via `WebApplicationFactory`, pure HTTP-contract asserts (no browser). (Namespace `PoMiniGames.E2EAPI` unchanged.)
 - `tests/E2EUI` — C# end-to-end **UI** tests: Microsoft.Playwright drives a real browser against the host on a live Kestrel port. (Namespace `PoMiniGames.E2EUI` unchanged.)
 - `tests/Shared/` (`PoMiniGames.TestUtilities.csproj`) — shared test utilities (assertion helpers, budget guards) referenced by all four test projects.
@@ -59,14 +59,24 @@ the shared Infrastructure project unless the data is genuinely cross-slice.
   calls (PoCoupleQuiz answer-similarity scoring). Non-deterministic generations (questions) stay uncached.
 
 ## Auth (see `Features/Auth/` + `Infrastructure/AuthExtensions.cs`)
+- **Auth gate is unconditional.** `App.razor` wraps the entire `<Router>` in
+  `<AuthGate>`, which shows `<LoginScreen />` until `AuthState.IsAuthenticated`.
+  No route renders for unauthenticated users — the home page is gated just like
+  any other route.
 - Real auth: Microsoft OAuth (JWT bearer). `ValidateIssuer = true` with a custom
   `MicrosoftAuthIssuerValidator` that allow-lists `common`/`organizations`/`consumers`
   plus any tenant IDs in `PoMiniGames:MicrosoftAuth:AllowedTenantIds`.
 - **Authority**: `https://login.microsoftonline.com/common/v2.0` (multitenant + personal).
   AAD app registration must be created with
   `--sign-in-audience AzureADandPersonalMicrosoftAccount`. See [`docs/auth/README.md`](docs/auth/README.md).
+- **Environment → auth-surface map** (canonical; `AuthEndpoints` + `AuthExtensions` + `LoginScreen.razor`):
+  | Environment | Sign-in options | Notes |
+  |---|---|---|
+  | `Development` (local dotnet run / Azure dev slot) | Microsoft OAuth **+** Continue as Guest | LoginScreen shows both buttons. `Auth:AutoGuestLogin` opt-in via `?autoGuest=1`. |
+  | `Test` (integration / E2E / E2E-UI fixtures) | Guest dev-bypass only (auto via `?autoGuest=1` or `X-Fake-User` header) | No manual OAuth in tests. StartupSecretValidator skips secrets check. |
+  | `Production` (Azure App Service) | Microsoft OAuth **only** | Guest button hidden. `Auth:AutoGuestLogin` forbidden. `FakeAuth` scheme forbidden. StartupSecretValidator throws if `MicrosoftAuth:ClientId`/`ApiClientId` are missing. |
 - Dev: **`FakeAuthHandler`** (scheme `FakeAuth`, headers `X-Fake-User` / `X-Fake-Roles`),
-  gated on `IsDevelopment() && Auth:EnableFakeAuth`. Tests register it additively in
+  gated on `(IsDevelopment() || IsEnvironment("Test")) && Auth:EnableFakeAuth`. Tests register it additively in
   `TestWebApplicationFactory`.
 - Dev/Test: **DevCookie** (scheme `PoMiniGames.DevAuth`, HttpOnly, SameSite=Lax) +
   `/auth/login/fake` route mints a guest identity. Gated on `IsDevelopment() || IsEnvironment("Test")`
@@ -80,6 +90,12 @@ the shared Infrastructure project unless the data is genuinely cross-slice.
 - Routes: `/auth/login/microsoft`, `/auth/login/fake` (Dev/Test), `/auth/logout`,
   `/auth/me` (reports auth state + `oauthConfigured` flag; `returnUrl` must be a
   local relative path). Legacy `/api/auth/*` dev-login routes remain.
+- **Test environment wiring** (canonical — every test fixture uses `UseEnvironment("Test")`):
+  `tests/PoMiniGames.Integration/TestWebApplicationFactory.cs`, `LocalAuthWebApplicationFactory.cs`,
+  `AzuriteHealthIntegrationTests.cs`; `tests/E2EAPI/PoMiniGamesE2EFixture.cs`;
+  `tests/E2EUI/KestrelServerFixture.cs`. The Test branch in
+  `StartupSecretValidator` (line 79-83) and `AuthExtensions` (line 30) was
+  defensive dead code before 2026-06-27; it now activates on every test run.
 
 ## Observability
 - Serilog → Console + File (dev) + **Application Insights** (non-dev when a connection string is present). Enriched with `UserId` / `SessionId` / `CorrelationId`.
@@ -92,14 +108,41 @@ the shared Infrastructure project unless the data is genuinely cross-slice.
   `.http` files in the host project.
 
 ## CI/CD
-- `.github/workflows/deploy.yml` is **build-only** — no tests run in CI. Tests are
+- `.github/workflows/deploy.yml` is **build-only — no tests run in CI.** Tests are
   environment-coupled (Azurite, Playwright Chromium) and execute locally via
-  `scripts/test-all.ps1` (tiered Unit → Integration → E2E-API → E2E-UI).
+  `scripts/test-all.ps1` (tiered Unit → Integration → E2E-API → E2E-UI). This is a
+  deliberate policy (header comment in `deploy.yml`): the GitHub runner has no
+  Azurite or Playwright browsers.
 - Build job compiles every project in the solution (src + tests) under
-  `TreatWarningsAsErrors=true`, so a broken test file fails the build.
+  `TreatWarningsAsErrors=true` (`Directory.Build.props`), so a broken test file
+  fails the build — but tests are NOT *run* in CI.
 - Deploy job needs `build`, publishes the host, resolves the App Service by RG name
   (self-healing), zips `publish/`, then runs the three curl smoke tests
   (`/api/health/ping`, `/api/health`, `/api/diag`).
+
+## Secrets & environment config (Azure)
+- **Key Vault `kv-poshared`** (PoShared RG) holds the secrets the host reads via
+  `PrefixKeyVaultSecretManager("PoMiniGames")` (`--` → `:`). Written at deploy
+  time by `infra/kv-secrets.bicep`:
+  - `PoMiniGames--StorageAccountName` (mirrored from `resources.bicep` output)
+  - `PoMiniGames--AI--FoundryEndpoint` (mirrored from `resources.bicep` output)
+  Web App's MI gets `get + list` on the vault via `infra/kv-access.bicep`.
+- **App Service app settings** (set by `infra/resources.bicep`):
+  `ASPNETCORE_ENVIRONMENT=Production`, `PoMiniGames__ApplicationInsights__ConnectionString`,
+  `PoMiniGames__KeyVault__Uri`, `PoMiniGames__Storage__TableService__AccountName|Endpoint|TableName`,
+  `PoMiniGames__AI__FoundryEndpoint`, and (since 2026-06-27)
+  `PoMiniGames__MicrosoftAuth__ClientId|ApiClientId|Authority`.
+- **Microsoft (Entra ID) OAuth client IDs** are NOT secrets — they live as App
+  Service app settings, supplied as Bicep parameters (`microsoftAuthClientId`,
+  `microsoftAuthApiClientId`, `microsoftAuthTenantId` in `infra/main.bicep`,
+  defaulted in `infra/main.parameters.json`). Override per environment via
+  `azd env set PoMiniGamesMicrosoftAuthClientId <APP_ID>` (same for
+  ApiClientId). A deploy that ships empty ClientIds is caught by
+  `StartupSecretValidator` (fails-fast in Production).
+- **Local dev** uses `dotnet user-secrets` for Microsoft Auth values (never
+  committed); the dev-only fallback path (`Auth:AutoGuestLogin=true` +
+  `?autoGuest=1`) keeps iteration unblocked even when no App Registration is
+  wired.
 
 ## Conventions
 - Solution prefix `Po`. New games are split across multiple files (mirroring existing games), never one mega-file.

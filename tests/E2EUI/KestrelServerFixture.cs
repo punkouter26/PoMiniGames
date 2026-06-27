@@ -99,7 +99,11 @@ public class KestrelServerFixture : WebApplicationFactory<Program>, IAsyncLifeti
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        builder.UseEnvironment("Development");
+        // §CI/CD policy (2026-06-27): E2E-UI tests run under the "Test" environment
+        // so the FakeAuth scheme is opt-in (via Auth:EnableFakeAuth below), the
+        // DevCookie path is registered for the SPA's auto-guest flow, and
+        // StartupSecretValidator skips its secrets check.
+        builder.UseEnvironment("Test");
 
         builder.ConfigureAppConfiguration((_, cfg) =>
         {

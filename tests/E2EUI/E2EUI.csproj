@@ -24,6 +24,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\PoMiniGames\PoMiniGames\PoMiniGames.csproj" />
+    <!-- Shared test utilities (TestBudgetGuard, etc.) — explicit ProjectReference
+         so the fixture compiles whether or not tests/Shared/PoMiniGames.TestUtilities.csproj
+         is registered in the solution. -->
     <ProjectReference Include="..\Shared\PoMiniGames.TestUtilities.csproj" />
   </ItemGroup>
 

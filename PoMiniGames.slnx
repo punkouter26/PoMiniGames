@@ -12,7 +12,7 @@
     <Project Path="tests/Shared/PoMiniGames.TestUtilities.csproj" />
     <Project Path="tests/E2EAPI/E2EAPI.csproj" />
     <Project Path="tests/E2EUI/E2EUI.csproj" />
-    <Project Path="tests/IntegrationTests/IntegrationTests.csproj" />
-    <Project Path="tests/UnitTests/UnitTests.csproj" />
+    <Project Path="tests/PoMiniGames.Integration/PoMiniGames.Integration.csproj" />
+    <Project Path="tests/PoMiniGames.Unit/PoMiniGames.Unit.csproj" />
   </Folder>
 </Solution>

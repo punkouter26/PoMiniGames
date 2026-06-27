@@ -26,10 +26,11 @@ internal static class AuthExtensions
         // config flag slips in (see FakeAuthHandler + StartupSecretValidator).
         var devLoginEnabled = env.IsDevelopment() || env.IsEnvironment("Test");
 
-        // Fake auth (header-driven) is Dev-only convenience, gated behind an explicit
-        // config flag. Test environments use the cookie-based dev-login instead so
-        // the tests can assert identity via real HTTP request flow.
-        var fakeAuthEnabled = env.IsDevelopment()
+        // Fake auth (header-driven) is gated to non-Production environments behind an
+        // explicit config flag. Both Dev and Test honor it so e2e fixtures can opt
+        // into header-driven identity assertions; Production guards remain intact via
+        // StartupSecretValidator (throws if FakeAuth is ever registered in Prod).
+        var fakeAuthEnabled = (env.IsDevelopment() || env.IsEnvironment("Test"))
             && configuration.GetValue<bool>("Auth:EnableFakeAuth");
 
         var authBuilder = services.AddAuthentication(options =>

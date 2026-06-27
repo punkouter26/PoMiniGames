@@ -522,9 +522,9 @@ builder.Services.AddRadzenComponents();
 
 | Layer | Framework | Scope | Key files |
 |---|---|---|---|
-| Unit | xUnit | Domain logic (EloCalculator) | `tests/UnitTests/EloCalculatorTests.cs` |
-| Unit | xUnit | Identity helpers | `tests/UnitTests/PrefixKeyVaultSecretManagerTests.cs` |
-| Integration | xUnit + `WebApplicationFactory` | Full API stack with in-memory/SQLite | `tests/IntegrationTests/` |
+| Unit | xUnit | Domain logic (EloCalculator) | `tests/PoMiniGames.Unit/EloCalculatorTests.cs` |
+| Unit | xUnit | Identity helpers | `tests/PoMiniGames.Unit/PrefixKeyVaultSecretManagerTests.cs` |
+| Integration | xUnit + `WebApplicationFactory` | Full API stack with in-memory/SQLite | `tests/PoMiniGames.Integration/` |
 | Integration | Testcontainers (Azurite) | Azure Table Storage health check | `AzuriteHealthIntegrationTests.cs` |
 | E2E-API | xUnit + `WebApplicationFactory` | Pure HTTP-contract smoke | `tests/E2EAPI/` |
 | E2E-UI | Playwright (C#) | Real browser on a Kestrel port | `tests/E2EUI/` |
@@ -717,10 +717,10 @@ group.MapPost("/highscores", async (MyScoreDto dto, IStorageService storage) =>
 dotnet build src/PoMiniGames/PoMiniGames/PoMiniGames.csproj
 
 # 2. Unit tests
-dotnet test tests/UnitTests/UnitTests.csproj -v minimal
+dotnet test tests/PoMiniGames.Unit/PoMiniGames.Unit.csproj -v minimal
 
 # 3. Integration tests
-dotnet test tests/IntegrationTests/IntegrationTests.csproj -v minimal
+dotnet test tests/PoMiniGames.Integration/PoMiniGames.Integration.csproj -v minimal
 
 # 4. E2E API tests
 dotnet test tests/E2EAPI/E2EAPI.csproj -v minimal

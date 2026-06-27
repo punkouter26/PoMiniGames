@@ -2,7 +2,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 
-namespace PoMiniGames.IntegrationTests;
+namespace PoMiniGames.Integration;
 
 /// <summary>
 /// WebApplicationFactory that keeps the production auth pipeline intact while

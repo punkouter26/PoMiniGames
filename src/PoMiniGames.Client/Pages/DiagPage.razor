@@ -5,6 +5,7 @@
 @inject AuthStateService AuthState
 @inject HttpClient Http
 @inject IWebAssemblyHostEnvironment HostEnvironment
+@inject NavigationManager Navigation
 
 <div class="diag">
     <h1 class="diag-h1">🔧 /diag</h1>
@@ -16,6 +17,8 @@
             <div class="diag-kv"><span class="diag-k">Backend</span><span class="diag-v">@_apiStatus</span></div>
             <div class="diag-kv"><span class="diag-k">Auth configured</span><span class="diag-v">@AuthState.IsConfigured</span></div>
             <div class="diag-kv"><span class="diag-k">Auth loading</span><span class="diag-v">@AuthState.IsLoading</span></div>
+            <div class="diag-kv"><span class="diag-k">Correlation ID (this page)</span><span class="diag-v mono">@_diagCorrelationId</span></div>
+            <div class="diag-kv"><span class="diag-k">Session ID</span><span class="diag-v mono">@(_sessionId ?? "—")</span></div>
         </div>
     </section>
 
@@ -30,7 +33,76 @@
     </section>
 
     <section class="diag-section">
-        <h2 class="diag-h2">Backend /diag</h2>
+        <h2 class="diag-h2">Active Mockables</h2>
+        <p class="diag-muted">
+            Every <code>IMockable</code> registered in the API DI container. Dev/Test environments only;
+            the endpoint returns 404 in Production. A non-zero count in Production is a deployment bug.
+        </p>
+        @if (_mockables.Count == 0)
+        {
+            <p class="diag-muted">@(_apiStatus == "offline" ? "API offline" : "No mocks registered.")</p>
+        }
+        else
+        {
+            <ul class="diag-mock-list">
+                @foreach (var m in _mockables)
+                {
+                    <li><code>@m</code></li>
+                }
+            </ul>
+        }
+    </section>
+
+    <section class="diag-section">
+        <h2 class="diag-h2">Integrations</h2>
+        @if (_integrations.Count == 0)
+        {
+            <p class="diag-muted">@(_apiStatus == "offline" ? "API offline" : "No integrations reported.")</p>
+        }
+        else
+        {
+            <table class="diag-table">
+                <thead><tr><th>Name</th><th>Status</th></tr></thead>
+                <tbody>
+                    @foreach (var integ in _integrations)
+                    {
+                        <tr>
+                            <td>@integ.Name</td>
+                            <td>
+                                <span class="diag-status diag-status--@integ.Status">@integ.Status</span>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </section>
+
+    <section class="diag-section">
+        <h2 class="diag-h2">Recent Server Logs</h2>
+        <p class="diag-muted">
+            Last @_logEntries.Count log lines from the API (dev-only). Use the CorrelationId
+            above to grep these for a specific request.
+        </p>
+        <div class="diag-log-controls">
+            <label class="diag-corr-filter">
+                <input type="checkbox" @bind="_filterByCorrelation" />
+                Filter by correlation @_diagCorrelationId
+            </label>
+            <button class="diag-refresh" @onclick="RefreshAsync">Refresh</button>
+        </div>
+        @if (_logEntries.Count == 0)
+        {
+            <p class="diag-muted">@(_apiStatus == "offline" ? "API offline" : "No logs available.")</p>
+        }
+        else
+        {
+            <pre class="diag-pre diag-log">@string.Join("\n", _filteredLogs)</pre>
+        }
+    </section>
+
+    <section class="diag-section">
+        <h2 class="diag-h2">Backend /diag (raw)</h2>
         @if (_backendError != null)
         {
             <p class="diag-error">@_backendError</p>
@@ -44,21 +116,6 @@
             <pre class="diag-pre">@_backendDiagRaw</pre>
         }
     </section>
-
-    <section class="diag-section">
-        <h2 class="diag-h2">Diagnostic Top-Level Keys</h2>
-        <table class="diag-table">
-            <thead>
-                <tr><th>Key</th><th>Summary</th></tr>
-            </thead>
-            <tbody>
-                @foreach (var row in _diagRows)
-                {
-                    <tr><td>@row.Key</td><td>@row.Summary</td></tr>
-                }
-            </tbody>
-        </table>
-    </section>
 </div>
 
 @code {
@@ -66,46 +123,12 @@
     private string? _backendDiagRaw;
     private string? _backendError;
     private readonly List<DiagRow> _diagRows = [];
-
-    protected override async Task OnInitializedAsync()
-    {
-        _apiStatus = await ApiService.IsAvailableAsync() ? "online" : "offline";
-
-        if (_apiStatus == "online")
-        {
-            try
-            {
-                var response = await Http.GetAsync("/api/diag");
-                if (response.IsSuccessStatusCode)
-                {
-                    var json = await response.Content.ReadAsStringAsync();
-                    try
-                    {
-                        var obj = JsonSerializer.Deserialize<JsonElement>(json);
-                        // The raw JSON may include connection strings / client IDs.
-                        // Only show it verbatim when running in Development; otherwise
-                        // point users at the masked table below.
-                        _backendDiagRaw = HostEnvironment.IsDevelopment()
-                            ? JsonSerializer.Serialize(obj, new JsonSerializerOptions { WriteIndented = true })
-                            : "(see masked table below — raw payload hidden outside Development)";
-                        BuildRows(obj);
-                    }
-                    catch
-                    {
-                        _backendDiagRaw = HostEnvironment.IsDevelopment() ? json : "(hidden outside Development)";
-                    }
-                }
-                else
-                {
-                    _backendError = $"HTTP {(int)response.StatusCode}";
-                }
-            }
-            catch (Exception ex)
-            {
-                _backendError = HostEnvironment.IsDevelopment() ? ex.ToString() : ex.Message;
-            }
-        }
-    }
+    private readonly List<string> _mockables = [];
+    private readonly List<DiagIntegration> _integrations = [];
+    private readonly List<string> _logEntries = [];
+    private string _diagCorrelationId = "(pending)";
+    private string? _sessionId;
+    private bool _filterByCorrelation = true;
 
     // Property names whose string values are sensitive and must be masked in the
     // diagnostic table (the raw JSON in the previous section is shown only in
@@ -123,20 +146,122 @@
         "clientSecret",
     };
 
+    protected override async Task OnInitializedAsync()
+    {
+        _apiStatus = await ApiService.IsAvailableAsync() ? "online" : "offline";
+
+        if (_apiStatus == "online")
+        {
+            // The server stamps every request with a TraceIdentifier; round-trip one
+            // through /api/diag/correlation so the SPA can show the value the API
+            // used, then use it to filter /api/logs/tail entries that were logged
+            // for this page load.
+            try
+            {
+                var corrResp = await Http.GetAsync("/api/diag/correlation");
+                if (corrResp.IsSuccessStatusCode)
+                {
+                    var doc = JsonSerializer.Deserialize<JsonElement>(await corrResp.Content.ReadAsStringAsync());
+                    _diagCorrelationId = doc.TryGetProperty("correlationId", out var c) ? (c.GetString() ?? "") : _diagCorrelationId;
+                    _sessionId = doc.TryGetProperty("sessionId", out var s) ? s.GetString() : null;
+                }
+            }
+            catch { /* offline — leave defaults */ }
+
+            await RefreshAsync();
+        }
+    }
+
+    private async Task RefreshAsync()
+    {
+        // Re-read the current /api/diag, /api/mockables, and /api/logs/tail in parallel
+        // so the page renders incrementally as each completes.
+        var diagTask = Http.GetAsync("/api/diag");
+        var mockTask = Http.GetAsync("/api/mockables");
+        var logsTask = Http.GetAsync("/api/logs/tail?count=50");
+        await Task.WhenAll(diagTask, mockTask, logsTask);
+
+        var diagResp = await diagTask;
+        if (diagResp.IsSuccessStatusCode)
+        {
+            var json = await diagResp.Content.ReadAsStringAsync();
+            try
+            {
+                var obj = JsonSerializer.Deserialize<JsonElement>(json);
+                _backendDiagRaw = HostEnvironment.IsDevelopment()
+                    ? JsonSerializer.Serialize(obj, new JsonSerializerOptions { WriteIndented = true })
+                    : "(see masked table below — raw payload hidden outside Development)";
+                BuildRows(obj);
+                BuildIntegrations(obj);
+            }
+            catch
+            {
+                _backendDiagRaw = HostEnvironment.IsDevelopment() ? json : "(hidden outside Development)";
+            }
+        }
+        else
+        {
+            _backendError = $"HTTP {(int)diagResp.StatusCode}";
+        }
+
+        var mockResp = await mockTask;
+        if (mockResp.IsSuccessStatusCode)
+        {
+            try
+            {
+                var arr = JsonSerializer.Deserialize<JsonElement>(await mockResp.Content.ReadAsStringAsync());
+                _mockables.Clear();
+                if (arr.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var entry in arr.EnumerateArray())
+                    {
+                        if (entry.TryGetProperty("mockId", out var id))
+                        {
+                            _mockables.Add(id.GetString() ?? "");
+                        }
+                    }
+                }
+            }
+            catch { /* ignore — best-effort */ }
+        }
+
+        var logsResp = await logsTask;
+        if (logsResp.IsSuccessStatusCode)
+        {
+            try
+            {
+                var obj = JsonSerializer.Deserialize<JsonElement>(await logsResp.Content.ReadAsStringAsync());
+                if (obj.TryGetProperty("entries", out var entries))
+                {
+                    _logEntries.Clear();
+                    foreach (var e in entries.EnumerateArray())
+                    {
+                        _logEntries.Add(e.GetString() ?? "");
+                    }
+                }
+            }
+            catch { /* best-effort */ }
+        }
+
+        StateHasChanged();
+    }
+
+    private IEnumerable<string> _filteredLogs =>
+        _filterByCorrelation && !string.IsNullOrEmpty(_diagCorrelationId) && _diagCorrelationId != "(pending)"
+            ? _logEntries.Where(l => l.Contains(_diagCorrelationId, StringComparison.OrdinalIgnoreCase))
+            : _logEntries;
+
     private void BuildRows(JsonElement root)
     {
         _diagRows.Clear();
-        if (root.ValueKind != JsonValueKind.Object)
-        {
-            return;
-        }
+        if (root.ValueKind != JsonValueKind.Object) return;
 
         foreach (var property in root.EnumerateObject())
         {
             string summary = property.Value.ValueKind switch
             {
                 JsonValueKind.Object => "Object",
-                JsonValueKind.Array => "Array",
+                JsonValueKind.Array => $"Array ({property.Value.GetArrayLength()})",
                 JsonValueKind.String => MaskIfSensitive(property.Name, property.Value.GetString() ?? string.Empty),
                 JsonValueKind.Number => property.Value.ToString(),
                 JsonValueKind.True => "true",
@@ -146,6 +271,19 @@
             };
 
             _diagRows.Add(new DiagRow(property.Name, summary));
+        }
+    }
+
+    private void BuildIntegrations(JsonElement root)
+    {
+        _integrations.Clear();
+        if (root.ValueKind != JsonValueKind.Object) return;
+        if (!root.TryGetProperty("integrations", out var integ) || integ.ValueKind != JsonValueKind.Array) return;
+        foreach (var entry in integ.EnumerateArray())
+        {
+            var name = entry.TryGetProperty("name", out var n) ? (n.GetString() ?? "") : "";
+            var status = entry.TryGetProperty("status", out var s) ? (s.GetString() ?? "") : "";
+            _integrations.Add(new DiagIntegration(name, status));
         }
     }
 
@@ -165,4 +303,5 @@
     }
 
     private sealed record DiagRow(string Key, string Summary);
+    private sealed record DiagIntegration(string Name, string Status);
 }

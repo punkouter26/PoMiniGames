@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
 using PoMiniGames.Application.Diagnostics;
+using PoMiniGames.Infrastructure;
 
 namespace PoMiniGames.Features.Health;
 
@@ -82,13 +83,32 @@ public static class DiagEndpoints
         {
             var dict = raw as IDictionary<string, object?>
                        ?? (raw is string s ? new Dictionary<string, object?>() { ["raw"] = s } : new Dictionary<string, object?>());
+
+            // Bug fix QA #5: the snapshot provider returns nested *anonymous* objects
+            // (e.g. `new { solution, appPrefix, ports }`) which are NOT IDictionary
+            // instances — so the original lookup-by-string-path returned "" for every
+            // nested key, surfacing empty identity/integrations to /api/diag. Use a
+            // case-insensitive reflection walker that handles anonymous types as well
+            // as dictionaries, so the live snapshot fields actually appear.
             string Get(params string[] path)
             {
                 object? cur = dict;
                 foreach (var key in path)
                 {
-                    if (cur is IDictionary<string, object?> d && d.TryGetValue(key, out var v)) { cur = v; continue; }
-                    return string.Empty;
+                    if (cur is null) return string.Empty;
+                    if (cur is IDictionary<string, object?> d)
+                    {
+                        if (!d.TryGetValue(key, out var v)) return string.Empty;
+                        cur = v;
+                        continue;
+                    }
+                    // Anonymous / POCO walk via case-insensitive property lookup.
+                    var prop = cur.GetType()
+                        .GetProperty(key, System.Reflection.BindingFlags.Public
+                            | System.Reflection.BindingFlags.Instance
+                            | System.Reflection.BindingFlags.IgnoreCase);
+                    if (prop is null) return string.Empty;
+                    cur = prop.GetValue(cur);
                 }
                 return cur?.ToString() ?? string.Empty;
             }
@@ -121,12 +141,34 @@ public static class DiagEndpoints
                 KeyVaultUri: config.GetValue<string>("KeyVault:Uri") ?? string.Empty,
                 TelemetryFlags: telemetryFlags);
 
-            // Project the integrations array (if the provider returned one) to a
-            // strict list of name/status/description strings. The provider historically
-            // returns System.* reflection data — that lives in /diag only after we
-            // explicitly re-add it; for now we project safely.
+            // Project the integrations section into a flat name/status/description list.
+            // The provider returns an anonymous object with named boolean sub-fields
+            // (keyVaultConfigured, applicationInsightsConfigured, …) — flatten them here
+            // so /api/diag surfaces the live integration state, not [].
             var integrations = new List<DiagIntegration>();
-            if (dict.TryGetValue("integrations", out var integ) && integ is IEnumerable<object?> items)
+
+            // 1) Anonymous object with boolean sub-fields (e.g. integrations = new { keyVaultConfigured = true })
+            if (dict.TryGetValue("integrations", out var integObj) && integObj is not null
+                && integObj is not IDictionary<string, object?>
+                && integObj is not string
+                && integObj is not IEnumerable<object?>)
+            {
+                var anonType = integObj.GetType();
+                foreach (var prop in anonType.GetProperties(System.Reflection.BindingFlags.Public
+                                                           | System.Reflection.BindingFlags.Instance))
+                {
+                    var value = prop.GetValue(integObj);
+                    var status = value switch
+                    {
+                        bool b => b ? "configured" : "not-configured",
+                        null => "not-configured",
+                        _ => value.ToString() ?? "unknown"
+                    };
+                    integrations.Add(new DiagIntegration(prop.Name, status ?? "unknown", null));
+                }
+            }
+            // 2) Already-shaped list of { name, status, description } dictionaries.
+            else if (dict.TryGetValue("integrations", out var integList) && integList is IEnumerable<object?> items)
             {
                 foreach (var item in items)
                 {
@@ -149,6 +191,25 @@ public static class DiagEndpoints
         .WithName("GetDiagnostics")
         .WithTags("Health")
         .WithSummary("Exposes a development-focused diagnostic summary without raw secret values");
+
+        // Bug fix QA #7: a tiny endpoint that echoes the current request's
+        // correlation + session IDs so the SPA can show them on /diag and let
+        // users grep server logs for "their" request without digging in the
+        // Serilog console.
+        app.MapGet("/api/diag/correlation", (HttpContext context) =>
+        {
+            return Results.Ok(new
+            {
+                correlationId = context.TraceIdentifier,
+                sessionId = context.Items[RequestLogContextMiddleware.SessionItemKey]?.ToString() ?? "",
+                userId = context.User?.Identity?.IsAuthenticated == true
+                    ? context.User.Identity?.Name ?? "authenticated"
+                    : "anonymous",
+            });
+        })
+        .WithName("GetDiagnosticsCorrelation")
+        .WithTags("Health")
+        .WithSummary("Echoes the current request's correlation + session IDs for log correlation");
 
         // Note: /diag is NOT registered as an API endpoint to avoid conflicting with
         // the Blazor page route at /diag. Use /api/diag for programmatic access.

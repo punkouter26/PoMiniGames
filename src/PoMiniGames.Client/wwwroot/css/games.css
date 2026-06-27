@@ -205,8 +205,27 @@
   padding: 1.5rem;
 }
 
+/* Bug fix QA #2: by default the game-area is transparent to pointer events so
+   that lobby forms / join screens inside the same shell remain clickable.
+   Pages that need the area to swallow pointer events (gameplay canvases with
+   drag/touch handling) must opt in via .gps-game-area--clickable. */
+.gps-game-area {
+  pointer-events: none;
+}
+
+.gps-game-area--clickable {
+  pointer-events: auto;
+}
+
 .gps-game-area--fullscreen {
   padding: 0;
+}
+
+/* Every direct child of .gps-game-area should also pass clicks through so
+   the lobby forms (which don't set --clickable) keep working without
+   opting every inner element in. */
+.gps-game-area > * {
+  pointer-events: auto;
 }
 
 .gps-play-again-bar {
@@ -347,16 +366,21 @@
   50% { box-shadow: 0 0 25px rgba(0, 229, 255, 0.7); }
 }
 
-/* ── Connect Five Styles ── */
+/* ── Connect Five Styles ──
+   Bug fix QA #1: the cell-size clamp now respects 100dvh + 100dvw so the 9x9
+   board scales to fit the viewport on portrait phones (was 360x800 overflowing).
+   `min(calc(... / 9), ...)` guarantees the cells shrink instead of overflowing. */
 .cf-layout {
-  --cf-cell: clamp(38px, min(calc((100vh - 230px) / 9), calc((100vw - 72px) / 9)), 56px);
+  --cf-cell: clamp(28px, min(calc((100dvh - 240px) / 9), calc((100dvw - 56px) / 9)), 56px);
   --cf-cell-stride: calc(var(--cf-cell) + 3px);
   display: flex;
   flex-direction: column;
   align-items: center;
-  width: fit-content;
+  width: 100%;
   max-width: 100%;
   margin: 0 auto;
+  /* §a Defensive: never let the layout exceed its container, regardless of cell calc. */
+  min-width: 0;
 }
 
 .cf-board {
@@ -365,12 +389,16 @@
   grid-template-rows: repeat(9, var(--cf-cell));
   gap: 3px;
   margin: 1rem auto;
-  width: fit-content;
+  /* Width tracks the cell grid exactly; no `fit-content` magic on small screens. */
+  width: calc(var(--cf-cell) * 9 + 3px * 8 + 24px);
   max-width: 100%;
   padding: 12px;
   background: var(--color-surface);
   border-radius: 12px;
   border: 1px solid var(--color-border);
+  /* §b Paint containment so the 81 cells don't repaint the whole page during
+     piece-drop animations on mid-range mobile devices. */
+  contain: layout paint;
 }
 
 .cf-cell {
@@ -763,7 +791,7 @@
   grid-template-columns: repeat(9, var(--cf-cell, 48px));
   gap: 3px;
   margin: 0 auto 1rem;
-  width: fit-content;
+  width: calc(var(--cf-cell, 48px) * 9 + 3px * 8);
   max-width: 100%;
   padding: 0 12px;
 }
@@ -800,11 +828,16 @@
   animation: pulse 1s ease-in-out infinite;
 }
 
-/* ── Responsive Game Styles ── */
+/* ── Responsive Game Styles ──
+   Bug fix QA #1: on phones (<= 640 px), shrink the cell size more aggressively
+   so the 9x9 board + drop row + shell chrome all fit inside the viewport.
+   The dvh-based clamp above already does most of the work; this block just
+   trims padding and forces the explicit cell-size for small screens where
+   the clamp's lower bound needs to be even smaller. */
 @media (max-width: 640px) {
   .cf-layout {
-    --cf-cell: 40px;
-    --cf-cell-stride: 42px;
+    --cf-cell: clamp(28px, calc((100dvh - 220px) / 9), 44px);
+    --cf-cell-stride: calc(var(--cf-cell) + 2px);
   }
   .ttt-board {
     --ttt-cell: clamp(38px, 13vw, 48px);
@@ -814,8 +847,30 @@
   .cf-board {
     gap: 2px;
     padding: 8px;
+    width: calc(var(--cf-cell) * 9 + 2px * 8 + 16px);
   }
-  .cf-cell { width: 40px; height: 40px; font-size: 1rem; }
-  .cf-drop-row { gap: 2px; padding: 0 8px; }
-  .cf-drop-btn { width: 40px; height: 24px; }
+  .cf-cell {
+    width: var(--cf-cell);
+    height: var(--cf-cell);
+    font-size: clamp(0.85rem, 2.6vmin, 1rem);
+  }
+  .cf-drop-row {
+    gap: 2px;
+    padding: 0 8px;
+    width: calc(var(--cf-cell) * 9 + 2px * 8);
+  }
+  .cf-drop-btn {
+    width: var(--cf-cell);
+    height: 24px;
+    font-size: 0.6rem;
+  }
+}
+
+/* Ultra-narrow phones (<= 360 px) — bump cell down further so the board plus
+   top-bar + bottom-tab-bar + padding all fit on one viewport height. */
+@media (max-width: 360px) {
+  .cf-layout {
+    --cf-cell: clamp(24px, calc((100dvh - 200px) / 9), 36px);
+  }
+  .cf-cell { font-size: 0.75rem; }
 }

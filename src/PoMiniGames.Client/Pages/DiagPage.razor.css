@@ -1,7 +1,7 @@
 /* Scoped styles for the /diag page (replaces the former inline styles + Radzen grid). */
 .diag {
     padding: var(--space-6);
-    max-width: 860px;
+    max-width: 960px;
     margin: 0 auto;
     font-family: monospace;
     color: #cdd5e0;
@@ -47,6 +47,58 @@
 
 .diag-k { color: #64748b; }
 .diag-v { color: #e2e8f0; }
+.diag-v.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.78rem; }
+
+/* Bug fix QA #7 additions */
+.diag-mock-list { list-style: square inside; padding: 0; margin: 0; color: #fbbf24; }
+.diag-mock-list li { padding: 0.15rem 0; }
+.diag-mock-list code { background: rgba(251, 191, 36, 0.08); padding: 0.05rem 0.35rem; border-radius: 4px; }
+
+.diag-status {
+    display: inline-block;
+    padding: 0.1rem 0.55rem;
+    border-radius: 9999px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+.diag-status--configured     { background: rgba(34, 197, 94, 0.18); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.4); }
+.diag-status--healthy        { background: rgba(34, 197, 94, 0.18); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.4); }
+.diag-status--not-configured { background: rgba(148, 163, 184, 0.12); color: #94a3b8; border: 1px solid rgba(148, 163, 184, 0.25); }
+
+.diag-log-controls {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    margin-bottom: var(--space-2);
+    font-size: var(--text-sm);
+}
+.diag-corr-filter { display: inline-flex; align-items: center; gap: 0.4rem; color: #94a3b8; }
+.diag-refresh {
+    background: transparent;
+    border: 1px solid var(--color-border);
+    color: var(--color-text-secondary);
+    border-radius: 6px;
+    padding: 0.25rem 0.7rem;
+    font-size: 0.8rem;
+    cursor: pointer;
+}
+.diag-refresh:hover { border-color: var(--color-text-secondary); color: var(--color-text-primary); }
+
+.diag-log {
+    max-height: 320px;
+    overflow: auto;
+    font-size: 0.72rem;
+    line-height: 1.4;
+    background: #0f172a;
+    border: 1px solid #1e293b;
+}
+
+@media (max-width: 640px) {
+    .diag { padding: var(--space-3); }
+    .diag-kv { grid-template-columns: 1fr; gap: 0.1rem; }
+}
 
 .diag-error { color: var(--color-error); margin: 0; }
 .diag-muted { color: #64748b; margin: 0; }

@@ -13,6 +13,8 @@ namespace PoMiniGames.Features.Leaderboard;
 public static class UnifiedLeaderboardEndpoints
 {
     // Games ranked by win rate via the shared PlayerStats board.
+    // Bug fix QA #3: surface every game from the home catalog so the Leaderboards
+    // page chip count matches the home tile count (was 8 vs. 16).
     private static readonly (string Key, string Title)[] WinRateGames =
     [
         ("connectfive", "Connect Five"),
@@ -20,6 +22,11 @@ public static class UnifiedLeaderboardEndpoints
         ("pofight", "PoFight"),
         ("poraceragdoll", "PoRaceRagdoll"),
         ("pohorserace", "PoHorseRace"),
+        ("poclick", "PoClick"),
+        ("porunner", "PoRunner"),
+        ("poracer", "PoRacer"),
+        ("posurvive", "PoSurvive"),
+        ("poface", "PoFace"),
     ];
 
     public static IEndpointRouteBuilder MapUnifiedLeaderboardEndpoints(this IEndpointRouteBuilder app)

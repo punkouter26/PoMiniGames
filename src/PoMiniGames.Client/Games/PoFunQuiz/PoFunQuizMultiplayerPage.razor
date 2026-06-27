@@ -16,9 +16,9 @@
     {
         <div class="fq-join">
             <h2>Two-player PoFunQuiz</h2>
-            <label>Your name: <input @bind="_playerName" maxlength="24" /></label>
+            <label>Your name: <input @bind="_playerName" maxlength="24" disabled="@_busy" /></label>
             <label>Category:
-                <select @bind="_category">
+                <select @bind="_category" disabled="@_busy">
                     <option value="General" selected>General</option>
                     <option value="Science">Science</option>
                     <option value="History">History</option>
@@ -27,15 +27,30 @@
                 </select>
             </label>
             <label>Game code (optional):
-                <input @bind="_joinCode" maxlength="6" />
+                <input @bind="_joinCode" maxlength="6" disabled="@_busy" />
             </label>
             <div class="fq-actions">
-                <button class="fq-btn fq-btn-primary" @onclick="OnCreate">Create new game</button>
-                <button class="fq-btn fq-btn-secondary" @onclick="OnJoin" disabled="@string.IsNullOrWhiteSpace(_joinCode)">Join by code</button>
+                @* Bug fix QA #6: aria-busy + disabled state while the SignalR handshake
+                   is in flight, so the primary button cannot fire twice on touch. *@
+                <button class="fq-btn fq-btn-primary"
+                        aria-busy="@_busy"
+                        disabled="@_busy"
+                        @onclick="OnCreate">
+                    @(_busy ? "Creating…" : "Create new game")
+                </button>
+                <button class="fq-btn fq-btn-secondary"
+                        aria-busy="@_busyJoin"
+                        disabled="@(_busyJoin || string.IsNullOrWhiteSpace(_joinCode))"
+                        @onclick="OnJoin">
+                    @(_busyJoin ? "Joining…" : "Join by code")
+                </button>
             </div>
             @if (!string.IsNullOrEmpty(_error))
             {
-                <p class="fq-error">@_error</p>
+                <p class="fq-error">
+                    @_error
+                    <button class="fq-btn fq-btn-secondary fq-btn-retry" @onclick="RetryConnect">Retry</button>
+                </p>
             }
         </div>
     }
@@ -101,6 +116,8 @@
     private string? _joinCode;
     private string? _error;
     private bool _isConnected;
+    private bool _busy;
+    private bool _busyJoin;
     private FunQuizGameStateDto? _state;
     private FunQuizGameFinishedDto? _finished;
     private FunQuizQuestionDto? _currentQuestion;
@@ -129,16 +146,63 @@
 
     private async Task OnCreate()
     {
+        if (_busy || _state is not null) return;
         if (string.IsNullOrWhiteSpace(_playerName)) { _error = "Enter a name."; return; }
         PlayerNameService.SetPlayerName(_playerName);
-        await Hub.CreateGame(_playerName, _category, 10);
+        _busy = true;
+        _error = null;
+        StateHasChanged();
+        try
+        {
+            await Hub.CreateGame(_playerName, _category, 10);
+        }
+        catch (Exception ex)
+        {
+            _error = $"Could not create game: {ex.Message}";
+        }
+        finally
+        {
+            _busy = false;
+            StateHasChanged();
+        }
     }
 
     private async Task OnJoin()
     {
+        if (_busyJoin || _state is not null) return;
         if (string.IsNullOrWhiteSpace(_joinCode)) { _error = "Enter a code."; return; }
         PlayerNameService.SetPlayerName(_playerName);
-        await Hub.JoinGame(_joinCode.Trim().ToUpperInvariant(), _playerName);
+        _busyJoin = true;
+        _error = null;
+        StateHasChanged();
+        try
+        {
+            await Hub.JoinGame(_joinCode.Trim().ToUpperInvariant(), _playerName);
+        }
+        catch (Exception ex)
+        {
+            _error = $"Could not join by code: {ex.Message}";
+        }
+        finally
+        {
+            _busyJoin = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task RetryConnect()
+    {
+        _error = null;
+        try
+        {
+            await Hub.ConnectAsync();
+            _isConnected = true;
+        }
+        catch (Exception ex)
+        {
+            _error = $"Retry failed: {ex.Message}";
+        }
+        StateHasChanged();
     }
 
     private async Task OnStart()

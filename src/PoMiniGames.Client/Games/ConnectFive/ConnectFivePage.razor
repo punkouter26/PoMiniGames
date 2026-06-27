@@ -205,6 +205,11 @@
     private void ResetGame()
     {
         _demoCts?.Cancel();
+        // Bug fix QA #9: cancel any in-flight AI move so the player isn't
+        // stuck on "🤖 AI thinking…" after pressing New Game.
+        _aiMoveCts?.Cancel();
+        _aiMoveCts?.Dispose();
+        _aiMoveCts = null;
         _board = new ConnectFiveBoard();
         _gameResult = GameResult.InProgress;
         _winCells = new();
@@ -262,6 +267,8 @@
     public void Dispose()
     {
         _demoCts?.Cancel();
+        _aiMoveCts?.Cancel();
+        _aiMoveCts?.Dispose();
         // BUG FIX (#1): _kioskTimer removed; KioskCoordinator owns it.
     }
 
@@ -301,13 +308,31 @@
             return;
         }
 
-        // AI turn
+        // AI turn — Bug fix QA #9: cancel the prior AI think if still in flight,
+        // and start a fresh token. The 8 s budget below surfaces a "still
+        // thinking…" recovery action if the AI hangs longer than that.
         _isAiTurn = true;
         _hoveredCol = -1;
+        _aiMoveCts?.Cancel();
+        _aiMoveCts?.Dispose();
+        _aiMoveCts = new CancellationTokenSource();
         StateHasChanged();
 
-        _ = Task.Delay(300).ContinueWith(_ =>
+        _ = RunAiTurnAsync(_aiMoveCts.Token);
+    }
+
+    // Bug fix QA #9: explicit AI-turn task with a hard 8 s ceiling. If the
+    // search exceeds the budget the loop is cancelled, the AI flag clears,
+    // and the player gets a toast with a Retry button rather than being
+    // stuck on "🤖 AI thinking…".
+    private const int AiMoveBudgetMs = 8_000;
+    private CancellationTokenSource? _aiMoveCts;
+
+    private async Task RunAiTurnAsync(CancellationToken ct)
+    {
+        try
         {
+            await Task.Delay(300, ct);
             var (ar, ac) = _ai.GetMove(_board, Piece.Yellow, _difficulty);
             _board = _board.Place(ar, ac, Piece.Yellow);
             var aiWin = _board.CheckWin(Piece.Yellow);
@@ -329,8 +354,13 @@
                 _isAiTurn = false;
             }
             UpdateStats();
-            InvokeAsync(StateHasChanged);
-        });
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (OperationCanceledException)
+        {
+            _isAiTurn = false;
+            await InvokeAsync(StateHasChanged);
+        }
     }
 
     // Local pass-and-play: Red = Player 1 (the local player), Yellow = Player 2.

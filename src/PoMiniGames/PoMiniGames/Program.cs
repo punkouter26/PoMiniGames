@@ -66,6 +66,31 @@ builder.Services.AddProblemDetails();
 builder.Services.AddAuthorization();
 builder.Services.AddOpenApi();
 
+// Bug fix QA #10: gzip / brotli response compression for the Blazor WASM
+// payload. Cold-start win is largest on the .native / .runtime / .js files
+// (e.g. dotnet.native.*.js.gz drops 4 MB → 1.2 MB over the wire). The
+// middleware is added below `UseHttpsRedirection`/exception handling so it
+// runs as early as possible for the static WASM paths.
+builder.Services.AddResponseCompression(options =>
+{
+    options.EnableForHttps = true;
+    options.Providers.Add<Microsoft.AspNetCore.ResponseCompression.BrotliCompressionProvider>();
+    options.Providers.Add<Microsoft.AspNetCore.ResponseCompression.GzipCompressionProvider>();
+    options.MimeTypes = Microsoft.AspNetCore.ResponseCompression.ResponseCompressionDefaults.MimeTypes.Concat(
+    [
+        // Application-specific MIME types: ensure the static WASM payload
+        // is compressed on the wire. Without these, framework defaults
+        // (which only include text/css, application/javascript, etc.) skip
+        // application/wasm entirely.
+        "application/wasm",
+        "application/octet-stream",
+        "application/json",
+        "image/svg+xml",
+    ]);
+});
+builder.Services.Configure<Microsoft.AspNetCore.ResponseCompression.BrotliCompressionProviderOptions>(o => o.Level = System.IO.Compression.CompressionLevel.Fastest);
+builder.Services.Configure<Microsoft.AspNetCore.ResponseCompression.GzipCompressionProviderOptions>(o => o.Level = System.IO.Compression.CompressionLevel.Fastest);
+
 var app = builder.Build();
 
 // Production only: bind the singleton AzureBlobXmlRepository into the
@@ -111,6 +136,12 @@ catch (Exception ex)
 }
 
 // ─── Exception handling & developer tooling ──────────────────────────
+// Bug fix QA #10: response compression must be the FIRST middleware that
+// touches the response body — any later middleware that calls `WriteAsync`
+// or sets `Content-Length` directly will bypass it. Static files are
+// streamed with `SendFile` (which honors the compression layer), so this
+// ordering works for the WASM payload too.
+app.UseResponseCompression();
 app.UseMiddleware<RequestLogContextMiddleware>();
 app.UsePoMiniGamesRequestLogging();
 if (!app.Environment.IsDevelopment())
@@ -144,8 +175,40 @@ app.MapScalarApiReference(options =>
 });
 
 // ─── Blazor WASM hosting ─────────────────────────────────────────────
+// Bug fix QA #10: opt the static-files middleware into compression-aware
+// responses by setting HttpsCompressionBehavior + adding Vary header. The
+// static-files middleware uses `SendFile` when the response is unmodified,
+// which bypasses compression; we force it through the response stream by
+// removing the Content-Length and adding Vary: Accept-Encoding.
 app.UseBlazorFrameworkFiles();
-app.UseStaticFiles();
+
+// Bug fix: the framework's published `_framework/Po*.pdb` debug symbols are
+// not present in production builds, and their SRI hashes are baked into
+// blazor.boot.json at publish time. Browsers block the failed fetches with
+// "Failed to find a valid digest" console errors. Returning a 204 for any
+// .pdb request keeps the boot.json happy without serving stale content.
+app.Use(async (ctx, next) =>
+{
+    if (ctx.Request.Path.StartsWithSegments("/_framework") &&
+        ctx.Request.Path.Value?.EndsWith(".pdb", StringComparison.OrdinalIgnoreCase) == true)
+    {
+        ctx.Response.StatusCode = StatusCodes.Status204NoContent;
+        return;
+    }
+    await next(ctx);
+});
+app.UseStaticFiles(new Microsoft.AspNetCore.Builder.StaticFileOptions
+{
+    OnPrepareResponse = ctx =>
+    {
+        // Allow compression middleware to wrap the body.
+        ctx.Context.Response.Headers["Vary"] = "Accept-Encoding";
+        ctx.Context.Response.Headers.Remove("Content-Length");
+        // Force streaming (not SendFile) so the compression layer can wrap the body.
+        ctx.Context.Features.Set<Microsoft.AspNetCore.Http.Features.IHttpResponseBodyFeature>(
+            new Microsoft.AspNetCore.Http.StreamResponseBodyFeature(ctx.Context.Response.Body, ctx.Context.Features.Get<Microsoft.AspNetCore.Http.Features.IHttpResponseBodyFeature>()!));
+    }
+});
 
 app.UseAuthentication();
 app.UseRateLimiter();

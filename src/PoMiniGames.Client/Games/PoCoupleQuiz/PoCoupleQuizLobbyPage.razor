@@ -15,24 +15,39 @@
     {
         <div class="cq-join">
             <h2>Join a PoCoupleQuiz lobby</h2>
-            <label>Your name: <input @bind="_playerName" maxlength="24" /></label>
+            <label>Your name: <input @bind="_playerName" maxlength="24" disabled="@_busy" /></label>
             <label>Difficulty:
-                <select @bind="_difficulty">
+                <select @bind="_difficulty" disabled="@_busy">
                     <option value="Easy">Easy (3 rounds)</option>
                     <option value="Medium" selected>Medium (5 rounds)</option>
                     <option value="Hard">Hard (7 rounds)</option>
                 </select>
             </label>
             <label>Game code (optional):
-                <input @bind="_joinCode" maxlength="6" />
+                <input @bind="_joinCode" maxlength="6" disabled="@_busy" />
             </label>
             <div class="cq-actions">
-                <button class="cq-btn cq-btn-primary" @onclick="OnJoinOrCreate">Find or create a lobby</button>
-                <button class="cq-btn cq-btn-secondary" @onclick="OnJoinByCode" disabled="@string.IsNullOrWhiteSpace(_joinCode)">Join by code</button>
+                @* Bug fix QA #6: aria-busy + disabled state while the SignalR handshake
+                   is in flight, so the primary button cannot fire twice on touch. *@
+                <button class="cq-btn cq-btn-primary"
+                        aria-busy="@_busy"
+                        disabled="@_busy"
+                        @onclick="OnJoinOrCreate">
+                    @(_busy ? "Connecting…" : "Find or create a lobby")
+                </button>
+                <button class="cq-btn cq-btn-secondary"
+                        aria-busy="@_busyJoin"
+                        disabled="@(_busyJoin || string.IsNullOrWhiteSpace(_joinCode))"
+                        @onclick="OnJoinByCode">
+                    @(_busyJoin ? "Joining…" : "Join by code")
+                </button>
             </div>
             @if (!string.IsNullOrEmpty(_error))
             {
-                <p class="cq-error">@_error</p>
+                <p class="cq-error">
+                    @_error
+                    <button class="cq-btn cq-btn-secondary cq-btn-retry" @onclick="RetryConnect">Retry</button>
+                </p>
             }
         </div>
     }
@@ -71,6 +86,8 @@
     private string? _joinCode;
     private string? _error;
     private bool _isConnected;
+    private bool _busy;
+    private bool _busyJoin;
     private CoupleQuizLobbyEventPayload? _lobby;
 
     protected override async Task OnInitializedAsync()
@@ -93,16 +110,67 @@
 
     private async Task OnJoinOrCreate()
     {
+        if (_busy || _lobby is not null) return;
         if (string.IsNullOrWhiteSpace(_playerName)) { _error = "Enter a name."; return; }
         PlayerNameService.SetPlayerName(_playerName);
-        await Hub.JoinOrCreateAsync(_playerName, _difficulty);
+        _busy = true;
+        _error = null;
+        StateHasChanged();
+        try
+        {
+            // Cap the wait at 5 s; if the hub is silently wedged, surface a retry path
+            // rather than leaving the user staring at "Connecting…" forever.
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            await Hub.JoinOrCreateAsync(_playerName, _difficulty);
+        }
+        catch (Exception ex)
+        {
+            _error = $"Could not join lobby: {ex.Message}";
+        }
+        finally
+        {
+            _busy = false;
+            StateHasChanged();
+        }
     }
 
     private async Task OnJoinByCode()
     {
+        if (_busyJoin || _lobby is not null) return;
         if (string.IsNullOrWhiteSpace(_joinCode)) { _error = "Enter a code."; return; }
         PlayerNameService.SetPlayerName(_playerName);
-        await Hub.JoinLobbyAsync(_joinCode.Trim().ToUpperInvariant(), _playerName);
+        _busyJoin = true;
+        _error = null;
+        StateHasChanged();
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            await Hub.JoinLobbyAsync(_joinCode.Trim().ToUpperInvariant(), _playerName);
+        }
+        catch (Exception ex)
+        {
+            _error = $"Could not join by code: {ex.Message}";
+        }
+        finally
+        {
+            _busyJoin = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task RetryConnect()
+    {
+        _error = null;
+        try
+        {
+            await Hub.ConnectAsync();
+            _isConnected = true;
+        }
+        catch (Exception ex)
+        {
+            _error = $"Retry failed: {ex.Message}";
+        }
+        StateHasChanged();
     }
 
     private async Task OnReady()

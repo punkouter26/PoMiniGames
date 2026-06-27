@@ -48,17 +48,30 @@
            page (one-tap), completing the Left–Center–Right spatial contract. *@
         <div class="gl-top-bar-center">
             @* Pending-sync pill: turns silent score-submit failures into honest, reassuring
-               status. Only shows when scores are parked offline; tapping it retries now. *@
-            @if (_pendingScores > 0)
-            {
-                <button type="button"
-                        class="gl-sync-pill"
-                        aria-label="@_pendingScores score(s) waiting to sync — tap to retry now"
-                        @onclick="FlushScoresAsync">
-                    ⟳ <span class="gl-sync-count">@_pendingScores</span>
+               status. Bug fix QA #8: the pill is now always visible (collapsed to an
+               icon-only "offline-ready" glyph when the queue is empty) so players can
+               discover the affordance and inspect sync state without first failing a
+               game. Tap is a no-op when the queue is empty. *@
+            <button type="button"
+                    class="gl-sync-pill @(_pendingScores > 0 ? "gl-sync-pill--has-pending" : "gl-sync-pill--idle")"
+                    aria-label="@(_pendingScores > 0
+                        ? $"{_pendingScores} score(s) waiting to sync — tap to retry now"
+                        : "No pending scores. Tap to flush anyway.")"
+                    title="@(_pendingScores > 0
+                        ? $"{_pendingScores} score(s) waiting to sync"
+                        : "Sync queue is empty")"
+                    @onclick="FlushScoresAsync">
+                <span class="gl-sync-icon" aria-hidden="true">⟳</span>
+                @if (_pendingScores > 0)
+                {
+                    <span class="gl-sync-count">@_pendingScores</span>
                     <span class="gl-center-action-label">pending</span>
-                </button>
-            }
+                }
+                else
+                {
+                    <span class="gl-center-action-label">synced</span>
+                }
+            </button>
             <button type="button"
                     class="gl-center-action @(Kiosk.IsActive ? "gl-center-action--active" : null)"
                     aria-pressed="@Kiosk.IsActive"

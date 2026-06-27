@@ -140,6 +140,31 @@ public static class CoupleQuizEndpoints
         .WithName("CoupleQuiz_TeamLeaderboard")
         .WithSummary("Top PoCoupleQuiz teams ordered by high score (tie-break: accuracy)");
 
+        // Bug fix QA #4: friendly alias for /api/couplequiz/leaderboard that returns the
+        // same payload as /teams/leaderboard. Many clients (and the diag tooling) assume
+        // a singular path; this avoids a silent 404 on that expectation.
+        group.MapGet("/leaderboard", async (ITeamsRepository repo, int limit = 25, CancellationToken ct = default) =>
+        {
+            var teams = await repo.GetAllTeamsAsync(ct);
+            var rows = teams
+                .OrderByDescending(t => t.HighScore)
+                .ThenByDescending(t => t.TotalQuestionsAnswered == 0 ? 0 : (double)t.CorrectAnswers / t.TotalQuestionsAnswered)
+                .Take(Math.Clamp(limit, 1, 100))
+                .Select((t, i) => new
+                {
+                    rank = i + 1,
+                    name = t.Name,
+                    highScore = t.HighScore,
+                    totalQuestionsAnswered = t.TotalQuestionsAnswered,
+                    correctAnswers = t.CorrectAnswers,
+                    accuracy = t.TotalQuestionsAnswered == 0 ? 0d : Math.Round((double)t.CorrectAnswers / t.TotalQuestionsAnswered, 3),
+                    lastPlayed = t.LastPlayed,
+                });
+            return Results.Ok(rows);
+        })
+        .WithName("CoupleQuiz_LeaderboardAlias")
+        .WithSummary("Alias for /teams/leaderboard — returns the same payload under the singular path");
+
         group.MapPost("/teams", async (Team team, ITeamsRepository repo, CancellationToken ct) =>
         {
             if (string.IsNullOrWhiteSpace(team.Name)) return Results.BadRequest(new { error = "Name is required" });

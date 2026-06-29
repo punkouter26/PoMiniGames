@@ -25,6 +25,7 @@
     }
 
     .btb-item {
+        position: relative; /* containing block for .btb-item--active::before */
         display: flex;
         flex-direction: column;
         align-items: center;

@@ -93,8 +93,14 @@
 
     private bool IsActive(string path)
     {
-        var current = NavigationManager.ToBaseRelativePath(NavigationManager.Uri).TrimEnd('/');
-        var compare = path.TrimEnd('/');
+        var current = NavigationManager.ToBaseRelativePath(NavigationManager.Uri);
+        // Strip query/fragment so "/?autoGuest=1" still matches Home, then normalise
+        // leading/trailing slashes on BOTH sides — ToBaseRelativePath drops the leading
+        // slash but the hrefs ("/leaderboards") keep it, so a raw compare never matched.
+        var cut = current.IndexOfAny(['?', '#']);
+        if (cut >= 0) current = current[..cut];
+        current = current.Trim('/');
+        var compare = path.Trim('/');
         if (string.IsNullOrEmpty(compare)) return string.IsNullOrEmpty(current);
         return current.Equals(compare, StringComparison.OrdinalIgnoreCase)
             || current.StartsWith(compare + "/", StringComparison.OrdinalIgnoreCase);

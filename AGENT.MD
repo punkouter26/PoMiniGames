@@ -31,7 +31,8 @@ the shared Infrastructure project unless the data is genuinely cross-slice.
   - `Games/` — **11 client-only mini-games** with no server slice (no Features/ counterpart, no telemetry, no leaderboard back-end). Pure local-first: `BabyTouch`, `ConnectFive`, `DropSquare`, `Fight`, `HorseRace`, `PoMarbleRace`, `PoRacer` (UI only — scores post to `/api/leaderboard`), `PoRunner`, `SnakeGame`, `TicTacToe`, `VoxelShooter`. Keep them in the client project; do **not** mirror them under `src/PoMiniGames/PoMiniGames/Features/`.
 - `src/PoMiniGames.Application` — application services, DTOs, diagnostics contracts.
 - `src/PoMiniGames.Domain` — domain models / services.
-- `src/PoMiniGames.Infrastructure` — shared platform persistence + health checks (Azure Table Storage) **and the legacy PoSurvive `AI/` resilience helpers** (`AzureOpenAIResilience.DefaultOptions()` is consumed by both PoSurvive's direct Azure OpenAI client and the new `PoMiniGames.AI.AIFoundryClientFactory`). Two AI namespaces exist by design during the PoSurvive → Foundry migration window; new code goes in `src/PoMiniGames/PoMiniGames/AI/`.
+- `src/PoMiniGames.Infrastructure` — shared platform persistence + health checks (Azure Table Storage). AI resilience helpers live exclusively under `PoMiniGames.AI` (see host project) — the migration window with two AI namespaces is closed.
+- AI namespace policy: every AI-touching type lives under `PoMiniGames.AI` and is reachable from the host project via `src/PoMiniGames/PoMiniGames/GlobalUsings.cs`. Per-slice files (PoCoupleQuiz / PoFace / PoFunQuiz / PoJoker / PoSurvive) do not need `using PoMiniGames.AI;` — the global using wires it. New AI consumers must use the same flat namespace; no `PoMiniGames.Infrastructure.AI` or other AI sub-namespace is permitted (the analyzer will flag any new duplicates).
 - `src/PoShared` — shared models/business logic used by both client and API (the `.Shared` library). Trim-clean (no IL suppressions). `PoShared/Games/` holds game-agnostic DTOs (e.g. `PoJoker/JokeDtos.cs`, `PoRacerShared.cs`) shared between client and host.
 - `tests/PoMiniGames.Unit` — xUnit unit tests, mirrored under `Features/<Slice>/`. Project name = `PoMiniGames.Unit`, namespace `PoMiniGames.Unit.*` (`<sln>.<Tier>` convention).
 - `tests/PoMiniGames.Integration` — `WebApplicationFactory` + **Testcontainers.Azurite** (v4 module). Project name = `PoMiniGames.Integration`, namespace `PoMiniGames.Integration.*`.
@@ -103,9 +104,13 @@ the shared Infrastructure project unless the data is genuinely cross-slice.
   `cloud_RoleName` is bound to the compile-time constant `TelemetryExtensions.CloudRoleName`
   = `"PoMiniGames"` — never reflect against the executing assembly (which can collide on
   trimming / single-file publish). Sampling: 100% in dev/test, ~10% in prod; errors always logged.
-- Diagnostics: `/health` (clean JSON) and `/diag` (masked keys + integration status,
-  feature-flag gated; the SPA only shows raw JSON in Development). OpenAPI via **Scalar**.
-  `.http` files in the host project.
+- Diagnostics: a single `/api/health/*` surface — `/api/health` (full health report),
+  `/api/health/liveness` (Kubernetes/App Service liveness probe, alias of `/api/health`),
+  `/api/health/ping` (zero-dependency `pong` — the cheapest liveness probe the platform
+  supports) — plus the legacy `/health` alias kept only for App Service default probes
+  (excluded from OpenAPI so new code prefers the `/api/health` shape). `/api/diag`
+  exposes masked keys + integration status, feature-flag gated; the SPA only shows raw
+  JSON in Development. OpenAPI via **Scalar**. `.http` files in the host project.
 
 ## CI/CD
 - `.github/workflows/deploy.yml` is **build-only — no tests run in CI.** Tests are

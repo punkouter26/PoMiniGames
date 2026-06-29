@@ -14,7 +14,7 @@ namespace PoMiniGames.AI;
 /// <list type="bullet">
 ///   <item>Halves connection setup time (one pipeline, one auth handshake).</item>
 ///   <item>Centralises the per-call timeout / retry / circuit-breaker policy in one place
-///         (<see cref="PoMiniGames.Infrastructure.AI.AzureOpenAIResilience"/>).</item>
+///         (<see cref="AzureOpenAIResilience"/>).</item>
 ///   <item>Provides a single point of audit for every model invocation routed through
 ///         OpenTelemetry → Application Insights.</item>
 /// </list>
@@ -56,7 +56,7 @@ public sealed class AIFoundryClientFactory
             return new AzureOpenAIClient(
                 new Uri(opts.Endpoint),
                 new Azure.Identity.DefaultAzureCredential(),
-                PoMiniGames.Infrastructure.AI.AzureOpenAIResilience.DefaultOptions());
+                AzureOpenAIResilience.DefaultOptions());
         });
     }
 

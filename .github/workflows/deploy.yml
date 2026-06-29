@@ -187,18 +187,28 @@ jobs:
       - name: Prewarm (absorb F1 cold-start)
         shell: bash
         # F1 cannot enable AlwaysOn; the first request after a fresh deploy pays
-        # the full cold-start tax (~10–30s on a Windows F1). Hammering
-        # /api/health/ping here keeps the retry-loop failures out of the next
-        # three smoke steps.
+        # the full cold-start tax (~10–30s on a Windows F1). Hammering the cold
+        # code paths here keeps the retry-loop failures out of the next four
+        # smoke steps. We probe ping (cheapest), liveness (alias), structured
+        # /api/health, and /api/diag in order — every health surface must be
+        # warmed before the smoke tests run.
         run: |
-          curl -fsS --retry 15 --retry-all-errors --retry-delay 15 \
-            "https://${APP_NAME}.azurewebsites.net/api/health/ping"
+          for path in "/api/health/ping" "/api/health/liveness" "/api/health" "/api/diag"; do
+            curl -fsS --retry 15 --retry-all-errors --retry-delay 15 \
+              "https://${APP_NAME}.azurewebsites.net${path}" || true
+          done
 
       - name: Smoke Test - Health Ping
         shell: bash
         run: |
           curl -fsS --retry 6 --retry-all-errors --retry-delay 10 \
             "https://${APP_NAME}.azurewebsites.net/api/health/ping" || exit 1
+
+      - name: Smoke Test - Health Liveness
+        shell: bash
+        run: |
+          curl -fsS --retry 6 --retry-all-errors --retry-delay 10 \
+            "https://${APP_NAME}.azurewebsites.net/api/health/liveness" || exit 1
 
       - name: Smoke Test - Full Health
         shell: bash

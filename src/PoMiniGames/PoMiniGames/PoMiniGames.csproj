@@ -28,6 +28,11 @@
     <PackageReference Include="Azure.Data.Tables" />
     <PackageReference Include="Azure.Storage.Blobs" />
     <PackageReference Include="Azure.AI.OpenAI" />
+    <!-- §2026-06-28 AI namespace consolidation: PoSurvive's AzureOpenAIInferenceService
+         now wraps an ME.AI IChatClient resolved from AIFoundryChatClientCache; the
+         .AsIChatClient() adapter extension lives in this package. -->
+    <PackageReference Include="Microsoft.Extensions.AI" />
+    <PackageReference Include="Microsoft.Extensions.AI.OpenAI" />
     <!-- API -->
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />

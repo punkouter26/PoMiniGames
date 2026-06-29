@@ -6,7 +6,7 @@ using Polly.CircuitBreaker;
 using Polly.Retry;
 using Polly.Timeout;
 
-namespace PoMiniGames.Infrastructure.AI;
+namespace PoMiniGames.AI;
 
 /// <summary>
 /// Centralises the resilience posture for every Azure OpenAI client in the solution so no
@@ -32,6 +32,13 @@ namespace PoMiniGames.Infrastructure.AI;
 /// The Azure OpenAI SDK (System.ClientModel) keeps its own <see cref="ClientRetryPolicy"/>
 /// for the underlying transport, but the orchestrating <see cref="ResiliencePipeline"/>
 /// is now the source of truth for total-call budget and circuit state.
+/// </para>
+/// <para>
+/// <b>Namespace consolidation.</b> Previously lived under
+/// <c>PoMiniGames.Infrastructure.AI</c> alongside the rest of the centralization types.
+/// Moved here as part of the migration-window cleanup so every AI consumer compiles
+/// against a single <c>using PoMiniGames.AI;</c> (wired by the host's
+/// <c>GlobalUsings.cs</c>).
 /// </para>
 /// </remarks>
 public static class AzureOpenAIResilience

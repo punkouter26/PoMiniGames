@@ -3,7 +3,6 @@ using Azure.AI.OpenAI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Options;
 using OpenAI.Chat;
-using PoMiniGames.AI;
 
 namespace PoMiniGames.AI;
 

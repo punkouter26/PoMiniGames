@@ -1,10 +1,10 @@
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Options;
-using PoMiniGames.AI;
 using PoSurvive.Application.Interfaces;
 using PoSurvive.Application.Services;
-using PoSurvive.Infrastructure.AI;
 using PoSurvive.Infrastructure.Persistence.TableStorage;
 using PoSurvive.Server.Endpoints;
+using PoSurvive.Server.Storage;
 using PoSurvive.Shared.Interfaces;
 
 namespace PoMiniGames.Features.PoSurvive;
@@ -37,16 +37,14 @@ public static class PoSurviveServiceExtensions
                 // resolved through AIFoundryOptions.Deployments["survive"].
                 services.AddSingleton<IInferenceService>(sp =>
                 {
-                    var foundry = sp.GetRequiredService<AIFoundryClientFactory>();
-                    var foundryOptions = sp.GetRequiredService<IOptionsMonitor<AIFoundryOptions>>().CurrentValue;
-                    var deployment = foundryOptions.ResolveDeployment(AIFoundryOptions.Games.Survive);
-                    var client = foundry.Client
+                    var chatClientCache = sp.GetRequiredService<AIFoundryChatClientCache>();
+                    var chatClient = chatClientCache.ResolveAsIChatClient(AIFoundryOptions.Games.Survive)
                         ?? throw new InvalidOperationException(
                             $"PoSurvive: AIFoundry not configured. Set {AIFoundryOptions.SectionName} in Key Vault (kv-poshared).");
 
                     return new AzureOpenAIInferenceService(
-                        openAiClient: client,
-                        defaultDeployment: deployment);
+                        chat: chatClient,
+                        logger: sp.GetRequiredService<ILogger<AzureOpenAIInferenceService>>());
                 });
             }
             else
@@ -73,12 +71,18 @@ public static class PoSurviveServiceExtensions
                 services.AddSingleton(_ => new Azure.AI.OpenAI.AzureOpenAIClient(
                     new Uri(endpoint),
                     new Azure.AzureKeyCredential(apiKey),
-                    PoMiniGames.Infrastructure.AI.AzureOpenAIResilience.DefaultOptions()));
+                    AzureOpenAIResilience.DefaultOptions()));
+
                 services.AddSingleton<IInferenceService>(sp =>
-                    new AzureOpenAIInferenceService(
-                        openAiClient: sp.GetRequiredService<Azure.AI.OpenAI.AzureOpenAIClient>(),
-                        defaultDeployment: defaultDeployment,
-                        deploymentMap: deploymentMap));
+                {
+                    var azure = sp.GetRequiredService<Azure.AI.OpenAI.AzureOpenAIClient>()
+                        .GetChatClient(defaultDeployment)
+                        .AsIChatClient();
+                    return new AzureOpenAIInferenceService(
+                        chat: azure,
+                        deploymentMap: deploymentMap,
+                        logger: sp.GetRequiredService<ILogger<AzureOpenAIInferenceService>>());
+                });
             }
         }
 

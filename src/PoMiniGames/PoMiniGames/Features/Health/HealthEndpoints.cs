@@ -3,10 +3,22 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 namespace PoMiniGames.Features.Health;
 
 /// <summary>
-/// Minimal API health endpoints.
-/// GET /api/health  → structured health report
-/// GET /api/health/ping → simple OK
+/// Minimal API health endpoints, all under a single <c>/api/health/*</c> prefix.
+/// <list type="bullet">
+///   <item><c>GET /api/health</c> — structured health report (the legacy contract)</item>
+///   <item><c>GET /api/health/liveness</c> — process-is-up liveness probe (alias of <c>/api/health</c>)</item>
+///   <item><c>GET /api/health/ping</c> — zero-dependency <c>pong</c> (no health-check service)</item>
+///   <item><c>GET /health</c> — non-prefixed alias kept only for App Service probe compatibility;
+///         new callers must use <c>/api/health</c>.</item>
+/// </list>
 /// </summary>
+/// <remarks>
+/// Pattern: Adapter over ASP.NET Core's <see cref="HealthCheckService"/>. The
+/// application-composition root treats these URLs as a single namespace so
+/// <c>curl .../api/health/...</c> is the only shape dev/ops/CI ever have to learn
+/// (the previously-divergent <c>/health</c> and <c>/api/health/ping</c> pair was the
+/// most-copy-pasted bug across the test suites — see <c>docs/qa-fixes-runbook.md</c>).
+/// </remarks>
 public static class HealthEndpoints
 {
     public static IEndpointRouteBuilder MapHealthEndpoints(this IEndpointRouteBuilder app)
@@ -25,15 +37,28 @@ public static class HealthEndpoints
         .WithTags("Health")
         .WithSummary("Structured health report for all dependencies");
 
-        app.MapGet("/health", healthHandler)
-        .WithName("HealthCheckRoot")
+        // Liveness is the standard Kubernetes / App Service probe shape:
+        // "is the process alive?" — answered by the same health-check service but
+        // named so the route table is self-documenting.
+        app.MapGet("/api/health/liveness", healthHandler)
+        .WithName("HealthLiveness")
         .WithTags("Health")
-        .WithSummary("Structured health report (root alias)");
+        .WithSummary("Liveness probe (process alive). Alias of /api/health.");
 
         app.MapGet("/api/health/ping", () => Results.Ok("pong"))
             .WithName("HealthPing")
             .WithTags("Health")
-            .WithSummary("Simple liveness probe");
+            .WithSummary("Simple liveness probe (no health-check service)");
+
+        // Legacy root alias: kept so external monitors pointed at <c>/health</c>
+        // continue to work. New callers must prefer <c>/api/health</c>. The
+        // alias is intentionally NOT named in OpenAPI to discourage new code
+        // from referencing it.
+        app.MapGet("/health", healthHandler)
+        .WithName("HealthCheckRootAlias")
+        .WithTags("Health")
+        .WithSummary("Structured health report (legacy root alias for App Service probes)")
+        .ExcludeFromDescription();
 
         return app;
     }

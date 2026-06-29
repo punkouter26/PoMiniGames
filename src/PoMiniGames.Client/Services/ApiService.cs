@@ -50,6 +50,9 @@ public class ApiService
         try
         {
             using var cts = new CancellationTokenSource(Timeout);
+            // /api/health/ping is the cheapest possible liveness probe — no JSON,
+            // no health-check service, just "200 OK / pong". Kept as the platform's
+            // off-line detection sentinel; for richer diagnostics use /api/health.
             var response = await _http.GetAsync("/api/health/ping", cts.Token);
             return response.IsSuccessStatusCode;
         }

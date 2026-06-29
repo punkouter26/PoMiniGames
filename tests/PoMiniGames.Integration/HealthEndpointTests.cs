@@ -41,6 +41,20 @@ public sealed class HealthEndpointTests : IClassFixture<TestWebApplicationFactor
     }
 
     [Fact]
+    public async Task ApiHealthLiveness_ReturnsStructuredJson()
+    {
+        // /api/health/liveness is the canonical Kubernetes / App Service liveness
+        // probe; same body as /api/health.
+        var response = await _client.GetAsync("/api/health/liveness");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var body = await response.Content.ReadAsStringAsync();
+        var json = JsonNode.Parse(body);
+        json.Should().NotBeNull();
+        json!["status"]!.GetValue<string>().Should().NotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
     public async Task DiagEndpoint_ReturnsOk()
     {
         // The programmatic snapshot lives at /api/diag; bare /diag is the Blazor page route

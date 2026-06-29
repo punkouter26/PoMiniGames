@@ -1,7 +1,6 @@
 @page "/"
 @inject NavigationManager NavigationManager
 @inject GameStatsService GameStatsService
-@inject ApiService ApiService
 @inject KioskCoordinator Kiosk
 @inject IJSRuntime JS
 @implements IAsyncDisposable
@@ -12,80 +11,20 @@
        CSS gradient on browsers without WebGL2 (Safari TP, etc.). *@
     <canvas @ref="_ambientCanvas" class="home-ambient" aria-hidden="true"></canvas>
 
-    @if (_isLoading)
-    {
-        <div class="home-modes">
-            <div class="skeleton skeleton--btn"></div>
-            <div class="skeleton skeleton--btn"></div>
-            <div class="skeleton skeleton--btn"></div>
-            <div class="skeleton skeleton--btn"></div>
-        </div>
-    }
-    else
-    {
-        <h1 class="home-title">
-            <span class="home-title-icon">
-                <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <rect x="3" y="5" width="14" height="14" rx="2" fill="currentColor" opacity="0.8"/>
-                    <rect x="23" y="5" width="14" height="14" rx="2" fill="currentColor" opacity="0.5"/>
-                    <rect x="3" y="23" width="14" height="14" rx="2" fill="currentColor" opacity="0.5"/>
-                    <rect x="23" y="23" width="14" height="14" rx="2" fill="currentColor" opacity="0.8"/>
-                </svg>
-            </span>
-            PoMiniGames
-        </h1>
-        <p class="home-subtitle">Choose how you want to play</p>
+    <h1 class="home-title">
+        <span class="home-title-icon">
+            <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect x="3" y="5" width="14" height="14" rx="2" fill="currentColor" opacity="0.8"/>
+                <rect x="23" y="5" width="14" height="14" rx="2" fill="currentColor" opacity="0.5"/>
+                <rect x="3" y="23" width="14" height="14" rx="2" fill="currentColor" opacity="0.5"/>
+                <rect x="23" y="23" width="14" height="14" rx="2" fill="currentColor" opacity="0.8"/>
+            </svg>
+        </span>
+        PoMiniGames
+    </h1>
+    <p class="home-subtitle">Choose how you want to play</p>
 
-        @* Score-first: the leaderboard (the platform's North Star) leads the page, so on a
-           phone the player sees live competition before scrolling into the game lists. *@
-        <section class="home-scores-preview">
-            <div class="home-scores-header">
-                <h2 class="home-scores-title">
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5C7 4 6 9 6 9z"/>
-                        <path d="M18 9h1.5a2.5 2.5 0 0 0 0-5C17 4 18 9 18 9z"/>
-                        <path d="M4 22h16"/>
-                        <path d="M10 22V9h4v13"/>
-                        <path d="M8 22V8"/>
-                        <path d="M16 22V8"/>
-                        <path d="M12 2v4m-2-2h4"/>
-                    </svg>
-                    Top Scores
-                </h2>
-                <a class="home-scores-all" href="/leaderboards">See all →</a>
-            </div>
-            <div class="home-scores-carousel">
-                @if (_topGames.Count == 0)
-                {
-                    <div class="home-scores-empty">
-                        <svg class="home-scores-empty-icon" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                            <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5C7 4 6 9 6 9z"/>
-                            <path d="M18 9h1.5a2.5 2.5 0 0 0 0-5C17 4 18 9 18 9z"/>
-                            <path d="M4 22h16M10 22V9h4v13M8 22V8M16 22V8"/>
-                        </svg>
-                        <span>@(_topScoresError ? "Backend offline — play now; scores you set will sync when it's back." : "Play a game to appear here!")</span>
-                        <a class="home-scores-empty-cta" href="#home-modes">Pick a game ↓</a>
-                    </div>
-                }
-                @foreach (var game in _topGames)
-                {
-                    <div class="home-score-card" @onclick="() => NavigationManager.NavigateTo(game.Url)">
-                        <div class="home-score-card-head">
-                            <h3>@game.Title</h3>
-                            <span class="home-score-unit">@game.Unit</span>
-                        </div>
-                        <ol class="home-score-mini-list">
-                            @foreach (var entry in game.Top3)
-                            {
-                                <li><span class="home-score-name">@entry.Name</span><span class="home-score-val">@entry.Score</span></li>
-                            }
-                        </ol>
-                    </div>
-                }
-            </div>
-        </section>
-
-        <div class="home-sections" id="home-modes">
+    <div class="home-sections" id="home-modes">
             <section class="home-section">
                 <div class="home-mode-btn home-mode-btn--1p home-mode-btn--static">
                     <span class="home-mode-icon">
@@ -158,28 +97,18 @@
             </button>
         </div>
 
-    }
 </div>
 
 @code {
-    private bool _isLoading = true;
-    private List<TopGamePreview> _topGames = [];
-    private bool _topScoresError = false;
     private ElementReference _ambientCanvas;
     private IJSObjectReference? _ambientModule;
     private bool _ambientStarted;
-    private record TopGamePreview(string Title, string Url, string Unit, List<ScoreEntry> Top3);
-    private record ScoreEntry(string Name, string Score);
 
-    protected override async Task OnInitializedAsync()
+    protected override void OnInitialized()
     {
         // Subscribe to kiosk state so the Demo button (Start ↔ Stop) updates
         // reactively when the coordinator starts/stops/pauses/advances.
         Kiosk.Changed += OnKioskStateChanged;
-
-        await LoadTopGames();
-
-        _isLoading = false;
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -204,38 +133,6 @@
     }
 
     private void OnKioskStateChanged() => InvokeAsync(StateHasChanged);
-
-    private async Task LoadTopGames()
-    {
-        // One round-trip to the unified read-model returns every game's board already
-        // normalized with the correct unit (win-rate, points, survival) and pre-formatted
-        // DisplayValue — no more hardcoded roster and no more win-rate-on-a-points-game bug.
-        var boards = await ApiService.GetAllLeaderboardsAsync(limit: 3);
-
-        if (boards is null)
-        {
-            // Distinct "backend offline" state instead of the misleading "play to appear here".
-            _topScoresError = true;
-            _topGames = [];
-            return;
-        }
-
-        _topGames = boards
-            .Where(b => b.Entries.Count > 0)
-            .Select(b => new TopGamePreview(
-                b.Title,
-                PlayUrlFor(b.GameKey),
-                b.Unit,
-                b.Entries.Select(e => new ScoreEntry(e.Name, e.DisplayValue)).ToList()))
-            .ToList();
-    }
-
-    // Resolve a board's primary play route from the shared catalog (falls back to "/{key}").
-    private static string PlayUrlFor(string gameKey)
-    {
-        var match = GameCatalog.SinglePlayer.FirstOrDefault(g => string.Equals(g.Key, gameKey, StringComparison.OrdinalIgnoreCase));
-        return match is not null ? match.Url : $"/{gameKey}";
-    }
 
     public async ValueTask DisposeAsync()
     {

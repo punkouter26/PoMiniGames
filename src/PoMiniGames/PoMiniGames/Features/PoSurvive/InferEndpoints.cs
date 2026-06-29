@@ -1,7 +1,7 @@
 namespace PoSurvive.Server.Endpoints;
 
 using Microsoft.AspNetCore.Mvc;
-using PoSurvive.Infrastructure.AI;
+using PoSurvive.Server.Storage;
 using PoSurvive.Shared.Interfaces;
 using PoSurvive.Shared.Models;
 

@@ -1,6 +1,5 @@
 using Microsoft.Extensions.Hosting;
 using OpenAI.Chat;
-using PoMiniGames.AI;
 using PoShared.Games.PoJoker;
 
 namespace PoMiniGames.Features.PoJoker;
@@ -14,7 +13,7 @@ namespace PoMiniGames.Features.PoJoker;
 /// not configured, the service falls back to <see cref="MockAnalysisService"/> in
 /// non-Production environments and throws in Production (so a misconfigured deployment
 /// never silently serves fabricated data). The shared
-/// <see cref="PoMiniGames.Infrastructure.AI.AzureOpenAIResilience"/> options bound the
+/// <see cref="AzureOpenAIResilience"/> options bound the
 /// per-attempt network timeout and retry count.</para>
 /// </summary>
 public sealed class AiJesterService : IAnalysisService

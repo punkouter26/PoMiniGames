@@ -4,7 +4,6 @@ using System.Text.Json;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using PoMiniGames.AI;
 
 namespace PoMiniGames.Features.PoFace;
 

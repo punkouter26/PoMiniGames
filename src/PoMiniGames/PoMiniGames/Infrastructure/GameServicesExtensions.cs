@@ -8,7 +8,6 @@ using PoMiniGames.Features.PoFunQuiz.Storage;
 using PoMiniGames.Features.PoJoker;
 using PoMiniGames.Features.PoJoker.Storage;
 using PoMiniGames.Features.PoRaceRagdoll;
-using PoMiniGames.Infrastructure.AI;
 using PoMiniGames.Infrastructure.Services;
 
 // Aliases to disambiguate the identically-named ILeaderboardRepository and
@@ -33,7 +32,7 @@ internal static class GameServicesExtensions
         // with its game key (couplequiz, funquiz, face, joker, survive).
         // Replaces the legacy per-game PoFunQuiz:AzureOpenAI, PoCoupleQuiz:AzureOpenAI,
         // PoFace:AzureOpenAI, PoJoker:AzureOpenAI, Inference:* sections.
-        services.Configure<PoMiniGames.AI.AIFoundryOptions>(opts =>
+        services.Configure<AIFoundryOptions>(opts =>
         {
             // Belt-and-braces fallback if KV hasn't resolved before the first
             // request. The host's environment variables (PoMiniGames__AI__FoundryEndpoint
@@ -48,8 +47,8 @@ internal static class GameServicesExtensions
             }
             opts.DefaultDeployment = defaultDeployment;
         });
-        services.AddSingleton<PoMiniGames.AI.AIFoundryClientFactory>();
-        services.AddSingleton<PoMiniGames.AI.AIFoundryChatClientCache>();
+        services.AddSingleton<AIFoundryClientFactory>();
+        services.AddSingleton<AIFoundryChatClientCache>();
         // §3: register the resilience pipeline (retry + circuit breaker + outer timeout)
         // used by every AI Foundry consumer. Idempotent — safe to call multiple times.
         services.AddAzureOpenAIResilience();
@@ -124,7 +123,7 @@ internal static class GameServicesExtensions
         // request's correlation/session ids and forward them upstream.
         services.AddHttpContextAccessor();
         services.AddTransient<CorrelationPropagationHandler>();
-        services.AddTransient<PoMiniGames.AI.AIFoundryBearerTokenHandler>();
+        services.AddTransient<AIFoundryBearerTokenHandler>();
         services.AddHttpClient(AzureAIFaceAnalysisService.HttpClientName, client =>
             {
                 // 30s, not 60s: this serves a real-time game; a request that hasn't
@@ -132,7 +131,7 @@ internal static class GameServicesExtensions
                 client.Timeout = TimeSpan.FromSeconds(30);
             })
             .AddHttpMessageHandler<CorrelationPropagationHandler>()
-            .AddHttpMessageHandler<PoMiniGames.AI.AIFoundryBearerTokenHandler>()
+            .AddHttpMessageHandler<AIFoundryBearerTokenHandler>()
             .AddStandardResilienceHandler();
         services.AddSingleton<IFaceAnalysisService, AzureAIFaceAnalysisService>();
         services.AddSingleton<StubFaceAnalysisService>();

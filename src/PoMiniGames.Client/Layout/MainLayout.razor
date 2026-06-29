@@ -44,44 +44,6 @@
             }
         </div>
 
-        @* Center: app-wide primary action — kiosk demo toggle reachable from any
-           page (one-tap), completing the Left–Center–Right spatial contract. *@
-        <div class="gl-top-bar-center">
-            @* Pending-sync pill: turns silent score-submit failures into honest, reassuring
-               status. Bug fix QA #8: the pill is now always visible (collapsed to an
-               icon-only "offline-ready" glyph when the queue is empty) so players can
-               discover the affordance and inspect sync state without first failing a
-               game. Tap is a no-op when the queue is empty. *@
-            <button type="button"
-                    class="gl-sync-pill @(_pendingScores > 0 ? "gl-sync-pill--has-pending" : "gl-sync-pill--idle")"
-                    aria-label="@(_pendingScores > 0
-                        ? $"{_pendingScores} score(s) waiting to sync — tap to retry now"
-                        : "No pending scores. Tap to flush anyway.")"
-                    title="@(_pendingScores > 0
-                        ? $"{_pendingScores} score(s) waiting to sync"
-                        : "Sync queue is empty")"
-                    @onclick="FlushScoresAsync">
-                <span class="gl-sync-icon" aria-hidden="true">⟳</span>
-                @if (_pendingScores > 0)
-                {
-                    <span class="gl-sync-count">@_pendingScores</span>
-                    <span class="gl-center-action-label">pending</span>
-                }
-                else
-                {
-                    <span class="gl-center-action-label">synced</span>
-                }
-            </button>
-            <button type="button"
-                    class="gl-center-action @(Kiosk.IsActive ? "gl-center-action--active" : null)"
-                    aria-pressed="@Kiosk.IsActive"
-                    aria-label="@(Kiosk.IsActive ? "Stop auto-cycling demos" : "Watch all demos")"
-                    @onclick="ToggleDemoKiosk">
-                @(Kiosk.IsActive ? "■" : "▸")
-                <span class="gl-center-action-label">@(Kiosk.IsActive ? "Stop demo" : "Demos")</span>
-            </button>
-        </div>
-
         <div class="gl-auth">
             @if (AuthState.IsConfigured && AuthState.User != null)
             {
@@ -143,8 +105,6 @@
     private List<Breadcrumb> _breadcrumbs = [];
     private string _currentUrl = "";
     private Action? _onAuthStateChanged;
-    private Action? _onSyncChanged;
-    private int _pendingScores;
 
     public record Breadcrumb(string Label, string Url);
 
@@ -157,54 +117,7 @@
         _onAuthStateChanged = () => InvokeAsync(StateHasChanged);
         AuthState.StateChanged += _onAuthStateChanged;
         NavigationManager.LocationChanged += OnLocationChanged;
-        Kiosk.Changed += OnKioskChanged;
-        // Reflect queue changes live (a game enqueues a failed score, or a flush drains it).
-        _onSyncChanged = () => InvokeAsync(() => { _pendingScores = ScoreSync.PendingCount; StateHasChanged(); });
-        ScoreSync.Changed += _onSyncChanged;
         UpdateBreadcrumbs();
-    }
-
-    // localStorage + the flusher both need JS interop, so do the first read and the
-    // startup sync after the first render rather than in OnInitialized.
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (!firstRender) return;
-
-        _pendingScores = ScoreSync.PendingCount;
-        if (_pendingScores > 0) StateHasChanged();
-
-        // Best-effort flush of anything parked from a previous offline session.
-        await ScoreSync.FlushAsync();
-        _pendingScores = ScoreSync.PendingCount;
-        StateHasChanged();
-    }
-
-    private async Task FlushScoresAsync()
-    {
-        await ScoreSync.FlushAsync();
-        _pendingScores = ScoreSync.PendingCount;
-    }
-
-    private void OnKioskChanged() => InvokeAsync(StateHasChanged);
-
-    // App-wide demo toggle (center slot). Starts the "Watch All Demos" auto-cycle
-    // from anywhere, or stops it if already running — mirrors the home Demo tile.
-    private void ToggleDemoKiosk()
-    {
-        if (Kiosk.IsActive)
-        {
-            Kiosk.Stop();
-            return;
-        }
-
-        var demos = GameCatalog.Demo;
-        if (demos.Count == 0) return;
-
-        Kiosk.RegisterEntries(demos.Select(d => new DemoEntry(d.Key, d.Url, d.Title, d.Icon)));
-        var first = demos[0];
-        var sep = first.Url.Contains('?') ? '&' : '?';
-        Kiosk.Start(1);
-        NavigationManager.NavigateTo($"{first.Url}{sep}kiosk=1");
     }
 
     private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
@@ -325,14 +238,9 @@
     public void Dispose()
     {
         NavigationManager.LocationChanged -= OnLocationChanged;
-        Kiosk.Changed -= OnKioskChanged;
         if (_onAuthStateChanged is not null)
         {
             AuthState.StateChanged -= _onAuthStateChanged;
-        }
-        if (_onSyncChanged is not null)
-        {
-            ScoreSync.Changed -= _onSyncChanged;
         }
     }
 }

@@ -47,9 +47,9 @@
 
 /* Spatial contract: Left (branding) — Center (actions) — Right (session). */
 .gl-top-bar {
-    display: grid;
-    grid-template-columns: 1fr auto 1fr;
+    display: flex;
     align-items: center;
+    justify-content: space-between;
     padding: 0.6rem var(--space-5);
     background: var(--surface-bar);
     backdrop-filter: var(--glass-2);

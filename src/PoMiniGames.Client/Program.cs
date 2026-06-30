@@ -99,7 +99,7 @@ builder.Services.AddScoped<EvolutionClientService>();
 
 // Inference service. "Inference:UseMock" defaults to true to avoid a multi-GB model
 // download; set it false to activate the real WebLLM (local) + Azure relay (remote) router.
-var useMock = builder.Configuration.GetValue("Inference:UseMock", defaultValue: true);
+var useMock = !bool.TryParse(builder.Configuration["Inference:UseMock"], out var _b0) || _b0;
 if (useMock)
 {
     builder.Services.AddSingleton<IInferenceService, MockInferenceService>();
@@ -107,10 +107,10 @@ if (useMock)
 }
 else
 {
-    var timeoutMs = builder.Configuration.GetValue("Inference:InferenceTimeoutMs", defaultValue: 15_000);
-    var maxRetryAttempts = builder.Configuration.GetValue("Inference:MaxRetryAttempts", defaultValue: 2);
-    var retryDelayMs = builder.Configuration.GetValue("Inference:RetryDelayMs", defaultValue: 500);
-    var retryOnCancellation = builder.Configuration.GetValue("Inference:RetryOnCancellation", defaultValue: false);
+    var timeoutMs = int.TryParse(builder.Configuration["Inference:InferenceTimeoutMs"], out var _i1) ? _i1 : 15_000;
+    var maxRetryAttempts = int.TryParse(builder.Configuration["Inference:MaxRetryAttempts"], out var _i2) ? _i2 : 2;
+    var retryDelayMs = int.TryParse(builder.Configuration["Inference:RetryDelayMs"], out var _i3) ? _i3 : 500;
+    var retryOnCancellation = bool.TryParse(builder.Configuration["Inference:RetryOnCancellation"], out var _b4) && _b4;
     var inferenceBaseAddress = builder.HostEnvironment.BaseAddress;
 
     builder.Services.AddSingleton<WebLlmInferenceService>(sp => new WebLlmInferenceService(

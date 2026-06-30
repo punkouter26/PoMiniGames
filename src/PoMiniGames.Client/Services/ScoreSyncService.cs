@@ -61,18 +61,18 @@ public sealed class ScoreSyncService
     public int PendingCount => _store.Load().Count;
 
     public void EnqueueSnake(SnakeHighScore entry) =>
-        Enqueue(PendingScoreKind.Snake, entry);
+        Enqueue(PendingScoreKind.Snake, JsonSerializer.Serialize(entry, ApiJsonContext.Default.SnakeHighScore));
 
     public void EnqueueMarbleRace(MarbleRaceHighScore entry) =>
-        Enqueue(PendingScoreKind.MarbleRace, entry);
+        Enqueue(PendingScoreKind.MarbleRace, JsonSerializer.Serialize(entry, ApiJsonContext.Default.MarbleRaceHighScore));
 
-    private void Enqueue<T>(PendingScoreKind kind, T payload)
+    private void Enqueue(PendingScoreKind kind, string payloadJson)
     {
         var items = _store.Load();
         items.Add(new PendingScore
         {
             Kind = kind,
-            PayloadJson = JsonSerializer.Serialize(payload),
+            PayloadJson = payloadJson,
             EnqueuedAt = DateTime.UtcNow.ToString("O"),
         });
         _store.Save(items);
@@ -136,12 +136,11 @@ public sealed class ScoreSyncService
     private async Task<bool> SubmitAsync(PendingScore item) => item.Kind switch
     {
         PendingScoreKind.Snake =>
-            await _api.SubmitSnakeHighScoreAsync(Deserialize<SnakeHighScore>(item.PayloadJson)) is not null,
+            await _api.SubmitSnakeHighScoreAsync(
+                JsonSerializer.Deserialize(item.PayloadJson, ApiJsonContext.Default.SnakeHighScore) ?? new SnakeHighScore()) is not null,
         PendingScoreKind.MarbleRace =>
-            await _api.SubmitMarbleRaceHighScoreAsync(Deserialize<MarbleRaceHighScore>(item.PayloadJson)) is not null,
+            await _api.SubmitMarbleRaceHighScoreAsync(
+                JsonSerializer.Deserialize(item.PayloadJson, ApiJsonContext.Default.MarbleRaceHighScore) ?? new MarbleRaceHighScore()) is not null,
         _ => true, // unknown kind: drop rather than wedge the queue forever
     };
-
-    private static T Deserialize<T>(string json) where T : new() =>
-        JsonSerializer.Deserialize<T>(json) ?? new T();
 }

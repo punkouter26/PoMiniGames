@@ -54,13 +54,13 @@
 
     private bool _isLoading = true;
     private string? _error;
-    private List<TeamRow> _teams = new();
+    private List<CoupleQuizTeamRow> _teams = new();
 
     protected override async Task OnInitializedAsync()
     {
         try
         {
-            var teams = await Http.GetFromJsonAsync<List<TeamRow>>("/api/couplequiz/teams");
+            var teams = await Http.GetFromJsonAsync("/api/couplequiz/teams", ApiJsonContext.Default.ListCoupleQuizTeamRow);
             _teams = teams ?? new();
             _teams = _teams.OrderByDescending(t => t.HighScore).ToList();
         }
@@ -74,12 +74,4 @@
         }
     }
 
-    public class TeamRow
-    {
-        public string Name { get; set; } = string.Empty;
-        public int HighScore { get; set; }
-        public int TotalQuestionsAnswered { get; set; }
-        public int CorrectAnswers { get; set; }
-        public DateTime LastPlayed { get; set; }
-    }
 }

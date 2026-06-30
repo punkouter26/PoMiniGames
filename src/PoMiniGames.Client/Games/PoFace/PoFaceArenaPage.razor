@@ -120,7 +120,7 @@
     private string? _sessionId;
     private int _currentRound;
     private string _currentEmotion = "Happiness";
-    private ScoreResponse? _lastScore;
+    private FaceScoreResponse? _lastScore;
     private int _finalTotal;
     private string? _error;
 
@@ -148,7 +148,7 @@
                 _phase = "NoCamera";
                 return;
             }
-            var session = await resp.Content.ReadFromJsonAsync<SessionDto>();
+            var session = await resp.Content.ReadFromJsonAsync(ApiJsonContext.Default.FaceSessionDto);
             _sessionId = session!.SessionId;
         }
         catch
@@ -268,7 +268,7 @@
                 _phase = "Ready";
                 return;
             }
-            _lastScore = await resp.Content.ReadFromJsonAsync<ScoreResponse>();
+            _lastScore = await resp.Content.ReadFromJsonAsync(ApiJsonContext.Default.FaceScoreResponse);
             _phase = "Reveal";
         }
         catch (Exception ex)
@@ -297,29 +297,4 @@
         try { await JS.InvokeVoidAsync("webcamInterop.releaseCamera"); } catch { /* ignore */ }
     }
 
-    public class SessionDto
-    {
-        public string SessionId { get; set; } = string.Empty;
-        public string UserId { get; set; } = string.Empty;
-        public List<RoundDto> Rounds { get; set; } = new();
-    }
-
-    public class RoundDto
-    {
-        public int RoundNumber { get; set; }
-        public string TargetEmotion { get; set; } = string.Empty;
-    }
-
-    public class ScoreResponse
-    {
-        public string SessionId { get; set; } = string.Empty;
-        public int RoundNumber { get; set; }
-        public string TargetEmotion { get; set; } = string.Empty;
-        public bool FaceDetected { get; set; }
-        public float Confidence { get; set; }
-        public bool HeadPoseValid { get; set; }
-        public int Score { get; set; }
-        public int TotalScore { get; set; }
-        public string? ImageUrl { get; set; }
-    }
 }

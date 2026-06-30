@@ -185,8 +185,20 @@
         _progress = progress;
         try
         {
-            var rows = JsonSerializer.Deserialize<List<LbRow>>(json, JsonOpts);
-            if (rows != null) _leaderboard = rows;
+            using var doc = JsonDocument.Parse(json);
+            var rows = new List<LbRow>();
+            foreach (var el in doc.RootElement.EnumerateArray())
+            {
+                rows.Add(new LbRow
+                {
+                    Place    = el.TryGetProperty("place",    out var p) && p.TryGetInt32(out var pi)  ? pi  : 0,
+                    Color    = el.TryGetProperty("color",    out var c) ? c.GetString() ?? "#fff" : "#fff",
+                    Speed    = el.TryGetProperty("speed",    out var s) && s.TryGetDouble(out var sd) ? sd  : 0,
+                    IsPlayer = el.TryGetProperty("isPlayer", out var ip) && ip.GetBoolean(),
+                    Finished = el.TryGetProperty("finished", out var f) && f.GetBoolean(),
+                });
+            }
+            _leaderboard = rows;
         }
         catch { }
         InvokeAsync(StateHasChanged);
@@ -253,8 +265,6 @@
         1 => "1st", 2 => "2nd", 3 => "3rd",
         _ => $"{n}th"
     };
-
-    private static readonly JsonSerializerOptions JsonOpts = new() { PropertyNameCaseInsensitive = true };
 
     public async ValueTask DisposeAsync()
     {

@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using PoMiniGamesClient.Services;
 using PoShared.Games;
 
 namespace PoMiniGamesClient.Games.PoRacer;
@@ -11,13 +12,13 @@ public sealed class PoRacerScoreApiClient
 
     public async Task<IReadOnlyList<PoRacerScoreDto>> GetTopAsync(int count = 10, CancellationToken ct = default)
     {
-        var result = await _http.GetFromJsonAsync<List<PoRacerScoreDto>>($"/api/poracer/scores?top={count}", ct);
+        var result = await _http.GetFromJsonAsync($"/api/poracer/scores?top={count}", ApiJsonContext.Default.ListPoRacerScoreDto, ct);
         return result ?? new List<PoRacerScoreDto>();
     }
 
     public async Task SubmitAsync(PoRacerScoreDto score, CancellationToken ct = default)
     {
-        var response = await _http.PostAsJsonAsync("/api/poracer/scores", score, ct);
+        var response = await _http.PostAsJsonAsync("/api/poracer/scores", score, ApiJsonContext.Default.PoRacerScoreDto, ct);
         response.EnsureSuccessStatusCode();
     }
 }

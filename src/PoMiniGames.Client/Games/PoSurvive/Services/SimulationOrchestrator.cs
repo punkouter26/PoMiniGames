@@ -2,6 +2,7 @@ namespace PoSurvive.Client.Services;
 
 using System.Text.Json;
 using Fluxor;
+using PoMiniGamesClient.Services;
 using PoSurvive.Application.DTOs;
 using PoSurvive.Application.Services;
 using PoSurvive.Client.Store;
@@ -530,13 +531,7 @@ public sealed class SimulationOrchestrator : IDisposable
             .Select(t => new FoodNodeDto(t.X, t.Y, t.Food!.SpawnTurn, t.Food.TtlHeartbeats))
             .ToList();
 
-    // Hoisted out of the serialise methods: these run on every heartbeat (up to ~20Hz),
-    // and allocating a fresh JsonSerializerOptions per call both churns GC and defeats the
-    // serializer's internal per-options metadata cache.
-    private static readonly JsonSerializerOptions GridJsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-    };
+    // GridStateDto is serialised using the source-generated ApiJsonContext (trim-safe, no reflection).
 
     private string SerialiseGrid()
     {
@@ -549,7 +544,7 @@ public sealed class SimulationOrchestrator : IDisposable
                 .Select(t => new GridCoordinateDto(t.X, t.Y))
                 .ToList());
 
-        return JsonSerializer.Serialize(dto, GridJsonOptions);
+        return JsonSerializer.Serialize(dto, ApiJsonContext.Default.GridStateDto);
     }
 
     private string SerialiseLocalGrid(Agent observer, int radius)
@@ -565,7 +560,7 @@ public sealed class SimulationOrchestrator : IDisposable
             Rocks:      _grid!.Where(t => t.Terrain == TerrainType.Rock && IsWithinRadius(t.X, t.Y))
                              .Select(t => new GridCoordinateDto(t.X, t.Y)).ToList());
 
-        return JsonSerializer.Serialize(dto, GridJsonOptions);
+        return JsonSerializer.Serialize(dto, ApiJsonContext.Default.GridStateDto);
     }
 
     private static SimulationConfig MapConfig(SimulationConfigDto dto) => new()

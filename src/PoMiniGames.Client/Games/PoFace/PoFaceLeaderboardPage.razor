@@ -52,7 +52,7 @@
     private int _year = DateTime.UtcNow.Year;
     private bool _isLoading = true;
     private string? _error;
-    private List<EntryDto> _entries = new();
+    private List<FaceLeaderboardEntryDto> _entries = new();
 
     protected override async Task OnInitializedAsync() => await Load();
 
@@ -62,7 +62,7 @@
         _error = null;
         try
         {
-            var entries = await Http.GetFromJsonAsync<List<EntryDto>>($"/api/face/leaderboard?year={_year}&top=100");
+            var entries = await Http.GetFromJsonAsync($"/api/face/leaderboard?year={_year}&top=100", ApiJsonContext.Default.ListFaceLeaderboardEntryDto);
             _entries = entries ?? new();
         }
         catch (Exception ex)
@@ -80,11 +80,4 @@
         userId.Length <= 6 ? userId :
         $"{userId[..3]}***{userId[^2..]}";
 
-    public class EntryDto
-    {
-        public string UserId { get; set; } = string.Empty;
-        public int Score { get; set; }
-        public int Year { get; set; }
-        public DateTime AchievedAt { get; set; }
-    }
 }

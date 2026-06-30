@@ -161,7 +161,7 @@
                 var corrResp = await Http.GetAsync("/api/diag/correlation");
                 if (corrResp.IsSuccessStatusCode)
                 {
-                    var doc = JsonSerializer.Deserialize<JsonElement>(await corrResp.Content.ReadAsStringAsync());
+                    var doc = JsonDocument.Parse(await corrResp.Content.ReadAsStringAsync()).RootElement;
                     _diagCorrelationId = doc.TryGetProperty("correlationId", out var c) ? (c.GetString() ?? "") : _diagCorrelationId;
                     _sessionId = doc.TryGetProperty("sessionId", out var s) ? s.GetString() : null;
                 }
@@ -187,9 +187,9 @@
             var json = await diagResp.Content.ReadAsStringAsync();
             try
             {
-                var obj = JsonSerializer.Deserialize<JsonElement>(json);
+                var obj = JsonDocument.Parse(json).RootElement;
                 _backendDiagRaw = HostEnvironment.IsDevelopment()
-                    ? JsonSerializer.Serialize(obj, new JsonSerializerOptions { WriteIndented = true })
+                    ? PrettyPrint(obj)
                     : "(see masked table below — raw payload hidden outside Development)";
                 BuildRows(obj);
                 BuildIntegrations(obj);
@@ -209,7 +209,7 @@
         {
             try
             {
-                var arr = JsonSerializer.Deserialize<JsonElement>(await mockResp.Content.ReadAsStringAsync());
+                var arr = JsonDocument.Parse(await mockResp.Content.ReadAsStringAsync()).RootElement;
                 _mockables.Clear();
                 if (arr.ValueKind == JsonValueKind.Array)
                 {
@@ -230,7 +230,7 @@
         {
             try
             {
-                var obj = JsonSerializer.Deserialize<JsonElement>(await logsResp.Content.ReadAsStringAsync());
+                var obj = JsonDocument.Parse(await logsResp.Content.ReadAsStringAsync()).RootElement;
                 if (obj.TryGetProperty("entries", out var entries))
                 {
                     _logEntries.Clear();
@@ -250,6 +250,15 @@
         _filterByCorrelation && !string.IsNullOrEmpty(_diagCorrelationId) && _diagCorrelationId != "(pending)"
             ? _logEntries.Where(l => l.Contains(_diagCorrelationId, StringComparison.OrdinalIgnoreCase))
             : _logEntries;
+
+    private static string PrettyPrint(JsonElement element)
+    {
+        using var ms = new System.IO.MemoryStream();
+        using var writer = new System.Text.Json.Utf8JsonWriter(ms, new System.Text.Json.JsonWriterOptions { Indented = true });
+        element.WriteTo(writer);
+        writer.Flush();
+        return System.Text.Encoding.UTF8.GetString(ms.ToArray());
+    }
 
     private void BuildRows(JsonElement root)
     {

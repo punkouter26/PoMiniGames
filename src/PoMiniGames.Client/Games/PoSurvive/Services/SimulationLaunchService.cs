@@ -24,7 +24,7 @@ public sealed class SimulationLaunchService(IJSRuntime js, IConfiguration config
             HeartbeatMaxMs: SimulationDefaults.HeartbeatMaxMs,
             InferenceTimeoutMs: SimulationDefaults.InferenceTimeoutMs,
             MaxInferredAgentsPerTurn: overrides?.MaxInferredAgentsPerTurn
-                ?? config.GetValue("Simulation:MaxInferredAgentsPerTurn", SimulationDefaults.MaxInferredAgentsPerTurn));
+                ?? (int.TryParse(config["Simulation:MaxInferredAgentsPerTurn"], out var _maxAgents) ? _maxAgents : SimulationDefaults.MaxInferredAgentsPerTurn));
     }
 
     private async Task<E2EOverrides?> ReadOverridesAsync()
@@ -35,15 +35,37 @@ public sealed class SimulationLaunchService(IJSRuntime js, IConfiguration config
             if (string.IsNullOrWhiteSpace(json))
                 return null;
 
-            return JsonSerializer.Deserialize<E2EOverrides>(json, new JsonSerializerOptions
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            return new E2EOverrides
             {
-                PropertyNameCaseInsensitive = true,
-            });
+                TeamSize               = TryGetInt(root, "teamSize")   ?? TryGetInt(root, "TeamSize"),
+                RockDensity            = TryGetFloat(root, "rockDensity") ?? TryGetFloat(root, "RockDensity"),
+                FoodSpawnChance        = TryGetFloat(root, "foodSpawnChance") ?? TryGetFloat(root, "FoodSpawnChance"),
+                FoodTtl                = TryGetInt(root, "foodTtl")    ?? TryGetInt(root, "FoodTtl"),
+                HungerDecayConstant    = TryGetFloat(root, "hungerDecayConstant") ?? TryGetFloat(root, "HungerDecayConstant"),
+                HungerThreshold        = TryGetFloat(root, "hungerThreshold") ?? TryGetFloat(root, "HungerThreshold"),
+                StarveHpLossPerTurn    = TryGetInt(root, "starveHpLossPerTurn") ?? TryGetInt(root, "StarveHpLossPerTurn"),
+                BaseDamage             = TryGetInt(root, "baseDamage") ?? TryGetInt(root, "BaseDamage"),
+                MaxInferredAgentsPerTurn = TryGetInt(root, "maxInferredAgentsPerTurn") ?? TryGetInt(root, "MaxInferredAgentsPerTurn"),
+            };
         }
         catch
         {
             return null;
         }
+    }
+
+    private static int? TryGetInt(JsonElement root, string name)
+    {
+        if (root.TryGetProperty(name, out var el) && el.TryGetInt32(out var v)) return v;
+        return null;
+    }
+
+    private static float? TryGetFloat(JsonElement root, string name)
+    {
+        if (root.TryGetProperty(name, out var el) && el.TryGetSingle(out var v)) return v;
+        return null;
     }
 
     private sealed class E2EOverrides

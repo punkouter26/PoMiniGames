@@ -79,7 +79,7 @@
     {
         base.OnInitialized();
         BootState.StateChanged += OnBootStateChanged;
-        _useCloudFallback = Config.GetValue("Inference:UseCloudFallback", false);
+        _useCloudFallback = bool.TryParse(Config["Inference:UseCloudFallback"], out var _ucf) && _ucf;
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -167,11 +167,11 @@
         {
             var modelId = Config["Inference:ModelId"] ?? "Phi-4-mini-instruct-q4f16_1-MLC";
             var cdnUrl = Config["Inference:WebLlmCdnUrl"];
-            var inferenceTimeoutMs = Config.GetValue("Inference:InferenceTimeoutMs", 15_000);
-            var useJsonResponseFormat = Config.GetValue("Inference:UseJsonResponseFormat", false);
-            var enableDiagnostics = Config.GetValue("Inference:EnableDiagnostics", true);
-            var shortCircuitOnBackpressure = Config.GetValue("Inference:ShortCircuitOnBackpressure", true);
-            var backpressureThreshold = Config.GetValue("Inference:BackpressureThreshold", 4);
+            var inferenceTimeoutMs = int.TryParse(Config["Inference:InferenceTimeoutMs"], out var _itms) ? _itms : 15_000;
+            var useJsonResponseFormat = bool.TryParse(Config["Inference:UseJsonResponseFormat"], out var _ujrf) && _ujrf;
+            var enableDiagnostics = !bool.TryParse(Config["Inference:EnableDiagnostics"], out var _ed) || _ed;
+            var shortCircuitOnBackpressure = !bool.TryParse(Config["Inference:ShortCircuitOnBackpressure"], out var _scbp) || _scbp;
+            var backpressureThreshold = int.TryParse(Config["Inference:BackpressureThreshold"], out var _bpt) ? _bpt : 4;
 
             var dotNetRef = DotNetObjectReference.Create(this);
             await JS.InvokeVoidAsync("inferenceWorkerBridge.init", dotNetRef, modelId, cdnUrl, new

@@ -2,17 +2,16 @@
 
   <PropertyGroup>
     <!-- TFM / Nullable / ImplicitUsings inherited from Directory.Build.props.
-         §1.7 Trimming Safeguards. The analyzer runs (EnableTrimAnalyzer) but the
-         four IL codes below are suppressed because the client uses reflection-based
-         JSON (HttpClient.GetFromJsonAsync<T>) across all 18 games — 134× IL2026 plus
-         20× IL2091/IL2110/IL2111 as of this writing. Eliminating them requires a
-         source-generated JsonSerializerContext threaded through every call site; that
-         migration is tracked as follow-up (regression-prone to do blind). The build is
-         non-AOT / non-trimmed-publish, so these are analyzer-only, not runtime, risks.
+         §1.7 Trimming Safeguards. All HttpClient JSON call sites now go through
+         ApiJsonContext (source-generated). IL2026/IL2091 in user code are fixed.
+         IL2110/IL2111 are suppressed for Blazor framework code only: LayoutView.Layout
+         and Router.NotFoundPage setters in App_razor.g.cs use reflection-based
+         parameter dispatch that the Blazor source generator does not yet emit as
+         trim-safe; these cannot be fixed in user code.
          NOTE: PoShared carries NO such suppression — it is genuinely trim-clean. -->
     <IsTrimmable>true</IsTrimmable>
     <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
-    <NoWarn>$(NoWarn);IL2026;IL2091;IL2110;IL2111</NoWarn>
+    <NoWarn>$(NoWarn);IL2110;IL2111</NoWarn>
   </PropertyGroup>
 
   <PropertyGroup>

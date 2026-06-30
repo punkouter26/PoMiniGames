@@ -1,5 +1,8 @@
 using System.Text.Json.Serialization;
 using PoMiniGamesClient.Models;
+using PoShared.Games;
+using PoSurvive.Client.Services;
+using PoSurvive.Shared.Models;
 
 namespace PoMiniGamesClient.Services;
 
@@ -33,6 +36,49 @@ namespace PoMiniGamesClient.Services;
 [JsonSerializable(typeof(MatchRecordDto))]
 [JsonSerializable(typeof(MatchRecordDto[]))]
 [JsonSerializable(typeof(AuthHandshake))]
+// PoSurvive — RemoteRelayInferenceService
+[JsonSerializable(typeof(InferRequestDto))]
+[JsonSerializable(typeof(InferenceResult))]
+[JsonSerializable(typeof(PersonalityDnaDto))]
+// PoSurvive — EvolutionClientService
+[JsonSerializable(typeof(CrossoverRequestDto))]
+[JsonSerializable(typeof(RecordEvolutionRequest))]
+[JsonSerializable(typeof(AgentEvolutionResult))]
+[JsonSerializable(typeof(EvolutionRequestDto))]
+[JsonSerializable(typeof(EvolutionStateDto))]
+[JsonSerializable(typeof(List<EvolutionStateDto>))]
+[JsonSerializable(typeof(EvolutionSummaryDto))]
+[JsonSerializable(typeof(EvolutionTreeDto))]
+[JsonSerializable(typeof(EvolutionTreeNodeDto))]
+// PoRacer
+[JsonSerializable(typeof(PoRacerScoreDto))]
+[JsonSerializable(typeof(List<PoRacerScoreDto>))]
+// PoJoker
+[JsonSerializable(typeof(PoShared.Games.PoJoker.JokeDto))]
+[JsonSerializable(typeof(PoShared.Games.PoJoker.JokeFlags))]
+[JsonSerializable(typeof(PoShared.Games.PoJoker.JokeAnalysisDto))]
+[JsonSerializable(typeof(PoShared.Games.PoJoker.JokeRatingDto))]
+[JsonSerializable(typeof(PoShared.Games.PoJoker.LeaderboardEntryDto), TypeInfoPropertyName = "JokerLeaderboardEntryDto")]
+[JsonSerializable(typeof(List<PoShared.Games.PoJoker.LeaderboardEntryDto>), TypeInfoPropertyName = "ListJokerLeaderboardEntryDto")]
+// PoFunQuiz
+[JsonSerializable(typeof(QuizQuestion))]
+[JsonSerializable(typeof(List<QuizQuestion>))]
+// PoFace
+[JsonSerializable(typeof(FaceStatusDto))]
+[JsonSerializable(typeof(FaceSessionDto))]
+[JsonSerializable(typeof(FaceRoundDto))]
+[JsonSerializable(typeof(FaceScoreResponse))]
+[JsonSerializable(typeof(List<FaceLeaderboardEntryDto>))]
+[JsonSerializable(typeof(FaceLeaderboardEntryDto))]
+// PoCoupleQuiz
+[JsonSerializable(typeof(CoupleQuizTeamRow))]
+[JsonSerializable(typeof(List<CoupleQuizTeamRow>))]
+// PoSurvive — SimulationOrchestrator grid serialisation
+[JsonSerializable(typeof(PoSurvive.Shared.Models.GridStateDto))]
+[JsonSerializable(typeof(PoSurvive.Shared.Models.AgentDto))]
+[JsonSerializable(typeof(PoSurvive.Shared.Models.FoodNodeDto))]
+[JsonSerializable(typeof(PoSurvive.Shared.Models.GridCoordinateDto))]
+// SimulationLaunchService — E2EOverrides (internal type exposed via partial class trick not applicable; use separate context)
 internal sealed partial class ApiJsonContext : JsonSerializerContext
 {
 }

@@ -1,5 +1,6 @@
 using System.Net.Http;
 using System.Net.Http.Json;
+using PoMiniGamesClient.Services;
 using PoShared.Games.PoJoker;
 
 namespace PoMiniGamesClient.Games.PoJoker;
@@ -218,7 +219,8 @@ public sealed class PerformanceOrchestrator : IAsyncDisposable
             return;
         }
 
-        CurrentJoke = await response.Content.ReadFromJsonAsync<JokeDto>(cancellationToken: cancellationToken);
+        CurrentJoke = await response.Content.ReadFromJsonAsync(
+            ApiJsonContext.Default.JokeDto, cancellationToken);
         if (CurrentJoke is not null)
         {
             SeenJokeIds.Add(CurrentJoke.Id);
@@ -248,7 +250,7 @@ public sealed class PerformanceOrchestrator : IAsyncDisposable
 
         var request = new HttpRequestMessage(HttpMethod.Post, "/api/joker/analyze");
         request.Headers.Add("X-Session-Id", SessionId);
-        request.Content = JsonContent.Create(CurrentJoke);
+        request.Content = JsonContent.Create(CurrentJoke, ApiJsonContext.Default.JokeDto);
         var analysisResponse = await _http.SendAsync(request, cancellationToken);
 
         // Content filter (451) — skip the joke silently.
@@ -257,7 +259,8 @@ public sealed class PerformanceOrchestrator : IAsyncDisposable
 
         if (analysisResponse.IsSuccessStatusCode)
         {
-            CurrentAnalysis = await analysisResponse.Content.ReadFromJsonAsync<JokeAnalysisDto>(cancellationToken: cancellationToken);
+            CurrentAnalysis = await analysisResponse.Content.ReadFromJsonAsync(
+                ApiJsonContext.Default.JokeAnalysisDto, cancellationToken);
         }
 
         await drumRollTask;

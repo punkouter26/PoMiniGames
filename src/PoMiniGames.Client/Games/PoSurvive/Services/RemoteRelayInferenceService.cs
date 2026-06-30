@@ -1,6 +1,7 @@
 namespace PoSurvive.Client.Services;
 
 using System.Net.Http.Json;
+using PoMiniGamesClient.Services;
 using PoSurvive.Shared.Interfaces;
 using PoSurvive.Shared.Models;
 
@@ -24,10 +25,10 @@ public sealed class RemoteRelayInferenceService(HttpClient http) : IInferenceSer
         CancellationToken ct = default)
     {
         var request  = new InferRequestDto(gridJson, dna, _modelId);
-        var response = await http.PostAsJsonAsync("/api/infer", request, ct);
+        var response = await http.PostAsJsonAsync("/api/infer", request, ApiJsonContext.Default.InferRequestDto, ct);
         response.EnsureSuccessStatusCode();
-        var result = await response.Content.ReadFromJsonAsync<InferenceResult>(
-            cancellationToken: ct);
+        var result = await response.Content.ReadFromJsonAsync(
+            ApiJsonContext.Default.InferenceResult, cancellationToken: ct);
         return result ?? new InferenceResult("No response from server relay.", "Idle");
     }
 }

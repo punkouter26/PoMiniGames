@@ -95,7 +95,7 @@
         StateHasChanged();
         try
         {
-            _entries = await Http.GetFromJsonAsync<List<LeaderboardEntryDto>>("/api/joker/leaderboard?sortBy=Triumph&top=25") ?? [];
+            _entries = await Http.GetFromJsonAsync("/api/joker/leaderboard?sortBy=Triumph&top=25", ApiJsonContext.Default.ListJokerLeaderboardEntryDto) ?? [];
             await Feedback.ClickAsync();
         }
         catch

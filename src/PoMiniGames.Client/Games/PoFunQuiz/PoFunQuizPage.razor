@@ -102,7 +102,7 @@
         try
         {
             var url = $"/api/funquiz/quiz/questions?count=10&category={Uri.EscapeDataString(_category)}";
-            var questions = await Http.GetFromJsonAsync<List<QuizQuestion>>(url);
+            var questions = await Http.GetFromJsonAsync(url, ApiJsonContext.Default.ListQuizQuestion);
             if (questions is null || questions.Count == 0)
             {
                 _error = "No questions available. Try a different category.";
@@ -171,12 +171,4 @@
         _error = null;
     }
 
-    public class QuizQuestion
-    {
-        public string Text { get; set; } = string.Empty;
-        public List<string> Options { get; set; } = new();
-        public int CorrectOptionIndex { get; set; }
-        public string Category { get; set; } = "General";
-        public int BasePoints { get; set; } = 2;
-    }
 }

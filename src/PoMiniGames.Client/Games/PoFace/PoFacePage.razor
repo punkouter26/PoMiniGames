@@ -43,7 +43,7 @@
     {
         try
         {
-            var status = await Http.GetFromJsonAsync<StatusDto>("/api/face/status");
+            var status = await Http.GetFromJsonAsync("/api/face/status", ApiJsonContext.Default.FaceStatusDto);
             _apiOnline = status is not null;
             _isMock = status?.IsMockFaceApi ?? true;
         }
@@ -64,7 +64,7 @@
                 _error = $"Start session returned {(int)resp.StatusCode}. Check that you're signed in.";
                 return;
             }
-            var session = await resp.Content.ReadFromJsonAsync<SessionDto>();
+            var session = await resp.Content.ReadFromJsonAsync(ApiJsonContext.Default.FaceSessionDto);
             if (session is null) { _error = "Empty session response."; return; }
             _lastSessionId = session.SessionId;
             _lastTotal = 0;
@@ -75,23 +75,4 @@
         }
     }
 
-    public class StatusDto
-    {
-        public string Game { get; set; } = "poface";
-        public bool IsMockFaceApi { get; set; }
-        public string Environment { get; set; } = string.Empty;
-    }
-
-    public class SessionDto
-    {
-        public string SessionId { get; set; } = string.Empty;
-        public string UserId { get; set; } = string.Empty;
-        public List<RoundDto> Rounds { get; set; } = new();
-    }
-
-    public class RoundDto
-    {
-        public int RoundNumber { get; set; }
-        public string TargetEmotion { get; set; } = string.Empty;
-    }
 }

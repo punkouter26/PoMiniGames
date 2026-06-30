@@ -1,6 +1,7 @@
 namespace PoSurvive.Client.Services;
 
 using System.Net.Http.Json;
+using PoMiniGamesClient.Services;
 using PoSurvive.Shared.Models;
 
 /// <summary>
@@ -24,7 +25,7 @@ public sealed class EvolutionClientService
     {
         try
         {
-            var response = await _http.PostAsJsonAsync("/api/evolution/record", request, ct);
+            var response = await _http.PostAsJsonAsync("/api/evolution/record", request, ApiJsonContext.Default.RecordEvolutionRequest, ct);
             response.EnsureSuccessStatusCode();
         }
         catch
@@ -38,8 +39,8 @@ public sealed class EvolutionClientService
     {
         try
         {
-            return await _http.GetFromJsonAsync<IReadOnlyList<EvolutionStateDto>>(
-                "/api/evolution/states", ct) ?? [];
+            return await _http.GetFromJsonAsync(
+                "/api/evolution/states", ApiJsonContext.Default.ListEvolutionStateDto, ct) ?? [];
         }
         catch { return []; }
     }
@@ -49,8 +50,8 @@ public sealed class EvolutionClientService
     {
         try
         {
-            return await _http.GetFromJsonAsync<EvolutionSummaryDto>(
-                "/api/evolution/summary", ct);
+            return await _http.GetFromJsonAsync(
+                "/api/evolution/summary", ApiJsonContext.Default.EvolutionSummaryDto, ct);
         }
         catch { return null; }
     }
@@ -60,8 +61,8 @@ public sealed class EvolutionClientService
     {
         try
         {
-            return await _http.GetFromJsonAsync<EvolutionTreeDto>(
-                "/api/evolution/tree", ct);
+            return await _http.GetFromJsonAsync(
+                "/api/evolution/tree", ApiJsonContext.Default.EvolutionTreeDto, ct);
         }
         catch { return null; }
     }
@@ -75,9 +76,10 @@ public sealed class EvolutionClientService
         try
         {
             var response = await _http.PostAsJsonAsync("/api/evolution/evolve",
-                new EvolutionRequestDto(parentDnaId, strategyPrompt), ct);
+                new EvolutionRequestDto(parentDnaId, strategyPrompt), ApiJsonContext.Default.EvolutionRequestDto, ct);
             response.EnsureSuccessStatusCode();
-            return await response.Content.ReadFromJsonAsync<EvolutionStateDto>(cancellationToken: ct);
+            return await response.Content.ReadFromJsonAsync(
+                ApiJsonContext.Default.EvolutionStateDto, cancellationToken: ct);
         }
         catch { return null; }
     }
@@ -91,9 +93,10 @@ public sealed class EvolutionClientService
         try
         {
             var response = await _http.PostAsJsonAsync("/api/evolution/crossover",
-                new { Parent1DnaId = parent1DnaId, Parent2DnaId = parent2DnaId }, ct);
+                new CrossoverRequestDto(parent1DnaId, parent2DnaId), ApiJsonContext.Default.CrossoverRequestDto, ct);
             response.EnsureSuccessStatusCode();
-            return await response.Content.ReadFromJsonAsync<EvolutionStateDto>(cancellationToken: ct);
+            return await response.Content.ReadFromJsonAsync(
+                ApiJsonContext.Default.EvolutionStateDto, cancellationToken: ct);
         }
         catch { return null; }
     }
@@ -118,6 +121,9 @@ public sealed class EvolutionClientService
         catch { }
     }
 }
+
+/// <summary>Request body for crossover between two parent DNAs.</summary>
+public sealed record CrossoverRequestDto(string Parent1DnaId, string Parent2DnaId);
 
 /// <summary>Request body for recording evolution outcomes.</summary>
 public sealed record RecordEvolutionRequest(

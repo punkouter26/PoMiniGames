@@ -93,11 +93,11 @@ public sealed class LocalModelBootstrapService(IJSRuntime js, IConfiguration con
         where TBridgeCallbacks : class
     {
         var cdnUrl = config["Inference:WebLlmCdnUrl"];
-        var inferenceTimeoutMs = config.GetValue("Inference:InferenceTimeoutMs", 15_000);
-        var useJsonResponseFormat = config.GetValue("Inference:UseJsonResponseFormat", false);
-        var enableDiagnostics = config.GetValue("Inference:EnableDiagnostics", true);
-        var shortCircuitOnBackpressure = config.GetValue("Inference:ShortCircuitOnBackpressure", true);
-        var backpressureThreshold = config.GetValue("Inference:BackpressureThreshold", 4);
+        var inferenceTimeoutMs = int.TryParse(config["Inference:InferenceTimeoutMs"], out var _itms) ? _itms : 15_000;
+        var useJsonResponseFormat = bool.TryParse(config["Inference:UseJsonResponseFormat"], out var _ujrf) && _ujrf;
+        var enableDiagnostics = !bool.TryParse(config["Inference:EnableDiagnostics"], out var _ed) || _ed;
+        var shortCircuitOnBackpressure = !bool.TryParse(config["Inference:ShortCircuitOnBackpressure"], out var _scbp) || _scbp;
+        var backpressureThreshold = int.TryParse(config["Inference:BackpressureThreshold"], out var _bpt) ? _bpt : 4;
 
         await js.InvokeVoidAsync("inferenceWorkerBridge.init", callbacksRef, modelId, cdnUrl, new
         {

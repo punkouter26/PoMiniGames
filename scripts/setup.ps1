@@ -113,7 +113,60 @@ else {
     dotnet build   (Join-Path $repoRoot 'PoMiniGames.slnx') -c Debug --no-restore
 }
 
-# ── 5. Playwright browsers (E2E-UI tier) ───────────────────────────────
+# ── 5. Developer tools: gstack, Understand-Anything, Graphify ─────────
+Write-Step 'Installing developer AI tools'
+
+# gstack — Claude Code skill package (23 engineering team roles as AI agents).
+# Requires Bun (bun.sh). If Bun is absent the clone still succeeds; run setup
+# manually inside ~/.claude/skills/gstack once Bun is installed.
+$gstackDir = Join-Path $env:USERPROFILE '.claude\skills\gstack'
+if (Test-Path $gstackDir) {
+    Write-Ok "gstack already installed at $gstackDir"
+} else {
+    if ($WhatIf) {
+        Write-Host "  [WHATIF] Would clone garrytan/gstack → $gstackDir and run setup"
+    } else {
+        try {
+            git clone --single-branch --depth 1 https://github.com/garrytan/gstack.git $gstackDir
+            if (Test-Command 'bun') {
+                Push-Location $gstackDir
+                try { & .\setup } finally { Pop-Location }
+                Write-Ok 'gstack installed (GBrain MCP server registered)'
+            } else {
+                Write-Warn "gstack cloned but Bun is not on PATH — run '.\setup' inside $gstackDir after installing Bun (bun.sh)"
+            }
+        } catch {
+            Write-Warn "Could not install gstack: $($_.Exception.Message)"
+        }
+    }
+}
+
+# Understand-Anything — Claude Code plugin (codebase → knowledge graph).
+# Install via Claude Code marketplace inside an interactive session:
+#   /plugin marketplace add Egonex-AI/Understand-Anything
+Write-Host '  [INFO]  Understand-Anything is a Claude Code marketplace plugin.' -ForegroundColor Gray
+Write-Host '          Install it inside Claude Code with:' -ForegroundColor Gray
+Write-Host '            /plugin marketplace add Egonex-AI/Understand-Anything' -ForegroundColor Cyan
+
+# Graphify — Python MCP server that turns code/docs into queryable knowledge graphs.
+# Requires Python 3.10+. The MCP server config lives in .vscode/mcp.json.
+if (Test-Command 'pip') {
+    if ($WhatIf) {
+        Write-Host '  [WHATIF] Would run: pip install graphifyy'
+    } else {
+        try {
+            pip install graphifyy --quiet
+            graphify install 2>$null
+            Write-Ok 'graphify installed (run "python -m graphify.serve graphify-out/graph.json" to start MCP server)'
+        } catch {
+            Write-Warn "Could not install graphify: $($_.Exception.Message)"
+        }
+    }
+} else {
+    Write-Warn 'pip not available — skipping graphify. Install Python 3.10+ and re-run setup.'
+}
+
+# ── 6. Playwright browsers (E2E-UI tier) ───────────────────────────────
 # The E2E-UI tier drives a real Chromium via Microsoft.Playwright; the pinned
 # browser build must be present or those tests fail at launch. The install
 # script ships next to the built E2E-UI assembly and is a no-op if already present.

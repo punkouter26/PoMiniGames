@@ -45,25 +45,7 @@ public class PoRunnerProfileService
 {
     private const string ProfileKey = "porunner_profile";
 
-    public PlayerProfile GetProfile()
-    {
-        try
-        {
-            var raw = System.Text.Json.JsonSerializer.Deserialize<PlayerProfile>(
-                System.Text.Json.JsonSerializer.Serialize(new { }));
-            if (System.Text.Json.JsonSerializer.Deserialize<PlayerProfile>(
-                System.Text.Json.JsonSerializer.Serialize(new { })) == null)
-            {
-                return new PlayerProfile();
-            }
-            // For now, return default - localStorage would need JS interop
-            return new PlayerProfile();
-        }
-        catch
-        {
-            return new PlayerProfile();
-        }
-    }
+    public PlayerProfile GetProfile() => new PlayerProfile();
 
     public void SaveProfile(PlayerProfile profile)
     {

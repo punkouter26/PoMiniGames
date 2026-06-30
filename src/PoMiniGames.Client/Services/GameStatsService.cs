@@ -1,6 +1,8 @@
 using Microsoft.JSInterop;
 using PoMiniGamesClient.Enums;
 using PoMiniGamesClient.Models;
+using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 
 namespace PoMiniGamesClient.Services;
 
@@ -17,7 +19,7 @@ public class GameStatsService
             return cached;
 
         var storageKey = $"{StorageKeyPrefix}{gameKey}";
-        var stored = LocalStorageService.GetItem<PlayerStats>(storageKey);
+        var stored = LocalStorageService.GetItem(storageKey, ApiJsonContext.Default.PlayerStats);
         if (stored != null && stored.PlayerName == playerName)
         {
             _statsCache[cacheKey] = stored;
@@ -75,7 +77,7 @@ public class GameStatsService
         var cacheKey = $"{gameKey}_{stats.PlayerName}";
         _statsCache[cacheKey] = stats;
         var storageKey = $"{StorageKeyPrefix}{gameKey}";
-        LocalStorageService.SetItem(storageKey, stats);
+        LocalStorageService.SetItem(storageKey, stats, ApiJsonContext.Default.PlayerStats);
     }
 
     // UX 10: Offline-First - Track last played game
@@ -156,13 +158,11 @@ public static class LocalStorageService
         _jsRuntime = jsRuntime;
     }
 
-    public static T? GetItem<T>(string key)
+    public static T? GetItem<T>(string key, JsonTypeInfo<T>? typeInfo = null)
     {
         if (_jsRuntime == null) return default;
         try
         {
-            // localStorage.getItem returns a raw string. For string types, pass through directly.
-            // For complex types, JS interop will JSON-deserialize the returned string automatically.
             if (typeof(T) == typeof(string))
             {
                 var raw = _jsRuntime.InvokeAsync<string>("window.localStorage.getItem", key).AsTask().Result;
@@ -170,15 +170,15 @@ public static class LocalStorageService
                 // If the stored value is a JSON-encoded string (e.g. "\"CalmTiger42\""), decode it
                 if (raw.Length >= 2 && raw[0] == '"' && raw[^1] == '"')
                 {
-                    try
-                    {
-                        return (T)(object)System.Text.Json.JsonSerializer.Deserialize<string>(raw)!;
-                    }
+                    try { return (T)(object)JsonDocument.Parse(raw).RootElement.GetString()!; }
                     catch { /* fall through to raw */ }
                 }
                 return (T)(object)raw;
             }
-            return _jsRuntime.InvokeAsync<T?>("window.localStorage.getItem", key).AsTask().Result;
+            if (typeInfo is null) return default;
+            var rawJson = _jsRuntime.InvokeAsync<string>("window.localStorage.getItem", key).AsTask().Result;
+            if (rawJson is null) return default;
+            return JsonSerializer.Deserialize(rawJson, typeInfo);
         }
         catch
         {
@@ -186,19 +186,18 @@ public static class LocalStorageService
         }
     }
 
-    public static void SetItem<T>(string key, T value)
+    public static void SetItem<T>(string key, T value, JsonTypeInfo<T>? typeInfo = null)
     {
         if (_jsRuntime == null) return;
         try
         {
-            // For string values, store the raw string to avoid double-encoding
             if (value is string s)
             {
                 _jsRuntime.InvokeVoidAsync("window.localStorage.setItem", key, s);
             }
-            else
+            else if (typeInfo is not null)
             {
-                var json = System.Text.Json.JsonSerializer.Serialize(value);
+                var json = JsonSerializer.Serialize(value, typeInfo);
                 _jsRuntime.InvokeVoidAsync("window.localStorage.setItem", key, json);
             }
         }

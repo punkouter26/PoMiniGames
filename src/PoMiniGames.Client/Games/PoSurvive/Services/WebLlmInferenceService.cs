@@ -89,12 +89,18 @@ public sealed class WebLlmInferenceService : IInferenceService, IAsyncDisposable
                     _inferenceTimeoutMs,
                     sourceContext);
 
-                var parsed = JsonSerializer.Deserialize<InferenceWorkerResult>(resultJson,
-                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                using var doc = System.Text.Json.JsonDocument.Parse(resultJson);
+                var root = doc.RootElement;
+                var thought = root.TryGetProperty("thought", out var t) ? t.GetString()
+                            : root.TryGetProperty("Thought", out var t2) ? t2.GetString()
+                            : null;
+                var action = root.TryGetProperty("action", out var a) ? a.GetString()
+                           : root.TryGetProperty("Action", out var a2) ? a2.GetString()
+                           : null;
 
                 return new InferenceResult(
-                    Thought: parsed?.Thought ?? "Observing.",
-                    Action:  parsed?.Action  ?? "Idle");
+                    Thought: thought ?? "Observing.",
+                    Action:  action  ?? "Idle");
             }
             catch (OperationCanceledException)
             {

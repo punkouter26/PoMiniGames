@@ -1,7 +1,4 @@
 using System.Net.Http.Json;
-using System.Text;
-using System.Text.Json;
-using System.Text.Json.Serialization;
 using PoMiniGamesClient.Models;
 
 namespace PoMiniGamesClient.Services;
@@ -10,24 +7,6 @@ public class ApiService
 {
     private readonly HttpClient _http;
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(5);
-    private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
-
-    private static JsonSerializerOptions CreateJsonOptions()
-    {
-        var options = new JsonSerializerOptions
-        {
-            PropertyNameCaseInsensitive = true,
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-            Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) }
-        };
-        // Fast path: source-generated metadata for the known API DTOs, with the reflection
-        // resolver chained behind it so any unlisted type still serializes. Must be set
-        // before the options are first used (after that the chain is frozen).
-        options.TypeInfoResolverChain.Insert(0, ApiJsonContext.Default);
-        options.TypeInfoResolverChain.Add(new System.Text.Json.Serialization.Metadata.DefaultJsonTypeInfoResolver());
-        return options;
-    }
 
     public ApiService(HttpClient http)
     {
@@ -66,7 +45,7 @@ public class ApiService
     {
         try
         {
-            return await _http.GetFromJsonAsync<AuthClientConfiguration>("/api/auth/config", JsonOptions);
+            return await _http.GetFromJsonAsync("/api/auth/config", ApiJsonContext.Default.AuthClientConfiguration);
         }
         catch
         {
@@ -83,7 +62,7 @@ public class ApiService
     {
         try
         {
-            return await _http.GetFromJsonAsync<AuthHandshake>("/api/auth/handshake", JsonOptions);
+            return await _http.GetFromJsonAsync("/api/auth/handshake", ApiJsonContext.Default.AuthHandshake);
         }
         catch
         {
@@ -95,8 +74,8 @@ public class ApiService
     {
         try
         {
-            var response = await _http.PostAsJsonAsync("/api/auth/dev-login", request ?? new DevLoginRequest(), JsonOptions);
-            return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<AuthenticatedUserProfile>(JsonOptions) : null;
+            var response = await _http.PostAsJsonAsync("/api/auth/dev-login", request ?? new DevLoginRequest(), ApiJsonContext.Default.DevLoginRequest);
+            return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync(ApiJsonContext.Default.AuthenticatedUserProfile) : null;
         }
         catch
         {
@@ -138,7 +117,7 @@ public class ApiService
                 request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
 
             var response = await _http.SendAsync(request);
-            return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<AuthenticatedUserProfile>(JsonOptions) : null;
+            return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync(ApiJsonContext.Default.AuthenticatedUserProfile) : null;
         }
         catch
         {
@@ -150,8 +129,8 @@ public class ApiService
     {
         try
         {
-            return await _http.GetFromJsonAsync<PlayerStatsDto>(
-                $"/api/{game}/players/{Uri.EscapeDataString(playerName)}/stats", JsonOptions);
+            return await _http.GetFromJsonAsync(
+                $"/api/{game}/players/{Uri.EscapeDataString(playerName)}/stats", ApiJsonContext.Default.PlayerStatsDto);
         }
         catch
         {
@@ -164,7 +143,7 @@ public class ApiService
         try
         {
             var response = await _http.PutAsJsonAsync(
-                $"/api/{game}/players/{Uri.EscapeDataString(playerName)}/stats", stats, JsonOptions);
+                $"/api/{game}/players/{Uri.EscapeDataString(playerName)}/stats", stats, ApiJsonContext.Default.PlayerStats);
             return (response.IsSuccessStatusCode, (int)response.StatusCode);
         }
         catch
@@ -181,8 +160,8 @@ public class ApiService
             if (!string.IsNullOrEmpty(difficulty) && difficulty != "all")
                 query += $"&difficulty={difficulty}";
 
-            return await _http.GetFromJsonAsync<PlayerStatsDto[]>(
-                $"/api/{game}/statistics/leaderboard{query}", JsonOptions);
+            return await _http.GetFromJsonAsync(
+                $"/api/{game}/statistics/leaderboard{query}", ApiJsonContext.Default.PlayerStatsDtoArray);
         }
         catch
         {
@@ -195,8 +174,8 @@ public class ApiService
     {
         try
         {
-            return await _http.GetFromJsonAsync<GameLeaderboardDto[]>(
-                $"/api/leaderboards?limit={limit}", JsonOptions);
+            return await _http.GetFromJsonAsync(
+                $"/api/leaderboards?limit={limit}", ApiJsonContext.Default.GameLeaderboardDtoArray);
         }
         catch
         {
@@ -209,8 +188,8 @@ public class ApiService
     {
         try
         {
-            return await _http.GetFromJsonAsync<GameLeaderboardDto>(
-                $"/api/leaderboards/{game}?limit={limit}", JsonOptions);
+            return await _http.GetFromJsonAsync(
+                $"/api/leaderboards/{game}?limit={limit}", ApiJsonContext.Default.GameLeaderboardDto);
         }
         catch
         {
@@ -222,8 +201,8 @@ public class ApiService
     {
         try
         {
-            return await _http.GetFromJsonAsync<SnakeHighScore[]>(
-                $"/api/snake/highscores?count={count}", JsonOptions);
+            return await _http.GetFromJsonAsync(
+                $"/api/snake/highscores?count={count}", ApiJsonContext.Default.SnakeHighScoreArray);
         }
         catch
         {
@@ -240,8 +219,8 @@ public class ApiService
             // row instead of duplicating the leaderboard entry.
             if (string.IsNullOrEmpty(entry.Date))
                 entry.Date = DateTime.UtcNow.ToString("O");
-            var response = await _http.PostAsJsonAsync("/api/snake/highscores", entry, JsonOptions);
-            return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<SnakeHighScore>(JsonOptions) : null;
+            var response = await _http.PostAsJsonAsync("/api/snake/highscores", entry, ApiJsonContext.Default.SnakeHighScore);
+            return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync(ApiJsonContext.Default.SnakeHighScore) : null;
         }
         catch
         {
@@ -253,8 +232,8 @@ public class ApiService
     {
         try
         {
-            return await _http.GetFromJsonAsync<MarbleRaceHighScore[]>(
-                $"/api/marblerace/highscores?count={count}", JsonOptions);
+            return await _http.GetFromJsonAsync(
+                $"/api/marblerace/highscores?count={count}", ApiJsonContext.Default.MarbleRaceHighScoreArray);
         }
         catch
         {
@@ -269,8 +248,8 @@ public class ApiService
             // Stamp once; preserve across resync so the deterministic RowKey stays stable (no duplicates).
             if (string.IsNullOrEmpty(entry.Date))
                 entry.Date = DateTime.UtcNow.ToString("O");
-            var response = await _http.PostAsJsonAsync("/api/marblerace/highscores", entry, JsonOptions);
-            return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<MarbleRaceHighScore>(JsonOptions) : null;
+            var response = await _http.PostAsJsonAsync("/api/marblerace/highscores", entry, ApiJsonContext.Default.MarbleRaceHighScore);
+            return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync(ApiJsonContext.Default.MarbleRaceHighScore) : null;
         }
         catch
         {
@@ -284,7 +263,7 @@ public class ApiService
     {
         try
         {
-            var response = await _http.PostAsJsonAsync("/api/matches", request, JsonOptions);
+            var response = await _http.PostAsJsonAsync("/api/matches", request, ApiJsonContext.Default.MatchRecordRequest);
             return response.IsSuccessStatusCode;
         }
         catch
@@ -297,8 +276,8 @@ public class ApiService
     {
         try
         {
-            return await _http.GetFromJsonAsync<MatchRecordDto[]>(
-                $"/api/matches?owner={Uri.EscapeDataString(owner)}&limit={limit}", JsonOptions);
+            return await _http.GetFromJsonAsync(
+                $"/api/matches?owner={Uri.EscapeDataString(owner)}&limit={limit}", ApiJsonContext.Default.MatchRecordDtoArray);
         }
         catch
         {

@@ -35,10 +35,8 @@
                     var piece = _board.Get(r, c);
                     var isWinCell = _winCells.Any(wc => wc.Row == r && wc.Col == c);
 
-                    <div class="cf-cell @GetPieceClass(piece) @(isWinCell ? "win-cell" : "") @(_gameResult != GameResult.InProgress ? "disabled" : "") @(_hoveredCol == col && _gameResult == GameResult.InProgress && !_isAiTurn && PlayMode != "demo" ? "col-hover" : "")"
+                    <div class="cf-cell @GetPieceClass(piece) @(isWinCell ? "win-cell" : "") @(_gameResult != GameResult.InProgress ? "disabled" : "")"
                          @onclick="() => HandleDrop(col)"
-                         @onmouseenter="() => _hoveredCol = col"
-                         @onmouseleave="() => _hoveredCol = -1"
                          role="gridcell"
                          aria-label="@GetPieceAriaLabel(piece)">
                         @* --drop-rows sets how far the piece falls: from above the
@@ -68,7 +66,6 @@
     private Difficulty _difficulty = Difficulty.Medium;
     private GameResult _gameResult = GameResult.InProgress;
     private bool _isAiTurn;
-    private int _hoveredCol = -1;
     // "ai" (vs CPU) or "2p" (local pass-and-play); "demo" is driven by the route param.
     private string _playMode = "ai";
     private string PlayMode => Demo == 1 ? "demo" : _playMode;
@@ -201,7 +198,6 @@
         _gameResult = GameResult.InProgress;
         _winCells = new();
         _isAiTurn = false;
-        _hoveredCol = -1;
         _current2pPiece = Piece.Red;
         _matchRecorded = false;
         _stats = _gameStats.GetStats("connectfive", _playerName);
@@ -299,7 +295,6 @@
         // and start a fresh token. The 8 s budget below surfaces a "still
         // thinking…" recovery action if the AI hangs longer than that.
         _isAiTurn = true;
-        _hoveredCol = -1;
         _aiMoveCts?.Cancel();
         _aiMoveCts?.Dispose();
         _aiMoveCts = new CancellationTokenSource();
@@ -355,7 +350,6 @@
     {
         var piece = _current2pPiece;
         _board = _board.Place(targetRow, col, piece);
-        _hoveredCol = -1;
 
         var winCheck = _board.CheckWin(piece);
         if (winCheck.Won)

@@ -24,7 +24,7 @@
     <!-- §3.4 Native HybridCache (stampede protection + L1/L2). Memoizes expensive
          Azure OpenAI generations at the slice boundary. -->
     <PackageVersion Include="Microsoft.Extensions.Caching.Hybrid" Version="10.7.0" />
-    <PackageVersion Include="Microsoft.OpenApi" Version="2.3.0" />
+    <PackageVersion Include="Microsoft.OpenApi" Version="2.7.5" />
     <PackageVersion Include="Scalar.AspNetCore" Version="2.13.10" />
     <!-- IdentityModel — security-pinned transitive deps (CVE mitigation, upgrade from 8.0.1) -->
     <PackageVersion Include="Microsoft.IdentityModel.Abstractions" Version="8.16.0" />

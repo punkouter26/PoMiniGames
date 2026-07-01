@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Trimmer roots for the Blazor WASM client (IsTrimmable=true → Release builds trim IL).
+
+  MainLayout is only ever referenced as `typeof(Layout.MainLayout)` (App.razor's
+  AuthorizeRouteView.DefaultLayout and the LayoutView.Layout fallbacks) and is then
+  instantiated *reflectively* by DefaultComponentActivator -> ActivatorUtilities.
+  The trimmer cannot see that reflective construction, so in the trimmed Release
+  build it removes the layout's constructor. The first authenticated render then
+  fails in Production with:
+
+      System.InvalidOperationException: CtorNotLocated,
+      PoMiniGamesClient.Layout.MainLayout
+
+  (Local Debug builds are not trimmed, which is why this only reproduces in Azure.)
+  Rooting the layout here preserves its constructor. This is the runtime counterpart
+  to the IL2110/IL2111 suppressions in PoMiniGamesClient.csproj — those silence the
+  build-time warning; this keeps the member the warning was about.
+-->
+<linker>
+  <assembly fullname="PoMiniGamesClient">
+    <type fullname="PoMiniGamesClient.Layout.MainLayout" preserve="all" />
+  </assembly>
+</linker>

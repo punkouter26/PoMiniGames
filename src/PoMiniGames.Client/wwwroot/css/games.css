@@ -396,7 +396,11 @@
   cursor: pointer;
   transition: all 0.15s;
   position: relative;
-  overflow: hidden;
+  /* No overflow clipping: the drop animation translates the piece far above
+     its own cell, so the cell must not clip it. The board's `contain: paint`
+     clips the travelling piece to the board's top edge instead, so it looks
+     like the piece drops in from the top of the board. */
+  overflow: visible;
 }
 
 .cf-cell:hover:not(.disabled) {
@@ -410,7 +414,7 @@
    per-cell) down to the resting row, accelerating like gravity, then a small
    settle bounce. Only newly-inserted piece elements animate — re-renders reuse
    the existing DOM node so placed pieces stay put. */
-.cf-cell .piece { animation: cf-slide-down 0.4s cubic-bezier(0.45, 0, 0.55, 1) both; }
+.cf-cell .piece { animation: cf-slide-down 0.5s cubic-bezier(0.45, 0, 0.55, 1) both; }
 
 @keyframes cf-slide-down {
   0%   { transform: translateY(calc(-1 * var(--drop-rows, 1) * var(--cf-cell-stride, 55px))); }
@@ -960,13 +964,6 @@
 
 .voxel-placeholder-3d button:hover {
   filter: brightness(1.1);
-}
-
-/* Column-hover cue: replaces the removed ▼ drop-row. Empty cells in the hovered
-   column light up so the player still sees where a click will drop. */
-.cf-cell.col-hover:not(.red):not(.yellow) {
-  background: rgba(0, 229, 255, 0.12);
-  border-color: #00e5ff;
 }
 
 /* ── Responsive Game Styles ──

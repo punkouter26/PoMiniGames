@@ -65,6 +65,18 @@
     opacity: 0.7;
 }
 
+/* Boards now stack — separate each with a divider and breathing room. */
+.lb-board {
+    padding-top: var(--space-4);
+    margin-top: var(--space-4);
+    border-top: 1px solid var(--color-border);
+}
+.lb-board:first-of-type {
+    padding-top: 0;
+    margin-top: 0;
+    border-top: none;
+}
+
 .lb-board-head {
     display: flex;
     align-items: baseline;

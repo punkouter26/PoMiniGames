@@ -26,14 +26,19 @@
 
     <div class="home-sections" id="home-modes">
             <section class="home-section">
-                <div class="home-mode-btn home-mode-btn--1p home-mode-btn--static">
-                    <span class="home-mode-icon">
-                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-                            <circle cx="12" cy="7" r="4"/>
-                        </svg>
-                    </span>
-                    <span class="home-mode-label">1 Player</span>
+                <div class="home-mode-col">
+                    <div class="home-mode-btn home-mode-btn--1p home-mode-btn--static">
+                        <span class="home-mode-icon">
+                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                                <circle cx="12" cy="7" r="4"/>
+                            </svg>
+                        </span>
+                        <span class="home-mode-label">1 Player</span>
+                    </div>
+                    <a class="home-lb-btn" href="/leaderboards">
+                        <span class="home-lb-icon" aria-hidden="true">🏆</span>Leaderboard
+                    </a>
                 </div>
                 <div class="home-section-games">
                     @foreach (var g in GameCatalog.SinglePlayer)
@@ -44,16 +49,21 @@
             </section>
 
             <section class="home-section">
-                <div class="home-mode-btn home-mode-btn--2p home-mode-btn--static">
-                    <span class="home-mode-icon">
-                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-                            <circle cx="9" cy="7" r="4"/>
-                            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
-                            <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-                        </svg>
-                    </span>
-                    <span class="home-mode-label">2 Player (local)</span>
+                <div class="home-mode-col">
+                    <div class="home-mode-btn home-mode-btn--2p home-mode-btn--static">
+                        <span class="home-mode-icon">
+                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                                <circle cx="9" cy="7" r="4"/>
+                                <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                                <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                            </svg>
+                        </span>
+                        <span class="home-mode-label">2 Player (local)</span>
+                    </div>
+                    <a class="home-lb-btn" href="/leaderboards">
+                        <span class="home-lb-icon" aria-hidden="true">🏆</span>Leaderboard
+                    </a>
                 </div>
                 <div class="home-section-games">
                     @foreach (var g in GameCatalog.LocalTwoPlayer)
@@ -64,15 +74,20 @@
             </section>
 
             <section class="home-section">
-                <div class="home-mode-btn home-mode-btn--multi home-mode-btn--static">
-                    <span class="home-mode-icon">
-                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <circle cx="12" cy="12" r="10"/>
-                            <path d="M2 12h20"/>
-                            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
-                        </svg>
-                    </span>
-                    <span class="home-mode-label">Multi player (online)</span>
+                <div class="home-mode-col">
+                    <div class="home-mode-btn home-mode-btn--multi home-mode-btn--static">
+                        <span class="home-mode-icon">
+                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="12" cy="12" r="10"/>
+                                <path d="M2 12h20"/>
+                                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+                            </svg>
+                        </span>
+                        <span class="home-mode-label">Multi player (online)</span>
+                    </div>
+                    <a class="home-lb-btn" href="/leaderboards">
+                        <span class="home-lb-icon" aria-hidden="true">🏆</span>Leaderboard
+                    </a>
                 </div>
                 <div class="home-section-games">
                     @foreach (var g in GameCatalog.Multiplayer)

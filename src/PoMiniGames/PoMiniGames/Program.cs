@@ -196,6 +196,25 @@ app.MapScalarApiReference(options =>
 // removing the Content-Length and adding Vary: Accept-Encoding.
 app.UseBlazorFrameworkFiles();
 
+// ─── Security gate: refuse to serve appsettings.*.json over HTTP ───
+// Why a middleware (not just a file filter): the Blazor static-file pipeline
+// also resolves symlinks + content-root files. Returning 404 before the file
+// system is read guarantees a config file is never on the wire, even if a
+// future deploy puts a real secret into appsettings.Development.json.
+// MUST be registered before UseStaticFiles so the gate fires before the
+// static-files pipeline reads the file from disk.
+app.Use(async (ctx, next) =>
+{
+    var p = ctx.Request.Path.Value;
+    if (p is not null && p.StartsWith("/appsettings", StringComparison.OrdinalIgnoreCase) &&
+        p.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+    {
+        ctx.Response.StatusCode = StatusCodes.Status404NotFound;
+        return;
+    }
+    await next(ctx);
+});
+
 // Bug fix: the framework's published `_framework/Po*.pdb` debug symbols are
 // not present in production builds, and their SRI hashes are baked into
 // blazor.boot.json at publish time. Browsers block the failed fetches with
@@ -222,23 +241,6 @@ app.UseStaticFiles(new Microsoft.AspNetCore.Builder.StaticFileOptions
         ctx.Context.Features.Set<Microsoft.AspNetCore.Http.Features.IHttpResponseBodyFeature>(
             new Microsoft.AspNetCore.Http.StreamResponseBodyFeature(ctx.Context.Response.Body, ctx.Context.Features.Get<Microsoft.AspNetCore.Http.Features.IHttpResponseBodyFeature>()!));
     }
-});
-
-// ─── Security gate: refuse to serve appsettings.*.json over HTTP ───
-// Why a middleware (not just a file filter): the Blazor static-file pipeline
-// also resolves symlinks + content-root files. Returning 404 before the file
-// system is read guarantees a config file is never on the wire, even if a
-// future deploy puts a real secret into appsettings.Development.json.
-app.Use(async (ctx, next) =>
-{
-    var p = ctx.Request.Path.Value;
-    if (p is not null && p.StartsWith("/appsettings", StringComparison.OrdinalIgnoreCase) &&
-        p.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
-    {
-        ctx.Response.StatusCode = StatusCodes.Status404NotFound;
-        return;
-    }
-    await next(ctx);
 });
 
 app.UseAuthentication();

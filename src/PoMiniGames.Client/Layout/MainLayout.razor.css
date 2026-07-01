@@ -308,6 +308,53 @@
     background: var(--color-surface-hover, rgba(255, 255, 255, 0.08));
 }
 
+/* ── §10 dev-only "Switch user" panel ── */
+.gl-dev-switch {
+    display: inline-block;
+}
+
+.gl-dev-switch__title {
+    padding: 0.4rem 0.75rem 0.25rem;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: rgba(255, 255, 255, 0.55);
+}
+
+.gl-dev-switch__input {
+    width: 100%;
+    box-sizing: border-box;
+    margin: 0.25rem 0.4rem 0.4rem;
+    width: calc(100% - 0.8rem);
+    background: rgba(255, 255, 255, 0.06);
+    color: inherit;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 6px;
+    padding: 0.4rem 0.55rem;
+    font: inherit;
+}
+
+.gl-dev-switch__input:focus {
+    outline: none;
+    border-color: #93c5fd;
+    background: rgba(147, 197, 253, 0.08);
+}
+
+.gl-dev-switch__error {
+    padding: 0.4rem 0.75rem;
+    color: #fecaca;
+    font-size: 12px;
+}
+
+.gl-dev-switch__hint {
+    padding: 0.25rem 0.75rem 0.4rem;
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 11px;
+    line-height: 1.4;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    margin-top: 0.25rem;
+}
+
 /* ── Mobile portrait audit ── */
 @media (max-width: 640px) {
     .gl-top-bar {

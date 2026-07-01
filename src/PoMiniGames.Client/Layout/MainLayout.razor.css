@@ -75,6 +75,18 @@
     gap: var(--space-2);
 }
 
+/* Game header slot: the active game projects its status + settings here so game
+   pages render a single consolidated bar instead of a second row. Grows to fill
+   the space between the breadcrumb rail and the session rail; empty (zero-width
+   in practice) on non-game pages. */
+.gl-top-bar-game {
+    display: flex;
+    flex: 1 1 auto;
+    align-items: center;
+    justify-content: flex-end;
+    min-width: 0;
+}
+
 .gl-brand {
     display: flex;
     align-items: center;

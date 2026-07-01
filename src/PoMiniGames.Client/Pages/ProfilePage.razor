@@ -301,23 +301,37 @@ else
     // ── Lifecycle ────────────────────────────────────────────────
     protected override void OnInitialized()
     {
-        _playerName = PlayerNameService.GetPlayerName();
         PlayerNameService.StateChanged += OnNameChanged;
-        LoadStats();
-        BuildLocalHighScores();
+        // §7 UX: _loading starts true (declared on the state field). The
+        // skeleton renders on the first paint, and we let OnInitializedAsync
+        // hydrate the stats + name. We deliberately do NOT call
+        // PlayerNameService.GetPlayerName() or LoadStats() here — those would
+        // resolve synchronously against cached localStorage and defeat the
+        // skeleton. Instead, the async path runs after first render and
+        // owns all data population so the placeholder is the first thing the
+        // user sees, even on a 0-ms warm-cache render.
     }
 
     protected override async Task OnInitializedAsync()
     {
+        await LoadStatsAsync();
         await LoadHighScoresAsync();
         await LoadMatchesAsync();
         // §7 UX: dismiss the skeleton once the slowest data source has resolved.
         // HighScore + MatchHistory fire in parallel; flipping _loading here means
         // the user sees a skeleton for the network round-trip (typically <300ms
-        // on warm-cache) and never a stale "FastHawk81" flash if a previous
-        // user's data was still resident in the component.
+        // on warm-cache) and never a stale identity flash if a previous user's
+        // data was still resident in the component.
         _loading = false;
         StateHasChanged();
+    }
+
+    private async Task LoadStatsAsync()
+    {
+        _playerName = PlayerNameService.GetPlayerName();
+        LoadStats();
+        BuildLocalHighScores();
+        await Task.CompletedTask;
     }
 
     public void Dispose() => PlayerNameService.StateChanged -= OnNameChanged;

@@ -2,26 +2,22 @@
 @* §6 Wrap the whole shell in a SwipeBack so every game gets a leftward
    swipe-back gesture without each game page having to wire it. *@
 
-<SwipeBack BackTo="@BackTo" Class="gps-shell-wrap">
-<div class="gps-shell">
-    <div class="gps-info-bar">
-        <div class="gps-info-left">
-            @if (!string.IsNullOrEmpty(BackTo))
-            {
-                <button class="gps-back-btn" @onclick="NavigateBack" aria-label="Go back">
-                    ←
-                </button>
-            }
-            <span class="gps-title">@Title</span>
-            @if (!string.IsNullOrEmpty(Player))
-            {
-                <span class="gps-player">@Player</span>
-            }
-        </div>
+@* §11 Consolidated header: the game's status + settings are projected into the
+   app top bar (see MainLayout's SectionOutlet), removing the separate second
+   row. The back-arrow and title are intentionally dropped — the top bar's brand
+   and breadcrumb already cover navigation and page identity; the swipe-back
+   gesture below still works. *@
+<SectionContent SectionName="game-header">
+    <div class="gps-header-slot">
+        @if (!string.IsNullOrEmpty(Player))
+        {
+            <span class="gps-player">@Player</span>
+        }
 
-        <div class="gps-info-center">
-            @Status
-        </div>
+        @if (Status != null)
+        {
+            <span class="gps-header-status">@Status</span>
+        }
 
         @if (IsOffline)
         {
@@ -61,7 +57,10 @@
             </div>
         }
     </div>
+</SectionContent>
 
+<SwipeBack BackTo="@BackTo" Class="gps-shell-wrap">
+<div class="gps-shell">
     <div class="gps-game-area @(Fullscreen ? "gps-game-area--fullscreen" : "")">
         @ChildContent
     </div>

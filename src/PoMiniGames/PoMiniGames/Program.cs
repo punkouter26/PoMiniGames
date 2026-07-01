@@ -196,11 +196,16 @@ app.MapScalarApiReference(options =>
 // removing the Content-Length and adding Vary: Accept-Encoding.
 app.UseBlazorFrameworkFiles();
 
-// ─── Security gate: refuse to serve appsettings.*.json over HTTP ───
-// Why a middleware (not just a file filter): the Blazor static-file pipeline
-// also resolves symlinks + content-root files. Returning 404 before the file
-// system is read guarantees a config file is never on the wire, even if a
-// future deploy puts a real secret into appsettings.Development.json.
+// ─── Security gate: sanitize appsettings.*.json responses ───
+// Why a middleware instead of just removing the file: the Blazor WASM runtime
+// fetches /appsettings.json at startup and treats a 404 as a fatal init
+// error (MONO_WASM: download 'http://...appsettings.json' ... failed 404).
+// We therefore intercept the request and return a minimal, empty config
+// stub so the runtime can initialize, without leaking the actual server
+// configuration. A real config fetch attempt from the page origin gets the
+// same empty payload — there is no observable difference between a Blazor
+// runtime fetch and a curl probe.
+//
 // MUST be registered before UseStaticFiles so the gate fires before the
 // static-files pipeline reads the file from disk.
 app.Use(async (ctx, next) =>
@@ -209,7 +214,14 @@ app.Use(async (ctx, next) =>
     if (p is not null && p.StartsWith("/appsettings", StringComparison.OrdinalIgnoreCase) &&
         p.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
     {
-        ctx.Response.StatusCode = StatusCodes.Status404NotFound;
+        // Empty shell config: enough to satisfy WebAssemblyHostBuilder's
+        // IConfiguration boot path (the server has its own appsettings +
+        // Key Vault pipeline that powers real secrets). Returning "{}" keeps
+        // IConfigurationBuilder.AddJsonFile happy without exposing anything.
+        ctx.Response.StatusCode = StatusCodes.Status200OK;
+        ctx.Response.ContentType = "application/json";
+        ctx.Response.Headers["Cache-Control"] = "no-store";
+        await ctx.Response.WriteAsync("{}");
         return;
     }
     await next(ctx);

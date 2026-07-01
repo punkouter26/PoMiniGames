@@ -45,6 +45,13 @@
             }
         </div>
 
+        @* Consolidated game header: the active game (via GameShell) projects its
+           status + settings into this single top bar, so game pages no longer
+           render a separate second row. Empty on non-game pages. *@
+        <div class="gl-top-bar-game">
+            <SectionOutlet SectionName="game-header" />
+        </div>
+
         <div class="gl-auth">
             @if (AuthState.IsConfigured && AuthState.User != null)
             {

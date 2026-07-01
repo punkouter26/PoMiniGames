@@ -6,41 +6,19 @@
   background: var(--color-bg);
 }
 
-.gps-info-bar {
+/* Game header slot — projected into the app top bar (SectionOutlet in
+   MainLayout). Replaces the old standalone `.gps-info-bar` second row. */
+.gps-header-slot {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 0.75rem 1.5rem;
-  background: var(--color-surface);
-  border-bottom: 1px solid var(--color-border);
-  gap: 1rem;
-  flex-wrap: wrap;
+  gap: 0.6rem;
+  min-width: 0;
 }
 
-.gps-info-left {
-  display: flex;
+.gps-header-status {
+  display: inline-flex;
   align-items: center;
-  gap: 0.75rem;
-}
-
-.gps-back-btn {
-  background: transparent;
-  border: none;
-  color: var(--color-text-secondary);
-  font-size: 1.25rem;
-  padding: 0.25rem 0.5rem;
-  border-radius: 4px;
-  transition: all 0.2s;
-}
-
-.gps-back-btn:hover {
-  background: var(--color-surface-hover);
-  color: var(--color-text-primary);
-}
-
-.gps-title {
-  font-weight: 600;
-  font-size: 1rem;
+  min-width: 0;
 }
 
 .gps-player {
@@ -49,11 +27,15 @@
   padding: 0.2rem 0.6rem;
   background: var(--color-surface-hover);
   border-radius: 9999px;
+  white-space: nowrap;
 }
 
-.gps-info-center {
-  flex: 1;
-  text-align: center;
+/* On phones the top bar drops the breadcrumb + auth email; keep the game slot
+   to status + settings only so it never gets pushed off-screen. */
+@media (max-width: 640px) {
+  .gps-header-slot .gps-player {
+    display: none;
+  }
 }
 
 /* ── Connect Five status strip (#9 / #10) ── */
@@ -424,11 +406,21 @@
 
 .cf-cell.disabled { cursor: default; }
 
-.cf-cell .piece { animation: cf-slide-down 0.3s ease-in both; }
+/* Piece drop: fall from above the board (distance = --drop-rows strides, set
+   per-cell) down to the resting row, accelerating like gravity, then a small
+   settle bounce. Only newly-inserted piece elements animate — re-renders reuse
+   the existing DOM node so placed pieces stay put. */
+.cf-cell .piece { animation: cf-slide-down 0.4s cubic-bezier(0.45, 0, 0.55, 1) both; }
 
 @keyframes cf-slide-down {
-  from { transform: translateY(calc(-1 * var(--drop-rows, 1) * var(--cf-cell-stride, 55px))); }
-  to { transform: translateY(0); }
+  0%   { transform: translateY(calc(-1 * var(--drop-rows, 1) * var(--cf-cell-stride, 55px))); }
+  70%  { transform: translateY(0); }
+  84%  { transform: translateY(-14%); }
+  100% { transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cf-cell .piece { animation: none; }
 }
 
 .cf-cell.red {
@@ -970,54 +962,19 @@
   filter: brightness(1.1);
 }
 
-.cf-drop-row {
-  display: grid;
-  grid-template-columns: repeat(9, var(--cf-cell, 48px));
-  gap: 3px;
-  margin: 0 auto 1rem;
-  width: calc(var(--cf-cell, 48px) * 9 + 3px * 8);
-  max-width: 100%;
-  padding: 0 12px;
-}
-
-.cf-drop-btn {
-  width: var(--cf-cell, 48px);
-  height: 32px;
-  background: rgba(0, 229, 255, 0.1);
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  color: #00e5ff;
-  font-size: 0.7rem;
-  font-weight: 700;
-  cursor: pointer;
-  transition: all 0.15s;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.cf-drop-btn:hover:not(:disabled) {
-  background: rgba(0, 229, 255, 0.25);
+/* Column-hover cue: replaces the removed ▼ drop-row. Empty cells in the hovered
+   column light up so the player still sees where a click will drop. */
+.cf-cell.col-hover:not(.red):not(.yellow) {
+  background: rgba(0, 229, 255, 0.12);
   border-color: #00e5ff;
-  transform: translateY(-4px);
-  box-shadow: 0 4px 14px rgba(0, 229, 255, 0.3);
-}
-
-.cf-drop-btn:disabled { opacity: 0.3; cursor: default; }
-
-.cf-drop-btn.active-column {
-  background: #00e5ff;
-  color: var(--color-bg);
-  box-shadow: 0 0 16px rgba(0, 229, 255, 0.5);
-  animation: pulse 1s ease-in-out infinite;
 }
 
 /* ── Responsive Game Styles ──
    Bug fix QA #1: on phones (<= 640 px), shrink the cell size more aggressively
-   so the 9x9 board + drop row + shell chrome all fit inside the viewport.
-   The dvh-based clamp above already does most of the work; this block just
-   trims padding and forces the explicit cell-size for small screens where
-   the clamp's lower bound needs to be even smaller. */
+   so the 9x9 board + shell chrome all fit inside the viewport. The dvh-based
+   clamp above already does most of the work; this block just trims padding and
+   forces the explicit cell-size for small screens where the clamp's lower bound
+   needs to be even smaller. */
 @media (max-width: 640px) {
   .cf-layout {
     --cf-cell: clamp(28px, calc((100dvh - 220px) / 9), 44px);
@@ -1037,16 +994,6 @@
     width: var(--cf-cell);
     height: var(--cf-cell);
     font-size: clamp(0.85rem, 2.6vmin, 1rem);
-  }
-  .cf-drop-row {
-    gap: 2px;
-    padding: 0 8px;
-    width: calc(var(--cf-cell) * 9 + 2px * 8);
-  }
-  .cf-drop-btn {
-    width: var(--cf-cell);
-    height: 24px;
-    font-size: 0.6rem;
   }
 }
 

@@ -9,6 +9,7 @@ public class AuthStateService
     private readonly ApiService _api;
     private readonly IJSRuntime _js;
     private readonly ILogger<AuthStateService> _logger;
+    private readonly PlayerNameService _playerName;
     private AuthClientConfiguration? _config;
     private AuthenticatedUserProfile? _user;
     private bool _initialized;
@@ -28,11 +29,12 @@ public class AuthStateService
 
     public event Action? StateChanged;
 
-    public AuthStateService(ApiService api, IJSRuntime js, ILogger<AuthStateService> logger)
+    public AuthStateService(ApiService api, IJSRuntime js, ILogger<AuthStateService> logger, PlayerNameService playerName)
     {
         _api = api;
         _js = js;
         _logger = logger;
+        _playerName = playerName;
     }
 
     /// <summary>Wire format for the MSAL JS interop result (see wwwroot/js/poauth.js).</summary>
@@ -75,7 +77,19 @@ public class AuthStateService
             if (!string.IsNullOrEmpty(urlUser))
             {
                 var profile = await _api.DevBypassAsync(urlUser);
-                if (profile is not null) _user = profile;
+                if (profile is not null)
+                {
+                    _user = profile;
+                    // Keep the local PlayerNameService in sync so /profile shows
+                    // the new identity, not the previously-cached player name.
+                    // Wait for PlayerNameService.InitializeAsync first so the
+                    // auth-derived value wins the localStorage race.
+                    await _playerName.Initialized;
+                    if (!string.IsNullOrWhiteSpace(profile.DisplayName))
+                    {
+                        _playerName.SetPlayerNameFromAuth(profile.DisplayName);
+                    }
+                }
                 _initialized = true;
                 NotifyStateChanged();
                 return;
@@ -330,6 +344,19 @@ public class AuthStateService
         {
             Error = null;
             _user = profile;
+            // §10: keep the local player-name in sync with the new identity
+            // so /profile and the bottom-tab bar show the new name immediately,
+            // not the previously-cached "Player" / random adjective-noun.
+            // SetPlayerNameFromAuth ignores empty values, which is what we want
+            // when the user typed a real name (DisplayName is non-empty).
+            // We wait for PlayerNameService.InitializeAsync first so the auth
+            // value wins the localStorage race instead of being overwritten by
+            // a randomly generated adjective-noun fallback.
+            await _playerName.Initialized;
+            if (!string.IsNullOrWhiteSpace(profile.DisplayName))
+            {
+                _playerName.SetPlayerNameFromAuth(profile.DisplayName);
+            }
         }
         else
         {

@@ -10,6 +10,15 @@ public class PlayerNameService
 
     private string _playerName = string.Empty;
     private IJSRuntime? _jsRuntime;
+    private TaskCompletionSource _initializedTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    /// <summary>True once <see cref="InitializeAsync"/> has finished its first pass.</summary>
+    public bool IsInitialized => _initializedTcs.Task.IsCompleted;
+
+    /// <summary>Resolves when the first read-from-localStorage pass is complete.
+    /// Used by AuthStateService so that a server-provided DisplayName is the
+    /// final value (not the random adjective-noun fallback).</summary>
+    public Task Initialized => _initializedTcs.Task;
 
     public string PlayerName
     {
@@ -46,6 +55,7 @@ public class PlayerNameService
                     await SetItemAsync(StorageKey, generated);
                 }
                 StateChanged?.Invoke();
+                _initializedTcs.TrySetResult();
                 return;
             }
         }
@@ -54,6 +64,7 @@ public class PlayerNameService
             // JS interop not available (e.g. pre-render)
         }
         _playerName = "Player";
+        _initializedTcs.TrySetResult();
     }
 
     public void SetPlayerName(string name)

@@ -1,0 +1,16 @@
+sequenceDiagram
+    participant U as User
+    participant C as Blazor component
+    participant T as Typed HttpClient
+    participant B as BFF / auth middleware
+    participant H as Minimal API handler
+    participant S as Azure Table Storage
+
+    U->>C: Start action
+    C->>T: Send typed request
+    T->>B: Attach same-origin session
+    B->>H: Validate auth + route
+    H->>S: Execute storage operation
+    S-->>H: Return entity or status
+    H-->>C: ProblemDetails or success payload
+    C-->>U: Render updated state

@@ -1,0 +1,8 @@
+graph LR
+    C[Client UI] -->|local action| L[Client-side state machine]
+    L -->|send update| H[SignalR hub]
+    H -->|validate| S[Server-authoritative room state]
+    S -->|broadcast| G[Group members]
+    G -->|apply| C
+    H -->|disconnect| D[Reconnect / lifecycle cleanup]
+    D --> L

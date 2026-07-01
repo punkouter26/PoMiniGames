@@ -1,0 +1,6 @@
+graph TD
+    U[User] --> L[Login screen]
+    L --> M[Microsoft sign-in]
+    M --> C[HttpOnly session cookie]
+    C --> G[Auth gate]
+    G --> A[App shell]

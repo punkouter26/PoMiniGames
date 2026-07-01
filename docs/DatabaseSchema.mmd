@@ -1,0 +1,26 @@
+erDiagram
+    PLAYER_STATS {
+        string PartitionKey
+        string RowKey
+        string Game
+        string PlayerName
+        json Stats
+    }
+    LEADERBOARD_ENTRY {
+        string PartitionKey
+        string RowKey
+        string Game
+        string PlayerName
+        int Rank
+        json Metadata
+    }
+    MATCH_HISTORY {
+        string PartitionKey
+        string RowKey
+        string Game
+        string PlayerName
+        string Outcome
+        datetime CreatedAt
+    }
+    PLAYER_STATS ||--o{ LEADERBOARD_ENTRY : derives
+    PLAYER_STATS ||--o{ MATCH_HISTORY : records

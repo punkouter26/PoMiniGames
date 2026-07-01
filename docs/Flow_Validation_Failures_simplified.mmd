@@ -1,0 +1,6 @@
+graph TD
+    UI[UI] --> V[Validation]
+    V -->|fail| E[Error feedback]
+    V -->|pass| API[API handler]
+    API --> X[Exception / ProblemDetails]
+    API --> P[Persisted result]

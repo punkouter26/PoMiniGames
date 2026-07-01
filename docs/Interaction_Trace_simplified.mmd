@@ -1,0 +1,14 @@
+sequenceDiagram
+    participant U as User
+    participant C as Client
+    participant B as BFF
+    participant H as API handler
+    participant S as Storage
+
+    U->>C: Action
+    C->>B: Request
+    B->>H: Validate and route
+    H->>S: Read/write data
+    S-->>H: Result
+    H-->>C: Response
+    C-->>U: Update UI

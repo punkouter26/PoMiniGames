@@ -1,0 +1,5 @@
+graph LR
+    Client[Client] --> Hub[SignalR hub]
+    Hub --> State[Server room state]
+    State --> Client
+    Client --> Reconnect[Reconnect / leave]

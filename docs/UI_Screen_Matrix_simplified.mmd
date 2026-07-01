@@ -1,0 +1,9 @@
+stateDiagram-v2
+    [*] --> Boot
+    Boot --> AuthCheck
+    AuthCheck --> LoginScreen: unauthenticated
+    AuthCheck --> AppShell: authenticated
+    LoginScreen --> AppShell: guest or OAuth success
+    AppShell --> ProtectedPage: authorized route
+    ProtectedPage --> AppShell: navigate
+    AppShell --> [*]

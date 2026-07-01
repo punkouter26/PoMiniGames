@@ -1,0 +1,6 @@
+graph TD
+    U[User] --> C[Blazor client]
+    C --> H[Host API]
+    H --> F[Feature slices]
+    F --> P[Table Storage]
+    H --> A[Auth boundary]

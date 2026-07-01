@@ -1,0 +1,9 @@
+graph TD
+    U[Mobile browser] --> C[Blazor WebAssembly client]
+    C --> H[ASP.NET Core host / API]
+    H --> F[Vertical slices]
+    F --> S[Shared application services]
+    F --> P[Azure Table Storage]
+    H --> A[Auth / cookie / BFF boundary]
+    A --> E[Microsoft Entra ID]
+    H --> O[Observability and diagnostics]

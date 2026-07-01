@@ -1,11 +1,11 @@
 graph TD
-    U[User on mobile browser] --> L[LoginScreen / auth entry]
-    L --> M[/auth/login/microsoft]
+    U[User on mobile browser] --> L[LoginScreen auth entry]
+    L --> M["/auth/login/microsoft"]
     M --> E[Microsoft Entra ID OIDC challenge]
     E --> R[Redirect back with validated returnUrl]
-    R --> A[/auth/me]
+    R --> A["/auth/me"]
     A --> C[HttpOnly BFF session cookie]
-    C --> G[AuthGate / BffAuthenticationStateProvider]
+    C --> G[AuthGate and BffAuthenticationStateProvider]
     G --> S[Authorized app shell]
     A -->|unauthenticated| L
     C -->|refresh| A

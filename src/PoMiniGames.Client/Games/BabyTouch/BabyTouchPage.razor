@@ -14,6 +14,8 @@
            OnPlayAgain="ResetGame"
            ShowSettings="true"
            Stats="@_statItems"
+           Status="@StatusContent"
+           GameSummary="@GameSummaryContent"
            Controls="@ControlsContent">
     <div class="baby-touch-wrapper">
         <div class="baby-touch-timer">Time: @_timeLeft</div>
@@ -50,6 +52,11 @@
     </div>;
 
     private RenderFragment TitleContent => @<span>👶 Baby Touch</span>;
+
+    private RenderFragment StatusContent => @<span class="gps-status-badge turn">Score @_score · @_timeLeft s</span>;
+    private RenderFragment? GameSummaryContent => _timeLeft <= 0
+        ? @<span class="cf-result cf-result--win">👶 Final: @_score</span>
+        : null;
 
     protected override void OnInitialized()
     {

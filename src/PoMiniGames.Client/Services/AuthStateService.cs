@@ -98,6 +98,11 @@ public class AuthStateService
             // Handshake already populated _user from the server-side cookie.
             if (_user is not null)
             {
+                // Restore the local player-name from the auth cookie so the
+                // GameShell "Player" slot matches the right-rail identity
+                // (e.g. "guest@local.dev" ↔ "Guest") instead of a stale
+                // random fallback that survived from a previous session.
+                await SyncPlayerNameFromAuthAsync();
                 _initialized = true;
                 NotifyStateChanged();
                 return;
@@ -120,6 +125,7 @@ public class AuthStateService
                         Email = profile.Email
                     };
                 _logger.AutoGuestSessionMinted();
+                await SyncPlayerNameFromAuthAsync();
                 _initialized = true;
                 NotifyStateChanged();
                 return;
@@ -197,6 +203,12 @@ public class AuthStateService
             DisplayName = string.IsNullOrWhiteSpace(result.Name) ? result.Username : result.Name,
             Email = result.Username
         };
+        // Push the MSAL display name into PlayerNameService so the GameShell
+        // "Player" slot and the right-rail identity stay in lockstep. Without
+        // this, signing in with Microsoft would leave the top-bar showing a
+        // stale random fallback (e.g. "BraveWolf32") while the auth rail
+        // correctly shows the user's email.
+        await SyncPlayerNameFromAuthAsync();
     }
 
     /// <summary>Interactive Microsoft sign-in (real MSAL when configured, dev-login stand-in otherwise).</summary>
@@ -281,8 +293,19 @@ public class AuthStateService
     {
         Error = null;
         var profile = await _api.DevBypassAsync("Guest");
-        if (profile != null) _user = profile;
-        else Error = "Guest sign-in failed.";
+        if (profile != null)
+        {
+            _user = profile;
+            // Sync the in-game player-name with the new auth identity so the
+            // GameShell "Player" slot shows "Guest" (the server-derived name)
+            // instead of any stale random fallback left in localStorage from
+            // a previous anonymous play.
+            await SyncPlayerNameFromAuthAsync();
+        }
+        else
+        {
+            Error = "Guest sign-in failed.";
+        }
         NotifyStateChanged();
     }
 
@@ -388,6 +411,20 @@ public class AuthStateService
     {
         _user = user;
         NotifyStateChanged();
+    }
+
+    /// <summary>
+    /// Push <see cref="AuthenticatedUserProfile.DisplayName"/> into
+    /// <see cref="PlayerNameService"/> so the GameShell "Player" slot, the
+    /// per-game stats file, and the right-rail auth identity all show the
+    /// same name. Waits for <c>PlayerNameService.Initialized</c> so a server-
+    /// derived display name wins over the locally-minted random fallback.
+    /// </summary>
+    private async Task SyncPlayerNameFromAuthAsync()
+    {
+        if (_user is null || string.IsNullOrWhiteSpace(_user.DisplayName)) return;
+        await _playerName.Initialized;
+        _playerName.SetPlayerNameFromAuth(_user.DisplayName);
     }
 
     private void NotifyStateChanged() => StateChanged?.Invoke();

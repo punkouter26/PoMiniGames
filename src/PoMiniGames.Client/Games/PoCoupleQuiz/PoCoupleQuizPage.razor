@@ -12,8 +12,8 @@
         <div class="cq-solo">
             @if (!_soloFinished)
             {
-                <h2>💕 PoCoupleQuiz · Solo</h2>
-                <p>Round @(_soloRound + 1) of @_soloQuestions.Count · Score: <strong>@_soloScore</strong></p>
+                <h2 class="gps-phase-h">Solo · Round @(_soloRound + 1) of @_soloQuestions.Count</h2>
+                <p>Score: <strong>@_soloScore</strong></p>
                 <p class="cq-solo-question"><strong>@CurrentSoloQuestion.Text</strong></p>
                 @if (!_soloRevealed)
                 {
@@ -38,7 +38,7 @@
             }
             else
             {
-                <h2>💕 Results</h2>
+                <h2 class="gps-phase-h">Results</h2>
                 <p>You matched your partner <strong>@_soloMatches</strong> / @_soloQuestions.Count times.</p>
                 <p>Score: <strong>@_soloScore</strong></p>
                 <div class="cq-actions">
@@ -57,7 +57,7 @@
     else if (_lobby is null)
     {
         <div class="cq-join">
-            <h2>Join the PoCoupleQuiz lobby</h2>
+            <h2 class="gps-phase-h">Lobby</h2>
             <p>Two or more players answer questions about each other. The "King" types the secret answer; the rest try to match — scored by AI.</p>
             <label>
                 Your name:
@@ -221,10 +221,23 @@
         await Hub.StartGameAsync(_lobby.GameCode);
     }
 
-    private void HandleLobbyCreated(CoupleQuizLobbyEventPayload p) => _lobby = p;
-    private void HandleLobbyJoined(CoupleQuizLobbyEventPayload p) => _lobby = p;
+    private void HandleLobbyCreated(CoupleQuizLobbyEventPayload p)
+    {
+        // BUG FIX (audit #5): a malformed SignalR payload (null / partial
+        // shape) used to overwrite _lobby with null and trigger an
+        // Arg_NullReferenceException render loop. Guard against null + empty
+        // game code so the UI shows a recoverable error instead of crashing.
+        if (p is null || string.IsNullOrEmpty(p.GameCode))
+        {
+            _error = "Server returned an empty lobby. Please try again.";
+            return;
+        }
+        _lobby = p;
+    }
+    private void HandleLobbyJoined(CoupleQuizLobbyEventPayload p) => HandleLobbyCreated(p);
     private void HandleLobbyUpdated(CoupleQuizLobbyUpdatedPayload p)
     {
+        if (p is null || string.IsNullOrEmpty(p.GameCode)) return;
         if (_lobby is not null && _lobby.GameCode == p.GameCode)
         {
             _lobby = _lobby with
@@ -237,7 +250,14 @@
             };
         }
     }
-    private void HandleError(string message) => _error = message;
+    private void HandleError(string? message)
+    {
+        // Null/empty guard — the UI renders @_error directly and crashes on
+        // null string interpolation otherwise.
+        _error = string.IsNullOrEmpty(message)
+            ? "An unknown error occurred. Please try again."
+            : message;
+    }
 
     // ── Solo mode handlers ───────────────────────────────────────────────────
     private void StartSolo()

@@ -14,10 +14,11 @@
            GameOver="@_gameOver"
            OnPlayAgain="ResetGame"
            ShowSettings="true"
-           IsOffline="@_isOffline"
            Stats="@_statItems"
+           Status="@StatusContent"
+           GameSummary="@GameSummaryContent"
            Controls="@ControlsContent">
-    <div id="voxel-game-container" style="width:100%;height:540px;background:#050510;border-radius:8px;overflow:hidden;"></div>
+    <div id="voxel-game-container" style="width:100%;height:540px;background:var(--color-bg);border-radius:8px;overflow:hidden;"></div>
 </GameShell>
 
 @code {
@@ -29,7 +30,6 @@
     private string _playerName = "";
     private bool _gameOver;
     private int _score;
-    private bool _isOffline = false;
     private List<StatItem> _statItems = new();
     private PlayerStats _stats = new();
     private readonly GameStatsService _gameStats = new();
@@ -37,6 +37,11 @@
     private bool _engineInitialized;
 
     private RenderFragment TitleContent => @<span>🎯 Voxel Shooter</span>;
+
+    private RenderFragment StatusContent => @<span class="gps-status-badge turn">Score @_score</span>;
+    private RenderFragment? GameSummaryContent => _gameOver
+        ? @<span class="cf-result cf-result--loss">☠️ Mission failed</span>
+        : null;
 
     private RenderFragment ControlsContent => @<div class="gps-controls">
         <button @onclick="ResetGame">🔄 Reset</button>
@@ -98,15 +103,7 @@
     private void UpdateStats()
     {
         var bucket = _gameStats.GetDifficultyBucket(_stats, Difficulty.Medium);
-        _statItems = new List<StatItem>
-        {
-            new() { Value = _score.ToString(), Label = "Score" },
-            new() { Value = bucket.Wins.ToString(), Label = "W" },
-            new() { Value = bucket.Losses.ToString(), Label = "L" },
-            new() { Value = bucket.Draws.ToString(), Label = "D" },
-            new() { Value = $"{bucket.WinRate * 100:F0}%", Label = "Rate" },
-            new() { Value = bucket.EloRating.ToString(), Label = "ELO" }
-        };
+        _statItems = GameStatsPanel.Build(bucket, includeDraws: true, ("Score", _score.ToString()));
     }
 
     public async ValueTask DisposeAsync()

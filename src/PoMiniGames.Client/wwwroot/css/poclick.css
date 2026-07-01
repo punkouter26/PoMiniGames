@@ -4,8 +4,12 @@
 /* deliberately removed Bootstrap for payload savings.       */
 /* ══════════════════════════════════════════════════════════ */
 
-/* ── PoClick CSS Variables ── */
-:root {
+/* ── PoClick CSS Variables ──
+   Scoped to `.gps-game-area` so PoClick's brand palette
+   (cyan / green / yellow / orange / red) doesn't leak into
+   the global `:root` token space. Every other game uses
+   `--color-accent` from app.css; PoClick has its own identity. */
+.gps-game-area {
   --accent-cyan: #06b6d4;
   --accent-green: #10b981;
   --accent-yellow: #f59e0b;

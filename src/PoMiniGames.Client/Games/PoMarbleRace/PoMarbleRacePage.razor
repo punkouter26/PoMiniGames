@@ -56,7 +56,7 @@
         {
             <div class="mr-overlay">
                 <div class="mr-pick-card">
-                    <h2 class="mr-pick-title">Pick your marble</h2>
+                    <h2 class="gps-phase-h">Pick your marble</h2>
                     <p class="mr-pick-sub">Top 3 finish = +1 point. Watch your marble race!</p>
                     <div class="mr-pick-grid">
                         @for (int i = 0; i < 8; i++)
@@ -240,16 +240,10 @@
     private void UpdateStats()
     {
         var bucket = _gameStats.GetDifficultyBucket(_stats, Difficulty.Medium);
-        // Marble race shows Score + Best and has no draws/streak column.
-        _statItems = new List<StatItem>
-        {
-            new() { Value = _score.ToString(), Label = "Score" },
-            new() { Value = _best.ToString(), Label = "Best" },
-            new() { Value = bucket.Wins.ToString(), Label = "W" },
-            new() { Value = bucket.Losses.ToString(), Label = "L" },
-            new() { Value = $"{bucket.WinRate * 100:F0}%", Label = "Rate" },
-            new() { Value = bucket.EloRating.ToString(), Label = "ELO" }
-        };
+        // Marble race has no draws and shows Score + Best as leading stats.
+        _statItems = GameStatsPanel.Build(bucket, includeDraws: false,
+            ("Score", _score.ToString()),
+            ("Best", _best.ToString()));
     }
 
     private static string Initials(string name)

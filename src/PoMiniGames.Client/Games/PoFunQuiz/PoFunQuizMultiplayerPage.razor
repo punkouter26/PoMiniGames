@@ -22,7 +22,7 @@
     else if (_state is null)
     {
         <div class="fq-join">
-            <h2>Two-player PoFunQuiz</h2>
+            <h2 class="gps-phase-h">Two-player · PoFunQuiz</h2>
             <label>Your name: <input @bind="_playerName" maxlength="24" disabled="@(_busy || !_isConnected)" /></label>
             <label>Category:
                 <select @bind="_category" disabled="@(_busy || !_isConnected)">
@@ -67,7 +67,7 @@
     else
     {
         <div class="fq-multi">
-            <h2>Game <code>@_state.GameId</code> · @_state.State</h2>
+            <h2 class="gps-phase-h">Game · @_state.GameId</h2>
             <h3>Players</h3>
             <ul>
                 @foreach (var p in _state.Players)

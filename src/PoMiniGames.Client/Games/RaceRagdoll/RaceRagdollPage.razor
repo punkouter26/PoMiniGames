@@ -15,7 +15,7 @@
             @if (_gameState == "betting")
             {
                 <div class="betting-phase">
-                    <h2>Place Your Bet!</h2>
+                    <h2 class="gps-phase-h">Place Your Bet</h2>
                     <div class="balance">Balance: $@_balance</div>
                     <div class="racers">
                         @for (int i = 0; i < _racers.Count; i++)
@@ -82,9 +82,23 @@
     private string _winnerName = "";
     private int _payout;
     private bool _won;
+    // Audit fix #9: lightweight local stats for the settings drawer.
+    // RaceRagdoll doesn't have a GameStatsService-backed progression; instead
+    // we track session totals in memory and surface them in the top-bar
+    // settings panel like every other game does.
+    private int _racesTotal;
+    private int _racesWon;
+    private int _racesLost;
+    private int _highestPayout;
+    private int _startingBalance = 1000;
     private List<Racer> _racers = new();
     private System.Threading.Timer? _timer;
     // BUG FIX (#1): _kioskTimer removed; KioskCoordinator owns the timer.
+
+    // Audit fix #9: use the shared GameStatsService so the settings drawer
+    // shows persisted session stats and the home page knows this is the
+    // user's most-recently-played game.
+    private readonly GameStatsService _gameStats = new();
 
     [SupplyParameterFromQuery(Name = "demo")] public int DemoMode { get; set; } = 0;
     [SupplyParameterFromQuery(Name = "kiosk")] public int KioskNext { get; set; } = -1;
@@ -100,6 +114,7 @@
     {
         _playerName = PlayerNameService.GetPlayerName();
         InitializeRacers();
+        UpdateStats(); // Audit fix #9: hydrate the settings drawer stats on first paint.
         if (DemoMode == 1)
         {
             _selectedRacer = 0;
@@ -181,7 +196,18 @@
             {
                 _payout = _currentBet * _racers[_selectedRacer].Odds;
                 _balance += _payout;
+                if (_payout > _highestPayout) _highestPayout = _payout;
+                _racesWon++;
             }
+            else
+            {
+                _racesLost++;
+            }
+            _racesTotal++;
+            UpdateStats();
+            // Save the last-played game so the home page's "▶ Continue" pill
+            // lights up on this game after the first race completes.
+            try { _gameStats.SaveLastPlayedGame("poraceragdoll"); } catch { /* defensive */ }
             // Demo: auto-restart after 2.5s
             if (DemoMode == 1)
             {
@@ -246,6 +272,25 @@
         3 => "#3A0CA3",
         _ => "#FFFFFF"
     };
+
+    // Audit fix #9: surface session stats in the settings drawer. RaceRagdoll
+    // doesn't have a W/L/ELO model (it's a betting sim, not a skill track), so
+    // we surface the user's balance, race count, win rate, and best payout.
+    private void UpdateStats()
+    {
+        var winRate = _racesTotal == 0 ? 0 : (int)Math.Round(_racesWon * 100.0 / _racesTotal);
+        var netPnl  = _balance - _startingBalance;
+        _statItems = new List<StatItem>
+        {
+            new() { Label = "Balance",  Value = $"${_balance}" },
+            new() { Label = "Races",    Value = _racesTotal.ToString() },
+            new() { Label = "Wins",     Value = _racesWon.ToString() },
+            new() { Label = "Losses",   Value = _racesLost.ToString() },
+            new() { Label = "Win Rate", Value = $"{winRate}%" },
+            new() { Label = "Best Payout", Value = _highestPayout == 0 ? "—" : $"${_highestPayout}" },
+            new() { Label = "Net P/L",  Value = netPnl >= 0 ? $"+${netPnl}" : $"-${Math.Abs(netPnl)}" },
+        };
+    }
 
     public void Dispose()
     {

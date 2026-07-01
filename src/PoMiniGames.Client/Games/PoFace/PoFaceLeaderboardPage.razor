@@ -4,7 +4,7 @@
 
 <GameShell Title=@TitleContent BackTo="/face" ShowSettings="false">
     <div class="pf-leaderboard">
-        <h2>Top PoFace scores (@_year)</h2>
+        <h2 class="gps-phase-h">Top scores · @_year</h2>
         <div class="pf-year-picker">
             <label>Year: <input type="number" @bind="_year" min="2024" max="2100" /></label>
             <button class="pf-btn pf-btn-secondary" @onclick="Load">Load</button>

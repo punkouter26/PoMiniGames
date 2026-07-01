@@ -2,10 +2,56 @@
    table, not a stack of padded cards. Tokens inherited from css/app.css :root. */
 
 .lb-page {
-    max-width: 640px;
+    max-width: 960px;
     margin: 0 auto;
     padding: var(--space-3) var(--space-4) var(--space-6);
     width: 100%;
+}
+
+/* Audit fix #8: "your top game" hero card, grouped sections, responsive grid. */
+.lb-hero {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    padding: 1rem 1.25rem;
+    margin-bottom: var(--space-3);
+    border-radius: 14px;
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.22), rgba(34, 211, 238, 0.16));
+    border: 1px solid rgba(99, 102, 241, 0.4);
+    text-decoration: none;
+    color: var(--color-text-primary);
+    transition: transform 0.18s ease;
+}
+.lb-hero:hover { transform: translateY(-2px); }
+.lb-hero-eyebrow {
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: rgba(199, 210, 254, 0.9);
+}
+.lb-hero-title { font-size: 1.25rem; font-weight: 800; }
+.lb-hero-rank { font-size: 0.95rem; color: var(--color-text-secondary); }
+
+.lb-group {
+    margin-top: var(--space-4);
+}
+.lb-group .gps-phase-h {
+    margin-bottom: var(--space-2);
+}
+.lb-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: var(--space-2);
+}
+@media (max-width: 640px) {
+    .lb-grid { grid-template-columns: 1fr; }
+}
+.lb-board-title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--color-text-primary);
+    margin: 0;
 }
 
 .lb-head {

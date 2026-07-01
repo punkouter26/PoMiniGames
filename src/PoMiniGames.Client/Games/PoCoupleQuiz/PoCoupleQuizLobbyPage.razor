@@ -14,7 +14,7 @@
     else if (_lobby is null)
     {
         <div class="cq-join">
-            <h2>Join a PoCoupleQuiz lobby</h2>
+            <h2 class="gps-phase-h">Join a lobby</h2>
             <label>Your name: <input @bind="_playerName" maxlength="24" disabled="@_busy" /></label>
             <label>Difficulty:
                 <select @bind="_difficulty" disabled="@_busy">
@@ -54,7 +54,7 @@
     else
     {
         <div class="cq-lobby">
-            <h2>Lobby <code>@_lobby.GameCode</code></h2>
+            <h2 class="gps-phase-h">Lobby · @_lobby.GameCode</h2>
             <p>Difficulty: <strong>@_lobby.Difficulty</strong> · AI mode: <strong>@_lobby.AiMode</strong></p>
             <p>Host: <strong>@_lobby.HostName</strong></p>
             <h3>Players (@_lobby.Players.Count)</h3>

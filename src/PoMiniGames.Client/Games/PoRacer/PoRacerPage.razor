@@ -13,6 +13,11 @@
 
 @page "/poracer"
 @page "/poracer/demo"
+@* PoRacer intentionally uses `EmptyLayout` (not the standard `MainLayout`)
+   and a custom settings drawer / start screen / end-of-race overlay instead
+   of `GameShell`. Migrating to `GameShell` would require a wholesale
+   rewrite of the canvas, touch controls, and CRT overlay; the opt-out is
+   deliberate. See AGENT.MD for the architectural decision log. *@
 @layout PoMiniGamesClient.Layout.EmptyLayout
 @inject IJSRuntime JS
 @inject PoRacerScoreApiClient Scores

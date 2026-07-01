@@ -38,7 +38,7 @@
         </p>
 
         <section style="margin-bottom:1rem">
-            <h2>Players (@(_state?.Players.Count ?? 0)/8)</h2>
+            <h2 class="gps-phase-h">Players · @(_state?.Players.Count ?? 0)/8</h2>
             @if (_state is null)
             {
                 <p style="opacity:0.5">Loading...</p>

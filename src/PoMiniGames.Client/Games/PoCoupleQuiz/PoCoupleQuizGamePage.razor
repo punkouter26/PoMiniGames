@@ -15,7 +15,7 @@
     else
     {
         <div class="cq-game">
-            <h2>Round @(_gameStarted.RoundIndex + 1) of @_gameStarted.MaxRounds</h2>
+            <h2 class="gps-phase-h">Round @(_gameStarted.RoundIndex + 1) of @_gameStarted.MaxRounds</h2>
             @if (_isKing)
             {
                 <p class="cq-king">👑 You are the King. Type your secret answer below — the others will try to match.</p>
@@ -56,7 +56,7 @@
             @if (_phase == "GameOver")
             {
                 <div class="cq-gameover">
-                    <h2>🎉 Game over</h2>
+                    <h2 class="gps-phase-h">Game over</h2>
                     <h3>Final scores</h3>
                     <ol>
                         @foreach (var kv in (_gameOver?.FinalScores ?? new Dictionary<string, int>()).OrderByDescending(x => x.Value))

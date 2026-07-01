@@ -15,8 +15,9 @@
            GameOver="@_finished"
            OnPlayAgain="ResetGame"
            ShowSettings="true"
-           IsOffline="@_isOffline"
            Stats="@_statItems"
+           Status="@StatusContent"
+           GameSummary="@GameSummaryContent"
            Controls="@ControlsContent">
     <div class="horse-race-wrapper">
         <div class="race-track">
@@ -46,10 +47,9 @@
             </div>
         }
         <div class="race-result">
-            @if (_finished)
-            {
-                <span>@_result</span>
-            }
+            @* Race outcome now flows through GameSummary (GPS play-again bar);
+               the inline banner is kept as an empty placeholder for visual
+               rhythm but no longer carries the result text. *@
         </div>
     </div>
 </GameShell>
@@ -64,7 +64,6 @@
     private int _selectedHorse;
     private int _boostsLeft;
     private System.Threading.Timer? _timer;
-    private bool _isOffline = false;
     private PlayerStats _stats = new();
     private readonly GameStatsService _gameStats = new();
     // BUG FIX (#1): _kioskTimer removed; KioskCoordinator owns the timer.
@@ -80,6 +79,11 @@
     </div>;
 
     private RenderFragment TitleContent => @<span>🐎 Horse Race</span>;
+
+    private RenderFragment StatusContent => @<span class="gps-status-badge turn">Picked: Horse @(_selectedHorse + 1)</span>;
+    private RenderFragment? GameSummaryContent => _finished
+        ? @<span class="cf-result @(_result.StartsWith("You won") ? "cf-result--win" : "cf-result--loss")">@_result</span>
+        : null;
 
     protected override void OnInitialized()
     {

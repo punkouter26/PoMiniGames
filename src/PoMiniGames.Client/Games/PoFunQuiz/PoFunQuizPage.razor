@@ -10,7 +10,7 @@
     @if (_questions.Count == 0 && !_isLoading)
     {
         <div class="fq-join">
-            <h2>Solo PoFunQuiz</h2>
+            <h2 class="gps-phase-h">Solo · PoFunQuiz</h2>
             <p>10 trivia questions, AI-generated. Try to get as many right as you can.</p>
             <label>
                 Your name: <input type="text" @bind="_playerName" maxlength="24" />
@@ -43,7 +43,7 @@
     {
         var q = _questions[_currentIndex];
         <div class="fq-question">
-            <h2>Question @(_currentIndex + 1) of @_questions.Count</h2>
+            <h2 class="gps-phase-h">Question @(_currentIndex + 1) of @_questions.Count</h2>
             <p class="fq-text">@q.Text</p>
             <div class="fq-options">
                 @for (var i = 0; i < q.Options.Count; i++)
@@ -62,7 +62,7 @@
     else
     {
         <div class="fq-results">
-            <h2>Done!</h2>
+            <h2 class="gps-phase-h">Done</h2>
             <p>Final score: <strong>@_score</strong></p>
             <p>Max streak: @_maxStreak</p>
             <button class="fq-btn fq-btn-secondary" @onclick="Reset">Play again</button>

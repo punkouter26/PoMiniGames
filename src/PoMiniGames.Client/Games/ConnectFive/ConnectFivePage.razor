@@ -18,7 +18,6 @@
     GameOver="@_isGameOver"
     OnPlayAgain="ResetGame"
     ShowSettings="true"
-    IsOffline="@_isOffline"
     Stats="@_statItems"
     Status="@StatusContent"
     GameSummary="@GameSummaryContent"
@@ -75,7 +74,6 @@
     private string _playerName = "";
     // Player 1's display name resolves asynchronously; fall back to "Player 1" until it does.
     private string P1Name => string.IsNullOrWhiteSpace(_playerName) ? "Player 1" : _playerName;
-    private bool _isOffline = false;
     private List<(int Row, int Col)> _winCells = new();
     private List<StatItem> _statItems = new();
     private PlayerStats _stats = new();
@@ -150,11 +148,11 @@
         </button>
         @if (PlayMode == "ai")
         {
-            <select @bind="_difficulty" @bind:after="ResetGame" aria-label="Select difficulty">
-                <option value="@Difficulty.Easy">Easy</option>
-                <option value="@Difficulty.Medium">Medium</option>
-                <option value="@Difficulty.Hard">Hard</option>
-            </select>
+            <div class="gps-pills" role="radiogroup" aria-label="Select difficulty">
+                <button type="button" class="@(_difficulty == Difficulty.Easy ? "active" : "")" @onclick="() => SetDifficulty(Difficulty.Easy)">Easy</button>
+                <button type="button" class="@(_difficulty == Difficulty.Medium ? "active" : "")" @onclick="() => SetDifficulty(Difficulty.Medium)">Medium</button>
+                <button type="button" class="@(_difficulty == Difficulty.Hard ? "active" : "")" @onclick="() => SetDifficulty(Difficulty.Hard)">Hard</button>
+            </div>
         }
         @if (PlayMode == "2p")
         {
@@ -177,6 +175,13 @@
     private void SetPlayMode(string mode)
     {
         _playMode = mode;
+        ResetGame();
+    }
+
+    private void SetDifficulty(Difficulty d)
+    {
+        if (_difficulty == d) return;
+        _difficulty = d;
         ResetGame();
     }
 

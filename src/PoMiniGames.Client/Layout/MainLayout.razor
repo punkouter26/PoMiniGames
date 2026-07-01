@@ -2,7 +2,6 @@
 @implements IDisposable
 @inject AuthStateService AuthState
 @inject ToastService ToastService
-@inject NavigationManager NavigationManager
 @inject KioskCoordinator Kiosk
 @inject ScoreSyncService ScoreSync
 @inject IWebAssemblyHostEnvironment HostEnvironment
@@ -25,24 +24,6 @@
                 </span>
                 <span class="gl-brand-text">PoMiniGames</span>
             </a>
-
-            @if (_breadcrumbs.Count > 0)
-            {
-                <nav class="gl-breadcrumbs" aria-label="Breadcrumb">
-                    @foreach (var crumb in _breadcrumbs)
-                    {
-                        if (crumb != _breadcrumbs.Last())
-                        {
-                            <a href="@crumb.Url" class="gl-breadcrumb-item">@crumb.Label</a>
-                            <span class="gl-breadcrumb-sep">/</span>
-                        }
-                        else
-                        {
-                            <span class="gl-breadcrumb-item--current" aria-current="page">@crumb.Label</span>
-                        }
-                    }
-                </nav>
-            }
         </div>
 
         @* Consolidated game header: the active game (via GameShell) projects its
@@ -97,7 +78,7 @@
                 }
                 @* §10 narrow-screen overflow: the ANON button is hidden on portrait phones
                    (< 480px) and surfaced via the ⋯ overflow menu instead of competing for
-                   horizontal space with the Sign in / breadcrumb. *@
+                   horizontal space with the Sign in button. *@
                 @if (!AuthState.IsAuthenticated)
                 {
                     <details class="gl-overflow-menu">
@@ -136,99 +117,16 @@
 </div>
 
 @code {
-    private List<Breadcrumb> _breadcrumbs = [];
-    private string _currentUrl = "";
     private Action? _onAuthStateChanged;
-
-    public record Breadcrumb(string Label, string Url);
 
     protected override void OnInitialized()
     {
         // Auth is initialized by <AuthGate> before MainLayout ever renders, so here we
-        // only subscribe for live updates (e.g. sign-out) and wire breadcrumbs. The handler
-        // is held in a field so Dispose can detach it — an inline lambda could never be
+        // only subscribe for live updates (e.g. sign-out). The handler is held in a
+        // field so Dispose can detach it — an inline lambda could never be
         // unsubscribed and would leak this component on every re-creation.
         _onAuthStateChanged = () => InvokeAsync(StateHasChanged);
         AuthState.StateChanged += _onAuthStateChanged;
-        NavigationManager.LocationChanged += OnLocationChanged;
-        UpdateBreadcrumbs();
-    }
-
-    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
-    {
-        UpdateBreadcrumbs();
-        InvokeAsync(StateHasChanged);
-    }
-
-    private void UpdateBreadcrumbs()
-    {
-        var uri = NavigationManager.ToBaseRelativePath(NavigationManager.Uri).ToLowerInvariant();
-        var segments = uri.Split('/', StringSplitOptions.RemoveEmptyEntries);
-
-        _breadcrumbs = [];
-
-        if (segments.Length == 0 || (segments.Length == 1 && segments[0] == ""))
-        {
-            // Home page - no breadcrumbs
-            return;
-        }
-
-        // Always start with Home
-        _breadcrumbs.Add(new Breadcrumb("Home", "/"));
-
-        for (var i = 0; i < segments.Length; i++)
-        {
-            var rawSeg = segments[i];
-            var seg = rawSeg.Split('?')[0]; // strip query string before matching
-            var label = seg switch
-            {
-                "connectfive" => "Connect Five",
-                "tictactoe" => "Tic Tac Toe",
-                "voxelshooter" => "Voxel Shooter",
-                "pofight" => "PoFight",
-                "podropsquare" => "PoDropSquare",
-                "pobabytouch" => "PoBabyTouch",
-                "poraceragdoll" => "PoRaceRagdoll",
-                "posnakegame" => "PoSnakeGame",
-                "pohorserace" => "PoHorseRace",
-                "porunner" => "PoRunner",
-                "poracer" => "PoRacer",
-                "pocouplequiz" => "PoCoupleQuiz",
-                "pofunquiz" => "PoFunQuiz",
-                "poface" => "PoFace",
-                "diagpage" => "Diagnostics",
-                "authcallbackpage" => "Auth",
-                "profile" => "My Profile",
-                "demo" => "Demo Mode",
-                "1" => "Demo",
-                // §10: unknown segments now fall back to a Title-Cased rendering
-                // (e.g. "poclick" → "Poclick") instead of leaking raw URL text
-                // into the breadcrumb nav. Trim long segments so the chrome
-                // doesn't wrap on narrow phones.
-                _ => TitleCaseSegment(seg)
-            };
-            _breadcrumbs.Add(new Breadcrumb(label, "/" + string.Join("/", segments[..(i + 1)])));
-        }
-
-        _currentUrl = NavigationManager.Uri;
-    }
-
-    /// <summary>
-    /// Renders an unknown URL segment as a Title-Cased display label so the breadcrumb
-    /// never leaks raw route text (e.g. <c>poclick</c> → <c>Poclick</c>).
-    /// </summary>
-    private static string TitleCaseSegment(string seg)
-    {
-        if (string.IsNullOrWhiteSpace(seg)) return seg;
-        // Hyphenated: "my-route" → "My Route"
-        var spaced = seg.Replace('-', ' ').Replace('_', ' ');
-        var parts = spaced.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        for (var i = 0; i < parts.Length; i++)
-        {
-            var p = parts[i];
-            if (p.Length > 0) parts[i] = char.ToUpperInvariant(p[0]) + p[1..];
-        }
-        return string.Join(' ', parts);
     }
 
     /// <summary>
@@ -308,7 +206,6 @@
 
     public void Dispose()
     {
-        NavigationManager.LocationChanged -= OnLocationChanged;
         if (_onAuthStateChanged is not null)
         {
             AuthState.StateChanged -= _onAuthStateChanged;

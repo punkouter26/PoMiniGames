@@ -13,8 +13,9 @@
            GameOver="@_isGameOver"
            OnPlayAgain="ResetGame"
            ShowSettings="true"
-           IsOffline="@_isOffline"
            Stats="@_statItems"
+           Status="@StatusContent"
+           GameSummary="@GameSummaryContent"
            Controls="@ControlsContent">
     <div class="drop-square-wrapper" tabindex="0" @onkeydown="HandleKey" @ref="_wrapper">
         <div class="drop-square-board">
@@ -41,7 +42,6 @@
     private string _playerName = "";
     private List<StatItem> _statItems = new();
     private bool _isGameOver;
-    private bool _isOffline = false;
     private int _score;
     private int _lines;
     private int _currentPiece;
@@ -76,6 +76,11 @@
 
     private RenderFragment TitleContent => @<span>🟦 Drop Square</span>;
 
+    private RenderFragment StatusContent => @<span class="gps-status-badge turn">Score @_score · Lines @_lines</span>;
+    private RenderFragment? GameSummaryContent => _isGameOver
+        ? @<span class="cf-result cf-result--loss">💀 Game over — @_score pts</span>
+        : null;
+
     protected override void OnInitialized()
     {
         _playerName = PlayerNameService.GetPlayerName();
@@ -90,7 +95,6 @@
             for (int c = 0; c < _cols; c++)
                 _board[r][c] = 0;
         _isGameOver = false;
-        _isOffline = false;
         _score = 0;
         _lines = 0;
         NewPiece();
@@ -320,14 +324,8 @@
     private void UpdateStats()
     {
         var bucket = _gameStats.GetDifficultyBucket(_stats, Difficulty.Easy);
-        _statItems = new List<StatItem>
-        {
-            new() { Value = _score.ToString(), Label = "Score" },
-            new() { Value = bucket.Wins.ToString(), Label = "W" },
-            new() { Value = bucket.Losses.ToString(), Label = "L" },
-            new() { Value = bucket.Draws.ToString(), Label = "D" },
-            new() { Value = $"{bucket.WinRate * 100:F0}%", Label = "Rate" },
-            new() { Value = bucket.EloRating.ToString(), Label = "ELO" }
-        };
+        _statItems = GameStatsPanel.Build(bucket, includeDraws: true,
+            ("Score", _score.ToString()),
+            ("Lines", _lines.ToString()));
     }
 }

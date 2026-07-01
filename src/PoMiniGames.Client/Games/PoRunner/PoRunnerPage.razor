@@ -16,7 +16,6 @@
            GameOver="@(_state.GameStatus == GameStatus.GameOver)"
            OnPlayAgain="ReturnToLobby"
            ShowSettings="true"
-           IsOffline="@_isOffline"
            Stats="@_statItems"
            Controls="@ControlsContent">
     <div class="pr-container" tabindex="0" @onkeydown="HandleKeyDown" @ref="_gameContainer">
@@ -31,7 +30,7 @@
             @* Error Screen *@
             <div id="ui-error" class="pr-screen hidden">
                 <div class="pr-glass">
-                    <h2>⚠️ Connection Error</h2>
+                    <h2 class="gps-phase-h">Connection error</h2>
                     <p>@_connectionError</p>
                     <button class="pr-btn primary" @onclick="Reconnect">RECONNECT</button>
                 </div>
@@ -222,8 +221,6 @@
     private long? _personalBest = null;
     private int _countdownValue = 3;
     private double _elapsedTime;
-    private bool _isOffline = false;
-    
     // Demo mode
     private long _demoAutoRestartAt;
     // BUG FIX (#1): _kioskTimer removed; KioskCoordinator owns the timer.

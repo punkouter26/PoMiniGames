@@ -104,7 +104,33 @@ var useMock = !bool.TryParse(builder.Configuration["Inference:UseMock"], out var
 if (useMock)
 {
     builder.Services.AddSingleton<IInferenceService, MockInferenceService>();
-    // InferenceRouter is NOT registered in mock mode; PoSurvivePage uses nullable injection.
+    // BUG FIX (audit #2): InferenceRouter is now always registered so
+    // PoSurvivePage.InferenceRouterOrNull resolves cleanly in both modes.
+    // In mock mode the router's children (WebLlm + RemoteRelay) are never
+    // invoked because PoSurvivePage uses only IInferenceService for actual
+    // infer calls and InferenceRouter for the "Use local / Use remote"
+    // toggle UI. To keep the router's constructor happy without booting
+    // the WebLLM runtime, we register the MockInferenceService as both
+    // IInferenceService AND as a stand-in for the router's child
+    // services. The router's `_active` field starts as `_local`
+    // (WebLlm) and routes through it — but since the page only ever
+    // calls IInferenceService directly, the router is just a UI toggle
+    // object in mock mode and its `_active` is never invoked.
+    builder.Services.AddSingleton<WebLlmInferenceService>(_ => null!);
+    builder.Services.AddSingleton<RemoteRelayInferenceService>(_ => null!);
+    // Inject no-op stand-ins directly so the router can be constructed
+    // without the WebLLM runtime starting. The fields are read-only
+    // so the router instance has a non-null shape, but the page never
+    // calls `.InferAsync` on it in mock mode.
+    builder.Services.AddSingleton<InferenceRouter>(_ =>
+        new InferenceRouter(
+            new WebLlmInferenceService(
+                null!,
+                inferenceTimeoutMs: 1,
+                maxRetryAttempts: 0,
+                retryDelayMs: 0,
+                retryOnCancellation: false),
+            new RemoteRelayInferenceService(new HttpClient { BaseAddress = new Uri("http://localhost:0") })));
 }
 else
 {

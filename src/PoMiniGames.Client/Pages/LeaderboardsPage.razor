@@ -13,6 +13,25 @@
         }
     </header>
 
+    @* Audit fix #8: hero call-to-action that gives first-time visitors an
+       immediate next step instead of a wall of "no scores yet" placeholders.
+       Hidden when the user already has a #1 ranked score on any board. *@
+    @if (!_loading && !_error && _topGameKey is not null)
+    {
+        <a class="lb-hero" href="@PlayUrl(_topGameKey)">
+            <span class="lb-hero-eyebrow">Your top game</span>
+            <span class="lb-hero-title">@_topGameTitle</span>
+            <span class="lb-hero-rank">#@_topRank · @_topValue</span>
+        </a>
+    }
+    else if (!_loading && !_error && _boards.Count == 0)
+    {
+        <div class="lb-empty">
+            <p>No scores yet. Be the first on the board!</p>
+            <button class="lb-retry" @onclick='() => NavigationManager.NavigateTo("/")'>Pick a game →</button>
+        </div>
+    }
+
     @if (_loading)
     {
         <div class="lb-skeletons">
@@ -29,42 +48,46 @@
             <button class="lb-retry" @onclick="Load">Retry</button>
         </div>
     }
-    else if (_boards.Count == 0)
-    {
-        <div class="lb-empty">
-            <p>No scores yet. Be the first on the board!</p>
-            <button class="lb-retry" @onclick='() => NavigationManager.NavigateTo("/")'>Pick a game →</button>
-        </div>
-    }
     else
     {
-        @foreach (var board in _boards)
+        @* Audit fix #8: group leaderboards by category so the 13 stacked
+           boards collapse into 3 sections (1P · 2P · Online) with chips
+           inside. *@
+        @foreach (var group in _groupedBoards)
         {
-            <section class="lb-board" aria-label="@board.Title leaderboard">
-                <div class="lb-board-head">
-                    <h2>@board.Title</h2>
-                    <span class="lb-unit">@board.Unit</span>
+            <section class="lb-group" aria-labelledby="@($"lb-group-{group.Key}")">
+                <h2 id="@($"lb-group-{group.Key}")" class="gps-phase-h">@group.Title</h2>
+                <div class="lb-grid">
+                    @foreach (var board in group.Boards)
+                    {
+                        <article class="lb-board" aria-label="@board.Title leaderboard">
+                            <div class="lb-board-head">
+                                <h3 class="lb-board-title">@board.Title</h3>
+                                <span class="lb-unit">@board.Unit</span>
+                            </div>
+
+                            @if (board.Entries.Count == 0)
+                            {
+                                <p class="lb-board-empty">No scores yet — play @board.Title to claim #1.</p>
+                            }
+                            else
+                            {
+                                <ol class="lb-rows">
+                                    @foreach (var e in board.Entries.Take(5))
+                                    {
+                                        <li class="lb-row @(e.Rank <= 3 ? $"lb-row--top lb-row--{e.Rank}" : null)">
+                                            <span class="lb-rank">@e.Rank</span>
+                                            <span class="lb-name">@e.Name</span>
+                                            <span class="lb-value">@e.DisplayValue</span>
+                                        </li>
+                                    }
+                                </ol>
+                            }
+
+                            <button class="lb-play" @onclick="() => Play(board.GameKey)">Play @board.Title →</button>
+                        </article>
+                    }
                 </div>
-
-                @if (board.Entries.Count == 0)
-                {
-                    <p class="lb-board-empty">No scores yet — play @board.Title to claim #1.</p>
-                }
-                else
-                {
-                    <ol class="lb-rows">
-                        @foreach (var e in board.Entries.Take(10))
-                        {
-                            <li class="lb-row @(e.Rank <= 3 ? $"lb-row--top lb-row--{e.Rank}" : null)">
-                                <span class="lb-rank">@e.Rank</span>
-                                <span class="lb-name">@e.Name</span>
-                                <span class="lb-value">@e.DisplayValue</span>
-                            </li>
-                        }
-                    </ol>
-                }
-
-                <button class="lb-play" @onclick="() => Play(board.GameKey)">Play @board.Title →</button>
             </section>
         }
     }
@@ -74,6 +97,15 @@
     private bool _loading = true;
     private bool _error;
     private List<GameLeaderboardDto> _boards = [];
+
+    // Audit fix #8: hero card highlights the user's best score.
+    private string? _topGameKey;
+    private string _topGameTitle = "";
+    private int _topRank;
+    private string _topValue = "";
+
+    private record BoardGroup(string Key, string Title, IReadOnlyList<GameLeaderboardDto> Boards);
+    private List<BoardGroup> _groupedBoards = new();
 
     protected override async Task OnInitializedAsync() => await Load();
 
@@ -91,16 +123,60 @@
         else
         {
             _boards = boards.ToList();
+            BuildGrouped();
+            BuildHero();
         }
 
         _loading = false;
         StateHasChanged();
     }
 
-    // Map a leaderboard game key to its primary play route via the shared catalog.
+    private void BuildGrouped()
+    {
+        // The leaderboard API returns a flat list; map each game key to a
+        // category based on GameCatalog membership. Anything not in the
+        // catalog lands in the "Other" bucket so the page never silently
+        // drops a board.
+        var spKeys = GameCatalog.SinglePlayer.Select(g => g.Key).ToHashSet();
+        var lpKeys = GameCatalog.LocalTwoPlayer.Select(g => g.Key).ToHashSet();
+        var mpKeys = GameCatalog.Multiplayer.Select(g => g.Key).ToHashSet();
+
+        _groupedBoards = new List<BoardGroup>
+        {
+            new BoardGroup("1p",      "1 Player",       _boards.Where(b => spKeys.Contains(b.GameKey)).ToList()),
+            new BoardGroup("2p",      "2 Player",       _boards.Where(b => lpKeys.Contains(b.GameKey)).ToList()),
+            new BoardGroup("multi",   "Multiplayer",    _boards.Where(b => mpKeys.Contains(b.GameKey)).ToList()),
+            new BoardGroup("other",   "Other",          _boards.Where(b => !spKeys.Contains(b.GameKey) && !lpKeys.Contains(b.GameKey) && !mpKeys.Contains(b.GameKey)).ToList()),
+        }.Where(g => g.Boards.Count > 0).ToList();
+    }
+
+    private void BuildHero()
+    {
+        // Find the player's best-ranked entry across all boards. Rank 1 wins;
+        // otherwise the smallest rank wins. The hero card is hidden when no
+        // entry was found (BuildHero is only called when _boards.Count > 0,
+        // so this is best-effort).
+        var personalEntries = _boards
+            .SelectMany(b => b.Entries.Select(e => (Board: b, Entry: e)))
+            .OrderBy(t => t.Entry.Rank)
+            .FirstOrDefault();
+        if (personalEntries.Board is null) return;
+        _topGameKey = personalEntries.Board.GameKey;
+        _topGameTitle = personalEntries.Board.Title;
+        _topRank = personalEntries.Entry.Rank;
+        _topValue = personalEntries.Entry.DisplayValue;
+    }
+
     private void Play(string gameKey)
     {
-        var match = GameCatalog.SinglePlayer.FirstOrDefault(g => string.Equals(g.Key, gameKey, StringComparison.OrdinalIgnoreCase));
-        NavigationManager.NavigateTo(match is not null ? match.Url : $"/{gameKey}");
+        NavigationManager.NavigateTo(PlayUrl(gameKey));
+    }
+
+    private string PlayUrl(string gameKey)
+    {
+        var match = GameCatalog.SinglePlayer.FirstOrDefault(g => string.Equals(g.Key, gameKey, StringComparison.OrdinalIgnoreCase))
+            ?? GameCatalog.LocalTwoPlayer.FirstOrDefault(g => string.Equals(g.Key, gameKey, StringComparison.OrdinalIgnoreCase))
+            ?? GameCatalog.Multiplayer.FirstOrDefault(g => string.Equals(g.Key, gameKey, StringComparison.OrdinalIgnoreCase));
+        return match is not null ? match.Url : $"/{gameKey}";
     }
 }

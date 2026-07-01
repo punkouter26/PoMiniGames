@@ -1,4 +1,9 @@
 ﻿@page "/posurvive"
+@* PoSurvive intentionally uses its own `PoSurviveLayout` (C64 retro theme)
+   instead of the standard `MainLayout` and renders without `GameShell`.
+   The opt-out is deliberate — its CRT-styled shell, Fluxor store, and
+   idle screen are part of the game's identity and pre-date the
+   PoMiniGames shell contract. See AGENT.MD for the architectural decision log. *@
 @layout PoSurviveLayout
 @using PoSurvive.Client.Features.Grid
 @using PoSurvive.Client.Services
@@ -19,7 +24,7 @@
     {
         <div class="idle-screen app-reveal">
             <div class="launch-card">
-                <h2 class="launch-card__title">MISSION CONTROL</h2>
+                <h2 class="launch-card__title gps-phase-h">Mission Control</h2>
                 <p class="launch-card__subtitle">Prepare the simulation in three quick steps.</p>
 
                 <div class="launch-health" role="status" aria-live="polite" data-testid="home-launch-health">

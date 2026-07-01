@@ -16,8 +16,9 @@
            GameOver="@(_playerHp <= 0 || _enemyHp <= 0)"
            OnPlayAgain="ResetGame"
            ShowSettings="true"
-           IsOffline="@_isOffline"
            Stats="@_statItems"
+           Status="@StatusContent"
+           GameSummary="@GameSummaryContent"
            Controls="@ControlsContent">
     <div class="fight-wrapper">
         @if (Demo == 1)
@@ -49,7 +50,9 @@
         </div>
         @if (_playerHp <= 0 || _enemyHp <= 0)
         {
-            <div class="fight-ko" aria-live="polite">@(_playerHp <= 0 ? "BLUE WINS!" : "RED WINS!")</div>
+            @* End-of-round surface moved to GameShell's GameSummary slot
+               (see StatusContent / GameSummaryContent below) so the GPS
+               play-again bar is the single source of truth. *@
         }
         <div class="fight-log" aria-live="polite" aria-label="Combat log">
             @foreach (var log in _combatLog.TakeLast(5))
@@ -72,7 +75,6 @@
     private int _playerHp = 100;
     private int _enemyHp = 100;
     private readonly List<string> _combatLog = new();
-    private bool _isOffline = false;
     private PlayerStats _stats = new();
     private readonly GameStatsService _gameStats = new();
     private System.Threading.Timer? _demoTimer;
@@ -97,6 +99,11 @@
     </div>;
 
     private RenderFragment TitleContent => @<span>⚔️ PoFight</span>;
+
+    private RenderFragment StatusContent => @<span class="gps-status-badge turn">You @_playerHp · Enemy @_enemyHp</span>;
+    private RenderFragment? GameSummaryContent => _playerHp <= 0 || _enemyHp <= 0
+        ? @<span class="cf-result @(_playerHp <= 0 ? "cf-result--loss" : "cf-result--win")">@(_playerHp <= 0 ? "BLUE WINS!" : "RED WINS!")</span>
+        : null;
 
     protected override void OnInitialized()
     {

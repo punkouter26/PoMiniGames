@@ -31,7 +31,7 @@
         @if (_stub)
         {
             <div class="pf-ready">
-                <h2>Round @(_currentRound + 1) of 5</h2>
+                <h2 class="gps-phase-h">Round @(_currentRound + 1) of 5</h2>
                 <p class="pf-prompt">Tap the face that shows: <strong>@_currentEmotion</strong></p>
                 <div class="pf-choice-grid" style="display:flex;flex-wrap:wrap;gap:0.75rem;justify-content:center;margin:1rem 0;">
                     @foreach (var emo in _choices)
@@ -46,7 +46,7 @@
         else
         {
             <div class="pf-ready">
-                <h2>Round @(_currentRound + 1) of 5</h2>
+                <h2 class="gps-phase-h">Round @(_currentRound + 1) of 5</h2>
                 <p class="pf-prompt">Make this face: <strong>@_currentEmotion</strong></p>
                 <video id="pf-webcam-preview" autoplay playsinline muted style="max-width:100%;border-radius:8px;"></video>
                 <div id="pf-frozen-overlay" class="pf-frozen-overlay"></div>
@@ -65,7 +65,7 @@
         @if (_stub)
         {
             <div class="pf-reveal">
-                <h2>Round @(_currentRound + 1) result</h2>
+                <h2 class="gps-phase-h">Round @(_currentRound + 1) result</h2>
                 <p>Target: <strong>@_currentEmotion @EmojiFor(_currentEmotion)</strong></p>
                 <p>You picked: <strong style="font-size:1.6rem;">@EmojiFor(_picked)</strong></p>
                 <p>@(_lastCorrect ? $"✅ Correct! +{_lastPoints} (speed bonus)" : "❌ Not quite")</p>
@@ -80,7 +80,7 @@
         else
         {
             <div class="pf-reveal">
-                <h2>Round @(_currentRound + 1) result</h2>
+                <h2 class="gps-phase-h">Round @(_currentRound + 1) result</h2>
                 <p>Target: <strong>@_currentEmotion</strong></p>
                 <p>Confidence: @((_lastScore?.Confidence * 100)?.ToString("F0"))%</p>
                 <p>Head pose valid: @(_lastScore?.HeadPoseValid == true ? "✅" : "❌")</p>

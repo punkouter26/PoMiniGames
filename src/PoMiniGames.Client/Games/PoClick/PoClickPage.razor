@@ -17,7 +17,6 @@
     GameOver="@_isGameOver"
     OnPlayAgain="ResetGame"
     ShowSettings="true"
-    IsOffline="@_isOffline"
     Stats="@_statItems"
     Status="@StatusContent"
     GameSummary="@GameSummaryContent"
@@ -135,7 +134,6 @@
     private bool _isPreviewPlaying = false;
 
     private string _playerName = "";
-    private bool _isOffline = false;
     private List<StatItem> _statItems = new();
     private PlayerStats _stats = new();
     private readonly GameStatsService _gameStats = new();

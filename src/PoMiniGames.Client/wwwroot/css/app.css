@@ -473,6 +473,32 @@ button { cursor: pointer; font-family: var(--font-body); }
   transform: translateY(-1px);
 }
 .home-game-chip-icon { font-size: 1rem; line-height: 1; }
+
+/* Audit fix #7: "▶ Continue" pill on the chip matching the user's last played game.
+   The pill is rendered server-side via the Index.razor template, so this is just
+   the visual treatment — accent ring, accent fill on hover. */
+.home-game-chip--continue {
+  border-color: var(--color-accent);
+  background: rgba(99, 102, 241, 0.15);
+  box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.35);
+}
+.home-game-chip--continue:hover {
+  background: rgba(99, 102, 241, 0.28);
+  border-color: var(--color-accent);
+}
+.home-game-chip-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-left: 0.35rem;
+  padding: 0.1rem 0.55rem;
+  border-radius: 9999px;
+  background: var(--color-accent);
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
 .home-stats-cta {
   display: flex;
   justify-content: center;

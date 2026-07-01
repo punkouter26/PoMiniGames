@@ -77,7 +77,7 @@
 
 /* Game header slot: the active game projects its status + settings here so game
    pages render a single consolidated bar instead of a second row. Grows to fill
-   the space between the breadcrumb rail and the session rail; empty (zero-width
+   the space between the brand rail and the session rail; empty (zero-width
    in practice) on non-game pages. */
 .gl-top-bar-game {
     display: flex;
@@ -102,40 +102,8 @@
     font-size: 1.3rem;
 }
 
-/* Breadcrumbs */
-.gl-breadcrumbs {
-    display: flex;
-    align-items: center;
-    gap: 0.35rem;
-    font-size: var(--text-xs);
-    color: var(--color-text-secondary);
-    min-width: 0;
-    overflow: hidden;
-}
-
-.gl-breadcrumb-item {
-    color: var(--color-text-secondary);
-    transition: color var(--dur-base) var(--ease-standard);
-    white-space: nowrap;
-    font-family: var(--font-body);
-}
-
-.gl-breadcrumb-item:hover {
-    color: var(--color-text-primary);
-}
-
-.gl-breadcrumb-item--current {
-    color: var(--color-text-primary);
-    font-weight: 600;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.gl-breadcrumb-sep {
-    color: var(--color-border);
-    font-size: 0.7rem;
-}
+/* Breadcrumbs removed — the top nav now relies on the PoMiniGames brand link to
+   return to the home page. */
 
 .gl-auth {
     display: flex;

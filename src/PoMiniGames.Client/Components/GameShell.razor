@@ -5,8 +5,8 @@
 @* §11 Consolidated header: the game's status + settings are projected into the
    app top bar (see MainLayout's SectionOutlet), removing the separate second
    row. The back-arrow and title are intentionally dropped — the top bar's brand
-   and breadcrumb already cover navigation and page identity; the swipe-back
-   gesture below still works. *@
+   already covers navigation back to the home page; the swipe-back gesture below
+   still works. *@
 <SectionContent SectionName="game-header">
     <div class="gps-header-slot">
         @if (!string.IsNullOrEmpty(Player))
@@ -17,13 +17,6 @@
         @if (Status != null)
         {
             <span class="gps-header-status">@Status</span>
-        }
-
-        @if (IsOffline)
-        {
-            <span class="gps-offline-badge" title="Server offline — scores won't sync">
-                ⚠️ Offline
-            </span>
         }
 
         @if (ShowSettings)
@@ -103,7 +96,6 @@
     [Parameter] public EventCallback OnPlayAgain { get; set; }
     [Parameter] public bool ShowSettings { get; set; } = true;
     [Parameter] public bool ShowPlayAgain { get; set; } = true;
-    [Parameter] public bool IsOffline { get; set; }
     [Parameter] public RenderFragment? GameSummary { get; set; }
     [Parameter] public RenderFragment ChildContent { get; set; } = null!;
 

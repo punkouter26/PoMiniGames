@@ -31,7 +31,11 @@ public sealed class AIFoundryBearerTokenHandler : DelegatingHandler
 
     public AIFoundryBearerTokenHandler()
     {
-        InnerHandler = new HttpClientHandler();
+        // Do NOT set InnerHandler here. When this handler is registered with
+        // IHttpClientFactory via AddHttpMessageHandler<T>, the factory
+        // composes the primary handler itself and rejects any DelegatingHandler
+        // whose InnerHandler is already wired. Leaving it null lets the factory
+        // build the pipeline correctly.
     }
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)

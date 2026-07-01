@@ -16,8 +16,9 @@
     GameOver="@(_gameResult != GameResult.InProgress)"
     OnPlayAgain="ResetGame"
     ShowSettings="true"
-    IsOffline="@_isOffline"
     Stats="@_statItems"
+    Status="@StatusContent"
+    GameSummary="@GameSummaryContent"
     Controls="@ControlsContent">
     
     <div class="snake-game-wrapper" tabindex="0" @onkeydown="HandleKeyDown" @ref="_gameWrapper">
@@ -73,21 +74,32 @@
     private Difficulty _difficulty = Difficulty.Medium;
     private System.Threading.Timer? _gameTimer;
     private bool _gameStarted;
-    private bool _isOffline = false;
     private ElementReference _gameWrapper;
 
     private RenderFragment TitleContent => @<span>🐍 Snake Game</span>;
+
+    private RenderFragment StatusContent => @<span class="gps-status-badge turn">Score @_score</span>;
+    private RenderFragment? GameSummaryContent => _gameResult != GameResult.InProgress
+        ? @<span class="cf-result cf-result--loss">🐍 Game over — @_score</span>
+        : null;
 
     private RenderFragment ControlsContent => @<div class="gps-controls">
         <button @onclick="StartGame" disabled="@_gameStarted">▶ Start</button>
         <button @onclick="PauseGame" disabled="@(!_gameStarted || _gameResult != GameResult.InProgress)">⏸ Pause</button>
         <button @onclick="ResetGame">🔄 Reset</button>
-        <select @bind="_difficulty" @bind:after="OnDifficultyChanged" aria-label="Select difficulty">
-            <option value="@Difficulty.Easy">Easy</option>
-            <option value="@Difficulty.Medium">Medium</option>
-            <option value="@Difficulty.Hard">Hard</option>
-        </select>
+        <div class="gps-pills" role="radiogroup" aria-label="Select difficulty">
+            <button type="button" class="@(_difficulty == Difficulty.Easy ? "active" : "")" @onclick="() => SetDifficulty(Difficulty.Easy)">Easy</button>
+            <button type="button" class="@(_difficulty == Difficulty.Medium ? "active" : "")" @onclick="() => SetDifficulty(Difficulty.Medium)">Medium</button>
+            <button type="button" class="@(_difficulty == Difficulty.Hard ? "active" : "")" @onclick="() => SetDifficulty(Difficulty.Hard)">Hard</button>
+        </div>
     </div>;
+
+    private void SetDifficulty(Difficulty d)
+    {
+        if (_difficulty == d) return;
+        _difficulty = d;
+        OnDifficultyChanged();
+    }
 
     protected override void OnInitialized()
     {
@@ -115,8 +127,6 @@
         if (_gameStarted) return;
         _gameStarted = true;
         _gameResult = GameResult.InProgress;
-        _isOffline = false;
-
         var interval = _difficulty switch
         {
             Difficulty.Easy => 250,

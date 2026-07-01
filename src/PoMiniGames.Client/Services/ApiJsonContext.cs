@@ -73,6 +73,9 @@ namespace PoMiniGamesClient.Services;
 // PoCoupleQuiz
 [JsonSerializable(typeof(CoupleQuizTeamRow))]
 [JsonSerializable(typeof(List<CoupleQuizTeamRow>))]
+// PoClick — local session history (localStorage)
+[JsonSerializable(typeof(PoClickSession))]
+[JsonSerializable(typeof(List<PoClickSession>))]
 // PoSurvive — SimulationOrchestrator grid serialisation
 [JsonSerializable(typeof(PoSurvive.Shared.Models.GridStateDto))]
 [JsonSerializable(typeof(PoSurvive.Shared.Models.AgentDto))]

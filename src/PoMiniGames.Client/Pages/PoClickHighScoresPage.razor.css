@@ -1,0 +1,24 @@
+/* PoClick High Scores page — two duration boards + current-run highlight. */
+
+.poclick-hs-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1rem;
+    margin-top: 1rem;
+}
+
+@media (max-width: 700px) {
+    .poclick-hs-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.poclick-hs-board {
+    height: 100%;
+}
+
+/* Highlight the row for the session the player just completed. */
+.poclick-hs-current {
+    background: color-mix(in srgb, var(--accent-cyan, #22d3ee) 18%, transparent);
+    outline: 1px solid var(--accent-cyan, #22d3ee);
+}

@@ -515,8 +515,8 @@
         else
         {
             await Task.Delay(2000);
-            // Navigate to detailed stats page
-            Navigation.NavigateTo($"/poclick/stats/{session.Id}");
+            // Navigate to high-scores page (10s / 20s top 10), highlighting this run
+            Navigation.NavigateTo($"/poclick/highscores/{session.Id}");
         }
     }
 

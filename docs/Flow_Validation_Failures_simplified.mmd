@@ -1,6 +1,20 @@
-graph TD
-    UI[UI] --> V[Validation]
-    V -->|fail| E[Error feedback]
-    V -->|pass| API[API handler]
-    API --> X[Exception / ProblemDetails]
-    API --> P[Persisted result]
+flowchart TD
+    Submit([Submit form]) --> Client{Client rules pass?}
+    Client -->|no| Msg[ValidationMessage - no call]
+    Client -->|yes| Http[Typed HttpClient + Polly]
+    Http --> Auth{Cookie auth}
+    Auth -->|no| Unauth[401]
+    Auth -->|yes| Handler[Slice handler validates DTO]
+    Handler -->|bad| Bad[400 ProblemDetails]
+    Handler -->|rule fail| Rule[400 business-rule]
+    Handler -->|ok| Repo[UPSERT Table Storage]
+    Repo -->|throttled| Throttled[503 + Retry-After]
+    Repo -->|timeout| Timeout[504 retry per Polly]
+    Repo -->|ok| Ok[200 + Elo]
+    Unauth --> Toast
+    Bad --> Toast
+    Rule --> Toast
+    Throttled --> Toast
+    Timeout --> Toast
+    Ok --> Toast
+    Toast([User-facing toast + log])

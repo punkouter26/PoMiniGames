@@ -1,11 +1,17 @@
 journey
-    title Quick user journey
-    section Start
-      Open app: 5: Launch the app
-      Sign in: 4: Auth gate resolves the session
+    title Mobile Portrait User Journey (Simplified)
+    section Discover
+      Tap launcher icon: 5: Player
+      Await cold start: 1: System
+    section Authenticate
+      Read AuthGate placeholder: 4: Player
+      Tap Microsoft or guest login: 4: Player
+      OIDC + cookie roundtrip: 1: System
     section Play
-      Choose game: 4: Start a game or lobby
-      Interact: 4: Play and stream state
-    section Finish
-      Save result: 3: Persist score or match outcome
-      Repeat: 4: Retry or switch games
+      Browse 11-game grid: 5: Player
+      Sustain 60fps loop: 1: System
+      Send move over hub: 1: System
+    section Score
+      Submit score: 4: Player
+      UPSERT leaderboard: 1: System
+      See new rank: 3: Player

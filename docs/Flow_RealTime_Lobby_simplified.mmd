@@ -1,5 +1,18 @@
-graph LR
-    Client[Client] --> Hub[SignalR hub]
-    Hub --> State[Server room state]
-    State --> Client
-    Client --> Reconnect[Reconnect / leave]
+flowchart LR
+    Tap([Find Match]) --> Queue[POST /api/lobby/join]
+    Queue --> Wait[Server holds for 2nd user]
+    Wait --> Sub[Client subscribes /hubs/lobby]
+    Wait --> Validate{Validate state?}
+    Validate -->|ok| Start[Hub broadcasts GameStarting]
+    Validate -->|bad| Refuse[Disconnect with reason]
+    Start --> Loop[60fps loop]
+    Loop --> Send[SendRealtimeInput]
+    Send --> HubChk{Hub validates}
+    HubChk -->|ok| Echo[Broadcast to opponent]
+    HubChk -->|bad| Reject[Error to caller]
+    Echo --> Render[Render opponent move]
+    Render --> Loop
+    Reject --> Loop
+    Echo -.drop.-> Reconnect[Reconnect w/ backoff]
+    Reconnect --> Sub
+    Refuse --> End([Cleanup])

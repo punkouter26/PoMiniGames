@@ -1,6 +1,30 @@
-graph TD
-    U[User] --> C[Blazor client]
-    C --> H[Host API]
-    H --> F[Feature slices]
-    F --> P[Table Storage]
-    H --> A[Auth boundary]
+flowchart TD
+    subgraph Client["PoMiniGames.Client (Blazor WASM, mobile-first)"]
+        App[App.razor + AuthGate]
+        Games[11 game modules]
+        Services[Typed HttpClients + AuthState]
+    end
+    subgraph Host["PoMiniGames (.API + WASM host)"]
+        Program[Composition root]
+        Slices["Features/<br/>Auth - Leaderboard - Lobby - FunQuiz<br/>CoupleQuiz - Face - Joker - Survive"]
+        Infra["Infrastructure/<br/>composition + lifecycle only"]
+    end
+    subgraph SharedInfra["PoMiniGames.Infrastructure"]
+        Storage[StorageService + Elo + Health]
+    end
+    subgraph Shared["PoShared (restricted)"]
+        DTOs[Game-agnostic DTOs]
+    end
+    subgraph Domain["PoMiniGames.Domain"]
+        Models[Domain models]
+    end
+    subgraph AppL["PoMiniGames.Application"]
+        AppS[Application services]
+    end
+
+    Client -.same origin.-> Host
+    Slices -.uses.-> SharedInfra
+    Slices -.uses.-> Domain
+    Slices -.uses.-> AppL
+    Slices -.uses thin.-> Shared
+    Infra --> Program

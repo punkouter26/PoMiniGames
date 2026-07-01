@@ -1,15 +1,28 @@
 stateDiagram-v2
-    [*] --> Boot
-    Boot --> AuthHandshake: initialize BFF auth handshake
-    AuthHandshake --> LoginScreen: user not authenticated
-    AuthHandshake --> AppShell: user authenticated
-    LoginScreen --> OAuthChallenge: Microsoft sign-in
-    LoginScreen --> GuestSession: Dev/Test guest flow
-    OAuthChallenge --> AppShell: cookie established
-    GuestSession --> AppShell: cookie established
-    AppShell --> RouteGuard: AuthorizeRouteView gate
-    RouteGuard --> ProtectedPage: authorized
-    RouteGuard --> AccessDenied: not authorized
-    ProtectedPage --> AppShell: navigation or refresh
-    AccessDenied --> LoginScreen: requires sign-in
-    AppShell --> [*]
+    [*] --> ColdBoot: Browser load
+    ColdBoot --> AuthGatePending: App.razor renders
+    AuthGatePending --> AuthChecking: AuthStateProvider.GetAuthenticationStateAsync
+    note right of AuthGatePending
+      AuthGate suppresses layout flash
+      by rendering <LoginScreen />
+      instead of <NotAuthorized>
+    end note
+    AuthChecking --> UnauthenticatedLayout: Identity?.IsAuthenticated == false
+    AuthChecking --> AuthenticatedLayout: Identity?.IsAuthenticated == true
+    UnauthenticatedLayout --> LoginScreen: <AuthorizeRouteView> fallback
+    LoginScreen --> MicrosoftChallenge: Tap "Sign in with Microsoft"
+    LoginScreen --> DevGuestButton: Tap "Continue as Guest" (Dev/Test only)
+    DevGuestButton --> DevCookieIssued: /auth/login/fake -> DevCookie
+    MicrosoftChallenge --> OidcRoundtrip: /auth/login/microsoft -> Entra ID
+    OidcRoundtrip --> CookieIssued: callback -> HttpOnly + Secure cookie
+    DevCookieIssued --> AuthChecking: /auth/me roundtrip
+    CookieIssued --> AuthChecking: /auth/me roundtrip
+    AuthChecking --> RedirectGuard: returnUrl is local path only
+    RedirectGuard --> AuthenticatedLayout: 302 local path
+    RedirectGuard --> LoginScreen: reject external path
+    AuthenticatedLayout --> RouteResolve: Blazor Router
+    RouteResolve --> GameShell: route matches Features/*
+    RouteResolve --> NotFound: 404
+    GameShell --> GameShell: Navigate within layout
+    GameShell --> UnauthenticatedLayout: /auth/logout
+    NotFound --> AuthenticatedLayout: back navigation

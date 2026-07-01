@@ -1,14 +1,33 @@
 sequenceDiagram
-    participant U as User
-    participant C as Client
-    participant B as BFF
-    participant H as API handler
-    participant S as Storage
+    autonumber
+    actor U as Player
+    participant C as Component.razor
+    participant H as Typed HttpClient
+    participant B as BFF Cookie Auth
+    participant E as Minimal API Handler
+    participant S as Table Storage
 
-    U->>C: Action
-    C->>B: Request
-    B->>H: Validate and route
-    H->>S: Read/write data
-    S-->>H: Result
-    H-->>C: Response
-    C-->>U: Update UI
+    U->>C: Tap Submit score
+    C->>C: Client validate
+    alt Invalid
+        C-->>U: Inline error
+    else Valid
+        C->>H: POST /api/leaderboard
+        H->>B: Cookie auth check
+        alt Unauth
+            B-->>H: 401
+            H-->>C: Auth error
+        else Auth
+            B->>E: Forward to handler
+            E->>S: UPSERT
+            alt Transient
+                S-->>E: 503 Retry-After
+                E-->>H: retry via Polly
+            else Ok
+                S-->>E: 200 entity
+                E-->>H: 200 DTO
+                H-->>C: Update view model
+                C-->>U: New rank
+            end
+        end
+    end

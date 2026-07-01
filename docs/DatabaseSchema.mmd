@@ -1,26 +1,109 @@
 erDiagram
+    PLAYER_STATS ||--o{ HIGH_SCORES : "plays"
+    PLAYER_STATS ||--o{ MATCH_HISTORY : "plays"
+    PLAYER_STATS ||--o{ LOBBY_MEMBERS : "joins"
+    LOBBY_STATE ||--|{ LOBBY_MEMBERS : "contains"
+    LOBBY_MEMBERS }o--|| MATCH_HISTORY : "produces"
+    HIGH_SCORES ||--|| LEADERBOARD_PROJECTION : "ranks"
+    FUN_QUIZ_QUESTIONS ||--o{ FUN_QUIZ_ATTEMPTS : "answered"
+    PLAYER_STATS ||--o{ FUN_QUIZ_ATTEMPTS : "answers"
+    SURVIVE_RUN ||--o{ SURVIVE_LOOT : "drops"
+    PLAYER_STATS ||--o{ SURVIVE_RUN : "owns"
+
     PLAYER_STATS {
-        string PartitionKey
-        string RowKey
-        string Game
-        string PlayerName
-        json Stats
+        string PartitionKey PK "UserId (oid claim)"
+        string RowKey "Stats"
+        string DisplayName
+        int TotalGames
+        int Wins
+        int Losses
+        int EloRating
+        datetime LastUpdatedUtc
+        string SchemaVersion "v1"
     }
-    LEADERBOARD_ENTRY {
-        string PartitionKey
-        string RowKey
-        string Game
-        string PlayerName
-        int Rank
-        json Metadata
+
+    HIGH_SCORES {
+        string PartitionKey PK "GameId (e.g. tictactoe, snake, drop-square)"
+        string RowKey "UserId"
+        int Score
+        datetime AchievedUtc
+        string GameMode "solo - versus-ai - versus-human"
+        int DurationSeconds
     }
+
+    LOBBY_STATE {
+        string PartitionKey PK "LobbyId"
+        string RowKey "Meta"
+        string HostUserId
+        string GameKey "tictactoe - connectfive - fight - survive - snake"
+        string Status "Waiting - InProgress - Closed"
+        datetime CreatedUtc
+        string Seed
+    }
+
+    LOBBY_MEMBERS {
+        string PartitionKey PK "LobbyId"
+        string RowKey "UserId"
+        string Role "Host - Guest - Spectator"
+        datetime JoinedUtc
+        string ConnectionId
+    }
+
     MATCH_HISTORY {
-        string PartitionKey
-        string RowKey
-        string Game
-        string PlayerName
-        string Outcome
-        datetime CreatedAt
+        string PartitionKey PK "GameId"
+        string RowKey "MatchId"
+        string WinnerUserId
+        string LoserUserId
+        int WinnerScore
+        int LoserScore
+        datetime PlayedUtc
+        int DurationSeconds
+        int EloDelta
     }
-    PLAYER_STATS ||--o{ LEADERBOARD_ENTRY : derives
-    PLAYER_STATS ||--o{ MATCH_HISTORY : records
+
+    LEADERBOARD_PROJECTION {
+        string PartitionKey PK "GameId"
+        string RowKey "Rank (zero-padded)"
+        string UserId
+        int Score
+        int EloRating
+        datetime ComputedUtc
+    }
+
+    FUN_QUIZ_QUESTIONS {
+        string PartitionKey PK "CategoryId"
+        string RowKey "QuestionId"
+        string Question
+        string CorrectAnswer
+        string Difficulty "easy - medium - hard"
+        datetime CreatedUtc
+    }
+
+    FUN_QUIZ_ATTEMPTS {
+        string PartitionKey PK "UserId"
+        string RowKey "AttemptId"
+        string QuestionId
+        string Answer
+        bool Correct
+        datetime AnsweredUtc
+        int ElapsedMs
+    }
+
+    SURVIVE_RUN {
+        string PartitionKey PK "UserId"
+        string RowKey "RunId"
+        int Wave
+        int Score
+        int Health
+        datetime StartedUtc
+        datetime EndedUtc
+        string Outcome "victory - defeat - abandoned"
+    }
+
+    SURVIVE_LOOT {
+        string PartitionKey PK "RunId"
+        string RowKey "LootId"
+        string ItemKey
+        int Quantity
+        datetime DroppedUtc
+    }

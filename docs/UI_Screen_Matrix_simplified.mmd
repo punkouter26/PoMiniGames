@@ -1,9 +1,14 @@
 stateDiagram-v2
-    [*] --> Boot
-    Boot --> AuthCheck
-    AuthCheck --> LoginScreen: unauthenticated
-    AuthCheck --> AppShell: authenticated
-    LoginScreen --> AppShell: guest or OAuth success
-    AppShell --> ProtectedPage: authorized route
-    ProtectedPage --> AppShell: navigate
-    AppShell --> [*]
+    [*] --> ColdBoot
+    ColdBoot --> AuthChecking: AuthStateProvider
+    AuthChecking --> LoginScreen: anonymous
+    AuthChecking --> Authed: authenticated
+    LoginScreen --> OidcRoundtrip: Microsoft login
+    LoginScreen --> DevCookie: Continue as Guest
+    OidcRoundtrip --> Authed: HttpOnly cookie
+    DevCookie --> Authed: HttpOnly cookie
+    Authed --> Router: Blazor Router
+    Router --> GameShell: route match
+    Router --> NotFound: no match
+    GameShell --> Authed: navigate
+    GameShell --> LoginScreen: sign out

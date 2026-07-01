@@ -1,16 +1,57 @@
 sequenceDiagram
-    participant U as User
-    participant C as Blazor component
-    participant T as Typed HttpClient
-    participant B as BFF / auth middleware
-    participant H as Minimal API handler
-    participant S as Azure Table Storage
+    autonumber
+    actor U as Player (mobile portrait)
+    participant CR as Component.razor (Blazor WASM)
+    participant FC as FluentValidation (client)
+    participant TH as Typed HttpClient (Polly resilient)
+    participant BA as BFF Cookie Auth Middleware
+    participant SV as StartupSecretValidator (cold path)
+    participant EP as Minimal API Feature Handler
+    participant VS as Validator (server, DataAnnotations)
+    participant ST as Storage Repository (Table Storage)
+    participant AZ as Azure Table Storage (Azurite dev / Azure prod)
+    participant LG as LoggerMessage (zero-alloc source-gen)
 
-    U->>C: Start action
-    C->>T: Send typed request
-    T->>B: Attach same-origin session
-    B->>H: Validate auth + route
-    H->>S: Execute storage operation
-    S-->>H: Return entity or status
-    H-->>C: ProblemDetails or success payload
-    C-->>U: Render updated state
+    U->>CR: Tap "Submit score"
+    CR->>FC: Validate SubmitScoreRequest (client rules)
+    alt Client validation fails
+        FC-->>CR: ValidationMessage rendered
+        CR-->>U: Inline error (no network call)
+    else Client validation passes
+        CR->>TH: POST /api/leaderboard {score, gameId}
+        TH->>TH: Polly retry + timeout pipeline
+        TH->>BA: HTTP request (carries HttpOnly cookie)
+        BA->>BA: MicrosoftAuth or FakeAuth scheme
+        alt Unauthenticated
+            BA-->>TH: 401 Unauthorized
+            TH-->>CR: Surface auth error
+            CR-->>U: Redirect to LoginScreen
+        else Authenticated
+            BA->>SV: First-request secret validation (prod only)
+            SV-->>BA: OK
+            BA->>EP: Forward to /api/leaderboard handler
+            EP->>VS: Validate DTO (trim-safe POCO)
+            alt DTO invalid
+                VS-->>EP: ValidationException
+                EP-->>TH: 400 ProblemDetails (RFC 7807)
+                TH-->>CR: Typed client throws
+                CR->>LG: Log Warning EventId 2003 bad-dto
+            else DTO valid
+                EP->>ST: UPSERT (PartitionKey, RowKey)
+                ST->>AZ: TableTransactionAction.Upsert
+                alt Transient fault
+                    AZ-->>ST: Throttled / Timeout
+                    ST-->>EP: 503 + Retry-After
+                    EP->>LG: Log Warning EventId 2004 transient
+                    TH->>TH: Polly retries per policy
+                else Success
+                    AZ-->>ST: 200 OK with ETag
+                    ST-->>EP: new entity
+                    EP-->>TH: 200 OK DTO (System.Text.Json source-gen)
+                    TH-->>CR: Update PlayerStatsViewModel
+                    CR->>LG: Log Information EventId 2001 score-submitted
+                    CR-->>U: Render new rank + Elo
+                end
+            end
+        end
+    end

@@ -53,15 +53,23 @@ public sealed class FunQuizHubService : IAsyncDisposable
     public event Action<FunQuizGameFinishedDto>? OnGameFinished;
     public event Action<FunQuizLobbyErrorDto>? OnLobbyError;
 
+    // Connection lifecycle events (consumed by the page to render a
+    // "Reconnecting…" banner so players know the lobby is healing, not dead).
+    public event Action<Exception?>? OnReconnecting;
+    public event Action<string?>? OnReconnected;
+    public event Action<Exception?>? OnClosed;
+
+    public bool IsReconnecting { get; private set; }
+
     public FunQuizHubService(NavigationManager navigation) => _navigation = navigation;
 
     public async Task ConnectAsync()
     {
-        if (_connection is not null) return;
+        if (_connection is not null && _connection.State != HubConnectionState.Disconnected) return;
         var url = new Uri(new Uri(_navigation.BaseUri), "funquiz/gamehub").ToString();
         _connection = new HubConnectionBuilder()
             .WithUrl(url)
-            .WithAutomaticReconnect()
+            .WithAutomaticReconnect(new[] { TimeSpan.FromSeconds(0), TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(5) })
             .Build();
         _connection.On<FunQuizGameStateDto>("GameCreated", p => OnGameCreated?.Invoke(p));
         _connection.On<FunQuizGameStateDto>("GameJoined", p => OnGameJoined?.Invoke(p));
@@ -71,6 +79,24 @@ public sealed class FunQuizHubService : IAsyncDisposable
         _connection.On<FunQuizLobbyPlayerJoinedDto>("PlayerJoined", p => OnPlayerJoined?.Invoke(p));
         _connection.On<FunQuizGameFinishedDto>("GameFinished", p => OnGameFinished?.Invoke(p));
         _connection.On<FunQuizLobbyErrorDto>("LobbyError", p => OnLobbyError?.Invoke(p));
+
+        // Surface reconnect lifecycle so the UI can show a "Reconnecting…"
+        // banner instead of leaving the player staring at a dead lobby.
+        _connection.Reconnecting += ex =>
+        {
+            OnReconnecting?.Invoke(ex);
+            return Task.CompletedTask;
+        };
+        _connection.Reconnected += id =>
+        {
+            OnReconnected?.Invoke(id);
+            return Task.CompletedTask;
+        };
+        _connection.Closed += ex =>
+        {
+            OnClosed?.Invoke(ex);
+            return Task.CompletedTask;
+        };
         await _connection.StartAsync();
     }
 

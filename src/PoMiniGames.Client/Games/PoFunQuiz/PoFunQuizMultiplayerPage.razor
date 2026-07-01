@@ -8,6 +8,13 @@
 @implements IAsyncDisposable
 
 <GameShell Title=@TitleContent Player="@_playerName" BackTo="/funquiz" ShowSettings="false">
+    @if (_reconnecting)
+    {
+        <div class="fq-reconnecting" role="status" aria-live="polite">
+            <span class="fq-reconnecting__pulse" aria-hidden="true"></span>
+            Reconnecting to lobby…
+        </div>
+    }
     @if (!_isConnected)
     {
         <p>Connecting…</p>
@@ -16,14 +23,17 @@
     {
         <div class="fq-join">
             <h2>Two-player PoFunQuiz</h2>
-            <label>Your name: <input @bind="_playerName" maxlength="24" disabled="@_busy" /></label>
+            <label>Your name: <input @bind="_playerName" maxlength="24" disabled="@(_busy || !_isConnected)" /></label>
             <label>Category:
-                <select @bind="_category" disabled="@_busy">
+                <select @bind="_category" disabled="@(_busy || !_isConnected)">
                     <option value="General" selected>General</option>
                     <option value="Science">Science</option>
                     <option value="History">History</option>
+                    <option value="Geography">Geography</option>
                     <option value="Sports">Sports</option>
                     <option value="Entertainment">Entertainment</option>
+                    <option value="Technology">Technology</option>
+                    <option value="ArtCulture">Art &amp; Culture</option>
                 </select>
             </label>
             <label>Game code (optional):
@@ -116,6 +126,7 @@
     private string? _joinCode;
     private string? _error;
     private bool _isConnected;
+    private bool _reconnecting;
     private bool _busy;
     private bool _busyJoin;
     private FunQuizGameStateDto? _state;
@@ -133,6 +144,9 @@
         Hub.OnScoreUpdated += HandleScoreUpdate;
         Hub.OnGameFinished += HandleFinished;
         Hub.OnLobbyError += HandleError;
+        Hub.OnReconnecting += HandleReconnecting;
+        Hub.OnReconnected += HandleReconnected;
+        Hub.OnClosed += HandleClosed;
         try
         {
             await Hub.ConnectAsync();
@@ -142,6 +156,32 @@
         {
             _error = $"Could not connect: {ex.Message}";
         }
+    }
+
+    private void HandleReconnecting(Exception? ex)
+    {
+        // Show a "Reconnecting…" banner so the player knows the lobby is healing.
+        // A common cause on a fresh tab is the browser tearing down the WebSocket
+        // when the BFF cookie hasn't finished propagating yet — the
+        // WithAutomaticReconnect() schedule above retries 0/1/3/5s.
+        _isConnected = false;
+        _reconnecting = true;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void HandleReconnected(string? connectionId)
+    {
+        _isConnected = true;
+        _reconnecting = false;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void HandleClosed(Exception? ex)
+    {
+        _isConnected = false;
+        _reconnecting = false;
+        // The lobby page shows a retry button when _isConnected is false.
+        InvokeAsync(StateHasChanged);
     }
 
     private async Task OnCreate()
@@ -272,6 +312,9 @@
         Hub.OnScoreUpdated -= HandleScoreUpdate;
         Hub.OnGameFinished -= HandleFinished;
         Hub.OnLobbyError -= HandleError;
+        Hub.OnReconnecting -= HandleReconnecting;
+        Hub.OnReconnected -= HandleReconnected;
+        Hub.OnClosed -= HandleClosed;
         await Hub.DisposeAsync();
     }
 }

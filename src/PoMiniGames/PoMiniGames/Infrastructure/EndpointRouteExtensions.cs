@@ -35,6 +35,7 @@ internal static class EndpointRouteExtensions
         app.MapHealthEndpoints();
         app.MapDiagEndpoints();
         app.MapMockablesEndpoints();
+        app.MapTelemetryStatusEndpoints();
         app.MapTestHarnessEndpoints(app.Environment);
 
         // ── Authenticated game API ─────────────────────────────────────────

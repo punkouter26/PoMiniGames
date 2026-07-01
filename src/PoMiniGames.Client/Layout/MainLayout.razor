@@ -5,6 +5,7 @@
 @inject NavigationManager NavigationManager
 @inject KioskCoordinator Kiosk
 @inject ScoreSyncService ScoreSync
+@inject IWebAssemblyHostEnvironment HostEnvironment
 
 <div class="gl-page">
     @if (AuthState.UsingMockData)
@@ -51,6 +52,32 @@
                 <span class="gl-auth-user" title="@(AuthState.User.Email ?? AuthState.User.DisplayName)">
                     @(IsAnonUser(AuthState.User.DisplayName) ? "Playing as Guest" : (AuthState.User.Email ?? AuthState.User.DisplayName))
                 </span>
+            }
+            @* §10 dev-only "Switch user…" affordance. Renders only in Development +
+               Test environments where the /api/auth/dev-bypass endpoint exists;
+               lets a developer verify head-to-head flows from the same machine
+               without spinning up an incognito tab. Hidden in Production. *@
+            @if (ShowDevSwitch)
+            {
+                <details class="gl-overflow-menu gl-dev-switch">
+                    <summary class="gl-overflow-trigger" aria-label="Developer tools">🔧</summary>
+                    <div class="gl-overflow-panel">
+                        <div class="gl-dev-switch__title">Switch user (dev only)</div>
+                        <input class="gl-dev-switch__input" type="text"
+                               placeholder="@(AuthState.User?.DisplayName ?? "new-name")"
+                               @bind="_devUser"
+                               @bind:event="oninput"
+                               maxlength="32" />
+                        <button class="gl-overflow-item" @onclick="SwitchDevUserAsync" disabled="@(string.IsNullOrWhiteSpace(_devUser) || _switching)">
+                            @(_switching ? "Switching…" : "Switch identity")
+                        </button>
+                        @if (!string.IsNullOrEmpty(_switchError))
+                        {
+                            <div class="gl-dev-switch__error">@_switchError</div>
+                        }
+                        <div class="gl-dev-switch__hint">Replaces the current cookie; reloads match history.</div>
+                    </div>
+                </details>
             }
             @if (AuthState.IsConfigured && !AuthState.IsLoading)
             {
@@ -233,6 +260,43 @@
     private async Task SignInAnon()
     {
         await AuthState.DevBypassAsync("ANON");
+    }
+
+    // §10 dev-only "Switch user" panel. The button only renders when the host
+    // is in Development or Test (where /api/auth/dev-bypass is registered); the
+    // server-side endpoint already 404s outside loopback + non-Production so a
+    // malicious probe of the UI never reaches a working handler.
+    private bool ShowDevSwitch =>
+        HostEnvironment.IsDevelopment() ||
+        string.Equals(HostEnvironment.Environment, "Test", StringComparison.OrdinalIgnoreCase);
+
+    private string _devUser = string.Empty;
+    private bool _switching;
+    private string? _switchError;
+
+    private async Task SwitchDevUserAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_devUser)) return;
+        _switching = true;
+        _switchError = null;
+        try
+        {
+            // Reuse the existing AuthStateService.DevBypassAsync, which calls
+            // /api/auth/dev-bypass?user=<name> — the canonical "switch identity"
+            // endpoint the server already wires up. No new server code needed.
+            await AuthState.DevBypassAsync(_devUser.Trim());
+            ToastService.Show($"Signed in as {_devUser.Trim()}", ToastType.Success);
+            _devUser = string.Empty;
+        }
+        catch (Exception ex)
+        {
+            _switchError = ex.Message;
+        }
+        finally
+        {
+            _switching = false;
+            await InvokeAsync(StateHasChanged);
+        }
     }
 
     public void Dispose()

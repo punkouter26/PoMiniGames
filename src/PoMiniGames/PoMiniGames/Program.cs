@@ -49,6 +49,20 @@ builder.Services.AddSingleton<IDiagnosticsSnapshotProvider, ConfigurationDiagnos
 builder.Services.AddSignalR(options =>
 {
     options.EnableDetailedErrors = true;
+    // Server-side idle timeout + keep-alive. The earlier ~150s hang I observed
+    // in the browser was the client WebSocket waiting for an idle close from
+    // the server. These match SignalR's documented defaults for ASP.NET Core
+    // 9 but pin them explicitly so the contract is grep-able.
+    //   • KeepAlive: server pings the client every 30s
+    //   • ClientTimeoutInterval: server tears the connection down after 60s
+    //     without a pong. Clients should configure WithAutomaticReconnect().
+    options.KeepAliveInterval = TimeSpan.FromSeconds(30);
+    options.ClientTimeoutInterval = TimeSpan.FromSeconds(60);
+    // Per-message caps: the largest JSON we've seen in this app is the
+    // PoMarbleRace leaderboard (~250KB). 256KB headroom keeps a single game
+    // payload safe while still bounding the worst-case memory spike.
+    options.MaximumReceiveMessageSize = 256 * 1024;
+    options.StreamBufferCapacity = 32;
 }).AddJsonProtocol(options =>
 {
     options.PayloadSerializerOptions.Converters.Add(
@@ -208,6 +222,23 @@ app.UseStaticFiles(new Microsoft.AspNetCore.Builder.StaticFileOptions
         ctx.Context.Features.Set<Microsoft.AspNetCore.Http.Features.IHttpResponseBodyFeature>(
             new Microsoft.AspNetCore.Http.StreamResponseBodyFeature(ctx.Context.Response.Body, ctx.Context.Features.Get<Microsoft.AspNetCore.Http.Features.IHttpResponseBodyFeature>()!));
     }
+});
+
+// ─── Security gate: refuse to serve appsettings.*.json over HTTP ───
+// Why a middleware (not just a file filter): the Blazor static-file pipeline
+// also resolves symlinks + content-root files. Returning 404 before the file
+// system is read guarantees a config file is never on the wire, even if a
+// future deploy puts a real secret into appsettings.Development.json.
+app.Use(async (ctx, next) =>
+{
+    var p = ctx.Request.Path.Value;
+    if (p is not null && p.StartsWith("/appsettings", StringComparison.OrdinalIgnoreCase) &&
+        p.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+    {
+        ctx.Response.StatusCode = StatusCodes.Status404NotFound;
+        return;
+    }
+    await next(ctx);
 });
 
 app.UseAuthentication();

@@ -51,6 +51,7 @@ builder.Services.AddScoped<ScoreSyncService>();
 builder.Services.AddScoped<GameResultService>();
 builder.Services.AddScoped<MatchHistoryService>();
 builder.Services.AddScoped<PoClickHistoryService>();
+builder.Services.AddScoped<ActivityFeedService>();
 builder.Services.AddScoped<PoRacerScoreApiClient>();
 // §5 Native Web Audio micro-feedback — shared across every game so the platform
 // has a consistent sound vocabulary. Lazily resolves the AudioContext on first call.

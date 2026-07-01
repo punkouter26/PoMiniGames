@@ -1,7 +1,11 @@
 ﻿@using Microsoft.AspNetCore.Components.Authorization
+@* §2.3: AuthGate gates the whole app. AppErrorBoundary wraps everything so an
+   unhandled exception in any page surfaces an actionable, environment-aware
+   banner instead of the default Blazor error template. *@
 
-<CascadingAuthenticationState>
-    <AuthGate>
+<AuthGate>
+    <AppErrorBoundary>
+    <CascadingAuthenticationState>
     <Router AppAssembly="@typeof(App).Assembly">
         <Found Context="routeData">
             @* §2.3: AuthorizeRouteView prevents page flashing on routes that opt into
@@ -31,5 +35,6 @@
             </LayoutView>
         </NotFound>
     </Router>
-    </AuthGate>
-</CascadingAuthenticationState>
+    </CascadingAuthenticationState>
+    </AppErrorBoundary>
+</AuthGate>

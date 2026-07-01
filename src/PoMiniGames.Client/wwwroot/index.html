@@ -10,10 +10,12 @@
     <!-- Bug fix QA #10: start the WASM download as early as possible so the
          browser can warm up the connection and overlap the TCP/TLS handshake
          with the HTML parse. The actual script tag below drives execution;
-         the modulepreload just primes the network. ~1.2 s cold-start win. -->
+         the modulepreload just primes the network. ~1.2 s cold-start win.
+         Note: only blazor.webassembly.js is the real, non-hashed boot script.
+         The dotnet.* runtime + native modules are emitted with content hashes
+         and discovered at runtime by the Blazor loader — preloading them by
+         their unhashed names 404s and pollutes DevTools with red noise. -->
     <link rel="modulepreload" href="_framework/blazor.webassembly.js" />
-    <link rel="modulepreload" href="_framework/dotnet.native.js" crossorigin />
-    <link rel="modulepreload" href="_framework/dotnet.runtime.js" crossorigin />
 
     <!-- Typography (non-render-blocking): fonts load async so first paint is not
          gated on three third-party stylesheets. system-ui renders immediately and
@@ -69,6 +71,8 @@
     <script src="js/uiFeedback.js" defer></script>
     <!-- PoFace webcam capture (consolidation import) -->
     <script src="js/webcam.js" defer></script>
+    <!-- AppErrorBoundary fallback clipboard helper (non-secure-context safe) -->
+    <script src="js/appErrorBoundary.js" defer></script>
     <!-- Microsoft sign-in (MSAL.js + interop wrapper). Loaded eagerly so the
          login gate can call poAuth.* during startup when OAuth is configured.
          NOTE: consider pinning a Subresource Integrity hash for this CDN script

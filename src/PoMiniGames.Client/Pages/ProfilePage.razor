@@ -9,6 +9,24 @@
 @implements IDisposable
 
 <div class="prf-page">
+@if (_loading)
+{
+    <div class="profile-skel" aria-busy="true" aria-label="Loading profile">
+        <div class="profile-skel__header">
+            <div class="profile-skel__avatar"></div>
+            <div class="profile-skel__lines">
+                <div class="profile-skel__line profile-skel__line--w70"></div>
+                <div class="profile-skel__line profile-skel__line--w40"></div>
+                <div class="profile-skel__line profile-skel__line--w55"></div>
+            </div>
+        </div>
+        <div class="profile-skel__row"></div>
+        <div class="profile-skel__row"></div>
+        <div class="profile-skel__row"></div>
+    </div>
+}
+else
+{
 
     <!-- ── Hero ── -->
     <div class="prf-hero">
@@ -195,6 +213,7 @@
         </div>
     </div>
 
+}
 </div>
 
 @code {
@@ -243,6 +262,7 @@
     };
 
     // ── State ────────────────────────────────────────────────────
+    private bool _loading = true;
     private string _playerName = "Player";
     private string _initials   = "P";
     private int _totalGames, _totalWins, _totalLosses, _totalDraws;
@@ -291,6 +311,13 @@
     {
         await LoadHighScoresAsync();
         await LoadMatchesAsync();
+        // §7 UX: dismiss the skeleton once the slowest data source has resolved.
+        // HighScore + MatchHistory fire in parallel; flipping _loading here means
+        // the user sees a skeleton for the network round-trip (typically <300ms
+        // on warm-cache) and never a stale "FastHawk81" flash if a previous
+        // user's data was still resident in the component.
+        _loading = false;
+        StateHasChanged();
     }
 
     public void Dispose() => PlayerNameService.StateChanged -= OnNameChanged;
@@ -300,6 +327,10 @@
         _playerName = PlayerNameService.GetPlayerName();
         LoadStats();
         BuildLocalHighScores();
+        // Re-show the skeleton so a "Switch user" mid-session (see top-bar dev
+        // tool) never flashes the previous user's stats before the new ones
+        // arrive.
+        _loading = true;
         _ = LoadHighScoresAsync();
         _ = LoadMatchesAsync();
         InvokeAsync(StateHasChanged);

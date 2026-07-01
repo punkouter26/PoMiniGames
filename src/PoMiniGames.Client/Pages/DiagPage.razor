@@ -33,6 +33,27 @@
     </section>
 
     <section class="diag-section">
+        <h2 class="diag-h2">Telemetry</h2>
+        <div class="diag-kv-list">
+            <div class="diag-kv"><span class="diag-k">App Insights</span><span class="diag-v">@(_telemetry.AppInsightsConfigured ? "configured" : "not configured")</span></div>
+            <div class="diag-kv"><span class="diag-k">OTel exporter</span><span class="diag-v">@(_telemetry.OtelExporter ?? "—")</span></div>
+            <div class="diag-kv"><span class="diag-k">cloud_RoleName</span><span class="diag-v mono">@(_telemetry.ResourceRoleName ?? "—")</span></div>
+            <div class="diag-kv"><span class="diag-k">Live Metrics</span><span class="diag-v">@(_telemetry.LiveMetricsEnabled ? "on" : "off")</span></div>
+            <div class="diag-kv"><span class="diag-k">Sampling</span><span class="diag-v">@_telemetry.SamplingRatio.ToString("0.00")</span></div>
+        </div>
+        <p class="diag-muted">
+            @if (_telemetry.AppInsightsConfigured)
+            {
+                <text>Traces from this process are exported to Application Insights; the CorrelationId above is searchable in the App Insights transaction search.</text>
+            }
+            else
+            {
+                <text>Set <code>APPLICATIONINSIGHTS_CONNECTION_STRING</code> (env var) or <code>PoMiniGames:ApplicationInsights:ConnectionString</code> in config to ship traces. The /diag/telemetry endpoint reflects the same source-of-truth.</text>
+            }
+        </p>
+    </section>
+
+    <section class="diag-section">
         <h2 class="diag-h2">Active Mockables</h2>
         <p class="diag-muted">
             Every <code>IMockable</code> registered in the API DI container. Dev/Test environments only;
@@ -129,6 +150,7 @@
     private string _diagCorrelationId = "(pending)";
     private string? _sessionId;
     private bool _filterByCorrelation = true;
+    private TelemetryState _telemetry = new(false, null, null, false, 1.0);
 
     // Property names whose string values are sensitive and must be masked in the
     // diagnostic table (the raw JSON in the previous section is shown only in
@@ -174,12 +196,13 @@
 
     private async Task RefreshAsync()
     {
-        // Re-read the current /api/diag, /api/mockables, and /api/logs/tail in parallel
-        // so the page renders incrementally as each completes.
+        // Re-read the current /api/diag, /api/mockables, /api/diag/telemetry, and
+        // /api/logs/tail in parallel so the page renders incrementally as each completes.
         var diagTask = Http.GetAsync("/api/diag");
         var mockTask = Http.GetAsync("/api/mockables");
+        var telemetryTask = Http.GetAsync("/api/diag/telemetry");
         var logsTask = Http.GetAsync("/api/logs/tail?count=50");
-        await Task.WhenAll(diagTask, mockTask, logsTask);
+        await Task.WhenAll(diagTask, mockTask, telemetryTask, logsTask);
 
         var diagResp = await diagTask;
         if (diagResp.IsSuccessStatusCode)
@@ -223,6 +246,23 @@
                 }
             }
             catch { /* ignore — best-effort */ }
+        }
+
+        // /api/diag/telemetry — never returns a connection string, just the configured state.
+        var telemetryResp = await telemetryTask;
+        if (telemetryResp.IsSuccessStatusCode)
+        {
+            try
+            {
+                var t = JsonDocument.Parse(await telemetryResp.Content.ReadAsStringAsync()).RootElement;
+                _telemetry = new TelemetryState(
+                    AppInsightsConfigured: t.TryGetProperty("appInsightsConfigured", out var ai) && ai.GetBoolean(),
+                    OtelExporter: t.TryGetProperty("otelExporter", out var oe) && oe.ValueKind == JsonValueKind.String ? oe.GetString() : null,
+                    ResourceRoleName: t.TryGetProperty("resourceRoleName", out var rn) && rn.ValueKind == JsonValueKind.String ? rn.GetString() : null,
+                    LiveMetricsEnabled: t.TryGetProperty("liveMetricsEnabled", out var lm) && lm.GetBoolean(),
+                    SamplingRatio: t.TryGetProperty("samplingRatio", out var sr) ? sr.GetDouble() : 1.0);
+            }
+            catch { /* leave default */ }
         }
 
         var logsResp = await logsTask;
@@ -313,4 +353,5 @@
 
     private sealed record DiagRow(string Key, string Summary);
     private sealed record DiagIntegration(string Name, string Status);
+    private sealed record TelemetryState(bool AppInsightsConfigured, string? OtelExporter, string? ResourceRoleName, bool LiveMetricsEnabled, double SamplingRatio);
 }

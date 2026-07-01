@@ -3,6 +3,7 @@
 @inject GameStatsService GameStatsService
 @inject KioskCoordinator Kiosk
 @inject IJSRuntime JS
+@inject ActivityFeedService ActivityFeed
 @implements IAsyncDisposable
 
 <div class="home-container">
@@ -112,6 +113,26 @@
             </button>
         </div>
 
+    @* §9 home page activity feed: surfaces the player's most recent matches
+       so the page never feels empty even on a fresh install. Pulled from the
+       existing /api/matches endpoint via ActivityFeedService — no new API. *@
+    @if (_activity.Count > 0)
+    {
+        <section class="home-activity" aria-label="Your recent activity">
+            <h2 class="home-activity__title">Your recent activity</h2>
+            <ul class="home-activity__list">
+                @foreach (var item in _activity)
+                {
+                    <li class="home-activity__item">
+                        <span aria-hidden="true">@item.Icon</span>
+                        <a href="@item.Url">@item.GameTitle</a>
+                        <span>· @item.Message</span>
+                        <span class="home-activity__time" title="@item.When.ToString("u")">@FormatRelative(item.When)</span>
+                    </li>
+                }
+            </ul>
+        </section>
+    }
 </div>
 
 @code {
@@ -119,11 +140,39 @@
     private IJSObjectReference? _ambientModule;
     private bool _ambientStarted;
 
+    // §9: activity feed (recent matches).
+    private IReadOnlyList<ActivityFeedService.FeedItem> _activity = Array.Empty<ActivityFeedService.FeedItem>();
+
     protected override void OnInitialized()
     {
         // Subscribe to kiosk state so the Demo button (Start ↔ Stop) updates
         // reactively when the coordinator starts/stops/pauses/advances.
         Kiosk.Changed += OnKioskStateChanged;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Pull the feed once on initial render. The ActivityFeedService is
+        // best-effort — it never throws — so we can await it without a try
+        // and still get a graceful empty feed if the API is offline.
+        try
+        {
+            _activity = await ActivityFeed.GetRecentAsync(limit: 5);
+        }
+        catch
+        {
+            _activity = Array.Empty<ActivityFeedService.FeedItem>();
+        }
+    }
+
+    private static string FormatRelative(DateTimeOffset when)
+    {
+        var diff = DateTimeOffset.UtcNow - when;
+        if (diff.TotalSeconds < 60) return "just now";
+        if (diff.TotalMinutes < 60) return $"{(int)diff.TotalMinutes}m ago";
+        if (diff.TotalHours < 24) return $"{(int)diff.TotalHours}h ago";
+        if (diff.TotalDays < 7) return $"{(int)diff.TotalDays}d ago";
+        return when.ToString("MMM d");
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)

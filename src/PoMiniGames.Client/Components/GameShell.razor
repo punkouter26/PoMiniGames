@@ -58,26 +58,46 @@
         @ChildContent
     </div>
 
-    @if (GameOver && ShowPlayAgain)
+    @* End-of-game modal: a centered, blocking dialog shown for every game the
+       moment GameOver flips true. It surfaces the final score/result
+       (GameSummary), the persistent stats grid (Stats), and the two exit
+       actions. There is intentionally no backdrop-dismiss — the player leaves
+       via Play Again or Home. *@
+    @if (GameOver)
     {
-        <div class="gps-play-again-bar" role="complementary" aria-label="Game over actions">
-            @if (GameSummary != null)
-            {
-                <div class="gps-game-summary">@GameSummary</div>
-            }
-            <div class="gps-play-again-actions">
-                @if (OnPlayAgain.HasDelegate)
+        <div class="gps-modal-overlay" role="presentation">
+            <div class="gps-modal" role="dialog" aria-modal="true" aria-label="Game over">
+                <div class="gps-modal-title">@Title</div>
+                @if (GameSummary != null)
                 {
-                    <button class="gps-play-again-btn gps-play-again-btn--primary" @onclick="OnPlayAgain">
-                        🔄 Play Again
-                    </button>
+                    <div class="gps-game-summary">@GameSummary</div>
                 }
-                @if (!string.IsNullOrEmpty(BackTo))
+                @if (Stats != null && Stats.Any())
                 {
-                    <button class="gps-play-again-btn gps-play-again-btn--secondary" @onclick="NavigateBack">
-                        🏠 Home
-                    </button>
+                    <div class="gps-drawer-stats gps-modal-stats">
+                        @foreach (var stat in Stats)
+                        {
+                            <div class="gps-stat">
+                                <span class="gps-stat-value">@stat.Value</span>
+                                <span class="gps-stat-label">@stat.Label</span>
+                            </div>
+                        }
+                    </div>
                 }
+                <div class="gps-play-again-actions">
+                    @if (ShowPlayAgain && OnPlayAgain.HasDelegate)
+                    {
+                        <button class="gps-play-again-btn gps-play-again-btn--primary" @onclick="OnPlayAgain">
+                            🔄 Play Again
+                        </button>
+                    }
+                    @if (!string.IsNullOrEmpty(BackTo))
+                    {
+                        <button class="gps-play-again-btn gps-play-again-btn--secondary" @onclick="NavigateBack">
+                            🏠 Home
+                        </button>
+                    }
+                </div>
             </div>
         </div>
     }

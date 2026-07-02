@@ -12,6 +12,16 @@ using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// ─── Static web assets in Test ───────────────────────────────────────
+// ASP.NET auto-loads the static-web-assets manifest (which maps the referenced
+// Blazor Client's index.html/_framework into the served file set) ONLY in the
+// Development environment. The E2E-UI tier boots the host under "Test", where
+// UseBlazorFrameworkFiles/MapFallbackToFile would otherwise 404 on every page.
+if (builder.Environment.IsEnvironment("Test"))
+{
+    builder.WebHost.UseStaticWebAssets();
+}
+
 // ─── Telemetry & Key Vault ───────────────────────────────────────────
 builder
     .AddPoMiniGamesTelemetry()

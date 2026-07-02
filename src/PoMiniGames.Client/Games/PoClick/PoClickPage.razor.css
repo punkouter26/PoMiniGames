@@ -1,0 +1,108 @@
+/* Inline post-game results board — the top-10 leaderboard now shows directly
+   beneath the game summary instead of redirecting to a separate high-scores page. */
+
+/* End-of-game modal summary: score pill on top, detail lines, then the board.
+   (The pill class only wraps the one-line score — see GameSummaryContent.) */
+.poclick-result-summary {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+}
+
+.poclick-result-board {
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    text-align: left;
+}
+
+.poclick-section-heading {
+    font-family: var(--font-heading, 'Orbitron', sans-serif);
+    font-size: 0.9rem;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    text-align: center;
+    margin: 0 0 0.75rem;
+    color: var(--text-secondary, #cbd5e1);
+}
+
+.poclick-section-heading--gold {
+    color: var(--accent-yellow, #fbbf24);
+    text-shadow: 0 0 12px rgba(251, 191, 36, 0.35);
+}
+
+.poclick-table-wrap {
+    max-height: 320px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+.poclick-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+}
+
+.poclick-table thead th {
+    position: sticky;
+    top: 0;
+    background: rgba(15, 23, 42, 0.95);
+    color: var(--text-muted, #94a3b8);
+    font-size: 0.7rem;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    text-align: left;
+    padding: 0.4rem 0.6rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.poclick-table tbody td {
+    padding: 0.4rem 0.6rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.poclick-table-row {
+    transition: background 0.15s ease;
+}
+
+/* Highlight the row for the run the player just completed. */
+.poclick-hs-current {
+    background: color-mix(in srgb, var(--accent-cyan, #22d3ee) 18%, transparent);
+    outline: 1px solid var(--accent-cyan, #22d3ee);
+}
+
+.poclick-rank-medal {
+    font-size: 1rem;
+}
+
+.poclick-rank-other {
+    color: var(--text-muted, #94a3b8);
+    font-variant-numeric: tabular-nums;
+}
+
+.poclick-empty-state {
+    text-align: center;
+    color: var(--text-muted, #94a3b8);
+    padding: 1rem 0;
+    font-size: 0.85rem;
+}
+
+.poclick-result-stats-link {
+    display: inline-block;
+    margin-top: 0.75rem;
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: var(--text-secondary, #cbd5e1);
+    border-radius: 0.35rem;
+    padding: 0.4rem 0.9rem;
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.poclick-result-stats-link:hover {
+    border-color: var(--accent-cyan, #22d3ee);
+    color: var(--accent-cyan, #22d3ee);
+}

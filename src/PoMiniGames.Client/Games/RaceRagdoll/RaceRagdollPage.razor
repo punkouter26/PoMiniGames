@@ -9,7 +9,9 @@
 @inject NavigationManager Navigation
 @inject KioskCoordinator Kiosk
 
-<GameShell Title=@TitleContent Player="@_playerName" BackTo="/" ShowSettings="true" Stats="@_statItems" Controls="@ControlsContent">
+<GameShell Title=@TitleContent Player="@_playerName" BackTo="/" ShowSettings="true" Stats="@_statItems"
+           GameOver="@(_raceFinished && DemoMode != 1)" OnPlayAgain="ResetRace" GameSummary="@GameSummaryContent"
+           Controls="@ControlsContent">
     <div class="ragdoll-wrapper">
         <div class="ragdoll-arena">
             @if (_gameState == "betting")
@@ -53,14 +55,11 @@
                     </div>
                     <div class="race-info">
                         <div>Round @(_round)/@_maxRounds</div>
-                        @if (_raceFinished)
+                        @* Non-demo race results are shown in the shared end-of-game modal;
+                           the demo kiosk keeps a lightweight inline banner (it auto-restarts). *@
+                        @if (_raceFinished && DemoMode == 1)
                         {
                             <div class="race-result">@_winnerName wins!</div>
-                            @if (_won)
-                            {
-                                <div class="payout">You won $@_payout!</div>
-                            }
-                            <button @onclick="ResetRace">Next Race</button>
                         }
                     </div>
                 </div>
@@ -109,6 +108,19 @@
     </div>;
 
     private RenderFragment TitleContent => @<span>🏁 Ragdoll Racing</span>;
+
+    private RenderFragment GameSummaryContent => @<div>
+        <div>@_winnerName wins!</div>
+        @if (_won)
+        {
+            <div>You won $@_payout!</div>
+        }
+        else
+        {
+            <div>Better luck next race</div>
+        }
+        <div>Balance: $@_balance</div>
+    </div>;
 
     protected override void OnInitialized()
     {

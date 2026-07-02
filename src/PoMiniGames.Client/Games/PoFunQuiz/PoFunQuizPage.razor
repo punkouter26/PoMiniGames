@@ -6,7 +6,10 @@
 @inject NavigationManager Navigation
 @inject HttpClient Http
 
-<GameShell Title=@TitleContent Player="@_playerName" BackTo="/" ShowSettings="false">
+<GameShell Title=@TitleContent Player="@_playerName" BackTo="/" ShowSettings="false"
+           GameOver="@(_questions.Count > 0 && _currentIndex >= _questions.Count)"
+           OnPlayAgain="Reset"
+           GameSummary="@GameSummaryContent">
     @if (_questions.Count == 0 && !_isLoading)
     {
         <div class="fq-join">
@@ -59,19 +62,16 @@
             <p>Score: @_score · Streak: @_streak</p>
         </div>
     }
-    else
-    {
-        <div class="fq-results">
-            <h2 class="gps-phase-h">Done</h2>
-            <p>Final score: <strong>@_score</strong></p>
-            <p>Max streak: @_maxStreak</p>
-            <button class="fq-btn fq-btn-secondary" @onclick="Reset">Play again</button>
-        </div>
-    }
+    @* Quiz completion is shown in the shared end-of-game modal (GameSummaryContent). *@
 </GameShell>
 
 @code {
     private RenderFragment TitleContent => @<span>🧠 PoFunQuiz</span>;
+
+    private RenderFragment GameSummaryContent => @<div>
+        <div>Final score: <strong>@_score</strong></div>
+        <div>Max streak: @_maxStreak</div>
+    </div>;
 
     private string _playerName = string.Empty;
     private string _category = "General";

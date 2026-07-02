@@ -48,7 +48,7 @@ public class MobileGoldenPathTests
     {
         using var playwright = await Playwright.CreateAsync();
         await using var browser = await playwright.Chromium.LaunchAsync(
-            new BrowserTypeLaunchOptions { Headless = true });
+            BrowserLaunch.Options());
         var page = await OpenHomeAsync(browser);
 
         // The home hero renders the platform identity…
@@ -74,7 +74,7 @@ public class MobileGoldenPathTests
     {
         using var playwright = await Playwright.CreateAsync();
         await using var browser = await playwright.Chromium.LaunchAsync(
-            new BrowserTypeLaunchOptions { Headless = true });
+            BrowserLaunch.Options());
         var page = await OpenHomeAsync(browser);
 
         var firstChip = page.Locator(".home-game-chip").First;

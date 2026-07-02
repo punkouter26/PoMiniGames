@@ -122,6 +122,8 @@
     private bool    _showResultOverlay = false;
     private double  _estimatedScore    = 0;
     private string  _lastSessionId     = "";
+    // Top-10 leaderboard shown inline beneath the results (no page redirect).
+    private List<PoClickSession> _resultLeaderboard = new();
 
     // UX-5: duration selector
     private int _duration = 10;
@@ -150,10 +152,71 @@
         : _estimatedScore > 0 ? @<span class="cf-status cf-status--win">Score: @(_estimatedScore.ToString("0.#")) / 100</span>
         : @<span class="cf-status">Ready to play</span>;
 
-    private RenderFragment? GameSummaryContent => !isPlaying && !isCountingDown && _showResultOverlay ? @<div class="cf-result cf-result--win">
-        <div>Final Score: @(_estimatedScore.ToString("0.#")) / 100</div>
+    @* The pill class (border-radius 9999px) only suits the one-line score — wrapping
+       the whole block in it rendered the leaderboard inside a giant ellipse. *@
+    private RenderFragment? GameSummaryContent => !isPlaying && !isCountingDown && _showResultOverlay ? @<div class="poclick-result-summary">
+        <div class="cf-result cf-result--win">Final Score: @(_estimatedScore.ToString("0.#")) / 100</div>
         <div>Perfect: @perfectCount | Good: @goodCount | Okay: @okayCount | Miss: @missCount</div>
         <div>Max Streak: @maxStreak</div>
+
+        <div class="poclick-result-board">
+            <h3 class="poclick-section-heading poclick-section-heading--gold">🏆 @(_duration)-Second Top 10</h3>
+            @if (_resultLeaderboard.Count == 0)
+            {
+                <div class="poclick-empty-state">
+                    <p>No scores yet.<br/>Be the first to top the charts!</p>
+                </div>
+            }
+            else
+            {
+                <div class="poclick-table-wrap">
+                    <table class="poclick-table">
+                        <thead>
+                            <tr>
+                                <th>Rank</th>
+                                <th>Score</th>
+                                <th>Date</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var (entry, idx) in _resultLeaderboard.Select((s, i) => (s, i)))
+                            {
+                                var rank = idx + 1;
+                                var isCurrent = entry.Id == _lastSessionId;
+                                <tr class="poclick-table-row @(isCurrent ? "poclick-hs-current" : "")">
+                                    <td>
+                                        @if (rank == 1)
+                                        {
+                                            <span class="poclick-rank-medal poclick-rank-gold">🥇</span>
+                                        }
+                                        else if (rank == 2)
+                                        {
+                                            <span class="poclick-rank-medal poclick-rank-silver">🥈</span>
+                                        }
+                                        else if (rank == 3)
+                                        {
+                                            <span class="poclick-rank-medal poclick-rank-bronze">🥉</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="poclick-rank-other">#@rank</span>
+                                        }
+                                    </td>
+                                    <td>@($"{entry.Score:0.#}")@(isCurrent ? " ★" : "")</td>
+                                    <td>@entry.CreatedAt.ToLocalTime().ToString("MM/dd HH:mm")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+            @if (!string.IsNullOrEmpty(_lastSessionId))
+            {
+                <button type="button" class="poclick-result-stats-link" @onclick="ViewLastSessionStats">
+                    📊 View this run's detailed stats
+                </button>
+            }
+        </div>
     </div> : null;
 
     private RenderFragment ControlsContent => @<div class="gps-controls">
@@ -353,7 +416,7 @@
 
         if (absOffset <= 25)
         {
-            rating = "perfect";
+            rating = "Perfect";
             displayRating = "PERFECT";
             css = "rating-perfect";
             perfectCount++;
@@ -362,7 +425,7 @@
         }
         else if (absOffset <= 60)
         {
-            rating = "good";
+            rating = "Good";
             displayRating = $"GOOD ({clue})";
             css = "rating-good";
             goodCount++;
@@ -371,7 +434,7 @@
         }
         else if (absOffset <= 120)
         {
-            rating = "okay";
+            rating = "Okay";
             displayRating = $"OKAY ({clue})";
             css = "rating-okay";
             okayCount++;
@@ -380,7 +443,7 @@
         }
         else
         {
-            rating = "miss";
+            rating = "Miss";
             displayRating = $"MISS ({clue})";
             css = "rating-miss";
             missCount++;
@@ -400,9 +463,9 @@
 
         // UI-5: pulse reactive HUD items on each tap
         PulseScore();
-        if (rating is "perfect" or "good") PulseStreak();
-        if (rating == "perfect") PulsePerfects();
-        if (rating == "miss")    PulseMisses();
+        if (rating is "Perfect" or "Good") PulseStreak();
+        if (rating == "Perfect") PulsePerfects();
+        if (rating == "Miss")    PulseMisses();
 
         playerAttempts.Add(new PoClickAttempt(beatIndex, targetTime, actualTime, offset, rating));
     }
@@ -415,7 +478,7 @@
         lastOffsetMs = 0;
         PulseMisses(); // UI-5
 
-        playerAttempts.Add(new PoClickAttempt(beatIndex, targetTime, targetTime + 250, 250.0, "miss"));
+        playerAttempts.Add(new PoClickAttempt(beatIndex, targetTime, targetTime + 250, 250.0, "Miss"));
     }
 
     private void RegisterWildMiss(double tapTimeMs)
@@ -426,7 +489,7 @@
         lastOffsetMs = 0;
         PulseMisses(); // UI-5
 
-        playerAttempts.Add(new PoClickAttempt(-1, tapTimeMs - 250, tapTimeMs, 250.0, "miss"));
+        playerAttempts.Add(new PoClickAttempt(-1, tapTimeMs - 250, tapTimeMs, 250.0, "Miss"));
     }
 
     private void TriggerFeedbackHUD(string text, string cssClass)
@@ -499,10 +562,14 @@
         HistoryService.SaveSession(session);
         _lastSessionId = session.Id;
 
+        // Load the top-10 leaderboard for the duration just played so it can be
+        // shown inline beneath the results instead of redirecting to a separate page.
+        _resultLeaderboard = HistoryService.GetLeaderboardByDuration(_duration, limit: 10);
+
         // UX-6: show animated result overlay
         _showResultOverlay = true;
         StateHasChanged();
-        
+
         if (Demo == 1)
         {
             // Demo mode - auto restart after delay
@@ -512,11 +579,13 @@
                 ResetGame();
             }
         }
-        else
+    }
+
+    private void ViewLastSessionStats()
+    {
+        if (!string.IsNullOrEmpty(_lastSessionId))
         {
-            await Task.Delay(2000);
-            // Navigate to high-scores page (10s / 20s top 10), highlighting this run
-            Navigation.NavigateTo($"/poclick/highscores/{session.Id}");
+            Navigation.NavigateTo($"/poclick/stats/{_lastSessionId}");
         }
     }
 
@@ -536,7 +605,8 @@
         scheduledBeats.Clear();
         playerAttempts.Clear();
         _estimatedScore = 0;
-        
+        _resultLeaderboard = new();
+
         _stats = _gameStats.GetStats("poclick", _playerName);
         UpdateStats();
         

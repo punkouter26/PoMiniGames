@@ -6,7 +6,10 @@
 @inject NavigationManager Navigation
 @implements IAsyncDisposable
 
-<GameShell Title=@TitleContent Player="@_playerName" BackTo="/" ShowSettings="false">
+<GameShell Title=@TitleContent Player="@_playerName" BackTo="/" ShowSettings="false"
+           GameOver="@(_solo && _soloFinished)"
+           OnPlayAgain="StartSolo"
+           GameSummary="@GameSummaryContent">
     @if (_solo)
     {
         <div class="cq-solo">
@@ -36,16 +39,7 @@
                     <button class="cq-btn cq-btn-primary" @onclick="SoloNext">@(_soloRound + 1 < _soloQuestions.Count ? "Next" : "See results")</button>
                 }
             }
-            else
-            {
-                <h2 class="gps-phase-h">Results</h2>
-                <p>You matched your partner <strong>@_soloMatches</strong> / @_soloQuestions.Count times.</p>
-                <p>Score: <strong>@_soloScore</strong></p>
-                <div class="cq-actions">
-                    <button class="cq-btn cq-btn-primary" @onclick="StartSolo">Play again</button>
-                    <button class="cq-btn cq-btn-secondary" @onclick="ExitSolo">Back to lobby</button>
-                </div>
-            }
+            @* Solo results are shown in the shared end-of-game modal (GameSummaryContent). *@
         </div>
     }
     else if (!_isConnected)
@@ -124,6 +118,11 @@
 
 @code {
     private RenderFragment TitleContent => @<span>💕 PoCoupleQuiz</span>;
+
+    private RenderFragment GameSummaryContent => @<div>
+        <div>You matched your partner <strong>@_soloMatches</strong> / @_soloQuestions.Count times.</div>
+        <div>Score: <strong>@_soloScore</strong></div>
+    </div>;
 
     private string _playerName = string.Empty;
     private string _difficulty = "Medium";
@@ -302,8 +301,6 @@
         _soloRound++;
         _soloRevealed = false;
     }
-
-    private void ExitSolo() => _solo = false;
 
     private sealed record SoloQ(string Text, string[] Options, int PartnerIndex);
 

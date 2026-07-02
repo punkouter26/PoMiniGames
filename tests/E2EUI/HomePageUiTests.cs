@@ -23,7 +23,7 @@ public class HomePageUiTests
     {
         using var playwright = await Playwright.CreateAsync();
         await using var browser = await playwright.Chromium.LaunchAsync(
-            new BrowserTypeLaunchOptions { Headless = true });
+            BrowserLaunch.Options());
         // §3 BFF Header Overrides: the FakeAuth scheme authenticates every request
         // via the X-Fake-User / X-Fake-Roles headers, bypassing the cookie flow
         // entirely. This keeps the E2E-UI suite deterministic across cookie-domain

@@ -5,7 +5,10 @@
 @inject IJSRuntime JS
 @inject NavigationManager Navigation
 
-<GameShell Title=@TitleContent BackTo="/face" ShowSettings="false">
+<GameShell Title=@TitleContent BackTo="/face" ShowSettings="false"
+           GameOver="@(_phase == "GameOver")"
+           OnPlayAgain="PlayAgainFace"
+           GameSummary="@GameSummaryContent">
     @if (_phase == "Init")
     {
         <p>Initializing camera…</p>
@@ -90,22 +93,7 @@
             </div>
         }
     }
-    else if (_phase == "GameOver")
-    {
-        <div class="pf-gameover">
-            <h2>🎉 Game over</h2>
-            <p>Total score: <strong>@_finalTotal</strong> / 50</p>
-            @if (_stub)
-            {
-                <button class="pf-btn pf-btn-primary" @onclick="ResetStub">Play again</button>
-                <a class="pf-btn pf-btn-secondary" href="/face">Back</a>
-            }
-            else
-            {
-                <a class="pf-btn pf-btn-primary" href="@($"/face/recap/{_sessionId}")">View recap</a>
-            }
-        </div>
-    }
+    @* Game-over is shown in the shared end-of-game modal (GameSummaryContent). *@
 
     @if (!string.IsNullOrEmpty(_error))
     {
@@ -115,6 +103,27 @@
 
 @code {
     private RenderFragment TitleContent => @<span>🙂 PoFace · Arena</span>;
+
+    private RenderFragment GameSummaryContent => @<div>
+        <div>🎉 Total score: <strong>@_finalTotal</strong> / 50</div>
+        @if (!_stub && _sessionId is not null)
+        {
+            <div><a href="@($"/face/recap/{_sessionId}")">View full recap →</a></div>
+        }
+    </div>;
+
+    // Play Again from the end-of-game modal: stub mode restarts instantly;
+    // camera mode re-creates a session and re-initializes the webcam.
+    private async Task PlayAgainFace()
+    {
+        if (_stub) { ResetStub(); return; }
+        _phase = "Init";
+        _currentRound = 0;
+        _finalTotal = 0;
+        _lastScore = null;
+        _error = null;
+        await OnInitializedAsync();
+    }
 
     private string _phase = "Init";
     private string? _sessionId;

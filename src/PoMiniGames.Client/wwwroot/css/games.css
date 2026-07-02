@@ -308,6 +308,63 @@
   color: var(--color-text-primary);
 }
 
+/* ── End-of-game modal ──
+   Centered, blocking dialog rendered by GameShell when GameOver is true.
+   Surfaces the final score/result, the stats grid, and Play Again / Home. */
+.gps-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(0, 0, 0, 0.62);
+  backdrop-filter: blur(4px);
+  animation: gps-modal-fade 0.2s ease-out both;
+}
+
+.gps-modal {
+  width: min(92vw, 380px);
+  max-height: 88vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.5rem 1.75rem 1.75rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55);
+  animation: gps-modal-pop 0.25s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.gps-modal-title {
+  font-size: 1.3rem;
+  font-weight: 800;
+  text-align: center;
+  color: var(--color-text-primary);
+}
+
+/* Reuse the drawer-stats grid inside the modal, minus its divider/margin. */
+.gps-modal-stats {
+  width: 100%;
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+@keyframes gps-modal-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes gps-modal-pop {
+  from { opacity: 0; transform: translateY(12px) scale(0.96); }
+  to   { opacity: 1; transform: none; }
+}
+
 .gps-status-badge {
   display: inline-flex;
   align-items: center;

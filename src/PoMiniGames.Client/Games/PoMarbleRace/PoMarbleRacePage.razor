@@ -14,9 +14,11 @@
 <GameShell Title=@TitleContent
            Player="@_playerName"
            BackTo="/"
-           ShowPlayAgain="false"
            ShowSettings="true"
            Stats="@_statItems"
+           GameOver="@(_phase == "result" && !_demo)"
+           OnPlayAgain="NewTrack"
+           GameSummary="@GameSummaryContent"
            Controls="@ControlsContent">
     <div class="mr-wrap">
         <div id="marble-race-container" class="mr-canvas-host"></div>
@@ -71,20 +73,7 @@
             </div>
         }
 
-        @* Result banner *@
-        @if (_phase == "result")
-        {
-            <div class="mr-result @(_lastWon ? "mr-result-win" : "mr-result-lose")">
-                @if (_lastWon)
-                {
-                    <span>🏆 Your marble placed @Ordinal(_lastPlace) — +1!</span>
-                }
-                else
-                {
-                    <span>Your marble placed @Ordinal(_lastPlace)</span>
-                }
-            </div>
-        }
+        @* Race result is shown in the shared end-of-game modal (GameSummaryContent). *@
     </div>
 </GameShell>
 
@@ -120,6 +109,11 @@
     private RenderFragment ControlsContent => @<div class="gps-controls">
         <button @onclick="ToggleMute">@(_muted ? "🔇 Unmute" : "🔊 Mute")</button>
         <button @onclick="NewTrack">🔄 New track</button>
+    </div>;
+
+    private RenderFragment GameSummaryContent => @<div>
+        <div>@(_lastWon ? "🏆 Top 3 finish!" : "Race over")</div>
+        <div>Your marble placed @Ordinal(_lastPlace)</div>
     </div>;
 
     private bool _muted;

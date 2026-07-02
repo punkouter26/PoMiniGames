@@ -158,6 +158,42 @@ public static class LocalStorageService
         _jsRuntime = jsRuntime;
     }
 
+    /// <summary>
+    /// Read a value straight from localStorage. On Blazor WASM this must use the
+    /// synchronous <see cref="IJSInProcessRuntime"/>: blocking on InvokeAsync(...).Result
+    /// on the WASM UI thread can throw, which previously surfaced as silently-empty
+    /// history (e.g. the PoClick stats page reporting "Session Not Found").
+    /// </summary>
+    // Only plain strings cross the JS boundary here (localStorage stores strings),
+    // so the trimmer warning about reflection-based JSON marshalling does not apply.
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage(
+        "Trimming", "IL2026",
+        Justification = "Only string values are read from localStorage; no reflection-based JSON marshalling.")]
+    private static string? RawGet(string key)
+    {
+        if (_jsRuntime is IJSInProcessRuntime inProcess)
+            return inProcess.Invoke<string?>("window.localStorage.getItem", key);
+
+        // Fallback for non-WASM hosts (prerender/tests) where in-process isn't available.
+        return _jsRuntime?.InvokeAsync<string?>("window.localStorage.getItem", key).AsTask().GetAwaiter().GetResult();
+    }
+
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage(
+        "Trimming", "IL2026",
+        Justification = "Only string values are written to localStorage; no reflection-based JSON marshalling.")]
+    private static void RawSet(string key, string value)
+    {
+        if (_jsRuntime is IJSInProcessRuntime inProcess)
+        {
+            // Synchronous invoke guarantees the write is committed before we return,
+            // so a subsequent read (e.g. navigating to the stats page) sees it.
+            inProcess.InvokeVoid("window.localStorage.setItem", key, value);
+            return;
+        }
+
+        _jsRuntime?.InvokeVoidAsync("window.localStorage.setItem", key, value);
+    }
+
     public static T? GetItem<T>(string key, JsonTypeInfo<T>? typeInfo = null)
     {
         if (_jsRuntime == null) return default;
@@ -165,7 +201,7 @@ public static class LocalStorageService
         {
             if (typeof(T) == typeof(string))
             {
-                var raw = _jsRuntime.InvokeAsync<string>("window.localStorage.getItem", key).AsTask().Result;
+                var raw = RawGet(key);
                 if (raw is null) return default;
                 // If the stored value is a JSON-encoded string (e.g. "\"CalmTiger42\""), decode it
                 if (raw.Length >= 2 && raw[0] == '"' && raw[^1] == '"')
@@ -176,7 +212,7 @@ public static class LocalStorageService
                 return (T)(object)raw;
             }
             if (typeInfo is null) return default;
-            var rawJson = _jsRuntime.InvokeAsync<string>("window.localStorage.getItem", key).AsTask().Result;
+            var rawJson = RawGet(key);
             if (rawJson is null) return default;
             return JsonSerializer.Deserialize(rawJson, typeInfo);
         }
@@ -193,12 +229,12 @@ public static class LocalStorageService
         {
             if (value is string s)
             {
-                _jsRuntime.InvokeVoidAsync("window.localStorage.setItem", key, s);
+                RawSet(key, s);
             }
             else if (typeInfo is not null)
             {
                 var json = JsonSerializer.Serialize(value, typeInfo);
-                _jsRuntime.InvokeVoidAsync("window.localStorage.setItem", key, json);
+                RawSet(key, json);
             }
         }
         catch { }

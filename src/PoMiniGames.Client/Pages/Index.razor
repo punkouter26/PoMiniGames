@@ -1,6 +1,5 @@
 @page "/"
 @inject NavigationManager NavigationManager
-@inject GameStatsService GameStatsService
 @inject KioskCoordinator Kiosk
 @inject IJSRuntime JS
 @inject ActivityFeedService ActivityFeed
@@ -44,13 +43,8 @@
                 <div class="home-section-games">
                     @foreach (var g in GameCatalog.SinglePlayer)
                     {
-                        var isLast = g.Url == _lastPlayedUrl;
-                        <a class="home-game-chip @(isLast ? "home-game-chip--continue" : null)" href="@g.Url">
+                        <a class="home-game-chip" href="@g.Url">
                             <span class="home-game-chip-icon">@g.Icon</span>@g.Title
-                            @if (isLast)
-                            {
-                                <span class="home-game-chip-pill" aria-label="Continue last played">▶ Continue</span>
-                            }
                         </a>
                     }
                 </div>
@@ -150,19 +144,11 @@
     // §9: activity feed (recent matches).
     private IReadOnlyList<ActivityFeedService.FeedItem> _activity = Array.Empty<ActivityFeedService.FeedItem>();
 
-    // Audit fix #7: read pomini_last_game from localStorage so the matching
-    // game chip gets a "▶ Continue" pill on the home page. The service
-    // returns a GameCard record (title + url) so we can match by URL.
-    private string? _lastPlayedUrl;
-
     protected override void OnInitialized()
     {
         // Subscribe to kiosk state so the Demo button (Start ↔ Stop) updates
         // reactively when the coordinator starts/stops/pauses/advances.
         Kiosk.Changed += OnKioskStateChanged;
-        // Read pomini_last_game from localStorage. GameStatsService caches it
-        // internally; this is safe to call before any rendering has happened.
-        try { _lastPlayedUrl = GameStatsService.GetLastPlayedGame()?.Url; } catch { /* defensive */ }
     }
 
     protected override async Task OnInitializedAsync()

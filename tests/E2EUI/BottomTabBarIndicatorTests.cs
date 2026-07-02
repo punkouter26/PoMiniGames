@@ -92,7 +92,7 @@ public class BottomTabBarIndicatorTests
     {
         using var playwright = await Playwright.CreateAsync();
         await using var browser = await playwright.Chromium.LaunchAsync(
-            new BrowserTypeLaunchOptions { Headless = true });
+            BrowserLaunch.Options());
 
         // ── Home: the "Home" tab is active ──────────────────────────────────────
         var home = await OpenAsync(browser, "/");

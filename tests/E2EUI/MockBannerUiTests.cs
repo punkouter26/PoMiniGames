@@ -20,7 +20,7 @@ public class MockBannerUiTests
     {
         using var playwright = await Playwright.CreateAsync();
         await using var browser = await playwright.Chromium.LaunchAsync(
-            new BrowserTypeLaunchOptions { Headless = true });
+            BrowserLaunch.Options());
         // §3 BFF Header Overrides: attach FakeAuth headers so every request carries
         // identity without depending on the cookie flow.
         var context = await browser.NewContextAsync(new BrowserNewContextOptions

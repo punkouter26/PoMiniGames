@@ -17,8 +17,8 @@
     BackTo="@_backTo"
     GameOver="@_isGameOver"
     OnPlayAgain="ResetGame"
-    ShowSettings="true"
-    Stats="@_statItems"
+    ShowSettings="@(PlayMode == "2p")"
+    Stats="@(PlayMode == "ai" ? _statItems : null)"
     Status="@StatusContent"
     GameSummary="@GameSummaryContent"
     Controls="@ControlsContent">
@@ -62,7 +62,8 @@
 
     private ConnectFiveBoard _board = new();
     private ConnectFiveAI _ai = new();
-    private Difficulty _difficulty = Difficulty.Medium;
+    // 1-player Connect Five always plays the AI at Medium; no in-game difficulty picker.
+    private readonly Difficulty _difficulty = Difficulty.Medium;
     private GameResult _gameResult = GameResult.InProgress;
     private bool _isAiTurn;
     // "ai" (vs CPU) or "2p" (local pass-and-play); "demo" is driven by the route param.
@@ -75,6 +76,7 @@
     // Player 1's display name resolves asynchronously; fall back to "Player 1" until it does.
     private string P1Name => string.IsNullOrWhiteSpace(_playerName) ? "Player 1" : _playerName;
     private List<(int Row, int Col)> _winCells = new();
+    // vs-AI W/L/D/ELO stats surfaced in the end-of-game modal (1-player only).
     private List<StatItem> _statItems = new();
     private PlayerStats _stats = new();
     private readonly GameStatsService _gameStats = new();
@@ -121,39 +123,12 @@
         _               => null
     }) : null;
 
+    // 1-player is fixed to Medium and needs no settings, so the drawer keeps only
+    // New Game. 2-player still exposes the opponent's name; demo restarts the loop.
     private RenderFragment ControlsContent => @<div class="gps-controls">
-        @if (PlayMode != "demo")
-        {
-            <button type="button"
-                    class="@(PlayMode == "ai" ? "active" : "")"
-                    @onclick='() => SetPlayMode("ai")'>
-                Vs AI
-            </button>
-            <button type="button"
-                    class="@(PlayMode == "2p" ? "active" : "")"
-                    @onclick='() => SetPlayMode("2p")'>
-                2 Player
-            </button>
-        }
-        @if (PlayMode == "demo")
-        {
-            <button type="button"
-                    class="@(PlayMode == "demo" ? "active" : "")"
-                    @onclick="() => {}">
-                Demo CPU vs CPU
-            </button>
-        }
         <button @onclick="ResetGame">
             🔄 @(PlayMode == "demo" ? "Restart Demo" : "New Game")
         </button>
-        @if (PlayMode == "ai")
-        {
-            <div class="gps-pills" role="radiogroup" aria-label="Select difficulty">
-                <button type="button" class="@(_difficulty == Difficulty.Easy ? "active" : "")" @onclick="() => SetDifficulty(Difficulty.Easy)">Easy</button>
-                <button type="button" class="@(_difficulty == Difficulty.Medium ? "active" : "")" @onclick="() => SetDifficulty(Difficulty.Medium)">Medium</button>
-                <button type="button" class="@(_difficulty == Difficulty.Hard ? "active" : "")" @onclick="() => SetDifficulty(Difficulty.Hard)">Hard</button>
-            </div>
-        }
         @if (PlayMode == "2p")
         {
             <input class="gps-name-input" value="@_player2Name" @onchange="OnPlayer2NameChange"
@@ -166,29 +141,22 @@
         _playerName = PlayerNameService.GetPlayerName();
         if (Demo != 1 && string.Equals(ModeQuery, "2p", StringComparison.OrdinalIgnoreCase))
             _playMode = "2p";
-        _stats = _gameStats.GetStats("connectfive", _playerName);
-        UpdateStats();
         ResetGame();
         if (Demo == 1) Kiosk.SetCurrent("connectfive-demo");
-    }
-
-    private void SetPlayMode(string mode)
-    {
-        _playMode = mode;
-        ResetGame();
-    }
-
-    private void SetDifficulty(Difficulty d)
-    {
-        if (_difficulty == d) return;
-        _difficulty = d;
-        ResetGame();
     }
 
     private void OnPlayer2NameChange(ChangeEventArgs e)
     {
         var name = e.Value?.ToString();
         _player2Name = string.IsNullOrWhiteSpace(name) ? "Player 2" : name.Trim();
+    }
+
+    // Rebuild the W/L/D/ELO tiles from the (in-place mutated) cached stats so the
+    // end-of-game modal reflects the result that was just recorded.
+    private void UpdateStats()
+    {
+        var bucket = _gameStats.GetDifficultyBucket(_stats, _difficulty);
+        _statItems = GameStatsPanel.Build(bucket);
     }
 
     private void ResetGame()
@@ -258,12 +226,6 @@
         _aiMoveCts?.Cancel();
         _aiMoveCts?.Dispose();
         // BUG FIX (#1): _kioskTimer removed; KioskCoordinator owns it.
-    }
-
-    private void UpdateStats()
-    {
-        var bucket = _gameStats.GetDifficultyBucket(_stats, _difficulty);
-        _statItems = GameStatsPanel.Build(bucket);
     }
 
     private void HandleDrop(int col)

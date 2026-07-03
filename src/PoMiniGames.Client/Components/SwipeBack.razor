@@ -1,5 +1,6 @@
 @namespace PoMiniGamesClient.Components
 @inject NavigationManager Nav
+@inject UiFeedbackService Feedback
 @implements IAsyncDisposable
 
 @*
@@ -54,6 +55,10 @@
         var dy = Math.Abs(e.ClientY - _startY);
         if (dx <= -Threshold && dy <= VerticalTolerance)
         {
+            // §10 native Web Audio swipe-back whoosh — a downsweep reinforces
+            // the directional gesture so the user gets a tactile confirmation
+            // before the page changes under their finger.
+            _ = Feedback.SwipeBackAsync();
             Nav.NavigateTo(BackTo);
         }
     }

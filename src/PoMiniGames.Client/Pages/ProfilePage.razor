@@ -115,21 +115,34 @@ else
     </div>
 
     <!-- ── Charts row ── -->
-    <div class="prf-charts">
-        <div class="prf-chart-card">
-            <h3 class="prf-chart-title">Win Rate by Game</h3>
-            @((MarkupString)BuildRadarSvg())
+    @* §8: empty-state for first-time players — no charts means no signal.
+       A single CTA card replaces the entire charts row. *@
+    @if (_totalGames == 0)
+    {
+        <div class="prf-chart-card prf-chart-card--empty">
+            <h3 class="prf-chart-title">No games played yet</h3>
+            <p class="prf-chart-empty-text">Win rates, charts, and head-to-head records unlock after your first match.</p>
+            <a href="/" class="sp-btn-primary">Pick a game →</a>
         </div>
-        <div class="prf-chart-card">
-            <h3 class="prf-chart-title">Overall Record</h3>
-            @((MarkupString)BuildDonutSvg())
-            <div class="prf-donut-legend">
-                <span class="prf-legend-dot prf-legend-win"></span><span>Wins&nbsp;@_totalWins</span>
-                <span class="prf-legend-dot prf-legend-draw"></span><span>Draws&nbsp;@_totalDraws</span>
-                <span class="prf-legend-dot prf-legend-loss"></span><span>Losses&nbsp;@_totalLosses</span>
+    }
+    else
+    {
+        <div class="prf-charts">
+            <div class="prf-chart-card">
+                <h3 class="prf-chart-title">Win Rate by Game</h3>
+                @((MarkupString)BuildRadarSvg())
+            </div>
+            <div class="prf-chart-card">
+                <h3 class="prf-chart-title">Overall Record</h3>
+                @((MarkupString)BuildDonutSvg())
+                <div class="prf-donut-legend">
+                    <span class="prf-legend-dot prf-legend-win"></span><span>Wins&nbsp;@_totalWins</span>
+                    <span class="prf-legend-dot prf-legend-draw"></span><span>Draws&nbsp;@_totalDraws</span>
+                    <span class="prf-legend-dot prf-legend-loss"></span><span>Losses&nbsp;@_totalLosses</span>
+                </div>
             </div>
         </div>
-    </div>
+    }
 
     <!-- ── Callouts ── -->
     @if (_bestEntry != null || _nemesisEntry != null)

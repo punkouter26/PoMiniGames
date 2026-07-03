@@ -7,7 +7,8 @@ namespace PoMiniGamesClient.Services;
 public enum PendingScoreKind
 {
     Snake,
-    MarbleRace
+    MarbleRace,
+    PoBrawl
 }
 
 /// <summary>
@@ -65,6 +66,9 @@ public sealed class ScoreSyncService
 
     public void EnqueueMarbleRace(MarbleRaceHighScore entry) =>
         Enqueue(PendingScoreKind.MarbleRace, JsonSerializer.Serialize(entry, ApiJsonContext.Default.MarbleRaceHighScore));
+
+    public void EnqueuePoBrawl(PoBrawlHighScore entry) =>
+        Enqueue(PendingScoreKind.PoBrawl, JsonSerializer.Serialize(entry, ApiJsonContext.Default.PoBrawlHighScore));
 
     private void Enqueue(PendingScoreKind kind, string payloadJson)
     {
@@ -141,6 +145,9 @@ public sealed class ScoreSyncService
         PendingScoreKind.MarbleRace =>
             await _api.SubmitMarbleRaceHighScoreAsync(
                 JsonSerializer.Deserialize(item.PayloadJson, ApiJsonContext.Default.MarbleRaceHighScore) ?? new MarbleRaceHighScore()) is not null,
+        PendingScoreKind.PoBrawl =>
+            await _api.SubmitPoBrawlHighScoreAsync(
+                JsonSerializer.Deserialize(item.PayloadJson, ApiJsonContext.Default.PoBrawlHighScore) ?? new PoBrawlHighScore()) is not null,
         _ => true, // unknown kind: drop rather than wedge the queue forever
     };
 }

@@ -39,12 +39,12 @@
                         <svg class="score-ring-svg" viewBox="0 0 140 140">
                             <circle class="score-ring-bg" cx="70" cy="70" r="54" />
                             <circle class="score-ring-fill" cx="70" cy="70" r="54"
-                                    stroke="@_ringColor"
+                                    stroke="currentColor"
                                     stroke-dasharray="339.3"
                                     style="--ring-end: @_ringOffsetStr;" />
                         </svg>
                         <div class="score-ring-text">
-                            <div class="poclick-score-value" style="color: @_ringColor;">@($"{_session.Score:0.#}")</div>
+                            <div class="poclick-score-value poclick-score-value--@_ringClass">@($"{_session.Score:0.#}")</div>
                             <div class="poclick-score-unit">/ 100</div>
                         </div>
                     </div>
@@ -61,25 +61,25 @@
                 <div class="poclick-stat-label">Perfect Taps (±25ms)</div>
                 <div class="poclick-stat-value poclick-stat-value--green">@_session.PerfectCount</div>
                 <div class="poclick-stat-pct">@GetPercentage(_session.PerfectCount)% of beats</div>
-                <div class="poclick-bar-track"><div class="poclick-bar-fill" style="width: @GetPercentage(_session.PerfectCount)%; background: var(--accent-green);"></div></div>
+                <div class="poclick-bar-track"><div class="poclick-bar-fill poclick-bar-fill--green" style="--bar-w: @GetPercentage(_session.PerfectCount)%;"></div></div>
             </div>
             <div class="poclick-stat-card poclick-stat-card--good">
                 <div class="poclick-stat-label">Good Taps (±60ms)</div>
                 <div class="poclick-stat-value poclick-stat-value--yellow">@_session.GoodCount</div>
                 <div class="poclick-stat-pct">@GetPercentage(_session.GoodCount)% of beats</div>
-                <div class="poclick-bar-track"><div class="poclick-bar-fill" style="width: @GetPercentage(_session.GoodCount)%; background: var(--accent-yellow);"></div></div>
+                <div class="poclick-bar-track"><div class="poclick-bar-fill poclick-bar-fill--yellow" style="--bar-w: @GetPercentage(_session.GoodCount)%;"></div></div>
             </div>
             <div class="poclick-stat-card poclick-stat-card--okay">
                 <div class="poclick-stat-label">Okay Taps (±120ms)</div>
                 <div class="poclick-stat-value poclick-stat-value--orange">@_session.OkayCount</div>
                 <div class="poclick-stat-pct">@GetPercentage(_session.OkayCount)% of beats</div>
-                <div class="poclick-bar-track"><div class="poclick-bar-fill" style="width: @GetPercentage(_session.OkayCount)%; background: var(--accent-orange);"></div></div>
+                <div class="poclick-bar-track"><div class="poclick-bar-fill poclick-bar-fill--orange" style="--bar-w: @GetPercentage(_session.OkayCount)%;"></div></div>
             </div>
             <div class="poclick-stat-card poclick-stat-card--miss">
                 <div class="poclick-stat-label">Misses (>120ms)</div>
                 <div class="poclick-stat-value poclick-stat-value--red">@_session.MissCount</div>
                 <div class="poclick-stat-pct">@GetPercentage(_session.MissCount)% of beats</div>
-                <div class="poclick-bar-track"><div class="poclick-bar-fill" style="width: @GetPercentage(_session.MissCount)%; background: var(--accent-red);"></div></div>
+                <div class="poclick-bar-track"><div class="poclick-bar-fill poclick-bar-fill--red" style="--bar-w: @GetPercentage(_session.MissCount)%;"></div></div>
             </div>
         </div>
 
@@ -118,8 +118,8 @@
                 <div class="poclick-rushdrag-wrap">
                     <div class="poclick-pocket-label">Rush / Drag</div>
                     <div class="poclick-rushdrag-bar">
-                        <div class="poclick-rushdrag-early" style="--pct:@(_rushPct)%"></div>
-                        <div class="poclick-rushdrag-late" style="--pct:@(_dragPct)%"></div>
+                        <div class="poclick-rushdrag-early" style="--pct: @(_rushPct)%;"></div>
+                        <div class="poclick-rushdrag-late" style="--pct: @(_dragPct)%;"></div>
                     </div>
                     <div class="poclick-rushdrag-labels">
                         <span class="poclick-rushdrag-early-label">Early @(_rushPct)%</span>
@@ -221,8 +221,8 @@
     private bool _loading = true;
     private PoClickSession? _session;
 
-    private string _ringColor = "var(--accent-cyan)";
     private string _ringOffsetStr = "339.3";
+    private string _ringClass = "cyan";
     private double _rushPct;
     private double _dragPct;
 
@@ -241,10 +241,10 @@
             double circ = 339.3;
             double ringOffset = circ * (1.0 - _session.Score / 100.0);
             _ringOffsetStr = ringOffset.ToString("F1", System.Globalization.CultureInfo.InvariantCulture);
-            _ringColor = _session.Score >= 80 ? "var(--accent-cyan)"
-                       : _session.Score >= 60 ? "var(--accent-green)"
-                       : _session.Score >= 40 ? "var(--accent-yellow)"
-                       : "var(--accent-red)";
+            _ringClass = _session.Score >= 80 ? "cyan"
+                       : _session.Score >= 60 ? "green"
+                       : _session.Score >= 40 ? "yellow"
+                       : "red";
 
             _rushPct = _session.GetRushPercent();
             _dragPct = _session.GetDragPercent();

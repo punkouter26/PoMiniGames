@@ -27,8 +27,8 @@
                 <div class="horse-lane">
                     <span class="horse-icon">@GetHorseEmoji(horse)</span>
                     <div class="track">
-                        <div class="horse @(horse == _selectedHorse ? "selected" : "")" 
-                             style="left: @(_horsePositions[horse])%"
+                        <div class="horse @(horse == _selectedHorse ? "selected" : "")"
+                             style="--horse-pos: @(_horsePositions[horse])%;"
                              @onclick="() => SelectHorse(horse)"></div>
                         <div class="finish-line"></div>
                     </div>
@@ -38,12 +38,12 @@
         </div>
         @if (_timer != null)
         {
-            <div class="race-boost" style="text-align:center;margin:0.6rem 0;">
-                <button class="cq-btn cq-btn-primary" style="font-size:1.1rem;padding:0.5rem 1.4rem;cursor:pointer;"
+            <div class="race-boost">
+                <button class="cq-btn cq-btn-primary cq-btn--boost"
                         @onclick="Boost" disabled="@(_boostsLeft <= 0)">
                     ⚡ Boost Horse @(_selectedHorse + 1)
                 </button>
-                <span style="margin-left:0.6rem;">Boosts left: <strong>@_boostsLeft</strong></span>
+                <span class="race-boost__count">Boosts left: <strong>@_boostsLeft</strong></span>
             </div>
         }
         <div class="race-result">

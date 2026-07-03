@@ -49,7 +49,6 @@
     <!-- §2.3 AuthenticationStateProvider + AuthorizeRouteView. Not transitively
          included by the WASM metapackage in .NET 10. -->
     <PackageVersion Include="Microsoft.AspNetCore.Components.Authorization" Version="10.0.7" />
-    <PackageVersion Include="Radzen.Blazor" Version="8.7.4" />
     <PackageVersion Include="Fluxor.Blazor.Web" Version="6.0.0" />
     <!-- AI (PoSurvive inference: server-side Azure OpenAI relay) -->
     <PackageVersion Include="Microsoft.Extensions.AI" Version="9.5.0" />

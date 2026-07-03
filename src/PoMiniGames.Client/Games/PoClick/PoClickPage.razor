@@ -44,7 +44,7 @@
                     @countdownValue
                 </div>
                 <div class="text-uppercase text-secondary font-monospace mt-3 countdown-hint">
-                    Prepare your spacebar...
+                    @(Demo == 1 ? "Demo — watch the rhythm" : "Prepare your spacebar...")
                 </div>
             </div>
         </div>
@@ -140,6 +140,11 @@
     private PlayerStats _stats = new();
     private readonly GameStatsService _gameStats = new();
     private CancellationTokenSource? _demoCts;
+    // Set in Dispose(). The demo loop's countdown (StartCountdown → StartGame) and the
+    // post-game restart delay are not cancellable mid-await, so a kiosk rotation that
+    // fires during one of them would otherwise call startMetronome AFTER the page was
+    // disposed — a "ghost metronome" bleeding into the next demo. StartGame checks this.
+    private bool _disposed;
 
     private string _backTo => "/";
     private bool _isGameOver => !isPlaying && !isCountingDown && _showResultOverlay;
@@ -288,11 +293,19 @@
         }
 
         isCountingDown = false;
+        // Bail if the page was disposed (e.g. kiosk rotated away) during the countdown —
+        // otherwise we'd start a metronome that no Dispose will ever stop.
+        if (_disposed) return;
         await StartGame();
     }
 
     private async Task StartGame()
     {
+        // Guard against the disposal race: the demo loop can reach here after Dispose()
+        // already ran (its countdown/restart delays aren't cancellable). Starting the
+        // metronome now would leave it playing into the next demo.
+        if (_disposed) return;
+
         isPlaying = true;
         _isFinishing = false;
         timeLeft = _duration;
@@ -311,6 +324,13 @@
 
         // Start metronome and register key listener in JS
         await JSRuntime.InvokeVoidAsync("poclickAudio.startMetronome", bpm, dotNetHelper);
+        // If disposal happened during the interop await, undo the start immediately so
+        // the metronome never outlives the page.
+        if (_disposed)
+        {
+            try { await JSRuntime.InvokeVoidAsync("poclickAudio.stopMetronome"); } catch { }
+            return;
+        }
         await JSRuntime.InvokeVoidAsync("poclickAudio.registerSpaceListener", dotNetHelper);
 
         // Start C# countdown timer
@@ -680,6 +700,9 @@
 
     public void Dispose()
     {
+        // Set first so any in-flight demo countdown / restart delay that resumes after
+        // this point sees the page as gone and refuses to (re)start the metronome.
+        _disposed = true;
         _demoCts?.Cancel();
 
         _periodicTimer?.Dispose();

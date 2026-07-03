@@ -29,7 +29,7 @@
             <div class="fighter player @(_playerHit ? "hit" : "")">
                 <div class="fighter-avatar" aria-hidden="true">🥷</div>
                 <div class="fighter-name">@(Demo == 1 ? "CPU Red" : "Player")</div>
-                <div class="fighter-hp-bar"><div class="hp-fill @(_playerHp < 30 ? "low" : "")" style="width: @(_playerHp)%"></div></div>
+                <div class="fighter-hp-bar"><div class="hp-fill @(_playerHp < 30 ? "low" : "")" style="--hp: @(_playerHp)%;"></div></div>
                 <div class="fighter-hp">@_playerHp HP</div>
                 @if (_lastEnemyDmg > 0)
                 {
@@ -40,7 +40,7 @@
             <div class="fighter enemy @(_enemyHit ? "hit" : "")">
                 <div class="fighter-avatar" aria-hidden="true">🤖</div>
                 <div class="fighter-name">@(Demo == 1 ? "CPU Blue" : "Enemy")</div>
-                <div class="fighter-hp-bar"><div class="hp-fill enemy @(_enemyHp < 30 ? "low" : "")" style="width: @(_enemyHp)%"></div></div>
+                <div class="fighter-hp-bar"><div class="hp-fill enemy @(_enemyHp < 30 ? "low" : "")" style="--hp: @(_enemyHp)%;"></div></div>
                 <div class="fighter-hp">@_enemyHp HP</div>
                 @if (_lastPlayerDmg > 0)
                 {
@@ -55,6 +55,10 @@
                play-again bar is the single source of truth. *@
         }
         <div class="fight-log" aria-live="polite" aria-label="Combat log">
+            @if (_ready && Demo != 1)
+            {
+                <div class="log-entry ready">Awaiting challenger… press START to begin.</div>
+            }
             @foreach (var log in _combatLog.TakeLast(5))
             {
                 var cls = log.Contains("wins", StringComparison.OrdinalIgnoreCase)
@@ -63,6 +67,18 @@
                 <div class="log-entry @cls">@log</div>
             }
         </div>
+
+        @* §PoFight Start: bottom-of-page START button shown only in the
+           ready state for non-demo runs. Demo mode skips this and lets the
+           CPU-only loop take over immediately. *@
+        @if (_ready && Demo != 1)
+        {
+            <div class="fight-start-row">
+                <button class="fight-start-btn" @onclick="BeginFight" aria-label="Start fight">
+                    ▶ START
+                </button>
+            </div>
+        }
     </div>
 </GameShell>
 
@@ -74,6 +90,9 @@
     private List<StatItem> _statItems = new();
     private int _playerHp = 100;
     private int _enemyHp = 100;
+    // §PoFight Start: page begins in a "ready" state and only the START
+    // button is interactable. Flipping this off reveals the action bar.
+    private bool _ready = true;
     private readonly List<string> _combatLog = new();
     private PlayerStats _stats = new();
     private readonly GameStatsService _gameStats = new();
@@ -89,7 +108,7 @@
     private string _backTo => "/";
 
     private RenderFragment ControlsContent => @<div class="gps-controls">
-        @if (Demo != 1)
+        @if (Demo != 1 && !_ready)
         {
             <button @onclick="() => Attack(15, 25)">⚔️ Attack</button>
             <button @onclick="() => Defend()">🛡️ Defend</button>
@@ -182,7 +201,7 @@
 
     private void Attack(int minDmg, int maxDmg)
     {
-        if (Demo == 1) return;
+        if (Demo == 1 || _ready) return;
         var dmg = Random.Shared.Next(minDmg, maxDmg + 1);
         _enemyHp = Math.Max(0, _enemyHp - dmg);
         _lastPlayerDmg = dmg;
@@ -207,7 +226,7 @@
 
     private void Defend()
     {
-        if (Demo == 1) return;
+        if (Demo == 1 || _ready) return;
         _combatLog.Add("You defended!");
         EnemyTurn(true);
         StateHasChanged();
@@ -215,7 +234,7 @@
 
     private void Heal()
     {
-        if (Demo == 1) return;
+        if (Demo == 1 || _ready) return;
         var heal = Random.Shared.Next(10, 20);
         _playerHp = Math.Min(100, _playerHp + heal);
         _combatLog.Add($"You healed {heal} HP!");
@@ -250,7 +269,22 @@
         _lastPlayerDmg = 0;
         _lastEnemyDmg = 0;
         _combatLog.Clear();
+        // Demo mode keeps running on its own CPU loop; for the real
+        // non-demo path we return to the ready screen so the player
+        // presses START again — avoids accidental refresh-after-fight.
+        _ready = Demo != 1;
         if (Demo == 1) StartDemoLoop();
+    }
+
+    private void BeginFight()
+    {
+        // Idempotent — safe even if the click handler fires twice during
+        // a fast render. Demo runs ignore the START button entirely.
+        if (Demo == 1) return;
+        if (!_ready) return;
+        _ready = false;
+        _combatLog.Add("Round begins!");
+        StateHasChanged();
     }
 
     private void UpdateStats()

@@ -37,4 +37,22 @@
     });
   };
 
+  // ----- 3. WebGL2 + device capability probe (callable from Blazor) -----
+  // §2: gates the home page ambient particle field. Skips WebGL entirely on
+  // low-memory devices, when prefers-reduced-motion is set, or when WebGL2
+  // is unavailable. Returns a boolean — caller falls back to the CSS gradient.
+  window.probeWebGL2 = function () {
+    try {
+      if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        return false;
+      }
+      var mem = navigator.deviceMemory || 4;
+      if (mem < 4) return false;
+      var c = document.createElement('canvas');
+      return !!(c.getContext && c.getContext('webgl2'));
+    } catch (_) {
+      return false;
+    }
+  };
+
 })();

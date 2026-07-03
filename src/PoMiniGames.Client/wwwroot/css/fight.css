@@ -113,6 +113,7 @@
 }
 .hp-fill {
   height: 100%;
+  width: var(--hp, 100%);
   background: linear-gradient(90deg, #f87171, #ef4444);
   transition: width 220ms cubic-bezier(0.4, 0, 0.2, 1);
   box-shadow: 0 0 8px rgba(239, 68, 68, 0.6);
@@ -224,7 +225,7 @@
   border-radius: 999px;
   backdrop-filter: blur(12px);
   box-shadow: 0 12px 32px -8px rgba(0, 0, 0, 0.6);
-  z-index: 9999;
+  z-index: var(--z-modal);
   transition: opacity 280ms ease, transform 280ms ease;
   font-size: 0.9rem;
   color: #e2e8f0;
@@ -261,4 +262,44 @@
   border-radius: 4px;
   color: rgba(226, 232, 240, 0.7);
   letter-spacing: 0.05em;
+}
+
+/* === §PoFight Start ========================================================
+   A full-width ▶ START button rendered under the arena in the ready state.
+   Mirrors the existing CTA in .gps-controls for visual consistency but
+   wider so it reads as a primary call-to-action on first load. */
+.fight-start-row {
+  margin-top: 1.1rem;
+  display: flex;
+  justify-content: center;
+}
+.fight-start-btn {
+  min-width: 18rem;
+  padding: 0.85rem 1.2rem;
+  border: none;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #f87171 0%, #b91c1c 100%);
+  color: #fff;
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+  font-size: 1.1rem;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  cursor: pointer;
+  box-shadow: 0 6px 22px rgba(185, 28, 28, 0.45), 0 0 0 1px rgba(248, 113, 113, 0.55) inset;
+  transition: transform 120ms ease, box-shadow 120ms ease, filter 120ms ease;
+  animation: fight-start-pulse 1.6s ease-in-out infinite;
+}
+.fight-start-btn:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.08);
+  box-shadow: 0 10px 28px rgba(185, 28, 28, 0.6), 0 0 0 1px rgba(248, 113, 113, 0.7) inset;
+}
+.fight-start-btn:active { transform: translateY(0); filter: brightness(0.96); }
+.fight-start-btn:focus-visible { outline: 2px solid #fca5a5; outline-offset: 3px; }
+@keyframes fight-start-pulse {
+  0%, 100% { box-shadow: 0 6px 22px rgba(185, 28, 28, 0.45), 0 0 0 1px rgba(248, 113, 113, 0.55) inset; }
+  50%      { box-shadow: 0 6px 30px rgba(185, 28, 28, 0.75), 0 0 0 1px rgba(248, 113, 113, 0.85) inset; }
+}
+@media (max-width: 480px) {
+  .fight-start-btn { min-width: 0; width: 100%; padding: 0.95rem 0.8rem; }
 }

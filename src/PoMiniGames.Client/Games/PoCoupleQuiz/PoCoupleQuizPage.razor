@@ -20,7 +20,7 @@
                 <p class="cq-solo-question"><strong>@CurrentSoloQuestion.Text</strong></p>
                 @if (!_soloRevealed)
                 {
-                    <div class="cq-actions" style="flex-wrap:wrap;">
+                    <div class="cq-actions cq-actions--wrap">
                         @for (int i = 0; i < CurrentSoloQuestion.Options.Length; i++)
                         {
                             var idx = i;

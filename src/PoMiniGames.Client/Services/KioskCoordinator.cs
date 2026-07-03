@@ -54,6 +54,28 @@ public sealed class KioskCoordinator : IDisposable
     public int SecondsUntilAdvance { get; private set; } = 20;
     public const int AdvanceSeconds = 20;
 
+    // Per-game dwell: fast games (a rhythm tap, a quick round) get a shorter slice so the
+    // reel doesn't sit on a restart; slower ones (a full race, a comedy bit) get longer.
+    // Keyed by the catalog GameKey (DemoEntry.Key). Anything unmapped uses AdvanceSeconds.
+    private static readonly Dictionary<string, int> DwellByKey = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["poclick"] = 12,
+        ["tictactoe"] = 12,
+        ["connectfive"] = 14,
+        ["poraceragdoll"] = 14,
+        ["pofight"] = 16,
+        ["pohorserace"] = 16,
+        ["porunner"] = 18,
+        ["poracer"] = 18,
+        ["pomarblerace"] = 22,
+        ["pojoker"] = 24,
+        ["pobrawl"] = 22,
+    };
+
+    private int DwellFor(int index) =>
+        index >= 0 && index < _entries.Count && DwellByKey.TryGetValue(_entries[index].Key, out var s)
+            ? s : AdvanceSeconds;
+
     public IReadOnlyList<DemoEntry> Entries => _entries;
 
     public void RegisterEntries(IEnumerable<DemoEntry> entries)
@@ -141,7 +163,7 @@ public sealed class KioskCoordinator : IDisposable
         if (TryGetKioskIndex(e.Location, out var kioskIndex))
         {
             _advanceIndex = kioskIndex;
-            SecondsUntilAdvance = AdvanceSeconds;
+            SecondsUntilAdvance = DwellFor(kioskIndex);
             if (_timer is null && !_disposed)
             {
                 _timer = new System.Threading.Timer(_ => OnTick(), null, 1000, 1000);

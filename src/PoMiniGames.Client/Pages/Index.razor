@@ -25,7 +25,7 @@
     <p class="home-subtitle">Choose how you want to play</p>
 
     <div class="home-sections" id="home-modes">
-            <section class="home-section">
+            <section class="home-section @(_sectionOpen[0] ? "" : "home-section--collapsed")">
                 <div class="home-mode-col">
                     <div class="home-mode-btn home-mode-btn--1p home-mode-btn--static">
                         <span class="home-mode-icon">
@@ -39,6 +39,7 @@
                     <a class="home-lb-btn" href="/leaderboards">
                         <span class="home-lb-icon" aria-hidden="true">🏆</span>Leaderboard
                     </a>
+                    @SectionToggle(0, GameCatalog.SinglePlayer.Count)
                 </div>
                 <div class="home-section-games">
                     @foreach (var g in GameCatalog.SinglePlayer)
@@ -50,7 +51,7 @@
                 </div>
             </section>
 
-            <section class="home-section">
+            <section class="home-section @(_sectionOpen[1] ? "" : "home-section--collapsed")">
                 <div class="home-mode-col">
                     <div class="home-mode-btn home-mode-btn--2p home-mode-btn--static">
                         <span class="home-mode-icon">
@@ -66,6 +67,7 @@
                     <a class="home-lb-btn" href="/leaderboards">
                         <span class="home-lb-icon" aria-hidden="true">🏆</span>Leaderboard
                     </a>
+                    @SectionToggle(1, GameCatalog.LocalTwoPlayer.Count)
                 </div>
                 <div class="home-section-games">
                     @foreach (var g in GameCatalog.LocalTwoPlayer)
@@ -75,7 +77,7 @@
                 </div>
             </section>
 
-            <section class="home-section">
+            <section class="home-section @(_sectionOpen[2] ? "" : "home-section--collapsed")">
                 <div class="home-mode-col">
                     <div class="home-mode-btn home-mode-btn--multi home-mode-btn--static">
                         <span class="home-mode-icon">
@@ -90,9 +92,44 @@
                     <a class="home-lb-btn" href="/leaderboards">
                         <span class="home-lb-icon" aria-hidden="true">🏆</span>Leaderboard
                     </a>
+                    @SectionToggle(2, GameCatalog.Multiplayer.Count)
                 </div>
                 <div class="home-section-games">
                     @foreach (var g in GameCatalog.Multiplayer)
+                    {
+                        <a class="home-game-chip" href="@g.Url"><span class="home-game-chip-icon">@g.Icon</span>@g.Title</a>
+                    }
+                </div>
+            </section>
+
+            <section class="home-section @(_sectionOpen[3] ? "" : "home-section--collapsed")">
+                <div class="home-mode-col">
+                    <div class="home-mode-btn home-mode-btn--demo home-mode-btn--static">
+                        <span class="home-mode-icon">
+                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="2" y="3" width="20" height="14" rx="2"/>
+                                <path d="M8 21h8"/>
+                                <path d="M12 17v4"/>
+                                <polygon points="10 8 15 10.5 10 13 10 8" fill="currentColor" stroke="none"/>
+                            </svg>
+                        </span>
+                        <span class="home-mode-label">Demo</span>
+                    </div>
+                    <p class="home-mode-caption">Sit back and watch</p>
+                    @SectionToggle(3, GameCatalog.Demo.Count + 1)
+                </div>
+                <div class="home-section-games">
+                    @* "Play all" starts the auto-rotating kiosk; individual chips play one game
+                       in demo mode continuously until the user navigates home. *@
+                    <button type="button"
+                            class="home-game-chip home-game-chip--playall @(Kiosk.IsActive ? "home-game-chip--continue" : null)"
+                            aria-pressed="@Kiosk.IsActive"
+                            aria-label="@(Kiosk.IsActive ? "Stop demo auto-cycle" : "Watch all demos")"
+                            title="Watch all demos — same as the Demo tab"
+                            @onclick="ToggleWatchAll">
+                        <span class="home-game-chip-icon">@(Kiosk.IsActive ? "⏸" : "▶")</span>@(Kiosk.IsActive ? "Stop" : "Play all")
+                    </button>
+                    @foreach (var g in GameCatalog.Demo)
                     {
                         <a class="home-game-chip" href="@g.Url"><span class="home-game-chip-icon">@g.Icon</span>@g.Title</a>
                     }
@@ -144,6 +181,18 @@
     // §9: activity feed (recent matches).
     private IReadOnlyList<ActivityFeedService.FeedItem> _activity = Array.Empty<ActivityFeedService.FeedItem>();
 
+    // Collapsible home sections — only takes visual effect on phones (see .home-section-toggle
+    // / .home-section--collapsed CSS, both mobile-only). Desktop always shows every game, so
+    // starting the secondary sections "closed" trims the long mobile scroll without touching
+    // the desktop layout. Order: 1 Player, 2 Player, Multiplayer, Demo.
+    private readonly bool[] _sectionOpen = { true, false, false, false };
+    private void ToggleSection(int i) => _sectionOpen[i] = !_sectionOpen[i];
+    private RenderFragment SectionToggle(int i, int count) => @<button type="button"
+        class="home-section-toggle" aria-expanded="@_sectionOpen[i]"
+        @onclick="() => ToggleSection(i)">
+        <span class="home-section-toggle-chev">@(_sectionOpen[i] ? "▾" : "▸")</span>@count games
+    </button>;
+
     protected override void OnInitialized()
     {
         // Subscribe to kiosk state so the Demo button (Start ↔ Stop) updates
@@ -178,13 +227,22 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        // Lazy WebGL bootstrap — only on first paint so we don't ship the
-        // JS payload during SSR / prerender.
+        // §2 Lazy WebGL bootstrap — only on first paint so we don't ship the
+        // JS payload during SSR / prerender. Gate on the device-capability
+        // probe so low-memory phones and prefers-reduced-motion users skip
+        // the GPU wake entirely; the CSS gradient behind the canvas is the
+        // fallback for everyone else.
         if (firstRender && !_ambientStarted)
         {
             _ambientStarted = true;
             try
             {
+                var canRender = await JS.InvokeAsync<bool>("probeWebGL2");
+                if (!canRender)
+                {
+                    _ambientModule = null;
+                    return;
+                }
                 _ambientModule = await JS.InvokeAsync<IJSObjectReference>(
                     "import", "./js/ambientParticles.js");
                 await _ambientModule.InvokeVoidAsync("start", _ambientCanvas);
@@ -198,6 +256,28 @@
     }
 
     private void OnKioskStateChanged() => InvokeAsync(StateHasChanged);
+
+    // "Play all": start (or stop) the auto-rotating kiosk over every demo game.
+    // Mirrors BottomTabBar's toggle so both entry points share one coordinator.
+    private void ToggleWatchAll()
+    {
+        if (Kiosk.IsActive)
+        {
+            Kiosk.Stop();
+            return;
+        }
+
+        var demos = GameCatalog.Demo;
+        if (demos.Count == 0) return;
+
+        Kiosk.RegisterEntries(demos.Select(d => new Services.DemoEntry(d.Key, d.Url, d.Title, d.Icon)));
+        var first = demos[0];
+        var sep = first.Url.Contains('?') ? '&' : '?';
+        // Display index 0 with advance pointer 0 so the first rotation lands on index 1
+        // (TicTacToe). Starting at 1 skipped the second demo on every lap.
+        Kiosk.Start(0);
+        NavigationManager.NavigateTo($"{first.Url}{sep}kiosk=0");
+    }
 
     public async ValueTask DisposeAsync()
     {

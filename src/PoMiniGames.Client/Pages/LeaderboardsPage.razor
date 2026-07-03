@@ -73,14 +73,15 @@
                             else
                             {
                                 <ol class="lb-rows">
-                                    @foreach (var e in board.Entries.Take(5))
-                                    {
+                                    @* §5: <Virtualize> keeps the DOM flat even when
+                                       a board's Top-N grows past the current Take(5) cap. *@
+                                    <Virtualize Items="@board.Entries.Take(5).ToList()" Context="e" ItemSize="36">
                                         <li class="lb-row @(e.Rank <= 3 ? $"lb-row--top lb-row--{e.Rank}" : null)">
                                             <span class="lb-rank">@e.Rank</span>
                                             <span class="lb-name">@e.Name</span>
                                             <span class="lb-value">@e.DisplayValue</span>
                                         </li>
-                                    }
+                                    </Virtualize>
                                 </ol>
                             }
 

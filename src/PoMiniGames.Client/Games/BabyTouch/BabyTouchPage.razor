@@ -23,8 +23,8 @@
         <div class="baby-touch-board" @onclick="HandleBoardClick">
             @foreach (var bubble in _bubbles)
             {
-                <div class="bubble @(bubble.Popped ? "popped" : "")" 
-                     style="left: @bubble.X%; top: @bubble.Y%;"
+                <div class="bubble @(bubble.Popped ? "popped" : "")"
+                     style="--bx: @bubble.X%; --by: @bubble.Y%;"
                      @onclick="() => PopBubble(bubble)">
                     @if (!bubble.Popped)
                     {

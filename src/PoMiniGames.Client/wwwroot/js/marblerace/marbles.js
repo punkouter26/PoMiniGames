@@ -199,6 +199,8 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
       m.trail.geometry.dispose();
       m.trail.material.dispose();
       m.blob.material.dispose();
+      // Dispose the highlight ring if this marble was the picked one at teardown.
+      if (m.ring) { m.ring.geometry.dispose(); m.ring.material.dispose(); m.ring = null; }
     }
     sphereGeo.dispose();
     blobGeo.dispose();

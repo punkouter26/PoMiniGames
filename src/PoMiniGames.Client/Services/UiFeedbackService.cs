@@ -49,6 +49,29 @@ public sealed class UiFeedbackService : IAsyncDisposable
     /// <summary>A subtle UI confirmation (60 ms C6 sine, 10 % gain).</summary>
     public ValueTask ClickAsync() => PlayToneAsync(1046.50, 60, 0.10, "sine");
 
+    /// <summary>
+    /// §10 Swipe-back gesture feedback — a 90 ms downsweep from C5 → A3 with
+    /// a soft attack. Matches the navigation gesture direction (low = leaving).
+    /// </summary>
+    public ValueTask SwipeBackAsync() => PlaySweepAsync(523.25, 220.00, 90, 0.14, "triangle");
+
+    /// <summary>
+    /// §10 Personal-best celebration — three ascending arpeggio notes (C5 → E5 → G5)
+    /// with a short vibration burst on supporting devices. The audio is the
+    /// milestone cue; the haptic reinforces it for tactile-first users.
+    /// </summary>
+    public ValueTask PersonalBestAsync() => PlayArpeggioAsync(
+        new[] { 523.25, 659.25, 783.99 },
+        new[] { 80, 80, 180 },
+        0.16,
+        vibrate: new[] { 12, 40, 18 });
+
+    /// <summary>
+    /// §10 Mock-data environment cue — a single low buzz (140 ms, F3, 14 % gain)
+    /// whenever the USING MOCK DATA banner appears. Best-effort, never blocks.
+    /// </summary>
+    public ValueTask MockDataAsync() => PlayToneAsync(174.61, 140, 0.14, "square");
+
     private async ValueTask PlayToneAsync(double freq, int ms, double gain, string type)
     {
         if (_disposed) return;
@@ -74,6 +97,38 @@ public sealed class UiFeedbackService : IAsyncDisposable
         catch
         {
             // Best-effort — never throw from a feedback path.
+        }
+    }
+
+    private async ValueTask PlaySweepAsync(double fromHz, double toHz, int ms, double gain, string type)
+    {
+        if (_disposed) return;
+        try
+        {
+            var module = await _module.Value;
+            await module.InvokeVoidAsync("playSweep", fromHz, toHz, ms, gain, type);
+        }
+        catch
+        {
+            // Best-effort.
+        }
+    }
+
+    private async ValueTask PlayArpeggioAsync(double[] freqs, int[] durationsMs, double gain, int[]? vibrate)
+    {
+        if (_disposed) return;
+        try
+        {
+            var module = await _module.Value;
+            await module.InvokeVoidAsync("playArpeggio", freqs, durationsMs, gain);
+            if (vibrate is { Length: > 0 })
+            {
+                await module.InvokeVoidAsync("vibrate", vibrate);
+            }
+        }
+        catch
+        {
+            // Best-effort.
         }
     }
 

@@ -1,0 +1,24 @@
+/* Router fallbacks — the NotAuthorized / NotFound fragments rendered
+   inline inside App.razor's <AuthorizeRouteView>. Kept scoped so the global
+   style-recalc surface shrinks. */
+
+.app-fallback {
+    max-width: 480px;
+    margin: 4rem auto;
+    text-align: center;
+    padding: var(--space-5);
+    border-radius: var(--radius-lg);
+    background: #1d2230;
+    color: #cdd5e0;
+}
+
+.app-fallback h1 { margin: 0 0 var(--space-2) 0; }
+.app-fallback p { margin: 0 0 var(--space-4) 0; line-height: 1.45; }
+
+.app-fallback-link { color: #7eb6ff; text-decoration: none; }
+
+.app-fallback--plain {
+    color: #cdd5e0;
+    text-align: center;
+    padding: 3rem;
+}

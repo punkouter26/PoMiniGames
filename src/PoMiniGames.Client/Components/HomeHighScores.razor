@@ -74,30 +74,35 @@
         {
             <ol class="home-highscores-list">
                 @{
+                    // §5: pre-compute per-row render state (medal, width, class)
+                    // into a tuple list so <Virtualize> can stream rows without
+                    // recomputing metrics per render pass.
                     double topBarFraction = 1;
                     if (_entries.Count > 0)
                     {
                         topBarFraction = _entries.Max(e => GetBarFraction(e));
                     }
+                    var rowData = _entries.Select((entry, i) =>
+                    {
+                        var (metricLabel, barFraction) = GetRowMetric(entry);
+                        var barWidth = topBarFraction > 0 ? (int)Math.Round(barFraction / topBarFraction * 100) : 0;
+                        var medal = i == 0 ? "🥇" : i == 1 ? "🥈" : i == 2 ? "🥉" : null;
+                        var rowClass = medal != null ? $" home-highscores-row--rank{i + 1}" : "";
+                        return (Index: i, Entry: entry, Medal: medal, BarWidth: barWidth, RowClass: rowClass, MetricLabel: metricLabel);
+                    }).ToList();
                 }
-                @for (int i = 0; i < _entries.Count; i++)
-                {
-                    var entry = _entries[i];
-                    var (metricLabel, barFraction) = GetRowMetric(entry);
-                    var barWidth = topBarFraction > 0 ? (int)Math.Round(barFraction / topBarFraction * 100) : 0;
-                    var medal = i == 0 ? "🥇" : i == 1 ? "🥈" : i == 2 ? "🥉" : null;
-                    var rowClass = medal != null ? $" home-highscores-row--rank{i + 1}" : "";
-                    <li class="home-highscores-row@rowClass">
-                        <span class="home-highscores-rank">@(medal ?? $"#{i + 1}")</span>
+                <Virtualize Items="rowData" Context="row" ItemSize="44">
+                    <li class="home-highscores-row@row.RowClass" style="--bar-delay:@(row.Index * 60)ms">
+                        <span class="home-highscores-rank">@(row.Medal ?? $"#{row.Index + 1}")</span>
                         <div class="home-highscores-info">
-                            <span class="home-highscores-name">@entry.Name</span>
+                            <span class="home-highscores-name">@row.Entry.Name</span>
                             <div class="home-highscores-bar-wrap">
-                                <div class="home-highscores-bar" style="--bar-w:@(barWidth)%;--bar-delay:@(i * 60)ms"></div>
+                                <div class="home-highscores-bar" style="--bar-w:@(row.BarWidth)%;"></div>
                             </div>
                         </div>
-                        <span class="home-highscores-metric">@metricLabel</span>
+                        <span class="home-highscores-metric">@row.MetricLabel</span>
                     </li>
-                }
+                </Virtualize>
             </ol>
         }
     </div>

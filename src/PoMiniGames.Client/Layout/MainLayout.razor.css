@@ -45,6 +45,47 @@
     .gl-mock-banner { animation: none; }
 }
 
+/* §9 mobile mock-banner: on portrait phones the banner eats ~36 px of
+   permanent chrome above the top bar. Collapse to a tiny indicator dot in
+   the top-bar left rail so the game list isn't pushed off the fold.
+   Tap-to-expand handled by MainLayout.razor's <details> wrapping the dot. */
+.gl-mock-banner--dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--color-warning, #f59e0b);
+    box-shadow: 0 0 6px rgba(245, 158, 11, 0.7);
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.gl-mock-banner--dot[open] {
+    width: auto;
+    height: auto;
+    padding: 0.4rem 0.7rem;
+    border-radius: var(--radius-pill);
+    background: linear-gradient(90deg, #ffd400, #fff36e);
+    color: #1a1a00;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    font-size: 0.7rem;
+    box-shadow: 0 0 12px rgba(245, 158, 11, 0.5);
+}
+
+.gl-mock-banner--dot > summary {
+    list-style: none;
+    cursor: pointer;
+}
+
+.gl-mock-banner--dot > summary::-webkit-details-marker { display: none; }
+
+@media (min-width: 641px) {
+    .gl-mock-banner--dot {
+        display: none;
+    }
+}
+
 /* Spatial contract: Left (branding) — Center (actions) — Right (session). */
 .gl-top-bar {
     display: flex;
@@ -222,7 +263,13 @@
    that support the cross-document navigation API. */
 @media (prefers-reduced-motion: no-preference) {
     .gl-page {
-        animation: gl-page-enter var(--dur-base) var(--ease-out) both;
+        /* `backwards` (not `both`): fill the FROM state before the run to avoid an
+           initial flash, but do NOT retain the final transform. A retained
+           `transform: translateY(0)` turns .gl-page into the containing block for
+           every position:fixed descendant (kiosk bar, game-over modal, toasts),
+           anchoring them to the over-tall page instead of the viewport — which
+           clipped the kiosk control bar off the bottom edge during demos. */
+        animation: gl-page-enter var(--dur-base) var(--ease-out) backwards;
     }
     @keyframes gl-page-enter {
         from { opacity: 0; transform: translateY(6px); }
@@ -267,7 +314,7 @@
     padding: 0.4rem;
     min-width: 12rem;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
-    z-index: 50;
+    z-index: var(--z-dropdown);
 }
 
 .gl-overflow-item {
@@ -330,6 +377,125 @@
     padding: 0.25rem 0.75rem 0.4rem;
     color: rgba(255, 255, 255, 0.5);
     font-size: 11px;
+}
+
+/* ── Toast stack — rendered by MainLayout's @foreach toast loop. Lives here
+     because MainLayout owns the markup. ── */
+.toast-stack {
+    position: fixed;
+    bottom: 1.5rem;
+    right: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    z-index: var(--z-toast-stack);
+    max-width: 380px;
+}
+
+.toast {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+    border-radius: 0.5rem;
+    font-size: 0.85rem;
+    animation: gl-toast-in var(--dur-base) var(--ease-out);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+.toast--info { background: var(--toast-info-bg); border: 1px solid var(--toast-info-border); color: var(--toast-info-text); }
+.toast--error { background: var(--toast-error-bg); border: 1px solid var(--toast-error-border); color: var(--toast-error-text); }
+.toast--success { background: var(--toast-success-bg); border: 1px solid var(--toast-success-border); color: var(--toast-success-text); }
+.toast--warning { background: var(--toast-warning-bg); border: 1px solid var(--toast-warning-border); color: var(--toast-warning-text); }
+
+.toast-msg { flex: 1; }
+
+.toast-close {
+    background: transparent;
+    border: none;
+    color: inherit;
+    opacity: 0.6;
+    font-size: 1.1rem;
+    line-height: 1;
+}
+
+.toast-close:hover { opacity: 1; }
+
+@keyframes gl-toast-in {
+    from { transform: translateX(100%); opacity: 0; }
+    to   { transform: translateX(0); opacity: 1; }
+}
+
+/* ── Kiosk demo progress bar (rendered conditionally by @if Demo?.IsActive)
+     — co-located with MainLayout because both renderers share chrome. ── */
+.demo-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.5rem 1.5rem;
+    background: rgba(17, 24, 39, 0.95);
+    border-top: 1px solid var(--color-border);
+    backdrop-filter: blur(8px);
+    font-size: 0.8rem;
+    z-index: var(--z-kiosk);
+}
+
+.demo-bar__progress {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 2px;
+    background: var(--color-accent);
+    transition: width 1s linear;
+}
+
+.demo-bar__label {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    color: var(--color-text-secondary);
+}
+
+.demo-bar__dot {
+    width: 6px;
+    height: 6px;
+    background: var(--color-accent);
+    border-radius: 50%;
+    animation: gl-pulse 1.5s ease-in-out infinite;
+}
+
+.demo-bar__next { color: var(--color-text-secondary); font-size: 0.7rem; }
+
+.demo-bar__stop {
+    margin-left: auto;
+    background: transparent;
+    border: 1px solid var(--color-border);
+    color: var(--color-text-secondary);
+    padding: 0.2rem 0.65rem;
+    border-radius: var(--radius-pill);
+    font-size: 0.7rem;
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+
+.demo-bar__stop:hover { border-color: var(--color-error); color: var(--color-error); }
+
+@keyframes gl-pulse {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: 0.5; }
+}
+
+/* ── Generic fade-in keyframe used by Lists/Rows across multiple pages.
+     Lives here so page-scoped CSS can reuse without redeclaring. ── */
+@keyframes gl-fade-in-up {
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
     line-height: 1.4;
     border-top: 1px solid rgba(255, 255, 255, 0.06);
     margin-top: 0.25rem;

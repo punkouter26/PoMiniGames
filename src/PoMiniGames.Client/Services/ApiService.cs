@@ -257,6 +257,35 @@ public class ApiService
         }
     }
 
+    public async Task<PoBrawlHighScore[]?> GetPoBrawlHighScoresAsync(int count = 10)
+    {
+        try
+        {
+            return await _http.GetFromJsonAsync(
+                $"/api/pobrawl/highscores?count={count}", ApiJsonContext.Default.PoBrawlHighScoreArray);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public async Task<PoBrawlHighScore?> SubmitPoBrawlHighScoreAsync(PoBrawlHighScore entry)
+    {
+        try
+        {
+            // Stamp once; preserve across resync so the deterministic RowKey stays stable (no duplicates).
+            if (string.IsNullOrEmpty(entry.Date))
+                entry.Date = DateTime.UtcNow.ToString("O");
+            var response = await _http.PostAsJsonAsync("/api/pobrawl/highscores", entry, ApiJsonContext.Default.PoBrawlHighScore);
+            return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync(ApiJsonContext.Default.PoBrawlHighScore) : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     // ─── Head-to-head match history ──────────────────────────────────────
 
     public async Task<bool> RecordMatchAsync(MatchRecordRequest request)

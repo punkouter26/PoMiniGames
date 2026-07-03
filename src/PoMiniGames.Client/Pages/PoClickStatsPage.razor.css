@@ -1,7 +1,23 @@
 /* PoClick Stats page — bar fill + rush/drag strip styles. These classes are
-   referenced from PoClickStatsPage.razor with CSS-var bindings (--pct) on the
-   element style so per-instance widths flow through scoped CSS rather than
-   inline pixel/percent declarations. */
+   referenced from PoClickStatsPage.razor with CSS-var bindings (--pct, --bar-w)
+   on the element style so per-instance widths flow through scoped CSS rather
+   than inline pixel/percent declarations. */
+
+.score-ring-fill {
+    fill: none;
+    stroke-width: 10;
+    stroke-linecap: round;
+    transform: rotate(-90deg);
+    transform-origin: 50% 50%;
+    stroke-dashoffset: var(--ring-end, 339.3);
+    transition: stroke-dashoffset 0.6s var(--ease-standard);
+}
+
+.poclick-score-value { color: var(--accent-cyan, #22d3ee); }
+.poclick-score-value--cyan   { color: var(--accent-cyan,   #22d3ee); }
+.poclick-score-value--green  { color: var(--accent-green,  #22c55e); }
+.poclick-score-value--yellow { color: var(--accent-yellow, #f59e0b); }
+.poclick-score-value--red    { color: var(--accent-red,    #ef4444); }
 
 .poclick-bar-track {
     background: var(--color-bg);
@@ -13,7 +29,8 @@
 
 .poclick-bar-fill {
     height: 100%;
-    width: var(--pct, 0);
+    width: var(--bar-w, 0);
+    background: var(--accent-green, #22c55e);
     transition: width var(--dur-base) var(--ease-standard);
 }
 

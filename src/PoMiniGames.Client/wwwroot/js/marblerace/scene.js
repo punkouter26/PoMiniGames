@@ -67,7 +67,8 @@ export function createScene(container) {
   renderer.domElement.style.display = 'block';
 
   const scene = new THREE.Scene();
-  scene.background = makeBgGradient();                    // #10 — graded background
+  const bgTexture = makeBgGradient();                     // #10 — graded background
+  scene.background = bgTexture;
   scene.fog = new THREE.Fog(BG, 70, 240);
 
   // #4 — image-based lighting so the glossy marbles/floor have something to reflect.
@@ -260,6 +261,7 @@ export function createScene(container) {
       window.removeEventListener('pointerup', onPointerUp);
       sparkGeo.dispose();
       sparkMat.dispose();
+      bgTexture.dispose();
       envRT.texture.dispose();
       composer.dispose();
       renderer.dispose();

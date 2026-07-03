@@ -48,7 +48,7 @@
                             <div class="race-lane">
                                 <span>@_racers[i].Name</span>
                                 <div class="race-progress">
-                                    <div class="progress-fill" style="width: @(_racers[i].Progress)%; background: @GetRacerColor(i)"></div>
+                                    <div class="progress-fill" style="--rp: @(_racers[i].Progress)%; --rc: @GetRacerColor(i);"></div>
                                 </div>
                             </div>
                         }

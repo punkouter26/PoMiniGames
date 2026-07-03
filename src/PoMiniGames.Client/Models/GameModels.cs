@@ -68,3 +68,11 @@ public class MarbleRaceHighScore
     public string Date { get; set; } = "";
     public double GameDuration { get; set; }
 }
+
+public class PoBrawlHighScore
+{
+    public string PlayerInitials { get; set; } = "";
+    public double KoTimeSeconds { get; set; }
+    public string Character { get; set; } = "";
+    public string Date { get; set; } = "";
+}

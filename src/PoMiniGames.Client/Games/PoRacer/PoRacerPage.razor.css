@@ -1,0 +1,15 @@
+/* PoRacer canvas wrapper — keeps the canvas filling its parent without
+   inline-style declarations in the .razor file. The interactive flag
+   re-enables pointer events that the wrapper disables so taps reach the
+   canvas. */
+.racer-canvas-wrap {
+    width: 100%;
+    height: 100%;
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+.racer-canvas--interactive {
+    pointer-events: auto;
+}

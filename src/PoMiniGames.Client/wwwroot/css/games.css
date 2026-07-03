@@ -2,7 +2,11 @@
 .gps-shell {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  /* Dynamic viewport height: on mobile browsers the URL bar shrinks the visible
+     area, and static 100vh overshoots it — causing a scroll and the game content
+     to sit in a letterboxed band. 100dvh tracks the actual visible height so the
+     game area fills the screen the player sees. */
+  min-height: 100dvh;
   background: var(--color-bg);
 }
 
@@ -106,7 +110,7 @@
   border-radius: 8px;
   padding: 1rem;
   min-width: 200px;
-  z-index: 50;
+  z-index: var(--z-dropdown);
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
 }
 
@@ -314,7 +318,7 @@
 .gps-modal-overlay {
   position: fixed;
   inset: 0;
-  z-index: 1000;
+  z-index: var(--z-modal);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -554,6 +558,8 @@
   background: linear-gradient(135deg, rgba(0, 0, 0, 0.8), rgba(20, 20, 30, 0.8));
   border: 2px solid var(--color-border);
   border-radius: 8px;
+}
+.pr-canvas--pixelated { image-rendering: pixelated; }
   display: block;
 }
 
@@ -1154,6 +1160,7 @@
 }
 .cq-btn-secondary:hover { border-color: var(--color-text-secondary); color: var(--color-text-primary); }
 .cq-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.cq-actions--wrap { flex-wrap: wrap; }
 .cq-error { color: #fca5a5; font-weight: 600; }
 .cq-join label,
 .fq-join label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.9rem; }
@@ -1215,6 +1222,10 @@
 .pf-btn-primary { background: var(--color-accent); color: #fff; border-color: var(--color-accent); }
 .pf-btn-secondary { background: transparent; border-color: var(--color-border); color: var(--color-text-secondary); }
 .pf-btn-secondary:hover { border-color: var(--color-text-secondary); color: var(--color-text-primary); }
+.pf-choice-grid { display: grid; gap: 0.75rem; justify-content: center; margin: 1rem 0; }
+.pf-choice-grid--wrap { display: flex; flex-wrap: wrap; gap: 0.75rem; justify-content: center; margin: 1rem 0; }
+.pf-face-choice { padding: 0.5rem 0.9rem; }
+.pf-face-choice--large { font-size: 2.5rem; padding: 0.5rem 0.9rem; }
 
 /* ── PoBabyTouch (`.baby-touch-*`, `.bubble`) ── */
 .baby-touch-wrapper {
@@ -1247,6 +1258,8 @@
 }
 .bubble {
   position: absolute;
+  left: var(--bx, 50%);
+  top: var(--by, 50%);
   width: 48px;
   height: 48px;
   border-radius: 50%;
@@ -1291,6 +1304,7 @@
 }
 .horse {
   position: absolute;
+  left: var(--horse-pos, 0%);
   top: 50%;
   width: 24px;
   height: 24px;
@@ -1317,7 +1331,9 @@
   margin-top: 0.5rem;
   min-height: 1.5rem;
 }
-.race-boost { display: flex; align-items: center; justify-content: center; gap: 0.5rem; }
+.race-boost { display: flex; align-items: center; justify-content: center; gap: 0.5rem; flex-wrap: wrap; margin: 0.6rem 0; text-align: center; }
+.race-boost__count { margin-left: 0.6rem; }
+.cq-btn--boost { font-size: 1.1rem; padding: 0.5rem 1.4rem; cursor: pointer; }
 
 /* ── RaceRagdoll (`.ragdoll-*`, `.racer-*`, `.start-race-btn`) ── */
 .ragdoll-wrapper { width: 100%; max-width: 720px; margin: 0 auto; display: flex; flex-direction: column; gap: 1rem; padding: 0.5rem; }
@@ -1363,6 +1379,11 @@
   border-radius: 6px;
   overflow: hidden;
 }
+  height: 100%;
+  width: var(--rp, 0%);
+  background: var(--rc, var(--color-accent));
+  transition: width 0.1s linear;
+
 .progress-fill { height: 100%; transition: width 0.1s linear; }
 .race-info { display: flex; flex-direction: column; gap: 0.75rem; align-items: center; }
 .payout { font-weight: 700; color: #4ade80; }

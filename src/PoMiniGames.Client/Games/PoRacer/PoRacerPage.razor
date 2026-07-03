@@ -30,8 +30,8 @@
 <PageTitle>PoRacer — Arcade Racing</PageTitle>
 
 <div class="racer-root @(_crtOn ? "crt-enabled" : "") po-page-transition" tabindex="0">
-    <div style="width: 100%; height: 100%; position: absolute; inset: 0; pointer-events: none;">
-        <canvas id="racerCanvas" class="racer-canvas" style="pointer-events: auto;"></canvas>
+    <div class="racer-canvas-wrap">
+        <canvas id="racerCanvas" class="racer-canvas racer-canvas--interactive"></canvas>
     </div>
 
     <!-- Settings Drawer Toggle Button -->

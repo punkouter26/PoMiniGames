@@ -7,9 +7,14 @@ let program = null;
 let buffer = null;
 let raf = 0;
 let visible = true;
+let inViewport = true;
 let lastX = 0.5;
 let lastY = 0.5;
 let resizeObs = null;
+let intersectObs = null;
+let longFrames = 0;
+let lastFrameMs = 0;
+let currentPointCount = 200;
 
 const POINT_COUNT = 200;
 const VERT_SRC = `#version 300 es
@@ -158,16 +163,45 @@ export function start(canvas) {
     document.addEventListener('visibilitychange', onVisibility);
     window.addEventListener('pagehide', stop);
 
+    // §2 battery guard: pause the render loop when the canvas leaves the
+    // viewport. IntersectionObserver fires once with the current state, then
+    // toggles cheaply as the user scrolls. Saves a full GPU wake + draw call
+    // per frame when the home page is off-screen.
+    intersectObs = new IntersectionObserver((entries) => {
+        for (const e of entries) {
+            inViewport = e.isIntersecting;
+        }
+    }, { rootMargin: '50px' });
+    intersectObs.observe(canvas);
+
     const startTime = performance.now();
     function tick(now) {
         if (!gl) return;
-        if (visible) {
+
+        // §2 thermal guard: if 60 consecutive frames take > 22 ms, halve the
+        // particle count. This keeps the loop hitting 60 fps on phones that
+        // thermal-throttle after a few minutes in landscape demo mode.
+        if (lastFrameMs > 0) {
+            const delta = now - lastFrameMs;
+            if (delta > 22) {
+                longFrames++;
+                if (longFrames >= 60 && currentPointCount > 60) {
+                    currentPointCount = Math.max(60, Math.floor(currentPointCount / 2));
+                    longFrames = 0;
+                }
+            } else {
+                longFrames = 0;
+            }
+        }
+        lastFrameMs = now;
+
+        if (visible && inViewport) {
             gl.clearColor(0, 0, 0, 0);
             gl.clear(gl.COLOR_BUFFER_BIT);
             gl.uniform1f(uTime, now - startTime);
             gl.uniform2f(uRes, canvas.width, canvas.height);
             gl.uniform2f(uMouse, lastX, lastY);
-            gl.drawArrays(gl.TRIANGLES, 0, POINT_COUNT * 6);
+            gl.drawArrays(gl.TRIANGLES, 0, currentPointCount * 6);
         }
         raf = requestAnimationFrame(tick);
     }
@@ -186,6 +220,10 @@ export function stop() {
     if (resizeObs) {
         resizeObs.disconnect();
         resizeObs = null;
+    }
+    if (intersectObs) {
+        intersectObs.disconnect();
+        intersectObs = null;
     }
     if (gl && buffer) {
         gl.deleteBuffer(buffer);

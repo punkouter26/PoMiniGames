@@ -1,0 +1,302 @@
+@page "/pobrawl"
+@page "/pobrawl/{Demo:int}"
+@using PoMiniGamesClient.Components
+@using PoMiniGamesClient.Enums
+@using PoMiniGamesClient.Models
+@using PoMiniGamesClient.Services
+@implements IAsyncDisposable
+@inject PlayerNameService PlayerNameService
+@inject ApiService ApiService
+@inject GameResultService GameResults
+@inject IJSRuntime JSRuntime
+@inject KioskCoordinator Kiosk
+
+<GameShell Title=@TitleContent
+           Player="@_playerName"
+           BackTo="/"
+           ShowSettings="true"
+           Stats="@_statItems"
+           GameOver="@(_phase == "result" && !_demo)"
+           OnPlayAgain="BackToSelect"
+           GameSummary="@GameSummaryContent"
+           Controls="@ControlsContent">
+    <div class="pb-wrap">
+        <div id="pobrawl-container" class="pb-canvas-host"></div>
+
+        @* HP bar HUD, fed by the JS engine's OnHud callback *@
+        @if (_phase == "fighting" || _demo)
+        {
+            <div class="pb-hud">
+                <div class="pb-hp-side">
+                    <span class="pb-hp-name">@CharName(_p1Char)</span>
+                    <div class="pb-hp-track"><div class="pb-hp-fill pb-hp-p1" style="--hp: @(_p1Hp)%;"></div></div>
+                </div>
+                <div class="pb-clock">@_elapsed.ToString("0")</div>
+                <div class="pb-hp-side pb-hp-right">
+                    <span class="pb-hp-name">@CharName(_p2Char)</span>
+                    <div class="pb-hp-track"><div class="pb-hp-fill pb-hp-p2" style="--hp: @(_p2Hp)%;"></div></div>
+                </div>
+            </div>
+        }
+
+        @if (_demo)
+        {
+            <div class="pb-demo-badge">🎮 Demo — CPU vs CPU</div>
+        }
+
+        @* Character / mode select overlay *@
+        @if (_phase == "select" && !_demo)
+        {
+            <div class="pb-overlay">
+                <div class="pb-select-card">
+                    <h2 class="gps-phase-h">@(_mode == "2p" ? "Local 2-Player Brawl" : "Choose your fighter")</h2>
+                    <p class="pb-select-sub">
+                        @(_mode == "2p"
+                            ? "P1: A/D move · W/S step · hold S block · F punch · G kick — P2: arrows · K punch · L kick"
+                            : "A/D move · W/S sidestep · hold S block · F punch · G kick")
+                    </p>
+
+                    <div class="pb-pick-row">
+                        <span class="pb-pick-label">@(_mode == "2p" ? "Player 1" : "You")</span>
+                        <div class="pb-pick-grid">
+                            @foreach (var c in Roster)
+                            {
+                                <button class="pb-pick-btn @(_p1Char == c.Id ? "pb-picked" : "")"
+                                        style="--suit:@c.Suit; --tie:@c.Tie"
+                                        @onclick="() => _p1Char = c.Id">
+                                    <span class="pb-pick-swatch"></span>@c.Name
+                                </button>
+                            }
+                        </div>
+                    </div>
+                    <div class="pb-pick-row">
+                        <span class="pb-pick-label">@(_mode == "2p" ? "Player 2" : "Opponent")</span>
+                        <div class="pb-pick-grid">
+                            @foreach (var c in Roster)
+                            {
+                                <button class="pb-pick-btn @(_p2Char == c.Id ? "pb-picked" : "")"
+                                        style="--suit:@c.Suit; --tie:@c.Tie"
+                                        @onclick="() => _p2Char = c.Id">
+                                    <span class="pb-pick-swatch"></span>@c.Name
+                                </button>
+                            }
+                        </div>
+                    </div>
+
+                    <button class="pb-fight-btn" @onclick="StartMatch">🥊 FIGHT</button>
+
+                    @if (_highScores is { Length: > 0 })
+                    {
+                        <div class="pb-board">
+                            <h3>⚡ Fastest KO</h3>
+                            <ol>
+                                @foreach (var s in _highScores)
+                                {
+                                    <li><span class="pb-board-initials">@s.PlayerInitials</span>
+                                        <span class="pb-board-char">@CharName(s.Character)</span>
+                                        <span class="pb-board-time">@s.KoTimeSeconds.ToString("0.00")s</span></li>
+                                }
+                            </ol>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+</GameShell>
+
+@code {
+    [Parameter] public int? Demo { get; set; }
+    [SupplyParameterFromQuery(Name = "mode")] public string? ModeQuery { get; set; }
+
+    private sealed record RosterEntry(string Id, string Name, string Suit, string Tie);
+
+    private static readonly RosterEntry[] Roster =
+    [
+        new("trump", "Trump", "#1b2a52", "#d62828"),
+        new("biden", "Biden", "#24365e", "#7fb2e5"),
+        new("obama", "Obama", "#3a3f44", "#2456c9"),
+        new("bush", "Bush", "#17181c", "#b02323"),
+    ];
+
+    private string _playerName = "";
+    private bool _demo;
+    private string _mode = "1p";
+    private string _phase = "select";
+    private string _p1Char = "trump";
+    private string _p2Char = "biden";
+    private int _p1Hp = 100;
+    private int _p2Hp = 100;
+    private double _elapsed;
+    private int _winner;
+    private double _lastKo;
+    private double _bestKo;
+    private bool _newRecord;
+    private bool _muted;
+
+    private PoBrawlHighScore[]? _highScores;
+    private List<StatItem> _statItems = new();
+    private PlayerStats _stats = new();
+    private readonly GameStatsService _gameStats = new();
+    private DotNetObjectReference<PoBrawlPage>? _ref;
+
+    private RenderFragment TitleContent => @<span>🥊 PoBrawl</span>;
+
+    private RenderFragment ControlsContent => @<div class="gps-controls">
+        <button @onclick="ToggleMute">@(_muted ? "🔇 Unmute" : "🔊 Mute")</button>
+        <button @onclick="BackToSelect">🔄 Character select</button>
+    </div>;
+
+    private RenderFragment GameSummaryContent => @<div>
+        <div>@ResultLine()</div>
+        @if (_winner != 0 && _mode == "1p" && _winner == 1)
+        {
+            <div>KO in @_lastKo.ToString("0.00")s@(_newRecord ? " — 🏆 New record!" : "")</div>
+        }
+    </div>;
+
+    protected override void OnInitialized()
+    {
+        _demo = Demo == 1;
+        _mode = _demo ? "demo" : (ModeQuery == "2p" ? "2p" : "1p");
+        _playerName = PlayerNameService.GetPlayerName();
+        _stats = _gameStats.GetStats("pobrawl", _playerName);
+        UpdateStats();
+
+        if (_demo)
+        {
+            _phase = "fighting";
+            Kiosk.SetCurrent("pobrawl-demo");
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+
+        _ref = DotNetObjectReference.Create(this);
+        if (_demo)
+        {
+            var picks = Roster.OrderBy(_ => Guid.NewGuid()).Take(2).ToArray();
+            _p1Char = picks[0].Id;
+            _p2Char = picks[1].Id;
+            await InitEngine();
+        }
+        else
+        {
+            _highScores = await ApiService.GetPoBrawlHighScoresAsync(10);
+            StateHasChanged();
+        }
+    }
+
+    private async Task InitEngine()
+    {
+        _p1Hp = 100;
+        _p2Hp = 100;
+        _elapsed = 0;
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("PoBrawl.init", "pobrawl-container", _ref,
+                new { mode = _mode, p1Character = _p1Char, p2Character = _p2Char, difficulty = "medium" });
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[PoBrawl] JS init failed: {ex.Message}");
+        }
+    }
+
+    private async Task StartMatch()
+    {
+        _phase = "fighting";
+        await InitEngine();
+    }
+
+    private async Task BackToSelect()
+    {
+        if (_demo) return;
+        _phase = "select";
+        try { await JSRuntime.InvokeVoidAsync("PoBrawl.destroy"); } catch { }
+        _highScores = await ApiService.GetPoBrawlHighScoresAsync(10);
+    }
+
+    private async Task ToggleMute()
+    {
+        _muted = !_muted;
+        try { await JSRuntime.InvokeVoidAsync("PoBrawl.setMuted", _muted); } catch { }
+    }
+
+    [JSInvokable]
+    public void OnHud(int p1Hp, int p2Hp, double elapsed)
+    {
+        _p1Hp = p1Hp;
+        _p2Hp = p2Hp;
+        _elapsed = elapsed;
+        InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public async Task OnMatchEnd(int winner, double elapsedSeconds)
+    {
+        _winner = winner;
+        _lastKo = elapsedSeconds;
+        _phase = "result";
+
+        if (!_demo && _mode == "1p")
+        {
+            _gameStats.SaveLastPlayedGame("pobrawl");
+
+            // A new fastest KO is submitted to the global board (session-debounced by _bestKo).
+            PoBrawlHighScore? best = null;
+            _newRecord = false;
+            var won = winner == 1;
+            if (won && elapsedSeconds > 0 && (_bestKo == 0 || elapsedSeconds < _bestKo))
+            {
+                _bestKo = elapsedSeconds;
+                _newRecord = true;
+                best = new PoBrawlHighScore
+                {
+                    PlayerInitials = Initials(_playerName),
+                    KoTimeSeconds = Math.Round(elapsedSeconds, 2),
+                    Character = _p1Char,
+                };
+            }
+
+            var result = winner == 0 ? GameResult.Draw : (won ? GameResult.Win : GameResult.Loss);
+            _stats = await GameResults.RecordAndSubmitPoBrawlAsync(_playerName, result, best);
+            UpdateStats();
+        }
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void UpdateStats()
+    {
+        var bucket = _gameStats.GetDifficultyBucket(_stats, Difficulty.Medium);
+        _statItems = GameStatsPanel.Build(bucket, includeDraws: false,
+            ("Best KO", _bestKo > 0 ? $"{_bestKo:0.00}s" : "—"));
+    }
+
+    private string ResultLine()
+    {
+        if (_winner == 0) return "🤝 Draw!";
+        var winnerName = CharName(_winner == 1 ? _p1Char : _p2Char);
+        if (_mode == "2p") return $"🏆 {winnerName} wins — Player {_winner}!";
+        return _winner == 1 ? $"🏆 You win as {winnerName}!" : $"💀 {winnerName} beat you";
+    }
+
+    private static string CharName(string id) =>
+        Roster.FirstOrDefault(r => r.Id == id)?.Name ?? id;
+
+    private static string Initials(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return "PO";
+        var letters = new string(name.Where(char.IsLetterOrDigit).ToArray());
+        if (letters.Length == 0) return "PO";
+        return letters[..Math.Min(3, letters.Length)].ToUpperInvariant();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try { await JSRuntime.InvokeVoidAsync("PoBrawl.destroy"); } catch { }
+        _ref?.Dispose();
+    }
+}

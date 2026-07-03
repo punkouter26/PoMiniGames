@@ -56,6 +56,63 @@ export async function playChord(freqs, ms, gain) {
     }
 }
 
+/**
+ * §10 Play a frequency sweep from fromHz → toHz over ms milliseconds.
+ * Used for swipe-back feedback (downsweep = leaving the page).
+ * @param {number} fromHz
+ * @param {number} toHz
+ * @param {number} ms
+ * @param {number} gain
+ * @param {string} type
+ */
+export async function playSweep(fromHz, toHz, ms, gain, type) {
+    try {
+        const ctx = await getCtx();
+        const t0 = ctx.currentTime;
+        const dur = ms / 1000;
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = type || 'triangle';
+        osc.frequency.setValueAtTime(fromHz, t0);
+        osc.frequency.exponentialRampToValueAtTime(Math.max(toHz, 20), t0 + dur);
+        g.gain.setValueAtTime(0, t0);
+        g.gain.linearRampToValueAtTime(gain, t0 + 0.01);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+        osc.connect(g).connect(ctx.destination);
+        osc.start(t0);
+        osc.stop(t0 + dur);
+    } catch { /* fail silently */ }
+}
+
+/**
+ * §10 Play an arpeggio (sequential notes with individual durations).
+ * Used for personal-best celebration.
+ * @param {number[]} freqs
+ * @param {number[]} durationsMs
+ * @param {number} gain
+ */
+export async function playArpeggio(freqs, durationsMs, gain) {
+    let delay = 0;
+    for (let i = 0; i < freqs.length; i++) {
+        const f = freqs[i];
+        const ms = durationsMs[i] || 80;
+        setTimeout(() => playTone(f, ms, gain, 'triangle'), delay);
+        delay += ms - 10; // small overlap so notes blend
+    }
+}
+
+/**
+ * §10 Vibration helper — gated on navigator.vibrate availability.
+ * @param {number[]} pattern - alternating vibrate/pause ms, e.g. [12, 40, 18]
+ */
+export async function vibrate(pattern) {
+    try {
+        if (navigator && typeof navigator.vibrate === 'function') {
+            navigator.vibrate(pattern);
+        }
+    } catch { /* fail silently */ }
+}
+
 export function isAudioAvailable() {
     return !!(window.AudioContext || window.webkitAudioContext);
 }

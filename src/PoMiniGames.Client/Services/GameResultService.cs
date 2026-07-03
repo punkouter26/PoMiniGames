@@ -66,6 +66,31 @@ public sealed class GameResultService
         return stats;
     }
 
+    /// <summary>Records the PoBrawl outcome locally and submits the fastest-KO score together.</summary>
+    public async Task<PlayerStats> RecordAndSubmitPoBrawlAsync(
+        string playerName, GameResult result, PoBrawlHighScore? highScore)
+    {
+        var stats = await _stats.RecordResult("pobrawl", playerName, Difficulty.Medium, result);
+        if (highScore is not null)
+        {
+            var submitted = await _api.SubmitPoBrawlHighScoreAsync(highScore);
+            if (submitted is null)
+            {
+                _sync.EnqueuePoBrawl(highScore);
+                await _feedback.ErrorAsync();
+            }
+            else
+            {
+                await _feedback.CompleteAsync();
+            }
+        }
+        else
+        {
+            await _feedback.TapAsync();
+        }
+        return stats;
+    }
+
     /// <summary>Records the snake outcome locally and submits the high score together.</summary>
     public async Task<PlayerStats> RecordAndSubmitSnakeAsync(
         string playerName, Difficulty difficulty, GameResult result, SnakeHighScore? highScore)

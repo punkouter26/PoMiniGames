@@ -30,6 +30,7 @@ public static class GameCatalog
         new(GameKeys.PoCoupleQuiz, "PoCoupleQuiz", "💕", "/couplequiz"),
         new(GameKeys.PoFunQuiz, "PoFunQuiz", "🧠", "/funquiz"),
         new(GameKeys.PoFace, "PoFace", "🙂", "/face"),
+        new(GameKeys.PoBrawl, "PoBrawl", "🥊", "/pobrawl"),
     ];
 
     public static readonly IReadOnlyList<CatalogGame> LocalTwoPlayer =
@@ -38,6 +39,7 @@ public static class GameCatalog
         new(GameKeys.TicTacToe, "Tic Tac Toe", "❌", "/tictactoe?mode=2p"),
         new(GameKeys.PoRunner, "PoRunner", "⚡", "/porunner?mode=2p"),
         new(GameKeys.PoFunQuiz, "PoFunQuiz", "🧠", "/funquiz"),
+        new(GameKeys.PoBrawl, "PoBrawl", "🥊", "/pobrawl?mode=2p"),
     ];
 
     public static readonly IReadOnlyList<CatalogGame> Multiplayer =
@@ -60,5 +62,6 @@ public static class GameCatalog
         new(GameKeys.PoRacer, "PoRacer", "🏎️", "/poracer/demo"),
         new(GameKeys.PoMarbleRace, "PoMarbleRace", "🔮", "/pomarblerace?demo=1"),
         new(GameKeys.PoJoker, "PoJoker", "🃏", "/pojoker"),
+        new(GameKeys.PoBrawl, "PoBrawl", "🥊", "/pobrawl/1"),
     ];
 }

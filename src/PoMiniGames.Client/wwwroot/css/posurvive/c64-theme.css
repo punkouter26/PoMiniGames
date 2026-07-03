@@ -157,7 +157,7 @@ html, body {
 
 /* ===== Mock Banner ========================================================= */
 .mock-banner {
-    position: fixed; top: 0; left: 0; right: 0; z-index: 1000;
+    position: fixed; top: 0; left: 0; right: 0; z-index: var(--z-banner);
     padding: 0.3rem 1rem;
     background-color: var(--mock-banner-bg);
     border-bottom: 1px solid var(--mock-banner-border);
@@ -1228,7 +1228,7 @@ html, body {
     position: fixed; bottom: 0; left: 0; right: 0;
     max-height: 40vh; overflow-y: auto;
     background-color: #400; border-top: 2px solid #e05050;
-    padding: var(--space-4); z-index: 9999;
+    padding: var(--space-4); z-index: var(--z-error-overlay);
     font-size: var(--font-size-sm); color: #ff8888;
 }
 .dev-error-overlay h3 { color: #ff4444; margin-bottom: var(--space-2); }

@@ -23,11 +23,13 @@ public class StorageService : IStorageService
     private const string SnakeTable = "SnakeHighScores";
     private const string DropSquareTable = "PoDropSquareHighScores";
     private const string MarbleRaceTable = "MarbleRaceHighScores";
+    private const string PoBrawlTable = "PoBrawlHighScores";
 
     // High scores share a single partition per game so a leaderboard is one partition scan.
     private const string SnakePartition = "snake";
     private const string DropSquarePartition = "podropsquare";
     private const string MarbleRacePartition = "marblerace";
+    private const string PoBrawlPartition = "pobrawl";
 
     private readonly TableServiceClient _serviceClient;
     private readonly EloCalculator _eloCalculator;
@@ -72,7 +74,7 @@ public class StorageService : IStorageService
     /// </summary>
     public void Initialize()
     {
-        foreach (var table in new[] { PlayerStatsTable, SnakeTable, DropSquareTable, MarbleRaceTable })
+        foreach (var table in new[] { PlayerStatsTable, SnakeTable, DropSquareTable, MarbleRaceTable, PoBrawlTable })
         {
             try { Table(table); } catch { /* ensured lazily on first use */ }
         }
@@ -312,6 +314,32 @@ public class StorageService : IStorageService
         // Highest score wins, oldest first as the tiebreaker.
         Rank: s => s.OrderByDescending(x => x.BestScore).ThenBy(x => x.Date));
 
+    private static readonly HighScoreDescriptor<PoBrawlHighScore> PoBrawlScores = new(
+        Table: PoBrawlTable,
+        Partition: PoBrawlPartition,
+        Sanitize: e => e with
+        {
+            PlayerInitials = Initials3(e.PlayerInitials),
+            Character = SanitizeName(e.Character),
+            Date = DefaultDate(e.Date),
+        },
+        ToFields: e => new Dictionary<string, object?>
+        {
+            ["PlayerInitials"] = e?.PlayerInitials,
+            ["KoTimeSeconds"] = e?.KoTimeSeconds,
+            ["Character"] = e?.Character,
+            ["Date"] = e?.Date,
+        },
+        FromEntity: e => new PoBrawlHighScore
+        {
+            PlayerInitials = e.GetString("PlayerInitials") ?? "",
+            KoTimeSeconds = e.GetDouble("KoTimeSeconds") ?? 0d,
+            Character = e.GetString("Character") ?? "",
+            Date = e.GetString("Date") ?? "",
+        },
+        // Fastest KO wins, oldest first as the tiebreaker.
+        Rank: s => s.OrderBy(x => x.KoTimeSeconds).ThenBy(x => x.Date));
+
     public Task<List<SnakeHighScore>> GetSnakeHighScoresAsync(int limit = 10) =>
         GetHighScoresAsync(SnakeScores, limit);
 
@@ -329,6 +357,12 @@ public class StorageService : IStorageService
 
     public Task<MarbleRaceHighScore> SaveMarbleRaceHighScoreAsync(MarbleRaceHighScore entry) =>
         SaveHighScoreAsync(MarbleRaceScores, entry);
+
+    public Task<List<PoBrawlHighScore>> GetPoBrawlHighScoresAsync(int limit = 10) =>
+        GetHighScoresAsync(PoBrawlScores, limit);
+
+    public Task<PoBrawlHighScore> SavePoBrawlHighScoreAsync(PoBrawlHighScore entry) =>
+        SaveHighScoreAsync(PoBrawlScores, entry);
 
     // The one shared high-score read: scan the game's partition, rebuild entries, rank, take.
     private async Task<List<T>> GetHighScoresAsync<T>(HighScoreDescriptor<T> descriptor, int limit)
@@ -391,6 +425,7 @@ public class StorageService : IStorageService
     {
         "Initials", "Score", "SurvivalTime", "BestScore",
         "GameDuration", "SnakeLength", "FoodEaten", "PlayerInitials", "PlayerName",
+        "KoTimeSeconds", "Character",
     };
 
     private static string[] DeterministicRowKeyFieldsKey<T>(HighScoreDescriptor<T> descriptor)

@@ -36,11 +36,11 @@
             <div class="pf-ready">
                 <h2 class="gps-phase-h">Round @(_currentRound + 1) of 5</h2>
                 <p class="pf-prompt">Tap the face that shows: <strong>@_currentEmotion</strong></p>
-                <div class="pf-choice-grid" style="display:flex;flex-wrap:wrap;gap:0.75rem;justify-content:center;margin:1rem 0;">
+                <div class="pf-choice-grid pf-choice-grid--wrap">
                     @foreach (var emo in _choices)
                     {
                         var choice = emo;
-                        <button class="pf-btn pf-face-choice" style="font-size:2.5rem;padding:0.5rem 0.9rem;" @onclick="() => PickEmotion(choice)">@EmojiFor(choice)</button>
+                        <button class="pf-btn pf-face-choice pf-face-choice--large" @onclick="() => PickEmotion(choice)">@EmojiFor(choice)</button>
                     }
                 </div>
                 <p class="pf-score-line">Score: <strong>@_localTotal</strong></p>

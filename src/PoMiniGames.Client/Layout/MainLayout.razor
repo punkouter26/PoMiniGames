@@ -4,12 +4,20 @@
 @inject ToastService ToastService
 @inject KioskCoordinator Kiosk
 @inject ScoreSyncService ScoreSync
+@inject UiFeedbackService Feedback
 @inject IWebAssemblyHostEnvironment HostEnvironment
 
 <div class="gl-page">
+    @* §9 mock banner — desktop gets the full-width shimmer banner; mobile gets
+       a tappable dot that expands to the same label. Keeps the safety guard
+       visible without sacrificing ~36 px of chrome on portrait phones. *@
     @if (AuthState.UsingMockData)
     {
         <div class="gl-mock-banner" role="status" aria-live="polite">USING MOCK DATA</div>
+        <details class="gl-mock-banner--dot" aria-label="Mock data active — tap for details">
+            <summary aria-label="Mock data active"></summary>
+            <span>USING MOCK DATA</span>
+        </details>
     }
     <header class="gl-top-bar">
         <div class="gl-top-bar-left">
@@ -127,6 +135,13 @@
         // unsubscribed and would leak this component on every re-creation.
         _onAuthStateChanged = () => InvokeAsync(StateHasChanged);
         AuthState.StateChanged += _onAuthStateChanged;
+
+        // §10 fire the mock-data buzz once on mount so the developer notices
+        // the safety guard when they hit the home page in a mock-data env.
+        if (AuthState.UsingMockData)
+        {
+            _ = Feedback.MockDataAsync();
+        }
     }
 
     /// <summary>

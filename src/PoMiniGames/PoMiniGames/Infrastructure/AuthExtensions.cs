@@ -80,7 +80,11 @@ internal static class AuthExtensions
             {
                 options.Cookie.Name = "PoMiniGames.DevAuth";
                 options.Cookie.HttpOnly = true;
-                options.Cookie.SameSite = SameSiteMode.Lax;
+                // §4.2: session cookies are SameSite=Strict. The dev/guest cookie is
+                // minted and read entirely same-origin (the /auth/login/fake redirect and
+                // /api/auth/dev-* posts all originate from the SPA on the host origin), so
+                // Strict never blocks a legitimate flow while closing the cross-site vector.
+                options.Cookie.SameSite = SameSiteMode.Strict;
                 options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
                 options.Events = new CookieAuthenticationEvents
                 {

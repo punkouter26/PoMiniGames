@@ -151,7 +151,7 @@ public sealed class EvolutionEngine
         var childMap = new Dictionary<string, List<string>>(); // parentDnaId -> childDnaIds
         foreach (var record in allRecords)
         {
-            var parentIds = JsonSerializer.Deserialize<List<string>>(record.ParentDnaIdsJson) ?? [];
+            var parentIds = JsonSerializer.Deserialize(record.ParentDnaIdsJson, EvolutionJsonContext.Default.ListString) ?? [];
             foreach (var parentId in parentIds)
             {
                 if (!childMap.ContainsKey(parentId))
@@ -204,7 +204,7 @@ public sealed class EvolutionEngine
             Methodical:        r.Methodical,
             Generation:        r.Generation,
             SourceSessionId:   string.IsNullOrWhiteSpace(r.SourceSessionId) ? null : r.SourceSessionId,
-            ParentDnaIds:      JsonSerializer.Deserialize<List<string>>(r.ParentDnaIdsJson) ?? [],
+            ParentDnaIds:      JsonSerializer.Deserialize(r.ParentDnaIdsJson, EvolutionJsonContext.Default.ListString) ?? [],
             Archetype:         string.IsNullOrWhiteSpace(r.Archetype) ? null : r.Archetype,
             DominantTrait:     r.DominantTrait,
             CreatedAt:         r.CreatedAt,

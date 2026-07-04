@@ -11,6 +11,22 @@ organises its own endpoints as vertical slices** (`Features/<Slice>/`). This is 
 the layered projects hold cross-cutting platform code; each game owns its HTTP/hub surface,
 contracts, and (where it has its own tables) persistence inside its slice folder.
 
+> **§2.1 deviation (deliberate, do NOT "fix" by collapsing).** The generic NET_RULES §2.1
+> mandates pure Vertical Slice Architecture with no layered sub-projects. This repo keeps
+> Domain (715 LOC) / Application (1076 LOC) / Infrastructure (967 LOC) because the PoSurvive
+> simulation core (EvolutionEngine, SimulationEngine, CombatService, DNA value objects) is a
+> cohesive body of logic shared across multiple host slices and the client — not a per-slice
+> concern. Collapsing ~2,700 LOC of working, tested code into slices is high-risk churn with
+> no functional benefit; the layered core stays. New *game* code still follows VSA (own
+> `Features/<Slice>/` folder). Reconcile future rule audits against this note, not by refactor.
+
+> **Known layering leak (tracked debt).** `PoMiniGamesClient.csproj` references
+> `PoMiniGames.Application`, which drags the server-side PoSurvive simulation (and Domain)
+> into the WASM trim closure — bundle bloat and the reason two IL2026 trim errors existed
+> (fixed 2026-07-04 via `EvolutionJsonContext`). The correct fix is to move the handful of
+> client-facing PoSurvive DTOs into `PoShared` and drop the Application reference from the
+> client. The CI bundle-size budget (deploy.yml) is the pressure valve until then.
+
 ### Persistence boundary rule (authoritative — keep drift out)
 There is exactly one home for each kind of persistence:
 - **Per-game tables/blobs** → live in that game's slice: `Features/<Slice>/Storage/`
@@ -64,6 +80,9 @@ the shared Infrastructure project unless the data is genuinely cross-slice.
 - **master is the only branch.** No local or remote feature branches. All work lands
   directly on `master` via PRs. Delete any branch (local or remote) the moment a
   change is merged.
+- **Invariant guard**: `scripts/branch-hygiene.ps1` asserts master is the only local/remote
+  branch and warns when local master is ahead of `origin/master` (remote lacks latest code).
+  Run with `-Fix` to prune offenders. Wire into a pre-push hook / CI to prevent drift.
 
 ## Data & local dev
 - Persistence: **Azure Table Storage** via `Azure.Data.Tables` (`StorageService`). DTOs are POCOs converted to `TableEntity` at the persistence boundary.
@@ -99,7 +118,7 @@ the shared Infrastructure project unless the data is genuinely cross-slice.
 - Dev: **`FakeAuthHandler`** (scheme `FakeAuth`, headers `X-Fake-User` / `X-Fake-Roles`),
   gated on `(IsDevelopment() || IsEnvironment("Test")) && Auth:EnableFakeAuth`. Tests register it additively in
   `TestWebApplicationFactory`.
-- Dev/Test: **DevCookie** (scheme `PoMiniGames.DevAuth`, HttpOnly, SameSite=Lax) +
+- Dev/Test: **DevCookie** (scheme `PoMiniGames.DevAuth`, HttpOnly, **SameSite=Strict** per §4.2) +
   `/auth/login/fake` route mints a guest identity. Gated on `IsDevelopment() || IsEnvironment("Test")`
   **and** loopback peer — 404 in Production and from non-loopback clients.
 - **Production guards**:
@@ -133,11 +152,17 @@ the shared Infrastructure project unless the data is genuinely cross-slice.
   JSON in Development. OpenAPI via **Scalar**. `.http` files in the host project.
 
 ## CI/CD
-- `.github/workflows/deploy.yml` is **build-only — no tests run in CI.** Tests are
-  environment-coupled (Azurite, Playwright Chromium) and execute locally via
-  `scripts/test-all.ps1` (tiered Unit → Integration → E2E-API → E2E-UI). This is a
-  deliberate policy (header comment in `deploy.yml`): the GitHub runner has no
-  Azurite or Playwright browsers.
+- `.github/workflows/deploy.yml`: **`build` + `test` (unit) jobs; deploy needs both.**
+  - **Unit tests run in CI** (`test` job → `tests/PoMiniGames.Unit`) — zero infra deps, a
+    cheap regression gate on the auto-deploy branch (added 2026-07-04).
+  - **Integration + E2E stay local** (Azurite via Testcontainers + Playwright Chromium) via
+    `scripts/test-all.ps1` (tiered Unit → Integration → E2E-API → E2E-UI).
+  - **Trim audit** publishes the client with `PublishTrimmed`; IL2xxx warnings fail the build
+    under `TreatWarningsAsErrors`. (2026-07-04: fixed 3 latent IL2026 trim errors in
+    EvolutionRecord/EvolutionEngine via `EvolutionJsonContext` source-gen — the audit had been
+    red because those only surface under trimming, not the Debug build.)
+  - **WASM bundle-size budget**: fails if trimmed `_framework` exceeds `FRAMEWORK_BUDGET_MB`
+    (25 MB; baseline ≈ 20 MB). Lower it as the client's Application reference is slimmed.
 - Build job compiles every project in the solution (src + tests) under
   `TreatWarningsAsErrors=true` (`Directory.Build.props`), so a broken test file
   fails the build — but tests are NOT *run* in CI.
@@ -171,6 +196,12 @@ the shared Infrastructure project unless the data is genuinely cross-slice.
 
 ## Conventions
 - Solution prefix `Po`. New games are split across multiple files (mirroring existing games), never one mega-file.
+- **§2.2 naming deviation (canonical here).** Generic NET_RULES §2.2 suggests `<sln>.Shared`,
+  `<sln>.UnitTests`, `<sln>.IntegrationTests`. This repo's canonical names are `PoShared`,
+  `PoMiniGames.Unit`, `PoMiniGames.Integration`, `E2EAPI`, `E2EUI` (the layered projects use
+  the `PoSurvive.*` root namespace for the simulation domain). These names are stable and
+  referenced across csproj/GlobalUsings/tests; a rename is pure cosmetic churn with a large
+  blast radius, so it is intentionally NOT done. Treat these as the standard for this repo.
 - Web Audio API for all sound effects (no `<audio>` tags).
 - A `USING MOCK DATA` banner shows in the nav when `FeatureFlags:UseMockData` is set (mock-service environments).
 - Document GoF/SOLID patterns with `<remarks>` explaining the architectural reasoning.

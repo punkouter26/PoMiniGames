@@ -1,11 +1,14 @@
 name: Deploy to Azure
 
-# CI/CD policy (2026-06-26):
-#   - Build-only. Tests are deliberately NOT run here (Integration/E2E tests require
-#     Azurite + Playwright browsers, which are out-of-band on the GitHub runner).
-#     The full tiered suite runs locally via scripts/test-all.ps1.
+# CI/CD policy (2026-07-04):
+#   - Unit tests (tests/PoMiniGames.Unit) DO run here — they have zero infra
+#     dependencies (no Azurite, no Playwright) so they are a cheap regression gate
+#     on the one branch that auto-deploys. Deploy needs both `build` and `test`.
+#   - Integration + E2E (API/UI) tests remain out-of-band: they require Azurite
+#     (Testcontainers) and Playwright Chromium and run locally via scripts/test-all.ps1.
 #   - master is the only branch that triggers deploy. Local + remote feature
-#     branches are merged into master via PRs.
+#     branches are merged into master via PRs. Branch-hygiene invariant:
+#     scripts/branch-hygiene.ps1.
 on:
   push:
     branches: [ master ]
@@ -110,6 +113,24 @@ jobs:
             -o ./client-trim-audit \
             --no-restore
 
+      # §6.6 mobile-first budget: the trimmed WASM _framework payload gates first
+      # paint on phones. Fail the build if it regresses past the budget so a new
+      # reflection-heavy DTO (or server code leaking into the client closure) can't
+      # silently bloat the download. Baseline 2026-07-04 ≈ 20 MB uncompressed;
+      # budget set with headroom. Lower the budget as the client's server-side
+      # references are slimmed (see AGENT.MD — Application leaks into the client).
+      - name: WASM bundle-size budget
+        shell: bash
+        env:
+          FRAMEWORK_BUDGET_MB: 25
+        run: |
+          SIZE_MB=$(du -sm ./client-trim-audit/wwwroot/_framework | cut -f1)
+          echo "Trimmed _framework size: ${SIZE_MB} MB (budget ${FRAMEWORK_BUDGET_MB} MB)"
+          if [ "$SIZE_MB" -gt "$FRAMEWORK_BUDGET_MB" ]; then
+            echo "::error::WASM _framework ${SIZE_MB} MB exceeds budget ${FRAMEWORK_BUDGET_MB} MB."
+            exit 1
+          fi
+
       - name: Verify formatting (non-blocking)
         run: dotnet format PoMiniGames.slnx --verify-no-changes --verbosity minimal
         continue-on-error: true
@@ -125,9 +146,32 @@ jobs:
           name: api-publish
           path: ./publish
 
+  test:
+    name: Unit tests (no infra)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/Directory.Packages.props', '**/global.json') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+      # Unit tier only — zero external dependencies. Integration/E2E stay local
+      # (Azurite + Playwright). See the CI/CD policy header.
+      - name: Run unit tests
+        run: dotnet test tests/PoMiniGames.Unit/PoMiniGames.Unit.csproj --configuration Debug
+
   deploy:
     name: Deploy to Azure App Service
-    needs: build
+    needs: [build, test]
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     timeout-minutes: 20

@@ -22,19 +22,11 @@ namespace PoMiniGames.Infrastructure;
 /// <para>Pattern: Fail-Fast. The service runs as <see cref="IHostedService"/> before the first
 /// HTTP request is processed.</para>
 /// </summary>
-/// <remarks>Lifted from PoFunQuiz's StartupSecretValidator (2026-06-13 mock-data fix). The
-/// per-game secret sections are optional; a missing section is treated the same as an empty
-/// value. Per-game gating lets a deployment enable only one of the three games.</remarks>
+/// <remarks>Validates platform-level secrets (Key Vault, Table Storage, Microsoft Auth) plus
+/// the centralized Azure AI Foundry endpoint/deployment. AI is a single shared hub — there are
+/// no per-game secret sections.</remarks>
 public sealed class StartupSecretValidator : IHostedService
 {
-    /// <summary>Per-game configuration section names. The validator only enforces a section
-    /// that is *present* (even if empty) — that is the operator's signal that they intend to
-    /// host the game and are ready to provide the keys.</summary>
-    /// <remarks>Deprecated since the centralization on the Azure AI Foundry hub in PoShared.
-    /// Retained for compatibility with deployments that still ship per-game sections
-    /// during the migration window (2026-Q3).</remarks>
-    public static readonly IReadOnlyList<string> GameSections = Array.Empty<string>();
-
     private readonly IHostEnvironment _environment;
     private readonly IConfiguration _configuration;
     private readonly ILogger<StartupSecretValidator> _logger;
@@ -139,28 +131,6 @@ public sealed class StartupSecretValidator : IHostedService
                 missing.Add("PoMiniGames:AI:FoundryEndpoint");
             if (string.IsNullOrWhiteSpace(foundryDeployment))
                 missing.Add("PoMiniGames:AI:DefaultDeployment");
-        }
-
-        // ── Legacy per-game Azure OpenAI secrets (compatibility window) ──
-        foreach (var sectionPath in GameSections)
-        {
-            var section = _configuration.GetSection(sectionPath);
-            if (!section.Exists())
-            {
-                // Operator chose not to enable this game. Not an error.
-                continue;
-            }
-
-            var endpoint = section["Endpoint"];
-            var apiKey = section["ApiKey"];
-            var deploymentName = section["DeploymentName"];
-
-            if (string.IsNullOrWhiteSpace(endpoint))
-                missing.Add($"{sectionPath}:Endpoint");
-            if (string.IsNullOrWhiteSpace(apiKey))
-                missing.Add($"{sectionPath}:ApiKey");
-            if (string.IsNullOrWhiteSpace(deploymentName))
-                missing.Add($"{sectionPath}:DeploymentName");
         }
 
         if (missing.Count == 0)

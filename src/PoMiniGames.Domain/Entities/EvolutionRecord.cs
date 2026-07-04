@@ -53,7 +53,8 @@ public sealed class EvolutionRecord
             Methodical = dna.Methodical,
             Generation = dna.Generation,
             SourceSessionId = sessionId ?? dna.SourceSessionId,
-            ParentDnaIdsJson = System.Text.Json.JsonSerializer.Serialize(dna.ParentDnaIds),
+            ParentDnaIdsJson = System.Text.Json.JsonSerializer.Serialize(
+                dna.ParentDnaIds, EvolutionJsonContext.Default.IReadOnlyListString),
             Archetype = dna.Archetype,
             DominantTrait = dna.DominantTrait,
             CreatedAt = dna.CreatedAt,

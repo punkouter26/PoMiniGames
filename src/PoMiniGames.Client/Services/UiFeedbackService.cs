@@ -50,6 +50,13 @@ public sealed class UiFeedbackService : IAsyncDisposable
     public ValueTask ClickAsync() => PlayToneAsync(1046.50, 60, 0.10, "sine");
 
     /// <summary>
+    /// A disc-drop "tock" (75 ms, low triangle at 20 % gain) synced to a piece
+    /// landing in a Connect-style board. Deliberately low and short so rapid
+    /// moves don't fatigue — the settle-bounce visual and this cue fire together.
+    /// </summary>
+    public ValueTask DiscDropAsync() => PlayToneAsync(174.61, 75, 0.20, "triangle");
+
+    /// <summary>
     /// §10 Swipe-back gesture feedback — a 90 ms downsweep from C5 → A3 with
     /// a soft attack. Matches the navigation gesture direction (low = leaving).
     /// </summary>

@@ -94,6 +94,22 @@
   --toast-warning-bg: #451a03;
   --toast-warning-border: #f59e0b;
   --toast-warning-text: #fde68a;
+
+  /* Game-piece tokens (§ Design-token unification — single source of truth for
+     the disc colours / gloss / win-glow shared by Connect Five's board and any
+     future disc game). Discs are lit spheres: a light rim → mid → dark core. */
+  --disc-red-lit: #ff8a80;
+  --disc-red-mid: #f44336;
+  --disc-red-core: #c62828;
+  --disc-yellow-lit: #fffde7;
+  --disc-yellow-mid: #ffee58;
+  --disc-yellow-core: #f9a825;
+  /* Each disc rule writes its own radial-gradient from the *-lit/-mid/-core
+     tokens above — a shared gradient template can't live here because its inner
+     var()s would resolve against :root (out of scope) and compute to empty. */
+  --disc-shadow: inset 0 -3px 6px rgba(0,0,0,0.32), 0 2px 5px rgba(0,0,0,0.4);
+  --accent-glow: rgba(0,229,255,0.5);
+  --accent-cyan: #00e5ff;
 }
 
 html, body, #app {

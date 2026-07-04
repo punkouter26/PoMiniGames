@@ -198,6 +198,35 @@ app.MapScalarApiReference(options =>
     options.Theme = ScalarTheme.Purple;
 });
 
+// ─── Dev-only: never cache the boot chain ────────────────────────────
+// The SPA shell (index.html, served for extensionless routes), /_framework/*,
+// and the non-fingerprinted .css/.js are how the browser discovers the current
+// fingerprinted asset names. If they sit in the HTTP cache, a rebuild changes
+// the fingerprints and an already-open tab keeps requesting the old (now 404)
+// files → "An unhandled error has occurred" on load. In Development we force
+// revalidation so a plain reload always lands on the freshest build. Production
+// keeps normal caching (fingerprinted assets are immutable and safe to cache).
+if (app.Environment.IsDevelopment())
+{
+    app.Use(async (ctx, next) =>
+    {
+        var path = ctx.Request.Path.Value ?? "/";
+        var noCache = path.StartsWith("/_framework", StringComparison.OrdinalIgnoreCase)
+            || !System.IO.Path.HasExtension(path)                       // SPA shell routes ("/", "/connectfive/1")
+            || path.EndsWith(".css", StringComparison.OrdinalIgnoreCase)
+            || path.EndsWith(".js", StringComparison.OrdinalIgnoreCase);
+        if (noCache)
+        {
+            ctx.Response.OnStarting(() =>
+            {
+                ctx.Response.Headers.CacheControl = "no-cache, no-store, must-revalidate";
+                return Task.CompletedTask;
+            });
+        }
+        await next();
+    });
+}
+
 // ─── Blazor WASM hosting ─────────────────────────────────────────────
 // Bug fix QA #10: opt the static-files middleware into compression-aware
 // responses by setting HttpsCompressionBehavior + adding Vary header. The

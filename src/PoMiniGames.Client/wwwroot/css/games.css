@@ -154,14 +154,34 @@
   background: var(--color-surface-hover);
   border: 1px solid var(--color-border);
   color: var(--color-text-secondary);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   font-size: 0.8rem;
-  transition: all 0.2s;
+  /* §9 Native micro-interaction: transform-only press for instant tactile
+     feedback; discrete props (no `all`) so the browser only composites. */
+  transition: border-color var(--dur-base) var(--ease-standard),
+              color var(--dur-base) var(--ease-standard),
+              transform var(--dur-fast) var(--ease-standard),
+              box-shadow var(--dur-fast) var(--ease-standard);
 }
 
 .gps-controls button:hover {
   border-color: var(--color-accent);
   color: var(--color-text-primary);
+}
+
+/* §9 Instant press feedback + keyboard-visible focus ring (accessible, not
+   mouse-only). :active dips the button; :focus-visible draws the accent halo. */
+.gps-controls button:active { transform: scale(0.94); }
+.gps-controls button:focus-visible,
+.gps-name-input:focus-visible {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.35);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gps-controls button { transition: border-color var(--dur-base), color var(--dur-base); }
+  .gps-controls button:active { transform: none; }
 }
 
 .gps-controls button.active {
@@ -444,102 +464,11 @@
   50% { box-shadow: 0 0 25px rgba(0, 229, 255, 0.7); }
 }
 
-/* ── Connect Five Styles ──
-   Bug fix QA #1: the cell-size clamp now respects 100dvh + 100dvw so the 9x9
-   board scales to fit the viewport on portrait phones (was 360x800 overflowing).
-   `min(calc(... / 9), ...)` guarantees the cells shrink instead of overflowing. */
-.cf-layout {
-  --cf-cell: clamp(28px, min(calc((100dvh - 240px) / 9), calc((100dvw - 56px) / 9)), 56px);
-  --cf-cell-stride: calc(var(--cf-cell) + 3px);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  width: 100%;
-  max-width: 100%;
-  margin: 0 auto;
-  /* §a Defensive: never let the layout exceed its container, regardless of cell calc. */
-  min-width: 0;
-}
-
-.cf-board {
-  display: grid;
-  grid-template-columns: repeat(9, var(--cf-cell));
-  grid-template-rows: repeat(9, var(--cf-cell));
-  gap: 3px;
-  margin: 1rem auto;
-  /* Width tracks the cell grid exactly; no `fit-content` magic on small screens. */
-  width: calc(var(--cf-cell) * 9 + 3px * 8 + 24px);
-  max-width: 100%;
-  padding: 12px;
-  background: var(--color-surface);
-  border-radius: 12px;
-  border: 1px solid var(--color-border);
-  /* §b Paint containment so the 81 cells don't repaint the whole page during
-     piece-drop animations on mid-range mobile devices. */
-  contain: layout paint;
-}
-
-.cf-cell {
-  width: var(--cf-cell);
-  height: var(--cf-cell);
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid var(--color-border);
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: clamp(1rem, 3vmin, 1.6rem);
-  cursor: pointer;
-  transition: all 0.15s;
-  position: relative;
-  /* No overflow clipping: the drop animation translates the piece far above
-     its own cell, so the cell must not clip it. The board's `contain: paint`
-     clips the travelling piece to the board's top edge instead, so it looks
-     like the piece drops in from the top of the board. */
-  overflow: visible;
-}
-
-.cf-cell:hover:not(.disabled) {
-  background: rgba(0, 229, 255, 0.1);
-  border-color: #00e5ff;
-}
-
-.cf-cell.disabled { cursor: default; }
-
-/* Piece drop: fall from above the board (distance = --drop-rows strides, set
-   per-cell) down to the resting row, accelerating like gravity, then a small
-   settle bounce. Only newly-inserted piece elements animate — re-renders reuse
-   the existing DOM node so placed pieces stay put. */
-.cf-cell .piece { animation: cf-slide-down 0.5s cubic-bezier(0.45, 0, 0.55, 1) both; }
-
-@keyframes cf-slide-down {
-  0%   { transform: translateY(calc(-1 * var(--drop-rows, 1) * var(--cf-cell-stride, 55px))); }
-  70%  { transform: translateY(0); }
-  84%  { transform: translateY(-14%); }
-  100% { transform: translateY(0); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .cf-cell .piece { animation: none; }
-}
-
-.cf-cell.red {
-  background: rgba(244, 67, 54, 0.7);
-  border-color: #f44336;
-  box-shadow: inset 0 -3px 6px rgba(0, 0, 0, 0.3);
-}
-
-.cf-cell.yellow {
-  background: rgba(255, 235, 59, 0.7);
-  border-color: #ffeb3b;
-  box-shadow: inset 0 -3px 6px rgba(0, 0, 0, 0.2);
-}
-
-.cf-cell.win-cell {
-  box-shadow: 0 0 20px rgba(0, 229, 255, 0.5);
-  border-color: #00e5ff;
-  animation: glow 1.5s ease-in-out infinite;
-}
+/* ── Connect Five Styles moved to Games/ConnectFive/ConnectFivePage.razor.css ──
+   §2 style isolation: the 9x9 board's ~15 selectors now live in a scoped
+   component stylesheet so they no longer participate in every other game's
+   style-matching. Shared badges (.cf-status--*, .cf-result--*) remain global
+   above — they're a cross-game vocabulary. */
 
 /* ── PoRunner Styles ── */
 .porunner-wrapper {
@@ -1457,40 +1386,14 @@
 }
 
 /* ── Responsive Game Styles ──
-   Bug fix QA #1: on phones (<= 640 px), shrink the cell size more aggressively
-   so the 9x9 board + shell chrome all fit inside the viewport. The dvh-based
-   clamp above already does most of the work; this block just trims padding and
-   forces the explicit cell-size for small screens where the clamp's lower bound
-   needs to be even smaller. */
+   (Connect Five's phone breakpoints moved to its scoped razor.css alongside the
+   rest of its board rules — §2 style isolation.) */
 @media (max-width: 640px) {
-  .cf-layout {
-    --cf-cell: clamp(28px, calc((100dvh - 220px) / 9), 44px);
-    --cf-cell-stride: calc(var(--cf-cell) + 2px);
-  }
   .ttt-board {
     --ttt-cell: clamp(38px, 13vw, 48px);
     gap: 2px;
     padding: 8px;
   }
-  .cf-board {
-    gap: 2px;
-    padding: 8px;
-    width: calc(var(--cf-cell) * 9 + 2px * 8 + 16px);
-  }
-  .cf-cell {
-    width: var(--cf-cell);
-    height: var(--cf-cell);
-    font-size: clamp(0.85rem, 2.6vmin, 1rem);
-  }
-}
-
-/* Ultra-narrow phones (<= 360 px) — bump cell down further so the board plus
-   top-bar + bottom-tab-bar + padding all fit on one viewport height. */
-@media (max-width: 360px) {
-  .cf-layout {
-    --cf-cell: clamp(24px, calc((100dvh - 200px) / 9), 36px);
-  }
-  .cf-cell { font-size: 0.75rem; }
 }
 
 /* Audit fix #3: PoDropSquare + PoSnakeGame boards overflow the viewport on

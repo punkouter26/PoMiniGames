@@ -183,6 +183,11 @@
         if (PlayMode == "demo")
         {
             _demoCts = new CancellationTokenSource();
+            // Kick off the CPU-vs-CPU auto-play loop. This call was dropped in
+            // the KioskCoordinator refactor, which left demo mode showing an
+            // empty board — the kiosk timer moved out, but the per-game loop
+            // must still start here.
+            _ = RunDemoLoop(_demoCts.Token);
         }
         else
         {
@@ -345,6 +350,7 @@
     
     private string GetStatusIcon()
     {
+        if (PlayMode == "demo") return "🎮";
         if (PlayMode == "2p")
         {
             return _gameResult switch
@@ -365,6 +371,7 @@
 
     private string GetStatusText()
     {
+        if (PlayMode == "demo") return "Demo mode";
         if (PlayMode == "2p")
         {
             return _gameResult switch
@@ -386,6 +393,7 @@
 
     private string GetStatusClass()
     {
+        if (PlayMode == "demo") return "gps-status-badge turn";
         if (PlayMode == "2p")
         {
             return _gameResult switch

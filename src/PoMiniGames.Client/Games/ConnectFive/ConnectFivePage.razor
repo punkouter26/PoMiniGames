@@ -10,6 +10,7 @@
 @inject PlayerNameService PlayerNameService;
 @inject MatchHistoryService MatchHistory;
 @inject KioskCoordinator Kiosk;
+@inject UiFeedbackService Feedback;
 
 <GameShell 
     Title=@TitleContent 
@@ -24,7 +25,10 @@
     Controls="@ControlsContent">
     
     <div class="cf-layout">
-        <div class="cf-board" role="grid" aria-label="Connect Five game board">
+        @* §3 Hover-ghost: pointerleave on the board clears the column preview so
+           the ghost disc never sticks when the cursor exits the grid. *@
+        <div class="cf-board" role="grid" aria-label="Connect Five game board"
+             @onpointerleave="ClearHover">
             @for (int r = 0; r < ConnectFiveBoard.Rows; r++)
             {
                 @for (int c = 0; c < ConnectFiveBoard.Cols; c++)
@@ -32,21 +36,33 @@
                     var row = r;
                     var col = c;
                     var piece = _board.Get(r, c);
-                    var isWinCell = _winCells.Any(wc => wc.Row == r && wc.Col == c);
+                    var winIndex = _winCells.FindIndex(wc => wc.Row == r && wc.Col == c);
+                    var isWinCell = winIndex >= 0;
+                    var isGhost = piece == Piece.None && CanPreview && col == _hoverCol && row == _hoverTargetRow;
 
                     <div class="cf-cell @GetPieceClass(piece) @(isWinCell ? "win-cell" : "") @(_gameResult != GameResult.InProgress ? "disabled" : "")"
+                         style="@(isWinCell ? $"--win-i: {winIndex};" : null)"
                          @onclick="() => HandleDrop(col)"
+                         @onpointerenter="() => SetHover(col)"
                          role="gridcell"
                          aria-label="@GetPieceAriaLabel(piece)">
-                        @* --drop-rows sets how far the piece falls: from above the
-                           board down to its resting row (row index + 1 strides). *@
+                        @* The disc IS the piece: a single glossy CSS disc drops in
+                           from above the board. --drop-rows sets how far it falls:
+                           from above the board down to its resting row (row index + 1
+                           strides). No emoji + cell-fill double-circle. *@
                         @if (piece == Piece.Red)
                         {
-                            <span class="piece red-piece" style="--drop-rows: @(row + 1);">🔴</span>
+                            <span class="piece red-piece" style="--drop-rows: @(row + 1);" aria-hidden="true"></span>
                         }
                         else if (piece == Piece.Yellow)
                         {
-                            <span class="piece yellow-piece" style="--drop-rows: @(row + 1);">🟡</span>
+                            <span class="piece yellow-piece" style="--drop-rows: @(row + 1);" aria-hidden="true"></span>
+                        }
+                        else if (isGhost)
+                        {
+                            @* Column-drop preview — colourless of drop animation; CSS
+                               hides it entirely on coarse/touch pointers. *@
+                            <span class="piece ghost-piece @GhostColorClass" aria-hidden="true"></span>
                         }
                     </div>
                 }
@@ -82,6 +98,33 @@
     private readonly GameStatsService _gameStats = new();
     private CancellationTokenSource? _demoCts;
     // BUG FIX (#1): _kioskTimer removed; KioskCoordinator owns the timer.
+
+    // §3 Column-preview ghost. _hoverCol is the column under the pointer (-1 = none).
+    // The landing row is derived from the live board (never stored), so it stays
+    // correct after the AI or the other player fills a slot without a re-hover.
+    private int _hoverCol = -1;
+    private int _hoverTargetRow => _hoverCol >= 0 ? _board.GetTargetRow(_hoverCol) : -1;
+    // The ghost only makes sense on a live human turn — not while the AI thinks,
+    // not in demo, not after the game ends. CSS additionally hides it on touch.
+    private bool CanPreview => _gameResult == GameResult.InProgress && !_isAiTurn && PlayMode != "demo";
+    // The ghost wears the colour of whoever is about to move.
+    private string GhostColorClass => PlayMode == "2p"
+        ? (_current2pPiece == Piece.Red ? "red-piece" : "yellow-piece")
+        : "red-piece";
+
+    private void SetHover(int col)
+    {
+        if (!CanPreview || _hoverCol == col) return;
+        _hoverCol = col;
+        StateHasChanged();
+    }
+
+    private void ClearHover()
+    {
+        if (_hoverCol == -1) return;
+        _hoverCol = -1;
+        StateHasChanged();
+    }
 
     private string _backTo => "/";
     private bool _isGameOver => _gameResult != GameResult.InProgress && PlayMode != "demo";
@@ -179,6 +222,11 @@
         if (PlayMode == "demo")
         {
             _demoCts = new CancellationTokenSource();
+            // Kick off the CPU-vs-CPU auto-play loop. This call was dropped in
+            // the KioskCoordinator refactor, which left demo mode showing an
+            // empty board — the kiosk timer moved out, but the per-game loop
+            // must still start here.
+            _ = RunDemoLoop(_demoCts.Token);
         }
         else
         {
@@ -239,12 +287,14 @@
         if (PlayMode == "2p") { HandleTwoPlayerDrop(targetRow, col); return; }
 
         _board = _board.Place(targetRow, col, Piece.Red);
-        
+        _ = Feedback.DiscDropAsync(); // §4 disc-landing tock, synced to the settle bounce
+
         var winCheck = _board.CheckWin(Piece.Red);
         if (winCheck.Won)
         {
             _gameResult = GameResult.Win;
             _winCells = winCheck.Cells;
+            _ = Feedback.CompleteAsync(); // §4 victory chord
             _ = _gameStats.RecordResult("connectfive", _playerName, _difficulty, GameResult.Win);
             UpdateStats();
             return;
@@ -284,12 +334,14 @@
             await Task.Delay(300, ct);
             var (ar, ac) = _ai.GetMove(_board, Piece.Yellow, _difficulty);
             _board = _board.Place(ar, ac, Piece.Yellow);
+            _ = Feedback.DiscDropAsync(); // §4 the AI's disc lands with the same tock
             var aiWin = _board.CheckWin(Piece.Yellow);
             if (aiWin.Won)
             {
                 _gameResult = GameResult.Loss;
                 _winCells = aiWin.Cells;
                 _isAiTurn = false;
+                _ = Feedback.ErrorAsync(); // §4 low buzz on defeat
                 _ = _gameStats.RecordResult("connectfive", _playerName, _difficulty, GameResult.Loss);
             }
             else if (_board.IsFull())
@@ -317,12 +369,14 @@
     {
         var piece = _current2pPiece;
         _board = _board.Place(targetRow, col, piece);
+        _ = Feedback.DiscDropAsync(); // §4 disc-landing tock
 
         var winCheck = _board.CheckWin(piece);
         if (winCheck.Won)
         {
             _winCells = winCheck.Cells;
             _gameResult = piece == Piece.Red ? GameResult.Win : GameResult.Loss;
+            _ = Feedback.CompleteAsync(); // §4 victory chord for whoever connected five
             RecordLocalMatch();
             return;
         }

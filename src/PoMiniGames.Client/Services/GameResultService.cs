@@ -90,29 +90,4 @@ public sealed class GameResultService
         }
         return stats;
     }
-
-    /// <summary>Records the snake outcome locally and submits the high score together.</summary>
-    public async Task<PlayerStats> RecordAndSubmitSnakeAsync(
-        string playerName, Difficulty difficulty, GameResult result, SnakeHighScore? highScore)
-    {
-        var stats = await _stats.RecordResult("posnakegame", playerName, difficulty, result);
-        if (highScore is not null)
-        {
-            var submitted = await _api.SubmitSnakeHighScoreAsync(highScore);
-            if (submitted is null)
-            {
-                _sync.EnqueueSnake(highScore);
-                await _feedback.ErrorAsync();
-            }
-            else
-            {
-                await _feedback.CompleteAsync();
-            }
-        }
-        else
-        {
-            await _feedback.TapAsync();
-        }
-        return stats;
-    }
 }

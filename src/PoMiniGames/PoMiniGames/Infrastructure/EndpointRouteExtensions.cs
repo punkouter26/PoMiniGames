@@ -1,14 +1,13 @@
 using PoMiniGames.Features.Auth;
 using PoMiniGames.Features.Diagnostics;
 using PoMiniGames.Features.Health;
-using PoMiniGames.Features.HighScores;     // HighScores + MarbleRace mappers
+using PoMiniGames.Features.HighScores;     // MarbleRace / PoBrawl mappers
 using PoMiniGames.Features.Leaderboard;
 using PoMiniGames.Features.MatchHistory;
 using PoMiniGames.Features.PoCoupleQuiz;
 using PoMiniGames.Features.PoFace;
 using PoMiniGames.Features.PoFunQuiz;
 using PoMiniGames.Features.PoJoker;
-using PoMiniGames.Features.PoRaceRagdoll;
 using PoMiniGames.Features.PoRacer;
 using PoMiniGames.Features.PoRunner;
 using PoMiniGames.Features.PoSurvive;
@@ -49,11 +48,9 @@ internal static class EndpointRouteExtensions
         gameApi.MapGetLeaderboard();
         gameApi.MapUnifiedLeaderboardEndpoints();
         gameApi.MapGetAllPlayerStatistics();
-        gameApi.MapHighScoresEndpoints();
         gameApi.MapMarbleRaceHighScoresEndpoints();
         gameApi.MapPoBrawlHighScoresEndpoints();
         gameApi.MapMatchHistoryEndpoints();
-        gameApi.MapGameEndpoints();          // PoRaceRagdoll
         gameApi.MapCoupleQuizEndpoints();
         gameApi.MapFunQuizEndpoints();
         gameApi.MapFaceEndpoints();

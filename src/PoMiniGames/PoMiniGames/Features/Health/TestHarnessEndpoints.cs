@@ -64,7 +64,7 @@ public static class TestHarnessEndpoints
                 checklist = new[]
                 {
                     "1. Open DevTools → Performance → Start Recording",
-                    "2. Navigate to /dropsquare or /voxelshooter",
+                    "2. Navigate to /poclick (or any game that triggers a canvas redraw)",
                     "3. Stop recording after 2-3 seconds",
                     "4. Look for long task / layout thrash / Paint events",
                     "5. Check React Profiler for janky commits",

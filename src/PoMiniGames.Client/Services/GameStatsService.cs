@@ -91,13 +91,6 @@ public class GameStatsService
         {
             "connectfive" => "Connect Five",
             "tictactoe" => "Tic Tac Toe",
-            "voxelshooter" => "Voxel Shooter",
-            "pofight" => "PoFight",
-            "podropsquare" => "PoDropSquare",
-            "pobabytouch" => "PoBabyTouch",
-            "poraceragdoll" => "PoRaceRagdoll",
-            "posnakegame" => "PoSnakeGame",
-            "pohorserace" => "PoHorseRace",
             "porunner" => "PoRunner",
             "poracer" => "PoRacer",
             "pomarblerace" => "PoMarbleRace",

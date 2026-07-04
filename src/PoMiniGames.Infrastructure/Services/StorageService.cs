@@ -20,14 +20,10 @@ namespace PoMiniGames.Infrastructure.Services;
 public class StorageService : IStorageService
 {
     private const string PlayerStatsTable = "PlayerStats";
-    private const string SnakeTable = "SnakeHighScores";
-    private const string DropSquareTable = "PoDropSquareHighScores";
     private const string MarbleRaceTable = "MarbleRaceHighScores";
     private const string PoBrawlTable = "PoBrawlHighScores";
 
     // High scores share a single partition per game so a leaderboard is one partition scan.
-    private const string SnakePartition = "snake";
-    private const string DropSquarePartition = "podropsquare";
     private const string MarbleRacePartition = "marblerace";
     private const string PoBrawlPartition = "pobrawl";
 
@@ -74,7 +70,7 @@ public class StorageService : IStorageService
     /// </summary>
     public void Initialize()
     {
-        foreach (var table in new[] { PlayerStatsTable, SnakeTable, DropSquareTable, MarbleRaceTable, PoBrawlTable })
+        foreach (var table in new[] { PlayerStatsTable, MarbleRaceTable, PoBrawlTable })
         {
             try { Table(table); } catch { /* ensured lazily on first use */ }
         }
@@ -234,61 +230,6 @@ public class StorageService : IStorageService
     // ── High scores ───────────────────────────────────────────────────────
     // Each game is one descriptor; the save/get flow below is shared by all of them.
 
-    private static readonly HighScoreDescriptor<SnakeHighScore> SnakeScores = new(
-        Table: SnakeTable,
-        Partition: SnakePartition,
-        Sanitize: e => e with
-        {
-            Initials = e.Initials.Trim().ToUpperInvariant(),
-            Date = DefaultDate(e.Date),
-        },
-        ToFields: e => new Dictionary<string, object?>
-        {
-            ["Initials"] = e.Initials,
-            ["Score"] = e.Score,
-            ["Date"] = e.Date,
-            ["GameDuration"] = e.GameDuration,
-            ["SnakeLength"] = e.SnakeLength,
-            ["FoodEaten"] = e.FoodEaten,
-        },
-        FromEntity: e => new SnakeHighScore
-        {
-            Initials = e.GetString("Initials") ?? "",
-            Score = e.GetInt32("Score") ?? 0,
-            Date = e.GetString("Date") ?? "",
-            GameDuration = e.GetDouble("GameDuration") ?? 30d,
-            SnakeLength = e.GetInt32("SnakeLength") ?? 0,
-            FoodEaten = e.GetInt32("FoodEaten") ?? 0,
-        },
-        // Highest score wins.
-        Rank: s => s.OrderByDescending(x => x.Score));
-
-    private static readonly HighScoreDescriptor<PoDropSquareHighScore> DropSquareScores = new(
-        Table: DropSquareTable,
-        Partition: DropSquarePartition,
-        Sanitize: e => e with
-        {
-            PlayerInitials = Initials3(e.PlayerInitials),
-            Date = DefaultDate(e.Date),
-            PlayerName = string.IsNullOrWhiteSpace(e.PlayerName) ? null : SanitizeName(e.PlayerName),
-        },
-        ToFields: e => new Dictionary<string, object?>
-        {
-            ["PlayerInitials"] = e.PlayerInitials,
-            ["SurvivalTime"] = e.SurvivalTime,
-            ["Date"] = e.Date,
-            ["PlayerName"] = e.PlayerName,
-        },
-        FromEntity: e => new PoDropSquareHighScore
-        {
-            PlayerInitials = e.GetString("PlayerInitials") ?? "",
-            SurvivalTime = e.GetDouble("SurvivalTime") ?? 0d,
-            Date = e.GetString("Date") ?? "",
-            PlayerName = e.GetString("PlayerName"),
-        },
-        // Lowest survival time wins, oldest first as the tiebreaker.
-        Rank: s => s.OrderBy(x => x.SurvivalTime).ThenBy(x => x.Date));
-
     private static readonly HighScoreDescriptor<MarbleRaceHighScore> MarbleRaceScores = new(
         Table: MarbleRaceTable,
         Partition: MarbleRacePartition,
@@ -339,18 +280,6 @@ public class StorageService : IStorageService
         },
         // Fastest KO wins, oldest first as the tiebreaker.
         Rank: s => s.OrderBy(x => x.KoTimeSeconds).ThenBy(x => x.Date));
-
-    public Task<List<SnakeHighScore>> GetSnakeHighScoresAsync(int limit = 10) =>
-        GetHighScoresAsync(SnakeScores, limit);
-
-    public Task<SnakeHighScore> SaveSnakeHighScoreAsync(SnakeHighScore entry) =>
-        SaveHighScoreAsync(SnakeScores, entry);
-
-    public Task<List<PoDropSquareHighScore>> GetPoDropSquareHighScoresAsync(int limit = 10) =>
-        GetHighScoresAsync(DropSquareScores, limit);
-
-    public Task<PoDropSquareHighScore> SavePoDropSquareHighScoreAsync(PoDropSquareHighScore entry) =>
-        SaveHighScoreAsync(DropSquareScores, entry);
 
     public Task<List<MarbleRaceHighScore>> GetMarbleRaceHighScoresAsync(int limit = 10) =>
         GetHighScoresAsync(MarbleRaceScores, limit);

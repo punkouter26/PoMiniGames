@@ -16,11 +16,6 @@ public sealed class HomePageApiTests : IClassFixture<TestWebApplicationFactory>
     [
         "connectfive",
         "tictactoe",
-        "voxelshooter",
-        "pofight",
-        "podropsquare",
-        "pobabytouch",
-        "poraceragdoll",
         "pocouplequiz",
         "pofunquiz",
         "poface",
@@ -38,11 +33,6 @@ public sealed class HomePageApiTests : IClassFixture<TestWebApplicationFactory>
     [Theory]
     [InlineData("connectfive")]
     [InlineData("tictactoe")]
-    [InlineData("voxelshooter")]
-    [InlineData("pofight")]
-    [InlineData("podropsquare")]
-    [InlineData("pobabytouch")]
-    [InlineData("poraceragdoll")]
     [InlineData("pocouplequiz")]
     [InlineData("pofunquiz")]
     [InlineData("poface")]
@@ -56,8 +46,6 @@ public sealed class HomePageApiTests : IClassFixture<TestWebApplicationFactory>
 
     [Theory]
     [InlineData("connectfive")]
-    [InlineData("voxelshooter")]
-    [InlineData("podropsquare")]
     public async Task GetLeaderboard_ReturnsEmptyArray_WhenNoEntries(string gameId)
     {
         var entries = await _client.GetFromJsonAsync<object[]>($"/api/{gameId}/statistics/leaderboard");

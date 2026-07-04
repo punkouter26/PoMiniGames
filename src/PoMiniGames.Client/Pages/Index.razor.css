@@ -667,6 +667,28 @@
 
 .home-game-chip--playall { cursor: pointer; font: inherit; font-weight: 600; }
 
+/* Demo card acts as the primary "Watch all demos" action. Distinct
+   amber/orange accent so it doesn't look identical to the static
+   1P / 2P / Multi cards which are purely navigational labels. */
+.home-mode-btn--demo {
+    cursor: pointer;
+    border-color: rgba(251, 146, 60, 0.55);
+    background: linear-gradient(135deg, rgba(251, 146, 60, 0.18), rgba(244, 114, 182, 0.10));
+}
+
+.home-mode-btn--demo:hover {
+    border-color: rgba(251, 146, 60, 0.85);
+    background: linear-gradient(135deg, rgba(251, 146, 60, 0.28), rgba(244, 114, 182, 0.16));
+}
+
+.home-mode-btn--demo-on {
+    background: linear-gradient(135deg, rgba(251, 146, 60, 0.42), rgba(244, 114, 182, 0.30));
+    border-color: rgba(251, 146, 60, 1);
+    color: #fff7ed;
+}
+
+.home-mode-btn--demo-on .home-mode-icon { color: #fff7ed; }
+
 .home-mode-btn--static { cursor: default; }
 
 .home-mode-btn--static:hover {

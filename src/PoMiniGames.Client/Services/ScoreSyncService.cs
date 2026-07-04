@@ -6,7 +6,6 @@ namespace PoMiniGamesClient.Services;
 /// <summary>The kind of server board a queued score targets — drives which submit path the flusher uses.</summary>
 public enum PendingScoreKind
 {
-    Snake,
     MarbleRace,
     PoBrawl
 }
@@ -60,9 +59,6 @@ public sealed class ScoreSyncService
     public event Action? Changed;
 
     public int PendingCount => _store.Load().Count;
-
-    public void EnqueueSnake(SnakeHighScore entry) =>
-        Enqueue(PendingScoreKind.Snake, JsonSerializer.Serialize(entry, ApiJsonContext.Default.SnakeHighScore));
 
     public void EnqueueMarbleRace(MarbleRaceHighScore entry) =>
         Enqueue(PendingScoreKind.MarbleRace, JsonSerializer.Serialize(entry, ApiJsonContext.Default.MarbleRaceHighScore));
@@ -139,9 +135,6 @@ public sealed class ScoreSyncService
 
     private async Task<bool> SubmitAsync(PendingScore item) => item.Kind switch
     {
-        PendingScoreKind.Snake =>
-            await _api.SubmitSnakeHighScoreAsync(
-                JsonSerializer.Deserialize(item.PayloadJson, ApiJsonContext.Default.SnakeHighScore) ?? new SnakeHighScore()) is not null,
         PendingScoreKind.MarbleRace =>
             await _api.SubmitMarbleRaceHighScoreAsync(
                 JsonSerializer.Deserialize(item.PayloadJson, ApiJsonContext.Default.MarbleRaceHighScore) ?? new MarbleRaceHighScore()) is not null,

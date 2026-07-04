@@ -197,37 +197,6 @@ public class ApiService
         }
     }
 
-    public async Task<SnakeHighScore[]?> GetSnakeHighScoresAsync(int count = 10)
-    {
-        try
-        {
-            return await _http.GetFromJsonAsync(
-                $"/api/snake/highscores?count={count}", ApiJsonContext.Default.SnakeHighScoreArray);
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    public async Task<SnakeHighScore?> SubmitSnakeHighScoreAsync(SnakeHighScore entry)
-    {
-        try
-        {
-            // Stamp the play time once. Preserving it across a timeout-then-resync keeps the
-            // server's content-hash RowKey stable, so a requeued score upserts onto the same
-            // row instead of duplicating the leaderboard entry.
-            if (string.IsNullOrEmpty(entry.Date))
-                entry.Date = DateTime.UtcNow.ToString("O");
-            var response = await _http.PostAsJsonAsync("/api/snake/highscores", entry, ApiJsonContext.Default.SnakeHighScore);
-            return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync(ApiJsonContext.Default.SnakeHighScore) : null;
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
     public async Task<MarbleRaceHighScore[]?> GetMarbleRaceHighScoresAsync(int count = 10)
     {
         try

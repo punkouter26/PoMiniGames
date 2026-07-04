@@ -19,9 +19,6 @@ public static class UnifiedLeaderboardEndpoints
     [
         ("connectfive", "Connect Five"),
         ("tictactoe", "Tic Tac Toe"),
-        ("pofight", "PoFight"),
-        ("poraceragdoll", "PoRaceRagdoll"),
-        ("pohorserace", "PoHorseRace"),
         ("poclick", "PoClick"),
         ("porunner", "PoRunner"),
         ("poracer", "PoRacer"),
@@ -69,9 +66,7 @@ public static class UnifiedLeaderboardEndpoints
             result.Add(await BuildWinRateAsync(storage, key, title, limit));
         }
 
-        result.Add(await BuildSnakeAsync(storage, limit));
         result.Add(await BuildMarbleAsync(storage, limit));
-        result.Add(await BuildDropSquareAsync(storage, limit));
 
         // Boards with at least one entry float to the top; empty boards still ship so the
         // client can show a "be the first" prompt instead of hiding the game entirely.
@@ -87,9 +82,7 @@ public static class UnifiedLeaderboardEndpoints
 
         return key switch
         {
-            "posnakegame" or "snake" => await BuildSnakeAsync(storage, limit),
             "pomarblerace" or "marblerace" => await BuildMarbleAsync(storage, limit),
-            "podropsquare" => await BuildDropSquareAsync(storage, limit),
             _ => null,
         };
     }
@@ -106,16 +99,6 @@ public static class UnifiedLeaderboardEndpoints
         return new GameLeaderboardDto(key, title, "Win rate", HigherIsBetter: true, entries);
     }
 
-    private static async Task<GameLeaderboardDto> BuildSnakeAsync(IStorageService storage, int limit)
-    {
-        var scores = await storage.GetSnakeHighScoresAsync(limit);
-        var entries = scores
-            .Select((s, i) => new LeaderboardEntryDto(
-                i + 1, s.Initials, s.Score, s.Score.ToString("N0", CultureInfo.InvariantCulture)))
-            .ToList();
-        return new GameLeaderboardDto("posnakegame", "PoSnakeGame", "Points", HigherIsBetter: true, entries);
-    }
-
     private static async Task<GameLeaderboardDto> BuildMarbleAsync(IStorageService storage, int limit)
     {
         var scores = await storage.GetMarbleRaceHighScoresAsync(limit);
@@ -124,19 +107,5 @@ public static class UnifiedLeaderboardEndpoints
                 i + 1, s.PlayerInitials, s.BestScore, s.BestScore.ToString("N0", CultureInfo.InvariantCulture)))
             .ToList();
         return new GameLeaderboardDto("pomarblerace", "PoMarbleRace", "Points", HigherIsBetter: true, entries);
-    }
-
-    private static async Task<GameLeaderboardDto> BuildDropSquareAsync(IStorageService storage, int limit)
-    {
-        var scores = await storage.GetPoDropSquareHighScoresAsync(limit);
-        var entries = scores
-            .Select((s, i) => new LeaderboardEntryDto(
-                i + 1,
-                string.IsNullOrWhiteSpace(s.PlayerName) ? s.PlayerInitials : s.PlayerName!,
-                s.SurvivalTime,
-                s.SurvivalTime.ToString("0.0", CultureInfo.InvariantCulture) + "s"))
-            .ToList();
-        // Survival board is already ranked longest-first by storage; higher time = better.
-        return new GameLeaderboardDto("podropsquare", "PoDropSquare", "Survival", HigherIsBetter: true, entries);
     }
 }

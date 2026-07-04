@@ -7,6 +7,7 @@
 @layout PoSurviveLayout
 @using PoSurvive.Client.Features.Grid
 @using PoSurvive.Client.Services
+@using PoMiniGamesClient.Services
 @using PoSurvive.Client.Store
 @inherits Fluxor.Blazor.Web.Components.FluxorComponent
 @implements IDisposable
@@ -18,6 +19,8 @@
 @inject IInferenceService        InferenceService
 @inject InferenceRouter?         InferenceRouterOrNull
 @inject LocalModelBootstrapService ModelBootstrap
+@inject KioskCoordinator         Kiosk
+@inject PoSurvive.Client.Services.SimulationLaunchService LaunchService
 
 <div data-testid="grid-container">
     @if (!SimState.Value.IsRunning && SimState.Value.Agents.Count == 0 && !SimState.Value.ShowPostMortem)
@@ -143,11 +146,49 @@
     private List<ModelOption> _modelOptions = [];
     private DotNetObjectReference<PoSurvivePage>? _bridgeCallbacksRef;
 
+    // ── Demo (kiosk auto-cycle, mirrors PoCoupleQuiz demo pattern) ─────
+    // Lands on /posurvive?demo=1, bypasses Mission Control, runs a
+    // deterministic two-team match in degraded/mock mode at fast speed,
+    // and loops on post-mortem. The KioskCoordinator owns the 20-24s
+    // rotation between demo pages; this loop keeps the simulation itself
+    // playing continuously while the page is on screen.
+    [SupplyParameterFromQuery(Name = "demo")] public int DemoQuery { get; set; } = 0;
+    [SupplyParameterFromQuery(Name = "kiosk")] public int KioskNext { get; set; } = -1;
+    private bool _isDemo;
+    private bool _demoBooted;
+    private bool _lastShowPostMortem;
+    private System.Threading.Timer? _demoLoopTimer;
+    private const int DemoHeartbeatMs = 250;        // 4 turns/sec — fast enough for a 10-15s match
+    private const int DemoRestartDelayMs = 3_500;   // how long the post-mortem stays on screen
+    private const int DemoPreLaunchDelayMs = 500;   // brief gap so the reset+launch pair is visible
+
     protected override void OnInitialized()
     {
         base.OnInitialized();
         _modelOptions    = ModelBootstrap.ReadAllModelOptions();
         _selectedModelId = ModelBootstrap.ResolveDefaultSelectedModelIdFromAll(BootState.Value.ModelId, _modelOptions);
+
+        if (DemoQuery == 1)
+        {
+            _isDemo = true;
+            // Register the demo with the KioskCoordinator so the on-screen
+            // countdown / pause / skip / exit controls pick this game up.
+            Kiosk.SetCurrent("posurvive-demo");
+        }
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        base.OnAfterRender(firstRender);
+
+        if (!_isDemo || _demoBooted) return;
+        // First render after demo init: kick off the simulation loop.
+        // Doing it here (vs OnInitialized) gives Fluxor a chance to
+        // subscribe state-change handlers before we start dispatching.
+        _demoBooted = true;
+        _lastShowPostMortem = SimState.Value.ShowPostMortem;
+        SimState.StateChanged += OnSimStateChanged;
+        _ = InvokeAsync(BootDemoAsync);
     }
 
     protected override void OnParametersSet()
@@ -271,6 +312,74 @@
         await FocusStartControl();
     }
 
+    // ── Demo drivers ───────────────────────────────────────────────────
+    // BootDemoAsync runs once when the demo page first renders. It:
+    //   1. forces the BootState to "ready" via the degraded-mode path
+    //      (no model download, mock inference; matches what the live
+    //      degraded-mode play would do),
+    //   2. cranks the heartbeat to 250ms so a match resolves in ~10-15s,
+    //   3. dispatches StartSimulationAction with a small deterministic
+    //      config (TeamSize 2, generous food spawn).
+    // The state-change subscription (OnSimStateChanged) handles the
+    // post-mortem → reset → re-launch cycle.
+    private async Task BootDemoAsync()
+    {
+        if (!_isDemo) return;
+
+        // Force degraded mode so the layout renders the grid instead of
+        // Mission Control. BootReducers treats this as ready.
+        Dispatcher.Dispatch(new ContinueDegradedModeAction());
+
+        // Crank speed — mock inference + tiny grid = much faster than the
+        // default 900ms/turn. Keeps the demo snappy on the kiosk reel.
+        Dispatcher.Dispatch(new SpeedChangedAction(DemoHeartbeatMs));
+
+        await Task.Yield();
+
+        var config = await LaunchService.BuildConfigAsync();
+        Dispatcher.Dispatch(new StartSimulationAction(config, IsMockProvider: true));
+    }
+
+    // State-change handler: when the simulation finishes and the
+    // post-mortem overlay appears, schedule a reset + re-launch after a
+    // short pause so the kiosk viewer sees the narrative + outcome, then
+    // a fresh match starts. We track the previous value of ShowPostMortem
+    // so the timer only fires on the false→true edge transition (not on
+    // every state change while the overlay is up).
+    private void OnSimStateChanged(object? sender, EventArgs e)
+    {
+        if (!_isDemo) return;
+        var showPostMortem = SimState.Value.ShowPostMortem;
+        if (showPostMortem && !_lastShowPostMortem)
+        {
+            _demoLoopTimer?.Dispose();
+            _demoLoopTimer = new System.Threading.Timer(
+                _ => InvokeAsync(DemoRestartAsync),
+                null,
+                DemoRestartDelayMs,
+                System.Threading.Timeout.Infinite);
+        }
+        _lastShowPostMortem = showPostMortem;
+    }
+
+    private async Task DemoRestartAsync()
+    {
+        if (!_isDemo) return;
+        _demoLoopTimer?.Dispose();
+        _demoLoopTimer = null;
+
+        // Reset clears SimState (turn → 0, IsRunning → false, post-mortem
+        // hidden), then we re-launch a fresh match.
+        Dispatcher.Dispatch(new ResetSimulationAction());
+        Dispatcher.Dispatch(new SpeedChangedAction(DemoHeartbeatMs));
+
+        await Task.Delay(DemoPreLaunchDelayMs);
+        if (!_isDemo) return;
+
+        var config = await LaunchService.BuildConfigAsync();
+        Dispatcher.Dispatch(new StartSimulationAction(config, IsMockProvider: true));
+    }
+
     [JSInvokable]
     public void OnModelProgress(long bytesLoaded, long totalBytes)
         => Dispatcher.Dispatch(new ModelLoadProgressAction(bytesLoaded, totalBytes));
@@ -298,6 +407,12 @@
     {
         _bridgeCallbacksRef?.Dispose();
         _bridgeCallbacksRef = null;
+        _demoLoopTimer?.Dispose();
+        _demoLoopTimer = null;
+        if (_demoBooted)
+        {
+            SimState.StateChanged -= OnSimStateChanged;
+        }
     }
 
 }

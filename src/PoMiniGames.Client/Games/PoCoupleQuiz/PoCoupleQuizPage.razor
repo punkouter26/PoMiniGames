@@ -4,43 +4,103 @@
 @inject CoupleQuizHubService Hub
 @inject PlayerNameService PlayerNameService
 @inject NavigationManager Navigation
+@inject KioskCoordinator Kiosk
 @implements IAsyncDisposable
 
 <GameShell Title=@TitleContent Player="@_playerName" BackTo="/" ShowSettings="false"
-           GameOver="@(_solo && _soloFinished)"
+           GameOver="@(_solo && _soloFinished && !_isDemo)"
            OnPlayAgain="StartSolo"
            GameSummary="@GameSummaryContent">
     @if (_solo)
     {
-        <div class="cq-solo">
-            @if (!_soloFinished)
-            {
-                <h2 class="gps-phase-h">Solo · Round @(_soloRound + 1) of @_soloQuestions.Count</h2>
-                <p>Score: <strong>@_soloScore</strong></p>
-                <p class="cq-solo-question"><strong>@CurrentSoloQuestion.Text</strong></p>
-                @if (!_soloRevealed)
+        @if (_isDemo)
+        {
+            @* Demo renders the multiplayer shell so the kiosk viewer sees a
+               "live multiplayer game" — same .cq-game/.cq-results/.cq-gameover
+               markup + same .cq-btn classes that the real /couplequiz/game page uses. *@
+            <div class="cq-game">
+                <h2 class="gps-phase-h">@(_demoPhase == DemoPhase.GameOver ? "Game over" : $"Round {_soloRound + 1} of {_soloQuestions.Count}")</h2>
+                @if (_demoIsKing && _demoPhase == DemoPhase.Answering)
                 {
-                    <div class="cq-actions cq-actions--wrap">
-                        @for (int i = 0; i < CurrentSoloQuestion.Options.Length; i++)
+                    <p class="cq-king">👑 You are the King. Type your secret answer below — the others will try to match.</p>
+                }
+                <p class="cq-question">@CurrentSoloQuestion.Text</p>
+                <input @bind="_demoAnswer"
+                       placeholder="@(_demoIsKing ? "Your secret answer (1-2 words)" : "Your guess")"
+                       maxlength="60"
+                       readonly />
+                <div class="cq-actions">
+                    <button class="cq-btn cq-btn-primary" disabled>
+                        @(_demoPhase == DemoPhase.Results ? "Submitted ✓" : (_demoIsKing ? "Lock secret" : "Submit"))
+                    </button>
+                </div>
+
+                @if (_demoPhase == DemoPhase.Results)
+                {
+                    <div class="cq-results">
+                        <h3>Round result</h3>
+                        <p>King's answer: <strong>@_demoKingAnswer</strong></p>
+                        @if (_demoMatchedPlayers.Count > 0)
                         {
-                            var idx = i;
-                            <button class="cq-btn cq-btn-secondary" @onclick="() => SoloPick(idx)">@CurrentSoloQuestion.Options[idx]</button>
+                            <p>Matched: @string.Join(", ", _demoMatchedPlayers)</p>
                         }
+                        <h4>Scores</h4>
+                        <ul>
+                            @foreach (var kv in _demoRoundScores.OrderByDescending(x => x.Value))
+                            {
+                                <li>@kv.Key — @kv.Value</li>
+                            }
+                        </ul>
                     </div>
                 }
-                else
+
+                @if (_demoPhase == DemoPhase.GameOver)
                 {
-                    <p>Your partner picked: <strong>@CurrentSoloQuestion.Options[CurrentSoloQuestion.PartnerIndex]</strong></p>
-                    <p>@(_soloLastMatch ? $"💞 Match! +{_soloLastPoints}" : "💔 No match")</p>
-                    @if (_soloStreak > 1)
-                    {
-                        <p>🔥 Streak: <strong>@_soloStreak</strong></p>
-                    }
-                    <button class="cq-btn cq-btn-primary" @onclick="SoloNext">@(_soloRound + 1 < _soloQuestions.Count ? "Next" : "See results")</button>
+                    <div class="cq-gameover">
+                        <h3>Final scores</h3>
+                        <ol>
+                            @foreach (var kv in _demoFinalScores.OrderByDescending(x => x.Value))
+                            {
+                                <li>@kv.Key — @kv.Value</li>
+                            }
+                        </ol>
+                        <a class="cq-btn cq-btn-primary" href="/couplequiz/leaderboard">View leaderboard</a>
+                    </div>
                 }
-            }
-            @* Solo results are shown in the shared end-of-game modal (GameSummaryContent). *@
-        </div>
+            </div>
+        }
+        else
+        {
+            <div class="cq-solo">
+                @if (!_soloFinished)
+                {
+                    <h2 class="gps-phase-h">Solo · Round @(_soloRound + 1) of @_soloQuestions.Count</h2>
+                    <p>Score: <strong>@_soloScore</strong></p>
+                    <p class="cq-solo-question"><strong>@CurrentSoloQuestion.Text</strong></p>
+                    @if (!_soloRevealed)
+                    {
+                        <div class="cq-actions cq-actions--wrap">
+                            @for (int i = 0; i < CurrentSoloQuestion.Options.Length; i++)
+                            {
+                                var idx = i;
+                                <button class="cq-btn cq-btn-secondary" @onclick="() => SoloPick(idx)">@CurrentSoloQuestion.Options[idx]</button>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <p>Your partner picked: <strong>@CurrentSoloQuestion.Options[CurrentSoloQuestion.PartnerIndex]</strong></p>
+                        <p>@(_soloLastMatch ? $"💞 Match! +{_soloLastPoints}" : "💔 No match")</p>
+                        @if (_soloStreak > 1)
+                        {
+                            <p>🔥 Streak: <strong>@_soloStreak</strong></p>
+                        }
+                        <button class="cq-btn cq-btn-primary" @onclick="SoloNext">@(_soloRound + 1 < _soloQuestions.Count ? "Next" : "See results")</button>
+                    }
+                }
+                @* Solo results are shown in the shared end-of-game modal (GameSummaryContent). *@
+            </div>
+        }
     }
     else if (!_isConnected)
     {
@@ -117,6 +177,9 @@
 </GameShell>
 
 @code {
+    [SupplyParameterFromQuery(Name = "demo")] public int DemoQuery { get; set; } = 0;
+    [SupplyParameterFromQuery(Name = "kiosk")] public int KioskNext { get; set; } = -1;
+
     private RenderFragment TitleContent => @<span>💕 PoCoupleQuiz</span>;
 
     private RenderFragment GameSummaryContent => @<div>
@@ -142,6 +205,27 @@
     private bool _soloLastMatch;
     private bool _soloFinished;
     private List<SoloQ> _soloQuestions = new();
+
+    // ── Demo mode (kiosk auto-cycle, mirrors BabyTouchPage demo pattern) ─────
+    private bool _isDemo;
+    private System.Threading.Timer? _demoTimer;
+    private System.Threading.Timer? _demoTypeTimer;
+    // Demo runs as a simulated multiplayer game: two players ("You" and
+    // "Partner"), a King/Guesser role that flips per round, and the same
+    // .cq-game / .cq-results / .cq-gameover markup the multiplayer shell
+    // uses. State below tracks the per-round "live" UI.
+    private const string DemoYouName = "You";
+    private const string DemoPartnerName = "Partner";
+    private enum DemoPhase { Answering, Results, GameOver }
+    private DemoPhase _demoPhase;
+    private bool _demoIsKing;
+    private string _demoAnswer = string.Empty;
+    private string _demoKingAnswer = string.Empty;
+    private List<string> _demoMatchedPlayers = new();
+    private Dictionary<string, int> _demoRoundScores = new();
+    private Dictionary<string, int> _demoFinalScores = new();
+    private int _demoTypeIndex;
+    private string _demoTypeTarget = string.Empty;
 
     private SoloQ CurrentSoloQuestion => _soloQuestions[_soloRound];
 
@@ -183,6 +267,195 @@
         catch (Exception ex)
         {
             _error = $"Could not connect to the game server: {ex.Message}";
+        }
+
+        if (DemoQuery == 1)
+        {
+            _isDemo = true;
+            // Demo bypasses the lobby (which needs a second player) and runs
+            // solo on a timer. Hand off the cross-demo rotate to the shared
+            // KioskCoordinator so the 20s advance is owned in one place.
+            Kiosk.SetCurrent("couplequiz-demo");
+            StartSolo();
+            if (_soloQuestions.Count > 0)
+            {
+                StartDemoRound();
+            }
+        }
+    }
+
+    // ── Demo round driver ───────────────────────────────────────────────────
+    // Single-shot timers drive a round through three beats:
+    //   1. typing animation fills the bound input character-by-character
+    //   2. submit → phase flips to Results, results panel renders
+    //   3. either advance to next round OR show GameOver
+    // Total ≈ 7s per round × 5 rounds ≈ 35s — fits the kiosk dwell nicely
+    // before the KioskCoordinator rotates away.
+    private void StartDemoRound()
+    {
+        _demoTypeTimer?.Dispose();
+        _demoTimer?.Dispose();
+
+        // Reset per-round UI.
+        _demoPhase = DemoPhase.Answering;
+        _demoAnswer = string.Empty;
+        _demoMatchedPlayers = new();
+        _demoRoundScores = new();
+        _demoIsKing = (_soloRound % 2) == 0; // alternate role per round
+
+        // Choose what to "type":
+        //  - You-as-King:    type a short secret answer (King's only input).
+        //  - You-as-Guesser: type the partner's option to guarantee a match.
+        //  - Partner-as-King: free — the King input is shown empty while we
+        //                      reveal the partner's picked option below.
+        if (_demoIsKing)
+        {
+            _demoTypeTarget = PickShortAnswer();
+        }
+        else
+        {
+            // Guesser: type the partner's option to guarantee a match.
+            _demoTypeTarget = CurrentSoloQuestion.Options[CurrentSoloQuestion.PartnerIndex];
+        }
+        _demoTypeIndex = 0;
+
+        // Compute the King's secret answer for this round:
+        //   - if YOU are King: it's whatever you type (we'll reveal it
+        //     after submit using _demoTypeTarget).
+        //   - if PARTNER is King: it's the partner's option index.
+        if (!_demoIsKing)
+        {
+            _demoKingAnswer = CurrentSoloQuestion.Options[CurrentSoloQuestion.PartnerIndex];
+        }
+
+        // Begin the typing animation after a short pause so the viewer can
+        // see the empty input + question first.
+        _demoTypeTimer = new System.Threading.Timer(_ => InvokeAsync(DemoTypeTick), null, 700, 60);
+        InvokeAsync(StateHasChanged);
+    }
+
+    // Pick a short, plausible secret answer from the available options where
+    // possible (so the King's typed text matches one of the visible buttons
+    // — looks plausible), falling back to a hard-coded short word.
+    private string PickShortAnswer()
+    {
+        var opts = CurrentSoloQuestion.Options;
+        // Prefer the partner's option (visual symmetry between King & Guesser
+        // in this demo simulation) but pick any option if length is short.
+        if (opts[CurrentSoloQuestion.PartnerIndex].Length <= 14)
+        {
+            return opts[CurrentSoloQuestion.PartnerIndex];
+        }
+        // Otherwise pick the shortest option.
+        return opts.OrderBy(o => o.Length).First();
+    }
+
+    private void DemoTypeTick()
+    {
+        if (!_isDemo) return;
+        if (_demoPhase != DemoPhase.Answering) return;
+
+        if (_demoTypeIndex >= _demoTypeTarget.Length)
+        {
+            // Typing done — flip to Results after a short pause.
+            _demoTypeTimer?.Dispose();
+            _demoTypeTimer = null;
+            _demoTimer = new System.Threading.Timer(_ => InvokeAsync(DemoSubmit), null, 600, Timeout.Infinite);
+            return;
+        }
+        _demoAnswer = _demoTypeTarget.Substring(0, _demoTypeIndex + 1);
+        _demoTypeIndex++;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void DemoSubmit()
+    {
+        if (!_isDemo) return;
+
+        // Resolve the King's secret answer.
+        if (_demoIsKing)
+        {
+            // The King wrote _demoTypeTarget (the short answer we picked).
+            _demoKingAnswer = _demoTypeTarget;
+        }
+
+        // Decide who matched. For visual symmetry, the demo always matches:
+        //   - You-as-King: Partner is a random Guesser who happens to type
+        //     the same option the King typed (we don't show their typing).
+        //   - Partner-as-King: Guesser (You) typed the partner's option → match.
+        _demoMatchedPlayers = new List<string>();
+        bool isRoundWin;
+        if (_demoIsKing)
+        {
+            // King wrote something that we picked from one of the visible
+            // options — the partner (demo's invisible Guesser) is treated
+            // as having typed the same option exactly, so both "match" the
+            // King's secret. Visually: only the partner shows up matched
+            // (the King already knows the answer by definition).
+            _demoMatchedPlayers.Add(DemoPartnerName);
+            isRoundWin = true;
+        }
+        else
+        {
+            // You typed the partner's option → match for You.
+            _demoMatchedPlayers.Add(DemoYouName);
+            isRoundWin = true;
+        }
+
+        // Per-round score copy mirroring multiplayer semantics (10 per
+        // matched player; loser earns 0).
+        _demoRoundScores = new Dictionary<string, int>
+        {
+            [DemoYouName] = _demoMatchedPlayers.Contains(DemoYouName) ? 10 : 0,
+            [DemoPartnerName] = _demoMatchedPlayers.Contains(DemoPartnerName) ? 10 : 0,
+        };
+
+        if (!_demoFinalScores.ContainsKey(DemoYouName)) _demoFinalScores[DemoYouName] = 0;
+        if (!_demoFinalScores.ContainsKey(DemoPartnerName)) _demoFinalScores[DemoPartnerName] = 0;
+        _demoFinalScores[DemoYouName] += _demoRoundScores[DemoYouName];
+        _demoFinalScores[DemoPartnerName] += _demoRoundScores[DemoPartnerName];
+
+        // Also keep the legacy solo bookkeeping in sync so the GameOver
+        // formula and any future solo-derived state don't drift.
+        if (isRoundWin)
+        {
+            _soloMatches++;
+            _soloStreak++;
+            _soloLastPoints = 10;
+            _soloScore += 10;
+        }
+
+        _demoPhase = DemoPhase.Results;
+        InvokeAsync(StateHasChanged);
+
+        // After showing the results panel for ~3.5s, advance OR show GameOver.
+        var isLast = _soloRound + 1 >= _soloQuestions.Count;
+        _demoTimer?.Dispose();
+        _demoTimer = new System.Threading.Timer(_ => InvokeAsync(DemoAdvance),
+                                                null,
+                                                isLast ? 4000 : 3500,
+                                                Timeout.Infinite);
+    }
+
+    private void DemoAdvance()
+    {
+        if (!_isDemo) return;
+        _demoTimer?.Dispose();
+        _demoTimer = null;
+
+        if (_soloRound + 1 >= _soloQuestions.Count)
+        {
+            _soloFinished = true;
+            _demoPhase = DemoPhase.GameOver;
+            InvokeAsync(StateHasChanged);
+        }
+        else
+        {
+            // Reset reveal flags and move to next round.
+            _soloRound++;
+            _soloRevealed = false;
+            _soloLastMatch = false;
+            StartDemoRound();
         }
     }
 
@@ -313,6 +586,10 @@
 
     public async ValueTask DisposeAsync()
     {
+        _demoTimer?.Dispose();
+        _demoTimer = null;
+        _demoTypeTimer?.Dispose();
+        _demoTypeTimer = null;
         Hub.OnLobbyCreated -= HandleLobbyCreated;
         Hub.OnLobbyJoined -= HandleLobbyJoined;
         Hub.OnLobbyUpdated -= HandleLobbyUpdated;

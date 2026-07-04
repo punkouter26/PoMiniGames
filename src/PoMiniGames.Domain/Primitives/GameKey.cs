@@ -74,18 +74,12 @@ public readonly record struct GameKey(string Value) : IComparable<GameKey>
 
     public static readonly GameKey ConnectFive  = new("connectfive");
     public static readonly GameKey TicTacToe    = new("tictactoe");
-    public static readonly GameKey PoFight      = new("pofight");
-    public static readonly GameKey PoRaceRagdoll = new("poraceragdoll");
-    public static readonly GameKey PoHorseRace  = new("pohorserace");
-    public static readonly GameKey PoSnakeGame  = new("posnakegame");
     public static readonly GameKey PoMarbleRace = new("pomarblerace");
-    public static readonly GameKey PoDropSquare = new("podropsquare");
 
     private static readonly GameKey[] All =
     {
         CoupleQuiz, FunQuiz, Face, Joker, Survive,
-        ConnectFive, TicTacToe, PoFight, PoRaceRagdoll, PoHorseRace,
-        PoSnakeGame, PoMarbleRace, PoDropSquare,
+        ConnectFive, TicTacToe, PoMarbleRace,
     };
 
     private static readonly string[] WellKnownNames = All.Select(k => k.Value).ToArray();

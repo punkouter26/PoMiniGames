@@ -31,13 +31,6 @@ public static class GameKeys
     public static readonly GameKey PoClick = new("poclick");
     public static readonly GameKey ConnectFive = new("connectfive");
     public static readonly GameKey TicTacToe = new("tictactoe");
-    public static readonly GameKey VoxelShooter = new("voxelshooter");
-    public static readonly GameKey PoFight = new("pofight");
-    public static readonly GameKey PoDropSquare = new("podropsquare");
-    public static readonly GameKey PoBabyTouch = new("pobabytouch");
-    public static readonly GameKey PoRaceRagdoll = new("poraceragdoll");
-    public static readonly GameKey PoSnakeGame = new("posnakegame");
-    public static readonly GameKey PoHorseRace = new("pohorserace");
     public static readonly GameKey PoRunner = new("porunner");
     public static readonly GameKey PoRacer = new("poracer");
     public static readonly GameKey PoMarbleRace = new("pomarblerace");

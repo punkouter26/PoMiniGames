@@ -27,3 +27,11 @@ public class DevLoginRequest
     public string? DisplayName { get; set; }
     public string? Email { get; set; }
 }
+
+/// <summary>
+/// Wire shape for <c>/api/auth/handshake</c>: pairs <see cref="AuthClientConfiguration"/>
+/// with the optional <see cref="AuthenticatedUserProfile"/> for the current session.
+/// </summary>
+public sealed record AuthHandshake(
+    AuthClientConfiguration? Config,
+    AuthenticatedUserProfile? User);

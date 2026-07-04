@@ -51,16 +51,6 @@ public class PlayerStatsDto
     public PlayerStats Stats { get; set; } = new();
 }
 
-public class SnakeHighScore
-{
-    public string Initials { get; set; } = "";
-    public int Score { get; set; }
-    public string Date { get; set; } = "";
-    public int GameDuration { get; set; }
-    public int SnakeLength { get; set; }
-    public int FoodEaten { get; set; }
-}
-
 public class MarbleRaceHighScore
 {
     public string PlayerInitials { get; set; } = "";

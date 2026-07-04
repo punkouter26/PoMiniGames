@@ -70,6 +70,7 @@ public sealed class KioskCoordinator : IDisposable
         ["pomarblerace"] = 22,
         ["pojoker"] = 24,
         ["pobrawl"] = 22,
+        ["posurvive"] = 24,
     };
 
     private int DwellFor(int index) =>

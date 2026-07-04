@@ -1,12 +1,14 @@
 @page "/face/arena"
+@page "/face/demo"
 @using PoMiniGamesClient.Components
 @implements IAsyncDisposable
 @inject HttpClient Http
 @inject IJSRuntime JS
 @inject NavigationManager Navigation
+@inject KioskCoordinator Kiosk
 
-<GameShell Title=@TitleContent BackTo="/face" ShowSettings="false"
-           GameOver="@(_phase == "GameOver")"
+<GameShell Title=@TitleContent BackTo="@_backTo" ShowSettings="@(!_isDemo)"
+           GameOver="@(_phase == "GameOver" && !_isDemo)"
            OnPlayAgain="PlayAgainFace"
            GameSummary="@GameSummaryContent">
     @if (_phase == "Init")
@@ -93,6 +95,84 @@
             </div>
         }
     }
+    else if (_phase == "DemoReady" || _phase == "DemoReveal" || _phase == "DemoFinal")
+    {
+        @* ─── PoFace demo kiosk view ──────────────────────────────────────────
+           Shown when ?demo=1 is on the URL. Synthetic inline SVG face morphs
+           to the round's target emotion (Happiness/Surprise/Anger/Sadness/Fear)
+           so the kiosk viewer sees a face actually change; the choice chips
+           underneath show all 5 emotions for context. We always auto-pick the
+           correct chip in `DemoTick`, so the "score" ticks up to 50 every
+           single time — this is a showcase, not a representation of accuracy. *@
+        <div class="pf-demo">
+            <h2 class="gps-phase-h">@(_phase == "DemoFinal" ? "Demo final" : $"Round {_currentRound + 1} of 5")</h2>
+
+            <svg viewBox="0 0 200 200"
+                 class="pf-demo-face"
+                 role="img"
+                 aria-label="Synthetic face showing @_currentEmotion">
+                <defs>
+                    <radialGradient id="pfDemoFaceBg" cx="50%" cy="40%" r="60%">
+                        <stop offset="0%" stop-color="#ffd29a" />
+                        <stop offset="100%" stop-color="#f6a85b" />
+                    </radialGradient>
+                </defs>
+                <!-- Face background -->
+                <circle cx="100" cy="100" r="92" fill="url(#pfDemoFaceBg)" stroke="#b06a2c" stroke-width="3" />
+                @FaceSvgFor(_currentEmotion)
+            </svg>
+
+            @if (_phase == "DemoFinal")
+            {
+                <p class="pf-prompt">Round 1 of 5 — looping…</p>
+            }
+            else
+            {
+                <p class="pf-prompt">Make this face: <strong>@_currentEmotion</strong> @_emotionEmoji</p>
+            }
+
+            <div class="pf-choice-grid pf-choice-grid--wrap pf-demo-choices">
+                @foreach (var emo in RoundOrder)
+                {
+                    var choice = emo;
+                    var isTarget = choice == _currentEmotion;
+                    var isPicked = _phase == "DemoReveal" && _picked == choice;
+                    var cssClass = $"pf-face-choice pf-face-choice--large pf-demo-chip" +
+                                   (isTarget ? " pf-demo-chip--target" : "") +
+                                   (isPicked ? " pf-demo-chip--picked" : "");
+                    <button type="button"
+                            class="@cssClass"
+                            disabled
+                            aria-disabled="true"
+                            title="@choice">
+                        <span class="pf-demo-chip-emoji">@EmojiFor(choice)</span>
+                        <span class="pf-demo-chip-label">@choice</span>
+                    </button>
+                }
+            </div>
+
+            @if (_phase == "DemoReady")
+            {
+                <p class="pf-score-line">Score: <strong>@_localTotal</strong> / 50</p>
+            }
+            else if (_phase == "DemoReveal")
+            {
+                <p class="pf-reveal-line">
+                    <span style="font-size:1.6rem;">@EmojiFor(_picked)</span>
+                    ✅ Correct! +@_lastPoints
+                    @if (_streak > 1)
+                    {
+                        <span> · 🔥 Streak @_streak</span>
+                    }
+                </p>
+                <p class="pf-score-line">Total: <strong>@_localTotal</strong> / 50</p>
+            }
+            else if (_phase == "DemoFinal")
+            {
+                <p class="pf-reveal-line">🎉 Final score: <strong>@_localTotal</strong> / 50</p>
+            }
+        </div>
+    }
     @* Game-over is shown in the shared end-of-game modal (GameSummaryContent). *@
 
     @if (!string.IsNullOrEmpty(_error))
@@ -105,10 +185,18 @@
     private RenderFragment TitleContent => @<span>🙂 PoFace · Arena</span>;
 
     private RenderFragment GameSummaryContent => @<div>
-        <div>🎉 Total score: <strong>@_finalTotal</strong> / 50</div>
-        @if (!_stub && _sessionId is not null)
+        @if (_isDemo)
         {
-            <div><a href="@($"/face/recap/{_sessionId}")">View full recap →</a></div>
+            <div>🎮 Demo highlight · Total: <strong>@_finalTotal</strong> / 50</div>
+            <div style="opacity:.7;font-size:.9em;">Auto-restarts in 5 s…</div>
+        }
+        else
+        {
+            <div>🎉 Total score: <strong>@_finalTotal</strong> / 50</div>
+            @if (!_stub && _sessionId is not null)
+            {
+                <div><a href="@($"/face/recap/{_sessionId}")">View full recap →</a></div>
+            }
         }
     </div>;
 
@@ -116,6 +204,7 @@
     // camera mode re-creates a session and re-initializes the webcam.
     private async Task PlayAgainFace()
     {
+        if (_isDemo) { DemoPlayAgain(); return; }
         if (_stub) { ResetStub(); return; }
         _phase = "Init";
         _currentRound = 0;
@@ -143,10 +232,33 @@
     private int _streak;
     private int _lastPoints;
 
+    // Demo mode: synthetic SVG face + auto-pick loop, no camera required.
+    [SupplyParameterFromQuery(Name = "demo")] public int DemoQuery { get; set; } = 0;
+    [SupplyParameterFromQuery(Name = "kiosk")] public int KioskNext { get; set; } = -1;
+    private bool _isDemo;
+    private System.Threading.Timer? _demoTimer;
+    private int _demoRoundPoints; // per-round fake points added on the demo loop
+    // Demo "back" link goes home instead of to the camera home, because
+    // demo doesn't need the camera-permission landing screen.
+    private string _backTo = "/face";
+
     private static readonly string[] RoundOrder = { "Happiness", "Surprise", "Anger", "Sadness", "Fear" };
 
     protected override async Task OnInitializedAsync()
     {
+        if (DemoQuery == 1 || _isDemo || (Navigation.Uri?.EndsWith("/face/demo", StringComparison.OrdinalIgnoreCase) ?? false))
+        {
+            // Demo never touches the network or camera. Hand the cross-demo
+            // rotation to the shared KioskCoordinator (same pattern as the
+            // other game demos). Back link goes straight home; the demo has
+            // no other game mode to "return" to.
+            _isDemo = true;
+            _backTo = "/";
+            Kiosk.SetCurrent("poface-demo");
+            StartDemo();
+            return;
+        }
+
         try
         {
             var resp = await Http.PostAsync("/api/face/sessions", content: null);
@@ -184,6 +296,83 @@
             _phase = "NoCamera";
         }
         _currentEmotion = RoundOrder[0];
+    }
+
+    // ── Demo driver ─────────────────────────────────────────────────────────
+    // Renders an inline SVG face whose expression is set to the current
+    // round's emotion. Auto-picks the correct chip every round (always 100%)
+    // and auto-advances. Shows a Game-Over modal once after round 5, then
+    // restarts the loop. Total runtime ≈ 25 s per cycle.
+    private void StartDemo()
+    {
+        _currentRound = 0;
+        _currentEmotion = RoundOrder[0];
+        _localTotal = 0;
+        _finalTotal = 0;
+        BuildChoices();
+        _phase = "DemoReady";
+        ScheduleDemoTick(TimeSpan.FromMilliseconds(1500));   // show round → reveal
+    }
+
+    private void ScheduleDemoTick(TimeSpan delay, bool advanceRound = false)
+    {
+        _demoTimer?.Dispose();
+        _demoTimer = new System.Threading.Timer(
+            _ => InvokeAsync(() => { DemoTick(advanceRound); StateHasChanged(); }),
+            null,
+            (int)delay.TotalMilliseconds,
+            Timeout.Infinite);
+    }
+
+    private void DemoTick(bool advanceRound)
+    {
+        if (!_isDemo) return;
+        _demoTimer?.Dispose();
+
+        if (_phase == "DemoReady")
+        {
+            // Auto-pick the correct emotion chip. Always matches → +10 each round → total 50.
+            _picked = _currentEmotion;
+            _lastCorrect = true;
+            _demoRoundPoints = 10;
+            _localTotal += _demoRoundPoints;
+            _streak++;
+            _lastPoints = _demoRoundPoints;
+            _phase = "DemoReveal";
+            ScheduleDemoTick(TimeSpan.FromMilliseconds(2200));   // reveal → next round or final
+            return;
+        }
+
+        if (_phase == "DemoReveal")
+        {
+            _currentRound++;
+            if (_currentRound >= 5)
+            {
+                _phase = "DemoFinal";
+                _finalTotal = _localTotal;
+                // Auto-restart after the kiosk has had time to read the final.
+                ScheduleDemoTick(TimeSpan.FromSeconds(5), advanceRound: false);
+                return;
+            }
+            _currentEmotion = RoundOrder[_currentRound];
+            BuildChoices();
+            _phase = "DemoReady";
+            ScheduleDemoTick(TimeSpan.FromMilliseconds(1300));
+            return;
+        }
+
+        if (_phase == "DemoFinal")
+        {
+            // Loop back to round 1 for the next kiosk lap.
+            StartDemo();
+            return;
+        }
+    }
+
+    private void DemoPlayAgain()
+    {
+        _demoTimer?.Dispose();
+        StartDemo();
     }
 
     private async Task ActivateStubMode()
@@ -244,6 +433,67 @@
         _ => "❓"
     };
 
+    private static MarkupString FaceSvgFor(string emotion) => emotion switch
+    {
+        // Eyes are at (70, 90) and (130, 90). Mouth coordinates vary per emotion.
+        "Happiness" => new MarkupString(
+            // Eyes - happy squint arcs
+            "<path d='M58 92 Q70 78 82 92' stroke='#222' stroke-width='4' fill='none' stroke-linecap='round' />" +
+            "<path d='M118 92 Q130 78 142 92' stroke='#222' stroke-width='4' fill='none' stroke-linecap='round' />" +
+            // Mouth - big grin
+            "<path d='M70 138 Q100 168 130 138' stroke='#222' stroke-width='5' fill='none' stroke-linecap='round' />" +
+            // Optional warm cheek accent
+            "<circle cx='62' cy='118' r='7' fill='#f48a8a' opacity='0.55' />" +
+            "<circle cx='138' cy='118' r='7' fill='#f48a8a' opacity='0.55' />"),
+        "Surprise" => new MarkupString(
+            // Eyes - wide circles
+            "<circle cx='70' cy='90' r='9' fill='#fff' stroke='#222' stroke-width='3' />" +
+            "<circle cx='130' cy='90' r='9' fill='#fff' stroke='#222' stroke-width='3' />" +
+            "<circle cx='70' cy='90' r='3' fill='#222' />" +
+            "<circle cx='130' cy='90' r='3' fill='#222' />" +
+            // Mouth - small O
+            "<ellipse cx='100' cy='142' rx='10' ry='14' fill='#222' />" +
+            // Eyebrows raised (subtle)
+            "<line x1='54' y1='70' x2='86' y2='66' stroke='#222' stroke-width='3' stroke-linecap='round' />" +
+            "<line x1='114' y1='66' x2='146' y2='70' stroke='#222' stroke-width='3' stroke-linecap='round' />"),
+        "Anger" => new MarkupString(
+            // Eyes - narrowed slits, angled brows
+            "<line x1='58' y1='88' x2='84' y2='92' stroke='#222' stroke-width='4' stroke-linecap='round' />" +
+            "<line x1='116' y1='92' x2='142' y2='88' stroke='#222' stroke-width='4' stroke-linecap='round' />" +
+            // Angry brows over eyes
+            "<line x1='52' y1='74' x2='86' y2='80' stroke='#222' stroke-width='4' stroke-linecap='round' />" +
+            "<line x1='114' y1='80' x2='148' y2='74' stroke='#222' stroke-width='4' stroke-linecap='round' />" +
+            // Mouth - frown
+            "<path d='M70 148 Q100 124 130 148' stroke='#222' stroke-width='5' fill='none' stroke-linecap='round' />"),
+        "Sadness" => new MarkupString(
+            // Eyes - droopy
+            "<circle cx='70' cy='92' r='4' fill='#222' />" +
+            "<circle cx='130' cy='92' r='4' fill='#222' />" +
+            // Inner eyebrows tilted up at the inner ends
+            "<line x1='58' y1='80' x2='86' y2='86' stroke='#222' stroke-width='3' stroke-linecap='round' />" +
+            "<line x1='114' y1='86' x2='142' y2='80' stroke='#222' stroke-width='3' stroke-linecap='round' />" +
+            // Single tear drop under left eye
+            "<path d='M70 102 Q66 112 70 116 Q74 112 70 102 Z' fill='#7ec8f5' />" +
+            // Frown
+            "<path d='M70 144 Q100 122 130 144' stroke='#222' stroke-width='5' fill='none' stroke-linecap='round' />"),
+        "Fear" => new MarkupString(
+            // Eyes - wide, raised brows
+            "<circle cx='70' cy='90' r='9' fill='#fff' stroke='#222' stroke-width='3' />" +
+            "<circle cx='130' cy='90' r='9' fill='#fff' stroke='#222' stroke-width='3' />" +
+            "<circle cx='70' cy='90' r='3' fill='#222' />" +
+            "<circle cx='130' cy='90' r='3' fill='#222' />" +
+            // High, raised brows
+            "<line x1='52' y1='62' x2='88' y2='62' stroke='#222' stroke-width='3' stroke-linecap='round' />" +
+            "<line x1='112' y1='62' x2='148' y2='62' stroke='#222' stroke-width='3' stroke-linecap='round' />" +
+            // Grimace
+            "<path d='M68 144 Q100 132 132 144' stroke='#222' stroke-width='5' fill='none' stroke-linecap='round' />" +
+            // Sweat drop
+            "<path d='M150 70 Q146 80 150 84 Q154 80 150 70 Z' fill='#7ec8f5' />"),
+        _ => new MarkupString("<text x='100' y='110' text-anchor='middle' font-size='18' fill='#222'>❓</text>")
+    };
+
+    private string _emotionEmoji => EmojiFor(_currentEmotion);
+
     private async Task CaptureAndScore()
     {
         if (_sessionId is null) return;
@@ -303,6 +553,8 @@
 
     public async ValueTask DisposeAsync()
     {
+        _demoTimer?.Dispose();
+        _demoTimer = null;
         try { await JS.InvokeVoidAsync("webcamInterop.releaseCamera"); } catch { /* ignore */ }
     }
 

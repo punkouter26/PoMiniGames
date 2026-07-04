@@ -264,14 +264,8 @@ else
     {
         ("tictactoe",    "Tic Tac Toe",   "✖",  false, false),
         ("connectfive",  "Connect Five",  "🔵", false, false),
-        ("pofight",      "PoFight",       "⚔️", false, false),
         ("porunner",     "PoRunner",      "⚡", false, false),
-        ("poraceragdoll","Race Ragdoll",  "🏎", false, false),
-        ("pohorserace",  "Horse Race",    "🐎", false, false),
-        ("posnakegame",  "Snake Game",    "🐍", true,  false),
-        ("podropsquare", "Drop Square",   "🟦", true,  false),
-        ("voxelshooter", "Voxel Shooter", "🎯", false, true),
-        ("pobabytouch",  "Baby Touch",    "🍭", false, true),
+        ("pomarblerace", "Marble Race",   "🔮", true,  false),
     };
 
     // ── State ────────────────────────────────────────────────────
@@ -289,14 +283,10 @@ else
 
     private static readonly (string Key, string Title, string Icon, string Kind)[] HsDefs =
     {
-        ("posnakegame",  "PoSnakeGame",   "🐍", "snake"),
         ("pomarblerace", "PoMarbleRace",  "🔮", "marble"),
         ("tictactoe",    "Tic Tac Toe",   "❌", "ai"),
         ("connectfive",  "Connect Five",  "🔴", "ai"),
-        ("pofight",      "PoFight",        "⚔️", "ai"),
         ("porunner",     "PoRunner",       "⚡", "ai"),
-        ("poraceragdoll","Race Ragdoll",   "🚗", "ai"),
-        ("pohorserace",  "Horse Race",     "🏇", "ai"),
     };
 
     // ── Head-to-head record vs named opponents ────────────────────
@@ -397,18 +387,8 @@ else
 
     private async Task LoadHighScoresAsync()
     {
-        var snakeTask = ApiService.GetSnakeHighScoresAsync(1);
-        var marbleTask = ApiService.GetMarbleRaceHighScoresAsync(1);
-        var snake = await snakeTask;
-        var marble = await marbleTask;
+        var marble = await ApiService.GetMarbleRaceHighScoresAsync(1);
 
-        HighScoreEntry SnakeEntry()
-        {
-            var top = snake is { Length: > 0 } ? snake[0] : null;
-            return top is not null
-                ? new HighScoreEntry("PoSnakeGame", "🐍", top.Score.ToString("N0"), $"by {top.Initials}", true)
-                : new HighScoreEntry("PoSnakeGame", "🐍", "—", "No scores yet", false);
-        }
         HighScoreEntry MarbleEntry()
         {
             var top = marble is { Length: > 0 } ? marble[0] : null;
@@ -419,8 +399,7 @@ else
 
         for (var i = 0; i < _highScores.Count; i++)
         {
-            if (_highScores[i].Game == "PoSnakeGame") _highScores[i] = SnakeEntry();
-            else if (_highScores[i].Game == "PoMarbleRace") _highScores[i] = MarbleEntry();
+            if (_highScores[i].Game == "PoMarbleRace") _highScores[i] = MarbleEntry();
         }
         StateHasChanged();
     }

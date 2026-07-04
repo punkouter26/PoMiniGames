@@ -42,7 +42,7 @@
                     @SectionToggle(0, GameCatalog.SinglePlayer.Count)
                 </div>
                 <div class="home-section-games">
-                    @foreach (var g in GameCatalog.SinglePlayer)
+                    @foreach (var g in GameCatalog.SinglePlayer.OrderBy(x => x.Title, StringComparer.OrdinalIgnoreCase))
                     {
                         <a class="home-game-chip" href="@g.Url">
                             <span class="home-game-chip-icon">@g.Icon</span>@g.Title
@@ -70,7 +70,7 @@
                     @SectionToggle(1, GameCatalog.LocalTwoPlayer.Count)
                 </div>
                 <div class="home-section-games">
-                    @foreach (var g in GameCatalog.LocalTwoPlayer)
+                    @foreach (var g in GameCatalog.LocalTwoPlayer.OrderBy(x => x.Title, StringComparer.OrdinalIgnoreCase))
                     {
                         <a class="home-game-chip" href="@g.Url"><span class="home-game-chip-icon">@g.Icon</span>@g.Title</a>
                     }
@@ -95,7 +95,7 @@
                     @SectionToggle(2, GameCatalog.Multiplayer.Count)
                 </div>
                 <div class="home-section-games">
-                    @foreach (var g in GameCatalog.Multiplayer)
+                    @foreach (var g in GameCatalog.Multiplayer.OrderBy(x => x.Title, StringComparer.OrdinalIgnoreCase))
                     {
                         <a class="home-game-chip" href="@g.Url"><span class="home-game-chip-icon">@g.Icon</span>@g.Title</a>
                     }
@@ -104,7 +104,12 @@
 
             <section class="home-section @(_sectionOpen[3] ? "" : "home-section--collapsed")">
                 <div class="home-mode-col">
-                    <div class="home-mode-btn home-mode-btn--demo home-mode-btn--static">
+                    <button type="button"
+                            class="home-mode-btn home-mode-btn--demo @(Kiosk.IsActive ? "home-mode-btn--demo-on" : null)"
+                            aria-pressed="@Kiosk.IsActive"
+                            aria-label="@(Kiosk.IsActive ? "Stop demo auto-cycle" : "Watch all demos")"
+                            title="@(Kiosk.IsActive ? "Stop watching all demos" : "Watch all demos")"
+                            @onclick="ToggleWatchAll">
                         <span class="home-mode-icon">
                             <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                 <rect x="2" y="3" width="20" height="14" rx="2"/>
@@ -113,23 +118,17 @@
                                 <polygon points="10 8 15 10.5 10 13 10 8" fill="currentColor" stroke="none"/>
                             </svg>
                         </span>
-                        <span class="home-mode-label">Demo</span>
-                    </div>
-                    <p class="home-mode-caption">Sit back and watch</p>
-                    @SectionToggle(3, GameCatalog.Demo.Count + 1)
+                        <span class="home-mode-label">@(Kiosk.IsActive ? "Stop" : "Demo")</span>
+                    </button>
+                    <p class="home-mode-caption">@(Kiosk.IsActive ? "Auto-cycling demos…" : "Sit back and watch")</p>
+                    @SectionToggle(3, GameCatalog.Demo.Count)
                 </div>
                 <div class="home-section-games">
-                    @* "Play all" starts the auto-rotating kiosk; individual chips play one game
-                       in demo mode continuously until the user navigates home. *@
-                    <button type="button"
-                            class="home-game-chip home-game-chip--playall @(Kiosk.IsActive ? "home-game-chip--continue" : null)"
-                            aria-pressed="@Kiosk.IsActive"
-                            aria-label="@(Kiosk.IsActive ? "Stop demo auto-cycle" : "Watch all demos")"
-                            title="Watch all demos — same as the Demo tab"
-                            @onclick="ToggleWatchAll">
-                        <span class="home-game-chip-icon">@(Kiosk.IsActive ? "⏸" : "▶")</span>@(Kiosk.IsActive ? "Stop" : "Play all")
-                    </button>
-                    @foreach (var g in GameCatalog.Demo)
+                    @* The big Demo card on the left toggles "watch all demos" (the
+                       auto-rotating kiosk over every demo chip). Individual chips below
+                       play one game in demo mode continuously until the user navigates
+                       home, mirroring the BottomTabBar's Demo toggle. *@
+                    @foreach (var g in GameCatalog.Demo.OrderBy(x => x.Title, StringComparer.OrdinalIgnoreCase))
                     {
                         <a class="home-game-chip" href="@g.Url"><span class="home-game-chip-icon">@g.Icon</span>@g.Title</a>
                     }

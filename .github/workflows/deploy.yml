@@ -115,10 +115,10 @@ jobs:
 
       # §6.6 mobile-first budget: the trimmed WASM _framework payload gates first
       # paint on phones. Fail the build if it regresses past the budget so a new
-      # reflection-heavy DTO (or server code leaking into the client closure) can't
-      # silently bloat the download. Baseline 2026-07-04 ≈ 20 MB uncompressed;
-      # budget set with headroom. Lower the budget as the client's server-side
-      # references are slimmed (see AGENT.MD — Application leaks into the client).
+      # reflection-heavy DTO can't silently bloat the download. Baseline 2026-07-04
+      # ≈ 20 MB uncompressed — inherent to shipping the PoSurvive client-side
+      # simulation engine (by design; see AGENT.MD). Budget set with headroom to
+      # catch regression, not to squeeze the baseline.
       - name: WASM bundle-size budget
         shell: bash
         env:

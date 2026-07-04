@@ -20,12 +20,17 @@ contracts, and (where it has its own tables) persistence inside its slice folder
 > no functional benefit; the layered core stays. New *game* code still follows VSA (own
 > `Features/<Slice>/` folder). Reconcile future rule audits against this note, not by refactor.
 
-> **Known layering leak (tracked debt).** `PoMiniGamesClient.csproj` references
-> `PoMiniGames.Application`, which drags the server-side PoSurvive simulation (and Domain)
-> into the WASM trim closure — bundle bloat and the reason two IL2026 trim errors existed
-> (fixed 2026-07-04 via `EvolutionJsonContext`). The correct fix is to move the handful of
-> client-facing PoSurvive DTOs into `PoShared` and drop the Application reference from the
-> client. The CI bundle-size budget (deploy.yml) is the pressure valve until then.
+> **Client-side simulation (why the client references Application/Domain — by design).**
+> `PoMiniGamesClient.csproj` references `PoMiniGames.Application` deliberately: the PoSurvive
+> game runs its agent simulation *in the browser*. `SimulationEngine`, `GridService`,
+> `CombatService`, `HungerService`, and `NarrativeService` are registered as DI singletons in
+> the client `Program.cs` and ticked by `SimulationOrchestrator`. This is intentional reuse of
+> one engine on both sides — NOT a leak — so the reference cannot be dropped without losing the
+> game, and relocating the code to `PoShared` would ship identical IL (no bundle win). The
+> ~20 MB trimmed `_framework` is inherent to a client-side simulation (+ optional WebLLM
+> inference). The 2026-07-04 IL2026 fix (`EvolutionJsonContext`) was needed precisely because
+> this engine is in the client's trim closure. The CI bundle budget guards against *regression*
+> from this baseline, not against the baseline itself.
 
 ### Persistence boundary rule (authoritative — keep drift out)
 There is exactly one home for each kind of persistence:

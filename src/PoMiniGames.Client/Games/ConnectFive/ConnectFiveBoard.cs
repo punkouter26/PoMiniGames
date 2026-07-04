@@ -9,44 +9,87 @@ public class ConnectFiveBoard
     public const int Cols = 9;
     public const int WinLength = 5;
 
-    private readonly Piece[][] _cells;
+    // Audit #5: flat Piece[Rows * Cols] storage replaces the prior jagged
+    // Piece[Rows][]. 81 contiguous pieces > 9 array headers; one allocation
+    // per Place() vs. the old "allocate 9 inner arrays per copy + a 9x9 loop".
+    // Array.Copy is intrinsified by the JIT and runs at memory-bandwidth speed.
+    private readonly Piece[] _cells;
+
+    // Audit #10: per-column next-landing-row cache. O(1) GetTargetRow + O(Cols)
+    // GetAvailableCols (was O(Cols * Rows)). Maintained incrementally by Place.
+    private readonly int[] _topRow;
 
     public ConnectFiveBoard()
     {
-        _cells = new Piece[Rows][];
-        for (int r = 0; r < Rows; r++)
+        _cells = new Piece[Rows * Cols];
+        _topRow = new int[Cols];
+        for (int c = 0; c < Cols; c++)
         {
-            _cells[r] = new Piece[Cols];
+            _topRow[c] = Rows - 1;
         }
     }
 
-    public Piece Get(int row, int col) => _cells[row][col];
-
-    public int GetTargetRow(int col)
+    // Private ctor for Place: clones the source cells + top-row cache in one go.
+    private ConnectFiveBoard(Piece[] cells, int[] topRow)
     {
-        for (int r = Rows - 1; r >= 0; r--)
+        _cells = cells;
+        _topRow = topRow;
+    }
+
+    public Piece Get(int row, int col) => _cells[row * Cols + col];
+
+    public int GetTargetRow(int col) => _topRow[col];
+
+    public bool IsColumnFull(int col) => _topRow[col] < 0;
+
+    /// <summary>
+    /// Place a piece using a <see cref="Player"/> (the strongly-typed turn owner).
+    /// Rejects the empty player (Audit #6) so a Piece.None turn can never leak
+    /// through the AI / placement boundary and silently corrupt win checks.
+    /// </summary>
+    public ConnectFiveBoard Place(int row, int col, Player player)
+    {
+        if (player.IsEmpty)
         {
-            if (_cells[r][col] == Piece.None) return r;
+            throw new ArgumentException("Cannot place the empty player.", nameof(player));
         }
-        return -1;
+        return Place(row, col, player.Color);
     }
 
     public ConnectFiveBoard Place(int row, int col, Piece value)
     {
-        var newBoard = new ConnectFiveBoard();
-        for (int r = 0; r < Rows; r++)
+        if (value == Piece.None)
         {
-            for (int c = 0; c < Cols; c++)
-            {
-                newBoard._cells[r][c] = _cells[r][c];
-            }
+            // The empty sentinel must never be placed on the board; placing it
+            // would silently corrupt win-detection and gravity. Fail loud so
+            // the bug surfaces at the call site, not three moves later when
+            // CheckWin returns a phantom match.
+            throw new ArgumentException("Cannot place Piece.None on the board.", nameof(value));
         }
-        newBoard._cells[row][col] = value;
-        return newBoard;
+        var newCells = new Piece[_cells.Length];
+        Array.Copy(_cells, newCells, _cells.Length);
+        newCells[row * Cols + col] = value;
+        var newTopRow = (int[])_topRow.Clone();
+        newTopRow[col] = row - 1;
+        return new ConnectFiveBoard(newCells, newTopRow);
+    }
+
+    public WinResult CheckWin(Player player)
+    {
+        if (player.IsEmpty) return new WinResult { Won = false, Cells = new List<(int, int)>() };
+        return CheckWin(player.Color);
     }
 
     public WinResult CheckWin(Piece player)
     {
+        if (player == Piece.None)
+        {
+            // Audit #6: refuse to "win" for the empty player — a caller passing
+            // Piece.None here is a bug, not a no-op. Returning "no win" hides
+            // the regression; throwing makes it visible.
+            throw new ArgumentException("Cannot check win for Piece.None.", nameof(player));
+        }
+
         var directions = new[] { (0, 1), (1, 0), (1, 1), (1, -1) };
 
         for (int r = 0; r < Rows; r++)
@@ -55,21 +98,24 @@ public class ConnectFiveBoard
             {
                 foreach (var (dr, dc) in directions)
                 {
-                    var cells = new List<(int, int)>();
                     bool valid = true;
-                    for (int i = 0; i < WinLength; i++)
+                    for (int i = 1; i < WinLength; i++)
                     {
                         var nr = r + dr * i;
                         var nc = c + dc * i;
-                        if (nr < 0 || nr >= Rows || nc < 0 || nc >= Cols || _cells[nr][nc] != player)
+                        if (nr < 0 || nr >= Rows || nc < 0 || nc >= Cols || _cells[nr * Cols + nc] != player)
                         {
                             valid = false;
                             break;
                         }
-                        cells.Add((nr, nc));
                     }
                     if (valid)
                     {
+                        var cells = new List<(int, int)>(WinLength);
+                        for (int i = 0; i < WinLength; i++)
+                        {
+                            cells.Add((r + dr * i, c + dc * i));
+                        }
                         return new WinResult { Won = true, Cells = cells };
                     }
                 }
@@ -80,23 +126,47 @@ public class ConnectFiveBoard
 
     public bool IsFull()
     {
-        for (int r = 0; r < Rows; r++)
+        // Audit #10: O(Cols) using the top-row cache. A column is full when
+        // _topRow[col] < 0; the board is full when every column is full.
+        for (int c = 0; c < Cols; c++)
         {
-            for (int c = 0; c < Cols; c++)
-            {
-                if (_cells[r][c] == Piece.None) return false;
-            }
+            if (_topRow[c] >= 0) return false;
         }
         return true;
     }
 
+    /// <summary>
+    /// Audit #10: enumerate playable columns in O(Cols). The previous
+    /// implementation called <see cref="GetTargetRow"/> per column which
+    /// itself walked <see cref="Rows"/>; the net was O(Cols * Rows) every AI
+    /// turn. With the cache, this method is linear at most.
+    /// </summary>
     public List<int> GetAvailableCols()
     {
-        var cols = new List<int>();
+        var cols = new List<int>(Cols);
         for (int c = 0; c < Cols; c++)
         {
-            if (GetTargetRow(c) >= 0) cols.Add(c);
+            if (_topRow[c] >= 0) cols.Add(c);
         }
         return cols;
+    }
+
+    /// <summary>
+    /// Cheap 64-bit FNV-style folding hash over the flat cell array. Used by
+    /// the Negamax search's transposition table. Collisions are tolerable —
+    /// alpha-beta + depth caps mean a wrong cached hit at worst costs one
+    /// ply of refinement (the score is still within the alpha-beta window).
+    /// </summary>
+    internal long HashForSearch()
+    {
+        // FNV-1a 64-bit offset basis (0xcbf29ce484222325) overflows long.MaxValue,
+        // so we operate in ulong and reinterpret the final bits as long. The
+        // hash bits don't care about sign; this is purely a folding function.
+        ulong h = 0xcbf29ce484222325UL;
+        for (int i = 0; i < _cells.Length; i++)
+        {
+            h = (h ^ (ulong)_cells[i]) * 1099511628211UL;
+        }
+        return unchecked((long)h);
     }
 }

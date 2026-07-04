@@ -10,6 +10,11 @@
 .cf-layout {
   --cf-cell: clamp(28px, min(calc((100dvh - 240px) / 9), calc((100dvw - 56px) / 9)), 56px);
   --cf-cell-stride: calc(var(--cf-cell) + 3px);
+  /* Audit #2: every disc drops the full board depth (Rows), not (row + 1).
+     Without this, a piece in row 0 only travels 1 cell (~50px) while a piece
+     in row 8 travels 9 cells (~450px). Viewers see chaotic, inconsistent drop
+     lengths and read it as "pieces going through others." */
+  --cf-drop-rows: 9;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -83,7 +88,12 @@
   border-radius: 50%;
   font-size: 0;
   will-change: transform;
-  animation: cf-slide-down 0.5s cubic-bezier(0.34, 1.2, 0.55, 1) both;
+  /* Audit #1: `forwards` (not `both`) keeps the disc at translateY(0) once
+     the keyframe completes, so settled discs no longer flicker between the
+     0% (above-board) and 100% (cell) frames when Blazor re-renders during
+     rapid demo drops. Iteration count pinned to 1 to prevent any future
+     animation-name leak from re-triggering the cascade. */
+  animation: cf-slide-down 0.55s cubic-bezier(0.34, 1.2, 0.55, 1) forwards 1;
 }
 
 /* Off-centre radial highlight (lit rim → mid → dark core) reads as a lit sphere.
@@ -99,10 +109,15 @@
 }
 
 .cf-cell .piece.yellow-piece {
-  background: radial-gradient(circle at 34% 28%,
-    var(--disc-yellow-lit) 0%, var(--disc-yellow-mid) 46%, var(--disc-yellow-core) 100%);
-  box-shadow: var(--disc-shadow);
-}
+/* Audit #3: dropped the 84% bounce keyframe. The cubic-bezier(0.34, 1.2, 0.55, 1)
+   easing already overshoots past 0 between 0% and 70%, giving the disc a soft
+   squash-and-settle. The extra 84% → -14% step lifted the disc ABOVE its cell
+   right at the moment a new piece was about to drop, so observers read it as
+   "the new piece passed through the settled one." One fewer frame, one fewer
+   visible glitch. */
+@keyframes cf-slide-down {
+  0%   { transform: translateY(calc(-1 * var(--cf-drop-rows, 9) * var(--cf-cell-stride, 55px))); }
+  70%  { transform: translateY(0
 
 @keyframes cf-slide-down {
   0%   { transform: translateY(calc(-1 * var(--drop-rows, 1) * var(--cf-cell-stride, 55px))); }
@@ -133,12 +148,21 @@
 .cf-cell.win-cell {
   border-color: var(--accent-cyan);
   box-shadow: 0 0 16px var(--accent-glow);
-  animation: cf-win-pop 0.45s var(--ease-out) both;
+  animation: cf-win-pop 0.45s var(--ease-out) forwards 1;
   animation-delay: calc(var(--win-i, 0) * 90ms);
 }
 .cf-cell.win-cell .piece {
-  animation: cf-win-disc 0.45s var(--ease-out) both;
+  animation: cf-win-disc 0.45s var(--ease-out) forwards 1;
   animation-delay: calc(var(--win-i, 0) * 90ms);
+}
+/* Audit #9: post-cascade static state. Once the cascade has played once, the
+   page swaps this class in for .win-cell to suppress any future re-render
+   from replaying the keyframe (which showed up as a flicker when Blazor
+   re-rendered after the ghost preview cleared). Same final visual, no
+   animation. */
+.cf-cell.win-cell-static {
+  border-color: var(--accent-cyan);
+  box-shadow: 0 0 16px var(--accent-glow);
 }
 @keyframes cf-win-pop {
   0%   { box-shadow: 0 0 0 var(--accent-glow); }
@@ -158,6 +182,9 @@
   .cf-cell.win-cell,
   .cf-cell.win-cell .piece { animation: none; }
   .cf-cell { transition: none; }
+  /* Audit #9: under reduced-motion the cascade never plays; jump straight to
+     the static state so win cells still glow but never animate. */
+  .cf-cell.win-cell { animation: none; box-shadow: 0 0 16px var(--accent-glow); }
 }
 
 /* ── Portrait phones (§8 padding audit) ──

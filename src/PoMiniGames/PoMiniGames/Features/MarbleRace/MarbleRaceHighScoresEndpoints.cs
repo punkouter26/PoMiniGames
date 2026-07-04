@@ -8,18 +8,20 @@ public static class MarbleRaceHighScoresEndpoints
 {
     public static IEndpointRouteBuilder MapMarbleRaceHighScoresEndpoints(this IEndpointRouteBuilder app)
     {
-        app.MapGet("/api/marblerace/highscores",
+        // §1 MapGroup() per slice: PoMarbleRace high scores share /api/marblerace/highscores.
+        var marble = app.MapGroup("/api/marblerace/highscores").WithTags("HighScores");
+
+        marble.MapGet("",
             async (IStorageService storage, int count = 10) =>
             {
                 var scores = await storage.GetMarbleRaceHighScoresAsync(count);
                 return Results.Ok(scores);
             })
             .WithName("GetMarbleRaceHighScores")
-            .WithTags("HighScores")
             .WithSummary("Top PoMarbleRace high scores")
             .Produces<IEnumerable<MarbleRaceHighScore>>(StatusCodes.Status200OK);
 
-        app.MapPost("/api/marblerace/highscores",
+        marble.MapPost("",
             async (MarbleRaceHighScore entry, IStorageService storage) =>
             {
                 if (string.IsNullOrWhiteSpace(entry.PlayerInitials))
@@ -35,7 +37,6 @@ public static class MarbleRaceHighScoresEndpoints
                 return Results.Created("/api/marblerace/highscores", saved);
             })
             .WithName("SaveMarbleRaceHighScore")
-            .WithTags("HighScores")
             .WithSummary("Submit a new PoMarbleRace high score")
             .Produces<MarbleRaceHighScore>(StatusCodes.Status201Created)
             .RequireRateLimiting("highscores");

@@ -10,7 +10,10 @@ public static class PoRacerScoreEndpoints
 
     public static void MapPoRacerScoreEndpoints(this IEndpointRouteBuilder app)
     {
-        app.MapGet("/api/poracer/scores", (int? top) =>
+        // §1 MapGroup() per slice: PoRacer scores share /api/poracer/scores.
+        var scores = app.MapGroup("/api/poracer/scores");
+
+        scores.MapGet("", (int? top) =>
         {
             top ??= 10;
             List<PoRacerScoreDto> result;
@@ -32,7 +35,7 @@ public static class PoRacerScoreEndpoints
             return Results.Ok(result);
         });
 
-        app.MapPost("/api/poracer/scores", ([FromBody] PoRacerScoreDto dto) =>
+        scores.MapPost("", ([FromBody] PoRacerScoreDto dto) =>
         {
             var errors = new Dictionary<string, string[]>();
             var name = dto.PlayerDisplayName?.Trim() ?? "";

@@ -21,7 +21,7 @@
             </div>
 
             <!-- Beat Visualizer Space -->
-            <div class="visualizer-container @(MissFlash ? "miss-flash" : "")" @onclick="OnTap" style="cursor: pointer; touch-action: manipulation;">
+            <div class="visualizer-container is-interactive @(MissFlash ? "miss-flash" : "")" @onclick="OnTap">
                 <div class="tempo-line"></div>
 
                 <!-- Pulse expanding ring -->
@@ -29,7 +29,7 @@
 
                 <!-- Pulsing beat center -->
                 <div class="beat-center @(IsFlashing ? "flash" : "")">
-                    <i class="rzi beat-icon @(IsFlashing ? "flash" : "")" style="font-size: 3rem;">music_note</i>
+                    <i class="rzi beat-icon beat-icon--large @(IsFlashing ? "flash" : "")">music_note</i>
                 </div>
 
                 <!-- Feedback splash text -->

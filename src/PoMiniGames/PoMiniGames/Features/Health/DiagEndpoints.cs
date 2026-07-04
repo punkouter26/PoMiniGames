@@ -187,16 +187,20 @@ public static class DiagEndpoints
             return new DiagResponse(identity, environment, integrations);
         }
 
-        app.MapGet("/api/diag", diagHandler)
+        // §1 MapGroup() per slice: /api/diag and /api/diag/correlation share the
+        // /api/diag prefix; /api/logs/tail sits at a sibling path so it gets its
+        // own sibling declaration.
+        var diag = app.MapGroup("/api/diag").WithTags("Health");
+
+        diag.MapGet("", diagHandler)
         .WithName("GetDiagnostics")
-        .WithTags("Health")
         .WithSummary("Exposes a development-focused diagnostic summary without raw secret values");
 
         // Bug fix QA #7: a tiny endpoint that echoes the current request's
         // correlation + session IDs so the SPA can show them on /diag and let
         // users grep server logs for "their" request without digging in the
         // Serilog console.
-        app.MapGet("/api/diag/correlation", (HttpContext context) =>
+        diag.MapGet("/correlation", (HttpContext context) =>
         {
             return Results.Ok(new
             {
@@ -208,7 +212,6 @@ public static class DiagEndpoints
             });
         })
         .WithName("GetDiagnosticsCorrelation")
-        .WithTags("Health")
         .WithSummary("Echoes the current request's correlation + session IDs for log correlation");
 
         // Note: /diag is NOT registered as an API endpoint to avoid conflicting with
@@ -294,6 +297,8 @@ public static class DiagEndpoints
             }
         }
 
+        // Sibling to /api/diag — kept outside the diag group so OpenAPI's per-tag
+        // listing reads cleanly (logs are dev-only; diag is gated separately).
         app.MapGet("/api/logs/tail", logsTailHandler)
         .WithName("GetLogsTail")
         .WithTags("Health")

@@ -28,19 +28,21 @@ public static class UnifiedLeaderboardEndpoints
 
     public static IEndpointRouteBuilder MapUnifiedLeaderboardEndpoints(this IEndpointRouteBuilder app)
     {
-        app.MapGet("/api/leaderboards",
+        // §1 MapGroup() per slice: /api/leaderboards/{game} reuses the parent prefix.
+        var boards = app.MapGroup("/api/leaderboards").WithTags("Statistics");
+
+        boards.MapGet("",
             async (IStorageService storage, int limit = 5) =>
             {
                 limit = Math.Clamp(limit, 1, 100);
-                var boards = await BuildAllAsync(storage, limit);
-                return Results.Ok(boards);
+                var all = await BuildAllAsync(storage, limit);
+                return Results.Ok(all);
             })
             .WithName("GetUnifiedLeaderboards")
-            .WithTags("Statistics")
             .WithSummary("Normalized leaderboards for every game in one call")
             .Produces<IEnumerable<GameLeaderboardDto>>(StatusCodes.Status200OK);
 
-        app.MapGet("/api/leaderboards/{game}",
+        boards.MapGet("/{game}",
             async (string game, IStorageService storage, int limit = 10) =>
             {
                 limit = Math.Clamp(limit, 1, 100);
@@ -49,7 +51,6 @@ public static class UnifiedLeaderboardEndpoints
                                      : Results.Ok(board);
             })
             .WithName("GetUnifiedLeaderboard")
-            .WithTags("Statistics")
             .WithSummary("Normalized leaderboard for a single game")
             .Produces<GameLeaderboardDto>(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status404NotFound);

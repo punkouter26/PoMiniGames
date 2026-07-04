@@ -27,7 +27,12 @@ public static class TelemetryStatusEndpoints
 
     public static IEndpointRouteBuilder MapTelemetryStatusEndpoints(this IEndpointRouteBuilder app)
     {
-        app.MapGet("/api/diag/telemetry", (IConfiguration config, IHostEnvironment env) =>
+        // §1 MapGroup() per slice: telemetry status under /api/diag/telemetry.
+        // Sits at the diag prefix alongside DiagEndpoints' group so the tag
+        // listing in OpenAPI shows both surfaces under "Diagnostics".
+        var telemetry = app.MapGroup("/api/diag/telemetry").WithTags("Diagnostics");
+
+        telemetry.MapGet("", (IConfiguration config, IHostEnvironment env) =>
         {
             // Connection strings are secrets. We never echo them — only the
             // boolean "is one configured" which is the same signal the diag
@@ -52,7 +57,6 @@ public static class TelemetryStatusEndpoints
                 SamplingRatio: samplingRatio));
         })
         .WithName("GetTelemetryStatus")
-        .WithTags("Diagnostics")
         .WithSummary("Returns telemetry pipeline status without leaking secrets.");
 
         return app;

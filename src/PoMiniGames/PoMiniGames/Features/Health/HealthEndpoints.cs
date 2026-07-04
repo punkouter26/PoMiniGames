@@ -32,28 +32,31 @@ public static class HealthEndpoints
                 : Results.Json(response, statusCode: StatusCodes.Status503ServiceUnavailable);
         }
 
-        app.MapGet("/api/health", healthHandler)
+        // §1 MapGroup() per slice: every /api/health/* route lives under the same
+        // group so the OpenAPI tag, auth gate (none — probes must stay anonymous),
+        // and route prefix are declared once.
+        var health = app.MapGroup("/api/health").WithTags("Health");
+
+        health.MapGet("", healthHandler)
         .WithName("HealthCheck")
-        .WithTags("Health")
         .WithSummary("Structured health report for all dependencies");
 
         // Liveness is the standard Kubernetes / App Service probe shape:
         // "is the process alive?" — answered by the same health-check service but
         // named so the route table is self-documenting.
-        app.MapGet("/api/health/liveness", healthHandler)
+        health.MapGet("/liveness", healthHandler)
         .WithName("HealthLiveness")
-        .WithTags("Health")
         .WithSummary("Liveness probe (process alive). Alias of /api/health.");
 
-        app.MapGet("/api/health/ping", () => Results.Ok("pong"))
+        health.MapGet("/ping", () => Results.Ok("pong"))
             .WithName("HealthPing")
-            .WithTags("Health")
             .WithSummary("Simple liveness probe (no health-check service)");
 
         // Legacy root alias: kept so external monitors pointed at <c>/health</c>
         // continue to work. New callers must prefer <c>/api/health</c>. The
         // alias is intentionally NOT named in OpenAPI to discourage new code
-        // from referencing it.
+        // from referencing it. NOT inside the /api/health group so the OpenAPI
+        // tag stays /api/health only.
         app.MapGet("/health", healthHandler)
         .WithName("HealthCheckRootAlias")
         .WithTags("Health")

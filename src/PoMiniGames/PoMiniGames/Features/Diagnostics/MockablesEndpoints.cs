@@ -30,9 +30,10 @@ public static class MockablesEndpoints
 
     public static IEndpointRouteBuilder MapMockablesEndpoints(this IEndpointRouteBuilder app)
     {
-        // The endpoint lives under /api so the SPA's ApiService can call it without
-        // needing a dedicated interceptor. The mock inventory is dev tooling.
-        app.MapGet("/api/mockables", (IServiceProvider sp, IHostEnvironment env) =>
+        // §1 MapGroup() per slice: dev-tooling endpoint under /api/mockables.
+        var mockables = app.MapGroup("/api/mockables").WithTags("Diagnostics");
+
+        mockables.MapGet("", (IServiceProvider sp, IHostEnvironment env) =>
         {
             // Production hardening: never expose the mock surface to a deployed host.
             // Production should never resolve an IMockable — if any does, the suite's
@@ -57,7 +58,6 @@ public static class MockablesEndpoints
             return Results.Ok(mockIds);
         })
         .WithName("GetMockables")
-        .WithTags("Diagnostics")
         .WithSummary("Enumerates IMockable registrations. Hidden in Production.");
 
         return app;

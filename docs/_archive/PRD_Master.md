@@ -55,7 +55,7 @@ A slice MUST NOT reach into another slice's folder. Cross-slice sharing goes thr
 Client-only games (no slice): `BabyTouch`, `ConnectFive` (client-only when vs AI),
 `DropSquare`, `Fight` (client-only when vs CPU), `HorseRace`, `PoMarbleRace`,
 `PoRacer`, `PoRunner`, `SnakeGame` (client-only when vs AI), `TicTacToe`
-(client-only when vs AI), `VoxelShooter`. These are pure local-first and MUST NOT
+(client-only when vs AI). These are pure local-first and MUST NOT
 be mirrored under `Features/`.
 
 ### 2.3 Persistence boundary (drift-prevention)

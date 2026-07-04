@@ -81,18 +81,44 @@ jobs:
       # Compile every project in the solution — src + tests — so a broken test
       # file cannot slip into master. TreatWarningsAsErrors=true (Directory.Build.props)
       # ensures zero warnings reach the artifact stage.
+      #
+      # PR builds stay in Debug to keep CI fast (no publish, no artifact upload);
+      # only push-to-master runs the Release publish + upload that feeds the
+      # deploy job. This halves PR build minutes without sacrificing the
+      # "broken test file fails master" guarantee.
       - name: Build
-        run: dotnet build PoMiniGames.slnx --no-restore --configuration Release
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            dotnet build PoMiniGames.slnx --no-restore --configuration Debug
+          else
+            dotnet build PoMiniGames.slnx --no-restore --configuration Release
+          fi
+
+      # §7 #NET_CLEAN_10: trim-audit for the WASM client. The host's `dotnet publish`
+      # exercises server-side AOT but never compiles the Blazor client with trimming
+      # on, so a regression in PoShared / PoMiniGamesClient trim safety would only
+      # surface at the consumer's first deploy. This step runs the same
+      # PublishTrimmed + EnableTrimAnalyzer pipeline locally — if the analyzer
+      # surfaces IL2xxx warnings under Debug, TreatWarningsAsErrors fails the build.
+      # Release adds trimming at publish time; both must pass.
+      - name: Trim audit (WASM client)
+        run: |
+          dotnet publish src/PoMiniGames.Client/PoMiniGamesClient.csproj \
+            -c ${{ github.event_name == 'pull_request' && 'Debug' || 'Release' }} \
+            -p:PublishTrimmed=true \
+            -p:TrimMode=partial \
+            -o ./client-trim-audit \
+            --no-restore
 
       - name: Verify formatting (non-blocking)
         run: dotnet format PoMiniGames.slnx --verify-no-changes --verbosity minimal
         continue-on-error: true
 
-      - name: Publish
+      - name: Publish (push-to-master only)
         if: github.event_name == 'push' && github.ref == 'refs/heads/master'
         run: dotnet publish src/PoMiniGames/PoMiniGames/PoMiniGames.csproj -c Release -o ./publish
 
-      - name: Upload publish artifact
+      - name: Upload publish artifact (push-to-master only)
         if: github.event_name == 'push' && github.ref == 'refs/heads/master'
         uses: actions/upload-artifact@v4
         with:

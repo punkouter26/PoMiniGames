@@ -12,7 +12,11 @@ public static class PlayerStatsEndpoints
 {
     public static IEndpointRouteBuilder MapGetPlayerStats(this IEndpointRouteBuilder app)
     {
-        app.MapGet("/api/{game}/players/{playerName}/stats",
+        // §1 MapGroup() per slice: /api/{game}/players/{playerName}/stats lives under
+        // a per-game group so the {game} placeholder is captured once at the boundary.
+        var player = app.MapGroup("/api/{game}/players/{playerName}").WithTags("Players");
+
+        player.MapGet("/stats",
             async (string game, string playerName, IStorageService storage) =>
             {
                 var stats = await storage.GetPlayerStatsAsync(game, playerName);
@@ -29,7 +33,6 @@ public static class PlayerStatsEndpoints
                 });
             })
             .WithName("GetPlayerStats")
-            .WithTags("Players")
             .WithSummary("Retrieve stats for a player in a specific game")
             .Produces<PlayerStatsDto>(StatusCodes.Status200OK);
 
@@ -38,7 +41,11 @@ public static class PlayerStatsEndpoints
 
     public static IEndpointRouteBuilder MapSavePlayerStats(this IEndpointRouteBuilder app)
     {
-        app.MapPut("/api/{game}/players/{playerName}/stats",
+        // §1 MapGroup() per slice: companion PUT to the GET above shares the
+        // {game}/players/{playerName} prefix group so auth + tag apply once.
+        var player = app.MapGroup("/api/{game}/players/{playerName}").WithTags("Players");
+
+        player.MapPut("/stats",
             async (string game, string playerName, PlayerStats stats, IStorageService storage) =>
             {
                 if (string.IsNullOrWhiteSpace(playerName))
@@ -56,7 +63,6 @@ public static class PlayerStatsEndpoints
             })
             .RequireAuthorization()
             .WithName("SavePlayerStats")
-            .WithTags("Players")
             .WithSummary("Save or update player statistics for a game")
             .Produces(StatusCodes.Status204NoContent)
             .ProducesProblem(StatusCodes.Status401Unauthorized);
@@ -66,7 +72,10 @@ public static class PlayerStatsEndpoints
 
     public static IEndpointRouteBuilder MapGetLeaderboard(this IEndpointRouteBuilder app)
     {
-        app.MapGet("/api/{game}/statistics/leaderboard",
+        // §1 MapGroup() per slice: per-game leaderboard under /api/{game}/statistics.
+        var stats = app.MapGroup("/api/{game}/statistics").WithTags("Statistics");
+
+        stats.MapGet("/leaderboard",
             async (string game, IStorageService storage, int limit = 10, string? difficulty = null) =>
             {
                 limit = Math.Clamp(limit, 1, 100);
@@ -77,7 +86,6 @@ public static class PlayerStatsEndpoints
                 return Results.Ok(result);
             })
             .WithName("GetLeaderboard")
-            .WithTags("Statistics")
             .WithSummary("Top players for a game ranked by win rate or difficulty-based ELO")
             .Produces<IEnumerable<PlayerStatsDto>>(StatusCodes.Status200OK);
 
@@ -86,7 +94,10 @@ public static class PlayerStatsEndpoints
 
     public static IEndpointRouteBuilder MapGetAllPlayerStatistics(this IEndpointRouteBuilder app)
     {
-        app.MapGet("/api/statistics", async (HttpContext ctx, IStorageService storage, CancellationToken ct) =>
+        // §1 MapGroup() per slice: cross-game statistics live under /api/statistics.
+        var stats = app.MapGroup("/api/statistics").WithTags("Statistics");
+
+        stats.MapGet("", async (HttpContext ctx, IStorageService storage, CancellationToken ct) =>
             {
                 // §8: stream the response so the network and heap track page size, not row count.
                 // Uses the typed JsonContent / IAsyncEnumerable pattern to avoid buffering.
@@ -102,7 +113,6 @@ public static class PlayerStatsEndpoints
             })
             .RequireAuthorization()
             .WithName("GetAllPlayerStatistics")
-            .WithTags("Statistics")
             .WithSummary("All player statistics across every game")
             .Produces<IEnumerable<PlayerStatsDto>>(StatusCodes.Status200OK)
             .ProducesProblem(StatusCodes.Status401Unauthorized);
@@ -113,7 +123,7 @@ public static class PlayerStatsEndpoints
         // §6 of QA report: accept BOTH `gameId` (canonical, OpenAPI-documented) and
         // `gameKey` (legacy alias used by some pre-consolidation clients) and
         // surface a precise validation error naming which field was missing.
-        app.MapPost("/api/statistics",
+        stats.MapPost("",
             async (HttpContext context, PlayerStatsSubmissionRaw raw, IStorageService storage) =>
             {
                 if (raw is null)
@@ -135,7 +145,7 @@ public static class PlayerStatsEndpoints
                         hint = "POST { gameId, playerName, stats } to /api/statistics. `gameKey` is accepted as a legacy alias of `gameId`."
                     });
                 }
-                var stats = raw.Stats ?? new PlayerStats();
+                var stats2 = raw.Stats ?? new PlayerStats();
                 // If the client sent a flat { score, outcome } shape, fold it into
                 // the default difficulty bucket so simple callers don't have to
                 // supply the full nested schema. WinRate / TotalWins / TotalGames
@@ -144,16 +154,15 @@ public static class PlayerStatsEndpoints
                 if (raw.Score is not null)
                 {
                     var won = raw.Outcome?.Equals("win", StringComparison.OrdinalIgnoreCase) == true;
-                    stats.Easy.Wins = won ? 1 : 0;
-                    stats.Easy.Losses = won ? 0 : 1;
-                    stats.Easy.TotalGames = 1;
+                    stats2.Easy.Wins = won ? 1 : 0;
+                    stats2.Easy.Losses = won ? 0 : 1;
+                    stats2.Easy.TotalGames = 1;
                 }
-                await storage.SavePlayerStatsAsync(gameId!, playerName!, stats);
+                await storage.SavePlayerStatsAsync(gameId!, playerName!, stats2);
                 return Results.NoContent();
             })
             .RequireAuthorization()
             .WithName("SavePlayerStatistics")
-            .WithTags("Statistics")
             .WithSummary("Save or upsert a player's stats for a single game (body supplies gameId + playerName + stats). gameKey is accepted as a legacy alias.")
             .Produces(StatusCodes.Status204NoContent)
             .ProducesProblem(StatusCodes.Status400BadRequest)

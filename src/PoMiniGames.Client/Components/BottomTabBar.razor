@@ -3,17 +3,14 @@
 
 @*
     §9 Bottom-tab-bar for mobile portrait. Anchored to the bottom of the viewport
-    with a 5-icon primary navigation: Home / Scores / Demo / Me / Auth. Hidden on
-    >= 641 px so the L-C-R top-bar contract on desktop / landscape stays intact.
-*@
-
-@*
-    §9 Bottom-tab-bar for mobile portrait. Anchored to the bottom of the viewport
-    with a 4-icon primary navigation: Home / Scores / Demo / Me. Hidden on
-    >= 641 px so the L-C-R top-bar contract on desktop / landscape stays intact.
+    with a 3-icon primary navigation: Home / Scores / Me. Hidden on >= 641 px so
+    the L-C-R top-bar contract on desktop / landscape stays intact.
     Auth was previously the 5th icon; it's now reachable via the overflow menu
     in the top bar (and remains visible on >= 480 px via the Sign in / Sign out
     button) so the mobile tab strip gets ~25 % more horizontal room per icon.
+    The "Demo" tab was removed 2026-07-04: it duplicated the Index.razor Demo
+    card and routed users into the kiosk auto-cycle with no exit affordance
+    (KioskControlBar was previously removed from the layout).
 *@
 
 <nav class="btb" aria-label="Primary navigation">
@@ -39,27 +36,6 @@
         <span class="btb-label">Scores</span>
     </a>
 
-    <button type="button"
-            class="btb-item @(IsDemoActive ? "btb-item--active" : null)"
-            aria-label="@(IsDemoActive ? "Stop demo auto-cycle" : "Watch all demos")"
-            aria-pressed="@IsDemoActive"
-            @onclick="ToggleDemoAsync">
-        @if (IsDemoActive)
-        {
-            <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true">
-                <rect x="6" y="5" width="4" height="14" rx="1"/>
-                <rect x="14" y="5" width="4" height="14" rx="1"/>
-            </svg>
-        }
-        else
-        {
-            <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true">
-                <polygon points="6 4 20 12 6 20 6 4"/>
-            </svg>
-        }
-        <span class="btb-label">@(IsDemoActive ? "Stop" : "Demo")</span>
-    </button>
-
     <a class="btb-item @(IsActive("/profile") ? "btb-item--active" : null)" href="/profile"
        aria-label="My profile" aria-current="@(IsActive("/profile") ? "page" : null)">
         <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -71,10 +47,6 @@
 </nav>
 
 @code {
-    [Inject] private KioskCoordinator Kiosk { get; set; } = default!;
-
-    private bool IsDemoActive => Kiosk.IsActive;
-
     private bool IsActive(string path)
     {
         var current = NavigationManager.ToBaseRelativePath(NavigationManager.Uri);
@@ -88,25 +60,5 @@
         if (string.IsNullOrEmpty(compare)) return string.IsNullOrEmpty(current);
         return current.Equals(compare, StringComparison.OrdinalIgnoreCase)
             || current.StartsWith(compare + "/", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private void ToggleDemoAsync()
-    {
-        if (Kiosk.IsActive)
-        {
-            Kiosk.Stop();
-            return;
-        }
-
-        var demos = GameCatalog.Demo;
-        if (demos.Count == 0) return;
-
-        Kiosk.RegisterEntries(demos.Select(d => new DemoEntry(d.Key, d.Url, d.Title, d.Icon)));
-        var first = demos[0];
-        var sep = first.Url.Contains('?') ? '&' : '?';
-        // Display index 0 and set the advance pointer to 0 so the FIRST advance goes to
-        // index 1 (not 2). Passing 1 here skipped the second demo (TicTacToe) every lap.
-        Kiosk.Start(0);
-        NavigationManager.NavigateTo($"{first.Url}{sep}kiosk=0");
     }
 }

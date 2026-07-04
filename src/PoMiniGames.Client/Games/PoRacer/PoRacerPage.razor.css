@@ -13,3 +13,62 @@
 .racer-canvas--interactive {
     pointer-events: auto;
 }
+
+/* §7 #NET_CLEAN_10 — static utility styles lifted from PoRacerPage.razor.
+   Each rule owns a single .razor.css-scoped class so the bound runtime
+   styles (color/width/height driven by game state) stay inline where
+   their dynamic semantics are clearest. */
+
+/* Footer line in the settings panel — was <div style="margin-top: auto;
+   font-size: 11px; color: var(--muted); text-align: center;"> */
+.racer-settings-footer {
+    margin-top: auto;
+    font-size: 11px;
+    color: var(--muted);
+    text-align: center;
+}
+
+/* Minimap visibility — was <div class="racer-minimap"
+   style="display:@(Phase == GamePhase.Racing ? "block" : "none")"> */
+.racer-minimap.is-racing {
+    display: block;
+}
+
+.racer-minimap:not(.is-racing) {
+    display: none;
+}
+
+/* Start-screen action row — was <div style="display: flex; gap: 12px;
+   justify-content: center; align-items: center; margin: 0 auto 10px;"> */
+.racer-start-actions {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    align-items: center;
+    margin: 0 auto 10px;
+}
+
+/* Settings button on start screen — was <button class="racer-btn-secondary"
+   style="padding: 14px 20px; font-size: 15px;" …> */
+.racer-btn-secondary--large {
+    padding: 14px 20px;
+    font-size: 15px;
+}
+
+/* "DEMO MODE" pill inside the standings HUD — was
+   <div class="hud-row" style="color:var(--accent-warm);font-weight:700"> */
+.hud-row--demo-badge {
+    color: var(--accent-warm);
+    font-weight: 700;
+}
+
+/* Splits panel — was <div class="hud-panel hud-right" style="top: 140px;"> */
+.hud-panel--splits {
+    top: 140px;
+}
+
+/* Auto-restart hint under the leaderboard — was <div class="racer-hint"
+   style="margin-top:10px"> */
+.racer-hint--demo-restart {
+    margin-top: 10px;
+}

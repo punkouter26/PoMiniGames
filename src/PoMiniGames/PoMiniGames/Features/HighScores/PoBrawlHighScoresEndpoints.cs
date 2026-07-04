@@ -8,18 +8,20 @@ public static class PoBrawlHighScoresEndpoints
 {
     public static IEndpointRouteBuilder MapPoBrawlHighScoresEndpoints(this IEndpointRouteBuilder app)
     {
-        app.MapGet("/api/pobrawl/highscores",
+        // §1 MapGroup() per slice: PoBrawl high scores share /api/pobrawl/highscores.
+        var brawl = app.MapGroup("/api/pobrawl/highscores").WithTags("HighScores");
+
+        brawl.MapGet("",
             async (IStorageService storage, int count = 10) =>
             {
                 var scores = await storage.GetPoBrawlHighScoresAsync(count);
                 return Results.Ok(scores);
             })
             .WithName("GetPoBrawlHighScores")
-            .WithTags("HighScores")
             .WithSummary("Top PoBrawl fastest-KO times")
             .Produces<IEnumerable<PoBrawlHighScore>>(StatusCodes.Status200OK);
 
-        app.MapPost("/api/pobrawl/highscores",
+        brawl.MapPost("",
             async (PoBrawlHighScore entry, IStorageService storage) =>
             {
                 if (string.IsNullOrWhiteSpace(entry.PlayerInitials))
@@ -35,7 +37,6 @@ public static class PoBrawlHighScoresEndpoints
                 return Results.Created("/api/pobrawl/highscores", saved);
             })
             .WithName("SavePoBrawlHighScore")
-            .WithTags("HighScores")
             .WithSummary("Submit a new PoBrawl fastest-KO time")
             .Produces<PoBrawlHighScore>(StatusCodes.Status201Created)
             .RequireRateLimiting("highscores");

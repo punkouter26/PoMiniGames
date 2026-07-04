@@ -27,8 +27,15 @@ the shared Infrastructure project unless the data is genuinely cross-slice.
 - `src/PoMiniGames/PoMiniGames` — **host/API** project (Program.cs, feature-sliced Minimal API
   endpoints + SignalR hubs, serves the WASM client). Acts as the `.API` project. The full route
   table is registered in one place: `Infrastructure/EndpointRouteExtensions.MapPoMiniGamesEndpoints`.
+  - **§1 MapGroup() per slice** (2026-07-04 sweep): every slice's endpoints live under a
+    single `MapGroup("/api/<slice>")` call. The route prefix, OpenAPI tag, and auth gate
+    are declared once at the group boundary; per-route attributes attach to the group's
+    child handlers. Legacy unprefixed URLs (`/auth/login/microsoft|fake`, `/auth/logout`,
+    `/auth/me`) stay outside the group because external monitors and the SPA reference
+    them by exact path. New slices MUST follow this pattern — register routes via a
+    group, not via scattered `app.MapGet/MapPost` calls.
 - `src/PoMiniGames.Client` — Blazor WASM client. **`wwwroot` lives only here.**
-  - `Games/` — **11 client-only mini-games** with no server slice (no Features/ counterpart, no telemetry, no leaderboard back-end). Pure local-first: `BabyTouch`, `ConnectFive`, `DropSquare`, `Fight`, `HorseRace`, `PoMarbleRace`, `PoRacer` (UI only — scores post to `/api/leaderboard`), `PoRunner`, `SnakeGame`, `TicTacToe`, `VoxelShooter`. Keep them in the client project; do **not** mirror them under `src/PoMiniGames/PoMiniGames/Features/`.
+  - `Games/` — **10 client-only mini-games** with no server slice (no Features/ counterpart, no telemetry, no leaderboard back-end). Pure local-first: `BabyTouch`, `ConnectFive`, `DropSquare`, `Fight`, `HorseRace`, `PoMarbleRace`, `PoRacer` (UI only — scores post to `/api/leaderboard`), `PoRunner`, `SnakeGame`, `TicTacToe`. Keep them in the client project; do **not** mirror them under `src/PoMiniGames/PoMiniGames/Features/`.
 - `src/PoMiniGames.Application` — application services, DTOs, diagnostics contracts.
 - `src/PoMiniGames.Domain` — domain models / services.
 - `src/PoMiniGames.Infrastructure` — shared platform persistence + health checks (Azure Table Storage). AI resilience helpers live exclusively under `PoMiniGames.AI` (see host project) — the migration window with two AI namespaces is closed.
@@ -46,6 +53,12 @@ the shared Infrastructure project unless the data is genuinely cross-slice.
 - Run: `dotnet run --project src/PoMiniGames/PoMiniGames`. Hardcoded ports **HTTP 5000 / HTTPS 5001**.
 - `F5` in VS Code uses `.vscode/launch.json` + `tasks.json`. The `prelaunch` task runs in sequence: `kill-dotnet` (frees port 5000) → `start-azurite` (`docker compose up -d azurite`, so local storage is always the Docker container) → `start-api`. Disable any non-Docker Azurite (e.g. the VS Code Azurite extension) so the `pominigames` container can bind ports 10000–10002.
 - First-run setup: `scripts/setup.ps1` (WinGet installs, Azurite container, `az login` check).
+- **CI trim audit** (2026-07-04 sweep): `.github/workflows/deploy.yml` runs a
+  `dotnet publish src/PoMiniGames.Client/PoMiniGamesClient.csproj -p:PublishTrimmed=true -p:TrimMode=partial`
+  step after the regular build. Both `PoShared` and `PoMiniGamesClient` already set
+  `<IsTrimmable>true</IsTrimmable>` + `<EnableTrimAnalyzer>true</EnableTrimAnalyzer>`; this
+  step is the runtime check that a new reflection-using feature didn't slip into a
+  shared DTO. Debug on PR builds (fast), Release on push-to-master (matches the artifact).
 
 ## Branches
 - **master is the only branch.** No local or remote feature branches. All work lands
@@ -58,6 +71,13 @@ the shared Infrastructure project unless the data is genuinely cross-slice.
 - Prod uses Managed Identity + Key Vault (`PoShared` resource group).
 - **Caching**: native `HybridCache` (`AddHybridCache`) memoizes deterministic, expensive Azure OpenAI
   calls (PoCoupleQuiz answer-similarity scoring). Non-deterministic generations (questions) stay uncached.
+- **HttpClient resilience** (2026-07-04 sweep): every typed `HttpClient` registered with
+  `services.AddHttpClient(...)` MUST chain `.AddStandardResilienceHandler()` (or a named
+  `AddResiliencePipeline(...)` for non-default tuning). The host's two current callers
+  (PoFace → Azure AI Foundry, PoJoker → JokeAPI.dev) already use the standard handler
+  (retry x3 + exponential backoff + circuit breaker). New HttpClients in this codebase
+  MUST follow the same pattern — bare `new HttpClient()` or handler-less typed clients
+  are a CI-grade regression.
 
 ## Auth (see `Features/Auth/` + `Infrastructure/AuthExtensions.cs`)
 - **Auth gate is unconditional.** `App.razor` wraps the entire `<Router>` in

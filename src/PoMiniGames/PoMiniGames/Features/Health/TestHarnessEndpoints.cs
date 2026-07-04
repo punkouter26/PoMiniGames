@@ -16,8 +16,12 @@ public static class TestHarnessEndpoints
         if (!env.IsDevelopment())
             return app;
 
+        // §1 MapGroup() per slice: all four /test/* routes share the same prefix,
+        // OpenAPI tag ("Testing"), and the dev-only env guard applied here.
+        var test = app.MapGroup("/test").WithTags("Testing");
+
         /// <summary>GET /test/offline-mode → Forces all API calls to fail, tests offline resilience</summary>
-        app.MapGet("/test/offline-mode", () =>
+        test.MapGet("/offline-mode", () =>
         {
             return Results.Ok(new
             {
@@ -33,11 +37,10 @@ public static class TestHarnessEndpoints
             });
         })
         .WithName("GetOfflineModeInstructions")
-        .WithTags("Testing")
         .WithSummary("Instructions for testing offline game functionality");
 
         /// <summary>GET /test/keyboard-events → Test keyboard input capture</summary>
-        app.MapGet("/test/keyboard-events", () =>
+        test.MapGet("/keyboard-events", () =>
         {
             return Results.Ok(new
             {
@@ -52,11 +55,10 @@ public static class TestHarnessEndpoints
             });
         })
         .WithName("GetKeyboardEventTest")
-        .WithTags("Testing")
         .WithSummary("Debug keyboard input capture for games");
 
         /// <summary>GET /test/render-diagnostics → Canvas/WebGL render pipeline debug</summary>
-        app.MapGet("/test/render-diagnostics", () =>
+        test.MapGet("/render-diagnostics", () =>
         {
             return Results.Ok(new
             {
@@ -74,17 +76,15 @@ public static class TestHarnessEndpoints
             });
         })
         .WithName("GetRenderDiagnostics")
-        .WithTags("Testing")
         .WithSummary("Render pipeline diagnostics for Canvas/WebGL games");
 
         /// <summary>GET /test/api-timeout → Simulate slow API responses</summary>
-        app.MapGet("/test/api-timeout", async (HttpContext context) =>
+        test.MapGet("/api-timeout", async (HttpContext context) =>
         {
             await Task.Delay(8000); // Exceed 5s client timeout
             return Results.Ok(new { message = "Response after timeout window" });
         })
         .WithName("GetSlowApiResponse")
-        .WithTags("Testing")
         .WithSummary("Simulates slow API response (tests client timeout handling)");
 
         return app;

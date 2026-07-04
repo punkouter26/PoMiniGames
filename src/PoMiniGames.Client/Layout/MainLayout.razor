@@ -42,13 +42,9 @@
         </div>
 
         <div class="gl-auth">
-            @if (AuthState.IsConfigured && AuthState.User != null)
-            {
-                @* Show "Playing as Guest" for anonymous dev sessions; show email for real Microsoft accounts *@
-                <span class="gl-auth-user" title="@(AuthState.User.Email ?? AuthState.User.DisplayName)">
-                    @(IsAnonUser(AuthState.User.DisplayName) ? "Playing as Guest" : (AuthState.User.Email ?? AuthState.User.DisplayName))
-                </span>
-            }
+            @* Guest pill and email chip removed per 2026-07-04 mobile-portrait cleanup:
+               neither belongs on a portrait phone chrome strip. The sign-in / sign-out
+               button (and the dev Switch-user panel, when applicable) remain below. *@
             @* §10 dev-only "Switch user…" affordance. Renders only in Development +
                Test environments where the /api/auth/dev-bypass endpoint exists;
                lets a developer verify head-to-head flows from the same machine
@@ -117,8 +113,9 @@
         </div>
     }
 
-    <!-- Floating kiosk control bar (demo auto-cycle, 2026) -->
-    <KioskControlBar />
+    <!-- Floating kiosk control bar removed per 2026-07-04 mobile-portrait cleanup.
+         The KioskCoordinator still drives demo auto-rotation when started from the
+         home page; only the floating control surface is gone. -->
 
     <!-- §9 Bottom-tab-bar for mobile portrait. Hidden on >= 641 px. -->
     <BottomTabBar />

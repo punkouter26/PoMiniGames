@@ -9,7 +9,14 @@ public static class AuthEndpoints
 {
     public static IEndpointRouteBuilder MapAuthEndpoints(this IEndpointRouteBuilder app)
     {
-        app.MapGet("/api/auth/config", (
+        // §1 MapGroup() per slice: every /api/auth/* endpoint shares the same
+        // prefix and OpenAPI tag. The legacy unprefixed /auth/login/microsoft,
+        // /auth/login/fake, /auth/logout, and /auth/me routes are kept OUTSIDE
+        // this group — those URLs are documented in §2.3 of AGENT.MD and used
+        // by external monitors, so the wire path must not change.
+        var auth = app.MapGroup("/api/auth").WithTags("Auth");
+
+        auth.MapGet("/config", (
             IOptions<MicrosoftAuthOptions> options,
             IWebHostEnvironment environment,
             IConfiguration configuration) =>
@@ -50,7 +57,7 @@ public static class AuthEndpoints
         .WithTags("Auth")
         .WithSummary("Returns the public Microsoft sign-in configuration for the SPA.");
 
-        app.MapPost("/api/auth/dev-login", [AllowAnonymous] async (HttpContext context, HttpRequest httpRequest, IWebHostEnvironment environment) =>
+        auth.MapPost("/dev-login", [AllowAnonymous] async (HttpContext context, HttpRequest httpRequest, IWebHostEnvironment environment) =>
         {
             DevLoginRequest? request = null;
             if (httpRequest.HasJsonContentType())
@@ -61,16 +68,14 @@ public static class AuthEndpoints
             return await SignInDevelopmentUserAsync(context, environment, request, null);
         })
         .WithName("DevLogin")
-        .WithTags("Auth")
         .WithSummary("Creates a local development auth session without Microsoft OAuth.");
 
-        app.MapPost("/api/auth/dev-bypass", [AllowAnonymous] (HttpContext context, string? user, IWebHostEnvironment environment) =>
+        auth.MapPost("/dev-bypass", [AllowAnonymous] (HttpContext context, string? user, IWebHostEnvironment environment) =>
                 SignInDevelopmentUserAsync(context, environment, null, user))
             .WithName("DevBypass")
-            .WithTags("Auth")
             .WithSummary("Creates a dev session keyed to the selected display name.");
 
-        app.MapPost("/api/auth/dev-logout", [AllowAnonymous] async (HttpContext context, IWebHostEnvironment environment) =>
+        auth.MapPost("/dev-logout", [AllowAnonymous] async (HttpContext context, IWebHostEnvironment environment) =>
         {
             if (!environment.IsDevelopment())
             {
@@ -81,10 +86,9 @@ public static class AuthEndpoints
             return Results.Ok();
         })
         .WithName("DevLogout")
-        .WithTags("Auth")
         .WithSummary("Clears the local development auth session.");
 
-        app.MapGet("/api/auth/me", [Authorize] (HttpContext context) =>
+        auth.MapGet("/me", [Authorize] (HttpContext context) =>
         {
             if (!AuthenticatedUser.TryCreate(context.User, out var user) || user is null)
             {
@@ -94,7 +98,6 @@ public static class AuthEndpoints
             return Results.Ok(new AuthenticatedUserProfile(user.UserId, user.DisplayName, user.Email));
         })
         .WithName("GetCurrentUser")
-        .WithTags("Auth")
         .WithSummary("Returns the authenticated user profile for the current bearer token.")
         .Produces<AuthenticatedUserProfile>(StatusCodes.Status200OK)
         .Produces(StatusCodes.Status401Unauthorized);
@@ -170,7 +173,7 @@ public static class AuthEndpoints
         // /api/auth/me in sequence — two round-trips plus a frame of layout shift.
         // This endpoint collapses both into one response so AuthGate can hydrate
         // BffAuthenticationStateProvider in a single awaited call.
-        app.MapGet("/api/auth/handshake", [AllowAnonymous] (
+        auth.MapGet("/handshake", [AllowAnonymous] (
             HttpContext context,
             IOptions<MicrosoftAuthOptions> authOptions,
             IWebHostEnvironment environment,
@@ -207,7 +210,6 @@ public static class AuthEndpoints
             return Results.Ok(new AuthHandshakeResponse(clientConfig, profile));
         })
         .WithName("GetAuthHandshake")
-        .WithTags("Auth")
         .WithSummary("Single-roundtrip auth state: client config + current user profile (or null).");
 
         return app;

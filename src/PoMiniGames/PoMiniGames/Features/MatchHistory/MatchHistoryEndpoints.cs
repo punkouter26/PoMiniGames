@@ -10,7 +10,10 @@ public static class MatchHistoryEndpoints
 {
     public static IEndpointRouteBuilder MapMatchHistoryEndpoints(this IEndpointRouteBuilder app)
     {
-        app.MapPost("/api/matches",
+        // §1 MapGroup() per slice: match history POST + GET share /api/matches.
+        var matches = app.MapGroup("/api/matches").WithTags("MatchHistory");
+
+        matches.MapPost("",
             async (MatchRecordRequest request, MatchHistoryRepository repo) =>
             {
                 if (string.IsNullOrWhiteSpace(request.Owner))
@@ -24,12 +27,11 @@ public static class MatchHistoryEndpoints
                 return Results.Created("/api/matches", null);
             })
             .WithName("RecordMatch")
-            .WithTags("MatchHistory")
             .WithSummary("Record a finished head-to-head match result")
             .Produces(StatusCodes.Status201Created)
             .RequireRateLimiting("highscores");
 
-        app.MapGet("/api/matches",
+        matches.MapGet("",
             async (string owner, MatchHistoryRepository repo, int limit = 500) =>
             {
                 if (string.IsNullOrWhiteSpace(owner))
@@ -39,7 +41,6 @@ public static class MatchHistoryEndpoints
                 return Results.Ok(records);
             })
             .WithName("GetMatches")
-            .WithTags("MatchHistory")
             .WithSummary("Read an owner's match history, most recent first")
             .Produces<IEnumerable<MatchRecordDto>>(StatusCodes.Status200OK);
 

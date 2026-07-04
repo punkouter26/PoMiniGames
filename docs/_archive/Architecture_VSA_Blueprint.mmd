@@ -4,7 +4,7 @@ flowchart TD
         Router[Blazor Router + AuthorizeRouteView]
         Layout[MainLayout + NavMenu + LoginScreen]
         Pages[Pages: Index, GameRoute, NotFound]
-        subgraph GameModules["Games/ - 11 client-only modules"]
+        subgraph GameModules["Games/ - 10 client-only modules"]
             G1[BabyTouch]
             G2[ConnectFive]
             G3[DropSquare]
@@ -15,7 +15,6 @@ flowchart TD
             G8[PoRunner]
             G9[SnakeGame]
             G10[TicTacToe]
-            G11[VoxelShooter]
         end
         subgraph Services["Services/ - typed HttpClients + state"]
             Svc1[AuthStateProvider]

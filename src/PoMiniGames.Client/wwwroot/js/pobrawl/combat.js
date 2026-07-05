@@ -15,6 +15,11 @@ export const COMBAT_EVENTS = Object.freeze({
   COMBAT_FINISHED: 'combat.finished',
 });
 
+// Region ids used for per-region damage. The engine maps each to a rig region.
+export const REGIONS = Object.freeze({
+  HEAD: 'head', TORSO: 'torso', ARMS: 'arms', LEGS: 'legs',
+});
+
 export class CombatPlay {
   constructor({ maxHealth = 100, maxArmor = 100, armorAbsorption = 0.6 } = {}) {
     this.maxHealth = maxHealth;
@@ -85,4 +90,30 @@ export class CombatPlay {
     this._events = [];
     return events;
   }
+}
+
+// Per-region damage state lives alongside the CombatPlay in the engine, but the
+// rules for region-to-effect translation are shared here so tests and AI can
+// reason about them. The engine calls `regionEffect(regionDmg)` to compute the
+// combined status effect modifier for the current tick.
+//
+// Region damage thresholds (0..100):
+//   head  >= 70  → +flinch (longer hitstun)
+//   arms  >= 70  → -attack power
+//   legs  >= 70  → -move speed
+// Returns multipliers and additive flags the engine can apply.
+export function regionEffect(regionDmg) {
+  let moveMul = 1.0;
+  let atkMul = 1.0;
+  let flinchBonus = 0;
+  const head = regionDmg.head ?? 0;
+  const arms = regionDmg.arms ?? 0;
+  const legs = regionDmg.legs ?? 0;
+  if (head >= 70) flinchBonus = 0.10;
+  else if (head >= 40) flinchBonus = 0.04;
+  if (arms >= 70) atkMul = 0.85;
+  else if (arms >= 30) atkMul = 0.95;
+  if (legs >= 70) moveMul = 0.65;
+  else if (legs >= 30) moveMul = 0.85;
+  return { moveMul, atkMul, flinchBonus };
 }

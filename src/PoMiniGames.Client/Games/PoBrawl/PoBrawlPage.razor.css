@@ -259,3 +259,32 @@
         font-size: 0.8rem;
     }
 }
+
+/* ── KO chromatic-aberration flash overlay ─────────────
+   A full-bleed overlay that fades red/cyan split-second on K.O. We use two
+   box-shadows offset in opposite directions plus a vignette to mimic the
+   look of a chromatic-aberration post-pass without paying for a real one. */
+
+.pb-canvas-host ::deep .pb-flash {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0;
+    mix-blend-mode: screen;
+}
+
+.pb-canvas-host ::deep .pb-flash.pb-flash-active {
+    animation: pb-flash-anim 0.55s ease-out forwards;
+}
+
+@keyframes pb-flash-anim {
+    0%   { opacity: 0; box-shadow: inset 0 0 0 0 rgba(255, 80, 80, 0), inset 0 0 0 0 rgba(80, 160, 255, 0); }
+    10%  { opacity: 1; box-shadow: inset 6px 0 80px 0 rgba(255, 60, 60, 0.55), inset -6px 0 80px 0 rgba(60, 120, 255, 0.55), inset 0 0 200px 30px rgba(0, 0, 0, 0.85); }
+    60%  { opacity: 0.4; box-shadow: inset 2px 0 30px 0 rgba(255, 60, 60, 0.18), inset -2px 0 30px 0 rgba(60, 120, 255, 0.18), inset 0 0 80px 10px rgba(0, 0, 0, 0.5); }
+    100% { opacity: 0; box-shadow: inset 0 0 0 0 rgba(0, 0, 0, 0), inset 0 0 0 0 rgba(0, 0, 0, 0); }
+}
+
+/* KO banner gets a bigger, bloodier hit when the round ends. */
+.pb-canvas-host ::deep .pb-banner {
+    transition: font-size 0.2s ease-out;
+}

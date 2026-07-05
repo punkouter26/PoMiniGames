@@ -1,6 +1,11 @@
 // fighters.js — the four president caricatures as hierarchical three.js primitive rigs.
 // Silhouette identity comes from hair geometry, suit/tie palette and height/build scale;
 // faces stay abstract so the caricature reads as playful, not mocking.
+//
+// Each character exposes `mass`, `attackPower`, and `moveAccel` so the engine can drive
+// realistic weight/momentum/knockback without per-character special cases.
+// Materials are MeshStandardMaterial so we can pick up the arena env map and react
+// to the key/rim lights.
 import * as THREE from 'three';
 
 export const CHARACTERS = {
@@ -9,32 +14,45 @@ export const CHARACTERS = {
     skin: 0xf0b98a, suit: 0x1b2a52, tie: 0xd62828, tieLength: 1.4,
     hair: 0xf5d47a, hairStyle: 'sweep',
     heightScale: 1.02, buildScale: 1.15,
+    mass: 1.18, attackPower: 1.10, moveAccel: 11,
   },
   biden: {
     id: 'biden', name: 'Biden',
     skin: 0xe8bfa4, suit: 0x24365e, tie: 0x7fb2e5, tieLength: 1.0,
     hair: 0xf2f2f2, hairStyle: 'comb',
     heightScale: 1.0, buildScale: 0.95, aviators: true,
+    mass: 0.95, attackPower: 0.92, moveAccel: 13,
   },
   obama: {
     id: 'obama', name: 'Obama',
     skin: 0x8d5524, suit: 0x3a3f44, tie: 0x2456c9, tieLength: 1.0,
     hair: 0x2b2b2b, hairStyle: 'cap',
     heightScale: 1.04, buildScale: 0.95,
+    mass: 1.0, attackPower: 1.05, moveAccel: 14,
   },
   bush: {
     id: 'bush', name: 'Bush',
     skin: 0xe3b18e, suit: 0x17181c, tie: 0xb02323, tieLength: 0.85,
     hair: 0x8a8073, hairStyle: 'cap',
     heightScale: 0.97, buildScale: 1.08,
+    mass: 1.12, attackPower: 1.0, moveAccel: 10,
   },
 };
 
 export const CHARACTER_IDS = Object.keys(CHARACTERS);
 
+// Region -> bone names. The engine uses these to drive per-region damage and tints.
+export const REGION_BONES = {
+  head: ['head'],
+  torso: ['torso', 'hips'],
+  arms: ['shoulderL', 'elbowL', 'shoulderR', 'elbowR'],
+  legs: ['hipL', 'kneeL', 'hipR', 'kneeR'],
+};
+
 function box(w, h, d, mat) {
   const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
   m.castShadow = true;
+  m.receiveShadow = true;
   return m;
 }
 
@@ -44,22 +62,19 @@ function sphere(r, mat) {
   return m;
 }
 
-function buildHair(style, hairMat, skinMat) {
+function buildHair(style, hairMat) {
   const g = new THREE.Group();
   if (style === 'sweep') {
-    // Flattened swept slab with a front overhang wedge.
     const top = box(0.3, 0.09, 0.3, hairMat);
     top.position.y = 0.335;
     const front = box(0.3, 0.07, 0.1, hairMat);
     front.position.set(0, 0.31, 0.17);
     g.add(top, front);
   } else if (style === 'comb') {
-    // Thin combed-back cap, receded at the front.
     const top = box(0.28, 0.06, 0.24, hairMat);
     top.position.set(0, 0.325, -0.03);
     g.add(top);
   } else {
-    // Short close cap.
     const top = box(0.28, 0.07, 0.28, hairMat);
     top.position.y = 0.325;
     const back = box(0.28, 0.1, 0.06, hairMat);
@@ -70,20 +85,30 @@ function buildHair(style, hairMat, skinMat) {
 }
 
 /**
- * Builds one fighter rig. Returns { root, joints, materials, config } where joints are the
- * named THREE.Group pivots the animator drives: hips, torso, head, shoulderL/R, elbowL/R,
- * hipL/R, kneeL/R. The rig faces local +Z; the game yaws `root` toward the opponent.
+ * Builds one fighter rig. Returns { root, joints, materials, config, baseColors }.
  */
 export function buildFighter(charId) {
   const c = CHARACTERS[charId];
   const b = c.buildScale;
 
-  const suitMat = new THREE.MeshLambertMaterial({ color: c.suit });
-  const skinMat = new THREE.MeshLambertMaterial({ color: c.skin });
-  const tieMat = new THREE.MeshLambertMaterial({ color: c.tie });
-  const hairMat = new THREE.MeshLambertMaterial({ color: c.hair });
-  const shoeMat = new THREE.MeshLambertMaterial({ color: 0x111111 });
-  const shirtMat = new THREE.MeshLambertMaterial({ color: 0xf5f5f0 });
+  const suitMat = new THREE.MeshStandardMaterial({
+    color: c.suit, roughness: 0.7, metalness: 0.05,
+  });
+  const skinMat = new THREE.MeshStandardMaterial({
+    color: c.skin, roughness: 0.55, metalness: 0.0,
+  });
+  const tieMat = new THREE.MeshStandardMaterial({
+    color: c.tie, roughness: 0.55, metalness: 0.0,
+  });
+  const hairMat = new THREE.MeshStandardMaterial({
+    color: c.hair, roughness: 0.85, metalness: 0.0,
+  });
+  const shoeMat = new THREE.MeshStandardMaterial({
+    color: 0x111111, roughness: 0.4, metalness: 0.05,
+  });
+  const shirtMat = new THREE.MeshStandardMaterial({
+    color: 0xf5f5f0, roughness: 0.85, metalness: 0.0,
+  });
 
   const root = new THREE.Group();
 
@@ -118,9 +143,8 @@ export function buildFighter(charId) {
   const skull = box(0.26, 0.28, 0.26, skinMat);
   skull.position.y = 0.16;
   head.add(skull);
-  head.add(buildHair(c.hairStyle, hairMat, skinMat));
+  head.add(buildHair(c.hairStyle, hairMat));
 
-  // Ears — slightly oversized for Bush per the caricature spec.
   const earR = c.id === 'bush' ? 0.05 : 0.035;
   for (const side of [-1, 1]) {
     const ear = sphere(earR, skinMat);
@@ -129,7 +153,9 @@ export function buildFighter(charId) {
   }
 
   if (c.aviators) {
-    const glassMat = new THREE.MeshLambertMaterial({ color: 0x14161a });
+    const glassMat = new THREE.MeshStandardMaterial({
+      color: 0x14161a, roughness: 0.1, metalness: 0.85,
+    });
     for (const side of [-1, 1]) {
       const lens = box(0.09, 0.07, 0.02, glassMat);
       lens.position.set(side * 0.065, 0.18, 0.14);
@@ -187,5 +213,42 @@ export function buildFighter(charId) {
 
   root.scale.setScalar(c.heightScale);
 
-  return { root, joints, materials: { suitMat, skinMat, tieMat, hairMat }, config: c };
+  return {
+    root,
+    joints,
+    materials: { suitMat, skinMat, tieMat, hairMat },
+    config: c,
+    baseColors: {
+      suit: new THREE.Color(c.suit),
+      skin: new THREE.Color(c.skin),
+      tie: new THREE.Color(c.tie),
+    },
+  };
+}
+
+// Cache pristine colors so per-region tinting is reversible.
+const _orig = new WeakMap();
+function ensureBase(mesh) {
+  if (!mesh.material || !mesh.material.color) return null;
+  if (!_orig.has(mesh.material)) _orig.set(mesh.material, mesh.material.color.clone());
+  return _orig.get(mesh.material);
+}
+
+/** Lerp every material under a joint toward `target` by `amount` (0..1). */
+export function tintJoint(joint, amount, target) {
+  if (!joint || amount <= 0) return;
+  joint.traverse((o) => {
+    if (o.isMesh && o.material && o.material.color) {
+      const base = ensureBase(o);
+      if (base) o.material.color.copy(base).lerp(target, Math.min(1, amount));
+    }
+  });
+}
+
+export function resetTints(rig) {
+  rig.root.traverse((o) => {
+    if (o.isMesh && o.material && o.material.color && _orig.has(o.material)) {
+      o.material.color.copy(_orig.get(o.material));
+    }
+  });
 }

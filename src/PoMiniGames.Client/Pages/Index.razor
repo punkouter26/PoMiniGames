@@ -182,9 +182,9 @@
 
     // Collapsible home sections — only takes visual effect on phones (see .home-section-toggle
     // / .home-section--collapsed CSS, both mobile-only). Desktop always shows every game, so
-    // starting the secondary sections "closed" trims the long mobile scroll without touching
+    // starting the sections "closed" trims the long mobile scroll without touching
     // the desktop layout. Order: Demo, 1 Player, 2 Player, Multiplayer.
-    private readonly bool[] _sectionOpen = { true, true, true, true };
+    private readonly bool[] _sectionOpen = { false, false, false, false };
     private void ToggleSection(int i) => _sectionOpen[i] = !_sectionOpen[i];
     private RenderFragment SectionToggle(int i, int count) => @<button type="button"
         class="home-section-toggle" aria-expanded="@_sectionOpen[i]"

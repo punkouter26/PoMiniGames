@@ -109,6 +109,11 @@
 }
 
 .cf-cell .piece.yellow-piece {
+  background: radial-gradient(circle at 34% 28%,
+    var(--disc-yellow-lit) 0%, var(--disc-yellow-mid) 46%, var(--disc-yellow-core) 100%);
+  box-shadow: var(--disc-shadow);
+}
+
 /* Audit #3: dropped the 84% bounce keyframe. The cubic-bezier(0.34, 1.2, 0.55, 1)
    easing already overshoots past 0 between 0% and 70%, giving the disc a soft
    squash-and-settle. The extra 84% → -14% step lifted the disc ABOVE its cell
@@ -117,12 +122,7 @@
    visible glitch. */
 @keyframes cf-slide-down {
   0%   { transform: translateY(calc(-1 * var(--cf-drop-rows, 9) * var(--cf-cell-stride, 55px))); }
-  70%  { transform: translateY(0
-
-@keyframes cf-slide-down {
-  0%   { transform: translateY(calc(-1 * var(--drop-rows, 1) * var(--cf-cell-stride, 55px))); }
   70%  { transform: translateY(0); }
-  84%  { transform: translateY(-14%); }
   100% { transform: translateY(0); }
 }
 
@@ -192,7 +192,11 @@
    viewport height without a second nested border eating horizontal space. */
 @media (max-width: 640px) {
   .cf-layout {
-    --cf-cell: clamp(28px, calc((100dvh - 220px) / 9), 44px);
+    /* Constrain by width AND height. The board chrome on phones is gap 2px×8
+       + frame 7px×2 = 30px; subtract ~40px (chrome + shell padding + a safety
+       margin against the scrollbar) so 9 cells + frame never exceed 100dvw and
+       the board can't clip off the right edge. */
+    --cf-cell: clamp(24px, min(calc((100dvh - 220px) / 9), calc((100dvw - 40px) / 9)), 44px);
     --cf-cell-stride: calc(var(--cf-cell) + 2px);
   }
   .cf-board {
@@ -206,7 +210,7 @@
 
 @media (max-width: 360px) {
   .cf-layout {
-    --cf-cell: clamp(24px, calc((100dvh - 200px) / 9), 36px);
+    --cf-cell: clamp(22px, min(calc((100dvh - 200px) / 9), calc((100dvw - 40px) / 9)), 36px);
   }
   .cf-cell { font-size: 0.75rem; }
 }

@@ -16,6 +16,51 @@ public class ConnectFiveAI
         };
     }
 
+    /// <summary>
+    /// Pick a move whose strength scales with <paramref name="cpuElo"/>. The ELO
+    /// maps to a (search depth, blunder-rate) rung: at a low rating the CPU mostly
+    /// plays random moves (missing blocks and wins); as the rating climbs it plays
+    /// deeper negamax with fewer blunders. This lets the 1-player game match the
+    /// CPU to the player's adaptive rating for a ~50/50 challenge.
+    /// </summary>
+    public (int Row, int Col) GetAdaptiveMove(ConnectFiveBoard board, Player player, int cpuElo)
+    {
+        var (depth, blunder) = StrengthForElo(cpuElo);
+
+        // A "blunder" is a fully random legal move — it may miss its own win or
+        // fail to block the player, which is exactly what makes low rungs weak.
+        if (blunder > 0 && Random.Shared.NextDouble() < blunder)
+        {
+            var cols = board.GetAvailableCols();
+            if (cols.Count == 0) return (0, 0);
+            var randCol = cols[Random.Shared.Next(cols.Count)];
+            return (board.GetTargetRow(randCol), randCol);
+        }
+
+        // Otherwise play a "smart" move: depth 1 = the win/block/center heuristic,
+        // depth >= 2 = alpha-beta negamax to that depth.
+        if (depth <= 1) return MediumMove(board, player);
+
+        var search = new NegamaxSearch(player, maxDepth: depth);
+        return search.ChooseMove(board);
+    }
+
+    /// <summary>
+    /// Maps a CPU ELO to a strength rung. Seven rungs span roughly 800–2000; the
+    /// top rung is the existing 4-ply "Hard" search with no blunders. Depth is
+    /// capped at 4 to keep every move well inside the game's responsiveness budget.
+    /// </summary>
+    public static (int Depth, double Blunder) StrengthForElo(int elo) => elo switch
+    {
+        < 900  => (1, 0.60),
+        < 1050 => (1, 0.38),
+        < 1200 => (2, 0.24),
+        < 1350 => (2, 0.12),
+        < 1500 => (3, 0.06),
+        < 1700 => (4, 0.03),
+        _      => (4, 0.00),
+    };
+
     private (int, int) EasyMove(ConnectFiveBoard board, Player player)
     {
         var opponent = player.Other;
@@ -51,7 +96,14 @@ public class ConnectFiveAI
             return (board.GetTargetRow(centerCol), centerCol);
         }
 
-        return (board.GetTargetRow(cols[Random.Shared.Next(cols.Count)]), cols[0]);
+        // Bug fix 2026-07-05: the previous return used a *random* column for the
+        // row lookup but *cols[0]* for the column returned. If the random and the
+        // fixed index differed (e.g. cols=[0,1,2], random picks 2, return col 0),
+        // the row was the bottom of col 2 but the place went into col 0 — a
+        // piece could land above the existing stack in col 0. The fix: pick one
+        // column and use its target row for both halves of the tuple.
+        var pick = cols[Random.Shared.Next(cols.Count)];
+        return (board.GetTargetRow(pick), pick);
     }
 
     private (int, int) HardMove(ConnectFiveBoard board, Player player)

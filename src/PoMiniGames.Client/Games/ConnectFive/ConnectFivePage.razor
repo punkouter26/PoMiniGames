@@ -93,7 +93,8 @@
 
     private ConnectFiveBoard _board = new();
     private ConnectFiveAI _ai = new();
-    // 1-player Connect Five always plays the AI at Medium; no in-game difficulty picker.
+    // Demo mode (CPU vs CPU) plays both sides at Medium. 1-player difficulty is
+    // driven by the adaptive ELO (see _cpuElo), not this field.
     private readonly Difficulty _difficulty = Difficulty.Medium;
     private GameResult _gameResult = GameResult.InProgress;
     private bool _isAiTurn;
@@ -113,7 +114,13 @@
     private List<(int Row, int Col)> _winCells = new();
     // vs-AI W/L/D/ELO stats surfaced in the end-of-game modal (1-player only).
     private List<StatItem> _statItems = new();
-    private PlayerStats _stats = new();
+    // Adaptive 1-player rating. The CPU is matched to _cpuElo — the player's
+    // rating at the start of this game — so a win raises the rating (next CPU is
+    // tougher) and a loss lowers it (next CPU is easier). See GameStatsService.
+    private AdaptiveRating _rating = new();
+    private int _cpuElo = AdaptiveRating.StartingElo;
+    // ELO change from the just-finished game, shown on the game-over panel.
+    private int? _lastEloDelta;
     private readonly GameStatsService _gameStats = new();
     private CancellationTokenSource? _demoCts;
     // BUG FIX (#1): _kioskTimer removed; KioskCoordinator owns the timer.
@@ -190,27 +197,49 @@
                         : @<span class="cf-status cf-status--draw">🤝 Draw!</span>)
             : _gameResult == GameResult.InProgress
                 ? (_isAiTurn
-                    ? @<span class="cf-status cf-status--ai">🤖 AI thinking…</span>
-                    : @<span class="cf-status cf-status--player">🔴 Your turn</span>)
+                    ? @<span class="cf-status cf-status--ai">🤖 CPU @_cpuElo thinking…</span>
+                    : @<span class="cf-status cf-status--player">🔴 Your turn · vs CPU @_cpuElo</span>)
                 : _gameResult == GameResult.Win
                     ? @<span class="cf-status cf-status--win">🎉 You win!</span>
                     : _gameResult == GameResult.Loss
                         ? @<span class="cf-status cf-status--loss">🤖 AI wins</span>
                         : @<span class="cf-status cf-status--draw">🤝 Draw!</span>;
 
-    private RenderFragment? GameSummaryContent => _isGameOver ? (PlayMode == "2p" ? _gameResult switch
+    private RenderFragment? GameSummaryContent => !_isGameOver ? null
+        : PlayMode == "2p" ? TwoPlayerSummary : AiSummary;
+
+    private RenderFragment TwoPlayerSummary => _gameResult switch
     {
         GameResult.Win  => @<div class="cf-result cf-result--win">🔴 @P1Name won! Nice game.</div>,
         GameResult.Loss => @<div class="cf-result cf-result--win">🟡 @_player2Name won! Nice game.</div>,
         GameResult.Draw => @<div class="cf-result cf-result--draw">🤝 It’s a draw!</div>,
-        _               => null
-    } : _gameResult switch
-    {
-        GameResult.Win  => @<div class="cf-result cf-result--win">🎉 You won! Great game, @_playerName!</div>,
-        GameResult.Loss => @<div class="cf-result cf-result--loss">🤖 AI wins this round — try again!</div>,
-        GameResult.Draw => @<div class="cf-result cf-result--draw">🤝 It’s a draw!</div>,
-        _               => null
-    }) : null;
+        _               => @<text></text>
+    };
+
+    // 1-player: result banner plus the ELO change from this game. _lastEloDelta is
+    // set by ApplyAdaptiveResult, so the panel shows the new rating and +/- swing.
+    private RenderFragment AiSummary => @<div class="cf-ai-summary">
+        @if (_gameResult == GameResult.Win)
+        {
+            <div class="cf-result cf-result--win">🎉 You won! Great game, @_playerName!</div>
+        }
+        else if (_gameResult == GameResult.Loss)
+        {
+            <div class="cf-result cf-result--loss">🤖 CPU wins this round — try again!</div>
+        }
+        else if (_gameResult == GameResult.Draw)
+        {
+            <div class="cf-result cf-result--draw">🤝 It’s a draw!</div>
+        }
+        @if (_lastEloDelta is int d)
+        {
+            <div class="cf-elo-change">
+                <span class="cf-elo-now">ELO @_rating.Elo</span>
+                <span class="cf-elo-delta @(d > 0 ? "cf-elo-delta--up" : d < 0 ? "cf-elo-delta--down" : "cf-elo-delta--flat")">@(d >= 0 ? $"+{d}" : d.ToString())</span>
+                <span class="cf-elo-cpu">vs CPU @_cpuElo</span>
+            </div>
+        }
+    </div>;
 
     // 1-player is fixed to Medium and needs no settings, so the drawer keeps only
     // New Game. 2-player still exposes the opponent's name; demo restarts the loop.
@@ -240,12 +269,29 @@
         _player2Name = string.IsNullOrWhiteSpace(name) ? "Player 2" : name.Trim();
     }
 
-    // Rebuild the W/L/D/ELO tiles from the (in-place mutated) cached stats so the
-    // end-of-game modal reflects the result that was just recorded.
+    // Rebuild the ELO/CPU/W/L/D/Rate tiles from the adaptive rating so the stats
+    // drawer and end-of-game panel reflect the result that was just recorded.
     private void UpdateStats()
     {
-        var bucket = _gameStats.GetDifficultyBucket(_stats, _difficulty);
-        _statItems = GameStatsPanel.Build(bucket);
+        _statItems = new()
+        {
+            new StatItem { Label = "ELO",  Value = _rating.Elo.ToString() },
+            new StatItem { Label = "CPU",  Value = _cpuElo.ToString() },
+            new StatItem { Label = "W",    Value = _rating.Wins.ToString() },
+            new StatItem { Label = "L",    Value = _rating.Losses.ToString() },
+            new StatItem { Label = "D",    Value = _rating.Draws.ToString() },
+            new StatItem { Label = "Rate", Value = $"{_rating.WinRate * 100:F0}%" },
+        };
+    }
+
+    // Apply the finished game's result to the adaptive rating, remember the ELO
+    // delta for the game-over panel, and refresh the stat tiles.
+    private void ApplyAdaptiveResult(GameResult result)
+    {
+        var before = _rating.Elo;
+        _rating = _gameStats.RecordAdaptiveResult("connectfive", _playerName, _cpuElo, result);
+        _lastEloDelta = _rating.Elo - before;
+        UpdateStats();
     }
 
     private void ResetGame()
@@ -264,7 +310,11 @@
         _matchRecorded = false;
         // Audit #9: a fresh game must play the cascade again on its next win.
         _winCascadePlayed = false;
-        _stats = _gameStats.GetStats("connectfive", _playerName);
+        _lastEloDelta = null;
+        // Load the adaptive rating and match the CPU to the player's current ELO,
+        // so this game is a ~50/50 challenge that ramps as the player improves.
+        _rating = _gameStats.GetAdaptiveRating("connectfive", _playerName);
+        _cpuElo = _rating.Elo;
         UpdateStats();
 
         if (PlayMode == "demo")
@@ -354,16 +404,14 @@
             _winCells = winCheck.Cells;
             OnWinDetected();
             _ = Feedback.CompleteAsync(); // §4 victory chord
-            _ = _gameStats.RecordResult("connectfive", _playerName, _difficulty, GameResult.Win);
-            UpdateStats();
+            ApplyAdaptiveResult(GameResult.Win);
             return;
         }
 
         if (_board.IsFull())
         {
             _gameResult = GameResult.Draw;
-            _ = _gameStats.RecordResult("connectfive", _playerName, _difficulty, GameResult.Draw);
-            UpdateStats();
+            ApplyAdaptiveResult(GameResult.Draw);
             return;
         }
 
@@ -391,7 +439,8 @@
         try
         {
             await Task.Delay(300, ct);
-            var (ar, ac) = _ai.GetMove(_board, Player.Yellow, _difficulty);
+            // Strength scales with the CPU's ELO (matched to the player's rating).
+            var (ar, ac) = _ai.GetAdaptiveMove(_board, Player.Yellow, _cpuElo);
             _board = _board.Place(ar, ac, Player.Yellow);
             _ = Feedback.DiscDropAsync(); // §4 the AI's disc lands with the same tock
             var aiWin = _board.CheckWin(Player.Yellow);
@@ -402,19 +451,18 @@
                 _isAiTurn = false;
                 OnWinDetected();
                 _ = Feedback.ErrorAsync(); // §4 low buzz on defeat
-                _ = _gameStats.RecordResult("connectfive", _playerName, _difficulty, GameResult.Loss);
+                ApplyAdaptiveResult(GameResult.Loss);
             }
             else if (_board.IsFull())
             {
                 _gameResult = GameResult.Draw;
                 _isAiTurn = false;
-                _ = _gameStats.RecordResult("connectfive", _playerName, _difficulty, GameResult.Draw);
+                ApplyAdaptiveResult(GameResult.Draw);
             }
             else
             {
                 _isAiTurn = false;
             }
-            UpdateStats();
             await InvokeAsync(StateHasChanged);
         }
         catch (OperationCanceledException)

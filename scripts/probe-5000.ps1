@@ -1,0 +1,1 @@
+Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Where-Object { $_.LocalPort -ge 5000 -and $_.LocalPort -le 5010 } | Format-Table LocalAddress, LocalPort, OwningProcess -AutoSize

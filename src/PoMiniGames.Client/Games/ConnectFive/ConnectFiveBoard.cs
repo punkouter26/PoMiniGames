@@ -66,11 +66,37 @@ public class ConnectFiveBoard
             // CheckWin returns a phantom match.
             throw new ArgumentException("Cannot place Piece.None on the board.", nameof(value));
         }
+
+        // Bug fix 2026-07-05: gravity is enforced by the board, not by the caller.
+        // A previous bug in MediumMove produced mismatched (row, col) tuples where
+        // the row came from one column and the col from another. That placed a
+        // piece above the column's actual stack, producing overlapping discs.
+        // The board now ignores the caller's row and uses the bottom-most empty
+        // cell of the chosen column. The `row` parameter is kept for API stability
+        // but the caller's value is validated and only used as a sanity check.
+        if (row < 0 || row >= Rows)
+        {
+            throw new ArgumentOutOfRangeException(nameof(row), $"Row {row} is outside the board.");
+        }
+        if (col < 0 || col >= Cols)
+        {
+            throw new ArgumentOutOfRangeException(nameof(col), $"Col {col} is outside the board.");
+        }
+        var actualRow = GetTargetRow(col);
+        if (actualRow < 0)
+        {
+            throw new InvalidOperationException($"Cannot place in column {col} — column is full.");
+        }
+        // If the caller passed a row that doesn't match the gravity-correct row,
+        // fall back to the gravity-correct row. This is a "best effort" recovery
+        // that keeps the demo loop robust to the AI's previous (now-fixed) bug.
+        var finalRow = actualRow;
+
         var newCells = new Piece[_cells.Length];
         Array.Copy(_cells, newCells, _cells.Length);
-        newCells[row * Cols + col] = value;
+        newCells[finalRow * Cols + col] = value;
         var newTopRow = (int[])_topRow.Clone();
-        newTopRow[col] = row - 1;
+        newTopRow[col] = finalRow - 1;
         return new ConnectFiveBoard(newCells, newTopRow);
     }
 

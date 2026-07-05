@@ -101,6 +101,13 @@
   color: var(--color-accent);
 }
 
+/* 2026-07-05: hide the in-game settings gear (⚙️) on portrait phones. The
+   button is a desktop affordance; on mobile the top bar's Sign in / Sign out
+   covers the same settings scope. */
+@media (max-width: 640px) {
+  .gps-settings-wrap { display: none !important; }
+}
+
 .gps-settings-drawer {
   position: absolute;
   top: calc(100% + 0.5rem);
@@ -297,6 +304,23 @@
 .cf-result--loss { color: #f87171; background: rgba(248, 113, 113, 0.08); border: 1px solid rgba(248, 113, 113, 0.25); }
 .cf-result--draw { color: #94a3b8; background: rgba(148, 163, 184, 0.08); border: 1px solid rgba(148, 163, 184, 0.25); }
 
+/* Adaptive-ELO change line under the 1-player result banner. */
+.cf-ai-summary { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; }
+.cf-elo-change {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+.cf-elo-now { color: var(--color-text-primary); }
+.cf-elo-delta { padding: 0.1rem 0.5rem; border-radius: 9999px; font-weight: 700; }
+.cf-elo-delta--up   { color: #4ade80; background: rgba(74, 222, 128, 0.14); }
+.cf-elo-delta--down { color: #f87171; background: rgba(248, 113, 113, 0.14); }
+.cf-elo-delta--flat { color: #94a3b8; background: rgba(148, 163, 184, 0.14); }
+.cf-elo-cpu { opacity: 0.85; }
+
 .gps-play-again-actions {
   display: flex;
   justify-content: center;
@@ -332,35 +356,42 @@
   color: var(--color-text-primary);
 }
 
-/* ── End-of-game modal ──
-   Centered, blocking dialog rendered by GameShell when GameOver is true.
-   Surfaces the final score/result, the stats grid, and Play Again / Home. */
+/* ── End-of-game panel ──
+   Docked to the bottom of the screen (NOT a centered blocking modal) so the
+   board — and the highlighted winning line — stays fully visible while the
+   result and Play Again / Home actions sit below it. The overlay itself does
+   not paint a backdrop and lets pointer events pass through to the board; only
+   the panel is interactive. */
 .gps-modal-overlay {
   position: fixed;
   inset: 0;
   z-index: var(--z-modal);
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
-  padding: 1rem;
-  background: rgba(0, 0, 0, 0.62);
-  backdrop-filter: blur(4px);
+  /* Dock near the top, offset below the app header so the nav bar stays
+     clear. No dark/blur backdrop — the whole point is to keep the win
+     visible. */
+  padding: 4.5rem 1rem 1rem;
+  background: none;
+  pointer-events: none;
   animation: gps-modal-fade 0.2s ease-out both;
 }
 
 .gps-modal {
+  pointer-events: auto;
   width: min(92vw, 380px);
-  max-height: 88vh;
+  max-height: 45vh;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 1rem;
-  padding: 1.5rem 1.75rem 1.75rem;
+  gap: 0.85rem;
+  padding: 1rem 1.5rem 1.25rem;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: 16px;
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
   animation: gps-modal-pop 0.25s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
@@ -385,7 +416,7 @@
 }
 
 @keyframes gps-modal-pop {
-  from { opacity: 0; transform: translateY(12px) scale(0.96); }
+  from { opacity: 0; transform: translateY(-100%); }
   to   { opacity: 1; transform: none; }
 }
 

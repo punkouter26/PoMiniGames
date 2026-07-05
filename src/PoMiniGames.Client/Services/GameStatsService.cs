@@ -10,6 +10,7 @@ public class GameStatsService
 {
     private static readonly Dictionary<string, PlayerStats> _statsCache = new();
     private const string StorageKeyPrefix = "pomini_stats_";
+    private const string AdaptiveKeyPrefix = "pomini_adaptive_";
     private const string LastGameKey = "pomini_last_game";
 
     public PlayerStats GetStats(string gameKey, string playerName)
@@ -78,6 +79,59 @@ public class GameStatsService
         _statsCache[cacheKey] = stats;
         var storageKey = $"{StorageKeyPrefix}{gameKey}";
         LocalStorageService.SetItem(storageKey, stats, ApiJsonContext.Default.PlayerStats);
+    }
+
+    // ── Adaptive single-rating ELO (e.g. Connect Five 1-player) ──────────────
+    // A single skill rating per game. The CPU is matched to the player's current
+    // ELO, so each game is a ~50/50 challenge that ramps up as the player wins.
+    private const int AdaptiveK = 32;
+
+    public AdaptiveRating GetAdaptiveRating(string gameKey, string playerName)
+    {
+        var stored = LocalStorageService.GetItem(
+            $"{AdaptiveKeyPrefix}{gameKey}", ApiJsonContext.Default.AdaptiveRating);
+        if (stored != null && stored.PlayerName == playerName)
+            return stored;
+
+        return new AdaptiveRating
+        {
+            PlayerName = playerName,
+            Elo = AdaptiveRating.StartingElo,
+            Peak = AdaptiveRating.StartingElo
+        };
+    }
+
+    /// <summary>
+    /// Apply one game's result to the adaptive rating using the standard ELO
+    /// formula against <paramref name="cpuElo"/> (the rating of the CPU that was
+    /// actually played this game), then persist. When the CPU was matched to the
+    /// player's rating this yields ±<see cref="AdaptiveK"/>/2 per win/loss.
+    /// </summary>
+    public AdaptiveRating RecordAdaptiveResult(string gameKey, string playerName, int cpuElo, GameResult result)
+    {
+        var rating = GetAdaptiveRating(gameKey, playerName);
+
+        var expected = 1.0 / (1.0 + Math.Pow(10, (cpuElo - rating.Elo) / 400.0));
+        var score = result switch
+        {
+            GameResult.Win => 1.0,
+            GameResult.Draw => 0.5,
+            _ => 0.0
+        };
+        var newElo = (int)Math.Round(rating.Elo + AdaptiveK * (score - expected));
+        rating.Elo = Math.Clamp(newElo, 100, 3000);
+        rating.Peak = Math.Max(rating.Peak, rating.Elo);
+
+        switch (result)
+        {
+            case GameResult.Win: rating.Wins++; break;
+            case GameResult.Loss: rating.Losses++; break;
+            case GameResult.Draw: rating.Draws++; break;
+        }
+
+        LocalStorageService.SetItem(
+            $"{AdaptiveKeyPrefix}{gameKey}", rating, ApiJsonContext.Default.AdaptiveRating);
+        return rating;
     }
 
     // UX 10: Offline-First - Track last played game

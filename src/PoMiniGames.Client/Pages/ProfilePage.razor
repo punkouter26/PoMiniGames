@@ -364,6 +364,16 @@ else
         {
             if (kind == "ai")
             {
+                // Connect Five uses the adaptive single-rating ELO.
+                if (key == "connectfive")
+                {
+                    var ar = GameStatsService.GetAdaptiveRating(key, _playerName);
+                    list.Add(ar.TotalGames > 0
+                        ? new HighScoreEntry(title, icon, $"ELO {ar.Elo}", $"{ar.WinRate:P0} · {ar.Wins}W {ar.Losses}L", true)
+                        : new HighScoreEntry(title, icon, "—", "Not played yet", false));
+                    continue;
+                }
+
                 var s = GameStatsService.GetStats(key, _playerName);
                 if (s.TotalGames > 0)
                 {
@@ -473,6 +483,29 @@ else
 
         foreach (var (key, label, icon, hsOnly, offlineOnly) in GameDefs)
         {
+            // Connect Five 1-player now uses a single adaptive ELO rating (the CPU
+            // is matched to the player's rating) instead of Easy/Medium/Hard buckets.
+            if (key == "connectfive")
+            {
+                var ar = GameStatsService.GetAdaptiveRating(key, _playerName);
+                var cfEntry = new GameEntry
+                {
+                    Key = key, Label = label, Icon = icon,
+                    TotalWins = ar.Wins, TotalLosses = ar.Losses, TotalDraws = ar.Draws,
+                    Difficulties =
+                    [
+                        new DiffEntry { Name = "Adaptive", Wins = ar.Wins, Losses = ar.Losses, Draws = ar.Draws, EloRating = ar.Elo }
+                    ]
+                };
+                _entries.Add(cfEntry);
+                _totalGames  += cfEntry.TotalGames;
+                _totalWins   += cfEntry.TotalWins;
+                _totalLosses += cfEntry.TotalLosses;
+                _totalDraws  += cfEntry.TotalDraws;
+                _topElo       = Math.Max(_topElo, ar.Elo);
+                continue;
+            }
+
             PlayerStats stats = hsOnly || offlineOnly
                 ? new PlayerStats()
                 : GameStatsService.GetStats(key, _playerName);
@@ -532,8 +565,12 @@ else
     private string BuildRadarSvg()
     {
         const double cx = 150, cy = 150, maxR = 90;
-        const int n = 10;
-        const double step = 2 * Math.PI / n;
+        // One axis per game entry. This was hardcoded to 10 while GameDefs
+        // defines only 4 games, so the label loop below indexed _entries[4..9]
+        // and threw IndexOutOfRangeException, crashing the whole profile page.
+        int n = _entries.Count;
+        if (n == 0) return "<svg viewBox=\"0 0 300 300\" class=\"prf-radar\" aria-hidden=\"true\"></svg>";
+        double step = 2 * Math.PI / n;
         const double startAngle = -Math.PI / 2;
 
         string Pt(double r, int i)

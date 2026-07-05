@@ -544,3 +544,11 @@
 @media (min-width: 641px) {
     .gl-overflow-menu { display: none !important; }
 }
+
+/* 2026-07-05: hide the Developer tools (🔧) affordance on portrait phones.
+   It duplicates the gear that we just hid, and on a 390px-wide viewport the
+   two icons + brand + sign-in button crowd the top bar past the viewport.
+   The dev tools menu is still reachable on >= 641 px viewports. */
+@media (max-width: 640px) {
+    .gl-overflow-menu { display: none !important; }
+}

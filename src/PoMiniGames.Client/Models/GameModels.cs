@@ -31,6 +31,28 @@ public class StatItem
     public string Label { get; set; } = "";
 }
 
+/// <summary>
+/// Single adaptive skill rating for a 1-player game (e.g. Connect Five vs CPU).
+/// Replaces the fixed Easy/Medium/Hard buckets: the CPU is matched to the
+/// player's current <see cref="Elo"/> each game, so a win raises the rating (and
+/// the next CPU is tougher) while a loss lowers it (next CPU is easier). Stored
+/// locally per player.
+/// </summary>
+public class AdaptiveRating
+{
+    public const int StartingElo = 1200;
+
+    public string PlayerName { get; set; } = "";
+    public int Elo { get; set; } = StartingElo;
+    public int Peak { get; set; } = StartingElo;
+    public int Wins { get; set; }
+    public int Losses { get; set; }
+    public int Draws { get; set; }
+
+    public int TotalGames => Wins + Losses + Draws;
+    public double WinRate => TotalGames > 0 ? (double)Wins / TotalGames : 0;
+}
+
 public class StatusInfo
 {
     public string Icon { get; set; } = "";

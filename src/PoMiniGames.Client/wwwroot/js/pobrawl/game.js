@@ -101,6 +101,10 @@ const _blobPos = new THREE.Vector3();
 // Scratch vectors for the lighting updater.
 const _spotTarget = new THREE.Vector3();
 const _blDir = new THREE.Vector3();
+// Scratch vectors for posture (look-at / momentum) updates.
+const _animVel = new THREE.Vector3();
+const _lookA = new THREE.Vector3();
+const _lookB = new THREE.Vector3();
 
 export class BrawlGame {
   constructor(container, dotnetRef, options) {
@@ -536,7 +540,13 @@ export class BrawlGame {
 
     for (const f of this.fighters) {
       f.idleT += dt;
-      f.animator.update({ dt, speed: f.speedAmt, idleT: f.idleT, snappy: false });
+      const opp = f === this.fighters[0] ? this.fighters[1] : this.fighters[0];
+      this._updatePosture(f, opp, dt);
+      f.animator.update({
+        dt, speed: f.speedAmt, idleT: f.idleT,
+        root: f.rig.root,
+        vel: _animVel.set(f.vel.x + f.knockback.x, 0, f.vel.z + f.knockback.z),
+      });
       f.animator.decayLean(dt);
       f.hpCur = this._hp(f);
 
@@ -583,10 +593,23 @@ export class BrawlGame {
 
     // ── Ring clamp + cannon-es physics step ────────────────────────
     // 1. Clamp each fighter inside the ring (still the engine's job — cannon
-    //    wouldn't otherwise know about the arena boundary).
+    //    wouldn't otherwise know about the arena boundary). A fighter thrown
+    //    hard into the boundary rebounds off the ropes instead of sticking.
     for (const f of this.fighters) {
-      f.rig.root.position.x = THREE.MathUtils.clamp(f.rig.root.position.x, -RING_HALF, RING_HALF);
-      f.rig.root.position.z = THREE.MathUtils.clamp(f.rig.root.position.z, -RING_HALF, RING_HALF);
+      const pos = f.rig.root.position;
+      const rawX = pos.x, rawZ = pos.z;
+      pos.x = THREE.MathUtils.clamp(rawX, -RING_HALF, RING_HALF);
+      pos.z = THREE.MathUtils.clamp(rawZ, -RING_HALF, RING_HALF);
+      if (pos.x !== rawX && Math.abs(f.knockback.x) > 1.5) {
+        f.knockback.x *= -0.65; // springy ropes
+        f.animator.applyLean(0, rawX > 0 ? 0.35 : -0.35);
+        f.animator.applyReaction('torso', -2.5, 0, 0);
+      }
+      if (pos.z !== rawZ && Math.abs(f.knockback.z) > 1.5) {
+        f.knockback.z *= -0.65;
+        f.animator.applyLean(rawZ > 0 ? -0.35 : 0.35, 0);
+        f.animator.applyReaction('torso', -2.5, 0, 0);
+      }
     }
 
     // 2. Sync cannon bodies to current rig transforms BEFORE stepping so
@@ -927,6 +950,13 @@ export class BrawlGame {
       defender.knockback.add(knockDir.clone().multiplyScalar(2.0 * blockDamp));
       this._spawnSparks(hit.point, 0x9ad0ff, 6, 1.0);
       this._flashImpactLight(hit.point, 3, 0x9ad0ff, 0.1);
+      // Visible absorb: the attacker's arm bounces off the guard; the
+      // defender's guard compresses under the impact.
+      attacker.animator.applyReaction('shoulderR', 4, 0, -3);
+      attacker.animator.applyReaction('elbowR', -6, 0, 0);
+      defender.animator.applyReaction('elbowL', -3.5, 0, 0);
+      defender.animator.applyReaction('elbowR', -3.5, 0, 0);
+      defender.animator.applyReaction('torso', -1.5, 0, 0);
       this._hitFeedback(attack, false);
       this.audio.block(hit.point);
       return;
@@ -945,6 +975,29 @@ export class BrawlGame {
     // Impact frame: emissive white pop + cartoon squash on the defender.
     defender.flashT = 0.13;
     defender.squashT = 0.14;
+
+    // Active-ragdoll flavor: inject an angular impulse into the struck
+    // limb's reaction springs so it physically whips from the blow while
+    // the animator keeps driving everything else, then blends back.
+    const rSide = hit.capsule.endsWith('L') ? 'L' : hit.capsule.endsWith('R') ? 'R' : null;
+    const rPow = Math.min(2, baseDmg / 35);
+    if (region === REGIONS.HEAD) {
+      defender.animator.applyReaction('head', -7 * rPow,
+        (this.rng.random() - 0.5) * 5, (this.rng.random() - 0.5) * 4);
+      defender.animator.applyReaction('torso', -3 * rPow, 0, 0);
+    } else if (region === REGIONS.TORSO) {
+      defender.animator.applyReaction('torso', -5 * rPow, 0, 0);
+      defender.animator.applyReaction('head', -3 * rPow, 0, 0);
+      defender.animator.applyReaction('shoulderL', 0, 0, 2.5 * rPow);
+      defender.animator.applyReaction('shoulderR', 0, 0, -2.5 * rPow);
+    } else if (region === REGIONS.ARMS && rSide) {
+      defender.animator.applyReaction('shoulder' + rSide, -3 * rPow, 0,
+        (rSide === 'L' ? 5 : -5) * rPow);
+      defender.animator.applyReaction('elbow' + rSide, -5 * rPow, 0, 0);
+    } else if (region === REGIONS.LEGS && rSide) {
+      defender.animator.applyReaction('hip' + rSide, -3 * rPow, 0, 0);
+      defender.animator.applyReaction('knee' + rSide, 5 * rPow, 0, 0); // buckle
+    }
 
     // Per-region damage & tint at the actual contact point.
     defender.regionDmg[region] = Math.min(100, defender.regionDmg[region] + Math.max(2, baseDmg));
@@ -1014,6 +1067,8 @@ export class BrawlGame {
         velocity: defender.vel.clone().add(defender.knockback),
         scale: 0.65,
       });
+      // A trip to the canvas dishevels the hair for the rest of the match.
+      if (defender.rig.refs) defender.rig.refs.hairPivot.rotation.y = 0.3;
       this.excited = Math.max(this.excited, 0.6);
     }
   }
@@ -1028,6 +1083,20 @@ export class BrawlGame {
         const joint = f.rig.joints[bone];
         if (joint) tintJoint(joint, t, tint);
       }
+    }
+
+    // Accumulating damage visuals: sweat glisten (roughness drops — the
+    // fighter literally gets shinier as the fight wears on), cheek/brow
+    // swelling, and a cut that opens past heavy head damage.
+    const total = (f.regionDmg.head + f.regionDmg.torso
+      + f.regionDmg.arms + f.regionDmg.legs) / 400;
+    const sweat = Math.min(1, total * 1.6);
+    f.rig.materials.skinMat.roughness = 0.55 - 0.3 * sweat;
+    f.rig.materials.suitMat.roughness = 0.95 - 0.3 * sweat;
+    if (f.rig.refs) {
+      const hd = Math.min(1, f.regionDmg.head / 100);
+      f.rig.refs.skull.scale.set(1 + hd * 0.07, 1, 1 + hd * 0.05);
+      f.rig.refs.cut.visible = f.regionDmg.head >= 50;
     }
   }
 
@@ -1144,6 +1213,42 @@ export class BrawlGame {
     g.fillRect(0, 0, 128, 128);
     this._blobTex = new THREE.CanvasTexture(c);
     return this._blobTex;
+  }
+
+  // Per-tick posture: head tracking toward the opponent, momentum lean from
+  // the fighter's own velocity/acceleration, and the clinch-frame blend at
+  // chest-to-chest range. All feed overlay targets on the animator.
+  _updatePosture(f, opp, dt) {
+    if (!opp || f.state === 'ko' || f.state === 'down') return;
+    const anim = f.animator;
+
+    // ── Head tracking: look at the opponent's upper body ─────────────
+    f.rig.joints.head.getWorldPosition(_lookA);
+    opp.rig.joints.hips.getWorldPosition(_lookB);
+    _lookB.y += 0.55; // chest height
+    const dx = _lookB.x - _lookA.x, dz = _lookB.z - _lookA.z;
+    const horiz = Math.hypot(dx, dz);
+    let yawLocal = Math.atan2(dx, dz) - f.rig.root.rotation.y;
+    while (yawLocal > Math.PI) yawLocal -= Math.PI * 2;
+    while (yawLocal < -Math.PI) yawLocal += Math.PI * 2;
+    // Pitch: negative x rotation looks up; a downed opponent pulls the gaze down.
+    const pitch = -Math.atan2(_lookB.y - _lookA.y, Math.max(horiz, 0.4));
+    anim.setLook(yawLocal, pitch);
+
+    // ── Momentum lean: into acceleration, counter-lean when braking ──
+    const vx = f.vel.x + f.knockback.x, vz = f.vel.z + f.knockback.z;
+    const ax = (vx - (f._pvx ?? vx)) / dt, az = (vz - (f._pvz ?? vz)) / dt;
+    f._pvx = vx; f._pvz = vz;
+    const yaw = f.rig.root.rotation.y;
+    const cos = Math.cos(yaw), sin = Math.sin(yaw);
+    const lvz = vx * sin + vz * cos, lvx = vx * cos - vz * sin;   // local fwd/side vel
+    const laz = ax * sin + az * cos, lax = ax * cos - az * sin;   // local fwd/side accel
+    anim.setMoveLean(lvz * 0.06 + laz * 0.006, -(lvx * 0.05 + lax * 0.005));
+
+    // ── Clinch frame: arms brace when chest-to-chest, nobody swinging ─
+    const dist = f.rig.root.position.distanceTo(opp.rig.root.position);
+    const passive = (s) => s === 'idle' || s === 'block';
+    anim.setClinch(dist < 1.05 && passive(f.state) && passive(opp.state));
   }
 
   // Mirror each rig into its ghost-reflection copy: root transform flipped

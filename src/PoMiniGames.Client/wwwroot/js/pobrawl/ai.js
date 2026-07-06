@@ -66,6 +66,15 @@ export class AiController {
     if (this.sinceDecision < this.reactionMs) return intent;
     this.sinceDecision = 0;
 
+    // ── Downed opponent: back off ───────────────────────────────────────
+    // The body is invulnerable while down/getting up — swinging at it wastes
+    // frames and looks dumb. Give ground and reset spacing instead.
+    if (ctx.opponentState === 'down' || ctx.opponentState === 'getup') {
+      this.current = { move: ctx.distance < 2.2 ? -1 : 0, side: 0, punch: false, kick: false, block: false };
+      this.baitArmed = false;
+      return { ...this.current };
+    }
+
     // ── Anti-stunlock retreat ───────────────────────────────────────────
     if (this.t < this.retreatUntil) {
       this.current = { move: -1, side: 0, punch: false, kick: false, block: false };

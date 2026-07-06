@@ -3,8 +3,15 @@
 // per-region damage + hit-pause + screen shake + cinematic camera + replay buffer,
 // audio bus, and the Blazor interop callbacks.
 import * as THREE from 'three';
-import { buildArena, animateCrowd, damagePost, RING_HALF } from './arena.js';
-import { buildFighter, REGION_BONES, tintJoint, resetTints, CHARACTERS, CHARACTER_IDS } from './fighters.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { buildArena, animateCrowd, updateAtmosphere, damagePost, RING_HALF } from './arena.js';
+import { buildFighter, updateJiggles, REGION_BONES, tintJoint, resetTints, CHARACTERS, CHARACTER_IDS } from './fighters.js';
 import { Animator } from './animation.js';
 import { KeyboardController } from './input.js';
 import { AiController } from './ai.js';
@@ -13,9 +20,10 @@ import { CombatPlay, COMBAT_EVENTS, REGIONS, regionEffect } from './combat.js';
 import { AudioBus } from './audio.js';
 import { ReplayBuffer } from './replay.js';
 import { PoBrawlRagdoll } from './ragdoll.js';
+import { CannonRagdoll } from './ragdoll-physics.js';
 import { testAttackHit, testAttackBlocked, regionForHurtBone } from './hitboxes.js';
 import {
-  createPhysicsWorld, stepWorld,
+  createPhysicsWorld, stepWorld, buildArenaColliders,
   buildFighterPhysics, syncHurtSpheres, syncRigRoot,
   buildSwingPhysics, syncStrikerSpheres, destroySwingPhysics,
   applyRecoil, G_HURT, G_STRIKER,
@@ -40,6 +48,45 @@ const ATTACKS = {
 
 const HITSTUN = 0.35;
 
+// A single hit past this damage knocks the defender down (partial ragdoll +
+// get-up) instead of just hitstun. With 40/60 base damage this makes most
+// clean kicks and heavy head punches score a knockdown.
+const KNOCKDOWN_DMG = 50;
+const DOWN_TIME = 1.15;   // seconds spent ragdolled on the canvas
+const GETUP_TIME = 0.6;   // seconds to scramble back to guard
+
+// ── Post-processing: chromatic aberration + vignette ─────────────────────
+// Runs after bloom, before OutputPass (so it operates on the linear HDR
+// frame). uCA is pulsed by hits and the KO flash; the vignette is constant.
+const CAVignetteShader = {
+  uniforms: {
+    tDiffuse: { value: null },
+    uCA: { value: 0 },
+    uVignette: { value: 0.5 },
+  },
+  vertexShader: /* glsl */`
+    varying vec2 vUv;
+    void main() {
+      vUv = uv;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }`,
+  fragmentShader: /* glsl */`
+    uniform sampler2D tDiffuse;
+    uniform float uCA;
+    uniform float uVignette;
+    varying vec2 vUv;
+    void main() {
+      vec2 off = (vUv - 0.5) * uCA * 0.012;
+      float r = texture2D(tDiffuse, vUv + off).r;
+      float g = texture2D(tDiffuse, vUv).g;
+      float b = texture2D(tDiffuse, vUv - off).b;
+      vec3 col = vec3(r, g, b);
+      float d = distance(vUv, vec2(0.5));
+      col *= 1.0 - smoothstep(0.55, 0.95, d) * uVignette;
+      gl_FragColor = vec4(col, 1.0);
+    }`,
+};
+
 // Bruise tint per region. Skin takes a redder flush on head hits, a yellowy bruise
 // on torso, blueish on legs. Suits just go a bit darker.
 const REGION_TINT = {
@@ -48,6 +95,12 @@ const REGION_TINT = {
   arms: new THREE.Color(0x4a3320),
   legs: new THREE.Color(0x304060),
 };
+
+// Scratch vector for the blob-shadow tracker.
+const _blobPos = new THREE.Vector3();
+// Scratch vectors for the lighting updater.
+const _spotTarget = new THREE.Vector3();
+const _blDir = new THREE.Vector3();
 
 export class BrawlGame {
   constructor(container, dotnetRef, options) {
@@ -68,6 +121,15 @@ export class BrawlGame {
     this.shakeAmp = 0;
     this.fovPunch = 0;
     this.fovBase = 55;
+    // Post-FX pulses: bloom strength, chromatic aberration and exposure spike
+    // on hits and KO, then decay exponentially in _updateFx.
+    this.caPulse = 0;
+    this.bloomPulse = 0;
+    this.exposurePulse = 0;
+    // KO "lights down" blend (0 = house lights, 1 = spotlight-only).
+    this.lightsDim = 0;
+    // Atmosphere clock — always advances (this.clock only runs while fighting).
+    this.atmoT = 0;
     // Cinematic state: KO zoom + replay buffer.
     this.cameraMode = 'normal'; // 'normal' | 'ko' | 'replay'
     this.cameraModeT = 0;
@@ -87,9 +149,14 @@ export class BrawlGame {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setSize(w, h);
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.05;
+    // PCF (not PCFSoft) so light.shadow.radius blurs the penumbra — softer,
+    // more photographic shadow edges under the fighters.
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
+    // AgX handles saturated bright lights (bloom pulses, colored corner
+    // accents) far more gracefully than ACES, which skews hot colors.
+    this.renderer.toneMapping = THREE.AgXToneMapping;
+    this.exposureBase = 1.15;
+    this.renderer.toneMappingExposure = this.exposureBase;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.container.appendChild(this.renderer.domElement);
 
@@ -101,11 +168,68 @@ export class BrawlGame {
 
     this.camera = new THREE.PerspectiveCamera(55, w / h, 0.1, 100);
     this.camera.position.set(0, 2.4, 7);
-    if (this.envMap) this.scene.environment = this.envMap;
+    if (this.envMap) {
+      this.scene.environment = this.envMap;
+      // RoomEnvironment is bright — keep the moody arena look.
+      this.scene.environmentIntensity = 0.4;
+    }
+
+    // Post chain: render → bloom → CA/vignette → tone-map/sRGB output.
+    // Bloom threshold sits just under the spark/hit-flash luminance so
+    // impacts glow while the arena itself stays clean.
+    // MSAA render target — the composer's default target has no samples,
+    // which would drop the AA the raw canvas had.
+    const composerRT = new THREE.WebGLRenderTarget(w, h, {
+      type: THREE.HalfFloatType, samples: 4,
+    });
+    this.composer = new EffectComposer(this.renderer, composerRT);
+    this.composer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.composer.addPass(new RenderPass(this.scene, this.camera));
+    // Ground-truth AO: contact-level darkening in armpits, under ropes and
+    // between crowd rows that flat hemisphere ambient destroys.
+    try {
+      const gtao = new GTAOPass(this.scene, this.camera, w, h);
+      gtao.output = GTAOPass.OUTPUT.Default;
+      gtao.blendIntensity = 0.85;
+      this.composer.addPass(gtao);
+    } catch { /* AO is a nicety — never block the game on it */ }
+    this.bloomPass = new UnrealBloomPass(new THREE.Vector2(w, h), 0.32, 0.55, 0.8);
+    this.composer.addPass(this.bloomPass);
+    this.fxPass = new ShaderPass(CAVignetteShader);
+    this.composer.addPass(this.fxPass);
+    this.composer.addPass(new OutputPass());
+
+    // Impact light pool: reused PointLights flashed at hit points. A fixed
+    // pool keeps the scene's light count constant (adding/removing lights at
+    // runtime forces shader recompiles).
+    this._impactLights = Array.from({ length: 3 }, () => {
+      const light = new THREE.PointLight(0xffa050, 0, 5, 2);
+      this.scene.add(light);
+      return { light, life: 0, dur: 0.15, peak: 0 };
+    });
+    this._impactCursor = 0;
+
+    // Per-fighter backlights: cool kicker spots behind each fighter, opposite
+    // the camera — constant halo separation from the dark background.
+    // Repositioned every frame in _updateLighting.
+    this._backlights = [0, 1].map(() => {
+      const s = new THREE.SpotLight(0x7d95ff, 3.0, 14, Math.PI / 5, 0.85, 1.6);
+      s.castShadow = false;
+      this.scene.add(s);
+      this.scene.add(s.target);
+      return s;
+    });
 
     this.banner = document.createElement('div');
     this.banner.className = 'pb-banner';
     this.container.appendChild(this.banner);
+
+    // FPS badge, upper-right. Updated twice a second from the render loop.
+    this.fpsEl = document.createElement('div');
+    this.fpsEl.className = 'pb-fps';
+    this.container.appendChild(this.fpsEl);
+    this._fpsFrames = 0;
+    this._fpsTime = 0;
 
     // CSS overlay for chromatic aberration / vignette flash on KO.
     this.flash = document.createElement('div');
@@ -118,6 +242,7 @@ export class BrawlGame {
       this.camera.aspect = cw / ch;
       this.camera.updateProjectionMatrix();
       this.renderer.setSize(cw, ch);
+      this.composer.setSize(cw, ch);
     };
     window.addEventListener('resize', this._onResize);
 
@@ -125,6 +250,8 @@ export class BrawlGame {
     // (kinematic rig-root + dynamic hurt spheres) are created in _spawnFighters.
     this._physics = createPhysicsWorld();
     this._setupPhysicsCollisions();
+    // Static post/rope colliders — only the KO ragdoll interacts with them.
+    buildArenaColliders(this._physics.world, this._physics.materials);
     this._spawnFighters(this.options.p1Character, this.options.p2Character);
     this._startCountdown();
 
@@ -143,8 +270,21 @@ export class BrawlGame {
     const loop = (now) => {
       if (this.disposed) return;
       this.raf = requestAnimationFrame(loop);
-      let dt = Math.min((now - this.lastFrame) / 1000, MAX_FRAME_DT);
+      const rawDt = (now - this.lastFrame) / 1000;
+      let dt = Math.min(rawDt, MAX_FRAME_DT);
       this.lastFrame = now;
+
+      // FPS badge — measured from the unclamped frame delta so slow frames
+      // report honestly (dt is clamped for the sim).
+      this._fpsFrames++;
+      this._fpsTime += rawDt;
+      if (this._fpsTime >= 0.5) {
+        const fps = Math.round(this._fpsFrames / this._fpsTime);
+        const label = `${fps} FPS`;
+        if (this.fpsEl && this.fpsEl.textContent !== label) this.fpsEl.textContent = label;
+        this._fpsFrames = 0;
+        this._fpsTime = 0;
+      }
       this.accumulator += dt * this.timeScale;
       while (this.accumulator >= SIM_DT) {
         this.accumulator -= SIM_DT;
@@ -153,7 +293,16 @@ export class BrawlGame {
       this._updateCamera(dt);
       this._updateEffects(dt);
       this._updateCrowd(dt);
-      this.renderer.render(this.scene, this.camera);
+      this._updateFx(dt);
+      this._updateLighting(dt);
+      this.atmoT += dt;
+      updateAtmosphere(this.arena, dt, this.atmoT, this.excited);
+      this._updateBlobShadows();
+      this._updateReflections();
+      if (this.fighters) {
+        for (const f of this.fighters) updateJiggles(f.rig, dt);
+      }
+      this.composer.render();
     };
     this.raf = requestAnimationFrame(loop);
   }
@@ -163,16 +312,10 @@ export class BrawlGame {
   _makeEnvMap() {
     try {
       const pmrem = new THREE.PMREMGenerator(this.renderer);
-      pmrem.compileEquirectangularShader();
-      // A small dark-blue scene with a bright top — gives our PBR materials
-      // a soft horizon reflection without needing a downloaded HDR.
-      const tmp = new THREE.Scene();
-      tmp.background = new THREE.Color(0x202848);
-      tmp.add(new THREE.HemisphereLight(0xfff1d0, 0x1a1030, 1.4));
-      const key = new THREE.DirectionalLight(0xffffff, 2.0);
-      key.position.set(0.5, 1.0, 0.4);
-      tmp.add(key);
-      const tex = pmrem.fromScene(tmp, 0.04).texture;
+      // RoomEnvironment: a procedural studio box with area-light panels —
+      // far richer reflections for the aviators/posts/suit sheen than the
+      // old 3-light void, still no HDR download.
+      const tex = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
       pmrem.dispose();
       return tex;
     } catch {
@@ -194,19 +337,22 @@ export class BrawlGame {
         // Tear down any active swing physics before disposing the fighter.
         if (f.swingPhysics) destroySwingPhysics(this._physics.world, f.swingPhysics);
         // Dispose cannon bodies we created for this fighter.
-        if (f.fighterPhysics) {
-          for (const s of f.fighterPhysics.hurtSpheres) {
-            if (this._physics.world.bodies.includes(s)) this._physics.world.removeBody(s);
-          }
-          for (const c of f.fighterPhysics.constraints) {
-            if (this._physics.world.constraints.includes(c)) this._physics.world.removeConstraint(c);
-          }
-          if (this._physics.world.bodies.includes(f.fighterPhysics.rigRoot)) {
-            this._physics.world.removeBody(f.fighterPhysics.rigRoot);
-          }
-        }
+        this._removeFighterPhysics(f);
+        if (f.koRagdoll) f.koRagdoll.dispose();
         resetTints(f.rig);
         this.scene.remove(f.rig.root);
+        if (f.blob) {
+          this.scene.remove(f.blob);
+          f.blob.geometry.dispose();
+          f.blob.material.dispose(); // texture is shared; disposed in dispose()
+        }
+        if (f.mirror) {
+          this.scene.remove(f.mirror.root);
+          f.mirror.root.traverse((o) => {
+            if (o.geometry) o.geometry.dispose();
+            if (o.material) o.material.dispose();
+          });
+        }
         f.controller.dispose();
       }
     }
@@ -227,6 +373,48 @@ export class BrawlGame {
       // DistanceConstraints are what the strikers collide with.
       const initialXZ = { x: rig.root.position.x, z: rig.root.position.z };
       const fighterPhysics = buildFighterPhysics(this._physics.world, this._physics.materials, { rig }, initialXZ);
+
+      // Soft contact shadow: a radial-gradient blob that tracks the hips and
+      // widens/darkens as the body drops. Sells grounding far better than
+      // the directional shadow map alone.
+      const blob = new THREE.Mesh(
+        new THREE.PlaneGeometry(1.5, 1.5),
+        new THREE.MeshBasicMaterial({
+          map: this._makeBlobTexture(), transparent: true,
+          opacity: 0.34, depthWrite: false,
+        })
+      );
+      blob.rotation.x = -Math.PI / 2;
+      blob.position.y = 0.055;
+      this.scene.add(blob);
+
+      // Fake planar reflection: a ghost copy of the rig mirrored about the
+      // canvas plane (y=0.04), additive + depthTest-off so it reads as a
+      // glossy sheen on the vinyl. Joint transforms are copied every frame.
+      const mirror = buildFighter(CHARACTERS[charId] ? charId : CHARACTER_IDS[0]);
+      const matClones = new Map();
+      mirror.root.traverse((o) => {
+        o.castShadow = false;
+        o.receiveShadow = false;
+        if (o.isMesh && o.material) {
+          if (!matClones.has(o.material)) {
+            const mc = o.material.clone();
+            mc.transparent = true;
+            mc.opacity = 0.13;
+            mc.blending = THREE.AdditiveBlending;
+            mc.depthTest = false;
+            mc.depthWrite = false;
+            mc.side = THREE.DoubleSide; // negative scale flips winding
+            mc.fog = false;
+            matClones.set(o.material, mc);
+          }
+          o.material = matClones.get(o.material);
+        }
+      });
+      mirror.root.scale.y *= -1;
+      mirror.root.renderOrder = 1;
+      this.scene.add(mirror.root);
+
       return {
         index,
         playerId,
@@ -248,10 +436,21 @@ export class BrawlGame {
         idleT: this.rng.random() * 10,
         speedAmt: 0,
         hpCur: MAX_HP,
+        // Impact feedback: emissive hit-flash and cartoon squash timers.
+        flashT: 0,
+        squashT: 0,
+        // Soft contact-shadow mesh (tracks the hips each frame).
+        blob,
+        // Ghost reflection rig (synced to the real rig each render frame).
+        mirror,
         // Track the last frame's windup flag for the AI to read.
         lastWasWindup: false,
-        // Verlet ragdoll — activated on KO so the fighter flops realistically.
+        // Verlet ragdoll — the soft, recoverable flop used for knockdowns.
         ragdoll: new PoBrawlRagdoll(rig.joints, rig.root),
+        // Rigid-body ragdoll — the real cannon-es skeleton used for the KO.
+        // Built lazily (pendingKO) because KOs can fire inside world.step.
+        koRagdoll: new CannonRagdoll(this._physics.world, this._physics.materials.ragdoll, rig),
+        pendingKO: null,
         // Cannon-es physics — kinematic rig root + dynamic hurt spheres.
         fighterPhysics,
         // Active swing bodies (striker spheres). Created on _enterAttack,
@@ -309,6 +508,10 @@ export class BrawlGame {
         this._endMatch(h1 === h2 ? 0 : (h1 > h2 ? 1 : 2), 'TIME!');
       }
     } else if (this.phase === 'ko') {
+      // Build any pending rigid-body ragdoll now — we're guaranteed to be
+      // outside cannon's step here, so body removal/creation is safe.
+      this._buildPendingKO();
+      if (this._physics) stepWorld(this._physics.world, dt);
       this._tickKoFall(dt);
       this._tickReplay(dt);
       if (this.phaseT >= 1.4) {
@@ -318,6 +521,8 @@ export class BrawlGame {
         this._reportResult();
       }
     } else if (this.phase === 'result') {
+      this._buildPendingKO();
+      if (this._physics) stepWorld(this._physics.world, dt);
       this._tickKoFall(dt);
       if (this.options.mode === 'demo' && this.phaseT >= 3) {
         this.resetMatch(true);
@@ -334,6 +539,23 @@ export class BrawlGame {
       f.animator.update({ dt, speed: f.speedAmt, idleT: f.idleT, snappy: false });
       f.animator.decayLean(dt);
       f.hpCur = this._hp(f);
+
+      // Knockdown ragdoll runs during regular play (KO ragdoll is stepped
+      // by _tickKoFall so it survives the slow-mo phases).
+      if (f.state === 'down' && f.ragdoll && f.ragdoll.active) f.ragdoll.step(dt);
+
+      // Emissive hit-flash: full-body white pop that decays to the bruise tint.
+      if (f.flashT > 0) {
+        f.flashT = Math.max(0, f.flashT - dt);
+        this._setEmissive(f.rig, (f.flashT / 0.13) * 0.85);
+      }
+      // Cartoon squash: compress the whole body for a couple of frames on impact.
+      if (f.squashT > 0) {
+        f.squashT = Math.max(0, f.squashT - dt);
+        const q = f.squashT / 0.14;
+        const s = q * q * 0.2;
+        f.rig.joints.hips.scale.set(1 + s * 0.8, 1 - s, 1 + s * 0.8);
+      }
     }
 
     // Drive music tension from the lower of the two HPs (0..1 → 0..1).
@@ -443,10 +665,10 @@ export class BrawlGame {
       }
     }
 
-    // Face each other (yaw only).
+    // Face each other (yaw only). A body lying on the canvas doesn't yaw-track.
     for (const f of this.fighters) {
       const opp = f === f1 ? f2 : f1;
-      if (f.state !== 'ko') {
+      if (f.state !== 'ko' && f.state !== 'down') {
         const p = opp.rig.root.position;
         f.rig.root.rotation.y = Math.atan2(p.x - f.rig.root.position.x, p.z - f.rig.root.position.z);
       }
@@ -485,7 +707,8 @@ export class BrawlGame {
     // Compute a desired world velocity from intent, lerp `vel` toward it,
     // and integrate. Knockback is added directly and decays.
     const desired = new THREE.Vector3();
-    if (intent.move !== 0 && f.state !== 'ko') {
+    const incapacitated = f.state === 'ko' || f.state === 'down' || f.state === 'getup';
+    if (intent.move !== 0 && !incapacitated) {
       const toward = opp.rig.root.position.clone().sub(pos);
       toward.y = 0;
       if (toward.lengthSq() > 1e-6) toward.normalize();
@@ -503,7 +726,7 @@ export class BrawlGame {
     // Knockback + sidestep impulses.
     f.knockback.multiplyScalar(Math.max(0, 1 - dt * 8));
     f.sideVel.multiplyScalar(Math.max(0, 1 - dt * 10));
-    if (intent.side !== 0 && f.state !== 'ko') {
+    if (intent.side !== 0 && !incapacitated) {
       const camDir = this._sideDirection();
       f.sideVel.add(camDir.multiplyScalar(intent.side * 5.5));
     }
@@ -557,6 +780,33 @@ export class BrawlGame {
         if (f.state === 'idle') this._destroySwingPhysics(f);
         break;
       }
+      case 'down': {
+        // Knocked down: the partial ragdoll owns the body (stepped in _tick).
+        // Invulnerable until the get-up completes — _tryHit early-outs on us.
+        // Swing teardown happens here (outside the physics step) — see the
+        // note in _tryHit's knockdown block.
+        this._destroySwingPhysics(f);
+        if (f.stateT >= DOWN_TIME) {
+          f.state = 'getup';
+          f.stateT = 0;
+          f.animator.frozen = false;
+          f.animator.setBlocking(false);
+          f.ragdoll.dispose();
+        }
+        break;
+      }
+      case 'getup': {
+        // Scramble back to guard: the animator (unfrozen) damp-lerps the
+        // joints from the ragdoll pose to GUARD while we slide the root
+        // back up to standing height.
+        f.rig.root.position.y = THREE.MathUtils.lerp(f.rig.root.position.y, 0, Math.min(1, dt * 8));
+        if (f.stateT >= GETUP_TIME) {
+          f.state = 'idle';
+          f.stateT = 0;
+          f.rig.root.position.y = 0;
+        }
+        break;
+      }
       case 'ko':
         // KO: drop any swing physics so the ragdoll has clean state.
         this._destroySwingPhysics(f);
@@ -593,6 +843,9 @@ export class BrawlGame {
     if (!this._physics) return;
     this._physics.world.addEventListener('beginContact', (event) => {
       const a = event.bodyA, b = event.bodyB;
+      // A body removed by an earlier event in this same dispatch loop makes
+      // cannon's getBodyById return undefined for later pairs.
+      if (!a || !b) return;
       const striker = a.userData?.kind === 'striker' ? a
                    : b.userData?.kind === 'striker' ? b : null;
       const hurt = a.userData?.kind === 'hurt' ? a
@@ -636,6 +889,10 @@ export class BrawlGame {
     // against the defender's full body hurt set. A hit is registered only
     // when at least one striker/hurt capsule pair intersects; the deepest
     // intersection wins for both location and region.
+    // A downed (or already-KO'd) body is invulnerable — the knockdown is the
+    // punish; wailing on a ragdoll would read as unfair and looks broken.
+    if (defender.state === 'down' || defender.state === 'ko') return;
+
     const phase = (attacker.stateT > attack.windup + attack.active) ? 'recover' : 'active';
     const hit = testAttackHit(attacker.rig, attack.name, phase, defender.rig);
     if (!hit) return;
@@ -669,6 +926,7 @@ export class BrawlGame {
       const blockDamp = 1 / defMass;
       defender.knockback.add(knockDir.clone().multiplyScalar(2.0 * blockDamp));
       this._spawnSparks(hit.point, 0x9ad0ff, 6, 1.0);
+      this._flashImpactLight(hit.point, 3, 0x9ad0ff, 0.1);
       this._hitFeedback(attack, false);
       this.audio.block(hit.point);
       return;
@@ -684,14 +942,18 @@ export class BrawlGame {
     defender.animator.play('hitstun');
     defender.knockback.add(knockDir.clone().multiplyScalar(4.5 * (atkMass / defMass)));
     defender.animator.applyLean(knockDir.z * 0.6, -knockDir.x * 0.6);
+    // Impact frame: emissive white pop + cartoon squash on the defender.
+    defender.flashT = 0.13;
+    defender.squashT = 0.14;
 
     // Per-region damage & tint at the actual contact point.
     defender.regionDmg[region] = Math.min(100, defender.regionDmg[region] + Math.max(2, baseDmg));
     this._applyRegionTints(defender);
 
     if (defender.controller.notifyHit) defender.controller.notifyHit();
-    // Sparks at the contact point, not at the defender's root.
+    // Sparks + a real light flash at the contact point, not at the defender's root.
     this._spawnSparks(hit.point, region === REGIONS.HEAD ? 0xff5530 : 0xffc857, 8, 1.4);
+    this._flashImpactLight(hit.point, attack.name === 'kick' ? 10 : 6);
     this._hitFeedback(attack, true);
     this.audio.impact({ power: Math.min(2, baseDmg / 12), worldPos: hit.point });
     this.audio.grunt({ power: Math.min(2, baseDmg / 12) });
@@ -705,7 +967,14 @@ export class BrawlGame {
           downed.state = 'ko';
           downed.animator.frozen = true;
           downed.animator.play(null);
-          downed.ragdoll.activate(knockDir);
+          // Queue the rigid-body ragdoll. Built next tick in _buildPendingKO
+          // — this handler can run inside cannon's contact dispatch, where
+          // adding/removing bodies is unsafe. Momentum carries into the
+          // launch so a KO mid-dash tumbles with the motion.
+          downed.pendingKO = {
+            knockDir: knockDir.clone(),
+            velocity: downed.vel.clone().add(downed.knockback),
+          };
         }
       } else if (ev.type === COMBAT_EVENTS.COMBAT_FINISHED) {
         this.phase = 'ko';
@@ -717,8 +986,35 @@ export class BrawlGame {
         this._setBanner('K.O.!');
         this.audio.ko();
         this._triggerFlash();
+        this.caPulse = 1.8;
+        this.bloomPulse = 1.4;
+        this.exposurePulse = 0.35;
+        // Big warm flash over the fallen fighter as the house lights dim.
+        this._flashImpactLight(
+          new THREE.Vector3(dpos.x, dpos.y + 1.0, dpos.z), 22, 0xfff0d0, 0.4);
         this.excited = 1;
       }
+    }
+
+    // ── Knockdown tier ────────────────────────────────────────────────
+    // A single heavy hit (most kicks, clean head punches) that doesn't kill
+    // drops the defender into a brief partial ragdoll: they flop, lie for a
+    // beat (invulnerable), then scramble back up. Softer impulses than the
+    // KO flop, and the pre-hit momentum carries into the fall.
+    if (defender.state !== 'ko' && baseDmg >= KNOCKDOWN_DMG) {
+      defender.state = 'down';
+      defender.stateT = 0;
+      defender.animator.frozen = true;
+      defender.animator.play(null); // drop the queued hitstun track
+      // NOTE: swing physics is torn down by the 'down' case in the state
+      // machine, NOT here — _tryHit can run inside cannon's beginContact
+      // dispatch, and removing bodies mid-step leaves getBodyById returning
+      // undefined for the remaining queued contact events.
+      defender.ragdoll.activate(knockDir, {
+        velocity: defender.vel.clone().add(defender.knockback),
+        scale: 0.65,
+      });
+      this.excited = Math.max(this.excited, 0.6);
     }
   }
 
@@ -746,6 +1042,151 @@ export class BrawlGame {
     this.shakeT = 0.18;
     this.shakeAmp = attack.name === 'kick' ? 0.18 : 0.12;
     this.fovPunch = attack.name === 'kick' ? 5.0 : 3.0;
+    // Post-FX spike: bloom flares, the frame fringes, and the exposure
+    // "blooms open" for a beat on heavy hits.
+    this.caPulse = Math.max(this.caPulse, attack.name === 'kick' ? 0.6 : 0.35);
+    this.bloomPulse = Math.max(this.bloomPulse, attack.name === 'kick' ? 0.7 : 0.4);
+    this.exposurePulse = Math.max(this.exposurePulse, attack.name === 'kick' ? 0.15 : 0.08);
+  }
+
+  // Decay the post-FX pulses and push them into the passes.
+  _updateFx(dt) {
+    this.caPulse *= Math.exp(-dt * 4);
+    this.bloomPulse *= Math.exp(-dt * 5);
+    this.exposurePulse *= Math.exp(-dt * 5);
+    if (this.fxPass) this.fxPass.uniforms.uCA.value = this.caPulse;
+    if (this.bloomPass) this.bloomPass.strength = 0.32 + this.bloomPulse;
+    this.renderer.toneMappingExposure = this.exposureBase + this.exposurePulse;
+
+    // Impact-light pool decay.
+    for (const s of this._impactLights || []) {
+      if (s.life > 0) {
+        s.life = Math.max(0, s.life - dt);
+        s.light.intensity = s.peak * (s.life / s.dur);
+      }
+    }
+  }
+
+  // Flash one pooled PointLight at a world position (hit sparks, KO).
+  _flashImpactLight(point, peak, color = 0xffa050, dur = 0.15) {
+    if (!this._impactLights) return;
+    const slot = this._impactLights[this._impactCursor++ % this._impactLights.length];
+    slot.light.color.setHex(color);
+    slot.light.position.set(point.x, point.y + 0.2, point.z);
+    slot.peak = peak;
+    slot.dur = dur;
+    slot.life = dur;
+    slot.light.intensity = peak;
+  }
+
+  // House-light choreography. Normally static; on KO the house dims over
+  // ~0.5s, the overhead spotlight brightens and hunts the fallen fighter.
+  // Backlights track their fighters every frame for rim separation.
+  _updateLighting(dt) {
+    const L = this.arena && this.arena.lights;
+    if (!L) return;
+    const target = this.cameraMode === 'ko' ? 1 : 0;
+    this.lightsDim = THREE.MathUtils.lerp(this.lightsDim, target, Math.min(1, dt * 2.5));
+    const d = this.lightsDim;
+    L.hemi.intensity = 0.55 * (1 - d * 0.85);
+    L.key.intensity = 1.6 * (1 - d * 0.75);
+    L.rim.intensity = 0.7 * (1 - d * 0.5);
+    L.fill.intensity = 0.5 * (1 - d * 0.85);
+    L.cornerA.intensity = 1.3 * (1 - d * 0.9);
+    L.cornerB.intensity = 1.3 * (1 - d * 0.9);
+    L.spot.intensity = 1.1 + d * 1.6;
+
+    // Spotlight target: ring center normally, the loser during the KO.
+    const loser = this.fighters && this.fighters.find((f) => f.state === 'ko');
+    if (loser && d > 0.01) {
+      const lp = loser.rig.root.position;
+      _spotTarget.set(lp.x, 0, lp.z);
+    } else {
+      _spotTarget.set(0, 0, 0);
+    }
+    L.spot.target.position.lerp(_spotTarget, Math.min(1, dt * 3));
+
+    // Backlights: behind each fighter, opposite the camera.
+    if (this.fighters && this._backlights) {
+      for (let i = 0; i < this.fighters.length; i++) {
+        const fp = this.fighters[i].rig.root.position;
+        const bl = this._backlights[i];
+        if (!bl) continue;
+        _blDir.copy(fp).sub(this.camera.position);
+        _blDir.y = 0;
+        if (_blDir.lengthSq() < 1e-6) _blDir.set(0, 0, -1);
+        _blDir.normalize();
+        bl.position.set(fp.x + _blDir.x * 3, 3.2, fp.z + _blDir.z * 3);
+        bl.target.position.set(fp.x, 1.0, fp.z);
+        bl.intensity = 3.0 * (1 - d * 0.5);
+      }
+    }
+  }
+
+  // Full-body emissive flash (decays via flashT in _tick).
+  _setEmissive(rig, e) {
+    for (const m of Object.values(rig.materials)) {
+      if (m.emissive) m.emissive.setRGB(e, e, e);
+    }
+  }
+
+  // Shared radial-gradient texture for the fighters' contact-shadow blobs.
+  _makeBlobTexture() {
+    if (this._blobTex) return this._blobTex;
+    const c = document.createElement('canvas');
+    c.width = c.height = 128;
+    const g = c.getContext('2d');
+    const grad = g.createRadialGradient(64, 64, 8, 64, 64, 64);
+    grad.addColorStop(0, 'rgba(0,0,0,0.9)');
+    grad.addColorStop(0.55, 'rgba(0,0,0,0.45)');
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = grad;
+    g.fillRect(0, 0, 128, 128);
+    this._blobTex = new THREE.CanvasTexture(c);
+    return this._blobTex;
+  }
+
+  // Mirror each rig into its ghost-reflection copy: root transform flipped
+  // about the canvas plane (y=0.04 → y' = 0.08 − y), all joint local
+  // transforms copied verbatim (the negative root scale does the mirroring).
+  _updateReflections() {
+    if (!this.fighters) return;
+    for (const f of this.fighters) {
+      const m = f.mirror;
+      if (!m) continue;
+      const r = f.rig.root;
+      m.root.position.set(r.position.x, 0.08 - r.position.y, r.position.z);
+      m.root.rotation.copy(r.rotation);
+      for (const [name, joint] of Object.entries(f.rig.joints)) {
+        const mj = m.joints[name];
+        if (!mj) continue;
+        mj.quaternion.copy(joint.quaternion);
+        mj.position.copy(joint.position);
+      }
+      m.joints.hips.scale.copy(f.rig.joints.hips.scale);
+      // Tie/hair jiggle pivots mirror too.
+      if (f.rig.jiggles && m.jiggles) {
+        for (let i = 0; i < m.jiggles.length; i++) {
+          m.jiggles[i].pivot.rotation.copy(f.rig.jiggles[i].pivot.rotation);
+        }
+      }
+    }
+  }
+
+  // Track each fighter's hips; widen + darken the blob as the body drops
+  // (knockdown/KO) so the lying pose still reads as grounded.
+  _updateBlobShadows() {
+    if (!this.fighters) return;
+    for (const f of this.fighters) {
+      if (!f.blob) continue;
+      f.rig.joints.hips.getWorldPosition(_blobPos);
+      f.blob.position.x = _blobPos.x;
+      f.blob.position.z = _blobPos.z;
+      const standing = THREE.MathUtils.clamp((_blobPos.y - 0.15) / 0.85, 0, 1);
+      const s = THREE.MathUtils.lerp(1.5, 1.0, standing);
+      f.blob.scale.set(s, s, 1);
+      f.blob.material.opacity = THREE.MathUtils.lerp(0.5, 0.34, standing);
+    }
   }
 
   _triggerFlash() {
@@ -757,12 +1198,50 @@ export class BrawlGame {
     this.flash.classList.add('pb-flash-active');
   }
 
+  // Remove a fighter's live-fight cannon bodies (rig root, hurt spheres,
+  // constraints). Used at KO handoff (the ragdoll replaces them), respawn
+  // and dispose. Never call from inside a physics step.
+  _removeFighterPhysics(f) {
+    if (!this._physics || !f.fighterPhysics) return;
+    const world = this._physics.world;
+    for (const s of f.fighterPhysics.hurtSpheres) {
+      if (world.bodies.includes(s)) world.removeBody(s);
+    }
+    for (const c of f.fighterPhysics.constraints) {
+      if (world.constraints.includes(c)) world.removeConstraint(c);
+    }
+    if (world.bodies.includes(f.fighterPhysics.rigRoot)) {
+      world.removeBody(f.fighterPhysics.rigRoot);
+    }
+    f.fighterPhysics = null;
+  }
+
+  // Deferred KO-ragdoll construction. The KO event only queues pendingKO;
+  // here — safely outside world.step — we swap the fighter's live-fight
+  // bodies for the jointed rigid-body skeleton and launch it.
+  _buildPendingKO() {
+    for (const f of this.fighters) {
+      if (!f.pendingKO || f.state !== 'ko') continue;
+      if (f.ragdoll && f.ragdoll.active) f.ragdoll.dispose();
+      this._destroySwingPhysics(f);
+      this._removeFighterPhysics(f);
+      f.koRagdoll.activate(f.pendingKO.knockDir, {
+        velocity: f.pendingKO.velocity,
+        rng: this.rng,
+      });
+      f.pendingKO = null;
+    }
+  }
+
   _tickKoFall(dt) {
     for (const f of this.fighters) {
       if (f.state !== 'ko') continue;
-      // The verlet ragdoll drives per-joint transforms for the KO fall.
-      // It's stepped at fixed 60 Hz regardless of the slow-mo timeScale so
-      // the ragdoll integration stays stable during the cinematic.
+      // Rigid-body KO: cannon owns the pose; mirror it onto the rig.
+      if (f.koRagdoll && f.koRagdoll.active) {
+        f.koRagdoll.drive();
+        continue;
+      }
+      // Verlet ragdoll (knockdown path / legacy safety net).
       if (f.ragdoll && f.ragdoll.active) {
         f.ragdoll.step(dt);
         continue;
@@ -816,11 +1295,12 @@ export class BrawlGame {
       this.cameraMode = 'replay';
       this.replayT = 0;
       // Hand control of the rig transforms over to the replay buffer so the
-      // ragdoll doesn't fight the snapshot playback. The fallen body stays
-      // on screen after the replay ends via the rigid-fall fallback in
-      // _tickKoFall (which is gated by ragdoll.active).
+      // ragdolls don't fight the snapshot playback. The joints hold their
+      // last simulated pose after disposal.
       for (const f of this.fighters) {
         if (f.ragdoll && f.ragdoll.active) f.ragdoll.dispose();
+        if (f.koRagdoll && f.koRagdoll.active) f.koRagdoll.dispose();
+        f.pendingKO = null;
       }
     }
     if (this.dotnet) {
@@ -979,17 +1459,8 @@ export class BrawlGame {
     if (this.fighters) {
       for (const f of this.fighters) {
         if (f.swingPhysics) destroySwingPhysics(this._physics.world, f.swingPhysics);
-        if (f.fighterPhysics) {
-          for (const s of f.fighterPhysics.hurtSpheres) {
-            if (this._physics.world.bodies.includes(s)) this._physics.world.removeBody(s);
-          }
-          for (const c of f.fighterPhysics.constraints) {
-            if (this._physics.world.constraints.includes(c)) this._physics.world.removeConstraint(c);
-          }
-          if (this._physics.world.bodies.includes(f.fighterPhysics.rigRoot)) {
-            this._physics.world.removeBody(f.fighterPhysics.rigRoot);
-          }
-        }
+        this._removeFighterPhysics(f);
+        if (f.koRagdoll) f.koRagdoll.dispose();
       }
     }
     this._physics = null;
@@ -1001,12 +1472,15 @@ export class BrawlGame {
         }
       });
     }
+    if (this.composer) this.composer.dispose?.();
+    if (this._blobTex) this._blobTex.dispose();
     if (this.renderer) {
       this.renderer.dispose();
       this.renderer.domElement.remove();
     }
     if (this.banner) this.banner.remove();
     if (this.flash) this.flash.remove();
+    if (this.fpsEl) this.fpsEl.remove();
     this.dotnet = null;
   }
 }

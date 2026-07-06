@@ -35,6 +35,23 @@
     text-shadow: 0 4px 24px rgba(0, 0, 0, 0.7);
 }
 
+/* FPS badge created by the JS engine, upper-right (below the HP bar). */
+.pb-canvas-host ::deep .pb-fps {
+    position: absolute;
+    top: 44px;
+    right: 14px;
+    padding: 3px 8px;
+    border-radius: 6px;
+    background: rgba(10, 12, 24, 0.55);
+    color: rgba(255, 255, 255, 0.75);
+    font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    pointer-events: none;
+    z-index: 6;
+}
+
 /* ── HUD ─────────────────────────────────────────────── */
 
 .pb-hud {

@@ -83,6 +83,40 @@ const VELOCITY_DAMPING = 0.86;
 // Gravity in world units / second².
 const GRAVITY = -22;
 
+// ── Anatomical cone limits ────────────────────────────────────────────────
+// Each entry constrains the bone (parent → joint) to stay within `maxAngle`
+// radians of a reference direction sampled from two other verlet points.
+// This is what actually prevents the "fold into a ball" failure the old
+// splay-impulse hack fought: knees can't tuck to the chest, the head can't
+// fold under the torso, arms can't cross through the ribcage.
+//   [jointName, refFrom, refTo, maxAngle]
+const CONE_LIMITS = [
+  ['head',   'hips',  'torso',     0.95], // neck follows the spine
+  ['kneeL',  'torso', 'hips',      1.45], // thigh stays within ~83° of "down the spine"
+  ['kneeR',  'torso', 'hips',      1.45],
+  ['elbowL', 'torso', 'shoulderL', 2.80], // generous shoulder ROM, no full cross-fold
+  ['elbowR', 'torso', 'shoulderR', 2.80],
+];
+
+// ── Inter-limb collision ──────────────────────────────────────────────────
+// Approximate each major point as a sphere and push overlapping pairs apart
+// so limbs can't interpenetrate while the body settles. Parent-child pairs
+// are skipped (the distance constraint owns those).
+const LIMB_RADII = {
+  head: 0.20, torso: 0.24, hips: 0.22,
+  shoulderL: 0.14, shoulderR: 0.14,
+  elbowL: 0.12, elbowR: 0.12,
+  kneeL: 0.14, kneeR: 0.14,
+};
+const LIMB_NAMES = Object.keys(LIMB_RADII);
+
+// Scratch vectors for the cone-limit solver (module scope, no per-tick alloc).
+const _refDir = new THREE.Vector3();
+const _boneDir = new THREE.Vector3();
+const _coneAxis = new THREE.Vector3();
+const _coneQuat = new THREE.Quaternion();
+const _corrected = new THREE.Vector3();
+
 export class PoBrawlRagdoll {
   constructor(joints, root) {
     this.joints = joints;
@@ -99,10 +133,19 @@ export class PoBrawlRagdoll {
     this._restParent = {};
   }
 
-  // Called once per KO. Snapshots current world transforms and primes
-  // verlet velocities from a small impulse so the body doesn't sit motionless.
-  activate(knockDir) {
+  // Called once per KO (or knockdown). Snapshots current world transforms and
+  // primes verlet velocities from a small impulse so the body doesn't sit
+  // motionless.
+  //
+  // opts.velocity — the fighter's world velocity at the moment of the hit.
+  //                 Carried into every point so someone knocked out mid-dash
+  //                 tumbles with real momentum instead of dropping in place.
+  // opts.scale    — impulse multiplier (< 1 for the softer knockdown flop).
+  activate(knockDir, opts = {}) {
     if (knockDir) this.knockDir.copy(knockDir).normalize();
+    const scale = opts.scale ?? 1;
+    const bvx = opts.velocity ? opts.velocity.x * 0.9 : 0;
+    const bvz = opts.velocity ? opts.velocity.z * 0.9 : 0;
 
     // Bake rest distances from the live rig. We re-derive local positions
     // and rotations every frame from world coords, so the rig's hierarchy
@@ -141,29 +184,30 @@ export class PoBrawlRagdoll {
 // The previous version launched every joint upward, which combined with
 // the constraint solver's distance-only enforcement collapsed the figure
 // into a tight cluster under the chest.
-const knockStrength = 7.0;        // horizontal push along knockDir
-const splayStrength = 5.5;        // lateral push perpendicular to knockDir
-const upKick = 0.4;               // small vertical so the body briefly arcs before falling
-const downKick = -0.4;            // tiny downward push for low joints so gravity dominates
+const knockStrength = 7.0 * scale; // horizontal push along knockDir
+const splayStrength = 5.5 * scale; // lateral push perpendicular to knockDir
+const upKick = 0.4 * scale;        // small vertical so the body briefly arcs before falling
+const downKick = -0.4;             // tiny downward push for low joints so gravity dominates
 // Perpendicular to knockDir in the XZ plane.
 const perpX = -this.knockDir.z;
 const perpZ = this.knockDir.x;
 
 // Upper body goes ALONG knockDir with a tiny vertical kick. Heavy on XZ,
 // light on Y, so the figure tumbles forward (not up) and gravity lands
-// it chest-down on the canvas.
-this._impulse('hips',      this.knockDir.x * knockStrength, upKick, this.knockDir.z * knockStrength);
-this._impulse('torso',     this.knockDir.x * (knockStrength * 0.7), upKick, this.knockDir.z * (knockStrength * 0.7));
-this._impulse('head',      this.knockDir.x * (knockStrength * 1.4), upKick * 0.5, this.knockDir.z * (knockStrength * 1.4));
-this._impulse('shoulderL', this.knockDir.x * (knockStrength * 0.5), upKick, this.knockDir.z * (knockStrength * 0.5));
-this._impulse('shoulderR', this.knockDir.x * (knockStrength * 0.5), upKick, this.knockDir.z * (knockStrength * 0.5));
+// it chest-down on the canvas. Every point additionally inherits the
+// fighter's momentum (bvx/bvz) so the tumble carries the pre-hit motion.
+this._impulse('hips',      this.knockDir.x * knockStrength + bvx, upKick, this.knockDir.z * knockStrength + bvz);
+this._impulse('torso',     this.knockDir.x * (knockStrength * 0.7) + bvx, upKick, this.knockDir.z * (knockStrength * 0.7) + bvz);
+this._impulse('head',      this.knockDir.x * (knockStrength * 1.4) + bvx, upKick * 0.5, this.knockDir.z * (knockStrength * 1.4) + bvz);
+this._impulse('shoulderL', this.knockDir.x * (knockStrength * 0.5) + bvx, upKick, this.knockDir.z * (knockStrength * 0.5) + bvz);
+this._impulse('shoulderR', this.knockDir.x * (knockStrength * 0.5) + bvx, upKick, this.knockDir.z * (knockStrength * 0.5) + bvz);
 // Elbows splay OUTWARD perpendicular to knockDir + slight down. They
 // land on either side of the torso instead of folding into the chest.
-this._impulse('elbowL',    perpX * splayStrength, downKick, perpZ * splayStrength);
-this._impulse('elbowR',    -perpX * splayStrength, downKick, -perpZ * splayStrength);
+this._impulse('elbowL',    perpX * splayStrength + bvx, downKick, perpZ * splayStrength + bvz);
+this._impulse('elbowR',    -perpX * splayStrength + bvx, downKick, -perpZ * splayStrength + bvz);
 // Knees splay OUTWARD perpendicular to knockDir + slight down.
-this._impulse('kneeL',     perpX * splayStrength, downKick, perpZ * splayStrength);
-this._impulse('kneeR',     -perpX * splayStrength, downKick, -perpZ * splayStrength);
+this._impulse('kneeL',     perpX * splayStrength + bvx, downKick, perpZ * splayStrength + bvz);
+this._impulse('kneeR',     -perpX * splayStrength + bvx, downKick, -perpZ * splayStrength + bvz);
 
     // Root gets a matching linear push so the whole rig slides.
     this.root.position.x += this.knockDir.x * 0.05;
@@ -234,13 +278,13 @@ this._impulse('kneeR',     -perpX * splayStrength, downKick, -perpZ * splayStren
       p.pos.y += vy + GRAVITY * dt * dt;
       p.pos.z += vz;
 
-      // Splay bias: as a low joint nears the canvas, push it outward
-      // perpendicular to the fall direction. Prevents the legs/arms
-      // from clustering under the torso into a curled ball.
+      // Small residual splay bias near the canvas. The cone limits and
+      // inter-limb collision now do the anatomical work; this just nudges
+      // the limbs to lie on either side of the torso.
       if (p.pos.y < GROUND_Y + 0.6 && (p.name === 'kneeL' || p.name === 'kneeR'
                                      || p.name === 'elbowL' || p.name === 'elbowR')) {
         const sign = (p.name === 'kneeL' || p.name === 'elbowL') ? 1 : -1;
-        const splayAccel = 12.0;
+        const splayAccel = 6.0;
         const perpX = -this.knockDir.z;
         const perpZ = this.knockDir.x;
         p.pos.x += sign * perpX * splayAccel * dt * dt;
@@ -281,12 +325,80 @@ this._impulse('kneeR',     -perpX * splayStrength, downKick, -perpZ * splayStren
         parent.pos.y += dy * k * (w2 / wsum);
         parent.pos.z += dz * k * (w2 / wsum);
       }
+      this._applyConeLimits();
+      this._collideLimbs();
     }
 
     // Floor clamp with per-joint geometry extents.
     for (const [, p] of this.points) {
       const minY = jointMinY(p.name);
       if (p.pos.y < minY) p.pos.y = minY;
+    }
+  }
+
+  // Clamp each constrained bone back inside its anatomical cone. Softly
+  // blended (0.6/pass) so the correction doesn't pop.
+  _applyConeLimits() {
+    for (const [name, refFrom, refTo, maxAng] of CONE_LIMITS) {
+      const p = this.points.get(name);
+      if (!p || !p.parent) continue;
+      const parent = this.points.get(p.parent);
+      const a = this.points.get(refFrom);
+      const b = this.points.get(refTo);
+      if (!parent || !a || !b) continue;
+
+      _refDir.set(b.pos.x - a.pos.x, b.pos.y - a.pos.y, b.pos.z - a.pos.z);
+      if (_refDir.lengthSq() < 1e-8) continue;
+      _refDir.normalize();
+
+      _boneDir.set(p.pos.x - parent.pos.x, p.pos.y - parent.pos.y, p.pos.z - parent.pos.z);
+      const len = _boneDir.length();
+      if (len < 1e-6) continue;
+      _boneDir.divideScalar(len);
+
+      const ang = Math.acos(THREE.MathUtils.clamp(_refDir.dot(_boneDir), -1, 1));
+      if (ang <= maxAng) continue;
+
+      _coneAxis.crossVectors(_refDir, _boneDir);
+      if (_coneAxis.lengthSq() < 1e-8) continue;
+      _coneAxis.normalize();
+      _coneQuat.setFromAxisAngle(_coneAxis, maxAng);
+      _corrected.copy(_refDir).applyQuaternion(_coneQuat).multiplyScalar(len);
+      p.pos.x += (parent.pos.x + _corrected.x - p.pos.x) * 0.6;
+      p.pos.y += (parent.pos.y + _corrected.y - p.pos.y) * 0.6;
+      p.pos.z += (parent.pos.z + _corrected.z - p.pos.z) * 0.6;
+    }
+  }
+
+  // Sphere-sphere push-apart between major points so limbs never
+  // interpenetrate. Parent-child pairs are skipped (distance constraints
+  // own those); the mass-weighted split keeps the torso stable while
+  // light limbs give way.
+  _collideLimbs() {
+    for (let i = 0; i < LIMB_NAMES.length; i++) {
+      const pi = this.points.get(LIMB_NAMES[i]);
+      if (!pi) continue;
+      for (let j = i + 1; j < LIMB_NAMES.length; j++) {
+        const pj = this.points.get(LIMB_NAMES[j]);
+        if (!pj) continue;
+        if (pi.parent === pj.name || pj.parent === pi.name) continue;
+        const dx = pj.pos.x - pi.pos.x;
+        const dy = pj.pos.y - pi.pos.y;
+        const dz = pj.pos.z - pi.pos.z;
+        const minD = LIMB_RADII[pi.name] + LIMB_RADII[pj.name];
+        const distSq = dx * dx + dy * dy + dz * dz;
+        if (distSq >= minD * minD || distSq < 1e-8) continue;
+        const dist = Math.sqrt(distSq);
+        const push = (minD - dist) / dist;
+        const wi = 1 / pi.mass, wj = 1 / pj.mass;
+        const wsum = wi + wj;
+        pi.pos.x -= dx * push * (wi / wsum);
+        pi.pos.y -= dy * push * (wi / wsum);
+        pi.pos.z -= dz * push * (wi / wsum);
+        pj.pos.x += dx * push * (wj / wsum);
+        pj.pos.y += dy * push * (wj / wsum);
+        pj.pos.z += dz * push * (wj / wsum);
+      }
     }
   }
 

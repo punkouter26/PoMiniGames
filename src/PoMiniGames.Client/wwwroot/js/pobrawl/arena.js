@@ -5,6 +5,41 @@ import * as THREE from 'three';
 
 export const RING_HALF = 5.2; // playable clamp radius (ring is 12x12, keep a margin)
 
+// Procedural ring-canvas texture: lavender-blue vinyl with scuff noise, a
+// worn (lighter) center from footwork, and a faint center-ring logo.
+let _canvasTex = null;
+function ringCanvasTexture() {
+  if (_canvasTex) return _canvasTex;
+  const c = document.createElement('canvas');
+  c.width = c.height = 256;
+  const g = c.getContext('2d');
+  g.fillStyle = '#3d4680';
+  g.fillRect(0, 0, 256, 256);
+  // Worn center: fighters shuffle here, the vinyl lightens.
+  const wear = g.createRadialGradient(128, 128, 10, 128, 128, 120);
+  wear.addColorStop(0, 'rgba(200,205,235,0.16)');
+  wear.addColorStop(1, 'rgba(200,205,235,0)');
+  g.fillStyle = wear;
+  g.fillRect(0, 0, 256, 256);
+  // Faint center-ring logo.
+  g.strokeStyle = 'rgba(255,255,255,0.10)';
+  g.lineWidth = 4;
+  g.beginPath();
+  g.arc(128, 128, 42, 0, Math.PI * 2);
+  g.stroke();
+  // Scuff noise.
+  for (let i = 0; i < 2200; i++) {
+    const v = Math.random();
+    g.fillStyle = v > 0.5
+      ? `rgba(255,255,255,${(v - 0.5) * 0.05})`
+      : `rgba(0,0,20,${(0.5 - v) * 0.07})`;
+    g.fillRect(Math.random() * 256, Math.random() * 256, 1 + Math.random() * 2, 1);
+  }
+  _canvasTex = new THREE.CanvasTexture(c);
+  _canvasTex.colorSpace = THREE.SRGBColorSpace;
+  return _canvasTex;
+}
+
 export function buildArena(scene, envMap = null) {
   scene.background = new THREE.Color(0x0d0f1a);
   scene.fog = new THREE.Fog(0x0d0f1a, 22, 60);
@@ -35,9 +70,14 @@ export function buildArena(scene, envMap = null) {
   ring.receiveShadow = true;
   scene.add(ring);
 
+  // Ring canvas: procedurally textured glossy vinyl — worn center, faint
+  // ring logo, scuff noise. Low roughness + env map give it the reflective
+  // sheen that sells "lit mat in a dark hall".
   const canvasMat = new THREE.MeshStandardMaterial({
-    color: 0x3d4680, roughness: 0.95, metalness: 0.0,
+    color: 0xffffff, roughness: 0.55, metalness: 0.0,
+    map: ringCanvasTexture(),
   });
+  if (envMap) { canvasMat.envMap = envMap; canvasMat.envMapIntensity = 0.5; }
   const top = new THREE.Mesh(new THREE.BoxGeometry(11.6, 0.04, 11.6), canvasMat);
   top.position.y = 0.02;
   top.receiveShadow = true;
@@ -95,18 +135,24 @@ export function buildArena(scene, envMap = null) {
   }
 
   // Lights — slightly warmer key, bluer rim, plus a low ambient bounce so
-  // PBR materials in shadow still read some colour.
-  scene.add(new THREE.HemisphereLight(0x9aa4ff, 0x1a1030, 0.55));
+  // PBR materials in shadow still read some colour. All handles are returned
+  // so the engine can dim the house for the KO "lights down" cinematic.
+  const hemi = new THREE.HemisphereLight(0x9aa4ff, 0x1a1030, 0.55);
+  scene.add(hemi);
   const key = new THREE.DirectionalLight(0xfff1d0, 1.6);
   key.position.set(6, 12, 4);
   key.castShadow = true;
-  key.shadow.mapSize.set(1024, 1024);
-  key.shadow.camera.left = -10;
-  key.shadow.camera.right = 10;
-  key.shadow.camera.top = 10;
-  key.shadow.camera.bottom = -10;
+  key.shadow.mapSize.set(2048, 2048);
+  // Frustum hugs the ring (fight area is ±5.2, posts at ±5.8) — tighter
+  // bounds roughly double the effective shadow resolution vs the old ±10.
+  key.shadow.camera.left = -6.5;
+  key.shadow.camera.right = 6.5;
+  key.shadow.camera.top = 6.5;
+  key.shadow.camera.bottom = -6.5;
   key.shadow.bias = -0.0005;
   key.shadow.normalBias = 0.02;
+  // Penumbra blur (works with PCFShadowMap; PCFSoft ignores radius).
+  key.shadow.radius = 4;
   scene.add(key);
 
   const rim = new THREE.DirectionalLight(0x6070ff, 0.7);
@@ -117,12 +163,174 @@ export function buildArena(scene, envMap = null) {
   fill.position.set(0, 6, 0);
   scene.add(fill);
 
+  // Overhead ring spotlight — the classic bright-pool-over-the-ring look.
+  // Casts its own shadow so the KO close-up gets a tight overhead shadow
+  // under the fallen body; during the KO cinematic the engine brightens it
+  // and retargets it onto the loser.
+  const spot = new THREE.SpotLight(0xfff4e0, 1.1, 30, Math.PI / 4.5, 0.45, 1.2);
+  spot.position.set(0, 11, 0);
+  spot.target.position.set(0, 0, 0);
+  spot.castShadow = true;
+  spot.shadow.mapSize.set(1024, 1024);
+  spot.shadow.bias = -0.0005;
+  spot.shadow.normalBias = 0.02;
+  spot.shadow.radius = 6;
+  scene.add(spot);
+  scene.add(spot.target);
+
+  // Corner identity lighting: red vs blue side, matching the HUD bars.
+  // Fighters pick up a warm/cool gradient as they cross the ring.
+  const cornerA = new THREE.PointLight(0xff3b30, 1.3, 8, 1.8);
+  cornerA.position.set(-6.2, 1.4, 0);
+  scene.add(cornerA);
+  const cornerB = new THREE.PointLight(0x3b6bff, 1.3, 8, 1.8);
+  cornerB.position.set(6.2, 1.4, 0);
+  scene.add(cornerB);
+
+  // Emissive apron trim: unlit strips along the canvas edges glow against
+  // the dark arena (red side / blue side / dim violet ends).
+  const trimRed = new THREE.MeshBasicMaterial({ color: 0xff5a4a });
+  const trimBlue = new THREE.MeshBasicMaterial({ color: 0x4a7dff });
+  const trimEnd = new THREE.MeshBasicMaterial({ color: 0x584a9c });
+  const trimZ = new THREE.BoxGeometry(0.08, 0.05, 11.6);
+  const trimX = new THREE.BoxGeometry(11.6, 0.05, 0.08);
+  for (const [geo, mat, x, z] of [
+    [trimZ, trimRed, -5.82, 0],
+    [trimZ, trimBlue, 5.82, 0],
+    [trimX, trimEnd, 0, -5.82],
+    [trimX, trimEnd, 0, 5.82],
+  ]) {
+    const strip = new THREE.Mesh(geo, mat);
+    strip.position.set(x, 0.06, z);
+    scene.add(strip);
+  }
+
+  // Fake volumetrics: additive gradient cone under the spotlight + drifting
+  // dust motes inside the beam.
+  const atmo = buildAtmosphere(scene);
+
   // Crowd: 4 rows of low-poly silhouettes around the ring.
   // They're tagged userData.crowd so we can bounce them on KOs (wave animation).
   const crowd = buildCrowd(scene);
   scene.add(crowd);
 
-  return { posts, crowd };
+  // Camera-flash sprites sparkle in the crowd (a storm of them on KO).
+  const flashes = buildCrowdFlashes(scene);
+
+  return {
+    posts, crowd, atmo, flashes,
+    lights: { hemi, key, rim, fill, spot, cornerA, cornerB },
+  };
+}
+
+// ── Atmosphere: light shaft + dust ────────────────────────────────────────
+// The cone is a cheap "volumetric" — an open cylinder with a vertical
+// alpha-gradient, additive-blended so it reads as light in smoky air.
+function buildAtmosphere(scene) {
+  const c = document.createElement('canvas');
+  c.width = 1; c.height = 64;
+  const g = c.getContext('2d');
+  const grad = g.createLinearGradient(0, 0, 0, 64);
+  grad.addColorStop(0, 'rgba(255,244,224,0.55)');
+  grad.addColorStop(1, 'rgba(255,244,224,0)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 1, 64);
+  const tex = new THREE.CanvasTexture(c);
+
+  const cone = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.35, 4.2, 10, 24, 1, true),
+    new THREE.MeshBasicMaterial({
+      map: tex, transparent: true, opacity: 0.09,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+      side: THREE.DoubleSide, fog: false,
+    })
+  );
+  cone.position.y = 5.6;
+  cone.renderOrder = 2;
+  scene.add(cone);
+
+  const COUNT = 50;
+  const pos = new Float32Array(COUNT * 3);
+  const dustSeed = [];
+  for (let i = 0; i < COUNT; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const r = Math.random() * 2.0;
+    pos[i * 3] = Math.cos(a) * r;
+    pos[i * 3 + 1] = 0.5 + Math.random() * 8.5;
+    pos[i * 3 + 2] = Math.sin(a) * r;
+    dustSeed.push({ vy: 0.1 + Math.random() * 0.2, phase: Math.random() * Math.PI * 2 });
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const dust = new THREE.Points(geo, new THREE.PointsMaterial({
+    color: 0xfff4e0, size: 0.05, transparent: true, opacity: 0.35,
+    blending: THREE.AdditiveBlending, depthWrite: false,
+    sizeAttenuation: true, fog: false,
+  }));
+  scene.add(dust);
+  return { cone, dust, dustSeed };
+}
+
+// Pool of billboard sprites reused as crowd camera flashes. Kept in their
+// own group (same coordinate space — the crowd group has no transform) so
+// animateCrowd's child loop never touches them.
+function buildCrowdFlashes(scene) {
+  const group = new THREE.Group();
+  const pool = [];
+  for (let i = 0; i < 20; i++) {
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({
+      color: 0xffffff, transparent: true, opacity: 0,
+      depthWrite: false, fog: false,
+    }));
+    s.scale.setScalar(0.14);
+    s.visible = false;
+    group.add(s);
+    pool.push({ sprite: s, life: 0 });
+  }
+  scene.add(group);
+  return pool;
+}
+
+// Per-frame atmosphere update: dust drifts down the beam and wraps; crowd
+// flashes fire occasionally at rest and in a storm while `excited` > 0.
+export function updateAtmosphere(arena, dt, t, excited) {
+  const { atmo, flashes, crowd } = arena;
+  if (atmo) {
+    const attr = atmo.dust.geometry.attributes.position;
+    const arr = attr.array;
+    for (let i = 0; i < atmo.dustSeed.length; i++) {
+      const s = atmo.dustSeed[i];
+      arr[i * 3 + 1] -= s.vy * dt;
+      if (arr[i * 3 + 1] < 0.3) arr[i * 3 + 1] = 9.0;
+      arr[i * 3] += Math.sin(t * 0.6 + s.phase) * 0.05 * dt;
+      arr[i * 3 + 2] += Math.cos(t * 0.5 + s.phase) * 0.05 * dt;
+    }
+    attr.needsUpdate = true;
+  }
+  if (flashes && crowd) {
+    const rate = 1.2 + excited * 22; // expected flashes per second
+    if (Math.random() < rate * dt) {
+      const free = flashes.find((f) => f.life <= 0);
+      const members = crowd.children;
+      if (free && members.length) {
+        const m = members[(Math.random() * members.length) | 0];
+        free.sprite.position.set(
+          m.position.x + (Math.random() - 0.5) * 0.3,
+          m.position.y + 1.0 + Math.random() * 0.25,
+          m.position.z + (Math.random() - 0.5) * 0.3
+        );
+        free.life = 0.09;
+        free.sprite.visible = true;
+      }
+    }
+    for (const f of flashes) {
+      if (f.life > 0) {
+        f.life -= dt;
+        f.sprite.material.opacity = Math.max(0, f.life / 0.09);
+        if (f.life <= 0) f.sprite.visible = false;
+      }
+    }
+  }
 }
 
 function buildCrowd(scene) {

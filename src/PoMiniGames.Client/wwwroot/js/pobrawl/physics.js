@@ -31,6 +31,8 @@ import * as CANNON from 'cannon-es';
 export const G_ROOT = 1 << 0;
 export const G_HURT = 1 << 1;
 export const G_STRIKER = 1 << 2;
+export const G_RAGDOLL = 1 << 3;  // KO rigid-body ragdoll parts
+export const G_ARENA = 1 << 4;    // static ring colliders (posts, rope walls)
 export const M_ALL = G_ROOT | G_HURT | G_STRIKER;
 
 const GRAVITY = 20;
@@ -39,25 +41,44 @@ const MAX_SUBSTEPS = 8;
 
 let _materials = null;
 
+// Material instances are module-cached, but ContactMaterials must be
+// registered on EVERY world (a rematch builds a fresh world — the old code
+// only registered them for the first world ever created).
 function ensureMaterials(world) {
-  if (_materials) return _materials;
-  const root = new CANNON.Material('root');
-  const hurt = new CANNON.Material('hurt');
-  const striker = new CANNON.Material('striker');
-  world.addContactMaterial(new CANNON.ContactMaterial(root, root, {
+  if (!_materials) {
+    _materials = {
+      root: new CANNON.Material('root'),
+      hurt: new CANNON.Material('hurt'),
+      striker: new CANNON.Material('striker'),
+      ragdoll: new CANNON.Material('ragdoll'),
+      arena: new CANNON.Material('arena'),
+    };
+  }
+  const m = _materials;
+  world.addContactMaterial(new CANNON.ContactMaterial(m.root, m.root, {
     friction: 0, restitution: 0,
   }));
-  world.addContactMaterial(new CANNON.ContactMaterial(hurt, hurt, {
+  world.addContactMaterial(new CANNON.ContactMaterial(m.hurt, m.hurt, {
     friction: 0, restitution: 0.4,
   }));
-  world.addContactMaterial(new CANNON.ContactMaterial(striker, hurt, {
+  world.addContactMaterial(new CANNON.ContactMaterial(m.striker, m.hurt, {
     friction: 0.05, restitution: 0.2,
   }));
-  world.addContactMaterial(new CANNON.ContactMaterial(striker, root, {
+  world.addContactMaterial(new CANNON.ContactMaterial(m.striker, m.root, {
     friction: 0.05, restitution: 0.2,
   }));
-  _materials = { root, hurt, striker };
-  return _materials;
+  // KO ragdoll response: slight bounce off the canvas, high limb-on-limb
+  // friction so the pile settles, springy rope walls.
+  world.addContactMaterial(new CANNON.ContactMaterial(m.ragdoll, m.root, {
+    friction: 0.5, restitution: 0.25,
+  }));
+  world.addContactMaterial(new CANNON.ContactMaterial(m.ragdoll, m.ragdoll, {
+    friction: 0.4, restitution: 0.05,
+  }));
+  world.addContactMaterial(new CANNON.ContactMaterial(m.ragdoll, m.arena, {
+    friction: 0.3, restitution: 0.45,
+  }));
+  return m;
 }
 
 // Build the shared physics world. One world per match.
@@ -102,10 +123,50 @@ export function createRootBody(world, mats, initialPos) {
     type: CANNON.Body.KINEMATIC,
   });
   body.collisionFilterGroup = G_ROOT;
-  body.collisionFilterMask = G_ROOT;
+  // Mask includes ragdolls: the standing winner shoves the KO'd body aside
+  // (kinematic vs dynamic — only the ragdoll moves).
+  body.collisionFilterMask = G_ROOT | G_RAGDOLL;
   body.userData = { kind: 'rigRoot' };
   world.addBody(body);
   return body;
+}
+
+// ── Static ring colliders ─────────────────────────────────────────────
+// Posts + rope walls the KO ragdoll can crumple against and bounce off.
+// They only interact with G_RAGDOLL, so live-fight bodies never see them.
+export function buildArenaColliders(world, mats) {
+  const HALF = 5.8;
+  const bodies = [];
+  const add = (body) => {
+    body.collisionFilterGroup = G_ARENA;
+    body.collisionFilterMask = G_RAGDOLL;
+    body.userData = { kind: 'arena' };
+    world.addBody(body);
+    bodies.push(body);
+  };
+  // Corner posts.
+  for (const x of [-HALF, HALF]) {
+    for (const z of [-HALF, HALF]) {
+      add(new CANNON.Body({
+        mass: 0, material: mats.arena,
+        shape: new CANNON.Cylinder(0.1, 0.1, 1.5, 8),
+        position: new CANNON.Vec3(x, 0.79, z),
+      }));
+    }
+  }
+  // Rope walls: one thin springy box per side spanning the rope band
+  // (y 0.45..1.35) so a launched body rebounds into the ring.
+  for (const side of [0, 1]) {
+    for (const sign of [-1, 1]) {
+      add(new CANNON.Body({
+        mass: 0, material: mats.arena,
+        shape: new CANNON.Box(new CANNON.Vec3(
+          side ? 0.04 : HALF, 0.45, side ? HALF : 0.04)),
+        position: new CANNON.Vec3(side ? sign * HALF : 0, 0.9, side ? 0 : sign * HALF),
+      }));
+    }
+  }
+  return bodies;
 }
 
 // ── Hurt limb sphere ──────────────────────────────────────────────────

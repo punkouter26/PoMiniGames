@@ -50,7 +50,7 @@ if ($TierProject) {
 
 # Route extraction: find every quoted string that looks like a URL or a known
 # pattern (/api/*, /health, /auth/*) and bucket the test by that surface.
-$routePattern = [regex]'/(api|auth|health|openapi|scalar|diag|couplequiz|funquiz|poface|pojoker|porunner|poracer|posurvive|poclick|games|leaderboard|matchhistory|play)/[A-Za-z0-9_\-/{}\.:%?=]*'
+$routePattern = [regex]'/(api|auth|health|openapi|scalar|diag|couplequiz|funquiz|poface|pojoker|poracer|posurvive|poclick|games|leaderboard|matchhistory|play)/[A-Za-z0-9_\-/{}\.:%?=]*'
 
 function Get-RoutesFromFile {
     param([string]$Path)

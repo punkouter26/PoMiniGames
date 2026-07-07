@@ -145,7 +145,6 @@ public class GameStatsService
         {
             "connectfive" => "Connect Five",
             "tictactoe" => "Tic Tac Toe",
-            "porunner" => "PoRunner",
             "poracer" => "PoRacer",
             "pomarblerace" => "PoMarbleRace",
             _ => lastGameKey

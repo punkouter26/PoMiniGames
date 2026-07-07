@@ -2,7 +2,7 @@ $h = @{
     "X-Fake-User"  = "qa-demo"
     "X-Fake-Roles" = "authenticated"
 }
-foreach ($g in "poclick","tictactoe","connectfive","couplequiz","face","porunner","poracer","pomarblerace","pojoker","pobrawl","posurvive") {
+foreach ($g in "poclick","tictactoe","connectfive","couplequiz","face","poracer","pomarblerace","pojoker","pobrawl","posurvive") {
     $e = "/api/leaderboards/$g"
     $code = 'N/A'
     try {

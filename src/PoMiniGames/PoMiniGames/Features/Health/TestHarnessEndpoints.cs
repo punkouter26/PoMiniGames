@@ -16,7 +16,7 @@ public static class TestHarnessEndpoints
         if (!env.IsDevelopment())
             return app;
 
-        // §1 MapGroup() per slice: all four /test/* routes share the same prefix,
+        // §1 MapGroup() per slice: all /test/* routes share the same prefix,
         // OpenAPI tag ("Testing"), and the dev-only env guard applied here.
         var test = app.MapGroup("/test").WithTags("Testing");
 
@@ -38,24 +38,6 @@ public static class TestHarnessEndpoints
         })
         .WithName("GetOfflineModeInstructions")
         .WithSummary("Instructions for testing offline game functionality");
-
-        /// <summary>GET /test/keyboard-events → Test keyboard input capture</summary>
-        test.MapGet("/keyboard-events", () =>
-        {
-            return Results.Ok(new
-            {
-                message = "Keyboard event test harness",
-                instructions = new[]
-                {
-                    "Navigate to /porunner?mode=debug",
-                    "Browser console will log all key presses",
-                    "Expected keys: T, Y, G, H (sprint controls)",
-                    "Check for keyboard event bubbling issues"
-                }
-            });
-        })
-        .WithName("GetKeyboardEventTest")
-        .WithSummary("Debug keyboard input capture for games");
 
         /// <summary>GET /test/render-diagnostics → Canvas/WebGL render pipeline debug</summary>
         test.MapGet("/render-diagnostics", () =>

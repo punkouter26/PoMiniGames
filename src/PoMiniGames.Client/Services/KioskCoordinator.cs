@@ -65,7 +65,6 @@ public sealed class KioskCoordinator : IDisposable
         ["poraceragdoll"] = 14,
         ["pofight"] = 16,
         ["pohorserace"] = 16,
-        ["porunner"] = 18,
         ["poracer"] = 18,
         ["pomarblerace"] = 22,
         ["pojoker"] = 24,

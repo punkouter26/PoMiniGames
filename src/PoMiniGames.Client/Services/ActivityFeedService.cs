@@ -77,7 +77,6 @@ public sealed class ActivityFeedService
     {
         "tictactoe" => "Tic Tac Toe",
         "connectfive" => "Connect Five",
-        "porunner" => "PoRunner",
         "poracer" => "PoRacer",
         "pocouplequiz" => "PoCoupleQuiz",
         "pofunquiz" => "PoFunQuiz",
@@ -88,7 +87,6 @@ public sealed class ActivityFeedService
     {
         "tictactoe" => "/tictactoe",
         "connectfive" => "/connectfive",
-        "porunner" => "/porunner?mode=1p",
         "poracer" => "/poracer",
         "pocouplequiz" => "/couplequiz",
         "pofunquiz" => "/funquiz",

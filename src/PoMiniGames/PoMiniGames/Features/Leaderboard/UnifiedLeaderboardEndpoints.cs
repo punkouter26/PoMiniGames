@@ -20,7 +20,6 @@ public static class UnifiedLeaderboardEndpoints
         ("connectfive", "Connect Five"),
         ("tictactoe", "Tic Tac Toe"),
         ("poclick", "PoClick"),
-        ("porunner", "PoRunner"),
         ("poracer", "PoRacer"),
         ("posurvive", "PoSurvive"),
         ("poface", "PoFace"),

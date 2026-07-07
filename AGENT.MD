@@ -56,7 +56,7 @@ the shared Infrastructure project unless the data is genuinely cross-slice.
     them by exact path. New slices MUST follow this pattern — register routes via a
     group, not via scattered `app.MapGet/MapPost` calls.
 - `src/PoMiniGames.Client` — Blazor WASM client. **`wwwroot` lives only here.**
-  - `Games/` — **10 client-only mini-games** with no server slice (no Features/ counterpart, no telemetry, no leaderboard back-end). Pure local-first: `BabyTouch`, `ConnectFive`, `DropSquare`, `Fight`, `HorseRace`, `PoMarbleRace`, `PoRacer` (UI only — scores post to `/api/leaderboard`), `PoRunner`, `SnakeGame`, `TicTacToe`. Keep them in the client project; do **not** mirror them under `src/PoMiniGames/PoMiniGames/Features/`.
+  - `Games/` — **9 client-only mini-games** with no server slice (no Features/ counterpart, no telemetry, no leaderboard back-end). Pure local-first: `BabyTouch`, `ConnectFive`, `DropSquare`, `Fight`, `HorseRace`, `PoMarbleRace`, `PoRacer` (UI only — scores post to `/api/leaderboard`), `SnakeGame`, `TicTacToe`. Keep them in the client project; do **not** mirror them under `src/PoMiniGames/PoMiniGames/Features/`.
 - `src/PoMiniGames.Application` — application services, DTOs, diagnostics contracts.
 - `src/PoMiniGames.Domain` — domain models / services.
 - `src/PoMiniGames.Infrastructure` — shared platform persistence + health checks (Azure Table Storage). AI resilience helpers live exclusively under `PoMiniGames.AI` (see host project) — the migration window with two AI namespaces is closed.

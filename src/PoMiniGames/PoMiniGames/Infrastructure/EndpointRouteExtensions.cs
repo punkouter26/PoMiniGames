@@ -9,7 +9,6 @@ using PoMiniGames.Features.PoFace;
 using PoMiniGames.Features.PoFunQuiz;
 using PoMiniGames.Features.PoJoker;
 using PoMiniGames.Features.PoRacer;
-using PoMiniGames.Features.PoRunner;
 using PoMiniGames.Features.PoSurvive;
 
 namespace PoMiniGames.Infrastructure;
@@ -61,7 +60,6 @@ internal static class EndpointRouteExtensions
         // ── SignalR hubs (auth required; not part of MapGroup) ────────────
         app.MapHub<CoupleQuizHub>("/couplequiz/hubs/game").RequireAuthorization();
         app.MapHub<FunQuizHub>("/funquiz/gamehub").RequireAuthorization();
-        app.MapHub<GameHub>("/porunner/gamehub").RequireAuthorization();
         app.MapHub<PoRacerLobbyHub>("/poracer/lobby-hub").RequireAuthorization();
 
         return app;

@@ -505,58 +505,6 @@
    style-matching. Shared badges (.cf-status--*, .cf-result--*) remain global
    above — they're a cross-game vocabulary. */
 
-/* ── PoRunner Styles ── */
-.porunner-wrapper {
-  width: 100%;
-  max-width: 800px;
-  margin: 0 auto;
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.pr-canvas {
-  width: 100%;
-  height: auto;
-  aspect-ratio: 8 / 6;
-  background: linear-gradient(135deg, rgba(0, 0, 0, 0.8), rgba(20, 20, 30, 0.8));
-  border: 2px solid var(--color-border);
-  border-radius: 8px;
-}
-.pr-canvas--pixelated { image-rendering: pixelated; }
-  display: block;
-}
-
-.porunner-stats {
-  display: flex;
-  justify-content: space-around;
-  gap: 1rem;
-  padding: 0.75rem;
-  background: var(--color-surface);
-  border-radius: 8px;
-  border: 1px solid var(--color-border);
-  font-size: 0.9rem;
-}
-
-.porunner-stat {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.25rem;
-}
-
-.porunner-stat-value {
-  font-weight: 700;
-  color: var(--color-accent);
-  font-size: 1.2rem;
-}
-
-.porunner-stat-label {
-  font-size: 0.75rem;
-  color: var(--color-text-secondary);
-  text-transform: uppercase;
-}
-
 /* ── Drop Square Styles ── */
 .drop-square-wrapper {
   width: 100%;

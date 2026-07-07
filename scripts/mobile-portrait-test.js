@@ -7,7 +7,6 @@ const DEMOS = [
   { name: 'connectfive',   url: 'http://localhost:5000/connectfive/1' },
   { name: 'couplequiz',    url: 'http://localhost:5000/couplequiz?demo=1' },
   { name: 'poface',        url: 'http://localhost:5000/face/demo' },
-  { name: 'porunner',      url: 'http://localhost:5000/porunner/demo' },
   { name: 'poracer',       url: 'http://localhost:5000/poracer/demo' },
   { name: 'pomarblerace',  url: 'http://localhost:5000/pomarblerace?demo=1' },
   { name: 'pojoker',       url: 'http://localhost:5000/pojoker' },

@@ -1,4 +1,3 @@
-using PoMiniGames.Features.PoRunner;   // GameOptions + SignalR session types (registered below)
 using PoMiniGames.Features.PoSurvive;  // AddPoSurvive
 using PoMiniGames.Features.Auth;       // Source-generated AuthLog + MicrosoftAuthOptionsBinder
 using PoMiniGames.Application.Diagnostics;
@@ -55,7 +54,7 @@ builder.Services.AddPoMiniGamesStorage(builder.Configuration)
     .AddPoSurvive(builder.Configuration);
 builder.Services.AddSingleton<IDiagnosticsSnapshotProvider, ConfigurationDiagnosticsSnapshotProvider>();
 
-// ─── PoRunner SignalR ────────────────────────────────────────────────
+// ─── SignalR (shared by all multiplayer hubs) ────────────────────────
 builder.Services.AddSignalR(options =>
 {
     options.EnableDetailedErrors = true;
@@ -79,11 +78,6 @@ builder.Services.AddSignalR(options =>
         new System.Text.Json.Serialization.JsonStringEnumConverter(
             System.Text.Json.JsonNamingPolicy.CamelCase));
 });
-builder.Services.Configure<GameOptions>(
-    builder.Configuration.GetSection(GameOptions.SectionName));
-builder.Services.AddSingleton<IGameBroadcaster, SignalRGameBroadcaster>();
-builder.Services.AddSingleton<IGameSessionManager, GameSessionManager>();
-builder.Services.AddHostedService(provider => (GameSessionManager)provider.GetRequiredService<IGameSessionManager>());
 
 // ─── Swagger / OpenAPI ───────────────────────────────────────────────
 builder.Services.AddProblemDetails();

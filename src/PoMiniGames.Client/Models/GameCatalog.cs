@@ -16,7 +16,6 @@ public static class GameCatalog
         new(GameKeys.PoClick, "PoClick", "🥁", "/poclick"),
         new(GameKeys.ConnectFive, "Connect Five", "🔴", "/connectfive"),
         new(GameKeys.TicTacToe, "Tic Tac Toe", "❌", "/tictactoe"),
-        new(GameKeys.PoRunner, "PoRunner", "⚡", "/porunner?mode=1p"),
         new(GameKeys.PoRacer, "PoRacer", "🏎️", "/poracer"),
         new(GameKeys.PoMarbleRace, "PoMarbleRace", "🔮", "/pomarblerace"),
         new(GameKeys.PoSurvive, "PoSurvive", "🛡️", "/posurvive"),
@@ -30,14 +29,12 @@ public static class GameCatalog
     [
         new(GameKeys.ConnectFive, "Connect Five", "🔴", "/connectfive?mode=2p"),
         new(GameKeys.TicTacToe, "Tic Tac Toe", "❌", "/tictactoe?mode=2p"),
-        new(GameKeys.PoRunner, "PoRunner", "⚡", "/porunner?mode=2p"),
         new(GameKeys.PoFunQuiz, "PoFunQuiz", "🧠", "/funquiz"),
         new(GameKeys.PoBrawl, "PoBrawl", "🥊", "/pobrawl?mode=2p"),
     ];
 
     public static readonly IReadOnlyList<CatalogGame> Multiplayer =
     [
-        new(GameKeys.PoRunner, "PoRunner", "⚡", "/porunner/multi"),
         new(GameKeys.PoRacer, "PoRacer", "🏎️", "/poracer/lobby"),
         new(GameKeys.PoCoupleQuiz, "PoCoupleQuiz", "💕", "/couplequiz/lobby"),
         new(GameKeys.PoFunQuiz, "PoFunQuiz", "🧠", "/funquiz/multiplayer"),
@@ -49,7 +46,6 @@ public static class GameCatalog
         new(GameKeys.TicTacToe, "Tic Tac Toe", "❌", "/tictactoe/1"),
         new(GameKeys.ConnectFive, "Connect Five", "🔴", "/connectfive/1"),
         new(GameKeys.PoFace, "PoFace", "🙂", "/face/demo"),
-        new(GameKeys.PoRunner, "PoRunner", "⚡", "/porunner/demo"),
         new(GameKeys.PoRacer, "PoRacer", "🏎️", "/poracer/demo"),
         new(GameKeys.PoMarbleRace, "PoMarbleRace", "🔮", "/pomarblerace?demo=1"),
         new(GameKeys.PoJoker, "PoJoker", "🃏", "/pojoker"),

@@ -14,7 +14,6 @@
 <GameShell Title=@TitleContent
            Player="@_playerName"
            BackTo="/"
-           ShowSettings="true"
            Stats="@_statItems"
            GameOver="@(_phase == "result" && !_demo)"
            ShowNextMatch="@(_mode == "1p" && _winner == 1)"
@@ -22,8 +21,7 @@
            NextMatchLabel="@(_champion ? "🏆 NEW LADDER" : "➡️ NEXT MATCH")"
            PlayAgainLabel="@(_mode == "1p" && _winner != 1 ? "🔄 REMATCH" : "🔄 Play Again")"
            OnPlayAgain="BackToSelect"
-           GameSummary="@GameSummaryContent"
-           Controls="@ControlsContent">
+           GameSummary="@GameSummaryContent">
     <div class="pb-wrap">
         <div id="pobrawl-container" class="pb-canvas-host"></div>
 
@@ -202,10 +200,10 @@
 
     private RenderFragment TitleContent => @<span>🥊 PoBrawl</span>;
 
-    private RenderFragment ControlsContent => @<div class="gps-controls">
-        <button @onclick="ToggleMute">@(_muted ? "🔇 Unmute" : "🔊 Mute")</button>
-        <button @onclick="BackToSelect">🔄 Character select</button>
-    </div>;
+    // The legacy in-canvas Controls fragment was unreachable (the Settings
+    // drawer was removed 2026-07-06) and is intentionally gone. Mute toggle +
+    // character select are reachable via Play Again ("REMATCH") / Next Match
+    // on the unified end-of-game modal; mute is a JS `keydown` on `M`.
 
     private RenderFragment GameSummaryContent => @<div>
         <div>@ResultLine()</div>

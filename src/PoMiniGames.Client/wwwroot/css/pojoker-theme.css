@@ -11,21 +11,26 @@
     --bg-secondary: #16213e;
     --card-bg: #1f1f38;
 
-    /* Accents */
+    /* Accents — wired through the universal token bag (`--accent-gold` and
+       `--accent-jester` defined in app.css so every reference still resolves
+       from one palette if the brand colour changes). */
+    --accent: var(--accent-gold);             /* retint PoJoker CTAs */
     --color-accent-gold: #b8956a;
     --gold-accent: #d4af37;
-    --jester-purple: #4a0080;
+    --jester-purple: var(--accent-jester);
 
     /* Text */
     --text-primary: #e8e8e8;
     --text-secondary: #b8b8b8;
 
     /* Status */
-    --success-color: #2e7d32;
-    --error-color: #c62828;
+    --success-color: var(--accent-success);
+    --error-color: var(--accent-danger);
 
-    /* Typography */
-    --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Helvetica Neue', sans-serif;
+    /* Typography — uses the global token so the universal chrome and PoJoker
+       share the same body font. Brand-specific personality comes from the
+       gradients / serif titles PoJokerPage already applies. */
+    --font-body: var(--font-body);
 
     display: block;
     min-height: 100%;

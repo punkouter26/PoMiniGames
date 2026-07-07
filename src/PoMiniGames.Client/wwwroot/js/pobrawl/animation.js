@@ -109,6 +109,84 @@ const TRACKS = {
   ],
 };
 
+// ── Entrance tracks ───────────────────────────────────────────────────
+// Played once per fighter during the 3.7 s countdown so each president
+// has a personality at the bell. Each entrance is ~1.5 s, looping
+// internally across the countdown. Foes face the camera-front during
+// their pose (animator.look is forced toward the audience for 1.5 s by
+// the engine after _spawnFighters).
+const ENTRANCES = {
+  // Trump: chin-up swagger — head high, shoulders back, fists on hips.
+  swagger: [
+    [{ torso: { x: -0.04, y: 0.1, z: 0 }, head: { x: -0.18, y: 0, z: 0 },
+       shoulderL: { x: -0.4, y: 0, z: 0.55 }, shoulderR: { x: -0.45, y: 0, z: -0.55 },
+       elbowL: { x: -1.6, y: 0, z: 0 }, elbowR: { x: -1.6, y: 0, z: 0 },
+       hipL: { x: -0.05, y: 0, z: 0 }, hipR: { x: -0.05, y: 0, z: 0 } }, 0.6, { k: 8 }],
+    [{ torso: { x: -0.02, y: 0.15, z: 0 }, head: { x: -0.22, y: 0, z: 0 },
+       shoulderL: { x: -0.3, y: 0, z: 0.45 }, shoulderR: { x: -0.35, y: 0, z: -0.45 },
+       elbowL: { x: -1.7, y: 0, z: 0 }, elbowR: { x: -1.7, y: 0, z: 0 } }, 0.6, { k: 6 }],
+    [GUARD, 0.3, { k: 6 }],
+  ],
+  // Biden: aviator-adjust — hand to brow, two quick taps.
+  aviator: [
+    [{ torso: { x: 0.08, y: 0, z: 0 }, head: { x: -0.08, y: -0.05, z: 0 },
+       shoulderR: { x: -1.3, y: 0, z: -0.4 }, elbowR: { x: -2.0, y: 0, z: 0 },
+       shoulderL: { x: -0.7, y: 0, z: 0.1 }, elbowL: { x: -1.4, y: 0, z: 0 } }, 0.35, { k: 14 }],
+    [{ torso: { x: 0.06, y: 0, z: 0 }, head: { x: -0.06, y: -0.05, z: 0 },
+       shoulderR: { x: -1.4, y: 0, z: -0.5 }, elbowR: { x: -2.1, y: 0, z: 0 },
+       shoulderL: { x: -0.7, y: 0, z: 0.1 }, elbowL: { x: -1.4, y: 0, z: 0 } }, 0.35, { k: 18 }],
+    [{ shoulderR: { x: -0.7, y: 0, z: -0.15 }, elbowR: { x: -1.4, y: 0, z: 0 } }, 0.4, { k: 12 }],
+    [GUARD, 0.4, { k: 6 }],
+  ],
+  // Obama: fist-bump — left arm cocked forward, head nod.
+  fistbump: [
+    [{ torso: { x: 0.0, y: 0.25, z: 0 }, head: { x: 0.06, y: 0.15, z: 0 },
+       shoulderL: { x: -1.2, y: 0, z: 0.3 }, elbowL: { x: -2.4, y: 0, z: 0 } }, 0.4, { k: 12 }],
+    [{ torso: { x: 0.0, y: -0.15, z: 0 }, head: { x: -0.1, y: -0.05, z: 0 },
+       shoulderL: { x: -0.9, y: 0, z: 0.35 }, elbowL: { x: -1.4, y: 0, z: 0 },
+       shoulderR: { x: -0.65, y: 0, z: -0.2 }, elbowR: { x: -1.2, y: 0, z: 0 } }, 0.35, { k: 16 }],
+    [{ torso: { x: 0.06, y: 0.18, z: 0 }, head: { x: 0.08, y: 0.12, z: 0 },
+       shoulderL: { x: -1.2, y: 0, z: 0.3 }, elbowL: { x: -2.4, y: 0, z: 0 } }, 0.4, { k: 14 }],
+    [GUARD, 0.35, { k: 8 }],
+  ],
+  // Bush: cowboy wave — wide arm swing side-to-side.
+  cowboy: [
+    [{ torso: { x: 0.05, y: -0.1, z: 0 }, head: { x: -0.1, y: 0, z: 0 },
+       shoulderR: { x: -0.3, y: 0, z: -1.7 }, elbowR: { x: -2.0, y: 0, z: 0 } }, 0.4, { k: 14 }],
+    [{ torso: { x: 0.05, y: -0.1, z: 0 }, head: { x: -0.1, y: 0, z: 0 },
+       shoulderR: { x: -0.3, y: 0, z: -1.0 }, elbowR: { x: -2.0, y: 0, z: 0 } }, 0.3, { k: 14 }],
+    [{ torso: { x: 0.05, y: -0.1, z: 0 }, head: { x: -0.1, y: 0, z: 0 },
+       shoulderR: { x: -0.3, y: 0, z: -1.7 }, elbowR: { x: -2.0, y: 0, z: 0 } }, 0.3, { k: 14 }],
+    [GUARD, 0.5, { k: 8 }],
+  ],
+  // Clinton: thumbs-up — single arm raise.
+  thumbsup: [
+    [{ torso: { x: 0.04, y: 0, z: 0 }, head: { x: -0.04, y: 0.1, z: 0 },
+       shoulderR: { x: -2.5, y: 0, z: -0.05 }, elbowR: { x: -0.8, y: 0, z: 0 },
+       shoulderL: { x: -0.65, y: 0, z: 0.1 }, elbowL: { x: -1.3, y: 0, z: 0 } }, 0.45, { k: 10 }],
+    [{ torso: { x: 0.04, y: 0, z: 0 }, head: { x: -0.02, y: 0.1, z: 0 },
+       shoulderR: { x: -2.6, y: 0, z: -0.05 }, elbowR: { x: -0.85, y: 0, z: 0 } }, 0.4, { k: 8 }],
+    [GUARD, 0.5, { k: 6 }],
+  ],
+  // Generic salute — used by every other president.
+  salute: [
+    [{ torso: { x: 0.04, y: 0.05, z: 0 }, head: { x: -0.05, y: 0, z: 0 },
+       shoulderR: { x: -1.6, y: 0, z: -0.35 }, elbowR: { x: -2.4, y: 0, z: 0 } }, 0.5, { k: 12 }],
+    [{ shoulderR: { x: -1.5, y: 0, z: -0.3 }, elbowR: { x: -2.4, y: 0, z: 0 } }, 0.5, { k: 8 }],
+    [GUARD, 0.5, { k: 6 }],
+  ],
+  // BOB: fists-up — square up ready stance.
+  ready: [
+    [{ torso: { x: 0.08, y: 0.1, z: 0 }, head: { x: -0.06, y: 0, z: 0 },
+       shoulderL: { x: -1.1, y: 0, z: 0.35 }, shoulderR: { x: -1.15, y: 0, z: -0.35 },
+       elbowL: { x: -1.85, y: 0, z: 0 }, elbowR: { x: -1.9, y: 0, z: 0 } }, 0.6, { k: 10 }],
+    [{ torso: { x: 0.1, y: 0.1, z: 0 }, shoulderL: { x: -1.15, y: 0, z: 0.35 }, shoulderR: { x: -1.2, y: 0, z: -0.35 } }, 0.5, { k: 8 }],
+    [GUARD, 0.4, { k: 6 }],
+  ],
+};
+
+export { ENTRANCES };
+
 function lerpAngle(cur, target, k) {
   return cur + (target - cur) * k;
 }
@@ -165,7 +243,10 @@ export class Animator {
   }
 
   play(name) {
-    this.track = TRACKS[name] || null;
+    // Accept either a combat TRACK (punch/kick/hitstun/ko) or an entrance
+    // track. Falling back to null is intentional — idle poses are handled
+    // by the base stance, not a track.
+    this.track = TRACKS[name] || ENTRANCES[name] || null;
     this.trackT = 0;
   }
 

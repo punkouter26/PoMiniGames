@@ -12,17 +12,15 @@
 @inject KioskCoordinator Kiosk;
 @inject UiFeedbackService Feedback;
 
-<GameShell 
-    Title=@TitleContent 
+<GameShell
+    Title=@TitleContent
     Player="@_playerName"
     BackTo="@_backTo"
     GameOver="@_isGameOver"
     OnPlayAgain="ResetGame"
-    ShowSettings="@(PlayMode == "2p")"
     Stats="@(PlayMode == "ai" ? _statItems : null)"
     Status="@StatusContent"
-    GameSummary="@GameSummaryContent"
-    Controls="@ControlsContent">
+    GameSummary="@GameSummaryContent">
     
     <div class="cf-layout">
         @* §3 Hover-ghost: pointerleave on the board clears the column preview so
@@ -184,26 +182,29 @@
 
     private RenderFragment TitleContent => @<span>🔴 Connect Five</span>;
 
-    private RenderFragment StatusContent => PlayMode == "demo" ? @<span class="cf-status cf-status--demo">🎮 Demo mode</span>
+    // Unified gps-status-badge.* vocabulary — every game identifies its turn /
+    // result in the same way. The legacy `.cf-status--*` aliases still forward
+    // to the same palette so muscle memory doesn't break.
+    private RenderFragment StatusContent => PlayMode == "demo" ? @<span class="gps-status-badge demo">🎮 Demo mode</span>
         : PlayMode == "2p"
             ? (_gameResult == GameResult.InProgress
                 ? (_current2pPlayer == Player.Red
-                    ? @<span class="cf-status cf-status--player">🔴 @P1Name's turn</span>
-                    : @<span class="cf-status cf-status--ai">🟡 @_player2Name's turn</span>)
+                    ? @<span class="gps-status-badge player">🔴 @P1Name's turn</span>
+                    : @<span class="gps-status-badge ai">🟡 @_player2Name's turn</span>)
                 : _gameResult == GameResult.Win
-                    ? @<span class="cf-status cf-status--win">🎉 @P1Name wins!</span>
+                    ? @<span class="gps-status-badge win">🎉 @P1Name wins!</span>
                     : _gameResult == GameResult.Loss
-                        ? @<span class="cf-status cf-status--win">🎉 @_player2Name wins!</span>
-                        : @<span class="cf-status cf-status--draw">🤝 Draw!</span>)
+                        ? @<span class="gps-status-badge win">🎉 @_player2Name wins!</span>
+                        : @<span class="gps-status-badge draw">🤝 Draw!</span>)
             : _gameResult == GameResult.InProgress
                 ? (_isAiTurn
-                    ? @<span class="cf-status cf-status--ai">🤖 CPU @_cpuElo thinking…</span>
-                    : @<span class="cf-status cf-status--player">🔴 Your turn · vs CPU @_cpuElo</span>)
+                    ? @<span class="gps-status-badge thinking">🤖 CPU @_cpuElo thinking…</span>
+                    : @<span class="gps-status-badge player">🔴 Your turn · vs CPU @_cpuElo</span>)
                 : _gameResult == GameResult.Win
-                    ? @<span class="cf-status cf-status--win">🎉 You win!</span>
+                    ? @<span class="gps-status-badge win">🎉 You win!</span>
                     : _gameResult == GameResult.Loss
-                        ? @<span class="cf-status cf-status--loss">🤖 AI wins</span>
-                        : @<span class="cf-status cf-status--draw">🤝 Draw!</span>;
+                        ? @<span class="gps-status-badge loss">🤖 AI wins</span>
+                        : @<span class="gps-status-badge draw">🤝 Draw!</span>;
 
     private RenderFragment? GameSummaryContent => !_isGameOver ? null
         : PlayMode == "2p" ? TwoPlayerSummary : AiSummary;
@@ -241,18 +242,9 @@
         }
     </div>;
 
-    // 1-player is fixed to Medium and needs no settings, so the drawer keeps only
-    // New Game. 2-player still exposes the opponent's name; demo restarts the loop.
-    private RenderFragment ControlsContent => @<div class="gps-controls">
-        <button @onclick="ResetGame">
-            🔄 @(PlayMode == "demo" ? "Restart Demo" : "New Game")
-        </button>
-        @if (PlayMode == "2p")
-        {
-            <input class="gps-name-input" value="@_player2Name" @onchange="OnPlayer2NameChange"
-                   maxlength="24" placeholder="Player 2 name" aria-label="Player 2 name" />
-        }
-    </div>;
+    // 1-player & 2-player & demo all restart through the end-of-game modal's
+    // Play Again button — the legacy in-canvas Controls fragment was unreachable
+    // (the Settings drawer was removed 2026-07-06) and is intentionally gone.
 
     protected override void OnInitialized()
     {

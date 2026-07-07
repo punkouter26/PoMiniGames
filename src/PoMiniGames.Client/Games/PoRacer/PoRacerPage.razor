@@ -1,6 +1,7 @@
 @using System.Diagnostics
 @using PoMiniGamesClient.Games.PoRacer
 @using PoMiniGamesClient.Services
+@using PoMiniGamesClient.Components
 @using PoShared.Games
 @*
     PoRacer — Top-down arcade racing game (single-file Blazor WebAssembly).
@@ -9,26 +10,34 @@
     Integrated into PoMiniGames from the standalone PoRacerMiniMaxM3 project.
 
     Controls: WASD or Arrow keys. Space = handbrake (sharp drift).
+
+    2026-07-06: Migrated onto the universal `MainLayout` + `GameShell` chrome.
+    The page no longer uses `EmptyLayout` — the canvas pins to the viewport
+    via `.racer-canvas-wrap` (`position: absolute; inset: 0`) inside the
+    standard `<main>` block (it sets `--gps-chrome-h` so the canvas respects
+    the top-bar height). Brand / game-header / FPS / Sign in-out are now
+    identical to every other game.
 *@
 
 @page "/poracer"
 @page "/poracer/demo"
-@* PoRacer intentionally uses `EmptyLayout` (not the standard `MainLayout`)
-   and a custom settings drawer / start screen / end-of-race overlay instead
-   of `GameShell`. Migrating to `GameShell` would require a wholesale
-   rewrite of the canvas, touch controls, and CRT overlay; the opt-out is
-   deliberate. See AGENT.MD for the architectural decision log. *@
-@layout PoMiniGamesClient.Layout.EmptyLayout
 @inject IJSRuntime JS
 @inject PoRacerScoreApiClient Scores
 @inject AuthStateService AuthState
 @inject NavigationManager Nav
 @inject GameStatsService GameStats
 @inject KioskCoordinator Kiosk
+@inject PlayerNameService PlayerNameService
 @implements IAsyncDisposable
 
 <PageTitle>PoRacer — Arcade Racing</PageTitle>
 
+<GameShell Title="@TitleContent"
+           Player="@_playerName"
+           BackTo="/"
+           Fullscreen="true"
+           Status="@StatusContent">
+<div class="racer-shell-wrap">
 <div class="racer-root @(_crtOn ? "crt-enabled" : "") po-page-transition" tabindex="0">
     <div class="racer-canvas-wrap">
         <canvas id="racerCanvas" class="racer-canvas racer-canvas--interactive"></canvas>
@@ -288,13 +297,23 @@
         </div>
     }
 </div>
+</div>
+</GameShell>
 
 <style>
     /* ===========================================================
        PoRacer component-level styles (HUD, overlays, buttons)
        =========================================================== */
+    /* New `.racer-shell-wrap` is the GameShell child; `.racer-root` pins to
+       it instead of the viewport, so the universal top bar from MainLayout
+       remains visible above the canvas. */
+    .racer-shell-wrap {
+        position: absolute;
+        inset: 0;
+        /* Leave room for the top bar via `--gps-chrome-h` if needed. */
+    }
     .racer-root {
-        position: fixed;
+        position: absolute;
         inset: 0;
         background: #05070d;
         outline: none;
@@ -884,6 +903,18 @@
     private bool _isDemo;
     private double _demoRestartAt;
 
+    // Universal chrome fragments — see GameShell.razor. Bound via the params
+    // on `<GameShell Title="@TitleContent" Status="@StatusContent">`.
+    private RenderFragment TitleContent => @<span>🏎️ PoRacer</span>;
+    private string _playerName = string.Empty;
+    private RenderFragment StatusContent => _isDemo
+        ? @<span class="gps-status-badge demo">🤖 Demo</span>
+        : Phase == GamePhase.Racing
+            ? @<span class="gps-status-badge player">Lap @Player.Lap / @TotalLaps</span>
+            : Phase == GamePhase.Finished
+                ? @<span class="gps-status-badge draw">🏁 Finished</span>
+                : @<span class="gps-status-badge turn">Top-down arcade racing</span>;
+
     [SupplyParameterFromQuery(Name = "kiosk")]
     public int KioskNext { get; set; } = -1;
     // BUG FIX (#1): _kioskTimer removed; KioskCoordinator owns the timer.
@@ -894,6 +925,7 @@
     protected override Task OnInitializedAsync()
     {
         _isDemo = Nav.Uri.Contains("/poracer/demo", StringComparison.OrdinalIgnoreCase);
+        _playerName = PlayerNameService.GetPlayerName();
         try
         {
             var stored = LocalStorageService.GetItem<string>("PoRacer.CrtShader");

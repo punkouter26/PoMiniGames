@@ -240,6 +240,20 @@ export class BrawlGame {
     this.flash.className = 'pb-flash';
     this.container.appendChild(this.flash);
 
+    // Inter-round splash. Created once; reused via _showSplash() so the
+    // browser doesn't pay the cost of mounting a new DOM node every match.
+    this.splash = document.createElement('div');
+    this.splash.className = 'pb-splash';
+    this.splash.innerHTML = `
+      <div class="pb-splash__inner">
+        <div class="pb-splash__round"></div>
+        <div class="pb-splash__versus">VS</div>
+        <div class="pb-splash__p1"></div>
+        <div class="pb-splash__p2"></div>
+      </div>`;
+    this.container.appendChild(this.splash);
+    this._splashHide = 0; // wall-clock at which the splash should fade out
+
     this._onResize = () => {
       const cw = this.container.clientWidth, ch = this.container.clientHeight;
       if (!cw || !ch) return;
@@ -425,6 +439,9 @@ export class BrawlGame {
         rig,
         animator: new Animator(rig.joints),
         controller: this._makeController(index),
+        // Personality entrance — played under the "3 / 2 / 1 / FIGHT!" banner
+        // during _startCountdown. Resolves to GUARD by the time FIGHT! fires.
+        entranceKey: (CHARACTERS[charId] && CHARACTERS[charId].entrance) || 'salute',
         state: 'idle',
         stateT: 0,
         attack: null,
@@ -478,6 +495,14 @@ export class BrawlGame {
     this.timeScale = 1;
     this.cameraMode = 'normal';
     this.cameraModeT = 0;
+    // Kick the personality entrance for each fighter. The track lasts ~1.5 s
+    // (3-4 keyframes); the countdown is 3.7 s, so the entrance resolves to
+    // GUARD before FIGHT! fires and the match starts clean.
+    if (this.fighters) {
+      for (const f of this.fighters) {
+        if (f.animator && f.entranceKey) f.animator.play(f.entranceKey);
+      }
+    }
     this._setBanner('3');
   }
 
@@ -488,7 +513,26 @@ export class BrawlGame {
       [p1, p2] = ids;
     }
     this._spawnFighters(p1, p2);
-    this._startCountdown();
+    // Show the inter-round splash, then start the countdown once it's
+    // faded in. The splash doubles as a brief loading screen — the new
+    // match's physics + arena are ready under it, so the transition reads
+    // as "next round" rather than "page reload".
+    this._showSplash(p1, p2, /* holdMs */ 1300);
+    setTimeout(() => { this._hideSplash(); this._startCountdown(); }, 1300);
+  }
+
+  _showSplash(p1Char, p2Char, holdMs) {
+    const p1 = CHARACTERS[p1Char]?.name ?? p1Char;
+    const p2 = CHARACTERS[p2Char]?.name ?? p2Char;
+    this.splash.querySelector('.pb-splash__round').textContent =
+      this.options.mode === 'demo' ? 'DEMO' : 'NEXT ROUND';
+    this.splash.querySelector('.pb-splash__p1').textContent = p1;
+    this.splash.querySelector('.pb-splash__p2').textContent = p2;
+    this.splash.classList.add('pb-splash--visible');
+  }
+
+  _hideSplash() {
+    this.splash.classList.remove('pb-splash--visible');
   }
 
   // ── simulation ──────────────────────────────────────────────────────────
@@ -509,7 +553,15 @@ export class BrawlGame {
       this._tickFighting(dt);
       if (this.clock >= TIME_LIMIT && this.phase === 'fighting') {
         const h1 = this._hp(this.fighters[0]), h2 = this._hp(this.fighters[1]);
-        this._endMatch(h1 === h2 ? 0 : (h1 > h2 ? 1 : 2), 'TIME!');
+        // Per user request: a no-KO finish always has a winner. The fighter
+        // with more energy left takes the decision; only an exact-equal
+        // (literally the same HP to the unit) is a draw — and even then
+        // we still pick a winner by index rather than call it a draw.
+        let winner;
+        if (h1 > h2) winner = 1;
+        else if (h2 > h1) winner = 2;
+        else winner = 1; // exact tie → P1 by default; never report 0 here
+        this._endMatch(winner, 'TIME!');
       }
     } else if (this.phase === 'ko') {
       // Build any pending rigid-body ragdoll now — we're guaranteed to be
@@ -572,6 +624,19 @@ export class BrawlGame {
     if (this.fighters && this.fighters.length) {
       const low = Math.min(...this.fighters.map((f) => f.hpCur)) / MAX_HP;
       this.audio.setMusicTension(1 - low);
+    }
+
+    // Audio-reactive bloom: every SFX call nudges the AudioBus envelope;
+    // here we decay it and pulse UnrealBloomPass strength so each impact
+    // glows brighter for ~150 ms. Base 0.32, peak +0.6, eased back via
+    // exp-decay (k ≈ 7.5 in audio.tick).
+    if (this.audio && typeof this.audio.tick === 'function') this.audio.tick(dt);
+    if (this.bloomPass) {
+      const env = (this.audio && this.audio.getEnvelope) ? this.audio.getEnvelope() : 0;
+      const target = 0.32 + env * 0.6;
+      // Smoothly chase the target so back-to-back hits stack without snap.
+      const k = 1 - Math.exp(-dt * 18);
+      this.bloomPass.strength = this.bloomPass.strength + (target - this.bloomPass.strength) * k;
     }
 
     this._pushHud(dt);
@@ -1063,6 +1128,12 @@ export class BrawlGame {
   }
 
   _applyRegionTints(f) {
+    // The user-requested invariant: a fighter that is already down or KO'd
+    // must keep whatever colour they had at the moment of KO. Tint / sweat /
+    // skull-swell / cut-visibility all freeze from this point so the
+    // knocked-out silhouette reads consistently while the result modal sits
+    // over the canvas.
+    if (f.state === 'ko' || f.state === 'down') return;
     // Lerp each region's tint toward its bruise color, scaled by damage / 100.
     for (const [region, bones] of Object.entries(REGION_BONES)) {
       const dmg = f.regionDmg[region] ?? 0;
@@ -1384,19 +1455,12 @@ export class BrawlGame {
       ? 'DRAW'
       : `${this.fighters[this.winner - 1].rig.config.name.toUpperCase()} WINS!`;
     this._setBanner(name);
-    // Trigger replay right after the KO zoom finishes.
-    if (this.options.mode !== 'demo') {
-      this.cameraMode = 'replay';
-      this.replayT = 0;
-      // Hand control of the rig transforms over to the replay buffer so the
-      // ragdolls don't fight the snapshot playback. The joints hold their
-      // last simulated pose after disposal.
-      for (const f of this.fighters) {
-        if (f.ragdoll && f.ragdoll.active) f.ragdoll.dispose();
-        if (f.koRagdoll && f.koRagdoll.active) f.koRagdoll.dispose();
-        f.pendingKO = null;
-      }
-    }
+    // Per user request: on KO we freeze the camera in 'normal' mode. No
+    // replay scrub, no cinematic KO zoom — the fight frame stays exactly
+    // where it landed so the player can read the result without their view
+    // moving. The mid/perp framing in _updateCamera keeps the same shot.
+    this.cameraMode = 'normal';
+    this.cameraModeT = 0;
     if (this.dotnet) {
       this.dotnet.invokeMethodAsync('OnMatchEnd', this.winner, Math.round(this.clock * 100) / 100)
         .catch(() => {});

@@ -10,17 +10,15 @@
 @inject IJSRuntime JSRuntime
 @inject PoClickHistoryService HistoryService
 
-<GameShell 
-    Title=@TitleContent 
+<GameShell
+    Title=@TitleContent
     Player="@_playerName"
     BackTo="@_backTo"
     GameOver="@_isGameOver"
     OnPlayAgain="ResetGame"
-    ShowSettings="true"
     Stats="@_statItems"
     Status="@StatusContent"
-    GameSummary="@GameSummaryContent"
-    Controls="@ControlsContent">
+    GameSummary="@GameSummaryContent">
     
     @if (!isPlaying && !isCountingDown)
     {
@@ -151,10 +149,10 @@
 
     private RenderFragment TitleContent => @<span>🥁 PoClick</span>;
 
-    private RenderFragment StatusContent => Demo == 1 ? @<span class="cf-status cf-status--demo">🎮 Demo mode</span>
-        : isCountingDown ? @<span class="cf-status cf-status--player">Get ready...</span>
-        : isPlaying ? @<span class="cf-status cf-status--player">🥁 Playing... (BPM: @bpm)</span>
-        : _estimatedScore > 0 ? @<span class="cf-status cf-status--win">Score: @(_estimatedScore.ToString("0.#")) / 100</span>
+    private RenderFragment StatusContent => Demo == 1 ? @<span class="gps-status-badge demo">🎮 Demo mode</span>
+        : isCountingDown ? @<span class="gps-status-badge player">Get ready...</span>
+        : isPlaying ? @<span class="gps-status-badge player">🥁 Playing... (BPM: @bpm)</span>
+        : _estimatedScore > 0 ? @<span class="gps-status-badge win">Score: @(_estimatedScore.ToString("0.#")) / 100</span>
         : @<span class="cf-status">Ready to play</span>;
 
     @* The pill class (border-radius 9999px) only suits the one-line score — wrapping
@@ -224,22 +222,9 @@
         </div>
     </div> : null;
 
-    private RenderFragment ControlsContent => @<div class="gps-controls">
-        @if (Demo != 1)
-        {
-            <button @onclick="ResetGame">
-                🔄 @(isPlaying ? "Abort" : "New Game")
-            </button>
-        }
-        @if (Demo == 1)
-        {
-            <button type="button" 
-                    class="active"
-                    @onclick="() => {}">
-                Demo Mode
-            </button>
-        }
-    </div>;
+    // The legacy in-canvas Controls fragment was unreachable (the Settings
+    // drawer was removed 2026-07-06) and is intentionally gone. The end-of-game
+    // modal's Play Again button handles restart.
 
     protected override void OnInitialized()
     {

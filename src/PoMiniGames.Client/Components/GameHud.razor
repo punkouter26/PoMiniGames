@@ -1,0 +1,39 @@
+@namespace PoMiniGamesClient.Components
+
+@*
+   Universal in-game heads-up display (HUD).
+
+   Every game with score / time / status chrome renders the same three-slot
+   layout — LeftSlot, CenterSlot, RightSlot — so the eye knows where to look
+   no matter the game. Used to be per-game (`.pb-hud` for PoBrawl, `.mr-hud`
+   for PoMarbleRace, `GameHud.razor` for PoClick only). The PoClick component
+   is preserved as a specialised wrapper, but new games should bind this
+   universal HUD straight into `<GameShell>` instead of inventing their own.
+
+   Slot model:
+     • LeftSlot  — score / streak / ELO / win-counter
+     • CenterSlot — timer / round / status
+     • RightSlot — best-score / ELO change / secondary metric
+
+   The HUD sits in the universal game chrome strip (no per-game overlay
+   positioning required). It composes with `<GameHud>` and replaces it
+   where game-specific fields can be expressed as label / value pairs.
+*@
+
+<div class="gps-hud" role="status" aria-live="polite">
+    <div class="gps-hud-left">
+        @LeftSlot
+    </div>
+    <div class="gps-hud-center">
+        @CenterSlot
+    </div>
+    <div class="gps-hud-right">
+        @RightSlot
+    </div>
+</div>
+
+@code {
+    [Parameter] public RenderFragment? LeftSlot { get; set; }
+    [Parameter] public RenderFragment? CenterSlot { get; set; }
+    [Parameter] public RenderFragment? RightSlot { get; set; }
+}

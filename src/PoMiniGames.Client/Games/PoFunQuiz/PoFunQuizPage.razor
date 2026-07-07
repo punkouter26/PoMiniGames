@@ -6,15 +6,16 @@
 @inject NavigationManager Navigation
 @inject HttpClient Http
 
-<GameShell Title=@TitleContent Player="@_playerName" BackTo="/" ShowSettings="false"
+<GameShell Title=@TitleContent Player="@_playerName" BackTo="/"
            GameOver="@(_questions.Count > 0 && _currentIndex >= _questions.Count)"
            OnPlayAgain="Reset"
            GameSummary="@GameSummaryContent">
     @if (_questions.Count == 0 && !_isLoading)
     {
-        <div class="fq-join">
+        <div class="gps-game-card">
             <h2 class="gps-phase-h">Solo · PoFunQuiz</h2>
-            <p>10 trivia questions, AI-generated. Try to get as many right as you can.</p>
+            <h3 class="gps-game-h">🧠 10 AI-generated trivia questions</h3>
+            <p>Answer as many right as you can in a row to chase the streak record.</p>
             <label>
                 Your name: <input type="text" @bind="_playerName" maxlength="24" />
             </label>
@@ -31,10 +32,10 @@
                     <option value="ArtCulture">Art &amp; Culture</option>
                 </select>
             </label>
-            <button class="fq-btn fq-btn-primary" @onclick="StartSolo">Start solo</button>
+            <button class="gps-cta" @onclick="StartSolo">Start solo</button>
             @if (!string.IsNullOrEmpty(_error))
             {
-                <p class="fq-error">@_error</p>
+                <p class="gps-error">@_error</p>
             }
         </div>
     }

@@ -7,7 +7,7 @@
 @inject NavigationManager Navigation
 @inject KioskCoordinator Kiosk
 
-<GameShell Title=@TitleContent BackTo="@_backTo" ShowSettings="@(!_isDemo)"
+<GameShell Title=@TitleContent BackTo="@_backTo">
            GameOver="@(_phase == "GameOver" && !_isDemo)"
            OnPlayAgain="PlayAgainFace"
            GameSummary="@GameSummaryContent">

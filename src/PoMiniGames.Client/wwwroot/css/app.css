@@ -11,7 +11,26 @@
   --color-accent: #6366f1;
   --color-warning: #f59e0b;
   --color-error: #ef4444;
-
+  /* ── Tiered accent bag (Fix #8 — single source of truth for status colour) ──
+     Each game's own brand colour (PoClick cyan, PoJoker gold, PoSurvive amber,
+     etc.) stays scoped to its theme root, but every chip / button / focus ring
+     reads from one of the tokens below so the universal chrome is identical.
+     Slugs reflect semantic intent, not raw colour, so swapping palettes is a
+     1-line change to the named hex. */
+  --accent: var(--color-accent);
+  --accent-bg: rgba(99, 102, 241, 0.18);              /* hover-backdrop for primary actions */
+  --accent-soft: rgba(99, 102, 241, 0.12);            /* empty-state badges, etc. */
+  --accent-ring: rgba(99, 102, 241, 0.45);            /* :focus-visible */
+  --accent-success: #4ade80;
+  --accent-success-soft: rgba(74, 222, 128, 0.18);
+  --accent-warning: #f59e0b;
+  --accent-warning-soft: rgba(245, 158, 11, 0.18);
+  --accent-danger: #f87171;
+  --accent-danger-soft: rgba(248, 113, 113, 0.18);
+  --accent-cyan: #00e5ff;
+  --accent-amber: #facc15;
+  --accent-gold: #d4af37;
+  --accent-jester: #4a0080;
   /* Typography (Suggestion #4) */
   --font-display: 'Inter', system-ui, -apple-system, sans-serif;
   --font-body: system-ui, -apple-system, sans-serif;

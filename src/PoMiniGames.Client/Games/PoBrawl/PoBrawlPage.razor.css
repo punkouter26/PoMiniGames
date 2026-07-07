@@ -28,11 +28,12 @@
     align-items: center;
     justify-content: center;
     pointer-events: none;
-    font-size: clamp(2.2rem, 8vw, 4.5rem);
+    font-family: 'Bungee', 'Bungee Inline', 'Russo One', 'Impact', sans-serif;
+    font-size: clamp(2.4rem, 9vw, 5rem);
     font-weight: 900;
     letter-spacing: 0.08em;
     color: #ffd166;
-    text-shadow: 0 4px 24px rgba(0, 0, 0, 0.7);
+    text-shadow: 0 4px 24px rgba(0, 0, 0, 0.7), 0 0 12px rgba(255, 209, 102, 0.25);
 }
 
 /* FPS badge created by the JS engine, upper-right (below the HP bar). */
@@ -50,6 +51,75 @@
     letter-spacing: 0.04em;
     pointer-events: none;
     z-index: 6;
+}
+
+/* ── Inter-round splash (BrawlGame.resetMatch) ───────────────────────
+   Hidden by default; `.pb-splash--visible` fades it in. The engine holds
+   it for ~1.3 s, then removes the class so it can fade out before the
+   countdown "3 / 2 / 1 / FIGHT!" banner takes over. */
+.pb-canvas-host ::deep .pb-splash {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: radial-gradient(ellipse at center,
+                rgba(8, 10, 24, 0.75) 0%,
+                rgba(2, 4, 12, 0.95) 70%);
+    color: #ffd166;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.35s ease-out;
+    z-index: 5;
+}
+
+.pb-canvas-host ::deep .pb-splash--visible {
+    opacity: 1;
+}
+
+.pb-canvas-host ::deep .pb-splash__inner {
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.4rem;
+    transform: translateY(0);
+}
+
+.pb-canvas-host ::deep .pb-splash--visible .pb-splash__inner {
+    animation: pb-splash-rise 0.45s cubic-bezier(.22,1,.36,1) both;
+}
+
+@keyframes pb-splash-rise {
+    0%   { transform: translateY(20px) scale(0.92); opacity: 0; }
+    100% { transform: translateY(0)    scale(1);    opacity: 1; }
+}
+
+.pb-canvas-host ::deep .pb-splash__round {
+    font-family: 'Bungee', 'Bungee Inline', 'Russo One', 'Impact', sans-serif;
+    font-size: clamp(1.2rem, 3.2vw, 1.8rem);
+    letter-spacing: 0.16em;
+    color: #e8eaf6;
+    text-shadow: 0 0 18px rgba(255, 209, 102, 0.35);
+    margin-bottom: 0.4rem;
+}
+
+.pb-canvas-host ::deep .pb-splash__p1,
+.pb-canvas-host ::deep .pb-splash__p2 {
+    font-family: 'Bungee', 'Russo One', 'Impact', sans-serif;
+    font-size: clamp(1.6rem, 5vw, 2.4rem);
+    letter-spacing: 0.06em;
+    color: #ffd166;
+    text-shadow: 0 4px 18px rgba(0, 0, 0, 0.7);
+    line-height: 1.05;
+}
+
+.pb-canvas-host ::deep .pb-splash__versus {
+    font-family: 'Bungee Inline', 'Russo One', 'Impact', sans-serif;
+    font-size: clamp(1rem, 2.4vw, 1.4rem);
+    color: #9aa3c0;
+    letter-spacing: 0.4em;
+    margin: 0.2rem 0 0.4rem;
 }
 
 /* ── HUD ─────────────────────────────────────────────── */
@@ -77,8 +147,9 @@
 }
 
 .pb-hp-name {
-    font-size: 0.75rem;
-    font-weight: 700;
+    font-family: 'Bungee', 'Russo One', 'Impact', sans-serif;
+    font-size: 0.78rem;
+    letter-spacing: 0.06em;
     color: #e8eaf6;
     text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
 }
@@ -109,8 +180,9 @@
 
 .pb-clock {
     min-width: 44px;
-    text-align: center;
-    font-size: 1.2rem;
+    text-family: 'Bungee', 'Russo One', 'Impact', sans-serif;
+    font-size: 1.3rem;
+    letter-spacing: 0.06emm;
     font-weight: 800;
     color: #fff;
     background: rgba(0, 0, 0, 0.5);
@@ -235,9 +307,9 @@
     margin: 10px 0 12px;
 }
 
-.pb-vs-name {
-    font-size: 1.35rem;
-    font-weight: 900;
+.pb-vs-nafamily: 'Bungee', 'Russo One', 'Impact', sans-serif;
+    font-size: 1.4rem;
+    letter-spacing: 0.06
     letter-spacing: 0.04em;
     color: #e8eaf6;
 }
@@ -246,8 +318,9 @@
     color: #7fd0ff;
 }
 
-.pb-vs-tag {
-    font-size: 0.85rem;
+.pb-vs-tafamily: 'Bungee Inline', 'Russo One', 'Impact', sans-serif;
+    font-size: 0.9rem;
+    letter-spacing: 0.32emem;
     font-weight: 800;
     color: #ef4444;
 }

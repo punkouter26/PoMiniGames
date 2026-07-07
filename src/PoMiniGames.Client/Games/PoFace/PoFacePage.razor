@@ -3,24 +3,25 @@
 @inject HttpClient Http
 @inject NavigationManager Navigation
 
-<GameShell Title=@TitleContent BackTo="/" ShowSettings="false">
-    <div class="pf-home">
+<GameShell Title=@TitleContent BackTo="/">
+    <div class="gps-game-card">
         <h2 class="gps-phase-h">PoFace · Home</h2>
+        <h3 class="gps-game-h">🙂 Match the expression</h3>
         <p>Five rounds of expression matching. With a webcam + Azure OpenAI you make the face on camera; otherwise play the camera-free emoji-match mode — both score out of 50.</p>
 
-        <a class="pf-btn pf-btn-primary" href="/face/arena">▶ Play (5 rounds)</a>
+        <a class="gps-cta" href="/face/arena">▶ Play (5 rounds)</a>
 
         @if (_apiOnline == true)
         {
             <p>Camera scoring API: <strong>@(_isMock ? "Stub (no real AI)" : "Azure OpenAI")</strong></p>
-            <button class="pf-btn pf-btn-secondary" @onclick="StartSession">Start new session</button>
+            <button class="gps-btn gps-btn--secondary" @onclick="StartSession">Start new session</button>
             @if (_lastSessionId is not null)
             {
                 <p>Last session: <code>@_lastSessionId</code> · total: @_lastTotal</p>
             }
             @if (!string.IsNullOrEmpty(_error))
             {
-                <p class="pf-error">@_error</p>
+                <p class="gps-error">@_error</p>
             }
         }
         else

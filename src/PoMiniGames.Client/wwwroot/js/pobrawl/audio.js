@@ -36,6 +36,11 @@ class AudioBus {
     this.noiseBuf = null;
     this.musicNodes = null;
     this.lowMusicCrossfade = 0; // 0 = normal stem, 1 = low-HP stem
+    // Audio-reactive envelope. Each SFX call nudges this up; the render loop
+    // calls tick(dt) once a frame to decay it. The BrawlGame reads
+    // getEnvelope() to pulse the UnrealBloomPass on every impact.
+    this._env = 0;
+    this._envPeak = 1.0; // clamped ceiling for the latest hit
   }
 
   _ensure() {
@@ -73,6 +78,25 @@ class AudioBus {
     this.muted = !!m;
     if (this.master) this.master.gain.value = this.muted ? 0 : 0.85;
   }
+
+  // Audio-reactive envelope: every SFX method calls _pulse(power) right when
+  // the sound fires, so the bloom pass in game.js can read getEnvelope() the
+  // same frame. Big hits land at ~1.0, whooshes at ~0.2, blocks at ~0.4.
+  _pulse(power) {
+    this._envPeak = Math.max(this._envPeak, Math.min(1, power));
+  }
+
+  // Per-frame envelope decay. Halflife ≈ 90 ms so a flurry of hits keeps
+  // the bloom glowing; silence brings it back to zero in ~0.5 s.
+  tick(dt) {
+    const decay = Math.exp(-dt * 7.5);
+    this._env = this._envPeak * (1 - decay) + this._env * decay;
+    // After enough decay, both targets converge; collapse _envPeak so a new
+    // pulse doesn't get averaged into the tail of a previous one.
+    if (this._env < 0.01 && this._envPeak < 0.01) { this._env = 0; this._envPeak = 0; }
+  }
+
+  getEnvelope() { return this._env; }
 
   // Resume the context after a user gesture — Blazor can't always start audio
   // because the .razor lifecycle may not be triggered by a button click.
@@ -112,6 +136,7 @@ class AudioBus {
   // Layered impact: low thud (sine + sub noise) + mid crack (filtered noise) + hiss.
   impact({ power = 1, blocked = false, worldPos = null } = {}) {
     if (!this._ensure() || this.muted) return;
+    this._pulse(blocked ? 0.45 : Math.min(1, 0.55 + power * 0.25));
     const ctx = this.ctx;
     const now = ctx.currentTime;
     const spat = this._spatializer(worldPos);
@@ -161,6 +186,7 @@ class AudioBus {
 
   block(worldPos = null) {
     if (!this._ensure() || this.muted) return;
+    this._pulse(0.4);
     const ctx = this.ctx;
     const now = ctx.currentTime;
     const spat = this._spatializer(worldPos);
@@ -182,6 +208,7 @@ class AudioBus {
   }
 
   ko() {
+    this._pulse(1.0);
     if (!this._ensure() || this.muted) return;
     const ctx = this.ctx;
     const now = ctx.currentTime;
@@ -213,6 +240,8 @@ class AudioBus {
   // Short vocal grunt on swing / windup. Random pitch so it doesn't loop.
   grunt({ power = 1, blocked = false } = {}) {
     if (!this._ensure() || this.muted) return;
+    this._pulse(0.15 + power * 0.1);
+    if (!this._ensure() || this.muted) return;
     const ctx = this.ctx;
     const now = ctx.currentTime;
     const baseHz = blocked ? 150 : 110 + power * 30;
@@ -234,6 +263,7 @@ class AudioBus {
 
   whoosh() {
     if (!this._ensure() || this.muted) return;
+    this._pulse(0.22);
     const ctx = this.ctx;
     const now = ctx.currentTime;
     const src = ctx.createBufferSource();
@@ -253,6 +283,7 @@ class AudioBus {
   // Cheap footstep tick — call on every other walk-cycle hit.
   footstep(volume = 0.05) {
     if (!this._ensure() || this.muted) return;
+    this._pulse(0.08);
     const ctx = this.ctx;
     const now = ctx.currentTime;
     const o = ctx.createOscillator();

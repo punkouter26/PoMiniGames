@@ -7,7 +7,7 @@
 @inject NavigationManager Navigation
 @implements IAsyncDisposable
 
-<GameShell Title=@TitleContent Player="@_playerName" BackTo="/funquiz" ShowSettings="false">
+<GameShell Title=@TitleContent Player="@_playerName" BackTo="/funquiz">
     @if (_reconnecting)
     {
         <div class="fq-reconnecting" role="status" aria-live="polite">

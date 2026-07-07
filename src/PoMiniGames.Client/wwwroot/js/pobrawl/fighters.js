@@ -16,6 +16,7 @@ export const CHARACTERS = {
     hair: 0xf5d47a, hairStyle: 'sweep',
     heightScale: 1.02, buildScale: 1.15,
     mass: 1.18, attackPower: 1.10, moveAccel: 11,
+    entrance: 'swagger',
   },
   biden: {
     id: 'biden', name: 'Biden',
@@ -23,6 +24,7 @@ export const CHARACTERS = {
     hair: 0xf2f2f2, hairStyle: 'comb',
     heightScale: 1.0, buildScale: 0.95, aviators: true,
     mass: 0.95, attackPower: 0.92, moveAccel: 13,
+    entrance: 'aviator',
   },
   obama: {
     id: 'obama', name: 'Obama',
@@ -30,6 +32,7 @@ export const CHARACTERS = {
     hair: 0x2b2b2b, hairStyle: 'cap',
     heightScale: 1.04, buildScale: 0.95,
     mass: 1.0, attackPower: 1.05, moveAccel: 14,
+    entrance: 'fistbump',
   },
   bush: {
     id: 'bush', name: 'Bush',
@@ -37,6 +40,7 @@ export const CHARACTERS = {
     hair: 0x8a8073, hairStyle: 'cap',
     heightScale: 0.97, buildScale: 1.08,
     mass: 1.12, attackPower: 1.0, moveAccel: 10,
+    entrance: 'cowboy',
   },
   clinton: {
     id: 'clinton', name: 'Clinton',
@@ -44,6 +48,7 @@ export const CHARACTERS = {
     hair: 0xd9d9d9, hairStyle: 'sweep',
     heightScale: 1.03, buildScale: 1.06,
     mass: 1.08, attackPower: 1.02, moveAccel: 12,
+    entrance: 'thumbsup',
   },
   bushsr: {
     id: 'bushsr', name: 'Bush Sr.',
@@ -51,6 +56,7 @@ export const CHARACTERS = {
     hair: 0xbfb8ae, hairStyle: 'comb',
     heightScale: 1.04, buildScale: 0.92,
     mass: 0.98, attackPower: 0.98, moveAccel: 13,
+    entrance: 'salute',
   },
   reagan: {
     id: 'reagan', name: 'Reagan',
@@ -58,6 +64,7 @@ export const CHARACTERS = {
     hair: 0x442e1f, hairStyle: 'sweep',
     heightScale: 1.02, buildScale: 1.0,
     mass: 1.05, attackPower: 1.08, moveAccel: 12,
+    entrance: 'salute',
   },
   carter: {
     id: 'carter', name: 'Carter',
@@ -65,6 +72,7 @@ export const CHARACTERS = {
     hair: 0x9c9587, hairStyle: 'cap',
     heightScale: 0.99, buildScale: 0.9,
     mass: 0.92, attackPower: 0.95, moveAccel: 14,
+    entrance: 'salute',
   },
   ford: {
     id: 'ford', name: 'Ford',
@@ -72,6 +80,7 @@ export const CHARACTERS = {
     hair: 0xcdb98e, hairStyle: 'balding',
     heightScale: 1.05, buildScale: 1.1,
     mass: 1.15, attackPower: 1.06, moveAccel: 11,
+    entrance: 'salute',
   },
   nixon: {
     id: 'nixon', name: 'Nixon',
@@ -79,6 +88,7 @@ export const CHARACTERS = {
     hair: 0x3a3129, hairStyle: 'widow',
     heightScale: 1.0, buildScale: 1.12,
     mass: 1.2, attackPower: 1.12, moveAccel: 12,
+    entrance: 'salute',
   },
   // BOB — the 1-player everyman hero. No suit: white tee, blue jeans,
   // sneakers, messy brown hair. Built by the same rig with `outfit: 'casual'`.
@@ -88,6 +98,7 @@ export const CHARACTERS = {
     outfit: 'casual', shirtColor: 0xe9e6de, jeans: 0x3566a8, sneaker: 0xf0f0ee,
     heightScale: 1.0, buildScale: 1.0,
     mass: 1.0, attackPower: 1.0, moveAccel: 12,
+    entrance: 'ready',
   },
 };
 

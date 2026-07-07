@@ -18,11 +18,9 @@
     BackTo="@_backTo"
     GameOver="@_isGameOver"
     OnPlayAgain="ResetGame"
-    ShowSettings="true"
     Stats="@_statItems"
     Status="@StatusContent"
-    GameSummary="@GameSummaryContent"
-    Controls="@ControlsContent">
+    GameSummary="@GameSummaryContent">
     <div class="ttt-board" role="grid" aria-label="Tic Tac Toe game board">
         @for (int r = 0; r < TicTacToeBoard.Size; r++)
         {
@@ -86,46 +84,12 @@
     
     private RenderFragment TitleContent => @<span>❌ Tic Tac Toe</span>;
     
-    private RenderFragment ControlsContent => @<div class="gps-controls">
-        @if (PlayMode != "demo")
-        {
-            <button type="button"
-                    class="@(PlayMode == "ai" ? "active" : "")"
-                    @onclick='() => SetPlayMode("ai")'>
-                Vs AI
-            </button>
-            <button type="button"
-                    class="@(PlayMode == "2p" ? "active" : "")"
-                    @onclick='() => SetPlayMode("2p")'>
-                2 Player
-            </button>
-        }
-        @if (PlayMode == "demo")
-        {
-            <button type="button"
-                    class="@(PlayMode == "demo" ? "active" : "")"
-                    @onclick="() => {}">
-                Demo CPU vs CPU
-            </button>
-        }
-        <button @onclick="ResetGame">
-            🔄 @(PlayMode == "demo" ? "Restart Demo" : "New Game")
-        </button>
-        @if (PlayMode == "ai")
-        {
-            <div class="gps-pills" role="radiogroup" aria-label="Select difficulty">
-                <button type="button" class="@(_difficulty == Difficulty.Easy ? "active" : "")" @onclick="() => SetDifficulty(Difficulty.Easy)">Easy</button>
-                <button type="button" class="@(_difficulty == Difficulty.Medium ? "active" : "")" @onclick="() => SetDifficulty(Difficulty.Medium)">Medium</button>
-                <button type="button" class="@(_difficulty == Difficulty.Hard ? "active" : "")" @onclick="() => SetDifficulty(Difficulty.Hard)">Hard</button>
-            </div>
-        }
-        @if (PlayMode == "2p")
-        {
-            <input class="gps-name-input" value="@_player2Name" @onchange="OnPlayer2NameChange"
-                   maxlength="24" placeholder="Player 2 name" aria-label="Player 2 name" />
-        }
-    </div>;
-    
+    // The legacy in-canvas Controls fragment was unreachable (the Settings
+    // drawer was removed 2026-07-06) and is intentionally gone. Mode picker
+    // / difficulty / opponent name now live on each game's mode-selection
+    // landing card (see SetPlayMode / SetDifficulty usage in
+    // TicTacToePage.razor landing), so the in-game chrome stays clean.
+
     private RenderFragment StatusContent => @<span class="@GetStatusClass()">
         @((MarkupString)GetStatusIcon()) @GetStatusText()
     </span>;

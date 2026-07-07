@@ -1,2 +1,68 @@
 @inherits LayoutComponentBase
-@Body
+@using PoMiniGamesClient.Services
+@inject AuthStateService AuthState
+@inject KioskCoordinator Kiosk
+@inject ScoreSyncService ScoreSync
+@inject UiFeedbackService Feedback
+@inject IWebAssemblyHostEnvironment HostEnvironment
+
+@*
+   "Bare" layout used only by PoRacer — its canvas is `position: fixed;
+   inset: 0` so it must NOT sit inside MainLayout's `<main>` (that would
+   force the canvas into a content box). The top-bar chrome still renders
+   here as an overlay so PoRacer benefits from universal navigation
+   (brand / game-header slot / FPS / Sign in-out) just like every other
+   game. Pages opt into the game-header slot by setting SectionContent
+   inside `<GameShell>` — see PoRacerPage.
+*@
+
+<div class="gl-page racer-with-chrome">
+    @if (AuthState.UsingMockData)
+    {
+        <div class="gl-mock-banner" role="status" aria-live="polite">USING MOCK DATA</div>
+        <details class="gl-mock-banner--dot" aria-label="Mock data active — tap for details">
+            <summary aria-label="Mock data active"></summary>
+            <span>USING MOCK DATA</span>
+        </details>
+    }
+    <header class="gl-top-bar">
+        <div class="gl-top-bar-left">
+            <a href="/" class="gl-brand">
+                <span class="gl-brand-icon">
+                    <svg width="22" height="22" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <rect x="3" y="5" width="14" height="14" rx="2" fill="currentColor" opacity="0.8"/>
+                        <rect x="23" y="5" width="14" height="14" rx="2" fill="currentColor" opacity="0.5"/>
+                        <rect x="3" y="23" width="14" height="14" rx="2" fill="currentColor" opacity="0.5"/>
+                        <rect x="23" y="23" width="14" height="14" rx="2" fill="currentColor" opacity="0.8"/>
+                    </svg>
+                </span>
+                <span class="gl-brand-text">PoMiniGames</span>
+            </a>
+        </div>
+        <div class="gl-top-bar-game">
+            <SectionOutlet SectionName="game-header" />
+        </div>
+        <div class="gl-auth">
+            <FpsCounter />
+            @if (AuthState.IsConfigured && !AuthState.IsLoading)
+            {
+                <button class="gl-auth-button" @onclick="AuthState.IsAuthenticated ? SignOut : SignIn">
+                    @(AuthState.IsAuthenticated ? "Sign out" : "Sign in")
+                </button>
+                @if (!AuthState.IsAuthenticated)
+                {
+                    <button class="gl-auth-button gl-auth-button--anon" @onclick="SignInAnon" title="Continue as anonymous">ANON</button>
+                }
+            }
+        </div>
+    </header>
+    @Body
+</div>
+
+@code {
+    [Inject] private NavigationManager Navigation { get; set; } = default!;
+
+    private void SignIn() => Navigation.NavigateTo("/auth/login/microsoft", forceLoad: true);
+    private void SignOut() => Navigation.NavigateTo("/auth/logout", forceLoad: true);
+    private void SignInAnon() => Navigation.NavigateTo("/auth/login/fake", forceLoad: true);
+}

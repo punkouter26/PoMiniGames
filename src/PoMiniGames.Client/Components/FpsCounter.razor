@@ -1,0 +1,47 @@
+@implements IDisposable
+@inject IJSRuntime JSRuntime
+
+<span class="gl-fps" title="Frames per second" data-tier="@_tier">@_label</span>
+
+@code {
+    private string _label = "— FPS";
+    private string _tier = "ok";
+    private int _frames;
+    private double _elapsedMs;
+    private DotNetObjectReference<FpsCounter>? _ref;
+    private bool _running;
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (!firstRender || _running) return;
+        _running = true;
+        _ref = DotNetObjectReference.Create(this);
+        // JS interop can throw during SSR / pre-render — swallow and let the
+        // placeholder label stand so the page still renders.
+        try { JSRuntime.InvokeVoidAsync("glFps.start", _ref); } catch { }
+    }
+
+    [JSInvokable]
+    public void OnTick(double deltaMs)
+    {
+        _frames++;
+        _elapsedMs += deltaMs;
+        if (_elapsedMs < 500) return;
+        var fps = Math.Round(_frames * 1000.0 / _elapsedMs);
+        _frames = 0;
+        _elapsedMs = 0;
+        var next = $"{fps:0} FPS";
+        var nextTier = fps >= 55 ? "ok" : fps >= 30 ? "warn" : "bad";
+        if (next == _label && nextTier == _tier) return;
+        _label = next;
+        _tier = nextTier;
+        InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        _running = false;
+        try { JSRuntime.InvokeVoidAsync("glFps.stop"); } catch { }
+        _ref?.Dispose();
+    }
+}

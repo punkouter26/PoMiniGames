@@ -31,9 +31,14 @@
     <link rel="preload"
           href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Outfit:wght@300;400;600;800&display=swap"
           as="style" onload="this.onload=null;this.rel='stylesheet'" />
+    <!-- PoBrawl: stencil/broadcast feel for the HUD, banner and inter-round splash -->
+    <link rel="preload"
+          href="https://fonts.googleapis.com/css2?family=Bungee&family=Bungee+Inline&display=swap"
+          as="style" onload="this.onload=null;this.rel='stylesheet'" />
     <noscript>
         <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
         <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Outfit:wght@300;400;600;800&display=swap" />
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&family=Bungee+Inline&display=swap" />
     </noscript>
 
     <!-- Remove Bootstrap – all styles are custom (payload savings ~187KB) -->
@@ -109,6 +114,7 @@
     <script src="js/posurvive/indexedDbStore.js"></script>
     <script src="js/posurvive/inferenceWorkerBridge.js"></script>
     <script src="js/posurvive/audioEngine.js" defer></script>
+    <script src="js/gl-fps.js"></script>
 </body>
 
 </html>

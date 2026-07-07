@@ -6,15 +6,17 @@
 @inject NavigationManager Navigation
 @implements IAsyncDisposable
 
-<GameShell Title=@TitleContent Player="@_playerName" BackTo="/couplequiz" ShowSettings="false">
+<GameShell Title=@TitleContent Player="@_playerName" BackTo="/couplequiz">
     @if (!_isConnected)
     {
         <p>Connecting…</p>
     }
     else if (_lobby is null)
     {
-        <div class="cq-join">
-            <h2 class="gps-phase-h">Join a lobby</h2>
+        <div class="gps-game-card">
+            <h2 class="gps-phase-h">Multiplayer · PoCoupleQuiz</h2>
+            <h3 class="gps-game-h">💕 Join a lobby</h3>
+            <p>Two or more players answer questions about each other. The "King" types the secret answer; the rest try to match — scored by AI.</p>
             <label>Your name: <input @bind="_playerName" maxlength="24" disabled="@_busy" /></label>
             <label>Difficulty:
                 <select @bind="_difficulty" disabled="@_busy">
@@ -26,16 +28,16 @@
             <label>Game code (optional):
                 <input @bind="_joinCode" maxlength="6" disabled="@_busy" />
             </label>
-            <div class="cq-actions">
+            <div class="gps-row">
                 @* Bug fix QA #6: aria-busy + disabled state while the SignalR handshake
                    is in flight, so the primary button cannot fire twice on touch. *@
-                <button class="cq-btn cq-btn-primary"
+                <button class="gps-cta"
                         aria-busy="@_busy"
                         disabled="@_busy"
                         @onclick="OnJoinOrCreate">
                     @(_busy ? "Connecting…" : "Find or create a lobby")
                 </button>
-                <button class="cq-btn cq-btn-secondary"
+                <button class="gps-btn gps-btn--secondary"
                         aria-busy="@_busyJoin"
                         disabled="@(_busyJoin || string.IsNullOrWhiteSpace(_joinCode))"
                         @onclick="OnJoinByCode">
@@ -44,17 +46,18 @@
             </div>
             @if (!string.IsNullOrEmpty(_error))
             {
-                <p class="cq-error">
+                <p class="gps-error">
                     @_error
-                    <button class="cq-btn cq-btn-secondary cq-btn-retry" @onclick="RetryConnect">Retry</button>
+                    <button class="gps-btn gps-btn--secondary" @onclick="RetryConnect">Retry</button>
                 </p>
             }
         </div>
     }
     else
     {
-        <div class="cq-lobby">
+        <div class="gps-game-card">
             <h2 class="gps-phase-h">Lobby · @_lobby.GameCode</h2>
+            <h3 class="gps-game-h">💕 Waiting for players</h3>
             <p>Difficulty: <strong>@_lobby.Difficulty</strong> · AI mode: <strong>@_lobby.AiMode</strong></p>
             <p>Host: <strong>@_lobby.HostName</strong></p>
             <h3>Players (@_lobby.Players.Count)</h3>

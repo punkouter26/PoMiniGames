@@ -9,6 +9,14 @@
    still works. *@
 <SectionContent SectionName="game-header">
     <div class="gps-header-slot">
+        @* Game title — always rendered as the first child of the chrome slot so
+           every game page identifies itself in the top bar. Plain text; the
+           page's `Title` fragment may compose an icon + name. *@
+        @if (Title != null)
+        {
+            <span class="gps-game-title">@Title</span>
+        }
+
         @if (!string.IsNullOrEmpty(Player))
         {
             <span class="gps-player">@Player</span>
@@ -19,9 +27,10 @@
             <span class="gps-header-status">@Status</span>
         }
 
-        @* Settings gear removed per 2026-07-06 header cleanup: the ⚙️ button and
-           its drawer no longer render. Stats still surface in the end-of-game
-           modal; the Controls fragment is intentionally unreachable for now. *@
+        @* Settings gear removed per 2026-07-06 header cleanup. The `ShowSettings`
+           parameter was retained briefly while pages migrated; it's gone now.
+           Stats still surface in the end-of-game modal; the Controls fragment
+           was unused by every page and is removed entirely. *@
     </div>
 </SectionContent>
 
@@ -70,12 +79,9 @@
                             @PlayAgainLabel
                         </button>
                     }
-                    @if (!string.IsNullOrEmpty(BackTo))
-                    {
-                        <button class="gps-play-again-btn gps-play-again-btn--secondary" @onclick="NavigateBack">
-                            🏠 Home
-                        </button>
-                    }
+                    <button class="gps-play-again-btn gps-play-again-btn--secondary" @onclick="NavigateBack">
+                        🏠 Home
+                    </button>
                 </div>
             </div>
         </div>
@@ -84,13 +90,16 @@
 </SwipeBack>
 
 @code {
-    [Parameter] public RenderFragment Title { get; set; } = null!;
+    [Parameter] public RenderFragment? Title { get; set; }
     [Parameter] public string? Player { get; set; }
     [Parameter] public RenderFragment? Status { get; set; }
-    [Parameter] public RenderFragment? Controls { get; set; }
     [Parameter] public List<Models.StatItem>? Stats { get; set; }
     [Parameter] public bool Fullscreen { get; set; }
-    [Parameter] public string? BackTo { get; set; }
+    // Where the Home button on the end-of-game modal navigates. Default is the
+    // home page ("/") — pages only need to override when they sit under a
+    // sub-lobby (e.g. PoCoupleQuiz lobby → "/couplequiz"). This makes every
+    // game page identical on this dimension by default.
+    [Parameter] public string BackTo { get; set; } = "/";
     [Parameter] public bool GameOver { get; set; }
     [Parameter] public EventCallback OnPlayAgain { get; set; }
     [Parameter] public string PlayAgainLabel { get; set; } = "🔄 Play Again";
@@ -100,23 +109,11 @@
     [Parameter] public bool ShowNextMatch { get; set; }
     [Parameter] public EventCallback OnNextMatch { get; set; }
     [Parameter] public string NextMatchLabel { get; set; } = "➡️ NEXT MATCH";
-    [Parameter] public bool ShowSettings { get; set; } = true;
     [Parameter] public bool ShowPlayAgain { get; set; } = true;
     [Parameter] public RenderFragment? GameSummary { get; set; }
     [Parameter] public RenderFragment ChildContent { get; set; } = null!;
 
     [Inject] private NavigationManager Navigation { get; set; } = null!;
 
-    private void NavigateBack()
-    {
-        if (!string.IsNullOrEmpty(BackTo))
-        {
-            Navigation.NavigateTo(BackTo);
-        }
-    }
-
-    protected override void OnInitialized()
-    {
-        // Register keyboard handler for Escape key
-    }
+    private void NavigateBack() => Navigation.NavigateTo(BackTo);
 }

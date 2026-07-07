@@ -8,8 +8,13 @@
    Scoped to `.gps-game-area` so PoClick's brand palette
    (cyan / green / yellow / orange / red) doesn't leak into
    the global `:root` token space. Every other game uses
-   `--color-accent` from app.css; PoClick has its own identity. */
+   `--color-accent` from app.css; PoClick retints it with
+   `--accent: var(--accent-cyan)` so its CTAs match its brand.
+   The five accent slots still resolve through the universal
+   token bag, so e.g. Win / Loss badges stay consistent across
+   games. */
 .gps-game-area {
+  --accent: var(--accent-cyan);                       /* retint CTAs */
   --accent-cyan: #06b6d4;
   --accent-green: #10b981;
   --accent-yellow: #f59e0b;

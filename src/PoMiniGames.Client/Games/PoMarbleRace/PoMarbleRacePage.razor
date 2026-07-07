@@ -14,12 +14,10 @@
 <GameShell Title=@TitleContent
            Player="@_playerName"
            BackTo="/"
-           ShowSettings="true"
            Stats="@_statItems"
            GameOver="@(_phase == "result" && !_demo)"
            OnPlayAgain="NewTrack"
-           GameSummary="@GameSummaryContent"
-           Controls="@ControlsContent">
+           GameSummary="@GameSummaryContent">
     <div class="mr-wrap">
         <div id="marble-race-container" class="mr-canvas-host"></div>
 
@@ -106,10 +104,10 @@
 
     private RenderFragment TitleContent => @<span>🔮 PoMarbleRace</span>;
 
-    private RenderFragment ControlsContent => @<div class="gps-controls">
-        <button @onclick="ToggleMute">@(_muted ? "🔇 Unmute" : "🔊 Mute")</button>
-        <button @onclick="NewTrack">🔄 New track</button>
-    </div>;
+    // The legacy in-canvas Controls fragment was unreachable (the Settings
+    // drawer was removed 2026-07-06). "New track" is bound to `R` (already
+    // handled in JS) and surfaces via Play Again on the unified modal;
+    // mute is a JS `keydown` on `M`.
 
     private RenderFragment GameSummaryContent => @<div>
         <div>@(_lastWon ? "🏆 Top 3 finish!" : "Race over")</div>

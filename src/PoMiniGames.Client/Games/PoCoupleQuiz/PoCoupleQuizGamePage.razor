@@ -7,7 +7,7 @@
 @inject NavigationManager Navigation
 @implements IAsyncDisposable
 
-<GameShell Title=@TitleContent Player="@_playerName" BackTo="/couplequiz" ShowSettings="false">
+<GameShell Title=@TitleContent Player="@_playerName" BackTo="/couplequiz">
     @if (_gameStarted is null)
     {
         <p>Waiting for the round to start…</p>

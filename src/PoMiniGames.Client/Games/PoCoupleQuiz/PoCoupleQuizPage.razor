@@ -7,7 +7,7 @@
 @inject KioskCoordinator Kiosk
 @implements IAsyncDisposable
 
-<GameShell Title=@TitleContent Player="@_playerName" BackTo="/" ShowSettings="false"
+<GameShell Title=@TitleContent Player="@_playerName" BackTo="/"
            GameOver="@(_solo && _soloFinished && !_isDemo)"
            OnPlayAgain="StartSolo"
            GameSummary="@GameSummaryContent">

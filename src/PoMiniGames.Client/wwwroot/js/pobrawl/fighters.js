@@ -38,6 +38,57 @@ export const CHARACTERS = {
     heightScale: 0.97, buildScale: 1.08,
     mass: 1.12, attackPower: 1.0, moveAccel: 10,
   },
+  clinton: {
+    id: 'clinton', name: 'Clinton',
+    skin: 0xeec39a, suit: 0x2c3e6b, tie: 0xc0392b, tieLength: 1.05,
+    hair: 0xd9d9d9, hairStyle: 'sweep',
+    heightScale: 1.03, buildScale: 1.06,
+    mass: 1.08, attackPower: 1.02, moveAccel: 12,
+  },
+  bushsr: {
+    id: 'bushsr', name: 'Bush Sr.',
+    skin: 0xe5c0a0, suit: 0x3b4a63, tie: 0x30549c, tieLength: 0.95,
+    hair: 0xbfb8ae, hairStyle: 'comb',
+    heightScale: 1.04, buildScale: 0.92,
+    mass: 0.98, attackPower: 0.98, moveAccel: 13,
+  },
+  reagan: {
+    id: 'reagan', name: 'Reagan',
+    skin: 0xe0a884, suit: 0x5a3a35, tie: 0x99282e, tieLength: 1.0,
+    hair: 0x442e1f, hairStyle: 'sweep',
+    heightScale: 1.02, buildScale: 1.0,
+    mass: 1.05, attackPower: 1.08, moveAccel: 12,
+  },
+  carter: {
+    id: 'carter', name: 'Carter',
+    skin: 0xe6bd9d, suit: 0x6b7a8f, tie: 0x3f7a4d, tieLength: 0.95,
+    hair: 0x9c9587, hairStyle: 'cap',
+    heightScale: 0.99, buildScale: 0.9,
+    mass: 0.92, attackPower: 0.95, moveAccel: 14,
+  },
+  ford: {
+    id: 'ford', name: 'Ford',
+    skin: 0xe8c2a4, suit: 0x2f3a4a, tie: 0x8f6b2f, tieLength: 0.9,
+    hair: 0xcdb98e, hairStyle: 'balding',
+    heightScale: 1.05, buildScale: 1.1,
+    mass: 1.15, attackPower: 1.06, moveAccel: 11,
+  },
+  nixon: {
+    id: 'nixon', name: 'Nixon',
+    skin: 0xe2b492, suit: 0x23252b, tie: 0x5d6d7e, tieLength: 1.0,
+    hair: 0x3a3129, hairStyle: 'widow',
+    heightScale: 1.0, buildScale: 1.12,
+    mass: 1.2, attackPower: 1.12, moveAccel: 12,
+  },
+  // BOB — the 1-player everyman hero. No suit: white tee, blue jeans,
+  // sneakers, messy brown hair. Built by the same rig with `outfit: 'casual'`.
+  bob: {
+    id: 'bob', name: 'BOB',
+    skin: 0xdfae8f, hair: 0x5a3d24, hairStyle: 'spiky',
+    outfit: 'casual', shirtColor: 0xe9e6de, jeans: 0x3566a8, sneaker: 0xf0f0ee,
+    heightScale: 1.0, buildScale: 1.0,
+    mass: 1.0, attackPower: 1.0, moveAccel: 12,
+  },
 };
 
 export const CHARACTER_IDS = Object.keys(CHARACTERS);
@@ -141,6 +192,40 @@ function buildHair(style, hairMat) {
     const top = box(0.28, 0.06, 0.24, hairMat);
     top.position.set(0, 0.325, -0.03);
     g.add(top);
+  } else if (style === 'balding') {
+    // Bare crown; hair only above the ears and around the back.
+    for (const s of [-1, 1]) {
+      const side = box(0.05, 0.09, 0.2, hairMat);
+      side.position.set(s * 0.135, 0.26, -0.02);
+      g.add(side);
+    }
+    const back = box(0.28, 0.09, 0.05, hairMat);
+    back.position.set(0, 0.26, -0.13);
+    g.add(back);
+  } else if (style === 'widow') {
+    // Slicked top with a widow's-peak wedge pointing down the brow.
+    const top = box(0.28, 0.07, 0.26, hairMat);
+    top.position.set(0, 0.325, -0.02);
+    const peak = box(0.09, 0.05, 0.06, hairMat);
+    peak.position.set(0, 0.29, 0.135);
+    peak.rotation.x = 0.3;
+    g.add(top, peak);
+  } else if (style === 'spiky') {
+    // Messy tufts at varying angles — reads as "regular guy", not a statesman.
+    const base = box(0.29, 0.07, 0.29, hairMat);
+    base.position.y = 0.32;
+    g.add(base);
+    const tufts = [
+      [-0.09, 0.365, 0.05, 0.3], [0.02, 0.375, -0.04, -0.25],
+      [0.1, 0.36, 0.07, 0.4], [-0.02, 0.37, 0.1, -0.35], [0.06, 0.365, -0.1, 0.2],
+    ];
+    for (const [x, y, z, rz] of tufts) {
+      const tuft = box(0.07, 0.09, 0.07, hairMat);
+      tuft.position.set(x, y, z);
+      tuft.rotation.z = rz;
+      tuft.rotation.x = rz * -0.6;
+      g.add(tuft);
+    }
   } else {
     const top = box(0.28, 0.07, 0.28, hairMat);
     top.position.y = 0.325;
@@ -157,25 +242,38 @@ function buildHair(style, hairMat) {
 export function buildFighter(charId) {
   const c = CHARACTERS[charId];
   const b = c.buildScale;
+  const casual = c.outfit === 'casual';
 
+  // For a casual outfit the "suit" material is the t-shirt (the engine's
+  // sweat/tint systems talk to materials.suitMat, so the torso material must
+  // keep that name regardless of wardrobe), and the legs get denim instead.
   const suitMat = new THREE.MeshStandardMaterial({
-    color: c.suit, roughness: 0.95, metalness: 0.05,
+    color: casual ? c.shirtColor : c.suit,
+    roughness: casual ? 0.9 : 0.95, metalness: casual ? 0.0 : 0.05,
     roughnessMap: weaveTexture(),
-    bumpMap: weaveTexture(), bumpScale: 0.6,
+    bumpMap: weaveTexture(), bumpScale: casual ? 0.25 : 0.6,
   });
+  const legMat = casual
+    ? new THREE.MeshStandardMaterial({
+        color: c.jeans, roughness: 0.98, metalness: 0.0,
+        roughnessMap: weaveTexture(),
+        bumpMap: weaveTexture(), bumpScale: 0.8,
+      })
+    : suitMat;
   const skinMat = new THREE.MeshStandardMaterial({
     color: c.skin, roughness: 0.55, metalness: 0.0,
     roughnessMap: skinNoiseTexture(),
   });
   const tieMat = new THREE.MeshStandardMaterial({
-    color: c.tie, roughness: 0.5, metalness: 0.0,
+    color: c.tie ?? c.jeans ?? 0x444444, roughness: 0.5, metalness: 0.0,
     bumpMap: weaveTexture(), bumpScale: 0.3,
   });
   const hairMat = new THREE.MeshStandardMaterial({
     color: c.hair, roughness: 0.85, metalness: 0.0,
   });
   const shoeMat = new THREE.MeshStandardMaterial({
-    color: 0x111111, roughness: 0.35, metalness: 0.05,
+    color: casual ? c.sneaker : 0x111111,
+    roughness: casual ? 0.7 : 0.35, metalness: 0.05,
   });
   const shirtMat = new THREE.MeshStandardMaterial({
     color: 0xf5f5f0, roughness: 0.85, metalness: 0.0,
@@ -189,7 +287,7 @@ export function buildFighter(charId) {
 
   // Organic torso: tapered elliptical masses instead of boxes — waist
   // narrower than shoulders, pelvis flaring slightly to the hips.
-  const pelvis = taper(0.175 * b, 0.195 * b, 0.24, suitMat, 0.78);
+  const pelvis = taper(0.175 * b, 0.195 * b, 0.24, legMat, 0.78);
   hips.add(pelvis);
 
   const torso = new THREE.Group();
@@ -213,26 +311,41 @@ export function buildFighter(charId) {
   neck.position.y = 0.6;
   torso.add(neck);
 
-  const shirt = box(0.16 * b, 0.46, 0.02, shirtMat);
-  shirt.position.set(0, 0.34, 0.152 * b);
-  torso.add(shirt);
-  // Jacket buttons.
-  for (const by of [0.16, 0.06]) {
-    const btn = sphere(0.014, shoeMat);
-    btn.position.set(0, by, 0.155 * b);
-    torso.add(btn);
-  }
+  // Suit-only dressing: dress-shirt panel, jacket buttons, and the tie.
+  // A casual fighter (BOB) wears a plain tee — none of these apply.
+  let tiePivot = null;
+  if (!casual) {
+    const shirt = box(0.16 * b, 0.46, 0.02, shirtMat);
+    shirt.position.set(0, 0.34, 0.152 * b);
+    torso.add(shirt);
+    // Jacket buttons.
+    for (const by of [0.16, 0.06]) {
+      const btn = sphere(0.014, shoeMat);
+      btn.position.set(0, by, 0.155 * b);
+      torso.add(btn);
+    }
 
-  // Tie hangs from a pivot at the knot so secondary motion can swing it —
-  // the jiggle solver (updateJiggles) drives tiePivot.rotation from the
-  // torso's world acceleration each frame.
-  const tieLen = 0.4 * c.tieLength;
-  const tiePivot = new THREE.Group();
-  tiePivot.position.set(0, 0.52, 0.175 * b);
-  const tie = box(0.07, tieLen, 0.02, tieMat);
-  tie.position.set(0, -tieLen / 2, 0.005);
-  tiePivot.add(tie);
-  torso.add(tiePivot);
+    // Tie hangs from a pivot at the knot so secondary motion can swing it —
+    // the jiggle solver (updateJiggles) drives tiePivot.rotation from the
+    // torso's world acceleration each frame.
+    const tieLen = 0.4 * c.tieLength;
+    tiePivot = new THREE.Group();
+    tiePivot.position.set(0, 0.52, 0.175 * b);
+    const tie = box(0.07, tieLen, 0.02, tieMat);
+    tie.position.set(0, -tieLen / 2, 0.005);
+    tiePivot.add(tie);
+    torso.add(tiePivot);
+  } else {
+    // Tee details: a ring collar and a small chest pocket print.
+    const collar = taper(0.075, 0.085, 0.045, suitMat, 0.9);
+    collar.position.y = 0.585;
+    torso.add(collar);
+    const pocket = box(0.06, 0.07, 0.015, new THREE.MeshStandardMaterial({
+      color: 0xc9c4b8, roughness: 0.9,
+    }));
+    pocket.position.set(0.08 * b, 0.34, 0.15 * b);
+    torso.add(pocket);
+  }
 
   const head = new THREE.Group();
   head.position.y = 0.62;
@@ -296,12 +409,15 @@ export function buildFighter(charId) {
     const elbow = new THREE.Group();
     elbow.position.y = -0.34;
     shoulder.add(elbow);
-    const forearm = capsule(0.05 * b, 0.18, suitMat);
+    // Casual = short tee sleeves: the forearm is bare skin with no cuff.
+    const forearm = capsule(0.05 * b, 0.18, casual ? skinMat : suitMat);
     forearm.position.y = -0.13;
     elbow.add(forearm);
-    const cuff = capsule(0.052 * b, 0.02, shirtMat);
-    cuff.position.y = -0.235;
-    elbow.add(cuff);
+    if (!casual) {
+      const cuff = capsule(0.052 * b, 0.02, shirtMat);
+      cuff.position.y = -0.235;
+      elbow.add(cuff);
+    }
     const fist = sphere(0.075, skinMat);
     fist.scale.set(0.95, 0.8, 1.2);
     fist.position.y = -0.3;
@@ -311,22 +427,31 @@ export function buildFighter(charId) {
     const hip = new THREE.Group();
     hip.position.set(s * 0.11, -0.1, 0);
     hips.add(hip);
-    const thigh = capsule(0.078 * b, 0.26, suitMat);
+    const thigh = capsule(0.078 * b, 0.26, legMat);
     thigh.position.y = -0.2;
     hip.add(thigh);
 
     const knee = new THREE.Group();
     knee.position.y = -0.42;
     hip.add(knee);
-    const shin = capsule(0.06 * b, 0.26, suitMat);
+    const shin = capsule(0.06 * b, 0.26, legMat);
     shin.position.y = -0.2;
     knee.add(shin);
     const shoe = box(0.115, 0.075, 0.26, shoeMat);
     shoe.position.set(0, -0.45, 0.06);
     knee.add(shoe);
-    const heel = box(0.1, 0.05, 0.08, shoeMat);
-    heel.position.set(0, -0.462, -0.05);
-    knee.add(heel);
+    if (casual) {
+      // Sneaker sole: a dark rubber slab under the white upper.
+      const sole = box(0.12, 0.03, 0.28, new THREE.MeshStandardMaterial({
+        color: 0x2c2c2c, roughness: 0.9,
+      }));
+      sole.position.set(0, -0.492, 0.05);
+      knee.add(sole);
+    } else {
+      const heel = box(0.1, 0.05, 0.08, shoeMat);
+      heel.position.set(0, -0.462, -0.05);
+      knee.add(heel);
+    }
 
     joints['shoulder' + side] = shoulder;
     joints['elbow' + side] = elbow;
@@ -340,11 +465,13 @@ export function buildFighter(charId) {
   // `stiffness`/`damping` shape the pendulum. The tie is loose and floppy;
   // hair is stiff with a small max deflection.
   const jiggles = [
-    { pivot: tiePivot, stiffness: 42, damping: 7, gain: 0.014, max: 0.85,
-      rx: 0, rz: 0, vrx: 0, vrz: 0, prev: null, vel: new THREE.Vector3() },
     { pivot: hairPivot, stiffness: 70, damping: 9, gain: 0.005, max: 0.28,
       rx: 0, rz: 0, vrx: 0, vrz: 0, prev: null, vel: new THREE.Vector3() },
   ];
+  if (tiePivot) {
+    jiggles.push({ pivot: tiePivot, stiffness: 42, damping: 7, gain: 0.014, max: 0.85,
+      rx: 0, rz: 0, vrx: 0, vrz: 0, prev: null, vel: new THREE.Vector3() });
+  }
 
   return {
     root,
@@ -355,9 +482,9 @@ export function buildFighter(charId) {
     materials: { suitMat, skinMat, tieMat, hairMat },
     config: c,
     baseColors: {
-      suit: new THREE.Color(c.suit),
+      suit: new THREE.Color(casual ? c.shirtColor : c.suit),
       skin: new THREE.Color(c.skin),
-      tie: new THREE.Color(c.tie),
+      tie: new THREE.Color(c.tie ?? c.jeans ?? 0x444444),
     },
   };
 }

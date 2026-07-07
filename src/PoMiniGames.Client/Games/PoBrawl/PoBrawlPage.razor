@@ -44,44 +44,75 @@
             <div class="pb-demo-badge">🎮 Demo — CPU vs CPU</div>
         }
 
-        @* Character / mode select overlay *@
+        @* Pre-fight overlay: presidents ladder in 1P, character select in 2P *@
         @if (_phase == "select" && !_demo)
         {
             <div class="pb-overlay">
                 <div class="pb-select-card">
-                    <h2 class="gps-phase-h">@(_mode == "2p" ? "Local 2-Player Brawl" : "Choose your fighter")</h2>
+                    <h2 class="gps-phase-h">@(_mode == "2p" ? "Local 2-Player Brawl" : "Presidential Ladder")</h2>
                     <p class="pb-select-sub">
                         @(_mode == "2p"
                             ? "P1: A/D move · W/S step · hold S block · F punch · G kick — P2: arrows · K punch · L kick"
                             : "A/D move · W/S sidestep · hold S block · F punch · G kick")
                     </p>
 
-                    <div class="pb-pick-row">
-                        <span class="pb-pick-label">@(_mode == "2p" ? "Player 1" : "You")</span>
-                        <div class="pb-pick-grid">
-                            @foreach (var c in Roster)
+                    @if (_mode == "2p")
+                    {
+                        <div class="pb-pick-row">
+                            <span class="pb-pick-label">Player 1</span>
+                            <div class="pb-pick-grid">
+                                @foreach (var c in PickableRoster)
+                                {
+                                    <button class="pb-pick-btn @(_p1Char == c.Id ? "pb-picked" : "")"
+                                            style="--suit:@c.Suit; --tie:@c.Tie"
+                                            @onclick="() => _p1Char = c.Id">
+                                        <span class="pb-pick-swatch"></span>@c.Name
+                                    </button>
+                                }
+                            </div>
+                        </div>
+                        <div class="pb-pick-row">
+                            <span class="pb-pick-label">Player 2</span>
+                            <div class="pb-pick-grid">
+                                @foreach (var c in PickableRoster)
+                                {
+                                    <button class="pb-pick-btn @(_p2Char == c.Id ? "pb-picked" : "")"
+                                            style="--suit:@c.Suit; --tie:@c.Tie"
+                                            @onclick="() => _p2Char = c.Id">
+                                        <span class="pb-pick-swatch"></span>@c.Name
+                                    </button>
+                                }
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        @* BOB climbs the ladder: beat a president to unlock the previous
+                           one. Difficulty ramps with each rung; ELO tracks skill. *@
+                        <div class="pb-ladder-meta">
+                            <span class="pb-ladder-match">Match @(_ladder + 1) of @Roster.Length</span>
+                            <span class="pb-ladder-elo">ELO @_rating.Elo · Peak @_rating.Peak</span>
+                        </div>
+
+                        @if (_champion)
+                        {
+                            <p class="pb-champion">🏆 You beat every president! The ladder restarts — go again.</p>
+                        }
+
+                        <div class="pb-vs-row">
+                            <span class="pb-vs-name pb-vs-bob">BOB</span>
+                            <span class="pb-vs-tag">VS</span>
+                            <span class="pb-vs-name">@Roster[_ladder].Name</span>
+                        </div>
+
+                        <div class="pb-ladder-dots">
+                            @for (int i = 0; i < Roster.Length; i++)
                             {
-                                <button class="pb-pick-btn @(_p1Char == c.Id ? "pb-picked" : "")"
-                                        style="--suit:@c.Suit; --tie:@c.Tie"
-                                        @onclick="() => _p1Char = c.Id">
-                                    <span class="pb-pick-swatch"></span>@c.Name
-                                </button>
+                                var cls = i < _ladder ? "pb-dot-beaten" : (i == _ladder ? "pb-dot-current" : "pb-dot-locked");
+                                <span class="pb-dot @cls" title="@Roster[i].Name">@(i < _ladder ? "✓" : (i == _ladder ? "🥊" : "·"))</span>
                             }
                         </div>
-                    </div>
-                    <div class="pb-pick-row">
-                        <span class="pb-pick-label">@(_mode == "2p" ? "Player 2" : "Opponent")</span>
-                        <div class="pb-pick-grid">
-                            @foreach (var c in Roster)
-                            {
-                                <button class="pb-pick-btn @(_p2Char == c.Id ? "pb-picked" : "")"
-                                        style="--suit:@c.Suit; --tie:@c.Tie"
-                                        @onclick="() => _p2Char = c.Id">
-                                    <span class="pb-pick-swatch"></span>@c.Name
-                                </button>
-                            }
-                        </div>
-                    </div>
+                    }
 
                     <button class="pb-fight-btn" @onclick="StartMatch">🥊 FIGHT</button>
 
@@ -111,13 +142,31 @@
 
     private sealed record RosterEntry(string Id, string Name, string Suit, string Tie);
 
+    // 1-player ladder order: most recent president first, marching back in
+    // time. Rung index doubles as the CPU difficulty level (index + 1 → 1-10).
     private static readonly RosterEntry[] Roster =
     [
         new("trump", "Trump", "#1b2a52", "#d62828"),
         new("biden", "Biden", "#24365e", "#7fb2e5"),
         new("obama", "Obama", "#3a3f44", "#2456c9"),
         new("bush", "Bush", "#17181c", "#b02323"),
+        new("clinton", "Clinton", "#2c3e6b", "#c0392b"),
+        new("bushsr", "Bush Sr.", "#3b4a63", "#30549c"),
+        new("reagan", "Reagan", "#5a3a35", "#99282e"),
+        new("carter", "Carter", "#6b7a8f", "#3f7a4d"),
+        new("ford", "Ford", "#2f3a4a", "#8f6b2f"),
+        new("nixon", "Nixon", "#23252b", "#5d6d7e"),
     ];
+
+    private static readonly RosterEntry Bob = new("bob", "BOB", "#e9e6de", "#3566a8");
+
+    // 2-player select can pick anyone, BOB included.
+    private static readonly RosterEntry[] PickableRoster = [Bob, .. Roster];
+
+    // Fixed rating per ladder rung for the ELO math: rung 1 (Trump) is a
+    // pushover at 800; rung 10 (Nixon) sits near 2000. Beating an easy rung
+    // when your rating is high earns almost nothing; losing to it costs a lot.
+    private static int PresidentElo(int rung) => 800 + rung * 133;
 
     private string _playerName = "";
     private bool _demo;
@@ -140,6 +189,13 @@
     private readonly GameStatsService _gameStats = new();
     private DotNetObjectReference<PoBrawlPage>? _ref;
 
+    // ── 1P presidents ladder + adaptive ELO (same system as ConnectFive) ──
+    private int _ladder;                 // 0-based rung; Roster[_ladder] is the opponent
+    private bool _champion;              // set for one select-screen after clearing rung 10
+    private AdaptiveRating _rating = new();
+    private int _lastEloDelta;
+    private string LadderKey => $"pobrawl_ladder_{_playerName}";
+
     private RenderFragment TitleContent => @<span>🥊 PoBrawl</span>;
 
     private RenderFragment ControlsContent => @<div class="gps-controls">
@@ -153,6 +209,18 @@
         {
             <div>KO in @_lastKo.ToString("0.00")s@(_newRecord ? " — 🏆 New record!" : "")</div>
         }
+        @if (_mode == "1p")
+        {
+            <div>ELO @_rating.Elo (@(_lastEloDelta >= 0 ? "+" : "")@_lastEloDelta) vs @CharName(_p2Char) @PresidentElo(LadderRungOf(_p2Char))</div>
+            @if (_champion)
+            {
+                <div>🏆 Ladder complete — every president is down! Starting over at @Roster[0].Name.</div>
+            }
+            else
+            {
+                <div>Next: BOB vs @Roster[_ladder].Name (match @(_ladder + 1) of @Roster.Length)</div>
+            }
+        }
     </div>;
 
     protected override void OnInitialized()
@@ -161,6 +229,14 @@
         _mode = _demo ? "demo" : (ModeQuery == "2p" ? "2p" : "1p");
         _playerName = PlayerNameService.GetPlayerName();
         _stats = _gameStats.GetStats("pobrawl", _playerName);
+
+        if (_mode == "1p")
+        {
+            _rating = _gameStats.GetAdaptiveRating("pobrawl", _playerName);
+            _ladder = LoadLadder();
+            _p1Char = Bob.Id;
+            _p2Char = Roster[_ladder].Id;
+        }
         UpdateStats();
 
         if (_demo)
@@ -194,10 +270,13 @@
         _p1Hp = 100;
         _p2Hp = 100;
         _elapsed = 0;
+        // 1P difficulty is the ladder rung (1 = pushover Trump … 10 = brutal
+        // Nixon); demo keeps the balanced mid-tier CPU-vs-CPU fight.
+        object difficulty = _mode == "1p" ? _ladder + 1 : "medium";
         try
         {
             await JSRuntime.InvokeVoidAsync("PoBrawl.init", "pobrawl-container", _ref,
-                new { mode = _mode, p1Character = _p1Char, p2Character = _p2Char, difficulty = "medium" });
+                new { mode = _mode, p1Character = _p1Char, p2Character = _p2Char, difficulty });
         }
         catch (Exception ex)
         {
@@ -207,6 +286,12 @@
 
     private async Task StartMatch()
     {
+        if (_mode == "1p")
+        {
+            _champion = false;
+            _p1Char = Bob.Id;
+            _p2Char = Roster[_ladder].Id;
+        }
         _phase = "fighting";
         await InitEngine();
     }
@@ -262,6 +347,29 @@
             }
 
             var result = winner == 0 ? GameResult.Draw : (won ? GameResult.Win : GameResult.Loss);
+
+            // Adaptive ELO (same system as ConnectFive): scored against the
+            // beaten/losing president's fixed ladder rating, so early rungs are
+            // worth little and Nixon is worth a lot.
+            var before = _rating.Elo;
+            _rating = _gameStats.RecordAdaptiveResult("pobrawl", _playerName, PresidentElo(_ladder), result);
+            _lastEloDelta = _rating.Elo - before;
+
+            // Ladder: win → advance to the previous president; loss → rematch.
+            if (won)
+            {
+                if (_ladder >= Roster.Length - 1)
+                {
+                    _champion = true;
+                    _ladder = 0;
+                }
+                else
+                {
+                    _ladder++;
+                }
+                SaveLadder();
+            }
+
             _stats = await GameResults.RecordAndSubmitPoBrawlAsync(_playerName, result, best);
             UpdateStats();
         }
@@ -271,8 +379,12 @@
     private void UpdateStats()
     {
         var bucket = _gameStats.GetDifficultyBucket(_stats, Difficulty.Medium);
-        _statItems = GameStatsPanel.Build(bucket, includeDraws: false,
-            ("Best KO", _bestKo > 0 ? $"{_bestKo:0.00}s" : "—"));
+        _statItems = _mode == "1p"
+            ? GameStatsPanel.Build(bucket, includeDraws: false,
+                ("ELO", _rating.Elo.ToString()),
+                ("Best KO", _bestKo > 0 ? $"{_bestKo:0.00}s" : "—"))
+            : GameStatsPanel.Build(bucket, includeDraws: false,
+                ("Best KO", _bestKo > 0 ? $"{_bestKo:0.00}s" : "—"));
     }
 
     private string ResultLine()
@@ -280,11 +392,27 @@
         if (_winner == 0) return "🤝 Draw!";
         var winnerName = CharName(_winner == 1 ? _p1Char : _p2Char);
         if (_mode == "2p") return $"🏆 {winnerName} wins — Player {_winner}!";
-        return _winner == 1 ? $"🏆 You win as {winnerName}!" : $"💀 {winnerName} beat you";
+        return _winner == 1
+            ? $"🏆 BOB knocked out {CharName(_p2Char)}!"
+            : $"💀 {CharName(_p2Char)} beat BOB — rematch!";
     }
 
     private static string CharName(string id) =>
-        Roster.FirstOrDefault(r => r.Id == id)?.Name ?? id;
+        PickableRoster.FirstOrDefault(r => r.Id == id)?.Name ?? id;
+
+    private static int LadderRungOf(string presidentId)
+    {
+        var idx = Array.FindIndex(Roster, r => r.Id == presidentId);
+        return idx < 0 ? 0 : idx;
+    }
+
+    private int LoadLadder()
+    {
+        var raw = LocalStorageService.GetItem<string>(LadderKey);
+        return int.TryParse(raw, out var i) ? Math.Clamp(i, 0, Roster.Length - 1) : 0;
+    }
+
+    private void SaveLadder() => LocalStorageService.SetItem(LadderKey, _ladder.ToString());
 
     private static string Initials(string name)
     {

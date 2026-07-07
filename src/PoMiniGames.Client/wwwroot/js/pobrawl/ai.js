@@ -9,17 +9,38 @@
 //   • occasionally commit to a blocked attack then cancel into block (bait)
 //   • back off after taking quick consecutive hits (anti-stunlock)
 
-const REACTION_MS = { easy: 480, medium: 320, hard: 200 };
-const BLOCK_REACT_P = { easy: 0.22, medium: 0.5, hard: 0.78 };
-const BAIT_P = { easy: 0.0, medium: 0.06, hard: 0.12 };
-const PUNISH_P = { easy: 0.1, medium: 0.5, hard: 0.82 };
+// Ten numeric skill rungs for the 1-player presidents ladder. Level 1 is a
+// pushover (sluggish, near-blind defense, rarely swings); level 10 is a wall
+// (snap reactions, near-perfect blocking and whiff punishing, aggressive).
+// `aggro` scales how often the AI chooses to attack at all.
+const LEVELS = [
+  /* 1 */ { reactionMs: 780, blockP: 0.03, baitP: 0.00, punishP: 0.02, aggro: 0.35 },
+  /* 2 */ { reactionMs: 640, blockP: 0.08, baitP: 0.00, punishP: 0.06, aggro: 0.50 },
+  /* 3 */ { reactionMs: 540, blockP: 0.15, baitP: 0.00, punishP: 0.12, aggro: 0.62 },
+  /* 4 */ { reactionMs: 460, blockP: 0.24, baitP: 0.02, punishP: 0.22, aggro: 0.74 },
+  /* 5 */ { reactionMs: 380, blockP: 0.34, baitP: 0.04, punishP: 0.34, aggro: 0.85 },
+  /* 6 */ { reactionMs: 320, blockP: 0.45, baitP: 0.06, punishP: 0.46, aggro: 0.95 },
+  /* 7 */ { reactionMs: 270, blockP: 0.56, baitP: 0.08, punishP: 0.58, aggro: 1.05 },
+  /* 8 */ { reactionMs: 225, blockP: 0.66, baitP: 0.10, punishP: 0.70, aggro: 1.12 },
+  /* 9 */ { reactionMs: 185, blockP: 0.76, baitP: 0.13, punishP: 0.80, aggro: 1.20 },
+  /* 10 */{ reactionMs: 150, blockP: 0.86, baitP: 0.16, punishP: 0.90, aggro: 1.28 },
+];
+
+// Legacy string difficulties (used by demo / 2p fallbacks) map onto rungs.
+const NAMED_LEVELS = { easy: 2, medium: 5, hard: 8 };
 
 export class AiController {
+  /** difficulty: 1-10 rung number, or 'easy' | 'medium' | 'hard'. */
   constructor(difficulty, rng = null) {
-    this.reactionMs = REACTION_MS[difficulty] || REACTION_MS.medium;
-    this.blockP = BLOCK_REACT_P[difficulty] || BLOCK_REACT_P.medium;
-    this.baitP = BAIT_P[difficulty] || BAIT_P.medium;
-    this.punishP = PUNISH_P[difficulty] || PUNISH_P.medium;
+    const level = typeof difficulty === 'number'
+      ? Math.max(1, Math.min(10, Math.round(difficulty)))
+      : (NAMED_LEVELS[difficulty] || NAMED_LEVELS.medium);
+    const p = LEVELS[level - 1];
+    this.reactionMs = p.reactionMs;
+    this.blockP = p.blockP;
+    this.baitP = p.baitP;
+    this.punishP = p.punishP;
+    this.aggro = p.aggro;
     this.rng = rng || { random: Math.random };
     this.sinceDecision = 1e9;
     this.current = { move: 0, side: 0, punch: false, kick: false, block: false };
@@ -107,16 +128,20 @@ export class AiController {
       return { ...this.current, punch: true };
     }
 
+    // Attack shares scale with the rung's aggression; the leftover probability
+    // shifts into block/retreat/wait, so low rungs mostly shuffle around.
     const r = this.rng.random();
-    if (r < 0.35) {
+    const pPunch = 0.35 * this.aggro;
+    const pKick = 0.25 * this.aggro;
+    if (r < pPunch) {
       this.current = { move: 0, side: 0, punch: false, kick: false, block: false };
       this.baitArmed = false;
       return { ...this.current, punch: true };
-    } else if (r < 0.6) {
+    } else if (r < pPunch + pKick) {
       this.current = { move: 0, side: 0, punch: false, kick: false, block: false };
       this.baitArmed = false;
       return { ...this.current, kick: true };
-    } else if (r < 0.75) {
+    } else if (r < pPunch + pKick + 0.15) {
       // Optionally arm a bait: start a punch, then cancel into block next tick.
       if (this.rng.random() < this.baitP) {
         this.baitArmed = true;
@@ -125,7 +150,10 @@ export class AiController {
         return { ...this.current, punch: true };
       }
       this.current = { move: 0, side: 0, punch: false, kick: false, block: true };
-    } else if (r < 0.9) {
+    } else if (r < pPunch + pKick + 0.15 + 0.15) {
+      // Fixed 15% retreat share; whatever probability the low rungs don't
+      // spend on attacking becomes idle time — a level-1 president mostly
+      // stands there being punchable.
       this.current = { move: -1, side: 0, punch: false, kick: false, block: false };
     } else {
       this.current = { move: 0, side: 0, punch: false, kick: false, block: false };

@@ -17,6 +17,10 @@
            ShowSettings="true"
            Stats="@_statItems"
            GameOver="@(_phase == "result" && !_demo)"
+           ShowNextMatch="@(_mode == "1p" && _winner == 1)"
+           OnNextMatch="NextMatch"
+           NextMatchLabel="@(_champion ? "🏆 NEW LADDER" : "➡️ NEXT MATCH")"
+           PlayAgainLabel="@(_mode == "1p" && _winner != 1 ? "🔄 REMATCH" : "🔄 Play Again")"
            OnPlayAgain="BackToSelect"
            GameSummary="@GameSummaryContent"
            Controls="@ControlsContent">
@@ -302,6 +306,18 @@
         _phase = "select";
         try { await JSRuntime.InvokeVoidAsync("PoBrawl.destroy"); } catch { }
         _highScores = await ApiService.GetPoBrawlHighScoresAsync(10);
+    }
+
+    // 1P win path: the ladder was already advanced in OnMatchEnd, so just kick
+    // off the next match (StartMatch re-picks BOB vs Roster[_ladder] and
+    // re-inits the engine). Champion restart resets _champion so the banner
+    // disappears after the user clicks NEXT MATCH.
+    private async Task NextMatch()
+    {
+        if (_mode != "1p") { await BackToSelect(); return; }
+        _champion = false;
+        _winner = 0;
+        await StartMatch();
     }
 
     private async Task ToggleMute()

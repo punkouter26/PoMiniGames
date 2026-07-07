@@ -58,10 +58,16 @@
                     </div>
                 }
                 <div class="gps-play-again-actions">
+                    @if (ShowNextMatch && OnNextMatch.HasDelegate)
+                    {
+                        <button class="gps-play-again-btn gps-play-again-btn--primary" @onclick="OnNextMatch">
+                            @NextMatchLabel
+                        </button>
+                    }
                     @if (ShowPlayAgain && OnPlayAgain.HasDelegate)
                     {
-                        <button class="gps-play-again-btn gps-play-again-btn--primary" @onclick="OnPlayAgain">
-                            🔄 Play Again
+                        <button class="gps-play-again-btn @(ShowNextMatch ? "gps-play-again-btn--secondary" : "gps-play-again-btn--primary")" @onclick="OnPlayAgain">
+                            @PlayAgainLabel
                         </button>
                     }
                     @if (!string.IsNullOrEmpty(BackTo))
@@ -87,6 +93,13 @@
     [Parameter] public string? BackTo { get; set; }
     [Parameter] public bool GameOver { get; set; }
     [Parameter] public EventCallback OnPlayAgain { get; set; }
+    [Parameter] public string PlayAgainLabel { get; set; } = "🔄 Play Again";
+    // Optional secondary "next round" button. Shown alongside Play Again in
+    // modal dialogs so ladder games (PoBrawl 1P) can advance straight to the
+    // next opponent. Hidden by default — pages opt in by binding a handler.
+    [Parameter] public bool ShowNextMatch { get; set; }
+    [Parameter] public EventCallback OnNextMatch { get; set; }
+    [Parameter] public string NextMatchLabel { get; set; } = "➡️ NEXT MATCH";
     [Parameter] public bool ShowSettings { get; set; } = true;
     [Parameter] public bool ShowPlayAgain { get; set; } = true;
     [Parameter] public RenderFragment? GameSummary { get; set; }

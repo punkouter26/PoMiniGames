@@ -19,17 +19,89 @@
 @inject IJSRuntime              JS
 @inject NavigationManager       Nav
 @inject IWebAssemblyHostEnvironment HostEnv
+@inject PoSurvive.Client.Services.LocalModelBootstrapService ModelBootstrap
+@inject PoSurvive.Client.Services.InferenceRouter InferenceRouterOrNull
+@inject PoSurvive.Shared.Interfaces.IInferenceService InferenceService
+@inject AuthStateService        AuthState
+@inject ToastService            ToastService
 
-@if (BootState.Value.IsDegradedMode)
-{
-    <div class="mock-banner mock-banner--degraded" role="alert" data-testid="degraded-banner">DEGRADED MODE - fallback tactics active; real LLM inference unavailable</div>
-}
-else if (SimState.Value.IsMockProvider || BootState.Value.IsMockProvider)
-{
-    <div class="mock-banner" role="alert" data-testid="mock-banner">⚠ MOCK DATA - real LLM inference disabled</div>
-}
+@* Banner removed (player request: simplify UI). Degraded / mock state is already
+   surfaced inline via the toolbar inference chip + title tooltip below, so the
+   dedicated full-width banner was duplicate chrome. *@
 
-<header class="toolbar app-reveal" data-testid="toolbar">
+@* Page header — same `gl-top-bar` chrome as the home page (`MainLayout.razor`).
+   The game-specific command surface (model picker, speed, START / PAUSE / etc.)
+   lives in the `<div class="toolbar">` sibling below so it stays accessible but
+   outside the page `<header>` element. *@
+<header class="gl-top-bar">
+    <div class="gl-top-bar-left">
+        <a href="/" class="gl-brand">
+            <span class="gl-brand-icon">
+                <svg width="22" height="22" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect x="3" y="5" width="14" height="14" rx="2" fill="currentColor" opacity="0.8"/>
+                    <rect x="23" y="5" width="14" height="14" rx="2" fill="currentColor" opacity="0.5"/>
+                    <rect x="3" y="23" width="14" height="14" rx="2" fill="currentColor" opacity="0.5"/>
+                    <rect x="23" y="23" width="14" height="14" rx="2" fill="currentColor" opacity="0.8"/>
+                </svg>
+            </span>
+            <span class="gl-brand-text">PoMiniGames</span>
+        </a>
+    </div>
+
+    @* Game-header projection slot — empty on PoSurvive (it surfaces its own
+       game-specific UI in the toolbar div below instead of via SectionOutlet). *@
+    <div class="gl-top-bar-game"></div>
+
+    <div class="gl-auth">
+        @* §10 dev-only "Switch user…" affordance. Renders only in Development +
+           Test environments where the /api/auth/dev-bypass endpoint exists;
+           lets a developer verify head-to-head flows from the same machine
+           without spinning up an incognito tab. Hidden in Production. *@
+        @if (ShowDevSwitch)
+        {
+            <details class="gl-overflow-menu gl-dev-switch">
+                <summary class="gl-overflow-trigger" aria-label="Developer tools">🔧</summary>
+                <div class="gl-overflow-panel">
+                    <div class="gl-dev-switch__title">Switch user (dev only)</div>
+                    <input class="gl-dev-switch__input" type="text"
+                           placeholder="@(AuthState.User?.DisplayName ?? "new-name")"
+                           @bind="_devUser"
+                           @bind:event="oninput"
+                           maxlength="32" />
+                    <button class="gl-overflow-item" @onclick="SwitchDevUserAsync" disabled="@(string.IsNullOrWhiteSpace(_devUser) || _switching)">
+                        @(_switching ? "Switching…" : "Switch identity")
+                    </button>
+                    @if (!string.IsNullOrEmpty(_switchError))
+                    {
+                        <div class="gl-dev-switch__error">@_switchError</div>
+                    }
+                    <div class="gl-dev-switch__hint">Replaces the current cookie; reloads match history.</div>
+                </div>
+            </details>
+        }
+        @if (AuthState.IsConfigured && !AuthState.IsLoading)
+        {
+            <button class="gl-auth-button" @onclick="AuthState.IsAuthenticated ? SignOut : SignIn">
+                @(AuthState.IsAuthenticated ? "Sign out" : "Sign in")
+            </button>
+            @if (!AuthState.IsAuthenticated)
+            {
+                <button class="gl-auth-button gl-auth-button--anon" @onclick="SignInAnon" title="Continue as anonymous">ANON</button>
+            }
+            @if (!AuthState.IsAuthenticated)
+            {
+                <details class="gl-overflow-menu">
+                    <summary class="gl-overflow-trigger" aria-label="More">⋯</summary>
+                    <div class="gl-overflow-panel">
+                        <button class="gl-overflow-item" @onclick="SignInAnon">Continue as anonymous</button>
+                    </div>
+                </details>
+            }
+        }
+    </div>
+</header>
+
+<div class="toolbar app-reveal" data-testid="toolbar">
     <div class="toolbar__identity">
         <a class="toolbar__brand" href="/" aria-label="PoSurvive home">PoSurvive</a>
         <span class="toolbar__subtitle">AGENT SURVIVAL COMMAND DECK</span>
@@ -41,6 +113,37 @@ else if (SimState.Value.IsMockProvider || BootState.Value.IsMockProvider)
               title="Model ID: @BootState.Value.ModelId">
             @BootState.Value.ProviderKind | @BootState.Value.ModelLabel
         </span>
+        @* Compact model switcher — always visible so the user can flip between
+           LOCAL (WebLLM in-browser) and REMOTE (Azure OpenAI / Foundry) at any
+           time without leaving the toolbar. The Mission Control picker still
+           handles the full local-model download workflow. *@
+        <label class="toolbar__label toolbar__label--compact" for="toolbar-model-select">MODEL</label>
+        <select id="toolbar-model-select"
+                class="toolbar__model-select"
+                value="@ToolbarSelectedModelId"
+                @onchange="OnToolbarModelChanged"
+                disabled="@(ToolbarModelOptions.Count == 0 || SimState.Value.IsRunning || _switchingModel)"
+                data-testid="toolbar-model-select"
+                title="Switch between local (WebLLM) and remote (Azure OpenAI) inference models">
+            @if (ToolbarModelOptions.Any(o => !o.IsRemote))
+            {
+                <optgroup label="── LOCAL (WebLLM) ──">
+                    @foreach (var option in ToolbarModelOptions.Where(o => !o.IsRemote))
+                    {
+                        <option value="@option.Id">@option.Label</option>
+                    }
+                </optgroup>
+            }
+            @if (ToolbarModelOptions.Any(o => o.IsRemote))
+            {
+                <optgroup label="── REMOTE (Azure OpenAI / Foundry) ──">
+                    @foreach (var option in ToolbarModelOptions.Where(o => o.IsRemote))
+                    {
+                        <option value="@option.Id">@option.Label</option>
+                    }
+                </optgroup>
+            }
+        </select>
         @if (BootState.Value.IsDegradedMode)
         {
             <span class="toolbar__inference-status toolbar__inference-status--warn"
@@ -151,28 +254,11 @@ else if (SimState.Value.IsMockProvider || BootState.Value.IsMockProvider)
             [ DOWNLOAD LOG ]
         </button>
     </div>
-</header>
+</div>
 
-@if (SimState.Value.IsRunning || SimState.Value.Agents.Count > 0 || SimState.Value.ConsoleLog.Count > 0)
-{
-    <div class="mobile-pane-switch app-reveal" role="tablist" aria-label="Mobile panes">
-        <button class='c64-btn @(_activePane == "grid" ? "c64-btn--active" : string.Empty)'
-                @onclick='() => SetActivePane("grid")'
-                aria-selected='@(_activePane == "grid")'>
-            GRID
-        </button>
-        <button class='c64-btn @(_activePane == "agents" ? "c64-btn--active" : string.Empty)'
-                @onclick='() => SetActivePane("agents")'
-                aria-selected='@(_activePane == "agents")'>
-            AGENTS
-        </button>
-        <button class='c64-btn @(_activePane == "log" ? "c64-btn--active" : string.Empty)'
-                @onclick='() => SetActivePane("log")'
-                aria-selected='@(_activePane == "log")'>
-            LOG
-        </button>
-    </div>
-}
+@* Mobile pane switcher removed (player request: simplify UI on desktop layout). The
+   GRID / AGENTS / LOG panes are now always visible side-by-side instead of being
+   hidden behind three tab buttons. *@
 
 @if (_downloadToastVisible)
 {
@@ -196,38 +282,25 @@ else if (SimState.Value.IsMockProvider || BootState.Value.IsMockProvider)
 
 @if (SimState.Value.TurnNumber > 0 || SimState.Value.IsRunning)
 {
+    @* Stats bar simplified (player request): collapsed from 10 metrics to 4 most
+       important so the row stops dominating the viewport. Outcome / Pause / AI
+       state still surface via inline toolbar chips when active. *@
     <div class="statsbar" data-testid="statsbar">
         <span class="statsbar__item statsbar__item--time" title="Elapsed wall-clock time since simulation start">⏱ @ElapsedFormatted</span>
-        <span class="statsbar__sep">|</span>
+        <span class="statsbar__sep">·</span>
         <span class="statsbar__item" title="Current simulation turn">TURN <strong>@SimState.Value.TurnNumber</strong></span>
-        <span class="statsbar__sep">|</span>
-        <span class="statsbar__item statsbar__item--red" title="Alive Red agents">🔴 @AliveRed alive</span>
-        <span class="statsbar__item statsbar__item--blue" title="Alive Blue agents">🔵 @AliveBlue alive</span>
-        <span class="statsbar__sep">|</span>
-        <span class="statsbar__item" title="Total kills this session">☠ @TotalKills kills</span>
-        <span class="statsbar__sep">|</span>
-        <span class="statsbar__item" title="Average HP across all alive agents">❤ @AvgHp% avg HP</span>
-        <span class="statsbar__sep">|</span>
-        <span class="statsbar__item" title="Food items currently on the grid">🍎 @SimState.Value.FoodNodes.Count food</span>
-        @if (SecsPerTurn > 0)
+        <span class="statsbar__sep">·</span>
+        <span class="statsbar__item statsbar__item--red" title="Alive Red agents">🔴 @AliveRed</span>
+        <span class="statsbar__item statsbar__item--blue" title="Alive Blue agents">🔵 @AliveBlue</span>
+        @if (SimState.Value.IsPaused)
         {
-            <span class="statsbar__sep">|</span>
-            <span class="statsbar__item statsbar__item--dim" title="Estimated seconds per turn based on elapsed time">~@SecsPerTurn s/turn</span>
+            <span class="statsbar__sep">·</span>
+            <span class="statsbar__item statsbar__item--paused">⏸ PAUSED</span>
         }
         @if (SimState.Value.Outcome is not null)
         {
-            <span class="statsbar__sep">|</span>
+            <span class="statsbar__sep">·</span>
             <span class="statsbar__item statsbar__item--outcome">@SimState.Value.Outcome.ToUpperInvariant()</span>
-        }
-        @if (SimState.Value.IsRunning && BootState.Value.ProviderKind == "REMOTE")
-        {
-            <span class="statsbar__sep">|</span>
-            <span class="statsbar__item statsbar__item--querying" title="Azure OpenAI inference is active this turn">⚡ QUERYING AI</span>
-        }
-        @if (SimState.Value.IsPaused)
-        {
-            <span class="statsbar__sep">|</span>
-            <span class="statsbar__item statsbar__item--paused">⏸ PAUSED</span>
         }
     </div>
 }
@@ -245,8 +318,10 @@ else if (SimState.Value.IsMockProvider || BootState.Value.IsMockProvider)
         <div class="pane-body pane-body--sidebar">
             @if (SimState.Value.IsRunning || SimState.Value.Agents.Count > 0)
             {
+                @* SoundtrackControl removed from the always-visible sidebar (player request).
+                   Still reachable from its own route if needed; the right rail now stays
+                   focused on the decision intel and agent list. *@
                 <DecisionInspector />
-                <SoundtrackControl />
                 <AgentSidebar />
             }
         </div>
@@ -289,6 +364,62 @@ else if (SimState.Value.IsMockProvider || BootState.Value.IsMockProvider)
         "MOCK"   => "toolbar__inference--mock",
         _         => string.Empty,
     };
+
+    // ── Compact toolbar model switcher ────────────────────────────────
+    // Loads the same set of LOCAL (WebLLM) and REMOTE (Azure OpenAI / Foundry)
+    // options as the Mission Control picker. Lets the player change model on the fly
+    // without backing out to the idle screen.
+    private List<PoSurvive.Client.Services.ModelOption> ToolbarModelOptions { get; set; } = new();
+    private bool _switchingModel;
+    private string ToolbarSelectedModelId
+    {
+        get => BootState.Value.ModelId;
+        set { /* value is driven by BootState; OnToolbarModelChanged dispatches updates */ }
+    }
+
+    private async Task OnToolbarModelChanged(ChangeEventArgs e)
+    {
+        var newId = e.Value?.ToString();
+        if (string.IsNullOrWhiteSpace(newId) || newId == BootState.Value.ModelId) return;
+
+        var selected = ToolbarModelOptions.FirstOrDefault(o => o.Id == newId);
+        if (selected is null) return;
+
+        _switchingModel = true;
+        StateHasChanged();
+
+        try
+        {
+            var isMock       = InferenceService is PoSurvive.Client.Services.MockInferenceService;
+            var providerKind = ModelBootstrap.ResolveProviderKind(isMock, selected.IsRemote);
+
+            if (!isMock && InferenceRouterOrNull is { } router)
+            {
+                if (selected.IsRemote) router.UseRemote(selected.Id);
+                else                   router.UseLocal();
+            }
+
+            Dispatcher.Dispatch(new ResetInferenceBootstrapAction());
+            Dispatcher.Dispatch(new InferenceConfiguredAction(
+                ProviderKind: providerKind,
+                ModelId:      selected.Id,
+                ModelLabel:   selected.Label));
+
+            // Mock + remote models are ready instantly (no in-browser model download).
+            // LOCAL WebLLM models require the multi-MB download kicked off by the
+            // Mission Control picker's LoadSelectedModelAsync; here we only flip the
+            // router + provider chip and let the user open Mission Control to start
+            // the download if they want a local run.
+            if (isMock || selected.IsRemote)
+            {
+                Dispatcher.Dispatch(new BootReadyAction());
+            }
+        }
+        finally
+        {
+            _switchingModel = false;
+        }
+    }
 
     private bool StalledAtTurnZero
         => SimState.Value.IsRunning
@@ -333,10 +464,29 @@ else if (SimState.Value.IsMockProvider || BootState.Value.IsMockProvider)
 
     private System.Threading.Timer? _clockTimer;
 
+    // ── Auth chrome (mirrors MainLayout so the page <header> re-renders on
+    //    sign-in / sign-out without the parent layout needing to drive it). ──
+    private Action? _onAuthStateChanged;
+    private string _devUser = string.Empty;
+    private bool _switching;
+    private string? _switchError;
+
+    private bool ShowDevSwitch =>
+        HostEnv.IsDevelopment() ||
+        string.Equals(HostEnv.Environment, "Test", StringComparison.OrdinalIgnoreCase);
+
     protected override void OnInitialized()
     {
         base.OnInitialized();
+        // Keep the toolbar's compact model switcher populated from the same
+        // configuration source as Mission Control.
+        ToolbarModelOptions = ModelBootstrap.ReadAllModelOptions();
         _clockTimer = new System.Threading.Timer(_ => InvokeAsync(StateHasChanged), null, 1000, 1000);
+
+        // Mirror MainLayout: subscribe to auth changes so the <header> chrome
+        // (Sign in / Sign out buttons) re-renders without a full page reload.
+        _onAuthStateChanged = () => InvokeAsync(StateHasChanged);
+        AuthState.StateChanged += _onAuthStateChanged;
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -460,6 +610,42 @@ else if (SimState.Value.IsMockProvider || BootState.Value.IsMockProvider)
         _downloadToastCts?.Dispose();
         // Remove PoSurvive's stylesheets so the platform's styling is restored on exit.
         _ = JS.InvokeVoidAsync("PoSurviveTheme.unload");
+
+        // Detach the auth-state subscription wired up in OnInitialized so this
+        // layout doesn't leak event handlers on re-creation.
+        if (_onAuthStateChanged is not null)
+        {
+            AuthState.StateChanged -= _onAuthStateChanged;
+        }
+    }
+
+    // ── Auth chrome handlers (mirror MainLayout so the page <header> behaves
+    //    identically to the home page when the player taps Sign in / Sign out /
+    //    Continue as anonymous). ─────────────────────────────────────────────
+    private async Task SignIn()    => await AuthState.SignInAsync();
+    private async Task SignOut()   => await AuthState.SignOutAsync();
+    private async Task SignInAnon() => await AuthState.DevBypassAsync("ANON");
+
+    private async Task SwitchDevUserAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_devUser)) return;
+        _switching = true;
+        _switchError = null;
+        try
+        {
+            await AuthState.DevBypassAsync(_devUser.Trim());
+            ToastService.Show($"Signed in as {_devUser.Trim()}", ToastType.Success);
+            _devUser = string.Empty;
+        }
+        catch (Exception ex)
+        {
+            _switchError = ex.Message;
+        }
+        finally
+        {
+            _switching = false;
+            await InvokeAsync(StateHasChanged);
+        }
     }
 
 }

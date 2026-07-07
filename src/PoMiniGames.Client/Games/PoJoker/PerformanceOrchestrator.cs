@@ -209,21 +209,48 @@ public sealed class PerformanceOrchestrator : IAsyncDisposable
             ? string.Join("", SeenJokeIds.TakeLast(50).Select(id => $"&excludeIds={id}"))
             : "";
 
-        var response = await _http.GetAsync(
-            $"/api/joker/fetch?safeMode={safeMode}&category={Uri.EscapeDataString(SelectedCategory)}{excludeIdsQuery}",
-            cancellationToken);
-
-        if (!response.IsSuccessStatusCode)
+        HttpResponseMessage? response = null;
+        try
         {
-            await Task.Delay(TimeSpan.FromMilliseconds(_settings.RetryDelayMilliseconds), cancellationToken);
-            return;
+            response = await _http.GetAsync(
+                $"/api/joker/fetch?safeMode={safeMode}&category={Uri.EscapeDataString(SelectedCategory)}{excludeIdsQuery}",
+                cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                // Surface the failure so the operator sees it instead of stale state.
+                // 401 = session expired (e.g. cookie cleared mid-show); 503 = upstream joke API down;
+                // everything else is treated as transient.
+                var code = (int)response.StatusCode;
+                NetworkStatusText = code switch
+                {
+                    401 => "The royal seal is missing — sign in again to continue the show.",
+                    403 => "Access to the jester's joke vault was denied.",
+                    404 => "The jester has no joke for that category.",
+                    503 => "The comedic muses are off duty (upstream joke API unreachable).",
+                    _   => $"The courier returned {code}; will try again in a moment."
+                };
+                ShowNetworkOverlay = true;
+                NotifyStateChanged();
+                await Task.Delay(TimeSpan.FromMilliseconds(_settings.RetryDelayMilliseconds), cancellationToken);
+                return;
+            }
+
+            CurrentJoke = await response.Content.ReadFromJsonAsync(
+                ApiJsonContext.Default.JokeDto, cancellationToken);
+            if (CurrentJoke is not null)
+            {
+                SeenJokeIds.Add(CurrentJoke.Id);
+            }
         }
-
-        CurrentJoke = await response.Content.ReadFromJsonAsync(
-            ApiJsonContext.Default.JokeDto, cancellationToken);
-        if (CurrentJoke is not null)
+        catch (HttpRequestException)
         {
-            SeenJokeIds.Add(CurrentJoke.Id);
+            // Network blip — let the catch in RunPerformanceLoopAsync surface the overlay.
+            throw;
+        }
+        finally
+        {
+            response?.Dispose();
         }
     }
 

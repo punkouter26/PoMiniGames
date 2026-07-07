@@ -79,11 +79,27 @@
   <Target Name="StageBlazorClientStaticWebAssets" AfterTargets="Build">
     <ItemGroup>
       <_BlazorClientWwwroot Include="..\..\PoMiniGames.Client\bin\$(Configuration)\net10.0\wwwroot\**\*.*" />
+      <!-- The Blazor WASM SDK doesn't auto-copy wwwroot/appsettings*.json into the
+           build output, but the runtime needs them (PoSurvive reads Inference model
+           lists from these at startup). Copy them directly from the source. -->
+      <_BlazorClientSettings Include="..\..\PoMiniGames.Client\wwwroot\appsettings.json"
+                             Condition="Exists('..\..\PoMiniGames.Client\wwwroot\appsettings.json')" />
+      <_BlazorClientSettingsDev Include="..\..\PoMiniGames.Client\wwwroot\appsettings.Development.json"
+                                Condition="Exists('..\..\PoMiniGames.Client\wwwroot\appsettings.Development.json')" />
     </ItemGroup>
     <Copy
       SourceFiles="@(_BlazorClientWwwroot)"
       DestinationFiles="@(_BlazorClientWwwroot->'$(MSBuildThisFileDirectory)bin\$(Configuration)\net10.0\wwwroot\%(RecursiveDir)%(Filename)%(Extension)')"
       SkipUnchangedFiles="true" />
+    <Copy
+      SourceFiles="@(_BlazorClientSettings)"
+      DestinationFiles="@(_BlazorClientSettings->'$(MSBuildThisFileDirectory)bin\$(Configuration)\net10.0\wwwroot\%(Filename)%(Extension)')"
+      SkipUnchangedFiles="true" />
+    <Copy
+      SourceFiles="@(_BlazorClientSettingsDev)"
+      DestinationFiles="@(_BlazorClientSettingsDev->'$(MSBuildThisFileDirectory)bin\$(Configuration)\net10.0\wwwroot\%(Filename)%(Extension)')"
+      SkipUnchangedFiles="true"
+      Condition=" '$(Configuration)' == 'Debug' " />
   </Target>
 
 </Project>

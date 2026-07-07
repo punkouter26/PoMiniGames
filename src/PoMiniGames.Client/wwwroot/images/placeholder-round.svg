@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 240" role="img" aria-label="Round capture placeholder">
+  <defs>
+    <linearGradient id="bg" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0%" stop-color="#1f2937"/>
+      <stop offset="100%" stop-color="#111827"/>
+    </linearGradient>
+  </defs>
+  <rect width="320" height="240" fill="url(#bg)" rx="12"/>
+  <g transform="translate(160 110)" fill="none" stroke="#6366f1" stroke-width="3">
+    <circle r="46"/>
+    <circle cx="-16" cy="-8" r="3" fill="#6366f1"/>
+    <circle cx="16" cy="-8" r="3" fill="#6366f1"/>
+    <path d="M -14 14 Q 0 24 14 14" stroke-linecap="round"/>
+  </g>
+  <text x="160" y="200" text-anchor="middle" fill="#b0bec5" font-family="system-ui, sans-serif" font-size="14">
+    Capture unavailable
+  </text>
+</svg>

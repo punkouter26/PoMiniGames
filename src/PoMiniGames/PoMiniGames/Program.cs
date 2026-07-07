@@ -235,15 +235,13 @@ if (app.Environment.IsDevelopment())
 // removing the Content-Length and adding Vary: Accept-Encoding.
 app.UseBlazorFrameworkFiles();
 
-// ─── Security gate: sanitize appsettings.*.json responses ───
-// Why a middleware instead of just removing the file: the Blazor WASM runtime
-// fetches /appsettings.json at startup and treats a 404 as a fatal init
-// error (MONO_WASM: download 'http://...appsettings.json' ... failed 404).
-// We therefore intercept the request and return a minimal, empty config
-// stub so the runtime can initialize, without leaking the actual server
-// configuration. A real config fetch attempt from the page origin gets the
-// same empty payload — there is no observable difference between a Blazor
-// runtime fetch and a curl probe.
+// ─── Security gate: serve the *client's* appsettings.*.json, not the server's ───
+// Why this exists: the Blazor WASM runtime fetches /appsettings.json at startup
+// and treats a 404 as a fatal init error (MONO_WASM: download 'http://...
+// appsettings.json' ... failed 404). We therefore intercept the request and
+// serve ONLY the client's appsettings (PoSurvive model list, public API base
+// address) — the server's appsettings (Key Vault endpoints, secrets, AAD
+// client ids) are never returned to a browser.
 //
 // MUST be registered before UseStaticFiles so the gate fires before the
 // static-files pipeline reads the file from disk.
@@ -253,14 +251,49 @@ app.Use(async (ctx, next) =>
     if (p is not null && p.StartsWith("/appsettings", StringComparison.OrdinalIgnoreCase) &&
         p.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
     {
-        // Empty shell config: enough to satisfy WebAssemblyHostBuilder's
-        // IConfiguration boot path (the server has its own appsettings +
-        // Key Vault pipeline that powers real secrets). Returning "{}" keeps
-        // IConfigurationBuilder.AddJsonFile happy without exposing anything.
+        // Restrict to a small allowlist of filenames; block any other path that
+        // somehow resolves under appsettings*.json (e.g. ../ traversal).
+        var fileName = p.TrimStart('/');
+        if (fileName.Contains('/') || fileName.Contains('\\') ||
+            !(fileName.Equals("appsettings.json", StringComparison.OrdinalIgnoreCase) ||
+              fileName.Equals("appsettings.Development.json", StringComparison.OrdinalIgnoreCase)))
+        {
+            ctx.Response.StatusCode = StatusCodes.Status404NotFound;
+            return;
+        }
+
+        // Resolve the *client's* appsettings file from disk. PoMiniGames.csproj's
+        // StageBlazorClientStaticWebAssets target copies the client's
+        // appsettings files into <bin>/wwwroot/appsettings*.json. We deliberately
+        // do NOT serve ContentRootPath or AppContext.BaseDirectory, because those
+        // contain the server's own appsettings.json (Key Vault URIs, AAD client
+        // ids, secrets) and exposing them to a browser would leak configuration.
+        var env = ctx.RequestServices.GetRequiredService<IWebHostEnvironment>();
+        var fullPath = (string?)null;
+        var wwwrootRoot = env.WebRootPath;
+        if (string.IsNullOrEmpty(wwwrootRoot))
+        {
+            // Fall back: in `dotnet run` WebRootPath may be the source project root
+            // (where no wwwroot/ exists), so look under bin/wwwroot instead.
+            wwwrootRoot = Path.Combine(AppContext.BaseDirectory, "wwwroot");
+        }
+        var candidate = Path.Combine(wwwrootRoot, fileName);
+        if (System.IO.File.Exists(candidate)) fullPath = candidate;
+        if (!System.IO.File.Exists(fullPath))
+        {
+            // Fall back to an empty payload so the Blazor WASM runtime still
+            // boots — never 404 the client config, that bricks the SPA.
+            ctx.Response.StatusCode = StatusCodes.Status200OK;
+            ctx.Response.ContentType = "application/json";
+            ctx.Response.Headers["Cache-Control"] = "no-store";
+            await ctx.Response.WriteAsync("{}");
+            return;
+        }
+
         ctx.Response.StatusCode = StatusCodes.Status200OK;
         ctx.Response.ContentType = "application/json";
         ctx.Response.Headers["Cache-Control"] = "no-store";
-        await ctx.Response.WriteAsync("{}");
+        await ctx.Response.SendFileAsync(fullPath);
         return;
     }
     await next(ctx);

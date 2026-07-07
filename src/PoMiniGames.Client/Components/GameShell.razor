@@ -19,36 +19,9 @@
             <span class="gps-header-status">@Status</span>
         }
 
-        @if (ShowSettings)
-        {
-            <div class="gps-settings-wrap">
-                <button class="gps-settings-btn @(_settingsOpen ? "active" : "")"
-                        @onclick="ToggleSettings"
-                        aria-label="Game settings and stats"
-                        aria-expanded="@_settingsOpen">
-                    ⚙️
-                </button>
-
-                @if (_settingsOpen)
-                {
-                    <div class="gps-settings-drawer" role="dialog" aria-label="Game settings">
-                        @if (Stats != null && Stats.Any())
-                        {
-                            <div class="gps-drawer-stats">
-                                @foreach (var stat in Stats)
-                                {
-                                    <div class="gps-stat">
-                                        <span class="gps-stat-value">@stat.Value</span>
-                                        <span class="gps-stat-label">@stat.Label</span>
-                                    </div>
-                                }
-                            </div>
-                        }
-                        @Controls
-                    </div>
-                }
-            </div>
-        }
+        @* Settings gear removed per 2026-07-06 header cleanup: the ⚙️ button and
+           its drawer no longer render. Stats still surface in the end-of-game
+           modal; the Controls fragment is intentionally unreachable for now. *@
     </div>
 </SectionContent>
 
@@ -120,13 +93,6 @@
     [Parameter] public RenderFragment ChildContent { get; set; } = null!;
 
     [Inject] private NavigationManager Navigation { get; set; } = null!;
-
-    private bool _settingsOpen = false;
-
-    private void ToggleSettings()
-    {
-        _settingsOpen = !_settingsOpen;
-    }
 
     private void NavigateBack()
     {

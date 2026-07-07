@@ -48,12 +48,12 @@ const ATTACKS = {
 
 const HITSTUN = 0.35;
 
-// A single hit past this damage knocks the defender down (partial ragdoll +
-// get-up) instead of just hitstun. With 40/60 base damage this makes most
-// clean kicks and heavy head punches score a knockdown.
-const KNOCKDOWN_DMG = 50;
-const DOWN_TIME = 1.15;   // seconds spent ragdolled on the canvas
-const GETUP_TIME = 0.6;   // seconds to scramble back to guard
+// Fighters never leave their feet before the final blow — heavy hits get a
+// hard stagger (extra knockback + lean) instead of a mid-fight knockdown.
+// The KO ragdoll is the only way to the canvas.
+const HEAVY_HIT_DMG = 50; // threshold for the amplified stagger reaction
+const DOWN_TIME = 1.15;   // (legacy 'down' state, no longer triggered)
+const GETUP_TIME = 0.6;   // (legacy 'getup' state, no longer triggered)
 
 // ── Post-processing: chromatic aberration + vignette ─────────────────────
 // Runs after bloom, before OutputPass (so it operates on the linear HDR
@@ -1049,25 +1049,14 @@ export class BrawlGame {
       }
     }
 
-    // ── Knockdown tier ────────────────────────────────────────────────
-    // A single heavy hit (most kicks, clean head punches) that doesn't kill
-    // drops the defender into a brief partial ragdoll: they flop, lie for a
-    // beat (invulnerable), then scramble back up. Softer impulses than the
-    // KO flop, and the pre-hit momentum carries into the fall.
-    if (defender.state !== 'ko' && baseDmg >= KNOCKDOWN_DMG) {
-      defender.state = 'down';
-      defender.stateT = 0;
-      defender.animator.frozen = true;
-      defender.animator.play(null); // drop the queued hitstun track
-      // NOTE: swing physics is torn down by the 'down' case in the state
-      // machine, NOT here — _tryHit can run inside cannon's beginContact
-      // dispatch, and removing bodies mid-step leaves getBodyById returning
-      // undefined for the remaining queued contact events.
-      defender.ragdoll.activate(knockDir, {
-        velocity: defender.vel.clone().add(defender.knockback),
-        scale: 0.65,
-      });
-      // A trip to the canvas dishevels the hair for the rest of the match.
+    // ── Heavy-hit stagger ─────────────────────────────────────────────
+    // Fighters stay on their feet until the killing blow: a heavy hit
+    // (most kicks, clean head punches) that doesn't kill gets an amplified
+    // stagger — extra knockback and a deep lean — but never a knockdown.
+    if (defender.state !== 'ko' && baseDmg >= HEAVY_HIT_DMG) {
+      defender.knockback.add(knockDir.clone().multiplyScalar(3.0 * (atkMass / defMass)));
+      defender.animator.applyLean(knockDir.z * 0.5, -knockDir.x * 0.5);
+      // A near-drop dishevels the hair for the rest of the match.
       if (defender.rig.refs) defender.rig.refs.hairPivot.rotation.y = 0.3;
       this.excited = Math.max(this.excited, 0.6);
     }

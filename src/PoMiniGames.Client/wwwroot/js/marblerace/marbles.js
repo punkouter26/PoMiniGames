@@ -49,8 +49,10 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
   for (let i = 0; i < 8; i++) {
     const mat = new THREE.MeshStandardMaterial({
       color: MARBLE_COLORS[i],
-      emissive: MARBLE_COLORS[i],
-      emissiveIntensity: 0.5,
+      // No emissive — the bloom post-pass was amplifying it into a halo, making the
+      // marbles too bright. Let the environment map + base color carry the look.
+      emissive: 0x000000,
+      emissiveIntensity: 0,
       roughness: 0.12,   // glassy so the environment map reflects (#4)
       metalness: 0.6,
     });
@@ -89,11 +91,13 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
     decorations.add(blob);
 
     // Highlight ring on the player's marble so it's findable on screen.
+    // Plain white torus (no emissive) — the bloom pass was turning the previous
+    // emissive ring into a bright halo around the player's marble.
     let ring = null;
     if (i === chosenIndex) {
       ring = new THREE.Mesh(
         new THREE.TorusGeometry(TRACK.MARBLE_R * 1.7, 0.18, 8, 28),
-        new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 1.0 })
+        new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0x000000, emissiveIntensity: 0 })
       );
       mesh.add(ring);
     }

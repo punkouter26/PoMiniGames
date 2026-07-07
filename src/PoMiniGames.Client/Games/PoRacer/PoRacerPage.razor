@@ -34,37 +34,9 @@
         <canvas id="racerCanvas" class="racer-canvas racer-canvas--interactive"></canvas>
     </div>
 
-    <!-- Settings Drawer Toggle Button -->
-    <button class="settings-drawer-toggle" @onclick="ToggleSettings" title="Game Settings">⚙️ Settings</button>
-
-    <!-- Settings Drawer -->
-    <div class="settings-drawer @(_settingsOpen ? "open" : "")">
-        <div class="settings-drawer-header">
-            <h3>Game Settings</h3>
-            <button class="settings-drawer-close" @onclick="ToggleSettings">×</button>
-        </div>
-        <div class="settings-group">
-            <div class="settings-label">Display Effects</div>
-            <button class="po-btn po-btn--secondary settings-control" @onclick="ToggleCrt">
-                CRT Screen Shader: @(_crtOn ? "ON" : "OFF")
-            </button>
-            <button class="po-btn po-btn--secondary settings-control" @onclick="ToggleBloom">
-                Bloom Lighting: @(_bloomOn ? "ON" : "OFF")
-            </button>
-        </div>
-        <div class="settings-group">
-            <div class="settings-label">Weather Selection</div>
-            <select class="po-select" @bind="_weatherConfig">
-                <option value="Auto">Auto (Cycle)</option>
-                <option value="Clear">Clear</option>
-                <option value="Rain">Rainy / Storm</option>
-                <option value="Snow">Snowy</option>
-            </select>
-        </div>
-        <div class="racer-settings-footer">
-            PoRacer v1.0.0 · Onion Architecture
-        </div>
-    </div>
+    @* In-game settings panel removed (player request). CRT, Bloom, and Weather
+       features remain available via their bound fields; only the drawer UI is
+       gone so the focus stays on the race. *@
 
     @if (_crtOn)
     {
@@ -113,7 +85,6 @@
                 </div>
                 <div class="racer-start-actions">
                     <button class="racer-btn" @onclick="StartRace">Start Race</button>
-                    <button class="racer-btn-secondary racer-btn-secondary--large" @onclick="ToggleSettings" title="Game Settings">⚙️ Settings</button>
                 </div>
                 <div class="racer-hint">8 cars · 3 laps · first across the line wins</div>
             </div>
@@ -695,7 +666,7 @@
         min-height: 2px;
     }
 
-    /* -------- Touch controls (mobile) -------- */
+    /* -------- Touch controls (mobile / narrow viewports only) -------- */
     .racer-touch {
         position: absolute;
         left: 0; right: 0; bottom: 0;
@@ -740,7 +711,11 @@
         box-shadow: 0 0 18px rgba(80,180,255,0.5);
         transform: scale(0.94);
     }
-    @@media (pointer: coarse), (any-pointer: coarse) {
+    /* Touch icons only appear on narrow viewports where the on-screen keyboard
+       isn't an option AND the input is coarse. Desktop (wide viewport) uses the
+       keyboard regardless of pointer type — the previous rule alone let the
+       icons leak into desktop when a coarse pointer was reported. */
+    @@media (max-width: 900px) {
         .racer-touch.is-active { display: flex; }
         /* Lift the minimap clear of the steer cluster. */
         .racer-minimap { bottom: 130px; }
@@ -789,93 +764,7 @@
     .lb-pos { font-family: 'Orbitron', sans-serif; font-weight: 700; }
     .lb-time { font-family: 'Orbitron', sans-serif; color: var(--accent-warm); text-align: right; }
 
-    /* Settings Drawer styles */
-    .settings-drawer-toggle {
-        position: absolute;
-        top: clamp(10px, 2vw, 20px);
-        right: clamp(10px, 2vw, 20px);
-        z-index: 40;
-        background: rgba(10, 14, 24, 0.75);
-        border: 1px solid rgba(120, 200, 255, 0.35);
-        border-radius: 8px;
-        color: var(--text);
-        padding: 8px 14px;
-        font-family: 'Orbitron', sans-serif;
-        font-size: 13px;
-        font-weight: 700;
-        cursor: pointer;
-        backdrop-filter: blur(8px);
-        box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
-        transition: all 0.2s ease;
-    }
-    .settings-drawer-toggle:hover {
-        background: rgba(80, 180, 255, 0.25);
-        border-color: var(--accent);
-        box-shadow: 0 0 15px rgba(80, 180, 255, 0.4);
-    }
-    .settings-drawer {
-        position: absolute;
-        top: 0;
-        right: 0;
-        width: 280px;
-        height: 100%;
-        background: rgba(8, 11, 20, 0.95);
-        border-left: 1px solid rgba(120, 200, 255, 0.25);
-        z-index: 999;
-        padding: 24px 20px;
-        transform: translateX(100%);
-        transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-        backdrop-filter: blur(12px);
-        box-shadow: -8px 0 32px rgba(0, 0, 0, 0.7);
-        display: flex;
-        flex-direction: column;
-        gap: 20px;
-    }
-    .settings-drawer.open {
-        transform: translateX(0);
-    }
-    .settings-drawer-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        border-bottom: 1px solid rgba(120, 200, 255, 0.15);
-        padding-bottom: 12px;
-    }
-    .settings-drawer-header h3 {
-        margin: 0;
-        font-family: 'Orbitron', sans-serif;
-        font-size: 16px;
-        color: var(--accent);
-        letter-spacing: 1px;
-    }
-    .settings-drawer-close {
-        background: none;
-        border: none;
-        color: var(--muted);
-        font-size: 24px;
-        cursor: pointer;
-        padding: 0 5px;
-        line-height: 1;
-    }
-    .settings-drawer-close:hover {
-        color: #fff;
-    }
-    .settings-group {
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-    }
-    .settings-label {
-        font-size: 11px;
-        color: var(--muted);
-        text-transform: uppercase;
-        font-family: 'Orbitron', sans-serif;
-        letter-spacing: 1px;
-    }
-    .settings-control {
-        width: 100%;
-        text-align: left;
-    }
+    /* In-game settings panel removed (player request). */
 
     /* Drift progress and perfect drift styles */
     .hud-drift-container {
@@ -1143,7 +1032,6 @@
         catch { }
     }
 
-    private bool _settingsOpen = false;
     private string _weatherConfig = "Auto";
     private double _driftProgress = 0;
     private bool _perfectDriftActive = false;
@@ -1151,12 +1039,6 @@
     private int _wallHitsCount = 0;
     private double _maxPlayerSpeed = 0;
     private bool _didPerfectDrift = false;
-
-    private void ToggleSettings()
-    {
-        _settingsOpen = !_settingsOpen;
-        _hudDirty = true;
-    }
 
     private bool FinishedCloseCall()
     {

@@ -11,9 +11,11 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
 const BG = 0x0f172a;            // cyberpunk dark slate
-const CAM_HEIGHT = 14;
-const CAM_BACK = 20;            // distance behind the target (travel is +Z)
-const CAM_LOOKAHEAD = 10;
+const CAM_HEIGHT = 22;          // higher up so the leading marble sits centered, not below the frustum
+const CAM_BACK = 26;            // a bit further back to keep the marble + the chute ahead in frame
+const CAM_LOOKAHEAD = 4;        // shorter look-ahead → camera frames the marble, not empty track
+const CAM_LOOK_LIFT = 3;        // raise the look-at point so the marble lands ~mid-screen
+const CAM_DEFAULT_PITCH = -0.18; // slight downward tilt by default → marble sits centered, not at the top
 const CAM_LERP = 4.0;          // higher = snappier follow
 const FOV_BASE = 60;
 
@@ -99,7 +101,10 @@ export function createScene(container) {
   const composer = new EffectComposer(renderer);
   composer.setPixelRatio(renderer.getPixelRatio());
   composer.addPass(new RenderPass(scene, camera));
-  const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.75, 0.6, 0.82); // strength, radius, threshold
+  // Bloom strength dropped (0.75 → 0.18) and threshold raised (0.82 → 0.92) so the
+  // pass adds only a faint highlight to the brightest specular spots instead of
+  // glowing every emissive marble into a halo.
+  const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.18, 0.6, 0.92); // strength, radius, threshold
   composer.addPass(bloom);                                // #1 — bloom
   composer.addPass(new ShaderPass(PostShader));           // #10 — vignette + chromatic aberration
   const smaa = new SMAAPass(1, 1);                        // #10 — anti-aliasing for the bloom pipeline
@@ -166,11 +171,11 @@ export function createScene(container) {
 
   // ── Left-drag mouse orbit around the followed target ──────────────────
   let orbitYaw = 0;
-  let orbitPitch = 0;
+  let orbitPitch = CAM_DEFAULT_PITCH; // start tilted down so the marble sits centered, not at the top
   let dragging = false;
   let lastX = 0, lastY = 0;
   const YAW_SPEED = 0.008, PITCH_SPEED = 0.006;
-  const PITCH_MIN = -0.45, PITCH_MAX = 1.15;
+  const PITCH_MIN = -0.55, PITCH_MAX = 1.15;
 
   const canvas = renderer.domElement;
   canvas.style.cursor = 'grab';
@@ -223,8 +228,13 @@ export function createScene(container) {
     camera.position.lerp(desired, a);
 
     // Look-ahead only when roughly behind the target, so it stays centred when orbited round.
+    // Lift the look-at point so the leading marble (radius ≈ 1) sits ~mid-screen instead of
+    // clipped against the bottom edge of the frustum.
     const laFactor = Math.max(0, Math.cos(orbitYaw));
-    const look = new THREE.Vector3(pos.x, pos.y + 2, pos.z + CAM_LOOKAHEAD * laFactor);
+    const look = new THREE.Vector3(
+      pos.x,
+      pos.y + CAM_LOOK_LIFT,
+      pos.z + CAM_LOOKAHEAD * laFactor);
     if (!haveTarget) { camTarget.copy(look); haveTarget = true; }
     camTarget.lerp(look, a);
     camera.lookAt(camTarget);

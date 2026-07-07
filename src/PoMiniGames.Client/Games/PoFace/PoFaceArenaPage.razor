@@ -259,43 +259,80 @@
             return;
         }
 
+        // The session POST is only needed for score submission + recap. Camera
+        // playback should never be blocked by a transient network hiccup or a
+        // navigation-aborted fetch, so we make the session request best-effort
+        // and ALWAYS try to open the camera afterwards. If we have a session
+        // id, score uploads go to the API; if we don't, scoring silently no-ops
+        // (UI stays usable, persistence is the only casualty).
+        await TryStartSessionAsync();
+        await TryInitCameraAsync();
+        _currentEmotion = RoundOrder[0];
+    }
+
+    /// <summary>
+    /// Best-effort POST to <c>/api/face/sessions</c>. Never throws — failures
+    /// (auth, network, navigation-aborted) just leave <see cref="_sessionId"/>
+    /// null and the camera/play flow continues without persisted scoring.
+    /// </summary>
+    private async Task TryStartSessionAsync()
+    {
         try
         {
             var resp = await Http.PostAsync("/api/face/sessions", content: null);
             if (!resp.IsSuccessStatusCode)
             {
-                // No backend session (e.g. not signed in / API unavailable) — the
-                // offline emoji-match mini-game still works, so offer it.
-                _phase = "NoCamera";
+                _error = $"Session start returned {(int)resp.StatusCode}; scores won't be saved this round.";
                 return;
             }
             var session = await resp.Content.ReadFromJsonAsync(ApiJsonContext.Default.FaceSessionDto);
-            _sessionId = session!.SessionId;
-        }
-        catch
-        {
-            _phase = "NoCamera";
-            return;
-        }
-
-        // Try to initialize the camera. If denied/unavailable, show the fallback UI.
-        try
-        {
-            var status = await JS.InvokeAsync<string>("webcamInterop.initCamera", "pf-webcam-preview");
-            _phase = status switch
-            {
-                "ok" => "Ready",
-                "permission-denied" => "PermissionDenied",
-                "camera-unavailable" => "NoCamera",
-                _ => "NoCamera",
-            };
+            _sessionId = session?.SessionId;
+            if (_sessionId is not null) _error = null;
         }
         catch (Exception ex)
         {
-            _error = $"Camera init failed: {ex.Message}";
-            _phase = "NoCamera";
+            // Transient (network blip, navigation abort, etc.) — keep going,
+            // the camera path is independent.
+            _error = ex is HttpRequestException or TaskCanceledException
+                ? $"Session start deferred: {ex.Message}"
+                : $"Session start error: {ex.Message}";
         }
-        _currentEmotion = RoundOrder[0];
+    }
+
+    /// <summary>
+    /// Calls <c>webcamInterop.initCamera</c> and maps the returned status code
+    /// to a phase. Retries once if the first attempt fails with a transient
+    /// error, then falls through to the appropriate fallback screen.
+    /// </summary>
+    private async Task TryInitCameraAsync()
+    {
+        for (var attempt = 1; attempt <= 2; attempt++)
+        {
+            try
+            {
+                var status = await JS.InvokeAsync<string>("webcamInterop.initCamera", "pf-webcam-preview");
+                _phase = status switch
+                {
+                    "ok" => "Ready",
+                    "permission-denied" => "PermissionDenied",
+                    "camera-unavailable" => "NoCamera",
+                    _ => "NoCamera",
+                };
+                if (_phase == "Ready" || _phase == "PermissionDenied") return;
+                if (attempt < 2) await Task.Delay(250);
+            }
+            catch (Exception ex)
+            {
+                if (attempt < 2 && (ex is JSException || ex is TaskCanceledException))
+                {
+                    await Task.Delay(250);
+                    continue;
+                }
+                _error = $"Camera init failed: {ex.Message}";
+                _phase = "NoCamera";
+                return;
+            }
+        }
     }
 
     // ── Demo driver ─────────────────────────────────────────────────────────

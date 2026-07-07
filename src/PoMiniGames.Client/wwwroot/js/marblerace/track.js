@@ -8,14 +8,14 @@ import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 
 export const TRACK = {
-  LENGTH: 220,        // forward (+Z) extent
-  DROP: 86,           // total vertical drop over the length — steeper so gravity always wins (no stalls)
-  START_Y: 70,
+  LENGTH: 1100,       // forward (+Z) extent — 5× the original 220 for a much longer race
+  DROP: 220,          // total vertical drop over the length — scaled so the average slope stays playable
+  START_Y: 120,       // raised so the longer track still has headroom for the descent
   CHANNEL_WIDTH: 16,
   WALL_HEIGHT: 7,     // taller walls so the steeper/bouncier run can't throw a marble off the track
   WALL_THICK: 1.2,
   FLOOR_THICK: 2,
-  SEGMENTS: 80,
+  SEGMENTS: 320,      // 4× more segments so the longer track still flows smoothly
   MARBLE_R: 1.0,
 };
 
@@ -182,20 +182,10 @@ export function generateTrack(world, materials, seed) {
     }
   }
 
-  // ZONE 2 — Plinko pins: staggered grid of narrow pegs. Wider spacing + fewer rows so the
-  // gaps stay comfortably larger than a marble diameter and the pack flows through.
-  let row = 0;
-  for (let s = 0.42; s <= 0.62; s += 0.06, row++) {
-    const f = frameAt(s);
-    const r = TRACK.MARBLE_R * 0.9;
-    const spacing = 5.0;
-    const offset = (row % 2 === 0) ? 0 : spacing / 2;
-    const span = TRACK.CHANNEL_WIDTH - 4;
-    for (let x = -span / 2 + offset; x <= span / 2; x += spacing) {
-      const pos = f.p.clone().addScaledVector(f.rb, x).addScaledVector(f.up, r);
-      addStaticSphere(pos, r, pinMat);
-    }
-  }
+  // ZONE 2 — Plinko pins removed (player request): the pink pegs that used to scatter
+  // the pack are gone, so the marbles flow down a much smoother chute now.
+  // (Code path intentionally retained as a comment so the section structure is preserved
+  // if a future variation wants to re-enable a sparse peg field.)
 
   // ZONE 3 — turnstiles: free-spinning hinged paddles shorter than the channel
   for (let s = 0.74; s <= 0.90; s += 0.09) {
@@ -231,15 +221,8 @@ export function generateTrack(world, materials, seed) {
     turnstiles.push({ body: paddle, mesh });
   }
 
-  // Extra bumpers for variety — one peg in each gap between zones. Kept small and pulled
-  // well clear of the wall so a marble can never wedge between the peg and the wall.
-  for (const s of [0.34, 0.66]) {
-    const f = frameAt(s);
-    const r = TRACK.MARBLE_R * 0.9;
-    const side = (s < 0.5) ? -1 : 1;
-    const pos = f.p.clone().addScaledVector(f.rb, side * (TRACK.CHANNEL_WIDTH / 2 - 3.4)).addScaledVector(f.up, r);
-    addStaticSphere(pos, r, pinMat);
-  }
+  // Extra bumpers for variety removed (player request): the lone pink pegs that used to
+  // sit in the gaps between zones are gone too — the race is now a clean chute + turnstiles.
 
   // ── Start gate marker + finish line band ──
   const startF = frameAt(0.01);

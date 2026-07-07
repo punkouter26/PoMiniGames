@@ -6,7 +6,7 @@ import { createMarbles, hexString } from './marbles.js';
 import { createAudio } from './audio.js';
 
 const RESULT_MS = 3200;     // how long the result banner shows before next track
-const RACE_TIMEOUT = 22;    // s — failsafe so the loop never hangs on a straggler
+const RACE_TIMEOUT = 110;   // s — failsafe for a 5× longer track (~22s * 5 + headroom for the bumpier chute)
 const TICK_INTERVAL = 0.12; // s — throttle for OnRaceTick to C#
 const BEST_KEY = 'pomarblerace_best';
 

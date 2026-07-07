@@ -79,7 +79,9 @@
 .cf-status--win    { color: #4ade80; border-color: rgba(74, 222, 128, 0.4); background: rgba(74, 222, 128, 0.08); }
 .cf-status--loss   { color: #f87171; border-color: rgba(248, 113, 113, 0.3); background: rgba(248, 113, 113, 0.06); }
 .cf-status--draw   { color: #94a3b8; border-color: rgba(148, 163, 184, 0.3); }
-.cf-status--demo   { color: #c084fc; border-color: rgba(192, 132, 252, 0.3); }
+/* Demo-mode pill removed from the header per 2026-07-06 cleanup — demo/kiosk
+   rotation still runs, it just no longer advertises itself in the chrome. */
+.cf-status--demo   { display: none; }
 
 .gps-settings-wrap {
   position: relative;
@@ -381,7 +383,9 @@
 .gps-modal {
   pointer-events: auto;
   width: min(92vw, 380px);
-  max-height: 45vh;
+  /* Fill the space below the header so the whole dialog (score + top-10)
+     is visible at once; overflow only kicks in if it truly can't fit. */
+  max-height: calc(100dvh - 5.5rem);
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -1138,6 +1142,101 @@
 .cq-lobby ul { list-style: none; margin: 0; padding: 0; }
 .cq-lobby li { padding: 0.25rem 0; }
 
+/* In-round screens (game / results / game-over) — these classes are shared by
+   the real multiplayer page and the kiosk demo. Card chrome matches the rest
+   of the shell (surface + border + 16px radius). */
+.cq-game {
+  width: min(92vw, 480px);
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  padding: 1.25rem 1.5rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+}
+.cq-question {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+.cq-king {
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  color: #facc15;
+  background: rgba(250, 204, 21, 0.08);
+  border: 1px solid rgba(250, 204, 21, 0.3);
+}
+.cq-game input {
+  padding: 0.5rem 0.75rem;
+  background: var(--color-surface-hover);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+  border-radius: 6px;
+  font-size: 0.9rem;
+}
+.cq-results,
+.cq-gameover {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.85rem 1rem;
+  background: var(--color-surface-hover);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+}
+.cq-results h3,
+.cq-results h4,
+.cq-gameover h3 {
+  margin: 0;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+}
+.cq-results p,
+.cq-gameover p { margin: 0; font-size: 0.95rem; }
+.cq-results ul,
+.cq-gameover ol { margin: 0; padding: 0; list-style: none; }
+.cq-results li,
+.cq-gameover li {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.3rem 0;
+  border-bottom: 1px solid var(--color-border);
+  font-size: 0.95rem;
+}
+.cq-results li:last-child,
+.cq-gameover li:last-child { border-bottom: none; }
+
+/* Leaderboard page. */
+.cq-leaderboard { display: flex; flex-direction: column; gap: 0.75rem; }
+.cq-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+.cq-table th {
+  padding: 0.4rem 0.6rem;
+  text-align: left;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+  border-bottom: 1px solid var(--color-border);
+}
+.cq-table td {
+  padding: 0.45rem 0.6rem;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+}
+
 /* ── PoFunQuiz (`.fq-*` aliases) ── */
 .fq-join { display: flex; flex-direction: column; gap: 0.75rem; }
 .fq-btn {
@@ -1186,6 +1285,84 @@
 .pf-choice-grid--wrap { display: flex; flex-wrap: wrap; gap: 0.75rem; justify-content: center; margin: 1rem 0; }
 .pf-face-choice { padding: 0.5rem 0.9rem; }
 .pf-face-choice--large { font-size: 2.5rem; padding: 0.5rem 0.9rem; }
+
+/* PoFace — arena / play / permission screens */
+.pf-perm {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 0.75rem;
+  padding: 1.25rem; border: 1px solid var(--color-border); border-radius: 12px;
+  background: var(--color-surface);
+}
+.pf-ready { display: flex; flex-direction: column; align-items: center; gap: 0.75rem; }
+.pf-prompt { font-size: 1.05rem; color: var(--color-text-primary); margin: 0.5rem 0; }
+.pf-score-line { font-size: 1rem; color: var(--color-text-secondary); margin: 0.25rem 0; }
+.pf-score-line strong { color: var(--color-text-primary); }
+.pf-reveal {
+  display: flex; flex-direction: column; align-items: center; gap: 0.5rem;
+  padding: 1rem; border: 1px solid var(--color-border); border-radius: 12px;
+  background: var(--color-surface);
+}
+.pf-reveal-line { font-size: 1rem; margin: 0.25rem 0; }
+.pf-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; justify-content: center; }
+.pf-frozen-overlay {
+  position: absolute; pointer-events: none; inset: 0;
+  background: rgba(99, 102, 241, 0); transition: background 0.18s ease;
+  border-radius: 8px;
+}
+.pf-frozen-overlay.is-flash { background: rgba(255, 255, 255, 0.65); }
+
+/* PoFace — demo (kiosk loop) */
+.pf-demo { display: flex; flex-direction: column; align-items: center; gap: 0.75rem; }
+.pf-demo-face { width: min(320px, 80vw); height: auto; }
+.pf-demo-choices { width: 100%; max-width: 640px; }
+.pf-demo-chip {
+  display: inline-flex; flex-direction: column; align-items: center; gap: 0.25rem;
+  padding: 0.6rem 0.9rem; min-width: 92px;
+  border: 1px solid var(--color-border); border-radius: 10px;
+  background: var(--color-surface-hover); color: var(--color-text-primary);
+  cursor: default;
+}
+.pf-demo-chip--target { border-color: var(--color-accent); }
+.pf-demo-chip--picked { background: var(--color-accent); color: #fff; border-color: var(--color-accent); }
+.pf-demo-chip-emoji { font-size: 2rem; line-height: 1; }
+.pf-demo-chip-label { font-size: 0.75rem; opacity: 0.85; }
+
+/* PoFace — recap */
+.pf-recap { display: flex; flex-direction: column; gap: 0.75rem; }
+.pf-recap-grid {
+  display: grid; gap: 0.75rem;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+}
+.pf-recap-card {
+  display: flex; flex-direction: column; gap: 0.4rem;
+  padding: 0.75rem; border: 1px solid var(--color-border); border-radius: 12px;
+  background: var(--color-surface);
+}
+.pf-recap-card img {
+  width: 100%; aspect-ratio: 4 / 3; object-fit: cover;
+  border-radius: 8px; background: var(--color-surface-hover);
+}
+.pf-recap-card h4 { margin: 0; font-size: 0.95rem; }
+.pf-recap-card p { margin: 0; font-size: 0.85rem; color: var(--color-text-secondary); }
+
+/* PoFace — leaderboard */
+.pf-leaderboard { display: flex; flex-direction: column; gap: 0.75rem; }
+.pf-year-picker { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+.pf-year-picker input[type="number"] {
+  width: 6rem; padding: 0.4rem 0.5rem; border-radius: 6px;
+  border: 1px solid var(--color-border); background: var(--color-surface);
+  color: var(--color-text-primary);
+}
+.pf-table {
+  width: 100%; border-collapse: collapse; font-size: 0.9rem;
+  background: var(--color-surface); border: 1px solid var(--color-border);
+  border-radius: 8px; overflow: hidden;
+}
+.pf-table th, .pf-table td {
+  padding: 0.5rem 0.75rem; text-align: left;
+  border-bottom: 1px solid var(--color-border);
+}
+.pf-table th { color: var(--color-text-secondary); font-weight: 600; }
+.pf-table tr:last-child td { border-bottom: 0; }
 
 /* ── PoBabyTouch (`.baby-touch-*`, `.bubble`) ── */
 .baby-touch-wrapper {

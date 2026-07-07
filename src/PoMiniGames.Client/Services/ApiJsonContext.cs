@@ -45,6 +45,10 @@ namespace PoMiniGamesClient.Services;
 // PoFunQuiz
 [JsonSerializable(typeof(QuizQuestion))]
 [JsonSerializable(typeof(List<QuizQuestion>))]
+[JsonSerializable(typeof(FunQuizLeaderboardRow))]
+[JsonSerializable(typeof(List<FunQuizLeaderboardRow>))]
+[JsonSerializable(typeof(FunQuizLeaderboardRow[]))]
+[JsonSerializable(typeof(FunQuizLeaderboardSubmission))]
 // PoFace
 [JsonSerializable(typeof(FaceStatusDto))]
 [JsonSerializable(typeof(FaceSessionDto))]

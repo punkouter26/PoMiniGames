@@ -315,4 +315,43 @@ public class ApiService
             return null;
         }
     }
+
+    // ─── PoFunQuiz leaderboard ───────────────────────────────────────────
+
+    /// <summary>
+    /// GET /api/funquiz/leaderboard?category=…&top=… — top scores for a single category.
+    /// Returns an empty list when the user is signed out (the endpoint requires auth).
+    /// </summary>
+    public async Task<FunQuizLeaderboardRow[]?> GetFunQuizLeaderboardAsync(string category, int top = 20)
+    {
+        try
+        {
+            return await _http.GetFromJsonAsync(
+                $"/api/funquiz/leaderboard?category={Uri.EscapeDataString(category)}&top={top}",
+                ApiJsonContext.Default.FunQuizLeaderboardRowArray);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// POST /api/funquiz/leaderboard — submits a solo run. Server clamps Score to
+    /// 0..10_000 and overrides PlayerName with the authenticated identity, so a
+    /// spoof attempt from the client can't poison the board.
+    /// </summary>
+    public async Task<bool> SubmitFunQuizScoreAsync(FunQuizLeaderboardSubmission entry)
+    {
+        try
+        {
+            var response = await _http.PostAsJsonAsync(
+                "/api/funquiz/leaderboard", entry, ApiJsonContext.Default.FunQuizLeaderboardSubmission);
+            return response.IsSuccessStatusCode;
+        }
+        catch
+        {
+            return false;
+        }
+    }
 }

@@ -33,7 +33,9 @@
                     <span class="pb-hp-name">@CharName(_p1Char)</span>
                     <div class="pb-hp-track"><div class="pb-hp-fill pb-hp-p1" style="--hp: @(_p1Hp)%;"></div></div>
                 </div>
+                @BodyDiagram(_p1Regions)
                 <div class="pb-clock">@_elapsed.ToString("0")</div>
+                @BodyDiagram(_p2Regions)
                 <div class="pb-hp-side pb-hp-right">
                     <span class="pb-hp-name">@CharName(_p2Char)</span>
                     <div class="pb-hp-track"><div class="pb-hp-fill pb-hp-p2" style="--hp: @(_p2Hp)%;"></div></div>
@@ -118,20 +120,36 @@
 
                     <button class="pb-fight-btn" @onclick="StartMatch">🥊 FIGHT</button>
 
-                    @if (_highScores is { Length: > 0 })
-                    {
-                        <div class="pb-board">
-                            <h3>⚡ Fastest KO</h3>
-                            <ol>
-                                @foreach (var s in _highScores)
-                                {
-                                    <li><span class="pb-board-initials">@s.PlayerInitials</span>
-                                        <span class="pb-board-char">@CharName(s.Character)</span>
-                                        <span class="pb-board-time">@s.KoTimeSeconds.ToString("0.00")s</span></li>
-                                }
-                            </ol>
-                        </div>
-                    }
+                    <div class="pb-boards">
+                        @if (_highScores is { Length: > 0 })
+                        {
+                            <div class="pb-board">
+                                <h3>⚡ Fastest KO</h3>
+                                <ol>
+                                    @foreach (var s in _highScores)
+                                    {
+                                        <li><span class="pb-board-initials">@s.PlayerInitials</span>
+                                            <span class="pb-board-char">@CharName(s.Character)</span>
+                                            <span class="pb-board-time">@s.KoTimeSeconds.ToString("0.00")s</span></li>
+                                    }
+                                </ol>
+                            </div>
+                        }
+                        @if (_ladderBoard is { Length: > 0 })
+                        {
+                            <div class="pb-board">
+                                <h3>🏆 Ladder Legends</h3>
+                                <ol>
+                                    @foreach (var l in _ladderBoard)
+                                    {
+                                        <li><span class="pb-board-initials">@l.PlayerName</span>
+                                            <span class="pb-board-char">ELO @l.Elo</span>
+                                            <span class="pb-board-time">@l.PresidentsBeaten/10</span></li>
+                                    }
+                                </ol>
+                            </div>
+                        }
+                    </div>
                 </div>
             </div>
         }
@@ -186,6 +204,11 @@
     private bool _muted;
 
     private PoBrawlHighScore[]? _highScores;
+    private PoBrawlLadderEntry[]? _ladderBoard;
+
+    // Per-region damage (0-100) fed by the JS engine: [head, torso, arms, legs].
+    private int[] _p1Regions = new int[4];
+    private int[] _p2Regions = new int[4];
     private List<StatItem> _statItems = new();
     private PlayerStats _stats = new();
     private readonly GameStatsService _gameStats = new();
@@ -263,6 +286,7 @@
         else
         {
             _highScores = await ApiService.GetPoBrawlHighScoresAsync(10);
+            _ladderBoard = await ApiService.GetPoBrawlLadderAsync(10);
             StateHasChanged();
         }
     }
@@ -272,6 +296,8 @@
         _p1Hp = 100;
         _p2Hp = 100;
         _elapsed = 0;
+        _p1Regions = new int[4];
+        _p2Regions = new int[4];
         // 1P difficulty is the ladder rung (1 = pushover Trump … 10 = brutal
         // Nixon); demo keeps the balanced mid-tier CPU-vs-CPU fight.
         object difficulty = _mode == "1p" ? _ladder + 1 : "medium";
@@ -304,6 +330,7 @@
         _phase = "select";
         try { await JSRuntime.InvokeVoidAsync("PoBrawl.destroy"); } catch { }
         _highScores = await ApiService.GetPoBrawlHighScoresAsync(10);
+        _ladderBoard = await ApiService.GetPoBrawlLadderAsync(10);
     }
 
     // 1P win path: the ladder was already advanced in OnMatchEnd, so just kick
@@ -325,13 +352,47 @@
     }
 
     [JSInvokable]
-    public void OnHud(int p1Hp, int p2Hp, double elapsed)
+    public void OnHud(int p1Hp, int p2Hp, double elapsed, int[]? p1Regions, int[]? p2Regions)
     {
         _p1Hp = p1Hp;
         _p2Hp = p2Hp;
         _elapsed = elapsed;
+        if (p1Regions is { Length: 4 }) _p1Regions = p1Regions;
+        if (p2Regions is { Length: 4 }) _p2Regions = p2Regions;
         InvokeAsync(StateHasChanged);
     }
+
+    // ── Region-damage body diagram ────────────────────────────────────────
+    // Mirrors the JS engine's per-region damage model (combat.js regionEffect):
+    // head ≥70 → extra hitstun taken, arms ≥70 → weaker attacks, legs ≥70 →
+    // slower movement (milder steps at 30/40). The diagram turns those hidden
+    // numbers into a target-selection tool: hunt the zones that are already red.
+    private RenderFragment BodyDiagram(int[] regions) =>
+        @<svg class="pb-body" viewBox="0 0 40 64"
+              aria-label="Body damage — head @(regions[0]), torso @(regions[1]), arms @(regions[2]), legs @(regions[3])">
+            <title>Head @(regions[0]) · Torso @(regions[1]) · Arms @(regions[2]) · Legs @(regions[3])</title>
+            <circle cx="20" cy="8" r="7" class="@RegionClass(regions[0])" style="fill:@RegionColor(regions[0])" />
+            <rect x="12" y="17" width="16" height="20" rx="3" class="@RegionClass(regions[1])" style="fill:@RegionColor(regions[1])" />
+            <rect x="4"  y="17" width="6"  height="18" rx="3" class="@RegionClass(regions[2])" style="fill:@RegionColor(regions[2])" />
+            <rect x="30" y="17" width="6"  height="18" rx="3" class="@RegionClass(regions[2])" style="fill:@RegionColor(regions[2])" />
+            <rect x="13" y="39" width="6"  height="22" rx="3" class="@RegionClass(regions[3])" style="fill:@RegionColor(regions[3])" />
+            <rect x="21" y="39" width="6"  height="22" rx="3" class="@RegionClass(regions[3])" style="fill:@RegionColor(regions[3])" />
+        </svg>;
+
+    // Healthy teal → bruised amber → crippled red, matching the 30/70 thresholds
+    // the gameplay effects use.
+    private static string RegionColor(int dmg)
+    {
+        var t = Math.Clamp(dmg, 0, 100) / 100.0;
+        (int r, int g, int b) from, to;
+        double f;
+        if (t < 0.5) { from = (74, 222, 178); to = (250, 176, 5); f = t / 0.5; }
+        else { from = (250, 176, 5); to = (224, 49, 49); f = (t - 0.5) / 0.5; }
+        int L(int a, int b2) => (int)(a + (b2 - a) * f);
+        return $"rgb({L(from.r, to.r)},{L(from.g, to.g)},{L(from.b, to.b)})";
+    }
+
+    private static string RegionClass(int dmg) => dmg >= 70 ? "pb-reg-crit" : "";
 
     [JSInvokable]
     public async Task OnMatchEnd(int winner, double elapsedSeconds)
@@ -382,6 +443,16 @@
                     _ladder++;
                 }
                 SaveLadder();
+
+                // Global ladder board: presidents beaten this run (10 on a full
+                // clear — _ladder has already wrapped to 0 by then). The server
+                // keeps each player's best, so this is safe to fire every win.
+                _ = await ApiService.SubmitPoBrawlLadderAsync(new PoBrawlLadderEntry
+                {
+                    PlayerName = _playerName,
+                    PresidentsBeaten = _champion ? Roster.Length : _ladder,
+                    Elo = _rating.Elo,
+                });
             }
 
             _stats = await GameResults.RecordAndSubmitPoBrawlAsync(_playerName, result, best);
@@ -394,10 +465,10 @@
     {
         var bucket = _gameStats.GetDifficultyBucket(_stats, Difficulty.Medium);
         _statItems = _mode == "1p"
-            ? GameStatsPanel.Build(bucket, includeDraws: false,
+            ? GameStatsPanel.Build(bucket, includeDraws: false, includeElo: false,
                 ("ELO", _rating.Elo.ToString()),
                 ("Best KO", _bestKo > 0 ? $"{_bestKo:0.00}s" : "—"))
-            : GameStatsPanel.Build(bucket, includeDraws: false,
+            : GameStatsPanel.Build(bucket, includeDraws: false, includeElo: true,
                 ("Best KO", _bestKo > 0 ? $"{_bestKo:0.00}s" : "—"));
     }
 

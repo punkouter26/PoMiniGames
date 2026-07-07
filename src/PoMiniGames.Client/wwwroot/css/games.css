@@ -267,6 +267,16 @@
   font-size: 1rem;
   font-weight: 700;
   text-align: center;
+  line-height: 1.45;
+}
+
+/* Multi-line summaries (PoBrawl's ELO/next-match lines): keep the first
+   line as the headline, render follow-up lines smaller and muted so the
+   card reads headline → details → stats. */
+.gps-game-summary > div > div:not(:first-child) {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--color-text-secondary);
 }
 
 .cf-result {
@@ -380,12 +390,16 @@
   color: var(--color-text-primary);
 }
 
-/* Reuse the drawer-stats grid inside the modal, minus its divider/margin. */
+/* Stats grid inside the modal. The old `.gps-drawer-stats` grid rule left
+   with the settings drawer (2026-07-06), so the layout lives here now: one
+   even row of value-over-label cells, divided from the summary above. */
 .gps-modal-stats {
   width: 100%;
-  margin-bottom: 0;
-  padding-bottom: 0;
-  border-bottom: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(3rem, 1fr));
+  gap: 0.6rem 0.25rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--color-border);
 }
 
 @keyframes gps-modal-fade {

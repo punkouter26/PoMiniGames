@@ -22,10 +22,12 @@ public class StorageService : IStorageService
     private const string PlayerStatsTable = "PlayerStats";
     private const string MarbleRaceTable = "MarbleRaceHighScores";
     private const string PoBrawlTable = "PoBrawlHighScores";
+    private const string PoBrawlLadderTable = "PoBrawlLadder";
 
     // High scores share a single partition per game so a leaderboard is one partition scan.
     private const string MarbleRacePartition = "marblerace";
     private const string PoBrawlPartition = "pobrawl";
+    private const string PoBrawlLadderPartition = "pobrawlladder";
 
     private readonly TableServiceClient _serviceClient;
     private readonly EloCalculator _eloCalculator;
@@ -70,7 +72,7 @@ public class StorageService : IStorageService
     /// </summary>
     public void Initialize()
     {
-        foreach (var table in new[] { PlayerStatsTable, MarbleRaceTable, PoBrawlTable })
+        foreach (var table in new[] { PlayerStatsTable, MarbleRaceTable, PoBrawlTable, PoBrawlLadderTable })
         {
             try { Table(table); } catch { /* ensured lazily on first use */ }
         }
@@ -292,6 +294,67 @@ public class StorageService : IStorageService
 
     public Task<PoBrawlHighScore> SavePoBrawlHighScoreAsync(PoBrawlHighScore entry) =>
         SaveHighScoreAsync(PoBrawlScores, entry);
+
+    // ── PoBrawl presidents ladder ─────────────────────────────────────────
+    // Unlike the high-score boards (append + dedupe by content hash), the ladder
+    // keeps exactly one row per player: RowKey = sanitized player name, and
+    // PresidentsBeaten only ever ratchets up. Elo/Date follow the run that set
+    // (or matched) the best, so a later worse run can't erase a 10/10 clear.
+
+    public async Task<List<PoBrawlLadderEntry>> GetPoBrawlLadderAsync(int limit = 10)
+    {
+        var entries = new List<PoBrawlLadderEntry>();
+        await foreach (var e in Table(PoBrawlLadderTable).QueryAsync<TableEntity>(
+            filter: $"PartitionKey eq '{PoBrawlLadderPartition}'"))
+        {
+            entries.Add(new PoBrawlLadderEntry
+            {
+                PlayerName = e.GetString("PlayerName") ?? "",
+                PresidentsBeaten = e.GetInt32("PresidentsBeaten") ?? 0,
+                Elo = e.GetInt32("Elo") ?? 0,
+                Date = e.GetString("Date") ?? "",
+            });
+        }
+
+        // Most presidents beaten first; higher Elo breaks ties, then earliest clear.
+        return entries
+            .OrderByDescending(x => x.PresidentsBeaten)
+            .ThenByDescending(x => x.Elo)
+            .ThenBy(x => x.Date)
+            .Take(limit)
+            .ToList();
+    }
+
+    public async Task<PoBrawlLadderEntry> SavePoBrawlLadderAsync(PoBrawlLadderEntry entry)
+    {
+        var sanitized = entry with
+        {
+            PlayerName = SanitizeName(entry.PlayerName),
+            PresidentsBeaten = Math.Clamp(entry.PresidentsBeaten, 0, 10),
+            Date = DefaultDate(entry.Date),
+        };
+
+        var rowKey = sanitized.PlayerName.ToLowerInvariant();
+        await TableConcurrency.UpdateWithRetryAsync<TableEntity>(
+            Table(PoBrawlLadderTable),
+            partitionKey: PoBrawlLadderPartition,
+            rowKey: rowKey,
+            factory: () => new TableEntity(PoBrawlLadderPartition, rowKey),
+            mutate: e =>
+            {
+                var existingBest = e.GetInt32("PresidentsBeaten") ?? -1;
+                if (sanitized.PresidentsBeaten < existingBest)
+                {
+                    return false; // A worse run never overwrites the best.
+                }
+                e["PlayerName"] = sanitized.PlayerName;
+                e["PresidentsBeaten"] = sanitized.PresidentsBeaten;
+                e["Elo"] = sanitized.Elo;
+                e["Date"] = sanitized.Date;
+                return true;
+            });
+        return sanitized;
+    }
 
     // The one shared high-score read: scan the game's partition, rebuild entries, rank, take.
     private async Task<List<T>> GetHighScoresAsync<T>(HighScoreDescriptor<T> descriptor, int limit)

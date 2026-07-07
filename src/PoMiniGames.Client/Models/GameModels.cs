@@ -88,3 +88,11 @@ public class PoBrawlHighScore
     public string Character { get; set; } = "";
     public string Date { get; set; } = "";
 }
+
+public class PoBrawlLadderEntry
+{
+    public string PlayerName { get; set; } = "";
+    public int PresidentsBeaten { get; set; }
+    public int Elo { get; set; }
+    public string Date { get; set; } = "";
+}

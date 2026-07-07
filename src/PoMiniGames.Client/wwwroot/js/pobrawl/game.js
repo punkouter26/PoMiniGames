@@ -11,7 +11,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { buildArena, animateCrowd, updateAtmosphere, damagePost, RING_HALF } from './arena.js';
-import { buildFighter, updateJiggles, REGION_BONES, tintJoint, resetTints, CHARACTERS, CHARACTER_IDS } from './fighters.js';
+import { buildFighter, updateJiggles, CHARACTERS, CHARACTER_IDS } from './fighters.js';
 import { Animator } from './animation.js';
 import { KeyboardController } from './input.js';
 import { AiController } from './ai.js';
@@ -87,15 +87,6 @@ const CAVignetteShader = {
     }`,
 };
 
-// Bruise tint per region. Skin takes a redder flush on head hits, a yellowy bruise
-// on torso, blueish on legs. Suits just go a bit darker.
-const REGION_TINT = {
-  head: new THREE.Color(0xc44a3a),
-  torso: new THREE.Color(0x6b5a30),
-  arms: new THREE.Color(0x4a3320),
-  legs: new THREE.Color(0x304060),
-};
-
 // Scratch vector for the blob-shadow tracker.
 const _blobPos = new THREE.Vector3();
 // Scratch vectors for the lighting updater.
@@ -143,6 +134,16 @@ export class BrawlGame {
     this.replay = new ReplayBuffer();
     // Seeded RNG so a demo/kiosk replay is reproducible.
     this.rng = new RandomGenerator((options && options.seed) || 1337);
+    // Post-processing quality tier: 2 = full (MSAA×4 + GTAO + bloom + CA),
+    // 1 = medium (MSAA×2 + bloom + CA), 0 = low (bare render, pixel ratio 1).
+    // Starts at full and steps DOWN automatically when sustained FPS can't
+    // hold the 60 Hz sim — low framerate hurts a timing game more than any
+    // post pass helps it. options.quality (0|1|2) pins a tier and disables
+    // the auto stepdown.
+    this._qualityForced = !!(options && Number.isInteger(options.quality));
+    this.quality = this._qualityForced ? Math.max(0, Math.min(2, options.quality)) : 2;
+    this._lowFpsStreak = 0;
+    this._fpsSampleCount = 0;
   }
 
   start() {
@@ -178,30 +179,9 @@ export class BrawlGame {
       this.scene.environmentIntensity = 0.4;
     }
 
-    // Post chain: render → bloom → CA/vignette → tone-map/sRGB output.
-    // Bloom threshold sits just under the spark/hit-flash luminance so
-    // impacts glow while the arena itself stays clean.
-    // MSAA render target — the composer's default target has no samples,
-    // which would drop the AA the raw canvas had.
-    const composerRT = new THREE.WebGLRenderTarget(w, h, {
-      type: THREE.HalfFloatType, samples: 4,
-    });
-    this.composer = new EffectComposer(this.renderer, composerRT);
-    this.composer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    this.composer.addPass(new RenderPass(this.scene, this.camera));
-    // Ground-truth AO: contact-level darkening in armpits, under ropes and
-    // between crowd rows that flat hemisphere ambient destroys.
-    try {
-      const gtao = new GTAOPass(this.scene, this.camera, w, h);
-      gtao.output = GTAOPass.OUTPUT.Default;
-      gtao.blendIntensity = 0.85;
-      this.composer.addPass(gtao);
-    } catch { /* AO is a nicety — never block the game on it */ }
-    this.bloomPass = new UnrealBloomPass(new THREE.Vector2(w, h), 0.32, 0.55, 0.8);
-    this.composer.addPass(this.bloomPass);
-    this.fxPass = new ShaderPass(CAVignetteShader);
-    this.composer.addPass(this.fxPass);
-    this.composer.addPass(new OutputPass());
+    // Post chain: render → (GTAO) → (bloom → CA/vignette) → tone-map/sRGB
+    // output, assembled per quality tier (see _buildComposer).
+    this._buildComposer(w, h);
 
     // Impact light pool: reused PointLights flashed at hit points. A fixed
     // pool keeps the scene's light count constant (adding/removing lights at
@@ -298,7 +278,9 @@ export class BrawlGame {
       this._fpsTime += rawDt;
       if (this._fpsTime >= 0.5) {
         const fps = Math.round(this._fpsFrames / this._fpsTime);
-        const label = `${fps} FPS`;
+        this._tickQualityMonitor(fps);
+        const label = `${fps} FPS` +
+          (this.quality < 2 ? ` · FX ${this.quality === 1 ? 'med' : 'low'}` : '');
         if (this.fpsEl && this.fpsEl.textContent !== label) this.fpsEl.textContent = label;
         this._fpsFrames = 0;
         this._fpsTime = 0;
@@ -326,6 +308,79 @@ export class BrawlGame {
   }
 
   // ── setup ───────────────────────────────────────────────────────────────
+
+  // Build (or rebuild) the post chain for the current quality tier.
+  //   tier 2: MSAA×4 target, GTAO, bloom, CA/vignette — full look
+  //   tier 1: MSAA×2 target, bloom, CA/vignette — GTAO is the priciest pass
+  //   tier 0: plain render target, no bloom/CA, pixel ratio 1 — gameplay only
+  // All render-loop consumers guard on this.bloomPass/this.fxPass, so dropped
+  // passes simply stop pulsing.
+  _buildComposer(w, h) {
+    if (this.composer) {
+      // EffectComposer.dispose() only frees its own targets — passes (GTAO's
+      // internal buffers, bloom's mip chain) must be disposed explicitly.
+      for (const p of this.composer.passes) p.dispose?.();
+      try { this.composer.dispose(); } catch { /* already gone */ }
+    }
+    this.bloomPass = null;
+    this.fxPass = null;
+
+    const q = this.quality;
+    const pixelRatio = q === 2 ? Math.min(window.devicePixelRatio, 2)
+      : q === 1 ? Math.min(window.devicePixelRatio, 1.5)
+      : 1;
+    this.renderer.setPixelRatio(pixelRatio);
+    this.renderer.setSize(w, h);
+
+    // Bloom threshold sits just under the spark/hit-flash luminance so
+    // impacts glow while the arena itself stays clean.
+    // MSAA render target — the composer's default target has no samples,
+    // which would drop the AA the raw canvas had.
+    const composerRT = new THREE.WebGLRenderTarget(w, h, {
+      type: THREE.HalfFloatType, samples: q === 2 ? 4 : q === 1 ? 2 : 0,
+    });
+    this.composer = new EffectComposer(this.renderer, composerRT);
+    this.composer.setPixelRatio(pixelRatio);
+    this.composer.addPass(new RenderPass(this.scene, this.camera));
+    if (q === 2) {
+      // Ground-truth AO: contact-level darkening in armpits, under ropes and
+      // between crowd rows that flat hemisphere ambient destroys.
+      try {
+        const gtao = new GTAOPass(this.scene, this.camera, w, h);
+        gtao.output = GTAOPass.OUTPUT.Default;
+        gtao.blendIntensity = 0.85;
+        this.composer.addPass(gtao);
+      } catch { /* AO is a nicety — never block the game on it */ }
+    }
+    if (q >= 1) {
+      this.bloomPass = new UnrealBloomPass(new THREE.Vector2(w, h), 0.32, 0.55, 0.8);
+      this.composer.addPass(this.bloomPass);
+      this.fxPass = new ShaderPass(CAVignetteShader);
+      this.composer.addPass(this.fxPass);
+    }
+    this.composer.addPass(new OutputPass());
+  }
+
+  // Auto quality stepdown, fed a sample every 0.5 s by the render loop. The
+  // first ~2 s are ignored (shader warm-up skews them); after that, four
+  // consecutive samples under 45 FPS drop one tier. Down only — stepping back
+  // up would oscillate at the boundary.
+  _tickQualityMonitor(fps) {
+    if (this._qualityForced || this.quality <= 0) return;
+    this._fpsSampleCount++;
+    if (this._fpsSampleCount <= 4) return;
+    if (fps >= 45) {
+      this._lowFpsStreak = 0;
+      return;
+    }
+    if (++this._lowFpsStreak >= 4) {
+      this.quality--;
+      this._lowFpsStreak = 0;
+      this._buildComposer(
+        this.container.clientWidth || 800, this.container.clientHeight || 540);
+      console.info(`[PoBrawl] sustained low FPS — post FX stepped down to tier ${this.quality}`);
+    }
+  }
 
   _makeEnvMap() {
     try {
@@ -357,7 +412,6 @@ export class BrawlGame {
         // Dispose cannon bodies we created for this fighter.
         this._removeFighterPhysics(f);
         if (f.koRagdoll) f.koRagdoll.dispose();
-        resetTints(f.rig);
         this.scene.remove(f.rig.root);
         if (f.blob) {
           this.scene.remove(f.blob);
@@ -457,8 +511,8 @@ export class BrawlGame {
         idleT: this.rng.random() * 10,
         speedAmt: 0,
         hpCur: MAX_HP,
-        // Impact feedback: emissive hit-flash and cartoon squash timers.
-        flashT: 0,
+        // Impact feedback: cartoon squash timer (shape only — per user request
+        // the model's colors never change on hits or KO).
         squashT: 0,
         // Soft contact-shadow mesh (tracks the hips each frame).
         blob,
@@ -606,11 +660,6 @@ export class BrawlGame {
       // by _tickKoFall so it survives the slow-mo phases).
       if (f.state === 'down' && f.ragdoll && f.ragdoll.active) f.ragdoll.step(dt);
 
-      // Emissive hit-flash: full-body white pop that decays to the bruise tint.
-      if (f.flashT > 0) {
-        f.flashT = Math.max(0, f.flashT - dt);
-        this._setEmissive(f.rig, (f.flashT / 0.13) * 0.85);
-      }
       // Cartoon squash: compress the whole body for a couple of frames on impact.
       if (f.squashT > 0) {
         f.squashT = Math.max(0, f.squashT - dt);
@@ -1037,8 +1086,8 @@ export class BrawlGame {
     defender.animator.play('hitstun');
     defender.knockback.add(knockDir.clone().multiplyScalar(4.5 * (atkMass / defMass)));
     defender.animator.applyLean(knockDir.z * 0.6, -knockDir.x * 0.6);
-    // Impact frame: emissive white pop + cartoon squash on the defender.
-    defender.flashT = 0.13;
+    // Impact frame: cartoon squash on the defender (no color flash — per user
+    // request the model's materials never change on hits).
     defender.squashT = 0.14;
 
     // Active-ragdoll flavor: inject an angular impulse into the struck
@@ -1064,9 +1113,10 @@ export class BrawlGame {
       defender.animator.applyReaction('knee' + rSide, 5 * rPow, 0, 0); // buckle
     }
 
-    // Per-region damage & tint at the actual contact point.
+    // Per-region damage at the actual contact point (drives the HUD body
+    // diagram and the sweat/swell wear — never the model's colors).
     defender.regionDmg[region] = Math.min(100, defender.regionDmg[region] + Math.max(2, baseDmg));
-    this._applyRegionTints(defender);
+    this._applyDamageWear(defender);
 
     if (defender.controller.notifyHit) defender.controller.notifyHit();
     // Sparks + a real light flash at the contact point, not at the defender's root.
@@ -1127,27 +1177,15 @@ export class BrawlGame {
     }
   }
 
-  _applyRegionTints(f) {
-    // The user-requested invariant: a fighter that is already down or KO'd
-    // must keep whatever colour they had at the moment of KO. Tint / sweat /
-    // skull-swell / cut-visibility all freeze from this point so the
-    // knocked-out silhouette reads consistently while the result modal sits
-    // over the canvas.
+  // Accumulating damage wear — SHAPE AND SHINE ONLY. Per user request the
+  // model's colors never change when a fighter is hit or knocked out: no
+  // bruise tints, no emissive hit-flash, no cut decal. Damage is read from
+  // the HUD body diagram instead. What remains here is sweat glisten
+  // (roughness drops — the fighter gets shinier as the fight wears on) and
+  // cheek/brow swelling, both frozen once the fighter is down/KO'd so the
+  // fallen silhouette stays consistent under the result modal.
+  _applyDamageWear(f) {
     if (f.state === 'ko' || f.state === 'down') return;
-    // Lerp each region's tint toward its bruise color, scaled by damage / 100.
-    for (const [region, bones] of Object.entries(REGION_BONES)) {
-      const dmg = f.regionDmg[region] ?? 0;
-      const t = Math.min(1, dmg / 100);
-      const tint = REGION_TINT[region];
-      for (const bone of bones) {
-        const joint = f.rig.joints[bone];
-        if (joint) tintJoint(joint, t, tint);
-      }
-    }
-
-    // Accumulating damage visuals: sweat glisten (roughness drops — the
-    // fighter literally gets shinier as the fight wears on), cheek/brow
-    // swelling, and a cut that opens past heavy head damage.
     const total = (f.regionDmg.head + f.regionDmg.torso
       + f.regionDmg.arms + f.regionDmg.legs) / 400;
     const sweat = Math.min(1, total * 1.6);
@@ -1156,7 +1194,6 @@ export class BrawlGame {
     if (f.rig.refs) {
       const hd = Math.min(1, f.regionDmg.head / 100);
       f.rig.refs.skull.scale.set(1 + hd * 0.07, 1, 1 + hd * 0.05);
-      f.rig.refs.cut.visible = f.regionDmg.head >= 50;
     }
   }
 
@@ -1249,13 +1286,6 @@ export class BrawlGame {
         bl.target.position.set(fp.x, 1.0, fp.z);
         bl.intensity = 3.0 * (1 - d * 0.5);
       }
-    }
-  }
-
-  // Full-body emissive flash (decays via flashT in _tick).
-  _setEmissive(rig, e) {
-    for (const m of Object.values(rig.materials)) {
-      if (m.emissive) m.emissive.setRGB(e, e, e);
     }
   }
 
@@ -1596,8 +1626,15 @@ export class BrawlGame {
     this.hudTimer = 0;
     this.hudDirty = false;
     if (this.dotnet) {
+      // Region damage rides along as [head, torso, arms, legs] per fighter so
+      // the Blazor HUD can render the body-diagram damage readout.
+      const regions = (f) => [
+        Math.round(f.regionDmg.head), Math.round(f.regionDmg.torso),
+        Math.round(f.regionDmg.arms), Math.round(f.regionDmg.legs),
+      ];
       this.dotnet.invokeMethodAsync('OnHud',
-        this._hp(this.fighters[0]), this._hp(this.fighters[1]), Math.round(this.clock * 10) / 10)
+        this._hp(this.fighters[0]), this._hp(this.fighters[1]), Math.round(this.clock * 10) / 10,
+        regions(this.fighters[0]), regions(this.fighters[1]))
         .catch(() => {});
     }
   }

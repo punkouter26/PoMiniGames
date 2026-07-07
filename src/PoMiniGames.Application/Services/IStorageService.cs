@@ -21,4 +21,8 @@ public interface IStorageService
     // PoBrawl High Scores (fastest KO)
     Task<List<PoBrawlHighScore>> GetPoBrawlHighScoresAsync(int limit = 10);
     Task<PoBrawlHighScore> SavePoBrawlHighScoreAsync(PoBrawlHighScore entry);
+
+    // PoBrawl presidents-ladder leaderboard (one row per player, best-ever progress)
+    Task<List<PoBrawlLadderEntry>> GetPoBrawlLadderAsync(int limit = 10);
+    Task<PoBrawlLadderEntry> SavePoBrawlLadderAsync(PoBrawlLadderEntry entry);
 }

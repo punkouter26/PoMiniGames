@@ -41,6 +41,41 @@ public static class PoBrawlHighScoresEndpoints
             .Produces<PoBrawlHighScore>(StatusCodes.Status201Created)
             .RequireRateLimiting("highscores");
 
+        // ── Presidents-ladder leaderboard ─────────────────────────────────
+        // One row per player; ranks by how many of the 10 presidents the player
+        // has beaten in 1-player mode (best run ever), Elo as the tiebreaker.
+        var ladder = app.MapGroup("/api/pobrawl/ladder").WithTags("HighScores");
+
+        ladder.MapGet("",
+            async (IStorageService storage, int count = 10) =>
+            {
+                var entries = await storage.GetPoBrawlLadderAsync(count);
+                return Results.Ok(entries);
+            })
+            .WithName("GetPoBrawlLadder")
+            .WithSummary("Top PoBrawl ladder runs (presidents beaten out of 10)")
+            .Produces<IEnumerable<PoBrawlLadderEntry>>(StatusCodes.Status200OK);
+
+        ladder.MapPost("",
+            async (PoBrawlLadderEntry entry, IStorageService storage) =>
+            {
+                if (string.IsNullOrWhiteSpace(entry.PlayerName))
+                    return Results.BadRequest(new { error = "Player name is required" });
+
+                if (entry.PlayerName.Trim().Length > 24)
+                    return Results.BadRequest(new { error = "Player name must be 24 characters or fewer" });
+
+                if (entry.PresidentsBeaten is < 0 or > 10)
+                    return Results.BadRequest(new { error = "Presidents beaten must be between 0 and 10" });
+
+                var saved = await storage.SavePoBrawlLadderAsync(entry);
+                return Results.Created("/api/pobrawl/ladder", saved);
+            })
+            .WithName("SavePoBrawlLadder")
+            .WithSummary("Submit a player's presidents-ladder progress")
+            .Produces<PoBrawlLadderEntry>(StatusCodes.Status201Created)
+            .RequireRateLimiting("highscores");
+
         return app;
     }
 }

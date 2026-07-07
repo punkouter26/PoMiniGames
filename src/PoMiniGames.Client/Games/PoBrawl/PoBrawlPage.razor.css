@@ -178,6 +178,32 @@
     margin-left: auto;
 }
 
+/* Region-damage body diagram: one 4-zone silhouette per fighter, flanking the
+   clock. Zones tint teal → amber → red as damage accrues; a zone past the
+   70-damage gameplay threshold (flinch / weak arms / slow legs) pulses. */
+.pb-body {
+    width: 24px;
+    height: 38px;
+    flex: 0 0 auto;
+    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.6));
+    opacity: 0.92;
+}
+
+.pb-body circle,
+.pb-body rect {
+    stroke: rgba(0, 0, 0, 0.45);
+    stroke-width: 1;
+}
+
+.pb-reg-crit {
+    animation: pb-reg-pulse 0.9s ease-in-out infinite;
+}
+
+@keyframes pb-reg-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.45; }
+}
+
 .pb-clock {
     min-width: 44px;
     text-family: 'Bungee', 'Russo One', 'Impact', sans-serif;
@@ -379,6 +405,19 @@
 }
 
 /* ── Fastest-KO board ────────────────────────────────── */
+
+/* Two leaderboards side by side (fastest KO + ladder legends); stacks on narrow screens. */
+.pb-boards {
+    display: flex;
+    gap: 24px;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+.pb-boards .pb-board {
+    flex: 1 1 220px;
+    min-width: 200px;
+}
 
 .pb-board {
     margin-top: 16px;

@@ -17,6 +17,7 @@ public static class GameStatsPanel
     public static List<StatItem> Build(
         DifficultyStats bucket,
         bool includeDraws = true,
+        bool includeElo = true,
         params (string Label, string Value)[] leading)
     {
         var items = new List<StatItem>();
@@ -34,7 +35,12 @@ public static class GameStatsPanel
         }
         items.Add(new StatItem { Label = "Str", Value = bucket.WinStreak.ToString() });
         items.Add(new StatItem { Label = "Rate", Value = $"{bucket.WinRate * 100:F0}%" });
-        items.Add(new StatItem { Label = "ELO", Value = bucket.EloRating.ToString() });
+        // Games that surface their own adaptive/ladder ELO as a leading stat
+        // (PoBrawl 1P) opt out of the bucket ELO to avoid two "ELO" cells.
+        if (includeElo)
+        {
+            items.Add(new StatItem { Label = "ELO", Value = bucket.EloRating.ToString() });
+        }
 
         return items;
     }

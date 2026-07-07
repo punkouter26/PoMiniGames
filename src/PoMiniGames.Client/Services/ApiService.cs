@@ -255,6 +255,39 @@ public class ApiService
         }
     }
 
+    public async Task<PoBrawlLadderEntry[]?> GetPoBrawlLadderAsync(int count = 10)
+    {
+        try
+        {
+            return await _http.GetFromJsonAsync(
+                $"/api/pobrawl/ladder?count={count}", ApiJsonContext.Default.PoBrawlLadderEntryArray);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Submits ladder progress. The server keeps one row per player with
+    /// max-progress semantics, so a dropped submit self-heals on the next win —
+    /// no offline resync queue needed.
+    /// </summary>
+    public async Task<PoBrawlLadderEntry?> SubmitPoBrawlLadderAsync(PoBrawlLadderEntry entry)
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(entry.Date))
+                entry.Date = DateTime.UtcNow.ToString("O");
+            var response = await _http.PostAsJsonAsync("/api/pobrawl/ladder", entry, ApiJsonContext.Default.PoBrawlLadderEntry);
+            return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync(ApiJsonContext.Default.PoBrawlLadderEntry) : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     // ─── Head-to-head match history ──────────────────────────────────────
 
     public async Task<bool> RecordMatchAsync(MatchRecordRequest request)

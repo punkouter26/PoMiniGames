@@ -543,29 +543,6 @@ export function updateJiggles(rig, dt) {
   }
 }
 
-// Cache pristine colors so per-region tinting is reversible.
-const _orig = new WeakMap();
-function ensureBase(mesh) {
-  if (!mesh.material || !mesh.material.color) return null;
-  if (!_orig.has(mesh.material)) _orig.set(mesh.material, mesh.material.color.clone());
-  return _orig.get(mesh.material);
-}
-
-/** Lerp every material under a joint toward `target` by `amount` (0..1). */
-export function tintJoint(joint, amount, target) {
-  if (!joint || amount <= 0) return;
-  joint.traverse((o) => {
-    if (o.isMesh && o.material && o.material.color) {
-      const base = ensureBase(o);
-      if (base) o.material.color.copy(base).lerp(target, Math.min(1, amount));
-    }
-  });
-}
-
-export function resetTints(rig) {
-  rig.root.traverse((o) => {
-    if (o.isMesh && o.material && o.material.color && _orig.has(o.material)) {
-      o.material.color.copy(_orig.get(o.material));
-    }
-  });
-}
+// Per-region bruise tinting used to live here (tintJoint/resetTints). Removed
+// per user request: a fighter's model colors never change when hit or KO'd —
+// damage is communicated via the HUD body diagram instead.

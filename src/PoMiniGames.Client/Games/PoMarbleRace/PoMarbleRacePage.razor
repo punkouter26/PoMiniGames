@@ -233,7 +233,7 @@
     {
         var bucket = _gameStats.GetDifficultyBucket(_stats, Difficulty.Medium);
         // Marble race has no draws and shows Score + Best as leading stats.
-        _statItems = GameStatsPanel.Build(bucket, includeDraws: false,
+        _statItems = GameStatsPanel.Build(bucket, includeDraws: false, includeElo: true,
             ("Score", _score.ToString()),
             ("Best", _best.ToString()));
     }

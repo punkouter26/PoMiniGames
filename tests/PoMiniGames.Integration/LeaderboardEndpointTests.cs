@@ -60,4 +60,45 @@ public sealed class LeaderboardEndpointTests : IClassFixture<TestWebApplicationF
             new { PlayerInitials = "ABC", KoTimeSeconds = 0.0 })).StatusCode
             .Should().Be(HttpStatusCode.BadRequest);
     }
+
+    // ── PoBrawl presidents-ladder leaderboard ─────────────────────────────
+
+    [Fact]
+    public async Task PoBrawlLadder_KeepsBestRunPerPlayer_RanksByPresidentsBeaten_AndRejectsBadInput()
+    {
+        var name = $"ladder_test_{Guid.NewGuid():N}"[..24];
+        var rival = $"ladder_riva_{Guid.NewGuid():N}"[..24];
+
+        // Best-progress semantics: 4 → then a worse run (2) must NOT overwrite it.
+        (await _client.PostAsJsonAsync("/api/pobrawl/ladder",
+            new { PlayerName = name, PresidentsBeaten = 4, Elo = 1300 })).StatusCode
+            .Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.Created);
+        (await _client.PostAsJsonAsync("/api/pobrawl/ladder",
+            new { PlayerName = name, PresidentsBeaten = 2, Elo = 1250 })).StatusCode
+            .Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.Created);
+        (await _client.PostAsJsonAsync("/api/pobrawl/ladder",
+            new { PlayerName = rival, PresidentsBeaten = 10, Elo = 1700 })).StatusCode
+            .Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.Created);
+
+        var entries = await _client.GetFromJsonAsync<List<System.Text.Json.JsonElement>>("/api/pobrawl/ladder?count=50");
+        entries.Should().NotBeNull();
+
+        var mine = entries!.Single(e => e.GetProperty("playerName").GetString() == name);
+        mine.GetProperty("presidentsBeaten").GetInt32()
+            .Should().Be(4, because: "a worse later run must not overwrite the best");
+        entries!.Should().ContainSingle(e => e.GetProperty("playerName").GetString() == name,
+            because: "the ladder keeps one row per player");
+
+        // Ranked by presidents beaten, descending.
+        var beaten = entries!.Select(e => e.GetProperty("presidentsBeaten").GetInt32()).ToList();
+        beaten.Should().BeInDescendingOrder(because: "most presidents beaten ranks first");
+
+        // Bad input is rejected: empty name and an out-of-range count.
+        (await _client.PostAsJsonAsync("/api/pobrawl/ladder",
+            new { PlayerName = "", PresidentsBeaten = 3 })).StatusCode
+            .Should().Be(HttpStatusCode.BadRequest);
+        (await _client.PostAsJsonAsync("/api/pobrawl/ladder",
+            new { PlayerName = "abc", PresidentsBeaten = 11 })).StatusCode
+            .Should().Be(HttpStatusCode.BadRequest);
+    }
 }

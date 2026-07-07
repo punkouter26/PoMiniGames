@@ -1,0 +1,28 @@
+Using launch settings from src\PoMiniGames\PoMiniGames\Properties\launchSettings.json...
+[00:00:42 INF] Storage table ensured: PoCoupleQuizTeams 
+[00:00:42 INF] Storage table ensured: PoCoupleQuizHistory 
+[00:00:42 INF] Storage table ensured: PoFunQuizPlayers 
+[00:00:42 INF] Storage table ensured: PoFaceGameSessions 
+[00:00:42 INF] Storage table ensured: PoFaceRoundCaptures 
+[00:00:42 INF] Storage table ensured: PoFaceLeaderboard 
+[00:00:42 INF] Storage table ensured: PoFacePlayerStats 
+[00:00:42 INF] Storage table ensured: PoFacePlayers 
+[00:00:42 INF] Storage table ensured: EvolutionRecords 
+[00:00:42 INF] Storage table ensured: PoSurviveSessions 
+[00:00:42 INF] Storage table ensured: PoSurviveHeartbeats 
+[00:00:42 INF] Storage table ensured: PoJokerPerformances 
+[00:00:42 INF] Starting PoMiniGames on port 5000 
+[00:00:42 DBG] Hosting starting 
+[00:00:42 INF] Startup secret validation passed for Development 
+[00:00:42 INF] Now listening on: http://localhost:5000 
+[00:00:42 INF] Application started. Press Ctrl+C to shut down. 
+[00:00:42 INF] Hosting environment: Development 
+[00:00:42 INF] Content root path: C:\Users\punko\Downloads\PoMiniGames\src\PoMiniGames\PoMiniGames 
+[00:00:42 DBG] Hosting started 
+[00:00:43 INF] Request starting HTTP/1.1 GET http://localhost:5000/api/auth/handshake - null null 
+[00:00:43 INF] Executing endpoint 'HTTP: GET /api/auth/handshake' 
+[00:00:43 INF] Setting HTTP status code 200. 
+[00:00:43 INF] Writing value of type 'AuthHandshakeResponse' as Json. 
+[00:00:43 INF] Executed endpoint 'HTTP: GET /api/auth/handshake' 
+[00:00:43 INF] HTTP GET /api/auth/handshake responded 200 in 25.6490 ms 
+[00:00:43 INF] Request finished HTTP/1.1 GET http://localhost:5000/api/auth/handshake - 200 null application/json; charset=utf-8 114.893ms 

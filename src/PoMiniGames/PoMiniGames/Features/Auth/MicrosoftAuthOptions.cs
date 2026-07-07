@@ -47,9 +47,64 @@ public sealed class MicrosoftAuthOptions
     /// </summary>
     public bool FullyConfigured => !string.IsNullOrWhiteSpace(ClientId) && !string.IsNullOrWhiteSpace(ApiClientId);
 
-    public string EffectiveScope => !string.IsNullOrWhiteSpace(Scope)
-        ? Scope
-        : string.IsNullOrWhiteSpace(ApiClientId)
-            ? string.Empty
-            : $"api://{ApiClientId}/access_as_user";
+    /// <summary>
+    /// Scope to request from MSAL.js for the API access token.
+    /// <para>
+    /// If <see cref="Scope"/> looks like a placeholder/template (e.g.
+    /// <c>api://&lt;your-api-client-id&gt;/access_as_user</c> shipped in
+    /// <c>appsettings.Development.json</c>) the value is ignored even when non-empty —
+    /// sending the literal <c>&lt;your-api-client-id&gt;</c> segment to
+    /// <c>login.microsoftonline.com</c> produces <c>AADSTS90013 Invalid input
+    /// received from the user</c> because the resource identifier does not resolve
+    /// to an app registration. In that case the canonical scope is constructed from
+    /// <see cref="ApiClientId"/>.
+    /// </para>
+    /// </summary>
+    public string EffectiveScope
+    {
+        get
+        {
+            if (LooksLikePlaceholder(Scope))
+            {
+                return string.IsNullOrWhiteSpace(ApiClientId)
+                    ? string.Empty
+                    : $"api://{ApiClientId}/access_as_user";
+            }
+
+            return !string.IsNullOrWhiteSpace(Scope)
+                ? Scope
+                : string.IsNullOrWhiteSpace(ApiClientId)
+                    ? string.Empty
+                    : $"api://{ApiClientId}/access_as_user";
+        }
+    }
+
+    /// <summary>
+    /// True when <paramref name="value"/> still contains a templating token such as
+    /// <c>&lt;your-api-client-id&gt;</c>, <c>&lt;APP_ID&gt;</c>, or <c>{{...}}</c> —
+    /// i.e. it was clearly never substituted before being shipped to a running app.
+    /// </summary>
+    public static bool LooksLikePlaceholder(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return false;
+        // `<...>` tokens (the dev template, Helm chart placeholders, etc.)
+        if (System.Text.RegularExpressions.Regex.IsMatch(
+                value, @"<\s*[A-Za-z][A-Za-z0-9_\-\.]*\s*>"))
+        {
+            return true;
+        }
+        // `{{...}}` Mustache-style placeholders.
+        if (value.Contains("{{", StringComparison.Ordinal)
+            && value.Contains("}}", StringComparison.Ordinal))
+        {
+            return true;
+        }
+        // Explicit REPLACE-me markers (e.g. from copied README snippets).
+        if (value.Contains("REPLACE", StringComparison.OrdinalIgnoreCase)
+            || value.Contains("CHANGEME", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+        return false;
+    }
 }

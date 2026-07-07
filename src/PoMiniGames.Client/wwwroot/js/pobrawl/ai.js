@@ -8,23 +8,40 @@
 //   • throw its fastest attack when the opponent is in active/recover (whiff punish)
 //   • occasionally commit to a blocked attack then cancel into block (bait)
 //   • back off after taking quick consecutive hits (anti-stunlock)
+//
+// In-match adaptation: the AI also reads the opponent's habits over a rolling
+// ~8-second window and shifts its weights —
+//   • turtles (blocking a big share of in-range time) draw more kicks, because
+//     the guard capsules only cover the forearms so kicks to the legs land
+//     through a standing block, plus more feint-baits
+//   • spammers (high attack rate) get blocked and whiff-punished more often
+// Adaptation strength scales with the rung, so a level-2 president barely
+// adjusts while a level-9 one counters your gameplan within a few exchanges.
 
 // Ten numeric skill rungs for the 1-player presidents ladder. Level 1 is a
 // pushover (sluggish, near-blind defense, rarely swings); level 10 is a wall
 // (snap reactions, near-perfect blocking and whiff punishing, aggressive).
-// `aggro` scales how often the AI chooses to attack at all.
+// `aggro` scales how often the AI chooses to attack at all. `comboP` is the
+// chance a committed punch is pre-planned as a punch→kick cancel string —
+// only rungs 7+ know the cancel table exists.
 const LEVELS = [
-  /* 1 */ { reactionMs: 780, blockP: 0.03, baitP: 0.00, punishP: 0.02, aggro: 0.35 },
-  /* 2 */ { reactionMs: 640, blockP: 0.08, baitP: 0.00, punishP: 0.06, aggro: 0.50 },
-  /* 3 */ { reactionMs: 540, blockP: 0.15, baitP: 0.00, punishP: 0.12, aggro: 0.62 },
-  /* 4 */ { reactionMs: 460, blockP: 0.24, baitP: 0.02, punishP: 0.22, aggro: 0.74 },
-  /* 5 */ { reactionMs: 380, blockP: 0.34, baitP: 0.04, punishP: 0.34, aggro: 0.85 },
-  /* 6 */ { reactionMs: 320, blockP: 0.45, baitP: 0.06, punishP: 0.46, aggro: 0.95 },
-  /* 7 */ { reactionMs: 270, blockP: 0.56, baitP: 0.08, punishP: 0.58, aggro: 1.05 },
-  /* 8 */ { reactionMs: 225, blockP: 0.66, baitP: 0.10, punishP: 0.70, aggro: 1.12 },
-  /* 9 */ { reactionMs: 185, blockP: 0.76, baitP: 0.13, punishP: 0.80, aggro: 1.20 },
-  /* 10 */{ reactionMs: 150, blockP: 0.86, baitP: 0.16, punishP: 0.90, aggro: 1.28 },
+  /* 1 */ { reactionMs: 780, blockP: 0.03, baitP: 0.00, punishP: 0.02, aggro: 0.35, comboP: 0.00 },
+  /* 2 */ { reactionMs: 640, blockP: 0.08, baitP: 0.00, punishP: 0.06, aggro: 0.50, comboP: 0.00 },
+  /* 3 */ { reactionMs: 540, blockP: 0.15, baitP: 0.00, punishP: 0.12, aggro: 0.62, comboP: 0.00 },
+  /* 4 */ { reactionMs: 460, blockP: 0.24, baitP: 0.02, punishP: 0.22, aggro: 0.74, comboP: 0.00 },
+  /* 5 */ { reactionMs: 380, blockP: 0.34, baitP: 0.04, punishP: 0.34, aggro: 0.85, comboP: 0.00 },
+  /* 6 */ { reactionMs: 320, blockP: 0.45, baitP: 0.06, punishP: 0.46, aggro: 0.95, comboP: 0.00 },
+  /* 7 */ { reactionMs: 270, blockP: 0.56, baitP: 0.08, punishP: 0.58, aggro: 1.05, comboP: 0.25 },
+  /* 8 */ { reactionMs: 225, blockP: 0.66, baitP: 0.10, punishP: 0.70, aggro: 1.12, comboP: 0.35 },
+  /* 9 */ { reactionMs: 185, blockP: 0.76, baitP: 0.13, punishP: 0.80, aggro: 1.20, comboP: 0.45 },
+  /* 10 */{ reactionMs: 150, blockP: 0.86, baitP: 0.16, punishP: 0.90, aggro: 1.28, comboP: 0.55 },
 ];
+
+// Habit-tracker tuning. The rolling window is an exponential decay so recent
+// behavior dominates; thresholds are the point past which a habit is "read".
+const HABIT_TAU = 8;          // seconds of memory
+const TURTLE_THRESHOLD = 0.35; // fraction of in-range time spent blocking
+const SPAM_THRESHOLD = 0.5;    // opponent attacks per second
 
 // Legacy string difficulties (used by demo / 2p fallbacks) map onto rungs.
 const NAMED_LEVELS = { easy: 2, medium: 5, hard: 8 };
@@ -36,11 +53,15 @@ export class AiController {
       ? Math.max(1, Math.min(10, Math.round(difficulty)))
       : (NAMED_LEVELS[difficulty] || NAMED_LEVELS.medium);
     const p = LEVELS[level - 1];
+    this.level = level;
     this.reactionMs = p.reactionMs;
     this.blockP = p.blockP;
     this.baitP = p.baitP;
     this.punishP = p.punishP;
     this.aggro = p.aggro;
+    this.comboP = p.comboP;
+    // How hard the habit reads bend the weights: level 1 ≈ 0.1, level 10 = 1.
+    this.adapt = level / 10;
     this.rng = rng || { random: Math.random };
     this.sinceDecision = 1e9;
     this.current = { move: 0, side: 0, punch: false, kick: false, block: false };
@@ -50,6 +71,16 @@ export class AiController {
     // Used to occasionally start a swing then cancel to block on the next decision.
     this.baitArmed = false;
     this.baitStartedAt = 0;
+    // Pre-planned punch→kick cancel string (rungs 7+): fire the kick edge when
+    // t reaches comboAt, drop the plan if the window is missed.
+    this.comboAt = 0;
+    this.comboUntil = 0;
+    // Rolling habit counters (exponentially decayed, HABIT_TAU memory).
+    this.obsT = 0;       // decayed in-range observation time
+    this.oppBlockT = 0;  // decayed in-range time the opponent spent blocking
+    this.oppAtkN = 0;    // decayed count of opponent attack starts
+    this.clockT = 0;     // decayed total time (normalizer for the attack rate)
+    this.prevOppWindup = false;
   }
 
   notifyHit() {
@@ -66,20 +97,75 @@ export class AiController {
    *     ownAttacks: { punch: {...}, kick: {...} } // with windup/active/recover
    *   }
    */
+  // ── Habit tracking ────────────────────────────────────────────────────
+  // Decayed counters: multiply by exp(-dt/tau) each tick, then add this tick's
+  // observation, so the read always reflects roughly the last HABIT_TAU seconds.
+  _observe(ctx) {
+    const decay = Math.exp(-ctx.dt / HABIT_TAU);
+    const inRange = ctx.distance < ctx.kickRange * 1.25;
+    this.obsT = this.obsT * decay + (inRange ? ctx.dt : 0);
+    this.oppBlockT = this.oppBlockT * decay
+      + (inRange && ctx.opponentState === 'block' ? ctx.dt : 0);
+    this.clockT = this.clockT * decay + ctx.dt;
+    this.oppAtkN *= decay;
+    if (ctx.opponentWindup && !this.prevOppWindup) this.oppAtkN += 1;
+    this.prevOppWindup = ctx.opponentWindup;
+  }
+
+  // 0..1 — how much of recent in-range time the opponent spent blocking.
+  _turtleRead() {
+    if (this.obsT < 1.5) return 0; // not enough evidence yet
+    return Math.max(0, this.oppBlockT / this.obsT - TURTLE_THRESHOLD);
+  }
+
+  // Attacks/sec above the spam threshold (0 when calm).
+  _spamRead() {
+    if (this.clockT < 1.5) return 0;
+    return Math.max(0, this.oppAtkN / this.clockT - SPAM_THRESHOLD);
+  }
+
   update(ctx) {
     this.t += ctx.dt;
     this.sinceDecision += ctx.dt * 1000;
+    this._observe(ctx);
+
+    // Habit-adjusted probabilities for this tick. Spammers get blocked and
+    // whiff-punished more; the bumps are capped so low rungs stay beatable.
+    const spam = this._spamRead();
+    const turtle = this._turtleRead();
+    const effBlockP = Math.min(0.95, this.blockP + spam * 0.5 * this.adapt);
+    const effPunishP = Math.min(0.95, this.punishP + spam * 0.4 * this.adapt);
+    const effBaitP = Math.min(0.5, this.baitP + turtle * 0.4 * this.adapt);
 
     // Edge-triggered flags are consumed each read; holds (move/block) persist.
     const intent = { ...this.current, punch: false, kick: false, side: 0 };
 
+    // ── Pre-planned cancel string (rungs 7+) ────────────────────────────
+    // A punch committed with a combo plan cancels into kick exactly when the
+    // frame-data window opens. Fires outside the reaction gate — the string
+    // was decided when the punch started, not as a reaction.
+    if (this.comboAt > 0 && this.t >= this.comboAt) {
+      const missed = this.t > this.comboUntil
+        || ctx.opponentState === 'down' || ctx.opponentState === 'getup'
+        || ctx.distance > ctx.kickRange * 1.1;
+      this.comboAt = 0;
+      this.comboUntil = 0;
+      if (!missed) {
+        this.current = { move: 0, side: 0, punch: false, kick: false, block: false };
+        this.sinceDecision = 0;
+        return { ...this.current, kick: true };
+      }
+    }
+
     // ── Reactive defense ────────────────────────────────────────────────
     // Block during the opponent's windup if we can plausibly get there.
     if (ctx.opponentWindup && ctx.distance < ctx.kickRange * 1.25 && !this.current.block) {
-      if (this.rng.random() < this.blockP) {
+      if (this.rng.random() < effBlockP) {
         this.current = { move: 0, side: 0, punch: false, kick: false, block: true };
         this.sinceDecision = 0;
         this.baitArmed = false;
+        this.comboAt = 0;
+        this.comboUntil = 0;
         return { ...this.current };
       }
     }
@@ -121,7 +207,7 @@ export class AiController {
       return { ...this.current };
     }
 
-    if ((ctx.opponentActive || ctx.opponentRecover) && this.rng.random() < this.punishP) {
+    if ((ctx.opponentActive || ctx.opponentRecover) && this.rng.random() < effPunishP) {
       // Punch is the fastest move — best for punishing recovery.
       this.current = { move: 0, side: 0, punch: false, kick: false, block: false };
       this.baitArmed = false;
@@ -130,12 +216,23 @@ export class AiController {
 
     // Attack shares scale with the rung's aggression; the leftover probability
     // shifts into block/retreat/wait, so low rungs mostly shuffle around.
+    // Vs a turtle, punch share shifts into kick: the guard only covers the
+    // forearms, so kicks to the legs connect through a standing block.
     const r = this.rng.random();
-    const pPunch = 0.35 * this.aggro;
-    const pKick = 0.25 * this.aggro;
+    let pPunch = 0.35 * this.aggro;
+    let pKick = 0.25 * this.aggro;
+    const kickShift = Math.min(pPunch * 0.6, turtle * 0.8 * this.adapt);
+    pPunch -= kickShift;
+    pKick += kickShift;
     if (r < pPunch) {
       this.current = { move: 0, side: 0, punch: false, kick: false, block: false };
       this.baitArmed = false;
+      // Rungs 7+ sometimes commit to the punch as the opener of a
+      // punch→kick cancel string (see the combo block above).
+      if (this.comboP > 0 && this.rng.random() < this.comboP) {
+        this.comboAt = this.t + ctx.ownAttacks.punch.cancelInto.kick + 0.04;
+        this.comboUntil = this.comboAt + 0.15;
+      }
       return { ...this.current, punch: true };
     } else if (r < pPunch + pKick) {
       this.current = { move: 0, side: 0, punch: false, kick: false, block: false };
@@ -143,7 +240,7 @@ export class AiController {
       return { ...this.current, kick: true };
     } else if (r < pPunch + pKick + 0.15) {
       // Optionally arm a bait: start a punch, then cancel into block next tick.
-      if (this.rng.random() < this.baitP) {
+      if (this.rng.random() < effBaitP) {
         this.baitArmed = true;
         this.baitStartedAt = this.t;
         this.current = { move: 0, side: 0, punch: false, kick: false, block: false };

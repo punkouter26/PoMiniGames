@@ -24,6 +24,13 @@ public record FunQuizLobbySummary(
 
 public record FunQuizScoreUpdate(string GameId, string PlayerName, int TotalScore, int Streak, int MaxStreak);
 
+/// <summary>
+/// Per-question "I'm done" broadcast. <paramref name="finishedCount"/> /
+/// <paramref name="totalPlayers"/> drives the lobby UI ("1/2 answered") so
+/// players know when the next question is about to drop.
+/// </summary>
+public record FunQuizPlayerFinishedQuestion(string GameId, string PlayerName, int FinishedCount, int TotalPlayers);
+
 public record FunQuizGameFinished(
     string GameId,
     IReadOnlyDictionary<string, int> FinalScores,
@@ -43,6 +50,7 @@ public interface IFunQuizClient
     Task GameStarted(FunQuizGameState state);
     Task ScoreUpdated(FunQuizScoreUpdate update);
     Task PlayerJoined(FunQuizLobbyPlayerJoined payload);
+    Task PlayerFinishedQuestion(FunQuizPlayerFinishedQuestion payload);
     Task GameFinished(FunQuizGameFinished payload);
     Task LobbyError(FunQuizLobbyError error);
 }

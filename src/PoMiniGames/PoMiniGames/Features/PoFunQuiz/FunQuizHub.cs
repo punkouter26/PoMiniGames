@@ -92,18 +92,41 @@ public class FunQuizHub : Hub<IFunQuizClient>
         var normalized = gameId.Trim().ToUpperInvariant();
         var game = _lobby.GetByConnection(Context.ConnectionId);
         if (game is null || game.GameId != normalized) return;
-        // Mark this player as finished. When both have finished, declare the winner.
+        // Mark this player as finished for the *current* question. When both
+        // have finished the question, advance. Once we've burned through every
+        // question, declare the winner.
         var me = game.Players.FirstOrDefault(p => p.ConnectionId == Context.ConnectionId);
         if (me is null) return;
+        if (me.HasFinished) return; // already submitted for this question
         me.HasFinished = true;
+        await Clients.Group(game.GameId).PlayerFinishedQuestion(new FunQuizPlayerFinishedQuestion(
+            game.GameId, me.Name, game.Players.Count(p => p.HasFinished), game.Players.Count));
+
         if (game.Players.Count == 2 && game.Players.All(p => p.HasFinished))
         {
-            _lobby.FinishGame(game.GameId);
-            var scores = game.Players.ToDictionary(p => p.Name, p => p.Score);
-            var winner = game.Winner;
-            var payload = new FunQuizGameFinished(
-                game.GameId, scores, winner is null ? null : new FunQuizPlayerState(winner.Name, winner.Score, winner.MaxStreak), game.IsTie);
-            await Clients.Group(game.GameId).GameFinished(payload);
+            if (game.CurrentQuestionIndex >= game.Questions.Count - 1)
+            {
+                // All questions consumed → declare the final winner.
+                _lobby.FinishGame(game.GameId);
+                var scores = game.Players.ToDictionary(p => p.Name, p => p.Score);
+                var winner = game.Winner;
+                var payload = new FunQuizGameFinished(
+                    game.GameId, scores,
+                    winner is null ? null : new FunQuizPlayerState(winner.Name, winner.Score, winner.MaxStreak),
+                    game.IsTie);
+                await Clients.Group(game.GameId).GameFinished(payload);
+            }
+            else
+            {
+                // Advance to the next question. HasFinished is reset inside
+                // MultiplayerLobbyService.AdvanceQuestion.
+                _lobby.AdvanceQuestion(game.GameId, Context.ConnectionId);
+                var fresh = _lobby.GetByConnection(Context.ConnectionId);
+                if (fresh is not null)
+                {
+                    await Clients.Group(fresh.GameId).GameUpdated(BuildState(fresh));
+                }
+            }
         }
     }
 

@@ -77,6 +77,10 @@
     <script src="js/webcam.js" defer></script>
     <!-- AppErrorBoundary fallback clipboard helper (non-secure-context safe) -->
     <script src="js/appErrorBoundary.js" defer></script>
+    <!-- PoFunQuiz split-screen local 2P hotkey bridge. Loaded eagerly because
+         the page invokes window.poFunQuizSplitHotkeys.register() inside
+         OnAfterRenderAsync on first render; a deferred script would miss it. -->
+    <script src="js/poFunQuizSplitHotkeys.js"></script>
     <!-- Microsoft sign-in (MSAL.js + interop wrapper). Loaded eagerly so the
          login gate can call poAuth.* during startup when OAuth is configured.
          NOTE: consider pinning a Subresource Integrity hash for this CDN script

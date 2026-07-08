@@ -97,7 +97,11 @@
                     </div>
                     @if (_hasAnswered)
                     {
-                        <p>Answered. Waiting for opponent…</p>
+                        <p>Answered. Waiting for opponent… (@_finishedThisQuestion / @_state.Players.Count)</p>
+                    }
+                    else
+                    {
+                        <p class="fq-2p-scores">@_playerName: <strong>@MyScore</strong> · @OpponentName: <strong>@OpponentScore</strong></p>
                     }
                 </div>
             }
@@ -133,6 +137,11 @@
     private FunQuizGameFinishedDto? _finished;
     private FunQuizQuestionDto? _currentQuestion;
     private bool _hasAnswered;
+    private int _finishedThisQuestion;
+
+    private int MyScore => _state?.Players.FirstOrDefault(p => p.Name == _playerName)?.Score ?? 0;
+    private int OpponentScore => _state?.Players.FirstOrDefault(p => p.Name != _playerName)?.Score ?? 0;
+    private string OpponentName => _state?.Players.FirstOrDefault(p => p.Name != _playerName)?.Name ?? "Opponent";
 
     protected override async Task OnInitializedAsync()
     {
@@ -142,6 +151,7 @@
         Hub.OnGameUpdated += HandleState;
         Hub.OnGameStarted += HandleState;
         Hub.OnScoreUpdated += HandleScoreUpdate;
+        Hub.OnPlayerFinishedQuestion += HandlePlayerFinishedQuestion;
         Hub.OnGameFinished += HandleFinished;
         Hub.OnLobbyError += HandleError;
         Hub.OnReconnecting += HandleReconnecting;
@@ -253,9 +263,21 @@
 
     private void HandleState(FunQuizGameStateDto s)
     {
+        // If the question index advanced (or the game restarted), clear the
+        // per-question "answered" flag so the player can submit again.
+        if (_state is null || s.CurrentQuestionIndex != _state.CurrentQuestionIndex)
+        {
+            _hasAnswered = false;
+            _finishedThisQuestion = 0;
+        }
         _state = s;
         _currentQuestion = s.Questions.Count > s.CurrentQuestionIndex ? s.Questions[s.CurrentQuestionIndex] : null;
-        _hasAnswered = false;
+    }
+
+    private void HandlePlayerFinishedQuestion(FunQuizPlayerFinishedQuestionDto p)
+    {
+        _finishedThisQuestion = p.FinishedCount;
+        InvokeAsync(StateHasChanged);
     }
 
     private void HandleScoreUpdate(FunQuizScoreUpdateDto u)
@@ -298,8 +320,9 @@
         _hasAnswered = true;
         // For the consolidation MVP we treat every answer as 1.0× speed (no timer running yet).
         await Hub.UpdateScore(_state.GameId, isCorrect, speedMultiplier: 1.0, secondsRemaining: 0);
-        // Mark the local player as finished for this question — both players finishing
-        // triggers GameFinished on the server.
+        // Mark the local player as finished for this question — once both
+        // players finish, the server advances to the next question (or ends
+        // the game on the last one).
         await Hub.PlayerFinished(_state.GameId);
     }
 
@@ -310,6 +333,7 @@
         Hub.OnGameUpdated -= HandleState;
         Hub.OnGameStarted -= HandleState;
         Hub.OnScoreUpdated -= HandleScoreUpdate;
+        Hub.OnPlayerFinishedQuestion -= HandlePlayerFinishedQuestion;
         Hub.OnGameFinished -= HandleFinished;
         Hub.OnLobbyError -= HandleError;
         Hub.OnReconnecting -= HandleReconnecting;

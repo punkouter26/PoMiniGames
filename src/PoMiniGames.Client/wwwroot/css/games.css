@@ -786,6 +786,203 @@
   font-weight: 600;
 }
 
+/* ── FunQuiz split-screen local 2P (one keyboard, one display) ── */
+/* Layout: header (question + prompt) sits across the top, then a CSS-grid
+   board splits 1fr / auto / 1fr so left and right players get equal columns.
+   Both sides see the SAME question but have their own option stack and
+   score panel. Hotkeys: 1-4 left, 6-9 right. */
+.fq-split {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 0.5rem;
+}
+
+.fq-split__header {
+  text-align: center;
+  background: rgba(99, 102, 241, 0.08);
+  border: 1px solid rgba(99, 102, 241, 0.25);
+  border-radius: 12px;
+  padding: 0.75rem 1rem;
+}
+
+.fq-split__header .gps-phase-h { margin: 0 0 0.25rem; }
+.fq-split__prompt { margin: 0; font-size: 1.25rem; font-weight: 600; }
+
+.fq-split__board {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 1rem;
+  align-items: stretch;
+}
+
+.fq-split__player {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 1rem;
+  border-radius: 14px;
+  border: 1px solid var(--color-border, rgba(148, 163, 184, 0.25));
+  background: rgba(15, 23, 42, 0.55);
+}
+
+.fq-split__player--left  { border-left: 4px solid #38bdf8; }  /* cyan   = Player 1 */
+.fq-split__player--right { border-left: 4px solid #f472b6; }  /* pink   = Player 2 */
+
+.fq-split__name {
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.fq-split__score {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: #facc15;
+}
+
+.fq-split__streak {
+  display: inline-block;
+  margin-left: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--color-text-secondary, #94a3b8);
+  font-weight: 500;
+}
+
+.fq-split__keys {
+  display: flex;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+  color: var(--color-text-secondary, #94a3b8);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.fq-split__keys kbd {
+  display: inline-block;
+  padding: 2px 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-bottom-width: 2px;
+  border-radius: 6px;
+  font-family: ui-monospace, "JetBrains Mono", "SFMono-Regular", monospace;
+  font-size: 0.8rem;
+  color: #f8fafc;
+}
+
+.fq-split__options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+.fq-split__opt {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.7rem 0.9rem;
+  font-size: 1rem;
+  text-align: left;
+  background: rgba(30, 41, 59, 0.85);
+  color: var(--color-text-primary, #f8fafc);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: transform 0.08s ease, border-color 0.12s ease, background 0.12s ease;
+}
+
+.fq-split__opt:hover:not([disabled]) {
+  border-color: rgba(56, 189, 248, 0.65);
+  background: rgba(30, 58, 138, 0.55);
+}
+
+.fq-split__opt:active:not([disabled]) { transform: scale(0.98); }
+
+.fq-split__opt[disabled] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.fq-split__opt--picked {
+  border-color: #facc15;
+  background: rgba(250, 204, 21, 0.18);
+  box-shadow: 0 0 0 2px rgba(250, 204, 21, 0.45) inset;
+}
+
+.fq-split__key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  font-family: ui-monospace, "JetBrains Mono", "SFMono-Regular", monospace;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 6px;
+}
+
+.fq-split__label { line-height: 1.25; }
+
+.fq-split__badge {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #facc15;
+  color: #1e293b;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+}
+
+.fq-split__status {
+  margin-top: auto;
+  padding-top: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--color-text-secondary, #94a3b8);
+  border-top: 1px dashed rgba(148, 163, 184, 0.18);
+}
+
+.fq-split__vs {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  color: rgba(250, 204, 21, 0.85);
+  padding: 0 0.5rem;
+}
+
+.fq-split__reveal {
+  text-align: center;
+  padding: 0.6rem 0.9rem;
+  border-radius: 10px;
+  background: rgba(34, 197, 94, 0.12);
+  border: 1px solid rgba(34, 197, 94, 0.4);
+  color: #bbf7d0;
+  font-weight: 600;
+  animation: fq-split-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes fq-split-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+  50%      { box-shadow: 0 0 0 6px rgba(34, 197, 94, 0.15); }
+}
+
+/* Narrow viewports: stack the two halves vertically so the keyboard rows
+   don't fight for horizontal space. The 2P shared-screen design targets
+   landscape monitors but must also work on portrait tablets. */
+@media (max-width: 720px) {
+  .fq-split__board {
+    grid-template-columns: 1fr;
+  }
+  .fq-split__vs { padding: 0.25rem 0; }
+}
+
 .fq-reconnecting__pulse {
   display: inline-block;
   width: 10px;

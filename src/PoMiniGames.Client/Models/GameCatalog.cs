@@ -29,7 +29,7 @@ public static class GameCatalog
     [
         new(GameKeys.ConnectFive, "Connect Five", "🔴", "/connectfive?mode=2p"),
         new(GameKeys.TicTacToe, "Tic Tac Toe", "❌", "/tictactoe?mode=2p"),
-        new(GameKeys.PoFunQuiz, "PoFunQuiz", "🧠", "/funquiz"),
+        new(GameKeys.PoFunQuiz, "PoFunQuiz", "🧠", "/funquiz?mode=2p"),
         new(GameKeys.PoBrawl, "PoBrawl", "🥊", "/pobrawl?mode=2p"),
     ];
 

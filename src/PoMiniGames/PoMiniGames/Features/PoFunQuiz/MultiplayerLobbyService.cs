@@ -118,6 +118,11 @@ public class MultiplayerLobbyService(IOpenAIService ai, ILogger<MultiplayerLobby
         if (!_games.TryGetValue(gameId, out var game)) return false;
         if (game.HostConnectionId != requesterConnectionId) return false;
         game.CurrentQuestionIndex++;
+        // §Best-practice (2026-07-07): reset per-question flags so a player
+        // who already answered can submit their next answer for the new
+        // question. Without this, PlayerFinished() in the hub returns early
+        // after the first question because HasFinished was set permanently.
+        foreach (var p in game.Players) p.HasFinished = false;
         return true;
     }
 

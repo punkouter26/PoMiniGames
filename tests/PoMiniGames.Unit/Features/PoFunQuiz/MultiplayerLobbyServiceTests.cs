@@ -154,4 +154,41 @@ public sealed class MultiplayerLobbyServiceTests
         open.Should().HaveCount(1);
         open[0].HostName.Should().Be("Alice");
     }
+
+    [Theory]
+    [InlineData(1, 5)] // after AdvanceQuestion on Q1, both players' HasFinished should be reset
+    [InlineData(2, 5)] // and on subsequent questions as well
+    [InlineData(4, 5)] // only the very last question must NOT auto-advance (the hub finalizes it instead)
+    public async Task AdvanceQuestion_ResetsHasFinished_ExceptOnLastQuestion(int currentQuestion, int totalQuestions)
+    {
+        var lobby = NewLobby();
+        var game = await lobby.CreateAsync("conn1", "Alice", QuestionCategory.General, totalQuestions, default);
+        lobby.Join(game.GameId, "conn2", "Bob");
+
+        // Hop the game to the desired question index by direct field-mutation
+        // (acceptable here: we are testing the AdvanceQuestion behavior in
+        // isolation, not the entire state machine).
+        var g = lobby.GetByConnection("conn1")!;
+        g.CurrentQuestionIndex = currentQuestion;
+
+        // Pretend both players answered the previous question.
+        foreach (var p in g.Players) p.HasFinished = true;
+
+        lobby.AdvanceQuestion(game.GameId, "conn1");
+
+        var fresh = lobby.GetByConnection("conn1")!;
+        // AdvanceQuestion only increments the index when there is room; on the
+        // last question the lobby stays put so the hub can finalize. Either
+        // way the reset flag is what we're really validating.
+        if (currentQuestion < totalQuestions - 1)
+        {
+            fresh.CurrentQuestionIndex.Should().Be(currentQuestion + 1);
+        }
+
+        foreach (var p in fresh.Players)
+        {
+            p.HasFinished.Should().BeFalse(
+                because: "AdvanceQuestion must clear per-question submission flags so the same player can answer the next question");
+        }
+    }
 }

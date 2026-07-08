@@ -26,6 +26,8 @@ public record FunQuizQuestionDto(
 
 public record FunQuizScoreUpdateDto(string GameId, string PlayerName, int TotalScore, int Streak, int MaxStreak);
 
+public record FunQuizPlayerFinishedQuestionDto(string GameId, string PlayerName, int FinishedCount, int TotalPlayers);
+
 public record FunQuizGameFinishedDto(string GameId, IReadOnlyDictionary<string, int> FinalScores, FunQuizPlayerStateDto? Winner, bool IsTie);
 
 public record FunQuizLobbyPlayerJoinedDto(string GameId, string PlayerName, List<string> Players);
@@ -50,6 +52,7 @@ public sealed class FunQuizHubService : IAsyncDisposable
     public event Action<FunQuizGameStateDto>? OnGameStarted;
     public event Action<FunQuizScoreUpdateDto>? OnScoreUpdated;
     public event Action<FunQuizLobbyPlayerJoinedDto>? OnPlayerJoined;
+    public event Action<FunQuizPlayerFinishedQuestionDto>? OnPlayerFinishedQuestion;
     public event Action<FunQuizGameFinishedDto>? OnGameFinished;
     public event Action<FunQuizLobbyErrorDto>? OnLobbyError;
 
@@ -67,6 +70,11 @@ public sealed class FunQuizHubService : IAsyncDisposable
     {
         if (_connection is not null && _connection.State != HubConnectionState.Disconnected) return;
         var url = new Uri(new Uri(_navigation.BaseUri), "funquiz/gamehub").ToString();
+        // §Best-practice (2026-07-07): WebSockets are the preferred transport
+        // (lowest overhead, full duplex, server can push arbitrary broadcasts).
+        // SignalR negotiates the transport automatically, so we don't restrict
+        // the client's allowed transports — fall-through to ServerSentEvents /
+        // LongPolling only kicks in when WS is blocked by a proxy or sandbox.
         _connection = new HubConnectionBuilder()
             .WithUrl(url)
             .WithAutomaticReconnect(new[] { TimeSpan.FromSeconds(0), TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(5) })
@@ -77,6 +85,7 @@ public sealed class FunQuizHubService : IAsyncDisposable
         _connection.On<FunQuizGameStateDto>("GameStarted", p => OnGameStarted?.Invoke(p));
         _connection.On<FunQuizScoreUpdateDto>("ScoreUpdated", p => OnScoreUpdated?.Invoke(p));
         _connection.On<FunQuizLobbyPlayerJoinedDto>("PlayerJoined", p => OnPlayerJoined?.Invoke(p));
+        _connection.On<FunQuizPlayerFinishedQuestionDto>("PlayerFinishedQuestion", p => OnPlayerFinishedQuestion?.Invoke(p));
         _connection.On<FunQuizGameFinishedDto>("GameFinished", p => OnGameFinished?.Invoke(p));
         _connection.On<FunQuizLobbyErrorDto>("LobbyError", p => OnLobbyError?.Invoke(p));
 

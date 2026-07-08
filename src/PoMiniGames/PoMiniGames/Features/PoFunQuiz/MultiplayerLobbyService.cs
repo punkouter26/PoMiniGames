@@ -126,6 +126,21 @@ public class MultiplayerLobbyService(IOpenAIService ai, ILogger<MultiplayerLobby
         return true;
     }
 
+    /// <summary>
+    /// Server-driven advance — used by the hub when both players have
+    /// finished a question and the game state machine wants to move on.
+    /// Bypasses the host-only guard on <see cref="AdvanceQuestion"/> so the
+    /// transition fires regardless of which player submitted last.
+    /// </summary>
+    public bool ForceAdvanceQuestion(string gameId)
+    {
+        if (!_games.TryGetValue(gameId, out var game)) return false;
+        if (game.CurrentQuestionIndex >= game.Questions.Count - 1) return false;
+        game.CurrentQuestionIndex++;
+        foreach (var p in game.Players) p.HasFinished = false;
+        return true;
+    }
+
     public bool FinishGame(string gameId)
     {
         if (!_games.TryGetValue(gameId, out var game)) return false;

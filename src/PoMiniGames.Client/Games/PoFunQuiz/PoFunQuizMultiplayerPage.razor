@@ -196,7 +196,19 @@
     {
         _isConnected = false;
         _reconnecting = false;
-        // The lobby page shows a retry button when _isConnected is false.
+        // If we were mid-game (Waiting or InProgress), the server has already
+        // torn the session down via OnDisconnectedAsync — so the lobby state
+        // we're holding is stale and will never receive another broadcast.
+        // Reset to the lobby screen so the player can re-create or re-join
+        // instead of staring at a phantom "Start game" button that never works.
+        if (_state is not null && _finished is null)
+        {
+            _error = "Lost connection to the lobby. The game was closed.";
+            _state = null;
+            _currentQuestion = null;
+            _hasAnswered = false;
+            _finishedThisQuestion = 0;
+        }
         InvokeAsync(StateHasChanged);
     }
 

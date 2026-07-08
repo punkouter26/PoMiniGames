@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.Http.Connections;
 using Microsoft.AspNetCore.SignalR.Client;
+using Microsoft.Extensions.Configuration;
 
 namespace PoMiniGamesClient.Games.PoFunQuiz.Services;
 
@@ -44,6 +46,7 @@ public record FunQuizLobbySummaryDto(string GameId, string HostName, List<string
 public sealed class FunQuizHubService : IAsyncDisposable
 {
     private readonly NavigationManager _navigation;
+    private readonly IConfiguration _configuration;
     private HubConnection? _connection;
 
     public event Action<FunQuizGameStateDto>? OnGameCreated;
@@ -64,19 +67,43 @@ public sealed class FunQuizHubService : IAsyncDisposable
 
     public bool IsReconnecting { get; private set; }
 
-    public FunQuizHubService(NavigationManager navigation) => _navigation = navigation;
+    // Trim-safe config read. IConfiguration.GetValue<T> is annotated
+    // RequiresUnreferencedCode; we only need a bool here so a direct index
+    // lookup + TryParse avoids the warning under PublishTrimmed=true.
+    private bool ReadForceSkipWebSockets()
+    {
+        var raw = _configuration["PoMiniGames:FunQuiz:ForceSkipWebSockets"];
+        return bool.TryParse(raw, out var skip) && skip;
+    }
+
+    public FunQuizHubService(NavigationManager navigation, IConfiguration configuration)
+    {
+        _navigation = navigation;
+        _configuration = configuration;
+    }
 
     public async Task ConnectAsync()
     {
         if (_connection is not null && _connection.State != HubConnectionState.Disconnected) return;
         var url = new Uri(new Uri(_navigation.BaseUri), "funquiz/gamehub").ToString();
-        // §Best-practice (2026-07-07): WebSockets are the preferred transport
-        // (lowest overhead, full duplex, server can push arbitrary broadcasts).
-        // SignalR negotiates the transport automatically, so we don't restrict
-        // the client's allowed transports — fall-through to ServerSentEvents /
-        // LongPolling only kicks in when WS is blocked by a proxy or sandbox.
-        _connection = new HubConnectionBuilder()
-            .WithUrl(url)
+        var builder = new HubConnectionBuilder().WithUrl(url);
+        // §Dev-box quirk (2026-07-07): on this dev machine the WebSocket upgrade
+        // through `UseResponseCompression` takes 30-60s to complete (one full
+        // reload cycle per handshake), which makes 2-player testing brittle —
+        // the host's connection can drop before the second player finishes
+        // negotiating and the lobby state goes stale. Setting
+        // `PoMiniGames:FunQuiz:ForceSkipWebSockets=true` in appsettings restricts
+        // the client to ServerSentEvents / LongPolling, which establish in <1s
+        // and are functionally identical for our bidirectional invoke + push
+        // pattern. Production should keep the default (WS preferred).
+        if (ReadForceSkipWebSockets())
+        {
+            builder = builder.WithUrl(url, options =>
+            {
+                options.Transports = HttpTransportType.ServerSentEvents | HttpTransportType.LongPolling;
+            });
+        }
+        _connection = builder
             .WithAutomaticReconnect(new[] { TimeSpan.FromSeconds(0), TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(5) })
             .Build();
         _connection.On<FunQuizGameStateDto>("GameCreated", p => OnGameCreated?.Invoke(p));

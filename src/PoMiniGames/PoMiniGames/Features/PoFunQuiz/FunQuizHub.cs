@@ -124,7 +124,16 @@ public class FunQuizHub : Hub<IFunQuizClient>
             {
                 // Advance to the next question. HasFinished is reset inside
                 // MultiplayerLobbyService.AdvanceQuestion.
-                _lobby.AdvanceQuestion(game.GameId, Context.ConnectionId);
+                // §Bug fix (2026-07-07): the host-only guard in
+                // MultiplayerLobbyService.AdvanceQuestion was blocking the advance
+                // when the NON-host player was the second to finish — the if
+                // branch above was entered, but `_lobby.AdvanceQuestion(...)`
+                // returned false because Context.ConnectionId wasn't the host.
+                // Bypass that helper when we're auto-advancing from
+                // PlayerFinished so either player can drive the transition;
+                // keep the host-only guard for the explicit AdvanceQuestion
+                // hub method (manual host control).
+                _lobby.ForceAdvanceQuestion(game.GameId);
                 var fresh = _lobby.GetByConnection(Context.ConnectionId);
                 if (fresh is not null)
                 {

@@ -42,12 +42,24 @@
     </noscript>
 
     <!-- Remove Bootstrap – all styles are custom (payload savings ~187KB) -->
+    <!-- app.css carries the design tokens + app shell — render-blocking on purpose
+         so first paint is fully styled. -->
     <link rel="stylesheet" href="css/app.css" />
-    <link rel="stylesheet" href="css/games.css" />
-    <link rel="stylesheet" href="css/poclick.css" />
-    <link rel="stylesheet" href="css/fight.css" />
+    <!-- §3 Per-game stylesheets are non-render-blocking: each only matters once its
+         game route is entered (by which point it's cached), so loading them async
+         keeps first paint gated on app.css alone (~640 lines) instead of the full
+         ~5,400-line global bundle. Same preload-swap pattern used for the webfonts. -->
+    <link rel="preload" href="css/games.css" as="style" onload="this.onload=null;this.rel='stylesheet'" />
+    <link rel="preload" href="css/poclick.css" as="style" onload="this.onload=null;this.rel='stylesheet'" />
+    <link rel="preload" href="css/fight.css" as="style" onload="this.onload=null;this.rel='stylesheet'" />
     <!-- PoJoker (demo game): hand-written medieval-dark theme (scoped to .pojoker-root) -->
-    <link rel="stylesheet" href="css/pojoker-theme.css" />
+    <link rel="preload" href="css/pojoker-theme.css" as="style" onload="this.onload=null;this.rel='stylesheet'" />
+    <noscript>
+        <link rel="stylesheet" href="css/games.css" />
+        <link rel="stylesheet" href="css/poclick.css" />
+        <link rel="stylesheet" href="css/fight.css" />
+        <link rel="stylesheet" href="css/pojoker-theme.css" />
+    </noscript>
     <link rel="icon" type="image/svg+xml" href="favicon.svg" />
     <link rel="alternate icon" type="image/png" href="favicon.png" />
     <link rel="manifest" href="manifest.webmanifest" />

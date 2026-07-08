@@ -20,9 +20,9 @@
 
     /* --- Surface Depth Levels --- */
     --surface-0: #06121b;   /* deepest - console */
-    --surface-1: #091722;   /* body bg */
-    --surface-2: #0f2231;   /* panels */
-    --surface-3: #14354a;   /* panel headers, boot screen */
+    --c64-surface-1: #091722;   /* body bg */
+    --c64-surface-2: #0f2231;   /* panels */
+    --c64-surface-3: #14354a;   /* panel headers, boot screen */
     --surface-4: #1a425b;   /* hover, selected */
 
     /* --- Semantic Accent --- */
@@ -178,7 +178,7 @@ html, body {
     align-items: center;
     gap: var(--space-3);
     padding: 0 var(--space-4);
-    background: linear-gradient(180deg, var(--surface-3) 0%, var(--surface-2) 100%);
+    background: linear-gradient(180deg, var(--c64-surface-3) 0%, var(--c64-surface-2) 100%);
     border-bottom: 1px solid var(--panel-border);
     height: var(--toolbar-h);
     flex-shrink: 0;
@@ -271,7 +271,7 @@ html, body {
     align-items: center;
     gap: var(--space-2);
     padding: var(--space-2) var(--space-4);
-    background-color: var(--surface-2);
+    background-color: var(--c64-surface-2);
     border-bottom: 1px solid var(--panel-border);
     flex-shrink: 0;
 }
@@ -351,12 +351,12 @@ html, body {
     padding: 0 var(--space-2);
     height: var(--pane-hdr-h);
     display: flex; align-items: center;
-    background-color: var(--surface-3);
+    background-color: var(--c64-surface-3);
     border-bottom: 1px solid var(--panel-border);
     flex-shrink: 0;
     text-transform: uppercase;
 }
-.pane-header--sidebar  { background-color: var(--surface-3); }
+.pane-header--sidebar  { background-color: var(--c64-surface-3); }
 .pane-header--console  { background-color: var(--surface-0); border-bottom-color: var(--console-border); }
 
 .pane-body { flex: 1; overflow: hidden; }
@@ -577,7 +577,7 @@ html, body {
 .launch-model-picker__select {
     min-height: 34px;
     border: 1px solid var(--panel-border);
-    background-color: var(--surface-3);
+    background-color: var(--c64-surface-3);
     color: var(--c64-text);
     font-family: var(--font-mono);
     font-size: var(--font-size-sm);
@@ -1320,7 +1320,7 @@ html, body {
 .soundtrack-control {
     margin-bottom: var(--space-2);
     border: 1px solid var(--panel-border);
-    background: var(--surface-1);
+    background: var(--c64-surface-1);
 }
 
 .soundtrack-control__header {
@@ -1328,7 +1328,7 @@ html, body {
     justify-content: space-between;
     align-items: center;
     padding: 4px var(--space-2);
-    background: var(--surface-3);
+    background: var(--c64-surface-3);
     border-bottom: 1px solid var(--panel-border);
 }
 
@@ -1437,7 +1437,7 @@ html, body {
 .evolution-lab {
     margin-bottom: var(--space-2);
     border: 1px solid var(--panel-border);
-    background: var(--surface-1);
+    background: var(--c64-surface-1);
 }
 
 .evolution-lab__header {
@@ -1445,7 +1445,7 @@ html, body {
     justify-content: space-between;
     align-items: center;
     padding: 4px var(--space-2);
-    background: var(--surface-3);
+    background: var(--c64-surface-3);
     border-bottom: 1px solid var(--panel-border);
 }
 
@@ -1492,7 +1492,7 @@ html, body {
     flex-direction: column;
     align-items: center;
     padding: 6px 4px;
-    background: var(--surface-2);
+    background: var(--c64-surface-2);
     border: 1px solid var(--panel-border);
     border-radius: 4px;
 }
@@ -1528,7 +1528,7 @@ html, body {
     align-items: center;
     gap: 6px;
     padding: 6px 8px;
-    background: var(--surface-2);
+    background: var(--c64-surface-2);
     border: 1px solid var(--panel-border);
     border-radius: 4px;
     font-size: 10px;
@@ -1536,7 +1536,7 @@ html, body {
 
 .evolution-lab__dna-row--top {
     border-color: var(--accent-primary);
-    background: var(--surface-3);
+    background: var(--c64-surface-3);
 }
 
 .evolution-lab__dna-left {
@@ -1619,7 +1619,7 @@ html, body {
     font-family: var(--font-mono);
     font-size: 10px;
     color: var(--accent-success);
-    background: var(--surface-2);
+    background: var(--c64-surface-2);
     border: 1px solid var(--accent-success);
     border-radius: 4px;
 }
@@ -1641,7 +1641,7 @@ html, body {
 
 .evolution-tree__header {
     padding: 4px var(--space-2);
-    background: var(--surface-3);
+    background: var(--c64-surface-3);
     border-bottom: 1px solid var(--panel-border);
 }
 

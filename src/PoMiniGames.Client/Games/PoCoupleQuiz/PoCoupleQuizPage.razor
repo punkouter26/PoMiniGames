@@ -502,9 +502,12 @@
         if (p is null || string.IsNullOrEmpty(p.GameCode))
         {
             _error = "Server returned an empty lobby. Please try again.";
+            _ = InvokeAsync(StateHasChanged);
             return;
         }
         _lobby = p;
+        // SignalR `.On` callbacks run outside the render loop — marshal a repaint.
+        _ = InvokeAsync(StateHasChanged);
     }
     private void HandleLobbyJoined(CoupleQuizLobbyEventPayload p) => HandleLobbyCreated(p);
     private void HandleLobbyUpdated(CoupleQuizLobbyUpdatedPayload p)
@@ -520,6 +523,7 @@
                 Difficulty = p.Difficulty ?? _lobby.Difficulty,
                 AiMode = p.AiMode ?? _lobby.AiMode
             };
+            _ = InvokeAsync(StateHasChanged);
         }
     }
     private void HandleError(string? message)
@@ -529,6 +533,7 @@
         _error = string.IsNullOrEmpty(message)
             ? "An unknown error occurred. Please try again."
             : message;
+        _ = InvokeAsync(StateHasChanged);
     }
 
     // ── Solo mode handlers ───────────────────────────────────────────────────
@@ -579,12 +584,16 @@
 
     private void HandleGameStarted(CoupleQuizGameStartedPayload p)
     {
-        // The full game UI is a follow-up. For now, show the in-flight question.
-        _lobby = null;
-        _error = $"Game started! Round {p.RoundIndex + 1} of {p.MaxRounds}. Question: {p.QuestionText}";
+        // Everyone readied up (or the host pressed Start) — move to the game board.
+        // The hub service buffers this payload so the game page hydrates from it.
+        Navigation.NavigateTo("/couplequiz/game");
     }
 
-    public async ValueTask DisposeAsync()
+    // NOTE: do NOT dispose the hub here — CoupleQuizHubService is a scoped
+    // (app-lifetime) singleton shared with the lobby and game pages. Disposing it on
+    // navigation would tear down the live SignalR connection the next page needs. We
+    // only detach our handlers; the DI container owns the connection's lifetime.
+    public ValueTask DisposeAsync()
     {
         _demoTimer?.Dispose();
         _demoTimer = null;
@@ -596,6 +605,6 @@
         Hub.OnLobbyError -= HandleError;
         Hub.OnGameStarted -= HandleGameStarted;
         Hub.OnGameError -= HandleError;
-        await Hub.DisposeAsync();
+        return ValueTask.CompletedTask;
     }
 }

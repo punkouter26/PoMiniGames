@@ -3,6 +3,7 @@
 @inject KioskCoordinator Kiosk
 @inject IJSRuntime JS
 @inject ActivityFeedService ActivityFeed
+@inject UiFeedbackService Feedback
 @implements IAsyncDisposable
 
 <div class="home-container">
@@ -138,7 +139,7 @@
         </div>
 
         <div class="home-stats-cta">
-            <button type="button" class="home-mode-btn home-mode-btn--profile" aria-label="View my stats" @onclick='() => NavigationManager.NavigateTo("/profile")'>
+            <button type="button" class="home-mode-btn home-mode-btn--profile" aria-label="View my stats" @onclick="GoToStats">
                 <span class="home-mode-icon">
                     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
@@ -184,7 +185,10 @@
     // / .home-section--collapsed CSS, both mobile-only). Desktop always shows every game, so
     // starting the sections "closed" trims the long mobile scroll without touching
     // the desktop layout. Order: Demo, 1 Player, 2 Player, Multiplayer.
-    private readonly bool[] _sectionOpen = { false, false, false, false };
+    // §6 the 1-Player section (index 1) starts expanded — it's the primary flow,
+    // so a portrait player lands on a visible game list instead of four collapsed
+    // accordions requiring a tap to reveal anything.
+    private readonly bool[] _sectionOpen = { false, true, false, false };
     private void ToggleSection(int i) => _sectionOpen[i] = !_sectionOpen[i];
     private RenderFragment SectionToggle(int i, int count) => @<button type="button"
         class="home-section-toggle" aria-expanded="@_sectionOpen[i]"
@@ -256,10 +260,20 @@
 
     private void OnKioskStateChanged() => InvokeAsync(StateHasChanged);
 
+    // §10 fire a Web Audio tap before navigating to the stats page. The audio
+    // unlock happens on this same user gesture — the first tap unlocks the
+    // AudioContext (mobile autoplay rules) and plays; best-effort, never blocks.
+    private async Task GoToStats()
+    {
+        await Feedback.TapAsync();
+        NavigationManager.NavigateTo("/profile");
+    }
+
     // "Play all": start (or stop) the auto-rotating kiosk over every demo game.
     // Mirrors BottomTabBar's toggle so both entry points share one coordinator.
-    private void ToggleWatchAll()
+    private async Task ToggleWatchAll()
     {
+        await Feedback.TapAsync();
         if (Kiosk.IsActive)
         {
             Kiosk.Stop();

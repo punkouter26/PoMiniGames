@@ -11,6 +11,7 @@
 @inject MatchHistoryService MatchHistory;
 @inject IJSRuntime JSRuntime;
 @inject KioskCoordinator Kiosk;
+@inject UiFeedbackService Feedback;
 
 <GameShell
     Title=@TitleContent
@@ -21,7 +22,7 @@
     Stats="@_statItems"
     Status="@StatusContent"
     GameSummary="@GameSummaryContent">
-    <div class="ttt-board" role="grid" aria-label="Tic Tac Toe game board">
+    <div class="ttt-board @(_isAiTurn ? "ttt-board--thinking" : "") @ResultClass" role="grid" aria-label="Tic Tac Toe game board">
         @for (int r = 0; r < TicTacToeBoard.Size; r++)
         {
             @for (int c = 0; c < TicTacToeBoard.Size; c++)
@@ -29,28 +30,46 @@
                 var row = r;
                 var col = c;
                 var cellValue = _board.Get(r, c);
-                var isDisabled = PlayMode == "demo" 
-                    ? true 
+                var isDisabled = PlayMode == "demo"
+                    ? true
                     : _gameResult != GameResult.InProgress || _isAiTurn || cellValue != CellValue.None;
                 var isWinCell = _winCells.Any(wc => wc.Row == r && wc.Col == c);
-                
-                <div class="ttt-cell @(isDisabled ? "disabled" : "") @(isWinCell ? "win-cell" : "")"
+                var isLast = _lastMove is { } lm && lm.Row == r && lm.Col == c;
+
+                <div class="ttt-cell @(isDisabled ? "disabled" : "") @(isWinCell ? "win-cell" : "") @(isLast ? "last-move" : "")"
+                     style="--ci:@(r * TicTacToeBoard.Size + c)"
+                     @key="(_gameId, row, col)"
                      @onclick="() => HandleCellClick(row, col)"
                      role="gridcell"
                      aria-label="@GetCellAriaLabel(cellValue)"
                      tabindex="@(isDisabled ? -1 : 0)">
                     @if (cellValue == CellValue.X)
                     {
-                        <span class="piece x-piece">❌</span>
+                        @Mark(isX: true, ghost: false)
                     }
                     else if (cellValue == CellValue.O)
                     {
-                        <span class="piece o-piece">⭕</span>
+                        @Mark(isX: false, ghost: false)
+                    }
+                    else if (!isDisabled)
+                    {
+                        @* §7 ghost preview of whoever moves next (X vs CPU; the active token in 2P). *@
+                        @Mark(isX: PlayMode == "2p" ? _current2pToken == CellValue.X : true, ghost: true)
                     }
                 </div>
             }
         }
+        @* §2 animated strike through the winning run — geometry computed from the
+           shared --ttt-* grid tokens so it lines up at any cell size. *@
+        @if (_winCells.Count >= 2)
+        {
+            <div class="ttt-winline" style="@WinLineStyle"></div>
+        }
     </div>
+
+    @* Self-drawing SVG mark. Coral X / cyan O; strokes reveal via stroke-dashoffset
+       on placement (see TicTacToePage.razor.css). The ghost variant is pre-drawn
+       and shown faintly on hover. *@
 </GameShell>
 
 @code {
@@ -73,6 +92,12 @@
     // Player 1's display name resolves asynchronously; fall back to "Player 1" until it does.
     private string P1Name => string.IsNullOrWhiteSpace(_playerName) ? "Player 1" : _playerName;
     private List<(int Row, int Col)> _winCells = new();
+    // §5 the most-recent placement (highlighted with a ring so the AI's last move
+    // is trackable on a busy 6x6 board). Null until the first move of a game.
+    private (int Row, int Col)? _lastMove;
+    // Bumped on every ResetGame so each cell's @key changes, which recreates the
+    // cell elements and replays the staggered board-entrance animation.
+    private int _gameId;
     private List<StatItem> _statItems = new();
     private PlayerStats _stats = new();
     private readonly GameStatsService _gameStats = new();
@@ -83,6 +108,60 @@
     private bool _isGameOver => _gameResult != GameResult.InProgress && PlayMode != "demo";
     
     private RenderFragment TitleContent => @<span>❌ Tic Tac Toe</span>;
+
+    // Board state → CSS modifier: "decided" spotlights the winning line (works for
+    // a vs-AI win, a vs-AI loss, and either side of a 2P game); "draw" greys out.
+    private string ResultClass => _gameResult switch
+    {
+        GameResult.Win or GameResult.Loss => "ttt-board--decided",
+        GameResult.Draw => "ttt-board--draw",
+        _ => ""
+    };
+
+    // Self-drawing SVG mark. isX → coral X (two strokes); else → cyan O. The ghost
+    // variant is pre-drawn and faded in on hover to preview the next move.
+    private RenderFragment Mark(bool isX, bool ghost) =>
+        @<svg class="ttt-mark @(isX ? "ttt-mark--x" : "ttt-mark--o") @(ghost ? "ttt-mark--ghost" : "")"
+              viewBox="0 0 100 100" aria-hidden="true">
+            @if (isX)
+            {
+                <line x1="24" y1="24" x2="76" y2="76" />
+                <line x1="76" y1="24" x2="24" y2="76" />
+            }
+            else
+            {
+                <circle cx="50" cy="50" r="28" />
+            }
+        </svg>;
+
+    // Inline style for the win-strike overlay. Anchored at the first winning cell's
+    // centre and rotated + scaled from its left edge. Every offset is expressed in
+    // terms of the board's --ttt-cell / --ttt-gap / --ttt-pad tokens so the line
+    // stays aligned with the grid at any responsive size (no JS measurement).
+    private string? WinLineStyle
+    {
+        get
+        {
+            if (_winCells.Count < 2) return null;
+            var cells = _winCells.OrderBy(c => c.Row).ThenBy(c => c.Col).ToList();
+            var first = cells[0];
+            var last = cells[^1];
+            var span = cells.Count - 1;
+            const string step = "(var(--ttt-cell) + var(--ttt-gap))";
+            int dr = last.Row - first.Row, dc = last.Col - first.Col;
+
+            string angle, length;
+            if (dr == 0)      { angle = "0deg";   length = $"calc({span} * {step})"; }
+            else if (dc == 0) { angle = "90deg";  length = $"calc({span} * {step})"; }
+            else if (dc > 0)  { angle = "45deg";  length = $"calc({span} * {step} * 1.41421)"; }
+            else              { angle = "135deg"; length = $"calc({span} * {step} * 1.41421)"; }
+
+            var left = $"calc(var(--ttt-pad) + {first.Col} * {step} + var(--ttt-cell) / 2)";
+            var top = $"calc(var(--ttt-pad) + {first.Row} * {step} + var(--ttt-cell) / 2)";
+            var color = _board.Get(first.Row, first.Col) == CellValue.X ? "var(--ttt-x)" : "var(--ttt-o)";
+            return $"left:{left}; top:{top}; width:{length}; --wl-angle:{angle}; --wl-color:{color};";
+        }
+    }
     
     // The legacy in-canvas Controls fragment was unreachable (the Settings
     // drawer was removed 2026-07-06) and is intentionally gone. Mode picker
@@ -138,6 +217,8 @@
         _board = new TicTacToeBoard();
         _gameResult = GameResult.InProgress;
         _winCells = new();
+        _lastMove = null;
+        _gameId++;
         _isAiTurn = false;
         _current2pToken = CellValue.X;
         _matchRecorded = false;
@@ -168,6 +249,7 @@
             // X (CPU1) move
             var (xr, xc) = _ai.GetMove(_board, CellValue.X, _difficulty);
             _board = _board.Place(xr, xc, CellValue.X);
+            _lastMove = (xr, xc);
             var xWin = _board.CheckWin(CellValue.X);
             if (xWin.Won) { _gameResult = GameResult.Win; _winCells = xWin.Cells; }
             else if (_board.IsFull()) { _gameResult = GameResult.Draw; }
@@ -178,6 +260,7 @@
             // O (CPU2) move
             var (or2, oc2) = _ai.GetMove(_board, CellValue.O, _difficulty);
             _board = _board.Place(or2, oc2, CellValue.O);
+            _lastMove = (or2, oc2);
             var oWin = _board.CheckWin(CellValue.O);
             if (oWin.Won) { _gameResult = GameResult.Loss; _winCells = oWin.Cells; }
             else if (_board.IsFull()) { _gameResult = GameResult.Draw; }
@@ -209,26 +292,32 @@
     {
         if (PlayMode == "demo") return;
         if (_gameResult != GameResult.InProgress || _isAiTurn) return;
-        if (_board.Get(row, col) != CellValue.None) return;
+        // §4 tapping an occupied cell is a no-op — give a short error buzz so the
+        // rejected input is felt, not silently ignored.
+        if (_board.Get(row, col) != CellValue.None) { _ = Feedback.ErrorAsync(); return; }
 
         if (PlayMode == "2p") { HandleTwoPlayerMove(row, col); return; }
 
         var currentToken = CellValue.X;
         _board = _board.Place(row, col, currentToken);
-        
+        _lastMove = (row, col);
+        _ = Feedback.DiscDropAsync();
+
         var winCheck = _board.CheckWin(currentToken);
         if (winCheck.Won)
         {
             _gameResult = GameResult.Win;
             _winCells = winCheck.Cells;
+            _ = Feedback.PersonalBestAsync();
             _ = _gameStats.RecordResult("tictactoe", _playerName, _difficulty, GameResult.Win);
             UpdateStats();
             return;
         }
-        
+
         if (_board.IsFull())
         {
             _gameResult = GameResult.Draw;
+            _ = Feedback.CompleteAsync();
             _ = _gameStats.RecordResult("tictactoe", _playerName, _difficulty, GameResult.Draw);
             UpdateStats();
             return;
@@ -238,22 +327,26 @@
         _isAiTurn = true;
         StateHasChanged();
         
-        _ = Task.Delay(200).ContinueWith(_ =>
+        _ = Task.Delay(200).ContinueWith(_prev =>
         {
             var (ar, ac) = _ai.GetMove(_board, CellValue.O, _difficulty);
             _board = _board.Place(ar, ac, CellValue.O);
+            _lastMove = (ar, ac);
+            _ = Feedback.DiscDropAsync();
             var aiWin = _board.CheckWin(CellValue.O);
             if (aiWin.Won)
             {
                 _gameResult = GameResult.Loss;
                 _winCells = aiWin.Cells;
                 _isAiTurn = false;
+                _ = Feedback.ErrorAsync();
                 _ = _gameStats.RecordResult("tictactoe", _playerName, _difficulty, GameResult.Loss);
             }
             else if (_board.IsFull())
             {
                 _gameResult = GameResult.Draw;
                 _isAiTurn = false;
+                _ = Feedback.CompleteAsync();
                 _ = _gameStats.RecordResult("tictactoe", _playerName, _difficulty, GameResult.Draw);
             }
             else
@@ -270,12 +363,15 @@
     {
         var token = _current2pToken;
         _board = _board.Place(row, col, token);
+        _lastMove = (row, col);
+        _ = Feedback.DiscDropAsync();
 
         var winCheck = _board.CheckWin(token);
         if (winCheck.Won)
         {
             _winCells = winCheck.Cells;
             _gameResult = token == CellValue.X ? GameResult.Win : GameResult.Loss;
+            _ = Feedback.PersonalBestAsync();
             RecordLocalMatch();
             return;
         }
@@ -283,6 +379,7 @@
         if (_board.IsFull())
         {
             _gameResult = GameResult.Draw;
+            _ = Feedback.CompleteAsync();
             RecordLocalMatch();
             return;
         }

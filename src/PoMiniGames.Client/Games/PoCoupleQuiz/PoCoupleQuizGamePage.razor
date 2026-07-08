@@ -102,8 +102,18 @@
         {
             // If the hub isn't connected we just sit at "waiting for round to start".
         }
+
+        // GameStarted fired while the lobby was still mounted (it drove the navigation
+        // here), so we won't see it as a live event. Hydrate from the buffered payload.
+        if (Hub.LastGameStarted is not null)
+        {
+            HandleGameStarted(Hub.LastGameStarted);
+        }
     }
 
+    // SignalR `.On` callbacks run outside Blazor's render loop, so each handler marshals
+    // a StateHasChanged onto the renderer's context to repaint. (HandleGameStarted is also
+    // invoked synchronously from OnInitializedAsync for the buffered payload — harmless there.)
     private void HandleGameStarted(CoupleQuizGameStartedPayload p)
     {
         _gameStarted = p;
@@ -112,6 +122,7 @@
         _isHost = _playerName == p.Players[0].Name; // first to join = host per the server's design
         _phase = "Answering";
         _myAnswer = string.Empty;
+        _ = InvokeAsync(StateHasChanged);
     }
 
     private void HandleRoundStarted(CoupleQuizRoundStartedPayload p)
@@ -120,6 +131,7 @@
         _isKing = _playerName == p.KingPlayerName;
         _phase = "Answering";
         _myAnswer = string.Empty;
+        _ = InvokeAsync(StateHasChanged);
     }
 
     private void HandleAnswerRecorded(CoupleQuizAnswerRecordedPayload p)
@@ -133,12 +145,14 @@
         _lastResult = p;
         _lastKingAnswer = p.KingAnswer;
         _phase = "Results";
+        _ = InvokeAsync(StateHasChanged);
     }
 
     private void HandleGameOver(CoupleQuizGameOverPayload p)
     {
         _gameOver = p;
         _phase = "GameOver";
+        _ = InvokeAsync(StateHasChanged);
         _ = RecordOutcomesAsync(p);
     }
 
@@ -168,13 +182,15 @@
         await Hub.RequestNextRoundAsync(_gameStarted.GameCode);
     }
 
-    public async ValueTask DisposeAsync()
+    // Detach handlers only — the scoped hub service (shared with the lobby) owns the
+    // SignalR connection; disposing it here would kill it for any later navigation.
+    public ValueTask DisposeAsync()
     {
         Hub.OnGameStarted -= HandleGameStarted;
         Hub.OnRoundStarted -= HandleRoundStarted;
         Hub.OnAnswerRecorded -= HandleAnswerRecorded;
         Hub.OnRoundResult -= HandleRoundResult;
         Hub.OnGameOver -= HandleGameOver;
-        await Hub.DisposeAsync();
+        return ValueTask.CompletedTask;
     }
 }

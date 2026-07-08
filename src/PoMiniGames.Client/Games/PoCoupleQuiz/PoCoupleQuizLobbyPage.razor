@@ -100,6 +100,7 @@
         Hub.OnLobbyJoined += HandleLobbyJoined;
         Hub.OnLobbyUpdated += HandleLobbyUpdated;
         Hub.OnLobbyError += HandleError;
+        Hub.OnGameStarted += HandleGameStarted;
         try
         {
             await Hub.ConnectAsync();
@@ -188,8 +189,20 @@
         await Hub.StartGameAsync(_lobby.GameCode);
     }
 
-    private void HandleLobbyCreated(CoupleQuizLobbyEventPayload p) => _lobby = p;
-    private void HandleLobbyJoined(CoupleQuizLobbyEventPayload p) => _lobby = p;
+    // NB: SignalR `.On` callbacks run outside Blazor's render loop, so each handler
+    // must marshal a StateHasChanged onto the renderer's context — otherwise the UI
+    // only repaints when some *other* UI event happens to fire (a latent race that
+    // left the lobby stuck on the join card even after the server created it).
+    private void HandleLobbyCreated(CoupleQuizLobbyEventPayload p)
+    {
+        _lobby = p;
+        _ = InvokeAsync(StateHasChanged);
+    }
+    private void HandleLobbyJoined(CoupleQuizLobbyEventPayload p)
+    {
+        _lobby = p;
+        _ = InvokeAsync(StateHasChanged);
+    }
     private void HandleLobbyUpdated(CoupleQuizLobbyUpdatedPayload p)
     {
         if (_lobby is not null && _lobby.GameCode == p.GameCode)
@@ -202,16 +215,32 @@
                 Difficulty = p.Difficulty ?? _lobby.Difficulty,
                 AiMode = p.AiMode ?? _lobby.AiMode
             };
+            _ = InvokeAsync(StateHasChanged);
         }
     }
-    private void HandleError(string message) => _error = message;
+    private void HandleError(string message)
+    {
+        _error = message;
+        _ = InvokeAsync(StateHasChanged);
+    }
 
-    public async ValueTask DisposeAsync()
+    // The game auto-starts once everyone readies up (or the host hits "Start game"),
+    // which broadcasts GameStarted to the whole group. Move every player to the board;
+    // the hub service buffers the payload so the game page hydrates from it on mount.
+    private void HandleGameStarted(CoupleQuizGameStartedPayload _) =>
+        Navigation.NavigateTo("/couplequiz/game");
+
+    // NOTE: do NOT dispose the hub here. CoupleQuizHubService is a scoped (app-lifetime)
+    // singleton shared with the game page — disposing it on navigation would tear down
+    // the live SignalR connection the game page depends on. We only detach our handlers;
+    // the DI container owns the connection's lifetime.
+    public ValueTask DisposeAsync()
     {
         Hub.OnLobbyCreated -= HandleLobbyCreated;
         Hub.OnLobbyJoined -= HandleLobbyJoined;
         Hub.OnLobbyUpdated -= HandleLobbyUpdated;
         Hub.OnLobbyError -= HandleError;
-        await Hub.DisposeAsync();
+        Hub.OnGameStarted -= HandleGameStarted;
+        return ValueTask.CompletedTask;
     }
 }

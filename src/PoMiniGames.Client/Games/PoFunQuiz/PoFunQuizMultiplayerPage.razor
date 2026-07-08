@@ -75,11 +75,11 @@
                     <li>@p.Name — @p.Score @(p.Name == _state.HostName ? "👑" : "")</li>
                 }
             </ul>
-            @if (_state.State == "Waiting" && _playerName == _state.HostName && _state.Players.Count >= 2)
+            @if (IsWaiting && _playerName == _state.HostName && _state.Players.Count >= 2)
             {
                 <button class="fq-btn fq-btn-primary" @onclick="OnStart">Start game</button>
             }
-            @if (_state.State == "InProgress" && _currentQuestion is not null)
+            @if (IsInProgress && _currentQuestion is not null)
             {
                 <div class="fq-question">
                     <h3>Question @(_state.CurrentQuestionIndex + 1) of @_state.Questions.Count</h3>
@@ -138,6 +138,12 @@
     private FunQuizQuestionDto? _currentQuestion;
     private bool _hasAnswered;
     private int _finishedThisQuestion;
+
+    // The hub serialises the GameState enum with a camelCase policy (see Program.cs
+    // AddJsonProtocol), so the wire value is "waiting" / "inProgress" — compare
+    // case-insensitively rather than against a PascalCase literal.
+    private bool IsWaiting => string.Equals(_state?.State, "Waiting", StringComparison.OrdinalIgnoreCase);
+    private bool IsInProgress => string.Equals(_state?.State, "InProgress", StringComparison.OrdinalIgnoreCase);
 
     private int MyScore => _state?.Players.FirstOrDefault(p => p.Name == _playerName)?.Score ?? 0;
     private int OpponentScore => _state?.Players.FirstOrDefault(p => p.Name != _playerName)?.Score ?? 0;
@@ -272,6 +278,10 @@
         }
         _state = s;
         _currentQuestion = s.Questions.Count > s.CurrentQuestionIndex ? s.Questions[s.CurrentQuestionIndex] : null;
+        // SignalR `.On` callbacks run outside the render loop — repaint explicitly.
+        // Without this the opponent's join, the host's Start, and each question
+        // advance would not reach the non-initiating player until another event fired.
+        InvokeAsync(StateHasChanged);
     }
 
     private void HandlePlayerFinishedQuestion(FunQuizPlayerFinishedQuestionDto p)
@@ -287,11 +297,13 @@
             ? new FunQuizPlayerStateDto(p.Name, u.TotalScore, u.Streak)
             : p).ToList();
         _state = _state with { Players = updated };
+        InvokeAsync(StateHasChanged);
     }
 
     private void HandleFinished(FunQuizGameFinishedDto f)
     {
         _finished = f;
+        InvokeAsync(StateHasChanged);
         _ = RecordOutcomesAsync(f);
     }
 
@@ -309,7 +321,11 @@
         }
     }
 
-    private void HandleError(FunQuizLobbyErrorDto e) => _error = e.Message;
+    private void HandleError(FunQuizLobbyErrorDto e)
+    {
+        _error = e.Message;
+        InvokeAsync(StateHasChanged);
+    }
 
     private bool HasAnswered(int _option) => _hasAnswered;
 

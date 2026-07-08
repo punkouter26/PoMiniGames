@@ -52,8 +52,12 @@ public class FunQuizHub : Hub<IFunQuizClient>
         await Groups.AddToGroupAsync(Context.ConnectionId, game.GameId);
         _logger.LogInformation("PoFunQuiz {Code}: {Name} joined", game.GameId, playerName);
         await Clients.Caller.GameJoined(BuildState(game));
-        await Clients.OthersInGroup(game.GameId).PlayerJoined(new FunQuizLobbyPlayerJoined(
-            game.GameId, playerName, game.Players.Select(p => p.Name).ToList()));
+        // Push the FULL updated state to the host (and any other members), not just a
+        // lightweight PlayerJoined notice — the client renders off GameState, and the
+        // page never subscribed to PlayerJoined, so the host would otherwise never see
+        // the 2nd player arrive (and never get the "Start game" button). Mirrors the
+        // GameUpdated broadcast used on disconnect / question advance.
+        await Clients.OthersInGroup(game.GameId).GameUpdated(BuildState(game));
     }
 
     public async Task GetOpenGames()

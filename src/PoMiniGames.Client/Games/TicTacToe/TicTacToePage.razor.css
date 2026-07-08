@@ -1,0 +1,246 @@
+/* Tic Tac Toe — scoped board styles (§2 style isolation: migrated out of the
+   1,895-line global games.css). Design tokens (--color-*, --radius-*, --ease-*,
+   --accent-*) are inherited from the global :root in css/app.css. */
+
+/* ── Board ── */
+.ttt-board {
+    /* Geometry tokens are shared with the win-line calc (see WinLineStyle in the
+       .razor) so the overlay stays pixel-aligned with the grid at any size. */
+    --ttt-cell: clamp(44px, calc((100vh - 220px) / 6), 78px);
+    --ttt-gap: 4px;
+    --ttt-pad: 12px;
+    /* §3 distinct player colours: X = warm coral, O = cyan. */
+    --ttt-x: #ff6b6b;
+    --ttt-o: #00e5ff;
+
+    position: relative;
+    display: grid;
+    grid-template-columns: repeat(6, var(--ttt-cell));
+    grid-template-rows: repeat(6, var(--ttt-cell));
+    gap: var(--ttt-gap);
+    padding: var(--ttt-pad);
+    margin: 1rem auto;
+    width: fit-content;
+    overflow: hidden;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--color-border);
+    /* §8 depth: glass surface + inner top highlight + elevation, so the board
+       reads as a physical object instead of a flat rectangle. */
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent 40%),
+        var(--surface-2);
+    backdrop-filter: var(--glass-1);
+    box-shadow:
+        var(--elevation-1),
+        inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+/* ── Cell ── */
+.ttt-cell {
+    position: relative;
+    width: var(--ttt-cell);
+    height: var(--ttt-cell);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    overflow: hidden;
+    transition: background var(--dur-fast) var(--ease-standard),
+                border-color var(--dur-fast) var(--ease-standard),
+                transform var(--dur-fast) var(--ease-standard);
+    /* §5 staggered board entrance — --ci is the linear cell index set inline. */
+    animation: ttt-cell-in var(--dur-base) var(--ease-out) backwards;
+    animation-delay: calc(var(--ci, 0) * 10ms);
+}
+
+.ttt-cell:hover:not(.disabled) {
+    background: rgba(0, 229, 255, 0.08);
+    border-color: rgba(0, 229, 255, 0.6);
+    transform: translateY(-1px);
+}
+
+/* §7 tactile press — the cell sinks slightly on pointer-down. */
+.ttt-cell:not(.disabled):active {
+    transform: translateY(0) scale(0.96);
+    background: rgba(0, 229, 255, 0.12);
+}
+
+.ttt-cell.disabled { cursor: default; }
+
+@keyframes ttt-cell-in {
+    from { opacity: 0; transform: scale(0.6) translateY(6px); }
+    to   { opacity: 1; transform: none; }
+}
+
+/* ── Marks (self-drawing SVG X / O) ── */
+.ttt-mark {
+    width: 62%;
+    height: 62%;
+    overflow: visible;
+}
+
+.ttt-mark line,
+.ttt-mark circle {
+    fill: none;
+    stroke-width: 12;
+    stroke-linecap: round;
+}
+
+.ttt-mark--x line { stroke: var(--ttt-x); }
+.ttt-mark--o circle { stroke: var(--ttt-o); }
+
+/* Placement draw-in: each stroke reveals via stroke-dashoffset. The X's two
+   strokes fire one-two; the O sweeps closed. */
+.ttt-mark:not(.ttt-mark--ghost) line {
+    stroke-dasharray: 82;
+    stroke-dashoffset: 82;
+    animation: ttt-draw 0.22s var(--ease-out) forwards;
+}
+.ttt-mark:not(.ttt-mark--ghost) line:nth-of-type(2) { animation-delay: 0.11s; }
+
+.ttt-mark:not(.ttt-mark--ghost) circle {
+    stroke-dasharray: 176;
+    stroke-dashoffset: 176;
+    animation: ttt-draw 0.32s var(--ease-out) forwards;
+}
+
+@keyframes ttt-draw { to { stroke-dashoffset: 0; } }
+
+/* §7 ghost hover preview — a faint mark of the current player's token in empty
+   cells, revealed on hover. Pointer-events off so it never blocks the click. */
+.ttt-mark--ghost {
+    position: absolute;
+    inset: 19%;
+    width: 62%;
+    height: 62%;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--dur-fast) var(--ease-standard);
+}
+.ttt-mark--ghost line,
+.ttt-mark--ghost circle { stroke-dashoffset: 0; }
+.ttt-cell:not(.disabled):hover .ttt-mark--ghost { opacity: 0.22; }
+
+/* ── Last-move indicator ── */
+.ttt-cell.last-move::before {
+    content: '';
+    position: absolute;
+    inset: 3px;
+    border: 2px solid rgba(255, 255, 255, 0.55);
+    border-radius: var(--radius-sm);
+    pointer-events: none;
+    animation: ttt-lastmove 0.4s var(--ease-out) both;
+}
+
+@keyframes ttt-lastmove {
+    from { opacity: 0; transform: scale(1.15); }
+    to   { opacity: 1; transform: scale(1); }
+}
+
+/* ── Winning cells + strike line ── */
+.ttt-cell.win-cell {
+    background: rgba(0, 229, 255, 0.14);
+    border-color: rgba(0, 229, 255, 0.7);
+    box-shadow: 0 0 15px rgba(0, 229, 255, 0.4);
+    animation: ttt-win-glow 1.5s ease-in-out infinite;
+    z-index: 2;
+}
+
+@keyframes ttt-win-glow {
+    0%, 100% { box-shadow: 0 0 15px rgba(0, 229, 255, 0.4); }
+    50%      { box-shadow: 0 0 26px rgba(0, 229, 255, 0.75); }
+}
+
+/* §2 strike line — anchored at the first winning cell centre, rotated + scaled
+   from left. All geometry comes from the shared --ttt-* tokens (computed in the
+   .razor), so it stays aligned on desktop and mobile alike. */
+.ttt-winline {
+    position: absolute;
+    height: 7px;
+    margin-top: -3.5px;
+    border-radius: var(--radius-pill);
+    background: var(--wl-color, var(--accent-cyan));
+    box-shadow: 0 0 12px var(--wl-color, var(--accent-cyan));
+    transform-origin: left center;
+    transform: rotate(var(--wl-angle, 0deg));
+    pointer-events: none;
+    z-index: 3;
+    animation: ttt-winline-draw 0.38s var(--ease-out) both;
+}
+
+@keyframes ttt-winline-draw {
+    from { transform: rotate(var(--wl-angle, 0deg)) scaleX(0); }
+    to   { transform: rotate(var(--wl-angle, 0deg)) scaleX(1); }
+}
+
+/* ── §6 AI-thinking state: pulsing inset ring so the hand-off feels alive
+     rather than frozen during the AI's move delay. ── */
+.ttt-board--thinking::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    z-index: 4;
+    box-shadow: inset 0 0 0 2px rgba(0, 229, 255, 0.4);
+    animation: ttt-think 1s ease-in-out infinite;
+}
+
+@keyframes ttt-think {
+    0%, 100% { opacity: 0.25; }
+    50%      { opacity: 0.9; }
+}
+
+/* ── §9 outcome moments ── */
+/* Decided (someone won): dim the non-winning cells to spotlight the line, and
+   run a one-shot shimmer sweep across the board. Mode-safe — works for a vs-AI
+   win, a vs-AI loss, and either side of a 2-player game. */
+.ttt-board--decided .ttt-cell:not(.win-cell) {
+    opacity: 0.32;
+    filter: saturate(0.6);
+    transition: opacity 0.4s var(--ease-standard), filter 0.4s var(--ease-standard);
+}
+
+.ttt-board--decided::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 5;
+    background: linear-gradient(105deg, transparent 32%, rgba(255, 255, 255, 0.18) 50%, transparent 68%);
+    transform: translateX(-120%);
+    animation: ttt-sweep 0.75s var(--ease-out) 0.1s 1;
+}
+
+@keyframes ttt-sweep {
+    to { transform: translateX(120%); }
+}
+
+/* Draw: a gentle grayscale settle over the whole board. */
+.ttt-board--draw .ttt-cell {
+    filter: grayscale(0.7);
+    opacity: 0.82;
+    transition: filter 0.5s var(--ease-standard), opacity 0.5s var(--ease-standard);
+}
+
+/* ── Responsive ── */
+@media (max-width: 640px) {
+    .ttt-board {
+        --ttt-cell: clamp(40px, 13.5vw, 52px);
+        --ttt-gap: 3px;
+        --ttt-pad: 8px;
+    }
+}
+
+/* ── Accessibility: the global prefers-reduced-motion guard in app.css already
+     collapses animation durations; we additionally pin the stroke reveals and
+     the winline to their finished state so nothing is left half-drawn. ── */
+@media (prefers-reduced-motion: reduce) {
+    .ttt-mark line,
+    .ttt-mark circle { stroke-dashoffset: 0 !important; }
+    .ttt-winline { transform: rotate(var(--wl-angle, 0deg)); }
+    .ttt-cell { animation: none; }
+}

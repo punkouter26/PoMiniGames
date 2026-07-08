@@ -196,22 +196,6 @@ button { cursor: pointer; font-family: var(--font-body); }
   100% { background-position: -200% 0; }
 }
 
-/* ── View Transitions (Suggestion #5) ── */
-::view-transition-old(root) {
-  animation: viewFadeOut 0.3s ease-out;
-}
-::view-transition-new(root) {
-  animation: viewFadeIn 0.3s ease-in;
-}
-
-@keyframes viewFadeOut {
-  from { opacity: 1; }
-  to { opacity: 0; }
-}
-@keyframes viewFadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
 
 /* ── Layout ──
    The app shell (.gl-page / .gl-mock-banner / .gl-top-bar* / .gl-brand* /
@@ -256,14 +240,6 @@ button { cursor: pointer; font-family: var(--font-body); }
 
 /* Login gate styles migrated to scoped Components/LoginScreen.razor.css. */
 
-/* ── Home sections (mode button + its game list) ── */
-  align-items: center;
-  padding: 1rem;
-  border: 1px solid var(--color-border);
-  border-radius: 1rem;
-  background: rgba(17,24,39,0.55);
-  backdrop-filter: blur(8px);
-}
 
 /* All .home-* selectors migrated to scoped Pages/Index.razor.css. */
 
@@ -579,79 +555,6 @@ button { cursor: pointer; font-family: var(--font-body); }
    scoped MainLayout.razor.css.) */
 
 /* ── Home Scores Preview Carousel (UI 2) — moved to scoped Index.razor.css ── */
-  margin-left: auto;
-  margin-right: auto;
-}
-.home-scores-header {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 0.75rem;
-  margin-bottom: 0.75rem;
-}
-.home-scores-title {
-  font-size: 1.1rem;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-.home-scores-all {
-  font-size: 0.8rem;
-  color: var(--color-accent);
-  text-decoration: none;
-  white-space: nowrap;
-}
-.home-scores-all:hover { text-decoration: underline; }
-.home-scores-carousel {
-  display: flex;
-  gap: 1rem;
-  overflow-x: auto;
-  scroll-snap-type: x mandatory;
-  -webkit-overflow-scrolling: touch;
-  padding-bottom: 0.5rem;
-  scrollbar-width: none;
-  justify-content: center;
-}
-.home-scores-carousel::-webkit-scrollbar {
-  display: none;
-}
-.home-scores-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 2rem 1rem;
-  color: var(--color-text-secondary);
-  font-size: 0.85rem;
-  text-align: center;
-  width: 100%;
-}
-.home-scores-empty-icon { opacity: 0.3; }
-.home-scores-empty-cta {
-  background: transparent;
-  border: 1px solid var(--color-border);
-  color: var(--color-accent);
-  padding: 0.35rem 0.9rem;
-  border-radius: 9999px;
-  font-size: 0.8rem;
-  transition: all 0.2s;
-}
-.home-scores-empty-cta:hover {
-  border-color: var(--color-accent);
-  background: rgba(99, 102, 241, 0.1);
-}
-.home-score-card {
-  flex: 0 0 250px;
-  scroll-snap-align: start;
-  background: rgba(15, 23, 42, 0.6);
-  border: 1px solid var(--color-border);
-  border-radius: 0.75rem;
-  padding: 1rem;
-  cursor: pointer;
-  transition: all 0.25s;
-  min-height: 44px;
-}
 /* ── Enhanced Game Card Touch Feedback (UI 4) ── */
 @media (max-width: 768px) {
   .sp-game-card {

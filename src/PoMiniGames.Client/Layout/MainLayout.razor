@@ -168,16 +168,19 @@
 
     private async Task SignIn()
     {
+        await Feedback.TapAsync();
         await AuthState.SignInAsync();
     }
 
     private async Task SignOut()
     {
+        await Feedback.TapAsync();
         await AuthState.SignOutAsync();
     }
 
     private async Task SignInAnon()
     {
+        await Feedback.TapAsync();
         await AuthState.DevBypassAsync("ANON");
     }
 

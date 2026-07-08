@@ -78,6 +78,15 @@ public sealed class CoupleQuizHubService : IAsyncDisposable
     private readonly NavigationManager _navigation;
     private HubConnection? _connection;
 
+    /// <summary>
+    /// The most recent <c>GameStarted</c> payload, buffered so the game page can
+    /// initialise from it. The lobby page consumes the live event to navigate to
+    /// <c>/couplequiz/game</c>; by the time that page mounts and subscribes, the
+    /// live event has already fired — so it reads this buffer instead. Cleared on
+    /// game-over so a stale game can't leak into the next lobby session.
+    /// </summary>
+    public CoupleQuizGameStartedPayload? LastGameStarted { get; private set; }
+
     public event Action<CoupleQuizLobbyEventPayload>? OnLobbyCreated;
     public event Action<CoupleQuizLobbyEventPayload>? OnLobbyJoined;
     public event Action<CoupleQuizLobbyUpdatedPayload>? OnLobbyUpdated;
@@ -106,11 +115,20 @@ public sealed class CoupleQuizHubService : IAsyncDisposable
         _connection.On<CoupleQuizLobbyEventPayload>("LobbyJoined", p => OnLobbyJoined?.Invoke(p));
         _connection.On<CoupleQuizLobbyUpdatedPayload>("LobbyUpdated", p => OnLobbyUpdated?.Invoke(p));
         _connection.On<string>("LobbyError", m => OnLobbyError?.Invoke(m));
-        _connection.On<CoupleQuizGameStartedPayload>("GameStarted", p => OnGameStarted?.Invoke(p));
+        _connection.On<CoupleQuizGameStartedPayload>("GameStarted", p =>
+        {
+            // Buffer first, THEN raise — the game page reads the buffer on mount.
+            LastGameStarted = p;
+            OnGameStarted?.Invoke(p);
+        });
         _connection.On<CoupleQuizRoundStartedPayload>("RoundStarted", p => OnRoundStarted?.Invoke(p));
         _connection.On<CoupleQuizAnswerRecordedPayload>("AnswerRecorded", p => OnAnswerRecorded?.Invoke(p));
         _connection.On<CoupleQuizRoundResultPayload>("RoundResult", p => OnRoundResult?.Invoke(p));
-        _connection.On<CoupleQuizGameOverPayload>("GameOver", p => OnGameOver?.Invoke(p));
+        _connection.On<CoupleQuizGameOverPayload>("GameOver", p =>
+        {
+            LastGameStarted = null; // don't let a finished game re-hydrate a new page
+            OnGameOver?.Invoke(p);
+        });
         _connection.On<string>("GameError", m => OnGameError?.Invoke(m));
         _connection.On<CoupleQuizLobbyUpdatedPayload>("PlayerDisconnected", p => OnPlayerDisconnected?.Invoke(p));
         _connection.On<CoupleQuizHostChangedPayload>("HostChanged", p => OnHostChanged?.Invoke(p));

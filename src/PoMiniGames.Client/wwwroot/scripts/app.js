@@ -46,6 +46,13 @@
       if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
         return false;
       }
+      // §9 mobile-portrait battery guard: the ambient particle field is purely
+      // decorative chrome behind the game list. On portrait phones it's GPU/battery
+      // cost with little payoff, so fall back to the (already frozen <=768px) CSS
+      // gradient there instead of waking the GPU render loop.
+      if (window.matchMedia && window.matchMedia('(max-width: 640px)').matches) {
+        return false;
+      }
       var mem = navigator.deviceMemory || 4;
       if (mem < 4) return false;
       var c = document.createElement('canvas');

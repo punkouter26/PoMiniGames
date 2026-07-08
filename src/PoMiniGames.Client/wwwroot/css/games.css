@@ -427,65 +427,6 @@
    of these rules here; they've been removed in favour of the unified
    palette. */
 
-/* ── Tic Tac Toe Styles ── */
-.ttt-board {
-  display: grid;
-  grid-template-columns: repeat(6, var(--ttt-cell));
-  grid-template-rows: repeat(6, var(--ttt-cell));
-  gap: 4px;
-  margin: 1rem auto;
-  width: fit-content;
-  padding: 12px;
-  background: var(--color-surface);
-  border-radius: 12px;
-  border: 1px solid var(--color-border);
-  --ttt-cell: clamp(44px, calc((100vh - 200px) / 6), 80px);
-}
-
-.ttt-cell {
-  width: var(--ttt-cell);
-  height: var(--ttt-cell);
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: clamp(1.2rem, 3.5vmin, 2rem);
-  cursor: pointer;
-  transition: all 0.15s;
-  position: relative;
-  overflow: hidden;
-}
-
-.ttt-cell:hover:not(.disabled) {
-  background: rgba(0, 229, 255, 0.1);
-  border-color: #00e5ff;
-  transform: scale(1.02);
-}
-
-.ttt-cell.disabled { cursor: default; }
-
-.ttt-cell .piece { animation: scaleIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); }
-
-.ttt-cell.win-cell {
-  background: rgba(0, 229, 255, 0.15);
-  border-color: #00e5ff;
-  box-shadow: 0 0 15px rgba(0, 229, 255, 0.4);
-  animation: glow 1.5s ease-in-out infinite;
-}
-
-.x-piece, .o-piece { font-size: inherit; }
-
-@keyframes scaleIn {
-  from { transform: scale(0); opacity: 0; }
-  to { transform: scale(1); opacity: 1; }
-}
-
-@keyframes glow {
-  0%, 100% { box-shadow: 0 0 15px rgba(0, 229, 255, 0.4); }
-  50% { box-shadow: 0 0 25px rgba(0, 229, 255, 0.7); }
-}
 
 /* ── Connect Five Styles moved to Games/ConnectFive/ConnectFivePage.razor.css ──
    §2 style isolation: the 9x9 board's ~15 selectors now live in a scoped
@@ -1847,13 +1788,6 @@
 /* ── Responsive Game Styles ──
    (Connect Five's phone breakpoints moved to its scoped razor.css alongside the
    rest of its board rules — §2 style isolation.) */
-@media (max-width: 640px) {
-  .ttt-board {
-    --ttt-cell: clamp(38px, 13vw, 48px);
-    gap: 2px;
-    padding: 8px;
-  }
-}
 
 /* Audit fix #3: PoDropSquare + PoSnakeGame boards overflow the viewport on
    portrait phones (428px / 463px board width inside a 390px viewport). Cap

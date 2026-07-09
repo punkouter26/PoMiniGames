@@ -1,8 +1,8 @@
 using System.Text.Json.Serialization;
 using PoMiniGamesClient.Models;
 using PoShared.Games;
-using PoSurvive.Client.Services;
-using PoSurvive.Shared.Models;
+using PoMiniGamesClient.Games.PoSurvive.Services;
+using PoShared.Simulation.Models;
 
 namespace PoMiniGamesClient.Services;
 

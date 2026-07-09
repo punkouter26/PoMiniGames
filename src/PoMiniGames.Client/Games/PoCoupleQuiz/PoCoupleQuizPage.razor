@@ -17,7 +17,7 @@
         {
             @* Demo renders the multiplayer shell so the kiosk viewer sees a
                "live multiplayer game" — same .cq-game/.cq-results/.cq-gameover
-               markup + same .cq-btn classes that the real /couplequiz/game page uses. *@
+               markup + same .gps-btn classes that the real /couplequiz/game page uses. *@
             <div class="cq-game">
                 <h2 class="gps-phase-h">@(_demoPhase == DemoPhase.GameOver ? "Game over" : $"Round {_soloRound + 1} of {_soloQuestions.Count}")</h2>
                 @if (_demoIsKing && _demoPhase == DemoPhase.Answering)
@@ -30,7 +30,7 @@
                        maxlength="60"
                        readonly />
                 <div class="cq-actions">
-                    <button class="cq-btn cq-btn-primary" disabled>
+                    <button class="gps-btn gps-btn gps-btn--primary" disabled>
                         @(_demoPhase == DemoPhase.Results ? "Submitted ✓" : (_demoIsKing ? "Lock secret" : "Submit"))
                     </button>
                 </div>
@@ -64,7 +64,7 @@
                                 <li>@kv.Key — @kv.Value</li>
                             }
                         </ol>
-                        <a class="cq-btn cq-btn-primary" href="/couplequiz/leaderboard">View leaderboard</a>
+                        <a class="gps-btn gps-btn gps-btn--primary" href="/couplequiz/leaderboard">View leaderboard</a>
                     </div>
                 }
             </div>
@@ -83,7 +83,7 @@
                             @for (int i = 0; i < CurrentSoloQuestion.Options.Length; i++)
                             {
                                 var idx = i;
-                                <button class="cq-btn cq-btn-secondary" @onclick="() => SoloPick(idx)">@CurrentSoloQuestion.Options[idx]</button>
+                                <button class="gps-btn gps-btn gps-btn--secondary" @onclick="() => SoloPick(idx)">@CurrentSoloQuestion.Options[idx]</button>
                             }
                         </div>
                     }
@@ -95,7 +95,7 @@
                         {
                             <p>🔥 Streak: <strong>@_soloStreak</strong></p>
                         }
-                        <button class="cq-btn cq-btn-primary" @onclick="SoloNext">@(_soloRound + 1 < _soloQuestions.Count ? "Next" : "See results")</button>
+                        <button class="gps-btn gps-btn gps-btn--primary" @onclick="SoloNext">@(_soloRound + 1 < _soloQuestions.Count ? "Next" : "See results")</button>
                     }
                 }
                 @* Solo results are shown in the shared end-of-game modal (GameSummaryContent). *@
@@ -130,12 +130,12 @@
                 <input type="text" @bind="_joinCode" maxlength="6" />
             </label>
             <div class="cq-actions">
-                <button class="cq-btn cq-btn-primary" @onclick="OnJoinOrCreate">Find or create a lobby</button>
-                <button class="cq-btn cq-btn-secondary" @onclick="OnJoinByCode" disabled="@string.IsNullOrWhiteSpace(_joinCode)">Join by code</button>
+                <button class="gps-btn gps-btn gps-btn--primary" @onclick="OnJoinOrCreate">Find or create a lobby</button>
+                <button class="gps-btn gps-btn gps-btn--secondary" @onclick="OnJoinByCode" disabled="@string.IsNullOrWhiteSpace(_joinCode)">Join by code</button>
             </div>
             <p class="cq-solo-hint">No second player? <strong>Play solo</strong> against an AI partner — guess what they'd pick.</p>
             <div class="cq-actions">
-                <button class="cq-btn cq-btn-secondary" @onclick="StartSolo">Play solo (vs AI partner)</button>
+                <button class="gps-btn gps-btn gps-btn--secondary" @onclick="StartSolo">Play solo (vs AI partner)</button>
             </div>
             @if (!string.IsNullOrEmpty(_error))
             {
@@ -164,12 +164,12 @@
                 }
             </ul>
             <div class="cq-actions">
-                <button class="cq-btn cq-btn-primary" @onclick="OnReady">I'm ready</button>
+                <button class="gps-btn gps-btn gps-btn--primary" @onclick="OnReady">I'm ready</button>
             </div>
             @if (_lobby.IsHost && _lobby.Players.Count >= 2)
             {
                 <div class="cq-actions">
-                    <button class="cq-btn cq-btn-secondary" @onclick="OnStart">Start game</button>
+                    <button class="gps-btn gps-btn gps-btn--secondary" @onclick="OnStart">Start game</button>
                 </div>
             }
         </div>

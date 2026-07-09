@@ -1,7 +1,7 @@
-namespace PoSurvive.Domain.Entities;
+namespace PoMiniGames.Domain.Entities.Simulation;
 
-using PoSurvive.Domain.Enums;
-using PoSurvive.Domain.ValueObjects;
+using PoMiniGames.Domain.Enums.Simulation;
+using PoMiniGames.Domain.ValueObjects.Simulation;
 
 // GoF: Aggregate Root — encapsulates the lifecycle and summary of one simulation match
 public sealed class SimulationSession

@@ -1,4 +1,4 @@
-namespace PoSurvive.Shared.Constants;
+namespace PoShared.Simulation.Constants;
 
 /// <summary>Typed constants for all default simulation parameters (mirrors appsettings.json defaults).</summary>
 public static class SimulationDefaults

@@ -1,7 +1,7 @@
-namespace PoSurvive.Client.Services;
+namespace PoMiniGamesClient.Games.PoSurvive.Services;
 
 using Fluxor;
-using PoSurvive.Client.Store;
+using PoMiniGamesClient.Games.PoSurvive.Store;
 
 /// <summary>Fluxor effects that feed HeartbeatEventDtos into SessionLogService (T070).</summary>
 public sealed class SessionLogEffects(SessionLogService log)

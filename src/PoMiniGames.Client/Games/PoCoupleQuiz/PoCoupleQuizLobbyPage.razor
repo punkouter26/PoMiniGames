@@ -69,12 +69,12 @@
                 }
             </ul>
             <div class="cq-actions">
-                <button class="cq-btn cq-btn-primary" @onclick="OnReady">I'm ready</button>
+                <button class="gps-btn gps-btn gps-btn--primary" @onclick="OnReady">I'm ready</button>
             </div>
             @if (_lobby.IsHost && _lobby.Players.Count >= 2)
             {
                 <div class="cq-actions">
-                    <button class="cq-btn cq-btn-secondary" @onclick="OnStart">Start game</button>
+                    <button class="gps-btn gps-btn gps-btn--secondary" @onclick="OnStart">Start game</button>
                 </div>
             }
         </div>

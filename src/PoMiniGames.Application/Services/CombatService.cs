@@ -1,7 +1,7 @@
-namespace PoSurvive.Application.Services;
+namespace PoMiniGames.Application.Simulation;
 
-using PoSurvive.Application.DTOs;
-using PoSurvive.Domain.Entities;
+using PoMiniGames.Application.Simulation;
+using PoMiniGames.Domain.Entities.Simulation;
 
 // SOLID: SRP — owns only HP-damage calculation; no movement or state management
 public sealed class CombatService

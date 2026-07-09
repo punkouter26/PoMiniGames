@@ -1,9 +1,9 @@
 using System.Text.Json;
 using Microsoft.JSInterop;
-using PoSurvive.Shared.Constants;
-using PoSurvive.Shared.Models;
+using PoShared.Simulation.Constants;
+using PoShared.Simulation.Models;
 
-namespace PoSurvive.Client.Services;
+namespace PoMiniGamesClient.Games.PoSurvive.Services;
 
 public sealed class SimulationLaunchService(IJSRuntime js, IConfiguration config)
 {

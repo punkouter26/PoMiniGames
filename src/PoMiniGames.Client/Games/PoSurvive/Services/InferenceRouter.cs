@@ -1,7 +1,7 @@
-namespace PoSurvive.Client.Services;
+namespace PoMiniGamesClient.Games.PoSurvive.Services;
 
-using PoSurvive.Shared.Interfaces;
-using PoSurvive.Shared.Models;
+using PoShared.Simulation.Interfaces;
+using PoShared.Simulation.Models;
 
 /// <summary>
 /// GoF: Strategy proxy — routes InferAsync to either the local WebLLM service

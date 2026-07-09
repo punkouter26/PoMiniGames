@@ -1,7 +1,7 @@
-namespace PoSurvive.Client.Services;
+namespace PoMiniGamesClient.Games.PoSurvive.Services;
 
-using PoSurvive.Shared.Interfaces;
-using PoSurvive.Shared.Models;
+using PoShared.Simulation.Interfaces;
+using PoShared.Simulation.Models;
 
 // GoF: Strategy — deterministic mock; used in all integration and E2E test runs
 // SOLID: DIP — implements IInferenceService so the simulation engine never knows it's a mock

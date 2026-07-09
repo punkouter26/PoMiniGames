@@ -15,7 +15,7 @@ public class PerformanceSettings
     /// <summary>Delay before revealing the punchline in seconds. Default: 1.</summary>
     public int PunchlineDelaySeconds { get; set; } = 1;
 
-    /// <summary>Duration for showing the punchline in seconds. Default: 5 — long enough for
+    /// <summary>Duration for showing the punchline in seconds. Default: 5 - long enough for
     /// TTS to finish narrating the punchline and for the viewer to read the commentary.</summary>
     public int PunchlineDurationSeconds { get; set; } = 5;
 

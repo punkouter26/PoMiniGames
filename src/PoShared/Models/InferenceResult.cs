@@ -1,4 +1,4 @@
-namespace PoSurvive.Shared.Models;
+namespace PoShared.Simulation.Models;
 
 /// <summary>Returned by IInferenceService.InferAsync.</summary>
 public record InferenceResult(

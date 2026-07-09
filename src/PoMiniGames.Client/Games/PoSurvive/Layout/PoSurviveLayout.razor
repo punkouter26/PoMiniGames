@@ -1,13 +1,13 @@
-@using PoSurvive.Client.Features.Grid
-@using PoSurvive.Client.Features.Inspector
-@using PoSurvive.Client.Features.Sidebar
-@using PoSurvive.Client.Features.Console
-@using PoSurvive.Client.Features.PostMortem
-@using PoSurvive.Client.Features.Soundtrack
-@using PoSurvive.Client.Services
-@using PoSurvive.Client.Store
-@using PoSurvive.Shared.Constants
-@using PoSurvive.Shared.Models
+@using PoMiniGamesClient.Games.PoSurvive.Features.Grid
+@using PoMiniGamesClient.Games.PoSurvive.Features.Inspector
+@using PoMiniGamesClient.Games.PoSurvive.Features.Sidebar
+@using PoMiniGamesClient.Games.PoSurvive.Features.Console
+@using PoMiniGamesClient.Games.PoSurvive.Features.PostMortem
+@using PoMiniGamesClient.Games.PoSurvive.Features.Soundtrack
+@using PoMiniGamesClient.Games.PoSurvive.Services
+@using PoMiniGamesClient.Games.PoSurvive.Store
+@using PoShared.Simulation.Constants
+@using PoShared.Simulation.Models
 @using Microsoft.AspNetCore.Components.WebAssembly.Hosting
 @inherits Fluxor.Blazor.Web.Components.FluxorLayout
 @implements IDisposable
@@ -19,9 +19,9 @@
 @inject IJSRuntime              JS
 @inject NavigationManager       Nav
 @inject IWebAssemblyHostEnvironment HostEnv
-@inject PoSurvive.Client.Services.LocalModelBootstrapService ModelBootstrap
-@inject PoSurvive.Client.Services.InferenceRouter InferenceRouterOrNull
-@inject PoSurvive.Shared.Interfaces.IInferenceService InferenceService
+@inject PoMiniGamesClient.Games.PoSurvive.Services.LocalModelBootstrapService ModelBootstrap
+@inject PoMiniGamesClient.Games.PoSurvive.Services.InferenceRouter InferenceRouterOrNull
+@inject PoShared.Simulation.Interfaces.IInferenceService InferenceService
 @inject AuthStateService        AuthState
 @inject ToastService            ToastService
 
@@ -369,7 +369,7 @@
     // Loads the same set of LOCAL (WebLLM) and REMOTE (Azure OpenAI / Foundry)
     // options as the Mission Control picker. Lets the player change model on the fly
     // without backing out to the idle screen.
-    private List<PoSurvive.Client.Services.ModelOption> ToolbarModelOptions { get; set; } = new();
+    private List<PoMiniGamesClient.Games.PoSurvive.Services.ModelOption> ToolbarModelOptions { get; set; } = new();
     private bool _switchingModel;
     private string ToolbarSelectedModelId
     {
@@ -390,7 +390,7 @@
 
         try
         {
-            var isMock       = InferenceService is PoSurvive.Client.Services.MockInferenceService;
+            var isMock       = InferenceService is PoMiniGamesClient.Games.PoSurvive.Services.MockInferenceService;
             var providerKind = ModelBootstrap.ResolveProviderKind(isMock, selected.IsRemote);
 
             if (!isMock && InferenceRouterOrNull is { } router)

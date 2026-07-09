@@ -1,4 +1,4 @@
-namespace PoSurvive.Shared.Models;
+namespace PoShared.Simulation.Models;
 
 /// <summary>DTO representing the full evolution state for a DNA lineage.</summary>
 public sealed record EvolutionStateDto(

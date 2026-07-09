@@ -1,6 +1,6 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Caching.Hybrid;
 using PoMiniGames.Features.PoFunQuiz.Storage;
 
 namespace PoMiniGames.Features.PoFunQuiz;
@@ -17,13 +17,15 @@ public static class FunQuizEndpoints
     {
         var group = app.MapGroup("/api/funquiz").WithTags("PoFunQuiz");
 
-        // ── Question generation (with a tiny in-memory cache to dedupe repeats) ──
+        // ── Question generation (HybridCache memoizes the deterministic
+        //    (category, count) → questions tuple for 60s so identical
+        //    concurrent requests share one upstream OpenAI call) ────────────
 
         group.MapGet("/quiz/questions", async (
             [FromQuery] int count,
             [FromQuery] string? category,
             IOpenAIService ai,
-            IMemoryCache cache,
+            HybridCache cache,
             CancellationToken cancellationToken) =>
         {
             if (count <= 0) count = 10;
@@ -38,13 +40,13 @@ public static class FunQuizEndpoints
                 : QuestionCategory.General;
             var key = $"funquiz:q:{cat}:{count}";
 
-            if (!cache.TryGetValue(key, out IReadOnlyList<QuizQuestion>? cached))
-            {
-                var generated = await ai.GenerateQuizQuestionsAsync(cat, count, cancellationToken);
-                cached = generated;
-                cache.Set(key, cached, TimeSpan.FromSeconds(60));
-            }
-            return Results.Ok(cached);
+            var questions = await cache.GetOrCreateAsync(
+                key,
+                (Ai: ai, Cat: cat, Count: count),
+                static async (state, ct) => await state.Ai.GenerateQuizQuestionsAsync(state.Cat, state.Count, ct),
+                new HybridCacheEntryOptions { Expiration = TimeSpan.FromSeconds(60) },
+                cancellationToken: cancellationToken);
+            return Results.Ok(questions);
         })
         .RequireRateLimiting("ai-generation")
         .WithName("FunQuiz_GetQuestions")

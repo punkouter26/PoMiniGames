@@ -1,4 +1,4 @@
-namespace PoSurvive.Application.DTOs;
+namespace PoMiniGames.Application.Simulation;
 
 /// <summary>
 /// Feature-flag-controlled simulation parameters.

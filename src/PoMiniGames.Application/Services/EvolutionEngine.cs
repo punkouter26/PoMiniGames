@@ -1,10 +1,10 @@
-namespace PoSurvive.Application.Services;
+namespace PoMiniGames.Application.Simulation;
 
 using System.Text.Json;
-using PoSurvive.Application.Interfaces;
-using PoSurvive.Domain.Entities;
-using PoSurvive.Domain.ValueObjects;
-using PoSurvive.Shared.Models;
+using PoMiniGames.Application.Simulation;
+using PoMiniGames.Domain.Entities.Simulation;
+using PoMiniGames.Domain.ValueObjects.Simulation;
+using PoShared.Simulation.Models;
 
 /// <summary>
 /// Core engine for LLM-Powered Agent Evolution.

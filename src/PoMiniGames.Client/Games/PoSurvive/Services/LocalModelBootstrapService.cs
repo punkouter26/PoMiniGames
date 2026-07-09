@@ -1,6 +1,6 @@
 using Microsoft.JSInterop;
 
-namespace PoSurvive.Client.Services;
+namespace PoMiniGamesClient.Games.PoSurvive.Services;
 
 public sealed class LocalModelBootstrapService(IJSRuntime js, IConfiguration config)
 {

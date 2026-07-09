@@ -54,7 +54,7 @@ builder.Services.AddPoMiniGamesStorage(builder.Configuration)
     .AddPoSurvive(builder.Configuration);
 builder.Services.AddSingleton<IDiagnosticsSnapshotProvider, ConfigurationDiagnosticsSnapshotProvider>();
 
-// ─── SignalR (shared by all multiplayer hubs) ────────────────────────
+// ─── SignalR (shared by all multiplayer hubs) ─────────────────────────────────
 builder.Services.AddSignalR(options =>
 {
     options.EnableDetailedErrors = true;
@@ -154,14 +154,12 @@ catch (Exception ex)
 }
 
 // ─── Exception handling & developer tooling ──────────────────────────
-// §Best-practice (2026-07-07): UseResponseCompression is registered AFTER
-// `MapPoMiniGamesEndpoints` further below so SignalR hubs (WebSocket
-// upgrades) are not buffered by the compression middleware. Previously
-// `UseResponseCompression` ran first and held each hub handshake GET open
-// for 30-60s waiting for the first frame — making 2-player testing on
-// localhost impractical. Static-file compression still works because the
-// middleware short-circuits on non-compressible responses and the
-// `UseStaticFiles` layer below streams bodies through `StreamResponseBodyFeature`.
+// Bug fix QA #10: response compression must be the FIRST middleware that
+// touches the response body — any later middleware that calls `WriteAsync`
+// or sets `Content-Length` directly will bypass it. Static files are
+// streamed with `SendFile` (which honors the compression layer), so this
+// ordering works for the WASM payload too.
+app.UseResponseCompression();
 app.UseMiddleware<RequestLogContextMiddleware>();
 app.UsePoMiniGamesRequestLogging();
 if (!app.Environment.IsDevelopment())
@@ -329,16 +327,7 @@ app.UseAuthorization();
 
 // ─── Minimal API endpoints + SignalR hubs (one ordered registration) ──
 // The whole route table lives in EndpointRouteExtensions.MapPoMiniGamesEndpoints.
-// IMPORTANT: must be mapped BEFORE `UseResponseCompression` so the hub
-// endpoints don't pick up the compression middleware (which buffers the
-// WebSocket upgrade response).
 app.MapPoMiniGamesEndpoints();
-
-// §Best-practice (2026-07-07): response compression runs LAST among the
-// request/response middlewares so it never sits in front of SignalR hubs,
-// Server-Sent Events, or the negotiated WebSocket upgrade. Static files,
-// JSON API responses, and the Blazor WASM payload all still benefit.
-app.UseResponseCompression();
 
 // ─── Fake /api/* fallback (§4 of QA report) ───────────────────────────
 // The SPA fallback below (`MapFallbackToFile("index.html")`) intercepts every

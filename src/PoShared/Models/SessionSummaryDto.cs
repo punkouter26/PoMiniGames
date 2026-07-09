@@ -1,4 +1,4 @@
-namespace PoSurvive.Shared.Models;
+namespace PoShared.Simulation.Models;
 
 public record SessionSummaryDto(
     Guid                               SessionId,

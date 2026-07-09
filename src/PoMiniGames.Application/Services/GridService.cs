@@ -1,10 +1,10 @@
-namespace PoSurvive.Application.Services;
+namespace PoMiniGames.Application.Simulation;
 
-using PoSurvive.Application.DTOs;
-using PoSurvive.Domain.Entities;
-using PoSurvive.Domain.Enums;
-using PoSurvive.Domain.ValueObjects;
-using PoSurvive.Shared.Constants;
+using PoMiniGames.Application.Simulation;
+using PoMiniGames.Domain.Entities.Simulation;
+using PoMiniGames.Domain.Enums.Simulation;
+using PoMiniGames.Domain.ValueObjects.Simulation;
+using PoShared.Simulation.Constants;
 
 // SOLID: SRP — owns only grid generation, agent placement, food spawning, and food wither
 public sealed class GridService

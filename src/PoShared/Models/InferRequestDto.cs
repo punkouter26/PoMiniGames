@@ -1,4 +1,4 @@
-namespace PoSurvive.Shared.Models;
+namespace PoShared.Simulation.Models;
 
 /// <summary>
 /// Request body for POST /api/infer.

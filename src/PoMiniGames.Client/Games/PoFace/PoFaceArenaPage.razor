@@ -20,7 +20,7 @@
         <div class="pf-perm">
             <h2>Camera permission denied</h2>
             <p>The PoFace game needs access to your webcam to score facial expressions. Please allow camera access in your browser settings and reload.</p>
-            <button class="pf-btn pf-btn-secondary" @onclick="ActivateStubMode">Continue without camera (stub mode)</button>
+            <button class="gps-btn gps-btn gps-btn--secondary" @onclick="ActivateStubMode">Continue without camera (stub mode)</button>
         </div>
     }
     else if (_phase == "NoCamera")
@@ -28,7 +28,7 @@
         <div class="pf-perm">
             <h2>No camera detected</h2>
             <p>We couldn't find a webcam on this device. You can continue in stub mode (no real scoring).</p>
-            <button class="pf-btn pf-btn-secondary" @onclick="ActivateStubMode">Continue in stub mode</button>
+            <button class="gps-btn gps-btn gps-btn--secondary" @onclick="ActivateStubMode">Continue in stub mode</button>
         </div>
     }
     else if (_phase == "Ready")
@@ -42,7 +42,7 @@
                     @foreach (var emo in _choices)
                     {
                         var choice = emo;
-                        <button class="pf-btn pf-face-choice pf-face-choice--large" @onclick="() => PickEmotion(choice)">@EmojiFor(choice)</button>
+                        <button class="gps-btn pf-face-choice pf-face-choice--large" @onclick="() => PickEmotion(choice)">@EmojiFor(choice)</button>
                     }
                 </div>
                 <p class="pf-score-line">Score: <strong>@_localTotal</strong></p>
@@ -56,7 +56,7 @@
                 <video id="pf-webcam-preview" autoplay playsinline muted style="max-width:100%;border-radius:8px;"></video>
                 <div id="pf-frozen-overlay" class="pf-frozen-overlay"></div>
                 <div class="pf-actions">
-                    <button class="pf-btn pf-btn-primary" @onclick="CaptureAndScore">📸 Capture</button>
+                    <button class="gps-btn gps-btn gps-btn--primary" @onclick="CaptureAndScore">📸 Capture</button>
                 </div>
             </div>
         }
@@ -79,7 +79,7 @@
                     <p>🔥 Streak: <strong>@_streak</strong></p>
                 }
                 <p>Total: <strong>@_localTotal</strong></p>
-                <button class="pf-btn pf-btn-primary" @onclick="NextRound">@(_currentRound + 1 < 5 ? "Next round" : "See results")</button>
+                <button class="gps-btn gps-btn gps-btn--primary" @onclick="NextRound">@(_currentRound + 1 < 5 ? "Next round" : "See results")</button>
             </div>
         }
         else
@@ -91,7 +91,7 @@
                 <p>Head pose valid: @(_lastScore?.HeadPoseValid == true ? "✅" : "❌")</p>
                 <p>Score: <strong>@_lastScore?.Score</strong></p>
                 <p>Total: <strong>@_lastScore?.TotalScore</strong></p>
-                <button class="pf-btn pf-btn-primary" @onclick="NextRound">@(_currentRound + 1 < 5 ? "Next round" : "See results")</button>
+                <button class="gps-btn gps-btn gps-btn--primary" @onclick="NextRound">@(_currentRound + 1 < 5 ? "Next round" : "See results")</button>
             </div>
         }
     }

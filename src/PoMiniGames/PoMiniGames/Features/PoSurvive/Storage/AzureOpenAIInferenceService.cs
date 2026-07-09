@@ -1,8 +1,8 @@
 using Microsoft.Extensions.AI;
-using PoSurvive.Shared.Interfaces;
-using PoSurvive.Shared.Models;
+using PoShared.Simulation.Interfaces;
+using PoShared.Simulation.Models;
 
-namespace PoSurvive.Server.Storage;
+namespace PoMiniGames.Features.PoSurvive.Storage;
 
 // GoF: Strategy — implements IInferenceService; activated only when Inference:UseCloudFallback=true.
 // SOLID: DIP — callers depend on IInferenceService; this class wires in Azure OpenAI via ME.AI.

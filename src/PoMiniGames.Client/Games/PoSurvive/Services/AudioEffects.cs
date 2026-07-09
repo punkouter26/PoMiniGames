@@ -1,8 +1,8 @@
-namespace PoSurvive.Client.Services;
+namespace PoMiniGamesClient.Games.PoSurvive.Services;
 
 using Fluxor;
-using PoSurvive.Client.Store;
-using PoSurvive.Domain.Enums;
+using PoMiniGamesClient.Games.PoSurvive.Store;
+using PoMiniGames.Domain.Enums.Simulation;
 
 /// <summary>
 /// Fluxor effects that trigger audio feedback from simulation events (T074).

@@ -1,6 +1,6 @@
-namespace PoSurvive.Domain.Entities;
+namespace PoMiniGames.Domain.Entities.Simulation;
 
-using PoSurvive.Domain.ValueObjects;
+using PoMiniGames.Domain.ValueObjects.Simulation;
 
 /// <summary>
 /// Persistence entity for storing evolution state of a DNA lineage.

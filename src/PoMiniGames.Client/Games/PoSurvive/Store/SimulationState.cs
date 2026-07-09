@@ -1,7 +1,7 @@
-namespace PoSurvive.Client.Store;
+namespace PoMiniGamesClient.Games.PoSurvive.Store;
 
 using Fluxor;
-using PoSurvive.Shared.Models;
+using PoShared.Simulation.Models;
 
 /// <summary>Immutable view state for one running simulation session.</summary>
 [FeatureState]

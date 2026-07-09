@@ -42,13 +42,13 @@
             <div class="fq-actions">
                 @* Bug fix QA #6: aria-busy + disabled state while the SignalR handshake
                    is in flight, so the primary button cannot fire twice on touch. *@
-                <button class="fq-btn fq-btn-primary"
+                <button class="gps-btn gps-btn gps-btn--primary"
                         aria-busy="@_busy"
                         disabled="@_busy"
                         @onclick="OnCreate">
                     @(_busy ? "Creating…" : "Create new game")
                 </button>
-                <button class="fq-btn fq-btn-secondary"
+                <button class="gps-btn gps-btn gps-btn--secondary"
                         aria-busy="@_busyJoin"
                         disabled="@(_busyJoin || string.IsNullOrWhiteSpace(_joinCode))"
                         @onclick="OnJoin">
@@ -59,7 +59,7 @@
             {
                 <p class="fq-error">
                     @_error
-                    <button class="fq-btn fq-btn-secondary fq-btn-retry" @onclick="RetryConnect">Retry</button>
+                    <button class="gps-btn gps-btn gps-btn--secondary gps-btn-retry" @onclick="RetryConnect">Retry</button>
                 </p>
             }
         </div>
@@ -77,7 +77,7 @@
             </ul>
             @if (IsWaiting && _playerName == _state.HostName && _state.Players.Count >= 2)
             {
-                <button class="fq-btn fq-btn-primary" @onclick="OnStart">Start game</button>
+                <button class="gps-btn gps-btn gps-btn--primary" @onclick="OnStart">Start game</button>
             }
             @if (IsInProgress && _currentQuestion is not null)
             {
@@ -115,7 +115,7 @@
                             <li>@kv.Key — @kv.Value</li>
                         }
                     </ul>
-                    <a class="fq-btn fq-btn-primary" href="/funquiz/leaderboard">View leaderboard</a>
+                    <a class="gps-btn gps-btn gps-btn--primary" href="/funquiz/leaderboard">View leaderboard</a>
                 </div>
             }
         </div>

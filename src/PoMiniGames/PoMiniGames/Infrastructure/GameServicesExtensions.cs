@@ -97,10 +97,9 @@ internal static class GameServicesExtensions
         // PoFunQuizPlayers table (PartitionKey = Category, RowKey = Guid).
         // MultiplayerLobbyService is the in-memory registry for the SignalR hub
         // (CreateGame/JoinGame/StartGame/UpdateScore/PlayerFinished).
-        services.AddMemoryCache();
         // §3.4 HybridCache: stampede-protected memoization for deterministic, expensive
-        // Azure OpenAI calls (answer-similarity scoring). Question generation is left
-        // uncached on purpose so gameplay stays varied.
+        // Azure OpenAI calls (answer-similarity scoring + question generation).
+        // Shared by PoCoupleQuiz (answer similarity) and PoFunQuiz (question list).
         services.AddHybridCache();
         services.AddSingleton<IOpenAIService, AzureOpenAIService>();
         services.AddSingleton<PoMiniGames.Features.PoFunQuiz.Storage.ILeaderboardRepository,

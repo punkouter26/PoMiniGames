@@ -1,7 +1,7 @@
-using PoSurvive.Shared.Models;
-using PoSurvive.Client.Store;
+using PoShared.Simulation.Models;
+using PoMiniGamesClient.Games.PoSurvive.Store;
 
-namespace PoSurvive.Client.Services;
+namespace PoMiniGamesClient.Games.PoSurvive.Services;
 
 public sealed class DecisionInsightService
 {

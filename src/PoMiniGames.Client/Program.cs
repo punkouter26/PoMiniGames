@@ -8,9 +8,9 @@ using PoMiniGamesClient.Games.PoCoupleQuiz.Services;
 using PoMiniGamesClient.Games.PoFunQuiz.Services;
 using PoMiniGamesClient.Games.PoRacer;
 using PoMiniGamesClient.Services;
-using PoSurvive.Application.Services;
-using PoSurvive.Client.Services;
-using PoSurvive.Shared.Interfaces;
+using PoMiniGames.Application.Simulation;
+using PoMiniGamesClient.Games.PoSurvive.Services;
+using PoShared.Simulation.Interfaces;
 
 var builder = WebAssemblyHostBuilder.CreateDefault(args);
 builder.RootComponents.Add<App>("#app");

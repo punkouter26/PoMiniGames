@@ -1,4 +1,4 @@
-namespace PoSurvive.Domain.ValueObjects;
+namespace PoMiniGames.Domain.ValueObjects.Simulation;
 
 // GoF: Value Object — immutable, identity-less, equality by value
 // LLM Evolution: Added generation metadata for tracking evolutionary lineage

@@ -1,6 +1,6 @@
-namespace PoSurvive.Shared.Interfaces;
+namespace PoShared.Simulation.Interfaces;
 
-using PoSurvive.Shared.Models;
+using PoShared.Simulation.Models;
 
 // GoF: Strategy — multiple implementations: WebLlmInferenceService (client), AzureOpenAIInferenceService (server), MockInferenceService (tests)
 // SOLID: DIP — callers depend on this interface, not on a concrete implementation

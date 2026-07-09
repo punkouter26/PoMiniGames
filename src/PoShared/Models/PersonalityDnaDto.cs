@@ -1,4 +1,4 @@
-namespace PoSurvive.Shared.Models;
+namespace PoShared.Simulation.Models;
 
 /// <summary>Used as input to IInferenceService.InferAsync.</summary>
 public record PersonalityDnaDto(

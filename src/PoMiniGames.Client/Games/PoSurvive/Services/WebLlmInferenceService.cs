@@ -1,9 +1,9 @@
-namespace PoSurvive.Client.Services;
+namespace PoMiniGamesClient.Games.PoSurvive.Services;
 
 using System.Text.Json;
 using Microsoft.JSInterop;
-using PoSurvive.Shared.Interfaces;
-using PoSurvive.Shared.Models;
+using PoShared.Simulation.Interfaces;
+using PoShared.Simulation.Models;
 
 // GoF: Strategy — real WebLLM implementation; registered in DI only when InferenceMode != Mock
 // SOLID: SRP — responsible solely for bridging Blazor to the JS inferenceWorker.js

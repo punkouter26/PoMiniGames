@@ -1,9 +1,9 @@
-namespace PoSurvive.Server.Endpoints;
+namespace PoMiniGames.Features.PoSurvive.Endpoints;
 
 using Microsoft.AspNetCore.Mvc;
-using PoSurvive.Server.Storage;
-using PoSurvive.Shared.Interfaces;
-using PoSurvive.Shared.Models;
+using PoMiniGames.Features.PoSurvive.Storage;
+using PoShared.Simulation.Interfaces;
+using PoShared.Simulation.Models;
 
 /// <summary>
 /// T076a: POST /api/infer — server-side relay that proxies inference requests to
@@ -17,13 +17,18 @@ public static class InferEndpoints
 {
     public static IEndpointRouteBuilder MapInferEndpoints(this IEndpointRouteBuilder routes)
     {
-        routes.MapPost("/api/infer", HandleAsync)
-              .WithName("Infer")
-              .WithSummary("Relay inference request to Azure OpenAI (cloud fallback only).")
-              .RequireRateLimiting("infer")
-              .Produces<InferenceResult>(StatusCodes.Status200OK)
-              .ProducesValidationProblem()
-              .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
+        // §1 NET_CLEAN_10: single-endpoint slices still use MapGroup so the
+        // route prefix + OpenAPI tag + auth gate are declared once at the group
+        // boundary (mirrors the convention in every other slice).
+        var group = routes.MapGroup("/api/infer").WithTags("PoSurvive");
+
+        group.MapPost("", HandleAsync)
+             .WithName("Infer")
+             .WithSummary("Relay inference request to Azure OpenAI (cloud fallback only).")
+             .RequireRateLimiting("infer")
+             .Produces<InferenceResult>(StatusCodes.Status200OK)
+             .ProducesValidationProblem()
+             .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
 
         return routes;
     }

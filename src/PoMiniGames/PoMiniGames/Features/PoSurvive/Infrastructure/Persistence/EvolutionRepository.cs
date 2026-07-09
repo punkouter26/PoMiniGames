@@ -1,10 +1,10 @@
-namespace PoSurvive.Infrastructure.Persistence.TableStorage;
+namespace PoMiniGames.Features.PoSurvive.Infrastructure.Persistence;
 
 using Azure;
 using Azure.Data.Tables;
 using Microsoft.Extensions.Configuration;
-using PoSurvive.Application.Interfaces;
-using PoSurvive.Domain.Entities;
+using PoMiniGames.Application.Simulation;
+using PoMiniGames.Domain.Entities.Simulation;
 
 /// <summary>
 /// Azure Table Storage implementation of IEvolutionRepository.

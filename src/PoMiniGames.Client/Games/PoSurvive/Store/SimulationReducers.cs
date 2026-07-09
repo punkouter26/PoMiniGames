@@ -1,4 +1,4 @@
-namespace PoSurvive.Client.Store;
+namespace PoMiniGamesClient.Games.PoSurvive.Store;
 
 using Fluxor;
 

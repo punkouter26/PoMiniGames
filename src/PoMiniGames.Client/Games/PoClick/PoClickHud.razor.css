@@ -1,0 +1,22 @@
+/* PoClickHud scoped styles.
+   §7 #NET_CLEAN_10: static inline styles in PoClickHud.razor are lifted here
+   so theme accent tokens (--accent-*) swap propagate without touching markup. */
+
+/* Visualizer click surface — was
+   <div class="visualizer-container …" style="cursor: pointer; touch-action: manipulation;"> */
+.visualizer-container.is-interactive {
+    cursor: pointer;
+    touch-action: manipulation;
+}
+
+/* Beat icon sizing — was <i class="rzi beat-icon …" style="font-size: 3rem;"> */
+.beat-icon--large {
+    font-size: 3rem;
+}
+
+/* Stat-value color modifiers — were
+   <div class="hud-value" style="color: var(--accent-yellow);"> etc. */
+.hud-value--streak  { color: var(--accent-yellow); }
+.hud-value--score   { color: var(--accent-cyan); }
+.hud-value--perfect { color: var(--accent-green); }
+.hud-value--miss    { color: var(--accent-red); }

@@ -1,6 +1,6 @@
-namespace PoSurvive.Domain.Entities;
+namespace PoMiniGames.Domain.Entities.Simulation;
 
-using PoSurvive.Domain.Enums;
+using PoMiniGames.Domain.Enums.Simulation;
 
 public sealed class GridTile
 {

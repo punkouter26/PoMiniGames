@@ -1,4 +1,4 @@
-namespace PoSurvive.Domain.Entities;
+namespace PoMiniGames.Domain.Entities.Simulation;
 
 public sealed class FoodNode
 {

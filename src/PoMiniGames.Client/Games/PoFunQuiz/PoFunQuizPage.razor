@@ -196,14 +196,14 @@
             <div>@_playerName: <strong>@_score1</strong> (best streak @_maxStreak1)</div>
             <div>@_player2Name: <strong>@_score2</strong> (best streak @_maxStreak2)</div>
             <div class="fq-leaderboard-cta">
-                <a class="fq-btn fq-btn-secondary" href="/funquiz?mode=2ps">Play split-screen again</a>
+                <a class="gps-btn gps-btn gps-btn--secondary" href="/funquiz?mode=2ps">Play split-screen again</a>
             </div>
         </div>,
         _ => @<div>
             <div>Final score: <strong>@_score</strong></div>
             <div>Max streak: @_maxStreak</div>
             <div class="fq-leaderboard-cta">
-                <a class="fq-btn fq-btn-secondary" href="/funquiz/leaderboard?category=@Uri.EscapeDataString(_category)">View leaderboard</a>
+                <a class="gps-btn gps-btn gps-btn--secondary" href="/funquiz/leaderboard?category=@Uri.EscapeDataString(_category)">View leaderboard</a>
             </div>
         </div>,
     };

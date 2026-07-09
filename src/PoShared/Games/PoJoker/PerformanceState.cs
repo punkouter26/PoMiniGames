@@ -2,7 +2,7 @@ namespace PoShared.Games.PoJoker;
 
 /// <summary>
 /// Represents the five-act performance state machine.
-/// Per spec: Fetching → Setup → Guess → Reveal → Transition.
+/// Per spec: Fetching -> Setup -> Guess -> Reveal -> Transition.
 /// </summary>
 public enum PerformanceState
 {

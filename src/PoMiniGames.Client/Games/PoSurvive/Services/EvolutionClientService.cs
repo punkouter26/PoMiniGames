@@ -1,8 +1,8 @@
-namespace PoSurvive.Client.Services;
+namespace PoMiniGamesClient.Games.PoSurvive.Services;
 
 using System.Net.Http.Json;
 using PoMiniGamesClient.Services;
-using PoSurvive.Shared.Models;
+using PoShared.Simulation.Models;
 
 /// <summary>
 /// Client-side service that calls the server evolution API endpoints.

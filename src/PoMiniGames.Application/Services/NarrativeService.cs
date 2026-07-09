@@ -1,9 +1,9 @@
-namespace PoSurvive.Application.Services;
+namespace PoMiniGames.Application.Simulation;
 
-using PoSurvive.Application.DTOs;
-using PoSurvive.Domain.Entities;
-using PoSurvive.Domain.Enums;
-using PoSurvive.Shared.Models;
+using PoMiniGames.Application.Simulation;
+using PoMiniGames.Domain.Entities.Simulation;
+using PoMiniGames.Domain.Enums.Simulation;
+using PoShared.Simulation.Models;
 
 // GoF: Template Method — GenerateNarrative() selects and fills in a template based on outcome + winner DNA
 public sealed class NarrativeService

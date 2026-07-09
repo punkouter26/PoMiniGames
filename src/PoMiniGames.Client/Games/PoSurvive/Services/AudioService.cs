@@ -1,4 +1,4 @@
-namespace PoSurvive.Client.Services;
+namespace PoMiniGamesClient.Games.PoSurvive.Services;
 
 using Microsoft.JSInterop;
 

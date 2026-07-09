@@ -1,12 +1,12 @@
-namespace PoSurvive.Infrastructure.Persistence.TableStorage;
+namespace PoMiniGames.Features.PoSurvive.Infrastructure.Persistence;
 
 using System.Text.Json;
 using Azure.Data.Tables;
 using Microsoft.Extensions.Configuration;
 using PoMiniGames.Infrastructure.Storage;
-using PoSurvive.Application.Interfaces;
-using PoSurvive.Domain.Entities;
-using PoSurvive.Shared.Models;
+using PoMiniGames.Application.Simulation;
+using PoMiniGames.Domain.Entities.Simulation;
+using PoShared.Simulation.Models;
 
 // GoF: Repository — abstracts Azure Table Storage persistence behind ISessionRepository
 public sealed class SessionRepository : ISessionRepository

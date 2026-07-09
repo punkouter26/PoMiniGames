@@ -1,9 +1,9 @@
-namespace PoSurvive.Server.Endpoints;
+namespace PoMiniGames.Features.PoSurvive.Endpoints;
 
 using Microsoft.AspNetCore.Mvc;
-using PoSurvive.Application.Services;
-using PoSurvive.Domain.ValueObjects;
-using PoSurvive.Shared.Models;
+using PoMiniGames.Application.Simulation;
+using PoMiniGames.Domain.ValueObjects.Simulation;
+using PoShared.Simulation.Models;
 
 /// <summary>
 /// API endpoints for LLM-Powered Agent Evolution.

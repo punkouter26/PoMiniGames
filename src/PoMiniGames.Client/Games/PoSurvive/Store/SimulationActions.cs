@@ -1,6 +1,6 @@
-namespace PoSurvive.Client.Store;
+namespace PoMiniGamesClient.Games.PoSurvive.Store;
 
-using PoSurvive.Shared.Models;
+using PoShared.Simulation.Models;
 
 // ─── Session lifecycle ────────────────────────────────────────────────────────
 

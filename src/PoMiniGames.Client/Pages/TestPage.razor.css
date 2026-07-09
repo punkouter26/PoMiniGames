@@ -1,0 +1,55 @@
+.test-section {
+        margin: 20px 0;
+        padding: 16px;
+        background: rgba(99, 102, 241, 0.05);
+        border-left: 4px solid #6366f1;
+        border-radius: 4px;
+    }
+
+    .test-section h2 {
+        margin: 0 0 12px 0;
+        font-size: 14px;
+        font-weight: 600;
+        color: #6366f1;
+    }
+
+    .test-btn {
+        display: inline-block;
+        padding: 8px 12px;
+        margin: 4px 4px 4px 0;
+        background: #6366f1;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        font-size: 13px;
+        cursor: pointer;
+        transition: background 0.2s;
+    }
+
+    .test-btn:hover {
+        background: #4f46e5;
+    }
+
+    .test-desc {
+        margin: 8px 0 0 0;
+        font-size: 12px;
+        color: #666;
+    }
+
+    .test-endpoints {
+        list-style: none;
+        padding: 0;
+        margin: 8px 0;
+    }
+
+    .test-endpoints li {
+        padding: 4px 0;
+        font-size: 12px;
+    }
+
+    code {
+        background: #f3f4f6;
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-family: monospace;
+    }

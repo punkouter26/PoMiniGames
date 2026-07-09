@@ -150,7 +150,7 @@ public sealed record LeaderboardEntryDto
     /// <summary>Number of AI triumphs.</summary>
     public int Triumphs { get; init; }
 
-    /// <summary>Triumph rate as a decimal fraction (0.0–1.0). Use P1 format to display as percentage.</summary>
+    /// <summary>Triumph rate as a decimal fraction (0.0-1.0). Use P1 format to display as percentage.</summary>
     public double TriumphRate { get; init; }
 
     /// <summary>Score calculated for ranking. Formula: (Triumphs * 100) + (TriumphRate * 1000).</summary>

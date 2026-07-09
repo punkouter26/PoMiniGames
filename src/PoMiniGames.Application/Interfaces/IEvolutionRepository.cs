@@ -1,6 +1,6 @@
-namespace PoSurvive.Application.Interfaces;
+namespace PoMiniGames.Application.Simulation;
 
-using PoSurvive.Domain.Entities;
+using PoMiniGames.Domain.Entities.Simulation;
 
 /// <summary>Repository for persisting and querying DNA evolution records.</summary>
 public interface IEvolutionRepository

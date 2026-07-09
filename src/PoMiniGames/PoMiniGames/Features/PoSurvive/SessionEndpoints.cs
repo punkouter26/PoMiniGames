@@ -1,22 +1,27 @@
-namespace PoSurvive.Server.Endpoints;
+namespace PoMiniGames.Features.PoSurvive.Endpoints;
 
 using Microsoft.AspNetCore.Http.HttpResults;
-using PoSurvive.Application.Interfaces;
-using PoSurvive.Domain.Entities;
-using PoSurvive.Domain.Enums;
-using PoSurvive.Domain.ValueObjects;
-using PoSurvive.Shared.Models;
+using PoMiniGames.Application.Simulation;
+using PoMiniGames.Domain.Entities.Simulation;
+using PoMiniGames.Domain.Enums.Simulation;
+using PoMiniGames.Domain.ValueObjects.Simulation;
+using PoShared.Simulation.Models;
 
 public static class SessionEndpoints
 {
     public static IEndpointRouteBuilder MapSessionEndpoints(this IEndpointRouteBuilder routes)
     {
-        routes.MapPost("/api/sessions", PostSessionAsync)
-              .WithName("PostSession")
-              .WithSummary("Persist a completed simulation session summary.")
-              .Produces<SessionPersistedResponse>(StatusCodes.Status201Created)
-              .ProducesValidationProblem()
-              .ProducesProblem(StatusCodes.Status500InternalServerError);
+        // §1 NET_CLEAN_10: single-endpoint slices still use MapGroup so the
+        // route prefix + OpenAPI tag + auth gate are declared once at the group
+        // boundary (mirrors the convention in every other slice).
+        var group = routes.MapGroup("/api/sessions").WithTags("PoSurvive");
+
+        group.MapPost("", PostSessionAsync)
+             .WithName("PostSession")
+             .WithSummary("Persist a completed simulation session summary.")
+             .Produces<SessionPersistedResponse>(StatusCodes.Status201Created)
+             .ProducesValidationProblem()
+             .ProducesProblem(StatusCodes.Status500InternalServerError);
 
         return routes;
     }

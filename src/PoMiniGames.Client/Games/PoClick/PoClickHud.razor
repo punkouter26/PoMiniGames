@@ -48,19 +48,19 @@
             <div class="hud-grid mt-4">
                 <div class="hud-item @(StreakGlow ? "updated" : "")">
                     <div class="hud-label">Streak</div>
-                    <div class="hud-value" style="color: var(--accent-yellow);">@CurrentStreak</div>
+                    <div class="hud-value hud-value--streak">@CurrentStreak</div>
                 </div>
                 <div class="hud-item @(ScoreGlow ? "updated" : "")">
                     <div class="hud-label">Points</div>
-                    <div class="hud-value" style="color: var(--accent-cyan);">@RunningScore</div>
+                    <div class="hud-value hud-value--score">@RunningScore</div>
                 </div>
                 <div class="hud-item @(PerfectsGlow ? "updated" : "")">
                     <div class="hud-label">Perfects</div>
-                    <div class="hud-value" style="color: var(--accent-green);">@PerfectCount</div>
+                    <div class="hud-value hud-value--perfect">@PerfectCount</div>
                 </div>
                 <div class="hud-item @(MissesGlow ? "updated" : "")">
                     <div class="hud-label">Misses</div>
-                    <div class="hud-value" style="color: var(--accent-red);">@MissCount</div>
+                    <div class="hud-value hud-value--miss">@MissCount</div>
                 </div>
             </div>
 

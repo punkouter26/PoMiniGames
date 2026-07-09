@@ -1,7 +1,7 @@
-namespace PoSurvive.Application.Interfaces;
+namespace PoMiniGames.Application.Simulation;
 
-using PoSurvive.Domain.Entities;
-using PoSurvive.Shared.Models;
+using PoMiniGames.Domain.Entities.Simulation;
+using PoShared.Simulation.Models;
 
 // SOLID: DIP — Application depends on this abstraction; Infrastructure provides the implementation
 public interface ISessionRepository

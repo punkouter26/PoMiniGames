@@ -24,7 +24,7 @@
         }
         else if (!string.IsNullOrEmpty(_error))
         {
-            <p class="fq-error">@_error <button class="fq-btn fq-btn-secondary" @onclick="ReloadAsync">Retry</button></p>
+            <p class="fq-error">@_error <button class="gps-btn gps-btn gps-btn--secondary" @onclick="ReloadAsync">Retry</button></p>
         }
         else if (_entries.Count == 0)
         {
@@ -52,8 +52,8 @@
             </table>
         }
         <div class="fq-leaderboard-actions">
-            <a class="fq-btn fq-btn-primary" href="/funquiz">Play again</a>
-            <a class="fq-btn fq-btn-secondary" href="/leaderboards">All leaderboards</a>
+            <a class="gps-btn gps-btn gps-btn--primary" href="/funquiz">Play again</a>
+            <a class="gps-btn gps-btn gps-btn--secondary" href="/leaderboards">All leaderboards</a>
         </div>
     </div>
 </GameShell>

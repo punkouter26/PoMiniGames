@@ -23,7 +23,7 @@
             <p class="cq-question">@_currentQuestion</p>
             <input @bind="_myAnswer" placeholder="@(_isKing ? "Your secret answer (1-2 words)" : "Your guess")" maxlength="60" />
             <div class="cq-actions">
-                <button class="cq-btn cq-btn-primary" @onclick="Submit" disabled="@string.IsNullOrWhiteSpace(_myAnswer)">Submit</button>
+                <button class="gps-btn gps-btn gps-btn--primary" @onclick="Submit" disabled="@string.IsNullOrWhiteSpace(_myAnswer)">Submit</button>
             </div>
 
             @if (_phase == "Results")
@@ -45,7 +45,7 @@
                 </div>
                 @if (_isHost)
                 {
-                    <button class="cq-btn cq-btn-primary" @onclick="NextRound">Next round</button>
+                    <button class="gps-btn gps-btn gps-btn--primary" @onclick="NextRound">Next round</button>
                 }
                 else
                 {
@@ -64,7 +64,7 @@
                             <li>@kv.Key — @kv.Value</li>
                         }
                     </ol>
-                    <a class="cq-btn cq-btn-primary" href="/couplequiz/leaderboard">View leaderboard</a>
+                    <a class="gps-btn gps-btn gps-btn--primary" href="/couplequiz/leaderboard">View leaderboard</a>
                 </div>
             }
         </div>

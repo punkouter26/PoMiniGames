@@ -1,11 +1,10 @@
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Options;
-using PoSurvive.Application.Interfaces;
-using PoSurvive.Application.Services;
-using PoSurvive.Infrastructure.Persistence.TableStorage;
-using PoSurvive.Server.Endpoints;
-using PoSurvive.Server.Storage;
-using PoSurvive.Shared.Interfaces;
+using PoMiniGames.Application.Simulation;
+using PoMiniGames.Features.PoSurvive.Infrastructure.Persistence;
+using PoMiniGames.Features.PoSurvive.Endpoints;
+using PoMiniGames.Features.PoSurvive.Storage;
+using PoShared.Simulation.Interfaces;
 
 namespace PoMiniGames.Features.PoSurvive;
 

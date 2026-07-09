@@ -1,9 +1,9 @@
-namespace PoSurvive.Application.Services;
+namespace PoMiniGames.Application.Simulation;
 
-using PoSurvive.Application.DTOs;
-using PoSurvive.Domain.Entities;
-using PoSurvive.Domain.Enums;
-using PoSurvive.Shared.Constants;
+using PoMiniGames.Application.Simulation;
+using PoMiniGames.Domain.Entities.Simulation;
+using PoMiniGames.Domain.Enums.Simulation;
+using PoShared.Simulation.Constants;
 
 // GoF: Template Method — Tick() defines the invariant heartbeat algorithm; subclasses (if any) override steps
 // SOLID: OCP — new resolution strategies can be injected without modifying the template
@@ -214,7 +214,7 @@ public sealed class SimulationEngine
         var src = GridService.TileAt(grid, agent.Position.X, agent.Position.Y)!;
         src.Occupant  = null;
         dest.Occupant = agent;
-        agent.Position = new Domain.ValueObjects.GridCoordinate(dest.X, dest.Y);
+        agent.Position = new Domain.ValueObjects.Simulation.GridCoordinate(dest.X, dest.Y);
     }
 
     private static void RemoveFromGrid(GridTile[] grid, Agent agent)
@@ -235,10 +235,10 @@ public sealed class SimulationEngine
         }
     }
 
-    private static int Manhattan(Domain.ValueObjects.GridCoordinate pos, Domain.ValueObjects.GridCoordinate other)
+    private static int Manhattan(Domain.ValueObjects.Simulation.GridCoordinate pos, Domain.ValueObjects.Simulation.GridCoordinate other)
         => Math.Abs(pos.X - other.X) + Math.Abs(pos.Y - other.Y);
 
-    private static int Manhattan(Domain.ValueObjects.GridCoordinate pos, int x, int y)
+    private static int Manhattan(Domain.ValueObjects.Simulation.GridCoordinate pos, int x, int y)
         => Math.Abs(pos.X - x) + Math.Abs(pos.Y - y);
 
     private static int Manhattan(int x1, int y1, int x2, int y2)

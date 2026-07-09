@@ -50,16 +50,16 @@
     else
     {
         <!-- Game Play Screen -->
-        <GameHud Bpm="@bpm" TimeLeft="@timeLeft"
-                 CurrentStreak="@currentStreak" RunningScore="@runningScore"
-                 PerfectCount="@perfectCount" MissCount="@missCount"
-                 IsFlashing="@isFlashing" ShowFeedback="@showFeedback"
-                 FeedbackText="@feedbackText" FeedbackClass="@feedbackClass"
-                 LastOffsetMs="@lastOffsetMs"
-                 StreakGlow="@_streakGlow" ScoreGlow="@_scoreGlow"
-                 PerfectsGlow="@_perfectsGlow" MissesGlow="@_missesGlow"
-                 MissFlash="@_missFlash"
-                 OnAbort="StopGame" OnTap="HandleTapAsync" />
+        <PoClickHud Bpm="@bpm" TimeLeft="@timeLeft"
+                    CurrentStreak="@currentStreak" RunningScore="@runningScore"
+                    PerfectCount="@perfectCount" MissCount="@missCount"
+                    IsFlashing="@isFlashing" ShowFeedback="@showFeedback"
+                    FeedbackText="@feedbackText" FeedbackClass="@feedbackClass"
+                    LastOffsetMs="@lastOffsetMs"
+                    StreakGlow="@_streakGlow" ScoreGlow="@_scoreGlow"
+                    PerfectsGlow="@_perfectsGlow" MissesGlow="@_missesGlow"
+                    MissFlash="@_missFlash"
+                    OnAbort="StopGame" OnTap="HandleTapAsync" />
     }
 </GameShell>
 

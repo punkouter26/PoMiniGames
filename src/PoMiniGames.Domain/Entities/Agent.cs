@@ -1,7 +1,7 @@
-namespace PoSurvive.Domain.Entities;
+namespace PoMiniGames.Domain.Entities.Simulation;
 
-using PoSurvive.Domain.Enums;
-using PoSurvive.Domain.ValueObjects;
+using PoMiniGames.Domain.Enums.Simulation;
+using PoMiniGames.Domain.ValueObjects.Simulation;
 
 // SOLID: SRP — Agent owns only its own state; all behaviour is in external service classes
 public sealed class Agent

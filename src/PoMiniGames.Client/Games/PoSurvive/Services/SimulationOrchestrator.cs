@@ -1,17 +1,16 @@
-namespace PoSurvive.Client.Services;
+namespace PoMiniGamesClient.Games.PoSurvive.Services;
 
 using System.Text.Json;
 using Fluxor;
 using PoMiniGamesClient.Services;
-using PoSurvive.Application.DTOs;
-using PoSurvive.Application.Services;
-using PoSurvive.Client.Store;
-using PoSurvive.Domain.Entities;
-using PoSurvive.Domain.Enums;
-using PoSurvive.Domain.ValueObjects;
-using PoSurvive.Shared.Interfaces;
-using PoSurvive.Shared.Models;
-using PoSurvive.Shared.Constants;
+using PoMiniGames.Application.Simulation;
+using PoMiniGamesClient.Games.PoSurvive.Store;
+using PoMiniGames.Domain.Entities.Simulation;
+using PoMiniGames.Domain.Enums.Simulation;
+using PoMiniGames.Domain.ValueObjects.Simulation;
+using PoShared.Simulation.Interfaces;
+using PoShared.Simulation.Models;
+using PoShared.Simulation.Constants;
 
 /// <summary>
 /// Singleton service that holds the mutable domain model for a running simulation and

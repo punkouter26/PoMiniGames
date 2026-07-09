@@ -1,14 +1,14 @@
-﻿@page "/posurvive"
+@page "/posurvive"
 @* PoSurvive intentionally uses its own `PoSurviveLayout` (C64 retro theme)
    instead of the standard `MainLayout` and renders without `GameShell`.
    The opt-out is deliberate — its CRT-styled shell, Fluxor store, and
    idle screen are part of the game's identity and pre-date the
    PoMiniGames shell contract. See AGENT.MD for the architectural decision log. *@
 @layout PoSurviveLayout
-@using PoSurvive.Client.Features.Grid
-@using PoSurvive.Client.Services
+@using PoMiniGamesClient.Games.PoSurvive.Features.Grid
+@using PoMiniGamesClient.Games.PoSurvive.Services
 @using PoMiniGamesClient.Services
-@using PoSurvive.Client.Store
+@using PoMiniGamesClient.Games.PoSurvive.Store
 @inherits Fluxor.Blazor.Web.Components.FluxorComponent
 @implements IDisposable
 @inject NavigationManager Nav
@@ -20,7 +20,7 @@
 @inject InferenceRouter?         InferenceRouterOrNull
 @inject LocalModelBootstrapService ModelBootstrap
 @inject KioskCoordinator         Kiosk
-@inject PoSurvive.Client.Services.SimulationLaunchService LaunchService
+@inject PoMiniGamesClient.Games.PoSurvive.Services.SimulationLaunchService LaunchService
 
 <div data-testid="grid-container">
     @if (!SimState.Value.IsRunning && SimState.Value.Agents.Count == 0 && !SimState.Value.ShowPostMortem)

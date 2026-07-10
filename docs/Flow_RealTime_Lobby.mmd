@@ -1,0 +1,64 @@
+graph LR
+    %% Flow_RealTime_Lobby.mmd
+    %% Client-side processing vs async backend state propagation, server-validated
+    %% SignalR Hub states, and user connectivity lifecycles.
+    %%
+    %% Reference: PoRacer lobby-hub + race-hub (Features/PoRacer/*)
+    %% Single global lobby room; first arrival is host; ServerTick 20Hz.
+
+    subgraph Client["Client (Blazor WASM)"]
+        direction TB
+        C_HubOpen["HubConnection /poracer/lobby-hub<br/>.start()"]
+        C_Join["hub.invoke('Join', name, isGuest)"]
+        C_Toggle["hub.invoke('ToggleReady')"]
+        C_Start["hub.invoke('StartGame')<br/>(host only)"]
+        C_Race["HubConnection /poracer/race-hub<br/>.start()"]
+        C_Input["hub.invoke('SendInput', code, PoRacerInput)"]
+        C_State["@state PoRacerLobbyState<br/>local projection"]
+        C_Snap["Apply PoRacerRaceSnapshot at 20 Hz<br/>Canvas / Babylon render"]
+        C_Final["Handle raceFinished → leaderboard"]
+        C_Disc["onClosed / onReconnecting / onReconnected<br/>CircuitState"]
+    end
+
+    subgraph Server["Server (ASP.NET Core SignalR)"]
+        direction TB
+        S_LobbyHub["PoRacerLobbyHub<br/>OnConnectedAsync<br/>→ AddToGroup('poracer-lobby')"]
+        S_LobbySvc["PoRacerLobbyService<br/>Server-validated state"]
+        S_Registry["PoRacerRaceRegistry<br/>(per-game-code)"]
+        S_RaceSvc["PoRacerRaceService<br/>~20 Hz tick loop<br/>SnapshotReady event"]
+        S_HubCtx["IHubContext<PoRacerRaceHub><br/>(long-lived broadcast)"]
+        S_RaceHub["PoRacerRaceHub<br/>per-race group<br/>poracer-race-{CODE}"]
+        S_Lifecycle["OnDisconnectedAsync<br/>Lobby.Leave +<br/>RaceRegistry.RemoveConnection"]
+        S_Final["race.Finished → broadcast finalResult<br/>+ delayed disposal (5 s)"]
+    end
+
+    C_HubOpen -- "WS upgrade" --> S_LobbyHub
+    C_Join -- "RPC" --> S_LobbySvc
+    S_LobbySvc -- "Clients.Group('poracer-lobby')<br/>.lobbyState + .lobbyEvent" --> C_State
+    C_Toggle -- "RPC" --> S_LobbySvc
+    S_LobbySvc -- "re-broadcast state" --> C_State
+
+    C_Start -- "host only" --> S_LobbySvc
+    S_LobbySvc -- "TryStart" --> S_RaceSvc
+    S_RaceSvc -- "_races.GetOrCreateAsync(code)<br/>+ Clients.Group gameStarted" --> C_State
+
+    C_Race -- "WS upgrade" --> S_RaceHub
+    S_RaceHub -- "join race group" --> S_Registry
+    C_Input -- "RPC:PoRacerInput" --> S_RaceSvc
+
+    S_RaceSvc -- "20 Hz" --> S_HubCtx
+    S_HubCtx -- "Clients.Group('poracer-race-{CODE}')<br/>.raceSnapshot" --> C_Snap
+
+    S_RaceSvc -- "race end" --> S_Final
+    S_Final -- ".raceFinished" --> C_Final
+
+    C_Disc -. "WebSocket drop" .-> S_Lifecycle
+    S_Lifecycle -- ".lobbyState updated" --> C_State
+
+    classDef client fill:#dcfce7,stroke:#166534,color:#111;
+    classDef server fill:#dbeafe,stroke:#1d4ed8,color:#111;
+    classDef stream fill:#fef3c7,stroke:#92400e,color:#111;
+
+    class C_HubOpen,C_Join,C_Toggle,C_Start,C_Race,C_Input,C_State,C_Snap,C_Final,C_Disc client
+    class S_LobbyHub,S_LobbySvc,S_Registry,S_RaceSvc,S_HubCtx,S_RaceHub,S_Lifecycle,S_Final server
+    class S_RaceSvc,S_HubCtx,C_Snap stream

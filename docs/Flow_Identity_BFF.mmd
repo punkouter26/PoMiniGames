@@ -1,0 +1,86 @@
+graph TD
+    %% Flow_Identity_BFF.mmd
+    %% Multi-tenant Entra ID OIDC challenge path, server-managed HttpOnly
+    %% cookie loops, and /auth/me local path redirection gates.
+    %%
+    %% Branches:
+    %%   Production: MS OAuth only — no Guest, no FakeAuth
+    %%   Development: MS OAuth + Guest (Continue as Guest), AutoGuestLogin opt-in
+    %%   Test: Guest auto via ?autoGuest=1 or X-Fake-User header
+
+    Player(["📱 Player (mobile)"])
+
+    Browser["SPA init<br/>App.razor → AuthGate"]
+    Handshake[/"GET /api/auth/handshake<br/>single RTT"/]
+    DecisionAuth{Is Authenticated?}
+
+    subgraph ProdFlow["Production path"]
+        P_Config["microsoftEnabled + microsoftConfigured<br/>clientId · msalAuthority · redirectPath"]
+        P_MSAL["MSAL.js<br/>acquireTokenSilent/Popup<br/>→ Entra ID OIDC challenge"]
+        P_Callback["SPA → /auth/login/microsoft"]
+        P_Cookie["Mint DevCookie / set DevAuth cookie<br/>(HttpOnly · SameSite=Strict · loopback in Dev)"]
+    end
+
+    subgraph DevFlow["Development / Test"]
+        D_Config["devLoginEnabled = true<br/>Guest button shown"]
+        D_Guest["POST /api/auth/dev-bypass?user=…"]
+        D_AutoGuest["?autoGuest=1 → silent Guest"]
+        D_Fake["X-Fake-User header<br/>(Test only)"]
+    end
+
+    ValidateReturn["ResolveLocalReturnUrl(returnUrl)<br/>must be a local relative path<br/>(anti open-redirect)"]
+
+    LoopbackGate{Loopback peer?}
+    DevGate{IsDevelopment or Test?}
+    ProdGate{Production?}
+    AutoGuest{AutoGuestLogin<br/>= true?}
+
+    Forbidden404["404<br/>(Forced AuthSurface map)"]
+    StartupCheck["Program.cs throws if<br/>FakeAuth registered in Prod<br/>or AutoGuestLogin=true in Prod"]
+
+    AfterHandshake[/"AuthState {authed, oauthConfigured, profile}"/]
+
+    Player --> Browser
+    Browser --> Handshake
+    Handshake --> DecisionAuth
+
+    DecisionAuth -- yes --> AfterHandshake
+    DecisionAuth -- no --> DevGate
+
+    DevGate -- yes --> DevFlow
+    DevGate -- no --> ProdGate
+
+    ProdGate -- yes --> ProdFlow
+    ProdGate -- no --> StartupCheck
+
+    %% Production flow
+    P_Config --> P_MSAL
+    P_MSAL -- "Entra ID allow-lists<br/>common · organizations · consumers<br/>+ AllowedTenantIds" --> P_Callback
+    P_Callback --> P_Cookie
+    P_Cookie --> ValidateReturn
+
+    %% Dev/Test flow
+    D_Config --> D_Guest
+    D_Config --> D_Fake
+    D_Config --> AutoGuest
+    AutoGuest -- yes --> D_AutoGuest
+    AutoGuest -- no --> D_Guest
+    D_Guest --> LoopbackGate
+    LoopbackGate -- no --> Forbidden404
+    LoopbackGate -- yes --> P_Cookie
+    D_Fake --> P_Cookie
+    D_AutoGuest --> P_Cookie
+
+    ValidateReturn --> AfterHandshake
+
+    AfterHandshake --> RouteTable["AuthorizeRouteView renders router<br/>(/api/{slice} gated game API)"]
+
+    classDef prod fill:#fef3c7,stroke:#92400e,color:#111;
+    classDef dev  fill:#dcfce7,stroke:#166534,color:#111;
+    classDef fail fill:#fee2e2,stroke:#991b1b,color:#111;
+    classDef core fill:#dbeafe,stroke:#1d4ed8,color:#111;
+
+    class P_Config,P_MSAL,P_Callback,P_Cookie prod
+    class D_Config,D_Guest,D_AutoGuest,D_Fake dev
+    class Forbidden404,StartupCheck fail
+    class Handshake,DecisionAuth,AfterHandshake,ValidateReturn,DevGate,ProdGate,LoopbackGate,AutoGuest,RouteTable core

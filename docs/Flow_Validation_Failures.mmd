@@ -1,0 +1,93 @@
+graph TD
+    %% Flow_Validation_Failures.mmd
+    %% Native input processing pipelines mapping UI component validation rules
+    %% against backend exceptions inside a single Vertical Slice.
+    %%
+    %% Reference slice: PoRacer score submission (Features/PoRacer/PoRacerScoreEndpoints.cs)
+    %% Anti-spoof: PlayerDisplayName coerced from auth claims (never trust client).
+
+    Player(["📱 Player"])
+
+    subgraph Client["PoMiniGames.Client (Blazor WASM)"]
+        direction TB
+        Form["EditForm + DataAnnotationsValidator<br/>PlayerStatsInput (TotalTimeSeconds, FinalPosition)"]
+        Live["LiveDataAnnotationsValidator<br/>(per-keystroke)"]
+        Disabled["Submit disabled until valid"]
+        Submit["OnValidSubmit → Typed HttpClient"]
+    end
+
+    subgraph Network["Standard Resilience"]
+        Retry["Standard resilience handler<br/>retry x3 + exp backoff + breaker"]
+        Circuit["Circuit breaker open → fallback"]
+    end
+
+    subgraph Host["ASP.NET Core Minimal API"]
+        direction TB
+        Auth["Authorize attribute<br/>auth-cookie bearer/JWT"]
+        Bind["Model binding<br/>System.Text.Json → PoRacerScoreDto"]
+        SliceValidate["Slice handler validation<br/>TotalTimeSeconds 1..3600<br/>FinalPosition 1..8<br/>playerName anti-spoof (auth-coerced)"]
+        Cooldown["Cooldown per userId (≥ 30 s)"]
+        Repo["SaveHighScoreAsync(dto, userId)"]
+        ValidateProblem["Results.ValidationProblem(errors)<br/>(per-field 400)"]
+        NoContent["204 NoContent"]
+        BadReq["Results.BadRequest"]
+        ServerErr["500 internal (storage down)"]
+    end
+
+    subgraph Table["Azure Table Storage"]
+        Upsert["Upsert PoRacerHighScores<br/>PartitionKey = 'poracer'<br/>RowKey = SHA-256(content)"]
+    end
+
+    ClientSideErr["Inline form errors<br/>(DataAnnotations)"]
+    AuthFail["401 → /api/auth/handshake → LoginScreen"]
+    NetworkErr["Network error → retry<br/>or fallback toast"]
+
+    Player --> Form
+    Form --> Live
+    Live -->|invalid| ClientSideErr
+    Live -->|valid| Disabled
+    Disabled --> Submit
+    Submit --> Retry
+    Retry -->|open| Circuit
+    Retry -->|closed| Auth
+    Circuit --> NetworkErr
+
+    Auth -- 401 --> AuthFail
+    Auth -- 200 --> Bind
+    Bind -- "fail" --> BadReq
+    Bind -- "ok" --> SliceValidate
+    SliceValidate -- "fail" --> ValidateProblem
+    SliceValidate -- "ok" --> Cooldown
+    Cooldown -- "fail" --> ValidateProblem
+    Cooldown -- "ok" --> Repo
+    Repo --> Upsert
+    Upsert -- "ok" --> NoContent
+    Upsert -- "fail" --> ServerErr
+
+    ValidateProblem --> ClientSideErr
+
+    %% Validation rules table (annotations)
+    subgraph Rules["Per-slice validation contract (illustrative)"]
+        direction TB
+        R1["TotalTimeSeconds > 0 AND ≤ 3600"]
+        R2["FinalPosition >= 1 AND <= 8"]
+        R3["PlayerDisplayName ← from auth claims<br/>NEVER client-supplied"]
+        R4["Cooldown: now - lastSubmit ≥ 30 s"]
+        R5["Category (PoFunQuiz): enum-mapped"]
+        R6["PoSurvive sessionId != Guid.Empty<br/>outcome ∈ RedWin|BlueWin|Draw<br/>endedAt > startedAt"]
+        R7["Joke analysis: ≤ 2 KB body size"]
+    end
+
+    Rules -. applies to .-> SliceValidate
+
+    classDef err fill:#fee2e2,stroke:#991b1b,color:#111;
+    classDef warn fill:#fef3c7,stroke:#92400e,color:#111;
+    classDef ok fill:#dcfce7,stroke:#166534,color:#111;
+    classDef client fill:#dbeafe,stroke:#1d4ed8,color:#111;
+    classDef host fill:#ede9fe,stroke:#6d28d9,color:#111;
+
+    class ClientSideErr,AuthFail,NetworkErr,BadReq,ValidateProblem,ServerErr err
+    class Circuit,Cooldown,Live warn
+    class NoContent,Disabled,Upsert ok
+    class Form,Live,Disabled,Submit client
+    class Auth,Bind,SliceValidate,Repo host

@@ -40,8 +40,8 @@ export const FIGHTER_CAPSULES = {
     hipR:      { jointA: 'hips',  jointB: 'hipR',     radius: 0.18 },
     thighL:    { jointA: 'hipL',  jointB: 'kneeL',    radius: 0.16 },
     thighR:    { jointA: 'hipR',  jointB: 'kneeR',    radius: 0.16 },
-    shinL:     { jointA: 'kneeL', jointB: 'kneeL',    radius: 0.14, anchorOffset: 0.4 },
-    shinR:     { jointA: 'kneeR', jointB: 'kneeR',    radius: 0.14, anchorOffset: 0.4 },
+    shinL:     { jointA: 'kneeL', jointB: 'footL',    radius: 0.14 },
+    shinR:     { jointA: 'kneeR', jointB: 'footR',    radius: 0.14 },
     upperArmL: { jointA: 'torso', jointB: 'elbowL',   radius: 0.13 },
     upperArmR: { jointA: 'torso', jointB: 'elbowR',   radius: 0.13 },
     forearmL:  { jointA: 'shoulderL', jointB: 'elbowL', radius: 0.11 },
@@ -56,31 +56,32 @@ export const FIGHTER_CAPSULES = {
 
 // Per-attack striker capsules. We split strike vs recovery so a swing that
 // misses never re-strikes on the way back.
+//
+// Strikers follow the ACTUAL fist/shoe meshes (registered as rig joints in
+// fighters.js) — a hit only registers when the visible limb polygons reach
+// the defender. `forwardReach` is now just a small knuckle/toe pad, not the
+// half-meter invisible extension it used to be; the range comes from the
+// stretched strike animation and the attack lunge instead.
 export const ATTACK_CAPSULES = {
   punch: {
     active: {
-      // The punching forearm, slightly extended forward via the fist anchor.
-      rightArm: { jointA: 'shoulderR', jointB: 'elbowR', radius: 0.16,
-                  forwardReach: 0.45 },
-      fist:     { jointA: 'elbowR',    jointB: 'elbowR', radius: 0.16,
-                  forwardReach: 0.55 },
+      forearm: { jointA: 'elbowR', jointB: 'fistR', radius: 0.11 },
+      fist:    { jointA: 'fistR',  jointB: 'fistR', radius: 0.12,
+                 forwardReach: 0.06 },
     },
     // Recovery: capsule shrinks so a follow-up swing is required to hit again.
     recover: {
-      rightArm: { jointA: 'shoulderR', jointB: 'elbowR', radius: 0.10,
-                  forwardReach: 0.25 },
+      forearm: { jointA: 'elbowR', jointB: 'fistR', radius: 0.08 },
     },
   },
   kick: {
     active: {
-      rightLeg: { jointA: 'hipR',      jointB: 'kneeR',  radius: 0.18,
-                  forwardReach: 0.55 },
-      foot:     { jointA: 'kneeR',     jointB: 'kneeR',  radius: 0.16,
-                  forwardReach: 0.75 },
+      shin: { jointA: 'kneeR', jointB: 'footR', radius: 0.13 },
+      foot: { jointA: 'footR', jointB: 'footR', radius: 0.14,
+              forwardReach: 0.08 },
     },
     recover: {
-      rightLeg: { jointA: 'hipR',      jointB: 'kneeR',  radius: 0.10,
-                  forwardReach: 0.30 },
+      shin: { jointA: 'kneeR', jointB: 'footR', radius: 0.09 },
     },
   },
 };
@@ -96,17 +97,10 @@ function capsuleEndpoints(joints, cap, forwardDir) {
   const b = joints[cap.jointB];
   if (!a || !b) return null;
   a.getWorldPosition(_vA);
-  // For shin/foot capsules that share a joint, anchorOffset pushes the second
-  // endpoint down along world -Y (toward the floor).
-  if (cap.anchorOffset) {
-    _vB.copy(_vA);
-    _vB.y -= cap.anchorOffset;
-  } else {
-    b.getWorldPosition(_vB);
-    if (cap.forwardReach && forwardDir) {
-      _fwd.copy(forwardDir).multiplyScalar(cap.forwardReach);
-      _vB.add(_fwd);
-    }
+  b.getWorldPosition(_vB);
+  if (cap.forwardReach && forwardDir) {
+    _fwd.copy(forwardDir).multiplyScalar(cap.forwardReach);
+    _vB.add(_fwd);
   }
   return { a: _vA.clone(), b: _vB.clone() };
 }

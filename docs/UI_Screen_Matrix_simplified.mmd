@@ -1,0 +1,18 @@
+stateDiagram-v2
+    %% UI_Screen_Matrix_simplified.mmd
+    title Client Routes — Auth-Gated States
+
+    [*] --> Loading
+
+    Loading --> LoginScreen : handshake → anon
+    LoginScreen --> Authed : sign-in success
+    Authed --> NotAuthorized : [Authorize] + anon
+    Authed --> NotFound : bad path
+    Authed --> LoggedOut : sign-out
+    LoggedOut --> LoginScreen
+
+    state Authed {
+        [*] --> Solo
+        Solo --> Lobby : tap Play Online
+        Lobby --> Race : host StartGame
+    }

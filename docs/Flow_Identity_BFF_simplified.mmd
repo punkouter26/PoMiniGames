@@ -1,0 +1,19 @@
+graph TD
+    %% Flow_Identity_BFF_simplified.mmd
+
+    Player(["📱 Player"])
+    Handshake[/"GET /api/auth/handshake"/]
+    Authed{Authed?}
+    ProdFlow["MS OAuth (Entra ID, multi-tenant)<br/>MSAL.js → OIDC → cookie"]
+    DevFlow["Dev/Test: Guest via /api/auth/dev-bypass<br/>or ?autoGuest=1 · loopback"]
+    Loopback{Loopback?}
+    Forbidden["404 / startup-throw"]
+    AuthedState[/"AuthState ✓"/]
+
+    Player --> Handshake
+    Handshake --> Authed
+    Authed -- no --> Loopback
+    Authed -- yes --> AuthedState
+    Loopback -- yes --> DevFlow --> AuthedState
+    Loopback -- no --> ProdFlow --> AuthedState
+    ProdFlow -. prod check throws .-> Forbidden

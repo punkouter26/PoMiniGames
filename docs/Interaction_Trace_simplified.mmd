@@ -1,0 +1,25 @@
+sequenceDiagram
+    %% Interaction_Trace_simplified.mmd
+    %% Stakeholder-review condensation.
+
+    autonumber
+    actor User as Player
+    participant Page as Game Page
+    participant Http as Typed HttpClient<br/>(resilient)
+    participant Auth as Auth Middleware
+    participant API as Feature Handler<br/>(Minimal API)
+    participant Table as Azure Tables
+
+    User->>Page: Submit score
+    Page->>Http: POST /api/<slice>/...
+    Http->>Auth: request + cookie
+    alt authed
+        Auth->>API: 200 → handler
+        API->>API: Validate DTO
+        API->>Table: Upsert (PK, RK=SHA256)
+        Table-->>API: 204
+        API-->>Page: 204 NoContent
+    else anon
+        Auth-->>Page: 401
+        Page-->>User: Show LoginScreen
+    end

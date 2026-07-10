@@ -1,6 +1,9 @@
 // input.js — keyboard → fight intents for the two local layouts.
 // Intent shape (shared with ai.js): { move: -1|0|1 (+1 = toward opponent),
-// side: -1|0|1 (edge-triggered step), punch: bool (edge), kick: bool (edge), block: bool }.
+// side: -1|0|1 (edge-triggered step), punch: bool (press edge), kick: bool
+// (press edge), punchHeld: bool, kickHeld: bool, block: bool }.
+// The press edge starts a charge; the engine releases the attack when the
+// matching *Held flag drops — hold longer for a more powerful strike.
 //
 // Layout 1 (P1): A/D move · W step in · S tap step out, hold = block · F punch · G kick
 // Layout 2 (P2): ←/→ move · ↑ step in · ↓ tap step out, hold = block · K punch · L kick
@@ -50,6 +53,10 @@ export class KeyboardController {
       side: this.sideQueued,
       punch: this.punchQueued,
       kick: this.kickQueued,
+      // Held flags keep a charge alive; the `|| queued` term guarantees a
+      // sub-tick tap still reads as held for one update (then releases).
+      punchHeld: this.down.has(this.map.punch) || this.punchQueued,
+      kickHeld: this.down.has(this.map.kick) || this.kickQueued,
       block,
     };
     this.punchQueued = false;

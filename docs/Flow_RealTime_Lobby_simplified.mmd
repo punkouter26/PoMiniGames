@@ -1,0 +1,27 @@
+graph LR
+    %% Flow_RealTime_Lobby_simplified.mmd
+
+    subgraph Client["Client"]
+        Join["hub.invoke('Join')"]
+        Ready["ToggleReady"]
+        Start["StartGame (host)"]
+        Input["SendInput"]
+        State["@state PoRacerLobbyState"]
+        Snap["Apply raceSnapshot (20Hz)"]
+        Final["Handle raceFinished"]
+    end
+
+    subgraph Server["Server (SignalR)"]
+        Svc["PoRacerLobbyService<br/>(server-validated)"]
+        Race["PoRacerRaceService<br/>~20 Hz"]
+        Hub["IHubContext<br/>(long-lived)"]
+    end
+
+    Join --> Svc
+    Ready --> Svc
+    Svc -. lobbyState .-> State
+    Start --> Race
+    Input --> Race
+    Race -- Snap --> Hub
+    Hub -- raceSnapshot --> Snap
+    Race -- finalResult --> Final

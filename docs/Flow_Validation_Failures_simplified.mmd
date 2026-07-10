@@ -1,0 +1,19 @@
+graph TD
+    %% Flow_Validation_Failures_simplified.mmd
+
+    Player(["📱 Player"])
+    Form["EditForm<br/>DataAnnotationsValidator<br/>(live per keystroke)"]
+    Http["Typed HttpClient (resilient)"]
+    Auth["Authorize attribute"]
+    Bind["Bind DTO"]
+    Slice["Slice handler validation<br/>+ anti-spoof name coercion<br/>+ cooldown"]
+    Repo["Repository.upsert"]
+    Table["Azure Tables"]
+    Fail["400 ValidationProblem(errors)<br/>or 500"]
+
+    Player --> Form
+    Form -- valid --> Http --> Auth --> Bind --> Slice --> Repo --> Table
+    Slice -- fail --> Fail
+    Bind -- fail --> Fail
+    Auth -- 401 --> Fail
+    Form -- invalid --> Fail

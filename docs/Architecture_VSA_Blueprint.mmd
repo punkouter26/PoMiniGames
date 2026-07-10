@@ -1,0 +1,171 @@
+graph TD
+    %% Architecture_VSA_Blueprint.mmd
+    %% Topology showing feature slice isolation within the <sln>.API host,
+    %% interaction bounds for the mobile-first .Client, and the restricted
+    %% <sln>.Shared assembly. (VSA = Vertical Slice Architecture.)
+
+    Player(["📱 Mobile Player<br/>(portrait)"])
+
+    subgraph Browser["Browser — same origin (no CORS)"]
+        direction TB
+        subgraph Client["PoMiniGames.Client<br/>(Blazor WASM, .NET 10)"]
+            direction TB
+            AppRazor["App.razor<br/>&lt;AuthGate&gt; wrap"]
+            Router["Router<br/>+ &lt;AuthorizeRouteView&gt;"]
+            subgraph Cmp["Components/"]
+                AuthGate["AuthGate / LoginScreen<br/>AppErrorBoundary<br/>GameShell / HomeHighScores"]
+            end
+            subgraph Games["Games/ (9 client-only)"]
+                TTT["TicTacToe / ConnectFive"]
+                PoBrawl["PoBrawl / PoMarbleRace"]
+                PoFace["PoFace / PoJoker"]
+                PoQuizzes["PoFunQuiz / PoCoupleQuiz"]
+                PoRacerClient["PoRacer / PoSurvive (UI)"]
+            end
+            subgraph Svc["Services/"]
+                TypedClient["Resilient Typed HttpClient<br/>+ MSAL.js"]
+                AuthSvc["BffAuthenticationStateProvider<br/>(single RTT /auth/handshake)"]
+                HubClient["SignalR Hub Clients"]
+            end
+        end
+        subgraph Www["wwwroot/"]
+            WasmBin["_framework/<br/>(trimmed, ≤25 MB)"]
+            Static["index.html / css / js"]
+        end
+    end
+
+    subgraph Host["PoMiniGames (.NET 10 API host)"]
+        direction TB
+        ProgramCs["Program.cs<br/>composition root<br/>(Single MapPoMiniGamesEndpoints)"]
+        EndpointMap["Infrastructure/EndpointRouteExtensions.cs<br/>auth-gated gameApi group + SignalR hubs"]
+        AI["PoMiniGames.AI<br/>(flat namespace, source-gen resilience)"]
+
+        subgraph Features["Features/&lt;Slice&gt;/ (vertical slices)"]
+            direction TB
+            AuthS["Auth<br/>AuthEndpoints · AuthSchemes · FakeAuth"]
+            HealthS["Health<br/>live/readiness/ping"]
+            DiagS["Diagnostics<br/>masked keys"]
+            ScoreS["HighScores<br/>marblerace · pobrawl"]
+            LeadS["Leaderboard<br/>/api/{game}/players ... + unified"]
+            HistS["MatchHistory"]
+            PcqS["PoCoupleQuiz<br/>Endpoints + Hub + Storage"]
+            PfqS["PoFunQuiz<br/>Endpoints + Hub + Storage"]
+            PfS["PoFace<br/>AI Foundry call"]
+            PjS["PoJoker<br/>JokeAPI.dev resilient + LLM"]
+            PrS["PoRacer<br/>Score + LobbyHub + RaceHub"]
+            PsS["PoSurvive<br/>Sessions + Infer"]
+
+            subgraph HostInfra["Infrastructure/"]
+                Telemetry["TelemetryExtensions<br/>UseAzureMonitor"]
+                Logging["LoggingExtensions · Serilog"]
+                AuthExt["AuthExtensions · RateLimiting"]
+                Storage["StorageExtensions · StartupSecretValidator"]
+            end
+        end
+    end
+
+    subgraph Shared["PoShared (.Shared — restricted)"]
+        direction TB
+        Trim["&lt;IsTrimmable&gt;true<br/>&lt;EnableTrimAnalyzer&gt;true"]
+        WireDTOs["PoShared/Games/<br/>wire DTOs only<br/>(JokeDtos · PoRacerShared · ...)"]
+        Identity["Identity helpers<br/>(server-only refs)"]
+    end
+
+    subgraph Layered["Layered core (per AGENT.md §2.1 deviation)"]
+        direction TB
+        App["PoMiniGames.Application<br/>DTOs · services"]
+        Dom["PoMiniGames.Domain<br/>models · value objects"]
+        Inf["PoMiniGames.Infrastructure<br/>StorageService · EloCalculator · health"]
+    end
+
+    subgraph Persist["Azure Table Storage"]
+        direction TB
+        AzT["(Azurite in Dev)<br/>Testcontainers.Azurite in tests"]
+        Tables["Tables: PlayerStats · MarbleRaceHighScores<br/>PoBrawlHighScores · PoRacerHighScores · CoupleQuiz · FunQuiz · PoSurviveSessions"]
+    end
+
+    subgraph Tests["tests/"]
+        direction TB
+        Unit["PoMiniGames.Unit (CI)"]
+        Integ["PoMiniGames.Integration<br/>(Testcontainers.Azurite)"]
+        E2EA["E2EAPI (WebApplicationFactory)"]
+        E2EU["E2EUI (Playwright + Kestrel)"]
+        Shared2["tests/Shared/ PoMiniGames.TestUtilities"]
+    end
+
+    subgraph Edge["Azure edge / platform"]
+        direction TB
+        Entra["Entra ID<br/>(multitenant OIDC)"]
+        KV["Key Vault<br/>kv-poshared"]
+        AppIns["Application Insights"]
+    end
+
+    %% Player flow
+    Player --> WasmBin
+    Player --> AppRazor
+    AppRazor --> Router
+    Router --> AuthGate
+    AuthGate --> Games
+
+    %% Client → host contracts
+    Games --> TypedClient
+    AuthGate --> AuthSvc
+    Games --> HubClient
+    TypedClient -. HTTP /api/*  .-> ProgramCs
+    AuthSvc -. /api/auth/handshake .-> ProgramCs
+    HubClient -. WebSocket /<slice>/hubs/* .-> EndpointMap
+
+    %% Host composition
+    ProgramCs --> EndpointMap
+    EndpointMap --> Features
+    Features --> AI
+    Features --> HostInfra
+    ProgramCs --> HostInfra
+
+    %% Slice → layered core
+    LeadS --> App
+    PcqS --> App
+    PfqS --> App
+    PrS --> App
+    PsS --> App
+    App --> Dom
+    Inf -.shared PlatformService.-> Storage
+
+    %% Persistence
+    AuthS -.SignIn dev.-> Entra
+    AuthS -.prod OIDC.-> Entra
+    EndpointMap --> Tables
+    Inf --> Tables
+    Tables --> AzT
+
+    %% Cross-cutting
+    EndpointMap --> KV
+    HostInfra --> AppIns
+    Telemetry --> AppIns
+    Logging --> AppIns
+
+    %% Shared references (restricted)
+    Client -.->|client can read<br/>(Application, Domain, PoShared)| App
+    Client -.->|client can read| Dom
+    Client -.->|client can read| Shared
+    Host -.->|host owns all projects| Layered
+    Host -.->|host owns all projects| Shared
+
+    %% Tests
+    Tests -->|project references| Host
+    Tests -->|project references| Client
+    Tests -. Testcontainers .-> AzT
+
+    classDef sliceStyle fill:#fef3c7,stroke:#92400e,color:#111;
+    classDef sharedStyle fill:#dbeafe,stroke:#1d4ed8,color:#111;
+    classDef layeredStyle fill:#ede9fe,stroke:#6d28d9,color:#111;
+    classDef clientStyle fill:#dcfce7,stroke:#166534,color:#111;
+    classDef persistStyle fill:#fee2e2,stroke:#991b1b,color:#111;
+    classDef edgeStyle fill:#f3e8ff,stroke:#6b21a8,color:#111;
+
+    class AuthS,HealthS,DiagS,ScoreS,LeadS,HistS,PcqS,PfqS,PfS,PjS,PrS,PsS sliceStyle;
+    class Shared,Trim,WireDTOs,Identity sharedStyle;
+    class App,Dom,Inf layeredStyle;
+    class Client,Cmp,Games,Svc,AppRazor,Router,AuthGate,TypedClient,AuthSvc,HubClient clientStyle;
+    class Tables,AzT persistStyle;
+    class Edge,Entra,KV,AppIns edgeStyle;

@@ -71,6 +71,12 @@ export class AiController {
     // Used to occasionally start a swing then cancel to block on the next decision.
     this.baitArmed = false;
     this.baitStartedAt = 0;
+    // Hold-to-charge plan: while holdName is set the AI keeps the button
+    // held (the engine charges the attack), releasing at holdUntil. Higher
+    // rungs charge more often and wind up longer.
+    this.holdName = null;
+    this.holdUntil = 0;
+    this.chargeP = Math.min(0.5, 0.08 + 0.045 * level);
     // Pre-planned punch→kick cancel string (rungs 7+): fire the kick edge when
     // t reaches comboAt, drop the plan if the window is missed.
     this.comboAt = 0;
@@ -87,6 +93,8 @@ export class AiController {
     this.recentHits.push(this.t);
     this.recentHits = this.recentHits.filter((h) => this.t - h < 1.5);
     if (this.recentHits.length >= 2) this.retreatUntil = this.t + 0.7;
+    // Taking a hit dumps any charge the engine was holding for us.
+    this.holdName = null;
   }
 
   /**
@@ -140,6 +148,20 @@ export class AiController {
     // Edge-triggered flags are consumed each read; holds (move/block) persist.
     const intent = { ...this.current, punch: false, kick: false, side: 0 };
 
+    // ── Active charge hold ──────────────────────────────────────────────
+    // A charge plan overrides everything: keep the button held until the
+    // release time, then drop the held flag so the engine throws the strike.
+    if (this.holdName) {
+      if (this.t < this.holdUntil) {
+        const out = { move: 0, side: 0, punch: false, kick: false, block: false };
+        out[this.holdName + 'Held'] = true;
+        return out;
+      }
+      this.holdName = null;
+      this.sinceDecision = 0;
+      return { move: 0, side: 0, punch: false, kick: false, block: false };
+    }
+
     // ── Pre-planned cancel string (rungs 7+) ────────────────────────────
     // A punch committed with a combo plan cancels into kick exactly when the
     // frame-data window opens. Fires outside the reaction gate — the string
@@ -186,6 +208,25 @@ export class AiController {
     if (this.t < this.retreatUntil) {
       this.current = { move: -1, side: 0, punch: false, kick: false, block: false };
       return { ...this.current };
+    }
+
+    // ── Charged attack: wind up while the opponent can't answer ────────
+    // The opponent is stuck in hitstun and in range — occasionally commit to
+    // a held charge instead of a tap. The visible coil is the player's cue
+    // to block or interrupt when the stun wears off.
+    if (ctx.opponentState === 'hitstun' && ctx.distance < ctx.kickRange
+        && this.rng.random() < this.chargeP) {
+      const name = this.rng.random() < 0.45 ? 'kick' : 'punch';
+      this.holdName = name;
+      this.holdUntil = this.t + 0.45 + this.rng.random() * 0.5;
+      this.baitArmed = false;
+      this.comboAt = 0;
+      this.comboUntil = 0;
+      this.current = { move: 0, side: 0, punch: false, kick: false, block: false };
+      const out = { ...this.current };
+      out[name] = true;            // press edge starts the charge
+      out[name + 'Held'] = true;   // and the hold keeps it winding
+      return out;
     }
 
     // ── Out of range: approach, occasionally sidestep ───────────────────

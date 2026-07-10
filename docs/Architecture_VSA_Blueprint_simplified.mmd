@@ -1,0 +1,49 @@
+graph TD
+    %% Architecture_VSA_Blueprint_simplified.mmd
+    %% Stakeholder-review condensation of the full Architecture_VSA_Blueprint.
+
+    Player(["📱 Mobile player"])
+
+    subgraph Client["PoMiniGames.Client (Blazor WASM)"]
+        UI["UI / Games (9)<br/>+ AuthGate"]
+    end
+
+    subgraph Host["PoMiniGames (API host)"]
+        Slices["Features/&lt;Slice&gt;/ folders<br/>(Auth · PoRacer · PoSurvive · …)<br/>+ SignalR hubs"]
+        Infra["Infrastructure/<br/>Endpoint route map · Auth · Telemetry · Storage"]
+        AI["PoMiniGames.AI<br/>(resilience + Azure AI)"]
+    end
+
+    subgraph Layered["Layered core"]
+        App["Application"]
+        Dom["Domain"]
+        Inf["Infrastructure<br/>(shared StorageService + Elo)"]
+    end
+
+    subgraph Shared["PoShared (.Shared — restricted)"]
+        DTOs["Wire DTOs only<br/>(trim-clean)"]
+    end
+
+    subgraph Storage["Azure Table Storage"]
+        Tables["PlayerStats · MarbleRace<br/>PoBrawl · PoRacer · …"]
+    end
+
+    Player --> UI
+    UI -->|HTTP /api/*| Slices
+    UI -->|WS  /hubs/*| Slices
+    Slices --> AI
+    Slices --> Layered
+    Infra --> Slices
+    UI --> Shared
+    Slices --> Shared
+    Layered --> Storage
+
+    classDef slice fill:#fef3c7,stroke:#92400e,color:#111;
+    classDef shared fill:#dbeafe,stroke:#1d4ed8,color:#111;
+    classDef layered fill:#ede9fe,stroke:#6d28d9,color:#111;
+    classDef storage fill:#fee2e2,stroke:#991b1b,color:#111;
+
+    class Slices slice;
+    class Shared,DTOs shared;
+    class App,Dom,Inf layered;
+    class Tables,Storage storage;

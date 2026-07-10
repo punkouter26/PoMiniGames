@@ -1,0 +1,57 @@
+sequenceDiagram
+    %% Interaction_Trace.mmd
+    %% End-to-end user transaction trace via the BFF boundary.
+    %% Component.razor → Resilient Typed HttpClient → BFF Cookie Verification
+    %% → Minimal API Feature Handler → Table Storage Execution.
+
+    autonumber
+    actor User as Player (mobile)
+    participant Page as Game Page<br/>(Component.razor)
+    participant Http as Resilient Typed<br/>HttpClient (.AddStandardResilienceHandler)
+    participant Cookie as DevCookie<br/>HttpOnly · SameSite=Strict
+    participant Auth as Auth Middleware<br/>+ Microsoft OIDC (prod)
+    participant API as Minimal API<br/>Feature Handler (MapGroup)
+    participant Repo as Slice Repository<br/>(e.g., PoRacer.Storage)
+    participant Table as Azure Table Storage<br/>(Azurite in Dev)
+    participant TLogs as OpenTelemetry<br/>App Insights
+    participant Logs as Serilog<br/>(source-gen events)
+
+    User->>Page: Tap "Submit score"
+    Page->>Page: Optimistic UI update<br/>(local toast)
+    Page->>Http: POST /api/poracer/scores<br/>{totalTimeSeconds, finalPosition}
+    Note over Http: Standard resilience:<br/>retry x3 + exponential backoff<br/>+ circuit breaker
+    Http->>Cookie: Attach Bearer/DevCookie<br/>(read from browser jar)
+    Http->>+Auth: HTTP request hits host
+    Auth->>Auth: Authorize attribute check
+    alt Authenticated
+        Auth-->>API: 200 OK to /api/poracer/scores
+        API->>API: Bind PoRacerScoreDto<br/>(System.Text.Json)
+        API->>API: Handler validation<br/>(TotalTimeSeconds 1..3600,<br/>FinalPosition 1..8)
+        alt validation fails
+            API-->>Http: 400 ValidationProblem(errors)
+            Http-->>Page: Validation problem (per-field)
+            Page-->>User: Inline form errors
+        else valid
+            API->>API: Coerce PlayerDisplayName<br/>from auth claims (anti-spoof)
+            API->>API: Cooldown check<br/>(_lastSubmitByUser, ≥30 s)
+            API->>+Repo: SaveHighScoreAsync(dto, userId)
+            Repo->>+Table: Upsert TableEntity<br/>(PK=poracer, RK=SHA-256(dto))
+            Table-->>Repo: 204 / ETag
+            Repo-->>-API: Upsert result
+            API-->>-Http: 204 NoContent
+            Http-->>-Page: 204
+            Page->>Page: Update local state + leaderboard cache
+            Page-->>User: "Score saved" toast
+        end
+    else Unauthenticated
+        Auth-->>Http: 401 Unauthorized
+        Http-->>Page: 401
+        Page->>Auth: GET /api/auth/handshake
+        Auth-->>Page: AuthState { anonymous, oauthConfigured }
+        Page-->>User: Render <LoginScreen />
+    end
+    Note over Logs,TLogs: Every step emits<br/>source-gen LoggerMessage event<br/>and an OTel span
+    API->>Logs: emit "Score accepted" event
+    API->>TLogs: trace "poracer.submit"
+    Auth->>TLogs: dependency "aztables.upsert"
+    Auth->>Logs: emit "Auth challenge" if anon

@@ -1,0 +1,51 @@
+erDiagram
+    %% DatabaseSchema_simplified.mmd
+
+    PLAYERSTATS {
+        PartitionKey string PK "= {game}"
+        RowKey       string RK "= {player}"
+        Wins Losses Draws Elo int
+    }
+    MARBLERACEHIGHSCORES {
+        PartitionKey string PK "= 'marblerace'"
+        RowKey       string RK "= tick"
+        PlayerName string
+        BestTimeMs int
+    }
+    POBRAWLHIGHSCORES {
+        PartitionKey string PK "= 'pobrawl'"
+        RowKey       string RK "= tick"
+        PlayerName string
+        MatchId string FK
+    }
+    POBRAWLLADDER {
+        PartitionKey string PK "= 'pobrawlladder'"
+        RowKey       string RK "= {player}"
+        Elo Wins Losses int
+    }
+    PORACERHIGHSCORES {
+        PartitionKey string PK "= 'poracer'"
+        RowKey       string RK "= SHA256(content)"
+        PlayerDisplayName string
+        TotalTimeSeconds double
+        FinalPosition int
+    }
+    COUPLEQUIZ_GAMES {
+        PartitionKey string PK "= {roomCode}"
+        RowKey       string RK "= {connId}"
+        DisplayName JoinedAtUtc string
+    }
+    FUNQUIZ_LEADERBOARD {
+        PartitionKey string PK "= {category}"
+        RowKey       string RK "= SHA256(content)"
+        PlayerName string
+        Score int
+    }
+    POSURVIVE_SESSIONS {
+        PartitionKey string PK "= {userId}"
+        RowKey       string RK "= {sessionId}"
+        StartedAt EndedAt DateTimeOffset
+        Outcome WinningTeam string
+    }
+
+    PLAYERSTATS  ||--o{ POBRAWLHIGHSCORES : "PlayerName"

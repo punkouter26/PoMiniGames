@@ -39,14 +39,27 @@ const MIN_SEPARATION = 0.95;
 // state. { idle: 0 } means recovery auto-completes when stateT reaches the end.
 // Damage is bumped 5x from the original 8/12 → 40/60 so matches resolve
 // in ~6-10 exchanges instead of 30+.
+// `reach` reflects the REAL polygon contact range now: the striker capsules
+// ride the actual fist/shoe meshes (see hitboxes.js), so root-to-root hit
+// distance ≈ limb extension + lunge. The old values assumed a half-meter of
+// invisible forward reach.
 const ATTACKS = {
-  punch: { name: 'punch', windup: 0.08, active: 0.10, recover: 0.22, dmg: 40, reach: 1.5,
+  punch: { name: 'punch', windup: 0.08, active: 0.10, recover: 0.22, dmg: 40, reach: 1.2,
            cancelInto: { idle: 0.30, punch: 0.20, kick: 0.26, block: 0.32 } },
-  kick:  { name: 'kick',  windup: 0.12, active: 0.12, recover: 0.30, dmg: 60, reach: 1.85,
+  kick:  { name: 'kick',  windup: 0.12, active: 0.12, recover: 0.30, dmg: 60, reach: 1.45,
            cancelInto: { idle: 0.42, punch: 0.34, kick: 0.36, block: 0.40 } },
 };
 
 const HITSTUN = 0.35;
+
+// ── Hold-to-charge (Urban Champion style) ────────────────────────────────
+// Press-and-hold punch/kick winds the attack up; release throws it. Charge
+// scales damage/knockback 1x → CHARGE_MAX_MUL over CHARGE_TIME seconds of
+// hold; the fighter is rooted while charging and can hold at max forever
+// (at the cost of eating anything the opponent throws — a hit drops the
+// stored charge).
+const CHARGE_TIME = 1.0;
+const CHARGE_MAX_MUL = 2.0;
 
 // Fighters never leave their feet before the final blow — heavy hits get a
 // hard stagger (extra knockback + lean) instead of a mid-fight knockdown.
@@ -500,6 +513,12 @@ export class BrawlGame {
         stateT: 0,
         attack: null,
         hasHit: false,
+        // ── Hold-to-charge ────────────────────────────────────────────
+        chargeName: null,  // 'punch'|'kick' while state === 'charge'
+        chargeAmt: 0,      // 0..1 stored charge
+        chargeMul: 1,      // damage/knockback multiplier of the current swing
+        chargeCued: false, // full-charge audio cue fired
+        chargeSparkT: 0,   // spark-mote emission timer
         // ── Momentum + weight ─────────────────────────────────────────
         vel: new THREE.Vector3(),
         targetVel: new THREE.Vector3(),
@@ -815,7 +834,9 @@ export class BrawlGame {
   _aiContext(f, opp, dt) {
     const dist = f.rig.root.position.distanceTo(opp.rig.root.position);
     const oppAttack = (opp.state === 'punch' || opp.state === 'kick') ? opp.attack : null;
-    const oppInWindup = !!oppAttack && opp.stateT < oppAttack.windup;
+    // A charging opponent reads as windup — the coil is the tell to block.
+    const oppInWindup = opp.state === 'charge'
+      || (!!oppAttack && opp.stateT < oppAttack.windup);
     const oppInActive = !!oppAttack && opp.stateT >= oppAttack.windup
       && opp.stateT <= oppAttack.windup + oppAttack.active;
     const oppInRecover = !!oppAttack && opp.stateT > oppAttack.windup + oppAttack.active;
@@ -845,7 +866,9 @@ export class BrawlGame {
     // and integrate. Knockback is added directly and decays.
     const desired = new THREE.Vector3();
     const incapacitated = f.state === 'ko' || f.state === 'down' || f.state === 'getup';
-    if (intent.move !== 0 && !incapacitated) {
+    // Charging roots the fighter — all the weight is loaded into the coil.
+    const rooted = f.state === 'charge';
+    if (intent.move !== 0 && !incapacitated && !rooted) {
       const toward = opp.rig.root.position.clone().sub(pos);
       toward.y = 0;
       if (toward.lengthSq() > 1e-6) toward.normalize();
@@ -863,7 +886,7 @@ export class BrawlGame {
     // Knockback + sidestep impulses.
     f.knockback.multiplyScalar(Math.max(0, 1 - dt * 8));
     f.sideVel.multiplyScalar(Math.max(0, 1 - dt * 10));
-    if (intent.side !== 0 && !incapacitated) {
+    if (intent.side !== 0 && !incapacitated && !rooted) {
       const camDir = this._sideDirection();
       f.sideVel.add(camDir.multiplyScalar(intent.side * 5.5));
     }
@@ -877,12 +900,42 @@ export class BrawlGame {
       case 'idle': {
         if (intent.punch || intent.kick) {
           const name = intent.punch ? 'punch' : 'kick';
-          this._enterAttack(f, name);
+          this._enterCharge(f, name);
           break;
         }
         if (intent.block) {
           f.state = 'block';
           f.animator.setBlocking(true);
+        }
+        break;
+      }
+      case 'charge': {
+        // Winding up: charge accrues while the button is held (capped at
+        // CHARGE_TIME; you can hold at max forever). Release throws the
+        // attack scaled by the stored charge.
+        const held = f.chargeName === 'punch' ? intent.punchHeld : intent.kickHeld;
+        f.chargeAmt = Math.min(1, f.stateT / CHARGE_TIME);
+        f.animator.setCharge(f.chargeName, f.chargeAmt);
+        // Full-charge cue: one audible snap when the coil tops out.
+        if (f.chargeAmt >= 1 && !f.chargeCued) {
+          f.chargeCued = true;
+          this.audio.whoosh();
+        }
+        // Spark motes at the loaded fist/foot once the charge means something.
+        f.chargeSparkT -= dt;
+        if (f.chargeAmt > 0.25 && f.chargeSparkT <= 0) {
+          f.chargeSparkT = 0.16 - 0.08 * f.chargeAmt;
+          const anchor = f.rig.joints[f.chargeName === 'punch' ? 'fistR' : 'footR'];
+          if (anchor) {
+            const p = new THREE.Vector3();
+            anchor.getWorldPosition(p);
+            this._spawnSparks(p, 0xffd257, 2, 0.4 + 0.5 * f.chargeAmt);
+          }
+        }
+        if (!held) {
+          const amt = f.chargeAmt;
+          f.animator.setCharge(null, 0);
+          this._enterAttack(f, f.chargeName, amt);
         }
         break;
       }
@@ -901,8 +954,9 @@ export class BrawlGame {
 
         // Cancel windows: if the player input another action and we're past the
         // configured stateT threshold for that target, transition immediately.
-        if (intent.punch && f.stateT >= a.cancelInto.punch) this._enterAttack(f, 'punch');
-        else if (intent.kick && f.stateT >= a.cancelInto.kick) this._enterAttack(f, 'kick');
+        // Attack cancels re-enter the charge state so a held follow-up charges too.
+        if (intent.punch && f.stateT >= a.cancelInto.punch) this._enterCharge(f, 'punch');
+        else if (intent.kick && f.stateT >= a.cancelInto.kick) this._enterCharge(f, 'kick');
         else if (intent.block && f.stateT >= a.cancelInto.block) {
           f.state = 'block'; f.stateT = 0; f.animator.setBlocking(true);
           this._destroySwingPhysics(f);
@@ -951,13 +1005,43 @@ export class BrawlGame {
     }
   }
 
-  _enterAttack(f, name) {
+  // Start winding an attack up. The fighter is rooted until the button is
+  // released (see the 'charge' case in _tickFighter), then _enterAttack
+  // throws the strike scaled by the stored charge.
+  _enterCharge(f, name) {
+    f.state = 'charge';
+    f.stateT = 0;
+    f.chargeName = name;
+    f.chargeAmt = 0;
+    f.chargeCued = false;
+    f.chargeSparkT = 0;
+    f.animator.setBlocking(false);
+    f.animator.setCharge(name, 0);
+    this._destroySwingPhysics(f);
+  }
+
+  _enterAttack(f, name, chargeAmt = 0) {
     f.state = name;
     f.stateT = 0;
     f.hasHit = false;
     f.attack = ATTACKS[name];
+    f.chargeName = null;
+    f.chargeMul = 1 + (CHARGE_MAX_MUL - 1) * chargeAmt;
     f.animator.play(name);
     this.audio.whoosh();
+    // Attack lunge: a real step into the strike, scaled by charge. This is
+    // where the "reach" lives now that the hitboxes track the actual limb —
+    // a charged release lunges dramatically further.
+    const opp = this.fighters.find((o) => o !== f);
+    if (opp) {
+      const dir = new THREE.Vector3().subVectors(opp.rig.root.position, f.rig.root.position);
+      dir.y = 0;
+      if (dir.lengthSq() > 1e-6) {
+        dir.normalize();
+        const lunge = (name === 'kick' ? 2.2 : 1.8) * (1 + 1.4 * chargeAmt);
+        f.knockback.add(dir.multiplyScalar(lunge));
+      }
+    }
     // Tear down any prior swing physics and build the new striker bodies.
     // These are the cannon-es spheres that actually register hits via
     // the `collide` event during the active window.
@@ -1057,11 +1141,12 @@ export class BrawlGame {
     // If the defender is blocking, only the guard capsules count — the hurt
     // capsules still register the "near-miss" but the striker must explicitly
     // touch the guard surface to count as blocked.
+    const chargeMul = attacker.chargeMul || 1;
     const blocked = defender.state === 'block' &&
                     testAttackBlocked(attacker.rig, attack.name, phase, defender.rig);
     if (blocked) {
       const blockDamp = 1 / defMass;
-      defender.knockback.add(knockDir.clone().multiplyScalar(2.0 * blockDamp));
+      defender.knockback.add(knockDir.clone().multiplyScalar(2.0 * blockDamp * chargeMul));
       this._spawnSparks(hit.point, 0x9ad0ff, 6, 1.0);
       this._flashImpactLight(hit.point, 3, 0x9ad0ff, 0.1);
       // Visible absorb: the attacker's arm bounces off the guard; the
@@ -1076,15 +1161,20 @@ export class BrawlGame {
       return;
     }
 
-    // Damage rolls: ±2 variance, scaled by mass ratio, attack power, region
-    // and the defender's existing region damage modifiers.
-    const baseDmg = (attack.dmg + this.rng.randint(-2, 2)) * effect.atkMul * regionMod * powerScale;
+    // Damage rolls: ±2 variance, scaled by charge, mass ratio, attack power,
+    // region and the defender's existing region damage modifiers.
+    const baseDmg = (attack.dmg * chargeMul + this.rng.randint(-2, 2))
+      * effect.atkMul * regionMod * powerScale;
     this.combat.damage({ playerId: defender.playerId, amount: baseDmg, sourceId: attacker.playerId });
     defender.state = 'hitstun';
     defender.stateT = 0;
+    // Getting tagged mid-charge dumps the stored charge — that's the risk.
+    defender.chargeName = null;
+    defender.chargeAmt = 0;
+    defender.animator.setCharge(null, 0);
     defender.animator.setBlocking(false);
     defender.animator.play('hitstun');
-    defender.knockback.add(knockDir.clone().multiplyScalar(4.5 * (atkMass / defMass)));
+    defender.knockback.add(knockDir.clone().multiplyScalar(4.5 * chargeMul * (atkMass / defMass)));
     defender.animator.applyLean(knockDir.z * 0.6, -knockDir.x * 0.6);
     // Impact frame: cartoon squash on the defender (no color flash — per user
     // request the model's materials never change on hits).
@@ -1120,9 +1210,10 @@ export class BrawlGame {
 
     if (defender.controller.notifyHit) defender.controller.notifyHit();
     // Sparks + a real light flash at the contact point, not at the defender's root.
-    this._spawnSparks(hit.point, region === REGIONS.HEAD ? 0xff5530 : 0xffc857, 8, 1.4);
-    this._flashImpactLight(hit.point, attack.name === 'kick' ? 10 : 6);
-    this._hitFeedback(attack, true);
+    this._spawnSparks(hit.point, region === REGIONS.HEAD ? 0xff5530 : 0xffc857,
+      Math.round(8 * chargeMul), 1.4 * chargeMul);
+    this._flashImpactLight(hit.point, (attack.name === 'kick' ? 10 : 6) * chargeMul);
+    this._hitFeedback(attack, true, chargeMul);
     this.audio.impact({ power: Math.min(2, baseDmg / 12), worldPos: hit.point });
     this.audio.grunt({ power: Math.min(2, baseDmg / 12) });
     this.hudDirty = true;
@@ -1197,22 +1288,23 @@ export class BrawlGame {
     }
   }
 
-  _hitFeedback(attack, connected) {
+  _hitFeedback(attack, connected, chargeMul = 1) {
     if (!connected) {
       this.shakeT = 0.08; this.shakeAmp = 0.05;
       return;
     }
-    // Hit-pause scales with attack weight.
-    const frames = attack.name === 'kick' ? 5 : 3;
+    // Hit-pause scales with attack weight and stored charge — a fully charged
+    // release lands with roughly double the stop, shake and lens kick.
+    const frames = Math.round((attack.name === 'kick' ? 5 : 3) * chargeMul);
     this.hitstopT = frames * SIM_DT;
     this.shakeT = 0.18;
-    this.shakeAmp = attack.name === 'kick' ? 0.18 : 0.12;
-    this.fovPunch = attack.name === 'kick' ? 5.0 : 3.0;
+    this.shakeAmp = (attack.name === 'kick' ? 0.18 : 0.12) * chargeMul;
+    this.fovPunch = (attack.name === 'kick' ? 5.0 : 3.0) * chargeMul;
     // Post-FX spike: bloom flares, the frame fringes, and the exposure
     // "blooms open" for a beat on heavy hits.
-    this.caPulse = Math.max(this.caPulse, attack.name === 'kick' ? 0.6 : 0.35);
-    this.bloomPulse = Math.max(this.bloomPulse, attack.name === 'kick' ? 0.7 : 0.4);
-    this.exposurePulse = Math.max(this.exposurePulse, attack.name === 'kick' ? 0.15 : 0.08);
+    this.caPulse = Math.max(this.caPulse, (attack.name === 'kick' ? 0.6 : 0.35) * chargeMul);
+    this.bloomPulse = Math.max(this.bloomPulse, (attack.name === 'kick' ? 0.7 : 0.4) * chargeMul);
+    this.exposurePulse = Math.max(this.exposurePulse, (attack.name === 'kick' ? 0.15 : 0.08) * chargeMul);
   }
 
   // Decay the post-FX pulses and push them into the passes.

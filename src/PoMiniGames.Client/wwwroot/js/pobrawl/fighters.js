@@ -468,6 +468,11 @@ export function buildFighter(charId) {
     joints['elbow' + side] = elbow;
     joints['hip' + side] = hip;
     joints['knee' + side] = knee;
+    // Strike anchors: the actual fist/shoe meshes, registered as joints so
+    // the hit capsules track the visible polygons instead of approximating
+    // them with forward-reach offsets from the elbow/knee.
+    joints['fist' + side] = fist;
+    joints['foot' + side] = shoe;
   }
 
   root.scale.setScalar(c.heightScale);

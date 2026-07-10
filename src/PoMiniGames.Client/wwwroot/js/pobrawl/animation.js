@@ -61,17 +61,20 @@ const KO_POSE = {
 const TRACKS = {
   punch: [
     // windup: hip-load + shoulder coil (0.08 total)
-    [{ shoulderR: { x: -0.2, y: 0, z: -0.45 }, elbowR: { x: -1.9, y: 0, z: 0 },
-       torso: { x: 0.02, y: 0.55, z: 0 }, head: { x: -0.02, y: -0.18, z: 0 },
+    [{ shoulderR: { x: 0.05, y: 0, z: -0.5 }, elbowR: { x: -2.05, y: 0, z: 0 },
+       torso: { x: 0.02, y: 0.65, z: 0 }, head: { x: -0.02, y: -0.22, z: 0 },
        shoulderL: { x: -0.85, y: 0, z: 0.2 } }, 0.04, { k: 18 }],
-    [{ shoulderR: { x: -0.7, y: 0, z: -0.25 }, elbowR: { x: -1.5, y: 0, z: 0 },
-       torso: { x: 0.06, y: 0.5, z: 0 } }, 0.04, { k: 22 }],
-    // active: whip → full extension (0.10)
-    [{ shoulderR: { x: -1.35, y: 0, z: 0.05 }, elbowR: { x: -0.35, y: 0, z: 0 },
-       torso: { x: 0.1, y: -0.25, z: 0 }, head: { x: 0, y: 0.08, z: 0 } }, 0.05, { k: 50, overshoot: 1.1 }],
-    [{ shoulderR: { x: -1.55, y: 0, z: 0 }, elbowR: { x: -0.02, y: 0, z: 0 },
-       torso: { x: 0.14, y: -0.5, z: 0 }, head: { x: 0, y: 0.12, z: 0 },
-       shoulderL: { x: -0.5, y: 0, z: 0.25 } }, 0.05, { k: 55, overshoot: 1.16 }],
+    [{ shoulderR: { x: -0.6, y: 0, z: -0.3 }, elbowR: { x: -1.6, y: 0, z: 0 },
+       torso: { x: 0.06, y: 0.55, z: 0 } }, 0.04, { k: 22 }],
+    // active: whip → full cross extension. The rear shoulder rolls all the way
+    // through and the torso corkscrews so the fist visibly stretches past the
+    // lead shoulder — the striker capsules ride the real fist mesh now, so the
+    // pose IS the range.
+    [{ shoulderR: { x: -1.45, y: 0, z: 0.1 }, elbowR: { x: -0.2, y: 0, z: 0 },
+       torso: { x: 0.16, y: -0.45, z: 0 }, head: { x: 0, y: 0.1, z: 0 } }, 0.05, { k: 52, overshoot: 1.14 }],
+    [{ shoulderR: { x: -1.7, y: 0, z: 0.05 }, elbowR: { x: -0.01, y: 0, z: 0 },
+       torso: { x: 0.24, y: -0.85, z: 0 }, head: { x: 0.05, y: 0.2, z: 0 },
+       shoulderL: { x: -0.35, y: 0, z: 0.35 } }, 0.05, { k: 58, overshoot: 1.22 }],
     // recover: recoil then settle to guard (0.22)
     [{ shoulderR: { x: -1.1, y: 0, z: -0.1 }, elbowR: { x: -0.7, y: 0, z: 0 },
        torso: { x: 0.08, y: -0.15, z: 0 } }, 0.10, { k: 14 }],
@@ -79,16 +82,17 @@ const TRACKS = {
   ],
   kick: [
     // windup: weight shift + knee chamber (0.12)
-    [{ hipR: { x: -0.35, y: 0, z: 0 }, kneeR: { x: 1.1, y: 0, z: 0 },
+    [{ hipR: { x: -0.4, y: 0, z: 0 }, kneeR: { x: 1.3, y: 0, z: 0 },
        torso: { x: 0.14, y: 0.15, z: 0.04 }, shoulderL: { x: -0.5, y: 0, z: 0.3 } }, 0.05, { k: 16 }],
-    [{ hipR: { x: -0.7, y: 0, z: 0 }, kneeR: { x: 1.6, y: 0, z: 0 },
+    [{ hipR: { x: -0.85, y: 0, z: 0 }, kneeR: { x: 1.8, y: 0, z: 0 },
        torso: { x: 0.1, y: 0.1, z: 0.05 } }, 0.07, { k: 20 }],
-    // active: snap extension → drive-through (0.12)
-    [{ hipR: { x: -1.5, y: 0, z: 0 }, kneeR: { x: 0.08, y: 0, z: 0 },
-       torso: { x: -0.24, y: 0.05, z: 0 }, shoulderL: { x: -0.2, y: 0, z: 0.5 },
-       shoulderR: { x: -0.2, y: 0, z: -0.6 }, head: { x: 0.05, y: 0, z: 0 } }, 0.06, { k: 48, overshoot: 1.15 }],
-    [{ hipR: { x: -1.25, y: 0, z: 0 }, kneeR: { x: 0.25, y: 0, z: 0 },
-       torso: { x: -0.18, y: 0.02, z: 0 } }, 0.06, { k: 30 }],
+    // active: snap extension → drive-through. Deep torso lean-back lets the
+    // hip open further so the shoe stabs out well past the old pose.
+    [{ hipR: { x: -1.65, y: 0, z: 0 }, kneeR: { x: 0.04, y: 0, z: 0 },
+       torso: { x: -0.38, y: 0.05, z: 0 }, shoulderL: { x: -0.2, y: 0, z: 0.55 },
+       shoulderR: { x: -0.2, y: 0, z: -0.65 }, head: { x: 0.1, y: 0, z: 0 } }, 0.06, { k: 50, overshoot: 1.2 }],
+    [{ hipR: { x: -1.4, y: 0, z: 0 }, kneeR: { x: 0.18, y: 0, z: 0 },
+       torso: { x: -0.28, y: 0.02, z: 0 } }, 0.06, { k: 32 }],
     // recover: retract, replant (0.30)
     [{ hipR: { x: -0.5, y: 0, z: 0 }, kneeR: { x: 1.2, y: 0, z: 0 },
        torso: { x: 0.05, y: 0.08, z: 0 } }, 0.12, { k: 14 }],
@@ -107,6 +111,29 @@ const TRACKS = {
   ko: [
     [KO_POSE, 0.6, { k: 24 }],
   ],
+};
+
+// ── Charge poses ──────────────────────────────────────────────────────
+// Held coil poses for the hold-to-charge attacks. The engine calls
+// animator.setCharge(name, amt) every tick while the button is held; the
+// pose deepens with `amt` and the animator layers a tremble on top so a
+// fully-wound fighter visibly shakes with stored power.
+const CHARGE_POSES = {
+  // Fist drawn back past the hip, torso wound like a spring. Legs are left
+  // unkeyed so the foot-IK keeps the stance planted.
+  punch: {
+    torso: { x: 0.04, y: 0.85, z: 0 }, head: { x: -0.05, y: -0.5, z: 0 },
+    shoulderR: { x: 0.35, y: 0, z: -0.55 }, elbowR: { x: -2.3, y: 0, z: 0 },
+    shoulderL: { x: -1.0, y: 0, z: 0.25 }, elbowL: { x: -1.6, y: 0, z: 0 },
+  },
+  // Knee chambered high, arms flared for balance. Right leg is keyed so the
+  // stepper releases it (same rule as the kick track).
+  kick: {
+    torso: { x: 0.26, y: 0.1, z: 0.05 }, head: { x: -0.15, y: 0, z: 0 },
+    hipR: { x: -1.05, y: 0, z: 0 }, kneeR: { x: 2.0, y: 0, z: 0 },
+    shoulderL: { x: -0.7, y: 0, z: 0.55 }, shoulderR: { x: -0.5, y: 0, z: -0.65 },
+    elbowL: { x: -1.1, y: 0, z: 0 }, elbowR: { x: -1.0, y: 0, z: 0 },
+  },
 };
 
 // ── Entrance tracks ───────────────────────────────────────────────────
@@ -218,6 +245,9 @@ export class Animator {
     this.trackT = 0;
     this.base = GUARD;
     this.walkPhase = 0;
+    // Hold-to-charge coil (see setCharge).
+    this.chargeName = null;
+    this.chargeAmt = 0;
     // Hit-reaction lean in radians (set by the game; decays each tick).
     this.leanX = 0;
     this.leanZ = 0;
@@ -248,6 +278,15 @@ export class Animator {
     // by the base stance, not a track.
     this.track = TRACKS[name] || ENTRANCES[name] || null;
     this.trackT = 0;
+  }
+
+  // Hold-to-charge coil. `name` is 'punch'|'kick' (or null to clear); `amt`
+  // is 0..1 charge fraction. While set (and no track is playing) the joints
+  // damp-lerp into the charge pose, deepening and trembling with amt.
+  setCharge(name, amt) {
+    if (name && this.chargeName !== name) this.track = null;
+    this.chargeName = name || null;
+    this.chargeAmt = name ? amt : 0;
   }
 
   setBlocking(on) {
@@ -321,7 +360,25 @@ export class Animator {
         this.track = null;
       }
     }
+
+    // Charge coil: no track playing, but a charge is held. The pose deepens
+    // with the stored charge (80% coil on tap → full coil at max).
+    if (!this.track && this.chargeName && CHARGE_POSES[this.chargeName]) {
+      const pose = CHARGE_POSES[this.chargeName];
+      const depth = 0.8 + 0.2 * this.chargeAmt;
+      const scaled = {};
+      for (const [n, p] of Object.entries(pose)) {
+        scaled[n] = { x: p.x * depth, y: p.y * depth, z: p.z * depth };
+      }
+      target = { ...GUARD, ...scaled };
+      this._legDriven.L = !!(pose.hipL || pose.kneeL);
+      this._legDriven.R = !!(pose.hipR || pose.kneeR);
+      trackK = 16;
+    }
     const snappy = trackK > 0;
+    // Stored-power tremble: the whole upper body shakes as charge builds.
+    const tremble = (this.chargeName && this.chargeAmt > 0.1)
+      ? Math.sin(ctx.idleT * 47) * 0.05 * this.chargeAmt : 0;
 
     // ── Overlay state advance ──────────────────────────────────────────
     this.walkPhase += ctx.speed * dt * 9;
@@ -371,6 +428,13 @@ export class Animator {
       if (name === 'torso') px += breath;
       else if (name === 'shoulderL') pz += breath * 0.4;
       else if (name === 'shoulderR') pz -= breath * 0.4;
+
+      // Charge tremble on the wound-up upper body.
+      if (tremble !== 0) {
+        if (name === 'torso') px += tremble;
+        else if (name === 'shoulderL' || name === 'shoulderR') px += tremble * 1.4;
+        else if (name === 'head') px += tremble * 0.7;
+      }
 
       // Hit-reaction lean overlay on the upper body only.
       if (name === 'torso') { px += this.leanX; pz += this.leanZ; }

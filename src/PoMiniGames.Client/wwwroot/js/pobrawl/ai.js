@@ -8,6 +8,8 @@
 //   • throw its fastest attack when the opponent is in active/recover (whiff punish)
 //   • occasionally commit to a blocked attack then cancel into block (bait)
 //   • back off after taking quick consecutive hits (anti-stunlock)
+//   • occasionally wind up a held CHARGE attack while the opponent is stuck
+//     in hitstun (the coil pose is the player's tell to block the release)
 //
 // In-match adaptation: the AI also reads the opponent's habits over a rolling
 // ~8-second window and shifts its weights —

@@ -1,45 +1,47 @@
 sequenceDiagram
     %% Interaction_Trace.mmd
     %% End-to-end user transaction trace via the BFF boundary.
-    %% Component.razor → Resilient Typed HttpClient → BFF Cookie Verification
-    %% → Minimal API Feature Handler → Table Storage Execution.
+    %% Component.razor -> Resilient Typed HttpClient -> BFF Cookie Verification
+    %% -> Minimal API Feature Handler -> Table Storage Execution.
 
     autonumber
     actor User as Player (mobile)
-    participant Page as Game Page<br/>(Component.razor)
-    participant Http as Resilient Typed<br/>HttpClient (.AddStandardResilienceHandler)
-    participant Cookie as DevCookie<br/>HttpOnly · SameSite=Strict
-    participant Auth as Auth Middleware<br/>+ Microsoft OIDC (prod)
-    participant API as Minimal API<br/>Feature Handler (MapGroup)
-    participant Repo as Slice Repository<br/>(e.g., PoRacer.Storage)
-    participant Table as Azure Table Storage<br/>(Azurite in Dev)
-    participant TLogs as OpenTelemetry<br/>App Insights
-    participant Logs as Serilog<br/>(source-gen events)
+    participant Page as Game Page Component
+    participant Http as Resilient Typed HttpClient
+    participant Cookie as DevCookie HttpOnly
+    participant Auth as Auth Middleware OIDC prod
+    participant API as Minimal API Feature Handler
+    participant Repo as Slice Repository
+    participant Table as Azure Table Storage
+    participant TLogs as OpenTelemetry App Insights
+    participant Logs as Serilog source-gen events
 
     User->>Page: Tap "Submit score"
-    Page->>Page: Optimistic UI update<br/>(local toast)
-    Page->>Http: POST /api/poracer/scores<br/>{totalTimeSeconds, finalPosition}
-    Note over Http: Standard resilience:<br/>retry x3 + exponential backoff<br/>+ circuit breaker
-    Http->>Cookie: Attach Bearer/DevCookie<br/>(read from browser jar)
-    Http->>+Auth: HTTP request hits host
+    Page->>Page: Optimistic UI update (local toast)
+    Page->>Http: POST /api/poracer/scores
+    Note over Http: Standard resilience: retry x3 + exp backoff + breaker
+    Http->>Cookie: Attach Bearer or DevCookie
+    Http->>Auth: HTTP request hits host
     Auth->>Auth: Authorize attribute check
+
     alt Authenticated
-        Auth-->>API: 200 OK to /api/poracer/scores
-        API->>API: Bind PoRacerScoreDto<br/>(System.Text.Json)
-        API->>API: Handler validation<br/>(TotalTimeSeconds 1..3600,<br/>FinalPosition 1..8)
+        Auth->>API: forward to handler
+        API->>API: Bind PoRacerScoreDto (System.Text.Json)
+        API->>API: Handler validation (TotalTime 1..3600, Position 1..8)
+
         alt validation fails
-            API-->>Http: 400 ValidationProblem(errors)
-            Http-->>Page: Validation problem (per-field)
-            Page-->>User: Inline form errors
+            API-->>Http: 400 ValidationProblem errors
+            Http-->>Page: per-field validation
+            Page-->>User: inline form errors
         else valid
-            API->>API: Coerce PlayerDisplayName<br/>from auth claims (anti-spoof)
-            API->>API: Cooldown check<br/>(_lastSubmitByUser, ≥30 s)
-            API->>+Repo: SaveHighScoreAsync(dto, userId)
-            Repo->>+Table: Upsert TableEntity<br/>(PK=poracer, RK=SHA-256(dto))
-            Table-->>Repo: 204 / ETag
-            Repo-->>-API: Upsert result
-            API-->>-Http: 204 NoContent
-            Http-->>-Page: 204
+            API->>API: Coerce PlayerDisplayName from auth claims (anti-spoof)
+            API->>API: Cooldown check (lastSubmitByUser, at least 30s)
+            API->>Repo: SaveHighScoreAsync(dto, userId)
+            Repo->>Table: Upsert TableEntity (PK=poracer, RK=SHA-256(dto))
+            Table-->>Repo: 204 with ETag
+            Repo-->>API: Upsert result
+            API-->>Http: 204 NoContent
+            Http-->>Page: 204
             Page->>Page: Update local state + leaderboard cache
             Page-->>User: "Score saved" toast
         end
@@ -47,10 +49,11 @@ sequenceDiagram
         Auth-->>Http: 401 Unauthorized
         Http-->>Page: 401
         Page->>Auth: GET /api/auth/handshake
-        Auth-->>Page: AuthState { anonymous, oauthConfigured }
-        Page-->>User: Render <LoginScreen />
+        Auth-->>Page: AuthState (anonymous, oauthConfigured)
+        Page-->>User: render LoginScreen
     end
-    Note over Logs,TLogs: Every step emits<br/>source-gen LoggerMessage event<br/>and an OTel span
+
+    Note over Logs,TLogs: Every step emits source-gen LoggerMessage event and OTel span
     API->>Logs: emit "Score accepted" event
     API->>TLogs: trace "poracer.submit"
     Auth->>TLogs: dependency "aztables.upsert"

@@ -1,51 +1,59 @@
 erDiagram
-    %% DatabaseSchema_simplified.mmd
+    title PoMiniGames Database Schema
 
     PLAYERSTATS {
-        PartitionKey string PK "= {game}"
-        RowKey       string RK "= {player}"
-        Wins Losses Draws Elo int
+        PartitionKey string PK "game slug"
+        RowKey string "player name"
+        Wins int
+        Losses int
+        Draws int
+        Elo int
     }
     MARBLERACEHIGHSCORES {
-        PartitionKey string PK "= 'marblerace'"
-        RowKey       string RK "= tick"
+        PartitionKey string PK "marblerace"
+        RowKey string "tick"
         PlayerName string
         BestTimeMs int
     }
     POBRAWLHIGHSCORES {
-        PartitionKey string PK "= 'pobrawl'"
-        RowKey       string RK "= tick"
+        PartitionKey string PK "pobrawl"
+        RowKey string "tick"
         PlayerName string
         MatchId string FK
     }
     POBRAWLLADDER {
-        PartitionKey string PK "= 'pobrawlladder'"
-        RowKey       string RK "= {player}"
-        Elo Wins Losses int
+        PartitionKey string PK "pobrawlladder"
+        RowKey string "player name"
+        Elo int
+        Wins int
+        Losses int
     }
     PORACERHIGHSCORES {
-        PartitionKey string PK "= 'poracer'"
-        RowKey       string RK "= SHA256(content)"
+        PartitionKey string PK "poracer"
+        RowKey string "SHA-256 content"
         PlayerDisplayName string
         TotalTimeSeconds double
         FinalPosition int
     }
     COUPLEQUIZ_GAMES {
-        PartitionKey string PK "= {roomCode}"
-        RowKey       string RK "= {connId}"
-        DisplayName JoinedAtUtc string
+        PartitionKey string PK "room code"
+        RowKey string "conn id"
+        DisplayName string
+        JoinedAtUtc DateTimeOffset
     }
     FUNQUIZ_LEADERBOARD {
-        PartitionKey string PK "= {category}"
-        RowKey       string RK "= SHA256(content)"
+        PartitionKey string PK "category"
+        RowKey string "SHA-256 content"
         PlayerName string
         Score int
     }
     POSURVIVE_SESSIONS {
-        PartitionKey string PK "= {userId}"
-        RowKey       string RK "= {sessionId}"
-        StartedAt EndedAt DateTimeOffset
-        Outcome WinningTeam string
+        PartitionKey string PK "user id"
+        RowKey string "session id"
+        StartedAt DateTimeOffset
+        EndedAt DateTimeOffset
+        Outcome string
+        WinningTeam string
     }
 
-    PLAYERSTATS  ||--o{ POBRAWLHIGHSCORES : "PlayerName"
+    PLAYERSTATS ||--o{ POBRAWLHIGHSCORES : "PlayerName"

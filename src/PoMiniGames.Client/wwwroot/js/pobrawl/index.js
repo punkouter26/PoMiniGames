@@ -11,6 +11,8 @@ window.PoBrawl = {
     if (!el) { console.error('[PoBrawl] container not found:', containerId); return; }
     game = new BrawlGame(el, dotnetRef, options || {});
     game.start();
+    // Debug/automation handle (read-only introspection; not part of the API).
+    window.PoBrawl._game = game;
   },
   reset() { if (game) game.resetMatch(false); },
   setMuted(muted) { if (game) game.setMuted(muted); },

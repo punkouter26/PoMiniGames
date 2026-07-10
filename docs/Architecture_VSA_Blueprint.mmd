@@ -145,11 +145,10 @@ graph TD
     Logging --> AppIns
 
     %% Shared references (restricted)
-    Client -.->|client can read<br/>(Application, Domain, PoShared)| App
-    Client -.->|client can read| Dom
-    Client -.->|client can read| Shared
-    Host -.->|host owns all projects| Layered
-    Host -.->|host owns all projects| Shared
+    Client -.->|client refs Application and Domain| App
+    Client -.->|client refs PoShared| Shared
+    Host -.->|host refs all projects| Layered
+    Host -.->|host refs all projects| Shared
 
     %% Tests
     Tests -->|project references| Host

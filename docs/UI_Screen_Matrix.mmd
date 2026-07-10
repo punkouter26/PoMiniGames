@@ -1,7 +1,7 @@
 stateDiagram-v2
     %% UI_Screen_Matrix.mmd
     %% Client routes and screen states guarded by Blazor's cascading
-    %% <AuthorizeRouteView>, a custom AuthenticationStateProvider
+    %% AuthorizeRouteView, a custom AuthenticationStateProvider
     %% (BffAuthenticationStateProvider / AuthStateService), and layout flash
     %% mitigations (no route renders until AuthState.IsAuthenticated).
 
@@ -9,88 +9,35 @@ stateDiagram-v2
 
     [*] --> Loading
 
-    state "Loading (AuthState.IsLoading)" as Loading
-    note right of Loading
-      AuthGate shows spinner
-      Single RTT: GET /api/auth/handshake
-      Hydrates BffAuthenticationStateProvider
-      No layout flash — Router does not render
-    end note
+    Loading --> LoginScreen : handshake anonymous
 
-    Loading --> LoginScreen : handshake → anonymous
+    LoginScreen --> AuthChecking : tap Microsoft or Guest
 
-    state "LoginScreen" as LoginScreen
-    note right of LoginScreen
-      Dev + Test: shows Microsoft + Guest buttons
-      Prod: shows Microsoft only
-      ?autoGuest=1 → automatic Guest (Dev/Test only)
-    end note
-
-    LoginScreen --> AuthChecking : tap Microsoft / Guest
-
-    state "AuthChecking" as AuthChecking
-    note right of AuthChecking
-      Microsoft: MSAL.js acquires token, calls /auth/login/microsoft
-      Guest: POST /api/auth/dev-bypass (Dev/Test, loopback)
-    end note
-
-    AuthChecking --> Authenticated : cookie minted, claims = user
+    AuthChecking --> Authenticated : cookie minted
     AuthChecking --> LoginScreen : failure or cancel
 
-    state "Authenticated" as Authenticated
-    note right of Authenticated
-      AuthGate renders ChildContent
-      Router + <AuthorizeRouteView> take over
-    end note
-
-    Authenticated --> ProfilePage : /profile
-    Authenticated --> LeaderboardsPage : /leaderboards
-    Authenticated --> DiagPage : /diag (Dev only)
-    Authenticated --> AuthCallbackPage : /auth/callback
-    Authenticated --> GamePages : /games/{slug}/...
-
-    state "GamePages (sliced)" as GamePages {
+    state Authenticated {
         direction LR
-        state SoloPage as "Solo game"
-        state LobbyPage as "Multiplayer lobby"
-        state RacePage as "Live race"
-        SoloPage --> LobbyPage : tap Play Online
-        LobbyPage --> RacePage : host StartGame
+        [*] --> Solo
+        Solo --> Lobby : tap Play Online
+        Lobby --> Race : host StartGame
     }
 
-    state "ProfilePage" as ProfilePage
-    state "LeaderboardsPage" as LeaderboardsPage
-    state "DiagPage" as DiagPage
-    state "AuthCallbackPage" as AuthCallbackPage
+    Authenticated --> ProfilePage : route
+    Authenticated --> LeaderboardsPage : route
+    Authenticated --> DiagPage : route
+    Authenticated --> AuthCallbackPage : route
 
     ProfilePage --> Authenticated : navigation
     LeaderboardsPage --> Authenticated : navigation
     DiagPage --> Authenticated : navigation
     AuthCallbackPage --> Authenticated : cookie applied
 
-    %% ─── Inner route guards ────────────────────────────
-    state RouteGuard {
-        [*] --> RouteResolve
-        state "RouteResolve" as RouteResolve
-        RouteResolve --> NotAuthorized : [Authorize] route + anon claims
-        RouteResolve --> NotFound : path not in router
-    }
-
-    state "NotAuthorized" as NotAuthorized {
-        note right of NotAuthorized
-          <NotAuthorized> template inside AuthorizeRouteView
-          Renders "Sign in required" fallback with link to /
-        end note
-    }
-
-    state "NotFound" as NotFound
-
-    Authenticated --> NotAuthorized : [Authorize] route + anon
+    Authenticated --> NotAuthorized : Authorize route + anon
     Authenticated --> NotFound : unknown route
 
     NotAuthorized --> LoginScreen : tap Sign in
     NotFound --> Authenticated : enter valid route
 
-    Authenticated --> LoggedOut : tap Sign out → /auth/logout
-    state "LoggedOut" as LoggedOut
+    Authenticated --> LoggedOut : tap Sign out
     LoggedOut --> LoginScreen

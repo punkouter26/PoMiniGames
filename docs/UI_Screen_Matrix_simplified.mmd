@@ -1,12 +1,11 @@
 stateDiagram-v2
     %% UI_Screen_Matrix_simplified.mmd
-    title Client Routes — Auth-Gated States
 
     [*] --> Loading
 
-    Loading --> LoginScreen : handshake → anon
+    Loading --> LoginScreen : handshake anon
     LoginScreen --> Authed : sign-in success
-    Authed --> NotAuthorized : [Authorize] + anon
+    Authed --> NotAuthorized : Authorize route + anon
     Authed --> NotFound : bad path
     Authed --> LoggedOut : sign-out
     LoggedOut --> LoginScreen

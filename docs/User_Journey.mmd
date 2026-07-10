@@ -3,40 +3,43 @@ journey
     %% Mobile portrait actor cognitive tasks mapped chronologically against
     %% system-level performance impact scores.
     %%
-    %% Section labels:
-    %%   sections format: <cognitive task> : <perf-impact score 1-5>
-    %%   actors: Mobile player (phone, portrait, mid-range Android)
-    title PoMiniGames — Mobile Player Journey (portrait)
+    %% Each task is "Name : Score : Actor" - score is 1..5 where 5 = highest
+    %% cognitive load OR highest system impact (we use it as system impact
+    %% because the mobile UX is constrained by CPU / network / battery).
+    %% Sections group tasks by journey phase; section names do NOT carry
+    %% scores (the journey grammar rejects `:` in section names).
 
-    section Discover : 3
-      Land on /: 3
-      First render: 3
+    title PoMiniGames - Mobile Player Journey (portrait)
 
-    section Authenticate : 4
-      Choose Microsoft or Guest: 4
-      Wait for /auth/handshake: 4
+    section Discover
+      Land on slash: 3: Player
+      First render: 3: Player
+      Tap Microsoft or Guest: 4: Player
 
-    section Browse : 2
-      Tap game tile: 2
-      See game shell: 2
+    section Authenticate
+      Wait for handshake: 4: Player
 
-    section Play Solo : 4
-      Press Start: 4
-      Tick AI opponent: 4
-      Win/Lose feedback: 3
+    section Browse
+      Tap game tile: 2: Player
+      See game shell: 2: Player
 
-    section Multiplayer : 5
-      Enter lobby: 5
-      Toggle Ready: 4
-      Wait for host Start: 4
-      Race snapshot stream at 20Hz: 5
-      Finish: 4
+    section Play Solo
+      Press Start: 4: Player
+      Tick AI opponent: 4: Player
+      Win or Lose feedback: 3: Player
 
-    section Persist : 4
-      Submit score: 4
-      View leaderboard: 3
+    section Multiplayer
+      Enter lobby: 5: Player
+      Toggle Ready: 4: Player
+      Wait for host Start: 4: Player
+      Race snapshot stream at 20Hz: 5: Player
+      Finish: 4: Player
 
-    section Return : 3
-      Reload page: 4
-      Resume session: 3
-      Sign out: 3
+    section Persist
+      Submit score: 4: Player
+      View leaderboard: 3: Player
+
+    section Return
+      Reload page: 4: Player
+      Resume session: 3: Player
+      Sign out: 3: Player

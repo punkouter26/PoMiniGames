@@ -1,133 +1,111 @@
 erDiagram
-    %% DatabaseSchema.mmd
-    %% Azure Table Storage architecture, partition/row keys, strongly typed
-    %% schema layouts, and indexing relation bounds.
-    %%
-    %% Cardinalities:
-    %%   ||--||   one-to-one
-    %%   ||--o{   one-to-zero-or-many
-    %%   ||--|{   one-to-one-or-many
+    title PoMiniGames Database Schema
 
-    %% ─── Platform-wide tables (StorageService) ───────────────────────────
     PLAYERSTATS {
-        PartitionKey string PK "= {game-slug} (e.g. tictactoe, connectfive)"
-        RowKey       string RK "= {playerName-lowercased}"
-        Wins         int
-        Losses       int
-        Draws        int
-        ELO          int
-        TotalGames   int
-        LastPlayedAtUtc DateTimeOffset "Timestamp"
+        PartitionKey string PK "partition = game slug"
+        RowKey string "row = player name lowercased"
+        Wins int
+        Losses int
+        Draws int
+        ELO int
+        TotalGames int
+        LastPlayedAtUtc DateTimeOffset
     }
 
     MARBLERACEHIGHSCORES {
-        PartitionKey string PK "= 'marblerace' (single-partition leaderboards)"
-        RowKey       string RK "= {tick-GUID} or '{player}-{tick}'"
-        PlayerName   string "= auth-coerced; client value dropped"
-        BestTimeMs   int
-        Track        string
+        PartitionKey string PK "single-partition leaderboards"
+        RowKey string "tick GUID or player-tick"
+        PlayerName string "auth-coerced"
+        BestTimeMs int
+        Track string
         AchievedAtUtc DateTimeOffset
     }
 
     POBRAWLHIGHSCORES {
-        PartitionKey string PK "= 'pobrawl'"
-        RowKey       string RK "= {tick-GUID}"
-        PlayerName   string
-        EloAfter     int
-        MatchId      string FK "→ MATCHES.RowKey"
-        PlayedAtUtc  DateTimeOffset
+        PartitionKey string PK "pobrawl partition"
+        RowKey string "tick GUID"
+        PlayerName string
+        EloAfter int
+        MatchId string FK "FK to matches RowKey"
+        PlayedAtUtc DateTimeOffset
     }
 
     POBRAWLLADDER {
-        PartitionKey string PK "= 'pobrawlladder'"
-        RowKey       string RK "= {playerName-lowercased}"
-        Elo          int
-        Wins         int
-        Losses       int
-        Rank         int "computed"
+        PartitionKey string PK "pobrawlladder partition"
+        RowKey string "player name lowercased"
+        Elo int
+        Wins int
+        Losses int
+        Rank int "computed"
     }
 
     PORACERHIGHSCORES {
-        PartitionKey string PK "= 'poracer'"
-        RowKey       string RK "= SHA-256(immutableScore) — dedup"
+        PartitionKey string PK "poracer partition"
+        RowKey string "SHA-256 of immutable score (dedup)"
         PlayerDisplayName string "auth-coerced"
-        TotalTimeSeconds  double
-        FinalPosition     int "1..8"
-        AchievedAtUtc     DateTimeOffset
-        IsGuest           bool
+        TotalTimeSeconds double
+        FinalPosition int "1 to 8"
+        AchievedAtUtc DateTimeOffset
+        IsGuest bool
     }
 
-    %% ─── Per-slice tables (game-specific repos) ──────────────────────────
     COUPLEQUIZ_GAMES {
-        PartitionKey string PK "= '{roomCode}'"
-        RowKey       string RK "= '{connectionId}'"
-        DisplayName  string
-        JoinedAtUtc  DateTimeOffset
-        IsGuest      bool
+        PartitionKey string PK "room code"
+        RowKey string "connection id"
+        DisplayName string
+        JoinedAtUtc DateTimeOffset
+        IsGuest bool
     }
 
     COUPLEQUIZ_HISTORY {
-        PartitionKey string PK "= '{roomCode}'"
-        RowKey       string RK "= '{questionId}-{answerId}'"
+        PartitionKey string PK "room code"
+        RowKey string "question id dash answer id"
         QuestionText string
-        Answer       string "similarity-scored by PoMiniGames.AI"
-        Score        double
+        Answer string "similarity-scored by PoMiniGames.AI"
+        Score double
     }
 
     FUNQUIZ_LEADERBOARD {
-        PartitionKey string PK "= '{category}' (General, Science, …)"
-        RowKey       string RK "= SHA-256(content)"
-        PlayerName   string
-        Score        int
+        PartitionKey string PK "category"
+        RowKey string "SHA-256 of content"
+        PlayerName string
+        Score int
         AchievedAtUtc DateTimeOffset
     }
 
     POSURVIVE_SESSIONS {
-        PartitionKey string PK "= '{userId-or-anon}'"
-        RowKey       string RK "= '{sessionId-GUID}'"
-        StartedAt    DateTimeOffset
-        EndedAt      DateTimeOffset
-        Outcome      string "RedWin|BlueWin|Draw"
-        WinningTeam  string "nullable when Draw"
-        TotalTurns   int
+        PartitionKey string PK "user id or anon"
+        RowKey string "session id GUID"
+        StartedAt DateTimeOffset
+        EndedAt DateTimeOffset
+        Outcome string "RedWin or BlueWin or Draw"
+        WinningTeam string "nullable when Draw"
+        TotalTurns int
         TotalFoodConsumed int
-        TotalDamageDealt  int
-        Config       object "JSON-serialized SimulationConfigSnapshot"
-        Agents       object "JSON-serialized AgentFinalSnapshot[]"
+        TotalDamageDealt int
+        Config object "JSON SimulationConfigSnapshot"
+        Agents object "JSON AgentFinalSnapshot array"
     }
 
     POSURVIVE_AGENTINFER {
-        PartitionKey string PK "= '{sessionId-GUID}'"
-        RowKey       string RK "= '{agentId}-{tick}'"
-        InferenceMs  int
+        PartitionKey string PK "session id GUID"
+        RowKey string "agent id dash tick"
+        InferenceMs int
         PredictedAction string
-        Confidence   double
+        Confidence double
     }
 
-    %% ─── Indexing relations (PK-scoped queries; no joins in Table Storage) ─
-    PLAYERSTATS  ||--o{ POBRAWLHIGHSCORES   : "shared PlayerName"
     MATCHES {
-        PartitionKey string PK "= '{playerA-or-tournament}'"
-        RowKey       string RK "= '{matchId-GUID}'"
-        Game         string
+        PartitionKey string PK "player A or tournament"
+        RowKey string "match id GUID"
+        Game string
         StartedAtUtc DateTimeOffset
         EndedAtUtc   DateTimeOffset
     }
-    MATCHES      ||--|{ POBRAWLHIGHSCORES   : "MatchId"
 
-    %% Notes
-    %% • All PartitionKey values are designed for **point lookups + per-PK scans**:
-    %%   a leaderboard page is a single PartitionKey scan ordered by RowKey.
-    %% • RowKeys avoid hot partitions; SHA-256-based RowKeys enable idempotent
-    %%   retries (the dedup row collapses onto itself).
-    %% • Strongly typed schema = POCOs at the persistence boundary; columns
-    %%   mirror POCO property names after JSON-serialising composite columns
-    %%   (e.g. `Config`, `Agents`) into a single string column.
+    PLAYERSTATS ||--o{ POBRAWLHIGHSCORES : "shared PlayerName"
+    MATCHES ||--|{ POBRAWLHIGHSCORES : "MatchId FK"
 
-    %% ─── table_creation bootstrap order (StorageExtensions.EnsureTables) ──
-    %% 1. PlayerStats
-    %% 2. MarbleRaceHighScores
-    %% 3. PoBrawlHighScores
-    %% 4. PoBrawlLadder
-    %% 5. PoRacerHighScores
-    %% 6. (per-slice tables lazily on first use)
+    PLAYERSTATS {
+        string gameSlug "PartitionKey value"
+    }

@@ -7,6 +7,7 @@ using PoMiniGames.Features.PoFunQuiz;
 using PoMiniGames.Features.PoFunQuiz.Storage;
 using PoMiniGames.Features.PoJoker;
 using PoMiniGames.Features.PoJoker.Storage;
+using PoMiniGames.Features.PoRacer;
 using PoMiniGames.Infrastructure.Services;
 
 // Aliases to disambiguate the identically-named ILeaderboardRepository and
@@ -158,6 +159,14 @@ internal static class GameServicesExtensions
         services.AddSingleton<MockAnalysisService>();
         services.AddSingleton<IAnalysisService, AiJesterService>();
         services.AddSingleton<IJokeStorageClient, JokeStorageClient>();
+
+        // PoRacer — multiplayer racing. The lobby service is the in-memory
+        // registry; the race registry + service own the per-game simulation
+        // timer. Both are process-local (single-instance, like every other
+        // multiplayer lobby in the host) and are DI-managed so the host's
+        // graceful-shutdown path can dispose the race registry.
+        services.AddSingleton<PoMiniGames.Features.PoRacer.PoRacerLobbyService>();
+        services.AddSingleton<PoMiniGames.Features.PoRacer.PoRacerRaceRegistry>();
 
         services.ConfigureHttpJsonOptions(options =>
         {

@@ -25,7 +25,7 @@
             Status:
             @if (_hub is null)
             {
-                <span class="po-pill po-pill--muted">disconnected</span>
+                <span class="po-pill po-pill--muted">connecting…</span>
             }
             else if (_hub.State == HubConnectionState.Connected)
             {
@@ -36,6 +36,8 @@
                 <span class="po-pill po-pill--warn">@_hub.State.ToString().ToLowerInvariant()</span>
             }
         </p>
+
+        <p class="poracer-hint">Single shared room — first to arrive becomes host.</p>
 
         <section style="margin-bottom:1rem">
             <h2 class="gps-phase-h">Players · @(_state?.Players.Count ?? 0)/8</h2>
@@ -52,10 +54,11 @@
                 <ol class="poracer-lobby-list">
                     @foreach (var p in _state.Players)
                     {
-                        var isYou = p.ConnectionId == _hub?.ConnectionId;
-                        <li class="@(isYou ? "is-you" : "") @(p.ConnectionId == _state.HostConnectionId ? "is-host" : "")">
+                        var isYou = p.ConnectionId == _localConnectionId;
+                        var isHost = p.ConnectionId == _state.HostConnectionId;
+                        <li class="@(isYou ? "is-you" : "") @(isHost ? "is-host" : "")">
                             <span>@p.DisplayName @(isYou ? "(you)" : "")</span>
-                            @if (p.ConnectionId == _state.HostConnectionId)
+                            @if (isHost)
                             {
                                 <span class="po-pill po-pill--accent">host</span>
                             }
@@ -74,15 +77,25 @@
         </section>
 
         <section>
-            @if (IsHost)
+            @if (_state is null)
             {
-                <button class="sp-btn-primary" @onclick="StartGameAsync" disabled="@(_state is null || _state.Players.Count == 0)">Start Race</button>
+                <p class="poracer-hint">Connecting to the lobby hub…</p>
+            }
+            else if (IsHost)
+            {
+                @if (!EveryoneReady)
+                {
+                    <p class="poracer-hint">Waiting for everyone to mark Ready…</p>
+                }
+                <button class="sp-btn-primary" @onclick="StartGameAsync" disabled="@(!EveryoneReady)">Start Race</button>
+                <button class="sp-btn-secondary" style="margin-left:8px" @onclick="LeaveAsync">Leave</button>
             }
             else
             {
-                <button class="sp-btn-secondary" @onclick="ToggleReadyAsync">
-                    @(_isReady ? "Not Ready" : "Ready!")
+                <button class="sp-btn-primary" @onclick="ToggleReadyAsync">
+                    @(_myReady ? "Not Ready" : "Ready!")
                 </button>
+                <button class="sp-btn-secondary" style="margin-left:8px" @onclick="LeaveAsync">Leave</button>
             }
         </section>
 
@@ -91,19 +104,25 @@
 </div>
 
 
-
 @code {
     private HubConnection? _hub;
     private PoRacerLobbyState? _state;
     private string _lastUpdate = "—";
-    private bool _isReady;
+    private bool _myReady;
     private IDisposable? _lobbySub;
     private IDisposable? _gameStartedSub;
+    private IDisposable? _lobbyEventSub;
+    private string _localConnectionId = "";
 
     private bool IsHost =>
         _state is not null
-        && _hub?.ConnectionId is { } id
-        && _state.HostConnectionId == id;
+        && !string.IsNullOrEmpty(_state.HostConnectionId)
+        && _state.HostConnectionId == _localConnectionId;
+
+    private bool EveryoneReady =>
+        _state is not null
+        && _state.Players.Count > 0
+        && _state.Players.All(p => p.ConnectionId == _state.HostConnectionId || p.IsReady);
 
     protected override async Task OnInitializedAsync()
     {
@@ -123,27 +142,44 @@
         _lobbySub = _hub.On<PoRacerLobbyState>("lobbyState", state =>
         {
             _state = state;
+            _localConnectionId = _hub?.ConnectionId ?? _localConnectionId;
             _lastUpdate = state.LastUpdatedUtc.LocalDateTime.ToString("HH:mm:ss");
+            var me = state.Players.FirstOrDefault(p => p.ConnectionId == _localConnectionId);
+            if (me is not null) _myReady = me.IsReady;
             InvokeAsync(StateHasChanged);
         });
 
-        _gameStartedSub = _hub.On("gameStarted", () =>
+        _lobbyEventSub = _hub.On<PoRacerLobbyEvent>("lobbyEvent", ev =>
+        {
+            ToastService.Show(ev.Message, ev.Kind == "left" ? ToastType.Warning : ToastType.Info);
+        });
+
+        _gameStartedSub = _hub.On<string>("gameStarted", code =>
         {
             Nav.NavigateTo("/poracer");
         });
 
         await _hub.StartAsync();
+        _localConnectionId = _hub.ConnectionId ?? "";
 
         var displayName = AuthState.User?.DisplayName ?? "Player";
         var isGuest = !AuthState.IsAuthenticated;
-        await _hub.InvokeAsync("Join", displayName, isGuest);
+        await _hub.InvokeAsync<PoRacerLobbyState>("Join", displayName, isGuest);
+
+        // Re-join on every reconnect — SignalR hands us a NEW ConnectionId when
+        // the WebSocket drops and re-negotiates (every ~30s by default), and
+        // the server's disconnect handler will have run Leave on the old id.
+        _hub.Reconnected += async (newId) =>
+        {
+            _localConnectionId = newId ?? _localConnectionId;
+            try { await _hub.InvokeAsync<PoRacerLobbyState>("Join", displayName, isGuest); } catch { }
+        };
     }
 
     private async Task ToggleReadyAsync()
     {
         if (_hub is null) return;
         await _hub.InvokeAsync("ToggleReady");
-        _isReady = !_isReady;
     }
 
     private async Task StartGameAsync()
@@ -152,12 +188,20 @@
         await _hub.InvokeAsync("StartGame");
     }
 
+    private async Task LeaveAsync()
+    {
+        if (_hub is null) return;
+        try { await _hub.InvokeAsync("LeaveLobby"); } catch { }
+        Nav.NavigateTo("/");
+    }
+
     public async ValueTask DisposeAsync()
     {
         if (_hub is not null)
         {
             _lobbySub?.Dispose();
             _gameStartedSub?.Dispose();
+            _lobbyEventSub?.Dispose();
             try { await _hub.DisposeAsync(); } catch { }
         }
     }

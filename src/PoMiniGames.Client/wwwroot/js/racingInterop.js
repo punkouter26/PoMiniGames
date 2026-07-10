@@ -97,10 +97,36 @@ const PoRacer = (() => {
         lastTs = now;
         const dt = Math.min(dtMs, 50) / 1000.0;
         resize();
-        try { dotnetRef.invokeMethodAsync('Tick', dt, lastSize.w, lastSize.h, input); }
-        catch (e) { console.error('Tick failed', e); rafId = 0; return; }
+        // No more per-frame Tick — multiplayer mode is purely server-driven.
+        // drawSnapshot is the new entry point invoked by .NET when a server
+        // snapshot arrives (every ~50ms). We keep the rAF loop only to keep
+        // particles/animations alive between snapshots.
         rafId = requestAnimationFrame(frame);
     }
+
+    // Track last input snapshot so we only call back to .NET on real changes.
+    let _lastInputSig = '';
+    function emitInput() {
+        if (!dotnetRef) return;
+        const sig = `${+input.up}|${+input.down}|${+input.left}|${+input.right}|${+input.space}`;
+        if (sig === _lastInputSig) return;
+        _lastInputSig = sig;
+        try { dotnetRef.invokeMethodAsync('OnInputChange', input.up, input.down, input.left, input.right, input.space); }
+        catch (e) { /* dotnetRef disposed mid-frame is fine */ }
+    }
+
+    // Wrap the original setKey so each transition fires emitInput.
+    const _origSetKey = setKey;
+    function setKeyWithEmit(e, down) {
+        const before = JSON.stringify(input);
+        _origSetKey(e, down);
+        if (JSON.stringify(input) !== before) emitInput();
+    }
+    window.removeEventListener('keydown', (e) => _origSetKey(e, true));
+    window.removeEventListener('keyup', (e) => _origSetKey(e, false));
+    window.addEventListener('keydown', (e) => setKeyWithEmit(e, true));
+    window.addEventListener('keyup', (e) => setKeyWithEmit(e, false));
+    window.addEventListener('blur', () => { for (const k in input) input[k] = false; emitInput(); });
 
     return {
         start(canvasId, dotnetObj) {
@@ -111,7 +137,12 @@ const PoRacer = (() => {
             rafId = requestAnimationFrame(frame);
         },
         stop() { if (rafId) cancelAnimationFrame(rafId); rafId = 0; dotnetRef = null; },
-        getSize() { resize(); return lastSize; }
+        getSize() { resize(); return lastSize; },
+        // Test/debug helper: lets tests poke the keyboard state directly.
+        __setInput(up, down, left, right, space) {
+            input.up = !!up; input.down = !!down; input.left = !!left; input.right = !!right; input.space = !!space;
+            emitInput();
+        }
     };
 })();
 
@@ -201,6 +232,12 @@ window.PoRacer = PoRacer;
     }
     function unpackColor(p) {
         return 'rgb(' + ((p >> 16) & 0xff) + ',' + ((p >> 8) & 0xff) + ',' + (p & 0xff) + ')';
+    }
+    function packColor(hex) {
+        if (!hex || hex[0] !== '#' || hex.length < 7) return 0xffffff;
+        return (parseInt(hex.substr(1, 2), 16) << 16)
+             | (parseInt(hex.substr(3, 2), 16) << 8)
+             |  parseInt(hex.substr(5, 2), 16);
     }
     function mulberry32(seed) {
         let a = seed;
@@ -668,6 +705,68 @@ window.PoRacer = PoRacer;
         setBloom(enabled) { bloomEnabled = !!enabled; },
         clearParticles() { _jsSmoke.fill(0); _jsSmokeHead=0; _jsSkids.fill(0); _jsSkidHead=0; _jsWeather.fill(0); _jsWeatherHead=0; window._smokeSprite=null; },
         invalidateBitmaps() { grassTex=null; trackTex=null; minimapTex=null; parallaxFar=null; parallaxMid=null; bloomTex=null; bloomCtx=null; vignetteTex=null; fogTex=null; mainCtx_=null; mainCanvasEl=null; mainCanvasId_=null; miniCanvasEl=null; miniCanvasId_=null; },
+
+        // drawSnapshot — multiplayer thin-client entry point. Server pushes
+        // a snapshot every ~50ms; we compute the camera and render in one call.
+        // `cars` is an array of { x, y, h, v, color, colorDark, isPlayer, name, lap, position, finished, boost, skid }.
+        drawSnapshot(mainCanvasId, miniCanvasId, elapsedSec, weather, cars) {
+            if (!mainCanvasId) return;
+            if (mainCanvasId !== mainCanvasId_) { mainCanvasId_ = mainCanvasId; mainCanvasEl = document.getElementById(mainCanvasId); mainCtx_ = null; }
+            const mainCanvas = mainCanvasEl;
+            if (!mainCanvas) return;
+            if (!mainCtx_) mainCtx_ = mainCanvas.getContext('2d');
+            const g = mainCtx_;
+            if (!g || !cars || cars.length === 0) return;
+            if (miniCanvasId !== miniCanvasId_) { miniCanvasId_ = miniCanvasId; miniCanvasEl = miniCanvasId ? document.getElementById(miniCanvasId) : null; }
+            const miniCanvas = miniCanvasEl;
+            const miniCtx = miniCanvas ? miniCanvas.getContext('2d') : null;
+
+            resize();
+            const w = lastSize.w, h = lastSize.h;
+            // Pick camera target = the local player; if missing, first car.
+            const target = cars.find(c => c.isPlayer) || cars[0];
+            // Zoom-out follow: scale chosen so the track comfortably fits the
+            // viewport with the player centered. For multiplayer races the
+            // camera shows both the player's car AND the cars around them so
+            // collisions are visible. We compute scale per-frame from the
+            // track bbox (cached on first call) so the player never gets lost.
+            const lookAhead = Math.cos(target.h) * 80;
+            const camX = target.x + lookAhead;
+            const camY = target.y + Math.sin(target.h) * 80;
+            // Scale: aim so ~70% of the smaller viewport dimension shows the
+            // ~600-unit-long track. Smaller viewport ⇒ tighter zoom.
+            const baseScale = Math.min(w, h) / 900;
+            const scale = Math.max(0.25, Math.min(1.2, baseScale));
+            const dt = 0.05; // snapshot interval ≈ 50ms
+
+            // Pack cars into Float32Arrays the existing draw() expects.
+            const carBuf = new Float32Array(cars.length * 6);
+            const carCols = new Int32Array(cars.length);
+            const carDark = new Int32Array(cars.length);
+            for (let i = 0; i < cars.length; i++) {
+                const c = cars[i];
+                const o = i * 6;
+                carBuf[o] = c.x; carBuf[o + 1] = c.y; carBuf[o + 2] = c.h;
+                carBuf[o + 3] = c.boost || 0;
+                carBuf[o + 4] = c.isPlayer ? 1 : 0;
+                carBuf[o + 5] = c.skid || 0;
+                carCols[i] = packColor(c.color);
+                carDark[i] = packColor(c.colorDark);
+            }
+            // Reuse the existing draw() implementation. The enclosing object
+            // literal is mid-construction so referencing it by name would
+            // throw — call through the window-scoped binding instead.
+            window.PoRacerRender.draw(
+                mainCanvasId, miniCanvasId,
+                w, h, camX, camY, scale,
+                carBuf, cars.length, carCols, carDark,
+                new Float32Array(0), 0,
+                new Float32Array(0), 0,
+                new Float32Array(0), 0,
+                dt,
+                weather || 0,
+                0, 0.5, 0);
+        },
 
         draw(mainCanvasId, miniCanvasId,
              w, h, camX, camY, scale,

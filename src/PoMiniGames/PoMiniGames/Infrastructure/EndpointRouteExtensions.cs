@@ -61,6 +61,7 @@ internal static class EndpointRouteExtensions
         app.MapHub<CoupleQuizHub>("/couplequiz/hubs/game").RequireAuthorization();
         app.MapHub<FunQuizHub>("/funquiz/gamehub").RequireAuthorization();
         app.MapHub<PoRacerLobbyHub>("/poracer/lobby-hub").RequireAuthorization();
+        app.MapHub<PoRacerRaceHub>("/poracer/race-hub").RequireAuthorization();
 
         return app;
     }

@@ -23,11 +23,13 @@ public class StorageService : IStorageService
     private const string MarbleRaceTable = "MarbleRaceHighScores";
     private const string PoBrawlTable = "PoBrawlHighScores";
     private const string PoBrawlLadderTable = "PoBrawlLadder";
+    private const string PoRacerTable = "PoRacerHighScores";
 
     // High scores share a single partition per game so a leaderboard is one partition scan.
     private const string MarbleRacePartition = "marblerace";
     private const string PoBrawlPartition = "pobrawl";
     private const string PoBrawlLadderPartition = "pobrawlladder";
+    private const string PoRacerPartition = "poracer";
 
     private readonly TableServiceClient _serviceClient;
     private readonly EloCalculator _eloCalculator;
@@ -72,7 +74,7 @@ public class StorageService : IStorageService
     /// </summary>
     public void Initialize()
     {
-        foreach (var table in new[] { PlayerStatsTable, MarbleRaceTable, PoBrawlTable, PoBrawlLadderTable })
+        foreach (var table in new[] { PlayerStatsTable, MarbleRaceTable, PoBrawlTable, PoBrawlLadderTable, PoRacerTable })
         {
             try { Table(table); } catch { /* ensured lazily on first use */ }
         }
@@ -295,6 +297,53 @@ public class StorageService : IStorageService
     public Task<PoBrawlHighScore> SavePoBrawlHighScoreAsync(PoBrawlHighScore entry) =>
         SaveHighScoreAsync(PoBrawlScores, entry);
 
+    // ── PoRacer High Scores ───────────────────────────────────────────────
+    // Server-side identity is authoritative: the client-supplied PlayerName
+    // is replaced with the auth-cookie value before persistence. The row
+    // is deduped by a hash of the immutable content (name + time + position +
+    // minute-bucketed date) so retry-after-timeout collapses onto the same row.
+    private static readonly HighScoreDescriptor<PoRacerHighScore> PoRacerScores = new(
+        Table: PoRacerTable,
+        Partition: PoRacerPartition,
+        Sanitize: e => new PoRacerHighScore
+        {
+            PlayerName = SanitizeName(e.PlayerName),
+            UserId = string.IsNullOrWhiteSpace(e.UserId) ? "" : e.UserId,
+            TotalTimeSeconds = Math.Clamp(e.TotalTimeSeconds, 0.001, 3600),
+            FinalPosition = Math.Clamp(e.FinalPosition, 1, 8),
+            IsGuest = e.IsGuest,
+            Date = DefaultDate(e.Date),
+            GameCode = SanitizeName(e.GameCode),
+        },
+        ToFields: e => new Dictionary<string, object?>
+        {
+            ["PlayerName"] = e?.PlayerName,
+            ["UserId"] = e?.UserId,
+            ["TotalTimeSeconds"] = e?.TotalTimeSeconds,
+            ["FinalPosition"] = e?.FinalPosition,
+            ["IsGuest"] = e?.IsGuest,
+            ["Date"] = e?.Date,
+            ["GameCode"] = e?.GameCode,
+        },
+        FromEntity: e => new PoRacerHighScore
+        {
+            PlayerName = e.GetString("PlayerName") ?? "",
+            UserId = e.GetString("UserId") ?? "",
+            TotalTimeSeconds = e.GetDouble("TotalTimeSeconds") ?? 0d,
+            FinalPosition = e.GetInt32("FinalPosition") ?? 0,
+            IsGuest = e.GetBoolean("IsGuest") ?? false,
+            Date = e.GetString("Date") ?? "",
+            GameCode = e.GetString("GameCode") ?? "",
+        },
+        // Lowest race time wins; oldest submission breaks ties.
+        Rank: s => s.OrderBy(x => x.TotalTimeSeconds).ThenBy(x => x.Date));
+
+    public Task<List<PoRacerHighScore>> GetPoRacerHighScoresAsync(int limit = 10) =>
+        GetHighScoresAsync(PoRacerScores, limit);
+
+    public Task<PoRacerHighScore> SavePoRacerHighScoreAsync(PoRacerHighScore entry) =>
+        SaveHighScoreAsync(PoRacerScores, entry);
+
     // ── PoBrawl presidents ladder ─────────────────────────────────────────
     // Unlike the high-score boards (append + dedupe by content hash), the ladder
     // keeps exactly one row per player: RowKey = sanitized player name, and
@@ -418,6 +467,7 @@ public class StorageService : IStorageService
         "Initials", "Score", "SurvivalTime", "BestScore",
         "GameDuration", "SnakeLength", "FoodEaten", "PlayerInitials", "PlayerName",
         "KoTimeSeconds", "Character",
+        "UserId", "TotalTimeSeconds", "FinalPosition",
     };
 
     private static string[] DeterministicRowKeyFieldsKey<T>(HighScoreDescriptor<T> descriptor)

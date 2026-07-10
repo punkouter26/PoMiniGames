@@ -1,0 +1,142 @@
+using System.Collections.Concurrent;
+using PoShared.Games;
+
+namespace PoMiniGames.Features.PoRacer;
+
+/// <summary>
+/// Single global PoRacer lobby. The first arrival becomes the host; subsequent
+/// arrivals join as players. When everyone is Ready and the host clicks Start,
+/// the race spins up on <see cref="PoRacerRaceService"/>. When the race ends
+/// (or everyone leaves) the lobby resets to empty so a new host can claim it.
+/// </summary>
+public sealed class PoRacerLobbyService
+{
+    /// <summary>Fixed code surfaced in <see cref="PoRacerLobbyState.GameCode"/>; no codes are user-visible.</summary>
+    public const string GlobalCode = "LOBBY";
+
+    private readonly ConcurrentDictionary<string, PoRacerLobbyPlayer> _players = new();
+    private string _hostConnectionId = "";
+    private long _startedAtMs;
+    private long _lastTouchedMs;
+    private readonly object _stateLock = new();
+
+    public PoRacerLobbyState State
+    {
+        get
+        {
+            lock (_stateLock)
+            {
+                return new PoRacerLobbyState(
+                    Players: _players.Values.OrderBy(p => p.ConnectionId).ToList(),
+                    HostConnectionId: string.IsNullOrEmpty(_hostConnectionId) ? null : _hostConnectionId,
+                    GameCode: GlobalCode,
+                    LastUpdatedUtc: DateTimeOffset.UtcNow);
+            }
+        }
+    }
+
+    public IReadOnlyList<PoRacerLobbyPlayer> Players
+    {
+        get { lock (_stateLock) return _players.Values.OrderBy(p => p.ConnectionId).ToList(); }
+    }
+
+    public string? HostConnectionId
+    {
+        get { lock (_stateLock) return string.IsNullOrEmpty(_hostConnectionId) ? null : _hostConnectionId; }
+    }
+
+    public bool IsStarted => _startedAtMs > 0;
+
+    /// <summary>Open the lobby. If empty, the caller becomes host; otherwise joins.</summary>
+    public (PoRacerLobbyState state, string eventMessage) Open(string connectionId, string displayName, bool isGuest)
+    {
+        lock (_stateLock)
+        {
+            var name = SanitizeName(displayName);
+            if (_startedAtMs > 0)
+            {
+                return (State, "Race already in progress");
+            }
+            if (_players.TryRemove(connectionId, out _) && _hostConnectionId == connectionId)
+            {
+                _hostConnectionId = "";
+            }
+            _players[connectionId] = new PoRacerLobbyPlayer(connectionId, name, isGuest, false);
+            if (string.IsNullOrEmpty(_hostConnectionId))
+            {
+                _hostConnectionId = connectionId;
+            }
+            _lastTouchedMs = NowMs();
+            return (State, $"{name} joined");
+        }
+    }
+
+    public void SetReady(string connectionId, bool ready)
+    {
+        lock (_stateLock)
+        {
+            if (!_players.TryGetValue(connectionId, out var existing)) return;
+            _players[connectionId] = existing with { IsReady = ready };
+            _lastTouchedMs = NowMs();
+        }
+    }
+
+    public (bool ok, string message) Leave(string connectionId)
+    {
+        lock (_stateLock)
+        {
+            if (!_players.TryRemove(connectionId, out var removed)) return (true, "");
+            if (_hostConnectionId == connectionId)
+            {
+                _hostConnectionId = _players.Keys.OrderBy(k => k, StringComparer.Ordinal).FirstOrDefault() ?? "";
+            }
+            _lastTouchedMs = NowMs();
+            return (true, $"{removed.DisplayName} left");
+        }
+    }
+
+    public bool TryStart(string connectionId)
+    {
+        lock (_stateLock)
+        {
+            if (_startedAtMs > 0) return false;
+            if (_hostConnectionId != connectionId) return false;
+            if (_players.IsEmpty) return false;
+            var notReady = _players.Values.Where(p => p.ConnectionId != _hostConnectionId && !p.IsReady).ToList();
+            if (notReady.Count > 0) return false;
+            _startedAtMs = NowMs();
+            return true;
+        }
+    }
+
+    public void EndRace()
+    {
+        lock (_stateLock)
+        {
+            _startedAtMs = 0;
+            // Reset ready flags so the next race needs a fresh Ready round.
+            foreach (var key in _players.Keys.ToList())
+            {
+                if (_players.TryGetValue(key, out var p))
+                {
+                    _players[key] = p with { IsReady = false };
+                }
+            }
+            _lastTouchedMs = NowMs();
+        }
+    }
+
+    public bool IsEmpty
+    {
+        get { lock (_stateLock) return _players.IsEmpty; }
+    }
+
+    private static long NowMs() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+    private static string SanitizeName(string raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return "Player";
+        var trimmed = raw.Trim();
+        return trimmed.Length > 24 ? trimmed[..24] : trimmed;
+    }
+}

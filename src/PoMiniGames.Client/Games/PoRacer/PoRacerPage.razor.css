@@ -7,13 +7,18 @@
     .racer-shell-wrap {
         position: absolute;
         inset: 0;
-        /* Leave room for the top bar via `--gps-chrome-h` if needed. */
+        /* Clamp the shell to the viewport so the start-screen card can never
+           grow past the canvas (NET_RUN_10 #2: was overflowing on every device). */
+        overflow: hidden;
+        height: 100%;
+        max-height: 100dvh;
     }
     .racer-root {
         position: absolute;
         inset: 0;
         background: #05070d;
         outline: none;
+        overflow: hidden;
     }
     
     /* CRT Mode styles */
@@ -427,15 +432,23 @@
         box-shadow: 0 0 18px rgba(80,180,255,0.5);
         transform: scale(0.94);
     }
-    /* Touch icons only appear on narrow viewports where the on-screen keyboard
-       isn't an option AND the input is coarse. Desktop (wide viewport) uses the
-       keyboard regardless of pointer type — the previous rule alone let the
-       icons leak into desktop when a coarse pointer was reported. */
-    @@media (max-width: 900px) {
+    /* Touch icons appear when input is coarse (NET_RUN_10 #7): any device whose
+       primary pointer is a finger — regardless of viewport width. A tablet in
+       landscape (1024 wide) with a touch screen now gets the touch UI; a
+       desktop with a mouse still relies on the keyboard. The previous rule
+       tied touch to max-width, which hid controls on tablets / foldables. */
+    @@media (pointer: coarse) {
         .racer-touch.is-active { display: flex; }
         /* Lift the minimap clear of the steer cluster. */
         .racer-minimap { bottom: 130px; }
-        /* The right-hand standings/splits panels crowd a phone screen. */
+        /* The right-hand standings panel crowds a phone screen. */
+        .hud-right { display: none; }
+    }
+    /* Belt-and-braces: also show touch on small viewports even if the pointer
+       query hasn't fired yet (some embedded WebViews mis-report the pointer). */
+    @@media (max-width: 600px) {
+        .racer-touch.is-active { display: flex; }
+        .racer-minimap { bottom: 130px; }
         .hud-right { display: none; }
     }
 
@@ -588,3 +601,51 @@
         0% { transform: scale(0.6); opacity: 0; }
         100% { transform: scale(1.0); opacity: 1; }
     }
+    /* ─── Multiplayer countdown overlay (NET_RUN_10 #10) ─── */
+    .racer-countdown {
+        position: absolute; inset: 0;
+        display: flex; align-items: center; justify-content: center;
+        pointer-events: none; z-index: 50;
+    }
+    .racer-countdown-num {
+        font-family: 'Orbitron', sans-serif;
+        font-size: 220px;
+        font-weight: 900;
+        color: #ffffff;
+        text-shadow: 0 0 40px rgba(80,180,255,0.7), 0 0 120px rgba(80,180,255,0.4);
+        animation: countdown-pulse 1s ease-out infinite;
+    }
+    @@keyframes countdown-pulse {
+        0%, 100% { transform: scale(1); opacity: 0.9; }
+        50% { transform: scale(1.15); opacity: 1; }
+    }
+
+    /* ─── Multiplayer toast (NET_RUN_10 #10) ─── */
+    .racer-toast {
+        position: absolute;
+        top: 70px;
+        left: 50%;
+        transform: translateX(-50%);
+        padding: 8px 18px;
+        background: rgba(20,30,48,0.85);
+        border: 1px solid rgba(120,200,255,0.35);
+        border-radius: 999px;
+        font-family: 'Orbitron', sans-serif;
+        font-size: 12px;
+        letter-spacing: 2px;
+        text-transform: uppercase;
+        color: #cfe0ff;
+        backdrop-filter: blur(6px);
+        z-index: 30;
+        animation: toast-slide 3.5s ease-in-out both;
+        pointer-events: none;
+    }
+    @@keyframes toast-slide {
+        0%   { opacity: 0; transform: translate(-50%, -8px); }
+        10%  { opacity: 1; transform: translate(-50%, 0); }
+        90%  { opacity: 1; transform: translate(-50%, 0); }
+        100% { opacity: 0; transform: translate(-50%, -8px); }
+    }
+
+    /* Start-screen error variant */
+    .racer-hint--error { color: #ff6b6b; }

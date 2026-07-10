@@ -66,7 +66,8 @@
                                 <span class="lb-unit">@board.Unit</span>
                             </div>
 
-                            @if (board.Entries.Count == 0)
+                            @{ var rows = VisibleRows(board, group.Key); }
+                            @if (rows.Count == 0)
                             {
                                 <p class="lb-board-empty">No scores yet — play @board.Title to claim #1.</p>
                             }
@@ -74,9 +75,9 @@
                             {
                                 <ol class="lb-rows">
                                     @* §5: <Virtualize> keeps the DOM flat even when
-                                       a board's Top-N grows past the current Take(5) cap. *@
-                                    <Virtualize Items="@board.Entries.Take(5).ToList()" Context="e" ItemSize="36">
-                                        <li class="lb-row @(e.Rank <= 3 ? $"lb-row--top lb-row--{e.Rank}" : null)">
+                                       a board's Top-N grows past the section cap. *@
+                                    <Virtualize Items="@rows" Context="e" ItemSize="36">
+                                        <li class="lb-row @(e.Rank <= 3 && e.Name != PlaceholderName ? $"lb-row--top lb-row--{e.Rank}" : null)">
                                             <span class="lb-rank">@e.Rank</span>
                                             <span class="lb-name">@e.Name</span>
                                             <span class="lb-value">@e.DisplayValue</span>
@@ -107,6 +108,16 @@
 
     private record BoardGroup(string Key, string Title, IReadOnlyList<GameLeaderboardDto> Boards);
     private List<BoardGroup> _groupedBoards = new();
+
+    // The server pads every unified board to the requested limit with dummy
+    // "XXX"/0 rows. The 1 Player section shows the full padded top-10; the
+    // other sections keep the compact top-5 of real scores only.
+    private const string PlaceholderName = "XXX";
+
+    private static List<LeaderboardEntryDto> VisibleRows(GameLeaderboardDto board, string groupKey)
+        => groupKey == "1p"
+            ? board.Entries.Take(10).ToList()
+            : board.Entries.Where(e => e.Name != PlaceholderName).Take(5).ToList();
 
     protected override async Task OnInitializedAsync() => await Load();
 
@@ -159,6 +170,7 @@
         // so this is best-effort).
         var personalEntries = _boards
             .SelectMany(b => b.Entries.Select(e => (Board: b, Entry: e)))
+            .Where(t => t.Entry.Name != PlaceholderName) // never hero the XXX padding
             .OrderBy(t => t.Entry.Rank)
             .FirstOrDefault();
         if (personalEntries.Board is null) return;

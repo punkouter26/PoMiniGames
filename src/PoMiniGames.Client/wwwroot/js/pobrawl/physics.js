@@ -218,7 +218,10 @@ export function createStrikerSphere(world, mats, capsuleName, initialPos, radius
     angularDamping: 0.6,
   });
   body.collisionFilterGroup = G_STRIKER;
-  body.collisionFilterMask = G_HURT | G_ROOT;
+  // G_STRIKER in the mask lets opposing strikers collide mid-air — the
+  // engine turns striker-vs-striker contacts into parry clashes. Same-
+  // fighter striker pairs are filtered out in the beginContact handler.
+  body.collisionFilterMask = G_HURT | G_ROOT | G_STRIKER;
   body.userData = { capsuleName, kind: 'striker' };
   world.addBody(body);
   return body;

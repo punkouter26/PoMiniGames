@@ -99,12 +99,14 @@ const TRACKS = {
     [GUARD, 0.18, { k: 8 }],
   ],
   hitstun: [
-    // violent whip, then a sag, then recover (0.35 = HITSTUN)
-    [{ torso: { x: -0.5, y: 0.12, z: 0 }, head: { x: -0.42, y: 0.05, z: 0 },
-       shoulderL: { x: 0.35, y: 0, z: 0.55 }, shoulderR: { x: 0.3, y: 0, z: -0.55 },
-       elbowL: { x: -0.35, y: 0, z: 0 }, elbowR: { x: -0.35, y: 0, z: 0 } }, 0.06, { k: 40, overshoot: 1.15 }],
-    [{ torso: { x: -0.3, y: 0.08, z: 0 }, head: { x: -0.2, y: 0, z: 0 },
-       shoulderL: { x: 0.2, y: 0, z: 0.4 }, shoulderR: { x: 0.18, y: 0, z: -0.4 },
+    // Sharp but SMALL whip, a sag, then recover (0.35 = HITSTUN). Joint
+    // telemetry tuning: the rendered torso deflection should stay in the
+    // realistic 5-15° band — the head sells the hit, not a folding spine.
+    [{ torso: { x: -0.16, y: 0.06, z: 0 }, head: { x: -0.3, y: 0.04, z: 0 },
+       shoulderL: { x: 0.15, y: 0, z: 0.35 }, shoulderR: { x: 0.12, y: 0, z: -0.35 },
+       elbowL: { x: -0.35, y: 0, z: 0 }, elbowR: { x: -0.35, y: 0, z: 0 } }, 0.06, { k: 40, overshoot: 1.1 }],
+    [{ torso: { x: -0.09, y: 0.04, z: 0 }, head: { x: -0.14, y: 0, z: 0 },
+       shoulderL: { x: 0.1, y: 0, z: 0.25 }, shoulderR: { x: 0.08, y: 0, z: -0.25 },
        elbowL: { x: -0.55, y: 0, z: 0 }, elbowR: { x: -0.55, y: 0, z: 0 } }, 0.08, { k: 16 }],
     [GUARD, 0.21, { k: 10 }],
   ],
@@ -195,6 +197,29 @@ const ENTRANCES = {
        shoulderR: { x: -2.6, y: 0, z: -0.05 }, elbowR: { x: -0.85, y: 0, z: 0 } }, 0.4, { k: 8 }],
     [GUARD, 0.5, { k: 6 }],
   ],
+  // Nixon: the double-V victory arms — both fists high and wide, two pumps.
+  victory: [
+    [{ torso: { x: -0.06, y: 0, z: 0 }, head: { x: -0.2, y: 0, z: 0 },
+       shoulderL: { x: -2.5, y: 0, z: 0.65 }, shoulderR: { x: -2.5, y: 0, z: -0.65 },
+       elbowL: { x: -0.25, y: 0, z: 0 }, elbowR: { x: -0.25, y: 0, z: 0 } }, 0.45, { k: 10 }],
+    [{ torso: { x: -0.02, y: 0, z: 0 }, head: { x: -0.16, y: 0, z: 0 },
+       shoulderL: { x: -2.35, y: 0, z: 0.55 }, shoulderR: { x: -2.35, y: 0, z: -0.55 },
+       elbowL: { x: -0.3, y: 0, z: 0 }, elbowR: { x: -0.3, y: 0, z: 0 } }, 0.3, { k: 12 }],
+    [{ torso: { x: -0.06, y: 0, z: 0 }, head: { x: -0.2, y: 0, z: 0 },
+       shoulderL: { x: -2.55, y: 0, z: 0.68 }, shoulderR: { x: -2.55, y: 0, z: -0.68 },
+       elbowL: { x: -0.22, y: 0, z: 0 }, elbowR: { x: -0.22, y: 0, z: 0 } }, 0.35, { k: 12 }],
+    [GUARD, 0.4, { k: 6 }],
+  ],
+  // Carter: a warm side-to-side wave with a friendly head nod.
+  wave: [
+    [{ torso: { x: 0.04, y: 0, z: 0 }, head: { x: 0.06, y: 0.08, z: 0.04 },
+       shoulderR: { x: -2.6, y: 0, z: -0.3 }, elbowR: { x: -0.5, y: 0, z: 0.4 } }, 0.4, { k: 12 }],
+    [{ head: { x: 0.04, y: -0.05, z: -0.03 },
+       shoulderR: { x: -2.6, y: 0, z: -0.15 }, elbowR: { x: -0.5, y: 0, z: -0.35 } }, 0.3, { k: 14 }],
+    [{ head: { x: 0.06, y: 0.06, z: 0.04 },
+       shoulderR: { x: -2.6, y: 0, z: -0.3 }, elbowR: { x: -0.5, y: 0, z: 0.4 } }, 0.3, { k: 14 }],
+    [GUARD, 0.5, { k: 6 }],
+  ],
   // Generic salute — used by every other president.
   salute: [
     [{ torso: { x: 0.04, y: 0.05, z: 0 }, head: { x: -0.05, y: 0, z: 0 },
@@ -216,6 +241,22 @@ export { ENTRANCES };
 
 function lerpAngle(cur, target, k) {
   return cur + (target - cur) * k;
+}
+
+// Layer per-character stance offsets additively onto the shared guard —
+// Trump's chin-up lean, Nixon's hunch, Obama's dropped relaxed arms. Offsets
+// are partial: { jointName: {x?,y?,z?} } added to the GUARD values.
+function personalizeGuard(offsets) {
+  if (!offsets) return GUARD;
+  const out = {};
+  for (const [n, p] of Object.entries(GUARD)) out[n] = { ...p };
+  for (const [n, o] of Object.entries(offsets)) {
+    const t = out[n] || (out[n] = { x: 0, y: 0, z: 0 });
+    t.x += o.x || 0;
+    t.y += o.y || 0;
+    t.z += o.z || 0;
+  }
+  return out;
 }
 function clamp(v, lo, hi) {
   return v < lo ? lo : v > hi ? hi : v;
@@ -239,11 +280,15 @@ const _targetLocal = new THREE.Vector3();
 const _footW = new THREE.Vector3();
 
 export class Animator {
-  constructor(joints) {
+  constructor(joints, stance = null) {
     this.joints = joints;
     this.track = null;
     this.trackT = 0;
-    this.base = GUARD;
+    // The character's personalized idle guard (GUARD + stance offsets).
+    // Track segments that reference GUARD resolve to this, so the
+    // personality survives the return from punches/kicks/entrances.
+    this.guard = personalizeGuard(stance);
+    this.base = this.guard;
     this.walkPhase = 0;
     // Hold-to-charge coil (see setCharge).
     this.chargeName = null;
@@ -290,7 +335,7 @@ export class Animator {
   }
 
   setBlocking(on) {
-    this.base = on ? BLOCK : GUARD;
+    this.base = on ? BLOCK : this.guard;
   }
 
   // Head-tracking targets (root-local yaw/pitch toward the opponent).
@@ -338,7 +383,7 @@ export class Animator {
       }
       if (seg) {
         if (seg === GUARD) {
-          target = GUARD;
+          target = this.guard;
         } else {
           const ov = segOpts?.overshoot ?? 1;
           if (ov !== 1) {
@@ -346,9 +391,9 @@ export class Animator {
             for (const [n, p] of Object.entries(seg)) {
               scaled[n] = { x: p.x * ov, y: p.y * ov, z: p.z * ov };
             }
-            target = { ...GUARD, ...scaled };
+            target = { ...this.guard, ...scaled };
           } else {
-            target = { ...GUARD, ...seg };
+            target = { ...this.guard, ...seg };
           }
           // Legs explicitly keyed by this segment are track-driven; the
           // foot-IK stepper must not fight them.
@@ -370,7 +415,7 @@ export class Animator {
       for (const [n, p] of Object.entries(pose)) {
         scaled[n] = { x: p.x * depth, y: p.y * depth, z: p.z * depth };
       }
-      target = { ...GUARD, ...scaled };
+      target = { ...this.guard, ...scaled };
       this._legDriven.L = !!(pose.hipL || pose.kneeL);
       this._legDriven.R = !!(pose.hipR || pose.kneeR);
       trackK = 16;
@@ -598,8 +643,10 @@ export class Animator {
     this.leanX += x;
     this.leanZ += z;
     // Cap so consecutive hits don't rotate the torso beyond believable range.
-    this.leanX = Math.max(-0.8, Math.min(0.8, this.leanX));
-    this.leanZ = Math.max(-0.8, Math.min(0.8, this.leanZ));
+    // 0.5 rad — the lean stacks with the hitstun track, the reaction springs
+    // and the ragdoll blend, all pulling the spine the same way.
+    this.leanX = Math.max(-0.2, Math.min(0.2, this.leanX));
+    this.leanZ = Math.max(-0.2, Math.min(0.2, this.leanZ));
   }
 
   decayLean(dt) {

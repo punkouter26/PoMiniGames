@@ -109,11 +109,26 @@ export class CannonRagdoll {
   // Build the skeleton from the rig's CURRENT world pose and launch it.
   // opts.velocity — fighter world velocity at the moment of the KO blow.
   // opts.rng      — seeded RNG for the tumble jitter (demo reproducibility).
+  // opts.launch   — shape of the killing blow: { upMul, flip, spin,
+  //                 knockMul, velMul }. upMul scales the vertical launch
+  //                 (uppercuts loft the body), flip adds pitch angular
+  //                 velocity about the axis perpendicular to knockDir (leg
+  //                 sweeps flip forward, head shots whip backward), spin
+  //                 adds yaw. knockMul scales the directed launch speed and
+  //                 velMul the carried momentum — near-zero for the
+  //                 "lights out, crumples in place" KO.
   activate(knockDir, opts = {}) {
     if (this.bodies) this.dispose();
     const s = (this.rig.config && this.rig.config.heightScale) || 1;
     const vel = opts.velocity || { x: 0, z: 0 };
     const rand = opts.rng ? () => opts.rng.random() : Math.random;
+    const launch = opts.launch || {};
+    const upMul = launch.upMul ?? 1;
+    const flip = launch.flip ?? 0;
+    const spin = launch.spin ?? 0;
+    const knockMul = launch.knockMul ?? 1;
+    const velMul = launch.velMul ?? 1;
+    const flipAxisX = -knockDir.z, flipAxisZ = knockDir.x;
     this.rig.root.updateMatrixWorld(true);
 
     this.bodies = {};
@@ -144,12 +159,14 @@ export class CannonRagdoll {
       // two KOs tumble identically.
       const L = LAUNCH[part];
       body.velocity.set(
-        vel.x + knockDir.x * L.knock,
-        L.up,
-        vel.z + knockDir.z * L.knock
+        vel.x * velMul + knockDir.x * L.knock * knockMul,
+        L.up * upMul,
+        vel.z * velMul + knockDir.z * L.knock * knockMul
       );
       body.angularVelocity.set(
-        (rand() - 0.5) * 3, (rand() - 0.5) * 2, (rand() - 0.5) * 3);
+        (rand() - 0.5) * 3 + flipAxisX * flip,
+        (rand() - 0.5) * 2 + spin,
+        (rand() - 0.5) * 3 + flipAxisZ * flip);
 
       this.world.addBody(body);
       this.bodies[part] = body;

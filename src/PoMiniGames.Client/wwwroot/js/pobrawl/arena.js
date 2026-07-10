@@ -2,6 +2,8 @@
 // Materials are MeshStandardMaterial so they read the key/rim lights and (optionally)
 // the env map that the engine can attach at startup.
 import * as THREE from 'three';
+import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUniformsLib.js';
+import { Reflector } from 'three/addons/objects/Reflector.js';
 
 export const RING_HALF = 5.2; // playable clamp radius (ring is 12x12, keep a margin)
 
@@ -42,7 +44,10 @@ function ringCanvasTexture() {
 
 export function buildArena(scene, envMap = null) {
   scene.background = new THREE.Color(0x0d0f1a);
-  scene.fog = new THREE.Fog(0x0d0f1a, 22, 60);
+  // Exponential haze instead of the old far-plane linear fog: the fighters
+  // (4-6 m from camera) stay clean while the crowd rows and hall edges melt
+  // progressively into the dark — "smoky arena air".
+  scene.fog = new THREE.FogExp2(0x0d0f1a, 0.022);
 
   // Outer floor.
   const floor = new THREE.Mesh(
@@ -83,6 +88,25 @@ export function buildArena(scene, envMap = null) {
   top.receiveShadow = true;
   scene.add(top);
 
+  // Real planar reflection on the vinyl (tier 2 only — the engine toggles
+  // `reflector.visible` with the quality tier and falls back to the ghost
+  // mirror rigs below it). A faint transparent overlay on the opaque canvas:
+  // the fragment alpha is patched down so the vinyl texture reads through.
+  const reflector = new Reflector(new THREE.PlaneGeometry(11.6, 11.6), {
+    textureWidth: 512, textureHeight: 512,
+    color: 0x9aa0c0, clipBias: 0.003,
+  });
+  reflector.rotation.x = -Math.PI / 2;
+  reflector.position.y = 0.045;
+  reflector.material.transparent = true;
+  reflector.material.onBeforeCompile = (shader) => {
+    shader.fragmentShader = shader.fragmentShader.replace(
+      'gl_FragColor = vec4( blendOverlay( base.rgb, color ), 1.0 );',
+      'gl_FragColor = vec4( blendOverlay( base.rgb, color ), 0.22 );');
+  };
+  reflector.visible = false; // engine enables it on tier 2
+  scene.add(reflector);
+
   // Corner posts — breakable. The engine listens for collisions against these.
   const postMat = new THREE.MeshStandardMaterial({
     color: 0x8a92c9, roughness: 0.45, metalness: 0.25,
@@ -117,19 +141,25 @@ export function buildArena(scene, envMap = null) {
     }
   }
 
-  // Ropes (kept from the original).
+  // Ropes: bendable bezier tubes with a spring-loaded midpoint. A fighter
+  // pressed against the ring boundary bows the ropes on that side outward;
+  // a hard rebound twangs them (see updateRopes / twangRope).
   const ropeMat = new THREE.MeshStandardMaterial({
     color: 0xd0d4f0, roughness: 0.85, metalness: 0.0,
   });
+  const ropes = [];
   for (const y of [0.5, 0.9, 1.3]) {
-    for (const side of [0, 1]) {
+    for (const axis of ['x', 'z']) {           // 'x' = runs along X (z = ±half)
       for (const sign of [-1, 1]) {
-        const rope = new THREE.Mesh(
-          new THREE.BoxGeometry(side ? 0.04 : half * 2, 0.04, side ? half * 2 : 0.04),
-          ropeMat
-        );
-        rope.position.set(side ? sign * half : 0, y, side ? 0 : sign * half);
-        scene.add(rope);
+        const rope = {
+          axis, sign, y, half,
+          offset: 0, vel: 0, built: -1,
+          mesh: new THREE.Mesh(undefined, ropeMat),
+        };
+        rope.mesh.geometry = ropeGeometry(rope);
+        rope.built = 0;
+        scene.add(rope.mesh);
+        ropes.push(rope);
       }
     }
   }
@@ -137,7 +167,9 @@ export function buildArena(scene, envMap = null) {
   // Lights — slightly warmer key, bluer rim, plus a low ambient bounce so
   // PBR materials in shadow still read some colour. All handles are returned
   // so the engine can dim the house for the KO "lights down" cinematic.
-  const hemi = new THREE.HemisphereLight(0x9aa4ff, 0x1a1030, 0.55);
+  // Slightly lower than before — the RectArea rig panels below now carry a
+  // share of the ambient level.
+  const hemi = new THREE.HemisphereLight(0x9aa4ff, 0x1a1030, 0.42);
   scene.add(hemi);
   const key = new THREE.DirectionalLight(0xfff1d0, 1.6);
   key.position.set(6, 12, 4);
@@ -159,7 +191,7 @@ export function buildArena(scene, envMap = null) {
   rim.position.set(-5, 6, -6);
   scene.add(rim);
 
-  const fill = new THREE.PointLight(0xffe0a0, 0.5, 30, 1.4);
+  const fill = new THREE.PointLight(0xffe0a0, 0.35, 30, 1.4);
   fill.position.set(0, 6, 0);
   scene.add(fill);
 
@@ -177,6 +209,20 @@ export function buildArena(scene, envMap = null) {
   spot.shadow.radius = 6;
   scene.add(spot);
   scene.add(spot.target);
+
+  // Studio rig panels: two RectAreaLights angled over the ring give the
+  // broad soft speculars on the vinyl and gradient falloff on the fighters
+  // that point/spot lights can't fake. No shadows (RectArea can't cast) —
+  // the key/spot still own shadowing.
+  RectAreaLightUniformsLib.init();
+  const rectA = new THREE.RectAreaLight(0xfff0d8, 2.6, 4.5, 3.2);
+  rectA.position.set(-3.6, 8.5, 3.6);
+  rectA.lookAt(0, 0, 0);
+  scene.add(rectA);
+  const rectB = new THREE.RectAreaLight(0xdfe6ff, 1.8, 4.5, 3.2);
+  rectB.position.set(3.6, 8.5, -3.6);
+  rectB.lookAt(0, 0, 0);
+  scene.add(rectB);
 
   // Corner identity lighting: red vs blue side, matching the HUD bars.
   // Fighters pick up a warm/cool gradient as they cross the ring.
@@ -218,9 +264,77 @@ export function buildArena(scene, envMap = null) {
   const flashes = buildCrowdFlashes(scene);
 
   return {
-    posts, crowd, atmo, flashes,
-    lights: { hemi, key, rim, fill, spot, cornerA, cornerB },
+    posts, crowd, atmo, flashes, reflector, ropes,
+    lights: { hemi, key, rim, fill, spot, cornerA, cornerB, rectA, rectB },
   };
+}
+
+// ── Rope physics ──────────────────────────────────────────────────────────
+// Each rope is a quadratic-bezier tube whose midpoint control rides a
+// damped spring. Pressing bows it outward (and slightly down); releasing
+// twangs it back with an underdamped snap.
+const _ropeA = new THREE.Vector3();
+const _ropeM = new THREE.Vector3();
+const _ropeB = new THREE.Vector3();
+function ropeGeometry(rope) {
+  const { axis, sign, y, half, offset } = rope;
+  if (axis === 'x') {
+    _ropeA.set(-half, y, sign * half);
+    _ropeB.set(half, y, sign * half);
+    _ropeM.set(0, y - Math.abs(offset) * 0.18, sign * (half + offset * 1.6));
+  } else {
+    _ropeA.set(sign * half, y, -half);
+    _ropeB.set(sign * half, y, half);
+    _ropeM.set(sign * (half + offset * 1.6), y - Math.abs(offset) * 0.18, 0);
+  }
+  return new THREE.TubeGeometry(
+    new THREE.QuadraticBezierCurve3(_ropeA.clone(), _ropeM.clone(), _ropeB.clone()),
+    12, 0.022, 6);
+}
+
+// Per-frame rope solve. `fighters` is the engine's fighter list; a body
+// leaning past the clamp margin presses the ropes on that side.
+export function updateRopes(arena, dt, fighters) {
+  if (!arena.ropes) return;
+  const pressStart = RING_HALF - 0.55; // bodies this far out start pressing
+  for (const rope of arena.ropes) {
+    let target = 0;
+    if (fighters) {
+      for (const f of fighters) {
+        const p = f.rig.root.position;
+        const along = rope.axis === 'x' ? p.x : p.z;
+        const out = (rope.axis === 'x' ? p.z : p.x) * rope.sign;
+        if (Math.abs(along) > rope.half - 0.4) continue; // near the posts, not the span
+        const press = out - pressStart;
+        if (press > 0) {
+          // The middle rope (torso height) takes the most load.
+          const w = rope.y === 0.9 ? 1.1 : 0.6;
+          target = Math.max(target, Math.min(0.55, press * w));
+        }
+      }
+    }
+    // Underdamped spring toward the press target — released ropes twang.
+    rope.vel += ((target - rope.offset) * 55 - rope.vel * 7) * dt;
+    rope.offset += rope.vel * dt;
+    if (Math.abs(rope.offset - rope.built) > 0.004) {
+      rope.mesh.geometry.dispose();
+      rope.mesh.geometry = ropeGeometry(rope);
+      rope.built = rope.offset;
+    }
+  }
+}
+
+// Impulse a side's ropes (rebound off the boundary): axis 'x'|'z' is the
+// world axis the fighter was clamped on, sign which side.
+export function twangRope(arena, clampAxis, sign, power = 1) {
+  if (!arena.ropes) return;
+  for (const rope of arena.ropes) {
+    // A clamp on world X hits the ropes that run along Z at x = sign*half.
+    const runsAlong = clampAxis === 'x' ? 'z' : 'x';
+    if (rope.axis === runsAlong && rope.sign === sign) {
+      rope.vel += 2.6 * power;
+    }
+  }
 }
 
 // ── Atmosphere: light shaft + dust ────────────────────────────────────────
@@ -249,26 +363,9 @@ function buildAtmosphere(scene) {
   cone.renderOrder = 2;
   scene.add(cone);
 
-  const COUNT = 50;
-  const pos = new Float32Array(COUNT * 3);
-  const dustSeed = [];
-  for (let i = 0; i < COUNT; i++) {
-    const a = Math.random() * Math.PI * 2;
-    const r = Math.random() * 2.0;
-    pos[i * 3] = Math.cos(a) * r;
-    pos[i * 3 + 1] = 0.5 + Math.random() * 8.5;
-    pos[i * 3 + 2] = Math.sin(a) * r;
-    dustSeed.push({ vy: 0.1 + Math.random() * 0.2, phase: Math.random() * Math.PI * 2 });
-  }
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  const dust = new THREE.Points(geo, new THREE.PointsMaterial({
-    color: 0xfff4e0, size: 0.05, transparent: true, opacity: 0.35,
-    blending: THREE.AdditiveBlending, depthWrite: false,
-    sizeAttenuation: true, fog: false,
-  }));
-  scene.add(dust);
-  return { cone, dust, dustSeed };
+  // (Floating dust motes removed per user request — the shaft alone carries
+  // the volumetric read.)
+  return { cone };
 }
 
 // Pool of billboard sprites reused as crowd camera flashes. Kept in their
@@ -294,30 +391,18 @@ function buildCrowdFlashes(scene) {
 // Per-frame atmosphere update: dust drifts down the beam and wraps; crowd
 // flashes fire occasionally at rest and in a storm while `excited` > 0.
 export function updateAtmosphere(arena, dt, t, excited) {
-  const { atmo, flashes, crowd } = arena;
-  if (atmo) {
-    const attr = atmo.dust.geometry.attributes.position;
-    const arr = attr.array;
-    for (let i = 0; i < atmo.dustSeed.length; i++) {
-      const s = atmo.dustSeed[i];
-      arr[i * 3 + 1] -= s.vy * dt;
-      if (arr[i * 3 + 1] < 0.3) arr[i * 3 + 1] = 9.0;
-      arr[i * 3] += Math.sin(t * 0.6 + s.phase) * 0.05 * dt;
-      arr[i * 3 + 2] += Math.cos(t * 0.5 + s.phase) * 0.05 * dt;
-    }
-    attr.needsUpdate = true;
-  }
+  const { flashes, crowd } = arena;
   if (flashes && crowd) {
     const rate = 1.2 + excited * 22; // expected flashes per second
     if (Math.random() < rate * dt) {
       const free = flashes.find((f) => f.life <= 0);
-      const members = crowd.children;
-      if (free && members.length) {
-        const m = members[(Math.random() * members.length) | 0];
+      const spots = crowd.userData.spots;
+      if (free && spots && spots.length) {
+        const m = spots[(Math.random() * spots.length) | 0];
         free.sprite.position.set(
-          m.position.x + (Math.random() - 0.5) * 0.3,
-          m.position.y + 1.0 + Math.random() * 0.25,
-          m.position.z + (Math.random() - 0.5) * 0.3
+          m.x + (Math.random() - 0.5) * 0.3,
+          m.y + 0.15 + Math.random() * 0.25,
+          m.z + (Math.random() - 0.5) * 0.3
         );
         free.life = 0.09;
         free.sprite.visible = true;
@@ -333,19 +418,37 @@ export function updateAtmosphere(arena, dt, t, excited) {
   }
 }
 
+// GPU-instanced crowd: all torsos in one InstancedMesh, all heads in another
+// (2 draw calls total, was ~290 as individual meshes). The idle sway and the
+// excited bounce moved into the vertex shader — a per-instance phase
+// attribute plus shared uTime/uExcited uniforms displace each spectator.
+// Instances only rotate about Y, so an object-space +Y offset in
+// begin_vertex IS a world-space bounce.
+function crowdBounceMaterial(uniforms) {
+  const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 });
+  mat.onBeforeCompile = (shader) => {
+    shader.uniforms.uTime = uniforms.uTime;
+    shader.uniforms.uExcited = uniforms.uExcited;
+    shader.vertexShader = `
+      uniform float uTime;
+      uniform float uExcited;
+      attribute float aPhase;
+    ` + shader.vertexShader.replace(
+      '#include <begin_vertex>',
+      `#include <begin_vertex>
+      float crowdPhase = aPhase + uTime * 1.4;
+      transformed.y += sin(crowdPhase) * 0.025
+        + sin(crowdPhase * 1.8) * 0.18 * uExcited;`);
+  };
+  return mat;
+}
+
 function buildCrowd(scene) {
   const group = new THREE.Group();
   group.userData.kind = 'crowd';
-  const skinA = new THREE.MeshStandardMaterial({ color: 0xb88a6a, roughness: 0.9 });
-  const skinB = new THREE.MeshStandardMaterial({ color: 0x6b4a32, roughness: 0.9 });
-  const shirt = new THREE.MeshStandardMaterial({ color: 0x4a4a4a, roughness: 0.9 });
-  const shirtB = new THREE.MeshStandardMaterial({ color: 0x252540, roughness: 0.9 });
-  const palettes = [
-    [skinA, shirt],
-    [skinB, shirtB],
-    [skinA, shirtB],
-    [skinB, shirt],
-  ];
+
+  const skins = [0xb88a6a, 0x6b4a32, 0xd8a67f, 0x8a5d3f];
+  const shirts = [0x4a4a4a, 0x252540, 0x5a2f2f, 0x2f4a3a, 0x3a3a5c, 0x6b5a2f];
 
   const ring = 7.6;
   const rows = [
@@ -354,54 +457,76 @@ function buildCrowd(scene) {
     { r: ring + 3.4, count: 40 },
     { r: ring + 5.5, count: 48 },
   ];
+  const total = rows.reduce((n, r) => n + r.count, 0);
+
+  const uniforms = { uTime: { value: 0 }, uExcited: { value: 0 } };
+  const torsoMesh = new THREE.InstancedMesh(
+    new THREE.BoxGeometry(0.42, 0.9, 0.28), crowdBounceMaterial(uniforms), total);
+  const headMesh = new THREE.InstancedMesh(
+    new THREE.BoxGeometry(0.24, 0.26, 0.24), crowdBounceMaterial(uniforms), total);
+  torsoMesh.castShadow = false;
+  headMesh.castShadow = false;
+
+  const phases = new Float32Array(total);
+  const spots = [];
+  const m = new THREE.Matrix4();
+  const q = new THREE.Quaternion();
+  const up = new THREE.Vector3(0, 1, 0);
+  const s = new THREE.Vector3();
+  const p = new THREE.Vector3();
+  const color = new THREE.Color();
+
   let id = 0;
   for (const row of rows) {
-    const count = row.count;
-    for (let i = 0; i < count; i++) {
-      const a = (i / count) * Math.PI * 2 + (Math.random() - 0.5) * 0.05;
+    for (let i = 0; i < row.count; i++) {
+      const a = (i / row.count) * Math.PI * 2 + (Math.random() - 0.5) * 0.05;
       const x = Math.sin(a) * row.r + (Math.random() - 0.5) * 0.4;
       const z = Math.cos(a) * row.r + (Math.random() - 0.5) * 0.4;
       const y = -0.45;
-
-      const body = new THREE.Group();
       const heightJitter = 0.92 + Math.random() * 0.18;
-      const pal = palettes[id % palettes.length];
-      const torso2 = new THREE.Mesh(
-        new THREE.BoxGeometry(0.42, 0.9 * heightJitter, 0.28),
-        pal[1]
-      );
-      torso2.position.y = 0.45 * heightJitter;
-      torso2.castShadow = false;
-      body.add(torso2);
-      const skull2 = new THREE.Mesh(
-        new THREE.BoxGeometry(0.24, 0.26, 0.24),
-        pal[0]
-      );
-      skull2.position.y = 1.05 * heightJitter;
-      body.add(skull2);
-      body.position.set(x, y, z);
-      body.rotation.y = Math.atan2(-x, -z) + (Math.random() - 0.5) * 0.6;
-      body.userData.crowd = true;
-      body.userData.bouncePhase = Math.random() * Math.PI * 2;
-      body.userData.baseY = y;
-      group.add(body);
+      const yaw = Math.atan2(-x, -z) + (Math.random() - 0.5) * 0.6;
+      q.setFromAxisAngle(up, yaw);
+
+      // Torso: height jitter via Y scale (its box is 0.9 tall around origin).
+      s.set(1, heightJitter, 1);
+      p.set(x, y + 0.45 * heightJitter, z);
+      m.compose(p, q, s);
+      torsoMesh.setMatrixAt(id, m);
+      torsoMesh.setColorAt(id, color.setHex(shirts[(Math.random() * shirts.length) | 0]));
+
+      s.set(1, 1, 1);
+      p.set(x, y + 1.05 * heightJitter, z);
+      m.compose(p, q, s);
+      headMesh.setMatrixAt(id, m);
+      headMesh.setColorAt(id, color.setHex(skins[(Math.random() * skins.length) | 0]));
+
+      phases[id] = Math.random() * Math.PI * 2;
+      spots.push({ x, y: y + 1.05 * heightJitter, z });
       id++;
     }
   }
+  const phaseAttr = new THREE.InstancedBufferAttribute(phases, 1);
+  torsoMesh.geometry.setAttribute('aPhase', phaseAttr);
+  headMesh.geometry.setAttribute('aPhase', phaseAttr);
+  torsoMesh.instanceMatrix.needsUpdate = true;
+  headMesh.instanceMatrix.needsUpdate = true;
+  if (torsoMesh.instanceColor) torsoMesh.instanceColor.needsUpdate = true;
+  if (headMesh.instanceColor) headMesh.instanceColor.needsUpdate = true;
+
+  group.add(torsoMesh, headMesh);
+  group.userData.uniforms = uniforms;
+  // Head positions for the camera-flash sprites (updateAtmosphere).
+  group.userData.spots = spots;
   return group;
 }
 
-// Animate the crowd: a subtle idle sway plus an excited bounce while `excited` > 0.
-// Called from the engine's _updateCrowd at render rate.
+// Animate the crowd: the sway/bounce runs in the vertex shader now — this
+// just feeds the clock and excitement uniforms. Called from the engine's
+// _updateCrowd at render rate.
 export function animateCrowd(crowd, dt, t, excited) {
-  if (!crowd) return;
-  for (const c of crowd.children) {
-    const phase = (c.userData.bouncePhase ?? 0) + t * 1.4;
-    const idle = Math.sin(phase) * 0.025;
-    const wave = excited > 0 ? Math.sin(phase * 1.8 + c.userData.baseY) * 0.18 * excited : 0;
-    c.position.y = c.userData.baseY + idle + wave;
-    c.rotation.x = excited > 0 ? Math.sin(phase * 1.8) * 0.05 * excited : 0;
-  }
+  if (!crowd || !crowd.userData.uniforms) return;
+  crowd.userData.uniforms.uTime.value = t;
+  crowd.userData.uniforms.uExcited.value = excited;
 }
 
 // Knock chunks off a post on collision. Returns the debris meshes for the engine

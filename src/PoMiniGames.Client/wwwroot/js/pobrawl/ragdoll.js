@@ -266,6 +266,56 @@ this._impulse('kneeR',     -perpX * splayStrength + bvx, downKick, -perpZ * spla
     this._renderFromVerlet();
   }
 
+  // ── Partial-blend step: the hitstun "active ragdoll" ─────────────────
+  // Integrates the verlet body and SLERPs the animator-driven rotation of
+  // the UPPER-BODY joints toward the physics solution by `weight` — the
+  // defender's torso/arms/head genuinely absorb the blow while the foot IK
+  // keeps the legs planted. The rig root is never touched, and each point
+  // is softly re-anchored to the live rig so gravity can't sag the pose
+  // over the short hitstun window.
+  static BLEND_JOINTS = new Set(['torso', 'head', 'shoulderL', 'shoulderR', 'elbowL', 'elbowR']);
+
+  blendStep(dt, weight) {
+    if (!this.active || weight <= 0.001) return;
+    this.t += dt;
+    dt = Math.min(dt, 1 / 30);
+    this._integrateVerlet(dt);
+    this._solveConstraints();
+
+    // Soft anchor: pull each verlet point 35 %/frame toward where the
+    // animator actually put the joint this tick. High-frequency whip
+    // survives; low-frequency gravity sag does not.
+    const anchor = new THREE.Vector3();
+    for (const [name, p] of this.points) {
+      const joint = this.joints[name];
+      if (!joint) continue;
+      joint.getWorldPosition(anchor);
+      p.pos.lerp(anchor, 0.35);
+      p.prev.lerp(anchor, 0.35);
+    }
+
+    // Blend upper-body joint rotations toward the verlet solution.
+    const _yAxis = new THREE.Vector3(0, -1, 0);
+    const _dir = new THREE.Vector3();
+    const _parentQ = new THREE.Quaternion();
+    const _targetQ = new THREE.Quaternion();
+    for (const [name, parentName] of Object.entries(this._restParent)) {
+      if (!PoBrawlRagdoll.BLEND_JOINTS.has(name)) continue;
+      const joint = this.joints[name];
+      const parentJoint = this.joints[parentName];
+      const p = this.points.get(name);
+      const parentP = this.points.get(parentName);
+      if (!joint || !parentJoint || !p || !parentP) continue;
+      _dir.set(p.pos.x - parentP.pos.x, p.pos.y - parentP.pos.y, p.pos.z - parentP.pos.z);
+      if (_dir.lengthSq() < 1e-8) continue;
+      _dir.normalize();
+      _targetQ.setFromUnitVectors(_yAxis, _dir);
+      parentJoint.getWorldQuaternion(_parentQ);
+      _targetQ.premultiply(_parentQ.invert());
+      joint.quaternion.slerp(_targetQ, weight);
+    }
+  }
+
   // ── Phase 1 + 2: verlet integration, constraint solve, ground clamp ──
   _integrateVerlet(dt) {
     const damp = Math.pow(VELOCITY_DAMPING, dt * 60);

@@ -1,52 +1,123 @@
-// fighters.js — the four president caricatures as hierarchical three.js primitive rigs.
-// Silhouette identity comes from hair geometry, suit/tie palette and height/build scale;
-// faces stay abstract so the caricature reads as playful, not mocking.
+// fighters.js — the president caricatures as hierarchical three.js primitive rigs.
+// Everything is procedurally generated: no meshes, no textures on disk.
 //
-// Each character exposes `mass`, `attackPower`, and `moveAccel` so the engine can drive
-// realistic weight/momentum/knockback without per-character special cases.
-// Materials are MeshStandardMaterial so we can pick up the arena env map and react
-// to the key/rim lights.
+// Likeness comes from four layers, all cheap primitives + canvas textures:
+//   1. Facial geometry — brows/eyes/nose/mouth/chin/jowls, parameterized per
+//      president (Nixon's ski-jump nose and heavy brows, Clinton's bulb nose…).
+//   2. A canvas-painted face-detail plate — tan lines, blush, wrinkles,
+//      stubble — laid over the front of the skull.
+//   3. Bespoke hair geometry per president (the Trump sweep, Reagan's
+//      pompadour, Obama's grey temples) instead of shared generic styles.
+//   4. Body caricature — per-part belly/shoulder/head scales layered on the
+//      base build, plus accessories (flag pins, Bush Sr.'s round glasses,
+//      Carter's cardigan, Clinton's loosened tie).
+//
+// Engine contracts that must NOT change (mirror sync, foot IK, ragdolls and
+// hit capsules all depend on them): joint names, joint positions, the
+// jiggles array order, and refs.skull.scale staying (1,1,1) at build time
+// (the engine writes absolute swell scales into it).
+//
+// Each character exposes `mass`, `attackPower`, and `moveAccel` so the engine
+// can drive realistic weight/momentum/knockback without per-character special
+// cases. Materials are MeshStandardMaterial so we can pick up the arena env
+// map and react to the key/rim lights.
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 
+// Face parameter reference (all optional, defaults in buildFace):
+//   brow:  { color, angle (rad; − = stern inner-down, + = raised), thick, w }
+//   eyes:  { squint (0..1), color (iris) }
+//   nose:  { type: 'straight'|'ski'|'bulb'|'wide'|'button', size }
+//   mouth: { w, smile (0..1), frown (0..1), smirk (bool), teeth (bool) }
+//   chin:  scale (1 = subtle, 1.5 = Ford jaw), jowls/cheeks: bool
+//   Painted detail: tanLines (Trump goggles), blush (0..1), wrinkles (0..1),
+//   stubble (bool), faceTint (face-only skin tone override).
 export const CHARACTERS = {
   trump: {
     id: 'trump', name: 'Trump',
-    skin: 0xf0b98a, suit: 0x1b2a52, tie: 0xd62828, tieLength: 1.4,
-    hair: 0xf5d47a, hairStyle: 'sweep',
+    skin: 0xefae7f, faceTint: 0xea9a5e, suit: 0x1b2a52, tie: 0xd62828, tieLength: 1.4,
+    hair: 0xf7d98c, hairStyle: 'trumpSweep',
     heightScale: 1.02, buildScale: 1.15,
+    headScale: 1.02, bellyScale: 1.22,
+    face: {
+      brow: { color: 0xd8b36a, angle: -0.22, thick: 1.1 },
+      eyes: { squint: 0.35, color: 0x5d7fa3 },
+      nose: { type: 'straight', size: 1.0 },
+      mouth: { w: 0.72, frown: 0.25 },
+      cheeks: true, tanLines: true, blush: 0.25, wrinkles: 0.25,
+    },
+    lapelPin: true,
+    stance: { torso: { x: -0.05 }, head: { x: -0.14 } },
     mass: 1.18, attackPower: 1.10, moveAccel: 11,
     entrance: 'swagger',
   },
   biden: {
     id: 'biden', name: 'Biden',
-    skin: 0xe8bfa4, suit: 0x24365e, tie: 0x7fb2e5, tieLength: 1.0,
-    hair: 0xf2f2f2, hairStyle: 'comb',
+    skin: 0xeec9ae, suit: 0x24365e, tie: 0x7fb2e5, tieLength: 1.0,
+    hair: 0xf5f5f5, hairStyle: 'combover',
     heightScale: 1.0, buildScale: 0.95, aviators: true,
+    face: {
+      brow: { color: 0xcfcfcf, angle: -0.05, thick: 0.8 },
+      eyes: { squint: 0.55, color: 0x6f93b5 },
+      nose: { type: 'straight', size: 0.9 },
+      mouth: { w: 1.15, smile: 0.5, teeth: true },
+      wrinkles: 0.8,
+    },
+    lapelPin: true,
+    stance: { head: { x: 0.03, z: 0.05 } },
     mass: 0.95, attackPower: 0.92, moveAccel: 13,
     entrance: 'aviator',
   },
   obama: {
     id: 'obama', name: 'Obama',
     skin: 0x8d5524, suit: 0x3a3f44, tie: 0x2456c9, tieLength: 1.0,
-    hair: 0x2b2b2b, hairStyle: 'cap',
+    hair: 0x2b2b2b, hairStyle: 'crop', greyTemples: true,
     heightScale: 1.04, buildScale: 0.95,
+    headW: 0.245, headH: 0.305, earR: 0.052,
+    face: {
+      brow: { color: 0x1f1f1f, angle: -0.1, thick: 1.0 },
+      eyes: { color: 0x33231a },
+      nose: { type: 'wide', size: 1.0 },
+      mouth: { w: 1.0, smile: 0.25 },
+      chin: 1.05, wrinkles: 0.2,
+    },
+    lapelPin: true,
+    stance: { shoulderL: { x: 0.22 }, shoulderR: { x: 0.22 }, elbowL: { x: 0.3 }, elbowR: { x: 0.3 } },
     mass: 1.0, attackPower: 1.05, moveAccel: 14,
     entrance: 'fistbump',
   },
   bush: {
     id: 'bush', name: 'Bush',
     skin: 0xe3b18e, suit: 0x17181c, tie: 0xb02323, tieLength: 0.85,
-    hair: 0x8a8073, hairStyle: 'cap',
-    heightScale: 0.97, buildScale: 1.08,
+    hair: 0x8a8073, hairStyle: 'sidePart',
+    heightScale: 0.97, buildScale: 1.08, earR: 0.05,
+    face: {
+      brow: { color: 0x6e6357, angle: 0.14, thick: 0.9 },
+      eyes: { squint: 0.45, color: 0x51708d },
+      nose: { type: 'straight', size: 0.9 },
+      mouth: { w: 0.85, smirk: true, smile: 0.2 },
+      chin: 1.1, wrinkles: 0.45,
+    },
+    lapelPin: true,
+    stance: { head: { z: 0.07 } },
     mass: 1.12, attackPower: 1.0, moveAccel: 10,
     entrance: 'cowboy',
   },
   clinton: {
     id: 'clinton', name: 'Clinton',
     skin: 0xeec39a, suit: 0x2c3e6b, tie: 0xc0392b, tieLength: 1.05,
-    hair: 0xd9d9d9, hairStyle: 'sweep',
+    hair: 0xe3e3e3, hairStyle: 'silverSweep',
     heightScale: 1.03, buildScale: 1.06,
+    headW: 0.275, bellyScale: 1.12,
+    face: {
+      brow: { color: 0xb9b9b9, thick: 0.9 },
+      eyes: { color: 0x74808d },
+      nose: { type: 'bulb', size: 1.1 },
+      mouth: { w: 1.05, smile: 0.35 },
+      cheeks: true, blush: 0.5, wrinkles: 0.35,
+    },
+    lapelPin: true, tieLoose: true,
+    stance: { head: { z: -0.05 }, torso: { x: 0.02 } },
     mass: 1.08, attackPower: 1.02, moveAccel: 12,
     entrance: 'thumbsup',
   },
@@ -54,31 +125,67 @@ export const CHARACTERS = {
     id: 'bushsr', name: 'Bush Sr.',
     skin: 0xe5c0a0, suit: 0x3b4a63, tie: 0x30549c, tieLength: 0.95,
     hair: 0xbfb8ae, hairStyle: 'comb',
-    heightScale: 1.04, buildScale: 0.92,
+    heightScale: 1.04, buildScale: 0.92, headH: 0.3,
+    face: {
+      brow: { color: 0x9d9689, thick: 0.85 },
+      eyes: { color: 0x5f7a94 },
+      nose: { type: 'straight', size: 1.0 },
+      mouth: { w: 0.9 },
+      wrinkles: 0.6,
+    },
+    glasses: 'round', lapelPin: true,
+    stance: { torso: { x: -0.05 } },
     mass: 0.98, attackPower: 0.98, moveAccel: 13,
     entrance: 'salute',
   },
   reagan: {
     id: 'reagan', name: 'Reagan',
     skin: 0xe0a884, suit: 0x5a3a35, tie: 0x99282e, tieLength: 1.0,
-    hair: 0x442e1f, hairStyle: 'sweep',
+    hair: 0x3d2a1c, hairStyle: 'pompadour', hairShine: true,
     heightScale: 1.02, buildScale: 1.0,
+    face: {
+      brow: { color: 0x53402e, thick: 1.0 },
+      eyes: { color: 0x4c6078 },
+      nose: { type: 'straight', size: 1.0 },
+      mouth: { w: 1.0, smile: 0.4 },
+      chin: 1.1, blush: 0.55, wrinkles: 0.6,
+    },
+    lapelPin: true,
+    stance: { head: { x: -0.04, z: 0.04 }, torso: { x: -0.02 } },
     mass: 1.05, attackPower: 1.08, moveAccel: 12,
     entrance: 'salute',
   },
   carter: {
     id: 'carter', name: 'Carter',
-    skin: 0xe6bd9d, suit: 0x6b7a8f, tie: 0x3f7a4d, tieLength: 0.95,
-    hair: 0x9c9587, hairStyle: 'cap',
-    heightScale: 0.99, buildScale: 0.9,
+    skin: 0xe6bd9d, suit: 0xb59a72, tie: 0x3f7a4d, tieLength: 0.95,
+    hair: 0x9c9587, hairStyle: 'sidePart',
+    heightScale: 0.99, buildScale: 0.9, headW: 0.245,
+    face: {
+      brow: { color: 0x8a8378, thick: 0.85 },
+      eyes: { color: 0x557089 },
+      nose: { type: 'button', size: 1.0 },
+      mouth: { w: 1.25, smile: 0.7, teeth: true },
+      wrinkles: 0.5,
+    },
+    cardigan: true,
+    stance: { head: { x: 0.04 } },
     mass: 0.92, attackPower: 0.95, moveAccel: 14,
-    entrance: 'salute',
+    entrance: 'wave',
   },
   ford: {
     id: 'ford', name: 'Ford',
     skin: 0xe8c2a4, suit: 0x2f3a4a, tie: 0x8f6b2f, tieLength: 0.9,
     hair: 0xcdb98e, hairStyle: 'balding',
-    heightScale: 1.05, buildScale: 1.1,
+    heightScale: 1.05, buildScale: 1.1, shoulderScale: 1.15,
+    face: {
+      brow: { color: 0xb5a173, thick: 0.95 },
+      eyes: { color: 0x5a7590 },
+      nose: { type: 'straight', size: 1.05 },
+      mouth: { w: 0.95 },
+      chin: 1.5, wrinkles: 0.4,
+    },
+    lapelPin: true,
+    stance: { torso: { x: 0.05 }, shoulderL: { z: 0.06 }, shoulderR: { z: -0.06 } },
     mass: 1.15, attackPower: 1.06, moveAccel: 11,
     entrance: 'salute',
   },
@@ -86,9 +193,18 @@ export const CHARACTERS = {
     id: 'nixon', name: 'Nixon',
     skin: 0xe2b492, suit: 0x23252b, tie: 0x5d6d7e, tieLength: 1.0,
     hair: 0x3a3129, hairStyle: 'widow',
-    heightScale: 1.0, buildScale: 1.12,
+    heightScale: 1.0, buildScale: 1.12, headD: 0.27,
+    face: {
+      brow: { color: 0x241d15, angle: -0.35, thick: 1.6 },
+      eyes: { squint: 0.2, color: 0x3a2f26 },
+      nose: { type: 'ski', size: 1.15 },
+      mouth: { w: 0.9, frown: 0.35 },
+      chin: 1.15, jowls: true, stubble: true, wrinkles: 0.55,
+    },
+    lapelPin: true,
+    stance: { torso: { x: 0.16 }, head: { x: -0.1 }, shoulderL: { z: 0.12 }, shoulderR: { z: -0.12 } },
     mass: 1.2, attackPower: 1.12, moveAccel: 12,
-    entrance: 'salute',
+    entrance: 'victory',
   },
   // BOB — the 1-player everyman hero. No suit: white tee, blue jeans,
   // sneakers, messy brown hair. Built by the same rig with `outfit: 'casual'`.
@@ -97,6 +213,12 @@ export const CHARACTERS = {
     skin: 0xdfae8f, hair: 0x5a3d24, hairStyle: 'spiky',
     outfit: 'casual', shirtColor: 0xe9e6de, jeans: 0x3566a8, sneaker: 0xf0f0ee,
     heightScale: 1.0, buildScale: 1.0,
+    face: {
+      brow: { color: 0x4a3320, thick: 1.0 },
+      eyes: { color: 0x4a3a28 },
+      nose: { type: 'button', size: 1.0 },
+      mouth: { w: 1.0, smile: 0.3 },
+    },
     mass: 1.0, attackPower: 1.0, moveAccel: 12,
     entrance: 'ready',
   },
@@ -111,6 +233,24 @@ export const REGION_BONES = {
   arms: ['shoulderL', 'elbowL', 'shoulderR', 'elbowR'],
   legs: ['hipL', 'kneeL', 'hipR', 'kneeR'],
 };
+
+// ── Color helpers (canvas painting) ────────────────────────────────────────
+function cssHex(hex) {
+  return `#${hex.toString(16).padStart(6, '0')}`;
+}
+// f > 0 lightens toward white, f < 0 darkens toward black.
+function shade(hex, f) {
+  const r = (hex >> 16) & 255, g = (hex >> 8) & 255, b = hex & 255;
+  const t = f < 0 ? 0 : 255, a = Math.abs(f);
+  const m = (ch) => Math.round(ch + (t - ch) * a);
+  return `rgb(${m(r)},${m(g)},${m(b)})`;
+}
+function mixHex(h1, h2, t) {
+  const r = Math.round(((h1 >> 16) & 255) + ((((h2 >> 16) & 255)) - ((h1 >> 16) & 255)) * t);
+  const g = Math.round(((h1 >> 8) & 255) + ((((h2 >> 8) & 255)) - ((h1 >> 8) & 255)) * t);
+  const b = Math.round((h1 & 255) + ((h2 & 255) - (h1 & 255)) * t);
+  return (r << 16) | (g << 8) | b;
+}
 
 // Rounded boxes read as tailored cloth instead of voxels; the bevel also
 // catches the rim light so limb silhouettes separate from the suit body.
@@ -136,6 +276,12 @@ function taper(rTop, rBottom, h, mat, zScale = 0.74) {
   m.scale.z = zScale;
   m.castShadow = true;
   m.receiveShadow = true;
+  return m;
+}
+
+function sphere(r, mat) {
+  const m = new THREE.Mesh(new THREE.SphereGeometry(r, 12, 10), mat);
+  m.castShadow = true;
   return m;
 }
 
@@ -185,66 +331,529 @@ function skinNoiseTexture() {
   return _skinTex;
 }
 
-function sphere(r, mat) {
-  const m = new THREE.Mesh(new THREE.SphereGeometry(r, 12, 10), mat);
-  m.castShadow = true;
-  return m;
+// Tiny pixel US flag for the lapel pins (NearestFilter keeps the stripes crisp).
+let _flagTex = null;
+function flagTexture() {
+  if (_flagTex) return _flagTex;
+  const c = document.createElement('canvas');
+  c.width = 24; c.height = 16;
+  const g = c.getContext('2d');
+  for (let i = 0; i < 7; i++) {
+    g.fillStyle = i % 2 === 0 ? '#b22234' : '#f5f2ec';
+    g.fillRect(0, Math.round(i * 16 / 7), 24, Math.ceil(16 / 7));
+  }
+  g.fillStyle = '#3c3b6e';
+  g.fillRect(0, 0, 10, 9);
+  g.fillStyle = '#f5f2ec';
+  for (const [x, y] of [[2, 2], [6, 2], [4, 4], [2, 6], [6, 6]]) g.fillRect(x, y, 1, 1);
+  _flagTex = new THREE.CanvasTexture(c);
+  _flagTex.colorSpace = THREE.SRGBColorSpace;
+  _flagTex.magFilter = THREE.NearestFilter;
+  return _flagTex;
 }
 
-function buildHair(style, hairMat) {
-  const g = new THREE.Group();
-  if (style === 'sweep') {
-    const top = box(0.3, 0.09, 0.3, hairMat);
-    top.position.y = 0.335;
-    const front = box(0.3, 0.07, 0.1, hairMat);
-    front.position.set(0, 0.31, 0.17);
-    g.add(top, front);
-  } else if (style === 'comb') {
-    const top = box(0.28, 0.06, 0.24, hairMat);
-    top.position.set(0, 0.325, -0.03);
-    g.add(top);
-  } else if (style === 'balding') {
-    // Bare crown; hair only above the ears and around the back.
+// ── Painted face detail ────────────────────────────────────────────────────
+// A per-president canvas: base face tone, cheek blush, Trump's pale "goggle"
+// tan lines, forehead/crow's-feet/nasolabial wrinkles, Nixon's five-o'clock
+// shadow. Mapped onto a thin plate over the front of the skull; the 3D
+// features (nose/brows/eyes/mouth) sit on top of it.
+const _faceTexCache = new Map();
+function faceDetailTexture(c) {
+  if (_faceTexCache.has(c.id)) return _faceTexCache.get(c.id);
+  const f = c.face || {};
+  const S = 128;
+  const W = (c.headW ?? 0.26) * 0.92;
+  const H = (c.headH ?? 0.28) * 0.94;
+  const y0 = 0.16 - H / 2;
+  // Head-local coords → canvas pixels (y up → canvas y down).
+  const px = (x) => (x / W + 0.5) * S;
+  const py = (y) => (1 - (y - y0) / H) * S;
+
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = S;
+  const g = cv.getContext('2d');
+  const base = c.faceTint ?? c.skin;
+  g.fillStyle = cssHex(base);
+  g.fillRect(0, 0, S, S);
+
+  // Fine tonal grain so the plate doesn't read as a flat sticker.
+  for (let i = 0; i < 260; i++) {
+    g.fillStyle = shade(base, (Math.random() - 0.5) * 0.16);
+    g.globalAlpha = 0.16;
+    g.fillRect(Math.random() * S, Math.random() * S, 2, 2);
+  }
+  g.globalAlpha = 1;
+
+  const eyeY = 0.195, eyeX = 0.062, mouthY = 0.085;
+
+  // Trump's goggle tan: pale rings where the tanning bed didn't reach.
+  if (f.tanLines) {
+    g.fillStyle = shade(base, 0.32);
+    g.globalAlpha = 0.85;
     for (const s of [-1, 1]) {
-      const side = box(0.05, 0.09, 0.2, hairMat);
-      side.position.set(s * 0.135, 0.26, -0.02);
+      g.beginPath();
+      g.ellipse(px(s * eyeX), py(eyeY), S * 0.14, S * 0.1, 0, 0, Math.PI * 2);
+      g.fill();
+    }
+    g.globalAlpha = 1;
+  }
+
+  // Cheek blush (Clinton/Reagan ruddiness, a touch on Trump).
+  if (f.blush) {
+    for (const s of [-1, 1]) {
+      const cx = px(s * 0.075), cy = py(0.13);
+      const rg = g.createRadialGradient(cx, cy, 2, cx, cy, S * 0.13);
+      rg.addColorStop(0, `rgba(196,84,72,${0.4 * f.blush})`);
+      rg.addColorStop(1, 'rgba(196,84,72,0)');
+      g.fillStyle = rg;
+      g.fillRect(0, 0, S, S);
+    }
+  }
+
+  // Age wrinkles: forehead creases, crow's feet, nasolabial folds.
+  const wr = f.wrinkles ?? 0;
+  if (wr > 0) {
+    g.strokeStyle = shade(base, -0.32);
+    g.lineWidth = 1.4;
+    g.globalAlpha = 0.28 * wr;
+    for (const fy of [0.255, 0.275]) {
+      g.beginPath();
+      g.moveTo(px(-0.075), py(fy));
+      g.quadraticCurveTo(px(0), py(fy + 0.012), px(0.075), py(fy));
+      g.stroke();
+    }
+    for (const s of [-1, 1]) {
+      for (let i = 0; i < 3; i++) {
+        g.beginPath();
+        g.moveTo(px(s * (eyeX + 0.035)), py(eyeY + 0.01 - i * 0.012));
+        g.lineTo(px(s * (eyeX + 0.058)), py(eyeY + 0.022 - i * 0.016));
+        g.stroke();
+      }
+      // Nasolabial: nose wing down to the mouth corner.
+      g.beginPath();
+      g.moveTo(px(s * 0.028), py(0.155));
+      g.quadraticCurveTo(px(s * 0.06), py(0.125), px(s * 0.055), py(mouthY + 0.008));
+      g.stroke();
+    }
+    g.globalAlpha = 1;
+  }
+
+  // Nixon's five-o'clock shadow: speckled darkening over the jaw and upper lip.
+  if (f.stubble) {
+    g.fillStyle = shade(base, -0.42);
+    for (let i = 0; i < 900; i++) {
+      const x = Math.random() * S;
+      const y = Math.random() * S;
+      const ly = 1 - y / S;                     // 0 bottom → 1 top (v space)
+      const yy = y0 + ly * H;                   // head-local y
+      const jaw = yy < mouthY - 0.01;
+      const lip = yy > mouthY + 0.012 && yy < 0.145 && Math.abs(x / S - 0.5) < 0.22;
+      const sideburn = yy < eyeY && Math.abs(x / S - 0.5) > 0.4;
+      if (!jaw && !lip && !sideburn) continue;
+      g.globalAlpha = 0.16 + Math.random() * 0.18;
+      g.fillRect(x, y, 1.4, 1.4);
+    }
+    g.globalAlpha = 1;
+  }
+
+  // Soft shading down the jaw sides so the flat plate reads as curvature.
+  for (const s of [-1, 1]) {
+    const cx = px(s * 0.115), cy = py(0.05);
+    const rg = g.createRadialGradient(cx, cy, 2, cx, cy, S * 0.2);
+    rg.addColorStop(0, 'rgba(40,20,12,0.14)');
+    rg.addColorStop(1, 'rgba(40,20,12,0)');
+    g.fillStyle = rg;
+    g.fillRect(0, 0, S, S);
+  }
+
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  _faceTexCache.set(c.id, tex);
+  return tex;
+}
+
+// ── Bespoke hair ───────────────────────────────────────────────────────────
+// One silhouette per president — hair is the strongest identity read at
+// gameplay distance, so each style is built specifically rather than shared.
+// All coordinates are head-local; dims carries the per-president skull size.
+function buildHair(c, hairMat, dims) {
+  const g = new THREE.Group();
+  const { w, d, topY, hw } = dims;
+  const style = c.hairStyle;
+
+  if (style === 'trumpSweep') {
+    // The signature sweep: a tall crown, a big front lip overhanging the
+    // forehead and swept sideways, side wings brushed back over the ears.
+    const crown = box(w + 0.02, 0.085, d + 0.02, hairMat);
+    crown.position.set(0, topY + 0.03, -0.005);
+    const swoop = box(w + 0.015, 0.06, 0.16, hairMat);
+    swoop.position.set(0.012, topY + 0.022, d / 2 - 0.012);
+    swoop.rotation.set(-0.22, 0.12, -0.06);
+    g.add(crown, swoop);
+    for (const s of [-1, 1]) {
+      const wing = box(0.05, 0.07, d * 0.8, hairMat);
+      wing.position.set(s * (hw + 0.012), topY - 0.045, -0.012);
+      wing.rotation.y = -s * 0.15;
+      g.add(wing);
+    }
+    const back = box(w * 0.9, 0.075, 0.05, hairMat);
+    back.position.set(0, topY - 0.03, -(d / 2) - 0.006);
+    g.add(back);
+  } else if (style === 'combover') {
+    // Biden: thin white hair slicked straight back off a high hairline.
+    const top = box(w * 0.94, 0.035, d * 0.82, hairMat);
+    top.position.set(0, topY + 0.008, -0.03);
+    const strip = box(0.1, 0.028, 0.07, hairMat);
+    strip.position.set(0, topY + 0.004, d / 2 - 0.1);
+    g.add(top, strip);
+    for (const s of [-1, 1]) {
+      const side = box(0.032, 0.08, d * 0.7, hairMat);
+      side.position.set(s * (hw + 0.004), topY - 0.055, -0.015);
       g.add(side);
     }
-    const back = box(0.28, 0.09, 0.05, hairMat);
-    back.position.set(0, 0.26, -0.13);
+    const back = box(w * 0.88, 0.06, 0.032, hairMat);
+    back.position.set(0, topY - 0.03, -(d / 2) - 0.004);
+    g.add(back);
+  } else if (style === 'crop') {
+    // Obama: tight crop hugging the skull; grey patches at the temples.
+    const cap = box(w + 0.012, 0.045, d + 0.012, hairMat);
+    cap.position.set(0, topY + 0.012, -0.004);
+    const back = box(w * 0.95, 0.06, 0.035, hairMat);
+    back.position.set(0, topY - 0.02, -(d / 2) - 0.004);
+    g.add(cap, back);
+    if (c.greyTemples) {
+      const greyMat = new THREE.MeshStandardMaterial({
+        color: 0x9a9a9a, roughness: 0.85, metalness: 0.0,
+      });
+      for (const s of [-1, 1]) {
+        const temple = box(0.028, 0.05, 0.05, greyMat);
+        temple.position.set(s * (hw + 0.006), topY - 0.045, 0.045);
+        g.add(temple);
+      }
+    }
+  } else if (style === 'sidePart') {
+    // Bush/Carter: full head of hair with a visible side part — the main
+    // mass sits right of the part line, a thinner flat panel to its left.
+    const main = box(w * 0.72, 0.06, d, hairMat);
+    main.position.set(0.038, topY + 0.02, -0.005);
+    const flat = box(w * 0.34, 0.038, d * 0.94, hairMat);
+    flat.position.set(-0.075, topY + 0.008, -0.005);
+    g.add(main, flat);
+    for (const s of [-1, 1]) {
+      const side = box(0.04, 0.08, d * 0.78, hairMat);
+      side.position.set(s * (hw + 0.006), topY - 0.05, -0.01);
+      g.add(side);
+    }
+    const back = box(w * 0.92, 0.08, 0.04, hairMat);
+    back.position.set(0, topY - 0.035, -(d / 2) - 0.005);
+    g.add(back);
+  } else if (style === 'silverSweep') {
+    // Clinton: big soft silver volume swept up and back off the forehead.
+    const puff = box(w + 0.03, 0.1, d + 0.02, hairMat);
+    puff.position.set(0, topY + 0.045, -0.012);
+    const wave = box(w * 0.9, 0.075, 0.09, hairMat);
+    wave.position.set(0, topY + 0.038, d / 2 - 0.03);
+    wave.rotation.x = -0.15;
+    g.add(puff, wave);
+    for (const s of [-1, 1]) {
+      const side = box(0.045, 0.075, d * 0.8, hairMat);
+      side.position.set(s * (hw + 0.015), topY - 0.03, -0.01);
+      g.add(side);
+    }
+  } else if (style === 'pompadour') {
+    // Reagan: tall glossy front wave rolling back into a slick crown.
+    const wave = box(w * 0.96, 0.1, 0.11, hairMat);
+    wave.position.set(0, topY + 0.045, d / 2 - 0.075);
+    wave.rotation.x = -0.12;
+    const crown = box(w * 0.98, 0.06, d * 0.7, hairMat);
+    crown.position.set(0, topY + 0.02, -0.05);
+    g.add(wave, crown);
+    for (const s of [-1, 1]) {
+      const side = box(0.04, 0.08, d * 0.75, hairMat);
+      side.position.set(s * (hw + 0.008), topY - 0.04, -0.02);
+      side.rotation.y = -s * 0.2;
+      g.add(side);
+    }
+    const back = box(w * 0.9, 0.08, 0.04, hairMat);
+    back.position.set(0, topY - 0.03, -(d / 2) - 0.005);
+    g.add(back);
+  } else if (style === 'comb') {
+    // Bush Sr.: thin combed layer set well back — a high patrician forehead.
+    const top = box(w * 0.9, 0.05, d * 0.75, hairMat);
+    top.position.set(0, topY + 0.01, -0.045);
+    g.add(top);
+    for (const s of [-1, 1]) {
+      const side = box(0.03, 0.07, d * 0.65, hairMat);
+      side.position.set(s * (hw + 0.004), topY - 0.05, -0.02);
+      g.add(side);
+    }
+  } else if (style === 'balding') {
+    // Ford: bare crown; hair only above the ears and around the back.
+    for (const s of [-1, 1]) {
+      const side = box(0.05, 0.09, d * 0.77, hairMat);
+      side.position.set(s * (hw + 0.005), topY - 0.06, -0.02);
+      g.add(side);
+    }
+    const back = box(w + 0.02, 0.09, 0.05, hairMat);
+    back.position.set(0, topY - 0.06, -(d / 2) - 0.005);
     g.add(back);
   } else if (style === 'widow') {
-    // Slicked top with a widow's-peak wedge pointing down the brow.
-    const top = box(0.28, 0.07, 0.26, hairMat);
-    top.position.set(0, 0.325, -0.02);
-    const peak = box(0.09, 0.05, 0.06, hairMat);
-    peak.position.set(0, 0.29, 0.135);
-    peak.rotation.x = 0.3;
+    // Nixon: full dark hair with the widow's-peak wedge down the brow.
+    const top = box(w + 0.01, 0.07, d * 0.95, hairMat);
+    top.position.set(0, topY + 0.022, -0.015);
+    const peak = box(0.07, 0.04, 0.06, hairMat);
+    peak.position.set(0, topY - 0.01, d / 2 - 0.008);
+    peak.rotation.x = 0.35;
     g.add(top, peak);
+    for (const s of [-1, 1]) {
+      const side = box(0.04, 0.085, d * 0.8, hairMat);
+      side.position.set(s * (hw + 0.005), topY - 0.05, -0.015);
+      g.add(side);
+    }
   } else if (style === 'spiky') {
     // Messy tufts at varying angles — reads as "regular guy", not a statesman.
-    const base = box(0.29, 0.07, 0.29, hairMat);
-    base.position.y = 0.32;
+    const base = box(w + 0.03, 0.07, d + 0.03, hairMat);
+    base.position.y = topY + 0.02;
     g.add(base);
     const tufts = [
-      [-0.09, 0.365, 0.05, 0.3], [0.02, 0.375, -0.04, -0.25],
-      [0.1, 0.36, 0.07, 0.4], [-0.02, 0.37, 0.1, -0.35], [0.06, 0.365, -0.1, 0.2],
+      [-0.09, 0.065, 0.05, 0.3], [0.02, 0.075, -0.04, -0.25],
+      [0.1, 0.06, 0.07, 0.4], [-0.02, 0.07, 0.1, -0.35], [0.06, 0.065, -0.1, 0.2],
     ];
-    for (const [x, y, z, rz] of tufts) {
+    for (const [x, dy, z, rz] of tufts) {
       const tuft = box(0.07, 0.09, 0.07, hairMat);
-      tuft.position.set(x, y, z);
+      tuft.position.set(x, topY + dy, z);
       tuft.rotation.z = rz;
       tuft.rotation.x = rz * -0.6;
       g.add(tuft);
     }
   } else {
-    const top = box(0.28, 0.07, 0.28, hairMat);
-    top.position.y = 0.325;
-    const back = box(0.28, 0.1, 0.06, hairMat);
-    back.position.set(0, 0.28, -0.13);
+    const top = box(w + 0.02, 0.07, d + 0.02, hairMat);
+    top.position.y = topY + 0.025;
+    const back = box(w + 0.02, 0.1, 0.06, hairMat);
+    back.position.set(0, topY - 0.02, -(d / 2));
     g.add(top, back);
   }
   return g;
+}
+
+// ── Facial features ────────────────────────────────────────────────────────
+// Parameterized primitives on the front of the skull. Returns the mouth
+// expression groups so the engine can swap neutral/hurt/grin at runtime.
+function buildFace(c, head, mats, dims) {
+  const f = c.face || {};
+  const zF = dims.d / 2;
+  const { faceMat, skinMat } = mats;
+
+  // Painted detail plate (tan lines, blush, wrinkles, stubble).
+  const plateMat = new THREE.MeshStandardMaterial({
+    map: faceDetailTexture(c), roughness: 0.6, metalness: 0.0,
+  });
+  const plate = new THREE.Mesh(
+    new THREE.PlaneGeometry(dims.w * 0.92, dims.h * 0.94), plateMat);
+  plate.position.set(0, 0.16, zF + 0.004);
+  head.add(plate);
+
+  // Eyes: matte sclera half-embedded in the face, glossy dark iris/pupil
+  // that catches the key light — the highlight is what makes them read alive.
+  const eyes = f.eyes || {};
+  const squint = eyes.squint ?? 0.15;
+  const scleraMat = new THREE.MeshStandardMaterial({
+    color: 0xf4f1ea, roughness: 0.45, metalness: 0.0,
+  });
+  const irisMat = new THREE.MeshStandardMaterial({
+    color: mixHex(eyes.color ?? 0x3a2e22, 0x000000, 0.25),
+    roughness: 0.12, metalness: 0.1,
+  });
+  for (const s of [-1, 1]) {
+    const sclera = sphere(0.032, scleraMat);
+    sclera.scale.set(1, 0.75 * (1 - squint * 0.5), 0.5);
+    sclera.position.set(s * 0.062, 0.195, zF - 0.004);
+    const pupil = sphere(0.0135, irisMat);
+    pupil.scale.y = Math.max(0.4, 1 - squint * 0.7);
+    pupil.position.set(s * 0.06, 0.195, zF + 0.009);
+    head.add(sclera, pupil);
+  }
+
+  // Brows: the angle carries the personality — Nixon's stern inner-down
+  // slabs vs. Bush's amused raise.
+  const brow = f.brow || {};
+  const browMat = new THREE.MeshStandardMaterial({
+    color: brow.color ?? mixHex(c.hair, 0x000000, 0.35), roughness: 0.9,
+  });
+  const bThick = brow.thick ?? 1;
+  for (const s of [-1, 1]) {
+    const b = box(0.075 * (brow.w ?? 1), 0.017 * bThick, 0.02, browMat);
+    b.position.set(s * 0.063, 0.243, zF);
+    // angle < 0: inner ends drop toward the nose (stern). angle > 0: raised.
+    b.rotation.z = s * (brow.angle ?? 0);
+    head.add(b);
+  }
+
+  // Nose: the caricature anchor. A rotated group tips the bridge out of the
+  // face; the tip sphere inherits the group transform.
+  const nose = f.nose || {};
+  const nSize = nose.size ?? 1;
+  const noseG = new THREE.Group();
+  noseG.position.set(0, 0.198, zF - 0.005);
+  if (nose.type === 'button') {
+    const tip = sphere(0.018 * nSize, faceMat);
+    tip.position.set(0, -0.045, 0.018);
+    noseG.add(tip);
+  } else {
+    const type = nose.type ?? 'straight';
+    const wide = type === 'wide';
+    const bridge = capsule((wide ? 0.02 : 0.016) * nSize, 0.06, faceMat);
+    bridge.position.y = -0.033;
+    noseG.add(bridge);
+    let tip;
+    if (type === 'ski') {
+      // Nixon: the bridge juts out hard and the tip turns up.
+      noseG.rotation.x = 0.65;
+      tip = sphere(0.02 * nSize, faceMat);
+      tip.scale.set(1, 0.9, 1.15);
+      tip.position.set(0, -0.07, 0.012);
+    } else if (type === 'bulb') {
+      noseG.rotation.x = 0.42;
+      tip = sphere(0.028 * nSize, faceMat);
+      tip.position.set(0, -0.068, 0.005);
+    } else if (wide) {
+      noseG.rotation.x = 0.45;
+      tip = sphere(0.021 * nSize, faceMat);
+      tip.scale.set(1.5, 0.85, 1);
+      tip.position.set(0, -0.068, 0.005);
+    } else {
+      noseG.rotation.x = 0.5;
+      tip = sphere(0.019 * nSize, faceMat);
+      tip.position.set(0, -0.068, 0.005);
+    }
+    noseG.add(tip);
+  }
+  head.add(noseG);
+
+  // Mouth: three swappable expression groups. The engine toggles visibility
+  // via setExpression — neutral at rest, hurt on hits/KO, grin on the win.
+  const m = f.mouth || {};
+  const mw = m.w ?? 1;
+  const mouthY = 0.085;
+  const mx = m.smirk ? 0.016 : 0;
+  const lipMat = new THREE.MeshStandardMaterial({
+    color: mixHex(c.faceTint ?? c.skin, 0x7a3a34, 0.65), roughness: 0.6,
+  });
+  const toothMat = new THREE.MeshStandardMaterial({
+    color: 0xf2eee4, roughness: 0.35,
+  });
+  const innerMat = new THREE.MeshStandardMaterial({
+    color: 0x431a17, roughness: 0.7,
+  });
+
+  const neutral = new THREE.Group();
+  {
+    const lip = box(0.11 * mw, 0.016, 0.014, lipMat);
+    lip.position.set(mx, mouthY, zF);
+    if (m.smirk) lip.rotation.z = 0.09;
+    neutral.add(lip);
+    const bend = (m.smile ?? 0) - (m.frown ?? 0);
+    if (bend !== 0) {
+      // Corner segments tilt up for a smile, down for a frown/purse.
+      for (const s of [-1, 1]) {
+        const corner = box(0.026, 0.013, 0.012, lipMat);
+        corner.position.set(mx + s * 0.058 * mw, mouthY + 0.008 * bend, zF);
+        corner.rotation.z = -s * 0.32 * bend;
+        neutral.add(corner);
+      }
+    }
+    if (m.teeth && (m.smile ?? 0) > 0.3) {
+      // The Carter/Biden flash of teeth under the smile line.
+      const teeth = box(0.08 * mw, 0.017, 0.011, toothMat);
+      teeth.position.set(mx, mouthY - 0.013, zF - 0.001);
+      neutral.add(teeth);
+    }
+  }
+
+  const hurt = new THREE.Group();
+  {
+    const open = box(0.055, 0.05, 0.018, innerMat);
+    open.position.set(0, mouthY - 0.006, zF - 0.002);
+    const lipTop = box(0.08, 0.013, 0.013, lipMat);
+    lipTop.position.set(0, mouthY + 0.022, zF);
+    hurt.add(open, lipTop);
+    hurt.visible = false;
+  }
+
+  const grin = new THREE.Group();
+  {
+    const teeth = box(0.105 * Math.max(mw, 1), 0.026, 0.014, toothMat);
+    teeth.position.set(0, mouthY, zF);
+    grin.add(teeth);
+    for (const s of [-1, 1]) {
+      const corner = box(0.026, 0.013, 0.012, lipMat);
+      corner.position.set(s * 0.062 * Math.max(mw, 1), mouthY + 0.012, zF);
+      corner.rotation.z = -s * 0.38;
+      grin.add(corner);
+    }
+    grin.visible = false;
+  }
+  head.add(neutral, hurt, grin);
+
+  // Chin/jaw mass — Ford's slab jaw, Nixon's heavy chin.
+  const chinScale = f.chin ?? 1;
+  if (chinScale > 0) {
+    const chin = sphere(0.026 * chinScale, faceMat);
+    chin.scale.set(1.35, 0.75, 0.8);
+    chin.position.set(0, 0.028, zF - 0.008);
+    head.add(chin);
+  }
+  // Nixon's jowls: cheek masses sagging beside the mouth, on a shared pivot
+  // so the jiggle solver can quiver them on impacts.
+  let jowlPivot = null;
+  if (f.jowls) {
+    jowlPivot = new THREE.Group();
+    jowlPivot.position.set(0, 0.07, zF - 0.008);
+    for (const s of [-1, 1]) {
+      const jowl = sphere(0.03, faceMat);
+      jowl.scale.set(1, 1.2, 0.75);
+      jowl.position.set(s * 0.092, 0, 0);
+      jowlPivot.add(jowl);
+    }
+    head.add(jowlPivot);
+  }
+  // Round cheek volumes (Clinton, Trump).
+  if (f.cheeks) {
+    for (const s of [-1, 1]) {
+      const cheek = sphere(0.034, faceMat);
+      cheek.scale.set(1, 0.9, 0.6);
+      cheek.position.set(s * 0.078, 0.135, zF - 0.008);
+      head.add(cheek);
+    }
+  }
+
+  // Bush Sr.'s round wire glasses — open rings so the eyes show through.
+  if (c.glasses === 'round') {
+    const wireMat = new THREE.MeshStandardMaterial({
+      color: 0xb9975b, roughness: 0.3, metalness: 0.8,
+    });
+    for (const s of [-1, 1]) {
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.041, 0.006, 8, 20), wireMat);
+      ring.position.set(s * 0.062, 0.195, zF + 0.008);
+      head.add(ring);
+      const arm = box(0.006, 0.006, 0.11, wireMat);
+      arm.position.set(s * 0.115, 0.2, zF - 0.055);
+      head.add(arm);
+    }
+    const bridge = box(0.032, 0.008, 0.008, wireMat);
+    bridge.position.set(0, 0.205, zF + 0.008);
+    head.add(bridge);
+  }
+
+  return { plateMat, mouths: { neutral, hurt, grin }, jowlPivot };
+}
+
+// Swap the visible mouth expression: 'neutral' | 'hurt' | 'grin'.
+export function setExpression(rig, name) {
+  const m = rig.refs && rig.refs.mouths;
+  if (!m) return;
+  const pick = m[name] ? name : 'neutral';
+  for (const k of Object.keys(m)) m[k].visible = (k === pick);
 }
 
 /**
@@ -254,37 +863,69 @@ export function buildFighter(charId) {
   const c = CHARACTERS[charId];
   const b = c.buildScale;
   const casual = c.outfit === 'casual';
+  // Caricature ratios layered on the base build.
+  const belly = c.bellyScale ?? 1;
+  const shoulderS = c.shoulderScale ?? 1;
+  const dims = {
+    w: c.headW ?? 0.26, h: c.headH ?? 0.28, d: c.headD ?? 0.26,
+  };
+  dims.hw = dims.w / 2;
+  dims.topY = 0.16 + dims.h / 2;
 
   // For a casual outfit the "suit" material is the t-shirt (the engine's
   // sweat/tint systems talk to materials.suitMat, so the torso material must
   // keep that name regardless of wardrobe), and the legs get denim instead.
-  const suitMat = new THREE.MeshStandardMaterial({
+  //
+  // MeshPhysicalMaterial throughout the wardrobe: `sheen` gives wool/silk
+  // their grazing-angle backscatter (real fabric glows at silhouette edges),
+  // `clearcoat` gives polished hair and dress shoes a second specular lobe.
+  const suitMat = new THREE.MeshPhysicalMaterial({
     color: casual ? c.shirtColor : c.suit,
     roughness: casual ? 0.9 : 0.95, metalness: casual ? 0.0 : 0.05,
+    sheen: casual ? 0.3 : 0.55, sheenRoughness: 0.75,
+    sheenColor: new THREE.Color(casual ? c.shirtColor : c.suit).lerp(new THREE.Color(0xffffff), 0.35),
     roughnessMap: weaveTexture(),
     bumpMap: weaveTexture(), bumpScale: casual ? 0.25 : 0.6,
   });
   const legMat = casual
-    ? new THREE.MeshStandardMaterial({
+    ? new THREE.MeshPhysicalMaterial({
         color: c.jeans, roughness: 0.98, metalness: 0.0,
+        sheen: 0.25, sheenRoughness: 0.9,
+        sheenColor: new THREE.Color(c.jeans).lerp(new THREE.Color(0xffffff), 0.3),
         roughnessMap: weaveTexture(),
         bumpMap: weaveTexture(), bumpScale: 0.8,
       })
     : suitMat;
-  const skinMat = new THREE.MeshStandardMaterial({
+  // Skin: a warm reddish sheen fakes subsurface scattering — light appears
+  // to bleed through at grazing angles (ears, nose bridge, knuckles).
+  const skinMat = new THREE.MeshPhysicalMaterial({
     color: c.skin, roughness: 0.55, metalness: 0.0,
+    sheen: 0.32, sheenRoughness: 0.5, sheenColor: new THREE.Color(0xff7a55),
     roughnessMap: skinNoiseTexture(),
   });
-  const tieMat = new THREE.MeshStandardMaterial({
+  // Face-only skin: lets Trump's face run oranger than his hands.
+  const faceMat = c.faceTint
+    ? new THREE.MeshPhysicalMaterial({
+        color: c.faceTint, roughness: 0.55, metalness: 0.0,
+        sheen: 0.32, sheenRoughness: 0.5, sheenColor: new THREE.Color(0xff7a55),
+        roughnessMap: skinNoiseTexture(),
+      })
+    : skinMat;
+  // Silk tie: strong anisotropic-looking sheen is what reads as silk.
+  const tieMat = new THREE.MeshPhysicalMaterial({
     color: c.tie ?? c.jeans ?? 0x444444, roughness: 0.5, metalness: 0.0,
+    sheen: 0.8, sheenRoughness: 0.35,
+    sheenColor: new THREE.Color(c.tie ?? c.jeans ?? 0x444444).lerp(new THREE.Color(0xffffff), 0.5),
     bumpMap: weaveTexture(), bumpScale: 0.3,
   });
-  const hairMat = new THREE.MeshStandardMaterial({
-    color: c.hair, roughness: 0.85, metalness: 0.0,
+  const hairMat = new THREE.MeshPhysicalMaterial({
+    color: c.hair, roughness: c.hairShine ? 0.45 : 0.85, metalness: 0.0,
+    clearcoat: c.hairShine ? 0.7 : 0.12, clearcoatRoughness: 0.35,
   });
-  const shoeMat = new THREE.MeshStandardMaterial({
+  const shoeMat = new THREE.MeshPhysicalMaterial({
     color: casual ? c.sneaker : 0x111111,
     roughness: casual ? 0.7 : 0.35, metalness: 0.05,
+    clearcoat: casual ? 0.0 : 0.55, clearcoatRoughness: 0.25,
   });
   const shirtMat = new THREE.MeshStandardMaterial({
     color: 0xf5f5f0, roughness: 0.85, metalness: 0.0,
@@ -292,26 +933,49 @@ export function buildFighter(charId) {
 
   const root = new THREE.Group();
 
+  // Secondary-motion pivot handles, filled in during construction below and
+  // registered with the jiggle solver at the end. Declared up front — the
+  // belly pivot is created during the torso build, well before the suit
+  // dressing block.
+  let bellyPivot = null;
+  const tieSegPivots = [];
+  const flapPivots = [];
+
   const hips = new THREE.Group();
   hips.position.y = 1.0;
   root.add(hips);
 
   // Organic torso: tapered elliptical masses instead of boxes — waist
-  // narrower than shoulders, pelvis flaring slightly to the hips.
-  const pelvis = taper(0.175 * b, 0.195 * b, 0.24, legMat, 0.78);
+  // narrower than shoulders, pelvis flaring slightly to the hips. The belly
+  // ratio widens the waist; the shoulder ratio widens the chest top.
+  const pelvis = taper(0.175 * b * (1 + (belly - 1) * 0.6), 0.195 * b, 0.24, legMat, 0.78);
   hips.add(pelvis);
 
   const torso = new THREE.Group();
   torso.position.y = 0.1;
   hips.add(torso);
 
-  const chest = taper(0.235 * b, 0.165 * b, 0.62, suitMat, 0.72);
+  const chest = taper(
+    0.235 * b * (1 + (shoulderS - 1) * 0.6),
+    0.165 * b * belly, 0.62, suitMat, 0.72);
   chest.position.y = 0.3;
   torso.add(chest);
 
+  // Big-belly caricature: a forward bulge under the jacket (Trump, Clinton).
+  // Wrapped in its own pivot so the jiggle solver can wobble it (scale
+  // squash driven by vertical acceleration — jelly physics).
+  if (belly > 1.1) {
+    bellyPivot = new THREE.Group();
+    bellyPivot.position.set(0, 0.13, 0.055 * b);
+    const bulge = sphere(0.17 * b, suitMat);
+    bulge.scale.set(1.05, 0.85, 0.7);
+    bellyPivot.add(bulge);
+    torso.add(bellyPivot);
+  }
+
   // Suit shoulders: rounded caps where the arms meet the jacket.
   for (const s of [-1, 1]) {
-    const cap = sphere(0.085 * b, suitMat);
+    const cap = sphere(0.085 * b * shoulderS, suitMat);
     cap.scale.set(1.15, 0.85, 1.0);
     cap.position.set(s * 0.26 * b, 0.5, 0);
     torso.add(cap);
@@ -329,23 +993,85 @@ export function buildFighter(charId) {
     const shirt = box(0.16 * b, 0.46, 0.02, shirtMat);
     shirt.position.set(0, 0.34, 0.152 * b);
     torso.add(shirt);
-    // Jacket buttons.
-    for (const by of [0.16, 0.06]) {
-      const btn = sphere(0.014, shoeMat);
-      btn.position.set(0, by, 0.155 * b);
-      torso.add(btn);
+    if (c.cardigan) {
+      // Carter's cardigan: angled V-neck edges over the shirt, a button
+      // column instead of jacket buttons.
+      for (const s of [-1, 1]) {
+        const lapel = box(0.035, 0.3, 0.022, suitMat);
+        lapel.position.set(s * 0.055 * b, 0.42, 0.155 * b);
+        lapel.rotation.z = -s * 0.32;
+        torso.add(lapel);
+      }
+      for (const by of [0.14, 0.06, -0.02]) {
+        const btn = sphere(0.012, shoeMat);
+        btn.position.set(0, by, 0.158 * b);
+        torso.add(btn);
+      }
+    } else {
+      // Jacket buttons.
+      for (const by of [0.16, 0.06]) {
+        const btn = sphere(0.014, shoeMat);
+        btn.position.set(0, by, 0.155 * b);
+        torso.add(btn);
+      }
     }
 
-    // Tie hangs from a pivot at the knot so secondary motion can swing it —
-    // the jiggle solver (updateJiggles) drives tiePivot.rotation from the
-    // torso's world acceleration each frame.
+    // Flag lapel pin — a tiny canvas-painted Stars and Stripes on the left
+    // lapel, angled to hug the chest curve.
+    if (c.lapelPin) {
+      const pin = box(0.04, 0.026, 0.008, new THREE.MeshStandardMaterial({
+        map: flagTexture(), roughness: 0.4, metalness: 0.3,
+      }));
+      pin.position.set(0.09 * b, 0.46, 0.152 * b);
+      pin.rotation.y = 0.42;
+      torso.add(pin);
+    }
+
+    // Tie: a knot plus three CHAINED spring pivots — each segment lags its
+    // parent through the shared jiggle solver, so the tie whips, folds and
+    // flows like cloth instead of swinging as one plank. Asymmetric pitch
+    // clamps stop it swinging through the chest while letting it fly up
+    // over the shoulder on hard knockback.
     const tieLen = 0.4 * c.tieLength;
     tiePivot = new THREE.Group();
     tiePivot.position.set(0, 0.52, 0.175 * b);
-    const tie = box(0.07, tieLen, 0.02, tieMat);
-    tie.position.set(0, -tieLen / 2, 0.005);
-    tiePivot.add(tie);
+    if (c.tieLoose) tiePivot.position.y -= 0.035;
+    const knot = box(0.055, 0.05, 0.03, tieMat);
+    knot.position.y = -0.01;
+    tiePivot.add(knot);
+    const segLen = tieLen / 3;
+    const segWidths = [0.06, 0.07, 0.082]; // widens toward the blade
+    let tieParent = tiePivot;
+    for (let i = 0; i < 3; i++) {
+      const segPivot = new THREE.Group();
+      segPivot.position.y = i === 0 ? -0.025 : -segLen;
+      const segMesh = box(segWidths[i], segLen, 0.02, tieMat);
+      segMesh.position.set(0, -segLen / 2, 0.004);
+      if (i === 0 && c.tieLoose) segMesh.rotation.z = 0.09;
+      segPivot.add(segMesh);
+      tieParent.add(segPivot);
+      tieSegPivots.push(segPivot);
+      tieParent = segPivot;
+    }
+    if (c.tieLoose) {
+      // Clinton's end-of-day loosened knot: collar button showing.
+      const collarBtn = sphere(0.011, shirtMat);
+      collarBtn.position.set(0, 0.545, 0.162 * b);
+      torso.add(collarBtn);
+    }
     torso.add(tiePivot);
+
+    // Jacket tails: two rear hem flaps on spring pivots — they kick out
+    // behind the fighter on dashes and knockback.
+    for (const s of [-1, 1]) {
+      const flapPivot = new THREE.Group();
+      flapPivot.position.set(s * 0.09 * b, 0.02, -0.1 * b);
+      const flap = box(0.09, 0.16, 0.02, suitMat);
+      flap.position.y = -0.08;
+      flapPivot.add(flap);
+      torso.add(flapPivot);
+      flapPivots.push(flapPivot);
+    }
   } else {
     // Tee details: a ring collar and a small chest pocket print.
     const collar = taper(0.075, 0.085, 0.045, suitMat, 0.9);
@@ -361,31 +1087,37 @@ export function buildFighter(charId) {
   const head = new THREE.Group();
   head.position.y = 0.62;
   torso.add(head);
+  // Whole-head caricature scale — the engine only writes to refs.skull.scale
+  // (swelling), so the group scale is safe to own here.
+  if (c.headScale && c.headScale !== 1) head.scale.setScalar(c.headScale);
 
-  const skull = box(0.26, 0.28, 0.26, skinMat);
+  const skull = box(dims.w, dims.h, dims.d, faceMat);
   skull.position.y = 0.16;
   head.add(skull);
   // Hair on its own pivot so it can flop with a subtler jiggle than the tie.
   const hairPivot = new THREE.Group();
   hairPivot.position.y = 0.3;
-  const hair = buildHair(c.hairStyle, hairMat);
+  const hair = buildHair(c, hairMat, dims);
   hair.position.y = -0.3;
   hairPivot.add(hair);
   head.add(hairPivot);
 
-  const earR = c.id === 'bush' ? 0.05 : 0.035;
+  const earR = c.earR ?? 0.035;
   for (const side of [-1, 1]) {
     const ear = sphere(earR, skinMat);
-    ear.position.set(side * 0.14, 0.16, 0);
+    ear.position.set(side * (dims.hw + 0.01), 0.16, 0);
     head.add(ear);
   }
+
+  // Facial features + painted detail plate (returns the expression groups).
+  const face = buildFace(c, head, { faceMat, skinMat }, dims);
 
   // Cut decal above the brow — hidden until head damage passes the threshold
   // (the engine toggles refs.cut.visible).
   const cut = box(0.024, 0.06, 0.02, new THREE.MeshStandardMaterial({
     color: 0x7a1512, roughness: 0.35,
   }));
-  cut.position.set(0.085, 0.225, 0.125);
+  cut.position.set(0.085, 0.225, dims.d / 2 - 0.005);
   cut.rotation.z = 0.45;
   cut.visible = false;
   head.add(cut);
@@ -396,11 +1128,11 @@ export function buildFighter(charId) {
     });
     for (const side of [-1, 1]) {
       const lens = box(0.09, 0.07, 0.02, glassMat);
-      lens.position.set(side * 0.065, 0.18, 0.14);
+      lens.position.set(side * 0.065, 0.19, dims.d / 2 + 0.012);
       head.add(lens);
     }
     const bridge = box(0.04, 0.015, 0.02, glassMat);
-    bridge.position.set(0, 0.19, 0.14);
+    bridge.position.set(0, 0.2, dims.d / 2 + 0.012);
     head.add(bridge);
   }
 
@@ -478,24 +1210,52 @@ export function buildFighter(charId) {
   root.scale.setScalar(c.heightScale);
 
   // Secondary-motion springs. `gain` converts world acceleration into swing,
-  // `stiffness`/`damping` shape the pendulum. The tie is loose and floppy;
-  // hair is stiff with a small max deflection.
+  // `stiffness`/`damping` shape the pendulum. kind 'rot' swings the pivot,
+  // kind 'scale' squash-stretches it (belly wobble, jowl quiver). minRx/maxRx
+  // clamp pitch asymmetrically so cloth can't swing through the body.
+  // NOTE: the mirror ghost syncs this array BY INDEX — both rigs are built by
+  // this same function, so order stays consistent automatically.
+  const mkJiggle = (pivot, opts) => ({
+    pivot, kind: 'rot', rx: 0, rz: 0, vrx: 0, vrz: 0,
+    prev: null, vel: new THREE.Vector3(), ...opts,
+  });
   const jiggles = [
-    { pivot: hairPivot, stiffness: 70, damping: 9, gain: 0.005, max: 0.28,
-      rx: 0, rz: 0, vrx: 0, vrz: 0, prev: null, vel: new THREE.Vector3() },
+    mkJiggle(hairPivot, { stiffness: 70, damping: 9, gain: 0.005, max: 0.28 }),
   ];
-  if (tiePivot) {
-    jiggles.push({ pivot: tiePivot, stiffness: 42, damping: 7, gain: 0.014, max: 0.85,
-      rx: 0, rz: 0, vrx: 0, vrz: 0, prev: null, vel: new THREE.Vector3() });
+  // Chained tie segments: looser and wider-swinging toward the tip so the
+  // chain whips. Pitch clamps: barely into the chest, freely up and away.
+  tieSegPivots.forEach((pivot, i) => {
+    jiggles.push(mkJiggle(pivot, {
+      stiffness: 46 - i * 9, damping: 7 - i * 0.8, gain: 0.012 + i * 0.007,
+      max: 0.6 + i * 0.18, minRx: -0.1 - i * 0.05, maxRx: 1.0 + i * 0.3,
+    }));
+  });
+  // Jacket tails: swing backward only (the torso blocks the forward arc).
+  for (const pivot of flapPivots) {
+    jiggles.push(mkJiggle(pivot, {
+      stiffness: 58, damping: 8, gain: 0.009, max: 0.6, minRx: -0.8, maxRx: 0.12,
+    }));
+  }
+  // Body-mass wobble: Trump/Clinton bellies, Nixon jowls.
+  if (bellyPivot) {
+    jiggles.push(mkJiggle(bellyPivot, {
+      kind: 'scale', stiffness: 90, damping: 8, gain: 0.0035, max: 0.16,
+    }));
+  }
+  if (face.jowlPivot) {
+    jiggles.push(mkJiggle(face.jowlPivot, {
+      kind: 'scale', stiffness: 120, damping: 9, gain: 0.003, max: 0.2,
+    }));
   }
 
   return {
     root,
     joints,
     jiggles,
-    // Direct mesh handles for the damage-visuals system (swelling, cut).
-    refs: { skull, cut, hairPivot },
-    materials: { suitMat, skinMat, tieMat, hairMat },
+    // Direct mesh handles for the damage-visuals system (swelling, cut) and
+    // the expression system (mouths — see setExpression).
+    refs: { skull, cut, hairPivot, mouths: face.mouths },
+    materials: { suitMat, skinMat, faceMat, plateMat: face.plateMat, tieMat, hairMat },
     config: c,
     baseColors: {
       suit: new THREE.Color(casual ? c.shirtColor : c.suit),
@@ -537,11 +1297,20 @@ export function updateJiggles(rig, dt) {
     j.pivot.parent.getWorldQuaternion(_jq);
     _jaccel.applyQuaternion(_jq.invert());
 
+    if (j.kind === 'scale') {
+      // Jelly wobble: vertical acceleration drives a squash-stretch spring.
+      // Landing/knockback compresses the mass, the spring rebounds it.
+      j.vrx += (-_jaccel.y * j.gain - j.rx * j.stiffness - j.vrx * j.damping) * dt;
+      j.rx = Math.max(-j.max, Math.min(j.max, j.rx + j.vrx * dt));
+      j.pivot.scale.set(1 + j.rx * 0.6, 1 - j.rx, 1 + j.rx * 0.6);
+      continue;
+    }
+
     // Lag: forward accel (+Z local) tips the appendage backward (+rot.x);
     // lateral accel (+X) tips it the other way (−rot.z).
     j.vrx += (_jaccel.z * j.gain - j.rx * j.stiffness - j.vrx * j.damping) * dt;
     j.vrz += (-_jaccel.x * j.gain - j.rz * j.stiffness - j.vrz * j.damping) * dt;
-    j.rx = Math.max(-j.max, Math.min(j.max, j.rx + j.vrx * dt));
+    j.rx = Math.max(j.minRx ?? -j.max, Math.min(j.maxRx ?? j.max, j.rx + j.vrx * dt));
     j.rz = Math.max(-j.max, Math.min(j.max, j.rz + j.vrz * dt));
     j.pivot.rotation.x = j.rx;
     j.pivot.rotation.z = j.rz;

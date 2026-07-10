@@ -68,9 +68,9 @@ public static class UnifiedLeaderboardEndpoints
 
         result.Add(await BuildMarbleAsync(storage, limit));
 
-        // Boards with at least one entry float to the top; empty boards still ship so the
-        // client can show a "be the first" prompt instead of hiding the game entirely.
-        return result.OrderByDescending(b => b.Entries.Count).ToList();
+        // Boards with at least one REAL entry float to the top (every board is now
+        // padded to `limit` with XXX placeholders, so raw count no longer ranks).
+        return result.OrderByDescending(b => b.Entries.Count(e => e.Name != PlaceholderName)).ToList();
     }
 
     private static async Task<GameLeaderboardDto?> BuildOneAsync(IStorageService storage, string game, int limit)
@@ -87,6 +87,25 @@ public static class UnifiedLeaderboardEndpoints
         };
     }
 
+    /// <summary>
+    /// Placeholder name for the dummy rows that pad every board out to the requested
+    /// limit. Real scores always rank above the padding (they are appended after the
+    /// ranked entries); clients that don't want the padding filter on this name.
+    /// Padding lives here in the BFF rather than as seeded storage records because
+    /// the PlayerStats table keys rows by player name — ten identical "XXX" rows
+    /// per game cannot exist in storage, and fake stats rows would leak into the
+    /// /api/statistics aggregates and ELO maths.
+    /// </summary>
+    public const string PlaceholderName = "XXX";
+
+    private static void PadWithPlaceholders(List<LeaderboardEntryDto> entries, int limit, string zeroDisplay)
+    {
+        for (var rank = entries.Count + 1; rank <= limit; rank++)
+        {
+            entries.Add(new LeaderboardEntryDto(rank, PlaceholderName, 0, zeroDisplay));
+        }
+    }
+
     private static async Task<GameLeaderboardDto> BuildWinRateAsync(
         IStorageService storage, string key, string title, int limit)
     {
@@ -96,6 +115,7 @@ public static class UnifiedLeaderboardEndpoints
                 i + 1, p.Name, p.Stats.WinRate,
                 p.Stats.WinRate.ToString("P0", CultureInfo.InvariantCulture)))
             .ToList();
+        PadWithPlaceholders(entries, limit, 0d.ToString("P0", CultureInfo.InvariantCulture));
         return new GameLeaderboardDto(key, title, "Win rate", HigherIsBetter: true, entries);
     }
 
@@ -106,6 +126,7 @@ public static class UnifiedLeaderboardEndpoints
             .Select((s, i) => new LeaderboardEntryDto(
                 i + 1, s.PlayerInitials, s.BestScore, s.BestScore.ToString("N0", CultureInfo.InvariantCulture)))
             .ToList();
+        PadWithPlaceholders(entries, limit, "0");
         return new GameLeaderboardDto("pomarblerace", "PoMarbleRace", "Points", HigherIsBetter: true, entries);
     }
 }

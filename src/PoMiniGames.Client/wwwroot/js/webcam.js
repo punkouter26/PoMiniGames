@@ -25,6 +25,13 @@
     let _stubMode = false;
 
     /**
+     * Demo override: when set, captureFrame renders the supplied SVG markup
+     * to a canvas and returns the JPEG. Used by PoFace demo mode to feed a
+     * synthetic face through the same capture pipeline the live camera uses.
+     */
+    let _demoSvgMarkup = null;
+
+    /**
      * Minimal valid 1×1 white JPEG — used when stub mode is active so the
      * scoring API receives a real (if unscored) JPEG rather than nothing.
      */
@@ -88,6 +95,33 @@
     }
 
     async function captureFrame(videoElementId) {
+        // NetRun10 follow-up: when demo mode has registered a synthetic
+        // SVG markup via setDemoSvgMarkup(), render it to the same canvas
+        // the live camera path uses and return the JPEG. This lets the
+        // demo exercise the real scoring pipeline end-to-end without a
+        // webcam. Falls back to STUB_DATA_URL if the SVG fails to render.
+        if (_demoSvgMarkup) {
+            try {
+                if (!_canvas) {
+                    _canvas = document.createElement('canvas');
+                    _canvas.width = CANVAS_W;
+                    _canvas.height = CANVAS_H;
+                    _canvas.style.display = 'none';
+                    document.body.appendChild(_canvas);
+                    _ctx = _canvas.getContext('2d');
+                }
+                const img = await svgMarkupToImage(_demoSvgMarkup, CANVAS_W, CANVAS_H);
+                _ctx.fillStyle = '#000';
+                _ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+                _ctx.drawImage(img, 0, 0, CANVAS_W, CANVAS_H);
+                const downlink = navigator.connection?.downlink ?? Infinity;
+                const quality  = downlink < 1.0 ? QUALITY_LOW_BW : QUALITY_NORMAL;
+                return _canvas.toDataURL('image/jpeg', quality);
+            } catch (e) {
+                console.warn('[webcam] demo SVG render failed, falling back to stub JPEG', e);
+                return STUB_DATA_URL;
+            }
+        }
         if (_stubMode) return STUB_DATA_URL;
         const video = document.getElementById(videoElementId);
         if (!video) throw new Error(`Video element #${videoElementId} not found.`);
@@ -98,6 +132,31 @@
         const downlink = navigator.connection?.downlink ?? Infinity;
         const quality  = downlink < 1.0 ? QUALITY_LOW_BW : QUALITY_NORMAL;
         return _canvas.toDataURL('image/jpeg', quality);
+    }
+
+    /**
+     * Render an SVG markup string to an HTMLImageElement (CORS-safe; we
+     * inline via data: URL so no fetch is needed). Returns a Promise that
+     * resolves on the image's onload or rejects on onerror / 5 s timeout.
+     */
+    function svgMarkupToImage(svgMarkup, width, height) {
+        return new Promise((resolve, reject) => {
+            const dataUrl = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgMarkup);
+            const img = new Image();
+            img.width = width;
+            img.height = height;
+            img.onload = () => resolve(img);
+            img.onerror = () => reject(new Error('svg image load failed'));
+            const timeout = setTimeout(() => reject(new Error('svg image load timeout')), 5000);
+            img.onload = () => { clearTimeout(timeout); resolve(img); };
+            img.onerror = () => { clearTimeout(timeout); reject(new Error('svg image load failed')); };
+            img.src = dataUrl;
+        });
+    }
+
+    function setDemoSvgMarkup(svgMarkup) {
+        // Pass null/empty to clear; the next captureFrame falls back to stub.
+        _demoSvgMarkup = (svgMarkup && svgMarkup.length > 0) ? svgMarkup : null;
     }
 
     function releaseCamera() {
@@ -128,6 +187,7 @@
         captureFrame,
         releaseCamera,
         flashShutter,
-        activateStubMode
+        activateStubMode,
+        setDemoSvgMarkup
     };
 })();

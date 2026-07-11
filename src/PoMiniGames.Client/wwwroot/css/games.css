@@ -1484,6 +1484,16 @@
 .pf-demo-chip-emoji { font-size: 2rem; line-height: 1; }
 .pf-demo-chip-label { font-size: 0.75rem; opacity: 0.85; }
 
+/* Hidden mirror SVG used by webcam.js to render the demo's "fake image".
+   Off-screen but kept in the DOM so outerHTML always has current markup. */
+.pf-demo-face-source {
+    position: absolute;
+    width: 1px; height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    pointer-events: none;
+}
+
 /* PoFace — recap */
 .pf-recap { display: flex; flex-direction: column; gap: 0.75rem; }
 .pf-recap-grid {

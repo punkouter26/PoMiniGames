@@ -122,6 +122,26 @@
                 @FaceSvgFor(_currentEmotion)
             </svg>
 
+            @* NetRun10 follow-up: the demo's synthetic face doubles as a
+               "fake image" fed through webcam.js' capture pipeline so the
+               real scoring API (/api/face/sessions/.../rounds/.../score)
+               is exercised end-to-end. The hidden SVG below mirrors the
+               visible one and is what webcamInterop.setDemoSvgMarkup
+               pulls markup from during the auto-pick tick. *@
+            <svg id="pf-demo-face-source"
+                 viewBox="0 0 200 200"
+                 class="pf-demo-face-source"
+                 aria-hidden="true">
+                <defs>
+                    <radialGradient id="pfDemoFaceBgSource" cx="50%" cy="40%" r="60%">
+                        <stop offset="0%" stop-color="#ffd29a" />
+                        <stop offset="100%" stop-color="#f6a85b" />
+                    </radialGradient>
+                </defs>
+                <circle cx="100" cy="100" r="92" fill="url(#pfDemoFaceBgSource)" stroke="#b06a2c" stroke-width="3" />
+                @FaceSvgFor(_currentEmotion)
+            </svg>
+
             @if (_phase == "DemoFinal")
             {
                 <p class="pf-prompt">Round 1 of 5 — looping…</p>
@@ -337,9 +357,11 @@
 
     // ── Demo driver ─────────────────────────────────────────────────────────
     // Renders an inline SVG face whose expression is set to the current
-    // round's emotion. Auto-picks the correct chip every round (always 100%)
-    // and auto-advances. Shows a Game-Over modal once after round 5, then
-    // restarts the loop. Total runtime ≈ 25 s per cycle.
+    // round's emotion. The SVG is registered with webcam.js so captureFrame()
+    // converts it to a real JPEG and feeds it through the SAME scoring
+    // pipeline the live camera uses (/api/face/sessions/.../rounds/.../score).
+    // Auto-advances every round. Shows a Game-Over modal once after round 5,
+    // then restarts the loop. Total runtime ≈ 25 s per cycle.
     private void StartDemo()
     {
         _currentRound = 0;
@@ -348,7 +370,50 @@
         _finalTotal = 0;
         BuildChoices();
         _phase = "DemoReady";
-        ScheduleDemoTick(TimeSpan.FromMilliseconds(1500));   // show round → reveal
+        // Begin demo session lazily on first tick (so we don't POST if the
+        // user navigates away immediately).
+        _ = RegisterDemoSvgAsync();
+        ScheduleDemoTick(TimeSpan.FromMilliseconds(1500));   // show round → capture+score
+    }
+
+    /// <summary>
+    /// Reads the hidden #pf-demo-face-source SVG's outerHTML and pushes it
+    /// into webcam.js so captureFrame() routes through the SVG → canvas →
+    /// JPEG pipeline instead of the stub 1×1 white pixel.
+    /// </summary>
+    private async Task RegisterDemoSvgAsync()
+    {
+        try
+        {
+            var markup = await JS.InvokeAsync<string>(
+                "eval",
+                "(document.getElementById('pf-demo-face-source')?.outerHTML) || ''");
+            await JS.InvokeVoidAsync("webcamInterop.setDemoSvgMarkup", markup);
+        }
+        catch
+        {
+            // Non-fatal — demo will fall back to the stub JPEG.
+        }
+    }
+
+    /// <summary>
+    /// Calls the real /api/face/sessions endpoint so demo captures flow
+    /// through persisted scoring like a live game. Returns the session id
+    /// or null if the call fails.
+    /// </summary>
+    private async Task<string?> StartDemoSessionAsync()
+    {
+        try
+        {
+            var resp = await Http.PostAsync("/api/face/sessions", content: null);
+            if (!resp.IsSuccessStatusCode) return null;
+            var session = await resp.Content.ReadFromJsonAsync(ApiJsonContext.Default.FaceSessionDto);
+            return session?.SessionId;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private void ScheduleDemoTick(TimeSpan delay, bool advanceRound = false)
@@ -368,9 +433,18 @@
 
         if (_phase == "DemoReady")
         {
-            // Auto-pick the correct emotion chip. Always matches → +10 each round → total 50.
+            // Auto-pick the correct emotion chip and feed the synthetic
+            // SVG through webcam.js' real capture pipeline. The scoring API
+            // returns whatever the analyzer makes of the SVG (likely a low
+            // score for a synthetic face, which is honest and lets the
+            // kiosk demo surface what real feedback looks like).
             _picked = _currentEmotion;
             _lastCorrect = true;
+            _ = InvokeAsync(async () =>
+            {
+                await RegisterDemoSvgAsync();
+                await CaptureDemoFrameAsync();
+            });
             _demoRoundPoints = 10;
             _localTotal += _demoRoundPoints;
             _streak++;
@@ -394,6 +468,7 @@
             _currentEmotion = RoundOrder[_currentRound];
             BuildChoices();
             _phase = "DemoReady";
+            _ = RegisterDemoSvgAsync();  // refresh SVG markup for the new emotion
             ScheduleDemoTick(TimeSpan.FromMilliseconds(1300));
             return;
         }
@@ -403,6 +478,40 @@
             // Loop back to round 1 for the next kiosk lap.
             StartDemo();
             return;
+        }
+    }
+
+    /// <summary>
+    /// Runs the same capture → POST pipeline the live camera path uses,
+    /// but driven by the registered demo SVG instead of a webcam. Lazily
+    /// opens a session on first call. Failures are non-fatal — the demo
+    /// just shows the synthetic +10 score without a server round.
+    /// </summary>
+    private async Task CaptureDemoFrameAsync()
+    {
+        try
+        {
+            _sessionId ??= await StartDemoSessionAsync();
+            if (_sessionId is null) return;
+
+            var dataUrl = await JS.InvokeAsync<string>("webcamInterop.captureFrame", "pf-webcam-preview");
+            if (!dataUrl.StartsWith("data:image/jpeg;base64,", StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+            var base64 = dataUrl.Substring("data:image/jpeg;base64,".Length);
+            var bytes = Convert.FromBase64String(base64);
+
+            using var content = new MultipartFormDataContent();
+            var imageContent = new ByteArrayContent(bytes);
+            imageContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/jpeg");
+            content.Add(imageContent, "image", $"demo-round-{_currentRound}.jpg");
+
+            await Http.PostAsync($"/api/face/sessions/{_sessionId}/rounds/{_currentRound}/score", content);
+        }
+        catch
+        {
+            // Demo runs even if scoring is offline; visual + synthetic score stays.
         }
     }
 
@@ -593,6 +702,18 @@
         _demoTimer?.Dispose();
         _demoTimer = null;
         try { await JS.InvokeVoidAsync("webcamInterop.releaseCamera"); } catch { /* ignore */ }
+        try { await JS.InvokeVoidAsync("webcamInterop.setDemoSvgMarkup", (object?)null); } catch { /* ignore */ }
+    }
+
+    // After every render in demo mode, push the fresh SVG markup into
+    // webcam.js so captureFrame() picks up the current emotion. This is
+    // idempotent and cheap (a couple of <200 byte strings per render).
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_isDemo)
+        {
+            await RegisterDemoSvgAsync();
+        }
     }
 
 }

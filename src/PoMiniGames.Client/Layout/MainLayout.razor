@@ -5,6 +5,7 @@
 @inject KioskCoordinator Kiosk
 @inject ScoreSyncService ScoreSync
 @inject UiFeedbackService Feedback
+@inject SettingsService Settings
 @inject IWebAssemblyHostEnvironment HostEnvironment
 
 <div class="gl-page">
@@ -43,6 +44,18 @@
 
         <div class="gl-auth">
             <FpsCounter />
+            @* ⚙️ Global settings: master mute + FPS badge, shared by every game. *@
+            <details class="gl-overflow-menu gl-settings-menu">
+                <summary class="gl-overflow-trigger" aria-label="Settings">⚙️</summary>
+                <div class="gl-overflow-panel">
+                    <button class="gl-overflow-item" @onclick="ToggleMute">
+                        @(Settings.Muted ? "🔇 Sound: off" : "🔊 Sound: on")
+                    </button>
+                    <button class="gl-overflow-item" @onclick="ToggleFps">
+                        @(Settings.ShowFps ? "📈 FPS badge: shown" : "📉 FPS badge: hidden")
+                    </button>
+                </div>
+            </details>
             @* Guest pill and email chip removed per 2026-07-04 mobile-portrait cleanup:
                neither belongs on a portrait phone chrome strip. The sign-in / sign-out
                button (and the dev Switch-user panel, when applicable) remain below. *@
@@ -141,7 +154,12 @@
         {
             _ = Feedback.MockDataAsync();
         }
+
+        Settings.Load();
     }
+
+    private void ToggleMute() => Settings.SetMuted(!Settings.Muted);
+    private void ToggleFps() => Settings.SetShowFps(!Settings.ShowFps);
 
     /// <summary>
     /// Returns true when the display name identifies a dev-bypass anonymous session.

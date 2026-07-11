@@ -45,7 +45,13 @@
            Player="@_playerName"
            BackTo="/"
            Fullscreen="true"
-           Status="@StatusContent">
+           Status="@StatusContent"
+           GameOver="@(Phase == GamePhase.Finished && !_isDemo)"
+           OnPlayAgain="StartRace"
+           PlayAgainLabel="🔄 Race Again"
+           GameSummary="@RaceSummaryContent"
+           HowToPlay="@HowToPlayContent"
+           HowToPlayKey="@(_isDemo ? null : "poracer")">
 <div class="racer-shell-wrap">
 <div class="racer-root @(_crtOn ? "crt-enabled" : "") po-page-transition" tabindex="0">
     <div class="racer-canvas-wrap">
@@ -142,9 +148,7 @@
 
                 <div class="hud-label">Time</div>
                 <div class="hud-value">@FormatTime(_elapsedRaceTime)</div>
-
-                <div class="hud-label">FPS</div>
-                <div class="hud-value hud-fps" style="color:@FpsColor">@_fpsDisplay</div>
+                @* FPS row removed — the shared top-bar FpsCounter badge covers it. *@
             </div>
 
             <div class="hud-panel hud-right">
@@ -171,49 +175,8 @@
         </div>
     }
 
-    @* -------- Race finished -------- *@
-    @if (Phase == GamePhase.Finished)
-    {
-        <div class="racer-overlay racer-end">
-            <div class="racer-card">
-                <div class="racer-title small">Race Complete</div>
-                <div class="racer-subtitle">
-                    @if (Player?.Position == 1) { <span>🏆 You won!</span> }
-                    else { <span>You finished @Ordinal(Player?.Position ?? 0)</span> }
-                </div>
-                <div class="leaderboard" aria-live="polite">
-                    @foreach (var c in Standings)
-                    {
-                        <div class="lb-row @(c.IsPlayer ? "is-player" : "")">
-                            <span class="lb-pos">@Ordinal(c.Position)</span>
-                            <span class="hud-dot" style="background:@c.Color"></span>
-                            <span class="lb-name">@c.Name</span>
-                            <span class="lb-time">@(c.FinishTime > 9e8 || c.FinishTime < 0 ? "DNF" : FormatTime(c.FinishTime))</span>
-                        </div>
-                    }
-                </div>
-                <div class="lb-status" role="status">
-                    @if (_submitState == SubmitState.Submitting)
-                    {
-                        <span class="lb-status-text">Submitting score...</span>
-                    }
-                    else if (_submitState == SubmitState.Failed)
-                    {
-                        <span class="lb-status-text error">@_submitError</span>
-                        <button class="racer-btn-secondary" @onclick="SubmitPlayerScoreAsync">Retry</button>
-                    }
-                    else if (_submitState == SubmitState.Saved)
-                    {
-                        <span class="lb-status-text ok">✓ Score saved</span>
-                    }
-                </div>
-                <div class="lb-actions">
-                    <button class="racer-btn" @onclick="StartRace">Race Again</button>
-                    <button class="racer-btn-secondary" @onclick="GoToLeaderboard">View leaderboard</button>
-                </div>
-            </div>
-        </div>
-    }
+    @* Race-finished content moved into the shared GameShell end-of-game modal
+       (RaceSummaryContent) so every game ends with the same dialog. *@
 </div>
 </div>
 </GameShell>
@@ -226,6 +189,15 @@
     private bool _disposed;
 
     private RenderFragment TitleContent => @<text>🏎️ PoRacer</text>;
+
+    private RenderFragment HowToPlayContent => @<div>
+        <p>Finish 3 laps ahead of the pack.</p>
+        <ul>
+            <li><kbd>↑</kbd>/<kbd>W</kbd> accelerate · <kbd>↓</kbd>/<kbd>S</kbd> brake</li>
+            <li><kbd>←</kbd>/<kbd>→</kbd> (or <kbd>A</kbd>/<kbd>D</kbd>) steer</li>
+            <li>Best race times land on the leaderboard — smooth lines beat raw speed</li>
+        </ul>
+    </div>;
     private string _playerName = string.Empty;
     private RenderFragment StatusContent => _isDemo
         ? @<span class="gps-status-badge demo">🤖 Demo</span>
@@ -234,6 +206,46 @@
             : Phase == GamePhase.Finished
                 ? @<span class="gps-status-badge draw">🏁 Finished</span>
                 : @<span class="gps-status-badge turn">Multiplayer arcade racing</span>;
+
+    // End-of-race content for the shared GameShell modal: result line, final
+    // standings, and the score-submit status (with retry). Same contract as
+    // every other game — result, score, actions.
+    private RenderFragment RaceSummaryContent => @<div class="racer-modal-summary">
+        @if (Player?.Position == 1)
+        {
+            <div class="cf-result cf-result--win">🏆 You won!</div>
+        }
+        else
+        {
+            <div class="cf-result cf-result--draw">🏁 You finished @Ordinal(Player?.Position ?? 0)</div>
+        }
+        <div class="leaderboard" aria-live="polite">
+            @foreach (var c in Standings)
+            {
+                <div class="lb-row @(c.IsPlayer ? "is-player" : "")">
+                    <span class="lb-pos">@Ordinal(c.Position)</span>
+                    <span class="hud-dot" style="background:@c.Color"></span>
+                    <span class="lb-name">@c.Name</span>
+                    <span class="lb-time">@(c.FinishTime > 9e8 || c.FinishTime < 0 ? "DNF" : FormatTime(c.FinishTime))</span>
+                </div>
+            }
+        </div>
+        <div class="lb-status" role="status">
+            @if (_submitState == SubmitState.Submitting)
+            {
+                <span class="lb-status-text">Submitting score...</span>
+            }
+            else if (_submitState == SubmitState.Failed)
+            {
+                <span class="lb-status-text error">@_submitError</span>
+                <button class="racer-btn-secondary" @onclick="SubmitPlayerScoreAsync">Retry</button>
+            }
+            else if (_submitState == SubmitState.Saved)
+            {
+                <span class="lb-status-text ok">✓ Score saved</span>
+            }
+        </div>
+    </div>;
 
     // The global PoRacer lobby is a single shared room — no codes, no joining.
 
@@ -259,9 +271,8 @@
     private bool _lastSentUp, _lastSentDown, _lastSentLeft, _lastSentRight, _lastSentSpace;
     private System.Timers.Timer? _inputTimer;
 
-    // FPS watchdog — guarantees the HUD ticks even if the rAF callback is
+    // HUD watchdog — guarantees the HUD ticks even if the rAF callback is
     // throttled (e.g. canvas extending beyond the viewport on iOS Safari).
-    private double _fpsDisplayMs;
     private System.Timers.Timer? _watchdog;
 
     // Race result handling.
@@ -271,8 +282,6 @@
     private enum SubmitState { Idle, Submitting, Saved, Failed }
     private bool _playerSubmitted;
 
-    private string _fpsDisplay = "--";
-    private string FpsColor => _fpsDisplay == "--" ? "var(--muted)" : _fpsDisplayMs >= 55 ? "#6bff9c" : _fpsDisplayMs >= 30 ? "#ffd24e" : "#ff6b6b";
     private bool _crtOn;
     private const int TotalLaps = 3;
 
@@ -452,8 +461,6 @@
         {
             Phase = GamePhase.Finished;
         }
-        _fpsDisplay = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() % 1000 < 50 ? "60" : "45";
-        _fpsDisplayMs = double.Parse(_fpsDisplay);
         InvokeAsync(StateHasChanged);
     }
 

@@ -61,6 +61,17 @@ const HITSTUN = 0.35;
 const CHARGE_TIME = 1.0;
 const CHARGE_MAX_MUL = 2.0;
 
+// ── Energy meter ─────────────────────────────────────────────────────────
+// One 0..1 pool per fighter, shown under the HP bar in the Blazor HUD. It IS
+// the stored attack power: a release spends ALL of it (chargeMul 1x when
+// empty → CHARGE_MAX_MUL when full). It fills while holding punch/kick (the
+// charge state) and jumps +25% per successfully blocked hit; passive regen
+// only works while idle and tops out at half power — banking more than 50%
+// takes active defense or a held wind-up.
+const ENERGY_IDLE_CAP = 0.5;
+const ENERGY_REGEN = 0.12;        // per second, idle state only, up to the cap
+const ENERGY_BLOCK_REWARD = 0.25; // per blocked hit, up to 1
+
 // Fighters never leave their feet before the final blow — heavy hits get a
 // hard stagger (extra knockback + lean) instead of a mid-fight knockdown.
 // The KO ragdoll is the only way to the canvas.
@@ -347,15 +358,16 @@ export class BrawlGame {
       let dt = Math.min(rawDt, MAX_FRAME_DT);
       this.lastFrame = now;
 
-      // FPS badge — measured from the unclamped frame delta so slow frames
-      // report honestly (dt is clamped for the sim).
+      // Quality monitor — measured from the unclamped frame delta so slow
+      // frames report honestly (dt is clamped for the sim). The FPS number
+      // itself lives in the shared top-bar badge (FpsCounter); the in-canvas
+      // badge only surfaces the FX tier when the monitor has stepped down.
       this._fpsFrames++;
       this._fpsTime += rawDt;
       if (this._fpsTime >= 0.5) {
         const fps = Math.round(this._fpsFrames / this._fpsTime);
         this._tickQualityMonitor(fps);
-        const label = `${fps} FPS` +
-          (this.quality < 2 ? ` · FX ${this.quality === 1 ? 'med' : 'low'}` : '');
+        const label = this.quality < 2 ? `FX ${this.quality === 1 ? 'med' : 'low'}` : '';
         if (this.fpsEl && this.fpsEl.textContent !== label) this.fpsEl.textContent = label;
         this._fpsFrames = 0;
         this._fpsTime = 0;
@@ -374,7 +386,6 @@ export class BrawlGame {
       updateAtmosphere(this.arena, dt, this.atmoT, this.excited);
       updateRopes(this.arena, dt, this.fighters);
       this._updateBlobShadows();
-      this._updateReflections();
       if (this.fighters) {
         for (const f of this.fighters) {
           updateJiggles(f.rig, dt);
@@ -533,13 +544,6 @@ export class BrawlGame {
           f.blob.geometry.dispose();
           f.blob.material.dispose(); // texture is shared; disposed in dispose()
         }
-        if (f.mirror) {
-          this.scene.remove(f.mirror.root);
-          f.mirror.root.traverse((o) => {
-            if (o.geometry) o.geometry.dispose();
-            if (o.material) o.material.dispose();
-          });
-        }
         if (f.trail) {
           this.scene.remove(f.trail.mesh);
           f.trail.mesh.geometry.dispose();
@@ -587,33 +591,6 @@ export class BrawlGame {
       blob.position.y = 0.055;
       this.scene.add(blob);
 
-      // Fake planar reflection: a ghost copy of the rig mirrored about the
-      // canvas plane (y=0.04), additive + depthTest-off so it reads as a
-      // glossy sheen on the vinyl. Joint transforms are copied every frame.
-      const mirror = buildFighter(CHARACTERS[charId] ? charId : CHARACTER_IDS[0]);
-      const matClones = new Map();
-      mirror.root.traverse((o) => {
-        o.castShadow = false;
-        o.receiveShadow = false;
-        if (o.isMesh && o.material) {
-          if (!matClones.has(o.material)) {
-            const mc = o.material.clone();
-            mc.transparent = true;
-            mc.opacity = 0.13;
-            mc.blending = THREE.AdditiveBlending;
-            mc.depthTest = false;
-            mc.depthWrite = false;
-            mc.side = THREE.DoubleSide; // negative scale flips winding
-            mc.fog = false;
-            matClones.set(o.material, mc);
-          }
-          o.material = matClones.get(o.material);
-        }
-      });
-      mirror.root.scale.y *= -1;
-      mirror.root.renderOrder = 1;
-      this.scene.add(mirror.root);
-
       return {
         index,
         playerId,
@@ -631,8 +608,9 @@ export class BrawlGame {
         hasHit: false,
         // ── Hold-to-charge ────────────────────────────────────────────
         chargeName: null,  // 'punch'|'kick' while state === 'charge'
-        chargeAmt: 0,      // 0..1 stored charge
+        chargeAmt: 0,      // 0..1 stored charge (mirrors energy while charging)
         chargeMul: 1,      // damage/knockback multiplier of the current swing
+        energy: ENERGY_IDLE_CAP, // 0..1 banked attack power (see ENERGY_* consts)
         chargeCued: false, // full-charge audio cue fired
         chargeSparkT: 0,   // spark-mote emission timer
         // ── Momentum + weight ─────────────────────────────────────────
@@ -662,8 +640,6 @@ export class BrawlGame {
         blob,
         // Additive swing ribbon following the striking limb.
         trail: this._makeTrail(),
-        // Ghost reflection rig (synced to the real rig each render frame).
-        mirror,
         // Track the last frame's windup flag for the AI to read.
         lastWasWindup: false,
         // Verlet ragdoll — the soft, recoverable flop used for knockdowns.
@@ -692,6 +668,11 @@ export class BrawlGame {
     this.phaseT = 0;
     this.clock = 0;
     this.winner = 0;
+    // Land the previous match's celebrant before the fresh countdown.
+    if (this.celebrant) this.celebrant.rig.root.position.y = 0;
+    this.celebrant = null;
+    this.pendingCelebration = null;
+    this.celebrationT = 0;
     this.timeScale = 1;
     this.cameraMode = 'normal';
     this.cameraModeT = 0;
@@ -774,12 +755,14 @@ export class BrawlGame {
         this.timeScale = 1;
         this.phase = 'result';
         this.phaseT = 0;
+        this._startCelebration(this.pendingCelebration);
         this._reportResult();
       }
     } else if (this.phase === 'result') {
       this._buildPendingKO();
       if (this._physics) stepWorld(this._physics.world, dt);
       this._tickKoFall(dt);
+      this._tickCelebration(dt);
       if (this.options.mode === 'demo' && this.phaseT >= 3) {
         this.resetMatch(true);
       }
@@ -1091,6 +1074,10 @@ export class BrawlGame {
     // ── State machine ────────────────────────────────────────────────
     switch (f.state) {
       case 'idle': {
+        // Passive energy regen — idle only, capped at half power.
+        if (f.energy < ENERGY_IDLE_CAP) {
+          f.energy = Math.min(ENERGY_IDLE_CAP, f.energy + ENERGY_REGEN * dt);
+        }
         if (intent.punch || intent.kick) {
           const name = intent.punch ? 'punch' : 'kick';
           this._enterCharge(f, name);
@@ -1107,7 +1094,11 @@ export class BrawlGame {
         // CHARGE_TIME; you can hold at max forever). Release throws the
         // attack scaled by the stored charge.
         const held = f.chargeName === 'punch' ? intent.punchHeld : intent.kickHeld;
-        f.chargeAmt = Math.min(1, f.stateT / CHARGE_TIME);
+        // Holding pumps the shared energy pool; the coil animation shows the
+        // TRUE banked power (idle regen + block rewards included), so a
+        // fighter who blocked a haymaker coils near-full almost instantly.
+        f.energy = Math.min(1, f.energy + dt / CHARGE_TIME);
+        f.chargeAmt = f.energy;
         f.animator.setCharge(f.chargeName, f.chargeAmt);
         // Full-charge cue: one audible snap when the coil tops out.
         if (f.chargeAmt >= 1 && !f.chargeCued) {
@@ -1205,11 +1196,11 @@ export class BrawlGame {
     f.state = 'charge';
     f.stateT = 0;
     f.chargeName = name;
-    f.chargeAmt = 0;
+    f.chargeAmt = f.energy; // coil starts at the already-banked power
     f.chargeCued = false;
     f.chargeSparkT = 0;
     f.animator.setBlocking(false);
-    f.animator.setCharge(name, 0);
+    f.animator.setCharge(name, f.chargeAmt);
     this._destroySwingPhysics(f);
   }
 
@@ -1220,9 +1211,15 @@ export class BrawlGame {
     f.attack = ATTACKS[name];
     f.chargeName = null;
     f.chargeMul = 1 + (CHARGE_MAX_MUL - 1) * chargeAmt;
+    // Spend-it-all: the swing consumes the whole energy pool. Regen crawls
+    // back toward the 50% idle cap; blocks are the fast way to reload.
+    f.energy = 0;
+    this.hudDirty = true;
     f.animator.play(name);
-    // Trail color: cool steel normally, hot gold on a charged release.
-    if (f.trail) f.trail.color.setHex(chargeAmt > 0.35 ? 0xffd257 : 0xcfe0ff);
+    // Trail color: cool steel normally, hot gold on a charged release —
+    // "charged" now means above the ENERGY_IDLE_CAP baseline, so gold still
+    // reads as earned bonus power rather than lighting up every tap.
+    if (f.trail) f.trail.color.setHex(chargeAmt > 0.65 ? 0xffd257 : 0xcfe0ff);
     this.audio.whoosh();
     // Attack lunge: a real step into the strike, scaled by charge. This is
     // where the "reach" lives now that the hitboxes track the actual limb —
@@ -1440,6 +1437,9 @@ export class BrawlGame {
     const blocked = defender.state === 'block' &&
                     testAttackBlocked(attacker.rig, attack.name, phase, defender.rig);
     if (blocked) {
+      // Successful block banks energy — the defender's counter gets stronger.
+      defender.energy = Math.min(1, defender.energy + ENERGY_BLOCK_REWARD);
+      this.hudDirty = true;
       const blockDamp = 1 / defMass;
       defender.knockback.add(knockDir.clone().multiplyScalar(2.0 * blockDamp * chargeMul));
       this._spawnSparks(hit.point, 0x9ad0ff, 6, 1.0);
@@ -1461,9 +1461,12 @@ export class BrawlGame {
     const baseDmg = (attack.dmg * chargeMul + this.rng.randint(-1, 1))
       * effect.atkMul * regionMod * powerScale;
     this.combat.damage({ playerId: defender.playerId, amount: baseDmg, sourceId: attacker.playerId });
+    // Getting tagged mid-charge dumps the stored charge — that's the risk.
+    // (Energy banked while idle/blocking survives a hit; only an interrupted
+    // wind-up loses the pool.)
+    if (defender.state === 'charge') defender.energy = 0;
     defender.state = 'hitstun';
     defender.stateT = 0;
-    // Getting tagged mid-charge dumps the stored charge — that's the risk.
     defender.chargeName = null;
     defender.chargeAmt = 0;
     defender.animator.setCharge(null, 0);
@@ -1561,6 +1564,10 @@ export class BrawlGame {
         // (expressionT stays 0 so nothing resets either one).
         const wf = this.winner ? this.fighters[this.winner - 1] : null;
         if (wf) { setExpression(wf.rig, 'grin'); wf.expressionT = 0; }
+        // Sometimes the victor celebrates — decided here (seeded RNG keeps
+        // demo replays reproducible) but the hopping starts at the 'result'
+        // transition so the slow-mo KO fall keeps its drama.
+        this.pendingCelebration = (wf && this.rng.random() < 0.55) ? wf : null;
         this._setBanner('K.O.!');
         this.audio.ko();
         this._triggerFlash();
@@ -1780,42 +1787,6 @@ export class BrawlGame {
     anim.setClinch(dist < 1.05 && passive(f.state) && passive(opp.state));
   }
 
-  // Mirror each rig into its ghost-reflection copy: root transform flipped
-  // about the canvas plane (y=0.04 → y' = 0.08 − y), all joint local
-  // transforms copied verbatim (the negative root scale does the mirroring).
-  _updateReflections() {
-    if (!this.fighters) return;
-    // Tier 2 uses the real planar Reflector on the canvas (reflects ropes,
-    // sparks and debris too); below that we fall back to the cheap additive
-    // ghost-rig mirror. Never both — that would double the fighters.
-    const useReflector = !!(this.arena && this.arena.reflector) && this.quality === 2;
-    if (this.arena && this.arena.reflector) this.arena.reflector.visible = useReflector;
-    for (const f of this.fighters) {
-      const m = f.mirror;
-      if (!m) continue;
-      m.root.visible = !useReflector;
-      if (useReflector) continue;
-      const r = f.rig.root;
-      m.root.position.set(r.position.x, 0.08 - r.position.y, r.position.z);
-      m.root.rotation.copy(r.rotation);
-      for (const [name, joint] of Object.entries(f.rig.joints)) {
-        const mj = m.joints[name];
-        if (!mj) continue;
-        mj.quaternion.copy(joint.quaternion);
-        mj.position.copy(joint.position);
-      }
-      m.joints.hips.scale.copy(f.rig.joints.hips.scale);
-      // Tie/hair/flap jiggle pivots mirror too — rotation for the swing
-      // springs, scale for the belly/jowl wobble springs.
-      if (f.rig.jiggles && m.jiggles) {
-        for (let i = 0; i < m.jiggles.length; i++) {
-          m.jiggles[i].pivot.rotation.copy(f.rig.jiggles[i].pivot.rotation);
-          m.jiggles[i].pivot.scale.copy(f.rig.jiggles[i].pivot.scale);
-        }
-      }
-    }
-  }
-
   // Track each fighter's hips; widen + darken the blob as the body drops
   // (knockdown/KO) so the lying pose still reads as grounded.
   _updateBlobShadows() {
@@ -1956,8 +1927,34 @@ export class BrawlGame {
     // Time-out victory: the winner grins for the result frame.
     const wf = winner ? this.fighters[winner - 1] : null;
     if (wf) { setExpression(wf.rig, 'grin'); wf.expressionT = 0; }
+    // Sometimes the decision winner celebrates too.
+    this._startCelebration(wf && this.rng.random() < 0.55 ? wf : null);
     this._setBanner(bannerText);
     this._reportResult();
+  }
+
+  // ── Victory celebration ───────────────────────────────────────────────
+  // Sometimes (~55% of wins) the victor bounces on the spot under the
+  // result banner — parabolic hops on the rig root, plus a replay of the
+  // personality entrance gesture for flavor. The loser's ragdoll and the
+  // frozen camera are untouched. Cleared in _startCountdown.
+  _startCelebration(f) {
+    this.celebrant = f || null;
+    this.celebrationT = 0;
+    if (f && f.animator && f.entranceKey && f.state !== 'ko') {
+      f.animator.play(f.entranceKey);
+    }
+  }
+
+  _tickCelebration(dt) {
+    const f = this.celebrant;
+    if (!f || f.state === 'ko') return;
+    this.celebrationT += dt;
+    // Ballistic hop arc: period 0.55 s, peak 0.38 m — 4·h·t·(1−t) is the
+    // real gravity parabola, so the jumps read as jumps, not a sine bob.
+    const HOP_PERIOD = 0.55, HOP_HEIGHT = 0.38;
+    const ph = (this.celebrationT % HOP_PERIOD) / HOP_PERIOD;
+    f.rig.root.position.y = 4 * HOP_HEIGHT * ph * (1 - ph);
   }
 
   _reportResult() {
@@ -2311,7 +2308,7 @@ export class BrawlGame {
     const r = 0.03 + this.rng.random() * 0.055;
     s.scale.set(r * (1 + this.rng.random() * 0.6), r, 1);
     s.position.set(x, 0.048, z);
-    s.renderOrder = 2; // above the canvas top and the tier-2 reflector
+    s.renderOrder = 2; // above the canvas top
     this.scene.add(s);
     this._bloodStains.push(s);
   }
@@ -2399,7 +2396,8 @@ export class BrawlGame {
       ];
       this.dotnet.invokeMethodAsync('OnHud',
         this._hp(this.fighters[0]), this._hp(this.fighters[1]), Math.round(this.clock * 10) / 10,
-        regions(this.fighters[0]), regions(this.fighters[1]))
+        regions(this.fighters[0]), regions(this.fighters[1]),
+        Math.round(this.fighters[0].energy * 100), Math.round(this.fighters[1].energy * 100))
         .catch(() => {});
     }
   }

@@ -215,7 +215,8 @@
                 _submittedBest = score;
                 best = new MarbleRaceHighScore
                 {
-                    PlayerInitials = Initials(_playerName),
+                    // One identity across boards: full display name, not initials.
+                    PlayerInitials = _playerName,
                     BestScore = score,
                     GameDuration = 0,
                 };

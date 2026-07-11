@@ -54,6 +54,8 @@ public class GameSession
 public class LeaderboardEntry
 {
     public string UserId { get; set; } = string.Empty;
+    /// <summary>Human-readable player name — boards display this, never the UserId.</summary>
+    public string DisplayName { get; set; } = string.Empty;
     public int Score { get; set; } = 0;
     public int Year { get; set; } = DateTime.UtcNow.Year;
     public DateTime AchievedAt { get; set; } = DateTime.UtcNow;

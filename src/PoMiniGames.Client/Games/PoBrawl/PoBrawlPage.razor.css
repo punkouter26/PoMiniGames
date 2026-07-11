@@ -7,8 +7,8 @@
 
 .pb-canvas-host {
     width: 100%;
-    height: min(60vh, 540px);
-    min-height: 320px;
+    height: min(72vh, 648px);
+    min-height: 384px;
     border-radius: 12px;
     overflow: hidden;
     background: #0d0f1a;
@@ -239,6 +239,34 @@
 .pb-hp-p2 {
     background: linear-gradient(90deg, #f87171, #ef4444);
     margin-left: auto;
+}
+
+/* Energy meter — banked attack power (see game.js ENERGY_* consts). Thinner
+   sibling of the HP track; fill turns gold + glows once past the 50% idle
+   cap, i.e. when the fighter has blocked/charged their way into bonus power. */
+.pb-en-track {
+    width: 100%;
+    height: 6px;
+    border-radius: 3px;
+    background: rgba(0, 0, 0, 0.55);
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.pb-en-fill {
+    height: 100%;
+    width: var(--en, 50%);
+    background: linear-gradient(90deg, #5b7cfa, #8aa4ff);
+    transition: width 0.25s linear;
+}
+
+.pb-hp-right .pb-en-fill {
+    margin-left: auto;
+}
+
+.pb-en-hot {
+    background: linear-gradient(90deg, #ffb020, #ffd257);
+    box-shadow: 0 0 6px rgba(255, 210, 87, 0.75);
 }
 
 /* Region-damage body diagram: one 4-zone silhouette per fighter, flanking the

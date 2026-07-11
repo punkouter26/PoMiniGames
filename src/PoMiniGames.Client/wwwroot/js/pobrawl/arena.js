@@ -3,7 +3,6 @@
 // the env map that the engine can attach at startup.
 import * as THREE from 'three';
 import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUniformsLib.js';
-import { Reflector } from 'three/addons/objects/Reflector.js';
 
 export const RING_HALF = 5.2; // playable clamp radius (ring is 12x12, keep a margin)
 
@@ -87,25 +86,6 @@ export function buildArena(scene, envMap = null) {
   top.position.y = 0.02;
   top.receiveShadow = true;
   scene.add(top);
-
-  // Real planar reflection on the vinyl (tier 2 only — the engine toggles
-  // `reflector.visible` with the quality tier and falls back to the ghost
-  // mirror rigs below it). A faint transparent overlay on the opaque canvas:
-  // the fragment alpha is patched down so the vinyl texture reads through.
-  const reflector = new Reflector(new THREE.PlaneGeometry(11.6, 11.6), {
-    textureWidth: 512, textureHeight: 512,
-    color: 0x9aa0c0, clipBias: 0.003,
-  });
-  reflector.rotation.x = -Math.PI / 2;
-  reflector.position.y = 0.045;
-  reflector.material.transparent = true;
-  reflector.material.onBeforeCompile = (shader) => {
-    shader.fragmentShader = shader.fragmentShader.replace(
-      'gl_FragColor = vec4( blendOverlay( base.rgb, color ), 1.0 );',
-      'gl_FragColor = vec4( blendOverlay( base.rgb, color ), 0.22 );');
-  };
-  reflector.visible = false; // engine enables it on tier 2
-  scene.add(reflector);
 
   // Corner posts — breakable. The engine listens for collisions against these.
   const postMat = new THREE.MeshStandardMaterial({
@@ -264,7 +244,7 @@ export function buildArena(scene, envMap = null) {
   const flashes = buildCrowdFlashes(scene);
 
   return {
-    posts, crowd, atmo, flashes, reflector, ropes,
+    posts, crowd, atmo, flashes, ropes,
     lights: { hemi, key, rim, fill, spot, cornerA, cornerB, rectA, rectB },
   };
 }

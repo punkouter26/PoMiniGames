@@ -28,6 +28,8 @@ async function getCtx() {
  */
 export async function playTone(freq, ms, gain, type) {
     try {
+        // Global master mute (settings gear in the top bar; see SettingsService).
+        if ((localStorage.getItem('pomini_muted') || '').indexOf('1') !== -1) return;
         const ctx = await getCtx();
         const t0 = ctx.currentTime;
         const dur = ms / 1000;

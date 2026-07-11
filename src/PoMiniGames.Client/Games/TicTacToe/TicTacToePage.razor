@@ -12,6 +12,7 @@
 @inject IJSRuntime JSRuntime;
 @inject KioskCoordinator Kiosk;
 @inject UiFeedbackService Feedback;
+@inject GameResultService GameResults;
 
 <GameShell
     Title=@TitleContent
@@ -21,7 +22,9 @@
     OnPlayAgain="ResetGame"
     Stats="@_statItems"
     Status="@StatusContent"
-    GameSummary="@GameSummaryContent">
+    GameSummary="@GameSummaryContent"
+    HowToPlay="@HowToPlayContent"
+    HowToPlayKey="@(Demo == 1 ? null : "tictactoe")">
     <div class="ttt-board @(_isAiTurn ? "ttt-board--thinking" : "") @ResultClass" role="grid" aria-label="Tic Tac Toe game board">
         @for (int r = 0; r < TicTacToeBoard.Size; r++)
         {
@@ -79,8 +82,17 @@
 
     private TicTacToeBoard _board = new();
     private TicTacToeAI _ai = new();
-    private Difficulty _difficulty = Difficulty.Medium;
+    // Demo mode (CPU vs CPU) plays both sides at Medium. 1-player difficulty is
+    // driven by the adaptive ELO (see _cpuElo), not this field.
+    private readonly Difficulty _difficulty = Difficulty.Medium;
     private GameResult _gameResult = GameResult.InProgress;
+    // Adaptive 1-player rating (same system as ConnectFive/PoBrawl). The CPU is
+    // matched to _cpuElo — the player's rating at the start of the game — so the
+    // opponent gets stronger as the player's ELO climbs and eases off after losses.
+    private AdaptiveRating _rating = new();
+    private int _cpuElo = AdaptiveRating.StartingElo;
+    // ELO change from the just-finished game, shown on the game-over panel.
+    private int? _lastEloDelta;
     private bool _isAiTurn;
     // "ai" (vs CPU) or "2p" (local pass-and-play); "demo" is driven by the route param.
     private string _playMode = "ai";
@@ -99,7 +111,6 @@
     // cell elements and replays the staggered board-entrance animation.
     private int _gameId;
     private List<StatItem> _statItems = new();
-    private PlayerStats _stats = new();
     private readonly GameStatsService _gameStats = new();
     private CancellationTokenSource? _demoCts;
     // BUG FIX (#1): _kioskTimer removed; KioskCoordinator owns the timer.
@@ -108,6 +119,15 @@
     private bool _isGameOver => _gameResult != GameResult.InProgress && PlayMode != "demo";
     
     private RenderFragment TitleContent => @<span>❌ Tic Tac Toe</span>;
+
+    private RenderFragment HowToPlayContent => @<div>
+        <p>Line up @TicTacToeBoard.WinLength in a row on the @TicTacToeBoard.Size×@TicTacToeBoard.Size board.</p>
+        <ul>
+            <li>Tap an empty cell to place your ❌ — the CPU answers with ⭕</li>
+            <li>The CPU is matched to your ELO: win and it gets stronger, lose and it eases off</li>
+            <li>Even the top CPU makes the occasional mistake — stay sharp</li>
+        </ul>
+    </div>;
 
     // Board state → CSS modifier: "decided" spotlights the winning line (works for
     // a vs-AI win, a vs-AI loss, and either side of a 2P game); "draw" greys out.
@@ -164,23 +184,37 @@
     }
     
     // The legacy in-canvas Controls fragment was unreachable (the Settings
-    // drawer was removed 2026-07-06) and is intentionally gone. Mode picker
-    // / difficulty / opponent name now live on each game's mode-selection
-    // landing card (see SetPlayMode / SetDifficulty usage in
-    // TicTacToePage.razor landing), so the in-game chrome stays clean.
+    // drawer was removed 2026-07-06) and is intentionally gone. The manual
+    // difficulty picker is gone too — 1-player strength is always matched to
+    // the player's adaptive ELO, exactly like ConnectFive.
 
     private RenderFragment StatusContent => @<span class="@GetStatusClass()">
         @((MarkupString)GetStatusIcon()) @GetStatusText()
     </span>;
 
     private RenderFragment? GameSummaryContent => _isGameOver
-        ? _gameResult switch
-        {
-            GameResult.Win  => @<span class="cf-result cf-result--win">🎉 You win!</span>,
-            GameResult.Loss => @<span class="cf-result cf-result--loss">🤖 AI wins</span>,
-            GameResult.Draw => @<span class="cf-result cf-result--draw">🤝 Draw</span>,
-            _ => null
-        }
+        ? @<div>
+            @if (_gameResult == GameResult.Win)
+            {
+                <span class="cf-result cf-result--win">🎉 You win!</span>
+            }
+            else if (_gameResult == GameResult.Loss)
+            {
+                <span class="cf-result cf-result--loss">🤖 AI wins</span>
+            }
+            else if (_gameResult == GameResult.Draw)
+            {
+                <span class="cf-result cf-result--draw">🤝 Draw</span>
+            }
+            @if (_lastEloDelta is int d)
+            {
+                <div class="cf-elo-change">
+                    <span class="cf-elo-now">ELO @_rating.Elo</span>
+                    <span class="cf-elo-delta @(d > 0 ? "cf-elo-delta--up" : d < 0 ? "cf-elo-delta--down" : "cf-elo-delta--flat")">@(d >= 0 ? $"+{d}" : d.ToString())</span>
+                    <span class="cf-elo-cpu">vs CPU @_cpuElo</span>
+                </div>
+            }
+        </div>
         : null;
     
     protected override void OnInitialized()
@@ -190,19 +224,6 @@
             _playMode = "2p";
         ResetGame();
         if (PlayMode == "demo") Kiosk.SetCurrent("tictactoe-demo");
-    }
-
-    private void SetPlayMode(string mode)
-    {
-        _playMode = mode;
-        ResetGame();
-    }
-
-    private void SetDifficulty(Difficulty d)
-    {
-        if (_difficulty == d) return;
-        _difficulty = d;
-        ResetGame();
     }
 
     private void OnPlayer2NameChange(ChangeEventArgs e)
@@ -222,7 +243,11 @@
         _isAiTurn = false;
         _current2pToken = CellValue.X;
         _matchRecorded = false;
-        _stats = _gameStats.GetStats("tictactoe", _playerName);
+        _lastEloDelta = null;
+        // Match the CPU to the player's rating as it stands right now — this is
+        // what makes the difficulty evolve with the ELO.
+        _rating = _gameStats.GetAdaptiveRating("tictactoe", _playerName);
+        _cpuElo = _rating.Elo;
         UpdateStats();
 
         if (PlayMode == "demo")
@@ -282,10 +307,32 @@
         // BUG FIX (#1): _kioskTimer removed; KioskCoordinator owns it.
     }
 
+    // Rebuild the ELO/CPU/W/L/D/Rate tiles from the adaptive rating so the stats
+    // drawer and end-of-game panel reflect the result that was just recorded.
     private void UpdateStats()
     {
-        var bucket = _gameStats.GetDifficultyBucket(_stats, _difficulty);
-        _statItems = GameStatsPanel.Build(bucket);
+        _statItems = new()
+        {
+            new StatItem { Label = "ELO",  Value = _rating.Elo.ToString() },
+            new StatItem { Label = "CPU",  Value = _cpuElo.ToString() },
+            new StatItem { Label = "W",    Value = _rating.Wins.ToString() },
+            new StatItem { Label = "L",    Value = _rating.Losses.ToString() },
+            new StatItem { Label = "D",    Value = _rating.Draws.ToString() },
+            new StatItem { Label = "Rate", Value = $"{_rating.WinRate * 100:F0}%" },
+        };
+    }
+
+    // Apply the finished game's result to the adaptive rating, remember the ELO
+    // delta for the game-over panel, and refresh the stat tiles.
+    private void ApplyAdaptiveResult(GameResult result)
+    {
+        var before = _rating.Elo;
+        _rating = _gameStats.RecordAdaptiveResult("tictactoe", _playerName, _cpuElo, result);
+        _lastEloDelta = _rating.Elo - before;
+        UpdateStats();
+        // Single pipeline: GameResultService mirrors the rating into the stats
+        // shape and PUTs it; failures land in the offline sync queue.
+        _ = GameResults.SubmitAdaptiveStatsAsync("tictactoe", _playerName, _rating);
     }
     
     private void HandleCellClick(int row, int col)
@@ -309,8 +356,7 @@
             _gameResult = GameResult.Win;
             _winCells = winCheck.Cells;
             _ = Feedback.PersonalBestAsync();
-            _ = _gameStats.RecordResult("tictactoe", _playerName, _difficulty, GameResult.Win);
-            UpdateStats();
+            ApplyAdaptiveResult(GameResult.Win);
             return;
         }
 
@@ -318,8 +364,7 @@
         {
             _gameResult = GameResult.Draw;
             _ = Feedback.CompleteAsync();
-            _ = _gameStats.RecordResult("tictactoe", _playerName, _difficulty, GameResult.Draw);
-            UpdateStats();
+            ApplyAdaptiveResult(GameResult.Draw);
             return;
         }
         
@@ -329,7 +374,8 @@
         
         _ = Task.Delay(200).ContinueWith(_prev =>
         {
-            var (ar, ac) = _ai.GetMove(_board, CellValue.O, _difficulty);
+            // CPU strength is matched to the player's rating at game start.
+            var (ar, ac) = _ai.GetAdaptiveMove(_board, CellValue.O, _cpuElo);
             _board = _board.Place(ar, ac, CellValue.O);
             _lastMove = (ar, ac);
             _ = Feedback.DiscDropAsync();
@@ -340,20 +386,19 @@
                 _winCells = aiWin.Cells;
                 _isAiTurn = false;
                 _ = Feedback.ErrorAsync();
-                _ = _gameStats.RecordResult("tictactoe", _playerName, _difficulty, GameResult.Loss);
+                ApplyAdaptiveResult(GameResult.Loss);
             }
             else if (_board.IsFull())
             {
                 _gameResult = GameResult.Draw;
                 _isAiTurn = false;
                 _ = Feedback.CompleteAsync();
-                _ = _gameStats.RecordResult("tictactoe", _playerName, _difficulty, GameResult.Draw);
+                ApplyAdaptiveResult(GameResult.Draw);
             }
             else
             {
                 _isAiTurn = false;
             }
-            UpdateStats();
             InvokeAsync(StateHasChanged);
         });
     }
@@ -448,7 +493,7 @@
             GameResult.Win => "You Win!",
             GameResult.Loss => "AI Wins!",
             GameResult.Draw => "Draw!",
-            _ => _isAiTurn ? "AI thinking..." : "Your turn (X)"
+            _ => _isAiTurn ? $"CPU {_cpuElo} thinking..." : $"Your turn (X) · vs CPU {_cpuElo}"
         };
     }
 

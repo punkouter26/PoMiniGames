@@ -1788,3 +1788,100 @@
   .racer-card { padding: 0.5rem 0.75rem; }
   .bet-controls button { padding: 0.4rem 0.75rem; font-size: 0.8rem; }
 }
+
+/* ── First-run "how to play" onboarding (GameShell) ─────────────────────────
+   The "?" recall button lives in the consolidated game header; the overlay
+   reuses the shared gps-modal so onboarding looks identical in every game. */
+.gps-howto-btn {
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 50%;
+  border: 1px solid var(--color-border, rgba(150, 160, 220, 0.45));
+  background: transparent;
+  color: var(--color-text-secondary, #9aa3c0);
+  font-weight: 700;
+  font-size: 0.85rem;
+  line-height: 1;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+
+.gps-howto-btn:hover {
+  color: var(--color-text-primary, #e8eaf6);
+  border-color: currentColor;
+}
+
+.gps-howto-modal { max-width: 420px; }
+
+.gps-howto-body {
+  text-align: left;
+  font-size: 0.95rem;
+  line-height: 1.55;
+}
+
+.gps-howto-body ul {
+  margin: 0.5rem 0 0;
+  padding-left: 1.1rem;
+}
+
+.gps-howto-body li { margin-bottom: 0.3rem; }
+
+.gps-howto-body kbd {
+  padding: 0.05rem 0.4rem;
+  border-radius: 4px;
+  border: 1px solid var(--color-border, rgba(150, 160, 220, 0.45));
+  background: rgba(0, 0, 0, 0.35);
+  font-family: inherit;
+  font-size: 0.85em;
+}
+
+/* ── Shared virtual touch controls (js/touchControls.js) ────────────────────
+   Same look as PoBrawl's in-engine touch cluster so action games feel like
+   one family on mobile. Pinned to the bottom strip; buttons only take touches. */
+.ptc-root {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+  display: flex;
+  justify-content: space-between;
+  padding: 0 18px;
+  z-index: 60;
+  pointer-events: none;
+}
+
+.ptc-cluster {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.ptc-btn {
+  pointer-events: auto;
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  border: 2px solid rgba(150, 160, 220, 0.45);
+  background: rgba(20, 24, 44, 0.6);
+  color: #e8eaf6;
+  font-size: 1.3rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.ptc-btn--small {
+  width: 44px;
+  height: 44px;
+  font-size: 1.05rem;
+}
+
+.ptc-btn--held {
+  background: rgba(90, 110, 220, 0.65);
+  border-color: rgba(190, 200, 255, 0.8);
+  transform: scale(1.08);
+}

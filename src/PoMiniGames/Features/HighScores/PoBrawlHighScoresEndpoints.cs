@@ -25,10 +25,10 @@ public static class PoBrawlHighScoresEndpoints
             async (PoBrawlHighScore entry, IStorageService storage) =>
             {
                 if (string.IsNullOrWhiteSpace(entry.PlayerInitials))
-                    return Results.BadRequest(new { error = "Initials are required" });
+                    return Results.BadRequest(new { error = "Player name is required" });
 
-                if (entry.PlayerInitials.Trim().Length > 3)
-                    return Results.BadRequest(new { error = "Initials must be 3 characters or fewer" });
+                if (entry.PlayerInitials.Trim().Length > 24)
+                    return Results.BadRequest(new { error = "Player name must be 24 characters or fewer" });
 
                 if (entry.KoTimeSeconds <= 0 || entry.KoTimeSeconds >= 600)
                     return Results.BadRequest(new { error = "KO time must be between 0 and 600 seconds" });

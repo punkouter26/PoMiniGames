@@ -107,6 +107,8 @@ public class LeaderboardEntity : ITableEntity
     public ETag ETag { get; set; }
     public int Score { get; set; }
     public DateTime AchievedAt { get; set; }
+    /// <summary>Human-readable player name — boards display this, never the UserId.</summary>
+    public string DisplayName { get; set; } = string.Empty;
 }
 
 public interface ILeaderboardRepository
@@ -137,6 +139,7 @@ public sealed class LeaderboardRepository : ILeaderboardRepository
                 if (entry.Score <= e.Score) return false; // existing is better or equal — no write
                 e.Score = entry.Score;
                 e.AchievedAt = entry.AchievedAt == default ? DateTime.UtcNow : entry.AchievedAt;
+                if (!string.IsNullOrWhiteSpace(entry.DisplayName)) e.DisplayName = entry.DisplayName;
                 return true;
             },
             cancellationToken);
@@ -153,7 +156,14 @@ public sealed class LeaderboardRepository : ILeaderboardRepository
             rows.Add(entity);
         }
         return rows.OrderByDescending(r => r.Score).ThenByDescending(r => r.AchievedAt).Take(top)
-            .Select(r => new LeaderboardEntry { UserId = r.RowKey, Year = r.PartitionKey == "" ? year : int.Parse(r.PartitionKey), Score = r.Score, AchievedAt = r.AchievedAt })
+            .Select(r => new LeaderboardEntry
+            {
+                UserId = r.RowKey,
+                DisplayName = r.DisplayName,
+                Year = r.PartitionKey == "" ? year : int.Parse(r.PartitionKey),
+                Score = r.Score,
+                AchievedAt = r.AchievedAt,
+            })
             .ToList();
     }
 }

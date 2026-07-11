@@ -11,6 +11,7 @@
 @inject MatchHistoryService MatchHistory;
 @inject KioskCoordinator Kiosk;
 @inject UiFeedbackService Feedback;
+@inject GameResultService GameResults;
 
 <GameShell
     Title=@TitleContent
@@ -20,8 +21,10 @@
     OnPlayAgain="ResetGame"
     Stats="@(PlayMode == "ai" ? _statItems : null)"
     Status="@StatusContent"
-    GameSummary="@GameSummaryContent">
-    
+    GameSummary="@GameSummaryContent"
+    HowToPlay="@HowToPlayContent"
+    HowToPlayKey="@(Demo == 1 ? null : "connectfive")">
+
     <div class="cf-layout">
         @* §3 Hover-ghost: pointerleave on the board clears the column preview so
            the ghost disc never sticks when the cursor exits the grid. *@
@@ -182,6 +185,15 @@
 
     private RenderFragment TitleContent => @<span>🔴 Connect Five</span>;
 
+    private RenderFragment HowToPlayContent => @<div>
+        <p>Get five discs in a row — horizontally, vertically or diagonally.</p>
+        <ul>
+            <li>Click or tap a column to drop your disc</li>
+            <li>The CPU is matched to your ELO: win and it gets stronger, lose and it eases off</li>
+            <li>Your rating and the CPU's show in the header — climb as high as you can</li>
+        </ul>
+    </div>;
+
     // Unified gps-status-badge.* vocabulary — every game identifies its turn /
     // result in the same way. The legacy `.cf-status--*` aliases still forward
     // to the same palette so muscle memory doesn't break.
@@ -284,6 +296,9 @@
         _rating = _gameStats.RecordAdaptiveResult("connectfive", _playerName, _cpuElo, result);
         _lastEloDelta = _rating.Elo - before;
         UpdateStats();
+        // Single pipeline: GameResultService mirrors the rating into the stats
+        // shape and PUTs it; failures land in the offline sync queue.
+        _ = GameResults.SubmitAdaptiveStatsAsync("connectfive", _playerName, _rating);
     }
 
     private void ResetGame()

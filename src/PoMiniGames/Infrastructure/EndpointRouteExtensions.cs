@@ -49,6 +49,7 @@ internal static class EndpointRouteExtensions
         gameApi.MapGetAllPlayerStatistics();
         gameApi.MapMarbleRaceHighScoresEndpoints();
         gameApi.MapPoBrawlHighScoresEndpoints();
+        gameApi.MapPoClickHighScoresEndpoints();
         gameApi.MapMatchHistoryEndpoints();
         gameApi.MapCoupleQuizEndpoints();
         gameApi.MapFunQuizEndpoints();

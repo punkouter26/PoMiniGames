@@ -24,12 +24,14 @@ public class StorageService : IStorageService
     private const string PoBrawlTable = "PoBrawlHighScores";
     private const string PoBrawlLadderTable = "PoBrawlLadder";
     private const string PoRacerTable = "PoRacerHighScores";
+    private const string PoClickTable = "PoClickHighScores";
 
     // High scores share a single partition per game so a leaderboard is one partition scan.
     private const string MarbleRacePartition = "marblerace";
     private const string PoBrawlPartition = "pobrawl";
     private const string PoBrawlLadderPartition = "pobrawlladder";
     private const string PoRacerPartition = "poracer";
+    private const string PoClickPartition = "poclick";
 
     private readonly TableServiceClient _serviceClient;
     private readonly EloCalculator _eloCalculator;
@@ -160,8 +162,15 @@ public class StorageService : IStorageService
             throw new ArgumentException("Player name cannot be empty", nameof(playerName));
         }
 
-        // Compute ELO ratings server-side before persisting so the stored JSON is always current.
-        _eloCalculator.ApplyAll(stats);
+        // Backfill ELO only when the client sent none (legacy clients that never
+        // computed a rating). Clients that DO send ratings — the adaptive-ELO
+        // games (ConnectFive/TicTacToe) mirror their evolving skill rating into
+        // the bucket — must not have them overwritten by the legacy W/L formula.
+        if (stats.TotalGames > 0 &&
+            stats.Easy.EloRating == 0 && stats.Medium.EloRating == 0 && stats.Hard.EloRating == 0)
+        {
+            _eloCalculator.ApplyAll(stats);
+        }
         stats.UpdatedAt = DateTime.UtcNow;
 
         // §1: read-modify-write under optimistic concurrency so two players finishing
@@ -239,7 +248,8 @@ public class StorageService : IStorageService
         Partition: MarbleRacePartition,
         Sanitize: e => e with
         {
-            PlayerInitials = Initials3(e.PlayerInitials),
+            // One identity across boards: full display name (legacy rows hold initials).
+            PlayerInitials = DisplayName24(e.PlayerInitials),
             Date = DefaultDate(e.Date),
         },
         ToFields: e => new Dictionary<string, object?>
@@ -264,7 +274,8 @@ public class StorageService : IStorageService
         Partition: PoBrawlPartition,
         Sanitize: e => e with
         {
-            PlayerInitials = Initials3(e.PlayerInitials),
+            // One identity across boards: full display name (legacy rows hold initials).
+            PlayerInitials = DisplayName24(e.PlayerInitials),
             Character = SanitizeName(e.Character),
             Date = DefaultDate(e.Date),
         },
@@ -343,6 +354,43 @@ public class StorageService : IStorageService
 
     public Task<PoRacerHighScore> SavePoRacerHighScoreAsync(PoRacerHighScore entry) =>
         SaveHighScoreAsync(PoRacerScores, entry);
+
+    // ── PoClick High Scores ──────────────────────────────────────────────
+    private static readonly HighScoreDescriptor<PoClickHighScore> PoClickScores = new(
+        Table: PoClickTable,
+        Partition: PoClickPartition,
+        Sanitize: e => e with
+        {
+            PlayerName = SanitizeName(e.PlayerName),
+            Score = Math.Clamp(e.Score, 0, 100),
+            Bpm = Math.Clamp(e.Bpm, 1, 400),
+            DurationSeconds = Math.Clamp(e.DurationSeconds, 1, 600),
+            Date = DefaultDate(e.Date),
+        },
+        ToFields: e => new Dictionary<string, object?>
+        {
+            ["PlayerName"] = e.PlayerName,
+            ["Score"] = e.Score,
+            ["Bpm"] = e.Bpm,
+            ["DurationSeconds"] = e.DurationSeconds,
+            ["Date"] = e.Date,
+        },
+        FromEntity: e => new PoClickHighScore
+        {
+            PlayerName = e.GetString("PlayerName") ?? "",
+            Score = e.GetDouble("Score") ?? 0d,
+            Bpm = e.GetInt32("Bpm") ?? 0,
+            DurationSeconds = e.GetInt32("DurationSeconds") ?? 0,
+            Date = e.GetString("Date") ?? "",
+        },
+        // Highest accuracy score wins, oldest first as the tiebreaker.
+        Rank: s => s.OrderByDescending(x => x.Score).ThenBy(x => x.Date));
+
+    public Task<List<PoClickHighScore>> GetPoClickHighScoresAsync(int limit = 10) =>
+        GetHighScoresAsync(PoClickScores, limit);
+
+    public Task<PoClickHighScore> SavePoClickHighScoreAsync(PoClickHighScore entry) =>
+        SaveHighScoreAsync(PoClickScores, entry);
 
     // ── PoBrawl presidents ladder ─────────────────────────────────────────
     // Unlike the high-score boards (append + dedupe by content hash), the ladder
@@ -499,6 +547,14 @@ public class StorageService : IStorageService
     {
         var s = SanitizeName(raw).ToUpperInvariant();
         return s.Length > 3 ? s[..3] : s;
+    }
+
+    // Full display name, capped for table hygiene. Boards show the same name the
+    // GameShell header shows — never initials or ids.
+    private static string DisplayName24(string raw)
+    {
+        var s = SanitizeName(raw);
+        return s.Length > 24 ? s[..24] : s;
     }
 
 

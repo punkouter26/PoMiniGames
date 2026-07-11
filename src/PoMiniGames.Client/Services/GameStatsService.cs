@@ -88,10 +88,22 @@ public class GameStatsService
 
     public AdaptiveRating GetAdaptiveRating(string gameKey, string playerName)
     {
+        // Per-player slot: switching identities on the same browser (e.g. Guest ↔
+        // Microsoft sign-in) must never wipe another player's accumulated rating —
+        // the Guest's ELO keeps evolving across guest sessions no matter who else
+        // played in between.
         var stored = LocalStorageService.GetItem(
-            $"{AdaptiveKeyPrefix}{gameKey}", ApiJsonContext.Default.AdaptiveRating);
+            $"{AdaptiveKeyPrefix}{gameKey}_{playerName}", ApiJsonContext.Default.AdaptiveRating);
         if (stored != null && stored.PlayerName == playerName)
             return stored;
+
+        // Legacy single-slot fallback (pre per-player keys). Adopt it when it
+        // belongs to this player; the next recorded result re-saves it under the
+        // per-player key above.
+        var legacy = LocalStorageService.GetItem(
+            $"{AdaptiveKeyPrefix}{gameKey}", ApiJsonContext.Default.AdaptiveRating);
+        if (legacy != null && legacy.PlayerName == playerName)
+            return legacy;
 
         return new AdaptiveRating
         {
@@ -130,7 +142,7 @@ public class GameStatsService
         }
 
         LocalStorageService.SetItem(
-            $"{AdaptiveKeyPrefix}{gameKey}", rating, ApiJsonContext.Default.AdaptiveRating);
+            $"{AdaptiveKeyPrefix}{gameKey}_{playerName}", rating, ApiJsonContext.Default.AdaptiveRating);
         return rating;
     }
 

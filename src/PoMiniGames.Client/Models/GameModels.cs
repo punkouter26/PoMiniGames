@@ -96,3 +96,24 @@ public class PoBrawlLadderEntry
     public int Elo { get; set; }
     public string Date { get; set; } = "";
 }
+
+/// <summary>PoClick accuracy result submitted to the server board (0-100, higher wins).</summary>
+public class PoClickHighScore
+{
+    public string PlayerName { get; set; } = "";
+    public double Score { get; set; }
+    public int Bpm { get; set; }
+    public int DurationSeconds { get; set; }
+    public string Date { get; set; } = "";
+}
+
+/// <summary>
+/// Queued PlayerStats PUT for the offline score-sync pipeline: a stats snapshot
+/// that failed to reach the server is parked and replayed by ScoreSyncService.
+/// </summary>
+public class PendingPlayerStats
+{
+    public string GameKey { get; set; } = "";
+    public string PlayerName { get; set; } = "";
+    public PlayerStats Stats { get; set; } = new();
+}

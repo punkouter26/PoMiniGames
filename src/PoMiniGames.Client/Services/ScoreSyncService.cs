@@ -7,7 +7,10 @@ namespace PoMiniGamesClient.Services;
 public enum PendingScoreKind
 {
     MarbleRace,
-    PoBrawl
+    PoBrawl,
+    PoClick,
+    /// <summary>A PlayerStats PUT (adaptive-ELO games mirror their rating into it).</summary>
+    PlayerStats
 }
 
 /// <summary>
@@ -65,6 +68,12 @@ public sealed class ScoreSyncService
 
     public void EnqueuePoBrawl(PoBrawlHighScore entry) =>
         Enqueue(PendingScoreKind.PoBrawl, JsonSerializer.Serialize(entry, ApiJsonContext.Default.PoBrawlHighScore));
+
+    public void EnqueuePoClick(PoClickHighScore entry) =>
+        Enqueue(PendingScoreKind.PoClick, JsonSerializer.Serialize(entry, ApiJsonContext.Default.PoClickHighScore));
+
+    public void EnqueuePlayerStats(PendingPlayerStats entry) =>
+        Enqueue(PendingScoreKind.PlayerStats, JsonSerializer.Serialize(entry, ApiJsonContext.Default.PendingPlayerStats));
 
     private void Enqueue(PendingScoreKind kind, string payloadJson)
     {
@@ -141,6 +150,19 @@ public sealed class ScoreSyncService
         PendingScoreKind.PoBrawl =>
             await _api.SubmitPoBrawlHighScoreAsync(
                 JsonSerializer.Deserialize(item.PayloadJson, ApiJsonContext.Default.PoBrawlHighScore) ?? new PoBrawlHighScore()) is not null,
+        PendingScoreKind.PoClick =>
+            await _api.SubmitPoClickHighScoreAsync(
+                JsonSerializer.Deserialize(item.PayloadJson, ApiJsonContext.Default.PoClickHighScore) ?? new PoClickHighScore()) is not null,
+        PendingScoreKind.PlayerStats =>
+            await SubmitPlayerStatsAsync(item.PayloadJson),
         _ => true, // unknown kind: drop rather than wedge the queue forever
     };
+
+    private async Task<bool> SubmitPlayerStatsAsync(string payloadJson)
+    {
+        var pending = JsonSerializer.Deserialize(payloadJson, ApiJsonContext.Default.PendingPlayerStats);
+        if (pending is null || string.IsNullOrEmpty(pending.GameKey)) return true; // malformed: drop
+        var (ok, _) = await _api.SavePlayerStatsAsync(pending.GameKey, pending.PlayerName, pending.Stats);
+        return ok;
+    }
 }

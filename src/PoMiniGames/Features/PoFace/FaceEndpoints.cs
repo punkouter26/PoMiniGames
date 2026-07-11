@@ -191,6 +191,10 @@ public static class FaceEndpoints
             await leaderboard.UpsertBestAsync(new LeaderboardEntry
             {
                 UserId = userId,
+                // One identity across all boards: display the auth name, never the id.
+                DisplayName = ctx.User?.FindFirst(ClaimTypes.Name)?.Value
+                    ?? ctx.User?.FindFirst("name")?.Value
+                    ?? userId,
                 Score = session.TotalScore,
                 Year = DateTime.UtcNow.Year
             }, cancellationToken);

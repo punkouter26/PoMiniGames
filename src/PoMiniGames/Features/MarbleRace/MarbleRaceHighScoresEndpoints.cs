@@ -25,10 +25,10 @@ public static class MarbleRaceHighScoresEndpoints
             async (MarbleRaceHighScore entry, IStorageService storage) =>
             {
                 if (string.IsNullOrWhiteSpace(entry.PlayerInitials))
-                    return Results.BadRequest(new { error = "Initials are required" });
+                    return Results.BadRequest(new { error = "Player name is required" });
 
-                if (entry.PlayerInitials.Trim().Length > 3)
-                    return Results.BadRequest(new { error = "Initials must be 3 characters or fewer" });
+                if (entry.PlayerInitials.Trim().Length > 24)
+                    return Results.BadRequest(new { error = "Player name must be 24 characters or fewer" });
 
                 if (entry.BestScore < 0)
                     return Results.BadRequest(new { error = "Score must be non-negative" });

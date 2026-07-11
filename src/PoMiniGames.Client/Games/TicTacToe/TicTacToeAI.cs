@@ -18,6 +18,48 @@ public class TicTacToeAI
         };
     }
 
+    /// <summary>
+    /// Pick a move whose strength scales with <paramref name="cpuElo"/> — the same
+    /// adaptive scheme as ConnectFive's GetAdaptiveMove. The ELO maps to a
+    /// (move quality, blunder-rate) rung: low ratings mostly play the win/block
+    /// heuristic with frequent random blunders; high ratings run the full minimax
+    /// with a small floor of blunders. The floor is deliberate: it keeps the top
+    /// rung beatable so a strong player's rating can keep climbing instead of
+    /// plateauing against an unbeatable opponent.
+    /// </summary>
+    public (int Row, int Col) GetAdaptiveMove(TicTacToeBoard board, CellValue player, int cpuElo)
+    {
+        var (hard, blunder) = StrengthForElo(cpuElo);
+
+        // A "blunder" is a fully random legal move — it may miss its own win or
+        // fail to block the player, which is exactly what makes low rungs weak.
+        if (blunder > 0 && Random.Shared.NextDouble() < blunder)
+        {
+            var moves = board.GetAvailableMoves();
+            if (moves.Count == 0) return (0, 0);
+            return moves[Random.Shared.Next(moves.Count)];
+        }
+
+        return hard ? HardMove(board, player) : MediumMove(board, player);
+    }
+
+    /// <summary>
+    /// Maps a CPU ELO to a strength rung. Seven rungs span roughly 800–2000,
+    /// mirroring ConnectFiveAI.StrengthForElo. Unlike ConnectFive the top rung
+    /// keeps a 5% blunder rate — near-perfect play would force endless draws
+    /// (frozen ELO), so the ceiling stays brutal but beatable.
+    /// </summary>
+    public static (bool Hard, double Blunder) StrengthForElo(int elo) => elo switch
+    {
+        < 900  => (false, 0.55),
+        < 1050 => (false, 0.35),
+        < 1200 => (false, 0.20),
+        < 1350 => (true, 0.14),
+        < 1500 => (true, 0.10),
+        < 1700 => (true, 0.07),
+        _      => (true, 0.05),
+    };
+
     private (int, int) EasyMove(TicTacToeBoard board, CellValue player)
     {
         var opponent = player == CellValue.X ? CellValue.O : CellValue.X;

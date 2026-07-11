@@ -9,6 +9,7 @@
 @inject PlayerNameService PlayerNameService
 @inject IJSRuntime JSRuntime
 @inject PoClickHistoryService HistoryService
+@inject GameResultService GameResults
 
 <GameShell
     Title=@TitleContent
@@ -18,7 +19,9 @@
     OnPlayAgain="ResetGame"
     Stats="@_statItems"
     Status="@StatusContent"
-    GameSummary="@GameSummaryContent">
+    GameSummary="@GameSummaryContent"
+    HowToPlay="@HowToPlayContent"
+    HowToPlayKey="@(Demo == 1 ? null : "poclick")">
     
     @if (!isPlaying && !isCountingDown)
     {
@@ -148,6 +151,15 @@
     private bool _isGameOver => !isPlaying && !isCountingDown && _showResultOverlay;
 
     private RenderFragment TitleContent => @<span>🥁 PoClick</span>;
+
+    private RenderFragment HowToPlayContent => @<div>
+        <p>Tap in time with the metronome — accuracy is everything.</p>
+        <ul>
+            <li>Press <kbd>Space</kbd> (or tap) exactly on each beat</li>
+            <li>Perfect hits score 100; the further off the beat, the fewer points</li>
+            <li>Pick your BPM and duration, then chase a spot on the leaderboard</li>
+        </ul>
+    </div>;
 
     private RenderFragment StatusContent => Demo == 1 ? @<span class="gps-status-badge demo">🎮 Demo mode</span>
         : isCountingDown ? @<span class="gps-status-badge player">Get ready...</span>
@@ -543,10 +555,25 @@
         double maxPoints = playerAttempts.Count > 0 ? playerAttempts.Count * 100.0 : 1;
         _estimatedScore = Math.Round(runningScore / maxPoints * 100, 1);
 
-        // Record stats
-        _ = _gameStats.RecordResult("poclick", _playerName, Difficulty.Medium, 
-            _estimatedScore > 70 ? GameResult.Win : _estimatedScore > 40 ? GameResult.Draw : GameResult.Loss);
-        
+        // Record stats + submit the accuracy score through the single score
+        // pipeline (server board + offline retry queue). Demo runs stay local.
+        var outcome = _estimatedScore > 70 ? GameResult.Win : _estimatedScore > 40 ? GameResult.Draw : GameResult.Loss;
+        if (Demo == 1)
+        {
+            _ = _gameStats.RecordResult("poclick", _playerName, Difficulty.Medium, outcome);
+        }
+        else
+        {
+            _ = GameResults.RecordAndSubmitPoClickAsync(_playerName, outcome, new PoClickHighScore
+            {
+                PlayerName = _playerName,
+                Score = _estimatedScore,
+                Bpm = bpm,
+                DurationSeconds = _duration,
+            });
+        }
+
+
         _stats = _gameStats.GetStats("poclick", _playerName);
         UpdateStats();
 

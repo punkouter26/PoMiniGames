@@ -226,6 +226,22 @@ public class ApiService
         }
     }
 
+    public async Task<PoClickHighScore?> SubmitPoClickHighScoreAsync(PoClickHighScore entry)
+    {
+        try
+        {
+            // Stamp once; preserve across resync so the deterministic RowKey stays stable (no duplicates).
+            if (string.IsNullOrEmpty(entry.Date))
+                entry.Date = DateTime.UtcNow.ToString("O");
+            var response = await _http.PostAsJsonAsync("/api/poclick/highscores", entry, ApiJsonContext.Default.PoClickHighScore);
+            return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync(ApiJsonContext.Default.PoClickHighScore) : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     public async Task<PoBrawlHighScore[]?> GetPoBrawlHighScoresAsync(int count = 10)
     {
         try

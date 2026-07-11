@@ -1,7 +1,13 @@
 @implements IDisposable
 @inject IJSRuntime JSRuntime
+@inject Services.SettingsService Settings
 
-<span class="gl-fps" title="Frames per second" data-tier="@_tier">@_label</span>
+@* Hidden (not unmounted) when the FPS badge is toggled off in ⚙️ settings —
+   the sampler keeps running so re-enabling shows a live value instantly. *@
+@if (Settings.ShowFps)
+{
+    <span class="gl-fps" title="Frames per second" data-tier="@_tier">@_label</span>
+}
 
 @code {
     private string _label = "— FPS";
@@ -10,6 +16,13 @@
     private double _elapsedMs;
     private DotNetObjectReference<FpsCounter>? _ref;
     private bool _running;
+    private Action? _onSettingsChanged;
+
+    protected override void OnInitialized()
+    {
+        _onSettingsChanged = () => InvokeAsync(StateHasChanged);
+        Settings.Changed += _onSettingsChanged;
+    }
 
     protected override void OnAfterRender(bool firstRender)
     {
@@ -40,6 +53,7 @@
 
     public void Dispose()
     {
+        if (_onSettingsChanged != null) Settings.Changed -= _onSettingsChanged;
         _running = false;
         try { JSRuntime.InvokeVoidAsync("glFps.stop"); } catch { }
         _ref?.Dispose();

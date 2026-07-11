@@ -10,6 +10,7 @@
 @inject GameResultService GameResults
 @inject IJSRuntime JSRuntime
 @inject KioskCoordinator Kiosk
+@inject SettingsService Settings
 
 <GameShell Title=@TitleContent
            Player="@_playerName"
@@ -21,7 +22,9 @@
            NextMatchLabel="@(_champion ? "🏆 NEW LADDER" : "➡️ NEXT MATCH")"
            PlayAgainLabel="@(_mode == "1p" && _winner != 1 ? "🔄 REMATCH" : "🔄 Play Again")"
            OnPlayAgain="BackToSelect"
-           GameSummary="@GameSummaryContent">
+           GameSummary="@GameSummaryContent"
+           HowToPlay="@HowToPlayContent"
+           HowToPlayKey="@(_demo ? null : "pobrawl")">
     <div class="pb-wrap">
         <div id="pobrawl-container" class="pb-canvas-host"></div>
 
@@ -32,6 +35,7 @@
                 <div class="pb-hp-side">
                     <span class="pb-hp-name">@CharName(_p1Char)</span>
                     <div class="pb-hp-track"><div class="pb-hp-fill pb-hp-p1" style="--hp: @(_p1Hp)%;"></div></div>
+                    <div class="pb-en-track" title="Energy — attack power"><div class="pb-en-fill @(_p1Energy > 50 ? "pb-en-hot" : "")" style="--en: @(_p1Energy)%;"></div></div>
                 </div>
                 @BodyDiagram(_p1Regions)
                 <div class="pb-clock">@_elapsed.ToString("0")</div>
@@ -39,6 +43,7 @@
                 <div class="pb-hp-side pb-hp-right">
                     <span class="pb-hp-name">@CharName(_p2Char)</span>
                     <div class="pb-hp-track"><div class="pb-hp-fill pb-hp-p2" style="--hp: @(_p2Hp)%;"></div></div>
+                    <div class="pb-en-track" title="Energy — attack power"><div class="pb-en-fill @(_p2Energy > 50 ? "pb-en-hot" : "")" style="--en: @(_p2Energy)%;"></div></div>
                 </div>
             </div>
         }
@@ -52,14 +57,14 @@
         @if (_phase == "select" && !_demo)
         {
             <div class="pb-overlay">
-                <div class="pb-select-card">
-                    <h2 class="gps-phase-h">@(_mode == "2p" ? "Local 2-Player Brawl" : "Presidential Ladder")</h2>
-                    <p class="pb-select-sub">
+                <GameLanding Title="@(_mode == "2p" ? "Local 2-Player Brawl" : "Presidential Ladder")"
+                             CtaText="🥊 FIGHT" OnStart="StartMatch">
+                    <Subtitle>
                         @(_mode == "2p"
                             ? "P1: A/D move · W/S step · hold S block · F punch · G kick — P2: arrows · K punch · L kick"
                             : "A/D move · W/S sidestep · hold S block · F punch · G kick")
-                    </p>
-
+                    </Subtitle>
+                    <ChildContent>
                     @if (_mode == "2p")
                     {
                         <div class="pb-pick-row">
@@ -117,9 +122,8 @@
                             }
                         </div>
                     }
-
-                    <button class="pb-fight-btn" @onclick="StartMatch">🥊 FIGHT</button>
-
+                    </ChildContent>
+                    <Boards>
                     <div class="pb-boards">
                         @if (_highScores is { Length: > 0 })
                         {
@@ -150,7 +154,8 @@
                             </div>
                         }
                     </div>
-                </div>
+                    </Boards>
+                </GameLanding>
             </div>
         }
     </div>
@@ -196,6 +201,9 @@
     private string _p2Char = "biden";
     private int _p1Hp = 100;
     private int _p2Hp = 100;
+    // Energy meters (0-100) fed by the JS engine — see game.js ENERGY_* consts.
+    private int _p1Energy = 50;
+    private int _p2Energy = 50;
     private double _elapsed;
     private int _winner;
     private double _lastKo;
@@ -222,6 +230,17 @@
     private string LadderKey => $"pobrawl_ladder_{_playerName}";
 
     private RenderFragment TitleContent => @<span>🥊 PoBrawl</span>;
+
+    private RenderFragment HowToPlayContent => @<div>
+        <p>Knock out your opponent — charge attacks and block at the right moment.</p>
+        <ul>
+            <li><kbd>A</kbd>/<kbd>D</kbd> move · <kbd>W</kbd> step in · tap <kbd>S</kbd> sidestep</li>
+            <li><b>Hold</b> <kbd>S</kbd> to block — blocked hits charge your ⚡ energy</li>
+            <li><kbd>F</kbd> punch · <kbd>G</kbd> kick — <b>hold</b> to charge, release to strike</li>
+            <li>Energy is your power: spend it all on one big hit (watch the bar under your health)</li>
+            <li>Watch for the coil wind-up — that's your cue to block!</li>
+        </ul>
+    </div>;
 
     // The legacy in-canvas Controls fragment was unreachable (the Settings
     // drawer was removed 2026-07-06) and is intentionally gone. Mute toggle +
@@ -295,6 +314,8 @@
     {
         _p1Hp = 100;
         _p2Hp = 100;
+        _p1Energy = 50;
+        _p2Energy = 50;
         _elapsed = 0;
         _p1Regions = new int[4];
         _p2Regions = new int[4];
@@ -305,6 +326,11 @@
         {
             await JSRuntime.InvokeVoidAsync("PoBrawl.init", "pobrawl-container", _ref,
                 new { mode = _mode, p1Character = _p1Char, p2Character = _p2Char, difficulty });
+            // Honour the global ⚙️ master-mute setting on every engine boot.
+            if (Settings.Muted || _muted)
+            {
+                await JSRuntime.InvokeVoidAsync("PoBrawl.setMuted", true);
+            }
         }
         catch (Exception ex)
         {
@@ -352,10 +378,13 @@
     }
 
     [JSInvokable]
-    public void OnHud(int p1Hp, int p2Hp, double elapsed, int[]? p1Regions, int[]? p2Regions)
+    public void OnHud(int p1Hp, int p2Hp, double elapsed, int[]? p1Regions, int[]? p2Regions,
+        int p1Energy = 50, int p2Energy = 50)
     {
         _p1Hp = p1Hp;
         _p2Hp = p2Hp;
+        _p1Energy = p1Energy;
+        _p2Energy = p2Energy;
         _elapsed = elapsed;
         if (p1Regions is { Length: 4 }) _p1Regions = p1Regions;
         if (p2Regions is { Length: 4 }) _p2Regions = p2Regions;
@@ -415,7 +444,8 @@
                 _newRecord = true;
                 best = new PoBrawlHighScore
                 {
-                    PlayerInitials = Initials(_playerName),
+                    // One identity across boards: full display name, not initials.
+                    PlayerInitials = _playerName,
                     KoTimeSeconds = Math.Round(elapsedSeconds, 2),
                     Character = _p1Char,
                 };

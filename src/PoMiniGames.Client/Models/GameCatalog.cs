@@ -18,8 +18,6 @@ public static class GameCatalog
         new(GameKeys.TicTacToe, "Tic Tac Toe", "❌", "/tictactoe"),
         new(GameKeys.PoRacer, "PoRacer", "🏎️", "/poracer"),
         new(GameKeys.PoMarbleRace, "PoMarbleRace", "🔮", "/pomarblerace"),
-        new(GameKeys.PoSurvive, "PoSurvive", "🛡️", "/posurvive"),
-        new(GameKeys.PoCoupleQuiz, "PoCoupleQuiz", "💕", "/couplequiz"),
         new(GameKeys.PoFunQuiz, "PoFunQuiz", "🧠", "/funquiz"),
         new(GameKeys.PoFace, "PoFace", "🙂", "/face"),
         new(GameKeys.PoBrawl, "PoBrawl", "🥊", "/pobrawl"),

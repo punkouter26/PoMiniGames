@@ -66,6 +66,40 @@ public sealed class GameResultService
         return stats;
     }
 
+    /// <summary>Records the PoClick outcome locally and submits the accuracy score together.</summary>
+    public async Task RecordAndSubmitPoClickAsync(string playerName, GameResult result, PoClickHighScore highScore)
+    {
+        await _stats.RecordResult("poclick", playerName, Difficulty.Medium, result);
+        var submitted = await _api.SubmitPoClickHighScoreAsync(highScore);
+        if (submitted is null) _sync.EnqueuePoClick(highScore);
+    }
+
+    /// <summary>
+    /// The single sync path for adaptive-ELO games (ConnectFive/TicTacToe): mirror the
+    /// adaptive record into the legacy stats shape (Medium bucket carries the adaptive
+    /// W/L/D and ELO), persist locally, and PUT to the server so the leaderboard shows
+    /// this player. A failed PUT is parked in the offline queue and replayed on reconnect.
+    /// </summary>
+    public async Task SubmitAdaptiveStatsAsync(string gameKey, string playerName, AdaptiveRating rating)
+    {
+        var stats = _stats.GetStats(gameKey, playerName);
+        stats.Medium.Wins = rating.Wins;
+        stats.Medium.Losses = rating.Losses;
+        stats.Medium.Draws = rating.Draws;
+        stats.Medium.EloRating = rating.Elo;
+        await _stats.SaveStats(gameKey, stats);
+        var (ok, _) = await _api.SavePlayerStatsAsync(gameKey, playerName, stats);
+        if (!ok)
+        {
+            _sync.EnqueuePlayerStats(new PendingPlayerStats
+            {
+                GameKey = gameKey,
+                PlayerName = playerName,
+                Stats = stats,
+            });
+        }
+    }
+
     /// <summary>Records the PoBrawl outcome locally and submits the fastest-KO score together.</summary>
     public async Task<PlayerStats> RecordAndSubmitPoBrawlAsync(
         string playerName, GameResult result, PoBrawlHighScore? highScore)

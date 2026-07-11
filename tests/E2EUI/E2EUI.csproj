@@ -23,7 +23,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\PoMiniGames\PoMiniGames\PoMiniGames.csproj" />
+    <ProjectReference Include="..\..\src\PoMiniGames\PoMiniGames.csproj" />
     <!-- Shared test utilities (TestBudgetGuard, etc.) — explicit ProjectReference
          so the fixture compiles whether or not tests/Shared/PoMiniGames.TestUtilities.csproj
          is registered in the solution. -->
@@ -47,15 +47,11 @@
     Skip with `-p:SkipPlaywrightInstall=true` when the environment already
     has Chromium provisioned (e.g. a cached build agent image).
   -->
-  <Target Name="EnsurePlaywrightBrowsers"
-          BeforeTargets="VSTest"
-          Condition="'$(SkipPlaywrightInstall)' != 'true' AND '$(_IsPublishing)' != 'true'">
+  <Target Name="EnsurePlaywrightBrowsers" BeforeTargets="VSTest" Condition="'$(SkipPlaywrightInstall)' != 'true' AND '$(_IsPublishing)' != 'true'">
     <PropertyGroup>
       <_PlaywrightScript>$(MSBuildProjectDirectory)\bin\$(Configuration)\net10.0\playwright.ps1</_PlaywrightScript>
     </PropertyGroup>
-    <Exec Command="pwsh -NoProfile -ExecutionPolicy Bypass -File &quot;$(_PlaywrightScript)&quot; install chromium"
-          IgnoreExitCode="false"
-          ContinueOnError="false" />
+    <Exec Command="pwsh -NoProfile -ExecutionPolicy Bypass -File &quot;$(_PlaywrightScript)&quot; install chromium" IgnoreExitCode="false" ContinueOnError="false" />
   </Target>
 
 </Project>

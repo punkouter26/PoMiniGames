@@ -3,6 +3,6 @@
 name: PoMiniGames
 services:
   api:
-    project: src/PoMiniGames/PoMiniGames/PoMiniGames.csproj
+    project: src/PoMiniGames/PoMiniGames.csproj
     host: appservice
     language: dotnet

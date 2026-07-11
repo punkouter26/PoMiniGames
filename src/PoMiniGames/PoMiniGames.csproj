@@ -59,10 +59,10 @@
        `dotnet run` pipeline skips the file-system copy in some environments —
        the ProjectReference below makes the copy deterministic in dev. -->
   <ItemGroup>
-    <ProjectReference Include="..\..\PoShared\PoShared.csproj" />
-    <ProjectReference Include="..\..\PoMiniGames.Application\PoMiniGames.Application.csproj" />
-    <ProjectReference Include="..\..\PoMiniGames.Infrastructure\PoMiniGames.Infrastructure.csproj" />
-    <ProjectReference Include="..\..\PoMiniGames.Client\PoMiniGamesClient.csproj" />
+    <ProjectReference Include="..\PoShared\PoShared.csproj" />
+    <ProjectReference Include="..\PoMiniGames.Application\PoMiniGames.Application.csproj" />
+    <ProjectReference Include="..\PoMiniGames.Infrastructure\PoMiniGames.Infrastructure.csproj" />
+    <ProjectReference Include="..\PoMiniGames.Client\PoMiniGamesClient.csproj" />
   </ItemGroup>
 
   <!--
@@ -78,14 +78,14 @@
   -->
   <Target Name="StageBlazorClientStaticWebAssets" AfterTargets="Build">
     <ItemGroup>
-      <_BlazorClientWwwroot Include="..\..\PoMiniGames.Client\bin\$(Configuration)\net10.0\wwwroot\**\*.*" />
+      <_BlazorClientWwwroot Include="..\PoMiniGames.Client\bin\$(Configuration)\net10.0\wwwroot\**\*.*" />
       <!-- The Blazor WASM SDK doesn't auto-copy wwwroot/appsettings*.json into the
            build output, but the runtime needs them (PoSurvive reads Inference model
            lists from these at startup). Copy them directly from the source. -->
-      <_BlazorClientSettings Include="..\..\PoMiniGames.Client\wwwroot\appsettings.json"
-                             Condition="Exists('..\..\PoMiniGames.Client\wwwroot\appsettings.json')" />
-      <_BlazorClientSettingsDev Include="..\..\PoMiniGames.Client\wwwroot\appsettings.Development.json"
-                                Condition="Exists('..\..\PoMiniGames.Client\wwwroot\appsettings.Development.json')" />
+      <_BlazorClientSettings Include="..\PoMiniGames.Client\wwwroot\appsettings.json"
+                             Condition="Exists('..\PoMiniGames.Client\wwwroot\appsettings.json')" />
+      <_BlazorClientSettingsDev Include="..\PoMiniGames.Client\wwwroot\appsettings.Development.json"
+                                Condition="Exists('..\PoMiniGames.Client\wwwroot\appsettings.Development.json')" />
     </ItemGroup>
     <Copy
       SourceFiles="@(_BlazorClientWwwroot)"

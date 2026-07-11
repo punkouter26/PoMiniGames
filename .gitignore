@@ -28,10 +28,10 @@ x86/
 # Files the host or framework writes at run-time (never commit).
 # ASP.NET DataProtection key ring contains XML-wrapped key material that
 # would let an attacker forge the BFF's auth cookies.
-src/PoMiniGames/PoMiniGames/keys/
-src/PoMiniGames/PoMiniGames/keys/**
-src/PoMiniGames/PoMiniGames/logs/
-src/PoMiniGames/PoMiniGames/logs/**
+src/PoMiniGames/keys/
+src/PoMiniGames/keys/**
+src/PoMiniGames/logs/
+src/PoMiniGames/logs/**
 
 # ─── IDE / editor state ──────────────────────────────────────────────
 .vs/

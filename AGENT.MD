@@ -49,13 +49,13 @@ There is exactly one home for each kind of persistence:
 - **Shared platform persistence** → `src/PoMiniGames.Infrastructure`
   (`StorageService` = the shared `TableServiceClient` factory + Elo, the PoSurvive
   `Persistence/TableStorage` repos, and the storage health checks).
-- **Host composition root** → `src/PoMiniGames/PoMiniGames/Infrastructure/`
+- **Host composition root** → `src/PoMiniGames/Infrastructure/`
   (registration + lifecycle only: `StorageExtensions`, `StorageInitializer`, DataProtection).
 A new game adds its repo under its own `Storage/` folder; it must NOT add a repository to
 the shared Infrastructure project unless the data is genuinely cross-slice.
 
 ## Solution layout (`PoMiniGames.slnx`)
-- `src/PoMiniGames/PoMiniGames` — **host/API** project (Program.cs, feature-sliced Minimal API
+- `src/PoMiniGames` — **host/API** project (Program.cs, feature-sliced Minimal API
   endpoints + SignalR hubs, serves the WASM client). Acts as the `.API` project. The full route
   table is registered in one place: `Infrastructure/EndpointRouteExtensions.MapPoMiniGamesEndpoints`.
   - **§1 MapGroup() per slice** (2026-07-04 sweep): every slice's endpoints live under a
@@ -66,11 +66,11 @@ the shared Infrastructure project unless the data is genuinely cross-slice.
     them by exact path. New slices MUST follow this pattern — register routes via a
     group, not via scattered `app.MapGet/MapPost` calls.
 - `src/PoMiniGames.Client` — Blazor WASM client. **`wwwroot` lives only here.**
-  - `Games/` — **9 client-only mini-games** with no server slice (no Features/ counterpart, no telemetry, no leaderboard back-end). Pure local-first: `BabyTouch`, `ConnectFive`, `DropSquare`, `Fight`, `HorseRace`, `PoMarbleRace`, `PoRacer` (UI only — scores post to `/api/leaderboard`), `SnakeGame`, `TicTacToe`. Keep them in the client project; do **not** mirror them under `src/PoMiniGames/PoMiniGames/Features/`.
+  - `Games/` — **9 client-only mini-games** with no server slice (no Features/ counterpart, no telemetry, no leaderboard back-end). Pure local-first: `BabyTouch`, `ConnectFive`, `DropSquare`, `Fight`, `HorseRace`, `PoMarbleRace`, `PoRacer` (UI only — scores post to `/api/leaderboard`), `SnakeGame`, `TicTacToe`. Keep them in the client project; do **not** mirror them under `src/PoMiniGames/Features/`.
 - `src/PoMiniGames.Application` — application services, DTOs, diagnostics contracts.
 - `src/PoMiniGames.Domain` — domain models / services.
 - `src/PoMiniGames.Infrastructure` — shared platform persistence + health checks (Azure Table Storage). AI resilience helpers live exclusively under `PoMiniGames.AI` (see host project) — the migration window with two AI namespaces is closed.
-- AI namespace policy: every AI-touching type lives under `PoMiniGames.AI` and is reachable from the host project via `src/PoMiniGames/PoMiniGames/GlobalUsings.cs`. Per-slice files (PoCoupleQuiz / PoFace / PoFunQuiz / PoJoker / PoSurvive) do not need `using PoMiniGames.AI;` — the global using wires it. New AI consumers must use the same flat namespace; no `PoMiniGames.Infrastructure.AI` or other AI sub-namespace is permitted (the analyzer will flag any new duplicates).
+- AI namespace policy: every AI-touching type lives under `PoMiniGames.AI` and is reachable from the host project via `src/PoMiniGames/GlobalUsings.cs`. Per-slice files (PoCoupleQuiz / PoFace / PoFunQuiz / PoJoker / PoSurvive) do not need `using PoMiniGames.AI;` — the global using wires it. New AI consumers must use the same flat namespace; no `PoMiniGames.Infrastructure.AI` or other AI sub-namespace is permitted (the analyzer will flag any new duplicates).
 - `src/PoShared` — shared models/business logic used by both client and API (the `.Shared` library). Trim-clean (no IL suppressions). `PoShared/Games/` holds **wire DTOs that cross the network boundary** between client and host — these types MUST live in a project the client can reference (the client only references `PoShared`, `PoMiniGames.Application`, and `PoMiniGames.Domain`, **never** the host's `Features/`). Per-game contract types (`PoJoker/JokeDtos.cs`, `PoRacerShared.cs`) live here by design — moving them into `Features/<Slice>/` breaks the client (it can't see the host's namespace). The audit's recommendation to relocate these into `Features/` was rejected on 2026-07-09 (NET_CLEAN_10); the right VSA shape for cross-network types is "they belong to both sides, so neither slice owns them alone".
 - `tests/PoMiniGames.Unit` — xUnit unit tests, mirrored under `Features/<Slice>/`. Project name = `PoMiniGames.Unit`, namespace `PoMiniGames.Unit.*` (`<sln>.<Tier>` convention).
 - `tests/PoMiniGames.Integration` — `WebApplicationFactory` + **Testcontainers.Azurite** (v4 module). Project name = `PoMiniGames.Integration`, namespace `PoMiniGames.Integration.*`.
@@ -81,7 +81,7 @@ the shared Infrastructure project unless the data is genuinely cross-slice.
 ## Build & run
 - Target framework **net10.0**, pinned via `global.json`. Central settings in `Directory.Build.props` (Nullable + TreatWarningsAsErrors **on** — warnings break the build; TFM/Nullable/ImplicitUsings are inherited, **do not redeclare them in csproj**) and CPM in `Directory.Packages.props`.
 - **Security gate**: NuGet vulnerability auditing is on (`NuGetAudit`/`NuGetAuditMode=all`) and **not** suppressed — a known-CVE package fails the build. Transitive security pins (e.g. `OpenTelemetry.Api`, IdentityModel) live in `Directory.Packages.props`.
-- Run: `dotnet run --project src/PoMiniGames/PoMiniGames`. Hardcoded ports **HTTP 5000 / HTTPS 5001**.
+- Run: `dotnet run --project src/PoMiniGames`. Hardcoded ports **HTTP 5000 / HTTPS 5001**.
 - `F5` in VS Code uses `.vscode/launch.json` + `tasks.json`. The `prelaunch` task runs in sequence: `kill-dotnet` (frees port 5000) → `start-azurite` (`docker compose up -d azurite`, so local storage is always the Docker container) → `start-api`. Disable any non-Docker Azurite (e.g. the VS Code Azurite extension) so the `pominigames` container can bind ports 10000–10002.
 - First-run setup: `scripts/setup.ps1` (WinGet installs, Azurite container, `az login` check).
 - **CI trim audit** (2026-07-04 sweep): `.github/workflows/deploy.yml` runs a

@@ -40,10 +40,10 @@ auth round-trip (Guest dev-bypass in non-Production environments).
 ## 2. Vertical Slice boundaries
 
 A **Vertical Slice** in this project is a folder under
-`src/PoMiniGames/PoMiniGames/Features/<Slice>/` that owns the HTTP/hub
+`src/PoMiniGames/Features/<Slice>/` that owns the HTTP/hub
 surface, contracts, persistence repos, and (when needed) AI integrations
 for **one feature**. The single composition point is
-`src/PoMiniGames/PoMiniGames/Infrastructure/EndpointRouteExtensions.cs`,
+`src/PoMiniGames/Infrastructure/EndpointRouteExtensions.cs`,
 which calls every `MapXxxEndpoints()` extension.
 
 | Slice | Owns | Endpoints (`/api/…`) | SignalR hubs | Repos (Azure Tables) |
@@ -225,7 +225,7 @@ config (`MicrosoftAuth:ClientId` / `ApiClientId`) is missing.
 - Shared platform persistence → `src/PoMiniGames.Infrastructure`
   (`StorageService` = shared `TableServiceClient` factory + Elo calculator).
 - Host composition root (registration + lifecycle only) →
-  `src/PoMiniGames/PoMiniGames/Infrastructure/`.
+  `src/PoMiniGames/Infrastructure/`.
 
 ---
 

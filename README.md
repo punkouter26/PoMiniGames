@@ -298,7 +298,7 @@ cd src/PoMiniGames.Client && npm install && cd ../..
 docker compose up -d azurite        # Table service on localhost:10002, data in a named volume
 
 # Set dev secrets
-cd src/PoMiniGames/PoMiniGames
+cd src/PoMiniGames
 dotnet user-secrets set "PoMiniGames:MicrosoftAuth:ClientId" "<client-id>"
 dotnet user-secrets set "PoMiniGames:MicrosoftAuth:ApiClientId" "<api-client-id>"
 cd ../../..

@@ -46,7 +46,7 @@
 		{
 			"label": "start-api",
 			"type": "shell",
-			"command": "dotnet run --project ${workspaceFolder}/src/PoMiniGames/PoMiniGames/PoMiniGames.csproj",
+			"command": "dotnet run --project ${workspaceFolder}/src/PoMiniGames/PoMiniGames.csproj",
 			"isBackground": true,
 			"problemMatcher": {
 				"pattern": {
@@ -69,7 +69,7 @@
 			"type": "process",
 			"args": [
 				"build",
-				"${workspaceFolder}/src/PoMiniGames/PoMiniGames/PoMiniGames.csproj",
+				"${workspaceFolder}/src/PoMiniGames/PoMiniGames.csproj",
 				"/property:GenerateFullPaths=true",
 				"/consoleloggerparameters:NoSummary"
 			],

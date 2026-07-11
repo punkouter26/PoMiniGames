@@ -189,5 +189,5 @@ if (Test-Path $playwrightScript) {
 }
 
 Write-Host "`nSetup complete. Run the app with:" -ForegroundColor Cyan
-Write-Host "  dotnet run --project src/PoMiniGames/PoMiniGames" -ForegroundColor Gray
+Write-Host "  dotnet run --project src/PoMiniGames" -ForegroundColor Gray
 Write-Host "Then it is available at http://localhost:5000`n" -ForegroundColor Gray

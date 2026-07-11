@@ -23,7 +23,7 @@
   <ItemGroup>
     <!-- §5: spin the real host in-process (the Blazor WASM client is BFF-served
          by the host on :5000; no separate Vite/Node). -->
-    <ProjectReference Include="..\..\src\PoMiniGames\PoMiniGames\PoMiniGames.csproj" />
+    <ProjectReference Include="..\..\src\PoMiniGames\PoMiniGames.csproj" />
     <!-- Shared test utilities (TestBudgetGuard, etc.) — explicit ProjectReference
          so the fixture compiles whether or not tests/Shared/PoMiniGames.TestUtilities.csproj
          is registered in the solution. -->

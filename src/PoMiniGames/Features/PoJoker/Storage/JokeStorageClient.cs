@@ -96,6 +96,9 @@ public sealed class JokeStorageClient : IJokeStorageClient
         }
 
         return sessionStats
+            .Where(kvp => kvp.Value.Triumphs > 0)  // NetRun10 audit #3: drop zero-triumph
+                                                     // sessions so the leaderboard never shows
+                                                     // a 0/0%/0.0 ghost champion row.
             .Select(kvp =>
             {
                 var triumphRate = kvp.Value.Total > 0

@@ -1,6 +1,8 @@
 @page "/leaderboards"
 @inject ApiService ApiService
 @inject NavigationManager NavigationManager
+@inject BrowserViewport Viewport
+@implements IAsyncDisposable
 
 <PageTitle>Leaderboards · PoMiniGames</PageTitle>
 
@@ -66,7 +68,7 @@
                                 <span class="lb-unit">@board.Unit</span>
                             </div>
 
-                            @{ var rows = VisibleRows(board, group.Key); }
+                            @{ var rows = VisibleRows(board, group.Key, BoardRowLimit()); }
                             @if (rows.Count == 0)
                             {
                                 <p class="lb-board-empty">No scores yet — play @board.Title to claim #1.</p>
@@ -110,16 +112,33 @@
     private List<BoardGroup> _groupedBoards = new();
 
     // The server pads every unified board to the requested limit with dummy
-    // "XXX"/0 rows. The 1 Player section shows the full padded top-10; the
-    // other sections keep the compact top-5 of real scores only.
+    // "XXX"/0 rows. NetRun10 audit #1: filter them out everywhere so users
+    // never see ghost players. Real scores only; "No scores yet — be the
+    // first!" replaces boards that come back entirely padded.
     private const string PlaceholderName = "XXX";
 
-    private static List<LeaderboardEntryDto> VisibleRows(GameLeaderboardDto board, string groupKey)
-        => groupKey == "1p"
-            ? board.Entries.Take(10).ToList()
-            : board.Entries.Where(e => e.Name != PlaceholderName).Take(5).ToList();
+    private List<LeaderboardEntryDto> VisibleRows(GameLeaderboardDto board, string groupKey, int take)
+        => board.Entries.Where(e => e.Name != PlaceholderName).Take(take).ToList();
+
+    // NetRun10 audit #6: mobile viewports collapse each board to a top-3
+    // short list to avoid the 5× doc-height overflow we measured at 390×844.
+    // Desktop keeps the full top-10.
+    private int BoardRowLimit() => Viewport.IsNarrow ? 3 : 10;
 
     protected override async Task OnInitializedAsync() => await Load();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            // NetRun10 audit #6: pull the live viewport width so the
+            // BoardRowLimit() branches between top-3 (mobile) and top-10 (desktop).
+            await Viewport.RefreshAsync();
+            StateHasChanged();
+        }
+    }
+
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
     private async Task Load()
     {

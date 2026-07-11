@@ -1,10 +1,16 @@
 .mr-wrap {
+    /* NetRun10 audit #5: cap the canvas wrap to the live viewport so the
+       three.js renderer's 800×540+ canvas can never overflow a phone screen.
+       Using min(...) keeps the desktop layout at 560px tall while collapsing
+       the height proportionally on narrow phones. */
     position: relative;
-    width: 100%;
-    height: 560px;
+    width: min(100%, 960px);
+    height: min(560px, calc(100vh - 240px));
+    aspect-ratio: 16 / 9;
     border-radius: 10px;
     overflow: hidden;
     background: #0f172a;
+    margin: 0 auto;
 }
 
 .mr-canvas-host {
@@ -235,7 +241,18 @@
 }
 
 @media (max-width: 640px) {
-    .mr-wrap { height: 460px; }
-    .mr-hud { width: 150px; font-size: 0.72rem; }
+    /* NetRun10 audit #5: phone-sized viewport. Pull the HUD to the bottom
+       so it doesn't cover the chute, shrink the pick balls, and let the
+       canvas fill the remaining vertical space minus chrome. */
+    .mr-wrap {
+        height: auto;
+        aspect-ratio: 4 / 5;
+    }
+    .mr-hud {
+        position: static;
+        width: auto;
+        margin-top: 8px;
+        font-size: 0.72rem;
+    }
     .mr-pick-ball { width: 38px; height: 38px; }
 }

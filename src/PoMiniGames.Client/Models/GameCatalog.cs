@@ -15,7 +15,10 @@ public static class GameCatalog
     [
         new(GameKeys.PoClick, "PoClick", "🥁", "/poclick"),
         new(GameKeys.ConnectFive, "Connect Five", "🔴", "/connectfive"),
-        new(GameKeys.TicTacToe, "Tic Tac Toe", "❌", "/tictactoe"),
+        // NetRun10 audit #4: the page is actually a 6×6 / 4-in-a-row grid,
+        // not the classic 3×3 tic-tac-toe. The user-facing title now matches
+        // the in-game label and the "How to play" copy.
+        new(GameKeys.TicTacToe, "Connect Six", "❌", "/tictactoe"),
         new(GameKeys.PoRacer, "PoRacer", "🏎️", "/poracer"),
         new(GameKeys.PoMarbleRace, "PoMarbleRace", "🔮", "/pomarblerace"),
         new(GameKeys.PoFunQuiz, "PoFunQuiz", "🧠", "/funquiz"),
@@ -26,7 +29,7 @@ public static class GameCatalog
     public static readonly IReadOnlyList<CatalogGame> LocalTwoPlayer =
     [
         new(GameKeys.ConnectFive, "Connect Five", "🔴", "/connectfive?mode=2p"),
-        new(GameKeys.TicTacToe, "Tic Tac Toe", "❌", "/tictactoe?mode=2p"),
+        new(GameKeys.TicTacToe, "Connect Six", "❌", "/tictactoe?mode=2p"),
         new(GameKeys.PoFunQuiz, "PoFunQuiz", "🧠", "/funquiz?mode=2p"),
         new(GameKeys.PoBrawl, "PoBrawl", "🥊", "/pobrawl?mode=2p"),
     ];
@@ -41,7 +44,7 @@ public static class GameCatalog
     public static readonly IReadOnlyList<CatalogGame> Demo =
     [
         new(GameKeys.PoClick, "PoClick", "🥁", "/poclick/1"),
-        new(GameKeys.TicTacToe, "Tic Tac Toe", "❌", "/tictactoe/1"),
+        new(GameKeys.TicTacToe, "Connect Six", "❌", "/tictactoe/1"),
         new(GameKeys.ConnectFive, "Connect Five", "🔴", "/connectfive/1"),
         new(GameKeys.PoFace, "PoFace", "🙂", "/face/demo"),
         new(GameKeys.PoRacer, "PoRacer", "🏎️", "/poracer/demo"),

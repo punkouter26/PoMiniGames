@@ -57,6 +57,9 @@ builder.Services.AddScoped<PoRacerScoreApiClient>();
 builder.Services.AddScoped<UiFeedbackService>();
 // Global settings (master mute, FPS badge) shared by the layout and every game.
 builder.Services.AddScoped<SettingsService>();
+// NetRun10 audit #6: viewport-width helper so leaderboards can render
+// top-3 on mobile and top-10 on desktop without a JS-only media query.
+builder.Services.AddScoped<BrowserViewport>();
 // Singleton — manages the shared "Watch All Demos" auto-rotation timer
 // across the lifetime of the Blazor session. Fixes the timer-leak /
 // hijack-navigation bug (QA finding #1 + #4).

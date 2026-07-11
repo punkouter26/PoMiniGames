@@ -123,8 +123,16 @@ public static class AuthEndpoints
         // same DevCookie pathway as the legacy /api/auth/dev-bypass endpoint,
         // but is reachable from the SPA via a clean /auth/login/fake URL.
         // Hard-guarded: 404 unless Development/Test AND loopback peer.
+        //
+        // NetRun10 audit #7: accept both `?user=…` and `?displayName=…` —
+        // every other dev-bypass endpoint in the project uses `displayName`,
+        // so the previous `user`-only binding silently minted "Guest" for
+        // anyone copying the AGENT.MD example. `displayName` wins if both
+        // are supplied; unknown query params are rejected with 400 to keep
+        // the contract honest.
         app.MapGet("/auth/login/fake", [AllowAnonymous] async (
             string? user,
+            string? displayName,
             string? returnUrl,
             HttpContext context,
             IWebHostEnvironment environment) =>
@@ -137,12 +145,27 @@ public static class AuthEndpoints
             {
                 return Results.NotFound();
             }
-            await SignInDevelopmentUserAsync(context, environment, null, string.IsNullOrWhiteSpace(user) ? "Guest" : user);
+            // Honor the contract: only the two known params are accepted.
+            // Anything else gets a 400 so E2E / curl authors see their typo
+            // instead of silently minting a Guest.
+            var known = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "user", "displayName", "returnUrl"
+            };
+            foreach (var key in context.Request.Query.Keys)
+            {
+                if (!known.Contains(key))
+                {
+                    return Results.BadRequest(new { error = "unknown_query_param", parameter = key });
+                }
+            }
+            var chosen = !string.IsNullOrWhiteSpace(displayName) ? displayName : user;
+            await SignInDevelopmentUserAsync(context, environment, null, string.IsNullOrWhiteSpace(chosen) ? "Guest" : chosen);
             return Results.Redirect(ResolveLocalReturnUrl(returnUrl));
         })
         .WithName("LoginFake")
         .WithTags("Auth")
-        .WithSummary("Mints a guest identity (Dev/Test only). Reachable only from loopback.");
+        .WithSummary("Mints a guest identity (Dev/Test only). Reachable only from loopback. Accepts `?user=` or `?displayName=`.");
 
         // Clears the application sign-out cookie and returns the user to a validated local target.
         app.MapGet("/auth/logout", [AllowAnonymous] async (string? returnUrl, HttpContext context) =>

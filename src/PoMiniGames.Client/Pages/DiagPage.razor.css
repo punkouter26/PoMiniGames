@@ -48,6 +48,7 @@
 .diag-k { color: #64748b; }
 .diag-v { color: #e2e8f0; }
 .diag-v.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.78rem; }
+.diag-v--off { color: #fb7185; font-style: italic; }
 
 /* Bug fix QA #7 additions */
 .diag-mock-list { list-style: square inside; padding: 0; margin: 0; color: #fbbf24; }

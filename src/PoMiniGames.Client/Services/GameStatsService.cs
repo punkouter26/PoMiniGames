@@ -156,7 +156,7 @@ public class GameStatsService
         var gameTitle = lastGameKey switch
         {
             "connectfive" => "Connect Five",
-            "tictactoe" => "Tic Tac Toe",
+            "tictactoe" => "Connect Six",
             "poracer" => "PoRacer",
             "pomarblerace" => "PoMarbleRace",
             _ => lastGameKey

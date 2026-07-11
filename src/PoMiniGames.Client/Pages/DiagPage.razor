@@ -38,8 +38,19 @@
             <div class="diag-kv"><span class="diag-k">App Insights</span><span class="diag-v">@(_telemetry.AppInsightsConfigured ? "configured" : "not configured")</span></div>
             <div class="diag-kv"><span class="diag-k">OTel exporter</span><span class="diag-v">@(_telemetry.OtelExporter ?? "—")</span></div>
             <div class="diag-kv"><span class="diag-k">cloud_RoleName</span><span class="diag-v mono">@(_telemetry.ResourceRoleName ?? "—")</span></div>
-            <div class="diag-kv"><span class="diag-k">Live Metrics</span><span class="diag-v">@(_telemetry.LiveMetricsEnabled ? "on" : "off")</span></div>
-            <div class="diag-kv"><span class="diag-k">Sampling</span><span class="diag-v">@_telemetry.SamplingRatio.ToString("0.00")</span></div>
+            @* NetRun10 audit #10: don't claim "Live Metrics: on" when there's
+               no App Insights to ship to — the previous copy was misleading
+               because the toggle was active but the destination was missing. *@
+            @if (_telemetry.AppInsightsConfigured)
+            {
+                <div class="diag-kv"><span class="diag-k">Live Metrics</span><span class="diag-v">@(_telemetry.LiveMetricsEnabled ? "on" : "off")</span></div>
+                <div class="diag-kv"><span class="diag-k">Sampling</span><span class="diag-v">@_telemetry.SamplingRatio.ToString("0.00")</span></div>
+            }
+            else
+            {
+                <div class="diag-kv"><span class="diag-k">Live Metrics</span><span class="diag-v diag-v--off">off (no destination)</span></div>
+                <div class="diag-kv"><span class="diag-k">Sampling</span><span class="diag-v diag-v--off">n/a</span></div>
+            }
         </div>
         <p class="diag-muted">
             @if (_telemetry.AppInsightsConfigured)
@@ -48,7 +59,7 @@
             }
             else
             {
-                <text>Set <code>APPLICATIONINSIGHTS_CONNECTION_STRING</code> (env var) or <code>PoMiniGames:ApplicationInsights:ConnectionString</code> in config to ship traces. The /diag/telemetry endpoint reflects the same source-of-truth.</text>
+                <text><strong>Telemetry is not being shipped.</strong> Set <code>APPLICATIONINSIGHTS_CONNECTION_STRING</code> (env var) or <code>PoMiniGames:ApplicationInsights:ConnectionString</code> in config to enable Application Insights. Without it, traces stay in-process and <code>Live Metrics</code>/<code>Sampling</code> are no-ops. The /diag/telemetry endpoint reflects the same source-of-truth.</text>
             }
         </p>
     </section>

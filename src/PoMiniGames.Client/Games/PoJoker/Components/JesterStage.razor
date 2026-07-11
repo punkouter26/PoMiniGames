@@ -60,8 +60,14 @@
 
     private async Task StartPerformance()
     {
+        // NetRun10 audit #2: default to safeMode=true so the first joke a
+        // new visitor sees isn't filtered out by the upstream JokeAPI's
+        // "anti-vaxxer parents" anti-pattern. We keep Category="Any" because
+        // JokeAPI doesn't support a "Wholesome" category (only Any/Misc/
+        // Programming/Dark/Pun/Spooky/Christmas); safe-mode alone strips
+        // NSFW, religious, political, racist, sexist, explicit flags.
         _orchestrator.SelectedCategory = "Any";
-        _orchestrator.SelectedSafeMode = false;
+        _orchestrator.SelectedSafeMode = true;
         _orchestrator.SelectedMoodLabel = "Random";
         await JS.InvokeVoidAsync("eval", "window.__pojokerShowRunning = true;");
         await _orchestrator.StartAsync();

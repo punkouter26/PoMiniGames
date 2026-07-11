@@ -25,7 +25,7 @@
     GameSummary="@GameSummaryContent"
     HowToPlay="@HowToPlayContent"
     HowToPlayKey="@(Demo == 1 ? null : "tictactoe")">
-    <div class="ttt-board @(_isAiTurn ? "ttt-board--thinking" : "") @ResultClass" role="grid" aria-label="Tic Tac Toe game board">
+    <div class="ttt-board @(_isAiTurn ? "ttt-board--thinking" : "") @ResultClass" role="grid" aria-label="Connect Six game board">
         @for (int r = 0; r < TicTacToeBoard.Size; r++)
         {
             @for (int c = 0; c < TicTacToeBoard.Size; c++)
@@ -118,7 +118,7 @@
     private string _backTo => "/";
     private bool _isGameOver => _gameResult != GameResult.InProgress && PlayMode != "demo";
     
-    private RenderFragment TitleContent => @<span>❌ Tic Tac Toe</span>;
+    private RenderFragment TitleContent => @<span>❌ Connect Six</span>;
 
     private RenderFragment HowToPlayContent => @<div>
         <p>Line up @TicTacToeBoard.WinLength in a row on the @TicTacToeBoard.Size×@TicTacToeBoard.Size board.</p>

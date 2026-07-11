@@ -10,7 +10,23 @@
 <GameShell Title=@TitleContent Player="@_playerName" BackTo="/couplequiz">
     @if (_gameStarted is null)
     {
-        <p>Waiting for the round to start…</p>
+        // NetRun10 audit #8: if the player landed on /game without ever joining
+        // a lobby (deep-link, refresh mid-game, or wrong navigation), the page
+        // used to spin forever on "Waiting for the round to start…". After a
+        // short grace period, route them back to the lobby with a one-shot
+        // banner so they understand what happened.
+        @if (_showLobbyHint)
+        {
+            <div class="cq-gameover">
+                <h2 class="gps-phase-h">You haven't joined a game yet</h2>
+                <p>This page is only useful mid-round. Pick or create a lobby and the host will start a game for you.</p>
+                <a class="gps-btn gps-btn--primary" href="/couplequiz">Go to lobby →</a>
+            </div>
+        }
+        else
+        {
+            <p>Waiting for the round to start…</p>
+        }
     }
     else
     {
@@ -84,6 +100,10 @@
     private CoupleQuizGameStartedPayload? _gameStarted;
     private CoupleQuizRoundResultPayload? _lastResult;
     private CoupleQuizGameOverPayload? _gameOver;
+    // NetRun10 audit #8: if no game starts within 4s of landing here, show
+    // the lobby redirect hint instead of an infinite spinner.
+    private bool _showLobbyHint;
+    private CancellationTokenSource? _lobbyHintCts;
 
     protected override async Task OnInitializedAsync()
     {
@@ -109,6 +129,25 @@
         {
             HandleGameStarted(Hub.LastGameStarted);
         }
+
+        // NetRun10 audit #8: kick off the dead-end watchdog. If no GameStarted
+        // payload arrives in 4s, surface the "go to lobby" hint.
+        _lobbyHintCts = new CancellationTokenSource();
+        _ = WatchForLobbyHintAsync(_lobbyHintCts.Token);
+    }
+
+    private async Task WatchForLobbyHintAsync(CancellationToken ct)
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(4), ct);
+            if (_gameStarted is null && !ct.IsCancellationRequested)
+            {
+                _showLobbyHint = true;
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (TaskCanceledException) { /* expected when game starts */ }
     }
 
     // SignalR `.On` callbacks run outside Blazor's render loop, so each handler marshals
@@ -163,6 +202,8 @@
         foreach (var (name, score) in p.FinalScores)
         {
             if (name == _playerName) continue;
+        _lobbyHintCts?.Cancel();
+        _lobbyHintCts?.Dispose();
             var outcome = myScore > score ? MatchOutcome.Win
                         : myScore < score ? MatchOutcome.Loss
                         : MatchOutcome.Draw;

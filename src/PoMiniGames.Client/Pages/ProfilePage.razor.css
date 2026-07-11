@@ -73,6 +73,20 @@
     min-width: 60px;
 }
 
+/* NetRun10 audit #9: inline hint that explains what unlocks an em-dash stat.
+   Hidden by default (display:none); the Razor toggles it via the parent chip
+   contents; we use :has() so a single .prf-chip-hint inside the chip surfaces it. */
+.prf-chip-hint {
+    display: none;
+    font-size: 0.6rem;
+    color: var(--color-text-secondary);
+    text-align: center;
+    margin-top: 0.25rem;
+    line-height: 1.2;
+    max-width: 120px;
+}
+.prf-chip:has(.prf-chip-hint) .prf-chip-hint { display: block; }
+
 .prf-chip-val {
     font-size: 1rem;
     font-weight: 700;
@@ -95,8 +109,20 @@
     gap: 1rem;
 }
 
+/* NetRun10 audit #9: collapse the profile page aggressively on phone-sized
+   viewports. Without this the page was 1235px tall on a 768px desktop and
+   even worse on a 390px phone — the charts row + 6 stacked sections
+   forced the user to scroll past 5× the viewport. */
+@media (max-width: 768px) {
+    .prf-hero { flex-direction: column; align-items: flex-start; padding: 1rem; }
+    .prf-h2h-cols { grid-template-columns: 1fr; }
+    .prf-charts { grid-template-columns: 1fr; }
+    .prf-game-grid { grid-template-columns: 1fr 1fr; }
+}
 @media (max-width: 560px) {
     .prf-charts { grid-template-columns: 1fr; }
+    .prf-game-grid { grid-template-columns: 1fr; }
+    .prf-page { gap: 1rem; padding: 1rem 0.75rem 3rem; }
 }
 
 .prf-chart-card {

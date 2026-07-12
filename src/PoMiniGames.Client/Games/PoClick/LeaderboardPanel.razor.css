@@ -6,3 +6,8 @@
     overflow-y: auto;
     overscroll-behavior: contain;
 }
+
+.lp-start-btn {
+    font-size: 0.75rem;
+    padding: 0.5rem 1.5rem;
+}

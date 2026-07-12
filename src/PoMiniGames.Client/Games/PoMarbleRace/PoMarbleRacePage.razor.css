@@ -20,21 +20,26 @@
     height: 100%;
 }
 
-/* ── HUD ── */
+/* ── HUD ──
+   2026-07-12: the HUD used to be absolutely positioned inside the canvas
+   wrap (sitting *on top of* the marble track at the finish line). It is now
+   a sibling of the canvas in a column flex — rendered as a regular block
+   element beneath the canvas so the sticky top bar (z-sticky) cannot clip
+   it and the HUD never overlaps the marble track. */
 .mr-hud {
-    position: absolute;
-    top: 12px;
-    right: 12px;
-    width: 190px;
-    padding: 10px 12px;
-    border-radius: 10px;
+    width: min(720px, 100%);
+    margin: var(--space-3) auto 0;
+    padding: 12px 16px;
+    border-radius: 12px;
     background: rgba(15, 23, 42, 0.72);
     border: 1px solid rgba(34, 211, 238, 0.35);
     box-shadow: 0 0 18px rgba(34, 211, 238, 0.15);
     backdrop-filter: blur(6px);
     color: #e2e8f0;
-    font-size: 0.8rem;
-    pointer-events: none;
+    font-size: 0.82rem;
+    flex: 0 1 auto;
+    position: relative;
+    z-index: 1;
 }
 
 .mr-score-row {
@@ -86,16 +91,22 @@
     margin: 0;
     padding: 0;
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
+    flex-wrap: nowrap;
     gap: 2px;
+    justify-content: space-between;
 }
 
 .mr-lb-row {
     display: flex;
+    flex-direction: column;
     align-items: center;
-    gap: 6px;
-    padding: 2px 4px;
-    border-radius: 4px;
+    gap: 3px;
+    padding: 4px 2px 4px;
+    border-radius: 6px;
+    flex: 1 1 0;
+    min-width: 0;
+    position: relative;
 }
 
 .mr-lb-you {
@@ -104,36 +115,68 @@
 }
 
 .mr-lb-place {
-    width: 16px;
-    text-align: right;
     font-weight: 700;
     color: #cbd5e1;
+    font-size: 0.78rem;
+    line-height: 1;
 }
 
 .mr-lb-dot {
-    width: 12px;
-    height: 12px;
+    width: 18px;
+    height: 18px;
     border-radius: 50%;
-    box-shadow: 0 0 6px currentColor;
+    box-shadow: 0 0 8px currentColor;
 }
 
 .mr-lb-speed {
-    margin-left: auto;
     font-variant-numeric: tabular-nums;
     color: #94a3b8;
-    font-size: 0.72rem;
+    font-size: 0.68rem;
+    line-height: 1;
+    /* Keep the speed number on a single line even when the HUD width is on
+       the smaller side — the number carries the leaderboard semantics. */
+    white-space: nowrap;
 }
 
 .mr-lb-you-tag {
-    font-size: 0.55rem;
+    font-size: 0.5rem;
     font-weight: 800;
     color: #22d3ee;
     letter-spacing: 0.06em;
+    line-height: 1;
 }
 
 .mr-lb-fin {
     color: #a3e635;
     font-weight: 800;
+}
+
+/* Tag overlays on each marble tile: YOU sits top-right, ✓ (finished) sits
+   bottom-right. They never collide even when both apply to the same marble.
+   The horizontal leaderboard narrows to 84 px per tile at 720 px width, so
+   each tag needs to live in its own corner — stacking both on top-right used
+   to cause one to obscure the other. */
+.mr-lb-row > .mr-lb-you-tag {
+    position: absolute;
+    top: 1px;
+    right: 3px;
+    font-size: 0.5rem;
+    font-weight: 800;
+    color: #22d3ee;
+    letter-spacing: 0.06em;
+    line-height: 1;
+    z-index: 1;
+}
+
+.mr-lb-row > .mr-lb-fin {
+    position: absolute;
+    bottom: 1px;
+    right: 3px;
+    font-size: 0.85rem;
+    color: #a3e635;
+    font-weight: 800;
+    line-height: 1;
+    z-index: 1;
 }
 
 .mr-hint {
@@ -148,6 +191,30 @@
     border-radius: 4px;
     padding: 0 4px;
     border: 1px solid #334155;
+}
+
+/* The .mr-wrap-row always stacks canvas above HUD now (no wide-viewport
+   side-by-side branch needed). The container is a centred flex column so
+   both elements line up to the same horizontal centre. */
+.mr-wrap-row {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-3);
+    max-width: 960px;
+    margin: 0 auto;
+    width: 100%;
+}
+
+@media (max-width: 640px) {
+    .mr-hud {
+        /* On phones the horizontal leaderboard can't fit 8 tiles legibly;
+           fall back to a narrower centred strip. */
+        width: 100%;
+        max-width: 320px;
+        font-size: 0.72rem;
+        padding: 10px 12px;
+    }
 }
 
 /* ── Pick overlay ── */

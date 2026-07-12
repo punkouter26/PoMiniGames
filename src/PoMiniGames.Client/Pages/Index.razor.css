@@ -109,7 +109,7 @@
     padding: 0.35rem 0.9rem;
     border-radius: var(--radius-pill);
     font-size: 0.8rem;
-    transition: all 0.2s;
+    transition: border-color 0.2s var(--ease-standard), background 0.2s var(--ease-standard), color 0.2s var(--ease-standard);
 }
 
 .home-scores-empty-cta:hover {
@@ -125,7 +125,7 @@
     border-radius: 0.75rem;
     padding: 1rem;
     cursor: pointer;
-    transition: all 0.25s;
+    transition: border-color 0.25s var(--ease-standard), transform 0.25s var(--ease-standard);
     min-height: 44px;
 }
 
@@ -256,7 +256,7 @@
     font-weight: 600;
     border-radius: var(--radius-pill);
     cursor: pointer;
-    transition: all 0.25s;
+    transition: transform 0.25s var(--ease-standard), box-shadow 0.25s var(--ease-standard);
     z-index: 1;
     margin-bottom: 1rem;
     min-height: 44px;
@@ -320,7 +320,7 @@
     padding: 0.3rem 0.75rem;
     border-radius: 0.35rem;
     cursor: pointer;
-    transition: all 0.2s;
+    transition: color 0.2s var(--ease-standard), background 0.2s var(--ease-standard);
 }
 
 .home-highscores-tab:hover { color: var(--color-text-primary); }
@@ -343,7 +343,7 @@
     font-size: 0.7rem;
     padding: 0.2rem 0.65rem;
     border-radius: var(--radius-pill);
-    transition: all 0.2s;
+    transition: border-color 0.2s var(--ease-standard), background 0.2s var(--ease-standard), color 0.2s var(--ease-standard);
 }
 
 .home-highscores-diff-tab.active {
@@ -527,7 +527,7 @@
     background: rgba(17, 24, 39, 0.8);
     color: var(--color-text-primary);
     min-width: 160px;
-    transition: all 0.25s;
+    transition: border-color 0.25s var(--ease-standard), background 0.25s var(--ease-standard), transform 0.25s var(--ease-standard), box-shadow 0.25s var(--ease-standard);
     backdrop-filter: blur(8px);
     position: relative;
     overflow: hidden;
@@ -620,7 +620,7 @@
     font-size: 0.85rem;
     font-weight: 600;
     text-decoration: none;
-    transition: all 0.18s;
+    transition: border-color 0.18s var(--ease-standard), background 0.18s var(--ease-standard), transform 0.18s var(--ease-standard);
 }
 
 .home-lb-btn:hover {
@@ -662,7 +662,18 @@
 
     .home-section--collapsed .home-section-games { display: none; }
 
-    .home-section { grid-template-columns: 1fr; gap: 0.85rem; }
+    /* §9 mobile border audit: the outer section is only a grouping container.
+       On a ~360px column its frame competes with the inner mode-button and game
+       chips (three concentric borders). Drop the outer frame/blur on mobile so
+       the content reads as one clean group instead of nested boxes. */
+    .home-section {
+        grid-template-columns: 1fr;
+        gap: 0.85rem;
+        border: none;
+        background: transparent;
+        backdrop-filter: none;
+        padding: 0.25rem 0;
+    }
 }
 
 .home-game-chip--playall { cursor: pointer; font: inherit; font-weight: 600; }
@@ -719,7 +730,7 @@
     font-size: 0.85rem;
     font-weight: 500;
     text-decoration: none;
-    transition: all 0.18s;
+    transition: border-color 0.18s var(--ease-standard), background 0.18s var(--ease-standard), transform 0.18s var(--ease-standard);
 }
 
 .home-game-chip:hover {
@@ -763,17 +774,14 @@
 }
 
 @media (max-width: 640px) {
+    /* Previously position:fixed to the viewport bottom, which permanently
+       overlaid (and hid) the game chips behind it. Now it flows in-document
+       after the game list so nothing is covered. */
     .home-stats-cta {
-        position: fixed;
-        left: 0;
-        right: 0;
-        bottom: max(env(safe-area-inset-bottom, 0px), 8px);
-        margin: 0;
-        padding: 0.5rem 0.75rem;
-        background: linear-gradient(180deg, rgba(11, 15, 25, 0) 0%, rgba(11, 15, 25, 0.85) 40%, rgba(11, 15, 25, 0.95) 100%);
-        z-index: 10;
+        margin-top: 1.25rem;
+        padding: 0.5rem 0.75rem 0;
     }
 
     .home-stats-cta .home-mode-btn { width: 100%; max-width: 360px; }
-    .home-container { padding-bottom: 6rem; }
+    .home-container { padding-bottom: max(env(safe-area-inset-bottom, 0px), 1rem); }
 }

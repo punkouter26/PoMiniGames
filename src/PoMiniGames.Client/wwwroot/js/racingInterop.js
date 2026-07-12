@@ -721,8 +721,15 @@ window.PoRacer = PoRacer;
             const miniCanvas = miniCanvasEl;
             const miniCtx = miniCanvas ? miniCanvas.getContext('2d') : null;
 
-            resize();
-            const w = lastSize.w, h = lastSize.h;
+            // resize() + lastSize live in the sibling PoRacer IIFE (out of scope
+            // here). Route through its public accessor, which resizes the shared
+            // canvas backing store and returns the CSS size. Referencing the
+            // private symbols directly threw ReferenceError, which OnSnapshot's
+            // try/catch swallowed → blank canvas with a live HUD.
+            const size = (window.PoRacer && window.PoRacer.getSize)
+                ? window.PoRacer.getSize()
+                : { w: mainCanvas.clientWidth, h: mainCanvas.clientHeight };
+            const w = size.w, h = size.h;
             // Pick camera target = the local player; if missing, first car.
             const target = cars.find(c => c.isPlayer) || cars[0];
             // Zoom-out follow: scale chosen so the track comfortably fits the

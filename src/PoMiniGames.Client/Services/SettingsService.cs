@@ -15,6 +15,9 @@ public sealed class SettingsService
     public event Action? Changed;
 
     public bool Muted { get; private set; }
+    // FPS badge lives in the centre of the top bar (always visible at a glance)
+    // — on by default per the 2026-07-12 nav cleanup. Users can still hide it via
+    // ⚙️ → "📉 FPS badge" if they need the chrome strip narrower.
     public bool ShowFps { get; private set; } = true;
 
     /// <summary>Read persisted values. Call once JS interop is available.</summary>
@@ -23,6 +26,8 @@ public sealed class SettingsService
         try
         {
             Muted = LocalStorageService.GetItem<string>(MutedKey) == "1";
+            // Default on; persisted value still wins so users who hid the badge
+            // keep their preference across reloads.
             ShowFps = LocalStorageService.GetItem<string>(ShowFpsKey) != "0";
         }
         catch { /* pre-render — defaults stand */ }

@@ -13,7 +13,7 @@
     <div class="sp-card">
         <div class="sp-header">
             <button class="sp-back" @onclick='() => Nav.NavigateTo("/")'>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:0.2rem">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="racer-lobby-ico">
                     <polyline points="15 18 9 12 15 6"/>
                 </svg>
                 Back
@@ -39,11 +39,11 @@
 
         <p class="poracer-hint">Single shared room — first to arrive becomes host.</p>
 
-        <section style="margin-bottom:1rem">
+        <section class="racer-lobby-section">
             <h2 class="gps-phase-h">Players · @(_state?.Players.Count ?? 0)/8</h2>
             @if (_state is null)
             {
-                <p style="opacity:0.5">Loading...</p>
+                <p class="racer-lobby-loading">Loading...</p>
             }
             else if (_state.Players.Count == 0)
             {
@@ -88,18 +88,18 @@
                     <p class="poracer-hint">Waiting for everyone to mark Ready…</p>
                 }
                 <button class="sp-btn-primary" @onclick="StartGameAsync" disabled="@(!EveryoneReady)">Start Race</button>
-                <button class="sp-btn-secondary" style="margin-left:8px" @onclick="LeaveAsync">Leave</button>
+                <button class="sp-btn-secondary racer-leave-btn" @onclick="LeaveAsync">Leave</button>
             }
             else
             {
                 <button class="sp-btn-primary" @onclick="ToggleReadyAsync">
                     @(_myReady ? "Not Ready" : "Ready!")
                 </button>
-                <button class="sp-btn-secondary" style="margin-left:8px" @onclick="LeaveAsync">Leave</button>
+                <button class="sp-btn-secondary racer-leave-btn" @onclick="LeaveAsync">Leave</button>
             }
         </section>
 
-        <p style="color:var(--muted);font-size:12px;margin-top:8px">Last update: @_lastUpdate</p>
+        <p class="racer-lobby-updated">Last update: @_lastUpdate</p>
     </div>
 </div>
 

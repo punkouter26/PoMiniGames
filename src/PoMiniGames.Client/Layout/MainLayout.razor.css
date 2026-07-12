@@ -33,7 +33,8 @@
     top: 0;
     z-index: var(--z-banner);
     animation: gl-mock-shimmer 3.5s linear infinite;
-    will-change: background-position;
+    /* No permanent will-change: the background-position shimmer composites fine
+       without reserving a GPU layer for the banner's entire lifetime. */
 }
 
 @keyframes gl-mock-shimmer {
@@ -86,7 +87,11 @@
     }
 }
 
-/* Spatial contract: Left (branding) — Center (actions) — Right (session). */
+/* Spatial contract: Left (branding) — Center (FPS + game status) — Right (session).
+   2026-07-12 rework: the FPS counter now lives in the dedicated centre rail
+   (visually anchored between the brand and the session controls). The game
+   status, formerly anchored to the right, sits inside the centre rail too so
+   the bar reads as brand | FPS · game | session. */
 .gl-top-bar {
     display: flex;
     align-items: center;
@@ -106,26 +111,37 @@
     align-items: center;
     gap: var(--space-5);
     min-width: 0;
+    flex: 0 0 auto;
 }
 
-/* Center: app-wide primary actions, kept visually centered between the rails. */
+/* Center: FPS pill anchored next to the brand side; the game-status subslot
+   uses margin-left: auto to push itself to the right edge of the centre rail.
+   The visible gap between them makes the FPS pill read as the centre element.
+   (Blazor's per-component CSS scoping rules out a single absolute-positioning
+   rule across the MainLayout → FpsCounter boundary, so we lay out with flex
+   instead. Result on home page, where there's no game status, is also correct:
+   the rail flexes the FPS pill to its natural centre.) */
 .gl-top-bar-center {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: var(--space-2);
-}
-
-/* Game header slot: the active game projects its status + settings here so game
-   pages render a single consolidated bar instead of a second row. Grows to fill
-   the space between the brand rail and the session rail; empty (zero-width
-   in practice) on non-game pages. */
-.gl-top-bar-game {
     display: flex;
     flex: 1 1 auto;
     align-items: center;
-    justify-content: flex-end;
+    justify-content: center;
+    gap: var(--space-3);
     min-width: 0;
+    padding: 0 var(--space-3);
+}
+
+/* Game status subslot: grows to fill space, pushes itself to the right edge of
+   the centre rail with margin-left: auto. */
+.gl-top-bar-game {
+    display: flex;
+    flex: 0 1 auto;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--space-2);
+    min-width: 0;
+    margin-left: auto;
+    overflow: hidden;
 }
 
 .gl-brand {
@@ -170,6 +186,9 @@
     padding: 0.35rem 0.85rem;
     border-radius: var(--radius-pill);
     font-size: var(--text-sm);
+    /* Keep "Sign out" on one line — it was wrapping to two rows and bloating
+       the top-bar height on narrow phones. */
+    white-space: nowrap;
     transition: border-color var(--dur-base) var(--ease-standard),
                 color var(--dur-base) var(--ease-standard),
                 background var(--dur-base) var(--ease-standard);
@@ -180,34 +199,6 @@
     border-color: var(--color-text-secondary);
     color: var(--color-text-primary);
 }
-
-/* FPS pill: a small monospace chip on the right rail that mirrors whatever
-   the global requestAnimationFrame sampler reads. Green ≥55, amber 30–54,
-   red <30. Sits before the auth buttons; never competes with them for space
-   because it has a fixed-width tabular-numeric label. */
-.gl-fps {
-    display: inline-flex;
-    align-items: center;
-    padding: 0.25rem 0.6rem;
-    border-radius: var(--radius-pill);
-    background: rgba(10, 12, 24, 0.55);
-    border: 1px solid var(--color-border);
-    color: #6bff6b;
-    font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
-    font-size: 0.72rem;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    font-variant-numeric: tabular-nums;
-    line-height: 1.1;
-    min-width: 5.4ch;
-    text-align: center;
-    transition: color var(--dur-base) var(--ease-standard);
-}
-
-/* Colour thresholds mirror PoBrawl's _fpsDisplay rules so the indicator
-   reads the same anywhere it appears. */
-.gl-fps[data-tier="warn"] { color: #ffd24e; }
-.gl-fps[data-tier="bad"]  { color: #ff6b6b; }
 
 /* Active state when the kiosk demo auto-cycle is running. */
 .gl-center-action {
@@ -313,8 +304,16 @@
 
 /* ── §10 overflow menu: ANON button is the redundant text path on wide screens,
      the ⋯ trigger is the canonical path on narrow portrait phones. ─────────── */
+/* The settings (⚙️) and dev-switch (🔧) menus reuse this dropdown mechanic and
+   must stay reachable on every viewport — the mute/FPS toggle is a global
+   control. Only the redundant anonymous-login "⋯" overflow is conditionally
+   shown (hidden here by default; surfaced on portrait phones below). */
 .gl-overflow-menu {
     position: relative;
+    display: inline-block;
+}
+
+.gl-overflow-menu--anon {
     display: none;
 }
 
@@ -534,6 +533,18 @@
 
     .gl-top-bar-left {
         gap: var(--space-3);
+        flex-shrink: 0;
+    }
+
+    /* Compact the centre rail so the FPS pill fits between the brand and the
+       session controls on portrait phones. */
+    .gl-top-bar-center {
+        gap: var(--space-2);
+        padding: 0 var(--space-2);
+    }
+
+    .gl-top-bar-game {
+        justify-content: flex-end;
     }
 
     /* Reclaim horizontal space on small screens. */
@@ -550,7 +561,7 @@
 
     /* Hide the standalone ANON button on narrow screens; the ⋯ overflow menu takes over. */
     .gl-auth-button--anon { display: none; }
-    .gl-overflow-menu { display: inline-block; }
+    .gl-overflow-menu--anon { display: inline-block; }
 
     /* Collapse the sync pill to a single icon glyph with a numeric badge so the
        kiosk button doesn't get pushed off-screen on sub-360px devices. */
@@ -563,16 +574,15 @@
     }
 }
 
-/* Wider than portrait phones: hide the overflow trigger so the standalone ANON
-   button remains the canonical path. */
-@media (min-width: 641px) {
-    .gl-overflow-menu { display: none !important; }
-}
+/* 2026-07-12: the anonymous "⋯" overflow is hidden on wide screens via the
+   `--anon` base rule (the standalone ANON button is the canonical path there),
+   so no blanket !important hide is needed — that rule previously also nuked the
+   settings gear and dev-switch, making the global mute/FPS toggle and anonymous
+   login unreachable on every viewport. */
 
-/* 2026-07-05: hide the Developer tools (🔧) affordance on portrait phones.
-   It duplicates the gear that we just hid, and on a 390px-wide viewport the
-   two icons + brand + sign-in button crowd the top bar past the viewport.
-   The dev tools menu is still reachable on >= 641 px viewports. */
+/* Hide only the Developer tools (🔧) on portrait phones: on a 390px viewport the
+   dev icon + settings + brand + sign-in button crowd the top bar past the
+   viewport. The settings gear and (when unauthenticated) the ⋯ menu remain. */
 @media (max-width: 640px) {
-    .gl-overflow-menu { display: none !important; }
+    .gl-dev-switch { display: none !important; }
 }

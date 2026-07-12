@@ -23,8 +23,7 @@
     Stats="@_statItems"
     Status="@StatusContent"
     GameSummary="@GameSummaryContent"
-    HowToPlay="@HowToPlayContent"
-    HowToPlayKey="@(Demo == 1 ? null : "tictactoe")">
+    HowToPlay="@HowToPlayContent">
     <div class="ttt-board @(_isAiTurn ? "ttt-board--thinking" : "") @ResultClass" role="grid" aria-label="Connect Six game board">
         @for (int r = 0; r < TicTacToeBoard.Size; r++)
         {

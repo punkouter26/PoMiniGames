@@ -77,6 +77,10 @@
   font-size: 0.85rem;
   font-weight: 500;
   animation: gps-status-in 0.25s ease-out both;
+  /* Allow the badge to shrink inside the clipped top-bar slot instead of
+     forcing the slot wider (which pushed it over the brand). */
+  min-width: 0;
+  white-space: nowrap;
 }
 @keyframes gps-status-in {
   from { opacity: 0; transform: translateY(-4px); }
@@ -201,7 +205,7 @@
   border-radius: 9999px;
   font-size: 0.8rem;
   font-weight: 600;
-  transition: all 0.15s;
+  transition: color 0.15s, background 0.15s;
   cursor: pointer;
 }
 .gps-pills button:hover {
@@ -286,8 +290,8 @@
   font-weight: 700;
   letter-spacing: 0.01em;
 }
-.cf-result--win  { color: #4ade80; background: rgba(74, 222, 128, 0.12); border: 1px solid rgba(74, 222, 128, 0.35); }
-.cf-result--loss { color: #f87171; background: rgba(248, 113, 113, 0.08); border: 1px solid rgba(248, 113, 113, 0.25); }
+.cf-result--win  { color: var(--accent-success); background: rgba(74, 222, 128, 0.12); border: 1px solid rgba(74, 222, 128, 0.35); }
+.cf-result--loss { color: var(--accent-danger); background: rgba(248, 113, 113, 0.08); border: 1px solid rgba(248, 113, 113, 0.25); }
 .cf-result--draw { color: #94a3b8; background: rgba(148, 163, 184, 0.08); border: 1px solid rgba(148, 163, 184, 0.25); }
 
 /* Adaptive-ELO change line under the 1-player result banner. */
@@ -302,8 +306,8 @@
 }
 .cf-elo-now { color: var(--color-text-primary); }
 .cf-elo-delta { padding: 0.1rem 0.5rem; border-radius: 9999px; font-weight: 700; }
-.cf-elo-delta--up   { color: #4ade80; background: rgba(74, 222, 128, 0.14); }
-.cf-elo-delta--down { color: #f87171; background: rgba(248, 113, 113, 0.14); }
+.cf-elo-delta--up   { color: var(--accent-success); background: rgba(74, 222, 128, 0.14); }
+.cf-elo-delta--down { color: var(--accent-danger); background: rgba(248, 113, 113, 0.14); }
 .cf-elo-delta--flat { color: #94a3b8; background: rgba(148, 163, 184, 0.14); }
 .cf-elo-cpu { opacity: 0.85; }
 
@@ -318,7 +322,7 @@
   border-radius: 8px;
   font-size: 0.9rem;
   font-weight: 600;
-  transition: all 0.2s;
+  transition: filter 0.2s, border-color 0.2s, color 0.2s;
 }
 
 .gps-play-again-btn--primary {
@@ -434,284 +438,6 @@
    style-matching. Shared badges (.cf-status--*, .cf-result--*) remain global
    above — they're a cross-game vocabulary. */
 
-/* ── Drop Square Styles ── */
-.drop-square-wrapper {
-  width: 100%;
-  max-width: 600px;
-  margin: 0 auto;
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.drop-square-board {
-  --ds-cell: clamp(32px, calc((100vw - 32px) / 10), 64px);
-  display: grid;
-  grid-template-columns: repeat(10, var(--ds-cell));
-  grid-template-rows: repeat(20, var(--ds-cell));
-  gap: 2px;
-  padding: 12px;
-  background: var(--color-surface);
-  border-radius: 12px;
-  border: 2px solid var(--color-border);
-  margin: 0 auto;
-  width: fit-content;
-}
-
-.drop-square-cell {
-  width: var(--ds-cell);
-  height: var(--ds-cell);
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid var(--color-border);
-  border-radius: 4px;
-  transition: all 0.1s;
-  position: relative;
-}
-
-.drop-square-cell.occupied {
-  background: rgba(0, 229, 255, 0.6);
-  border-color: #00e5ff;
-  box-shadow: inset 0 0 8px rgba(0, 229, 255, 0.3);
-}
-
-.drop-square-cell.current {
-  background: rgba(138, 43, 226, 0.5);
-  border-color: #8a2be2;
-  box-shadow: inset 0 0 12px rgba(138, 43, 226, 0.4);
-}
-
-.drop-square-score {
-  display: flex;
-  justify-content: space-around;
-  gap: 1rem;
-  padding: 0.75rem;
-  background: var(--color-surface);
-  border-radius: 8px;
-  border: 1px solid var(--color-border);
-  font-size: 0.95rem;
-  font-weight: 600;
-}
-
-/* ── Snake Game Styles ── */
-.snake-game-wrapper {
-  width: 100%;
-  max-width: 500px;
-  margin: 0 auto;
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.snake-game-board {
-  /* Cell budget: wrapper is max 500px (≈464 content after padding/border).
-     20×cell + 19×1gap + 16 padding ≤ 464 → cell ≤ 21.4. Cap at 22 for a
-     round number. */
-  --snake-cell: clamp(20px, calc((100vw - 64px) / 20), 22px);
-  display: grid;
-  grid-template-columns: repeat(20, var(--snake-cell));
-  grid-template-rows: repeat(20, var(--snake-cell));
-  gap: 1px;
-  padding: 8px;
-  background: var(--color-surface);
-  border-radius: 12px;
-  border: 2px solid var(--color-border);
-  margin: 0 auto;
-  width: 100%;
-  max-width: 100%;
-  min-width: 0;
-  box-sizing: border-box;
-}
-
-.snake-cell {
-  width: var(--snake-cell);
-  height: var(--snake-cell);
-  background: rgba(255, 255, 255, 0.03);
-  border: 0.5px solid rgba(255, 255, 255, 0.1);
-  border-radius: 2px;
-}
-
-.snake-cell.snake {
-  background: rgba(0, 229, 255, 0.7);
-  border-color: #00e5ff;
-  box-shadow: inset 0 0 4px rgba(0, 229, 255, 0.5);
-}
-
-.snake-cell.snake-head {
-  background: #00e5ff;
-  box-shadow: inset 0 0 6px rgba(0, 229, 255, 0.8);
-}
-
-.snake-cell.food {
-  background: rgba(34, 197, 94, 0.8);
-  border-color: #22c55e;
-  box-shadow: inset 0 0 6px rgba(34, 197, 94, 0.6);
-}
-
-.snake-game-info {
-  display: flex;
-  justify-content: space-around;
-  gap: 1rem;
-  padding: 0.75rem;
-  background: var(--color-surface);
-  border-radius: 8px;
-  border: 1px solid var(--color-border);
-  font-size: 0.9rem;
-}
-
-.snake-info-item {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.25rem;
-}
-
-.snake-info-value {
-  font-weight: 700;
-  color: var(--color-accent);
-  font-size: 1.1rem;
-}
-
-/* ── Voxel Shooter Styles ── */
-.voxel-wrapper {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  min-height: 500px;
-}
-
-.voxel-loading {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 1rem;
-  padding: 2rem;
-  text-align: center;
-}
-
-.spinner {
-  width: 48px;
-  height: 48px;
-  border: 4px solid rgba(0, 229, 255, 0.2);
-  border-top-color: #00e5ff;
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-.voxel-menu {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1.5rem;
-  padding: 2rem;
-  background: linear-gradient(135deg, rgba(0, 0, 0, 0.4), rgba(20, 20, 30, 0.4));
-  border-radius: 12px;
-  border: 1px solid var(--color-border);
-  max-width: 400px;
-  text-align: center;
-}
-
-.voxel-menu h2 {
-  font-size: 2rem;
-  margin: 0;
-  color: var(--color-accent);
-}
-
-.voxel-menu p {
-  color: var(--color-text-secondary);
-  margin: 0;
-}
-
-.voxel-controls-info {
-  padding: 1rem;
-  background: rgba(0, 229, 255, 0.1);
-  border: 1px solid rgba(0, 229, 255, 0.3);
-  border-radius: 8px;
-  font-size: 0.9rem;
-}
-
-.voxel-controls-info p {
-  margin: 0.25rem 0;
-  color: #00e5ff;
-}
-
-.voxel-features {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 0.75rem;
-  width: 100%;
-}
-
-.voxel-features span {
-  padding: 0.5rem 1rem;
-  background: rgba(0, 229, 255, 0.1);
-  border: 1px solid rgba(0, 229, 255, 0.3);
-  border-radius: 6px;
-  font-size: 0.85rem;
-  color: #00e5ff;
-}
-
-.start-btn {
-  padding: 0.75rem 2rem;
-  background: var(--color-accent);
-  border: none;
-  color: white;
-  font-size: 1rem;
-  font-weight: 600;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.start-btn:hover {
-  filter: brightness(1.1);
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 229, 255, 0.3);
-}
-
-.voxel-game-area {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-}
-
-.voxel-hud {
-  display: flex;
-  justify-content: space-around;
-  gap: 1rem;
-  padding: 0.75rem 1.5rem;
-  background: var(--color-surface);
-  border-bottom: 1px solid var(--color-border);
-  font-weight: 600;
-  color: var(--color-accent);
-}
-
-.voxel-placeholder-3d {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 1rem;
-  background: linear-gradient(135deg, rgba(0, 0, 0, 0.6), rgba(20, 20, 30, 0.6));
-  color: var(--color-text-secondary);
-  text-align: center;
-  padding: 2rem;
-}
-
-.voxel-placeholder-3d p {
-  margin: 0;
-  font-size: 1.1rem;
-}
-
 /* ── FunQuiz multiplayer: reconnecting banner ── */
 .fq-reconnecting {
   display: flex;
@@ -779,7 +505,7 @@
 .fq-split__score {
   font-size: 1.4rem;
   font-weight: 700;
-  color: #facc15;
+  color: var(--accent-amber);
 }
 
 .fq-split__streak {
@@ -847,7 +573,7 @@
 }
 
 .fq-split__opt--picked {
-  border-color: #facc15;
+  border-color: var(--accent-amber);
   background: rgba(250, 204, 21, 0.18);
   box-shadow: 0 0 0 2px rgba(250, 204, 21, 0.45) inset;
 }
@@ -871,7 +597,7 @@
   width: 22px;
   height: 22px;
   border-radius: 50%;
-  background: #facc15;
+  background: var(--accent-amber);
   color: #1e293b;
   display: inline-flex;
   align-items: center;
@@ -983,60 +709,11 @@
 }
 .app-error-boundary__btn:hover { filter: brightness(1.1); }
 
-/* ── Home page activity stream ── */
-.home-activity {
-  margin: 16px auto 0;
-  max-width: 960px;
-  padding: 14px 16px;
-  border-radius: 14px;
-  background: rgba(15, 23, 42, 0.55);
-  border: 1px solid rgba(148, 163, 184, 0.18);
-}
+/* Home page activity-stream styles removed from this global sheet — they were a
+   stale duplicate of the scoped rules in Index.razor.css (which win on the home
+   page anyway). Nothing else consumes `.home-activity*`. */
 
-.home-activity__title {
-  margin: 0 0 8px;
-  font-size: 13px;
-  font-weight: 700;
-  color: #cbd5e1;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.home-activity__list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 8px;
-}
-
-.home-activity__item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
-  background: rgba(30, 41, 59, 0.6);
-  border: 1px solid rgba(148, 163, 184, 0.1);
-  border-radius: 10px;
-  font-size: 13px;
-  color: #e2e8f0;
-}
-
-.home-activity__item a {
-  color: #93c5fd;
-  text-decoration: none;
-}
-
-.home-activity__item a:hover { text-decoration: underline; }
-
-.home-activity__time {
-  margin-left: auto;
-  font-size: 11px;
-  color: rgba(226, 232, 240, 0.55);
-  white-space: nowrap;
-}
-
-/* ── Profile skeleton loader ── */
+/* ── Profile skeleton loader (used by ProfilePage) ── */
 .profile-skel {
   margin: 16px auto;
   max-width: 720px;
@@ -1090,22 +767,6 @@
 @keyframes profile-shimmer {
   0%   { background-position: 200% 0; }
   100% { background-position: -200% 0; }
-}
-}
-
-.voxel-placeholder-3d button {
-  padding: 0.6rem 1.5rem;
-  background: var(--color-accent);
-  border: none;
-  color: white;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.2s;
-  font-weight: 600;
-}
-
-.voxel-placeholder-3d button:hover {
-  filter: brightness(1.1);
 }
 
 /* ── Unified `.gps-*` game styles (consistency pass 2026-07-01) ──
@@ -1269,7 +930,7 @@
   font-size: 0.9rem;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.18s ease;
+  transition: filter 0.18s ease, border-color 0.18s ease, color 0.18s ease;
   border: 1px solid transparent;
   background: var(--color-surface-hover);
   color: var(--color-text-primary);
@@ -1345,7 +1006,7 @@
   padding: 0.5rem 0.75rem;
   border-radius: 8px;
   font-size: 0.9rem;
-  color: #facc15;
+  color: var(--accent-amber);
   background: rgba(250, 204, 21, 0.08);
   border: 1px solid rgba(250, 204, 21, 0.3);
 }
@@ -1417,6 +1078,55 @@
 
 /* ── PoFunQuiz (`.fq-*` aliases) ── */
 .fq-join { display: flex; flex-direction: column; gap: 0.75rem; }
+
+/* Pre-game setup form (name + category). Replaces the old bare inline
+   `<label>` fields with a proper labelled-field stack so the landing card
+   matches the rest of the shell (surface tokens, focus ring, radius). */
+.fq-setup {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  width: 100%;
+  text-align: left;
+}
+/* The two name inputs pair up side-by-side on a wide card and collapse to a
+   single column on narrow ones. auto-fit means solo mode's lone field spans
+   the full width without an empty cell. */
+.fq-names {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 1rem;
+}
+.fq-field { display: flex; flex-direction: column; gap: 0.4rem; }
+.fq-field label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+}
+.fq-field input,
+.fq-field select {
+  width: 100%;
+  padding: 0.65rem 0.85rem;
+  background: var(--color-surface-hover);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+  border-radius: 10px;
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  transition: border-color var(--dur-fast) var(--ease-standard),
+              box-shadow var(--dur-fast) var(--ease-standard);
+}
+.fq-field select { cursor: pointer; }
+.fq-field input::placeholder { color: var(--color-text-secondary); opacity: 0.55; }
+.fq-field input:focus-visible,
+.fq-field select:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+
 /* Buttons consolidated into `.gps-btn*` above (NET_CLEAN_10). */
 .fq-error { color: #fca5a5; font-weight: 600; }
 .fq-question { display: flex; flex-direction: column; gap: 0.75rem; }
@@ -1425,7 +1135,7 @@
 .fq-option {
   display: inline-flex; align-items: center; justify-content: flex-start; gap: 0.4rem;
   padding: 0.6rem 1.25rem; border-radius: 8px; font-size: 0.9rem; font-weight: 600;
-  cursor: pointer; transition: all 0.18s ease; border: 1px solid var(--color-border);
+  cursor: pointer; transition: filter 0.18s ease, background 0.18s ease, color 0.18s ease, border-color 0.18s ease; border: 1px solid var(--color-border);
   background: var(--color-surface-hover); color: var(--color-text-primary);
   width: 100%; text-align: left;
 }
@@ -1433,6 +1143,87 @@
 .fq-option:disabled { opacity: 0.5; cursor: not-allowed; }
 .fq-option--selected { background: var(--color-accent); color: #fff; border-color: var(--color-accent); }
 .fq-results { display: flex; flex-direction: column; gap: 0.75rem; }
+
+/* ── PoFunQuiz leaderboard page. Was completely unstyled (bare browser buttons
+   + default table); these rules bring it in line with the rest of the shell:
+   a card wrapper, a scrollable segmented category selector with real tap
+   targets, and a token-styled score table. ── */
+.fq-leaderboard {
+  width: min(94vw, 560px);
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.25rem 1.25rem 1rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  box-shadow: var(--elevation-1);
+  text-align: left;
+}
+/* Category selector: a horizontally scrollable pill row so all 8 categories
+   stay reachable on a phone without wrapping into a cramped 9-target grid. */
+.fq-leaderboard-tabs {
+  display: flex;
+  gap: 0.4rem;
+  overflow-x: auto;
+  padding-bottom: 0.35rem;
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
+}
+.fq-leaderboard-tab {
+  flex: 0 0 auto;
+  min-height: 40px;
+  padding: 0.5rem 0.9rem;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-hover);
+  color: var(--color-text-secondary);
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-standard),
+              color var(--dur-fast) var(--ease-standard),
+              background var(--dur-fast) var(--ease-standard);
+}
+.fq-leaderboard-tab:hover { color: var(--color-text-primary); border-color: var(--color-text-secondary); }
+.fq-leaderboard-tab--active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.fq-leaderboard-tab:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+.fq-leaderboard-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+.fq-leaderboard-table thead th {
+  text-align: left;
+  padding: 0.4rem 0.5rem;
+  font-size: 0.7rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+  border-bottom: 1px solid var(--color-border);
+}
+.fq-leaderboard-table tbody td {
+  padding: 0.45rem 0.5rem;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+.fq-leaderboard-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 0.25rem;
+}
 
 /* ── PoFace (`.pf-*` aliases) ── */
 .pf-home { display: flex; flex-direction: column; gap: 0.75rem; }
@@ -1532,273 +1323,6 @@
 .pf-table th { color: var(--color-text-secondary); font-weight: 600; }
 .pf-table tr:last-child td { border-bottom: 0; }
 
-/* ── PoBabyTouch (`.baby-touch-*`, `.bubble`) ── */
-.baby-touch-wrapper {
-  width: 100%;
-  max-width: 600px;
-  margin: 0 auto;
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-.baby-touch-timer,
-.baby-touch-score {
-  padding: 0.5rem 1rem;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  font-weight: 700;
-  font-size: 1rem;
-  text-align: center;
-}
-.baby-touch-board {
-  position: relative;
-  width: 100%;
-  aspect-ratio: 4 / 3;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 12px;
-  overflow: hidden;
-  cursor: pointer;
-}
-.bubble {
-  position: absolute;
-  left: var(--bx, 50%);
-  top: var(--by, 50%);
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(0, 229, 255, 0.8), rgba(99, 102, 241, 0.6));
-  border: 2px solid #00e5ff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1.1rem;
-  font-weight: 700;
-  color: #fff;
-  box-shadow: 0 0 12px rgba(0, 229, 255, 0.4);
-  cursor: pointer;
-  animation: bubble-float 2s ease-in-out infinite;
-  user-select: none;
-}
-.bubble.popped { animation: bubble-pop 0.25s ease-out forwards; }
-@keyframes bubble-float { 50% { transform: translateY(-4px); } }
-@keyframes bubble-pop  to { transform: scale(1.4); opacity: 0; }
-
-/* ── HorseRace (`.horse-*`, `.race-*`) ── */
-.horse-race-wrapper { width: 100%; max-width: 720px; margin: 0 auto; display: flex; flex-direction: column; gap: 1rem; padding: 0.5rem; }
-.race-track { display: flex; flex-direction: column; gap: 0.4rem; }
-.horse-lane {
-  display: grid;
-  grid-template-columns: 36px 1fr 80px;
-  gap: 0.5rem;
-  align-items: center;
-  padding: 0.5rem 0.75rem;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-}
-.horse-icon { font-size: 1.3rem; text-align: center; }
-.track {
-  position: relative;
-  height: 24px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid var(--color-border);
-  border-radius: 4px;
-  overflow: hidden;
-}
-.horse {
-  position: absolute;
-  left: var(--horse-pos, 0%);
-  top: 50%;
-  width: 24px;
-  height: 24px;
-  transform: translateY(-50%);
-  background: var(--color-accent);
-  border-radius: 50%;
-  transition: left 0.1s linear;
-  cursor: pointer;
-  box-shadow: 0 0 6px var(--color-accent);
-}
-.horse.selected { background: #facc15; box-shadow: 0 0 8px #facc15; }
-.finish-line {
-  position: absolute;
-  right: 0; top: 0; bottom: 0;
-  width: 3px;
-  background: repeating-linear-gradient(180deg, #fff 0 6px, #000 6px 12px);
-}
-.horse-name { font-size: 0.85rem; color: var(--color-text-secondary); text-align: right; }
-.race-result {
-  text-align: center;
-  font-size: 1.1rem;
-  font-weight: 700;
-  color: var(--color-accent);
-  margin-top: 0.5rem;
-  min-height: 1.5rem;
-}
-.race-boost { display: flex; align-items: center; justify-content: center; gap: 0.5rem; flex-wrap: wrap; margin: 0.6rem 0; text-align: center; }
-.race-boost__count { margin-left: 0.6rem; }
-
-/* ── RaceRagdoll (`.ragdoll-*`, `.racer-*`) ── */
-.ragdoll-wrapper { width: 100%; max-width: 720px; margin: 0 auto; display: flex; flex-direction: column; gap: 1rem; padding: 0.5rem; }
-.ragdoll-arena { display: flex; flex-direction: column; gap: 0.75rem; }
-.betting-phase { display: flex; flex-direction: column; gap: 0.75rem; }
-.balance,
-.current-bet { font-size: 1rem; font-weight: 600; }
-.racers { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.5rem; }
-.racer-card {
-  padding: 0.75rem 1rem;
-  background: var(--color-surface);
-  border: 2px solid var(--color-border);
-  border-radius: 8px;
-  cursor: pointer;
-  text-align: center;
-  transition: all 0.15s;
-}
-.racer-card:hover { border-color: var(--color-accent); }
-.racer-card.selected { border-color: #facc15; background: rgba(250, 204, 21, 0.1); }
-.racer-name { font-weight: 700; }
-.racer-odds { font-size: 0.85rem; color: var(--color-text-secondary); }
-.bet-controls { display: flex; gap: 0.5rem; flex-wrap: wrap; justify-content: center; }
-.bet-controls button {
-  display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem;
-  padding: 0.6rem 1.25rem; border-radius: 8px; font-size: 0.9rem; font-weight: 600;
-  cursor: pointer; transition: all 0.18s ease; border: 1px solid var(--color-border);
-  background: var(--color-surface-hover); color: var(--color-text-primary);
-}
-.bet-controls button:hover { filter: brightness(1.1); }
-/* `.start-race-btn` removed (NET_CLEAN_10) — orphan (0 call sites); race boost
-   button now uses canonical `.gps-btn.gps-btn--primary` with the `.race-boost__boost`
-   modifier below for the slightly larger font/padding. */
-.race-boost__boost { font-size: 1.1rem; padding: 0.5rem 1.4rem; }
-.racing-phase { display: flex; flex-direction: column; gap: 0.75rem; }
-.race-progress {
-  height: 12px;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
-  overflow: hidden;
-}
-  height: 100%;
-  width: var(--rp, 0%);
-  background: var(--rc, var(--color-accent));
-  transition: width 0.1s linear;
-
-.progress-fill { height: 100%; transition: width 0.1s linear; }
-.race-info { display: flex; flex-direction: column; gap: 0.75rem; align-items: center; }
-.payout { font-weight: 700; color: #4ade80; }
-.race-info button {
-  display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem;
-  padding: 0.6rem 1.25rem; border-radius: 8px; font-size: 0.9rem; font-weight: 600;
-  cursor: pointer; transition: all 0.18s ease;
-  background: transparent; border: 1px solid var(--color-border); color: var(--color-text-secondary);
-}
-.race-info button:hover { border-color: var(--color-text-secondary); color: var(--color-text-primary); }
-
-/* ── SnakeGame (`.snake-board` / `.snake-dpad` / `.snake-score-*`) ──
-   The markup uses `.snake-board` (not `.snake-game-board`). We forward
-   the existing `.snake-game-board` styles so the new markup renders. */
-.snake-board {
-  /* Mirror the .snake-game-board budget so markup using either class name
-     renders identically. Cap at 22px so the intrinsic grid (≈ 484px)
-     always fits the 500px wrapper. */
-  --snake-cell: clamp(20px, calc((100vw - 64px) / 20), 22px);
-  display: grid;
-  grid-template-columns: repeat(20, var(--snake-cell));
-  grid-template-rows: repeat(20, var(--snake-cell));
-  gap: 1px;
-  padding: 8px;
-  background: var(--color-surface);
-  border-radius: 12px;
-  border: 2px solid var(--color-border);
-  margin: 0 auto;
-  width: 100%;
-  max-width: 100%;
-  min-width: 0;
-  box-sizing: border-box;
-}
-.snake-cell {
-  width: var(--snake-cell);
-  height: var(--snake-cell);
-  background: rgba(255, 255, 255, 0.03);
-  border: 0.5px solid rgba(255, 255, 255, 0.1);
-  border-radius: 2px;
-}
-.snake-cell.snake      { background: rgba(0, 229, 255, 0.7); border-color: #00e5ff; box-shadow: inset 0 0 4px rgba(0, 229, 255, 0.5); }
-.snake-cell.snake-head { background: #00e5ff; box-shadow: inset 0 0 6px rgba(0, 229, 255, 0.8); }
-.snake-cell.food       { background: rgba(34, 197, 94, 0.8); border-color: #22c55e; box-shadow: inset 0 0 6px rgba(34, 197, 94, 0.6); }
-.snake-score-display {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 0.6rem;
-  padding: 0.6rem 1rem;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-}
-.snake-score-label { font-size: 0.8rem; color: var(--color-text-secondary); text-transform: uppercase; }
-.snake-score-value { font-size: 1.4rem; font-weight: 700; color: var(--color-accent); }
-.snake-instructions { text-align: center; }
-.snake-instructions p { margin: 0.25rem 0; }
-.snake-start-btn {
-  display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem;
-  padding: 0.6rem 1.25rem; border-radius: 8px; font-size: 0.9rem; font-weight: 600;
-  cursor: pointer; transition: all 0.18s ease;
-  background: var(--color-accent); color: #fff; border: 1px solid var(--color-accent);
-  margin-bottom: 0.4rem;
-}
-.snake-dpad-btn {
-  display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem;
-  padding: 0; border-radius: 8px; font-size: 1.2rem; font-weight: 600;
-  cursor: pointer; transition: all 0.18s ease; border: 1px solid var(--color-border);
-  background: var(--color-surface-hover); color: var(--color-text-primary);
-  width: 3rem; height: 3rem;
-}
-
-/* ── Responsive Game Styles ──
-   (Connect Five's phone breakpoints moved to its scoped razor.css alongside the
-   rest of its board rules — §2 style isolation.) */
-
-/* Audit fix #3: PoDropSquare + PoSnakeGame boards overflow the viewport on
-   portrait phones (428px / 463px board width inside a 390px viewport). Cap
-   the cell size on small screens so both 10x20 and 20x20 boards fit, AND
-   clamp the board's max-width to the viewport so any padding/border/gap
-   can't push the body wider than the screen. */
-@media (max-width: 480px) {
-  /* DropSquare: 10 cols, 1px gap × 9, 8px padding × 2, 2px border × 2.
-     Wrapper content area on a 390vp device is roughly 327px (after game-area
-     padding). cells = (327-9-16)/10 ≈ 30. Shrink clamp lower bound so even
-     narrow phones fit. The grid's intrinsic width uses these values, so the
-     board sizes itself naturally — no need to override width. */
-  .drop-square-board {
-    --ds-cell: clamp(16px, calc((100vw - 96px) / 10), 32px);
-    padding: 6px;
-  }
-  .drop-square-wrapper { padding: 0 0.25rem; }
-
-  /* Snake: 20 cols, 1px gap × 19, 8px padding × 2, 2px border × 2.
-     Content budget on 390vp wrapper ≈ 327px. cells = (327-19-16)/20 ≈ 14.6.
-     Clamp(10, (100vw-110)/20, 22) on 390vp ≈ 14px — fits perfectly. */
-  .snake-board {
-    --snake-cell: clamp(10px, calc((100vw - 110px) / 20), 22px);
-    padding: 6px;
-    gap: 1px;
-  }
-  .snake-game-board {
-    --snake-cell: clamp(10px, calc((100vw - 110px) / 20), 22px);
-    padding: 6px;
-    gap: 1px;
-  }
-
-  .baby-touch-board {
-    aspect-ratio: auto;
-    min-height: 320px;
-  }
-  .racer-card { padding: 0.5rem 0.75rem; }
-  .bet-controls button { padding: 0.4rem 0.75rem; font-size: 0.8rem; }
-}
-
 /* ── First-run "how to play" onboarding (GameShell) ─────────────────────────
    The "?" recall button lives in the consolidated game header; the overlay
    reuses the shared gps-modal so onboarding looks identical in every game. */
@@ -1816,33 +1340,104 @@
   flex: 0 0 auto;
 }
 
-.gps-howto-btn:hover {
+.gps-howto-btn:hover,
+.gps-howto-btn.is-open {
   color: var(--color-text-primary, #e8eaf6);
   border-color: currentColor;
+  background: rgba(150, 160, 220, 0.08);
 }
 
-.gps-howto-modal { max-width: 420px; }
+/* ── How-to-play popover (2026-07-12) ──────────────────────────────────────
+   Replaces the previous full-screen modal: no overlay backdrop, no
+   auto-show on first visit. The popover sits at the top of the game area
+   inside .gps-shell, anchored to whichever side has free space, and is
+   dismissed by clicking outside it, the × button, or the Got it button. */
 
-.gps-howto-body {
+.gps-howto-popover {
+  position: relative;
+  max-width: min(420px, 100%);
+  margin: 0.75rem auto 0;
+  padding: 0.75rem 0.9rem 0.85rem;
+  background: var(--color-card-bg, #1c1f2e);
+  color: var(--color-text-primary, #e8eaf6);
+  border: 1px solid var(--color-border, rgba(150, 160, 220, 0.45));
+  border-radius: 12px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
   text-align: left;
+  font-size: 0.95rem;
+  line-height: 1.55;
+  /* Slide-down from the header so it feels like an extension of the "?" trigger */
+  animation: gps-howto-pop-in 160ms ease-out;
+}
+
+@keyframes gps-howto-pop-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.gps-howto-popover-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.45rem;
+}
+
+.gps-howto-popover-title {
+  font-weight: 700;
+  font-size: 1rem;
+  letter-spacing: 0.01em;
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.gps-howto-close {
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 50%;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--color-text-secondary, #9aa3c0);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  flex: 0 0 auto;
+  padding: 0;
+}
+
+.gps-howto-close:hover {
+  color: var(--color-text-primary, #e8eaf6);
+  border-color: var(--color-border, rgba(150, 160, 220, 0.45));
+}
+
+.gps-howto-popover-body {
   font-size: 0.95rem;
   line-height: 1.55;
 }
 
-.gps-howto-body ul {
+.gps-howto-popover-body ul {
   margin: 0.5rem 0 0;
   padding-left: 1.1rem;
 }
 
-.gps-howto-body li { margin-bottom: 0.3rem; }
+.gps-howto-popover-body li { margin-bottom: 0.3rem; }
 
-.gps-howto-body kbd {
+.gps-howto-popover-body kbd {
   padding: 0.05rem 0.4rem;
   border-radius: 4px;
   border: 1px solid var(--color-border, rgba(150, 160, 220, 0.45));
   background: rgba(0, 0, 0, 0.35);
   font-family: inherit;
   font-size: 0.85em;
+}
+
+.gps-howto-popover-actions {
+  margin-top: 0.75rem;
+  display: flex;
+  justify-content: flex-end;
 }
 
 /* ── Shared virtual touch controls (js/touchControls.js) ────────────────────

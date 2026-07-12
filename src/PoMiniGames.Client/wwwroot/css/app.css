@@ -151,6 +151,30 @@ html, body, #app {
   animation-timing-function: var(--ease-standard);
 }
 
+/* §7 a11y: honour reduced-motion for the cross-document transition too — the
+   root cross-fade is motion the user opted out of. Skipping the animation makes
+   the swap instant (the API still no-ops gracefully where unsupported). */
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation: none;
+  }
+}
+
+/* Conditional glass: when the OS/user asks to reduce transparency, collapse the
+   glassmorphism blur tokens to `none` in one place. Because every glass surface
+   consumes `--glass-*` via `backdrop-filter: var(--glass-N)`, this single
+   override strips the blur app-wide (a11y + a GPU win on low-power devices)
+   without editing a single component. The 2026 `prefers-reduced-transparency`
+   media feature; a no-op on browsers that don't yet support it. */
+@media (prefers-reduced-transparency: reduce) {
+  :root {
+    --glass-1: none;
+    --glass-2: none;
+    --glass-3: none;
+  }
+}
+
 body {
   font-family: var(--font-body);
 }

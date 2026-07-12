@@ -53,7 +53,7 @@
             <div class="pf-ready">
                 <h2 class="gps-phase-h">Round @(_currentRound + 1) of 5</h2>
                 <p class="pf-prompt">Make this face: <strong>@_currentEmotion</strong></p>
-                <video id="pf-webcam-preview" autoplay playsinline muted style="max-width:100%;border-radius:8px;"></video>
+                <video id="pf-webcam-preview" autoplay playsinline muted class="pf-webcam-preview"></video>
                 <div id="pf-frozen-overlay" class="pf-frozen-overlay"></div>
                 <div class="pf-actions">
                     <button class="gps-btn gps-btn gps-btn--primary" @onclick="CaptureAndScore">📸 Capture</button>
@@ -72,7 +72,7 @@
             <div class="pf-reveal">
                 <h2 class="gps-phase-h">Round @(_currentRound + 1) result</h2>
                 <p>Target: <strong>@_currentEmotion @EmojiFor(_currentEmotion)</strong></p>
-                <p>You picked: <strong style="font-size:1.6rem;">@EmojiFor(_picked)</strong></p>
+                <p>You picked: <strong class="pf-picked-emoji">@EmojiFor(_picked)</strong></p>
                 <p>@(_lastCorrect ? $"✅ Correct! +{_lastPoints} (speed bonus)" : "❌ Not quite")</p>
                 @if (_streak > 1)
                 {
@@ -178,7 +178,7 @@
             else if (_phase == "DemoReveal")
             {
                 <p class="pf-reveal-line">
-                    <span style="font-size:1.6rem;">@EmojiFor(_picked)</span>
+                    <span class="pf-picked-emoji">@EmojiFor(_picked)</span>
                     ✅ Correct! +@_lastPoints
                     @if (_streak > 1)
                     {
@@ -208,7 +208,7 @@
         @if (_isDemo)
         {
             <div>🎮 Demo highlight · Total: <strong>@_finalTotal</strong> / 50</div>
-            <div style="opacity:.7;font-size:.9em;">Auto-restarts in 5 s…</div>
+            <div class="pf-autorestart">Auto-restarts in 5 s…</div>
         }
         else
         {

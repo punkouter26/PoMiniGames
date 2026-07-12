@@ -23,8 +23,7 @@
            PlayAgainLabel="@(_mode == "1p" && _winner != 1 ? "🔄 REMATCH" : "🔄 Play Again")"
            OnPlayAgain="BackToSelect"
            GameSummary="@GameSummaryContent"
-           HowToPlay="@HowToPlayContent"
-           HowToPlayKey="@(_demo ? null : "pobrawl")">
+           HowToPlay="@HowToPlayContent">
     <div class="pb-wrap">
         <div id="pobrawl-container" class="pb-canvas-host"></div>
 

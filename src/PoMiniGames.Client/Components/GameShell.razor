@@ -27,12 +27,18 @@
             <span class="gps-header-status">@Status</span>
         }
 
-        @* First-run onboarding: a "?" recall button whenever the page supplies a
-           HowToPlay fragment. The overlay also auto-shows once per game (keyed by
-           HowToPlayKey in localStorage) so new players always see the controls. *@
+        @* Compact popover trigger: clicking "?" toggles a small inline help panel.
+           Per the 2026-07-12 simplification, the modal no longer auto-shows on
+           first visit; players open it on demand. Demo pages leave HowToPlay=null
+           to hide the button entirely. *@
         @if (HowToPlay != null)
         {
-            <button class="gps-howto-btn" @onclick="ShowHowTo" aria-label="How to play" title="How to play">?</button>
+            <button class="gps-howto-btn @(HowToPlayOpen ? "is-open" : null)"
+                    aria-label="How to play"
+                    title="How to play"
+                    aria-expanded="@HowToPlayOpen"
+                    aria-controls="gps-howto-popover"
+                    @onclick="ToggleHowTo">?</button>
         }
 
         @* Settings gear removed per 2026-07-06 header cleanup. The `ShowSettings`
@@ -43,7 +49,7 @@
 </SectionContent>
 
 <SwipeBack BackTo="@BackTo" Class="gps-shell-wrap">
-<div class="gps-shell">
+<div class="gps-shell" @onclick="OnShellClick">
     <div class="gps-game-area @(Fullscreen ? "gps-game-area--fullscreen" : "")">
         @ChildContent
     </div>
@@ -53,19 +59,22 @@
        (GameSummary), the persistent stats grid (Stats), and the two exit
        actions. There is intentionally no backdrop-dismiss — the player leaves
        via Play Again or Home. *@
-    @* How-to-play overlay: shown automatically on a game's first ever visit
-       (per-browser, keyed by HowToPlayKey) and on demand via the "?" button. *@
-    @if (_howToVisible && HowToPlay != null)
+    @* How-to-play popover: a small inline card toggled by the header "?". Replaces
+       the 2026-07-12 full-screen modal — no overlay, no auto-show, no localStorage.
+       The popover sits at the top of the game area and is dismissed by clicking
+       the "?" again, the Got it button, or anywhere outside the card. *@
+    @if (HowToPlayOpen && HowToPlay != null)
     {
-        <div class="gps-modal-overlay" role="presentation">
-            <div class="gps-modal gps-howto-modal" role="dialog" aria-modal="true" aria-label="How to play">
-                <div class="gps-modal-title">@Title</div>
-                <div class="gps-howto-body">@HowToPlay</div>
-                <div class="gps-play-again-actions">
-                    <button class="gps-play-again-btn gps-play-again-btn--primary" @onclick="DismissHowTo">👍 Got it</button>
-                </div>
+        <aside id="gps-howto-popover" class="gps-howto-popover" role="region" aria-label="How to play" @onclick:stopPropagation="true">
+            <div class="gps-howto-popover-head">
+                <span class="gps-howto-popover-title">@Title</span>
+                <button class="gps-howto-close" @onclick="DismissHowTo" aria-label="Close how to play" title="Close">×</button>
             </div>
-        </div>
+            <div class="gps-howto-popover-body">@HowToPlay</div>
+            <div class="gps-howto-popover-actions">
+                <button class="gps-btn gps-btn--secondary" @onclick="DismissHowTo">Got it</button>
+            </div>
+        </aside>
     }
 
     @if (GameOver)
@@ -135,40 +144,28 @@
     [Parameter] public bool ShowPlayAgain { get; set; } = true;
     [Parameter] public RenderFragment? GameSummary { get; set; }
     [Parameter] public RenderFragment ChildContent { get; set; } = null!;
-    // First-run onboarding: short "how to play" content (controls, goal). The
-    // overlay auto-shows once per HowToPlayKey (persisted per browser) and can
-    // always be recalled with the header "?" button. Pass a null key (e.g. in
-    // demo mode) to disable the auto-show while keeping the button.
+    // Optional "how to play" content. Surfaces as a compact popover toggled by the
+    // header "?" button — no full-screen modal, no auto-show, no persisted
+    // dismissal. Pass null (demo pages) to hide the trigger entirely.
     [Parameter] public RenderFragment? HowToPlay { get; set; }
-    [Parameter] public string? HowToPlayKey { get; set; }
+    // Optional initial open state. False by default so first-time visitors land on
+    // the playable game without an interstitial. Hosts that want the popover open
+    // by default (e.g. kiosk layout previews) can opt in here.
+    [Parameter] public bool HowToPlayOpen { get; set; }
 
     [Inject] private NavigationManager Navigation { get; set; } = null!;
 
-    private bool _howToVisible;
+    private void ToggleHowTo() => HowToPlayOpen = !HowToPlayOpen;
 
-    protected override void OnAfterRender(bool firstRender)
+    private void DismissHowTo() => HowToPlayOpen = false;
+
+    // The popover itself stops propagation, so any click that reaches the shell
+    // container is "outside the popover" — close it. Host pages that listen on
+    // <ChildContent> elements keep their own click handlers (the outer click
+    // bubbles here only after them, but the dismissal is idempotent).
+    private void OnShellClick()
     {
-        if (!firstRender || HowToPlay == null || string.IsNullOrEmpty(HowToPlayKey)) return;
-        try
-        {
-            if (Services.LocalStorageService.GetItem<string>($"pomini_howto_{HowToPlayKey}") != "1")
-            {
-                _howToVisible = true;
-                StateHasChanged();
-            }
-        }
-        catch { /* pre-render — skip the auto-show */ }
-    }
-
-    private void ShowHowTo() => _howToVisible = true;
-
-    private void DismissHowTo()
-    {
-        _howToVisible = false;
-        if (!string.IsNullOrEmpty(HowToPlayKey))
-        {
-            Services.LocalStorageService.SetItem($"pomini_howto_{HowToPlayKey}", "1");
-        }
+        if (HowToPlayOpen) HowToPlayOpen = false;
     }
 
     private void NavigateBack() => Navigation.NavigateTo(BackTo);

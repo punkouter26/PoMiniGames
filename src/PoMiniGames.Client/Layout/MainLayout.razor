@@ -37,13 +37,18 @@
 
         @* Consolidated game header: the active game (via GameShell) projects its
            status + settings into this single top bar, so game pages no longer
-           render a separate second row. Empty on non-game pages. *@
-        <div class="gl-top-bar-game">
-            <SectionOutlet SectionName="game-header" />
+           render a separate second row. Empty on non-game pages. The game's
+           status lives on the right of the middle rail (after the FPS counter)
+           so the FPS pill sits closer to the visual centre, between the brand
+           on the left and the session controls on the right. *@
+        <div class="gl-top-bar-center">
+            <FpsCounter />
+            <div class="gl-top-bar-game">
+                <SectionOutlet SectionName="game-header" />
+            </div>
         </div>
 
         <div class="gl-auth">
-            <FpsCounter />
             @* ⚙️ Global settings: master mute + FPS badge, shared by every game. *@
             <details class="gl-overflow-menu gl-settings-menu">
                 <summary class="gl-overflow-trigger" aria-label="Settings">⚙️</summary>
@@ -99,7 +104,7 @@
                    horizontal space with the Sign in button. *@
                 @if (!AuthState.IsAuthenticated)
                 {
-                    <details class="gl-overflow-menu">
+                    <details class="gl-overflow-menu gl-overflow-menu--anon">
                         <summary class="gl-overflow-trigger" aria-label="More">⋯</summary>
                         <div class="gl-overflow-panel">
                             <button class="gl-overflow-item" @onclick="SignInAnon">Continue as anonymous</button>

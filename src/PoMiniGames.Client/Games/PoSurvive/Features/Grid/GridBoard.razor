@@ -6,8 +6,7 @@
 @inject IDispatcher Dispatcher
 @inject IState<SimulationState> SimState
 
-<div class="grid-board" data-testid="grid-board"
-     style="display:grid;grid-template-columns:repeat(10,1fr);gap:2px;"
+<div class="grid-board sv-grid-board" data-testid="grid-board"
      role="grid" aria-label="Simulation grid">
 
     @for (var row = 0; row < 10; row++)

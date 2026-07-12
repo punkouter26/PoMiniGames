@@ -30,7 +30,7 @@
                 var dur = d;
                 <button type="button" class="btn flex-fill font-monospace btn-duration @(_duration == dur ? "active" : "")"
                         @onclick="() => SetDurationAsync(dur)">
-                    @dur<span style="font-size: 0.7em; opacity: 0.75;">s</span>
+                    @dur<span class="bpm-unit">s</span>
                 </button>
             }
         </div>

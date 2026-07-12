@@ -18,10 +18,38 @@
            GameOver="@(_phase == "result" && !_demo)"
            OnPlayAgain="NewTrack"
            GameSummary="@GameSummaryContent">
-    <div class="mr-wrap">
-        <div id="marble-race-container" class="mr-canvas-host"></div>
+    @* 2026-07-12: stack the HUD BELOW the canvas inside a column flex
+       container, so the sticky top bar (z-sticky > z-modal) never clips the
+       HUD and the HUD never sits on top of the marble track. *@
+    <div class="mr-wrap-row">
+        <div class="mr-wrap">
+            <div id="marble-race-container" class="mr-canvas-host"></div>
 
-        @* Scoreboard / HUD *@
+            @* Pick overlay *@
+            @if (_phase == "pick" && !_demo)
+            {
+                <div class="mr-overlay">
+                    <div class="mr-pick-card">
+                        <h2 class="gps-phase-h">Pick your marble</h2>
+                        <p class="mr-pick-sub">Top 3 finish = +1 point. Watch your marble race!</p>
+                        <div class="mr-pick-grid">
+                            @for (int i = 0; i < 8; i++)
+                            {
+                                var idx = i;
+                                <button class="mr-pick-marble" style="--c:@Colors[idx]" @onclick="() => Pick(idx)" aria-label="@($"Pick marble {idx + 1}")">
+                                    <span class="mr-pick-ball"></span>
+                                </button>
+                            }
+                        </div>
+                    </div>
+                </div>
+            }
+
+            @* Race result is shown in the shared end-of-game modal (GameSummaryContent). *@
+        </div>
+
+        @* Scoreboard / HUD — stacked vertically beneath the canvas so it can
+           never collide with the marble track or be clipped by the top bar. *@
         <div class="mr-hud">
             <div class="mr-score-row">
                 <div class="mr-score"><span class="mr-score-label">SCORE</span><span class="mr-score-value">@_score</span></div>
@@ -37,6 +65,9 @@
                         <span class="mr-lb-place">@row.Place</span>
                         <span class="mr-lb-dot" style="background:@row.Color"></span>
                         <span class="mr-lb-speed">@row.Speed.ToString("0.0")</span>
+                        @* YOU / ✓ tags rendered last so CSS pins them to the
+                           top-right corner of the tile via the absolute rules
+                           in PoMarbleRacePage.razor.css. *@
                         @if (row.IsPlayer)
                         {
                             <span class="mr-lb-you-tag">YOU</span>
@@ -50,28 +81,6 @@
             </ol>
             <div class="mr-hint">Press <kbd>R</kbd> for a new track</div>
         </div>
-
-        @* Pick overlay *@
-        @if (_phase == "pick" && !_demo)
-        {
-            <div class="mr-overlay">
-                <div class="mr-pick-card">
-                    <h2 class="gps-phase-h">Pick your marble</h2>
-                    <p class="mr-pick-sub">Top 3 finish = +1 point. Watch your marble race!</p>
-                    <div class="mr-pick-grid">
-                        @for (int i = 0; i < 8; i++)
-                        {
-                            var idx = i;
-                            <button class="mr-pick-marble" style="--c:@Colors[idx]" @onclick="() => Pick(idx)" aria-label="@($"Pick marble {idx + 1}")">
-                                <span class="mr-pick-ball"></span>
-                            </button>
-                        }
-                    </div>
-                </div>
-            </div>
-        }
-
-        @* Race result is shown in the shared end-of-game modal (GameSummaryContent). *@
     </div>
 </GameShell>
 

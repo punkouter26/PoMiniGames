@@ -1,0 +1,13 @@
+.pf-webcam-preview {
+    max-width: 100%;
+    border-radius: 8px;
+}
+
+.pf-picked-emoji {
+    font-size: 1.6rem;
+}
+
+.pf-autorestart {
+    opacity: .7;
+    font-size: .9em;
+}

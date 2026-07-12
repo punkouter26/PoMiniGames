@@ -39,11 +39,13 @@
                 <span class="gl-brand-text">PoMiniGames</span>
             </a>
         </div>
-        <div class="gl-top-bar-game">
-            <SectionOutlet SectionName="game-header" />
+        <div class="gl-top-bar-center">
+            <FpsCounter />
+            <div class="gl-top-bar-game">
+                <SectionOutlet SectionName="game-header" />
+            </div>
         </div>
         <div class="gl-auth">
-            <FpsCounter />
             @if (AuthState.IsConfigured && !AuthState.IsLoading)
             {
                 <button class="gl-auth-button" @onclick="AuthState.IsAuthenticated ? SignOut : SignIn">

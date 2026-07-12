@@ -18,7 +18,9 @@ public static class UnifiedLeaderboardEndpoints
     private static readonly (string Key, string Title)[] WinRateGames =
     [
         ("connectfive", "Connect Five"),
-        ("tictactoe", "Tic Tac Toe"),
+        // Renamed to "Connect Six" (6×6 / 4-in-a-row grid) to match the catalog,
+        // profile, and in-game labels; the storage key stays "tictactoe".
+        ("tictactoe", "Connect Six"),
     ];
 
     public static IEndpointRouteBuilder MapUnifiedLeaderboardEndpoints(this IEndpointRouteBuilder app)

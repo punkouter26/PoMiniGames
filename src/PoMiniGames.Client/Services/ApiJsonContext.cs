@@ -37,6 +37,8 @@ namespace PoMiniGamesClient.Services;
 [JsonSerializable(typeof(PoBrawlLadderEntry[]))]
 [JsonSerializable(typeof(PoClickHighScore))]
 [JsonSerializable(typeof(PoClickHighScore[]))]
+[JsonSerializable(typeof(PoReflexHighScore))]
+[JsonSerializable(typeof(PoReflexHighScore[]))]
 [JsonSerializable(typeof(PendingPlayerStats))]
 [JsonSerializable(typeof(LeaderboardEntryDto))]
 [JsonSerializable(typeof(GameLeaderboardDto))]

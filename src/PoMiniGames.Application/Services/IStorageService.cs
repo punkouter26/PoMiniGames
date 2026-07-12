@@ -33,4 +33,8 @@ public interface IStorageService
     // PoClick High Scores (highest accuracy score wins)
     Task<List<PoClickHighScore>> GetPoClickHighScoresAsync(int limit = 10);
     Task<PoClickHighScore> SavePoClickHighScoreAsync(PoClickHighScore entry);
+
+    // PoReflex High Scores (lowest average reaction time wins)
+    Task<List<PoReflexHighScore>> GetPoReflexHighScoresAsync(int limit = 10);
+    Task<PoReflexHighScore> SavePoReflexHighScoreAsync(PoReflexHighScore entry);
 }

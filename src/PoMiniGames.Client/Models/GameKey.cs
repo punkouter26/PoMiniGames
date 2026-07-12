@@ -29,6 +29,7 @@ public readonly record struct GameKey(string Value)
 public static class GameKeys
 {
     public static readonly GameKey PoClick = new("poclick");
+    public static readonly GameKey PoReflex = new("poreflex");
     public static readonly GameKey ConnectFive = new("connectfive");
     public static readonly GameKey TicTacToe = new("tictactoe");
     public static readonly GameKey PoRacer = new("poracer");

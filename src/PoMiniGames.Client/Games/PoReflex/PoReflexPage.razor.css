@@ -1,0 +1,280 @@
+/* PoReflex — six stacked bars that expand L→R; the player stops each on sight.
+   Motion is GPU-only (transform/opacity) per the frontend hygiene rules: the live
+   sweep animates transform: scaleX, never layout width. */
+
+.rf-landing-copy {
+    color: var(--text-secondary, #cbd5e1);
+    line-height: 1.5;
+    margin: 0 0 0.75rem;
+}
+
+.rf-landing-warn {
+    color: var(--accent-warning, #f59e0b);
+    font-size: var(--text-sm, 0.875rem);
+    margin: 0;
+}
+
+.rf-arena {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 1rem;
+    width: 100%;
+    max-width: 640px;
+    margin: 0 auto;
+    padding: 0.5rem;
+    touch-action: manipulation;   /* kill the 300ms tap delay / double-tap zoom */
+    user-select: none;
+}
+
+.rf-progress {
+    text-align: center;
+    font-family: var(--font-heading, 'Orbitron', sans-serif);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    font-size: var(--text-sm, 0.875rem);
+    color: var(--text-muted, #94a3b8);
+}
+
+.rf-bars {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+}
+
+.rf-bar {
+    display: grid;
+    grid-template-columns: 2rem 1fr auto;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.rf-bar-index {
+    font-family: var(--font-heading, 'Orbitron', sans-serif);
+    font-size: var(--text-sm, 0.875rem);
+    color: var(--text-muted, #94a3b8);
+    text-align: center;
+}
+
+.rf-bar-track {
+    position: relative;
+    height: 2.25rem;
+    border-radius: 0.5rem;
+    background: var(--surface-3, rgba(15, 23, 42, 0.6));
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    overflow: hidden;
+}
+
+/* The fill is a full-width layer scaled from the left edge — scaleX is GPU-composited,
+   so the live sweep never triggers layout. Blazor sets width as the target fraction;
+   the live class overrides transform to sweep to full. */
+.rf-bar-fill {
+    position: absolute;
+    inset: 0;
+    transform-origin: left center;
+    transform: scaleX(0);
+    border-radius: inherit;
+    background: linear-gradient(90deg, var(--accent, #6366f1), var(--accent-cyan, #00e5ff));
+    will-change: transform;
+}
+
+.rf-bar--waiting .rf-bar-fill { transform: scaleX(0); }
+
+/* Go-live: sweep from empty to full over the sweep window. If the player never
+   stops, the bar simply fills — that's the visual clock they're racing. */
+.rf-bar--live .rf-bar-fill {
+    transform: scaleX(1);
+    transition: transform 2.6s linear;
+    background: linear-gradient(90deg, var(--accent-success, #4ade80), var(--accent-cyan, #00e5ff));
+}
+
+/* Frozen: the inline transform (set by the component to scaleX(reaction-fraction))
+   holds the bar exactly where it was when STOP was hit. transition:none means the
+   freeze is instant — no shrink, no re-grow, no second sweep. */
+.rf-bar--done .rf-bar-fill {
+    transition: none;
+    background: linear-gradient(90deg, var(--accent-success, #4ade80), var(--accent-success, #4ade80));
+    opacity: 0.85;
+}
+
+.rf-bar--fault .rf-bar-fill {
+    transition: none;
+    background: linear-gradient(90deg, var(--accent-danger, #f87171), var(--accent-danger, #f87171));
+}
+
+.rf-bar--live .rf-bar-track {
+    border-color: var(--accent-success, #4ade80);
+    box-shadow: 0 0 14px rgba(74, 222, 128, 0.35);
+}
+
+.rf-bar--fault .rf-bar-track {
+    border-color: var(--accent-danger, #f87171);
+    box-shadow: 0 0 14px rgba(248, 113, 113, 0.4);
+}
+
+.rf-bar-value {
+    min-width: 5.5rem;
+    text-align: right;
+    font-family: var(--font-heading, 'Orbitron', sans-serif);
+    font-size: var(--text-sm, 0.875rem);
+    font-variant-numeric: tabular-nums;
+    color: var(--text-secondary, #cbd5e1);
+}
+
+.rf-bar--live .rf-bar-value { color: var(--accent-success, #4ade80); }
+.rf-bar--fault .rf-bar-value { color: var(--accent-danger, #f87171); }
+.rf-bar--waiting .rf-bar-value { color: var(--text-muted, #94a3b8); }
+
+/* Full-width STOP affordance. Input is captured on the whole arena (pointerdown /
+   Space), so this is a visual target only — tabindex -1, aria-hidden. */
+.rf-stop {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.15rem;
+    padding: 1.1rem;
+    margin-top: 0.5rem;
+    border-radius: 0.9rem;
+    border: 2px solid transparent;
+    cursor: pointer;
+    background: var(--surface-2, rgba(17, 24, 39, 0.8));
+    transition: transform 0.08s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+}
+
+.rf-stop:active { transform: scale(0.98); }
+
+.rf-stop-word {
+    font-family: var(--font-heading, 'Orbitron', sans-serif);
+    font-size: var(--text-2xl, 2rem);
+    font-weight: 800;
+    letter-spacing: 3px;
+}
+
+.rf-stop-hint {
+    font-size: var(--text-xs, 0.75rem);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-muted, #94a3b8);
+}
+
+.rf-stop--wait {
+    border-color: rgba(148, 163, 184, 0.25);
+    opacity: 0.65;
+}
+.rf-stop--wait .rf-stop-word { color: var(--text-muted, #94a3b8); }
+
+.rf-stop--go {
+    border-color: var(--accent-success, #4ade80);
+    background: var(--accent-success-soft, rgba(74, 222, 128, 0.18));
+    box-shadow: 0 0 26px rgba(74, 222, 128, 0.4);
+    opacity: 1;
+}
+.rf-stop--go .rf-stop-word { color: var(--accent-success, #4ade80); }
+.rf-stop--go .rf-stop-hint { color: var(--accent-success, #4ade80); }
+
+/* End-of-run summary in the shared game-over modal. */
+.rf-summary {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+}
+
+.rf-summary-line {
+    color: var(--text-secondary, #cbd5e1);
+    font-size: var(--text-sm, 0.875rem);
+}
+
+.rf-summary-breakdown {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.4rem;
+    margin-top: 0.5rem;
+}
+
+.rf-chip {
+    padding: 0.25rem 0.55rem;
+    border-radius: 0.5rem;
+    background: var(--surface-3, rgba(15, 23, 42, 0.6));
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    font-size: var(--text-xs, 0.75rem);
+    font-variant-numeric: tabular-nums;
+    color: var(--text-secondary, #cbd5e1);
+}
+
+/* Results top-10 board — fastest average reaction time first (lower is better). */
+.rf-board {
+    width: 100%;
+    margin-top: 1rem;
+    padding-top: 0.85rem;
+    border-top: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.rf-board-heading {
+    font-family: var(--font-heading, 'Orbitron', sans-serif);
+    font-size: var(--text-xs, 0.75rem);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    text-align: center;
+    color: var(--accent-gold, #d4af37);
+    margin: 0 0 0.6rem;
+}
+
+.rf-board-empty {
+    text-align: center;
+    color: var(--text-muted, #94a3b8);
+    font-size: var(--text-sm, 0.875rem);
+    margin: 0;
+}
+
+.rf-board-rows {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.rf-board-row {
+    display: grid;
+    grid-template-columns: 2.25rem 1fr auto;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.3rem 0.5rem;
+    border-radius: 0.4rem;
+    font-size: var(--text-sm, 0.875rem);
+}
+
+.rf-board-row--me {
+    background: var(--accent-success-soft, rgba(74, 222, 128, 0.18));
+    border: 1px solid var(--accent-success, #4ade80);
+}
+
+.rf-board-rank { text-align: center; }
+
+.rf-board-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-secondary, #cbd5e1);
+}
+
+.rf-board-ms {
+    font-variant-numeric: tabular-nums;
+    font-family: var(--font-heading, 'Orbitron', sans-serif);
+    color: var(--text-primary, #f1f5f9);
+}
+
+.rf-summary--fault p {
+    color: var(--text-secondary, #cbd5e1);
+    text-align: center;
+    font-size: var(--text-sm, 0.875rem);
+    margin: 0.25rem 0 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .rf-bar--live .rf-bar-fill { transition: none; }
+}

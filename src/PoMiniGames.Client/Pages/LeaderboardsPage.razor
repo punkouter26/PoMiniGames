@@ -120,10 +120,9 @@
     private List<LeaderboardEntryDto> VisibleRows(GameLeaderboardDto board, string groupKey, int take)
         => board.Entries.Where(e => e.Name != PlaceholderName).Take(take).ToList();
 
-    // NetRun10 audit #6: mobile viewports collapse each board to a top-3
-    // short list to avoid the 5× doc-height overflow we measured at 390×844.
-    // Desktop keeps the full top-10.
-    private int BoardRowLimit() => Viewport.IsNarrow ? 3 : 10;
+    // Every board shows its top 3 so many games' boards fit on screen at once
+    // (was top-3 mobile / top-10 desktop). Keeps each section compact.
+    private int BoardRowLimit() => 3;
 
     protected override async Task OnInitializedAsync() => await Load();
 

@@ -242,6 +242,35 @@ public class ApiService
         }
     }
 
+    public async Task<PoReflexHighScore?> SubmitPoReflexHighScoreAsync(PoReflexHighScore entry)
+    {
+        try
+        {
+            // Stamp once; preserve across resync so the deterministic RowKey stays stable (no duplicates).
+            if (string.IsNullOrEmpty(entry.Date))
+                entry.Date = DateTime.UtcNow.ToString("O");
+            var response = await _http.PostAsJsonAsync("/api/poreflex/highscores", entry, ApiJsonContext.Default.PoReflexHighScore);
+            return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync(ApiJsonContext.Default.PoReflexHighScore) : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public async Task<PoReflexHighScore[]?> GetPoReflexHighScoresAsync(int count = 10)
+    {
+        try
+        {
+            return await _http.GetFromJsonAsync(
+                $"/api/poreflex/highscores?count={count}", ApiJsonContext.Default.PoReflexHighScoreArray);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     public async Task<PoBrawlHighScore[]?> GetPoBrawlHighScoresAsync(int count = 10)
     {
         try

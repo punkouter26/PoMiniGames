@@ -70,6 +70,7 @@ public static class UnifiedLeaderboardEndpoints
         result.Add(await BuildPoFaceAsync(faceBoard, limit));
         result.Add(await BuildPoBrawlAsync(storage, limit));
         result.Add(await BuildPoClickAsync(storage, limit));
+        result.Add(await BuildPoReflexAsync(storage, limit));
 
         // Boards with at least one REAL entry float to the top (every board is now
         // padded to `limit` with XXX placeholders, so raw count no longer ranks).
@@ -91,6 +92,7 @@ public static class UnifiedLeaderboardEndpoints
             "poface" => await BuildPoFaceAsync(faceBoard, limit),
             "pobrawl" => await BuildPoBrawlAsync(storage, limit),
             "poclick" => await BuildPoClickAsync(storage, limit),
+            "poreflex" => await BuildPoReflexAsync(storage, limit),
             _ => null,
         };
     }
@@ -173,6 +175,24 @@ public static class UnifiedLeaderboardEndpoints
             .ToList();
         PadWithPlaceholders(entries, limit, "0");
         return new GameLeaderboardDto("poclick", "PoClick", "Accuracy", HigherIsBetter: true, entries);
+    }
+
+    /// <summary>Best (lowest) average reaction time per player, milliseconds. Lower is better.</summary>
+    private static async Task<GameLeaderboardDto> BuildPoReflexAsync(IStorageService storage, int limit)
+    {
+        var scores = await storage.GetPoReflexHighScoresAsync(50);
+        var entries = scores
+            .Where(s => s.Score > 0)
+            .GroupBy(s => s.PlayerName)
+            .Select(g => (Name: g.Key, Best: g.Min(s => s.Score)))
+            .OrderBy(x => x.Best)
+            .Take(limit)
+            .Select((x, i) => new LeaderboardEntryDto(
+                i + 1, x.Name, x.Best,
+                x.Best.ToString("0", CultureInfo.InvariantCulture) + "ms"))
+            .ToList();
+        PadWithPlaceholders(entries, limit, "—");
+        return new GameLeaderboardDto("poreflex", "PoReflex", "Avg reaction", HigherIsBetter: false, entries);
     }
 
     /// <summary>Best race time per player (lower is better) from the PoRacer score table.</summary>

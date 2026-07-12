@@ -1,0 +1,419 @@
+@page "/poreflex"
+@page "/poreflex/{Demo:int}"
+@implements IAsyncDisposable
+@using PoMiniGamesClient.Enums
+@inject PlayerNameService PlayerNameService
+@inject IJSRuntime JSRuntime
+@inject GameResultService GameResults
+@inject ApiService Api
+@inject UiFeedbackService Feedback
+@inject KioskCoordinator Kiosk
+
+<GameShell
+    Title="@TitleContent"
+    Player="@_playerName"
+    GameOver="@_isGameOver"
+    OnPlayAgain="StartGame"
+    Stats="@_statItems"
+    Status="@StatusContent"
+    GameSummary="@GameSummaryContent"
+    HowToPlay="@HowToPlayContent">
+
+    @if (_phase == Phase.Landing)
+    {
+        <GameLanding Title="⚡ PoReflex" CtaText="▶ Start" OnStart="StartGame">
+            <Subtitle>Six bars. React the instant each one starts to move.</Subtitle>
+            <ChildContent>
+                <p class="rf-landing-copy">
+                    Each bar waits, then suddenly begins to expand. Hit <strong>STOP</strong>
+                    (tap, click, or <kbd>Space</kbd>) as fast as you can once it moves.
+                    Your score is the <strong>average reaction time</strong> across all six —
+                    lower is better.
+                </p>
+                <p class="rf-landing-warn">⚠️ Stop <em>before</em> a bar moves and the whole run is over.</p>
+            </ChildContent>
+        </GameLanding>
+    }
+    else
+    {
+        <div class="rf-arena" @ref="_areaRef">
+            <div class="rf-progress">Bar @Math.Min(_current + 1, BarCount) / @BarCount</div>
+
+            <div class="rf-bars">
+                @for (var i = 0; i < _bars.Count; i++)
+                {
+                    var bar = _bars[i];
+                    <div class="rf-bar rf-bar--@StatusClass(bar.Status)">
+                        <div class="rf-bar-index">@(i + 1)</div>
+                        <div class="rf-bar-track">
+                            <div class="rf-bar-fill" style="@FillStyle(bar)"></div>
+                        </div>
+                        <div class="rf-bar-value">@BarLabel(bar)</div>
+                    </div>
+                }
+            </div>
+
+            <button type="button" class="rf-stop rf-stop--@PromptClass" tabindex="-1" aria-hidden="true">
+                <span class="rf-stop-word">STOP</span>
+                <span class="rf-stop-hint">@PromptHint</span>
+            </button>
+        </div>
+    }
+</GameShell>
+
+@code {
+    [Parameter] public int? Demo { get; set; }
+
+    private const int BarCount = 6;
+    // Random pre-move window per bar. Wide enough that counting the rhythm doesn't help.
+    private const int ArmMinMs = 900;
+    private const int ArmMaxMs = 3200;
+    // Full CSS fill sweep duration (ms); the frozen length maps reaction time onto it.
+    private const double SweepMs = 2600;
+
+    private enum Phase { Landing, Playing, FinishedWin, FalseStart }
+    private enum BarStatus { Idle, Waiting, Live, Done, Fault }
+
+    private sealed class Bar
+    {
+        public BarStatus Status { get; set; } = BarStatus.Idle;
+        public double Fill { get; set; }      // 0..1 frozen fraction (visual length ∝ reaction time)
+        public double? Rt { get; set; }        // reaction time in ms
+    }
+
+    private readonly List<Bar> _bars = [];
+    private readonly List<double> _reactions = [];
+    private readonly Random _rng = new();
+
+    private Phase _phase = Phase.Landing;
+    private int _current;
+    private bool _demo;
+    private double _avgMs;
+    private double _bestMs;
+    // Server top-3 for the results board (fastest average reaction time first).
+    private List<PoReflexHighScore> _topScores = [];
+    private int _myRowIndex = -1;   // which board row is this run (for highlight)
+
+    private ElementReference _areaRef;
+    private IJSObjectReference? _mod;
+    private DotNetObjectReference<PoReflexPage>? _dotNet;
+    private bool _pendingArm;
+    private bool _disposed;
+    // Bumped on every reset/dispose so a delayed continuation (between-bar pause,
+    // demo restart) that resumes after the run changed can detect it and bail.
+    private int _gen;
+
+    private string _playerName = "";
+    private List<StatItem> _statItems = [];
+
+    private bool _isGameOver => _phase is Phase.FinishedWin or Phase.FalseStart;
+
+    private RenderFragment TitleContent => @<span>⚡ PoReflex</span>;
+
+    private RenderFragment HowToPlayContent => @<div>
+        <p>A pure reaction test — no rhythm, no pattern.</p>
+        <ul>
+            <li>Each of the 6 bars waits a random moment, then starts to expand from the left</li>
+            <li>The instant it moves, hit <kbd>Space</kbd> / tap <strong>STOP</strong></li>
+            <li>Stopping <em>before</em> a bar moves ends the run — you start over</li>
+            <li>Your score is the average reaction time over all six bars (lower wins)</li>
+        </ul>
+    </div>;
+
+    private RenderFragment StatusContent =>
+        _demo ? @<span class="gps-status-badge demo">🎮 Demo mode</span>
+        : _phase == Phase.FalseStart ? @<span class="gps-status-badge loss">Too soon!</span>
+        : _phase == Phase.FinishedWin ? @<span class="gps-status-badge win">Avg @_avgMs.ToString("0") ms</span>
+        : _current < _bars.Count && _bars[_current].Status == BarStatus.Live ? @<span class="gps-status-badge player">STOP!</span>
+        : _phase == Phase.Playing ? @<span class="gps-status-badge player">Wait for it…</span>
+        : @<span class="cf-status">Ready to play</span>;
+
+    private RenderFragment? GameSummaryContent => _phase switch
+    {
+        Phase.FalseStart => @<div class="rf-summary rf-summary--fault">
+            <div class="cf-result cf-result--loss">TOO SOON — jumped the gun</div>
+            <p>You hit STOP before bar @(_current + 1) started moving. Reaction runs demand patience — try again from bar 1.</p>
+        </div>,
+        Phase.FinishedWin => @<div class="rf-summary">
+            <div class="cf-result cf-result--win">Average: @_avgMs.ToString("0") ms</div>
+            <div class="rf-summary-line">Best bar: @_bestMs.ToString("0") ms</div>
+            <div class="rf-summary-breakdown">
+                @foreach (var (bar, idx) in _bars.Select((b, i) => (b, i)))
+                {
+                    <span class="rf-chip">#@(idx + 1) · @((bar.Rt ?? 0).ToString("0"))ms</span>
+                }
+            </div>
+
+            <div class="rf-board">
+                <h3 class="rf-board-heading">🏆 Fastest Averages · lower is better</h3>
+                @if (_topScores.Count == 0)
+                {
+                    <p class="rf-board-empty">No scores yet.<br/>Be the first on the board!</p>
+                }
+                else
+                {
+                    <ol class="rf-board-rows">
+                        @foreach (var (entry, idx) in _topScores.Select((s, i) => (s, i)))
+                        {
+                            var rank = idx + 1;
+                            var isMine = idx == _myRowIndex;
+                            <li class="rf-board-row @(isMine ? "rf-board-row--me" : "")">
+                                <span class="rf-board-rank">@(rank == 1 ? "🥇" : rank == 2 ? "🥈" : rank == 3 ? "🥉" : $"#{rank}")</span>
+                                <span class="rf-board-name">@entry.PlayerName@(isMine ? " ★" : "")</span>
+                                <span class="rf-board-ms">@entry.Score.ToString("0") ms</span>
+                            </li>
+                        }
+                    </ol>
+                }
+            </div>
+        </div>,
+        _ => null
+    };
+
+    protected override void OnInitialized()
+    {
+        _playerName = PlayerNameService.GetPlayerName();
+        ResetBars();
+        UpdateStats();
+
+        if (Demo == 1)
+        {
+            _demo = true;
+            Kiosk.SetCurrent("poreflex-demo");
+            _ = StartGame();
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // Arm only once the arena element is in the DOM so the pointer listener
+        // has a live target. StartGame / the between-bar pause set _pendingArm.
+        if (_pendingArm && !_disposed)
+        {
+            _pendingArm = false;
+            await ArmBarAsync();
+        }
+    }
+
+    private async Task<IJSObjectReference> ModuleAsync() =>
+        _mod ??= await JSRuntime.InvokeAsync<IJSObjectReference>("import", "./js/poreflex.js");
+
+    private void ResetBars()
+    {
+        _bars.Clear();
+        for (var i = 0; i < BarCount; i++) _bars.Add(new Bar());
+        _reactions.Clear();
+        _current = 0;
+        _avgMs = 0;
+        _bestMs = 0;
+    }
+
+    private async Task StartGame()
+    {
+        _gen++;
+        await StopInputAsync();
+        ResetBars();
+        _topScores = [];
+        _myRowIndex = -1;
+        _phase = Phase.Playing;
+        _pendingArm = true;          // OnAfterRenderAsync arms bar 0 after the arena renders
+        StateHasChanged();
+    }
+
+    private async Task ArmBarAsync()
+    {
+        if (_disposed || _phase != Phase.Playing) return;
+
+        var bar = _bars[_current];
+        bar.Status = BarStatus.Waiting;
+        bar.Fill = 0;
+        bar.Rt = null;
+        StateHasChanged();
+
+        _dotNet ??= DotNetObjectReference.Create(this);
+        var autoMs = _demo ? _rng.Next(190, 430) : 0;    // demo bot's "human" reaction
+        var mod = await ModuleAsync();
+        if (_disposed) return;
+        await mod.InvokeVoidAsync("start", _dotNet, _areaRef, ArmMinMs, ArmMaxMs, autoMs);
+    }
+
+    [JSInvokable]
+    public Task OnGoLive() => InvokeAsync(() =>
+    {
+        if (_phase != Phase.Playing || _current >= _bars.Count) return;
+        _bars[_current].Status = BarStatus.Live;       // CSS sweeps the fill 0→100% from here
+        _ = Feedback.ClickAsync();                     // best-effort "go" cue
+        StateHasChanged();
+    });
+
+    [JSInvokable]
+    public Task OnReaction(double rt) => InvokeAsync(async () =>
+    {
+        if (_phase != Phase.Playing || _current >= _bars.Count) return;
+
+        var bar = _bars[_current];
+        bar.Status = BarStatus.Done;
+        bar.Rt = rt;
+        bar.Fill = Math.Clamp(rt / SweepMs, 0.03, 1);   // frozen length ∝ reaction time
+        _ = Feedback.TapAsync();
+        _reactions.Add(rt);
+        _current++;
+        StateHasChanged();
+
+        if (_current < _bars.Count)
+        {
+            var gen = _gen;
+            await Task.Delay(500);                        // brief beat between bars
+            if (_disposed || gen != _gen) return;
+            _pendingArm = true;
+            StateHasChanged();
+        }
+        else
+        {
+            await FinishGameAsync();
+        }
+    });
+
+    [JSInvokable]
+    public Task OnFalseStart() => InvokeAsync(async () =>
+    {
+        if (_phase != Phase.Playing) return;
+        _gen++;
+        await StopInputAsync();
+        if (_current < _bars.Count) _bars[_current].Status = BarStatus.Fault;
+        _phase = Phase.FalseStart;
+        UpdateStats();
+        StateHasChanged();
+
+        if (_demo)
+        {
+            // A demo bot never actually false-starts, but guard anyway: restart the loop.
+            await RestartDemoAsync();
+        }
+    });
+
+    private async Task FinishGameAsync()
+    {
+        _gen++;
+        await StopInputAsync();
+        _phase = Phase.FinishedWin;
+
+        _avgMs = _reactions.Count > 0 ? _reactions.Average() : 0;
+        _bestMs = _reactions.Count > 0 ? _reactions.Min() : 0;
+        UpdateStats();
+
+        var outcome = _avgMs < 300 ? GameResult.Win : _avgMs < 450 ? GameResult.Draw : GameResult.Loss;
+        if (_demo)
+        {
+            StateHasChanged();
+            await LoadTopScoresAsync();   // showcase the real board (read-only; no submit)
+            await RestartDemoAsync();
+            return;
+        }
+
+        await GameResults.RecordAndSubmitPoReflexAsync(_playerName, outcome, new PoReflexHighScore
+        {
+            PlayerName = _playerName,
+            Score = Math.Round(_avgMs, 1),
+            BestReactionMs = Math.Round(_bestMs, 1),
+        });
+        StateHasChanged();
+
+        await LoadTopScoresAsync();
+    }
+
+    private async Task LoadTopScoresAsync()
+    {
+        var scores = await Api.GetPoReflexHighScoresAsync(3);
+        if (_disposed) return;
+        // The server already ranks ascending (lowest average wins); sort defensively anyway.
+        // Top 3 only, so the board stays compact.
+        _topScores = (scores ?? [])
+            .Where(s => s.Score > 0)
+            .OrderBy(s => s.Score)
+            .Take(3)
+            .ToList();
+        // Demo never submits, so don't highlight a coincidentally-matching row.
+        _myRowIndex = _demo ? -1 : _topScores.FindIndex(s =>
+            s.PlayerName == _playerName && Math.Abs(s.Score - Math.Round(_avgMs, 1)) < 0.05);
+        StateHasChanged();
+    }
+
+    private async Task RestartDemoAsync()
+    {
+        var gen = _gen;
+        await Task.Delay(3200);
+        if (_disposed || gen != _gen || !_demo) return;
+        await StartGame();
+    }
+
+    private void UpdateStats()
+    {
+        _statItems =
+        [
+            new() { Value = $"{_reactions.Count}/{BarCount}", Label = "Bars" },
+            new() { Value = _avgMs > 0 ? $"{_avgMs:0}ms" : "—", Label = "Average" },
+            new() { Value = _bestMs > 0 ? $"{_bestMs:0}ms" : "—", Label = "Best" },
+            new() { Value = _phase == Phase.FalseStart ? "Jumped" : _phase == Phase.FinishedWin ? "Done" : "—", Label = "Result" },
+        ];
+    }
+
+    private async Task StopInputAsync()
+    {
+        try
+        {
+            if (_mod is not null) await _mod.InvokeVoidAsync("stop");
+        }
+        catch { /* module never loaded — fine */ }
+    }
+
+    private static string StatusClass(BarStatus s) => s switch
+    {
+        BarStatus.Waiting => "waiting",
+        BarStatus.Live => "live",
+        BarStatus.Done => "done",
+        BarStatus.Fault => "fault",
+        _ => "idle"
+    };
+
+    // Position is driven purely by scaleX (GPU-composited). Live sweeps via the CSS
+    // class; Done snaps to the frozen fraction with transition:none so hitting STOP
+    // freezes the bar in place instead of shrinking-then-regrowing. The box width
+    // never changes, so there is nothing to re-animate.
+    private static string FillStyle(Bar bar) => bar.Status switch
+    {
+        BarStatus.Live => "",                                                // CSS .rf-bar--live sweeps scaleX 0→1
+        BarStatus.Done => $"transform:scaleX({bar.Fill.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)});",
+        BarStatus.Fault => "transform:scaleX(1);",
+        _ => "transform:scaleX(0);"
+    };
+
+    private static string BarLabel(Bar bar) => bar.Status switch
+    {
+        BarStatus.Waiting => "WAIT",
+        BarStatus.Live => "GO!",
+        BarStatus.Done => $"{bar.Rt ?? 0:0} ms",
+        BarStatus.Fault => "TOO SOON",
+        _ => ""
+    };
+
+    private string PromptClass =>
+        _current < _bars.Count && _bars[_current].Status == BarStatus.Live ? "go" : "wait";
+
+    private string PromptHint =>
+        _current < _bars.Count && _bars[_current].Status == BarStatus.Live
+            ? "Now!" : "tap / space when a bar moves";
+
+    public async ValueTask DisposeAsync()
+    {
+        _disposed = true;
+        _gen++;
+        await StopInputAsync();
+        if (_mod is not null)
+        {
+            try { await _mod.DisposeAsync(); } catch { /* already gone */ }
+            _mod = null;
+        }
+        _dotNet?.Dispose();
+    }
+}

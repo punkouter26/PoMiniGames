@@ -25,6 +25,7 @@ public class StorageService : IStorageService
     private const string PoBrawlLadderTable = "PoBrawlLadder";
     private const string PoRacerTable = "PoRacerHighScores";
     private const string PoClickTable = "PoClickHighScores";
+    private const string PoReflexTable = "PoReflexHighScores";
 
     // High scores share a single partition per game so a leaderboard is one partition scan.
     private const string MarbleRacePartition = "marblerace";
@@ -32,6 +33,7 @@ public class StorageService : IStorageService
     private const string PoBrawlLadderPartition = "pobrawlladder";
     private const string PoRacerPartition = "poracer";
     private const string PoClickPartition = "poclick";
+    private const string PoReflexPartition = "poreflex";
 
     private readonly TableServiceClient _serviceClient;
     private readonly EloCalculator _eloCalculator;
@@ -391,6 +393,40 @@ public class StorageService : IStorageService
 
     public Task<PoClickHighScore> SavePoClickHighScoreAsync(PoClickHighScore entry) =>
         SaveHighScoreAsync(PoClickScores, entry);
+
+    // ── PoReflex High Scores ──────────────────────────────────────────────
+    private static readonly HighScoreDescriptor<PoReflexHighScore> PoReflexScores = new(
+        Table: PoReflexTable,
+        Partition: PoReflexPartition,
+        Sanitize: e => e with
+        {
+            PlayerName = SanitizeName(e.PlayerName),
+            Score = Math.Clamp(e.Score, 0, 60_000),
+            BestReactionMs = Math.Clamp(e.BestReactionMs, 0, 60_000),
+            Date = DefaultDate(e.Date),
+        },
+        ToFields: e => new Dictionary<string, object?>
+        {
+            ["PlayerName"] = e?.PlayerName,
+            ["Score"] = e?.Score,
+            ["BestReactionMs"] = e?.BestReactionMs,
+            ["Date"] = e?.Date,
+        },
+        FromEntity: e => new PoReflexHighScore
+        {
+            PlayerName = e.GetString("PlayerName") ?? "",
+            Score = e.GetDouble("Score") ?? 0d,
+            BestReactionMs = e.GetDouble("BestReactionMs") ?? 0d,
+            Date = e.GetString("Date") ?? "",
+        },
+        // Lowest average reaction time wins, oldest first as the tiebreaker.
+        Rank: s => s.OrderBy(x => x.Score).ThenBy(x => x.Date));
+
+    public Task<List<PoReflexHighScore>> GetPoReflexHighScoresAsync(int limit = 10) =>
+        GetHighScoresAsync(PoReflexScores, limit);
+
+    public Task<PoReflexHighScore> SavePoReflexHighScoreAsync(PoReflexHighScore entry) =>
+        SaveHighScoreAsync(PoReflexScores, entry);
 
     // ── PoBrawl presidents ladder ─────────────────────────────────────────
     // Unlike the high-score boards (append + dedupe by content hash), the ladder

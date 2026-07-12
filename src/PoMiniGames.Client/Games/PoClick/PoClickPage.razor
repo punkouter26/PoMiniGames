@@ -122,7 +122,7 @@
     private bool    _showResultOverlay = false;
     private double  _estimatedScore    = 0;
     private string  _lastSessionId     = "";
-    // Top-10 leaderboard shown inline beneath the results (no page redirect).
+    // Top-3 leaderboard shown inline beneath the results (no page redirect).
     private List<PoClickSession> _resultLeaderboard = new();
 
     // UX-5: duration selector
@@ -174,7 +174,7 @@
         <div>Max Streak: @maxStreak</div>
 
         <div class="poclick-result-board">
-            <h3 class="poclick-section-heading poclick-section-heading--gold">🏆 @(_duration)-Second Top 10</h3>
+            <h3 class="poclick-section-heading poclick-section-heading--gold">🏆 @(_duration)-Second Top 3</h3>
             @if (_resultLeaderboard.Count == 0)
             {
                 <div class="poclick-empty-state">
@@ -593,9 +593,9 @@
         HistoryService.SaveSession(session);
         _lastSessionId = session.Id;
 
-        // Load the top-10 leaderboard for the duration just played so it can be
+        // Load the top-3 leaderboard for the duration just played so it can be
         // shown inline beneath the results instead of redirecting to a separate page.
-        _resultLeaderboard = HistoryService.GetLeaderboardByDuration(_duration, limit: 10);
+        _resultLeaderboard = HistoryService.GetLeaderboardByDuration(_duration, limit: 3);
 
         // UX-6: show animated result overlay
         _showResultOverlay = true;

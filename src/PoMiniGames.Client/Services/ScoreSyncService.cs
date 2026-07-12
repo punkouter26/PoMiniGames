@@ -9,6 +9,7 @@ public enum PendingScoreKind
     MarbleRace,
     PoBrawl,
     PoClick,
+    PoReflex,
     /// <summary>A PlayerStats PUT (adaptive-ELO games mirror their rating into it).</summary>
     PlayerStats
 }
@@ -71,6 +72,9 @@ public sealed class ScoreSyncService
 
     public void EnqueuePoClick(PoClickHighScore entry) =>
         Enqueue(PendingScoreKind.PoClick, JsonSerializer.Serialize(entry, ApiJsonContext.Default.PoClickHighScore));
+
+    public void EnqueuePoReflex(PoReflexHighScore entry) =>
+        Enqueue(PendingScoreKind.PoReflex, JsonSerializer.Serialize(entry, ApiJsonContext.Default.PoReflexHighScore));
 
     public void EnqueuePlayerStats(PendingPlayerStats entry) =>
         Enqueue(PendingScoreKind.PlayerStats, JsonSerializer.Serialize(entry, ApiJsonContext.Default.PendingPlayerStats));
@@ -153,6 +157,9 @@ public sealed class ScoreSyncService
         PendingScoreKind.PoClick =>
             await _api.SubmitPoClickHighScoreAsync(
                 JsonSerializer.Deserialize(item.PayloadJson, ApiJsonContext.Default.PoClickHighScore) ?? new PoClickHighScore()) is not null,
+        PendingScoreKind.PoReflex =>
+            await _api.SubmitPoReflexHighScoreAsync(
+                JsonSerializer.Deserialize(item.PayloadJson, ApiJsonContext.Default.PoReflexHighScore) ?? new PoReflexHighScore()) is not null,
         PendingScoreKind.PlayerStats =>
             await SubmitPlayerStatsAsync(item.PayloadJson),
         _ => true, // unknown kind: drop rather than wedge the queue forever

@@ -2076,6 +2076,12 @@ export class BrawlGame {
         e.preventDefault();
         b.classList.add('pb-touch-held');
         window.dispatchEvent(new KeyboardEvent('keydown', { code }));
+        // §7 Haptic tick on press — heavier for strikes (punch/kick) than movement.
+        try {
+          if ((localStorage.getItem('pomini_muted') || '').indexOf('1') === -1 && navigator.vibrate) {
+            navigator.vibrate((code === 'KeyF' || code === 'KeyG') ? 16 : 8);
+          }
+        } catch { }
       };
       const up = () => {
         if (!b.classList.contains('pb-touch-held')) return;

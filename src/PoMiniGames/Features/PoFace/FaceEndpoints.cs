@@ -155,6 +155,48 @@ public static class FaceEndpoints
         .RequireRateLimiting("face-analysis")
         .WithName("Face_ScoreRound");
 
+        // ── Session read (recap) ────────────────────────────────────────────
+        // Backs the /face/recap/{id} page: returns the saved per-round captures
+        // (target emotion, score, confidence, captured frame URL) for the caller's
+        // own session. Scoped to the authenticated user — you can only read your
+        // own sessions.
+        group.MapGet("/sessions/{id}", async (
+            string id, HttpContext ctx,
+            IGameSessionRepository sessions,
+            CancellationToken cancellationToken) =>
+        {
+            var userId = ctx.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                ?? ctx.User?.FindFirst("sub")?.Value
+                ?? "anon";
+            var session = await sessions.GetAsync(userId, id, cancellationToken);
+            if (session is null) return Results.NotFound();
+            if (session.UserId != userId) return Results.StatusCode(StatusCodes.Status403Forbidden);
+
+            return Results.Ok(new
+            {
+                sessionId = session.SessionId,
+                totalScore = session.TotalScore,
+                isComplete = session.IsComplete,
+                rounds = FaceRoundOrder.Order.Select((emotion, i) =>
+                {
+                    var c = session.Captures.FirstOrDefault(x => x.RoundNumber == i);
+                    return new
+                    {
+                        roundNumber = i,
+                        targetEmotion = emotion.ToString(),
+                        // A round that was never captured stays at zero/placeholder.
+                        captured = c is not null && c.CapturedAt > DateTime.MinValue,
+                        score = c?.Score ?? 0,
+                        confidence = c?.TargetEmotionConfidence ?? 0f,
+                        headPoseValid = c?.HeadPoseValid ?? false,
+                        imageUrl = c?.ImageUrl
+                    };
+                }).ToList()
+            });
+        })
+        .RequireAuthorization()
+        .WithName("Face_GetSession");
+
         group.MapPost("/sessions/{id}/complete", async (
             string id, HttpContext ctx,
             IGameSessionRepository sessions,

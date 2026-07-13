@@ -10,22 +10,25 @@
         <span class="login-mesh" aria-hidden="true"></span>
         <div class="login-card">
             <div class="login-spinner" aria-label="Loading"></div>
-            <p class="login-sub">Checking sign-in…</p>
+            <p class="login-sub">Loading…</p>
         </div>
     </div>
 }
-else if (AuthState.IsAuthenticated)
-{
-    @ChildContent
-}
 else
 {
-    <LoginScreen />
+    @* §10 Guest-first: the app is NOT gated. Anonymous visitors get straight to
+       the home page and can tap any single-player game and play immediately.
+       Sign-in is offered on demand (top-bar "Sign in") and prompted at the
+       score-save moment — see GameResultService. LoginScreen is still reachable
+       as a route/overlay; it is no longer the app's front door. *@
+    @ChildContent
 }
 
 @code {
-    // The whole app is gated: nothing renders until the player is signed in (Microsoft
-    // in any environment, or Guest in Development; the test harness auto-signs-in as Guest).
+    // §10 The app renders for everyone once the auth handshake settles. We still run
+    // InitializeAsync (below) so an existing cookie/MSAL session is restored — a
+    // returning signed-in player keeps their identity — but a brand-new visitor is
+    // never blocked: they browse and play as a guest until they choose to sign in.
     [Parameter] public RenderFragment ChildContent { get; set; } = default!;
 
     protected override async Task OnInitializedAsync()

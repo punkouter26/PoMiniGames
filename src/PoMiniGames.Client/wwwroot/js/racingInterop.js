@@ -55,6 +55,12 @@ const PoRacer = (() => {
         try { t.el.setPointerCapture(e.pointerId); } catch { }
         input[t.key] = true;
         t.el.classList.add('is-pressed');
+        // §7 Light haptic tick on control press (mute-aware, mobile only).
+        try {
+            if ((localStorage.getItem('pomini_muted') || '').indexOf('1') === -1 && navigator.vibrate) {
+                navigator.vibrate(t.key === 'space' ? 14 : 8);
+            }
+        } catch { }
     }, { passive: false });
     function releaseTouch(e) {
         const t = touchTarget(e);

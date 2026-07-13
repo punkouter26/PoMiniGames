@@ -19,17 +19,54 @@ public sealed class GameResultService
     private readonly ApiService _api;
     private readonly ScoreSyncService _sync;
     private readonly UiFeedbackService _feedback;
+    private readonly AuthStateService _auth;
+    private readonly ToastService _toast;
+    // Nudge a guest to sign in at most once per app session — a soft invitation,
+    // not a nag after every round.
+    private bool _guestNudgeShown;
 
     public GameResultService(
         GameStatsService stats,
         ApiService api,
         ScoreSyncService sync,
-        UiFeedbackService feedback)
+        UiFeedbackService feedback,
+        AuthStateService auth,
+        ToastService toast)
     {
         _stats = stats;
         _api = api;
         _sync = sync;
         _feedback = feedback;
+        _auth = auth;
+        _toast = toast;
+    }
+
+    /// <summary>
+    /// §10 A server submit didn't land, so the score was parked in the offline queue.
+    /// Why it failed changes what the player should hear:
+    /// <list type="bullet">
+    /// <item>Guest (not signed in) — this isn't an error, it's the deferred-sign-in
+    /// path. Nudge them to sign in so the parked score reaches the board; keep the
+    /// audio soft.</item>
+    /// <item>Signed-in — a genuine network hiccup. Buzz + reassure that it will sync.</item>
+    /// </list>
+    /// </summary>
+    private async Task OnScoreParkedAsync()
+    {
+        if (!_auth.IsAuthenticated)
+        {
+            await _feedback.TapAsync();
+            if (!_guestNudgeShown)
+            {
+                _guestNudgeShown = true;
+                _toast.Show("Nice run! Sign in to save your score to the leaderboard.", ToastType.Info);
+            }
+        }
+        else
+        {
+            await _feedback.ErrorAsync();
+            _toast.Show("You're offline — your score will sync automatically.", ToastType.Warning);
+        }
     }
 
     /// <summary>Records a local-only outcome (the common path for games without a server board).</summary>
@@ -52,7 +89,7 @@ public sealed class GameResultService
             if (submitted is null)
             {
                 _sync.EnqueueMarbleRace(highScore);
-                await _feedback.ErrorAsync();
+                await OnScoreParkedAsync();
             }
             else
             {
@@ -71,7 +108,11 @@ public sealed class GameResultService
     {
         await _stats.RecordResult("poclick", playerName, Difficulty.Medium, result);
         var submitted = await _api.SubmitPoClickHighScoreAsync(highScore);
-        if (submitted is null) _sync.EnqueuePoClick(highScore);
+        if (submitted is null)
+        {
+            _sync.EnqueuePoClick(highScore);
+            await OnScoreParkedAsync();
+        }
     }
 
     /// <summary>Records the PoReflex outcome locally and submits the average reaction time together.</summary>
@@ -82,7 +123,7 @@ public sealed class GameResultService
         if (submitted is null)
         {
             _sync.EnqueuePoReflex(highScore);
-            await _feedback.ErrorAsync();
+            await OnScoreParkedAsync();
         }
         else
         {
@@ -127,7 +168,7 @@ public sealed class GameResultService
             if (submitted is null)
             {
                 _sync.EnqueuePoBrawl(highScore);
-                await _feedback.ErrorAsync();
+                await OnScoreParkedAsync();
             }
             else
             {

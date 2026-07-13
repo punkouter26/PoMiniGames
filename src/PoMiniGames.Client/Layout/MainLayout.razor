@@ -127,7 +127,23 @@
     private async Task SignIn()
     {
         await Feedback.TapAsync();
-        await AuthState.SignInAsync();
+        var wasAuthenticated = AuthState.IsAuthenticated;
+        // Interactive sign-in: real MSAL when Microsoft is configured, dev-login
+        // stand-in otherwise. (The old SignInAsync() only errored in MSAL mode.)
+        await AuthState.SignInMicrosoftAsync();
+
+        // §10 Deferred-save payoff: if the player just signed in, replay any scores
+        // they parked while playing as a guest so their board entries land now.
+        if (!wasAuthenticated && AuthState.IsAuthenticated)
+        {
+            var synced = await ScoreSync.FlushAsync();
+            if (synced > 0)
+            {
+                ToastService.Show(
+                    synced == 1 ? "Your score was saved to the leaderboard." : $"{synced} scores saved to the leaderboard.",
+                    ToastType.Success);
+            }
+        }
     }
 
     private async Task SignOut()

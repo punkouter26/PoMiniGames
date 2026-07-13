@@ -111,16 +111,18 @@
     opacity: 0.7;
 }
 
-/* Boards now stack — separate each with a divider and breathing room. */
+/* Boards render as a uniform grid of cards. Every board gets identical
+   padding/border/background so all cells read as the same shape and their
+   tops align across a row — no per-board margin/divider (which, in a grid,
+   only skipped :first-of-type and pushed the rest of the first row down,
+   making the layout look ragged). */
 .lb-board {
-    padding-top: var(--space-4);
-    margin-top: var(--space-4);
-    border-top: 1px solid var(--color-border);
-}
-.lb-board:first-of-type {
-    padding-top: 0;
-    margin-top: 0;
-    border-top: none;
+    display: flex;
+    flex-direction: column;
+    padding: var(--space-3);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md, 12px);
+    background: rgba(255, 255, 255, 0.02);
 }
 
 .lb-board-head {

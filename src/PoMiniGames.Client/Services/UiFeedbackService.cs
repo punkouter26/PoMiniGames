@@ -34,27 +34,63 @@ public sealed class UiFeedbackService : IAsyncDisposable
             js.InvokeAsync<IJSObjectReference>("import", "./js/uiAudio.js").AsTask());
     }
 
-    /// <summary>A short tap (40 ms, A5, 18 % gain) for button presses.</summary>
-    public ValueTask TapAsync() => PlayToneAsync(880, 40, 0.18, "triangle");
+    // §7 Haptic vocabulary. Each intent below pairs its audio cue with a short
+    // vibration so the same feedback lands on tactile-first mobile players (and
+    // in silent/pocket contexts). Patterns are deliberately tiny — a "tick", not
+    // a "buzz" — so rapid interactions never fatigue. All are best-effort and
+    // gated on the same master-mute as audio (see uiAudio.js `vibrate`).
+    private static readonly int[] HapticTap = { 8 };
+    private static readonly int[] HapticClick = { 6 };
+    private static readonly int[] HapticDrop = { 14 };
+    private static readonly int[] HapticComplete = { 12, 28, 12 };
+    private static readonly int[] HapticError = { 40 };
+    private static readonly int[] HapticStart = { 10, 30, 16 };
 
-    /// <summary>A bright completion cue (220 ms C-E-G chord at 12 % gain).</summary>
-    public ValueTask CompleteAsync() => PlayChordAsync(new[] { 523.25, 659.25, 783.99 }, 220, 0.12);
+    /// <summary>A short tap (40 ms, A5, 18 % gain + light haptic tick) for button presses.</summary>
+    public async ValueTask TapAsync()
+    {
+        await PlayToneAsync(880, 40, 0.18, "triangle");
+        await VibrateAsync(HapticTap);
+    }
 
-    /// <summary>A low error buzz (120 ms A3 square wave at 22 % gain).</summary>
-    public ValueTask ErrorAsync() => PlayToneAsync(220, 120, 0.22, "square");
+    /// <summary>A bright completion cue (220 ms C-E-G chord at 12 % gain + haptic).</summary>
+    public async ValueTask CompleteAsync()
+    {
+        await PlayChordAsync(new[] { 523.25, 659.25, 783.99 }, 220, 0.12);
+        await VibrateAsync(HapticComplete);
+    }
 
-    /// <summary>A confident game-start chord (280 ms G-C-E triangle at 15 % gain).</summary>
-    public ValueTask GameStartAsync() => PlayChordAsync(new[] { 392.00, 523.25, 659.25 }, 280, 0.15);
+    /// <summary>A low error buzz (120 ms A3 square wave at 22 % gain + haptic buzz).</summary>
+    public async ValueTask ErrorAsync()
+    {
+        await PlayToneAsync(220, 120, 0.22, "square");
+        await VibrateAsync(HapticError);
+    }
 
-    /// <summary>A subtle UI confirmation (60 ms C6 sine, 10 % gain).</summary>
-    public ValueTask ClickAsync() => PlayToneAsync(1046.50, 60, 0.10, "sine");
+    /// <summary>A confident game-start chord (280 ms G-C-E triangle at 15 % gain + haptic).</summary>
+    public async ValueTask GameStartAsync()
+    {
+        await PlayChordAsync(new[] { 392.00, 523.25, 659.25 }, 280, 0.15);
+        await VibrateAsync(HapticStart);
+    }
+
+    /// <summary>A subtle UI confirmation (60 ms C6 sine, 10 % gain + faint haptic).</summary>
+    public async ValueTask ClickAsync()
+    {
+        await PlayToneAsync(1046.50, 60, 0.10, "sine");
+        await VibrateAsync(HapticClick);
+    }
 
     /// <summary>
-    /// A disc-drop "tock" (75 ms, low triangle at 20 % gain) synced to a piece
-    /// landing in a Connect-style board. Deliberately low and short so rapid
+    /// A disc-drop "tock" (75 ms, low triangle at 20 % gain + haptic) synced to a
+    /// piece landing in a Connect-style board. Deliberately low and short so rapid
     /// moves don't fatigue — the settle-bounce visual and this cue fire together.
     /// </summary>
-    public ValueTask DiscDropAsync() => PlayToneAsync(174.61, 75, 0.20, "triangle");
+    public async ValueTask DiscDropAsync()
+    {
+        await PlayToneAsync(174.61, 75, 0.20, "triangle");
+        await VibrateAsync(HapticDrop);
+    }
 
     /// <summary>
     /// §10 Swipe-back gesture feedback — a 90 ms downsweep from C5 → A3 with
@@ -78,6 +114,27 @@ public sealed class UiFeedbackService : IAsyncDisposable
     /// whenever the USING MOCK DATA banner appears. Best-effort, never blocks.
     /// </summary>
     public ValueTask MockDataAsync() => PlayToneAsync(174.61, 140, 0.14, "square");
+
+    /// <summary>
+    /// §7 Fire a raw haptic pattern (alternating vibrate/pause milliseconds, e.g.
+    /// <c>[12, 40, 18]</c>). Gated on <c>navigator.vibrate</c> support and the
+    /// global master-mute; a no-op on desktop/unsupported devices. Best-effort —
+    /// never throws. Games can call this directly for bespoke cues (hit, near-miss,
+    /// countdown) beyond the shared intents above.
+    /// </summary>
+    public async ValueTask VibrateAsync(int[] pattern)
+    {
+        if (_disposed || pattern is not { Length: > 0 }) return;
+        try
+        {
+            var module = await _module.Value;
+            await module.InvokeVoidAsync("vibrate", pattern);
+        }
+        catch
+        {
+            // Best-effort — never throw from a feedback path.
+        }
+    }
 
     private async ValueTask PlayToneAsync(double freq, int ms, double gain, string type)
     {

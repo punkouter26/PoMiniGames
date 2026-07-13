@@ -58,6 +58,7 @@ namespace PoMiniGamesClient.Services;
 [JsonSerializable(typeof(FaceStatusDto))]
 [JsonSerializable(typeof(FaceSessionDto))]
 [JsonSerializable(typeof(FaceScoreResponse))]
+[JsonSerializable(typeof(FaceRecapDto))]
 [JsonSerializable(typeof(FaceLeaderboardEntryDto))]
 [JsonSerializable(typeof(List<FaceLeaderboardEntryDto>))]
 // PoCoupleQuiz

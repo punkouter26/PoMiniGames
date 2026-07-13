@@ -36,6 +36,16 @@ internal static class EndpointRouteExtensions
         app.MapTelemetryStatusEndpoints();
         app.MapTestHarnessEndpoints(app.Environment);
 
+        // ── Public read-only leaderboards (guest-first) ────────────────────
+        // §10 A brand-new visitor can browse the boards before signing in, so
+        // the leaderboard READ endpoints are anonymous. These are pure GETs
+        // (no writes), and default authorization is anonymous — the only reason
+        // they were gated before was the authenticated group below. Score
+        // SUBMIT paths stay authenticated (guests park scores locally and flush
+        // them on sign-in), so anonymous read never becomes anonymous write.
+        app.MapGetLeaderboard();
+        app.MapUnifiedLeaderboardEndpoints();
+
         // ── Authenticated game API ─────────────────────────────────────────
         // All game-data endpoints require a valid session. Per-endpoint rate
         // limits (highscores, ai-generation, face-analysis, infer) are declared
@@ -44,8 +54,6 @@ internal static class EndpointRouteExtensions
 
         gameApi.MapGetPlayerStats();
         gameApi.MapSavePlayerStats();
-        gameApi.MapGetLeaderboard();
-        gameApi.MapUnifiedLeaderboardEndpoints();
         gameApi.MapGetAllPlayerStatistics();
         gameApi.MapMarbleRaceHighScoresEndpoints();
         gameApi.MapPoBrawlHighScoresEndpoints();

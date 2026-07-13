@@ -1,5 +1,8 @@
 @page "/face/recap/{SessionId}"
+@using System.Net.Http.Json
 @using PoMiniGamesClient.Components
+@using PoMiniGamesClient.Models
+@using PoMiniGamesClient.Services
 @inject HttpClient Http
 @inject NavigationManager Navigation
 
@@ -12,7 +15,14 @@
     {
         <div class="pf-recap">
             <h2 class="gps-phase-h">PoFace recap</h2>
-            <p>Session: <code>@SessionId</code></p>
+            @if (_loadError)
+            {
+                <p class="pf-recap-note">Couldn't load this session's captures. It may have expired or belong to another player.</p>
+            }
+            else
+            {
+                <p>Total score: <strong>@_totalScore</strong></p>
+            }
             <h3>Rounds</h3>
             <div class="pf-recap-grid">
                 @foreach (var c in _captures)
@@ -20,8 +30,15 @@
                     <div class="pf-recap-card">
                         <img src="@ResolveImage(c)" alt="Round @(c.Round + 1) capture" />
                         <h4>Round @(c.Round + 1) — @c.Emotion</h4>
-                        <p>Score: <strong>@c.Score</strong></p>
-                        <p>Confidence: @((c.Confidence * 100).ToString("F0"))%</p>
+                        @if (c.Captured)
+                        {
+                            <p>Score: <strong>@c.Score</strong></p>
+                            <p>Confidence: @((c.Confidence * 100).ToString("F0"))%</p>
+                        }
+                        else
+                        {
+                            <p class="pf-recap-note">No capture</p>
+                        }
                     </div>
                 }
             </div>
@@ -36,26 +53,57 @@
     [Parameter] public string SessionId { get; set; } = string.Empty;
 
     private bool _isLoading = true;
+    private bool _loadError;
+    private int _totalScore;
     private List<CaptureRow> _captures = new();
 
     protected override async Task OnInitializedAsync()
     {
-        // The recap endpoint reads the session from table storage. For the consolidation
-        // MVP we don't have a GET /api/face/sessions/{id} endpoint, so we synthesize a
-        // 5-round empty recap and show "no captures" placeholders. The full implementation
-        // adds a GET endpoint that returns the saved round captures (see follow-up).
-        await Task.CompletedTask;
-        for (var i = 0; i < 5; i++)
+        // Fetch the saved session (per-round captures + scores) from
+        // GET /api/face/sessions/{id}. Falls back to placeholder cards if the
+        // session can't be read (expired, not owned, or offline).
+        try
         {
-            _captures.Add(new CaptureRow
+            // Trim/AOT-safe deserialization via the source-generated context.
+            var recap = await Http.GetFromJsonAsync(
+                $"/api/face/sessions/{Uri.EscapeDataString(SessionId)}",
+                ApiJsonContext.Default.FaceRecapDto);
+            if (recap is not null)
             {
-                Round = i,
-                Emotion = new[] { "Happiness", "Surprise", "Anger", "Sadness", "Fear" }[i],
-                Score = 0,
-                Confidence = 0f,
-                ImageUrl = null
-            });
+                _totalScore = recap.TotalScore;
+                _captures = recap.Rounds
+                    .OrderBy(r => r.RoundNumber)
+                    .Select(r => new CaptureRow
+                    {
+                        Round = r.RoundNumber,
+                        Emotion = r.TargetEmotion,
+                        Captured = r.Captured,
+                        Score = r.Score,
+                        Confidence = r.Confidence,
+                        ImageUrl = r.ImageUrl
+                    })
+                    .ToList();
+            }
+            else
+            {
+                _loadError = true;
+            }
         }
+        catch
+        {
+            _loadError = true;
+        }
+
+        if (_captures.Count == 0)
+        {
+            // Last-resort placeholders so the page still renders the 5 target emotions.
+            var emotions = new[] { "Happiness", "Surprise", "Anger", "Sadness", "Fear" };
+            for (var i = 0; i < emotions.Length; i++)
+            {
+                _captures.Add(new CaptureRow { Round = i, Emotion = emotions[i] });
+            }
+        }
+
         _isLoading = false;
     }
 
@@ -66,6 +114,7 @@
     {
         public int Round { get; set; }
         public string Emotion { get; set; } = string.Empty;
+        public bool Captured { get; set; }
         public int Score { get; set; }
         public float Confidence { get; set; }
         public string? ImageUrl { get; set; }

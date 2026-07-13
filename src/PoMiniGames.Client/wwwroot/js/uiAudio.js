@@ -109,6 +109,9 @@ export async function playArpeggio(freqs, durationsMs, gain) {
  */
 export async function vibrate(pattern) {
     try {
+        // Honour the same global master-mute as audio — a muted player wants
+        // silence and stillness, not a buzzing pocket.
+        if ((localStorage.getItem('pomini_muted') || '').indexOf('1') !== -1) return;
         if (navigator && typeof navigator.vibrate === 'function') {
             navigator.vibrate(pattern);
         }

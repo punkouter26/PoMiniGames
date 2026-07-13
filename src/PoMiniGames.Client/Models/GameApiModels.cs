@@ -88,6 +88,27 @@ public class FaceScoreResponse
     public string? ImageUrl { get; set; }
 }
 
+/// <summary>Recap of a completed/in-progress session returned by GET /api/face/sessions/{id}.</summary>
+public class FaceRecapDto
+{
+    public string SessionId { get; set; } = string.Empty;
+    public int TotalScore { get; set; }
+    public bool IsComplete { get; set; }
+    public List<FaceRecapRoundDto> Rounds { get; set; } = new();
+}
+
+/// <summary>A single saved round inside a <see cref="FaceRecapDto"/> — score, confidence, captured frame.</summary>
+public class FaceRecapRoundDto
+{
+    public int RoundNumber { get; set; }
+    public string TargetEmotion { get; set; } = string.Empty;
+    public bool Captured { get; set; }
+    public int Score { get; set; }
+    public float Confidence { get; set; }
+    public bool HeadPoseValid { get; set; }
+    public string? ImageUrl { get; set; }
+}
+
 // ---------------------------------------------------------------------------
 // PoCoupleQuiz
 // ---------------------------------------------------------------------------

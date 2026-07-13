@@ -170,6 +170,12 @@ the shared Infrastructure project unless the data is genuinely cross-slice.
 - `.github/workflows/deploy.yml`: **`build` + `test` (unit) jobs; deploy needs both.**
   - **Unit tests run in CI** (`test` job → `tests/PoMiniGames.Unit`) — zero infra deps, a
     cheap regression gate on the auto-deploy branch (added 2026-07-04).
+  - The host (`src/PoMiniGames`) exposes internals to `PoMiniGames.Unit` via
+    `<InternalsVisibleTo Include="PoMiniGames.Unit" />` so the server-side `PoRacerSim`
+    AI can be driven headlessly. `PoRacerSimAiTests` news up a bot-only race (zero human
+    players → the sim pads all 8 slots with AI) and asserts every bot completes the 3-lap
+    race as a spread field — the regression gate for `UpdateAi` (2026-07-12). NB: PoRacer
+    is NOT "UI-only" — its physics/AI simulation lives server-side in `Features/PoRacer/`.
   - **Integration + E2E stay local** (Azurite via Testcontainers + Playwright Chromium) via
     `scripts/test-all.ps1` (tiered Unit → Integration → E2E-API → E2E-UI).
   - **Trim audit** publishes the client with `PublishTrimmed`; IL2xxx warnings fail the build

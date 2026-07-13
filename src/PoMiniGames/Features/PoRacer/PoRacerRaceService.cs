@@ -70,16 +70,22 @@ public sealed class PoRacerRaceService : IAsyncDisposable
             PoRacerFinalResult? result = null;
             lock (_stateLock)
             {
-                _sim.Tick(1.0 / TickHz, inputs);
                 if (_countdownMs > 0)
                 {
+                    // Hold the grid until GO — the sim is NOT advanced during the
+                    // countdown, so bots no longer take off before "3·2·1".
                     _countdownMs = Math.Max(0, _countdownMs - (int)(1000.0 / TickHz));
+                    if (_countdownMs == 0) _sim.StartRacing();  // rebase the race clock to 0 at GO
                 }
-                finished = !_finishedBroadcast && _sim.AllFinishedOrStopped();
-                if (finished)
+                else
                 {
-                    _finishedBroadcast = true;
-                    result = _sim.BuildFinalResult(_gameCode);
+                    _sim.Tick(1.0 / TickHz, inputs);
+                    finished = !_finishedBroadcast && _sim.AllFinishedOrStopped();
+                    if (finished)
+                    {
+                        _finishedBroadcast = true;
+                        result = _sim.BuildFinalResult(_gameCode);
+                    }
                 }
             }
             if (result is not null)

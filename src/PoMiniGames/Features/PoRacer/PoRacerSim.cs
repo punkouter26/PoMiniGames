@@ -132,9 +132,12 @@ internal sealed class PoRacerSim
             slots.Add((p.ConnectionId, p.DisplayName, true));
         }
         string[] botNames = { "Vega", "Kairo", "Nyx", "Rocco", "Sable", "Jinx", "Echo", "Astra" };
-        for (int i = slots.Count; i < 8 && i - slots.Count < botNames.Length; i++)
+        // Capture the human count ONCE: slots.Count grows as bots are added, so using
+        // it live made `botNames[i - slots.Count]` always index 0 → every bot "Vega".
+        int humanCount = slots.Count;
+        for (int i = humanCount; i < 8 && i - humanCount < botNames.Length; i++)
         {
-            slots.Add(($"bot-{i}", botNames[i - slots.Count], false));
+            slots.Add(($"bot-{i}", botNames[i - humanCount], false));
         }
         while (slots.Count < 8) slots.Add(($"bot-{slots.Count}", botNames[slots.Count % botNames.Length], false));
 
@@ -179,6 +182,10 @@ internal sealed class PoRacerSim
 
     public bool OwnedBy(string connectionId) => _byConnectionId.ContainsKey(connectionId);
 
+    /// <summary>Called when the countdown reaches GO. Rebases the race clock so elapsed
+    /// and finish times start from zero — the sim isn't ticked during the countdown.</summary>
+    public void StartRacing() => _startElapsedMs = _wallClock.ElapsedMilliseconds;
+
     public void Tick(double dt, IReadOnlyDictionary<string, PoRacerInput> inputs)
     {
         // Apply player input.
@@ -194,8 +201,21 @@ internal sealed class PoRacerSim
             if (c.Lap > TotalLaps) continue;
             UpdateAi(c, dt);
         }
+        // Finished cars coast to a halt just past the line instead of being driven,
+        // so they don't mill around the finish under collision impulses.
+        foreach (var c in _cars)
+        {
+            if (c.Lap <= TotalLaps) continue;
+            c.Speed *= Math.Max(0, 1 - 3.5 * dt);
+            if (Math.Abs(c.Speed) < 2) c.Speed = 0;
+            c.Pos = new Vec2(c.Pos.X + Math.Cos(c.Heading) * c.Speed * dt,
+                             c.Pos.Y + Math.Sin(c.Heading) * c.Speed * dt);
+        }
         // Car-car collisions.
         ResolveCarCollisions();
+        // Hard safety bound: collision impulses on a jam of stopped cars could
+        // otherwise integrate into absurd runaway speeds (the finish-line pile-up).
+        foreach (var c in _cars) c.Speed = Math.Clamp(c.Speed, -c.MaxSpeed, c.MaxSpeed);
         // Project onto centerline.
         foreach (var c in _cars) Project(c);
         // Wall collisions.
@@ -268,28 +288,111 @@ internal sealed class PoRacerSim
     private void UpdateAi(SimCar c, double dt)
     {
         int n = _centerline.Count;
-        int lookAhead = (int)(8 + c.CorneringSkill * 14);
-        int targetIdx = (c.LastCheckpoint + lookAhead) % n;
-        var target = _centerline[targetIdx];
-        var prev = _centerline[(targetIdx - 1 + n) % n];
-        var next = _centerline[(targetIdx + 1) % n];
-        var curve = ShortAngleDiff(Math.Atan2(next.Y - prev.Y, next.X - prev.X), Math.Atan2(target.Y - prev.Y, target.X - prev.X));
-        double lineOffset = -Math.Sign(curve) * 18 * (1 - c.CorneringSkill);
-        var nrm = Normal(prev, next);
-        target = new Vec2(target.X + nrm.X * lineOffset, target.Y + nrm.Y * lineOffset);
-        var dx = target.X - c.Pos.X;
-        var dy = target.Y - c.Pos.Y;
-        var desired = Math.Atan2(dy, dx);
-        double diff = ShortAngleDiff(desired, c.Heading);
-        bool accel = true, brake = false, handbrake = false;
-        if (Math.Abs(diff) > 0.6) brake = true;
-        if (Math.Abs(diff) > 1.0) handbrake = c.Aggression > 0.6;
-        bool left = diff < -0.05, right = diff > 0.05;
-        ApplyControl(c, dt, accel, brake, left, right, handbrake);
-        if (Random.Shared.NextDouble() < 0.002)
+
+        // Stuck accounting + marshal rescue, evaluated first so nothing can pin a
+        // bot for the whole race. We track lack of TRACK PROGRESS (not just low
+        // speed): a bot boxed at the grid or scraped onto a wall can thrash back and
+        // forth with speed yet advance nowhere — the old AI's core failure mode.
+        // If a bot fails to advance for a sustained spell despite the reverse
+        // maneuver below, a marshal places it back on the racing line facing forward
+        // — a hard completion guarantee.
+        // Monotonic track progress in node units (n per lap) — unlike DistanceAlongTrack
+        // this never dips at the start/finish line, so it won't false-flag a lapping car.
+        double progress = c.Lap * n + c.ProjIdx + c.ProjT;
+        if (progress > c.ProgressMark + 0.5)
         {
-            c.Steer += (Random.Shared.NextDouble() - 0.5) * 0.2;
+            c.ProgressMark = progress;
+            c.StuckTimer = 0;
         }
+        else
+        {
+            c.StuckTimer += dt;
+        }
+        if (c.StuckTimer > 2.0)
+        {
+            // Nudge a few nodes PAST the snag, not back onto it, so a bot that keeps
+            // re-wedging at the same corner still nets forward progress each rescue.
+            int pi = ((c.ProjIdx + 5) % n + n) % n;
+            var cp = _centerline[pi];
+            var nb = _centerline[(pi + 1) % n];
+            c.Pos = cp;
+            c.Heading = Math.Atan2(nb.Y - cp.Y, nb.X - cp.X);
+            c.Speed = c.MaxSpeed * 0.32;
+            c.Steer = 0;
+            c.StuckTimer = 0;
+            return;
+        }
+
+        double speedFrac = Math.Clamp(Math.Abs(c.Speed) / c.MaxSpeed, 0, 1);
+
+        // Aim a few nodes down the track — tight enough to follow the line through
+        // corners instead of cutting the chord into the outside wall.
+        int steerLook = (int)(3 + speedFrac * 6 + c.CorneringSkill * 3);
+        int aimIdx = (c.LastCheckpoint + steerLook) % n;
+        var target = _centerline[aimIdx];
+        double desired = Math.Atan2(target.Y - c.Pos.Y, target.X - c.Pos.X);
+        double diff = ShortAngleDiff(desired, c.Heading);
+
+        // Predictive corner speed: measure how hard the track bends over a
+        // speed-scaled window ahead and slow to a speed the car can actually hold
+        // through it. Straights → near top speed; tight bends → a small fraction.
+        int scan = (int)(9 + speedFrac * 15);
+        double bend = UpcomingBend(c.LastCheckpoint, scan);
+        double curviness = Math.Clamp(bend / 0.85, 0, 1);
+        double cornerSpeed = c.MaxSpeed * (1.0 - 0.58 * curviness) * (0.92 + 0.14 * c.CorneringSkill);
+        cornerSpeed = Math.Clamp(cornerSpeed, c.MaxSpeed * 0.36, c.MaxSpeed);
+
+        const double deadband = 0.05;
+        bool accel, brake = false, handbrake = false;
+        bool left = diff < -deadband, right = diff > deadband;
+
+        // Once the crawl has lasted a moment, back STRAIGHT out to make room, then
+        // resume. If reversing still can't free the car the marshal rescue above
+        // eventually fires; here we give it every chance to recover on its own first.
+        if (c.StuckTimer > 0.7)
+        {
+            accel = false; brake = true;             // low speed + brake ⇒ reverse
+            left = false; right = false;             // straight back-out; steer relaxes to centre
+        }
+        else if (Math.Abs(c.Speed) < c.MaxSpeed * 0.18)
+        {
+            accel = true;                            // slow but not wedged → power out toward aim
+        }
+        else if (c.Speed > cornerSpeed * 1.05) { accel = false; brake = true; }   // shed speed
+        else if (c.Speed > cornerSpeed)         { accel = false; }                 // coast to target
+        else                                     { accel = true; }                 // power on
+
+        // Badly misaligned at speed (nose toward a wall) → brake to bleed it off.
+        if (c.StuckTimer <= 0.7 && Math.Abs(c.Speed) >= c.MaxSpeed * 0.18 && Math.Abs(diff) > 1.25)
+        {
+            brake = true; accel = false;
+        }
+
+        ApplyControl(c, dt, accel, brake, left, right, handbrake);
+
+        // Small stochastic imperfection so the field isn't robotic; less for skilled bots.
+        if (Random.Shared.NextDouble() < 0.015 * (1.15 - c.CorneringSkill))
+        {
+            c.Steer += (Random.Shared.NextDouble() - 0.5) * 0.06;
+        }
+    }
+
+    /// <summary>Cumulative absolute heading change (radians) over the next <paramref name="span"/>
+    /// centerline segments — a cheap proxy for how sharp the upcoming track is.</summary>
+    private double UpcomingBend(int startIdx, int span)
+    {
+        int n = _centerline.Count;
+        double total = 0;
+        for (int k = 0; k < span; k++)
+        {
+            var p0 = _centerline[(startIdx + k) % n];
+            var p1 = _centerline[(startIdx + k + 1) % n];
+            var p2 = _centerline[(startIdx + k + 2) % n];
+            double h1 = Math.Atan2(p1.Y - p0.Y, p1.X - p0.X);
+            double h2 = Math.Atan2(p2.Y - p1.Y, p2.X - p1.X);
+            total += Math.Abs(ShortAngleDiff(h2, h1));
+        }
+        return total;
     }
 
     private void ResolveCarCollisions()
@@ -601,5 +704,7 @@ internal sealed class PoRacerSim
         public double SkidIntensity;
         public double BoostGlow;
         public double Damage;
+        public double StuckTimer;   // seconds without track progress — drives the AI unstick maneuver
+        public double ProgressMark; // last DistanceAlongTrack the car meaningfully advanced past
     }
 }

@@ -730,20 +730,35 @@ window.PoRacer = PoRacer;
                 ? window.PoRacer.getSize()
                 : { w: mainCanvas.clientWidth, h: mainCanvas.clientHeight };
             const w = size.w, h = size.h;
-            // Pick camera target = the local player; if missing, first car.
-            const target = cars.find(c => c.isPlayer) || cars[0];
-            // Zoom-out follow: scale chosen so the track comfortably fits the
-            // viewport with the player centered. For multiplayer races the
-            // camera shows both the player's car AND the cars around them so
-            // collisions are visible. We compute scale per-frame from the
-            // track bbox (cached on first call) so the player never gets lost.
-            const lookAhead = Math.cos(target.h) * 80;
-            const camX = target.x + lookAhead;
-            const camY = target.y + Math.sin(target.h) * 80;
-            // Scale: aim so ~70% of the smaller viewport dimension shows the
-            // ~600-unit-long track. Smaller viewport ⇒ tighter zoom.
-            const baseScale = Math.min(w, h) / 900;
-            const scale = Math.max(0.25, Math.min(1.2, baseScale));
+            const player = cars.find(c => c.isPlayer);
+            let camX, camY, scale;
+            if (!player && centerXY && centerN > 0) {
+                // Spectator / demo view: there is no local player to follow, so frame
+                // the WHOLE track and hold the camera still. A tight follow-cam on one
+                // bot made cars pop in and out of view as the field spread out and as
+                // stuck bots got marshal-rescued (the camera jumped with them). Fitting
+                // the whole track keeps every car on screen the entire race.
+                let minX = 1e9, minY = 1e9, maxX = -1e9, maxY = -1e9;
+                for (let i = 0; i < centerN; i++) {
+                    const x = centerXY[i * 2], y = centerXY[i * 2 + 1];
+                    if (x < minX) minX = x; if (x > maxX) maxX = x;
+                    if (y < minY) minY = y; if (y > maxY) maxY = y;
+                }
+                const pad = (trackWidth || 240) * 1.1;
+                minX -= pad; maxX += pad; minY -= pad; maxY += pad;
+                camX = (minX + maxX) / 2;
+                camY = (minY + maxY) / 2;
+                scale = Math.min(w / (maxX - minX), h / (maxY - minY));
+            } else {
+                // Follow-cam on the local player: zoom in so their car and the cars
+                // around them (for collisions) are clearly visible.
+                const target = player || cars[0];
+                const lookAhead = Math.cos(target.h) * 80;
+                camX = target.x + lookAhead;
+                camY = target.y + Math.sin(target.h) * 80;
+                const baseScale = Math.min(w, h) / 900;
+                scale = Math.max(0.25, Math.min(1.2, baseScale));
+            }
             const dt = 0.05; // snapshot interval ≈ 50ms
 
             // Pack cars into Float32Arrays the existing draw() expects.

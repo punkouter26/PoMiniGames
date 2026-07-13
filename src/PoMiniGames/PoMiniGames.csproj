@@ -21,6 +21,12 @@
     <PackageReference Include="MinVer" PrivateAssets="all" />
   </ItemGroup>
 
+  <!-- Expose internals (e.g. PoRacerSim) to the unit-test tier so the AI sim can be
+       driven headlessly in a bot-only race for regression testing. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="PoMiniGames.Unit" />
+  </ItemGroup>
+
   <ItemGroup>
     <!-- Azure -->
     <PackageReference Include="Azure.Identity" />

@@ -1,12 +1,12 @@
 .mr-wrap {
-    /* NetRun10 audit #5: cap the canvas wrap to the live viewport so the
-       three.js renderer's 800×540+ canvas can never overflow a phone screen.
-       Using min(...) keeps the desktop layout at 560px tall while collapsing
-       the height proportionally on narrow phones. */
+    /* Fill the game area: the canvas spans the full row width and most of the
+       viewport height (chrome-aware), so the race uses the whole screen instead
+       of sitting in a small 960×540 box. The three.js camera auto-adjusts to the
+       resulting aspect via scene.resize(). Phones get a portrait box below. */
     position: relative;
-    width: min(100%, 960px);
-    height: min(560px, calc(100vh - 240px));
-    aspect-ratio: 16 / 9;
+    width: 100%;
+    height: min(calc(100vh - 200px), 80vh);
+    min-height: 340px;
     border-radius: 10px;
     overflow: hidden;
     background: #0f172a;
@@ -19,6 +19,72 @@
     width: 100%;
     height: 100%;
 }
+
+/* ── Top-3 podium overlay (broadcast banner, top-centre of the canvas) ── */
+.mr-podium {
+    position: absolute;
+    top: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 4;
+    min-width: 264px;
+    padding: 12px 16px;
+    border-radius: 12px;
+    background: rgba(8, 12, 24, 0.82);
+    border: 1px solid rgba(253, 224, 71, 0.5);
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45), 0 0 18px rgba(253, 224, 71, 0.15);
+    backdrop-filter: blur(6px);
+    color: #e2e8f0;
+    animation: mr-podium-in 0.35s ease-out;
+}
+
+@keyframes mr-podium-in {
+    from { opacity: 0; transform: translate(-50%, -10px); }
+    to   { opacity: 1; transform: translate(-50%, 0); }
+}
+
+.mr-podium-title {
+    text-align: center;
+    font-size: 0.72rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #fde047;
+    margin-bottom: 8px;
+}
+
+.mr-podium-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 4px 6px;
+    border-radius: 8px;
+}
+
+.mr-podium-row--1 { background: rgba(253, 224, 71, 0.12); }
+
+.mr-podium-medal { font-size: 1.1rem; width: 1.4rem; text-align: center; }
+
+.mr-podium-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    box-shadow: 0 0 6px currentColor;
+}
+
+.mr-podium-time {
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    min-width: 4.2rem;
+}
+
+.mr-podium-gap {
+    margin-left: auto;
+    font-size: 0.78rem;
+    color: #94a3b8;
+    font-variant-numeric: tabular-nums;
+}
+
+.mr-podium-row--1 .mr-podium-gap { color: #fde047; font-weight: 700; }
 
 /* ── HUD ──
    2026-07-12: the HUD used to be absolutely positioned inside the canvas
@@ -201,7 +267,7 @@
     flex-direction: column;
     align-items: center;
     gap: var(--space-3);
-    max-width: 960px;
+    max-width: 1500px;
     margin: 0 auto;
     width: 100%;
 }

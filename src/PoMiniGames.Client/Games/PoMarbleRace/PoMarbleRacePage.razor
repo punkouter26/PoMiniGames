@@ -45,6 +45,24 @@
                 </div>
             }
 
+            @* Top-3 podium overlay — appears the moment the 3rd marble crosses the
+               line, showing the winner + next two and their gap behind the winner. *@
+            @if (_podium.Count > 0)
+            {
+                <div class="mr-podium" role="status" aria-live="polite">
+                    <div class="mr-podium-title">🏁 Podium</div>
+                    @foreach (var row in _podium)
+                    {
+                        <div class="mr-podium-row mr-podium-row--@row.Place">
+                            <span class="mr-podium-medal">@Medal(row.Place)</span>
+                            <span class="mr-podium-dot" style="background:@row.Color"></span>
+                            <span class="mr-podium-time">@row.Time.ToString("0.00")s</span>
+                            <span class="mr-podium-gap">@(row.Place == 1 ? "WINNER" : $"+{row.Gap.ToString("0.00")}s")</span>
+                        </div>
+                    }
+                </div>
+            }
+
             @* Race result is shown in the shared end-of-game modal (GameSummaryContent). *@
         </div>
 
@@ -64,7 +82,7 @@
                     <li class="@(row.IsPlayer ? "mr-lb-row mr-lb-you" : "mr-lb-row")">
                         <span class="mr-lb-place">@row.Place</span>
                         <span class="mr-lb-dot" style="background:@row.Color"></span>
-                        <span class="mr-lb-speed">@row.Speed.ToString("0.0")</span>
+                        <span class="mr-lb-speed">@(row.Finished && row.Time is not null ? $"{row.Time:0.00}s" : row.Speed.ToString("0.0"))</span>
                         @* YOU / ✓ tags rendered last so CSS pins them to the
                            top-right corner of the tile via the absolute rules
                            in PoMarbleRacePage.razor.css. *@
@@ -99,6 +117,7 @@
     private int _submittedBest;
 
     private List<LbRow> _leaderboard = new();
+    private List<PodiumRow> _podium = new();
     private List<StatItem> _statItems = new();
     private PlayerStats _stats = new();
     private readonly GameStatsService _gameStats = new();
@@ -176,9 +195,35 @@
         {
             _progress = 0;
             _leaderboard.Clear();
+            _podium.Clear();   // hide the previous race's podium as the next race sets up
         }
         InvokeAsync(StateHasChanged);
     }
+
+    [JSInvokable]
+    public void OnPodium(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var rows = new List<PodiumRow>();
+            foreach (var el in doc.RootElement.EnumerateArray())
+            {
+                rows.Add(new PodiumRow
+                {
+                    Place = el.TryGetProperty("place", out var p) && p.TryGetInt32(out var pi) ? pi : 0,
+                    Color = el.TryGetProperty("color", out var c) ? c.GetString() ?? "#fff" : "#fff",
+                    Time  = el.TryGetProperty("time",  out var t) && t.TryGetDouble(out var td) ? td : 0,
+                    Gap   = el.TryGetProperty("gap",   out var g) && g.TryGetDouble(out var gd) ? gd : 0,
+                });
+            }
+            _podium = rows;
+        }
+        catch { }
+        InvokeAsync(StateHasChanged);
+    }
+
+    private static string Medal(int place) => place switch { 1 => "🥇", 2 => "🥈", 3 => "🥉", _ => $"{place}." };
 
     [JSInvokable]
     public void OnRaceTick(string json, double progress)
@@ -197,6 +242,7 @@
                     Speed    = el.TryGetProperty("speed",    out var s) && s.TryGetDouble(out var sd) ? sd  : 0,
                     IsPlayer = el.TryGetProperty("isPlayer", out var ip) && ip.GetBoolean(),
                     Finished = el.TryGetProperty("finished", out var f) && f.GetBoolean(),
+                    Time     = el.TryGetProperty("time",     out var tv) && tv.ValueKind == JsonValueKind.Number && tv.TryGetDouble(out var tvd) ? tvd : (double?)null,
                 });
             }
             _leaderboard = rows;
@@ -275,5 +321,14 @@
         public double Speed { get; set; }
         public bool IsPlayer { get; set; }
         public bool Finished { get; set; }
+        public double? Time { get; set; }
+    }
+
+    private sealed class PodiumRow
+    {
+        public int Place { get; set; }
+        public string Color { get; set; } = "#fff";
+        public double Time { get; set; }
+        public double Gap { get; set; }
     }
 }

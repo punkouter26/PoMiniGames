@@ -87,11 +87,14 @@ export class Game {
 
   // ── internals ──
   _buildTrack() {
+    this._podiumSent = false; // reset the top-3 podium for the new race
     this.track = generateTrack(this.world, this.materials, this.seed >>> 0);
     this.scene.add(this.track.group);
     this.marbleSet = createMarbles(this.world, this.materials, this.track.startPositions, -1,
       (v, pos, color) => {
-        this.audio.playClink(v);
+        // Only BIG collisions make a sound — the constant clinking from every
+        // little tap was too noisy. Sparks still fire on the smaller hits.
+        if (v > 8) this.audio.playClink(v);
         this.scene.burstSparks(pos, color, Math.min(14, 4 + Math.floor(v)), Math.min(1.6, 0.5 + v * 0.12));
       });
     for (const m of this.marbleSet.marbles) this.scene.add(m.mesh);
@@ -129,7 +132,8 @@ export class Game {
   _focusMarble() {
     const leader = this.marbleSet.leaderboard()[0];
     if (this.demo) return leader;
-    return this.marbleSet.marbles[this.chosen] || leader;
+    const me = this.marbleSet.marbles[this.chosen];
+    return (me && !me.eliminated) ? me : leader;
   }
 
   _frame(dt) {
@@ -144,17 +148,36 @@ export class Game {
       this.marbleSet.sync();
       for (const t of this.track.turnstiles) { t.mesh.position.copy(t.body.position); t.mesh.quaternion.copy(t.body.quaternion); }
 
+      // Remove any marble that has fallen out of bounds (dropped well below the
+      // track surface at its position) — it's out of the race.
+      for (const m of this.marbleSet.marbles) {
+        if (m.finished || m.eliminated) continue;
+        if (m.body.position.y < this.track.floorY(m.body.position.z) - 30) {
+          this.marbleSet.eliminate(m);
+        }
+      }
+
       this.raceClock += dt;
-      const allDone = this.marbleSet.checkFinishes(this.track.finishZ);
+      const { allDone, justFinished } = this.marbleSet.checkFinishes(this.track.finishZ, this.raceClock);
+      for (const m of justFinished) {
+        this.scene.burstConfetti(m.mesh.position);   // celebrate each ball crossing the line
+        this.audio.playClink(6);                      // finish chime
+      }
+      // Podium: the moment the 3rd marble crosses, freeze the top-3 (winner + 2)
+      // with their gaps behind the winner and push it to the HUD overlay.
+      if (!this._podiumSent && this.marbleSet.marbles.filter((m) => m.finished).length >= 3) {
+        this._podiumSent = true;
+        this._sendPodium();
+      }
       if (allDone || this.raceClock >= RACE_TIMEOUT) {
-        if (!allDone) this.marbleSet.forceFinishRemaining();
+        if (!allDone) this.marbleSet.forceFinishRemaining(this.raceClock);
         this._resolve();
       }
 
       // Camera centers the focus marble: the race LEADER in demo/spectator mode,
       // or the player's own pick in a real game.
       const focus = this._focusMarble();
-      this.scene.followTarget(focus.mesh.position, dt, false);
+      if (focus) this.scene.followTarget(focus.mesh.position, dt, false);
 
       this.tickAccum += dt;
       if (this.tickAccum >= TICK_INTERVAL) { this.tickAccum = 0; this._sendTick(); }
@@ -190,6 +213,22 @@ export class Game {
     }
   }
 
+  _sendPodium() {
+    if (!this.dotnet) return;
+    const top3 = this.marbleSet.marbles
+      .filter((m) => m.finished)
+      .sort((a, b) => a.finishOrder - b.finishOrder)
+      .slice(0, 3);
+    const winTime = top3.length ? top3[0].finishTime : 0;
+    const payload = top3.map((m) => ({
+      place: m.finishOrder + 1,
+      color: hexString(m.index),
+      time: Math.round(m.finishTime * 100) / 100,
+      gap: Math.round((m.finishTime - winTime) * 100) / 100,
+    }));
+    try { this.dotnet.invokeMethodAsync('OnPodium', JSON.stringify(payload)); } catch { }
+  }
+
   _sendTick() {
     if (!this.dotnet) return;
     const order = this.marbleSet.leaderboard();
@@ -199,6 +238,7 @@ export class Game {
       speed: Math.round(m.speed * 10) / 10,
       isPlayer: m.index === this.chosen,
       finished: m.finished,
+      time: m.finished ? Math.round(m.finishTime * 100) / 100 : null,
     }));
     const progress = this.marbleSet.progress();
     try { this.dotnet.invokeMethodAsync('OnRaceTick', JSON.stringify(payload), progress); } catch { }

@@ -18,8 +18,9 @@ export function createWorld() {
   // is kept low on the floor/walls and higher on obstacles so marbles glance off.
   const marble = new CANNON.Material('marble');
   const surface = new CANNON.Material('surface');   // floor + walls
-  const obstacle = new CANNON.Material('obstacle');  // pegs, bumps, paddles, bumpers
+  const obstacle = new CANNON.Material('obstacle');  // paddles, pendulum boxes
   const rumble = new CANNON.Material('rumble');      // high-friction floor bands (subtle slow zones)
+  const bump = new CANNON.Material('bump');          // washboard ridges — low bounce so they don't launch marbles
 
   world.addContactMaterial(new CANNON.ContactMaterial(marble, surface,
     { friction: 0.0, restitution: 0.12 }));
@@ -31,8 +32,12 @@ export function createWorld() {
   // floor is still steep so a marble slows — it never stops (non-blocking guarantee).
   world.addContactMaterial(new CANNON.ContactMaterial(marble, rumble,
     { friction: 0.38, restitution: 0.10 }));
+  // Washboard ridges: bounce weakened 4× (0.40 → 0.10) so they jostle the pack
+  // without launching marbles into the air.
+  world.addContactMaterial(new CANNON.ContactMaterial(marble, bump,
+    { friction: 0.0, restitution: 0.10 }));
 
-  return { world, materials: { marble, surface, obstacle, rumble } };
+  return { world, materials: { marble, surface, obstacle, rumble, bump } };
 }
 
 export function stepWorld(world, dt) {

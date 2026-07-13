@@ -11,12 +11,17 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
 const BG = 0x0f172a;            // cyberpunk dark slate
-const CAM_HEIGHT = 22;          // higher up so the leading marble sits centered, not below the frustum
-const CAM_BACK = 26;            // a bit further back to keep the marble + the chute ahead in frame
-const CAM_LOOKAHEAD = 4;        // shorter look-ahead → camera frames the marble, not empty track
-const CAM_LOOK_LIFT = 3;        // raise the look-at point so the marble lands ~mid-screen
-const CAM_DEFAULT_PITCH = -0.18; // slight downward tilt by default → marble sits centered, not at the top
-const CAM_LERP = 4.0;          // higher = snappier follow
+// Broadcast-style chase cam: higher and further back for a cleaner, more
+// professional framing that shows the leader plus the track ahead.
+// High, pulled-back overview: a positive default pitch orbits the camera UP and
+// behind the leader so it looks down into the channel over the tall walls,
+// showing a complete view of the pack and the track ahead.
+const CAM_HEIGHT = 26;          // base vantage height above the leader
+const CAM_BACK = 46;            // well back so the whole pack + a long stretch of track are in frame
+const CAM_LOOKAHEAD = 10;       // look down-track so turns are anticipated (broadcast feel)
+const CAM_LOOK_LIFT = 2;        // look-at just above the leader
+const CAM_DEFAULT_PITCH = 0.32;  // positive → camera rides HIGH and looks down into the chute
+const CAM_LERP = 3.4;          // slightly smoother follow reads more cinematic
 const FOV_BASE = 60;
 
 // Vignette + chromatic-aberration post pass (#10). Runs in linear HDR before OutputPass.
@@ -145,6 +150,22 @@ export function createScene(container) {
     }
   }
 
+  // Multicolored confetti burst — reuses the spark pool but with random bright
+  // colors and a strong upward pop. Fired when a marble crosses the finish line.
+  const CONFETTI_COLORS = [0x22d3ee, 0xe879f9, 0xa3e635, 0xfb923c, 0xf87171, 0x60a5fa, 0xfde047, 0xf472b6, 0xffffff];
+  function burstConfetti(pos, count = 24) {
+    for (let k = 0; k < count; k++) {
+      const i = sparkHead; sparkHead = (sparkHead + 1) % SPARKS;
+      sparkPos[i * 3] = pos.x; sparkPos[i * 3 + 1] = pos.y + 1.2; sparkPos[i * 3 + 2] = pos.z;
+      sparkVel[i * 3] = (Math.random() - 0.5) * 16;
+      sparkVel[i * 3 + 1] = Math.random() * 12 + 7;
+      sparkVel[i * 3 + 2] = (Math.random() - 0.5) * 16;
+      sparkLife[i] = 1.3;
+      _col.set(CONFETTI_COLORS[(Math.random() * CONFETTI_COLORS.length) | 0]);
+      sparkBase[i * 3] = _col.r; sparkBase[i * 3 + 1] = _col.g; sparkBase[i * 3 + 2] = _col.b;
+    }
+  }
+
   function updateSparks(dt) {
     let any = false;
     for (let i = 0; i < SPARKS; i++) {
@@ -261,6 +282,7 @@ export function createScene(container) {
     remove(obj) { scene.remove(obj); },
     followTarget,
     burstSparks,
+    burstConfetti,
     punchFov,
     render() { composer.render(); },
     resize,

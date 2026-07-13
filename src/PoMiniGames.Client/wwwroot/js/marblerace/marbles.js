@@ -121,13 +121,28 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
     marbles.push({
       index: i, body, mesh, ring,
       trail, trailPos, blob,
-      finished: false, finishOrder: -1, place: -1,
+      finished: false, finishOrder: -1, place: -1, finishTime: 0,
+      eliminated: false,
       speed: 0,
     });
   }
 
+  // Remove a marble that has fallen off the track: pull its body out of the
+  // world (safe here — this runs from the frame loop, never inside a contact
+  // callback) and hide its visuals. It no longer counts toward the race.
+  function eliminate(m) {
+    if (m.eliminated) return;
+    m.eliminated = true;
+    try { world.removeBody(m.body); } catch { }
+    m.mesh.visible = false;
+    m.trail.visible = false;
+    m.blob.visible = false;
+    if (m.ring) m.ring.visible = false;
+  }
+
   function sync() {
     for (const m of marbles) {
+      if (m.eliminated) continue;
       m.mesh.position.copy(m.body.position);
       m.mesh.quaternion.copy(m.body.quaternion);
       m.speed = m.body.velocity.length();
@@ -147,26 +162,48 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
     }
   }
 
-  // Record finish order as marbles cross the finish plane; returns true once all finished.
-  function checkFinishes(finishZ) {
+  // Record finish order + time as marbles cross the finish plane. Returns
+  // { allDone, justFinished } where justFinished lists marbles that crossed on
+  // THIS tick (so the caller can fire confetti + a chime per finisher).
+  // Stop a marble dead on the finish line: zero its motion and pull the body out
+  // of the physics world so it freezes exactly where it crossed instead of rolling
+  // off the end and falling. The mesh stays visible (sync keeps drawing it at the
+  // frozen position), and with no body it can't block or bump trailing marbles.
+  // Safe here — called from the frame loop, never inside a contact callback.
+  function freezeMarble(m) {
+    m.body.velocity.set(0, 0, 0);
+    m.body.angularVelocity.set(0, 0, 0);
+    try { world.removeBody(m.body); } catch { }
+  }
+
+  function checkFinishes(finishZ, raceClock) {
+    const justFinished = [];
     for (const m of marbles) {
-      if (!m.finished && m.body.position.z >= finishZ) {
+      if (m.eliminated || m.finished) continue;
+      if (m.body.position.z >= finishZ) {
         m.finished = true;
         m.finishOrder = finishCounter++;
+        m.finishTime = raceClock || 0;
+        freezeMarble(m);
+        justFinished.push(m);
       }
     }
-    return marbles.every((m) => m.finished);
+    // The race is done once every marble still in it has finished (eliminated
+    // marbles are out and no longer block completion).
+    const allDone = marbles.every((m) => m.finished || m.eliminated);
+    return { allDone, justFinished };
   }
 
   // Force-finish any stragglers (failsafe) ordered by current progress.
-  function forceFinishRemaining() {
-    const rest = marbles.filter((m) => !m.finished).sort((a, b) => b.body.position.z - a.body.position.z);
-    for (const m of rest) { m.finished = true; m.finishOrder = finishCounter++; }
+  function forceFinishRemaining(raceClock) {
+    const rest = marbles.filter((m) => !m.finished && !m.eliminated).sort((a, b) => b.body.position.z - a.body.position.z);
+    for (const m of rest) { m.finished = true; m.finishOrder = finishCounter++; m.finishTime = raceClock || 0; freezeMarble(m); }
   }
 
-  // Live ordering: finished first (by finish order), then unfinished by progress.
+  // Live ordering (excludes eliminated marbles): finished first (by finish
+  // order), then unfinished by progress.
   function leaderboard() {
-    const order = [...marbles].sort((a, b) => {
+    const order = marbles.filter((m) => !m.eliminated).sort((a, b) => {
       if (a.finished && b.finished) return a.finishOrder - b.finishOrder;
       if (a.finished) return -1;
       if (b.finished) return 1;
@@ -176,10 +213,10 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
     return order;
   }
 
-  // Max progress (0..1) across the pack — feeds the HUD progress bar.
+  // Max progress (0..1) across the marbles still in the race — feeds the HUD bar.
   function progress() {
     let max = 0;
-    for (const m of marbles) max = Math.max(max, m.body.position.z);
+    for (const m of marbles) { if (!m.eliminated) max = Math.max(max, m.body.position.z); }
     return Math.max(0, Math.min(1, max / TRACK.LENGTH));
   }
 
@@ -210,5 +247,5 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
     blobGeo.dispose();
   }
 
-  return { marbles, decorations, sync, checkFinishes, forceFinishRemaining, leaderboard, progress, highlight, dispose };
+  return { marbles, decorations, sync, eliminate, checkFinishes, forceFinishRemaining, leaderboard, progress, highlight, dispose };
 }

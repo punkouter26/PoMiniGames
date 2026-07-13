@@ -87,8 +87,6 @@
                                     </Virtualize>
                                 </ol>
                             }
-
-                            <button class="lb-play" @onclick="() => Play(board.GameKey)">Play @board.Title →</button>
                         </article>
                     }
                 </div>
@@ -112,13 +110,19 @@
     private List<BoardGroup> _groupedBoards = new();
 
     // The server pads every unified board to the requested limit with dummy
-    // "XXX"/0 rows. NetRun10 audit #1: filter them out everywhere so users
-    // never see ghost players. Real scores only; "No scores yet — be the
-    // first!" replaces boards that come back entirely padded.
+    // "XXX" rows. By request we now KEEP them so every board fills out to its
+    // row limit — real scores rank first, then "XXX" placeholders. The server
+    // formats a padded row's DisplayValue per board unit ("—", "0%", "0"); the
+    // product wants a literal "0" for every placeholder, so we override it here.
     private const string PlaceholderName = "XXX";
 
     private List<LeaderboardEntryDto> VisibleRows(GameLeaderboardDto board, string groupKey, int take)
-        => board.Entries.Where(e => e.Name != PlaceholderName).Take(take).ToList();
+        => board.Entries
+            .Take(take)
+            .Select(e => e.Name == PlaceholderName
+                ? new LeaderboardEntryDto { Rank = e.Rank, Name = e.Name, Value = e.Value, DisplayValue = "0" }
+                : e)
+            .ToList();
 
     // Every board shows its top 3 so many games' boards fit on screen at once
     // (was top-3 mobile / top-10 desktop). Keeps each section compact.
@@ -196,11 +200,6 @@
         _topGameTitle = personalEntries.Board.Title;
         _topRank = personalEntries.Entry.Rank;
         _topValue = personalEntries.Entry.DisplayValue;
-    }
-
-    private void Play(string gameKey)
-    {
-        NavigationManager.NavigateTo(PlayUrl(gameKey));
     }
 
     private string PlayUrl(string gameKey)

@@ -19,6 +19,7 @@ export function createWorld() {
   const marble = new CANNON.Material('marble');
   const surface = new CANNON.Material('surface');   // floor + walls
   const obstacle = new CANNON.Material('obstacle');  // pegs, bumps, paddles, bumpers
+  const rumble = new CANNON.Material('rumble');      // high-friction floor bands (subtle slow zones)
 
   world.addContactMaterial(new CANNON.ContactMaterial(marble, surface,
     { friction: 0.0, restitution: 0.12 }));
@@ -26,8 +27,12 @@ export function createWorld() {
     { friction: 0.0, restitution: 0.40 }));
   world.addContactMaterial(new CANNON.ContactMaterial(marble, marble,
     { friction: 0.0, restitution: 0.45 }));
+  // Rumble bands: enough friction to shave speed and reshuffle the pack, but the
+  // floor is still steep so a marble slows — it never stops (non-blocking guarantee).
+  world.addContactMaterial(new CANNON.ContactMaterial(marble, rumble,
+    { friction: 0.38, restitution: 0.10 }));
 
-  return { world, materials: { marble, surface, obstacle } };
+  return { world, materials: { marble, surface, obstacle, rumble } };
 }
 
 export function stepWorld(world, dt) {

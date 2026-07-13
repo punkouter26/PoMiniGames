@@ -200,6 +200,11 @@ window.PoRacer = PoRacer;
     // Feature 3: Screen shake
     let shakeX = 0, shakeY = 0, shakeDecay = 0;
 
+    // Spectator follow-cam smoothing (demo/no-local-player). Tracks the race
+    // leader; lerped so leadership changes and marshal rescues pan smoothly
+    // instead of snapping. Reset to null on setStatic (new race geometry).
+    let _specCamX = null, _specCamY = null;
+
     // Feature 8+10: Time-of-day / ambient
     let timeOfDay = 0.5;
     let fogDensity = 0;
@@ -691,6 +696,7 @@ window.PoRacer = PoRacer;
             wallsXY = new Float32Array(walls); wallsM = wallsXY.length / 4;
             trackWidth = width; trackTex = null; minimapTex = null;
             parallaxFar = null; parallaxMid = null;
+            _specCamX = null; _specCamY = null;
         },
         shake(intensity) { applyShake(intensity); },
         sparks(x, y, count) { emitSparks(x, y, count); },
@@ -733,11 +739,12 @@ window.PoRacer = PoRacer;
             const player = cars.find(c => c.isPlayer);
             let camX, camY, scale;
             if (!player && centerXY && centerN > 0) {
-                // Spectator / demo view: there is no local player to follow, so frame
-                // the WHOLE track and hold the camera still. A tight follow-cam on one
-                // bot made cars pop in and out of view as the field spread out and as
-                // stuck bots got marshal-rescued (the camera jumped with them). Fitting
-                // the whole track keeps every car on screen the entire race.
+                // Spectator / demo view: no local player. Follow the race LEADER
+                // (position 1) zoomed in 100% (2x the whole-track fit) so the
+                // graphics scroll with the action instead of showing the entire
+                // course at once. The camera is lerped toward the leader so
+                // leadership changes and marshal rescues pan smoothly rather than
+                // snapping (the reason the old fit-whole-track view existed).
                 let minX = 1e9, minY = 1e9, maxX = -1e9, maxY = -1e9;
                 for (let i = 0; i < centerN; i++) {
                     const x = centerXY[i * 2], y = centerXY[i * 2 + 1];
@@ -746,9 +753,28 @@ window.PoRacer = PoRacer;
                 }
                 const pad = (trackWidth || 240) * 1.1;
                 minX -= pad; maxX += pad; minY -= pad; maxY += pad;
-                camX = (minX + maxX) / 2;
-                camY = (minY + maxY) / 2;
-                scale = Math.min(w / (maxX - minX), h / (maxY - minY));
+                const fitScale = Math.min(w / (maxX - minX), h / (maxY - minY));
+                scale = fitScale * 2; // zoom in 100%
+
+                // Pick the current leader (lowest valid position; positions are
+                // 1..N, or 0 before the race settles). Fall back to cars[0].
+                let leader = cars[0];
+                for (let i = 1; i < cars.length; i++) {
+                    const p = cars[i].position;
+                    if (p > 0 && (!(leader.position > 0) || p < leader.position)) leader = cars[i];
+                }
+                const targetX = leader.x + Math.cos(leader.h) * 80;
+                const targetY = leader.y + Math.sin(leader.h) * 80;
+
+                // Smooth pan toward the leader; snap on huge jumps (race start /
+                // teleport) so we don't slowly drift across the whole map.
+                if (_specCamX === null || Math.hypot(targetX - _specCamX, targetY - _specCamY) > 3000) {
+                    _specCamX = targetX; _specCamY = targetY;
+                } else {
+                    _specCamX += (targetX - _specCamX) * 0.18;
+                    _specCamY += (targetY - _specCamY) * 0.18;
+                }
+                camX = _specCamX; camY = _specCamY;
             } else {
                 // Follow-cam on the local player: zoom in so their car and the cars
                 // around them (for collisions) are clearly visible.

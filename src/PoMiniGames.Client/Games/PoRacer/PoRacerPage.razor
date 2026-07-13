@@ -66,10 +66,6 @@
         </div>
     }
 
-    <div class="racer-minimap @(Phase == GamePhase.Racing ? "is-racing" : "")">
-        <canvas id="minimapCanvas" width="180" height="180"></canvas>
-    </div>
-
     <div class="racer-touch @(Phase == GamePhase.Racing ? "is-active" : "")" aria-hidden="true">
         <div class="touch-cluster">
             <button type="button" class="touch-btn" data-po-input="left">◀</button>
@@ -444,7 +440,7 @@
         try
         {
             _ = JS.InvokeVoidAsync("PoRacerRender.drawSnapshot",
-                "racerCanvas", "minimapCanvas",
+                "racerCanvas", null,
                 snap.ElapsedRaceTime, snap.CountdownMs > 0 ? 0 : 1,
                 Cars.Select(c => new
                 {

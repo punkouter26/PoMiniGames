@@ -6,7 +6,7 @@ import { createMarbles, hexString } from './marbles.js';
 import { createAudio } from './audio.js';
 
 const RESULT_MS = 3200;     // how long the result banner shows before next track
-const RACE_TIMEOUT = 110;   // s — failsafe for a 5× longer track (~22s * 5 + headroom for the bumpier chute)
+const RACE_TIMEOUT = 160;   // s — failsafe for the lengthened (1800-unit) chute + friction bands
 const TICK_INTERVAL = 0.12; // s — throttle for OnRaceTick to C#
 const BEST_KEY = 'pomarblerace_best';
 
@@ -123,6 +123,15 @@ export class Game {
     this._demoPickAt = performance.now() + 1200;
   }
 
+  // Which marble the camera centers on. Demo/spectator view tracks the current
+  // race LEADER (front-runner) so the front of the pack stays framed; a real
+  // player's camera stays on their own picked marble.
+  _focusMarble() {
+    const leader = this.marbleSet.leaderboard()[0];
+    if (this.demo) return leader;
+    return this.marbleSet.marbles[this.chosen] || leader;
+  }
+
   _frame(dt) {
     // demo auto-pick
     if (this.demo && this.phase === 'pick' && this._demoPickAt && performance.now() >= this._demoPickAt) {
@@ -142,9 +151,10 @@ export class Game {
         this._resolve();
       }
 
-      // camera follows the player's own marble
-      const me = this.marbleSet.marbles[this.chosen];
-      this.scene.followTarget(me.mesh.position, dt, false);
+      // Camera centers the focus marble: the race LEADER in demo/spectator mode,
+      // or the player's own pick in a real game.
+      const focus = this._focusMarble();
+      this.scene.followTarget(focus.mesh.position, dt, false);
 
       this.tickAccum += dt;
       if (this.tickAccum >= TICK_INTERVAL) { this.tickAccum = 0; this._sendTick(); }
@@ -152,8 +162,8 @@ export class Game {
       // keep turnstiles/marbles visually settled; advance after the banner
       this.marbleSet.sync();
       this.resultTimer -= dt;
-      const me = this.marbleSet.marbles[this.chosen];
-      if (me) this.scene.followTarget(me.mesh.position, dt, false);
+      const focus = this._focusMarble();
+      if (focus) this.scene.followTarget(focus.mesh.position, dt, false);
       if (this.resultTimer <= 0) this._nextTrack();
     } else {
       // pick phase: gentle overview of the start gate

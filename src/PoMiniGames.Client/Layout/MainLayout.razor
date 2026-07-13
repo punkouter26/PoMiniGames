@@ -6,7 +6,6 @@
 @inject ScoreSyncService ScoreSync
 @inject UiFeedbackService Feedback
 @inject SettingsService Settings
-@inject IWebAssemblyHostEnvironment HostEnvironment
 
 <div class="gl-page">
     @* §9 mock banner — desktop gets the full-width shimmer banner; mobile gets
@@ -49,47 +48,9 @@
         </div>
 
         <div class="gl-auth">
-            @* ⚙️ Global settings: master mute + FPS badge, shared by every game. *@
-            <details class="gl-overflow-menu gl-settings-menu">
-                <summary class="gl-overflow-trigger" aria-label="Settings">⚙️</summary>
-                <div class="gl-overflow-panel">
-                    <button class="gl-overflow-item" @onclick="ToggleMute">
-                        @(Settings.Muted ? "🔇 Sound: off" : "🔊 Sound: on")
-                    </button>
-                    <button class="gl-overflow-item" @onclick="ToggleFps">
-                        @(Settings.ShowFps ? "📈 FPS badge: shown" : "📉 FPS badge: hidden")
-                    </button>
-                </div>
-            </details>
-            @* Guest pill and email chip removed per 2026-07-04 mobile-portrait cleanup:
-               neither belongs on a portrait phone chrome strip. The sign-in / sign-out
-               button (and the dev Switch-user panel, when applicable) remain below. *@
-            @* §10 dev-only "Switch user…" affordance. Renders only in Development +
-               Test environments where the /api/auth/dev-bypass endpoint exists;
-               lets a developer verify head-to-head flows from the same machine
-               without spinning up an incognito tab. Hidden in Production. *@
-            @if (ShowDevSwitch)
-            {
-                <details class="gl-overflow-menu gl-dev-switch">
-                    <summary class="gl-overflow-trigger" aria-label="Developer tools">🔧</summary>
-                    <div class="gl-overflow-panel">
-                        <div class="gl-dev-switch__title">Switch user (dev only)</div>
-                        <input class="gl-dev-switch__input" type="text"
-                               placeholder="@(AuthState.User?.DisplayName ?? "new-name")"
-                               @bind="_devUser"
-                               @bind:event="oninput"
-                               maxlength="32" />
-                        <button class="gl-overflow-item" @onclick="SwitchDevUserAsync" disabled="@(string.IsNullOrWhiteSpace(_devUser) || _switching)">
-                            @(_switching ? "Switching…" : "Switch identity")
-                        </button>
-                        @if (!string.IsNullOrEmpty(_switchError))
-                        {
-                            <div class="gl-dev-switch__error">@_switchError</div>
-                        }
-                        <div class="gl-dev-switch__hint">Replaces the current cookie; reloads match history.</div>
-                    </div>
-                </details>
-            }
+            @* ⚙️ settings gear and 🔧 dev switch-user wrench removed per user
+               request (2026-07-13). Master mute / FPS-badge toggles and the
+               dev-only identity switcher are gone from the top bar entirely. *@
             @if (AuthState.IsConfigured && !AuthState.IsLoading)
             {
                 <button class="gl-auth-button" @onclick="AuthState.IsAuthenticated ? SignOut : SignIn">
@@ -163,32 +124,6 @@
         Settings.Load();
     }
 
-    private void ToggleMute() => Settings.SetMuted(!Settings.Muted);
-    private void ToggleFps() => Settings.SetShowFps(!Settings.ShowFps);
-
-    /// <summary>
-    /// Returns true when the display name identifies a dev-bypass anonymous session.
-    /// §10 hardening: previously relied on a tautological <c>StartsWith("ANON")</c> heuristic
-    /// which misclassified any legitimate display name beginning with "ANON" as anonymous.
-    /// We now pattern-match the canonical anonymous prefix <c>dev-anon-</c> and the
-    /// auto-guest suffix <c>(auto)</c> that the auth pipeline emits, and reject every
-    /// other display name as authenticated.
-    /// </summary>
-    private static bool IsAnonUser(string? displayName)
-    {
-        if (string.IsNullOrEmpty(displayName)) return false;
-        if (displayName.StartsWith("dev-anon-", StringComparison.OrdinalIgnoreCase)) return true;
-        if (displayName.StartsWith("ANON", StringComparison.OrdinalIgnoreCase)
-            && displayName.Length > 4
-            && (char.IsDigit(displayName[4]) || displayName[4] == '-'))
-        {
-            // Legacy: only the dev-bypass path produced "ANON463443" — never a real user.
-            return true;
-        }
-        if (displayName.EndsWith(" (auto)", StringComparison.Ordinal)) return true;
-        return false;
-    }
-
     private async Task SignIn()
     {
         await Feedback.TapAsync();
@@ -205,43 +140,6 @@
     {
         await Feedback.TapAsync();
         await AuthState.DevBypassAsync("ANON");
-    }
-
-    // §10 dev-only "Switch user" panel. The button only renders when the host
-    // is in Development or Test (where /api/auth/dev-bypass is registered); the
-    // server-side endpoint already 404s outside loopback + non-Production so a
-    // malicious probe of the UI never reaches a working handler.
-    private bool ShowDevSwitch =>
-        HostEnvironment.IsDevelopment() ||
-        string.Equals(HostEnvironment.Environment, "Test", StringComparison.OrdinalIgnoreCase);
-
-    private string _devUser = string.Empty;
-    private bool _switching;
-    private string? _switchError;
-
-    private async Task SwitchDevUserAsync()
-    {
-        if (string.IsNullOrWhiteSpace(_devUser)) return;
-        _switching = true;
-        _switchError = null;
-        try
-        {
-            // Reuse the existing AuthStateService.DevBypassAsync, which calls
-            // /api/auth/dev-bypass?user=<name> — the canonical "switch identity"
-            // endpoint the server already wires up. No new server code needed.
-            await AuthState.DevBypassAsync(_devUser.Trim());
-            ToastService.Show($"Signed in as {_devUser.Trim()}", ToastType.Success);
-            _devUser = string.Empty;
-        }
-        catch (Exception ex)
-        {
-            _switchError = ex.Message;
-        }
-        finally
-        {
-            _switching = false;
-            await InvokeAsync(StateHasChanged);
-        }
     }
 
     public void Dispose()

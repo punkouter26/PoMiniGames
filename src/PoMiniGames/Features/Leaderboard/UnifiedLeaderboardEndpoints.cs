@@ -151,7 +151,7 @@ public static class UnifiedLeaderboardEndpoints
                 i + 1, s.PlayerInitials, s.BestScore, s.BestScore.ToString("N0", CultureInfo.InvariantCulture)))
             .ToList();
         PadWithPlaceholders(entries, limit, "0");
-        return new GameLeaderboardDto("pomarblerace", "PoMarbleRace", "Points", HigherIsBetter: true, entries);
+        return new GameLeaderboardDto("pomarblerace", "Marble Race", "Points", HigherIsBetter: true, entries);
     }
 
     /// <summary>Best race time per player (lower is better) from the PoRacer score table.</summary>
@@ -169,7 +169,7 @@ public static class UnifiedLeaderboardEndpoints
                 x.Best.ToString("0.0", CultureInfo.InvariantCulture) + "s"))
             .ToList();
         PadWithPlaceholders(entries, limit, "—");
-        return new GameLeaderboardDto("poracer", "PoRacer", "Best time", HigherIsBetter: false, entries);
+        return new GameLeaderboardDto("poracer", "Racer", "Best time", HigherIsBetter: false, entries);
     }
 
     /// <summary>
@@ -203,7 +203,7 @@ public static class UnifiedLeaderboardEndpoints
                 i + 1, l.PlayerName, l.PresidentsBeaten, $"{l.PresidentsBeaten}/10"))
             .ToList();
         PadWithPlaceholders(entries, limit, "0/10");
-        return new GameLeaderboardDto("pobrawl", "PoBrawl", "Ladder", HigherIsBetter: true, entries);
+        return new GameLeaderboardDto("pobrawl", "Brawl", "Ladder", HigherIsBetter: true, entries);
     }
 
     /// <summary>Mirror of the client's Initials(): first 3 alphanumeric chars, uppercased.</summary>

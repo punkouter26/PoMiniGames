@@ -49,7 +49,7 @@ export const CHARACTERS = {
     lapelPin: true,
     stance: { torso: { x: -0.05 }, head: { x: -0.14 } },
     mass: 1.18, attackPower: 1.10, moveAccel: 11,
-    entrance: 'swagger',
+    entrance: 'trumpPump',
   },
   biden: {
     id: 'biden', name: 'Biden',
@@ -136,7 +136,7 @@ export const CHARACTERS = {
     glasses: 'round', lapelPin: true,
     stance: { torso: { x: -0.05 } },
     mass: 0.98, attackPower: 0.98, moveAccel: 13,
-    entrance: 'salute',
+    entrance: 'golf',
   },
   reagan: {
     id: 'reagan', name: 'Reagan',
@@ -153,7 +153,7 @@ export const CHARACTERS = {
     lapelPin: true,
     stance: { head: { x: -0.04, z: 0.04 }, torso: { x: -0.02 } },
     mass: 1.05, attackPower: 1.08, moveAccel: 12,
-    entrance: 'salute',
+    entrance: 'point',
   },
   carter: {
     id: 'carter', name: 'Carter',
@@ -187,7 +187,7 @@ export const CHARACTERS = {
     lapelPin: true,
     stance: { torso: { x: 0.05 }, shoulderL: { z: 0.06 }, shoulderR: { z: -0.06 } },
     mass: 1.15, attackPower: 1.06, moveAccel: 11,
-    entrance: 'salute',
+    entrance: 'stumble',
   },
   nixon: {
     id: 'nixon', name: 'Nixon',

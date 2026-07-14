@@ -68,6 +68,20 @@ public class AuthStateService
             return;
         }
 
+        // Microsoft OAuth: drain the redirect callback (auth code in the URL) or
+        // restore a cached MSAL session FIRST — even in dev, where DevLoginEnabled
+        // is also true. This is what consumes the code left by the redirect flow
+        // and clears MSAL's `interaction_in_progress` lock. The old ordering ran
+        // the DevLoginEnabled branch first and returned before ever draining the
+        // redirect, so the lock stayed stuck and every subsequent Microsoft
+        // sign-in failed with "previously interrupted" (poauth.js signIn).
+        if (_config.MicrosoftEnabled && await TryApplyMicrosoftSessionAsync())
+        {
+            _initialized = true;
+            NotifyStateChanged();
+            return;
+        }
+
         if (_config.DevLoginEnabled)
         {
             AccessToken = null;
@@ -136,46 +150,63 @@ public class AuthStateService
             return;
         }
 
-        // Microsoft OAuth (MSAL) mode — the handshake can't fetch an MSAL-restored
-        // session (it's all client-side IndexedDB); do that here, but only after we
-        // know the handshake succeeded so we never block on a hung MSAL init when the
-        // user already has a server-side cookie.
-        if (_config.MicrosoftEnabled)
-        {
-            try
-            {
-                await EnsureMsalInitializedAsync();
-                // First, drain any pending redirect-callback result. The redirect
-                // flow (used when loginPopup is blocked) lands the browser on
-                // /auth/callback with the auth code in the URL fragment; MSAL
-                // processes it here, the SPA then navigates to "/". The
-                // handshake has already succeeded, so we don't try /api/auth/me
-                // again — ApplyMicrosoftSessionAsync reuses the bearer we just
-                // acquired.
-                var redirectResult = await _js.InvokeAsync<MsalResult?>("poAuth.handleRedirect", _config.Scope);
-                if (redirectResult is not null)
-                {
-                    await ApplyMicrosoftSessionAsync(redirectResult);
-                }
-                else
-                {
-                    // No redirect in flight; fall back to a silent cache restore
-                    // (the user previously signed in on this machine).
-                    var restored = await _js.InvokeAsync<MsalResult?>("poAuth.tryRestore", _config.Scope);
-                    if (restored is not null)
-                    {
-                        await ApplyMicrosoftSessionAsync(restored);
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.SilentMsalRestoreFailed(ex.Message, ex);
-            }
-        }
-
         _initialized = true;
         NotifyStateChanged();
+    }
+
+    /// <summary>
+    /// Drain a pending MSAL redirect callback (auth code in the URL) or restore a
+    /// cached MSAL account, applying the resulting Microsoft session. Returns true
+    /// when an authenticated session was applied.
+    ///
+    /// Safe to call on every load where Microsoft is configured — even with no
+    /// redirect in flight, invoking <c>handleRedirectPromise()</c> is what clears
+    /// MSAL's <c>interaction_in_progress</c> lock after a redirect round-trip. This
+    /// MUST run before the DevLoginEnabled short-circuit in <see cref="InitializeAsync"/>,
+    /// otherwise (in dev, where both flags are set) the lock stays stuck and every
+    /// subsequent Microsoft sign-in fails with "previously interrupted".
+    ///
+    /// Runs only when Microsoft is actually configured (ClientId + ApiClientId
+    /// wired); an enabled-but-unwired config has no MSAL app to restore and would
+    /// throw on init.
+    /// </summary>
+    private async Task<bool> TryApplyMicrosoftSessionAsync()
+    {
+        if (_config is null || !_config.MicrosoftConfigured) return false;
+
+        // Do not block on a hung MSAL init when the handshake already restored a
+        // server-side session (e.g. a dev cookie) — that path is handled by the
+        // caller. We still attempt the drain so the redirect lock gets cleared.
+        try
+        {
+            await EnsureMsalInitializedAsync();
+
+            // First, drain any pending redirect-callback result. The redirect flow
+            // (used when loginPopup is blocked) lands the browser on /auth/callback
+            // with the auth code in the URL; MSAL processes it here and the SPA
+            // navigates back to the original request URL.
+            var redirectResult = await _js.InvokeAsync<MsalResult?>("poAuth.handleRedirect", _config.Scope);
+            if (redirectResult is not null)
+            {
+                await ApplyMicrosoftSessionAsync(redirectResult);
+                return _user is not null;
+            }
+
+            // No redirect in flight; fall back to a silent cache restore (the user
+            // previously signed in on this machine).
+            var restored = await _js.InvokeAsync<MsalResult?>("poAuth.tryRestore", _config.Scope);
+            if (restored is not null)
+            {
+                await ApplyMicrosoftSessionAsync(restored);
+                return _user is not null;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.SilentMsalRestoreFailed(ex.Message, ex);
+        }
+
+        return false;
     }
 
     /// <summary>

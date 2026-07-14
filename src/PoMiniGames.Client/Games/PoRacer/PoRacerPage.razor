@@ -39,7 +39,7 @@
 @inject ToastService ToastService
 @implements IAsyncDisposable
 
-<PageTitle>PoRacer — Arcade Racing</PageTitle>
+<PageTitle>Racer — Arcade Racing</PageTitle>
 
 <GameShell Title="@TitleContent"
            Player="@_playerName"
@@ -100,7 +100,7 @@
     {
         <div class="racer-overlay racer-start">
             <div class="racer-card">
-                <div class="racer-title">PoRacer</div>
+                <div class="racer-title">Racer</div>
                 <div class="racer-subtitle">Multiplayer Arcade Racing</div>
                 <div class="racer-controls">
                     <div><kbd>W</kbd> / <kbd>↑</kbd> Accelerate</div>
@@ -183,7 +183,7 @@
     private bool _isDemo;
     private bool _disposed;
 
-    private RenderFragment TitleContent => @<text>🏎️ PoRacer</text>;
+    private RenderFragment TitleContent => @<text>🏎️ Racer</text>;
 
     private RenderFragment HowToPlayContent => @<div>
         <p>Finish 3 laps ahead of the pack.</p>

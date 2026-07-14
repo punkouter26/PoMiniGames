@@ -93,9 +93,14 @@
 
     private ConnectFiveBoard _board = new();
     private ConnectFiveAI _ai = new();
-    // Demo mode (CPU vs CPU) plays both sides at Medium. 1-player difficulty is
-    // driven by the adaptive ELO (see _cpuElo), not this field.
-    private readonly Difficulty _difficulty = Difficulty.Medium;
+    // Demo mode (CPU vs CPU) plays BOTH sides at full strength — the 4-ply
+    // alpha-beta negamax "Hard" rung — so the attract-mode game is genuinely
+    // smart. 1-player difficulty is driven by the adaptive ELO (see _cpuElo).
+    // Ply counter + opening-randomisation window: the Hard search is fully
+    // deterministic, so without varying the first couple of plies every demo
+    // loop would replay the identical game. See DemoMove.
+    private int _demoPly;
+    private const int DemoOpeningRandomPlies = 2;
     private GameResult _gameResult = GameResult.InProgress;
     private bool _isAiTurn;
     // "ai" (vs CPU) or "2p" (local pass-and-play); "demo" is driven by the route param.
@@ -325,6 +330,7 @@
 
         if (PlayMode == "demo")
         {
+            _demoPly = 0;
             _demoCts = new CancellationTokenSource();
             // Kick off the CPU-vs-CPU auto-play loop. This call was dropped in
             // the KioskCoordinator refactor, which left demo mode showing an
@@ -350,9 +356,10 @@
             // lands cleanly and sits still long enough for the eye to register
             // before the next piece starts falling.
             const int demoStepMs = 850;
-            // Red (CPU1) move
-            var (rr, rc) = _ai.GetMove(_board, Player.Red, _difficulty);
+            // Red (CPU1) move — full-strength Hard play (see DemoMove).
+            var (rr, rc) = DemoMove(_board, Player.Red);
             _board = _board.Place(rr, rc, Player.Red);
+            _demoPly++;
             var redWin = _board.CheckWin(Player.Red);
             if (redWin.Won) { _gameResult = GameResult.Win; _winCells = redWin.Cells; OnWinDetected(); }
             else if (_board.IsFull()) { _gameResult = GameResult.Draw; }
@@ -360,9 +367,10 @@
             if (_gameResult != GameResult.InProgress) break;
             await Task.Delay(demoStepMs, ct);
 
-            // Yellow (CPU2) move
-            var (yr, yc) = _ai.GetMove(_board, Player.Yellow, _difficulty);
+            // Yellow (CPU2) move — full-strength Hard play (see DemoMove).
+            var (yr, yc) = DemoMove(_board, Player.Yellow);
             _board = _board.Place(yr, yc, Player.Yellow);
+            _demoPly++;
             var yellowWin = _board.CheckWin(Player.Yellow);
             if (yellowWin.Won) { _gameResult = GameResult.Loss; _winCells = yellowWin.Cells; OnWinDetected(); }
             else if (_board.IsFull()) { _gameResult = GameResult.Draw; }
@@ -380,6 +388,31 @@
             if (!ct.IsCancellationRequested)
                 await InvokeAsync(ResetGame);
         }
+    }
+
+    /// <summary>
+    /// Demo-mode move selection for a CPU side. Plays the 4-ply alpha-beta negamax
+    /// "Hard" rung so both CPUs play a genuinely smart game. The first
+    /// <see cref="DemoOpeningRandomPlies"/> plies are randomised across the central
+    /// columns: the Hard search is deterministic, so without this every demo loop
+    /// would replay the identical game. An empty / near-empty board carries no
+    /// tactical threats, so a varied central opening diversifies which strong game
+    /// is played out without ever making a blunder.
+    /// </summary>
+    private (int Row, int Col) DemoMove(ConnectFiveBoard board, Player player)
+    {
+        if (_demoPly < DemoOpeningRandomPlies)
+        {
+            var cols = board.GetAvailableCols();
+            var center = ConnectFiveBoard.Cols / 2;
+            var band = cols.Where(c => Math.Abs(c - center) <= 2).ToList();
+            var pickFrom = band.Count > 0 ? band : cols;
+            if (pickFrom.Count == 0) return (0, 0);
+            var pick = pickFrom[Random.Shared.Next(pickFrom.Count)];
+            return (board.GetTargetRow(pick), pick);
+        }
+
+        return _ai.GetMove(board, player, Difficulty.Hard);
     }
 
     public void Dispose()

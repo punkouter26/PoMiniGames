@@ -200,9 +200,10 @@
     private string _p2Char = "biden";
     private int _p1Hp = 100;
     private int _p2Hp = 100;
-    // Energy meters (0-100) fed by the JS engine — see game.js ENERGY_* consts.
-    private int _p1Energy = 50;
-    private int _p2Energy = 50;
+    // Energy meters (0-100) fed by the JS engine — starts at the 1/3 bank
+    // (game.js ENERGY_DEFAULT); only winding up or attacking moves it.
+    private int _p1Energy = 33;
+    private int _p2Energy = 33;
     private double _elapsed;
     private int _winner;
     private double _lastKo;
@@ -228,7 +229,7 @@
     private int _lastEloDelta;
     private string LadderKey => $"pobrawl_ladder_{_playerName}";
 
-    private RenderFragment TitleContent => @<span>🥊 PoBrawl</span>;
+    private RenderFragment TitleContent => @<span>🥊 Brawl</span>;
 
     private RenderFragment HowToPlayContent => @<div>
         <p>Knock out your opponent — charge attacks and block at the right moment.</p>
@@ -313,8 +314,8 @@
     {
         _p1Hp = 100;
         _p2Hp = 100;
-        _p1Energy = 50;
-        _p2Energy = 50;
+        _p1Energy = 33;
+        _p2Energy = 33;
         _elapsed = 0;
         _p1Regions = new int[4];
         _p2Regions = new int[4];
@@ -387,6 +388,19 @@
         _elapsed = elapsed;
         if (p1Regions is { Length: 4 }) _p1Regions = p1Regions;
         if (p2Regions is { Length: 4 }) _p2Regions = p2Regions;
+        InvokeAsync(StateHasChanged);
+    }
+
+    // Fired by the JS engine whenever a match (re)spawns its fighters. In demo
+    // mode resetMatch reshuffles the roster on the JS side, so without this the
+    // HUD names (and body-diagram avatars) drift off the actual on-screen
+    // fighters. Syncing the resolved character ids keeps the left/right names
+    // matched to the fighters underneath them.
+    [JSInvokable]
+    public void OnMatchStart(string p1Char, string p2Char)
+    {
+        if (!string.IsNullOrEmpty(p1Char)) _p1Char = p1Char;
+        if (!string.IsNullOrEmpty(p2Char)) _p2Char = p2Char;
         InvokeAsync(StateHasChanged);
     }
 

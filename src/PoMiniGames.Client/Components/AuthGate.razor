@@ -14,6 +14,15 @@
         </div>
     </div>
 }
+else if (AuthState.DevLoginEnabled && !AuthState.IsAuthenticated)
+{
+    @* Dev env: force an explicit login. Instead of the guest-first flow, an
+       unauthenticated visitor is held on the LoginScreen (Microsoft or
+       "Continue as Guest") until they sign in. This keeps the "ANON" pass-
+       through from happening while developing. Production (Microsoft-only)
+       auth still follows the guest-first path below. *@
+    <LoginScreen />
+}
 else
 {
     @* §10 Guest-first: the app is NOT gated. Anonymous visitors get straight to

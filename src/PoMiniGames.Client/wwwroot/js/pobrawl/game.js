@@ -52,6 +52,18 @@ const ATTACKS = {
 
 const HITSTUN = 0.35;
 
+// ── Dismemberment ─────────────────────────────────────────────────────────
+// When the arms region reddens, an arm tears off and falls to the canvas with a
+// silly blood squirt. The non-punching (LEFT) arm goes first (>= ARM_SEVER_L)
+// so the fighter keeps its striking arm — with one arm you can only punch with
+// that (right) arm. The right/striking arm only tears off once the left is
+// already gone and damage is near-max (ARM_SEVER_R); after that the fighter has
+// no arms and can only kick.
+const ARM_SEVER_L = 70;
+const ARM_SEVER_R = 95;
+// Rest height of a severed arm lying on the canvas (its capsule half-radius).
+const LIMB_GROUND_Y = 0.12;
+
 // ── Hold-to-charge (Urban Champion style) ────────────────────────────────
 // Press-and-hold punch/kick winds the attack up; release throws it. Charge
 // scales damage/knockback 1x → CHARGE_MAX_MUL over CHARGE_TIME seconds of
@@ -64,13 +76,11 @@ const CHARGE_MAX_MUL = 2.0;
 // ── Energy meter ─────────────────────────────────────────────────────────
 // One 0..1 pool per fighter, shown under the HP bar in the Blazor HUD. It IS
 // the stored attack power: a release spends ALL of it (chargeMul 1x when
-// empty → CHARGE_MAX_MUL when full). It fills while holding punch/kick (the
-// charge state) and jumps +25% per successfully blocked hit; passive regen
-// only works while idle and tops out at half power — banking more than 50%
-// takes active defense or a held wind-up.
-const ENERGY_IDLE_CAP = 0.5;
-const ENERGY_REGEN = 0.12;        // per second, idle state only, up to the cap
-const ENERGY_BLOCK_REWARD = 0.25; // per blocked hit, up to 1
+// empty → CHARGE_MAX_MUL when full). ONLY two things move the bar: winding up
+// a punch/kick (the charge state) fills it toward the peak, and releasing the
+// attack empties it to zero. Every fighter starts each match banked at 1/3 —
+// there is no idle regen, no block reward, and taking a hit doesn't touch it.
+const ENERGY_DEFAULT = 1 / 3;
 
 // Fighters never leave their feet before the final blow — heavy hits get a
 // hard stagger (extra knockback + lean) instead of a mid-fight knockdown.
@@ -212,10 +222,11 @@ export class BrawlGame {
     // hold the 60 Hz sim — low framerate hurts a timing game more than any
     // post pass helps it. options.quality (0|1|2) pins a tier and disables
     // the auto stepdown.
-    this._qualityForced = !!(options && Number.isInteger(options.quality));
-    this.quality = this._qualityForced ? Math.max(0, Math.min(2, options.quality)) : 2;
-    this._lowFpsStreak = 0;
-    this._fpsSampleCount = 0;
+    // GFX quality is pinned to the maximum tier (MSAA×4 + GTAO + bloom + CA).
+    // The auto-stepdown and the on-screen "FX" tier badge were removed per user
+    // request — the game always renders at full quality regardless of framerate.
+    this._qualityForced = true;
+    this.quality = 2;
   }
 
   start() {
@@ -287,13 +298,6 @@ export class BrawlGame {
     this.banner.className = 'pb-banner';
     this.container.appendChild(this.banner);
 
-    // FPS badge, upper-right. Updated twice a second from the render loop.
-    this.fpsEl = document.createElement('div');
-    this.fpsEl.className = 'pb-fps';
-    this.container.appendChild(this.fpsEl);
-    this._fpsFrames = 0;
-    this._fpsTime = 0;
-
     // CSS overlay for chromatic aberration / vignette flash on KO.
     this.flash = document.createElement('div');
     this.flash.className = 'pb-flash';
@@ -358,20 +362,6 @@ export class BrawlGame {
       let dt = Math.min(rawDt, MAX_FRAME_DT);
       this.lastFrame = now;
 
-      // Quality monitor — measured from the unclamped frame delta so slow
-      // frames report honestly (dt is clamped for the sim). The FPS number
-      // itself lives in the shared top-bar badge (FpsCounter); the in-canvas
-      // badge only surfaces the FX tier when the monitor has stepped down.
-      this._fpsFrames++;
-      this._fpsTime += rawDt;
-      if (this._fpsTime >= 0.5) {
-        const fps = Math.round(this._fpsFrames / this._fpsTime);
-        this._tickQualityMonitor(fps);
-        const label = this.quality < 2 ? `FX ${this.quality === 1 ? 'med' : 'low'}` : '';
-        if (this.fpsEl && this.fpsEl.textContent !== label) this.fpsEl.textContent = label;
-        this._fpsFrames = 0;
-        this._fpsTime = 0;
-      }
       this.accumulator += dt * this.timeScale;
       while (this.accumulator >= SIM_DT) {
         this.accumulator -= SIM_DT;
@@ -459,27 +449,6 @@ export class BrawlGame {
     this.composer.addPass(new OutputPass());
   }
 
-  // Auto quality stepdown, fed a sample every 0.5 s by the render loop. The
-  // first ~2 s are ignored (shader warm-up skews them); after that, four
-  // consecutive samples under 45 FPS drop one tier. Down only — stepping back
-  // up would oscillate at the boundary.
-  _tickQualityMonitor(fps) {
-    if (this._qualityForced || this.quality <= 0) return;
-    this._fpsSampleCount++;
-    if (this._fpsSampleCount <= 4) return;
-    if (fps >= 45) {
-      this._lowFpsStreak = 0;
-      return;
-    }
-    if (++this._lowFpsStreak >= 4) {
-      this.quality--;
-      this._lowFpsStreak = 0;
-      this._buildComposer(
-        this.container.clientWidth || 800, this.container.clientHeight || 540);
-      console.info(`[PoBrawl] sustained low FPS — post FX stepped down to tier ${this.quality}`);
-    }
-  }
-
   _makeEnvMap() {
     try {
       const pmrem = new THREE.PMREMGenerator(this.renderer);
@@ -560,12 +529,25 @@ export class BrawlGame {
       this._bloodStains.length = 0;
     }
 
+    // Clear any arms torn off in the previous fight.
+    if (this._severedLimbs) {
+      for (const l of this._severedLimbs) {
+        this.scene.remove(l.mesh);
+        l.mesh.traverse((o) => {
+          if (o.geometry) o.geometry.dispose();
+          if (o.material) for (const m of Array.isArray(o.material) ? o.material : [o.material]) m.dispose();
+        });
+      }
+      this._severedLimbs.length = 0;
+    }
+
     this.combat = new CombatPlay({ maxHealth: MAX_HP });
     this.replay.start();
 
     this.fighters = [1, 2].map((index) => {
       const charId = index === 1 ? p1Char : p2Char;
-      const rig = buildFighter(CHARACTERS[charId] ? charId : CHARACTER_IDS[0]);
+      const resolvedId = CHARACTERS[charId] ? charId : CHARACTER_IDS[0];
+      const rig = buildFighter(resolvedId);
       rig.root.position.set(index === 1 ? -1.6 : 1.6, 0, 0);
       this.scene.add(rig.root);
       const playerId = `p${index}`;
@@ -594,6 +576,10 @@ export class BrawlGame {
       return {
         index,
         playerId,
+        // Resolved character id (demo mode reshuffles these every reset — the
+        // HUD reads it back via the OnMatchStart callback so the on-screen
+        // names always match the actual fighters).
+        charId: resolvedId,
         rig,
         // Stance offsets give each president a personal idle silhouette
         // (Trump's chin-up lean, Nixon's hunch) on top of the shared guard.
@@ -610,7 +596,7 @@ export class BrawlGame {
         chargeName: null,  // 'punch'|'kick' while state === 'charge'
         chargeAmt: 0,      // 0..1 stored charge (mirrors energy while charging)
         chargeMul: 1,      // damage/knockback multiplier of the current swing
-        energy: ENERGY_IDLE_CAP, // 0..1 banked attack power (see ENERGY_* consts)
+        energy: ENERGY_DEFAULT, // 0..1 banked attack power; starts at 1/3 (see ENERGY_DEFAULT)
         chargeCued: false, // full-charge audio cue fired
         chargeSparkT: 0,   // spark-mote emission timer
         // ── Momentum + weight ─────────────────────────────────────────
@@ -620,6 +606,11 @@ export class BrawlGame {
         sideVel: new THREE.Vector3(),
         // ── Per-region damage ─────────────────────────────────────────
         regionDmg: { head: 0, torso: 0, arms: 0, legs: 0 },
+        // ── Dismemberment ─────────────────────────────────────────────
+        // Which arm sides ('L'/'R') have torn off, plus the still-bleeding
+        // stumps that keep squirting for a beat. See _severArm / _tick.
+        armsLost: new Set(),
+        stumps: [],
         // ── Misc ──────────────────────────────────────────────────────
         idleT: this.rng.random() * 10,
         speedAmt: 0,
@@ -657,6 +648,13 @@ export class BrawlGame {
     });
     this.hudDirty = true;
     this.hudTimer = 0;
+    // Tell the HUD which characters actually spawned so the left/right names
+    // match the fighters — critical in demo mode, where resetMatch reshuffles
+    // the roster without the Blazor layer knowing.
+    if (this.dotnet) {
+      this.dotnet.invokeMethodAsync('OnMatchStart',
+        this.fighters[0].charId, this.fighters[1].charId).catch(() => {});
+    }
   }
 
   _hp(f) {
@@ -803,6 +801,26 @@ export class BrawlGame {
         const q = f.squashT / 0.14;
         const s = q * q * 0.2;
         f.rig.joints.hips.scale.set(1 + s * 0.8, 1 - s, 1 + s * 0.8);
+      }
+
+      // Bleeding stumps: keep squirting from the torn shoulder socket for a beat.
+      if (f.stumps && f.stumps.length) {
+        for (let n = f.stumps.length - 1; n >= 0; n--) {
+          const st = f.stumps[n];
+          st.t -= dt;
+          st.emit -= dt;
+          if (st.emit <= 0) {
+            st.emit = 0.07;
+            // Shoulder socket in torso-local space (see fighters.js: shoulder at
+            // x = ±0.28·buildScale, y = 0.5), lifted to world.
+            const socket = new THREE.Vector3(
+              (st.side === 'L' ? -1 : 1) * 0.28 * f.rig.config.buildScale, 0.5, 0);
+            f.rig.joints.torso.localToWorld(socket);
+            const out = new THREE.Vector3(st.side === 'L' ? -1 : 1, 0.5, 0).normalize();
+            this._bloodSquirt(socket, out, 1.1);
+          }
+          if (st.t <= 0) f.stumps.splice(n, 1);
+        }
       }
     }
 
@@ -1074,12 +1092,13 @@ export class BrawlGame {
     // ── State machine ────────────────────────────────────────────────
     switch (f.state) {
       case 'idle': {
-        // Passive energy regen — idle only, capped at half power.
-        if (f.energy < ENERGY_IDLE_CAP) {
-          f.energy = Math.min(ENERGY_IDLE_CAP, f.energy + ENERGY_REGEN * dt);
-        }
-        if (intent.punch || intent.kick) {
-          const name = intent.punch ? 'punch' : 'kick';
+        // Energy is static while idle — it only moves via winding up (fill) or
+        // attacking (empty). No passive regen.
+        // A punch needs the striking (right) arm — a fighter that lost it can
+        // only kick. Kick input still works with no arms.
+        const canPunch = intent.punch && this._canPunch(f);
+        if (canPunch || intent.kick) {
+          const name = canPunch ? 'punch' : 'kick';
           this._enterCharge(f, name);
           break;
         }
@@ -1139,7 +1158,7 @@ export class BrawlGame {
         // Cancel windows: if the player input another action and we're past the
         // configured stateT threshold for that target, transition immediately.
         // Attack cancels re-enter the charge state so a held follow-up charges too.
-        if (intent.punch && f.stateT >= a.cancelInto.punch) this._enterCharge(f, 'punch');
+        if (intent.punch && this._canPunch(f) && f.stateT >= a.cancelInto.punch) this._enterCharge(f, 'punch');
         else if (intent.kick && f.stateT >= a.cancelInto.kick) this._enterCharge(f, 'kick');
         else if (intent.block && f.stateT >= a.cancelInto.block) {
           f.state = 'block'; f.stateT = 0; f.animator.setBlocking(true);
@@ -1205,6 +1224,15 @@ export class BrawlGame {
   }
 
   _enterAttack(f, name, chargeAmt = 0) {
+    // A punch needs the striking (right) arm; if it was torn off mid-charge,
+    // drop back to idle rather than swinging a missing limb.
+    if (name === 'punch' && !this._canPunch(f)) {
+      f.state = 'idle';
+      f.stateT = 0;
+      f.chargeName = null;
+      f.animator.setCharge(null, 0);
+      return;
+    }
     f.state = name;
     f.stateT = 0;
     f.hasHit = false;
@@ -1217,7 +1245,7 @@ export class BrawlGame {
     this.hudDirty = true;
     f.animator.play(name);
     // Trail color: cool steel normally, hot gold on a charged release —
-    // "charged" now means above the ENERGY_IDLE_CAP baseline, so gold still
+    // "charged" means wound up well past the 1/3 starting bank, so gold still
     // reads as earned bonus power rather than lighting up every tap.
     if (f.trail) f.trail.color.setHex(chargeAmt > 0.65 ? 0xffd257 : 0xcfe0ff);
     this.audio.whoosh();
@@ -1437,9 +1465,8 @@ export class BrawlGame {
     const blocked = defender.state === 'block' &&
                     testAttackBlocked(attacker.rig, attack.name, phase, defender.rig);
     if (blocked) {
-      // Successful block banks energy — the defender's counter gets stronger.
-      defender.energy = Math.min(1, defender.energy + ENERGY_BLOCK_REWARD);
-      this.hudDirty = true;
+      // Blocking no longer banks energy (the bar only moves via winding up /
+      // attacking), but a clean block still absorbs the blow.
       const blockDamp = 1 / defMass;
       defender.knockback.add(knockDir.clone().multiplyScalar(2.0 * blockDamp * chargeMul));
       this._spawnSparks(hit.point, 0x9ad0ff, 6, 1.0);
@@ -1461,10 +1488,8 @@ export class BrawlGame {
     const baseDmg = (attack.dmg * chargeMul + this.rng.randint(-1, 1))
       * effect.atkMul * regionMod * powerScale;
     this.combat.damage({ playerId: defender.playerId, amount: baseDmg, sourceId: attacker.playerId });
-    // Getting tagged mid-charge dumps the stored charge — that's the risk.
-    // (Energy banked while idle/blocking survives a hit; only an interrupted
-    // wind-up loses the pool.)
-    if (defender.state === 'charge') defender.energy = 0;
+    // A hit interrupts a wind-up (state → hitstun below) but no longer drains
+    // the energy bar — per the rule that only winding up or attacking moves it.
     defender.state = 'hitstun';
     defender.stateT = 0;
     defender.chargeName = null;
@@ -1502,6 +1527,17 @@ export class BrawlGame {
     // diagram and the sweat/swell wear — never the model's colors).
     defender.regionDmg[region] = Math.min(100, defender.regionDmg[region] + Math.max(2, baseDmg));
     this._applyDamageWear(defender);
+
+    // Dismemberment: once the arms region reddens, an arm tears off. Left first
+    // (keeps the striking arm), right only at near-max once the left is gone.
+    if (region === REGIONS.ARMS) {
+      const armDmg = defender.regionDmg.arms;
+      if (armDmg >= ARM_SEVER_R && defender.armsLost.has('L') && !defender.armsLost.has('R')) {
+        this._severArm(defender, 'R', impulseDir);
+      } else if (armDmg >= ARM_SEVER_L && !defender.armsLost.has('L')) {
+        this._severArm(defender, 'L', impulseDir);
+      }
+    }
 
     // Facial reaction: a grimace held briefly, then back to the resting face.
     setExpression(defender.rig, 'hurt');
@@ -2288,6 +2324,106 @@ export class BrawlGame {
     }
   }
 
+  // Can this fighter still throw a punch? The engine only ever swings the RIGHT
+  // arm, so a punch needs the right arm attached. (The left arm always tears off
+  // first — see _severArm — so a one-armed fighter punches with its right; once
+  // the right is gone too it can only kick.)
+  _canPunch(f) {
+    return !f.armsLost || !f.armsLost.has('R');
+  }
+
+  // Tear an arm off the fighter: detach the shoulder→fist group from the torso,
+  // reparent it to the scene, and launch it tumbling to the canvas with a silly
+  // blood squirt from both the stump and the flying limb.
+  _severArm(fighter, side, dir) {
+    if (!fighter.armsLost) fighter.armsLost = new Set();
+    if (fighter.armsLost.has(side)) return;
+    const shoulder = fighter.rig.joints['shoulder' + side];
+    if (!shoulder || !shoulder.parent) return;
+    fighter.armsLost.add(side);
+
+    // Snapshot the arm's world transform, detach, and re-anchor it in the scene
+    // so it keeps its on-screen pose the instant it comes off.
+    const wp = new THREE.Vector3();
+    const wq = new THREE.Quaternion();
+    const ws = new THREE.Vector3();
+    shoulder.getWorldPosition(wp);
+    shoulder.getWorldQuaternion(wq);
+    shoulder.getWorldScale(ws);
+    shoulder.parent.remove(shoulder);
+    shoulder.position.copy(wp);
+    shoulder.quaternion.copy(wq);
+    shoulder.scale.copy(ws);
+    this.scene.add(shoulder);
+
+    // Launch outward (away from the body) + up, with a fast tumble.
+    const outward = dir ? dir.clone() : new THREE.Vector3(side === 'L' ? -1 : 1, 0, 0);
+    outward.y = 0;
+    if (outward.lengthSq() < 1e-4) outward.set(side === 'L' ? -1 : 1, 0, 0);
+    outward.normalize();
+    const vel = new THREE.Vector3(
+      outward.x * (1.6 + this.rng.random() * 1.6) + (side === 'L' ? -1 : 1) * 1.3,
+      3.2 + this.rng.random() * 1.6,
+      outward.z * (1.6 + this.rng.random() * 1.6));
+    const angVel = new THREE.Vector3(
+      (this.rng.random() - 0.5) * 11, (this.rng.random() - 0.5) * 11, (this.rng.random() - 0.5) * 13);
+    this._severedLimbs = this._severedLimbs || [];
+    this._severedLimbs.push({ mesh: shoulder, vel, angVel, grounded: false });
+
+    // Silly geyser: a big squirt off the stump + a burst trailing the limb.
+    this._bloodSquirt(wp, outward, 2.4);
+    this._bloodSquirt(wp, new THREE.Vector3(outward.x, 1, outward.z).normalize(), 1.8);
+    // Keep the stump bleeding for a beat (see the stump loop in _tick).
+    fighter.stumps.push({ side, t: 1.4, emit: 0 });
+    this.audio.impact({ power: 1.8, worldPos: wp });
+    this.hudDirty = true;
+  }
+
+  // A beefier, sillier version of _spawnBlood for a dismemberment geyser: more
+  // droplets, launched harder. Reuses the blood/stain pipeline so it splats.
+  _bloodSquirt(pos, dir, power = 1) {
+    const count = 10 + Math.round(this.rng.random() * 10 * power);
+    for (let i = 0; i < count; i++) {
+      const m = new THREE.Mesh(
+        new THREE.SphereGeometry(0.02 + this.rng.random() * 0.03, 5, 4),
+        new THREE.MeshBasicMaterial({ color: 0x9e120e, transparent: true, opacity: 0.95 })
+      );
+      m.position.set(
+        pos.x + (this.rng.random() - 0.5) * 0.1,
+        pos.y + (this.rng.random() - 0.5) * 0.1,
+        pos.z + (this.rng.random() - 0.5) * 0.1);
+      const vel = new THREE.Vector3(
+        dir.x * (2.2 + this.rng.random() * 2.6) + (this.rng.random() - 0.5) * 2.2,
+        1.6 + this.rng.random() * 2.6 * power,
+        dir.z * (2.2 + this.rng.random() * 2.6) + (this.rng.random() - 0.5) * 2.2);
+      this.scene.add(m);
+      this.effects.push({ mesh: m, life: 2.5, vel, gravity: -11, blood: true });
+    }
+  }
+
+  // Fall + tumble a severed arm to the canvas, where it comes to rest and
+  // leaves a pool. Limbs linger until the next match clears them (_spawnFighters).
+  _updateSeveredLimbs(dt) {
+    if (!this._severedLimbs || !this._severedLimbs.length) return;
+    for (const l of this._severedLimbs) {
+      if (l.grounded) continue;
+      l.mesh.position.x += l.vel.x * dt;
+      l.mesh.position.y += l.vel.y * dt;
+      l.mesh.position.z += l.vel.z * dt;
+      l.vel.y += -11 * dt;
+      l.mesh.rotation.x += l.angVel.x * dt;
+      l.mesh.rotation.y += l.angVel.y * dt;
+      l.mesh.rotation.z += l.angVel.z * dt;
+      if (l.mesh.position.y <= LIMB_GROUND_Y) {
+        l.mesh.position.y = LIMB_GROUND_Y;
+        l.grounded = true;
+        if (Math.abs(l.mesh.position.x) < 5.7 && Math.abs(l.mesh.position.z) < 5.7) {
+          this._addBloodStain(l.mesh.position.x, l.mesh.position.z);
+        }
+      }
+    }
+  }
+
   // A landed droplet becomes a permanent stain on the canvas — the ring
   // visibly accumulates the fight's damage until the next match clears it.
   _addBloodStain(x, z) {
@@ -2345,6 +2481,7 @@ export class BrawlGame {
 
   _updateEffects(dt) {
     this._updateParticles(dt);
+    this._updateSeveredLimbs(dt);
     // The mesh-based list below carries post debris chunks + blood droplets.
     for (let i = this.effects.length - 1; i >= 0; i--) {
       const e = this.effects[i];
@@ -2445,7 +2582,6 @@ export class BrawlGame {
     }
     if (this.banner) this.banner.remove();
     if (this.flash) this.flash.remove();
-    if (this.fpsEl) this.fpsEl.remove();
     this.dotnet = null;
   }
 }

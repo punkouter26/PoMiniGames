@@ -17,34 +17,13 @@
             <span class="gps-game-title">@Title</span>
         }
 
-        @if (!string.IsNullOrEmpty(Player))
-        {
-            <span class="gps-player">@Player</span>
-        }
-
-        @if (Status != null)
-        {
-            <span class="gps-header-status">@Status</span>
-        }
-
-        @* Compact popover trigger: clicking "?" toggles a small inline help panel.
-           Per the 2026-07-12 simplification, the modal no longer auto-shows on
-           first visit; players open it on demand. Demo pages leave HowToPlay=null
-           to hide the button entirely. *@
-        @if (HowToPlay != null)
-        {
-            <button class="gps-howto-btn @(HowToPlayOpen ? "is-open" : null)"
-                    aria-label="How to play"
-                    title="How to play"
-                    aria-expanded="@HowToPlayOpen"
-                    aria-controls="gps-howto-popover"
-                    @onclick="ToggleHowTo">?</button>
-        }
-
-        @* Settings gear removed per 2026-07-06 header cleanup. The `ShowSettings`
-           parameter was retained briefly while pages migrated; it's gone now.
-           Stats still surface in the end-of-game modal; the Controls fragment
-           was unused by every page and is removed entirely. *@
+        @* 2026-07-13 top-bar cleanup (user request): the in-game Player name, the
+           live Status pill, and the "?" how-to trigger were removed from the header
+           to save horizontal space. The signed-in identity now lives once on the
+           right (next to Sign out), the game result surfaces in the end-of-game
+           modal, and the how-to popover is no longer exposed from the top bar.
+           The Player / Status / HowToPlay parameters remain accepted (pages still
+           pass them) but are intentionally not projected here. *@
     </div>
 </SectionContent>
 

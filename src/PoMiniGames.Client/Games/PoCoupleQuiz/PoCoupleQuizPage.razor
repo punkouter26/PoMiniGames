@@ -180,7 +180,7 @@
     [SupplyParameterFromQuery(Name = "demo")] public int DemoQuery { get; set; } = 0;
     [SupplyParameterFromQuery(Name = "kiosk")] public int KioskNext { get; set; } = -1;
 
-    private RenderFragment TitleContent => @<span>💕 PoCoupleQuiz</span>;
+    private RenderFragment TitleContent => @<span>💕 Couple Quiz</span>;
 
     private RenderFragment GameSummaryContent => @<div>
         <div>You matched your partner <strong>@_soloMatches</strong> / @_soloQuestions.Count times.</div>

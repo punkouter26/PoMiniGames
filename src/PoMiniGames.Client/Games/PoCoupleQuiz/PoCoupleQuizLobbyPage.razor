@@ -14,7 +14,7 @@
     else if (_lobby is null)
     {
         <div class="gps-game-card">
-            <h2 class="gps-phase-h">Multiplayer · PoCoupleQuiz</h2>
+            <h2 class="gps-phase-h">Multiplayer · Couple Quiz</h2>
             <h3 class="gps-game-h">💕 Join a lobby</h3>
             <p>Two or more players answer questions about each other. The "King" types the secret answer; the rest try to match — scored by AI.</p>
             <label>Your name: <input @bind="_playerName" maxlength="24" disabled="@_busy" /></label>
@@ -82,7 +82,7 @@
 </GameShell>
 
 @code {
-    private RenderFragment TitleContent => @<span>💕 PoCoupleQuiz · Lobby</span>;
+    private RenderFragment TitleContent => @<span>💕 Couple Quiz · Lobby</span>;
 
     private string _playerName = string.Empty;
     private string _difficulty = "Medium";

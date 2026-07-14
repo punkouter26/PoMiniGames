@@ -53,6 +53,10 @@
                dev-only identity switcher are gone from the top bar entirely. *@
             @if (AuthState.IsConfigured && !AuthState.IsLoading)
             {
+                @if (AuthState.IsAuthenticated)
+                {
+                    <span class="gl-auth-user" title="@AuthUserTitle">@AuthUserLabel</span>
+                }
                 <button class="gl-auth-button" @onclick="AuthState.IsAuthenticated ? SignOut : SignIn">
                     @(AuthState.IsAuthenticated ? "Sign out" : "Sign in")
                 </button>
@@ -104,6 +108,30 @@
 
 @code {
     private Action? _onAuthStateChanged;
+
+    // Top-bar identity for a signed-in user: prefer the display name, fall back to
+    // the email/username. The full email is surfaced via the tooltip so a truncated
+    // name in the pill is still resolvable on hover.
+    private string AuthUserLabel
+    {
+        get
+        {
+            var user = AuthState.User;
+            if (user is null) return string.Empty;
+            if (!string.IsNullOrWhiteSpace(user.DisplayName)) return user.DisplayName;
+            return user.Email ?? string.Empty;
+        }
+    }
+
+    private string AuthUserTitle
+    {
+        get
+        {
+            var user = AuthState.User;
+            if (user is null) return string.Empty;
+            return string.IsNullOrWhiteSpace(user.Email) ? AuthUserLabel : user.Email;
+        }
+    }
 
     protected override void OnInitialized()
     {

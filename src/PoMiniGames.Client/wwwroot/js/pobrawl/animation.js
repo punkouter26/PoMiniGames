@@ -220,7 +220,62 @@ const ENTRANCES = {
        shoulderR: { x: -2.6, y: 0, z: -0.3 }, elbowR: { x: -0.5, y: 0, z: 0.4 } }, 0.3, { k: 14 }],
     [GUARD, 0.5, { k: 6 }],
   ],
-  // Generic salute — used by every other president.
+  // Trump: the double-hand pump — both forearms cocked by the hips, pumping
+  // down-and-up in rhythm with a chin-up bob. Two full pumps, then guard.
+  trumpPump: [
+    [{ torso: { x: 0.04, y: 0.06, z: 0 }, head: { x: -0.14, y: 0, z: 0 },
+       shoulderL: { x: -0.35, y: 0, z: 0.42 }, shoulderR: { x: -0.35, y: 0, z: -0.42 },
+       elbowL: { x: -2.0, y: 0, z: 0 }, elbowR: { x: -2.0, y: 0, z: 0 } }, 0.22, { k: 16 }],
+    [{ torso: { x: 0.13, y: 0.06, z: 0 }, head: { x: -0.05, y: 0, z: 0 },
+       shoulderL: { x: -0.12, y: 0, z: 0.40 }, shoulderR: { x: -0.12, y: 0, z: -0.40 },
+       elbowL: { x: -1.02, y: 0, z: 0 }, elbowR: { x: -1.02, y: 0, z: 0 } }, 0.18, { k: 20 }],
+    [{ torso: { x: 0.04, y: 0.06, z: 0 }, head: { x: -0.14, y: 0, z: 0 },
+       shoulderL: { x: -0.35, y: 0, z: 0.42 }, shoulderR: { x: -0.35, y: 0, z: -0.42 },
+       elbowL: { x: -2.0, y: 0, z: 0 }, elbowR: { x: -2.0, y: 0, z: 0 } }, 0.18, { k: 20 }],
+    [{ torso: { x: 0.13, y: 0.06, z: 0 },
+       elbowL: { x: -1.02, y: 0, z: 0 }, elbowR: { x: -1.02, y: 0, z: 0 } }, 0.18, { k: 20 }],
+    [GUARD, 0.24, { k: 8 }],
+  ],
+  // Reagan: the actor's finger-gun point-and-wink — right arm snaps forward
+  // level, a double jab of the point.
+  point: [
+    [{ torso: { x: 0.06, y: -0.16, z: 0 }, head: { x: -0.05, y: -0.1, z: 0 },
+       shoulderR: { x: -1.5, y: 0, z: -0.15 }, elbowR: { x: -0.2, y: 0, z: 0 },
+       shoulderL: { x: -0.6, y: 0, z: 0.15 }, elbowL: { x: -1.2, y: 0, z: 0 } }, 0.34, { k: 15 }],
+    [{ torso: { x: 0.03, y: -0.16, z: 0 }, head: { x: -0.02, y: -0.1, z: 0 },
+       shoulderR: { x: -1.28, y: 0, z: -0.15 }, elbowR: { x: -0.55, y: 0, z: 0 } }, 0.26, { k: 17 }],
+    [{ torso: { x: 0.06, y: -0.16, z: 0 },
+       shoulderR: { x: -1.5, y: 0, z: -0.15 }, elbowR: { x: -0.2, y: 0, z: 0 } }, 0.3, { k: 17 }],
+    [GUARD, 0.4, { k: 8 }],
+  ],
+  // Ford: the clumsy stumble — a wide side-to-side wobble with arms flailing
+  // for balance and a knee dip, playing on his pratfall reputation.
+  stumble: [
+    [{ torso: { x: 0.05, y: 0, z: 0.22 }, head: { x: 0, y: 0, z: 0.18 },
+       shoulderL: { x: -0.9, y: 0, z: 0.7 }, shoulderR: { x: -0.3, y: 0, z: -0.5 },
+       elbowL: { x: -0.8, y: 0, z: 0 }, elbowR: { x: -0.7, y: 0, z: 0 },
+       kneeL: { x: 0.3, y: 0, z: 0 } }, 0.3, { k: 12 }],
+    [{ torso: { x: 0.05, y: 0, z: -0.22 }, head: { x: 0, y: 0, z: -0.18 },
+       shoulderR: { x: -0.9, y: 0, z: -0.7 }, shoulderL: { x: -0.3, y: 0, z: 0.5 },
+       elbowR: { x: -0.8, y: 0, z: 0 }, elbowL: { x: -0.7, y: 0, z: 0 },
+       kneeR: { x: 0.3, y: 0, z: 0 } }, 0.3, { k: 12 }],
+    [{ torso: { x: 0.08, y: 0, z: 0.1 }, head: { x: 0.1, y: 0, z: 0.08 },
+       shoulderL: { x: -0.6, y: 0, z: 0.6 }, shoulderR: { x: -0.5, y: 0, z: -0.6 },
+       elbowL: { x: -1.0, y: 0, z: 0 }, elbowR: { x: -1.0, y: 0, z: 0 } }, 0.25, { k: 10 }],
+    [GUARD, 0.35, { k: 7 }],
+  ],
+  // Bush Sr.: a full golf swing — wind the torso back, then whip it across
+  // (the Kennebunkport duffer).
+  golf: [
+    [{ torso: { x: 0.05, y: -0.9, z: 0 }, head: { x: -0.05, y: -0.5, z: 0 },
+       shoulderL: { x: -1.7, y: 0, z: 0.2 }, shoulderR: { x: -1.9, y: 0, z: -0.1 },
+       elbowL: { x: -0.7, y: 0, z: 0 }, elbowR: { x: -0.6, y: 0, z: 0 } }, 0.45, { k: 9 }],
+    [{ torso: { x: 0.05, y: 0.9, z: 0 }, head: { x: -0.05, y: 0.4, z: 0 },
+       shoulderL: { x: -1.9, y: 0, z: 0.1 }, shoulderR: { x: -1.7, y: 0, z: -0.2 },
+       elbowL: { x: -0.6, y: 0, z: 0 }, elbowR: { x: -0.7, y: 0, z: 0 } }, 0.3, { k: 22 }],
+    [GUARD, 0.5, { k: 7 }],
+  ],
+  // Generic salute — fallback for any president without a bespoke dance.
   salute: [
     [{ torso: { x: 0.04, y: 0.05, z: 0 }, head: { x: -0.05, y: 0, z: 0 },
        shoulderR: { x: -1.6, y: 0, z: -0.35 }, elbowR: { x: -2.4, y: 0, z: 0 } }, 0.5, { k: 12 }],

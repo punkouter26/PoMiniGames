@@ -25,11 +25,16 @@
    K.O. / "X WINS!" text never covers the fighters in the ring. */
 .pb-canvas-host ::deep .pb-banner {
     position: fixed;
+    /* Sit in the empty band between the top nav bar and the HP-bar HUD, and
+       centre the K.O. / countdown text within it — this keeps the yellow text
+       up in the dead strip above the ring so it never covers the fighters
+       (spanning to the bottom of the play area put it over the players). */
     top: 76px;
+    height: 96px;
     left: 0;
     right: 0;
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     justify-content: center;
     pointer-events: none;
     font-family: 'Bungee', 'Bungee Inline', 'Russo One', 'Impact', sans-serif;
@@ -99,22 +104,6 @@
     }
 }
 
-/* FPS badge created by the JS engine, upper-right (below the HP bar). */
-.pb-canvas-host ::deep .pb-fps {
-    position: absolute;
-    top: 44px;
-    right: 14px;
-    padding: 3px 8px;
-    border-radius: 6px;
-    background: rgba(10, 12, 24, 0.55);
-    color: rgba(255, 255, 255, 0.75);
-    font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
-    font-size: 0.72rem;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    pointer-events: none;
-    z-index: 6;
-}
 
 /* ── Inter-round splash (BrawlGame.resetMatch) ───────────────────────
    Hidden by default; `.pb-splash--visible` fades it in. The engine holds

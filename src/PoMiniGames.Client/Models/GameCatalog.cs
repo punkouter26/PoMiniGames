@@ -18,33 +18,33 @@ public static class GameCatalog
         // not the classic 3×3 tic-tac-toe. The user-facing title now matches
         // the in-game label and the "How to play" copy.
         new(GameKeys.TicTacToe, "TicTacToe6", "❌", "/tictactoe"),
-        new(GameKeys.PoRacer, "PoRacer", "🏎️", "/poracer"),
-        new(GameKeys.PoMarbleRace, "PoMarbleRace", "🔮", "/pomarblerace"),
-        new(GameKeys.PoBrawl, "PoBrawl", "🥊", "/pobrawl"),
+        new(GameKeys.PoRacer, "Racer", "🏎️", "/poracer"),
+        new(GameKeys.PoMarbleRace, "Marble Race", "🔮", "/pomarblerace"),
+        new(GameKeys.PoBrawl, "Brawl", "🥊", "/pobrawl"),
     ];
 
     public static readonly IReadOnlyList<CatalogGame> LocalTwoPlayer =
     [
         new(GameKeys.ConnectFive, "Connect Five", "🔴", "/connectfive?mode=2p"),
         new(GameKeys.TicTacToe, "TicTacToe6", "❌", "/tictactoe?mode=2p"),
-        new(GameKeys.PoBrawl, "PoBrawl", "🥊", "/pobrawl?mode=2p"),
+        new(GameKeys.PoBrawl, "Brawl", "🥊", "/pobrawl?mode=2p"),
     ];
 
     public static readonly IReadOnlyList<CatalogGame> Multiplayer =
     [
-        new(GameKeys.PoRacer, "PoRacer", "🏎️", "/poracer/lobby"),
-        new(GameKeys.PoCoupleQuiz, "PoCoupleQuiz", "💕", "/couplequiz/lobby"),
-        new(GameKeys.PoFunQuiz, "PoFunQuiz", "🧠", "/funquiz/multiplayer"),
+        new(GameKeys.PoRacer, "Racer", "🏎️", "/poracer/lobby"),
+        new(GameKeys.PoCoupleQuiz, "Couple Quiz", "💕", "/couplequiz/lobby"),
+        new(GameKeys.PoFunQuiz, "Fun Quiz", "🧠", "/funquiz/multiplayer"),
     ];
 
     public static readonly IReadOnlyList<CatalogGame> Demo =
     [
         new(GameKeys.TicTacToe, "TicTacToe6", "❌", "/tictactoe/1"),
         new(GameKeys.ConnectFive, "Connect Five", "🔴", "/connectfive/1"),
-        new(GameKeys.PoRacer, "PoRacer", "🏎️", "/poracer/demo"),
-        new(GameKeys.PoMarbleRace, "PoMarbleRace", "🔮", "/pomarblerace?demo=1"),
-        new(GameKeys.PoJoker, "PoJoker", "🃏", "/pojoker"),
-        new(GameKeys.PoBrawl, "PoBrawl", "🥊", "/pobrawl/1"),
-        new(GameKeys.PoSurvive, "PoSurvive", "🛡️", "/posurvive?demo=1"),
+        new(GameKeys.PoRacer, "Racer", "🏎️", "/poracer/demo"),
+        new(GameKeys.PoMarbleRace, "Marble Race", "🔮", "/pomarblerace?demo=1"),
+        new(GameKeys.PoJoker, "Joker", "🃏", "/pojoker"),
+        new(GameKeys.PoBrawl, "Brawl", "🥊", "/pobrawl/1"),
+        new(GameKeys.PoSurvive, "Survive", "🛡️", "/posurvive?demo=1"),
     ];
 }

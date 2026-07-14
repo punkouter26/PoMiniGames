@@ -293,7 +293,7 @@ else
 
     private static readonly (string Key, string Title, string Icon, string Kind)[] HsDefs =
     {
-        ("pomarblerace", "PoMarbleRace",  "🔮", "marble"),
+        ("pomarblerace", "Marble Race",  "🔮", "marble"),
         ("tictactoe",    "TicTacToe6",    "❌", "ai"),
         ("connectfive",  "Connect Five",  "🔴", "ai"),
     };
@@ -412,13 +412,13 @@ else
         {
             var top = marble is { Length: > 0 } ? marble[0] : null;
             return top is not null
-                ? new HighScoreEntry("PoMarbleRace", "🔮", top.BestScore.ToString("N0"), $"by {top.PlayerInitials}", true)
-                : new HighScoreEntry("PoMarbleRace", "🔮", "—", "No scores yet", false);
+                ? new HighScoreEntry("Marble Race", "🔮", top.BestScore.ToString("N0"), $"by {top.PlayerInitials}", true)
+                : new HighScoreEntry("Marble Race", "🔮", "—", "No scores yet", false);
         }
 
         for (var i = 0; i < _highScores.Count; i++)
         {
-            if (_highScores[i].Game == "PoMarbleRace") _highScores[i] = MarbleEntry();
+            if (_highScores[i].Game == "Marble Race") _highScores[i] = MarbleEntry();
         }
         StateHasChanged();
     }

@@ -22,7 +22,7 @@
     else if (_state is null)
     {
         <div class="fq-join">
-            <h2 class="gps-phase-h">Two-player · PoFunQuiz</h2>
+            <h2 class="gps-phase-h">Two-player · Fun Quiz</h2>
             <label>Your name: <input @bind="_playerName" maxlength="24" disabled="@(_busy || !_isConnected)" /></label>
             <label>Category:
                 <select @bind="_category" disabled="@(_busy || !_isConnected)">
@@ -123,7 +123,7 @@
 </GameShell>
 
 @code {
-    private RenderFragment TitleContent => @<span>🧠 PoFunQuiz · Multiplayer</span>;
+    private RenderFragment TitleContent => @<span>🧠 Fun Quiz · Multiplayer</span>;
 
     private string _playerName = string.Empty;
     private string _category = "General";

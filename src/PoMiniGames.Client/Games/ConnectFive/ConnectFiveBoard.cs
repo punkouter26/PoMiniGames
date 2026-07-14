@@ -125,7 +125,13 @@ public class ConnectFiveBoard
                 foreach (var (dr, dc) in directions)
                 {
                     bool valid = true;
-                    for (int i = 1; i < WinLength; i++)
+                    // Validate the FULL window starting at the anchor (i = 0). A
+                    // prior off-by-one started at i = 1, so the anchor cell (r,c)
+                    // was added to the win result but never checked against
+                    // `player`. That let a run of only 4 matching pieces report a
+                    // "win" whose 5th highlighted cell was empty or the opponent's
+                    // colour — 5 cells lit up, one the wrong colour.
+                    for (int i = 0; i < WinLength; i++)
                     {
                         var nr = r + dr * i;
                         var nc = c + dc * i;

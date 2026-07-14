@@ -173,7 +173,7 @@
     // lock in, the correct answer reveals and the round advances.
     private bool _splitScreen;
 
-    private RenderFragment TitleContent => @<span>🧠 PoFunQuiz</span>;
+    private RenderFragment TitleContent => @<span>🧠 Fun Quiz</span>;
 
     private RenderFragment GameSummaryContent => _playMode switch
     {
@@ -236,9 +236,9 @@
     private string _playMode = "solo";
     private string _landingTitle => _playMode switch
     {
-        "2ps" => "Split-screen · PoFunQuiz",
-        "2p" => "Two-player · PoFunQuiz",
-        _ => "Solo · PoFunQuiz",
+        "2ps" => "Split-screen · Fun Quiz",
+        "2p" => "Two-player · Fun Quiz",
+        _ => "Solo · Fun Quiz",
     };
     private string _landingSubtext => _playMode switch
     {

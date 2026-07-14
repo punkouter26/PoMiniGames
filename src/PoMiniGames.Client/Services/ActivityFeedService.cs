@@ -77,9 +77,9 @@ public sealed class ActivityFeedService
     {
         "tictactoe" => "TicTacToe6",
         "connectfive" => "Connect Five",
-        "poracer" => "PoRacer",
-        "pocouplequiz" => "PoCoupleQuiz",
-        "pofunquiz" => "PoFunQuiz",
+        "poracer" => "Racer",
+        "pocouplequiz" => "Couple Quiz",
+        "pofunquiz" => "Fun Quiz",
         _ => key
     };
 

@@ -6,7 +6,7 @@
 @inject HttpClient Http
 @inject UiFeedbackService Feedback
 
-<PageTitle>PoJoker — Hall of Champions</PageTitle>
+<PageTitle>Joker — Hall of Champions</PageTitle>
 
 <GameShell Title="@TitleContent"
            BackTo="/pojoker"
@@ -84,7 +84,7 @@
     private List<LeaderboardEntryDto> _entries = [];
     private bool _isLoading = true;
 
-    private readonly RenderFragment TitleContent = builder => builder.AddContent(0, "🏆 PoJoker Leaderboard");
+    private readonly RenderFragment TitleContent = builder => builder.AddContent(0, "🏆 Joker Leaderboard");
 
     protected override async Task OnInitializedAsync() => await LoadLeaderboardAsync();
 

@@ -17,7 +17,7 @@
                 </button>
             }
         </div>
-        <h2 class="gps-phase-h">Top PoFunQuiz · @DisplayName(_category)</h2>
+        <h2 class="gps-phase-h">Top Fun Quiz · @DisplayName(_category)</h2>
         @if (_isLoading)
         {
             <p>Loading…</p>
@@ -59,7 +59,7 @@
 </GameShell>
 
 @code {
-    private RenderFragment TitleContent => @<span>🧠 PoFunQuiz · Leaderboard</span>;
+    private RenderFragment TitleContent => @<span>🧠 Fun Quiz · Leaderboard</span>;
 
     private static readonly IReadOnlyList<string> _categories = new[]
     {

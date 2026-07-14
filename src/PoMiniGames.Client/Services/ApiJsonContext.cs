@@ -35,10 +35,6 @@ namespace PoMiniGamesClient.Services;
 [JsonSerializable(typeof(PoBrawlHighScore[]))]
 [JsonSerializable(typeof(PoBrawlLadderEntry))]
 [JsonSerializable(typeof(PoBrawlLadderEntry[]))]
-[JsonSerializable(typeof(PoClickHighScore))]
-[JsonSerializable(typeof(PoClickHighScore[]))]
-[JsonSerializable(typeof(PoReflexHighScore))]
-[JsonSerializable(typeof(PoReflexHighScore[]))]
 [JsonSerializable(typeof(PendingPlayerStats))]
 [JsonSerializable(typeof(LeaderboardEntryDto))]
 [JsonSerializable(typeof(GameLeaderboardDto))]
@@ -54,13 +50,6 @@ namespace PoMiniGamesClient.Services;
 [JsonSerializable(typeof(List<FunQuizLeaderboardRow>))]
 [JsonSerializable(typeof(FunQuizLeaderboardRow[]))]
 [JsonSerializable(typeof(FunQuizLeaderboardSubmission))]
-// PoFace
-[JsonSerializable(typeof(FaceStatusDto))]
-[JsonSerializable(typeof(FaceSessionDto))]
-[JsonSerializable(typeof(FaceScoreResponse))]
-[JsonSerializable(typeof(FaceRecapDto))]
-[JsonSerializable(typeof(FaceLeaderboardEntryDto))]
-[JsonSerializable(typeof(List<FaceLeaderboardEntryDto>))]
 // PoCoupleQuiz
 [JsonSerializable(typeof(CoupleQuizTeamRow))]
 [JsonSerializable(typeof(List<CoupleQuizTeamRow>))]
@@ -73,9 +62,6 @@ namespace PoMiniGamesClient.Services;
 // resolves it.
 [JsonSerializable(typeof(PoShared.Games.PoJoker.LeaderboardEntryDto), TypeInfoPropertyName = "JokerLeaderboardEntryDto")]
 [JsonSerializable(typeof(List<PoShared.Games.PoJoker.LeaderboardEntryDto>), TypeInfoPropertyName = "ListJokerLeaderboardEntryDto")]
-// PoClick (local-only)
-[JsonSerializable(typeof(PoClickSession))]
-[JsonSerializable(typeof(List<PoClickSession>))]
 // PoRacer
 [JsonSerializable(typeof(PoRacerScoreDto))]
 [JsonSerializable(typeof(List<PoRacerScoreDto>))]

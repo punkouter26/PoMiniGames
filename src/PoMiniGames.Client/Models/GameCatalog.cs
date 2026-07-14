@@ -13,25 +13,20 @@ public static class GameCatalog
 {
     public static readonly IReadOnlyList<CatalogGame> SinglePlayer =
     [
-        new(GameKeys.PoClick, "PoClick", "🥁", "/poclick"),
-        new(GameKeys.PoReflex, "PoReflex", "⚡", "/poreflex"),
         new(GameKeys.ConnectFive, "Connect Five", "🔴", "/connectfive"),
         // NetRun10 audit #4: the page is actually a 6×6 / 4-in-a-row grid,
         // not the classic 3×3 tic-tac-toe. The user-facing title now matches
         // the in-game label and the "How to play" copy.
-        new(GameKeys.TicTacToe, "Connect Six", "❌", "/tictactoe"),
+        new(GameKeys.TicTacToe, "TicTacToe6", "❌", "/tictactoe"),
         new(GameKeys.PoRacer, "PoRacer", "🏎️", "/poracer"),
         new(GameKeys.PoMarbleRace, "PoMarbleRace", "🔮", "/pomarblerace"),
-        new(GameKeys.PoFunQuiz, "PoFunQuiz", "🧠", "/funquiz"),
-        new(GameKeys.PoFace, "PoFace", "🙂", "/face"),
         new(GameKeys.PoBrawl, "PoBrawl", "🥊", "/pobrawl"),
     ];
 
     public static readonly IReadOnlyList<CatalogGame> LocalTwoPlayer =
     [
         new(GameKeys.ConnectFive, "Connect Five", "🔴", "/connectfive?mode=2p"),
-        new(GameKeys.TicTacToe, "Connect Six", "❌", "/tictactoe?mode=2p"),
-        new(GameKeys.PoFunQuiz, "PoFunQuiz", "🧠", "/funquiz?mode=2p"),
+        new(GameKeys.TicTacToe, "TicTacToe6", "❌", "/tictactoe?mode=2p"),
         new(GameKeys.PoBrawl, "PoBrawl", "🥊", "/pobrawl?mode=2p"),
     ];
 
@@ -44,11 +39,8 @@ public static class GameCatalog
 
     public static readonly IReadOnlyList<CatalogGame> Demo =
     [
-        new(GameKeys.PoClick, "PoClick", "🥁", "/poclick/1"),
-        new(GameKeys.PoReflex, "PoReflex", "⚡", "/poreflex/1"),
-        new(GameKeys.TicTacToe, "Connect Six", "❌", "/tictactoe/1"),
+        new(GameKeys.TicTacToe, "TicTacToe6", "❌", "/tictactoe/1"),
         new(GameKeys.ConnectFive, "Connect Five", "🔴", "/connectfive/1"),
-        new(GameKeys.PoFace, "PoFace", "🙂", "/face/demo"),
         new(GameKeys.PoRacer, "PoRacer", "🏎️", "/poracer/demo"),
         new(GameKeys.PoMarbleRace, "PoMarbleRace", "🔮", "/pomarblerace?demo=1"),
         new(GameKeys.PoJoker, "PoJoker", "🃏", "/pojoker"),

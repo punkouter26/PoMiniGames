@@ -97,25 +97,6 @@ public class PoBrawlLadderEntry
     public string Date { get; set; } = "";
 }
 
-/// <summary>PoClick accuracy result submitted to the server board (0-100, higher wins).</summary>
-public class PoClickHighScore
-{
-    public string PlayerName { get; set; } = "";
-    public double Score { get; set; }
-    public int Bpm { get; set; }
-    public int DurationSeconds { get; set; }
-    public string Date { get; set; } = "";
-}
-
-/// <summary>PoReflex reaction result submitted to the server board (average ms, lower wins).</summary>
-public class PoReflexHighScore
-{
-    public string PlayerName { get; set; } = "";
-    public double Score { get; set; }
-    public double BestReactionMs { get; set; }
-    public string Date { get; set; } = "";
-}
-
 /// <summary>
 /// Queued PlayerStats PUT for the offline score-sync pipeline: a stats snapshot
 /// that failed to reach the server is parked and replayed by ScoreSyncService.

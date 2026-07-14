@@ -11,6 +11,10 @@
 (function () {
     let app = null;
     let apiScope = null;
+    // Cached result of the redirect-flow callback. MSAL's handleRedirectPromise
+    // resolves before Blazor's OnInitialized runs, so we stash the auth result
+    // and let AuthStateService pick it up via consumeRedirectResult().
+    let pendingRedirectResult = null;
 
     function ensureLib() {
         if (typeof msal === "undefined" || !msal.PublicClientApplication) {
@@ -77,6 +81,38 @@
         },
 
         // Silent restore: returns a result if MSAL already has a cached account.
+        // If the current page load is the post-redirect callback (URL contains
+        // an auth code/error from Microsoft), process it first so the result
+        // flows through the same ApplyMicrosoftSessionAsync path.
+        handleRedirect: async function (scope) {
+            if (!app) return null;
+            if (pendingRedirectResult !== null) {
+                const cached = pendingRedirectResult;
+                pendingRedirectResult = null;
+                return cached;
+            }
+            apiScope = scope;
+            try {
+                const res = await app.handleRedirectPromise();
+                if (!res) return null;
+                const account = res.account || (app.getAllAccounts()[0]);
+                if (!account) return null;
+                app.setActiveAccount(account);
+                const token = await acquireToken(account, scope);
+                return toResult(account, token);
+            } catch (e) {
+                // Most common cause: handleRedirectPromise was called twice on the
+                // same page load (SPA re-hydration). Swallow & return null so the
+                // subsequent tryRestore path can still pick up a cached account.
+                if (e && (e.errorCode === "interaction_in_progress"
+                    || (e.message && e.message.indexOf("interaction_in_progress") !== -1)
+                    || (e.message && e.message.indexOf("already running") !== -1))) {
+                    return null;
+                }
+                throw e;
+            }
+        },
+
         tryRestore: async function (scope) {
             if (!app) return null;
             apiScope = scope;

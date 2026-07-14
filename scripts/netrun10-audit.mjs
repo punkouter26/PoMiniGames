@@ -7,16 +7,13 @@ const OUT = "C:/Users/punko/Downloads/PoMiniGames/docs/audit-2026-07-11";
 mkdirSync(OUT, { recursive: true });
 const ROUTES = [
   "/", "/leaderboards", "/profile", "/diag", "/test",
-  "/connectfive/1", "/pobrawl/1", "/poclick/1",
-  "/face/demo", "/face", "/face/leaderboard",
-  "/face/recap/00000000-0000-0000-0000-000000000000",
+  "/connectfive/1", "/pobrawl/1",
   "/pomarblerace?demo=1", "/pomarblerace",
   "/poracer/demo", "/poracer",
   "/posurvive?demo=1",
   "/tictactoe/1", "/funquiz/1", "/funquiz",
   "/couplequiz", "/couplequiz/lobby", "/couplequiz/leaderboard",
   "/funquiz/multiplayer", "/poracer/lobby",
-  "/poclick/stats/00000000-0000-0000-0000-000000000000",
 ];
 (async () => {
   const browser = await puppeteer.launch({

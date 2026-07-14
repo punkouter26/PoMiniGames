@@ -145,10 +145,27 @@ public class AuthStateService
             try
             {
                 await EnsureMsalInitializedAsync();
-                var restored = await _js.InvokeAsync<MsalResult?>("poAuth.tryRestore", _config.Scope);
-                if (restored is not null)
+                // First, drain any pending redirect-callback result. The redirect
+                // flow (used when loginPopup is blocked) lands the browser on
+                // /auth/callback with the auth code in the URL fragment; MSAL
+                // processes it here, the SPA then navigates to "/". The
+                // handshake has already succeeded, so we don't try /api/auth/me
+                // again — ApplyMicrosoftSessionAsync reuses the bearer we just
+                // acquired.
+                var redirectResult = await _js.InvokeAsync<MsalResult?>("poAuth.handleRedirect", _config.Scope);
+                if (redirectResult is not null)
                 {
-                    await ApplyMicrosoftSessionAsync(restored);
+                    await ApplyMicrosoftSessionAsync(redirectResult);
+                }
+                else
+                {
+                    // No redirect in flight; fall back to a silent cache restore
+                    // (the user previously signed in on this machine).
+                    var restored = await _js.InvokeAsync<MsalResult?>("poAuth.tryRestore", _config.Scope);
+                    if (restored is not null)
+                    {
+                        await ApplyMicrosoftSessionAsync(restored);
+                    }
                 }
             }
             catch (Exception ex)

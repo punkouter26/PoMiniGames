@@ -316,6 +316,18 @@
         // keyboard + touch) and invokes onInputChange(...) on every change.
         _selfRef = DotNetObjectReference.Create(this);
         await JS.InvokeVoidAsync("PoRacer.start", "racerCanvas", _selfRef);
+
+        // §2026-07-13: demo entry skips the title screen. Other demo games
+        // (PoBrawl, ConnectFive, PoMarbleRace) auto-start on first render
+        // when their demo parameter is set; PoRacer had the right
+        // `StartDemoRaceAsync` flow but never called it, so users landed on
+        // the START RACE / Multiplayer lobby overlay. Connect to the lobby
+        // as a guest, mark Ready, fire StartGame — the server pads the
+        // remaining 7 slots with AI bots so the demo always has a full grid.
+        if (_isDemo)
+        {
+            await StartDemoRaceAsync();
+        }
     }
 
     public async ValueTask DisposeAsync()

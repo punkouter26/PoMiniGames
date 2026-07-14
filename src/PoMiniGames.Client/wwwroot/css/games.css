@@ -62,7 +62,7 @@
 }
 
 /* ── Unified status badge (`.gps-status-badge.*`) ──
-   The single status system used across the top bar. ConnectFive / PoClick
+   The single status system used across the top bar. ConnectFive
    used the older `.cf-status--*` family; those rules and the
    `.gps-settings-*` drawer were the last two legacy chrome surfaces and are
    removed in 2026-07-06 cleanup. Every game now binds `<Status>` to a
@@ -95,7 +95,7 @@
 .gps-status-badge.turn     { background: rgba(0, 229, 255, 0.18);   color: var(--accent-cyan);   border: 1px solid rgba(0, 229, 255, 0.4); }
 .gps-status-badge.demo     { background: rgba(192, 132, 252, 0.18); color: #c084fc; border: 1px solid rgba(192, 132, 252, 0.4); }
 
-/* Legacy `.cf-status--*` alias block was deleted once ConnectFive / PoClick
+/* Legacy `.cf-status--*` alias block was deleted once ConnectFive
    migrated to `.gps-status-badge.*` (see the unified block above). */
 
 .gps-settings-wrap {
@@ -1224,104 +1224,6 @@
   gap: 0.6rem;
   margin-top: 0.25rem;
 }
-
-/* ── PoFace (`.pf-*` aliases) ── */
-.pf-home { display: flex; flex-direction: column; gap: 0.75rem; }
-.pf-note { color: var(--color-text-secondary); font-size: 0.9rem; }
-.pf-error { color: #fca5a5; font-weight: 600; }
-/* Buttons consolidated into `.gps-btn*` above (NET_CLEAN_10). */
-.pf-choice-grid { display: grid; gap: 0.75rem; justify-content: center; margin: 1rem 0; }
-.pf-choice-grid--wrap { display: flex; flex-wrap: wrap; gap: 0.75rem; justify-content: center; margin: 1rem 0; }
-.pf-face-choice { padding: 0.5rem 0.9rem; }
-.pf-face-choice--large { font-size: 2.5rem; padding: 0.5rem 0.9rem; }
-
-/* PoFace — arena / play / permission screens */
-.pf-perm {
-  display: flex; flex-direction: column; align-items: flex-start; gap: 0.75rem;
-  padding: 1.25rem; border: 1px solid var(--color-border); border-radius: 12px;
-  background: var(--color-surface);
-}
-.pf-ready { display: flex; flex-direction: column; align-items: center; gap: 0.75rem; }
-.pf-prompt { font-size: 1.05rem; color: var(--color-text-primary); margin: 0.5rem 0; }
-.pf-score-line { font-size: 1rem; color: var(--color-text-secondary); margin: 0.25rem 0; }
-.pf-score-line strong { color: var(--color-text-primary); }
-.pf-reveal {
-  display: flex; flex-direction: column; align-items: center; gap: 0.5rem;
-  padding: 1rem; border: 1px solid var(--color-border); border-radius: 12px;
-  background: var(--color-surface);
-}
-.pf-reveal-line { font-size: 1rem; margin: 0.25rem 0; }
-.pf-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; justify-content: center; }
-.pf-frozen-overlay {
-  position: absolute; pointer-events: none; inset: 0;
-  background: rgba(99, 102, 241, 0); transition: background 0.18s ease;
-  border-radius: 8px;
-}
-.pf-frozen-overlay.is-flash { background: rgba(255, 255, 255, 0.65); }
-
-/* PoFace — demo (kiosk loop) */
-.pf-demo { display: flex; flex-direction: column; align-items: center; gap: 0.75rem; }
-.pf-demo-face { width: min(320px, 80vw); height: auto; }
-.pf-demo-choices { width: 100%; max-width: 640px; }
-.pf-demo-chip {
-  display: inline-flex; flex-direction: column; align-items: center; gap: 0.25rem;
-  padding: 0.6rem 0.9rem; min-width: 92px;
-  border: 1px solid var(--color-border); border-radius: 10px;
-  background: var(--color-surface-hover); color: var(--color-text-primary);
-  cursor: default;
-}
-.pf-demo-chip--target { border-color: var(--color-accent); }
-.pf-demo-chip--picked { background: var(--color-accent); color: #fff; border-color: var(--color-accent); }
-.pf-demo-chip-emoji { font-size: 2rem; line-height: 1; }
-.pf-demo-chip-label { font-size: 0.75rem; opacity: 0.85; }
-
-/* Hidden mirror SVG used by webcam.js to render the demo's "fake image".
-   Off-screen but kept in the DOM so outerHTML always has current markup. */
-.pf-demo-face-source {
-    position: absolute;
-    width: 1px; height: 1px;
-    overflow: hidden;
-    clip: rect(0 0 0 0);
-    pointer-events: none;
-}
-
-/* PoFace — recap */
-.pf-recap { display: flex; flex-direction: column; gap: 0.75rem; }
-.pf-recap-grid {
-  display: grid; gap: 0.75rem;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-}
-.pf-recap-card {
-  display: flex; flex-direction: column; gap: 0.4rem;
-  padding: 0.75rem; border: 1px solid var(--color-border); border-radius: 12px;
-  background: var(--color-surface);
-}
-.pf-recap-card img {
-  width: 100%; aspect-ratio: 4 / 3; object-fit: cover;
-  border-radius: 8px; background: var(--color-surface-hover);
-}
-.pf-recap-card h4 { margin: 0; font-size: 0.95rem; }
-.pf-recap-card p { margin: 0; font-size: 0.85rem; color: var(--color-text-secondary); }
-
-/* PoFace — leaderboard */
-.pf-leaderboard { display: flex; flex-direction: column; gap: 0.75rem; }
-.pf-year-picker { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
-.pf-year-picker input[type="number"] {
-  width: 6rem; padding: 0.4rem 0.5rem; border-radius: 6px;
-  border: 1px solid var(--color-border); background: var(--color-surface);
-  color: var(--color-text-primary);
-}
-.pf-table {
-  width: 100%; border-collapse: collapse; font-size: 0.9rem;
-  background: var(--color-surface); border: 1px solid var(--color-border);
-  border-radius: 8px; overflow: hidden;
-}
-.pf-table th, .pf-table td {
-  padding: 0.5rem 0.75rem; text-align: left;
-  border-bottom: 1px solid var(--color-border);
-}
-.pf-table th { color: var(--color-text-secondary); font-weight: 600; }
-.pf-table tr:last-child td { border-bottom: 0; }
 
 /* ── First-run "how to play" onboarding (GameShell) ─────────────────────────
    The "?" recall button lives in the consolidated game header; the overlay

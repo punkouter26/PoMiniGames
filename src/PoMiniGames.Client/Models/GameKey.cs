@@ -2,7 +2,7 @@ namespace PoMiniGamesClient.Models;
 
 /// <summary>
 /// Strongly-typed identifier for a game in the catalog. Replaces raw <see cref="string"/>
-/// keys ("poclick", "connectfive", …) that were compared ad-hoc across the client, where a
+/// keys ("connectfive", "pofunquiz", …) that were compared ad-hoc across the client, where a
 /// typo compiled cleanly and failed only at runtime.
 /// </summary>
 /// <remarks>
@@ -28,8 +28,6 @@ public readonly record struct GameKey(string Value)
 /// <summary>The canonical set of game keys. Reference these instead of magic string literals.</summary>
 public static class GameKeys
 {
-    public static readonly GameKey PoClick = new("poclick");
-    public static readonly GameKey PoReflex = new("poreflex");
     public static readonly GameKey ConnectFive = new("connectfive");
     public static readonly GameKey TicTacToe = new("tictactoe");
     public static readonly GameKey PoRacer = new("poracer");
@@ -37,7 +35,6 @@ public static class GameKeys
     public static readonly GameKey PoSurvive = new("posurvive");
     public static readonly GameKey PoCoupleQuiz = new("pocouplequiz");
     public static readonly GameKey PoFunQuiz = new("pofunquiz");
-    public static readonly GameKey PoFace = new("poface");
     public static readonly GameKey PoJoker = new("pojoker");
     public static readonly GameKey PoBrawl = new("pobrawl");
 }

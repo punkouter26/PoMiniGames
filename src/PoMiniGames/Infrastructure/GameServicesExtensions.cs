@@ -1,21 +1,12 @@
 using PoMiniGames.Domain.Services;
 using PoMiniGames.Features.PoCoupleQuiz;
 using PoMiniGames.Features.PoCoupleQuiz.Storage;
-using PoMiniGames.Features.PoFace;
-using PoMiniGames.Features.PoFace.Storage;
 using PoMiniGames.Features.PoFunQuiz;
 using PoMiniGames.Features.PoFunQuiz.Storage;
 using PoMiniGames.Features.PoJoker;
 using PoMiniGames.Features.PoJoker.Storage;
 using PoMiniGames.Features.PoRacer;
 using PoMiniGames.Infrastructure.Services;
-
-// Aliases to disambiguate the identically-named ILeaderboardRepository and
-// IGameSessionRepository in the per-game Storage namespaces.
-using FaceLeaderboardRepository = PoMiniGames.Features.PoFace.Storage.LeaderboardRepository;
-using FaceLeaderboardEntry = PoMiniGames.Features.PoFace.LeaderboardEntry;
-using FaceGameSessionRepository = PoMiniGames.Features.PoFace.Storage.GameSessionRepository;
-using FacePlayerStatsRepository = PoMiniGames.Features.PoFace.Storage.PlayerStatsRepository;
 
 namespace PoMiniGames.Infrastructure;
 
@@ -65,7 +56,7 @@ internal static class GameServicesExtensions
             return new EloCalculator(config.Value);
         });
 
-        // Storage initializer for the consolidated games (PoCoupleQuiz, PoFunQuiz, PoFace).
+        // Storage initializer for the consolidated games (PoCoupleQuiz, PoFunQuiz).
         // Ensures all per-game tables and blob containers exist at host startup.
         services.AddSingleton<StorageInitializer>();
 
@@ -106,40 +97,6 @@ internal static class GameServicesExtensions
         services.AddSingleton<PoMiniGames.Features.PoFunQuiz.Storage.ILeaderboardRepository,
             PoMiniGames.Features.PoFunQuiz.Storage.LeaderboardRepository>();
         services.AddSingleton<MultiplayerLobbyService>();
-
-        // PoFace — Phase 3 of the consolidation. See Features/PoFace/.
-        // The AzureAIFaceAnalysisService uses the shared multimodal deployment on
-        // the centralized Azure AI Foundry hub (PoShared RG); the StubFaceAnalysisService
-        // implements IFaceAnalysisService and reports IsMock=true (drives the per-game
-        // "USING MOCK DATA" banner).
-        // §3.4: typed HttpClient via IHttpClientFactory + standard resilience handler
-        // (retry x3 with exponential backoff + jitter, circuit breaker at 30% failure,
-        // 30s total request timeout). The named client below is the one consumed by
-        // AzureAIFaceAnalysisService.
-        // CorrelationPropagationHandler needs the ambient HttpContext to read the
-        // request's correlation/session ids and forward them upstream.
-        services.AddHttpContextAccessor();
-        services.AddTransient<CorrelationPropagationHandler>();
-        services.AddTransient<AIFoundryBearerTokenHandler>();
-        services.AddHttpClient(AzureAIFaceAnalysisService.HttpClientName, client =>
-            {
-                // 30s, not 60s: this serves a real-time game; a request that hasn't
-                // returned in 30s is already a failed round from the player's view.
-                client.Timeout = TimeSpan.FromSeconds(30);
-            })
-            .AddHttpMessageHandler<CorrelationPropagationHandler>()
-            .AddHttpMessageHandler<AIFoundryBearerTokenHandler>()
-            .AddStandardResilienceHandler();
-        services.AddSingleton<IFaceAnalysisService, AzureAIFaceAnalysisService>();
-        services.AddSingleton<StubFaceAnalysisService>();
-        services.AddSingleton<PoMiniGames.Features.PoFace.Storage.IGameSessionRepository, FaceGameSessionRepository>();
-        services.AddSingleton<PoMiniGames.Features.PoFace.Storage.ILeaderboardRepository, FaceLeaderboardRepository>();
-        services.AddSingleton<PoMiniGames.Features.PoFace.Storage.IPlayerStatsRepository, FacePlayerStatsRepository>();
-        // Blob storage for the poface-captures container (round-capture JPEGs).
-        // Best-effort: when the blob endpoint is missing or unreachable, the round
-        // score is still recorded in table storage and the recap page shows a
-        // placeholder image.
-        services.AddSingleton<PoMiniGames.Features.PoFace.Storage.IBlobImageRepository, PoMiniGames.Features.PoFace.Storage.BlobImageRepository>();
 
         // PoJoker — demo-only autonomous comedy show. See Features/PoJoker/.
         // AiJesterService is the production path (shared Azure OpenAI resilience); it

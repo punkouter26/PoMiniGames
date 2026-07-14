@@ -103,34 +103,6 @@ public sealed class GameResultService
         return stats;
     }
 
-    /// <summary>Records the PoClick outcome locally and submits the accuracy score together.</summary>
-    public async Task RecordAndSubmitPoClickAsync(string playerName, GameResult result, PoClickHighScore highScore)
-    {
-        await _stats.RecordResult("poclick", playerName, Difficulty.Medium, result);
-        var submitted = await _api.SubmitPoClickHighScoreAsync(highScore);
-        if (submitted is null)
-        {
-            _sync.EnqueuePoClick(highScore);
-            await OnScoreParkedAsync();
-        }
-    }
-
-    /// <summary>Records the PoReflex outcome locally and submits the average reaction time together.</summary>
-    public async Task RecordAndSubmitPoReflexAsync(string playerName, GameResult result, PoReflexHighScore highScore)
-    {
-        await _stats.RecordResult("poreflex", playerName, Difficulty.Medium, result);
-        var submitted = await _api.SubmitPoReflexHighScoreAsync(highScore);
-        if (submitted is null)
-        {
-            _sync.EnqueuePoReflex(highScore);
-            await OnScoreParkedAsync();
-        }
-        else
-        {
-            await _feedback.CompleteAsync();
-        }
-    }
-
     /// <summary>
     /// The single sync path for adaptive-ELO games (ConnectFive/TicTacToe): mirror the
     /// adaptive record into the legacy stats shape (Medium bucket carries the adaptive

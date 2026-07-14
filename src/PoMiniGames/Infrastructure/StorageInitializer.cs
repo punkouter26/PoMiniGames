@@ -21,17 +21,12 @@ namespace PoMiniGames.Infrastructure;
 /// </remarks>
 public sealed class StorageInitializer
 {
-    /// <summary>Tables used by the three consolidated games (PoCoupleQuiz, PoFunQuiz, PoFace).</summary>
+    /// <summary>Tables used by the three consolidated games (PoCoupleQuiz, PoFunQuiz).</summary>
     public static readonly string[] AdditionalTables =
     [
         "PoCoupleQuizTeams",
         "PoCoupleQuizHistory",
         "PoFunQuizPlayers",
-        "PoFaceGameSessions",
-        "PoFaceRoundCaptures",
-        "PoFaceLeaderboard",
-        "PoFacePlayerStats",
-        "PoFacePlayers",
         // PoSurvive persistence (§3 of QA report): the Evolution, Session and
         // Heartbeat tables are required by the /api/evolution/* and /api/posurvive/*
         // surfaces. Without eager creation those endpoints return 500 with
@@ -45,10 +40,9 @@ public sealed class StorageInitializer
         "PoJokerPerformances",
     ];
 
-    /// <summary>Blob containers used by the consolidated games (PoFace needs webcam capture blobs).</summary>
+    /// <summary>Blob containers used by the consolidated games (none beyond the base container set).</summary>
     public static readonly string[] AdditionalBlobContainers =
     [
-        "poface-captures",
     ];
 
     private readonly TableServiceClient _tableServiceClient;

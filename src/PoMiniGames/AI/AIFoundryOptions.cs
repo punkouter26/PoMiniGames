@@ -4,7 +4,7 @@ namespace PoMiniGames.AI;
 /// Centralized Azure AI Foundry binding used by every AI-consuming service in the host.
 /// <para>
 /// Replaces the per-game configuration sections (<c>PoFunQuiz:AzureOpenAI:*</c>,
-/// <c>PoCoupleQuiz:AzureOpenAI:*</c>, <c>PoFace:AzureOpenAI:*</c>, <c>PoJoker:AzureOpenAI:*</c>,
+/// <c>PoCoupleQuiz:AzureOpenAI:*</c>, <c>PoJoker:AzureOpenAI:*</c>,
 /// and <c>Inference:*</c>) with a single source-of-truth resolved at startup from Key Vault.
 /// </para>
 /// <para>

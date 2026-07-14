@@ -7,7 +7,7 @@ namespace PoMiniGames.AI;
 /// <summary>
 /// Delegating handler that attaches an AAD bearer token acquired via
 /// <see cref="DefaultAzureCredential"/> to every outbound request to the
-/// Azure AI Foundry hub. Used by <see cref="PoMiniGames.Features.PoFace.AzureAIFaceAnalysisService"/>.
+/// Azure AI Foundry hub. Used by chat-completion clients in the consolidated AI features.
 ///
 /// <para>
 /// Mirrors the AAD-auth pattern used by the Azure SDK clients

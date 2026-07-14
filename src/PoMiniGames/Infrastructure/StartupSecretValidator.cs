@@ -6,7 +6,7 @@ namespace PoMiniGames.Infrastructure;
 
 /// <summary>
 /// Hosted service that runs once at startup and validates that the secrets required for every
-/// consolidated game (PoCoupleQuiz, PoFunQuiz, PoFace) are present. This is the fail-fast
+/// consolidated game (PoCoupleQuiz, PoFunQuiz) are present. This is the fail-fast
 /// guard so a misconfigured production deployment never silently serves mock/fallback data
 /// to real players.
 ///

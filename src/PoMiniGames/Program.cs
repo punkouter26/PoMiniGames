@@ -142,7 +142,7 @@ if (!microsoftAuth.Enabled)
 app.Services.GetRequiredService<StorageService>().Initialize();
 
 // Ensure the additional tables and blob containers for the consolidated games
-// (PoCoupleQuiz, PoFunQuiz, PoFace) exist. Runs idempotently; failures are logged
+// (PoCoupleQuiz, PoFunQuiz) exist. Runs idempotently; failures are logged
 // but never block startup.
 try
 {

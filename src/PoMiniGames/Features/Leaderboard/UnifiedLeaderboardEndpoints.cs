@@ -18,9 +18,9 @@ public static class UnifiedLeaderboardEndpoints
     private static readonly (string Key, string Title)[] WinRateGames =
     [
         ("connectfive", "Connect Five"),
-        // Renamed to "Connect Six" (6×6 / 4-in-a-row grid) to match the catalog,
+        // Renamed to "TicTacToe6" (6×6 / 4-in-a-row grid) to match the catalog,
         // profile, and in-game labels; the storage key stays "tictactoe".
-        ("tictactoe", "Connect Six"),
+        ("tictactoe", "TicTacToe6"),
     ];
 
     public static IEndpointRouteBuilder MapUnifiedLeaderboardEndpoints(this IEndpointRouteBuilder app)
@@ -29,10 +29,10 @@ public static class UnifiedLeaderboardEndpoints
         var boards = app.MapGroup("/api/leaderboards").WithTags("Statistics");
 
         boards.MapGet("",
-            async (IStorageService storage, PoFace.Storage.ILeaderboardRepository faceBoard, int limit = 5) =>
+            async (IStorageService storage, int limit = 5) =>
             {
                 limit = Math.Clamp(limit, 1, 100);
-                var all = await BuildAllAsync(storage, faceBoard, limit);
+                var all = await BuildAllAsync(storage, limit);
                 return Results.Ok(all);
             })
             .WithName("GetUnifiedLeaderboards")
@@ -40,10 +40,10 @@ public static class UnifiedLeaderboardEndpoints
             .Produces<IEnumerable<GameLeaderboardDto>>(StatusCodes.Status200OK);
 
         boards.MapGet("/{game}",
-            async (string game, IStorageService storage, PoFace.Storage.ILeaderboardRepository faceBoard, int limit = 10) =>
+            async (string game, IStorageService storage, int limit = 10) =>
             {
                 limit = Math.Clamp(limit, 1, 100);
-                var board = await BuildOneAsync(storage, faceBoard, game, limit);
+                var board = await BuildOneAsync(storage, game, limit);
                 return board is null ? Results.NotFound(new { message = $"No leaderboard for game '{game}'" })
                                      : Results.Ok(board);
             })
@@ -56,7 +56,7 @@ public static class UnifiedLeaderboardEndpoints
     }
 
     private static async Task<List<GameLeaderboardDto>> BuildAllAsync(
-        IStorageService storage, PoFace.Storage.ILeaderboardRepository faceBoard, int limit)
+        IStorageService storage, int limit)
     {
         var result = new List<GameLeaderboardDto>();
 
@@ -67,10 +67,7 @@ public static class UnifiedLeaderboardEndpoints
 
         result.Add(await BuildMarbleAsync(storage, limit));
         result.Add(await BuildPoRacerAsync(storage, limit));
-        result.Add(await BuildPoFaceAsync(faceBoard, limit));
         result.Add(await BuildPoBrawlAsync(storage, limit));
-        result.Add(await BuildPoClickAsync(storage, limit));
-        result.Add(await BuildPoReflexAsync(storage, limit));
 
         // Boards with at least one REAL entry float to the top (every board is now
         // padded to `limit` with XXX placeholders, so raw count no longer ranks).
@@ -78,7 +75,7 @@ public static class UnifiedLeaderboardEndpoints
     }
 
     private static async Task<GameLeaderboardDto?> BuildOneAsync(
-        IStorageService storage, PoFace.Storage.ILeaderboardRepository faceBoard, string game, int limit)
+        IStorageService storage, string game, int limit)
     {
         var key = game.ToLowerInvariant();
         var winRate = Array.Find(WinRateGames, g => g.Key == key);
@@ -89,10 +86,7 @@ public static class UnifiedLeaderboardEndpoints
         {
             "pomarblerace" or "marblerace" => await BuildMarbleAsync(storage, limit),
             "poracer" => await BuildPoRacerAsync(storage, limit),
-            "poface" => await BuildPoFaceAsync(faceBoard, limit),
             "pobrawl" => await BuildPoBrawlAsync(storage, limit),
-            "poclick" => await BuildPoClickAsync(storage, limit),
-            "poreflex" => await BuildPoReflexAsync(storage, limit),
             _ => null,
         };
     }
@@ -160,41 +154,6 @@ public static class UnifiedLeaderboardEndpoints
         return new GameLeaderboardDto("pomarblerace", "PoMarbleRace", "Points", HigherIsBetter: true, entries);
     }
 
-    /// <summary>Best PoClick accuracy score per player (0-100, higher is better).</summary>
-    private static async Task<GameLeaderboardDto> BuildPoClickAsync(IStorageService storage, int limit)
-    {
-        var scores = await storage.GetPoClickHighScoresAsync(50);
-        var entries = scores
-            .GroupBy(s => s.PlayerName)
-            .Select(g => (Name: g.Key, Best: g.Max(s => s.Score)))
-            .OrderByDescending(x => x.Best)
-            .Take(limit)
-            .Select((x, i) => new LeaderboardEntryDto(
-                i + 1, x.Name, x.Best,
-                x.Best.ToString("0.0", CultureInfo.InvariantCulture)))
-            .ToList();
-        PadWithPlaceholders(entries, limit, "0");
-        return new GameLeaderboardDto("poclick", "PoClick", "Accuracy", HigherIsBetter: true, entries);
-    }
-
-    /// <summary>Best (lowest) average reaction time per player, milliseconds. Lower is better.</summary>
-    private static async Task<GameLeaderboardDto> BuildPoReflexAsync(IStorageService storage, int limit)
-    {
-        var scores = await storage.GetPoReflexHighScoresAsync(50);
-        var entries = scores
-            .Where(s => s.Score > 0)
-            .GroupBy(s => s.PlayerName)
-            .Select(g => (Name: g.Key, Best: g.Min(s => s.Score)))
-            .OrderBy(x => x.Best)
-            .Take(limit)
-            .Select((x, i) => new LeaderboardEntryDto(
-                i + 1, x.Name, x.Best,
-                x.Best.ToString("0", CultureInfo.InvariantCulture) + "ms"))
-            .ToList();
-        PadWithPlaceholders(entries, limit, "—");
-        return new GameLeaderboardDto("poreflex", "PoReflex", "Avg reaction", HigherIsBetter: false, entries);
-    }
-
     /// <summary>Best race time per player (lower is better) from the PoRacer score table.</summary>
     private static async Task<GameLeaderboardDto> BuildPoRacerAsync(IStorageService storage, int limit)
     {
@@ -211,21 +170,6 @@ public static class UnifiedLeaderboardEndpoints
             .ToList();
         PadWithPlaceholders(entries, limit, "—");
         return new GameLeaderboardDto("poracer", "PoRacer", "Best time", HigherIsBetter: false, entries);
-    }
-
-    /// <summary>Best PoFace score per player (current year board).</summary>
-    private static async Task<GameLeaderboardDto> BuildPoFaceAsync(
-        PoFace.Storage.ILeaderboardRepository faceBoard, int limit)
-    {
-        var top = await faceBoard.GetTopAsync(DateTime.UtcNow.Year, limit);
-        var entries = top
-            .Select((e, i) => new LeaderboardEntryDto(
-                i + 1,
-                string.IsNullOrWhiteSpace(e.DisplayName) ? e.UserId : e.DisplayName,
-                e.Score, e.Score.ToString("N0", CultureInfo.InvariantCulture)))
-            .ToList();
-        PadWithPlaceholders(entries, limit, "0");
-        return new GameLeaderboardDto("poface", "PoFace", "Score", HigherIsBetter: true, entries);
     }
 
     /// <summary>

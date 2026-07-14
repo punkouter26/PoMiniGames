@@ -63,8 +63,7 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>, IAsyncL
             {
                 // §6 + §3: mirror the Azurite connection string into BOTH the
                 // TableService and BlobService sections so per-game blob repositories
-                // (e.g. BlobImageRepository for PoFace captures) bind to the
-                // emulator rather than falling through to DefaultAzureCredential.
+                // bind to the emulator rather than falling through to DefaultAzureCredential.
                 foreach (var (k, v) in TestBudgetGuard.StorageOverrides(_azuriteConnectionString, "pominigames"))
                 {
                     overrides[k] = v;

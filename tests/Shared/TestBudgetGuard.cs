@@ -36,7 +36,6 @@ public static class TestBudgetGuard
         ["PoFunQuiz:Features:UseMockAI"] = "true",
         ["PoCoupleQuiz:Features:UseMockAI"] = "true",
         ["PoJoker:Features:UseMockAI"] = "true",
-        ["PoFace:Features:UseMockAI"] = "true",
 
         // ── Cloud inference relay ─────────────────────────────────────────
         // PoSurvive's remote model relay; default off in Dev, but a developer's

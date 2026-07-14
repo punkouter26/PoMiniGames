@@ -24,16 +24,12 @@ public class StorageService : IStorageService
     private const string PoBrawlTable = "PoBrawlHighScores";
     private const string PoBrawlLadderTable = "PoBrawlLadder";
     private const string PoRacerTable = "PoRacerHighScores";
-    private const string PoClickTable = "PoClickHighScores";
-    private const string PoReflexTable = "PoReflexHighScores";
 
     // High scores share a single partition per game so a leaderboard is one partition scan.
     private const string MarbleRacePartition = "marblerace";
     private const string PoBrawlPartition = "pobrawl";
     private const string PoBrawlLadderPartition = "pobrawlladder";
     private const string PoRacerPartition = "poracer";
-    private const string PoClickPartition = "poclick";
-    private const string PoReflexPartition = "poreflex";
 
     private readonly TableServiceClient _serviceClient;
     private readonly EloCalculator _eloCalculator;
@@ -356,77 +352,6 @@ public class StorageService : IStorageService
 
     public Task<PoRacerHighScore> SavePoRacerHighScoreAsync(PoRacerHighScore entry) =>
         SaveHighScoreAsync(PoRacerScores, entry);
-
-    // ── PoClick High Scores ──────────────────────────────────────────────
-    private static readonly HighScoreDescriptor<PoClickHighScore> PoClickScores = new(
-        Table: PoClickTable,
-        Partition: PoClickPartition,
-        Sanitize: e => e with
-        {
-            PlayerName = SanitizeName(e.PlayerName),
-            Score = Math.Clamp(e.Score, 0, 100),
-            Bpm = Math.Clamp(e.Bpm, 1, 400),
-            DurationSeconds = Math.Clamp(e.DurationSeconds, 1, 600),
-            Date = DefaultDate(e.Date),
-        },
-        ToFields: e => new Dictionary<string, object?>
-        {
-            ["PlayerName"] = e.PlayerName,
-            ["Score"] = e.Score,
-            ["Bpm"] = e.Bpm,
-            ["DurationSeconds"] = e.DurationSeconds,
-            ["Date"] = e.Date,
-        },
-        FromEntity: e => new PoClickHighScore
-        {
-            PlayerName = e.GetString("PlayerName") ?? "",
-            Score = e.GetDouble("Score") ?? 0d,
-            Bpm = e.GetInt32("Bpm") ?? 0,
-            DurationSeconds = e.GetInt32("DurationSeconds") ?? 0,
-            Date = e.GetString("Date") ?? "",
-        },
-        // Highest accuracy score wins, oldest first as the tiebreaker.
-        Rank: s => s.OrderByDescending(x => x.Score).ThenBy(x => x.Date));
-
-    public Task<List<PoClickHighScore>> GetPoClickHighScoresAsync(int limit = 10) =>
-        GetHighScoresAsync(PoClickScores, limit);
-
-    public Task<PoClickHighScore> SavePoClickHighScoreAsync(PoClickHighScore entry) =>
-        SaveHighScoreAsync(PoClickScores, entry);
-
-    // ── PoReflex High Scores ──────────────────────────────────────────────
-    private static readonly HighScoreDescriptor<PoReflexHighScore> PoReflexScores = new(
-        Table: PoReflexTable,
-        Partition: PoReflexPartition,
-        Sanitize: e => e with
-        {
-            PlayerName = SanitizeName(e.PlayerName),
-            Score = Math.Clamp(e.Score, 0, 60_000),
-            BestReactionMs = Math.Clamp(e.BestReactionMs, 0, 60_000),
-            Date = DefaultDate(e.Date),
-        },
-        ToFields: e => new Dictionary<string, object?>
-        {
-            ["PlayerName"] = e?.PlayerName,
-            ["Score"] = e?.Score,
-            ["BestReactionMs"] = e?.BestReactionMs,
-            ["Date"] = e?.Date,
-        },
-        FromEntity: e => new PoReflexHighScore
-        {
-            PlayerName = e.GetString("PlayerName") ?? "",
-            Score = e.GetDouble("Score") ?? 0d,
-            BestReactionMs = e.GetDouble("BestReactionMs") ?? 0d,
-            Date = e.GetString("Date") ?? "",
-        },
-        // Lowest average reaction time wins, oldest first as the tiebreaker.
-        Rank: s => s.OrderBy(x => x.Score).ThenBy(x => x.Date));
-
-    public Task<List<PoReflexHighScore>> GetPoReflexHighScoresAsync(int limit = 10) =>
-        GetHighScoresAsync(PoReflexScores, limit);
-
-    public Task<PoReflexHighScore> SavePoReflexHighScoreAsync(PoReflexHighScore entry) =>
-        SaveHighScoreAsync(PoReflexScores, entry);
 
     // ── PoBrawl presidents ladder ─────────────────────────────────────────
     // Unlike the high-score boards (append + dedupe by content hash), the ladder

@@ -3,10 +3,8 @@
 
 $ErrorActionPreference = 'Stop'
 $urls = @(
-    'http://localhost:5000/poclick/1'
     'http://localhost:5000/tictactoe/1'
     'http://localhost:5000/connectfive/1'
-    'http://localhost:5000/face/demo'
     'http://localhost:5000/poracer/demo'
     'http://localhost:5000/pomarblerace?demo=1'
     'http://localhost:5000/pojoker'

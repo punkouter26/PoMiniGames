@@ -55,7 +55,6 @@ which calls every `MapXxxEndpoints()` extension.
 | `Leaderboard` | Player stats, unified leaderboard | `/api/{game}/players/{name}/stats`, `/api/leaderboard/*` | — | shared |
 | `MatchHistory` | Read-only match log | `/api/matchhistory/*` | — | shared |
 | `PoCoupleQuiz` | Real-time couples quiz | `/api/couplequiz/*` | `/couplequiz/hubs/game` | local tables |
-| `PoFace` | Face analysis (Azure AI Foundry) | `/api/face/*` | — | shared |
 | `PoFunQuiz` | Solo quiz + leaderboard | `/api/funquiz/*` | `/funquiz/gamehub` | local tables |
 | `PoJoker` | Joke fetch + LLM analysis | `/api/joker/*` | — | shared |
 | `PoRacer` | Lobby + race + high scores | `/api/poracer/scores/*` | `/poracer/lobby-hub`, `/poracer/race-hub` | local table |
@@ -167,7 +166,6 @@ partial-class extension file referenced by `GlobalUsings.cs`.
 | GET | `/api/funquiz/quiz/questions` | PoFunQuiz | Auth | ai-generation | Cache-memoized quiz |
 | GET | `/api/funquiz/leaderboard` | PoFunQuiz | Auth | none | Top players |
 | POST | `/api/funquiz/leaderboard` | PoFunQuiz | Auth | submit | Submit score |
-| POST | `/api/face/analyze` | PoFace | Auth | face-analysis | AI Foundry call |
 | GET | `/api/joker/random` | PoJoker | Auth | none | JokeAPI.dev (resilient) |
 | POST | `/api/joker/analyze` | PoJoker | Auth | joker-analysis | LLM roast |
 | GET | `/api/poracer/scores` | PoRacer | Auth | none | Top races |

@@ -59,7 +59,6 @@ public sealed class KioskCoordinator : IDisposable
     // Keyed by the catalog GameKey (DemoEntry.Key). Anything unmapped uses AdvanceSeconds.
     private static readonly Dictionary<string, int> DwellByKey = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["poclick"] = 12,
         ["tictactoe"] = 12,
         ["connectfive"] = 14,
         ["poraceragdoll"] = 14,

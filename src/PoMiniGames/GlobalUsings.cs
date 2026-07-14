@@ -6,6 +6,6 @@
 //
 // Both now live under the single PoMiniGames.AI namespace; this global
 // using keeps the per-slice "using PoMiniGames.AI;" ceremony out of
-// every AI-touching file (PoCoupleQuiz, PoFace, PoFunQuiz, PoJoker,
+// every AI-touching file (PoCoupleQuiz, PoFunQuiz, PoJoker,
 // PoSurvive, AIFoundryCentralizationTests).
 global using PoMiniGames.AI;

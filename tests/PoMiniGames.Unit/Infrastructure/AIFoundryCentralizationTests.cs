@@ -5,7 +5,6 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using PoMiniGames.AI;
-using PoMiniGames.Features.PoFace;
 using PoMiniGames.Features.PoJoker;
 
 namespace PoMiniGames.Unit.Infrastructure;
@@ -125,7 +124,6 @@ public sealed class AIFoundryCentralizationTests
         var config = new ConfigurationBuilder().Build();
         config["PoFunQuiz:AzureOpenAI:ApiKey"].Should().BeNull();
         config["PoCoupleQuiz:AzureOpenAI:ApiKey"].Should().BeNull();
-        config["PoFace:AzureOpenAI:ApiKey"].Should().BeNull();
         config["PoJoker:AzureOpenAI:ApiKey"].Should().BeNull();
     }
 

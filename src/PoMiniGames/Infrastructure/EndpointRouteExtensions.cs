@@ -5,7 +5,6 @@ using PoMiniGames.Features.HighScores;     // MarbleRace / PoBrawl mappers
 using PoMiniGames.Features.Leaderboard;
 using PoMiniGames.Features.MatchHistory;
 using PoMiniGames.Features.PoCoupleQuiz;
-using PoMiniGames.Features.PoFace;
 using PoMiniGames.Features.PoFunQuiz;
 using PoMiniGames.Features.PoJoker;
 using PoMiniGames.Features.PoRacer;
@@ -57,12 +56,9 @@ internal static class EndpointRouteExtensions
         gameApi.MapGetAllPlayerStatistics();
         gameApi.MapMarbleRaceHighScoresEndpoints();
         gameApi.MapPoBrawlHighScoresEndpoints();
-        gameApi.MapPoClickHighScoresEndpoints();
-        gameApi.MapPoReflexHighScoresEndpoints();
         gameApi.MapMatchHistoryEndpoints();
         gameApi.MapCoupleQuizEndpoints();
         gameApi.MapFunQuizEndpoints();
-        gameApi.MapFaceEndpoints();
         gameApi.MapPoJokerEndpoints();
         gameApi.MapPoRacerScoreEndpoints();
         gameApi.MapPoSurviveEndpoints(app.Configuration);

@@ -14,8 +14,8 @@ namespace PoMiniGames.Features.Diagnostics;
 /// </summary>
 /// <remarks>
 /// <para><b>§5 Mockable Enumeration.</b> Pre-marker, every game had its own
-/// ad-hoc "is this a mock?" probe (PoFace exposed <c>IsMock</c>, PoCoupleQuiz
-/// exposed <c>isMockData</c>, etc.). Lifting the contract to
+/// ad-hoc "is this a mock?" probe (PoCoupleQuiz exposed <c>isMockData</c>,
+/// etc.). Lifting the contract to
 /// <see cref="IMockable"/> lets this endpoint project a stable JSON shape and
 /// lets the test suite assert the mock count is exactly the expected number
 /// (e.g. zero in Production, one per overridden game in Dev/Test).</para>

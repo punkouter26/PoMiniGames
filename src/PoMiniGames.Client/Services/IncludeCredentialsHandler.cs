@@ -20,12 +20,14 @@ namespace PoMiniGamesClient.Services;
 /// cookie auth without callers needing to remember to set it per-request.
 /// </summary>
 /// <remarks>
-/// Used as a child handler that the framework inserts into the WASM
-/// HttpClient pipeline via <c>IHttpMessageHandlerBuilderFilter</c> (see
-/// <c>Program.cs</c>). It is intentionally not registered as a primary
-/// handler — that would replace the browser fetch shim and break all
-/// requests, because Blazor WASM ships its own <c>BrowserHttpMessageHandler</c>
-/// implementation that must be the innermost handler in the chain.
+/// Wired as a <see cref="DelegatingHandler"/> in the client HttpClient pipeline in
+/// <c>Program.cs</c>: it sits above <c>HttpClientHandler</c> (which backs the WASM
+/// browser fetch shim and must remain the innermost handler in the chain) and below
+/// <see cref="TransientRetryHandler"/>. It is intentionally not registered as a primary
+/// handler — that would replace the browser fetch shim and break all requests. This is
+/// the code-level fallback for cross-origin cookie inclusion; the
+/// <c>wwwroot/js/crossOriginFetchPatch.js</c> monkey-patch is the belt-and-braces
+/// equivalent at the JS layer.
 /// </remarks>
 public sealed class IncludeCredentialsHandler : DelegatingHandler
 {

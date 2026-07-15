@@ -36,9 +36,11 @@ public class GameHistoryEntity : ITableEntity
 
     public static GameHistoryEntity From(GameHistory h) => new()
     {
-        // Reverse-ticks format gives a natural reverse-chronological ordering when scanned.
+        // Reverse-ticks prefix gives natural reverse-chronological ordering when scanned; the
+        // session-id suffix disambiguates two histories that share the same PlayedAt tick
+        // (which previously collided and surfaced as a 500).
         PartitionKey = "GameHistory",
-        RowKey = GenerateRowKey(h.PlayedAt),
+        RowKey = GenerateRowKey(h.PlayedAt, h.GameSessionId),
         GameSessionId = h.GameSessionId,
         Team1Name = h.Team1Name,
         Team2Name = h.Team2Name ?? string.Empty,
@@ -61,8 +63,20 @@ public class GameHistoryEntity : ITableEntity
         Difficulty = Difficulty
     };
 
-    private static string GenerateRowKey(DateTime dt) =>
-        (DateTimeOffset.MaxValue.UtcTicks - dt.ToUniversalTime().Ticks).ToString("D19");
+    private static string GenerateRowKey(DateTime dt, string sessionId)
+    {
+        var inverse = (DateTimeOffset.MaxValue.UtcTicks - dt.ToUniversalTime().Ticks).ToString("D19");
+        return $"{inverse}-{IdempotencyKey(sessionId)}";
+    }
+
+    // Stable Table-safe suffix derived from the game session id.
+    internal static string IdempotencyKey(string sessionId)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId)) return Guid.NewGuid().ToString("N");
+        var hash = System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(sessionId.Trim()));
+        return Convert.ToHexStringLower(hash)[..32];
+    }
 }
 
 // ── Repository ──────────────────────────────────────────────────────────────
@@ -84,6 +98,16 @@ public sealed class GameHistoryRepository : IGameHistoryRepository
 
     public async Task SaveGameHistoryAsync(GameHistory history, CancellationToken cancellationToken = default)
     {
-        await _table.AddEntityAsync(GameHistoryEntity.From(history), cancellationToken);
+        // Idempotency: a retried POST for the same GameSessionId maps to the same RowKey, so a
+        // 409 (or the deterministic collision) means it was already recorded — treat as success
+        // instead of surfacing a 500 or writing a duplicate row.
+        try
+        {
+            await _table.AddEntityAsync(GameHistoryEntity.From(history), cancellationToken);
+        }
+        catch (RequestFailedException ex) when (ex.Status == 409)
+        {
+            // Already recorded for this session id.
+        }
     }
 }

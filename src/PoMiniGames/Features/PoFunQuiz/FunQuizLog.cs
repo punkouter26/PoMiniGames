@@ -21,4 +21,12 @@ internal static partial class FunQuizLog
     [LoggerMessage(EventId = 4103, Level = LogLevel.Error,
         Message = "PoFunQuiz: Azure OpenAI question generation failed for category {Category} (count {Count}).")]
     public static partial void GenerationFailed(this ILogger logger, Exception ex, QuestionCategory category, int count);
+
+    [LoggerMessage(EventId = 4104, Level = LogLevel.Information,
+        Message = "PoFunQuiz game {Code} created by {Host}")]
+    public static partial void GameCreated(this ILogger logger, string code, string host);
+
+    [LoggerMessage(EventId = 4105, Level = LogLevel.Information,
+        Message = "PoFunQuiz {Code}: {Name} joined")]
+    public static partial void PlayerJoined(this ILogger logger, string code, string name);
 }

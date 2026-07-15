@@ -26,4 +26,12 @@ internal static partial class CoupleQuizLog
     [LoggerMessage(EventId = 5104, Level = LogLevel.Error,
         Message = "PoCoupleQuiz: Azure OpenAI similarity scoring failed.")]
     public static partial void SimilarityScoringFailed(this ILogger logger, Exception ex);
+
+    [LoggerMessage(EventId = 5105, Level = LogLevel.Information,
+        Message = "Lobby {Code} created by {Host}")]
+    public static partial void LobbyCreated(this ILogger logger, string code, string? host);
+
+    [LoggerMessage(EventId = 5106, Level = LogLevel.Information,
+        Message = "JoinOrCreate: lobby {Code} created by {Host}")]
+    public static partial void JoinOrCreateLobbyCreated(this ILogger logger, string code, string? host);
 }

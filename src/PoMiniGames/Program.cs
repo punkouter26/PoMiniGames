@@ -6,6 +6,7 @@ using PoMiniGames.Infrastructure.Services;
 using Microsoft.Extensions.Options;
 // Note: the full endpoint/hub route table is registered via app.MapPoMiniGamesEndpoints()
 // (EndpointRouteExtensions); per-slice types there are referenced in that file, not here.
+using Microsoft.AspNetCore.SignalR;   // HubOptions.AddFilter<HubLogContextFilter>()
 using Scalar.AspNetCore;
 using Serilog;
 
@@ -55,9 +56,16 @@ builder.Services.AddPoMiniGamesStorage(builder.Configuration)
 builder.Services.AddSingleton<IDiagnosticsSnapshotProvider, ConfigurationDiagnosticsSnapshotProvider>();
 
 // ─── SignalR (shared by all multiplayer hubs) ─────────────────────────────────
+// Enrich every hub invocation's logs with UserId/ConnectionId — the SignalR
+// equivalent of RequestLogContextMiddleware for HTTP (see HubLogContextFilter).
+builder.Services.AddSingleton<HubLogContextFilter>();
 builder.Services.AddSignalR(options =>
 {
-    options.EnableDetailedErrors = true;
+    options.AddFilter<HubLogContextFilter>();
+    // Only surface server-side exception detail to clients in Development.
+    // In Production this would leak internal exception messages/stack traces
+    // over the wire to every connected client.
+    options.EnableDetailedErrors = builder.Environment.IsDevelopment();
     // Server-side idle timeout + keep-alive. The earlier ~150s hang I observed
     // in the browser was the client WebSocket waiting for an idle close from
     // the server. These match SignalR's documented defaults for ASP.NET Core

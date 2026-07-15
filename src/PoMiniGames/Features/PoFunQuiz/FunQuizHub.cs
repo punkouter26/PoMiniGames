@@ -31,7 +31,7 @@ public class FunQuizHub : Hub<IFunQuizClient>
         questionCount = Math.Clamp(questionCount, 1, 50);
         var game = await _lobby.CreateAsync(Context.ConnectionId, playerName.Trim(), cat, questionCount, Context.ConnectionAborted);
         await Groups.AddToGroupAsync(Context.ConnectionId, game.GameId);
-        _logger.LogInformation("PoFunQuiz game {Code} created by {Host}", game.GameId, playerName);
+        _logger.GameCreated(game.GameId, playerName);
         await Clients.Caller.GameCreated(BuildState(game));
     }
 
@@ -50,7 +50,7 @@ public class FunQuizHub : Hub<IFunQuizClient>
             return;
         }
         await Groups.AddToGroupAsync(Context.ConnectionId, game.GameId);
-        _logger.LogInformation("PoFunQuiz {Code}: {Name} joined", game.GameId, playerName);
+        _logger.PlayerJoined(game.GameId, playerName);
         await Clients.Caller.GameJoined(BuildState(game));
         // Push the FULL updated state to the host (and any other members), not just a
         // lightweight PlayerJoined notice — the client renders off GameState, and the

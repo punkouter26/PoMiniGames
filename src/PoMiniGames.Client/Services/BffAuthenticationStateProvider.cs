@@ -10,10 +10,14 @@ namespace PoMiniGamesClient.Services;
 /// </summary>
 /// <remarks>
 /// <para>
-/// §2.3 requires Blazor to never see an access token and to prevent page flashing on
-/// unauthenticated routes. The provider defers to the BFF for the truth, so the WASM
-/// client can implement <c>&lt;AuthorizeRouteView&gt;</c> with a real
-/// <see cref="AuthenticationState"/> rather than a synthetic one.
+/// NOTE on the token flow: a full BFF would keep the access token entirely server-side.
+/// This client is NOT there yet — for Microsoft sign-in, <see cref="AuthStateService"/>
+/// currently holds the bearer token in WASM memory and <c>ApiService</c> attaches it as an
+/// <c>Authorization</c> header. A true token-never-leaves-the-server BFF is a future
+/// hardening goal; today this provider only mirrors the resolved profile/cookie state and
+/// prevents page flashing on unauthenticated routes. The provider defers to the resolved
+/// session for the truth, so the WASM client can implement <c>&lt;AuthorizeRouteView&gt;</c>
+/// with a real <see cref="AuthenticationState"/> rather than a synthetic one.
 /// </para>
 /// <para>
 /// Pattern: Adapter (Gamma et al., 1994). The Blazor authorization surface

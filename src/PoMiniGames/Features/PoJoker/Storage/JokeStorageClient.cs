@@ -75,7 +75,12 @@ public sealed class JokeStorageClient : IJokeStorageClient
         var sessionStats = new Dictionary<string, (int Total, int Triumphs, DateTimeOffset LastCompleted)>();
         try
         {
-            await foreach (var entity in _tableClient.QueryAsync<JokePerformanceEntity>(cancellationToken: cancellationToken))
+            // §6: this is an unpartitioned table scan that aggregates every performance row per
+            // request — it grows with total history. maxPerPage bounds the per-request memory
+            // spike; a pre-rolled per-session aggregate row is the follow-up if this table gets
+            // large. (Kept as a scan for now to preserve exact aggregate semantics.)
+            await foreach (var entity in _tableClient.QueryAsync<JokePerformanceEntity>(
+                maxPerPage: 1000, cancellationToken: cancellationToken))
             {
                 if (!sessionStats.TryGetValue(entity.SessionId, out var stats))
                 {

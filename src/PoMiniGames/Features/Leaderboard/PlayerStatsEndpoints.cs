@@ -2,6 +2,8 @@ using System.Text.Json;
 using PoMiniGames.Application.DTOs;
 using PoMiniGames.Application.Services;
 using PoMiniGames.Domain.Models;
+using PoMiniGames.Domain.Primitives;
+using PoMiniGames.Features.Auth;
 
 namespace PoMiniGames.Features.Leaderboard;
 
@@ -46,19 +48,35 @@ public static class PlayerStatsEndpoints
         var player = app.MapGroup("/api/{game}/players/{playerName}").WithTags("Players");
 
         player.MapPut("/stats",
-            async (string game, string playerName, PlayerStats stats, IStorageService storage) =>
+            async (string game, string playerName, PlayerStats stats, HttpContext http, IStorageService storage) =>
             {
-                if (string.IsNullOrWhiteSpace(playerName))
+                // §8 allow-list: reject unknown game keys instead of silently creating an
+                // arbitrary partition. Only the well-known catalogue may carry stats.
+                if (GameKey.TryParse(game) is null)
+                {
+                    return Results.BadRequest(new { error = $"Unknown game key '{game}'" });
+                }
+
+                // §1 server-authoritative identity: a signed-in caller may only write their
+                // OWN stats row. The route {playerName} is ignored for authenticated users —
+                // the persisted key is the caller's claim identity — so nobody can PUT to
+                // /players/{victim}/stats and overwrite another player's leaderboard row.
+                var identity = RequestIdentity.Resolve(http.User);
+                var owner = identity.IsAuthenticated && !string.IsNullOrWhiteSpace(identity.DisplayName)
+                    ? identity.DisplayName
+                    : playerName;
+
+                if (string.IsNullOrWhiteSpace(owner))
                 {
                     return Results.BadRequest("Player name cannot be empty");
                 }
 
                 if (!IsValidStats(stats))
                 {
-                    return Results.BadRequest("Stats cannot have negative values");
+                    return Results.BadRequest("Stats cannot have negative or out-of-range values");
                 }
 
-                await storage.SavePlayerStatsAsync(game, playerName, stats);
+                await storage.SavePlayerStatsAsync(game, owner, stats);
                 return Results.NoContent();
             })
             .RequireAuthorization()
@@ -78,6 +96,10 @@ public static class PlayerStatsEndpoints
         stats.MapGet("/leaderboard",
             async (string game, IStorageService storage, int limit = 10, string? difficulty = null) =>
             {
+                if (GameKey.TryParse(game) is null)
+                {
+                    return Results.BadRequest(new { error = $"Unknown game key '{game}'" });
+                }
                 limit = Math.Clamp(limit, 1, 100);
                 var board = await storage.GetLeaderboardAsync(game, limit, difficulty);
                 var result = board
@@ -145,6 +167,18 @@ public static class PlayerStatsEndpoints
                         hint = "POST { gameId, playerName, stats } to /api/statistics. `gameKey` is accepted as a legacy alias of `gameId`."
                     });
                 }
+                // §8 allow-list: reject unknown game keys before persisting.
+                if (GameKey.TryParse(gameId) is null)
+                {
+                    return Results.BadRequest(new { error = $"Unknown game key '{gameId}'" });
+                }
+                // §1 server-authoritative identity: override the body's playerName with the
+                // caller's claim so a signed-in user can only write their own row.
+                var identity = RequestIdentity.Resolve(context.User);
+                if (identity.IsAuthenticated && !string.IsNullOrWhiteSpace(identity.DisplayName))
+                {
+                    playerName = identity.DisplayName;
+                }
                 var stats2 = raw.Stats ?? new PlayerStats();
                 // If the client sent a flat { score, outcome } shape, fold it into
                 // the default difficulty bucket so simple callers don't have to
@@ -205,10 +239,15 @@ public static class PlayerStatsEndpoints
             return true;
         }
 
+        // EloRating is client-authoritative for adaptive-ELO games (they mirror their
+        // evolving skill rating into the bucket), but it must stay within the same range
+        // the client itself clamps to (100–3000). A wider ceiling here (4000) leaves
+        // headroom while rejecting a tampered int.MaxValue that would own the board.
         return stats.Wins >= 0
             && stats.Losses >= 0
             && stats.Draws >= 0
             && stats.TotalGames >= 0
-            && stats.WinStreak >= 0;
+            && stats.WinStreak >= 0
+            && stats.EloRating is >= 0 and <= 4000;
     }
 }

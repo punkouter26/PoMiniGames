@@ -1,10 +1,12 @@
+using PoMiniGames.Features.Auth;
+
 namespace PoMiniGames.Features.MatchHistory;
 
 /// <summary>
 /// Minimal API endpoints for recording and reading head-to-head match results.
-/// The owner identity is supplied by the client (MS-OAuth email when signed in,
-/// otherwise the guest name) so both authenticated and guest players accumulate
-/// a personal opponent record.
+/// The owner identity is server-authoritative for signed-in callers (forced to the
+/// claim identity so nobody can read or forge another user's record); truly-anonymous
+/// guests fall back to the client-supplied name, which is inherently low-trust.
 /// </summary>
 public static class MatchHistoryEndpoints
 {
@@ -14,16 +16,23 @@ public static class MatchHistoryEndpoints
         var matches = app.MapGroup("/api/matches").WithTags("MatchHistory");
 
         matches.MapPost("",
-            async (MatchRecordRequest request, MatchHistoryRepository repo) =>
+            async (MatchRecordRequest request, HttpContext http, MatchHistoryRepository repo) =>
             {
-                if (string.IsNullOrWhiteSpace(request.Owner))
-                    return Results.BadRequest(new { error = "Owner is required" });
                 if (string.IsNullOrWhiteSpace(request.Game))
                     return Results.BadRequest(new { error = "Game is required" });
                 if (string.IsNullOrWhiteSpace(request.OpponentName))
                     return Results.BadRequest(new { error = "OpponentName is required" });
 
-                await repo.RecordAsync(request);
+                // §1: a signed-in caller may only write to their OWN partition — the client
+                // Owner is overridden with the claim identity. Guests keep the supplied name.
+                var identity = RequestIdentity.Resolve(http.User);
+                var owner = identity.IsAuthenticated && !string.IsNullOrWhiteSpace(identity.DisplayName)
+                    ? identity.DisplayName
+                    : request.Owner;
+                if (string.IsNullOrWhiteSpace(owner))
+                    return Results.BadRequest(new { error = "Owner is required" });
+
+                await repo.RecordAsync(request with { Owner = owner });
                 return Results.Created("/api/matches", null);
             })
             .WithName("RecordMatch")
@@ -32,16 +41,22 @@ public static class MatchHistoryEndpoints
             .RequireRateLimiting("highscores");
 
         matches.MapGet("",
-            async (string owner, MatchHistoryRepository repo, int limit = 500) =>
+            async (HttpContext http, MatchHistoryRepository repo, string? owner = null, int limit = 500) =>
             {
-                if (string.IsNullOrWhiteSpace(owner))
+                // §1: a signed-in caller can only read their OWN history — the owner query
+                // param is ignored and forced to the claim identity (closes the IDOR read).
+                var identity = RequestIdentity.Resolve(http.User);
+                var effectiveOwner = identity.IsAuthenticated && !string.IsNullOrWhiteSpace(identity.DisplayName)
+                    ? identity.DisplayName
+                    : owner;
+                if (string.IsNullOrWhiteSpace(effectiveOwner))
                     return Results.BadRequest(new { error = "owner query parameter is required" });
 
-                var records = await repo.GetForOwnerAsync(owner, limit);
+                var records = await repo.GetForOwnerAsync(effectiveOwner, limit);
                 return Results.Ok(records);
             })
             .WithName("GetMatches")
-            .WithSummary("Read an owner's match history, most recent first")
+            .WithSummary("Read the caller's match history, most recent first")
             .Produces<IEnumerable<MatchRecordDto>>(StatusCodes.Status200OK);
 
         return app;

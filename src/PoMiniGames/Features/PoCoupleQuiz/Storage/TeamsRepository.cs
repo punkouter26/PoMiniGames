@@ -21,6 +21,12 @@ public class UpdateStatsRequest
     public int Score { get; set; }
     public int QuestionsAnswered { get; set; }
     public int CorrectAnswers { get; set; }
+
+    /// <summary>
+    /// Optional idempotency key. When supplied, a retried/duplicate PUT for the same
+    /// game session is applied at most once, so the running totals cannot double-count.
+    /// </summary>
+    public string? GameSessionId { get; set; }
 }
 
 // ── Table entity ────────────────────────────────────────────────────────────
@@ -65,7 +71,7 @@ public interface ITeamsRepository
     Task<Team?> GetTeamAsync(string teamName, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<Team>> GetAllTeamsAsync(CancellationToken cancellationToken = default);
     Task SaveTeamAsync(Team team, CancellationToken cancellationToken = default);
-    Task UpdateStatsAsync(string teamName, int score, int questionsAnswered, int correctAnswers, CancellationToken cancellationToken = default);
+    Task UpdateStatsAsync(string teamName, int score, int questionsAnswered, int correctAnswers, string? gameSessionId = null, CancellationToken cancellationToken = default);
 }
 
 public sealed class TeamsRepository : ITeamsRepository
@@ -115,14 +121,51 @@ public sealed class TeamsRepository : ITeamsRepository
         {
             team.LastPlayed = team.LastPlayed.ToUniversalTime();
         }
-        await _table.UpsertEntityAsync(TeamTableEntity.From(team), TableUpdateMode.Replace, cancellationToken);
+
+        // §2: read-modify-write instead of a blind Upsert(Replace). A create/save must never
+        // clobber the running totals that UpdateStatsAsync accumulates concurrently on the same
+        // row — HighScore only ratchets up, and the answer counters are preserved unless the
+        // incoming snapshot is genuinely larger (never regressed to a stale/zero value).
+        var rowKey = team.Name.ToLowerInvariant();
+        await TableConcurrency.UpdateWithRetryAsync<TeamTableEntity>(
+            _table,
+            partitionKey: "Team",
+            rowKey: rowKey,
+            factory: () => new TeamTableEntity { Name = team.Name },
+            mutate: e =>
+            {
+                if (string.IsNullOrEmpty(e.Name)) e.Name = team.Name;
+                e.HighScore = Math.Max(e.HighScore, team.HighScore);
+                e.TotalQuestionsAnswered = Math.Max(e.TotalQuestionsAnswered, team.TotalQuestionsAnswered);
+                e.CorrectAnswers = Math.Max(e.CorrectAnswers, team.CorrectAnswers);
+                e.LastPlayed = team.LastPlayed;
+                return true;
+            },
+            cancellationToken);
     }
 
-    public async Task UpdateStatsAsync(string teamName, int score, int questionsAnswered, int correctAnswers, CancellationToken cancellationToken = default)
+    public async Task UpdateStatsAsync(string teamName, int score, int questionsAnswered, int correctAnswers, string? gameSessionId = null, CancellationToken cancellationToken = default)
     {
+        // §3 idempotency: when a session id is supplied, claim a dedup marker in a separate
+        // partition first. A retried PUT re-claims the same marker → 409 → we skip the
+        // increment so the running totals never double-count. The ETag retry loop below can't
+        // help here (it would re-apply the same increment), which is exactly the bug.
+        var rowKey = teamName.ToLowerInvariant();
+        if (!string.IsNullOrWhiteSpace(gameSessionId))
+        {
+            var marker = new TableEntity($"StatApplied:{rowKey}", IdempotencyKey(gameSessionId!));
+            try
+            {
+                await _table.AddEntityAsync(marker, cancellationToken);
+            }
+            catch (RequestFailedException ex) when (ex.Status == 409)
+            {
+                return; // Already applied for this session.
+            }
+        }
+
         // Running totals: read-modify-write under optimistic concurrency so two concurrent
         // game finishes for the same team cannot lose each other's increments.
-        var rowKey = teamName.ToLowerInvariant();
         await TableConcurrency.UpdateWithRetryAsync<TeamTableEntity>(
             _table,
             partitionKey: "Team",
@@ -138,5 +181,13 @@ public sealed class TeamsRepository : ITeamsRepository
                 return true;
             },
             cancellationToken);
+    }
+
+    // Stable Table-safe RowKey for a dedup marker derived from the game session id.
+    private static string IdempotencyKey(string sessionId)
+    {
+        var hash = System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(sessionId.Trim()));
+        return Convert.ToHexStringLower(hash)[..32];
     }
 }

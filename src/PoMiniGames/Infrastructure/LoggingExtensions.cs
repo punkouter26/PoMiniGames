@@ -1,7 +1,6 @@
 using Serilog;
 using Serilog.Events;
 using Serilog.Exceptions;
-using Serilog.Sinks.ApplicationInsights.TelemetryConverters;
 
 namespace PoMiniGames.Infrastructure;
 
@@ -41,20 +40,12 @@ internal static class LoggingExtensions
             }
             else
             {
+                // Log export to Azure Application Insights is owned entirely by OpenTelemetry
+                // (UseAzureMonitor in TelemetryExtensions) — traces/metrics/dependencies AND the
+                // log stream flow through that single pipeline. The classic Serilog AI sink was
+                // removed to stop double-ingestion (and its per-log ingestion cost); Serilog keeps
+                // the console sink for container stdout capture.
                 configuration.WriteTo.Console();
-
-                // Route structured logs to Azure Application Insights. OTel (UseAzureMonitor) owns
-                // traces/metrics/dependencies/live-metrics; Serilog owns the log stream → App Insights.
-                var appInsightsConnString = context.Configuration["PoMiniGames:ApplicationInsights:ConnectionString"]
-                    ?? context.Configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"]
-                    ?? context.Configuration["APPINSIGHTS_CONNECTIONSTRING"];
-
-                if (!string.IsNullOrEmpty(appInsightsConnString))
-                {
-                    configuration.WriteTo.ApplicationInsights(
-                        appInsightsConnString,
-                        new TraceTelemetryConverter());
-                }
             }
         });
 

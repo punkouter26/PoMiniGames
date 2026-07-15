@@ -183,7 +183,7 @@ public static class CoupleQuizEndpoints
             {
                 return Results.BadRequest(new { error = "Values must be non-negative" });
             }
-            await repo.UpdateStatsAsync(name, body.Score, body.QuestionsAnswered, body.CorrectAnswers, ct);
+            await repo.UpdateStatsAsync(name, body.Score, body.QuestionsAnswered, body.CorrectAnswers, body.GameSessionId, ct);
             return Results.NoContent();
         })
         .WithName("CoupleQuiz_UpdateStats");

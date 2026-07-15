@@ -130,14 +130,25 @@ public class AuthStateService
             {
                 var sessionTag = await JsSessionTagAsync();
                 var profile = await _api.DevBypassAsync($"Guest-{sessionTag}");
-                _user = profile is null
-                    ? new AuthenticatedUserProfile { UserId = $"dev-Guest-{sessionTag}", DisplayName = $"Guest (auto · {sessionTag[..Math.Min(6, sessionTag.Length)]})" }
-                    : new AuthenticatedUserProfile
-                    {
-                        UserId = profile.UserId,
-                        DisplayName = profile.DisplayName + " (auto)",
-                        Email = profile.Email
-                    };
+                if (profile is null)
+                {
+                    // The server-side guest sign-in failed, so NO auth cookie exists.
+                    // Do NOT fabricate a client-side identity here: minting a phantom
+                    // AuthenticatedUserProfile would flip IsAuthenticated true while the
+                    // server has no session, so every protected /api/* call would 401
+                    // while the UI shows "signed in". Leave _user null and stay
+                    // genuinely anonymous instead.
+                    _initialized = true;
+                    NotifyStateChanged();
+                    return;
+                }
+
+                _user = new AuthenticatedUserProfile
+                {
+                    UserId = profile.UserId,
+                    DisplayName = profile.DisplayName + " (auto)",
+                    Email = profile.Email
+                };
                 _logger.AutoGuestSessionMinted();
                 await SyncPlayerNameFromAuthAsync();
                 _initialized = true;

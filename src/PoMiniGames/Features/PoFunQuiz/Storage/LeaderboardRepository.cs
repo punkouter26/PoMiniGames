@@ -34,19 +34,43 @@ public sealed class LeaderboardRepository(TableServiceClient tableServiceClient)
         // Server-side sanitization: override any client-supplied PlayerName with the
         // authenticated user. The caller is responsible for setting PlayerName to
         // the email claim (or "anon-<guid>" for guest mode) before invoking.
+        var playerName = Truncate(Sanitize(entry.PlayerName), 32);
+        var score = Math.Clamp(entry.Score, 0, 10_000); // hard cap
+        var maxStreak = Math.Max(0, entry.MaxStreak);
+        var datePlayed = entry.DatePlayed == default ? DateTime.UtcNow : entry.DatePlayed;
         var entity = new LeaderboardEntryEntity
         {
             PartitionKey = entry.Category.ToString(),
-            RowKey = Guid.NewGuid().ToString(),
-            PlayerName = Truncate(Sanitize(entry.PlayerName), 32),
-            Score = Math.Clamp(entry.Score, 0, 10_000), // hard cap
-            MaxStreak = Math.Max(0, entry.MaxStreak),
+            // Deterministic content-hash RowKey (player + score + streak + minute bucket) so a
+            // retried/duplicate POST collapses onto the same row instead of flooding the board
+            // with identical entries. Bucketing DatePlayed to the minute keeps genuine retries
+            // (same submission within the minute) idempotent without merging distinct runs.
+            RowKey = DeterministicRowKey(playerName, score, maxStreak, entry.Category.ToString(), datePlayed),
+            PlayerName = playerName,
+            Score = score,
+            MaxStreak = maxStreak,
             Category = entry.Category.ToString(),
-            DatePlayed = entry.DatePlayed == default ? DateTime.UtcNow : entry.DatePlayed,
+            DatePlayed = datePlayed,
             Wins = Math.Max(0, entry.Wins),
             Losses = Math.Max(0, entry.Losses)
         };
-        await _table.AddEntityAsync(entity, cancellationToken);
+        try
+        {
+            await _table.AddEntityAsync(entity, cancellationToken);
+        }
+        catch (RequestFailedException ex) when (ex.Status == 409)
+        {
+            // Duplicate/retried submission with identical content — already recorded.
+        }
+    }
+
+    private static string DeterministicRowKey(string player, int score, int maxStreak, string category, DateTime datePlayed)
+    {
+        var minuteBucket = new DateTime(datePlayed.Year, datePlayed.Month, datePlayed.Day,
+            datePlayed.Hour, datePlayed.Minute, 0, DateTimeKind.Utc).Ticks;
+        var canonical = $"{player}|{score}|{maxStreak}|{category}|{minuteBucket}";
+        var hash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(canonical));
+        return Convert.ToHexStringLower(hash);
     }
 
     public async Task<IReadOnlyList<LeaderboardEntry>> GetTopAsync(QuestionCategory category, int top, CancellationToken cancellationToken = default)
@@ -56,6 +80,7 @@ public sealed class LeaderboardRepository(TableServiceClient tableServiceClient)
         // Table Storage has no server-side ORDER BY. Scan the partition and rank in memory.
         await foreach (var entity in _table.QueryAsync<LeaderboardEntryEntity>(
             filter: $"PartitionKey eq '{category.ToString().Replace("'", "''")}'",
+            maxPerPage: 1000,
             cancellationToken: cancellationToken))
         {
             rows.Add(entity);

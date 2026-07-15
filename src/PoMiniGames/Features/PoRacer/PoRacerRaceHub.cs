@@ -73,26 +73,63 @@ public sealed class PoRacerRaceHub : Hub
         // Use the long-lived IHubContext so broadcasts survive the wiring
         // connection leaving the hub.
         var hub = _hubContext;
+        var log = _log;
         race.SnapshotReady += snap =>
         {
-            _ = hub.Clients.Group(RaceGroup(snap.GameCode)).SendAsync("raceSnapshot", snap);
+            // Fire-and-forget broadcast (~20 Hz). Wrap in a local async helper so a
+            // failed SendAsync (e.g. transport tear-down mid-broadcast) is observed
+            // and logged instead of surfacing as an unobserved TaskException.
+            _ = BroadcastSnapshotAsync(snap);
         };
         race.Finished += result =>
         {
-            _ = hub.Clients.Group(RaceGroup(result.GameCode)).SendAsync("raceFinished", result);
-            _ = Task.Run(async () =>
+            _ = BroadcastFinishedAsync(result);
+            _ = DisposeRaceAfterDelayAsync(result.GameCode);
+        };
+        return Task.CompletedTask;
+
+        async Task BroadcastSnapshotAsync(PoRacerRaceSnapshot snap)
+        {
+            try
+            {
+                await hub.Clients.Group(RaceGroup(snap.GameCode)).SendAsync("raceSnapshot", snap);
+            }
+            catch (Exception ex)
+            {
+                log.LogError(ex, "PoRacer: raceSnapshot broadcast failed for {Code}", snap.GameCode);
+            }
+        }
+
+        async Task BroadcastFinishedAsync(PoRacerFinalResult result)
+        {
+            try
+            {
+                await hub.Clients.Group(RaceGroup(result.GameCode)).SendAsync("raceFinished", result);
+            }
+            catch (Exception ex)
+            {
+                log.LogError(ex, "PoRacer: raceFinished broadcast failed for {Code}", result.GameCode);
+            }
+        }
+
+        async Task DisposeRaceAfterDelayAsync(string gameCode)
+        {
+            try
             {
                 await Task.Delay(TimeSpan.FromSeconds(5));
-                if (_registry.GetByCode(result.GameCode) is { } raceToDispose)
+                if (_registry.GetByCode(gameCode) is { } raceToDispose)
                 {
-                    if (_wiredRaces.Remove(result.GameCode))
+                    if (_wiredRaces.Remove(gameCode))
                     {
                         await raceToDispose.DisposeAsync();
                     }
                 }
-            });
-        };
-        return Task.CompletedTask;
+            }
+            catch (Exception ex)
+            {
+                log.LogError(ex, "PoRacer: delayed race dispose failed for {Code}", gameCode);
+            }
+        }
     }
 
     public Task SendInput(string code, PoRacerInput input)

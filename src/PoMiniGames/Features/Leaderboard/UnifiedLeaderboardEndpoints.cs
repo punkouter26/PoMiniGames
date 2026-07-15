@@ -58,16 +58,18 @@ public static class UnifiedLeaderboardEndpoints
     private static async Task<List<GameLeaderboardDto>> BuildAllAsync(
         IStorageService storage, int limit)
     {
-        var result = new List<GameLeaderboardDto>();
-
-        foreach (var (key, title) in WinRateGames)
+        // §6: each board is an independent storage read, so fan them out concurrently instead
+        // of awaiting one at a time. Wall-clock drops from the SUM of the per-board scans to
+        // the slowest single one.
+        var winRateTasks = WinRateGames.Select(g => BuildWinRateAsync(storage, g.Key, g.Title, limit));
+        var boardTasks = new[]
         {
-            result.Add(await BuildWinRateAsync(storage, key, title, limit));
-        }
+            BuildMarbleAsync(storage, limit),
+            BuildPoRacerAsync(storage, limit),
+            BuildPoBrawlAsync(storage, limit),
+        };
 
-        result.Add(await BuildMarbleAsync(storage, limit));
-        result.Add(await BuildPoRacerAsync(storage, limit));
-        result.Add(await BuildPoBrawlAsync(storage, limit));
+        var result = (await Task.WhenAll(winRateTasks.Concat(boardTasks))).ToList();
 
         // Boards with at least one REAL entry float to the top (every board is now
         // padded to `limit` with XXX placeholders, so raw count no longer ranks).

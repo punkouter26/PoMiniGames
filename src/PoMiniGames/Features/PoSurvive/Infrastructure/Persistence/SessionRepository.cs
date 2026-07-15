@@ -49,11 +49,24 @@ public sealed class SessionRepository : ISessionRepository
             factory: () => new TableEntity(partition, rowKey),
             mutate: e =>
             {
+                // §2: the counters are monotonic across a run, so merge with max against the
+                // stored row rather than blindly overwriting with the in-memory value. This
+                // makes a stale/out-of-order progress save unable to regress another save's
+                // accumulated totals (the previous code ignored `e` entirely — a blind replace
+                // under an ETag that defeated the very concurrency it claimed to provide).
+                var storedTurns  = e.GetInt32("TotalTurns") ?? 0;
+                var storedFood   = e.GetInt32("TotalFoodConsumed") ?? 0;
+                var storedDamage = e.GetInt32("TotalDamageDealt") ?? 0;
+
+                var newTurns  = Math.Max(storedTurns, session.TotalTurns);
+                var newFood   = Math.Max(storedFood, session.TotalFoodConsumed);
+                var newDamage = Math.Max(storedDamage, session.TotalDamageDealt);
+
                 e["Outcome"]             = session.Outcome.ToString();
                 e["WinningTeam"]         = session.WinningTeam?.ToString();
-                e["TotalTurns"]          = session.TotalTurns;
-                e["TotalFoodConsumed"]   = session.TotalFoodConsumed;
-                e["TotalDamageDealt"]    = session.TotalDamageDealt;
+                e["TotalTurns"]          = newTurns;
+                e["TotalFoodConsumed"]   = newFood;
+                e["TotalDamageDealt"]    = newDamage;
                 e["StartedAt"]           = session.StartedAt.ToString("O");
                 e["EndedAt"]             = session.EndedAt?.ToString("O");
                 e["TeamSize"]            = session.Config.TeamSize;

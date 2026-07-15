@@ -8,7 +8,18 @@
          and Router.NotFoundPage setters in App_razor.g.cs use reflection-based
          parameter dispatch that the Blazor source generator does not yet emit as
          trim-safe; these cannot be fixed in user code.
-         NOTE: PoShared carries NO such suppression — it is genuinely trim-clean. -->
+         NOTE: PoShared carries NO such suppression — it is genuinely trim-clean.
+
+         RISK / TODO (scope this later): this NoWarn is project-wide, so it also
+         silences any *genuine* IL2110/IL2111 trim warning in our OWN code, not just
+         the framework false-positives above. It exists solely for the generated
+         App_razor.g.cs LayoutView.Layout / Router.NotFoundPage setter dispatch. It is
+         kept blanket because those warnings originate in generated code with no stable
+         member handle to target via a scoped [UnconditionalSuppressMessage] or
+         per-file suppression; narrowing it safely would require a targeted attribute on
+         the exact framework-generated members, which we cannot reference here without
+         risking a broken build. Prefer safety: leave it until those members can be
+         suppressed narrowly. -->
     <IsTrimmable>true</IsTrimmable>
     <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
     <NoWarn>$(NoWarn);IL2110;IL2111</NoWarn>

@@ -160,6 +160,12 @@ public class StorageService : IStorageService
             throw new ArgumentException("Player name cannot be empty", nameof(playerName));
         }
 
+        // §9: clamp client-supplied values into their legitimate ranges before they touch
+        // storage. EloRating is client-authoritative for adaptive games but must stay within
+        // the same band the client clamps to (100–3000); the ceiling here rejects a tampered
+        // int.MaxValue that would otherwise own the leaderboard.
+        ClampStats(stats);
+
         // Backfill ELO only when the client sent none (legacy clients that never
         // computed a rating). Clients that DO send ratings — the adaptive-ELO
         // games (ConnectFive/TicTacToe) mirror their evolving skill rating into
@@ -171,9 +177,11 @@ public class StorageService : IStorageService
         }
         stats.UpdatedAt = DateTime.UtcNow;
 
-        // §1: read-modify-write under optimistic concurrency so two players finishing
-        // the same game at the same instant cannot lose each other's stat increments.
-        var statsJson = JsonSerializer.Serialize(stats);
+        // §1/§2: read-modify-write under optimistic concurrency. The client sends ABSOLUTE
+        // totals, so a blind replace lets a stale client regress another writer's counters.
+        // We merge against the stored row — monotonic counters take the max, non-monotonic
+        // fields (WinStreak, EloRating) take the latest value — so a concurrent finish can
+        // never lose accumulated wins/games.
         var partition = sanitizedGame;
         var rowKey = sanitizedName;
         await TableConcurrency.UpdateWithRetryAsync<TableEntity>(
@@ -183,12 +191,59 @@ public class StorageService : IStorageService
             factory: () => new TableEntity(partition, rowKey),
             mutate: e =>
             {
-                var existing = e.GetString("StatsJson");
-                if (existing == statsJson) return false; // idempotent no-op
-                e["StatsJson"] = statsJson;
+                var existingJson = e.GetString("StatsJson");
+                var merged = stats;
+                if (!string.IsNullOrEmpty(existingJson))
+                {
+                    var existing = JsonSerializer.Deserialize<PlayerStats>(existingJson);
+                    if (existing is not null) merged = MergeStats(existing, stats);
+                }
+                var mergedJson = JsonSerializer.Serialize(merged);
+                if (existingJson == mergedJson) return false; // idempotent no-op
+                e["StatsJson"] = mergedJson;
                 e["UpdatedAt"] = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ");
                 return true;
             });
+    }
+
+    // §9: clamp each difficulty bucket into its legitimate range. Counters are non-negative;
+    // EloRating is bounded to [0, 3000] (the adaptive client's own clamp ceiling).
+    private static void ClampStats(PlayerStats stats)
+    {
+        foreach (var b in new[] { stats.Easy, stats.Medium, stats.Hard })
+        {
+            b.Wins       = Math.Max(0, b.Wins);
+            b.Losses     = Math.Max(0, b.Losses);
+            b.Draws      = Math.Max(0, b.Draws);
+            b.TotalGames = Math.Max(0, b.TotalGames);
+            b.WinStreak  = Math.Max(0, b.WinStreak);
+            b.EloRating  = Math.Clamp(b.EloRating, 0, 3000);
+        }
+    }
+
+    // §2: merge two absolute snapshots. Monotonic counters take the max so a stale write can't
+    // regress totals; WinStreak/EloRating take the incoming (latest) value.
+    private static PlayerStats MergeStats(PlayerStats existing, PlayerStats incoming)
+    {
+        static DifficultyStats Merge(DifficultyStats e, DifficultyStats i) => new()
+        {
+            Wins       = Math.Max(e.Wins, i.Wins),
+            Losses     = Math.Max(e.Losses, i.Losses),
+            Draws      = Math.Max(e.Draws, i.Draws),
+            TotalGames = Math.Max(e.TotalGames, i.TotalGames),
+            WinStreak  = i.WinStreak,
+            EloRating  = i.EloRating,
+        };
+        return new PlayerStats
+        {
+            PlayerId  = string.IsNullOrEmpty(incoming.PlayerId) ? existing.PlayerId : incoming.PlayerId,
+            PlayerName = string.IsNullOrEmpty(incoming.PlayerName) ? existing.PlayerName : incoming.PlayerName,
+            Easy   = Merge(existing.Easy, incoming.Easy),
+            Medium = Merge(existing.Medium, incoming.Medium),
+            Hard   = Merge(existing.Hard, incoming.Hard),
+            CreatedAt = existing.CreatedAt == default ? incoming.CreatedAt : existing.CreatedAt,
+            UpdatedAt = incoming.UpdatedAt,
+        };
     }
 
     public async Task<List<(string Name, PlayerStats Stats)>> GetLeaderboardAsync(string game, int limit, string? difficulty = null)
@@ -203,7 +258,8 @@ public class StorageService : IStorageService
         // memory. Leaderboards are small, so this is cheap.
         var rows = new List<(string Name, PlayerStats Stats)>();
         await foreach (var entity in Table(PlayerStatsTable).QueryAsync<TableEntity>(
-            filter: $"PartitionKey eq '{sanitizedGame.Replace("'", "''")}'"))
+            filter: $"PartitionKey eq '{sanitizedGame.Replace("'", "''")}'",
+            maxPerPage: 1000))
         {
             var json = entity.GetString("StatsJson");
             if (string.IsNullOrEmpty(json)) continue;
@@ -363,7 +419,8 @@ public class StorageService : IStorageService
     {
         var entries = new List<PoBrawlLadderEntry>();
         await foreach (var e in Table(PoBrawlLadderTable).QueryAsync<TableEntity>(
-            filter: $"PartitionKey eq '{PoBrawlLadderPartition}'"))
+            filter: $"PartitionKey eq '{PoBrawlLadderPartition}'",
+            maxPerPage: 1000))
         {
             entries.Add(new PoBrawlLadderEntry
             {
@@ -419,7 +476,8 @@ public class StorageService : IStorageService
     {
         var scores = new List<T>();
         await foreach (var e in Table(descriptor.Table).QueryAsync<TableEntity>(
-            filter: $"PartitionKey eq '{descriptor.Partition}'"))
+            filter: $"PartitionKey eq '{descriptor.Partition}'",
+            maxPerPage: 1000))
         {
             scores.Add(descriptor.FromEntity(e));
         }

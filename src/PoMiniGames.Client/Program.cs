@@ -43,7 +43,23 @@ if (string.IsNullOrWhiteSpace(apiBase))
 // The patch is idempotent. Installed via JS interop during
 // WebAssemblyHostBuilder.Build() below — see the `await host.RunAsync()`
 // chain after `var host = builder.Build()`.
-builder.Services.AddScoped(sp => new HttpClient
+//
+// The HttpClient is built over an explicit DelegatingHandler pipeline so
+// credential inclusion has a code-level guarantee (IncludeCredentialsHandler),
+// not only the JS monkey-patch, and so transient GET failures get a bounded
+// retry (TransientRetryHandler). Order (outer → inner):
+//   TransientRetryHandler → IncludeCredentialsHandler → HttpClientHandler
+// Retry is outermost so each replayed clone passes back through
+// IncludeCredentialsHandler and gets the credentials mode re-applied before it
+// reaches the browser transport (HttpClientHandler backs the WASM fetch shim).
+builder.Services.AddScoped(sp => new HttpClient(
+    new TransientRetryHandler
+    {
+        InnerHandler = new IncludeCredentialsHandler
+        {
+            InnerHandler = new HttpClientHandler()
+        }
+    })
 {
     BaseAddress = new Uri(apiBase)
 });

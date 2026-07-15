@@ -32,6 +32,11 @@ public sealed class MatchRecordEntity : ITableEntity
 }
 
 /// <summary>Inbound payload when a game reports a finished head-to-head result.</summary>
+/// <remarks>
+/// <paramref name="MatchId"/> is an optional client-generated idempotency key. When
+/// supplied it is folded into the RowKey so a retried/duplicate POST collapses onto the
+/// same row instead of double-recording the match.
+/// </remarks>
 public sealed record MatchRecordRequest(
     string Owner,
     string Game,
@@ -39,7 +44,8 @@ public sealed record MatchRecordRequest(
     string OpponentName,
     string? OpponentType,
     string Outcome,
-    string? OwnerType);
+    string? OwnerType,
+    string? MatchId = null);
 
 /// <summary>Outbound match record returned to the stats page.</summary>
 public sealed record MatchRecordDto(

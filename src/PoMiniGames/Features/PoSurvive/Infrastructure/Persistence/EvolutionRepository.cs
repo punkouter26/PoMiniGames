@@ -5,6 +5,7 @@ using Azure.Data.Tables;
 using Microsoft.Extensions.Configuration;
 using PoMiniGames.Application.Simulation;
 using PoMiniGames.Domain.Entities.Simulation;
+using PoMiniGames.Infrastructure.Storage;
 
 /// <summary>
 /// Azure Table Storage implementation of IEvolutionRepository.
@@ -35,28 +36,41 @@ public sealed class EvolutionRepository : IEvolutionRepository
         var tableClient = _tableService.GetTableClient(TableName);
         await tableClient.CreateIfNotExistsAsync(ct);
 
-        var entity = new TableEntity(record.PartitionKey, record.DnaId)
-        {
-            ["DnaId"]            = record.DnaId,
-            ["Predatory"]        = record.Predatory,
-            ["Scavenger"]        = record.Scavenger,
-            ["Paranoid"]         = record.Paranoid,
-            ["Altruistic"]       = record.Altruistic,
-            ["Methodical"]       = record.Methodical,
-            ["Generation"]       = record.Generation,
-            ["SourceSessionId"]  = record.SourceSessionId ?? "",
-            ["ParentDnaIdsJson"] = record.ParentDnaIdsJson,
-            ["Archetype"]        = record.Archetype ?? "",
-            ["DominantTrait"]    = record.DominantTrait,
-            ["CreatedAt"]        = record.CreatedAt.ToString("O"),
-            ["WinCount"]         = record.WinCount,
-            ["TotalSessions"]    = record.TotalSessions,
-            ["TotalKills"]       = record.TotalKills,
-            ["TotalFoodConsumed"] = record.TotalFoodConsumed,
-            ["TotalDamageDealt"] = record.TotalDamageDealt,
-        };
+        // Normalize the partition to the literal every read hard-codes ("evolution"); a record
+        // persisted under any other partition would be silently unreadable.
+        const string partition = "evolution";
 
-        await tableClient.UpsertEntityAsync(entity, TableUpdateMode.Replace, ct);
+        // §2: read-modify-write under optimistic concurrency instead of a blind
+        // Upsert(Replace). The aggregate counters are monotonic, so merge with max against the
+        // stored row — two concurrent evolution updates for the same DnaId can no longer clobber
+        // each other's tallies. Descriptive/trait fields take the latest value.
+        await TableConcurrency.UpdateWithRetryAsync<TableEntity>(
+            tableClient,
+            partitionKey: partition,
+            rowKey: record.DnaId,
+            factory: () => new TableEntity(partition, record.DnaId),
+            mutate: e =>
+            {
+                e["DnaId"]            = record.DnaId;
+                e["Predatory"]        = record.Predatory;
+                e["Scavenger"]        = record.Scavenger;
+                e["Paranoid"]         = record.Paranoid;
+                e["Altruistic"]       = record.Altruistic;
+                e["Methodical"]       = record.Methodical;
+                e["Generation"]       = record.Generation;
+                e["SourceSessionId"]  = record.SourceSessionId ?? "";
+                e["ParentDnaIdsJson"] = record.ParentDnaIdsJson;
+                e["Archetype"]        = record.Archetype ?? "";
+                e["DominantTrait"]    = record.DominantTrait;
+                if (!e.ContainsKey("CreatedAt")) e["CreatedAt"] = record.CreatedAt.ToString("O");
+                e["WinCount"]          = Math.Max(e.GetInt32("WinCount") ?? 0, record.WinCount);
+                e["TotalSessions"]     = Math.Max(e.GetInt32("TotalSessions") ?? 0, record.TotalSessions);
+                e["TotalKills"]        = Math.Max(e.GetInt32("TotalKills") ?? 0, record.TotalKills);
+                e["TotalFoodConsumed"] = Math.Max(e.GetInt32("TotalFoodConsumed") ?? 0, record.TotalFoodConsumed);
+                e["TotalDamageDealt"]  = Math.Max(e.GetInt32("TotalDamageDealt") ?? 0, record.TotalDamageDealt);
+                return true;
+            },
+            ct);
     }
 
     public async Task<EvolutionRecord?> GetAsync(string dnaId, CancellationToken ct = default)

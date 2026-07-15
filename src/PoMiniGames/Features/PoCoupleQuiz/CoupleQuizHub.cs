@@ -49,7 +49,7 @@ public class CoupleQuizHub : Hub<IGameClient>
         var diff = ParseDifficulty(difficulty);
         var session = _sessions.CreateLobby(Context.ConnectionId, playerName.Trim(), diff, aiMode);
         await Groups.AddToGroupAsync(Context.ConnectionId, session.GameCode);
-        _logger.LogInformation("Lobby {Code} created by {Host}", session.GameCode, session.HostName);
+        _logger.LobbyCreated(session.GameCode, session.HostName);
         await Clients.Caller.LobbyCreated(BuildLobbyPayload(session, isHost: true));
     }
 
@@ -84,7 +84,7 @@ public class CoupleQuizHub : Hub<IGameClient>
         await Groups.AddToGroupAsync(Context.ConnectionId, session.GameCode);
         if (created)
         {
-            _logger.LogInformation("JoinOrCreate: lobby {Code} created by {Host}", session.GameCode, session.HostName);
+            _logger.JoinOrCreateLobbyCreated(session.GameCode, session.HostName);
             await Clients.Caller.LobbyCreated(BuildLobbyPayload(session, isHost: true));
         }
         else

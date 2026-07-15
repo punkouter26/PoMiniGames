@@ -36,6 +36,7 @@
 @inject KioskCoordinator Kiosk
 @inject PlayerNameService PlayerNameService
 @inject ApiService Api
+@inject ApiEndpoints Endpoints
 @inject ToastService ToastService
 @implements IAsyncDisposable
 
@@ -373,7 +374,7 @@
     private async Task<PoRacerLobbyState?> ConnectLobbyAsync()
     {
         _lobbyHub = new HubConnectionBuilder()
-            .WithUrl(Nav.BaseUri.TrimEnd('/') + "/poracer/lobby-hub")
+            .WithUrl(Endpoints.Hub("poracer/lobby-hub"))
             .WithAutomaticReconnect()
             .Build();
         WireLobbyHandlers(_lobbyHub);
@@ -385,7 +386,7 @@
     private async Task ConnectRaceAsync(string code)
     {
         _raceHub = new HubConnectionBuilder()
-            .WithUrl(Nav.BaseUri.TrimEnd('/') + "/poracer/race-hub")
+            .WithUrl(Endpoints.Hub("poracer/race-hub"))
             .WithAutomaticReconnect()
             .Build();
         var initialSnap = await _raceHub.StartAsync().ContinueWith(_ =>

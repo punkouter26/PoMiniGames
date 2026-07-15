@@ -109,6 +109,36 @@ builder.Services.AddResponseCompression(options =>
 builder.Services.Configure<Microsoft.AspNetCore.ResponseCompression.BrotliCompressionProviderOptions>(o => o.Level = System.IO.Compression.CompressionLevel.Fastest);
 builder.Services.Configure<Microsoft.AspNetCore.ResponseCompression.GzipCompressionProviderOptions>(o => o.Level = System.IO.Compression.CompressionLevel.Fastest);
 
+// ─── CORS — only registered in Development ───────────────────────────────
+// When the Blazor WASM client runs on its own Kestrel port (e.g. :5261 from
+// `dotnet run --project src/PoMiniGames.Client`) the API lives at :5000, so
+// every /api/* fetch becomes a cross-origin request. The default browser
+// preflight would block it without Access-Control-Allow-Origin. We register
+// a Development-only policy permitting the two ports the client's
+// launchSettings.json exposes (http://5261 + https://7208) plus the API host
+// itself. Production and Staging stay same-origin (the host serves both the
+// WASM and the API) so no CORS service is registered there.
+if (builder.Environment.IsDevelopment())
+{
+    builder.Services.AddCors(options =>
+    {
+        options.AddPolicy("PoMiniGamesDevSpa", policy =>
+        {
+            policy.WithOrigins(
+                    "http://localhost:5261",
+                    "https://localhost:7208",
+                    "http://localhost:5000",
+                    "https://localhost:5000")
+                .AllowAnyHeader()
+                .AllowAnyMethod()
+                // The auth flow returns a bearer in JSON; allow credentials
+                // so the dev cookie (FakeAuthHandler header + cookie pair)
+                // round-trips during the handshake.
+                .AllowCredentials();
+        });
+    });
+}
+
 var app = builder.Build();
 
 // Production only: bind the singleton AzureBlobXmlRepository into the
@@ -160,6 +190,13 @@ catch (Exception ex)
 // streamed with `SendFile` (which honors the compression layer), so this
 // ordering works for the WASM payload too.
 app.UseResponseCompression();
+// §CORS: applies only in Development (see registration above). Must precede
+// UseAuthentication / MapPoMiniGamesEndpoints so preflight OPTIONS requests
+// are answered before the auth pipeline tries to validate them.
+if (app.Environment.IsDevelopment())
+{
+    app.UseCors("PoMiniGamesDevSpa");
+}
 app.UseMiddleware<RequestLogContextMiddleware>();
 app.UsePoMiniGamesRequestLogging();
 if (!app.Environment.IsDevelopment())

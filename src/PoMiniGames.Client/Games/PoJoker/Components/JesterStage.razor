@@ -10,7 +10,8 @@
                  Message="Connection lost. Retrying."
                  StatusText="@_orchestrator.NetworkStatusText"
                  IsRetrying="@_orchestrator.IsRetrying"
-                 RetryCount="@_orchestrator.RetryCount" />
+                 RetryCount="@_orchestrator.RetryCount"
+                 OnRetry="@_orchestrator.RetryNetworkAsync" />
 
 <div class="jester-stage">
     <div class="stage-header">

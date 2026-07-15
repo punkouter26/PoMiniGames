@@ -14,14 +14,24 @@
         </div>
     </div>
 }
-else if (AuthState.DevLoginEnabled && !AuthState.IsAuthenticated)
+else if (AuthState.DevLoginEnabled && !AuthState.IsAuthenticated && !_silentDevLoginInFlight)
 {
-    @* Dev env: force an explicit login. Instead of the guest-first flow, an
-       unauthenticated visitor is held on the LoginScreen (Microsoft or
-       "Continue as Guest") until they sign in. This keeps the "ANON" pass-
-       through from happening while developing. Production (Microsoft-only)
-       auth still follows the guest-first path below. *@
-    <LoginScreen />
+    @* Dev env: force an explicit login — unless the visitor landed on a
+       /demo or /<route>/demo URL (e.g. /pobrawl/1, /connectfive/1,
+       /poracer/demo). Demo routes are meant to be zero-friction for the
+       attraction loop, so we silently mint a Guest session instead of
+       flashing the LoginScreen and asking the visitor to tap "Continue as
+       Guest" a second time. _ensureDemoGuest() is idempotent and runs
+       once per page load; the regular LoginScreen path is still used
+       for every non-demo route. *@
+    if (IsDemoRoute())
+    {
+        _ = EnsureDemoGuestAsync();
+    }
+    else
+    {
+        <LoginScreen />
+    }
 }
 else
 {
@@ -40,6 +50,13 @@ else
     // never blocked: they browse and play as a guest until they choose to sign in.
     [Parameter] public RenderFragment ChildContent { get; set; } = default!;
 
+    // §Demo-route silent dev-login: gate flips to true only while we're
+    // background-minting a guest session on a demo URL. Prevents the
+    // LoginScreen from flashing on top of the spinner during the ~50ms
+    // between dev-login kicking off and the cookie landing.
+    private bool _silentDevLoginInFlight;
+    private bool _demoGuestStarted;
+
     protected override async Task OnInitializedAsync()
     {
         AuthState.StateChanged += OnAuthStateChanged;
@@ -48,6 +65,78 @@ else
     }
 
     private void OnAuthStateChanged() => InvokeAsync(StateHasChanged);
+
+    /// <summary>
+    /// Demo URL patterns the app treats as zero-friction: any path ending in
+    /// <c>/demo</c> or <c>/1</c> (the canonical demo flag for routes like
+    /// <c>/pobrawl/{Demo:int}</c>, <c>/connectfive/{Demo:int}</c>, etc.),
+    /// plus the explicit <c>?demo=1</c> query string for routes that don't
+    /// use the typed route parameter.
+    /// </summary>
+    private bool IsDemoRoute()
+    {
+        var path = new Uri(Navigation.Uri).AbsolutePath.TrimEnd('/').ToLowerInvariant();
+        if (path.EndsWith("/demo", StringComparison.Ordinal)) return true;
+        // /pobrawl/1, /connectfive/1, /tictactoe/1, /funquiz/1 — all the
+        // {Demo:int} route templates take a trailing 1 to mean "demo".
+        if (path.Length >= 2 && path[^1] == '1' && char.IsDigit(path[^1]))
+        {
+            var prev = path.Length >= 3 ? path[^2] : '\0';
+            if (prev == '/') return true;
+        }
+        // Fallback query-string form. Inline mini-parser so we don't take a
+        // dependency on System.Web.HttpUtility, which isn't part of the
+        // Blazor WASM BCL by default.
+        var query = new Uri(Navigation.Uri).Query;
+        if (QueryStringHasTrueFlag(query, "demo"))
+        {
+            return true;
+        }
+        return false;
+    }
+
+    private static bool QueryStringHasTrueFlag(string query, string key)
+    {
+        if (string.IsNullOrEmpty(query)) return false;
+        // query is "foo=1&bar=2" or "?foo=1&bar=2" — strip the leading ?.
+        var s = query.StartsWith('?') ? query[1..] : query;
+        foreach (var pair in s.Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var eq = pair.IndexOf('=');
+            if (eq <= 0) continue;
+            var k = pair[..eq];
+            if (!string.Equals(k, key, StringComparison.OrdinalIgnoreCase)) continue;
+            var v = pair[(eq + 1)..];
+            return v == "1" || string.Equals(v, "true", StringComparison.OrdinalIgnoreCase);
+        }
+        return false;
+    }
+
+    private async Task EnsureDemoGuestAsync()
+    {
+        // Idempotent: only one in-flight attempt per gate instance. Subsequent
+        // OnAuthStateChanged events that arrive while we're authenticating will
+        // see the in-flight flag and skip the LoginScreen render entirely.
+        if (_demoGuestStarted) return;
+        _demoGuestStarted = true;
+        _silentDevLoginInFlight = true;
+        try
+        {
+            await AuthState.SignInAsync();
+        }
+        catch
+        {
+            // AuthState swallows errors internally; nothing to do here. Worst
+            // case the LoginScreen re-appears for one frame on a hard failure.
+        }
+        finally
+        {
+            _silentDevLoginInFlight = false;
+            // Force a re-render so the gate re-evaluates IsAuthenticated now
+            // that the dev-login has settled.
+            await InvokeAsync(StateHasChanged);
+        }
+    }
 
     public void Dispose() => AuthState.StateChanged -= OnAuthStateChanged;
 }

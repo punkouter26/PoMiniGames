@@ -31,11 +31,27 @@ if (string.IsNullOrWhiteSpace(apiBase))
 {
     apiBase = builder.HostEnvironment.BaseAddress;
 }
+// §Cross-origin credentials: the Blazor WASM HttpClient uses the browser's
+// `fetch` underneath, which defaults to `credentials: 'omit'`. On the
+// standalone-client dev setup (Blazor served from :5261, API on :5000)
+// every cross-origin request therefore drops the DevCookie set by
+// /api/auth/dev-login and every protected endpoint returns 401.
+//
+// We patch `window.fetch` once at startup (see
+// wwwroot/js/crossOriginFetchPatch.js) so cross-origin requests get
+// `credentials: 'include'` while same-origin requests stay untouched.
+// The patch is idempotent. Installed via JS interop during
+// WebAssemblyHostBuilder.Build() below — see the `await host.RunAsync()`
+// chain after `var host = builder.Build()`.
 builder.Services.AddScoped(sp => new HttpClient
 {
     BaseAddress = new Uri(apiBase)
 });
 builder.Services.AddScoped<ApiService>();
+// §Absolute API endpoints: resolved once from configuration + host env so
+// SignalR and other string-URL transports can target the API host (:5000)
+// even when the WASM is served standalone on :5261.
+builder.Services.AddScoped<ApiEndpoints>();
 builder.Services.AddScoped<AuthStateService>();
 // §2.3: BFF-aware AuthenticationStateProvider wired into <AuthorizeRouteView>.
 builder.Services.AddScoped<AuthenticationStateProvider, BffAuthenticationStateProvider>();
@@ -166,5 +182,15 @@ LocalStorageService.SetJSRuntime(host.Services.GetRequiredService<IJSRuntime>())
 
 // Fluxor requires explicit store initialisation before any action is dispatched.
 await host.Services.GetRequiredService<IStore>().InitializeAsync();
+
+// §Cross-origin credentials patch: must run before any HttpClient is used
+// (i.e. before any component renders), so we install it right after Build
+// but before RunAsync. Importing the module triggers its top-level IIFE
+// which patches `window.fetch` once, idempotently. Same-origin requests
+// pass through unchanged; cross-origin requests get credentials: 'include'
+// so the DevCookie set by /api/auth/dev-login round-trips on the
+// standalone-client (:5261 → :5000) dev setup.
+await host.Services.GetRequiredService<IJSRuntime>()
+    .InvokeAsync<IJSObjectReference>("import", "./js/crossOriginFetchPatch.js");
 
 await host.RunAsync();

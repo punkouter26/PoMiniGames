@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.SignalR.Client;
+using PoMiniGamesClient.Services;
 
 namespace PoMiniGamesClient.Games.PoCoupleQuiz.Services;
 
@@ -76,6 +77,7 @@ public record CoupleQuizHostChangedPayload(string GameCode, string NewHostName);
 public sealed class CoupleQuizHubService : IAsyncDisposable
 {
     private readonly NavigationManager _navigation;
+    private readonly ApiEndpoints _endpoints;
     private HubConnection? _connection;
 
     /// <summary>
@@ -100,12 +102,17 @@ public sealed class CoupleQuizHubService : IAsyncDisposable
     public event Action<CoupleQuizLobbyUpdatedPayload>? OnPlayerDisconnected;
     public event Action<CoupleQuizHostChangedPayload>? OnHostChanged;
 
-    public CoupleQuizHubService(NavigationManager navigation) => _navigation = navigation;
+    public CoupleQuizHubService(NavigationManager navigation, ApiEndpoints endpoints) =>
+        (_navigation, _endpoints) = (navigation, endpoints);
 
     public async Task ConnectAsync()
     {
         if (_connection is not null) return;
-        var hubUrl = new Uri(new Uri(_navigation.BaseUri), "couplequiz/hubs/game").ToString();
+        // §Absolute URL: SignalR ignores the DI HttpClient BaseAddress, so we
+        // compose against ApiEndpoints.ApiBase — the API host (:5000), not the
+        // WASM host (:5261). Without this, the standalone client hits
+        // /couplequiz/hubs/game/negotiate on :5261 and gets a 405.
+        var hubUrl = _endpoints.Hub("couplequiz/hubs/game");
         _connection = new HubConnectionBuilder()
             .WithUrl(hubUrl)
             .WithAutomaticReconnect()

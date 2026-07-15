@@ -4,6 +4,7 @@
 @inject AuthStateService AuthState
 @inject NavigationManager Nav
 @inject ApiService Api
+@inject ApiEndpoints Endpoints
 @inject ToastService ToastService
 @implements IAsyncDisposable
 
@@ -133,7 +134,7 @@
             return;
         }
 
-        var hubUrl = Nav.BaseUri.TrimEnd('/') + "/poracer/lobby-hub";
+        var hubUrl = Endpoints.Hub("poracer/lobby-hub");
         _hub = new HubConnectionBuilder()
             .WithUrl(hubUrl)
             .WithAutomaticReconnect()

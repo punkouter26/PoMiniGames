@@ -48,7 +48,7 @@
         <div class="gl-auth">
             @if (AuthState.IsConfigured && !AuthState.IsLoading)
             {
-                <button class="gl-auth-button" @onclick="AuthState.IsAuthenticated ? SignOut : SignIn">
+                <button class="gl-auth-button" @onclick="AuthState.IsAuthenticated ? (async () => await SignOut()) : (async () => await SignIn())">
                     @(AuthState.IsAuthenticated ? "Sign out" : "Sign in")
                 </button>
                 @if (!AuthState.IsAuthenticated)
@@ -64,7 +64,14 @@
 @code {
     [Inject] private NavigationManager Navigation { get; set; } = default!;
 
-    private void SignIn() => Navigation.NavigateTo("/auth/login/microsoft", forceLoad: true);
-    private void SignOut() => Navigation.NavigateTo("/auth/logout", forceLoad: true);
+    private async Task SignIn() => Navigation.NavigateTo("/auth/login/microsoft", forceLoad: true);
+    // §SignOut: route through AuthStateService.SignOutAsync (same as MainLayout
+    // and PoSurviveLayout). That service only invokes MSAL's logoutPopup when
+    // MicrosoftEnabled is true AND MSAL has actually been initialised in this
+    // browser — so a Guest / dev-bypass user (no Microsoft identity) gets a
+    // local-only logout and never sees the login.microsoftonline.com modal.
+    // Navigating straight to "/auth/logout" here used to bypass that gate and
+    // trigger the MSAL popup for any session that still had a cached account.
+    private async Task SignOut() => await AuthState.SignOutAsync();
     private void SignInAnon() => Navigation.NavigateTo("/auth/login/fake", forceLoad: true);
 }

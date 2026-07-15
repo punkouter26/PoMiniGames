@@ -34,6 +34,17 @@ const SIM_DT = 1 / 60;
 const MAX_FRAME_DT = 0.05;
 const MAX_HP = 100;
 const TIME_LIMIT = 99;
+
+// ── Spawn X by HUD side ────────────────────────────────────────────────────
+// Each fighter spawns at the X that lines up with the side their energy bar
+// is drawn on by the Blazor HUD:
+//   • index 1 → HUD `.pb-hp-side` (no right class) → renders on the LEFT
+//   • index 2 → HUD `.pb-hp-side.pb-hp-right`     → renders on the RIGHT
+// The world-space spawn X mirrors that screen side: negative X projects to
+// the left of the camera (which sits at +Z looking toward −Z), positive X
+// projects to the right. Single source of truth — change here, not in
+// `_spawnFighters`, so the spawn and the HUD can never desync.
+const SPAWN_X_BY_SIDE = { left: -1.6, right: 1.6 };
 const MIN_SEPARATION = 0.95;
 
 // Frame-data table. cancelInto = minimum stateT to transition into each named
@@ -623,7 +634,13 @@ export class BrawlGame {
       const charId = index === 1 ? p1Char : p2Char;
       const resolvedId = CHARACTERS[charId] ? charId : CHARACTER_IDS[0];
       const rig = buildFighter(resolvedId);
-      rig.root.position.set(index === 1 ? -1.6 : 1.6, 0, 0);
+      // Spawn on the same side as this fighter's energy bar in the Blazor HUD
+      // (see SPAWN_X_BY_SIDE at the top of the file). The camera at +Z
+      // looking toward −Z renders negative X on the screen-left and positive
+      // X on the screen-right, matching `pb-hp-side` (P1) and `pb-hp-right`
+      // (P2) respectively.
+      const side = index === 1 ? 'left' : 'right';
+      rig.root.position.set(SPAWN_X_BY_SIDE[side], 0, 0);
       this.scene.add(rig.root);
       const playerId = `p${index}`;
       this.combat.addPlayer({ playerId, teamId: String(index) });
@@ -668,6 +685,12 @@ export class BrawlGame {
       return {
         index,
         playerId,
+        // 'left' | 'right' — mirrors the side this fighter's HUD bar is drawn
+        // on by Blazor, and the X coordinate they spawned at. Single source of
+        // truth for any code that needs "which side am I on?" (camera framing,
+        // KO camera, replay, future AI hints). Set above; do not mutate after
+        // spawn — moving across the ring is tracked separately on `vel.x`.
+        side,
         // Resolved character id (demo mode reshuffles these every reset — the
         // HUD reads it back via the OnMatchStart callback so the on-screen
         // names always match the actual fighters).

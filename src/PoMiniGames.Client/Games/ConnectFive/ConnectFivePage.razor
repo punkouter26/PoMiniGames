@@ -360,6 +360,7 @@
             var (rr, rc) = DemoMove(_board, Player.Red);
             _board = _board.Place(rr, rc, Player.Red);
             _demoPly++;
+            _ = Feedback.ChipDropAsync(rr); // demo was silent before — now each CPU drop plays the slide + thud
             var redWin = _board.CheckWin(Player.Red);
             if (redWin.Won) { _gameResult = GameResult.Win; _winCells = redWin.Cells; OnWinDetected(); }
             else if (_board.IsFull()) { _gameResult = GameResult.Draw; }
@@ -371,6 +372,7 @@
             var (yr, yc) = DemoMove(_board, Player.Yellow);
             _board = _board.Place(yr, yc, Player.Yellow);
             _demoPly++;
+            _ = Feedback.ChipDropAsync(yr); // demo CPU #2 — same realistic cue
             var yellowWin = _board.CheckWin(Player.Yellow);
             if (yellowWin.Won) { _gameResult = GameResult.Loss; _winCells = yellowWin.Cells; OnWinDetected(); }
             else if (_board.IsFull()) { _gameResult = GameResult.Draw; }
@@ -434,7 +436,7 @@
         if (PlayMode == "2p") { HandleTwoPlayerDrop(targetRow, col); return; }
 
         _board = _board.Place(targetRow, col, Player.Red);
-        _ = Feedback.DiscDropAsync(); // §4 disc-landing tock, synced to the settle bounce
+        _ = Feedback.ChipDropAsync(targetRow); // realistic slide + thud, synced to the drop animation
 
         var winCheck = _board.CheckWin(Player.Red);
         if (winCheck.Won)
@@ -481,7 +483,7 @@
             // Strength scales with the CPU's ELO (matched to the player's rating).
             var (ar, ac) = _ai.GetAdaptiveMove(_board, Player.Yellow, _cpuElo);
             _board = _board.Place(ar, ac, Player.Yellow);
-            _ = Feedback.DiscDropAsync(); // §4 the AI's disc lands with the same tock
+            _ = Feedback.ChipDropAsync(ar); // AI's disc lands with the same realistic cue
             var aiWin = _board.CheckWin(Player.Yellow);
             if (aiWin.Won)
             {
@@ -516,7 +518,7 @@
     {
         var player = _current2pPlayer;
         _board = _board.Place(targetRow, col, player);
-        _ = Feedback.DiscDropAsync(); // §4 disc-landing tock
+        _ = Feedback.ChipDropAsync(targetRow); // realistic slide + thud, 2P
 
         var winCheck = _board.CheckWin(player);
         if (winCheck.Won)

@@ -93,6 +93,40 @@ public sealed class UiFeedbackService : IAsyncDisposable
     }
 
     /// <summary>
+    /// Realistic Connect-style chip-drop cue. Plays a band-passed noise slide
+    /// (chip scraping down the slot) followed by a thud + click on landing. The
+    /// landing row (0..8, where 8 = bottom of board) shifts the thud frequency
+    /// and decay slightly so high drops sound thinner than low drops. Fires a
+    /// short haptic at the impact moment so the cue lands on tactile devices.
+    /// Best-effort; silent on autoplay-blocked / no-AudioContext environments.
+    /// </summary>
+    /// <param name="rowIndex">0..8 — the row the chip landed on (8 = bottom).</param>
+    public async ValueTask ChipDropAsync(int rowIndex)
+    {
+        if (_disposed) return;
+        try
+        {
+            var module = await _module.Value;
+            // Match the CSS drop length: the slide takes ~400 ms so it
+            // synchronises with cf-slide-down's 0.55s easing as the disc
+            // crosses the board. The thud fires at ~0.40s — feels "with" the
+            // settle bounce.
+            await module.InvokeVoidAsync("playChipDrop", new
+            {
+                rowIndex,
+                slideMs = 400,
+                thudMs = 110,
+                masterGain = 0.22,
+            });
+            await module.InvokeVoidAsync("vibrate", HapticDrop);
+        }
+        catch
+        {
+            // Best-effort — never throw from a feedback path.
+        }
+    }
+
+    /// <summary>
     /// §10 Swipe-back gesture feedback — a 90 ms downsweep from C5 → A3 with
     /// a soft attack. Matches the navigation gesture direction (low = leaving).
     /// </summary>

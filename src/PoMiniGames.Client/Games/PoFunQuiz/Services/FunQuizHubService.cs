@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Http.Connections;
 using Microsoft.AspNetCore.SignalR.Client;
+using PoMiniGamesClient.Services;
 using Microsoft.Extensions.Configuration;
 
 namespace PoMiniGamesClient.Games.PoFunQuiz.Services;
@@ -47,6 +48,7 @@ public sealed class FunQuizHubService : IAsyncDisposable
 {
     private readonly NavigationManager _navigation;
     private readonly IConfiguration _configuration;
+    private readonly ApiEndpoints _endpoints;
     private HubConnection? _connection;
 
     public event Action<FunQuizGameStateDto>? OnGameCreated;
@@ -76,16 +78,21 @@ public sealed class FunQuizHubService : IAsyncDisposable
         return bool.TryParse(raw, out var skip) && skip;
     }
 
-    public FunQuizHubService(NavigationManager navigation, IConfiguration configuration)
+    public FunQuizHubService(NavigationManager navigation, IConfiguration configuration, ApiEndpoints endpoints)
     {
         _navigation = navigation;
         _configuration = configuration;
+        _endpoints = endpoints;
     }
 
     public async Task ConnectAsync()
     {
         if (_connection is not null && _connection.State != HubConnectionState.Disconnected) return;
-        var url = new Uri(new Uri(_navigation.BaseUri), "funquiz/gamehub").ToString();
+        // §Absolute URL: SignalR ignores the DI HttpClient BaseAddress, so we
+        // compose against ApiEndpoints.ApiBase — the API host (:5000), not the
+        // WASM host (:5261). Without this, the standalone client hits
+        // /funquiz/gamehub/negotiate on :5261 and gets a 405.
+        var url = _endpoints.Hub("funquiz/gamehub");
         var builder = new HubConnectionBuilder().WithUrl(url);
         // §Dev-box quirk (2026-07-07): on this dev machine the WebSocket upgrade
         // through `UseResponseCompression` takes 30-60s to complete (one full

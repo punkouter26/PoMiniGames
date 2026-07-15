@@ -183,20 +183,6 @@ public class ApiService
         }
     }
 
-    /// <summary>Normalized leaderboard for a single game.</summary>
-    public async Task<GameLeaderboardDto?> GetGameLeaderboardAsync(string game, int limit = 10)
-    {
-        try
-        {
-            return await _http.GetFromJsonAsync(
-                $"/api/leaderboards/{game}?limit={limit}", ApiJsonContext.Default.GameLeaderboardDto);
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
     public async Task<MarbleRaceHighScore[]?> GetMarbleRaceHighScoresAsync(int count = 10)
     {
         try

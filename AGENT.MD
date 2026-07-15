@@ -20,15 +20,16 @@ contracts, and (where it has its own tables) persistence inside its slice folder
 > no functional benefit; the layered core stays. New *game* code still follows VSA (own
 > `Features/<Slice>/` folder). Reconcile future rule audits against this note, not by refactor.
 >
-> **§2.1 PoSurvive drift (NET_CLEAN_10, 2026-07-09).** A prior partial extraction left 39
-> PoSurvive files re-planted inside `PoMiniGames.Application` / `Domain` / `Infrastructure` /
-> `PoShared` under phantom `namespace PoSurvive.*` (the `PoSurvive.{Application,Domain,Infrastructure,Server,Shared}`
-> projects do not exist in `PoMiniGames.slnx`). The build compiles only because the shared
-> projects shadow the missing projects. **The VSA leak, not the layered core, is the
-> drift.** Future cleanup should *consolidate* PoSurvive's scattered DTOs / repositories /
-> endpoint glue under `Features/PoSurvive/{Application,Infrastructure,Endpoints}` while the
-> simulation engine itself stays in the layered projects for client/server reuse. The
-> deviation note above still holds for the engine — do not move SimulationEngine et al.
+> **§2.1 PoSurvive drift — RESOLVED (NET_CLEAN_10, 2026-07-15).** A prior partial extraction
+> had left ~39 PoSurvive files re-planted under phantom `namespace PoSurvive.*`. That
+> consolidation is now **done**: the slice glue lives under
+> `Features/PoSurvive/{Endpoints,Infrastructure/Persistence,Storage}`, and the simulation
+> engine (`SimulationEngine`/`EvolutionEngine`) correctly sits in the layered
+> `PoMiniGames.Application` under a `PoMiniGames.*` namespace (sanctioned client/server reuse).
+> The last orphaned straggler (`PoMiniGames.Infrastructure/Configuration/KeyVaultSecretProvider.cs`,
+> unreferenced, phantom namespace) was deleted. A repo-wide `grep "namespace PoSurvive"` should
+> now return **zero** hits — if a new one appears, that is fresh drift to fix. The engine
+> deviation note above still holds: do not move `SimulationEngine` et al.
 
 > **Client-side simulation (why the client references Application/Domain — by design).**
 > `PoMiniGamesClient.csproj` references `PoMiniGames.Application` deliberately: the PoSurvive
@@ -153,8 +154,8 @@ the shared Infrastructure project unless the data is genuinely cross-slice.
   defensive dead code before 2026-06-27; it now activates on every test run.
 
 ## Observability
-- Serilog → Console + File (dev) + **Application Insights** (non-dev when a connection string is present). Enriched with `UserId` / `SessionId` / `CorrelationId`.
-- OpenTelemetry via `UseAzureMonitor` for traces/metrics/dependencies + **Live Metrics**.
+- Serilog → Console + File (dev) + Console (non-dev). Enriched with `UserId` / `SessionId` / `CorrelationId`. The classic Serilog Application Insights sink was **removed** (NET_CLEAN_10) to stop double-ingestion — **OpenTelemetry (`UseAzureMonitor`) owns all log/trace/metric export to Application Insights**. SignalR hub invocations are enriched with `UserId`/`ConnectionId` via `HubLogContextFilter` (the hub analogue of `RequestLogContextMiddleware`).
+- OpenTelemetry via `UseAzureMonitor` for traces/metrics/dependencies + logs + **Live Metrics**.
   `cloud_RoleName` is bound to the compile-time constant `TelemetryExtensions.CloudRoleName`
   = `"PoMiniGames"` — never reflect against the executing assembly (which can collide on
   trimming / single-file publish). Sampling: 100% in dev/test, ~10% in prod; errors always logged.
@@ -217,6 +218,8 @@ the shared Infrastructure project unless the data is genuinely cross-slice.
 
 ## Conventions
 - Solution prefix `Po`. New games are split across multiple files (mirroring existing games), never one mega-file.
+- **Server-authoritative write identity.** Leaderboard / stats / match-history write endpoints must never trust a client-supplied player name, owner, or id. Resolve the caller via `Features/Auth/RequestIdentity.Resolve(...)` and, for a signed-in caller, override the client value with the claim identity (guests fall back to the supplied name, which is low-trust). Client-authoritative scores/ratings are clamped to legitimate ranges server-side. See `PoRacerScoreEndpoints` / `MarbleRaceHighScoresEndpoints` / `PlayerStatsEndpoints` / `MatchHistoryEndpoints` for the pattern.
+- **Idempotent mutations.** Retryable POST/PUT writes take an optional client idempotency key (`MatchId` / `GameSessionId`) folded into a deterministic RowKey or a dedup-marker row, so a retried request collapses instead of double-counting. Aggregate writes go through `TableConcurrency.UpdateWithRetryAsync` with monotonic-max merge, never a blind `Upsert(Replace)`.
 - **§2.2 naming deviation (canonical here).** Generic NET_RULES §2.2 suggests `<sln>.Shared`,
   `<sln>.UnitTests`, `<sln>.IntegrationTests`. This repo's canonical names are `PoShared`,
   `PoMiniGames.Unit`, `PoMiniGames.Integration`, `E2EAPI`, `E2EUI` (the layered projects use

@@ -77,7 +77,8 @@ internal static class GameServicesExtensions
         services.AddSingleton<IGameSessionManager, GameSessionManager>();
         // Note: GameSessionManager is a pure in-memory state holder, not a hosted service.
         // Background timers (round timers, host-promote grace periods) are owned by the hub.
-        services.AddSingleton<GameSessionManager>(sp => (GameSessionManager)sp.GetRequiredService<IGameSessionManager>());
+        // Every consumer injects IGameSessionManager; nothing resolves the concrete type, so
+        // the previous concrete-forwarding registration was dead and has been removed.
         services.AddSingleton<IQuestionService, AzureOpenAIQuestionService>();
         services.AddSingleton<MockQuestionService>();
         services.AddSingleton<ITeamsRepository, TeamsRepository>();

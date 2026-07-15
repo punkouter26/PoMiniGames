@@ -297,11 +297,12 @@ public static class DiagEndpoints
             }
         }
 
-        // Sibling to /api/diag — kept outside the diag group so OpenAPI's per-tag
-        // listing reads cleanly (logs are dev-only; diag is gated separately).
-        app.MapGet("/api/logs/tail", logsTailHandler)
+        // §1 MapGroup() per slice: the log-tail surface gets its own /api/logs group
+        // (distinct prefix from /api/diag) so every route is registered via a group
+        // rather than a scattered app.MapGet. Same URL (/api/logs/tail) as before.
+        var logs = app.MapGroup("/api/logs").WithTags("Health");
+        logs.MapGet("/tail", logsTailHandler)
         .WithName("GetLogsTail")
-        .WithTags("Health")
         .WithSummary("Tail the latest development log file (dev-only)");
 
         return app;

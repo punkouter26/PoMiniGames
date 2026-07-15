@@ -206,6 +206,108 @@ export const CHARACTERS = {
     mass: 1.2, attackPower: 1.12, moveAccel: 12,
     entrance: 'victory',
   },
+  // LBJ (Lyndon B. Johnson, 1963–1969). Texas-sized arm-twister: heavy brows,
+  // big nose, prominent ears, hair brushed straight back from a high forehead.
+  // Round belly + wide shoulders, slow but hits like a freight train.
+  lbj: {
+    id: 'lbj', name: 'LBJ',
+    skin: 0xe5c19a, suit: 0x2b3e5e, tie: 0xc0392b, tieLength: 1.05,
+    hair: 0x6a5a48, hairStyle: 'brushBack',
+    heightScale: 1.05, buildScale: 1.18, headW: 0.28, headD: 0.28, earR: 0.058,
+    bellyScale: 1.25,
+    face: {
+      brow: { color: 0x4a3a28, angle: -0.18, thick: 1.25 },
+      eyes: { squint: 0.4, color: 0x5a7a96 },
+      nose: { type: 'wide', size: 1.1 },
+      mouth: { w: 1.05, smile: 0.15 },
+      chin: 1.2, wrinkles: 0.5, blush: 0.3,
+    },
+    lapelPin: true,
+    stance: { torso: { x: 0.05 }, head: { z: 0.05 },
+              shoulderL: { z: 0.08 }, shoulderR: { z: -0.08 } },
+    mass: 1.25, attackPower: 1.18, moveAccel: 9,
+    entrance: 'lbjTreatment',
+  },
+  // JFK (John F. Kennedy, 1961–1963). Iconic bouffant of thick light-brown hair
+  // swept up and back, the famous Kennedy grin, breezy confidence.
+  jfk: {
+    id: 'jfk', name: 'JFK',
+    skin: 0xefcfa6, suit: 0x1a2a4e, tie: 0x4a7ba8, tieLength: 1.0,
+    hair: 0x8a7050, hairStyle: 'bouffant', hairShine: true,
+    heightScale: 1.06, buildScale: 0.92,
+    face: {
+      brow: { color: 0x6a5238, thick: 0.95 },
+      eyes: { squint: 0.18, color: 0x6b8aab },
+      nose: { type: 'straight', size: 0.95 },
+      mouth: { w: 1.05, smile: 0.55, teeth: true },
+      chin: 1.05, blush: 0.45, wrinkles: 0.15,
+    },
+    lapelPin: true,
+    stance: { head: { x: 0.05, y: 0.02 }, torso: { x: -0.03 } },
+    mass: 0.9, attackPower: 0.98, moveAccel: 14,
+    entrance: 'jfkNod',
+  },
+  // Eisenhower (Dwight D., 1953–1961). Military bearing: short cropped grey
+  // hair, broad shoulders, a strict-but-fair thousand-yard stare. Wider
+  // stance than the recent presidents; slow feet but punishing counters.
+  eisenhower: {
+    id: 'eisenhower', name: 'Eisenhower',
+    skin: 0xeec9a8, suit: 0x4a5a6a, tie: 0x8a6028, tieLength: 0.95,
+    hair: 0xb0a89a, hairStyle: 'crop', greyTemples: true,
+    heightScale: 1.05, buildScale: 1.1, shoulderScale: 1.2,
+    face: {
+      brow: { color: 0x9a948a, angle: 0.05, thick: 1.05 },
+      eyes: { squint: 0.35, color: 0x5e7a92 },
+      nose: { type: 'straight', size: 1.0 },
+      mouth: { w: 1.0, smile: 0.3 },
+      chin: 1.2, wrinkles: 0.5, blush: 0.2,
+    },
+    lapelPin: true,
+    stance: { torso: { x: 0.02 }, shoulderL: { z: 0.05 }, shoulderR: { z: -0.05 },
+              head: { x: -0.04 } },
+    mass: 1.18, attackPower: 1.15, moveAccel: 10,
+    entrance: 'eisenhowerSalute',
+  },
+  // Truman (Harry S., 1945–1953). Bald on top with a thin rim of grey hair
+  // and round wire-rim glasses. Plucky, big smile, round cheeks — the
+  // "Give 'em hell" pugilist of the postwar era.
+  truman: {
+    id: 'truman', name: 'Truman',
+    skin: 0xeec5a0, suit: 0x3a3f4a, tie: 0x8a7a5a, tieLength: 0.95,
+    hair: 0xa8a099, hairStyle: 'balding',
+    heightScale: 0.98, buildScale: 0.95, headW: 0.255,
+    face: {
+      brow: { color: 0x7a7468, thick: 0.95 },
+      eyes: { squint: 0.4, color: 0x6080a0 },
+      nose: { type: 'straight', size: 0.9 },
+      mouth: { w: 1.1, smile: 0.5, teeth: true },
+      cheeks: true, blush: 0.4, wrinkles: 0.4,
+    },
+    glasses: 'round', lapelPin: true,
+    stance: { head: { x: 0.05 }, torso: { x: -0.02 } },
+    mass: 0.94, attackPower: 1.05, moveAccel: 13,
+    entrance: 'giveEmHell',
+  },
+  // FDR (Franklin D., 1933–1945). Tall, lean, aristocratic silver hair
+  // combed back. The cigarette-holder grin, round wire glasses, the
+  // longest reach in the roster — fast and precise despite the cane era.
+  fdr: {
+    id: 'fdr', name: 'FDR',
+    skin: 0xe6bea0, suit: 0x1c2538, tie: 0x4a5a8a, tieLength: 1.1,
+    hair: 0xe8e4dc, hairStyle: 'combBack', hairShine: true,
+    heightScale: 1.1, buildScale: 0.95,
+    face: {
+      brow: { color: 0xb0aea6, thick: 0.9 },
+      eyes: { squint: 0.3, color: 0x6c8aa8 },
+      nose: { type: 'straight', size: 1.0 },
+      mouth: { w: 0.95, smile: 0.45 },
+      chin: 1.15, wrinkles: 0.55, blush: 0.2,
+    },
+    glasses: 'round', lapelPin: true,
+    stance: { head: { x: 0.04, y: 0.03 }, torso: { x: -0.04 } },
+    mass: 0.96, attackPower: 1.1, moveAccel: 12,
+    entrance: 'fdrCane',
+  },
   // BOB — the 1-player everyman hero. No suit: white tee, blue jeans,
   // sneakers, messy brown hair. Built by the same rig with `outfit: 'casual'`.
   bob: {
@@ -608,6 +710,60 @@ function buildHair(c, hairMat, dims) {
     for (const s of [-1, 1]) {
       const side = box(0.04, 0.085, d * 0.8, hairMat);
       side.position.set(s * (hw + 0.005), topY - 0.05, -0.015);
+      g.add(side);
+    }
+  } else if (style === 'brushBack') {
+    // LBJ: thick brown hair brushed straight back off a high forehead, with
+    // a slight upward roll at the front and brushed-down sides hugging the
+    // temples. Reads as a working-statesman helmet of hair.
+    const crown = box(w + 0.015, 0.07, d * 0.9, hairMat);
+    crown.position.set(0, topY + 0.02, -0.025);
+    const roll = box(w * 0.85, 0.035, 0.06, hairMat);
+    roll.position.set(0, topY + 0.04, d / 2 - 0.04);
+    roll.rotation.x = -0.45;
+    g.add(crown, roll);
+    for (const s of [-1, 1]) {
+      const side = box(0.045, 0.085, d * 0.75, hairMat);
+      side.position.set(s * (hw + 0.008), topY - 0.04, -0.015);
+      side.rotation.z = -s * 0.08;
+      g.add(side);
+    }
+    const back = box(w * 0.92, 0.075, 0.05, hairMat);
+    back.position.set(0, topY - 0.04, -(d / 2) - 0.005);
+    g.add(back);
+  } else if (style === 'bouffant') {
+    // JFK: tall thick hair lifted up and swept back from the forehead, with
+    // a wide rolling front wave. Sides brushed down to hug the ears — the
+    // unmistakable early-1960s Kennedy silhouette.
+    const puff = box(w + 0.04, 0.115, d + 0.03, hairMat);
+    puff.position.set(0, topY + 0.05, -0.02);
+    const wave = box(w * 0.95, 0.085, 0.13, hairMat);
+    wave.position.set(0, topY + 0.04, d / 2 - 0.05);
+    wave.rotation.x = -0.2;
+    g.add(puff, wave);
+    for (const s of [-1, 1]) {
+      const side = box(0.05, 0.095, d * 0.85, hairMat);
+      side.position.set(s * (hw + 0.012), topY - 0.025, -0.012);
+      side.rotation.z = -s * 0.05;
+      g.add(side);
+    }
+    const back = box(w + 0.02, 0.1, 0.055, hairMat);
+    back.position.set(0, topY - 0.03, -(d / 2) - 0.006);
+    g.add(back);
+  } else if (style === 'combBack') {
+    // FDR: thin, distinguished silver hair combed straight back from a
+    // moderate hairline. Short at the temples, slightly longer on top,
+    // a small tidy wave at the forehead. The "New England aristocrat".
+    const top = box(w * 0.95, 0.055, d * 0.85, hairMat);
+    top.position.set(0, topY + 0.018, -0.035);
+    top.rotation.x = -0.05;
+    const brow = box(w * 0.9, 0.03, 0.05, hairMat);
+    brow.position.set(0, topY + 0.005, d / 2 - 0.045);
+    brow.rotation.x = -0.55;
+    g.add(top, brow);
+    for (const s of [-1, 1]) {
+      const side = box(0.03, 0.07, d * 0.6, hairMat);
+      side.position.set(s * (hw + 0.004), topY - 0.05, -0.02);
       g.add(side);
     }
   } else if (style === 'spiky') {

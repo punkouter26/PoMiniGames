@@ -63,15 +63,8 @@ const HITSTUN = 0.35;
 // no arms and can only kick.
 const ARM_SEVER_L = 50;
 const ARM_SEVER_R = 78;
-// Y offset above the canvas top (y = 0) where a severed limb's bounding
-// sphere settles. We compute the actual radius per-limb at sever time so
-// arms don't sink into the floor — see _severArm / _updateSeveredLimbs.
-// A small clearance above 0 keeps the limb from z-fighting the canvas.
-const LIMB_FLOOR_CLEARANCE = 0.02;
-// A small bounce fraction so the arm doesn't stick dead on first contact.
-const LIMB_BOUNCE = 0.18;
-// Angular velocity damping once the arm is on the floor.
-const LIMB_ANG_DAMP = 4.0;
+// Rest height of a severed arm lying on the canvas (its capsule half-radius).
+const LIMB_GROUND_Y = 0.12;
 
 // How much harder a CHARGED "power" hit chews the struck limb vs a tap. Region
 // (limb) damage is what reddens the body-diagram section and eventually tears an
@@ -3174,10 +3167,6 @@ export class BrawlGame {
     if (!shoulder || !shoulder.parent) return;
     fighter.armsLost.add(side);
 
-    // Bound radius is computed from the actual mesh hierarchy below; declared
-    // up front so the rest of the function can read it.
-    let limbBoundR = 0.42;
-
     // Snapshot the arm's world transform, detach, and re-anchor it in the scene
     // so it keeps its on-screen pose the instant it comes off.
     const wp = new THREE.Vector3();
@@ -3192,52 +3181,6 @@ export class BrawlGame {
     shoulder.scale.copy(ws);
     this.scene.add(shoulder);
 
-    // Compute the bounding-sphere radius of the detached hierarchy in its
-    // CURRENT local orientation. The shoulder is the new world root, so we
-    // walk its children in world space and find the max distance from the
-    // shoulder origin — that becomes the collision radius. This avoids any
-    // sinking into the floor regardless of how the arm tumbles.
-    const _bbMin = new THREE.Vector3();
-    const _bbMax = new THREE.Vector3();
-    const _bbCenter = new THREE.Vector3();
-    shoulder.updateMatrixWorld(true);
-    shoulder.children[0]?.geometry?.computeBoundingBox?.();
-    const localBox = new THREE.Box3();
-    shoulder.traverse((o) => {
-      if (o.isMesh && o.geometry) {
-        if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
-        const box = o.geometry.boundingBox.clone();
-        box.applyMatrix4(o.matrixWorld);
-        if (localBox.isEmpty()) localBox.copy(box);
-        else localBox.union(box);
-      }
-    });
-    // Radius = max distance from shoulder origin to a bounding-box corner.
-    if (!localBox.isEmpty()) {
-      _bbCenter.copy(shoulder.position);          // local origin == world root pos
-      localBox.getCenter(_bbCenter);
-      const corners = [
-        new THREE.Vector3(localBox.min.x, localBox.min.y, localBox.min.z),
-        new THREE.Vector3(localBox.max.x, localBox.min.y, localBox.min.z),
-        new THREE.Vector3(localBox.min.x, localBox.max.y, localBox.min.z),
-        new THREE.Vector3(localBox.max.x, localBox.max.y, localBox.min.z),
-        new THREE.Vector3(localBox.min.x, localBox.min.y, localBox.max.z),
-        new THREE.Vector3(localBox.max.x, localBox.min.y, localBox.max.z),
-        new THREE.Vector3(localBox.min.x, localBox.max.y, localBox.max.z),
-        new THREE.Vector3(localBox.max.x, localBox.max.y, localBox.max.z),
-      ];
-      let radius = 0;
-      for (const c of corners) {
-        c.sub(shoulder.position);                  // distance from shoulder root
-        const d = c.length();
-        if (d > radius) radius = d;
-      }
-      // Pad slightly so the limb visually rests on top of, not inside, the canvas.
-      limbBoundR = radius + 0.02;
-    } else {
-      limbBoundR = 0.42;  // safe fallback for fists-only geometry
-    }
-
     // Launch outward (away from the body) + up, with a fast tumble.
     const outward = dir ? dir.clone() : new THREE.Vector3(side === 'L' ? -1 : 1, 0, 0);
     outward.y = 0;
@@ -3250,11 +3193,7 @@ export class BrawlGame {
     const angVel = new THREE.Vector3(
       (this.rng.random() - 0.5) * 11, (this.rng.random() - 0.5) * 11, (this.rng.random() - 0.5) * 13);
     this._severedLimbs = this._severedLimbs || [];
-    this._severedLimbs.push({
-      mesh: shoulder, vel, angVel,
-      boundR: limbBoundR,                 // world-space collision sphere radius
-      grounded: false, groundedT: 0,      // grounded timer for blood-stain fade
-    });
+    this._severedLimbs.push({ mesh: shoulder, vel, angVel, grounded: false });
 
     // Silly geyser: a big squirt off the stump + a burst trailing the limb.
     this._bloodSquirt(wp, outward, 2.4);
@@ -3289,55 +3228,23 @@ export class BrawlGame {
 
   // Fall + tumble a severed arm to the canvas, where it comes to rest and
   // leaves a pool. Limbs linger until the next match clears them (_spawnFighters).
-  // Collision is bounding-sphere against the canvas top (y = 0); the sphere
-  // radius is computed per-arm at sever time so the limb never sinks into
-  // the floor regardless of how it tumbles.
   _updateSeveredLimbs(dt) {
     if (!this._severedLimbs || !this._severedLimbs.length) return;
     for (const l of this._severedLimbs) {
-      // Integrate position from velocity. Vertical (y) motion decays only via
-      // gravity; horizontal (x/z) gradually bleeds off so the limb settles.
-      if (!l.grounded) {
-        l.mesh.position.x += l.vel.x * dt;
-        l.mesh.position.y += l.vel.y * dt;
-        l.mesh.position.z += l.vel.z * dt;
-        l.vel.y += -11 * dt;
-        l.mesh.rotation.x += l.angVel.x * dt;
-        l.mesh.rotation.y += l.angVel.y * dt;
-        l.mesh.rotation.z += l.angVel.z * dt;
-
-        // Ground contact: the bounding sphere centered on the shoulder root
-        // collides when shoulder.position.y - boundR < LIMB_FLOOR_CLEARANCE.
-        // Snap to the surface and dampen the impact (a small bounce, no
-        // permanent sink).
-        const minY = LIMB_FLOOR_CLEARANCE + (l.boundR || 0.42);
-        if (l.mesh.position.y < minY) {
-          l.mesh.position.y = minY;
-          if (l.vel.y < 0) l.vel.y = -l.vel.y * LIMB_BOUNCE;
-          // Tangential friction on contact so the limb doesn't slide forever.
-          l.vel.x *= Math.exp(-4 * dt);
-          l.vel.z *= Math.exp(-4 * dt);
-          // Angular tumble slows on first contact, then bleeds off.
-          l.angVel.multiplyScalar(Math.exp(-2 * dt));
-
-          // Mark grounded on first contact and paint a pool if inside the
-          // ring. Subsequent contacts still bounce + settle, but no new stain.
-          if (!l.grounded) {
-            l.grounded = true;
-            l.groundedT = 0;
-            if (Math.abs(l.mesh.position.x) < 5.7
-                && Math.abs(l.mesh.position.z) < 5.7) {
-              this._addBloodStain(l.mesh.position.x, l.mesh.position.z);
-            }
-          }
+      if (l.grounded) continue;
+      l.mesh.position.x += l.vel.x * dt;
+      l.mesh.position.y += l.vel.y * dt;
+      l.mesh.position.z += l.vel.z * dt;
+      l.vel.y += -11 * dt;
+      l.mesh.rotation.x += l.angVel.x * dt;
+      l.mesh.rotation.y += l.angVel.y * dt;
+      l.mesh.rotation.z += l.angVel.z * dt;
+      if (l.mesh.position.y <= LIMB_GROUND_Y) {
+        l.mesh.position.y = LIMB_GROUND_Y;
+        l.grounded = true;
+        if (Math.abs(l.mesh.position.x) < 5.7 && Math.abs(l.mesh.position.z) < 5.7) {
+          this._addBloodStain(l.mesh.position.x, l.mesh.position.z);
         }
-      } else {
-        // Already on the floor: snap-to-surface each frame in case gravity
-        // pulled the limb too low before impact, then dampen the remaining
-        // angular spin.
-        l.mesh.position.y = Math.max(l.mesh.position.y,
-          LIMB_FLOOR_CLEARANCE + (l.boundR || 0.42));
-        l.angVel.multiplyScalar(Math.exp(-LIMB_ANG_DAMP * dt));
       }
     }
   }

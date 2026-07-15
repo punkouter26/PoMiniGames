@@ -290,6 +290,71 @@ const ENTRANCES = {
     [{ torso: { x: 0.1, y: 0.1, z: 0 }, shoulderL: { x: -1.15, y: 0, z: 0.35 }, shoulderR: { x: -1.2, y: 0, z: -0.35 } }, 0.5, { k: 8 }],
     [GUARD, 0.4, { k: 6 }],
   ],
+  // LBJ: "the Johnson Treatment" — drops an arm across the opponent's
+  // shoulder and leans in close, head bowed as if whispering. Forearm
+  // presses in, then releases with a tilt-back laugh.
+  lbjTreatment: [
+    [{ torso: { x: 0.08, y: 0, z: 0.05 }, head: { x: 0.18, y: -0.08, z: 0.04 },
+       shoulderR: { x: -0.5, y: 0, z: -0.7 }, elbowR: { x: -2.3, y: 0, z: 0 },
+       shoulderL: { x: -0.5, y: 0, z: 0.55 }, elbowL: { x: -1.7, y: 0, z: 0 } }, 0.55, { k: 9 }],
+    [{ torso: { x: 0.05, y: 0, z: 0.08 }, head: { x: 0.2, y: -0.1, z: 0.05 },
+       shoulderR: { x: -0.45, y: 0, z: -0.65 }, elbowR: { x: -2.4, y: 0, z: 0 } }, 0.45, { k: 10 }],
+    [{ torso: { x: -0.02, y: 0.05, z: 0 }, head: { x: -0.12, y: 0.1, z: -0.02 },
+       shoulderR: { x: -0.7, y: 0, z: -0.3 }, elbowR: { x: -1.4, y: 0, z: 0 },
+       shoulderL: { x: -0.7, y: 0, z: 0.3 }, elbowL: { x: -1.4, y: 0, z: 0 } }, 0.45, { k: 8 }],
+    [GUARD, 0.35, { k: 6 }],
+  ],
+  // JFK: confident head-tilt and wave — right hand rises in a casual
+  // open-palm greeting, then the chin drops with that famous grin.
+  jfkNod: [
+    [{ torso: { x: 0.03, y: 0, z: 0 }, head: { x: 0.12, y: 0.04, z: 0.02 },
+       shoulderR: { x: -2.55, y: 0, z: -0.2 }, elbowR: { x: -1.1, y: 0, z: 0 },
+       shoulderL: { x: -0.6, y: 0, z: 0.1 }, elbowL: { x: -1.2, y: 0, z: 0 } }, 0.45, { k: 12 }],
+    [{ head: { x: 0.04, y: -0.08, z: -0.02 },
+       shoulderR: { x: -2.55, y: 0, z: -0.12 }, elbowR: { x: -1.1, y: 0, z: 0 } }, 0.3, { k: 14 }],
+    [{ head: { x: 0.12, y: 0.02, z: 0.02 },
+       shoulderR: { x: -2.55, y: 0, z: -0.22 }, elbowR: { x: -1.05, y: 0, z: 0 } }, 0.35, { k: 14 }],
+    [GUARD, 0.4, { k: 6 }],
+  ],
+  // Eisenhower: a sharp military salute — right hand snaps up to the
+  // brow, holds for a beat, drops crisply to guard.
+  eisenhowerSalute: [
+    [{ torso: { x: 0.04, y: 0, z: 0 }, head: { x: -0.04, y: 0, z: 0 },
+       shoulderR: { x: -0.5, y: 0, z: -0.2 }, elbowR: { x: -0.7, y: 0, z: 0 } }, 0.25, { k: 22 }],
+    [{ head: { x: -0.06, y: 0, z: 0 },
+       shoulderR: { x: -0.18, y: 0, z: -0.18 }, elbowR: { x: -2.6, y: 0, z: 0 } }, 0.5, { k: 10 }],
+    [{ head: { x: -0.04, y: 0, z: 0 },
+       shoulderR: { x: -0.2, y: 0, z: -0.2 }, elbowR: { x: -2.55, y: 0, z: 0 } }, 0.45, { k: 9 }],
+    [{ shoulderR: { x: -0.55, y: 0, z: -0.2 }, elbowR: { x: -1.4, y: 0, z: 0 } }, 0.25, { k: 16 }],
+    [GUARD, 0.35, { k: 6 }],
+  ],
+  // Truman: "Give 'em hell" — both fists raised high in a fighter's
+  // pose, a quick double-pump at chin level, then settle.
+  giveEmHell: [
+    [{ torso: { x: 0.06, y: 0.05, z: 0 }, head: { x: -0.05, y: 0.05, z: 0 },
+       shoulderL: { x: -2.45, y: 0, z: 0.5 }, shoulderR: { x: -2.45, y: 0, z: -0.5 },
+       elbowL: { x: -0.4, y: 0, z: 0 }, elbowR: { x: -0.4, y: 0, z: 0 } }, 0.35, { k: 14 }],
+    [{ torso: { x: 0.0, y: -0.05, z: 0 },
+       shoulderL: { x: -1.4, y: 0, z: 0.4 }, shoulderR: { x: -1.4, y: 0, z: -0.4 },
+       elbowL: { x: -1.9, y: 0, z: 0 }, elbowR: { x: -1.9, y: 0, z: 0 } }, 0.22, { k: 18 }],
+    [{ torso: { x: 0.06, y: 0.05, z: 0 },
+       shoulderL: { x: -2.45, y: 0, z: 0.5 }, shoulderR: { x: -2.45, y: 0, z: -0.5 },
+       elbowL: { x: -0.4, y: 0, z: 0 }, elbowR: { x: -0.4, y: 0, z: 0 } }, 0.25, { k: 16 }],
+    [GUARD, 0.45, { k: 6 }],
+  ],
+  // FDR: the long cigarette-holder flourish — head tilted up, right hand
+  // raised shoulder-high in a relaxed open palm (the holder grip), then
+  // a regal chin-up pose before the guard.
+  fdrCane: [
+    [{ torso: { x: 0.03, y: 0.02, z: 0 }, head: { x: 0.08, y: 0.08, z: 0.02 },
+       shoulderR: { x: -2.3, y: 0, z: -0.2 }, elbowR: { x: -0.6, y: 0, z: 0.05 },
+       shoulderL: { x: -0.55, y: 0, z: 0.15 }, elbowL: { x: -1.2, y: 0, z: 0 } }, 0.55, { k: 10 }],
+    [{ head: { x: 0.05, y: 0.12, z: 0 },
+       shoulderR: { x: -2.3, y: 0, z: -0.25 }, elbowR: { x: -0.55, y: 0, z: 0.05 } }, 0.4, { k: 12 }],
+    [{ torso: { x: -0.01, y: 0.06, z: 0 }, head: { x: -0.08, y: 0.04, z: 0 },
+       shoulderR: { x: -0.65, y: 0, z: -0.2 }, elbowR: { x: -1.3, y: 0, z: 0 } }, 0.4, { k: 9 }],
+    [GUARD, 0.4, { k: 6 }],
+  ],
 };
 
 export { ENTRANCES };

@@ -6,6 +6,7 @@
 }
 
 .pb-canvas-host {
+    position: relative;
     width: 100%;
     height: min(72vh, 648px);
     min-height: 384px;
@@ -24,13 +25,13 @@
    Anchored to the strip just below the top nav bar (viewport-fixed) so the
    K.O. / "X WINS!" text never covers the fighters in the ring. */
 .pb-canvas-host ::deep .pb-banner {
-    position: fixed;
-    /* Sit in the empty band between the top nav bar and the HP-bar HUD, and
-       centre the K.O. / countdown text within it — this keeps the yellow text
-       up in the dead strip above the ring so it never covers the fighters
-       (spanning to the bottom of the play area put it over the players). */
-    top: 76px;
-    height: 96px;
+    /* Anchored to the CANVAS (not the viewport) so the yellow FIGHT! / K.O.
+       text sits symmetrically inside the arena's black band above the ring,
+       centred both horizontally and vertically in the dead strip below the
+       HP-bar HUD and above the fighters' heads — never covering the players. */
+    position: absolute;
+    top: 8%;
+    height: 26%;
     left: 0;
     right: 0;
     display: flex;

@@ -1,3 +1,4 @@
+using Azure.Core;
 using Azure.Identity;
 using Azure.Monitor.OpenTelemetry.AspNetCore;
 using OpenTelemetry.Instrumentation.AspNetCore;
@@ -87,19 +88,59 @@ internal static class TelemetryExtensions
 
         if (!string.IsNullOrEmpty(keyVaultUri))
         {
-            // §4 chaos-engineering hardening: pin a 3-attempt / 3-second-per-attempt budget
-            // on the DefaultAzureCredential chain. Without this, a hung network during
-            // cold start (a flaky VPN, the AAD STS being slow) means AddAzureKeyVault
-            // blocks forever waiting for the first GetPropertiesOfSecrets enumeration —
-            // a silent DoS on app startup.
-            var credential = new DefaultAzureCredential(new DefaultAzureCredentialOptions
+            // In Development, authenticate to Key Vault with the Azure CLI identity ONLY.
+            // The full DefaultAzureCredential chain probes VisualStudio/VS Code/shared-token-cache
+            // credentials *before* the CLI, and on a dev box those can resolve to a different
+            // AAD account than `az login` — one whose tenant sees this subscription as disabled,
+            // producing a hard "subscription associated with this vault has been disabled" 403
+            // that aborts startup even though `az keyvault secret list` succeeds. Pinning to the
+            // CLI credential makes the app use exactly the identity the developer is signed in as.
+            TokenCredential credential = builder.Environment.IsDevelopment()
+                ? new AzureCliCredential(new AzureCliCredentialOptions
+                {
+                    ProcessTimeout = TimeSpan.FromSeconds(10),
+                })
+                // §4 chaos-engineering hardening: pin a 3-attempt / 3-second-per-attempt budget
+                // on the DefaultAzureCredential chain. Without this, a hung network during
+                // cold start (a flaky VPN, the AAD STS being slow) means AddAzureKeyVault
+                // blocks forever waiting for the first GetPropertiesOfSecrets enumeration —
+                // a silent DoS on app startup.
+                : new DefaultAzureCredential(new DefaultAzureCredentialOptions
+                {
+                    Retry = { MaxRetries = 2, NetworkTimeout = TimeSpan.FromSeconds(3) },
+                });
+
+            if (builder.Environment.IsDevelopment())
             {
-                Retry = { MaxRetries = 2, NetworkTimeout = TimeSpan.FromSeconds(3) },
-            });
-            builder.Configuration.AddAzureKeyVault(
-                new Uri(keyVaultUri),
-                credential,
-                new PrefixKeyVaultSecretManager("PoMiniGames"));
+                // In Development, a failed Key Vault load must NOT abort startup. If the
+                // developer is offline, not `az login`'d, or the vault's subscription is in a
+                // billing-blocked state (a "Warned"/disabled subscription returns a 403
+                // "subscription associated with this vault has been disabled"), we fall back to
+                // the local values in appsettings.Development.json and let the app boot — guest
+                // login still works and Microsoft sign-in simply stays unwired until the vault
+                // is reachable again. In cloud environments this failure stays fatal by design.
+                try
+                {
+                    builder.Configuration.AddAzureKeyVault(
+                        new Uri(keyVaultUri),
+                        credential,
+                        new PrefixKeyVaultSecretManager("PoMiniGames"));
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine(
+                        $"[KeyVault] Development: skipping Key Vault '{keyVaultUri}' — {ex.GetType().Name}: {ex.Message}. " +
+                        "Falling back to local appsettings. If this is a 403 'subscription disabled', the Azure " +
+                        "subscription is in a Warned/billing-blocked state; resolve billing in the Azure portal.");
+                }
+            }
+            else
+            {
+                builder.Configuration.AddAzureKeyVault(
+                    new Uri(keyVaultUri),
+                    credential,
+                    new PrefixKeyVaultSecretManager("PoMiniGames"));
+            }
         }
 
         return builder;

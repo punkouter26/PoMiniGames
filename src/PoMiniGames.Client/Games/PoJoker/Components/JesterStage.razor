@@ -23,8 +23,7 @@
                         CurrentAnalysis="@_orchestrator.CurrentAnalysis"
                         JokesDisplayed="@_orchestrator.JokesDisplayed"
                         TopJokes="@_orchestrator.TopJokes"
-                        SessionTriumphs="@_orchestrator.SessionTriumphs"
-                        OnReplay="@ReplayPerformance" />
+                        SessionTriumphs="@_orchestrator.SessionTriumphs" />
 
     <PerformanceControls IsRunning="@_orchestrator.IsRunning"
                          OnStart="@StartPerformance"
@@ -36,6 +35,18 @@
 
     /// <summary>When true, the show starts automatically on first render (demo mode).</summary>
     [Parameter] public bool AutoStart { get; set; } = true;
+
+    /// <summary>
+    /// Raised once when the 10-joke show finishes, carrying the session's triumph
+    /// count. Lets the hosting page surface the result in the shared end-of-game
+    /// modal — the completion state lives in the orchestrator, which the page
+    /// can't otherwise observe.
+    /// </summary>
+    [Parameter] public EventCallback<int> OnShowComplete { get; set; }
+
+    // Guards against re-raising OnShowComplete on every StateChanged tick while
+    // the orchestrator sits in Complete.
+    private bool _completeRaised;
 
     protected override void OnInitialized()
     {
@@ -75,19 +86,21 @@
         await JS.InvokeVoidAsync("eval", "window.__pojokerShowRunning = false;");
     }
 
-    private async Task ReplayPerformance()
-    {
-        _orchestrator.ResetForNewShow();
-        await StartPerformance();
-    }
-
     private async Task StopPerformance()
     {
         await JS.InvokeVoidAsync("eval", "window.__pojokerShowRunning = false;");
         await _orchestrator.StopAsync();
     }
 
-    private void OnStateChanged() => InvokeAsync(StateHasChanged);
+    private void OnStateChanged()
+    {
+        if (!_completeRaised && _orchestrator.CurrentState == PerformanceState.Complete)
+        {
+            _completeRaised = true;
+            InvokeAsync(() => OnShowComplete.InvokeAsync(_orchestrator.SessionTriumphs));
+        }
+        InvokeAsync(StateHasChanged);
+    }
 
     async ValueTask IAsyncDisposable.DisposeAsync()
     {

@@ -1,6 +1,10 @@
 using System.Globalization;
 using PoMiniGames.Application.DTOs;
 using PoMiniGames.Application.Services;
+using PoMiniGames.Features.PoCoupleQuiz.Storage;
+using PoMiniGames.Features.PoFunQuiz;
+using PoMiniGames.Features.PoFunQuiz.Storage;
+using PoMiniGames.Features.PoJoker;
 
 namespace PoMiniGames.Features.Leaderboard;
 
@@ -29,10 +33,11 @@ public static class UnifiedLeaderboardEndpoints
         var boards = app.MapGroup("/api/leaderboards").WithTags("Statistics");
 
         boards.MapGet("",
-            async (IStorageService storage, int limit = 5) =>
+            async (IStorageService storage, ILeaderboardRepository funQuiz, ITeamsRepository teams,
+                   IJokeStorageClient joker, int limit = 5) =>
             {
                 limit = Math.Clamp(limit, 1, 100);
-                var all = await BuildAllAsync(storage, limit);
+                var all = await BuildAllAsync(storage, funQuiz, teams, joker, limit);
                 return Results.Ok(all);
             })
             .WithName("GetUnifiedLeaderboards")
@@ -40,10 +45,11 @@ public static class UnifiedLeaderboardEndpoints
             .Produces<IEnumerable<GameLeaderboardDto>>(StatusCodes.Status200OK);
 
         boards.MapGet("/{game}",
-            async (string game, IStorageService storage, int limit = 10) =>
+            async (string game, IStorageService storage, ILeaderboardRepository funQuiz, ITeamsRepository teams,
+                   IJokeStorageClient joker, int limit = 10) =>
             {
                 limit = Math.Clamp(limit, 1, 100);
-                var board = await BuildOneAsync(storage, game, limit);
+                var board = await BuildOneAsync(storage, funQuiz, teams, joker, game, limit);
                 return board is null ? Results.NotFound(new { message = $"No leaderboard for game '{game}'" })
                                      : Results.Ok(board);
             })
@@ -56,7 +62,8 @@ public static class UnifiedLeaderboardEndpoints
     }
 
     private static async Task<List<GameLeaderboardDto>> BuildAllAsync(
-        IStorageService storage, int limit)
+        IStorageService storage, ILeaderboardRepository funQuiz, ITeamsRepository teams,
+        IJokeStorageClient joker, int limit)
     {
         // §6: each board is an independent storage read, so fan them out concurrently instead
         // of awaiting one at a time. Wall-clock drops from the SUM of the per-board scans to
@@ -67,6 +74,9 @@ public static class UnifiedLeaderboardEndpoints
             BuildMarbleAsync(storage, limit),
             BuildPoRacerAsync(storage, limit),
             BuildPoBrawlAsync(storage, limit),
+            BuildFunQuizAsync(funQuiz, limit),
+            BuildCoupleQuizAsync(teams, limit),
+            BuildPoJokerAsync(joker, limit),
         };
 
         var result = (await Task.WhenAll(winRateTasks.Concat(boardTasks))).ToList();
@@ -77,7 +87,8 @@ public static class UnifiedLeaderboardEndpoints
     }
 
     private static async Task<GameLeaderboardDto?> BuildOneAsync(
-        IStorageService storage, string game, int limit)
+        IStorageService storage, ILeaderboardRepository funQuiz, ITeamsRepository teams,
+        IJokeStorageClient joker, string game, int limit)
     {
         var key = game.ToLowerInvariant();
         var winRate = Array.Find(WinRateGames, g => g.Key == key);
@@ -89,6 +100,9 @@ public static class UnifiedLeaderboardEndpoints
             "pomarblerace" or "marblerace" => await BuildMarbleAsync(storage, limit),
             "poracer" => await BuildPoRacerAsync(storage, limit),
             "pobrawl" => await BuildPoBrawlAsync(storage, limit),
+            "pofunquiz" or "funquiz" => await BuildFunQuizAsync(funQuiz, limit),
+            "pocouplequiz" or "couplequiz" => await BuildCoupleQuizAsync(teams, limit),
+            "pojoker" or "joker" => await BuildPoJokerAsync(joker, limit),
             _ => null,
         };
     }
@@ -207,6 +221,73 @@ public static class UnifiedLeaderboardEndpoints
         PadWithPlaceholders(entries, limit, "0/10");
         return new GameLeaderboardDto("pobrawl", "Brawl", "Ladder", HigherIsBetter: true, entries);
     }
+
+    /// <summary>
+    /// PoFunQuiz ranks by best single-run score. The repository partitions by category, so an
+    /// overall board means scanning every category and keeping each player's personal best —
+    /// otherwise a player who played three categories would occupy three rows.
+    /// </summary>
+    private static async Task<GameLeaderboardDto> BuildFunQuizAsync(ILeaderboardRepository repo, int limit)
+    {
+        var perCategory = await Task.WhenAll(
+            Enum.GetValues<PoFunQuiz.QuestionCategory>()
+                .Select(c => repo.GetTopAsync(c, limit)));
+
+        var entries = perCategory
+            .SelectMany(rows => rows)
+            .GroupBy(r => r.PlayerName, StringComparer.OrdinalIgnoreCase)
+            .Select(g => (Name: g.Key, Best: g.Max(r => r.Score)))
+            .OrderByDescending(x => x.Best)
+            .Take(limit)
+            .Select((x, i) => new LeaderboardEntryDto(
+                i + 1, x.Name, x.Best, x.Best.ToString("N0", CultureInfo.InvariantCulture)))
+            .ToList();
+        PadWithPlaceholders(entries, limit, "0");
+        return new GameLeaderboardDto("pofunquiz", "Fun Quiz", "Score", HigherIsBetter: true, entries);
+    }
+
+    /// <summary>
+    /// PoCoupleQuiz is played by a named team rather than an individual, so its board ranks
+    /// teams by their all-time high score.
+    /// </summary>
+    private static async Task<GameLeaderboardDto> BuildCoupleQuizAsync(ITeamsRepository repo, int limit)
+    {
+        var teams = await repo.GetAllTeamsAsync();
+        var entries = teams
+            .OrderByDescending(t => t.HighScore)
+            .ThenByDescending(t => t.CorrectAnswers)
+            .Take(limit)
+            .Select((t, i) => new LeaderboardEntryDto(
+                i + 1, t.Name, t.HighScore, t.HighScore.ToString("N0", CultureInfo.InvariantCulture)))
+            .ToList();
+        PadWithPlaceholders(entries, limit, "0");
+        return new GameLeaderboardDto("pocouplequiz", "Couple Quiz", "High score", HigherIsBetter: true, entries);
+    }
+
+    /// <summary>
+    /// PoJoker scores a whole 10-joke show, and its rows are keyed by session rather than by
+    /// player (the show has no sign-in), so the display name is the shortened session id —
+    /// mirroring what /pojoker/leaderboard already shows.
+    /// </summary>
+    private static async Task<GameLeaderboardDto> BuildPoJokerAsync(IJokeStorageClient client, int limit)
+    {
+        var sessions = await client.GetLeaderboardAsync(limit);
+        var entries = sessions
+            .OrderByDescending(s => s.Score)
+            .Take(limit)
+            .Select((s, i) => new LeaderboardEntryDto(
+                i + 1, ShortSession(s.SessionId), s.Score,
+                s.Score.ToString("F1", CultureInfo.InvariantCulture)))
+            .ToList();
+        PadWithPlaceholders(entries, limit, "0.0");
+        return new GameLeaderboardDto("pojoker", "Joker", "Score", HigherIsBetter: true, entries);
+    }
+
+    /// <summary>First segment of a session GUID — enough to tell rows apart without overflowing.</summary>
+    private static string ShortSession(string sessionId) =>
+        string.IsNullOrWhiteSpace(sessionId) ? "—"
+        : sessionId.Length <= 8 ? sessionId
+        : sessionId[..8];
 
     /// <summary>Mirror of the client's Initials(): first 3 alphanumeric chars, uppercased.</summary>
     private static string InitialsOf(string name)

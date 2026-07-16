@@ -183,6 +183,26 @@ public class ApiService
         }
     }
 
+    /// <summary>
+    /// One game's normalized leaderboard. Backs the top-3 board that the shared
+    /// GameShell renders inside every end-of-game modal, so the unit and ordering
+    /// come from the server rather than each game re-deriving them.
+    /// Returns null when the game has no board (404) or the API is offline — the
+    /// modal simply omits the section.
+    /// </summary>
+    public async Task<GameLeaderboardDto?> GetGameLeaderboardAsync(string game, int limit = 3)
+    {
+        try
+        {
+            return await _http.GetFromJsonAsync(
+                $"/api/leaderboards/{game}?limit={limit}", ApiJsonContext.Default.GameLeaderboardDto);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     public async Task<MarbleRaceHighScore[]?> GetMarbleRaceHighScoresAsync(int count = 10)
     {
         try

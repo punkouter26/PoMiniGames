@@ -106,24 +106,8 @@
    along with the ShowSettings parameter on GameShell. Stats still surface
    inline in the end-of-game modal — see `.gps-modal-stats` further down. */
 
-.gps-stat {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-}
-
-.gps-stat-value {
-  font-size: 1.1rem;
-  font-weight: 700;
-  color: var(--color-text-primary);
-}
-
-.gps-stat-label {
-  font-size: 0.65rem;
-  color: var(--color-text-secondary);
-  text-transform: uppercase;
-}
+/* `.gps-stat*` moved to game-shell.css (2026-07-16) — it is shared game-over
+   chrome, not a per-game rule. */
 
 /* The `.gps-controls` button pill bar used to render in the second-row game
    header before the gear was retired. It's still used by the ConnectFive /
@@ -267,21 +251,7 @@
   border-top: 1px solid var(--color-border);
 }
 
-.gps-game-summary {
-  font-size: 1rem;
-  font-weight: 700;
-  text-align: center;
-  line-height: 1.45;
-}
-
-/* Multi-line summaries (PoBrawl's ELO/next-match lines): keep the first
-   line as the headline, render follow-up lines smaller and muted so the
-   card reads headline → details → stats. */
-.gps-game-summary > div > div:not(:first-child) {
-  font-size: 0.85rem;
-  font-weight: 500;
-  color: var(--color-text-secondary);
-}
+/* `.gps-game-summary` moved to game-shell.css (2026-07-16). */
 
 .cf-result {
   padding: 0.5rem 1.5rem;
@@ -311,110 +281,11 @@
 .cf-elo-delta--flat { color: #94a3b8; background: rgba(148, 163, 184, 0.14); }
 .cf-elo-cpu { opacity: 0.85; }
 
-.gps-play-again-actions {
-  display: flex;
-  justify-content: center;
-  gap: 0.75rem;
-}
-
-.gps-play-again-btn {
-  padding: 0.6rem 1.25rem;
-  border-radius: 8px;
-  font-size: 0.9rem;
-  font-weight: 600;
-  transition: filter 0.2s, border-color 0.2s, color 0.2s;
-}
-
-.gps-play-again-btn--primary {
-  background: var(--color-accent);
-  border: none;
-  color: white;
-}
-
-.gps-play-again-btn--primary:hover {
-  filter: brightness(1.1);
-}
-
-.gps-play-again-btn--secondary {
-  background: transparent;
-  border: 1px solid var(--color-border);
-  color: var(--color-text-secondary);
-}
-
-.gps-play-again-btn--secondary:hover {
-  border-color: var(--color-text-secondary);
-  color: var(--color-text-primary);
-}
-
-/* ── End-of-game panel ──
-   Docked to the bottom of the screen (NOT a centered blocking modal) so the
-   board — and the highlighted winning line — stays fully visible while the
-   result and Play Again / Home actions sit below it. The overlay itself does
-   not paint a backdrop and lets pointer events pass through to the board; only
-   the panel is interactive. */
-.gps-modal-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: var(--z-modal);
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  /* Dock near the top, offset below the app header so the nav bar stays
-     clear. No dark/blur backdrop — the whole point is to keep the win
-     visible. */
-  padding: 4.5rem 1rem 1rem;
-  background: none;
-  pointer-events: none;
-  animation: gps-modal-fade 0.2s ease-out both;
-}
-
-.gps-modal {
-  pointer-events: auto;
-  width: min(92vw, 380px);
-  /* Fill the space below the header so the whole dialog (score + top-10)
-     is visible at once; overflow only kicks in if it truly can't fit. */
-  max-height: calc(100dvh - 5.5rem);
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.85rem;
-  padding: 1rem 1.5rem 1.25rem;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 16px;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
-  animation: gps-modal-pop 0.25s cubic-bezier(0.2, 0.8, 0.2, 1) both;
-}
-
-.gps-modal-title {
-  font-size: 1.3rem;
-  font-weight: 800;
-  text-align: center;
-  color: var(--color-text-primary);
-}
-
-/* Stats grid inside the modal. The old `.gps-drawer-stats` grid rule left
-   with the settings drawer (2026-07-06), so the layout lives here now: one
-   even row of value-over-label cells, divided from the summary above. */
-.gps-modal-stats {
-  width: 100%;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(3rem, 1fr));
-  gap: 0.6rem 0.25rem;
-  padding-top: 0.75rem;
-  border-top: 1px solid var(--color-border);
-}
-
-@keyframes gps-modal-fade {
-  from { opacity: 0; }
-  to   { opacity: 1; }
-}
-
-@keyframes gps-modal-pop {
-  from { opacity: 0; transform: translateY(-100%); }
-  to   { opacity: 1; transform: none; }
-}
+/* The whole end-of-game modal (`.gps-modal*`, `.gps-play-again-*`, and its
+   keyframes) moved to game-shell.css (2026-07-16). It is shared chrome owned
+   by Components/GameShell.razor — every game inherits it, none override it.
+   The old rules here docked the panel to the top with no backdrop; the shared
+   version is a genuinely centered blocking dialog. */
 
 .gps-status-badge {
   display: inline-flex;

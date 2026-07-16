@@ -48,8 +48,7 @@
            Fullscreen="true"
            Status="@StatusContent"
            GameOver="@(Phase == GamePhase.Finished && !_isDemo)"
-           OnPlayAgain="StartRace"
-           PlayAgainLabel="🔄 Race Again"
+           GameKey="poracer"
            GameSummary="@RaceSummaryContent"
            HowToPlay="@HowToPlayContent">
 <div class="racer-shell-wrap">
@@ -96,30 +95,36 @@
         </div>
     }
 
-    @* -------- Start screen (only for /poracer/demo or when no race code) -------- *@
+    @* -------- Connecting / failed-to-start overlay --------
+       2026-07-16: this was a "Start Race" title card that every player had to
+       click through. The race now auto-starts on navigation (see
+       OnAfterRenderAsync), so this overlay is only ever seen while the lobby
+       connection is in flight, or if that connection failed — in which case it
+       offers a retry rather than stranding the player on a dead canvas. *@
     @if (Phase == GamePhase.Start)
     {
         <div class="racer-overlay racer-start">
             <div class="racer-card">
                 <div class="racer-title">Racer</div>
-                <div class="racer-subtitle">Multiplayer Arcade Racing</div>
-                <div class="racer-controls">
-                    <div><kbd>W</kbd> / <kbd>↑</kbd> Accelerate</div>
-                    <div><kbd>S</kbd> / <kbd>↓</kbd> Brake / Reverse</div>
-                    <div><kbd>A</kbd> <kbd>D</kbd> / <kbd>←</kbd> <kbd>→</kbd> Steer</div>
-                    <div><kbd>Space</kbd> Handbrake (drift)</div>
-                </div>
-                <div class="racer-start-actions">
-                    <button class="racer-btn" @onclick="StartRace">Start Race</button>
-                    @if (_isDemo)
-                    {
-                        <button class="racer-btn-secondary" @onclick="OpenLobby">Multiplayer lobby</button>
-                    }
-                </div>
-                <div class="racer-hint">@_startHint</div>
-                @if (!string.IsNullOrEmpty(_startError))
+                @if (string.IsNullOrEmpty(_startError))
                 {
+                    <div class="racer-subtitle">Joining race…</div>
+                    <div class="racer-controls">
+                        <div><kbd>W</kbd> / <kbd>↑</kbd> Accelerate</div>
+                        <div><kbd>S</kbd> / <kbd>↓</kbd> Brake / Reverse</div>
+                        <div><kbd>A</kbd> <kbd>D</kbd> / <kbd>←</kbd> <kbd>→</kbd> Steer</div>
+                        <div><kbd>Space</kbd> Handbrake (drift)</div>
+                    </div>
+                    <div class="racer-hint">@_startHint</div>
+                }
+                else
+                {
+                    <div class="racer-subtitle">Couldn't start the race</div>
                     <div class="racer-hint racer-hint--error">@_startError</div>
+                    <div class="racer-start-actions">
+                        <button class="racer-btn" @onclick="StartRace">Retry</button>
+                        <button class="racer-btn-secondary" @onclick="OpenLobby">Multiplayer lobby</button>
+                    </div>
                 }
             </div>
         </div>
@@ -318,16 +323,19 @@
         _selfRef = DotNetObjectReference.Create(this);
         await JS.InvokeVoidAsync("PoRacer.start", "racerCanvas", _selfRef);
 
-        // §2026-07-13: demo entry skips the title screen. Other demo games
-        // (PoBrawl, ConnectFive, PoMarbleRace) auto-start on first render
-        // when their demo parameter is set; PoRacer had the right
-        // `StartDemoRaceAsync` flow but never called it, so users landed on
-        // the START RACE / Multiplayer lobby overlay. Connect to the lobby
+        // §2026-07-13: demo entry skips the title screen. Connect to the lobby
         // as a guest, mark Ready, fire StartGame — the server pads the
         // remaining 7 slots with AI bots so the demo always has a full grid.
+        // §2026-07-16: the non-demo route auto-starts too. It used to land on a
+        // "Start Race" card that configured nothing, which was a pure extra
+        // click between the home page and the game.
         if (_isDemo)
         {
             await StartDemoRaceAsync();
+        }
+        else
+        {
+            await StartRace();
         }
     }
 

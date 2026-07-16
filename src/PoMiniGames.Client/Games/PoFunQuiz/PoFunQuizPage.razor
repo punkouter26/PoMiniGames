@@ -15,48 +15,26 @@
 
 <GameShell Title=@TitleContent Player="@_playerName" BackTo="/"
            GameOver="@IsGameOver"
-           OnPlayAgain="Reset"
+           GameKey="@(_playMode == "solo" ? "pofunquiz" : null)"
            Stats="@_statItems"
            GameSummary="@GameSummaryContent">
-    @if (_questions.Count == 0 && !_isLoading)
-    {
-        <GameLanding Title="@_landingTitle" CtaText="@_landingCta" OnStart="StartGame" Error="@_error">
-            <Subtitle>🧠 10 AI-generated trivia questions — @_landingSubtext</Subtitle>
-            <ChildContent>
-                <div class="fq-setup">
-                    <div class="fq-names">
-                        <div class="fq-field">
-                            <label for="fq-p1">Player 1 name</label>
-                            <input id="fq-p1" type="text" @bind="_playerName" maxlength="24" placeholder="Enter your name" />
-                        </div>
-                        @if (_playMode == "2p" || _playMode == "2ps")
-                        {
-                            <div class="fq-field">
-                                <label for="fq-p2">Player 2 name</label>
-                                <input id="fq-p2" type="text" @bind="_player2Name" maxlength="24" placeholder="Player 2" />
-                            </div>
-                        }
-                    </div>
-                    <div class="fq-field">
-                        <label for="fq-cat">Category</label>
-                        <select id="fq-cat" @bind="_category">
-                            <option value="General">General</option>
-                            <option value="Science">Science</option>
-                            <option value="History">History</option>
-                            <option value="Geography">Geography</option>
-                            <option value="Sports">Sports</option>
-                            <option value="Entertainment">Entertainment</option>
-                            <option value="Technology">Technology</option>
-                            <option value="ArtCulture">Art &amp; Culture</option>
-                        </select>
-                    </div>
-                </div>
-            </ChildContent>
-        </GameLanding>
-    }
-    else if (_isLoading)
+    @* 2026-07-16: the GameLanding setup card (Player 1 / Player 2 name inputs +
+       category picker behind a "Start" button) was removed — it was an intro page
+       between the home page and the quiz. The player's name now comes from their
+       stored profile, Player 2 keeps its default label, and the category defaults
+       to General; the quiz loads and starts on navigation (see OnInitializedAsync).
+       This block is now only the load / load-failed state. *@
+    @if (_isLoading)
     {
         <p>Loading questions…</p>
+    }
+    else if (_questions.Count == 0)
+    {
+        <div class="gps-game-card">
+            <h2 class="gps-phase-h">Couldn't start the quiz</h2>
+            <p class="gps-error">@(_error ?? "No questions available right now.")</p>
+            <button class="gps-cta" @onclick="StartGame">Retry</button>
+        </div>
     }
     else if (_currentIndex < _questions.Count && !_splitScreen)
     {
@@ -194,16 +172,12 @@
             </div>
             <div>@_playerName: <strong>@_score1</strong> (best streak @_maxStreak1)</div>
             <div>@_player2Name: <strong>@_score2</strong> (best streak @_maxStreak2)</div>
-            <div class="fq-leaderboard-cta">
-                <a class="gps-btn gps-btn gps-btn--secondary" href="/funquiz?mode=2ps">Play split-screen again</a>
-            </div>
         </div>,
+        @* The "View leaderboard" link that used to sit here is redundant now that
+           the shared modal renders this game's top 3 inline. *@
         _ => @<div>
             <div>Final score: <strong>@_score</strong></div>
             <div>Max streak: @_maxStreak</div>
-            <div class="fq-leaderboard-cta">
-                <a class="gps-btn gps-btn gps-btn--secondary" href="/funquiz/leaderboard?category=@Uri.EscapeDataString(_category)">View leaderboard</a>
-            </div>
         </div>,
     };
 
@@ -211,7 +185,9 @@
     private string _player2Name = "Player 2";
     private string _category = "General";
     private string? _error;
-    private bool _isLoading;
+    // Starts true: the quiz auto-loads on navigation, so the very first render
+    // is the loading state, never the "couldn't start" card.
+    private bool _isLoading = true;
     private List<QuizQuestion> _questions = new();
     private int _currentIndex;
     private int _score;
@@ -234,24 +210,8 @@
     private readonly int[] _splitPicks = { -1, -1, -1 };
     private readonly bool[] _splitResults = { false, false, false };
     private string _playMode = "solo";
-    private string _landingTitle => _playMode switch
-    {
-        "2ps" => "Split-screen · Fun Quiz",
-        "2p" => "Two-player · Fun Quiz",
-        _ => "Solo · Fun Quiz",
-    };
-    private string _landingSubtext => _playMode switch
-    {
-        "2ps" => "Both players see the same question and answer simultaneously on one screen. Left uses 1/2/3/4, right uses 6/7/8/9.",
-        "2p"  => "Pass the device between rounds. Same 10 questions, alternating turns; highest total wins.",
-        _     => "Answer as many right as you can in a row to chase the streak record.",
-    };
-    private string _landingCta => _playMode switch
-    {
-        "2ps" => "Start split-screen",
-        "2p" => "Start 2-player",
-        _ => "Start solo",
-    };
+    // _landingTitle / _landingSubtext / _landingCta went with the setup card
+    // (2026-07-16) — nothing renders a landing screen any more.
     private readonly Dictionary<int, (int selected, bool correct)> _selected = new();
     private List<StatItem>? _statItems;
 
@@ -349,6 +309,10 @@
         }
     }
 
+    // Load the questions and start playing on navigation — there is no longer a
+    // setup card to click through.
+    protected override async Task OnInitializedAsync() => await StartGame();
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender && _splitScreen)
@@ -389,17 +353,10 @@
 
     private async Task StartGame()
     {
-        if (string.IsNullOrWhiteSpace(_playerName))
-        {
-            _error = "Please enter a name.";
-            return;
-        }
-        if (_playMode == "2p" && string.IsNullOrWhiteSpace(_player2Name))
-        {
-            _error = "Player 2 needs a name too.";
-            return;
-        }
-        PlayerNameService.SetPlayerName(_playerName);
+        // The name inputs are gone, so there is nothing to validate: _playerName
+        // comes from the stored profile and _player2Name / _category carry their
+        // defaults. Guard only against an empty stored profile.
+        if (string.IsNullOrWhiteSpace(_playerName)) _playerName = "Player 1";
         _error = null;
         _isLoading = true;
         try
@@ -524,22 +481,8 @@
         return _selected.ContainsKey(_currentIndex);
     }
 
-    private void Reset()
-    {
-        _questions = new();
-        _currentIndex = 0;
-        _score = 0;
-        _streak = 0;
-        _maxStreak = 0;
-        _score1 = _score2 = 0;
-        _streak1 = _streak2 = 0;
-        _maxStreak1 = _maxStreak2 = 0;
-        _selected.Clear();
-        _error = null;
-        _scoreSubmitted = false;
-        _statItems = null;
-        ResetSplitState();
-    }
+    // Reset() went with the modal's Play Again button (2026-07-16) — StartGame
+    // already clears the same state, and OK now returns the player to the menu.
 
     // Submit the final solo score to the server leaderboard. Best-effort:
     // never throws to the UI; a failed POST just means the run won't show up

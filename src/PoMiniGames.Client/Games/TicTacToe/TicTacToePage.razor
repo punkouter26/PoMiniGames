@@ -19,8 +19,11 @@
     Player="@_playerName"
     BackTo="@_backTo"
     GameOver="@_isGameOver"
-    OnPlayAgain="ResetGame"
-    Stats="@_statItems"
+    GameKey="@(PlayMode == "ai" ? "tictactoe" : null)"
+    @* Stats are the adaptive-ELO bucket, which 2-player never updates
+       (HandleTwoPlayerMove records a local match instead) — so showing the
+       grid there displayed stale 1P figures. Matches ConnectFive. *@
+    Stats="@(PlayMode == "ai" ? _statItems : null)"
     Status="@StatusContent"
     GameSummary="@GameSummaryContent"
     HowToPlay="@HowToPlayContent">

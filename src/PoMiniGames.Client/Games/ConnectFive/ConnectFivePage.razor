@@ -18,7 +18,7 @@
     Player="@_playerName"
     BackTo="@_backTo"
     GameOver="@_isGameOver"
-    OnPlayAgain="ResetGame"
+    GameKey="@(PlayMode == "ai" ? "connectfive" : null)"
     Stats="@(PlayMode == "ai" ? _statItems : null)"
     Status="@StatusContent"
     GameSummary="@GameSummaryContent"

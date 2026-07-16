@@ -16,7 +16,7 @@
            BackTo="/"
            Stats="@_statItems"
            GameOver="@(_phase == "result" && !_demo)"
-           OnPlayAgain="NewTrack"
+           GameKey="pomarblerace"
            GameSummary="@GameSummaryContent">
     @* 2026-07-12: stack the HUD BELOW the canvas inside a column flex
        container, so the sticky top bar (z-sticky > z-modal) never clips the
@@ -25,18 +25,28 @@
         <div class="mr-wrap">
             <div id="marble-race-container" class="mr-canvas-host"></div>
 
-            @* Pick overlay *@
+            @* Pick overlay — a 3-second countdown on the starting grid, not an
+               intro page: the race is already up and the clock is running. Click a
+               marble to claim it, or let the timer run out and one is picked for
+               you (see StartPickCountdown). Either way the race starts within 3s
+               of arriving, and the camera follows your marble (game.js
+               _focusMarble only follows the leader in demo mode). *@
             @if (_phase == "pick" && !_demo)
             {
                 <div class="mr-overlay">
                     <div class="mr-pick-card">
-                        <h2 class="gps-phase-h">Pick your marble</h2>
-                        <p class="mr-pick-sub">Top 3 finish = +1 point. Watch your marble race!</p>
+                        <h2 class="mr-pick-title">Pick your marble</h2>
+                        <p class="mr-pick-sub">
+                            Top 3 finish = +1 point. Starting in
+                            <strong class="mr-pick-count">@_pickCountdown</strong>…
+                        </p>
                         <div class="mr-pick-grid">
                             @for (int i = 0; i < 8; i++)
                             {
                                 var idx = i;
-                                <button class="mr-pick-marble" style="--c:@Colors[idx]" @onclick="() => Pick(idx)" aria-label="@($"Pick marble {idx + 1}")">
+                                <button class="mr-pick-marble" style="--c:@Colors[idx]"
+                                        @onclick="() => Pick(idx)"
+                                        aria-label="@($"Pick marble {idx + 1}")">
                                     <span class="mr-pick-ball"></span>
                                 </button>
                             }
@@ -169,14 +179,48 @@
         }
     }
 
-    private async Task Pick(int index)
+    // ── Pick countdown ──
+    // The player gets PickSeconds on the starting grid to claim a marble; if they
+    // don't, one is picked at random so the race always starts. Clicking a marble
+    // (or the timer firing) drives the same Pick, and JS ignores a second pick
+    // once the phase leaves "pick" — so a click landing on the same tick as the
+    // timeout can't double-pick.
+    private const int PickSeconds = 3;
+    private int _pickCountdown;
+    private System.Timers.Timer? _pickTimer;
+
+    private void StartPickCountdown()
     {
-        try { await JSRuntime.InvokeVoidAsync("PoMarbleRace.pick", index); } catch { }
+        _pickCountdown = PickSeconds;
+        _pickTimer?.Dispose();
+        _pickTimer = new System.Timers.Timer(1000) { AutoReset = true };
+        _pickTimer.Elapsed += async (_, _) =>
+        {
+            _pickCountdown--;
+            if (_pickCountdown > 0)
+            {
+                await InvokeAsync(StateHasChanged);
+                return;
+            }
+
+            StopPickCountdown();
+            await InvokeAsync(async () => await Pick(Random.Shared.Next(8)));
+        };
+        _pickTimer.Start();
     }
 
-    private async Task NewTrack()
+    private void StopPickCountdown()
     {
-        try { await JSRuntime.InvokeVoidAsync("PoMarbleRace.regenerate"); } catch { }
+        _pickTimer?.Stop();
+        _pickTimer?.Dispose();
+        _pickTimer = null;
+    }
+
+    private async Task Pick(int index)
+    {
+        // Covers the player clicking before the countdown expires.
+        StopPickCountdown();
+        try { await JSRuntime.InvokeVoidAsync("PoMarbleRace.pick", index); } catch { }
     }
 
     private async Task ToggleMute()
@@ -196,6 +240,15 @@
             _progress = 0;
             _leaderboard.Clear();
             _podium.Clear();   // hide the previous race's podium as the next race sets up
+
+            // Give the player 3s on the grid to claim a marble, then pick for them.
+            // Demo mode does its own auto-pick on the JS side (after a short beat
+            // framing the start gate), so it never runs this countdown.
+            if (!_demo) StartPickCountdown();
+        }
+        else
+        {
+            StopPickCountdown();
         }
         InvokeAsync(StateHasChanged);
     }
@@ -310,6 +363,9 @@
 
     public async ValueTask DisposeAsync()
     {
+        // Before the JS ref goes away — a pending tick would otherwise try to
+        // Pick() through a disposed interop ref if the player leaves mid-countdown.
+        StopPickCountdown();
         try { await JSRuntime.InvokeVoidAsync("PoMarbleRace.stop"); } catch { }
         _ref?.Dispose();
     }

@@ -1,9 +1,13 @@
 @page "/posurvive"
 @* PoSurvive intentionally uses its own `PoSurviveLayout` (C64 retro theme)
    instead of the standard `MainLayout` and renders without `GameShell`.
-   The opt-out is deliberate — its CRT-styled shell, Fluxor store, and
-   idle screen are part of the game's identity and pre-date the
-   PoMiniGames shell contract. See AGENT.MD for the architectural decision log. *@
+   The opt-out is deliberate — its CRT-styled shell and Fluxor store are part of
+   the game's identity and pre-date the PoMiniGames shell contract. See AGENT.MD
+   for the architectural decision log.
+
+   It does NOT opt out of the shared end-of-game modal: PostMortemOverlay renders
+   the same <GameOverModal> every other game ends on (2026-07-16). The former
+   "Mission Control" idle screen is gone too — the arena starts on navigation. *@
 @layout PoSurviveLayout
 @using PoMiniGamesClient.Games.PoSurvive.Features.Grid
 @using PoMiniGamesClient.Games.PoSurvive.Services
@@ -11,141 +15,28 @@
 @using PoMiniGamesClient.Games.PoSurvive.Store
 @inherits Fluxor.Blazor.Web.Components.FluxorComponent
 @implements IDisposable
-@inject NavigationManager Nav
-@inject IJSRuntime JS
 @inject IDispatcher Dispatcher
 @inject IState<BootState>       BootState
 @inject IState<SimulationState> SimState
-@inject IInferenceService        InferenceService
-@inject InferenceRouter?         InferenceRouterOrNull
-@inject LocalModelBootstrapService ModelBootstrap
 @inject KioskCoordinator         Kiosk
 @inject PoMiniGamesClient.Games.PoSurvive.Services.SimulationLaunchService LaunchService
 
 <div data-testid="grid-container">
-    @if (!SimState.Value.IsRunning && SimState.Value.Agents.Count == 0 && !SimState.Value.ShowPostMortem)
-    {
-        <div class="idle-screen app-reveal">
-            <div class="launch-card">
-                <h2 class="launch-card__title gps-phase-h">Mission Control</h2>
-                <h3 class="gps-game-h">🛡️ Agent Survival Arena</h3>
-                <p class="launch-card__subtitle">Prepare the simulation in three quick steps.</p>
-
-                <div class="launch-health" role="status" aria-live="polite" data-testid="home-launch-health">
-                    <span class="launch-health__chip @(BootState.Value.ProviderKind == "REMOTE" ? "launch-health__chip--remote" : BootState.Value.ProviderKind == "LOCAL" ? "launch-health__chip--local" : string.Empty)">@ProviderChipLabel</span>
-                    <span class="launch-health__chip @(CanLaunchSimulation ? "launch-health__chip--ok" : "launch-health__chip--warn")">@LaunchReadinessLabel</span>
-                    <span class="launch-health__chip">MODEL @BootState.Value.ModelLabel</span>
-                </div>
-
-                <ol class="launch-steps" aria-label="Simulation launch steps">
-                    <li class="launch-steps__item launch-steps__item--done">Inference engine online.</li>
-                    <li class="launch-steps__item @(CanLaunchSimulation ? "launch-steps__item--done" : string.Empty)">Ensure selected model is loaded.</li>
-                    <li class="launch-steps__item @(CanLaunchSimulation ? "launch-steps__item--done" : string.Empty)">Press [ START ] on the command bar to launch the arena.</li>
-                </ol>
-
-                <div class="launch-model-picker" data-testid="home-model-picker">
-                    <label class="launch-model-picker__label" for="model-picker-select">ACTIVE MODEL</label>
-                    <select id="model-picker-select"
-                            class="launch-model-picker__select @(IsSelectedModelRemote ? "launch-model-picker__select--remote" : "launch-model-picker__select--local")"
-                            @bind="_selectedModelId"
-                            disabled="@CanNotSwitchModels"
-                            aria-label="Select inference model">
-                        @if (_modelOptions.Any(o => !o.IsRemote))
-                        {
-                            <optgroup label="── LOCAL (WebLLM) ──">
-                                @foreach (var option in _modelOptions.Where(o => !o.IsRemote))
-                                {
-                                    <option value="@option.Id">@option.Label</option>
-                                }
-                            </optgroup>
-                        }
-                        @if (_modelOptions.Any(o => o.IsRemote))
-                        {
-                            <optgroup label="── REMOTE (Azure OpenAI) ──">
-                                @foreach (var option in _modelOptions.Where(o => o.IsRemote))
-                                {
-                                    <option value="@option.Id">@option.Label</option>
-                                }
-                            </optgroup>
-                        }
-                    </select>
-                    <p class="launch-model-picker__description">@SelectedModelDescription</p>
-
-                    <div class="launch-model-picker__status" data-testid="home-model-status">
-                        @if (BootState.Value.HasInferenceInitError)
-                        {
-                            <span class="launch-model-picker__status-error">INFERENCE ISSUE: @InferenceIssueSummary</span>
-                        }
-                        else if (IsInferenceLoading)
-                        {
-                            @if (IsSelectedModelRemote)
-                            {
-                                <span class="launch-model-picker__status-loading">CONNECTING TO AZURE OPENAI…</span>
-                            }
-                            else
-                            {
-                                <span class="launch-model-picker__status-loading">LOADING @FormatBytes(BootState.Value.BytesLoaded) / @FormatBytes(BootState.Value.TotalBytes)</span>
-                            }
-                        }
-                        else if (BootState.Value.IsReady)
-                        {
-                            <span class="launch-model-picker__status-ready">READY: @BootState.Value.ModelLabel</span>
-                        }
-                        else
-                        {
-                            <span class="launch-model-picker__status-idle">Select a model and load it.</span>
-                        }
-                    </div>
-
-                    <button class="c64-btn"
-                            @onclick="LoadSelectedModelAsync"
-                            disabled="@CanNotSwitchModels"
-                            data-testid="btn-load-model">
-                        [ @LoadModelLabel ]
-                    </button>
-                </div>
-
-                <div class="launch-card__actions">
-                    <button class="c64-btn c64-btn--primary"
-                            @onclick="FocusStartControl"
-                            disabled="@(!CanLaunchSimulation)"
-                            title="@LaunchButtonHint">
-                        [ FOCUS START ]
-                    </button>
-                </div>
-
-                @if (!CanLaunchSimulation)
-                {
-                    <div class="launch-card__actions">
-                        <button class="c64-btn"
-                                @onclick="EnterDegradedMode"
-                                data-testid="btn-degraded-home"
-                                title="Play immediately using built-in fallback tactics — no model download required.">
-                            [ PLAY NOW — FALLBACK AI (no download) ]
-                        </button>
-                    </div>
-                }
-
-                <p class="launch-card__hint" data-testid="home-launch-hint">@LaunchButtonHint</p>
-
-                <details class="launch-card__advanced">
-                    <summary>Advanced options</summary>
-                    <button class="c64-btn" @onclick="GoBoot">[ RETURN TO BOOT ]</button>
-                </details>
-            </div>
-        </div>
-    }
-    else
-    {
-        <GridBoard />
-    }
+    @* 2026-07-16: the "Mission Control" idle screen was removed. It was an intro
+       page between the home page and the game — a model picker, a 3-step
+       checklist, and a [ FOCUS START ] button that didn't even start the sim, it
+       just highlighted a [ START ] button in the command bar. The arena now
+       launches on navigation (see OnAfterRender -> BootArenaAsync), falling back
+       to degraded mode when no model is loaded so it never blocks on a download.
+       Model switching and [ RETURN TO BOOT ] still live on the command bar and
+       the /boot route. *@
+    <GridBoard />
 </div>
 
 @code {
-    private bool _switchingModel;
-    private string _selectedModelId = string.Empty;
-    private List<ModelOption> _modelOptions = [];
-    private DotNetObjectReference<PoSurvivePage>? _bridgeCallbacksRef;
+    // The model picker / loader that used to live on this page went with the
+    // Mission Control screen (2026-07-16). Inference is configured on the /boot
+    // route and switched from the command bar's picker in PoSurviveLayout.
 
     // ── Demo (kiosk auto-cycle, mirrors PoCoupleQuiz demo pattern) ─────
     // Lands on /posurvive?demo=1, bypasses Mission Control, runs a
@@ -156,7 +47,8 @@
     [SupplyParameterFromQuery(Name = "demo")] public int DemoQuery { get; set; } = 0;
     [SupplyParameterFromQuery(Name = "kiosk")] public int KioskNext { get; set; } = -1;
     private bool _isDemo;
-    private bool _demoBooted;
+    // Guards the one-shot launch on first render (demo reel or real play).
+    private bool _booted;
     private bool _lastShowPostMortem;
     private System.Threading.Timer? _demoLoopTimer;
     private const int DemoHeartbeatMs = 250;        // 4 turns/sec — fast enough for a 10-15s match
@@ -166,8 +58,6 @@
     protected override void OnInitialized()
     {
         base.OnInitialized();
-        _modelOptions    = ModelBootstrap.ReadAllModelOptions();
-        _selectedModelId = ModelBootstrap.ResolveDefaultSelectedModelIdFromAll(BootState.Value.ModelId, _modelOptions);
 
         if (DemoQuery == 1)
         {
@@ -182,136 +72,44 @@
     {
         base.OnAfterRender(firstRender);
 
-        if (!_isDemo || _demoBooted) return;
-        // First render after demo init: kick off the simulation loop.
-        // Doing it here (vs OnInitialized) gives Fluxor a chance to
-        // subscribe state-change handlers before we start dispatching.
-        _demoBooted = true;
-        _lastShowPostMortem = SimState.Value.ShowPostMortem;
-        SimState.StateChanged += OnSimStateChanged;
-        _ = InvokeAsync(BootDemoAsync);
+        if (_booted) return;
+        // First render: kick off the simulation. Doing it here (vs OnInitialized)
+        // gives Fluxor a chance to subscribe state-change handlers before we
+        // start dispatching.
+        _booted = true;
+
+        if (_isDemo)
+        {
+            _lastShowPostMortem = SimState.Value.ShowPostMortem;
+            SimState.StateChanged += OnSimStateChanged;
+            _ = InvokeAsync(BootDemoAsync);
+        }
+        else
+        {
+            _ = InvokeAsync(BootArenaAsync);
+        }
     }
 
-    protected override void OnParametersSet()
+    // Real play now auto-launches, replacing the Mission Control screen + the
+    // command bar's [ START ]. If inference isn't ready we enter degraded mode
+    // rather than gate the game behind a model download — the same escape hatch
+    // Mission Control offered as "[ PLAY NOW — FALLBACK AI ]", just automatic.
+    // The command bar's [ START ] still exists for relaunching after a reset.
+    private async Task BootArenaAsync()
     {
-        base.OnParametersSet();
+        if (!CanLaunchSimulation)
+        {
+            Dispatcher.Dispatch(new ContinueDegradedModeAction());
+            await Task.Yield();
+        }
 
-        if (_switchingModel || _modelOptions.Count == 0)
-            return;
-
-        _selectedModelId = ModelBootstrap.ResolveDefaultSelectedModelIdFromAll(BootState.Value.ModelId, _modelOptions);
+        var config = await LaunchService.BuildConfigAsync();
+        Dispatcher.Dispatch(new StartSimulationAction(
+            config, BootState.Value.IsMockProvider || BootState.Value.IsDegradedMode));
     }
-
-    private bool CanNotSwitchModels
-        => _switchingModel || SimState.Value.IsRunning || _modelOptions.Count == 0;
-
-    private bool IsSelectedModelRemote
-        => _modelOptions.FirstOrDefault(o => o.Id == _selectedModelId)?.IsRemote ?? false;
-
-    private bool IsInferenceLoading
-        => !BootState.Value.HasInferenceInitError
-           && (_switchingModel || (BootState.Value.TotalBytes > 0 && BootState.Value.BytesLoaded < BootState.Value.TotalBytes));
 
     private bool CanLaunchSimulation
         => BootState.Value.IsReady || BootState.Value.IsDegradedMode;
-
-    private string ProviderChipLabel
-        => string.IsNullOrWhiteSpace(BootState.Value.ProviderKind)
-            ? "PROVIDER UNKNOWN"
-            : $"PROVIDER {BootState.Value.ProviderKind}";
-
-    private string LaunchReadinessLabel
-        => CanLaunchSimulation ? "SYSTEM READY" : "SYSTEM NOT READY";
-
-    private string LoadModelLabel
-        => _switchingModel ? "LOADING..." : "LOAD MODEL";
-
-    private string LaunchButtonHint
-        => CanLaunchSimulation
-            ? "Press [ FOCUS START ] then use [ START ] in the top command bar."
-            : "Load a model first, or enable degraded mode from boot.";
-
-    private string InferenceIssueSummary
-        => string.IsNullOrWhiteSpace(BootState.Value.InferenceInitError)
-            ? "Unable to initialise inference."
-            : BootState.Value.InferenceInitError!;
-
-    private string SelectedModelDescription
-        => _modelOptions.FirstOrDefault(o => o.Id == _selectedModelId)?.Description
-           ?? "No description available for this model.";
-
-    private async Task LoadSelectedModelAsync()
-    {
-        if (CanNotSwitchModels)
-            return;
-
-        var selected = _modelOptions.FirstOrDefault(o => o.Id == _selectedModelId);
-        if (selected is null)
-            return;
-
-        _switchingModel = true;
-
-        Dispatcher.Dispatch(new ResetInferenceBootstrapAction());
-
-        var isMock       = InferenceService is MockInferenceService;
-        var providerKind = ModelBootstrap.ResolveProviderKind(isMock, selected.IsRemote);
-
-        // Point the router at the correct backend
-        if (!isMock && InferenceRouterOrNull is { } router)
-        {
-            if (selected.IsRemote)
-                router.UseRemote(selected.Id);
-            else
-                router.UseLocal();
-        }
-
-        Dispatcher.Dispatch(new InferenceConfiguredAction(
-            ProviderKind: providerKind,
-            ModelId:      selected.Id,
-            ModelLabel:   selected.Label));
-
-        // Mock or remote models need no local download — mark ready immediately
-        if (isMock || selected.IsRemote)
-        {
-            Dispatcher.Dispatch(new BootReadyAction());
-            _switchingModel = false;
-            return;
-        }
-
-        // Local WebLLM model — start JS worker bootstrap
-        try
-        {
-            _bridgeCallbacksRef?.Dispose();
-            _bridgeCallbacksRef = DotNetObjectReference.Create(this);
-            await ModelBootstrap.InitModelAsync(_bridgeCallbacksRef, selected.Id);
-        }
-        catch (Exception ex)
-        {
-            Dispatcher.Dispatch(new InferenceInitFailedAction(ex.Message));
-            _switchingModel = false;
-        }
-    }
-
-    private async Task FocusStartControl()
-    {
-        await JS.InvokeVoidAsync("PoSurviveUi.focusElementById", "start-sim-button");
-        await JS.InvokeVoidAsync("PoSurviveUi.flashElement", "start-sim-button");
-    }
-
-    private void GoBoot()
-    {
-        Nav.NavigateTo("/boot");
-    }
-
-    // Enable degraded mode straight from Mission Control so the game is playable
-    // without the multi-hundred-MB WebLLM download. Fallback tactics drive the
-    // agents; then point the user at the top-bar START control.
-    private async Task EnterDegradedMode()
-    {
-        Dispatcher.Dispatch(new ContinueDegradedModeAction());
-        await Task.Yield();
-        await FocusStartControl();
-    }
 
     // ── Demo drivers ───────────────────────────────────────────────────
     // BootDemoAsync runs once when the demo page first renders. It:
@@ -381,36 +179,12 @@
         Dispatcher.Dispatch(new StartSimulationAction(config, IsMockProvider: true));
     }
 
-    [JSInvokable]
-    public void OnModelProgress(long bytesLoaded, long totalBytes)
-        => Dispatcher.Dispatch(new ModelLoadProgressAction(bytesLoaded, totalBytes));
-
-    [JSInvokable]
-    public void OnModelReady()
-    {
-        Dispatcher.Dispatch(new BootReadyAction());
-        _switchingModel = false;
-        _ = InvokeAsync(StateHasChanged);
-    }
-
-    [JSInvokable]
-    public void OnModelInitError(string error)
-    {
-        Dispatcher.Dispatch(new InferenceInitFailedAction(error));
-        _switchingModel = false;
-        _ = InvokeAsync(StateHasChanged);
-    }
-
-    private static string FormatBytes(long bytes)
-        => LocalModelBootstrapService.FormatBytes(bytes);
-
     public void Dispose()
     {
-        _bridgeCallbacksRef?.Dispose();
-        _bridgeCallbacksRef = null;
         _demoLoopTimer?.Dispose();
         _demoLoopTimer = null;
-        if (_demoBooted)
+        // Only the demo reel subscribes (for its post-mortem → relaunch loop).
+        if (_isDemo && _booted)
         {
             SimState.StateChanged -= OnSimStateChanged;
         }

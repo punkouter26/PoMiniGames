@@ -33,11 +33,11 @@
         @ChildContent
     </div>
 
-    @* End-of-game modal: a centered, blocking dialog shown for every game the
-       moment GameOver flips true. It surfaces the final score/result
-       (GameSummary), the persistent stats grid (Stats), and the two exit
-       actions. There is intentionally no backdrop-dismiss — the player leaves
-       via Play Again or Home. *@
+    @* End-of-game modal: the one centered, blocking dialog every game ends on.
+       It surfaces the final result (GameSummary), the stats grid (Stats), this
+       game's top 3 (fetched from GameKey), and a single OK that returns to the
+       home menu. There is intentionally no backdrop-dismiss and no Play Again —
+       OK is the only exit, so the flow is identical in every game. *@
     @* How-to-play popover: a small inline card toggled by the header "?". Replaces
        the 2026-07-12 full-screen modal — no overlay, no auto-show, no localStorage.
        The popover sits at the top of the game area and is dismissed by clicking
@@ -58,44 +58,12 @@
 
     @if (GameOver)
     {
-        <div class="gps-modal-overlay" role="presentation">
-            <div class="gps-modal" role="dialog" aria-modal="true" aria-label="Game over">
-                <div class="gps-modal-title">@Title</div>
-                @if (GameSummary != null)
-                {
-                    <div class="gps-game-summary">@GameSummary</div>
-                }
-                @if (Stats != null && Stats.Any())
-                {
-                    <div class="gps-modal-stats">
-                        @foreach (var stat in Stats)
-                        {
-                            <div class="gps-stat">
-                                <span class="gps-stat-value">@stat.Value</span>
-                                <span class="gps-stat-label">@stat.Label</span>
-                            </div>
-                        }
-                    </div>
-                }
-                <div class="gps-play-again-actions">
-                    @if (ShowNextMatch && OnNextMatch.HasDelegate)
-                    {
-                        <button class="gps-play-again-btn gps-play-again-btn--primary" @onclick="OnNextMatch">
-                            @NextMatchLabel
-                        </button>
-                    }
-                    @if (ShowPlayAgain && OnPlayAgain.HasDelegate)
-                    {
-                        <button class="gps-play-again-btn @(ShowNextMatch ? "gps-play-again-btn--secondary" : "gps-play-again-btn--primary")" @onclick="OnPlayAgain">
-                            @PlayAgainLabel
-                        </button>
-                    }
-                    <button class="gps-play-again-btn gps-play-again-btn--secondary" @onclick="NavigateBack">
-                        🏠 Home
-                    </button>
-                </div>
-            </div>
-        </div>
+        <GameOverModal Title="@Title"
+                       GameSummary="@GameSummary"
+                       Stats="@Stats"
+                       GameKey="@GameKey"
+                       Player="@Player"
+                       BackTo="@BackTo" />
     }
 </div>
 </SwipeBack>
@@ -112,15 +80,10 @@
     // game page identical on this dimension by default.
     [Parameter] public string BackTo { get; set; } = "/";
     [Parameter] public bool GameOver { get; set; }
-    [Parameter] public EventCallback OnPlayAgain { get; set; }
-    [Parameter] public string PlayAgainLabel { get; set; } = "🔄 Play Again";
-    // Optional secondary "next round" button. Shown alongside Play Again in
-    // modal dialogs so ladder games (PoBrawl 1P) can advance straight to the
-    // next opponent. Hidden by default — pages opt in by binding a handler.
-    [Parameter] public bool ShowNextMatch { get; set; }
-    [Parameter] public EventCallback OnNextMatch { get; set; }
-    [Parameter] public string NextMatchLabel { get; set; } = "➡️ NEXT MATCH";
-    [Parameter] public bool ShowPlayAgain { get; set; } = true;
+    // Catalog key for this game's unified leaderboard (e.g. "connectfive").
+    // When set, the end-of-game modal fetches and renders that game's top 3.
+    // Leave null for modes with no meaningful board (local 2-player, demo).
+    [Parameter] public string? GameKey { get; set; }
     [Parameter] public RenderFragment? GameSummary { get; set; }
     [Parameter] public RenderFragment ChildContent { get; set; } = null!;
     // Optional "how to play" content. Surfaces as a compact popover toggled by the
@@ -132,7 +95,8 @@
     // by default (e.g. kiosk layout previews) can opt in here.
     [Parameter] public bool HowToPlayOpen { get; set; }
 
-    [Inject] private NavigationManager Navigation { get; set; } = null!;
+    // The top-3 fetch and the OK action live in GameOverModal — this shell just
+    // decides when to show it and passes the game's data through.
 
     private void ToggleHowTo() => HowToPlayOpen = !HowToPlayOpen;
 
@@ -147,5 +111,4 @@
         if (HowToPlayOpen) HowToPlayOpen = false;
     }
 
-    private void NavigateBack() => Navigation.NavigateTo(BackTo);
 }

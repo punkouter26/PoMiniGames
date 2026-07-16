@@ -1,128 +1,57 @@
 @using PoMiniGamesClient.Games.PoSurvive.Store
-@using PoShared.Simulation.Constants
-@using System.Text.Json
-@using System.Text.Json.Nodes
+@using PoMiniGamesClient.Components
+@using PoMiniGamesClient.Models
 
-@* T068: PostMortemOverlay — full-screen post-mortem screen shown when simulation ends *@
+@* PostMortemOverlay — the end-of-run screen, shown when the simulation ends. *@
 @inherits Fluxor.Blazor.Web.Components.FluxorComponent
 @inject IState<SimulationState> SimState
 @inject IDispatcher Dispatcher
-@inject IJSRuntime JS
 
+@* 2026-07-16: this was a bespoke full-screen post-mortem with its own C64-styled
+   overlay and a REVIEW / EXPORT / NEW SIMULATION button row — the one game that
+   ended on something other than the shared modal, with no way back to the menu.
+   It now renders the shared GameOverModal like every other game, so the styling
+   and the single OK exit come from one place. PoSurvive still can't host
+   GameShell (its own layout + Fluxor store — see the note atop PoSurvivePage),
+   which is exactly why the modal is a standalone component.
+
+   No GameKey: PoSurvive is a simulation with no score, so it has no leaderboard
+   and the modal simply omits the top-3 section. *@
 @if (SimState.Value.ShowPostMortem)
 {
-    <div class="postmortem-overlay" data-testid="postmortem-overlay" role="dialog" aria-modal="true">
-        <div class="postmortem-overlay__inner">
-
-            <h1 class="postmortem__title">
-                @if (SimState.Value.Outcome == "Draw")
-                {
-                    <text>⚠ DRAW — NO SURVIVORS</text>
-                }
-                else
-                {
-                    <text>VICTORY: @SimState.Value.WinningTeam?.ToUpperInvariant() FACTION</text>
-                }
-            </h1>
-
-            @* Narrative *@
-            <div class="postmortem__narrative" data-testid="narrative-text">
-                @SimState.Value.NarrativeText
-            </div>
-
-            @* Final standings *@
-            <div class="postmortem__standings" data-testid="standings-table">
-                <h2 class="gps-phase-h">Final standings</h2>
-                <table>
-                    <thead>
-                        <tr>
-                            <th>ID</th><th>TEAM</th><th>HP</th><th>KILLS</th>
-                            <th>FOOD</th><th>DAMAGE</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var a in SimState.Value.Agents.OrderBy(a => a.Team).ThenBy(a => a.Id))
-                        {
-                            <tr class="@(a.Team == "Red" ? "text-red" : "text-blue")">
-                                <td>@a.Id</td>
-                                <td>@a.Team</td>
-                                <td>@a.Hp</td>
-                                <td>@a.KillCount</td>
-                                <td>@a.FoodConsumed</td>
-                                <td>@a.TotalDamageDealt</td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
-                <p class="postmortem__totals">
-                    TOTAL TURNS: @SimState.Value.TurnNumber
-                </p>
-            </div>
-
-            <div class="postmortem__actions">
-                <button class="c64-btn"
-                        @onclick="ReviewTimeline"
-                        data-testid="btn-review-timeline">
-                    [ REVIEW TIMELINE ]
-                </button>
-                <button class="c64-btn"
-                        @onclick="ExportPostMortemJsonAsync"
-                        data-testid="btn-export-postmortem">
-                    [ EXPORT JSON ]
-                </button>
-                <button class="c64-btn c64-btn--primary"
-                        @onclick="NewSimulation"
-                        data-testid="btn-new-simulation">
-                    [ NEW SIMULATION ]
-                </button>
-            </div>
-
-        </div>
+    <div data-testid="postmortem-overlay">
+        <GameOverModal Title="@TitleContent"
+                       GameSummary="@SummaryContent"
+                       Stats="@StatItems"
+                       BackTo="/"
+                       OnOk="@ResetSimulation" />
     </div>
 }
 
 @code {
-    private void NewSimulation() => Dispatcher.Dispatch(new ResetSimulationAction());
+    private RenderFragment TitleContent => @<span>🛡️ Survive</span>;
 
-    private void ReviewTimeline()
-        => Dispatcher.Dispatch(new HidePostMortemAction());
+    private RenderFragment SummaryContent => @<div>
+        <div>
+            @(SimState.Value.Outcome == "Draw"
+                ? "⚠ Draw — no survivors"
+                : $"Victory: {SimState.Value.WinningTeam?.ToUpperInvariant()} faction")
+        </div>
+        <div>@SimState.Value.NarrativeText</div>
+    </div>;
 
-    private async Task ExportPostMortemJsonAsync()
-    {
-        var standingsArray = new JsonArray();
-        foreach (var a in SimState.Value.Agents.OrderBy(a => a.Team).ThenBy(a => a.Id))
-        {
-            JsonNode standingNode = new JsonObject
-            {
-                ["id"]               = JsonValue.Create(a.Id),
-                ["team"]             = JsonValue.Create(a.Team),
-                ["hp"]               = JsonValue.Create(a.Hp),
-                ["killCount"]        = JsonValue.Create(a.KillCount),
-                ["foodConsumed"]     = JsonValue.Create(a.FoodConsumed),
-                ["totalDamageDealt"] = JsonValue.Create(a.TotalDamageDealt),
-                ["survivalTurns"]    = JsonValue.Create(a.SurvivalTurns),
-            };
-            standingsArray.Add(standingNode);
-        }
+    // The old overlay carried a full per-agent standings table (ID/TEAM/HP/KILLS/
+    // FOOD/DAMAGE). That doesn't fit the shared modal, so it collapses to the
+    // three figures that summarise a run; the per-agent detail is still on the
+    // grid behind the modal.
+    private List<StatItem> StatItems =>
+    [
+        new StatItem { Value = SimState.Value.TurnNumber.ToString(), Label = "Turns" },
+        new StatItem { Value = SimState.Value.Agents.Sum(a => a.KillCount).ToString(), Label = "Kills" },
+        new StatItem { Value = SimState.Value.Agents.Count(a => a.Hp > 0).ToString(), Label = "Survivors" },
+    ];
 
-        var root = new JsonObject
-        {
-            ["sessionId"]      = SimState.Value.SessionId,
-            ["turns"]          = SimState.Value.TurnNumber,
-            ["outcome"]        = SimState.Value.Outcome,
-            ["winner"]         = SimState.Value.WinningTeam,
-            ["generatedAtUtc"] = DateTimeOffset.UtcNow.ToString("O"),
-            ["narrative"]      = SimState.Value.NarrativeText,
-            ["standings"]      = standingsArray,
-        };
-
-        var fileName = $"postmortem-{SimState.Value.SessionId}.json";
-        using var ms = new System.IO.MemoryStream();
-        using var writer = new Utf8JsonWriter(ms, new JsonWriterOptions { Indented = true });
-        root.WriteTo(writer);
-        writer.Flush();
-        var json = System.Text.Encoding.UTF8.GetString(ms.ToArray());
-
-        await JS.InvokeVoidAsync("downloadTextFile", fileName, json);
-    }
+    // Clear the run before OK navigates home, so the store doesn't come back with
+    // the post-mortem still showing.
+    private void ResetSimulation() => Dispatcher.Dispatch(new ResetSimulationAction());
 }

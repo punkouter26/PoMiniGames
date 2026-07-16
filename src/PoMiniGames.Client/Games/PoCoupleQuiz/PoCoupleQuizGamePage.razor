@@ -7,7 +7,16 @@
 @inject NavigationManager Navigation
 @implements IAsyncDisposable
 
-<GameShell Title=@TitleContent Player="@_playerName" BackTo="/couplequiz">
+@* 2026-07-16: this page wrapped GameShell but never passed GameOver, so the
+   multiplayer finale rendered as an inline block *below the still-live question
+   input* instead of the shared end-of-game modal every other game uses. It now
+   ends on the same modal, with the match's final scores as the summary and the
+   game's all-time top 3 underneath. BackTo is "/" so OK lands on the main menu
+   like everywhere else. *@
+<GameShell Title=@TitleContent Player="@_playerName" BackTo="/"
+           GameOver="@(_phase == "GameOver")"
+           GameKey="pocouplequiz"
+           GameSummary="@GameSummaryContent">
     @if (_gameStarted is null)
     {
         // NetRun10 audit #8: if the player landed on /game without ever joining
@@ -69,26 +78,24 @@
                 }
             }
 
-            @if (_phase == "GameOver")
-            {
-                <div class="cq-gameover">
-                    <h2 class="gps-phase-h">Game over</h2>
-                    <h3>Final scores</h3>
-                    <ol>
-                        @foreach (var kv in (_gameOver?.FinalScores ?? new Dictionary<string, int>()).OrderByDescending(x => x.Value))
-                        {
-                            <li>@kv.Key — @kv.Value</li>
-                        }
-                    </ol>
-                    <a class="gps-btn gps-btn gps-btn--primary" href="/couplequiz/leaderboard">View leaderboard</a>
-                </div>
-            }
+            @* The game-over block that used to render here now goes through the
+               shared modal — see GameSummaryContent below. *@
         </div>
     }
 </GameShell>
 
 @code {
     private RenderFragment TitleContent => @<span>💕 Couple Quiz · Game</span>;
+
+    // This match's final scores, highest first. The all-time top 3 is rendered
+    // separately by GameShell from GameKey.
+    private RenderFragment GameSummaryContent => @<div>
+        <div>Final scores</div>
+        @foreach (var kv in (_gameOver?.FinalScores ?? new Dictionary<string, int>()).OrderByDescending(x => x.Value))
+        {
+            <div>@kv.Key — <strong>@kv.Value</strong></div>
+        }
+    </div>;
 
     private string _playerName = string.Empty;
     private string _myAnswer = string.Empty;

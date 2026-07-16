@@ -44,6 +44,10 @@
          game route is entered (by which point it's cached), so loading them async
          keeps first paint gated on app.css alone (~640 lines) instead of the full
          ~5,400-line global bundle. Same preload-swap pattern used for the webfonts. -->
+    <!-- game-shell.css is the SHARED game chrome (the end-of-game modal every
+         game ends on). Loaded ahead of games.css so per-game rules can't win a
+         specificity tie against it by accident. -->
+    <link rel="preload" href="css/game-shell.css" as="style" onload="this.onload=null;this.rel='stylesheet'" />
     <link rel="preload" href="css/games.css" as="style" onload="this.onload=null;this.rel='stylesheet'" />
     <link rel="preload" href="css/fight.css" as="style" onload="this.onload=null;this.rel='stylesheet'" />
     <!-- PoJoker (demo game): hand-written medieval-dark theme (scoped to .pojoker-root) -->

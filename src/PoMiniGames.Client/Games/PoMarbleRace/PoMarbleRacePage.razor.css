@@ -315,6 +315,26 @@
     font-size: 0.85rem;
 }
 
+/* Seconds left to claim a marble before one is picked at random. Ticks with a
+   pulse so the urgency reads without the player parsing the sentence. */
+.mr-pick-count {
+    display: inline-block;
+    min-width: 1.1em;
+    color: #f1f5f9;
+    font-size: 1.05rem;
+    font-variant-numeric: tabular-nums;
+    animation: mr-pick-tick 1s ease-out infinite;
+}
+
+@keyframes mr-pick-tick {
+    0%   { transform: scale(1.25); color: #a855f7; }
+    100% { transform: scale(1);    color: #f1f5f9; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .mr-pick-count { animation: none; }
+}
+
 .mr-pick-grid {
     display: grid;
     grid-template-columns: repeat(4, 1fr);

@@ -1,0 +1,128 @@
+@namespace PoMiniGamesClient.Components
+
+@* ─────────────────────────────────────────────────────────────────────────
+   The one end-of-game modal for every game in PoMiniGames.
+
+   Centered, blocking, no backdrop-dismiss: the final result (GameSummary), the
+   stats grid (Stats), this game's top 3 (fetched from GameKey), and a single OK
+   that returns to the main menu.
+
+   Most games get this for free by passing GameOver to <GameShell>, which renders
+   this component. It is a standalone component rather than markup inside
+   GameShell so games that legitimately can't host GameShell — PoSurvive runs its
+   own C64 layout and Fluxor store — still end on the identical dialog instead of
+   hand-rolling a lookalike. Styling lives in wwwroot/css/game-shell.css.
+   ───────────────────────────────────────────────────────────────────────── *@
+
+<div class="gps-modal-overlay" role="presentation">
+    <div class="gps-modal" role="dialog" aria-modal="true" aria-label="Game over">
+        <div class="gps-modal-title">@Title</div>
+
+        @if (GameSummary != null)
+        {
+            <div class="gps-game-summary">@GameSummary</div>
+        }
+
+        @if (Stats != null && Stats.Any())
+        {
+            <div class="gps-modal-stats">
+                @foreach (var stat in Stats)
+                {
+                    <div class="gps-stat">
+                        <span class="gps-stat-value">@stat.Value</span>
+                        <span class="gps-stat-label">@stat.Label</span>
+                    </div>
+                }
+            </div>
+        }
+
+        @* Silently omitted when the game has no board (GameKey null / 404) or the
+           API is offline — the modal still works, it just shows no top 3. *@
+        @if (_board is not null && _board.Entries.Count > 0)
+        {
+            <div class="gps-modal-board">
+                <div class="gps-modal-board-head">
+                    <span class="gps-modal-board-title">🏆 Top 3</span>
+                    <span class="gps-modal-board-unit">@_board.Unit</span>
+                </div>
+                <ol class="gps-modal-board-rows">
+                    @foreach (var e in _board.Entries)
+                    {
+                        <li class="gps-modal-board-row gps-modal-board-row--@e.Rank @(IsMe(e) ? "gps-modal-board-row--me" : null)">
+                            <span class="gps-modal-board-rank">@e.Rank</span>
+                            <span class="gps-modal-board-name">@e.Name</span>
+                            <span class="gps-modal-board-value">@e.DisplayValue</span>
+                        </li>
+                    }
+                </ol>
+            </div>
+        }
+
+        <div class="gps-play-again-actions">
+            <button class="gps-play-again-btn gps-play-again-btn--primary" @onclick="Ok" autofocus>
+                OK
+            </button>
+        </div>
+    </div>
+</div>
+
+@code {
+    /// <summary>Modal heading — normally the game's title.</summary>
+    [Parameter] public RenderFragment? Title { get; set; }
+
+    /// <summary>The result line(s): who won, the final score.</summary>
+    [Parameter] public RenderFragment? GameSummary { get; set; }
+
+    /// <summary>Optional value-over-label stat cells.</summary>
+    [Parameter] public List<Models.StatItem>? Stats { get; set; }
+
+    /// <summary>
+    /// Catalog key for this game's unified leaderboard (e.g. "connectfive").
+    /// Null for modes with no meaningful board (local 2-player, demo).
+    /// </summary>
+    [Parameter] public string? GameKey { get; set; }
+
+    /// <summary>Player name, used to highlight their own row in the top 3.</summary>
+    [Parameter] public string? Player { get; set; }
+
+    /// <summary>Where OK navigates. The main menu unless a game overrides it.</summary>
+    [Parameter] public string BackTo { get; set; } = "/";
+
+    /// <summary>
+    /// Optional teardown to run when OK is pressed, before navigating. For games
+    /// holding end-of-match state outside the page (PoSurvive's Fluxor store keeps
+    /// ShowPostMortem set), this is where that state gets cleared — otherwise the
+    /// modal would still be up when the player next opens the game.
+    /// </summary>
+    [Parameter] public EventCallback OnOk { get; set; }
+
+    [Inject] private NavigationManager Navigation { get; set; } = null!;
+    [Inject] private Services.ApiService Api { get; set; } = null!;
+
+    private Models.GameLeaderboardDto? _board;
+
+    /// <summary>Mirrors the server's padding sentinel (UnifiedLeaderboardEndpoints.PlaceholderName).</summary>
+    private const string PlaceholderName = "XXX";
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (string.IsNullOrEmpty(GameKey)) return;
+
+        var board = await Api.GetGameLeaderboardAsync(GameKey, limit: 3);
+        if (board is null) return;
+
+        // Drop the server's "XXX" padding rows — an end-of-game modal should show
+        // the real top 3 or nothing, not filler.
+        board.Entries = board.Entries.Where(e => e.Name != PlaceholderName).ToList();
+        _board = board;
+    }
+
+    private bool IsMe(Models.LeaderboardEntryDto e) =>
+        !string.IsNullOrEmpty(Player) && string.Equals(e.Name, Player, StringComparison.OrdinalIgnoreCase);
+
+    private async Task Ok()
+    {
+        if (OnOk.HasDelegate) await OnOk.InvokeAsync();
+        Navigation.NavigateTo(BackTo);
+    }
+}

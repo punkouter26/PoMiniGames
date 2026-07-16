@@ -17,11 +17,7 @@
            BackTo="/"
            Stats="@_statItems"
            GameOver="@(_phase == "result" && !_demo)"
-           ShowNextMatch="@(_mode == "1p" && _winner == 1)"
-           OnNextMatch="NextMatch"
-           NextMatchLabel="@(_champion ? "🏆 NEW LADDER" : "➡️ NEXT MATCH")"
-           PlayAgainLabel="@(_mode == "1p" && _winner != 1 ? "🔄 REMATCH" : "🔄 Play Again")"
-           OnPlayAgain="BackToSelect"
+           GameKey="@(_mode == "1p" ? "pobrawl" : null)"
            GameSummary="@GameSummaryContent"
            HowToPlay="@HowToPlayContent">
     <div class="pb-wrap">
@@ -52,111 +48,13 @@
             <div class="pb-demo-badge">🎮 Demo — CPU vs CPU</div>
         }
 
-        @* Pre-fight overlay: presidents ladder in 1P, character select in 2P *@
-        @if (_phase == "select" && !_demo)
-        {
-            <div class="pb-overlay">
-                <GameLanding Title="@(_mode == "2p" ? "Local 2-Player Brawl" : "Presidential Ladder")"
-                             CtaText="🥊 FIGHT" OnStart="StartMatch">
-                    <Subtitle>
-                        @(_mode == "2p"
-                            ? "P1: A/D move · W/S step · hold S block · F punch · G kick — P2: arrows · K punch · L kick"
-                            : "A/D move · W/S sidestep · hold S block · F punch · G kick")
-                    </Subtitle>
-                    <ChildContent>
-                    @if (_mode == "2p")
-                    {
-                        <div class="pb-pick-row">
-                            <span class="pb-pick-label">Player 1</span>
-                            <div class="pb-pick-grid">
-                                @foreach (var c in PickableRoster)
-                                {
-                                    <button class="pb-pick-btn @(_p1Char == c.Id ? "pb-picked" : "")"
-                                            style="--suit:@c.Suit; --tie:@c.Tie"
-                                            @onclick="() => _p1Char = c.Id">
-                                        <span class="pb-pick-swatch"></span>@c.Name
-                                    </button>
-                                }
-                            </div>
-                        </div>
-                        <div class="pb-pick-row">
-                            <span class="pb-pick-label">Player 2</span>
-                            <div class="pb-pick-grid">
-                                @foreach (var c in PickableRoster)
-                                {
-                                    <button class="pb-pick-btn @(_p2Char == c.Id ? "pb-picked" : "")"
-                                            style="--suit:@c.Suit; --tie:@c.Tie"
-                                            @onclick="() => _p2Char = c.Id">
-                                        <span class="pb-pick-swatch"></span>@c.Name
-                                    </button>
-                                }
-                            </div>
-                        </div>
-                    }
-                    else
-                    {
-                        @* BOB climbs the ladder: beat a president to unlock the previous
-                           one. Difficulty ramps with each rung; ELO tracks skill. *@
-                        <div class="pb-ladder-meta">
-                            <span class="pb-ladder-match">Match @(_ladder + 1) of @Roster.Length</span>
-                            <span class="pb-ladder-elo">ELO @_rating.Elo · Peak @_rating.Peak</span>
-                        </div>
-
-                        @if (_champion)
-                        {
-                            <p class="pb-champion">🏆 You beat every president! The ladder restarts — go again.</p>
-                        }
-
-                        <div class="pb-vs-row">
-                            <span class="pb-vs-name pb-vs-bob">BOB</span>
-                            <span class="pb-vs-tag">VS</span>
-                            <span class="pb-vs-name">@Roster[_ladder].Name</span>
-                        </div>
-
-                        <div class="pb-ladder-dots">
-                            @for (int i = 0; i < Roster.Length; i++)
-                            {
-                                var cls = i < _ladder ? "pb-dot-beaten" : (i == _ladder ? "pb-dot-current" : "pb-dot-locked");
-                                <span class="pb-dot @cls" title="@Roster[i].Name">@(i < _ladder ? "✓" : (i == _ladder ? "🥊" : "·"))</span>
-                            }
-                        </div>
-                    }
-                    </ChildContent>
-                    <Boards>
-                    <div class="pb-boards">
-                        @if (_highScores is { Length: > 0 })
-                        {
-                            <div class="pb-board">
-                                <h3>⚡ Fastest KO</h3>
-                                <ol>
-                                    @foreach (var s in _highScores)
-                                    {
-                                        <li><span class="pb-board-initials">@s.PlayerInitials</span>
-                                            <span class="pb-board-char">@CharName(s.Character)</span>
-                                            <span class="pb-board-time">@s.KoTimeSeconds.ToString("0.00")s</span></li>
-                                    }
-                                </ol>
-                            </div>
-                        }
-                        @if (_ladderBoard is { Length: > 0 })
-                        {
-                            <div class="pb-board">
-                                <h3>🏆 Ladder Legends</h3>
-                                <ol>
-                                    @foreach (var l in _ladderBoard)
-                                    {
-                                        <li><span class="pb-board-initials">@l.PlayerName</span>
-                                            <span class="pb-board-char">ELO @l.Elo</span>
-                                            <span class="pb-board-time">@l.PresidentsBeaten/10</span></li>
-                                    }
-                                </ol>
-                            </div>
-                        }
-                    </div>
-                    </Boards>
-                </GameLanding>
-            </div>
-        }
+        @* 2026-07-16: the pre-fight overlay (presidential ladder card in 1P,
+           fighter picker in 2P, both gated behind a "FIGHT" button) was removed.
+           It sat between the home page and the game and configured what the page
+           can decide itself: 1P always fights the player's current ladder rung,
+           and 2P now gets two random fighters the way demo mode already did.
+           The "Fastest KO" / "Ladder Legends" boards it hosted are superseded by
+           the top 3 in the shared end-of-game modal. *@
     </div>
 </GameShell>
 
@@ -195,7 +93,9 @@
     private string _playerName = "";
     private bool _demo;
     private string _mode = "1p";
-    private string _phase = "select";
+    // "fighting" | "result". There is no longer a "select" phase — every route
+    // drops straight into the fight (see OnInitialized).
+    private string _phase = "fighting";
     private string _p1Char = "trump";
     private string _p2Char = "biden";
     private int _p1Hp = 100;
@@ -210,9 +110,6 @@
     private double _bestKo;
     private bool _newRecord;
     private bool _muted;
-
-    private PoBrawlHighScore[]? _highScores;
-    private PoBrawlLadderEntry[]? _ladderBoard;
 
     // Per-region damage (0-100) fed by the JS engine: [head, torso, arms, legs].
     private int[] _p1Regions = new int[4];
@@ -283,11 +180,7 @@
         }
         UpdateStats();
 
-        if (_demo)
-        {
-            _phase = "fighting";
-            Kiosk.SetCurrent("pobrawl-demo");
-        }
+        if (_demo) Kiosk.SetCurrent("pobrawl-demo");
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -295,19 +188,16 @@
         if (!firstRender) return;
 
         _ref = DotNetObjectReference.Create(this);
-        if (_demo)
+
+        // Demo and local 2-player both fight a random pair. 1P keeps the ladder
+        // matchup chosen in OnInitialized (BOB vs the current rung).
+        if (_mode != "1p")
         {
             var picks = Roster.OrderBy(_ => Guid.NewGuid()).Take(2).ToArray();
             _p1Char = picks[0].Id;
             _p2Char = picks[1].Id;
-            await InitEngine();
         }
-        else
-        {
-            _highScores = await ApiService.GetPoBrawlHighScoresAsync(10);
-            _ladderBoard = await ApiService.GetPoBrawlLadderAsync(10);
-            StateHasChanged();
-        }
+        await InitEngine();
     }
 
     private async Task InitEngine()
@@ -338,38 +228,10 @@
         }
     }
 
-    private async Task StartMatch()
-    {
-        if (_mode == "1p")
-        {
-            _champion = false;
-            _p1Char = Bob.Id;
-            _p2Char = Roster[_ladder].Id;
-        }
-        _phase = "fighting";
-        await InitEngine();
-    }
-
-    private async Task BackToSelect()
-    {
-        if (_demo) return;
-        _phase = "select";
-        try { await JSRuntime.InvokeVoidAsync("PoBrawl.destroy"); } catch { }
-        _highScores = await ApiService.GetPoBrawlHighScoresAsync(10);
-        _ladderBoard = await ApiService.GetPoBrawlLadderAsync(10);
-    }
-
-    // 1P win path: the ladder was already advanced in OnMatchEnd, so just kick
-    // off the next match (StartMatch re-picks BOB vs Roster[_ladder] and
-    // re-inits the engine). Champion restart resets _champion so the banner
-    // disappears after the user clicks NEXT MATCH.
-    private async Task NextMatch()
-    {
-        if (_mode != "1p") { await BackToSelect(); return; }
-        _champion = false;
-        _winner = 0;
-        await StartMatch();
-    }
+    // StartMatch / BackToSelect / NextMatch were removed with the pre-fight
+    // overlay and the modal's Play Again / Next Match buttons (2026-07-16). The
+    // ladder still advances in OnMatchEnd and is persisted by SaveLadder, so
+    // re-entering /pobrawl resumes at the next president.
 
     private async Task ToggleMute()
     {

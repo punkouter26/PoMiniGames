@@ -4,14 +4,22 @@
 
 <PageTitle>Joker — The Digital Jester</PageTitle>
 
+@* 2026-07-16: this page wrapped GameShell but never passed GameOver, so the
+   shared modal could never render and the show ended on an inline, non-blocking
+   completion screen with no way back to the menu. JesterStage now reports the
+   finish (OnShowComplete) and the show ends on the same centered modal as every
+   other game. *@
 <GameShell Title="@TitleContent"
            BackTo="/"
-           ShowPlayAgain="false">
+           GameOver="@_showComplete"
+           GameKey="pojoker"
+           Stats="@_statItems"
+           GameSummary="@GameSummaryContent">
     <div class="pojoker-root">
         <div class="pojoker-toolbar">
             <a href="/pojoker/leaderboard" class="pojoker-link">🏆 Hall of Champions</a>
         </div>
-        <JesterStage AutoStart="true" />
+        <JesterStage AutoStart="true" OnShowComplete="HandleShowComplete" />
     </div>
 </GameShell>
 
@@ -20,4 +28,27 @@
     {
         builder.AddContent(0, "🃏 Joker");
     };
+
+    /// <summary>Every show is a fixed 10 jokes (PerformanceOrchestrator's show length).</summary>
+    private const int JokesPerShow = 10;
+
+    private bool _showComplete;
+    private int _triumphs;
+    private List<StatItem>? _statItems;
+
+    private RenderFragment GameSummaryContent => @<div>
+        <div>Show complete</div>
+        <div>The Jester landed @_triumphs of @JokesPerShow.</div>
+    </div>;
+
+    private void HandleShowComplete(int triumphs)
+    {
+        _triumphs = triumphs;
+        _statItems =
+        [
+            new StatItem { Value = triumphs.ToString(), Label = "Triumphs" },
+            new StatItem { Value = $"{Math.Round(triumphs * 100.0 / JokesPerShow)}%", Label = "Rate" },
+        ];
+        _showComplete = true;
+    }
 }

@@ -115,10 +115,9 @@
                     </div>
                 }
 
-                <div class="completion-actions">
-                    <p class="demo-end">Want another show?</p>
-                    <button class="btn btn-primary" @onclick="OnReplay">Again! ▶️</button>
-                </div>
+                @* The "Again! ▶️" replay button was removed (2026-07-16): the show
+                   now ends on the shared end-of-game modal, whose OK is the single
+                   exit back to the menu. This screen is the final frame behind it. *@
             </div>
             break;
     }
@@ -131,5 +130,4 @@
     [Parameter] public int JokesDisplayed { get; set; }
     [Parameter] public List<JokeAnalysisDto> TopJokes { get; set; } = [];
     [Parameter] public int SessionTriumphs { get; set; }
-    [Parameter] public EventCallback OnReplay { get; set; }
 }

@@ -20,6 +20,18 @@ export function hexString(i) {
 
 const TRAIL_LEN = 16;
 
+// The player's highlight ring. Deliberately NOT emissive: the bloom post-pass blows an emissive
+// ring out into a bright halo that swallows the marble. Built in one place because the two
+// call sites had drifted apart — the unused one was non-emissive and carried the comment
+// explaining why, while the live one (highlight()) still set emissive white at full intensity,
+// so the halo this was supposed to fix was never actually gone.
+function makeRing() {
+  return new THREE.Mesh(
+    new THREE.TorusGeometry(TRACK.MARBLE_R * 1.7, 0.18, 8, 28),
+    new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0x000000, emissiveIntensity: 0 })
+  );
+}
+
 // Soft radial-gradient disc used as a fake contact shadow under each marble (#8). Built once.
 let _blobTex = null;
 function blobTexture() {
@@ -90,15 +102,11 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
     blob.renderOrder = 1;
     decorations.add(blob);
 
-    // Highlight ring on the player's marble so it's findable on screen.
-    // Plain white torus (no emissive) — the bloom pass was turning the previous
-    // emissive ring into a bright halo around the player's marble.
+    // Highlight ring on the player's marble so it's findable on screen. Attached at pick time
+    // via highlight() — which is the only path, since every caller passes chosenIndex -1.
     let ring = null;
     if (i === chosenIndex) {
-      ring = new THREE.Mesh(
-        new THREE.TorusGeometry(TRACK.MARBLE_R * 1.7, 0.18, 8, 28),
-        new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0x000000, emissiveIntensity: 0 })
-      );
+      ring = makeRing();
       mesh.add(ring);
     }
 
@@ -133,6 +141,10 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
   function eliminate(m) {
     if (m.eliminated) return;
     m.eliminated = true;
+    // Clear the stale placing. leaderboard() only ranks marbles still in the race, so an
+    // eliminated marble would otherwise keep whatever place it held on the frame before it
+    // fell — and a player eliminated while running 2nd would be scored a top-3 finish.
+    m.place = -1;
     try { world.removeBody(m.body); } catch { }
     m.mesh.visible = false;
     m.trail.visible = false;
@@ -227,19 +239,21 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
     }
     const m = marbles[index];
     if (!m) return;
-    m.ring = new THREE.Mesh(
-      new THREE.TorusGeometry(TRACK.MARBLE_R * 1.7, 0.18, 8, 28),
-      new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 1.0 })
-    );
+    m.ring = makeRing();
     m.mesh.add(m.ring);
   }
 
   function dispose() {
     for (const m of marbles) {
-      world.removeBody(m.body);
+      // Eliminated/finished marbles already had their body pulled out of the world.
+      try { world.removeBody(m.body); } catch { }
       m.trail.geometry.dispose();
       m.trail.material.dispose();
       m.blob.material.dispose();
+      // Each marble owns its MeshStandardMaterial (they differ by colour), so the shared
+      // sphereGeo disposal below doesn't cover it. Leaving it leaked 8 materials on the GPU
+      // every time a track was regenerated — and R regenerates on demand.
+      m.mesh.material.dispose();
       // Dispose the highlight ring if this marble was the picked one at teardown.
       if (m.ring) { m.ring.geometry.dispose(); m.ring.material.dispose(); m.ring = null; }
     }

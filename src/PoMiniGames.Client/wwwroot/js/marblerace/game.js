@@ -2,7 +2,7 @@
 import { createScene } from './scene.js';
 import { createWorld, stepWorld } from './physics.js';
 import { generateTrack } from './track.js';
-import { createMarbles, hexString } from './marbles.js';
+import { createMarbles } from './marbles.js';
 import { createAudio } from './audio.js';
 
 const RESULT_MS = 3200;     // how long the result banner shows before next track
@@ -25,7 +25,9 @@ export class Game {
     this.score = 0;
     this.best = parseInt(localStorage.getItem(BEST_KEY) || '0', 10) || 0;
     this.chosen = -1;
-    this.seed = (Date.parse(new Date().toString()) & 0xffffff) ^ 0x9e3779;
+    // Date.parse(new Date().toString()) round-trips through a second-precision string, so two
+    // loads in the same second raced the identical track. Use the raw epoch ms.
+    this.seed = ((Date.now() & 0xffffff) ^ 0x9e3779) >>> 0;
     this.track = null;
     this.marbleSet = null;
     this.raceClock = 0;
@@ -108,9 +110,7 @@ export class Game {
 
   _setPhase(p) {
     this.phase = p;
-    if (this.dotnet) {
-      try { this.dotnet.invokeMethodAsync('OnPhase', p, this.chosen, this.score, this.best); } catch { }
-    }
+    this._invoke('OnPhase', p, this.chosen, this.score, this.best);
   }
 
   _nextTrack() {
@@ -197,10 +197,15 @@ export class Game {
   }
 
   _resolve() {
-    const order = this.marbleSet.leaderboard();
+    this.marbleSet.leaderboard();   // final standings — assigns place to every marble still racing
     const me = this.marbleSet.marbles[this.chosen];
-    const place = me.place;
-    const won = place <= 3;
+    // A marble that fell off the track has no placing: it neither finished nor holds a rank.
+    // Reporting its last-known place scored the player a point for being eliminated, and an
+    // elimination before the first standings pass left place at -1, which `place <= 3` also
+    // counted as a win.
+    const finished = !!me && me.finished && !me.eliminated;
+    const place = finished ? me.place : -1;
+    const won = finished && place >= 1 && place <= 3;
     if (won) this.score += 1;
     if (this.score > this.best) { this.best = this.score; try { localStorage.setItem(BEST_KEY, String(this.best)); } catch { } }
 
@@ -208,9 +213,21 @@ export class Game {
     this._setPhase('result');
     this.audio.playSting(won);
     this._sendTick(); // final standings
-    if (this.dotnet) {
-      try { this.dotnet.invokeMethodAsync('OnRaceResult', won, place, this.score); } catch { }
-    }
+    this._invoke('OnRaceResult', won, place, this.score);
+  }
+
+  // C# is handed parallel primitive arrays rather than a JSON string: the string form was
+  // serialized by us, serialized again by the interop layer, then parsed a third time on the
+  // C# side — every 0.12s for a whole race. Colours are omitted entirely; C# derives them from
+  // the marble index (its Colors array mirrors MARBLE_COLORS).
+  _invoke(method, ...args) {
+    if (!this.dotnet) return;
+    // invokeMethodAsync rejects asynchronously, so a bare try/catch here would never see the
+    // failure — it has to be caught on the promise.
+    try {
+      const p = this.dotnet.invokeMethodAsync(method, ...args);
+      if (p && p.catch) p.catch(() => { });
+    } catch { }
   }
 
   _sendPodium() {
@@ -220,33 +237,30 @@ export class Game {
       .sort((a, b) => a.finishOrder - b.finishOrder)
       .slice(0, 3);
     const winTime = top3.length ? top3[0].finishTime : 0;
-    const payload = top3.map((m) => ({
-      place: m.finishOrder + 1,
-      color: hexString(m.index),
-      time: Math.round(m.finishTime * 100) / 100,
-      gap: Math.round((m.finishTime - winTime) * 100) / 100,
-    }));
-    try { this.dotnet.invokeMethodAsync('OnPodium', JSON.stringify(payload)); } catch { }
+    const round2 = (v) => Math.round(v * 100) / 100;
+    this._invoke('OnPodium',
+      top3.map((m) => m.index),
+      top3.map((m) => round2(m.finishTime)),
+      top3.map((m) => round2(m.finishTime - winTime)));
   }
 
   _sendTick() {
     if (!this.dotnet) return;
     const order = this.marbleSet.leaderboard();
-    const payload = order.map((m) => ({
-      place: m.place,
-      color: hexString(m.index),
-      speed: Math.round(m.speed * 10) / 10,
-      isPlayer: m.index === this.chosen,
-      finished: m.finished,
-      time: m.finished ? Math.round(m.finishTime * 100) / 100 : null,
-    }));
-    const progress = this.marbleSet.progress();
-    try { this.dotnet.invokeMethodAsync('OnRaceTick', JSON.stringify(payload), progress); } catch { }
+    this._invoke('OnRaceTick',
+      order.map((m) => m.index),
+      order.map((m) => Math.round(m.speed * 10) / 10),
+      order.map((m) => m.finished),
+      order.map((m) => (m.finished ? Math.round(m.finishTime * 100) / 100 : 0)),
+      this.marbleSet.progress());
   }
 
   _bindKeys() {
     this._keyHandler = (e) => {
       if (e.key === 'r' || e.key === 'R') { e.preventDefault(); this.regenerate(); }
+      // M was documented as the mute key but was never actually bound to anything, and the
+      // only other caller (a Settings drawer) had been deleted — so mute was unreachable.
+      if (e.key === 'm' || e.key === 'M') { e.preventDefault(); this.audio.toggleMuted(); }
     };
     window.addEventListener('keydown', this._keyHandler);
   }

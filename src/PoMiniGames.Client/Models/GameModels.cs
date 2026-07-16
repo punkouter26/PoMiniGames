@@ -73,13 +73,22 @@ public class PlayerStatsDto
     public PlayerStats Stats { get; set; } = new();
 }
 
-public class MarbleRaceHighScore
+/// <summary>A row read back from the PoMarbleRace board. Read-only — the server owns every field.</summary>
+public sealed class MarbleRaceHighScore
 {
     public string PlayerInitials { get; set; } = "";
+    public string UserId { get; set; } = "";
+    public bool IsGuest { get; set; }
     public int BestScore { get; set; }
-    public string Date { get; set; } = "";
-    public double GameDuration { get; set; }
+    public DateTimeOffset AchievedAtUtc { get; set; }
 }
+
+/// <summary>
+/// A PoMarbleRace submission. Carries the score and nothing else: the player's name, id and
+/// timestamp are resolved server-side from the auth cookie, so there is no field here to forge
+/// them in, and no unread field an attacker can vary to mint duplicate rows.
+/// </summary>
+public sealed record MarbleRaceHighScoreRequest(int BestScore);
 
 public class PoBrawlHighScore
 {

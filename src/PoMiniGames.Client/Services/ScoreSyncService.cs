@@ -62,8 +62,8 @@ public sealed class ScoreSyncService
 
     public int PendingCount => _store.Load().Count;
 
-    public void EnqueueMarbleRace(MarbleRaceHighScore entry) =>
-        Enqueue(PendingScoreKind.MarbleRace, JsonSerializer.Serialize(entry, ApiJsonContext.Default.MarbleRaceHighScore));
+    public void EnqueueMarbleRace(MarbleRaceHighScoreRequest entry) =>
+        Enqueue(PendingScoreKind.MarbleRace, JsonSerializer.Serialize(entry, ApiJsonContext.Default.MarbleRaceHighScoreRequest));
 
     public void EnqueuePoBrawl(PoBrawlHighScore entry) =>
         Enqueue(PendingScoreKind.PoBrawl, JsonSerializer.Serialize(entry, ApiJsonContext.Default.PoBrawlHighScore));
@@ -85,9 +85,11 @@ public sealed class ScoreSyncService
     }
 
     /// <summary>
-    /// Attempts to resubmit every queued score in FIFO order. Succeeded entries are dropped; entries that
-    /// still fail stay queued (attempt count bumped) for the next flush. Re-entrant calls are ignored so a
-    /// startup flush and a reconnect flush can't double-submit. Returns the number of scores synced.
+    /// Attempts to resubmit every queued score in FIFO order. Synced entries are dropped, and so are ones
+    /// the server rejects outright — a payload the server refuses can only be refused again, so keeping it
+    /// would replay the same rejection on every flush forever. Only entries that could still succeed stay
+    /// queued (attempt count bumped). Re-entrant calls are ignored so a startup flush and a reconnect flush
+    /// can't double-submit. Returns the number of scores synced.
     /// </summary>
     public async Task<int> FlushAsync()
     {
@@ -106,24 +108,27 @@ public sealed class ScoreSyncService
             var remaining = new List<PendingScore>(items.Count);
             foreach (var item in items)
             {
-                bool ok;
+                Disposition disposition;
                 try
                 {
-                    ok = await SubmitAsync(item);
+                    disposition = await SubmitAsync(item);
                 }
                 catch
                 {
-                    ok = false;
+                    disposition = Disposition.Retry;
                 }
 
-                if (ok)
+                switch (disposition)
                 {
-                    synced++;
-                }
-                else
-                {
-                    item.Attempts++;
-                    remaining.Add(item);
+                    case Disposition.Synced:
+                        synced++;
+                        break;
+                    case Disposition.Drop:
+                        break;
+                    default:
+                        item.Attempts++;
+                        remaining.Add(item);
+                        break;
                 }
             }
 
@@ -138,24 +143,37 @@ public sealed class ScoreSyncService
         return synced;
     }
 
-    private async Task<bool> SubmitAsync(PendingScore item) => item.Kind switch
+    /// <summary>What to do with a queued entry after attempting it.</summary>
+    private enum Disposition { Synced, Retry, Drop }
+
+    private async Task<Disposition> SubmitAsync(PendingScore item) => item.Kind switch
     {
-        PendingScoreKind.MarbleRace =>
-            await _api.SubmitMarbleRaceHighScoreAsync(
-                JsonSerializer.Deserialize(item.PayloadJson, ApiJsonContext.Default.MarbleRaceHighScore) ?? new MarbleRaceHighScore()) is not null,
+        PendingScoreKind.MarbleRace => await SubmitMarbleRaceAsync(item.PayloadJson),
         PendingScoreKind.PoBrawl =>
             await _api.SubmitPoBrawlHighScoreAsync(
-                JsonSerializer.Deserialize(item.PayloadJson, ApiJsonContext.Default.PoBrawlHighScore) ?? new PoBrawlHighScore()) is not null,
-        PendingScoreKind.PlayerStats =>
-            await SubmitPlayerStatsAsync(item.PayloadJson),
-        _ => true, // unknown kind: drop rather than wedge the queue forever
+                JsonSerializer.Deserialize(item.PayloadJson, ApiJsonContext.Default.PoBrawlHighScore) ?? new PoBrawlHighScore()) is not null
+                ? Disposition.Synced : Disposition.Retry,
+        PendingScoreKind.PlayerStats => await SubmitPlayerStatsAsync(item.PayloadJson),
+        _ => Disposition.Drop, // unknown kind: drop rather than wedge the queue forever
     };
 
-    private async Task<bool> SubmitPlayerStatsAsync(string payloadJson)
+    private async Task<Disposition> SubmitMarbleRaceAsync(string payloadJson)
+    {
+        // Entries queued before the submission shape narrowed to a bare score carry extra
+        // properties; deserializing ignores them and keeps the score, so old queues still drain.
+        var request = JsonSerializer.Deserialize(payloadJson, ApiJsonContext.Default.MarbleRaceHighScoreRequest);
+        if (request is null) return Disposition.Drop; // malformed: unreplayable
+
+        var result = await _api.SubmitMarbleRaceHighScoreAsync(request);
+        if (result.IsSaved) return Disposition.Synced;
+        return result.ShouldRetry ? Disposition.Retry : Disposition.Drop;
+    }
+
+    private async Task<Disposition> SubmitPlayerStatsAsync(string payloadJson)
     {
         var pending = JsonSerializer.Deserialize(payloadJson, ApiJsonContext.Default.PendingPlayerStats);
-        if (pending is null || string.IsNullOrEmpty(pending.GameKey)) return true; // malformed: drop
+        if (pending is null || string.IsNullOrEmpty(pending.GameKey)) return Disposition.Drop; // malformed
         var (ok, _) = await _api.SavePlayerStatsAsync(pending.GameKey, pending.PlayerName, pending.Stats);
-        return ok;
+        return ok ? Disposition.Synced : Disposition.Retry;
     }
 }

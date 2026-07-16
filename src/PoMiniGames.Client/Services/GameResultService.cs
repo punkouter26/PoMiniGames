@@ -78,27 +78,33 @@ public sealed class GameResultService
     /// server board in the same awaited call. One report, both writes, consistent ordering.
     /// </summary>
     public async Task<PlayerStats> RecordAndSubmitMarbleRaceAsync(
-        string playerName, GameResult result, MarbleRaceHighScore? highScore)
+        string playerName, GameResult result, MarbleRaceHighScoreRequest? highScore)
     {
         var stats = await _stats.RecordResult("pomarblerace", playerName, Difficulty.Medium, result);
-        if (highScore is not null)
+        if (highScore is null)
         {
-            // If the server board can't be reached, park the score so it syncs on reconnect
-            // instead of being silently lost — the leaderboard is the platform's North Star.
-            var submitted = await _api.SubmitMarbleRaceHighScoreAsync(highScore);
-            if (submitted is null)
-            {
-                _sync.EnqueueMarbleRace(highScore);
-                await OnScoreParkedAsync();
-            }
-            else
-            {
-                await _feedback.CompleteAsync();
-            }
+            await _feedback.TapAsync();
+            return stats;
+        }
+
+        var submitted = await _api.SubmitMarbleRaceHighScoreAsync(highScore);
+        if (submitted.IsSaved)
+        {
+            await _feedback.CompleteAsync();
+        }
+        else if (submitted.ShouldRetry)
+        {
+            // Unreachable or a server fault — the payload is good, so park it and let the
+            // queue replay it on reconnect. The leaderboard is the platform's North Star.
+            _sync.EnqueueMarbleRace(highScore);
+            await OnScoreParkedAsync();
         }
         else
         {
-            await _feedback.TapAsync();
+            // The server rejected this score outright; queueing it would only replay the
+            // rejection forever. Say so instead of promising a sync that can't happen.
+            await _feedback.ErrorAsync();
+            _toast.Show("That score couldn't be saved to the leaderboard.", ToastType.Error);
         }
         return stats;
     }

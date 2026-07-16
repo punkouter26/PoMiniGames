@@ -69,6 +69,7 @@ export function createAudio() {
     playClink,
     playSting,
     setMuted(m) { muted = !!m; },
+    toggleMuted() { muted = !muted; return muted; },
     isMuted() { return muted; },
     dispose() { if (ctx) { try { ctx.close(); } catch { } ctx = null; } },
   };

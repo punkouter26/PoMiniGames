@@ -1,5 +1,4 @@
 @page "/pomarblerace"
-@using System.Text.Json
 @using PoMiniGamesClient.Components
 @using PoMiniGamesClient.Enums
 @using PoMiniGamesClient.Models
@@ -41,7 +40,7 @@
                             <strong class="mr-pick-count">@_pickCountdown</strong>…
                         </p>
                         <div class="mr-pick-grid">
-                            @for (int i = 0; i < 8; i++)
+                            @for (int i = 0; i < MarbleCount; i++)
                             {
                                 var idx = i;
                                 <button class="mr-pick-marble" style="--c:@Colors[idx]"
@@ -116,11 +115,14 @@
     [SupplyParameterFromQuery(Name = "demo")]
     public int Demo { get; set; }
 
+    private const int MarbleCount = 8;
+
     private string _playerName = "";
     private bool _demo;
     private string _phase = "pick";
     private int _score;
     private int _best;
+    private int _chosen = -1;
     private double _progress;
     private bool _lastWon;
     private int _lastPlace;
@@ -143,16 +145,16 @@
     private RenderFragment TitleContent => @<span>🔮 Marble Race</span>;
 
     // The legacy in-canvas Controls fragment was unreachable (the Settings
-    // drawer was removed 2026-07-06). "New track" is bound to `R` (already
-    // handled in JS) and surfaces via Play Again on the unified modal;
-    // mute is a JS `keydown` on `M`.
+    // drawer was removed 2026-07-06). "New track" is bound to `R` and mute to
+    // `M`, both handled in JS; "New track" also surfaces via Play Again on the
+    // unified modal.
 
+    // A marble that fell off the track has no placing, so say that rather than
+    // reporting the sentinel as an ordinal ("placed -1th").
     private RenderFragment GameSummaryContent => @<div>
         <div>@(_lastWon ? "🏆 Top 3 finish!" : "Race over")</div>
-        <div>Your marble placed @Ordinal(_lastPlace)</div>
+        <div>@(_lastPlace > 0 ? $"Your marble placed {Ordinal(_lastPlace)}" : "Your marble didn't finish")</div>
     </div>;
-
-    private bool _muted;
 
     protected override void OnInitialized()
     {
@@ -187,52 +189,63 @@
     // timeout can't double-pick.
     private const int PickSeconds = 3;
     private int _pickCountdown;
-    private System.Timers.Timer? _pickTimer;
+
+    // Cancellation, not a System.Timers.Timer: that fired its Elapsed handler on a threadpool
+    // thread, so the countdown mutated component state off the renderer's context and raced
+    // Stop/Dispose. The loop below only ever runs on the component's own context.
+    private CancellationTokenSource? _pickCts;
 
     private void StartPickCountdown()
     {
+        StopPickCountdown();
         _pickCountdown = PickSeconds;
-        _pickTimer?.Dispose();
-        _pickTimer = new System.Timers.Timer(1000) { AutoReset = true };
-        _pickTimer.Elapsed += async (_, _) =>
+        var cts = new CancellationTokenSource();
+        _pickCts = cts;
+        _ = RunPickCountdownAsync(cts.Token);
+    }
+
+    private async Task RunPickCountdownAsync(CancellationToken ct)
+    {
+        try
         {
-            _pickCountdown--;
-            if (_pickCountdown > 0)
+            using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
+            while (_pickCountdown > 0 && await timer.WaitForNextTickAsync(ct))
             {
+                _pickCountdown--;
                 await InvokeAsync(StateHasChanged);
-                return;
             }
 
-            StopPickCountdown();
-            await InvokeAsync(async () => await Pick(Random.Shared.Next(8)));
-        };
-        _pickTimer.Start();
+            // Timer ran out with no choice made — pick one so the race always starts.
+            if (!ct.IsCancellationRequested) await Pick(Random.Shared.Next(MarbleCount));
+        }
+        catch (OperationCanceledException)
+        {
+            // The player picked, the phase moved on, or they left the page.
+        }
     }
 
     private void StopPickCountdown()
     {
-        _pickTimer?.Stop();
-        _pickTimer?.Dispose();
-        _pickTimer = null;
+        var cts = _pickCts;
+        _pickCts = null;
+        if (cts is null) return;
+        cts.Cancel();
+        cts.Dispose();
     }
 
     private async Task Pick(int index)
     {
-        // Covers the player clicking before the countdown expires.
+        // Covers the player clicking before the countdown expires. JS ignores a second pick once
+        // the phase leaves "pick", so a click landing on the same tick as the timeout is harmless.
         StopPickCountdown();
         try { await JSRuntime.InvokeVoidAsync("PoMarbleRace.pick", index); } catch { }
     }
 
-    private async Task ToggleMute()
-    {
-        _muted = !_muted;
-        try { await JSRuntime.InvokeVoidAsync("PoMarbleRace.setMuted", _muted); } catch { }
-    }
-
     [JSInvokable]
-    public void OnPhase(string phase, int chosen, int score, int best)
+    public async Task OnPhase(string phase, int chosen, int score, int best)
     {
         _phase = phase;
+        _chosen = chosen;
         _score = score;
         _best = best;
         if (phase == "pick")
@@ -250,59 +263,65 @@
         {
             StopPickCountdown();
         }
-        InvokeAsync(StateHasChanged);
+        await InvokeAsync(StateHasChanged);
     }
 
+    // ── Interop payloads ──
+    // These take parallel primitive arrays rather than a JSON string. The string form cost three
+    // serialization passes per call (JS JSON.stringify → Blazor serializing that string → a
+    // JsonDocument.Parse here) on a path that fires ~8x/second for a whole race. Colours aren't
+    // transferred at all: a marble's colour is a pure function of its index, and Colors already
+    // mirrors MARBLE_COLORS in marbles.js.
+
+    /// <param name="indices">Marble indices, in finishing order.</param>
     [JSInvokable]
-    public void OnPodium(string json)
+    public async Task OnPodium(int[] indices, double[] times, double[] gaps)
     {
-        try
+        var rows = new List<PodiumRow>(indices.Length);
+        for (var i = 0; i < indices.Length; i++)
         {
-            using var doc = JsonDocument.Parse(json);
-            var rows = new List<PodiumRow>();
-            foreach (var el in doc.RootElement.EnumerateArray())
+            rows.Add(new PodiumRow
             {
-                rows.Add(new PodiumRow
-                {
-                    Place = el.TryGetProperty("place", out var p) && p.TryGetInt32(out var pi) ? pi : 0,
-                    Color = el.TryGetProperty("color", out var c) ? c.GetString() ?? "#fff" : "#fff",
-                    Time  = el.TryGetProperty("time",  out var t) && t.TryGetDouble(out var td) ? td : 0,
-                    Gap   = el.TryGetProperty("gap",   out var g) && g.TryGetDouble(out var gd) ? gd : 0,
-                });
-            }
-            _podium = rows;
+                Place = i + 1,
+                Color = ColorOf(indices[i]),
+                Time = At(times, i),
+                Gap = At(gaps, i),
+            });
         }
-        catch { }
-        InvokeAsync(StateHasChanged);
+        _podium = rows;
+        await InvokeAsync(StateHasChanged);
     }
 
     private static string Medal(int place) => place switch { 1 => "🥇", 2 => "🥈", 3 => "🥉", _ => $"{place}." };
 
+    /// <param name="order">Marble indices in current standings order (place 1 first).</param>
+    /// <param name="times">Finish time per entry; only meaningful where <paramref name="finished"/> is true.</param>
     [JSInvokable]
-    public void OnRaceTick(string json, double progress)
+    public async Task OnRaceTick(int[] order, double[] speeds, bool[] finished, double[] times, double progress)
     {
         _progress = progress;
-        try
+        var rows = new List<LbRow>(order.Length);
+        for (var i = 0; i < order.Length; i++)
         {
-            using var doc = JsonDocument.Parse(json);
-            var rows = new List<LbRow>();
-            foreach (var el in doc.RootElement.EnumerateArray())
+            var isFinished = i < finished.Length && finished[i];
+            rows.Add(new LbRow
             {
-                rows.Add(new LbRow
-                {
-                    Place    = el.TryGetProperty("place",    out var p) && p.TryGetInt32(out var pi)  ? pi  : 0,
-                    Color    = el.TryGetProperty("color",    out var c) ? c.GetString() ?? "#fff" : "#fff",
-                    Speed    = el.TryGetProperty("speed",    out var s) && s.TryGetDouble(out var sd) ? sd  : 0,
-                    IsPlayer = el.TryGetProperty("isPlayer", out var ip) && ip.GetBoolean(),
-                    Finished = el.TryGetProperty("finished", out var f) && f.GetBoolean(),
-                    Time     = el.TryGetProperty("time",     out var tv) && tv.ValueKind == JsonValueKind.Number && tv.TryGetDouble(out var tvd) ? tvd : (double?)null,
-                });
-            }
-            _leaderboard = rows;
+                Place = i + 1,
+                Color = ColorOf(order[i]),
+                Speed = At(speeds, i),
+                IsPlayer = order[i] == _chosen,
+                Finished = isFinished,
+                Time = isFinished ? At(times, i) : null,
+            });
         }
-        catch { }
-        InvokeAsync(StateHasChanged);
+        _leaderboard = rows;
+        await InvokeAsync(StateHasChanged);
     }
+
+    private static double At(double[] values, int i) => i < values.Length ? values[i] : 0;
+
+    private static string ColorOf(int index) =>
+        index >= 0 && index < Colors.Length ? Colors[index] : "#fff";
 
     [JSInvokable]
     public async Task OnRaceResult(bool won, int place, int score)
@@ -317,17 +336,13 @@
             _gameStats.SaveLastPlayedGame("pomarblerace");
 
             // A new personal best is submitted to the global board (debounced by _submittedBest).
-            MarbleRaceHighScore? best = null;
+            // The submission carries only the score — who the player is, and when they played, are
+            // resolved server-side from the auth cookie.
+            MarbleRaceHighScoreRequest? best = null;
             if (score > _submittedBest && score > 0)
             {
                 _submittedBest = score;
-                best = new MarbleRaceHighScore
-                {
-                    // One identity across boards: full display name, not initials.
-                    PlayerInitials = _playerName,
-                    BestScore = score,
-                    GameDuration = 0,
-                };
+                best = new MarbleRaceHighScoreRequest(score);
             }
 
             // One intake records local stats and submits the high score together — no desync.
@@ -345,14 +360,6 @@
         _statItems = GameStatsPanel.Build(bucket, includeDraws: false, includeElo: true,
             ("Score", _score.ToString()),
             ("Best", _best.ToString()));
-    }
-
-    private static string Initials(string name)
-    {
-        if (string.IsNullOrWhiteSpace(name)) return "PO";
-        var letters = new string(name.Where(char.IsLetterOrDigit).ToArray());
-        if (letters.Length == 0) return "PO";
-        return letters[..Math.Min(3, letters.Length)].ToUpperInvariant();
     }
 
     private static string Ordinal(int n) => n switch

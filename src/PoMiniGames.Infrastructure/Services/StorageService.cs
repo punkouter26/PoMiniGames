@@ -304,24 +304,44 @@ public class StorageService : IStorageService
         {
             // One identity across boards: full display name (legacy rows hold initials).
             PlayerInitials = DisplayName24(e.PlayerInitials),
-            Date = DefaultDate(e.Date),
+            UserId = e.UserId ?? "",
+            BestScore = MarbleRaceScore.Clamp(e.BestScore),
+            AchievedAtUtc = e.AchievedAtUtc == default ? DateTimeOffset.UtcNow : e.AchievedAtUtc,
         },
         ToFields: e => new Dictionary<string, object?>
         {
-            ["PlayerInitials"] = e.PlayerInitials,
-            ["BestScore"] = e.BestScore,
-            ["Date"] = e.Date,
-            ["GameDuration"] = e.GameDuration,
+            ["PlayerInitials"] = e?.PlayerInitials,
+            ["UserId"] = e?.UserId,
+            ["IsGuest"] = e?.IsGuest,
+            ["BestScore"] = e?.BestScore,
+            // Stored as an ISO-8601 string, not a native DateTimeOffset: legacy rows wrote a
+            // string, and a column holding both types breaks GetString on read.
+            ["Date"] = e?.AchievedAtUtc.ToString("yyyy-MM-ddTHH:mm:ssZ"),
         },
         FromEntity: e => new MarbleRaceHighScore
         {
             PlayerInitials = e.GetString("PlayerInitials") ?? "",
+            // Legacy rows predate identity columns: no UserId means it can't be attributed to a
+            // real account, so it reads back as a guest row.
+            UserId = e.GetString("UserId") ?? "",
+            IsGuest = e.GetBoolean("IsGuest") ?? true,
             BestScore = e.GetInt32("BestScore") ?? 0,
-            Date = e.GetString("Date") ?? "",
-            GameDuration = e.GetDouble("GameDuration") ?? 0d,
+            AchievedAtUtc = DateTimeOffset.TryParse(e.GetString("Date"), out var d) ? d : default,
         },
+        // Identity is the player — (UserId, IsGuest) rather than the display name, so a guest
+        // can't write onto a signed-in player's row by copying their name. Deliberately NOT
+        // keyed on BestScore: the client submits on every new personal best, so a session that
+        // scored 10 would post 1,2,3…10 and mint ten rows, letting one player fill a board that
+        // ranks "highest score wins". One row per player, ratcheted by ShouldOverwrite below.
+        RowKeyFields: ["PlayerInitials", "UserId", "IsGuest"],
         // Highest score wins, oldest first as the tiebreaker.
-        Rank: s => s.OrderByDescending(x => x.BestScore).ThenBy(x => x.Date));
+        Rank: s => s.OrderByDescending(x => x.BestScore).ThenBy(x => x.AchievedAtUtc))
+    {
+        // One row per player means every submission targets the same row, so a later, worse run
+        // would otherwise erase a better one. Mirrors the PoBrawl ladder's ratchet.
+        ShouldOverwrite = (existing, incoming) =>
+            (incoming.TryGetValue("BestScore", out var v) ? v as int? ?? 0 : 0) > (existing.GetInt32("BestScore") ?? -1),
+    };
 
     private static readonly HighScoreDescriptor<PoBrawlHighScore> PoBrawlScores = new(
         Table: PoBrawlTable,
@@ -347,6 +367,7 @@ public class StorageService : IStorageService
             Character = e.GetString("Character") ?? "",
             Date = e.GetString("Date") ?? "",
         },
+        RowKeyFields: ["Character", "KoTimeSeconds", "PlayerInitials"],
         // Fastest KO wins, oldest first as the tiebreaker.
         Rank: s => s.OrderBy(x => x.KoTimeSeconds).ThenBy(x => x.Date));
 
@@ -400,6 +421,7 @@ public class StorageService : IStorageService
             Date = e.GetString("Date") ?? "",
             GameCode = e.GetString("GameCode") ?? "",
         },
+        RowKeyFields: ["FinalPosition", "PlayerName", "TotalTimeSeconds", "UserId"],
         // Lowest race time wins; oldest submission breaks ties.
         Rank: s => s.OrderBy(x => x.TotalTimeSeconds).ThenBy(x => x.Date));
 
@@ -495,13 +517,12 @@ public class StorageService : IStorageService
         var sanitized = descriptor.Sanitize(entry);
         var fields = descriptor.ToFields(sanitized);
 
-        // §9.1 chaos-engineering hardening: hash the *immutable* content fields only
-        // (initials, score, game-specific measurements). Including timestamps here would
-        // mean two near-simultaneous submissions of the same score produce two distinct
-        // rows — a duplicate the leaderboard then has to dedupe at read time, and a
-        // vector for cheap score-flooding via bursty retries.
-        var immutableKey = DeterministicRowKeyFieldsKey(descriptor);
-        var rowKey = DeterministicRowKey(fields, immutableKey);
+        // §9.1 chaos-engineering hardening: hash the row's identity fields only (submitter,
+        // score, game-specific measurements). Including timestamps here would mean two
+        // near-simultaneous submissions of the same score produce two distinct rows — a
+        // duplicate the leaderboard then has to dedupe at read time, and a vector for cheap
+        // score-flooding via bursty retries.
+        var rowKey = DeterministicRowKey(fields, descriptor.RowKeyFields);
 
         // Concurrency-safe upsert: read existing, merge, write with ETag. Bounded retry on
         // 412/409 (see TableConcurrency).
@@ -512,6 +533,11 @@ public class StorageService : IStorageService
             factory: () => new TableEntity(descriptor.Partition, rowKey),
             mutate: e =>
             {
+                if (descriptor.ShouldOverwrite is not null && !descriptor.ShouldOverwrite(e, fields))
+                {
+                    return false;
+                }
+
                 var changed = false;
                 foreach (var (key, value) in fields)
                 {
@@ -526,29 +552,12 @@ public class StorageService : IStorageService
         return sanitized;
     }
 
-    // Which fields of a high-score descriptor should be hashed to form the RowKey.
-    // Excludes mutable metadata (Date, timestamps) so duplicate retries collapse onto
-    // the same row.
-    private static readonly HashSet<string> HighScoreRowKeyImmutableFields = new(StringComparer.Ordinal)
+    // Stable content hash over the row's identity fields → idempotent, retry-safe RowKey.
+    // Sorted ordinal so a descriptor's RowKeyFields order can never affect the hash.
+    private static string DeterministicRowKey(IDictionary<string, object?> fields, IReadOnlyList<string> rowKeyFields)
     {
-        "Initials", "Score", "SurvivalTime", "BestScore",
-        "GameDuration", "SnakeLength", "FoodEaten", "PlayerInitials", "PlayerName",
-        "KoTimeSeconds", "Character",
-        "UserId", "TotalTimeSeconds", "FinalPosition",
-    };
-
-    private static string[] DeterministicRowKeyFieldsKey<T>(HighScoreDescriptor<T> descriptor)
-    {
-        // The descriptor's first row in ToFields defines the available field names.
-        // We intersect with the known immutable set so we don't depend on iteration order.
-        var sample = descriptor.ToFields(default!);
-        return sample.Keys.Where(HighScoreRowKeyImmutableFields.Contains).OrderBy(s => s, StringComparer.Ordinal).ToArray();
-    }
-
-// Stable content hash over the row's immutable fields → idempotent, retry-safe RowKey.
-    private static string DeterministicRowKey(IDictionary<string, object?> fields, string[] immutableFields)
-    {
-        var canonical = string.Join("", immutableFields
+        var canonical = string.Join("", rowKeyFields
+            .OrderBy(s => s, StringComparer.Ordinal)
             .Select(k => fields.TryGetValue(k, out var v) ? $"{k}={Convert.ToString(v, System.Globalization.CultureInfo.InvariantCulture)}" : $"{k}="));
         var hash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(canonical));
         return Convert.ToHexStringLower(hash);

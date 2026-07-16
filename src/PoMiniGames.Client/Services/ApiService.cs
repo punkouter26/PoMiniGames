@@ -216,19 +216,35 @@ public class ApiService
         }
     }
 
-    public async Task<MarbleRaceHighScore?> SubmitMarbleRaceHighScoreAsync(MarbleRaceHighScore entry)
+    /// <summary>
+    /// Submits a PoMarbleRace score. The outcome distinguishes "retry later" from "never retry":
+    /// collapsing both into null meant a server that rejected every submission was indistinguishable
+    /// from being offline, so scores were parked in the sync queue forever and the player was told
+    /// they were offline while online.
+    /// </summary>
+    public async Task<ScoreSubmitResult<MarbleRaceHighScore>> SubmitMarbleRaceHighScoreAsync(MarbleRaceHighScoreRequest entry)
     {
         try
         {
-            // Stamp once; preserve across resync so the deterministic RowKey stays stable (no duplicates).
-            if (string.IsNullOrEmpty(entry.Date))
-                entry.Date = DateTime.UtcNow.ToString("O");
-            var response = await _http.PostAsJsonAsync("/api/marblerace/highscores", entry, ApiJsonContext.Default.MarbleRaceHighScore);
-            return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync(ApiJsonContext.Default.MarbleRaceHighScore) : null;
+            var response = await _http.PostAsJsonAsync(
+                "/api/marblerace/highscores", entry, ApiJsonContext.Default.MarbleRaceHighScoreRequest);
+
+            if (response.IsSuccessStatusCode)
+            {
+                var saved = await response.Content.ReadFromJsonAsync(ApiJsonContext.Default.MarbleRaceHighScore);
+                return ScoreSubmitResult<MarbleRaceHighScore>.Saved(saved);
+            }
+
+            // 4xx: the payload itself is the problem, so replaying it just wedges the queue.
+            if ((int)response.StatusCode is >= 400 and < 500)
+                return ScoreSubmitResult<MarbleRaceHighScore>.Rejected(response.StatusCode);
+
+            return ScoreSubmitResult<MarbleRaceHighScore>.Unavailable(response.StatusCode);
         }
         catch
         {
-            return null;
+            // No response at all — genuinely offline/unreachable.
+            return ScoreSubmitResult<MarbleRaceHighScore>.Unavailable(null);
         }
     }
 

@@ -114,7 +114,14 @@ public sealed class CoupleQuizHubService : IAsyncDisposable
         // /couplequiz/hubs/game/negotiate on :5261 and gets a 405.
         var hubUrl = _endpoints.Hub("couplequiz/hubs/game");
         _connection = new HubConnectionBuilder()
-            .WithUrl(hubUrl)
+            .WithUrl(hubUrl, options =>
+            {
+                // §2026-07-16: SignalR's default HttpClientFactory doesn't flow
+                // through DI, so the negotiate POST drops the dev cookie and the
+                // hub's RequireAuthorization() returns 401. Force the credentials
+                // handler so the PoMiniGames.DevAuth cookie round-trips.
+                options.HttpMessageHandlerFactory = SignalRCredentialsHttpClientFactory.CreateHandler;
+            })
             .WithAutomaticReconnect()
             .Build();
 

@@ -312,7 +312,12 @@ export class BrawlGame {
     const w = this.container.clientWidth || 800;
     const h = this.container.clientHeight || 540;
 
-    this.renderer = new THREE.WebGLRenderer({ antialias: true });
+    // antialias:false is deliberate. Every frame is rendered into the
+    // composer's own MSAA target (see _buildComposer) and reaches the canvas
+    // as a fullscreen quad in OutputPass — a quad has no interior edges, so a
+    // multisampled default framebuffer would be allocated and never resolved
+    // against any geometry. The `samples` on composerRT is the real AA.
+    this.renderer = new THREE.WebGLRenderer({ antialias: false });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setSize(w, h);
     this.renderer.shadowMap.enabled = true;
@@ -321,8 +326,16 @@ export class BrawlGame {
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     // AgX handles saturated bright lights (bloom pulses, colored corner
     // accents) far more gracefully than ACES, which skews hot colors.
+    // Measured against ACES/Neutral/Reinhard on a live frame: AgX keeps ~15%
+    // of pixels in the midtones where the others crush 95-98% into shadow.
     this.renderer.toneMapping = THREE.AgXToneMapping;
-    this.exposureBase = 1.15;
+    // Contrast comes from the lighting ratio (key vs hemisphere fill), NOT from
+    // exposure — exposure lifts shadows and highlights together, so pushing it
+    // just makes a flat image a brighter flat image. Measured: at 1.9 the frame
+    // went 99.8% midtones with 0% shadows, visibly worse than 1.15. The real
+    // lever is the hemisphere cut + hotter key in arena.js; exposure only takes
+    // the small step needed to keep overall level after that cut.
+    this.exposureBase = 1.3;
     this.renderer.toneMappingExposure = this.exposureBase;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.container.appendChild(this.renderer.domElement);
@@ -440,6 +453,12 @@ export class BrawlGame {
     // Static post/rope colliders — only the KO ragdoll interacts with them.
     buildArenaColliders(this._physics.world, this._physics.materials);
     this._spawnFighters(this.options.p1Character, this.options.p2Character);
+    // Textures are built by arena.js/fighters.js as module-level cached
+    // singletons with no renderer handle, so none of them could set anisotropy
+    // themselves — every map was sampling at 1x. Apply it once here, after the
+    // first arena+fighter build has created them; later rounds reuse the same
+    // cached texture objects and stay filtered.
+    this._applyTextureAnisotropy();
     this._startCountdown();
 
     // Kick the audio context the first time the user interacts with the page —
@@ -546,6 +565,32 @@ export class BrawlGame {
       this.composer.addPass(this.fxPass);
     }
     this.composer.addPass(new OutputPass());
+  }
+
+  // Anisotropic filtering for every texture in the scene. The ring mat is a
+  // large plane seen at a grazing angle — the single most anisotropy-sensitive
+  // surface here — and at 1x its scuff/wear detail smears to mush toward the
+  // far edge. Costs nothing but sampler state.
+  _applyTextureAnisotropy() {
+    const maxAniso = this.renderer.capabilities.getMaxAnisotropy();
+    if (!maxAniso || maxAniso <= 1) return;
+    const aniso = Math.min(maxAniso, 8); // 8 is where the returns flatten
+    const seen = new Set();
+    const MAPS = ['map', 'roughnessMap', 'normalMap', 'bumpMap', 'aoMap',
+                  'metalnessMap', 'emissiveMap', 'alphaMap'];
+    this.scene.traverse((o) => {
+      if (!o.isMesh && !o.isPoints) return;
+      for (const mat of Array.isArray(o.material) ? o.material : [o.material]) {
+        if (!mat) continue;
+        for (const slot of MAPS) {
+          const tex = mat[slot];
+          if (!tex || seen.has(tex.uuid) || tex.anisotropy === aniso) continue;
+          seen.add(tex.uuid);
+          tex.anisotropy = aniso;
+          tex.needsUpdate = true;
+        }
+      }
+    });
   }
 
   _makeEnvMap() {
@@ -2256,7 +2301,7 @@ export class BrawlGame {
     this._camVel.addScaledVector(impulseDir,
       (attack.name === 'kick' ? 1.5 : 0.9) * chargeMul);
     this._camVel.y += 0.35 * chargeMul;
-    this.audio.impact({ power: Math.min(2, baseDmg / 3), worldPos: hit.point });
+    this.audio.impact({ power: Math.min(2, baseDmg / 3), worldPos: hit.point, kind: attack.name });
     this.audio.grunt({ power: Math.min(2, baseDmg / 3) });
     this.hudDirty = true;
 

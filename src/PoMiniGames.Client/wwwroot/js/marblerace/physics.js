@@ -18,9 +18,10 @@ export function createWorld() {
   // is kept low on the floor/walls and higher on obstacles so marbles glance off.
   const marble = new CANNON.Material('marble');
   const surface = new CANNON.Material('surface');   // floor + walls
-  const obstacle = new CANNON.Material('obstacle');  // paddles, pendulum boxes
+  const obstacle = new CANNON.Material('obstacle');  // paddles, pendulum boxes, plinko pins
   const rumble = new CANNON.Material('rumble');      // high-friction floor bands (subtle slow zones)
   const bump = new CANNON.Material('bump');          // washboard ridges — low bounce so they don't launch marbles
+  const spinner = new CANNON.Material('spinner');    // Gauntlet rotors — the one surface that hits back
 
   world.addContactMaterial(new CANNON.ContactMaterial(marble, surface,
     { friction: 0.0, restitution: 0.12 }));
@@ -36,8 +37,13 @@ export function createWorld() {
   // without launching marbles into the air.
   world.addContactMaterial(new CANNON.ContactMaterial(marble, bump,
     { friction: 0.0, restitution: 0.10 }));
+  // Gauntlet rotors: high restitution so a motor-driven arm genuinely flings a marble
+  // instead of shoving it. The bounce is the drama — this is the only contact in the
+  // world tuned to make the outcome worse for whoever it hits.
+  world.addContactMaterial(new CANNON.ContactMaterial(marble, spinner,
+    { friction: 0.05, restitution: 0.62 }));
 
-  return { world, materials: { marble, surface, obstacle, rumble, bump } };
+  return { world, materials: { marble, surface, obstacle, rumble, bump, spinner } };
 }
 
 export function stepWorld(world, dt) {

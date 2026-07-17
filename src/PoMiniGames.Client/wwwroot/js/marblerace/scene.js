@@ -16,9 +16,11 @@ const BG = 0x0f172a;            // cyberpunk dark slate
 // High, pulled-back overview: a positive default pitch orbits the camera UP and
 // behind the leader so it looks down into the channel over the tall walls,
 // showing a complete view of the pack and the track ahead.
-const CAM_HEIGHT = 26;          // base vantage height above the leader
-const CAM_BACK = 46;            // well back so the whole pack + a long stretch of track are in frame
-const CAM_LOOKAHEAD = 10;       // look down-track so turns are anticipated (broadcast feel)
+// Raised and pulled back with the road: at CHANNEL_WIDTH 64 the old 26/46 vantage framed
+// about a third of the chute's width, so marbles kept fighting off-screen.
+const CAM_HEIGHT = 36;          // base vantage height above the leader
+const CAM_BACK = 62;            // well back so the whole pack + a long stretch of track are in frame
+const CAM_LOOKAHEAD = 14;       // look down-track so turns are anticipated (broadcast feel)
 const CAM_LOOK_LIFT = 2;        // look-at just above the leader
 const CAM_DEFAULT_PITCH = 0.32;  // positive → camera rides HIGH and looks down into the chute
 const CAM_LERP = 3.4;          // slightly smoother follow reads more cinematic
@@ -76,7 +78,9 @@ export function createScene(container) {
   const scene = new THREE.Scene();
   const bgTexture = makeBgGradient();                     // #10 — graded background
   scene.background = bgTexture;
-  scene.fog = new THREE.Fog(BG, 70, 240);
+  // Fog pushed out with the camera: at 70/240 the far wall of a wide, sharply-turning chute
+  // faded out before the turn it belongs to was readable.
+  scene.fog = new THREE.Fog(BG, 110, 340);
 
   // #4 — image-based lighting so the glossy marbles/floor have something to reflect.
   const pmrem = new THREE.PMREMGenerator(renderer);
@@ -96,8 +100,10 @@ export function createScene(container) {
   key.shadow.mapSize.set(1024, 1024);
   key.shadow.camera.near = 1;
   key.shadow.camera.far = 220;
-  key.shadow.camera.left = -42; key.shadow.camera.right = 42;
-  key.shadow.camera.top = 42; key.shadow.camera.bottom = -42;
+  // Frustum widened to cover the 64-wide road — at ±42 the shadows were being clipped off
+  // the outer thirds of the chute.
+  key.shadow.camera.left = -75; key.shadow.camera.right = 75;
+  key.shadow.camera.top = 75; key.shadow.camera.bottom = -75;
   key.shadow.bias = -0.0008;
   scene.add(key);
   scene.add(key.target);

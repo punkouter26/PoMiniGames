@@ -149,9 +149,14 @@ export function buildArena(scene, envMap = null) {
   // so the engine can dim the house for the KO "lights down" cinematic.
   // Slightly lower than before — the RectArea rig panels below now carry a
   // share of the ambient level.
-  const hemi = new THREE.HemisphereLight(0x9aa4ff, 0x1a1030, 0.42);
+  // Hemisphere is a flat, directionless fill: every unit of it raises the floor
+  // of the image without ever creating a highlight. At 0.42 it was lifting the
+  // whole frame into a mid-grey haze with no true blacks. Keep just enough to
+  // stop shadowed PBR surfaces going pure black, and let the key/spot/rig
+  // panels (plus the raised exposure in game.js) build the contrast.
+  const hemi = new THREE.HemisphereLight(0x9aa4ff, 0x1a1030, 0.14);
   scene.add(hemi);
-  const key = new THREE.DirectionalLight(0xfff1d0, 1.6);
+  const key = new THREE.DirectionalLight(0xfff1d0, 2.6);
   key.position.set(6, 12, 4);
   key.castShadow = true;
   key.shadow.mapSize.set(2048, 2048);
@@ -162,9 +167,14 @@ export function buildArena(scene, envMap = null) {
   key.shadow.camera.top = 6.5;
   key.shadow.camera.bottom = -6.5;
   key.shadow.bias = -0.0005;
-  key.shadow.normalBias = 0.02;
-  // Penumbra blur (works with PCFShadowMap; PCFSoft ignores radius).
-  key.shadow.radius = 4;
+  // normalBias trades shadow acne for peter-panning: too high and contact
+  // shadows detach from the feet, which is most of why the fighters read as
+  // floating. 0.02 over this frustum is more than the geometry needs.
+  key.shadow.normalBias = 0.008;
+  // NOTE: shadow.radius is ignored by PCFSoftShadowMap (it only applies to
+  // PCFShadowMap/VSM), so the old radius=4 here was dead config — the softness
+  // you see is PCFSoft's fixed kernel scaled by texel size. Penumbra is
+  // therefore controlled by mapSize vs frustum extent, not by this value.
   scene.add(key);
 
   const rim = new THREE.DirectionalLight(0x6070ff, 0.7);

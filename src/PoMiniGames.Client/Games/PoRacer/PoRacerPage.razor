@@ -135,20 +135,37 @@
     {
         <div class="racer-hud" aria-live="polite" aria-atomic="false">
             <div class="hud-panel hud-left">
-                <div class="hud-label">Position</div>
-                <div class="hud-value big">@Ordinal(Player?.Position ?? 0) <span class="hud-of">/ @Cars.Count</span></div>
+                @* §2026-07-16: demo mode is a spectator (no IsPlayer car), so the
+                   left panel collapses to a "Spectator" badge + the race clock
+                   instead of fabricating a fake player position from a null car. *@
+                @if (_isDemo)
+                {
+                    <div class="hud-label">Mode</div>
+                    <div class="hud-value big">🤖 Spectator</div>
 
-                <div class="hud-label">Lap</div>
-                <div class="hud-value">@(Player?.Lap ?? 1) <span class="hud-of">/ @TotalLaps</span></div>
+                    <div class="hud-label">Grid</div>
+                    <div class="hud-value">@Cars.Count <span class="hud-of">CPU drivers</span></div>
 
-                <div class="hud-label">Speed</div>
-                <div class="hud-value">@((int)SpeedKph(Player)) <span class="hud-of">km/h</span></div>
-                <div class="hud-speed-bar">
-                    <div class="hud-speed-fill" style="width:@(Math.Min(100, SpeedKph(Player) / 3.4))%"></div>
-                </div>
+                    <div class="hud-label">Time</div>
+                    <div class="hud-value">@FormatTime(_elapsedRaceTime)</div>
+                }
+                else
+                {
+                    <div class="hud-label">Position</div>
+                    <div class="hud-value big">@Ordinal(Player?.Position ?? 0) <span class="hud-of">/ @Cars.Count</span></div>
 
-                <div class="hud-label">Time</div>
-                <div class="hud-value">@FormatTime(_elapsedRaceTime)</div>
+                    <div class="hud-label">Lap</div>
+                    <div class="hud-value">@(Player?.Lap ?? 1) <span class="hud-of">/ @TotalLaps</span></div>
+
+                    <div class="hud-label">Speed</div>
+                    <div class="hud-value">@((int)SpeedKph(Player)) <span class="hud-of">km/h</span></div>
+                    <div class="hud-speed-bar">
+                        <div class="hud-speed-fill" style="width:@(Math.Min(100, SpeedKph(Player) / 3.4))%"></div>
+                    </div>
+
+                    <div class="hud-label">Time</div>
+                    <div class="hud-value">@FormatTime(_elapsedRaceTime)</div>
+                }
                 @* FPS row removed — the shared top-bar FpsCounter badge covers it. *@
             </div>
 
@@ -382,7 +399,14 @@
     private async Task<PoRacerLobbyState?> ConnectLobbyAsync()
     {
         _lobbyHub = new HubConnectionBuilder()
-            .WithUrl(Endpoints.Hub("poracer/lobby-hub"))
+            .WithUrl(Endpoints.Hub("poracer/lobby-hub"), options =>
+            {
+                // §2026-07-16: SignalR's default HttpClientFactory doesn't flow
+                // through DI, so the negotiate POST drops the dev cookie and the
+                // hub's RequireAuthorization() returns 401. Force the credentials
+                // handler so the PoMiniGames.DevAuth cookie round-trips.
+                options.HttpMessageHandlerFactory = SignalRCredentialsHttpClientFactory.CreateHandler;
+            })
             .WithAutomaticReconnect()
             .Build();
         WireLobbyHandlers(_lobbyHub);
@@ -394,7 +418,11 @@
     private async Task ConnectRaceAsync(string code)
     {
         _raceHub = new HubConnectionBuilder()
-            .WithUrl(Endpoints.Hub("poracer/race-hub"))
+            .WithUrl(Endpoints.Hub("poracer/race-hub"), options =>
+            {
+                // See ConnectLobbyAsync — same credentials requirement applies.
+                options.HttpMessageHandlerFactory = SignalRCredentialsHttpClientFactory.CreateHandler;
+            })
             .WithAutomaticReconnect()
             .Build();
         var initialSnap = await _raceHub.StartAsync().ContinueWith(_ =>
@@ -407,24 +435,29 @@
         _raceHub.On<PoRacerRaceSnapshot>("raceSnapshot", snap => OnSnapshot(snap));
         _raceHub.On<PoRacerFinalResult>("raceFinished", result => OnFinished(result));
 
-        // Stream input at 30 Hz.
-        _inputTimer = new System.Timers.Timer(33) { AutoReset = true };
-        _inputTimer.Elapsed += async (_, _) =>
+        // Stream input at 30 Hz — only meaningful when we're an actual player. In
+        // demo/spectator mode there's no car with our ConnectionId, so the server
+        // would silently drop every packet anyway. Skip the timer to avoid noise.
+        if (!_isDemo)
         {
-            if (_raceHub is null || _gameCode is null) return;
-            var i = _input;
-            if (i.up == _lastSentUp && i.down == _lastSentDown && i.left == _lastSentLeft &&
-                i.right == _lastSentRight && i.space == _lastSentSpace)
-                return;
-            _lastSentUp = i.up; _lastSentDown = i.down; _lastSentLeft = i.left;
-            _lastSentRight = i.right; _lastSentSpace = i.space;
-            try { await _raceHub.InvokeAsync("SendInput", _gameCode, new PoRacerInput
+            _inputTimer = new System.Timers.Timer(33) { AutoReset = true };
+            _inputTimer.Elapsed += async (_, _) =>
             {
-                Up = i.up, Down = i.down, Left = i.left, Right = i.right, Space = i.space,
-                ClientTs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-            }); } catch { }
-        };
-        _inputTimer.Start();
+                if (_raceHub is null || _gameCode is null) return;
+                var i = _input;
+                if (i.up == _lastSentUp && i.down == _lastSentDown && i.left == _lastSentLeft &&
+                    i.right == _lastSentRight && i.space == _lastSentSpace)
+                    return;
+                _lastSentUp = i.up; _lastSentDown = i.down; _lastSentLeft = i.left;
+                _lastSentRight = i.right; _lastSentSpace = i.space;
+                try { await _raceHub.InvokeAsync("SendInput", _gameCode, new PoRacerInput
+                {
+                    Up = i.up, Down = i.down, Left = i.left, Right = i.right, Space = i.space,
+                    ClientTs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                }); } catch { }
+            };
+            _inputTimer.Start();
+        }
     }
 
     private void WireLobbyHandlers(HubConnection hub)
@@ -485,7 +518,13 @@
         _finalResult = result;
         Phase = GamePhase.Finished;
         ShowToast("Race finished");
-        _ = SubmitPlayerScoreAsync();
+        // Demo is a spectator race — there's no player car to score, so don't
+        // push a phantom 0-position entry to the leaderboard. GameShell hides
+        // the end-of-game modal in demo anyway (see GameOver prop).
+        if (!_isDemo)
+        {
+            _ = SubmitPlayerScoreAsync();
+        }
         InvokeAsync(StateHasChanged);
     }
 
@@ -554,16 +593,18 @@
 
     private async Task StartDemoRaceAsync()
     {
-        // Demo flow: open the lobby as a guest, auto-mark Ready, immediately Start.
-        // The race service fills the remaining slots with 7 AI bots so the demo
-        // user still races against a full grid.
+        // §2026-07-16 — pure spectator demo. The visitor does NOT join the lobby:
+        // we skip ConnectLobbyAsync / ToggleReady / StartGame entirely and just
+        // subscribe to the race hub. The server's PoRacerSim pads an empty
+        // player list with 8 AI bots (see Features/PoRacer/PoRacerSim.cs), so the
+        // demo race is always a full grid of CPU cars — the visitor watches the
+        // action without driving. This also means no lobby-hub negotiate round-trip,
+        // which used to be the path that 401'd (fixed by the
+        // SignalRCredentialsHttpClientFactory handler chain).
         try
         {
-            await ConnectLobbyAsync();
             _gameCode = "LOBBY";
             await ConnectRaceAsync(_gameCode);
-            await _lobbyHub!.InvokeAsync("ToggleReady");
-            await _lobbyHub!.InvokeAsync("StartGame");
             Phase = GamePhase.Racing;
             StateHasChanged();
         }

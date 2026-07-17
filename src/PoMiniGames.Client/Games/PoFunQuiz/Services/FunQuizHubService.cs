@@ -93,7 +93,14 @@ public sealed class FunQuizHubService : IAsyncDisposable
         // WASM host (:5261). Without this, the standalone client hits
         // /funquiz/gamehub/negotiate on :5261 and gets a 405.
         var url = _endpoints.Hub("funquiz/gamehub");
-        var builder = new HubConnectionBuilder().WithUrl(url);
+        var builder = new HubConnectionBuilder().WithUrl(url, options =>
+        {
+            // §2026-07-16: SignalR's default HttpClientFactory doesn't flow
+            // through DI, so the negotiate POST drops the dev cookie and the
+            // hub's RequireAuthorization() returns 401. Force the credentials
+            // handler so the PoMiniGames.DevAuth cookie round-trips.
+            options.HttpMessageHandlerFactory = SignalRCredentialsHttpClientFactory.CreateHandler;
+        });
         // §Dev-box quirk (2026-07-07): on this dev machine the WebSocket upgrade
         // through `UseResponseCompression` takes 30-60s to complete (one full
         // reload cycle per handshake), which makes 2-player testing brittle —
@@ -108,6 +115,9 @@ public sealed class FunQuizHubService : IAsyncDisposable
             builder = builder.WithUrl(url, options =>
             {
                 options.Transports = HttpTransportType.ServerSentEvents | HttpTransportType.LongPolling;
+                // See note above — credentials handler is required regardless of
+                // transport choice. Re-applying it here is cheap and idempotent.
+                options.HttpMessageHandlerFactory = SignalRCredentialsHttpClientFactory.CreateHandler;
             });
         }
         _connection = builder

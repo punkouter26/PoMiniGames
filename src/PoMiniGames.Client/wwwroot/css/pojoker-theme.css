@@ -40,12 +40,6 @@
     font-family: var(--font-body);
 }
 
-.pojoker-root .pojoker-toolbar {
-    display: flex;
-    justify-content: flex-end;
-    margin-bottom: 0.5rem;
-}
-
 .pojoker-root .pojoker-link {
     display: inline-block;
     color: var(--gold-accent);

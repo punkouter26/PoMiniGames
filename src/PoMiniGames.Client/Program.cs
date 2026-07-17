@@ -38,8 +38,8 @@ if (string.IsNullOrWhiteSpace(apiBase))
 // /api/auth/dev-login and every protected endpoint returns 401.
 //
 // We patch `window.fetch` once at startup (see
-// wwwroot/js/crossOriginFetchPatch.js) so cross-origin requests get
-// `credentials: 'include'` while same-origin requests stay untouched.
+// wwwroot/js/crossOriginFetchPatch.js) so requests to the API origin get
+// `credentials: 'include'` while every other origin stays untouched.
 // The patch is idempotent. Installed via JS interop during
 // WebAssemblyHostBuilder.Build() below — see the `await host.RunAsync()`
 // chain after `var host = builder.Build()`.
@@ -191,12 +191,14 @@ await host.Services.GetRequiredService<IStore>().InitializeAsync();
 
 // §Cross-origin credentials patch: must run before any HttpClient is used
 // (i.e. before any component renders), so we install it right after Build
-// but before RunAsync. Importing the module triggers its top-level IIFE
-// which patches `window.fetch` once, idempotently. Same-origin requests
-// pass through unchanged; cross-origin requests get credentials: 'include'
-// so the DevCookie set by /api/auth/dev-login round-trips on the
-// standalone-client (:5261 → :5000) dev setup.
-await host.Services.GetRequiredService<IJSRuntime>()
+// but before RunAsync. Requests to `apiBase` get credentials: 'include' so
+// the DevCookie set by /api/auth/dev-login round-trips on the
+// standalone-client (:5261 → :5000) dev setup. Everything else — including
+// MSAL's Entra calls — keeps the browser default; passing apiBase is what
+// scopes it (see the module header for the sign-in outage a blanket patch
+// caused). Installs nothing when the API is same-origin.
+var fetchPatchModule = await host.Services.GetRequiredService<IJSRuntime>()
     .InvokeAsync<IJSObjectReference>("import", "./js/crossOriginFetchPatch.js");
+await fetchPatchModule.InvokeVoidAsync("installCrossOriginCredentialsPatch", apiBase);
 
 await host.RunAsync();

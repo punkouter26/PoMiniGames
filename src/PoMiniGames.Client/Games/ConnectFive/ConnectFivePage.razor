@@ -18,6 +18,7 @@
     Player="@_playerName"
     BackTo="@_backTo"
     GameOver="@_isGameOver"
+    Elo="@(PlayMode == "ai" ? _rating.Elo : (int?)null)"
     GameKey="@(PlayMode == "ai" ? "connectfive" : null)"
     Stats="@(PlayMode == "ai" ? _statItems : null)"
     Status="@StatusContent"

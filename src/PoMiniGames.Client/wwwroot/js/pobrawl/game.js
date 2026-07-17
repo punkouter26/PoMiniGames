@@ -848,6 +848,17 @@ export class BrawlGame {
     this.timeScale = 1;
     this.cameraMode = 'normal';
     this.cameraModeT = 0;
+    // Snap the boom back to the canonical +Z side before the round starts.
+    // The KO cinematic swings the camera around to the −Z side of the ring
+    // (see _updateCamera 'ko' branch), and the normal spring camera's
+    // perp-flip keeps whatever side it's already on — so without this reset
+    // the next round is filmed from behind, mirroring the arena: P1 (world
+    // −X, drawn on the screen-left in the HUD) would render on the right and
+    // the left/right names read swapped against the fighters. Resetting here
+    // guarantees screen-left always maps to P1.
+    this.camera.position.set(0, 2.4, 7);
+    this._camVel.set(0, 0, 0);
+    this.camera.lookAt(0, 1, 0);
     // Kick the personality entrance for each fighter. The track lasts ~1.5 s
     // (3-4 keyframes); the countdown is 3.7 s, so the entrance resolves to
     // GUARD before FIGHT! fires and the match starts clean.
@@ -2359,8 +2370,14 @@ export class BrawlGame {
         this._setBanner('K.O.!');
         this.audio.ko();
         this._triggerFlash();
-        this.caPulse = 1.8;
-        this.bloomPulse = 1.4;
+        // Keep the KO frame crisp: cancel the radial-blur streak, chromatic
+        // aberration and bloom spike the killing blow's _hitFeedback would
+        // otherwise leave smeared across the screen. Per-hit feedback during
+        // the fight is untouched; the exposure spike + lights-down color
+        // drain (uDesat) stay — those aren't blur.
+        this.radialPulse = 0;
+        this.caPulse = 0;
+        this.bloomPulse = 0;
         this.exposurePulse = 0.35;
         // Big warm flash over the fallen fighter as the house lights dim.
         this._flashImpactLight(

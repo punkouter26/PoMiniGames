@@ -17,6 +17,12 @@
             <span class="gps-game-title">@Title</span>
         }
 
+        @* Live rating badge for single-player, ELO-rated modes: the page passes
+           its current rating via Elo and it renders next to the signed-in
+           identity (see MainLayout's "game-elo" outlet), so the player can see
+           their standing throughout the match. Left null in 2-player / demo /
+           unrated modes, which emits nothing. *@
+
         @* 2026-07-13 top-bar cleanup (user request): the in-game Player name, the
            live Status pill, and the "?" how-to trigger were removed from the header
            to save horizontal space. The signed-in identity now lives once on the
@@ -26,6 +32,13 @@
            pass them) but are intentionally not projected here. *@
     </div>
 </SectionContent>
+
+@if (Elo is int elo)
+{
+    <SectionContent SectionName="game-elo">
+        <span class="gps-elo-badge" title="Your current ELO rating">ELO @elo</span>
+    </SectionContent>
+}
 
 <SwipeBack BackTo="@BackTo" Class="gps-shell-wrap">
 <div class="gps-shell" @onclick="OnShellClick">
@@ -71,6 +84,11 @@
 @code {
     [Parameter] public RenderFragment? Title { get; set; }
     [Parameter] public string? Player { get; set; }
+    // Current ELO for single-player, rated modes. When set, it renders as a
+    // small badge beside the signed-in identity in the top bar (via the
+    // "game-elo" section outlet in MainLayout). Leave null for 2-player, demo
+    // and other unrated modes — nothing is projected.
+    [Parameter] public int? Elo { get; set; }
     [Parameter] public RenderFragment? Status { get; set; }
     [Parameter] public List<Models.StatItem>? Stats { get; set; }
     [Parameter] public bool Fullscreen { get; set; }

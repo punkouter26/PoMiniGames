@@ -53,6 +53,10 @@
                dev-only identity switcher are gone from the top bar entirely. *@
             @if (AuthState.IsConfigured && !AuthState.IsLoading)
             {
+                @* Live ELO badge for single-player rated games, projected here by
+                   GameShell so it sits right beside the player's identity. Renders
+                   nothing outside a rated 1P game. *@
+                <SectionOutlet SectionName="game-elo" />
                 @if (AuthState.IsAuthenticated)
                 {
                     <span class="gl-auth-user" title="@AuthUserTitle">@AuthUserLabel</span>

@@ -14,6 +14,7 @@
 
 <GameShell Title=@TitleContent
            Player="@_playerName"
+           Elo="@(_mode == "1p" ? _rating.Elo : (int?)null)"
            BackTo="/"
            Stats="@_statItems"
            GameOver="@(_phase == "result" && !_demo)"
@@ -65,7 +66,9 @@
     private sealed record RosterEntry(string Id, string Name, string Suit, string Tie);
 
     // 1-player ladder order: most recent president first, marching back in
-    // time. Rung index doubles as the CPU difficulty level (index + 1 → 1-10).
+    // time to FDR. Rung index doubles as the CPU difficulty level (index + 1 →
+    // 1-15, the full range ai.js LEVELS/MAX_RUNG defines). All 15 fighters are
+    // defined in fighters.js CHARACTERS; the ladder walks every one of them.
     private static readonly RosterEntry[] Roster =
     [
         new("trump", "Trump", "#1b2a52", "#d62828"),
@@ -78,6 +81,11 @@
         new("carter", "Carter", "#6b7a8f", "#3f7a4d"),
         new("ford", "Ford", "#2f3a4a", "#8f6b2f"),
         new("nixon", "Nixon", "#23252b", "#5d6d7e"),
+        new("lbj", "LBJ", "#2b3e5e", "#c0392b"),
+        new("jfk", "JFK", "#1a2a4e", "#4a7ba8"),
+        new("eisenhower", "Eisenhower", "#4a5a6a", "#8a6028"),
+        new("truman", "Truman", "#3a3f4a", "#8a7a5a"),
+        new("fdr", "FDR", "#1c2538", "#4a5a8a"),
     ];
 
     private static readonly RosterEntry Bob = new("bob", "BOB", "#e9e6de", "#3566a8");
@@ -86,7 +94,7 @@
     private static readonly RosterEntry[] PickableRoster = [Bob, .. Roster];
 
     // Fixed rating per ladder rung for the ELO math: rung 1 (Trump) is a
-    // pushover at 800; rung 10 (Nixon) sits near 2000. Beating an easy rung
+    // pushover at 800; rung 15 (FDR) tops out near 2660. Beating an easy rung
     // when your rating is high earns almost nothing; losing to it costs a lot.
     private static int PresidentElo(int rung) => 800 + rung * 133;
 
@@ -209,8 +217,8 @@
         _elapsed = 0;
         _p1Regions = new int[4];
         _p2Regions = new int[4];
-        // 1P difficulty is the ladder rung (1 = pushover Trump … 10 = brutal
-        // Nixon); demo keeps the balanced mid-tier CPU-vs-CPU fight.
+        // 1P difficulty is the ladder rung (1 = pushover Trump … 15 = brutal
+        // FDR); demo keeps the balanced mid-tier CPU-vs-CPU fight.
         object difficulty = _mode == "1p" ? _ladder + 1 : "medium";
         try
         {
@@ -303,66 +311,96 @@
     {
         _winner = winner;
         _lastKo = elapsedSeconds;
-        _phase = "result";
 
-        if (!_demo && _mode == "1p")
+        // Demo and 2P have no ladder: the shared end-of-game modal always shows.
+        if (_demo || _mode != "1p")
         {
-            _gameStats.SaveLastPlayedGame("pobrawl");
-
-            // A new fastest KO is submitted to the global board (session-debounced by _bestKo).
-            PoBrawlHighScore? best = null;
-            _newRecord = false;
-            var won = winner == 1;
-            if (won && elapsedSeconds > 0 && (_bestKo == 0 || elapsedSeconds < _bestKo))
-            {
-                _bestKo = elapsedSeconds;
-                _newRecord = true;
-                best = new PoBrawlHighScore
-                {
-                    // One identity across boards: full display name, not initials.
-                    PlayerInitials = _playerName,
-                    KoTimeSeconds = Math.Round(elapsedSeconds, 2),
-                    Character = _p1Char,
-                };
-            }
-
-            var result = winner == 0 ? GameResult.Draw : (won ? GameResult.Win : GameResult.Loss);
-
-            // Adaptive ELO (same system as ConnectFive): scored against the
-            // beaten/losing president's fixed ladder rating, so early rungs are
-            // worth little and Nixon is worth a lot.
-            var before = _rating.Elo;
-            _rating = _gameStats.RecordAdaptiveResult("pobrawl", _playerName, PresidentElo(_ladder), result);
-            _lastEloDelta = _rating.Elo - before;
-
-            // Ladder: win → advance to the previous president; loss → rematch.
-            if (won)
-            {
-                if (_ladder >= Roster.Length - 1)
-                {
-                    _champion = true;
-                    _ladder = 0;
-                }
-                else
-                {
-                    _ladder++;
-                }
-                SaveLadder();
-
-                // Global ladder board: presidents beaten this run (10 on a full
-                // clear — _ladder has already wrapped to 0 by then). The server
-                // keeps each player's best, so this is safe to fire every win.
-                _ = await ApiService.SubmitPoBrawlLadderAsync(new PoBrawlLadderEntry
-                {
-                    PlayerName = _playerName,
-                    PresidentsBeaten = _champion ? Roster.Length : _ladder,
-                    Elo = _rating.Elo,
-                });
-            }
-
-            _stats = await GameResults.RecordAndSubmitPoBrawlAsync(_playerName, result, best);
-            UpdateStats();
+            _phase = "result";
+            await InvokeAsync(StateHasChanged);
+            return;
         }
+
+        _gameStats.SaveLastPlayedGame("pobrawl");
+
+        // A new fastest KO is submitted to the global board (session-debounced by _bestKo).
+        PoBrawlHighScore? best = null;
+        _newRecord = false;
+        var won = winner == 1;
+        if (won && elapsedSeconds > 0 && (_bestKo == 0 || elapsedSeconds < _bestKo))
+        {
+            _bestKo = elapsedSeconds;
+            _newRecord = true;
+            best = new PoBrawlHighScore
+            {
+                // One identity across boards: full display name, not initials.
+                PlayerInitials = _playerName,
+                KoTimeSeconds = Math.Round(elapsedSeconds, 2),
+                Character = _p1Char,
+            };
+        }
+
+        var result = winner == 0 ? GameResult.Draw : (won ? GameResult.Win : GameResult.Loss);
+
+        // Adaptive ELO (same system as ConnectFive): scored against the
+        // beaten/losing president's fixed ladder rating, so early rungs are
+        // worth little and Nixon is worth a lot.
+        var before = _rating.Elo;
+        _rating = _gameStats.RecordAdaptiveResult("pobrawl", _playerName, PresidentElo(_ladder), result);
+        _lastEloDelta = _rating.Elo - before;
+
+        // Ladder: a win with presidents still in line rolls straight into the
+        // next fight — no modal. The shared end-of-game modal is reserved for
+        // the run's *end*: a loss/draw (gauntlet over) or the full-ladder clear.
+        var advanceToNext = false;
+        if (won)
+        {
+            if (_ladder >= Roster.Length - 1)
+            {
+                _champion = true;   // cleared rung 10 → triumphant end, show the modal
+                _ladder = 0;
+            }
+            else
+            {
+                _ladder++;
+                advanceToNext = true;   // another CPU is queued → skip the modal
+            }
+            SaveLadder();
+
+            // Global ladder board: presidents beaten this run (10 on a full
+            // clear — _ladder has already wrapped to 0 by then). The server
+            // keeps each player's best, so this is safe to fire every win.
+            _ = await ApiService.SubmitPoBrawlLadderAsync(new PoBrawlLadderEntry
+            {
+                PlayerName = _playerName,
+                PresidentsBeaten = _champion ? Roster.Length : _ladder,
+                Elo = _rating.Elo,
+            });
+        }
+
+        _stats = await GameResults.RecordAndSubmitPoBrawlAsync(_playerName, result, best);
+        UpdateStats();
+
+        if (advanceToNext)
+        {
+            // Stay in the fight: reset the HUD to the fresh match and tell the
+            // engine to roll into the next president (NEXT ROUND splash →
+            // countdown). GameOver stays false, so no modal is shown.
+            _p2Char = Roster[_ladder].Id;
+            _phase = "fighting";
+            _p1Hp = 100;
+            _p2Hp = 100;
+            _p1Energy = 33;
+            _p2Energy = 33;
+            _elapsed = 0;
+            _p1Regions = new int[4];
+            _p2Regions = new int[4];
+            await InvokeAsync(StateHasChanged);
+            try { await JSRuntime.InvokeVoidAsync("PoBrawl.next", _p2Char, _ladder + 1); }
+            catch (Exception ex) { Console.Error.WriteLine($"[PoBrawl] next-match failed: {ex.Message}"); }
+            return;
+        }
+
+        _phase = "result";
         await InvokeAsync(StateHasChanged);
     }
 

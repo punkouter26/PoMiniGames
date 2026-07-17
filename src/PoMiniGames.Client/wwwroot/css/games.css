@@ -95,6 +95,30 @@
 .gps-status-badge.turn     { background: rgba(0, 229, 255, 0.18);   color: var(--accent-cyan);   border: 1px solid rgba(0, 229, 255, 0.4); }
 .gps-status-badge.demo     { background: rgba(192, 132, 252, 0.18); color: #c084fc; border: 1px solid rgba(192, 132, 252, 0.4); }
 
+/* Live ELO badge shown in the top bar beside the signed-in identity during
+   single-player rated games. Projected by GameShell into MainLayout's
+   `game-elo` section outlet (so it lands inside `.gl-auth`, not the game
+   header). Amber to read as a "your standing" chip, distinct from the cyan
+   turn / status badges. */
+.gps-elo-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.6rem;
+  border-radius: 9999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  background: rgba(250, 204, 21, 0.16);
+  color: var(--accent-amber);
+  border: 1px solid rgba(250, 204, 21, 0.4);
+}
+/* On narrow phones the identity label is already hidden (see MainLayout.css);
+   drop the ELO chip too so the top bar keeps Sign out on one line. */
+@media (max-width: 480px) {
+  .gps-elo-badge { display: none; }
+}
+
 /* Legacy `.cf-status--*` alias block was deleted once ConnectFive
    migrated to `.gps-status-badge.*` (see the unified block above). */
 

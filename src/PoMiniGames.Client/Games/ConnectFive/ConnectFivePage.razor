@@ -25,6 +25,15 @@
     GameSummary="@GameSummaryContent"
     HowToPlay="@HowToPlayContent">
 
+    @if (!_introDone)
+    {
+        <GameIntro Title="@TitleContent"
+                   Objective="Connect five of your discs in a row — horizontal, vertical or diagonal — before your opponent."
+                   Controls="@HowToPlayContent"
+                   Mode="@_introMode"
+                   OnStart="DismissIntro" />
+    }
+
     <div class="cf-layout">
         @* §3 Hover-ghost: pointerleave on the board clears the column preview so
            the ghost disc never sticks when the cursor exits the grid. *@
@@ -187,6 +196,15 @@
 
     private string _backTo => "/";
     private bool _isGameOver => _gameResult != GameResult.InProgress && PlayMode != "demo";
+
+    // Intro/welcome gate: the board is blocked behind the intro card until the
+    // player dismisses it (OK), or the demo flashes it for 2s. Nothing on this
+    // board auto-moves in human modes, so the overlay alone gates play.
+    private bool _introDone;
+    private GameIntro.IntroMode _introMode => PlayMode == "demo"
+        ? GameIntro.IntroMode.Demo
+        : GameIntro.IntroMode.OnePlayer;
+    private void DismissIntro() => _introDone = true;
 
     private RenderFragment TitleContent => @<span>🔴 Connect Five</span>;
 

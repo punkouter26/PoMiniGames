@@ -6,8 +6,17 @@
 @inject NavigationManager Navigation
 @implements IAsyncDisposable
 
-<GameShell Title=@TitleContent Player="@_playerName" BackTo="/couplequiz">
-    @if (!_isConnected)
+<GameShell Title=@TitleContent Player="@_playerName" BackTo="/couplequiz"
+           HowToPlay="@HowToPlayContent">
+    @if (!_introDone)
+    {
+        <GameIntro Title="@TitleContent"
+                   Objective="Play Couple Quiz online — match your partner's answers to score. Join a lobby, then the host starts."
+                   Controls="@HowToPlayContent"
+                   Mode="GameIntro.IntroMode.OnePlayer"
+                   OnStart="OnIntroStartAsync" />
+    }
+    else if (!_isConnected)
     {
         <p>Connecting…</p>
     }
@@ -84,6 +93,17 @@
 @code {
     private RenderFragment TitleContent => @<span>💕 Couple Quiz · Lobby</span>;
 
+    // Intro/welcome gate — the controls card shows first; only on OK do we connect
+    // to the lobby hub (so the player doesn't appear to others until they're ready).
+    private bool _introDone;
+    private RenderFragment HowToPlayContent => @<div>
+        <p>Answer questions about each other. The "King" locks a secret answer; everyone else tries to match it — matches score points.</p>
+        <ul>
+            <li>Tap the option you think matches your partner</li>
+            <li>Wait for another player to join, ready up, then the host starts</li>
+        </ul>
+    </div>;
+
     private string _playerName = string.Empty;
     private string _difficulty = "Medium";
     private string? _joinCode;
@@ -93,14 +113,23 @@
     private bool _busyJoin;
     private CoupleQuizLobbyEventPayload? _lobby;
 
-    protected override async Task OnInitializedAsync()
+    protected override void OnInitialized()
     {
+        // Only wire the hub handlers here — the connection itself waits for the
+        // intro's OK (see OnIntroStartAsync) so the player joins the lobby only
+        // after seeing the controls.
         _playerName = PlayerNameService.GetPlayerName();
         Hub.OnLobbyCreated += HandleLobbyCreated;
         Hub.OnLobbyJoined += HandleLobbyJoined;
         Hub.OnLobbyUpdated += HandleLobbyUpdated;
         Hub.OnLobbyError += HandleError;
         Hub.OnGameStarted += HandleGameStarted;
+    }
+
+    private async Task OnIntroStartAsync()
+    {
+        _introDone = true;
+        StateHasChanged();
         try
         {
             await Hub.ConnectAsync();
@@ -110,6 +139,7 @@
         {
             _error = $"Could not connect: {ex.Message}";
         }
+        StateHasChanged();
     }
 
     private async Task OnJoinOrCreate()

@@ -14,7 +14,16 @@
            GameOver="@_showComplete"
            GameKey="pojoker"
            Stats="@_statItems"
-           GameSummary="@GameSummaryContent">
+           GameSummary="@GameSummaryContent"
+           HowToPlay="@HowToPlayContent">
+    @if (!_introDone)
+    {
+        <GameIntro Title="@TitleContent"
+                   Objective="The digital Jester performs a 10-joke set — see how many land."
+                   Controls="@HowToPlayContent"
+                   Mode="GameIntro.IntroMode.Demo"
+                   OnStart="DismissIntro" />
+    }
     <div class="pojoker-root">
         <JesterStage AutoStart="true" OnShowComplete="HandleShowComplete" />
     </div>
@@ -32,6 +41,19 @@
     private bool _showComplete;
     private int _triumphs;
     private List<StatItem>? _statItems;
+
+    // Intro/welcome gate — a 2s flash (this is a watch-only performance); the
+    // show runs behind it and the card auto-clears.
+    private bool _introDone;
+    private void DismissIntro() => _introDone = true;
+
+    private RenderFragment HowToPlayContent => @<div>
+        <p>Sit back and watch — the Jester tells a 10-joke set to a live crowd.</p>
+        <ul>
+            <li>No controls — each joke either lands or bombs with the audience</li>
+            <li>Track how many of the 10 jokes triumph</li>
+        </ul>
+    </div>;
 
     private RenderFragment GameSummaryContent => @<div>
         <div>Show complete</div>

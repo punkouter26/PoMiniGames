@@ -16,7 +16,16 @@
            Stats="@_statItems"
            GameOver="@(_phase == "result" && !_demo)"
            GameKey="pomarblerace"
-           GameSummary="@GameSummaryContent">
+           GameSummary="@GameSummaryContent"
+           HowToPlay="@HowToPlayContent">
+    @if (!_introDone)
+    {
+        <GameIntro Title="@TitleContent"
+                   Objective="You control the one RED marble in a pack of 101. Finish in the top 10 to score."
+                   Controls="@HowToPlayContent"
+                   Mode="@_introMode"
+                   OnStart="OnIntroStartAsync" />
+    }
     @* 2026-07-12: stack the HUD BELOW the canvas inside a column flex
        container, so the sticky top bar (z-sticky > z-modal) never clips the
        HUD and the HUD never sits on top of the marble track. *@
@@ -244,7 +253,23 @@
     private static string RosterName(int index) =>
         index == PlayerIndex ? "You" : $"Marble {index + 1}";
 
+    // Intro/welcome gate: the marble engine (and its race clock) only boots once
+    // the intro card is dismissed (OK in 1P, 2s flash in demo). See OnIntroStartAsync.
+    private bool _introDone;
+    private GameIntro.IntroMode _introMode => _demo
+        ? GameIntro.IntroMode.Demo
+        : GameIntro.IntroMode.OnePlayer;
+
     private RenderFragment TitleContent => @<span>🔮 Marble Race</span>;
+
+    private RenderFragment HowToPlayContent => @<div>
+        <p>You control the one RED marble in a pack of 101. Finish in the top 10 to score.</p>
+        <ul>
+            <li><kbd>←</kbd>/<kbd>→</kbd> hold to steer your marble</li>
+            <li><kbd>R</kbd> new track · <kbd>M</kbd> mute</li>
+            <li>String finishes together for a points multiplier — mind the edges</li>
+        </ul>
+    </div>;
 
     private RenderFragment GameSummaryContent => @<div>
         <div>@(_lastWon ? $"🏆 {Ordinal(_lastPlace)} place — +{_lastGained} points" : "💀 Run over")</div>
@@ -264,20 +289,21 @@
         UpdateStats();
     }
 
-    protected override async Task OnAfterRenderAsync(bool firstRender)
+    // The engine no longer boots on first render — the intro card gates it so the
+    // race clock never runs behind the welcome. OnIntroStartAsync starts it.
+    private async Task OnIntroStartAsync()
     {
-        if (firstRender && !_engineStarted)
+        _introDone = true;
+        if (_engineStarted) return;
+        _engineStarted = true;
+        _ref = DotNetObjectReference.Create(this);
+        try
         {
-            _engineStarted = true;
-            _ref = DotNetObjectReference.Create(this);
-            try
-            {
-                await JSRuntime.InvokeVoidAsync("PoMarbleRace.start", "marble-race-container", _ref, _demo);
-            }
-            catch (Exception ex)
-            {
-                Console.Error.WriteLine($"[PoMarbleRace] JS init failed: {ex.Message}");
-            }
+            await JSRuntime.InvokeVoidAsync("PoMarbleRace.start", "marble-race-container", _ref, _demo);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[PoMarbleRace] JS init failed: {ex.Message}");
         }
     }
 

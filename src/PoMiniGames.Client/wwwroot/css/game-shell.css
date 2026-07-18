@@ -234,3 +234,229 @@
     animation: none;
   }
 }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Intro / welcome card (Components/GameIntro.razor)
+
+   The bookend to the end-of-game modal: one centered card every game opens
+   on. Deliberately styled here alongside the outro so intro + outro share
+   one visual language. Sits at --z-overlay (below the game-over modal's
+   --z-modal) so a game that somehow ends instantly still surfaces its result
+   on top.
+   ───────────────────────────────────────────────────────────────────────── */
+.gps-intro-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-overlay);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(2, 6, 23, 0.72);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  pointer-events: auto;
+  outline: none;
+  animation: gps-modal-fade 0.2s ease-out both;
+}
+
+.gps-intro-card {
+  pointer-events: auto;
+  width: min(94vw, 440px);
+  max-height: calc(100dvh - 2rem);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 1.5rem 1.5rem 1.25rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  text-align: center;
+  animation: gps-modal-pop 0.25s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+/* Two-player select wants more room for its side-by-side rosters. */
+.gps-intro-card--twoplayer {
+  width: min(96vw, 620px);
+}
+
+.gps-intro-title {
+  font-size: 1.4rem;
+  font-weight: 800;
+  color: var(--color-text-primary);
+}
+
+.gps-intro-objective {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--color-text-secondary);
+  line-height: 1.45;
+}
+
+.gps-intro-controls {
+  width: 100%;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--color-border);
+  text-align: left;
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+  line-height: 1.6;
+}
+
+.gps-intro-controls p { margin: 0 0 0.35rem; }
+.gps-intro-controls ul { margin: 0; padding-left: 1.1rem; }
+.gps-intro-controls li { margin-bottom: 0.2rem; }
+
+.gps-intro-section-label {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+  opacity: 0.75;
+  margin-bottom: 0.4rem;
+}
+
+/* Reuse the shell's <kbd> look inside the controls list. */
+.gps-intro-controls kbd {
+  display: inline-block;
+  min-width: 1.1rem;
+  padding: 0.05rem 0.35rem;
+  border: 1px solid var(--color-border);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  background: var(--color-surface-hover);
+  color: var(--color-text-primary);
+  font-size: 0.78rem;
+  font-family: inherit;
+  text-align: center;
+}
+
+.gps-intro-options {
+  width: 100%;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--color-border);
+}
+
+.gps-intro-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  padding-top: 0.35rem;
+}
+
+.gps-intro-hint,
+.gps-intro-demo-hint {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+}
+
+.gps-intro-demo-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+}
+
+.gps-intro-spinner {
+  width: 0.85rem;
+  height: 0.85rem;
+  border: 2px solid var(--color-border);
+  border-top-color: var(--color-accent);
+  border-radius: 50%;
+  animation: gps-intro-spin 0.8s linear infinite;
+}
+
+.gps-play-again-btn--primary:disabled {
+  filter: none;
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ── Shared two-player select grid (used by Brawl; available to any 2P game) ──
+   Two rosters side by side, one per player, each with a highlighted cursor and
+   a "locked" state once that player confirms their pick. */
+.gps-intro-versus {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 0.5rem;
+  align-items: start;
+}
+
+.gps-intro-vs-divider {
+  align-self: center;
+  font-weight: 800;
+  color: var(--color-text-secondary);
+  font-size: 1.1rem;
+}
+
+.gps-intro-side-title {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin-bottom: 0.15rem;
+}
+
+.gps-intro-side-keys {
+  font-size: 0.62rem;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 0.5rem;
+}
+
+.gps-intro-roster {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 40vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.gps-intro-roster-item {
+  padding: 0.3rem 0.5rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+  background: rgba(148, 163, 184, 0.06);
+  border: 1px solid transparent;
+}
+
+.gps-intro-roster-item--cursor {
+  color: var(--color-text-primary);
+  border-color: var(--color-accent);
+  background: rgba(99, 102, 241, 0.14);
+}
+
+.gps-intro-roster-item--locked {
+  color: var(--color-text-primary);
+  background: rgba(34, 197, 94, 0.16);
+  border-color: rgba(34, 197, 94, 0.5);
+  font-weight: 700;
+}
+
+.gps-intro-ready {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #22c55e;
+  margin-top: 0.4rem;
+  min-height: 1rem;
+}
+
+@keyframes gps-intro-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gps-intro-overlay,
+  .gps-intro-card { animation: none; }
+  .gps-intro-spinner { animation: none; }
+}

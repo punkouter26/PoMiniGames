@@ -17,7 +17,16 @@
            GameOver="@IsGameOver"
            GameKey="@(_playMode == "solo" ? "pofunquiz" : null)"
            Stats="@_statItems"
-           GameSummary="@GameSummaryContent">
+           GameSummary="@GameSummaryContent"
+           HowToPlay="@HowToPlayContent">
+    @if (!_introDone)
+    {
+        <GameIntro Title="@TitleContent"
+                   Objective="Answer the multiple-choice questions — chain correct answers for a streak bonus."
+                   Controls="@HowToPlayContent"
+                   Mode="@_introMode"
+                   OnStart="DismissIntro" />
+    }
     @* 2026-07-16: the GameLanding setup card (Player 1 / Player 2 name inputs +
        category picker behind a "Start" button) was removed — it was an intro page
        between the home page and the quiz. The player's name now comes from their
@@ -152,6 +161,23 @@
     private bool _splitScreen;
 
     private RenderFragment TitleContent => @<span>🧠 Fun Quiz</span>;
+
+    // Intro/welcome gate — overlay blocks the quiz until dismissed (OK); demo
+    // flashes it for 2s. Questions load behind the card, so no extra gating.
+    private bool _introDone;
+    private GameIntro.IntroMode _introMode => _playMode == "demo"
+        ? GameIntro.IntroMode.Demo
+        : GameIntro.IntroMode.OnePlayer;
+    private void DismissIntro() => _introDone = true;
+
+    private RenderFragment HowToPlayContent => @<div>
+        <p>Answer each multiple-choice question. Correct answers in a row build a streak for bonus points.</p>
+        <ul>
+            <li>Tap or click the answer you think is right</li>
+            <li>Local 2-player: players 1 &amp; 2 use their own keys on the split-screen board</li>
+            <li>Chain correct answers for a scoring multiplier</li>
+        </ul>
+    </div>;
 
     private RenderFragment GameSummaryContent => _playMode switch
     {

@@ -7,7 +7,18 @@
 @inject NavigationManager Navigation
 @implements IAsyncDisposable
 
-<GameShell Title=@TitleContent Player="@_playerName" BackTo="/funquiz">
+<GameShell Title=@TitleContent Player="@_playerName" BackTo="/funquiz"
+           HowToPlay="@HowToPlayContent">
+    @if (!_introDone)
+    {
+        <GameIntro Title="@TitleContent"
+                   Objective="Play Fun Quiz head-to-head online. Create or join a game, then answer faster and smarter than your opponent."
+                   Controls="@HowToPlayContent"
+                   Mode="GameIntro.IntroMode.OnePlayer"
+                   OnStart="OnIntroStartAsync" />
+    }
+    else
+    {
     @if (_reconnecting)
     {
         <div class="fq-reconnecting" role="status" aria-live="polite">
@@ -120,10 +131,23 @@
             }
         </div>
     }
+    }
 </GameShell>
 
 @code {
     private RenderFragment TitleContent => @<span>🧠 Fun Quiz · Multiplayer</span>;
+
+    // Intro/welcome gate — controls card first; the hub connect waits for OK so
+    // the player joins the lobby only after seeing the controls.
+    private bool _introDone;
+    private RenderFragment HowToPlayContent => @<div>
+        <p>Two players answer the same questions online. Correct answers score points; build a streak for a bonus.</p>
+        <ul>
+            <li>Tap or click the answer you think is right</li>
+            <li>Create a game and share the code, or join with a friend's code</li>
+            <li>The host starts once both players are in</li>
+        </ul>
+    </div>;
 
     private string _playerName = string.Empty;
     private string _category = "General";
@@ -149,8 +173,10 @@
     private int OpponentScore => _state?.Players.FirstOrDefault(p => p.Name != _playerName)?.Score ?? 0;
     private string OpponentName => _state?.Players.FirstOrDefault(p => p.Name != _playerName)?.Name ?? "Opponent";
 
-    protected override async Task OnInitializedAsync()
+    protected override void OnInitialized()
     {
+        // Only wire hub handlers here — the connection waits for the intro's OK
+        // (see OnIntroStartAsync).
         _playerName = PlayerNameService.GetPlayerName();
         Hub.OnGameCreated += HandleState;
         Hub.OnGameJoined += HandleState;
@@ -163,6 +189,12 @@
         Hub.OnReconnecting += HandleReconnecting;
         Hub.OnReconnected += HandleReconnected;
         Hub.OnClosed += HandleClosed;
+    }
+
+    private async Task OnIntroStartAsync()
+    {
+        _introDone = true;
+        StateHasChanged();
         try
         {
             await Hub.ConnectAsync();
@@ -172,6 +204,7 @@
         {
             _error = $"Could not connect: {ex.Message}";
         }
+        StateHasChanged();
     }
 
     private void HandleReconnecting(Exception? ex)

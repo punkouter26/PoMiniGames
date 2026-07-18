@@ -1,0 +1,179 @@
+@namespace PoMiniGamesClient.Components
+@using Microsoft.AspNetCore.Components.Web
+@implements IDisposable
+
+@* ─────────────────────────────────────────────────────────────────────────
+   GameIntro — the one centered welcome/controls card every game opens on.
+
+   A blocking overlay rendered inside a game's GameShell ChildContent (or
+   standalone for games that can't host GameShell). It welcomes the player,
+   shows the controls (reuse the page's existing HowToPlay fragment), and
+   gates the start of play by mode:
+
+     • Demo       → flashes for DemoDelayMs (default 2s), then auto-starts.
+     • OnePlayer  → stays up until the player presses OK (or Enter/Space).
+     • TwoPlayer  → shows an optional Options slot (e.g. Brawl's per-player
+                    keyboard character select) and a Start button that is
+                    disabled until StartEnabled. Keydowns are forwarded to
+                    the host via OnKey so each game wires its own two-player
+                    selection to its in-game keys.
+
+   Styling lives in wwwroot/css/game-shell.css (.gps-intro-*), mirroring the
+   shared end-of-game modal so intro + outro read as one system.
+   ───────────────────────────────────────────────────────────────────────── *@
+
+<div class="gps-intro-overlay" role="dialog" aria-modal="true" aria-label="Game intro"
+     @ref="_root" tabindex="0"
+     @onkeydown="HandleKey" @onkeydown:preventDefault="CaptureKeys">
+    <div class="gps-intro-card gps-intro-card--@ModeClass">
+        @if (Title != null)
+        {
+            <div class="gps-intro-title">@Title</div>
+        }
+
+        @if (!string.IsNullOrWhiteSpace(Objective))
+        {
+            <p class="gps-intro-objective">@Objective</p>
+        }
+
+        @if (Controls != null)
+        {
+            <div class="gps-intro-controls">
+                <div class="gps-intro-section-label">Controls</div>
+                @Controls
+            </div>
+        }
+
+        @if (Options != null)
+        {
+            <div class="gps-intro-options">@Options</div>
+        }
+
+        <div class="gps-intro-actions">
+            @switch (Mode)
+            {
+                case IntroMode.Demo:
+                    <div class="gps-intro-demo-hint" role="status">
+                        <span class="gps-intro-spinner" aria-hidden="true"></span>
+                        Demo starting…
+                    </div>
+                    break;
+
+                case IntroMode.TwoPlayer:
+                    <button class="gps-play-again-btn gps-play-again-btn--primary"
+                            disabled="@(!StartEnabled)"
+                            @onclick="StartAsync">
+                        @(StartLabel ?? "Start")
+                    </button>
+                    @if (!string.IsNullOrWhiteSpace(StartHint))
+                    {
+                        <p class="gps-intro-hint">@StartHint</p>
+                    }
+                    break;
+
+                default:
+                    <button class="gps-play-again-btn gps-play-again-btn--primary"
+                            @onclick="StartAsync">
+                        @(StartLabel ?? "OK")
+                    </button>
+                    break;
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    public enum IntroMode { Demo, OnePlayer, TwoPlayer }
+
+    /// <summary>Card heading — normally the game's title fragment.</summary>
+    [Parameter] public RenderFragment? Title { get; set; }
+
+    /// <summary>One-line welcome / objective shown under the title.</summary>
+    [Parameter] public string? Objective { get; set; }
+
+    /// <summary>Controls list — pass the page's existing HowToPlay fragment.</summary>
+    [Parameter] public RenderFragment? Controls { get; set; }
+
+    /// <summary>Optional extra content for TwoPlayer mode (e.g. character select).</summary>
+    [Parameter] public RenderFragment? Options { get; set; }
+
+    [Parameter] public IntroMode Mode { get; set; } = IntroMode.OnePlayer;
+
+    /// <summary>In TwoPlayer mode, gates the Start button (both players ready).</summary>
+    [Parameter] public bool StartEnabled { get; set; } = true;
+
+    /// <summary>Overrides the action button label ("OK" / "Start").</summary>
+    [Parameter] public string? StartLabel { get; set; }
+
+    /// <summary>Optional helper line under the TwoPlayer Start button.</summary>
+    [Parameter] public string? StartHint { get; set; }
+
+    /// <summary>How long the demo card flashes before auto-starting.</summary>
+    [Parameter] public int DemoDelayMs { get; set; } = 2000;
+
+    /// <summary>Forward keydowns to the host (TwoPlayer option selection).</summary>
+    [Parameter] public bool CaptureKeys { get; set; }
+
+    /// <summary>Fired once when the intro is dismissed and play should begin.</summary>
+    [Parameter] public EventCallback OnStart { get; set; }
+
+    /// <summary>Raw keydowns while the intro is up (used by TwoPlayer selection).</summary>
+    [Parameter] public EventCallback<KeyboardEventArgs> OnKey { get; set; }
+
+    private ElementReference _root;
+    private bool _started;
+    private Timer? _demoTimer;
+
+    private string ModeClass => Mode switch
+    {
+        IntroMode.Demo => "demo",
+        IntroMode.TwoPlayer => "twoplayer",
+        _ => "oneplayer",
+    };
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+
+        // Focus the overlay so Enter/Space (1P) and the per-player select keys
+        // (2P) land here without the player having to click first.
+        try { await _root.FocusAsync(); } catch { /* headless / detached — fine */ }
+
+        if (Mode == IntroMode.Demo && _demoTimer is null)
+        {
+            _demoTimer = new Timer(async _ => await InvokeAsync(StartAsync),
+                null, DemoDelayMs, Timeout.Infinite);
+        }
+    }
+
+    private async Task StartAsync()
+    {
+        if (_started) return;
+        if (Mode == IntroMode.TwoPlayer && !StartEnabled) return;
+        _started = true;
+        _demoTimer?.Dispose();
+        _demoTimer = null;
+        if (OnStart.HasDelegate) await OnStart.InvokeAsync();
+    }
+
+    private async Task HandleKey(KeyboardEventArgs e)
+    {
+        if (Mode == IntroMode.TwoPlayer)
+        {
+            if (OnKey.HasDelegate) await OnKey.InvokeAsync(e);
+            return;
+        }
+
+        // 1P: keyboard players can dismiss without reaching for the mouse.
+        if (e.Key is "Enter" or " " or "Spacebar")
+        {
+            await StartAsync();
+        }
+    }
+
+    public void Dispose()
+    {
+        _demoTimer?.Dispose();
+        _demoTimer = null;
+    }
+}

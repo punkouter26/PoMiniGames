@@ -6,20 +6,6 @@
 @inject UiFeedbackService Feedback
 @implements IAsyncDisposable
 
-@* §2026-07-17: Auto-skip the intro/home page and go straight to the 1P Racer
-   game. The racer is the primary flow for this build, so landing on the menu
-   and forcing an extra click was friction. replaceHistory keeps the back
-   button on /poracer so the user can still navigate to other routes via
-   the in-game shell's home button. *@
-@if (_autoRedirected)
-{
-    <div class="home-container home-container--redirecting" aria-busy="true">
-        <p class="home-redirect-hint">Loading Racer…</p>
-    </div>
-}
-else
-{
-
 <div class="home-container">
     <span class="home-mesh" aria-hidden="true"></span>
     @* §4 GPU-accelerated ambient particle field. WebGL2-only; falls back to the
@@ -187,14 +173,10 @@ else
     }
 </div>
 
-} @* end else — only render the home page when we did NOT auto-redirect *@
-
 @code {
     private ElementReference _ambientCanvas;
     private IJSObjectReference? _ambientModule;
     private bool _ambientStarted;
-    private bool _autoRedirected;
-    private bool _autoRedirectTried;
 
     // §9: activity feed (recent matches).
     private IReadOnlyList<ActivityFeedService.FeedItem> _activity = Array.Empty<ActivityFeedService.FeedItem>();
@@ -216,23 +198,6 @@ else
 
     protected override void OnInitialized()
     {
-        // §2026-07-17: Auto-skip the intro page — go directly to the 1P Racer
-        // game. We guard against query strings that explicitly request the
-        // home page (e.g. `?home=1`) so power-users can still reach it for
-        // navigation to other games. replaceHistory=true means the browser
-        // back button returns to the previous site, not back to this page.
-        if (_autoRedirectTried) return;
-        _autoRedirectTried = true;
-
-        var uri = NavigationManager.ToAbsoluteUri(NavigationManager.Uri);
-        var skipHome = uri.Query.Contains("home=1", StringComparison.OrdinalIgnoreCase)
-                    || uri.Query.Contains("menu=1", StringComparison.OrdinalIgnoreCase);
-        if (!skipHome)
-        {
-            _autoRedirected = true;
-            NavigationManager.NavigateTo("/poracer", forceLoad: false, replace: true);
-        }
-
         // Subscribe to kiosk state so the Demo button (Start ↔ Stop) updates
         // reactively when the coordinator starts/stops/pauses/advances.
         Kiosk.Changed += OnKioskStateChanged;

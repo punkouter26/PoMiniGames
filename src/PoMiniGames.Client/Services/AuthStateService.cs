@@ -351,7 +351,14 @@ public class AuthStateService
     public async Task SignInGuestAsync()
     {
         Error = null;
-        var profile = await _api.DevBypassAsync("Guest");
+        // Give every guest a unique "Guest######" name (6 random digits) so two
+        // anonymous players can be told apart. Name is the identity key in the
+        // multiplayer lobbies/scoring (Fun Quiz, Couple Quiz), so a shared "Guest"
+        // name collapsed distinct players into one (both crowned King/host). The
+        // server keys the guest identity off this name, and the session cookie
+        // persists it across navigations, so the name stays stable for the session.
+        var guestName = $"Guest{Random.Shared.Next(0, 1_000_000):D6}";
+        var profile = await _api.DevBypassAsync(guestName);
         if (profile != null)
         {
             _user = profile;

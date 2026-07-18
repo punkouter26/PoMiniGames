@@ -10,7 +10,16 @@
 <GameShell Title=@TitleContent Player="@_playerName" BackTo="/"
            GameOver="@(_solo && _soloFinished && !_isDemo)"
            GameKey="pocouplequiz"
-           GameSummary="@GameSummaryContent">
+           GameSummary="@GameSummaryContent"
+           HowToPlay="@HowToPlayContent">
+    @if (!_introDone)
+    {
+        <GameIntro Title="@TitleContent"
+                   Objective="Match your partner's answers — the King sets a secret, everyone else tries to match it."
+                   Controls="@HowToPlayContent"
+                   Mode="@_introMode"
+                   OnStart="DismissIntro" />
+    }
     @if (_solo)
     {
         @if (_isDemo)
@@ -181,6 +190,24 @@
     [SupplyParameterFromQuery(Name = "kiosk")] public int KioskNext { get; set; } = -1;
 
     private RenderFragment TitleContent => @<span>💕 Couple Quiz</span>;
+
+    // Intro/welcome gate — demo flashes it for 2s; the lobby/solo screen waits
+    // for OK. Keyed off the demo query so the mode is right on the first render
+    // (before OnInitializedAsync sets _isDemo).
+    private bool _introDone;
+    private GameIntro.IntroMode _introMode => DemoQuery == 1
+        ? GameIntro.IntroMode.Demo
+        : GameIntro.IntroMode.OnePlayer;
+    private void DismissIntro() => _introDone = true;
+
+    private RenderFragment HowToPlayContent => @<div>
+        <p>Answer questions about each other. The "King" locks a secret answer; everyone else tries to match it — matches score points.</p>
+        <ul>
+            <li>Solo vs an AI partner: pick the option you think they'd choose</li>
+            <li>Build a streak of matches for bonus points</li>
+            <li>Multiplayer: join a lobby and answer as a couple</li>
+        </ul>
+    </div>;
 
     private RenderFragment GameSummaryContent => @<div>
         <div>You matched your partner <strong>@_soloMatches</strong> / @_soloQuestions.Count times.</div>

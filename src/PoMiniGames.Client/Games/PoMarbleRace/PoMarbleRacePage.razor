@@ -24,40 +24,22 @@
         <div class="mr-wrap">
             <div id="marble-race-container" class="mr-canvas-host"></div>
 
-            @* Pick overlay — a 4-second countdown on the starting grid, not an
-               intro page: the race is already up and the clock is running. Click a
-               marble to claim it, or let the timer run out and one is picked for
-               you (see StartPickCountdown). Either way the race starts within 4s
-               of arriving. *@
+            @* Start overlay — a short countdown, not an intro page: the race is already up and
+               the clock is running. There's nothing to choose now — you always control the one
+               red marble in a pack of 100 blue — so this just tells you which one is yours and
+               how to steer before the gun. *@
             @if (_phase == "pick" && !_demo)
             {
                 <div class="mr-overlay">
                     <div class="mr-pick-card">
-                        <h2 class="mr-pick-title">Pick your marble</h2>
+                        <h2 class="mr-pick-title">You're the <span class="mr-pick-red">RED</span> marble</h2>
                         <p class="mr-pick-sub">
-                            Podium = points. Miss = the run ends. Starting in
-                            <strong class="mr-pick-count">@_pickCountdown</strong>…
+                            100 blue marbles. One red — yours. Steer with
+                            <kbd>←</kbd> <kbd>→</kbd> and finish in the top @ScoreTop to score.
                         </p>
-                        @* The roster is a real choice now: each marble has its own build and
-                           its own record, and the grid slot it drew this race is shuffled per
-                           track (track.js gridSlots). P1 is the front row. *@
-                        <div class="mr-pick-grid">
-                            @for (int i = 0; i < MarbleCount; i++)
-                            {
-                                var idx = i;
-                                <button class="mr-pick-marble" style="--c:@Colors[idx]"
-                                        @onclick="() => Pick(idx)"
-                                        aria-label="@PickLabel(idx)">
-                                    <span class="mr-pick-ball" style="--r:@RosterSizes[idx]"></span>
-                                    <span class="mr-pick-name">@Roster[idx].Name</span>
-                                    <span class="mr-pick-trait">@Roster[idx].Trait</span>
-                                    <span class="mr-pick-meta">
-                                        <span class="mr-pick-grid-pos">P@(GridPos(idx))</span>
-                                        <span class="mr-pick-form">@FormText(idx)</span>
-                                    </span>
-                                </button>
-                            }
-                        </div>
+                        <p class="mr-pick-sub">
+                            Starting in <strong class="mr-pick-count">@_pickCountdown</strong>…
+                        </p>
                     </div>
                 </div>
             }
@@ -81,10 +63,10 @@
                 </div>
             }
 
-            @* Live race telemetry, pinned to the canvas: clock, your position, your gap
-               to the leader, and your remaining nudges. None of this existed before —
-               the race clock was computed in JS and never shown, and the gap only
-               appeared on the podium after the race was already decided. *@
+            @* Live race telemetry, pinned to the canvas: clock, your position, and your gap
+               to the leader. None of this existed before — the race clock was computed in JS
+               and never shown, and the gap only appeared on the podium after the race was
+               already decided. *@
             @if (_phase == "racing" && !_demo)
             {
                 <div class="mr-telemetry" role="status" aria-live="off">
@@ -97,24 +79,42 @@
                     </div>
                     <div class="mr-tel-clock">@_clock.ToString("0.00")</div>
                     <div class="mr-tel-row">
-                        <span class="mr-tel-pos">P@(_myPlace > 0 ? _myPlace.ToString() : "–")</span>
+                        <span class="mr-tel-pos">P@(_myPlace > 0 ? _myPlace.ToString() : "–")<span class="mr-tel-field">/@(_myField > 0 ? _myField.ToString() : "101")</span></span>
                         <span class="mr-tel-gap">@GapText()</span>
                     </div>
-                    <div class="mr-tel-nudges" aria-label="@($"{_nudges} nudges left")">
-                        @for (int i = 0; i < NudgeCharges; i++)
-                        {
-                            <span class="mr-tel-pip @(i < _nudges ? "mr-tel-pip--on" : "")"></span>
-                        }
+                    @* #3 edge gauge: where your marble sits across the channel. The marker slides
+                       from left rail to right rail; it flashes red near an edge so you know to
+                       steer back before you fall off. *@
+                    <div class="mr-tel-edge @(EdgeDanger ? "mr-tel-edge--danger" : "")" aria-label="Track position">
+                        <div class="mr-tel-edge-track">
+                            <span class="mr-tel-edge-center"></span>
+                            <span class="mr-tel-edge-marker" style="--c:@ColorOf(_chosen); left:@EdgePct"></span>
+                        </div>
+                        <span class="mr-tel-edge-cap">@(EdgeDanger ? "⚠ EDGE" : "TRACK")</span>
                     </div>
                     @if (_streak > 0)
                     {
-                        <div class="mr-tel-streak">🔥 @_streak · @MultiplierText()</div>
+                        <div class="mr-tel-streak @(_streak >= 3 ? "mr-tel-streak--hot" : "")">🔥 @_streak · @MultiplierText()</div>
                     }
                 </div>
 
-                @* Who the camera director is on, and why. The director cuts between the leader
-                   and your marble (game.js _pickShot), which is disorienting unless the cut
-                   announces itself. Matches the ON AIR pin in-world. *@
+                @* #10 FINAL STRETCH klaxon: once the leader hits the Gauntlet run to the line,
+                   the stakes are set — shout it so the ending has weight. *@
+                @if (_progress >= 0.86)
+                {
+                    <div class="mr-final" role="status" aria-live="polite">🏁 FINAL STRETCH</div>
+                }
+
+                @* #10 hot-streak fire: at a 2× multiplier or better the screen edges catch fire,
+                   so a run that's worth real points looks like it. *@
+                @if (_streak >= 3)
+                {
+                    <div class="mr-fire" aria-hidden="true"></div>
+                }
+
+                @* Who the camera is on, and why. It's locked to your marble (game.js _pickShot)
+                   and only leaves you when you're out of the race or at the slow-mo finish, so
+                   the pin mostly reads YOU. Matches the ON AIR pin in-world. *@
                 @if (_camIndex >= 0)
                 {
                     <div class="mr-oncam" style="--c:@ColorOf(_camIndex)" role="status" aria-live="off">
@@ -125,13 +125,22 @@
                     </div>
                 }
 
-                @* Touch/mouse path for the nudge — the keyboard is the primary input but a
-                   verb that only exists on a physical keyboard isn't a verb on a phone. *@
+                @* Touch/mouse path for steering — the keyboard is the primary input but a
+                   verb that only exists on a physical keyboard isn't a verb on a phone. Press
+                   and hold to steer; release (or drag off the pad) to stop. *@
                 <div class="mr-nudge-pads">
-                    <button class="mr-nudge-pad" disabled="@(_nudges <= 0)"
-                            @onclick="() => Nudge(-1)" aria-label="Nudge left">◀</button>
-                    <button class="mr-nudge-pad" disabled="@(_nudges <= 0)"
-                            @onclick="() => Nudge(1)" aria-label="Nudge right">▶</button>
+                    <button class="mr-nudge-pad"
+                            @onpointerdown="() => Steer(-1, true)"
+                            @onpointerup="() => Steer(-1, false)"
+                            @onpointerleave="() => Steer(-1, false)"
+                            @oncontextmenu:preventDefault="true"
+                            aria-label="Steer left">◀</button>
+                    <button class="mr-nudge-pad"
+                            @onpointerdown="() => Steer(1, true)"
+                            @onpointerup="() => Steer(1, false)"
+                            @onpointerleave="() => Steer(1, false)"
+                            @oncontextmenu:preventDefault="true"
+                            aria-label="Steer right">▶</button>
                 </div>
             }
         </div>
@@ -181,7 +190,7 @@
                 }
             </ol>
             <div class="mr-hint">
-                <kbd>←</kbd><kbd>→</kbd> nudge your marble · <kbd>R</kbd> new track · <kbd>M</kbd> mute
+                <kbd>←</kbd><kbd>→</kbd> hold to steer your marble · <kbd>R</kbd> new track · <kbd>M</kbd> mute
             </div>
         </div>
     </div>
@@ -191,8 +200,9 @@
     [SupplyParameterFromQuery(Name = "demo")]
     public int Demo { get; set; }
 
-    private const int MarbleCount = 8;
-    private const int NudgeCharges = 3;   // mirrors NUDGE_CHARGES in game.js
+    private const int MarbleCount = 101;   // mirrors MARBLE_COUNT in marbles.js (1 red + 100 blue)
+    private const int PlayerIndex = 0;     // the red marble the player controls
+    private const int ScoreTop = 10;       // mirrors SCORE_TOP in game.js — finish top 10 to score
 
     private string _playerName = "";
     private bool _demo;
@@ -205,18 +215,15 @@
     private double _myProgress;
     private double _clock;
     private int _myPlace = -1;
+    private int _myField = MarbleCount;
     private double _myGap;
+    private double _myLateral;   // −1 (left edge) … 0 (centre) … +1 (right edge)
     private int _camIndex = -1;
     private string _camReason = "LEADER";
-    private int _nudges = NudgeCharges;
     private bool _lastWon;
     private int _lastPlace;
     private int _lastGained;
     private int _submittedBest;
-
-    private int[] _gridSlots = new int[MarbleCount];
-    private int[] _formWins = new int[MarbleCount];
-    private int[] _formRaces = new int[MarbleCount];
 
     private List<LbRow> _leaderboard = new();
     private List<PodiumRow> _podium = new();
@@ -226,31 +233,16 @@
     private DotNetObjectReference<PoMarbleRacePage>? _ref;
     private bool _engineStarted;
 
-    /// <summary>
-    /// Mirrors MARBLE_ROSTER in marbles.js — name, trait and colour are a pure function of the
-    /// marble index, so none of it is sent over interop on the per-tick path. Keep the two in
-    /// step: the index is the contract.
-    /// </summary>
-    private sealed record RosterEntry(string Name, string Trait, string Color, double Radius);
+    // Colour + name are a pure function of the marble index (index 0 is the red player, every
+    // other index is a blue AI marble), so neither is sent over interop on the per-tick path.
+    // Mirrors marbles.js — the index is the contract.
+    private const string RedColor = "#ef4444";
+    private const string BlueColor = "#3b82f6";
 
-    private static readonly RosterEntry[] Roster =
-    {
-        new("Volt",    "Sprinter",      "#22d3ee", 0.88),
-        new("Hex",     "Bouncer",       "#e879f9", 0.95),
-        new("Sprout",  "All-rounder",   "#a3e635", 1.00),
-        new("Ember",   "Brawler",       "#fb923c", 1.12),
-        new("Scarlet", "Heavyweight",   "#f87171", 1.18),
-        new("Azure",   "Glider",        "#60a5fa", 0.92),
-        new("Sol",     "Wildcard",      "#fde047", 1.05),
-        new("Blossom", "Featherweight", "#f472b6", 0.82),
-    };
+    private static string ColorOf(int index) => index == PlayerIndex ? RedColor : BlueColor;
 
-    private static readonly string[] Colors = Roster.Select(r => r.Color).ToArray();
-
-    // Pick-screen ball sizes scale with the marble's real radius, so the physique you're
-    // choosing is visible rather than described.
-    private static readonly string[] RosterSizes =
-        Roster.Select(r => $"{(int)Math.Round(r.Radius * 40)}px").ToArray();
+    private static string RosterName(int index) =>
+        index == PlayerIndex ? "You" : $"Marble {index + 1}";
 
     private RenderFragment TitleContent => @<span>🔮 Marble Race</span>;
 
@@ -263,9 +255,6 @@
         </div>
         <div>@(_lastWon ? $"Run: {_score} · Streak: {_streak}" : $"Best run: {_best}")</div>
     </div>;
-
-    private static string RosterName(int index) =>
-        index >= 0 && index < Roster.Length ? Roster[index].Name : "Your marble";
 
     protected override void OnInitialized()
     {
@@ -295,22 +284,10 @@
     // ── Display helpers ──
     private static string Pct(double v) => $"{(int)(Math.Clamp(v, 0, 1) * 100)}%";
 
-    // Grid position is 1-based and shuffled per track: slot 0-3 is the front row, 4-7 the
-    // (measurably disadvantaged) back row. Showing it is the point — the stagger used to be
-    // a silent, permanent handicap tied to the colour you picked.
-    private int GridPos(int index) =>
-        index >= 0 && index < _gridSlots.Length ? _gridSlots[index] + 1 : 0;
-
-    private string FormText(int index)
-    {
-        var races = index < _formRaces.Length ? _formRaces[index] : 0;
-        if (races == 0) return "no form";
-        var wins = index < _formWins.Length ? _formWins[index] : 0;
-        return $"{wins}/{races} pod";
-    }
-
-    private string PickLabel(int index) =>
-        $"Pick {Roster[index].Name}, {Roster[index].Trait}, grid {GridPos(index)}, {FormText(index)}";
+    // #3 edge gauge: map lateral (−1..+1) to a 0..100% marker position, and flag the danger
+    // band where the marble is close enough to a rail to risk falling off.
+    private string EdgePct => $"{(int)(Math.Clamp((_myLateral + 1) / 2, 0, 1) * 100)}%";
+    private bool EdgeDanger => Math.Abs(_myLateral) > 0.82;
 
     // JS caps the gap estimate at GAP_MAX (60s); at the cap the number is meaningless, so
     // show the cap as a cap rather than pretending to a tenth of a second.
@@ -327,13 +304,11 @@
         return $"{mult:0.#}×";
     }
 
-    // ── Pick countdown ──
-    // The player gets PickSeconds on the starting grid to claim a marble; if they
-    // don't, one is picked at random so the race always starts. Clicking a marble
-    // (or the timer firing) drives the same Pick, and JS ignores a second pick
-    // once the phase leaves "pick" — so a click landing on the same tick as the
-    // timeout can't double-pick.
-    private const int PickSeconds = 4;   // the roster cards need a beat longer to read than 8 bare dots
+    // ── Start countdown ──
+    // There's nothing to choose anymore — the player always controls the red marble — so this
+    // is just a "get ready" beat that frames the start gate, then the race begins with the red
+    // marble (PlayerIndex) assigned. JS ignores a second pick once the phase leaves "pick".
+    private const int PickSeconds = 3;
     private int _pickCountdown;
 
     // Cancellation, not a System.Timers.Timer: that fired its Elapsed handler on a threadpool
@@ -362,8 +337,8 @@
                 await InvokeAsync(StateHasChanged);
             }
 
-            // Timer ran out with no choice made — pick one so the race always starts.
-            if (!ct.IsCancellationRequested) await Pick(Random.Shared.Next(MarbleCount));
+            // Countdown done — start the race controlling the red marble.
+            if (!ct.IsCancellationRequested) await Pick(PlayerIndex);
         }
         catch (OperationCanceledException)
         {
@@ -393,12 +368,12 @@
         try { await JSRuntime.InvokeVoidAsync("PoMarbleRace.pick", index); } catch { }
     }
 
-    private async Task Nudge(int dir)
+    // Hold-to-steer for the on-screen pads. dir is -1 (left) / +1 (right); active is the
+    // pointer-down/up state. The engine applies the lateral force every physics step while a
+    // direction is held, mirroring the keyboard's keydown/keyup path.
+    private async Task Steer(int dir, bool active)
     {
-        // JS is the authority on whether a charge was actually spent (cooldown, charges left,
-        // marble already finished), and it pushes the new count back on the next tick — so this
-        // deliberately doesn't decrement _nudges locally.
-        try { await JSRuntime.InvokeVoidAsync("PoMarbleRace.nudge", dir); } catch { }
+        try { await JSRuntime.InvokeVoidAsync("PoMarbleRace.setSteer", dir, active); } catch { }
     }
 
     [JSInvokable]
@@ -416,7 +391,6 @@
             _clock = 0;
             _myPlace = -1;
             _myGap = 0;
-            _nudges = NudgeCharges;
             _leaderboard.Clear();
             _podium.Clear();   // hide the previous race's podium as the next race sets up
 
@@ -432,22 +406,12 @@
         await InvokeAsync(StateHasChanged);
     }
 
-    /// <summary>Per-track roster context for the pick screen: the shuffled grid slots and running form.</summary>
-    [JSInvokable]
-    public async Task OnRoster(int[] gridSlots, int[] wins, int[] races)
-    {
-        if (gridSlots.Length == MarbleCount) _gridSlots = gridSlots;
-        if (wins.Length == MarbleCount) _formWins = wins;
-        if (races.Length == MarbleCount) _formRaces = races;
-        await InvokeAsync(StateHasChanged);
-    }
-
     // ── Interop payloads ──
     // These take parallel primitive arrays rather than a JSON string. The string form cost three
     // serialization passes per call (JS JSON.stringify → Blazor serializing that string → a
     // JsonDocument.Parse here) on a path that fires ~10x/second for a whole race. Colours and
-    // names aren't transferred at all: they're a pure function of the marble index, and Roster
-    // already mirrors MARBLE_ROSTER in marbles.js.
+    // names aren't transferred at all: they're a pure function of the marble index (0 = the red
+    // player, everything else blue).
 
     /// <param name="indices">Marble indices, in finishing order.</param>
     [JSInvokable]
@@ -476,27 +440,32 @@
     /// <param name="gaps">Seconds behind the leader per entry (estimated from distance while still running).</param>
     /// <param name="progress">Leader progress 0..1.</param>
     /// <param name="myProgress">The player's own progress 0..1.</param>
+    /// <param name="order">Top-N marble indices in standings order (the whole 101-marble field
+    /// isn't sent — see LB_SHOWN in game.js). The player's own standing arrives separately as
+    /// <paramref name="myPlace"/>/<paramref name="myField"/>/<paramref name="myGap"/> so it's
+    /// shown even when the player is far down the pack.</param>
     [JSInvokable]
     public async Task OnRaceTick(int[] order, double[] speeds, bool[] finished, double[] times,
                                  double[] gaps, double progress, double myProgress, double clock,
-                                 int nudges, int streak, int camIndex, string camReason)
+                                 double myLateral, int myPlace, int myField, double myGap,
+                                 int streak, int camIndex, string camReason)
     {
         _progress = progress;
         _myProgress = myProgress;
         _clock = clock;
-        _nudges = nudges;
+        _myLateral = myLateral;
+        _myPlace = myPlace;
+        _myField = myField > 0 ? myField : MarbleCount;
+        _myGap = myGap;
         _streak = streak;
         _camIndex = camIndex;
         _camReason = camReason;
-        _myPlace = -1;
-        _myGap = 0;
 
         var rows = new List<LbRow>(order.Length);
         for (var i = 0; i < order.Length; i++)
         {
             var isFinished = i < finished.Length && finished[i];
             var isPlayer = order[i] == _chosen;
-            if (isPlayer) { _myPlace = i + 1; _myGap = At(gaps, i); }
             rows.Add(new LbRow
             {
                 Place = i + 1,
@@ -515,9 +484,6 @@
     }
 
     private static double At(double[] values, int i) => i < values.Length ? values[i] : 0;
-
-    private static string ColorOf(int index) =>
-        index >= 0 && index < Colors.Length ? Colors[index] : "#fff";
 
     [JSInvokable]
     public async Task OnRaceResult(bool won, int place, int score, int gained, int streak, int best)

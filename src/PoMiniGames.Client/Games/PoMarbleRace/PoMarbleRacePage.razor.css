@@ -366,10 +366,25 @@
     font-size: 1.4rem;
 }
 
+/* The word RED in the start card, coloured like the marble it names. */
+.mr-pick-red {
+    color: #ef4444;
+    text-shadow: 0 0 12px rgba(239, 68, 68, 0.7);
+}
+
 .mr-pick-sub {
-    margin: 0 0 16px;
+    margin: 0 0 10px;
     color: #94a3b8;
     font-size: 0.85rem;
+}
+
+.mr-pick-sub kbd {
+    background: rgba(148, 163, 184, 0.18);
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-size: 0.85em;
+    color: #e2e8f0;
 }
 
 /* Seconds left to claim a marble before one is picked at random. Ticks with a
@@ -544,35 +559,98 @@
     color: #22d3ee;
 }
 
+/* "/ 101" after the place — your rank out of the field, dimmer so the place stays the figure. */
+.mr-tel-field {
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: #64748b;
+}
+
 .mr-tel-gap {
     font-size: 0.75rem;
     color: #94a3b8;
     font-variant-numeric: tabular-nums;
 }
 
-.mr-tel-nudges {
-    display: flex;
-    gap: 4px;
-    margin-top: 6px;
+/* #3 edge gauge: a rail with a centre tick and a sliding marker for the marble's lateral
+   position, so the player can read "am I about to steer off?" at a glance. */
+.mr-tel-edge {
+    margin-top: 7px;
 }
 
-.mr-tel-pip {
-    width: 16px;
-    height: 5px;
+.mr-tel-edge-track {
+    position: relative;
+    height: 6px;
     border-radius: 3px;
-    background: rgba(148, 163, 184, 0.25);
+    /* green in the middle → amber → red at the rails, so drifting toward an edge darkens. */
+    background: linear-gradient(90deg,
+        rgba(248, 113, 113, 0.55) 0%, rgba(251, 146, 60, 0.4) 18%,
+        rgba(74, 222, 128, 0.35) 50%,
+        rgba(251, 146, 60, 0.4) 82%, rgba(248, 113, 113, 0.55) 100%);
+    border: 1px solid rgba(148, 163, 184, 0.25);
 }
 
-.mr-tel-pip--on {
-    background: #fb923c;
-    box-shadow: 0 0 7px rgba(251, 146, 60, 0.75);
+.mr-tel-edge-center {
+    position: absolute;
+    left: 50%;
+    top: -1px;
+    bottom: -1px;
+    width: 1px;
+    background: rgba(226, 232, 240, 0.5);
+}
+
+.mr-tel-edge-marker {
+    position: absolute;
+    top: 50%;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--c, #22d3ee);
+    box-shadow: 0 0 8px var(--c, #22d3ee);
+    transform: translate(-50%, -50%);
+    transition: left 0.09s linear;
+}
+
+.mr-tel-edge-cap {
+    display: block;
+    margin-top: 3px;
+    font-size: 0.5rem;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    color: #64748b;
+}
+
+/* Near a rail the whole gauge flashes red — the "steer back NOW" signal. */
+.mr-tel-edge--danger .mr-tel-edge-cap { color: #f87171; }
+.mr-tel-edge--danger .mr-tel-edge-track {
+    border-color: rgba(248, 113, 113, 0.9);
+    animation: mr-edge-pulse 0.5s ease-in-out infinite;
+}
+
+@keyframes mr-edge-pulse {
+    0%, 100% { box-shadow: 0 0 0 rgba(248, 113, 113, 0); }
+    50% { box-shadow: 0 0 12px rgba(248, 113, 113, 0.8); }
 }
 
 .mr-tel-streak {
-    margin-top: 5px;
+    margin-top: 6px;
     font-size: 0.68rem;
     font-weight: 700;
     color: #fb923c;
+}
+
+/* #10 hot streak (2×+): the multiplier readout ignites so a valuable run looks valuable. */
+.mr-tel-streak--hot {
+    font-size: 0.82rem;
+    font-weight: 900;
+    color: #fde047;
+    text-shadow: 0 0 10px rgba(251, 146, 60, 0.95), 0 0 20px rgba(248, 113, 113, 0.7);
+    animation: mr-streak-throb 0.7s ease-in-out infinite;
+}
+
+@keyframes mr-streak-throb {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.08); }
 }
 
 /* ── On-air chip (top-right of the canvas) ──
@@ -628,8 +706,58 @@
     50% { opacity: 0.4; }
 }
 
+/* ── #10 FINAL STRETCH klaxon ──
+   Centred across the top of the canvas the moment the leader hits the run to the line. */
+.mr-final {
+    position: absolute;
+    top: 14px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 5;
+    padding: 6px 18px;
+    border-radius: 999px;
+    background: rgba(12, 8, 20, 0.8);
+    border: 1px solid rgba(253, 224, 71, 0.7);
+    font-size: 0.9rem;
+    font-weight: 900;
+    letter-spacing: 0.12em;
+    color: #fde047;
+    text-shadow: 0 0 12px rgba(251, 146, 60, 0.9);
+    backdrop-filter: blur(6px);
+    pointer-events: none;
+    animation: mr-final-throb 0.6s ease-in-out infinite;
+}
+
+@keyframes mr-final-throb {
+    0%, 100% { transform: translateX(-50%) scale(1); opacity: 0.9; }
+    50% { transform: translateX(-50%) scale(1.06); opacity: 1; }
+}
+
+/* ── #10 hot-streak fire ──
+   An inset amber/red glow around the canvas edges while the multiplier is 2×+, so a run that's
+   racking up points feels like it's on fire. Non-interactive overlay. */
+.mr-fire {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    pointer-events: none;
+    border-radius: inherit;
+    box-shadow: inset 0 0 60px 8px rgba(251, 146, 60, 0.45),
+                inset 0 0 120px 24px rgba(248, 113, 113, 0.28);
+    animation: mr-fire-flicker 0.5s ease-in-out infinite;
+}
+
+@keyframes mr-fire-flicker {
+    0%, 100% { opacity: 0.75; }
+    50% { opacity: 1; }
+}
+
 @media (prefers-reduced-motion: reduce) {
-    .mr-oncam-live { animation: none; }
+    .mr-oncam-live,
+    .mr-tel-edge--danger .mr-tel-edge-track,
+    .mr-tel-streak--hot,
+    .mr-final,
+    .mr-fire { animation: none; }
 }
 
 /* ── Nudge pads ──
@@ -648,6 +776,9 @@
 
 .mr-nudge-pad {
     pointer-events: auto;
+    touch-action: none; /* hold-to-steer: don't let a press scroll/zoom the page */
+    -webkit-user-select: none;
+    user-select: none;
     width: 58px;
     height: 58px;
     border-radius: 50%;

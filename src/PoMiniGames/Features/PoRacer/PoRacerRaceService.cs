@@ -16,8 +16,10 @@ public sealed class PoRacerRaceService : IAsyncDisposable
     private const int TickHz = 50;
     /// <summary>20 Hz snapshot is plenty for the rendered framerate.</summary>
     private const int SnapshotHz = 20;
-    /// <summary>Pre-race countdown so all clients hit GO simultaneously.</summary>
-    private const int CountdownMs = 3_000;
+    /// <summary>Pre-race countdown so all clients hit GO simultaneously.
+    /// §2026-07-17: set to 0 — the 3-2-1 overlay was an extra click the
+    /// racer player never asked for. Race starts the instant they join.</summary>
+    private const int CountdownMs = 0;
 
     private readonly string _gameCode;
     private readonly PoRacerLobbyService _lobby;

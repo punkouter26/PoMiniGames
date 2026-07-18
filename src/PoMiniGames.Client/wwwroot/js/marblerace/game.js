@@ -3,40 +3,46 @@
 import { createScene } from './scene.js';
 import { createWorld, stepWorld } from './physics.js';
 import { generateTrack } from './track.js';
-import { createMarbles, MARBLE_ROSTER } from './marbles.js';
+import { createMarbles, MARBLE_COUNT } from './marbles.js';
 import { createAudio } from './audio.js';
 
 const RESULT_MS = 3600;     // how long the result banner shows before next track
 const RACE_TIMEOUT = 180;   // s — failsafe for the lengthened chute + friction bands + Gauntlet
 const TICK_INTERVAL = 0.1;  // s — throttle for OnRaceTick to C#
 const BEST_KEY = 'pomarblerace_best';
-const FORM_KEY = 'pomarblerace_form';
+const LB_SHOWN = 6;         // leaderboard rows sent to the HUD (top N of the 101-marble field)
 
 // ── The player's verb ──
-// Three lateral nudges per race, on a cooldown. This is the entire interactive surface of
-// the game, so it is deliberately cheap to use and expensive to waste: a nudge is the
-// difference between taking the boost pad line and bouncing off a Gauntlet rotor, but you
-// only get three and there is no way to earn more mid-race.
-const NUDGE_CHARGES = 3;
-const NUDGE_COOLDOWN = 0.6;  // s
-const NUDGE_DV = 7.0;        // velocity delta at mass 1 — divided by mass, so heavy marbles resist
+// Continuous lateral steering. Holding left/right adds sideways acceleration to the picked
+// marble for as long as it's held — this is the entire interactive surface of the game, so
+// the player is always able to fight for the boost-pad line or steer off a Gauntlet rotor.
+// The force is divided by mass, so the roster's heavyweights are genuinely harder to steer:
+// the trade for the momentum they carry through the Gauntlet.
+const STEER_ACCEL = 40;      // lateral units/s² at mass 1, applied every step a direction is held
 
 // ── Boost pads ──
 const BOOST_ACCEL = 30;      // units/s² along the track tangent while on a pad
 const BOOST_MAX_SPEED = 95;  // don't let a marble that camps a pad accelerate without bound
 
+// ── Kickers (#6) ── telegraphed push-only band that fires on a cycle, shoving marbles sideways.
+const KICK_DV = 16;          // lateral velocity punch at mass 1 when it fires (÷ mass — heavies resist)
+const KICK_UP = 4;           // small upward pop so the kick reads as a jolt, not a slide
+const KICK_CHARGE = 0.34;    // fraction of each cycle spent visibly charging up — the TELL
+
 // ── Scoring ──
-// Placement-weighted, not the old flat "+1 for any top-3". 1st is worth more than 3rd, a
-// dominant win is worth more again, and a streak multiplies the lot.
-const PLACE_POINTS = [0, 5, 3, 2];   // index by place; 4th-8th score nothing
-const DOMINANT_GAP = 1.5;            // s clear of 2nd for the +2 dominant-win bonus
-const DOMINANT_BONUS = 2;
+// Placement-weighted across the 101-marble field: finishing anywhere in the top SCORE_TOP
+// scores, more for a higher place, with a dominant-win bonus and a streak multiplier on top.
+// Beating 100 marbles with only a steering input makes even a top-10 a real result, so the
+// scoring bar is the top 10 rather than a podium of 3.
+const SCORE_TOP = 10;                // finish in the top 10 of 101 to score / keep a streak
+const DOMINANT_GAP = 1.5;            // s clear of 2nd for the dominant-win bonus
+const DOMINANT_BONUS = 4;
 const MAX_STREAK_STEPS = 4;          // multiplier caps at 1 + 4*0.5 = 3×
 
 // ── Director ──
-const SHOT_LEADER_MS = 5.0;   // s on the leader before considering a cut
-const SHOT_PLAYER_MS = 2.2;   // s held on the player once cut to
-const BATTLE_DIST = 7;        // units — another marble this close to you is a battle worth showing
+// The camera locks to the player's own marble (this is a game you steer, so you must always
+// see what you're steering); the leader only takes the shot when the player is out of the
+// race or during the slow-motion finish. See _pickShot.
 const SLOWMO_DIST = 45;       // units from the finish where the leader triggers slow-motion
 const SLOWMO_SCALE = 0.35;
 
@@ -48,18 +54,6 @@ const OOB_MARGIN = 48;
 // Ceiling on a reported time gap; beyond this the HUD shows "+60s" rather than a number
 // whose precision it hasn't earned. See _gapSeconds.
 const GAP_MAX = 60;
-
-function loadForm() {
-  // Per-marble win/race counts, so the pick screen can show form instead of asking the
-  // player to choose a colour blind. Corrupt or absent storage just means a fresh table.
-  const empty = { races: new Array(MARBLE_ROSTER.length).fill(0), wins: new Array(MARBLE_ROSTER.length).fill(0) };
-  try {
-    const raw = JSON.parse(localStorage.getItem(FORM_KEY) || 'null');
-    if (!raw || !Array.isArray(raw.races) || !Array.isArray(raw.wins)) return empty;
-    if (raw.races.length !== MARBLE_ROSTER.length || raw.wins.length !== MARBLE_ROSTER.length) return empty;
-    return raw;
-  } catch { return empty; }
-}
 
 export class Game {
   constructor(containerId, dotnetRef, demo) {
@@ -76,7 +70,6 @@ export class Game {
     this.score = 0;
     this.streak = 0;
     this.best = parseInt(localStorage.getItem(BEST_KEY) || '0', 10) || 0;
-    this.form = loadForm();
     this.chosen = -1;
     // Date.parse(new Date().toString()) round-trips through a second-precision string, so two
     // loads in the same second raced the identical track. Use the raw epoch ms.
@@ -90,15 +83,14 @@ export class Game {
     this._raf = 0;
     this._lastTs = 0;
 
-    // player verb
-    this.nudges = NUDGE_CHARGES;
-    this.nudgeCd = 0;
+    // player verb — lateral steering, held via keyboard or the on-screen pads
+    this._steerLeft = false;
+    this._steerRight = false;
+    this._steerSparkAccum = 0;
     this._wasBoosting = false;
 
     // director
-    this.shot = 'leader';
     this.shotReason = 'LEADER';
-    this.shotHold = 0;
     this.slowmo = false;
     this._lastFocus = null;
 
@@ -124,13 +116,10 @@ export class Game {
 
   pick(index) {
     if (this.phase !== 'pick') return;
-    if (index < 0 || index >= MARBLE_ROSTER.length) return;
+    if (index < 0 || index >= MARBLE_COUNT) return;
     this.chosen = index;
     this.marbleSet.highlight(index);
-    this.nudges = NUDGE_CHARGES;
-    this.nudgeCd = 0;
-    this.shot = 'leader';
-    this.shotHold = 0;
+    this._steerLeft = this._steerRight = false;
     this._setPhase('racing');
     this.raceClock = 0;
     this.tickAccum = TICK_INTERVAL;
@@ -141,29 +130,40 @@ export class Game {
     this.audio.playGun();
   }
 
-  // The player's one in-race input: shove the picked marble sideways. dir is -1 (left) or +1
-  // (right) in the local track frame, so it stays intuitive through banked turns and hairpins
+  // The player's in-race input: hold a direction to steer the picked marble sideways. dir is
+  // -1 (left) or +1 (right); active toggles the hold. Keyboard drives this on keydown/keyup,
+  // the on-screen pads on pointer down/up. The force itself is applied every physics step in
+  // _applySteer — this just records which way, if any, is currently held.
+  setSteer(dir, active) {
+    if (dir < 0) this._steerLeft = !!active;
+    else if (dir > 0) this._steerRight = !!active;
+  }
+
+  // Applied once per physics step while racing. Left+right held cancel out. The push is along
+  // the track's LOCAL right vector, so it stays intuitive through banked turns and hairpins
   // where world-space X would flip under the player.
-  nudge(dir) {
-    if (this.phase !== 'racing' || this.demo) return false;
-    if (this.nudges <= 0 || this.nudgeCd > 0) return false;
+  _applySteer(sdt) {
+    if (this.demo || this.phase !== 'racing') return;
+    const dir = (this._steerRight ? 1 : 0) - (this._steerLeft ? 1 : 0);
+    if (!dir) return;
     const m = this.marbleSet.marbles[this.chosen];
-    if (!m || m.finished || m.eliminated) return false;
+    if (!m || m.finished || m.eliminated) return;
 
     const rb = this.track.rightAt(m.body.position.z);
-    // Impulse / mass: the roster's heavyweights are genuinely harder to steer, which is the
+    // Accel / mass: the roster's heavyweights are genuinely harder to steer, which is the
     // trade for the momentum they carry through the Gauntlet.
-    const dv = (NUDGE_DV / m.body.mass) * dir;
+    const dv = (STEER_ACCEL / m.body.mass) * dir * sdt;
     m.body.velocity.x += rb.x * dv;
     m.body.velocity.y += rb.y * dv;
     m.body.velocity.z += rb.z * dv;
 
-    this.nudges--;
-    this.nudgeCd = NUDGE_COOLDOWN;
-    this.audio.playWhoosh();
-    this.scene.burstSparks(m.mesh.position, m.spec.color, 10, 1.1);
-    this._sendTick();
-    return true;
+    // Throttled sparks off the steered marble — feedback that the input is landing, without
+    // the every-frame audio a held key would otherwise spam.
+    this._steerSparkAccum += sdt;
+    if (this._steerSparkAccum >= 0.08) {
+      this._steerSparkAccum = 0;
+      this.scene.burstSparks(m.mesh.position, m.spec.color, 3, 0.7);
+    }
   }
 
   regenerate() {
@@ -188,7 +188,7 @@ export class Game {
   // ── internals ──
   _buildTrack() {
     this._podiumSent = false; // reset the top-3 podium for the new race
-    this.track = generateTrack(this.world, this.materials, this.seed >>> 0);
+    this.track = generateTrack(this.world, this.materials, this.seed >>> 0, MARBLE_COUNT);
     this.scene.add(this.track.group);
     this.marbleSet = createMarbles(this.world, this.materials, this.track.startPositions, -1,
       (v, pos, color) => {
@@ -202,7 +202,6 @@ export class Game {
     this.chosen = -1;
     this.slowmo = false;
     this._setPhase('pick');
-    this._sendRoster();
     // frame the start gate from above
     const ov = this.track.overviewTarget;
     this.scene.followTarget(ov, 0, true);
@@ -222,50 +221,29 @@ export class Game {
   }
 
   _autoPickSoon() {
-    // pick a random marble after a short beat so the start gate is visible first
+    // demo mode: assign the red marble after a short beat so the start gate is visible first
+    // (the demo camera follows the leader regardless — chosen just needs to be valid).
     this._demoPickAt = performance.now() + 1200;
   }
 
   // ── Camera director ──
-  // The old camera hard-locked to the player's own marble, so a player running last watched
-  // the back of the pack while the actual race happened off-screen. This picks a shot the way
-  // a broadcast would: stay on the leader, cut to the player when they're in a fight or when
-  // they've been off-screen too long, and never cut mid-slow-motion at the line.
-  _pickShot(dt) {
-    const lb = this.marbleSet.leaderboard();
-    const leader = lb[0];
-    const take = (marble, shot, reason, hold) => {
-      this.shot = shot;
-      this.shotReason = reason;
-      if (hold !== undefined) this.shotHold = hold;
-      return marble;
-    };
-    if (this.demo) return take(leader, 'leader', 'LEADER');
+  // This is a game you steer, so the camera stays LOCKED to your own marble the whole race —
+  // you must always see the marble you're controlling. The only times it leaves you: when
+  // you're out of the race (eliminated/finished → follow the leader so there's still a race to
+  // watch), and the slow-motion finish (the leader's money shot — unless YOU are that leader,
+  // in which case staying on you already frames it).
+  _pickShot() {
+    const leader = this.marbleSet.leaderboard()[0];
+    const take = (marble, reason) => { this.shotReason = reason; return marble; };
+    if (this.demo) return take(leader, 'LEADER');
 
     const me = this.marbleSet.marbles[this.chosen];
     const meAlive = me && !me.eliminated && !me.finished;
-    if (!meAlive) return take(leader, 'leader', 'LEADER');
+    if (!meAlive) return take(leader, 'LEADER');
 
-    this.shotHold -= dt;
-    if (this.shotHold > 0) return this.shot === 'player' ? me : leader;
+    if (this.slowmo && me !== leader) return take(leader, 'FINISH');
 
-    // Slow-motion at the line always frames the leader — that's the money shot.
-    if (this.slowmo) return take(leader, 'leader', 'FINISH', SHOT_LEADER_MS);
-
-    // If the player IS the leader, or is close enough to be in the leader's frame, one shot
-    // covers both and there's nothing to cut to.
-    if (me.place >= 1 && me.place <= 3) return take(leader, 'leader', 'LEADER', SHOT_LEADER_MS);
-
-    // A battle: someone is right on top of the player. Cut to it.
-    const inBattle = this.marbleSet.marbles.some((o) =>
-      o !== me && !o.eliminated && !o.finished &&
-      Math.abs(o.body.position.z - me.body.position.z) < BATTLE_DIST);
-
-    if (this.shot === 'leader' || inBattle) {
-      this.scene.punchFov();
-      return take(me, 'player', inBattle ? 'BATTLE' : 'YOU', inBattle ? SHOT_PLAYER_MS * 1.4 : SHOT_PLAYER_MS);
-    }
-    return take(leader, 'leader', 'LEADER', SHOT_LEADER_MS);
+    return take(me, me === leader ? 'LEADER' : 'YOU');
   }
 
   // Time gap behind the leader, in seconds. Finished marbles compare finish times; those
@@ -303,11 +281,50 @@ export class Game {
     this._wasBoosting = playerBoosting;
   }
 
+  // #6 Kickers: drive the telegraph (brightening pad) and the fire moment. Push-only, so it
+  // can scatter the pack and force a steering correction but never trap a marble.
+  _applyKickers() {
+    const kickers = this.track.kickers;
+    if (!kickers) return;
+    const t = this.raceClock;
+    for (const k of kickers) {
+      const phase = (t % k.period) / k.period;         // 0..1 within the charge→fire cycle
+      // Tell: brighten over the last KICK_CHARGE of the cycle, easing in so it "winds up".
+      const charge = phase > (1 - KICK_CHARGE) ? (phase - (1 - KICK_CHARGE)) / KICK_CHARGE : 0;
+      k.mat.emissiveIntensity = 0.5 + charge * charge * 2.4;
+      // Fire on the wrap, when phase resets from near-1 back toward 0.
+      if (phase < k._lastPhase) this._fireKicker(k);
+      k._lastPhase = phase;
+    }
+  }
+
+  _fireKicker(k) {
+    const [a, b] = k.band;
+    const len = this.track.length;
+    let hits = 0;
+    for (const m of this.marbleSet.marbles) {
+      if (m.finished || m.eliminated) continue;
+      const s = m.body.position.z / len;
+      if (s < a || s > b) continue;
+      const rb = this.track.rightAt(m.body.position.z);
+      // Alternate the kick direction by marble index so a fire splits the pack rather than
+      // shoving everyone the same way — and the player has to steer back to their line.
+      const dv = (KICK_DV / m.body.mass) * (m.index % 2 === 0 ? 1 : -1);
+      m.body.velocity.x += rb.x * dv;
+      m.body.velocity.y += rb.y * dv + KICK_UP;
+      m.body.velocity.z += rb.z * dv;
+      this.scene.burstSparks(m.mesh.position, 0xe879f9, 14, 1.5);
+      hits++;
+    }
+    k.mat.emissiveIntensity = 3.6;          // bright flash on fire (visible even when it hits nothing)
+    if (hits > 0) this.audio.playWhoosh();  // ...but only make noise when it actually connects
+  }
+
   _frame(dt) {
     // demo auto-pick
     if (this.demo && this.phase === 'pick' && this._demoPickAt && performance.now() >= this._demoPickAt) {
       this._demoPickAt = 0;
-      this.pick(Math.floor(Math.random() * MARBLE_ROSTER.length));
+      this.pick(Math.floor(Math.random() * MARBLE_COUNT));
     }
 
     if (this.phase === 'racing') {
@@ -321,11 +338,11 @@ export class Game {
 
       this.track.driveMotors();
       this._applyBoost(sdt);
+      this._applySteer(sdt);   // player's held steering, integrated by the step below
+      this._applyKickers();    // #6 telegraphed kicker band (push-only)
       stepWorld(this.world, sdt);
       this.marbleSet.sync();
       for (const t of this.track.turnstiles) { t.mesh.position.copy(t.body.position); t.mesh.quaternion.copy(t.body.quaternion); }
-
-      if (this.nudgeCd > 0) this.nudgeCd -= dt;
 
       this.raceClock += sdt;
       // Finishes are resolved BEFORE the out-of-bounds sweep. Crossing the line is terminal:
@@ -369,17 +386,23 @@ export class Game {
       }
 
       // Audio beds ride the focused marble's speed and how close the race is to resolving.
+      // #10: tightened the range (400→300) and eased it (pow 0.6) so the bed ramps up harder
+      // and sooner as the leader runs at the line — the music leans into the finish.
       const leaderNow = this.marbleSet.leaderboard()[0];
-      const nearFinish = leaderNow
-        ? 1 - Math.max(0, Math.min(1, (this.track.finishZ - leaderNow.body.position.z) / 400))
+      const nearRaw = leaderNow
+        ? 1 - Math.max(0, Math.min(1, (this.track.finishZ - leaderNow.body.position.z) / 300))
         : 0;
+      const nearFinish = Math.pow(nearRaw, 0.6);
       this.audio.updateBeds(leaderNow ? leaderNow.speed : 0, nearFinish, this.phase === 'racing');
 
       // Snap on a shot change rather than lerping across the track: a director's cut is a
       // cut. Lerping between two marbles 200 units apart reads as the camera losing the race.
-      const focus = this._pickShot(dt);
+      const focus = this._pickShot();
       if (focus) {
-        this.scene.followTarget(focus.mesh.position, dt, focus !== this._lastFocus);
+        // Feed the camera the marble's heading (so it looks along the track ahead, #2) and
+        // speed (so the FOV widens with pace, #4).
+        const fwd = this.track.dirAt(focus.body.position.z);
+        this.scene.followTarget(focus.mesh.position, dt, focus !== this._lastFocus, fwd, focus.speed);
         this.marbleSet.setCameraFocus(focus.index);
         this._lastFocus = focus;
       }
@@ -411,14 +434,15 @@ export class Game {
     // counted as a win.
     const finished = !!me && me.finished && !me.eliminated;
     const place = finished ? me.place : -1;
-    const won = finished && place >= 1 && place <= 3;
+    // Score for finishing anywhere in the top SCORE_TOP of the 101-marble field.
+    const won = finished && place >= 1 && place <= SCORE_TOP;
 
     let gained = 0;
     if (won) {
-      let base = PLACE_POINTS[place];
-      // A dominant win — clear of 2nd by DOMINANT_GAP — is worth more than scraping home
-      // first. This is where finish TIME finally enters the score: it used to be computed
-      // and displayed and then thrown away entirely.
+      // Higher place = more points: 1st is worth SCORE_TOP, SCORE_TOP-th is worth 1.
+      let base = SCORE_TOP - place + 1;
+      // A dominant win — 1st and clear of 2nd by DOMINANT_GAP — is worth more again. This is
+      // where finish TIME enters the score.
       if (place === 1 && order.length > 1 && order[1].finished &&
           (order[1].finishTime - me.finishTime) >= DOMINANT_GAP) {
         base += DOMINANT_BONUS;
@@ -428,22 +452,12 @@ export class Game {
       gained = Math.round(base * mult);
       this.score += gained;
     } else {
-      // The run ends. Score used to be a strictly-increasing counter that never reset, which
-      // made "best" identical to "score" and turned the global board into a measure of how
-      // long a tab was left open. A miss now costs the whole run — that's the stake that
-      // makes a streak worth watching.
+      // The run ends. A miss (finishing outside the top SCORE_TOP, or falling off) costs the
+      // whole run — that's the stake that makes a streak worth watching.
       this.streak = 0;
       this.score = 0;
     }
     if (this.score > this.best) { this.best = this.score; try { localStorage.setItem(BEST_KEY, String(this.best)); } catch { } }
-
-    // Roster form: every marble that finished this race gets a start, the top 3 get a win.
-    for (const m of this.marbleSet.marbles) {
-      if (m.eliminated) continue;
-      this.form.races[m.index] = (this.form.races[m.index] || 0) + 1;
-      if (m.finished && m.place >= 1 && m.place <= 3) this.form.wins[m.index] = (this.form.wins[m.index] || 0) + 1;
-    }
-    try { localStorage.setItem(FORM_KEY, JSON.stringify(this.form)); } catch { }
 
     this.resultTimer = RESULT_MS / 1000;
     this._setPhase('result');
@@ -454,8 +468,8 @@ export class Game {
 
   // C# is handed parallel primitive arrays rather than a JSON string: the string form was
   // serialized by us, serialized again by the interop layer, then parsed a third time on the
-  // C# side — every tick for a whole race. Colours are omitted entirely; C# derives them from
-  // the marble index (its Roster array mirrors MARBLE_ROSTER).
+  // C# side — every tick for a whole race. Colours/names are omitted; C# derives them from the
+  // marble index (index 0 = the red player, everything else blue).
   _invoke(method, ...args) {
     if (!this.dotnet) return;
     // invokeMethodAsync rejects asynchronously, so a bare try/catch here would never see the
@@ -464,12 +478,6 @@ export class Game {
       const p = this.dotnet.invokeMethodAsync(method, ...args);
       if (p && p.catch) p.catch(() => { });
     } catch { }
-  }
-
-  // Grid slots + running form, so the pick screen can show what it's actually asking the
-  // player to choose between. Sent once per track, at pick time.
-  _sendRoster() {
-    this._invoke('OnRoster', this.track.gridSlots, this.form.wins, this.form.races);
   }
 
   _sendPodium() {
@@ -499,17 +507,29 @@ export class Game {
     }
     for (const m of order) m.prevPlace = m.place;
 
+    // #3 lateral position of the player's marble across the channel (−1 left edge … +1 right
+    // edge), for the HUD edge gauge. 0 when the player has no live marble.
+    const myLateral = (me && !me.eliminated) ? this.track.lateralOf(me.body.position) : 0;
+
+    // With 101 marbles the HUD can't render the whole field, so only the top LB_SHOWN are sent
+    // for the leaderboard list. The player's own standing is sent separately (place / field /
+    // gap) and shown in the telemetry panel, so it's always visible even when far down the pack.
+    const shown = order.slice(0, LB_SHOWN);
+    const myLive = !!me && !me.eliminated;
     const round2 = (v) => Math.round(v * 100) / 100;
     this._invoke('OnRaceTick',
-      order.map((m) => m.index),
-      order.map((m) => Math.round(m.speed * 10) / 10),
-      order.map((m) => m.finished),
-      order.map((m) => (m.finished ? round2(m.finishTime) : 0)),
-      order.map((m) => round2(this._gapSeconds(m, leader))),
+      shown.map((m) => m.index),
+      shown.map((m) => Math.round(m.speed * 10) / 10),
+      shown.map((m) => m.finished),
+      shown.map((m) => (m.finished ? round2(m.finishTime) : 0)),
+      shown.map((m) => round2(this._gapSeconds(m, leader))),
       this.marbleSet.progress(),
-      me && !me.eliminated ? this.marbleSet.progressOf(me) : 0,
+      myLive ? this.marbleSet.progressOf(me) : 0,
       round2(this.raceClock),
-      this.nudges,
+      Math.round(myLateral * 1000) / 1000,
+      myLive ? me.place : -1,                                  // player's absolute place
+      order.length,                                            // field size (marbles still racing)
+      myLive ? round2(this._gapSeconds(me, leader)) : 0,       // player's gap to the leader
       this.streak,
       this._lastFocus ? this._lastFocus.index : -1,
       this.shotReason || 'LEADER');
@@ -521,10 +541,25 @@ export class Game {
       // M was documented as the mute key but was never actually bound to anything, and the
       // only other caller (a Settings drawer) had been deleted — so mute was unreachable.
       if (e.key === 'm' || e.key === 'M') { e.preventDefault(); this.audio.toggleMuted(); }
-      if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') { e.preventDefault(); this.nudge(-1); }
-      if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') { e.preventDefault(); this.nudge(1); }
+      // Held-key steering: keydown starts the hold (auto-repeat re-sets the same flag, which
+      // is idempotent), keyup below ends it.
+      if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') { e.preventDefault(); this.setSteer(-1, true); }
+      if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') { e.preventDefault(); this.setSteer(1, true); }
     };
+    this._keyUpHandler = (e) => {
+      if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') { this.setSteer(-1, false); }
+      if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') { this.setSteer(1, false); }
+    };
+    // Losing focus (alt-tab, click away) has no keyup, so release steering here or the marble
+    // keeps drifting into the wall with nothing held.
+    this._blurHandler = () => { this._steerLeft = this._steerRight = false; };
     window.addEventListener('keydown', this._keyHandler);
+    window.addEventListener('keyup', this._keyUpHandler);
+    window.addEventListener('blur', this._blurHandler);
   }
-  _unbindKeys() { if (this._keyHandler) window.removeEventListener('keydown', this._keyHandler); }
+  _unbindKeys() {
+    if (this._keyHandler) window.removeEventListener('keydown', this._keyHandler);
+    if (this._keyUpHandler) window.removeEventListener('keyup', this._keyUpHandler);
+    if (this._blurHandler) window.removeEventListener('blur', this._blurHandler);
+  }
 }

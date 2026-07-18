@@ -1,7 +1,7 @@
 // track.js — procedural descending neon chute (floor + walls) with curves, banked
-// turns, vertical undulation, channel pinches, friction bands, boost pads, and five
-// hazard zones (washboard ridges, plinko pins, pendulum bobs, turnstiles, and the
-// motorised Gauntlet). Builds matching Three.js meshes and cannon-es bodies.
+// turns, vertical undulation, channel pinches, friction bands, boost pads, telegraphed
+// kicker bands, and five hazard zones (washboard ridges, plinko pins, pendulum bobs,
+// turnstiles, and the motorised Gauntlet). Builds matching Three.js meshes and cannon-es bodies.
 //
 // Non-trapping guarantee: obstacles scatter the pack hard, but nothing can hold a
 // marble forever. Every obstacle is either curved, free-spinning, or motor-driven
@@ -35,6 +35,7 @@ const ZONES = {
   RIDGES: { from: 0.10, to: 0.24, step: 0.045 },
   BOOST: [[0.26, 0.295], [0.615, 0.655], [0.835, 0.870]],
   PLINKO: { from: 0.31, to: 0.43, rows: 7 },
+  KICKERS: [0.435, 0.455],  // #6 telegraphed push-only kick band (fits the plinko→rumble gap)
   RUMBLE: [[0.46, 0.50], [0.68, 0.72]],
   BOBS: { from: 0.52, to: 0.60, step: 0.04 },
   TURNSTILES: { from: 0.74, to: 0.82, step: 0.04 },
@@ -128,7 +129,7 @@ function boostTexture() {
   return t;
 }
 
-export function generateTrack(world, materials, seed) {
+export function generateTrack(world, materials, seed, marbleCount = 8) {
   const rnd = mulberry32(seed);
   const group = new THREE.Group();
   const bodies = [];
@@ -340,6 +341,27 @@ export function generateTrack(world, materials, seed) {
     const bm = new THREE.Mesh(buildFloorRibbon(a, b, 0.05, 14), boostFloorMat);
     bm.receiveShadow = true;
     group.add(bm);
+  }
+
+  // #6 telegraphed KICKER band: push-only (no collider, like the boost pads) but it fires on a
+  // cycle — charging up (brightening magenta) for a beat as a TELL, then flashing and shoving
+  // whatever is crossing it hard sideways. Push-only means it scatters the pack and forces a
+  // steering correction without ever being able to trap a marble (the non-trapping guarantee).
+  // game.js reads `kickers` and drives both the tell (mat.emissiveIntensity ramp) and the
+  // impulse (see _applyKickers). Magenta so it never reads as a friendly cyan boost.
+  const kickerMat = new THREE.MeshStandardMaterial({
+    color: 0x3b0a52, emissive: 0xe879f9, emissiveIntensity: 0.5,
+    roughness: 0.35, metalness: 0.25, map: grid,
+  });
+  kickerMat.side = THREE.DoubleSide;
+  const kickers = [];
+  {
+    const [a, b] = ZONES.KICKERS;
+    const km = new THREE.Mesh(buildFloorRibbon(a, b, 0.06, 12), kickerMat);
+    km.receiveShadow = true;
+    group.add(km);
+    // period: seconds per charge→fire cycle; _lastPhase: edge-detect the fire moment in game.js.
+    kickers.push({ band: [a, b], mesh: km, mat: kickerMat, period: 2.6, _lastPhase: 0 });
   }
 
   for (const sgn of [-1, 1]) {
@@ -604,37 +626,44 @@ export function generateTrack(world, materials, seed) {
   checkerMesh.receiveShadow = true;
   group.add(checkerMesh);
 
-  // Start positions: a 4×2 staggered grid so no two marbles overlap at spawn
-  // (8 marbles can't fit in one row without their radii intersecting).
-  //
-  // The second row starts measurably up-track, which is a real handicap — so the
-  // 8 grid slots are SHUFFLED against marble index with the track seed. Marble i
-  // gets slot gridSlots[i], and which marble draws the front row is part of the
-  // race you're betting on rather than a fixed property of the colour you picked.
+  // Start positions: a full starting field of `marbleCount` marbles (now 101) laid out in a
+  // wide grid that fills the road across and stacks rows up-track, so nothing overlaps at spawn
+  // and the pack immediately funnels into the first hazards together. All marbles are identical,
+  // so the only thing to arrange for is spacing — the seeded shuffle the 8-marble roster needed
+  // is gone.
+  const usable = Math.max(12, widthAt(0.008) - 6);           // clear of both walls
+  const COL_SPACING = 3.4;                                    // > one diameter (2) plus margin
+  const cols = Math.max(1, Math.min(18, Math.floor(usable / COL_SPACING)));
+  const rows = Math.ceil(marbleCount / cols);
+  const span = Math.min(usable, (cols - 1) * COL_SPACING);
+  const ROW_DS = 0.0045;                                      // s-step between rows (~8 units apart)
   const slotPositions = [];
-  const perRow = 4;
-  // Grid span is CAPPED rather than derived from the channel: spreading 4 marbles across a
-  // 64-wide road would start them ~19 units apart, i.e. not a pack at all — they'd never
-  // touch before the first hazard. GRID_SPAN keeps them side by side and fighting from the
-  // gun, with the rest of the road there to be used, not to be spawned across.
-  const GRID_SPAN = Math.min(widthAt(0.008) - 6, 18);
-  for (let slot = 0; slot < 8; slot++) {
-    const col = slot % perRow;
-    const rowS = 0.008 + Math.floor(slot / perRow) * 0.016; // second row slightly up-track
+  for (let slot = 0; slot < marbleCount; slot++) {
+    const col = slot % cols;
+    const row = Math.floor(slot / cols);
+    const rowS = 0.008 + row * ROW_DS;
     const f = frameAt(rowS);
-    const lateral = (col / (perRow - 1) - 0.5) * GRID_SPAN;  // 6-unit spacing > widest diameter
+    const lateral = cols === 1 ? 0 : (col / (cols - 1) - 0.5) * span;
     slotPositions.push(f.p.clone()
       .addScaledVector(f.rb, lateral)
-      .addScaledVector(f.up, TRACK.MARBLE_R * 1.25 + 0.6)); // clears the widest roster marble
+      .addScaledVector(f.up, TRACK.MARBLE_R * 1.25 + 0.6));
   }
 
-  // Seeded Fisher-Yates: gridSlots[i] is the slot marble i lines up in.
-  const gridSlots = [0, 1, 2, 3, 4, 5, 6, 7];
-  for (let i = gridSlots.length - 1; i > 0; i--) {
-    const j = Math.floor(rnd() * (i + 1));
-    [gridSlots[i], gridSlots[j]] = [gridSlots[j], gridSlots[i]];
+  // Put the player's marble (index 0, the red one) in the MIDDLE of the pack rather than the
+  // front-left corner — it starts on an even footing and there's a race in front of and behind
+  // it. Swap its slot with the central one.
+  const centralSlot = Math.min(marbleCount - 1,
+    Math.floor(rows / 2) * cols + Math.floor(cols / 2));
+  if (centralSlot > 0) {
+    const tmp = slotPositions[0];
+    slotPositions[0] = slotPositions[centralSlot];
+    slotPositions[centralSlot] = tmp;
   }
-  const startPositions = gridSlots.map((slot) => slotPositions[slot]);
+
+  // Marble i spawns at slotPositions[i]. gridSlots is kept (identity) only so the return shape
+  // is unchanged for any caller that still reads it.
+  const gridSlots = Array.from({ length: marbleCount }, (_, i) => i);
+  const startPositions = slotPositions;
 
   const sAt = (z) => Math.max(0, Math.min(1, z / TRACK.LENGTH));
 
@@ -642,6 +671,7 @@ export function generateTrack(world, materials, seed) {
     group,
     bodies,
     turnstiles,
+    kickers,           // #6 telegraphed kicker bands — driven by game.js _applyKickers
     startPositions,
     gridSlots,
     length: TRACK.LENGTH,
@@ -652,9 +682,18 @@ export function generateTrack(world, materials, seed) {
     // the acceleration itself — the pads are visual + a predicate, not colliders.
     inBoost: (z) => inBoost(sAt(z)),
     // Local track basis at a forward position, for the boost push (dir) and the
-    // player's nudge (rb).
+    // player's steering (rb).
     dirAt: (z) => frameAt(sAt(z)).dir,
     rightAt: (z) => frameAt(sAt(z)).rb,
+    // #3 signed lateral position of a body across the channel: 0 = centerline, ±1 = at the
+    // wall edge (clamped a little past for marbles climbing the bank). Drives the HUD edge
+    // gauge so the player can see how close they are to steering off the track.
+    lateralOf: (pos) => {
+      const s = sAt(pos.z);
+      const f = frameAt(s), w = widthAt(s);
+      const lat = (pos.x - f.p.x) * f.rb.x + (pos.y - f.p.y) * f.rb.y + (pos.z - f.p.z) * f.rb.z;
+      return Math.max(-1.4, Math.min(1.4, lat / (w / 2)));
+    },
     // Cannon zeroes a motor's target the moment something stalls it hard; re-arming
     // every frame keeps the Gauntlet turning instead of seizing on a wedged marble.
     driveMotors() { for (const m of motors) m.hinge.setMotorSpeed(m.speed); },

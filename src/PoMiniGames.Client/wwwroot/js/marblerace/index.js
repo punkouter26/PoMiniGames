@@ -12,9 +12,9 @@ window.PoMarbleRace = {
     game.start();
   },
   pick(index) { if (game) game.pick(index); },
-  // dir: -1 nudges left, +1 right (local track frame). Returns whether a charge was spent,
-  // so the HUD's on-screen buttons can stay in step with the keyboard path.
-  nudge(dir) { return game ? game.nudge(dir) : false; },
+  // dir: -1 steers left, +1 right (local track frame); active toggles the hold on/off. The
+  // on-screen pads drive this on pointer down/up, mirroring the keyboard's keydown/keyup.
+  setSteer(dir, active) { if (game) game.setSteer(dir, active); },
   // The pick countdown is owned by the Blazor component, so the pip that goes with it has
   // to be driven from there — JS never sees the tick.
   beep(final) { if (game) game.beep(final); },
@@ -43,9 +43,12 @@ window.__fin = () => game && game.marbleSet ? game.marbleSet.marbles.map(m => ({
 window.__diag = () => game && game.marbleSet ? game.marbleSet.marbles.map(m => ({
   i: m.index,
   n: m.spec.name,
+  x: Math.round(m.body.position.x * 100) / 100,
   z: Math.round(m.body.position.z),
   dy: Math.round(m.body.position.y - game.track.floorY(m.body.position.z)),
   sp: Math.round(m.speed),
   fin: m.finished,
   el: m.eliminated,
 })) : null;
+window.__chosen = () => game ? game.chosen : -1;
+window.__game = () => game;

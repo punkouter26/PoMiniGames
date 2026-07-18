@@ -51,7 +51,10 @@ public sealed class PoRacerRaceHub : Hub
             ServerTimeMs = 0,
             Cars = Array.Empty<PoRacerCarState>(),
             ElapsedRaceTime = 0,
-            CountdownMs = 3000,
+            // §2026-07-17: 0 — skip the 3-2-1 intro overlay and start racing
+            // the instant the player joins. Keeps the first-snapshot
+            // CountdownMs in sync with PoRacerRaceService.CountdownMs.
+            CountdownMs = 0,
             Started = false,
             Finished = false,
             Static = race.GetStaticWorld(),

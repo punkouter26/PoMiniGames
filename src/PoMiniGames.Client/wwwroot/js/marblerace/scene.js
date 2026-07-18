@@ -18,13 +18,22 @@ const BG = 0x0f172a;            // cyberpunk dark slate
 // showing a complete view of the pack and the track ahead.
 // Raised and pulled back with the road: at CHANNEL_WIDTH 64 the old 26/46 vantage framed
 // about a third of the chute's width, so marbles kept fighting off-screen.
-const CAM_HEIGHT = 36;          // base vantage height above the leader
-const CAM_BACK = 62;            // well back so the whole pack + a long stretch of track are in frame
-const CAM_LOOKAHEAD = 14;       // look down-track so turns are anticipated (broadcast feel)
-const CAM_LOOK_LIFT = 2;        // look-at just above the leader
-const CAM_DEFAULT_PITCH = 0.32;  // positive → camera rides HIGH and looks down into the chute
+// The camera now locks to the PLAYER'S marble (see _pickShot), which is a marble you steer —
+// so the framing is a chase cam, not a pack overview: closer and a touch lower than the old
+// broadcast vantage, tilted enough to read the road ahead so you can steer toward boost pads
+// and away from the fall-off edge.
+const CAM_HEIGHT = 30;          // base vantage height above the followed marble
+const CAM_BACK = 54;            // behind the marble; close enough to feel the speed, back enough to see ahead
+const CAM_LOOKAHEAD = 28;       // look well down-track (along travel) so turns/hazards are anticipated
+const CAM_LOOK_LIFT = 2;        // look-at just above the marble
+const CAM_DEFAULT_PITCH = 0.22;  // positive → camera rides above and looks down into the chute
 const CAM_LERP = 3.4;          // slightly smoother follow reads more cinematic
 const FOV_BASE = 60;
+// #4 speed-reactive FOV: the frame widens as the followed marble speeds up, so velocity is felt
+// and not just measured. Mapped from marble speed; the start-line FOV punch rides on top.
+const FOV_SPEED_ADD = 10;       // max degrees added at top speed
+const FOV_SPEED_LO = 25;        // speed at which the widening starts
+const FOV_SPEED_HI = 90;        // speed at which it saturates
 
 // Vignette + chromatic-aberration post pass (#10). Runs in linear HDR before OutputPass.
 const PostShader = {
@@ -245,7 +254,10 @@ export function createScene(container) {
 
   // Smoothly move the camera to orbit-and-follow `pos`. With no drag this is the default
   // above-and-behind view; left-drag adds a yaw/pitch offset that rotates around the target.
-  function followTarget(pos, dt, snap) {
+  // `forward` (optional) is the followed marble's horizontal heading, used to look down-track
+  // *along travel* so the road ahead is visible around curves; `speed` (optional) drives the
+  // speed-reactive FOV.
+  function followTarget(pos, dt, snap, forward, speed) {
     const horiz = CAM_BACK * Math.cos(orbitPitch);
     const vert = CAM_HEIGHT + CAM_BACK * Math.sin(orbitPitch);
     const offX = horiz * Math.sin(orbitYaw);
@@ -254,14 +266,19 @@ export function createScene(container) {
     const a = snap ? 1 : 1 - Math.exp(-CAM_LERP * dt);
     camera.position.lerp(desired, a);
 
-    // Look-ahead only when roughly behind the target, so it stays centred when orbited round.
-    // Lift the look-at point so the leading marble (radius ≈ 1) sits ~mid-screen instead of
-    // clipped against the bottom edge of the frustum.
-    const laFactor = Math.max(0, Math.cos(orbitYaw));
+    // Look-ahead along the direction of travel (falls back to straight down-track). Only when
+    // roughly behind the target, so it stays centred when orbited round. Lift the look-at point
+    // so the marble (radius ≈ 1) sits ~mid-screen instead of clipped against the bottom edge.
+    let laX = 0, laZ = 1;
+    if (forward) {
+      const fl = Math.hypot(forward.x, forward.z) || 1;
+      laX = forward.x / fl; laZ = forward.z / fl;
+    }
+    const laFactor = Math.max(0, Math.cos(orbitYaw)) * CAM_LOOKAHEAD;
     const look = new THREE.Vector3(
-      pos.x,
+      pos.x + laX * laFactor,
       pos.y + CAM_LOOK_LIFT,
-      pos.z + CAM_LOOKAHEAD * laFactor);
+      pos.z + laZ * laFactor);
     if (!haveTarget) { camTarget.copy(look); haveTarget = true; }
     camTarget.lerp(look, a);
     camera.lookAt(camTarget);
@@ -271,12 +288,14 @@ export function createScene(container) {
     key.target.position.set(pos.x, pos.y, pos.z + 6);
     key.target.updateMatrixWorld();
 
-    // FOV punch decay (#10) + spark integration (#7).
-    if (Math.abs(fovPunch) > 0.05) {
-      fovPunch *= Math.exp(-6 * dt);
-      camera.fov = FOV_BASE + fovPunch;
-      camera.updateProjectionMatrix();
-    }
+    // FOV: base + speed-reactive widening (#4) + start-line punch (#10), all eased toward.
+    const spd = speed || 0;
+    const speedT = Math.max(0, Math.min(1, (spd - FOV_SPEED_LO) / (FOV_SPEED_HI - FOV_SPEED_LO)));
+    const targetFov = FOV_BASE + speedT * FOV_SPEED_ADD + fovPunch;
+    camera.fov += (targetFov - camera.fov) * (1 - Math.exp(-5 * dt));
+    camera.updateProjectionMatrix();
+    fovPunch = Math.abs(fovPunch) > 0.05 ? fovPunch * Math.exp(-6 * dt) : 0;
+
     updateSparks(dt);
   }
 

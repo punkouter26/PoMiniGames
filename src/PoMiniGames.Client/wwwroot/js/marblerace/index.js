@@ -51,4 +51,3 @@ window.__diag = () => game && game.marbleSet ? game.marbleSet.marbles.map(m => (
   el: m.eliminated,
 })) : null;
 window.__chosen = () => game ? game.chosen : -1;
-window.__game = () => game;

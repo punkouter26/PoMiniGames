@@ -193,12 +193,13 @@ export function generateTrack(world, materials, seed, marbleCount = 8) {
   const amp2 = 24 + rnd() * 30, freq2 = 3.4 + rnd() * 2.8, ph2 = rnd() * 6.28;
   const amp3 = 106 + rnd() * 46, freq3 = 0.6 + rnd() * 0.55, ph3 = rnd() * 6.28; // #2 sweeping S-curves
 
-  // #3 vertical undulation: crests/dips layered on the linear descent. TWO octaves now — a long
-  // roll plus a finer, faster wave — so the road rides lumpy underfoot rather than dead flat.
-  // Kept small enough that dy/ds stays negative everywhere (Σ undAmp*undFreq*π < DROP), so the
-  // run is strictly descending and can never trap a marble.
-  const undAmp = 8 + rnd() * 3, undFreq = 3.0 + rnd() * 1.5, undPh = rnd() * 6.28;
-  const undAmp2 = 3 + rnd() * 2, undFreq2 = 7 + rnd() * 3, undPh2 = rnd() * 6.28;
+  // #3 vertical undulation: mild crests/dips layered on the linear descent. Kept to ONE gentle
+  // octave in the PHYSICS centerline — a second, faster octave here made the floor-collider
+  // segments step enough that the now-rolling marbles caught on the seams and the pack stalled.
+  // The lumpy *look* is carried by bumpAt() on the visual ribbon instead (colliders stay smooth).
+  // Kept small enough that dy/ds stays negative everywhere (undAmp*undFreq*π < DROP), so the run
+  // is strictly descending and can never trap a marble.
+  const undAmp = 7 + rnd() * 3, undFreq = 3.0 + rnd() * 1.5, undPh = rnd() * 6.28;
 
   // #7 lateral camber waves: an extra roll oscillation independent of turns, so
   // even straights tilt gently side to side and marbles drift laterally.
@@ -210,8 +211,7 @@ export function generateTrack(world, materials, seed, marbleCount = 8) {
             + amp2 * Math.sin(s * freq2 * Math.PI + ph2)
             + amp3 * Math.sin(s * freq3 * Math.PI + ph3);
     const y = TRACK.START_Y - s * TRACK.DROP
-            + undAmp * Math.sin(s * undFreq * Math.PI + undPh)
-            + undAmp2 * Math.sin(s * undFreq2 * Math.PI + undPh2);
+            + undAmp * Math.sin(s * undFreq * Math.PI + undPh);
     return new THREE.Vector3(x, y, z);
   };
 

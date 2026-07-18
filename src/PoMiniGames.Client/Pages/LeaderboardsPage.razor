@@ -117,11 +117,14 @@
     private const string PlaceholderName = "XXX";
 
     private List<LeaderboardEntryDto> VisibleRows(GameLeaderboardDto board, string groupKey, int take)
+        // §2026-07-18: filter out the server's XXX padding rows so the
+        // leaderboards look like real populated boards rather than a
+        // 3/5/10-deep graveyard of placeholder names. The server still pads
+        // for callers that want a uniform rank list (e.g. GameOverModal),
+        // but this view only shows real players.
         => board.Entries
+            .Where(e => e.Name != PlaceholderName)
             .Take(take)
-            .Select(e => e.Name == PlaceholderName
-                ? new LeaderboardEntryDto { Rank = e.Rank, Name = e.Name, Value = e.Value, DisplayValue = "0" }
-                : e)
             .ToList();
 
     // Every board shows its top 3 so many games' boards fit on screen at once

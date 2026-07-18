@@ -1,0 +1,25 @@
+{
+  "errors": [],
+  "log": [
+    "[16:38:09] auth: {\"alice\":\"Alice\",\"bob\":\"Bob\",\"cara\":\"Cara\"}",
+    "[16:38:09] phase: \"couple_quiz\"",
+    "[16:38:20] alice_created: \"PoMiniGames 60 FPS 💕 Couple Quiz · Lobby Alice Sign out LOBBY · Z99X3 💕 Waiting for players Difficulty: Medium · AI mode: Remote Host: Alice Players (1) Alice 👑 I'm ready\"",
+    "[16:38:21] code: \"Z99X3\"",
+    "[16:38:36] joined_Bob: \"PoMiniGames 54 FPS 💕 Couple Quiz · Lobby Bob Sign out LOBBY · Z99X3 💕 Waiting for players Difficulty: Medium · AI mode: Remote Host: Alice Players (2) Alice 👑 Bob I'm ready\"",
+    "[16:38:47] joined_Cara: \"PoMiniGames 60 FPS 💕 Couple Quiz · Lobby Cara Sign out LOBBY · Z99X3 💕 Waiting for players Difficulty: Medium · AI mode: Remote Host: Alice Players (3) Alice 👑 Bob Cara I'm ready\"",
+    "[16:38:47] alice_after_joins: \"PoMiniGames 60 FPS 💕 Couple Quiz · Lobby Alice Sign out LOBBY · Z99X3 💕 Waiting for players Difficulty: Medium · AI mode: Remote Host: Alice Players (3) Alice 👑 Bob Cara I'm ready Start game\"",
+    "[16:38:47] ready_Alice: \"clicked\"",
+    "[16:38:49] ready_Bob: \"clicked\"",
+    "[16:38:51] ready_Cara: \"clicked\"",
+    "[16:39:03] round_alice: \"PoMiniGames 60 FPS 💕 Couple Quiz · Game Alice Sign out ROUND 1 OF 5 👑 You are the King. Type your secret answer below — the others will try to match. What is your partner's dream vacation destination? Submit\"",
+    "[16:39:03] round_bob: \"PoMiniGames 60 FPS 💕 Couple Quiz · Game Bob Sign out ROUND 1 OF 5 What is your partner's dream vacation destination? Submit\"",
+    "[16:39:03] round_cara: \"PoMiniGames 60 FPS 💕 Couple Quiz · Game Cara Sign out ROUND 1 OF 5 What is your partner's dream vacation destination? Submit\"",
+    "[16:39:09] phase: \"poracer\"",
+    "[16:39:29] racer_lobby_alice: \"PoMiniGames 60 FPS Alice Sign out Back Racer Lobby Status: CONNECTED Single shared room — first to arrive becomes host. PLAYERS · 3/8 Cara Alice (you) HOST Bob Waiting for everyone to mark Ready… Start Race Leave Last update: 12:39:24\"",
+    "[16:39:29] racer_lobby_bob: \"PoMiniGames 60 FPS Bob Sign out Back Racer Lobby Status: CONNECTED Single shared room — first to arrive becomes host. PLAYERS · 3/8 Cara Alice HOST Bob (you) Ready! Leave Last update: 12:39:24\"",
+    "[16:39:29] racer_lobby_cara: \"PoMiniGames 60 FPS Cara Sign out Back Racer Lobby Status: CONNECTED Single shared room — first to arrive becomes host. PLAYERS · 3/8 Cara (you) Alice HOST Bob Ready! Leave Last update: 12:39:24\"",
+    "[16:39:48] race_alice: \"PoMiniGames 60 FPS 🏎️ Racer Alice Sign out 🏎️ Racer Beat the pack to the finish line — 3 laps, first across wins. CONTROLS Finish 3 laps ahead of the pack. ↑/W accelerate · ↓/S brake ←/→ (or A/D) steer Best race times land on the leaderboard — smooth lines beat raw speed OK Racer JOINING RACE… W / ↑ Accelerate S / ↓ Brake / Reverse A D / ← → Steer Space Handbrake (drift) 8 cars · 3 laps · first across the line wins Bob is not ready × Cara is not ready × Race starting… ×\"",
+    "[16:39:48] race_bob: \"PoMiniGames 60 FPS 🏎️ Racer Bob Sign out 🏎️ Racer Beat the pack to the finish line — 3 laps, first across wins. CONTROLS Finish 3 laps ahead of the pack. ↑/W accelerate · ↓/S brake ←/→ (or A/D) steer Best race times land on the leaderboard — smooth lines beat raw speed OK Racer JOINING RACE… W / ↑ Accelerate S / ↓ Brake / Reverse A D / ← → Steer Space Handbrake (drift) 8 cars · 3 laps · first across the line wins Bob is not ready × Cara is not ready × Race starting… ×\"",
+    "[16:39:48] race_cara: \"PoMiniGames 60 FPS 🏎️ Racer Cara Sign out 🏎️ Racer Beat the pack to the finish line — 3 laps, first across wins. CONTROLS Finish 3 laps ahead of the pack. ↑/W accelerate · ↓/S brake ←/→ (or A/D) steer Best race times land on the leaderboard — smooth lines beat raw speed OK Racer JOINING RACE… W / ↑ Accelerate S / ↓ Brake / Reverse A D / ← → Steer Space Handbrake (drift) 8 cars · 3 laps · first across the line wins Bob is not ready × Cara is not ready × Race starting… ×\""
+  ]
+}

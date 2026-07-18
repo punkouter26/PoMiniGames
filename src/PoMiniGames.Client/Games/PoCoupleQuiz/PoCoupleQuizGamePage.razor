@@ -51,6 +51,29 @@
                 <button class="gps-btn gps-btn gps-btn--primary" @onclick="Submit" disabled="@string.IsNullOrWhiteSpace(_myAnswer)">Submit</button>
             </div>
 
+            @* Bug-fix 2026-07-18: the "Next round" button used to live INSIDE the
+   @if (_phase == "Results") block, but that phase only flips to Results
+   when the server's RoundResult broadcast arrives - which only fires
+   AFTER the host calls RequestNextRound. Chicken-and-egg deadlock: the
+   game was stuck on round 1 forever with no UI to advance. Now the
+   button is always visible to the host while the game is live, and is
+   gated on (a) being the host, (b) the King having submitted their
+   secret, and (c) every non-King player having answered. The result
+   panel still renders when the round has been evaluated. *@
+            @if (_isHost && _phase != "GameOver")
+            {
+                <div class="cq-actions">
+                    <button class="gps-btn gps-btn gps-btn--primary"
+                            @onclick="NextRound"
+                            disabled="@(!_kingSubmitted || _answersThisRound < _totalNonKingPlayers)">
+                        Next round (@_answersThisRound / @_totalNonKingPlayers)
+                    </button>
+                </div>
+            }
+            @if (!_isHost && _phase != "GameOver" && _kingSubmitted)
+            {
+                <p>Waiting for the host to start the next round…</p>
+            }
             @if (_phase == "Results")
             {
                 <div class="cq-results">
@@ -68,14 +91,6 @@
                         </ul>
                     }
                 </div>
-                @if (_isHost)
-                {
-                    <button class="gps-btn gps-btn gps-btn--primary" @onclick="NextRound">Next round</button>
-                }
-                else
-                {
-                    <p>Waiting for the host to start the next round…</p>
-                }
             }
 
             @* The game-over block that used to render here now goes through the
@@ -107,6 +122,16 @@
     private CoupleQuizGameStartedPayload? _gameStarted;
     private CoupleQuizRoundResultPayload? _lastResult;
     private CoupleQuizGameOverPayload? _gameOver;
+    // §Bug-fix 2026-07-18: track answer count per round so the host can advance.
+    // _kingSubmitted = the King has set the secret answer for this round.
+    // _answersThisRound = # of non-King players who have answered this round.
+    // _totalNonKingPlayers = snapshot of players.Count - 1 taken at round start.
+    // _answeredThisRound = distinct player names that have answered so we don't
+    // double-count (e.g. if the same broadcast arrives via reconnect).
+    private bool _kingSubmitted;
+    private int _answersThisRound;
+    private int _totalNonKingPlayers;
+    private HashSet<string> _answeredThisRound = new(StringComparer.Ordinal);
     // NetRun10 audit #8: if no game starts within 4s of landing here, show
     // the lobby redirect hint instead of an infinite spinner.
     private bool _showLobbyHint;
@@ -168,6 +193,7 @@
         _isHost = _playerName == p.Players[0].Name; // first to join = host per the server's design
         _phase = "Answering";
         _myAnswer = string.Empty;
+        ResetAnswerTracking(p);
         _ = InvokeAsync(StateHasChanged);
     }
 
@@ -177,20 +203,64 @@
         _isKing = _playerName == p.KingPlayerName;
         _phase = "Answering";
         _myAnswer = string.Empty;
+        _lastResult = null; // clear stale result from previous round
+        // §Bug-fix 2026-07-18: update the displayed round number. _gameStarted
+        // holds the initial RoundIndex from the GameStarted payload; if we don't
+        // overwrite it here the heading keeps showing "Round 1 of 5" forever.
+        if (_gameStarted is not null)
+        {
+            _gameStarted = _gameStarted with { RoundIndex = p.RoundIndex };
+        }
+        ResetAnswerTracking(p);
         _ = InvokeAsync(StateHasChanged);
     }
 
     private void HandleAnswerRecorded(CoupleQuizAnswerRecordedPayload p)
     {
-        // No-op; the round result arrives separately. The page can show a "waiting" hint
-        // when all-but-the-current-player have answered — left as a future enhancement.
+        // §Bug-fix 2026-07-18: track how many non-King players have answered so
+        // the host's "Next round" button can enable once everyone has spoken.
+        // We can't match on _playerName here because the shared dev cookie /
+        // localStorage can collapse multiple tabs onto the same identity — we
+        // count against the canonical KingPlayerName from the GameStarted
+        // payload and a small "seen names" set so duplicate broadcasts for
+        // the same player don't double-count.
+        var kingName = _gameStarted?.KingPlayerName ?? string.Empty;
+        if (string.Equals(p.PlayerName, kingName, StringComparison.Ordinal))
+        {
+            _kingSubmitted = true;
+        }
+        else if (!_answeredThisRound.Contains(p.PlayerName))
+        {
+            _answeredThisRound.Add(p.PlayerName);
+            _answersThisRound = _answeredThisRound.Count;
+        }
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void ResetAnswerTracking(CoupleQuizGameStartedPayload p)
+    {
+        _kingSubmitted = false;
+        _answersThisRound = 0;
+        _answeredThisRound.Clear();
+        _totalNonKingPlayers = Math.Max(0, p.Players.Count - 1);
+    }
+
+    private void ResetAnswerTracking(CoupleQuizRoundStartedPayload p)
+    {
+        _kingSubmitted = false;
+        _answersThisRound = 0;
+        _answeredThisRound.Clear();
+        _totalNonKingPlayers = Math.Max(0, p.Players.Count - 1);
     }
 
     private void HandleRoundResult(CoupleQuizRoundResultPayload p)
     {
+        _answeredThisRound.Clear();
         _lastResult = p;
         _lastKingAnswer = p.KingAnswer;
         _phase = "Results";
+        _kingSubmitted = true; // server already evaluated; the round is done
+        _answersThisRound = _totalNonKingPlayers;
         _ = InvokeAsync(StateHasChanged);
     }
 
@@ -205,12 +275,12 @@
     // Record a head-to-head result against every other player, scored by final points.
     private async Task RecordOutcomesAsync(CoupleQuizGameOverPayload p)
     {
+        _lobbyHintCts?.Cancel();
+        _lobbyHintCts?.Dispose();
         if (!p.FinalScores.TryGetValue(_playerName, out var myScore)) return;
         foreach (var (name, score) in p.FinalScores)
         {
             if (name == _playerName) continue;
-        _lobbyHintCts?.Cancel();
-        _lobbyHintCts?.Dispose();
             var outcome = myScore > score ? MatchOutcome.Win
                         : myScore < score ? MatchOutcome.Loss
                         : MatchOutcome.Draw;
@@ -227,6 +297,10 @@
     private async Task NextRound()
     {
         if (_gameStarted is null) return;
+        // §Bug-fix 2026-07-18: gating moved to the button's `disabled` attribute,
+        // but double-check here so a host who hits Enter can't accidentally skip
+        // past a not-yet-finished round.
+        if (!_kingSubmitted || _answersThisRound < _totalNonKingPlayers) return;
         await Hub.RequestNextRoundAsync(_gameStarted.GameCode);
     }
 

@@ -8,20 +8,34 @@
 
 <section class="decision-inspector app-reveal" data-testid="decision-inspector">
     <div class="decision-inspector__header">
-        <h3 class="decision-inspector__title">DECISION INSPECTOR</h3>
-        @if (SimState.Value.SelectedAgentId is not null)
-        {
-            <button class="c64-btn decision-inspector__clear-follow"
-                    @onclick="ClearFollow"
-                    data-testid="btn-clear-follow">
-                CLEAR FOLLOW
-            </button>
-        }
+        <h3 class="decision-inspector__title">Why this move?</h3>
+        <div class="decision-inspector__header-actions">
+            @if (CurrentAgent is not null)
+            {
+                <button class="sv-btn sv-btn--champion @(IsChampion ? "is-active" : string.Empty)"
+                        @onclick="ToggleChampion"
+                        title="@(IsChampion ? "Drop your champion" : "Root for this agent — track it all match")"
+                        data-testid="btn-champion">
+                    @(IsChampion ? "★ Champion" : "☆ Champion")
+                </button>
+            }
+            @if (SimState.Value.SelectedAgentId is not null)
+            {
+                <button class="sv-btn decision-inspector__clear-follow"
+                        @onclick="ClearFollow"
+                        data-testid="btn-clear-follow">
+                    Clear follow
+                </button>
+            }
+        </div>
     </div>
+
+    @* Plain-language hero line — the "aha" up top, before any jargon. *@
+    <p class="decision-inspector__plain" data-testid="decision-plain">@PlainSummary</p>
 
     @if (CurrentEntry is null)
     {
-        <p class="decision-inspector__empty">Run a simulation to inspect why each move is chosen.</p>
+        <p class="decision-inspector__empty">Follow an agent (click it on the grid) to see why it moves.</p>
     }
     else
     {
@@ -51,7 +65,7 @@
 
         @if (CurrentAgent is not null)
         {
-            <div class="decision-inspector__section-title">Decision Causality</div>
+            <div class="decision-inspector__section-title" title="Decision Causality">What drove it</div>
             <div class="decision-inspector__causality-grid">
                 @foreach (var factor in CausalityFactors)
                 {
@@ -63,7 +77,7 @@
                 }
             </div>
 
-            <div class="decision-inspector__section-title">Counterfactual Move Fit</div>
+            <div class="decision-inspector__section-title" title="Counterfactual Move Fit">What else it considered</div>
             <div class="decision-inspector__alternatives" data-testid="decision-alternatives">
                 @foreach (var option in ActionOptions)
                 {
@@ -81,7 +95,7 @@
             </div>
 
             <div class="decision-inspector__motivation">
-                <div class="decision-inspector__motivation-title">Motivation Profile</div>
+                <div class="decision-inspector__motivation-title" title="Motivation Profile">Personality</div>
                 @foreach (var trait in InsightService.GetSortedTraits(CurrentAgent).Take(3))
                 {
                     <div class="decision-inspector__trait-row">
@@ -96,7 +110,7 @@
 
             @if (CurrentAgentHistory.Count > 1)
             {
-                <div class="decision-inspector__section-title">Recent Decision Sequence</div>
+                <div class="decision-inspector__section-title" title="Recent Decision Sequence">Recent moves</div>
                 <div class="decision-inspector__history-list" data-testid="decision-history">
                     @foreach (var item in CurrentAgentHistory)
                     {
@@ -128,6 +142,14 @@
     private string CurrentEventFilter => string.IsNullOrWhiteSpace(SimState.Value.EventFilter)
         ? "all"
         : SimState.Value.EventFilter;
+
+    private string PlainSummary => InsightService.BuildPlainSummary(CurrentAgent, CurrentEntry);
+
+    private bool IsChampion
+        => CurrentAgent is not null && SimState.Value.ChampionAgentId == CurrentAgent.Id;
+
+    private void ToggleChampion()
+        => Dispatcher.Dispatch(new ChampionSelectedAction(IsChampion ? null : CurrentAgent?.Id));
 
     private ConsoleEntry? CurrentEntry
     {

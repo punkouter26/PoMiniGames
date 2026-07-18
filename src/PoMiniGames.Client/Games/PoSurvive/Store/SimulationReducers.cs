@@ -21,6 +21,7 @@ public static class SimulationReducers
             TurnNumber     = 0,
             ConsoleLog     = [],
             SelectedAgentId = null,
+            ChampionAgentId = null,
             EventFilter    = "all",
             IsRunning      = true,
             Outcome        = null,
@@ -83,6 +84,17 @@ public static class SimulationReducers
     public static SimulationState OnGodClickCleared(
         SimulationState state, GodClickClearedAction _)
         => state with { SelectedAgentId = null };
+
+    [ReducerMethod]
+    public static SimulationState OnChampionSelected(
+        SimulationState state, ChampionSelectedAction a)
+        // Adopting a champion also follows it in the inspector; dropping the
+        // champion leaves the current follow untouched.
+        => state with
+        {
+            ChampionAgentId = a.AgentId,
+            SelectedAgentId = a.AgentId ?? state.SelectedAgentId,
+        };
 
     [ReducerMethod]
     public static SimulationState OnLogEventFilterChanged(

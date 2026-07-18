@@ -24,6 +24,11 @@ public sealed record SimulationState
     public string? SelectedAgentId { get; init; }
     public string EventFilter { get; init; } = "all";
 
+    // ─── Champion (pick-a-champion) ───────────────────────────────────────
+    // The agent the user has adopted to root for. Persists across turns; drives
+    // the champion HUD strip, auto-follow, and the champion-centric post-mortem.
+    public string? ChampionAgentId { get; init; }
+
     // ─── Lifecycle flags ──────────────────────────────────────────────────
     public bool    IsRunning        { get; init; } = false;
     public string? Outcome          { get; init; }       // "RedWin" | "BlueWin" | "Draw" | null

@@ -41,10 +41,15 @@ public class MultiplayerLobbyService(IOpenAIService ai, ILogger<MultiplayerLobby
         if (game.Players.Count >= 2) return null; // 2-player only
         // If this connection re-joins, drop the old slot first.
         game.Players.RemoveAll(p => p.ConnectionId == connectionId);
+        // Two anonymous players share one "Guest######" identity when they sign in
+        // from the same browser, so disambiguate a duplicate name with a suffix.
+        var taken = new HashSet<string>(game.Players.Select(p => p.Name), StringComparer.OrdinalIgnoreCase);
+        var uniqueName = playerName;
+        for (var i = 2; taken.Contains(uniqueName); i++) uniqueName = $"{playerName} ({i})";
         game.Players.Add(new MultiplayerPlayer
         {
             ConnectionId = connectionId,
-            Name = playerName,
+            Name = uniqueName,
             PlayerNumber = game.Players.Count + 1
         });
         _connectionToGame[connectionId] = game.GameId;

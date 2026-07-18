@@ -48,6 +48,10 @@ public sealed record GodClickSelectedAction(string AgentId);
 /// <summary>Clears the God-Click filter (empty tile clicked).</summary>
 public sealed record GodClickClearedAction;
 
+/// <summary>Adopts an agent as the user's "champion" to root for (also follows it).
+/// Pass null to drop the current champion.</summary>
+public sealed record ChampionSelectedAction(string? AgentId);
+
 /// <summary>Updates the tactical log event filter (all/errors/attack/forage/flee/idle).</summary>
 public sealed record LogEventFilterChangedAction(string FilterKey);
 

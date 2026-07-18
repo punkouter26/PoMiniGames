@@ -101,164 +101,167 @@
     </div>
 </header>
 
-<div class="toolbar app-reveal" data-testid="toolbar">
+<div class="toolbar sv-toolbar app-reveal" data-testid="toolbar">
     <div class="toolbar__identity">
         <a class="toolbar__brand" href="/" aria-label="PoMiniGames home">PoMiniGames</a>
-        <span class="toolbar__subtitle">AGENT SURVIVAL COMMAND DECK</span>
+        <span class="toolbar__subtitle">Survive · AI battle simulator</span>
     </div>
 
-    <div class="toolbar__status-lane">
-        <span class="toolbar__inference @InferenceIndicatorClass"
-              data-testid="inference-indicator"
-              title="Model ID: @BootState.Value.ModelId">
-            @BootState.Value.ProviderKind | @BootState.Value.ModelLabel
-        </span>
-        @* Compact model switcher — always visible so the user can flip between
-           LOCAL (WebLLM in-browser) and REMOTE (Azure OpenAI / Foundry) at any
-           time without leaving the toolbar. The Mission Control picker still
-           handles the full local-model download workflow. *@
-        <label class="toolbar__label toolbar__label--compact" for="toolbar-model-select">MODEL</label>
-        <select id="toolbar-model-select"
-                class="toolbar__model-select"
-                value="@ToolbarSelectedModelId"
-                @onchange="OnToolbarModelChanged"
-                disabled="@(ToolbarModelOptions.Count == 0 || SimState.Value.IsRunning || _switchingModel)"
-                data-testid="toolbar-model-select"
-                title="Switch between local (WebLLM) and remote (Azure OpenAI) inference models">
-            @if (ToolbarModelOptions.Any(o => !o.IsRemote))
-            {
-                <optgroup label="── LOCAL (WebLLM) ──">
-                    @foreach (var option in ToolbarModelOptions.Where(o => !o.IsRemote))
-                    {
-                        <option value="@option.Id">@option.Label</option>
-                    }
-                </optgroup>
-            }
-            @if (ToolbarModelOptions.Any(o => o.IsRemote))
-            {
-                <optgroup label="── REMOTE (Azure OpenAI / Foundry) ──">
-                    @foreach (var option in ToolbarModelOptions.Where(o => o.IsRemote))
-                    {
-                        <option value="@option.Id">@option.Label</option>
-                    }
-                </optgroup>
-            }
-        </select>
-        @if (BootState.Value.IsDegradedMode)
-        {
-            <span class="toolbar__inference-status toolbar__inference-status--warn"
-                  data-testid="inference-status-degraded"
-                  title="@DegradedModeSummary">
-                DEGRADED MODE
-            </span>
-            <span class="toolbar__inference-detail" data-testid="inference-detail">
-                @DegradedModeSummary
-            </span>
-        }
-        else if (HasInferenceIssue)
-        {
-            <span class="toolbar__inference-status toolbar__inference-status--error"
-                  data-testid="inference-status"
-                  title="@InferenceIssueSummary">
-                INFERENCE: ISSUE
-            </span>
-            <span class="toolbar__inference-detail" data-testid="inference-detail">
-                @InferenceIssueSummary
-            </span>
-        }
-        else
-        {
-            <span class="toolbar__inference-status toolbar__inference-status--ok"
-                  data-testid="inference-status-ok"
-                  title="Inference is available.">
-                INFERENCE: READY
-            </span>
-        }
-    </div>
-
-    <div class="toolbar__controls">
+    <div class="sv-toolbar__primary">
+        @* ── North-Star control: one primary button that morphs with lifecycle ── *@
         @if (!IsBootRoute && BootCanStartSimulation && !SimState.Value.IsRunning && !SimState.Value.IsPaused && SimState.Value.Outcome is null && !SimState.Value.ShowPostMortem)
         {
-            <button class="c64-btn c64-btn--primary"
+            <button class="sv-btn sv-btn--primary sv-btn--cta"
                     id="start-sim-button"
                     @onclick="StartSimulation"
                     data-testid="btn-start">
-                [ START ]
+                ▶ Start battle
             </button>
         }
-
         @if (SimState.Value.IsRunning && !SimState.Value.IsPaused)
         {
-            <button class="c64-btn"
-                    @onclick="PauseSimulation"
-                    data-testid="btn-pause"
-                    title="Pause simulation">
-                [ PAUSE ]
+            <button class="sv-btn" @onclick="PauseSimulation" data-testid="btn-pause" title="Pause">
+                ❚❚ Pause
             </button>
         }
-
         @if (SimState.Value.IsPaused)
         {
-            <button class="c64-btn c64-btn--primary"
-                    @onclick="ResumeSimulation"
-                    data-testid="btn-resume"
-                    title="Resume simulation">
-                [ RESUME ]
+            <button class="sv-btn sv-btn--primary" @onclick="ResumeSimulation" data-testid="btn-resume" title="Resume">
+                ▶ Resume
             </button>
         }
-
         @if (!SimState.Value.IsRunning && !SimState.Value.IsPaused && SimState.Value.TurnNumber > 0)
         {
-            <button class="c64-btn"
-                    @onclick="ResetSimulation"
-                    data-testid="btn-restart">
-                [ NEW RUN ]
+            <button class="sv-btn sv-btn--primary sv-btn--cta" @onclick="ResetSimulation" data-testid="btn-restart">
+                ↻ New battle
             </button>
         }
 
-        <label class="toolbar__label">SPEED</label>
-        <input type="range"
-               class="toolbar__slider"
-               min="@SimulationDefaults.HeartbeatMinMs"
-               max="@SimulationDefaults.HeartbeatMaxMs"
-               step="50"
-               value="@SimState.Value.SpeedMs"
-               @oninput="OnSpeedChange"
-               data-testid="speed-slider"
-               aria-label="Simulation speed" />
-        <span class="toolbar__speed-label">@SimState.Value.SpeedMs ms</span>
+        @* ── Speed presets, primary (raw ms lives in Advanced) ── *@
+        <div class="sv-speed" role="group" aria-label="Playback speed">
+            <button class="sv-chip @(SimState.Value.SpeedMs <= 400 ? "is-active" : string.Empty)"
+                    @onclick="() => SetSpeedPreset(350)" data-testid="btn-speed-fast" title="Fast">Fast</button>
+            <button class="sv-chip @(SimState.Value.SpeedMs > 400 && SimState.Value.SpeedMs < 1200 ? "is-active" : string.Empty)"
+                    @onclick="() => SetSpeedPreset(900)" data-testid="btn-speed-balanced" title="Balanced">Balanced</button>
+            <button class="sv-chip @(SimState.Value.SpeedMs >= 1200 ? "is-active" : string.Empty)"
+                    @onclick="() => SetSpeedPreset(1500)" data-testid="btn-speed-inspect" title="Slow — read every decision">Inspect</button>
+        </div>
 
-        <button class="c64-btn @(SimState.Value.SpeedMs == 350 ? "c64-btn--active" : string.Empty)"
-                @onclick="() => SetSpeedPreset(350)"
-                title="Fast playback"
-                data-testid="btn-speed-fast">
-            FAST
-        </button>
-        <button class="c64-btn @(SimState.Value.SpeedMs == 900 ? "c64-btn--active" : string.Empty)"
-                @onclick="() => SetSpeedPreset(900)"
-                title="Balanced playback"
-                data-testid="btn-speed-balanced">
-            BAL
-        </button>
-        <button class="c64-btn @(SimState.Value.SpeedMs == 1500 ? "c64-btn--active" : string.Empty)"
-                @onclick="() => SetSpeedPreset(1500)"
-                title="Inspect mode"
-                data-testid="btn-speed-inspect">
-            INSPECT
-        </button>
+        @* ── Natural-language AI status pill ── *@
+        @if (BootState.Value.IsDegradedMode)
+        {
+            <span class="sv-status sv-status--warn" data-testid="inference-status-degraded" title="@DegradedModeSummary">Offline AI</span>
+        }
+        else if (HasInferenceIssue)
+        {
+            <span class="sv-status sv-status--error" data-testid="inference-status" title="@InferenceIssueSummary">AI issue</span>
+        }
+        else
+        {
+            <span class="sv-status sv-status--ok" data-testid="inference-status-ok" title="Live AI inference is running.">AI online</span>
+        }
 
-        <button class="c64-btn"
-                @onclick="DownloadLog"
-                disabled="@(SimState.Value.TurnNumber == 0)"
-                data-testid="btn-download">
-            [ DOWNLOAD LOG ]
-        </button>
+        @* ── Advanced drawer: model, raw speed, log export, contrast ── *@
+        <details class="sv-advanced">
+            <summary class="sv-advanced__summary" title="Model, speed, export, accessibility">⚙ Advanced</summary>
+            <div class="sv-advanced__panel">
+                <span class="sv-advanced__provider @InferenceIndicatorClass"
+                      data-testid="inference-indicator"
+                      title="Model ID: @BootState.Value.ModelId">
+                    @BootState.Value.ProviderKind · @BootState.Value.ModelLabel
+                </span>
+
+                <label class="sv-advanced__label" for="toolbar-model-select">AI model</label>
+                <select id="toolbar-model-select"
+                        class="sv-advanced__select"
+                        value="@ToolbarSelectedModelId"
+                        @onchange="OnToolbarModelChanged"
+                        disabled="@(ToolbarModelOptions.Count == 0 || SimState.Value.IsRunning || _switchingModel)"
+                        data-testid="toolbar-model-select"
+                        title="Switch between local (in-browser) and remote (cloud) inference models">
+                    @if (ToolbarModelOptions.Any(o => !o.IsRemote))
+                    {
+                        <optgroup label="In-browser (local)">
+                            @foreach (var option in ToolbarModelOptions.Where(o => !o.IsRemote))
+                            {
+                                <option value="@option.Id">@option.Label</option>
+                            }
+                        </optgroup>
+                    }
+                    @if (ToolbarModelOptions.Any(o => o.IsRemote))
+                    {
+                        <optgroup label="Cloud (remote)">
+                            @foreach (var option in ToolbarModelOptions.Where(o => o.IsRemote))
+                            {
+                                <option value="@option.Id">@option.Label</option>
+                            }
+                        </optgroup>
+                    }
+                </select>
+
+                <label class="sv-advanced__label" for="speed-range">Turn speed</label>
+                <div class="sv-advanced__row">
+                    <input id="speed-range" type="range"
+                           class="sv-advanced__slider"
+                           min="@SimulationDefaults.HeartbeatMinMs"
+                           max="@SimulationDefaults.HeartbeatMaxMs"
+                           step="50"
+                           value="@SimState.Value.SpeedMs"
+                           @oninput="OnSpeedChange"
+                           data-testid="speed-slider"
+                           aria-label="Simulation speed" />
+                    <span class="sv-advanced__value">@SimState.Value.SpeedMs ms</span>
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(InferenceDetailText))
+                {
+                    <div class="sv-advanced__detail" data-testid="inference-detail">@InferenceDetailText</div>
+                }
+
+                <div class="sv-advanced__row sv-advanced__row--actions">
+                    <button class="sv-btn sv-btn--sm"
+                            @onclick="DownloadLog"
+                            disabled="@(SimState.Value.TurnNumber == 0)"
+                            data-testid="btn-download">
+                        Download log
+                    </button>
+                    <button class="sv-btn sv-btn--sm @(_highContrast ? "is-active" : string.Empty)"
+                            @onclick="ToggleHighContrast"
+                            data-testid="btn-high-contrast"
+                            aria-pressed="@_highContrast.ToString().ToLowerInvariant()">
+                        High contrast: @(_highContrast ? "On" : "Off")
+                    </button>
+                </div>
+            </div>
+        </details>
     </div>
 </div>
 
-@* Mobile pane switcher removed (player request: simplify UI on desktop layout). The
-   GRID / AGENTS / LOG panes are now always visible side-by-side instead of being
-   hidden behind three tab buttons. *@
+@* ── First-run "what am I watching?" intro (#5) ───────────────────────────
+   Dismissible; shown once per browser (persisted in localStorage). Answers the
+   biggest comprehension gap: this is a spectator sim of AI agents, not a game
+   you steer. *@
+@if (_showIntro && !_isDemoRoute)
+{
+    <div class="sv-intro" role="dialog" aria-labelledby="sv-intro-title" data-testid="posurvive-intro">
+        <div class="sv-intro__card app-reveal">
+            <h2 id="sv-intro-title" class="sv-intro__title">🛡️ Welcome to Survive</h2>
+            <p class="sv-intro__lead">
+                Two teams of <strong>AI agents</strong> — <span class="sv-intro__red">Red</span> vs
+                <span class="sv-intro__blue">Blue</span> — fight to be the last standing on the grid.
+                You don't steer them; you <strong>watch and inspect</strong> their choices.
+            </p>
+            <ul class="sv-intro__steps">
+                <li><span class="sv-intro__num">1</span> Press <strong>Start battle</strong> and watch the grid.</li>
+                <li><span class="sv-intro__num">2</span> Click any agent to see <strong>why</strong> it moved.</li>
+                <li><span class="sv-intro__num">3</span> Tap <strong>☆ Champion</strong> to adopt one and follow its fate.</li>
+            </ul>
+            <button class="sv-btn sv-btn--primary sv-btn--cta" @onclick="DismissIntro" data-testid="btn-intro-dismiss">
+                Got it — let's watch
+            </button>
+        </div>
+    </div>
+}
 
 @if (_downloadToastVisible)
 {
@@ -302,6 +305,22 @@
             <span class="statsbar__sep">·</span>
             <span class="statsbar__item statsbar__item--outcome">@SimState.Value.Outcome.ToUpperInvariant()</span>
         }
+    </div>
+}
+
+@* ── Champion strip (#2): persistent tracker for the agent the user adopted ── *@
+@if (Champion is not null)
+{
+    <div class="sv-champion @(Champion.IsAlive ? "" : "sv-champion--fallen") @(Champion.Team == "Red" ? "sv-champion--red" : "sv-champion--blue")"
+         data-testid="champion-strip">
+        <span class="sv-champion__star">★</span>
+        <span class="sv-champion__label">Your champion</span>
+        <span class="sv-champion__id">@Champion.Id</span>
+        <span class="sv-champion__stat" title="Health">❤ @Champion.Hp</span>
+        <span class="sv-champion__stat" title="Kills">⚔ @Champion.KillCount</span>
+        <span class="sv-champion__stat" title="Turns survived">⏳ @Champion.SurvivalTurns</span>
+        <span class="sv-champion__state">@(Champion.IsAlive ? "ALIVE" : "FALLEN")</span>
+        <button class="sv-champion__drop" @onclick="DropChampion" title="Drop champion" aria-label="Drop champion">✕</button>
     </div>
 }
 
@@ -443,6 +462,24 @@
     private string DegradedModeSummary
         => "Fallback tactics are active because real inference is unavailable.";
 
+    // Detail line shown inside the Advanced drawer (was a permanent toolbar chip).
+    private string? InferenceDetailText
+        => BootState.Value.IsDegradedMode ? DegradedModeSummary
+        : HasInferenceIssue ? InferenceIssueSummary
+        : null;
+
+    // ── High-contrast toggle ──────────────────────────────────────────────
+    // The high-contrast palette (high-contrast.css) keys off `body.high-contrast`.
+    // No action was ever wired to it; this toggles the class directly via JS and
+    // persists the choice so it survives navigation.
+    private bool _highContrast;
+
+    private async Task ToggleHighContrast()
+    {
+        _highContrast = !_highContrast;
+        await JS.InvokeVoidAsync("PoSurviveTheme.setHighContrast", _highContrast);
+    }
+
     private string InferenceIssueSummary
         => StalledAtTurnZero
             ? $"Turn watchdog triggered (>{StalledTurnThresholdSec}s at turn 0)."
@@ -498,6 +535,23 @@
             // global CSS resets don't leak into the rest of the PoMiniGames platform.
             await JS.InvokeVoidAsync("PoSurviveTheme.load");
         }
+    }
+
+    // ── First-run intro (#5) + champion strip (#2) ────────────────────────
+    private bool _showIntro;
+    private bool _isDemoRoute => Nav.Uri.Contains("demo=1", StringComparison.OrdinalIgnoreCase);
+
+    private PoShared.Simulation.Models.AgentDto? Champion
+        => SimState.Value.ChampionAgentId is { } id
+            ? SimState.Value.Agents.FirstOrDefault(a => a.Id == id)
+            : null;
+
+    private void DropChampion() => Dispatcher.Dispatch(new ChampionSelectedAction(null));
+
+    private async Task DismissIntro()
+    {
+        _showIntro = false;
+        await JS.InvokeVoidAsync("localStorage.setItem", "posurvive_intro_seen", "1");
     }
 
     private int AliveRed  => SimState.Value.Agents.Count(a => a.IsAlive && a.Team == "Red");

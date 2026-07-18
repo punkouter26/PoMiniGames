@@ -7,10 +7,15 @@
 //
 // Layout 1 (P1): A/D move · W step in · S tap step out, hold = block · F punch · G kick
 // Layout 2 (P2): ←/→ move · ↑ step in · ↓ tap step out, hold = block · K punch · L kick
-
+//
+// `left`/`right` are SCREEN-relative: the left key always walks the fighter
+// toward the left edge of the screen, the right key toward the right edge,
+// no matter which side of the ring the fighter is standing on. update() folds
+// the fighter's facing back in to produce the engine's opponent-relative
+// `move` (+1 = toward opponent).
 const LAYOUTS = {
-  1: { away: 'KeyA', toward: 'KeyD', stepIn: 'KeyW', stepOutOrBlock: 'KeyS', punch: 'KeyF', kick: 'KeyG' },
-  2: { away: 'ArrowRight', toward: 'ArrowLeft', stepIn: 'ArrowUp', stepOutOrBlock: 'ArrowDown', punch: 'KeyK', kick: 'KeyL' },
+  1: { left: 'KeyA', right: 'KeyD', stepIn: 'KeyW', stepOutOrBlock: 'KeyS', punch: 'KeyF', kick: 'KeyG' },
+  2: { left: 'ArrowLeft', right: 'ArrowRight', stepIn: 'ArrowUp', stepOutOrBlock: 'ArrowDown', punch: 'KeyK', kick: 'KeyL' },
 };
 
 const BLOCK_HOLD_MS = 120;
@@ -45,8 +50,14 @@ export class KeyboardController {
     window.addEventListener('keyup', this._onUp);
   }
 
-  update() {
-    const move = (this.down.has(this.map.toward) ? 1 : 0) - (this.down.has(this.map.away) ? 1 : 0);
+  update(ctx) {
+    // Screen-relative intent: +1 = right key, −1 = left key.
+    const worldDir = (this.down.has(this.map.right) ? 1 : 0) - (this.down.has(this.map.left) ? 1 : 0);
+    // Fold in facing so the keys stay screen-relative. towardX is the sign of
+    // (opponent.x − self.x); multiplying maps screen-left/right onto the
+    // engine's toward/away `move`. Defaults to +1 when facing is unknown.
+    const towardX = (ctx && ctx.towardX) || 1;
+    const move = worldDir * towardX;
     const block = this.blockKeyDownAt > 0 && performance.now() - this.blockKeyDownAt >= BLOCK_HOLD_MS;
     const intent = {
       move,

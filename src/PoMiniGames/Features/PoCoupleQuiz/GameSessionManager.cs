@@ -50,7 +50,12 @@ public sealed class GameSessionManager : IGameSessionManager
         // Disconnect an existing entry for this connection id (e.g. reconnect).
         _connectionToGameCode.TryRemove(connectionId, out _);
 
-        session.Players.Add(new LobbyPlayer(playerName, connectionId));
+        // Two anonymous players share one "Guest######" identity when they sign in
+        // from the same browser (shared session cookie), so the same name can join
+        // twice. The name is the identity key for round scoring, so a collision
+        // collapses both players into one. Disambiguate with a numeric suffix.
+        var uniqueName = EnsureUniqueName(session, playerName);
+        session.Players.Add(new LobbyPlayer(uniqueName, connectionId));
         _connectionToGameCode[connectionId] = gameCode;
         return session;
     }
@@ -234,6 +239,19 @@ public sealed class GameSessionManager : IGameSessionManager
         s.AiMode,
         s.Players.Count > 0 && s.ReadyConnectionIds.Count >= s.Players.Count,
         MinPlayersToStart);
+
+    // Ensure a joining player's name is unique within the lobby (case-insensitive).
+    // Shared "Guest######" identities collide otherwise; append " (2)", " (3)", …
+    private static string EnsureUniqueName(GameSession session, string requested)
+    {
+        var taken = new HashSet<string>(session.Players.Select(p => p.Name), StringComparer.OrdinalIgnoreCase);
+        if (!taken.Contains(requested)) return requested;
+        for (var i = 2; ; i++)
+        {
+            var candidate = $"{requested} ({i})";
+            if (!taken.Contains(candidate)) return candidate;
+        }
+    }
 
     private string GenerateUniqueGameCode()
     {

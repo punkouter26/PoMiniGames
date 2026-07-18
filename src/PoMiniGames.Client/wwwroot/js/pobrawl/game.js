@@ -1243,6 +1243,10 @@ export class BrawlGame {
     return {
       dt,
       distance: dist,
+      // Sign of (opponent.x − self.x): +1 when the opponent is to our right,
+      // −1 when to our left. The keyboard controller uses this to keep the
+      // left/right keys screen-relative regardless of which side we're on.
+      towardX: Math.sign(opp.rig.root.position.x - f.rig.root.position.x) || 1,
       kickRange: ATTACKS.kick.reach * opp.rig.config.heightScale + 0.3,
       opponentWindup: oppInWindup,
       opponentActive: oppInActive,

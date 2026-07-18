@@ -19,10 +19,17 @@ const BLUE = 0x3b82f6;  // the pack
 
 // Kept as an array so the rest of the engine can still look a marble up by index. Physically
 // uniform — index 0 is red, everything else blue.
+//
+// Real glass marble: at the world scale of 1 unit = 1 cm, a radius-1 marble is 20 mm across,
+// and solid soda-lime glass (~2500 kg/m³) makes that ≈ 10.5 g. Mass is carried here as 1.0
+// "marble unit" (the obstacle masses in track.js are multiples of it), and cannon-es derives a
+// real SOLID-SPHERE moment of inertia (I = 2/5·m·r²) from the sphere shape — so the marbles
+// carry realistic rotational momentum and roll true. Damping is near zero: real glass has
+// negligible rolling resistance and air drag at this size, so a marble keeps its spin.
 export const MARBLE_ROSTER = Array.from({ length: MARBLE_COUNT }, (_, i) => ({
   name: i === PLAYER_INDEX ? 'You' : 'Marble',
   color: i === PLAYER_INDEX ? RED : BLUE,
-  radius: 1.0, mass: 1.0, linDamp: 0.008, angDamp: 0.008,
+  radius: 1.0, mass: 1.0, linDamp: 0.003, angDamp: 0.002,
 }));
 
 export const MARBLE_COLORS = MARBLE_ROSTER.map((m) => m.color);

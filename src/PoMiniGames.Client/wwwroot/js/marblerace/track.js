@@ -1,7 +1,9 @@
-// track.js — procedural descending neon chute (floor + walls) with curves, banked
-// turns, vertical undulation, channel pinches, friction bands, boost pads, telegraphed
-// kicker bands, and five hazard zones (washboard ridges, plinko pins, pendulum bobs,
-// turnstiles, and the motorised Gauntlet). Builds matching Three.js meshes and cannon-es bodies.
+// track.js — procedural descending ROAD: an asphalt floor (lumpy surface) edged by curved
+// red/white kerb berms, with curves, banked turns, vertical undulation, channel pinches,
+// friction bands, boost pads, telegraphed kicker bands, and five hazard zones (washboard
+// ridges, plinko pins, pendulum bobs, turnstiles, and the motorised Gauntlet). Builds matching
+// Three.js meshes and cannon-es bodies (the berm is visual; the wall COLLIDER stays at the road
+// edge, so the tuned physics is unchanged).
 //
 // Non-trapping guarantee: obstacles scatter the pack hard, but nothing can hold a
 // marble forever. Every obstacle is either curved, free-spinning, or motor-driven
@@ -129,6 +131,52 @@ function boostTexture() {
   return t;
 }
 
+// Asphalt road surface: a dark bed flecked with aggregate speckle + faint longitudinal wear,
+// so the ground reads as tarmac rather than a neon grid. Built once.
+let _roadTex = null;
+function roadTexture() {
+  if (_roadTex) return _roadTex;
+  const c = document.createElement('canvas');
+  c.width = c.height = 256;
+  const g = c.getContext('2d');
+  g.fillStyle = '#1a2130'; g.fillRect(0, 0, 256, 256);
+  for (let k = 0; k < 4600; k++) {
+    const x = Math.random() * 256, y = Math.random() * 256, r = Math.random() * 1.5 + 0.3;
+    const v = Math.random();
+    g.fillStyle = v < 0.5 ? 'rgba(58,70,92,0.5)' : (v < 0.85 ? 'rgba(9,13,22,0.55)' : 'rgba(120,140,175,0.32)');
+    g.beginPath(); g.arc(x, y, r, 0, 6.283); g.fill();
+  }
+  g.strokeStyle = 'rgba(90,150,230,0.05)'; g.lineWidth = 1;
+  for (let x = 6; x < 256; x += 24) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x + (Math.random() * 6 - 3), 256); g.stroke(); }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.anisotropy = 4;
+  _roadTex = t;
+  return t;
+}
+
+// Racing-kerb stripes for the berms: transverse red/white bands (the universal "edge of the
+// road" signal). The band axis is mapped to down-track V in buildBermRibbon, so the stripes run
+// up-and-across the berm and repeat along the road like a real kerb. Built once.
+let _kerbTex = null;
+function kerbTexture() {
+  if (_kerbTex) return _kerbTex;
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const g = c.getContext('2d');
+  g.fillStyle = '#eef2f7'; g.fillRect(0, 0, 128, 128);   // white
+  g.fillStyle = '#dc2626';                                // two red bands → 50% duty
+  g.fillRect(0, 0, 128, 32);
+  g.fillRect(0, 64, 128, 32);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.anisotropy = 4;
+  _kerbTex = t;
+  return t;
+}
+
 export function generateTrack(world, materials, seed, marbleCount = 8) {
   const rnd = mulberry32(seed);
   const group = new THREE.Group();
@@ -145,10 +193,12 @@ export function generateTrack(world, materials, seed, marbleCount = 8) {
   const amp2 = 24 + rnd() * 30, freq2 = 3.4 + rnd() * 2.8, ph2 = rnd() * 6.28;
   const amp3 = 106 + rnd() * 46, freq3 = 0.6 + rnd() * 0.55, ph3 = rnd() * 6.28; // #2 sweeping S-curves
 
-  // #3 vertical undulation: mild crests/dips layered on the linear descent.
-  // Kept small enough that dy/ds stays negative everywhere (undAmp*undFreq*π <
-  // DROP), so the run is strictly descending and can never trap a marble.
-  const undAmp = 7 + rnd() * 3, undFreq = 3.0 + rnd() * 1.5, undPh = rnd() * 6.28;
+  // #3 vertical undulation: crests/dips layered on the linear descent. TWO octaves now — a long
+  // roll plus a finer, faster wave — so the road rides lumpy underfoot rather than dead flat.
+  // Kept small enough that dy/ds stays negative everywhere (Σ undAmp*undFreq*π < DROP), so the
+  // run is strictly descending and can never trap a marble.
+  const undAmp = 8 + rnd() * 3, undFreq = 3.0 + rnd() * 1.5, undPh = rnd() * 6.28;
+  const undAmp2 = 3 + rnd() * 2, undFreq2 = 7 + rnd() * 3, undPh2 = rnd() * 6.28;
 
   // #7 lateral camber waves: an extra roll oscillation independent of turns, so
   // even straights tilt gently side to side and marbles drift laterally.
@@ -159,8 +209,23 @@ export function generateTrack(world, materials, seed, marbleCount = 8) {
     const x = amp1 * Math.sin(s * freq1 * Math.PI + ph1)
             + amp2 * Math.sin(s * freq2 * Math.PI + ph2)
             + amp3 * Math.sin(s * freq3 * Math.PI + ph3);
-    const y = TRACK.START_Y - s * TRACK.DROP + undAmp * Math.sin(s * undFreq * Math.PI + undPh);
+    const y = TRACK.START_Y - s * TRACK.DROP
+            + undAmp * Math.sin(s * undFreq * Math.PI + undPh)
+            + undAmp2 * Math.sin(s * undFreq2 * Math.PI + undPh2);
     return new THREE.Vector3(x, y, z);
+  };
+
+  // Visual surface lumpiness: a small per-vertex height noise added to the FLOOR RIBBON only
+  // (the box colliders stay flat — the marbles are radius 1 so a ≤0.4 lump under them reads as
+  // a rough, uneven road without the physics fighting it). Tapers to 0 at the road edges (u=±1)
+  // so the floor still meets the berms cleanly.
+  const bph1 = rnd() * 6.28, bph2 = rnd() * 6.28, bph3 = rnd() * 6.28, bph4 = rnd() * 6.28;
+  const BUMP_AMP = 0.55;
+  const bumpAt = (s, u) => {
+    const z = s * TRACK.LENGTH;
+    const n = Math.sin(z * 0.11 + u * 3.0 + bph1) * Math.sin(z * 0.047 + bph2)
+            + 0.6 * Math.sin(z * 0.21 + u * 4.5 + bph3) * Math.cos(u * 2.2 + bph4);
+    return BUMP_AMP * n * (1 - u * u);
   };
 
   // #4 channel-width pinches: two Gaussian "funnels" that squeeze the channel then
@@ -212,13 +277,15 @@ export function generateTrack(world, materials, seed, marbleCount = 8) {
     return { p, dir, up, rb, q };
   };
 
-  // Materials (neon, emissive on dark). Floor is a glossy clearcoat surface (#5) carrying the
-  // neon grid (#9) so it catches reflections from the environment map and bloom highlights.
+  // Materials. Floor is now an ASPHALT ROAD — a matte-ish tarmac (rough, low metal, a whisper
+  // of clearcoat for wet sheen) carrying the speckled road texture, so the ground reads as a
+  // road surface rather than a neon grid. The grid is still used by the rumble/kicker bands.
   const grid = gridTexture();
+  const road = roadTexture();
   const floorMat = new THREE.MeshPhysicalMaterial({
-    color: 0x16203c, emissive: 0x0e1b3a, emissiveIntensity: 0.5,
-    roughness: 0.35, metalness: 0.25, clearcoat: 0.85, clearcoatRoughness: 0.3,
-    map: grid, roughnessMap: grid,
+    color: 0x2a3446, emissive: 0x0a0f1c, emissiveIntensity: 0.16,
+    roughness: 0.8, metalness: 0.1, clearcoat: 0.2, clearcoatRoughness: 0.7,
+    map: road, roughnessMap: road,
   });
   // #5 rumble-band floor: warm amber so the friction stretches read at a glance.
   const rumbleFloorMat = new THREE.MeshPhysicalMaterial({
@@ -232,7 +299,13 @@ export function generateTrack(world, materials, seed, marbleCount = 8) {
     color: 0x0e7490, emissive: 0x22d3ee, emissiveIntensity: 0.75,
     roughness: 0.3, metalness: 0.2, map: boostTex,
   });
-  const wallMat = new THREE.MeshStandardMaterial({ color: 0x0b3550, emissive: 0x22d3ee, emissiveIntensity: 0.95, roughness: 0.35, metalness: 0.3, transparent: true, opacity: 0.5 });
+  // Berms replace the old flat cyan walls: red/white racing kerbs that curve up out of the road
+  // edge (see buildBermRibbon). A faint emissive keeps them reading in the dark scene.
+  const kerb = kerbTexture();
+  const bermMat = new THREE.MeshStandardMaterial({
+    color: 0xffffff, emissive: 0x1a0303, emissiveIntensity: 0.18,
+    roughness: 0.55, metalness: 0.15, map: kerb,
+  });
 
   const addBody = (body) => { world.addBody(body); bodies.push(body); };
 
@@ -279,23 +352,35 @@ export function generateTrack(world, materials, seed, marbleCount = 8) {
   floorMat.side = THREE.DoubleSide;
   rumbleFloorMat.side = THREE.DoubleSide;
   boostFloorMat.side = THREE.DoubleSide;
-  wallMat.side = THREE.DoubleSide;
+  bermMat.side = THREE.DoubleSide;
   const RIBBON_N = Math.max(TRACK.SEGMENTS, 700);
   const CELL = 22;                // world units per texture tile
+  const FLOOR_LAT = 8;            // lateral subdivisions of the floor ribbon (for the surface lumps)
 
-  // Floor ribbon over [sA,sB], lifted `eps` above the collider top, tiling `tex`.
+  // Floor ribbon over [sA,sB], lifted `eps` above the collider top, tiling at `cell`. Subdivided
+  // laterally and displaced by bumpAt() so the road surface is visibly lumpy/uneven.
   const buildFloorRibbon = (sA, sB, eps, cell) => {
     const steps = Math.max(2, Math.round(RIBBON_N * (sB - sA)));
+    const cols = FLOOR_LAT + 1;
     const pos = [], uv = [], idx = [];
     for (let i = 0; i <= steps; i++) {
       const s = sA + (sB - sA) * (i / steps);
       const f = frameAt(s), w = widthAt(s);
-      const L = f.p.clone().addScaledVector(f.rb, -w / 2).addScaledVector(f.up, eps);
-      const R = f.p.clone().addScaledVector(f.rb, w / 2).addScaledVector(f.up, eps);
-      pos.push(L.x, L.y, L.z, R.x, R.y, R.z);
       const v = (s * TRACK.LENGTH) / cell;
-      uv.push(-(w / 2) / cell, v, (w / 2) / cell, v);
-      if (i < steps) { const a = i * 2; idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); }
+      for (let j = 0; j <= FLOOR_LAT; j++) {
+        const u = (j / FLOOR_LAT) * 2 - 1;            // -1 (left rail) .. +1 (right rail)
+        const lift = eps + bumpAt(s, u);
+        const P = f.p.clone().addScaledVector(f.rb, u * w / 2).addScaledVector(f.up, lift);
+        pos.push(P.x, P.y, P.z);
+        uv.push((u * w / 2) / cell, v);
+      }
+      if (i < steps) {
+        const row = i * cols, next = (i + 1) * cols;
+        for (let j = 0; j < FLOOR_LAT; j++) {
+          const a = row + j, b = row + j + 1, c = next + j, d = next + j + 1;
+          idx.push(a, c, b, b, c, d);            // wind for upward-facing normals
+        }
+      }
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
@@ -304,18 +389,51 @@ export function generateTrack(world, materials, seed, marbleCount = 8) {
     return g;
   };
 
-  const buildWallRibbon = (sgn) => {
+  // ── Curved berms replace the flat vertical walls ──
+  // Cross-section (outward lateral offset, height above the road edge), from the road edge
+  // upward: a quarter-circle FILLET curls the road edge up and out (radius BERM_R), then a wall
+  // continues to the top. So each side of the road curves smoothly up into a red/white kerb
+  // instead of meeting a flat pane at a hard right angle. Physics is unchanged — the vertical
+  // wall COLLIDER still sits at the road edge; the berm is the visible surface that curls around
+  // it, and a marble held at the edge nestles into the curve.
+  const BERM_R = 7;                              // fillet radius at the road edge
+  const BERM_TOP = TRACK.WALL_HEIGHT;            // berm rises to the old wall height
+  const bermProfile = (() => {
+    const pts = [], F = 5;
+    for (let k = 0; k <= F; k++) { const a = (k / F) * (Math.PI / 2); pts.push([BERM_R * Math.sin(a), BERM_R * (1 - Math.cos(a))]); }
+    pts.push([BERM_R, BERM_TOP]);                // vertical run from the top of the fillet to full height
+    return pts;
+  })();
+  const bermArc = (() => {
+    const arc = [0];
+    for (let k = 1; k < bermProfile.length; k++) {
+      const dx = bermProfile[k][0] - bermProfile[k - 1][0], dy = bermProfile[k][1] - bermProfile[k - 1][1];
+      arc.push(arc[k - 1] + Math.hypot(dx, dy));
+    }
+    return arc;
+  })();
+
+  const buildBermRibbon = (sgn) => {
+    const M = bermProfile.length, BCELL = 9;     // BCELL tuned so the kerb stripes read
     const pos = [], uv = [], idx = [];
     for (let i = 0; i <= RIBBON_N; i++) {
       const s = i / RIBBON_N;
       const f = frameAt(s), w = widthAt(s);
       const edge = f.p.clone().addScaledVector(f.rb, sgn * (w / 2));
-      const bot = edge.clone().addScaledVector(f.up, -TRACK.FLOOR_THICK / 2);
-      const top = edge.clone().addScaledVector(f.up, TRACK.WALL_HEIGHT - TRACK.FLOOR_THICK / 2);
-      pos.push(bot.x, bot.y, bot.z, top.x, top.y, top.z);
-      const v = (s * TRACK.LENGTH) / CELL;
-      uv.push(0, v, TRACK.WALL_HEIGHT / CELL, v);
-      if (i < RIBBON_N) { const a = i * 2; idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); }
+      const v = (s * TRACK.LENGTH) / BCELL;
+      for (let k = 0; k < M; k++) {
+        const [lat, h] = bermProfile[k];
+        const P = edge.clone().addScaledVector(f.rb, sgn * lat).addScaledVector(f.up, h - TRACK.FLOOR_THICK / 2);
+        pos.push(P.x, P.y, P.z);
+        uv.push(bermArc[k] / BCELL, v);
+      }
+      if (i < RIBBON_N) {
+        const row = i * M, next = (i + 1) * M;
+        for (let k = 0; k < M - 1; k++) {
+          const a = row + k, b = row + k + 1, c = next + k, d = next + k + 1;
+          idx.push(a, b, c, b, d, c);
+        }
+      }
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
@@ -365,9 +483,10 @@ export function generateTrack(world, materials, seed, marbleCount = 8) {
   }
 
   for (const sgn of [-1, 1]) {
-    const wm = new THREE.Mesh(buildWallRibbon(sgn), wallMat);
-    wm.receiveShadow = true;
-    group.add(wm);
+    const bm = new THREE.Mesh(buildBermRibbon(sgn), bermMat);
+    bm.receiveShadow = true;
+    bm.castShadow = true;
+    group.add(bm);
   }
 
   // ── Obstacle materials. Per request, the ONLY spheres in the scene are the 8

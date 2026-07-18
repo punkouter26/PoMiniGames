@@ -136,9 +136,9 @@ public class GameStatsService
 
         switch (result)
         {
-            case GameResult.Win: rating.Wins++; break;
-            case GameResult.Loss: rating.Losses++; break;
-            case GameResult.Draw: rating.Draws++; break;
+            case GameResult.Win: rating.Wins++; rating.WinStreak++; break;
+            case GameResult.Loss: rating.Losses++; rating.WinStreak = 0; break;
+            case GameResult.Draw: rating.Draws++; rating.WinStreak = 0; break;
         }
 
         LocalStorageService.SetItem(

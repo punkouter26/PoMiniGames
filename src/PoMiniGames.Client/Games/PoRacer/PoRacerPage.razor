@@ -425,6 +425,13 @@
             })
             .WithAutomaticReconnect()
             .Build();
+        // §2026-07-18: register the snapshot/finished handlers BEFORE invoking
+        // JoinRace. Otherwise snapshots broadcast in the gap between the server
+        // wiring its events and our client subscribing are silently dropped,
+        // and the HUD stays empty (Cars.Count == 0) even though the race is
+        // ticking on the server.
+        _raceHub.On<PoRacerRaceSnapshot>("raceSnapshot", snap => OnSnapshot(snap));
+        _raceHub.On<PoRacerFinalResult>("raceFinished", result => OnFinished(result));
         var initialSnap = await _raceHub.StartAsync().ContinueWith(_ =>
             _raceHub!.InvokeAsync<PoRacerRaceSnapshot?>("JoinRace", code)).Unwrap();
         if (initialSnap?.Static is not null)
@@ -432,8 +439,6 @@
             await JS.InvokeVoidAsync("PoRacerRender.setStatic",
                 initialSnap.Static.CenterXY, initialSnap.Static.TrackWidth, initialSnap.Static.WallsXY);
         }
-        _raceHub.On<PoRacerRaceSnapshot>("raceSnapshot", snap => OnSnapshot(snap));
-        _raceHub.On<PoRacerFinalResult>("raceFinished", result => OnFinished(result));
 
         // Stream input at 30 Hz — only meaningful when we're an actual player. In
         // demo/spectator mode there's no car with our ConnectionId, so the server

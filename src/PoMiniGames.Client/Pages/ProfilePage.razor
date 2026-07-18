@@ -52,7 +52,7 @@ else
                        exactly what unlocks the stat. *@
                     @if (_bestStreak == 0)
                     {
-                        <span class="prf-chip-hint">Play PoClick to set your first streak</span>
+                        <span class="prf-chip-hint">Play Connect Five or Brawl to set your first streak</span>
                     }
                 </div>
                 <div class="prf-chip">
@@ -511,7 +511,19 @@ else
                 _totalWins   += cfEntry.TotalWins;
                 _totalLosses += cfEntry.TotalLosses;
                 _totalDraws  += cfEntry.TotalDraws;
-                _topElo       = Math.Max(_topElo, ar.Elo);
+                // §2026-07-18: only factor the adaptive rating into Top ELO once
+                // the player has actually played at least one Connect Five match.
+                // Otherwise the 1200 StartingElo floor would dominate the
+                // leaderboard even when the player hasn't touched the game.
+                if (ar.TotalGames > 0)
+                {
+                    _topElo = Math.Max(_topElo, ar.Elo);
+                    // §2026-07-18: surface the adaptive win streak too. The
+                    // connectfive path `continue`s before the streak aggregation
+                    // below runs, so without this Connect Five wins are
+                    // invisible to "Best Streak".
+                    _bestStreak = Math.Max(_bestStreak, ar.WinStreak);
+                }
                 continue;
             }
 

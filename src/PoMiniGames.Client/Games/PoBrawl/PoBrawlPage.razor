@@ -410,9 +410,9 @@
         _statItems = _mode == "1p"
             ? GameStatsPanel.Build(bucket, includeDraws: false, includeElo: false,
                 ("ELO", _rating.Elo.ToString()),
-                ("Best KO", _bestKo > 0 ? $"{_bestKo:0.00}s" : "—"))
+                ("Best KO", _bestKo > 0 ? $"{_bestKo:0.00}s" : "0s"))
             : GameStatsPanel.Build(bucket, includeDraws: false, includeElo: true,
-                ("Best KO", _bestKo > 0 ? $"{_bestKo:0.00}s" : "—"));
+                ("Best KO", _bestKo > 0 ? $"{_bestKo:0.00}s" : "0s"));
     }
 
     private string ResultLine()

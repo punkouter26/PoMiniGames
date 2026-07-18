@@ -53,6 +53,16 @@ public sealed class PoRacerLobbyService
         lock (_stateLock)
         {
             var name = SanitizeName(displayName);
+            // §2026-07-18: stale "race in progress" recovery. If the lobby has
+            // been in a "started" state for longer than the 90s race safety
+            // cap and the dict is empty (i.e. every player dropped mid-race),
+            // accept the new join and clear the flag — the prior race never
+            // produced an EndRace() because the only client left before the
+            // race sim hit AllFinishedOrStopped().
+            if (_startedAtMs > 0 && (NowMs() - _startedAtMs) > 90_000 && _players.IsEmpty)
+            {
+                _startedAtMs = 0;
+            }
             if (_startedAtMs > 0)
             {
                 return (State, "Race already in progress");
@@ -89,6 +99,16 @@ public sealed class PoRacerLobbyService
             if (_hostConnectionId == connectionId)
             {
                 _hostConnectionId = _players.Keys.OrderBy(k => k, StringComparer.Ordinal).FirstOrDefault() ?? "";
+            }
+            // §2026-07-18: when the lobby drains, reset _startedAtMs so the next
+            // visitor isn't locked out by a stale "race in progress" flag. This
+            // happens when a client joins, kicks off a race, then disconnects
+            // before the race sim ticks its 90s safety cap (e.g. the lobby→race
+            // navigation glitch where the client never actually reached
+            // JoinRace, so the race sim never reached AllFinishedOrStopped).
+            if (_players.IsEmpty)
+            {
+                _startedAtMs = 0;
             }
             _lastTouchedMs = NowMs();
             return (true, $"{removed.DisplayName} left");

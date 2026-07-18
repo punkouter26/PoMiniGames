@@ -18,11 +18,11 @@ const LB_SHOWN = 6;         // leaderboard rows sent to the HUD (top N of the 10
 // the player is always able to fight for the boost-pad line or steer off a Gauntlet rotor.
 // The force is divided by mass, so the roster's heavyweights are genuinely harder to steer:
 // the trade for the momentum they carry through the Gauntlet.
-const STEER_ACCEL = 40;      // lateral units/s² at mass 1, applied every step a direction is held
+const STEER_ACCEL = 72;      // lateral units/s² — raised with gravity so steering keeps its bite
 
 // ── Boost pads ──
-const BOOST_ACCEL = 30;      // units/s² along the track tangent while on a pad
-const BOOST_MAX_SPEED = 95;  // don't let a marble that camps a pad accelerate without bound
+const BOOST_ACCEL = 40;      // units/s² along the track tangent while on a pad
+const BOOST_MAX_SPEED = 150; // don't let a marble that camps a pad accelerate without bound
 
 // ── Kickers (#6) ── telegraphed push-only band that fires on a cycle, shoving marbles sideways.
 const KICK_DV = 16;          // lateral velocity punch at mass 1 when it fires (÷ mass — heavies resist)
@@ -48,8 +48,9 @@ const SLOWMO_SCALE = 0.35;
 
 // How far under the track centerline a marble may legitimately be before it counts as
 // having fallen off. Sized against the banked inner edge of the wide road — see the
-// out-of-bounds check in _frame.
-const OOB_MARGIN = 48;
+// out-of-bounds check in _frame. Raised with gravity: faster, weightier marbles ride the
+// banks higher, so a tighter margin would eliminate them for taking the outside line.
+const OOB_MARGIN = 58;
 
 // Ceiling on a reported time gap; beyond this the HUD shows "+60s" rather than a number
 // whose precision it hasn't earned. See _gapSeconds.
@@ -150,8 +151,8 @@ export class Game {
     if (!m || m.finished || m.eliminated) return;
 
     const rb = this.track.rightAt(m.body.position.z);
-    // Accel / mass: the roster's heavyweights are genuinely harder to steer, which is the
-    // trade for the momentum they carry through the Gauntlet.
+    // A lateral acceleration (÷ mass so it's independent of the mass unit), applied along the
+    // track's local right vector.
     const dv = (STEER_ACCEL / m.body.mass) * dir * sdt;
     m.body.velocity.x += rb.x * dv;
     m.body.velocity.y += rb.y * dv;

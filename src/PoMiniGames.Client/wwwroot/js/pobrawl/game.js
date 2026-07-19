@@ -140,6 +140,12 @@ const CAVignetteShader = {
     uRadial: { value: 0 },
     uGrade: { value: 1.0 },
     uDesat: { value: 0 },
+    // Film grain (idea #10): animated luminance-weighted noise. uGrain is the
+    // amount (0 = off); uTime drives the per-frame hash so the grain crawls.
+    // 0.04 reads as subtle film texture on hardware GL; nudge up toward 0.08 for
+    // a grittier look or down to 0 to disable.
+    uGrain: { value: 0.04 },
+    uTime: { value: 0 },
     // ── Godrays / lens-flare uniforms (idea #10) ───────────────────
     // uGodrays     : intensity (0 = off). Drives the spotlight blade.
     // uGodraysOrig : screen-space origin of the shaft in UV (default 0.5,1.05 — top edge).
@@ -167,7 +173,15 @@ const CAVignetteShader = {
     uniform vec2 uGodraysOrig;
     uniform float uGodraysDecay;
     uniform vec3 uGodraysTint;
+    uniform float uGrain;
+    uniform float uTime;
     varying vec2 vUv;
+    // Cheap hash for the film grain — no texture fetch.
+    float hash21(vec2 p) {
+      p = fract(p * vec2(123.34, 456.21));
+      p += dot(p, p + 45.32);
+      return fract(p.x * p.y);
+    }
     void main() {
       vec2 off = (vUv - 0.5) * uCA * 0.012;
       float r = texture2D(tDiffuse, vUv + off).r;
@@ -220,6 +234,11 @@ const CAVignetteShader = {
       col += vec3(0.008, 0.02, 0.038) * (1.0 - smoothstep(0.0, 0.4, lum)) * uGrade;
       col *= mix(vec3(1.0), vec3(1.05, 1.0, 0.93), smoothstep(0.3, 1.0, lum) * uGrade);
       col = mix(vec3(lum), col, 1.0 + 0.1 * uGrade);
+      // Filmic S-curve contrast: crush the toe a touch and roll the shoulder so
+      // the grade reads like a graded LUT rather than a flat colour shift. Only
+      // the amount is dialled by uGrade — the shape is fixed.
+      vec3 sc = col * col * (3.0 - 2.0 * col);   // smoothstep-shaped contrast
+      col = mix(col, sc, 0.18 * uGrade);
 
       // KO drain: desaturate except strong reds (blood-red trim, red corner).
       if (uDesat > 0.003) {
@@ -230,6 +249,17 @@ const CAVignetteShader = {
 
       float d = distance(vUv, vec2(0.5));
       col *= 1.0 - smoothstep(0.55, 0.95, d) * uVignette;
+
+      // Film grain (idea #10): animated monochrome noise, strongest in the
+      // shadows (where sensor noise actually lives) and fading out of the
+      // highlights so bright speculars stay clean. Two hashed samples offset
+      // by the frame time keep it crawling rather than static-dithering.
+      if (uGrain > 0.0001) {
+        float g1 = hash21(vUv * vec2(1920.0, 1080.0) + fract(uTime) * 71.7);
+        float grain = (g1 - 0.5);
+        float shadowW = 1.0 - smoothstep(0.0, 0.55, lum); // more grain in darks
+        col += grain * uGrain * (0.35 + 0.65 * shadowW);
+      }
       gl_FragColor = vec4(col, 1.0);
     }`,
 };
@@ -1633,7 +1663,7 @@ export class BrawlGame {
     this.shakeT = 0.16;
     this.shakeAmp = 0.1;
     this.radialPulse = Math.max(this.radialPulse, 0.45);
-    this.caPulse = Math.max(this.caPulse, 0.5);
+    // Chromatic-aberration colour pulse removed per user request.
     this.audio.block(mid);
     this.excited = Math.max(this.excited, 0.5);
   }
@@ -2425,11 +2455,24 @@ export class BrawlGame {
     const total = (f.regionDmg.head + f.regionDmg.torso
       + f.regionDmg.arms + f.regionDmg.legs) / 400;
     const sweat = Math.min(1, total * 1.6);
-    f.rig.materials.skinMat.roughness = 0.55 - 0.3 * sweat;
+    const skin = f.rig.materials.skinMat;
+    skin.roughness = 0.55 - 0.3 * sweat;
     f.rig.materials.suitMat.roughness = 0.95 - 0.3 * sweat;
+    // Wet-sheen ramp (idea #6): a rising clearcoat lobe + a hotter skin sheen
+    // is what actually reads as SWEAT — a lowered roughness alone just makes
+    // the skin a flatter matte. The clearcoat gives the glistening second
+    // specular highlight of a sweat film; sheen widens the grazing-angle
+    // glow. Both ride the same sweat value the roughness drop uses.
+    skin.clearcoat = 0.55 * sweat;
+    skin.sheen = 0.32 + 0.25 * sweat;
     // The face has its own materials now (tinted skin + painted detail
     // plate) — they glisten with the rest of the skin.
-    if (f.rig.materials.faceMat) f.rig.materials.faceMat.roughness = 0.55 - 0.3 * sweat;
+    if (f.rig.materials.faceMat) {
+      const fm = f.rig.materials.faceMat;
+      fm.roughness = 0.55 - 0.3 * sweat;
+      fm.clearcoat = 0.55 * sweat;
+      fm.sheen = 0.32 + 0.25 * sweat;
+    }
     if (f.rig.materials.plateMat) f.rig.materials.plateMat.roughness = 0.6 - 0.3 * sweat;
     if (f.rig.refs) {
       const hd = Math.min(1, f.regionDmg.head / 100);
@@ -2451,9 +2494,9 @@ export class BrawlGame {
     this.shakeT = 0.14;
     this.shakeAmp = (attack.name === 'kick' ? 0.09 : 0.06) * chargeMul;
     this.fovPunch = (attack.name === 'kick' ? 5.0 : 3.0) * chargeMul;
-    // Post-FX spike: bloom flares, the frame fringes, and the exposure
-    // "blooms open" for a beat on heavy hits.
-    this.caPulse = Math.max(this.caPulse, (attack.name === 'kick' ? 0.6 : 0.35) * chargeMul);
+    // Post-FX spike: bloom flares and the exposure "blooms open" for a beat on
+    // heavy hits. The chromatic-aberration (colour-fringe) pulse was removed per
+    // user request — hits no longer tint/split the frame's colour.
     this.bloomPulse = Math.max(this.bloomPulse, (attack.name === 'kick' ? 0.7 : 0.4) * chargeMul);
     this.exposurePulse = Math.max(this.exposurePulse, (attack.name === 'kick' ? 0.15 : 0.08) * chargeMul);
     // One-beat radial streak toward the frame center — reads as the impact
@@ -2473,6 +2516,15 @@ export class BrawlGame {
       // KO color drain rides the lights-down blend (keeps the reds hot).
       this.fxPass.uniforms.uDesat.value = this.lightsDim * 0.55;
 
+      // Film grain clock (idea #10). atmoT always advances, even between
+      // rounds, so the grain never freezes on a paused frame.
+      this.fxPass.uniforms.uTime.value = this.atmoT;
+      // Vignette breathing (idea #10): a slow ±0.04 swell around the 0.5 base,
+      // tightening hard as the house lights drop for the KO so the frame
+      // closes in on the fallen fighter.
+      this.fxPass.uniforms.uVignette.value =
+        0.5 + 0.04 * Math.sin(this.atmoT * 0.7) + this.lightsDim * 0.35;
+
       // ── Godrays (idea #10) ───────────────────────────────────────
       // Project the spotlight's world position to screen-space UV and feed
       // it to the shader as the origin. Strength pulses with the
@@ -2484,9 +2536,13 @@ export class BrawlGame {
       const sy = (projected.y + 1) / 2;
       this.fxPass.uniforms.uGodraysOrig.value[0] = sx;
       this.fxPass.uniforms.uGodraysOrig.value[1] = sy;
-      // Intensity rises with lights-dim and the limelight activity.
+      // Intensity rises with lights-dim and the limelight activity. A small
+      // always-on baseline (idea #4) keeps the overhead shaft reading as
+      // volumetric during normal play, not just at the KO; the KO ramp then
+      // blows it out to a full cinema blade.
       const limelightOn = this._limelightActive > 0 ? 1 : 0;
-      this.fxPass.uniforms.uGodrays.value = 0.32 * this.lightsDim + 0.45 * limelightOn * this.lightsDim;
+      this.fxPass.uniforms.uGodrays.value =
+        0.07 + 0.32 * this.lightsDim + 0.45 * limelightOn * this.lightsDim;
     }
     if (this.bloomPass) this.bloomPass.strength = 0.32 + this.bloomPulse;
     this.renderer.toneMappingExposure = this.exposureBase + this.exposurePulse;
@@ -3100,7 +3156,17 @@ export class BrawlGame {
     if (swinging) {
       const joint = f.rig.joints[f.state === 'kick' ? 'footR' : 'fistR'];
       joint.getWorldPosition(_trailPos);
-      t.points.push({ x: _trailPos.x, y: _trailPos.y, z: _trailPos.z });
+      // Per-point limb speed (idea #9) → drives a velocity motion-blur smear:
+      // the faster the fist/foot travels this frame, the wider and hotter the
+      // ribbon reads, so a committed strike leaves a real blur, not a thin
+      // ribbon. Slow repositioning barely trails at all.
+      const prev = t.points[t.points.length - 1];
+      let spd = 0;
+      if (prev) {
+        const dx = _trailPos.x - prev.x, dy = _trailPos.y - prev.y, dz = _trailPos.z - prev.z;
+        spd = Math.sqrt(dx * dx + dy * dy + dz * dz) / Math.max(dt, 1e-3);
+      }
+      t.points.push({ x: _trailPos.x, y: _trailPos.y, z: _trailPos.z, spd });
       if (t.points.length > t.max) t.points.shift();
     } else if (t.points.length) {
       // Swing over: the tail burns off over a few frames.
@@ -3118,11 +3184,14 @@ export class BrawlGame {
     for (let i = 0; i < n; i++) {
       const p = t.points[i];
       const a = i / (n - 1);          // 0 tail → 1 head
-      const w = 0.012 + 0.05 * a;     // ribbon half-width grows to the head
+      // Velocity smear (idea #9): a fast-moving section of the arc widens and
+      // brightens toward a motion-blur streak; ~9 m/s saturates the boost.
+      const boost = Math.min(1, (p.spd || 0) / 9);
+      const w = (0.012 + 0.05 * a) * (1 + boost * 1.7);  // half-width grows to head
       const o = i * 6;
       pos[o] = p.x; pos[o + 1] = p.y - w; pos[o + 2] = p.z;
       pos[o + 3] = p.x; pos[o + 4] = p.y + w; pos[o + 5] = p.z;
-      const br = a * a * 0.85;        // quadratic ramp — hot head, faint tail
+      const br = a * a * (0.85 + 0.9 * boost);  // quadratic ramp — hot head, faint tail
       col[o] = col[o + 3] = t.color.r * br;
       col[o + 1] = col[o + 4] = t.color.g * br;
       col[o + 2] = col[o + 5] = t.color.b * br;

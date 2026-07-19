@@ -34,9 +34,13 @@ const PoRacer = (() => {
         }
     }
 
-    window.addEventListener('keydown', (e) => setKey(e, true));
-    window.addEventListener('keyup', (e) => setKey(e, false));
-    window.addEventListener('blur', () => { for (const k in input) input[k] = false; });
+    // NOTE: the window keydown/keyup/blur listeners are registered further down
+    // as the emit-capable `setKeyWithEmit` wrappers. They used to ALSO be
+    // registered here as bare `setKey` handlers — but that early pair fired
+    // first and mutated `input` BEFORE setKeyWithEmit snapshotted its `before`
+    // state, so the wrapper saw "no change" and never called emitInput(). The
+    // result: keyboard presses updated `input` but never reached C#, so the
+    // car sat frozen at the grid. Registering only the emit wrappers fixes it.
 
     // ----- Touch / pointer controls (mobile) -----
     // Buttons carry data-po-input="up|down|left|right|space". Event delegation
@@ -121,15 +125,15 @@ const PoRacer = (() => {
         catch (e) { /* dotnetRef disposed mid-frame is fine */ }
     }
 
-    // Wrap the original setKey so each transition fires emitInput.
-    const _origSetKey = setKey;
+    // Wrap the original setKey so each transition fires emitInput. These are the
+    // ONLY window key listeners (the bare setKey pair above was removed — see the
+    // note there). Because `input` is untouched before this runs, the before/after
+    // diff correctly detects the transition and emits to C#.
     function setKeyWithEmit(e, down) {
         const before = JSON.stringify(input);
-        _origSetKey(e, down);
+        setKey(e, down);
         if (JSON.stringify(input) !== before) emitInput();
     }
-    window.removeEventListener('keydown', (e) => _origSetKey(e, true));
-    window.removeEventListener('keyup', (e) => _origSetKey(e, false));
     window.addEventListener('keydown', (e) => setKeyWithEmit(e, true));
     window.addEventListener('keyup', (e) => setKeyWithEmit(e, false));
     window.addEventListener('blur', () => { for (const k in input) input[k] = false; emitInput(); });

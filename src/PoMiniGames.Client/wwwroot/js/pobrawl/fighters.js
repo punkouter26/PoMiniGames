@@ -433,6 +433,67 @@ function skinNoiseTexture() {
   return _skinTex;
 }
 
+// ── Procedural normal maps (idea #5) ────────────────────────────────────────
+// Real tangent-space normal maps (RGB), Sobel-derived from a height field, so
+// surface detail catches DIRECTIONAL light — the rim/key/RectArea speculars
+// break up across skin pores and fabric weave instead of sliding over a flat
+// lobe. A bumpMap only perturbs along the view gradient; a normalMap tilts the
+// shading normal properly, which is what reads as "material" under moving
+// lights. Kept linear (no sRGB) since these are data, not colour.
+function normalFromHeight(size, heightFn, strength) {
+  const h = new Float32Array(size * size);
+  for (let y = 0; y < size; y++)
+    for (let x = 0; x < size; x++)
+      h[y * size + x] = heightFn(x, y);
+  const at = (x, y) => h[((y + size) % size) * size + ((x + size) % size)];
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const g = c.getContext('2d');
+  const img = g.createImageData(size, size);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      // Sobel gradient → tangent-space normal.
+      const dx = (at(x + 1, y) - at(x - 1, y)) * strength;
+      const dy = (at(x, y + 1) - at(x, y - 1)) * strength;
+      const len = Math.hypot(dx, dy, 1);
+      const i = (y * size + x) * 4;
+      img.data[i]     = ((-dx / len) * 0.5 + 0.5) * 255;
+      img.data[i + 1] = ((-dy / len) * 0.5 + 0.5) * 255;
+      img.data[i + 2] = ((1 / len) * 0.5 + 0.5) * 255;
+      img.data[i + 3] = 255;
+    }
+  }
+  g.putImageData(img, 0, 0);
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  return tex;
+}
+
+// Fabric weave normal: raised warp/weft threads (matches weaveTexture's pattern)
+// so the cloth micro-relief tilts light along the thread grid.
+let _weaveNormalTex = null;
+function weaveNormalTexture() {
+  if (_weaveNormalTex) return _weaveNormalTex;
+  _weaveNormalTex = normalFromHeight(64, (x, y) => {
+    const warp = (x % 4 < 2) ? 0.6 : 0.0;
+    const weft = (y % 4 < 2) ? 0.5 : 0.0;
+    const noise = Math.random() * 0.15;
+    return warp + weft + noise;
+  }, 2.2);
+  _weaveNormalTex.repeat.set(2, 2);
+  return _weaveNormalTex;
+}
+
+// Skin pore normal: fine high-frequency bumps at low strength — enough to
+// scatter the sheen highlight without looking like orange peel.
+let _skinNormalTex = null;
+function skinNormalTexture() {
+  if (_skinNormalTex) return _skinNormalTex;
+  _skinNormalTex = normalFromHeight(64, () => Math.random(), 0.7);
+  _skinNormalTex.repeat.set(3, 3);
+  return _skinNormalTex;
+}
+
 // Tiny pixel US flag for the lapel pins (NearestFilter keeps the stripes crisp).
 let _flagTex = null;
 function flagTexture() {
@@ -1041,7 +1102,10 @@ export function buildFighter(charId) {
     sheen: casual ? 0.3 : 0.55, sheenRoughness: 0.75,
     sheenColor: new THREE.Color(casual ? c.shirtColor : c.suit).lerp(new THREE.Color(0xffffff), 0.35),
     roughnessMap: weaveTexture(),
-    bumpMap: weaveTexture(), bumpScale: casual ? 0.25 : 0.6,
+    // Real weave normal map (idea #5) replaces the old grayscale bumpMap —
+    // the thread grid now tilts light directionally under the rim/rig lights.
+    normalMap: weaveNormalTexture(),
+    normalScale: new THREE.Vector2(casual ? 0.35 : 0.7, casual ? 0.35 : 0.7),
   });
   const legMat = casual
     ? new THREE.MeshPhysicalMaterial({
@@ -1049,15 +1113,25 @@ export function buildFighter(charId) {
         sheen: 0.25, sheenRoughness: 0.9,
         sheenColor: new THREE.Color(c.jeans).lerp(new THREE.Color(0xffffff), 0.3),
         roughnessMap: weaveTexture(),
-        bumpMap: weaveTexture(), bumpScale: 0.8,
+        normalMap: weaveNormalTexture(),
+        normalScale: new THREE.Vector2(0.9, 0.9),
       })
     : suitMat;
   // Skin: a warm reddish sheen fakes subsurface scattering — light appears
-  // to bleed through at grazing angles (ears, nose bridge, knuckles).
+  // to bleed through at grazing angles (ears, nose bridge, knuckles). The
+  // pore normal (idea #5) scatters that sheen highlight so skin stops
+  // reading as smooth plastic.
   const skinMat = new THREE.MeshPhysicalMaterial({
     color: c.skin, roughness: 0.55, metalness: 0.0,
     sheen: 0.32, sheenRoughness: 0.5, sheenColor: new THREE.Color(0xff7a55),
     roughnessMap: skinNoiseTexture(),
+    normalMap: skinNormalTexture(),
+    normalScale: new THREE.Vector2(0.35, 0.35),
+    // Seed a near-zero clearcoat so the wet-sheen lobe is compiled into the
+    // shader up front (idea #6). _applyDamageWear then ramps this value with
+    // sweat WITHOUT forcing a per-frame recompile — a clearcoat that starts
+    // at exactly 0 would need needsUpdate to switch the feature on.
+    clearcoat: 0.001, clearcoatRoughness: 0.28,
   });
   // Face-only skin: lets Trump's face run oranger than his hands.
   const faceMat = c.faceTint
@@ -1065,6 +1139,9 @@ export function buildFighter(charId) {
         color: c.faceTint, roughness: 0.55, metalness: 0.0,
         sheen: 0.32, sheenRoughness: 0.5, sheenColor: new THREE.Color(0xff7a55),
         roughnessMap: skinNoiseTexture(),
+        normalMap: skinNormalTexture(),
+        normalScale: new THREE.Vector2(0.3, 0.3),
+        clearcoat: 0.001, clearcoatRoughness: 0.28,
       })
     : skinMat;
   // Silk tie: strong anisotropic-looking sheen is what reads as silk.
@@ -1072,7 +1149,8 @@ export function buildFighter(charId) {
     color: c.tie ?? c.jeans ?? 0x444444, roughness: 0.5, metalness: 0.0,
     sheen: 0.8, sheenRoughness: 0.35,
     sheenColor: new THREE.Color(c.tie ?? c.jeans ?? 0x444444).lerp(new THREE.Color(0xffffff), 0.5),
-    bumpMap: weaveTexture(), bumpScale: 0.3,
+    normalMap: weaveNormalTexture(),
+    normalScale: new THREE.Vector2(0.35, 0.35),
   });
   const hairMat = new THREE.MeshPhysicalMaterial({
     color: c.hair, roughness: c.hairShine ? 0.45 : 0.85, metalness: 0.0,

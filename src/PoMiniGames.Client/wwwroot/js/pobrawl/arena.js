@@ -159,7 +159,10 @@ export function buildArena(scene, envMap = null) {
   const key = new THREE.DirectionalLight(0xfff1d0, 2.6);
   key.position.set(6, 12, 4);
   key.castShadow = true;
-  key.shadow.mapSize.set(2048, 2048);
+  // 4096 over the tight ±6.5 frustum (idea #7): halving the texel size gives
+  // the fighters' contact shadows a crisp, grounded edge at the feet instead
+  // of the mushy penumbra a 2048 map left toward the far side of the ring.
+  key.shadow.mapSize.set(4096, 4096);
   // Frustum hugs the ring (fight area is ±5.2, posts at ±5.8) — tighter
   // bounds roughly double the effective shadow resolution vs the old ±10.
   key.shadow.camera.left = -6.5;
@@ -193,7 +196,9 @@ export function buildArena(scene, envMap = null) {
   spot.position.set(0, 11, 0);
   spot.target.position.set(0, 0, 0);
   spot.castShadow = true;
-  spot.shadow.mapSize.set(1024, 1024);
+  // 2048 (idea #7): the KO cinematic pushes in on the tight overhead shadow
+  // under the fallen body — 1024 pixelated its edge at that framing.
+  spot.shadow.mapSize.set(2048, 2048);
   spot.shadow.bias = -0.0005;
   spot.shadow.normalBias = 0.02;
   spot.shadow.radius = 6;
@@ -245,6 +250,12 @@ export function buildArena(scene, envMap = null) {
   // dust motes inside the beam.
   const atmo = buildAtmosphere(scene);
 
+  // Backdrop architecture (idea #3): overhead truss rig, hanging banners and a
+  // jumbotron fill the black void behind the crowd so the ring reads as an
+  // event in a hall, not a lit island in a vacuum. All dim/emissive and far
+  // from the camera — cheap, and the fog swallows their edges.
+  const backdrop = buildBackdrop(scene);
+
   // Crowd: 4 rows of low-poly silhouettes around the ring.
   // They're tagged userData.crowd so we can bounce them on KOs (wave animation).
   const crowd = buildCrowd(scene);
@@ -254,9 +265,140 @@ export function buildArena(scene, envMap = null) {
   const flashes = buildCrowdFlashes(scene);
 
   return {
-    posts, crowd, atmo, flashes, ropes,
+    posts, crowd, atmo, flashes, ropes, backdrop,
     lights: { hemi, key, rim, fill, spot, cornerA, cornerB, rectA, rectB },
   };
+}
+
+// ── Backdrop architecture (idea #3) ─────────────────────────────────────────
+// Everything here lives well outside the crowd ring and mostly above the
+// fighters, so it never crowds the fight but gives the frame depth and a
+// "big event" read: a square lighting truss overhead with rig-light blocks,
+// four hanging banners, and a pair of emissive jumbotron screens. The
+// jumbotron material is returned so the engine could pulse it, but it's fine
+// left static.
+function buildBackdrop(scene) {
+  const group = new THREE.Group();
+  group.userData.kind = 'backdrop';
+
+  // Dark structural metal for trusses/frames — reads as silhouette against
+  // the fog, catching only a little of the rig lights.
+  const steel = new THREE.MeshStandardMaterial({
+    color: 0x12141f, roughness: 0.7, metalness: 0.6,
+  });
+
+  // Overhead lighting truss: a square ring of box beams up in the rafters,
+  // with cross-braces. Sits above the spotlight so its shadow never matters.
+  const trussY = 9.4;
+  const trussHalf = 7.5;
+  const beamLong = new THREE.BoxGeometry(trussHalf * 2, 0.22, 0.22);
+  const beamSideGeo = new THREE.BoxGeometry(0.22, 0.22, trussHalf * 2);
+  for (const z of [-trussHalf, trussHalf]) {
+    const beam = new THREE.Mesh(beamLong, steel);
+    beam.position.set(0, trussY, z);
+    group.add(beam);
+  }
+  for (const x of [-trussHalf, trussHalf]) {
+    const beam = new THREE.Mesh(beamSideGeo, steel);
+    beam.position.set(x, trussY, 0);
+    group.add(beam);
+  }
+  // A few cross-braces so the truss reads as a lattice, not a bare square.
+  const braceGeo = new THREE.BoxGeometry(trussHalf * 2, 0.1, 0.1);
+  for (const z of [-3.5, 0, 3.5]) {
+    const brace = new THREE.Mesh(braceGeo, steel);
+    brace.position.set(0, trussY - 0.15, z);
+    group.add(brace);
+  }
+
+  // Rig-light blocks clamped to the truss — small emissive lenses pointing
+  // down at the ring. Purely decorative (the real lights are in buildArena).
+  const lensGeo = new THREE.BoxGeometry(0.3, 0.18, 0.3);
+  const lensColors = [0xfff2d0, 0xbcd0ff, 0xfff2d0, 0xffd0d0];
+  let li = 0;
+  for (const x of [-5, -1.7, 1.7, 5]) {
+    for (const z of [-trussHalf, trussHalf]) {
+      const lens = new THREE.Mesh(lensGeo, new THREE.MeshStandardMaterial({
+        color: 0x0a0a0a, emissive: lensColors[li % lensColors.length],
+        emissiveIntensity: 1.4, roughness: 0.4,
+      }));
+      lens.position.set(x, trussY - 0.28, z);
+      group.add(lens);
+      li++;
+    }
+  }
+
+  // Hanging banners: tall vertical panels dropping from the truss on all four
+  // sides, alternating red/blue to echo the corner identity. Unlit-ish
+  // standard material so they sit back in the gloom.
+  const bannerGeo = new THREE.PlaneGeometry(2.2, 4.0);
+  const bannerRed = new THREE.MeshStandardMaterial({
+    color: 0x6a1f22, roughness: 0.9, side: THREE.DoubleSide,
+    emissive: 0x2a0a0c, emissiveIntensity: 0.4,
+  });
+  const bannerBlue = new THREE.MeshStandardMaterial({
+    color: 0x1f2f6a, roughness: 0.9, side: THREE.DoubleSide,
+    emissive: 0x0a1030, emissiveIntensity: 0.4,
+  });
+  const bannerSpots = [
+    { x: -trussHalf + 0.3, z: 0, ry: Math.PI / 2, mat: bannerRed },
+    { x: trussHalf - 0.3, z: 0, ry: Math.PI / 2, mat: bannerBlue },
+    { x: 0, z: -trussHalf + 0.3, ry: 0, mat: bannerBlue },
+    { x: 0, z: trussHalf - 0.3, ry: 0, mat: bannerRed },
+  ];
+  for (const b of bannerSpots) {
+    const banner = new THREE.Mesh(bannerGeo, b.mat);
+    banner.position.set(b.x, trussY - 2.3, b.z);
+    banner.rotation.y = b.ry;
+    group.add(banner);
+  }
+
+  // Jumbotron: two big emissive screens on the far ends (behind the crowd on
+  // the ±Z sides, high up). A dim procedural "static" texture reads as a live
+  // feed from a distance without needing to render one.
+  const screenTex = jumbotronTexture();
+  const screenMat = new THREE.MeshBasicMaterial({ map: screenTex, fog: true });
+  const frameGeo = new THREE.BoxGeometry(6.4, 3.4, 0.3);
+  const screenGeo = new THREE.PlaneGeometry(6.0, 3.0);
+  for (const sign of [-1, 1]) {
+    const frame = new THREE.Mesh(frameGeo, steel);
+    frame.position.set(0, 6.4, sign * 14);
+    group.add(frame);
+    // Screen sits 0.16 toward the ring from its frame so the frame never
+    // occludes it, and faces inward (the −z screen faces +z, and vice-versa).
+    const screen = new THREE.Mesh(screenGeo, screenMat);
+    screen.position.set(0, 6.4, sign * 13.84);
+    screen.rotation.y = sign > 0 ? Math.PI : 0;
+    group.add(screen);
+  }
+
+  group.userData.screenMat = screenMat;
+  scene.add(group);
+  return group;
+}
+
+// Procedural jumbotron screen: a dim bluish glow with scanline banding and a
+// blocky "crowd cam" smear — legible as a big screen only from across the hall.
+let _jumboTex = null;
+function jumbotronTexture() {
+  if (_jumboTex) return _jumboTex;
+  const c = document.createElement('canvas');
+  c.width = 128; c.height = 64;
+  const g = c.getContext('2d');
+  g.fillStyle = '#0a1428';
+  g.fillRect(0, 0, 128, 64);
+  // Blocky colour smears — a fuzzy, unreadable live feed.
+  for (let i = 0; i < 60; i++) {
+    const hue = 200 + Math.random() * 60;
+    g.fillStyle = `hsla(${hue}, 40%, ${30 + Math.random() * 30}%, 0.5)`;
+    g.fillRect(Math.random() * 128, Math.random() * 64, 4 + Math.random() * 10, 3 + Math.random() * 8);
+  }
+  // Scanlines.
+  g.fillStyle = 'rgba(0,0,0,0.35)';
+  for (let y = 0; y < 64; y += 2) g.fillRect(0, y, 128, 1);
+  _jumboTex = new THREE.CanvasTexture(c);
+  _jumboTex.colorSpace = THREE.SRGBColorSpace;
+  return _jumboTex;
 }
 
 // ── Rope physics ──────────────────────────────────────────────────────────

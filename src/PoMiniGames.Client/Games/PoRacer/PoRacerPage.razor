@@ -252,6 +252,10 @@
         {
             <div class="cf-result cf-result--draw">🏁 You finished @Ordinal(Player?.Position ?? 0)</div>
         }
+        @if ((Player?.BestLapSeconds ?? -1) > 0)
+        {
+            <div class="racer-bestlap">⏱️ Fastest lap: <strong>@FormatTime(Player!.BestLapSeconds)</strong> — your score</div>
+        }
         <div class="leaderboard" aria-live="polite">
             @foreach (var c in Standings)
             {
@@ -404,8 +408,11 @@
         }
         try
         {
-            _gameCode = "LOBBY";
-            await ConnectRaceAsync(_gameCode);
+            // 1-player is a private solo race — no lobby. A unique code per
+            // session guarantees a fresh 8-car grid (human on pole + 7 AI) that
+            // this connection owns, so the arrow keys drive the player's car.
+            _gameCode = "solo-" + Guid.NewGuid().ToString("N")[..8];
+            await ConnectRaceAsync(_gameCode, asPlayer: true);
             Phase = GamePhase.Racing;
             StateHasChanged();
         }
@@ -435,8 +442,17 @@
         return state;
     }
 
-    private async Task ConnectRaceAsync(string code)
+    private async Task ConnectRaceAsync(string code, bool asPlayer)
     {
+        // Retry safety: tear down any hub left over from a previous failed
+        // attempt (the "Retry" button re-enters here) so we never leak a
+        // reconnecting connection or double-join the race.
+        if (_raceHub is not null)
+        {
+            try { await _raceHub.DisposeAsync(); } catch { }
+            _raceHub = null;
+        }
+
         _raceHub = new HubConnectionBuilder()
             .WithUrl(Endpoints.Hub("poracer/race-hub"), options =>
             {
@@ -452,8 +468,19 @@
         // ticking on the server.
         _raceHub.On<PoRacerRaceSnapshot>("raceSnapshot", snap => OnSnapshot(snap));
         _raceHub.On<PoRacerFinalResult>("raceFinished", result => OnFinished(result));
-        var initialSnap = await _raceHub.StartAsync().ContinueWith(_ =>
-            _raceHub!.InvokeAsync<PoRacerRaceSnapshot?>("JoinRace", code)).Unwrap();
+        // §2026-07-19: was `StartAsync().ContinueWith(_ => InvokeAsync("JoinRace"))
+        // .Unwrap()`. ContinueWith runs its continuation even when StartAsync
+        // faults (or before the connection reaches Connected), so JoinRace fired
+        // on an inactive hub → "InvokeCoreAsync cannot be called if the
+        // connection is not active", masking the real negotiate error. Awaiting
+        // sequentially guarantees the connection is up before we invoke, and any
+        // StartAsync failure surfaces to the caller's try/catch as itself.
+        await _raceHub.StartAsync();
+        // asPlayer=true (1P) claims the pole car on the server for this connection
+        // so arrow-key input drives it; demo passes false to spectate.
+        var initialSnap = await _raceHub.InvokeAsync<PoRacerRaceSnapshot?>(
+            "JoinRace", code, asPlayer,
+            AuthState.User?.DisplayName ?? "Player", !AuthState.IsAuthenticated);
         if (initialSnap?.Static is not null)
         {
             await JS.InvokeVoidAsync("PoRacerRender.setStatic",
@@ -585,6 +612,14 @@
         if (_finalResult is null) return;
         var myResult = _finalResult.Standings.FirstOrDefault(s => s.Name == Player.Name);
         if (myResult is null) return;
+        // 1P is scored on the FASTEST LAP, not total race time. No completed lap
+        // (crashed out / DNF before crossing the line once) → nothing to submit.
+        if (myResult.BestLapSeconds <= 0)
+        {
+            _submitState = SubmitState.Idle;
+            StateHasChanged();
+            return;
+        }
         _playerSubmitted = true;
         _submitState = SubmitState.Submitting;
         StateHasChanged();
@@ -593,7 +628,9 @@
             await Scores.SubmitAsync(new PoRacerScoreDto
             {
                 PlayerDisplayName = AuthState.User?.DisplayName ?? "Player",
-                TotalTimeSeconds = myResult.TotalTimeSeconds,
+                // The leaderboard ranks by this field ascending; feeding it the
+                // best lap makes it a fastest-lap board.
+                TotalTimeSeconds = myResult.BestLapSeconds,
                 FinalPosition = myResult.Position,
                 AchievedAtUtc = _finalResult.FinishedAtUtc,
                 IsGuest = !AuthState.IsAuthenticated,
@@ -629,7 +666,7 @@
         try
         {
             _gameCode = "LOBBY";
-            await ConnectRaceAsync(_gameCode);
+            await ConnectRaceAsync(_gameCode, asPlayer: false);
             Phase = GamePhase.Racing;
             StateHasChanged();
         }

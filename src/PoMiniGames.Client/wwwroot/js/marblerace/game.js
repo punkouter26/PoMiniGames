@@ -240,9 +240,11 @@ export class Game {
 
     const me = this.marbleSet.marbles[this.chosen];
     const meAlive = me && !me.eliminated && !me.finished;
+    // 1-player: stay LOCKED to your own marble the entire race — including the
+    // slow-mo finish. You must always see the marble you're steering. The camera
+    // only leaves you once you're out of the race (eliminated or finished), when
+    // it falls back to the leader so there's still a race to watch.
     if (!meAlive) return take(leader, 'LEADER');
-
-    if (this.slowmo && me !== leader) return take(leader, 'FINISH');
 
     return take(me, me === leader ? 'LEADER' : 'YOU');
   }

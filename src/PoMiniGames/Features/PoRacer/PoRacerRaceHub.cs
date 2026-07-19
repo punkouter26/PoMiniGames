@@ -39,10 +39,24 @@ public sealed class PoRacerRaceHub : Hub
     /// the static world + latest snapshot so a reconnecting player gets back
     /// in without a lobby round-trip.
     /// </summary>
-    public async Task<PoRacerRaceSnapshot?> JoinRace(string code)
+    public async Task<PoRacerRaceSnapshot?> JoinRace(string code, bool asPlayer = false, string? displayName = null, bool isGuest = true)
     {
         if (string.IsNullOrWhiteSpace(code)) return null;
-        var race = await _registry.GetOrCreateAsync(code);
+        // asPlayer (1-player mode): spin up a private solo race whose pole car is
+        // owned by THIS race-hub connection, so the arrow-key input this same
+        // connection streams via SendInput drives it. Otherwise (demo/spectator)
+        // join the shared lobby-seeded race and just watch.
+        PoRacerRaceService race;
+        if (asPlayer)
+        {
+            var name = string.IsNullOrWhiteSpace(displayName) ? "Player" : displayName!;
+            race = _registry.GetOrCreateSolo(code,
+                new PoRacerLobbyPlayer(Context.ConnectionId, name, isGuest, IsReady: true));
+        }
+        else
+        {
+            race = await _registry.GetOrCreateAsync(code);
+        }
         _registry.RegisterConnection(code, Context.ConnectionId);
         await Groups.AddToGroupAsync(Context.ConnectionId, RaceGroup(code));
         var snap = new PoRacerRaceSnapshot

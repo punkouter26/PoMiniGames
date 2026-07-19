@@ -5,7 +5,9 @@
        resulting aspect via scene.resize(). Phones get a portrait box below. */
     position: relative;
     width: 100%;
-    height: min(calc(100vh - 200px), 80vh);
+    /* The below-canvas HUD was removed, so the race graphics take that space:
+       fill nearly the whole viewport height minus the sticky top bar. */
+    height: min(calc(100vh - 96px), 92vh);
     min-height: 340px;
     border-radius: 10px;
     overflow: hidden;
@@ -768,10 +770,19 @@
     position: absolute;
     inset: auto 0 16px 0;
     z-index: 4;
-    display: flex;
+    /* Hidden by default — the on-screen ◀ ▶ steer buttons are only shown on a
+       touch device held in portrait (see the media query below). On desktop the
+       keyboard arrows are the input, so the pads would just cover the track. */
+    display: none;
     justify-content: space-between;
     padding: 0 16px;
     pointer-events: none;
+}
+
+/* Mobile portrait only: a phone/tablet in portrait has no keyboard and the tall
+   frame leaves room at the bottom corners for thumbs. */
+@media (pointer: coarse) and (orientation: portrait) {
+    .mr-nudge-pads { display: flex; }
 }
 
 .mr-nudge-pad {

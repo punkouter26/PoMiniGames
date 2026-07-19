@@ -34,6 +34,26 @@ public sealed class PoRacerRaceRegistry : IAsyncDisposable
         return race;
     }
 
+    /// <summary>
+    /// Create (or return, if the code already matches) a solo race seeded with a
+    /// single human player and 7 AI bots — bypassing the shared lobby entirely.
+    /// The player's car is owned by <paramref name="soloPlayer"/>.ConnectionId,
+    /// which is the caller's race-hub connection id, so its streamed input maps
+    /// straight onto the car (no lobby→race connection-id mismatch). 1-player
+    /// mode uses a unique code per session so this always spins up fresh.
+    /// </summary>
+    public PoRacerRaceService GetOrCreateSolo(string code, PoShared.Games.PoRacerLobbyPlayer soloPlayer)
+    {
+        lock (_createLock)
+        {
+            if (_currentRace is { } existing && existing.GameCode == code) return existing;
+            var log = _loggerFactory.CreateLogger<PoRacerRaceService>();
+            var race = new PoRacerRaceService(code, new[] { soloPlayer }, _lobby, log);
+            _currentRace = race;
+            return race;
+        }
+    }
+
     public PoRacerRaceService? GetByCode(string code) =>
         _currentRace is { } r && string.Equals(r.GameCode, code, StringComparison.OrdinalIgnoreCase) ? r : null;
 

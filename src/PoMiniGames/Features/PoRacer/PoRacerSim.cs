@@ -184,7 +184,13 @@ internal sealed class PoRacerSim
 
     /// <summary>Called when the countdown reaches GO. Rebases the race clock so elapsed
     /// and finish times start from zero — the sim isn't ticked during the countdown.</summary>
-    public void StartRacing() => _startElapsedMs = _wallClock.ElapsedMilliseconds;
+    public void StartRacing()
+    {
+        _startElapsedMs = _wallClock.ElapsedMilliseconds;
+        // Rebase every car's lap timer to the freshly-zeroed race clock so lap 1
+        // isn't credited with the countdown time.
+        foreach (var c in _cars) c.LapStartElapsed = 0;
+    }
 
     public void Tick(double dt, IReadOnlyDictionary<string, PoRacerInput> inputs)
     {
@@ -483,9 +489,19 @@ internal sealed class PoRacerSim
             if (wrappedForward || withinSegmentForward)
             {
                 c.Lap++;
+                // Fastest-lap timing: a lap just closed — measure it against the
+                // race clock and keep the best. LapStartElapsed rebases to now so
+                // the next lap times independently. This is the metric 1P scores on.
+                var nowSec = (_wallClock.ElapsedMilliseconds - _startElapsedMs) / 1000.0;
+                var lapTime = nowSec - c.LapStartElapsed;
+                if (lapTime > 0 && (c.BestLapTime < 0 || lapTime < c.BestLapTime))
+                {
+                    c.BestLapTime = lapTime;
+                }
+                c.LapStartElapsed = nowSec;
                 if (c.Lap > TotalLaps && c.FinishTime < 0)
                 {
-                    c.FinishTime = (_wallClock.ElapsedMilliseconds - _startElapsedMs) / 1000.0;
+                    c.FinishTime = nowSec;
                 }
             }
         }
@@ -523,7 +539,8 @@ internal sealed class PoRacerSim
                 c.IsPlayer ? c.ConnectionId : "",
                 !c.IsPlayer || c.IsAI, // ai or guest by sign-up
                 c.FinishTime,
-                c.Lap > TotalLaps && c.FinishTime >= 0 && !double.IsInfinity(c.FinishTime)))
+                c.Lap > TotalLaps && c.FinishTime >= 0 && !double.IsInfinity(c.FinishTime),
+                c.BestLapTime))
             .ToList();
         return new PoRacerFinalResult(code, standings, DateTimeOffset.UtcNow);
     }
@@ -542,6 +559,7 @@ internal sealed class PoRacerSim
             Speed = c.Speed,
             Lap = c.Lap,
             FinishTime = c.FinishTime,
+            BestLapSeconds = c.BestLapTime,
             IsPlayer = c.IsPlayer,
             Finished = c.Lap > TotalLaps,
             Position = c.Position,
@@ -697,6 +715,8 @@ internal sealed class PoRacerSim
         public double CheckpointT;
         public double DistanceAlongTrack;
         public double FinishTime = -1;
+        public double BestLapTime = -1;   // fastest single lap (s); -1 until first lap done
+        public double LapStartElapsed = 0; // race-clock seconds when the current lap began
         public int Position;
         public int ProjIdx;
         public double ProjT;

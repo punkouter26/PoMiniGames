@@ -53,6 +53,8 @@ public sealed class PoRacerCarState
     public double Speed { get; set; }
     public int Lap { get; set; }
     public double FinishTime { get; set; } = -1;
+    /// <summary>Fastest single lap so far, in seconds. -1 until the first lap completes.</summary>
+    public double BestLapSeconds { get; set; } = -1;
     public bool IsPlayer { get; set; }
     public bool Finished { get; set; }
     public int Position { get; set; }
@@ -111,4 +113,5 @@ public sealed record PoRacerFinalEntry(
     string UserId,
     bool IsGuest,
     double TotalTimeSeconds,
-    bool Finished);
+    bool Finished,
+    double BestLapSeconds = -1);

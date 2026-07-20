@@ -8,7 +8,9 @@
 .pb-canvas-host {
     position: relative;
     width: 100%;
-    height: min(72vh, 648px);
+    /* Fill more of the vertical space — the old min(72vh, 648px) left a ~10%
+       black band above/below the ring once the game-area centred it. */
+    height: min(86vh, 820px);
     min-height: 384px;
     border-radius: 12px;
     overflow: hidden;

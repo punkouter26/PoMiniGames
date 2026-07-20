@@ -10,7 +10,8 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
-import { buildArena, animateCrowd, updateAtmosphere, updateRopes, twangRope, damagePost, RING_HALF } from './arena.js';
+import { buildArena, animateCrowd, updateAtmosphere, updateRopes, updateBanners, twangRope, damagePost, RING_HALF } from './arena.js';
+import { buildProps, resetProps, updateProps, disposeProps } from './props.js';
 import { buildFighter, updateJiggles, setExpression, CHARACTERS, CHARACTER_IDS } from './fighters.js';
 import { Animator } from './animation.js';
 import { KeyboardController } from './input.js';
@@ -379,10 +380,12 @@ export class BrawlGame {
     this.camera = new THREE.PerspectiveCamera(55, w / h, 0.1, 100);
     this.camera.position.set(0, 2.4, 7);
     if (this.envMap) {
+      // Env-map reflections killed entirely (environmentIntensity 0) per user
+      // request — no shiny IBL reflections on the mat, ring or fighters. The
+      // real key/rim/spot/RectArea-panel rig carries the lighting; the lost IBL
+      // fill isn't missed (verified in-scene — the frame stays well lit).
       this.scene.environment = this.envMap;
-      // The arena-proxy bake is moodier than RoomEnvironment was, so the
-      // ambient IBL can run a little hotter without washing out the hall.
-      this.scene.environmentIntensity = 0.55;
+      this.scene.environmentIntensity = 0;
     }
 
     // Post chain: render → (GTAO) → (bloom → CA/vignette) → tone-map/sRGB
@@ -482,6 +485,10 @@ export class BrawlGame {
     this._setupPhysicsCollisions();
     // Static post/rope colliders — only the KO ragdoll interacts with them.
     buildArenaColliders(this._physics.world, this._physics.materials);
+    // Destructible corner crates + debris (props.js). The hooks let the module
+    // deal chip damage / spawn impact FX back through the engine.
+    this._propHooks = this._makePropHooks();
+    this.props = buildProps(this._physics.world, this._physics.materials, this.scene);
     this._spawnFighters(this.options.p1Character, this.options.p2Character);
     // Textures are built by arena.js/fighters.js as module-level cached
     // singletons with no renderer handle, so none of them could set anisotropy
@@ -522,7 +529,9 @@ export class BrawlGame {
       this._updateLighting(dt);
       this.atmoT += dt;
       updateAtmosphere(this.arena, dt, this.atmoT, this.excited);
-      updateRopes(this.arena, dt, this.fighters);
+      updateRopes(this.arena, dt, this.fighters, this.atmoT);
+      updateBanners(this.arena.backdrop, this.atmoT);
+      if (this.props) updateProps(this.props, dt, this.fighters, this._propHooks);
       this._updateBlobShadows();
       if (this.fighters) {
         for (const f of this.fighters) {
@@ -870,6 +879,8 @@ export class BrawlGame {
     this.phaseT = 0;
     this.clock = 0;
     this.winner = 0;
+    // Rebuild the corner crate stacks so each round opens with an intact ring.
+    if (this.props) resetProps(this.props);
     // Land the previous match's celebrant before the fresh countdown.
     if (this.celebrant) this.celebrant.rig.root.position.y = 0;
     this.celebrant = null;
@@ -1105,19 +1116,47 @@ export class BrawlGame {
       const rawX = pos.x, rawZ = pos.z;
       pos.x = THREE.MathUtils.clamp(rawX, -RING_HALF, RING_HALF);
       pos.z = THREE.MathUtils.clamp(rawZ, -RING_HALF, RING_HALF);
-      if (pos.x !== rawX && Math.abs(f.knockback.x) > 1.5) {
-        const power = Math.min(2, Math.abs(f.knockback.x) / 4);
-        f.knockback.x *= -0.65; // springy ropes
-        f.animator.applyLean(0, rawX > 0 ? 0.35 : -0.35);
-        f.animator.applyReaction('torso', -2.5, 0, 0);
+      // Elastic rope rebound (#3): the ropes catch a launched fighter and
+      // spring them back INTO the ring. Harder impacts snap back harder
+      // (restitution ramps 0.55 → 0.9 with incoming speed) instead of the old
+      // flat 0.65 — a hard knockback into the ropes now rebounds like a real
+      // rope-a-dope bounce rather than a dead stop.
+      if (pos.x !== rawX && Math.abs(f.knockback.x) > 1.2) {
+        const speed = Math.abs(f.knockback.x);
+        const power = Math.min(2.6, speed / 3.5);
+        const restitution = THREE.MathUtils.clamp(0.55 + speed * 0.05, 0.55, 0.9);
+        f.knockback.x *= -restitution;
+        f.animator.applyLean(0, rawX > 0 ? 0.4 : -0.4);
+        f.animator.applyReaction('torso', -3, 0, 0);
         twangRope(this.arena, 'x', rawX > 0 ? 1 : -1, power);
       }
-      if (pos.z !== rawZ && Math.abs(f.knockback.z) > 1.5) {
-        const power = Math.min(2, Math.abs(f.knockback.z) / 4);
-        f.knockback.z *= -0.65;
-        f.animator.applyLean(rawZ > 0 ? -0.35 : 0.35, 0);
-        f.animator.applyReaction('torso', -2.5, 0, 0);
+      if (pos.z !== rawZ && Math.abs(f.knockback.z) > 1.2) {
+        const speed = Math.abs(f.knockback.z);
+        const power = Math.min(2.6, speed / 3.5);
+        const restitution = THREE.MathUtils.clamp(0.55 + speed * 0.05, 0.55, 0.9);
+        f.knockback.z *= -restitution;
+        f.animator.applyLean(rawZ > 0 ? -0.4 : 0.4, 0);
+        f.animator.applyReaction('torso', -3, 0, 0);
         twangRope(this.arena, 'z', rawZ > 0 ? 1 : -1, power);
+      }
+
+      // Turnbuckle hazard (#9): a fighter knocked into a CORNER takes bonus
+      // damage and is flung back toward ring-center harder than a plain rope
+      // bounce. Cooldown-gated so a body wedged in the corner isn't shredded.
+      f._cornerCd = Math.max(0, (f._cornerCd || 0) - dt);
+      const inCorner = Math.abs(pos.x) > RING_HALF - 0.5 && Math.abs(pos.z) > RING_HALF - 0.5;
+      const cornerKb = Math.hypot(f.knockback.x, f.knockback.z);
+      if (inCorner && cornerKb > 3.0 && f._cornerCd === 0 && f.state !== 'ko') {
+        f._cornerCd = 0.6;
+        const sx = Math.sign(pos.x) || 1, sz = Math.sign(pos.z) || 1;
+        const tox = -sx / Math.SQRT2, toz = -sz / Math.SQRT2; // toward center
+        f.knockback.x = tox * cornerKb * 0.7;
+        f.knockback.z = toz * cornerKb * 0.7;
+        f.animator.applyReaction('torso', -3.5, 0, 0);
+        this._propHooks.onChip(f, Math.min(4, cornerKb - 3.0), tox, toz);
+        const pv = new THREE.Vector3(sx * (RING_HALF + 0.1), 1.0, sz * (RING_HALF + 0.1));
+        this._spawnSparks(pv, sx < 0 ? 0xff5a4a : 0x4a7dff, 10, 2.2);
+        this.audio.impact({ power: 1.3, worldPos: pv });
       }
 
       // ── Ground reaction: skids and landings ────────────────────────
@@ -1206,6 +1245,24 @@ export class BrawlGame {
           const nx = dx / d, nz = dz / d;
           pa.x += nx * push; pa.z += nz * push;
           pb.x -= nx * push; pb.z -= nz * push;
+
+          // Body-check shove (#2): the part of each fighter's knockback driving
+          // INTO the other is transferred, so charging/knocked into an opponent
+          // shoves them instead of both sliding to a dead stop at the clamp.
+          const aInto = -(fA.knockback.x * nx + fA.knockback.z * nz); // A → B
+          if (aInto > 0.4) {
+            fB.knockback.x += -nx * aInto * 0.45;
+            fB.knockback.z += -nz * aInto * 0.45;
+            fA.knockback.x -= -nx * aInto * 0.2;
+            fA.knockback.z -= -nz * aInto * 0.2;
+          }
+          const bInto = (fB.knockback.x * nx + fB.knockback.z * nz);  // B → A
+          if (bInto > 0.4) {
+            fA.knockback.x += nx * bInto * 0.45;
+            fA.knockback.z += nz * bInto * 0.45;
+            fB.knockback.x -= nx * bInto * 0.2;
+            fB.knockback.z -= nz * bInto * 0.2;
+          }
         }
       }
 
@@ -2440,7 +2497,34 @@ export class BrawlGame {
       // Sweat spray whips off the rocked head.
       defender.rig.joints.head.getWorldPosition(_sweatPos);
       this._spawnSweat(_sweatPos);
+      // Stagger ragdoll (#4): the heaviest non-lethal hits throw a brief
+      // whole-body flail — arms fling, elbows whip, torso pitches, the head
+      // snaps — driven through the reaction-spring system so it recovers on
+      // its own. Reads as a momentary loss of control without a knockdown.
+      if (baseDmg >= HEAVY_HIT_DMG * 1.35) {
+        this._staggerFlail(defender, knockDir);
+      }
     }
+  }
+
+  // A short, recoverable "partial ragdoll": a burst of reaction-spring impulses
+  // across the upper body so a rocked fighter flails before the springs settle
+  // them back to guard. Cheaper and far safer than swapping the live rig to a
+  // physics ragdoll mid-fight, and it reads as the same beat.
+  _staggerFlail(f, knockDir) {
+    const a = f.animator;
+    if (!a) return;
+    const s = knockDir.x >= 0 ? 1 : -1;
+    const back = -knockDir.z; // pitch magnitude away from the blow
+    a.applyReaction('shoulderR', 7 * back, 0, -7 * s);
+    a.applyReaction('shoulderL', 7 * back, 0, 7 * s);
+    a.applyReaction('elbowR', -10, 0, 0);
+    a.applyReaction('elbowL', -10, 0, 0);
+    a.applyReaction('torso', -5, 0, -2.5 * s);
+    a.applyLean(knockDir.z * 0.34, -knockDir.x * 0.34);
+    f.spinVel += 2.2 * s;        // a little uncontrolled yaw whip
+    setExpression(f.rig, 'hurt');
+    f.expressionT = Math.max(f.expressionT, 0.55);
   }
 
   // Accumulating damage wear — SHAPE AND SHINE ONLY. Per user request the
@@ -2496,12 +2580,15 @@ export class BrawlGame {
     this.fovPunch = (attack.name === 'kick' ? 5.0 : 3.0) * chargeMul;
     // Post-FX spike: bloom flares and the exposure "blooms open" for a beat on
     // heavy hits. The chromatic-aberration (colour-fringe) pulse was removed per
-    // user request — hits no longer tint/split the frame's colour.
-    this.bloomPulse = Math.max(this.bloomPulse, (attack.name === 'kick' ? 0.7 : 0.4) * chargeMul);
-    this.exposurePulse = Math.max(this.exposurePulse, (attack.name === 'kick' ? 0.15 : 0.08) * chargeMul);
+    // user request — hits no longer tint/split the frame's colour. Dialled down
+    // per user request so the dark-edge / teal-grade "black & green" pulse on
+    // each hit reads as a subtle beat rather than a full-frame flash.
+    this.bloomPulse = Math.max(this.bloomPulse, (attack.name === 'kick' ? 0.35 : 0.2) * chargeMul);
+    this.exposurePulse = Math.max(this.exposurePulse, (attack.name === 'kick' ? 0.08 : 0.045) * chargeMul);
     // One-beat radial streak toward the frame center — reads as the impact
-    // shockwave. Scales with attack weight and stored charge.
-    this.radialPulse = Math.max(this.radialPulse, (attack.name === 'kick' ? 0.55 : 0.32) * chargeMul);
+    // shockwave. Scales with attack weight and stored charge. Halved so the
+    // edge-darkening (the "black closing in" part) stays gentle.
+    this.radialPulse = Math.max(this.radialPulse, (attack.name === 'kick' ? 0.28 : 0.16) * chargeMul);
   }
 
   // Decay the post-FX pulses and push them into the passes.
@@ -2823,6 +2910,37 @@ export class BrawlGame {
     this.flash.classList.remove('pb-flash-active');
     void this.flash.offsetWidth; // force reflow
     this.flash.classList.add('pb-flash-active');
+  }
+
+  // Hooks handed to props.js so the crate module can push damage / FX back
+  // through the engine without importing it.
+  _makePropHooks() {
+    return {
+      onChip: (f, dmg, dx, dz) => this._propChip(f, dmg, dx, dz),
+      onImpactFx: (pos, power) => {
+        this._spawnSparks(pos, 0xc8a060, 8, 1.6);
+        this.audio.impact({ power: power ?? 1, worldPos: pos });
+      },
+    };
+  }
+
+  // Secondary "chip" damage from crashing into / getting hit by a crate
+  // (chain reactions, corner turnbuckle). Capped so a crate can never land the
+  // KILLING blow — HP is floored at 5 — keeping the KO strictly a fist/foot
+  // event and the combat/KO pipeline untouched.
+  _propChip(f, dmg, dx = 0, dz = 0) {
+    if (!f || f.state === 'ko' || dmg <= 0) return;
+    const player = this.combat.getPlayer(f.playerId);
+    if (!player) return;
+    const capped = Math.min(dmg, Math.max(0, player.health - 5));
+    if (capped <= 0.1) return;
+    this.combat.damage({ playerId: f.playerId, amount: capped, sourceId: f.playerId });
+    this.hudDirty = true;
+    const p = f.rig.root.position;
+    this._spawnSparks(new THREE.Vector3(p.x, 1.0, p.z), 0xffd0a0, 5, 1.2);
+    this.audio.grunt({ power: 0.6 });
+    setExpression(f.rig, 'hurt');
+    f.expressionT = Math.max(f.expressionT, 0.4);
   }
 
   // Remove a fighter's live-fight cannon bodies (rig root, hurt spheres,
@@ -3355,43 +3473,36 @@ export class BrawlGame {
     // walk its children in world space and find the max distance from the
     // shoulder origin — that becomes the collision radius. This avoids any
     // sinking into the floor regardless of how the arm tumbles.
-    const _bbMin = new THREE.Vector3();
-    const _bbMax = new THREE.Vector3();
-    const _bbCenter = new THREE.Vector3();
+    // Bounding box of the detached hierarchy in the shoulder's LOCAL frame
+    // (orientation-independent). We keep its 8 corners so _updateSeveredLimbs
+    // can find the limb's true lowest point at any tumble orientation and rest
+    // that point ON the canvas — so the arm lies flat on the ground instead of
+    // floating a full arm-length above it.
     shoulder.updateMatrixWorld(true);
-    shoulder.children[0]?.geometry?.computeBoundingBox?.();
+    const shoulderInv = shoulder.matrixWorld.clone().invert();
     const localBox = new THREE.Box3();
+    const _childMat = new THREE.Matrix4();
     shoulder.traverse((o) => {
       if (o.isMesh && o.geometry) {
         if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
         const box = o.geometry.boundingBox.clone();
-        box.applyMatrix4(o.matrixWorld);
+        _childMat.multiplyMatrices(shoulderInv, o.matrixWorld); // child → shoulder-local
+        box.applyMatrix4(_childMat);
         if (localBox.isEmpty()) localBox.copy(box);
         else localBox.union(box);
       }
     });
-    // Radius = max distance from shoulder origin to a bounding-box corner.
+    let limbCorners = null;
     if (!localBox.isEmpty()) {
-      _bbCenter.copy(shoulder.position);          // local origin == world root pos
-      localBox.getCenter(_bbCenter);
-      const corners = [
-        new THREE.Vector3(localBox.min.x, localBox.min.y, localBox.min.z),
-        new THREE.Vector3(localBox.max.x, localBox.min.y, localBox.min.z),
-        new THREE.Vector3(localBox.min.x, localBox.max.y, localBox.min.z),
-        new THREE.Vector3(localBox.max.x, localBox.max.y, localBox.min.z),
-        new THREE.Vector3(localBox.min.x, localBox.min.y, localBox.max.z),
-        new THREE.Vector3(localBox.max.x, localBox.min.y, localBox.max.z),
-        new THREE.Vector3(localBox.min.x, localBox.max.y, localBox.max.z),
-        new THREE.Vector3(localBox.max.x, localBox.max.y, localBox.max.z),
+      const mn = localBox.min, mx = localBox.max;
+      limbCorners = [
+        new THREE.Vector3(mn.x, mn.y, mn.z), new THREE.Vector3(mx.x, mn.y, mn.z),
+        new THREE.Vector3(mn.x, mx.y, mn.z), new THREE.Vector3(mx.x, mx.y, mn.z),
+        new THREE.Vector3(mn.x, mn.y, mx.z), new THREE.Vector3(mx.x, mn.y, mx.z),
+        new THREE.Vector3(mn.x, mx.y, mx.z), new THREE.Vector3(mx.x, mx.y, mx.z),
       ];
-      let radius = 0;
-      for (const c of corners) {
-        c.sub(shoulder.position);                  // distance from shoulder root
-        const d = c.length();
-        if (d > radius) radius = d;
-      }
-      // Pad slightly so the limb visually rests on top of, not inside, the canvas.
-      limbBoundR = radius + 0.02;
+      limbBoundR = 0;
+      for (const c of limbCorners) limbBoundR = Math.max(limbBoundR, c.length());
     } else {
       limbBoundR = 0.42;  // safe fallback for fists-only geometry
     }
@@ -3410,8 +3521,9 @@ export class BrawlGame {
     this._severedLimbs = this._severedLimbs || [];
     this._severedLimbs.push({
       mesh: shoulder, vel, angVel,
-      boundR: limbBoundR,                 // world-space collision sphere radius
-      grounded: false, groundedT: 0,      // grounded timer for blood-stain fade
+      corners: limbCorners,               // shoulder-local box corners for ground test
+      boundR: limbBoundR,                 // fallback collision sphere radius
+      grounded: false,
     });
 
     // Silly geyser: a big squirt off the stump + a burst trailing the limb.
@@ -3452,50 +3564,43 @@ export class BrawlGame {
   // the floor regardless of how it tumbles.
   _updateSeveredLimbs(dt) {
     if (!this._severedLimbs || !this._severedLimbs.length) return;
+    const _c = new THREE.Vector3();
     for (const l of this._severedLimbs) {
-      // Integrate position from velocity. Vertical (y) motion decays only via
-      // gravity; horizontal (x/z) gradually bleeds off so the limb settles.
-      if (!l.grounded) {
-        l.mesh.position.x += l.vel.x * dt;
-        l.mesh.position.y += l.vel.y * dt;
-        l.mesh.position.z += l.vel.z * dt;
-        l.vel.y += -11 * dt;
-        l.mesh.rotation.x += l.angVel.x * dt;
-        l.mesh.rotation.y += l.angVel.y * dt;
-        l.mesh.rotation.z += l.angVel.z * dt;
+      // Once down, a limb lies limp: it is frozen and never integrated again.
+      if (l.grounded) continue;
 
-        // Ground contact: the bounding sphere centered on the shoulder root
-        // collides when shoulder.position.y - boundR < LIMB_FLOOR_CLEARANCE.
-        // Snap to the surface and dampen the impact (a small bounce, no
-        // permanent sink).
-        const minY = LIMB_FLOOR_CLEARANCE + (l.boundR || 0.42);
-        if (l.mesh.position.y < minY) {
-          l.mesh.position.y = minY;
-          if (l.vel.y < 0) l.vel.y = -l.vel.y * LIMB_BOUNCE;
-          // Tangential friction on contact so the limb doesn't slide forever.
-          l.vel.x *= Math.exp(-4 * dt);
-          l.vel.z *= Math.exp(-4 * dt);
-          // Angular tumble slows on first contact, then bleeds off.
-          l.angVel.multiplyScalar(Math.exp(-2 * dt));
+      // Tumble through the air under gravity.
+      l.mesh.position.x += l.vel.x * dt;
+      l.mesh.position.y += l.vel.y * dt;
+      l.mesh.position.z += l.vel.z * dt;
+      l.vel.y += -11 * dt;
+      l.mesh.rotation.x += l.angVel.x * dt;
+      l.mesh.rotation.y += l.angVel.y * dt;
+      l.mesh.rotation.z += l.angVel.z * dt;
+      l.mesh.updateMatrixWorld(true);
 
-          // Mark grounded on first contact and paint a pool if inside the
-          // ring. Subsequent contacts still bounce + settle, but no new stain.
-          if (!l.grounded) {
-            l.grounded = true;
-            l.groundedT = 0;
-            if (Math.abs(l.mesh.position.x) < 5.7
-                && Math.abs(l.mesh.position.z) < 5.7) {
-              this._addBloodStain(l.mesh.position.x, l.mesh.position.z);
-            }
-          }
+      // True lowest point of the limb geometry at its current orientation.
+      let lowest = Infinity;
+      if (l.corners) {
+        for (const c of l.corners) {
+          _c.copy(c).applyMatrix4(l.mesh.matrixWorld);
+          if (_c.y < lowest) lowest = _c.y;
         }
       } else {
-        // Already on the floor: snap-to-surface each frame in case gravity
-        // pulled the limb too low before impact, then dampen the remaining
-        // angular spin.
-        l.mesh.position.y = Math.max(l.mesh.position.y,
-          LIMB_FLOOR_CLEARANCE + (l.boundR || 0.42));
-        l.angVel.multiplyScalar(Math.exp(-LIMB_ANG_DAMP * dt));
+        lowest = l.mesh.position.y - (l.boundR || 0.42);
+      }
+
+      // Contact with the canvas → rest the lowest point exactly on it and
+      // FREEZE. The arm lies flat where it fell and stops moving entirely.
+      if (lowest < LIMB_FLOOR_CLEARANCE) {
+        l.mesh.position.y += LIMB_FLOOR_CLEARANCE - lowest;
+        l.vel.set(0, 0, 0);
+        l.angVel.set(0, 0, 0);
+        l.grounded = true;
+        l.mesh.updateMatrixWorld(true);
+        if (Math.abs(l.mesh.position.x) < 5.7 && Math.abs(l.mesh.position.z) < 5.7) {
+          this._addBloodStain(l.mesh.position.x, l.mesh.position.z);
+        }
       }
     }
   }
@@ -3634,6 +3739,7 @@ export class BrawlGame {
     if (this.fighters) for (const f of this.fighters) f.controller.dispose();
     if (this.audio) this.audio.close();
     // Drop any swing physics and per-fighter bodies, then dispose the world.
+    if (this.props) { disposeProps(this.props); this.props = null; }
     if (this.fighters) {
       for (const f of this.fighters) {
         if (f.swingPhysics) destroySwingPhysics(this._physics.world, f.swingPhysics);

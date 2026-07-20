@@ -163,7 +163,9 @@
                     <div class="hud-value big">@Ordinal(Player?.Position ?? 0) <span class="hud-of">/ @Cars.Count</span></div>
 
                     <div class="hud-label">Lap</div>
-                    <div class="hud-value">@(Player?.Lap ?? 1) <span class="hud-of">/ @TotalLaps</span></div>
+                    @* Server uses Lap>TotalLaps as the "finished" sentinel; the HUD
+                       must never show 4/3 — clamp the display to TotalLaps. *@
+                    <div class="hud-value">@(Math.Min(Player?.Lap ?? 1, TotalLaps)) <span class="hud-of">/ @TotalLaps</span></div>
 
                     <div class="hud-label">Speed</div>
                     <div class="hud-value">@((int)SpeedKph(Player)) <span class="hud-of">km/h</span></div>
@@ -185,7 +187,7 @@
                         <span class="hud-dot" style="background:@c.Color"></span>
                         <span class="hud-pos">@Ordinal(c.Position)</span>
                         <span class="hud-name">@c.Name</span>
-                        <span class="hud-laps">L@(c.Lap)</span>
+                        <span class="hud-laps">@(c.Lap > TotalLaps ? "Fin" : $"L{c.Lap}")</span>
                     </div>
                 }
             </div>
@@ -235,7 +237,7 @@
     private RenderFragment StatusContent => _isDemo
         ? @<span class="gps-status-badge demo">🤖 Demo</span>
         : Phase == GamePhase.Racing
-            ? @<span class="gps-status-badge player">Lap @(Player?.Lap ?? 1) / @TotalLaps</span>
+            ? @<span class="gps-status-badge player">Lap @(Math.Min(Player?.Lap ?? 1, TotalLaps)) / @TotalLaps</span>
             : Phase == GamePhase.Finished
                 ? @<span class="gps-status-badge draw">🏁 Finished</span>
                 : @<span class="gps-status-badge turn">Multiplayer arcade racing</span>;

@@ -14,6 +14,11 @@ internal sealed class PoRacerSim
     private const int TotalLaps = 3;
     private const double CarRadius = 18;
     private const double StopAfterMs = 90_000; // 90s safety cap so a stuck client can't hang the room
+    // Once the winner crosses the line (finishes lap 3), the pack gets this much
+    // longer to finish; then the race ends and stragglers are DNF'd. Keeps the
+    // race from idling to the 90 s cap after it's effectively decided.
+    private const double FinishGraceMs = 5_000;
+    private double _leaderFinishMs = -1;
 
     public PoRacerStaticWorld Static { get; }
 
@@ -231,10 +236,17 @@ internal sealed class PoRacerSim
         // Rank.
         Rank();
 
-        // Safety cap: if 90 s pass without anyone finishing, declare remaining
-        // cars as DNF so the room doesn't sit forever.
+        // Race-end: the winner has crossed the line → start the finish grace.
+        // When the grace expires (or the 90 s safety cap hits) declare any car
+        // still running as DNF, so the race ends when the 3rd lap is won rather
+        // than idling on until the cap.
         var elapsed = _wallClock.ElapsedMilliseconds - _startElapsedMs;
-        if (elapsed > StopAfterMs && !AllFinishedOrStopped())
+        if (_leaderFinishMs < 0 && _cars.Any(c => c.Lap > TotalLaps))
+        {
+            _leaderFinishMs = elapsed;
+        }
+        var graceExpired = _leaderFinishMs >= 0 && elapsed - _leaderFinishMs > FinishGraceMs;
+        if ((elapsed > StopAfterMs || graceExpired) && !_cars.All(c => c.Lap > TotalLaps))
         {
             foreach (var c in _cars)
             {
@@ -524,7 +536,10 @@ internal sealed class PoRacerSim
         // We deliberately check ALL cars (not just players) so a bot-only race
         // doesn't immediately finish via the vacuous-All-of-empty-set trap.
         var elapsed = _wallClock.ElapsedMilliseconds - _startElapsedMs;
-        return elapsed > StopAfterMs || _cars.All(c => c.Lap > TotalLaps);
+        if (elapsed > StopAfterMs) return true;
+        // Winner crossed + grace elapsed → the race is decided.
+        if (_leaderFinishMs >= 0 && elapsed - _leaderFinishMs > FinishGraceMs) return true;
+        return _cars.All(c => c.Lap > TotalLaps);
     }
 
     public PoRacerFinalResult BuildFinalResult(string code)

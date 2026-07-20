@@ -33,6 +33,7 @@ export const G_HURT = 1 << 1;
 export const G_STRIKER = 1 << 2;
 export const G_RAGDOLL = 1 << 3;  // KO rigid-body ragdoll parts
 export const G_ARENA = 1 << 4;    // static ring colliders (posts, rope walls)
+export const G_PROP = 1 << 5;     // dynamic corner crates + debris (props.js)
 export const M_ALL = G_ROOT | G_HURT | G_STRIKER;
 
 const GRAVITY = 20;
@@ -52,6 +53,7 @@ function ensureMaterials(world) {
       striker: new CANNON.Material('striker'),
       ragdoll: new CANNON.Material('ragdoll'),
       arena: new CANNON.Material('arena'),
+      prop: new CANNON.Material('prop'),
     };
   }
   const m = _materials;
@@ -77,6 +79,23 @@ function ensureMaterials(world) {
   }));
   world.addContactMaterial(new CANNON.ContactMaterial(m.ragdoll, m.arena, {
     friction: 0.3, restitution: 0.45,
+  }));
+  // Corner crates / debris (props.js). Against the mat + fighters (root):
+  // enough friction that a knocked pile settles and stays instead of sliding
+  // forever, with a little bounce. Crate-on-crate friction keeps stacks
+  // standing until they're shoved; a KO ragdoll crashing through them bounces
+  // a touch more so the scatter reads.
+  world.addContactMaterial(new CANNON.ContactMaterial(m.prop, m.root, {
+    friction: 0.55, restitution: 0.2,
+  }));
+  world.addContactMaterial(new CANNON.ContactMaterial(m.prop, m.prop, {
+    friction: 0.5, restitution: 0.15,
+  }));
+  world.addContactMaterial(new CANNON.ContactMaterial(m.prop, m.ragdoll, {
+    friction: 0.4, restitution: 0.35,
+  }));
+  world.addContactMaterial(new CANNON.ContactMaterial(m.prop, m.arena, {
+    friction: 0.4, restitution: 0.4,
   }));
   return m;
 }
@@ -124,8 +143,10 @@ export function createRootBody(world, mats, initialPos) {
   });
   body.collisionFilterGroup = G_ROOT;
   // Mask includes ragdolls: the standing winner shoves the KO'd body aside
-  // (kinematic vs dynamic — only the ragdoll moves).
-  body.collisionFilterMask = G_ROOT | G_RAGDOLL;
+  // (kinematic vs dynamic — only the ragdoll moves). G_PROP lets a standing
+  // fighter's body physically nudge the corner crates as a fallback to the
+  // explicit shove impulses props.js applies.
+  body.collisionFilterMask = G_ROOT | G_RAGDOLL | G_PROP;
   body.userData = { kind: 'rigRoot' };
   world.addBody(body);
   return body;
@@ -139,7 +160,9 @@ export function buildArenaColliders(world, mats) {
   const bodies = [];
   const add = (body) => {
     body.collisionFilterGroup = G_ARENA;
-    body.collisionFilterMask = G_RAGDOLL;
+    // G_PROP so launched crates rebound off the rope walls / posts and stay
+    // inside the ring instead of sliding out under the ropes.
+    body.collisionFilterMask = G_RAGDOLL | G_PROP;
     body.userData = { kind: 'arena' };
     world.addBody(body);
     bodies.push(body);

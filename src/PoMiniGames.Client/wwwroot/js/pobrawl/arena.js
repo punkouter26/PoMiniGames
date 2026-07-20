@@ -68,20 +68,22 @@ export function buildArena(scene, envMap = null) {
   const ringMat = new THREE.MeshStandardMaterial({
     color: 0x2a3160, roughness: 0.85, metalness: 0.05,
   });
-  if (envMap) { ringMat.envMap = envMap; ringMat.envMapIntensity = 0.6; }
+  // envMapIntensity 0 opts this surface out of the scene environment's
+  // specular reflection (kept as ambient fill via scene.environment).
+  ringMat.envMapIntensity = 0;
   const ring = new THREE.Mesh(new THREE.BoxGeometry(12, 0.5, 12), ringMat);
   ring.position.y = -0.25;
   ring.receiveShadow = true;
   scene.add(ring);
 
-  // Ring canvas: procedurally textured glossy vinyl — worn center, faint
-  // ring logo, scuff noise. Low roughness + env map give it the reflective
-  // sheen that sells "lit mat in a dark hall".
+  // Ring canvas: procedurally textured matte vinyl — worn center, faint
+  // ring logo, scuff noise. High roughness + no env reflection keeps the mat
+  // flat so it doesn't mirror the house lights during the fight.
   const canvasMat = new THREE.MeshStandardMaterial({
-    color: 0xffffff, roughness: 0.55, metalness: 0.0,
+    color: 0xffffff, roughness: 0.95, metalness: 0.0,
     map: ringCanvasTexture(),
   });
-  if (envMap) { canvasMat.envMap = envMap; canvasMat.envMapIntensity = 0.5; }
+  canvasMat.envMapIntensity = 0;
   const top = new THREE.Mesh(new THREE.BoxGeometry(11.6, 0.04, 11.6), canvasMat);
   top.position.y = 0.02;
   top.receiveShadow = true;
@@ -89,9 +91,9 @@ export function buildArena(scene, envMap = null) {
 
   // Corner posts — breakable. The engine listens for collisions against these.
   const postMat = new THREE.MeshStandardMaterial({
-    color: 0x8a92c9, roughness: 0.45, metalness: 0.25,
+    color: 0x8a92c9, roughness: 0.7, metalness: 0.1,
   });
-  if (envMap) { postMat.envMap = envMap; postMat.envMapIntensity = 0.9; }
+  postMat.envMapIntensity = 0;
   const postGeo = new THREE.CylinderGeometry(0.08, 0.1, 1.5, 10);
   const posts = [];
   const half = 5.8;
@@ -118,6 +120,24 @@ export function buildArena(scene, envMap = null) {
       cap.castShadow = true;
       cap.userData.attachedTo = post;
       scene.add(cap);
+
+      // Turnbuckle pads (idea #9): three cushioned pads wrapping each corner
+      // post at the rope heights, in the corner's identity colour (red −X /
+      // blue +X). Visual anchor for the corner HAZARD — the engine deals bonus
+      // damage + a hard rebound when a fighter is knocked into a corner.
+      const padColor = x < 0 ? 0xd23b30 : 0x3b6bff;
+      const padMat = new THREE.MeshStandardMaterial({
+        color: padColor, roughness: 0.55, metalness: 0.05,
+        emissive: padColor, emissiveIntensity: 0.12,
+      });
+      const padGeo = new THREE.CylinderGeometry(0.17, 0.17, 0.26, 12);
+      for (const py of [0.5, 0.9, 1.3]) {
+        const pad = new THREE.Mesh(padGeo, padMat);
+        pad.position.set(x, py, z);
+        pad.castShadow = true;
+        pad.userData.turnbuckle = true;
+        scene.add(pad);
+      }
     }
   }
 
@@ -331,7 +351,9 @@ function buildBackdrop(scene) {
   // Hanging banners: tall vertical panels dropping from the truss on all four
   // sides, alternating red/blue to echo the corner identity. Unlit-ish
   // standard material so they sit back in the gloom.
-  const bannerGeo = new THREE.PlaneGeometry(2.2, 4.0);
+  // Segmented so the cloth can ripple (idea #10): each banner gets its own
+  // clone of this geometry and a stored rest pose that updateBanners waves.
+  const bannerGeo = new THREE.PlaneGeometry(2.2, 4.0, 4, 12);
   const bannerRed = new THREE.MeshStandardMaterial({
     color: 0x6a1f22, roughness: 0.9, side: THREE.DoubleSide,
     emissive: 0x2a0a0c, emissiveIntensity: 0.4,
@@ -346,10 +368,16 @@ function buildBackdrop(scene) {
     { x: 0, z: -trussHalf + 0.3, ry: 0, mat: bannerBlue },
     { x: 0, z: trussHalf - 0.3, ry: 0, mat: bannerRed },
   ];
+  let bannerPhase = 0;
   for (const b of bannerSpots) {
-    const banner = new THREE.Mesh(bannerGeo, b.mat);
+    const geo = bannerGeo.clone();
+    const banner = new THREE.Mesh(geo, b.mat);
     banner.position.set(b.x, trussY - 2.3, b.z);
     banner.rotation.y = b.ry;
+    banner.userData.banner = true;
+    banner.userData.phase = (bannerPhase += 1.7);
+    // Rest pose for the ripple solve (local-space vertex positions).
+    banner.userData.base = geo.attributes.position.array.slice();
     group.add(banner);
   }
 
@@ -426,11 +454,13 @@ function ropeGeometry(rope) {
 
 // Per-frame rope solve. `fighters` is the engine's fighter list; a body
 // leaning past the clamp margin presses the ropes on that side.
-export function updateRopes(arena, dt, fighters) {
+export function updateRopes(arena, dt, fighters, t = 0) {
   if (!arena.ropes) return;
   const pressStart = RING_HALF - 0.55; // bodies this far out start pressing
   for (const rope of arena.ropes) {
-    let target = 0;
+    // Idle sway (idea #10): a gentle continuous breathing so the ropes never
+    // sit dead-still. Tiny amplitude — the press response below dominates.
+    let target = 0.012 * Math.sin(t * 1.25 + rope.y * 3.1 + (rope.axis === 'x' ? 0 : 1.6));
     if (fighters) {
       for (const f of fighters) {
         const p = f.rig.root.position;
@@ -467,6 +497,37 @@ export function twangRope(arena, clampAxis, sign, power = 1) {
       rope.vel += 2.6 * power;
     }
   }
+}
+
+// ── Banner cloth ripple (idea #10) ─────────────────────────────────────────
+// A cheap "soft-body" pass over the hanging banners: each vertex is pushed
+// out-of-plane by a traveling wave whose amplitude grows toward the free
+// bottom edge (the top hem is pinned to the truss). No solver, no constraints
+// — a driven wave reads as a banner breathing in the hall's air currents.
+export function updateBanners(backdrop, t) {
+  if (!backdrop) return;
+  backdrop.traverse((o) => {
+    if (!o.userData || !o.userData.banner || !o.geometry) return;
+    const pos = o.geometry.attributes.position;
+    const base = o.userData.base;
+    const ph = o.userData.phase || 0;
+    for (let i = 0; i < pos.count; i++) {
+      const bx = base[i * 3], by = base[i * 3 + 1];
+      // by spans [-2, 2] (height 4); +2 is the pinned top, -2 the free bottom.
+      const droop = (2.0 - by) / 4.0;            // 0 at top → 1 at bottom
+      const amp = 0.22 * droop * droop;
+      const z = amp * Math.sin(t * 1.7 + bx * 1.6 + by * 0.7 + ph);
+      pos.array[i * 3 + 2] = base[i * 3 + 2] + z;
+      // A little lateral drift near the bottom so it doesn't wave like a flag
+      // on a rigid pole.
+      pos.array[i * 3] = bx + amp * 0.4 * Math.sin(t * 1.1 + by * 0.9 + ph);
+    }
+    pos.needsUpdate = true;
+    // Normals are intentionally NOT recomputed each frame — these are dim
+    // backdrop banners, and per-frame computeVertexNormals was a needless
+    // main-thread cost (it contributed to countdown-time frame hitches). The
+    // silhouette ripple reads fine with static normals.
+  });
 }
 
 // ── Atmosphere: light shaft + dust ────────────────────────────────────────

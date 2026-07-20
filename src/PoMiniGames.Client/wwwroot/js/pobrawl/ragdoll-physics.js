@@ -23,7 +23,7 @@
 
 import * as CANNON from 'cannon-es';
 import * as THREE from 'three';
-import { G_ROOT, G_RAGDOLL, G_ARENA } from './physics.js';
+import { G_ROOT, G_RAGDOLL, G_ARENA, G_PROP } from './physics.js';
 
 // Body parts: box half-extent source sizes (full w/h/d, scaled by the
 // fighter's heightScale), the rig joint that anchors them, the offset from
@@ -152,7 +152,8 @@ export class CannonRagdoll {
       body.addShape(new CANNON.Box(new CANNON.Vec3(
         (def.size[0] / 2) * s, (def.size[1] / 2) * s, (def.size[2] / 2) * s)));
       body.collisionFilterGroup = G_RAGDOLL;
-      body.collisionFilterMask = G_RAGDOLL | G_ARENA | G_ROOT;
+      // G_PROP so a launched KO body crashes through the corner crates.
+      body.collisionFilterMask = G_RAGDOLL | G_ARENA | G_ROOT | G_PROP;
       body.userData = { kind: 'ragdoll', part };
 
       // Momentum carry + directed launch + a touch of angular jitter so no

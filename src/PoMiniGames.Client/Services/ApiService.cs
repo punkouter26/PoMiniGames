@@ -57,17 +57,74 @@ public class ApiService
     /// §6: Single round-trip that returns the auth client config + (when a session
     /// cookie exists) the canonical user profile. Replaces the legacy two-call
     /// (config + me) handshake so AuthGate can hydrate with one RTT.
+    /// 2026-07-19 browser audit #3+#4: the previous implementation wrapped the call
+    /// in a bare try/catch and returned null on every failure, including the
+    /// ERR_ABORTED that fires when a navigation tears down the in-flight
+    /// request AND the X-Reauth header that signals a stale-cookie unprotect
+    /// failure. We now surface both as distinct exceptions so the caller can
+    /// keep the previous user on a transient abort and force a fresh dev
+    /// login on a reauth signal.
     /// </summary>
     public async Task<AuthHandshake?> GetAuthHandshakeAsync()
     {
+        AuthHandshakeReauthRequiredException? reauth = null;
         try
         {
-            return await _http.GetFromJsonAsync("/api/auth/handshake", ApiJsonContext.Default.AuthHandshake);
+            using var response = await _http.GetAsync("/api/auth/handshake");
+            if (response.Headers.TryGetValues("X-Reauth", out var reauthHeader)
+                && reauthHeader.Any(v => v == "1"))
+            {
+                // The server's data-protection key ring was rebuilt; the
+                // cookie we sent is no longer decryptable. The caller must
+                // trigger a fresh dev-login so the user isn't stranded on
+                // a stale identity.
+                reauth = new AuthHandshakeReauthRequiredException("Auth cookie no longer decryptable");
+            }
+            if (!response.IsSuccessStatusCode)
+            {
+                return null;
+            }
+            return await response.Content.ReadFromJsonAsync(ApiJsonContext.Default.AuthHandshake);
         }
-        catch
+        catch (HttpRequestException ex) when (ex.StatusCode is null)
         {
+            // Transport-level failure (DNS, connection refused, aborted
+            // navigation). Surface so the caller can keep the previous
+            // identity and show a "Reconnecting…" hint.
+            throw new AuthHandshakeUnavailableException("Auth handshake unreachable", ex);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Auth-side failure (5xx, schema drift, etc). Same surface as
+            // before: clear state and let the caller re-hydrate.
             return null;
         }
+        finally
+        {
+            if (reauth is not null) throw reauth;
+        }
+    }
+
+    /// <summary>
+    /// Thrown when the auth handshake can't be reached at the transport layer
+    /// (no HTTP response — e.g. aborted by navigation, DNS, connection refused).
+    /// AuthStateService treats this as transient: keep the previous user rather
+    /// than blanking the header on a navigation race.
+    /// </summary>
+    public sealed class AuthHandshakeUnavailableException : Exception
+    {
+        public AuthHandshakeUnavailableException(string message, Exception inner) : base(message, inner) { }
+    }
+
+    /// <summary>
+    /// Thrown when the server responded 401 with <c>X-Reauth: 1</c>, meaning the
+    /// data-protection key ring was rebuilt and the existing DevCookie can no
+    /// longer be unprotected. AuthStateService treats this as a forced
+    /// re-login: issue a fresh guest identity before continuing.
+    /// </summary>
+    public sealed class AuthHandshakeReauthRequiredException : Exception
+    {
+        public AuthHandshakeReauthRequiredException(string message) : base(message) { }
     }
 
     public async Task<AuthenticatedUserProfile?> DevLoginAsync(DevLoginRequest? request = null)

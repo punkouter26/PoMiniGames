@@ -14,10 +14,11 @@ public static class GameCatalog
     public static readonly IReadOnlyList<CatalogGame> SinglePlayer =
     [
         new(GameKeys.ConnectFive, "Connect Five", "🔴", "/connectfive"),
-        // NetRun10 audit #4: the page is actually a 6×6 / 4-in-a-row grid,
-        // not the classic 3×3 tic-tac-toe. The user-facing title now matches
-        // the in-game label and the "How to play" copy.
-        new(GameKeys.TicTacToe, "TicTacToe6", "❌", "/tictactoe"),
+        // 2026-07-19 browser audit #8: the grid dimension (6×6 / 4-in-a-row)
+        // was leaking into the product name as "TicTacToe6". Surface the
+        // classic product name; the grid size stays in the in-game "How to
+        // play" copy and intro card.
+        new(GameKeys.TicTacToe, "Tic-Tac-Toe", "❌", "/tictactoe"),
         new(GameKeys.PoRacer, "Racer", "🏎️", "/poracer"),
         new(GameKeys.PoMarbleRace, "Marble Race", "🔮", "/pomarblerace"),
         new(GameKeys.PoBrawl, "Brawl", "🥊", "/pobrawl"),
@@ -26,7 +27,7 @@ public static class GameCatalog
     public static readonly IReadOnlyList<CatalogGame> LocalTwoPlayer =
     [
         new(GameKeys.ConnectFive, "Connect Five", "🔴", "/connectfive?mode=2p"),
-        new(GameKeys.TicTacToe, "TicTacToe6", "❌", "/tictactoe?mode=2p"),
+        new(GameKeys.TicTacToe, "Tic-Tac-Toe", "❌", "/tictactoe?mode=2p"),
         new(GameKeys.PoBrawl, "Brawl", "🥊", "/pobrawl?mode=2p"),
     ];
 
@@ -39,7 +40,7 @@ public static class GameCatalog
 
     public static readonly IReadOnlyList<CatalogGame> Demo =
     [
-        new(GameKeys.TicTacToe, "TicTacToe6", "❌", "/tictactoe/1"),
+        new(GameKeys.TicTacToe, "Tic-Tac-Toe", "❌", "/tictactoe/1"),
         new(GameKeys.ConnectFive, "Connect Five", "🔴", "/connectfive/1"),
         new(GameKeys.PoRacer, "Racer", "🏎️", "/poracer/demo"),
         new(GameKeys.PoMarbleRace, "Marble Race", "🔮", "/pomarblerace?demo=1"),

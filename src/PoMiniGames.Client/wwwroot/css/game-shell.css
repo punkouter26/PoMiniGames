@@ -218,6 +218,37 @@
   color: var(--color-text-primary);
 }
 
+/* 2026-07-19 browser audit #6: the intro OK button used to share
+   .gps-play-again-btn{,-primary}, which collided with the end-of-game
+   modal's class names and made Playwright's stability heuristic time out
+   waiting for the intro button to "settle". Same visual treatment, but a
+   distinct semantic class so the two buttons can never be confused again. */
+.gps-intro-btn {
+  padding: 0.6rem 1.25rem;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  transition: filter 0.2s, border-color 0.2s, color 0.2s;
+}
+
+.gps-intro-btn--primary {
+  background: var(--color-accent);
+  border: none;
+  color: white;
+  min-width: 7rem;
+  cursor: pointer;
+}
+
+.gps-intro-btn--primary:hover {
+  filter: brightness(1.1);
+}
+
+.gps-intro-btn--primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  filter: none;
+}
+
 @keyframes gps-modal-fade {
   from { opacity: 0; }
   to   { opacity: 1; }

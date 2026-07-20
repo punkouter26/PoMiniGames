@@ -60,7 +60,7 @@
                     break;
 
                 case IntroMode.TwoPlayer:
-                    <button class="gps-play-again-btn gps-play-again-btn--primary"
+                    <button class="gps-intro-btn gps-intro-btn--primary"
                             disabled="@(!StartEnabled)"
                             @onclick="StartAsync">
                         @(StartLabel ?? "Start")
@@ -72,7 +72,7 @@
                     break;
 
                 default:
-                    <button class="gps-play-again-btn gps-play-again-btn--primary"
+                    <button class="gps-intro-btn gps-intro-btn--primary"
                             @onclick="StartAsync">
                         @(StartLabel ?? "OK")
                     </button>

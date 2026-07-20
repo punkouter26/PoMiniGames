@@ -399,6 +399,13 @@
     private async Task StartRace()
     {
         _startError = null;
+        // 2026-07-19 browser audit #9: gate the "Joining race…" placeholder
+        // on a timeout. The SignalR WebSocket upgrade through
+        // UseResponseCompression takes ~8.5s on this dev box (see memory);
+        // without a fallback the user sits on a dead overlay for the entire
+        // upgrade window. After 10s we offer an offline option so the
+        // player can still steer a CPU-only grid.
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         var available = await Api.IsAvailableAsync();
         if (!available)
         {
@@ -412,7 +419,18 @@
             // session guarantees a fresh 8-car grid (human on pole + 7 AI) that
             // this connection owns, so the arrow keys drive the player's car.
             _gameCode = "solo-" + Guid.NewGuid().ToString("N")[..8];
-            await ConnectRaceAsync(_gameCode, asPlayer: true);
+            // Race ConnectRaceAsync against the 10s budget so a hung
+            // negotiate/post/abort transitions to the retry UI instead of
+            // stranding the player on the placeholder.
+            var connectTask = ConnectRaceAsync(_gameCode, asPlayer: true);
+            var winner = await Task.WhenAny(connectTask, Task.Delay(Timeout.Infinite, cts.Token));
+            if (winner != connectTask)
+            {
+                _startError = "Race hub took too long to connect. Try again, or switch to Demo mode for an offline CPU grid.";
+                StateHasChanged();
+                return;
+            }
+            await connectTask; // surface any exception to the catch below
             Phase = GamePhase.Racing;
             StateHasChanged();
         }

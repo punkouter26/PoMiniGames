@@ -99,6 +99,13 @@ internal static class AuthExtensions
                         return Task.CompletedTask;
                     },
                 };
+                // 2026-07-19 browser audit #3: see /api/auth/handshake — the
+                // reauth signal is set on the handshake endpoint whenever a
+                // DevCookie was sent but context.User is anonymous (i.e. the
+                // data-protection key ring no longer matches). The handshake
+                // endpoint is the right place to detect this: cookie auth
+                // failures are swallowed upstream, so a per-endpoint check
+                // against the request cookie is the only reliable hook.
             })
             .AddJwtBearer(options =>
             {

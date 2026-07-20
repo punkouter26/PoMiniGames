@@ -103,16 +103,35 @@ export class Game {
   start() {
     this.audio.resume();
     this._lastTs = 0;
+    this._paused = true; // 2026-07-19: gate the rAF loop on resume() so the
+                         // engine can't run the pick countdown and racing
+                         // phase while the intro modal is still up.
     const loop = (ts) => {
       if (this.disposed) return;
       const now = ts || performance.now();
       const dt = this._lastTs ? (now - this._lastTs) / 1000 : 0.016;
       this._lastTs = now;
-      this._frame(Math.min(dt, 0.05));
+      if (!this._paused) this._frame(Math.min(dt, 0.05));
       this._raf = requestAnimationFrame(loop);
     };
     this._raf = requestAnimationFrame(loop);
+    // Demo mode is auto-cycled by the kiosk; it gets the same pause gate
+    // (the intro card flashes for DemoDelayMs then calls resume()).
     if (this.demo) this._autoPickSoon();
+  }
+
+  // 2026-07-19 browser audit #1: the engine used to call _setPhase('pick')
+  // during construction and immediately start a 3s auto-pick, all while
+  // the intro modal was still on screen. resume() is the explicit
+  // acknowledgment from the host that the intro is dismissed and the
+  // engine may now run the pick phase (and the rAF tick).
+  resume() {
+    if (this._paused) {
+      this._paused = false;
+      this._lastTs = 0; // discard the dt we accumulated while paused
+      // Re-emit the current phase so the host can sync its overlay state.
+      this._invoke('OnPhase', this.phase, this.chosen, this.score, this.best, this.streak);
+    }
   }
 
   pick(index) {
@@ -210,6 +229,12 @@ export class Game {
 
   _setPhase(p) {
     this.phase = p;
+    // 2026-07-19 browser audit #1: skip phase notifications while the
+    // intro is up. The host can't react to OnPhase('pick') until resume()
+    // fires anyway, and a notify during intro would race the host's
+    // StartPickCountdown. The constructor's first _setPhase('pick') is
+    // simply held until resume() flushes it.
+    if (this._paused) return;
     this._invoke('OnPhase', p, this.chosen, this.score, this.best, this.streak);
   }
 

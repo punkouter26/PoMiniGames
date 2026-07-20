@@ -37,7 +37,12 @@
                the clock is running. There's nothing to choose now — you always control the one
                red marble in a pack of 100 blue — so this just tells you which one is yours and
                how to steer before the gun. *@
-            @if (_phase == "pick" && !_demo)
+            @* 2026-07-19 browser audit #2: gate the overlay on
+               `_introDone && _phase == "pick"` so it never flashes
+               "Starting in 0…" while the intro card is up. The countdown
+               is also gated on `_pickCountdown > 0` so the very first
+               paint can't render a stale 0 either. *@
+            @if (_introDone && _phase == "pick" && !_demo && _pickCountdown > 0)
             {
                 <div class="mr-overlay">
                     <div class="mr-pick-card">
@@ -248,15 +253,33 @@
 
     // The engine no longer boots on first render — the intro card gates it so the
     // race clock never runs behind the welcome. OnIntroStartAsync starts it.
+    // 2026-07-19 browser audit #1: the engine now stays paused between
+    // start() and the explicit resume() call so OnPhase('pick') and the
+    // auto-pick countdown never fire while the intro modal is on screen.
     private async Task OnIntroStartAsync()
     {
         _introDone = true;
-        if (_engineStarted) return;
+        // 2026-07-19 browser audit #2: seed the pick countdown BEFORE we
+        // await JS so the overlay never flashes "Starting in 0…" during
+        // the round-trip. The JS side will still re-emit OnPhase when
+        // resume() flushes the queue, which re-arms the countdown.
+        _phase = "pick";
+        _pickCountdown = PickSeconds;
+        await InvokeAsync(StateHasChanged);
+
+        if (_engineStarted)
+        {
+            // The engine was already up (e.g. demo re-cycle) — just kick it.
+            try { await JSRuntime.InvokeVoidAsync("PoMarbleRace.resume"); }
+            catch (Exception ex) { Console.Error.WriteLine($"[PoMarbleRace] resume failed: {ex.Message}"); }
+            return;
+        }
         _engineStarted = true;
         _ref = DotNetObjectReference.Create(this);
         try
         {
             await JSRuntime.InvokeVoidAsync("PoMarbleRace.start", "marble-race-container", _ref, _demo);
+            await JSRuntime.InvokeVoidAsync("PoMarbleRace.resume");
         }
         catch (Exception ex)
         {

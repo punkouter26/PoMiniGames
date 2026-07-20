@@ -202,6 +202,15 @@ public static class AuthEndpoints
             IWebHostEnvironment environment,
             IConfiguration configuration) =>
         {
+            // 2026-07-19 browser audit #3: detect a stale DevCookie at the
+            // edge. When the data-protection key ring was rebuilt (Azurite
+            // wipe, dev-box restart) the cookie that the SPA sends is no
+            // longer decryptable; the cookie auth handler silently treats
+            // the request as anonymous and the SPA's stored identity never
+            // gets refreshed. Set X-Reauth: 1 here whenever a DevCookie
+            // was sent but failed to authenticate, so the client can
+            // transparently re-issue a fresh guest identity.
+            var sentCookie = context.Request.Cookies.TryGetValue("PoMiniGames.DevAuth", out var cookieValue);
             var auth = authOptions.Value;
             var microsoftEnabled = auth.Enabled;
             var microsoftConfigured = auth.FullyConfigured;
@@ -228,6 +237,13 @@ public static class AuthEndpoints
             if (AuthenticatedUser.TryCreate(context.User, out var user) && user is not null)
             {
                 profile = new AuthenticatedUserProfile(user.UserId, user.DisplayName, user.Email);
+            }
+            else if (sentCookie && !string.IsNullOrEmpty(cookieValue) && devLoginEnabled)
+            {
+                // Cookie was sent but context.User is anonymous → the
+                // data-protection key ring no longer matches. Signal the
+                // SPA to re-issue a fresh dev identity.
+                context.Response.Headers["X-Reauth"] = "1";
             }
 
             return Results.Ok(new AuthHandshakeResponse(clientConfig, profile));

@@ -2,6 +2,7 @@
 @inject ApiService ApiService
 @inject NavigationManager NavigationManager
 @inject BrowserViewport Viewport
+@inject PlayerNameService PlayerNameService
 @implements IAsyncDisposable
 
 <PageTitle>Leaderboards · PoMiniGames</PageTitle>
@@ -189,20 +190,50 @@
 
     private void BuildHero()
     {
-        // Find the player's best-ranked entry across all boards. Rank 1 wins;
-        // otherwise the smallest rank wins. The hero card is hidden when no
-        // entry was found (BuildHero is only called when _boards.Count > 0,
-        // so this is best-effort).
+        // 2026-07-19 browser audit #5: previously the hero card picked the
+        // GLOBAL rank-1 row across every board, so any previous E2E session
+        // that left a high Joker score was attributed to whichever guest
+        // happened to be signed in now. Filter to entries whose Name matches
+        // the current PlayerName (case-insensitive, contains — the score
+        // submit may use the display name, an email slug, or the bare id).
+        var me = PlayerNameService.GetPlayerName();
+        var meLower = me?.Trim().ToLowerInvariant() ?? string.Empty;
+
         var personalEntries = _boards
             .SelectMany(b => b.Entries.Select(e => (Board: b, Entry: e)))
             .Where(t => t.Entry.Name != PlaceholderName) // never hero the XXX padding
+            .Where(t => NameMatches(t.Entry.Name, meLower))
             .OrderBy(t => t.Entry.Rank)
             .FirstOrDefault();
-        if (personalEntries.Board is null) return;
+
+        if (personalEntries.Board is null)
+        {
+            _topGameKey = null;
+            return;
+        }
         _topGameKey = personalEntries.Board.GameKey;
         _topGameTitle = personalEntries.Board.Title;
         _topRank = personalEntries.Entry.Rank;
         _topValue = personalEntries.Entry.DisplayValue;
+    }
+
+    // Display-name comparison. Names on the leaderboard can be one of:
+    //   • the player's DisplayName   ("Guest342812")
+    //   • their email slug           ("guest342812@local.dev" → already shown verbatim)
+    //   • their id slug              ("dev-guest342812")
+    // The server writes whatever the submitter passed, so we accept any case-
+    // insensitive substring overlap with the local PlayerName rather than
+    // demanding an exact match.
+    private static bool NameMatches(string leaderName, string localLower)
+    {
+        if (string.IsNullOrEmpty(localLower)) return false;
+        var ln = leaderName?.Trim().ToLowerInvariant() ?? string.Empty;
+        if (ln.Length == 0) return false;
+        return ln == localLower
+            || ln.StartsWith(localLower + "@", StringComparison.Ordinal)
+            || ln.StartsWith(localLower + "-", StringComparison.Ordinal)
+            || localLower.StartsWith(ln + "@", StringComparison.Ordinal)
+            || localLower.StartsWith(ln + "-", StringComparison.Ordinal);
     }
 
     private string PlayUrl(string gameKey)

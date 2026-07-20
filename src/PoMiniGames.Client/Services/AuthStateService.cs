@@ -48,7 +48,34 @@ public class AuthStateService
 
         // §6: single-RTT auth handshake. The previous implementation fetched config
         // then user profile in two round-trips, causing one extra paint of the spinner.
-        var handshake = await _api.GetAuthHandshakeAsync();
+        AuthHandshake? handshake;
+        try
+        {
+            handshake = await _api.GetAuthHandshakeAsync();
+        }
+        catch (ApiService.AuthHandshakeUnavailableException ex)
+        {
+            // 2026-07-19 browser audit #4: a navigation race aborts the
+            // in-flight handshake with ERR_ABORTED. Treat that as
+            // "still warming up" — keep whatever identity we already have
+            // rather than blanking the header to a stale guest name, and
+            // let the next page mount retry the call.
+            _logger.LogDebug(ex, "Auth handshake transport unavailable; keeping previous identity");
+            _initialized = true;
+            NotifyStateChanged();
+            return;
+        }
+        catch (ApiService.AuthHandshakeReauthRequiredException)
+        {
+            // 2026-07-19 browser audit #3: the data-protection key ring was
+            // rebuilt (Azurite wipe, dev-box restart). The existing DevCookie
+            // can't be unprotected. Force a fresh dev login so the user
+            // isn't stranded on a stale identity, then fall through to the
+            // normal DevLoginEnabled branch below with the new identity.
+            await _api.DevLogoutAsync();
+            // Continue with handshake = null so we hit the DevLoginEnabled branch.
+            handshake = null;
+        }
         if (handshake is null)
         {
             _user = null;

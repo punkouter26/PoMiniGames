@@ -16,7 +16,10 @@
 
 @* Stats are the adaptive-ELO bucket, which 2-player never updates
    (HandleTwoPlayerMove records a local match instead) — so showing the
-   grid there displayed stale 1P figures. Matches ConnectFive. *@
+   grid there displayed stale 1P figures. Matches ConnectFive.
+   2026-07-19 browser audit #7: the header was missing the ELO badge that
+   Connect Five and Brawl both render — now passed through GameShell.Elo
+   so the live rating shows next to the signed-in identity on 1P AI. *@
 <GameShell
     Title=@TitleContent
     Player="@_playerName"
@@ -24,6 +27,7 @@
     GameOver="@_isGameOver"
     GameKey="@(PlayMode == "ai" ? "tictactoe" : null)"
     Stats="@(PlayMode == "ai" ? _statItems : null)"
+    Elo="@(PlayMode == "ai" ? _rating.Elo : (int?)null)"
     Status="@StatusContent"
     GameSummary="@GameSummaryContent"
     HowToPlay="@HowToPlayContent">
@@ -35,7 +39,7 @@
                    Mode="@_introMode"
                    OnStart="DismissIntro" />
     }
-    <div class="ttt-board @(_isAiTurn ? "ttt-board--thinking" : "") @ResultClass" role="grid" aria-label="TicTacToe6 game board">
+    <div class="ttt-board @(_isAiTurn ? "ttt-board--thinking" : "") @ResultClass" role="grid" aria-label="Tic-Tac-Toe game board">
         @for (int r = 0; r < TicTacToeBoard.Size; r++)
         {
             @for (int c = 0; c < TicTacToeBoard.Size; c++)
@@ -137,7 +141,11 @@
         : GameIntro.IntroMode.OnePlayer;
     private void DismissIntro() => _introDone = true;
 
-    private RenderFragment TitleContent => @<span>❌ TicTacToe6</span>;
+    // 2026-07-19 browser audit #8: the title used to leak the grid dimension
+    // ("TicTacToe6") into the product name. Surface the classic "Tic-Tac-Toe"
+    // and let the in-game intro / how-to-play carry the 6×6 / 4-in-a-row
+    // details.
+    private RenderFragment TitleContent => @<span>❌ Tic-Tac-Toe</span>;
 
     private RenderFragment HowToPlayContent => @<div>
         <p>Line up @TicTacToeBoard.WinLength in a row on the @TicTacToeBoard.Size×@TicTacToeBoard.Size board.</p>

@@ -6,7 +6,7 @@
     background: linear-gradient(180deg, rgba(248, 113, 113, 0.12), rgba(248, 113, 113, 0.04));
     border: 1px solid rgba(248, 113, 113, 0.45);
     color: var(--app-text, #f1f5f9);
-    font-family: 'Outfit', system-ui, sans-serif;
+    font-family: var(--font-display);
     box-shadow: 0 12px 32px rgba(248, 113, 113, 0.12);
 }
 
@@ -29,7 +29,7 @@
 }
 
 .app-error-boundary__message code {
-    background: rgba(15, 23, 42, 0.6);
+    background: var(--surface-3);
     padding: 1px 6px;
     border-radius: 4px;
     font-size: 12px;
@@ -64,7 +64,7 @@
 }
 
 .app-error-boundary__id code {
-    background: rgba(15, 23, 42, 0.6);
+    background: var(--surface-3);
     padding: 1px 6px;
     border-radius: 4px;
 }

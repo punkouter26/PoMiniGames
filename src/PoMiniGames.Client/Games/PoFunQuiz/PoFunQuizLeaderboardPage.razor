@@ -20,7 +20,7 @@
         <h2 class="gps-phase-h">Top Fun Quiz · @DisplayName(_category)</h2>
         @if (_isLoading)
         {
-            <p>Loading…</p>
+            <div class="app-loading"><span class="app-loading__spinner" aria-hidden="true"></span><span>Loading…</span></div>
         }
         else if (!string.IsNullOrEmpty(_error))
         {

@@ -35,7 +35,7 @@
        This block is now only the load / load-failed state. *@
     @if (_isLoading)
     {
-        <p>Loading questions…</p>
+        <div class="app-loading"><span class="app-loading__spinner" aria-hidden="true"></span><span>Loading questions…</span></div>
     }
     else if (_questions.Count == 0)
     {

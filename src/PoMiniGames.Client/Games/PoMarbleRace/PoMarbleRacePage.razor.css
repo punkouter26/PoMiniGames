@@ -31,7 +31,7 @@
     z-index: 4;
     min-width: 264px;
     padding: 12px 16px;
-    border-radius: 12px;
+    border-radius: var(--radius-md);
     background: rgba(8, 12, 24, 0.82);
     border: 1px solid rgba(253, 224, 71, 0.5);
     box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45), 0 0 18px rgba(253, 224, 71, 0.15);
@@ -59,7 +59,7 @@
     align-items: center;
     gap: 10px;
     padding: 4px 6px;
-    border-radius: 8px;
+    border-radius: var(--radius-sm);
 }
 
 .mr-podium-row--1 { background: rgba(253, 224, 71, 0.12); }
@@ -103,7 +103,7 @@
     width: min(720px, 100%);
     margin: var(--space-3) auto 0;
     padding: 12px 16px;
-    border-radius: 12px;
+    border-radius: var(--radius-md);
     background: rgba(15, 23, 42, 0.72);
     border: 1px solid rgba(34, 211, 238, 0.35);
     box-shadow: 0 0 18px rgba(34, 211, 238, 0.15);
@@ -364,7 +364,7 @@
 
 .mr-pick-title {
     margin: 0 0 4px;
-    color: #f1f5f9;
+    color: var(--color-text-primary);
     font-size: 1.4rem;
 }
 
@@ -394,7 +394,7 @@
 .mr-pick-count {
     display: inline-block;
     min-width: 1.1em;
-    color: #f1f5f9;
+    color: var(--color-text-primary);
     font-size: 1.05rem;
     font-variant-numeric: tabular-nums;
     animation: mr-pick-tick 1s ease-out infinite;
@@ -402,7 +402,7 @@
 
 @keyframes mr-pick-tick {
     0%   { transform: scale(1.25); color: #a855f7; }
-    100% { transform: scale(1);    color: #f1f5f9; }
+    100% { transform: scale(1);    color: var(--color-text-primary); }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -458,7 +458,7 @@
 .mr-pick-name {
     font-size: 0.78rem;
     font-weight: 800;
-    color: #f1f5f9;
+    color: var(--color-text-primary);
     line-height: 1;
 }
 
@@ -544,7 +544,7 @@
     font-size: 1.5rem;
     font-weight: 800;
     line-height: 1;
-    color: #f1f5f9;
+    color: var(--color-text-primary);
     font-variant-numeric: tabular-nums;
 }
 

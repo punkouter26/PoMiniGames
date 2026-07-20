@@ -40,6 +40,11 @@
     <!-- app.css carries the design tokens + app shell — render-blocking on purpose
          so first paint is fully styled. -->
     <link rel="stylesheet" href="css/app.css" />
+    <!-- app-shell.css: the SHARED, non-scoped top-bar chrome. Render-blocking so
+         the header is styled on first paint. Non-scoped (unlike MainLayout's
+         component CSS) so every layout reusing the gl-top-bar markup — e.g.
+         PoSurviveLayout — inherits identical chrome instead of rendering bare. -->
+    <link rel="stylesheet" href="css/app-shell.css" />
     <!-- §3 Per-game stylesheets are non-render-blocking: each only matters once its
          game route is entered (by which point it's cached), so loading them async
          keeps first paint gated on app.css alone (~640 lines) instead of the full

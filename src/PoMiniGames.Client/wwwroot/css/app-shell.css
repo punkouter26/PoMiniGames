@@ -1,0 +1,237 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   app-shell.css — the SHARED, NON-SCOPED top-bar chrome.
+
+   The `.gl-*` top-bar classes were authored only in MainLayout.razor.css, which
+   Blazor compiles as *component-scoped* CSS (`.gl-top-bar[b-xxxxx]`). Any OTHER
+   layout that reuses the same markup — notably PoSurviveLayout.razor, which
+   copies the `gl-top-bar` header verbatim — received NONE of those styles, so
+   its top bar rendered unstyled (transparent bar, native-looking Sign out
+   button, mis-tinted brand).
+
+   These rules are the single source of truth for the app-wide top bar and MUST
+   stay non-scoped so every layout that renders the `gl-top-bar` header inherits
+   identical chrome. MainLayout.razor.css keeps only its layout-unique pieces
+   (page shell, mock banner, toasts, demo bar).
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* Spatial contract: Left (branding) — Center (FPS + game status) — Right (session). */
+.gl-top-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.6rem var(--space-5);
+    background: var(--surface-bar);
+    backdrop-filter: var(--glass-2);
+    border-bottom: 1px solid var(--color-border);
+    position: sticky;
+    top: 0;
+    z-index: var(--z-sticky);
+    gap: var(--space-4);
+}
+
+.gl-top-bar-left {
+    display: flex;
+    align-items: center;
+    gap: var(--space-5);
+    min-width: 0;
+    flex: 0 0 auto;
+}
+
+.gl-top-bar-center {
+    display: flex;
+    flex: 1 1 auto;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-3);
+    min-width: 0;
+    padding: 0 var(--space-3);
+}
+
+.gl-top-bar-game {
+    display: flex;
+    flex: 0 1 auto;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--space-2);
+    min-width: 0;
+    margin-left: auto;
+    overflow: hidden;
+}
+
+.gl-brand {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    color: var(--color-text-primary);
+    text-decoration: none;
+    font-weight: 700;
+    font-size: 1.1rem;
+    white-space: nowrap;
+}
+
+.gl-brand-icon { font-size: 1.3rem; }
+
+.gl-auth {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--space-3);
+    min-width: 0;
+}
+
+.gl-auth-user {
+    font-size: var(--text-sm);
+    color: var(--color-text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.gl-auth-button,
+.gl-center-action {
+    background: transparent;
+    border: 1px solid var(--color-border);
+    color: var(--color-text-secondary);
+    padding: 0.35rem 0.85rem;
+    border-radius: var(--radius-pill);
+    font-size: var(--text-sm);
+    white-space: nowrap;
+    transition: border-color var(--dur-base) var(--ease-standard),
+                color var(--dur-base) var(--ease-standard),
+                background var(--dur-base) var(--ease-standard);
+}
+
+.gl-auth-button:hover,
+.gl-center-action:hover {
+    border-color: var(--color-text-secondary);
+    color: var(--color-text-primary);
+}
+
+.gl-center-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-weight: 600;
+}
+
+.gl-center-action--active {
+    border-color: var(--color-warning);
+    color: #fcd34d;
+    background: var(--accent-warning-soft);
+}
+
+/* ── Overflow / dev-switch dropdowns (shared by both layouts) ── */
+.gl-overflow-menu { position: relative; display: inline-block; }
+.gl-overflow-menu--anon { display: none; }
+
+.gl-overflow-trigger {
+    list-style: none;
+    cursor: pointer;
+    background: transparent;
+    border: 1px solid var(--color-border, rgba(255, 255, 255, 0.2));
+    border-radius: var(--radius-sm);
+    padding: 0.35rem 0.6rem;
+    color: inherit;
+    font-size: 1rem;
+    line-height: 1;
+}
+
+.gl-overflow-trigger::-webkit-details-marker { display: none; }
+
+.gl-overflow-panel {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 0.4rem);
+    background: var(--color-surface, #1a1a24);
+    border: 1px solid var(--color-border, rgba(255, 255, 255, 0.2));
+    border-radius: var(--radius-md);
+    padding: 0.4rem;
+    min-width: 12rem;
+    box-shadow: var(--elevation-1);
+    z-index: var(--z-dropdown);
+}
+
+.gl-overflow-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: transparent;
+    border: 0;
+    padding: 0.55rem 0.75rem;
+    color: inherit;
+    font: inherit;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+}
+
+.gl-overflow-item:hover,
+.gl-overflow-item:focus {
+    background: var(--color-surface-hover, rgba(255, 255, 255, 0.08));
+}
+
+.gl-dev-switch { display: inline-block; }
+
+.gl-dev-switch__title {
+    padding: 0.4rem 0.75rem 0.25rem;
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: rgba(255, 255, 255, 0.55);
+}
+
+.gl-dev-switch__input {
+    box-sizing: border-box;
+    margin: 0.25rem 0.4rem 0.4rem;
+    width: calc(100% - 0.8rem);
+    background: rgba(255, 255, 255, 0.06);
+    color: inherit;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: var(--radius-sm);
+    padding: 0.4rem 0.55rem;
+    font: inherit;
+}
+
+.gl-dev-switch__input:focus {
+    outline: none;
+    border-color: #93c5fd;
+    background: rgba(147, 197, 253, 0.08);
+}
+
+.gl-dev-switch__error {
+    padding: 0.4rem 0.75rem;
+    color: var(--toast-error-text);
+    font-size: var(--text-xs);
+}
+
+.gl-dev-switch__hint {
+    padding: 0.25rem 0.75rem 0.4rem;
+    color: rgba(255, 255, 255, 0.5);
+    font-size: var(--text-xs);
+}
+
+/* ── Mobile portrait: mirror MainLayout's top-bar compaction ── */
+@media (max-width: 640px) {
+    .gl-top-bar {
+        padding: 0.6rem var(--space-4);
+        gap: var(--space-2);
+    }
+
+    .gl-top-bar-left {
+        gap: var(--space-3);
+        flex-shrink: 0;
+    }
+
+    .gl-top-bar-center {
+        gap: var(--space-2);
+        padding: 0 var(--space-2);
+    }
+
+    .gl-top-bar-game { justify-content: flex-end; }
+
+    .gl-auth-user { display: none; }
+
+    .gl-auth-button--anon { display: none; }
+    .gl-overflow-menu--anon { display: inline-block; }
+
+    .gl-dev-switch { display: none !important; }
+}

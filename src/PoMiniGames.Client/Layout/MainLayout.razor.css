@@ -1,7 +1,13 @@
 /* App shell — scoped to MainLayout. These classes only appear in this
    component's markup, so scoping keeps them off the global style-recalc path.
    Design tokens (--color-*, --radius-*, --surface-*, --dur-*) are inherited
-   from the global :root in css/app.css. */
+   from the global :root in css/app.css.
+
+   NOTE: the top-bar chrome (.gl-top-bar*, .gl-brand*, .gl-auth*, .gl-overflow-*,
+   .gl-dev-switch*) is ALSO defined non-scoped in css/app-shell.css so other
+   layouts that reuse the gl-top-bar header (PoSurviveLayout) inherit it. The
+   scoped copies below win the specificity tie for MainLayout's own markup and
+   are kept byte-identical to app-shell.css — edit BOTH together. */
 
 .gl-page {
     display: flex;

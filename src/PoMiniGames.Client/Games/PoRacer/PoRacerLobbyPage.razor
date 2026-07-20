@@ -55,7 +55,7 @@ else
             <h2 class="gps-phase-h">Players · @(_state?.Players.Count ?? 0)/8</h2>
             @if (_state is null)
             {
-                <p class="racer-lobby-loading">Loading...</p>
+                <div class="app-loading"><span class="app-loading__spinner" aria-hidden="true"></span><span>Loading players…</span></div>
             }
             else if (_state.Players.Count == 0)
             {

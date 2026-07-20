@@ -364,7 +364,7 @@
   text-align: center;
   background: rgba(99, 102, 241, 0.08);
   border: 1px solid rgba(99, 102, 241, 0.25);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   padding: 0.75rem 1rem;
 }
 
@@ -570,7 +570,7 @@
   background: linear-gradient(180deg, rgba(248, 113, 113, 0.12), rgba(248, 113, 113, 0.04));
   border: 1px solid rgba(248, 113, 113, 0.45);
   color: var(--app-text, #f1f5f9);
-  font-family: 'Outfit', system-ui, sans-serif;
+  font-family: var(--font-display);
   box-shadow: 0 12px 32px rgba(248, 113, 113, 0.12);
 }
 
@@ -596,7 +596,7 @@
 .app-error-boundary__actions { display: flex; gap: 8px; }
 .app-error-boundary__btn {
   background: linear-gradient(135deg, #f43f5e, #e11d48); color: white; border: 0;
-  padding: 8px 14px; border-radius: 8px; font-weight: 600; font-size: 13px;
+  padding: 8px 14px; border-radius: var(--radius-sm); font-weight: 600; font-size: 13px;
   text-decoration: none; cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
 }
 .app-error-boundary__btn--ghost {
@@ -709,7 +709,7 @@
   padding: 1.25rem 1.5rem;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   box-shadow: var(--elevation-1);
 }
 
@@ -760,7 +760,7 @@
   padding: 0.75rem 1rem;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   font-family: var(--font-body);
 }
 .gps-hud-left   { justify-self: start;  text-align: left;  }
@@ -775,7 +775,7 @@
   gap: 0.35rem;
   padding: 0.25rem 0.6rem;
   background: var(--color-surface-hover);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   font-size: 0.85rem;
   margin: 0.15rem 0.15rem;
 }
@@ -821,7 +821,7 @@
   justify-content: center;
   gap: 0.4rem;
   padding: 0.6rem 1.25rem;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   font-size: 0.9rem;
   font-weight: 600;
   cursor: pointer;
@@ -888,7 +888,7 @@
   padding: 1.25rem 1.5rem;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
 }
 .cq-question {
   margin: 0;
@@ -899,7 +899,7 @@
 .cq-king {
   margin: 0;
   padding: 0.5rem 0.75rem;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   font-size: 0.9rem;
   color: var(--accent-amber);
   background: rgba(250, 204, 21, 0.08);
@@ -921,7 +921,7 @@
   padding: 0.85rem 1rem;
   background: var(--color-surface-hover);
   border: 1px solid var(--color-border);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
 }
 .cq-results h3,
 .cq-results h4,
@@ -1029,7 +1029,7 @@
 .fq-options { display: grid; gap: 0.5rem; }
 .fq-option {
   display: inline-flex; align-items: center; justify-content: flex-start; gap: 0.4rem;
-  padding: 0.6rem 1.25rem; border-radius: 8px; font-size: 0.9rem; font-weight: 600;
+  padding: 0.6rem 1.25rem; border-radius: var(--radius-sm); font-size: 0.9rem; font-weight: 600;
   cursor: pointer; transition: filter 0.18s ease, background 0.18s ease, color 0.18s ease, border-color 0.18s ease; border: 1px solid var(--color-border);
   background: var(--color-surface-hover); color: var(--color-text-primary);
   width: 100%; text-align: left;
@@ -1052,7 +1052,7 @@
   padding: 1.25rem 1.25rem 1rem;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   box-shadow: var(--elevation-1);
   text-align: left;
 }
@@ -1158,7 +1158,7 @@
   background: var(--color-card-bg, #1c1f2e);
   color: var(--color-text-primary, #e8eaf6);
   border: 1px solid var(--color-border, rgba(150, 160, 220, 0.45));
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
   text-align: left;
   font-size: 0.95rem;

@@ -13,7 +13,7 @@
     background: rgba(10, 12, 24, 0.55);
     border: 1px solid var(--color-border);
     color: #6bff6b;
-    font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+    font-family: var(--font-mono);
     font-size: 0.72rem;
     font-weight: 700;
     letter-spacing: 0.04em;

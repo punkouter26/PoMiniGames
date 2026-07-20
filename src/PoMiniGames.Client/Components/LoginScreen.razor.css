@@ -74,7 +74,7 @@
 
 .login-btn--ms {
     background: #ffffff;
-    color: #1f2937;
+    color: var(--color-border);
     border-color: #ffffff;
 }
 

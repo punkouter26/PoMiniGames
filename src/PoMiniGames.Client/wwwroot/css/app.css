@@ -34,6 +34,9 @@
   /* Typography (Suggestion #4) */
   --font-display: 'Inter', system-ui, -apple-system, sans-serif;
   --font-body: system-ui, -apple-system, sans-serif;
+  /* Single source of truth for monospace UI (FPS counter, diagnostics, code).
+     Previously each component hand-rolled its own mono stack. */
+  --font-mono: ui-monospace, 'Cascadia Code', 'Consolas', 'SFMono-Regular', 'Menlo', monospace;
 
   /* Type scale */
   --text-xs: 0.75rem;
@@ -202,6 +205,24 @@ h1, h2, h3, h4, h5, h6 {
 a { color: var(--color-accent); text-decoration: none; }
 button { cursor: pointer; font-family: var(--font-body); }
 
+/* Page headings are programmatically focused on route change (FocusOnNavigate)
+   for screen-reader users. Without this, the browser paints its default 1px
+   focus box around every <h1> after navigation — visible to sighted mouse users
+   as an unstyled outline on the title (rendered inconsistently, e.g. gold on
+   mobile). Suppress the ring for pointer/programmatic focus while keeping a real
+   accent ring for genuine keyboard focus. Applies app-wide so no single page
+   (previously only PoSurvive) has to opt out. */
+h1:focus:not(:focus-visible),
+h2:focus:not(:focus-visible),
+h3:focus:not(:focus-visible) { outline: none; }
+h1:focus-visible,
+h2:focus-visible,
+h3:focus-visible {
+  outline: 2px solid var(--accent-ring);
+  outline-offset: 4px;
+  border-radius: var(--radius-sm);
+}
+
 /* ── Skeleton Loading (Suggestion #6) ── */
 .skeleton {
   background: linear-gradient(90deg, var(--color-surface) 25%, var(--color-surface-hover) 50%, var(--color-surface) 75%);
@@ -218,6 +239,34 @@ button { cursor: pointer; font-family: var(--font-body); }
 @keyframes shimmer {
   0% { background-position: 200% 0; }
   100% { background-position: -200% 0; }
+}
+
+/* ── Shared inline loader (single source of truth for "Loading…" states) ──
+   Replaces the app's three ad-hoc idioms (bare left-aligned <p>Loading...</p>,
+   themed one-offs, etc.) with one centered spinner + muted label so every list
+   / lobby / leaderboard that can't use a skeleton reads identically. */
+.app-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  padding: var(--space-6) var(--space-4);
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+  text-align: center;
+}
+.app-loading__spinner {
+  width: 1.75rem;
+  height: 1.75rem;
+  border: 3px solid var(--color-border);
+  border-top-color: var(--color-accent);
+  border-radius: var(--radius-pill);
+  animation: app-spin 0.8s linear infinite;
+}
+@keyframes app-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .app-loading__spinner { animation: none; }
 }
 
 

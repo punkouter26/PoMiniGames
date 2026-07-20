@@ -523,8 +523,8 @@
     gap: 0.5rem;
     padding: 1.5rem 2rem;
     border: 1px solid var(--color-border);
-    border-radius: 1rem;
-    background: rgba(17, 24, 39, 0.8);
+    border-radius: var(--radius-lg);
+    background: var(--surface-2);
     color: var(--color-text-primary);
     min-width: 160px;
     transition: border-color 0.25s var(--ease-standard), background 0.25s var(--ease-standard), transform 0.25s var(--ease-standard), box-shadow 0.25s var(--ease-standard);
@@ -575,6 +575,29 @@
 .home-mode-btn--active .home-mode-icon,
 .home-mode-btn--active .home-mode-label { color: #fcd34d; }
 
+/* Static section-identity tiles (1 Player / 2 Player / Multiplayer). These are
+   NOT interactive — the games beside them are the actions — so they must not
+   wear the raised, hoverable button affordance the real buttons (Demo / My
+   Stats) use. Flatten them into labels: no border/blur, no hover lift, default
+   cursor. Prevents the "looks clickable, does nothing" mismatch. */
+.home-mode-btn--static,
+.home-section .home-mode-btn--static {
+    cursor: default;
+    background: transparent;
+    border-color: transparent;
+    backdrop-filter: none;
+    box-shadow: none;
+}
+.home-mode-btn--static:hover {
+    transform: none;
+    border-color: transparent;
+    background: transparent;
+    box-shadow: none;
+}
+.home-mode-btn--static:hover::before { opacity: 0; }
+.home-mode-btn--static .home-mode-icon,
+.home-mode-btn--static .home-mode-label { color: var(--color-text-secondary); }
+
 /* ── Mode sections (mode tile + adjacent game chips) ── */
 .home-sections {
     display: flex;
@@ -592,8 +615,8 @@
     align-items: center;
     padding: 1rem;
     border: 1px solid var(--color-border);
-    border-radius: 1rem;
-    background: rgba(17, 24, 39, 0.55);
+    border-radius: var(--radius-lg);
+    background: var(--surface-1);
     backdrop-filter: blur(8px);
 }
 
@@ -615,7 +638,7 @@
     padding: 0.6rem 0.9rem;
     border: 1px solid var(--color-border);
     border-radius: 0.7rem;
-    background: rgba(30, 41, 59, 0.7);
+    background: var(--surface-raised);
     color: var(--color-text-primary);
     font-size: 0.85rem;
     font-weight: 600;

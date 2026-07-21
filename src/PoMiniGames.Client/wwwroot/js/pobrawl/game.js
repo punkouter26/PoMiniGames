@@ -22,7 +22,7 @@ import { PERSONALITIES, makePersonalityState } from './personalities.js';
 import { AudioBus } from './audio.js';
 import { ReplayBuffer } from './replay.js';
 import { PoBrawlRagdoll } from './ragdoll.js';
-import { CannonRagdoll } from './ragdoll-physics.js';
+import { CannonRagdoll, SeveredArm } from './ragdoll-physics.js';
 import { testAttackHit, testAttackBlocked, regionForHurtBone } from './hitboxes.js';
 import {
   createPhysicsWorld, stepWorld, buildArenaColliders,
@@ -46,6 +46,15 @@ const TIME_LIMIT = 99;
 // projects to the right. Single source of truth — change here, not in
 // `_spawnFighters`, so the spawn and the HUD can never desync.
 const SPAWN_X_BY_SIDE = { left: -1.6, right: 1.6 };
+
+// ── Overhead house light drift ────────────────────────────────────────────
+// The ring spotlight (arena.js `lights.spot`) orbits this radius at this
+// height, aimed down at the midpoint between the fighters. See the "Room
+// light drift" block in _updateLighting.
+const HOUSE_LIGHT_RADIUS = 2.6;
+const HOUSE_LIGHT_HEIGHT = 11;
+const HOUSE_LIGHT_SPEED = (Math.PI * 2) / 26; // rad/s — one lap per ~26 s
+
 const MIN_SEPARATION = 0.95;
 
 // Frame-data table. cancelInto = minimum stateT to transition into each named
@@ -75,15 +84,10 @@ const HITSTUN = 0.35;
 // no arms and can only kick.
 const ARM_SEVER_L = 50;
 const ARM_SEVER_R = 78;
-// Y offset above the canvas top (y = 0) where a severed limb's bounding
-// sphere settles. We compute the actual radius per-limb at sever time so
-// arms don't sink into the floor — see _severArm / _updateSeveredLimbs.
-// A small clearance above 0 keeps the limb from z-fighting the canvas.
-const LIMB_FLOOR_CLEARANCE = 0.02;
-// A small bounce fraction so the arm doesn't stick dead on first contact.
-const LIMB_BOUNCE = 0.18;
-// Angular velocity damping once the arm is on the floor.
-const LIMB_ANG_DAMP = 4.0;
+// (Severed limbs are simulated by cannon now — see SeveredArm in
+// ragdoll-physics.js — so the hand-rolled tumble/ground constants that used to
+// live here are gone. The canvas plane and the ragdoll contact material own
+// clearance, bounce and damping.)
 
 // How much harder a CHARGED "power" hit chews the struck limb vs a tap. Region
 // (limb) damage is what reddens the body-diagram section and eventually tears an
@@ -278,6 +282,8 @@ const _koHead = new THREE.Vector3();
 // Scratch vectors for the lighting updater.
 const _spotTarget = new THREE.Vector3();
 const _blDir = new THREE.Vector3();
+const _beamDir = new THREE.Vector3();
+const _upY = new THREE.Vector3(0, 1, 0);
 // Scratch vectors for posture (look-at / momentum) updates.
 const _animVel = new THREE.Vector3();
 const _lookA = new THREE.Vector3();
@@ -497,6 +503,7 @@ export class BrawlGame {
     // cached texture objects and stay filtered.
     this._applyTextureAnisotropy();
     this._startCountdown();
+    this._warmupRender();
 
     // Kick the audio context the first time the user interacts with the page —
     // .razor lifecycle alone doesn't always satisfy autoplay policy.
@@ -700,13 +707,18 @@ export class BrawlGame {
     }
 
     // Clear any arms torn off in the previous fight.
+    if (this._pendingSevers) this._pendingSevers.length = 0;
     if (this._severedLimbs) {
       for (const l of this._severedLimbs) {
-        this.scene.remove(l.mesh);
-        l.mesh.traverse((o) => {
-          if (o.geometry) o.geometry.dispose();
-          if (o.material) for (const m of Array.isArray(o.material) ? o.material : [o.material]) m.dispose();
-        });
+        if (l.arm) l.arm.dispose();
+        for (const obj of [l.shoulder, l.elbow]) {
+          if (!obj) continue;
+          this.scene.remove(obj);
+          obj.traverse((o) => {
+            if (o.geometry) o.geometry.dispose();
+            if (o.material) for (const m of Array.isArray(o.material) ? o.material : [o.material]) m.dispose();
+          });
+        }
       }
       this._severedLimbs.length = 0;
     }
@@ -897,9 +909,7 @@ export class BrawlGame {
     // −X, drawn on the screen-left in the HUD) would render on the right and
     // the left/right names read swapped against the fighters. Resetting here
     // guarantees screen-left always maps to P1.
-    this.camera.position.set(0, 2.4, 7);
-    this._camVel.set(0, 0, 0);
-    this.camera.lookAt(0, 1, 0);
+    this._snapCameraToFraming();
     // Kick the personality entrance for each fighter. The track lasts ~1.5 s
     // (3-4 keyframes); the countdown is 3.7 s, so the entrance resolves to
     // GUARD before FIGHT! fires and the match starts clean.
@@ -916,6 +926,27 @@ export class BrawlGame {
     this._setBanner('3');
   }
 
+  // Compile every GPU program the current scene needs, then reset the frame
+  // clock. three compiles a material's shader lazily, on its first render;
+  // with this many distinct materials (arena + backdrop + crowd + props + two
+  // freshly built fighters + the whole post chain) that lands as one long
+  // stall on the first animated frame of a match. It doesn't just drop the
+  // opening camera move — a main-thread block that long also starves the
+  // music scheduler's setInterval past its lookahead window, so the bass line
+  // hiccups at the same moment. That combination is the "everything stutters
+  // at the start of a round" symptom. Warming up here spends the same time,
+  // but spends it before the clock starts / behind the round splash.
+  _warmupRender() {
+    try {
+      this.renderer.compile(this.scene, this.camera);
+      this.composer.render();
+    } catch { /* best effort — never block the match on the warm-up */ }
+    // Don't bill the warm-up to the simulation: the next frame's dt is
+    // measured from here, and no catch-up ticks are owed.
+    this.lastFrame = performance.now();
+    this.accumulator = 0;
+  }
+
   resetMatch(randomize) {
     let p1 = this.options.p1Character, p2 = this.options.p2Character;
     if (randomize) {
@@ -923,6 +954,9 @@ export class BrawlGame {
       [p1, p2] = ids;
     }
     this._spawnFighters(p1, p2);
+    // New rigs mean new materials: compile them under the splash rather than
+    // on the countdown's first frame.
+    this._warmupRender();
     // Show the inter-round splash, then start the countdown once it's
     // faded in. The splash doubles as a brief loading screen — the new
     // match's physics + arena are ready under it, so the transition reads
@@ -977,6 +1011,7 @@ export class BrawlGame {
       // Build any pending rigid-body ragdoll now — we're guaranteed to be
       // outside cannon's step here, so body removal/creation is safe.
       this._buildPendingKO();
+      this._buildPendingSevers();
       if (this._physics) stepWorld(this._physics.world, dt);
       this._tickKoFall(dt);
       this._tickReplay(dt);
@@ -989,6 +1024,7 @@ export class BrawlGame {
       }
     } else if (this.phase === 'result') {
       this._buildPendingKO();
+      this._buildPendingSevers();
       if (this._physics) stepWorld(this._physics.world, dt);
       this._tickKoFall(dt);
       this._tickCelebration(dt);
@@ -1196,6 +1232,9 @@ export class BrawlGame {
         }
       }
       stepWorld(this._physics.world, dt);
+      // An arm torn off inside this step's beginContact dispatch gets its
+      // bodies built here, now that we're safely outside world.step.
+      this._buildPendingSevers();
 
       // 3. Push-apart via cannon-es contact events. When two kinematic
       //    rig-roots overlap, cannon reports a contact but doesn't move
@@ -2729,15 +2768,45 @@ export class BrawlGame {
       atmo.cone.material.opacity = 0.09 + d * 0.14;
     }
 
-    // Spotlight target: ring center normally, the loser during the KO.
+    // ── Room light drift ─────────────────────────────────────────────
+    // The overhead house light isn't nailed above the ring centre: it creeps
+    // around a slow circle up in the rig while staying aimed down at the two
+    // fighters, so the pool of light, the cast shadows and the volumetric
+    // shaft all sweep across the canvas over the course of a round instead of
+    // sitting dead still. One revolution takes ~26 s — slow enough that it
+    // reads as an operator repositioning, not a disco.
+    this._houseT = (this._houseT || 0) + dt;
+    const orbit = this._houseT * HOUSE_LIGHT_SPEED;
+    L.spot.position.set(
+      Math.cos(orbit) * HOUSE_LIGHT_RADIUS,
+      HOUSE_LIGHT_HEIGHT + Math.sin(orbit * 0.63) * 0.5,
+      Math.sin(orbit) * HOUSE_LIGHT_RADIUS);
+
+    // Spotlight target: the midpoint between the fighters normally, the loser
+    // during the KO.
     const loser = this.fighters && this.fighters.find((f) => f.state === 'ko');
     if (loser && d > 0.01) {
       const lp = loser.rig.root.position;
       _spotTarget.set(lp.x, 0, lp.z);
+    } else if (this.fighters && this.fighters.length === 2) {
+      const a = this.fighters[0].rig.root.position;
+      const b = this.fighters[1].rig.root.position;
+      _spotTarget.set((a.x + b.x) * 0.5, 0, (a.z + b.z) * 0.5);
     } else {
       _spotTarget.set(0, 0, 0);
     }
     L.spot.target.position.lerp(_spotTarget, Math.min(1, dt * 3));
+    L.spot.target.updateMatrixWorld();
+
+    // Keep the fake volumetric shaft glued to the beam: the cylinder's +Y
+    // points back up at the lamp, and its centre sits 5.4 units down the beam
+    // — the same offset it had baked in when the lamp hung fixed at y = 11.
+    if (atmo && atmo.cone) {
+      _beamDir.copy(L.spot.position).sub(L.spot.target.position);
+      if (_beamDir.lengthSq() < 1e-6) _beamDir.set(0, 1, 0); else _beamDir.normalize();
+      atmo.cone.quaternion.setFromUnitVectors(_upY, _beamDir);
+      atmo.cone.position.copy(L.spot.position).addScaledVector(_beamDir, -5.4);
+    }
 
     // Godrays/idea #10 — feed the spotlight's world position to the post
     // shader so the godray blade projects from there in screen-space.
@@ -3107,6 +3176,36 @@ export class BrawlGame {
 
   // ── presentation ────────────────────────────────────────────────────────
 
+  // Place the boom exactly where the spring camera would settle, on the +Z
+  // side of the ring, with zero velocity. Used at countdown time: the old
+  // reset parked the camera at a fixed (0, 2.4, 7) and let the spring haul it
+  // in over the first second of the round, which is a visible lurch — and it
+  // lands in the same window as the round's first-frame shader compile, so
+  // the two together read as the camera stuttering as the match opens.
+  _snapCameraToFraming() {
+    if (!this.fighters || this.fighters.length !== 2) return;
+    const p1 = this.fighters[0].rig.root.position;
+    const p2 = this.fighters[1].rig.root.position;
+    const mid = p1.clone().add(p2).multiplyScalar(0.5);
+    const axis = p2.clone().sub(p1);
+    axis.y = 0;
+    const sep = Math.max(axis.length(), 0.5);
+    if (axis.lengthSq() > 1e-6) axis.normalize(); else axis.set(1, 0, 0);
+    // Same perpendicular the spring boom uses, forced onto the +Z side.
+    const perp = new THREE.Vector3(axis.z, 0, -axis.x);
+    if (perp.z < 0) perp.negate();
+    // Must match the framing maths in _updateCamera's normal branch.
+    const distance = THREE.MathUtils.clamp(2.2 + sep * 0.31, 2.5, 5);
+    this.camera.position.copy(mid).addScaledVector(perp, distance);
+    this.camera.position.y = 1.55 + sep * 0.06;
+    this.camera.lookAt(mid.x, mid.y + 1, mid.z);
+    this._camVel.set(0, 0, 0);
+    this.fovPunch = 0;
+    this.shakeT = 0;
+    this.camera.fov = this.fovBase;
+    this.camera.updateProjectionMatrix();
+  }
+
   _updateCamera(dt) {
     const [f1, f2] = this.fighters;
     const p1 = f1.rig.root.position, p2 = f2.rig.root.position;
@@ -3272,7 +3371,10 @@ export class BrawlGame {
     const swinging = attack && (f.state === 'punch' || f.state === 'kick')
       && f.stateT <= attack.windup + attack.active + 0.08;
     if (swinging) {
+      // fistR is unregistered when the right arm is torn off (see _severArm),
+      // which can happen mid-swing — there's nothing left to trail.
       const joint = f.rig.joints[f.state === 'kick' ? 'footR' : 'fistR'];
+      if (!joint) { t.points.length = 0; t.mesh.visible = false; return; }
       joint.getWorldPosition(_trailPos);
       // Per-point limb speed (idea #9) → drives a velocity motion-blur smear:
       // the faster the fist/foot travels this frame, the wider and hotter the
@@ -3441,71 +3543,60 @@ export class BrawlGame {
   }
 
   // Tear an arm off the fighter: detach the shoulder→fist group from the torso,
-  // reparent it to the scene, and launch it tumbling to the canvas with a silly
-  // blood squirt from both the stump and the flying limb.
+  // reparent the upper arm and forearm into the scene as two independent
+  // objects, and hand them to a two-bone rigid-body ragdoll so the limb flops
+  // limply to the canvas with a silly blood squirt from stump and limb.
+  //
+  // Unregistering the arm's joints from `rig.joints` is the load-bearing part:
+  // the animator, the verlet ragdoll, the KO ragdoll, the hitbox capsules and
+  // the hurt-sphere sync all iterate that map and all guard on a missing
+  // joint. While the joints stayed registered, every one of those systems kept
+  // writing the fighter's live pose onto a limb that was supposed to be lying
+  // on the mat — which is why a severed arm went on animating along with its
+  // owner instead of going limp.
+  //
+  // Runs inside cannon's beginContact dispatch (via _handlePhysicsHit), so it
+  // must not touch the world — body creation/removal is queued for
+  // _buildPendingSevers, which runs outside world.step.
   _severArm(fighter, side, dir) {
     if (!fighter.armsLost) fighter.armsLost = new Set();
     if (fighter.armsLost.has(side)) return;
-    const shoulder = fighter.rig.joints['shoulder' + side];
+    const joints = fighter.rig.joints;
+    const shoulder = joints['shoulder' + side];
     if (!shoulder || !shoulder.parent) return;
+    const elbow = joints['elbow' + side];
     fighter.armsLost.add(side);
 
-    // Bound radius is computed from the actual mesh hierarchy below; declared
-    // up front so the rest of the function can read it.
-    let limbBoundR = 0.42;
-
-    // Snapshot the arm's world transform, detach, and re-anchor it in the scene
-    // so it keeps its on-screen pose the instant it comes off.
+    // Snapshot each piece's world transform and re-anchor it in the scene so
+    // the arm keeps its on-screen pose the instant it comes off. Order
+    // matters: detaching the shoulder first leaves the elbow's world
+    // transform unchanged, so its snapshot is still correct.
     const wp = new THREE.Vector3();
-    const wq = new THREE.Quaternion();
-    const ws = new THREE.Vector3();
-    shoulder.getWorldPosition(wp);
-    shoulder.getWorldQuaternion(wq);
-    shoulder.getWorldScale(ws);
-    shoulder.parent.remove(shoulder);
-    shoulder.position.copy(wp);
-    shoulder.quaternion.copy(wq);
-    shoulder.scale.copy(ws);
-    this.scene.add(shoulder);
+    const detach = (obj) => {
+      const q = new THREE.Quaternion();
+      const s = new THREE.Vector3();
+      obj.getWorldPosition(wp);
+      obj.getWorldQuaternion(q);
+      obj.getWorldScale(s);
+      obj.parent.remove(obj);
+      obj.position.copy(wp);
+      obj.quaternion.copy(q);
+      obj.scale.copy(s);
+      this.scene.add(obj);
+    };
+    // Collision boxes are sized off heightScale, exactly like the KO ragdoll's
+    // upperArm/forearm parts — not off the sampled world scale, which briefly
+    // carries the hips' cartoon-squash factor.
+    const scale = (fighter.rig.config && fighter.rig.config.heightScale) || 1;
+    detach(shoulder);
+    if (elbow && elbow.parent) detach(elbow);
+    shoulder.getWorldPosition(wp); // stump position for the blood + audio
 
-    // Compute the bounding-sphere radius of the detached hierarchy in its
-    // CURRENT local orientation. The shoulder is the new world root, so we
-    // walk its children in world space and find the max distance from the
-    // shoulder origin — that becomes the collision radius. This avoids any
-    // sinking into the floor regardless of how the arm tumbles.
-    // Bounding box of the detached hierarchy in the shoulder's LOCAL frame
-    // (orientation-independent). We keep its 8 corners so _updateSeveredLimbs
-    // can find the limb's true lowest point at any tumble orientation and rest
-    // that point ON the canvas — so the arm lies flat on the ground instead of
-    // floating a full arm-length above it.
-    shoulder.updateMatrixWorld(true);
-    const shoulderInv = shoulder.matrixWorld.clone().invert();
-    const localBox = new THREE.Box3();
-    const _childMat = new THREE.Matrix4();
-    shoulder.traverse((o) => {
-      if (o.isMesh && o.geometry) {
-        if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
-        const box = o.geometry.boundingBox.clone();
-        _childMat.multiplyMatrices(shoulderInv, o.matrixWorld); // child → shoulder-local
-        box.applyMatrix4(_childMat);
-        if (localBox.isEmpty()) localBox.copy(box);
-        else localBox.union(box);
-      }
-    });
-    let limbCorners = null;
-    if (!localBox.isEmpty()) {
-      const mn = localBox.min, mx = localBox.max;
-      limbCorners = [
-        new THREE.Vector3(mn.x, mn.y, mn.z), new THREE.Vector3(mx.x, mn.y, mn.z),
-        new THREE.Vector3(mn.x, mx.y, mn.z), new THREE.Vector3(mx.x, mx.y, mn.z),
-        new THREE.Vector3(mn.x, mn.y, mx.z), new THREE.Vector3(mx.x, mn.y, mx.z),
-        new THREE.Vector3(mn.x, mx.y, mx.z), new THREE.Vector3(mx.x, mx.y, mx.z),
-      ];
-      limbBoundR = 0;
-      for (const c of limbCorners) limbBoundR = Math.max(limbBoundR, c.length());
-    } else {
-      limbBoundR = 0.42;  // safe fallback for fists-only geometry
-    }
+    // The limb is no longer part of the fighter: drop its joints so nothing
+    // poses it any more.
+    delete joints['shoulder' + side];
+    delete joints['elbow' + side];
+    delete joints['fist' + side];
 
     // Launch outward (away from the body) + up, with a fast tumble.
     const outward = dir ? dir.clone() : new THREE.Vector3(side === 'L' ? -1 : 1, 0, 0);
@@ -3518,13 +3609,12 @@ export class BrawlGame {
       outward.z * (1.6 + this.rng.random() * 1.6));
     const angVel = new THREE.Vector3(
       (this.rng.random() - 0.5) * 11, (this.rng.random() - 0.5) * 11, (this.rng.random() - 0.5) * 13);
+
+    const limb = { shoulder, elbow: elbow || null, scale, vel, angVel, arm: null, restT: 0, settled: false };
     this._severedLimbs = this._severedLimbs || [];
-    this._severedLimbs.push({
-      mesh: shoulder, vel, angVel,
-      corners: limbCorners,               // shoulder-local box corners for ground test
-      boundR: limbBoundR,                 // fallback collision sphere radius
-      grounded: false,
-    });
+    this._severedLimbs.push(limb);
+    this._pendingSevers = this._pendingSevers || [];
+    this._pendingSevers.push({ fighter, side, limb });
 
     // Silly geyser: a big squirt off the stump + a burst trailing the limb.
     this._bloodSquirt(wp, outward, 2.4);
@@ -3533,6 +3623,51 @@ export class BrawlGame {
     fighter.stumps.push({ side, t: 1.4, emit: 0 });
     this.audio.impact({ power: 1.8, worldPos: wp });
     this.hudDirty = true;
+  }
+
+  // Deferred half of _severArm: build the limb's rigid bodies and retire the
+  // arm's hurt spheres. Called right after every stepWorld, so we're always
+  // outside cannon's step when bodies are added or removed.
+  _buildPendingSevers() {
+    if (!this._pendingSevers || !this._pendingSevers.length) return;
+    if (!this._physics) { this._pendingSevers.length = 0; return; }
+    const world = this._physics.world;
+    for (const p of this._pendingSevers) {
+      // The arm's hurt capsules go with it — otherwise their spheres stay
+      // frozen mid-air (the sync skips them now that the joints are gone) and
+      // keep registering hits on a body part that isn't there any more.
+      const fp = p.fighter.fighterPhysics;
+      if (fp) {
+        const dead = new Set();
+        for (const s of fp.hurtSpheres) {
+          const cap = (s.userData.jointName || '').split(':')[0];
+          if (cap === 'upperArm' + p.side || cap === 'forearm' + p.side) dead.add(s);
+        }
+        for (const c of fp.constraints.slice()) {
+          if (!dead.has(c.bodyA) && !dead.has(c.bodyB)) continue;
+          if (world.constraints.includes(c)) world.removeConstraint(c);
+          fp.constraints.splice(fp.constraints.indexOf(c), 1);
+        }
+        for (const s of dead) {
+          if (world.bodies.includes(s)) world.removeBody(s);
+          fp.hurtSpheres.splice(fp.hurtSpheres.indexOf(s), 1);
+        }
+      }
+      // Losing the right arm mid-swing orphans that swing's striker spheres —
+      // the sync skips them once fistR is gone, so they'd sit frozen in the
+      // air still dealing hits. Retire the swing with the limb.
+      if (p.side === 'R' && p.fighter.swingPhysics && p.fighter.state === 'punch') {
+        this._destroySwingPhysics(p.fighter);
+      }
+      p.limb.arm = new SeveredArm(world, this._physics.materials.ragdoll, {
+        shoulder: p.limb.shoulder,
+        elbow: p.limb.elbow,
+        scale: p.limb.scale,
+        velocity: p.limb.vel,
+        angularVelocity: p.limb.angVel,
+      });
+    }
+    this._pendingSevers.length = 0;
   }
 
   // A beefier, sillier version of _spawnBlood for a dismemberment geyser: more
@@ -3557,49 +3692,25 @@ export class BrawlGame {
     }
   }
 
-  // Fall + tumble a severed arm to the canvas, where it comes to rest and
-  // leaves a pool. Limbs linger until the next match clears them (_spawnFighters).
-  // Collision is bounding-sphere against the canvas top (y = 0); the sphere
-  // radius is computed per-arm at sever time so the limb never sinks into
-  // the floor regardless of how it tumbles.
+  // Drive each severed arm from its rigid bodies. The limb is limp the whole
+  // way down — cannon owns gravity, the bounce off the canvas, the friction
+  // slide and the flop at the elbow — and once it has come to rest we retire
+  // its bodies and leave the meshes lying where they landed. (The world has
+  // allowSleep = false, so a settled limb would otherwise jitter on solver
+  // noise forever.) Limbs linger until the next match clears them
+  // (_spawnFighters).
   _updateSeveredLimbs(dt) {
     if (!this._severedLimbs || !this._severedLimbs.length) return;
-    const _c = new THREE.Vector3();
     for (const l of this._severedLimbs) {
-      // Once down, a limb lies limp: it is frozen and never integrated again.
-      if (l.grounded) continue;
-
-      // Tumble through the air under gravity.
-      l.mesh.position.x += l.vel.x * dt;
-      l.mesh.position.y += l.vel.y * dt;
-      l.mesh.position.z += l.vel.z * dt;
-      l.vel.y += -11 * dt;
-      l.mesh.rotation.x += l.angVel.x * dt;
-      l.mesh.rotation.y += l.angVel.y * dt;
-      l.mesh.rotation.z += l.angVel.z * dt;
-      l.mesh.updateMatrixWorld(true);
-
-      // True lowest point of the limb geometry at its current orientation.
-      let lowest = Infinity;
-      if (l.corners) {
-        for (const c of l.corners) {
-          _c.copy(c).applyMatrix4(l.mesh.matrixWorld);
-          if (_c.y < lowest) lowest = _c.y;
-        }
-      } else {
-        lowest = l.mesh.position.y - (l.boundR || 0.42);
-      }
-
-      // Contact with the canvas → rest the lowest point exactly on it and
-      // FREEZE. The arm lies flat where it fell and stops moving entirely.
-      if (lowest < LIMB_FLOOR_CLEARANCE) {
-        l.mesh.position.y += LIMB_FLOOR_CLEARANCE - lowest;
-        l.vel.set(0, 0, 0);
-        l.angVel.set(0, 0, 0);
-        l.grounded = true;
-        l.mesh.updateMatrixWorld(true);
-        if (Math.abs(l.mesh.position.x) < 5.7 && Math.abs(l.mesh.position.z) < 5.7) {
-          this._addBloodStain(l.mesh.position.x, l.mesh.position.z);
+      if (l.settled || !l.arm || !l.arm.active) continue;
+      l.arm.drive();
+      l.restT = l.arm.speed < 0.4 ? l.restT + dt : 0;
+      if (l.restT > 0.4) {
+        l.settled = true;
+        const p = l.shoulder.position;
+        l.arm.dispose();
+        if (Math.abs(p.x) < 5.7 && Math.abs(p.z) < 5.7) {
+          this._addBloodStain(p.x, p.z);
         }
       }
     }

@@ -22,7 +22,13 @@ const ARENA_HALF_WIDTH = 6;
 // due within SCHEDULE_AHEAD seconds. Timer jitter no longer reaches the audio
 // clock — the timer only decides *when we schedule*, never *when a note plays*.
 const LOOKAHEAD_MS = 25;
-const SCHEDULE_AHEAD = 0.1;
+// How far ahead of the audio clock notes are queued. This is the budget for
+// main-thread stalls: the timer can't fire while the thread is blocked, so any
+// block longer than this drains the queue and the bass line audibly hiccups.
+// A round opening (fresh rigs, first-frame shader compiles) can block for a
+// couple hundred milliseconds, so keep the queue deep enough to ride that out
+// — 0.1 s was not, which is why the music stuttered as a match started.
+const SCHEDULE_AHEAD = 0.45;
 
 const rand = (min, max) => min + Math.random() * (max - min);
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -672,6 +678,17 @@ class AudioBus {
     };
     const scheduler = () => {
       if (this.musicNodes?.stopped) return;
+      // Catch-up guard. If the main thread was blocked past the lookahead
+      // window (or the tab was throttled), nextNoteTime is now in the past.
+      // Scheduling those notes anyway makes the AudioParam ramps fire
+      // immediately, cramming a whole run of beats into one instant — the
+      // stutter is the catch-up, not the gap. Skip the missed beats and
+      // resume on the next one still in the future, staying on the grid.
+      if (nextNoteTime < ctx.currentTime) {
+        const missed = Math.ceil((ctx.currentTime - nextNoteTime) / beat);
+        nextNoteTime += missed * beat;
+        step += missed;
+      }
       while (nextNoteTime < ctx.currentTime + SCHEDULE_AHEAD) {
         scheduleNote(nextNoteTime);
         nextNoteTime += beat;

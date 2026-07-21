@@ -264,3 +264,138 @@ export class CannonRagdoll {
     this.constraints = null;
   }
 }
+
+// ── Severed limb ──────────────────────────────────────────────────────
+// A torn-off arm is its own two-bone ragdoll: the upper arm and the forearm
+// are separate rigid boxes linked at the elbow by a loose cone-twist, so the
+// limb flops instead of tumbling as one rigid stick. Nothing drives it —
+// the animator no longer owns these joints (game.js unregisters them from
+// rig.joints at sever time), so the arm is purely limp from the moment it
+// comes off until it settles on the canvas.
+//
+// The two THREE objects are expected to already be re-parented to the scene
+// (world transform == local transform); `drive()` writes each body's pose
+// straight onto them.
+const SEVERED_SEGMENTS = [
+  { key: 'shoulder', size: [0.13, 0.34, 0.13], pivotToCenter: [0, -0.17, 0], mass: 0.8 },
+  { key: 'elbow',    size: [0.12, 0.36, 0.12], pivotToCenter: [0, -0.19, 0], mass: 0.6 },
+];
+
+export class SeveredArm {
+  // opts: { shoulder, elbow, scale, velocity, angularVelocity }
+  constructor(world, material, opts) {
+    this.world = world;
+    this.segments = [];
+    this.constraints = [];
+    const s = opts.scale || 1;
+    const objs = { shoulder: opts.shoulder, elbow: opts.elbow };
+    const bodies = {};
+
+    for (const def of SEVERED_SEGMENTS) {
+      const obj = objs[def.key];
+      if (!obj) continue;
+      const p2c = new THREE.Vector3(
+        def.pivotToCenter[0] * s, def.pivotToCenter[1] * s, def.pivotToCenter[2] * s);
+      _q.copy(obj.quaternion);
+      _v.copy(p2c).applyQuaternion(_q);
+      const body = new CANNON.Body({
+        mass: def.mass,
+        material,
+        position: new CANNON.Vec3(
+          obj.position.x + _v.x, obj.position.y + _v.y, obj.position.z + _v.z),
+        linearDamping: 0.04,
+        angularDamping: 0.12,
+      });
+      body.quaternion.set(_q.x, _q.y, _q.z, _q.w);
+      body.addShape(new CANNON.Box(new CANNON.Vec3(
+        (def.size[0] / 2) * s, (def.size[1] / 2) * s, (def.size[2] / 2) * s)));
+      body.collisionFilterGroup = G_RAGDOLL;
+      body.collisionFilterMask = G_RAGDOLL | G_ARENA | G_ROOT | G_PROP;
+      body.userData = { kind: 'severedLimb' };
+      if (opts.velocity) {
+        body.velocity.set(opts.velocity.x, opts.velocity.y, opts.velocity.z);
+      }
+      if (opts.angularVelocity) {
+        body.angularVelocity.set(
+          opts.angularVelocity.x, opts.angularVelocity.y, opts.angularVelocity.z);
+      }
+      world.addBody(body);
+      bodies[def.key] = body;
+      this.segments.push({ obj, body, p2c });
+    }
+
+    // Elbow: same construction as the KO ragdoll's joints — pivots and axes
+    // derived from the live pose so the constraint's zero IS the pose the arm
+    // came off in, and the limits are deviation around it.
+    const parent = bodies.shoulder, child = bodies.elbow;
+    if (parent && child && objs.elbow) {
+      const jw = objs.elbow.position; // the elbow pivot, in world space
+      const cp = SEVERED_SEGMENTS[1].pivotToCenter;
+      const pivotB = new CANNON.Vec3(-cp[0] * s, -cp[1] * s, -cp[2] * s);
+
+      _qInv.set(parent.quaternion.x, parent.quaternion.y,
+        parent.quaternion.z, parent.quaternion.w).invert();
+      _v.set(jw.x - parent.position.x, jw.y - parent.position.y, jw.z - parent.position.z)
+        .applyQuaternion(_qInv);
+      const pivotA = new CANNON.Vec3(_v.x, _v.y, _v.z);
+
+      _axis.set(child.position.x - jw.x, child.position.y - jw.y, child.position.z - jw.z);
+      if (_axis.lengthSq() < 1e-8) _axis.set(0, -1, 0); else _axis.normalize();
+      _v.copy(_axis).applyQuaternion(_qInv);
+      const axisA = new CANNON.Vec3(_v.x, _v.y, _v.z);
+      _qInv.set(child.quaternion.x, child.quaternion.y,
+        child.quaternion.z, child.quaternion.w).invert();
+      _v.copy(_axis).applyQuaternion(_qInv);
+      const axisB = new CANNON.Vec3(_v.x, _v.y, _v.z);
+
+      // Looser than a living elbow (0.90/0.30): dead weight, no muscle tone.
+      const c = new CANNON.ConeTwistConstraint(parent, child, {
+        pivotA, pivotB, axisA, axisB,
+        angle: 1.3, twistAngle: 0.6,
+        collideConnected: false,
+      });
+      world.addConstraint(c);
+      this.constraints.push(c);
+    }
+  }
+
+  get active() {
+    return this.segments.length > 0;
+  }
+
+  // Largest linear/angular speed across the limb — the settle test.
+  get speed() {
+    let m = 0;
+    for (const s of this.segments) {
+      m = Math.max(m, s.body.velocity.length(), s.body.angularVelocity.length() * 0.25);
+    }
+    return m;
+  }
+
+  // Physics pose → THREE transforms. Each object is a scene child, so its
+  // local transform IS its world transform; we back the box center out to the
+  // joint pivot the mesh hierarchy is anchored on.
+  drive() {
+    for (const s of this.segments) {
+      const b = s.body;
+      _q.set(b.quaternion.x, b.quaternion.y, b.quaternion.z, b.quaternion.w);
+      _v.copy(s.p2c).applyQuaternion(_q);
+      s.obj.quaternion.copy(_q);
+      s.obj.position.set(b.position.x - _v.x, b.position.y - _v.y, b.position.z - _v.z);
+    }
+  }
+
+  // Retire the bodies once the limb has come to rest — the meshes stay where
+  // the simulation left them. The world never sleeps (allowSleep = false), so
+  // without this a settled arm would jitter on solver noise forever.
+  dispose() {
+    for (const c of this.constraints) {
+      if (this.world.constraints.includes(c)) this.world.removeConstraint(c);
+    }
+    for (const s of this.segments) {
+      if (this.world.bodies.includes(s.body)) this.world.removeBody(s.body);
+    }
+    this.constraints.length = 0;
+    this.segments.length = 0;
+  }
+}

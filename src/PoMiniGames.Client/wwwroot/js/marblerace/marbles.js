@@ -6,7 +6,7 @@
 // decided purely by steering skill and the scramble of the pack — there's no per-marble build
 // to pick anymore. To keep 101 marbles cheap, the blue pack shares a single geometry and
 // material and carries no trails/blobs/shadows; only the red player marble gets the full
-// treatment (own material, motion trail, contact blob, highlight ring, pins, collision sparks).
+// treatment (own material, motion trail, contact blob, collision sparks).
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 import { TRACK } from './track.js';
@@ -34,80 +34,16 @@ export const MARBLE_ROSTER = Array.from({ length: MARBLE_COUNT }, (_, i) => ({
 
 export const MARBLE_COLORS = MARBLE_ROSTER.map((m) => m.color);
 
-export function hexString(i) {
-  return '#' + (MARBLE_COLORS[i] ?? 0xffffff).toString(16).padStart(6, '0');
-}
-
 const TRAIL_LEN = 16;
 
-// The player's highlight ring. Deliberately NOT emissive: the bloom post-pass blows an emissive
-// ring out into a bright halo that swallows the marble. Built in one place because the two
-// call sites had drifted apart — the unused one was non-emissive and carried the comment
-// explaining why, while the live one (highlight()) still set emissive white at full intensity,
-// so the halo this was supposed to fix was never actually gone.
-function makeRing(radius) {
-  return new THREE.Mesh(
-    new THREE.TorusGeometry(radius * 1.7, 0.18, 8, 28),
-    new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0x000000, emissiveIntensity: 0 })
-  );
-}
-
-// ── Floating pins ──
-// Two questions the HUD couldn't answer while the race was moving: which marble is MINE, and
-// which one is the camera on? A leaderboard tag can't answer either — you'd have to match a
-// colour swatch to a ball in a moving pack of eight. These are billboarded labels pinned in
-// world space above the marble itself, drawn with depthTest off so they stay readable through
-// the chute walls and over the crest of a banked turn.
-function roundRectPath(g, x, y, w, h, r) {
-  g.beginPath();
-  g.moveTo(x + r, y);
-  g.arcTo(x + w, y, x + w, y + h, r);
-  g.arcTo(x + w, y + h, x, y + h, r);
-  g.arcTo(x, y + h, x, y, r);
-  g.arcTo(x, y, x + w, y, r);
-  g.closePath();
-}
-
-function makePinTexture(text, color) {
-  const c = document.createElement('canvas');
-  c.width = 256; c.height = 80;
-  const g = c.getContext('2d');
-  g.clearRect(0, 0, 256, 80);
-  // Label body
-  roundRectPath(g, 6, 4, 244, 48, 14);
-  g.fillStyle = 'rgba(2, 6, 23, 0.88)';
-  g.fill();
-  g.strokeStyle = color;
-  g.lineWidth = 5;
-  g.stroke();
-  // Downward tail so the label points AT the marble rather than floating near it
-  g.beginPath();
-  g.moveTo(114, 52); g.lineTo(142, 52); g.lineTo(128, 74);
-  g.closePath();
-  g.fillStyle = color;
-  g.fill();
-
-  g.font = 'bold 30px system-ui, "Segoe UI", sans-serif';
-  g.textAlign = 'center';
-  g.textBaseline = 'middle';
-  g.fillStyle = color;
-  g.fillText(text, 128, 29);
-
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  return t;
-}
-
-function makePin(text, color) {
-  const tex = makePinTexture(text, color);
-  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
-    map: tex, transparent: true, depthTest: false, depthWrite: false,
-  }));
-  sprite.scale.set(9, 2.8, 1);
-  sprite.renderOrder = 10;   // over the chute, under nothing
-  sprite.visible = false;
-  return sprite;
-}
+// ── Marker chrome: deliberately none ──
+// There used to be a white highlight ring around the player's marble and two billboarded pins
+// above it ('YOU' and '◉ ON AIR'). All three are gone. They existed to answer "which marble is
+// mine?" back when the field was eight differently-coloured marbles that the camera could cut
+// away from. Neither condition holds now: the player is the ONE red marble in a pack of 100
+// identical blue ones, and the camera stays locked to it for the whole race (game.js _pickShot),
+// so the marble you steer is the red one in the middle of the screen. The ring and pins were
+// just occluding it.
 
 // Soft radial-gradient disc used as a fake contact shadow under each marble (#8). Built once.
 let _blobTex = null;
@@ -164,7 +100,7 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
 
     // Trail + contact blob are the player's alone (a trail per blue marble would be 100 extra
     // draw calls for marbles you're not watching).
-    let trail = null, trailPos = null, blob = null, blobGeo = null, ring = null;
+    let trail = null, trailPos = null, blob = null, blobGeo = null;
     if (isPlayer) {
       trailPos = new Float32Array(TRAIL_LEN * 3);
       const trailCol = new Float32Array(TRAIL_LEN * 3);
@@ -214,7 +150,7 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
     world.addBody(body);
 
     marbles.push({
-      index: i, body, mesh, ring,
+      index: i, body, mesh,
       trail, trailPos, blob,
       spec, radius, sphereGeo, blobGeo,
       finished: false, finishOrder: -1, place: -1, finishTime: 0,
@@ -223,49 +159,6 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
       eliminated: false,
       speed: 0,
     });
-  }
-
-  // The two pins. Built once and repositioned each sync() rather than reparented, so a
-  // camera cut costs nothing and there's no per-cut allocation.
-  let youPin = null;      // rebuilt on pick — the label carries the marble's own name/colour
-  let youIndex = -1;
-  const camPin = makePin('◉ ON AIR', '#f87171');
-  let camIndex = -1;
-  decorations.add(camPin);
-
-  function setYou(index) {
-    const m = marbles[index];
-    if (youPin) {
-      decorations.remove(youPin);
-      youPin.material.map.dispose();
-      youPin.material.dispose();
-      youPin = null;
-    }
-    youIndex = m ? index : -1;
-    if (!m) return;
-    youPin = makePin('YOU', hexString(index));   // there's only one controllable marble now
-    decorations.add(youPin);
-  }
-
-  // Which marble the camera director is currently on (game.js _pickShot).
-  function setCameraFocus(index) { camIndex = index; }
-
-  // Stack the pins above a marble: YOU sits closest to the ball, ON AIR above it, so when
-  // the camera is on your own marble both read instead of overlapping into mush.
-  function placePins() {
-    if (youPin) {
-      const m = marbles[youIndex];
-      const show = !!m && !m.eliminated;
-      youPin.visible = show;
-      if (show) youPin.position.set(m.body.position.x, m.body.position.y + m.radius + 3.2, m.body.position.z);
-    }
-    const cm = marbles[camIndex];
-    const showCam = !!cm && !cm.eliminated;
-    camPin.visible = showCam;
-    if (showCam) {
-      const stacked = camIndex === youIndex ? 6.6 : 3.2;
-      camPin.position.set(cm.body.position.x, cm.body.position.y + cm.radius + stacked, cm.body.position.z);
-    }
   }
 
   // Remove a marble that has fallen off the track: pull its body out of the
@@ -282,7 +175,6 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
     m.mesh.visible = false;
     if (m.trail) m.trail.visible = false;
     if (m.blob) m.blob.visible = false;
-    if (m.ring) m.ring.visible = false;
   }
 
   function sync() {
@@ -307,7 +199,6 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
       // Contact blob sits just under the marble (#8).
       if (m.blob) m.blob.position.set(m.body.position.x, m.body.position.y - m.radius * 0.92, m.body.position.z);
     }
-    placePins();
   }
 
   // Record finish order + time as marbles cross the finish plane. Returns
@@ -375,22 +266,7 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
     return Math.max(0, Math.min(1, m.body.position.z / TRACK.LENGTH));
   }
 
-  // Attach the white highlight ring to the player's marble at pick time.
-  function highlight(index) {
-    for (const m of marbles) {
-      if (m.ring) { m.mesh.remove(m.ring); m.ring.geometry.dispose(); m.ring.material.dispose(); m.ring = null; }
-    }
-    const m = marbles[index];
-    if (!m) return;
-    m.ring = makeRing(m.radius);
-    m.mesh.add(m.ring);
-    setYou(index);   // the ring alone was too easy to lose in a pack of eight
-  }
-
   function dispose() {
-    if (youPin) { youPin.material.map.dispose(); youPin.material.dispose(); youPin = null; }
-    camPin.material.map.dispose();
-    camPin.material.dispose();
     // The blue pack shares one geometry + one material — dispose them ONCE here, not per-marble.
     blueGeo.dispose();
     blueMat.dispose();
@@ -405,10 +281,8 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
         m.sphereGeo.dispose();
         if (m.blobGeo) m.blobGeo.dispose();
       }
-      // Dispose the highlight ring if this marble was the picked one at teardown.
-      if (m.ring) { m.ring.geometry.dispose(); m.ring.material.dispose(); m.ring = null; }
     }
   }
 
-  return { marbles, decorations, sync, eliminate, checkFinishes, forceFinishRemaining, leaderboard, progress, progressOf, highlight, setCameraFocus, dispose };
+  return { marbles, decorations, sync, eliminate, checkFinishes, forceFinishRemaining, leaderboard, progress, progressOf, dispose };
 }

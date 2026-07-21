@@ -508,38 +508,8 @@
     pointer-events: none;
 }
 
-/* "This one is yours" — named, not just swatched. The in-world YOU pin (marbles.js) is the
-   other half of this; the two deliberately use the same colour and wording. */
-.mr-tel-me {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    margin-bottom: 5px;
-    padding-bottom: 5px;
-    border-bottom: 1px solid rgba(148, 163, 184, 0.2);
-}
-
-.mr-tel-me-dot {
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    background: var(--c);
-    box-shadow: 0 0 8px var(--c);
-}
-
-.mr-tel-me-label {
-    font-size: 0.52rem;
-    font-weight: 800;
-    letter-spacing: 0.1em;
-    color: #64748b;
-}
-
-.mr-tel-me-name {
-    font-size: 0.8rem;
-    font-weight: 800;
-    color: var(--c);
-}
-
+/* The .mr-tel-me "YOU · <name>" row that lived here is gone along with the in-world YOU pin
+   and the ON AIR badge — the panel is telemetry only now. */
 .mr-tel-clock {
     font-size: 1.5rem;
     font-weight: 800;
@@ -655,58 +625,8 @@
     50% { transform: scale(1.08); }
 }
 
-/* ── On-air chip (top-right of the canvas) ──
-   The director cuts between the leader and the player's marble, which is disorienting
-   unless each cut says what it just did. Mirrors the in-world ON AIR pin. */
-.mr-oncam {
-    position: absolute;
-    top: 14px;
-    right: 14px;
-    z-index: 4;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 5px 10px;
-    border-radius: 999px;
-    background: rgba(8, 12, 24, 0.75);
-    border: 1px solid rgba(248, 113, 113, 0.5);
-    backdrop-filter: blur(6px);
-    font-size: 0.7rem;
-    color: #e2e8f0;
-    pointer-events: none;
-}
-
-.mr-oncam-live {
-    font-size: 0.55rem;
-    font-weight: 800;
-    letter-spacing: 0.08em;
-    color: #f87171;
-    animation: mr-live-pulse 1.6s ease-in-out infinite;
-}
-
-.mr-oncam-dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    background: var(--c);
-    box-shadow: 0 0 8px var(--c);
-}
-
-.mr-oncam-name { font-weight: 800; color: var(--c); }
-
-.mr-oncam-why {
-    font-size: 0.55rem;
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    color: #64748b;
-    border-left: 1px solid rgba(148, 163, 184, 0.3);
-    padding-left: 6px;
-}
-
-@keyframes mr-live-pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.4; }
-}
+/* The .mr-oncam ON AIR chip that lived here is gone along with the in-world YOU / ON AIR
+   pins — the camera never leaves the player's marble, so the chip only ever said "you". */
 
 /* ── #10 FINAL STRETCH klaxon ──
    Centred across the top of the canvas the moment the leader hits the run to the line. */
@@ -755,7 +675,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .mr-oncam-live,
     .mr-tel-edge--danger .mr-tel-edge-track,
     .mr-tel-streak--hot,
     .mr-final,

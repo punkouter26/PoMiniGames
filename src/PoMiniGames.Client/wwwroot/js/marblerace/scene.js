@@ -22,9 +22,15 @@ const BG = 0x0f172a;            // cyberpunk dark slate
 // so the framing is a chase cam, not a pack overview: closer and a touch lower than the old
 // broadcast vantage, tilted enough to read the road ahead so you can steer toward boost pads
 // and away from the fall-off edge.
-const CAM_HEIGHT = 30;          // base vantage height above the followed marble
-const CAM_BACK = 54;            // behind the marble; close enough to feel the speed, back enough to see ahead
-const CAM_LOOKAHEAD = 28;       // look well down-track (along travel) so turns/hazards are anticipated
+//
+// HIGH CHASE: raised and pulled in so the red player marble sits CENTRED in frame. The old
+// vantage was the reason it never looked centred — CAM_LOOKAHEAD 28 aimed the look-at point
+// well down-track, which pushes the marble you're steering low and back in the frame. Height
+// now does the job look-ahead used to: from up here the camera sees over the marble into the
+// chute ahead, so the road still reads without shoving the marble off-centre.
+const CAM_HEIGHT = 52;          // base vantage height above the followed marble
+const CAM_BACK = 38;            // behind the marble; close enough to feel the speed, back enough to see ahead
+const CAM_LOOKAHEAD = 6;        // barely leads into turns — kept small so the marble stays centred
 const CAM_LOOK_LIFT = 2;        // look-at just above the marble
 const CAM_DEFAULT_PITCH = 0.22;  // positive → camera rides above and looks down into the chute
 const CAM_LERP = 3.4;          // slightly smoother follow reads more cinematic

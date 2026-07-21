@@ -138,7 +138,6 @@ export class Game {
     if (this.phase !== 'pick') return;
     if (index < 0 || index >= MARBLE_COUNT) return;
     this.chosen = index;
-    this.marbleSet.highlight(index);
     this._steerLeft = this._steerRight = false;
     this._setPhase('racing');
     this.raceClock = 0;
@@ -172,7 +171,13 @@ export class Game {
     const rb = this.track.rightAt(m.body.position.z);
     // A lateral acceleration (÷ mass so it's independent of the mass unit), applied along the
     // track's local right vector.
-    const dv = (STEER_ACCEL / m.body.mass) * dir * sdt;
+    //
+    // NEGATED: rightAt() returns the track's local +X (track.js frameAt), but the chase camera
+    // sits BEHIND the marble looking down +Z, and a camera looking down +Z has world -X on its
+    // screen-right. So track-right rendered as screen-LEFT and the arrow keys were inverted.
+    // Negate here rather than in rightAt(): that same basis vector feeds track.lateralOf(),
+    // which drives the HUD edge gauge, and flipping it there would silently invert the gauge too.
+    const dv = (STEER_ACCEL / m.body.mass) * -dir * sdt;
     m.body.velocity.x += rb.x * dv;
     m.body.velocity.y += rb.y * dv;
     m.body.velocity.z += rb.z * dv;
@@ -431,7 +436,6 @@ export class Game {
         // speed (so the FOV widens with pace, #4).
         const fwd = this.track.dirAt(focus.body.position.z);
         this.scene.followTarget(focus.mesh.position, dt, focus !== this._lastFocus, fwd, focus.speed);
-        this.marbleSet.setCameraFocus(focus.index);
         this._lastFocus = focus;
       }
 

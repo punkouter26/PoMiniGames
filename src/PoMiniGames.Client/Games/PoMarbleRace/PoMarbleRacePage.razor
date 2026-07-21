@@ -84,13 +84,9 @@
             @if (_phase == "racing" && !_demo)
             {
                 <div class="mr-telemetry" role="status" aria-live="off">
-                    @* Which marble is mine — stated by name and colour, not left to be inferred
-                       from a swatch in a moving pack of eight. Matches the YOU pin in-world. *@
-                    <div class="mr-tel-me" style="--c:@ColorOf(_chosen)">
-                        <span class="mr-tel-me-dot"></span>
-                        <span class="mr-tel-me-label">YOU</span>
-                        <span class="mr-tel-me-name">@RosterName(_chosen)</span>
-                    </div>
+                    @* The "YOU · <name>" identification row that sat here is gone with the rest of
+                       the marker chrome. Your marble is the only red one and the camera is locked
+                       to it, so the panel is now purely telemetry: clock, place, gap, edge. *@
                     <div class="mr-tel-clock">@_clock.ToString("0.00")</div>
                     <div class="mr-tel-row">
                         <span class="mr-tel-pos">P@(_myPlace > 0 ? _myPlace.ToString() : "–")<span class="mr-tel-field">/@(_myField > 0 ? _myField.ToString() : "101")</span></span>
@@ -126,18 +122,9 @@
                     <div class="mr-fire" aria-hidden="true"></div>
                 }
 
-                @* Who the camera is on, and why. It's locked to your marble (game.js _pickShot)
-                   and only leaves you when you're out of the race or at the slow-mo finish, so
-                   the pin mostly reads YOU. Matches the ON AIR pin in-world. *@
-                @if (_camIndex >= 0)
-                {
-                    <div class="mr-oncam" style="--c:@ColorOf(_camIndex)" role="status" aria-live="off">
-                        <span class="mr-oncam-live">◉ ON AIR</span>
-                        <span class="mr-oncam-dot"></span>
-                        <span class="mr-oncam-name">@RosterName(_camIndex)</span>
-                        <span class="mr-oncam-why">@_camReason</span>
-                    </div>
-                }
+                @* The ON AIR badge that used to sit here is gone, along with the in-world YOU /
+                   ON AIR pins (marbles.js). The camera is locked to your marble for the whole
+                   race, so a badge announcing which marble it was on only ever said "you". *@
 
                 @* Touch/mouse path for steering — the keyboard is the primary input but a
                    verb that only exists on a physical keyboard isn't a verb on a phone. Press
@@ -188,9 +175,11 @@
     private int _myPlace = -1;
     private int _myField = MarbleCount;
     private double _myGap;
-    private double _myLateral;   // −1 (left edge) … 0 (centre) … +1 (right edge)
+    // Signed lateral offset along the track's LOCAL right vector, which renders toward
+    // screen-LEFT under the chase camera. So: −1 = screen-RIGHT rail, 0 = centre,
+    // +1 = screen-LEFT rail. EdgePct flips it back into screen space for the gauge.
+    private double _myLateral;
     private int _camIndex = -1;
-    private string _camReason = "LEADER";
     private bool _lastWon;
     private int _lastPlace;
     private int _lastGained;
@@ -292,7 +281,14 @@
 
     // #3 edge gauge: map lateral (−1..+1) to a 0..100% marker position, and flag the danger
     // band where the marble is close enough to a rail to risk falling off.
-    private string EdgePct => $"{(int)(Math.Clamp((_myLateral + 1) / 2, 0, 1) * 100)}%";
+    //
+    // INVERTED on purpose. myLateral is measured along the track's LOCAL right vector
+    // (track.js lateralOf → frameAt.rb), but the chase camera sits behind the marble looking
+    // down +Z, and that local right vector renders toward screen-LEFT. So a positive lateral
+    // means the marble is drifting to the left of YOUR screen, and the marker has to travel
+    // left. The old (l + 1) / 2 sent it right, which put the gauge and the arrow keys in
+    // direct contradiction. Same root cause as the steering sign in game.js _applySteer.
+    private string EdgePct => $"{(int)(Math.Clamp((1 - _myLateral) / 2, 0, 1) * 100)}%";
     private bool EdgeDanger => Math.Abs(_myLateral) > 0.82;
 
     // JS caps the gap estimate at GAP_MAX (60s); at the cap the number is meaningless, so
@@ -464,8 +460,9 @@
         _myField = myField > 0 ? myField : MarbleCount;
         _myGap = myGap;
         _streak = streak;
+        // camReason is still sent by game.js (positional interop contract) but nothing renders
+        // it now that the ON AIR badge is gone.
         _camIndex = camIndex;
-        _camReason = camReason;
 
         var rows = new List<LbRow>(order.Length);
         for (var i = 0; i < order.Length; i++)

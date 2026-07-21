@@ -1,9 +1,10 @@
 // props.js — destructible corner crates, persistent debris, and the physics
 // glue that lets fighters interact with them.
 //
-// Each corner of the ring gets a small stack of wooden crates built as REAL
-// cannon-es dynamic bodies (G_PROP). They rest on the mat, stack on each
-// other, and stay put until something disturbs them:
+// Each corner of the ring gets a 10-crate pyramid (4 base + 3 + 2 + 1) of
+// wooden crates built as REAL cannon-es dynamic bodies (G_PROP). They rest
+// on the mat, stack on each other, and stay put until something disturbs
+// them:
 //
 //   • A fighter walking into a stack nudges it apart (explicit shove impulses,
 //     so it reads even though fighters are kinematic in the solver).
@@ -33,17 +34,45 @@ const HALF = BOX / 2;
 const CRATE_MASS = 1.6;
 const CRATE_HP = 100;
 
-const MAX_BODIES = 56;         // hard cap on live prop bodies (crates + debris)
+const MAX_BODIES = 96;         // hard cap on live prop bodies (crates + debris)
+                                // — raised from 56 because the corner stacks
+                                //   now hold 10 crates each (40 total) and a
+                                //   full shatter spawns up to ~160 debris.
 const SMASH_KB = 3.6;          // fighter knockback magnitude that starts damaging crates
 const PUSH_K = 0.85;           // shove-impulse gain for a fighter walking into a crate
 const MAX_PUSH = 15;           // clamp on a single shove impulse
 const CHAIN_SPEED = 3.0;       // crate speed that can chip a fighter on contact
 
-// Per-corner local stack layout (two on the bottom, one on top).
+// Per-corner local stack layout — a 10-crate pyramid (4 base + 3 + 2 + 1):
+//   ┌───┐
+//   │   │   tier 3: 1 centred crate
+//   ├─┬─┤
+//   │ │ │   tier 2: 2 side-by-side crates
+//   ├─┼─┤
+//   │▒│▒│   tier 1: 3 crates in a triangle (front-left, front-right, back)
+//   ├─┼─┤
+//   │▒│▒│
+//   │▒│▒│   tier 0: 2×2 base of 4 crates
+//   └───┘
+// The base spreads ±0.20 from the stack centre (~0.76 wide overall) and the
+// stack rises ~1.44 (4 tiers × BOX) — tall enough to match the corner posts
+// for visual balance, wide enough that a knocked fighter catches a shoulder
+// or two before piling through.
 const STACK = [
-  { x: -0.20, y: HALF, z: 0.02 },
-  { x: 0.20, y: HALF, z: -0.02 },
-  { x: 0.00, y: HALF + BOX, z: 0.00 },
+  // Tier 0 (bottom): 2×2 base of 4 crates
+  { x: -0.20, y: HALF,            z: -0.20 },
+  { x:  0.20, y: HALF,            z: -0.20 },
+  { x: -0.20, y: HALF,            z:  0.20 },
+  { x:  0.20, y: HALF,            z:  0.20 },
+  // Tier 1: 3 crates in a triangle sitting on the base
+  { x: -0.20, y: HALF + BOX,      z:  0.00 },
+  { x:  0.20, y: HALF + BOX,      z:  0.00 },
+  { x:  0.00, y: HALF + BOX,      z: -0.20 },
+  // Tier 2: 2 crates side by side
+  { x: -0.20, y: HALF + 2 * BOX,  z:  0.00 },
+  { x:  0.20, y: HALF + 2 * BOX,  z:  0.00 },
+  // Tier 3 (top): 1 centred crate
+  { x:  0.00, y: HALF + 3 * BOX,  z:  0.00 },
 ];
 
 // ── Crate texture: planks + a corner brace, so a crate reads as a crate ──
@@ -165,7 +194,7 @@ export function buildProps(world, mats, scene) {
 // respawned; any surplus is removed.
 export function resetProps(props) {
   if (!props) return;
-  // Target stack positions (12 crates).
+  // Target stack positions — 10 crates per corner × 4 corners = 40 crates.
   const targets = [];
   for (const sx of [-1, 1]) {
     for (const sz of [-1, 1]) {

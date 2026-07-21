@@ -41,12 +41,13 @@ function ringCanvasTexture() {
   return _canvasTex;
 }
 
-export function buildArena(scene, envMap = null) {
+export function buildArena(scene) {
   scene.background = new THREE.Color(0x0d0f1a);
   // Exponential haze instead of the old far-plane linear fog: the fighters
   // (4-6 m from camera) stay clean while the crowd rows and hall edges melt
-  // progressively into the dark — "smoky arena air".
-  scene.fog = new THREE.FogExp2(0x0d0f1a, 0.022);
+  // progressively into the dark — "smoky arena air". Slightly thinned (0.022
+  // → 0.018) so the ring reads brighter after the env-map fill was removed.
+  scene.fog = new THREE.FogExp2(0x0d0f1a, 0.018);
 
   // Outer floor.
   const floor = new THREE.Mesh(
@@ -68,22 +69,18 @@ export function buildArena(scene, envMap = null) {
   const ringMat = new THREE.MeshStandardMaterial({
     color: 0x2a3160, roughness: 0.85, metalness: 0.05,
   });
-  // envMapIntensity 0 opts this surface out of the scene environment's
-  // specular reflection (kept as ambient fill via scene.environment).
-  ringMat.envMapIntensity = 0;
   const ring = new THREE.Mesh(new THREE.BoxGeometry(12, 0.5, 12), ringMat);
   ring.position.y = -0.25;
   ring.receiveShadow = true;
   scene.add(ring);
 
   // Ring canvas: procedurally textured matte vinyl — worn center, faint
-  // ring logo, scuff noise. High roughness + no env reflection keeps the mat
-  // flat so it doesn't mirror the house lights during the fight.
+  // ring logo, scuff noise. High roughness keeps the mat flat so it doesn't
+  // mirror the house lights during the fight.
   const canvasMat = new THREE.MeshStandardMaterial({
     color: 0xffffff, roughness: 0.95, metalness: 0.0,
     map: ringCanvasTexture(),
   });
-  canvasMat.envMapIntensity = 0;
   const top = new THREE.Mesh(new THREE.BoxGeometry(11.6, 0.04, 11.6), canvasMat);
   top.position.y = 0.02;
   top.receiveShadow = true;
@@ -93,7 +90,6 @@ export function buildArena(scene, envMap = null) {
   const postMat = new THREE.MeshStandardMaterial({
     color: 0x8a92c9, roughness: 0.7, metalness: 0.1,
   });
-  postMat.envMapIntensity = 0;
   const postGeo = new THREE.CylinderGeometry(0.08, 0.1, 1.5, 10);
   const posts = [];
   const half = 5.8;
@@ -167,16 +163,20 @@ export function buildArena(scene, envMap = null) {
   // Lights — slightly warmer key, bluer rim, plus a low ambient bounce so
   // PBR materials in shadow still read some colour. All handles are returned
   // so the engine can dim the house for the KO "lights down" cinematic.
-  // Slightly lower than before — the RectArea rig panels below now carry a
-  // share of the ambient level.
+  //
+  // Intensity baseline bumped vs the previous pass: with the env-map fill
+  // gone (no scene.environment, no IBL speculars) the rig has to carry the
+  // scene's full ambient level on its own. The runtime values in
+  // game.js::_updateLighting match these baselines — arena.js values are the
+  // first-frame peak before the per-frame multiplier takes over.
   // Hemisphere is a flat, directionless fill: every unit of it raises the floor
   // of the image without ever creating a highlight. At 0.42 it was lifting the
-  // whole frame into a mid-grey haze with no true blacks. Keep just enough to
-  // stop shadowed PBR surfaces going pure black, and let the key/spot/rig
-  // panels (plus the raised exposure in game.js) build the contrast.
-  const hemi = new THREE.HemisphereLight(0x9aa4ff, 0x1a1030, 0.14);
+  // whole frame into a mid-grey haze with no true blacks. Slightly raised
+  // from the old 0.14 to 0.22 to compensate for the lost IBL fill, still well
+  // below the old "haze" threshold so the contrast lever keeps working.
+  const hemi = new THREE.HemisphereLight(0x9aa4ff, 0x1a1030, 0.22);
   scene.add(hemi);
-  const key = new THREE.DirectionalLight(0xfff1d0, 2.6);
+  const key = new THREE.DirectionalLight(0xfff1d0, 3.4);
   key.position.set(6, 12, 4);
   key.castShadow = true;
   // 4096 over the tight ±6.5 frustum (idea #7): halving the texel size gives
@@ -200,19 +200,20 @@ export function buildArena(scene, envMap = null) {
   // therefore controlled by mapSize vs frustum extent, not by this value.
   scene.add(key);
 
-  const rim = new THREE.DirectionalLight(0x6070ff, 0.7);
+  const rim = new THREE.DirectionalLight(0x6070ff, 1.0);
   rim.position.set(-5, 6, -6);
   scene.add(rim);
 
-  const fill = new THREE.PointLight(0xffe0a0, 0.35, 30, 1.4);
+  const fill = new THREE.PointLight(0xffe0a0, 0.6, 30, 1.4);
   fill.position.set(0, 6, 0);
   scene.add(fill);
 
   // Overhead ring spotlight — the classic bright-pool-over-the-ring look.
   // Casts its own shadow so the KO close-up gets a tight overhead shadow
   // under the fallen body; during the KO cinematic the engine brightens it
-  // and retargets it onto the loser.
-  const spot = new THREE.SpotLight(0xfff4e0, 1.1, 30, Math.PI / 4.5, 0.45, 1.2);
+  // and retargets it onto the loser. Bumped from 1.1 → 1.6 to compensate for
+  // the lost IBL speculars and to give the swinging rig a stronger read.
+  const spot = new THREE.SpotLight(0xfff4e0, 1.6, 30, Math.PI / 4.5, 0.45, 1.2);
   spot.position.set(0, 11, 0);
   spot.target.position.set(0, 0, 0);
   spot.castShadow = true;
@@ -228,23 +229,25 @@ export function buildArena(scene, envMap = null) {
   // Studio rig panels: two RectAreaLights angled over the ring give the
   // broad soft speculars on the vinyl and gradient falloff on the fighters
   // that point/spot lights can't fake. No shadows (RectArea can't cast) —
-  // the key/spot still own shadowing.
+  // the key/spot still own shadowing. Intensity bumped (2.6/1.8 → 3.4/2.6)
+  // so the rig still reads "studio panels" without the IBL contribution.
   RectAreaLightUniformsLib.init();
-  const rectA = new THREE.RectAreaLight(0xfff0d8, 2.6, 4.5, 3.2);
+  const rectA = new THREE.RectAreaLight(0xfff0d8, 3.4, 4.5, 3.2);
   rectA.position.set(-3.6, 8.5, 3.6);
   rectA.lookAt(0, 0, 0);
   scene.add(rectA);
-  const rectB = new THREE.RectAreaLight(0xdfe6ff, 1.8, 4.5, 3.2);
+  const rectB = new THREE.RectAreaLight(0xdfe6ff, 2.6, 4.5, 3.2);
   rectB.position.set(3.6, 8.5, -3.6);
   rectB.lookAt(0, 0, 0);
   scene.add(rectB);
 
   // Corner identity lighting: red vs blue side, matching the HUD bars.
-  // Fighters pick up a warm/cool gradient as they cross the ring.
-  const cornerA = new THREE.PointLight(0xff3b30, 1.3, 8, 1.8);
+  // Fighters pick up a warm/cool gradient as they cross the ring. Bumped
+  // (1.3 → 1.7) so the side tint still reads with the extra-direct rig.
+  const cornerA = new THREE.PointLight(0xff3b30, 1.7, 8, 1.8);
   cornerA.position.set(-6.2, 1.4, 0);
   scene.add(cornerA);
-  const cornerB = new THREE.PointLight(0x3b6bff, 1.3, 8, 1.8);
+  const cornerB = new THREE.PointLight(0x3b6bff, 1.7, 8, 1.8);
   cornerB.position.set(6.2, 1.4, 0);
   scene.add(cornerB);
 

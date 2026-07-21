@@ -77,7 +77,13 @@ public class MobileGoldenPathTests
             BrowserLaunch.Options());
         var page = await OpenHomeAsync(browser);
 
-        var firstChip = page.Locator(".home-game-chip").First;
+        // §9 mobile section collapse: the home page has four sections (Demo / 1P / 2P / Multi),
+        // and on a portrait viewport the Demo / 2P / Multi sections are collapsed by
+        // default (.home-section--collapsed .home-section-games { display: none }). The
+        // DOM-order first chip can therefore be hidden — Playwright would never see it
+        // as visible. Filter to visible-only so we always pick a chip the player can
+        // actually see (the 1-Player section starts open per Index.razor's defaults).
+        var firstChip = page.Locator(".home-game-chip:visible").First;
         await firstChip.WaitForAsync(new LocatorWaitForOptions
         {
             State = WaitForSelectorState.Visible,

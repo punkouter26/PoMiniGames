@@ -3,7 +3,6 @@
 // per-region damage + hit-pause + screen shake + cinematic camera + replay buffer,
 // audio bus, and the Blazor interop callbacks.
 import * as THREE from 'three';
-import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
@@ -47,13 +46,19 @@ const TIME_LIMIT = 99;
 // `_spawnFighters`, so the spawn and the HUD can never desync.
 const SPAWN_X_BY_SIDE = { left: -1.6, right: 1.6 };
 
-// ── Overhead house light drift ────────────────────────────────────────────
-// The ring spotlight (arena.js `lights.spot`) orbits this radius at this
-// height, aimed down at the midpoint between the fighters. See the "Room
-// light drift" block in _updateLighting.
-const HOUSE_LIGHT_RADIUS = 2.6;
+// ── Overhead house light swing ────────────────────────────────────────────
+// The ring spotlight (arena.js `lights.spot`) sweeps a wide elongated
+// ellipse over the ring (mostly along Z, with a smaller X amplitude and a
+// pronounced vertical bob), aimed down at the midpoint between the fighters.
+// The pool of light, the cast shadows and the volumetric shaft therefore all
+// sweep visibly back and forth across the canvas — the rig lamp is no longer
+// nailed above the centre, it swings like a hanging studio fixture. See the
+// "Room light swing" block in _updateLighting.
+const HOUSE_LIGHT_RADIUS = 4.4;              // wide Z swing (was 2.6)
+const HOUSE_LIGHT_RADIUS_X = 1.6;            // narrower X swing for an ellipse, not a circle
+const HOUSE_LIGHT_BOB = 1.8;                 // vertical bobbing amplitude
 const HOUSE_LIGHT_HEIGHT = 11;
-const HOUSE_LIGHT_SPEED = (Math.PI * 2) / 26; // rad/s — one lap per ~26 s
+const HOUSE_LIGHT_SPEED = (Math.PI * 2) / 12; // rad/s — one lap per ~12 s (was 26)
 
 const MIN_SEPARATION = 0.95;
 
@@ -372,27 +377,26 @@ export class BrawlGame {
     // went 99.8% midtones with 0% shadows, visibly worse than 1.15. The real
     // lever is the hemisphere cut + hotter key in arena.js; exposure only takes
     // the small step needed to keep overall level after that cut.
-    this.exposureBase = 1.3;
+    //
+    // Bumped 1.3 → 1.5 to compensate for the removed IBL fill — without the
+    // env map the rig now has to carry the full ambient level on its own, and
+    // exposure is the simplest way to keep the ring reading bright without
+    // flattening contrast (the hemisphere is still cut hard below).
+    this.exposureBase = 1.5;
     this.renderer.toneMappingExposure = this.exposureBase;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.container.appendChild(this.renderer.domElement);
 
     this.scene = new THREE.Scene();
-    // PBR env map: a tiny PMREMGenerator scene with hemisphere + key + rim
-    // produces a usable IBL without needing to ship an HDR file.
-    this.envMap = this._makeEnvMap();
-    this.arena = buildArena(this.scene, this.envMap);
+    // Reflection effects removed entirely per user request — no IBL, no
+    // scene.environment, no PMREM/RoomEnvironment generation. The real
+    // key/rim/spot/RectArea-panel rig plus the brighter house lights carry
+    // all of the scene's illumination now, so the ring reads bright without
+    // the softbox speculars that a PBR env map would lay on top.
+    this.arena = buildArena(this.scene);
 
     this.camera = new THREE.PerspectiveCamera(55, w / h, 0.1, 100);
     this.camera.position.set(0, 2.4, 7);
-    if (this.envMap) {
-      // Env-map reflections killed entirely (environmentIntensity 0) per user
-      // request — no shiny IBL reflections on the mat, ring or fighters. The
-      // real key/rim/spot/RectArea-panel rig carries the lighting; the lost IBL
-      // fill isn't missed (verified in-scene — the frame stays well lit).
-      this.scene.environment = this.envMap;
-      this.scene.environmentIntensity = 0;
-    }
 
     // Post chain: render → (GTAO) → (bloom → CA/vignette) → tone-map/sRGB
     // output, assembled per quality tier (see _buildComposer).
@@ -639,23 +643,6 @@ export class BrawlGame {
     });
   }
 
-  _makeEnvMap() {
-    try {
-      // RoomEnvironment + PMREM produces a balanced HDR IBL with broad
-      // softbox speculars — suits the studio-rig panels more than a custom
-      // proxy scene did. Tiny memory, no asset files. Combined with the
-      // moodier house-lights choreography, PBR materials now reflect both
-      // an indoor studio (env) and a dark arena (real lights).
-      const pmrem = new THREE.PMREMGenerator(this.renderer);
-      const env = new RoomEnvironment();
-      const tex = pmrem.fromScene(env, 0.04).texture;
-      pmrem.dispose();
-      return tex;
-    } catch {
-      return null;
-    }
-  }
-
   _makeController(playerIndex) {
     const mode = this.options.mode;
     const difficulty = this.options.difficulty || 'medium';
@@ -808,6 +795,10 @@ export class BrawlGame {
         chargeAmt: 0,      // 0..1 stored charge (mirrors energy while charging)
         chargeMul: 1,      // damage/knockback multiplier of the current swing
         energy: ENERGY_DEFAULT, // 0..1 banked attack power; starts at 1/3 (see ENERGY_DEFAULT)
+        // Super meter (0..1): fills by taking damage. ≥ 1 → superQueued fires
+        // PERSONALITIES[charId].onSuper; consumes to zero regardless of fill.
+        // Driven by _tickSuperMeter each tick; updated by _fireSuper on press.
+        superMeter: 0,
         chargeCued: false, // full-charge audio cue fired
         chargeSparkT: 0,   // spark-mote emission timer
         // ── Momentum + weight ─────────────────────────────────────────
@@ -1131,16 +1122,24 @@ export class BrawlGame {
       // ── Nixon "I Am Not a Crook" eye-gouge ──────────────────────────
       // 30% of block presses drop during the 0.3 s blind window. The simplest
       // realization is to clear the `block` flag with miss-rate probability.
-      if (f._inputBlindUntil && this.t < f._inputBlindUntil
-          && PERSONALITIES.nixon?.oncePerRound
-          && Math.random() < PERSONALITIES.nixon.oncePerRound.blindMissRate) {
-        intent = { ...intent, block: false };
+      // Ford "PARDON ME" super: same channel, higher miss-rate (60%), longer
+      // window (1.0 s). The runtime miss rate is read from
+      // f._inputBlindMissRate so future supers can reuse this without a
+      // new branch.
+      if (f._inputBlindUntil && this.t < f._inputBlindUntil) {
+        const missRate = f._inputBlindMissRate
+          || PERSONALITIES.nixon?.oncePerRound?.blindMissRate
+          || 0.30;
+        if (Math.random() < missRate) intent = { ...intent, block: false };
       }
       // ── W Bush "Decider Mode" freeze: stall out his attacking moves ──
       if (f.controller?.__freezeUntil && this.t < f.controller.__freezeUntil) {
         intent = { ...intent, punch: false, kick: false, side: 0 };
       }
       this._tickFighter(f, opp, intent, dt);
+      // Super meter fills passively by taking damage (see _tickSuperMeter).
+      // Drain any activated super state, decay swing-counted supers.
+      this._tickSuperMeter(f, opp, dt);
     }
 
     // ── Ring clamp + cannon-es physics step ────────────────────────
@@ -1379,6 +1378,10 @@ export class BrawlGame {
       opponentRecover: oppInRecover,
       opponentState: opp.state,
       ownAttacks: ATTACKS,
+      // Super meter full? Exposed so the AI's super-activation block knows
+      // when it has a budget to spend. Player controllers don't read this —
+      // their intent.super is driven by the super key directly.
+      superMeterFull: (f.superMeter || 0) >= 1.0,
     };
   }
 
@@ -1450,6 +1453,10 @@ export class BrawlGame {
           this._enterCharge(f, name);
           break;
         }
+        // Signature super activation: edge-triggered, only from idle so the
+        // pose read is clean ("He lines up. He fires."). No-op if the meter
+        // isn't full or this fighter has no onSuper config.
+        if (intent.super) this._fireSuper(f);
         if (intent.block) {
           f.state = 'block';
           f.animator.setBlocking(true);
@@ -1614,10 +1621,28 @@ export class BrawlGame {
     }
     // Nixon "Tricky Dick": 25% of swings carry a dirty tag — when the hit
     // is blocked, ~40% of the time the block lets the damage slip through.
+    // SUPER override: when "I Am Not a Crook" is active, ALL swings in the
+    // remaining counter carry the dirty tag (decays per swing via the
+    // superDirtySwingsLeft counter).
+    const nixonDirtyChance = per?.id === 'nixon'
+      ? (per.superDirtySwingsLeft > 0
+          ? 1.0
+          : PERSONALITIES.nixon.onSwingP.dirtyChance)
+      : 0;
     if (per?.id === 'nixon' && PERSONALITIES.nixon?.onSwingP
         && !f._dirtySwing
-        && this.rng.random() < PERSONALITIES.nixon.onSwingP.dirtyChance) {
+        && this.rng.random() < nixonDirtyChance) {
       f._dirtySwing = true;
+      if (per.superDirtySwingsLeft > 0) {
+        per.superDirtySwingsLeft = Math.max(0, per.superDirtySwingsLeft - 1);
+      }
+    }
+    // Bush Sr. "VOODOO ECONOMICS": next 3 swings after a super each carry
+    // 1.4× damage on top of whatever else is going on. The flag flips off
+    // one swing at a time.
+    if (per?.id === 'bushsr' && per.superPumpSwingsLeft > 0) {
+      f._bushsrSuperPump = true;
+      per.superPumpSwingsLeft = Math.max(0, per.superPumpSwingsLeft - 1);
     }
     // Ford "Ford Stumble": 15% of swings self-stun for 0.6 s — abort the
     // committed swing mid-air and route the fighter to 'idle' briefly.
@@ -1946,6 +1971,200 @@ export class BrawlGame {
     }
   }
 
+  // ── SUPER METER ────────────────────────────────────────────────────────
+  // The comeback super meter is a per-fighter 0..1 pool that fills passively
+  // by taking damage (see the damage roll in _tryHit). When ≥ 1.0 the player
+  // can press their Super key (or, for the AI, the controller emits
+  // `intent.super = true` after the AI's gating checks). Firing calls
+  // `_fireSuper`, which:
+  //   1. consumes the meter to zero (one-shot),
+  //   2. routes through PERSONALITIES[id].onSuper to set the right runtime
+  //      fields (mode, iframes, dirty count, swing bonus, etc.),
+  //   3. emits a screen-wide flash + camera pulse + audio cue for impact.
+  //
+  // The meter is intentionally NOT fueled by dealing damage: the design is a
+  // comeback mechanic — you earn the super by being on the wrong end of a
+  // beatdown, so the burst is the response that turns the round around.
+  //
+  // Per-frame: nothing happens unless the meter just hit 1.0, in which case
+  // we set superUntil = now + 1.6 s — the HUD reads it as the "PRESS SUPER"
+  // flash window. We don't tick down the meter otherwise; it stays at 1.0
+  // until consumed by a fire (or reset on round reset).
+  _tickSuperMeter(f, opp, dt) {
+    const per = f.personality;
+    if (!per) return;
+    // Cap at 1.0 — the meter is binary "ready or not".
+    if (per.superMeter > 1.0) per.superMeter = 1.0;
+    if (per.superMeter >= 1.0 && this.t > (per.superUntil || 0)) {
+      per.superUntil = this.t + 1.6;
+    }
+    // Defensive: if the personality has no onSuper config, never let the
+    // meter fill past 0 — the player shouldn't see a "press super" prompt
+    // that does nothing.
+    if (!PERSONALITIES[f.charId]?.onSuper) per.superMeter = 0;
+  }
+
+  // Fire the fighter's signature super. Called from _tickFighter on a
+  // super-intent edge in the idle state, OR from the AI controller's
+  // super-activation block via the same intent. Always called with meter
+  // ≥ 1.0 — if not, this is a no-op.
+  _fireSuper(f) {
+    const per = f.personality;
+    const cfg = PERSONALITIES[f.charId]?.onSuper;
+    if (!per || !cfg || per.superMeter < 1.0) return;
+    // Consume the meter regardless of fill level — one-shot, intentionally
+    // not "spend only what you need". This rewards timing over hoarding.
+    per.superMeter = 0;
+    per.superActiveMode = cfg.mode;
+    per.superFiredAt = this.t;
+    // Apply the per-mode effects via a small switch. Each block writes the
+    // runtime fields the existing damage / hit / tick code paths already
+    // consult (activeMode, modeExpiresAt, iframesUntil, superSwingAtkMul,
+    // superDirtySwingsLeft, superPumpSwingsLeft, lbjMissKBUntil, etc.).
+    this._applySuperEffect(f, cfg);
+    // ── Feedback ────────────────────────────────────────────────────────
+    // Camera pulse (handled via exposurePulse, which is read every frame in
+    // _updateEffects) and a full-screen flash overlay. Audio cue is a quick
+    // rising whoosh — the existing audio.whoosh() is too generic; we use a
+    // dedicated gain via audio.bigWhoosh() if present, fall back to whoosh.
+    this.exposurePulse = Math.max(this.exposurePulse || 0, 0.55);
+    this.hitstopT = Math.max(this.hitstopT || 0, 0.18);
+    if (this.flash) {
+      this.flash.style.transition = 'opacity 0.05s linear';
+      this.flash.style.background = 'rgba(255, 240, 200, 0.55)';
+      this.flash.style.opacity = '1';
+      setTimeout(() => {
+        if (this.flash) {
+          this.flash.style.transition = 'opacity 0.45s ease-out';
+          this.flash.style.opacity = '0';
+        }
+      }, 60);
+    }
+    if (this.audio) this.audio.whoosh?.();
+  }
+
+  // Per-mode super effect applier. Reads PERSONALITIES[id].onSuper and writes
+  // the corresponding runtime fields consumed by the existing engine paths.
+  // Each block is a single switch arm so adding a new personality's super is
+  // a one-arm change here + one onSuper config block in personalities.js.
+  _applySuperEffect(f, cfg) {
+    const per = f.personality;
+    const opp = this.fighters.find((o) => o !== f);
+    if (!per) return;
+    switch (cfg.mode) {
+      case 'theWall': {
+        // Trump: stack ramp for 3 s.
+        per.activeMode = 'theWallSuper';
+        per.modeExpiresAt = this.t + (cfg.durationSecs || 3.0);
+        // Inline ramp: superSwingAtkMul gets set on every swing commit while
+        // active, so we only need a flag here. The damage roll multiplies by
+        // (1 + koStacks × 0.05) via the existing per-stack path.
+        break;
+      }
+      case 'bigGuy': {
+        // Biden: auto-fill energy to max + auto-arm next swing for lockSecs.
+        f.energy = 1.0;
+        f.chargeAmt = 1.0;
+        // Clear the existing _enterCharge cooldown by entering charge state
+        // directly if the player presses punch/kick within the lock window.
+        per._bigGuyLockUntil = this.t + (cfg.lockSecs || 1.5);
+        break;
+      }
+      case 'droneStrike': {
+        // Obama: iframes + next swing atkMul.
+        per.iframesUntil = this.t + (cfg.iframesSecs || 1.5);
+        per.superSwingAtkMul = cfg.nextSwingAtkMul || 2.5;
+        break;
+      }
+      case 'deciderManual': {
+        // Bush: same as the passive HP-gated mode but no freeze window.
+        per.activeMode = 'decider';
+        per.modeExpiresAt = this.t + (cfg.durationSecs || 30);
+        // Note: the freeze window is what the AI controller's __freezeUntil
+        // would normally trigger; we deliberately skip it on the manual path
+        // so the human player gets the buff the instant they press the key.
+        break;
+      }
+      case 'saxSolo': {
+        // Clinton: arms a one-shot 1.6× next-swing + auto chain. The chain
+        // arms via the existing clinton onHitChain handler — we only need to
+        // raise the atkMul here and bias the next swing's windup longer.
+        per.superSwingAtkMul = cfg.nextSwingAtkMul || 1.6;
+        per._saxSoloUntil = this.t + 1.2;
+        break;
+      }
+      case 'voodoo': {
+        // Bush Sr.: 3 voodoo-tax swings. The flag is decremented per swing
+        // in _enterAttack.
+        per.superPumpSwingsLeft = cfg.swingCount || 3;
+        break;
+      }
+      case 'morningInAmerica': {
+        // Reagan: +40% dmg + 20% speed for the configured duration.
+        per.activeMode = 'morningInAmerica';
+        per.modeExpiresAt = this.t + (cfg.durationSecs || 6);
+        break;
+      }
+      case 'malaiseSpeech': {
+        // Carter: iframes + next-hit slow (the slow is applied in
+        // _applyOnHitPersonalities when this mode is the superActiveMode).
+        per.iframesUntil = this.t + (cfg.iframesSecs || 1.5);
+        break;
+      }
+      case 'pardonMe': {
+        // Ford: opponent input-blind. Applied directly on the opponent's
+        // fighter object (mirrors Nixon's existing eye-gouge path).
+        if (opp) {
+          opp._inputBlindUntil = this.t + (cfg.blindSecs || 1.0);
+          opp._inputBlindMissRate = cfg.blindMissRate || 0.60;
+        }
+        break;
+      }
+      case 'notACrook': {
+        // Nixon: N dirty swings + first one blinds on hit.
+        per.superDirtySwingsLeft = cfg.dirtySwings || 3;
+        per._notACrookFirst = true;
+        break;
+      }
+      case 'treatmentManual': {
+        // LBJ: arm a long miss-charge window the player picks the moment of.
+        per.lbjMissKBUntil = this.t + (cfg.windowSecs || 8.0);
+        break;
+      }
+      case 'profilesInCourage': {
+        // JFK: iframes + next-swing bonus. The manual super is larger than
+        // the time-gated passive (0.6 s / 1.5× vs 0.45 s / 1.25×).
+        per.jfkProfileIframesUntil = this.t + (cfg.iframesSecs || 0.6);
+        per.jfkNextSwingAtkMul = cfg.nextSwingAtkMul || 1.5;
+        break;
+      }
+      case 'overlord': {
+        // Eisenhower: 2.2× next swing + 1 s iframes.
+        per.superSwingAtkMul = cfg.nextSwingAtkMul || 2.2;
+        per.eisenhowerIframesUntil = this.t + (cfg.iframesSecs || 1.0);
+        break;
+      }
+      case 'buckStopsHere': {
+        // Truman: triple the current buckStacks for the next swing. Clear
+        // stacks after so the player doesn't double-dip.
+        const mul = cfg.stackMul || 3.0;
+        per.superSwingAtkMul = 1.0 + (per.trumanBuckStacks || 0) * 0.02 * mul;
+        per.trumanBuckStacks = 0;
+        break;
+      }
+      case 'dayOfInfamy': {
+        // FDR: longer-than-passive +35% dmg buff, no HP gate.
+        per.activeMode = 'dayOfInfamy';
+        per.modeExpiresAt = this.t + (cfg.durationSecs || 8.0);
+        break;
+      }
+      default:
+        // Unknown mode: silently ignore (shouldn't happen — PERSONALITIES
+        // controls the dispatch).
+        break;
+    }
+  }
+
   // Resolve per-hit personality effects: Biden slow-on-charge, Clinton elbow
   // flourish scheduling, Reagan/Bush damage multipliers (already applied in
   // the baseDmg block above), Ford retaliate rollover when Ford is hit during
@@ -1967,6 +2186,26 @@ export class BrawlGame {
       const params = PERSONALITIES.biden.onHitEffectParams;
       defender.slowUntil = now + (params?.slowSecs || 1.0);
       defender.slowMul = params?.slowMul || 0.5;
+    }
+
+    // Bush Sr. "VOODOO ECONOMICS" super: the swing carried a voodoo-tax tag
+    // — multiply this hit's damage by the voodoo mul. The swing counter was
+    // decremented at swing commit, so we just consult the flag here.
+    if (attacker._bushsrSuperPump && att?.id === 'bushsr') {
+      const cfg = PERSONALITIES.bushsr?.onSuper;
+      personalityDmgMul *= (cfg?.swingAtkMul || 1.4);
+      attacker._bushsrSuperPump = false;
+    }
+    // Trump "THE WALL" super: koStacks ramp is folded into the personality
+    // dmgMul above for the next 3 s. (No additional action needed here —
+    // superSwingAtkMul = (1 + koStacks × 0.05) was set in _fireSuper.)
+    // Carter "MALAISE SPEECH" super: on a landed hit during the window, apply
+    // a brief slow on the defender. The iframes are consumed at hit-resolution
+    // time via the existing perPer?.iframesUntil check.
+    if (att?.superActiveMode === 'malaiseSpeech' && att?.superFiredAt
+        && now - att.superFiredAt < (PERSONALITIES.carter.onSuper.slowSecs || 0.5)) {
+      defender.slowUntil = now + (PERSONALITIES.carter.onSuper.slowSecs || 0.5);
+      defender.slowMul = PERSONALITIES.carter.onSuper.slowMul || 0.55;
     }
 
     // Clinton "I Feel Your Pain": on a Clinton landed hit, queue follow-up
@@ -2273,6 +2512,22 @@ export class BrawlGame {
 
     // Quick dmg mul: reset on the swing commit so we accumulate fresh.
     attacker._personalityDmgMul = 1.0;
+    // ── SUPER METER damage hook ──────────────────────────────────
+    // Each super that boosts the NEXT swing (obama drone strike, clinton sax
+    // solo, jfk profile manual, eisenhower overlord, eisenhower atoms-for-
+    // peace, nixon pre-bonus, truman buck stops here) folds into the same
+    // base multiplier the personality layer already manages. Multiplicative
+    // stacking — a super during decider stacks with the decider atkMul.
+    if (attPer && attPer.superSwingAtkMul && attPer.superSwingAtkMul > 1.0) {
+      attacker._personalityDmgMul *= attPer.superSwingAtkMul;
+      // Per-super one-shot supers consume their bonus here. Multi-swing
+      // supers (nixon, bushsr) clear via their own counter in _enterAttack.
+      const oneShot = ['droneStrike', 'saxSolo', 'profilesInCourage', 'overlord'];
+      // Cheap ID-by-effect heuristic: if the personality id matches a super
+      // that uses superSwingAtkMul as a one-shot, consume. Eisenhower's
+      // passive Atoms-for-Peace path uses its own slot, not superSwingAtkMul.
+      if (attPer && oneShot.includes(attPer.superActiveMode)) attPer.superSwingAtkMul = 1.0;
+    }
     if (attPer?.activeMode && this.t < attPer.modeExpiresAt) {
       const trg = PERSONALITIES[attPer.id]?.onTriggerParams;
       if (attPer.activeMode === 'decider' && trg?.atkMul) attacker._personalityDmgMul *= trg.atkMul;
@@ -2334,6 +2589,16 @@ export class BrawlGame {
     // synchronously). The helper returns the residual personality dmg mul.
     const extraMul = this._applyOnHitPersonalities(attacker, defender, region, baseDmg, hit, attack);
     baseDmg *= extraMul;
+
+    // Super meter fill on damage taken. Pure damage ratio: a hit that costs
+    // 20% of HP fills ~ 1/5 of the meter — capped so a single massive hit
+    // can't overflow. Reading baseDmg / MAX_HP keeps the meter stable across
+    // character mass differences without per-president tuning.
+    if (defender?.personality) {
+      const fill = Math.min(0.5, baseDmg / MAX_HP);
+      defender.personality.superMeter = Math.min(1.0,
+        (defender.personality.superMeter || 0) + fill);
+    }
 
     this.combat.damage({ playerId: defender.playerId, amount: baseDmg, sourceId: attacker.playerId });
     // A hit interrupts a wind-up (state → hitstun below) but no longer drains
@@ -2703,10 +2968,10 @@ export class BrawlGame {
     const target = this.cameraMode === 'ko' ? 1 : 0;
     this.lightsDim = THREE.MathUtils.lerp(this.lightsDim, target, Math.min(1, dt * 2.5));
     const d = this.lightsDim;
-    L.hemi.intensity = 0.42 * (1 - d * 0.85);
-    L.key.intensity = 1.6 * (1 - d * 0.75);
-    L.rim.intensity = 0.7 * (1 - d * 0.5);
-    L.fill.intensity = 0.35 * (1 - d * 0.85);
+    L.hemi.intensity = 0.22 * (1 - d * 0.85);
+    L.key.intensity = 3.4 * (1 - d * 0.75);
+    L.rim.intensity = 1.0 * (1 - d * 0.5);
+    L.fill.intensity = 0.6 * (1 - d * 0.85);
 
     // ── Personality-driven rim pulses ─────────────────────────────
     // Active modes (Reagan morningInAmerica, Bush decider, FDR fourTerm, etc.)
@@ -2755,12 +3020,12 @@ export class BrawlGame {
     }
     L.rim.color.copy(rimTint);
     L.rim.intensity *= rimMul;
-    L.cornerA.intensity = 1.3 * (1 - d * 0.9);
-    L.cornerB.intensity = 1.3 * (1 - d * 0.9);
-    L.spot.intensity = 1.1 + d * 1.6;
+    L.cornerA.intensity = 1.7 * (1 - d * 0.9);
+    L.cornerB.intensity = 1.7 * (1 - d * 0.9);
+    L.spot.intensity = 1.6 + d * 1.6;
     // Studio rig panels dim with the house lights.
-    if (L.rectA) L.rectA.intensity = 2.6 * (1 - d * 0.85);
-    if (L.rectB) L.rectB.intensity = 1.8 * (1 - d * 0.85);
+    if (L.rectA) L.rectA.intensity = 3.4 * (1 - d * 0.85);
+    if (L.rectB) L.rectB.intensity = 2.6 * (1 - d * 0.85);
     // The volumetric shaft brightens as the hall goes dark — the classic
     // "single spotlight through smoky air" KO moment.
     const atmo = this.arena.atmo;
@@ -2768,18 +3033,20 @@ export class BrawlGame {
       atmo.cone.material.opacity = 0.09 + d * 0.14;
     }
 
-    // ── Room light drift ─────────────────────────────────────────────
-    // The overhead house light isn't nailed above the ring centre: it creeps
-    // around a slow circle up in the rig while staying aimed down at the two
-    // fighters, so the pool of light, the cast shadows and the volumetric
-    // shaft all sweep across the canvas over the course of a round instead of
-    // sitting dead still. One revolution takes ~26 s — slow enough that it
-    // reads as an operator repositioning, not a disco.
+    // ── Room light swing ──────────────────────────────────────────────
+    // The overhead house light isn't nailed above the ring centre: it traces
+    // a wide elongated ellipse up in the rig (mostly along Z, with a smaller
+    // X amplitude and a strong vertical bob), aimed down at the two fighters,
+    // so the pool of light, the cast shadows and the volumetric shaft all
+    // sweep visibly back and forth across the canvas over the course of a
+    // round instead of sitting dead still. One full cycle takes ~12 s — fast
+    // enough to read as a swinging rig fixture, slow enough that it doesn't
+    // feel like a strobe.
     this._houseT = (this._houseT || 0) + dt;
     const orbit = this._houseT * HOUSE_LIGHT_SPEED;
     L.spot.position.set(
-      Math.cos(orbit) * HOUSE_LIGHT_RADIUS,
-      HOUSE_LIGHT_HEIGHT + Math.sin(orbit * 0.63) * 0.5,
+      Math.cos(orbit) * HOUSE_LIGHT_RADIUS_X,
+      HOUSE_LIGHT_HEIGHT + Math.sin(orbit * 1.4) * HOUSE_LIGHT_BOB,
       Math.sin(orbit) * HOUSE_LIGHT_RADIUS);
 
     // Spotlight target: the midpoint between the fighters normally, the loser
@@ -3832,7 +4099,13 @@ export class BrawlGame {
       this.dotnet.invokeMethodAsync('OnHud',
         this._hp(this.fighters[0]), this._hp(this.fighters[1]), Math.round(this.clock * 10) / 10,
         regions(this.fighters[0]), regions(this.fighters[1]),
-        Math.round(this.fighters[0].energy * 100), Math.round(this.fighters[1].energy * 100))
+        Math.round(this.fighters[0].energy * 100), Math.round(this.fighters[1].energy * 100),
+        // Super meter (0..100) per fighter + 1/0 "ready" flag for the HUD
+        // to show the "PRESS E/O" prompt when full.
+        Math.round((this.fighters[0].superMeter || 0) * 100),
+        Math.round((this.fighters[1].superMeter || 0) * 100),
+        (this.fighters[0].superMeter || 0) >= 1.0 ? 1 : 0,
+        (this.fighters[1].superMeter || 0) >= 1.0 ? 1 : 0)
         .catch(() => {});
     }
   }

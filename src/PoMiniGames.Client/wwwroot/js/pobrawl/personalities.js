@@ -15,6 +15,10 @@
 //   onSwingP          — (0..1) chance to throw a "haymaker"/"dirty"/"stumble"
 //   onKoReceived      — increments a counter (per charId, e.g. koStacks for trump)
 //   activeFor(t)      — effect auto-clears after t seconds
+//   onSuper           — ON-DEMAND signature move. The player builds a comeback
+//                       super meter by taking damage and presses their Super
+//                       key to fire this effect immediately (no HP gate). The
+//                       engine consumes the meter in `_fireSuper`.
 //
 // All HP thresholds are PERCENT (0..1). The engine passes the live value at
 // trigger evaluation time so an effect can be HP-conditional.
@@ -29,6 +33,10 @@ export const PERSONALITIES = {
     perStackDmg: 0.05,
     maxStacks: 5,
     onStackHit: 'voiceWall',
+    // SUPER — "THE WALL": banks current koStacks into a 3-second window of
+    // (1 + koStacks × 0.05) damage on EVERY swing for the next 3 s. Visually
+    // identical to the per-stack ramp but compressed into one dramatic burst.
+    onSuper: { mode: 'theWall', durationSecs: 3.0 },
   },
 
   // ── Biden — "The Big Guy" charge ─────────────────────────────────────
@@ -40,6 +48,10 @@ export const PERSONALITIES = {
     chargeHoldSecs: 1.0,
     onChargeHitEffect: 'slow',
     onHitEffectParams: { slowMul: 0.5, slowSecs: 1.0 },
+    // SUPER — "THE BIG GUY": guaranteed charged strike — auto-fills the energy
+    // bar to CHARGE_MAX_MUL and arms the next punch/kick for the next 1.5 s
+    // (no need to wind up by hand). The hit lands with the Biden slow effect.
+    onSuper: { mode: 'bigGuy', lockSecs: 1.5 },
   },
 
   // ── Obama — "No-Drama Open" / "Drone Strike" combo ─────────────────
@@ -49,6 +61,9 @@ export const PERSONALITIES = {
     comboEverySecs: 4,
     comboIsPunchKick: true,
     passiveDodgeChance: 0.22,
+    // SUPER — "DRONE STRIKE": 1.5 s of perfect iframes + next swing deals
+    // 2.5× damage (the surgical strike). Plays a cool teal flicker on Obama.
+    onSuper: { mode: 'droneStrike', iframesSecs: 1.5, nextSwingAtkMul: 2.5 },
   },
 
   // ── Bush (W.) — "Decider Mode" ─────────────────────────────────────
@@ -59,6 +74,10 @@ export const PERSONALITIES = {
     checkHpBelow: 0.40,
     onTrigger: 'decider',
     onTriggerParams: { freezeSecs: 1.5, atkMul: 1.4, speedMul: 1.15 },
+    // SUPER — "DECIDER MODE" (manual): same mode as the passive HP-gated
+    // trigger, but fired on demand. No freeze window — straight into the
+    // atkMul/speedMul buff for the rest of the round.
+    onSuper: { mode: 'deciderManual', durationSecs: 30 },
   },
 
   // ── Clinton — "Sax Solo" + "I Feel Your Pain" elbow flurry ─────────
@@ -67,6 +86,10 @@ export const PERSONALITIES = {
   clinton: {
     onSwingP: { saxSoloWindupMul: 1.5 },
     onHitChain: { name: 'feelYourPain', hits: 4, growthPerOppMiss: 1, growthCap: 6 },
+    // SUPER — "SAX SOLO": arms a 1.6× next swing with auto-flurry chain
+    // (4 hits). Same feel as the passive chain but the windup is doubled
+    // (the visual tells the opponent a sax solo is coming).
+    onSuper: { mode: 'saxSolo', nextSwingAtkMul: 1.6, chainHits: 4, saxSoloWindupMul: 2.0 },
   },
 
   // ── Bush Sr. — "Read My Lips" + "Voodoo Economics" feints ──────────
@@ -76,6 +99,10 @@ export const PERSONALITIES = {
     passiveAiBoost: { blockP: +0.12, punishP: +0.10, baitP: +0.30 },
     onFeintTrigger: 'counter',
     onCounterHitKBMul: 1.45,
+    // SUPER — "VOODOO ECONOMICS": 1.2 s of guaranteed baits (the AI's
+    // signature feint loop, but armed by the player as a human-only burst)
+    // + next 3 swings carry 1.4× damage (the voodoo tax).
+    onSuper: { mode: 'voodoo', feintSecs: 1.2, swingCount: 3, swingAtkMul: 1.4 },
   },
 
   // ── Reagan — "Morning in America" + "Tear Down This Wall" ──────────
@@ -92,6 +119,10 @@ export const PERSONALITIES = {
       reflectFraction: 0.30,
       selfStaggerSecs: 0.6,
     },
+    // SUPER — "MORNING IN AMERICA" (manual): same buff as the passive HP-
+    // gated mode but fired on demand. +40% dmg + 20% speed for 6 s, no HP
+    // gate. Consumes the super meter even if HP is full.
+    onSuper: { mode: 'morningInAmerica', atkMul: 1.4, speedMul: 1.2, durationSecs: 6 },
   },
 
   // ── Carter — "Malaise Speech" + "Habitat for Humanity" ──────────────
@@ -109,6 +140,9 @@ export const PERSONALITIES = {
       comboLadderMax: 4,
       comboResetsAfterSecs: 3,
     },
+    // SUPER — "MALAISE SPEECH" (manual): 1.5 s iframes + the next landed hit
+    // applies a 0.5 s slow (Carter's wagging-finger energy hits the defender).
+    onSuper: { mode: 'malaiseSpeech', iframesSecs: 1.5, slowSecs: 0.5, slowMul: 0.55 },
   },
 
   // ── Ford — "Ford Stumble" + "Pardoning Nixon" ──────────────────────
@@ -118,6 +152,10 @@ export const PERSONALITIES = {
   ford: {
     onSwingP: { stumbleChance: 0.15, stumbleSelfStunSecs: 0.6 },
     onStumbleHit: { retaliateDmgMul: 2.0, retaliateSecs: 1.5 },
+    // SUPER — "PARDON ME": 1.0 s input-blind on the opponent (their block /
+    // move inputs drop 60% of the time). Ford stumbles through the gap and
+    // takes advantage.
+    onSuper: { mode: 'pardonMe', blindSecs: 1.0, blindMissRate: 0.60 },
   },
 
   // ── Nixon — "Tricky Dick" + "I Am Not a Crook" ────────────────────
@@ -132,6 +170,10 @@ export const PERSONALITIES = {
       blindSecs: 0.30,
       blindMissRate: 0.30,
     },
+    // SUPER — "I AM NOT A CROOK": next 3 swings carry the dirty tag (ignore
+    // 40% of block absorb) + the FIRST one applies 0.5 s opponent blind on
+    // landing (a doubled-up eye-gouge for the meter cost).
+    onSuper: { mode: 'notACrook', dirtySwings: 3, dirtyBlockFraction: 0.40, blindSecs: 0.5 },
   },
 
   // ── LBJ — "The Johnson Treatment" + "All the Way with LBJ" ──────────
@@ -148,6 +190,10 @@ export const PERSONALITIES = {
       pumpSwingCount: 3,
       pumpAtkMul: 1.20,
     },
+    // SUPER — "THE TREATMENT" (manual): primes an 8-second miss-charge window
+    // (any opponent-miss within range → next LBJ swing +50% knockback).
+    // The player CHOOSES when to arm it, instead of waiting passively.
+    onSuper: { mode: 'treatmentManual', kbMul: 1.5, windowSecs: 8.0 },
   },
 
   // ── JFK — "PT-109 Survivor" + "Profiles in Courage" + "Camelot Glint"
@@ -172,6 +218,10 @@ export const PERSONALITIES = {
       maxFires: Infinity,
     },
     everyNthHit: { n: 4, mul: 1.4, name: 'camelotGlint' },
+    // SUPER — "PROFILES IN COURAGE" (manual): same effect as the time-gated
+    // passive, but the player chooses when — and it's larger (0.6 s iframes
+    // + next swing 1.5× damage instead of the passive 0.45 s / 1.25×).
+    onSuper: { mode: 'profilesInCourage', iframesSecs: 0.6, nextSwingAtkMul: 1.5 },
   },
 
   // ── Eisenhower — "Operation Overlord" + "Atoms for Peace" ─────────
@@ -196,6 +246,10 @@ export const PERSONALITIES = {
       nextSwingAtkMul: 1.20,
       maxFires: 1,
     },
+    // SUPER — "OPERATION OVERLORD": the next swing auto-lands at 2.2× damage
+    // and grants 1.0 s of iframes immediately. The biggest one-shot swing
+    // any president can buy with a super meter.
+    onSuper: { mode: 'overlord', nextSwingAtkMul: 2.2, iframesSecs: 1.0 },
   },
 
   // ── Truman — "The Buck Stops Here" + "Give 'em Hell" ──────────────
@@ -216,6 +270,10 @@ export const PERSONALITIES = {
       procChance: 0.50,
       extraCamPulse: 0.55,
     },
+    // SUPER — "THE BUCK STOPS HERE": triplies the current buckStacks counter
+    // for the next swing, then resets stacks to zero. The longer the player
+    // let it build, the bigger the payoff — up to +180% dmg at cap.
+    onSuper: { mode: 'buckStopsHere', stackMul: 3.0 },
   },
 
   // ── FDR — "Four-Term Foundation" + "Fireside Chat" + "Day of Infamy" ──
@@ -241,6 +299,9 @@ export const PERSONALITIES = {
       iframesSecs: 0.4,
       nextSwingReachMul: 1.25,
     },
+    // SUPER — "DAY OF INFAMY" (manual): same +35% dmg buff as the HP-gated
+    // mode, but fired on demand and lasting 8 s instead of 5. No HP gate.
+    onSuper: { mode: 'dayOfInfamy', atkMul: 1.35, durationSecs: 8.0 },
   },
 };
 
@@ -281,5 +342,19 @@ export function makePersonalityState(id) {
     fdrStartupUntil: 0,         // fdr "Four-Term Foundation" active
     fdrIframesUntil: 0,         // fdr "Fireside Chat" chatting
     fdrNextSwingReachMul: 1.0,  // fdr next-swing reach bonus
+    // ── SUPER METER ───────────────────────────────────────────────────
+    // Fills by taking damage (see game.js::_tickSuperMeter). When ≥ 1.0 the
+    // player can press their Super key to fire onSuper. The super key is a
+    // one-shot: firing consumes the meter to zero regardless of how full it
+    // was, encouraging the player to time the activation, not stockpile.
+    superMeter: 0,
+    superUntil: 0,              // flicker window — visual "PRESS SUPER" hint while > 1.0 + post-fire cooldown
+    superActiveMode: null,      // mode name currently being delivered (for AI + UI)
+    superFiredAt: 0,            // wall-clock t when last fired (preventing AI back-to-back spam)
+    // Per-super scratch state slots — each president's on-super writes here.
+    superSwingAtkMul: 1.0,      // obama drone strike, clinton sax solo, jfk profile, eisenhower overlord
+    superDirtySwingsLeft: 0,    // nixon notACrook — swings remaining carrying dirty tag
+    superPumpSwingsLeft: 0,     // bushsr voodoo — swings remaining with voodoo tax
+    superSwingCnt: 0,           // generic swing counter for swing-counted supers (nixon/bushsr)
   };
 }

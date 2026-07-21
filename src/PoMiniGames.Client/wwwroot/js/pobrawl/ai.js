@@ -227,13 +227,41 @@ export class AiController {
     // release time, then drop the held flag so the engine throws the strike.
     if (this.holdName) {
       if (this.t < this.holdUntil) {
-        const out = { move: 0, side: 0, punch: false, kick: false, block: false };
+        const out = { move: 0, side: 0, punch: false, kick: false, block: false, super: false };
         out[this.holdName + 'Held'] = true;
         return out;
       }
       this.holdName = null;
       this.sinceDecision = 0;
-      return { move: 0, side: 0, punch: false, kick: false, block: false };
+      return { move: 0, side: 0, punch: false, kick: false, block: false, super: false };
+    }
+
+    // ── Signature super activation ────────────────────────────────────
+    // When the comeback meter is full, the AI spends it on its signature
+    // move. Rung drives the chance per tick (low rungs hoard the meter, high
+    // rungs know exactly when to spend). The engine handles the actual
+    // application — the AI just signals `intent.super = true` once.
+    //
+    // Cooldown: a hard-coded 4-second window after firing before the AI is
+    // allowed to fire again. Prevents accidental back-to-back activations
+    // from a refill before the meter has had time to build. The intent.super
+    // edge is consumed by the engine after the first read (intent is dropped
+    // by the engine after _fireSuper returns), so this is naturally one-shot
+    // per meter fill.
+    if (ctx.superMeterFull && this.t >= (this.superCooldownUntil || 0)) {
+      // Ramp-up: low rungs fire rarely, high rungs fire on the first full
+      // tick they can. The gate is a per-tick probability scaled by rung.
+      const superP = Math.min(0.85, 0.15 + (this.level - 1) * 0.05);
+      // Don't fire into the windup of an opponent swing we're blocking —
+      // it's a wasted activation if they're not in range / not in stun.
+      const oppVulnerable = ctx.opponentState === 'hitstun'
+        || ctx.opponentState === 'block'
+        || (ctx.opponentWindup && ctx.distance < ctx.kickRange * 1.1)
+        || ctx.opponentState === 'idle';
+      if (oppVulnerable && this.rng.random() < superP) {
+        this.superCooldownUntil = this.t + 4.0;
+        return { move: 0, side: 0, punch: false, kick: false, block: false, super: true };
+      }
     }
 
     // ── Pre-planned cancel string (rungs 7+) ────────────────────────────

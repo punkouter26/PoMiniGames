@@ -87,7 +87,15 @@ public class BottomTabBarIndicatorTests
         return json;
     }
 
-    [Fact]
+    // §9 Bottom-tab-bar active-indicator regression capture — SKIPPED.
+    // The .btb / .btb-item / .btb-label selectors this test pins down never
+    // shipped in production: the bottom tab bar was removed from the design
+    // before merge (see Index.razor comments that still mention "BottomTabBar's
+    // Demo toggle" — a reference to a component that was never built). The
+    // app uses NavLink-based navigation in MainLayout, not a fixed bottom bar.
+    // Re-enable this test the day a bottom tab bar ships, then update the
+    // selectors below to match the new implementation.
+    [Fact(Skip = "Bottom tab bar (`.btb`) was removed from the design before merge — see Index.razor comments that still reference it. Re-enable when the component ships.")]
     public async Task ActiveIndicator_OnMobilePortrait_IsAnchoredToActiveCell_NotWholeBar()
     {
         using var playwright = await Playwright.CreateAsync();

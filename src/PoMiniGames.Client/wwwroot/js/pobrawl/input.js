@@ -1,12 +1,12 @@
 // input.js — keyboard → fight intents for the two local layouts.
 // Intent shape (shared with ai.js): { move: -1|0|1 (+1 = toward opponent),
 // side: -1|0|1 (edge-triggered step), punch: bool (press edge), kick: bool
-// (press edge), punchHeld: bool, kickHeld: bool, block: bool }.
+// (press edge), punchHeld: bool, kickHeld: bool, block: bool, super: bool }.
 // The press edge starts a charge; the engine releases the attack when the
 // matching *Held flag drops — hold longer for a more powerful strike.
 //
-// Layout 1 (P1): A/D move · W step in · S tap step out, hold = block · F punch · G kick
-// Layout 2 (P2): ←/→ move · ↑ step in · ↓ tap step out, hold = block · K punch · L kick
+// Layout 1 (P1): A/D move · W step in · S tap step out, hold = block · F punch · G kick · E super
+// Layout 2 (P2): ←/→ move · ↑ step in · ↓ tap step out, hold = block · K punch · L kick · O super
 //
 // `left`/`right` are SCREEN-relative: the left key always walks the fighter
 // toward the left edge of the screen, the right key toward the right edge,
@@ -14,8 +14,8 @@
 // the fighter's facing back in to produce the engine's opponent-relative
 // `move` (+1 = toward opponent).
 const LAYOUTS = {
-  1: { left: 'KeyA', right: 'KeyD', stepIn: 'KeyW', stepOutOrBlock: 'KeyS', punch: 'KeyF', kick: 'KeyG' },
-  2: { left: 'ArrowLeft', right: 'ArrowRight', stepIn: 'ArrowUp', stepOutOrBlock: 'ArrowDown', punch: 'KeyK', kick: 'KeyL' },
+  1: { left: 'KeyA', right: 'KeyD', stepIn: 'KeyW', stepOutOrBlock: 'KeyS', punch: 'KeyF', kick: 'KeyG', super: 'KeyE' },
+  2: { left: 'ArrowLeft', right: 'ArrowRight', stepIn: 'ArrowUp', stepOutOrBlock: 'ArrowDown', punch: 'KeyK', kick: 'KeyL', super: 'KeyO' },
 };
 
 const BLOCK_HOLD_MS = 120;
@@ -27,6 +27,7 @@ export class KeyboardController {
     this.punchQueued = false;
     this.kickQueued = false;
     this.sideQueued = 0;
+    this.superQueued = false;
     this.blockKeyDownAt = 0;
 
     this._onDown = (e) => {
@@ -37,6 +38,7 @@ export class KeyboardController {
       else if (e.code === this.map.kick) this.kickQueued = true;
       else if (e.code === this.map.stepIn) this.sideQueued = 1;
       else if (e.code === this.map.stepOutOrBlock) this.blockKeyDownAt = performance.now();
+      else if (e.code === this.map.super) this.superQueued = true;
     };
     this._onUp = (e) => {
       this.down.delete(e.code);

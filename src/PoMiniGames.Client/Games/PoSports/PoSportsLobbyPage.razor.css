@@ -1,0 +1,71 @@
+.ps-lobby-hint {
+    opacity: 0.75;
+    font-size: 0.9rem;
+}
+
+.ps-lobby-section {
+    margin: 1rem 0;
+}
+
+.ps-lobby-list {
+    list-style: none;
+    padding: 0;
+    margin: 0.5rem 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+.ps-lobby-list li {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.35rem 0.5rem;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.ps-lobby-list li.is-you {
+    outline: 1px solid rgba(255, 209, 102, 0.5);
+}
+
+.ps-lobby-chars {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.5rem;
+}
+
+.ps-lobby-char {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.2rem;
+    padding: 0.55rem 0.4rem;
+    border-radius: 10px;
+    border: 2px solid rgba(255, 255, 255, 0.15);
+    background: rgba(255, 255, 255, 0.05);
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+    transition: border-color 120ms;
+}
+
+.ps-lobby-char--mine {
+    border-color: #ffd166;
+    background: rgba(255, 209, 102, 0.12);
+}
+
+.ps-lobby-char--taken {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.ps-lobby-char-emoji {
+    font-size: 1.5rem;
+}
+
+@media (max-width: 640px) {
+    .ps-lobby-chars {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}

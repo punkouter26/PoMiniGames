@@ -20,6 +20,10 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>, IAsyncL
     private AzuriteContainer? _azurite;
     private string? _azuriteConnectionString;
 
+    /// <summary>True when the Azurite container started — tests that REQUIRE table
+    /// storage (rather than treating it as best-effort) guard on this.</summary>
+    public bool DockerAvailable => _azuriteConnectionString is not null;
+
     public async Task InitializeAsync()
     {
         try

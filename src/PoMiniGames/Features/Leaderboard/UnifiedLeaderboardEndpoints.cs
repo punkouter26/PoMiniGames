@@ -73,6 +73,7 @@ public static class UnifiedLeaderboardEndpoints
         {
             BuildMarbleAsync(storage, limit),
             BuildPoRacerAsync(storage, limit),
+            BuildPoSportsAsync(storage, limit),
             BuildPoBrawlAsync(storage, limit),
             BuildFunQuizAsync(funQuiz, limit),
             BuildCoupleQuizAsync(teams, limit),
@@ -99,6 +100,7 @@ public static class UnifiedLeaderboardEndpoints
         {
             "pomarblerace" or "marblerace" => await BuildMarbleAsync(storage, limit),
             "poracer" => await BuildPoRacerAsync(storage, limit),
+            "posports" or "sports" => await BuildPoSportsAsync(storage, limit),
             "pobrawl" => await BuildPoBrawlAsync(storage, limit),
             "pofunquiz" or "funquiz" => await BuildFunQuizAsync(funQuiz, limit),
             "pocouplequiz" or "couplequiz" => await BuildCoupleQuizAsync(teams, limit),
@@ -186,6 +188,21 @@ public static class UnifiedLeaderboardEndpoints
             .ToList();
         PadWithPlaceholders(entries, limit, "—");
         return new GameLeaderboardDto("poracer", "Racer", "Best time", HigherIsBetter: false, entries);
+    }
+
+    private static async Task<GameLeaderboardDto> BuildPoSportsAsync(IStorageService storage, int limit)
+    {
+        // The descriptor keeps one ratcheted row per player, so no re-grouping is
+        // needed here — the read is already one-best-per-player, ranked ascending.
+        var scores = await storage.GetPoSportsHighScoresAsync(limit);
+        var entries = scores
+            .Where(s => s.TotalTimeSeconds > 0)
+            .Select((s, i) => new LeaderboardEntryDto(
+                i + 1, s.PlayerName, s.TotalTimeSeconds,
+                s.TotalTimeSeconds.ToString("0.0", CultureInfo.InvariantCulture) + "s"))
+            .ToList();
+        PadWithPlaceholders(entries, limit, "—");
+        return new GameLeaderboardDto("posports", "Sports", "Best meet", HigherIsBetter: false, entries);
     }
 
     /// <summary>

@@ -22,6 +22,7 @@ public static class GameCatalog
         new(GameKeys.PoRacer, "Racer", "🏎️", "/poracer"),
         new(GameKeys.PoMarbleRace, "Marble Race", "🔮", "/pomarblerace"),
         new(GameKeys.PoBrawl, "Brawl", "🥊", "/pobrawl"),
+        new(GameKeys.PoSports, "Sports", "🏃", "/posports"),
     ];
 
     public static readonly IReadOnlyList<CatalogGame> LocalTwoPlayer =
@@ -29,6 +30,7 @@ public static class GameCatalog
         new(GameKeys.ConnectFive, "Connect Five", "🔴", "/connectfive?mode=2p"),
         new(GameKeys.TicTacToe, "Tic-Tac-Toe", "❌", "/tictactoe?mode=2p"),
         new(GameKeys.PoBrawl, "Brawl", "🥊", "/pobrawl?mode=2p"),
+        new(GameKeys.PoSports, "Sports", "🏃", "/posports?mode=2p"),
     ];
 
     public static readonly IReadOnlyList<CatalogGame> Multiplayer =
@@ -36,6 +38,7 @@ public static class GameCatalog
         new(GameKeys.PoRacer, "Racer", "🏎️", "/poracer/lobby"),
         new(GameKeys.PoCoupleQuiz, "Couple Quiz", "💕", "/couplequiz/lobby"),
         new(GameKeys.PoFunQuiz, "Fun Quiz", "🧠", "/funquiz/multiplayer"),
+        new(GameKeys.PoSports, "Sports", "🏃", "/posports/lobby"),
     ];
 
     public static readonly IReadOnlyList<CatalogGame> Demo =
@@ -47,5 +50,6 @@ public static class GameCatalog
         new(GameKeys.PoJoker, "Joker", "🃏", "/pojoker"),
         new(GameKeys.PoBrawl, "Brawl", "🥊", "/pobrawl/1"),
         new(GameKeys.PoSurvive, "Survive", "🛡️", "/posurvive?demo=1"),
+        new(GameKeys.PoSports, "Sports", "🏃", "/posports/1"),
     ];
 }

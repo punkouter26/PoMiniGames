@@ -99,8 +99,8 @@ foreach ($name in $tiers.Keys) {
     }
 
     $tierFailed = ($LASTEXITCODE -ne 0) -or ($failed -gt 0)
-    if ($tierFailed) { $anyFailed = $true; Write-Err "$name: $failed failed / $total total" }
-    else { Write-Ok "$name: $passed passed / $total total" }
+    if ($tierFailed) { $anyFailed = $true; Write-Err "${name}: $failed failed / $total total" }
+    else { Write-Ok "${name}: $passed passed / $total total" }
 
     $ceilingNote = ''
     if ($total -gt $ceiling) {

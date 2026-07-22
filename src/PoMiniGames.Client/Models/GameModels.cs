@@ -101,6 +101,24 @@ public class PoBrawlHighScore
     public string Date { get; set; } = "";
 }
 
+/// <summary>
+/// A PoSports meet result (client mirror of the server's Domain model). UserId/IsGuest
+/// are stamped server-side from the auth cookie — nothing here can forge identity.
+/// </summary>
+public class PoSportsHighScore
+{
+    public string PlayerName { get; set; } = "";
+    public string UserId { get; set; } = "";
+    public bool IsGuest { get; set; }
+    public double TotalTimeSeconds { get; set; }
+    public double SprintSeconds { get; set; }
+    public double HurdlesSeconds { get; set; }
+    public int HurdlesClean { get; set; }
+    public string Character { get; set; } = "";
+    public string Date { get; set; } = "";
+    public string GameCode { get; set; } = "";
+}
+
 public class PoBrawlLadderEntry
 {
     public string PlayerName { get; set; } = "";

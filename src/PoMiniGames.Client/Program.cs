@@ -99,6 +99,8 @@ builder.Services.AddSingleton<KioskCoordinator>();
 builder.Services.AddScoped<CoupleQuizHubService>();
 // PoFunQuiz Phase 2 follow-up: SignalR client wrapper for /funquiz/gamehub.
 builder.Services.AddScoped<FunQuizHubService>();
+// PoSports: SignalR client wrapper for /posports/lobby-hub + /posports/race-hub.
+builder.Services.AddScoped<PoMiniGamesClient.Games.PoSports.Services.PoSportsHubService>();
 
 // ─── PoJoker (demo-only autonomous comedy show) ──────────────────────
 // TTS + Web-Audio effects run via JS interop

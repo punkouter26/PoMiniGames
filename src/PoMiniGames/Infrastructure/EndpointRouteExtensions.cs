@@ -61,6 +61,7 @@ internal static class EndpointRouteExtensions
         gameApi.MapFunQuizEndpoints();
         gameApi.MapPoJokerEndpoints();
         gameApi.MapPoRacerScoreEndpoints();
+        gameApi.MapPoSportsHighScoresEndpoints();
         gameApi.MapPoSurviveEndpoints(app.Configuration);
 
         // ── SignalR hubs (auth required; not part of MapGroup) ────────────
@@ -68,6 +69,8 @@ internal static class EndpointRouteExtensions
         app.MapHub<FunQuizHub>("/funquiz/gamehub").RequireAuthorization();
         app.MapHub<PoRacerLobbyHub>("/poracer/lobby-hub").RequireAuthorization();
         app.MapHub<PoRacerRaceHub>("/poracer/race-hub").RequireAuthorization();
+        app.MapHub<PoMiniGames.Features.PoSports.PoSportsLobbyHub>("/posports/lobby-hub").RequireAuthorization();
+        app.MapHub<PoMiniGames.Features.PoSports.PoSportsRaceHub>("/posports/race-hub").RequireAuthorization();
 
         return app;
     }

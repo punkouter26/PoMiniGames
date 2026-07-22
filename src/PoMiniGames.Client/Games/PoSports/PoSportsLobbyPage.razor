@@ -1,0 +1,231 @@
+@page "/posports/lobby"
+@using PoShared.Games
+@using PoMiniGamesClient.Components
+@using PoMiniGamesClient.Games.PoSports.Services
+@inject AuthStateService AuthState
+@inject NavigationManager Nav
+@inject ApiService Api
+@inject ToastService ToastService
+@inject PoSportsHubService Hub
+@implements IAsyncDisposable
+
+<PageTitle>Sports — Lobby</PageTitle>
+
+@if (!_introDone)
+{
+    <GameIntro Title="@TitleContent"
+               Objective="Race the family online — up to 4 runners. Pick a character, ready up, and the host fires the gun."
+               Controls="@HowToPlayContent"
+               Mode="GameIntro.IntroMode.OnePlayer"
+               OnStart="OnIntroStartAsync" />
+}
+else
+{
+<div class="sp-page">
+    <div class="sp-card">
+        <div class="sp-header">
+            <button class="sp-back" @onclick='() => Nav.NavigateTo("/")'>← Back</button>
+            <h1 class="sp-title">Sports Lobby</h1>
+        </div>
+
+        <p class="sp-subtitle">
+            Status:
+            @if (!_connected)
+            {
+                <span class="po-pill po-pill--muted">connecting…</span>
+            }
+            else
+            {
+                <span class="po-pill po-pill--ok">connected</span>
+            }
+        </p>
+
+        <p class="ps-lobby-hint">Single shared room — first to arrive becomes host.</p>
+
+        <section class="ps-lobby-section">
+            <h2 class="gps-phase-h">Runners · @(_state?.Members.Count ?? 0)/4</h2>
+            @if (_state is null)
+            {
+                <div class="app-loading"><span class="app-loading__spinner" aria-hidden="true"></span><span>Loading lobby…</span></div>
+            }
+            else if (_state.Members.Count == 0)
+            {
+                <p>No one's here yet. Be the first.</p>
+            }
+            else
+            {
+                <ol class="ps-lobby-list">
+                    @foreach (var m in _state.Members)
+                    {
+                        var isYou = m.ConnectionId == Hub.LobbyConnectionId;
+                        var isHost = m.ConnectionId == _state.HostConnectionId;
+                        <li class="@(isYou ? "is-you" : "")">
+                            <span>@CharEmoji(m.Character) @m.DisplayName @(isYou ? "(you)" : "")</span>
+                            @if (isHost) { <span class="po-pill po-pill--accent">host</span> }
+                            @if (m.IsGuest) { <span class="po-pill po-pill--muted">guest</span> }
+                            @if (string.IsNullOrEmpty(m.Character)) { <span class="po-pill po-pill--warn">picking…</span> }
+                            @if (m.IsReady) { <span class="po-pill po-pill--ok">ready</span> }
+                        </li>
+                    }
+                </ol>
+            }
+        </section>
+
+        <section class="ps-lobby-section">
+            <h2 class="gps-phase-h">Your runner</h2>
+            <div class="ps-lobby-chars">
+                @foreach (var c in Characters)
+                {
+                    var takenBy = _state?.Members.FirstOrDefault(m => m.Character == c.Id);
+                    var mine = takenBy?.ConnectionId == Hub.LobbyConnectionId;
+                    var taken = takenBy is not null && !mine;
+                    <button type="button"
+                            class="ps-lobby-char @(mine ? "ps-lobby-char--mine" : "") @(taken ? "ps-lobby-char--taken" : "")"
+                            disabled="@taken"
+                            @onclick="() => PickAsync(c.Id)">
+                        <span class="ps-lobby-char-emoji">@c.Emoji</span>
+                        <span>@c.Name</span>
+                        @if (taken) { <small>@takenBy!.DisplayName</small> }
+                    </button>
+                }
+            </div>
+        </section>
+
+        <section>
+            @if (_state is null)
+            {
+                <p class="ps-lobby-hint">Connecting to the lobby hub…</p>
+            }
+            else if (IsHost)
+            {
+                @if (!CanStart)
+                {
+                    <p class="ps-lobby-hint">Waiting for everyone to pick a runner and mark Ready…</p>
+                }
+                <button class="sp-btn-primary" @onclick="StartAsync" disabled="@(!CanStart)">Start the Meet</button>
+                <button class="sp-btn-secondary" @onclick="LeaveAsync">Leave</button>
+            }
+            else
+            {
+                <button class="sp-btn-primary" @onclick="ToggleReadyAsync" disabled="@(!IHavePicked)">
+                    @(_myReady ? "Not Ready" : "Ready!")
+                </button>
+                <button class="sp-btn-secondary" @onclick="LeaveAsync">Leave</button>
+            }
+        </section>
+    </div>
+</div>
+}
+
+@code {
+    private sealed record CharEntry(string Id, string Name, string Emoji);
+
+    private static readonly CharEntry[] Characters =
+    [
+        new("dad", "Dad", "👨"),
+        new("mom", "Mom", "👩"),
+        new("kim", "Kim", "👧"),
+        new("matt", "Matt", "👦"),
+        new("nick", "Nick", "🧒"),
+        new("tong", "Tong", "🧑"),
+    ];
+
+    private bool _introDone;
+    private bool _connected;
+    private PoSportsLobbyState? _state;
+    private bool _myReady;
+
+    private RenderFragment TitleContent => @<span>🏃 Sports · Multiplayer</span>;
+
+    private RenderFragment HowToPlayContent => @<div>
+        <p>Two-leg meet: 100m sprint, then 110m hurdles — lowest combined time wins.</p>
+        <ul>
+            <li>Type <kbd>Q</kbd> <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> in order to run · <kbd>E</kbd> jumps</li>
+            <li>A wrong key restarts your cycle; typing before the gun is a false start</li>
+        </ul>
+    </div>;
+
+    private bool IsHost =>
+        _state is not null && _state.HostConnectionId == Hub.LobbyConnectionId;
+
+    private bool IHavePicked =>
+        _state?.Members.Any(m => m.ConnectionId == Hub.LobbyConnectionId && !string.IsNullOrEmpty(m.Character)) == true;
+
+    private bool CanStart =>
+        _state is not null
+        && _state.Members.Count > 0
+        && _state.Members.All(m => !string.IsNullOrEmpty(m.Character))
+        && _state.Members.All(m => m.ConnectionId == _state.HostConnectionId || m.IsReady);
+
+    private static string CharEmoji(string id) =>
+        Characters.FirstOrDefault(c => c.Id == id)?.Emoji ?? "❔";
+
+    private async Task OnIntroStartAsync()
+    {
+        _introDone = true;
+        StateHasChanged();
+
+        if (!await Api.IsAvailableAsync())
+        {
+            ToastService.Show("Server unavailable. Try Single Player mode.", ToastType.Error);
+            return;
+        }
+
+        Hub.LobbyUpdated += OnLobbyUpdated;
+        Hub.LobbyEvent += OnLobbyEvent;
+        Hub.GameStarted += OnGameStarted;
+
+        var displayName = AuthState.User?.DisplayName ?? "Player";
+        var isGuest = !AuthState.IsAuthenticated;
+        _state = await Hub.ConnectLobbyAsync(displayName, isGuest);
+        _connected = true;
+        StateHasChanged();
+    }
+
+    private void OnLobbyUpdated(PoSportsLobbyState state)
+    {
+        _state = state;
+        var me = state.Members.FirstOrDefault(m => m.ConnectionId == Hub.LobbyConnectionId);
+        if (me is not null) _myReady = me.IsReady;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void OnLobbyEvent(PoSportsLobbyEvent ev)
+    {
+        ToastService.Show(ev.Message, ev.Kind switch
+        {
+            "left" => ToastType.Warning,
+            "pick-denied" => ToastType.Error,
+            _ => ToastType.Info,
+        });
+    }
+
+    private void OnGameStarted(string code)
+    {
+        Nav.NavigateTo($"/posports/race/{code}");
+    }
+
+    private async Task PickAsync(string character)
+    {
+        await Hub.PickCharacterAsync(character);
+    }
+
+    private Task ToggleReadyAsync() => Hub.ToggleReadyAsync();
+
+    private Task StartAsync() => Hub.StartGameAsync();
+
+    private async Task LeaveAsync()
+    {
+        try { await Hub.LeaveLobbyAsync(); } catch { }
+        Nav.NavigateTo("/");
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        Hub.LobbyUpdated -= OnLobbyUpdated;
+        Hub.LobbyEvent -= OnLobbyEvent;
+        Hub.GameStarted -= OnGameStarted;
+        // The hub service itself is scoped to the session — the race page reuses it.
+        return ValueTask.CompletedTask;
+    }
+}

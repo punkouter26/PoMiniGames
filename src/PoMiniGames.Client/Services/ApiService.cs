@@ -318,6 +318,35 @@ public class ApiService
         }
     }
 
+    public async Task<PoSportsHighScore[]?> GetPoSportsHighScoresAsync(int count = 10)
+    {
+        try
+        {
+            return await _http.GetFromJsonAsync(
+                $"/api/posports/highscores?count={count}", ApiJsonContext.Default.PoSportsHighScoreArray);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public async Task<PoSportsHighScore?> SubmitPoSportsHighScoreAsync(PoSportsHighScore entry)
+    {
+        try
+        {
+            // Stamp once; preserve across resync so the deterministic RowKey stays stable (no duplicates).
+            if (string.IsNullOrEmpty(entry.Date))
+                entry.Date = DateTime.UtcNow.ToString("O");
+            var response = await _http.PostAsJsonAsync("/api/posports/highscores", entry, ApiJsonContext.Default.PoSportsHighScore);
+            return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync(ApiJsonContext.Default.PoSportsHighScore) : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     public async Task<PoBrawlHighScore?> SubmitPoBrawlHighScoreAsync(PoBrawlHighScore entry)
     {
         try

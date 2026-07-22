@@ -156,3 +156,4 @@ ehthumbs.db
 # ─── Build tool caches ───────────────────────────────────────────────
 .cmake/
 CMakeCache.txt
+.absolute-work/

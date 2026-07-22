@@ -24,12 +24,14 @@ public class StorageService : IStorageService
     private const string PoBrawlTable = "PoBrawlHighScores";
     private const string PoBrawlLadderTable = "PoBrawlLadder";
     private const string PoRacerTable = "PoRacerHighScores";
+    private const string PoSportsTable = "PoSportsHighScores";
 
     // High scores share a single partition per game so a leaderboard is one partition scan.
     private const string MarbleRacePartition = "marblerace";
     private const string PoBrawlPartition = "pobrawl";
     private const string PoBrawlLadderPartition = "pobrawlladder";
     private const string PoRacerPartition = "poracer";
+    private const string PoSportsPartition = "posports";
 
     private readonly TableServiceClient _serviceClient;
     private readonly EloCalculator _eloCalculator;
@@ -430,6 +432,71 @@ public class StorageService : IStorageService
 
     public Task<PoRacerHighScore> SavePoRacerHighScoreAsync(PoRacerHighScore entry) =>
         SaveHighScoreAsync(PoRacerScores, entry);
+
+    // ── PoSports High Scores ──────────────────────────────────────────────
+    // Lowest combined meet time wins. One row per player — identity-keyed like
+    // MarbleRace (not score-keyed like PoRacer), because the client submits after
+    // every meet: score-keyed rows would let one player fill the whole board.
+    // ShouldOverwrite ratchets DOWN — a later, slower meet can't erase a PB.
+    private static readonly HighScoreDescriptor<PoSportsHighScore> PoSportsScores = new(
+        Table: PoSportsTable,
+        Partition: PoSportsPartition,
+        Sanitize: e => new PoSportsHighScore
+        {
+            PlayerName = DisplayName24(e.PlayerName),
+            UserId = string.IsNullOrWhiteSpace(e.UserId) ? "" : e.UserId,
+            IsGuest = e.IsGuest,
+            TotalTimeSeconds = Math.Clamp(e.TotalTimeSeconds, 0.001, 600),
+            SprintSeconds = Math.Clamp(e.SprintSeconds, 0, 300),
+            HurdlesSeconds = Math.Clamp(e.HurdlesSeconds, 0, 300),
+            HurdlesClean = Math.Clamp(e.HurdlesClean, 0, 8),
+            Character = SanitizeName(e.Character),
+            Date = DefaultDate(e.Date),
+            GameCode = SanitizeName(e.GameCode),
+        },
+        ToFields: e => new Dictionary<string, object?>
+        {
+            ["PlayerName"] = e?.PlayerName,
+            ["UserId"] = e?.UserId,
+            ["IsGuest"] = e?.IsGuest,
+            ["TotalTimeSeconds"] = e?.TotalTimeSeconds,
+            ["SprintSeconds"] = e?.SprintSeconds,
+            ["HurdlesSeconds"] = e?.HurdlesSeconds,
+            ["HurdlesClean"] = e?.HurdlesClean,
+            ["Character"] = e?.Character,
+            ["Date"] = e?.Date,
+            ["GameCode"] = e?.GameCode,
+        },
+        FromEntity: e => new PoSportsHighScore
+        {
+            PlayerName = e.GetString("PlayerName") ?? "",
+            UserId = e.GetString("UserId") ?? "",
+            // No identity columns → unattributable, so it reads back as a guest row.
+            IsGuest = e.GetBoolean("IsGuest") ?? true,
+            TotalTimeSeconds = e.GetDouble("TotalTimeSeconds") ?? 0d,
+            SprintSeconds = e.GetDouble("SprintSeconds") ?? 0d,
+            HurdlesSeconds = e.GetDouble("HurdlesSeconds") ?? 0d,
+            HurdlesClean = e.GetInt32("HurdlesClean") ?? 0,
+            Character = e.GetString("Character") ?? "",
+            Date = e.GetString("Date") ?? "",
+            GameCode = e.GetString("GameCode") ?? "",
+        },
+        // Identity is the player, not the score — see the MarbleRace note above.
+        RowKeyFields: ["PlayerName", "UserId", "IsGuest"],
+        // Fastest meet wins, oldest first as the tiebreaker.
+        Rank: s => s.OrderBy(x => x.TotalTimeSeconds).ThenBy(x => x.Date))
+    {
+        // One row per player: only a strictly faster meet may replace the stored PB.
+        ShouldOverwrite = (existing, incoming) =>
+            (incoming.TryGetValue("TotalTimeSeconds", out var v) ? v as double? ?? double.MaxValue : double.MaxValue)
+                < (existing.GetDouble("TotalTimeSeconds") ?? double.MaxValue),
+    };
+
+    public Task<List<PoSportsHighScore>> GetPoSportsHighScoresAsync(int limit = 10) =>
+        GetHighScoresAsync(PoSportsScores, limit);
+
+    public Task<PoSportsHighScore> SavePoSportsHighScoreAsync(PoSportsHighScore entry) =>
+        SaveHighScoreAsync(PoSportsScores, entry);
 
     // ── PoBrawl presidents ladder ─────────────────────────────────────────
     // Unlike the high-score boards (append + dedupe by content hash), the ladder

@@ -126,6 +126,12 @@ internal static class GameServicesExtensions
         services.AddSingleton<PoMiniGames.Features.PoRacer.PoRacerLobbyService>();
         services.AddSingleton<PoMiniGames.Features.PoRacer.PoRacerRaceRegistry>();
 
+        // PoSports — family track meet. Same single-lobby process-local shape as
+        // PoRacer; the registry owns the meet sim timers and is DI-managed for
+        // graceful-shutdown disposal.
+        services.AddSingleton<PoMiniGames.Features.PoSports.PoSportsLobbyService>();
+        services.AddSingleton<PoMiniGames.Features.PoSports.PoSportsRaceRegistry>();
+
         services.ConfigureHttpJsonOptions(options =>
         {
             options.SerializerOptions.Converters.Add(

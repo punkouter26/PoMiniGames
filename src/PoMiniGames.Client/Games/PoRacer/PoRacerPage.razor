@@ -27,6 +27,7 @@
 *@
 
 @page "/poracer"
+@page "/poracer/1player"
 @page "/poracer/demo"
 @inject IJSRuntime JS
 @inject PoRacerScoreApiClient Scores
@@ -697,7 +698,7 @@
         }
     }
 
-    private void OpenLobby() => Nav.NavigateTo("/poracer/lobby");
+    private void OpenLobby() => Nav.NavigateTo("/poracer/multi");
 
     // ─────────────────────────────  Input bridge (called from JS)  ─────────────────────────────
 

@@ -1,4 +1,5 @@
 @page "/pomarblerace"
+@page "/pomarblerace/{Mode}"
 @using PoMiniGamesClient.Components
 @using PoMiniGamesClient.Enums
 @using PoMiniGamesClient.Models
@@ -155,6 +156,8 @@
 </GameShell>
 
 @code {
+    /// <summary>Route mode segment: "1player" | "demo" (?demo=1 is the legacy form).</summary>
+    [Parameter] public string? Mode { get; set; }
     [SupplyParameterFromQuery(Name = "demo")]
     public int Demo { get; set; }
 
@@ -234,7 +237,7 @@
 
     protected override void OnInitialized()
     {
-        _demo = Demo == 1;
+        _demo = Demo == 1 || Mode is "demo";
         _playerName = PlayerNameService.GetPlayerName();
         _stats = _gameStats.GetStats("pomarblerace", _playerName);
         UpdateStats();

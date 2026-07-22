@@ -10,13 +10,13 @@ namespace PoMiniGames.Features.PoSports;
 public static class PoSportsConstants
 {
     /// <summary>Speed impulse per completed key sequence (m/s).</summary>
-    public const double Impulse = 1.9;
+    public const double Impulse = 3.8;
 
     /// <summary>Fraction of speed retained per second: v *= Decay^dt.</summary>
     public const double Decay = 0.45;
 
     /// <summary>Speed cap (m/s).</summary>
-    public const double MaxSpeed = 9.5;
+    public const double MaxSpeed = 19;
 
     /// <summary>Airborne window after a jump (seconds).</summary>
     public const double JumpDuration = 0.55;

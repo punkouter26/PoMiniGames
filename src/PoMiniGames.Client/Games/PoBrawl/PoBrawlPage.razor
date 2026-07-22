@@ -1,5 +1,5 @@
 @page "/pobrawl"
-@page "/pobrawl/{Demo:int}"
+@page "/pobrawl/{Mode}"
 @using PoMiniGamesClient.Components
 @using PoMiniGamesClient.Enums
 @using PoMiniGamesClient.Models
@@ -74,7 +74,8 @@
 </GameShell>
 
 @code {
-    [Parameter] public int? Demo { get; set; }
+    /// <summary>Route mode segment: "1player" | "2player" | "demo" ("1" is the legacy demo form).</summary>
+    [Parameter] public string? Mode { get; set; }
     [SupplyParameterFromQuery(Name = "mode")] public string? ModeQuery { get; set; }
 
     private sealed record RosterEntry(string Id, string Name, string Suit, string Tie);
@@ -240,8 +241,10 @@
 
     protected override void OnInitialized()
     {
-        _demo = Demo == 1;
-        _mode = _demo ? "demo" : (ModeQuery == "2p" ? "2p" : "1p");
+        _demo = Mode is "demo" or "1";
+        _mode = _demo ? "demo"
+              : (string.Equals(Mode, "2player", StringComparison.OrdinalIgnoreCase) || ModeQuery == "2p") ? "2p"
+              : "1p";
         _playerName = PlayerNameService.GetPlayerName();
         _stats = _gameStats.GetStats("pobrawl", _playerName);
 

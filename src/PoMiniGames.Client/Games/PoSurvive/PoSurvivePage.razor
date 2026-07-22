@@ -1,4 +1,5 @@
 @page "/posurvive"
+@page "/posurvive/{Mode}"
 @* PoSurvive intentionally uses its own `PoSurviveLayout` (C64 retro theme)
    instead of the standard `MainLayout` and renders without `GameShell`.
    The opt-out is deliberate — its CRT-styled shell and Fluxor store are part of
@@ -44,6 +45,8 @@
     // and loops on post-mortem. The KioskCoordinator owns the 20-24s
     // rotation between demo pages; this loop keeps the simulation itself
     // playing continuously while the page is on screen.
+    /// <summary>Route mode segment: "1player" | "demo" (?demo=1 is the legacy form).</summary>
+    [Parameter] public string? Mode { get; set; }
     [SupplyParameterFromQuery(Name = "demo")] public int DemoQuery { get; set; } = 0;
     [SupplyParameterFromQuery(Name = "kiosk")] public int KioskNext { get; set; } = -1;
     private bool _isDemo;
@@ -59,7 +62,7 @@
     {
         base.OnInitialized();
 
-        if (DemoQuery == 1)
+        if (DemoQuery == 1 || Mode is "demo")
         {
             _isDemo = true;
             // Register the demo with the KioskCoordinator so the on-screen

@@ -1,5 +1,5 @@
 @page "/funquiz"
-@page "/funquiz/{Demo:int}"
+@page "/funquiz/{Mode}"
 @using PoMiniGamesClient.Components
 @using PoMiniGamesClient.Enums
 @using PoMiniGamesClient.Models
@@ -150,7 +150,8 @@
 </GameShell>
 
 @code {
-    [Parameter] public int? Demo { get; set; }
+    /// <summary>Route mode segment: "1player" | "2player" | "demo" ("1" is the legacy demo form).</summary>
+    [Parameter] public string? Mode { get; set; }
     [SupplyParameterFromQuery(Name = "mode")] public string? ModeQuery { get; set; }
     // §Best-practice (2026-07-07): split-screen local 2P. Two players share
     // one keyboard + one display. Left side keys 1/2/3/4, right side keys
@@ -323,12 +324,13 @@
     {
         _playMode = string.Equals(ModeQuery, "2ps", StringComparison.OrdinalIgnoreCase) ? "2ps"
                   : string.Equals(ModeQuery, "2p",  StringComparison.OrdinalIgnoreCase) ? "2p"
+                  : string.Equals(Mode, "2player", StringComparison.OrdinalIgnoreCase) ? "2ps"
                   : "solo";
         _splitScreen = _playMode == "2ps";
         _playerName = PlayerNameService.GetPlayerName();
         // Demo mode runs forever — disable GameOver so the modal never surfaces.
         // The route param overrides whatever ?mode= the user supplied.
-        if (Demo == 1)
+        if (Mode is "demo" or "1")
         {
             _playMode = "demo";
             _splitScreen = false;

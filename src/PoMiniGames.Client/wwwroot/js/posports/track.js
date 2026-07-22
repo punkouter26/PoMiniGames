@@ -1,9 +1,9 @@
-// track.js — Canvas 2D renderer for the PoSports meet: sky, crowd, four lanes,
+// track.js — Canvas 2D renderer for the PoSports meet: sky, crowd, the lanes,
 // meter marks, hurdles, finish tape, and a leader-following camera. Pure drawing —
 // it reads lane state, never mutates it.
 import { CONSTANTS, HURDLE_POSITIONS } from './physics.js';
 
-export const PX_PER_METER = 14;
+export const PX_PER_METER = 28;
 /** Extra meters of track shown behind the start / past the finish. */
 const APRON_METERS = 6;
 /** Camera smoothing: fraction of the gap closed per second. */
@@ -44,16 +44,16 @@ export class TrackRenderer {
   /** meters → screen x. */
   toX(m) { return (m - this.cameraX) * PX_PER_METER; }
 
-  /** The y of a lane's ground line. Lanes stack from 45% down to the bottom apron. */
+  /** The y of a lane's ground line. Lanes stack from 26% down to the bottom apron. */
   laneY(lane, laneCount) {
-    const top = this.viewH * 0.48;
+    const top = this.viewH * 0.26;
     const bottom = this.viewH * 0.94;
     return top + ((lane + 1) / laneCount) * (bottom - top);
   }
 
   /** Sprite height for a lane row — nearer (lower) lanes draw slightly larger. */
   spriteHeight(lane, laneCount) {
-    return this.viewH * (0.16 + 0.03 * (lane / Math.max(1, laneCount - 1)));
+    return this.viewH * (0.25 + 0.04 * (lane / Math.max(1, laneCount - 1)));
   }
 
   /** Follow the leading runner, keeping ~35% of the view behind the leader. */
@@ -77,17 +77,17 @@ export class TrackRenderer {
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
 
     // Sky.
-    const sky = ctx.createLinearGradient(0, 0, 0, h * 0.45);
+    const sky = ctx.createLinearGradient(0, 0, 0, h * 0.22);
     sky.addColorStop(0, '#7ec8f2');
     sky.addColorStop(1, '#cfeaf9');
     ctx.fillStyle = sky;
-    ctx.fillRect(0, 0, w, h * 0.45);
+    ctx.fillRect(0, 0, w, h * 0.22);
 
     // Crowd strip: two rows of parallax dots.
     ctx.fillStyle = '#5d7a99';
-    ctx.fillRect(0, h * 0.30, w, h * 0.15);
+    ctx.fillRect(0, h * 0.12, w, h * 0.10);
     for (let row = 0; row < 2; row++) {
-      const y = h * (0.335 + row * 0.06);
+      const y = h * (0.145 + row * 0.05);
       const size = 3 + row * 1.5;
       const speed = 0.35 + row * 0.3; // nearer row scrolls faster
       const offset = (this.cameraX * PX_PER_METER * speed) % 18;
@@ -101,7 +101,7 @@ export class TrackRenderer {
 
     // Track bed.
     ctx.fillStyle = '#a04a35';
-    ctx.fillRect(0, h * 0.45, w, h * 0.55);
+    ctx.fillRect(0, h * 0.22, w, h * 0.78);
 
     const legLength = leg === 'hurdles' ? CONSTANTS.HURDLES_LENGTH : CONSTANTS.SPRINT_LENGTH;
 
@@ -128,18 +128,18 @@ export class TrackRenderer {
       ctx.strokeStyle = 'rgba(255,255,255,0.5)';
       ctx.lineWidth = m === 0 || m === legLength ? 4 : 1.5;
       ctx.beginPath();
-      ctx.moveTo(x, h * 0.45);
+      ctx.moveTo(x, h * 0.22);
       ctx.lineTo(x, h * 0.94);
       ctx.stroke();
       ctx.fillStyle = 'rgba(255,255,255,0.8)';
-      ctx.fillText(`${m}`, x, h * 0.45 - 4);
+      ctx.fillText(`${m}`, x, h * 0.22 - 4);
     }
 
     // Finish tape.
     const fx = this.toX(legLength);
     if (fx > -20 && fx < w + 20) {
       ctx.fillStyle = '#fff';
-      for (let y = h * 0.45; y < h * 0.94; y += 12) {
+      for (let y = h * 0.22; y < h * 0.94; y += 12) {
         ctx.fillRect(fx - 3, y, 6, 6);
         ctx.fillStyle = ctx.fillStyle === '#ffffff' ? '#222' : '#fff';
       }

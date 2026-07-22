@@ -1,4 +1,5 @@
 @page "/couplequiz"
+@page "/couplequiz/{Mode}"
 @using PoMiniGamesClient.Games.PoCoupleQuiz.Services
 @using PoMiniGamesClient.Components
 @inject CoupleQuizHubService Hub
@@ -186,8 +187,12 @@
 </GameShell>
 
 @code {
+    /// <summary>Route mode segment: "1player" | "demo" (?demo=1 is the legacy form).</summary>
+    [Parameter] public string? Mode { get; set; }
     [SupplyParameterFromQuery(Name = "demo")] public int DemoQuery { get; set; } = 0;
     [SupplyParameterFromQuery(Name = "kiosk")] public int KioskNext { get; set; } = -1;
+
+    private bool IsDemoMode => DemoQuery == 1 || Mode is "demo";
 
     private RenderFragment TitleContent => @<span>💕 Couple Quiz</span>;
 
@@ -195,7 +200,7 @@
     // for OK. Keyed off the demo query so the mode is right on the first render
     // (before OnInitializedAsync sets _isDemo).
     private bool _introDone;
-    private GameIntro.IntroMode _introMode => DemoQuery == 1
+    private GameIntro.IntroMode _introMode => IsDemoMode
         ? GameIntro.IntroMode.Demo
         : GameIntro.IntroMode.OnePlayer;
     private void DismissIntro() => _introDone = true;
@@ -296,7 +301,7 @@
             _error = $"Could not connect to the game server: {ex.Message}";
         }
 
-        if (DemoQuery == 1)
+        if (IsDemoMode)
         {
             _isDemo = true;
             // Demo bypasses the lobby (which needs a second player) and runs

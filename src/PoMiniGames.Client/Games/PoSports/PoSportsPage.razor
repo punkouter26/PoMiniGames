@@ -1,5 +1,5 @@
 @page "/posports"
-@page "/posports/{Demo:int}"
+@page "/posports/{Mode}"
 @page "/posports/race/{Code}"
 @using PoMiniGamesClient.Components
 @using PoMiniGamesClient.Enums
@@ -74,7 +74,8 @@
 </GameShell>
 
 @code {
-    [Parameter] public int? Demo { get; set; }
+    /// <summary>Route mode segment: "1player" | "2player" | "demo" ("1" is the legacy demo form).</summary>
+    [Parameter] public string? Mode { get; set; }
     /// <summary>Race code from the lobby's gameStarted broadcast — presence selects online mode.</summary>
     [Parameter] public string? Code { get; set; }
     [SupplyParameterFromQuery(Name = "mode")] public string? ModeQuery { get; set; }
@@ -205,7 +206,7 @@
         @foreach (var r in _results.OrderBy(x => x.Placing))
         {
             <div>
-                @(r.Placing switch { 1 => "🥇", 2 => "🥈", 3 => "🥉", _ => "4th" })
+                @(r.Placing switch { 1 => "🥇", 2 => "🥈", 3 => "🥉", _ => $"{r.Placing}th" })
                 @r.Name — @r.TotalSeconds.ToString("0.00")s
                 <small>(@r.SprintSeconds.ToString("0.0") + @r.HurdlesSeconds.ToString("0.0"))</small>
             </div>
@@ -218,10 +219,11 @@
 
     protected override void OnInitialized()
     {
-        _demo = Demo == 1;
+        _demo = Mode is "demo" or "1";
         _mode = !string.IsNullOrEmpty(Code) ? "online"
               : _demo ? "demo"
-              : (ModeQuery == "2p" ? "2p" : "1p");
+              : (string.Equals(Mode, "2player", StringComparison.OrdinalIgnoreCase) || ModeQuery == "2p") ? "2p"
+              : "1p";
         _playerName = PlayerNameService.GetPlayerName();
         _stats = _gameStats.GetStats("posports", _playerName);
         UpdateStats();
@@ -358,8 +360,8 @@
         var players = new List<PlayerSetup>();
         if (_demo)
         {
-            // Attract mode: four random family members, all CPU.
-            foreach (var p in Roster.OrderBy(_ => Guid.NewGuid()).Take(4))
+            // Attract mode: the whole family on the track, all CPU, in a random lane order.
+            foreach (var p in Roster.OrderBy(_ => Guid.NewGuid()))
             {
                 players.Add(new PlayerSetup(p.Id, p.Name, false, null));
             }
@@ -372,8 +374,8 @@
         else
         {
             players.Add(new PlayerSetup(Roster[_p1Sel].Id, _playerName, true, 1));
-            // Three CPU rivals on the unpicked family members.
-            foreach (var p in Roster.Where((_, i) => i != _p1Sel).OrderBy(_ => Guid.NewGuid()).Take(3))
+            // CPU rivals on every unpicked family member — a full six-lane meet.
+            foreach (var p in Roster.Where((_, i) => i != _p1Sel).OrderBy(_ => Guid.NewGuid()))
             {
                 players.Add(new PlayerSetup(p.Id, p.Name, false, null));
             }

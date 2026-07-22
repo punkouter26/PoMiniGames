@@ -7,9 +7,9 @@
 // block (name: value pairs, one per line) and fails the build on drift. Change both
 // sides in the same commit.
 export const CONSTANTS = {
-  IMPULSE: 1.9,          // m/s added per completed key sequence
+  IMPULSE: 3.8,          // m/s added per completed key sequence
   DECAY: 0.45,           // fraction of speed retained per second (v *= DECAY^dt)
-  MAX_SPEED: 9.5,        // m/s cap
+  MAX_SPEED: 19,         // m/s cap
   JUMP_DURATION: 0.55,   // s airborne after a jump
   JUMP_DRAG: 0.85,       // impulse multiplier while airborne
   STUMBLE_FACTOR: 0.3,   // speed multiplier on a grounded hurdle hit

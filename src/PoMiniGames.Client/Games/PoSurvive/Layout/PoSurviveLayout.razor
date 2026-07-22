@@ -539,7 +539,8 @@
 
     // ── First-run intro (#5) + champion strip (#2) ────────────────────────
     private bool _showIntro;
-    private bool _isDemoRoute => Nav.Uri.Contains("demo=1", StringComparison.OrdinalIgnoreCase);
+    private bool _isDemoRoute => Nav.Uri.Contains("demo=1", StringComparison.OrdinalIgnoreCase)
+        || Nav.Uri.Contains("/posurvive/demo", StringComparison.OrdinalIgnoreCase);
 
     private PoShared.Simulation.Models.AgentDto? Champion
         => SimState.Value.ChampionAgentId is { } id

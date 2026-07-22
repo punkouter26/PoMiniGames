@@ -1,5 +1,5 @@
 @page "/tictactoe"
-@page "/tictactoe/{Demo:int}"
+@page "/tictactoe/{Mode}"
 @implements IDisposable;
 @using PoMiniGamesClient.Components;
 @using PoMiniGamesClient.Enums;
@@ -90,9 +90,12 @@
 </GameShell>
 
 @code {
-    [Parameter] public int? Demo { get; set; }
+    /// <summary>Route mode segment: "1player" | "2player" | "demo" ("1" is the legacy demo form).</summary>
+    [Parameter] public string? Mode { get; set; }
     [SupplyParameterFromQuery(Name = "kiosk")] public int KioskNext { get; set; } = -1;
     [SupplyParameterFromQuery(Name = "mode")] public string? ModeQuery { get; set; }
+
+    private bool IsDemo => Mode is "demo" or "1";
 
     private TicTacToeBoard _board = new();
     private TicTacToeAI _ai = new();
@@ -110,7 +113,7 @@
     private bool _isAiTurn;
     // "ai" (vs CPU) or "2p" (local pass-and-play); "demo" is driven by the route param.
     private string _playMode = "ai";
-    private string PlayMode => Demo == 1 ? "demo" : _playMode;
+    private string PlayMode => IsDemo ? "demo" : _playMode;
     private CellValue _current2pToken = CellValue.X; // whose turn in 2-player mode
     private string _player2Name = "Player 2";
     private bool _matchRecorded;
@@ -247,7 +250,8 @@
     protected override void OnInitialized()
     {
         _playerName = PlayerNameService.GetPlayerName();
-        if (Demo != 1 && string.Equals(ModeQuery, "2p", StringComparison.OrdinalIgnoreCase))
+        if (!IsDemo && (string.Equals(Mode, "2player", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(ModeQuery, "2p", StringComparison.OrdinalIgnoreCase)))
             _playMode = "2p";
         ResetGame();
         if (PlayMode == "demo") Kiosk.SetCurrent("tictactoe-demo");

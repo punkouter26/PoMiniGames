@@ -53,7 +53,7 @@ export class TrackRenderer {
 
   /** Sprite height for a lane row — nearer (lower) lanes draw slightly larger. */
   spriteHeight(lane, laneCount) {
-    return this.viewH * (0.25 + 0.04 * (lane / Math.max(1, laneCount - 1)));
+    return this.viewH * (0.325 + 0.052 * (lane / Math.max(1, laneCount - 1)));
   }
 
   /** Follow the leading runner, keeping ~35% of the view behind the leader. */

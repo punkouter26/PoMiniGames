@@ -51,5 +51,5 @@ public static class PoSportsConstants
 
     /// <summary>The playable character keys, matching wwwroot/images/PoSports/ directories.</summary>
     public static readonly IReadOnlyList<string> Characters =
-        ["dad", "mom", "kim", "matt", "nick", "tong"];
+        ["mom", "kim", "matt", "nick", "tong"];
 }

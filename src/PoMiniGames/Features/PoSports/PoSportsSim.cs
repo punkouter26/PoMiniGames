@@ -51,11 +51,12 @@ public sealed class PoSportsSim
     private const double StumbleAnimSeconds = 0.7;
 
     // Server AI cadence: keys per second and wrong-key probability, medium-difficulty
-    // typists with per-lane seeded jitter. (Client demo AI lives in ai.js.)
-    private const double AiKeysPerSecond = 4.5;
-    private const double AiErrorRate = 0.05;
+    // typists with per-lane seeded jitter. Mirrors DIFFICULTIES.medium in ai.js —
+    // tuned so CPU lanes finish each leg in 9.5-14 s. (Client demo AI lives in ai.js.)
+    private const double AiKeysPerSecond = 10.0;
+    private const double AiErrorRate = 0.008;
     /// <summary>How far before a hurdle the AI decides to jump, meters.</summary>
-    private const double AiJumpLookahead = 1.6;
+    private const double AiJumpLookahead = 1.8;
 
     private readonly List<LaneState> _lanes;
     private readonly Random _rng;

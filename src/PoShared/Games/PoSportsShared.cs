@@ -6,7 +6,7 @@ public sealed record PoSportsLobbyMember(
     string ConnectionId,
     string DisplayName,
     bool IsGuest,
-    /// <summary>Character key (dad|mom|kim|matt|nick|tong), "" until picked. First-come lock.</summary>
+    /// <summary>Character key (mom|kim|matt|nick|tong), "" until picked. First-come lock.</summary>
     string Character,
     bool IsReady);
 

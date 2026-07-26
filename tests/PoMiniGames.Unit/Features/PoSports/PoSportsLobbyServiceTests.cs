@@ -41,17 +41,17 @@ public class PoSportsLobbyServiceTests
         _lobby.Open("c2", "Bob", true);
 
         // First claim wins; the second claimant is denied.
-        _lobby.PickCharacter("c1", "dad").ok.Should().BeTrue();
-        var (ok, msg) = _lobby.PickCharacter("c2", "dad");
+        _lobby.PickCharacter("c1", "kim").ok.Should().BeTrue();
+        var (ok, msg) = _lobby.PickCharacter("c2", "kim");
         ok.Should().BeFalse();
-        msg.Should().Be("dad is taken");
+        msg.Should().Be("kim is taken");
 
         // Re-picking your own character is a no-op success.
-        _lobby.PickCharacter("c1", "dad").ok.Should().BeTrue();
+        _lobby.PickCharacter("c1", "kim").ok.Should().BeTrue();
 
         // Switching releases the old lock for others.
         _lobby.PickCharacter("c1", "tong").ok.Should().BeTrue();
-        _lobby.PickCharacter("c2", "dad").ok.Should().BeTrue();
+        _lobby.PickCharacter("c2", "kim").ok.Should().BeTrue();
 
         // Unknown keys are rejected outright.
         _lobby.PickCharacter("c1", "gizmo").ok.Should().BeFalse();
@@ -62,7 +62,7 @@ public class PoSportsLobbyServiceTests
     {
         _lobby.Open("c1", "Alice", true);
         _lobby.Open("c2", "Bob", true);
-        _lobby.PickCharacter("c1", "dad");
+        _lobby.PickCharacter("c1", "kim");
         _lobby.SetReady("c2", true);
 
         // Everyone must have picked a character…
@@ -87,7 +87,7 @@ public class PoSportsLobbyServiceTests
         _lobby.State.HostConnectionId.Should().Be("c2");
 
         // Draining the lobby clears a stale started flag for the next visitor.
-        _lobby.PickCharacter("c2", "dad");
+        _lobby.PickCharacter("c2", "kim");
         _lobby.TryStart("c2").Should().BeTrue();
         _lobby.Leave("c2");
         var (state, _) = _lobby.Open("c9", "Cara", true);

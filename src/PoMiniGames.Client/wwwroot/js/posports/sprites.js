@@ -16,7 +16,7 @@ const cache = new Map();
 
 /** Deterministic fallback tint per character, used when a sheet fails to load. */
 export const FALLBACK_COLORS = {
-  dad: '#4a90d9', mom: '#d94a7a', kim: '#8a4ad9',
+  mom: '#d94a7a', kim: '#8a4ad9',
   matt: '#4ad98a', nick: '#d9c44a', tong: '#d9704a',
 };
 

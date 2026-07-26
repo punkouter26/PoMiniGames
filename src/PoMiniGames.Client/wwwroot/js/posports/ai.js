@@ -9,10 +9,12 @@
 // races; this one exists so local modes work fully offline.)
 import { HURDLE_POSITIONS } from './physics.js';
 
+// Tuned so every CPU lane finishes each leg in 9.5-14 s: easy lands near the slow
+// end of the band, hard near the fast end. (PoSportsSim's server AI mirrors medium.)
 export const DIFFICULTIES = {
-  easy: { keysPerSecond: 3.2, errorRate: 0.08, jumpLookahead: 1.2, jumpJitter: 0.5 },
-  medium: { keysPerSecond: 4.5, errorRate: 0.05, jumpLookahead: 1.6, jumpJitter: 0.3 },
-  hard: { keysPerSecond: 6.0, errorRate: 0.02, jumpLookahead: 2.0, jumpJitter: 0.15 },
+  easy: { keysPerSecond: 9.7, errorRate: 0.01, jumpLookahead: 1.6, jumpJitter: 0.4 },
+  medium: { keysPerSecond: 10.0, errorRate: 0.008, jumpLookahead: 1.8, jumpJitter: 0.3 },
+  hard: { keysPerSecond: 10.3, errorRate: 0.01, jumpLookahead: 2.0, jumpJitter: 0.15 },
 };
 
 /** Mulberry32 — tiny seeded PRNG so demo races are deterministic per seed. */

@@ -98,7 +98,7 @@ public class PoSportsUiTests
         await using var browser = await playwright.Chromium.LaunchAsync(BrowserLaunch.Options());
         var page = await OpenAsync(browser, "/posports");
 
-        // Intro card: the default character (Dad) is preselected — just press OK.
+        // Intro card: the default character (Mom) is preselected — just press OK.
         await page.Locator(".gps-intro-btn--primary").First.ClickAsync(new LocatorClickOptions { Timeout = 60_000 });
 
         await page.Locator("#posports-container canvas").WaitForAsync(new LocatorWaitForOptions

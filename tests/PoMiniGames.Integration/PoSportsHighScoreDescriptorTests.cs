@@ -39,7 +39,7 @@ public sealed class PoSportsHighScoreDescriptorTests
             TotalTimeSeconds = 99999,
             SprintSeconds = -5,
             HurdlesClean = 42,
-            Character = "dad",
+            Character = "mom",
         };
 
         var clean = Sanitize(dirty);

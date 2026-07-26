@@ -18,7 +18,7 @@ public sealed class PoSportsSimTests
     {
         var sim = new PoSportsSim(
         [
-            new PoSportsSim.LaneSetup("Alice", "dad", IsAi: false),
+            new PoSportsSim.LaneSetup("Alice", "kim", IsAi: false),
             new PoSportsSim.LaneSetup("CPU", "mom", IsAi: true),
         ], seed: 42);
         sim.SkipCountdown();
@@ -61,7 +61,7 @@ public sealed class PoSportsSimTests
         sim.Lane(0).Speed.Should().Be(PoSportsConstants.Impulse);
 
         // A key before the gun holds the runner and resets progress.
-        var cold = new PoSportsSim([new PoSportsSim.LaneSetup("Alice", "dad", IsAi: false)], seed: 1);
+        var cold = new PoSportsSim([new PoSportsSim.LaneSetup("Alice", "kim", IsAi: false)], seed: 1);
         cold.HandleSequenceKey(0, 0);
         cold.Phase.Should().Be("countdown");
         cold.Lane(0).SeqProgress.Should().Be(0);
@@ -106,7 +106,7 @@ public sealed class PoSportsSimTests
         var snap = sim.Snapshot();
         snap.Phase.Should().Be("sprint");
         snap.Lanes.Should().HaveCount(2);
-        snap.Lanes[0].Character.Should().Be("dad");
+        snap.Lanes[0].Character.Should().Be("kim");
         snap.Lanes[0].Speed.Should().BeGreaterThan(0);
         snap.Lanes[1].IsAi.Should().BeTrue();
 
@@ -130,7 +130,7 @@ public sealed class PoSportsSimTests
     {
         var sim = new PoSportsSim(
         [
-            new PoSportsSim.LaneSetup("CPU 1", "dad", IsAi: true),
+            new PoSportsSim.LaneSetup("CPU 1", "kim", IsAi: true),
             new PoSportsSim.LaneSetup("CPU 2", "mom", IsAi: true),
             new PoSportsSim.LaneSetup("CPU 3", "nick", IsAi: true),
             new PoSportsSim.LaneSetup("CPU 4", "tong", IsAi: true),

@@ -179,10 +179,21 @@
         var lpKeys = GameCatalog.LocalTwoPlayer.Select(g => g.Key).ToHashSet();
         var mpKeys = GameCatalog.Multiplayer.Select(g => g.Key).ToHashSet();
 
+        // 2026-07-26 browser audit #6: storage keeps a single global board per
+        // game (no 1P/2P partition), so the 2P section previously mirrored the
+        // 1P rows verbatim. Drop 2P entries that already appear under 1P to
+        // avoid the "identical data in both columns" confusion. If every 2P
+        // entry is deduped the section is suppressed entirely; the empty-state
+        // hint below explains why.
+        var twoPlayerBoards = _boards
+            .Where(b => lpKeys.Contains(b.GameKey))
+            .Where(b => !spKeys.Contains(b.GameKey))
+            .ToList();
+
         _groupedBoards = new List<BoardGroup>
         {
             new BoardGroup("1p",      "1 Player",       _boards.Where(b => spKeys.Contains(b.GameKey)).ToList()),
-            new BoardGroup("2p",      "2 Player",       _boards.Where(b => lpKeys.Contains(b.GameKey)).ToList()),
+            new BoardGroup("2p",      "2 Player",       twoPlayerBoards),
             new BoardGroup("multi",   "Multiplayer",    _boards.Where(b => mpKeys.Contains(b.GameKey)).ToList()),
             new BoardGroup("other",   "Other",          _boards.Where(b => !spKeys.Contains(b.GameKey) && !lpKeys.Contains(b.GameKey) && !mpKeys.Contains(b.GameKey)).ToList()),
         }.Where(g => g.Boards.Count > 0).ToList();

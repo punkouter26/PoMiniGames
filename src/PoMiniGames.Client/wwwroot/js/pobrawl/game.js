@@ -3493,6 +3493,15 @@ export class BrawlGame {
     let lookAt = mid.clone();
     lookAt.y += 1;
 
+    // 2026-07-26 browser audit #3: keep the camera on the audience side of
+    // the ring. Without this clamp a fighter ragdolled hard past the
+    // ring's edge pushed mid.z to <-3, which made perp.z flip to the
+    // -Z side — the spring then settled the camera at z≈-5 with the ring
+    // + fighters behind it and the dark backdrop filling the frame. Now
+    // perp is forced toward +Z (the audience / camera default), so the
+    // camera always looks back across the ring at the action.
+    if (perp.z < 0) perp.negate();
+
     if (this.cameraMode === 'ko') {
       this._camVel.set(0, 0, 0); // hand off cleanly from the spring boom
       const loser = this.fighters.find((f) => f.state === 'ko') || f2;
@@ -3507,7 +3516,10 @@ export class BrawlGame {
         const target = new THREE.Vector3(
           _koHead.x + 0.55,
           Math.max(_koHead.y + 1.1, 2.5 - Math.min(0.9, this.cameraModeT * 0.45)),
-          _koHead.z + 0.4);
+          // Clamp the Z so an off-the-ring ragdoll doesn't drag the camera
+          // behind the action. We keep the camera in front of the loser
+          // (audience side: +Z) so the dazed face stays in frame.
+          Math.max(_koHead.z + 0.4, RING_HALF + 0.6));
         this.camera.position.lerp(target, k);
         this.camera.lookAt(_koHead.x, _koHead.y, _koHead.z);
         this.camera.fov = this.fovBase - 8 + Math.max(0, 4 - this.cameraModeT * 1.4);
@@ -3517,6 +3529,12 @@ export class BrawlGame {
         const camSide = new THREE.Vector3(-axis2.z, 0, axis2.x);
         const target = lp.clone().add(camSide.multiplyScalar(3.0));
         target.y = 1.2;
+        // 2026-07-26 browser audit #3: keep the KO cinematic camera
+        // inside the ring footprint. Previously a loser ragdolled past the
+        // ring edge would pull the camera outside the ring with the loser
+        // hidden behind the camera, leaving the dark backdrop on screen.
+        target.x = THREE.MathUtils.clamp(target.x, -(RING_HALF + 0.5), RING_HALF + 0.5);
+        target.z = THREE.MathUtils.clamp(target.z, -(RING_HALF + 0.5), RING_HALF + 0.5);
         this.camera.position.lerp(target, k);
         this.camera.lookAt(lp.x, 0.3, lp.z);
         this.camera.fov = this.fovBase + Math.max(0, 4 - this.cameraModeT * 1.4);
@@ -3528,12 +3546,22 @@ export class BrawlGame {
       // hit impulses are injected straight into _camVel (_camImpulse).
       const target = mid.clone().add(perp.multiplyScalar(distance));
       target.y = height;
+      // 2026-07-26 browser audit #3: clamp the spring target so the
+      // camera never settles outside the ring. Even with the perp-flip
+      // guard above, mid can wander to ±RING_HALF on X; the camera should
+      // still stay within a viewing envelope around the ring.
+      target.x = THREE.MathUtils.clamp(target.x, -(RING_HALF + 1.0), RING_HALF + 1.0);
       const sdt = Math.min(dt, 1 / 20);
       const K = 26, C = 8.5;
       this._camVel.x += ((target.x - this.camera.position.x) * K - this._camVel.x * C) * sdt;
       this._camVel.y += ((target.y - this.camera.position.y) * K - this._camVel.y * C) * sdt;
       this._camVel.z += ((target.z - this.camera.position.z) * K - this._camVel.z * C) * sdt;
       this.camera.position.addScaledVector(this._camVel, sdt);
+      // Belt-and-braces: hard-clamp the camera position too in case the
+      // spring overshoots. The ring is at ±RING_HALF on X; the audience
+      // stays on the +Z side.
+      this.camera.position.x = THREE.MathUtils.clamp(this.camera.position.x, -(RING_HALF + 1.0), RING_HALF + 1.0);
+      this.camera.position.z = Math.max(this.camera.position.z, 0.2);
       this.camera.lookAt(lookAt.x, lookAt.y, lookAt.z);
     }
 

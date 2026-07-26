@@ -24,7 +24,7 @@ public static class UnifiedLeaderboardEndpoints
         ("connectfive", "Connect Five"),
         // Renamed to "TicTacToe6" (6×6 / 4-in-a-row grid) to match the catalog,
         // profile, and in-game labels; the storage key stays "tictactoe".
-        ("tictactoe", "TicTacToe6"),
+        ("tictactoe", "TicTacToe4"),
     ];
 
     public static IEndpointRouteBuilder MapUnifiedLeaderboardEndpoints(this IEndpointRouteBuilder app)

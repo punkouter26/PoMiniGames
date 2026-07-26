@@ -15,6 +15,16 @@ public class AuthStateService
     private bool _initialized;
     private bool _msalInitialized;
 
+    // 2026-07-26 browser audit #2: serialize concurrent InitializeAsync calls so
+    // a navigation race between two pages doesn't fire two parallel
+    // /api/auth/handshake requests — the second one always aborts the first
+    // with ERR_ABORTED, the first request's response gets discarded, and every
+    // navigation logs a noisy (and visually-confusing) aborted call in the
+    // browser console. A single in-flight Task is shared by every concurrent
+    // caller; subsequent calls await the same Task.
+    private readonly SemaphoreSlim _initGate = new(1, 1);
+    private Task? _initInFlight;
+
     public AuthClientConfiguration? Config => _config;
     public AuthenticatedUserProfile? User => _user;
     public bool IsConfigured => _config?.Enabled == true;
@@ -41,6 +51,49 @@ public class AuthStateService
     private sealed record MsalResult(string Name, string Username, string? AccessToken);
 
     public async Task InitializeAsync(string? queryString = null)
+    {
+        // 2026-07-26 browser audit #2: serialize concurrent handshakes. A second
+        // caller arriving while the first is still awaiting the network reuses
+        // the in-flight Task rather than issuing a parallel request that the
+        // browser will abort as soon as the second navigation tears down the
+        // first fetch.
+        await _initGate.WaitAsync();
+        try
+        {
+            if (_initInFlight is not null)
+            {
+                // Wait for the prior init to finish, then return whatever
+                // identity it established. We deliberately do NOT re-enter
+                // the handshake — the browser has already torn the in-flight
+                // fetch down.
+                await _initInFlight;
+                return;
+            }
+            _initInFlight = DoInitializeAsync(queryString);
+        }
+        finally
+        {
+            _initGate.Release();
+        }
+        await _initInFlight;
+    }
+
+    private async Task DoInitializeAsync(string? queryString)
+    {
+        try
+        {
+            await DoInitializeCoreAsync(queryString);
+        }
+        finally
+        {
+            // Allow the next caller (e.g. after a sign-out) to issue a fresh
+            // handshake. _initInFlight is reset on every exit path so a
+            // failed call doesn't poison subsequent attempts.
+            _initInFlight = null;
+        }
+    }
+
+    private async Task DoInitializeCoreAsync(string? queryString)
     {
         _initialized = false;
         Error = null;

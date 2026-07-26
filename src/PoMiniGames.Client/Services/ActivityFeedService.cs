@@ -75,7 +75,7 @@ public sealed class ActivityFeedService
 
     private static string GameTitle(string key) => key switch
     {
-        "tictactoe" => "TicTacToe6",
+        "tictactoe" => "TicTacToe4",
         "connectfive" => "Connect Five",
         "poracer" => "Racer",
         "pocouplequiz" => "Couple Quiz",

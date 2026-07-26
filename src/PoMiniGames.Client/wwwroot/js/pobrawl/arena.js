@@ -42,12 +42,18 @@ function ringCanvasTexture() {
 }
 
 export function buildArena(scene) {
-  scene.background = new THREE.Color(0x0d0f1a);
+  // 2026-07-26 browser audit #4: brighten the empty-hall background from
+  // #0d0f1a to #1a2040. When the camera flies outside the ring edge and
+  // points at empty space, the original near-black background read as "the
+  // screen went black mid-match" to the user — even though the canvas was
+  // rendering correctly. The new colour is still in the moody-arena
+  // family but distinguishable from black on every monitor.
+  scene.background = new THREE.Color(0x1a2040);
   // Exponential haze instead of the old far-plane linear fog: the fighters
   // (4-6 m from camera) stay clean while the crowd rows and hall edges melt
   // progressively into the dark — "smoky arena air". Slightly thinned (0.022
   // → 0.018) so the ring reads brighter after the env-map fill was removed.
-  scene.fog = new THREE.FogExp2(0x0d0f1a, 0.018);
+  scene.fog = new THREE.FogExp2(0x1a2040, 0.018);
 
   // Outer floor.
   const floor = new THREE.Mesh(

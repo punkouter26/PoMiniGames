@@ -109,8 +109,10 @@
        click through. The race now auto-starts on navigation (see
        OnAfterRenderAsync), so this overlay is only ever seen while the lobby
        connection is in flight, or if that connection failed — in which case it
-       offers a retry rather than stranding the player on a dead canvas. *@
-    @if (Phase == GamePhase.Start)
+       offers a retry rather than stranding the player on a dead canvas.
+       2026-07-26 browser audit #3: also gate this overlay on _introDone so it
+       doesn't render behind the GameIntro card on /poracer/1player. *@
+    @if (Phase == GamePhase.Start && _introDone)
     {
         <div class="racer-overlay racer-start">
             <div class="racer-card">

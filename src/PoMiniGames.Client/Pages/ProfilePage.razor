@@ -41,26 +41,32 @@ else
                     <span class="prf-chip-lbl">Games</span>
                 </div>
                 <div class="prf-chip">
-                    <span class="prf-chip-val">@(_totalGames > 0 ? $"{_totalWins * 100 / _totalGames}%" : "—")</span>
+                    <span class="prf-chip-val">@(_totalGames > 0 ? $"{_totalWins * 100 / _totalGames}%" : "— not played —")</span>
                     <span class="prf-chip-lbl">Win Rate</span>
                 </div>
                 <div class="prf-chip">
-                    <span class="prf-chip-val">@(_bestStreak > 0 ? _bestStreak.ToString() : "—")</span>
+                    <span class="prf-chip-val">@(_bestStreak > 0 ? _bestStreak.ToString() : "— not played —")</span>
                     <span class="prf-chip-lbl">Best Streak</span>
-                    @* NetRun10 audit #9: replace the em-dash with an inline
-                       one-liner hint so users with no PoClick history know
-                       exactly what unlocks the stat. *@
+                    @* 2026-07-26 browser audit #8: replace the em-dash with an
+                       inline one-liner hint so first-time users know exactly
+                       what unlocks the stat. Generic copy — Connect Five +
+                       Brawl are the two streak-tracking 1P games but the hint
+                       should never go stale if a third one ships. *@
                     @if (_bestStreak == 0)
                     {
-                        <span class="prf-chip-hint">Play Connect Five or Brawl to set your first streak</span>
+                        <span class="prf-chip-hint">Win 2+ in a row on a 1P CPU game to set your first streak</span>
                     }
                 </div>
                 <div class="prf-chip">
-                    <span class="prf-chip-val">@(_topElo > 1000 ? _topElo.ToString() : "—")</span>
+                    <span class="prf-chip-val">@(_topElo > 1200 ? _topElo.ToString() : "— not played —")</span>
                     <span class="prf-chip-lbl">Top ELO</span>
-                    @if (_topElo <= 1000)
+                    @* 2026-07-26 browser audit #8: AdaptiveRating.StartingElo
+                       is 1200 (GameModels.cs), so the "past 1000" copy was
+                       misleading — your first win only nudges you past the
+                       threshold by a few ELO points. *@
+                    @if (_topElo <= 1200)
                     {
-                        <span class="prf-chip-hint">Win a 1P match to climb past 1000</span>
+                        <span class="prf-chip-hint">Win a 1P match to climb past the 1200 starting rating</span>
                     }
                 </div>
             </div>
@@ -273,7 +279,7 @@ else
     // ── Game definitions (order determines radar axis order) ──
     private static readonly (string Key, string Label, string Icon, bool HsOnly, bool OfflineOnly)[] GameDefs =
     {
-        ("tictactoe",    "TicTacToe6",    "✖",  false, false),
+        ("tictactoe",    "TicTacToe4",    "✖",  false, false),
         ("connectfive",  "Connect Five",  "🔵", false, false),
         ("pomarblerace", "Marble Race",   "🔮", true,  false),
     };
@@ -283,7 +289,7 @@ else
     private string _playerName = "Player";
     private string _initials   = "P";
     private int _totalGames, _totalWins, _totalLosses, _totalDraws;
-    private int _bestStreak, _topElo = 1000;
+    private int _bestStreak, _topElo;
     private GameEntry? _bestEntry, _nemesisEntry;
     private List<GameEntry> _entries = new();
 
@@ -294,7 +300,7 @@ else
     private static readonly (string Key, string Title, string Icon, string Kind)[] HsDefs =
     {
         ("pomarblerace", "Marble Race",  "🔮", "marble"),
-        ("tictactoe",    "TicTacToe6",    "❌", "ai"),
+        ("tictactoe",    "TicTacToe4",    "❌", "ai"),
         ("connectfive",  "Connect Five",  "🔴", "ai"),
     };
 
@@ -406,14 +412,29 @@ else
 
     private async Task LoadHighScoresAsync()
     {
-        var marble = await ApiService.GetMarbleRaceHighScoresAsync(1);
+        // 2026-07-26 browser audit #7: the leaderboards endpoint returns the
+        // GLOBAL top-N, not the current player's own best. Requesting `count=1`
+        // and treating the top row as the user's own score would surface
+        // a previous session's highscore as if it belonged to the current
+        // guest. Scan the board until we find a row whose PlayerInitials
+        // matches the current PlayerName — that is the user's actual best.
+        // Fall back to "No scores yet" when no match exists.
+        var marble = await ApiService.GetMarbleRaceHighScoresAsync(10);
 
         HighScoreEntry MarbleEntry()
         {
-            var top = marble is { Length: > 0 } ? marble[0] : null;
-            return top is not null
-                ? new HighScoreEntry("Marble Race", "🔮", top.BestScore.ToString("N0"), $"by {top.PlayerInitials}", true)
-                : new HighScoreEntry("Marble Race", "🔮", "—", "No scores yet", false);
+            var me = _playerName?.Trim() ?? string.Empty;
+            var mine = marble?.FirstOrDefault(s =>
+                !string.IsNullOrEmpty(s.PlayerInitials)
+                && s.PlayerInitials.Equals(me, StringComparison.OrdinalIgnoreCase));
+            if (mine is not null)
+            {
+                return new HighScoreEntry("Marble Race", "🔮",
+                    mine.BestScore.ToString("N0"), $"your best", true);
+            }
+            // No own score — the global #1 is irrelevant to a profile page,
+            // so we suppress it entirely instead of pretending it's the user's.
+            return new HighScoreEntry("Marble Race", "🔮", "—", "Not played yet", false);
         }
 
         for (var i = 0; i < _highScores.Count; i++)
@@ -488,7 +509,11 @@ else
         _entries = new();
         _totalGames = _totalWins = _totalLosses = _totalDraws = 0;
         _bestStreak = 0;
-        _topElo = 1000;
+        // 2026-07-26 browser audit #8: seed _topElo at the AdaptiveRating
+        // starting value (1200 — see GameModels.cs) so a fresh guest sees
+        // "— not played —" via the chip's `> 1200` gate. Anything above this
+        // requires the user to have actually played at least one game.
+        _topElo = 1200;
 
         foreach (var (key, label, icon, hsOnly, offlineOnly) in GameDefs)
         {

@@ -35,7 +35,7 @@ public sealed class PoSportsLobbyService
             lock (_stateLock)
             {
                 return new PoSportsLobbyState(
-                    Members: _members.Values.OrderBy(m => m.ConnectionId).ToList(),
+                    Members: _members.Values.OrderBy(m => m.ConnectionId, StringComparer.Ordinal).ToList(),
                     HostConnectionId: string.IsNullOrEmpty(_hostConnectionId) ? null : _hostConnectionId,
                     GameCode: GlobalCode,
                     Phase: _startedAtMs > 0 ? "starting" : "waiting",
@@ -46,7 +46,7 @@ public sealed class PoSportsLobbyService
 
     public IReadOnlyList<PoSportsLobbyMember> Members
     {
-        get { lock (_stateLock) return _members.Values.OrderBy(m => m.ConnectionId).ToList(); }
+        get { lock (_stateLock) return _members.Values.OrderBy(m => m.ConnectionId, StringComparer.Ordinal).ToList(); }
     }
 
     public bool IsEmpty

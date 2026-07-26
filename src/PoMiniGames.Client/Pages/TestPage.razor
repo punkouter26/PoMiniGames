@@ -75,7 +75,7 @@
         {
             ToastService.Show("Calling slow endpoint (8s)...", ToastType.Info);
             // This will timeout since client timeout is 5s
-            var response = await ApiService.GetAuthConfigurationAsync();
+            _ = (await ApiService.GetAuthHandshakeAsync())?.Config;
             ToastService.Show("Request completed (unexpected)", ToastType.Success);
         }
         catch (Exception ex)

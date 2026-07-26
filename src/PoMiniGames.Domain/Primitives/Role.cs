@@ -18,14 +18,14 @@ public readonly record struct Role(string Value)
 
     public override string ToString() => Value;
 
-    public static readonly Role FakeAuth  = new("FakeAuth");
+    public static readonly Role FakeAuth = new("FakeAuth");
     public static readonly Role DevCookie = new("DevCookie");
     public static readonly Role Composite = new("Composite");
     public static readonly Role JwtBearer = new("Bearer");
-    public static readonly Role Bff       = new("BFF");
+    public static readonly Role Bff = new("BFF");
 
     public static readonly Role Admin = new("admin");
-    public static readonly Role User  = new("user");
+    public static readonly Role User = new("user");
 
     public static Role Parse(string? raw) => string.IsNullOrWhiteSpace(raw) ? default : new(raw.Trim());
 

@@ -30,6 +30,8 @@ namespace PoMiniGamesClient.Services;
 /// the DI <see cref="HttpClient"/> uses. Without this, the only way to play a
 /// multiplayer game (or the demo) is to be a fully-authenticated Entra ID user —
 /// defeating the Guest / dev-login attraction loop.
+/// <see cref="HubConnectionFactory.Create"/> is the one place that wiring
+/// happens — every client hub connection is built through it.
 ///
 /// The handler chain mirrors the DI HttpClient registered in <c>Program.cs</c>:
 ///   <c>IncludeCredentialsHandler → HttpClientHandler</c>.
@@ -37,11 +39,8 @@ namespace PoMiniGamesClient.Services;
 /// only on connect (single POST) and handles its own transport reconnects; wrapping
 /// it adds nothing.
 ///
-/// Used by:
-///   • <c>Games/PoRacer/PoRacerPage.razor</c>      — lobby + race hubs
-///   • <c>Games/PoRacer/PoRacerLobbyPage.razor</c> — lobby hub
-///   • <c>Games/PoCoupleQuiz/Services/CoupleQuizHubService.cs</c>
-///   • <c>Games/PoFunQuiz/Services/FunQuizHubService.cs</c>
+/// Used by <see cref="HubConnectionFactory"/>, the single construction path for
+/// every SignalR hub connection in the client.
 /// </summary>
 public static class SignalRCredentialsHttpClientFactory
 {

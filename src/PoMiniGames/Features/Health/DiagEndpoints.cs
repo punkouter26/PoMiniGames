@@ -223,7 +223,7 @@ public static class DiagEndpoints
         // "The process cannot access the file …". We now open with FileShare.ReadWrite
         // (and a tight 512 KB byte budget) so the tail endpoint can serve the rolling
         // log without taking a competing lock.
-            async Task<IResult> logsTailHandler(IConfiguration config, IWebHostEnvironment environment, int? lines = 50)
+        async Task<IResult> logsTailHandler(IConfiguration config, IWebHostEnvironment environment, int? lines = 50)
         {
             // Raw log tails are dev-only: unlike /api/diag (masked projection) this
             // streams unmasked log content, so it must never be reachable in Production

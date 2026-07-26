@@ -9,7 +9,7 @@ using PoShared.Simulation.Constants;
 // SOLID: SRP — owns only grid generation, agent placement, food spawning, and food wither
 public sealed class GridService
 {
-    private const int Width  = SimulationDefaults.GridWidth;
+    private const int Width = SimulationDefaults.GridWidth;
     private const int Height = SimulationDefaults.GridHeight;
 
     private static readonly PersonalityProfile[] PersonalityProfiles =
@@ -29,7 +29,7 @@ public sealed class GridService
     /// </summary>
     public GridTile[] GenerateGrid(SimulationConfig config, Random rng)
     {
-        var grid     = new GridTile[Width * Height];
+        var grid = new GridTile[Width * Height];
         var rockCount = (int)Math.Round(Width * Height * config.RockDensity);
 
         for (var i = 0; i < grid.Length; i++)
@@ -54,13 +54,13 @@ public sealed class GridService
     {
         if (grid is null)
             throw new ArgumentNullException(nameof(grid), "Grid cannot be null.");
-            
+
         if (agents is null || agents.Count == 0)
         {
             // No-op: nothing to place
             return;
         }
-        
+
         var emptyTiles = grid
             .Where(t => t.Terrain == TerrainType.Empty && t.Occupant is null)
             .ToList();
@@ -72,9 +72,9 @@ public sealed class GridService
             for (var k = 0; k < toPlace; k++)
             {
                 var tile = emptyTiles[k];
-                var a    = agents[k];
-                a.Position       = new GridCoordinate(tile.X, tile.Y);
-                tile.Occupant    = a;
+                var a = agents[k];
+                a.Position = new GridCoordinate(tile.X, tile.Y);
+                tile.Occupant = a;
             }
             return;
         }
@@ -89,9 +89,9 @@ public sealed class GridService
         for (var k = 0; k < agents.Count; k++)
         {
             var tile = emptyTiles[k];
-            var a    = agents[k];
-            a.Position       = new GridCoordinate(tile.X, tile.Y);
-            tile.Occupant    = a;
+            var a = agents[k];
+            a.Position = new GridCoordinate(tile.X, tile.Y);
+            tile.Occupant = a;
         }
     }
 
@@ -136,8 +136,8 @@ public sealed class GridService
         if (candidates.Count == 0)
             return -1;
 
-        var tile   = candidates[rng.Next(candidates.Count)];
-        tile.Food  = new FoodNode(turnNumber, config.FoodTtl);
+        var tile = candidates[rng.Next(candidates.Count)];
+        tile.Food = new FoodNode(turnNumber, config.FoodTtl);
         return tile.Y * Width + tile.X;
     }
 
@@ -146,7 +146,7 @@ public sealed class GridService
     {
         if (grid is null)
             throw new ArgumentNullException(nameof(grid), "Grid cannot be null.");
-            
+
         var withered = new List<(int, int)>();
         foreach (var tile in grid)
         {

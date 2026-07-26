@@ -38,7 +38,6 @@ public sealed class PoSportsHighScoreDescriptorTests
             PlayerName = new string('x', 60),
             TotalTimeSeconds = 99999,
             SprintSeconds = -5,
-            HurdlesClean = 42,
             Character = "mom",
         };
 
@@ -47,7 +46,6 @@ public sealed class PoSportsHighScoreDescriptorTests
         clean.PlayerName.Length.Should().BeLessThanOrEqualTo(24);
         clean.TotalTimeSeconds.Should().Be(600);
         clean.SprintSeconds.Should().Be(0);
-        clean.HurdlesClean.Should().Be(8);
         clean.Date.Should().NotBeNullOrEmpty("sanitize must default a missing date");
     }
 

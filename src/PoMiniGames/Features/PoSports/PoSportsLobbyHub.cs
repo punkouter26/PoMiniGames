@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.SignalR;
+using PoMiniGames.Features.Auth;
 using PoShared.Games;
 
 namespace PoMiniGames.Features.PoSports;
@@ -29,19 +30,17 @@ public sealed class PoSportsLobbyHub : Hub
 
     public override async Task OnDisconnectedAsync(Exception? ex)
     {
-        var (ok, msg) = _lobby.Leave(Context.ConnectionId);
-        await Clients.Group(Group).SendAsync("lobbyState", _lobby.State);
-        if (ok && !string.IsNullOrEmpty(msg))
-        {
-            await Clients.Group(Group).SendAsync("lobbyEvent", new PoSportsLobbyEvent("left", msg, DateTimeOffset.UtcNow));
-        }
+        await LeaveAndBroadcastAsync();
         await base.OnDisconnectedAsync(ex);
     }
 
     /// <summary>Join the global lobby. First arrival becomes host.</summary>
     public async Task<PoSportsLobbyState> Join(string displayName, bool isGuest)
     {
-        var (state, msg) = _lobby.Open(Context.ConnectionId, displayName, isGuest);
+        // The lobby keeps the claim-derived id server-side so the race can bind lanes by
+        // identity instead of the client-supplied name.
+        var userId = RequestIdentity.Resolve(Context.User).UserId;
+        var (state, msg) = _lobby.Open(Context.ConnectionId, displayName, isGuest, userId);
         _log.LogInformation("PoSports lobby: conn={Conn} joined as {Name}; members={Count} host={Host}",
             Context.ConnectionId, displayName, state.Members.Count, state.HostConnectionId);
         await Clients.Group(Group).SendAsync("lobbyState", state);
@@ -65,15 +64,19 @@ public sealed class PoSportsLobbyHub : Hub
 
     public async Task ToggleReady()
     {
-        var m = _lobby.Members.FirstOrDefault(x => x.ConnectionId == Context.ConnectionId);
-        if (m is null) return;
-        _lobby.SetReady(Context.ConnectionId, !m.IsReady);
+        // The service flips under its own lock and reports the state it stored — announcing
+        // a pre-toggle snapshot read outside the lock inverted every ready/not-ready toast.
+        var (ok, _, msg) = _lobby.ToggleReady(Context.ConnectionId);
+        if (!ok) return;
         await Clients.Group(Group).SendAsync("lobbyState", _lobby.State);
         await Clients.Group(Group).SendAsync("lobbyEvent",
-            new PoSportsLobbyEvent("ready", $"{m.DisplayName} is {(m.IsReady ? "ready" : "not ready")}", DateTimeOffset.UtcNow));
+            new PoSportsLobbyEvent("ready", msg, DateTimeOffset.UtcNow));
     }
 
-    public async Task LeaveLobby()
+    public Task LeaveLobby() => LeaveAndBroadcastAsync();
+
+    /// <summary>Shared by the explicit Leave and the disconnect path so both stay identical.</summary>
+    private async Task LeaveAndBroadcastAsync()
     {
         var (ok, msg) = _lobby.Leave(Context.ConnectionId);
         await Clients.Group(Group).SendAsync("lobbyState", _lobby.State);

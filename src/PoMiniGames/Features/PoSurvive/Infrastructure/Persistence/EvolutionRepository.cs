@@ -2,7 +2,6 @@ namespace PoMiniGames.Features.PoSurvive.Infrastructure.Persistence;
 
 using Azure;
 using Azure.Data.Tables;
-using Microsoft.Extensions.Configuration;
 using PoMiniGames.Application.Simulation;
 using PoMiniGames.Domain.Entities.Simulation;
 using PoMiniGames.Infrastructure.Storage;
@@ -10,31 +9,32 @@ using PoMiniGames.Infrastructure.Storage;
 /// <summary>
 /// Azure Table Storage implementation of IEvolutionRepository.
 /// Persists DNA evolution records to the "EvolutionRecords" table.
+/// Injects the shared DI <see cref="TableServiceClient"/> (StorageExtensions) so
+/// dev/prod/Managed-Identity resolution stays in one place; the table is ensured
+/// once per instance, not per call (startup also ensures it via
+/// StorageInitializer.AdditionalTables).
 /// </summary>
-public sealed class EvolutionRepository : IEvolutionRepository
+public sealed class EvolutionRepository(TableServiceClient tableServiceClient) : IEvolutionRepository
 {
-    private readonly TableServiceClient _tableService;
     private const string TableName = "EvolutionRecords";
+    private readonly TableClient _table = tableServiceClient.GetTableClient(TableName);
+    private bool _ensured;
 
-    public EvolutionRepository(IConfiguration configuration)
+    private async Task<TableClient> EnsuredTableAsync(CancellationToken ct)
     {
-        var connectionString =
-            configuration.GetConnectionString("AzuriteTableStorage")
-            ?? configuration["PoSurvive-TableStorageConnectionString"]
-            ?? throw new InvalidOperationException(
-                "No Azure Table Storage connection string found. " +
-                "Set ConnectionStrings:AzuriteTableStorage (dev) or " +
-                "PoSurvive-TableStorageConnectionString (Key Vault) in configuration.");
-
-        _tableService = new TableServiceClient(connectionString);
+        if (!_ensured)
+        {
+            await _table.CreateIfNotExistsAsync(ct);
+            _ensured = true;
+        }
+        return _table;
     }
 
     // ─── IEvolutionRepository ────────────────────────────────────────────────
 
     public async Task UpsertAsync(EvolutionRecord record, CancellationToken ct = default)
     {
-        var tableClient = _tableService.GetTableClient(TableName);
-        await tableClient.CreateIfNotExistsAsync(ct);
+        var tableClient = await EnsuredTableAsync(ct);
 
         // Normalize the partition to the literal every read hard-codes ("evolution"); a record
         // persisted under any other partition would be silently unreadable.
@@ -51,23 +51,23 @@ public sealed class EvolutionRepository : IEvolutionRepository
             factory: () => new TableEntity(partition, record.DnaId),
             mutate: e =>
             {
-                e["DnaId"]            = record.DnaId;
-                e["Predatory"]        = record.Predatory;
-                e["Scavenger"]        = record.Scavenger;
-                e["Paranoid"]         = record.Paranoid;
-                e["Altruistic"]       = record.Altruistic;
-                e["Methodical"]       = record.Methodical;
-                e["Generation"]       = record.Generation;
-                e["SourceSessionId"]  = record.SourceSessionId ?? "";
+                e["DnaId"] = record.DnaId;
+                e["Predatory"] = record.Predatory;
+                e["Scavenger"] = record.Scavenger;
+                e["Paranoid"] = record.Paranoid;
+                e["Altruistic"] = record.Altruistic;
+                e["Methodical"] = record.Methodical;
+                e["Generation"] = record.Generation;
+                e["SourceSessionId"] = record.SourceSessionId ?? "";
                 e["ParentDnaIdsJson"] = record.ParentDnaIdsJson;
-                e["Archetype"]        = record.Archetype ?? "";
-                e["DominantTrait"]    = record.DominantTrait;
+                e["Archetype"] = record.Archetype ?? "";
+                e["DominantTrait"] = record.DominantTrait;
                 if (!e.ContainsKey("CreatedAt")) e["CreatedAt"] = record.CreatedAt.ToString("O");
-                e["WinCount"]          = Math.Max(e.GetInt32("WinCount") ?? 0, record.WinCount);
-                e["TotalSessions"]     = Math.Max(e.GetInt32("TotalSessions") ?? 0, record.TotalSessions);
-                e["TotalKills"]        = Math.Max(e.GetInt32("TotalKills") ?? 0, record.TotalKills);
+                e["WinCount"] = Math.Max(e.GetInt32("WinCount") ?? 0, record.WinCount);
+                e["TotalSessions"] = Math.Max(e.GetInt32("TotalSessions") ?? 0, record.TotalSessions);
+                e["TotalKills"] = Math.Max(e.GetInt32("TotalKills") ?? 0, record.TotalKills);
                 e["TotalFoodConsumed"] = Math.Max(e.GetInt32("TotalFoodConsumed") ?? 0, record.TotalFoodConsumed);
-                e["TotalDamageDealt"]  = Math.Max(e.GetInt32("TotalDamageDealt") ?? 0, record.TotalDamageDealt);
+                e["TotalDamageDealt"] = Math.Max(e.GetInt32("TotalDamageDealt") ?? 0, record.TotalDamageDealt);
                 return true;
             },
             ct);
@@ -75,8 +75,7 @@ public sealed class EvolutionRepository : IEvolutionRepository
 
     public async Task<EvolutionRecord?> GetAsync(string dnaId, CancellationToken ct = default)
     {
-        var tableClient = _tableService.GetTableClient(TableName);
-        await tableClient.CreateIfNotExistsAsync(ct);
+        var tableClient = await EnsuredTableAsync(ct);
 
         try
         {
@@ -92,8 +91,7 @@ public sealed class EvolutionRepository : IEvolutionRepository
 
     public async Task<IReadOnlyList<EvolutionRecord>> GetAllAsync(CancellationToken ct = default)
     {
-        var tableClient = _tableService.GetTableClient(TableName);
-        await tableClient.CreateIfNotExistsAsync(ct);
+        var tableClient = await EnsuredTableAsync(ct);
 
         var results = new List<EvolutionRecord>();
         var pages = tableClient.QueryAsync<TableEntity>(
@@ -115,8 +113,7 @@ public sealed class EvolutionRepository : IEvolutionRepository
     public async Task<IReadOnlyList<EvolutionRecord>> GetByGenerationAsync(
         int generation, CancellationToken ct = default)
     {
-        var tableClient = _tableService.GetTableClient(TableName);
-        await tableClient.CreateIfNotExistsAsync(ct);
+        var tableClient = await EnsuredTableAsync(ct);
 
         var results = new List<EvolutionRecord>();
         var pages = tableClient.QueryAsync<TableEntity>(
@@ -134,7 +131,7 @@ public sealed class EvolutionRepository : IEvolutionRepository
 
     public async Task DeleteAllAsync(CancellationToken ct = default)
     {
-        var tableClient = _tableService.GetTableClient(TableName);
+        var tableClient = _table;
         var all = await GetAllAsync(ct);
 
         // Delete in transactional batches (max 100 actions, single partition) so the
@@ -167,23 +164,23 @@ public sealed class EvolutionRepository : IEvolutionRepository
     {
         return new EvolutionRecord
         {
-            PartitionKey     = entity.PartitionKey,
-            RowKey           = entity.RowKey,
-            DnaId            = GetString(entity, "DnaId"),
-            Predatory        = GetDouble(entity, "Predatory"),
-            Scavenger        = GetDouble(entity, "Scavenger"),
-            Paranoid         = GetDouble(entity, "Paranoid"),
-            Altruistic       = GetDouble(entity, "Altruistic"),
-            Methodical       = GetDouble(entity, "Methodical"),
-            Generation       = GetInt(entity, "Generation"),
-            SourceSessionId  = GetString(entity, "SourceSessionId"),
+            PartitionKey = entity.PartitionKey,
+            RowKey = entity.RowKey,
+            DnaId = GetString(entity, "DnaId"),
+            Predatory = GetDouble(entity, "Predatory"),
+            Scavenger = GetDouble(entity, "Scavenger"),
+            Paranoid = GetDouble(entity, "Paranoid"),
+            Altruistic = GetDouble(entity, "Altruistic"),
+            Methodical = GetDouble(entity, "Methodical"),
+            Generation = GetInt(entity, "Generation"),
+            SourceSessionId = GetString(entity, "SourceSessionId"),
             ParentDnaIdsJson = GetString(entity, "ParentDnaIdsJson"),
-            Archetype        = GetString(entity, "Archetype"),
-            DominantTrait    = GetString(entity, "DominantTrait"),
-            CreatedAt        = DateTimeOffset.TryParse(GetString(entity, "CreatedAt"), out var dt) ? dt : default,
-            WinCount         = GetInt(entity, "WinCount"),
-            TotalSessions    = GetInt(entity, "TotalSessions"),
-            TotalKills       = GetInt(entity, "TotalKills"),
+            Archetype = GetString(entity, "Archetype"),
+            DominantTrait = GetString(entity, "DominantTrait"),
+            CreatedAt = DateTimeOffset.TryParse(GetString(entity, "CreatedAt"), out var dt) ? dt : default,
+            WinCount = GetInt(entity, "WinCount"),
+            TotalSessions = GetInt(entity, "TotalSessions"),
+            TotalKills = GetInt(entity, "TotalKills"),
             TotalFoodConsumed = GetInt(entity, "TotalFoodConsumed"),
             TotalDamageDealt = GetInt(entity, "TotalDamageDealt"),
         };

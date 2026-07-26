@@ -10,13 +10,13 @@ using PoShared.Simulation.Models;
 /// </summary>
 public sealed class InferenceRouter : IInferenceService
 {
-    private readonly WebLlmInferenceService    _local;
+    private readonly WebLlmInferenceService _local;
     private readonly RemoteRelayInferenceService _remote;
-    private          IInferenceService           _active;
+    private IInferenceService _active;
 
     public InferenceRouter(WebLlmInferenceService local, RemoteRelayInferenceService remote)
     {
-        _local  = local;
+        _local = local;
         _remote = remote;
         _active = local; // default to local WebLLM
     }
@@ -36,7 +36,7 @@ public sealed class InferenceRouter : IInferenceService
 
     /// <inheritdoc/>
     public Task<InferenceResult> InferAsync(
-        string            gridJson,
+        string gridJson,
         PersonalityDnaDto dna,
         CancellationToken ct = default)
         => _active.InferAsync(gridJson, dna, ct);

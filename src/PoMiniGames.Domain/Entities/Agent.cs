@@ -6,20 +6,20 @@ using PoMiniGames.Domain.ValueObjects.Simulation;
 // SOLID: SRP — Agent owns only its own state; all behaviour is in external service classes
 public sealed class Agent
 {
-    private int   _hp;
+    private int _hp;
     private float _hunger;
 
-    public string          Id               { get; }
-    public TeamColor       Team             { get; }
-    public PersonalityDna  Dna              { get; }
-    public GridCoordinate  Position         { get; set; }
-    public bool            IsFading         { get; set; }
-    public AgentAction?    LastAction        { get; set; }
-    public string?         LastThought      { get; set; }
-    public int             KillCount        { get; set; }
-    public int             FoodConsumed     { get; set; }
-    public int             TotalDamageDealt { get; set; }
-    
+    public string Id { get; }
+    public TeamColor Team { get; }
+    public PersonalityDna Dna { get; }
+    public GridCoordinate Position { get; set; }
+    public bool IsFading { get; set; }
+    public AgentAction? LastAction { get; set; }
+    public string? LastThought { get; set; }
+    public int KillCount { get; set; }
+    public int FoodConsumed { get; set; }
+    public int TotalDamageDealt { get; set; }
+
     public int Hp
     {
         get => _hp;
@@ -40,11 +40,11 @@ public sealed class Agent
         if (id.Length != 2 || id[0] is not ('R' or 'B') || !char.IsDigit(id[1]))
             throw new ArgumentException($"Agent Id must be one letter (R/B) followed by a digit, got '{id}'.", nameof(id));
 
-        Id       = id;
-        Team     = team;
+        Id = id;
+        Team = team;
         Position = position;
-        Dna      = dna;
-        _hp      = Math.Clamp(startingHp, 0, 100);
-        _hunger  = 0f;
+        Dna = dna;
+        _hp = Math.Clamp(startingHp, 0, 100);
+        _hunger = 0f;
     }
 }

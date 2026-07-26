@@ -20,7 +20,6 @@ import { CombatPlay, COMBAT_EVENTS, REGIONS, regionEffect } from './combat.js';
 import { PERSONALITIES, makePersonalityState } from './personalities.js';
 import { AudioBus } from './audio.js';
 import { ReplayBuffer } from './replay.js';
-import { PoBrawlRagdoll } from './ragdoll.js';
 import { CannonRagdoll, SeveredArm } from './ragdoll-physics.js';
 import { testAttackHit, testAttackBlocked, regionForHurtBone } from './hitboxes.js';
 import {
@@ -134,8 +133,6 @@ const ENERGY_DEFAULT = 1 / 3;
 // hard stagger (extra knockback + lean) instead of a mid-fight knockdown.
 // The KO ragdoll is the only way to the canvas.
 const HEAVY_HIT_DMG = 13; // threshold for the amplified stagger reaction (¼ of the old 50, matching the ¼ damage table)
-const DOWN_TIME = 1.15;   // (legacy 'down' state, no longer triggered)
-const GETUP_TIME = 0.6;   // (legacy 'getup' state, no longer triggered)
 
 // ── Post-processing: CA + vignette + radial blur + broadcast grade ───────
 // Runs after bloom, before OutputPass (so it operates on the linear HDR
@@ -337,17 +334,9 @@ export class BrawlGame {
     this.replay = new ReplayBuffer();
     // Seeded RNG so a demo/kiosk replay is reproducible.
     this.rng = new RandomGenerator((options && options.seed) || 1337);
-    // Post-processing quality tier: 2 = full (MSAA×4 + GTAO + bloom + CA),
-    // 1 = medium (MSAA×2 + bloom + CA), 0 = low (bare render, pixel ratio 1).
-    // Starts at full and steps DOWN automatically when sustained FPS can't
-    // hold the 60 Hz sim — low framerate hurts a timing game more than any
-    // post pass helps it. options.quality (0|1|2) pins a tier and disables
-    // the auto stepdown.
     // GFX quality is pinned to the maximum tier (MSAA×4 + GTAO + bloom + CA).
     // The auto-stepdown and the on-screen "FX" tier badge were removed per user
     // request — the game always renders at full quality regardless of framerate.
-    this._qualityForced = true;
-    this.quality = 2;
   }
 
   start() {
@@ -398,8 +387,8 @@ export class BrawlGame {
     this.camera = new THREE.PerspectiveCamera(55, w / h, 0.1, 100);
     this.camera.position.set(0, 2.4, 7);
 
-    // Post chain: render → (GTAO) → (bloom → CA/vignette) → tone-map/sRGB
-    // output, assembled per quality tier (see _buildComposer).
+    // Post chain: render → GTAO → bloom → CA/vignette → tone-map/sRGB
+    // output (see _buildComposer).
     this._buildComposer(w, h);
 
     // GPU particle pool: one THREE.Points draw call for every spark, sweat
@@ -565,12 +554,7 @@ export class BrawlGame {
 
   // ── setup ───────────────────────────────────────────────────────────────
 
-  // Build (or rebuild) the post chain for the current quality tier.
-  //   tier 2: MSAA×4 target, GTAO, bloom, CA/vignette — full look
-  //   tier 1: MSAA×2 target, bloom, CA/vignette — GTAO is the priciest pass
-  //   tier 0: plain render target, no bloom/CA, pixel ratio 1 — gameplay only
-  // All render-loop consumers guard on this.bloomPass/this.fxPass, so dropped
-  // passes simply stop pulsing.
+  // Build (or rebuild) the post chain: MSAA×4 target, GTAO, bloom, CA/vignette.
   _buildComposer(w, h) {
     if (this.composer) {
       // EffectComposer.dispose() only frees its own targets — passes (GTAO's
@@ -581,10 +565,7 @@ export class BrawlGame {
     this.bloomPass = null;
     this.fxPass = null;
 
-    const q = this.quality;
-    const pixelRatio = q === 2 ? Math.min(window.devicePixelRatio, 2)
-      : q === 1 ? Math.min(window.devicePixelRatio, 1.5)
-      : 1;
+    const pixelRatio = Math.min(window.devicePixelRatio, 2);
     this.renderer.setPixelRatio(pixelRatio);
     this.renderer.setSize(w, h);
 
@@ -593,27 +574,23 @@ export class BrawlGame {
     // MSAA render target — the composer's default target has no samples,
     // which would drop the AA the raw canvas had.
     const composerRT = new THREE.WebGLRenderTarget(w, h, {
-      type: THREE.HalfFloatType, samples: q === 2 ? 4 : q === 1 ? 2 : 0,
+      type: THREE.HalfFloatType, samples: 4,
     });
     this.composer = new EffectComposer(this.renderer, composerRT);
     this.composer.setPixelRatio(pixelRatio);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
-    if (q === 2) {
-      // Ground-truth AO: contact-level darkening in armpits, under ropes and
-      // between crowd rows that flat hemisphere ambient destroys.
-      try {
-        const gtao = new GTAOPass(this.scene, this.camera, w, h);
-        gtao.output = GTAOPass.OUTPUT.Default;
-        gtao.blendIntensity = 0.85;
-        this.composer.addPass(gtao);
-      } catch { /* AO is a nicety — never block the game on it */ }
-    }
-    if (q >= 1) {
-      this.bloomPass = new UnrealBloomPass(new THREE.Vector2(w, h), 0.32, 0.55, 0.8);
-      this.composer.addPass(this.bloomPass);
-      this.fxPass = new ShaderPass(CAVignetteShader);
-      this.composer.addPass(this.fxPass);
-    }
+    // Ground-truth AO: contact-level darkening in armpits, under ropes and
+    // between crowd rows that flat hemisphere ambient destroys.
+    try {
+      const gtao = new GTAOPass(this.scene, this.camera, w, h);
+      gtao.output = GTAOPass.OUTPUT.Default;
+      gtao.blendIntensity = 0.85;
+      this.composer.addPass(gtao);
+    } catch { /* AO is a nicety — never block the game on it */ }
+    this.bloomPass = new UnrealBloomPass(new THREE.Vector2(w, h), 0.32, 0.55, 0.8);
+    this.composer.addPass(this.bloomPass);
+    this.fxPass = new ShaderPass(CAVignetteShader);
+    this.composer.addPass(this.fxPass);
     this.composer.addPass(new OutputPass());
   }
 
@@ -849,8 +826,6 @@ export class BrawlGame {
         trail: this._makeTrail(),
         // Track the last frame's windup flag for the AI to read.
         lastWasWindup: false,
-        // Verlet ragdoll — the soft, recoverable flop used for knockdowns.
-        ragdoll: new PoBrawlRagdoll(rig.joints, rig.root),
         // Rigid-body ragdoll — the real cannon-es skeleton used for the KO.
         // Built lazily (pendingKO) because KOs can fire inside world.step.
         koRagdoll: new CannonRagdoll(this._physics.world, this._physics.materials.ragdoll, rig),
@@ -1045,10 +1020,6 @@ export class BrawlGame {
       });
       f.animator.decayLean(dt);
       f.hpCur = this._hp(f);
-
-      // Knockdown ragdoll runs during regular play (KO ragdoll is stepped
-      // by _tickKoFall so it survives the slow-mo phases).
-      if (f.state === 'down' && f.ragdoll && f.ragdoll.active) f.ragdoll.step(dt);
 
       // NOTE: the experimental hitstun ragdoll-blend was removed after joint
       // telemetry showed its per-tick quaternion slerp COMPOUNDS against the
@@ -1338,7 +1309,7 @@ export class BrawlGame {
     // spins the defender off-facing, then they recover square.
     for (const f of this.fighters) {
       const opp = f === f1 ? f2 : f1;
-      if (f.state !== 'ko' && f.state !== 'down') {
+      if (f.state !== 'ko') {
         if (f.spinVel !== 0 || f.spinYaw !== 0) {
           f.spinYaw += f.spinVel * dt;
           f.spinYaw = THREE.MathUtils.clamp(f.spinYaw, -0.7, 0.7);
@@ -1398,7 +1369,7 @@ export class BrawlGame {
     // Compute a desired world velocity from intent, lerp `vel` toward it,
     // and integrate. Knockback is added directly and decays.
     const desired = new THREE.Vector3();
-    const incapacitated = f.state === 'ko' || f.state === 'down' || f.state === 'getup';
+    const incapacitated = f.state === 'ko';
     // Charging roots the fighter — all the weight is loaded into the coil.
     const rooted = f.state === 'charge';
     if (intent.move !== 0 && !incapacitated && !rooted) {
@@ -1527,33 +1498,6 @@ export class BrawlGame {
       case 'hitstun': {
         if (f.stateT >= HITSTUN) f.state = 'idle';
         if (f.state === 'idle') this._destroySwingPhysics(f);
-        break;
-      }
-      case 'down': {
-        // Knocked down: the partial ragdoll owns the body (stepped in _tick).
-        // Invulnerable until the get-up completes — _tryHit early-outs on us.
-        // Swing teardown happens here (outside the physics step) — see the
-        // note in _tryHit's knockdown block.
-        this._destroySwingPhysics(f);
-        if (f.stateT >= DOWN_TIME) {
-          f.state = 'getup';
-          f.stateT = 0;
-          f.animator.frozen = false;
-          f.animator.setBlocking(false);
-          f.ragdoll.dispose();
-        }
-        break;
-      }
-      case 'getup': {
-        // Scramble back to guard: the animator (unfrozen) damp-lerps the
-        // joints from the ragdoll pose to GUARD while we slide the root
-        // back up to standing height.
-        f.rig.root.position.y = THREE.MathUtils.lerp(f.rig.root.position.y, 0, Math.min(1, dt * 8));
-        if (f.stateT >= GETUP_TIME) {
-          f.state = 'idle';
-          f.stateT = 0;
-          f.rig.root.position.y = 0;
-        }
         break;
       }
       case 'ko':
@@ -2356,8 +2300,7 @@ export class BrawlGame {
       if (now < p.at) continue;
       // Landed: apply minor damage + brief pause frame. Only applies while
       // both fighters are still upright in range.
-      if (opp && opp.state !== 'ko' && opp.state !== 'down'
-          && f.state !== 'ko' && f.state !== 'down') {
+      if (opp && opp.state !== 'ko' && f.state !== 'ko') {
         const dist = f.rig.root.position.distanceTo(opp.rig.root.position);
         if (dist < 2.5) this.combat.damage({ playerId: p.target, amount: p.damage, sourceId: f.playerId });
       }
@@ -2378,9 +2321,9 @@ export class BrawlGame {
     // against the defender's full body hurt set. A hit is registered only
     // when at least one striker/hurt capsule pair intersects; the deepest
     // intersection wins for both location and region.
-    // A downed (or already-KO'd) body is invulnerable — the knockdown is the
-    // punish; wailing on a ragdoll would read as unfair and looks broken.
-    if (defender.state === 'down' || defender.state === 'ko') return;
+    // A KO'd body is invulnerable — wailing on a ragdoll would read as
+    // unfair and looks broken.
+    if (defender.state === 'ko') return;
 
     // Phase detection honors per-fighter swing timing multipliers (Eisenhower
     // "Overlord" stretches windup and compresses active). windup and active
@@ -2839,7 +2782,7 @@ export class BrawlGame {
   // cheek/brow swelling, both frozen once the fighter is down/KO'd so the
   // fallen silhouette stays consistent under the result modal.
   _applyDamageWear(f) {
-    if (f.state === 'ko' || f.state === 'down') return;
+    if (f.state === 'ko') return;
     const total = (f.regionDmg.head + f.regionDmg.torso
       + f.regionDmg.arms + f.regionDmg.legs) / 400;
     const sweat = Math.min(1, total * 1.6);
@@ -3175,7 +3118,7 @@ export class BrawlGame {
   // the fighter's own velocity/acceleration, and the clinch-frame blend at
   // chest-to-chest range. All feed overlay targets on the animator.
   _updatePosture(f, opp, dt) {
-    if (!opp || f.state === 'ko' || f.state === 'down') return;
+    if (!opp || f.state === 'ko') return;
     const anim = f.animator;
 
     // ── Head tracking: look at the opponent's upper body ─────────────
@@ -3303,7 +3246,6 @@ export class BrawlGame {
   _buildPendingKO() {
     for (const f of this.fighters) {
       if (!f.pendingKO || f.state !== 'ko') continue;
-      if (f.ragdoll && f.ragdoll.active) f.ragdoll.dispose();
       this._destroySwingPhysics(f);
       this._removeFighterPhysics(f);
       // Shape the launch from the killing blow: high head punches loft the
@@ -3349,11 +3291,6 @@ export class BrawlGame {
       // Rigid-body KO: cannon owns the pose; mirror it onto the rig.
       if (f.koRagdoll && f.koRagdoll.active) {
         f.koRagdoll.drive();
-        continue;
-      }
-      // Verlet ragdoll (knockdown path / legacy safety net).
-      if (f.ragdoll && f.ragdoll.active) {
-        f.ragdoll.step(dt);
         continue;
       }
       // Fallback (no ragdoll): rigid root tilt. Kept as a safety net.
@@ -3843,7 +3780,7 @@ export class BrawlGame {
   // limply to the canvas with a silly blood squirt from stump and limb.
   //
   // Unregistering the arm's joints from `rig.joints` is the load-bearing part:
-  // the animator, the verlet ragdoll, the KO ragdoll, the hitbox capsules and
+  // the animator, the KO ragdoll, the hitbox capsules and
   // the hurt-sphere sync all iterate that map and all guard on a missing
   // joint. While the joints stayed registered, every one of those systems kept
   // writing the fighter's live pose onto a limb that was supposed to be lying

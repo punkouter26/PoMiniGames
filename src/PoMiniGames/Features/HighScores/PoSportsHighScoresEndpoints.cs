@@ -1,5 +1,6 @@
 using PoMiniGames.Application.Services;
 using PoMiniGames.Domain.Models;
+using PoMiniGames.Features.Auth;
 using PoMiniGames.Features.PoSports;
 
 namespace PoMiniGames.Features.HighScores;
@@ -45,19 +46,13 @@ public static class PoSportsHighScoresEndpoints
                 if (Math.Abs(entry.SprintSeconds + entry.HurdlesSeconds - entry.TotalTimeSeconds) > 0.05)
                     return Results.BadRequest(new { error = "Leg times must sum to the total" });
 
-                if (entry.HurdlesClean is < 0 or > 8)
-                    return Results.BadRequest(new { error = "Clean hurdles must be between 0 and 8" });
-
                 if (!PoSportsConstants.Characters.Contains(entry.Character))
                     return Results.BadRequest(new { error = "Unknown character" });
 
                 // Authoritative identity from the auth cookie — never trust the client.
-                var user = http.User;
-                entry.UserId = user.FindFirst("sub")?.Value
-                               ?? user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
-                               ?? user.FindFirst("oid")?.Value
-                               ?? "";
-                entry.IsGuest = string.IsNullOrEmpty(entry.UserId) || user.IsInRole("guest");
+                var identity = RequestIdentity.Resolve(http.User);
+                entry.UserId = identity.UserId;
+                entry.IsGuest = identity.IsGuest;
 
                 var saved = await storage.SavePoSportsHighScoreAsync(entry);
                 return Results.Created("/api/posports/highscores", saved);

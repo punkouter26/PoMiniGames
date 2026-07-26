@@ -48,19 +48,19 @@ public sealed class PoSportsSim
     private const double CountdownSeconds = 3;
     /// <summary>Safety cap per leg — an abandoned human lane can't stall the meet forever.</summary>
     private const double LegTimeoutSeconds = 90;
-    private const double StumbleAnimSeconds = 0.7;
 
-    // Server AI cadence: keys per second and wrong-key probability, medium-difficulty
-    // typists with per-lane seeded jitter. Mirrors DIFFICULTIES.medium in ai.js —
-    // tuned so CPU lanes finish each leg in 9.5-14 s. (Client demo AI lives in ai.js.)
-    private const double AiKeysPerSecond = 10.0;
-    private const double AiErrorRate = 0.008;
-    /// <summary>How far before a hurdle the AI decides to jump, meters.</summary>
-    private const double AiJumpLookahead = 1.8;
+    // Stumble-anim and AI cadence live in PoSportsConstants with the rest of the JS
+    // contract, so PoSportsConstantsSyncTests pins them to physics.js/ai.js.
+    private const double StumbleAnimSeconds = PoSportsConstants.StumbleAnimSeconds;
+    private const double AiKeysPerSecond = PoSportsConstants.AiKeysPerSecond;
+    private const double AiErrorRate = PoSportsConstants.AiErrorRate;
+    private const double AiJumpLookahead = PoSportsConstants.AiJumpLookahead;
 
     private readonly List<LaneState> _lanes;
     private readonly Random _rng;
     private double _phaseClock;
+    /// <summary>Longest lane leg time, refreshed once per tick so <see cref="Clock"/> is a field read.</summary>
+    private double _legClock;
 
     public PoSportsSim(IReadOnlyList<LaneSetup> setups, int? seed = null)
     {
@@ -76,7 +76,7 @@ public sealed class PoSportsSim
     public string Phase { get; private set; }
 
     /// <summary>Seconds remaining in countdown/interstitial, or the elapsed leg clock.</summary>
-    public double Clock => Phase is "countdown" or "interstitial" ? _phaseClock : _lanes.Max(l => l.LegTime);
+    public double Clock => Phase is "countdown" or "interstitial" ? _phaseClock : _legClock;
 
     public IReadOnlyList<LaneState> Lanes => _lanes;
 
@@ -168,20 +168,29 @@ public sealed class PoSportsSim
                 return;
         }
 
+        // One pass: drive, tick, and accumulate the leg clock + finished tally. This is the
+        // 60 Hz hot path — re-scanning the lanes with LINQ afterwards allocated an
+        // enumerator and a delegate per tick, per race, for values already in hand.
         var (length, hurdles) = LegProfile;
+        var maxLegTime = 0.0;
+        var allFinished = true;
         foreach (var l in _lanes)
         {
             if (l.IsAi && !l.Finished) DriveAi(l, dt, hurdles);
             TickLane(l, dt, hurdles, length);
+            if (l.LegTime > maxLegTime) maxLegTime = l.LegTime;
+            if (!l.Finished) allFinished = false;
         }
+        _legClock = maxLegTime;
 
-        var timedOut = _lanes.Max(l => l.LegTime) >= LegTimeoutSeconds;
-        if (_lanes.All(l => l.Finished) || timedOut)
+        var timedOut = maxLegTime >= LegTimeoutSeconds;
+        if (allFinished || timedOut)
         {
             if (timedOut)
             {
-                foreach (var l in _lanes.Where(x => !x.Finished))
+                foreach (var l in _lanes)
                 {
+                    if (l.Finished) continue;
                     l.Finished = true;
                     l.LegTime = LegTimeoutSeconds;
                 }
@@ -244,6 +253,8 @@ public sealed class PoSportsSim
 
     private void CompleteLeg()
     {
+        // Keep the cached clock truthful for callers that force a leg end without ticking.
+        _legClock = _lanes.Count == 0 ? 0 : _lanes.Max(l => l.LegTime);
         if (Phase == "sprint")
         {
             foreach (var l in _lanes) l.SprintSeconds = l.LegTime;
@@ -291,6 +302,7 @@ public sealed class PoSportsSim
     public void AdvanceToHurdlesLeg()
     {
         foreach (var l in _lanes) l.ResetForLeg();
+        _legClock = 0;
         Phase = "hurdles";
     }
 

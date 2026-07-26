@@ -153,16 +153,19 @@ public class GameStatsService
         if (string.IsNullOrEmpty(lastGameKey))
             return null;
 
-        var gameTitle = lastGameKey switch
-        {
-            "connectfive" => "Connect Five",
-            "tictactoe" => "TicTacToe4",
-            "poracer" => "Racer",
-            "pomarblerace" => "Marble Race",
-            _ => lastGameKey
-        };
-
-        return new GameCard(gameTitle, $"/{lastGameKey}");
+        // Resolve title + URL from the canonical GameCatalog rather than a private
+        // key→title map that had drifted from the product names (it still said
+        // "TicTacToe4"). Unknown keys (e.g. a removed game lingering in
+        // localStorage) fall back to the raw key so the card still renders.
+        GameKey key = lastGameKey;
+        var entry = GameCatalog.SinglePlayer
+            .Concat(GameCatalog.LocalTwoPlayer)
+            .Concat(GameCatalog.Multiplayer)
+            .Concat(GameCatalog.Demo)
+            .FirstOrDefault(g => g.Key.Equals(key));
+        return entry is not null
+            ? new GameCard(entry.Title, entry.Url)
+            : new GameCard(lastGameKey, $"/{lastGameKey}");
     }
 
     public void SaveLastPlayedGame(string gameKey)

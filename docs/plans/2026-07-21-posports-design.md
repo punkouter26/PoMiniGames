@@ -73,7 +73,7 @@ Blazor PoSportsPage.razor ── JS interop ──> window.PoSports (js/posports
      ▼                                     ▼       └─ touch.js     1P touch pad
 Features/PoSports/ (server)          snapshots→page→JS (render-only in online mode)
   PoSportsLobbyHub + PoSportsLobbyService   lobby create/join/pick/ready state
-  PoSportsRaceHub    JoinRace / SendKey; broadcasts PoSportsSnapshot ~15 Hz
+  PoSportsRaceHub    JoinRace / SendSequenceKey / SendJump; broadcasts ~15 Hz
   PoSportsSim        stride model (C#) — server-authoritative race state
   PoSportsRaceRegistry / PoSportsRaceService   (mirrors PoRacer's server layout:
     LobbyHub/LobbyService/RaceHub/RaceRegistry/RaceService + Sim)
@@ -81,7 +81,7 @@ Features/PoSports/ (server)          snapshots→page→JS (render-only in onlin
 
 Local modes run entirely in JS (offline-resilient, per platform promise). Online mode:
 the C# sim is authoritative; the JS engine becomes a renderer fed by snapshots, and
-keystrokes are forwarded raw (`SendKey`) so the server runs the same sequence/momentum
+keystrokes are forwarded as layout ordinals (`SendSequenceKey`) so the server runs the same sequence/momentum
 rules. The stride model is deliberately simple (~40 lines) to keep the dual
 implementation cheap; shared constants are pinned by mirrored unit tests (below).
 
@@ -89,9 +89,9 @@ implementation cheap; shared constants are pinned by mirrored unit tests (below)
 
 ```
 SEQ_P1 = [KeyQ, KeyW, KeyA, KeyS]   SEQ_P2 = [KeyI, KeyO, KeyK, KeyL]
-IMPULSE        = 1.9  m/s   per completed sequence
+IMPULSE        = 3.8  m/s   per completed sequence
 DECAY          = 0.45       fraction of speed retained per second (v *= DECAY^dt)
-MAX_SPEED      = 9.5  m/s
+MAX_SPEED      = 19   m/s
 JUMP_DURATION  = 0.55 s     airborne window
 JUMP_DRAG      = 0.85       impulse multiplier while airborne
 STUMBLE_FACTOR = 0.3        speed multiplier on hurdle hit
@@ -122,7 +122,7 @@ drift breaks the build.
 | touch.js | 1P on-screen 4-button sequence pad + jump button | `…/js/posports/touch.js` |
 | PoSportsLobbyHub | Create/join/leave/pick-character/ready; starts race | `src/PoMiniGames/Features/PoSports/PoSportsLobbyHub.cs` |
 | PoSportsLobbyService | Lobby state store (code → members/picks/ready), mirrors `PoRacerLobbyService` | `src/PoMiniGames/Features/PoSports/PoSportsLobbyService.cs` |
-| PoSportsRaceHub | `JoinRace`, `SendKey`; snapshot broadcast | `src/PoMiniGames/Features/PoSports/PoSportsRaceHub.cs` |
+| PoSportsRaceHub | `JoinRace`, `SendSequenceKey`, `SendJump`; snapshot broadcast | `src/PoMiniGames/Features/PoSports/PoSportsRaceHub.cs` |
 | PoSportsSim | C# stride model + race state machine (both legs, penalties, finish order) | `src/PoMiniGames/Features/PoSports/PoSportsSim.cs` |
 | PoSportsConstants | C# copy of physics constants | `src/PoMiniGames/Features/PoSports/PoSportsConstants.cs` |
 | Registry/Service | Active-race registry + tick loop host (mirrors PoRacer) | `…/PoSports/PoSportsRaceRegistry.cs`, `PoSportsRaceService.cs` |
@@ -144,8 +144,7 @@ public sealed class PoSportsHighScore
     public double TotalTimeSeconds { get; set; }      // ranking key, ascending
     public double SprintSeconds { get; set; }
     public double HurdlesSeconds { get; set; }        // includes stumble penalties
-    public int HurdlesClean { get; set; }             // 0-8, results screen only
-    public string Character { get; set; } = "";       // dad|mom|kim|matt|nick|tong
+    public string Character { get; set; } = "";       // mom|kim|matt|nick|tong
     public string Date { get; set; } = "";            // ISO-8601 string (legacy-safe)
     public string GameCode { get; set; } = "";        // online lobby code, "" for 1P
 }
@@ -173,9 +172,11 @@ must sum to total within 0.05 s.
   taken character is rejected and the lobby UI grays it); `SetReady(code, bool)`;
   server events `LobbyUpdated(PoSportsLobbyState)`, `RaceStarting(code)`.
 - `/posports/race-hub`: `JoinRace(code, asPlayer, displayName, isGuest)` →
-  `PoSportsSnapshot?` (character comes from the lobby pick, carried in the registry —
-  not a JoinRace parameter); `SendKey(code, keyCode)` (raw key; server runs sequence
-  rules); server event `Snapshot(PoSportsSnapshot)` ~15 Hz.
+  `PoSportsJoinResult?` — the snapshot plus the lane the server bound to this
+  connection, or null when no meet is joinable (character comes from the lobby pick,
+  carried in the registry — not a JoinRace parameter); `SendSequenceKey(code, step)`
+  where step is the key's ordinal in the player's layout, and `SendJump(code)` (the
+  server runs the sequence rules); server event `Snapshot(PoSportsSnapshot)` ~15 Hz.
 
 ```csharp
 public sealed record PoSportsLobbyMember(
@@ -230,7 +231,7 @@ public sealed record PoSportsSnapshot(
 1. Lobby page: create/join via lobby hub; ready-up; server moves lobby → race,
    navigates members to `/posports/race/{code}`.
 2. Race page: `JoinRace` returns initial snapshot; JS engine `init` in `remote` mode
-   (render-only). Keydowns forward to `SendKey`.
+   (render-only). Keydowns forward to `SendSequenceKey`/`SendJump`.
 3. `PoSportsRaceService` ticks all active sims at 60 Hz, broadcasts 15 Hz snapshots;
    client interpolates between snapshots (see Interfaces).
 4. Sprint→hurdles interstitial is server-owned: sim enters `interstitial` phase for a
@@ -279,14 +280,14 @@ Tiers per `scripts/test-all.ps1` (Unit → Integration → E2E-API → E2E-UI):
 
 **Unit (xUnit, `tests/PoMiniGames.Unit`)**
 - `PoSportsSimTests` (expected values from the constants block): one completed
-  sequence from rest → speed 1.9 m/s exactly; no input for 2 s from 1.9 m/s →
-  1.9·0.45² ≈ 0.385 m/s; impulse spam caps at 9.5; wrong key resets `SeqProgress` to 0,
+  sequence from rest → speed 3.8 m/s exactly; no input for 2 s from 3.8 m/s →
+  3.8·0.45² ≈ 0.77 m/s; impulse spam caps at 19; wrong key resets `SeqProgress` to 0,
   speed unchanged; jump at hurdle → airborne 0.55 s, no stumble; grounded at hurdle →
   speed×0.3 and legTime+1.5; finish order sorts by total ascending; key before gun →
   0.5 s hold + progress reset; AI-vs-AI full meet finishes within 180 sim-seconds
   (10 800 ticks).
 - `PoSportsRaceServiceTests` (online path, no live hub): registry create→join→pick
-  →ready starts a sim; `SendKey` routed to the right lane advances its sequence;
+  →ready starts a sim; `SendSequenceKey` routed to the right lane advances its sequence;
   interstitial auto-advances after 8 s; snapshot serializes with all lanes; finished
   race persists scores through a fake `IStorageService` (guest + authed shapes);
   disconnect decays lane, rejoin resets `SeqProgress`.

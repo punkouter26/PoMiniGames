@@ -1,7 +1,6 @@
 // ragdoll-physics.js — true rigid-body KO ragdoll on cannon-es.
 //
-// Where the verlet ragdoll (ragdoll.js) is a lightweight, art-directed flop
-// used for recoverable knockdowns, THIS is the real thing for the final KO:
+// The one and only ragdoll: at the final KO the fighter hands off to
 // eleven jointed rigid boxes matching the visual rig, connected by
 // ConeTwistConstraints, simulated by the same cannon-es world that runs the
 // fight. The body carries its momentum, tumbles under gravity, bounces off

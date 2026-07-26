@@ -9,23 +9,23 @@ public sealed record StartSimulationAction(SimulationConfigDto Config, bool IsMo
 
 /// <summary>Dispatched when simulation state is fully initialised (grid built, agents placed).</summary>
 public sealed record SimulationInitialisedAction(
-    Guid                          SessionId,
-    IReadOnlyList<AgentDto>       Agents,
+    Guid SessionId,
+    IReadOnlyList<AgentDto> Agents,
     IReadOnlyList<GridCoordinateDto> Rocks,
-    SimulationConfigDto           Config,
-    bool                          IsMockProvider);
+    SimulationConfigDto Config,
+    bool IsMockProvider);
 
 /// <summary>Dispatched by the heartbeat timer to trigger a new turn.</summary>
 public sealed record HeartbeatTickAction;
 
 /// <summary>Dispatched by the orchestrator after computing a full tick.</summary>
 public sealed record HeartbeatCompletedAction(
-    int                           TurnNumber,
-    IReadOnlyList<AgentDto>       Agents,
-    IReadOnlyList<FoodNodeDto>    FoodNodes,
-    IReadOnlyList<ConsoleEntry>   NewEntries,
-    string?                       Outcome,
-    string?                       WinningTeam,
+    int TurnNumber,
+    IReadOnlyList<AgentDto> Agents,
+    IReadOnlyList<FoodNodeDto> FoodNodes,
+    IReadOnlyList<ConsoleEntry> NewEntries,
+    string? Outcome,
+    string? WinningTeam,
     IReadOnlyList<HeartbeatEventDto> HeartbeatEvents);
 
 /// <summary>Dispatched when at least one agent dies this turn (triggers audio).</summary>

@@ -34,7 +34,6 @@ public class AuthStateService
     public bool MicrosoftEnabled => _config?.MicrosoftEnabled == true;
     public bool MicrosoftConfigured => _config?.MicrosoftConfigured == true;
     public bool DevLoginEnabled => _config?.DevLoginEnabled == true;
-    public string? AccessToken { get; private set; }
     public string? Error { get; private set; }
 
     public event Action? StateChanged;
@@ -57,6 +56,7 @@ public class AuthStateService
         // the in-flight Task rather than issuing a parallel request that the
         // browser will abort as soon as the second navigation tears down the
         // first fetch.
+        Task inFlight;
         await _initGate.WaitAsync();
         try
         {
@@ -69,13 +69,21 @@ public class AuthStateService
                 await _initInFlight;
                 return;
             }
-            _initInFlight = DoInitializeAsync(queryString);
+            var started = DoInitializeAsync(queryString);
+            // Only publish a task that is still running. If DoInitializeCoreAsync ever
+            // completes or faults before its first await, the finally below has ALREADY
+            // nulled the field, and storing the finished task here would leave it set
+            // forever — every later InitializeAsync would await the stale task above and
+            // return without re-running the handshake (rethrowing a cached failure for
+            // good). No such synchronous path exists today; this keeps it that way.
+            _initInFlight = started.IsCompleted ? null : started;
+            inFlight = started;
         }
         finally
         {
             _initGate.Release();
         }
-        await _initInFlight;
+        await inFlight;
     }
 
     private async Task DoInitializeAsync(string? queryString)
@@ -142,7 +150,6 @@ public class AuthStateService
 
         if (_config == null || !_config.Enabled)
         {
-            AccessToken = null;
             _initialized = true;
             NotifyStateChanged();
             return;
@@ -164,8 +171,6 @@ public class AuthStateService
 
         if (_config.DevLoginEnabled)
         {
-            AccessToken = null;
-
             // Check for ?user= query param (explicit dev-bypass entry).
             var urlUser = GetDevUserFromQuery(queryString);
             if (!string.IsNullOrEmpty(urlUser))
@@ -331,7 +336,6 @@ public class AuthStateService
     // token to the API client and resolve the canonical profile from the server.
     private async Task ApplyMicrosoftSessionAsync(MsalResult result)
     {
-        AccessToken = result.AccessToken;
         _api.SetBearer(result.AccessToken);
         var profile = string.IsNullOrEmpty(result.AccessToken)
             ? null
@@ -537,7 +541,6 @@ public class AuthStateService
 
     public async Task SignOutAsync()
     {
-        AccessToken = null;
         _user = null;
         _api.SetBearer(null);
 
@@ -550,12 +553,6 @@ public class AuthStateService
             catch { /* best-effort */ }
         }
 
-        NotifyStateChanged();
-    }
-
-    public void SetUser(AuthenticatedUserProfile? user)
-    {
-        _user = user;
         NotifyStateChanged();
     }
 

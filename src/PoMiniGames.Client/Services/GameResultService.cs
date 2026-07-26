@@ -1,4 +1,7 @@
 using PoMiniGamesClient.Enums;
+// Alias, not a namespace import: PoMiniGamesClient.Models mirrors several other Domain
+// types by name, so importing the namespace wholesale would make them all ambiguous.
+using PoSportsHighScore = PoMiniGames.Domain.Models.PoSportsHighScore;
 using PoMiniGamesClient.Models;
 
 namespace PoMiniGamesClient.Services;
@@ -73,41 +76,67 @@ public sealed class GameResultService
     public Task<PlayerStats> RecordAsync(string gameKey, string playerName, Difficulty difficulty, GameResult result) =>
         _stats.RecordResult(gameKey, playerName, difficulty, result);
 
-    /// <summary>
-    /// Records the local outcome and, when <paramref name="highScore"/> is supplied, submits it to the
-    /// server board in the same awaited call. One report, both writes, consistent ordering.
-    /// </summary>
-    public async Task<PlayerStats> RecordAndSubmitMarbleRaceAsync(
-        string playerName, GameResult result, MarbleRaceHighScoreRequest? highScore)
+    /// <summary>How a server high-score submit resolved; drives the shared feedback path.</summary>
+    private enum SubmitOutcome
     {
-        var stats = await _stats.RecordResult("pomarblerace", playerName, Difficulty.Medium, result);
-        if (highScore is null)
+        /// <summary>The board accepted the score.</summary>
+        Saved,
+        /// <summary>Unreachable or a server fault — the payload is good, so park it and let the
+        /// queue replay it on reconnect. The leaderboard is the platform's North Star.</summary>
+        Park,
+        /// <summary>The server rejected this score outright; queueing it would only replay the
+        /// rejection forever. Say so instead of promising a sync that can't happen.</summary>
+        Rejected,
+    }
+
+    /// <summary>
+    /// The one record-then-submit flow both per-game wrappers share: record the local
+    /// outcome, submit the high score (when one was earned), and translate the submit
+    /// outcome into feedback — saved chime, offline park + nudge, or a rejection toast.
+    /// </summary>
+    private async Task<PlayerStats> RecordAndSubmitCoreAsync(
+        string gameKey, string playerName, GameResult result, bool hasHighScore,
+        Func<Task<SubmitOutcome>> submitAsync, Action enqueueOffline)
+    {
+        var stats = await _stats.RecordResult(gameKey, playerName, Difficulty.Medium, result);
+        if (!hasHighScore)
         {
             await _feedback.TapAsync();
             return stats;
         }
 
-        var submitted = await _api.SubmitMarbleRaceHighScoreAsync(highScore);
-        if (submitted.IsSaved)
+        switch (await submitAsync())
         {
-            await _feedback.CompleteAsync();
-        }
-        else if (submitted.ShouldRetry)
-        {
-            // Unreachable or a server fault — the payload is good, so park it and let the
-            // queue replay it on reconnect. The leaderboard is the platform's North Star.
-            _sync.EnqueueMarbleRace(highScore);
-            await OnScoreParkedAsync();
-        }
-        else
-        {
-            // The server rejected this score outright; queueing it would only replay the
-            // rejection forever. Say so instead of promising a sync that can't happen.
-            await _feedback.ErrorAsync();
-            _toast.Show("That score couldn't be saved to the leaderboard.", ToastType.Error);
+            case SubmitOutcome.Saved:
+                await _feedback.CompleteAsync();
+                break;
+            case SubmitOutcome.Park:
+                enqueueOffline();
+                await OnScoreParkedAsync();
+                break;
+            default:
+                await _feedback.ErrorAsync();
+                _toast.Show("That score couldn't be saved to the leaderboard.", ToastType.Error);
+                break;
         }
         return stats;
     }
+
+    /// <summary>
+    /// Records the local outcome and, when <paramref name="highScore"/> is supplied, submits it to the
+    /// server board in the same awaited call. One report, both writes, consistent ordering.
+    /// </summary>
+    public Task<PlayerStats> RecordAndSubmitMarbleRaceAsync(
+        string playerName, GameResult result, MarbleRaceHighScoreRequest? highScore) =>
+        RecordAndSubmitCoreAsync("pomarblerace", playerName, result, highScore is not null,
+            async () =>
+            {
+                var submitted = await _api.SubmitMarbleRaceHighScoreAsync(highScore!);
+                return submitted.IsSaved ? SubmitOutcome.Saved
+                    : submitted.ShouldRetry ? SubmitOutcome.Park
+                    : SubmitOutcome.Rejected;
+            },
+            () => _sync.EnqueueMarbleRace(highScore!));
 
     /// <summary>
     /// The single sync path for adaptive-ELO games (ConnectFive/TicTacToe): mirror the
@@ -135,28 +164,32 @@ public sealed class GameResultService
         }
     }
 
+    /// <summary>Records the PoSports meet locally and submits the combined time together.</summary>
+    /// <remarks>
+    /// Routed through the shared flow so a failed submit parks for replay instead of being
+    /// discarded: the board ratchets to the fastest time, so a personal best dropped on a
+    /// flaky connection is gone for good unless the player beats it again.
+    /// </remarks>
+    public Task<PlayerStats> RecordAndSubmitPoSportsAsync(
+        string playerName, GameResult result, PoSportsHighScore? highScore) =>
+        RecordAndSubmitCoreAsync("posports", playerName, result, highScore is not null,
+            async () =>
+            {
+                var submitted = await _api.SubmitPoSportsHighScoreAsync(highScore!);
+                return submitted.IsSaved ? SubmitOutcome.Saved
+                    : submitted.ShouldRetry ? SubmitOutcome.Park
+                    : SubmitOutcome.Rejected;
+            },
+            () => _sync.EnqueuePoSports(highScore!));
+
     /// <summary>Records the PoBrawl outcome locally and submits the fastest-KO score together.</summary>
-    public async Task<PlayerStats> RecordAndSubmitPoBrawlAsync(
-        string playerName, GameResult result, PoBrawlHighScore? highScore)
-    {
-        var stats = await _stats.RecordResult("pobrawl", playerName, Difficulty.Medium, result);
-        if (highScore is not null)
-        {
-            var submitted = await _api.SubmitPoBrawlHighScoreAsync(highScore);
-            if (submitted is null)
-            {
-                _sync.EnqueuePoBrawl(highScore);
-                await OnScoreParkedAsync();
-            }
-            else
-            {
-                await _feedback.CompleteAsync();
-            }
-        }
-        else
-        {
-            await _feedback.TapAsync();
-        }
-        return stats;
-    }
+    /// <remarks>The PoBrawl submit API only signals reachability (null response), so a
+    /// failure always parks for replay — there is no explicit-rejection path here.</remarks>
+    public Task<PlayerStats> RecordAndSubmitPoBrawlAsync(
+        string playerName, GameResult result, PoBrawlHighScore? highScore) =>
+        RecordAndSubmitCoreAsync("pobrawl", playerName, result, highScore is not null,
+            async () => await _api.SubmitPoBrawlHighScoreAsync(highScore!) is null
+                ? SubmitOutcome.Park
+                : SubmitOutcome.Saved,
+            () => _sync.EnqueuePoBrawl(highScore!));
 }

@@ -5,10 +5,18 @@ namespace PoMiniGames.Features.Auth;
 /// <summary>
 /// Resolves the server-authoritative caller identity from the auth cookie/JWT claims,
 /// so leaderboard and match-history writes never trust a client-supplied name or owner.
-/// Mirrors the inline pattern PoRacerScoreEndpoints already uses (oid → nameidentifier →
-/// sub for the id; name → preferred_username → Identity.Name for the display name), but
-/// hoisted into one place so every slice classifies identity the same way.
+/// One place, so every slice classifies identity the same way.
 /// </summary>
+/// <remarks>
+/// Claim order is <c>oid → nameidentifier → sub</c> for the id and
+/// <c>name → preferred_username → Identity.Name</c> for the display name. Entra tokens carry
+/// both <c>oid</c> (stable per user) and <c>sub</c> (pairwise per application) with DIFFERENT
+/// values, and <c>MapInboundClaims</c> is off (see AuthExtensions), so the raw claims arrive
+/// unrenamed and the order genuinely decides what gets stored. <c>oid</c> is the one to prefer.
+/// PoRacer resolved <c>sub</c> first until this replaced its inline copy, so PoRacer rows
+/// written between 2026-07-09 and that change carry sub-derived ids that will not match the
+/// same player today — worth a migration if anything ever starts reading rows by UserId.
+/// </remarks>
 public static class RequestIdentity
 {
     /// <param name="UserId">Stable id from the claims, or empty for a truly-anonymous caller.</param>

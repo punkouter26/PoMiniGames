@@ -173,14 +173,14 @@ public sealed class EvolutionEngine
             }
 
             nodes.Add(new EvolutionTreeNodeDto(
-                DnaId:         record.DnaId,
-                Label:         $"{archetype}-G{record.Generation}",
-                Generation:    record.Generation,
+                DnaId: record.DnaId,
+                Label: $"{archetype}-G{record.Generation}",
+                Generation: record.Generation,
                 DominantTrait: record.DominantTrait,
-                Archetype:     archetype,
-                WinRate:       record.TotalSessions > 0 ? (float)record.WinCount / record.TotalSessions : 0f,
-                WinCount:      record.WinCount,
-                ChildrenIds:   children ?? []
+                Archetype: archetype,
+                WinRate: record.TotalSessions > 0 ? (float)record.WinCount / record.TotalSessions : 0f,
+                WinCount: record.WinCount,
+                ChildrenIds: children ?? []
             ));
         }
 
@@ -195,25 +195,25 @@ public sealed class EvolutionEngine
         var all = await _repository.GetAllAsync(ct);
 
         return all.Select(r => new EvolutionStateDto(
-            Id:                r.DnaId,
-            DnaId:             r.DnaId,
-            Predatory:         r.Predatory,
-            Scavenger:         r.Scavenger,
-            Paranoid:          r.Paranoid,
-            Altruistic:        r.Altruistic,
-            Methodical:        r.Methodical,
-            Generation:        r.Generation,
-            SourceSessionId:   string.IsNullOrWhiteSpace(r.SourceSessionId) ? null : r.SourceSessionId,
-            ParentDnaIds:      JsonSerializer.Deserialize(r.ParentDnaIdsJson, EvolutionJsonContext.Default.ListString) ?? [],
-            Archetype:         string.IsNullOrWhiteSpace(r.Archetype) ? null : r.Archetype,
-            DominantTrait:     r.DominantTrait,
-            CreatedAt:         r.CreatedAt,
-            WinCount:          r.WinCount,
-            TotalSessions:     r.TotalSessions,
-            WinRate:           r.TotalSessions > 0 ? (float)r.WinCount / r.TotalSessions : 0f,
-            TotalKills:        r.TotalKills,
+            Id: r.DnaId,
+            DnaId: r.DnaId,
+            Predatory: r.Predatory,
+            Scavenger: r.Scavenger,
+            Paranoid: r.Paranoid,
+            Altruistic: r.Altruistic,
+            Methodical: r.Methodical,
+            Generation: r.Generation,
+            SourceSessionId: string.IsNullOrWhiteSpace(r.SourceSessionId) ? null : r.SourceSessionId,
+            ParentDnaIds: JsonSerializer.Deserialize(r.ParentDnaIdsJson, EvolutionJsonContext.Default.ListString) ?? [],
+            Archetype: string.IsNullOrWhiteSpace(r.Archetype) ? null : r.Archetype,
+            DominantTrait: r.DominantTrait,
+            CreatedAt: r.CreatedAt,
+            WinCount: r.WinCount,
+            TotalSessions: r.TotalSessions,
+            WinRate: r.TotalSessions > 0 ? (float)r.WinCount / r.TotalSessions : 0f,
+            TotalKills: r.TotalKills,
             TotalFoodConsumed: r.TotalFoodConsumed,
-            TotalDamageDealt:  r.TotalDamageDealt
+            TotalDamageDealt: r.TotalDamageDealt
         )).ToList();
     }
 
@@ -242,14 +242,14 @@ public sealed class EvolutionEngine
             .ToList();
 
         return new EvolutionSummaryDto(
-            TotalLineages:    records.Select(r => r.Generation == 0 ? r.DnaId : null).Where(id => id is not null).Distinct().Count(),
+            TotalLineages: records.Select(r => r.Generation == 0 ? r.DnaId : null).Where(id => id is not null).Distinct().Count(),
             TotalGenerations: records.Max(r => r.Generation),
-            MaxGeneration:    records.Max(r => r.Generation),
-            TotalSessions:    records.Sum(r => r.TotalSessions),
-            AverageWinRate:   records.Where(r => r.TotalSessions > 0).Select(r => (float)r.WinCount / r.TotalSessions).DefaultIfEmpty(0f).Average(),
-            TopArchetype:     archetypeCounts.FirstOrDefault().Archetype ?? "None",
+            MaxGeneration: records.Max(r => r.Generation),
+            TotalSessions: records.Sum(r => r.TotalSessions),
+            AverageWinRate: records.Where(r => r.TotalSessions > 0).Select(r => (float)r.WinCount / r.TotalSessions).DefaultIfEmpty(0f).Average(),
+            TopArchetype: archetypeCounts.FirstOrDefault().Archetype ?? "None",
             TopDominantTrait: traitCounts.FirstOrDefault().Trait ?? "None",
-            UniqueDnaCount:   records.Count
+            UniqueDnaCount: records.Count
         );
     }
 

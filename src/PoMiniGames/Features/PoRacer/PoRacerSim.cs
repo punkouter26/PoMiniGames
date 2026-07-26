@@ -83,7 +83,7 @@ internal sealed class PoRacerSim
         var wallsArr = new double[_walls.Count * 4];
         for (int i = 0; i < _walls.Count; i++)
         {
-            wallsArr[i * 4]     = _walls[i].a.X;
+            wallsArr[i * 4] = _walls[i].a.X;
             wallsArr[i * 4 + 1] = _walls[i].a.Y;
             wallsArr[i * 4 + 2] = _walls[i].b.X;
             wallsArr[i * 4 + 3] = _walls[i].b.Y;
@@ -110,7 +110,6 @@ internal sealed class PoRacerSim
         // Spawn grid: 2 cols × N rows along the first segment direction.
         var startA = _centerline[0];
         var startB = _centerline[1];
-        var dir = Normal(startA, startB) is var perp ? new Vec2(-perp.Y, perp.X) : new Vec2(1, 0);
         // Use a tangent directly: tangent = (b - a) normalized
         var dx = startB.X - startA.X; var dy = startB.Y - startA.Y;
         var dlen = Math.Sqrt(dx * dx + dy * dy);
@@ -119,16 +118,16 @@ internal sealed class PoRacerSim
         var nrm = new Vec2(-ty, tx);
         // Player goes first (slot 0). Then 7 AI bots fill the rest.
         var palette = new[] { "#4ec3ff", "#ff5d6c", "#ffd24e", "#7eff8a", "#c47bff", "#ff944d", "#5ee7ff", "#ff77c8" };
-        var profiles = new (double aggression, double skill, double maxSpeed, double accel, double handling)[]
+        var profiles = new (double skill, double maxSpeed, double accel, double handling)[]
         {
-            (0.5, 0.7, 320, 220, 1.0),
-            (0.85,0.55,335, 235, 0.95),
-            (0.3, 0.9, 305, 200, 1.05),
-            (0.7, 0.6, 320, 215, 1.0),
-            (0.2, 0.95,295, 195, 1.1),
-            (0.9, 0.5, 340, 245, 0.92),
-            (0.6, 0.65,315, 215, 1.0),
-            (0.4, 0.85,310, 210, 1.05),
+            (0.7, 320, 220, 1.0),
+            (0.55, 335, 235, 0.95),
+            (0.9, 305, 200, 1.05),
+            (0.6, 320, 215, 1.0),
+            (0.95, 295, 195, 1.1),
+            (0.5, 340, 245, 0.92),
+            (0.65, 315, 215, 1.0),
+            (0.85, 310, 210, 1.05),
         };
         // Pad players to 8 with AI bots.
         var slots = new List<(string connectionId, string name, bool isPlayer)>();
@@ -163,7 +162,6 @@ internal sealed class PoRacerSim
                 ConnectionId = s.connectionId,
                 Name = s.name,
                 IsPlayer = s.isPlayer,
-                IsAI = !s.isPlayer,
                 Color = palette[i],
                 ColorDark = Darken(palette[i]),
                 Pos = pos,
@@ -171,7 +169,6 @@ internal sealed class PoRacerSim
                 MaxSpeed = prof.maxSpeed,
                 Acceleration = prof.accel,
                 Handling = prof.handling,
-                Aggression = prof.aggression,
                 CorneringSkill = prof.skill,
                 Lap = 1,
                 LastCheckpoint = 0,
@@ -377,8 +374,8 @@ internal sealed class PoRacerSim
             accel = true;                            // slow but not wedged → power out toward aim
         }
         else if (c.Speed > cornerSpeed * 1.05) { accel = false; brake = true; }   // shed speed
-        else if (c.Speed > cornerSpeed)         { accel = false; }                 // coast to target
-        else                                     { accel = true; }                 // power on
+        else if (c.Speed > cornerSpeed) { accel = false; }                 // coast to target
+        else { accel = true; }                 // power on
 
         // Badly misaligned at speed (nose toward a wall) → brake to bleed it off.
         if (c.StuckTimer <= 0.7 && Math.Abs(c.Speed) >= c.MaxSpeed * 0.18 && Math.Abs(diff) > 1.25)
@@ -552,7 +549,7 @@ internal sealed class PoRacerSim
                 idx + 1,
                 c.Name,
                 c.IsPlayer ? c.ConnectionId : "",
-                !c.IsPlayer || c.IsAI, // ai or guest by sign-up
+                !c.IsPlayer, // ai or guest by sign-up
                 c.FinishTime,
                 c.Lap > TotalLaps && c.FinishTime >= 0 && !double.IsInfinity(c.FinishTime),
                 c.BestLapTime))
@@ -719,8 +716,6 @@ internal sealed class PoRacerSim
         public double Speed;
         public double Steer;
         public bool IsPlayer;
-        public bool IsAI;
-        public double Aggression;
         public double CorneringSkill;
         public double MaxSpeed;
         public double Acceleration;

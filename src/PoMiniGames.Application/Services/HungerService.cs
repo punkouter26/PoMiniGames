@@ -25,7 +25,7 @@ public sealed class HungerService
     /// <summary>Resets hunger to 0.0 when an agent eats a food node.</summary>
     public void ConsumeFood(Agent agent)
     {
-        agent.Hunger    = 0f;
+        agent.Hunger = 0f;
         agent.FoodConsumed++;
     }
 }

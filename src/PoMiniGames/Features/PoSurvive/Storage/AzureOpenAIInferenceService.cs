@@ -19,18 +19,18 @@ namespace PoMiniGames.Features.PoSurvive.Storage;
 // server-side organisation.
 public sealed class AzureOpenAIInferenceService : IInferenceService
 {
-    private readonly IChatClient                              _chat;
-    private readonly IReadOnlyDictionary<string, string>     _deploymentMap;
-    private readonly ILogger<AzureOpenAIInferenceService>    _logger;
+    private readonly IChatClient _chat;
+    private readonly IReadOnlyDictionary<string, string> _deploymentMap;
+    private readonly ILogger<AzureOpenAIInferenceService> _logger;
 
     public AzureOpenAIInferenceService(
-        IChatClient                                       chat,
-        IReadOnlyDictionary<string, string>?              deploymentMap = null,
-        ILogger<AzureOpenAIInferenceService>?             logger = null)
+        IChatClient chat,
+        IReadOnlyDictionary<string, string>? deploymentMap = null,
+        ILogger<AzureOpenAIInferenceService>? logger = null)
     {
-        _chat          = chat;
+        _chat = chat;
         _deploymentMap = deploymentMap ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        _logger        = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<AzureOpenAIInferenceService>.Instance;
+        _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<AzureOpenAIInferenceService>.Instance;
     }
 
     /// <inheritdoc />
@@ -51,10 +51,10 @@ public sealed class AzureOpenAIInferenceService : IInferenceService
     /// default deployment when the id is unknown (or null/empty).
     /// </summary>
     public Task<InferenceResult> InferWithModelAsync(
-        string              gridJson,
-        PersonalityDnaDto   dna,
-        string?             modelId,
-        CancellationToken   ct = default)
+        string gridJson,
+        PersonalityDnaDto dna,
+        string? modelId,
+        CancellationToken ct = default)
     {
         // The shared IChatClient is bound to a single deployment at construction time
         // (AIFoundryChatClientCache.Resolve(gameKey)). Per-request deployment switching

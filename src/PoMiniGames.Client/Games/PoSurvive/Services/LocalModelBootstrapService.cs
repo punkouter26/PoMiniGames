@@ -52,7 +52,7 @@ public sealed class LocalModelBootstrapService(IJSRuntime js, IConfiguration con
             if (string.IsNullOrWhiteSpace(id))
                 continue;
 
-            var label       = child["Label"]       ?? id;
+            var label = child["Label"] ?? id;
             var description = child["Description"] ?? string.Empty;
             result.Add(new ModelOption(id!, label, description, IsRemote: true));
         }

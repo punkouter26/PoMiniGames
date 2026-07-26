@@ -13,22 +13,22 @@ public static class SimulationReducers
         SimulationState state, SimulationInitialisedAction a)
         => state with
         {
-            SessionId      = a.SessionId,
-            StartedAt      = DateTimeOffset.UtcNow,
-            Agents         = a.Agents,
-            FoodNodes      = [],
-            Rocks          = a.Rocks,
-            TurnNumber     = 0,
-            ConsoleLog     = [],
+            SessionId = a.SessionId,
+            StartedAt = DateTimeOffset.UtcNow,
+            Agents = a.Agents,
+            FoodNodes = [],
+            Rocks = a.Rocks,
+            TurnNumber = 0,
+            ConsoleLog = [],
             SelectedAgentId = null,
             ChampionAgentId = null,
-            EventFilter    = "all",
-            IsRunning      = true,
-            Outcome        = null,
-            WinningTeam    = null,
-            NarrativeText  = null,
+            EventFilter = "all",
+            IsRunning = true,
+            Outcome = null,
+            WinningTeam = null,
+            NarrativeText = null,
             ShowPostMortem = false,
-            Config         = a.Config,
+            Config = a.Config,
             IsMockProvider = a.IsMockProvider,
         };
 
@@ -45,13 +45,13 @@ public static class SimulationReducers
 
         return state with
         {
-            TurnNumber  = a.TurnNumber,
-            Agents      = a.Agents,
-            FoodNodes   = a.FoodNodes,
-            ConsoleLog  = log,
-            Outcome     = a.Outcome,
+            TurnNumber = a.TurnNumber,
+            Agents = a.Agents,
+            FoodNodes = a.FoodNodes,
+            ConsoleLog = log,
+            Outcome = a.Outcome,
             WinningTeam = a.WinningTeam,
-            IsRunning   = a.Outcome is null,
+            IsRunning = a.Outcome is null,
         };
     }
 
@@ -60,9 +60,9 @@ public static class SimulationReducers
         SimulationState state, PostMortemReadyAction a)
         => state with
         {
-            NarrativeText  = a.NarrativeText,
+            NarrativeText = a.NarrativeText,
             ShowPostMortem = true,
-            IsRunning      = false,
+            IsRunning = false,
         };
 
     [ReducerMethod]

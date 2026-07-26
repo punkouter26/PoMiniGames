@@ -1,6 +1,8 @@
 // =============================================================
 //  PoRacer — JS Interop Shim
-//  Handles canvas creation, input polling, and the rAF loop.
+//  Handles canvas sizing and input forwarding. Rendering is snapshot-driven:
+//  .NET calls PoRacerRender.drawSnapshot (~50ms), which re-runs resize() via
+//  getSize() each time — so there is no client-side rAF loop.
 //  Game logic lives entirely in C#; this file is the "thin glue".
 // =============================================================
 
@@ -11,26 +13,20 @@ const PoRacer = (() => {
     let ctx = null;
     /** @type {DotNetObjectReference|null} */
     let dotnetRef = null;
-    let rafId = 0;
-    let lastTs = 0;
     let lastSize = { w: 0, h: 0 };
-    let tabHidden = false;
 
     const input = {
         up: false, down: false, left: false, right: false,
-        w: false, a: false, s: false, d: false,
-        space: false, r: false
+        space: false
     };
 
     function setKey(e, down) {
-        const k = e.key.toLowerCase();
-        switch (k) {
-            case 'arrowup': case 'w': input.up = down; if (k === 'w') input.w = down; e.preventDefault(); break;
-            case 'arrowdown': case 's': input.down = down; if (k === 's') input.s = down; e.preventDefault(); break;
-            case 'arrowleft': case 'a': input.left = down; if (k === 'a') input.a = down; e.preventDefault(); break;
-            case 'arrowright': case 'd': input.right = down; if (k === 'd') input.d = down; e.preventDefault(); break;
+        switch (e.key.toLowerCase()) {
+            case 'arrowup': case 'w': input.up = down; e.preventDefault(); break;
+            case 'arrowdown': case 's': input.down = down; e.preventDefault(); break;
+            case 'arrowleft': case 'a': input.left = down; e.preventDefault(); break;
+            case 'arrowright': case 'd': input.right = down; e.preventDefault(); break;
             case ' ': input.space = down; e.preventDefault(); break;
-            case 'r': input.r = down; break;
         }
     }
 
@@ -74,10 +70,6 @@ const PoRacer = (() => {
     }
     document.addEventListener('pointerup', releaseTouch);
     document.addEventListener('pointercancel', releaseTouch);
-    document.addEventListener('visibilitychange', () => {
-        tabHidden = document.hidden;
-        if (!tabHidden && dotnetRef && !rafId) { lastTs = 0; rafId = requestAnimationFrame(frame); }
-    });
 
     const MAX_DPR = 1.25;
     const MAX_CSS_W = 1600;
@@ -98,21 +90,6 @@ const PoRacer = (() => {
         }
     }
     window.addEventListener('resize', resize);
-
-    function frame(ts) {
-        if (!dotnetRef) { rafId = 0; return; }
-        if (tabHidden) { rafId = 0; return; }
-        const now = ts || performance.now();
-        const dtMs = lastTs === 0 ? 16.0 : (now - lastTs);
-        lastTs = now;
-        const dt = Math.min(dtMs, 50) / 1000.0;
-        resize();
-        // No more per-frame Tick — multiplayer mode is purely server-driven.
-        // drawSnapshot is the new entry point invoked by .NET when a server
-        // snapshot arrives (every ~50ms). We keep the rAF loop only to keep
-        // particles/animations alive between snapshots.
-        rafId = requestAnimationFrame(frame);
-    }
 
     // Track last input snapshot so we only call back to .NET on real changes.
     let _lastInputSig = '';
@@ -143,10 +120,9 @@ const PoRacer = (() => {
             canvas = document.getElementById(canvasId);
             if (!canvas) { console.error('Canvas not found:', canvasId); return; }
             ctx = canvas.getContext('2d');
-            dotnetRef = dotnetObj; resize(); lastTs = 0;
-            rafId = requestAnimationFrame(frame);
+            dotnetRef = dotnetObj; resize();
         },
-        stop() { if (rafId) cancelAnimationFrame(rafId); rafId = 0; dotnetRef = null; },
+        stop() { dotnetRef = null; },
         getSize() { resize(); return lastSize; },
         // Test/debug helper: lets tests poke the keyboard state directly.
         __setInput(up, down, left, right, space) {
@@ -244,9 +220,6 @@ window.PoRacer = PoRacer;
     function createOffscreen(w, h) {
         if (typeof OffscreenCanvas !== 'undefined') return new OffscreenCanvas(w, h);
         const c = document.createElement('canvas'); c.width = w; c.height = h; return c;
-    }
-    function unpackColor(p) {
-        return 'rgb(' + ((p >> 16) & 0xff) + ',' + ((p >> 8) & 0xff) + ',' + (p & 0xff) + ')';
     }
     function packColor(hex) {
         if (!hex || hex[0] !== '#' || hex.length < 7) return 0xffffff;
@@ -620,23 +593,19 @@ window.PoRacer = PoRacer;
     }
 
     // --- Feature 7: Enhanced car drawing ---
-    function drawCar(g, c, cx, cy, color, colorDark, boost, isPlayer, speedRatio, damage, skidInt) {
+    function drawCar(g, c, cx, cy, color, colorDark, boost, isPlayer, speedRatio, skidInt) {
         const [sx, sy] = project(cx, cy, c.camX, c.camY, c.scale, c.w, c.h);
         g.save(); g.translate(sx, sy); g.rotate(c.hdg); g.scale(c.scale, c.scale);
 
         // Feature 1: Soft shadow
         g.save(); g.translate(4, 6); g.fillStyle = 'rgba(0,0,0,0.35)'; g.beginPath(); g.ellipse(0, 0, 20, 12, 0, 0, Math.PI * 2); g.fill(); g.restore();
 
-        // Feature 7: Damage darkening
-        let bodyColor = color, bodyDark = colorDark;
-        if (damage > 0.3) { bodyColor = colorDark; }
-
         // Boost glow
         if (boost > 0.05) { g.shadowColor = '#7fd4ff'; g.shadowBlur = 30 * boost; }
 
         // Car body — flat fill + dark overlay (no createLinearGradient)
-        g.fillStyle = bodyColor; g.beginPath(); g.roundRect(-16, -9, 32, 18, 5); g.fill();
-        g.fillStyle = bodyDark; g.globalAlpha = 0.4; g.beginPath(); g.roundRect(0, -9, 16, 18, [0, 5, 5, 0]); g.fill(); g.globalAlpha = 1;
+        g.fillStyle = color; g.beginPath(); g.roundRect(-16, -9, 32, 18, 5); g.fill();
+        g.fillStyle = colorDark; g.globalAlpha = 0.4; g.beginPath(); g.roundRect(0, -9, 16, 18, [0, 5, 5, 0]); g.fill(); g.globalAlpha = 1;
         g.shadowBlur = 0; g.strokeStyle = 'rgba(0,0,0,0.55)'; g.lineWidth = 1.2;
         g.beginPath(); g.roundRect(-16, -9, 32, 18, 5); g.stroke();
 
@@ -665,12 +634,6 @@ window.PoRacer = PoRacer;
         if (skidInt > 0.3) {
             g.fillStyle = '#ff0000'; g.shadowColor = '#ff0000'; g.shadowBlur = 20;
             g.beginPath(); g.arc(-15, -5, 2.5, 0, Math.PI * 2); g.arc(-15, 5, 2.5, 0, Math.PI * 2); g.fill(); g.shadowBlur = 0;
-        }
-
-        // Feature 7: Damage scratches
-        if (damage > 0.3) {
-            g.strokeStyle = 'rgba(0,0,0,0.4)'; g.lineWidth = 0.8;
-            for (let i = 0; i < Math.floor(damage * 4); i++) { const lx = -10 + (i * 7) % 20, ly = -6 + (i * 3) % 12; g.beginPath(); g.moveTo(lx, ly); g.lineTo(lx + 4, ly + 3); g.stroke(); }
         }
 
         // Feature 7: Exhaust flame
@@ -933,7 +896,7 @@ window.PoRacer = PoRacer;
                 const o = i * 6;
                 drawCar(g, { camX, camY, scale, w, h, hdg: carBuf[o + 2] },
                     carBuf[o], carBuf[o + 1], cachedColor(carCols[i]), cachedColor(carDark[i]),
-                    carBuf[o + 3], carBuf[o + 4] !== 0, carBuf[o + 5], 0, carBuf[o + 5]);
+                    carBuf[o + 3], carBuf[o + 4] !== 0, carBuf[o + 5], carBuf[o + 5]);
             }
 
             // Feature 1: Ambient

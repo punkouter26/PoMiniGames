@@ -17,8 +17,12 @@ public sealed class PoSportsHubService : IAsyncDisposable
     private HubConnection? _lobby;
     private HubConnection? _race;
     private readonly List<IDisposable> _subs = [];
+    private readonly List<IDisposable> _raceSubs = [];
     private string _displayName = "Player";
     private bool _isGuest = true;
+    /// <summary>The race the connection is currently joined to — read by the reconnect handler.</summary>
+    private string _raceCode = "";
+    private bool _raceAsPlayer;
 
     public event Action<PoSportsLobbyState>? LobbyUpdated;
     public event Action<PoSportsLobbyEvent>? LobbyEvent;
@@ -39,14 +43,9 @@ public sealed class PoSportsHubService : IAsyncDisposable
         _isGuest = isGuest;
         if (_lobby is not null) return await _lobby.InvokeAsync<PoSportsLobbyState>("Join", _displayName, _isGuest);
 
-        _lobby = new HubConnectionBuilder()
-            .WithUrl(_endpoints.Hub("posports/lobby-hub"), options =>
-            {
-                // DevAuth cookie must round-trip on the negotiate POST (see PoRacer note).
-                options.HttpMessageHandlerFactory = SignalRCredentialsHttpClientFactory.CreateHandler;
-            })
-            .WithAutomaticReconnect()
-            .Build();
+        // Credentials handler + auto-reconnect come baked into the shared
+        // factory (see HubConnectionFactory for the §2026-07-16 cookie contract).
+        _lobby = HubConnectionFactory.Create(_endpoints.Hub("posports/lobby-hub"));
 
         _subs.Add(_lobby.On<PoSportsLobbyState>("lobbyState", s => LobbyUpdated?.Invoke(s)));
         _subs.Add(_lobby.On<PoSportsLobbyEvent>("lobbyEvent", e => LobbyEvent?.Invoke(e)));
@@ -74,30 +73,57 @@ public sealed class PoSportsHubService : IAsyncDisposable
 
     // ── Race ──────────────────────────────────────────────────────────────
 
-    public async Task<PoSportsSnapshot?> JoinRaceAsync(string code, bool asPlayer)
+    /// <summary>
+    /// Join (or rejoin) a meet. Returns null when the server has no joinable meet for the
+    /// code — the caller should send the player back to the lobby. The result carries the
+    /// lane the server bound to this connection (-1 for a spectator).
+    /// </summary>
+    public async Task<PoSportsJoinResult?> JoinRaceAsync(string code, bool asPlayer)
     {
+        // Fields, not captured locals: the Reconnected handler is registered once for the
+        // connection's life, so a closure over this call's arguments would keep replaying
+        // the FIRST race's code and role after any later join.
+        _raceCode = code;
+        _raceAsPlayer = asPlayer;
+
         if (_race is null)
         {
-            _race = new HubConnectionBuilder()
-                .WithUrl(_endpoints.Hub("posports/race-hub"), options =>
-                {
-                    options.HttpMessageHandlerFactory = SignalRCredentialsHttpClientFactory.CreateHandler;
-                })
-                .WithAutomaticReconnect()
-                .Build();
+            _race = HubConnectionFactory.Create(_endpoints.Hub("posports/race-hub"));
 
-            _subs.Add(_race.On<PoSportsSnapshot>("raceSnapshot", s => SnapshotReceived?.Invoke(s)));
-            _subs.Add(_race.On<PoSportsSnapshot>("raceFinished", s => RaceFinished?.Invoke(s)));
+            _raceSubs.Add(_race.On<PoSportsSnapshot>("raceSnapshot", s => SnapshotReceived?.Invoke(s)));
+            _raceSubs.Add(_race.On<PoSportsSnapshot>("raceFinished", s => RaceFinished?.Invoke(s)));
 
             await _race.StartAsync();
 
             // Rejoin rebinds the lane (sequence progress resets server-side).
             _race.Reconnected += async _ =>
             {
-                try { await _race.InvokeAsync<PoSportsSnapshot?>("JoinRace", code, asPlayer, _displayName, _isGuest); } catch { }
+                try { await _race.InvokeAsync<PoSportsJoinResult?>("JoinRace", _raceCode, _raceAsPlayer, _displayName, _isGuest); } catch { }
             };
         }
-        return await _race.InvokeAsync<PoSportsSnapshot?>("JoinRace", code, asPlayer, _displayName, _isGuest);
+        return await _race.InvokeAsync<PoSportsJoinResult?>("JoinRace", code, asPlayer, _displayName, _isGuest);
+    }
+
+    /// <summary>
+    /// Close the race connection when leaving the meet. Without this the socket stays open
+    /// for the app's lifetime (the service is scoped, which in WASM means app-lifetime),
+    /// still in the server's race group, deserializing 15 Hz snapshots into events nobody
+    /// listens to — and SignalR only sheds group membership on disconnect, so a later meet
+    /// would also keep receiving the old one's broadcasts.
+    /// </summary>
+    public async Task StopRaceAsync()
+    {
+        var race = _race;
+        _race = null;
+        _raceCode = "";
+        _raceAsPlayer = false;
+        foreach (var s in _raceSubs) s.Dispose();
+        _raceSubs.Clear();
+        if (race is not null)
+        {
+            try { await race.StopAsync(); } catch { }
+            try { await race.DisposeAsync(); } catch { }
+        }
     }
 
     /// <summary>Send one sequence key as its layout ordinal (0-3).</summary>
@@ -109,11 +135,10 @@ public sealed class PoSportsHubService : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        await StopRaceAsync();
         foreach (var s in _subs) s.Dispose();
         _subs.Clear();
         if (_lobby is not null) { try { await _lobby.DisposeAsync(); } catch { } }
-        if (_race is not null) { try { await _race.DisposeAsync(); } catch { } }
         _lobby = null;
-        _race = null;
     }
 }

@@ -70,12 +70,15 @@ export class SportsGame {
       tracker: null,
       ai: null,
     };
-    if (lane.human) {
-      lane.tracker = new SequenceTracker(p.layout ?? 1, {
-        onImpulse: () => this.onSequenceComplete(lane),
-        onJump: () => this.onJump(lane),
-      });
-    } else {
+    // Every lane — human or AI — runs its sequence through one SequenceTracker, so the
+    // rules live only in input.js. (The AI used to keep its own inline copy of them.)
+    lane.tracker = new SequenceTracker(p.layout ?? 1, {
+      onImpulse: () => this.onSequenceComplete(lane),
+      onJump: lane.human ? () => this.onJump(lane) : undefined,
+      isGated: () => !this.remote && (this.phase === 'countdown' || this.phase === 'interstitial'),
+      onGatedKey: () => applyFalseStart(lane.state),
+    });
+    if (!lane.human) {
       lane.ai = new AiTypist(this.options.difficulty ?? 'medium', (this.rng() * 2 ** 31) | 0);
     }
     return lane;
@@ -89,7 +92,9 @@ export class SportsGame {
     await Promise.all(chars.map((c) => sprites.loadCharacter(c, MEET_ANIMS)));
     if (this.disposed) return;
 
-    const humans = this.lanes.filter((l) => l.tracker);
+    // Only HUMAN lanes listen to the keyboard — AI lanes carry a tracker too now, and
+    // attaching theirs would let a player's keys drive the CPU runners.
+    const humans = this.lanes.filter((l) => l.human && l.tracker);
     if (humans.length) this._detachKeys = attachKeyboard(humans.map((l) => l.tracker));
 
     // Touch pad: single-human modes only (1P local, online). Local 2P shares one
@@ -135,13 +140,9 @@ export class SportsGame {
   // ── Input events (human lanes) ────────────────────────────────────────
 
   onSequenceComplete(lane) {
-    if (this.remote || this.phase !== 'racing') {
-      if (!this.remote && (this.phase === 'countdown' || this.phase === 'interstitial')) {
-        applyFalseStart(lane.state);
-        lane.tracker?.reset();
-      }
-      return;
-    }
+    // Pre-gun presses never reach here — the tracker's gate turns each one into a false
+    // start (see buildLane / SequenceTracker.injectKey).
+    if (this.remote || this.phase !== 'racing') return;
     applyImpulse(lane.state);
   }
 
@@ -162,12 +163,10 @@ export class SportsGame {
       case 'countdown':
       case 'interstitial': {
         this.phaseClock -= dt;
-        // Pre-gun typing is a false start — SequenceTracker completes a cycle only on
-        // 4 correct keys, so penalize any sequence key: reset progress + hold.
         if (this.phaseClock <= 0) {
           if (this.phase === 'interstitial') {
             this.leg = 'hurdles';
-            for (const l of this.lanes) { resetLane(l.state); l.tracker?.reset(); l.aiProgress = 0; l.animTime = 0; }
+            for (const l of this.lanes) { resetLane(l.state); l.tracker?.reset(); l.animTime = 0; }
           }
           this.setPhase('racing');
         }
@@ -191,20 +190,12 @@ export class SportsGame {
         l.ai.update(dt, {
           position: l.state.position,
           airborne: l.state.airborne,
-          seqProgress: l.aiProgress ?? 0,
+          seqProgress: l.tracker.progress,
           onHurdlesLeg: this.leg === 'hurdles',
         }, {
-          // Same sequence rules a human faces: 4 correct ordinals = 1 impulse; a
-          // fat-fingered key resets the cycle (first-key wrongs count as step one).
-          seqStep: (step) => {
-            const progress = l.aiProgress ?? 0;
-            if (step === progress) {
-              l.aiProgress = progress + 1;
-              if (l.aiProgress === 4) { l.aiProgress = 0; applyImpulse(l.state); }
-            } else {
-              l.aiProgress = step === 0 ? 1 : 0;
-            }
-          },
+          // Straight into the shared state machine: the AI faces exactly the rules a
+          // human does, with no second implementation to drift.
+          seqStep: (step) => l.tracker.injectKey(l.tracker.map.sequence[step]),
           jump: () => startJump(l.state),
         });
       }
@@ -249,7 +240,6 @@ export class SportsGame {
     for (const l of this.lanes) {
       resetLane(l.state);
       l.tracker?.reset();
-      l.aiProgress = 0;
       l.sprintSeconds = -1; l.hurdlesSeconds = -1; l.placing = 0; l.animTime = 0;
     }
     this.renderer.cameraX = -6;
@@ -395,22 +385,25 @@ export class SportsGame {
   // ── HUD ───────────────────────────────────────────────────────────────
 
   pushHud(now) {
+    // Local modes only. Online, the page drives its HUD straight from the server snapshot
+    // (which knows WHICH lane is yours); pushing lanes in snapshot order made a second
+    // writer that mapped lane 0 onto the local player's HUD row and fought the first one.
+    if (this.remote) return;
     if (now - this.lastHudAt < HUD_THROTTLE_MS) return;
     this.lastHudAt = now;
-    const states = this.remote ? (this.snapNext?.lanes ?? []) : this.lanes.map((l) => ({
-      position: l.state.position,
-      speed: l.state.speed,
-      seqProgress: l.tracker?.progress ?? 0,
-      legTime: l.state.legTime,
-      finished: l.state.finished,
-    }));
     const hud = {
       phase: this.phase,
       leg: this.leg ?? 'sprint',
       clock: this.phase === 'racing'
-        ? Math.max(0, ...this.lanes.map((l) => this.remote ? (this.snapNext?.clock ?? 0) : l.state.legTime))
+        ? Math.max(0, ...this.lanes.map((l) => l.state.legTime))
         : this.phaseClock,
-      lanes: states,
+      lanes: this.lanes.map((l) => ({
+        position: l.state.position,
+        speed: l.state.speed,
+        seqProgress: l.tracker?.progress ?? 0,
+        legTime: l.state.legTime,
+        finished: l.state.finished,
+      })),
     };
     try { this.dotnet?.invokeMethodAsync('OnHud', hud); } catch { /* page gone */ }
   }

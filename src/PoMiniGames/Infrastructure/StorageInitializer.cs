@@ -32,9 +32,12 @@ public sealed class StorageInitializer
         // surfaces. Without eager creation those endpoints return 500 with
         // "No Azure Table…". Adding them here closes the loop with the same
         // idempotent, best-effort pattern used for the consolidated games above.
+        // Names must match the constants in EvolutionRepository / SessionRepository —
+        // this list previously ensured "PoSurviveSessions"/"PoSurviveHeartbeats", two
+        // orphan tables the repositories never read.
         "EvolutionRecords",
-        "PoSurviveSessions",
-        "PoSurviveHeartbeats",
+        "SimulationSessions",
+        "HeartbeatEvents",
         // PoJoker (demo-only): per-session joke-performance records that back the
         // /api/joker/leaderboard surface (PartitionKey = SessionId).
         "PoJokerPerformances",

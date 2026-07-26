@@ -91,6 +91,23 @@ public sealed class PoRacerLobbyService
         }
     }
 
+    /// <summary>
+    /// Flip the caller's ready flag under the state lock and report the state that was
+    /// actually stored. Callers must announce THIS value: a read-then-SetReady pair
+    /// outside the lock races two rapid toggles and broadcasts the pre-toggle state.
+    /// </summary>
+    public (bool ok, bool isReady, string message) ToggleReady(string connectionId)
+    {
+        lock (_stateLock)
+        {
+            if (!_players.TryGetValue(connectionId, out var existing)) return (false, false, "");
+            var toggled = existing with { IsReady = !existing.IsReady };
+            _players[connectionId] = toggled;
+            _lastTouchedMs = NowMs();
+            return (true, toggled.IsReady, $"{toggled.DisplayName} is {(toggled.IsReady ? "ready" : "not ready")}");
+        }
+    }
+
     public (bool ok, string message) Leave(string connectionId)
     {
         lock (_stateLock)

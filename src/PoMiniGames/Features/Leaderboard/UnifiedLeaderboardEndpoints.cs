@@ -22,9 +22,10 @@ public static class UnifiedLeaderboardEndpoints
     private static readonly (string Key, string Title)[] WinRateGames =
     [
         ("connectfive", "Connect Five"),
-        // Renamed to "TicTacToe6" (6×6 / 4-in-a-row grid) to match the catalog,
-        // profile, and in-game labels; the storage key stays "tictactoe".
-        ("tictactoe", "TicTacToe4"),
+        // Titles must match GameCatalog on the client — the product-name authority per the
+        // 2026-07-19 audit, which removed the grid dimension from the name. The storage key
+        // stays "tictactoe"; only the label changed.
+        ("tictactoe", "Tic-Tac-Toe"),
     ];
 
     public static IEndpointRouteBuilder MapUnifiedLeaderboardEndpoints(this IEndpointRouteBuilder app)
@@ -212,8 +213,13 @@ public static class UnifiedLeaderboardEndpoints
     /// </summary>
     private static async Task<GameLeaderboardDto> BuildPoBrawlAsync(IStorageService storage, int limit)
     {
-        var ladder = await storage.GetPoBrawlLadderAsync(50);
-        var kos = await storage.GetPoBrawlHighScoresAsync(50);
+        // Two independent partition scans — fan out concurrently (§6), this builder is
+        // on the critical path of BuildAllAsync's WhenAll.
+        var ladderTask = storage.GetPoBrawlLadderAsync(50);
+        var kosTask = storage.GetPoBrawlHighScoresAsync(50);
+        await Task.WhenAll(ladderTask, kosTask);
+        var ladder = ladderTask.Result;
+        var kos = kosTask.Result;
 
         // KO rows now carry the full player name; legacy rows hold 3-letter
         // initials. Join by exact name first, initials as the legacy fallback.

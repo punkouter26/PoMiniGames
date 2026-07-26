@@ -61,9 +61,6 @@ public sealed class KioskCoordinator : IDisposable
     {
         ["tictactoe"] = 12,
         ["connectfive"] = 14,
-        ["poraceragdoll"] = 14,
-        ["pofight"] = 16,
-        ["pohorserace"] = 16,
         ["poracer"] = 18,
         ["pomarblerace"] = 22,
         ["pojoker"] = 24,

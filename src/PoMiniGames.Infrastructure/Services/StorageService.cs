@@ -76,7 +76,7 @@ public class StorageService : IStorageService
     /// </summary>
     public void Initialize()
     {
-        foreach (var table in new[] { PlayerStatsTable, MarbleRaceTable, PoBrawlTable, PoBrawlLadderTable, PoRacerTable })
+        foreach (var table in new[] { PlayerStatsTable, MarbleRaceTable, PoBrawlTable, PoBrawlLadderTable, PoRacerTable, PoSportsTable })
         {
             try { Table(table); } catch { /* ensured lazily on first use */ }
         }
@@ -168,15 +168,7 @@ public class StorageService : IStorageService
         // int.MaxValue that would otherwise own the leaderboard.
         ClampStats(stats);
 
-        // Backfill ELO only when the client sent none (legacy clients that never
-        // computed a rating). Clients that DO send ratings — the adaptive-ELO
-        // games (ConnectFive/TicTacToe) mirror their evolving skill rating into
-        // the bucket — must not have them overwritten by the legacy W/L formula.
-        if (stats.TotalGames > 0 &&
-            stats.Easy.EloRating == 0 && stats.Medium.EloRating == 0 && stats.Hard.EloRating == 0)
-        {
-            _eloCalculator.ApplyAll(stats);
-        }
+        BackfillLegacyElo(stats);
         stats.UpdatedAt = DateTime.UtcNow;
 
         // §1/§2: read-modify-write under optimistic concurrency. The client sends ABSOLUTE
@@ -214,12 +206,27 @@ public class StorageService : IStorageService
     {
         foreach (var b in new[] { stats.Easy, stats.Medium, stats.Hard })
         {
-            b.Wins       = Math.Max(0, b.Wins);
-            b.Losses     = Math.Max(0, b.Losses);
-            b.Draws      = Math.Max(0, b.Draws);
+            b.Wins = Math.Max(0, b.Wins);
+            b.Losses = Math.Max(0, b.Losses);
+            b.Draws = Math.Max(0, b.Draws);
             b.TotalGames = Math.Max(0, b.TotalGames);
-            b.WinStreak  = Math.Max(0, b.WinStreak);
-            b.EloRating  = Math.Clamp(b.EloRating, 0, 3000);
+            b.WinStreak = Math.Max(0, b.WinStreak);
+            b.EloRating = Math.Clamp(b.EloRating, 0, 3000);
+        }
+    }
+
+    // Backfill ELO only when the client sent none (legacy clients that never computed a
+    // rating — detected as "played games but every bucket's EloRating is 0"). Clients that
+    // DO send ratings — the adaptive-ELO games (ConnectFive/TicTacToe) mirror their evolving
+    // skill rating into the bucket — must not have them overwritten by the legacy W/L
+    // formula. Single definition shared by the save and leaderboard-read paths so the
+    // legacy-record rule cannot drift between them.
+    private void BackfillLegacyElo(PlayerStats stats)
+    {
+        if (stats.TotalGames > 0 &&
+            stats.Easy.EloRating == 0 && stats.Medium.EloRating == 0 && stats.Hard.EloRating == 0)
+        {
+            _eloCalculator.ApplyAll(stats);
         }
     }
 
@@ -229,20 +236,20 @@ public class StorageService : IStorageService
     {
         static DifficultyStats Merge(DifficultyStats e, DifficultyStats i) => new()
         {
-            Wins       = Math.Max(e.Wins, i.Wins),
-            Losses     = Math.Max(e.Losses, i.Losses),
-            Draws      = Math.Max(e.Draws, i.Draws),
+            Wins = Math.Max(e.Wins, i.Wins),
+            Losses = Math.Max(e.Losses, i.Losses),
+            Draws = Math.Max(e.Draws, i.Draws),
             TotalGames = Math.Max(e.TotalGames, i.TotalGames),
-            WinStreak  = i.WinStreak,
-            EloRating  = i.EloRating,
+            WinStreak = i.WinStreak,
+            EloRating = i.EloRating,
         };
         return new PlayerStats
         {
-            PlayerId  = string.IsNullOrEmpty(incoming.PlayerId) ? existing.PlayerId : incoming.PlayerId,
+            PlayerId = string.IsNullOrEmpty(incoming.PlayerId) ? existing.PlayerId : incoming.PlayerId,
             PlayerName = string.IsNullOrEmpty(incoming.PlayerName) ? existing.PlayerName : incoming.PlayerName,
-            Easy   = Merge(existing.Easy, incoming.Easy),
+            Easy = Merge(existing.Easy, incoming.Easy),
             Medium = Merge(existing.Medium, incoming.Medium),
-            Hard   = Merge(existing.Hard, incoming.Hard),
+            Hard = Merge(existing.Hard, incoming.Hard),
             CreatedAt = existing.CreatedAt == default ? incoming.CreatedAt : existing.CreatedAt,
             UpdatedAt = incoming.UpdatedAt,
         };
@@ -267,12 +274,7 @@ public class StorageService : IStorageService
             if (string.IsNullOrEmpty(json)) continue;
             var stats = JsonSerializer.Deserialize<PlayerStats>(json) ?? new PlayerStats();
 
-            // Backfill ELO for legacy records where EloRating was not yet stored.
-            if (stats.TotalGames > 0 &&
-                stats.Easy.EloRating == 0 && stats.Medium.EloRating == 0 && stats.Hard.EloRating == 0)
-            {
-                _eloCalculator.ApplyAll(stats);
-            }
+            BackfillLegacyElo(stats);
 
             rows.Add((entity.RowKey, stats));
         }
@@ -312,13 +314,13 @@ public class StorageService : IStorageService
         },
         ToFields: e => new Dictionary<string, object?>
         {
-            ["PlayerInitials"] = e?.PlayerInitials,
-            ["UserId"] = e?.UserId,
-            ["IsGuest"] = e?.IsGuest,
-            ["BestScore"] = e?.BestScore,
+            ["PlayerInitials"] = e.PlayerInitials,
+            ["UserId"] = e.UserId,
+            ["IsGuest"] = e.IsGuest,
+            ["BestScore"] = e.BestScore,
             // Stored as an ISO-8601 string, not a native DateTimeOffset: legacy rows wrote a
             // string, and a column holding both types breaks GetString on read.
-            ["Date"] = e?.AchievedAtUtc.ToString("yyyy-MM-ddTHH:mm:ssZ"),
+            ["Date"] = e.AchievedAtUtc.ToString("yyyy-MM-ddTHH:mm:ssZ"),
         },
         FromEntity: e => new MarbleRaceHighScore
         {
@@ -357,10 +359,10 @@ public class StorageService : IStorageService
         },
         ToFields: e => new Dictionary<string, object?>
         {
-            ["PlayerInitials"] = e?.PlayerInitials,
-            ["KoTimeSeconds"] = e?.KoTimeSeconds,
-            ["Character"] = e?.Character,
-            ["Date"] = e?.Date,
+            ["PlayerInitials"] = e.PlayerInitials,
+            ["KoTimeSeconds"] = e.KoTimeSeconds,
+            ["Character"] = e.Character,
+            ["Date"] = e.Date,
         },
         FromEntity: e => new PoBrawlHighScore
         {
@@ -405,13 +407,13 @@ public class StorageService : IStorageService
         },
         ToFields: e => new Dictionary<string, object?>
         {
-            ["PlayerName"] = e?.PlayerName,
-            ["UserId"] = e?.UserId,
-            ["TotalTimeSeconds"] = e?.TotalTimeSeconds,
-            ["FinalPosition"] = e?.FinalPosition,
-            ["IsGuest"] = e?.IsGuest,
-            ["Date"] = e?.Date,
-            ["GameCode"] = e?.GameCode,
+            ["PlayerName"] = e.PlayerName,
+            ["UserId"] = e.UserId,
+            ["TotalTimeSeconds"] = e.TotalTimeSeconds,
+            ["FinalPosition"] = e.FinalPosition,
+            ["IsGuest"] = e.IsGuest,
+            ["Date"] = e.Date,
+            ["GameCode"] = e.GameCode,
         },
         FromEntity: e => new PoRacerHighScore
         {
@@ -449,23 +451,21 @@ public class StorageService : IStorageService
             TotalTimeSeconds = Math.Clamp(e.TotalTimeSeconds, 0.001, 600),
             SprintSeconds = Math.Clamp(e.SprintSeconds, 0, 300),
             HurdlesSeconds = Math.Clamp(e.HurdlesSeconds, 0, 300),
-            HurdlesClean = Math.Clamp(e.HurdlesClean, 0, 8),
             Character = SanitizeName(e.Character),
             Date = DefaultDate(e.Date),
             GameCode = SanitizeName(e.GameCode),
         },
         ToFields: e => new Dictionary<string, object?>
         {
-            ["PlayerName"] = e?.PlayerName,
-            ["UserId"] = e?.UserId,
-            ["IsGuest"] = e?.IsGuest,
-            ["TotalTimeSeconds"] = e?.TotalTimeSeconds,
-            ["SprintSeconds"] = e?.SprintSeconds,
-            ["HurdlesSeconds"] = e?.HurdlesSeconds,
-            ["HurdlesClean"] = e?.HurdlesClean,
-            ["Character"] = e?.Character,
-            ["Date"] = e?.Date,
-            ["GameCode"] = e?.GameCode,
+            ["PlayerName"] = e.PlayerName,
+            ["UserId"] = e.UserId,
+            ["IsGuest"] = e.IsGuest,
+            ["TotalTimeSeconds"] = e.TotalTimeSeconds,
+            ["SprintSeconds"] = e.SprintSeconds,
+            ["HurdlesSeconds"] = e.HurdlesSeconds,
+            ["Character"] = e.Character,
+            ["Date"] = e.Date,
+            ["GameCode"] = e.GameCode,
         },
         FromEntity: e => new PoSportsHighScore
         {
@@ -476,7 +476,6 @@ public class StorageService : IStorageService
             TotalTimeSeconds = e.GetDouble("TotalTimeSeconds") ?? 0d,
             SprintSeconds = e.GetDouble("SprintSeconds") ?? 0d,
             HurdlesSeconds = e.GetDouble("HurdlesSeconds") ?? 0d,
-            HurdlesClean = e.GetInt32("HurdlesClean") ?? 0,
             Character = e.GetString("Character") ?? "",
             Date = e.GetString("Date") ?? "",
             GameCode = e.GetString("GameCode") ?? "",
@@ -636,13 +635,6 @@ public class StorageService : IStorageService
         string.IsNullOrWhiteSpace(date)
             ? DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
             : date;
-
-    // Uppercased, sanitized initials truncated to 3 characters.
-    private static string Initials3(string raw)
-    {
-        var s = SanitizeName(raw).ToUpperInvariant();
-        return s.Length > 3 ? s[..3] : s;
-    }
 
     // Full display name, capped for table hygiene. Boards show the same name the
     // GameShell header shows — never initials or ids.

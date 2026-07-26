@@ -20,10 +20,10 @@ public sealed class NarrativeService
     {
         return outcome switch
         {
-            SimulationOutcome.Draw      => GenerateDraw(agents),
-            SimulationOutcome.RedWin    => GenerateWin("RED", TeamColor.Red,  "Red",  agents, heartbeats),
-            SimulationOutcome.BlueWin   => GenerateWin("BLUE", TeamColor.Blue, "Blue", agents, heartbeats),
-            _                           => "SIMULATION TERMINATED. RECORDS INCOMPLETE.",
+            SimulationOutcome.Draw => GenerateDraw(agents),
+            SimulationOutcome.RedWin => GenerateWin("RED", TeamColor.Red, "Red", agents, heartbeats),
+            SimulationOutcome.BlueWin => GenerateWin("BLUE", TeamColor.Blue, "Blue", agents, heartbeats),
+            _ => "SIMULATION TERMINATED. RECORDS INCOMPLETE.",
         };
     }
 
@@ -48,22 +48,22 @@ public sealed class NarrativeService
         IReadOnlyList<HeartbeatEventDto>? heartbeats)
     {
         var winners = agents.Where(a => a.Team == teamKey).ToList();
-        var losers  = agents.Where(a => a.Team != teamKey).ToList();
+        var losers = agents.Where(a => a.Team != teamKey).ToList();
 
-        var topKiller  = winners.MaxBy(a => a.KillCount);
-        var dominant   = topKiller is null ? "UNKNOWN" : GetDominantTrait(topKiller);
+        var topKiller = winners.MaxBy(a => a.KillCount);
+        var dominant = topKiller is null ? "UNKNOWN" : GetDominantTrait(topKiller);
         var totalKills = winners.Sum(a => a.KillCount);
-        var totalFood  = winners.Sum(a => a.FoodConsumed);
-        var survTurns  = winners.Count > 0 ? winners.Max(a => a.SurvivalTurns) : 0;
+        var totalFood = winners.Sum(a => a.FoodConsumed);
+        var survTurns = winners.Count > 0 ? winners.Max(a => a.SurvivalTurns) : 0;
 
         var traitNarrative = dominant switch
         {
-            "Predatory"  => BuildPredatoryNarrative(displayName, topKiller!, totalKills),
-            "Scavenger"  => BuildScavengerNarrative(displayName, topKiller!, totalFood),
-            "Paranoid"   => BuildParanoidNarrative(displayName, topKiller!, survTurns),
+            "Predatory" => BuildPredatoryNarrative(displayName, topKiller!, totalKills),
+            "Scavenger" => BuildScavengerNarrative(displayName, topKiller!, totalFood),
+            "Paranoid" => BuildParanoidNarrative(displayName, topKiller!, survTurns),
             "Altruistic" => BuildAltruisticNarrative(displayName, topKiller!),
             "Methodical" => BuildMethodicalNarrative(displayName, topKiller!, totalKills, totalFood),
-            _            => $"{displayName} FACTION PREVAILED through unfathomable strategy.",
+            _ => $"{displayName} FACTION PREVAILED through unfathomable strategy.",
         };
 
         var casualties = losers.Count;

@@ -33,7 +33,6 @@ public class PoSportsHighScoresTests
             sprintSeconds = 15.0,
             hurdlesSeconds = 20.0,
             totalTimeSeconds = 35.0,
-            hurdlesClean = 5,
             character = "mom",
         });
         post.StatusCode.Should().BeOneOf(HttpStatusCode.Unauthorized, HttpStatusCode.Redirect, HttpStatusCode.Found);

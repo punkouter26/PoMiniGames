@@ -6,6 +6,7 @@
 @inject ApiService ApiService
 @inject MatchHistoryService MatchHistory
 @inject NavigationManager NavigationManager
+@inject AuthStateService AuthState
 @implements IDisposable
 
 <div class="prf-page">
@@ -279,7 +280,7 @@ else
     // ── Game definitions (order determines radar axis order) ──
     private static readonly (string Key, string Label, string Icon, bool HsOnly, bool OfflineOnly)[] GameDefs =
     {
-        ("tictactoe",    "TicTacToe4",    "✖",  false, false),
+        ("tictactoe",    "Tic-Tac-Toe",   "✖",  false, false),
         ("connectfive",  "Connect Five",  "🔵", false, false),
         ("pomarblerace", "Marble Race",   "🔮", true,  false),
     };
@@ -300,7 +301,7 @@ else
     private static readonly (string Key, string Title, string Icon, string Kind)[] HsDefs =
     {
         ("pomarblerace", "Marble Race",  "🔮", "marble"),
-        ("tictactoe",    "TicTacToe4",    "❌", "ai"),
+        ("tictactoe",    "Tic-Tac-Toe",   "❌", "ai"),
         ("connectfive",  "Connect Five",  "🔴", "ai"),
     };
 
@@ -333,8 +334,9 @@ else
     protected override async Task OnInitializedAsync()
     {
         await LoadStatsAsync();
-        await LoadHighScoresAsync();
-        await LoadMatchesAsync();
+        // HighScore + MatchHistory are independent (disjoint fields), so run them
+        // concurrently — the same way OnNameChanged already fires them.
+        await Task.WhenAll(LoadHighScoresAsync(), LoadMatchesAsync());
         // §7 UX: dismiss the skeleton once the slowest data source has resolved.
         // HighScore + MatchHistory fire in parallel; flipping _loading here means
         // the user sees a skeleton for the network round-trip (typically <300ms
@@ -412,25 +414,34 @@ else
 
     private async Task LoadHighScoresAsync()
     {
-        // 2026-07-26 browser audit #7: the leaderboards endpoint returns the
-        // GLOBAL top-N, not the current player's own best. Requesting `count=1`
-        // and treating the top row as the user's own score would surface
-        // a previous session's highscore as if it belonged to the current
-        // guest. Scan the board until we find a row whose PlayerInitials
-        // matches the current PlayerName — that is the user's actual best.
-        // Fall back to "No scores yet" when no match exists.
-        var marble = await ApiService.GetMarbleRaceHighScoresAsync(10);
+        // 2026-07-26 browser audit #7: the leaderboards endpoint returns the GLOBAL top-N,
+        // not the current player's own best, so treating the top row as "yours" surfaced a
+        // previous session's high score as if it belonged to the current guest.
+        //
+        // Match on the row's UserId, which the server stamps from the auth cookie. Matching
+        // on the display name (the first fix) could not find rows it should have: legacy
+        // rows store 3-letter initials, guest rows store the literal "Guest", and the server
+        // truncates names to 24 chars — none of which equal the local player name. A wider
+        // page also keeps a personal best visible when it sits outside the global top ten.
+        var marble = await ApiService.GetMarbleRaceHighScoresAsync(100);
 
         HighScoreEntry MarbleEntry()
         {
             var me = _playerName?.Trim() ?? string.Empty;
-            var mine = marble?.FirstOrDefault(s =>
+            var myUserId = AuthState.User?.UserId ?? string.Empty;
+
+            var mine = !string.IsNullOrEmpty(myUserId)
+                ? marble?.FirstOrDefault(s => string.Equals(s.UserId, myUserId, StringComparison.Ordinal))
+                : null;
+            // Anonymous/legacy rows carry no usable id — fall back to the name they do carry.
+            mine ??= marble?.FirstOrDefault(s =>
                 !string.IsNullOrEmpty(s.PlayerInitials)
                 && s.PlayerInitials.Equals(me, StringComparison.OrdinalIgnoreCase));
+
             if (mine is not null)
             {
                 return new HighScoreEntry("Marble Race", "🔮",
-                    mine.BestScore.ToString("N0"), $"your best", true);
+                    mine.BestScore.ToString("N0"), "your best", true);
             }
             // No own score — the global #1 is irrelevant to a profile page,
             // so we suppress it entirely instead of pretending it's the user's.

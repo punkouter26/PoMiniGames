@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using Microsoft.AspNetCore.Mvc;
 using PoMiniGames.Domain.Models;
+using PoMiniGames.Features.Auth;
 using PoMiniGames.Infrastructure.Services;
 using PoShared.Games;
 
@@ -65,16 +66,7 @@ public static class PoRacerScoreEndpoints
             }
 
             // Authoritative identity from the auth cookie — NEVER trust the client.
-            var user = http.User;
-            var userId = user.FindFirst("sub")?.Value
-                         ?? user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
-                         ?? user.FindFirst("oid")?.Value
-                         ?? "";
-            var displayName = user.FindFirst("name")?.Value
-                              ?? user.FindFirst("preferred_username")?.Value
-                              ?? user.Identity?.Name
-                              ?? "";
-            var isGuest = string.IsNullOrEmpty(userId) || user.IsInRole("guest");
+            var (userId, displayName, isGuest, _) = RequestIdentity.Resolve(http.User);
 
             // Cooldown: at most one submission per user per N seconds.
             if (!string.IsNullOrEmpty(userId))

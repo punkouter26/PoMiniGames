@@ -1,4 +1,7 @@
 using System.Text.Json.Serialization;
+// Alias, not a namespace import: PoMiniGamesClient.Models mirrors several other Domain
+// types by name, so importing the namespace wholesale would make them all ambiguous.
+using PoSportsHighScore = PoMiniGames.Domain.Models.PoSportsHighScore;
 using PoMiniGamesClient.Models;
 using PoShared.Games;
 using PoMiniGamesClient.Games.PoSurvive.Services;

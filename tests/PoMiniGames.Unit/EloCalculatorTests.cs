@@ -15,18 +15,18 @@ public sealed class EloCalculatorTests
     private static readonly EloCalculator _calculator = new(new EloOptions());
 
     [Theory]
-    [InlineData(800, "Win",  1001)] // weak AI: small gain
-    [InlineData(800, "Loss",  971)] // weak AI: heavy penalty
-    [InlineData(800, "Draw",  984)] // weak AI: still penalised
+    [InlineData(800, "Win", 1001)] // weak AI: small gain
+    [InlineData(800, "Loss", 971)] // weak AI: heavy penalty
+    [InlineData(800, "Draw", 984)] // weak AI: still penalised
     [InlineData(1200, "Win", 1018)] // medium AI: bigger gain
     [InlineData(1200, "Draw", 1008)] // medium AI: positive draw
     [InlineData(1600, "Win", 1032)] // hard AI: biggest gain
-    [InlineData(1600, "Loss",  998)] // hard AI: nearly neutral
+    [InlineData(1600, "Loss", 998)] // hard AI: nearly neutral
     public void Compute_ScalesRewardByOpponentStrength(int opponentElo, string result, int expectedLowerBound)
     {
         var ds = result switch
         {
-            "Win"  => new DifficultyStats { Wins = 1, TotalGames = 1 },
+            "Win" => new DifficultyStats { Wins = 1, TotalGames = 1 },
             "Loss" => new DifficultyStats { Losses = 1, TotalGames = 1 },
             "Draw" => new DifficultyStats { Draws = 1, TotalGames = 1 },
             _ => throw new ArgumentOutOfRangeException(nameof(result)),
@@ -111,9 +111,9 @@ public sealed class EloCalculatorTests
     public void Compute_HarderAiWinsOutrankEasyWins(int opponentElo, string result)
     {
         // Beating harder AI should yield a strictly higher gain than beating easier AI.
-        var easyWin   = new DifficultyStats { Wins = 1, TotalGames = 1 };
+        var easyWin = new DifficultyStats { Wins = 1, TotalGames = 1 };
         var harderWin = new DifficultyStats { Wins = 1, TotalGames = 1 };
-        var easyElo   = _calculator.Compute(easyWin,   800);
+        var easyElo = _calculator.Compute(easyWin, 800);
         var harderElo = _calculator.Compute(harderWin, opponentElo);
         harderElo.Should()
             .BeGreaterThan(easyElo, $"beating {opponentElo}-Elo AI yields a larger reward than 800");

@@ -4,11 +4,11 @@ using PoMiniGames.Domain.Enums.Simulation;
 
 public sealed class GridTile
 {
-    private Agent?    _occupant;
+    private Agent? _occupant;
     private FoodNode? _food;
 
-    public int         X       { get; }
-    public int         Y       { get; }
+    public int X { get; }
+    public int Y { get; }
     public TerrainType Terrain { get; }
 
     public Agent? Occupant
@@ -37,8 +37,8 @@ public sealed class GridTile
 
     public GridTile(int x, int y, TerrainType terrain = TerrainType.Empty)
     {
-        X       = x;
-        Y       = y;
+        X = x;
+        Y = y;
         Terrain = terrain;
     }
 }

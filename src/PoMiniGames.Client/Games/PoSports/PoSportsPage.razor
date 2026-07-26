@@ -7,13 +7,17 @@
 @using PoMiniGamesClient.Services
 @using PoMiniGamesClient.Games.PoSports.Services
 @using PoShared.Games
+@* Alias, not a namespace import — PoMiniGamesClient.Models mirrors other Domain types by name. *@
+@using PoSportsHighScore = PoMiniGames.Domain.Models.PoSportsHighScore
 @implements IAsyncDisposable
 @inject PlayerNameService PlayerNameService
-@inject ApiService ApiService
+@inject GameResultService GameResults
 @inject IJSRuntime JSRuntime
 @inject KioskCoordinator Kiosk
 @inject PoSportsHubService Hub
 @inject AuthStateService AuthState
+@inject NavigationManager Nav
+@inject ToastService ToastService
 
 <GameShell Title=@TitleContent
            Player="@_playerName"
@@ -80,25 +84,17 @@
     [Parameter] public string? Code { get; set; }
     [SupplyParameterFromQuery(Name = "mode")] public string? ModeQuery { get; set; }
 
-    private sealed record CharEntry(string Id, string Name, string Emoji);
-
     /// <summary>Lane setup passed to PoSports.init — lower-case members to match the JS shape.</summary>
     private sealed record PlayerSetup(string character, string name, bool human, int? layout);
 
-    private static readonly CharEntry[] Roster =
-    [
-        new("mom", "Mom", "👩"),
-        new("kim", "Kim", "👧"),
-        new("matt", "Matt", "👦"),
-        new("nick", "Nick", "🧒"),
-        new("tong", "Tong", "🧑"),
-    ];
+    /// <summary>The shared roster — declared once in PoShared, rendered by both PoSports pages.</summary>
+    private static IReadOnlyList<PoSportsCharacter> Roster => PoSportsRoster.All;
 
     private sealed class HudLane
     {
         public string Name = "";
-        public string[] Keys = ["Q", "W", "A", "S"];
-        public string JumpKey = "E";
+        public IReadOnlyList<string> Keys = PoSportsLayouts.For(1).Sequence;
+        public string JumpKey = PoSportsLayouts.For(1).Jump;
         public int SeqProgress;
         public double Position;
     }
@@ -111,6 +107,11 @@
     private string _leg = "sprint";
     private double _clock;
     private List<HudLane> _humanLanes = [];
+    /// <summary>Online: the lane index the server bound to this connection (-1 = spectator).</summary>
+    private int _myLane = -1;
+    /// <summary>Mirrors HUD_THROTTLE_MS in game.js — one HUD cadence for both modes.</summary>
+    private const double HudRenderIntervalMs = 250;
+    private DateTime _lastHudRender = DateTime.MinValue;
     private List<StatItem> _statItems = [];
     private readonly GameStatsService _gameStats = new();
     private PlayerStats _stats = new();
@@ -144,11 +145,22 @@
 
     private RenderFragment TitleContent => @<span>🏃 Sports</span>;
 
+    @* Key labels come from PoSportsLayouts so rebinding input.js can't leave the tutorial
+       teaching keys that no longer do anything. *@
     private RenderFragment HowToPlayContent => @<div>
         <p>Type your four keys <b>in order</b> to sprint — every completed cycle is a burst of speed. A wrong key restarts the cycle!</p>
         <ul>
-            <li>Player 1: <kbd>Q</kbd> <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> in order · <kbd>E</kbd> jumps</li>
-            <li>Player 2: <kbd>I</kbd> <kbd>O</kbd> <kbd>K</kbd> <kbd>L</kbd> in order · <kbd>P</kbd> jumps</li>
+            @foreach (var l in PoSportsLayouts.All)
+            {
+                <li>
+                    Player @l.Layout:
+                    @foreach (var k in l.Sequence)
+                    {
+                        <kbd>@k</kbd><text> </text>
+                    }
+                    in order · <kbd>@l.Jump</kbd> jumps
+                </li>
+            }
             <li>Jump the hurdles on leg 2 — clipping one costs speed and +1.5s</li>
             <li>Typing before the gun is a false start: half-second hold</li>
         </ul>
@@ -156,8 +168,19 @@
 
     private RenderFragment SelectContent => _mode == "2p" ? TwoPlayerSelect : OnePlayerSelect;
 
+    // The 2P roster cursor reuses each player's own sequence keys, so the select screen
+    // teaches the controls: first two keys cycle, the last one locks in.
+    private static string SelectHint(int layout)
+    {
+        var l = PoSportsLayouts.For(layout);
+        return $"{l.Sequence[0]} / {l.Sequence[1]} cycle · {l.Sequence[3]} lock in";
+    }
+
+    /// <summary>KeyboardEvent.code for a layout's Nth sequence key ("Q" → "KeyQ").</summary>
+    private static string SelectCode(int layout, int index) => "Key" + PoSportsLayouts.For(layout).Sequence[index];
+
     private RenderFragment OnePlayerSelect => @<div class="ps-select-grid" role="listbox" aria-label="Choose your runner">
-        @for (var i = 0; i < Roster.Length; i++)
+        @for (var i = 0; i < Roster.Count; i++)
         {
             var idx = i;
             <button type="button"
@@ -172,9 +195,9 @@
     private RenderFragment TwoPlayerSelect => @<div class="gps-intro-versus">
         <div>
             <div class="gps-intro-side-title">Player 1</div>
-            <div class="gps-intro-side-keys">Q / W cycle · S lock in</div>
+            <div class="gps-intro-side-keys">@SelectHint(1)</div>
             <ul class="gps-intro-roster">
-                @for (var i = 0; i < Roster.Length; i++)
+                @for (var i = 0; i < Roster.Count; i++)
                 {
                     var idx = i;
                     <li class="gps-intro-roster-item @(idx == _p1Sel ? "gps-intro-roster-item--cursor" : "") @(_p1Locked && idx == _p1Sel ? "gps-intro-roster-item--locked" : "")">
@@ -187,9 +210,9 @@
         <div class="gps-intro-vs-divider">VS</div>
         <div>
             <div class="gps-intro-side-title">Player 2</div>
-            <div class="gps-intro-side-keys">I / O cycle · L lock in</div>
+            <div class="gps-intro-side-keys">@SelectHint(2)</div>
             <ul class="gps-intro-roster">
-                @for (var i = 0; i < Roster.Length; i++)
+                @for (var i = 0; i < Roster.Count; i++)
                 {
                     var idx = i;
                     <li class="gps-intro-roster-item @(idx == _p2Sel ? "gps-intro-roster-item--cursor" : "") @(_p2Locked && idx == _p2Sel ? "gps-intro-roster-item--locked" : "")">
@@ -249,21 +272,31 @@
         Hub.SnapshotReceived += OnServerSnapshot;
         Hub.RaceFinished += OnServerFinished;
 
-        var snap = await Hub.JoinRaceAsync(Code!, asPlayer: true);
-        if (snap is null)
+        var join = await Hub.JoinRaceAsync(Code!, asPlayer: true);
+        if (join is null)
         {
-            Console.Error.WriteLine("[PoSports] JoinRace returned no snapshot");
+            // No joinable meet (none started, or the last one already finished): the lobby is
+            // where a new one begins, so don't strand the player on a track that will never run.
+            ToastService.Show("That meet has finished — back to the lobby.", ToastType.Info);
+            Nav.NavigateTo("/posports/multi");
             return;
         }
+
+        var snap = join.Snapshot;
+        // The server tells us which lane we own; identifying ourselves by name matching
+        // bound the HUD to whichever runner happened to be in lane 0.
+        _myLane = join.Lane;
 
         // Lanes come from the server; the JS engine renders them as ghosts driven
         // by snapshots. All lanes are human:false locally — no local trackers/AI.
         var players = snap.Lanes
             .Select(l => new PlayerSetup(l.Character, l.Name, false, null))
             .ToList();
+        var mine = snap.Lanes.FirstOrDefault(l => l.Lane == _myLane);
+        var layout = PoSportsLayouts.For(1);
         _humanLanes =
         [
-            new HudLane { Name = _playerName, Keys = ["Q", "W", "A", "S"], JumpKey = "E" },
+            new HudLane { Name = mine?.Name ?? _playerName, Keys = layout.Sequence, JumpKey = layout.Jump },
         ];
 
         try
@@ -281,8 +314,8 @@
     private void OnServerSnapshot(PoSportsSnapshot snap)
     {
         _ = ForwardSnapshotAsync(snap);
-        // HUD: my lane is matched by display name (the lobby seeded lanes with it).
-        var mine = snap.Lanes.FirstOrDefault(l => l.Name == _playerName);
+        // HUD: the lane the server bound to this connection at join time.
+        var mine = snap.Lanes.FirstOrDefault(l => l.Lane == _myLane);
         if (mine is not null && _humanLanes.Count > 0)
         {
             _humanLanes[0].SeqProgress = mine.SeqProgress;
@@ -290,7 +323,16 @@
         }
         _clock = snap.Clock;
         _leg = snap.Phase == "hurdles" ? "hurdles" : "sprint";
-        _phase = snap.Phase is "sprint" or "hurdles" ? "racing" : snap.Phase;
+        var phase = snap.Phase is "sprint" or "hurdles" ? "racing" : snap.Phase;
+        var phaseChanged = phase != _phase;
+        _phase = phase;
+
+        // Snapshots land at 15 Hz but the HUD only shows a 0.1 s clock, whole meters, and
+        // four progress dots — re-rendering the page that often just burns phone battery.
+        // Match the local engine's 250 ms HUD cadence, and never delay a phase change.
+        var now = DateTime.UtcNow;
+        if (!phaseChanged && (now - _lastHudRender).TotalMilliseconds < HudRenderIntervalMs) return;
+        _lastHudRender = now;
         InvokeAsync(StateHasChanged);
     }
 
@@ -322,17 +364,15 @@
     private void OnIntroKey(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
     {
         if (_mode != "2p" || _introDone) return;
-        var n = Roster.Length;
-        switch (e.Code)
-        {
-            case "KeyQ": if (!_p1Locked) _p1Sel = (_p1Sel - 1 + n) % n; break;
-            case "KeyW": if (!_p1Locked) _p1Sel = (_p1Sel + 1) % n; break;
-            case "KeyS": _p1Locked = !_p1Locked; break;
-            case "KeyI": if (!_p2Locked) _p2Sel = (_p2Sel - 1 + n) % n; break;
-            case "KeyO": if (!_p2Locked) _p2Sel = (_p2Sel + 1) % n; break;
-            case "KeyL": _p2Locked = !_p2Locked; break;
-            default: return;
-        }
+        var n = Roster.Count;
+        var code = e.Code;
+        if (code == SelectCode(1, 0)) { if (!_p1Locked) _p1Sel = (_p1Sel - 1 + n) % n; }
+        else if (code == SelectCode(1, 1)) { if (!_p1Locked) _p1Sel = (_p1Sel + 1) % n; }
+        else if (code == SelectCode(1, 3)) { _p1Locked = !_p1Locked; }
+        else if (code == SelectCode(2, 0)) { if (!_p2Locked) _p2Sel = (_p2Sel - 1 + n) % n; }
+        else if (code == SelectCode(2, 1)) { if (!_p2Locked) _p2Sel = (_p2Sel + 1) % n; }
+        else if (code == SelectCode(2, 3)) { _p2Locked = !_p2Locked; }
+        else return;
         if (_p1Locked && _p2Locked) { _ = OnIntroStartAsync(); return; }
         StateHasChanged();
     }
@@ -343,7 +383,7 @@
         // 2P: both players must pick different characters — bump P2 off a clash.
         if (_mode == "2p" && _p1Sel == _p2Sel)
         {
-            _p2Sel = (_p2Sel + 1) % Roster.Length;
+            _p2Sel = (_p2Sel + 1) % Roster.Count;
         }
         _introDone = true;
         StateHasChanged();
@@ -362,31 +402,30 @@
             // Attract mode: the whole family on the track, all CPU, in a random lane order.
             foreach (var p in Roster.OrderBy(_ => Guid.NewGuid()))
             {
-                players.Add(new PlayerSetup(p.Id, p.Name, false, null));
+                players.Add(new PlayerSetup(p.Key, p.Name, false, null));
             }
         }
         else if (_mode == "2p")
         {
-            players.Add(new PlayerSetup(Roster[_p1Sel].Id, $"{Roster[_p1Sel].Name} (P1)", true, 1));
-            players.Add(new PlayerSetup(Roster[_p2Sel].Id, $"{Roster[_p2Sel].Name} (P2)", true, 2));
+            players.Add(new PlayerSetup(Roster[_p1Sel].Key, $"{Roster[_p1Sel].Name} (P1)", true, 1));
+            players.Add(new PlayerSetup(Roster[_p2Sel].Key, $"{Roster[_p2Sel].Name} (P2)", true, 2));
         }
         else
         {
-            players.Add(new PlayerSetup(Roster[_p1Sel].Id, _playerName, true, 1));
+            players.Add(new PlayerSetup(Roster[_p1Sel].Key, _playerName, true, 1));
             // CPU rivals on every unpicked family member — a full six-lane meet.
             foreach (var p in Roster.Where((_, i) => i != _p1Sel).OrderBy(_ => Guid.NewGuid()))
             {
-                players.Add(new PlayerSetup(p.Id, p.Name, false, null));
+                players.Add(new PlayerSetup(p.Key, p.Name, false, null));
             }
         }
 
         _humanLanes = players
             .Where(p => p.human)
-            .Select(p => new HudLane
+            .Select(p =>
             {
-                Name = p.name,
-                Keys = p.layout == 2 ? ["I", "O", "K", "L"] : ["Q", "W", "A", "S"],
-                JumpKey = p.layout == 2 ? "P" : "E",
+                var keys = PoSportsLayouts.For(p.layout);
+                return new HudLane { Name = p.name, Keys = keys.Sequence, JumpKey = keys.Jump };
             })
             .ToList();
 
@@ -455,22 +494,25 @@
             if (mine is not null)
             {
                 _gameStats.SaveLastPlayedGame("posports");
-                _stats = await _gameStats.RecordResult("posports", _playerName, Difficulty.Medium,
-                    mine.Placing == 1 ? GameResult.Win : GameResult.Loss);
-                UpdateStats();
 
                 _newRecord = _bestTotal == 0 || mine.TotalSeconds < _bestTotal;
                 if (_newRecord) _bestTotal = mine.TotalSeconds;
 
-                // The server ratchets per player, so submitting every meet is safe.
-                _ = await ApiService.SubmitPoSportsHighScoreAsync(new PoSportsHighScore
-                {
-                    PlayerName = _playerName,
-                    SprintSeconds = Math.Round(mine.SprintSeconds, 2),
-                    HurdlesSeconds = Math.Round(mine.HurdlesSeconds, 2),
-                    TotalTimeSeconds = Math.Round(mine.TotalSeconds, 2),
-                    Character = mine.Character,
-                });
+                // Through the shared record-and-submit flow: the server ratchets per player,
+                // so a submit lost to a flaky connection loses the personal best for good
+                // unless it is parked and replayed (and the player is told either way).
+                _stats = await GameResults.RecordAndSubmitPoSportsAsync(
+                    _playerName,
+                    mine.Placing == 1 ? GameResult.Win : GameResult.Loss,
+                    new PoSportsHighScore
+                    {
+                        PlayerName = _playerName,
+                        SprintSeconds = Math.Round(mine.SprintSeconds, 2),
+                        HurdlesSeconds = Math.Round(mine.HurdlesSeconds, 2),
+                        TotalTimeSeconds = Math.Round(mine.TotalSeconds, 2),
+                        Character = mine.Character,
+                    });
+                UpdateStats();
             }
         }
         await InvokeAsync(StateHasChanged);
@@ -492,6 +534,9 @@
         {
             Hub.SnapshotReceived -= OnServerSnapshot;
             Hub.RaceFinished -= OnServerFinished;
+            // Unsubscribing alone leaves the socket open and still in the server's race
+            // group for the app's lifetime, decoding snapshots nobody listens to.
+            try { await Hub.StopRaceAsync(); } catch { }
         }
         try { await JSRuntime.InvokeVoidAsync("PoSports.destroy"); } catch { }
         _ref?.Dispose();

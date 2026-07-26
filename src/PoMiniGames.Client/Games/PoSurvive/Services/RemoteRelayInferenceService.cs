@@ -20,11 +20,11 @@ public sealed class RemoteRelayInferenceService(HttpClient http) : IInferenceSer
 
     /// <inheritdoc/>
     public async Task<InferenceResult> InferAsync(
-        string            gridJson,
+        string gridJson,
         PersonalityDnaDto dna,
         CancellationToken ct = default)
     {
-        var request  = new InferRequestDto(gridJson, dna, _modelId);
+        var request = new InferRequestDto(gridJson, dna, _modelId);
         var response = await http.PostAsJsonAsync("/api/infer", request, ApiJsonContext.Default.InferRequestDto, ct);
         response.EnsureSuccessStatusCode();
         var result = await response.Content.ReadFromJsonAsync(

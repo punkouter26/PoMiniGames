@@ -35,6 +35,52 @@ export class TrackRenderer {
     this.canvas.height = Math.round(rect.height * this.dpr);
     this.canvas.style.width = `${rect.width}px`;
     this.canvas.style.height = `${rect.height}px`;
+    this.buildBackdrop();
+  }
+
+  /**
+   * Pre-render the sky gradient and the two crowd rows once per resize.
+   * Both depend only on the view size, but were rebuilt every frame — a fresh
+   * gradient plus ~110 arc/fill paths at 60 fps, before a single runner was drawn.
+   * The crowd tiles are drawn one row wide plus a 18 px seam so the parallax scroll
+   * is a source-x offset on one drawImage instead of a per-dot loop.
+   */
+  buildBackdrop() {
+    const w = this.viewW; const h = this.viewH;
+    if (w === 0 || h === 0) return;
+
+    const make = (width, height, paint) => {
+      const c = document.createElement('canvas');
+      c.width = Math.max(1, Math.round(width * this.dpr));
+      c.height = Math.max(1, Math.round(height * this.dpr));
+      const cx = c.getContext('2d');
+      cx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+      paint(cx);
+      return c;
+    };
+
+    this._sky = make(w, h * 0.22, (cx) => {
+      const sky = cx.createLinearGradient(0, 0, 0, h * 0.22);
+      sky.addColorStop(0, '#7ec8f2');
+      sky.addColorStop(1, '#cfeaf9');
+      cx.fillStyle = sky;
+      cx.fillRect(0, 0, w, h * 0.22);
+    });
+
+    // One tile per row: view width + a full dot spacing so the scrolled seam is covered.
+    this._crowdRows = [0, 1].map((row) => {
+      const size = 3 + row * 1.5;
+      const tileH = size * 2 + 6;
+      const tile = make(w + 18, tileH, (cx) => {
+        cx.fillStyle = row === 0 ? '#8fa8c4' : '#a9bed6';
+        for (let x = 0; x <= w + 18; x += 18) {
+          cx.beginPath();
+          cx.arc(x, tileH / 2 + Math.sin((x + row * 7) * 0.7) * 2, size, 0, Math.PI * 2);
+          cx.fill();
+        }
+      });
+      return { tile, tileH, speed: 0.35 + row * 0.3, y: h * (0.145 + row * 0.05) };
+    });
   }
 
   /** Logical (CSS px) view size. */
@@ -76,27 +122,19 @@ export class TrackRenderer {
     const w = this.viewW; const h = this.viewH;
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
 
-    // Sky.
-    const sky = ctx.createLinearGradient(0, 0, 0, h * 0.22);
-    sky.addColorStop(0, '#7ec8f2');
-    sky.addColorStop(1, '#cfeaf9');
-    ctx.fillStyle = sky;
-    ctx.fillRect(0, 0, w, h * 0.22);
+    // Sky + crowd: pre-rendered in buildBackdrop(), blitted here. The crowd's parallax
+    // is the source-x offset into its tile, so each row costs one drawImage.
+    if (!this._sky) this.buildBackdrop();
+    if (this._sky) ctx.drawImage(this._sky, 0, 0, w, h * 0.22);
 
-    // Crowd strip: two rows of parallax dots.
     ctx.fillStyle = '#5d7a99';
     ctx.fillRect(0, h * 0.12, w, h * 0.10);
-    for (let row = 0; row < 2; row++) {
-      const y = h * (0.145 + row * 0.05);
-      const size = 3 + row * 1.5;
-      const speed = 0.35 + row * 0.3; // nearer row scrolls faster
-      const offset = (this.cameraX * PX_PER_METER * speed) % 18;
-      ctx.fillStyle = row === 0 ? '#8fa8c4' : '#a9bed6';
-      for (let x = -offset; x < w; x += 18) {
-        ctx.beginPath();
-        ctx.arc(x, y + Math.sin((x + row * 7) * 0.7) * 2, size, 0, Math.PI * 2);
-        ctx.fill();
-      }
+    for (const row of this._crowdRows ?? []) {
+      const offset = ((this.cameraX * PX_PER_METER * row.speed) % 18 + 18) % 18;
+      ctx.drawImage(
+        row.tile,
+        offset * this.dpr, 0, w * this.dpr, row.tile.height,
+        0, row.y - row.tileH / 2, w, row.tileH);
     }
 
     // Track bed.

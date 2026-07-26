@@ -23,7 +23,6 @@ public sealed class PoSportsHighScoreTests : IClassFixture<TestWebApplicationFac
         SprintSeconds = sprint,
         HurdlesSeconds = hurdles,
         TotalTimeSeconds = sprint + hurdles,
-        HurdlesClean = 6,
         Character = character,
         Date = "2026-07-21T12:00:00Z",
     };

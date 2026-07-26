@@ -1,4 +1,7 @@
 using System.Text.Json;
+// Alias, not a namespace import: PoMiniGamesClient.Models mirrors several other Domain
+// types by name, so importing the namespace wholesale would make them all ambiguous.
+using PoSportsHighScore = PoMiniGames.Domain.Models.PoSportsHighScore;
 using PoMiniGamesClient.Models;
 
 namespace PoMiniGamesClient.Services;
@@ -9,7 +12,8 @@ public enum PendingScoreKind
     MarbleRace,
     PoBrawl,
     /// <summary>A PlayerStats PUT (adaptive-ELO games mirror their rating into it).</summary>
-    PlayerStats
+    PlayerStats,
+    PoSports
 }
 
 /// <summary>
@@ -67,6 +71,9 @@ public sealed class ScoreSyncService
 
     public void EnqueuePoBrawl(PoBrawlHighScore entry) =>
         Enqueue(PendingScoreKind.PoBrawl, JsonSerializer.Serialize(entry, ApiJsonContext.Default.PoBrawlHighScore));
+
+    public void EnqueuePoSports(PoSportsHighScore entry) =>
+        Enqueue(PendingScoreKind.PoSports, JsonSerializer.Serialize(entry, ApiJsonContext.Default.PoSportsHighScore));
 
     public void EnqueuePlayerStats(PendingPlayerStats entry) =>
         Enqueue(PendingScoreKind.PlayerStats, JsonSerializer.Serialize(entry, ApiJsonContext.Default.PendingPlayerStats));
@@ -154,8 +161,19 @@ public sealed class ScoreSyncService
                 JsonSerializer.Deserialize(item.PayloadJson, ApiJsonContext.Default.PoBrawlHighScore) ?? new PoBrawlHighScore()) is not null
                 ? Disposition.Synced : Disposition.Retry,
         PendingScoreKind.PlayerStats => await SubmitPlayerStatsAsync(item.PayloadJson),
+        PendingScoreKind.PoSports => await SubmitPoSportsAsync(item.PayloadJson),
         _ => Disposition.Drop, // unknown kind: drop rather than wedge the queue forever
     };
+
+    private async Task<Disposition> SubmitPoSportsAsync(string payloadJson)
+    {
+        var entry = JsonSerializer.Deserialize(payloadJson, ApiJsonContext.Default.PoSportsHighScore);
+        if (entry is null) return Disposition.Drop; // malformed: unreplayable
+
+        var result = await _api.SubmitPoSportsHighScoreAsync(entry);
+        if (result.IsSaved) return Disposition.Synced;
+        return result.ShouldRetry ? Disposition.Retry : Disposition.Drop;
+    }
 
     private async Task<Disposition> SubmitMarbleRaceAsync(string payloadJson)
     {

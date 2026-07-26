@@ -24,19 +24,19 @@ public class MicrosoftAuthOptionsTests
     private const string ConstructedScope = "api://12a819d2-ac45-45ff-991b-6f27e6dd3dfb/access_as_user";
 
     [Theory]
-    [InlineData(DevTemplateScope,         SampleApiClientId, ConstructedScope, // shipped dev template
+    [InlineData(DevTemplateScope, SampleApiClientId, ConstructedScope, // shipped dev template
                   "the dev template placeholder must NOT leak to MSAL")]
-    [InlineData("api://<APP_ID>/foo",      SampleApiClientId, ConstructedScope, // Helm-style placeholder
+    [InlineData("api://<APP_ID>/foo", SampleApiClientId, ConstructedScope, // Helm-style placeholder
                   "<APP_ID>-style placeholders must be detected and replaced")]
     [InlineData("api://{{api_client_id}}", SampleApiClientId, ConstructedScope, // Mustache placeholder
                   "Mustache placeholders must be detected and replaced")]
-    [InlineData("REPLACE_ME/api",          SampleApiClientId, ConstructedScope, // explicit REPLACE marker
+    [InlineData("REPLACE_ME/api", SampleApiClientId, ConstructedScope, // explicit REPLACE marker
                   "explicit REPLACE markers must be detected and replaced")]
-    [InlineData("",                        SampleApiClientId, ConstructedScope, // empty Scope → construct
+    [InlineData("", SampleApiClientId, ConstructedScope, // empty Scope → construct
                   "an empty configured Scope falls back to the constructed scope")]
-    [InlineData(DevTemplateScope,         "",               "",               // placeholder AND no ApiClientId
+    [InlineData(DevTemplateScope, "", "",               // placeholder AND no ApiClientId
                   "no ApiClientId + placeholder Scope → empty scope, never the placeholder")]
-    [InlineData("api://other-app/foo",     SampleApiClientId, "api://other-app/foo", // custom valid scope
+    [InlineData("api://other-app/foo", SampleApiClientId, "api://other-app/foo", // custom valid scope
                   "a non-placeholder Scope is honoured verbatim")]
     public void EffectiveScope_HandlesPlaceholderAndFallback(
         string scope, string apiClientId, string expected, string because)

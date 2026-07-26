@@ -44,16 +44,16 @@ public sealed class SessionLogService
         {
             await _js.InvokeVoidAsync("indexedDbStore.appendHeartbeat", new
             {
-                sessionId    = evt.SessionId.ToString(),
-                turnNumber   = evt.TurnNumber,
-                agentId      = evt.AgentId,
-                team         = evt.Team,
-                thoughtText  = evt.ThoughtText,
-                actionTaken  = evt.ActionTaken,
-                hpBefore     = evt.HpBefore,
-                hpAfter      = evt.HpAfter,
+                sessionId = evt.SessionId.ToString(),
+                turnNumber = evt.TurnNumber,
+                agentId = evt.AgentId,
+                team = evt.Team,
+                thoughtText = evt.ThoughtText,
+                actionTaken = evt.ActionTaken,
+                hpBefore = evt.HpBefore,
+                hpAfter = evt.HpAfter,
                 hungerBefore = evt.HungerBefore,
-                hungerAfter  = evt.HungerAfter,
+                hungerAfter = evt.HungerAfter,
             });
         }
         catch { /* swallow JS interop errors */ }

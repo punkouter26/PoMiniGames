@@ -35,10 +35,10 @@ public static class InferEndpoints
 
     private static async Task<IResult> HandleAsync(
         [FromBody] InferRequestDto request,
-        IInferenceService          inferenceService,
-        IConfiguration             config,
-        ILoggerFactory             logFactory,
-        CancellationToken          ct)
+        IInferenceService inferenceService,
+        IConfiguration config,
+        ILoggerFactory logFactory,
+        CancellationToken ct)
     {
         var logger = logFactory.CreateLogger("InferEndpoints");
 

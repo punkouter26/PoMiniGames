@@ -41,7 +41,7 @@ public sealed class GameSessionManagerTests
 
     [Theory]
     [InlineData(false, true)]  // no waiting lobby → creates new
-    [InlineData(true,  false)] // waiting lobby exists → reuses
+    [InlineData(true, false)] // waiting lobby exists → reuses
     public void JoinOrCreate_RespectsWaitingLobbyState(bool seedWaitingLobby, bool expectCreated)
     {
         var mgr = new GameSessionManager();
@@ -196,9 +196,9 @@ public sealed class GameSessionManagerTests
     }
 
     [Theory]
-    [InlineData(DifficultyLevel.Easy,   3)]
+    [InlineData(DifficultyLevel.Easy, 3)]
     [InlineData(DifficultyLevel.Medium, 5)]
-    [InlineData(DifficultyLevel.Hard,   7)]
+    [InlineData(DifficultyLevel.Hard, 7)]
     public void Game_MaxRounds_MapsDifficulty(DifficultyLevel difficulty, int expectedRounds)
     {
         new Game { Difficulty = difficulty }.MaxRounds.Should().Be(expectedRounds);

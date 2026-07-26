@@ -55,7 +55,8 @@ internal static class StorageExtensions
 
         // Per-game repositories inject these clients directly; the central
         // resolver keeps the prod-vs-dev branching logic in one place.
-        services.AddSingleton(_ => ResolveTableServiceClient(connectionString, endpoint, accountName));
+        services.AddSingleton(sp => ResolveTableServiceClient(
+            connectionString, endpoint, accountName, sp.GetService<IHostEnvironment>()));
         services.AddSingleton(_ => ResolveBlobServiceClient(connectionString, endpoint, accountName));
 
         services.AddSingleton<StorageService>();
@@ -77,7 +78,8 @@ internal static class StorageExtensions
     private static TableServiceClient ResolveTableServiceClient(
         string? connectionString,
         string? endpoint,
-        string? accountName)
+        string? accountName,
+        IHostEnvironment? environment)
     {
         if (!string.IsNullOrWhiteSpace(connectionString))
         {
@@ -90,6 +92,17 @@ internal static class StorageExtensions
                 ? new Uri(endpoint!)
                 : new Uri($"https://{accountName}.table.core.windows.net");
             return new TableServiceClient(serviceUri, new DefaultAzureCredential());
+        }
+
+        // In production, silently falling through to the emulator turns a missing
+        // deployment setting into per-request 500s against a loopback address that isn't
+        // there. Say what is missing instead — every azd deploy sets these (infra/resources.bicep).
+        if (environment?.IsProduction() == true)
+        {
+            throw new InvalidOperationException(
+                "No table storage configured. Set PoMiniGames:Storage:TableService "
+                + "ConnectionString, Endpoint, or AccountName (infra/resources.bicep injects "
+                + "Endpoint/AccountName for the managed-identity path).");
         }
 
         // Default to the Azurite emulator (docker-compose.yml) so local dev

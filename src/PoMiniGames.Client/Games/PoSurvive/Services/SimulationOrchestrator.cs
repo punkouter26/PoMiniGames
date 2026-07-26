@@ -24,47 +24,47 @@ public sealed class SimulationOrchestrator : IDisposable
     private const int MinTurnInferenceBudgetMs = 6_000;
     private const int MaxTurnInferenceBudgetMs = 20_000;
 
-    private readonly IDispatcher           _dispatcher;
-    private readonly IInferenceService     _inference;
-    private readonly GridService           _gridSvc;
-    private readonly SimulationEngine      _engine;
-    private readonly NarrativeService      _narrative;
+    private readonly IDispatcher _dispatcher;
+    private readonly IInferenceService _inference;
+    private readonly GridService _gridSvc;
+    private readonly SimulationEngine _engine;
+    private readonly NarrativeService _narrative;
     private readonly EvolutionClientService _evolutionClient;
 
     // ─── Mutable runtime state ────────────────────────────────────────────
-    private GridTile[]?        _grid;
-    private List<Agent>?       _agents;
-    private SimulationConfig?  _config;
-    private Guid               _sessionId;
-    private DateTimeOffset     _startedAt;
-    private int                _turn;
-    private int                _inferenceRoundRobinOffset;
-    private bool               _isMock;
-    private readonly Random    _rng = new();
+    private GridTile[]? _grid;
+    private List<Agent>? _agents;
+    private SimulationConfig? _config;
+    private Guid _sessionId;
+    private DateTimeOffset _startedAt;
+    private int _turn;
+    private int _inferenceRoundRobinOffset;
+    private bool _isMock;
+    private readonly Random _rng = new();
 
     // HeartbeatEvents accumulated for the current session
     private readonly List<HeartbeatEventDto> _sessionLog = [];
     private readonly Dictionary<string, (string Thought, string Action)> _inferenceCache = new();
 
     private System.Timers.Timer? _timer;
-    private bool                 _ticking;
-    private bool                 _stopped;
-    private bool                 _paused;
-    private readonly object      _stateLock = new();
+    private bool _ticking;
+    private bool _stopped;
+    private bool _paused;
+    private readonly object _stateLock = new();
 
     public SimulationOrchestrator(
-        IDispatcher            dispatcher,
-        IInferenceService      inference,
-        GridService            gridSvc,
-        SimulationEngine       engine,
-        NarrativeService       narrative,
+        IDispatcher dispatcher,
+        IInferenceService inference,
+        GridService gridSvc,
+        SimulationEngine engine,
+        NarrativeService narrative,
         EvolutionClientService evolutionClient)
     {
-        _dispatcher      = dispatcher;
-        _inference       = inference;
-        _gridSvc         = gridSvc;
-        _engine          = engine;
-        _narrative       = narrative;
+        _dispatcher = dispatcher;
+        _inference = inference;
+        _gridSvc = gridSvc;
+        _engine = engine;
+        _narrative = narrative;
         _evolutionClient = evolutionClient;
     }
 
@@ -73,15 +73,15 @@ public sealed class SimulationOrchestrator : IDisposable
     /// <summary>Builds the grid, places agents, and starts the heartbeat timer.</summary>
     public void Initialize(SimulationConfigDto configDto, bool isMockProvider)
     {
-        _config    = MapConfig(configDto);
+        _config = MapConfig(configDto);
         _sessionId = Guid.NewGuid();
         _startedAt = DateTimeOffset.UtcNow;
-        _turn      = 0;
+        _turn = 0;
         _inferenceRoundRobinOffset = 0;
-        _isMock    = isMockProvider;
+        _isMock = isMockProvider;
         _sessionLog.Clear();
 
-        _grid   = _gridSvc.GenerateGrid(_config, _rng);
+        _grid = _gridSvc.GenerateGrid(_config, _rng);
         _agents = _gridSvc.CreateAgents(_config, _rng);
         _gridSvc.PlaceAgents(_grid, _agents, _rng);
 
@@ -92,10 +92,10 @@ public sealed class SimulationOrchestrator : IDisposable
             .ToList();
 
         _dispatcher.Dispatch(new SimulationInitialisedAction(
-            SessionId:     _sessionId,
-            Agents:        MapAgents(),
-            Rocks:         rocks,
-            Config:        configDto,
+            SessionId: _sessionId,
+            Agents: MapAgents(),
+            Rocks: rocks,
+            Config: configDto,
             IsMockProvider: isMockProvider));
 
         StartTimer(_config.HeartbeatMaxMs);
@@ -126,28 +126,28 @@ public sealed class SimulationOrchestrator : IDisposable
             var newEntries = _agents
                 .Select(a => new ConsoleEntry(
                     TurnNumber: _turn,
-                    AgentId:    a.Id,
-                    Team:       a.Team.ToString(),
-                    Thought:    a.LastThought ?? "(thinking…)",
-                    Action:     a.LastAction?.ToString() ?? "Idle"))
+                    AgentId: a.Id,
+                    Team: a.Team.ToString(),
+                    Thought: a.LastThought ?? "(thinking…)",
+                    Action: a.LastAction?.ToString() ?? "Idle"))
                 .ToList();
 
             // 4. Build heartbeat DTOs for session log
-            var gridJson  = SerialiseGrid();
+            var gridJson = SerialiseGrid();
             var heartbeats = _agents.Select(a =>
             {
                 var before = hpBefore.TryGetValue(a.Id, out var b) ? b : (Hp: a.Hp, Hunger: a.Hunger);
                 return new HeartbeatEventDto(
-                    SessionId:    _sessionId,
-                    TurnNumber:   _turn,
-                    AgentId:      a.Id,
-                    Team:         a.Team.ToString(),
-                    ThoughtText:  a.LastThought ?? "",
-                    ActionTaken:  a.LastAction?.ToString() ?? "Idle",
-                    HpBefore:     before.Hp,
-                    HpAfter:      a.Hp,
+                    SessionId: _sessionId,
+                    TurnNumber: _turn,
+                    AgentId: a.Id,
+                    Team: a.Team.ToString(),
+                    ThoughtText: a.LastThought ?? "",
+                    ActionTaken: a.LastAction?.ToString() ?? "Idle",
+                    HpBefore: before.Hp,
+                    HpAfter: a.Hp,
                     HungerBefore: before.Hunger,
-                    HungerAfter:  a.Hunger,
+                    HungerAfter: a.Hunger,
                     GridSnapshot: gridJson);
             }).ToList();
 
@@ -162,16 +162,16 @@ public sealed class SimulationOrchestrator : IDisposable
             }
 
             // 6. Dispatch heartbeat completed
-            string? outcome    = result.Outcome?.ToString();
+            string? outcome = result.Outcome?.ToString();
             string? winnerTeam = result.WinningTeam?.ToString();
 
             _dispatcher.Dispatch(new HeartbeatCompletedAction(
-                TurnNumber:      _turn,
-                Agents:          MapAgents(),
-                FoodNodes:       MapFoodNodes(),
-                NewEntries:      newEntries,
-                Outcome:         outcome,
-                WinningTeam:     winnerTeam,
+                TurnNumber: _turn,
+                Agents: MapAgents(),
+                FoodNodes: MapFoodNodes(),
+                NewEntries: newEntries,
+                Outcome: outcome,
+                WinningTeam: winnerTeam,
                 HeartbeatEvents: heartbeats));
 
             // 7. If simulation ended, stop timer, record evolution, and generate narrative
@@ -225,13 +225,13 @@ public sealed class SimulationOrchestrator : IDisposable
         StopTimer();
         lock (_stateLock)
         {
-            _grid      = null;
-            _agents    = null;
-            _config    = null;
+            _grid = null;
+            _agents = null;
+            _config = null;
             _sessionLog.Clear();
             _inferenceCache.Clear();
-            _turn      = 0;
-            _paused    = false;
+            _turn = 0;
+            _paused = false;
             _inferenceRoundRobinOffset = 0;
         }
     }
@@ -266,7 +266,7 @@ public sealed class SimulationOrchestrator : IDisposable
 
     private async Task<IReadOnlyDictionary<string, AgentAction>> InferActionsAsync()
     {
-        var dict     = new Dictionary<string, AgentAction>();
+        var dict = new Dictionary<string, AgentAction>();
         var aliveAgents = _agents!
             .Where(a => a.IsAlive)
             .ToList();
@@ -339,7 +339,7 @@ public sealed class SimulationOrchestrator : IDisposable
             {
                 var localGridJson = SerialiseLocalGrid(agent, 3);
                 var cacheKey = $"{agent.Hp}_{agent.Hunger}_{localGridJson}";
-                
+
                 if (_inferenceCache.TryGetValue(cacheKey, out var cached))
                 {
                     agent.LastThought = cached.Thought;
@@ -449,22 +449,22 @@ public sealed class SimulationOrchestrator : IDisposable
         {
             var winningTeam = winner?.ToString();
             var agentResults = _agents!.Select(a => new AgentEvolutionResult(
-                Predatory:        a.Dna.Predatory,
-                Scavenger:        a.Dna.Scavenger,
-                Paranoid:         a.Dna.Paranoid,
-                Altruistic:       a.Dna.Altruistic,
-                Methodical:       a.Dna.Methodical,
-                AgentId:          a.Id,
-                Team:             a.Team.ToString(),
-                IsWinner:         a.IsAlive && a.Team.ToString() == winningTeam,
-                KillCount:        a.KillCount,
-                FoodConsumed:     a.FoodConsumed,
-                DamageDealt:      a.TotalDamageDealt
+                Predatory: a.Dna.Predatory,
+                Scavenger: a.Dna.Scavenger,
+                Paranoid: a.Dna.Paranoid,
+                Altruistic: a.Dna.Altruistic,
+                Methodical: a.Dna.Methodical,
+                AgentId: a.Id,
+                Team: a.Team.ToString(),
+                IsWinner: a.IsAlive && a.Team.ToString() == winningTeam,
+                KillCount: a.KillCount,
+                FoodConsumed: a.FoodConsumed,
+                DamageDealt: a.TotalDamageDealt
             )).ToList();
 
             var request = new RecordEvolutionRequest(
                 SessionId: _sessionId.ToString(),
-                Agents:    agentResults);
+                Agents: agentResults);
 
             await _evolutionClient.RecordSessionOutcomeAsync(request);
         }
@@ -477,18 +477,18 @@ public sealed class SimulationOrchestrator : IDisposable
     private async Task GeneratePostMortemAsync(SimulationOutcome outcome, TeamColor? winner)
     {
         var agentSnapshots = _agents!.Select(a => new AgentFinalSnapshotDto(
-            Id:             a.Id,
-            Team:           a.Team.ToString(),
-            Hp:             a.Hp,
-            KillCount:      a.KillCount,
-            FoodConsumed:   a.FoodConsumed,
+            Id: a.Id,
+            Team: a.Team.ToString(),
+            Hp: a.Hp,
+            KillCount: a.KillCount,
+            FoodConsumed: a.FoodConsumed,
             TotalDamageDealt: a.TotalDamageDealt,
-            Predatory:      a.Dna.Predatory,
-            Scavenger:      a.Dna.Scavenger,
-            Paranoid:       a.Dna.Paranoid,
-            Altruistic:     a.Dna.Altruistic,
-            Methodical:     a.Dna.Methodical,
-            SurvivalTurns:  _turn
+            Predatory: a.Dna.Predatory,
+            Scavenger: a.Dna.Scavenger,
+            Paranoid: a.Dna.Paranoid,
+            Altruistic: a.Dna.Altruistic,
+            Methodical: a.Dna.Methodical,
+            SurvivalTurns: _turn
         )).ToList();
 
         var narrative = _narrative.GenerateNarrative(
@@ -496,32 +496,32 @@ public sealed class SimulationOrchestrator : IDisposable
 
         _dispatcher.Dispatch(new PostMortemReadyAction(
             NarrativeText: narrative,
-            WinnerName:    winner?.ToString()));
+            WinnerName: winner?.ToString()));
     }
 
     private IReadOnlyList<AgentDto> MapAgents() =>
         _agents!.Select(MapAgent).ToList();
 
     private AgentDto MapAgent(Agent a) => new AgentDto(
-        Id:               a.Id,
-        Team:             a.Team.ToString(),
-        Hp:               a.Hp,
-        Hunger:           a.Hunger,
-        KillCount:        a.KillCount,
-        Predatory:        a.Dna.Predatory,
-        Scavenger:        a.Dna.Scavenger,
-        Paranoid:         a.Dna.Paranoid,
-        Altruistic:       a.Dna.Altruistic,
-        Methodical:       a.Dna.Methodical,
-        X:                a.Position.X,
-        Y:                a.Position.Y,
-        IsAlive:          a.IsAlive,
-        IsFading:         a.IsFading,
-        LastThought:      a.LastThought,
-        LastAction:       a.LastAction?.ToString(),
-        FoodConsumed:     a.FoodConsumed,
+        Id: a.Id,
+        Team: a.Team.ToString(),
+        Hp: a.Hp,
+        Hunger: a.Hunger,
+        KillCount: a.KillCount,
+        Predatory: a.Dna.Predatory,
+        Scavenger: a.Dna.Scavenger,
+        Paranoid: a.Dna.Paranoid,
+        Altruistic: a.Dna.Altruistic,
+        Methodical: a.Dna.Methodical,
+        X: a.Position.X,
+        Y: a.Position.Y,
+        IsAlive: a.IsAlive,
+        IsFading: a.IsFading,
+        LastThought: a.LastThought,
+        LastAction: a.LastAction?.ToString(),
+        FoodConsumed: a.FoodConsumed,
         TotalDamageDealt: a.TotalDamageDealt,
-        SurvivalTurns:    _turn
+        SurvivalTurns: _turn
     );
 
     private IReadOnlyList<FoodNodeDto> MapFoodNodes() =>
@@ -536,9 +536,9 @@ public sealed class SimulationOrchestrator : IDisposable
     {
         var dto = new GridStateDto(
             TurnNumber: _turn,
-            Agents:     MapAgents(),
-            FoodNodes:  MapFoodNodes(),
-            Rocks:      _grid!
+            Agents: MapAgents(),
+            FoodNodes: MapFoodNodes(),
+            Rocks: _grid!
                 .Where(t => t.Terrain == TerrainType.Rock)
                 .Select(t => new GridCoordinateDto(t.X, t.Y))
                 .ToList());
@@ -548,15 +548,15 @@ public sealed class SimulationOrchestrator : IDisposable
 
     private string SerialiseLocalGrid(Agent observer, int radius)
     {
-        bool IsWithinRadius(int x, int y) => 
+        bool IsWithinRadius(int x, int y) =>
             Math.Abs(x - observer.Position.X) <= radius && Math.Abs(y - observer.Position.Y) <= radius;
 
         var dto = new GridStateDto(
             TurnNumber: _turn,
-            Agents:     _agents!.Where(a => IsWithinRadius(a.Position.X, a.Position.Y)).Select(MapAgent).ToList(),
-            FoodNodes:  _grid!.Where(t => t.Food is not null && IsWithinRadius(t.X, t.Y))
+            Agents: _agents!.Where(a => IsWithinRadius(a.Position.X, a.Position.Y)).Select(MapAgent).ToList(),
+            FoodNodes: _grid!.Where(t => t.Food is not null && IsWithinRadius(t.X, t.Y))
                              .Select(t => new FoodNodeDto(t.X, t.Y, t.Food!.SpawnTurn, t.Food.TtlHeartbeats)).ToList(),
-            Rocks:      _grid!.Where(t => t.Terrain == TerrainType.Rock && IsWithinRadius(t.X, t.Y))
+            Rocks: _grid!.Where(t => t.Terrain == TerrainType.Rock && IsWithinRadius(t.X, t.Y))
                              .Select(t => new GridCoordinateDto(t.X, t.Y)).ToList());
 
         return JsonSerializer.Serialize(dto, ApiJsonContext.Default.GridStateDto);
@@ -564,17 +564,17 @@ public sealed class SimulationOrchestrator : IDisposable
 
     private static SimulationConfig MapConfig(SimulationConfigDto dto) => new()
     {
-        TeamSize              = dto.TeamSize,
-        RockDensity           = dto.RockDensity,
-        FoodSpawnChance       = dto.FoodSpawnChance,
-        FoodTtl               = dto.FoodTtl,
-        HungerDecayConstant   = dto.HungerDecayConstant,
-        HungerThreshold       = dto.HungerThreshold,
-        StarveHpLossPerTurn   = dto.StarveHpLossPerTurn,
-        BaseDamage            = dto.BaseDamage,
-        HeartbeatMinMs        = dto.HeartbeatMinMs,
-        HeartbeatMaxMs        = dto.HeartbeatMaxMs,
-        InferenceTimeoutMs    = dto.InferenceTimeoutMs,
+        TeamSize = dto.TeamSize,
+        RockDensity = dto.RockDensity,
+        FoodSpawnChance = dto.FoodSpawnChance,
+        FoodTtl = dto.FoodTtl,
+        HungerDecayConstant = dto.HungerDecayConstant,
+        HungerThreshold = dto.HungerThreshold,
+        StarveHpLossPerTurn = dto.StarveHpLossPerTurn,
+        BaseDamage = dto.BaseDamage,
+        HeartbeatMinMs = dto.HeartbeatMinMs,
+        HeartbeatMaxMs = dto.HeartbeatMaxMs,
+        InferenceTimeoutMs = dto.InferenceTimeoutMs,
         MaxInferredAgentsPerTurn = dto.MaxInferredAgentsPerTurn,
     };
 }

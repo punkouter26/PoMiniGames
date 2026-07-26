@@ -18,6 +18,12 @@ public sealed class PoSportsLobbyService
     public const int MaxPlayers = 4;
 
     private readonly ConcurrentDictionary<string, PoSportsLobbyMember> _members = new();
+    /// <summary>
+    /// connectionId → claim-derived user id. Kept OUT of <see cref="PoSportsLobbyState"/>:
+    /// the lobby state is broadcast to every member, and a stable user id is not ours to
+    /// share. The race seeds lane ownership from here (see <see cref="Seats"/>).
+    /// </summary>
+    private readonly ConcurrentDictionary<string, string> _identities = new();
     private string _hostConnectionId = "";
     private long _startedAtMs;
     private readonly object _stateLock = new();
@@ -48,8 +54,38 @@ public sealed class PoSportsLobbyService
         get { lock (_stateLock) return _members.IsEmpty; }
     }
 
+    /// <summary>True while a meet is running (between TryStart and EndRace).</summary>
+    public bool RaceStarted
+    {
+        get { lock (_stateLock) return _startedAtMs > 0; }
+    }
+
+    /// <summary>
+    /// Lane seeds for the race: each member's already-sanitized name and character plus
+    /// the identity we never broadcast. The race binds lanes by <c>UserId</c>, so a player
+    /// whose display name was truncated (or who reconnects) still finds their own lane.
+    /// </summary>
+    public IReadOnlyList<PoSportsRaceSeat> Seats
+    {
+        get
+        {
+            lock (_stateLock)
+            {
+                return _members.Values
+                    .OrderBy(m => m.ConnectionId, StringComparer.Ordinal)
+                    .Select(m => new PoSportsRaceSeat(
+                        m.DisplayName,
+                        m.Character,
+                        _identities.TryGetValue(m.ConnectionId, out var uid) ? uid : "",
+                        m.IsGuest))
+                    .ToList();
+            }
+        }
+    }
+
     /// <summary>Open the lobby. If empty, the caller becomes host; otherwise joins.</summary>
-    public (PoSportsLobbyState state, string eventMessage) Open(string connectionId, string displayName, bool isGuest)
+    public (PoSportsLobbyState state, string eventMessage) Open(
+        string connectionId, string displayName, bool isGuest, string userId = "")
     {
         lock (_stateLock)
         {
@@ -73,6 +109,7 @@ public sealed class PoSportsLobbyService
                 _hostConnectionId = "";
             }
             _members[connectionId] = new PoSportsLobbyMember(connectionId, name, isGuest, "", false);
+            _identities[connectionId] = userId ?? "";
             if (string.IsNullOrEmpty(_hostConnectionId))
             {
                 _hostConnectionId = connectionId;
@@ -110,10 +147,27 @@ public sealed class PoSportsLobbyService
         }
     }
 
+    /// <summary>
+    /// Flip the caller's ready flag under the state lock and report the state that was
+    /// actually stored. Callers must announce THIS value: a read-then-SetReady pair
+    /// outside the lock races two rapid toggles and broadcasts the pre-toggle state.
+    /// </summary>
+    public (bool ok, bool isReady, string message) ToggleReady(string connectionId)
+    {
+        lock (_stateLock)
+        {
+            if (!_members.TryGetValue(connectionId, out var existing)) return (false, false, "");
+            var toggled = existing with { IsReady = !existing.IsReady };
+            _members[connectionId] = toggled;
+            return (true, toggled.IsReady, $"{toggled.DisplayName} is {(toggled.IsReady ? "ready" : "not ready")}");
+        }
+    }
+
     public (bool ok, string message) Leave(string connectionId)
     {
         lock (_stateLock)
         {
+            _identities.TryRemove(connectionId, out _);
             if (!_members.TryRemove(connectionId, out var removed)) return (true, "");
             if (_hostConnectionId == connectionId)
             {
@@ -163,7 +217,12 @@ public sealed class PoSportsLobbyService
 
     private static long NowMs() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
-    private static string SanitizeName(string raw)
+    /// <summary>
+    /// The one name-normalization rule for PoSports. The race service reuses it so a
+    /// client-supplied name is compared against lanes on identical terms (a &gt;24 char
+    /// display name would otherwise never match its own truncated lane).
+    /// </summary>
+    internal static string SanitizeName(string raw)
     {
         if (string.IsNullOrWhiteSpace(raw)) return "Player";
         var trimmed = raw.Trim();

@@ -179,23 +179,23 @@
         var lpKeys = GameCatalog.LocalTwoPlayer.Select(g => g.Key).ToHashSet();
         var mpKeys = GameCatalog.Multiplayer.Select(g => g.Key).ToHashSet();
 
-        // 2026-07-26 browser audit #6: storage keeps a single global board per
-        // game (no 1P/2P partition), so the 2P section previously mirrored the
-        // 1P rows verbatim. Drop 2P entries that already appear under 1P to
-        // avoid the "identical data in both columns" confusion. If every 2P
-        // entry is deduped the section is suppressed entirely; the empty-state
-        // hint below explains why.
-        var twoPlayerBoards = _boards
-            .Where(b => lpKeys.Contains(b.GameKey))
-            .Where(b => !spKeys.Contains(b.GameKey))
-            .ToList();
+        // 2026-07-26 browser audit #6: storage keeps a single global board per game (no
+        // 1P/2P/multiplayer partition), so a game listed in several catalogs rendered the
+        // SAME rows in each column. Rather than a per-column filter (the original fix
+        // deduped 2P-vs-1P only, leaving PoRacer and PoSports duplicated between the 1P and
+        // Multiplayer columns), each board is assigned exactly one owning section, most
+        // specific first. A section with nothing left is suppressed; the empty-state hint
+        // below explains why.
+        var claimed = new HashSet<GameKey>();
+        List<GameLeaderboardDto> Claim(Func<GameLeaderboardDto, bool> belongs) =>
+            _boards.Where(b => belongs(b) && claimed.Add(b.GameKey)).ToList();
 
         _groupedBoards = new List<BoardGroup>
         {
-            new BoardGroup("1p",      "1 Player",       _boards.Where(b => spKeys.Contains(b.GameKey)).ToList()),
-            new BoardGroup("2p",      "2 Player",       twoPlayerBoards),
-            new BoardGroup("multi",   "Multiplayer",    _boards.Where(b => mpKeys.Contains(b.GameKey)).ToList()),
-            new BoardGroup("other",   "Other",          _boards.Where(b => !spKeys.Contains(b.GameKey) && !lpKeys.Contains(b.GameKey) && !mpKeys.Contains(b.GameKey)).ToList()),
+            new BoardGroup("1p",      "1 Player",       Claim(b => spKeys.Contains(b.GameKey))),
+            new BoardGroup("2p",      "2 Player",       Claim(b => lpKeys.Contains(b.GameKey))),
+            new BoardGroup("multi",   "Multiplayer",    Claim(b => mpKeys.Contains(b.GameKey))),
+            new BoardGroup("other",   "Other",          Claim(_ => true)),
         }.Where(g => g.Boards.Count > 0).ToList();
     }
 

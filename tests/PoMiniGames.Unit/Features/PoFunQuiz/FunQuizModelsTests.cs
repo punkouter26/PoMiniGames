@@ -15,9 +15,9 @@ namespace PoMiniGames.Unit.Features.PoFunQuiz;
 public sealed class FunQuizModelsTests
 {
     [Theory]
-    [InlineData(DifficultyLevel.Easy,   1)]
+    [InlineData(DifficultyLevel.Easy, 1)]
     [InlineData(DifficultyLevel.Medium, 2)]
-    [InlineData(DifficultyLevel.Hard,   3)]
+    [InlineData(DifficultyLevel.Hard, 3)]
     public void QuizQuestion_BasePoints_MapsDifficulty(DifficultyLevel difficulty, int expected)
     {
         new QuizQuestion { Difficulty = difficulty }.BasePoints.Should().Be(expected);
@@ -56,10 +56,10 @@ public sealed class FunQuizModelsTests
     }
 
     [Theory]
-    [InlineData(10, 10, true,  null)]    // tie
-    [InlineData(15, 8,  false, "A")]     // P1 wins
-    [InlineData(8,  15, false, "B")]     // P2 wins
-    [InlineData(0,  0,  true,  null)]    // zero-tie
+    [InlineData(10, 10, true, null)]    // tie
+    [InlineData(15, 8, false, "A")]     // P1 wins
+    [InlineData(8, 15, false, "B")]     // P2 wins
+    [InlineData(0, 0, true, null)]    // zero-tie
     public void GameSession_ScoreAndWinner_ResolvesTie(
         int p1Score, int p2Score, bool expectTie, string? expectedWinnerName)
     {
@@ -95,9 +95,9 @@ public sealed class FunQuizModelsTests
     }
 
     [Theory]
-    [InlineData(0,    0,   0)]         // zero until EndTime set
+    [InlineData(0, 0, 0)]         // zero until EndTime set
     [InlineData(1000, 46000, 45)]      // 45s span
-    [InlineData(5000, 5000,  0)]       // same instant
+    [InlineData(5000, 5000, 0)]       // same instant
     public void GameSession_Duration_RespectsStartAndEndTime(int startMs, int endMs, int expectedSeconds)
     {
         var session = new GameSession();
@@ -108,8 +108,8 @@ public sealed class FunQuizModelsTests
 
     [Theory]
     [InlineData(QuestionCategory.Science, 12)]
-    [InlineData(QuestionCategory.General,   5)]
-    [InlineData(QuestionCategory.History,   8)]
+    [InlineData(QuestionCategory.General, 5)]
+    [InlineData(QuestionCategory.History, 8)]
     public void MockOpenAIService_ReturnsRequestedCount(QuestionCategory category, int count)
     {
         var q = MockOpenAIService.GenerateQuestions(category, count);

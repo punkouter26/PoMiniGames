@@ -211,8 +211,7 @@ export class AiController {
     // table — we emulate by re-arming comboAt/comboUntil directly.
     if (this.charId === 'obama' && PERSONALITIES.obama?.comboEverySecs
         && this.t >= this.obamaComboReadyAt
-        && ctx.distance < ctx.kickRange * 1.2
-        && ctx.opponentState !== 'down' && ctx.opponentState !== 'getup') {
+        && ctx.distance < ctx.kickRange * 1.2) {
       this.comboAt = this.t + ctx.ownAttacks.punch.cancelInto.kick + 0.04;
       this.comboUntil = this.comboAt + 0.15;
       this.obamaComboReadyAt = this.t + (PERSONALITIES.obama.comboEverySecs || 4);
@@ -270,7 +269,6 @@ export class AiController {
     // was decided when the punch started, not as a reaction.
     if (this.comboAt > 0 && this.t >= this.comboAt) {
       const missed = this.t > this.comboUntil
-        || ctx.opponentState === 'down' || ctx.opponentState === 'getup'
         || ctx.distance > ctx.kickRange * 1.1;
       this.comboAt = 0;
       this.comboUntil = 0;
@@ -296,15 +294,6 @@ export class AiController {
 
     if (this.sinceDecision < this.reactionMs) return intent;
     this.sinceDecision = 0;
-
-    // ── Downed opponent: back off ───────────────────────────────────────
-    // The body is invulnerable while down/getting up — swinging at it wastes
-    // frames and looks dumb. Give ground and reset spacing instead.
-    if (ctx.opponentState === 'down' || ctx.opponentState === 'getup') {
-      this.current = { move: ctx.distance < 2.2 ? -1 : 0, side: 0, punch: false, kick: false, block: false };
-      this.baitArmed = false;
-      return { ...this.current };
-    }
 
     // ── Anti-stunlock retreat ───────────────────────────────────────────
     if (this.t < this.retreatUntil) {

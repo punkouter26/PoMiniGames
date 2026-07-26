@@ -9,18 +9,18 @@ using PoShared.Simulation.Constants;
 // SOLID: OCP — new resolution strategies can be injected without modifying the template
 public sealed class SimulationEngine
 {
-    private const int Width  = SimulationDefaults.GridWidth;
+    private const int Width = SimulationDefaults.GridWidth;
     private const int Height = SimulationDefaults.GridHeight;
 
     private readonly CombatService _combat;
     private readonly HungerService _hunger;
-    private readonly GridService   _grid;
+    private readonly GridService _grid;
 
     public SimulationEngine(CombatService combat, HungerService hunger, GridService grid)
     {
         _combat = combat;
         _hunger = hunger;
-        _grid   = grid;
+        _grid = grid;
     }
 
     /// <summary>
@@ -29,14 +29,14 @@ public sealed class SimulationEngine
     /// Returns a <see cref="TickResult"/> describing what happened this turn.
     /// </summary>
     public TickResult Tick(
-        GridTile[]                          grid,
-        List<Agent>                         agents,
-        int                                 turnNumber,
-        SimulationConfig                    config,
+        GridTile[] grid,
+        List<Agent> agents,
+        int turnNumber,
+        SimulationConfig config,
         IReadOnlyDictionary<string, AgentAction> resolvedActions,
-        Random                              rng)
+        Random rng)
     {
-        var diedThisTurn    = new List<string>();
+        var diedThisTurn = new List<string>();
         var witheredThisTurn = new List<(int X, int Y)>();
 
         // Step 1 — apply hunger to all alive agents (before actions)
@@ -84,11 +84,11 @@ public sealed class SimulationEngine
         _grid.TrySpawnFood(grid, turnNumber, config, rng);
 
         // Step 5 — check win condition
-        var aliveRed  = agents.Count(a => a.IsAlive && a.Team == TeamColor.Red);
+        var aliveRed = agents.Count(a => a.IsAlive && a.Team == TeamColor.Red);
         var aliveBlue = agents.Count(a => a.IsAlive && a.Team == TeamColor.Blue);
 
         SimulationOutcome? outcome = null;
-        TeamColor?         winner  = null;
+        TeamColor? winner = null;
 
         if (aliveRed == 0 && aliveBlue == 0)
         {
@@ -97,12 +97,12 @@ public sealed class SimulationEngine
         else if (aliveRed == 0)
         {
             outcome = SimulationOutcome.BlueWin;
-            winner  = TeamColor.Blue;
+            winner = TeamColor.Blue;
         }
         else if (aliveBlue == 0)
         {
             outcome = SimulationOutcome.RedWin;
-            winner  = TeamColor.Red;
+            winner = TeamColor.Red;
         }
 
         return new TickResult(outcome, winner, diedThisTurn, witheredThisTurn);
@@ -154,7 +154,7 @@ public sealed class SimulationEngine
 
         // Find nearest food
         GridTile? nearest = null;
-        var       bestDist = int.MaxValue;
+        var bestDist = int.MaxValue;
         foreach (var tile in grid)
         {
             if (tile.Food is null) continue;
@@ -162,7 +162,7 @@ public sealed class SimulationEngine
             if (d < bestDist)
             {
                 bestDist = d;
-                nearest  = tile;
+                nearest = tile;
             }
         }
 
@@ -212,7 +212,7 @@ public sealed class SimulationEngine
     private static void MoveAgent(GridTile[] grid, Agent agent, GridTile dest)
     {
         var src = GridService.TileAt(grid, agent.Position.X, agent.Position.Y)!;
-        src.Occupant  = null;
+        src.Occupant = null;
         dest.Occupant = agent;
         agent.Position = new Domain.ValueObjects.Simulation.GridCoordinate(dest.X, dest.Y);
     }
@@ -248,8 +248,8 @@ public sealed class SimulationEngine
 
 /// <summary>Result produced by <see cref="SimulationEngine.Tick"/>.</summary>
 public sealed record TickResult(
-    SimulationOutcome?       Outcome,
-    TeamColor?               WinningTeam,
-    IReadOnlyList<string>    DiedThisTurn,
+    SimulationOutcome? Outcome,
+    TeamColor? WinningTeam,
+    IReadOnlyList<string> DiedThisTurn,
     IReadOnlyList<(int X, int Y)> FoodWitheredThisTurn
 );

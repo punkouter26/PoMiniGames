@@ -22,9 +22,9 @@ public readonly record struct GameOutcome
     private GameOutcome(Kind value) => Value = value;
 
     public static readonly GameOutcome Unknown = new(Kind.Unknown);
-    public static readonly GameOutcome Win     = new(Kind.Win);
-    public static readonly GameOutcome Loss    = new(Kind.Loss);
-    public static readonly GameOutcome Draw    = new(Kind.Draw);
+    public static readonly GameOutcome Win = new(Kind.Win);
+    public static readonly GameOutcome Loss = new(Kind.Loss);
+    public static readonly GameOutcome Draw = new(Kind.Draw);
 
     /// <summary>Parses legacy string synonyms. Unknown input maps to <see cref="Unknown"/>.</summary>
     public static GameOutcome Parse(string? raw)
@@ -34,21 +34,21 @@ public readonly record struct GameOutcome
         {
             "win" or "won" or "victory" or "w" => Win,
             "loss" or "lose" or "lost" or "l" => Loss,
-            "draw" or "tie" or "d"            => Draw,
-            _                                 => Unknown,
+            "draw" or "tie" or "d" => Draw,
+            _ => Unknown,
         };
     }
 
-    public bool IsWin  => Value == Kind.Win;
+    public bool IsWin => Value == Kind.Win;
     public bool IsLoss => Value == Kind.Loss;
     public bool IsDraw => Value == Kind.Draw;
     public bool IsKnown => Value != Kind.Unknown;
 
     public override string ToString() => Value switch
     {
-        Kind.Win  => "win",
+        Kind.Win => "win",
         Kind.Loss => "loss",
         Kind.Draw => "draw",
-        _         => "unknown",
+        _ => "unknown",
     };
 }

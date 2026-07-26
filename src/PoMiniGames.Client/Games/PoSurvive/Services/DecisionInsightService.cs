@@ -26,17 +26,17 @@ public sealed class DecisionInsightService
         if (agent is null || entry is null)
             return "Watch the grid, then follow an agent to see why it moves.";
 
-        var action  = (entry.Action ?? "idle").ToLowerInvariant();
+        var action = (entry.Action ?? "idle").ToLowerInvariant();
         var topTrait = GetSortedTraits(agent).First().Key.ToLowerInvariant();
-        var lowHp   = agent.Hp <= 35;
-        var hungry  = agent.Hunger >= 0.6f;
+        var lowHp = agent.Hp <= 35;
+        var hungry = agent.Hunger >= 0.6f;
 
         var verb = action switch
         {
             "attack" => "went on the attack",
             "forage" => "went looking for food",
-            "flee"   => "backed away from danger",
-            _        => "held its position",
+            "flee" => "backed away from danger",
+            _ => "held its position",
         };
 
         var reason = action switch
@@ -45,8 +45,8 @@ public sealed class DecisionInsightService
                 ? "an enemy was in reach and it's a natural hunter"
                 : "an enemy was in reach",
             "forage" => hungry ? "it's getting hungry" : "food was close by",
-            "flee"   => lowHp ? "its health is running low" : "a threat was closing in",
-            _        => "nothing nearby was worth the risk",
+            "flee" => lowHp ? "its health is running low" : "a threat was closing in",
+            _ => "nothing nearby was worth the risk",
         };
 
         return $"{agent.Id} {verb} — {reason}.";

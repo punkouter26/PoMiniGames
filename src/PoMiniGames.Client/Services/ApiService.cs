@@ -1,4 +1,7 @@
 using System.Net.Http.Json;
+// Alias, not a namespace import: PoMiniGamesClient.Models mirrors several other Domain
+// types by name, so importing the namespace wholesale would make them all ambiguous.
+using PoSportsHighScore = PoMiniGames.Domain.Models.PoSportsHighScore;
 using PoMiniGamesClient.Models;
 
 namespace PoMiniGamesClient.Services;
@@ -38,18 +41,6 @@ public class ApiService
         catch
         {
             return false;
-        }
-    }
-
-    public async Task<AuthClientConfiguration?> GetAuthConfigurationAsync()
-    {
-        try
-        {
-            return await _http.GetFromJsonAsync("/api/auth/config", ApiJsonContext.Default.AuthClientConfiguration);
-        }
-        catch
-        {
-            return null;
         }
     }
 
@@ -331,7 +322,7 @@ public class ApiService
         }
     }
 
-    public async Task<PoSportsHighScore?> SubmitPoSportsHighScoreAsync(PoSportsHighScore entry)
+    public async Task<ScoreSubmitResult<PoSportsHighScore>> SubmitPoSportsHighScoreAsync(PoSportsHighScore entry)
     {
         try
         {
@@ -339,11 +330,23 @@ public class ApiService
             if (string.IsNullOrEmpty(entry.Date))
                 entry.Date = DateTime.UtcNow.ToString("O");
             var response = await _http.PostAsJsonAsync("/api/posports/highscores", entry, ApiJsonContext.Default.PoSportsHighScore);
-            return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync(ApiJsonContext.Default.PoSportsHighScore) : null;
+
+            if (response.IsSuccessStatusCode)
+            {
+                var saved = await response.Content.ReadFromJsonAsync(ApiJsonContext.Default.PoSportsHighScore);
+                return ScoreSubmitResult<PoSportsHighScore>.Saved(saved);
+            }
+
+            // 4xx: the payload itself is the problem, so replaying it just wedges the queue.
+            if ((int)response.StatusCode is >= 400 and < 500)
+                return ScoreSubmitResult<PoSportsHighScore>.Rejected(response.StatusCode);
+
+            return ScoreSubmitResult<PoSportsHighScore>.Unavailable(response.StatusCode);
         }
         catch
         {
-            return null;
+            // No response at all — genuinely offline/unreachable.
+            return ScoreSubmitResult<PoSportsHighScore>.Unavailable(null);
         }
     }
 

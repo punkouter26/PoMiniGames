@@ -29,10 +29,10 @@ public static class SessionEndpoints
     // ─── Handler ─────────────────────────────────────────────────────────────
 
     private static async Task<IResult> PostSessionAsync(
-        SessionSummaryDto     dto,
-        ISessionRepository    repository,
-        ILoggerFactory        loggerFactory,
-        CancellationToken     ct)
+        SessionSummaryDto dto,
+        ISessionRepository repository,
+        ILoggerFactory loggerFactory,
+        CancellationToken ct)
     {
         var logger = loggerFactory.CreateLogger("PoSurvive.Server.Endpoints.SessionEndpoints");
         // ── Input validation ──────────────────────────────────────────────
@@ -75,42 +75,42 @@ public static class SessionEndpoints
 
         // ── Map DTO → domain aggregate ────────────────────────────────────
         var config = new SimulationConfigSnapshot(
-            TeamSize:            dto.Config.TeamSize,
-            RockDensity:         dto.Config.RockDensity,
-            FoodSpawnChance:     dto.Config.FoodSpawnChance,
-            FoodTtl:             dto.Config.FoodTtl,
+            TeamSize: dto.Config.TeamSize,
+            RockDensity: dto.Config.RockDensity,
+            FoodSpawnChance: dto.Config.FoodSpawnChance,
+            FoodTtl: dto.Config.FoodTtl,
             HungerDecayConstant: dto.Config.HungerDecayConstant,
-            HungerThreshold:     dto.Config.HungerThreshold,
+            HungerThreshold: dto.Config.HungerThreshold,
             StarveHpLossPerTurn: dto.Config.StarveHpLossPerTurn,
-            BaseDamage:          dto.Config.BaseDamage,
-            HeartbeatMinMs:      dto.Config.HeartbeatMinMs,
-            HeartbeatMaxMs:      dto.Config.HeartbeatMaxMs,
-            InferenceTimeoutMs:  dto.Config.InferenceTimeoutMs,
+            BaseDamage: dto.Config.BaseDamage,
+            HeartbeatMinMs: dto.Config.HeartbeatMinMs,
+            HeartbeatMaxMs: dto.Config.HeartbeatMaxMs,
+            InferenceTimeoutMs: dto.Config.InferenceTimeoutMs,
             MaxInferredAgentsPerTurn: dto.Config.MaxInferredAgentsPerTurn
         );
 
         var session = new SimulationSession(dto.SessionId, config, dto.StartedAt)
         {
-            EndedAt          = (DateTimeOffset?)dto.EndedAt,
-            Outcome          = outcome,
-            WinningTeam      = winningTeam,
-            TotalTurns       = dto.TotalTurns,
+            EndedAt = (DateTimeOffset?)dto.EndedAt,
+            Outcome = outcome,
+            WinningTeam = winningTeam,
+            TotalTurns = dto.TotalTurns,
             TotalFoodConsumed = dto.TotalFoodConsumed,
-            TotalDamageDealt  = dto.TotalDamageDealt,
-            AgentSnapshots   = dto.Agents
+            TotalDamageDealt = dto.TotalDamageDealt,
+            AgentSnapshots = dto.Agents
                 .Select(a => new AgentFinalSnapshot(
-                    Id:              a.Id,
-                    Team:            Enum.Parse<TeamColor>(a.Team, ignoreCase: true),
-                    Hp:              a.Hp,
-                    KillCount:       a.KillCount,
-                    FoodConsumed:    a.FoodConsumed,
+                    Id: a.Id,
+                    Team: Enum.Parse<TeamColor>(a.Team, ignoreCase: true),
+                    Hp: a.Hp,
+                    KillCount: a.KillCount,
+                    FoodConsumed: a.FoodConsumed,
                     TotalDamageDealt: a.TotalDamageDealt,
-                    Predatory:       a.Predatory,
-                    Scavenger:       a.Scavenger,
-                    Paranoid:        a.Paranoid,
-                    Altruistic:      a.Altruistic,
-                    Methodical:      a.Methodical,
-                    SurvivalTurns:   a.SurvivalTurns))
+                    Predatory: a.Predatory,
+                    Scavenger: a.Scavenger,
+                    Paranoid: a.Paranoid,
+                    Altruistic: a.Altruistic,
+                    Methodical: a.Methodical,
+                    SurvivalTurns: a.SurvivalTurns))
                 .ToList()
                 .AsReadOnly(),
         };
@@ -127,8 +127,8 @@ public static class SessionEndpoints
         {
             logger.LogError(ex, "Failed to persist session {SessionId}", dto.SessionId);
             return Results.Problem(
-                title:      "Persistence failed",
-                detail:     "The session summary could not be saved. Please try again.",
+                title: "Persistence failed",
+                detail: "The session summary could not be saved. Please try again.",
                 statusCode: StatusCodes.Status500InternalServerError);
         }
 

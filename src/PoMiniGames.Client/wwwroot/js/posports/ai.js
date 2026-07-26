@@ -2,11 +2,13 @@
 //
 // An AI lane "types" its sequence at a difficulty-tuned cadence with a wrong-key
 // rate, and jumps hurdles with a reaction-jittered lookahead. It drives the SAME
-// SequenceTracker/physics path a human lane uses — the AI has no shortcut into the
-// stride model, so difficulty is purely cadence + accuracy.
+// SequenceTracker/physics path a human lane uses — game.js feeds each seqStep through
+// the lane's own tracker — so the AI has no shortcut into the stride model and
+// difficulty is purely cadence + accuracy.
 //
 // (The server has its own medium-difficulty twin in PoSportsSim.DriveAi for online
-// races; this one exists so local modes work fully offline.)
+// races; this one exists so local modes work fully offline. The medium numbers below
+// are pinned to PoSportsConstants by PoSportsConstantsSyncTests — change both together.)
 import { HURDLE_POSITIONS } from './physics.js';
 
 // Tuned so every CPU lane finishes each leg in 9.5-14 s: easy lands near the slow

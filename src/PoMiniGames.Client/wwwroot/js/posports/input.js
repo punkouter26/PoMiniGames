@@ -16,7 +16,10 @@ export const LAYOUTS = {
 export class SequenceTracker {
   /**
    * @param {1|2} layout which key layout this player uses
-   * @param {{onImpulse?: () => void, onJump?: () => void, onReset?: () => void}} handlers
+   * @param {{onImpulse?: () => void, onJump?: () => void, onReset?: () => void,
+   *          isGated?: () => boolean, onGatedKey?: () => void}} handlers
+   *   isGated/onGatedKey implement the false-start rule: while gated (before the gun),
+   *   EVERY sequence key is a false start rather than silently banking progress.
    */
   constructor(layout, handlers = {}) {
     this.map = LAYOUTS[layout];
@@ -33,7 +36,7 @@ export class SequenceTracker {
   }
 
   /**
-   * Feed one key press. Returns 'impulse' | 'jump' | 'reset' | 'progress' | null
+   * Feed one key press. Returns 'impulse' | 'jump' | 'gated' | 'reset' | 'progress' | null
    * (null = key not in this layout, e.g. the other player's keys).
    */
   injectKey(code) {
@@ -42,6 +45,17 @@ export class SequenceTracker {
       return 'jump';
     }
     if (!this.map.sequence.includes(code)) return null;
+
+    // Before the gun, ONE key is already a false start — progress must never bank across
+    // the start. PoSportsSim.HandleSequenceKey applies the same rule server-side; when this
+    // check lived at the caller (which only saw completed 4-key cycles) a player could type
+    // three keys during the countdown and fire a free impulse on the gun, making local times
+    // unreachable for online runs on the very same leaderboard.
+    if (this.handlers.isGated?.()) {
+      this.progress = 0;
+      this.handlers.onGatedKey?.();
+      return 'gated';
+    }
 
     if (code === this.map.sequence[this.progress]) {
       this.progress++;

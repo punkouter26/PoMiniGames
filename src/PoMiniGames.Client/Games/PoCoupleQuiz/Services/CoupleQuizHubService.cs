@@ -112,18 +112,9 @@ public sealed class CoupleQuizHubService : IAsyncDisposable
         // compose against ApiEndpoints.ApiBase — the API host (:5000), not the
         // WASM host (:5261). Without this, the standalone client hits
         // /couplequiz/hubs/game/negotiate on :5261 and gets a 405.
-        var hubUrl = _endpoints.Hub("couplequiz/hubs/game");
-        _connection = new HubConnectionBuilder()
-            .WithUrl(hubUrl, options =>
-            {
-                // §2026-07-16: SignalR's default HttpClientFactory doesn't flow
-                // through DI, so the negotiate POST drops the dev cookie and the
-                // hub's RequireAuthorization() returns 401. Force the credentials
-                // handler so the PoMiniGames.DevAuth cookie round-trips.
-                options.HttpMessageHandlerFactory = SignalRCredentialsHttpClientFactory.CreateHandler;
-            })
-            .WithAutomaticReconnect()
-            .Build();
+        // Credentials handler + auto-reconnect come baked into the shared
+        // factory (see HubConnectionFactory for the §2026-07-16 cookie contract).
+        _connection = HubConnectionFactory.Create(_endpoints.Hub("couplequiz/hubs/game"));
 
         _connection.On<CoupleQuizLobbyEventPayload>("LobbyCreated", p => OnLobbyCreated?.Invoke(p));
         _connection.On<CoupleQuizLobbyEventPayload>("LobbyJoined", p => OnLobbyJoined?.Invoke(p));

@@ -58,7 +58,9 @@ public sealed class PoSportsRaceServiceTests
     private static (PoSportsRaceService race, PoSportsLobbyService lobby, CapturingStorage storage) StartedRace()
     {
         var lobby = new PoSportsLobbyService();
-        lobby.Open("conn-alice", "Alice", isGuest: false);
+        // Alice is signed in (a stable id); Bob is a guest with none — the race binds the
+        // first by identity and falls back to the sanitized name for the second.
+        lobby.Open("conn-alice", "Alice", isGuest: false, userId: "user-alice");
         lobby.Open("conn-bob", "Bob", isGuest: true);
         lobby.PickCharacter("conn-alice", "kim");
         lobby.PickCharacter("conn-bob", "mom");
@@ -67,7 +69,7 @@ public sealed class PoSportsRaceServiceTests
 
         var storage = new CapturingStorage();
         var race = new PoSportsRaceService(
-            "LOBBY", lobby.Members, lobby, storage,
+            "LOBBY", lobby.Seats, lobby, storage,
             NullLogger<PoSportsRaceService>.Instance, startTimers: false, seed: 11);
         return (race, lobby, storage);
     }
@@ -143,6 +145,50 @@ public sealed class PoSportsRaceServiceTests
 
         // The meet's end resets the lobby for the next ready round.
         lobby.State.Phase.Should().Be("waiting");
+    }
+
+    [Fact]
+    public void LaneBinding_SurvivesNameTruncationAndRefreshDefault()
+    {
+        var lobby = new PoSportsLobbyService();
+        // Longer than the lobby's 24-char cap, so the lane name is NOT what the client sends.
+        const string longName = "Bartholomew Fitzgerald-Montgomery";
+        lobby.Open("conn-long", longName, isGuest: false, userId: "user-long");
+        lobby.PickCharacter("conn-long", "kim");
+        lobby.TryStart("conn-long").Should().BeTrue();
+
+        var race = new PoSportsRaceService(
+            "LOBBY", lobby.Seats, lobby, new CapturingStorage(),
+            NullLogger<PoSportsRaceService>.Instance, startTimers: false, seed: 5);
+
+        race.Snapshot().Lanes[0].Name.Should().NotBe(longName, "the lobby truncates to 24 chars");
+
+        // The raw (untruncated) name never equals the lane name, and a page refresh sends
+        // the client's default name — identity is what makes both of these bind.
+        race.RegisterOwner("conn-race", longName, "user-long", isGuest: false).Should().Be(0);
+        race.RemoveConnection("conn-race");
+        race.RegisterOwner("conn-after-refresh", "Player", "user-long", isGuest: false).Should().Be(0);
+
+        // Keys from the rebound connection drive that lane.
+        Advance(race, 3.1);
+        for (var step = 0; step < 4; step++) race.SendSequenceKey("conn-after-refresh", step);
+        race.Advance(Dt);
+        race.Snapshot().Lanes[0].Speed.Should().BeGreaterThan(0);
+    }
+
+    [Fact]
+    public void FinishedRace_IsMarkedFinished_AndPersistsSeatIdentityAfterDisconnect()
+    {
+        var (race, _, storage) = StartedRace();
+        race.RegisterOwner("conn-alice", "Alice", "user-alice", isGuest: false);
+
+        // Alice drops before the podium: her run must still be attributed from her seat.
+        race.RemoveConnection("conn-alice");
+        Advance(race, 3 + 90 + 8 + 90 + 2);
+
+        race.Snapshot().Phase.Should().Be("podium");
+        race.IsFinished.Should().BeTrue("the registry refuses a finished race to the next meet's joiners");
+        storage.Saved.Single(s => s.PlayerName == "Alice").UserId.Should().Be("user-alice");
     }
 
     [Fact]

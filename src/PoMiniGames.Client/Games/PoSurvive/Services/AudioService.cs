@@ -11,9 +11,9 @@ public sealed class AudioService
     public AudioService(IJSRuntime js) => _js = js;
 
     // ─── Original SFX (GoF: Facade) ──────────────────────────────────────
-    public async Task PlayForageAsync()  => await SafePlay("forage");
-    public async Task PlayCombatAsync()  => await SafePlay("combat");
-    public async Task PlayDeathAsync()   => await SafePlay("death");
+    public async Task PlayForageAsync() => await SafePlay("forage");
+    public async Task PlayCombatAsync() => await SafePlay("combat");
+    public async Task PlayDeathAsync() => await SafePlay("death");
 
     public async Task UnlockAudioAsync()
     {
@@ -95,7 +95,7 @@ public sealed class AudioService
     // ─── Private helpers ──────────────────────────────────────────────────
     private async Task SafePlay(string eventType)
     {
-        try   { await _js.InvokeVoidAsync("audioEngine.play", eventType); }
+        try { await _js.InvokeVoidAsync("audioEngine.play", eventType); }
         catch { /* swallow JSException if audio API unavailable */ }
     }
 }

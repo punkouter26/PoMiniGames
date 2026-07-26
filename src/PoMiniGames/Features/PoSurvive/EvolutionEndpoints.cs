@@ -177,25 +177,25 @@ public static class EvolutionEndpoints
     private static EvolutionStateDto MapToDto(PersonalityDna dna)
     {
         return new EvolutionStateDto(
-            Id:                dna.GetDnaId(),
-            DnaId:             dna.GetDnaId(),
-            Predatory:         dna.Predatory,
-            Scavenger:         dna.Scavenger,
-            Paranoid:          dna.Paranoid,
-            Altruistic:        dna.Altruistic,
-            Methodical:        dna.Methodical,
-            Generation:        dna.Generation,
-            SourceSessionId:   dna.SourceSessionId,
-            ParentDnaIds:      dna.ParentDnaIds.ToList(),
-            Archetype:         dna.Archetype,
-            DominantTrait:     dna.DominantTrait,
-            CreatedAt:         dna.CreatedAt,
-            WinCount:          dna.WinCount,
-            TotalSessions:     dna.TotalSessions,
-            WinRate:           dna.WinRate,
-            TotalKills:        0,
+            Id: dna.GetDnaId(),
+            DnaId: dna.GetDnaId(),
+            Predatory: dna.Predatory,
+            Scavenger: dna.Scavenger,
+            Paranoid: dna.Paranoid,
+            Altruistic: dna.Altruistic,
+            Methodical: dna.Methodical,
+            Generation: dna.Generation,
+            SourceSessionId: dna.SourceSessionId,
+            ParentDnaIds: dna.ParentDnaIds.ToList(),
+            Archetype: dna.Archetype,
+            DominantTrait: dna.DominantTrait,
+            CreatedAt: dna.CreatedAt,
+            WinCount: dna.WinCount,
+            TotalSessions: dna.TotalSessions,
+            WinRate: dna.WinRate,
+            TotalKills: 0,
             TotalFoodConsumed: 0,
-            TotalDamageDealt:  0
+            TotalDamageDealt: 0
         );
     }
 

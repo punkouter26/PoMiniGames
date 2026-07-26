@@ -4,9 +4,9 @@ namespace PoMiniGamesClient.Games.PoSurvive.Store;
 
 /// <summary>Dispatched after gpuProbe.js resolves with the GPU availability result.</summary>
 public sealed record GpuProbeCompletedAction(
-    bool   GpuAvailable,
+    bool GpuAvailable,
     string GpuLabel,       // "ACCELERATED" | "CPU FALLBACK"
-    bool   IsMockProvider  // True when MockInferenceService is the active IInferenceService
+    bool IsMockProvider  // True when MockInferenceService is the active IInferenceService
 );
 
 /// <summary>Dispatched from the WebLLM progress callback to update the byte-counter.</summary>

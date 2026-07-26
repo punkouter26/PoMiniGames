@@ -39,32 +39,67 @@ public sealed class PoSportsRaceRegistry : IAsyncDisposable
     internal static string RaceGroup(string code) => "posports-race-" + code;
 
     /// <summary>
-    /// Get the current meet for <paramref name="code"/>, or create one seeded with the
-    /// lobby's current members (called at StartGame/JoinRace time, while the member
-    /// list is hot). Creation wires the broadcast pipeline exactly once per race.
+    /// Codes are compared and grouped case-insensitively, so <c>/posports/race/lobby</c>
+    /// and <c>.../LOBBY</c> address the same meet instead of the lowercase spelling
+    /// displacing the running race and stranding its group.
     /// </summary>
-    public PoSportsRaceService GetOrCreate(string code)
+    internal static string NormalizeCode(string code) => code.Trim().ToUpperInvariant();
+
+    /// <summary>
+    /// Get the meet for <paramref name="code"/>, creating one seeded from the lobby when
+    /// the host has actually started a meet. Returns null when there is nothing to join —
+    /// callers must treat that as "no race", not as a reason to spin one up.
+    /// </summary>
+    /// <remarks>
+    /// Two rules keep the single-slot registry honest:
+    /// a FINISHED race is never handed out (its podium phase is terminal, so a rematch
+    /// inside the 30 s grace window would pin everyone to the previous meet's results),
+    /// and a race is only created while <see cref="PoSportsLobbyService.RaceStarted"/> is
+    /// set (otherwise any authenticated client could conjure a ghost meet by browsing to
+    /// the race URL — which also called EndRace on the real lobby when it finished).
+    /// Whenever a race IS displaced, it is disposed here: the delayed sweep skips
+    /// non-current races, so nothing else would ever stop its timers.
+    /// </remarks>
+    public PoSportsRaceService? TryGetOrCreate(string code)
     {
+        code = NormalizeCode(code);
         lock (_createLock)
         {
-            if (_currentRace is { } existing && existing.GameCode == code) return existing;
+            if (Reusable(code) is { } existing) return existing;
+            if (!_lobby.RaceStarted) return null;
         }
-        var members = _lobby.Members.ToList();
+        var seats = _lobby.Seats;
+        if (seats.Count == 0) return null;
         var race = new PoSportsRaceService(
-            code, members, _lobby, _storage, _loggerFactory.CreateLogger<PoSportsRaceService>());
+            code, seats, _lobby, _storage, _loggerFactory.CreateLogger<PoSportsRaceService>());
+        PoSportsRaceService? displaced;
         lock (_createLock)
         {
             // A concurrent creator may have won — prefer theirs, drop ours unwired.
-            if (_currentRace is { } winner && winner.GameCode == code)
+            if (Reusable(code) is { } winner)
             {
                 _ = race.DisposeAsync();
                 return winner;
             }
+            displaced = _currentRace;
             _currentRace = race;
+        }
+        if (displaced is not null)
+        {
+            _log.LogInformation("PoSports: replacing race {Old} with {New}", displaced.GameCode, race.GameCode);
+            _ = displaced.DisposeAsync();
         }
         Wire(race);
         return race;
     }
+
+    /// <summary>The current race when it can still be joined. Callers hold <see cref="_createLock"/>.</summary>
+    private PoSportsRaceService? Reusable(string code) =>
+        _currentRace is { } r
+        && !r.IsFinished
+        && string.Equals(r.GameCode, code, StringComparison.OrdinalIgnoreCase)
+            ? r
+            : null;
 
     private void Wire(PoSportsRaceService race)
     {
@@ -96,8 +131,10 @@ public sealed class PoSportsRaceRegistry : IAsyncDisposable
             await Task.Delay(TimeSpan.FromSeconds(30));
             lock (_createLock)
             {
-                if (!ReferenceEquals(_currentRace, race)) return;
-                _currentRace = null;
+                // Only clear the slot if this race still owns it — a rematch may already
+                // have replaced (and disposed) it. Dispose unconditionally either way:
+                // returning early here is what leaked displaced races' timers forever.
+                if (ReferenceEquals(_currentRace, race)) _currentRace = null;
             }
             await race.DisposeAsync();
         }
@@ -108,9 +145,10 @@ public sealed class PoSportsRaceRegistry : IAsyncDisposable
     }
 
     public PoSportsRaceService? GetByCode(string code) =>
-        _currentRace is { } r && string.Equals(r.GameCode, code, StringComparison.OrdinalIgnoreCase) ? r : null;
+        _currentRace is { } r && string.Equals(r.GameCode, NormalizeCode(code), StringComparison.OrdinalIgnoreCase) ? r : null;
 
-    public void RegisterConnection(string code, string connectionId) => _connectionToCode[connectionId] = code;
+    public void RegisterConnection(string code, string connectionId) =>
+        _connectionToCode[connectionId] = NormalizeCode(code);
 
     public void RemoveConnection(string connectionId)
     {

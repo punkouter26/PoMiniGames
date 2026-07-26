@@ -25,7 +25,7 @@ else
 <div class="sp-page">
     <div class="sp-card">
         <div class="sp-header">
-            <button class="sp-back" @onclick='() => Nav.NavigateTo("/")'>← Back</button>
+            <button class="sp-back" @onclick="LeaveAsync">← Back</button>
             <h1 class="sp-title">Sports Lobby</h1>
         </div>
 
@@ -61,7 +61,7 @@ else
                         var isYou = m.ConnectionId == Hub.LobbyConnectionId;
                         var isHost = m.ConnectionId == _state.HostConnectionId;
                         <li class="@(isYou ? "is-you" : "")">
-                            <span>@CharEmoji(m.Character) @m.DisplayName @(isYou ? "(you)" : "")</span>
+                            <span>@PoSportsRoster.Emoji(m.Character) @m.DisplayName @(isYou ? "(you)" : "")</span>
                             @if (isHost) { <span class="po-pill po-pill--accent">host</span> }
                             @if (m.IsGuest) { <span class="po-pill po-pill--muted">guest</span> }
                             @if (string.IsNullOrEmpty(m.Character)) { <span class="po-pill po-pill--warn">picking…</span> }
@@ -75,15 +75,15 @@ else
         <section class="ps-lobby-section">
             <h2 class="gps-phase-h">Your runner</h2>
             <div class="ps-lobby-chars">
-                @foreach (var c in Characters)
+                @foreach (var c in PoSportsRoster.All)
                 {
-                    var takenBy = _state?.Members.FirstOrDefault(m => m.Character == c.Id);
+                    var takenBy = _state?.Members.FirstOrDefault(m => m.Character == c.Key);
                     var mine = takenBy?.ConnectionId == Hub.LobbyConnectionId;
                     var taken = takenBy is not null && !mine;
                     <button type="button"
                             class="ps-lobby-char @(mine ? "ps-lobby-char--mine" : "") @(taken ? "ps-lobby-char--taken" : "")"
                             disabled="@taken"
-                            @onclick="() => PickAsync(c.Id)">
+                            @onclick="() => PickAsync(c.Key)">
                         <span class="ps-lobby-char-emoji">@c.Emoji</span>
                         <span>@c.Name</span>
                         @if (taken) { <small>@takenBy!.DisplayName</small> }
@@ -119,21 +119,14 @@ else
 }
 
 @code {
-    private sealed record CharEntry(string Id, string Name, string Emoji);
-
-    private static readonly CharEntry[] Characters =
-    [
-        new("mom", "Mom", "👩"),
-        new("kim", "Kim", "👧"),
-        new("matt", "Matt", "👦"),
-        new("nick", "Nick", "🧒"),
-        new("tong", "Tong", "🧑"),
-    ];
-
     private bool _introDone;
     private bool _connected;
     private PoSportsLobbyState? _state;
     private bool _myReady;
+    /// <summary>Set by the Leave/Back buttons — dispose must not leave twice.</summary>
+    private bool _leaving;
+    /// <summary>Set when navigating to the race page — that navigation must KEEP our lobby seat.</summary>
+    private bool _starting;
 
     private RenderFragment TitleContent => @<span>🏃 Sports · Multiplayer</span>;
 
@@ -156,9 +149,6 @@ else
         && _state.Members.Count > 0
         && _state.Members.All(m => !string.IsNullOrEmpty(m.Character))
         && _state.Members.All(m => m.ConnectionId == _state.HostConnectionId || m.IsReady);
-
-    private static string CharEmoji(string id) =>
-        Characters.FirstOrDefault(c => c.Id == id)?.Emoji ?? "❔";
 
     private async Task OnIntroStartAsync()
     {
@@ -202,6 +192,7 @@ else
 
     private void OnGameStarted(string code)
     {
+        _starting = true;
         Nav.NavigateTo($"/posports/race/{code}");
     }
 
@@ -216,16 +207,26 @@ else
 
     private async Task LeaveAsync()
     {
+        _leaving = true;
         try { await Hub.LeaveLobbyAsync(); } catch { }
         Nav.NavigateTo("/");
     }
 
-    public ValueTask DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
         Hub.LobbyUpdated -= OnLobbyUpdated;
         Hub.LobbyEvent -= OnLobbyEvent;
         Hub.GameStarted -= OnGameStarted;
-        // The hub service itself is scoped to the session — the race page reuses it.
-        return ValueTask.CompletedTask;
+        // The hub service itself is scoped to the session — the race page reuses it — so
+        // nothing here closes the connection and the server never sees a disconnect. Leaving
+        // any other way (browser back, a link) must therefore tell the lobby explicitly, or
+        // the member lingers: holding its character lock, filling a slot, and blocking
+        // StartGame (which needs every non-host member Ready) until the tab is closed.
+        // _leaving covers the Leave/Back buttons, which already left; _starting covers the
+        // hop to the race page, where we must STAY in the lobby.
+        if (!_leaving && !_starting && _connected)
+        {
+            try { await Hub.LeaveLobbyAsync(); } catch { }
+        }
     }
 }

@@ -4,9 +4,9 @@ namespace PoMiniGames.Domain.ValueObjects.Simulation;
 // LLM Evolution: Added generation metadata for tracking evolutionary lineage
 public sealed record PersonalityDna
 {
-    public float Predatory  { get; }
-    public float Scavenger  { get; }
-    public float Paranoid   { get; }
+    public float Predatory { get; }
+    public float Scavenger { get; }
+    public float Paranoid { get; }
     public float Altruistic { get; }
     public float Methodical { get; }
 
@@ -44,9 +44,9 @@ public sealed record PersonalityDna
         if (total <= 0f)
             throw new ArgumentException("At least one DNA weight must be positive.");
 
-        Predatory  = predatory  / total;
-        Scavenger  = scavenger  / total;
-        Paranoid   = paranoid   / total;
+        Predatory = predatory / total;
+        Scavenger = scavenger / total;
+        Paranoid = paranoid / total;
         Altruistic = altruistic / total;
         Methodical = methodical / total;
     }
@@ -64,7 +64,7 @@ public sealed record PersonalityDna
                 (Altruistic, nameof(Altruistic)),
                 (Methodical,  nameof(Methodical)),
             };
-            
+
             var best = traits.MaxBy(t => t.Weight);
             return best.Name;
         }
@@ -107,11 +107,11 @@ public sealed record PersonalityDna
         }
 
         return new PersonalityDna(
-            Blend(parent1.Predatory,  parent2.Predatory),
-            Blend(parent1.Scavenger,  parent2.Scavenger),
-            Blend(parent1.Paranoid,   parent2.Paranoid),
+            Blend(parent1.Predatory, parent2.Predatory),
+            Blend(parent1.Scavenger, parent2.Scavenger),
+            Blend(parent1.Paranoid, parent2.Paranoid),
             Blend(parent1.Altruistic, parent2.Altruistic),
-            Blend(parent1.Methodical,  parent2.Methodical))
+            Blend(parent1.Methodical, parent2.Methodical))
         {
             Generation = Math.Max(parent1.Generation, parent2.Generation) + 1,
             ParentDnaIds = [parent1.GetDnaId(), parent2.GetDnaId()],

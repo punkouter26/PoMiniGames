@@ -102,11 +102,11 @@ public static class AzureOpenAIResilience
     /// </summary>
     private static bool IsTransient(Exception ex) => ex switch
     {
-        TimeoutRejectedException                 => true,
-        BrokenCircuitException                   => true,
-        Azure.RequestFailedException rfe         => rfe.Status >= 500 || rfe.Status == 408 || rfe.Status == 429,
-        HttpRequestException                     => true,
-        TaskCanceledException                    => false, // user-initiated; not a transient fault
-        _                                        => false,
+        TimeoutRejectedException => true,
+        BrokenCircuitException => true,
+        Azure.RequestFailedException rfe => rfe.Status >= 500 || rfe.Status == 408 || rfe.Status == 429,
+        HttpRequestException => true,
+        TaskCanceledException => false, // user-initiated; not a transient fault
+        _ => false,
     };
 }

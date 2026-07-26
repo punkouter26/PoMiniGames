@@ -39,14 +39,14 @@ public sealed class SimulationLaunchService(IJSRuntime js, IConfiguration config
             var root = doc.RootElement;
             return new E2EOverrides
             {
-                TeamSize               = TryGetInt(root, "teamSize")   ?? TryGetInt(root, "TeamSize"),
-                RockDensity            = TryGetFloat(root, "rockDensity") ?? TryGetFloat(root, "RockDensity"),
-                FoodSpawnChance        = TryGetFloat(root, "foodSpawnChance") ?? TryGetFloat(root, "FoodSpawnChance"),
-                FoodTtl                = TryGetInt(root, "foodTtl")    ?? TryGetInt(root, "FoodTtl"),
-                HungerDecayConstant    = TryGetFloat(root, "hungerDecayConstant") ?? TryGetFloat(root, "HungerDecayConstant"),
-                HungerThreshold        = TryGetFloat(root, "hungerThreshold") ?? TryGetFloat(root, "HungerThreshold"),
-                StarveHpLossPerTurn    = TryGetInt(root, "starveHpLossPerTurn") ?? TryGetInt(root, "StarveHpLossPerTurn"),
-                BaseDamage             = TryGetInt(root, "baseDamage") ?? TryGetInt(root, "BaseDamage"),
+                TeamSize = TryGetInt(root, "teamSize") ?? TryGetInt(root, "TeamSize"),
+                RockDensity = TryGetFloat(root, "rockDensity") ?? TryGetFloat(root, "RockDensity"),
+                FoodSpawnChance = TryGetFloat(root, "foodSpawnChance") ?? TryGetFloat(root, "FoodSpawnChance"),
+                FoodTtl = TryGetInt(root, "foodTtl") ?? TryGetInt(root, "FoodTtl"),
+                HungerDecayConstant = TryGetFloat(root, "hungerDecayConstant") ?? TryGetFloat(root, "HungerDecayConstant"),
+                HungerThreshold = TryGetFloat(root, "hungerThreshold") ?? TryGetFloat(root, "HungerThreshold"),
+                StarveHpLossPerTurn = TryGetInt(root, "starveHpLossPerTurn") ?? TryGetInt(root, "StarveHpLossPerTurn"),
+                BaseDamage = TryGetInt(root, "baseDamage") ?? TryGetInt(root, "BaseDamage"),
                 MaxInferredAgentsPerTurn = TryGetInt(root, "maxInferredAgentsPerTurn") ?? TryGetInt(root, "MaxInferredAgentsPerTurn"),
             };
         }

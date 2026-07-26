@@ -10,15 +10,15 @@ using PoShared.Simulation.Models;
 public sealed class WebLlmInferenceService : IInferenceService, IAsyncDisposable
 {
     private readonly IJSRuntime _js;
-    private readonly int        _inferenceTimeoutMs;
-    private readonly int        _maxRetryAttempts;
-    private readonly int        _retryDelayMs;
-    private readonly bool       _retryOnCancellation;
+    private readonly int _inferenceTimeoutMs;
+    private readonly int _maxRetryAttempts;
+    private readonly int _retryDelayMs;
+    private readonly bool _retryOnCancellation;
     private static readonly AsyncLocal<InferenceDiagnosticsContext?> CurrentDiagnosticsContext = new();
 
     // JS interop helper for the worker bridge (loaded lazily from wwwroot/js/webLlmBridge.js)
     private IJSObjectReference? _bridge;
-    private bool                _disposed;
+    private bool _disposed;
 
     public WebLlmInferenceService(
         IJSRuntime js,
@@ -27,10 +27,10 @@ public sealed class WebLlmInferenceService : IInferenceService, IAsyncDisposable
         int retryDelayMs = 750,
         bool retryOnCancellation = false)
     {
-        _js                  = js;
-        _inferenceTimeoutMs  = inferenceTimeoutMs;
-        _maxRetryAttempts    = Math.Max(1, maxRetryAttempts);
-        _retryDelayMs        = Math.Max(0, retryDelayMs);
+        _js = js;
+        _inferenceTimeoutMs = inferenceTimeoutMs;
+        _maxRetryAttempts = Math.Max(1, maxRetryAttempts);
+        _retryDelayMs = Math.Max(0, retryDelayMs);
         _retryOnCancellation = retryOnCancellation;
     }
 
@@ -44,7 +44,7 @@ public sealed class WebLlmInferenceService : IInferenceService, IAsyncDisposable
     }
 
     public async Task<InferenceResult> InferAsync(
-        string            gridJson,
+        string gridJson,
         PersonalityDnaDto dna,
         CancellationToken ct = default)
     {
@@ -53,11 +53,11 @@ public sealed class WebLlmInferenceService : IInferenceService, IAsyncDisposable
         // Build the dna object that inferenceWorker.js expects
         var dnaObj = new
         {
-            predatory     = dna.Predatory,
-            scavenger     = dna.Scavenger,
-            paranoid      = dna.Paranoid,
-            altruistic    = dna.Altruistic,
-            methodical    = dna.Methodical,
+            predatory = dna.Predatory,
+            scavenger = dna.Scavenger,
+            paranoid = dna.Paranoid,
+            altruistic = dna.Altruistic,
+            methodical = dna.Methodical,
             dominantTrait = GetDominantTrait(dna),
         };
 
@@ -100,7 +100,7 @@ public sealed class WebLlmInferenceService : IInferenceService, IAsyncDisposable
 
                 return new InferenceResult(
                     Thought: thought ?? "Observing.",
-                    Action:  action  ?? "Idle");
+                    Action: action ?? "Idle");
             }
             catch (OperationCanceledException)
             {

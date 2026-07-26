@@ -53,20 +53,20 @@ public sealed class MockInferenceService : IInferenceService
     // ── IInferenceService ────────────────────────────────────────────────────
 
     public Task<InferenceResult> InferAsync(
-        string            gridJson,
+        string gridJson,
         PersonalityDnaDto dna,
         CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
 
         var dominant = GetDominantTrait(dna);
-        var scripts  = _traitScripts.TryGetValue(dominant, out var s) && s.Length > 0 
-            ? s 
+        var scripts = _traitScripts.TryGetValue(dominant, out var s) && s.Length > 0
+            ? s
             : _traitScripts["Methodical"];
-        
+
         if (scripts.Length == 0)
             return Task.FromResult(new InferenceResult("No inference scripts available; defaulting to Idle.", "Idle"));
-        
+
         var entry = scripts[_callCount % scripts.Length];
 
         _callCount++;

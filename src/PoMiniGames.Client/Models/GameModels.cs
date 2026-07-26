@@ -101,23 +101,9 @@ public class PoBrawlHighScore
     public string Date { get; set; } = "";
 }
 
-/// <summary>
-/// A PoSports meet result (client mirror of the server's Domain model). UserId/IsGuest
-/// are stamped server-side from the auth cookie — nothing here can forge identity.
-/// </summary>
-public class PoSportsHighScore
-{
-    public string PlayerName { get; set; } = "";
-    public string UserId { get; set; } = "";
-    public bool IsGuest { get; set; }
-    public double TotalTimeSeconds { get; set; }
-    public double SprintSeconds { get; set; }
-    public double HurdlesSeconds { get; set; }
-    public int HurdlesClean { get; set; }
-    public string Character { get; set; } = "";
-    public string Date { get; set; } = "";
-    public string GameCode { get; set; } = "";
-}
+// PoSports scores use PoMiniGames.Domain.Models.PoSportsHighScore directly — the client
+// already references that assembly (via PoMiniGames.Application), so a hand-kept mirror
+// only bought silent drift: a renamed server field still deserialized, just as null.
 
 public class PoBrawlLadderEntry
 {

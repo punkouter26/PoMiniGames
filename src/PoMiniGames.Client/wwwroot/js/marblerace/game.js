@@ -263,8 +263,11 @@ export class Game {
   // you're out of the race (eliminated/finished → follow the leader so there's still a race to
   // watch), and the slow-motion finish (the leader's money shot — unless YOU are that leader,
   // in which case staying on you already frames it).
-  _pickShot() {
-    const leader = this.marbleSet.leaderboard()[0];
+  // `order` is this frame's post-step leaderboard(), computed once in _frame and shared with
+  // the audio bed — leaderboard() is an O(n log n) pass over the 101-marble field, so it's
+  // not re-derived here.
+  _pickShot(order) {
+    const leader = order[0];
     const take = (marble, reason) => { this.shotReason = reason; return marble; };
     if (this.demo) return take(leader, 'LEADER');
 
@@ -418,10 +421,16 @@ export class Game {
         this._resolve();
       }
 
+      // One post-step ranking pass, taken after the finish/eliminate sweeps (and any
+      // _resolve) above so it reflects this frame's settled standings. Shared by the
+      // audio bed and the camera director below — nothing mutates positions or race
+      // flags between here and the _pickShot call.
+      const order = this.marbleSet.leaderboard();
+
       // Audio beds ride the focused marble's speed and how close the race is to resolving.
       // #10: tightened the range (400→300) and eased it (pow 0.6) so the bed ramps up harder
       // and sooner as the leader runs at the line — the music leans into the finish.
-      const leaderNow = this.marbleSet.leaderboard()[0];
+      const leaderNow = order[0];
       const nearRaw = leaderNow
         ? 1 - Math.max(0, Math.min(1, (this.track.finishZ - leaderNow.body.position.z) / 300))
         : 0;
@@ -430,7 +439,7 @@ export class Game {
 
       // Snap on a shot change rather than lerping across the track: a director's cut is a
       // cut. Lerping between two marbles 200 units apart reads as the camera losing the race.
-      const focus = this._pickShot();
+      const focus = this._pickShot(order);
       if (focus) {
         // Feed the camera the marble's heading (so it looks along the track ahead, #2) and
         // speed (so the FOV widens with pace, #4).

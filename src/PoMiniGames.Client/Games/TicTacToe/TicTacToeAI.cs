@@ -51,13 +51,13 @@ public class TicTacToeAI
     /// </summary>
     public static (bool Hard, double Blunder) StrengthForElo(int elo) => elo switch
     {
-        < 900  => (false, 0.55),
+        < 900 => (false, 0.55),
         < 1050 => (false, 0.35),
         < 1200 => (false, 0.20),
         < 1350 => (true, 0.14),
         < 1500 => (true, 0.10),
         < 1700 => (true, 0.07),
-        _      => (true, 0.05),
+        _ => (true, 0.05),
     };
 
     private (int, int) EasyMove(TicTacToeBoard board, CellValue player)

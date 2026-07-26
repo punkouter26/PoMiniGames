@@ -9,10 +9,10 @@ public class ConnectFiveAI
     {
         return difficulty switch
         {
-            Difficulty.Easy   => EasyMove(board, player),
+            Difficulty.Easy => EasyMove(board, player),
             Difficulty.Medium => MediumMove(board, player),
-            Difficulty.Hard   => HardMove(board, player),
-            _                 => MediumMove(board, player)
+            Difficulty.Hard => HardMove(board, player),
+            _ => MediumMove(board, player)
         };
     }
 
@@ -52,13 +52,13 @@ public class ConnectFiveAI
     /// </summary>
     public static (int Depth, double Blunder) StrengthForElo(int elo) => elo switch
     {
-        < 900  => (1, 0.60),
+        < 900 => (1, 0.60),
         < 1050 => (1, 0.38),
         < 1200 => (2, 0.24),
         < 1350 => (2, 0.12),
         < 1500 => (3, 0.06),
         < 1700 => (4, 0.03),
-        _      => (4, 0.00),
+        _ => (4, 0.00),
     };
 
     private (int, int) EasyMove(ConnectFiveBoard board, Player player)

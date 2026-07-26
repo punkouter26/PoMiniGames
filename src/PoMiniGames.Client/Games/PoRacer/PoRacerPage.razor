@@ -293,7 +293,6 @@
 
     // ─────────────────────────────  State  ─────────────────────────────
     private HubConnection? _raceHub;
-    private HubConnection? _lobbyHub;
     private string? _gameCode;
     private string _startHint = "8 cars · 3 laps · first across the line wins";
     private string? _startError;
@@ -394,7 +393,6 @@
         try { await JS.InvokeVoidAsync("PoRacer.stop"); } catch { }
         _selfRef?.Dispose();
         if (_raceHub is not null) { try { await _raceHub.DisposeAsync(); } catch { } }
-        if (_lobbyHub is not null) { try { await _lobbyHub.DisposeAsync(); } catch { } }
     }
 
     private DotNetObjectReference<PoRacerPage>? _selfRef;
@@ -446,25 +444,6 @@
         }
     }
 
-    private async Task<PoRacerLobbyState?> ConnectLobbyAsync()
-    {
-        _lobbyHub = new HubConnectionBuilder()
-            .WithUrl(Endpoints.Hub("poracer/lobby-hub"), options =>
-            {
-                // §2026-07-16: SignalR's default HttpClientFactory doesn't flow
-                // through DI, so the negotiate POST drops the dev cookie and the
-                // hub's RequireAuthorization() returns 401. Force the credentials
-                // handler so the PoMiniGames.DevAuth cookie round-trips.
-                options.HttpMessageHandlerFactory = SignalRCredentialsHttpClientFactory.CreateHandler;
-            })
-            .WithAutomaticReconnect()
-            .Build();
-        WireLobbyHandlers(_lobbyHub);
-        await _lobbyHub.StartAsync();
-        var state = await _lobbyHub.InvokeAsync<PoRacerLobbyState>("Join", AuthState.User?.DisplayName ?? "Player", !AuthState.IsAuthenticated);
-        return state;
-    }
-
     private async Task ConnectRaceAsync(string code, bool asPlayer)
     {
         // Retry safety: tear down any hub left over from a previous failed
@@ -476,14 +455,7 @@
             _raceHub = null;
         }
 
-        _raceHub = new HubConnectionBuilder()
-            .WithUrl(Endpoints.Hub("poracer/race-hub"), options =>
-            {
-                // See ConnectLobbyAsync — same credentials requirement applies.
-                options.HttpMessageHandlerFactory = SignalRCredentialsHttpClientFactory.CreateHandler;
-            })
-            .WithAutomaticReconnect()
-            .Build();
+        _raceHub = HubConnectionFactory.Create(Endpoints.Hub("poracer/race-hub"));
         // §2026-07-18: register the snapshot/finished handlers BEFORE invoking
         // JoinRace. Otherwise snapshots broadcast in the gap between the server
         // wiring its events and our client subscribing are silently dropped,
@@ -533,19 +505,6 @@
             };
             _inputTimer.Start();
         }
-    }
-
-    private void WireLobbyHandlers(HubConnection hub)
-    {
-        hub.On<PoRacerLobbyState>("lobbyState", state =>
-        {
-            _gameCode = state.GameCode;
-            InvokeAsync(StateHasChanged);
-        });
-        hub.On<PoRacerLobbyEvent>("lobbyEvent", ev =>
-        {
-            ShowToast(ev.Message);
-        });
     }
 
     private void ShowToast(string message)
@@ -672,14 +631,12 @@
         }
     }
 
-    private void GoToLeaderboard() => Nav.NavigateTo("/");
-
     // ─────────────────────────────  Demo / fallback  ─────────────────────────────
 
     private async Task StartDemoRaceAsync()
     {
         // §2026-07-16 — pure spectator demo. The visitor does NOT join the lobby:
-        // we skip ConnectLobbyAsync / ToggleReady / StartGame entirely and just
+        // we skip the lobby hub / ToggleReady / StartGame entirely and just
         // subscribe to the race hub. The server's PoRacerSim pads an empty
         // player list with 8 AI bots (see Features/PoRacer/PoRacerSim.cs), so the
         // demo race is always a full grid of CPU cars — the visitor watches the
@@ -709,11 +666,6 @@
     {
         _input.up = up; _input.down = down; _input.left = left; _input.right = right; _input.space = space;
     }
-
-    // ─────────────────────────────  Static world  ─────────────────────────────
-
-    [JSInvokable]
-    public Task PushStaticWorld() => Task.CompletedTask;
 
     // ─────────────────────────────  Helpers  ─────────────────────────────
 

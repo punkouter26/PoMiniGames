@@ -2,8 +2,8 @@ namespace PoMiniGames.Domain.Entities.Simulation;
 
 public sealed class FoodNode
 {
-    public int SpawnTurn      { get; }
-    public int TtlHeartbeats  { get; }
+    public int SpawnTurn { get; }
+    public int TtlHeartbeats { get; }
 
     /// <summary>Returns true once <paramref name="currentTurn"/> - SpawnTurn >= TtlHeartbeats.</summary>
     public bool IsWithered(int currentTurn) => currentTurn - SpawnTurn >= TtlHeartbeats;
@@ -11,7 +11,7 @@ public sealed class FoodNode
     public FoodNode(int spawnTurn, int ttlHeartbeats)
     {
         if (ttlHeartbeats <= 0) throw new ArgumentOutOfRangeException(nameof(ttlHeartbeats));
-        SpawnTurn     = spawnTurn;
+        SpawnTurn = spawnTurn;
         TtlHeartbeats = ttlHeartbeats;
     }
 }

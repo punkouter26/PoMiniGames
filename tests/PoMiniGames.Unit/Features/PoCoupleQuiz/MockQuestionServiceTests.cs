@@ -29,13 +29,13 @@ public sealed class MockQuestionServiceTests
     }
 
     [Theory]
-    [InlineData("pizza",   "pizza",       1f)] // identical
-    [InlineData("Pizza",   "PIZZA",       1f)] // case-insensitive
-    [InlineData("  pizza  ", "pizza",     1f)] // whitespace-trimmed
-    [InlineData("pizza",   "sushi",       0f)] // different
-    [InlineData("",       "anything",    0f)] // empty lhs
-    [InlineData("anything", "",           0f)] // empty rhs
-    [InlineData(null,      "anything",    0f)] // null lhs
+    [InlineData("pizza", "pizza", 1f)] // identical
+    [InlineData("Pizza", "PIZZA", 1f)] // case-insensitive
+    [InlineData("  pizza  ", "pizza", 1f)] // whitespace-trimmed
+    [InlineData("pizza", "sushi", 0f)] // different
+    [InlineData("", "anything", 0f)] // empty lhs
+    [InlineData("anything", "", 0f)] // empty rhs
+    [InlineData(null, "anything", 0f)] // null lhs
     public async Task CheckSimilarity_AppliesNormalisationRules(string? lhs, string? rhs, float expected)
     {
         var score = await _service.CheckAnswerSimilarityAsync(lhs!, rhs!);

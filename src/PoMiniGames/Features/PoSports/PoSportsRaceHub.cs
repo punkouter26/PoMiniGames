@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.SignalR;
+using PoMiniGames.Features.Auth;
 using PoShared.Games;
 
 namespace PoMiniGames.Features.PoSports;
@@ -36,35 +37,38 @@ public sealed class PoSportsRaceHub : Hub
     /// <summary>
     /// Join a meet. Idempotent — a reconnecting player rebinds their lane (sequence
     /// progress resets; banked speed survives) and pulls the latest snapshot.
-    /// Spectators join the group without claiming a lane.
+    /// Spectators join the group without claiming a lane. Returns null when no meet is
+    /// joinable (none started, or the last one already finished) — the client sends the
+    /// player back to the lobby rather than a race that will never run.
     /// </summary>
-    public Task<PoSportsSnapshot?> JoinRace(string code, bool asPlayer = false, string? displayName = null, bool isGuest = true)
+    public Task<PoSportsJoinResult?> JoinRace(string code, bool asPlayer = false, string? displayName = null, bool isGuest = true)
     {
-        if (string.IsNullOrWhiteSpace(code)) return Task.FromResult<PoSportsSnapshot?>(null);
-        var race = _registry.GetOrCreate(code);
-        _registry.RegisterConnection(code, Context.ConnectionId);
+        if (string.IsNullOrWhiteSpace(code)) return Task.FromResult<PoSportsJoinResult?>(null);
+        var race = _registry.TryGetOrCreate(code);
+        if (race is null) return Task.FromResult<PoSportsJoinResult?>(null);
+        // Group on the race's own code, never the caller's spelling, so a differently-cased
+        // URL still lands in the group the broadcasts actually target.
+        _registry.RegisterConnection(race.GameCode, Context.ConnectionId);
 
+        var lane = -1;
         if (asPlayer)
         {
-            var user = Context.User;
-            var userId = user?.FindFirst("sub")?.Value
-                         ?? user?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
-                         ?? user?.FindFirst("oid")?.Value
-                         ?? "";
+            var identity = RequestIdentity.Resolve(Context.User);
             var name = string.IsNullOrWhiteSpace(displayName) ? "Player" : displayName!;
-            var lane = race.RegisterOwner(Context.ConnectionId, name, userId, isGuest);
-            if (lane is null)
+            var owned = race.RegisterOwner(Context.ConnectionId, name, identity.UserId, isGuest);
+            if (owned is null)
             {
-                _log.LogWarning("PoSports: no lane for {Name} in race {Code}", name, code);
+                _log.LogWarning("PoSports: no lane for {Name} in race {Code}", name, race.GameCode);
             }
+            lane = owned ?? -1;
         }
 
         return AddToGroupAndSnapshotAsync();
 
-        async Task<PoSportsSnapshot?> AddToGroupAndSnapshotAsync()
+        async Task<PoSportsJoinResult?> AddToGroupAndSnapshotAsync()
         {
-            await Groups.AddToGroupAsync(Context.ConnectionId, PoSportsRaceRegistry.RaceGroup(code));
-            return race.Snapshot();
+            await Groups.AddToGroupAsync(Context.ConnectionId, PoSportsRaceRegistry.RaceGroup(race.GameCode));
+            return new PoSportsJoinResult(lane, race.Snapshot());
         }
     }
 

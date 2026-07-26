@@ -26,7 +26,7 @@ public sealed class MultiplayerLobbyServiceTests
 
     [Theory]
     [InlineData("conn1", "Alice", 1)]
-    [InlineData("conn7", "Eve",   1)]
+    [InlineData("conn7", "Eve", 1)]
     public async Task Create_AssignsGameId_AndAddsHostAsPlayerOne(string hostConn, string hostName, int expectedPlayerNumber)
     {
         var lobby = NewLobby();
@@ -52,10 +52,10 @@ public sealed class MultiplayerLobbyServiceTests
     }
 
     [Theory]
-    [InlineData(true,  1)] // one correct answer → streak=1, baseScore > 0
+    [InlineData(true, 1)] // one correct answer → streak=1, baseScore > 0
     [InlineData(false, 0)] // wrong answer       → streak=0, baseScore stays 0
-    [InlineData(true,  2)] // two correct        → streak=2, baseScore doubles
-    [InlineData(true,  3)] // three correct      → streak=3 (tier 3+ bonus kicks in)
+    [InlineData(true, 2)] // two correct        → streak=2, baseScore doubles
+    [InlineData(true, 3)] // three correct      → streak=3 (tier 3+ bonus kicks in)
     public async Task UpdateScore_UpdatesBaseAndStreak(bool firstCorrect, int consecutiveCorrect)
     {
         var lobby = NewLobby();

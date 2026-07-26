@@ -164,18 +164,9 @@ else
             return;
         }
 
-        var hubUrl = Endpoints.Hub("poracer/lobby-hub");
-        _hub = new HubConnectionBuilder()
-            .WithUrl(hubUrl, options =>
-            {
-                // §2026-07-16: SignalR's default HttpClientFactory doesn't flow
-                // through DI, so the negotiate POST drops the dev cookie and the
-                // hub's RequireAuthorization() returns 401. Force the credentials
-                // handler so the PoMiniGames.DevAuth cookie round-trips.
-                options.HttpMessageHandlerFactory = SignalRCredentialsHttpClientFactory.CreateHandler;
-            })
-            .WithAutomaticReconnect()
-            .Build();
+        // Credentials handler + auto-reconnect come baked into the shared
+        // factory (see HubConnectionFactory for the §2026-07-16 cookie contract).
+        _hub = HubConnectionFactory.Create(Endpoints.Hub("poracer/lobby-hub"));
 
         _lobbySub = _hub.On<PoRacerLobbyState>("lobbyState", state =>
         {

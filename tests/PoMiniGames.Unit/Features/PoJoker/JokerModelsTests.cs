@@ -55,9 +55,9 @@ public sealed class JokerModelsTests
     }
 
     [Theory]
-    [InlineData(0,   3000)] // 3s
-    [InlineData(0,      0)] // same instant
-    [InlineData(-500,  500)] // completed before started → clamp via subtraction? assert the raw diff
+    [InlineData(0, 3000)] // 3s
+    [InlineData(0, 0)] // same instant
+    [InlineData(-500, 500)] // completed before started → clamp via subtraction? assert the raw diff
     public void JokePerformanceDto_DurationMs_MatchesTimestampDelta(int startOffsetMs, int completedOffsetMs)
     {
         var joke = TwoPart();
@@ -76,8 +76,8 @@ public sealed class JokerModelsTests
     }
 
     [Theory]
-    [InlineData(-1,  true)]   // negative setup duration
-    [InlineData(0,   false)]  // default setup duration is allowed
+    [InlineData(-1, true)]   // negative setup duration
+    [InlineData(0, false)]  // default setup duration is allowed
     [InlineData(int.MaxValue, false)] // huge but positive is allowed by validation
     public void PerformanceSettings_Validate_HandlesNegativeValues(int setupDurationSeconds, bool expectThrow)
     {

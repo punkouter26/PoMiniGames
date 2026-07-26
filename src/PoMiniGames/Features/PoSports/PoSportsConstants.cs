@@ -45,11 +45,32 @@ public static class PoSportsConstants
     /// <summary>Fixed simulation step (seconds) — identical on both sims by contract.</summary>
     public const double Tick = 1.0 / 60.0;
 
+    /// <summary>Duration the stumble (hit-react) animation locks the lane, seconds.
+    /// Mirrors <c>STUMBLE_ANIM_SECONDS</c> in physics.js.</summary>
+    public const double StumbleAnimSeconds = 0.7;
+
+    // Server AI cadence: keys per second and wrong-key probability for the medium-difficulty
+    // typists that fill online lanes. These mirror DIFFICULTIES.medium in ai.js and are pinned
+    // by PoSportsConstantsSyncTests — they used to live as private fields in PoSportsSim with
+    // only a comment claiming the mirror, so a difficulty rebalance desynced online CPU rivals
+    // from local ones with no build break.
+
+    /// <summary>Target key cadence for server AI lanes (keys/second).</summary>
+    public const double AiKeysPerSecond = 10.0;
+
+    /// <summary>Probability that a server AI lane presses a wrong key.</summary>
+    public const double AiErrorRate = 0.008;
+
+    /// <summary>How far before a hurdle a server AI lane decides to jump (meters).</summary>
+    public const double AiJumpLookahead = 1.8;
+
     /// <summary>Hurdle positions along the hurdles leg (meters from the start line).</summary>
     public static readonly IReadOnlyList<double> HurdlePositions =
         [20, 30, 40, 50, 60, 70, 80, 90];
 
-    /// <summary>The playable character keys, matching wwwroot/images/PoSports/ directories.</summary>
-    public static readonly IReadOnlyList<string> Characters =
-        ["mom", "kim", "matt", "nick", "tong"];
+    /// <summary>
+    /// The playable character keys. Sourced from <see cref="PoShared.Games.PoSportsRoster"/>
+    /// so the server, the lobby page, and the race page cannot disagree about who exists.
+    /// </summary>
+    public static IReadOnlyList<string> Characters => PoShared.Games.PoSportsRoster.Keys;
 }

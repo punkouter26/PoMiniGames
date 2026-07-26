@@ -67,7 +67,6 @@ public sealed class PoRacerRaceService : IAsyncDisposable
     {
         try
         {
-            var inputs = _inputs.ToArray().ToDictionary(kv => kv.Key, kv => kv.Value);
             bool finished;
             PoRacerFinalResult? result = null;
             lock (_stateLock)
@@ -81,7 +80,9 @@ public sealed class PoRacerRaceService : IAsyncDisposable
                 }
                 else
                 {
-                    _sim.Tick(1.0 / TickHz, inputs);
+                    // ConcurrentDictionary reads are lock-free and enumeration is snapshot-safe,
+                    // so the sim reads live inputs directly — no per-tick copy at 50Hz.
+                    _sim.Tick(1.0 / TickHz, _inputs);
                     finished = !_finishedBroadcast && _sim.AllFinishedOrStopped();
                     if (finished)
                     {

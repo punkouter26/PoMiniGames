@@ -17,9 +17,9 @@ namespace PoMiniGames.Unit.Features.Auth;
 public class MicrosoftAuthIssuerValidatorTests
 {
     [Theory]
-    [InlineData("https://login.microsoftonline.com/common/v2.0",                "")]
-    [InlineData("https://login.microsoftonline.com/organizations/v2.0",           "")]
-    [InlineData("https://login.microsoftonline.com/consumers/v2.0",              "")]
+    [InlineData("https://login.microsoftonline.com/common/v2.0", "")]
+    [InlineData("https://login.microsoftonline.com/organizations/v2.0", "")]
+    [InlineData("https://login.microsoftonline.com/consumers/v2.0", "")]
     [InlineData("https://login.microsoftonline.com/9188040d-6c67-4c5b-b112-36a304b66dad/v2.0", "")]
     [InlineData("https://login.microsoftonline.com/11111111-1111-1111-1111-111111111111/v2.0", "11111111-1111-1111-1111-111111111111")]
     public void Validate_AcceptsAllowedAuthorities(string issuer, string commaSeparatedAllowedTenants)
@@ -34,9 +34,9 @@ public class MicrosoftAuthIssuerValidatorTests
 
     [Theory]
     [InlineData("https://login.microsoftonline.com/22222222-2222-2222-2222-222222222222/v2.0", "")]
-    [InlineData("",                                                                            "")]
-    [InlineData("https://evil.example.com/v2.0",                                               "")]
-    [InlineData("https://login.microsoftonline.com/common/v2.0/extra",                        "11111111-1111-1111-1111-111111111111")]
+    [InlineData("", "")]
+    [InlineData("https://evil.example.com/v2.0", "")]
+    [InlineData("https://login.microsoftonline.com/common/v2.0/extra", "11111111-1111-1111-1111-111111111111")]
     public void Validate_RejectsDisallowedIssuers(string issuer, string commaSeparatedAllowedTenants)
     {
         var allowed = string.IsNullOrEmpty(commaSeparatedAllowedTenants)

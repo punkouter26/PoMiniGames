@@ -228,7 +228,7 @@ public sealed class PerformanceOrchestrator : IAsyncDisposable
                     403 => "Access to the jester's joke vault was denied.",
                     404 => "The jester has no joke for that category.",
                     503 => "The comedic muses are off duty (upstream joke API unreachable).",
-                    _   => $"The courier returned {code}; will try again in a moment."
+                    _ => $"The courier returned {code}; will try again in a moment."
                 };
                 ShowNetworkOverlay = true;
                 NotifyStateChanged();

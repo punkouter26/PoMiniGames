@@ -28,15 +28,28 @@ public sealed class PoSportsRaceService : IAsyncDisposable
     private readonly PoSportsSim _sim;
     /// <summary>lane index → owning connection. Only human lanes appear here.</summary>
     private readonly ConcurrentDictionary<int, LaneOwner> _owners = new();
+    /// <summary>lane index → the seat that lane was seeded from (human lanes only).</summary>
+    private readonly Dictionary<int, PoSportsRaceSeat> _seats = [];
     private bool _finishedHandled;
+    private bool _disposed;
 
     public string GameCode { get; }
+
+    /// <summary>
+    /// True once the meet reached the podium. The registry must never hand a finished
+    /// race to a rematch — the sim's podium phase is terminal, so joiners would be
+    /// pinned to the previous meet's results.
+    /// </summary>
+    public bool IsFinished
+    {
+        get { lock (_stateLock) return _finishedHandled; }
+    }
     public event Action<PoSportsSnapshot>? SnapshotReady;
     public event Action<PoSportsSnapshot>? Finished;
 
     public PoSportsRaceService(
         string gameCode,
-        IReadOnlyList<PoSportsLobbyMember> members,
+        IReadOnlyList<PoSportsRaceSeat> seats,
         PoSportsLobbyService lobby,
         IStorageService storage,
         ILogger<PoSportsRaceService> log,
@@ -51,11 +64,12 @@ public sealed class PoSportsRaceService : IAsyncDisposable
         // Humans take the first lanes in join order; AI family members fill the rest
         // of the 4-lane track with characters nobody picked.
         var setups = new List<PoSportsSim.LaneSetup>();
-        foreach (var m in members.Take(PoSportsLobbyService.MaxPlayers))
+        foreach (var seat in seats.Take(PoSportsLobbyService.MaxPlayers))
         {
-            setups.Add(new PoSportsSim.LaneSetup(m.DisplayName, m.Character, IsAi: false));
+            _seats[setups.Count] = seat;
+            setups.Add(new PoSportsSim.LaneSetup(seat.DisplayName, seat.Character, IsAi: false));
         }
-        var free = PoSportsConstants.Characters.Except(members.Select(m => m.Character)).ToList();
+        var free = PoSportsConstants.Characters.Except(seats.Select(s => s.Character)).ToList();
         for (var i = 0; setups.Count < PoSportsLobbyService.MaxPlayers && i < free.Count; i++)
         {
             setups.Add(new PoSportsSim.LaneSetup($"CPU {free[i]}", free[i], IsAi: true));
@@ -74,10 +88,18 @@ public sealed class PoSportsRaceService : IAsyncDisposable
     // ── Connections ───────────────────────────────────────────────────────
 
     /// <summary>
-    /// Bind a connection to its lane (matched by lobby display name at first join,
-    /// or rebind by connection on rejoin). A rejoin resets the lane's sequence
-    /// progress — the player's rhythm, not their speed, restarts.
+    /// Bind a connection to its lane and return the lane index, or null when the caller
+    /// owns no lane (a spectator). A rejoin resets the lane's sequence progress — the
+    /// player's rhythm, not their speed, restarts.
     /// </summary>
+    /// <remarks>
+    /// Lanes are matched on the claim-derived <paramref name="userId"/> from the lobby
+    /// seat, NOT on <paramref name="displayName"/>: the lobby stores names through
+    /// <see cref="PoSportsLobbyService.SanitizeName"/>, so a &gt;24-char or padded name
+    /// never equals its own lane, and a page refresh sends a default name — both silently
+    /// demoted the player to a spectator whose keys were dropped. The name path survives
+    /// only as a fallback for callers with no stable id, and sanitizes before comparing.
+    /// </remarks>
     public int? RegisterOwner(string connectionId, string displayName, string userId, bool isGuest)
     {
         lock (_stateLock)
@@ -90,9 +112,8 @@ public sealed class PoSportsRaceService : IAsyncDisposable
             // A new connection binding this player's lane: an unclaimed lane first
             // (initial join / rejoin after disconnect), else steal the stale bind
             // (reconnect where the old connection never formally disconnected).
-            var lane = _sim.Lanes.FirstOrDefault(l => !l.IsAi && l.Name == displayName
-                                                      && !_owners.ContainsKey(l.Index))?.Index
-                       ?? _sim.Lanes.FirstOrDefault(l => !l.IsAi && l.Name == displayName)?.Index
+            var lane = MatchLane(displayName, userId, requireUnclaimed: true)
+                       ?? MatchLane(displayName, userId, requireUnclaimed: false)
                        ?? -1;
             if (lane < 0) return null;
             // Any new connection restarts the player's typing rhythm — banked speed
@@ -101,6 +122,26 @@ public sealed class PoSportsRaceService : IAsyncDisposable
             _owners[lane] = new LaneOwner(connectionId, userId, isGuest);
             return lane;
         }
+    }
+
+    /// <summary>
+    /// Find this player's human lane: by seat identity when the caller has a stable id,
+    /// else by sanitized name. Callers hold <see cref="_stateLock"/>.
+    /// </summary>
+    private int? MatchLane(string displayName, string userId, bool requireUnclaimed)
+    {
+        var name = PoSportsLobbyService.SanitizeName(displayName);
+        foreach (var l in _sim.Lanes)
+        {
+            if (l.IsAi) continue;
+            if (requireUnclaimed && _owners.ContainsKey(l.Index)) continue;
+            var seat = _seats.TryGetValue(l.Index, out var s) ? s : null;
+            var matched = !string.IsNullOrEmpty(userId) && seat is not null && !string.IsNullOrEmpty(seat.UserId)
+                ? string.Equals(seat.UserId, userId, StringComparison.Ordinal)
+                : string.Equals(l.Name, name, StringComparison.Ordinal);
+            if (matched) return l.Index;
+        }
+        return null;
     }
 
     public void RemoveConnection(string connectionId)
@@ -176,15 +217,25 @@ public sealed class PoSportsRaceService : IAsyncDisposable
 
     private void HandleFinished(PoSportsSnapshot final)
     {
+        // The podium is terminal: further ticks are no-ops and every snapshot from here
+        // is byte-identical, so stop both timers instead of broadcasting the same podium
+        // ~450 more times across the registry's 30 s grace window. Clients already got
+        // the final state on "raceFinished".
+        _tick?.Change(Timeout.Infinite, Timeout.Infinite);
+        _snap?.Change(Timeout.Infinite, Timeout.Infinite);
+
         // Persist every human lane's meet — guests included (IsGuest rows rank too).
         foreach (var lane in final.Lanes.Where(l => !l.IsAi))
         {
+            // Prefer the live connection's identity, but fall back to the lobby seat so a
+            // player who dropped before the podium still gets their run attributed.
             var owner = _owners.TryGetValue(lane.Lane, out var o) ? o : null;
+            var seat = _seats.TryGetValue(lane.Lane, out var s) ? s : null;
             var entry = new PoSportsHighScore
             {
                 PlayerName = lane.Name,
-                UserId = owner?.UserId ?? "",
-                IsGuest = owner?.IsGuest ?? true,
+                UserId = owner?.UserId ?? seat?.UserId ?? "",
+                IsGuest = owner?.IsGuest ?? seat?.IsGuest ?? true,
                 SprintSeconds = lane.SprintSeconds,
                 HurdlesSeconds = lane.HurdlesSeconds,
                 TotalTimeSeconds = lane.SprintSeconds + lane.HurdlesSeconds,
@@ -211,8 +262,14 @@ public sealed class PoSportsRaceService : IAsyncDisposable
         }
     }
 
+    /// <summary>Idempotent: a displaced race is disposed at once and again by the delayed sweep.</summary>
     public async ValueTask DisposeAsync()
     {
+        lock (_stateLock)
+        {
+            if (_disposed) return;
+            _disposed = true;
+        }
         if (_tick is not null) await _tick.DisposeAsync();
         if (_snap is not null) await _snap.DisposeAsync();
     }

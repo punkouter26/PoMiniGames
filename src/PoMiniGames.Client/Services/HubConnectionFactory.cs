@@ -1,0 +1,46 @@
+using Microsoft.AspNetCore.Http.Connections;
+using Microsoft.AspNetCore.SignalR.Client;
+
+namespace PoMiniGamesClient.Services;
+
+/// <summary>
+/// The single construction path for every SignalR hub connection in the client.
+/// Bakes in the two things every hub connection here must have:
+/// <list type="bullet">
+/// <item>§2026-07-16: SignalR's default HttpClientFactory doesn't flow through
+/// DI, so the negotiate POST drops the dev cookie and the hub's
+/// RequireAuthorization() returns 401. Every connection forces the credentials
+/// handler (<see cref="SignalRCredentialsHttpClientFactory.CreateHandler"/>) so
+/// the PoMiniGames.DevAuth cookie round-trips — see that class for the full
+/// failure story.</item>
+/// <item>Automatic reconnect, so a dropped WebSocket heals instead of leaving
+/// the lobby/race dead.</item>
+/// </list>
+/// </summary>
+public static class HubConnectionFactory
+{
+    /// <summary>
+    /// Build a hub connection with the credentials handler and automatic
+    /// reconnect applied.
+    /// </summary>
+    /// <param name="hubUrl">Absolute hub URL — compose via <see cref="ApiEndpoints.Hub"/>;
+    /// SignalR does not honour the DI HttpClient BaseAddress (see <see cref="ApiEndpoints"/>).</param>
+    /// <param name="transports">Optional transport restriction (e.g. FunQuiz's
+    /// dev-box escape hatch that skips the slow WebSocket upgrade). Null keeps
+    /// SignalR's default transport negotiation.</param>
+    /// <param name="reconnectDelays">Optional custom reconnect backoff; null uses
+    /// SignalR's default 0/2/10/30s schedule.</param>
+    public static HubConnection Create(string hubUrl, HttpTransportType? transports = null, TimeSpan[]? reconnectDelays = null)
+    {
+        var builder = new HubConnectionBuilder()
+            .WithUrl(hubUrl, options =>
+            {
+                options.HttpMessageHandlerFactory = SignalRCredentialsHttpClientFactory.CreateHandler;
+                if (transports is { } restricted) options.Transports = restricted;
+            });
+        builder = reconnectDelays is null
+            ? builder.WithAutomaticReconnect()
+            : builder.WithAutomaticReconnect(reconnectDelays);
+        return builder.Build();
+    }
+}

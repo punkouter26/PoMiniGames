@@ -56,12 +56,13 @@ public sealed class PoRacerLobbyHub : Hub
 
     public async Task ToggleReady()
     {
-        var p = _lobby.Players.FirstOrDefault(x => x.ConnectionId == Context.ConnectionId);
-        if (p is null) return;
-        _lobby.SetReady(Context.ConnectionId, !p.IsReady);
+        // The service flips under its own lock and reports the state it stored — announcing
+        // a pre-toggle snapshot read outside the lock inverted every ready/not-ready toast.
+        var (ok, _, msg) = _lobby.ToggleReady(Context.ConnectionId);
+        if (!ok) return;
         await Clients.Group(Group).SendAsync("lobbyState", _lobby.State);
         await Clients.Group(Group).SendAsync("lobbyEvent",
-            new PoRacerLobbyEvent("ready", $"{p.DisplayName} is {(p.IsReady ? "ready" : "not ready")}", DateTimeOffset.UtcNow));
+            new PoRacerLobbyEvent("ready", msg, DateTimeOffset.UtcNow));
     }
 
     public async Task LeaveLobby()

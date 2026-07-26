@@ -168,7 +168,7 @@ PoMiniGames is an instant-play mini-games platform designed for accessibility an
 
 The platform hosts 8 games with distinct mechanics:
 
-- **TicTacToe4**: 6×6 grid game where you line up **4 in a row** before your opponent. AI opponent with three difficulty levels (Easy / Medium / Hard). Hard mode implements Minimax with alpha-beta pruning and depth-4 search.
+- **Tic-Tac-Toe**: 6×6 grid game where you line up **4 in a row** before your opponent. AI opponent with three difficulty levels (Easy / Medium / Hard). Hard mode implements Minimax with alpha-beta pruning and depth-4 search.
 - **Connect Five**: Vertical gravity-based game on a 9×9 grid requiring 5-in-a-row to win. AI uses heuristic board evaluation for Medium/Easy difficulties.
 - **PoFight**: 2D arena fighter with CPU opponents. Supports both player vs CPU and CPU vs CPU demo modes.
 - **Po Snake Game**: Canvas-based snake arena with multiplayer synchronization via SignalR. 30-second battle mode with high score tracking.

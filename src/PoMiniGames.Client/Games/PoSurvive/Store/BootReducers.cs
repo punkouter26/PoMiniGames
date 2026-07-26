@@ -11,7 +11,7 @@ public static class BootReducers
     public static BootState OnGpuProbeCompleted(BootState state, GpuProbeCompletedAction action)
         => state with
         {
-            GpuLabel      = action.GpuLabel,
+            GpuLabel = action.GpuLabel,
             IsMockProvider = action.IsMockProvider,
         };
 
@@ -20,7 +20,7 @@ public static class BootReducers
         => state with
         {
             BytesLoaded = action.BytesLoaded,
-            TotalBytes  = action.TotalBytes,
+            TotalBytes = action.TotalBytes,
         };
 
     [ReducerMethod]
@@ -28,8 +28,8 @@ public static class BootReducers
         => state with
         {
             ProviderKind = action.ProviderKind,
-            ModelId      = action.ModelId,
-            ModelLabel   = action.ModelLabel,
+            ModelId = action.ModelId,
+            ModelLabel = action.ModelLabel,
         };
 
     [ReducerMethod]
@@ -37,7 +37,7 @@ public static class BootReducers
         => state with
         {
             HasInferenceInitError = true,
-            InferenceInitError    = action.Error,
+            InferenceInitError = action.Error,
         };
 
     [ReducerMethod]

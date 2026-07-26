@@ -99,8 +99,10 @@ public sealed class TeamsRepository : ITeamsRepository
 
     public async Task<IReadOnlyList<Team>> GetAllTeamsAsync(CancellationToken cancellationToken = default)
     {
+        // Teams live in the "Team" partition only; the StatApplied:* idempotency-marker
+        // partitions grow with every game session and must not be scanned (or returned).
         var results = new List<Team>();
-        await foreach (var entity in _table.QueryAsync<TeamTableEntity>(cancellationToken: cancellationToken))
+        await foreach (var entity in _table.QueryAsync<TeamTableEntity>(filter: "PartitionKey eq 'Team'", cancellationToken: cancellationToken))
         {
             results.Add(entity.ToDomain());
         }

@@ -2,16 +2,16 @@ namespace PoMiniGames.Domain.ValueObjects.Simulation;
 
 // GoF: Value Object — snapshot of SimulationConfig captured at session creation
 public sealed record SimulationConfigSnapshot(
-    int   TeamSize,
+    int TeamSize,
     float RockDensity,
     float FoodSpawnChance,
-    int   FoodTtl,
+    int FoodTtl,
     float HungerDecayConstant,
     float HungerThreshold,
-    int   StarveHpLossPerTurn,
-    int   BaseDamage,
-    int   HeartbeatMinMs,
-    int   HeartbeatMaxMs,
-    int   InferenceTimeoutMs,
-    int   MaxInferredAgentsPerTurn
+    int StarveHpLossPerTurn,
+    int BaseDamage,
+    int HeartbeatMinMs,
+    int HeartbeatMaxMs,
+    int InferenceTimeoutMs,
+    int MaxInferredAgentsPerTurn
 );

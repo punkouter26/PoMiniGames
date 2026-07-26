@@ -39,7 +39,14 @@ export class TouchPad {
         window.dispatchEvent(new KeyboardEvent('keydown', { code, bubbles: true }));
         btn.classList.add('ps-touchpad-btn--active');
       });
-      const clear = () => btn.classList.remove('ps-touchpad-btn--active');
+      // Release emits the matching keyup so the pad is a faithful keyboard stand-in.
+      // PoSports itself only listens for keydown, but a synthetic press with no release
+      // is a trap for any future listener that tracks held keys.
+      const clear = () => {
+        if (!btn.classList.contains('ps-touchpad-btn--active')) return;
+        btn.classList.remove('ps-touchpad-btn--active');
+        window.dispatchEvent(new KeyboardEvent('keyup', { code, bubbles: true }));
+      };
       btn.addEventListener('pointerup', clear);
       btn.addEventListener('pointercancel', clear);
       btn.addEventListener('pointerleave', clear);

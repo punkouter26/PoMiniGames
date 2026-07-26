@@ -20,13 +20,13 @@ public class MicrosoftAuthOptionsBinderTests
     private const string Section = "PoMiniGames:MicrosoftAuth";
 
     [Theory]
-    [InlineData(true,  true,  false, true,  // both client ids present, Enabled absent → binder promotes
+    [InlineData(true, true, false, true,  // both client ids present, Enabled absent → binder promotes
                   "promote to true on a fully-wired deployment without an explicit flag")]
-    [InlineData(true,  true,  true,  false, // both client ids present, Enabled=false explicit → binder honours kill-switch
+    [InlineData(true, true, true, false, // both client ids present, Enabled=false explicit → binder honours kill-switch
                   "explicit Enabled=false wins over the FullyConfigured fallback")]
-    [InlineData(true,  false, false, false, // only ClientId set → not fully wired → binder leaves false
+    [InlineData(true, false, false, false, // only ClientId set → not fully wired → binder leaves false
                   "an incomplete wiring must NOT auto-enable sign-in")]
-    [InlineData(false, true,  false, false, // only ApiClientId set → not fully wired → binder leaves false
+    [InlineData(false, true, false, false, // only ApiClientId set → not fully wired → binder leaves false
                   "an incomplete wiring must NOT auto-enable sign-in")]
     [InlineData(false, false, false, false, // nothing set → not fully wired → binder leaves false
                   "an empty configuration leaves Enabled=false")]
@@ -59,7 +59,7 @@ public class MicrosoftAuthOptionsBinderTests
         new MicrosoftAuthOptions { ClientId = "x", ApiClientId = "y" }
             .FullyConfigured.Should().BeTrue("both ids present → fully wired");
 
-        new MicrosoftAuthOptions { ClientId = "",  ApiClientId = "y" }
+        new MicrosoftAuthOptions { ClientId = "", ApiClientId = "y" }
             .FullyConfigured.Should().BeFalse("empty ClientId → not wired");
         new MicrosoftAuthOptions { ClientId = "x", ApiClientId = "   " }
             .FullyConfigured.Should().BeFalse("whitespace ApiClientId → not wired");

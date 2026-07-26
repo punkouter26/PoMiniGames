@@ -13,7 +13,7 @@ namespace PoMiniGames.Domain.Primitives;
 /// source of truth for the on-the-wire form (<see cref="Value"/>).
 /// </para>
 /// <para>
-/// <b>Allocation</b>: the 32 cached well-known keys (<see cref="WellKnown"/>) are
+/// <b>Allocation</b>: the cached well-known keys (<see cref="WellKnown"/>) are
 /// zero-alloc when callers reference them directly. <see cref="Parse"/> only
 /// allocates when the input is not in the catalogue, which is the bug case we
 /// want to surface.
@@ -66,20 +66,28 @@ public readonly record struct GameKey(string Value) : IComparable<GameKey>
 
     // ── Well-known keys (canonical wire form) ────────────────────────────
 
-    public static readonly GameKey CoupleQuiz   = new("couplequiz");
-    public static readonly GameKey FunQuiz      = new("funquiz");
-    public static readonly GameKey Face         = new("face");
-    public static readonly GameKey Joker        = new("joker");
-    public static readonly GameKey Survive      = new("survive");
+    public static readonly GameKey CoupleQuiz = new("couplequiz");
+    public static readonly GameKey FunQuiz = new("funquiz");
+    public static readonly GameKey Face = new("face");
+    public static readonly GameKey Joker = new("joker");
+    public static readonly GameKey Survive = new("survive");
 
-    public static readonly GameKey ConnectFive  = new("connectfive");
-    public static readonly GameKey TicTacToe    = new("tictactoe");
+    public static readonly GameKey ConnectFive = new("connectfive");
+    public static readonly GameKey TicTacToe = new("tictactoe");
     public static readonly GameKey PoMarbleRace = new("pomarblerace");
+    public static readonly GameKey PoRacer = new("poracer");
+    public static readonly GameKey PoBrawl = new("pobrawl");
+    public static readonly GameKey PoSports = new("posports");
 
+    // This catalogue gates PlayerStats reads/writes (PlayerStatsEndpoints uses TryParse as
+    // the §8 allowlist), so it must cover every game the client can mirror stats for —
+    // it had drifted behind the client's GameKeys list (poracer/pobrawl/posports missing),
+    // which 400'd their stats and leaderboard calls.
     private static readonly GameKey[] All =
     {
         CoupleQuiz, FunQuiz, Face, Joker, Survive,
         ConnectFive, TicTacToe, PoMarbleRace,
+        PoRacer, PoBrawl, PoSports,
     };
 
     private static readonly string[] WellKnownNames = All.Select(k => k.Value).ToArray();

@@ -52,7 +52,13 @@
     <!-- AI (PoSurvive inference: server-side Azure OpenAI relay) -->
     <PackageVersion Include="Microsoft.Extensions.AI" Version="10.5.2" />
     <PackageVersion Include="Microsoft.Extensions.AI.OpenAI" Version="10.5.2" />
-    <PackageVersion Include="Azure.AI.OpenAI" Version="2.1.0" />
+    <!-- Must stay compatible with the OpenAI version Microsoft.Extensions.AI.OpenAI pulls in
+         (10.5.2 → OpenAI 2.10.0). NuGet unifies OpenAI to the highest requested version, so the
+         GA Azure.AI.OpenAI 2.1.0 — built against OpenAI 2.1.0 — bound against 2.10.0 at runtime
+         and every chat call threw MissingMethodException on the removed
+         ChatCompletionOptions.SerializedAdditionalRawData. That surfaced as "[The Jester
+         stumbled and cannot predict.]" rather than a startup failure. Bump both together. -->
+    <PackageVersion Include="Azure.AI.OpenAI" Version="2.9.0-beta.1" />
     <!-- Health Checks -->
     <!-- Testing -->
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />

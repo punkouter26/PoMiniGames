@@ -37,6 +37,19 @@
     [Parameter] public bool AutoStart { get; set; } = true;
 
     /// <summary>
+    /// Unattended mode: when a show finishes, reset and run another instead of ending.
+    /// A looping stage never raises <see cref="OnShowComplete"/> — there is no end to
+    /// report, and the host must not put up the end-of-game modal, which nobody would
+    /// be there to dismiss.
+    /// </summary>
+    [Parameter] public bool Loop { get; set; }
+
+    /// <summary>Beat between shows so the last punchline lands before the next setup.</summary>
+    private const int LoopGapMs = 4000;
+
+    private bool _disposed;
+
+    /// <summary>
     /// Raised once when the 10-joke show finishes, carrying the session's triumph
     /// count. Lets the hosting page surface the result in the shared end-of-game
     /// modal — the completion state lives in the orchestrator, which the page
@@ -82,8 +95,34 @@
         _orchestrator.SelectedSafeMode = true;
         _orchestrator.SelectedMoodLabel = "Random";
         await JS.InvokeVoidAsync("eval", "window.__pojokerShowRunning = true;");
-        await _orchestrator.StartAsync();
-        await JS.InvokeVoidAsync("eval", "window.__pojokerShowRunning = false;");
+        try
+        {
+            // Iterative, not recursive: an attract screen can run for days, and each show
+            // calling the next would grow the stack until it fell over.
+            while (true)
+            {
+                await _orchestrator.StartAsync();
+
+                // Only a show that ran to Complete rolls over. A manual Stop (or teardown)
+                // leaves another state, and must stay stopped.
+                if (!Loop || _disposed || _orchestrator.CurrentState != PerformanceState.Complete)
+                {
+                    break;
+                }
+
+                await Task.Delay(LoopGapMs);
+                if (_disposed) break;
+                _orchestrator.ResetForNewShow();
+            }
+        }
+        finally
+        {
+            if (!_disposed)
+            {
+                try { await JS.InvokeVoidAsync("eval", "window.__pojokerShowRunning = false;"); }
+                catch { /* JS interop may be unavailable during teardown */ }
+            }
+        }
     }
 
     private async Task StopPerformance()
@@ -94,7 +133,8 @@
 
     private void OnStateChanged()
     {
-        if (!_completeRaised && _orchestrator.CurrentState == PerformanceState.Complete)
+        // A looping stage has no "show over" to report — see the Loop parameter.
+        if (!Loop && !_completeRaised && _orchestrator.CurrentState == PerformanceState.Complete)
         {
             _completeRaised = true;
             InvokeAsync(() => OnShowComplete.InvokeAsync(_orchestrator.SessionTriumphs));
@@ -104,6 +144,8 @@
 
     async ValueTask IAsyncDisposable.DisposeAsync()
     {
+        // Breaks the loop above: navigating away must not leave a show restarting forever.
+        _disposed = true;
         if (_orchestrator != null)
         {
             _orchestrator.StateChanged -= OnStateChanged;

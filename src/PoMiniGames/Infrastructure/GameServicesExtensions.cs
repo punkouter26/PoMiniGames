@@ -23,21 +23,33 @@ internal static class GameServicesExtensions
         // with its game key (couplequiz, funquiz, face, joker, survive).
         // Replaces the legacy per-game PoFunQuiz:AzureOpenAI, PoCoupleQuiz:AzureOpenAI,
         // PoFace:AzureOpenAI, PoJoker:AzureOpenAI, Inference:* sections.
-        services.Configure<AIFoundryOptions>(opts =>
-        {
-            // Belt-and-braces fallback if KV hasn't resolved before the first
-            // request. The host's environment variables (PoMiniGames__AI__FoundryEndpoint
-            // etc.) act as a development override; production should always source
-            // from kv-poshared.
-            var endpoint = Environment.GetEnvironmentVariable("PoMiniGames__AI__FoundryEndpoint");
-            var defaultDeployment = Environment.GetEnvironmentVariable("PoMiniGames__AI__DefaultDeployment")
-                ?? "gpt-4o-mini";
-            if (!string.IsNullOrWhiteSpace(endpoint))
+        services.AddOptions<AIFoundryOptions>()
+            // Bind the configuration section the Key Vault secrets land in. This was missing:
+            // the options object was built ONLY from the environment-variable overrides below,
+            // so a correctly-populated kv-poshared (PoMiniGames--AI--*) left Endpoint empty,
+            // IsConfigured false, and every AI-backed game silently served mock data.
+            .BindConfiguration(AIFoundryOptions.SectionName)
+            .PostConfigure<IConfiguration>((opts, configuration) =>
             {
-                opts.Endpoint = endpoint!;
-            }
-            opts.DefaultDeployment = defaultDeployment;
-        });
+                // The vault names the endpoint secret PoMiniGames--AI--FoundryEndpoint, which
+                // binds to "<section>:FoundryEndpoint" — not to the Endpoint property. Map it
+                // across rather than renaming the secret, which other apps also read.
+                // Host environment variables stay the local override, and each only applies when
+                // actually set: unconditionally assigning DefaultDeployment used to stamp
+                // "gpt-4o-mini" over whatever the vault said.
+                var endpoint = Environment.GetEnvironmentVariable("PoMiniGames__AI__FoundryEndpoint")
+                    ?? configuration[$"{AIFoundryOptions.SectionName}:FoundryEndpoint"];
+                if (!string.IsNullOrWhiteSpace(endpoint))
+                {
+                    opts.Endpoint = endpoint!;
+                }
+
+                var defaultDeployment = Environment.GetEnvironmentVariable("PoMiniGames__AI__DefaultDeployment");
+                if (!string.IsNullOrWhiteSpace(defaultDeployment))
+                {
+                    opts.DefaultDeployment = defaultDeployment!;
+                }
+            });
         services.AddSingleton<AIFoundryClientFactory>();
         services.AddSingleton<AIFoundryChatClientCache>();
         // §3: register the resilience pipeline (retry + circuit breaker + outer timeout)

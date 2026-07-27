@@ -626,7 +626,7 @@ else
                 RatingKind.PlayCountOnly => new GameEntry
                 {
                     Key = key, Label = label, Icon = icon, Kind = kind,
-                    PlayCount = GameStatsService.GetPlayCount(key, _playerName),
+                    PlayCount = GameStatsService.GetPlayCount(key),
                 },
                 // HighScoreOnly: the server board carries the number (see HsDefs).
                 // There is no local W/L record to read.

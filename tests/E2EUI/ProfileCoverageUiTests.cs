@@ -47,18 +47,25 @@ public class ProfileCoverageUiTests
         await using var browser = await playwright.Chromium.LaunchAsync(BrowserLaunch.Options());
         var page = await NewSignedInPageAsync(browser);
 
-        // Actually play Joker rather than seeding its counter into localStorage.
-        // Seeding would have to guess the storage key, and the play count is keyed by
-        // a player name the guest flow assigns per session — so a seeded key can
-        // silently miss. Visiting the page exercises the real path end to end:
-        // RecordPlay on the game page, GetPlayCount on the profile.
-        await page.GotoAsync($"{_fixture.ServerAddress}pojoker?autoGuest=1",
-            new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
-        await page.Locator("#app *").First.WaitForAsync(
-            new LocatorWaitForOptions { Timeout = 30_000 });
-
         await page.GotoAsync($"{_fixture.ServerAddress}profile?autoGuest=1",
             new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+        await page.Locator(".prf-game-card").First.WaitForAsync(
+            new LocatorWaitForOptions { Timeout = 30_000 });
+
+        // Seed a session count for a game that has no outcome and no score. Play
+        // counts are keyed by the stable player id (see GameStatsService), which the
+        // profile render above has already created — so unlike the mutable display
+        // name, this key can be reproduced here exactly. Reading the id rather than
+        // hardcoding it keeps the test honest if the scheme changes.
+        var playerId = await page.EvaluateAsync<string?>(
+            "() => localStorage.getItem('pomini_player_id')");
+        playerId.Should().NotBeNullOrWhiteSpace(
+            because: "rendering the profile resolves the player id that play counts are keyed by");
+
+        await page.EvaluateAsync(
+            "id => localStorage.setItem(`pomini_plays_pojoker_${id}`, '3')", playerId);
+
+        await page.ReloadAsync(new PageReloadOptions { WaitUntil = WaitUntilState.NetworkIdle });
         await page.Locator(".prf-game-card").First.WaitForAsync(
             new LocatorWaitForOptions { Timeout = 30_000 });
 
@@ -74,8 +81,8 @@ public class ProfileCoverageUiTests
         {
             HasText = "Joker",
         }).First;
-        (await joker.Locator(".prf-game-plays").InnerTextAsync()).Should().Contain("1",
-            because: "the visit above is one session, and it must reach the profile");
+        (await joker.Locator(".prf-game-plays").InnerTextAsync()).Should().Contain("3",
+            because: "a play-count-only game reports sessions where a rated game reports a record");
         (await joker.Locator(".prf-game-wr").CountAsync()).Should().Be(0,
             because: "a game with no win condition must not display a win rate");
     }

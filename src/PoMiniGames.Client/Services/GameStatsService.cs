@@ -153,14 +153,27 @@ public class GameStatsService
     // would be a new feature, not stats coverage.
     private const string PlayCountKeyPrefix = "pomini_plays_";
 
-    // Per-player slot, matching GetAdaptiveRating's keying: switching identities on
-    // one browser (Guest ↔ Microsoft sign-in) must never merge or clobber counts.
-    private static string PlayCountKey(string gameKey, string playerName) =>
-        $"{PlayCountKeyPrefix}{gameKey}_{playerName}";
+    /// <remarks>
+    /// Keyed by the stable player id, NOT the display name. The name is mutable and
+    /// resolves late: it starts empty, is filled by an async localStorage read, and is
+    /// then overwritten by <see cref="PlayerNameService.SetPlayerNameFromAuth"/> when a
+    /// guest signs in. Keying on it meant a session recorded before any of those steps
+    /// was filed under a name the profile never reads back — the count silently showed
+    /// zero, and signing in orphaned whatever had accumulated.
+    ///
+    /// The id is created synchronously on first use and never changes, so it also
+    /// removes the ordering hazard entirely: callers need not await anything.
+    ///
+    /// Trade-off: two identities used in the same browser share one counter. For a
+    /// "times played" tally that is the better failure mode than losing the count on
+    /// every sign-in.
+    /// </remarks>
+    private string PlayCountKey(string gameKey) =>
+        $"{PlayCountKeyPrefix}{gameKey}_{GetOrCreatePlayerId()}";
 
-    public int GetPlayCount(string gameKey, string playerName)
+    public int GetPlayCount(string gameKey)
     {
-        var raw = LocalStorageService.GetItem<string>(PlayCountKey(gameKey, playerName));
+        var raw = LocalStorageService.GetItem<string>(PlayCountKey(gameKey));
         return int.TryParse(raw, out var n) && n > 0 ? n : 0;
     }
 
@@ -168,10 +181,10 @@ public class GameStatsService
     /// Counts one *session* of a no-outcome game, not one round — the profile tile
     /// reads "Played N times", so callers invoke this once per page session.
     /// </summary>
-    public int RecordPlay(string gameKey, string playerName)
+    public int RecordPlay(string gameKey)
     {
-        var next = GetPlayCount(gameKey, playerName) + 1;
-        LocalStorageService.SetItem(PlayCountKey(gameKey, playerName), next.ToString());
+        var next = GetPlayCount(gameKey) + 1;
+        LocalStorageService.SetItem(PlayCountKey(gameKey), next.ToString());
         return next;
     }
 

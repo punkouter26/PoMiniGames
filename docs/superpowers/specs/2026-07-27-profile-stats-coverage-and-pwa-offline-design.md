@@ -276,16 +276,35 @@ Measured: single `addAll` → fails; sequential batches of 40 → all 2257 cache
 ~19s. The worker therefore batches, and a batch failure deliberately aborts the
 install rather than leaving a half-filled cache.
 
-### B8. Play counts must await the resolved player name
+### B8. Play counts are keyed by player id, not player name
 
-`PlayerNameService.PlayerName` starts empty and is populated by a fire-and-forget
-async read of localStorage. Recording a play from `OnInitialized` therefore files the
-session under an empty name on a cold load, and the profile — reading later, with the
-name resolved — reports zero. Joker and Survive await `PlayerNameService.Initialized`
-before recording.
+A6 originally keyed play counts by player name, mirroring `GetAdaptiveRating`. That
+is wrong for this counter, in two compounding ways:
+
+1. `PlayerNameService.PlayerName` starts empty and is filled by a fire-and-forget
+   async read of localStorage, so recording at page-init files the session under an
+   empty name; the profile, reading later with the name resolved, reports zero.
+2. The name is then *overwritten* by `SetPlayerNameFromAuth` when a guest signs in.
+   Even with the ordering fixed, signing in orphans everything recorded before.
+
+(2) is not hypothetical: it is what the E2E environment does via FakeAuth, and it is
+what production does whenever a guest signs in with Microsoft.
+
+Play counts are therefore keyed by `GetOrCreatePlayerId()` — created synchronously on
+first use and never mutated. This removes the ordering hazard entirely (no awaiting
+anything) and survives sign-in.
+
+Trade-off, accepted: two identities in the same browser share one counter. For a
+"times played" tally that is a better failure mode than losing the count on every
+sign-in.
+
+Recording happens on first render rather than `OnInitialized`, since the counter goes
+through localStorage and JS interop is only guaranteed once the component has
+rendered.
 
 This does not affect the outcome-recording added in A3: PoRacer and PoCoupleQuiz
-record at game end, by which point the name has long resolved.
+record at game end, and those stats use the existing name-keyed scheme shared with
+every other rated game.
 
 ---
 

@@ -413,7 +413,7 @@
         else
         {
             players.Add(new PlayerSetup(Roster[_p1Sel].Key, _playerName, true, 1));
-            // CPU rivals on every unpicked family member — a full six-lane meet.
+            // CPU rivals on every unpicked family member — a full four-lane meet.
             foreach (var p in Roster.Where((_, i) => i != _p1Sel).OrderBy(_ => Guid.NewGuid()))
             {
                 players.Add(new PlayerSetup(p.Key, p.Name, false, null));

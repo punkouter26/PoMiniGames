@@ -67,7 +67,7 @@ public class PoSportsLobbyServiceTests
 
         // Everyone must have picked a character…
         _lobby.TryStart("c1").Should().BeFalse("Bob has no character yet");
-        _lobby.PickCharacter("c2", "mom");
+        _lobby.PickCharacter("c2", "matt");
 
         // …only the host can start…
         _lobby.TryStart("c2").Should().BeFalse("Bob is not the host");

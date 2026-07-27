@@ -21,7 +21,6 @@ public static class PoSportsRoster
 {
     public static readonly IReadOnlyList<PoSportsCharacter> All =
     [
-        new("mom", "Mom", "👩"),
         new("kim", "Kim", "👧"),
         new("matt", "Matt", "👦"),
         new("nick", "Nick", "🧒"),
@@ -72,7 +71,7 @@ public sealed record PoSportsLobbyMember(
     string ConnectionId,
     string DisplayName,
     bool IsGuest,
-    /// <summary>Character key (mom|kim|matt|nick|tong), "" until picked. First-come lock.</summary>
+    /// <summary>Character key (kim|matt|nick|tong), "" until picked. First-come lock.</summary>
     string Character,
     bool IsReady);
 

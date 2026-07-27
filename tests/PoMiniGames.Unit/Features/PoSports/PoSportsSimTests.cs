@@ -19,7 +19,7 @@ public sealed class PoSportsSimTests
         var sim = new PoSportsSim(
         [
             new PoSportsSim.LaneSetup("Alice", "kim", IsAi: false),
-            new PoSportsSim.LaneSetup("CPU", "mom", IsAi: true),
+            new PoSportsSim.LaneSetup("CPU", "matt", IsAi: true),
         ], seed: 42);
         sim.SkipCountdown();
         return sim;
@@ -131,7 +131,7 @@ public sealed class PoSportsSimTests
         var sim = new PoSportsSim(
         [
             new PoSportsSim.LaneSetup("CPU 1", "kim", IsAi: true),
-            new PoSportsSim.LaneSetup("CPU 2", "mom", IsAi: true),
+            new PoSportsSim.LaneSetup("CPU 2", "matt", IsAi: true),
             new PoSportsSim.LaneSetup("CPU 3", "nick", IsAi: true),
             new PoSportsSim.LaneSetup("CPU 4", "tong", IsAi: true),
         ], seed: 7);

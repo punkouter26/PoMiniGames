@@ -17,7 +17,7 @@ public sealed class PoSportsHighScoreTests : IClassFixture<TestWebApplicationFac
 
     public PoSportsHighScoreTests(TestWebApplicationFactory factory) => _factory = factory;
 
-    private static PoSportsHighScore Meet(string player, double sprint, double hurdles, string character = "mom") => new()
+    private static PoSportsHighScore Meet(string player, double sprint, double hurdles, string character = "kim") => new()
     {
         PlayerName = player,
         SprintSeconds = sprint,

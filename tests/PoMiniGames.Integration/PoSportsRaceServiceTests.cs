@@ -63,7 +63,7 @@ public sealed class PoSportsRaceServiceTests
         lobby.Open("conn-alice", "Alice", isGuest: false, userId: "user-alice");
         lobby.Open("conn-bob", "Bob", isGuest: true);
         lobby.PickCharacter("conn-alice", "kim");
-        lobby.PickCharacter("conn-bob", "mom");
+        lobby.PickCharacter("conn-bob", "matt");
         lobby.SetReady("conn-bob", true);
         lobby.TryStart("conn-alice").Should().BeTrue();
 
@@ -89,7 +89,7 @@ public sealed class PoSportsRaceServiceTests
         snap.Phase.Should().Be("countdown");
         snap.Lanes.Should().HaveCount(4);
         snap.Lanes[0].Should().Match<PoSportsLaneState>(l => l.Name == "Alice" && l.Character == "kim" && !l.IsAi);
-        snap.Lanes[1].Should().Match<PoSportsLaneState>(l => l.Name == "Bob" && l.Character == "mom" && !l.IsAi);
+        snap.Lanes[1].Should().Match<PoSportsLaneState>(l => l.Name == "Bob" && l.Character == "matt" && !l.IsAi);
         snap.Lanes.Skip(2).Should().OnlyContain(l => l.IsAi, "unpicked family members fill the track");
         snap.Lanes.Select(l => l.Character).Should().OnlyHaveUniqueItems();
     }

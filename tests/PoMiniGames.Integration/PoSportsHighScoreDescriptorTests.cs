@@ -38,7 +38,7 @@ public sealed class PoSportsHighScoreDescriptorTests
             PlayerName = new string('x', 60),
             TotalTimeSeconds = 99999,
             SprintSeconds = -5,
-            Character = "mom",
+            Character = "kim",
         };
 
         var clean = Sanitize(dirty);

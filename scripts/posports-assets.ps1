@@ -14,7 +14,7 @@
     2. Downscales 512 px sheets to 256 px (halves the PNG and every atlas x/y/w/h).
        Nick is already 256 px and is left untouched.
     3. Moves the set into the runtime layout the JS engine loads:
-         images/PoSports/{mom|kim|matt|nick|tong}/{idle|walk|run|jump|punch|kick|hitreact|dance}/
+         images/PoSports/{kim|matt|nick|tong}/{idle|walk|run|jump|punch|kick|hitreact|dance}/
   It is idempotent: once a set is in the runtime layout at 256 px, re-running is a no-op.
 
   DESTRUCTIVE: the source files are untracked, so deletion is unrecoverable.
@@ -43,7 +43,6 @@ if (-not $DryRun -and -not $Force) {
 
 # Raw-export dir name -> runtime key
 $charMap = @{
-    'Mom-spritesheet'  = 'mom'
     'Kim-spritesheet'  = 'kim'
     'Matt-spritesheet' = 'matt'
     'Nick-spritesheet' = 'nick'

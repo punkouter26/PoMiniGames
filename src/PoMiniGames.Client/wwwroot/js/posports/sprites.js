@@ -3,8 +3,8 @@
 // Assets live at images/PoSports/<char>/<anim>/{atlas.json, spritesheet.png}
 // (normalized by scripts/posports-assets.ps1). Loading is lazy and per-character:
 // a meet only fetches the characters actually in its lanes, and only the anims
-// requested — a full character is ~1-2 MB, so eager-loading all six would triple
-// first-paint time for nothing.
+// requested — a full character is ~1-2 MB, so eager-loading the whole roster would
+// triple first-paint time for nothing.
 //
 // Failure policy (spec error table): one retry per asset, then a colored-rectangle
 // fallback so a flaky fetch degrades the art, never the race.
@@ -16,7 +16,7 @@ const cache = new Map();
 
 /** Deterministic fallback tint per character, used when a sheet fails to load. */
 export const FALLBACK_COLORS = {
-  mom: '#d94a7a', kim: '#8a4ad9',
+  kim: '#8a4ad9',
   matt: '#4ad98a', nick: '#d9c44a', tong: '#d9704a',
 };
 

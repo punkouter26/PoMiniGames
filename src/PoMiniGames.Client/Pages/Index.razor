@@ -4,6 +4,7 @@
 @inject IJSRuntime JS
 @inject ActivityFeedService ActivityFeed
 @inject UiFeedbackService Feedback
+@inject OnlineStatusService OnlineStatus
 @implements IAsyncDisposable
 
 <div class="home-container">
@@ -54,7 +55,7 @@
                        home, mirroring the BottomTabBar's Demo toggle. *@
                     @foreach (var g in GameCatalog.Demo.OrderBy(x => x.Title, StringComparer.OrdinalIgnoreCase))
                     {
-                        <a class="home-game-chip" href="@g.Url"><span class="home-game-chip-icon">@g.Icon</span>@g.Title</a>
+                        @GameChip(g)
                     }
                 </div>
             </section>
@@ -78,9 +79,7 @@
                 <div class="home-section-games">
                     @foreach (var g in GameCatalog.SinglePlayer.OrderBy(x => x.Title, StringComparer.OrdinalIgnoreCase))
                     {
-                        <a class="home-game-chip" href="@g.Url">
-                            <span class="home-game-chip-icon">@g.Icon</span>@g.Title
-                        </a>
+                        @GameChip(g)
                     }
                 </div>
             </section>
@@ -106,7 +105,7 @@
                 <div class="home-section-games">
                     @foreach (var g in GameCatalog.LocalTwoPlayer.OrderBy(x => x.Title, StringComparer.OrdinalIgnoreCase))
                     {
-                        <a class="home-game-chip" href="@g.Url"><span class="home-game-chip-icon">@g.Icon</span>@g.Title</a>
+                        @GameChip(g)
                     }
                 </div>
             </section>
@@ -131,7 +130,7 @@
                 <div class="home-section-games">
                     @foreach (var g in GameCatalog.Multiplayer.OrderBy(x => x.Title, StringComparer.OrdinalIgnoreCase))
                     {
-                        <a class="home-game-chip" href="@g.Url"><span class="home-game-chip-icon">@g.Icon</span>@g.Title</a>
+                        @GameChip(g)
                     }
                 </div>
             </section>
@@ -188,6 +187,21 @@
     // §6 the 1-Player section (index 1) starts expanded — it's the primary flow,
     // so a portrait player lands on a visible game list instead of four collapsed
     // accordions requiring a tap to reveal anything.
+    // One chip renderer for all four sections. Offline, a hub-backed or API-backed
+    // entry renders as a non-link: with the service worker installed the shell loads
+    // fine without a network, so leaving these navigable would drop the player into a
+    // lobby that can never connect. Local games stay fully playable.
+    private RenderFragment GameChip(CatalogGame g) =>
+        g.RequiresNetwork && !OnlineStatus.IsOnline
+            ? @<span class="home-game-chip home-game-chip--offline"
+                     aria-disabled="true"
+                     title="Needs a connection — unavailable offline">
+                   <span class="home-game-chip-icon">@g.Icon</span>@g.Title
+               </span>
+            : @<a class="home-game-chip" href="@g.Url">
+                   <span class="home-game-chip-icon">@g.Icon</span>@g.Title
+               </a>;
+
     private readonly bool[] _sectionOpen = { false, true, false, false };
     private void ToggleSection(int i) => _sectionOpen[i] = !_sectionOpen[i];
     private RenderFragment SectionToggle(int i, int count) => @<button type="button"
@@ -201,6 +215,9 @@
         // Subscribe to kiosk state so the Demo button (Start ↔ Stop) updates
         // reactively when the coordinator starts/stops/pauses/advances.
         Kiosk.Changed += OnKioskStateChanged;
+        // Connectivity drives which chips are navigable (see GameChip), so the grid
+        // has to re-render the moment the browser goes offline or comes back.
+        OnlineStatus.StateChanged += OnOnlineStateChanged;
     }
 
     protected override async Task OnInitializedAsync()
@@ -260,6 +277,8 @@
 
     private void OnKioskStateChanged() => InvokeAsync(StateHasChanged);
 
+    private void OnOnlineStateChanged() => InvokeAsync(StateHasChanged);
+
     // §10 fire a Web Audio tap before navigating to the stats page. The audio
     // unlock happens on this same user gesture — the first tap unlocks the
     // AudioContext (mobile autoplay rules) and plays; best-effort, never blocks.
@@ -295,6 +314,7 @@
     public async ValueTask DisposeAsync()
     {
         Kiosk.Changed -= OnKioskStateChanged;
+        OnlineStatus.StateChanged -= OnOnlineStateChanged;
         if (_ambientModule is not null)
         {
             try

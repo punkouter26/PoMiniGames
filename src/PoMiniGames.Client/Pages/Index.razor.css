@@ -756,6 +756,22 @@
     transition: border-color 0.18s var(--ease-standard), background 0.18s var(--ease-standard), transform 0.18s var(--ease-standard);
 }
 
+/* Hub-backed or API-backed game while the browser is offline. Rendered as a <span>
+   rather than an <a>, so this only has to communicate the state — there is no link
+   to suppress. Kept legible rather than nearly-invisible: the player should still be
+   able to see what will be available once they reconnect. */
+.home-game-chip--offline {
+    opacity: 0.45;
+    cursor: not-allowed;
+    border-style: dashed;
+}
+
+.home-game-chip--offline:hover {
+    border-color: var(--color-border);
+    background: rgba(30, 41, 59, 0.7);
+    transform: none;
+}
+
 .home-game-chip:hover {
     border-color: var(--color-accent);
     background: rgba(51, 65, 85, 0.9);

@@ -20,6 +20,8 @@
 @inject IState<BootState>       BootState
 @inject IState<SimulationState> SimState
 @inject KioskCoordinator         Kiosk
+@inject GameStatsService         GameStats
+@inject PlayerNameService        PlayerNameService
 @inject PoMiniGamesClient.Games.PoSurvive.Services.SimulationLaunchService LaunchService
 
 <div data-testid="grid-container">
@@ -69,6 +71,24 @@
             // countdown / pause / skip / exit controls pick this game up.
             Kiosk.SetCurrent("posurvive-demo");
         }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+
+        // Survive is a simulation — no outcome and no score — so a session count is
+        // the only stat the profile can report for it truthfully. Demo is excluded:
+        // the kiosk auto-cycles every demo game, and counting those would report
+        // sessions the player never chose to start.
+        if (_isDemo) return;
+
+        // Await the name before keying the counter. PlayerName is populated by a
+        // fire-and-forget async read of localStorage, so on a cold load a synchronous
+        // GetPlayerName() returns the empty placeholder — the session would then be
+        // filed under a name the profile never reads back.
+        await PlayerNameService.Initialized;
+        GameStats.RecordPlay("posurvive", PlayerNameService.GetPlayerName());
     }
 
     protected override void OnAfterRender(bool firstRender)

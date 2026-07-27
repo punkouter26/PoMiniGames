@@ -20,6 +20,41 @@
    §10 GPU-only shimmer: a linear-gradient with background-position shift runs
    on the compositor thread (no JS, no per-frame work). respects
    prefers-reduced-motion. */
+/* Offline banner. Deliberately calmer than the mock-data banner below: being
+   offline is a supported state the app keeps working in, not a developer warning,
+   so it informs without shimmering or shouting. */
+.gl-offline-banner {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-4);
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #f8fafc;
+    background: rgba(71, 85, 105, 0.96);
+    border-bottom: 1px solid rgba(148, 163, 184, 0.35);
+    position: sticky;
+    top: 0;
+    z-index: var(--z-banner);
+}
+
+.gl-offline-dot {
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+    background: #f59e0b;
+    flex: 0 0 auto;
+}
+
+@media (max-width: 480px) {
+    .gl-offline-banner {
+        font-size: 0.72rem;
+        padding: var(--space-1) var(--space-2);
+    }
+}
+
 .gl-mock-banner {
     width: 100%;
     text-align: center;
@@ -453,6 +488,23 @@
 }
 
 .toast-close:hover { opacity: 1; }
+
+/* Action button on an actionable toast (currently the service-worker update
+   prompt). Reads as the primary control on the toast — it is the only way to
+   actually take the update. */
+.toast-action {
+    flex: 0 0 auto;
+    background: rgba(255, 255, 255, 0.16);
+    border: 1px solid currentColor;
+    border-radius: var(--radius-pill);
+    color: inherit;
+    font-size: 0.78rem;
+    font-weight: 700;
+    padding: 0.2rem 0.6rem;
+    cursor: pointer;
+}
+
+.toast-action:hover { background: rgba(255, 255, 255, 0.28); }
 
 @keyframes gl-toast-in {
     from { transform: translateX(100%); opacity: 0; }

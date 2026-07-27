@@ -1,9 +1,11 @@
 @page "/couplequiz/game"
 @using PoMiniGamesClient.Games.PoCoupleQuiz.Services
 @using PoMiniGamesClient.Components
+@using PoMiniGamesClient.Enums
 @inject CoupleQuizHubService Hub
 @inject PlayerNameService PlayerNameService
 @inject MatchHistoryService MatchHistory
+@inject GameResultService GameResults
 @inject NavigationManager Navigation
 @implements IAsyncDisposable
 
@@ -286,6 +288,16 @@
                         : MatchOutcome.Draw;
             await MatchHistory.RecordAsync("pocouplequiz", MatchMode.Multiplayer, name, outcome);
         }
+
+        // The head-to-head rows above are per-opponent; the profile's W/L record is
+        // per-game. Record exactly one outcome for the match as a whole, or a 4-player
+        // game would post three results and treble this game's weight on the profile.
+        // Placement against the whole field: top score wins, tied-for-top draws.
+        var best = p.FinalScores.Values.Max();
+        var overall = myScore < best ? GameResult.Loss
+                    : p.FinalScores.Count(kv => kv.Value == best) > 1 ? GameResult.Draw
+                    : GameResult.Win;
+        await GameResults.RecordAsync("pocouplequiz", _playerName, Difficulty.Medium, overall);
     }
 
     private async Task Submit()

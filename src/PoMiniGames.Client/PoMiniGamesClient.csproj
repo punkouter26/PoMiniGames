@@ -28,7 +28,18 @@
   <PropertyGroup>
     <WasmEnableWebcilProtectedResources>false</WasmEnableWebcilProtectedResources>
     <StaticWebAssetsFingerprintingEnabled>false</StaticWebAssetsFingerprintingEnabled>
+    <!-- PWA offline support. Generates service-worker-assets.js (the asset list +
+         integrity hashes the published worker precaches) and swaps the no-op
+         wwwroot/service-worker.js for service-worker.published.js on publish only.
+         Offline behaviour therefore CANNOT be observed under `dotnet run` — verify
+         against published output. -->
+    <ServiceWorkerAssetsManifest>service-worker-assets.js</ServiceWorkerAssetsManifest>
   </PropertyGroup>
+
+  <ItemGroup>
+    <ServiceWorker Include="wwwroot\service-worker.js"
+                   PublishedContent="wwwroot\service-worker.published.js" />
+  </ItemGroup>
 
   <ItemGroup>
     <!-- Preserve reflectively-instantiated layout constructors from the trimmer

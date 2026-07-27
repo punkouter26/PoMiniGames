@@ -91,6 +91,11 @@ builder.Services.AddScoped<SettingsService>();
 // NetRun10 audit #6: viewport-width helper so leaderboards can render
 // top-3 on mobile and top-10 on desktop without a JS-only media query.
 builder.Services.AddScoped<BrowserViewport>();
+// PWA: connectivity state for the offline banner, and service-worker registration
+// plus the "new version available" prompt. Both are initialized once from
+// MainLayout and are no-ops where the browser has no service worker support.
+builder.Services.AddScoped<OnlineStatusService>();
+builder.Services.AddScoped<AppUpdateService>();
 // Singleton — manages the shared "Watch All Demos" auto-rotation timer
 // across the lifetime of the Blazor session. Fixes the timer-leak /
 // hijack-navigation bug (QA finding #1 + #4).

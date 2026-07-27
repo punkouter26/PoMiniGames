@@ -3,6 +3,8 @@
 @using PoMiniGamesClient.Components
 @using PoMiniGamesClient.Games.PoJoker.Components
 @inject NavigationManager Navigation
+@inject GameStatsService GameStats
+@inject PlayerNameService PlayerNameService
 
 <PageTitle>Joker — The Digital Jester</PageTitle>
 
@@ -59,6 +61,22 @@
     protected override void OnInitialized() =>
         // Both routes render this page; only /pojoker/demo is the unattended one.
         _isDemo = Navigation.Uri.Contains("/pojoker/demo", StringComparison.OrdinalIgnoreCase);
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Joker has no win condition and no score, so a session count is the only
+        // stat the profile can report for it truthfully. Demo is excluded: the kiosk
+        // auto-cycles through every demo game, and counting those would report
+        // sessions the player never chose to start.
+        if (_isDemo) return;
+
+        // Await the name before keying the counter. PlayerName is populated by a
+        // fire-and-forget async read of localStorage, so on a cold load a synchronous
+        // GetPlayerName() returns the empty placeholder — the session would then be
+        // filed under a name the profile never reads back.
+        await PlayerNameService.Initialized;
+        GameStats.RecordPlay("pojoker", PlayerNameService.GetPlayerName());
+    }
 
     private RenderFragment HowToPlayContent => @<div>
         <p>Sit back and watch — the Jester tells a 10-joke set to a live crowd.</p>

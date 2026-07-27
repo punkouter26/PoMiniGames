@@ -126,6 +126,10 @@
     <script src="js/posurvive/inferenceWorkerBridge.js"></script>
     <script src="js/posurvive/audioEngine.js" defer></script>
     <script src="js/gl-fps.js"></script>
+    <!-- PWA: service worker registration + connectivity signals. Registration is
+         kicked off from MainLayout (not here) so the update toast has a live Blazor
+         renderer to display into. -->
+    <script src="js/pwa.js"></script>
 </body>
 
 </html>

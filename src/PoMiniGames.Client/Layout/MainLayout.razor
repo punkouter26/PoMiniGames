@@ -6,8 +6,21 @@
 @inject ScoreSyncService ScoreSync
 @inject UiFeedbackService Feedback
 @inject SettingsService Settings
+@inject OnlineStatusService OnlineStatus
+@inject AppUpdateService AppUpdate
 
 <div class="gl-page">
+    @* Offline is silent without this: the service worker serves a fully working app
+       shell with no network, so an online-only game failing would read as a bug
+       rather than as a connection problem. Scores earned offline are parked by
+       ScoreSyncService and replayed on reconnect — say so, so it isn't lost work. *@
+    @if (!OnlineStatus.IsOnline)
+    {
+        <div class="gl-offline-banner" role="status" aria-live="polite">
+            <span class="gl-offline-dot" aria-hidden="true"></span>
+            <span>Offline — you can keep playing. Scores will sync when you reconnect.</span>
+        </div>
+    }
     @* §9 mock banner — desktop gets the full-width shimmer banner; mobile gets
        a tappable dot that expands to the same label. Keeps the safety guard
        visible without sacrificing ~36 px of chrome on portrait phones. *@
@@ -95,6 +108,10 @@
             {
                 <div class="toast toast--@toast.Type.ToString().ToLowerInvariant()" role="alert">
                     <span class="toast-msg">@toast.Message</span>
+                    @if (toast.Action is not null)
+                    {
+                        <button class="toast-action" @onclick="() => RunToastAction(toast)">@toast.ActionLabel</button>
+                    }
                     <button class="toast-close" @onclick="() => ToastService.Dismiss(toast.Id)" aria-label="Dismiss">×</button>
                 </div>
             }
@@ -112,6 +129,7 @@
 
 @code {
     private Action? _onAuthStateChanged;
+    private Action? _onOnlineStateChanged;
 
     // Top-bar identity for a signed-in user: prefer the display name, fall back to
     // the email/username. The full email is surfaced via the tooltip so a truncated
@@ -153,7 +171,31 @@
             _ = Feedback.MockDataAsync();
         }
 
+        _onOnlineStateChanged = () => InvokeAsync(StateHasChanged);
+        OnlineStatus.StateChanged += _onOnlineStateChanged;
+
         Settings.Load();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // JS interop is only legal after the first render on WASM. Both calls are
+        // idempotent and swallow their own failures — offline support is an
+        // enhancement, so a browser without service workers just gets the app.
+        if (!firstRender) return;
+        await OnlineStatus.InitializeAsync();
+        await AppUpdate.InitializeAsync();
+    }
+
+    // Dismiss first: the update action reloads the page, and leaving the toast up
+    // through the reload flashes a stale prompt on the new build.
+    private async Task RunToastAction(ToastItem toast)
+    {
+        ToastService.Dismiss(toast.Id);
+        if (toast.Action is not null)
+        {
+            await toast.Action();
+        }
     }
 
     private async Task SignIn()
@@ -195,6 +237,10 @@
         if (_onAuthStateChanged is not null)
         {
             AuthState.StateChanged -= _onAuthStateChanged;
+        }
+        if (_onOnlineStateChanged is not null)
+        {
+            OnlineStatus.StateChanged -= _onOnlineStateChanged;
         }
     }
 }

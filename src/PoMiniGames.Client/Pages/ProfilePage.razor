@@ -197,7 +197,11 @@ else
         <div class="prf-game-grid">
             @foreach (var g in _entries)
             {
-                <div class="prf-game-card @(g.TotalGames == 0 ? "prf-game-card--unplayed" : "")">
+                @* "Unplayed" means no activity of the kind this game actually tracks:
+                   matches for W/L games, sessions for play-count games. Keying purely
+                   on TotalGames dimmed Joker/Survive cards that had real sessions,
+                   and dimmed Marble Race whose activity lives on the server board. *@
+                <div class="prf-game-card @(IsUnplayed(g) ? "prf-game-card--unplayed" : "")">
                     <div class="prf-game-header">
                         <span class="prf-game-icon">@g.Icon</span>
                         <span class="prf-game-name">@g.Label</span>
@@ -227,13 +231,25 @@ else
                             }
                         </div>
                     }
-                    else if (g.IsHighScoreOnly)
+                    else if (g.Kind == RatingKind.HighScoreOnly)
                     {
                         <p class="prf-game-note">Score-based — see leaderboard</p>
                     }
-                    else if (g.IsOfflineOnly)
+                    else if (g.Kind == RatingKind.PlayCountOnly)
                     {
-                        <p class="prf-game-note">Offline only · no stats tracked</p>
+                        @* No win condition and no score (Joker, Survive) — a session
+                           count is the only stat these can report truthfully. *@
+                        @if (g.PlayCount > 0)
+                        {
+                            <p class="prf-game-plays">
+                                <span class="prf-game-plays-val">@g.PlayCount</span>
+                                <span class="prf-game-plays-lbl">@(g.PlayCount == 1 ? "session" : "sessions")</span>
+                            </p>
+                        }
+                        else
+                        {
+                            <p class="prf-game-unplayed">Not played yet</p>
+                        }
                     }
                     else
                     {
@@ -259,13 +275,35 @@ else
         public int TotalGames => Wins + Losses + Draws;
     }
 
+    /// <summary>
+    /// How a game's skill is measured. Replaces the former pair of booleans plus a
+    /// hardcoded `key == "connectfive"` branch in LoadStats: with ten games that
+    /// shape multiplied, and a second adaptive game (pobrawl) would have silently
+    /// taken the difficulty-bucket path and reported zeros despite having data.
+    /// </summary>
+    private enum RatingKind
+    {
+        /// <summary>Single adaptive ELO vs a rating-matched CPU (TicTacToe, ConnectFive, Brawl).</summary>
+        Adaptive,
+        /// <summary>Easy/Medium/Hard buckets.</summary>
+        Difficulty,
+        /// <summary>No W/L semantics; the server board carries the number.</summary>
+        HighScoreOnly,
+        /// <summary>No outcome and no score — only how many times it was played.</summary>
+        PlayCountOnly,
+    }
+
     private sealed class GameEntry
     {
         public string Key { get; init; } = "";
         public string Label { get; init; } = "";
         public string Icon { get; init; } = "";
-        public bool IsHighScoreOnly { get; init; }
-        public bool IsOfflineOnly { get; init; }
+        public RatingKind Kind { get; init; }
+        public int PlayCount { get; init; }
+        /// <summary>Longest win streak across this game's rating buckets.</summary>
+        public int BestStreak { get; init; }
+        /// <summary>True when this game contributes a win rate — i.e. it can appear on the radar.</summary>
+        public bool HasRecord => Kind is RatingKind.Adaptive or RatingKind.Difficulty;
         public int TotalWins { get; set; }
         public int TotalLosses { get; set; }
         public int TotalDraws { get; set; }
@@ -278,11 +316,24 @@ else
     }
 
     // ── Game definitions (order determines radar axis order) ──
-    private static readonly (string Key, string Label, string Icon, bool HsOnly, bool OfflineOnly)[] GameDefs =
+    // Every game in GameCatalog appears here. Brawl, Sports and Fun Quiz were already
+    // persisting local stats through GameResultService/GameStatsService long before
+    // they were listed — the data existed, the page just never read it, so a player
+    // with prior history sees it appear on the first load after this ships.
+    private static readonly (string Key, string Label, string Icon, RatingKind Kind)[] GameDefs =
     {
-        ("tictactoe",    "Tic-Tac-Toe",   "✖",  false, false),
-        ("connectfive",  "Connect Five",  "🔵", false, false),
-        ("pomarblerace", "Marble Race",   "🔮", true,  false),
+        ("tictactoe",    "Tic-Tac-Toe",   "✖",   RatingKind.Adaptive),
+        ("connectfive",  "Connect Five",  "🔵",  RatingKind.Adaptive),
+        ("pobrawl",      "Brawl",         "🥊",  RatingKind.Adaptive),
+        ("posports",     "Sports",        "🏃",  RatingKind.Difficulty),
+        ("pofunquiz",    "Fun Quiz",      "🧠",  RatingKind.Difficulty),
+        ("poracer",      "Racer",         "🏎️", RatingKind.Difficulty),
+        ("pocouplequiz", "Couple Quiz",   "💕",  RatingKind.Difficulty),
+        ("pomarblerace", "Marble Race",   "🔮",  RatingKind.HighScoreOnly),
+        // No win condition and no score: PoJoker is an AI-jester/joke-API experience,
+        // PoSurvive is a simulation. A session count is the only honest stat here.
+        ("pojoker",      "Joker",         "🃏",  RatingKind.PlayCountOnly),
+        ("posurvive",    "Survive",       "🛡️", RatingKind.PlayCountOnly),
     };
 
     // ── State ────────────────────────────────────────────────────
@@ -301,6 +352,8 @@ else
     private static readonly (string Key, string Title, string Icon, string Kind)[] HsDefs =
     {
         ("pomarblerace", "Marble Race",  "🔮", "marble"),
+        ("posports",     "Sports",       "🏃", "sports"),
+        ("pobrawl",      "Brawl",        "🥊", "brawl"),
         ("tictactoe",    "Tic-Tac-Toe",   "❌", "ai"),
         ("connectfive",  "Connect Five",  "🔴", "ai"),
     };
@@ -423,36 +476,74 @@ else
         // rows store 3-letter initials, guest rows store the literal "Guest", and the server
         // truncates names to 24 chars — none of which equal the local player name. A wider
         // page also keeps a personal best visible when it sits outside the global top ten.
-        var marble = await ApiService.GetMarbleRaceHighScoresAsync(100);
+        // The three boards are independent reads — fetch them concurrently rather than
+        // serially stacking three round-trips behind the profile skeleton.
+        var marbleTask = ApiService.GetMarbleRaceHighScoresAsync(100);
+        var sportsTask = ApiService.GetPoSportsHighScoresAsync(100);
+        var brawlTask  = ApiService.GetPoBrawlHighScoresAsync(100);
+        await Task.WhenAll(marbleTask, sportsTask, brawlTask);
 
-        HighScoreEntry MarbleEntry()
+        var mine = new Dictionary<string, HighScoreEntry>(StringComparer.Ordinal)
         {
-            var me = _playerName?.Trim() ?? string.Empty;
-            var myUserId = AuthState.User?.UserId ?? string.Empty;
-
-            var mine = !string.IsNullOrEmpty(myUserId)
-                ? marble?.FirstOrDefault(s => string.Equals(s.UserId, myUserId, StringComparison.Ordinal))
-                : null;
-            // Anonymous/legacy rows carry no usable id — fall back to the name they do carry.
-            mine ??= marble?.FirstOrDefault(s =>
-                !string.IsNullOrEmpty(s.PlayerInitials)
-                && s.PlayerInitials.Equals(me, StringComparison.OrdinalIgnoreCase));
-
-            if (mine is not null)
-            {
-                return new HighScoreEntry("Marble Race", "🔮",
-                    mine.BestScore.ToString("N0"), "your best", true);
-            }
-            // No own score — the global #1 is irrelevant to a profile page,
-            // so we suppress it entirely instead of pretending it's the user's.
-            return new HighScoreEntry("Marble Race", "🔮", "—", "Not played yet", false);
-        }
+            ["Marble Race"] = FindMine(marbleTask.Result, "Marble Race", "🔮",
+                s => s.UserId, s => s.PlayerInitials, s => s.BestScore.ToString("N0")),
+            ["Sports"] = FindMine(sportsTask.Result, "Sports", "🏃",
+                s => s.UserId, s => s.PlayerName, s => $"{s.TotalTimeSeconds:0.00}s"),
+            // PoBrawlHighScore carries no UserId — unlike the Marble and Sports rows,
+            // the server never stamps one on this board. Name matching is all there is.
+            ["Brawl"] = FindMine(brawlTask.Result, "Brawl", "🥊",
+                userIdOf: null, s => s.PlayerInitials, s => $"{s.KoTimeSeconds:0.00}s"),
+        };
 
         for (var i = 0; i < _highScores.Count; i++)
         {
-            if (_highScores[i].Game == "Marble Race") _highScores[i] = MarbleEntry();
+            if (mine.TryGetValue(_highScores[i].Game, out var entry)) _highScores[i] = entry;
         }
         StateHasChanged();
+    }
+
+    /// <summary>
+    /// Resolve the current player's own best row out of a board response.
+    /// </summary>
+    /// <remarks>
+    /// 2026-07-26 browser audit #7: the leaderboards endpoints return the GLOBAL top-N,
+    /// not the caller's own best, so treating the top row as "yours" surfaced a previous
+    /// session's high score as if it belonged to the current guest.
+    ///
+    /// Match on the row's UserId, which the server stamps from the auth cookie. Matching
+    /// on the display name alone could not find rows it should have: legacy rows store
+    /// 3-letter initials, guest rows store the literal "Guest", and the server truncates
+    /// names to 24 chars — none of which equal the local player name. A wide page also
+    /// keeps a personal best visible when it sits outside the global top ten.
+    ///
+    /// <paramref name="userIdOf"/> is null for boards whose rows carry no user id at all
+    /// (PoBrawl), which degrades this to name-only matching for those rows.
+    /// </remarks>
+    private HighScoreEntry FindMine<T>(
+        T[]? rows, string title, string icon,
+        Func<T, string>? userIdOf, Func<T, string> nameOf, Func<T, string> formatOf)
+        where T : class
+    {
+        var me = _playerName?.Trim() ?? string.Empty;
+        var myUserId = AuthState.User?.UserId ?? string.Empty;
+
+        T? found = default;
+        if (userIdOf is not null && !string.IsNullOrEmpty(myUserId))
+        {
+            found = rows?.FirstOrDefault(r => string.Equals(userIdOf(r), myUserId, StringComparison.Ordinal));
+        }
+        // Anonymous/legacy rows carry no usable id — fall back to the name they do carry.
+        if (found is null && !string.IsNullOrEmpty(me))
+        {
+            found = rows?.FirstOrDefault(r =>
+                !string.IsNullOrEmpty(nameOf(r)) && nameOf(r).Equals(me, StringComparison.OrdinalIgnoreCase));
+        }
+
+        // No own score — the global #1 is irrelevant to a profile page, so suppress it
+        // entirely rather than pretending it belongs to this user.
+        return found is not null
+            ? new HighScoreEntry(title, icon, formatOf(found), "your best", true)
+            : new HighScoreEntry(title, icon, "—", "Not played yet", false);
     }
 
     // ── Head-to-head ─────────────────────────────────────────────
@@ -526,79 +617,41 @@ else
         // requires the user to have actually played at least one game.
         _topElo = 1200;
 
-        foreach (var (key, label, icon, hsOnly, offlineOnly) in GameDefs)
+        foreach (var (key, label, icon, kind) in GameDefs)
         {
-            // Connect Five 1-player now uses a single adaptive ELO rating (the CPU
-            // is matched to the player's rating) instead of Easy/Medium/Hard buckets.
-            if (key == "connectfive")
+            var entry = kind switch
             {
-                var ar = GameStatsService.GetAdaptiveRating(key, _playerName);
-                var cfEntry = new GameEntry
+                RatingKind.Adaptive      => BuildAdaptiveEntry(key, label, icon),
+                RatingKind.Difficulty    => BuildDifficultyEntry(key, label, icon),
+                RatingKind.PlayCountOnly => new GameEntry
                 {
-                    Key = key, Label = label, Icon = icon,
-                    TotalWins = ar.Wins, TotalLosses = ar.Losses, TotalDraws = ar.Draws,
-                    Difficulties =
-                    [
-                        new DiffEntry { Name = "Adaptive", Wins = ar.Wins, Losses = ar.Losses, Draws = ar.Draws, EloRating = ar.Elo }
-                    ]
-                };
-                _entries.Add(cfEntry);
-                _totalGames  += cfEntry.TotalGames;
-                _totalWins   += cfEntry.TotalWins;
-                _totalLosses += cfEntry.TotalLosses;
-                _totalDraws  += cfEntry.TotalDraws;
-                // §2026-07-18: only factor the adaptive rating into Top ELO once
-                // the player has actually played at least one Connect Five match.
-                // Otherwise the 1200 StartingElo floor would dominate the
-                // leaderboard even when the player hasn't touched the game.
-                if (ar.TotalGames > 0)
-                {
-                    _topElo = Math.Max(_topElo, ar.Elo);
-                    // §2026-07-18: surface the adaptive win streak too. The
-                    // connectfive path `continue`s before the streak aggregation
-                    // below runs, so without this Connect Five wins are
-                    // invisible to "Best Streak".
-                    _bestStreak = Math.Max(_bestStreak, ar.WinStreak);
-                }
-                continue;
-            }
-
-            PlayerStats stats = hsOnly || offlineOnly
-                ? new PlayerStats()
-                : GameStatsService.GetStats(key, _playerName);
-
-            var entry = new GameEntry
-            {
-                Key          = key,
-                Label        = label,
-                Icon         = icon,
-                IsHighScoreOnly = hsOnly,
-                IsOfflineOnly   = offlineOnly,
-                TotalWins    = stats.TotalWins,
-                TotalLosses  = stats.TotalLosses,
-                TotalDraws   = stats.TotalDraws,
-                Difficulties =
-                [
-                    new DiffEntry { Name = "Easy",   Wins = stats.Easy.Wins,   Losses = stats.Easy.Losses,   Draws = stats.Easy.Draws,   EloRating = stats.Easy.EloRating   },
-                    new DiffEntry { Name = "Medium", Wins = stats.Medium.Wins, Losses = stats.Medium.Losses, Draws = stats.Medium.Draws, EloRating = stats.Medium.EloRating },
-                    new DiffEntry { Name = "Hard",   Wins = stats.Hard.Wins,   Losses = stats.Hard.Losses,   Draws = stats.Hard.Draws,   EloRating = stats.Hard.EloRating   },
-                ]
+                    Key = key, Label = label, Icon = icon, Kind = kind,
+                    PlayCount = GameStatsService.GetPlayCount(key, _playerName),
+                },
+                // HighScoreOnly: the server board carries the number (see HsDefs).
+                // There is no local W/L record to read.
+                _ => new GameEntry { Key = key, Label = label, Icon = icon, Kind = kind },
             };
 
             _entries.Add(entry);
 
-            if (!hsOnly && !offlineOnly)
+            // Only games carrying a real W/L record feed the headline aggregates. A
+            // Joker session is not a match and must never dilute the overall win rate
+            // or the donut; a Marble Race run is a score, not an outcome.
+            if (!entry.HasRecord) continue;
+
+            _totalGames   += entry.TotalGames;
+            _totalWins    += entry.TotalWins;
+            _totalLosses  += entry.TotalLosses;
+            _totalDraws   += entry.TotalDraws;
+
+            // §2026-07-18: only factor a rating into Top ELO / Best Streak once the
+            // player has actually played this game. Otherwise the StartingElo floor
+            // dominates the headline chips for games they have never touched.
+            if (entry.TotalGames > 0)
             {
-                _totalGames   += entry.TotalGames;
-                _totalWins    += entry.TotalWins;
-                _totalLosses  += entry.TotalLosses;
-                _totalDraws   += entry.TotalDraws;
-                _bestStreak    = Math.Max(_bestStreak,
-                                    Math.Max(stats.Easy.WinStreak,
-                                        Math.Max(stats.Medium.WinStreak, stats.Hard.WinStreak)));
-                _topElo        = Math.Max(_topElo,
-                                    Math.Max(stats.Easy.EloRating,
-                                        Math.Max(stats.Medium.EloRating, stats.Hard.EloRating)));
+                _bestStreak = Math.Max(_bestStreak, entry.BestStreak);
+                _topElo     = Math.Max(_topElo, entry.Difficulties.Max(d => d.EloRating));
             }
         }
 
@@ -608,6 +661,59 @@ else
             ? played.OrderBy(e => e.WinRate).ThenByDescending(e => e.TotalGames).First()
             : null;
         if (_bestEntry == _nemesisEntry) _nemesisEntry = null;
+    }
+
+    /// <summary>
+    /// Whether a card should render dimmed, measured against whatever that game
+    /// actually tracks. HighScoreOnly games are never dimmed — their activity lives
+    /// on the server board, which this local record cannot see.
+    /// </summary>
+    private static bool IsUnplayed(GameEntry g) => g.Kind switch
+    {
+        RatingKind.PlayCountOnly => g.PlayCount == 0,
+        RatingKind.HighScoreOnly => false,
+        _ => g.TotalGames == 0,
+    };
+
+    /// <summary>
+    /// A game rated by a single adaptive ELO against a rating-matched CPU. The whole
+    /// record lives in one bucket, surfaced as the "Adaptive" difficulty row so the
+    /// breakdown grid renders it the same way as a bucketed game.
+    /// </summary>
+    private GameEntry BuildAdaptiveEntry(string key, string label, string icon)
+    {
+        var ar = GameStatsService.GetAdaptiveRating(key, _playerName);
+        return new GameEntry
+        {
+            Key = key, Label = label, Icon = icon, Kind = RatingKind.Adaptive,
+            TotalWins = ar.Wins, TotalLosses = ar.Losses, TotalDraws = ar.Draws,
+            BestStreak = ar.WinStreak,
+            Difficulties =
+            [
+                new DiffEntry { Name = "Adaptive", Wins = ar.Wins, Losses = ar.Losses, Draws = ar.Draws, EloRating = ar.Elo }
+            ]
+        };
+    }
+
+    /// <summary>A game rated by Easy/Medium/Hard buckets.</summary>
+    private GameEntry BuildDifficultyEntry(string key, string label, string icon)
+    {
+        var stats = GameStatsService.GetStats(key, _playerName);
+        return new GameEntry
+        {
+            Key = key, Label = label, Icon = icon, Kind = RatingKind.Difficulty,
+            TotalWins = stats.TotalWins,
+            TotalLosses = stats.TotalLosses,
+            TotalDraws = stats.TotalDraws,
+            BestStreak = Math.Max(stats.Easy.WinStreak,
+                            Math.Max(stats.Medium.WinStreak, stats.Hard.WinStreak)),
+            Difficulties =
+            [
+                new DiffEntry { Name = "Easy",   Wins = stats.Easy.Wins,   Losses = stats.Easy.Losses,   Draws = stats.Easy.Draws,   EloRating = stats.Easy.EloRating   },
+                new DiffEntry { Name = "Medium", Wins = stats.Medium.Wins, Losses = stats.Medium.Losses, Draws = stats.Medium.Draws, EloRating = stats.Medium.EloRating },
+                new DiffEntry { Name = "Hard",   Wins = stats.Hard.Wins,   Losses = stats.Hard.Losses,   Draws = stats.Hard.Draws,   EloRating = stats.Hard.EloRating   },
+            ]
+        };
     }
 
     private static string BuildInitials(string name)
@@ -622,11 +728,20 @@ else
     private string BuildRadarSvg()
     {
         const double cx = 150, cy = 150, maxR = 90;
-        // One axis per game entry. This was hardcoded to 10 while GameDefs
-        // defines only 4 games, so the label loop below indexed _entries[4..9]
+        // One axis per plotted game. This was hardcoded to 10 while GameDefs
+        // defined only 4 games, so the label loop below indexed _entries[4..9]
         // and threw IndexOutOfRangeException, crashing the whole profile page.
-        int n = _entries.Count;
-        if (n == 0) return "<svg viewBox=\"0 0 300 300\" class=\"prf-radar\" aria-hidden=\"true\"></svg>";
+        //
+        // Only games with a win rate the player has actually earned are plotted.
+        // Score-based (Marble Race) and play-count-only (Joker, Survive) games have
+        // no win rate: plotting them would pin those axes to zero and read as
+        // catastrophic losses. Unplayed W/L games are excluded for the same reason.
+        // Both live in the breakdown grid instead, which has a proper unplayed state.
+        var plotted = _entries.Where(e => e.HasRecord && e.TotalGames > 0).ToList();
+        int n = plotted.Count;
+        // A player who has only played score-based games lands here — same empty SVG
+        // as a brand-new player, rather than a degenerate 1- or 2-axis polygon.
+        if (n < 3) return "<svg viewBox=\"0 0 300 300\" class=\"prf-radar\" aria-hidden=\"true\"></svg>";
         double step = 2 * Math.PI / n;
         const double startAngle = -Math.PI / 2;
 
@@ -639,7 +754,7 @@ else
         string RingPoly(double frac) =>
             string.Join(" ", Enumerable.Range(0, n).Select(i => Pt(maxR * frac, i)));
 
-        var dataPoly = string.Join(" ", _entries.Select((e, i) => Pt(maxR * e.WinRate, i)));
+        var dataPoly = string.Join(" ", plotted.Select((e, i) => Pt(maxR * e.WinRate, i)));
 
         var sb = new System.Text.StringBuilder();
         sb.Append("<svg viewBox=\"0 0 300 300\" class=\"prf-radar\" aria-hidden=\"true\">");
@@ -658,10 +773,9 @@ else
         // Data polygon
         sb.Append($"<polygon points=\"{dataPoly}\" fill=\"rgba(99,102,241,0.22)\" stroke=\"rgba(99,102,241,0.85)\" stroke-width=\"2\" stroke-linejoin=\"round\"/>");
 
-        // Dots on played games
-        foreach (var (e, i) in _entries.Select((e, i) => (e, i)))
+        // Dots on played games (every plotted entry has games by construction)
+        foreach (var (e, i) in plotted.Select((e, i) => (e, i)))
         {
-            if (e.TotalGames == 0) continue;
             var a = startAngle + step * i;
             var r = maxR * e.WinRate;
             sb.Append($"<circle cx=\"{cx + r * Math.Cos(a):F1}\" cy=\"{cy + r * Math.Sin(a):F1}\" r=\"3.5\" fill=\"#6366f1\"/>");
@@ -674,7 +788,7 @@ else
             var lx = cx + (maxR + 22) * Math.Cos(a);
             var ly = cy + (maxR + 22) * Math.Sin(a);
             var anchor = lx < cx - 5 ? "end" : lx > cx + 5 ? "start" : "middle";
-            var label = _entries[i].Label.Split(' ')[0]; // first word only
+            var label = plotted[i].Label.Split(' ')[0]; // first word only
             sb.Append($"<text x=\"{lx:F1}\" y=\"{ly:F1}\" text-anchor=\"{anchor}\" dominant-baseline=\"middle\" fill=\"rgba(148,163,184,0.75)\" font-size=\"8.5\" font-family=\"system-ui,sans-serif\">{System.Web.HttpUtility.HtmlEncode(label)}</text>");
         }
 

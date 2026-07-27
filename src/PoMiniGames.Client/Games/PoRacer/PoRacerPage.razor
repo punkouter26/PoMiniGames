@@ -1,6 +1,7 @@
 @using System.Diagnostics
 @using Microsoft.AspNetCore.SignalR.Client
 @using PoMiniGamesClient.Games.PoRacer
+@using PoMiniGamesClient.Enums
 @using PoMiniGamesClient.Services
 @using PoMiniGamesClient.Components
 @using PoShared.Games
@@ -34,6 +35,7 @@
 @inject AuthStateService AuthState
 @inject NavigationManager Nav
 @inject GameStatsService GameStats
+@inject GameResultService GameResults
 @inject KioskCoordinator Kiosk
 @inject PlayerNameService PlayerNameService
 @inject ApiService Api
@@ -553,11 +555,17 @@
         Phase = GamePhase.Finished;
         ShowToast("Race finished");
         // Demo is a spectator race — there's no player car to score, so don't
-        // push a phantom 0-position entry to the leaderboard. GameShell hides
-        // the end-of-game modal in demo anyway (see GameOver prop).
+        // push a phantom 0-position entry to the leaderboard, and don't record an
+        // outcome the player never played. GameShell hides the end-of-game modal
+        // in demo anyway (see GameOver prop).
         if (!_isDemo)
         {
             _ = SubmitPlayerScoreAsync();
+            // The race outcome also belongs in the local record, so Racer shows up
+            // on the profile alongside every other rated game. Only first place is a
+            // win — the field is CPU-filled, so "finished at all" is not an outcome.
+            var outcome = Player?.Position == 1 ? GameResult.Win : GameResult.Loss;
+            _ = GameResults.RecordAsync("poracer", _playerName, Difficulty.Medium, outcome);
         }
         InvokeAsync(StateHasChanged);
     }

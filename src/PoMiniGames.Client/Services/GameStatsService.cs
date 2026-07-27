@@ -146,6 +146,35 @@ public class GameStatsService
         return rating;
     }
 
+    // ── Play counts (games with no win condition) ────────────────────────────
+    // PoJoker (AI jester) and PoSurvive (simulation) have no outcome and no score,
+    // so they carry neither a W/L record nor a leaderboard entry. A session count is
+    // the only honest thing the profile can report for them — inventing a score
+    // would be a new feature, not stats coverage.
+    private const string PlayCountKeyPrefix = "pomini_plays_";
+
+    // Per-player slot, matching GetAdaptiveRating's keying: switching identities on
+    // one browser (Guest ↔ Microsoft sign-in) must never merge or clobber counts.
+    private static string PlayCountKey(string gameKey, string playerName) =>
+        $"{PlayCountKeyPrefix}{gameKey}_{playerName}";
+
+    public int GetPlayCount(string gameKey, string playerName)
+    {
+        var raw = LocalStorageService.GetItem<string>(PlayCountKey(gameKey, playerName));
+        return int.TryParse(raw, out var n) && n > 0 ? n : 0;
+    }
+
+    /// <summary>
+    /// Counts one *session* of a no-outcome game, not one round — the profile tile
+    /// reads "Played N times", so callers invoke this once per page session.
+    /// </summary>
+    public int RecordPlay(string gameKey, string playerName)
+    {
+        var next = GetPlayCount(gameKey, playerName) + 1;
+        LocalStorageService.SetItem(PlayCountKey(gameKey, playerName), next.ToString());
+        return next;
+    }
+
     // UX 10: Offline-First - Track last played game
     public GameCard? GetLastPlayedGame()
     {

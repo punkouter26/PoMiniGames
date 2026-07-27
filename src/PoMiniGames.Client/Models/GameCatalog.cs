@@ -1,7 +1,15 @@
 namespace PoMiniGamesClient.Models;
 
 /// <summary>A single game entry shown under a home-page section.</summary>
-public sealed record CatalogGame(GameKey Key, string Title, string Icon, string Url);
+/// <param name="RequiresNetwork">
+/// True when the entry cannot run without a live server — a SignalR hub for
+/// multiplayer, or a server API the game calls mid-round. With the service worker
+/// installed the app shell loads fine offline, so these would otherwise present as
+/// playable and then fail at the point of no return (a lobby that never connects).
+/// Entries marked here are shown as unavailable while offline instead.
+/// </param>
+public sealed record CatalogGame(
+    GameKey Key, string Title, string Icon, string Url, bool RequiresNetwork = false);
 
 /// <summary>
 /// The canonical list of games per home-page section (1 Player, 2 Player local,
@@ -35,12 +43,13 @@ public static class GameCatalog
         new(GameKeys.PoSports, "Sports", "🏃", "/posports/2player"),
     ];
 
+    // Every entry here is hub-backed, so all of them require a live server.
     public static readonly IReadOnlyList<CatalogGame> Multiplayer =
     [
-        new(GameKeys.PoRacer, "Racer", "🏎️", "/poracer/multi"),
-        new(GameKeys.PoCoupleQuiz, "Couple Quiz", "💕", "/couplequiz/multi"),
-        new(GameKeys.PoFunQuiz, "Fun Quiz", "🧠", "/funquiz/multi"),
-        new(GameKeys.PoSports, "Sports", "🏃", "/posports/multi"),
+        new(GameKeys.PoRacer, "Racer", "🏎️", "/poracer/multi", RequiresNetwork: true),
+        new(GameKeys.PoCoupleQuiz, "Couple Quiz", "💕", "/couplequiz/multi", RequiresNetwork: true),
+        new(GameKeys.PoFunQuiz, "Fun Quiz", "🧠", "/funquiz/multi", RequiresNetwork: true),
+        new(GameKeys.PoSports, "Sports", "🏃", "/posports/multi", RequiresNetwork: true),
     ];
 
     public static readonly IReadOnlyList<CatalogGame> Demo =
@@ -49,7 +58,9 @@ public static class GameCatalog
         new(GameKeys.ConnectFive, "Connect Five", "🔴", "/connectfive/demo"),
         new(GameKeys.PoRacer, "Racer", "🏎️", "/poracer/demo"),
         new(GameKeys.PoMarbleRace, "Marble Race", "🔮", "/pomarblerace/demo"),
-        new(GameKeys.PoJoker, "Joker", "🃏", "/pojoker/demo"),
+        // Joker's set is fetched from a joke API mid-performance — there is no
+        // offline joke bank to fall back on.
+        new(GameKeys.PoJoker, "Joker", "🃏", "/pojoker/demo", RequiresNetwork: true),
         new(GameKeys.PoBrawl, "Brawl", "🥊", "/pobrawl/demo"),
         new(GameKeys.PoSurvive, "Survive", "🛡️", "/posurvive/demo"),
         new(GameKeys.PoSports, "Sports", "🏃", "/posports/demo"),

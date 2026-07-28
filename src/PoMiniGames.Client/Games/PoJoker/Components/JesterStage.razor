@@ -85,14 +85,21 @@
 
     private async Task StartPerformance()
     {
-        // NetRun10 audit #2: default to safeMode=true so the first joke a
-        // new visitor sees isn't filtered out by the upstream JokeAPI's
-        // "anti-vaxxer parents" anti-pattern. We keep Category="Any" because
-        // JokeAPI doesn't support a "Wholesome" category (only Any/Misc/
-        // Programming/Dark/Pun/Spooky/Christmas); safe-mode alone strips
-        // NSFW, religious, political, racist, sexist, explicit flags.
-        _orchestrator.SelectedCategory = "Any";
-        _orchestrator.SelectedSafeMode = true;
+        // 2026-07-27: deliberately reverses the earlier "NetRun10 audit #2" default of
+        // safeMode=true. The Jester is meant to be edgy, so it now runs unfiltered on
+        // JokeAPI's Dark category — the harshest material the upstream API exposes.
+        //
+        // Consequences, all intentional:
+        //  - safe-mode off means NO flags are stripped. JokeAPI's flag set is nsfw,
+        //    religious, political, racist, sexist, explicit; the client sends no
+        //    blacklistFlags, so any of them can come back. Add a blacklist in
+        //    JokeApiClient.BuildUrl to exclude specific flags without going back to
+        //    blanket safe mode.
+        //  - Dark jokes trip the AI jester's upstream content filter far more often.
+        //    AiJesterService handles that (shrug line, scored as not-a-triumph), so
+        //    expect visibly fewer triumphs in the 10-joke set.
+        _orchestrator.SelectedCategory = "Dark";
+        _orchestrator.SelectedSafeMode = false;
         _orchestrator.SelectedMoodLabel = "Random";
         await JS.InvokeVoidAsync("eval", "window.__pojokerShowRunning = true;");
         try

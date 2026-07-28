@@ -29,6 +29,20 @@ public interface IAnalysisService
 }
 
 /// <summary>
+/// Turns a flagged joke into a clean one that keeps its comic shape, so it can be
+/// performed rather than skipped.
+/// </summary>
+public interface IJokeRewriteService
+{
+    /// <summary>
+    /// Returns a rewritten joke, or <c>null</c> when no rewrite could be produced —
+    /// model unavailable, timed out, content-filtered, refused, or unparseable. The
+    /// caller is expected to fall back rather than treat null as an error.
+    /// </summary>
+    Task<JokeDto?> TryRewriteAsync(JokeDto joke, CancellationToken cancellationToken = default);
+}
+
+/// <summary>
 /// Repository contract for persisting and querying joke performance data.
 /// Repository pattern (GoF/DDD): abstracts storage so the feature is decoupled from
 /// Azure Table Storage implementation details.

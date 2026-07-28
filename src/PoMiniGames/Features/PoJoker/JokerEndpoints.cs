@@ -47,6 +47,7 @@ public static class JokerEndpoints
         [FromQuery] int[]? excludeIds,
         [FromQuery] string? category,
         IJokeApiClient jokeApiClient,
+        IJokeRewriteService rewriteService,
         ILoggerFactory loggerFactory,
         CancellationToken cancellationToken)
     {
@@ -66,7 +67,7 @@ public static class JokerEndpoints
 
             if (excludeSet.Count == 0 || !excludeSet.Contains(joke.Id))
             {
-                return Results.Ok(joke);
+                return Results.Ok(await CleanIfNeededAsync(joke, rewriteService, logger, cancellationToken));
             }
         }
 
@@ -85,7 +86,49 @@ public static class JokerEndpoints
                 Flags = new JokeFlags()
             };
         }
-        return Results.Ok(fallback);
+        return Results.Ok(await CleanIfNeededAsync(fallback, rewriteService, logger, cancellationToken));
+    }
+
+    /// <summary>
+    /// Makes a flagged joke performable instead of skipping it.
+    /// </summary>
+    /// <remarks>
+    /// Fallback chain, best-effort at every step so the show never stalls:
+    /// <list type="number">
+    /// <item>AI rewrite — the only step that can change a joke's <i>premise</i>, which
+    /// is where JokeAPI's racist/sexist flags actually live.</item>
+    /// <item>Word substitution — catches profanity the rewrite step could not handle
+    /// (model unavailable, timed out, refused).</item>
+    /// <item>Play as fetched — nothing is ever dropped.</item>
+    /// </list>
+    /// Unflagged jokes skip all of this and play verbatim, so the common path costs
+    /// no extra latency.
+    /// </remarks>
+    private static async Task<JokeDto> CleanIfNeededAsync(
+        JokeDto joke,
+        IJokeRewriteService rewriteService,
+        ILogger logger,
+        CancellationToken cancellationToken)
+    {
+        if (!JokeSanitizer.NeedsSanitizing(joke.Flags)) return joke;
+
+        var rewritten = await rewriteService.TryRewriteAsync(joke, cancellationToken);
+        if (rewritten is not null)
+        {
+            logger.LogInformation("PoJoker: joke {JokeId} was rewritten before performing.", joke.Id);
+            return rewritten;
+        }
+
+        var substituted = JokeSanitizer.SanitizeIfNeeded(joke);
+        if (!substituted.Sanitized)
+        {
+            // Worth a log line: the joke is going out flagged and unaltered, which is
+            // the case neither cleaning step could handle.
+            logger.LogInformation(
+                "PoJoker: joke {JokeId} is flagged but could not be rewritten or substituted; performing as fetched.",
+                joke.Id);
+        }
+        return substituted;
     }
 
     private static async Task<IResult> AnalyzeJoke(

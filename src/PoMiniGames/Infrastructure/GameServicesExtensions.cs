@@ -128,6 +128,10 @@ internal static class GameServicesExtensions
             sp.GetRequiredService<ILogger<JokeApiClient>>()));
         services.AddSingleton<MockAnalysisService>();
         services.AddSingleton<IAnalysisService, AiJesterService>();
+        // Rewrites flagged jokes so the Jester performs a clean version instead of
+        // skipping them. Deliberately has no mock stand-in: a fabricated rewrite
+        // would report a joke as cleaned when it was not.
+        services.AddSingleton<IJokeRewriteService, JokeRewriteService>();
         services.AddSingleton<IJokeStorageClient, JokeStorageClient>();
 
         // PoRacer — multiplayer racing. The lobby service is the in-memory

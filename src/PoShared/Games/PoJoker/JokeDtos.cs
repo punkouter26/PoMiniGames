@@ -30,6 +30,14 @@ public sealed record JokeDto
     /// <summary>Whether safe mode was enabled when this joke was fetched.</summary>
     public bool SafeMode { get; init; }
 
+    /// <summary>
+    /// True when harsh vocabulary was swapped for cheerful stand-ins so the joke could
+    /// be performed instead of skipped (see <c>JokeSanitizer</c>). This marks a
+    /// <i>rewritten</i> joke, not a clean one — the substitution changes words, not
+    /// the premise.
+    /// </summary>
+    public bool Sanitized { get; init; }
+
     /// <summary>Gets the display text - either the setup or the single joke text.</summary>
     public string DisplayText => Type == "twopart" ? Setup : Joke;
 

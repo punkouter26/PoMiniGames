@@ -1,26 +1,22 @@
-@using PoMiniGamesClient.Games.PoSurvive.Features.Grid
+﻿@using PoMiniGamesClient.Games.PoSurvive.Features.Grid
 @using PoMiniGamesClient.Games.PoSurvive.Features.Inspector
 @using PoMiniGamesClient.Games.PoSurvive.Features.Sidebar
 @using PoMiniGamesClient.Games.PoSurvive.Features.Console
 @using PoMiniGamesClient.Games.PoSurvive.Features.PostMortem
-@using PoMiniGamesClient.Games.PoSurvive.Features.Soundtrack
 @using PoMiniGamesClient.Games.PoSurvive.Services
 @using PoMiniGamesClient.Games.PoSurvive.Store
 @using PoShared.Simulation.Constants
 @using PoShared.Simulation.Models
 @using Microsoft.AspNetCore.Components.WebAssembly.Hosting
-@inherits Fluxor.Blazor.Web.Components.FluxorLayout
+@inherits SurviveLayoutBase
 @implements IDisposable
-@inject IState<SimulationState> SimState
-@inject IState<BootState>       BootState
-@inject IDispatcher             Dispatcher
 @inject SessionLogService       LogService
 @inject SimulationLaunchService LaunchService
 @inject IJSRuntime              JS
 @inject NavigationManager       Nav
 @inject IWebAssemblyHostEnvironment HostEnv
 @inject PoMiniGamesClient.Games.PoSurvive.Services.LocalModelBootstrapService ModelBootstrap
-@inject PoMiniGamesClient.Games.PoSurvive.Services.InferenceRouter InferenceRouterOrNull
+@inject IServiceProvider Services
 @inject PoShared.Simulation.Interfaces.IInferenceService InferenceService
 @inject AuthStateService        AuthState
 @inject ToastService            ToastService
@@ -47,10 +43,6 @@
             <span class="gl-brand-text">PoMiniGames</span>
         </a>
     </div>
-
-    @* Game-header projection slot — empty on PoSurvive (it surfaces its own
-       game-specific UI in the toolbar div below instead of via SectionOutlet). *@
-    <div class="gl-top-bar-game"></div>
 
     <div class="gl-auth">
         @* §10 dev-only "Switch user…" affordance. Renders only in Development +
@@ -102,14 +94,15 @@
 </header>
 
 <div class="toolbar sv-toolbar app-reveal" data-testid="toolbar">
+    @* The brand link lives in the gl-top-bar header above; repeating it here rendered
+       "PoMiniGames" twice, one line apart. Subtitle only. *@
     <div class="toolbar__identity">
-        <a class="toolbar__brand" href="/" aria-label="PoMiniGames home">PoMiniGames</a>
         <span class="toolbar__subtitle">Survive · AI battle simulator</span>
     </div>
 
     <div class="sv-toolbar__primary">
         @* ── North-Star control: one primary button that morphs with lifecycle ── *@
-        @if (!IsBootRoute && BootCanStartSimulation && !SimState.Value.IsRunning && !SimState.Value.IsPaused && SimState.Value.Outcome is null && !SimState.Value.ShowPostMortem)
+        @if (BootCanStartSimulation && !Store.Simulation.IsRunning && !Store.Simulation.IsPaused && Store.Simulation.Outcome is null && !Store.Simulation.ShowPostMortem)
         {
             <button class="sv-btn sv-btn--primary sv-btn--cta"
                     id="start-sim-button"
@@ -118,19 +111,19 @@
                 ▶ Start battle
             </button>
         }
-        @if (SimState.Value.IsRunning && !SimState.Value.IsPaused)
+        @if (Store.Simulation.IsRunning && !Store.Simulation.IsPaused)
         {
             <button class="sv-btn" @onclick="PauseSimulation" data-testid="btn-pause" title="Pause">
                 ❚❚ Pause
             </button>
         }
-        @if (SimState.Value.IsPaused)
+        @if (Store.Simulation.IsPaused)
         {
             <button class="sv-btn sv-btn--primary" @onclick="ResumeSimulation" data-testid="btn-resume" title="Resume">
                 ▶ Resume
             </button>
         }
-        @if (!SimState.Value.IsRunning && !SimState.Value.IsPaused && SimState.Value.TurnNumber > 0)
+        @if (!Store.Simulation.IsRunning && !Store.Simulation.IsPaused && Store.Simulation.TurnNumber > 0)
         {
             <button class="sv-btn sv-btn--primary sv-btn--cta" @onclick="ResetSimulation" data-testid="btn-restart">
                 ↻ New battle
@@ -139,16 +132,16 @@
 
         @* ── Speed presets, primary (raw ms lives in Advanced) ── *@
         <div class="sv-speed" role="group" aria-label="Playback speed">
-            <button class="sv-chip @(SimState.Value.SpeedMs <= 400 ? "is-active" : string.Empty)"
+            <button class="sv-chip @(Store.Simulation.SpeedMs <= 400 ? "is-active" : string.Empty)"
                     @onclick="() => SetSpeedPreset(350)" data-testid="btn-speed-fast" title="Fast">Fast</button>
-            <button class="sv-chip @(SimState.Value.SpeedMs > 400 && SimState.Value.SpeedMs < 1200 ? "is-active" : string.Empty)"
+            <button class="sv-chip @(Store.Simulation.SpeedMs > 400 && Store.Simulation.SpeedMs < 1200 ? "is-active" : string.Empty)"
                     @onclick="() => SetSpeedPreset(900)" data-testid="btn-speed-balanced" title="Balanced">Balanced</button>
-            <button class="sv-chip @(SimState.Value.SpeedMs >= 1200 ? "is-active" : string.Empty)"
+            <button class="sv-chip @(Store.Simulation.SpeedMs >= 1200 ? "is-active" : string.Empty)"
                     @onclick="() => SetSpeedPreset(1500)" data-testid="btn-speed-inspect" title="Slow — read every decision">Inspect</button>
         </div>
 
         @* ── Natural-language AI status pill ── *@
-        @if (BootState.Value.IsDegradedMode)
+        @if (Store.Boot.IsDegradedMode)
         {
             <span class="sv-status sv-status--warn" data-testid="inference-status-degraded" title="@DegradedModeSummary">Offline AI</span>
         }
@@ -167,8 +160,8 @@
             <div class="sv-advanced__panel">
                 <span class="sv-advanced__provider @InferenceIndicatorClass"
                       data-testid="inference-indicator"
-                      title="Model ID: @BootState.Value.ModelId">
-                    @BootState.Value.ProviderKind · @BootState.Value.ModelLabel
+                      title="Model ID: @Store.Boot.ModelId">
+                    @Store.Boot.ProviderKind · @Store.Boot.ModelLabel
                 </span>
 
                 <label class="sv-advanced__label" for="toolbar-model-select">AI model</label>
@@ -176,7 +169,7 @@
                         class="sv-advanced__select"
                         value="@ToolbarSelectedModelId"
                         @onchange="OnToolbarModelChanged"
-                        disabled="@(ToolbarModelOptions.Count == 0 || SimState.Value.IsRunning || _switchingModel)"
+                        disabled="@(ToolbarModelOptions.Count == 0 || Store.Simulation.IsRunning || _switchingModel)"
                         data-testid="toolbar-model-select"
                         title="Switch between local (in-browser) and remote (cloud) inference models">
                     @if (ToolbarModelOptions.Any(o => !o.IsRemote))
@@ -206,11 +199,11 @@
                            min="@SimulationDefaults.HeartbeatMinMs"
                            max="@SimulationDefaults.HeartbeatMaxMs"
                            step="50"
-                           value="@SimState.Value.SpeedMs"
+                           value="@Store.Simulation.SpeedMs"
                            @oninput="OnSpeedChange"
                            data-testid="speed-slider"
                            aria-label="Simulation speed" />
-                    <span class="sv-advanced__value">@SimState.Value.SpeedMs ms</span>
+                    <span class="sv-advanced__value">@Store.Simulation.SpeedMs ms</span>
                 </div>
 
                 @if (!string.IsNullOrWhiteSpace(InferenceDetailText))
@@ -221,7 +214,7 @@
                 <div class="sv-advanced__row sv-advanced__row--actions">
                     <button class="sv-btn sv-btn--sm"
                             @onclick="DownloadLog"
-                            disabled="@(SimState.Value.TurnNumber == 0)"
+                            disabled="@(Store.Simulation.TurnNumber == 0)"
                             data-testid="btn-download">
                         Download log
                     </button>
@@ -236,32 +229,6 @@
         </details>
     </div>
 </div>
-
-@* ── First-run "what am I watching?" intro (#5) ───────────────────────────
-   Dismissible; shown once per browser (persisted in localStorage). Answers the
-   biggest comprehension gap: this is a spectator sim of AI agents, not a game
-   you steer. *@
-@if (_showIntro && !_isDemoRoute)
-{
-    <div class="sv-intro" role="dialog" aria-labelledby="sv-intro-title" data-testid="posurvive-intro">
-        <div class="sv-intro__card app-reveal">
-            <h2 id="sv-intro-title" class="sv-intro__title">🛡️ Welcome to Survive</h2>
-            <p class="sv-intro__lead">
-                Two teams of <strong>AI agents</strong> — <span class="sv-intro__red">Red</span> vs
-                <span class="sv-intro__blue">Blue</span> — fight to be the last standing on the grid.
-                You don't steer them; you <strong>watch and inspect</strong> their choices.
-            </p>
-            <ul class="sv-intro__steps">
-                <li><span class="sv-intro__num">1</span> Press <strong>Start battle</strong> and watch the grid.</li>
-                <li><span class="sv-intro__num">2</span> Click any agent to see <strong>why</strong> it moved.</li>
-                <li><span class="sv-intro__num">3</span> Tap <strong>☆ Champion</strong> to adopt one and follow its fate.</li>
-            </ul>
-            <button class="sv-btn sv-btn--primary sv-btn--cta" @onclick="DismissIntro" data-testid="btn-intro-dismiss">
-                Got it — let's watch
-            </button>
-        </div>
-    </div>
-}
 
 @if (_downloadToastVisible)
 {
@@ -283,7 +250,7 @@
     </div>
 }
 
-@if (SimState.Value.TurnNumber > 0 || SimState.Value.IsRunning)
+@if (Store.Simulation.TurnNumber > 0 || Store.Simulation.IsRunning)
 {
     @* Stats bar simplified (player request): collapsed from 10 metrics to 4 most
        important so the row stops dominating the viewport. Outcome / Pause / AI
@@ -291,19 +258,19 @@
     <div class="statsbar" data-testid="statsbar">
         <span class="statsbar__item statsbar__item--time" title="Elapsed wall-clock time since simulation start">⏱ @ElapsedFormatted</span>
         <span class="statsbar__sep">·</span>
-        <span class="statsbar__item" title="Current simulation turn">TURN <strong>@SimState.Value.TurnNumber</strong></span>
+        <span class="statsbar__item" title="Current simulation turn">TURN <strong>@Store.Simulation.TurnNumber</strong></span>
         <span class="statsbar__sep">·</span>
         <span class="statsbar__item statsbar__item--red" title="Alive Red agents">🔴 @AliveRed</span>
         <span class="statsbar__item statsbar__item--blue" title="Alive Blue agents">🔵 @AliveBlue</span>
-        @if (SimState.Value.IsPaused)
+        @if (Store.Simulation.IsPaused)
         {
             <span class="statsbar__sep">·</span>
             <span class="statsbar__item statsbar__item--paused">⏸ PAUSED</span>
         }
-        @if (SimState.Value.Outcome is not null)
+        @if (Store.Simulation.Outcome is not null)
         {
             <span class="statsbar__sep">·</span>
-            <span class="statsbar__item statsbar__item--outcome">@SimState.Value.Outcome.ToUpperInvariant()</span>
+            <span class="statsbar__item statsbar__item--outcome">@Store.Simulation.Outcome.ToUpperInvariant()</span>
         }
     </div>
 }
@@ -324,7 +291,7 @@
     </div>
 }
 
-<div class="simulation-layout simulation-layout--@_activePane" data-testid="main-layout">
+<div class="simulation-layout simulation-layout--grid" data-testid="main-layout">
     <main class="simulation-layout__grid app-reveal">
         <div class="pane-header">BATTLE GRID</div>
         <div class="pane-body pane-body--grid">
@@ -335,11 +302,8 @@
     <aside class="simulation-layout__sidebar app-reveal">
         <div class="pane-header pane-header--sidebar">DECISION + AGENT INTEL</div>
         <div class="pane-body pane-body--sidebar">
-            @if (SimState.Value.IsRunning || SimState.Value.Agents.Count > 0)
+            @if (Store.Simulation.IsRunning || Store.Simulation.Agents.Count > 0)
             {
-                @* SoundtrackControl removed from the always-visible sidebar (player request).
-                   Still reachable from its own route if needed; the right rail now stays
-                   focused on the decision intel and agent list. *@
                 <DecisionInspector />
                 <AgentSidebar />
             }
@@ -349,7 +313,7 @@
     <footer class="simulation-layout__console app-reveal">
         <div class="pane-header pane-header--console">TACTICAL LOG</div>
         <div class="pane-body pane-body--console">
-            @if (SimState.Value.IsRunning || SimState.Value.ConsoleLog.Count > 0)
+            @if (Store.Simulation.IsRunning || Store.Simulation.ConsoleLog.Count > 0)
             {
                 <TacticalLog />
             }
@@ -359,24 +323,15 @@
 
 <PostMortemOverlay />
 
-<ErrorBoundary>
-    <ChildContent>@((MarkupString)"")</ChildContent>
-    <ErrorContent Context="ex">
-        @if (IsDev)
-        {
-            <div class="dev-error-overlay" role="alert">
-                <h3>UNHANDLED EXCEPTION (DEV MODE)</h3>
-                <pre>@ex.ToString()</pre>
-            </div>
-        }
-    </ErrorContent>
-</ErrorBoundary>
+@* An <ErrorBoundary> used to sit here wrapping (MarkupString)"" — it guarded no
+   content and so could never catch anything. Removed rather than re-pointed: @Body
+   already renders inside the grid pane above, and wrapping the layout's own chrome
+   in a boundary would swallow errors this page wants to surface. *@
 
 @code {
     private const int StalledTurnThresholdSec = 20;
-    private string _activePane = "grid";
 
-    private string InferenceIndicatorClass => BootState.Value.ProviderKind switch
+    private string InferenceIndicatorClass => Store.Boot.ProviderKind switch
     {
         "LOCAL"  => "toolbar__inference--local",
         "REMOTE" => "toolbar__inference--remote",
@@ -390,16 +345,15 @@
     // without backing out to the idle screen.
     private List<PoMiniGamesClient.Games.PoSurvive.Services.ModelOption> ToolbarModelOptions { get; set; } = new();
     private bool _switchingModel;
-    private string ToolbarSelectedModelId
-    {
-        get => BootState.Value.ModelId;
-        set { /* value is driven by BootState; OnToolbarModelChanged dispatches updates */ }
-    }
+
+    // Read-only: the <select> is bound one-way from BootState and OnToolbarModelChanged
+    // dispatches the update. (This used to be a property with a no-op setter.)
+    private string ToolbarSelectedModelId => Store.Boot.ModelId;
 
     private async Task OnToolbarModelChanged(ChangeEventArgs e)
     {
         var newId = e.Value?.ToString();
-        if (string.IsNullOrWhiteSpace(newId) || newId == BootState.Value.ModelId) return;
+        if (string.IsNullOrWhiteSpace(newId) || newId == Store.Boot.ModelId) return;
 
         var selected = ToolbarModelOptions.FirstOrDefault(o => o.Id == newId);
         if (selected is null) return;
@@ -412,17 +366,19 @@
             var isMock       = InferenceService is PoMiniGamesClient.Games.PoSurvive.Services.MockInferenceService;
             var providerKind = ModelBootstrap.ResolveProviderKind(isMock, selected.IsRemote);
 
-            if (!isMock && InferenceRouterOrNull is { } router)
+            // Registered only outside mock mode — genuinely absent, not a sentinel.
+            var inferenceRouter = Services.GetService<PoMiniGamesClient.Games.PoSurvive.Services.InferenceRouter>();
+            if (!isMock && inferenceRouter is { } router)
             {
                 if (selected.IsRemote) router.UseRemote(selected.Id);
                 else                   router.UseLocal();
             }
 
-            Dispatcher.Dispatch(new ResetInferenceBootstrapAction());
-            Dispatcher.Dispatch(new InferenceConfiguredAction(
-                ProviderKind: providerKind,
-                ModelId:      selected.Id,
-                ModelLabel:   selected.Label));
+            Store.ResetInferenceBootstrap();
+            Store.InferenceConfigured(
+                providerKind: providerKind,
+                modelId:      selected.Id,
+                modelLabel:   selected.Label);
 
             // Mock + remote models are ready instantly (no in-browser model download).
             // LOCAL WebLLM models require the multi-MB download kicked off by the
@@ -431,7 +387,7 @@
             // the download if they want a local run.
             if (isMock || selected.IsRemote)
             {
-                Dispatcher.Dispatch(new BootReadyAction());
+                Store.BootReady();
             }
         }
         finally
@@ -441,30 +397,28 @@
     }
 
     private bool StalledAtTurnZero
-        => SimState.Value.IsRunning
-            && !SimState.Value.IsMockProvider
-            && SimState.Value.TurnNumber == 0
-            && SimState.Value.StartedAt != default
-            && (DateTimeOffset.UtcNow - SimState.Value.StartedAt).TotalSeconds >= StalledTurnThresholdSec;
+        => Store.Simulation.IsRunning
+            && !Store.Simulation.IsMockProvider
+            && Store.Simulation.TurnNumber == 0
+            && Store.Simulation.StartedAt != default
+            && (DateTimeOffset.UtcNow - Store.Simulation.StartedAt).TotalSeconds >= StalledTurnThresholdSec;
 
     private bool HasInferenceIssue
-        => BootState.Value.HasInferenceInitError
+        => Store.Boot.HasInferenceInitError
             || StalledAtTurnZero
-            || (BootState.Value.ProviderKind == "LOCAL"
-                && BootState.Value.IsReady
-                && BootState.Value.TotalBytes > 0
-                && BootState.Value.BytesLoaded == 0);
+            || (Store.Boot.ProviderKind == "LOCAL"
+                && Store.Boot.IsReady
+                && Store.Boot.TotalBytes > 0
+                && Store.Boot.BytesLoaded == 0);
 
-    private bool IsBootRoute => Nav.Uri.Contains("/boot", StringComparison.OrdinalIgnoreCase);
-
-    private bool BootCanStartSimulation => BootState.Value.IsReady || BootState.Value.IsDegradedMode;
+    private bool BootCanStartSimulation => Store.Boot.IsReady || Store.Boot.IsDegradedMode;
 
     private string DegradedModeSummary
         => "Fallback tactics are active because real inference is unavailable.";
 
     // Detail line shown inside the Advanced drawer (was a permanent toolbar chip).
     private string? InferenceDetailText
-        => BootState.Value.IsDegradedMode ? DegradedModeSummary
+        => Store.Boot.IsDegradedMode ? DegradedModeSummary
         : HasInferenceIssue ? InferenceIssueSummary
         : null;
 
@@ -483,8 +437,8 @@
     private string InferenceIssueSummary
         => StalledAtTurnZero
             ? $"Turn watchdog triggered (>{StalledTurnThresholdSec}s at turn 0)."
-            : BootState.Value.InferenceInitError is { Length: > 0 }
-            ? SummarizeIssue(BootState.Value.InferenceInitError)
+            : Store.Boot.InferenceInitError is { Length: > 0 }
+            ? SummarizeIssue(Store.Boot.InferenceInitError)
             : "Inference is unavailable.";
 
     private static string SummarizeIssue(string detail)
@@ -496,8 +450,6 @@
         const int max = 96;
         return clean.Length <= max ? clean : clean[..max] + "...";
     }
-
-    private bool IsDev => HostEnv.IsDevelopment();
 
     private System.Threading.Timer? _clockTimer;
 
@@ -537,73 +489,44 @@
         }
     }
 
-    // ── First-run intro (#5) + champion strip (#2) ────────────────────────
-    private bool _showIntro;
-    private bool _isDemoRoute => Nav.Uri.Contains("demo=1", StringComparison.OrdinalIgnoreCase)
-        || Nav.Uri.Contains("/posurvive/demo", StringComparison.OrdinalIgnoreCase);
-
+    // ── Champion strip (#2) ───────────────────────────────────────────────
     private PoShared.Simulation.Models.AgentDto? Champion
-        => SimState.Value.ChampionAgentId is { } id
-            ? SimState.Value.Agents.FirstOrDefault(a => a.Id == id)
+        => Store.Simulation.ChampionAgentId is { } id
+            ? Store.Simulation.Agents.FirstOrDefault(a => a.Id == id)
             : null;
 
-    private void DropChampion() => Dispatcher.Dispatch(new ChampionSelectedAction(null));
+    private void DropChampion() => Store.SelectChampion(null);
 
-    private async Task DismissIntro()
-    {
-        _showIntro = false;
-        await JS.InvokeVoidAsync("localStorage.setItem", "posurvive_intro_seen", "1");
-    }
-
-    private int AliveRed  => SimState.Value.Agents.Count(a => a.IsAlive && a.Team == "Red");
-    private int AliveBlue => SimState.Value.Agents.Count(a => a.IsAlive && a.Team == "Blue");
-    private int TotalKills => SimState.Value.Agents.Sum(a => a.KillCount);
-    private int AvgHp => SimState.Value.Agents.Any(a => a.IsAlive)
-        ? (int)SimState.Value.Agents.Where(a => a.IsAlive).Average(a => a.Hp)
-        : 0;
+    private int AliveRed  => Store.Simulation.Agents.Count(a => a.IsAlive && a.Team == "Red");
+    private int AliveBlue => Store.Simulation.Agents.Count(a => a.IsAlive && a.Team == "Blue");
 
     private string ElapsedFormatted
     {
         get
         {
-            if (SimState.Value.StartedAt == default) return "0:00";
-            var elapsed = DateTimeOffset.UtcNow - SimState.Value.StartedAt;
+            if (Store.Simulation.StartedAt == default) return "0:00";
+            var elapsed = DateTimeOffset.UtcNow - Store.Simulation.StartedAt;
             return elapsed.TotalHours >= 1
                 ? $"{(int)elapsed.TotalHours}:{elapsed.Minutes:D2}:{elapsed.Seconds:D2}"
                 : $"{elapsed.Minutes}:{elapsed.Seconds:D2}";
         }
     }
 
-    private int SecsPerTurn
-    {
-        get
-        {
-            if (SimState.Value.TurnNumber < 2 || SimState.Value.StartedAt == default) return 0;
-            var elapsed = (DateTimeOffset.UtcNow - SimState.Value.StartedAt).TotalSeconds;
-            return (int)(elapsed / SimState.Value.TurnNumber);
-        }
-    }
-
-    private void SetActivePane(string pane)
-    {
-        _activePane = pane;
-    }
-
     private async Task StartSimulation()
     {
         var config = await LaunchService.BuildConfigAsync();
 
-        Dispatcher.Dispatch(new StartSimulationAction(config, BootState.Value.IsMockProvider || BootState.Value.IsDegradedMode));
+        Store.StartSimulation(config, Store.Boot.IsMockProvider || Store.Boot.IsDegradedMode);
     }
 
     private void OnSpeedChange(ChangeEventArgs e)
     {
         if (int.TryParse(e.Value?.ToString(), out var ms))
-            Dispatcher.Dispatch(new SpeedChangedAction(ms));
+            Store.SetSpeed(ms);
     }
 
     private void SetSpeedPreset(int speedMs)
-        => Dispatcher.Dispatch(new SpeedChangedAction(speedMs));
+        => Store.SetSpeed(speedMs);
 
     private string _downloadToastMessage = string.Empty;
     private string _downloadToastKind = "info";
@@ -643,17 +566,17 @@
     }
 
     private void ResetSimulation()
-        => Dispatcher.Dispatch(new ResetSimulationAction());
+        => Store.ResetSimulation();
 
     private void PauseSimulation()
-        => Dispatcher.Dispatch(new PauseSimulationAction());
+        => Store.Pause();
 
     private void ResumeSimulation()
-        => Dispatcher.Dispatch(new ResumeSimulationAction());
+        => Store.Resume();
 
     private async Task RecoverFromInferenceStall()
     {
-        Dispatcher.Dispatch(new ResetSimulationAction());
+        Store.ResetSimulation();
         await Task.Yield();
         await StartSimulation();
     }

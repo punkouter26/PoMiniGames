@@ -1,10 +1,8 @@
-@* PoSurvive game module. The .razor files declare a `@namespace PoSurvive.Client` so
+﻿@* PoSurvive game module. The .razor files declare a `@namespace PoSurvive.Client` so
    fully-qualified PoSurvive.Client.* identifiers (e.g. BootState, ConsoleEntry) resolve
    to their PoMiniGamesClient.Games.PoSurvive.* counterparts — the Blazor file-relative
    @namespace feature does this automatically. *@
 @namespace PoMiniGamesClient.Games.PoSurvive
-@using Fluxor
-@using Fluxor.Blazor.Web.Components
 @using Microsoft.AspNetCore.Components.WebAssembly.Hosting
 @using PoMiniGamesClient
 @using PoMiniGamesClient.Games.PoSurvive.Layout
@@ -13,11 +11,8 @@
 @using PoShared.Simulation.Constants
 @using PoShared.Simulation.Interfaces
 @using PoShared.Simulation.Models
-@using PoMiniGamesClient.Games.PoSurvive.Features.Boot
 @using PoMiniGamesClient.Games.PoSurvive.Features.Grid
 @using PoMiniGamesClient.Games.PoSurvive.Features.Inspector
 @using PoMiniGamesClient.Games.PoSurvive.Features.Sidebar
 @using PoMiniGamesClient.Games.PoSurvive.Features.Console
 @using PoMiniGamesClient.Games.PoSurvive.Features.PostMortem
-@using PoMiniGamesClient.Games.PoSurvive.Features.Soundtrack
-@using PoMiniGamesClient.Games.PoSurvive.Features.Evolution

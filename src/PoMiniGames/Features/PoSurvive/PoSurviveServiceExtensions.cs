@@ -1,8 +1,6 @@
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Options;
 using PoMiniGames.Application.Simulation;
-using PoMiniGames.Features.PoSurvive.Infrastructure.Persistence;
-using PoMiniGames.Features.PoSurvive.Endpoints;
 using PoMiniGames.Features.PoSurvive.Storage;
 using PoShared.Simulation.Interfaces;
 
@@ -19,7 +17,6 @@ public static class PoSurviveServiceExtensions
     public static IServiceCollection AddPoSurvive(this IServiceCollection services, IConfiguration configuration)
     {
         // ─── Persistence (Azure Table Storage; own tables, separate from PoMiniGames stats) ───
-        services.AddSingleton<ISessionRepository, SessionRepository>();
         services.AddSingleton<IEvolutionRepository, EvolutionRepository>();
         services.AddSingleton<EvolutionEngine>();
 
@@ -91,7 +88,6 @@ public static class PoSurviveServiceExtensions
     /// <summary>Maps PoSurvive minimal-API endpoints. /api/infer is mapped only when cloud fallback is enabled.</summary>
     public static IEndpointRouteBuilder MapPoSurviveEndpoints(this IEndpointRouteBuilder app, IConfiguration configuration)
     {
-        app.MapSessionEndpoints();
         app.MapEvolutionEndpoints();
         if (configuration.GetValue<bool>("Inference:UseCloudFallback"))
             app.MapInferEndpoints();

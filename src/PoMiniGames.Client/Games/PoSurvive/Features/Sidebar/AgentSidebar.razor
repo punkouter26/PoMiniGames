@@ -1,16 +1,13 @@
-@using PoMiniGamesClient.Games.PoSurvive.Store
+﻿@using PoMiniGamesClient.Games.PoSurvive.Store
 @using PoShared.Simulation.Models
 @implements IDisposable
 
-@inherits Fluxor.Blazor.Web.Components.FluxorComponent
-@inject IState<SimulationState> SimState
-@inject IDispatcher Dispatcher
-
+@inherits SurviveComponentBase
 <div class="agent-sidebar" data-testid="agent-sidebar">
 
-    @foreach (var agent in SimState.Value.Agents.OrderBy(a => a.Team).ThenBy(a => a.Id))
+    @foreach (var agent in Store.Simulation.Agents.OrderBy(a => a.Team).ThenBy(a => a.Id))
     {
-        var isSelected = SimState.Value.SelectedAgentId == agent.Id;
+        var isSelected = Store.Simulation.SelectedAgentId == agent.Id;
         var isExpanded = _expandedAgents.Contains(agent.Id);
         <div class="sidebar__agent @(isSelected ? "sidebar__agent--selected" : string.Empty) @(agent.IsAlive ? string.Empty : "sidebar__agent--dead")"
              data-testid="agent-panel-@agent.Id"
@@ -94,10 +91,10 @@
 
     private void OnAgentClick(string agentId)
     {
-        if (SimState.Value.SelectedAgentId == agentId)
-            Dispatcher.Dispatch(new GodClickClearedAction());
+        if (Store.Simulation.SelectedAgentId == agentId)
+            Store.ClearSelection();
         else
-            Dispatcher.Dispatch(new GodClickSelectedAction(agentId));
+            Store.SelectAgent(agentId);
     }
 
     private void ToggleExpand(string agentId)
@@ -123,8 +120,9 @@
         catch (OperationCanceledException) { }
     }
 
-    public void Dispose()
+    public override void Dispose()
     {
+        base.Dispose();
         _clockCts.Cancel();
         _clock.Dispose();
         _clockCts.Dispose();

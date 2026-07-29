@@ -27,17 +27,12 @@ public sealed class StorageInitializer
         "PoCoupleQuizTeams",
         "PoCoupleQuizHistory",
         "PoFunQuizPlayers",
-        // PoSurvive persistence (§3 of QA report): the Evolution, Session and
-        // Heartbeat tables are required by the /api/evolution/* and /api/posurvive/*
-        // surfaces. Without eager creation those endpoints return 500 with
-        // "No Azure Table…". Adding them here closes the loop with the same
-        // idempotent, best-effort pattern used for the consolidated games above.
-        // Names must match the constants in EvolutionRepository / SessionRepository —
-        // this list previously ensured "PoSurviveSessions"/"PoSurviveHeartbeats", two
-        // orphan tables the repositories never read.
+        // PoSurvive persistence: backs /api/evolution/record. Without eager creation
+        // that endpoint returns 500 with "No Azure Table…". Name must match the
+        // constant in EvolutionRepository.
+        // "SimulationSessions" and "HeartbeatEvents" were dropped with the /api/sessions
+        // endpoint — nothing read them, and SaveHeartbeatBatchAsync never had a caller.
         "EvolutionRecords",
-        "SimulationSessions",
-        "HeartbeatEvents",
         // PoJoker (demo-only): per-session joke-performance records that back the
         // /api/joker/leaderboard surface (PartitionKey = SessionId).
         "PoJokerPerformances",

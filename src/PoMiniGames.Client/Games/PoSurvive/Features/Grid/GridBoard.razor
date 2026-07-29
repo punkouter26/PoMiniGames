@@ -1,11 +1,8 @@
-@using PoMiniGamesClient.Games.PoSurvive.Store
+﻿@using PoMiniGamesClient.Games.PoSurvive.Store
 @using PoShared.Simulation.Models
 
 @* T053: GridBoard renders 10×10 CSS Grid, dispatches God-Click actions *@
-@inherits Fluxor.Blazor.Web.Components.FluxorComponent
-@inject IDispatcher Dispatcher
-@inject IState<SimulationState> SimState
-
+@inherits SurviveComponentBase
 <div class="grid-board sv-grid-board" data-testid="grid-board"
      role="grid" aria-label="Simulation grid">
 
@@ -16,10 +13,10 @@
             var x = col;
             var y = row;
 
-            var isRock   = SimState.Value.Rocks.Any(r => r.X == x && r.Y == y);
-            var food     = SimState.Value.FoodNodes.FirstOrDefault(f => f.X == x && f.Y == y);
-            var agent    = SimState.Value.Agents.FirstOrDefault(a => a.X == x && a.Y == y);
-            var selected = SimState.Value.SelectedAgentId;
+            var isRock   = Store.Simulation.Rocks.Any(r => r.X == x && r.Y == y);
+            var food     = Store.Simulation.FoodNodes.FirstOrDefault(f => f.X == x && f.Y == y);
+            var agent    = Store.Simulation.Agents.FirstOrDefault(a => a.X == x && a.Y == y);
+            var selected = Store.Simulation.SelectedAgentId;
 
             <GridTile X="@x" Y="@y"
                       IsRock="@isRock"
@@ -35,8 +32,8 @@
 
 @code {
     private void HandleTileClick(string agentId)
-        => Dispatcher.Dispatch(new GodClickSelectedAction(agentId));
+        => Store.SelectAgent(agentId);
 
     private void HandleEmptyClick()
-        => Dispatcher.Dispatch(new GodClickClearedAction());
+        => Store.ClearSelection();
 }

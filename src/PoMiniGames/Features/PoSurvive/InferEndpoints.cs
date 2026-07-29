@@ -1,4 +1,4 @@
-namespace PoMiniGames.Features.PoSurvive.Endpoints;
+namespace PoMiniGames.Features.PoSurvive;
 
 using Microsoft.AspNetCore.Mvc;
 using PoMiniGames.Features.PoSurvive.Storage;

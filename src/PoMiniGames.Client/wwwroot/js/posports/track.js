@@ -208,18 +208,4 @@ export class TrackRenderer {
       }
     }
   }
-
-  /** Draw a name tag above a runner. */
-  drawNameTag(name, x, y, isHuman) {
-    const { ctx } = this;
-    ctx.font = `600 ${Math.max(10, this.viewH * 0.022)}px system-ui, sans-serif`;
-    ctx.textAlign = 'center';
-    const w = ctx.measureText(name).width + 10;
-    ctx.fillStyle = isHuman ? 'rgba(30,120,60,0.85)' : 'rgba(20,20,30,0.6)';
-    ctx.beginPath();
-    ctx.roundRect(x - w / 2, y - 16, w, 16, 4);
-    ctx.fill();
-    ctx.fillStyle = '#fff';
-    ctx.fillText(name, x, y - 4);
-  }
 }

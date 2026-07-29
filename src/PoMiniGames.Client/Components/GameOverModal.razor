@@ -1,4 +1,4 @@
-@namespace PoMiniGamesClient.Components
+﻿@namespace PoMiniGamesClient.Components
 
 @* ─────────────────────────────────────────────────────────────────────────
    The one end-of-game modal for every game in PoMiniGames.
@@ -10,7 +10,7 @@
    Most games get this for free by passing GameOver to <GameShell>, which renders
    this component. It is a standalone component rather than markup inside
    GameShell so games that legitimately can't host GameShell — PoSurvive runs its
-   own C64 layout and Fluxor store — still end on the identical dialog instead of
+   own C64 layout and SurviveStore — still end on the identical dialog instead of
    hand-rolling a lookalike. Styling lives in wwwroot/css/game-shell.css.
    ───────────────────────────────────────────────────────────────────────── *@
 
@@ -90,7 +90,7 @@
 
     /// <summary>
     /// Optional teardown to run when OK is pressed, before navigating. For games
-    /// holding end-of-match state outside the page (PoSurvive's Fluxor store keeps
+    /// holding end-of-match state outside the page (PoSurvive's SurviveStore keeps
     /// ShowPostMortem set), this is where that state gets cleared — otherwise the
     /// modal would still be up when the player next opens the game.
     /// </summary>

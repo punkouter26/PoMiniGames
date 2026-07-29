@@ -1,13 +1,10 @@
-@using PoMiniGamesClient.Games.PoSurvive.Store
+﻿@using PoMiniGamesClient.Games.PoSurvive.Store
 
-@inherits Fluxor.Blazor.Web.Components.FluxorComponent
-@inject IState<SimulationState> SimState
-@inject IDispatcher Dispatcher
-
+@inherits SurviveComponentBase
 <div class="tactical-log" data-testid="tactical-log" role="log" aria-label="Tactical console">
 
     <div class="tactical-log__header">
-        @if (SimState.Value.ConsoleLog.Count > 0)
+        @if (Store.Simulation.ConsoleLog.Count > 0)
         {
             <div class="tactical-log__filter-chips" role="group" aria-label="Log filter presets">
                 @foreach (var f in _filters)
@@ -18,7 +15,7 @@
                         @f.Label
                     </button>
                 }
-                @if (CurrentEventFilter != "all" || SimState.Value.SelectedAgentId is not null)
+                @if (CurrentEventFilter != "all" || Store.Simulation.SelectedAgentId is not null)
                 {
                     <button class="log-chip"
                             @onclick="ClearFilters"
@@ -28,16 +25,16 @@
                 }
             </div>
         }
-        @if (SimState.Value.SelectedAgentId is not null)
+        @if (Store.Simulation.SelectedAgentId is not null)
         {
             <span class="tactical-log__filter-badge">
-                FOLLOWING: @SimState.Value.SelectedAgentId
+                FOLLOWING: @Store.Simulation.SelectedAgentId
             </span>
         }
     </div>
 
     <div class="tactical-log__scroll">
-        @if (SimState.Value.ConsoleLog.Count == 0)
+        @if (Store.Simulation.ConsoleLog.Count == 0)
         {
             <p class="tactical-log__empty">No events yet. Start the simulation to see agent decisions.</p>
         }
@@ -64,9 +61,9 @@
 </div>
 
 @code {
-    private string CurrentEventFilter => string.IsNullOrWhiteSpace(SimState.Value.EventFilter)
+    private string CurrentEventFilter => string.IsNullOrWhiteSpace(Store.Simulation.EventFilter)
         ? "all"
-        : SimState.Value.EventFilter;
+        : Store.Simulation.EventFilter;
 
     private record FilterOption(string Key, string Label);
 
@@ -84,9 +81,9 @@
     {
         get
         {
-            var source = SimState.Value.SelectedAgentId is null
-                ? SimState.Value.ConsoleLog
-                : SimState.Value.ConsoleLog.Where(e => e.AgentId == SimState.Value.SelectedAgentId);
+            var source = Store.Simulation.SelectedAgentId is null
+                ? Store.Simulation.ConsoleLog
+                : Store.Simulation.ConsoleLog.Where(e => e.AgentId == Store.Simulation.SelectedAgentId);
 
             if (CurrentEventFilter == "all") return source;
 
@@ -118,12 +115,12 @@
     }
 
     private void SetFilter(string key)
-        => Dispatcher.Dispatch(new LogEventFilterChangedAction(key));
+        => Store.SetLogFilter(key);
 
     private void ClearFilters()
     {
-        Dispatcher.Dispatch(new LogEventFilterChangedAction("all"));
-        Dispatcher.Dispatch(new GodClickClearedAction());
+        Store.SetLogFilter("all");
+        Store.ClearSelection();
     }
 
     private static IEnumerable<GroupedLogEntry> BuildLogRows(IEnumerable<ConsoleEntry> entries)

@@ -1,10 +1,8 @@
 namespace PoMiniGamesClient.Games.PoSurvive.Store;
 
-using Fluxor;
 using PoShared.Simulation.Models;
 
-/// <summary>Immutable view state for one running simulation session.</summary>
-[FeatureState]
+/// <summary>Immutable view state for one running simulation session. Owned by SurviveStore.</summary>
 public sealed record SimulationState
 {
     // ─── Session identity ──────────────────────────────────────────────────

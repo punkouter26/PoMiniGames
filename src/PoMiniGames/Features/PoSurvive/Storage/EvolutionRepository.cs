@@ -1,4 +1,4 @@
-namespace PoMiniGames.Features.PoSurvive.Infrastructure.Persistence;
+namespace PoMiniGames.Features.PoSurvive.Storage;
 
 using Azure;
 using Azure.Data.Tables;

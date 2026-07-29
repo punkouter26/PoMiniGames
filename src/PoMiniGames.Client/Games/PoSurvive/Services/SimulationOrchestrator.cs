@@ -1,7 +1,6 @@
 namespace PoMiniGamesClient.Games.PoSurvive.Services;
 
 using System.Text.Json;
-using Fluxor;
 using PoMiniGamesClient.Services;
 using PoMiniGames.Application.Simulation;
 using PoMiniGamesClient.Games.PoSurvive.Store;
@@ -13,9 +12,8 @@ using PoShared.Simulation.Models;
 using PoShared.Simulation.Constants;
 
 /// <summary>
-/// Singleton service that holds the mutable domain model for a running simulation and
-/// orchestrates heartbeat ticks on a timer. Pure Fluxor state is updated via dispatched
-/// actions after each tick.
+/// Holds the mutable domain model for a running simulation and orchestrates heartbeat
+/// ticks on a timer. View state is pushed to <see cref="Sink"/> after each tick.
 /// </summary>
 public sealed class SimulationOrchestrator : IDisposable
 {
@@ -24,7 +22,13 @@ public sealed class SimulationOrchestrator : IDisposable
     private const int MinTurnInferenceBudgetMs = 6_000;
     private const int MaxTurnInferenceBudgetMs = 20_000;
 
-    private readonly IDispatcher _dispatcher;
+    /// <summary>
+    /// Where turn output goes. SurviveStore assigns itself here in its constructor —
+    /// property injection rather than a constructor parameter so the store can depend on
+    /// the orchestrator without the two forming a DI cycle.
+    /// </summary>
+    public ISimulationSink? Sink { get; set; }
+
     private readonly IInferenceService _inference;
     private readonly GridService _gridSvc;
     private readonly SimulationEngine _engine;
@@ -53,14 +57,12 @@ public sealed class SimulationOrchestrator : IDisposable
     private readonly object _stateLock = new();
 
     public SimulationOrchestrator(
-        IDispatcher dispatcher,
         IInferenceService inference,
         GridService gridSvc,
         SimulationEngine engine,
         NarrativeService narrative,
         EvolutionClientService evolutionClient)
     {
-        _dispatcher = dispatcher;
         _inference = inference;
         _gridSvc = gridSvc;
         _engine = engine;
@@ -91,7 +93,10 @@ public sealed class SimulationOrchestrator : IDisposable
             .Select(t => new GridCoordinateDto(t.X, t.Y))
             .ToList();
 
-        _dispatcher.Dispatch(new SimulationInitialisedAction(
+        // Fire-and-forget: Initialize is the synchronous entry point off a button click,
+        // and the sink's work (open session log, start ambient audio) must not block the
+        // first heartbeat. This matches how Fluxor dispatched into the async effects.
+        _ = Sink?.OnInitialisedAsync(new SimulationInitialised(
             SessionId: _sessionId,
             Agents: MapAgents(),
             Rocks: rocks,
@@ -153,26 +158,27 @@ public sealed class SimulationOrchestrator : IDisposable
 
             _sessionLog.AddRange(heartbeats);
 
-            // 5. Dispatch per-death notifications (for audio)
+            // 5. Per-death notifications (for audio)
             foreach (var deadId in result.DiedThisTurn)
             {
                 var deadAgent = _agents.FirstOrDefault(a => a.Id == deadId);
-                if (deadAgent is not null)
-                    _dispatcher.Dispatch(new AgentDiedAction(deadId, deadAgent.Team.ToString()));
+                if (deadAgent is not null && Sink is not null)
+                    await Sink.OnAgentDiedAsync(new AgentDied(deadId, deadAgent.Team.ToString()));
             }
 
-            // 6. Dispatch heartbeat completed
+            // 6. Publish the completed turn
             string? outcome = result.Outcome?.ToString();
             string? winnerTeam = result.WinningTeam?.ToString();
 
-            _dispatcher.Dispatch(new HeartbeatCompletedAction(
-                TurnNumber: _turn,
-                Agents: MapAgents(),
-                FoodNodes: MapFoodNodes(),
-                NewEntries: newEntries,
-                Outcome: outcome,
-                WinningTeam: winnerTeam,
-                HeartbeatEvents: heartbeats));
+            if (Sink is not null)
+                await Sink.OnHeartbeatAsync(new HeartbeatCompleted(
+                    TurnNumber: _turn,
+                    Agents: MapAgents(),
+                    FoodNodes: MapFoodNodes(),
+                    NewEntries: newEntries,
+                    Outcome: outcome,
+                    WinningTeam: winnerTeam,
+                    HeartbeatEvents: heartbeats));
 
             // 7. If simulation ended, stop timer, record evolution, and generate narrative
             if (result.Outcome is not null)
@@ -494,9 +500,10 @@ public sealed class SimulationOrchestrator : IDisposable
         var narrative = _narrative.GenerateNarrative(
             outcome, winner?.ToString(), _sessionLog, agentSnapshots);
 
-        _dispatcher.Dispatch(new PostMortemReadyAction(
-            NarrativeText: narrative,
-            WinnerName: winner?.ToString()));
+        if (Sink is not null)
+            await Sink.OnPostMortemAsync(new PostMortemReady(
+                NarrativeText: narrative,
+                WinnerName: winner?.ToString()));
     }
 
     private IReadOnlyList<AgentDto> MapAgents() =>

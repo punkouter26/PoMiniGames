@@ -1,8 +1,8 @@
-@page "/posurvive"
+﻿@page "/posurvive"
 @page "/posurvive/{Mode}"
 @* PoSurvive intentionally uses its own `PoSurviveLayout` (C64 retro theme)
    instead of the standard `MainLayout` and renders without `GameShell`.
-   The opt-out is deliberate — its CRT-styled shell and Fluxor store are part of
+   The opt-out is deliberate — its CRT-styled shell and SurviveStore are part of
    the game's identity and pre-date the PoMiniGames shell contract. See AGENT.MD
    for the architectural decision log.
 
@@ -14,11 +14,8 @@
 @using PoMiniGamesClient.Games.PoSurvive.Services
 @using PoMiniGamesClient.Services
 @using PoMiniGamesClient.Games.PoSurvive.Store
-@inherits Fluxor.Blazor.Web.Components.FluxorComponent
+@inherits SurviveComponentBase
 @implements IDisposable
-@inject IDispatcher Dispatcher
-@inject IState<BootState>       BootState
-@inject IState<SimulationState> SimState
 @inject KioskCoordinator         Kiosk
 @inject GameStatsService         GameStats
 @inject PoMiniGamesClient.Games.PoSurvive.Services.SimulationLaunchService LaunchService
@@ -30,15 +27,14 @@
        just highlighted a [ START ] button in the command bar. The arena now
        launches on navigation (see OnAfterRender -> BootArenaAsync), falling back
        to degraded mode when no model is loaded so it never blocks on a download.
-       Model switching and [ RETURN TO BOOT ] still live on the command bar and
-       the /boot route. *@
+       Model switching lives on the command bar's Advanced drawer. *@
     <GridBoard />
 </div>
 
 @code {
     // The model picker / loader that used to live on this page went with the
-    // Mission Control screen (2026-07-16). Inference is configured on the /boot
-    // route and switched from the command bar's picker in PoSurviveLayout.
+    // Mission Control screen (2026-07-16). Inference is switched from the
+    // command bar's picker in PoSurviveLayout.
 
     // ── Demo (kiosk auto-cycle, mirrors PoCoupleQuiz demo pattern) ─────
     // Lands on /posurvive?demo=1, bypasses Mission Control, runs a
@@ -79,7 +75,7 @@
 
         if (_booted) return;
         // First render: kick off the simulation. Doing it here (vs OnInitialized)
-        // gives Fluxor a chance to subscribe state-change handlers before we
+        // gives the store a chance to subscribe state-change handlers before we
         // start dispatching.
         _booted = true;
 
@@ -95,8 +91,8 @@
 
         if (_isDemo)
         {
-            _lastShowPostMortem = SimState.Value.ShowPostMortem;
-            SimState.StateChanged += OnSimStateChanged;
+            _lastShowPostMortem = Store.Simulation.ShowPostMortem;
+            Store.Changed += OnSimStateChanged;
             _ = InvokeAsync(BootDemoAsync);
         }
         else
@@ -114,17 +110,17 @@
     {
         if (!CanLaunchSimulation)
         {
-            Dispatcher.Dispatch(new ContinueDegradedModeAction());
+            Store.ContinueDegradedMode();
             await Task.Yield();
         }
 
         var config = await LaunchService.BuildConfigAsync();
-        Dispatcher.Dispatch(new StartSimulationAction(
-            config, BootState.Value.IsMockProvider || BootState.Value.IsDegradedMode));
+        Store.StartSimulation(
+            config, Store.Boot.IsMockProvider || Store.Boot.IsDegradedMode);
     }
 
     private bool CanLaunchSimulation
-        => BootState.Value.IsReady || BootState.Value.IsDegradedMode;
+        => Store.Boot.IsReady || Store.Boot.IsDegradedMode;
 
     // ── Demo drivers ───────────────────────────────────────────────────
     // BootDemoAsync runs once when the demo page first renders. It:
@@ -132,8 +128,8 @@
     //      (no model download, mock inference; matches what the live
     //      degraded-mode play would do),
     //   2. cranks the heartbeat to 250ms so a match resolves in ~10-15s,
-    //   3. dispatches StartSimulationAction with a small deterministic
-    //      config (TeamSize 2, generous food spawn).
+    //   3. starts the simulation with a small deterministic config
+    //      (TeamSize 2, generous food spawn).
     // The state-change subscription (OnSimStateChanged) handles the
     // post-mortem → reset → re-launch cycle.
     private async Task BootDemoAsync()
@@ -141,17 +137,17 @@
         if (!_isDemo) return;
 
         // Force degraded mode so the layout renders the grid instead of
-        // Mission Control. BootReducers treats this as ready.
-        Dispatcher.Dispatch(new ContinueDegradedModeAction());
+        // Mission Control. The store treats degraded as ready.
+        Store.ContinueDegradedMode();
 
         // Crank speed — mock inference + tiny grid = much faster than the
         // default 900ms/turn. Keeps the demo snappy on the kiosk reel.
-        Dispatcher.Dispatch(new SpeedChangedAction(DemoHeartbeatMs));
+        Store.SetSpeed(DemoHeartbeatMs);
 
         await Task.Yield();
 
         var config = await LaunchService.BuildConfigAsync();
-        Dispatcher.Dispatch(new StartSimulationAction(config, IsMockProvider: true));
+        Store.StartSimulation(config, isMockProvider: true);
     }
 
     // State-change handler: when the simulation finishes and the
@@ -160,10 +156,10 @@
     // a fresh match starts. We track the previous value of ShowPostMortem
     // so the timer only fires on the false→true edge transition (not on
     // every state change while the overlay is up).
-    private void OnSimStateChanged(object? sender, EventArgs e)
+    private void OnSimStateChanged()
     {
         if (!_isDemo) return;
-        var showPostMortem = SimState.Value.ShowPostMortem;
+        var showPostMortem = Store.Simulation.ShowPostMortem;
         if (showPostMortem && !_lastShowPostMortem)
         {
             _demoLoopTimer?.Dispose();
@@ -184,24 +180,25 @@
 
         // Reset clears SimState (turn → 0, IsRunning → false, post-mortem
         // hidden), then we re-launch a fresh match.
-        Dispatcher.Dispatch(new ResetSimulationAction());
-        Dispatcher.Dispatch(new SpeedChangedAction(DemoHeartbeatMs));
+        Store.ResetSimulation();
+        Store.SetSpeed(DemoHeartbeatMs);
 
         await Task.Delay(DemoPreLaunchDelayMs);
         if (!_isDemo) return;
 
         var config = await LaunchService.BuildConfigAsync();
-        Dispatcher.Dispatch(new StartSimulationAction(config, IsMockProvider: true));
+        Store.StartSimulation(config, isMockProvider: true);
     }
 
-    public void Dispose()
+    public override void Dispose()
     {
+        base.Dispose();
         _demoLoopTimer?.Dispose();
         _demoLoopTimer = null;
         // Only the demo reel subscribes (for its post-mortem → relaunch loop).
         if (_isDemo && _booted)
         {
-            SimState.StateChanged -= OnSimStateChanged;
+            Store.Changed -= OnSimStateChanged;
         }
     }
 

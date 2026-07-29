@@ -77,15 +77,10 @@ namespace PoMiniGamesClient.Services;
 [JsonSerializable(typeof(PersonalityDnaDto))]
 [JsonSerializable(typeof(GridStateDto))]
 // PoSurvive — evolution
-[JsonSerializable(typeof(CrossoverRequestDto))]
+// Only /api/evolution/record survives on the client; the state/tree/summary and
+// evolve/crossover contexts went out with EvolutionLab and its server endpoints.
 [JsonSerializable(typeof(RecordEvolutionRequest))]
 [JsonSerializable(typeof(AgentEvolutionResult))]
-[JsonSerializable(typeof(EvolutionRequestDto))]
-[JsonSerializable(typeof(EvolutionStateDto))]
-[JsonSerializable(typeof(List<EvolutionStateDto>))]
-[JsonSerializable(typeof(EvolutionSummaryDto))]
-[JsonSerializable(typeof(EvolutionTreeDto))]
-[JsonSerializable(typeof(EvolutionTreeNodeDto))]
 internal partial class ApiJsonContext : JsonSerializerContext
 {
 }

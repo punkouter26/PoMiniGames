@@ -1,9 +1,7 @@
-@using PoMiniGamesClient.Games.PoSurvive.Store
+﻿@using PoMiniGamesClient.Games.PoSurvive.Store
 @using PoShared.Simulation.Models
 
-@inherits Fluxor.Blazor.Web.Components.FluxorComponent
-@inject IState<SimulationState> SimState
-@inject IDispatcher Dispatcher
+@inherits SurviveComponentBase
 @inject DecisionInsightService InsightService
 
 <section class="decision-inspector app-reveal" data-testid="decision-inspector">
@@ -19,7 +17,7 @@
                     @(IsChampion ? "★ Champion" : "☆ Champion")
                 </button>
             }
-            @if (SimState.Value.SelectedAgentId is not null)
+            @if (Store.Simulation.SelectedAgentId is not null)
             {
                 <button class="sv-btn decision-inspector__clear-follow"
                         @onclick="ClearFollow"
@@ -51,7 +49,7 @@
         </div>
 
         <p class="decision-inspector__summary">
-            @if (SimState.Value.SelectedAgentId is not null)
+            @if (Store.Simulation.SelectedAgentId is not null)
             {
                 <span>Following @CurrentEntry.AgentId. Event filter: @CurrentEventFilter.ToUpperInvariant().</span>
             }
@@ -139,42 +137,42 @@
 </section>
 
 @code {
-    private string CurrentEventFilter => string.IsNullOrWhiteSpace(SimState.Value.EventFilter)
+    private string CurrentEventFilter => string.IsNullOrWhiteSpace(Store.Simulation.EventFilter)
         ? "all"
-        : SimState.Value.EventFilter;
+        : Store.Simulation.EventFilter;
 
     private string PlainSummary => InsightService.BuildPlainSummary(CurrentAgent, CurrentEntry);
 
     private bool IsChampion
-        => CurrentAgent is not null && SimState.Value.ChampionAgentId == CurrentAgent.Id;
+        => CurrentAgent is not null && Store.Simulation.ChampionAgentId == CurrentAgent.Id;
 
     private void ToggleChampion()
-        => Dispatcher.Dispatch(new ChampionSelectedAction(IsChampion ? null : CurrentAgent?.Id));
+        => Store.SelectChampion(IsChampion ? null : CurrentAgent?.Id);
 
     private ConsoleEntry? CurrentEntry
     {
         get
         {
-            if (SimState.Value.ConsoleLog.Count == 0)
+            if (Store.Simulation.ConsoleLog.Count == 0)
                 return null;
 
-            if (SimState.Value.SelectedAgentId is not null)
-                return SimState.Value.ConsoleLog.LastOrDefault(e => e.AgentId == SimState.Value.SelectedAgentId)
-                       ?? SimState.Value.ConsoleLog.Last();
+            if (Store.Simulation.SelectedAgentId is not null)
+                return Store.Simulation.ConsoleLog.LastOrDefault(e => e.AgentId == Store.Simulation.SelectedAgentId)
+                       ?? Store.Simulation.ConsoleLog.Last();
 
-            return SimState.Value.ConsoleLog.Last();
+            return Store.Simulation.ConsoleLog.Last();
         }
     }
 
     private AgentDto? CurrentAgent
         => CurrentEntry is null
             ? null
-            : SimState.Value.Agents.FirstOrDefault(a => a.Id == CurrentEntry.AgentId);
+            : Store.Simulation.Agents.FirstOrDefault(a => a.Id == CurrentEntry.AgentId);
 
     private IReadOnlyList<ConsoleEntry> CurrentAgentHistory
         => CurrentEntry is null
             ? []
-            : SimState.Value.ConsoleLog
+            : Store.Simulation.ConsoleLog
                 .Where(e => e.AgentId == CurrentEntry.AgentId)
                 .TakeLast(5)
                 .ToList();
@@ -197,5 +195,5 @@
         => text.Length <= maxLen ? text : text[..(maxLen - 3)] + "...";
 
     private void ClearFollow()
-        => Dispatcher.Dispatch(new GodClickClearedAction());
+        => Store.ClearSelection();
 }

@@ -1,9 +1,6 @@
 namespace PoMiniGamesClient.Games.PoSurvive.Store;
 
-using Fluxor;
-
-/// <summary>Immutable state record for the boot sequence.</summary>
-[FeatureState]
+/// <summary>Immutable state record for the boot sequence. Owned by SurviveStore.</summary>
 public sealed record BootState
 {
     /// <summary>GPU label shown on boot screen: "ACCELERATED" or "CPU FALLBACK".</summary>

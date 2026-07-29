@@ -323,6 +323,11 @@ export class SportsGame {
 
   pickAnim(l, s) {
     if (this.phase === 'podium') return l.placing === this.lanes.length && this.lanes.length > 1 ? 'idle' : 'dance';
+    // Waiting to race — between legs, in the countdown, or already across the line while
+    // the rest of the field comes in. tickLane freezes a finished lane's speed at its
+    // crossing value and resetLane only runs when the next leg starts, so without this
+    // the speed-based picks below would keep the run cycle going on a standing runner.
+    if (this.phase !== 'racing' || s.finished) return 'idle';
     if (s.stumbling > 0) return 'hitreact';
     if (s.airborne > 0) return 'jump';
     if (s.speed > 3) return 'run';
@@ -358,7 +363,6 @@ export class SportsGame {
       const lift = jumpT > 0 ? Math.sin(jumpT * Math.PI) * h * 0.45 : 0;
       sprites.draw(this.renderer.ctx, l.character, anim, l.animTime, x, y - lift, h,
         { loop: anim !== 'jump' && anim !== 'hitreact' });
-      this.renderer.drawNameTag(l.name, x, y - h - lift - 4, l.human);
     });
 
     this.drawOverlay();

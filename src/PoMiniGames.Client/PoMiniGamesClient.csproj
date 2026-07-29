@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk.BlazorWebAssembly">
+﻿<Project Sdk="Microsoft.NET.Sdk.BlazorWebAssembly">
 
   <PropertyGroup>
     <!-- TFM / Nullable / ImplicitUsings inherited from Directory.Build.props.
@@ -52,7 +52,6 @@
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" PrivateAssets="all" />
     <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" />
     <PackageReference Include="Microsoft.AspNetCore.Components.Authorization" />
-    <PackageReference Include="Fluxor.Blazor.Web" />
   </ItemGroup>
 
   <ItemGroup>

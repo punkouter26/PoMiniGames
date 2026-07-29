@@ -1,23 +1,20 @@
-@using PoMiniGamesClient.Games.PoSurvive.Store
+﻿@using PoMiniGamesClient.Games.PoSurvive.Store
 @using PoMiniGamesClient.Components
 @using PoMiniGamesClient.Models
 
 @* PostMortemOverlay — the end-of-run screen, shown when the simulation ends. *@
-@inherits Fluxor.Blazor.Web.Components.FluxorComponent
-@inject IState<SimulationState> SimState
-@inject IDispatcher Dispatcher
-
+@inherits SurviveComponentBase
 @* 2026-07-16: this was a bespoke full-screen post-mortem with its own C64-styled
    overlay and a REVIEW / EXPORT / NEW SIMULATION button row — the one game that
    ended on something other than the shared modal, with no way back to the menu.
    It now renders the shared GameOverModal like every other game, so the styling
    and the single OK exit come from one place. PoSurvive still can't host
-   GameShell (its own layout + Fluxor store — see the note atop PoSurvivePage),
+   GameShell (its own layout + SurviveStore — see the note atop PoSurvivePage),
    which is exactly why the modal is a standalone component.
 
    No GameKey: PoSurvive is a simulation with no score, so it has no leaderboard
    and the modal simply omits the top-3 section. *@
-@if (SimState.Value.ShowPostMortem)
+@if (Store.Simulation.ShowPostMortem)
 {
     <div data-testid="postmortem-overlay">
         <GameOverModal Title="@TitleContent"
@@ -33,11 +30,11 @@
 
     private RenderFragment SummaryContent => @<div>
         <div>
-            @(SimState.Value.Outcome == "Draw"
+            @(Store.Simulation.Outcome == "Draw"
                 ? "⚠ Draw — no survivors"
-                : $"Victory: {SimState.Value.WinningTeam?.ToUpperInvariant()} faction")
+                : $"Victory: {Store.Simulation.WinningTeam?.ToUpperInvariant()} faction")
         </div>
-        <div>@SimState.Value.NarrativeText</div>
+        <div>@Store.Simulation.NarrativeText</div>
     </div>;
 
     // The old overlay carried a full per-agent standings table (ID/TEAM/HP/KILLS/
@@ -46,12 +43,12 @@
     // grid behind the modal.
     private List<StatItem> StatItems =>
     [
-        new StatItem { Value = SimState.Value.TurnNumber.ToString(), Label = "Turns" },
-        new StatItem { Value = SimState.Value.Agents.Sum(a => a.KillCount).ToString(), Label = "Kills" },
-        new StatItem { Value = SimState.Value.Agents.Count(a => a.Hp > 0).ToString(), Label = "Survivors" },
+        new StatItem { Value = Store.Simulation.TurnNumber.ToString(), Label = "Turns" },
+        new StatItem { Value = Store.Simulation.Agents.Sum(a => a.KillCount).ToString(), Label = "Kills" },
+        new StatItem { Value = Store.Simulation.Agents.Count(a => a.Hp > 0).ToString(), Label = "Survivors" },
     ];
 
     // Clear the run before OK navigates home, so the store doesn't come back with
     // the post-mortem still showing.
-    private void ResetSimulation() => Dispatcher.Dispatch(new ResetSimulationAction());
+    private void ResetSimulation() => Store.ResetSimulation();
 }

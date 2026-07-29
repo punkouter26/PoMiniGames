@@ -74,15 +74,6 @@ window.audioEngine = (() => {
         return _ctx;
     }
 
-    // Unlock AudioContext on user gesture (T075 boot unlock hook)
-    function unlockAudio() {
-        const ctx = getContext();
-        if (!ctx) return;
-        if (ctx.state === 'suspended') {
-            ctx.resume().catch(() => {});
-        }
-    }
-
     /**
      * Play a sound effect.
      * @param {string} eventType - "forage" | "combat" | "death"
@@ -402,84 +393,6 @@ window.audioEngine = (() => {
         });
     }
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // SOUNDTRACK COMPOSER: Layer Volume Control
-    // ═══════════════════════════════════════════════════════════════════════
-
-    /**
-     * Set volume for a specific audio layer.
-     * @param {string} layer - "ambient" | "combat" | "fanfare" | "master"
-     * @param {number} volume - 0..1
-     */
-    function setLayerVolume(layer, volume) {
-        const ctx = getContext();
-        if (!ctx) return;
-        const v = Math.max(0, Math.min(1, volume));
-
-        const now = ctx.currentTime;
-        switch (layer) {
-            case 'ambient':
-                if (_ambientGain) _ambientGain.gain.setValueAtTime(v, now);
-                break;
-            case 'combat':
-                if (_combatGain) _combatGain.gain.setValueAtTime(v, now);
-                break;
-            case 'fanfare':
-                if (_fanfareGain) _fanfareGain.gain.setValueAtTime(v, now);
-                break;
-            case 'master':
-                if (_masterGain) _masterGain.gain.setValueAtTime(v, now);
-                break;
-        }
-    }
-
-    /** Get the current volume for a layer. */
-    function getLayerVolume(layer) {
-        switch (layer) {
-            case 'ambient': return _ambientGain ? _ambientGain.gain.value : 0;
-            case 'combat':  return _combatGain  ? _combatGain.gain.value  : 0;
-            case 'fanfare': return _fanfareGain ? _fanfareGain.gain.value : 0;
-            case 'master':  return _masterGain  ? _masterGain.gain.value  : 0;
-            default:        return 0;
-        }
-    }
-
-    // ═══════════════════════════════════════════════════════════════════════
-    // SOUNDTRACK COMPOSER: Preset Themes
-    // ═══════════════════════════════════════════════════════════════════════
-
-    /**
-     * Switch the soundtrack theme.
-     * Restarts ambient and heartbeat with the new theme parameters.
-     * @param {string} theme - "tense" | "calm" | "epic"
-     */
-    function setTheme(theme) {
-        if (!THEMES[theme]) return;
-        _currentTheme = theme;
-
-        // Restart ambient if running
-        if (_isAmbientRunning) {
-            stopAmbientInternal();
-            startAmbient();
-        }
-        // Restart heartbeat if running
-        if (_isHeartbeatRunning) {
-            const savedIntensity = _currentIntensity;
-            stopHeartbeatInternal();
-            startHeartbeat(savedIntensity);
-        }
-    }
-
-    /** Get the current theme name. */
-    function getTheme() {
-        return _currentTheme;
-    }
-
-    /** Get all available theme names. */
-    function getAvailableThemes() {
-        return Object.keys(THEMES);
-    }
-
     /**
      * Set dynamic intensity based on simulation state.
      * Scales heartbeat and ambient gain based on combat activity.
@@ -514,35 +427,27 @@ window.audioEngine = (() => {
     // PUBLIC API
     // ═══════════════════════════════════════════════════════════════════════
 
+    // Exactly the surface AudioService calls. The mixer/theme API (setLayerVolume,
+    // get/setTheme, getAvailableThemes, is*Running, setHeartbeatIntensity, unlockAudio)
+    // went out with the SoundtrackControl panel; setHeartbeatIntensity stays as an
+    // internal helper because setDynamicIntensity still drives it.
     return {
-        // Original SFX API
         play,
-        unlockAudio,
 
-        // Soundtrack Composer — Ambient
+        // Ambient
         startAmbient,
         stopAmbient,
-        isAmbientRunning: () => _isAmbientRunning,
 
-        // Soundtrack Composer — Heartbeat
+        // Heartbeat
         startHeartbeat,
         stopHeartbeat,
-        setHeartbeatIntensity,
-        isHeartbeatRunning: () => _isHeartbeatRunning,
 
-        // Soundtrack Composer — Fanfares
+        // Fanfares
         playVictoryFanfare,
         playDefeatFanfare,
 
-        // Soundtrack Composer — Layer control
-        setLayerVolume,
-        getLayerVolume,
+        // Dynamic intensity (scaled per turn from combat activity)
         setDynamicIntensity,
-
-        // Soundtrack Composer — Themes
-        setTheme,
-        getTheme,
-        getAvailableThemes,
     };
 })();
 

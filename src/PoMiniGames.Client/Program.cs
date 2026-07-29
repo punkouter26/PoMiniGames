@@ -1,4 +1,3 @@
-using Fluxor;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
@@ -10,6 +9,7 @@ using PoMiniGamesClient.Games.PoRacer;
 using PoMiniGamesClient.Services;
 using PoMiniGames.Application.Simulation;
 using PoMiniGamesClient.Games.PoSurvive.Services;
+using PoMiniGamesClient.Games.PoSurvive.Store;
 using PoShared.Simulation.Interfaces;
 
 var builder = WebAssemblyHostBuilder.CreateDefault(args);
@@ -118,9 +118,9 @@ builder.Services.AddScoped<PoMiniGamesClient.Games.PoJoker.IJokerAudioService,
 builder.Services.AddSingleton<PoShared.Games.PoJoker.PerformanceSettings>();
 
 // ─── PoSurvive (agent survival simulation) ───────────────────────────
-// Fluxor (Redux) state management — scans this client assembly for the
-// PoSurvive feature states, reducers, and effects copied under Games/PoSurvive.
-builder.Services.AddFluxor(options => options.ScanAssemblies(typeof(Program).Assembly));
+// State lives in SurviveStore — a plain observable store. This replaced Fluxor, whose
+// assembly scan, action/reducer/effect files, and package reference existed for this
+// one slice; no other game used it.
 
 // Simulation logic (runs in-browser via WASM).
 builder.Services.AddSingleton<CombatService>();
@@ -128,8 +128,11 @@ builder.Services.AddSingleton<HungerService>();
 builder.Services.AddSingleton<GridService>();
 builder.Services.AddSingleton<NarrativeService>();
 builder.Services.AddSingleton<SimulationEngine>();
-// Scoped because it injects Fluxor.IDispatcher (Scoped). In WASM, Scoped == app lifetime.
+// Scoped == app lifetime in WASM. The store assigns itself as the orchestrator's sink,
+// so both must share a lifetime.
 builder.Services.AddScoped<SimulationOrchestrator>();
+builder.Services.AddScoped<AudioCues>();
+builder.Services.AddScoped<SurviveStore>();
 
 // PoSurvive client-only services.
 builder.Services.AddScoped<SessionLogService>();
@@ -144,24 +147,12 @@ builder.Services.AddScoped<EvolutionClientService>();
 var useMock = !bool.TryParse(builder.Configuration["Inference:UseMock"], out var _b0) || _b0;
 if (useMock)
 {
+    // Mock mode registers NO InferenceRouter. It previously registered one built from
+    // a WebLlmInferenceService(null!) and a RemoteRelayInferenceService pointed at
+    // http://localhost:0 — two deliberately unusable children, constructed only so the
+    // layout's `@inject InferenceRouter` would resolve. The layout now asks for the
+    // router optionally (GetService), which is what "may not exist" actually means.
     builder.Services.AddSingleton<IInferenceService, MockInferenceService>();
-    // BUG FIX (audit #2): InferenceRouter is now always registered so
-    // PoSurvivePage.InferenceRouterOrNull resolves cleanly in both modes.
-    // In mock mode the router's children (WebLlm + RemoteRelay) are never
-    // invoked because PoSurvivePage uses only IInferenceService for actual
-    // infer calls and InferenceRouter for the "Use local / Use remote"
-    // toggle UI. The router below constructs its OWN child instances, so no
-    // separate WebLlmInferenceService / RemoteRelayInferenceService singletons
-    // are registered in this branch (they were dead — nothing resolved them).
-    builder.Services.AddSingleton<InferenceRouter>(_ =>
-        new InferenceRouter(
-            new WebLlmInferenceService(
-                null!,
-                inferenceTimeoutMs: 1,
-                maxRetryAttempts: 0,
-                retryDelayMs: 0,
-                retryOnCancellation: false),
-            new RemoteRelayInferenceService(new HttpClient { BaseAddress = new Uri("http://localhost:0") })));
 }
 else
 {
@@ -192,9 +183,6 @@ var host = builder.Build();
 
 // Initialize LocalStorageService with the JS runtime so all localStorage operations work
 LocalStorageService.SetJSRuntime(host.Services.GetRequiredService<IJSRuntime>());
-
-// Fluxor requires explicit store initialisation before any action is dispatched.
-await host.Services.GetRequiredService<IStore>().InitializeAsync();
 
 // §Cross-origin credentials patch: must run before any HttpClient is used
 // (i.e. before any component renders), so we install it right after Build

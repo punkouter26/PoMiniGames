@@ -1,0 +1,124 @@
+<!--@STYLE-->
+<title>PoMiniGames · Slice isolation</title>
+<div class="shell">
+<header class="top">
+  <div class="brand"><span class="dot"></span>PoMiniGames · DOCS</div>
+  <div class="crumbs"><a href="index.html">index</a><span class="sep">›</span>Slice isolation</div>
+  <div class="spacer"></div>
+  <button class="toggle" aria-label="toggle theme">◑ dark</button>
+</header>
+<main>
+  <h1>Slice isolation report</h1>
+  <p class="muted">Audit of every <code>ProjectReference</code> edge in the solution plus a verdict on each one, the shared DTO surface (<code>PoShared</code>), and a hunt for layer leaks.</p>
+
+  <div class="tiles">
+    <div class="tile"><div class="label">Source projects</div><div class="value">6</div><div class="sub">Domain · Shared · Application · Infrastructure · PoMiniGames (web) · Client</div></div>
+    <div class="tile"><div class="label">Test projects</div><div class="value">5</div><div class="sub">Unit · Integration · E2EAPI · E2EUI · Shared</div></div>
+    <div class="tile"><div class="label">ProjectReference edges</div><div class="value">10</div><div class="sub">no test → src reference except via Web host</div></div>
+    <div class="tile"><div class="label">Layer leaks</div><div class="value"><span class="chip good">None</span></div><div class="sub">Client has no Infrastructure reference; Domain has no upward refs</div></div>
+  </div>
+
+  <!-- ── Dependency graph ────────────────────────────────────────────── -->
+  <div class="sec">
+    <h2>1. ProjectReference graph</h2>
+    <div class="card">
+      <!--@SVG:slice-graph-->
+    </div>
+  </div>
+
+  <!-- ── Edge-by-edge verdicts ───────────────────────────────────────── -->
+  <div class="sec">
+    <h2>2. Every edge, with verdict</h2>
+
+    <div class="card">
+      <table class="tbl">
+        <thead>
+          <tr><th>From → To</th><th>Reason declared in <code>.csproj</code></th><th>Verdict</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Domain → (none)</td><td>Domain primitives must depend on nothing.</td><td><span class="chip good">correct · leaf</span></td></tr>
+          <tr><td>PoShared → (none)</td><td>PoShared is the shared contract surface (DTOs, Identity, Constants, IMockable, Interfaces).</td><td><span class="chip good">correct · leaf</span></td></tr>
+          <tr><td>Application → Domain</td><td>Domain primitives used by application services.</td><td><span class="chip good">correct · inward only</span></td></tr>
+          <tr><td>Application → PoShared</td><td>Application services use shared DTOs.</td><td><span class="chip good">correct</span></td></tr>
+          <tr><td>Infrastructure → Application</td><td>StorageService, HighScoreDescriptor, TelemetryExtensions all depend on application interfaces.</td><td><span class="chip good">correct · inward only</span></td></tr>
+          <tr><td>Infrastructure → Domain</td><td>EloCalculator lives in Domain.</td><td><span class="chip good">correct</span></td></tr>
+          <tr><td>Infrastructure → PoShared</td><td>Shared DTOs, Identity, SecretMasker.</td><td><span class="chip good">correct</span></td></tr>
+          <tr><td>PoMiniGames (web) → PoShared</td><td>Identity constants, shared DTOs.</td><td><span class="chip good">correct</span></td></tr>
+          <tr><td>PoMiniGames (web) → Application</td><td>Web host composes application services.</td><td><span class="chip good">correct · composition root</span></td></tr>
+          <tr><td>PoMiniGames (web) → Infrastructure</td><td>Web host composes infrastructure extensions.</td><td><span class="chip good">correct · composition root</span></td></tr>
+          <tr><td>Client → PoShared</td><td>Blazor client uses shared DTOs to talk to the API.</td><td><span class="chip good">correct</span></td></tr>
+          <tr><td>Client → Application</td><td>Client uses application interfaces (e.g. <code>IStorageService</code> for type-driven projections).</td><td><span class="chip good">correct</span></td></tr>
+          <tr><td>Client → Infrastructure</td><td>— <em>not present</em></td><td><span class="chip good">absent · clean boundary</span></td></tr>
+          <tr><td>Tests/Unit → PoMiniGames (web)</td><td>The unit tier runs against the web host for endpoint registration smoke checks.</td><td><span class="chip warn">allowed · test-only</span></td></tr>
+          <tr><td>Tests/Integration/E2EAPI/E2EUI → PoMiniGames (web)</td><td>Boot the host with <code>WebApplicationFactory</code>.</td><td><span class="chip warn">allowed · test-only</span></td></tr>
+          <tr><td>Tests/Shared → (none, exposes helpers via PoMiniGames.TestUtilities)</td><td>Test budget guard + fixtures.</td><td><span class="chip good">test-only helper</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ── Shared DTO surface ─────────────────────────────────────────── -->
+  <div class="sec">
+    <h2>3. Shared DTO surface (PoShared)</h2>
+    <p class="lede"><code>PoShared</code> is a leaf project that every other project depends on. Its contents are deliberately minimal: types that have to cross the wire or the project boundary, plus shared markers.</p>
+
+    <div class="dual">
+      <div class="card">
+        <h3>3.1 Types</h3>
+        <table class="tbl">
+          <thead><tr><th>Folder</th><th>Representative types</th><th>Used by</th></tr></thead>
+          <tbody>
+            <tr><td><code>PoShared/Constants/</code></td><td>game-key constants</td><td>everywhere</td></tr>
+            <tr><td><code>PoShared/Diagnostics/</code></td><td><code>SecretMasker</code></td><td>Application + Web</td></tr>
+            <tr><td><code>PoShared/Games/</code></td><td><code>PoRacerShared.cs</code> · <code>PoSportsShared.cs</code> · <code>PoJoker/*</code></td><td>Web + Client (lobby state, hub contracts)</td></tr>
+            <tr><td><code>PoShared/Identity/</code></td><td><code>PoMiniGamesIdentity { SolutionName, AppPrefix, HttpPort, HttpsPort }</code></td><td>Web (diag) + future automation</td></tr>
+            <tr><td><code>PoShared/Interfaces/</code></td><td><code>IMockable</code> · <code>IInferenceService</code></td><td>Web (mockables) + Client (inference backends)</td></tr>
+            <tr><td><code>PoShared/Models/</code></td><td>DTOs that flow over SignalR or HTTP</td><td>Web + Client</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="card">
+        <h3>3.2 Risk surface</h3>
+        <p class="muted">Because every project reads <code>PoShared</code>, anything added here immediately becomes a public contract for the whole solution. Today's contents are small and contract-shaped (DTOs, marker interfaces, identity constants). The risk surface to monitor:</p>
+        <ul>
+          <li>Adding logic to <code>PoShared</code> (anything beyond types &amp; constants) breaks the leaf property.</li>
+          <li>Adding dependencies to <code>PoShared</code>'s <code>.csproj</code> drags them into every consumer — keep it transitive-clean.</li>
+          <li><code>PoShared/Games/PoRacerShared.cs</code> &amp; <code>PoSportsShared.cs</code> are read by both Web (hub) and Client (state binding) — schema changes are wire changes.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Layer leak hunt ─────────────────────────────────────────────── -->
+  <div class="sec">
+    <h2>4. Layer leak hunt</h2>
+    <div class="card">
+      <table class="tbl">
+        <thead>
+          <tr><th>Hypothesis</th><th>How we checked</th><th>Verdict</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Client references Infrastructure (i.e. <code>StorageService</code>, <code>AIFoundryClientFactory</code>) and uses it from the SPA.</td><td>grep <code>PoMiniGames.Infrastructure</code> in <code>src/PoMiniGames.Client/**/*.cs</code> — no hits. <code>PoMiniGamesClient.csproj</code> lists <code>PoShared</code> + <code>PoMiniGames.Application</code> only.</td><td><span class="chip good">no leak</span></td></tr>
+          <tr><td>Domain has any upward reference.</td><td><code>PoMiniGames.Domain.csproj</code> lists zero <code>ProjectReference</code>s.</td><td><span class="chip good">no leak</span></td></tr>
+          <tr><td>PoShared has any dependency.</td><td><code>PoShared.csproj</code> lists zero <code>ProjectReference</code>s.</td><td><span class="chip good">no leak</span></td></tr>
+          <tr><td>Application references Infrastructure.</td><td><code>PoMiniGames.Application.csproj</code> lists <code>Domain</code> + <code>PoShared</code> only.</td><td><span class="chip good">no leak</span></td></tr>
+          <tr><td>An <code>Features/*</code> slice accidentally consumes Infrastructure directly.</td><td>grep for <code>using PoMiniGames.Infrastructure</code> across <code>Features/**/*.cs</code>. The only hits are within <code>EndpointRouteExtensions.cs</code> itself (the composition root) and across Infrastructure-internal code.</td><td><span class="chip good">no leak</span></td></tr>
+          <tr><td>A test project bypasses the Web host and references <code>PoShared</code> or <code>Application</code> directly (skirting the composition root).</td><td>All four test projects reference the Web host only, plus the <code>tests/Shared</code> helper assembly.</td><td><span class="chip good">no leak</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="callout good">
+      <h4>Verdict · clean VSA, no layer leaks</h4>
+      <p>The dependency graph is a DAG with <code>Domain</code> and <code>PoShared</code> as leaves. The only "upward" references are the composition root in the Web host, which is the intended pattern. There are no test shortcuts around <code>PoMiniGames</code>; every test tier boots the host (Unit fast in-process, Integration through <code>TestWebApplicationFactory</code>, E2E through real HTTP).</p>
+    </div>
+  </div>
+</main>
+<footer>
+  <div>PoMiniGames DOCS · self-contained · dark/light themes · no CDN</div>
+  <div class="build">build: 2026-07-29</div>
+</footer>
+</div>
+<!--@SHELL-->

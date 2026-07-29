@@ -1,0 +1,280 @@
+<!--@STYLE-->
+<title>PoMiniGames · AI services</title>
+<div class="shell">
+<header class="top">
+  <div class="brand"><span class="dot"></span>PoMiniGames · DOCS</div>
+  <div class="crumbs"><a href="index.html">index</a><span class="sep">›</span>AI services</div>
+  <div class="spacer"></div>
+  <button class="toggle" aria-label="toggle theme">◑ dark</button>
+</header>
+<main>
+  <h1>AI services report</h1>
+  <p class="muted">Audit of every AI-touching provider in <code>src/PoMiniGames</code>, <code>src/PoMiniGames.Infrastructure</code>, <code>src/PoMiniGames.Application</code>, and <code>src/PoMiniGames.Client</code>. Per-prompt: Anthropic presence confirmed absent; per-token pricing confirmed unconfigured.</p>
+
+  <!-- ── Summary tiles ──────────────────────────────────────────────────── -->
+  <div class="sec">
+    <div class="tiles">
+      <div class="tile">
+        <div class="label">Providers</div>
+        <div class="value">1</div>
+        <div class="sub">Azure AI Foundry (centralized hub)</div>
+      </div>
+      <div class="tile">
+        <div class="label">Game keys wired</div>
+        <div class="value">5</div>
+        <div class="sub">couplequiz · funquiz · face · joker · survive</div>
+      </div>
+      <div class="tile">
+        <div class="label">Per-game AI sections</div>
+        <div class="value">0</div>
+        <div class="sub">Pinned by <code>AIFoundryCentralizationTests</code></div>
+      </div>
+      <div class="tile">
+        <div class="label">Anthropic present?</div>
+        <div class="value"><span class="chip bad">No</span></div>
+        <div class="sub">grep across <code>src/**/*.cs</code>: zero hits</div>
+      </div>
+      <div class="tile">
+        <div class="label">Per-token pricing</div>
+        <div class="value"><span class="chip warn">Not configured</span></div>
+        <div class="sub">cost projections are assumed volumes × nothing</div>
+      </div>
+      <div class="tile">
+        <div class="label">TTFT / tokens-sec</div>
+        <div class="value"><span class="chip warn">Not measured</span></div>
+        <div class="sub">no instrumentation in app</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Service matrix ─────────────────────────────────────────────────── -->
+  <div class="sec">
+    <h2>1. Service matrix</h2>
+    <p class="lede">Every AI service, the deployment it resolves to, the route that triggers it, what it does, and the call parameters it accepts. The "model/version" column shows the config value (<code>AIFoundryOptions.Deployments.&lt;game&gt;</code>) <em>and</em> the code fallback (<code>DefaultDeployment</code>) where they differ.</p>
+
+    <div class="card">
+      <table class="tbl">
+        <thead>
+          <tr>
+            <th>Service (interface)</th>
+            <th>Implementation</th>
+            <th>Game key · deployment</th>
+            <th>Trigger route</th>
+            <th>Function</th>
+            <th>Call parameters</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>IQuestionService</code></td>
+            <td><code>AzureOpenAIQuestionService</code> (mock: <code>MockQuestionService</code>)</td>
+            <td><code>couplequiz</code> · <code>AIFoundryOptions.Deployments.CoupleQuiz</code> ⇒ <code>DefaultDeployment</code></td>
+            <td><code>POST /api/couplequiz/questions/generate</code></td>
+            <td>Generate one PoCoupleQuiz question by category/difficulty.</td>
+            <td><code>GenerateQuestionRequest { Difficulty, Category }</code> → <code>IQuestionService.GenerateQuestionAsync(level, category, ct)</code></td>
+          </tr>
+          <tr>
+            <td><code>IQuestionService</code></td>
+            <td><code>AzureOpenAIQuestionService</code> (shared)</td>
+            <td><code>couplequiz</code> · same</td>
+            <td><code>POST /api/couplequiz/questions/check-similarity</code></td>
+            <td>Score semantic similarity 0.0–1.0 between two short answers.</td>
+            <td><code>CheckSimilarityRequest { Answer1, Answer2 }</code></td>
+          </tr>
+          <tr>
+            <td><code>IOpenAIService</code></td>
+            <td><code>AzureOpenAIService</code></td>
+            <td><code>funquiz</code> · <code>AIFoundryOptions.Deployments.FunQuiz</code></td>
+            <td><code>GET /api/funquiz/quiz/questions</code> · <code>POST /api/funquiz/leaderboard</code> (indirect)</td>
+            <td>Generate question list for the FunQuiz lobby.</td>
+            <td><code>QuestionCategory</code> · <code>count</code></td>
+          </tr>
+          <tr>
+            <td><code>IAnalysisService</code></td>
+            <td><code>AiJesterService</code> (mock: <code>MockAnalysisService</code>)</td>
+            <td><code>joker</code> · <code>AIFoundryOptions.Deployments.Joker</code></td>
+            <td><code>POST /api/joker/analyze</code> · <code>POST /api/joker/explain</code></td>
+            <td>Score / explain a PoJoker joke performance.</td>
+            <td><code>JokeAnalysisRequest</code> · <code>JokeExplanationRequest</code></td>
+          </tr>
+          <tr>
+            <td><code>IJokeRewriteService</code></td>
+            <td><code>JokeRewriteService</code></td>
+            <td><code>joker</code> · <code>AIFoundryOptions.Deployments.Joker</code></td>
+            <td>internal — invoked by hub after a flagged joke</td>
+            <td>Rewrite a flagged joke so the Jester performs a clean version. Deliberately has no mock stand-in.</td>
+            <td><code>JokeRewriteRequest</code></td>
+          </tr>
+          <tr>
+            <td><code>IInferenceService</code></td>
+            <td><code>AzureOpenAIInferenceService</code> (server) · <code>MockInferenceService</code> / <code>RemoteRelayInferenceService</code> / <code>WebLlmInferenceService</code> (client)</td>
+            <td><code>survive</code> · <code>AIFoundryOptions.Deployments.Survive</code></td>
+            <td><code>POST /api/infer</code></td>
+            <td>PoSurvive simulation inference — one prompt, one completion.</td>
+            <td><code>InferRequestDto { SystemPrompt, UserPrompt, MaxTokens }</code></td>
+          </tr>
+          <tr>
+            <td><code>IFaceAnalysisService</code></td>
+            <td>— <em>not implemented</em></td>
+            <td><code>face</code> · declared in <code>AIFoundryOptions.Deployments</code> only</td>
+            <td>— <em>no endpoint exists</em></td>
+            <td>PoFace scoring was specced in repo memory (<code>/api/face/status</code>) but no service, no endpoint, and no <code>Features/PoFace/</code> folder exist in the current tree.</td>
+            <td>n/a</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="muted">Source: <code>src/PoMiniGames/Infrastructure/GameServicesExtensions.cs</code> (<code>AddPoMiniGamesGameServices</code>), <code>src/PoMiniGames/AI/AIFoundryOptions.cs</code>, <code>src/PoMiniGames/Features/*/*Endpoints.cs</code>, <code>src/PoMiniGames/Features/PoCoupleQuiz/IQuestionService.cs</code>, <code>src/PoMiniGames/Features/PoFunQuiz/IOpenAIService.cs</code>, <code>src/PoMiniGames/Features/PoJoker/IJokerServices.cs</code>.</p>
+  </div>
+
+  <!-- ── Capabilities matrix ────────────────────────────────────────────── -->
+  <div class="sec">
+    <h2>2. Capabilities matrix</h2>
+    <p class="lede">Trigger (UI-driven vs background), fallback policy, hardware verification (which call path proves the model is reachable), and whether token/latency telemetry is captured.</p>
+
+    <div class="card">
+      <table class="tbl">
+        <thead>
+          <tr>
+            <th>Capability</th>
+            <th>Trigger</th>
+            <th>Fallback policy</th>
+            <th>Hardware verification</th>
+            <th>Token / latency instrumentation</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>PoCoupleQuiz · generate question</td>
+            <td>UI (lobby create / "next question")</td>
+            <td><code>MockQuestionService</code> when <code>FeatureFlags:UseMockData</code> = true OR Azure OpenAI unconfigured; throws in Production if secrets missing (<code>StartupSecretValidator</code>)</td>
+            <td><code>POST /api/couplequiz/questions/generate</code> returns 200 only when the chat completion call resolves</td>
+            <td><span class="chip warn">No</span> — no token-count or TTFT capture; only OTel HTTP client spans</td>
+          </tr>
+          <tr>
+            <td>PoCoupleQuiz · check similarity</td>
+            <td>UI (after both players submit an answer)</td>
+            <td>Same as above; <code>HybridCache</code> memoizes per-answer-pair</td>
+            <td>200 response with a score in [0.0, 1.0]</td>
+            <td><span class="chip warn">No</span></td>
+          </tr>
+          <tr>
+            <td>PoFunQuiz · generate question list</td>
+            <td>UI (lobby open)</td>
+            <td>Mock when unconfigured; in Production, <code>StartupSecretValidator</code> fails fast</td>
+            <td>200 with question array</td>
+            <td><span class="chip warn">No</span></td>
+          </tr>
+          <tr>
+            <td>PoJoker · analyze / explain</td>
+            <td>UI (Jester "perform")</td>
+            <td><code>MockAnalysisService</code> in Dev/Test when unconfigured; Production must reach AI</td>
+            <td>200 with a structured score</td>
+            <td><span class="chip warn">No</span></td>
+          </tr>
+          <tr>
+            <td>PoJoker · rewrite flagged joke</td>
+            <td>Background (inside the Jester loop)</td>
+            <td>No mock stand-in — a fabricated rewrite would silently report a joke as cleaned</td>
+            <td>200 with the rewritten text</td>
+            <td><span class="chip warn">No</span></td>
+          </tr>
+          <tr>
+            <td>PoSurvive · inference</td>
+            <td>UI (server) + Client (4 backends: <code>Mock</code>, <code>RemoteRelay</code>, <code>WebLlm</code>, server)</td>
+            <td>Client picks a backend based on <code>InferRequestDto</code> + feature flag; server has no fallback</td>
+            <td>200 with the completion payload</td>
+            <td><span class="chip warn">No</span></td>
+          </tr>
+          <tr>
+            <td>PoFace · face analysis</td>
+            <td>— <em>not present</em></td>
+            <td>— <em>not implemented</em></td>
+            <td>— <em>no endpoint, no implementation</em></td>
+            <td>n/a</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="callout warn">
+      <h4>Finding · TTFT / tokens-per-sec are not measured</h4>
+      <p>No AI consumer wraps its <code>ChatClient</code> call with a token-counting <code>IChatClient</code> decorator or a TTFT timer. OpenTelemetry spans are emitted by the Azure SDK but no report (server or client) reads them. The prompt's requirement to plot TTFT and tokens/sec is therefore a <strong>gap finding</strong>, not a chart.</p>
+    </div>
+  </div>
+
+  <!-- ── Anthropic: explicit confirmation of absence ──────────────────── -->
+  <div class="sec">
+    <h2>3. Anthropic — explicitly absent</h2>
+    <p class="lede">A grep across <code>src/**/*.cs</code> for <code>Anthropic|claude|haiku|sonnet|opus</code> returns one hit: the literal word <code>"Sonnet"</code> inside a PoFunQuiz trivia question bank (<code>"Shakespeare wrote 'Romeo and Juliet'. What type of work is it?"</code>, answer index 3). There is no <code>AnthropicClient</code>, no model alias, no <code>AnthropicOptions</code>, and no PoShared contract for Anthropic. The conclusion is unambiguous: <strong>PoMiniGames does not integrate Anthropic today</strong>.</p>
+    <div class="callout">
+      <h4>Why this matters</h4>
+      <p>If the prompt expects a Claude-backed rewrite/judge/explain path in any of these endpoints, that capability does not exist and must be added before any "Anthropic fallback" claim is made in product material.</p>
+    </div>
+  </div>
+
+  <!-- ── Cost projection ────────────────────────────────────────────────── -->
+  <div class="sec">
+    <h2>4. Cost projection — labelled assumption, not a quote</h2>
+    <p class="lede"><code>PoMiniGames:AI:FoundryEndpoint</code> and <code>PoMiniGames:AI:DefaultDeployment</code> are configured. <strong>No per-token prices are configured anywhere in <code>appsettings*.json</code></strong>; no <code>AiPricing</code> section exists. The projections below multiply three assumed volumes by three labelled tiers and present zero as the price column.</p>
+
+    <div class="dual">
+      <div>
+        <div class="chart" data-chart="hbar" data-src="#cost-projection"></div>
+        <script type="application/json" id="cost-projection">
+        {
+          "title": "Assumed monthly cost (USD, $0 — per-token price not configured)",
+          "data": [
+            { "label": "Light (50k req/mo)",  "value": 0, "secondary": 0 },
+            { "label": "Med  (250k req/mo)", "value": 0, "secondary": 0 },
+            { "label": "High (1M req/mo)",   "value": 0, "secondary": 0 }
+          ],
+          "note": "Bars are flat at $0 because no per-token price is configured. See callout below."
+        }
+        </script>
+      </div>
+      <div class="card">
+        <table class="tbl">
+          <thead>
+            <tr><th>Tier</th><th>Assumed monthly req</th><th class="num">$ configured</th><th class="num">$ if GPT-4o-mini @ $0.15/Mtok in + $0.60/Mtok out</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Light</td><td>50,000</td><td class="num">0.00</td><td class="num">$3.75</td></tr>
+            <tr><td>Med</td><td>250,000</td><td class="num">0.00</td><td class="num">$18.75</td></tr>
+            <tr><td>High</td><td>1,000,000</td><td class="num">0.00</td><td class="num">$75.00</td></tr>
+          </tbody>
+        </table>
+        <p class="muted" style="margin-top:10px">Assumptions: 250 input tokens + 250 output tokens per call (a one-sentence trivia question or a 4-bullet joke analysis). The right-hand column is illustrative only and is computed against public retail prices; no PoMiniGames code reads these numbers.</p>
+      </div>
+    </div>
+
+    <div class="callout bad">
+      <h4>Finding · No per-token pricing is configured</h4>
+      <p>Per the prompt's contract, this report does not fabricate numbers. The bars above are zero, and the table's third column is the public-retail estimate shown only so the bars have something to compare against — not a quote the app would bill against. To replace these with real cost data, add a <code>PoMiniGames:AI:Pricing</code> config section and have <code>ConfigurationDiagnosticsSnapshotProvider</code> project it through <code>/api/diag</code>.</p>
+    </div>
+  </div>
+
+  <!-- ── Hub: one shared AIFoundryClient + per-game ChatClient cache ──── -->
+  <div class="sec">
+    <h2>5. Centralization contract</h2>
+    <p class="lede">One <code>AzureOpenAIClient</code> + per-deployment <code>ChatClient</code> cache, shared by every AI consumer. Per-game secrets live only inside <code>AIFoundryOptions</code> and <code>PoMiniGames:AI:FoundryEndpoint</code> / <code>DefaultDeployment</code> in Key Vault.</p>
+
+    <div class="card">
+      <table class="tbl">
+        <thead>
+          <tr><th>Forbidden pattern</th><th>Enforced by</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>Po{Game}:AzureOpenAI:Endpoint</code> / <code>ApiKey</code> config sections</td><td><code>tests/PoMiniGames.Unit/Infrastructure/AIFoundryCentralizationTests.cs</code> (7 test methods)</td></tr>
+          <tr><td>Non-null-tolerant <code>AIFoundryClientFactory</code></td><td>same suite</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</main>
+<footer>
+  <div>PoMiniGames DOCS · self-contained · dark/light themes · no CDN</div>
+  <div class="build">build: 2026-07-29</div>
+</footer>
+</div>
+<!--@SHELL-->

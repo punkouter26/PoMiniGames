@@ -7,6 +7,17 @@
 // to pick anymore. To keep 101 marbles cheap, the blue pack shares a single geometry and
 // material and carries no trails/blobs/shadows; only the red player marble gets the full
 // treatment (own material, motion trail, contact blob, collision sparks).
+//
+// GFX #1 — INSTANCING. Sharing a geometry and a material still cost 100 separate draw calls and
+// 100 scene-graph nodes walked per frame, because they were 100 separate Mesh objects. The blue
+// pack is now ONE InstancedMesh: 100 draw calls collapse to 1. Each blue marble keeps a bare
+// Object3D as its `.mesh` — never added to the scene, but carrying the same position/quaternion/
+// visible fields the rest of the engine already reads (game.js fires sparks at m.mesh.position
+// in four places), so instancing is invisible to every existing call site. sync() composes those
+// proxies into the instance matrix buffer.
+//
+// The headroom this frees is what pays for the motion blur, shockwave rings and road sheen added
+// alongside it — see docs/superpowers/specs/2026-07-28-pomarblerace-gfx-audio-design.md.
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 import { TRACK } from './track.js';
@@ -35,6 +46,11 @@ export const MARBLE_ROSTER = Array.from({ length: MARBLE_COUNT }, (_, i) => ({
 export const MARBLE_COLORS = MARBLE_ROSTER.map((m) => m.color);
 
 const TRAIL_LEN = 16;
+
+// Speed at which a pack marble's per-instance tint reaches full heat. Sized against the audio
+// bed's own speed normalisation (audio.js updateBeds divides by 45) so the pack visibly runs
+// hot at the same pace the soundscape does.
+const PACK_TINT_SPEED = 55;
 
 // ── Marker chrome: deliberately none ──
 // There used to be a white highlight ring around the player's marble and two billboarded pins
@@ -69,34 +85,79 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
   const decorations = new THREE.Group();
   const blobTex = blobTexture();
 
+  // Everything the marble set draws lives under one group, so game.js adds and removes a single
+  // node per race instead of looping over 101 meshes. Contents: the player's Mesh + the pack's
+  // InstancedMesh.
+  const group = new THREE.Group();
+
   // The 100 blue marbles are identical, so they SHARE one geometry + one material — the whole
   // point of making them uniform is that the pack is cheap to draw. The red player marble owns
   // its own geometry/material (and is the only marble with a trail, blob, ring, pins and
   // collision sparks). Low-poly blue sphere: 100 of them, so the segment count matters.
-  const blueGeo = new THREE.SphereGeometry(1.0, 16, 12);
+  // 12×8 rather than the old 16×12. Measured, not guessed: as separate meshes the pack was
+  // frustum-culled per marble, so only the dozen-odd on screen were ever drawn. One InstancedMesh
+  // cannot be culled per instance (its bounds span the whole track), so all 100 are submitted
+  // every frame — which pushed the frame's triangle count UP even as draw calls and scene-graph
+  // nodes came down. Halving the tessellation (352 → 168 triangles per marble) pays that back.
+  // Invisible at the size these render: a pack marble is a ~1-unit sphere seen from 60+ units.
+  const blueGeo = new THREE.SphereGeometry(1.0, 12, 8);
   const blueMat = new THREE.MeshStandardMaterial({
-    color: BLUE, emissive: 0x000000, emissiveIntensity: 0, roughness: 0.18, metalness: 0.5,
+    color: 0xffffff, emissive: 0x000000, emissiveIntensity: 0, roughness: 0.18, metalness: 0.5,
   });
+  // NOTE the white base colour above: with an InstancedMesh, `instanceColor` MULTIPLIES the
+  // material colour, so a BLUE base would tint every per-instance colour blue a second time and
+  // the speed tint could never reach cyan. The blue now comes from the per-instance colour
+  // itself (PACK_COOL), which is the same blue the roster reports to the HUD.
+  const PACK_COUNT = MARBLE_COUNT - 1;   // every marble except the player
+  const pack = new THREE.InstancedMesh(blueGeo, blueMat, PACK_COUNT);
+  // The pack spans the whole track and is a single draw call, so per-object frustum culling has
+  // nothing to win and would only risk popping the whole field out at once.
+  pack.frustumCulled = false;
+  pack.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  // Per-instance colour — impossible while the pack shared one material. Drives the speed tint
+  // in sync(): each marble reads cool at rest and hot at pace, so the pack shows its own
+  // internal velocity structure instead of 100 identical dots.
+  pack.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(PACK_COUNT * 3), 3);
+  pack.instanceColor.setUsage(THREE.DynamicDrawUsage);
+  group.add(pack);
+
+  // Scratch objects for composing instance matrices — allocated once, reused every frame for
+  // every marble. sync() runs 100 times a frame; allocating here would be 6000 objects/second.
+  const _m4 = new THREE.Matrix4();
+  const _scale = new THREE.Vector3(1, 1, 1);
+  const _zero = new THREE.Vector3(0, 0, 0);
+  const _packCool = new THREE.Color(BLUE);            // resting colour of a pack marble
+  const _packHot = new THREE.Color(0x67e8f9);         // colour at PACK_TINT_SPEED and above
+  const _tint = new THREE.Color();
 
   for (let i = 0; i < MARBLE_COUNT; i++) {
     const spec = MARBLE_ROSTER[i];
     const isPlayer = i === PLAYER_INDEX;
     const radius = spec.radius;
 
-    let sphereGeo, mat;
+    // The player is a real Mesh (it alone casts/receives shadows and owns its material). Every
+    // other marble is drawn as an instance of `pack`, so its `.mesh` is a bare Object3D proxy:
+    // never added to the scene, but carrying the position/quaternion/visible fields the rest of
+    // the engine reads. sync() composes the proxy's transform into the instance buffer.
+    let sphereGeo = null, mat = null, mesh;
+    const packIndex = isPlayer ? -1 : i - 1;   // instance slot; player has none
     if (isPlayer) {
       sphereGeo = new THREE.SphereGeometry(radius, 24, 18);
       mat = new THREE.MeshStandardMaterial({
         color: RED, emissive: 0x3b0a0a, emissiveIntensity: 0.25, roughness: 0.1, metalness: 0.5,
       });
+      mesh = new THREE.Mesh(sphereGeo, mat);
+      // Only the player casts/receives shadows — 100 shadow-casters would swamp the shadow map.
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      group.add(mesh);
     } else {
-      sphereGeo = blueGeo; mat = blueMat;   // shared — do NOT dispose per-marble
+      mesh = new THREE.Object3D();
+      // The proxy is driven manually and never rendered, so skip the auto matrix work three.js
+      // would otherwise do for it.
+      mesh.matrixAutoUpdate = false;
     }
-    const mesh = new THREE.Mesh(sphereGeo, mat);
     mesh.position.copy(startPositions[i]);
-    // Only the player casts/receives shadows — 100 shadow-casters would swamp the shadow map.
-    mesh.castShadow = isPlayer;
-    mesh.receiveShadow = isPlayer;
 
     // Trail + contact blob are the player's alone (a trail per blue marble would be 100 extra
     // draw calls for marbles you're not watching).
@@ -150,7 +211,7 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
     world.addBody(body);
 
     marbles.push({
-      index: i, body, mesh,
+      index: i, body, mesh, packIndex,
       trail, trailPos, blob,
       spec, radius, sphereGeo, blobGeo,
       finished: false, finishOrder: -1, place: -1, finishTime: 0,
@@ -160,6 +221,19 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
       speed: 0,
     });
   }
+
+  // Seed the instance buffers from the starting grid. This is NOT redundant with sync(): the
+  // pick phase never calls sync() (game.js _frame only syncs while racing or showing a result),
+  // so without this the whole pack would render stacked at the world origin while the camera
+  // frames the start gate.
+  for (const m of marbles) {
+    if (m.packIndex < 0) continue;
+    _m4.compose(m.mesh.position, m.mesh.quaternion, _scale);
+    pack.setMatrixAt(m.packIndex, _m4);
+    pack.setColorAt(m.packIndex, _packCool);
+  }
+  pack.instanceMatrix.needsUpdate = true;
+  pack.instanceColor.needsUpdate = true;
 
   // Remove a marble that has fallen off the track: pull its body out of the
   // world (safe here — this runs from the frame loop, never inside a contact
@@ -173,16 +247,36 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
     m.place = -1;
     try { world.removeBody(m.body); } catch { }
     m.mesh.visible = false;
+    // A pack marble has no Mesh to hide — `visible` on the proxy is inert. Collapse its instance
+    // to zero scale instead, which is how an instance is "removed" without resizing the buffer.
+    // sync() skips eliminated marbles, so this write is never undone.
+    if (m.packIndex >= 0) {
+      _m4.compose(m.body.position, m.mesh.quaternion, _zero);
+      pack.setMatrixAt(m.packIndex, _m4);
+      pack.instanceMatrix.needsUpdate = true;
+    }
     if (m.trail) m.trail.visible = false;
     if (m.blob) m.blob.visible = false;
   }
 
   function sync() {
+    let packDirty = false;
     for (const m of marbles) {
       if (m.eliminated) continue;
       m.mesh.position.copy(m.body.position);
       m.mesh.quaternion.copy(m.body.quaternion);
       m.speed = m.body.velocity.length();
+
+      // Pack marbles are drawn as instances: push the proxy's transform into the matrix buffer,
+      // and tint the instance by its own speed (cool at rest → hot at pace).
+      if (m.packIndex >= 0) {
+        _m4.compose(m.mesh.position, m.mesh.quaternion, _scale);
+        pack.setMatrixAt(m.packIndex, _m4);
+        const heat = Math.min(1, m.speed / PACK_TINT_SPEED);
+        _tint.copy(_packCool).lerp(_packHot, heat);
+        pack.setColorAt(m.packIndex, _tint);
+        packDirty = true;
+      }
 
       // Trail + blob belong to the player marble only (both null on the blue pack).
       if (m.trail) {
@@ -198,6 +292,11 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
       }
       // Contact blob sits just under the marble (#8).
       if (m.blob) m.blob.position.set(m.body.position.x, m.body.position.y - m.radius * 0.92, m.body.position.z);
+    }
+    // One upload per frame for the whole 100-marble pack, not one per marble.
+    if (packDirty) {
+      pack.instanceMatrix.needsUpdate = true;
+      pack.instanceColor.needsUpdate = true;
     }
   }
 
@@ -268,6 +367,8 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
 
   function dispose() {
     // The blue pack shares one geometry + one material — dispose them ONCE here, not per-marble.
+    // The InstancedMesh owns the instance buffers, so disposing it releases those too.
+    pack.dispose();
     blueGeo.dispose();
     blueMat.dispose();
     for (const m of marbles) {
@@ -284,5 +385,5 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
     }
   }
 
-  return { marbles, decorations, sync, eliminate, checkFinishes, forceFinishRemaining, leaderboard, progress, progressOf, dispose };
+  return { marbles, group, pack, decorations, sync, eliminate, checkFinishes, forceFinishRemaining, leaderboard, progress, progressOf, dispose };
 }

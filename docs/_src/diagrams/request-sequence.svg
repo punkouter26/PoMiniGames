@@ -1,0 +1,106 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 460" role="img" aria-label="Request sequence: SPA UI submit, SignalR hub, hub handler, storage service, Azure Tables, response">
+  <style>
+    .actor  { fill: var(--bg-elevated, #131a26); stroke: var(--border, #2a3447); stroke-width: 1.4; }
+    .actor-soft { fill: var(--bg-soft, #1a2333); stroke: var(--border, #2a3447); }
+    .actor-text { fill: var(--fg, #e8eef7); font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; font-weight: 600; }
+    .actor-sub  { fill: var(--fg-muted, #aab4c5); font-family: system-ui, sans-serif; font-size: 10.5px; }
+    .lifeline { fill: none; stroke: var(--border, #2a3447); stroke-width: 1.2; stroke-dasharray: 4 4; }
+    .solid    { fill: none; stroke: var(--border-strong, #3a4660); stroke-width: 1.4; marker-end: url(#arrow3); }
+    .solid-rev{ fill: none; stroke: var(--border-strong, #3a4660); stroke-width: 1.4; marker-end: url(#arrow3); stroke-dasharray: 5 3; }
+    .good     { fill: none; stroke: var(--good, #4ade80); stroke-width: 1.6; marker-end: url(#arrow-good); }
+    .good-rev { fill: none; stroke: var(--good, #4ade80); stroke-width: 1.6; marker-end: url(#arrow-good); stroke-dasharray: 5 3; }
+    .warn     { fill: none; stroke: var(--c2, #E69F00); stroke-width: 1.6; marker-end: url(#arrow-warn); }
+    .bad      { fill: none; stroke: var(--bad, #f87171); stroke-width: 1.6; marker-end: url(#arrow-bad); }
+    .bad-rev  { fill: none; stroke: var(--bad, #f87171); stroke-width: 1.6; marker-end: url(#arrow-bad); stroke-dasharray: 5 3; }
+    .label { fill: var(--fg, #e8eef7); font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11px; }
+    .label-muted { fill: var(--fg-muted, #aab4c5); font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 10.5px; }
+  </style>
+  <defs>
+    <marker id="arrow3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--border-strong, #3a4660)" /></marker>
+    <marker id="arrow-good" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--good, #4ade80)" /></marker>
+    <marker id="arrow-warn" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--c2, #E69F00)" /></marker>
+    <marker id="arrow-bad" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--bad, #f87171)" /></marker>
+  </defs>
+
+  <text class="label" x="20" y="22" style="font-size:14px">PoCoupleQuiz lifecycle — UI submit → SignalR hub → Azure Tables</text>
+  <text class="label-muted" x="20" y="40">Most multi-game slices route via a SignalR hub; high-score POST is a Minimal-API exception. Failure surfaces in orange (429) and red (401/5xx).</text>
+
+  <!-- Actors -->
+  <g transform="translate(20,60)">
+    <rect class="actor" width="120" height="40" rx="8" />
+    <text class="actor-text" x="12" y="18">SPA</text>
+    <text class="actor-sub"  x="12" y="32">Blazor WASM</text>
+  </g>
+  <g transform="translate(170,60)">
+    <rect class="actor" width="140" height="40" rx="8" />
+    <text class="actor-text" x="12" y="18">/api/* host</text>
+    <text class="actor-sub"  x="12" y="32">auth + middleware</text>
+  </g>
+  <g transform="translate(340,60)">
+    <rect class="actor actor-soft" width="160" height="40" rx="8" />
+    <text class="actor-text" x="12" y="18">SignalR Hub</text>
+    <text class="actor-sub"  x="12" y="32">CoupleQuizHub / FunQuizHub / …</text>
+  </g>
+  <g transform="translate(530,60)">
+    <rect class="actor actor-soft" width="160" height="40" rx="8" />
+    <text class="actor-text" x="12" y="18">Game services</text>
+    <text class="actor-sub"  x="12" y="32">GameSessionManager · Question</text>
+  </g>
+  <g transform="translate(720,60)">
+    <rect class="actor" width="160" height="40" rx="8" />
+    <text class="actor-text" x="12" y="18">Storage</text>
+    <text class="actor-sub"  x="12" y="32">Azure Tables / Azurite</text>
+  </g>
+
+  <!-- Lifelines -->
+  <line class="lifeline" x1="80"   y1="105" x2="80"   y2="430" />
+  <line class="lifeline" x1="240"  y1="105" x2="240"  y2="430" />
+  <line class="lifeline" x1="420"  y1="105" x2="420"  y2="430" />
+  <line class="lifeline" x1="610"  y1="105" x2="610"  y2="430" />
+  <line class="lifeline" x1="800"  y1="105" x2="800"  y2="430" />
+
+  <!-- 1. SPA → host (negotiate + connect, with access_token query) -->
+  <path class="solid" d="M80,140 H 240" />
+  <text class="label" x="92" y="132">1) /couplequiz/hubs/game/negotiate</text>
+
+  <path class="solid" d="M80,170 H 240" />
+  <text class="label" x="92" y="162">2) WS connect ?access_token=…</text>
+
+  <!-- 2. Auth gate (JWT chosen from access_token) -->
+  <path class="good" d="M240,200 H 420" />
+  <text class="label" x="248" y="192" style="fill:var(--good, #4ade80)">3) RequireAuthorization → JWT Bearer</text>
+
+  <!-- 3. Hub handler → game services -->
+  <path class="solid" d="M420,230 H 610" />
+  <text class="label" x="432" y="222">4) SubmitAnswer(playerId, answer)</text>
+
+  <!-- 4. AI service for similarity (rate-limited) -->
+  <path class="warn" d="M610,260 H 420" />
+  <text class="label" x="442" y="252" style="fill:var(--c2, #E69F00)">5) CheckAnswerSimilarity (rate-limit: ai-generation 5/min)</text>
+
+  <!-- 5. Hub broadcasts to other clients -->
+  <path class="solid-rev" d="M420,290 H 80" />
+  <text class="label" x="200" y="282">6) Broadcast AnswerScored(opponentId, score)</text>
+
+  <!-- 6. Game end → POST to /api/{game}/highscores -->
+  <path class="solid" d="M80,320 H 240" />
+  <text class="label" x="92" y="312">7) POST /api/marblerace/highscores (etc.)</text>
+
+  <!-- 7. Host → StorageService -->
+  <path class="good" d="M240,350 H 800" />
+  <text class="label" x="260" y="342" style="fill:var(--good, #4ade80)">8) SaveHighScoreAsync → Azure Table (or Azurite)</text>
+
+  <!-- 8. Storage ack -->
+  <path class="good-rev" d="M800,380 H 240" />
+  <text class="label" x="490" y="372" style="fill:var(--good, #4ade80)">9) 201 Created (with new score)</text>
+
+  <!-- Failure surfaces -->
+  <path class="bad" d="M420,410 H 80" />
+  <text class="label" x="92" y="402" style="fill:var(--bad, #f87171)">Failure: 401-not-302 for /api/* (cookie auth) — SPA retries via /api/auth/handshake</text>
+
+  <path class="warn" d="M610,432 H 420" />
+  <text class="label" x="442" y="424" style="fill:var(--c2, #E69F00)">Failure: 429 from ai-generation policy — hub surfaces Retry-After</text>
+
+  <path class="bad" d="M800,454 H 240" />
+  <text class="label" x="260" y="446" style="fill:var(--bad, #f87171)">Failure: storage transient — RetryPolicy in StorageService / TableConcurrency (409 on Add)</text>
+</svg>

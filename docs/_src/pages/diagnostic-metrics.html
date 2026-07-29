@@ -1,0 +1,145 @@
+<!--@STYLE-->
+<title>PoMiniGames · Diagnostic metrics</title>
+<div class="shell">
+<header class="top">
+  <div class="brand"><span class="dot"></span>PoMiniGames · DOCS</div>
+  <div class="crumbs"><a href="index.html">index</a><span class="sep">›</span>Diagnostic metrics</div>
+  <div class="spacer"></div>
+  <button class="toggle" aria-label="toggle theme">◑ dark</button>
+</header>
+<main>
+  <h1>Diagnostic metrics report</h1>
+  <p class="muted">Audit of the runtime diagnostics the app actually emits, and the gap where <code>interactiveMs</code> / CLS / WASM memory would go. Per the prompt contract, no synthetic numbers are plotted when the data isn't there.</p>
+
+  <!-- ── Pipeline status ───────────────────────────────────────────── -->
+  <div class="sec">
+    <div class="callout bad">
+      <h4>Headline finding · <code>DOCS/collect-vitals.mjs</code> is absent</h4>
+      <p>There is no in-app instrumentation that records <code>interactiveMs</code>, <code>CLS</code>, or <code>performance.memory.usedJSHeapSize</code>. There is no <code>DOCS/diagnostic_history.json</code>. The build script's <code>@HISTORY</code> marker resolves to a labelled gap token (a JSON object with <code>"_gap": true</code>); the charts below render empty against it.</p>
+    </div>
+
+    <div class="tiles">
+      <div class="tile"><div class="label"><code>interactiveMs</code></div><div class="value"><span class="chip warn">not measured</span></div><div class="sub">no <code>PerformanceObserver</code> for first-render</div></div>
+      <div class="tile"><div class="label">CLS</div><div class="value"><span class="chip warn">not measured</span></div><div class="sub">no <code>layout-shift</code> observer</div></div>
+      <div class="tile"><div class="label">WASM memory</div><div class="value"><span class="chip warn">not measured</span></div><div class="sub">no <code>performance.memory</code> sampler</div></div>
+      <div class="tile"><div class="label">Document load</div><div class="value"><span class="chip warn">not measured</span></div><div class="sub">the load event fires in ~30 ms; runtime starts after it (see prompt §5)</div></div>
+    </div>
+  </div>
+
+  <!-- ── Three separate charts ─────────────────────────────────────── -->
+  <div class="sec">
+    <h2>1. Three separate charts (never a dual y-axis)</h2>
+
+    <h3>1.1 Time-to-interactive vs document load</h3>
+    <div class="chart" data-chart="line" data-src="#chart-interactive"></div>
+    <script type="application/json" id="chart-interactive">
+    {
+      "title": "interactiveMs vs document load (ms) — empty, no samples",
+      "x": ["sample 1","sample 2","sample 3","sample 4","sample 5","sample 6","sample 7","sample 8"],
+      "yMin": 0, "yMax": 100,
+      "series": [
+        { "name": "document load (load event)", "values": [null,null,null,null,null,null,null,null] },
+        { "name": "time-to-interactive (first Blazor render)", "values": [null,null,null,null,null,null,null,null] }
+      ]
+    }
+    </script>
+    <p class="muted">The two lines are plotted on the same axis for comparison, but the chart <em>would</em> highlight that <code>load</code> is not the right signal for Blazor WASM: the document load event fires after the bare HTML is parsed, before the WASM payload finishes downloading, compiling, and rendering the root component. Until <code>interactiveMs</code> is defined and measured, this chart stays empty.</p>
+
+    <h3>1.2 Cumulative Layout Shift (CLS)</h3>
+    <div class="chart" data-chart="line" data-src="#chart-cls"></div>
+    <script type="application/json" id="chart-cls">
+    {
+      "title": "Cumulative Layout Shift — empty, no samples",
+      "x": ["run 1","run 2","run 3","run 4","run 5","run 6","run 7","run 8"],
+      "yMin": 0, "yMax": 0.25,
+      "series": [
+        { "name": "CLS", "values": [null,null,null,null,null,null,null,null] }
+      ]
+    }
+    </script>
+    <p class="muted">A <code>PerformanceObserver</code> for <code>layout-shift</code> entries is the standard mechanism; the project doesn't subscribe to one. A "good" CLS for web vitals is &lt; 0.1; "needs improvement" is 0.1–0.25. Without samples, the chart is empty.</p>
+
+    <h3>1.3 WASM heap memory</h3>
+    <div class="chart" data-chart="line" data-src="#chart-memory"></div>
+    <script type="application/json" id="chart-memory">
+    {
+      "title": "WASM usedJSHeapSize (MB) — empty, no samples",
+      "x": ["t=0","t=250ms","t=500ms","t=750ms","t=1000ms","t=1250ms","t=1500ms","t=1750ms"],
+      "yMin": 0, "yMax": 200,
+      "series": [
+        { "name": "usedJSHeapSize", "values": [null,null,null,null,null,null,null,null] }
+      ]
+    }
+    </script>
+    <p class="muted"><code>performance.memory</code> is Chromium-only; even where it exists, sampling at 250 ms intervals during a representative route navigation would surface large retained buffers (e.g. PoMarbleRace scene data). No such sampler exists today.</p>
+  </div>
+
+  <!-- ── Source toggle ─────────────────────────────────────────────── -->
+  <div class="sec">
+    <h2>2. Source toggle</h2>
+    <div class="card">
+      <p>Per the prompt, the source toggle defaults to live data when samples exist and falls back to clearly-labelled synthetic values when they don't. This build renders <em>no</em> synthetic numbers; the empty charts above are the honest fallback. Once <code>DOCS/diagnostic_history.json</code> exists with samples, the toggle becomes meaningful and a switch in the top-right (synthetic / live) is straightforward to add.</p>
+    </div>
+  </div>
+
+  <!-- ── Inventory of what IS instrumented ─────────────────────────── -->
+  <div class="sec">
+    <h2>3. What the app <em>does</em> instrument</h2>
+    <p class="lede">Every diagnostic surface the app exposes today, with its purpose, output shape, and source path. None of these are runtime client metrics — they are all configuration/status/health surfaces intended for ops and the <code>/diag</code> page.</p>
+
+    <div class="card">
+      <table class="tbl">
+        <thead>
+          <tr><th>Surface</th><th>Purpose</th><th>Output shape</th><th>Source</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>GET /api/diag</code></td><td>Masked diagnostic snapshot: identity, environment, feature flags, integrations (KV/AI/AppInsights/Microsoft Auth configured?). Hidden unless <code>FeatureFlags:EnableDiagnostics</code> = true.</td><td><code>{ identity, environment, integrations[] }</code></td><td><code>Features/Health/DiagEndpoints.cs</code> + <code>Infrastructure/Diagnostics/ConfigurationDiagnosticsSnapshotProvider.cs</code></td></tr>
+          <tr><td><code>GET /api/diag/correlation</code></td><td>Echoes <code>TraceIdentifier</code> + <code>SessionId</code> + <code>UserId</code> so the SPA can show "your" correlation in the diag page.</td><td><code>{ correlationId, sessionId, userId }</code></td><td>same file</td></tr>
+          <tr><td><code>GET /api/diag/telemetry</code></td><td>Surfaces whether the telemetry pipeline is configured (App Insights connection string, exporter, sampling ratio, live metrics flag) without leaking the connection string.</td><td><code>{ AppInsightsConfigured, OtelExporter, ResourceRoleName, LiveMetricsEnabled, SamplingRatio }</code></td><td><code>Features/Diagnostics/TelemetryStatusEndpoints.cs</code></td></tr>
+          <tr><td><code>GET /api/mockables</code></td><td>Enumerates every <code>IMockable</code> in DI; hidden (404) in Production. Surfaces which services in Dev/Test are mocks.</td><td><code>MockableInfo[]</code></td><td><code>Features/Diagnostics/MockablesEndpoints.cs</code></td></tr>
+          <tr><td><code>GET /api/health</code> · <code>/api/health/liveness</code> · <code>/api/health/ping</code></td><td>Standard health probe + zero-dependency <code>pong</code>.</td><td><code>{ status, checks[], totalDuration, checkedAtUtc }</code></td><td><code>Features/Health/HealthEndpoints.cs</code></td></tr>
+          <tr><td><code>GET /api/logs/tail</code></td><td>Tail of the latest Serilog rolling file (Dev-only, even when diagnostics are enabled — the masked <code>/api/diag</code> is the only safe surface in non-Dev).</td><td><code>{ file, totalLines, shownLines, entries[] }</code></td><td><code>Features/Health/DiagEndpoints.cs</code></td></tr>
+          <tr><td><code>GET /test/offline-mode</code> · <code>/test/render-diagnostics</code> · <code>/test/api-timeout</code></td><td>Test harness endpoints, deliberately behind the <code>/test</code> prefix so they don't drift into production routes by accident.</td><td>various</td><td><code>Features/Health/TestHarnessEndpoints.cs</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ── What the pipeline needs to do ────────────────────────────── -->
+  <div class="sec">
+    <h2>4. What <code>collect-vitals.mjs</code> would need to add</h2>
+    <div class="card">
+      <p>The diagnostic pipeline is the only piece of this report suite that is missing entirely. Adding it is straightforward but invasive enough that we don't want to fabricate numbers in the meantime.</p>
+      <ol>
+        <li><strong>Time-to-interactive:</strong> Playwright <code>page.evaluate(() =&gt; performance.now())</code> around a sentinel DOM marker the SPA renders after first Blazor render. The <code>load</code> event is the wrong target — it fires after the HTML is parsed but before the WASM runtime has finished.</li>
+        <li><strong>CLS:</strong> <code>new PerformanceObserver(list =&gt; list.getEntries().forEach(e =&gt; samples.push(e.value)))</code> for <code>layout-shift</code>, scoped to the route navigation.</li>
+        <li><strong>WASM memory:</strong> Chromium-only <code>performance.memory.usedJSHeapSize</code>, sampled every 250 ms across a representative navigation. Discard if undefined.</li>
+        <li><strong>Sample count:</strong> per the prompt, <code>--runs 8</code> minimum per route. The script should be idempotent (append-only, install deps on first run, start/stop Azurite + host only if they aren't already up).</li>
+        <li><strong>Output:</strong> <code>DOCS/diagnostic_history.json</code> with shape <code>{ runs: [{ route, interactiveMs, cls, memorySeries: [...] }] }</code>. The build's <code>@HISTORY</code> marker will pick it up automatically.</li>
+      </ol>
+    </div>
+  </div>
+
+  <!-- ── @HISTORY token resolution ─────────────────────────────────── -->
+  <div class="sec">
+    <h2>5. <code>@HISTORY</code> token resolution</h2>
+    <div class="card">
+      <p>The build script inlines <code>DOCS/diagnostic_history.json</code> as a <code>&lt;script type="application/json" id="diagnostic-history"&gt;</code> element. If the file is absent, the marker resolves to a labelled gap object:</p>
+      <pre><code>{
+  "_gap": true,
+  "reason": "diagnostic_history.json not found. Run scripts/collect-vitals.mjs to populate; in the meantime, no synthetic numbers are fabricated.",
+  "samples": [],
+  "collectedAtUtc": null
+}</code></pre>
+      <p>The chart renderers check <code>data._gap</code> and bail out with a "no samples" badge rather than plotting zero. The charts above render against this exact payload right now.</p>
+    </div>
+  </div>
+
+  <!--@HISTORY-->
+</main>
+<footer>
+  <div>PoMiniGames DOCS · self-contained · dark/light themes · no CDN</div>
+  <div class="build">build: 2026-07-29</div>
+</footer>
+</div>
+<!--@SHELL-->

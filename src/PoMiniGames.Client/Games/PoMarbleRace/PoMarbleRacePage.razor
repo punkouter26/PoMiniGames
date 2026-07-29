@@ -1,5 +1,6 @@
 @page "/pomarblerace"
 @page "/pomarblerace/{Mode}"
+@using System.Globalization
 @using PoMiniGamesClient.Components
 @using PoMiniGamesClient.Enums
 @using PoMiniGamesClient.Models
@@ -64,11 +65,11 @@
             @if (_podium.Count > 0)
             {
                 <div class="mr-podium" role="status" aria-live="polite">
-                    <div class="mr-podium-title">🏁 Podium</div>
+                    <div class="mr-podium-title">@FlagIcon <span>Podium</span></div>
                     @foreach (var row in _podium)
                     {
                         <div class="mr-podium-row mr-podium-row--@row.Place">
-                            <span class="mr-podium-medal">@Medal(row.Place)</span>
+                            <span class="mr-podium-medal">@MedalIcon(row.Place)</span>
                             <span class="mr-podium-dot" style="background:@row.Color"></span>
                             <span class="mr-podium-name">@row.Name</span>
                             <span class="mr-podium-time">@row.Time.ToString("0.00")s</span>
@@ -84,11 +85,20 @@
                already decided. *@
             @if (_phase == "racing" && !_demo)
             {
-                <div class="mr-telemetry" role="status" aria-live="off">
+                @* GFX #6: --mr-heat (0..1) rides leader progress and drives the panel's warm
+                   overlay via an opacity-only transition, so the glass warms up in sympathy with
+                   the WebGL colour grade (scene.js GRADES) as the race resolves. --spd feeds the
+                   conic-gradient speed ring around the clock. *@
+                <div class="mr-telemetry" role="status" aria-live="off"
+                     style="--mr-heat:@HeatValue; --spd:@SpeedPct; --spd-deg:@SpeedDeg">
                     @* The "YOU · <name>" identification row that sat here is gone with the rest of
                        the marker chrome. Your marble is the only red one and the camera is locked
                        to it, so the panel is now purely telemetry: clock, place, gap, edge. *@
-                    <div class="mr-tel-clock">@_clock.ToString("0.00")</div>
+                    <div class="mr-tel-dial">
+                        <span class="mr-tel-dial-needle" aria-hidden="true"></span>
+                        <div class="mr-tel-clock">@_clock.ToString("0.00")</div>
+                        <div class="mr-tel-speed">@((int)Math.Round(_mySpeed))<span class="mr-tel-speed-unit">u/s</span></div>
+                    </div>
                     <div class="mr-tel-row">
                         <span class="mr-tel-pos">P@(_myPlace > 0 ? _myPlace.ToString() : "–")<span class="mr-tel-field">/@(_myField > 0 ? _myField.ToString() : "101")</span></span>
                         <span class="mr-tel-gap">@GapText()</span>
@@ -105,7 +115,7 @@
                     </div>
                     @if (_streak > 0)
                     {
-                        <div class="mr-tel-streak @(_streak >= 3 ? "mr-tel-streak--hot" : "")">🔥 @_streak · @MultiplierText()</div>
+                        <div class="mr-tel-streak @(_streak >= 3 ? "mr-tel-streak--hot" : "")">@FlameIcon <span>@_streak · @MultiplierText()</span></div>
                     }
                 </div>
 
@@ -113,7 +123,7 @@
                    the stakes are set — shout it so the ending has weight. *@
                 @if (_progress >= 0.86)
                 {
-                    <div class="mr-final" role="status" aria-live="polite">🏁 FINAL STRETCH</div>
+                    <div class="mr-final" role="status" aria-live="polite">@FlagIcon <span>FINAL STRETCH</span></div>
                 }
 
                 @* #10 hot-streak fire: at a 2× multiplier or better the screen edges catch fire,
@@ -182,6 +192,10 @@
     // screen-LEFT under the chase camera. So: −1 = screen-RIGHT rail, 0 = centre,
     // +1 = screen-LEFT rail. EdgePct flips it back into screen space for the gauge.
     private double _myLateral;
+    // GFX #6: the player's own speed, for the conic-gradient speed ring. The tick's `speeds`
+    // array only covers the top LB_SHOWN marbles, so a player outside the top 6 had no speed in
+    // the payload at all — game.js now appends this separately.
+    private double _mySpeed;
     private int _camIndex = -1;
     private bool _lastWon;
     private int _lastPlace;
@@ -294,6 +308,32 @@
     private string EdgePct => $"{(int)(Math.Clamp((1 - _myLateral) / 2, 0, 1) * 100)}%";
     private bool EdgeDanger => Math.Abs(_myLateral) > 0.82;
 
+    // ── GFX #6 gauge maths ──
+    // SpeedMax mirrors BOOST_MAX_SPEED in game.js: that's the hard ceiling the engine imposes on
+    // a marble camping a boost pad, so it's the only honest full-scale value for the ring.
+    private const double SpeedMax = 150;
+
+    private double SpeedFraction => Math.Clamp(_mySpeed / SpeedMax, 0, 1);
+
+    // Percentage for the conic-gradient arc, and the matching angle for the needle that rides
+    // it. The needle is a TRANSFORM, so it interpolates on the compositor between the 10 Hz
+    // ticks and the ring reads as continuous rather than stepping.
+    //
+    // INVARIANT CULTURE IS LOAD-BEARING on all three of these: they are interpolated straight
+    // into a style attribute, and under a culture that uses a comma decimal separator (fr, de,
+    // pt-BR…) "0,4" is not a valid CSS number — the whole declaration is dropped and the gauge
+    // silently freezes at zero. Blazor WASM picks up the browser's culture, so this is a real
+    // configuration, not a theoretical one.
+    private string SpeedPct => (SpeedFraction * 100).ToString("0.#", CultureInfo.InvariantCulture) + "%";
+    private string SpeedDeg => (SpeedFraction * 360).ToString("0.#", CultureInfo.InvariantCulture) + "deg";
+
+    // Warm-up for the glass panel, 0..1. Stays flat until the run to the line, then ramps — the
+    // same 0.86 leader-progress threshold the FINAL STRETCH klaxon and the WebGL colour grade
+    // (scene.js GRADES.final) both key off, so all three warm together.
+    private const double HeatFrom = 0.72;
+    private string HeatValue =>
+        Math.Clamp((_progress - HeatFrom) / (1 - HeatFrom), 0, 1).ToString("0.##", CultureInfo.InvariantCulture);
+
     // JS caps the gap estimate at GAP_MAX (60s); at the cap the number is meaningless, so
     // show the cap as a cap rather than pretending to a tenth of a second.
     private const double GapMax = 60;
@@ -396,6 +436,7 @@
             _clock = 0;
             _myPlace = -1;
             _myGap = 0;
+            _mySpeed = 0;    // else the ring carries the last race's final speed into the grid
             _leaderboard.Clear();
             _podium.Clear();   // hide the previous race's podium as the next race sets up
 
@@ -438,7 +479,32 @@
         await InvokeAsync(StateHasChanged);
     }
 
-    private static string Medal(int place) => place switch { 1 => "🥇", 2 => "🥈", 3 => "🥉", _ => $"{place}." };
+    // ── GFX #6: inline SVG iconography ──
+    // These replace the 🥇🥈🥉 / 🏁 / 🔥 emoji the HUD used to render. Emoji are a font
+    // dependency: they render at whatever size, weight and colour the platform's emoji font
+    // decides, they can't inherit the panel's colour, and they fall back to tofu where the font
+    // is missing. Inline SVG is crisp at any DPI, costs no extra request (asset policy for this
+    // work is zero new files), and is styleable from the scoped CSS like any other element.
+    private static RenderFragment MedalIcon(int place) => @<svg class="mr-medal mr-medal--@place" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path class="mr-medal-ribbon" d="M7.2 1.5 L10.4 8.6 L13.6 8.6 L16.8 1.5" />
+        <circle class="mr-medal-disc" cx="12" cy="15.2" r="6.6" />
+        <text class="mr-medal-num" x="12" y="15.2" text-anchor="middle" dominant-baseline="central">@place</text>
+    </svg>;
+
+    private static readonly RenderFragment FlagIcon = @<svg class="mr-flag" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path class="mr-flag-pole" d="M5 2 V22" />
+        <g class="mr-flag-cloth">
+            <rect x="7" y="4" width="4" height="4" /><rect x="15" y="4" width="4" height="4" />
+            <rect x="11" y="8" width="4" height="4" /><rect x="19" y="8" width="2" height="4" />
+            <rect x="7" y="12" width="4" height="4" /><rect x="15" y="12" width="4" height="4" />
+        </g>
+        <path class="mr-flag-edge" d="M7 4 H21 V16 H7 Z" />
+    </svg>;
+
+    private static readonly RenderFragment FlameIcon = @<svg class="mr-flame" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="M12.6 2c.4 3-1.5 4.2-2.9 5.6C8 9.3 6.5 11 6.5 13.8A5.6 5.6 0 0 0 12 19.5a5.6 5.6 0 0 0 5.5-5.7c0-3.4-2.3-5.3-3.2-7.6-.3 1.3-1.1 2-2 2.6.6-2.3.7-4.7.3-6.8Z" />
+        <path class="mr-flame-core" d="M12 12c.9 1 1.6 1.9 1.6 3.1A1.7 1.7 0 0 1 12 16.9a1.7 1.7 0 0 1-1.6-1.8c0-1.2.7-2.1 1.6-3.1Z" />
+    </svg>;
 
     /// <param name="order">Marble indices in current standings order (place 1 first).</param>
     /// <param name="times">Finish time per entry; only meaningful where <paramref name="finished"/> is true.</param>
@@ -450,15 +516,20 @@
     /// <paramref name="myPlace"/>/<paramref name="myField"/>/<paramref name="myGap"/> so it's
     /// shown even when the player is far down the pack.</param>
     [JSInvokable]
+    /// <param name="mySpeed">The player's own speed. Appended at the END of the argument list on
+    /// purpose: this is a positional interop contract, so adding here leaves every existing
+    /// argument's index untouched. Drives the HUD speed ring (GFX #6) — <paramref name="speeds"/>
+    /// only covers the top-N shown, so a player outside it had no speed in this payload.</param>
     public async Task OnRaceTick(int[] order, double[] speeds, bool[] finished, double[] times,
                                  double[] gaps, double progress, double myProgress, double clock,
                                  double myLateral, int myPlace, int myField, double myGap,
-                                 int streak, int camIndex, string camReason)
+                                 int streak, int camIndex, string camReason, double mySpeed)
     {
         _progress = progress;
         _myProgress = myProgress;
         _clock = clock;
         _myLateral = myLateral;
+        _mySpeed = mySpeed;
         _myPlace = myPlace;
         _myField = myField > 0 ? myField : MarbleCount;
         _myGap = myGap;

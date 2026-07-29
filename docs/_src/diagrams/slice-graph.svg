@@ -1,0 +1,112 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 540" role="img" aria-label="PoMiniGames project reference graph: Domain and Shared are leaves; Application depends on them; Infrastructure depends on Application, Domain, Shared; Web (PoMiniGames) depends on Application, Infrastructure, Shared; Client depends on Shared, Application">
+  <style>
+    .box { fill: var(--bg-elevated, #131a26); stroke: var(--border, #2a3447); stroke-width: 1.4; }
+    .box-leaf   { fill: var(--bg-soft, #1a2333); stroke: var(--border, #2a3447); }
+    .box-web    { fill: var(--bg-elevated, #131a26); stroke: var(--c1, #0072B2); stroke-width: 2; }
+    .box-client { fill: var(--bg-elevated, #131a26); stroke: var(--c3, #009E73); stroke-width: 2; }
+    .label { fill: var(--fg, #e8eef7); font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; font-weight: 600; }
+    .sub   { fill: var(--fg-muted, #aab4c5); font-family: system-ui, sans-serif; font-size: 11px; }
+    .edge       { fill: none; stroke: var(--border-strong, #3a4660); stroke-width: 1.6; marker-end: url(#arrow2); }
+    .edge-good  { fill: none; stroke: var(--good, #4ade80); stroke-width: 1.6; marker-end: url(#arrow-good); }
+    .edge-bad   { fill: none; stroke: var(--bad, #f87171); stroke-width: 1.6; marker-end: url(#arrow-bad); stroke-dasharray: 5 3; }
+    .edge-warn  { fill: none; stroke: var(--c2, #E69F00); stroke-width: 1.6; marker-end: url(#arrow-warn); }
+    .verdict    { fill: var(--fg-muted, #aab4c5); font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 10px; }
+  </style>
+  <defs>
+    <marker id="arrow2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--border-strong, #3a4660)" /></marker>
+    <marker id="arrow-good" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--good, #4ade80)" /></marker>
+    <marker id="arrow-bad" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--bad, #f87171)" /></marker>
+    <marker id="arrow-warn" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--c2, #E69F00)" /></marker>
+  </defs>
+
+  <text class="label" x="20" y="24" style="font-size:14px">PoMiniGames solution — ProjectReference graph</text>
+  <text class="sub"   x="20" y="42">Edges follow: Application→Domain, Shared (no upward refs); Infrastructure→Application, Domain, Shared; Web→Application, Infrastructure, Shared; Client→Shared, Application. Tests reference Web only.</text>
+
+  <!-- Layer 1: leaves -->
+  <g transform="translate(30,90)">
+    <rect class="box box-leaf" width="200" height="84" rx="10" />
+    <text class="label" x="14" y="22">PoMiniGames.Domain</text>
+    <text class="sub"   x="14" y="40">EloCalculator · EloOptions</text>
+    <text class="sub"   x="14" y="56">GameKey · Identity primitives</text>
+    <text class="sub"   x="14" y="72">No project references (leaf)</text>
+  </g>
+  <g transform="translate(260,90)">
+    <rect class="box box-leaf" width="200" height="84" rx="10" />
+    <text class="label" x="14" y="22">PoShared</text>
+    <text class="sub"   x="14" y="40">DTOs · Constants · Identity</text>
+    <text class="sub"   x="14" y="56">IMockable · Interfaces</text>
+    <text class="sub"   x="14" y="72">No project references (leaf)</text>
+  </g>
+
+  <!-- Layer 2: Application -->
+  <g transform="translate(30,220)">
+    <rect class="box" width="430" height="86" rx="10" />
+    <text class="label" x="14" y="22">PoMiniGames.Application</text>
+    <text class="sub"   x="14" y="40">IStorageService · IDiagnosticsSnapshotProvider · PoCoupleQuiz services</text>
+    <text class="sub"   x="14" y="56">PoFunQuiz services · PoJoker services · PoSurvive simulation</text>
+    <text class="sub"   x="14" y="72">→ Domain · Shared</text>
+  </g>
+
+  <!-- Layer 3: Infrastructure -->
+  <g transform="translate(490,90)">
+    <rect class="box" width="460" height="160" rx="10" />
+    <text class="label" x="14" y="22">PoMiniGames.Infrastructure</text>
+    <text class="sub"   x="14" y="40">StorageService (Azure Tables) · HighScoreDescriptor&lt;T&gt;</text>
+    <text class="sub"   x="14" y="56">EndpointRouteExtensions · AuthExtensions · DataProtectionExtensions</text>
+    <text class="sub"   x="14" y="72">RateLimitingExtensions · TelemetryExtensions · LoggingExtensions</text>
+    <text class="sub"   x="14" y="88">StartupSecretValidator · AzureBlobXmlRepository · AIFoundry hub</text>
+    <text class="sub"   x="14" y="104">→ Application · Domain · Shared</text>
+    <text class="verdict" x="14" y="124" style="fill:var(--good, #4ade80)">verdict: clean — depends only inward</text>
+    <text class="verdict" x="14" y="138" style="fill:var(--good, #4ade80)">verdict: no layer leaks</text>
+  </g>
+
+  <!-- Layer 4: Web host -->
+  <g transform="translate(30,360)">
+    <rect class="box box-web" width="640" height="120" rx="10" />
+    <text class="label" x="14" y="22">PoMiniGames  (web host, src/PoMiniGames/PoMiniGames.csproj)</text>
+    <text class="sub"   x="14" y="40">Program.cs · Features/{Auth,Health,Diagnostics,HighScores,Leaderboard,MatchHistory,PoCoupleQuiz,PoFunQuiz,PoJoker,PoRacer,PoSports,PoSurvive,MarbleRace}</text>
+    <text class="sub"   x="14" y="56">All Minimal API endpoints + 6 SignalR hubs registered in ONE place: EndpointRouteExtensions.MapPoMiniGamesEndpoints()</text>
+    <text class="sub"   x="14" y="72">→ Application · Infrastructure · Shared</text>
+    <text class="verdict" x="14" y="92" style="fill:var(--c2, #E69F00)">verdict: composes Infrastructure — no orchestration in Application</text>
+    <text class="verdict" x="14" y="106" style="fill:var(--c2, #E69F00)">verdict: hub classes live here (Composition Root for signalR)</text>
+  </g>
+
+  <!-- Client -->
+  <g transform="translate(700,220)">
+    <rect class="box box-client" width="250" height="120" rx="10" />
+    <text class="label" x="14" y="22">PoMiniGames.Client</text>
+    <text class="sub"   x="14" y="40">Blazor WebAssembly (assembly PoMiniGamesClient)</text>
+    <text class="sub"   x="14" y="56">Games/{ConnectFive,PoBrawl,PoCoupleQuiz,PoFunQuiz,PoJoker,PoMarbleRace,PoRacer,PoSports,PoSurvive,TicTacToe}</text>
+    <text class="sub"   x="14" y="72">→ Shared · Application</text>
+    <text class="verdict" x="14" y="92" style="fill:var(--good, #4ade80)">verdict: depends only on DTOs + Application services</text>
+    <text class="verdict" x="14" y="106" style="fill:var(--good, #4ade80)">verdict: no Infrastructure reference (clean boundary)</text>
+  </g>
+
+  <!-- Edges -->
+  <path class="edge" d="M130,175 V 220" />           <!-- Domain → App -->
+  <path class="edge" d="M360,175 V 220" />           <!-- Shared → App -->
+  <path class="edge" d="M330,260 H 490" />           <!-- App → Infra -->
+  <path class="edge" d="M350,260 C 480,260 460,200 600,175" /> <!-- Domain → Infra (via curve) -->
+  <path class="edge" d="M460,175 C 530,175 540,150 600,150" /> <!-- Shared → Infra -->
+
+  <path class="edge" d="M460,260 C 460,310 200,330 200,360" /> <!-- App → Web -->
+  <path class="edge" d="M720,250 C 720,290 600,330 670,360" /> <!-- Infra → Web -->
+  <path class="edge" d="M360,260 C 360,300 400,330 470,360" /> <!-- Shared → Web -->
+
+  <path class="edge" d="M340,310 C 360,360 500,250 700,260" /> <!-- App → Client -->
+  <path class="edge" d="M460,260 C 600,260 680,250 700,260" />  <!-- Shared → Client -->
+
+  <!-- Tests reference Web only -->
+  <g transform="translate(30,500)">
+    <rect class="box" width="200" height="34" rx="8" />
+    <text class="label" x="14" y="20" style="font-size:12px">tests/{Unit,Integration,E2EAPI,E2EUI}</text>
+  </g>
+  <g transform="translate(260,500)">
+    <rect class="box" width="160" height="34" rx="8" />
+    <text class="label" x="14" y="20" style="font-size:12px">tests/Shared</text>
+  </g>
+  <path class="edge" d="M130,500 V 480" />
+  <text class="verdict" x="100" y="496">→ PoMiniGames only</text>
+  <path class="edge" d="M340,500 V 480" />
+  <text class="verdict" x="290" y="496">→ PoMiniGames.TestUtilities</text>
+</svg>

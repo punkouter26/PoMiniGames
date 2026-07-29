@@ -1,0 +1,103 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 320" role="img" aria-label="Auth state machine: anonymous, dev-cookie, fake-auth, jwt, handshake, reauth">
+  <style>
+    .node-box { fill: var(--bg-elevated, #131a26); stroke: var(--border, #2a3447); stroke-width: 1.4; }
+    .node-text { fill: var(--fg, #e8eef7); font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
+    .node-label { fill: var(--fg-muted, #aab4c5); font-family: system-ui, sans-serif; font-size: 11px; }
+    .edge       { fill: none; stroke: var(--border, #2a3447); stroke-width: 1.4; marker-end: url(#arrow); }
+    .edge-warn  { fill: none; stroke: var(--c2, #E69F00); stroke-width: 1.6; marker-end: url(#arrow-warn); }
+    .edge-bad   { fill: none; stroke: var(--bad, #f87171); stroke-width: 1.6; marker-end: url(#arrow-bad); stroke-dasharray: 4 3; }
+    .edge-good  { fill: none; stroke: var(--good, #4ade80); stroke-width: 1.6; marker-end: url(#arrow-good); }
+    .edge-text  { fill: var(--fg-muted, #aab4c5); font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 10px; }
+    .start-dot  { fill: var(--accent, #5eb1ff); }
+    .reauth-box { fill: var(--bg-soft, #1a2333); stroke: var(--c2, #E69F00); stroke-width: 1.4; }
+  </style>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--border, #2a3447)" /></marker>
+    <marker id="arrow-warn" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--c2, #E69F00)" /></marker>
+    <marker id="arrow-bad" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--bad, #f87171)" /></marker>
+    <marker id="arrow-good" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--good, #4ade80)" /></marker>
+  </defs>
+
+  <!-- Title -->
+  <text class="node-label" x="20" y="22" style="font-size:12px;fill:var(--fg, #e8eef7)">Auth state machine — /api/auth/handshake, /auth/*, /api/auth/dev-*</text>
+  <text class="node-label" x="20" y="38">Composite policy forwards per-request to JWT | DevCookie | FakeAuth based on header / cookie presence</text>
+
+  <!-- Nodes -->
+  <g transform="translate(20,70)">
+    <rect class="node-box" width="150" height="60" rx="10" />
+    <circle class="start-dot" cx="14" cy="14" r="5" />
+    <text class="node-text" x="30" y="20">anon</text>
+    <text class="node-label" x="14" y="40">First paint</text>
+    <text class="node-label" x="14" y="54">SPA AuthStateService</text>
+  </g>
+
+  <g transform="translate(220,70)">
+    <rect class="node-box" width="170" height="60" rx="10" />
+    <text class="node-text" x="14" y="22">handshake</text>
+    <text class="node-label" x="14" y="40">GET /api/auth/handshake</text>
+    <text class="node-label" x="14" y="54">config + profile in 1 RTT</text>
+  </g>
+
+  <g transform="translate(440,30)">
+    <rect class="node-box" width="180" height="60" rx="10" />
+    <text class="node-text" x="14" y="22">DevCookie</text>
+    <text class="node-label" x="14" y="40">PoMiniGames.DevAuth</text>
+    <text class="node-label" x="14" y="54">SameSite=Strict, HttpOnly</text>
+  </g>
+
+  <g transform="translate(440,160)">
+    <rect class="node-box" width="180" height="60" rx="10" />
+    <text class="node-text" x="14" y="22">JWT Bearer</text>
+    <text class="node-label" x="14" y="40">Microsoft Entra (MSAL)</text>
+    <text class="node-label" x="14" y="54">oid/name/roles claims</text>
+  </g>
+
+  <g transform="translate(680,30)">
+    <rect class="node-box" width="180" height="60" rx="10" />
+    <text class="node-text" x="14" y="22">FakeAuth</text>
+    <text class="node-label" x="14" y="40">X-Fake-User header</text>
+    <text class="node-label" x="14" y="54">Dev/Test only</text>
+  </g>
+
+  <g transform="translate(680,160)">
+    <rect class="reauth-box" width="180" height="60" rx="10" />
+    <text class="node-text" x="14" y="22" style="fill:var(--c2, #E69F00)">X-Reauth: 1</text>
+    <text class="node-label" x="14" y="40">stale DevCookie, key ring rebuilt</text>
+    <text class="node-label" x="14" y="54">SPA reissues a guest identity</text>
+  </g>
+
+  <g transform="translate(220,210)">
+    <rect class="node-box" width="170" height="60" rx="10" />
+    <text class="node-text" x="14" y="22">/api/* → 401</text>
+    <text class="node-label" x="14" y="40">Cookie auth events return</text>
+    <text class="node-label" x="14" y="54">401, NOT 302 to login</text>
+  </g>
+
+  <!-- Edges -->
+  <path class="edge" d="M170,100 C 195,100 195,100 220,100" />
+  <text class="edge-text" x="180" y="92">GET handshake</text>
+
+  <path class="edge" d="M390,90 C 415,90 415,60 440,60" />
+  <text class="edge-text" x="394" y="56">DevCookie present</text>
+
+  <path class="edge" d="M390,100 C 415,100 415,190 440,190" />
+  <text class="edge-text" x="394" y="115">Bearer present</text>
+
+  <path class="edge" d="M610,60 C 645,60 645,60 680,60" />
+  <text class="edge-text" x="615" y="50">?access_token=</text>
+  <text class="edge-text" x="615" y="72">(for SignalR hubs)</text>
+
+  <path class="edge-warn" d="M530,90 C 580,90 620,140 670,170" />
+  <text class="edge-text" x="595" y="115" style="fill:var(--c2, #E69F00)">Dev/Test + X-Fake-User</text>
+
+  <path class="edge-bad" d="M530,90 C 600,90 640,150 680,190" />
+  <text class="edge-text" x="595" y="148" style="fill:var(--bad, #f87171)">cookie present but</text>
+  <text class="edge-text" x="595" y="162" style="fill:var(--bad, #f87171)">cannot unprotect</text>
+
+  <path class="edge" d="M680,90 C 580,90 470,210 390,240" />
+  <text class="edge-text" x="500" y="195">unauthenticated</text>
+  <text class="edge-text" x="500" y="208">/api/* request</text>
+
+  <path class="edge-good" d="M770,210 C 770,260 400,290 230,250" />
+  <text class="edge-text" x="380" y="298" style="fill:var(--good, #4ade80)">SPA retries handshake → fresh DevCookie</text>
+</svg>

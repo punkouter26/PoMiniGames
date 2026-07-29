@@ -164,6 +164,87 @@ function roadTexture() {
   return t;
 }
 
+// GFX #4b — vertical falloff for the boost-pad light shafts. Bright and solid where the shaft
+// meets the road, fading to nothing at the top so the cone has no visible cut-off edge. Cylinder
+// UVs run v=0 at the base to v=1 at the top, so the gradient is written bottom-up. Built once.
+let _shaftTex = null;
+function shaftTexture() {
+  if (_shaftTex) return _shaftTex;
+  const c = document.createElement('canvas');
+  c.width = 4; c.height = 64;
+  const g = c.getContext('2d');
+  const grd = g.createLinearGradient(0, 64, 0, 0);   // y=64 is v=0 (base)
+  grd.addColorStop(0, 'rgba(255,255,255,1)');
+  grd.addColorStop(0.35, 'rgba(255,255,255,0.45)');
+  grd.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grd; g.fillRect(0, 0, 4, 64);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  _shaftTex = t;
+  return t;
+}
+
+// GFX #5 — road normal map. The floor material already carried clearcoat, but with a perfectly
+// flat surface normal the clearcoat highlight was a single smooth sweep that read as polished
+// plastic. This bumps the aggregate so the highlight BREAKS UP across the surface, which is what
+// sells wet tarmac. Derived from the same speckle logic as roadTexture() and generated on canvas
+// like every other texture here — no asset file.
+//
+// Built by sampling a grey-height field and taking its gradient (a Sobel-lite central
+// difference), then packing the surface normal into RGB the way a tangent-space normal map
+// expects: +X → red, +Y → green, Z → blue, each remapped from [-1,1] to [0,1].
+let _roadNormalTex = null;
+function roadNormalTexture() {
+  if (_roadNormalTex) return _roadNormalTex;
+  const N = 256;
+  // Height field: mostly flat, with the same density of small round aggregate as the albedo.
+  const h = new Float32Array(N * N);
+  for (let k = 0; k < 3000; k++) {
+    const cx = Math.random() * N, cy = Math.random() * N;
+    const r = Math.random() * 2.2 + 0.8;
+    const amp = Math.random() * 0.5 + 0.25;
+    const r2 = r * r;
+    const x0 = Math.max(0, (cx - r) | 0), x1 = Math.min(N - 1, (cx + r) | 0);
+    const y0 = Math.max(0, (cy - r) | 0), y1 = Math.min(N - 1, (cy + r) | 0);
+    for (let y = y0; y <= y1; y++) {
+      for (let x = x0; x <= x1; x++) {
+        const d2 = (x - cx) * (x - cx) + (y - cy) * (y - cy);
+        if (d2 > r2) continue;
+        // Smooth dome rather than a cylinder, so the aggregate catches light on its shoulders.
+        h[y * N + x] += amp * (1 - d2 / r2);
+      }
+    }
+  }
+  const c = document.createElement('canvas');
+  c.width = c.height = N;
+  const g = c.getContext('2d');
+  const img = g.createImageData(N, N);
+  const STRENGTH = 2.6;
+  const at = (x, y) => h[((y + N) % N) * N + ((x + N) % N)];   // wraps, so the map tiles seamlessly
+  for (let y = 0; y < N; y++) {
+    for (let x = 0; x < N; x++) {
+      const dx = (at(x + 1, y) - at(x - 1, y)) * STRENGTH;
+      const dy = (at(x, y + 1) - at(x, y - 1)) * STRENGTH;
+      // Normalize (-dx, -dy, 1); the negation is the usual convention so a bump reads as raised.
+      const len = Math.hypot(-dx, -dy, 1) || 1;
+      const i = (y * N + x) * 4;
+      img.data[i] = ((-dx / len) * 0.5 + 0.5) * 255;
+      img.data[i + 1] = ((-dy / len) * 0.5 + 0.5) * 255;
+      img.data[i + 2] = ((1 / len) * 0.5 + 0.5) * 255;
+      img.data[i + 3] = 255;
+    }
+  }
+  g.putImageData(img, 0, 0);
+  const t = new THREE.CanvasTexture(c);
+  // A normal map is DATA, not colour — tagging it sRGB would push the packed vectors through a
+  // gamma curve and tilt every normal.
+  t.colorSpace = THREE.NoColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.anisotropy = MAX_ANISO();
+  _roadNormalTex = t;
+  return t;
+}
+
 // Racing-kerb stripes for the berms: transverse red/white bands (the universal "edge of the
 // road" signal). The band axis is mapped to down-track V in buildBermRibbon, so the stripes run
 // up-and-across the berm and repeat along the road like a real kerb. Built once.
@@ -290,10 +371,26 @@ export function generateTrack(world, materials, seed, marbleCount = 8) {
   // road surface rather than a neon grid. The grid is still used by the rumble/kicker bands.
   const grid = gridTexture();
   const road = roadTexture();
+  // GFX #5 — WET SHEEN. clearcoat was already enabled here, which is the whole reason this is
+  // cheap: the clearcoat shader permutation is already compiled, so pushing its strength up
+  // costs literally nothing at runtime. Raising clearcoat and dropping clearcoatRoughness turns
+  // the flat matte tarmac into a rain-slick surface that picks up the key light and the IBL.
+  // envMapIntensity is lifted because the scene HAS an environment (scene.js PMREM/RoomEnvironment)
+  // that this material was barely sampling.
+  //
+  // Deliberately NOT using MeshPhysicalMaterial.anisotropy: it's available in three r165 and
+  // would look good, but it compiles a new shader feature onto the single largest surface in the
+  // scene. normalMap + free clearcoat tuning buys most of the look for a fraction of the cost.
+  const roadNormal = roadNormalTexture();
   const floorMat = new THREE.MeshPhysicalMaterial({
     color: 0x2a3446, emissive: 0x0a0f1c, emissiveIntensity: 0.16,
-    roughness: 0.8, metalness: 0.1, clearcoat: 0.2, clearcoatRoughness: 0.7,
+    roughness: 0.72, metalness: 0.1, clearcoat: 0.55, clearcoatRoughness: 0.25,
     map: road, roughnessMap: road,
+    normalMap: roadNormal,
+    // Restrained: at full strength the aggregate reads as gravel and the road stops looking
+    // fast. This is enough to break the highlight up, not enough to texture the silhouette.
+    normalScale: new THREE.Vector2(0.45, 0.45),
+    envMapIntensity: 1.25,
   });
   // Rumble/boost/kicker bands are overlay ribbons floated 0.05–0.06 above the floor ribbon they
   // share a shape with. That gap is far too small to survive depth quantisation out where the
@@ -481,6 +578,49 @@ export function generateTrack(world, materials, seed, marbleCount = 8) {
     bm.receiveShadow = true;
     group.add(bm);
   }
+
+  // GFX #4b — BOOST LIGHT SHAFTS. Volumetric-looking cones of light standing on each pad.
+  // Additive, unlit, depthWrite off: no lighting cost, no shadow cost, nothing to z-fight.
+  // All of them are ONE InstancedMesh — a single draw call for the whole set.
+  //
+  // This is as much a gameplay read as a visual one. Boost pads are the one genuinely good
+  // surface on the track, and a flat cyan ribbon on the floor is invisible until you're nearly
+  // on it. A shaft standing 30 units in the air is readable from far enough down the chute to
+  // actually steer for, which is the whole verb of the game.
+  const SHAFTS_PER_BAND = 4;
+  const SHAFT_H = 30;
+  const shaftGeo = new THREE.CylinderGeometry(5.5, 2.6, SHAFT_H, 8, 1, true);
+  // Cylinder geometry is centred on its own origin; shift it up so the instance transform can
+  // place its BASE on the road rather than its middle.
+  shaftGeo.translate(0, SHAFT_H / 2, 0);
+  const shaftMat = new THREE.MeshBasicMaterial({
+    color: 0x22d3ee, map: shaftTexture(), transparent: true, opacity: 0.34,
+    blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+  });
+  const shaftCount = ZONES.BOOST.length * SHAFTS_PER_BAND;
+  const shafts = new THREE.InstancedMesh(shaftGeo, shaftMat, shaftCount);
+  shafts.frustumCulled = false;
+  {
+    const m4 = new THREE.Matrix4();
+    const scl = new THREE.Vector3(1, 1, 1);
+    const pos = new THREE.Vector3();
+    let n = 0;
+    for (const [a, b] of ZONES.BOOST) {
+      for (let k = 0; k < SHAFTS_PER_BAND; k++) {
+        // Spread the shafts down the band and across the channel, so they frame the pad as a
+        // gate to aim through instead of a single post.
+        const s = a + (b - a) * ((k + 0.5) / SHAFTS_PER_BAND);
+        const f = frameAt(s);
+        const across = (k % 2 === 0 ? -1 : 1) * TRACK.CHANNEL_WIDTH * 0.29;
+        pos.copy(f.p).addScaledVector(f.rb, across);
+        // Orient along the track's own up vector so shafts stand square to a banked road
+        // instead of leaning through it.
+        m4.compose(pos, f.q, scl);
+        shafts.setMatrixAt(n++, m4);
+      }
+    }
+  }
+  group.add(shafts);
 
   // #6 telegraphed KICKER band: push-only (no collider, like the boost pads) but it fires on a
   // cycle — charging up (brightening magenta) for a beat as a TELL, then flashing and shoving
@@ -841,7 +981,15 @@ export function generateTrack(world, materials, seed, marbleCount = 8) {
     },
     // Cannon zeroes a motor's target the moment something stalls it hard; re-arming
     // every frame keeps the Gauntlet turning instead of seizing on a wedged marble.
-    driveMotors() { for (const m of motors) m.hinge.setMotorSpeed(m.speed); },
+    //
+    // Also breathes the boost-pad light shafts (#4b). It rides here rather than on a call site
+    // of its own because game.js already invokes this once per racing frame with the clock to
+    // hand — one shared material opacity, so the pulse costs a single uniform write for all
+    // twelve shafts.
+    driveMotors(t) {
+      for (const m of motors) m.hinge.setMotorSpeed(m.speed);
+      if (typeof t === 'number') shaftMat.opacity = 0.26 + 0.14 * (0.5 + 0.5 * Math.sin(t * 2.4));
+    },
     // Centerline (floor-top) Y at a given forward Z — used to detect marbles that
     // have fallen off the track (their Y drops well below this).
     floorY: (z) => sample(sAt(z)).y,
@@ -850,7 +998,13 @@ export function generateTrack(world, materials, seed, marbleCount = 8) {
       // constraints are removed with their bodies by cannon-es on removeBody
       group.traverse((o) => {
         if (o.geometry) o.geometry.dispose();
+        // InstancedMesh also owns instance attribute buffers; geometry.dispose() alone leaves
+        // those allocated. (The shafts are the only instanced node the track builds.)
+        if (o.isInstancedMesh) o.dispose();
       });
+      // The shaft material is per-track (its opacity is animated), unlike the procedural
+      // textures above, which are module-level singletons deliberately shared across tracks.
+      shaftMat.dispose();
     },
   };
 }

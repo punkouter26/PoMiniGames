@@ -1,0 +1,148 @@
+<!--@STYLE-->
+<title>PoMiniGames · User workflow</title>
+<div class="shell">
+<header class="top">
+  <div class="brand"><span class="dot"></span>PoMiniGames · DOCS</div>
+  <div class="crumbs"><a href="index.html">index</a><span class="sep">›</span>User workflow</div>
+  <div class="spacer"></div>
+  <button class="toggle" aria-label="toggle theme">◑ dark</button>
+</header>
+<main>
+  <h1>User workflow report</h1>
+  <p class="muted">Audit of the request lifecycle from UI submit through the Minimal API / SignalR hub through orchestration through Azure Tables persistence. Every step cites a file path; nothing is assumed.</p>
+
+  <div class="callout">
+    <h4>There is no queue and no orchestrator</h4>
+    <p>PoMiniGames is request/response and hub-broadcast. There is no Azure Service Bus, no Queue-triggered worker, no orchestrator pattern; the "PoSurvive simulation" runs in-process inside <code>Application/Services/</code>, not as a queued background job. Persistence is synchronous against Azure Table Storage (or Azurite locally).</p>
+  </div>
+
+  <!-- ── Step-by-step trace ────────────────────────────────────────── -->
+  <div class="sec">
+    <h2>1. Step-by-step trace (PoCoupleQuiz answer submit)</h2>
+
+    <div class="card">
+      <table class="tbl">
+        <thead>
+          <tr><th>Step</th><th>Where (code)</th><th>What happens</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>1. UI submit</td>
+            <td><code>src/PoMiniGames.Client/Games/PoCoupleQuiz/CoupleQuizHubService.cs</code> (or <code>Pages/CoupleQuiz.razor</code>)</td>
+            <td>SPA calls <code>HubConnection.InvokeAsync("SubmitAnswer", sessionId, answerText)</code>. The connection was opened with <code>?access_token=...</code> (SignalR can't carry custom headers on the WS upgrade).</td>
+          </tr>
+          <tr>
+            <td>2. Hub handler</td>
+            <td><code>src/PoMiniGames/Features/PoCoupleQuiz/CoupleQuizHub.cs</code></td>
+            <td>Auth via the hub's <code>RequireAuthorization()</code>. The hub reads <code>Context.User</code> and resolves the request identity via <code>RequestIdentity.Resolve(...)</code>.</td>
+          </tr>
+          <tr>
+            <td>3. Service call</td>
+            <td><code>GameSessionManager</code> in <code>Features/PoCoupleQuiz/IGameSessionManager.cs</code> + <code>GameSessionManager.cs</code></td>
+            <td>Hub forwards to <code>IQuestionService.CheckAnswerSimilarityAsync(answer1, answer2, ct)</code>. Rate-limit policy <code>ai-generation</code> (5/min, compound IP+identity partition) applies at the matching <code>POST /api/couplequiz/questions/check-similarity</code> route, but the hub itself doesn't go through the limiter (the hub has no <code>RequireRateLimiting</code> on <code>SubmitAnswer</code>).</td>
+          </tr>
+          <tr>
+            <td>4. AI Foundry call</td>
+            <td><code>AIFoundryClientFactory</code> + <code>AIFoundryChatClientCache</code> via <code>AzureOpenAIQuestionService</code></td>
+            <td>Chat completion against the deployment resolved by <code>AIFoundryOptions.Deployments.CoupleQuiz</code> (or <code>DefaultDeployment</code>). Resilience pipeline: <code>AddAzureOpenAIResilience()</code> (retry + circuit breaker + outer timeout).</td>
+          </tr>
+          <tr>
+            <td>5. Hub broadcast</td>
+            <td>same hub</td>
+            <td>Hub pushes <code>AnswerScored(opponentId, score)</code> via <code>IGameClient.ReceiveAnswerScoredAsync</code> to every connected client in the lobby.</td>
+          </tr>
+          <tr>
+            <td>6. Game-end POST</td>
+            <td><code>Pages/CoupleQuiz.razor</code> + <code>ApiService.PostHighScoreAsync(...)</code></td>
+            <td>When the game completes, the SPA POSTs to one of <code>/api/{game}/highscores</code>, <code>/api/marblerace/highscores</code>, <code>/api/pobrawl/highscores</code>, <code>/api/posports/highscores</code>, <code>/api/poracer/scores</code>. Each is in the parent <code>MapGroup("").RequireAuthorization()</code> with rate-limit policy <code>highscores</code> (10/min, compound partition).</td>
+          </tr>
+          <tr>
+            <td>7. StorageService</td>
+            <td><code>src/PoMiniGames.Infrastructure/Services/StorageService.cs</code> via <code>HighScoreDescriptor&lt;T&gt;</code> (strategy pattern)</td>
+            <td>Endpoint routes the score to <code>StorageService.SaveXxxHighScoreAsync(...)</code>. The descriptor's <code>Sanitize</code> / <code>ToFields</code> / <code>RowKeyFields</code> / <code>ShouldOverwrite</code> are applied. <code>RequestIdentity.Resolve</code> overrides any client-supplied <code>PlayerInitials</code> with the claim-derived <code>DisplayName</code> (or <code>"Player"</code> / <code>"Guest"</code> fallback) and stamps <code>UserId</code> + <code>IsGuest</code>.</td>
+          </tr>
+          <tr>
+            <td>8. Azure Tables</td>
+            <td>one of <code>PlayerStats</code>, <code>MarbleRaceHighScores</code>, <code>PoBrawlHighScores</code>, <code>PoBrawlLadder</code>, <code>PoRacerHighScores</code>, <code>PoSportsHighScores</code></td>
+            <td><code>TableServiceClient</code> is built from <code>PoMiniGames:Storage:TableService:ConnectionString</code> &gt; <code>:Endpoint</code> &gt; <code>:AccountName</code> (DefaultAzureCredential) &gt; Azurite default. Tables are created eagerly at startup (<code>StorageService.Initialize()</code>) and lazily on first use (<code>Table(name).CreateIfNotExists()</code>).</td>
+          </tr>
+          <tr>
+            <td>9. Response</td>
+            <td>Minimal API</td>
+            <td><code>201 Created</code> with the saved DTO body, or <code>200 ValidationProblem</code> for malformed input (e.g. <code>MarbleRaceScore.TryCreate(...)</code> rejects out-of-range).</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ── Sequence diagram ─────────────────────────────────────────── -->
+  <div class="sec">
+    <h2>2. Sequence diagram</h2>
+    <div class="card">
+      <!--@SVG:request-sequence-->
+    </div>
+  </div>
+
+  <!-- ── Failure surfaces ─────────────────────────────────────────── -->
+  <div class="sec">
+    <h2>3. Failure surfaces</h2>
+
+    <div class="dual">
+      <div class="card">
+        <h3>3.1 401 — unauthenticated</h3>
+        <p>Cookie auth events override the framework's default redirect-to-login behaviour: an unauthenticated <code>/api/*</code> call returns <code>401 Unauthorized</code>, not <code>302 Found</code>. The SPA's <code>ApiService</code> translates the 401 into <code>AuthHandshakeReauthRequiredException</code> or a normal "needs login" path. <code>AuthStateService</code> deduplicates concurrent <code>/api/auth/handshake</code> calls so a navigation race doesn't flood the wire.</p>
+      </div>
+      <div class="card">
+        <h3>3.2 429 — rate limited</h3>
+        <p>The rate-limiter is configured with <code>RejectionStatusCode = 429</code>. Policies: <code>highscores</code> (10/min), <code>infer</code> (10/sec), <code>ai-generation</code> (5/min), <code>face-analysis</code> (2/10sec &mdash; declared but no endpoint uses it). Compound partition = <code>{ip}|{identity-or-anon}</code> so anonymous bursts don't poison authenticated buckets.</p>
+      </div>
+      <div class="card">
+        <h3>3.3 Provider retry</h3>
+        <p>Every AI consumer uses the same resilience pipeline via <code>AddAzureOpenAIResilience()</code>: retry + circuit breaker + outer timeout. There is no project-level "max retries" knob; it's whatever the standard resilience handler ships with. PoJoker uses <code>AddStandardResilienceHandler()</code> on its <code>JokeApiClient</code> HttpClient (15 s timeout).</p>
+      </div>
+      <div class="card">
+        <h3>3.4 Save retry</h3>
+        <p>Azure Tables does <code>Add</code> for new rows and <code>Upsert</code> for updates. A concurrent create surfaces as <code>409 Conflict</code>; <code>TableConcurrency.cs</code> retries with re-read on 409. No application-level retry loop wraps <code>SaveXxxHighScoreAsync</code> itself &mdash; the SDK handles it.</p>
+      </div>
+      <div class="card">
+        <h3>3.5 Mock banner</h3>
+        <p>The SPA shows a mock banner whenever <code>AuthStateService.UsingMockData</code> is true (i.e. <code>FeatureFlags:UseMockData</code> is true). The same flag drives per-game <code>IsMock</code> surfaces on services that implement <code>IMockable</code>; <code>/api/mockables</code> enumerates them and is hidden (404) in Production.</p>
+      </div>
+      <div class="card">
+        <h3>3.6 Handshake transport abort</h3>
+        <p>When the SPA navigates mid-handshake, the browser aborts the in-flight <code>/api/auth/handshake</code> with <code>ERR_ABORTED</code>. <code>AuthStateService</code> treats this as "still warming up" and keeps the previous identity rather than blanking the header. The next page mount retries the call.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Where the pipeline differs by game ────────────────────────── -->
+  <div class="sec">
+    <h2>4. Per-game deltas</h2>
+    <p class="lede">The trace above is PoCoupleQuiz-shaped. Other games substitute or skip steps:</p>
+
+    <div class="card">
+      <table class="tbl">
+        <thead>
+          <tr><th>Game</th><th>Lobby lifecycle</th><th>Persistence</th><th>AI involvement</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>PoCoupleQuiz</td><td>Hub-driven (<code>CoupleQuizHub</code>); lobby in-memory in <code>GameSessionManager</code></td><td>Azure Tables (<code>GameHistoryRepository</code>, <code>TeamsRepository</code>)</td><td>Question generation + answer similarity</td></tr>
+          <tr><td>PoFunQuiz</td><td>Hub-driven (<code>FunQuizHub</code>); lobby in <code>MultiplayerLobbyService</code></td><td>Azure Tables (<code>LeaderboardRepository</code> → <code>PoFunQuizPlayers</code>)</td><td>Question list per category</td></tr>
+          <tr><td>PoJoker</td><td>Single-player (no hub); UI calls <code>/api/joker/*</code></td><td>Azure Tables (<code>PoJokerPerformances</code>)</td><td>Analyze + explain + rewrite</td></tr>
+          <tr><td>PoRacer / PoSports</td><td>Two hubs each: lobby-hub + race-hub; registries in <code>PoRacerLobbyService</code> / <code>PoRacerRaceRegistry</code> (same shape for PoSports)</td><td>Azure Tables (<code>PoRacerHighScores</code>, <code>PoSportsHighScores</code>)</td><td>None</td></tr>
+          <tr><td>PoMarbleRace</td><td>Single-player; UI calls <code>/api/marblerace/highscores</code></td><td>Azure Tables (<code>MarbleRaceHighScores</code>)</td><td>None</td></tr>
+          <tr><td>PoBrawl</td><td>Single-player; UI calls <code>/api/pobrawl/highscores</code> + <code>/api/pobrawl/ladder</code></td><td>Azure Tables (<code>PoBrawlHighScores</code>, <code>PoBrawlLadder</code>)</td><td>None</td></tr>
+          <tr><td>PoSurvive</td><td>Single-player; client picks inference backend (Mock / RemoteRelay / WebLlm / server)</td><td>Azure Tables (<code>PlayerStats</code>, evolution tables created by <code>StorageInitializer</code>)</td><td>Simulation inference via <code>POST /api/infer</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</main>
+<footer>
+  <div>PoMiniGames DOCS · self-contained · dark/light themes · no CDN</div>
+  <div class="build">build: 2026-07-29</div>
+</footer>
+</div>
+<!--@SHELL-->

@@ -51,27 +51,105 @@ const FOV_SPEED_ADD = 10;       // max degrees added at top speed
 const FOV_SPEED_LO = 25;        // speed at which the widening starts
 const FOV_SPEED_HI = 90;        // speed at which it saturates
 
-// Vignette + chromatic-aberration post pass (#10). Runs in linear HDR before OutputPass.
+// Vignette + chromatic-aberration post pass (#10), now also carrying speed-reactive radial
+// motion blur (GFX #2) and the state-driven colour grade (GFX #3). Runs in linear HDR before
+// OutputPass.
+//
+// Both new effects live in THIS pass on purpose. A separate blur pass and a separate grading
+// pass would each cost a full-screen render target and a full-screen resolve; folded in here
+// they cost some extra taps and a handful of ALU on a pass that was already running. `uBlur`
+// gates the taps and is a uniform, so when the marble is slow the branch is coherent across
+// every invocation and the taps genuinely do not execute.
 const PostShader = {
   uniforms: {
     tDiffuse: { value: null },
     uVignette: { value: 1.15 },
     uAberration: { value: 0.0016 },
+    uBlur: { value: 0.0 },              // #2 — radial smear strength, 0 = off
+    uTint: { value: new THREE.Vector3(1, 1, 1) },   // #3 — grade
+    uContrast: { value: 1.0 },
+    uSaturation: { value: 1.0 },
   },
   vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
   fragmentShader: `
-    uniform sampler2D tDiffuse; uniform float uVignette; uniform float uAberration; varying vec2 vUv;
+    uniform sampler2D tDiffuse; uniform float uVignette; uniform float uAberration;
+    uniform float uBlur; uniform vec3 uTint; uniform float uContrast; uniform float uSaturation;
+    varying vec2 vUv;
+
+    const int BLUR_TAPS = 6;
+
+    // One chromatically-split sample. The R/B split is the pre-existing aberration; reusing it
+    // inside the blur taps is what gives the smear its prismatic edge, so the "speed streaks"
+    // cost nothing beyond the taps themselves.
+    vec3 sampleSplit(vec2 uv, vec2 off) {
+      return vec3(texture2D(tDiffuse, uv + off).r,
+                  texture2D(tDiffuse, uv).g,
+                  texture2D(tDiffuse, uv - off).b);
+    }
+
     void main() {
       vec2 c = vUv - 0.5;
       float d = dot(c, c);
       vec2 off = c * uAberration;
-      float r = texture2D(tDiffuse, vUv + off).r;
-      float g = texture2D(tDiffuse, vUv).g;
-      float b = texture2D(tDiffuse, vUv - off).b;
+
+      vec3 col;
+      if (uBlur > 0.001) {
+        // Radial smear: successive taps march back toward frame centre, so the centre (where
+        // the marble you steer sits) stays sharp and the edges streak. Weighted toward the
+        // un-displaced tap so the image never goes soft, only fast.
+        vec3 acc = vec3(0.0);
+        float wsum = 0.0;
+        for (int i = 0; i <= BLUR_TAPS; i++) {
+          float t = float(i) / float(BLUR_TAPS);
+          float s = 1.0 - t * uBlur * 0.09;
+          float w = 1.0 - t * 0.55;
+          acc += sampleSplit(0.5 + c * s, off) * w;
+          wsum += w;
+        }
+        col = acc / wsum;
+      } else {
+        col = sampleSplit(vUv, off);
+      }
+
+      // Grade (#3): saturation, then contrast about mid-grey, then tint. Clamped at zero —
+      // this runs in linear HDR, where a contrast push can otherwise drive channels negative
+      // and OutputPass turns those into black speckle.
+      float luma = dot(col, vec3(0.2126, 0.7152, 0.0722));
+      col = mix(vec3(luma), col, uSaturation);
+      col = (col - 0.5) * uContrast + 0.5;
+      col = max(col * uTint, 0.0);
+
       float vig = smoothstep(0.95, 0.15, d * uVignette);
-      gl_FragColor = vec4(vec3(r, g, b) * mix(0.5, 1.0, vig), 1.0);
+      gl_FragColor = vec4(col * mix(0.5, 1.0, vig), 1.0);
     }`,
 };
+
+// #3 grade presets. Eased toward, never snapped — see the grade easing in followTarget.
+// `vignette` rides along so the frame closes in as the race gets tense.
+const GRADES = {
+  // Pre-race on the grid: cool, desaturated, flat. Clinical — nothing has happened yet.
+  pick: { tint: [0.88, 0.94, 1.10], contrast: 0.94, saturation: 0.78, vignette: 1.30 },
+  // The baseline look the game shipped with.
+  racing: { tint: [1.00, 1.00, 1.00], contrast: 1.00, saturation: 1.00, vignette: 1.15 },
+  // Final stretch: warm, contrasty, tighter vignette. Matches the HUD's own 0.86 threshold.
+  final: { tint: [1.12, 1.02, 0.90], contrast: 1.12, saturation: 1.14, vignette: 1.55 },
+  // Won: brief lift in saturation and exposure.
+  win: { tint: [1.16, 1.10, 0.98], contrast: 1.08, saturation: 1.30, vignette: 1.05 },
+  // Lost or eliminated: drain the colour out.
+  loss: { tint: [0.92, 0.92, 0.96], contrast: 0.96, saturation: 0.35, vignette: 1.70 },
+};
+
+// Users who ask for reduced motion get the grade (a colour change, not motion) but never the
+// radial blur. Matches the prefers-reduced-motion blocks already in PoMarbleRacePage.razor.css.
+const REDUCED_MOTION = typeof window !== 'undefined' && window.matchMedia
+  ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  : false;
+
+// #2 blur mapping. Blur starts later than the FOV widening does — a mild speed should read as
+// FOV alone, with the smear reserved for genuinely quick running so it stays meaningful.
+const BLUR_SPEED_LO = 45;
+const BLUR_SPEED_HI = 110;
+const BLUR_MAX = 1.0;
 
 function makeBgGradient() {
   const c = document.createElement('canvas');
@@ -165,7 +243,10 @@ export function createScene(container) {
   // glowing every emissive marble into a halo.
   const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.18, 0.6, 0.92); // strength, radius, threshold
   composer.addPass(bloom);                                // #1 — bloom
-  composer.addPass(new ShaderPass(PostShader));           // #10 — vignette + chromatic aberration
+  // ShaderPass CLONES the uniforms off the descriptor, so drive `post.uniforms` — writing to
+  // PostShader.uniforms would touch the module-level template and leak between scenes.
+  const post = new ShaderPass(PostShader);                // #10 vignette/aberration + #2 blur + #3 grade
+  composer.addPass(post);
   const smaa = new SMAAPass(1, 1);                        // #10 — anti-aliasing for the bloom pipeline
   composer.addPass(smaa);
   composer.addPass(new OutputPass());                     // tone-map + sRGB to screen
@@ -239,11 +320,133 @@ export function createScene(container) {
     if (any) { sparkGeo.attributes.position.needsUpdate = true; sparkGeo.attributes.color.needsUpdate = true; }
   }
 
+  // ── Shockwave rings (#4) ──────────────────────────────────────────────
+  // A fixed pool of flat rings that expand and fade on a heavy impact. Additive and unlit with
+  // depthWrite off, so they cost no lighting, cast no shadow, and never z-fight the road they
+  // sit above. Same fire/age/recycle shape as the spark pool above — pre-allocated once, so a
+  // 30-marble pile-up allocates nothing.
+  const RINGS = 8;
+  const RING_LIFE = 0.42;       // seconds from fire to fully faded
+  const RING_R0 = 0.9;          // starting radius (about a marble)
+  const RING_R1 = 13;           // radius at end of life
+  const ringGeo = new THREE.RingGeometry(1, 1.14, 32);
+  const ringPool = [];
+  let ringHead = 0;
+  for (let i = 0; i < RINGS; i++) {
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0xffffff, transparent: true, opacity: 0,
+      blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+    });
+    const mesh = new THREE.Mesh(ringGeo, mat);
+    mesh.rotation.x = -Math.PI / 2;   // lie flat on the road
+    mesh.visible = false;
+    mesh.frustumCulled = false;
+    mesh.renderOrder = 2;
+    scene.add(mesh);
+    ringPool.push({ mesh, mat, life: 0 });
+  }
+
+  // Fire one ring at a world position. Recycles the oldest slot when the pool is exhausted,
+  // which is the correct behaviour here: in a pile-up the newest impacts are the ones worth
+  // seeing.
+  function burstRing(pos, colorHex, scale = 1) {
+    const r = ringPool[ringHead];
+    ringHead = (ringHead + 1) % RINGS;
+    r.life = RING_LIFE;
+    r.scale = scale;
+    r.mat.color.set(colorHex ?? 0xffd9a0);
+    r.mesh.position.set(pos.x, pos.y + 0.35, pos.z);
+    r.mesh.visible = true;
+  }
+
+  function updateRings(dt) {
+    for (const r of ringPool) {
+      if (r.life <= 0) continue;
+      r.life -= dt;
+      if (r.life <= 0) { r.mesh.visible = false; r.mat.opacity = 0; continue; }
+      const t = 1 - r.life / RING_LIFE;               // 0 at fire → 1 at death
+      const rad = (RING_R0 + (RING_R1 - RING_R0) * t) * (r.scale || 1);
+      r.mesh.scale.set(rad, rad, rad);
+      // Fade out on a curve rather than linearly, so the ring reads as a snap rather than a
+      // slow bloom.
+      r.mat.opacity = (1 - t) * (1 - t) * 0.85;
+    }
+  }
+
+  // ── Audio spatialization helper (#9) ──────────────────────────────────
+  // Turns a world position into a stereo pan and a distance gain relative to the LIVE camera,
+  // so audio.js never needs to know about the camera or three.js at all. Pan comes from the
+  // projected NDC x, which is exactly "where on screen did this happen" — the thing a player
+  // is actually looking at when the sound arrives.
+  const _cue = new THREE.Vector3();
+  const AUDIO_NEAR = 30;        // full volume within this distance
+  const AUDIO_FAR = 420;        // floor volume at/after this distance
+  const AUDIO_FLOOR = 0.18;     // distant events recede but never vanish
+  function audioCue(pos) {
+    _cue.set(pos.x, pos.y, pos.z);
+    const dist = _cue.distanceTo(camera.position);
+    _cue.project(camera);
+    // NDC x is unbounded behind the camera; clamp so an off-screen event pans hard rather than
+    // producing a nonsense pan value.
+    const pan = Math.max(-1, Math.min(1, _cue.x));
+    const t = Math.max(0, Math.min(1, (dist - AUDIO_NEAR) / (AUDIO_FAR - AUDIO_NEAR)));
+    return { pan, gain: 1 - (1 - AUDIO_FLOOR) * t };
+  }
+
   const camTarget = new THREE.Vector3();
   let haveTarget = false;
   let cutT = 0;                 // seconds left on the accelerated post-cut ease
   let fovPunch = 0;
   function punchFov() { fovPunch = -9; }
+
+  // ── #2 blur + #3 grade state ──────────────────────────────────────────
+  // Live values are eased toward the targets every frame so a grade change is always a
+  // transition and never a cut. `blurPunch` is a decaying transient laid over the speed-driven
+  // blur, fired at the start gun and on boost-pad entry.
+  let blurPunch = 0;
+  let gradeTo = GRADES.racing;
+  const gradeNow = {
+    tint: new THREE.Vector3(1, 1, 1), contrast: 1, saturation: 1, vignette: 1.15,
+  };
+
+  // Name one of GRADES ('pick' | 'racing' | 'final' | 'win' | 'loss'). Unknown names are
+  // ignored rather than throwing — the grade is decoration, and a typo here must never take
+  // the render loop down mid-race.
+  function setGrade(name) {
+    const g = GRADES[name];
+    if (g) gradeTo = g;
+  }
+
+  function punchBlur(amount = 0.55) {
+    if (REDUCED_MOTION) return;
+    blurPunch = Math.max(blurPunch, amount);
+  }
+
+  function updatePost(dt, speed) {
+    const k = 1 - Math.exp(-3.2 * dt);      // grade easing; slower than the FOV so it reads as a mood shift
+    gradeNow.tint.x += (gradeTo.tint[0] - gradeNow.tint.x) * k;
+    gradeNow.tint.y += (gradeTo.tint[1] - gradeNow.tint.y) * k;
+    gradeNow.tint.z += (gradeTo.tint[2] - gradeNow.tint.z) * k;
+    gradeNow.contrast += (gradeTo.contrast - gradeNow.contrast) * k;
+    gradeNow.saturation += (gradeTo.saturation - gradeNow.saturation) * k;
+    gradeNow.vignette += (gradeTo.vignette - gradeNow.vignette) * k;
+
+    const u = post.uniforms;
+    u.uTint.value.copy(gradeNow.tint);
+    u.uContrast.value = gradeNow.contrast;
+    u.uSaturation.value = gradeNow.saturation;
+    u.uVignette.value = gradeNow.vignette;
+
+    // Blur: speed ramp + the decaying punch, eased so it never steps.
+    let target = 0;
+    if (!REDUCED_MOTION) {
+      const t = Math.max(0, Math.min(1, (speed - BLUR_SPEED_LO) / (BLUR_SPEED_HI - BLUR_SPEED_LO)));
+      target = Math.min(BLUR_MAX, t * BLUR_MAX + blurPunch);
+    }
+    u.uBlur.value += (target - u.uBlur.value) * (1 - Math.exp(-6 * dt));
+    if (u.uBlur.value < 0.002) u.uBlur.value = 0;   // snap to exactly off so the shader takes the cheap branch
+    blurPunch = blurPunch > 0.005 ? blurPunch * Math.exp(-3.5 * dt) : 0;
+  }
 
   // ── Left-drag mouse orbit around the followed target ──────────────────
   let orbitYaw = 0;
@@ -369,6 +572,8 @@ export function createScene(container) {
     fovPunch = Math.abs(fovPunch) > 0.05 ? fovPunch * Math.exp(-6 * dt) : 0;
 
     updateSparks(dt);
+    updateRings(dt);            // #4 — expanding shockwave rings
+    updatePost(dt, spd);        // #2 blur + #3 grade, driven by the same speed the FOV uses
   }
 
   return {
@@ -380,6 +585,10 @@ export function createScene(container) {
     followTarget,
     burstSparks,
     burstConfetti,
+    burstRing,        // #4
+    audioCue,         // #9
+    setGrade,         // #3
+    punchBlur,        // #2
     punchFov,
     render() { composer.render(); },
     resize,
@@ -390,6 +599,10 @@ export function createScene(container) {
       window.removeEventListener('pointerup', onPointerUp);
       sparkGeo.dispose();
       sparkMat.dispose();
+      // Rings share one geometry across the pool; each owns its own material (they carry
+      // independent colour + opacity), so the geometry is disposed once and the materials each.
+      ringGeo.dispose();
+      for (const r of ringPool) r.mat.dispose();
       bgTexture.dispose();
       envRT.texture.dispose();
       composer.dispose();

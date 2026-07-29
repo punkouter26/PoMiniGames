@@ -1,0 +1,148 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 540" role="img" aria-label="C4 container view: Browser, Web host, SignalR hubs, Azure Table Storage, Entra ID, AI Foundry, App Insights, Key Vault">
+  <style>
+    .frame  { fill: none; stroke: var(--border, #2a3447); stroke-width: 1.2; stroke-dasharray: 6 4; }
+    .frame-label { fill: var(--fg-muted, #aab4c5); font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11px; }
+    .person { fill: var(--bg-soft, #1a2333); stroke: var(--border-strong, #3a4660); stroke-width: 1.6; }
+    .person-t { fill: var(--fg, #e8eef7); font-family: system-ui, sans-serif; font-size: 12px; font-weight: 600; }
+    .container { fill: var(--bg-elevated, #131a26); stroke: var(--c1, #0072B2); stroke-width: 1.6; }
+    .container-t { fill: var(--fg, #e8eef7); font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12.5px; font-weight: 600; }
+    .container-s { fill: var(--fg-muted, #aab4c5); font-family: system-ui, sans-serif; font-size: 11px; }
+    .ext  { fill: var(--bg-soft, #1a2333); stroke: var(--c4, #CC79A7); stroke-width: 1.6; }
+    .ext-t { fill: var(--fg, #e8eef7); font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; font-weight: 600; }
+    .ext-s { fill: var(--fg-muted, #aab4c5); font-family: system-ui, sans-serif; font-size: 10.5px; }
+    .edge        { fill: none; stroke: var(--border-strong, #3a4660); stroke-width: 1.4; marker-end: url(#arrow4); }
+    .edge-good   { fill: none; stroke: var(--good, #4ade80); stroke-width: 1.4; marker-end: url(#arrow-good); }
+    .edge-warn   { fill: none; stroke: var(--c2, #E69F00); stroke-width: 1.4; marker-end: url(#arrow-warn); }
+    .edge-label  { fill: var(--fg-muted, #aab4c5); font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 10.5px; }
+  </style>
+  <defs>
+    <marker id="arrow4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--border-strong, #3a4660)" /></marker>
+    <marker id="arrow-good" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--good, #4ade80)" /></marker>
+    <marker id="arrow-warn" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--c2, #E69F00)" /></marker>
+  </defs>
+
+  <text class="container-t" x="20" y="22" style="font-size:14px">C4 Level 2 — Containers (PoMiniGames)</text>
+  <text class="container-s" x="20" y="38">Single Kestrel host serves Blazor WASM + Minimal API + SignalR. Storage is Azure Tables (PoShared RG). Identity via Microsoft Entra with a Dev cookie fallback.</text>
+
+  <!-- Frame: PoMiniGames solution -->
+  <rect class="frame" x="160" y="60" width="660" height="450" rx="14" />
+  <text class="frame-label" x="172" y="78">PoMiniGames solution (single origin :5000)</text>
+
+  <!-- Browser (outside solution) -->
+  <g transform="translate(20,140)">
+    <rect class="person" width="110" height="58" rx="10" />
+    <text class="person-t" x="14" y="22">Player</text>
+    <text class="container-s" x="14" y="40">Edge / browser</text>
+    <text class="container-s" x="14" y="54">runs PoMiniGamesClient</text>
+  </g>
+
+  <!-- Web host container -->
+  <g transform="translate(180,110)">
+    <rect class="container" width="420" height="120" rx="10" />
+    <text class="container-t" x="14" y="22">Web host — Kestrel on :5000</text>
+    <text class="container-s" x="14" y="40">Single ASP.NET Core 10 process</text>
+    <text class="container-s" x="14" y="56">Routes: SPA shell + /api/* + 6 SignalR hubs</text>
+    <text class="container-s" x="14" y="72">Auth: Composite → JWT | DevCookie | FakeAuth</text>
+    <text class="container-s" x="14" y="88">Telemetry: OpenTelemetry → Azure Monitor (App Insights)</text>
+    <text class="container-s" x="14" y="104">Key ring: AzureBlobXmlRepository in Production (PoShared)</text>
+  </g>
+
+  <!-- Application services container -->
+  <g transform="translate(180,250)">
+    <rect class="container" width="200" height="100" rx="10" />
+    <text class="container-t" x="14" y="22">Application services</text>
+    <text class="container-s" x="14" y="40">IStorageService</text>
+    <text class="container-s" x="14" y="54">IDiagnosticsSnapshotProvider</text>
+    <text class="container-s" x="14" y="68">PoCoupleQuiz / PoFunQuiz / PoJoker</text>
+    <text class="container-s" x="14" y="82">PoSurvive simulation</text>
+  </g>
+
+  <!-- Infrastructure container -->
+  <g transform="translate(400,250)">
+    <rect class="container" width="200" height="100" rx="10" />
+    <text class="container-t" x="14" y="22">Infrastructure</text>
+    <text class="container-s" x="14" y="40">StorageService (Azure Tables)</text>
+    <text class="container-s" x="14" y="54">HighScoreDescriptor&lt;T&gt;</text>
+    <text class="container-s" x="14" y="68">EndpointRouteExtensions</text>
+    <text class="container-s" x="14" y="82">RateLimiter · Telemetry</text>
+  </g>
+
+  <!-- Hubs -->
+  <g transform="translate(620,110)">
+    <rect class="container" width="180" height="120" rx="10" />
+    <text class="container-t" x="14" y="22">SignalR hubs</text>
+    <text class="container-s" x="14" y="40">CoupleQuizHub</text>
+    <text class="container-s" x="14" y="54">FunQuizHub</text>
+    <text class="container-s" x="14" y="68">PoRacerLobby/RaceHub</text>
+    <text class="container-s" x="14" y="82">PoSportsLobby/RaceHub</text>
+    <text class="container-s" x="14" y="100">All RequireAuthorization</text>
+  </g>
+
+  <!-- External: Azure Table Storage -->
+  <g transform="translate(620,250)">
+    <rect class="ext" width="180" height="100" rx="10" />
+    <text class="ext-t" x="14" y="22">Azure Table Storage</text>
+    <text class="ext-s" x="14" y="40">PoShared RG · PoShared storage account</text>
+    <text class="ext-s" x="14" y="56">Tables: PlayerStats, MarbleRace, PoBrawl, PoRacer, PoSports, …</text>
+    <text class="ext-s" x="14" y="72">Blob: dp-keys (data-protection key ring)</text>
+    <text class="ext-s" x="14" y="88">Local dev: Azurite (UseDevelopmentStorage=true)</text>
+  </g>
+
+  <!-- External: Entra -->
+  <g transform="translate(20,300)">
+    <rect class="ext" width="120" height="64" rx="10" />
+    <text class="ext-t" x="14" y="22">Entra ID</text>
+    <text class="ext-s" x="14" y="38">Microsoft login</text>
+    <text class="ext-s" x="14" y="52">MSAL.js (SPA)</text>
+  </g>
+
+  <!-- External: AI Foundry -->
+  <g transform="translate(20,380)">
+    <rect class="ext" width="120" height="64" rx="10" />
+    <text class="ext-t" x="14" y="22">Azure AI Foundry</text>
+    <text class="ext-s" x="14" y="38">Centralized hub</text>
+    <text class="ext-s" x="14" y="52">DefaultAzureCredential</text>
+  </g>
+
+  <!-- External: App Insights -->
+  <g transform="translate(620,380)">
+    <rect class="ext" width="180" height="64" rx="10" />
+    <text class="ext-t" x="14" y="22">App Insights</text>
+    <text class="ext-s" x="14" y="38">SamplingRatio: 0.1 prod / 1.0 dev</text>
+    <text class="ext-s" x="14" y="52">OpenTelemetry exporter</text>
+  </g>
+
+  <!-- External: Key Vault -->
+  <g transform="translate(20,460)">
+    <rect class="ext" width="120" height="44" rx="10" />
+    <text class="ext-t" x="14" y="20">Key Vault</text>
+    <text class="ext-s" x="14" y="34">kv-poshared</text>
+  </g>
+
+  <!-- Edges -->
+  <path class="edge"        d="M130,170 H 180" />
+  <text class="edge-label"  x="135" y="160">HTTPS :5000</text>
+
+  <path class="edge-good"   d="M600,170 H 620" />
+  <text class="edge-label"  x="602" y="160" style="fill:var(--good, #4ade80)">WS /couplequiz/hubs/game</text>
+
+  <path class="edge"        d="M380,250 V 230 H 380" />
+  <path class="edge"        d="M500,250 V 230" />
+
+  <path class="edge"        d="M600,300 H 620" />
+  <text class="edge-label"  x="603" y="290">SDK calls</text>
+
+  <path class="edge-warn"   d="M380,350 H 140 V 410" />
+  <text class="edge-label"  x="160" y="345" style="fill:var(--c2, #E69F00)">MSAL (prod only)</text>
+
+  <path class="edge-warn"   d="M380,395 H 140 V 432" />
+  <text class="edge-label"  x="160" y="408" style="fill:var(--c2, #E69F00)">Azure OpenAI</text>
+
+  <path class="edge"        d="M600,395 H 620" />
+  <text class="edge-label"  x="603" y="385">OTLP</text>
+
+  <path class="edge"        d="M380,490 H 140 V 480" />
+  <text class="edge-label"  x="160" y="473">secrets at boot</text>
+
+  <text class="container-s" x="20" y="525">Single-process containers keep the surface tight; the only true I/O paths are Storage (Tables), AI Foundry, and Entra. App Insights is read-only telemetry.</text>
+</svg>

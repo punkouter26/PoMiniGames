@@ -1,0 +1,210 @@
+<!--@STYLE-->
+<title>PoMiniGames · Architecture</title>
+<div class="shell">
+<header class="top">
+  <div class="brand"><span class="dot"></span>PoMiniGames · DOCS</div>
+  <div class="crumbs"><a href="index.html">index</a><span class="sep">›</span>Architecture</div>
+  <div class="spacer"></div>
+  <button class="toggle" aria-label="toggle theme">◑ dark</button>
+</header>
+<main>
+  <h1>Architecture report</h1>
+  <p class="muted">Audit of the solution, vertical slices, Minimal API routes, SignalR hubs, and middleware order. All claims trace to a file path under <code>src/PoMiniGames</code>.</p>
+
+  <div class="tiles">
+    <div class="tile"><div class="label">Solution file</div><div class="value">PoMiniGames.slnx</div><div class="sub">.NET 10 · .slnx (XML)</div></div>
+    <div class="tile"><div class="label">Projects</div><div class="value">9</div><div class="sub">6 src · 1 shared · 4 test tiers</div></div>
+    <div class="tile"><div class="label">Slices</div><div class="value">13</div><div class="sub">under <code>src/PoMiniGames/Features</code></div></div>
+    <div class="tile"><div class="label">Minimal API groups</div><div class="value">22</div><div class="sub">all registered in one place</div></div>
+    <div class="tile"><div class="label">SignalR hubs</div><div class="value">6</div><div class="sub">all <code>RequireAuthorization()</code></div></div>
+    <div class="tile"><div class="label">Anonymous reads</div><div class="value">5</div><div class="sub">leaderboards + auth/config + health</div></div>
+  </div>
+
+  <!-- ── C4 ───────────────────────────────────────────────────────────── -->
+  <div class="sec">
+    <h2>1. C4 — system context & containers</h2>
+    <div class="card">
+      <!--@SVG:c4-containers-->
+    </div>
+    <p class="muted">Level 1 (system context) is implicit in the diagram: the player (browser) interacts with one PoMiniGames process. External dependencies are Entra ID (identity), Azure Table Storage (persistence), Azure AI Foundry (inference), App Insights (telemetry), and Key Vault (secrets). Level 3 (components) is covered by the slice matrix below.</p>
+  </div>
+
+  <!-- ── Slice × MapGroup matrix ──────────────────────────────────────── -->
+  <div class="sec">
+    <h2>2. Slice × MapGroup matrix</h2>
+    <p class="lede">Every Blazor <code>@page</code> on the left maps to the Minimal-API group on the right that owns its server-side counterpart. Routes are derived from <code>app.MapGroup(...)</code> and <code>app.MapHub&lt;T&gt;(...)</code> calls in <code>EndpointRouteExtensions.cs</code>.</p>
+
+    <div class="card">
+      <table class="tbl">
+        <thead>
+          <tr><th>Slice (Feature folder)</th><th>MapGroup</th><th>Routes</th><th>Auth</th><th>Rate-limit policy</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>Features/Auth/</code></td>
+            <td><code>/api/auth</code> + unprefixed <code>/auth/*</code></td>
+            <td><code>/config</code> · <code>/dev-login</code> · <code>/dev-bypass</code> · <code>/dev-logout</code> · <code>/me</code> · <code>/handshake</code> · <code>/auth/login/microsoft</code> · <code>/auth/login/fake</code> · <code>/auth/logout</code></td>
+            <td>Anonymous; <code>/api/auth/me</code> requires auth</td>
+            <td>—</td>
+          </tr>
+          <tr>
+            <td><code>Features/Health/</code></td>
+            <td><code>/api/health</code> · <code>/api/diag</code> · <code>/api/logs</code> · <code>/test</code></td>
+            <td><code>/api/health</code> · <code>/api/health/liveness</code> · <code>/api/health/ping</code> · <code>/health</code> (alias) · <code>/api/diag</code> · <code>/api/diag/correlation</code> · <code>/api/logs/tail</code> · <code>/test/offline-mode</code> · <code>/test/render-diagnostics</code> · <code>/test/api-timeout</code></td>
+            <td>Anonymous (probes must stay open)</td>
+            <td>—</td>
+          </tr>
+          <tr>
+            <td><code>Features/Diagnostics/</code></td>
+            <td><code>/api/diag/telemetry</code> · <code>/api/mockables</code></td>
+            <td><code>/api/diag/telemetry</code> · <code>/api/mockables</code></td>
+            <td>Anonymous; <code>/api/mockables</code> 404 in Production</td>
+            <td>—</td>
+          </tr>
+          <tr>
+            <td><code>Features/HighScores/PoBrawlHighScoresEndpoints.cs</code></td>
+            <td><code>/api/pobrawl/highscores</code> · <code>/api/pobrawl/ladder</code></td>
+            <td>GET/POST each</td>
+            <td>Auth (parent group <code>MapGroup("").RequireAuthorization()</code>)</td>
+            <td><code>highscores</code></td>
+          </tr>
+          <tr>
+            <td><code>Features/HighScores/PoSportsHighScoresEndpoints.cs</code></td>
+            <td><code>/api/posports/highscores</code></td>
+            <td>GET/POST</td>
+            <td>Auth</td>
+            <td><code>highscores</code></td>
+          </tr>
+          <tr>
+            <td><code>Features/MarbleRace/MarbleRaceHighScoresEndpoints.cs</code></td>
+            <td><code>/api/marblerace/highscores</code></td>
+            <td>GET/POST</td>
+            <td>Auth</td>
+            <td><code>highscores</code></td>
+          </tr>
+          <tr>
+            <td><code>Features/MatchHistory/MatchHistoryEndpoints.cs</code></td>
+            <td><code>/api/matches</code></td>
+            <td>GET/POST — owner is server-authoritative for signed-in callers</td>
+            <td>Auth</td>
+            <td><code>highscores</code></td>
+          </tr>
+          <tr>
+            <td><code>Features/Leaderboard/PlayerStatsEndpoints.cs</code></td>
+            <td><code>/api/{game}/players/{playerName}</code> · <code>/api/{game}/statistics</code> · <code>/api/statistics</code></td>
+            <td><code>/stats</code> GET/PUT · <code>/leaderboard</code> GET</td>
+            <td>Auth on writes; reads anonymous</td>
+            <td>—</td>
+          </tr>
+          <tr>
+            <td><code>Features/Leaderboard/UnifiedLeaderboardEndpoints.cs</code></td>
+            <td><code>/api/leaderboards</code></td>
+            <td>GET (single game or aggregated)</td>
+            <td>Anonymous</td>
+            <td>—</td>
+          </tr>
+          <tr>
+            <td><code>Features/PoCoupleQuiz/CoupleQuizEndpoints.cs</code></td>
+            <td><code>/api/couplequiz</code></td>
+            <td><code>/lobby/{code}/{exists,status}</code> · <code>/questions/generate</code> · <code>/questions/check-similarity</code> · <code>/teams/*</code> · <code>/game-history</code> · <code>/runtime/status</code></td>
+            <td>Auth on <code>/game-history</code> (parent group)</td>
+            <td><code>ai-generation</code> on question routes</td>
+          </tr>
+          <tr>
+            <td><code>Features/PoFunQuiz/FunQuizEndpoints.cs</code></td>
+            <td><code>/api/funquiz</code></td>
+            <td><code>/quiz/questions</code> · <code>/leaderboard</code> GET/POST · <code>/runtime/status</code> · <code>/lobby/open</code></td>
+            <td>Auth on POST leaderboard</td>
+            <td><code>ai-generation</code> on /quiz/questions</td>
+          </tr>
+          <tr>
+            <td><code>Features/PoJoker/JokerEndpoints.cs</code></td>
+            <td><code>/api/joker</code></td>
+            <td><code>/fetch</code> · <code>/analyze</code> · <code>/explain</code> · <code>/leaderboard</code></td>
+            <td>Auth (parent group)</td>
+            <td>—</td>
+          </tr>
+          <tr>
+            <td><code>Features/PoRacer/PoRacerScoreEndpoints.cs</code></td>
+            <td><code>/api/poracer/scores</code></td>
+            <td>GET/POST</td>
+            <td>Auth</td>
+            <td>—</td>
+          </tr>
+          <tr>
+            <td><code>Features/PoSurvive/*</code></td>
+            <td><code>/api/evolution</code> · <code>/api/infer</code> · <code>/api/sessions</code></td>
+            <td><code>/record</code> · <code>/states</code> · <code>/summary</code> · <code>/tree</code> · <code>/evolve</code> · <code>/crossover</code> · <code>/seed</code> · <code>/infer</code> · <code>/sessions</code></td>
+            <td>Auth</td>
+            <td><code>infer</code> on <code>/api/infer</code></td>
+          </tr>
+          <tr>
+            <td>Hubs (composed in <code>EndpointRouteExtensions</code>)</td>
+            <td>6 hub paths</td>
+            <td><code>/couplequiz/hubs/game</code> · <code>/funquiz/gamehub</code> · <code>/poracer/lobby-hub</code> · <code>/poracer/race-hub</code> · <code>/posports/lobby-hub</code> · <code>/posports/race-hub</code></td>
+            <td><code>RequireAuthorization()</code> on every hub</td>
+            <td>—</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="muted">All routes above are registered exactly once via <code>app.MapPoMiniGamesEndpoints()</code> in <code>src/PoMiniGames/Infrastructure/EndpointRouteExtensions.cs</code>. There is no <code>app.MapGet</code> / <code>app.MapPost</code> call outside that one method (and the deliberately-separate <code>app.MapFallbackToFile("index.html")</code> in <code>Program.cs</code>).</p>
+  </div>
+
+  <!-- ── Middleware order ────────────────────────────────────────────── -->
+  <div class="sec">
+    <h2>3. Middleware order & the <code>/_framework</code> anonymous opt-out</h2>
+    <p class="lede">The order matters: any middleware that touches <code>Response.Body</code> before <code>UseResponseCompression()</code> bypasses compression for that response. <code>UseAuthentication</code> must precede <code>UseAuthorization</code> precedes <code>app.MapPoMiniGamesEndpoints()</code> precedes the typed <code>/api/{*rest:nonfile}</code> 404 handler precedes the SPA fallback.</p>
+
+    <div class="card">
+      <ol>
+        <li><code>UseResponseCompression()</code> — first to wrap every later body write.</li>
+        <li><code>UseCors("PoMiniGamesDevSpa")</code> — Dev-only; CORS preflight must answer before auth.</li>
+        <li><code>UseMiddleware&lt;RequestLogContextMiddleware&gt;()</code> — sets <code>UserId</code>/<code>SessionId</code> log enrichers.</li>
+        <li><code>UsePoMiniGamesRequestLogging()</code> — Serilog request logger.</li>
+        <li><code>UseExceptionHandler() + UseHsts()</code> (non-dev) <em>or</em> dev exception handler.</li>
+        <li><code>MapOpenApi()</code> + <code>MapScalarApiReference(...)</code> (Purple theme) — unauthenticated.</li>
+        <li>Dev-only <strong>no-cache middleware</strong> for the SPA shell + <code>/_framework/*</code>.</li>
+        <li><code>UseBlazorFrameworkFiles()</code>.</li>
+        <li><strong>appsettings gate</strong> — serves the client's <code>appsettings.json</code> (never the server's), allow-listed to two filenames.</li>
+        <li><strong><code>/_framework/*.pdb</code> 204 handler</strong> — the "anonymous opt-out" the prompt asks about. Production builds don't ship <code>.pdb</code> symbols but <code>blazor.boot.json</code> still references them by SRI hash, so the browser logs "Failed to find a valid digest" on every boot. The handler returns 204 for any <code>/_framework/*.pdb</code> request, keeping the boot manifest honest without serving stale content.</li>
+        <li><code>UseStaticFiles(...)</code> — Vary: Accept-Encoding, Content-Length removed, <code>IHttpResponseBodyFeature</code> swapped to <code>StreamResponseBodyFeature</code> so the WASM payload goes through the compression stream instead of <code>SendFile</code>.</li>
+        <li><code>UseAuthentication()</code> — JWT, DevCookie, FakeAuth (Composite policy).</li>
+        <li><code>UseRateLimiter()</code>.</li>
+        <li><code>UseAuthorization()</code>.</li>
+        <li><code>app.MapPoMiniGamesEndpoints()</code> — all routes + hubs.</li>
+        <li><code>app.Map("/api/{*rest:nonfile}", () =&gt; Results.NotFound(...))</code> — typed 404 JSON so the SPA fallback below cannot silently return HTML for an unknown <code>/api/*</code> path.</li>
+        <li><code>app.MapFallbackToFile("index.html")</code> — SPA shell for extensionless client routes.</li>
+      </ol>
+    </div>
+    <div class="callout">
+      <h4>Why the <code>/_framework/*.pdb</code> opt-out exists</h4>
+      <p>Bug-fix QA #10 in <code>Program.cs</code>: production <code>blazor.boot.json</code> references <code>_framework/Po*.pdb</code> by SRI hash, but the published build never carries those symbols. Returning 204 makes the boot manifest happy without serving stale or fictional content. The handler is anonymous (no auth) because the browser needs to fetch it during the very first paint, before any auth round-trip.</p>
+    </div>
+  </div>
+
+  <!-- ── Request sequence ────────────────────────────────────────────── -->
+  <div class="sec">
+    <h2>4. Request flow — typical multi-player turn</h2>
+    <div class="card">
+      <!--@SVG:request-sequence-->
+    </div>
+    <p class="muted">Step 1–2 are the SignalR <code>negotiate</code> + WebSocket upgrade with <code>?access_token=...</code> (the prompt requires the token for the WS upgrade specifically because browsers can't send custom headers on a WS). Step 3 is the policy scheme forwarding to JWT Bearer. The 401 / 429 / 5xx failure surfaces are deliberate — see Report 8 for the full user-workflow trace.</p>
+  </div>
+
+  <!-- ── One-place registration contract ─────────────────────────────── -->
+  <div class="sec">
+    <h2>5. Single registration point contract</h2>
+    <div class="callout good">
+      <h4>Verdict · every route & hub lives in one place</h4>
+      <p><code>src/PoMiniGames/Infrastructure/EndpointRouteExtensions.cs</code> is the only file in the solution that calls <code>app.MapGroup(...)</code>, <code>app.MapGet/MapPost(...)</code>, or <code>app.MapHub&lt;T&gt;(...)</code> on the host. <code>Program.cs</code> then invokes <code>app.MapPoMiniGamesEndpoints()</code> as a single ordered call. The pattern is enforced by convention and code review, not by a unit test (no equivalent of <code>TestCountCeilingTests</code> exists for route placement).</p>
+    </div>
+  </div>
+
+</main>
+<footer>
+  <div>PoMiniGames DOCS · self-contained · dark/light themes · no CDN</div>
+  <div class="build">build: 2026-07-29</div>
+</footer>
+</div>
+<!--@SHELL-->

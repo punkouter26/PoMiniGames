@@ -45,8 +45,13 @@
     to   { opacity: 1; transform: translate(-50%, 0); }
 }
 
+/* The emoji here became an inline SVG (GFX #6), so the row is a flex line now — an SVG has no
+   baseline to align a text run against the way a glyph did. */
 .mr-podium-title {
-    text-align: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
     font-size: 0.72rem;
     letter-spacing: 0.12em;
     text-transform: uppercase;
@@ -500,13 +505,179 @@
     left: 14px;
     z-index: 4;
     padding: 8px 12px;
-    border-radius: 10px;
-    background: rgba(8, 12, 24, 0.7);
+    border-radius: 12px;
+    /* Layered glass: a soft directional sheen over the dark base, so the panel reads as a pane
+       of glass catching light rather than a flat translucent box. */
+    background:
+        linear-gradient(145deg, rgba(148, 197, 255, 0.10), rgba(148, 197, 255, 0) 46%),
+        rgba(8, 12, 24, 0.7);
     border: 1px solid rgba(34, 211, 238, 0.3);
-    backdrop-filter: blur(6px);
+    backdrop-filter: blur(10px) saturate(1.25);
+    -webkit-backdrop-filter: blur(10px) saturate(1.25);
+    box-shadow: 0 6px 22px rgba(2, 6, 18, 0.5), inset 0 1px 0 rgba(226, 232, 240, 0.10);
     color: #e2e8f0;
     pointer-events: none;
+    /* Own stacking context, so the ::after heat wash below can sit behind the content without
+       escaping the panel. */
+    isolation: isolate;
 }
+
+/* GFX #6 — the heat wash. Driven by --mr-heat (0..1, set inline from leader progress) as an
+   OPACITY, not by swapping the background: a gradient can't be transitioned, but opacity can,
+   and opacity stays on the compositor so warming the HUD never contends with the WebGL loop on
+   the main thread. Same reason every other animation added here is transform/opacity only. */
+.mr-telemetry::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    background: linear-gradient(150deg, rgba(251, 146, 60, 0.30), rgba(248, 113, 113, 0.16) 60%, rgba(248, 113, 113, 0) 100%);
+    opacity: var(--mr-heat, 0);
+    transition: opacity 0.4s ease-out;
+    z-index: -1;
+}
+
+/* ── GFX #6: speed dial ──
+   A conic-gradient arc around the race clock, filling with the player's own speed. The arc
+   itself is repainted on each 10 Hz tick (a gradient is not interpolable), but the needle that
+   rides it is a rotate transform with a matching transition, so the gauge reads as continuous
+   motion rather than as ten steps a second. */
+.mr-tel-dial {
+    position: relative;
+    width: 88px;
+    height: 88px;
+    display: grid;
+    place-content: center;
+    justify-items: center;
+}
+
+.mr-tel-dial::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    /* Cool → hot as the arc fills. The trailing `0` stop is a hard cut: everything past the
+       current speed falls back to the unlit track colour. */
+    background: conic-gradient(from -90deg,
+        #22d3ee 0%,
+        #4ade80 calc(var(--spd, 0%) * 0.45),
+        #fde047 calc(var(--spd, 0%) * 0.78),
+        #fb923c var(--spd, 0%),
+        rgba(148, 163, 184, 0.16) 0);
+    /* Punch the middle out to leave a ring. Both prefixes: -webkit- is still required on Safari. */
+    -webkit-mask: radial-gradient(closest-side, transparent 78%, #000 79%);
+    mask: radial-gradient(closest-side, transparent 78%, #000 79%);
+}
+
+.mr-tel-dial-needle {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    /* Rotating the whole (invisible) disc carries the ::after pip around the rim — one
+       compositor-friendly transform instead of animating a position. */
+    transform: rotate(var(--spd-deg, 0deg));
+    transition: transform 0.1s linear;
+    will-change: transform;
+}
+
+.mr-tel-dial-needle::after {
+    content: "";
+    position: absolute;
+    top: -2px;
+    left: 50%;
+    width: 5px;
+    height: 5px;
+    margin-left: -2.5px;
+    border-radius: 50%;
+    background: #f8fafc;
+    box-shadow: 0 0 8px rgba(255, 255, 255, 0.9);
+}
+
+.mr-tel-speed {
+    font-size: 0.62rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    color: #22d3ee;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+    margin-top: 2px;
+}
+
+.mr-tel-speed-unit {
+    font-size: 0.48rem;
+    font-weight: 700;
+    color: #64748b;
+    margin-left: 2px;
+}
+
+/* The dial spins the needle continuously; under reduced motion, drop the interpolation so it
+   snaps to each reading instead of gliding. */
+@media (prefers-reduced-motion: reduce) {
+    .mr-tel-dial-needle { transition: none; }
+    .mr-telemetry::after { transition: none; }
+}
+
+/* ── GFX #6: inline SVG iconography (replaces the emoji) ── */
+.mr-medal {
+    width: 1.15em;
+    height: 1.15em;
+    vertical-align: -0.2em;
+}
+
+.mr-medal-ribbon {
+    fill: none;
+    stroke: rgba(148, 163, 184, 0.85);
+    stroke-width: 2.2;
+    stroke-linecap: round;
+}
+
+.mr-medal-disc {
+    fill: var(--mr-medal, #94a3b8);
+    stroke: rgba(2, 6, 18, 0.55);
+    stroke-width: 1;
+}
+
+.mr-medal-num {
+    fill: rgba(12, 10, 4, 0.9);
+    font-size: 8px;
+    font-weight: 900;
+}
+
+.mr-medal--1 { --mr-medal: #fbbf24; }
+.mr-medal--2 { --mr-medal: #cbd5e1; }
+.mr-medal--3 { --mr-medal: #d97706; }
+
+.mr-flag {
+    width: 1em;
+    height: 1em;
+    vertical-align: -0.14em;
+}
+
+.mr-flag-pole {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+}
+
+.mr-flag-cloth rect { fill: currentColor; }
+
+.mr-flag-edge {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.4;
+    opacity: 0.75;
+}
+
+.mr-flame {
+    width: 1em;
+    height: 1em;
+    vertical-align: -0.15em;
+    fill: currentColor;
+}
+
+.mr-flame-core { fill: rgba(255, 247, 214, 0.9); }
 
 /* The .mr-tel-me "YOU · <name>" row that lived here is gone along with the in-world YOU pin
    and the ON AIR badge — the panel is telemetry only now. */
@@ -605,6 +776,9 @@
 }
 
 .mr-tel-streak {
+    display: flex;
+    align-items: center;
+    gap: 5px;
     margin-top: 6px;
     font-size: 0.68rem;
     font-weight: 700;
@@ -636,6 +810,12 @@
     left: 50%;
     transform: translateX(-50%);
     z-index: 5;
+    /* inline-flex, not block: the 🏁 emoji became an inline SVG (GFX #6), which needs explicit
+       cross-axis centring. inline-flex keeps the pill hugging its content so the translateX(-50%)
+       centring still lands. */
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
     padding: 6px 18px;
     border-radius: 999px;
     background: rgba(12, 8, 20, 0.8);

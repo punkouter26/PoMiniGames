@@ -1,0 +1,183 @@
+<!--@STYLE-->
+<title>PoMiniGames · Testing tiers</title>
+<div class="shell">
+<header class="top">
+  <div class="brand"><span class="dot"></span>PoMiniGames · DOCS</div>
+  <div class="crumbs"><a href="index.html">index</a><span class="sep">›</span>Testing tiers</div>
+  <div class="spacer"></div>
+  <button class="toggle" aria-label="toggle theme">◑ dark</button>
+</header>
+<main>
+  <h1>Testing tier hierarchy report</h1>
+  <p class="muted">Real test counts vs the structural ceilings enforced by <code>TestCountCeilingTests</code> in each tier. Counts derived by <code>scripts/_count-tests.ps1</code> (counts every <code>[Fact]</code> / <code>[Theory]</code> method by file).</p>
+
+  <!-- ── Counts vs ceilings ─────────────────────────────────────────── -->
+  <div class="sec">
+    <h2>1. Counts vs ceilings</h2>
+    <div class="dual">
+      <div>
+        <div class="chart" data-chart="hbar" data-src="#tier-counts"></div>
+        <script type="application/json" id="tier-counts">
+        {
+          "title": "Test method count per tier (bars = actual, secondary = ceiling)",
+          "data": [
+            { "label": "Unit",        "value": 100, "secondary": 100, "color": "#0072B2" },
+            { "label": "Integration", "value":  49, "secondary":  50, "color": "#E69F00" },
+            { "label": "E2EAPI",      "value":  11, "secondary":  25, "color": "#009E73" },
+            { "label": "E2EUI",       "value":  10, "secondary":  25, "color": "#CC79A7" }
+          ],
+          "note": "Unit tier is AT the ceiling (100 methods excluding the guard itself)."
+        }
+        </script>
+      </div>
+      <div class="card">
+        <table class="tbl">
+          <thead>
+            <tr><th>Tier</th><th class="num">Methods</th><th class="num">Ceiling</th><th>Headroom</th><th>Ceiling test</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Unit (excluding the guard)</td><td class="num">100</td><td class="num">100</td><td><span class="chip warn">0 — at the cap</span></td><td><code>TestCountCeilingTests.UnitTier_StaysWithinCeiling</code></td></tr>
+            <tr><td>Integration</td><td class="num">49</td><td class="num">50</td><td><span class="chip good">1</span></td><td><code>IntegrationTestCountCeilingTests</code></td></tr>
+            <tr><td>E2EAPI</td><td class="num">11</td><td class="num">25</td><td><span class="chip good">14</span></td><td><code>E2EApiTestCountCeilingTests</code></td></tr>
+            <tr><td>E2EUI</td><td class="num">10</td><td class="num">25</td><td><span class="chip good">15</span></td><td><code>E2EUiTestCountCeilingTests</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Is this a pyramid? ────────────────────────────────────────── -->
+  <div class="sec">
+    <h2>2. Shape vs the pyramid</h2>
+    <p class="lede">A balanced pyramid would be widest at Unit, narrowing through Integration and API, with a small UI apex. Today:</p>
+    <div class="card">
+      <pre><code>Unit         100  ████████████████████████████ (ceiling = 100)
+Integration   49  ██████████████              (ceiling = 50)
+E2EAPI        11  ███                         (ceiling = 25)
+E2EUI         10  ███                         (ceiling = 25)</code></pre>
+      <p class="muted">This <em>is</em> a pyramid — but with caveats:</p>
+      <ul>
+        <li>The Unit tier is pinned to its structural ceiling. Any new test <strong>must</strong> consolidate an existing one or move to Integration. The ceiling was raised from a default; it is not a recommendation.</li>
+        <li>Integration at 49/50 is healthy headroom. New behavior tests should land here first per CLAUDE.md.</li>
+        <li>E2EAPI and E2EUI both have ~50% headroom under their ceilings. The small number reflects the test budget guard (10 E2E tests can already cover a full Playwright deployment smoke), not under-coverage.</li>
+      </ul>
+    </div>
+    <div class="callout warn">
+      <h4>Finding · Unit tier is at the ceiling</h4>
+      <p>100 product test methods (excluding the <code>TestCountCeilingTests</code> guard itself, which the guard's own logic excludes via <code>Where(t =&gt; t != typeof(TestCountCeilingTests))</code>). The next test added will trip the guard unless the author consolidates or moves it to Integration. This is exactly the pressure the 100/50/25/25 rule was designed to apply, and it is doing its job.</p>
+    </div>
+  </div>
+
+  <!-- ── Copy-paste matrix ─────────────────────────────────────────── -->
+  <div class="sec">
+    <h2>3. Copy-paste <code>dotnet test --filter</code> matrix</h2>
+    <p class="lede">The commands below are the ones you can paste into a terminal today; each one is anchored to a real source file (the test names are exact, copied from <code>grep_search</code> over <code>tests/**/*.cs</code>).</p>
+
+    <div class="card">
+      <table class="tbl">
+        <thead>
+          <tr><th>Tier</th><th>Target</th><th>Command</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Unit</td>
+            <td>the whole tier</td>
+            <td><code>dotnet test tests/PoMiniGames.Unit/PoMiniGames.Unit.csproj</code></td>
+          </tr>
+          <tr>
+            <td>Unit</td>
+            <td>Elo calculator</td>
+            <td><code>dotnet test tests/PoMiniGames.Unit/PoMiniGames.Unit.csproj --filter "FullyQualifiedName~EloCalculatorTests"</code></td>
+          </tr>
+          <tr>
+            <td>Unit</td>
+            <td>AIFoundry centralization contract (7 tests)</td>
+            <td><code>dotnet test tests/PoMiniGames.Unit/PoMiniGames.Unit.csproj --filter "FullyQualifiedName~AIFoundryCentralizationTests"</code></td>
+          </tr>
+          <tr>
+            <td>Unit</td>
+            <td>Diagnostic projection</td>
+            <td><code>dotnet test tests/PoMiniGames.Unit/PoMiniGames.Unit.csproj --filter "FullyQualifiedName~DiagProjectionTests"</code></td>
+          </tr>
+          <tr>
+            <td>Unit</td>
+            <td>Microsoft auth options binder</td>
+            <td><code>dotnet test tests/PoMiniGames.Unit/PoMiniGames.Unit.csproj --filter "FullyQualifiedName~MicrosoftAuthOptionsBinderTests"</code></td>
+          </tr>
+          <tr>
+            <td>Integration</td>
+            <td>the whole tier (requires Azurite)</td>
+            <td><code>dotnet test tests/PoMiniGames.Integration/PoMiniGames.Integration.csproj</code></td>
+          </tr>
+          <tr>
+            <td>Integration</td>
+            <td>Azurite health probes</td>
+            <td><code>dotnet test tests/PoMiniGames.Integration/PoMiniGames.Integration.csproj --filter "FullyQualifiedName~AzuriteHealthIntegrationTests"</code></td>
+          </tr>
+          <tr>
+            <td>Integration</td>
+            <td>PoJoker endpoints</td>
+            <td><code>dotnet test tests/PoMiniGames.Integration/PoMiniGames.Integration.csproj --filter "FullyQualifiedName~PoJokerEndpointsTests"</code></td>
+          </tr>
+          <tr>
+            <td>Integration</td>
+            <td>Home page API contract</td>
+            <td><code>dotnet test tests/PoMiniGames.Integration/PoMiniGames.Integration.csproj --filter "FullyQualifiedName~HomePageApiTests"</code></td>
+          </tr>
+          <tr>
+            <td>Integration</td>
+            <td>Dev login endpoints</td>
+            <td><code>dotnet test tests/PoMiniGames.Integration/PoMiniGames.Integration.csproj --filter "FullyQualifiedName~AuthDevLoginEndpointsTests"</code></td>
+          </tr>
+          <tr>
+            <td>E2EAPI</td>
+            <td>the whole tier</td>
+            <td><code>dotnet test tests/E2EAPI/E2EAPI.csproj</code></td>
+          </tr>
+          <tr>
+            <td>E2EAPI</td>
+            <td>Smoke against a real HTTP host</td>
+            <td><code>dotnet test tests/E2EAPI/E2EAPI.csproj --filter "FullyQualifiedName~HomeSmokeTests|FullyQualifiedName~ApiContractSmokeTests"</code></td>
+          </tr>
+          <tr>
+            <td>E2EAPI</td>
+            <td>Deployment smoke (App Service)</td>
+            <td><code>dotnet test tests/E2EAPI/E2EAPI.csproj --filter "FullyQualifiedName~DeploymentSmokeTests"</code></td>
+          </tr>
+          <tr>
+            <td>E2EUI</td>
+            <td>the whole tier (Playwright)</td>
+            <td><code>dotnet test tests/E2EUI/E2EUI.csproj</code></td>
+          </tr>
+          <tr>
+            <td>E2EUI</td>
+            <td>Mobile golden path</td>
+            <td><code>dotnet test tests/E2EUI/E2EUI.csproj --filter "FullyQualifiedName~MobileGoldenPathTests"</code></td>
+          </tr>
+          <tr>
+            <td>E2EUI</td>
+            <td>Mock banner UI</td>
+            <td><code>dotnet test tests/E2EUI/E2EUI.csproj --filter "FullyQualifiedName~MockBannerUiTests"</code></td>
+          </tr>
+          <tr>
+            <td>All tiers</td>
+            <td>one shot</td>
+            <td><code>pwsh scripts/test-all.ps1</code></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ── Test budget guard ─────────────────────────────────────────── -->
+  <div class="sec">
+    <h2>4. Test budget guard</h2>
+    <p class="muted"><code>tests/Shared/TestBudgetGuard.cs</code> is the structural enforcement for the E2E tiers: even with a live Azure OpenAI client wired, the suite refuses to make a real call unless an explicit override is set. The intent is that an accidental key in <code>appsettings.Development.json</code> cannot rack up billing during local test runs.</p>
+  </div>
+</main>
+<footer>
+  <div>PoMiniGames DOCS · self-contained · dark/light themes · no CDN</div>
+  <div class="build">build: 2026-07-29</div>
+</footer>
+</div>
+<!--@SHELL-->

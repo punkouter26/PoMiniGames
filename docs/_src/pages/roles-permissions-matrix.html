@@ -1,0 +1,233 @@
+<!--@STYLE-->
+<title>PoMiniGames · Roles / permissions matrix</title>
+<div class="shell">
+<header class="top">
+  <div class="brand"><span class="dot"></span>PoMiniGames · DOCS</div>
+  <div class="crumbs"><a href="index.html">index</a><span class="sep">›</span>Roles &amp; permissions</div>
+  <div class="spacer"></div>
+  <button class="toggle" aria-label="toggle theme">◑ dark</button>
+</header>
+<main>
+  <h1>Roles &amp; permissions matrix</h1>
+  <p class="muted">Verdict-driven grid: principal × environment against Minimal API endpoints, SignalR hubs, and UI routes. Every verdict cites the guard as written in source.</p>
+
+  <div class="callout bad">
+    <h4>Headline finding · the app has no role checks</h4>
+    <p>A grep across <code>src/**/*.cs</code> for <code>RequireRole</code>, <code>[Authorize(Roles=...)]</code>, <code>policy.RequireRole</code>, and <code>IsInRole</code> returns exactly <strong>one</strong> hit: <code>src/PoMiniGames/Features/Auth/RequestIdentity.cs:39</code> &mdash; <code>(user?.IsInRole("guest") ?? true)</code>. There is no endpoint with a <code>RequireRole("admin")</code>-style gate. The role columns therefore <strong>collapse to one column</strong> showing where "guest" is detected.</p>
+  </div>
+
+  <!-- ── Where roles ARE used ──────────────────────────────────────── -->
+  <div class="sec">
+    <h2>1. The single role check</h2>
+    <div class="card">
+      <table class="tbl">
+        <thead>
+          <tr><th>Where</th><th>Role</th><th>What it does</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>RequestIdentity.Resolve</code></td>
+            <td><code>guest</code></td>
+            <td>Sets <code>Identity.IsGuest</code> to <code>true</code> when the caller has no stable <code>oid</code>/<code>nameidentifier</code>/<code>sub</code> claim OR has the <code>guest</code> role. Used by storage paths (<code>MatchHistory</code>, <code>MarbleRaceHighScores</code>, <code>HighScoreDescriptor</code>) to mark rows and to choose fallback identity ("Guest").</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="muted">No other code reads roles. No endpoint uses <code>RequireRole(...)</code>. No policy scheme declares a role-based authorization policy. The whole authorization decision is "anonymous vs authenticated" plus, inside the request, "is the caller a guest".</p>
+  </div>
+
+  <!-- ── Principal × environment verdict grid ─────────────────────── -->
+  <div class="sec">
+    <h2>2. Principal × environment × endpoint</h2>
+    <p class="lede">Verdicts come from the actual guard, not from policy intent. "Anonymous" means the endpoint is reachable without a session; "Authenticated" means <code>MapGroup("").RequireAuthorization()</code> (or an explicit <code>[Authorize]</code> on the legacy unprefixed routes); "Hub-auth" means <code>app.MapHub&lt;T&gt;(...).RequireAuthorization()</code>.</p>
+
+    <div class="card">
+      <table class="tbl">
+        <thead>
+          <tr>
+            <th>Endpoint / Hub</th>
+            <th>Guard as written</th>
+            <th>Dev · anon</th>
+            <th>Dev · auth</th>
+            <th>Dev · guest</th>
+            <th>Prod · anon</th>
+            <th>Prod · auth</th>
+            <th>Prod · guest</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>GET /api/auth/config</code></td>
+            <td>no guard; <code>MapAuthEndpoints</code> outside the auth group</td>
+            <td><span class="chip good">200</span></td>
+            <td><span class="chip good">200</span></td>
+            <td><span class="chip good">200</span></td>
+            <td><span class="chip good">200</span></td>
+            <td><span class="chip good">200</span></td>
+            <td><span class="chip good">200</span></td>
+          </tr>
+          <tr>
+            <td><code>POST /api/auth/dev-login</code> · <code>dev-bypass</code></td>
+            <td><code>[AllowAnonymous]</code> + <code>SignInDevelopmentUserAsync</code> returns 404 outside Dev/Test</td>
+            <td><span class="chip good">200</span></td>
+            <td><span class="chip good">200</span></td>
+            <td><span class="chip good">200</span></td>
+            <td><span class="chip bad">404</span></td>
+            <td><span class="chip bad">404</span></td>
+            <td><span class="chip bad">404</span></td>
+          </tr>
+          <tr>
+            <td><code>GET /auth/login/fake</code></td>
+            <td><code>[AllowAnonymous]</code> + 404 outside Dev/Test <em>and</em> if peer isn't loopback</td>
+            <td><span class="chip good">200/302</span></td>
+            <td><span class="chip good">200/302</span></td>
+            <td><span class="chip good">200/302</span></td>
+            <td><span class="chip bad">404</span></td>
+            <td><span class="chip bad">404</span></td>
+            <td><span class="chip bad">404</span></td>
+          </tr>
+          <tr>
+            <td><code>GET /api/auth/me</code></td>
+            <td><code>[Authorize]</code></td>
+            <td><span class="chip warn">401</span></td>
+            <td><span class="chip good">200</span></td>
+            <td><span class="chip warn">401</span></td>
+            <td><span class="chip warn">401</span></td>
+            <td><span class="chip good">200</span></td>
+            <td><span class="chip warn">401</span></td>
+          </tr>
+          <tr>
+            <td><code>GET /api/auth/handshake</code></td>
+            <td><code>[AllowAnonymous]</code></td>
+            <td><span class="chip good">200</span></td>
+            <td><span class="chip good">200</span></td>
+            <td><span class="chip good">200</span></td>
+            <td><span class="chip good">200</span></td>
+            <td><span class="chip good">200</span></td>
+            <td><span class="chip good">200</span></td>
+          </tr>
+          <tr>
+            <td><code>GET /api/diag</code> · <code>/api/diag/correlation</code> · <code>/api/diag/telemetry</code> · <code>/api/health*</code> · <code>/api/mockables</code></td>
+            <td>no auth; diagnostics gated by <code>FeatureFlags:EnableDiagnostics</code>; <code>/api/mockables</code> 404 in Prod</td>
+            <td><span class="chip good">200</span></td>
+            <td><span class="chip good">200</span></td>
+            <td><span class="chip good">200</span></td>
+            <td><span class="chip warn">404 or 200 (diag) / 404 (mockables)</span></td>
+            <td>same</td><td>same</td>
+          </tr>
+          <tr>
+            <td><code>GET /api/logs/tail</code></td>
+            <td>no auth; <code>Results.NotFound()</code> outside Development</td>
+            <td><span class="chip good">200</span></td>
+            <td><span class="chip good">200</span></td>
+            <td><span class="chip good">200</span></td>
+            <td><span class="chip bad">404</span></td>
+            <td><span class="chip bad">404</span></td>
+            <td><span class="chip bad">404</span></td>
+          </tr>
+          <tr>
+            <td><code>GET /api/leaderboards</code> · <code>/api/{game}/statistics/leaderboard</code></td>
+            <td>no auth (anonymous reads per §10)</td>
+            <td><span class="chip good">200</span></td>
+            <td><span class="chip good">200</span></td>
+            <td><span class="chip good">200</span></td>
+            <td><span class="chip good">200</span></td>
+            <td><span class="chip good">200</span></td>
+            <td><span class="chip good">200</span></td>
+          </tr>
+          <tr>
+            <td><code>POST /api/{game}/highscores</code> · <code>/api/marblerace/highscores</code> · <code>/api/pobrawl/highscores</code> · <code>/api/posports/highscores</code> · <code>/api/poracer/scores</code></td>
+            <td>parent group <code>MapGroup("").RequireAuthorization()</code></td>
+            <td><span class="chip warn">401</span></td>
+            <td><span class="chip good">200/201</span></td>
+            <td><span class="chip warn">401</span></td>
+            <td><span class="chip warn">401</span></td>
+            <td><span class="chip good">200/201</span></td>
+            <td><span class="chip warn">401</span></td>
+          </tr>
+          <tr>
+            <td><code>POST /api/matches</code></td>
+            <td>parent group auth</td>
+            <td><span class="chip warn">401</span></td>
+            <td><span class="chip good">201</span></td>
+            <td><span class="chip warn">401</span></td>
+            <td><span class="chip warn">401</span></td>
+            <td><span class="chip good">201</span></td>
+            <td><span class="chip warn">401</span></td>
+          </tr>
+          <tr>
+            <td><code>POST /api/couplequiz/game-history</code> · <code>/api/funquiz/leaderboard</code> (POST)</td>
+            <td>parent group auth</td>
+            <td><span class="chip warn">401</span></td>
+            <td><span class="chip good">200/201</span></td>
+            <td><span class="chip warn">401</span></td>
+            <td><span class="chip warn">401</span></td>
+            <td><span class="chip good">200/201</span></td>
+            <td><span class="chip warn">401</span></td>
+          </tr>
+          <tr>
+            <td><code>POST /api/infer</code> · <code>/api/evolution/*</code> · <code>/api/sessions</code></td>
+            <td>parent group auth</td>
+            <td><span class="chip warn">401</span></td>
+            <td><span class="chip good">200</span></td>
+            <td><span class="chip warn">401</span></td>
+            <td><span class="chip warn">401</span></td>
+            <td><span class="chip good">200</span></td>
+            <td><span class="chip warn">401</span></td>
+          </tr>
+          <tr>
+            <td>All 6 SignalR hubs</td>
+            <td><code>app.MapHub&lt;T&gt;(...).RequireAuthorization()</code></td>
+            <td><span class="chip warn">401 on negotiate</span></td>
+            <td><span class="chip good">WS upgrade</span></td>
+            <td><span class="chip warn">401 on negotiate</span></td>
+            <td><span class="chip warn">401 on negotiate</span></td>
+            <td><span class="chip good">WS upgrade</span></td>
+            <td><span class="chip warn">401 on negotiate</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="muted">The "guest" column is a derived state, not a separate principal &mdash; a guest is an authenticated caller whose <code>RequestIdentity.IsGuest == true</code>. There is no path that grants a guest write access: <code>MapGroup("").RequireAuthorization()</code> requires the bearer/cookie principal to authenticate, and the principal is marked <code>guest</code> only after authentication succeeds. The 401 in the guest columns reflects that the <code>guest</code> principal arrives at the endpoint only when DevCookie minted it (Dev/Test only) &mdash; in Production there is no path that produces a <code>guest</code> principal, so the column is theoretical.</p>
+  </div>
+
+  <!-- ── Why the columns collapsed ──────────────────────────────────── -->
+  <div class="sec">
+    <h2>3. Why the role columns collapse</h2>
+    <div class="card">
+      <p>The matrix the prompt asks for is a principal × role × environment grid. The principal columns (anon / auth / guest) are meaningful. The role columns are not, because:</p>
+      <ul>
+        <li>No <code>RequireRole(...)</code> exists anywhere.</li>
+        <li>No <code>AuthorizationPolicy</code> is declared with role-based requirements.</li>
+        <li>The single <code>IsInRole("guest")</code> lookup is used inside <code>RequestIdentity.Resolve</code> to compute <code>IsGuest</code>, not to gate authorization. A caller with the <code>guest</code> role is authenticated; what changes is what <code>DisplayName</code> / <code>UserId</code> they end up with on a saved row.</li>
+      </ul>
+      <p>Rendering additional role columns (e.g. "admin", "moderator") would imply that those principals exist. They don't. The honest finding is the headline above: there are no roles to matrix.</p>
+    </div>
+  </div>
+
+  <!-- ── UI routes (Blazor @page) ──────────────────────────────────── -->
+  <div class="sec">
+    <h2>4. UI route gates</h2>
+    <p class="lede">Blazor gates are based on <code>BffAuthenticationStateProvider.GetAuthenticationStateAsync()</code>, which mirrors the BFF's <code>/auth/me</code> HTTP endpoint. There is no <code>[Authorize(Roles=...)]</code> on any <code>@page</code>.</p>
+
+    <div class="card">
+      <table class="tbl">
+        <thead>
+          <tr><th>UI route family</th><th>Source page</th><th>Gate</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Game pages (e.g. <code>/connectfive</code>, <code>/marblerace</code>, <code>/pobrawl</code>, <code>/poracer</code>, <code>/posports</code>, <code>/pofunquiz</code>, <code>/pocouplequiz</code>, <code>/pojoker</code>, <code>/posurvive</code>, <code>/tictactoe</code>)</td><td><code>src/PoMiniGames.Client/Games/*</code></td><td>AuthGate (the SPA redirects to <code>/login</code> when <code>AuthStateService.IsAuthenticated</code> is false); no role check</td></tr>
+          <tr><td>Profile, Leaderboards, Match history</td><td><code>Pages/Profile.razor</code>, <code>Pages/Leaderboards.razor</code>, <code>Pages/MatchHistory.razor</code></td><td>AuthGate; no role check</td></tr>
+          <tr><td>Login, diag (read-only)</td><td><code>Pages/Login.razor</code>, <code>Pages/Diag.razor</code></td><td>Anonymous (diag is gated by <code>FeatureFlags:EnableDiagnostics</code>, not by role)</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</main>
+<footer>
+  <div>PoMiniGames DOCS · self-contained · dark/light themes · no CDN</div>
+  <div class="build">build: 2026-07-29</div>
+</footer>
+</div>
+<!--@SHELL-->

@@ -1,0 +1,119 @@
+<!--@STYLE-->
+<title>PoMiniGames · Auth lifecycle</title>
+<div class="shell">
+<header class="top">
+  <div class="brand"><span class="dot"></span>PoMiniGames · DOCS</div>
+  <div class="crumbs"><a href="index.html">index</a><span class="sep">›</span>Auth lifecycle</div>
+  <div class="spacer"></div>
+  <button class="toggle" aria-label="toggle theme">◑ dark</button>
+</header>
+<main>
+  <h1>Auth lifecycle report</h1>
+  <p class="muted">Audit of the auth engine, the BFF handshake, the 401-not-302 rule for <code>/api/*</code>, the WASM boot mask, and the X-Reauth: 1 cookie-stale signal.</p>
+
+  <div class="tiles">
+    <div class="tile"><div class="label">Auth schemes</div><div class="value">3</div><div class="sub">Composite · DevCookie · FakeAuth (+ JWT Bearer)</div></div>
+    <div class="tile"><div class="label">Cookie name</div><div class="value"><code>PoMiniGames.DevAuth</code></div><div class="sub">HttpOnly · SameSite=Strict</div></div>
+    <div class="tile"><div class="label">401-not-302</div><div class="value"><span class="chip good">enforced</span></div><div class="sub">Cookie events override <code>OnRedirectToLogin</code></div></div>
+    <div class="tile"><div class="label">Key ring</div><div class="value">DP keys</div><div class="sub">Dev: <code>&lt;contentroot&gt;/keys</code> · Test: ephemeral temp · Prod: <code>dp-keys</code> blob</div></div>
+    <div class="tile"><div class="label">Production guards</div><div class="value">3</div><div class="sub">FakeAuth scheme · AutoGuestLogin · missing Foundry secrets</div></div>
+    <div class="tile"><div class="label">Handshake</div><div class="value">1 RTT</div><div class="sub"><code>GET /api/auth/handshake</code> returns config + profile</div></div>
+  </div>
+
+  <!-- ── Auth engine switch ─────────────────────────────────────────── -->
+  <div class="sec">
+    <h2>1. Auth engine switch</h2>
+    <p class="lede">Three named schemes plus the policy scheme that selects among them. <code>AuthSchemes.Composite</code> is the default for both <em>authenticate</em> and <em>challenge</em>; it forwards per request.</p>
+
+    <div class="card">
+      <table class="tbl">
+        <thead>
+          <tr><th>Scheme</th><th>Where it's registered</th><th>When it forwards to itself</th><th>Production guards</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>Composite</code> (policy)</td>
+            <td><code>Infrastructure/AuthExtensions.cs</code></td>
+            <td>always — it's the default</td>
+            <td>none (a policy scheme is not a handler)</td>
+          </tr>
+          <tr>
+            <td><code>JwtBearerDefaults.AuthenticationScheme</code></td>
+            <td>same file, <code>.AddJwtBearer(...)</code></td>
+            <td>when <code>Authorization: Bearer ...</code> OR <code>?access_token=...</code> query is present</td>
+            <td>Prod requires <code>MicrosoftAuth:ClientId</code> + <code>MicrosoftAuth:ApiClientId</code>; <code>StartupSecretValidator</code> throws otherwise</td>
+          </tr>
+          <tr>
+            <td><code>DevCookie</code></td>
+            <td><code>.AddCookie(AuthSchemes.DevCookie, ...)</code></td>
+            <td>Dev/Test fallback when no Bearer header is present</td>
+            <td>Prod <em>can</em> register the cookie (the policy is what stops forwarding to it in Prod), but <code>SignInDevelopmentUserAsync</code> returns 404 in non-Dev/Test. So a forged DevCookie cannot authenticate a Prod request — it gets <code>NoResult()</code> and the request ends up anonymous.</td>
+          </tr>
+          <tr>
+            <td><code>FakeAuth</code></td>
+            <td><code>.AddScheme&lt;...&gt;(FakeAuthHandler.SchemeName, ...)</code></td>
+            <td>Dev/Test + <code>Auth:EnableFakeAuth=true</code> + <code>X-Fake-User</code> header present</td>
+            <td><code>StartupSecretValidator</code> throws if the scheme is registered in Prod. <code>FakeAuthHandler.IsSafeIdentity</code> rejects tampered values (>64 chars, anything outside <code>[A-Za-z0-9._@-]</code>) with a warning and <code>NoResult()</code>.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="muted">Production guards are triple-locked: (a) the cookie's <code>SignIn</code> short-circuits to 404 outside Dev/Test; (b) the <code>FakeAuth</code> scheme throws if registered in Prod; (c) <code>Auth:AutoGuestLogin</code> throws if true in Prod.</p>
+  </div>
+
+  <!-- ── BFF handshake + 401-not-302 ────────────────────────────────── -->
+  <div class="sec">
+    <h2>2. BFF handshake &amp; the 401-not-302 rule</h2>
+
+    <div class="card">
+      <h3>2.1 Single-RTT handshake</h3>
+      <p>The legacy flow fetched <code>/api/auth/config</code> and <code>/api/auth/me</code> in sequence — two round trips plus a frame of layout shift. <code>GET /api/auth/handshake</code> collapses both into one response: <code>{ config, profile }</code>. <code>AuthStateService.InitializeAsync</code> deduplicates concurrent calls with a <code>SemaphoreSlim</code> + an in-flight <code>Task&lt;?&gt;</code>; the browser-abort race is treated as "keep the previous identity", not "blank the header".</p>
+
+      <h3>2.2 X-Reauth: 1</h3>
+      <p>If a <code>PoMiniGames.DevAuth</code> cookie was sent but the cookie auth handler produced an anonymous principal (because the data-protection key ring was rebuilt — Azurite wipe, dev-box restart), the handshake endpoint sets <code>X-Reauth: 1</code> in its response. The SPA detects it on the next page mount, calls <code>/api/auth/dev-logout</code>, and re-issues a fresh guest identity so the user is not stranded on a stale name.</p>
+
+      <h3>2.3 401-not-302 for <code>/api/*</code></h3>
+      <p>The cookie auth events <em>deliberately</em> short-circuit the default redirect behaviour:</p>
+      <pre><code>options.Events.OnRedirectToLogin      = ctx =&gt; { ctx.Response.StatusCode = 401; return Task.CompletedTask; };
+options.Events.OnRedirectToAccessDenied = ctx =&gt; { ctx.Response.StatusCode = 403; return Task.CompletedTask; };</code></pre>
+      <p>If this is missing, an unauthenticated call to <code>/api/*</code> would be answered with a <code>302 Found</code> to <code>/Account/Login</code>. The browser would follow the redirect, the SPA shell would render a login page over a JSON consumer, and the client would parse HTML as data — corrupting state. The override is the single load-bearing line that makes the BFF pattern work for a JSON consumer.</p>
+    </div>
+  </div>
+
+  <!-- ── WASM boot mask ─────────────────────────────────────────────── -->
+  <div class="sec">
+    <h2>3. WASM boot mask</h2>
+    <p class="lede">Before <code>BffAuthenticationStateProvider.GetAuthenticationStateAsync</code> resolves a real session, every render assumes anonymous. This is the conservative choice for <code>&lt;AuthorizeView&gt;</code> / <code>&lt;AuthorizeRouteView&gt;</code> gates in <code>App.razor</code>: <code>IsAuthenticated</code> is always <code>false</code> on the first paint, so protected pages route to the login wall without flashing their protected content.</p>
+    <p>The same provider is an adapter over the BFF's <code>/auth/me</code> HTTP endpoint — it does not hold the bearer token. <code>AuthStateService</code> holds the bearer token (WASM memory) and <code>ApiService</code> attaches it as <code>Authorization</code> on outbound calls. The README's "BFF cookie" line is honest about this: a <em>true</em> token-never-leaves-the-server BFF is a future hardening goal, not the current shape.</p>
+  </div>
+
+  <!-- ── State machine diagram ─────────────────────────────────────── -->
+  <div class="sec">
+    <h2>4. Auth state machine</h2>
+    <div class="card">
+      <!--@SVG:auth-flow-->
+    </div>
+    <p class="muted">Edges follow the order in <code>ForwardDefaultSelector</code> in <code>Infrastructure/AuthExtensions.cs</code>: Bearer header first, then <code>?access_token=</code> (SignalR hubs), then <code>X-Fake-User</code> (Dev/Test + flag), then DevCookie fallback. The orange edge is the "Dev/Test + FakeAuth enabled" path; the dashed red edge is the cookie-present-but-unprotectable path that triggers <code>X-Reauth: 1</code>.</p>
+  </div>
+
+  <!-- ── Open redirect protection ───────────────────────────────────── -->
+  <div class="sec">
+    <h2>5. Open-redirect protection</h2>
+    <div class="card">
+      <p>Every <code>returnUrl</code> query parameter is passed through <code>AuthEndpoints.ResolveLocalReturnUrl</code>, which:</p>
+      <ul>
+        <li>Requires the value to start with <code>/</code> (rooted relative).</li>
+        <li>Rejects protocol-relative targets like <code>//evil.example</code> or <code>/\evil</code>.</li>
+        <li>Rejects well-formed absolute URLs.</li>
+      </ul>
+      <p>Anything else collapses to <code>/</code>. This is the same defense used by the legacy unprefixed routes (<code>/auth/login/microsoft</code>, <code>/auth/login/fake</code>, <code>/auth/logout</code>).</p>
+    </div>
+  </div>
+
+</main>
+<footer>
+  <div>PoMiniGames DOCS · self-contained · dark/light themes · no CDN</div>
+  <div class="build">build: 2026-07-29</div>
+</footer>
+</div>
+<!--@SHELL-->

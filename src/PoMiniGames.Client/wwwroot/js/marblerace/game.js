@@ -155,6 +155,7 @@ export class Game {
     for (const m of this.marbleSet.marbles) m.prevPlace = -1;
     this.scene.followTarget(this.marbleSet.marbles[index].mesh.position, 0, true);
     this.scene.punchFov();   // a quick FOV widen as the race kicks off
+    this.scene.punchBlur(0.7); // #2 — and a smear off the line, so the start has a kick
     this.audio.resume();
     this.audio.playGun();
   }
@@ -229,13 +230,20 @@ export class Game {
       (v, pos, color) => {
         // Only BIG collisions make a sound — the constant clinking from every
         // little tap was too noisy. Sparks still fire on the smaller hits.
-        if (v > 8) this.audio.playClink(v);
+        // #9: the clink is now placed in the stereo field by where the hit happened on screen.
+        if (v > 8) this.audio.playClink(v, this.scene.audioCue(pos));
         this.scene.burstSparks(pos, color, Math.min(14, 4 + Math.floor(v)), Math.min(1.6, 0.5 + v * 0.12));
+        // #4: a genuinely heavy hit also throws a shockwave ring. Gated harder than the clink —
+        // a ring on every tap would leave the road permanently covered in them.
+        if (v > 14) this.scene.burstRing(pos, color, Math.min(1.5, 0.6 + v * 0.05));
       });
-    for (const m of this.marbleSet.marbles) this.scene.add(m.mesh);
+    // One group, not 101 meshes: the pack is a single InstancedMesh now (marbles.js #1), and the
+    // player's Mesh rides in the same group.
+    this.scene.add(this.marbleSet.group);
     this.scene.add(this.marbleSet.decorations);
     this.chosen = -1;
     this.slowmo = false;
+    this._gradeState = '';        // #3 — force the next _setGrade through even if the name repeats
     // Drop the director's references into the marble set we just disposed — a stale _shotMarble
     // would keep the hysteresis holding a shot on a marble that is no longer in the world.
     this._shotMarble = null;
@@ -246,8 +254,22 @@ export class Game {
     this.scene.followTarget(ov, 0, true, this.track.dirAt(ov.z));
   }
 
+  // #3 — request a colour grade. Deduped because this is called from the frame loop: setGrade
+  // itself is cheap, but re-arming the same target every frame would be noise in a profile and
+  // makes the intent unreadable. scene.js eases toward whatever is set, so changes are always
+  // transitions.
+  _setGrade(name) {
+    if (this._gradeState === name) return;
+    this._gradeState = name;
+    this.scene.setGrade(name);
+  }
+
   _setPhase(p) {
     this.phase = p;
+    // Grade follows the phase. 'result' deliberately doesn't set one — _resolve has already
+    // chosen win/loss by then, and overwriting it here would wash that straight out.
+    if (p === 'pick') this._setGrade('pick');
+    else if (p === 'racing') this._setGrade('racing');
     // 2026-07-19 browser audit #1: skip phase notifications while the
     // intro is up. The host can't react to OnPhase('pick') until resume()
     // fires anyway, and a notify during intro would race the host's
@@ -258,7 +280,7 @@ export class Game {
   }
 
   _nextTrack() {
-    if (this.marbleSet) { for (const m of this.marbleSet.marbles) this.scene.remove(m.mesh); this.scene.remove(this.marbleSet.decorations); this.marbleSet.dispose(); }
+    if (this.marbleSet) { this.scene.remove(this.marbleSet.group); this.scene.remove(this.marbleSet.decorations); this.marbleSet.dispose(); }
     if (this.track) { this.scene.remove(this.track.group); this.track.dispose(); }
     this.seed = (this.seed * 1664525 + 1013904223) >>> 0;
     this._buildTrack();
@@ -347,7 +369,10 @@ export class Game {
       if (Math.random() < 0.25) this.scene.burstSparks(m.mesh.position, 0x22d3ee, 2, 0.5);
     }
     // Edge-trigger the whoosh so it fires once per pad, not every frame you're on one.
-    if (playerBoosting && !this._wasBoosting) this.audio.playWhoosh();
+    if (playerBoosting && !this._wasBoosting) {
+      this.audio.playWhoosh(this.scene.audioCue(me.mesh.position));   // #9 placed at the pad
+      this.scene.punchBlur(0.5);                                       // #2 the pad kicks the frame
+    }
     this._wasBoosting = playerBoosting;
   }
 
@@ -372,10 +397,12 @@ export class Game {
     const [a, b] = k.band;
     const len = this.track.length;
     let hits = 0;
+    let lastHitPos = null;
     for (const m of this.marbleSet.marbles) {
       if (m.finished || m.eliminated) continue;
       const s = m.body.position.z / len;
       if (s < a || s > b) continue;
+      lastHitPos = m.mesh.position;
       const rb = this.track.rightAt(m.body.position.z);
       // Alternate the kick direction by marble index so a fire splits the pack rather than
       // shoving everyone the same way — and the player has to steer back to their line.
@@ -387,7 +414,13 @@ export class Game {
       hits++;
     }
     k.mat.emissiveIntensity = 3.6;          // bright flash on fire (visible even when it hits nothing)
-    if (hits > 0) this.audio.playWhoosh();  // ...but only make noise when it actually connects
+    if (hits > 0) {
+      // ...but only make noise when it actually connects, and place it where it connected (#9).
+      this.audio.playWhoosh(this.scene.audioCue(lastHitPos));
+      // #4 — a magenta shockwave off the band, which is what makes the kick read as a discharge
+      // rather than the pack spontaneously scattering.
+      this.scene.burstRing(lastHitPos, 0xe879f9, 1.5);
+    }
   }
 
   _frame(dt) {
@@ -406,7 +439,7 @@ export class Game {
         (this.track.finishZ - leaderPre.body.position.z) < SLOWMO_DIST;
       const sdt = this.slowmo ? dt * SLOWMO_SCALE : dt;
 
-      this.track.driveMotors();
+      this.track.driveMotors(this.raceClock);   // clock also breathes the boost light shafts (#4b)
       this._applyBoost(sdt);
       this._applySteer(sdt);   // player's held steering, integrated by the step below
       this._applyKickers();    // #6 telegraphed kicker band (push-only)
@@ -442,7 +475,9 @@ export class Game {
 
       for (const m of justFinished) {
         this.scene.burstConfetti(m.mesh.position);   // celebrate each ball crossing the line
-        this.audio.playFinish();
+        // #9 — spatialized, so a pack crossing ahead of you spreads across the stereo field
+        // instead of stacking a hundred identical chimes dead centre.
+        this.audio.playFinish(this.scene.audioCue(m.mesh.position));
       }
       // Podium: the moment the 3rd marble crosses, freeze the top-3 (winner + 2)
       // with their gaps behind the winner and push it to the HUD overlay.
@@ -470,6 +505,14 @@ export class Game {
         : 0;
       const nearFinish = Math.pow(nearRaw, 0.6);
       this.audio.updateBeds(leaderNow ? leaderNow.speed : 0, nearFinish, this.phase === 'racing');
+
+      // #3 — FINAL STRETCH grade. Deliberately keyed off the same 0.86 leader-progress threshold
+      // the HUD's own "🏁 FINAL STRETCH" klaxon uses (PoMarbleRacePage.razor), so the screen and
+      // the banner agree instead of warming up at different moments. _resolve overrides this
+      // with win/loss the instant the race is decided.
+      if (this.phase === 'racing') {
+        this._setGrade(this.marbleSet.progress() >= 0.86 ? 'final' : 'racing');
+      }
 
       // Snap on a shot change rather than lerping across the track: a director's cut is a
       // cut. Lerping between two marbles 200 units apart reads as the camera losing the race.
@@ -549,6 +592,8 @@ export class Game {
 
     this.resultTimer = RESULT_MS / 1000;
     this._setPhase('result');
+    // #3 — the result grade, set AFTER _setPhase so it isn't overwritten by a phase grade.
+    this._setGrade(won ? 'win' : 'loss');
     this.audio.playSting(won);
     this._sendTick(); // final standings
     this._invoke('OnRaceResult', won, place, this.score, gained, this.streak, this.best);
@@ -620,7 +665,12 @@ export class Game {
       myLive ? round2(this._gapSeconds(me, leader)) : 0,       // player's gap to the leader
       this.streak,
       this._lastFocus ? this._lastFocus.index : -1,
-      this.shotReason || 'LEADER');
+      this.shotReason || 'LEADER',
+      // GFX #6 — the player's OWN speed, for the HUD's conic-gradient speed ring. The `speeds`
+      // array above only covers the top LB_SHOWN, so a player outside the top 6 had no speed
+      // anywhere in this payload. Appended at the END: OnRaceTick is a positional contract, and
+      // adding here means no existing argument shifts position.
+      myLive ? Math.round(me.speed * 10) / 10 : 0);
   }
 
   _bindKeys() {

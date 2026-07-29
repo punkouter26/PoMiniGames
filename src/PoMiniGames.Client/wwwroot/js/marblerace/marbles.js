@@ -1,20 +1,24 @@
-// marbles.js — a 101-marble field (1 red player marble + 100 blue AI), progress + finish
+// marbles.js — a 101-marble field (1 red player marble + 100 AI rivals), progress + finish
 // tracking.
 //
-// The field is now one RED marble the player steers against a pack of 100 identical BLUE
-// marbles. Every marble is physically identical (same radius/mass/damping), so a race is
-// decided purely by steering skill and the scramble of the pack — there's no per-marble build
-// to pick anymore. To keep 101 marbles cheap, the blue pack shares a single geometry and
-// material and carries no trails/blobs/shadows; only the red player marble gets the full
-// treatment (own material, motion trail, contact blob, collision sparks).
+// The field is one RED marble the player steers against a pack of 100 rivals, each with its own
+// colour (PACK_PALETTE) and its own procedural glass pattern (the atlas below). Every marble is
+// physically identical (same radius/mass/damping), so a race is decided purely by steering skill
+// and the scramble of the pack — there's no per-marble build to pick. The pack shares one
+// geometry and one material and carries no trails/blobs/shadows; only the red player marble gets
+// the full treatment (own material, motion trail, contact blob, collision sparks).
 //
 // GFX #1 — INSTANCING. Sharing a geometry and a material still cost 100 separate draw calls and
-// 100 scene-graph nodes walked per frame, because they were 100 separate Mesh objects. The blue
-// pack is now ONE InstancedMesh: 100 draw calls collapse to 1. Each blue marble keeps a bare
+// 100 scene-graph nodes walked per frame, because they were 100 separate Mesh objects. The pack
+// is now ONE InstancedMesh: 100 draw calls collapse to 1. Each pack marble keeps a bare
 // Object3D as its `.mesh` — never added to the scene, but carrying the same position/quaternion/
 // visible fields the rest of the engine already reads (game.js fires sparks at m.mesh.position
 // in four places), so instancing is invisible to every existing call site. sync() composes those
 // proxies into the instance matrix buffer.
+//
+// Per-marble variety survives that collapse: `instanceColor` carries each marble's palette
+// colour and a per-instance UV offset picks its cell out of the shared texture atlas, so 100
+// visually distinct marbles still cost exactly one draw call.
 //
 // The headroom this frees is what pays for the motion blur, shockwave rings and road sheen added
 // alongside it — see docs/superpowers/specs/2026-07-28-pomarblerace-gfx-audio-design.md.
@@ -22,14 +26,40 @@ import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 import { TRACK } from './track.js';
 
-export const MARBLE_COUNT = 101;    // 1 red player + 100 blue AI
+export const MARBLE_COUNT = 101;    // 1 red player + 100 AI rivals
 export const PLAYER_INDEX = 0;      // index 0 is the red marble the player controls
 
-const RED = 0xef4444;   // the player
-const BLUE = 0x3b82f6;  // the pack
+const RED = 0xef4444;   // the player — see PACK_PALETTE for why nothing else may be red
+
+// ── Pack palette ──
+// The pack used to be 100 identical blue marbles. It is now a spread of distinct colours, each
+// carrying one of the procedural glass-marble patterns in the atlas below.
+//
+// NOTHING IN HERE IS RED, AND THAT IS LOAD-BEARING. The player's entire identification mechanic
+// is "you are the ONE red marble" — the intro card says it, the start overlay says it, and the
+// camera locks to that marble for the whole race. A crimson or tomato entry in this palette
+// would put a decoy in the pack. Oranges are the closest this gets, and they are the light,
+// clearly-amber end (#fb923c / #fdba74) rather than anything that reads scarlet at speed.
+//
+// MIRRORED IN C#: PoMarbleRacePage.razor ColorOf() reproduces this array exactly, because the
+// HUD's podium dots and edge-gauge marker have to match the marble you are looking at. Colour is
+// a pure function of the marble index — the index is the contract between the two files. Change
+// this array and you MUST change that one.
+const PACK_PALETTE = [
+  0xf59e0b, 0xfacc15, 0xa3e635, 0x22c55e, 0x10b981, 0x14b8a6, 0x22d3ee, 0x38bdf8,
+  0x3b82f6, 0x6366f1, 0x8b5cf6, 0xa855f7, 0xd946ef, 0xec4899, 0xfb923c, 0x84cc16,
+  0xfcd34d, 0xbef264, 0x4ade80, 0x34d399, 0x2dd4bf, 0x67e8f9, 0x7dd3fc, 0x93c5fd,
+  0xa5b4fc, 0xc4b5fd, 0xd8b4fe, 0xf0abfc, 0xf9a8d4, 0xfdba74, 0xfde68a, 0x5eead4,
+];
+
+// Colour for a marble index. Index 0 is the player and is always red; everything else cycles the
+// palette. Deterministic, so JS and C# agree without any colour crossing the interop boundary.
+export function marbleColor(index) {
+  return index === PLAYER_INDEX ? RED : PACK_PALETTE[(index - 1) % PACK_PALETTE.length];
+}
 
 // Kept as an array so the rest of the engine can still look a marble up by index. Physically
-// uniform — index 0 is red, everything else blue.
+// uniform — index 0 is red, every other index takes its colour from PACK_PALETTE.
 //
 // Real glass marble: at the world scale of 1 unit = 1 cm, a radius-1 marble is 20 mm across,
 // and solid soda-lime glass (~2500 kg/m³) makes that ≈ 10.5 g. Mass is carried here as 1.0
@@ -39,7 +69,7 @@ const BLUE = 0x3b82f6;  // the pack
 // negligible rolling resistance and air drag at this size, so a marble keeps its spin.
 export const MARBLE_ROSTER = Array.from({ length: MARBLE_COUNT }, (_, i) => ({
   name: i === PLAYER_INDEX ? 'You' : 'Marble',
-  color: i === PLAYER_INDEX ? RED : BLUE,
+  color: marbleColor(i),
   radius: 1.0, mass: 1.0, linDamp: 0.003, angDamp: 0.002,
 }));
 
@@ -47,19 +77,158 @@ export const MARBLE_COLORS = MARBLE_ROSTER.map((m) => m.color);
 
 const TRAIL_LEN = 16;
 
-// Speed at which a pack marble's per-instance tint reaches full heat. Sized against the audio
-// bed's own speed normalisation (audio.js updateBeds divides by 45) so the pack visibly runs
-// hot at the same pace the soundscape does.
-const PACK_TINT_SPEED = 55;
-
 // ── Marker chrome: deliberately none ──
 // There used to be a white highlight ring around the player's marble and two billboarded pins
 // above it ('YOU' and '◉ ON AIR'). All three are gone. They existed to answer "which marble is
 // mine?" back when the field was eight differently-coloured marbles that the camera could cut
-// away from. Neither condition holds now: the player is the ONE red marble in a pack of 100
-// identical blue ones, and the camera stays locked to it for the whole race (game.js _pickShot),
-// so the marble you steer is the red one in the middle of the screen. The ring and pins were
-// just occluding it.
+// away from. Neither condition holds now: the player is the ONE red marble — no other marble in
+// the field may be red (see PACK_PALETTE) — and the camera stays locked to it for the whole race
+// (game.js _pickShot), so the marble you steer is the red one in the middle of the screen. The
+// ring and pins were just occluding it.
+//
+// Note this is exactly why the pack getting individual colours did NOT reintroduce the old
+// problem: the field is varied, but red is still reserved, and the camera still never leaves you.
+
+// ── Glass-marble texture atlas ──────────────────────────────────────────
+// 16 procedural marble patterns packed 4×4 into one canvas, so the whole pack still renders in a
+// SINGLE draw call: each instance samples its own cell via a per-instance UV offset (see the
+// onBeforeCompile patch in createMarbles).
+//
+// The patterns are drawn in GREYSCALE on a near-white base, because instanceColor MULTIPLIES the
+// sampled texel. White base × instance colour = that marble's pure colour; the darker swirls
+// become deeper shades of it and the near-white glints stay as highlights. Painting the patterns
+// in actual colours here would multiply twice and mud everything toward black.
+//
+// Sphere UVs are equirectangular, so a horizontal band in a cell wraps as a RING around the
+// marble (the classic cat's-eye ribbon) and a vertical stripe becomes a meridian. The patterns
+// below are deliberately low-frequency: mip levels blend across cell boundaries in an atlas, and
+// broad shapes make that bleed invisible at the size a pack marble actually occupies on screen.
+const ATLAS_COLS = 4, ATLAS_ROWS = 4;
+const ATLAS_CELLS = ATLAS_COLS * ATLAS_ROWS;
+const ATLAS_CELL = 256;                       // px per cell → 1024×1024 sheet
+
+let _atlasTex = null;
+function marbleAtlas() {
+  if (_atlasTex) return _atlasTex;
+  const c = document.createElement('canvas');
+  c.width = ATLAS_COLS * ATLAS_CELL;
+  c.height = ATLAS_ROWS * ATLAS_CELL;
+  const g = c.getContext('2d');
+  const S = ATLAS_CELL;
+
+  // Deterministic per-cell RNG so the atlas is identical on every load — a marble that changes
+  // pattern between races would read as a different marble.
+  const rngFor = (seed) => {
+    let s = (seed * 1664525 + 1013904223) >>> 0;
+    return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
+  };
+
+  for (let cell = 0; cell < ATLAS_CELLS; cell++) {
+    const ox = (cell % ATLAS_COLS) * S;
+    const oy = ((cell / ATLAS_COLS) | 0) * S;
+    const rnd = rngFor(cell + 1);
+
+    g.save();
+    g.beginPath();
+    g.rect(ox, oy, S, S);
+    g.clip();
+
+    // Base: bright, faintly graded glass body.
+    const base = g.createLinearGradient(ox, oy, ox, oy + S);
+    base.addColorStop(0, '#ffffff');
+    base.addColorStop(0.5, '#e8ecf2');
+    base.addColorStop(1, '#cdd5e0');
+    g.fillStyle = base;
+    g.fillRect(ox, oy, S, S);
+
+    const kind = cell % 4;
+    if (kind === 0) {
+      // CAT'S EYE — a wide wavy ribbon across the equator, the classic glass marble.
+      const mid = S * (0.42 + rnd() * 0.16);
+      const amp = S * (0.05 + rnd() * 0.07);
+      const thick = S * (0.16 + rnd() * 0.12);
+      for (const [inset, shade] of [[0, 'rgba(70,84,104,0.85)'], [thick * 0.3, 'rgba(150,164,186,0.8)']]) {
+        g.beginPath();
+        for (let x = 0; x <= S; x += 4) {
+          const y = mid + Math.sin((x / S) * Math.PI * 2 + cell) * amp;
+          if (x === 0) g.moveTo(ox + x, oy + y - thick / 2 + inset); else g.lineTo(ox + x, oy + y - thick / 2 + inset);
+        }
+        for (let x = S; x >= 0; x -= 4) {
+          const y = mid + Math.sin((x / S) * Math.PI * 2 + cell) * amp;
+          g.lineTo(ox + x, oy + y + thick / 2 - inset);
+        }
+        g.closePath();
+        g.fillStyle = shade;
+        g.fill();
+      }
+    } else if (kind === 1) {
+      // SWIRL — diagonal ribbons sweeping around the sphere.
+      const bands = 3 + ((rnd() * 3) | 0);
+      for (let b = 0; b < bands; b++) {
+        g.beginPath();
+        const phase = rnd() * Math.PI * 2;
+        const w = S * (0.05 + rnd() * 0.09);
+        for (let x = 0; x <= S; x += 4) {
+          const y = S * 0.5 + Math.sin((x / S) * Math.PI * 3 + phase) * S * 0.3 + (b - bands / 2) * S * 0.16;
+          if (x === 0) g.moveTo(ox + x, oy + y); else g.lineTo(ox + x, oy + y);
+        }
+        g.strokeStyle = b % 2 === 0 ? 'rgba(64,78,98,0.75)' : 'rgba(158,172,192,0.7)';
+        g.lineWidth = w;
+        g.lineCap = 'round';
+        g.stroke();
+      }
+    } else if (kind === 2) {
+      // SPECKLE — aggregate/granite glass, lots of small inclusions.
+      for (let k = 0; k < 900; k++) {
+        const x = rnd() * S, y = rnd() * S, r = rnd() * 5 + 1;
+        const v = rnd();
+        g.fillStyle = v < 0.45 ? 'rgba(72,86,108,0.55)'
+          : (v < 0.8 ? 'rgba(168,180,198,0.5)' : 'rgba(255,255,255,0.75)');
+        g.beginPath(); g.arc(ox + x, oy + y, r, 0, 6.283); g.fill();
+      }
+    } else {
+      // BANDED — broad latitude stripes, reading as rings around the marble.
+      const bands = 3 + ((rnd() * 3) | 0);
+      for (let b = 0; b < bands; b++) {
+        const y = (b / bands) * S + rnd() * 8;
+        const h = S / bands * (0.35 + rnd() * 0.4);
+        g.fillStyle = b % 2 === 0 ? 'rgba(76,90,112,0.6)' : 'rgba(176,188,206,0.55)';
+        g.fillRect(ox, oy + y, S, h);
+      }
+    }
+
+    // Shared glass finish: a bright specular bloom up top and a soft occlusion at the bottom, so
+    // every pattern reads as a rounded glass ball rather than a flat decal.
+    const glint = g.createRadialGradient(ox + S * 0.32, oy + S * 0.26, 2, ox + S * 0.32, oy + S * 0.26, S * 0.34);
+    glint.addColorStop(0, 'rgba(255,255,255,0.95)');
+    glint.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = glint;
+    g.fillRect(ox, oy, S, S);
+
+    const shade = g.createLinearGradient(ox, oy + S * 0.6, ox, oy + S);
+    shade.addColorStop(0, 'rgba(30,40,58,0)');
+    shade.addColorStop(1, 'rgba(30,40,58,0.45)');
+    g.fillStyle = shade;
+    g.fillRect(ox, oy, S, S);
+
+    g.restore();
+  }
+
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  // ClampToEdge, not Repeat: each instance samples a sub-rect, and wrapping would let a marble
+  // at a cell edge pull in its neighbour's pattern.
+  t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+  _atlasTex = t;
+  return t;
+}
+
+// Which atlas cell a marble uses. Multiplied by a prime so the pattern cycle does NOT line up
+// with the 32-entry colour cycle — otherwise every marble sharing a colour would also share a
+// pattern, and the pack would visibly repeat every 32 marbles.
+function atlasCell(index) {
+  return (index * 7) % ATLAS_CELLS;
+}
 
 // Soft radial-gradient disc used as a fake contact shadow under each marble (#8). Built once.
 let _blobTex = null;
@@ -90,45 +259,67 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
   // InstancedMesh.
   const group = new THREE.Group();
 
-  // The 100 blue marbles are identical, so they SHARE one geometry + one material — the whole
-  // point of making them uniform is that the pack is cheap to draw. The red player marble owns
-  // its own geometry/material (and is the only marble with a trail, blob, ring, pins and
-  // collision sparks). Low-poly blue sphere: 100 of them, so the segment count matters.
+  // The 100 pack marbles SHARE one geometry + one material, which is what keeps them cheap to
+  // draw; their individuality comes from per-instance colour and per-instance atlas cell rather
+  // than from separate materials. The red player marble owns its own geometry/material (and is
+  // the only marble with a trail, blob and collision sparks). Low-poly sphere: 100 of them, so
+  // the segment count matters.
   // 12×8 rather than the old 16×12. Measured, not guessed: as separate meshes the pack was
   // frustum-culled per marble, so only the dozen-odd on screen were ever drawn. One InstancedMesh
   // cannot be culled per instance (its bounds span the whole track), so all 100 are submitted
   // every frame — which pushed the frame's triangle count UP even as draw calls and scene-graph
   // nodes came down. Halving the tessellation (352 → 168 triangles per marble) pays that back.
   // Invisible at the size these render: a pack marble is a ~1-unit sphere seen from 60+ units.
-  const blueGeo = new THREE.SphereGeometry(1.0, 12, 8);
-  const blueMat = new THREE.MeshStandardMaterial({
+  const packGeo = new THREE.SphereGeometry(1.0, 12, 8);
+  const atlas = marbleAtlas();
+  const packMat = new THREE.MeshStandardMaterial({
     color: 0xffffff, emissive: 0x000000, emissiveIntensity: 0, roughness: 0.18, metalness: 0.5,
+    map: atlas,
   });
-  // NOTE the white base colour above: with an InstancedMesh, `instanceColor` MULTIPLIES the
-  // material colour, so a BLUE base would tint every per-instance colour blue a second time and
-  // the speed tint could never reach cyan. The blue now comes from the per-instance colour
-  // itself (PACK_COOL), which is the same blue the roster reports to the HUD.
+  // NOTE the white base colour above: with an InstancedMesh, `instanceColor` MULTIPLIES both the
+  // material colour and the sampled texel. White here means a marble's rendered colour is exactly
+  // its palette entry times the greyscale swirl pattern — any tint on the material itself would
+  // be applied a second time on top of every marble's own colour.
   const PACK_COUNT = MARBLE_COUNT - 1;   // every marble except the player
-  const pack = new THREE.InstancedMesh(blueGeo, blueMat, PACK_COUNT);
+  const pack = new THREE.InstancedMesh(packGeo, packMat, PACK_COUNT);
   // The pack spans the whole track and is a single draw call, so per-object frustum culling has
   // nothing to win and would only risk popping the whole field out at once.
   pack.frustumCulled = false;
   pack.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-  // Per-instance colour — impossible while the pack shared one material. Drives the speed tint
-  // in sync(): each marble reads cool at rest and hot at pace, so the pack shows its own
-  // internal velocity structure instead of 100 identical dots.
+  // Per-instance colour — impossible while the pack shared one material. Each marble carries its
+  // own palette colour for the whole race.
+  //
+  // This REPLACES the speed-reactive blue→cyan tint that lived here: with every marble now a
+  // different colour, a tint that drove them all toward the same cyan at pace would have undone
+  // exactly the variety it is supposed to show. Written once at construction, not per frame.
   pack.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(PACK_COUNT * 3), 3);
-  pack.instanceColor.setUsage(THREE.DynamicDrawUsage);
   group.add(pack);
+
+  // Per-instance atlas cell. This is what lets 100 marbles show 16 different glass patterns from
+  // ONE draw call: each instance gets the UV origin of its cell, and the vertex patch below
+  // scales the sphere's UVs into that cell.
+  const uvOffsets = new Float32Array(PACK_COUNT * 2);
+  packGeo.setAttribute('aUvOffset', new THREE.InstancedBufferAttribute(uvOffsets, 2));
+
+  // Inject the atlas lookup into three's standard material. `vMapUv` is produced by the
+  // <uv_vertex> chunk whenever a map is present, so remapping it right after that chunk reroutes
+  // every texture read for this instance into its own cell — no fragment-shader surgery, and the
+  // rest of MeshStandardMaterial (lighting, IBL, shadows) is untouched.
+  const cellU = 1 / ATLAS_COLS, cellV = 1 / ATLAS_ROWS;
+  packMat.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute vec2 aUvOffset;')
+      .replace(
+        '#include <uv_vertex>',
+        `#include <uv_vertex>\n\tvMapUv = vMapUv * vec2(${cellU.toFixed(6)}, ${cellV.toFixed(6)}) + aUvOffset;`);
+  };
 
   // Scratch objects for composing instance matrices — allocated once, reused every frame for
   // every marble. sync() runs 100 times a frame; allocating here would be 6000 objects/second.
   const _m4 = new THREE.Matrix4();
   const _scale = new THREE.Vector3(1, 1, 1);
   const _zero = new THREE.Vector3(0, 0, 0);
-  const _packCool = new THREE.Color(BLUE);            // resting colour of a pack marble
-  const _packHot = new THREE.Color(0x67e8f9);         // colour at PACK_TINT_SPEED and above
-  const _tint = new THREE.Color();
+  const _col = new THREE.Color();
 
   for (let i = 0; i < MARBLE_COUNT; i++) {
     const spec = MARBLE_ROSTER[i];
@@ -143,8 +334,22 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
     const packIndex = isPlayer ? -1 : i - 1;   // instance slot; player has none
     if (isPlayer) {
       sphereGeo = new THREE.SphereGeometry(radius, 24, 18);
+      // The player gets the same glass treatment as the pack, but through a CLONED texture with
+      // its own offset/repeat rather than the instanced UV patch (it's a plain Mesh, not an
+      // instance). Texture.clone() shares the underlying source, so this is a transform on the
+      // same GPU upload, not a second copy of the atlas.
+      //
+      // It stays unmistakably RED and gets the emissive lift no pack marble has: this is the
+      // marble you steer and the camera is locked to, and the whole game tells you to look for
+      // the red one. Nothing in PACK_PALETTE is allowed near this hue.
+      const playerTex = atlas.clone();
+      playerTex.needsUpdate = true;
+      playerTex.repeat.set(1 / ATLAS_COLS, 1 / ATLAS_ROWS);
+      const pc = atlasCell(PLAYER_INDEX + 3);   // a cat's-eye cell — the most "marble" of the four
+      playerTex.offset.set((pc % ATLAS_COLS) / ATLAS_COLS, ((pc / ATLAS_COLS) | 0) / ATLAS_ROWS);
       mat = new THREE.MeshStandardMaterial({
         color: RED, emissive: 0x3b0a0a, emissiveIntensity: 0.25, roughness: 0.1, metalness: 0.5,
+        map: playerTex,
       });
       mesh = new THREE.Mesh(sphereGeo, mat);
       // Only the player casts/receives shadows — 100 shadow-casters would swamp the shadow map.
@@ -159,7 +364,7 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
     }
     mesh.position.copy(startPositions[i]);
 
-    // Trail + contact blob are the player's alone (a trail per blue marble would be 100 extra
+    // Trail + contact blob are the player's alone (a trail per pack marble would be 100 extra
     // draw calls for marbles you're not watching).
     let trail = null, trailPos = null, blob = null, blobGeo = null;
     if (isPlayer) {
@@ -226,14 +431,21 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
   // pick phase never calls sync() (game.js _frame only syncs while racing or showing a result),
   // so without this the whole pack would render stacked at the world origin while the camera
   // frames the start gate.
+  // Colour and atlas cell are seeded here too, and never touched again — both are constant for a
+  // marble's whole life, so they cost nothing per frame.
   for (const m of marbles) {
     if (m.packIndex < 0) continue;
     _m4.compose(m.mesh.position, m.mesh.quaternion, _scale);
     pack.setMatrixAt(m.packIndex, _m4);
-    pack.setColorAt(m.packIndex, _packCool);
+    _col.setHex(m.spec.color);
+    pack.setColorAt(m.packIndex, _col);
+    const cell = atlasCell(m.index);
+    uvOffsets[m.packIndex * 2] = (cell % ATLAS_COLS) / ATLAS_COLS;
+    uvOffsets[m.packIndex * 2 + 1] = ((cell / ATLAS_COLS) | 0) / ATLAS_ROWS;
   }
   pack.instanceMatrix.needsUpdate = true;
   pack.instanceColor.needsUpdate = true;
+  packGeo.getAttribute('aUvOffset').needsUpdate = true;
 
   // Remove a marble that has fallen off the track: pull its body out of the
   // world (safe here — this runs from the frame loop, never inside a contact
@@ -267,18 +479,16 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
       m.mesh.quaternion.copy(m.body.quaternion);
       m.speed = m.body.velocity.length();
 
-      // Pack marbles are drawn as instances: push the proxy's transform into the matrix buffer,
-      // and tint the instance by its own speed (cool at rest → hot at pace).
+      // Pack marbles are drawn as instances: push the proxy's transform into the matrix buffer.
+      // Colour is NOT written here — each marble's palette colour is constant and was seeded at
+      // construction, so the per-frame cost is the transform alone.
       if (m.packIndex >= 0) {
         _m4.compose(m.mesh.position, m.mesh.quaternion, _scale);
         pack.setMatrixAt(m.packIndex, _m4);
-        const heat = Math.min(1, m.speed / PACK_TINT_SPEED);
-        _tint.copy(_packCool).lerp(_packHot, heat);
-        pack.setColorAt(m.packIndex, _tint);
         packDirty = true;
       }
 
-      // Trail + blob belong to the player marble only (both null on the blue pack).
+      // Trail + blob belong to the player marble only (both null on the pack).
       if (m.trail) {
         // Trail: shift the buffer back one and write the new head (#6).
         const tp = m.trailPos;
@@ -293,11 +503,9 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
       // Contact blob sits just under the marble (#8).
       if (m.blob) m.blob.position.set(m.body.position.x, m.body.position.y - m.radius * 0.92, m.body.position.z);
     }
-    // One upload per frame for the whole 100-marble pack, not one per marble.
-    if (packDirty) {
-      pack.instanceMatrix.needsUpdate = true;
-      pack.instanceColor.needsUpdate = true;
-    }
+    // One upload per frame for the whole 100-marble pack, not one per marble. Only the matrices
+    // move — instanceColor and the atlas offsets are static after construction.
+    if (packDirty) pack.instanceMatrix.needsUpdate = true;
   }
 
   // Record finish order + time as marbles cross the finish plane. Returns
@@ -366,11 +574,11 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
   }
 
   function dispose() {
-    // The blue pack shares one geometry + one material — dispose them ONCE here, not per-marble.
+    // The pack shares one geometry + one material — dispose them ONCE here, not per-marble.
     // The InstancedMesh owns the instance buffers, so disposing it releases those too.
     pack.dispose();
-    blueGeo.dispose();
-    blueMat.dispose();
+    packGeo.dispose();
+    packMat.dispose();
     for (const m of marbles) {
       // Eliminated/finished marbles already had their body pulled out of the world.
       try { world.removeBody(m.body); } catch { }
@@ -378,6 +586,10 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
       if (m.trail) { m.trail.geometry.dispose(); m.trail.material.dispose(); }
       if (m.blob) m.blob.material.dispose();
       if (m.index === PLAYER_INDEX) {
+        // The player's map is a CLONE of the atlas. Dispose the clone (it owns its own GPU
+        // texture entry) but never the atlas itself — that's a module-level singleton shared by
+        // every track, like the other procedural textures in this game.
+        if (m.mesh.material.map) m.mesh.material.map.dispose();
         m.mesh.material.dispose();
         m.sphereGeo.dispose();
         if (m.blobGeo) m.blobGeo.dispose();

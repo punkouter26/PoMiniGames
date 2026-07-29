@@ -50,7 +50,7 @@
                     <div class="mr-pick-card">
                         <h2 class="mr-pick-title">You're the <span class="mr-pick-red">RED</span> marble</h2>
                         <p class="mr-pick-sub">
-                            100 blue marbles. One red — yours. Steer with
+                            100 rivals, every one a different colour. One red — yours. Steer with
                             <kbd>←</kbd> <kbd>→</kbd> and finish in the top @ScoreTop to score.
                         </p>
                         <p class="mr-pick-sub">
@@ -214,9 +214,24 @@
     // other index is a blue AI marble), so neither is sent over interop on the per-tick path.
     // Mirrors marbles.js — the index is the contract.
     private const string RedColor = "#ef4444";
-    private const string BlueColor = "#3b82f6";
 
-    private static string ColorOf(int index) => index == PlayerIndex ? RedColor : BlueColor;
+    // MIRRORS PACK_PALETTE in marbles.js — byte for byte, in the same order. Colour is never sent
+    // over interop (the per-tick path carries indices only), so both sides derive it from the
+    // marble index independently and the index is the contract. If that array changes, this one
+    // changes with it or the podium dots stop matching the marbles on screen.
+    //
+    // Deliberately contains NO red: the player is "the one RED marble", which the intro card, the
+    // start overlay and the locked camera all depend on. A red entry here would be a decoy.
+    private static readonly string[] PackPalette =
+    {
+        "#f59e0b", "#facc15", "#a3e635", "#22c55e", "#10b981", "#14b8a6", "#22d3ee", "#38bdf8",
+        "#3b82f6", "#6366f1", "#8b5cf6", "#a855f7", "#d946ef", "#ec4899", "#fb923c", "#84cc16",
+        "#fcd34d", "#bef264", "#4ade80", "#34d399", "#2dd4bf", "#67e8f9", "#7dd3fc", "#93c5fd",
+        "#a5b4fc", "#c4b5fd", "#d8b4fe", "#f0abfc", "#f9a8d4", "#fdba74", "#fde68a", "#5eead4",
+    };
+
+    private static string ColorOf(int index) =>
+        index == PlayerIndex ? RedColor : PackPalette[(index - 1) % PackPalette.Length];
 
     private static string RosterName(int index) =>
         index == PlayerIndex ? "You" : $"Marble {index + 1}";

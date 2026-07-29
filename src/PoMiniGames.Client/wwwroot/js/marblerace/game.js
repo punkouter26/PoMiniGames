@@ -602,7 +602,7 @@ export class Game {
   // C# is handed parallel primitive arrays rather than a JSON string: the string form was
   // serialized by us, serialized again by the interop layer, then parsed a third time on the
   // C# side — every tick for a whole race. Colours/names are omitted; C# derives them from the
-  // marble index (index 0 = the red player, everything else blue).
+  // marble index (index 0 = the red player, everything else from PACK_PALETTE).
   _invoke(method, ...args) {
     if (!this.dotnet) return;
     // invokeMethodAsync rejects asynchronously, so a bare try/catch here would never see the

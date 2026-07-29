@@ -48,6 +48,14 @@ const ZONES = {
 const Z_AXIS = new THREE.Vector3(0, 0, 1);
 const UP = new THREE.Vector3(0, 1, 0);
 
+// Anisotropic filtering level for every procedural texture below. These were each pinned to 4,
+// which is what let the kerb stripes and the floor grid alias into crawling moiré at the
+// grazing angles a chase cam sees them from — the shimmer reads as the whole track flickering.
+// scene.js raises THREE.Texture.DEFAULT_ANISOTROPY to the GPU maximum, and createScene runs
+// before generateTrack, so by the time any of these lazy singletons is built the default is the
+// real hardware ceiling (16 on essentially anything current).
+const MAX_ANISO = () => THREE.Texture.DEFAULT_ANISOTROPY;
+
 // Procedural neon-grid texture for the chute surfaces (#9 — detailed surfaces). Built once.
 let _gridTex = null;
 function gridTexture() {
@@ -67,7 +75,7 @@ function gridTexture() {
   t.colorSpace = THREE.SRGBColorSpace;
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   t.repeat.set(2, 12);
-  t.anisotropy = 4;
+  t.anisotropy = MAX_ANISO();
   _gridTex = t;
   return t;
 }
@@ -97,7 +105,7 @@ function checkerTexture() {
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  t.anisotropy = 4;
+  t.anisotropy = MAX_ANISO();
   _checkerTex = t;
   return t;
 }
@@ -126,7 +134,7 @@ function boostTexture() {
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  t.anisotropy = 4;
+  t.anisotropy = MAX_ANISO();
   _boostTex = t;
   return t;
 }
@@ -151,7 +159,7 @@ function roadTexture() {
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  t.anisotropy = 4;
+  t.anisotropy = MAX_ANISO();
   _roadTex = t;
   return t;
 }
@@ -172,7 +180,7 @@ function kerbTexture() {
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  t.anisotropy = 4;
+  t.anisotropy = MAX_ANISO();
   _kerbTex = t;
   return t;
 }
@@ -287,17 +295,26 @@ export function generateTrack(world, materials, seed, marbleCount = 8) {
     roughness: 0.8, metalness: 0.1, clearcoat: 0.2, clearcoatRoughness: 0.7,
     map: road, roughnessMap: road,
   });
+  // Rumble/boost/kicker bands are overlay ribbons floated 0.05–0.06 above the floor ribbon they
+  // share a shape with. That gap is far too small to survive depth quantisation out where the
+  // track lives, so the bands z-fought the road and flickered. scene.js tightened the camera's
+  // near/far to give the depth buffer real resolution; polygonOffset is the belt to that braces,
+  // biasing these overlays toward the eye in depth so they win the comparison outright at any
+  // distance. Negative factor/units = pulled toward the camera.
+  const OVERLAY_OFFSET = { polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 };
   // #5 rumble-band floor: warm amber so the friction stretches read at a glance.
   const rumbleFloorMat = new THREE.MeshPhysicalMaterial({
     color: 0x3a2410, emissive: 0xfb923c, emissiveIntensity: 0.55,
     roughness: 0.7, metalness: 0.15, clearcoat: 0.25, clearcoatRoughness: 0.5,
     map: grid, roughnessMap: grid,
+    ...OVERLAY_OFFSET,
   });
   // Boost pads: cyan chevrons, bright enough to read as the one *good* surface.
   const boostTex = boostTexture();
   const boostFloorMat = new THREE.MeshStandardMaterial({
     color: 0x0e7490, emissive: 0x22d3ee, emissiveIntensity: 0.75,
     roughness: 0.3, metalness: 0.2, map: boostTex,
+    ...OVERLAY_OFFSET,
   });
   // Berms replace the old flat cyan walls: red/white racing kerbs that curve up out of the road
   // edge (see buildBermRibbon). A faint emissive keeps them reading in the dark scene.
@@ -414,7 +431,11 @@ export function generateTrack(world, materials, seed, marbleCount = 8) {
   })();
 
   const buildBermRibbon = (sgn) => {
-    const M = bermProfile.length, BCELL = 9;     // BCELL tuned so the kerb stripes read
+    // BCELL is the world size of one kerb tile; the texture carries 2 red/white bands per tile,
+    // so a stripe is BCELL/2 units long. At 9 that was a 4.5-unit stripe, fine enough that the
+    // bands collapsed below a pixel down-track and shimmered. 14 (a 7-unit stripe) still reads
+    // as a kerb up close but survives the minification the chase framing puts it through.
+    const M = bermProfile.length, BCELL = 14;
     const pos = [], uv = [], idx = [];
     for (let i = 0; i <= RIBBON_N; i++) {
       const s = i / RIBBON_N;
@@ -470,6 +491,7 @@ export function generateTrack(world, materials, seed, marbleCount = 8) {
   const kickerMat = new THREE.MeshStandardMaterial({
     color: 0x3b0a52, emissive: 0xe879f9, emissiveIntensity: 0.5,
     roughness: 0.35, metalness: 0.25, map: grid,
+    ...OVERLAY_OFFSET,
   });
   kickerMat.side = THREE.DoubleSide;
   const kickers = [];
@@ -800,6 +822,10 @@ export function generateTrack(world, materials, seed, marbleCount = 8) {
     // Is the marble at forward position z standing on a boost pad? game.js applies
     // the acceleration itself — the pads are visual + a predicate, not colliders.
     inBoost: (z) => inBoost(sAt(z)),
+    // Centerline point at a forward position. The camera frames the ROAD rather than the
+    // marble (see scene.js followTarget): anchoring the shot here is what keeps the chute
+    // horizontally centred no matter how far across it the subject has drifted.
+    centerAt: (z) => frameAt(sAt(z)).p.clone(),
     // Local track basis at a forward position, for the boost push (dir) and the
     // player's steering (rb).
     dirAt: (z) => frameAt(sAt(z)).dir,

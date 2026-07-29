@@ -29,6 +29,10 @@ window.PoMarbleRace = {
 };
 
 // TEMP DEBUG — headless verification hooks.
+// The live instance. Headless runs render at 1-2 FPS on swiftshader, so a browser check of the
+// racing camera has to drive the phase machine and the director directly rather than wait for
+// the demo to get there on its own.
+window.__game = () => game;
 window.__ff = (steps) => {
   if (!game || !game.marbleSet) return null;
   for (let i = 0; i < steps; i++) game.world.step(1 / 120, 1 / 120, 1);

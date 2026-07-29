@@ -45,6 +45,14 @@ const MAX_STREAK_STEPS = 4;          // multiplier caps at 1 + 4*0.5 = 3×
 // race or during the slow-motion finish. See _pickShot.
 const SLOWMO_DIST = 45;       // units from the finish where the leader triggers slow-motion
 const SLOWMO_SCALE = 0.35;
+// Shot hysteresis, demo mode only. "Follow the leader" over a 101-marble pack means the subject
+// changes every time two marbles swap noses — several times a second in traffic — and every
+// change asked the camera for a cut. That, not the follow lerp, is what made the demo camera
+// jump. A shot now has to run for SHOT_MIN_HOLD before it can be replaced, and the new leader
+// has to be SHOT_LEAD_MARGIN units clear of the current subject to be worth cutting to, so the
+// camera stays with a marble through a scrap and only moves on once someone has actually gone.
+const SHOT_MIN_HOLD = 3.0;    // seconds a shot must run before another marble can take it
+const SHOT_LEAD_MARGIN = 14;  // units the leader must be up on the current subject to take the shot
 
 // How far under the track centerline a marble may legitimately be before it counts as
 // having fallen off. Sized against the banked inner edge of the wide road — see the
@@ -94,6 +102,8 @@ export class Game {
     this.shotReason = 'LEADER';
     this.slowmo = false;
     this._lastFocus = null;
+    this._shotMarble = null;    // current subject; with _shotSince it drives the hysteresis above
+    this._shotSince = 0;
 
     this._buildTrack();
     this._bindKeys();
@@ -226,10 +236,14 @@ export class Game {
     this.scene.add(this.marbleSet.decorations);
     this.chosen = -1;
     this.slowmo = false;
+    // Drop the director's references into the marble set we just disposed — a stale _shotMarble
+    // would keep the hysteresis holding a shot on a marble that is no longer in the world.
+    this._shotMarble = null;
+    this._lastFocus = null;
     this._setPhase('pick');
-    // frame the start gate from above
+    // frame the start gate from above, looking along the track rather than down world +Z
     const ov = this.track.overviewTarget;
-    this.scene.followTarget(ov, 0, true);
+    this.scene.followTarget(ov, 0, true, this.track.dirAt(ov.z));
   }
 
   _setPhase(p) {
@@ -268,8 +282,28 @@ export class Game {
   // not re-derived here.
   _pickShot(order) {
     const leader = order[0];
-    const take = (marble, reason) => { this.shotReason = reason; return marble; };
-    if (this.demo) return take(leader, 'LEADER');
+    const now = performance.now();
+    // Stamp the subject on every change so the hysteresis below can measure how long the current
+    // shot has run. Cheap, and it keeps _shotSince honest for the non-demo cuts too.
+    const take = (marble, reason) => {
+      if (marble !== this._shotMarble) { this._shotMarble = marble; this._shotSince = now; }
+      this.shotReason = reason;
+      return marble;
+    };
+
+    if (this.demo) {
+      const cur = this._shotMarble;
+      // Nothing to hold on to, or the subject is out of the race → take the leader outright.
+      if (!cur || cur.eliminated || cur.finished) return take(leader, 'LEADER');
+      if (cur === leader) return take(leader, 'LEADER');
+      // Hold the shot: only cut once it has run its minimum AND the leader has genuinely gone.
+      // Returning `cur` without take() deliberately leaves _shotSince alone — the shot is
+      // continuing, not restarting.
+      const held = (now - this._shotSince) / 1000;
+      const behind = leader.body.position.z - cur.body.position.z;
+      if (held < SHOT_MIN_HOLD || behind < SHOT_LEAD_MARGIN) { this.shotReason = 'LEADER'; return cur; }
+      return take(leader, 'LEADER');
+    }
 
     const me = this.marbleSet.marbles[this.chosen];
     const meAlive = me && !me.eliminated && !me.finished;
@@ -441,10 +475,17 @@ export class Game {
       // cut. Lerping between two marbles 200 units apart reads as the camera losing the race.
       const focus = this._pickShot(order);
       if (focus) {
-        // Feed the camera the marble's heading (so it looks along the track ahead, #2) and
-        // speed (so the FOV widens with pace, #4).
-        const fwd = this.track.dirAt(focus.body.position.z);
-        this.scene.followTarget(focus.mesh.position, dt, focus !== this._lastFocus, fwd, focus.speed);
+        // Frame the ROAD, not the marble. The shot is anchored to the track centerline at the
+        // subject's down-track position, so the chute stays horizontally centred however far
+        // across it the marble has drifted — anchoring on the marble itself slid the road to
+        // whichever side of frame the marble wasn't on. The marble's lateral offset now reads
+        // as its position WITHIN the framed road, which is what you steer by anyway. Bonus: the
+        // anchor no longer inherits per-frame physics jitter from the marble.
+        // Also feed the camera the heading (so it looks along the track ahead, #2) and the
+        // subject's speed (so the FOV widens with pace, #4).
+        const fz = focus.body.position.z;
+        const fwd = this.track.dirAt(fz);
+        this.scene.followTarget(this.track.centerAt(fz), dt, focus !== this._lastFocus, fwd, focus.speed);
         this._lastFocus = focus;
       }
 
@@ -455,11 +496,17 @@ export class Game {
       this.marbleSet.sync();
       this.resultTimer -= dt;
       const winner = this.marbleSet.leaderboard()[0];
-      if (winner) this.scene.followTarget(winner.mesh.position, dt, false);
+      if (winner) {
+        const wz = winner.body.position.z;
+        this.scene.followTarget(this.track.centerAt(wz), dt, false, this.track.dirAt(wz));
+      }
       if (this.resultTimer <= 0) this._nextTrack();
     } else {
-      // pick phase: gentle overview of the start gate
-      this.scene.followTarget(this.track.overviewTarget, dt, false);
+      // pick phase: gentle overview of the start gate. The heading matters here too — without
+      // it the camera sat straight back in world -Z while the track headed off at an angle,
+      // which threw the road across one side of the frame before the race even started.
+      const ov = this.track.overviewTarget;
+      this.scene.followTarget(ov, dt, false, this.track.dirAt(ov.z));
     }
 
     this.scene.render();

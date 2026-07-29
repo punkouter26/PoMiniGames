@@ -23,17 +23,27 @@ const BG = 0x0f172a;            // cyberpunk dark slate
 // broadcast vantage, tilted enough to read the road ahead so you can steer toward boost pads
 // and away from the fall-off edge.
 //
-// HIGH CHASE: raised and pulled in so the red player marble sits CENTRED in frame. The old
-// vantage was the reason it never looked centred — CAM_LOOKAHEAD 28 aimed the look-at point
-// well down-track, which pushes the marble you're steering low and back in the frame. Height
-// now does the job look-ahead used to: from up here the camera sees over the marble into the
-// chute ahead, so the road still reads without shoving the marble off-centre.
-const CAM_HEIGHT = 52;          // base vantage height above the followed marble
-const CAM_BACK = 38;            // behind the marble; close enough to feel the speed, back enough to see ahead
-const CAM_LOOKAHEAD = 6;        // barely leads into turns — kept small so the marble stays centred
-const CAM_LOOK_LIFT = 2;        // look-at just above the marble
-const CAM_DEFAULT_PITCH = 0.22;  // positive → camera rides above and looks down into the chute
+// CHASE, FLATTENED: the previous 52/38 vantage sat almost on top of the marble (≈58° down),
+// so the frame was floor-plus-berms and the road ahead was a thin sliver at the top — the ramp
+// was unreadable. Pulling BACK rather than UP flattens the look angle to ≈40° and lets the
+// chute recede into frame, which is what makes the ramp legible.
+// Constraint on CAM_HEIGHT: the berms rise TRACK.WALL_HEIGHT (44) above the road, so the eye
+// must stay above ~50 or the near berm walls the shot in on turns. 46 + the pitch lift keeps
+// it clear (see `vert` below) without going back to a top-down.
+const CAM_HEIGHT = 46;          // base vantage height above the followed marble
+const CAM_BACK = 62;            // behind the marble; the depth that lets the chute recede and read
+const CAM_LOOKAHEAD = 20;       // aims down-track so the road ahead owns the frame, not the floor underfoot
+const CAM_LOOK_LIFT = 6;        // lifts the aim point; the marble settles into the lower third, road above it
+const CAM_DEFAULT_PITCH = 0.12;  // positive → camera rides above and looks down into the chute
 const CAM_LERP = 3.4;          // slightly smoother follow reads more cinematic
+// Shot changes used to teleport the camera (a === 1). With the demo camera on the leader of a
+// 101-marble pack that fired several times a second, which is the "jumping". The director's-cut
+// intent is kept — a change still resolves fast — but it now runs as a hard ease over
+// CAM_CUT_TIME instead of a single-frame warp, so a cut reads as a whip-pan and a lead swap
+// between two adjacent marbles reads as nothing at all. See also the shot hysteresis in
+// game.js _pickShot, which stops most cuts from being requested in the first place.
+const CAM_CUT_LERP = 11;        // follow rate while a cut is resolving (vs CAM_LERP when settled)
+const CAM_CUT_TIME = 0.5;       // seconds a cut stays on the accelerated rate
 const FOV_BASE = 60;
 // #4 speed-reactive FOV: the frame widens as the followed marble speeds up, so velocity is felt
 // and not just measured. Mapped from marble speed; the start-line FOV punch rides on top.
@@ -85,6 +95,12 @@ export function createScene(container) {
   renderer.toneMappingExposure = 1.15;
   renderer.shadowMap.enabled = true;                     // #3 — dynamic shadows
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  // FLICKER FIX (1/4) — anisotropy. Every procedural texture in track.js pinned itself to 4,
+  // and the kerb stripes (hard red/white, seen at grazing angles by a chase cam) aliased into
+  // crawling moiré at that level. Textures inherit this default, so raising it here raises it
+  // for the whole track — createScene runs before generateTrack, and track.js's texture
+  // singletons are built lazily on first use, so the ordering holds.
+  THREE.Texture.DEFAULT_ANISOTROPY = renderer.capabilities.getMaxAnisotropy();
   container.style.position = 'relative';
   container.style.overflow = 'hidden';
   container.appendChild(renderer.domElement);
@@ -94,8 +110,11 @@ export function createScene(container) {
   const bgTexture = makeBgGradient();                     // #10 — graded background
   scene.background = bgTexture;
   // Fog pushed out with the camera: at 70/240 the far wall of a wide, sharply-turning chute
-  // faded out before the turn it belongs to was readable.
-  scene.fog = new THREE.Fog(BG, 110, 340);
+  // faded out before the turn it belongs to was readable. Pushed out again with CAM_BACK 38→62:
+  // the marble alone now sits ~82 units from the eye, so at 110/340 the haze started biting a
+  // few units past it and greyed out the exact stretch of ramp the pulled-back framing exists
+  // to show.
+  scene.fog = new THREE.Fog(BG, 170, 560);
 
   // #4 — image-based lighting so the glossy marbles/floor have something to reflect.
   const pmrem = new THREE.PMREMGenerator(renderer);
@@ -103,7 +122,13 @@ export function createScene(container) {
   scene.environment = envRT.texture;
   pmrem.dispose();
 
-  const camera = new THREE.PerspectiveCamera(FOV_BASE, 1, 0.1, 2000);
+  // FLICKER FIX (2/4) — depth precision. near 0.1 / far 2000 is a 20000:1 range, which leaves
+  // almost no usable depth resolution out where the track is; the rumble/boost/kicker bands sit
+  // a mere 0.05–0.06 above the floor ribbon and were z-fighting it, which is the flicker that
+  // crawls across the road surface. Nothing is ever within 1 unit of this camera (it rides
+  // ≥15 units off the marble at any orbit angle) and fog reaches BG by 560, so 1/1000 clips
+  // nothing visible and buys ~20× the depth resolution.
+  const camera = new THREE.PerspectiveCamera(FOV_BASE, 1, 1, 1000);
   camera.position.set(0, CAM_HEIGHT, -CAM_BACK);
 
   // Lighting — soft ambient + a shadow-casting key light; neon comes from emissive materials.
@@ -112,7 +137,12 @@ export function createScene(container) {
   const key = new THREE.DirectionalLight(0xffffff, 1.5);
   key.position.set(40, 80, -30);
   key.castShadow = true;
-  key.shadow.mapSize.set(1024, 1024);
+  // FLICKER FIX (3/4) — shadow crawl. The shadow camera is dragged along by the followed
+  // marble every frame (see followTarget), so its texel grid slid continuously over the
+  // geometry and every shadow edge boiled. 2048 over the 150-wide frustum halves the texel,
+  // and followTarget quantises the light position to SHADOW_TEXEL so the grid steps instead
+  // of sliding.
+  key.shadow.mapSize.set(2048, 2048);
   key.shadow.camera.near = 1;
   key.shadow.camera.far = 220;
   // Frustum widened to cover the 64-wide road — at ±42 the shadows were being clipped off
@@ -120,6 +150,9 @@ export function createScene(container) {
   key.shadow.camera.left = -75; key.shadow.camera.right = 75;
   key.shadow.camera.top = 75; key.shadow.camera.bottom = -75;
   key.shadow.bias = -0.0008;
+  // frustum width ÷ map size — the world size of one shadow texel; followTarget snaps the
+  // light to this grid so the map doesn't crawl as the camera follows.
+  const SHADOW_TEXEL = 150 / 2048;
   scene.add(key);
   scene.add(key.target);
 
@@ -208,6 +241,7 @@ export function createScene(container) {
 
   const camTarget = new THREE.Vector3();
   let haveTarget = false;
+  let cutT = 0;                 // seconds left on the accelerated post-cut ease
   let fovPunch = 0;
   function punchFov() { fovPunch = -9; }
 
@@ -260,38 +294,70 @@ export function createScene(container) {
 
   // Smoothly move the camera to orbit-and-follow `pos`. With no drag this is the default
   // above-and-behind view; left-drag adds a yaw/pitch offset that rotates around the target.
-  // `forward` (optional) is the followed marble's horizontal heading, used to look down-track
-  // *along travel* so the road ahead is visible around curves; `speed` (optional) drives the
-  // speed-reactive FOV.
+  // `forward` (optional) is the track's full 3D heading at the followed marble. It places the
+  // camera (behind along the track rather than behind in world -Z, and lifted by the climb of
+  // the ground behind) as well as aiming it down-track along travel, so the road ahead reads
+  // around curves and down the ramp. `speed` (optional) drives the speed-reactive FOV.
   function followTarget(pos, dt, snap, forward, speed) {
+    // Track-relative framing. The offset used to be a fixed world -Z, which is wrong twice over
+    // on this track: the chute TURNS (so "behind in -Z" can put the camera in FRONT of the
+    // marble through a hairpin), and it DESCENDS at up to ~0.42 (so a fixed world-Y lift leaves
+    // the eye below the 44-unit berms of the stretch behind, which then wall the shot in — the
+    // pulled-back CAM_BACK made that unmissable). Offsetting along the track's own heading and
+    // adding the climb of the ground behind keeps the eye CAM_HEIGHT above the *track surface*
+    // it has to see over, on the flat and on the ramp alike.
+    let fx = 0, fy = 0, fz = 1;                  // unit heading of travel; +Z when not supplied
+    if (forward) {
+      const L = Math.hypot(forward.x, forward.y, forward.z) || 1;
+      fx = forward.x / L; fy = forward.y / L; fz = forward.z / L;
+    }
+    const fxz = Math.hypot(fx, fz) || 1;
     const horiz = CAM_BACK * Math.cos(orbitPitch);
     const vert = CAM_HEIGHT + CAM_BACK * Math.sin(orbitPitch);
-    const offX = horiz * Math.sin(orbitYaw);
-    const offZ = -horiz * Math.cos(orbitYaw);   // yaw 0 → straight behind (-Z)
-    const desired = new THREE.Vector3(pos.x + offX, pos.y + vert, pos.z + offZ);
-    const a = snap ? 1 : 1 - Math.exp(-CAM_LERP * dt);
+    const climb = -(fy / fxz) * horiz;           // fy < 0 descending → the ground behind is higher
+    // Backward heading rotated by the orbit yaw; yaw 0 → directly behind, matching the old
+    // (sin, -cos) world offset when `forward` is +Z.
+    const bx = -fx / fxz, bz = -fz / fxz;
+    const cy = Math.cos(orbitYaw), sy = Math.sin(orbitYaw);
+    const desired = new THREE.Vector3(
+      pos.x + (bx * cy - bz * sy) * horiz,
+      pos.y + vert + climb,
+      pos.z + (bx * sy + bz * cy) * horiz);
+    // `snap` no longer teleports. It arms CAM_CUT_TIME of accelerated easing, so a director's
+    // cut still resolves in a few frames but travels rather than warping. The one true warp
+    // left is placement: the first call, and the dt === 0 calls _buildTrack makes to frame the
+    // start gate, where easing would move the camera nowhere at all.
+    if (snap) cutT = CAM_CUT_TIME;
+    const instant = !haveTarget || dt <= 0;
+    const a = instant ? 1 : 1 - Math.exp(-(cutT > 0 ? CAM_CUT_LERP : CAM_LERP) * dt);
+    cutT = Math.max(0, cutT - dt);
     camera.position.lerp(desired, a);
 
     // Look-ahead along the direction of travel (falls back to straight down-track). Only when
     // roughly behind the target, so it stays centred when orbited round. Lift the look-at point
     // so the marble (radius ≈ 1) sits ~mid-screen instead of clipped against the bottom edge.
-    let laX = 0, laZ = 1;
-    if (forward) {
-      const fl = Math.hypot(forward.x, forward.z) || 1;
-      laX = forward.x / fl; laZ = forward.z / fl;
-    }
+    // The aim point rides the full 3D heading, so on the ramp it tracks the road DOWN instead of
+    // floating above it — aiming a flat CAM_LOOKAHEAD ahead in XZ only pointed the camera at
+    // empty air over a descent, which is half of why the ramp never read.
     const laFactor = Math.max(0, Math.cos(orbitYaw)) * CAM_LOOKAHEAD;
     const look = new THREE.Vector3(
-      pos.x + laX * laFactor,
-      pos.y + CAM_LOOK_LIFT,
-      pos.z + laZ * laFactor);
+      pos.x + fx * laFactor,
+      pos.y + fy * laFactor + CAM_LOOK_LIFT,
+      pos.z + fz * laFactor);
     if (!haveTarget) { camTarget.copy(look); haveTarget = true; }
     camTarget.lerp(look, a);
     camera.lookAt(camTarget);
 
     // Keep the shadow-casting key light (and its frustum) over the action for crisp shadows.
-    key.position.set(pos.x + 28, pos.y + 70, pos.z - 18);
-    key.target.position.set(pos.x, pos.y, pos.z + 6);
+    // Quantised to the shadow texel grid (see SHADOW_TEXEL): following the marble's exact
+    // position slid the shadow map by a fraction of a texel every frame, which boils every
+    // shadow edge in the scene. Stepping in whole texels keeps the map stationary between
+    // steps, so edges stay put.
+    const qx = Math.round(pos.x / SHADOW_TEXEL) * SHADOW_TEXEL;
+    const qy = Math.round(pos.y / SHADOW_TEXEL) * SHADOW_TEXEL;
+    const qz = Math.round(pos.z / SHADOW_TEXEL) * SHADOW_TEXEL;
+    key.position.set(qx + 28, qy + 70, qz - 18);
+    key.target.position.set(qx, qy, qz + 6);
     key.target.updateMatrixWorld();
 
     // FOV: base + speed-reactive widening (#4) + start-line punch (#10), all eased toward.

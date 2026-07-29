@@ -1,207 +1,162 @@
 // §4 WebGL ambient particle field. 200 GPU-resident points rendered with a
 // single fragment shader that computes a soft-circle + slow drift. Zero JS
 // per-frame allocations; runs only when the page is visible.
+//
+// §7 (2026-07-29) Rendering moved to a worker + OffscreenCanvas. In Blazor WASM
+// the main thread runs the .NET runtime, so the old main-thread rAF loop shared
+// a thread with game logic and stuttered visibly during GC. The worker path
+// decouples them. Browsers without `transferControlToOffscreen` fall back to the
+// original in-thread renderer below — same shader, via particlesCore.js.
+//
+// This file keeps ownership of everything DOM-shaped (pointer, resize,
+// intersection, visibility) because a worker cannot touch the DOM; it forwards
+// those as messages.
 
+import { initGl, drawFrame, POINT_COUNT } from './particlesCore.js';
+
+let worker = null;
+
+// Main-thread fallback state.
 let gl = null;
-let program = null;
-let buffer = null;
+let uniforms = null;
 let raf = 0;
 let visible = true;
 let inViewport = true;
 let lastX = 0.5;
 let lastY = 0.5;
+let currentPointCount = POINT_COUNT;
+
+// Shared DOM observers (both paths).
 let resizeObs = null;
 let intersectObs = null;
-let longFrames = 0;
-let lastFrameMs = 0;
-let currentPointCount = 200;
+let boundCanvas = null;
+let onPointerMove = null;
+let onTierChange = null;
+let onVisibilityChange = null;
+let onPageHide = null;
 
-const POINT_COUNT = 200;
-const VERT_SRC = `#version 300 es
-in vec2 aCorner;
-in vec2 aSeed;
-out vec2 vSeed;
-out vec2 vCorner;
-void main() {
-    vSeed = aSeed;
-    vCorner = aCorner;
-    gl_Position = vec4(aCorner, 0.0, 1.0);
-}`;
-
-const FRAG_SRC = `#version 300 es
-precision highp float;
-uniform float uTime;
-uniform vec2 uResolution;
-uniform vec2 uMouse;
-in vec2 vSeed;
-in vec2 vCorner;
-out vec4 frag;
-void main() {
-    // Soft circle (constant falloff in [-1, 1] quad space).
-    float r = length(vCorner);
-    if (r > 1.0) discard;
-    float falloff = smoothstep(1.0, 0.0, r);
-    // Slow drift per-point.
-    vec2 drift = vec2(sin(uTime * 0.0003 + vSeed.x * 6.28),
-                      cos(uTime * 0.00027 + vSeed.y * 6.28));
-    vec2 pos = vCorner + drift * 0.4;
-    // Gentle mouse attractor.
-    float mDist = distance(vCorner * 0.5 + 0.5, uMouse);
-    float mInfluence = exp(-mDist * 6.0) * 0.4;
-    vec3 hue = vec3(0.45 + vSeed.x * 0.15, 0.55 + vSeed.y * 0.2, 0.95);
-    vec3 color = hue * falloff * (0.6 + mInfluence);
-    frag = vec4(color, falloff * 0.5);
-}`;
-
-function compileShader(type, src) {
-    const s = gl.createShader(type);
-    gl.shaderSource(s, src);
-    gl.compileShader(s);
-    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
-        console.warn('Shader compile failed:', gl.getShaderInfoLog(s));
-        gl.deleteShader(s);
-        return null;
+function currentQualityScale() {
+    try {
+        const v = getComputedStyle(document.documentElement).getPropertyValue('--gfx-particles');
+        const n = parseFloat(v);
+        return Number.isFinite(n) && n > 0 ? n : 1;
+    } catch {
+        return 1;
     }
-    return s;
 }
 
-function linkProgram(vs, fs) {
-    const p = gl.createProgram();
-    gl.attachShader(p, vs);
-    gl.attachShader(p, fs);
-    gl.linkProgram(p);
-    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
-        console.warn('Program link failed:', gl.getProgramInfoLog(p));
-        gl.deleteProgram(p);
-        return null;
-    }
-    return p;
-}
+function attachDomObservers(canvas, onResize, onPointer, onVisible, onViewport, onQuality) {
+    boundCanvas = canvas;
 
-function buildGeometry() {
-    // Two-triangle quad with per-vertex seed.
-    const data = new Float32Array(POINT_COUNT * 6 * 4);
-    let i = 0;
-    for (let p = 0; p < POINT_COUNT; p++) {
-        const cx = (Math.random() * 2 - 1) * 0.95;
-        const cy = (Math.random() * 2 - 1) * 0.95;
-        const sx = Math.random();
-        const sy = Math.random();
-        const s = 0.025 + Math.random() * 0.04;
-        const corners = [
-            [cx - s, cy - s], [cx + s, cy - s],
-            [cx + s, cy + s], [cx - s, cy + s],
-        ];
-        // Two triangles per quad: 0-1-2, 0-2-3
-        const tris = [[0,1,2],[0,2,3]];
-        for (const tri of tris) {
-            for (const idx of tri) {
-                data[i++] = corners[idx][0];
-                data[i++] = corners[idx][1];
-                data[i++] = sx;
-                data[i++] = sy;
-            }
-        }
-    }
-    return data;
+    resizeObs = new ResizeObserver(() => {
+        const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+        onResize(
+            Math.max(1, Math.floor(canvas.clientWidth * dpr)),
+            Math.max(1, Math.floor(canvas.clientHeight * dpr)));
+    });
+    resizeObs.observe(canvas);
+
+    onPointerMove = (e) => {
+        const rect = canvas.getBoundingClientRect();
+        onPointer(
+            ((e.clientX - rect.left) / rect.width) || 0,
+            1 - ((e.clientY - rect.top) / rect.height) || 0);
+    };
+    canvas.addEventListener('pointermove', onPointerMove, { passive: true });
+
+    // Keep references: these must be the SAME function objects passed to
+    // removeEventListener in stop(), or the listeners outlive the canvas.
+    onVisibilityChange = onVisible;
+    onPageHide = stop;
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener('pagehide', onPageHide);
+
+    // §2 battery guard: pause rendering when the canvas leaves the viewport.
+    intersectObs = new IntersectionObserver((entries) => {
+        for (const e of entries) onViewport(e.isIntersecting);
+    }, { rootMargin: '50px' });
+    intersectObs.observe(canvas);
+
+    // §10 adaptive quality: visualRuntime.js is the single authority on how much
+    // the machine can afford. The old local "60 slow frames -> halve the points"
+    // heuristic is gone; two independent throttles could disagree and fight.
+    onTierChange = () => onQuality(currentQualityScale());
+    window.addEventListener('po-gfx-tier', onTierChange);
+    onQuality(currentQualityScale());
 }
 
 export function start(canvas) {
+    // ── Preferred path: render in a worker ─────────────────────────────
+    if (typeof Worker === 'function' && typeof canvas.transferControlToOffscreen === 'function') {
+        try {
+            const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+            const off = canvas.transferControlToOffscreen();
+            worker = new Worker(new URL('./particlesWorker.js', import.meta.url), { type: 'module' });
+
+            let failed = false;
+            worker.onmessage = (e) => {
+                if (e.data && e.data.type === 'failed') {
+                    // WebGL2 unavailable inside the worker. The canvas has
+                    // already been transferred and cannot be reclaimed, so we
+                    // cannot retry in-thread — leave it blank and let the CSS
+                    // gradient behind it show through, same as the old
+                    // no-WebGL behaviour.
+                    failed = true;
+                    stop();
+                }
+            };
+            if (failed) return false;
+
+            worker.postMessage({
+                type: 'init',
+                canvas: off,
+                width: Math.max(1, Math.floor(canvas.clientWidth * dpr)),
+                height: Math.max(1, Math.floor(canvas.clientHeight * dpr)),
+            }, [off]);
+
+            attachDomObservers(
+                canvas,
+                (w, h) => worker && worker.postMessage({ type: 'resize', width: w, height: h }),
+                (x, y) => worker && worker.postMessage({ type: 'pointer', x, y }),
+                () => worker && worker.postMessage({ type: 'visibility', visible: !document.hidden }),
+                (iv) => worker && worker.postMessage({ type: 'viewport', inViewport: iv }),
+                (scale) => worker && worker.postMessage({ type: 'quality', scale }));
+            return true;
+        } catch {
+            // Fall through to the in-thread renderer.
+            worker = null;
+        }
+    }
+
+    // ── Fallback: original main-thread renderer ────────────────────────
     gl = canvas.getContext('webgl2', { alpha: true, antialias: true, premultipliedAlpha: true });
     if (!gl) {
-        // Fallback: leave the canvas blank. The CSS gradient behind it stays visible.
+        // Leave the canvas blank. The CSS gradient behind it stays visible.
         return false;
     }
-    const vs = compileShader(gl.VERTEX_SHADER, VERT_SRC);
-    const fs = compileShader(gl.FRAGMENT_SHADER, FRAG_SRC);
-    if (!vs || !fs) return false;
-    program = linkProgram(vs, fs);
-    if (!program) return false;
+    uniforms = initGl(gl);
+    if (!uniforms) { gl = null; return false; }
 
-    gl.useProgram(program);
-    const data = buildGeometry();
-    buffer = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-    gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
-
-    const stride = 4 * 4; // 4 floats per vertex
-    const locCorner = gl.getAttribLocation(program, 'aCorner');
-    const locSeed = gl.getAttribLocation(program, 'aSeed');
-    gl.enableVertexAttribArray(locCorner);
-    gl.vertexAttribPointer(locCorner, 2, gl.FLOAT, false, stride, 0);
-    gl.enableVertexAttribArray(locSeed);
-    gl.vertexAttribPointer(locSeed, 2, gl.FLOAT, false, stride, 8);
-
-    gl.enable(gl.BLEND);
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
-
-    const uTime = gl.getUniformLocation(program, 'uTime');
-    const uRes = gl.getUniformLocation(program, 'uResolution');
-    const uMouse = gl.getUniformLocation(program, 'uMouse');
-
-    function resize() {
-        const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
-        const w = Math.floor(canvas.clientWidth * dpr);
-        const h = Math.floor(canvas.clientHeight * dpr);
-        if (canvas.width !== w || canvas.height !== h) {
-            canvas.width = w;
-            canvas.height = h;
-        }
-        gl.viewport(0, 0, canvas.width, canvas.height);
-    }
-
-    resizeObs = new ResizeObserver(resize);
-    resizeObs.observe(canvas);
-
-    function pointerMove(e) {
-        const rect = canvas.getBoundingClientRect();
-        lastX = ((e.clientX - rect.left) / rect.width) || 0;
-        lastY = 1 - ((e.clientY - rect.top) / rect.height) || 0;
-    }
-    canvas.addEventListener('pointermove', pointerMove, { passive: true });
-
-    document.addEventListener('visibilitychange', onVisibility);
-    window.addEventListener('pagehide', stop);
-
-    // §2 battery guard: pause the render loop when the canvas leaves the
-    // viewport. IntersectionObserver fires once with the current state, then
-    // toggles cheaply as the user scrolls. Saves a full GPU wake + draw call
-    // per frame when the home page is off-screen.
-    intersectObs = new IntersectionObserver((entries) => {
-        for (const e of entries) {
-            inViewport = e.isIntersecting;
-        }
-    }, { rootMargin: '50px' });
-    intersectObs.observe(canvas);
+    attachDomObservers(
+        canvas,
+        (w, h) => {
+            if (canvas.width !== w || canvas.height !== h) {
+                canvas.width = w;
+                canvas.height = h;
+            }
+            gl.viewport(0, 0, canvas.width, canvas.height);
+        },
+        (x, y) => { lastX = x; lastY = y; },
+        () => { visible = !document.hidden; },
+        (iv) => { inViewport = iv; },
+        (scale) => { currentPointCount = Math.max(20, Math.round(POINT_COUNT * scale)); });
 
     const startTime = performance.now();
     function tick(now) {
         if (!gl) return;
-
-        // §2 thermal guard: if 60 consecutive frames take > 22 ms, halve the
-        // particle count. This keeps the loop hitting 60 fps on phones that
-        // thermal-throttle after a few minutes in landscape demo mode.
-        if (lastFrameMs > 0) {
-            const delta = now - lastFrameMs;
-            if (delta > 22) {
-                longFrames++;
-                if (longFrames >= 60 && currentPointCount > 60) {
-                    currentPointCount = Math.max(60, Math.floor(currentPointCount / 2));
-                    longFrames = 0;
-                }
-            } else {
-                longFrames = 0;
-            }
-        }
-        lastFrameMs = now;
-
         if (visible && inViewport) {
-            gl.clearColor(0, 0, 0, 0);
-            gl.clear(gl.COLOR_BUFFER_BIT);
-            gl.uniform1f(uTime, now - startTime);
-            gl.uniform2f(uRes, canvas.width, canvas.height);
-            gl.uniform2f(uMouse, lastX, lastY);
-            gl.drawArrays(gl.TRIANGLES, 0, currentPointCount * 6);
+            drawFrame(gl, uniforms, canvas.width, canvas.height,
+                now - startTime, lastX, lastY, currentPointCount);
         }
         raf = requestAnimationFrame(tick);
     }
@@ -209,29 +164,36 @@ export function start(canvas) {
     return true;
 }
 
-function onVisibility() {
-    visible = !document.hidden;
-}
-
 export function stop() {
     if (raf) cancelAnimationFrame(raf);
     raf = 0;
-    document.removeEventListener('visibilitychange', onVisibility);
-    if (resizeObs) {
-        resizeObs.disconnect();
-        resizeObs = null;
+
+    if (worker) {
+        try { worker.postMessage({ type: 'stop' }); } catch { /* already dead */ }
+        worker = null;
     }
-    if (intersectObs) {
-        intersectObs.disconnect();
-        intersectObs = null;
+
+    if (onVisibilityChange) {
+        document.removeEventListener('visibilitychange', onVisibilityChange);
+        onVisibilityChange = null;
     }
-    if (gl && buffer) {
-        gl.deleteBuffer(buffer);
-        buffer = null;
+    if (onPageHide) {
+        window.removeEventListener('pagehide', onPageHide);
+        onPageHide = null;
     }
-    if (gl && program) {
-        gl.deleteProgram(program);
-        program = null;
+    if (resizeObs) { resizeObs.disconnect(); resizeObs = null; }
+    if (intersectObs) { intersectObs.disconnect(); intersectObs = null; }
+    if (onTierChange) { window.removeEventListener('po-gfx-tier', onTierChange); onTierChange = null; }
+    if (boundCanvas && onPointerMove) {
+        boundCanvas.removeEventListener('pointermove', onPointerMove);
     }
+    onPointerMove = null;
+    boundCanvas = null;
+
+    if (gl) {
+        if (uniforms && uniforms.buffer) gl.deleteBuffer(uniforms.buffer);
+        if (uniforms && uniforms.program) gl.deleteProgram(uniforms.program);
+    }
+    uniforms = null;
     gl = null;
 }

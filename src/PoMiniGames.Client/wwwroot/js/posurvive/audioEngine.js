@@ -51,10 +51,16 @@ window.audioEngine = (() => {
     function getContext() {
         if (!_ctx) {
             try {
-                _ctx = new (window.AudioContext || window.webkitAudioContext)();
+        // 2026-07-29: adopt the app's single shared AudioContext (js/audioBus.js).
+        // This module used to construct its own; five modules doing that meant no
+        // global mix and no way to duck one under another. Falls back to a private
+        // context only if audioBus is somehow unavailable.
+                _ctx = (window.PoAudioBus && window.PoAudioBus.contextSync())
+                    || new (window.AudioContext || window.webkitAudioContext)();
                 _masterGain = _ctx.createGain();
                 _masterGain.gain.setValueAtTime(0.5, _ctx.currentTime);
-                _masterGain.connect(_ctx.destination);
+                _masterGain.connect(
+                    (window.PoAudioBus && window.PoAudioBus.busSync('sfx')) || _ctx.destination);
 
                 _ambientGain = _ctx.createGain();
                 _ambientGain.gain.setValueAtTime(0.3, _ctx.currentTime);

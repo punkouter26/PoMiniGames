@@ -42,6 +42,28 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- §GFX Sprite payload (2026-07-29). wwwroot/images/ was 145 MB and ALL of it
+         was being emitted as static web assets, which meant the PWA manifest
+         (ServiceWorkerAssetsManifest above) precached every byte on install.
+
+         Two categories are excluded here. Both stay in the repo as the source of
+         truth for re-exporting sheets; neither is fetched at runtime.
+
+         1. frames/**  — 1,948 individual PNGs, 100.2 MB. These are export
+            intermediates from scripts/posports-assets.ps1. js/posports/sprites.js
+            loads ONLY atlas.json + spritesheet.webp; nothing in the codebase has
+            ever referenced a frames/ path. This was pure dead payload.
+
+         2. spritesheet.png — superseded by spritesheet.webp (36.9 MB -> 24.4 MB,
+            identical dimensions so atlas.json stays valid).
+
+         Net published image payload: ~145 MB -> ~26 MB. If you re-export sheets,
+         regenerate the .webp too or the game falls back to colored rectangles. -->
+    <Content Remove="wwwroot\images\PoSports\**\frames\**" />
+    <Content Remove="wwwroot\images\PoSports\**\spritesheet.png" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Preserve reflectively-instantiated layout constructors from the trimmer
          (see TrimmerRoots.xml — fixes CtorNotLocated for MainLayout in Release). -->
     <TrimmerRootDescriptor Include="TrimmerRoots.xml" />

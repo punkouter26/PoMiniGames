@@ -284,7 +284,8 @@ class AudioBus {
     try {
       const Ctor = window.AudioContext || window.webkitAudioContext;
       if (!Ctor) { this._ensureFailed = true; return false; }
-      const ctx = new Ctor();
+      // Shared context (js/audioBus.js) — see note in posurvive/audioEngine.js.
+      const ctx = (window.PoAudioBus && window.PoAudioBus.contextSync()) || new Ctor();
       this.ctx = ctx;
 
       this.master = ctx.createGain();
@@ -307,7 +308,8 @@ class AudioBus {
       limiter.attack.value = 0.001;
       limiter.release.value = 0.05;
 
-      this.master.connect(comp).connect(limiter).connect(ctx.destination);
+      this.master.connect(comp).connect(limiter).connect(
+        (window.PoAudioBus && window.PoAudioBus.busSync('sfx')) || ctx.destination);
 
       this.sfxGain = ctx.createGain();
       this.sfxGain.gain.value = 1.0;

@@ -1,0 +1,90 @@
+@* Icon.razor — inline SVG icon set (§9, 2026-07-29).
+
+   The app shipped 2,033 PNGs against 2 SVGs, and most UI furniture was emoji
+   (⏱ 🔴 ⚙ ★ ⚔) — which renders as a different glyph on every platform, cannot
+   be recoloured, and picks up the emoji font rather than the UI font.
+
+   Inline SVG instead of an <img> or a sprite sheet, because inline is the only
+   form that:
+     - inherits `currentColor`, so one icon serves every theme,
+     - costs zero network requests,
+     - can be animated per-path by CSS.
+
+   Icons are stroke-based on a 24x24 grid so they stay optically consistent at
+   any size. Add new ones to the switch below. *@
+
+<svg class="po-icon @Class"
+     width="@Size" height="@Size"
+     viewBox="0 0 24 24"
+     fill="none"
+     stroke="currentColor"
+     stroke-width="@StrokeWidth"
+     stroke-linecap="round"
+     stroke-linejoin="round"
+     aria-hidden="@(string.IsNullOrEmpty(Title) ? "true" : "false")"
+     role="@(string.IsNullOrEmpty(Title) ? "presentation" : "img")"
+     focusable="false">
+    @if (!string.IsNullOrEmpty(Title))
+    {
+        <title>@Title</title>
+    }
+    @((MarkupString)Path(Name))
+</svg>
+
+@code {
+    /// <summary>Icon key. Unknown keys render nothing rather than throwing.</summary>
+    [Parameter, EditorRequired] public string Name { get; set; } = "";
+
+    /// <summary>Pixel size for both width and height (icons are square).</summary>
+    [Parameter] public int Size { get; set; } = 16;
+
+    /// <summary>Extra CSS classes appended to `po-icon`.</summary>
+    [Parameter] public string? Class { get; set; }
+
+    /// <summary>Stroke weight. 1.5 reads best at 16px; go to 2 at 24px+.</summary>
+    [Parameter] public double StrokeWidth { get; set; } = 1.75;
+
+    /// <summary>
+    /// Accessible label. When set the icon becomes role="img" with a &lt;title&gt;;
+    /// when empty it is aria-hidden, which is correct for icons that sit beside
+    /// a visible text label.
+    /// </summary>
+    [Parameter] public string? Title { get; set; }
+
+    private static string Path(string name) => name switch
+    {
+        // ── transport ──────────────────────────────────────────────────
+        "play"    => """<path d="M7 4.5v15l12-7.5z" fill="currentColor" stroke="none"/>""",
+        "pause"   => """<path d="M8 4.5v15M16 4.5v15"/>""",
+        "restart" => """<path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20 4v5h-5"/>""",
+        "stop"    => """<rect x="6" y="6" width="12" height="12" rx="1.5" fill="currentColor" stroke="none"/>""",
+
+        // ── stats / meta ───────────────────────────────────────────────
+        "clock"   => """<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 1.8"/>""",
+        "turn"    => """<path d="M4 12a8 8 0 0 1 13.7-5.6L20 8"/><path d="M20 4v4h-4"/><path d="M20 12a8 8 0 0 1-13.7 5.6L4 16"/><path d="M4 20v-4h4"/>""",
+        "trophy"  => """<path d="M7 4h10v4a5 5 0 0 1-10 0z"/><path d="M7 6H4.5v1A3.5 3.5 0 0 0 8 10.5"/><path d="M17 6h2.5v1a3.5 3.5 0 0 1-3.5 3.5"/><path d="M12 13v4M9 20h6"/>""",
+        "star"    => """<path d="m12 3.6 2.6 5.3 5.8.85-4.2 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.2-4.1 5.8-.85z" fill="currentColor" stroke="none"/>""",
+        "heart"   => """<path d="M12 20s-7-4.4-7-9.2A4 4 0 0 1 12 8a4 4 0 0 1 7 2.8C19 15.6 12 20 12 20z" fill="currentColor" stroke="none"/>""",
+        "swords"  => """<path d="M5 5l9 9M3.5 6.5 6.5 3.5"/><path d="M19 5l-9 9M20.5 6.5 17.5 3.5"/><path d="m8 16 3 3M16 16l-3 3"/>""",
+        "hourglass" => """<path d="M7 3h10M7 21h10"/><path d="M7 3c0 4 5 5.2 5 9s-5 5-5 9"/><path d="M17 3c0 4-5 5.2-5 9s5 5 5 9"/>""",
+
+        // ── chrome ─────────────────────────────────────────────────────
+        "gear"    => """<circle cx="12" cy="12" r="3"/><path d="M12 2.5v2.2M12 19.3v2.2M4.2 7.2l1.9 1.1M17.9 15.7l1.9 1.1M4.2 16.8l1.9-1.1M17.9 8.3l1.9-1.1"/>""",
+        "close"   => """<path d="M6 6l12 12M18 6L6 18"/>""",
+        "chevron-left"  => """<path d="M14.5 5.5 8 12l6.5 6.5"/>""",
+        "chevron-right" => """<path d="M9.5 5.5 16 12l-6.5 6.5"/>""",
+        "search"  => """<circle cx="10.5" cy="10.5" r="6"/><path d="m15 15 4.5 4.5"/>""",
+        "user"    => """<circle cx="12" cy="8.5" r="3.5"/><path d="M5.5 20a6.5 6.5 0 0 1 13 0"/>""",
+        "wrench"  => """<path d="M15.5 3.5a5 5 0 0 0-6 6.4l-6 6a2 2 0 0 0 2.8 2.8l6-6a5 5 0 0 0 6.4-6l-3 3-2.6-.7-.7-2.6z"/>""",
+
+        // ── status ─────────────────────────────────────────────────────
+        "online"  => """<circle cx="12" cy="12" r="5" fill="currentColor" stroke="none"/>""",
+        "offline" => """<circle cx="12" cy="12" r="5"/>""",
+        "warning" => """<path d="M12 4.5 21 19H3z"/><path d="M12 10v4M12 16.6v.1"/>""",
+        "volume"  => """<path d="M4 9.5h3.5L12 5.5v13L7.5 14.5H4z" fill="currentColor" stroke="none"/><path d="M16 9.2a4 4 0 0 1 0 5.6"/><path d="M18.5 6.7a7.5 7.5 0 0 1 0 10.6"/>""",
+        "muted"   => """<path d="M4 9.5h3.5L12 5.5v13L7.5 14.5H4z" fill="currentColor" stroke="none"/><path d="M16.5 9.5 21 14M21 9.5 16.5 14"/>""",
+        "upload"  => """<path d="M12 19V6"/><path d="m7 11 5-5 5 5"/><path d="M5 20h14"/>""",
+
+        _ => "",
+    };
+}

@@ -225,7 +225,8 @@ export function createAudio() {
     if (!ctx) {
       const AC = window.AudioContext || window.webkitAudioContext;
       if (!AC) return null;
-      ctx = new AC();
+      // Shared context (js/audioBus.js) — see note in posurvive/audioEngine.js.
+      ctx = (window.PoAudioBus && window.PoAudioBus.contextSync()) || new AC();
 
       // #7 — master → compressor → destination. The compressor is the safety net that the old
       // single-gain graph never had: it catches the gun, a sting and a burst of impacts landing
@@ -238,7 +239,8 @@ export function createAudio() {
       comp.ratio.value = 4;
       comp.attack.value = 0.004;
       comp.release.value = 0.18;
-      master.connect(comp).connect(ctx.destination);
+      master.connect(comp).connect(
+        (window.PoAudioBus && window.PoAudioBus.busSync('sfx')) || ctx.destination);
 
       // Two buses so the beds can be ducked independently of the one-shots.
       bedBus = ctx.createGain();

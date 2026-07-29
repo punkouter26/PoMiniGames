@@ -1,10 +1,17 @@
 // sprites.js — atlas loading and frame drawing for the PoSports characters.
 //
-// Assets live at images/PoSports/<char>/<anim>/{atlas.json, spritesheet.png}
+// Assets live at images/PoSports/<char>/<anim>/{atlas.json, spritesheet.webp}
 // (normalized by scripts/posports-assets.ps1). Loading is lazy and per-character:
 // a meet only fetches the characters actually in its lanes, and only the anims
 // requested — a full character is ~1-2 MB, so eager-loading the whole roster would
 // triple first-paint time for nothing.
+//
+// 2026-07-29: sheets are WebP, not PNG (36.9 MB -> 24.4 MB across the roster).
+// Dimensions are byte-for-byte identical to the old PNGs, which is what keeps
+// the atlas.json frame rectangles valid — if you ever re-export, preserve the
+// sheet dimensions or every frame coordinate below shifts.
+// The `frames/` directories beside each sheet are export intermediates that
+// nothing here reads; they are excluded from publish in PoMiniGamesClient.csproj.
 //
 // Failure policy (spec error table): one retry per asset, then a colored-rectangle
 // fallback so a flaky fetch degrades the art, never the race.
@@ -35,7 +42,7 @@ async function loadAnim(char, anim) {
   const base = `images/PoSports/${char}/${anim}`;
   const [atlas, blob] = await Promise.all([
     fetchAsset(`${base}/atlas.json`, true),
-    fetchAsset(`${base}/spritesheet.png`, false),
+    fetchAsset(`${base}/spritesheet.webp`, false),
   ]);
   const bitmap = await createImageBitmap(blob);
   // Atlas frames object is keyed "0","1",… — order numerically, drop any partial

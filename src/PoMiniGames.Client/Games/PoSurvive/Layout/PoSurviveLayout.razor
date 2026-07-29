@@ -21,142 +21,119 @@
 @inject AuthStateService        AuthState
 @inject ToastService            ToastService
 
-@* Banner removed (player request: simplify UI). Degraded / mock state is already
-   surfaced inline via the toolbar inference chip + title tooltip below, so the
-   dedicated full-width banner was duplicate chrome. *@
+@* ── ONE command bar (2026-07-29, "board-first" consolidation) ────────────────
+   Replaces three stacked rows that together ate 127px above a 602px board: the
+   platform `gl-top-bar` (47px), the game `toolbar` (52px), and the `statsbar`
+   (28px). Brand, transport, speed, AI status, live stats and auth now share a
+   single 48px row, and the "BATTLE GRID" pane header is gone — the board does
+   not need a label.
 
-@* Page header — same `gl-top-bar` chrome as the home page (`MainLayout.razor`).
-   The game-specific command surface (model picker, speed, START / PAUSE / etc.)
-   lives in the `<div class="toolbar">` sibling below so it stays accessible but
-   outside the page `<header>` element. *@
-<header class="gl-top-bar">
-    <div class="gl-top-bar-left">
-        <a href="/" class="gl-brand">
-            <span class="gl-brand-icon">
-                <svg width="22" height="22" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <rect x="3" y="5" width="14" height="14" rx="2" fill="currentColor" opacity="0.8"/>
-                    <rect x="23" y="5" width="14" height="14" rx="2" fill="currentColor" opacity="0.5"/>
-                    <rect x="3" y="23" width="14" height="14" rx="2" fill="currentColor" opacity="0.5"/>
-                    <rect x="23" y="23" width="14" height="14" rx="2" fill="currentColor" opacity="0.8"/>
-                </svg>
-            </span>
-            <span class="gl-brand-text">PoMiniGames</span>
-        </a>
+   Two contracts this markup depends on, both previously violated:
+     1. `.sv-bar` must NOT set `overflow: hidden`. The old `.toolbar` did, at a
+        fixed 52px, which clipped the Advanced drawer and the AI status pill out
+        of sight entirely. The Advanced panel and the dev-switch panel are
+        absolutely positioned and have to escape the bar's box.
+     2. Every `sv-*` class used here has to exist in c64-theme.css. When this
+        toolbar was refactored to `sv-*` names the stylesheet never landed, so
+        the whole control group rendered as unstyled browser defaults. *@
+<div class="sv-bar app-reveal" data-testid="toolbar">
+    <a href="/" class="sv-bar__brand" title="Back to PoMiniGames">
+        <svg width="20" height="20" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <rect x="3" y="5" width="14" height="14" rx="2" fill="currentColor" opacity="0.8"/>
+            <rect x="23" y="5" width="14" height="14" rx="2" fill="currentColor" opacity="0.5"/>
+            <rect x="3" y="23" width="14" height="14" rx="2" fill="currentColor" opacity="0.5"/>
+            <rect x="23" y="23" width="14" height="14" rx="2" fill="currentColor" opacity="0.8"/>
+        </svg>
+        <span class="sv-bar__wordmark">Survive</span>
+    </a>
+
+    <span class="sv-bar__divider" aria-hidden="true"></span>
+
+    @* ── North-Star control: one primary button that morphs with lifecycle ── *@
+    @if (BootCanStartSimulation && !Store.Simulation.IsRunning && !Store.Simulation.IsPaused && Store.Simulation.Outcome is null && !Store.Simulation.ShowPostMortem)
+    {
+        <button class="sv-btn sv-btn--primary sv-btn--cta"
+                id="start-sim-button"
+                @onclick="StartSimulation"
+                data-testid="btn-start">
+            <Icon Name="play" Size="13" /> Start battle
+        </button>
+    }
+    @if (Store.Simulation.IsRunning && !Store.Simulation.IsPaused)
+    {
+        <button class="sv-btn" @onclick="PauseSimulation" data-testid="btn-pause" title="Pause">
+            <Icon Name="pause" Size="13" /> Pause
+        </button>
+    }
+    @if (Store.Simulation.IsPaused)
+    {
+        <button class="sv-btn sv-btn--primary" @onclick="ResumeSimulation" data-testid="btn-resume" title="Resume">
+            <Icon Name="play" Size="13" /> Resume
+        </button>
+    }
+    @if (!Store.Simulation.IsRunning && !Store.Simulation.IsPaused && Store.Simulation.TurnNumber > 0)
+    {
+        <button class="sv-btn sv-btn--primary sv-btn--cta" @onclick="ResetSimulation" data-testid="btn-restart">
+            <Icon Name="restart" Size="13" /> New battle
+        </button>
+    }
+
+    @* ── Speed presets, primary (raw ms lives in Advanced) ── *@
+    <div class="sv-speed" role="group" aria-label="Playback speed">
+        <button class="sv-chip @(Store.Simulation.SpeedMs <= 400 ? "is-active" : string.Empty)"
+                @onclick="() => SetSpeedPreset(350)" data-testid="btn-speed-fast" title="Fast">Fast</button>
+        <button class="sv-chip @(Store.Simulation.SpeedMs > 400 && Store.Simulation.SpeedMs < 1200 ? "is-active" : string.Empty)"
+                @onclick="() => SetSpeedPreset(900)" data-testid="btn-speed-balanced" title="Balanced">Balanced</button>
+        <button class="sv-chip @(Store.Simulation.SpeedMs >= 1200 ? "is-active" : string.Empty)"
+                @onclick="() => SetSpeedPreset(1500)" data-testid="btn-speed-inspect" title="Slow — read every decision">Inspect</button>
     </div>
 
-    <div class="gl-auth">
-        @* §10 dev-only "Switch user…" affordance. Renders only in Development +
-           Test environments where the /api/auth/dev-bypass endpoint exists;
-           lets a developer verify head-to-head flows from the same machine
-           without spinning up an incognito tab. Hidden in Production. *@
-        @if (ShowDevSwitch)
-        {
-            <details class="gl-overflow-menu gl-dev-switch">
-                <summary class="gl-overflow-trigger" aria-label="Developer tools">🔧</summary>
-                <div class="gl-overflow-panel">
-                    <div class="gl-dev-switch__title">Switch user (dev only)</div>
-                    <input class="gl-dev-switch__input" type="text"
-                           placeholder="@(AuthState.User?.DisplayName ?? "new-name")"
-                           @bind="_devUser"
-                           @bind:event="oninput"
-                           maxlength="32" />
-                    <button class="gl-overflow-item" @onclick="SwitchDevUserAsync" disabled="@(string.IsNullOrWhiteSpace(_devUser) || _switching)">
-                        @(_switching ? "Switching…" : "Switch identity")
-                    </button>
-                    @if (!string.IsNullOrEmpty(_switchError))
-                    {
-                        <div class="gl-dev-switch__error">@_switchError</div>
-                    }
-                    <div class="gl-dev-switch__hint">Replaces the current cookie; reloads match history.</div>
-                </div>
-            </details>
-        }
-        @if (AuthState.IsConfigured && !AuthState.IsLoading)
-        {
-            <button class="gl-auth-button" @onclick="AuthState.IsAuthenticated ? SignOut : SignIn">
-                @(AuthState.IsAuthenticated ? "Sign out" : "Sign in")
-            </button>
-            @if (!AuthState.IsAuthenticated)
+    @* ── Natural-language AI status pill ── *@
+    @if (Store.Boot.IsDegradedMode)
+    {
+        <span class="sv-status sv-status--warn" data-testid="inference-status-degraded" title="@DegradedModeSummary">Offline AI</span>
+    }
+    else if (HasInferenceIssue)
+    {
+        <span class="sv-status sv-status--error" data-testid="inference-status" title="@InferenceIssueSummary">AI issue</span>
+    }
+    else
+    {
+        <span class="sv-status sv-status--ok" data-testid="inference-status-ok" title="Live AI inference is running.">AI online</span>
+    }
+
+    @* The one flexible child: everything above sits left, everything below right.
+       It carries the alignment rather than an auto-margin on the stats group,
+       because the stats group is absent before the first turn. *@
+    <span class="sv-bar__spacer" aria-hidden="true"></span>
+
+    @* ── Live stats, absorbed from the deleted `statsbar` row ── *@
+    @if (Store.Simulation.TurnNumber > 0 || Store.Simulation.IsRunning)
+    {
+        <div class="sv-bar__stats" data-testid="statsbar">
+            <span class="statsbar__item statsbar__item--time" title="Elapsed wall-clock time since simulation start"><Icon Name="clock" Size="12" /> @ElapsedFormatted</span>
+            <span class="statsbar__sep">·</span>
+            <span class="statsbar__item" title="Current simulation turn">TURN <strong>@Store.Simulation.TurnNumber</strong></span>
+            <span class="statsbar__sep">·</span>
+            <span class="statsbar__item statsbar__item--red" title="Alive Red agents"><Icon Name="online" Size="10" /> @AliveRed</span>
+            <span class="statsbar__item statsbar__item--blue" title="Alive Blue agents"><Icon Name="online" Size="10" /> @AliveBlue</span>
+            @if (Store.Simulation.IsPaused)
             {
-                <button class="gl-auth-button gl-auth-button--anon" @onclick="SignInAnon" title="Continue as anonymous">ANON</button>
+                <span class="statsbar__sep">·</span>
+                <span class="statsbar__item statsbar__item--paused"><Icon Name="pause" Size="11" /> PAUSED</span>
             }
-            @if (!AuthState.IsAuthenticated)
+            @if (Store.Simulation.Outcome is not null)
             {
-                <details class="gl-overflow-menu">
-                    <summary class="gl-overflow-trigger" aria-label="More">⋯</summary>
-                    <div class="gl-overflow-panel">
-                        <button class="gl-overflow-item" @onclick="SignInAnon">Continue as anonymous</button>
-                    </div>
-                </details>
+                <span class="statsbar__sep">·</span>
+                <span class="statsbar__item statsbar__item--outcome">@Store.Simulation.Outcome.ToUpperInvariant()</span>
             }
-        }
-    </div>
-</header>
-
-<div class="toolbar sv-toolbar app-reveal" data-testid="toolbar">
-    @* The brand link lives in the gl-top-bar header above; repeating it here rendered
-       "PoMiniGames" twice, one line apart. Subtitle only. *@
-    <div class="toolbar__identity">
-        <span class="toolbar__subtitle">Survive · AI battle simulator</span>
-    </div>
-
-    <div class="sv-toolbar__primary">
-        @* ── North-Star control: one primary button that morphs with lifecycle ── *@
-        @if (BootCanStartSimulation && !Store.Simulation.IsRunning && !Store.Simulation.IsPaused && Store.Simulation.Outcome is null && !Store.Simulation.ShowPostMortem)
-        {
-            <button class="sv-btn sv-btn--primary sv-btn--cta"
-                    id="start-sim-button"
-                    @onclick="StartSimulation"
-                    data-testid="btn-start">
-                ▶ Start battle
-            </button>
-        }
-        @if (Store.Simulation.IsRunning && !Store.Simulation.IsPaused)
-        {
-            <button class="sv-btn" @onclick="PauseSimulation" data-testid="btn-pause" title="Pause">
-                ❚❚ Pause
-            </button>
-        }
-        @if (Store.Simulation.IsPaused)
-        {
-            <button class="sv-btn sv-btn--primary" @onclick="ResumeSimulation" data-testid="btn-resume" title="Resume">
-                ▶ Resume
-            </button>
-        }
-        @if (!Store.Simulation.IsRunning && !Store.Simulation.IsPaused && Store.Simulation.TurnNumber > 0)
-        {
-            <button class="sv-btn sv-btn--primary sv-btn--cta" @onclick="ResetSimulation" data-testid="btn-restart">
-                ↻ New battle
-            </button>
-        }
-
-        @* ── Speed presets, primary (raw ms lives in Advanced) ── *@
-        <div class="sv-speed" role="group" aria-label="Playback speed">
-            <button class="sv-chip @(Store.Simulation.SpeedMs <= 400 ? "is-active" : string.Empty)"
-                    @onclick="() => SetSpeedPreset(350)" data-testid="btn-speed-fast" title="Fast">Fast</button>
-            <button class="sv-chip @(Store.Simulation.SpeedMs > 400 && Store.Simulation.SpeedMs < 1200 ? "is-active" : string.Empty)"
-                    @onclick="() => SetSpeedPreset(900)" data-testid="btn-speed-balanced" title="Balanced">Balanced</button>
-            <button class="sv-chip @(Store.Simulation.SpeedMs >= 1200 ? "is-active" : string.Empty)"
-                    @onclick="() => SetSpeedPreset(1500)" data-testid="btn-speed-inspect" title="Slow — read every decision">Inspect</button>
         </div>
+    }
 
-        @* ── Natural-language AI status pill ── *@
-        @if (Store.Boot.IsDegradedMode)
-        {
-            <span class="sv-status sv-status--warn" data-testid="inference-status-degraded" title="@DegradedModeSummary">Offline AI</span>
-        }
-        else if (HasInferenceIssue)
-        {
-            <span class="sv-status sv-status--error" data-testid="inference-status" title="@InferenceIssueSummary">AI issue</span>
-        }
-        else
-        {
-            <span class="sv-status sv-status--ok" data-testid="inference-status-ok" title="Live AI inference is running.">AI online</span>
-        }
-
+    <div class="sv-bar__tools">
         @* ── Advanced drawer: model, raw speed, log export, contrast ── *@
         <details class="sv-advanced">
-            <summary class="sv-advanced__summary" title="Model, speed, export, accessibility">⚙ Advanced</summary>
+            <summary class="sv-advanced__summary" title="Model, speed, export, accessibility"><Icon Name="gear" Size="13" /> Advanced</summary>
             <div class="sv-advanced__panel">
                 <span class="sv-advanced__provider @InferenceIndicatorClass"
                       data-testid="inference-indicator"
@@ -227,6 +204,43 @@
                 </div>
             </div>
         </details>
+
+        @* §10 dev-only "Switch user…" affordance. Renders only in Development +
+           Test environments where the /api/auth/dev-bypass endpoint exists;
+           lets a developer verify head-to-head flows from the same machine
+           without spinning up an incognito tab. Hidden in Production. *@
+        @if (ShowDevSwitch)
+        {
+            <details class="gl-overflow-menu gl-dev-switch">
+                <summary class="gl-overflow-trigger" aria-label="Developer tools"><Icon Name="wrench" Size="14" /></summary>
+                <div class="gl-overflow-panel">
+                    <div class="gl-dev-switch__title">Switch user (dev only)</div>
+                    <input class="gl-dev-switch__input" type="text"
+                           placeholder="@(AuthState.User?.DisplayName ?? "new-name")"
+                           @bind="_devUser"
+                           @bind:event="oninput"
+                           maxlength="32" />
+                    <button class="gl-overflow-item" @onclick="SwitchDevUserAsync" disabled="@(string.IsNullOrWhiteSpace(_devUser) || _switching)">
+                        @(_switching ? "Switching…" : "Switch identity")
+                    </button>
+                    @if (!string.IsNullOrEmpty(_switchError))
+                    {
+                        <div class="gl-dev-switch__error">@_switchError</div>
+                    }
+                    <div class="gl-dev-switch__hint">Replaces the current cookie; reloads match history.</div>
+                </div>
+            </details>
+        }
+        @if (AuthState.IsConfigured && !AuthState.IsLoading)
+        {
+            <button class="sv-btn sv-btn--sm" @onclick="AuthState.IsAuthenticated ? SignOut : SignIn">
+                @(AuthState.IsAuthenticated ? "Sign out" : "Sign in")
+            </button>
+            @if (!AuthState.IsAuthenticated)
+            {
+                <button class="sv-btn sv-btn--sm" @onclick="SignInAnon" title="Continue as anonymous">ANON</button>
+            }
+        }
     </div>
 </div>
 
@@ -250,75 +264,102 @@
     </div>
 }
 
-@if (Store.Simulation.TurnNumber > 0 || Store.Simulation.IsRunning)
-{
-    @* Stats bar simplified (player request): collapsed from 10 metrics to 4 most
-       important so the row stops dominating the viewport. Outcome / Pause / AI
-       state still surface via inline toolbar chips when active. *@
-    <div class="statsbar" data-testid="statsbar">
-        <span class="statsbar__item statsbar__item--time" title="Elapsed wall-clock time since simulation start">⏱ @ElapsedFormatted</span>
-        <span class="statsbar__sep">·</span>
-        <span class="statsbar__item" title="Current simulation turn">TURN <strong>@Store.Simulation.TurnNumber</strong></span>
-        <span class="statsbar__sep">·</span>
-        <span class="statsbar__item statsbar__item--red" title="Alive Red agents">🔴 @AliveRed</span>
-        <span class="statsbar__item statsbar__item--blue" title="Alive Blue agents">🔵 @AliveBlue</span>
-        @if (Store.Simulation.IsPaused)
-        {
-            <span class="statsbar__sep">·</span>
-            <span class="statsbar__item statsbar__item--paused">⏸ PAUSED</span>
-        }
-        @if (Store.Simulation.Outcome is not null)
-        {
-            <span class="statsbar__sep">·</span>
-            <span class="statsbar__item statsbar__item--outcome">@Store.Simulation.Outcome.ToUpperInvariant()</span>
-        }
-    </div>
-}
+@* ── Two-pane stage: board + one tabbed intel rail ────────────────────────────
+   Was a 3-pane grid (`1fr 260px` / `1fr 180px`). The 180px bottom console pane
+   is gone; the Tactical Log moved into the rail as a tab alongside the Decision
+   Inspector and the Agent list, so the board reclaims that height as well as
+   the 105px of deleted header chrome.
 
-@* ── Champion strip (#2): persistent tracker for the agent the user adopted ── *@
-@if (Champion is not null)
-{
-    <div class="sv-champion @(Champion.IsAlive ? "" : "sv-champion--fallen") @(Champion.Team == "Red" ? "sv-champion--red" : "sv-champion--blue")"
-         data-testid="champion-strip">
-        <span class="sv-champion__star">★</span>
-        <span class="sv-champion__label">Your champion</span>
-        <span class="sv-champion__id">@Champion.Id</span>
-        <span class="sv-champion__stat" title="Health">❤ @Champion.Hp</span>
-        <span class="sv-champion__stat" title="Kills">⚔ @Champion.KillCount</span>
-        <span class="sv-champion__stat" title="Turns survived">⏳ @Champion.SurvivalTurns</span>
-        <span class="sv-champion__state">@(Champion.IsAlive ? "ALIVE" : "FALLEN")</span>
-        <button class="sv-champion__drop" @onclick="DropChampion" title="Drop champion" aria-label="Drop champion">✕</button>
-    </div>
-}
-
-<div class="simulation-layout simulation-layout--grid" data-testid="main-layout">
-    <main class="simulation-layout__grid app-reveal">
-        <div class="pane-header">BATTLE GRID</div>
-        <div class="pane-body pane-body--grid">
-            @Body
-        </div>
+   The rail also fixes a dead end: the old mobile breakpoint defined
+   `.simulation-layout--agents` / `--log` to reveal the sidebar and console one
+   at a time, but the razor hard-coded `--grid` and nothing ever set the other
+   two — below 760px the intel and log panes were unreachable. One tab mechanism
+   now serves both breakpoints. *@
+<div class="sv-stage @(_railCollapsed ? "sv-stage--rail-collapsed" : string.Empty)" data-testid="main-layout">
+    <main class="sv-stage__board app-reveal">
+        @Body
     </main>
 
-    <aside class="simulation-layout__sidebar app-reveal">
-        <div class="pane-header pane-header--sidebar">DECISION + AGENT INTEL</div>
-        <div class="pane-body pane-body--sidebar">
-            @if (Store.Simulation.IsRunning || Store.Simulation.Agents.Count > 0)
+    <aside class="sv-rail fx-glass app-reveal" data-testid="sv-rail">
+        <div class="sv-rail__head">
+            @* Champion tracker (#2), demoted from a full-width strip to a chip so it
+               costs the board no height. Stays visible across all three tabs. *@
+            @if (Champion is not null)
             {
-                <DecisionInspector />
-                <AgentSidebar />
+                <div class="sv-champion @(Champion.IsAlive ? string.Empty : "sv-champion--fallen") @(Champion.Team == "Red" ? "sv-champion--red" : "sv-champion--blue")"
+                     data-testid="champion-strip"
+                     title="Your champion — @Champion.Id (@(Champion.IsAlive ? "alive" : "fallen"))">
+                    <span class="sv-champion__star"><Icon Name="star" Size="11" /></span>
+                    <span class="sv-champion__id">@Champion.Id</span>
+                    <span class="sv-champion__stat" title="Health"><Icon Name="heart" Size="11" /> @Champion.Hp</span>
+                    <span class="sv-champion__stat" title="Kills"><Icon Name="swords" Size="11" /> @Champion.KillCount</span>
+                    <span class="sv-champion__stat" title="Turns survived"><Icon Name="hourglass" Size="11" /> @Champion.SurvivalTurns</span>
+                    <button class="sv-champion__drop" @onclick="DropChampion" title="Drop champion" aria-label="Drop champion"><Icon Name="close" Size="10" /></button>
+                </div>
+            }
+            else
+            {
+                <span class="sv-rail__hint">Click an agent to follow it</span>
+            }
+
+            <button class="sv-rail__collapse"
+                    @onclick="ToggleRail"
+                    data-testid="btn-rail-collapse"
+                    title="@(_railCollapsed ? "Expand intel rail" : "Collapse intel rail")"
+                    aria-expanded="@((!_railCollapsed).ToString().ToLowerInvariant())">
+                @(_railCollapsed ? "«" : "»")
+            </button>
+        </div>
+
+        <div class="sv-rail__tabs" role="tablist" aria-label="Intel">
+            @foreach (var tab in AllTabs)
+            {
+                <button class="sv-rail__tab @(_tab == tab ? "is-active" : string.Empty)"
+                        role="tab"
+                        aria-selected="@((_tab == tab).ToString().ToLowerInvariant())"
+                        data-testid="rail-tab-@(tab.ToString().ToLowerInvariant())"
+                        @onclick="() => SelectTab(tab)">
+                    @TabLabel(tab)
+                </button>
+            }
+        </div>
+
+        <div class="sv-rail__body" role="tabpanel" data-testid="rail-body">
+            @if (_tab == RailTab.Why)
+            {
+                @if (Store.Simulation.IsRunning || Store.Simulation.Agents.Count > 0)
+                {
+                    <DecisionInspector />
+                }
+                else
+                {
+                    <p class="sv-rail__empty">No decisions yet. Start a battle to see why each agent moves.</p>
+                }
+            }
+            else if (_tab == RailTab.Agents)
+            {
+                @if (Store.Simulation.IsRunning || Store.Simulation.Agents.Count > 0)
+                {
+                    <AgentSidebar />
+                }
+                else
+                {
+                    <p class="sv-rail__empty">No agents yet.</p>
+                }
+            }
+            else
+            {
+                @if (Store.Simulation.IsRunning || Store.Simulation.ConsoleLog.Count > 0)
+                {
+                    <TacticalLog />
+                }
+                else
+                {
+                    <p class="sv-rail__empty">No events yet.</p>
+                }
             }
         </div>
     </aside>
-
-    <footer class="simulation-layout__console app-reveal">
-        <div class="pane-header pane-header--console">TACTICAL LOG</div>
-        <div class="pane-body pane-body--console">
-            @if (Store.Simulation.IsRunning || Store.Simulation.ConsoleLog.Count > 0)
-            {
-                <TacticalLog />
-            }
-        </div>
-    </footer>
 </div>
 
 <PostMortemOverlay />
@@ -333,11 +374,39 @@
 
     private string InferenceIndicatorClass => Store.Boot.ProviderKind switch
     {
-        "LOCAL"  => "toolbar__inference--local",
-        "REMOTE" => "toolbar__inference--remote",
-        "MOCK"   => "toolbar__inference--mock",
+        "LOCAL"  => "sv-advanced__provider--local",
+        "REMOTE" => "sv-advanced__provider--remote",
+        "MOCK"   => "sv-advanced__provider--mock",
         _         => string.Empty,
     };
+
+    // ── Intel rail (2026-07-29) ───────────────────────────────────────────
+    // The Decision Inspector, Agent list and Tactical Log used to occupy two
+    // separate panes (a 260px sidebar and a 180px footer). They are now three
+    // tabs of one rail, which is what lets the board own the rest of the stage.
+    private enum RailTab { Why, Agents, Log }
+
+    private static readonly RailTab[] AllTabs = [RailTab.Why, RailTab.Agents, RailTab.Log];
+
+    private RailTab _tab = RailTab.Why;
+    private bool _railCollapsed;
+
+    private static string TabLabel(RailTab tab) => tab switch
+    {
+        RailTab.Why    => "Why",
+        RailTab.Agents => "Agents",
+        _              => "Log",
+    };
+
+    // Selecting a tab while collapsed expands the rail: the click is a request to
+    // read that panel, not just to arm it.
+    private void SelectTab(RailTab tab)
+    {
+        _tab = tab;
+        _railCollapsed = false;
+    }
+
+    private void ToggleRail() => _railCollapsed = !_railCollapsed;
 
     // ── Compact toolbar model switcher ────────────────────────────────
     // Loads the same set of LOCAL (WebLLM) and REMOTE (Azure OpenAI / Foundry)
@@ -470,7 +539,14 @@
         // Keep the toolbar's compact model switcher populated from the same
         // configuration source as Mission Control.
         ToolbarModelOptions = ModelBootstrap.ReadAllModelOptions();
-        _clockTimer = new System.Threading.Timer(_ => InvokeAsync(StateHasChanged), null, 1000, 1000);
+        _clockTimer = new System.Threading.Timer(_ => InvokeAsync(async () =>
+        {
+            StateHasChanged();
+            // Piggyback the ambient-intensity update on the clock tick rather than
+            // subscribing to every store change — the bed drifts over seconds, so
+            // 1 Hz is plenty and costs no extra wakeups.
+            await SyncAmbientIntensityAsync();
+        }), null, 1000, 1000);
 
         // Mirror MainLayout: subscribe to auth changes so the <header> chrome
         // (Sign in / Sign out buttons) re-renders without a full page reload.
@@ -486,8 +562,44 @@
             // Inject PoSurvive's stylesheets only while this layout is mounted so its
             // global CSS resets don't leak into the rest of the PoMiniGames platform.
             await JS.InvokeVoidAsync("PoSurviveTheme.load");
+
+            // §GFX/SOUND (2026-07-29). Generative ambient bed + audio-reactive
+            // visuals. Both are best-effort: a browser without Web Audio, or a
+            // muted player, simply gets nothing. Never let ambience break the game.
+            try
+            {
+                await JS.InvokeVoidAsync("PoAmbientMusic.start", "posurvive", 0.12);
+                await JS.InvokeVoidAsync("PoVisualRuntime.enableAudioReactive", true);
+            }
+            catch (JSException)
+            {
+                // Module not loaded (e.g. prerender or a stripped build) — ignore.
+            }
         }
     }
+
+    /// <summary>
+    /// Drive the ambient bed from the state of the battle: the fewer agents left
+    /// alive, the tenser the pad. Called from the same 1s clock timer that already
+    /// re-renders the elapsed time, so it costs no extra wakeups.
+    /// </summary>
+    private async Task SyncAmbientIntensityAsync()
+    {
+        var total = Store.Simulation.Agents.Count;
+        if (total == 0) return;
+        var alive = Store.Simulation.Agents.Count(a => a.IsAlive);
+        // 0 casualties -> calm; everyone but one down -> maximum tension.
+        var intensity = 1.0 - ((double)alive / total);
+        if (Math.Abs(intensity - _lastIntensity) < 0.08) return;
+        _lastIntensity = intensity;
+        try
+        {
+            await JS.InvokeVoidAsync("PoAmbientMusic.setIntensity", intensity);
+        }
+        catch (JSException) { /* module absent — ignore */ }
+    }
+
+    private double _lastIntensity = -1;
 
     // ── Champion strip (#2) ───────────────────────────────────────────────
     private PoShared.Simulation.Models.AgentDto? Champion
@@ -588,6 +700,12 @@
         _downloadToastCts?.Dispose();
         // Remove PoSurvive's stylesheets so the platform's styling is restored on exit.
         _ = JS.InvokeVoidAsync("PoSurviveTheme.unload");
+
+        // Stop the ambient bed and the analyser pump. An orphaned oscillator keeps
+        // the audio thread alive for the lifetime of the tab, so this is not
+        // optional cleanup — it is the difference between leaving and leaking.
+        _ = JS.InvokeVoidAsync("PoAmbientMusic.stop", 0.8);
+        _ = JS.InvokeVoidAsync("PoVisualRuntime.enableAudioReactive", false);
 
         // Detach the auth-state subscription wired up in OnInitialized so this
         // layout doesn't leak event handlers on re-creation.

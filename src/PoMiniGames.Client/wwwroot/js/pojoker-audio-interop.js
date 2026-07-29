@@ -14,7 +14,9 @@ let audioContext = null;
  */
 function getAudioContext() {
     if (!audioContext) {
-        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        // Shared context (js/audioBus.js) — see note in posurvive/audioEngine.js.
+        audioContext = (window.PoAudioBus && window.PoAudioBus.contextSync())
+            || new (window.AudioContext || window.webkitAudioContext)();
     }
     
     // Resume if suspended (happens after page load before user interaction)

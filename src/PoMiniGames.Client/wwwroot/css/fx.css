@@ -1,0 +1,257 @@
+/*
+ * fx.css — platform visual-effects layer (2026-07-29).
+ *
+ * Three jobs, all keyed off variables that visualRuntime.js publishes on <html>:
+ *
+ *   §5  glassmorphism + animatable gradients
+ *   §6  compositor-only motion primitives
+ *   §10 adaptive degradation (data-gfx="high|medium|low", --gfx-blur, --gfx-particles)
+ *
+ * Effects here are OPT-IN via utility classes. Nothing below restyles an
+ * existing element, so adding this stylesheet cannot regress a game's look —
+ * it only makes the primitives available.
+ */
+
+/* ===== §5 Animatable gradient angle ========================================
+ * A plain `background: conic-gradient(from 0deg, …)` cannot be transitioned or
+ * animated, because the browser has no idea the token inside the function is an
+ * angle. Registering it with @property gives it a type, and it becomes
+ * interpolable like any other animatable value. This is the whole trick behind
+ * a rotating conic border that costs nothing per frame in JS.
+ */
+@property --fx-angle {
+    syntax: '<angle>';
+    initial-value: 0deg;
+    inherits: false;
+}
+
+@property --fx-glow {
+    syntax: '<number>';
+    initial-value: 0;
+    inherits: false;
+}
+
+:root {
+    /* Overwritten every frame by visualRuntime.js when audio-reactive mode is
+       on; declared here so stylesheets have sane values before audio starts. */
+    --audio-bass: 0;
+    --audio-mid: 0;
+    --audio-treble: 0;
+    --audio-peak: 0;
+
+    /* Overwritten by visualRuntime.js's tier logic. */
+    --gfx-blur: 14px;
+    --gfx-particles: 1;
+    --gfx-shadows: 1;
+
+    --fx-glass-bg: rgba(255, 255, 255, 0.06);
+    --fx-glass-stroke: rgba(255, 255, 255, 0.14);
+    --fx-glass-highlight: rgba(255, 255, 255, 0.22);
+}
+
+/* ===== §5 Glassmorphism ====================================================
+ * COST WARNING: `backdrop-filter` forces the element onto its own compositor
+ * layer and makes the browser re-sample everything painted beneath it. Two or
+ * three of these on screen is fine; twenty will halve your frame rate on
+ * integrated graphics. Use it on chrome surfaces (bars, modals, rails) — never
+ * on list items or anything that repeats.
+ *
+ * The `--gfx-blur` indirection lets §10 drop the radius to 0 on weak hardware,
+ * at which point the surface degrades to a flat translucent fill that still
+ * looks deliberate.
+ */
+.fx-glass {
+    background-color: var(--fx-glass-bg);
+    border: 1px solid var(--fx-glass-stroke);
+    border-radius: 12px;
+    /* Fallback for engines without backdrop-filter — a slightly more opaque
+       fill so text contrast survives without the blur behind it. */
+    background-color: color-mix(in srgb, var(--fx-glass-bg) 100%, rgba(10, 20, 30, 0.55));
+}
+
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+    .fx-glass {
+        background-color: var(--fx-glass-bg);
+        -webkit-backdrop-filter: blur(var(--gfx-blur)) saturate(150%);
+        backdrop-filter: blur(var(--gfx-blur)) saturate(150%);
+    }
+}
+
+/* Specular top edge — sells "pane of glass" far more than the blur alone. */
+.fx-glass--lit {
+    position: relative;
+    overflow: hidden;
+}
+.fx-glass--lit::before {
+    content: '';
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 1px;
+    background: linear-gradient(90deg,
+        transparent,
+        var(--fx-glass-highlight) 22%,
+        var(--fx-glass-highlight) 78%,
+        transparent);
+    pointer-events: none;
+}
+
+/* ===== §5 Dynamic gradients ================================================ */
+
+/* Rotating conic ring. Animating --fx-angle (a registered custom property)
+   rather than `background` means the gradient is recomputed on the compositor
+   rather than re-parsed each frame. */
+.fx-aurora {
+    position: relative;
+    background:
+        conic-gradient(from var(--fx-angle),
+            color-mix(in oklch, var(--fx-accent, #66b6ff) 85%, transparent),
+            color-mix(in oklch, var(--fx-accent-2, #ffd166) 85%, transparent),
+            color-mix(in oklch, var(--fx-accent-3, #ef5f67) 85%, transparent),
+            color-mix(in oklch, var(--fx-accent, #66b6ff) 85%, transparent));
+    animation: fx-rotate-angle 12s linear infinite;
+}
+
+@keyframes fx-rotate-angle {
+    to { --fx-angle: 360deg; }
+}
+
+/* Gradient border without a wrapper element: paint the gradient on the padding
+   box and mask out the middle. */
+.fx-ring {
+    position: relative;
+    isolation: isolate;
+}
+.fx-ring::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    background: conic-gradient(from var(--fx-angle),
+        var(--fx-accent, #66b6ff),
+        var(--fx-accent-2, #ffd166),
+        var(--fx-accent, #66b6ff));
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    mask-composite: exclude;
+    pointer-events: none;
+    animation: fx-rotate-angle 8s linear infinite;
+}
+
+/* ===== §8 Audio-reactive surfaces ==========================================
+ * Consumes the CSS variables visualRuntime.js pumps from the AnalyserNode.
+ * Purely declarative — no per-element JS.
+ */
+.fx-audio-glow {
+    box-shadow:
+        0 0 calc(var(--audio-bass) * 42px) calc(var(--audio-bass) * 6px)
+        color-mix(in srgb, var(--fx-accent, #66b6ff) calc(var(--audio-bass) * 70%), transparent);
+}
+
+.fx-audio-pulse {
+    /* scale() is compositor-only; animating width/height here would trigger
+       layout on every audio frame. */
+    transform: scale(calc(1 + var(--audio-peak) * 0.04));
+    will-change: transform;
+}
+
+.fx-audio-tint {
+    border-color: color-mix(in oklch,
+        var(--fx-accent, #66b6ff) calc(30% + var(--audio-mid) * 60%),
+        transparent);
+}
+
+/* ===== §6 Compositor-only motion ===========================================
+ * Every primitive here animates ONLY transform and opacity. In Blazor WASM the
+ * main thread runs the .NET runtime, so an animation that triggers layout or
+ * paint competes directly with game logic; transform/opacity stay on the
+ * compositor and cost the main thread nothing once started.
+ *
+ * `will-change` is applied for the animation's duration only. Leaving it on
+ * permanently pins a compositor layer per element and costs GPU memory — the
+ * classic way to make a page slower while trying to make it faster.
+ */
+.fx-rise {
+    animation: fx-rise 0.38s cubic-bezier(0.165, 0.84, 0.44, 1) both;
+    will-change: transform, opacity;
+}
+@keyframes fx-rise {
+    from { opacity: 0; transform: translate3d(0, 8px, 0); }
+    to   { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
+.fx-pop {
+    animation: fx-pop 0.26s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+    will-change: transform;
+}
+@keyframes fx-pop {
+    0%   { transform: scale(0.86); }
+    60%  { transform: scale(1.04); }
+    100% { transform: scale(1); }
+}
+
+.fx-shake {
+    animation: fx-shake 0.4s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+    will-change: transform;
+}
+@keyframes fx-shake {
+    10%, 90% { transform: translate3d(-2px, 0, 0); }
+    20%, 80% { transform: translate3d(4px, 0, 0); }
+    30%, 50%, 70% { transform: translate3d(-7px, 0, 0); }
+    40%, 60% { transform: translate3d(7px, 0, 0); }
+}
+
+
+/* ===== §6 Offscreen work skipping ==========================================
+ * `content-visibility: auto` lets the browser skip layout, paint AND style for
+ * subtrees that are offscreen. On a long leaderboard this is the single largest
+ * win available, and unlike virtualisation it needs no component changes.
+ * `contain-intrinsic-size` supplies a placeholder height so the scrollbar does
+ * not jump as rows are skipped and realised.
+ */
+.fx-defer {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 48px;
+}
+.fx-defer--card {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 220px;
+}
+
+/* ===== §10 Adaptive degradation ============================================
+ * visualRuntime.js sets data-gfx on <html>. Rules here are what "degrade"
+ * actually means, so the policy lives in CSS rather than being scattered
+ * through component code.
+ */
+:root[data-gfx='low'] .fx-glass {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background-color: rgba(10, 20, 30, 0.72);
+}
+:root[data-gfx='low'] .fx-aurora,
+:root[data-gfx='low'] .fx-ring::after {
+    animation: none;
+}
+:root[data-gfx='low'] .fx-audio-glow,
+:root[data-gfx='medium'] .fx-audio-glow {
+    box-shadow: none;
+}
+:root[data-gfx='low'] .fx-glass--lit::before {
+    display: none;
+}
+
+/* ===== Reduced motion ======================================================
+ * Mirrors the existing blocks in app.css / game-shell.css / games.css. Motion
+ * is removed; the audio-reactive *colour* channels are kept, since they are not
+ * movement and carry real information about the mix.
+ */
+@media (prefers-reduced-motion: reduce) {
+    .fx-rise, .fx-pop, .fx-shake,
+    .fx-aurora, .fx-ring::after {
+        animation: none !important;
+    }
+    .fx-audio-pulse {
+        transform: none;
+    }
+}

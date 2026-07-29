@@ -54,6 +54,11 @@
          specificity tie against it by accident. -->
     <link rel="preload" href="css/game-shell.css" as="style" onload="this.onload=null;this.rel='stylesheet'" />
     <link rel="preload" href="css/games.css" as="style" onload="this.onload=null;this.rel='stylesheet'" />
+    <!-- §GFX fx.css: platform effects layer (glass, animatable gradients,
+         compositor-only motion, adaptive-quality rules). Purely additive utility
+         classes — nothing in it restyles an existing element, so it is safe to
+         load async alongside the per-game sheets. -->
+    <link rel="preload" href="css/fx.css" as="style" onload="this.onload=null;this.rel='stylesheet'" />
     <link rel="preload" href="css/fight.css" as="style" onload="this.onload=null;this.rel='stylesheet'" />
     <!-- PoJoker (demo game): hand-written medieval-dark theme (scoped to .pojoker-root) -->
     <link rel="preload" href="css/pojoker-theme.css" as="style" onload="this.onload=null;this.rel='stylesheet'" />
@@ -126,6 +131,16 @@
     <script src="js/posurvive/inferenceWorkerBridge.js"></script>
     <script src="js/posurvive/audioEngine.js" defer></script>
     <script src="js/gl-fps.js"></script>
+    <!-- §GFX/SOUND platform runtime (2026-07-29).
+         audioBus.js owns the app's ONE AudioContext and the master/music/sfx/ui
+         mix graph; five modules used to construct a context each. It must be
+         imported before any module that plays a sound, hence its position here.
+         visualRuntime.js runs the single rAF loop that publishes both the
+         analyser bands (--audio-*) and the adaptive-quality tier (data-gfx). -->
+    <script type="module" src="js/audioBus.js"></script>
+    <script type="module" src="js/visualRuntime.js"></script>
+    <script type="module" src="js/spatialAudio.js"></script>
+    <script type="module" src="js/ambientMusic.js"></script>
     <!-- PWA: service worker registration + connectivity signals. Registration is
          kicked off from MainLayout (not here) so the update toast has a live Blazor
          renderer to display into. -->

@@ -1,22 +1,22 @@
 // §5 Native Web Audio feedback — zero-asset micro-cues.
 // Generates triangle/sine oscillator bursts at the call site; no MP3/WAV to
 // ship. Lazy AudioContext init on first user gesture (mobile autoplay rules).
+//
+// 2026-07-29: this module no longer owns an AudioContext. It was one of five
+// modules each constructing their own, which meant no global mix and a mute
+// flag re-checked independently at every call site. Context, mute and the
+// output bus now come from audioBus.js; voices connect to the 'ui' bus rather
+// than ctx.destination so they can be ducked and metered with everything else.
 
-let _ctx = null;
-let _initPromise = null;
+import * as AudioBus from './audioBus.js';
 
 async function getCtx() {
-    if (_ctx) return _ctx;
-    if (_initPromise) return _initPromise;
-    _initPromise = (async () => {
-        const Ctor = window.AudioContext || window.webkitAudioContext;
-        _ctx = new Ctor();
-        if (_ctx.state === 'suspended') {
-            try { await _ctx.resume(); } catch { /* swallow — gesture may not have happened yet */ }
-        }
-        return _ctx;
-    })();
-    return _initPromise;
+    return AudioBus.context();
+}
+
+/** Output node for every voice in this module. Null when audio is unavailable. */
+async function out() {
+    return AudioBus.bus('ui');
 }
 
 /**
@@ -29,8 +29,10 @@ async function getCtx() {
 export async function playTone(freq, ms, gain, type) {
     try {
         // Global master mute (settings gear in the top bar; see SettingsService).
-        if ((localStorage.getItem('pomini_muted') || '').indexOf('1') !== -1) return;
+        if (AudioBus.isMuted()) return;
         const ctx = await getCtx();
+        const dest = await out();
+        if (!ctx || !dest) return;
         const t0 = ctx.currentTime;
         const dur = ms / 1000;
         const osc = ctx.createOscillator();
@@ -40,7 +42,7 @@ export async function playTone(freq, ms, gain, type) {
         g.gain.setValueAtTime(0, t0);
         g.gain.linearRampToValueAtTime(gain, t0 + 0.005);
         g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-        osc.connect(g).connect(ctx.destination);
+        osc.connect(g).connect(dest);
         osc.start(t0);
         osc.stop(t0 + dur);
     } catch { /* AudioContext unavailable — fail silently. */ }
@@ -70,6 +72,8 @@ export async function playChord(freqs, ms, gain) {
 export async function playSweep(fromHz, toHz, ms, gain, type) {
     try {
         const ctx = await getCtx();
+        const dest = await out();
+        if (!ctx || !dest) return;
         const t0 = ctx.currentTime;
         const dur = ms / 1000;
         const osc = ctx.createOscillator();
@@ -80,7 +84,7 @@ export async function playSweep(fromHz, toHz, ms, gain, type) {
         g.gain.setValueAtTime(0, t0);
         g.gain.linearRampToValueAtTime(gain, t0 + 0.01);
         g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-        osc.connect(g).connect(ctx.destination);
+        osc.connect(g).connect(dest);
         osc.start(t0);
         osc.stop(t0 + dur);
     } catch { /* fail silently */ }
@@ -129,8 +133,10 @@ export async function playArpeggio(freqs, durationsMs, gain) {
  */
 export async function playChipDrop(opts) {
     try {
-        if ((localStorage.getItem('pomini_muted') || '').indexOf('1') !== -1) return;
+        if (AudioBus.isMuted()) return;
         const ctx = await getCtx();
+        const dest = await out();
+        if (!ctx || !dest) return;
         const o = opts || {};
         const row = Math.max(0, Math.min(8, o.rowIndex ?? 8));
         const slideMs = o.slideMs ?? 400;
@@ -158,7 +164,7 @@ export async function playChipDrop(opts) {
         slideGain.gain.setValueAtTime(0, t0);
         slideGain.gain.linearRampToValueAtTime(masterGain * 0.45, t0 + 0.04);
         slideGain.gain.exponentialRampToValueAtTime(0.0001, t0 + slideMs / 1000);
-        slideSrc.connect(slideFilter).connect(slideGain).connect(ctx.destination);
+        slideSrc.connect(slideFilter).connect(slideGain).connect(dest);
         slideSrc.start(t0);
         slideSrc.stop(t0 + slideMs / 1000 + 0.02);
 
@@ -179,7 +185,7 @@ export async function playChipDrop(opts) {
         thudGain.gain.setValueAtTime(0, thudStart);
         thudGain.gain.linearRampToValueAtTime(masterGain * 0.95, thudStart + 0.006);
         thudGain.gain.exponentialRampToValueAtTime(0.0001, thudStart + thudDecay);
-        thudOsc.connect(thudGain).connect(ctx.destination);
+        thudOsc.connect(thudGain).connect(dest);
         thudOsc.start(thudStart);
         thudOsc.stop(thudStart + thudDecay + 0.02);
 
@@ -195,7 +201,7 @@ export async function playChipDrop(opts) {
         clickGain.gain.setValueAtTime(0, thudStart);
         clickGain.gain.linearRampToValueAtTime(masterGain * 0.5, thudStart + 0.004);
         clickGain.gain.exponentialRampToValueAtTime(0.0001, thudStart + 0.06);
-        clickSrc.connect(clickFilter).connect(clickGain).connect(ctx.destination);
+        clickSrc.connect(clickFilter).connect(clickGain).connect(dest);
         clickSrc.start(thudStart);
         clickSrc.stop(thudStart + 0.08);
     } catch { /* fail silently — feedback is best-effort */ }
@@ -209,7 +215,7 @@ export async function vibrate(pattern) {
     try {
         // Honour the same global master-mute as audio — a muted player wants
         // silence and stillness, not a buzzing pocket.
-        if ((localStorage.getItem('pomini_muted') || '').indexOf('1') !== -1) return;
+        if (AudioBus.isMuted()) return;
         if (navigator && typeof navigator.vibrate === 'function') {
             navigator.vibrate(pattern);
         }

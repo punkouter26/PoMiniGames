@@ -18,6 +18,13 @@ public sealed record SimulationState
     // ─── Console log ──────────────────────────────────────────────────────
     public IReadOnlyList<ConsoleEntry> ConsoleLog { get; init; } = [];
 
+    // ─── Turn series (charts) ─────────────────────────────────────────────
+    // One snapshot per completed turn. The console log carries per-agent *events*
+    // but nothing that can be plotted against time — every temporal signal in the
+    // UI used to be a scrolling text row. This is the series the rail's charts
+    // read; it is capped like ConsoleLog so a long run can't grow unbounded.
+    public IReadOnlyList<TurnSnapshot> TurnHistory { get; init; } = [];
+
     // ─── God-Click filter ─────────────────────────────────────────────────
     public string? SelectedAgentId { get; init; }
     public string EventFilter { get; init; } = "all";
@@ -53,3 +60,21 @@ public sealed record ConsoleEntry(
     string Thought,
     string Action
 );
+
+/// <summary>
+/// One turn's plottable state. Team totals are pre-aggregated (the charts would
+/// otherwise re-scan every agent on every render); <see cref="Vitals"/> keeps the
+/// per-agent detail the champion vitals chart needs, since the champion can be
+/// adopted mid-run and the series has to reach back to turn 1.
+/// </summary>
+public sealed record TurnSnapshot(
+    int Turn,
+    int RedAlive,
+    int BlueAlive,
+    int RedHp,
+    int BlueHp,
+    IReadOnlyList<AgentVitals> Vitals
+);
+
+/// <summary>Per-agent vitals for one turn. Hunger is 0..1 (see SimulationDefaults.HungerThreshold).</summary>
+public sealed record AgentVitals(string Id, int Hp, float Hunger);

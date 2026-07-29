@@ -1,0 +1,110 @@
+@namespace PoMiniGamesClient.Games.PoSurvive.Features.Charts
+@using PoMiniGamesClient.Games.PoSurvive.Store
+@inherits SurviveComponentBase
+
+@* One agent's health and satiation over the match.
+
+   Both series are percentages of their own capacity, so they share ONE axis
+   (0–100%). That is why hunger is plotted as SATIATION (100 − hunger×100) rather
+   than raw hunger: it makes both series "higher is better" on a single scale,
+   instead of forcing a second y-axis — which is never the right answer.
+
+   Amber/blue rather than the team colours: red and blue are reserved for team
+   identity everywhere else in this game, and reusing them here would read as
+   "Red team vs Blue team". The pair validates at ΔE 25.3 protan / 29.2 normal
+   against the panel surface, comfortably clear of the floor. *@
+
+@{
+    var series = Store.Simulation.TurnHistory
+        .Select(s => (s.Turn, Vitals: s.Vitals.FirstOrDefault(v => v.Id == AgentId)))
+        .Where(p => p.Vitals is not null)
+        .Select(p => (p.Turn, p.Vitals!.Hp, Satiation: (1f - p.Vitals!.Hunger) * 100f))
+        .ToList();
+}
+
+@if (series.Count < 2)
+{
+    <p class="sv-chart__empty" data-testid="vitals-empty">Vitals appear once two turns have resolved.</p>
+}
+else
+{
+    var n = series.Count;
+    const double maxY = 100;
+    var hpPts = string.Join(' ', series.Select((p, i) => ChartGeometry.Point(ChartGeometry.X(i, n), ChartGeometry.Y(p.Hp, maxY))));
+    var satPts = string.Join(' ', series.Select((p, i) => ChartGeometry.Point(ChartGeometry.X(i, n), ChartGeometry.Y(p.Satiation, maxY))));
+    var last = series[^1];
+
+    <figure class="sv-chart" data-testid="vitals-chart">
+        <figcaption class="sv-chart__title">
+            @AgentId · health &amp; satiation
+            <span class="sv-chart__legend">
+                <span class="sv-chart__key"><span class="sv-chart__swatch sv-chart__swatch--hp"></span>HP</span>
+                <span class="sv-chart__key"><span class="sv-chart__swatch sv-chart__swatch--sat"></span>Fed</span>
+            </span>
+        </figcaption>
+
+        <svg class="sv-chart__svg"
+             viewBox="0 0 @ChartGeometry.N(ChartGeometry.ViewW) @ChartGeometry.N(ChartGeometry.ViewH)"
+             preserveAspectRatio="xMidYMid meet"
+             role="img"
+             aria-label="Health and satiation of @AgentId per turn. Currently @((int)last.Hp) percent health, @((int)last.Satiation) percent fed.">
+
+            @foreach (var tick in new double[] { 0, 50, 100 })
+            {
+                var y = ChartGeometry.Y(tick, maxY);
+                <line class="sv-chart__grid"
+                      x1="@ChartGeometry.N(ChartGeometry.Left)" y1="@ChartGeometry.N(y)"
+                      x2="@ChartGeometry.N(ChartGeometry.Right)" y2="@ChartGeometry.N(y)" />
+                <SvgText Class="sv-chart__tick sv-chart__tick--y"
+                         X="@ChartGeometry.N(ChartGeometry.Left - 6)" Y="@ChartGeometry.N(y + 3)">@tick.ToString("0")</SvgText>
+            }
+
+            @* The hunger threshold the simulation actually acts on (0.80 hunger =
+               20% fed). A rule line explains a dip in the satiation series far
+               better than the series alone. *@
+            <line class="sv-chart__rule"
+                  x1="@ChartGeometry.N(ChartGeometry.Left)" y1="@ChartGeometry.N(ChartGeometry.Y(20, maxY))"
+                  x2="@ChartGeometry.N(ChartGeometry.Right)" y2="@ChartGeometry.N(ChartGeometry.Y(20, maxY))" />
+            <SvgText Class="sv-chart__rule-label"
+                     X="@ChartGeometry.N(ChartGeometry.Right)" Y="@ChartGeometry.N(ChartGeometry.Y(20, maxY) - 3)">starving</SvgText>
+
+            @foreach (var i in ChartGeometry.TickIndices(n))
+            {
+                <SvgText Class="sv-chart__tick sv-chart__tick--x"
+                         X="@ChartGeometry.N(ChartGeometry.X(i, n))"
+                         Y="@ChartGeometry.N(ChartGeometry.Bottom + 14)">@series[i].Turn</SvgText>
+            }
+
+            @* y is unlabelled for the same reason as the team chart: the ticks read
+               0/50/100 and the caption says these are percentages. *@
+            <SvgText Class="sv-chart__axis-title" X="@ChartGeometry.N(ChartGeometry.Left)" Y="@ChartGeometry.N(ChartGeometry.ViewH - 3)">TURN →</SvgText>
+
+            <polyline class="sv-chart__line sv-chart__line--hp" points="@hpPts" />
+            <polyline class="sv-chart__line sv-chart__line--sat" points="@satPts" />
+
+            <SvgText Class="sv-chart__endlabel sv-chart__endlabel--hp"
+                     X="@ChartGeometry.N(ChartGeometry.Right + 2)"
+                     Y="@ChartGeometry.N(ChartGeometry.Y(last.Hp, maxY) - 4)">@((int)last.Hp)</SvgText>
+            <SvgText Class="sv-chart__endlabel sv-chart__endlabel--sat"
+                     X="@ChartGeometry.N(ChartGeometry.Right + 2)"
+                     Y="@ChartGeometry.N(ChartGeometry.Y(last.Satiation, maxY) + 9)">@((int)last.Satiation)</SvgText>
+
+            @for (var i = 0; i < n; i++)
+            {
+                var p = series[i];
+                var bandW = ChartGeometry.PlotW / Math.Max(1, n - 1);
+                <rect class="sv-chart__band"
+                      x="@ChartGeometry.N(ChartGeometry.X(i, n) - bandW / 2)"
+                      y="@ChartGeometry.N(ChartGeometry.Top)"
+                      width="@ChartGeometry.N(bandW)"
+                      height="@ChartGeometry.N(ChartGeometry.PlotH)">
+                    <title>Turn @p.Turn — @((int)p.Hp)% HP, @((int)p.Satiation)% fed</title>
+                </rect>
+            }
+        </svg>
+    </figure>
+}
+
+@code {
+    [Parameter, EditorRequired] public string AgentId { get; set; } = default!;
+}

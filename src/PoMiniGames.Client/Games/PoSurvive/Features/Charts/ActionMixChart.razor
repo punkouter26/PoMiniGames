@@ -1,0 +1,96 @@
+@namespace PoMiniGamesClient.Games.PoSurvive.Features.Charts
+@using PoMiniGamesClient.Games.PoSurvive.Store
+@inherits SurviveComponentBase
+
+@* What the swarm is DOING each turn — as small multiples, not a stacked bar.
+
+   A stacked bar needs a four-colour categorical palette, and this one cannot be
+   made safe: every four-hue set tried against the panel surface failed the
+   validator on the blue/violet pair (ΔE 1.2–1.9 deutan, and 12.7–14.9 for NORMAL
+   vision — below the floor, so secondary encoding does not rescue it), because
+   deutan flattens exactly the red/green and blue/violet axes this palette needs.
+
+   Small multiples are the documented escape hatch. Each action gets its own
+   facet, so identity comes from a text label rather than a hue, all four share
+   one y-scale (printed once in the caption) and one x-axis, and the chart is
+   readable in greyscale, in forced-colors mode, and to every kind of colour
+   vision. One hue does all four fills. *@
+
+@{
+    var turns = Store.Simulation.ConsoleLog
+        .GroupBy(e => e.TurnNumber)
+        .OrderBy(g => g.Key)
+        .Select(g => new
+        {
+            Turn = g.Key,
+            Counts = Actions.ToDictionary(
+                a => a,
+                a => g.Count(e => e.Action.Equals(a, StringComparison.OrdinalIgnoreCase))),
+        })
+        .ToList();
+}
+
+@if (turns.Count < 2)
+{
+    <p class="sv-chart__empty" data-testid="action-mix-empty">Action mix appears once two turns have resolved.</p>
+}
+else
+{
+    var maxY = Math.Max(1, turns.Max(t => t.Counts.Values.DefaultIfEmpty(0).Max()));
+    var n = turns.Count;
+
+    <figure class="sv-chart sv-chart--facets" data-testid="action-mix-chart">
+        <figcaption class="sv-chart__title">
+            Actions per turn
+            <span class="sv-chart__note">shared scale 0–@maxY</span>
+        </figcaption>
+
+        @foreach (var action in Actions)
+        {
+            @* Baseline at 26, peak at 2, in a 320×28 user-space box. Area + line:
+               the line carries the shape, the translucent area keeps a
+               single-point spike visible. *@
+            var pts = string.Join(' ', turns.Select((t, i) =>
+                ChartGeometry.Point(
+                    FacetX(i, n),
+                    FacetY(t.Counts[action], maxY))));
+            var area = $"{ChartGeometry.Point(FacetX(0, n), 26)} {pts} {ChartGeometry.Point(FacetX(n - 1, n), 26)}";
+            var current = turns[^1].Counts[action];
+
+            <div class="sv-facet">
+                <span class="sv-facet__label">@action.ToUpperInvariant()</span>
+                <svg class="sv-facet__svg" viewBox="0 0 320 28" preserveAspectRatio="none"
+                     role="img"
+                     aria-label="@action per turn, currently @current of a maximum @maxY">
+                    <polygon class="sv-facet__area" points="@area" />
+                    <polyline class="sv-facet__line" points="@pts" />
+                </svg>
+                <span class="sv-facet__value">@current</span>
+            </div>
+        }
+
+        @* One shared x-axis for all four facets. *@
+        <div class="sv-facet sv-facet--axis" aria-hidden="true">
+            <span class="sv-facet__label">TURN</span>
+            <span class="sv-facet__ticks">
+                @foreach (var i in ChartGeometry.TickIndices(n))
+                {
+                    <span class="sv-facet__tick" style="left:@ChartGeometry.N(FacetX(i, n) / 320 * 100)%">@turns[i].Turn</span>
+                }
+            </span>
+            <span class="sv-facet__value"></span>
+        </div>
+    </figure>
+}
+
+@code {
+    // Matches AgentDto.LastAction and the tactical log's filter chips, so the
+    // facets and the filters below them partition the same data the same way.
+    private static readonly string[] Actions = ["Attack", "Forage", "Flee", "Idle"];
+
+    private static double FacetX(int i, int count)
+        => count <= 1 ? 0 : 320.0 * i / (count - 1);
+
+    private static double FacetY(int value, int max)
+        => 26 - (24.0 * value / (max <= 0 ? 1 : max));
+}

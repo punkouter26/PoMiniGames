@@ -1,0 +1,24 @@
+@namespace PoMiniGamesClient.Games.PoSurvive.Features.Charts
+
+@* An SVG <text> element.
+
+   This component exists for one reason: `<text>` is Razor's own markup-transition
+   pseudo-tag, so writing `<text class="…">` inside an `@foreach` or `@if` body
+   fails to compile with RZ1023 ("<text> tags cannot contain attributes"). At the
+   TOP LEVEL of a component's markup — which is where it sits here — there is no
+   code transition to disambiguate and the tag compiles as the SVG element it is.
+   Every axis tick and label in these charts is generated in a loop, so they all
+   route through here.
+
+   Blazor gives it the right namespace automatically: the renderer picks
+   createElementNS from the parent node, and the parent is always the chart's
+   <svg>. *@
+
+<text class="@Class" x="@X" y="@Y">@ChildContent</text>
+
+@code {
+    [Parameter] public string? Class { get; set; }
+    [Parameter] public string? X { get; set; }
+    [Parameter] public string? Y { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

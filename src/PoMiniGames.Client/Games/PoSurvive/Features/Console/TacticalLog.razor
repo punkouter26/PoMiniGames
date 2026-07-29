@@ -52,7 +52,10 @@
                 <span class="log-entry__action">@row.Entry.Action.ToUpperInvariant()</span>
                 @if (row.RepeatCount > 1)
                 {
-                    <span class="log-entry__repeat" title="Consecutive repeated events">x@row.RepeatCount</span>
+                    @* Interpolated, not `x@row.RepeatCount`: that form reads as an
+                       email address to the Razor parser and was emitted verbatim,
+                       so the burst badge showed the source text instead of a count. *@
+                    <span class="log-entry__repeat" title="Consecutive repeated events">@($"x{row.RepeatCount}")</span>
                 }
             </div>
         }

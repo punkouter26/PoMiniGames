@@ -38,21 +38,19 @@
 
             @if (agent.IsAlive)
             {
-                <div class="sidebar__hp-bar">
-                    <div class="hp-bar hp-bar--@(agent.Team == "Red" ? "red" : "blue")"
-                         style="width:@agent.Hp%"></div>
-                </div>
+                <MeterBar Value="@agent.Hp"
+                          Tone="@(agent.Team == "Red" ? "red" : "blue")"
+                          Compact="true"
+                          Class="sidebar__hp-bar"
+                          AriaLabel="@($"{agent.Id} health")" />
 
                 @if (isExpanded)
                 {
                     <div class="sidebar__detail-panel app-fade-in">
-                        <div class="sidebar__dna">
-                            <DnaBar Label="PRE" Value="@agent.Predatory" />
-                            <DnaBar Label="SCV" Value="@agent.Scavenger" />
-                            <DnaBar Label="PAR" Value="@agent.Paranoid" />
-                            <DnaBar Label="ALT" Value="@agent.Altruistic" />
-                            <DnaBar Label="MTH" Value="@agent.Methodical" />
-                        </div>
+                        @* Five stacked trait meters became one silhouette. Same
+                           vertical space, and two agents are now comparable at a
+                           glance instead of by reading ten numbers. *@
+                        <TraitRadar Agent="@agent" />
                         <div class="sidebar__stats">
                             <div class="stat-row">
                                 <span class="stat-label">Action:</span>

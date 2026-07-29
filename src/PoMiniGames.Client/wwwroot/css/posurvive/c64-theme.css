@@ -74,12 +74,17 @@
     --font-size-lg:   16px;
     --font-size-xl:   20px;
 
-    /* --- Spacing Scale --- */
+    /* --- Spacing Scale ---
+       These MUST stay identical to the platform scale in app.css. This sheet is
+       injected at runtime and lands after app.css, so any value that differs
+       silently re-spaces the shared `.gl-*` chrome (top bar, overflow menus) for
+       as long as PoSurvive is mounted. `--space-6` used to be 1.5rem here against
+       the platform's 2rem, which is exactly that bug; the two uses of it now take
+       `--space-5`, which this sheet does not redefine. */
     --space-1: 0.25rem;
     --space-2: 0.5rem;
     --space-3: 0.75rem;
     --space-4: 1rem;
-    --space-6: 1.5rem;
 
     /* --- Motion --- */
     --ease-out-quart: cubic-bezier(0.165, 0.84, 0.44, 1);
@@ -89,10 +94,14 @@
     --reveal-duration:   0.38s var(--ease-out-quart);
 
     /* --- Chrome Heights ---
-       One bar now, not three. `--bar-h` is the only chrome height the stage math
-       depends on, and the board no longer depends on it at all (it sizes against
-       its own pane via container queries). */
-    --bar-h: 48px;
+       `--bar-h` is now ONLY the game control strip's own min-height. Nothing
+       measures the chrome any more: `.sv-shell` is a flex column and `.sv-stage`
+       is its flexible child, so the stage is "whatever is left" whether the
+       header is one row or the control strip has wrapped to three. Every bug in
+       this file's history — the omitted 47px platform header, the watchdog alert
+       pushing the stage past the viewport, the dead band under a wrapped bar —
+       was a hand-maintained sum of chrome heights going stale. Do not add one. */
+    --bar-h: 40px;
     --rail-collapsed-w: 44px;
 }
 
@@ -110,6 +119,13 @@
 /* ===== Global Reset & Base ================================================ */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* NOTE — typography is deliberately NOT set on html/body here.
+   `font-size: 14px` on the root re-scales every `rem` on the page, and the shared
+   `.gl-*` top bar is authored in rem. With it on the root, PoSurvive's copy of the
+   platform header measured 47.1px tall with a 15.4px brand, against 52.4px/17.6px
+   on every other game — the same chrome, visibly smaller, on one game only.
+   The game's own font and scale live on `.sv-shell` below, which covers all of
+   PoSurvive's UI without touching the root or the platform header. */
 html, body {
     height: 100%;
     background:
@@ -117,8 +133,6 @@ html, body {
         radial-gradient(1000px 500px at 95% 10%, rgba(255,209,102,0.18), transparent 65%),
         linear-gradient(160deg, #08131c 0%, #0a1a26 45%, #0d2230 100%);
     color: var(--c64-text);
-    font-family: var(--font-ui);
-    font-size: var(--font-size-base);
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
     overflow: hidden;
@@ -171,9 +185,44 @@ html, body {
     color: #ffcf7a;
 }
 
-/* ===== Command Bar ========================================================= */
-/* One 48px row carrying brand, transport, speed, AI status, live stats and auth.
-   Replaces the old three-row stack (gl-top-bar 47 + toolbar 52 + statsbar 28).
+/* ===== App Shell =========================================================== */
+/* A flex column: platform header, game control strip, then the stage taking the
+   rest. This is what replaced `height: calc(100vh - <sum of chrome>)` on the
+   stage — see the note on `--bar-h`. `100dvh` (not `100vh`) because the mobile
+   URL bar is part of `vh` but not of the visible viewport, which is what pushed
+   the rail's bottom under the browser chrome on tablets and landscape phones. */
+.sv-shell {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;      /* fallback for engines without dvh */
+    height: 100dvh;
+    overflow: hidden;
+
+    /* The game's typography, scoped to the game — see the note on html/body.
+       Inherited by everything PoSurvive renders; the platform header opts back
+       out below so it matches the other games exactly. */
+    font-family: var(--font-ui);
+    font-size: var(--font-size-base);
+}
+
+/* The shared top bar is platform chrome and must look identical in every game.
+   It sits inside `.sv-shell`, so it has to opt out of the game's font explicitly;
+   its sizes are already in rem, which the root no longer rescales. */
+.sv-shell > .gl-top-bar {
+    font-family: var(--font-body);
+    font-size: 1rem;
+}
+
+/* ===== Platform header ===================================================== */
+/* The `.gl-top-bar` chrome itself comes from app-shell.css — do NOT restate it
+   here. These are only the adjustments PoSurvive's own palette needs, plus the
+   AI status pill that rides in the header's game slot. */
+.gl-top-bar { flex: 0 0 auto; }
+.sv-shell .gl-top-bar-game { gap: var(--space-2); }
+
+/* ===== Game control strip ================================================== */
+/* Transport, speed presets, live stats and the Advanced drawer. Deliberately
+   slim: the header above it already carries identity and session.
 
    HARD CONSTRAINT — do not add `overflow: hidden` here. The previous `.toolbar`
    had it at a fixed 52px, which clipped the ⚙ Advanced drawer and the AI status
@@ -184,32 +233,16 @@ html, body {
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    height: var(--bar-h);
+    min-height: var(--bar-h);
     padding: 0 var(--space-3);
     background: linear-gradient(180deg, var(--c64-surface-3) 0%, var(--c64-surface-2) 100%);
     border-bottom: 1px solid var(--panel-border);
-    flex-shrink: 0;
+    flex: 0 0 auto;
     flex-wrap: nowrap;
     white-space: nowrap;
     position: relative;
     z-index: 30;
     animation-delay: 0.05s;
-}
-
-.sv-bar__brand {
-    display: flex; align-items: center; gap: 0.4rem;
-    color: var(--c64-text-bright); text-decoration: none;
-    flex: 0 0 auto;
-    transition: color var(--transition-fast);
-}
-.sv-bar__brand:hover { color: var(--accent-primary); }
-.sv-bar__wordmark {
-    font-size: var(--font-size-base); font-weight: 700; letter-spacing: 0.1em;
-}
-
-.sv-bar__divider {
-    width: 1px; height: 22px; flex: 0 0 auto;
-    background-color: var(--panel-border);
 }
 
 /* The one flexible child. Everything before it sits left, everything after it
@@ -298,6 +331,18 @@ html, body {
     color: #0a1b27; background-color: #ffdc8a; border-color: #ffdc8a;
 }
 .sv-btn--cta  { box-shadow: 0 0 0 3px rgba(255, 209, 102, 0.14); }
+/* Champion toggle in the inspector header. Used since the champion feature
+   landed and never defined — it rendered as a plain `.sv-btn` with no indication
+   of its on/off state, which is the entire point of the control. */
+.sv-btn--champion {
+    font-size: var(--font-size-xs); padding: 0.18rem 0.45rem;
+    color: var(--c64-text-dim);
+}
+.sv-btn--champion.is-active {
+    color: var(--accent-primary);
+    border-color: var(--accent-primary);
+    background-color: rgba(255, 209, 102, 0.1);
+}
 .sv-btn--sm   { font-size: var(--font-size-xs); padding: 0.24rem 0.5rem; }
 .sv-btn--sm.is-active { color: var(--c64-text-bright); border-color: var(--c64-text-bright); }
 
@@ -399,7 +444,7 @@ html, body {
 .statsbar__item--blue       { color: #70b0ff; }
 .statsbar__item--dim        { color: var(--c64-text-dim); opacity: 0.7; }
 .statsbar__item--outcome    { color: var(--accent-primary); font-weight: bold; letter-spacing: 0.08em; }
-.statsbar__item--paused     { color: var(--accent-warning, #f4d35e); letter-spacing: 0.08em; }
+.statsbar__item--paused     { color: var(--accent-warn); letter-spacing: 0.08em; }
 .statsbar__item--querying   {
     color: var(--accent-primary);
     animation: pulse-query 1.4s ease-in-out infinite;
@@ -417,13 +462,28 @@ html, body {
    The rail is clamped rather than fixed so it absorbs the horizontal slack a
    square board leaves in a landscape viewport, instead of that slack sitting as
    dead background either side of the board. */
+/* Column split: the board pane is sized to the board it holds, and the rail takes
+   everything else. The old `1fr clamp(300px, 30vw, 460px)` gave the board pane
+   all the slack and centred a square board inside it — on a 1920×1080 window that
+   left ~460px of empty background beside a ~1000px board while the rail sat
+   capped at 460px, so the Decision Inspector's causality cards wrapped to one
+   column for want of width that was going spare two panes over.
+
+   `min(62%, calc(100dvh - 8rem))` is "as wide as the board can actually be
+   here": the board is square, so it can never use more width than the stage has
+   height, and the 62% ceiling keeps the rail from being squeezed on very short
+   landscape windows. */
 .sv-stage {
     display: grid;
-    grid-template-columns: 1fr clamp(300px, 30vw, 460px);
-    height: calc(100vh - var(--bar-h));
+    grid-template-columns: min(62%, calc(100dvh - 8rem)) minmax(300px, 1fr);
+    flex: 1 1 auto;
+    min-height: 0;
     gap: 1px;
     background-color: var(--panel-border);
     overflow: hidden;
+    /* Positioning context for the toast and the watchdog alert, which are
+       stage-anchored rather than viewport-fixed. */
+    position: relative;
 }
 .sv-stage--rail-collapsed { grid-template-columns: 1fr var(--rail-collapsed-w); }
 
@@ -519,7 +579,7 @@ html, body {
 }
 .sv-rail__empty {
     color: var(--c64-text-dim); font-size: var(--font-size-xs);
-    text-align: center; padding: var(--space-6) var(--space-2); opacity: 0.7;
+    text-align: center; padding: var(--space-5) var(--space-2); opacity: 0.7;
 }
 
 /* Collapsed: a thin vertical tab strip. Clicking a tab re-expands (SelectTab). */
@@ -560,15 +620,13 @@ html, body {
 }
 .sv-champion__drop:hover { color: var(--accent-danger); }
 
-/* ===== Grid Board ========================================================= */
-/* Sized against its own pane (see `.sv-stage__board`), never against a
-   hand-maintained sum of chrome heights. */
-.grid-board {
-    width: min(100cqw, 100cqh);
-    aspect-ratio: 1 / 1;
-}
-
-/* ===== Grid Tile ========================================================== */
+/* ===== Grid Tile ==========================================================
+   Board GEOMETRY lives in GridBoard.razor.css — scoped, bundled, and always
+   loaded. It used to be split: `display/columns/gap` there and `width/
+   aspect-ratio` here, in a sheet that PoSurviveTheme.load injects and REMOVES at
+   runtime, so half the board's layout could vanish while the other half stayed.
+   What remains here is the tile SKIN (terrain art, team colours), which is what
+   a theme file is for. */
 .grid-tile {
     background-color: var(--tile-empty);
     background-image: url('../../images/posurvive/ground.png');
@@ -627,7 +685,234 @@ html, body {
 .grid-tile--selected { outline: 2px solid var(--c64-text-bright); outline-offset: -2px; z-index: 10; box-shadow: 0 0 6px var(--c64-text-bright); }
 .grid-tile--dead        { opacity: 0.3; animation: fadeout var(--transition-slow) forwards; }
 
-/* ===== Idle / Launch Screen =============================================== */
+/* ===== Meter ==============================================================
+   ONE label / track / fill / value bar, used by the agent roster's HP bar, the
+   inspector's action-fit rows and its personality rows. It replaces four
+   near-identical implementations (`dna-bar`, `hp-bar`, `…__option-track/fill`,
+   `…__trait-track/fill`) that had drifted apart in height, colour and easing.
+
+   The level arrives as `--sv-meter-v` from the component, so the geometry stays
+   in the stylesheet and the inline style carries data rather than layout. */
+.sv-meter {
+    display: flex; align-items: center; gap: 0.35rem;
+    font-size: 10px; min-width: 0;
+}
+.sv-meter__label {
+    flex: 0 0 auto; min-width: 28px;
+    color: var(--c64-text-dim); text-transform: uppercase; letter-spacing: 0.06em;
+}
+.sv-meter__track {
+    flex: 1 1 auto; min-width: 0;
+    height: 5px;
+    background-color: var(--panel-border);
+    border-radius: 999px;
+    overflow: hidden;
+}
+.sv-meter__fill {
+    width: var(--sv-meter-v, 0%);
+    height: 100%;
+    background-color: var(--c64-text);
+    border-radius: 999px;
+    transition: width var(--transition-medium);
+}
+.sv-meter__value {
+    flex: 0 0 auto; min-width: 30px; text-align: right;
+    color: var(--c64-text-dim); font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+}
+.sv-meter--compact .sv-meter__track { height: 4px; border-radius: 2px; }
+.sv-meter--compact .sv-meter__fill  { border-radius: 2px; }
+
+.sv-meter__track--red  .sv-meter__fill { background-color: var(--team-red); }
+.sv-meter__track--blue .sv-meter__fill { background-color: var(--team-blue); }
+.sv-meter__track--good .sv-meter__fill { background-color: var(--accent-success); }
+.sv-meter__track--warn .sv-meter__fill { background-color: var(--accent-warn); }
+.sv-meter__track--bad  .sv-meter__fill { background-color: var(--accent-danger); }
+
+/* ===== Charts =============================================================
+   All PoSurvive charts are inline SVG — no charting library, no Radzen (see
+   CLAUDE.md: heavy component libraries are rejected for bundle size, and these
+   five charts together are a few KB of markup).
+
+   Shared rules: strokes are `non-scaling-stroke` so a 2px line stays 2px at any
+   rail width; grid and axis text are recessive so they never compete with the
+   data; text wears text tokens, never a series colour — a swatch beside the
+   label carries identity instead. */
+.sv-chart {
+    margin: 0 0 var(--space-2);
+    display: flex; flex-direction: column; gap: 0.2rem;
+    min-width: 0;
+}
+.sv-chart__title {
+    display: flex; align-items: center; gap: var(--space-2);
+    font-size: var(--font-size-xs); color: var(--c64-text);
+    text-transform: uppercase; letter-spacing: 0.08em;
+}
+.sv-chart__note   { color: var(--c64-text-dim); text-transform: none; letter-spacing: 0; }
+.sv-chart__legend { display: flex; align-items: center; gap: 0.5rem; margin-left: auto; }
+.sv-chart__key {
+    display: inline-flex; align-items: center; gap: 0.25rem;
+    color: var(--c64-text-dim); text-transform: none; letter-spacing: 0;
+}
+.sv-chart__swatch { width: 8px; height: 8px; border-radius: 2px; flex: 0 0 auto; }
+.sv-chart__swatch--red  { background-color: var(--team-red); }
+.sv-chart__swatch--blue { background-color: var(--team-blue); }
+.sv-chart__swatch--hp   { background-color: var(--accent-primary); }
+.sv-chart__swatch--sat  { background-color: var(--accent-info); }
+
+/* `max-width` is load-bearing, not cosmetic. The rail can now be 650px wide on a
+   large window, and a 320×140 viewBox scaled to that is a 285px-tall chart that
+   swallows the panel it is supposed to annotate. Capped, it stays a reading aid. */
+.sv-chart__svg {
+    width: 100%; max-width: 400px; height: auto;
+    display: block; overflow: visible;
+}
+
+.sv-chart__grid {
+    stroke: var(--panel-border); stroke-width: 1;
+    vector-effect: non-scaling-stroke;
+}
+.sv-chart__rule {
+    stroke: var(--accent-warn); stroke-width: 1; stroke-dasharray: 3 3;
+    opacity: 0.5; vector-effect: non-scaling-stroke;
+}
+.sv-chart__rule-label {
+    fill: var(--accent-warn); font-size: 8px; text-anchor: end; opacity: 0.75;
+    font-family: var(--font-ui);
+}
+.sv-chart__tick {
+    fill: var(--c64-text-dim); font-size: 9px;
+    font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+}
+.sv-chart__tick--y { text-anchor: end; }
+.sv-chart__tick--x { text-anchor: middle; }
+.sv-chart__axis-title {
+    fill: var(--c64-text-dim); font-size: 8px; opacity: 0.7;
+    font-family: var(--font-ui); letter-spacing: 0.1em;
+}
+.sv-chart__axis-title--y { text-anchor: end; }
+
+.sv-chart__line {
+    fill: none; stroke-width: 2;
+    stroke-linejoin: round; stroke-linecap: round;
+    vector-effect: non-scaling-stroke;
+}
+.sv-chart__line--red  { stroke: var(--team-red); }
+.sv-chart__line--blue { stroke: var(--team-blue); }
+.sv-chart__line--hp   { stroke: var(--accent-primary); }
+.sv-chart__line--sat  { stroke: var(--accent-info); }
+
+.sv-chart__endlabel {
+    font-size: 9px; font-family: var(--font-mono); font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+.sv-chart__endlabel--red  { fill: var(--team-red); }
+.sv-chart__endlabel--blue { fill: var(--team-blue); }
+.sv-chart__endlabel--hp   { fill: var(--accent-primary); }
+.sv-chart__endlabel--sat  { fill: var(--accent-info); }
+
+/* Hover layer: a full-height band per turn, so the hit target is a column rather
+   than a 2px line. The native <title> inside each band is the tooltip. */
+.sv-chart__band { fill: transparent; }
+.sv-chart__band:hover { fill: rgba(255, 255, 255, 0.05); }
+
+.sv-chart__empty {
+    color: var(--c64-text-dim); font-size: var(--font-size-xs);
+    opacity: 0.7; padding: var(--space-2) 0; margin: 0;
+}
+
+/* ===== Charts — small multiples (action mix) =============================== */
+.sv-chart--facets { gap: 0.15rem; }
+.sv-facet {
+    display: flex; align-items: center; gap: 0.4rem;
+    min-width: 0;
+}
+.sv-facet__label {
+    flex: 0 0 3.2rem;
+    font-size: 9px; letter-spacing: 0.08em;
+    color: var(--c64-text-dim); font-family: var(--font-ui);
+}
+.sv-facet__svg {
+    flex: 1 1 auto; min-width: 0;
+    height: 20px;
+    /* `preserveAspectRatio: none` is deliberate here and safe: the facet has no
+       stroke that a non-uniform scale could distort visibly at 20px, and the
+       four facets must share an identical x mapping to be comparable. */
+}
+.sv-facet__value {
+    flex: 0 0 1.4rem; text-align: right;
+    font-size: 10px; font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums; color: var(--c64-text);
+}
+.sv-facet__area { fill: var(--accent-info); opacity: 0.18; }
+.sv-facet__line {
+    fill: none; stroke: var(--accent-info); stroke-width: 1.25;
+    stroke-linejoin: round;
+}
+.sv-facet--axis { margin-top: 0.1rem; }
+.sv-facet__ticks {
+    position: relative; flex: 1 1 auto; min-width: 0; height: 11px;
+}
+.sv-facet__tick {
+    position: absolute; transform: translateX(-50%);
+    font-size: 9px; font-family: var(--font-mono);
+    color: var(--c64-text-dim);
+}
+
+/* ===== Charts — trait radar =============================================== */
+.sv-radar { margin: var(--space-1) 0; display: flex; justify-content: center; }
+.sv-radar svg { width: 100%; max-width: 132px; height: auto; overflow: visible; }
+.sv-radar__ring {
+    fill: none; stroke: var(--panel-border); stroke-width: 1;
+    vector-effect: non-scaling-stroke;
+}
+.sv-radar__spoke {
+    stroke: var(--panel-border); stroke-width: 1; opacity: 0.6;
+    vector-effect: non-scaling-stroke;
+}
+.sv-radar__area {
+    fill: color-mix(in srgb, var(--accent-info) 26%, transparent);
+    stroke: var(--accent-info); stroke-width: 2;
+    stroke-linejoin: round; vector-effect: non-scaling-stroke;
+}
+.sv-radar__dot { fill: var(--accent-info); }
+.sv-radar__label {
+    fill: var(--c64-text-dim); font-size: 8px; font-family: var(--font-ui);
+    text-anchor: middle; dominant-baseline: middle; letter-spacing: 0.06em;
+}
+
+/* ===== Charts — survival timeline (post-mortem) ============================ */
+.sv-timeline {
+    margin: var(--space-3) 0 0;
+    display: flex; flex-direction: column; gap: 0.2rem;
+    text-align: left;
+}
+.sv-timeline__row { display: flex; align-items: center; gap: 0.4rem; }
+.sv-timeline__id {
+    flex: 0 0 2.6rem; font-family: var(--font-mono); font-size: 10px;
+}
+.sv-timeline__track {
+    flex: 1 1 auto; min-width: 0; height: 8px;
+    background-color: var(--panel-border); border-radius: 2px;
+}
+.sv-timeline__bar {
+    height: 100%; border-radius: 2px;
+    transition: width var(--transition-medium);
+}
+.sv-timeline__bar--red  { background-color: var(--team-red); }
+.sv-timeline__bar--blue { background-color: var(--team-blue); }
+/* Survivors read as a full bar with a lit end cap, so "reached the end" is
+   distinguishable from "died on the last turn". */
+.sv-timeline__bar--survived { box-shadow: inset -3px 0 0 var(--c64-text-bright); }
+.sv-timeline__value {
+    flex: 0 0 1.9rem; text-align: right;
+    font-size: 10px; font-family: var(--font-mono); color: var(--c64-text-dim);
+}
+.sv-timeline__track--axis {
+    display: flex; justify-content: space-between;
+    background: transparent; height: auto;
+    font-size: 9px; font-family: var(--font-mono); color: var(--c64-text-dim);
+}
 
 /* ===== Agent Sidebar ====================================================== */
 .agent-sidebar { display: flex; flex-direction: column; gap: var(--space-2); }
@@ -654,10 +939,29 @@ html, body {
     color: var(--c64-text-bright);
 }
 
+/* Emitted by DecisionInspector and never defined, so the two header buttons had
+   no container rule and stacked against the title. */
+.decision-inspector__header-actions {
+    display: flex; align-items: center; gap: 0.3rem;
+    flex: 0 0 auto;
+}
+
 .decision-inspector__clear-follow {
     min-height: 24px;
     font-size: 10px;
     padding: 0.08rem 0.3rem;
+}
+
+/* The plain-language hero line — the "aha" before any jargon. Also emitted and
+   never defined, so the one sentence the panel is built around rendered as
+   unstyled body text at the browser default size. */
+.decision-inspector__plain {
+    font-size: var(--font-size-sm);
+    line-height: 1.4;
+    color: var(--c64-text-bright);
+    margin-bottom: var(--space-2);
+    padding-left: var(--space-2);
+    border-left: 2px solid var(--accent-primary);
 }
 
 .decision-inspector__empty {
@@ -806,17 +1110,8 @@ html, body {
     font-size: 10px;
 }
 
-.decision-inspector__option-track {
-    height: 6px;
-    border-radius: 999px;
-    overflow: hidden;
-    background-color: rgba(35, 64, 85, 0.86);
-}
-
-.decision-inspector__option-fill {
-    height: 100%;
-    background: linear-gradient(90deg, color-mix(in srgb, var(--accent-info) 85%, white 15%), var(--accent-primary));
-}
+/* The action-fit and personality bars are `<MeterBar>` now — see the Meter block
+   above. Their four bespoke track/fill rules are gone with them. */
 
 .decision-inspector__option-why {
     margin-top: 0.24rem;
@@ -835,32 +1130,9 @@ html, body {
     margin-bottom: 0.2rem;
 }
 
-.decision-inspector__trait-row {
-    display: grid;
-    grid-template-columns: 68px 1fr 38px;
-    gap: 0.35rem;
-    align-items: center;
-    margin-bottom: 0.18rem;
-}
-
-.decision-inspector__trait-label,
-.decision-inspector__trait-value {
-    font-size: var(--font-size-xs);
-    color: var(--c64-text-dim);
-    font-family: var(--font-mono);
-}
-
-.decision-inspector__trait-track {
-    height: 5px;
-    background-color: rgba(36,66,88,0.9);
-    border-radius: 999px;
-    overflow: hidden;
-}
-
-.decision-inspector__trait-fill {
-    height: 100%;
-    background: linear-gradient(90deg, var(--accent-info), var(--accent-primary));
-}
+/* Personality rows use `<MeterBar>`; the label column is widened here because
+   these labels are whole trait names, not the roster's three-letter codes. */
+.decision-inspector__motivation .sv-meter__label { min-width: 68px; }
 
 .decision-inspector__advanced {
     margin-top: var(--space-2);
@@ -962,29 +1234,14 @@ html, body {
 }
 .agent-expand-btn:hover { color: var(--c64-text-bright); border-color: var(--c64-text-bright); }
 
-.sidebar__hp-bar {
-    height: 5px;
-    background-color: var(--panel-border);
-    border-radius: 0;
-    overflow: hidden;
-    margin-top: var(--space-1);
-}
-
-.hp-bar {
-    height: 100%;
-    transition: width var(--transition-medium);
-    border-radius: 0;
-}
-.hp-bar--red  { background-color: var(--team-red); }
-.hp-bar--blue { background-color: var(--team-blue); }
+/* The roster HP bar is a `<MeterBar Compact>`; only its spacing is local. */
+.sidebar__hp-bar { margin-top: var(--space-1); }
 
 .sidebar__detail-panel {
     margin-top: var(--space-2);
     border-top: 1px solid var(--panel-border);
     padding-top: var(--space-2);
 }
-
-.sidebar__dna    { display: flex; flex-direction: column; gap: 1px; margin: var(--space-1) 0; }
 
 .sidebar__stats {
     display: flex; flex-direction: column; gap: var(--space-1);
@@ -1002,12 +1259,8 @@ html, body {
     margin-top: var(--space-1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
-/* ===== DNA Bar ============================================================ */
-.dna-bar { display: flex; align-items: center; gap: 0.3rem; font-size: 10px; }
-.dna-bar__label { width: 28px; color: var(--c64-text-dim); flex-shrink: 0; }
-.dna-bar__track { flex: 1; height: 4px; background-color: var(--panel-border); overflow: hidden; }
-.dna-bar__fill  { height: 100%; background-color: var(--c64-text); transition: width var(--transition-medium); }
-.dna-bar__pct   { width: 30px; text-align: right; color: var(--c64-text-dim); }
+/* The five DNA bars are one `<TraitRadar>` now — see the Charts block above.
+   DnaBar.razor and its five rules are deleted. */
 
 /* ===== Tactical Log ======================================================= */
 .tactical-log {
@@ -1064,6 +1317,12 @@ html, body {
     font-style: italic;
     animation-name: slideInLeft--deferred;
 }
+/* Team tint on the whole row. Emitted by TacticalLog since it was written and
+   never defined, so a red row and a blue row were visually identical apart from
+   the agent id. Kept to a left border rather than a text colour — the row's
+   thought text has to stay readable. */
+.log-entry--red  { border-left: 2px solid var(--team-red);  padding-left: 0.3rem; }
+.log-entry--blue { border-left: 2px solid var(--team-blue); padding-left: 0.3rem; }
 @keyframes slideInLeft--deferred {
     0%   { opacity: 0;    transform: translateX(-8px); }
     100% { opacity: 0.45; transform: translateX(0px);  }
@@ -1087,8 +1346,11 @@ html, body {
 }
 
 /* ===== Toasts ============================================================= */
+/* Stage-anchored, NOT viewport-fixed. `top: calc(var(--bar-h) + 8px)` is only
+   correct while the control strip is exactly one row tall; below 860px it wraps
+   to two or three rows and the toast landed on top of the controls. */
 .app-toast {
-    position: fixed; top: calc(var(--bar-h) + 8px); right: 12px; z-index: 1200;
+    position: absolute; top: 8px; right: 12px; z-index: 1200;
     min-width: 260px; max-width: 480px;
     border: 1px solid var(--panel-border); background-color: var(--panel-bg);
     color: var(--c64-text); padding: 0.45rem 0.6rem;
@@ -1101,12 +1363,12 @@ html, body {
 .app-toast--info    { border-color: #2f5e8f; color: #8fc7ff; background-color: #102033; }
 
 /* ===== Runtime Watchdog Alert =============================================
-   Floats over the stage rather than sitting in flow. In flow it pushed the stage
-   down by its own height, which `calc(100vh - var(--bar-h))` does not account
-   for — the board would have been forced to overflow the viewport exactly when
-   something was already going wrong. */
+   Floats over the stage rather than sitting in flow — in flow it pushed the
+   board down by its own height, exactly when something was already going wrong.
+   Anchored to the stage, not the viewport, for the same reason as the toast: the
+   old fixed offset covered the Start button once the control strip wrapped. */
 .runtime-alert {
-    position: fixed; top: calc(var(--bar-h) + 8px); left: 50%;
+    position: absolute; top: 8px; left: 50%;
     transform: translateX(-50%); z-index: 1100;
     max-width: min(680px, 92vw);
     display: flex; align-items: center; gap: var(--space-2);
@@ -1165,7 +1427,7 @@ html, body {
    Still side-by-side; the rail just gives ground first so the board stays the
    larger pane. */
 @media (max-width: 1100px) {
-    .sv-stage { grid-template-columns: 1fr clamp(260px, 32vw, 340px); }
+    .sv-stage { grid-template-columns: min(58%, calc(100dvh - 8rem)) minmax(260px, 1fr); }
     .sv-bar   { gap: var(--space-1); padding: 0 var(--space-2); }
 }
 
@@ -1175,31 +1437,46 @@ html, body {
    `--agents` and `--log` classes were never applied by anything — below 760px
    the intel and log panes were simply unreachable. */
 @media (max-width: 860px) {
-    html, body { overflow: auto; }
-
     .sv-bar {
-        height: auto; min-height: var(--bar-h);
         flex-wrap: wrap; row-gap: 0.35rem;
         padding: 0.35rem var(--space-2);
     }
-    .sv-bar__wordmark { display: none; }
-    .sv-bar__divider  { display: none; }
+
+    /* Header shrink order. `.gl-top-bar-game` clips its overflow, so without an
+       explicit order the game name is what gets cut — at 390px it rendered as
+       "Sur". The FPS pill is a developer metric and gives way first; the game
+       name and the AI status are what a player needs. */
+    .sv-shell .gl-fps { display: none; }
+    .sv-shell .gps-game-title { flex: 0 0 auto; }
+    .sv-shell .sv-status { flex: 0 0 auto; }
     .sv-bar__spacer   { display: none; }
     .sv-bar__stats    { order: 5; width: 100%; overflow: visible; white-space: normal; }
     .sv-bar__tools    { margin-left: auto; }
 
-    /* Rows are content-sized and the stage takes no min-height. The bar wraps to
-       2-3 rows down here, so `calc(100vh - var(--bar-h))` overshoots by whatever
-       the wrap added and the `auto` board row would stretch to absorb it, leaving
-       a dead band between the board and the rail. Let the page scroll instead —
-       html/body are `overflow: auto` at this breakpoint. */
+    /* Stacked, and BOTH panes stay on screen.
+       Previously the board took `aspect-ratio: 1/1` at full viewport width — 390px
+       tall on a 390px-wide phone — under a control strip that had wrapped to ~90px,
+       above a rail with `min-height: min(42vh, 380px)`. That totals more than the
+       viewport, so the page scrolled and the "Why this move?" panel sat below the
+       fold on every single turn: the game's whole explanatory surface was invisible
+       while the board was visible.
+
+       Capping the board at 48dvh leaves the rail a real share of the screen. The
+       board itself stays square regardless — it sizes with `min(100cqw, 100cqh)`
+       against this pane, so a wide-and-short pane just centres a smaller board. */
     .sv-stage {
         grid-template-columns: 1fr;
-        grid-template-rows: auto auto;
-        height: auto;
-        min-height: 0;
+        grid-template-rows: auto minmax(0, 1fr);
     }
-    .sv-rail { min-height: min(42vh, 380px); }
+    .sv-stage__board {
+        /* The row is `auto`, so the pane needs an intrinsic height to size the
+           board against — the aspect ratio provides one, and the cap keeps it
+           from claiming the whole viewport. */
+        aspect-ratio: 1 / 1;
+        max-height: 48dvh;
+        padding: 4px;
+    }
+    .sv-rail { min-height: 0; }
     /* Collapsing is a desktop affordance; stacked, the rail is always open. */
     .sv-stage--rail-collapsed { grid-template-columns: 1fr; }
     .sv-stage--rail-collapsed .sv-rail__body,
@@ -1211,10 +1488,6 @@ html, body {
     }
     .sv-stage--rail-collapsed .sv-rail__tab.is-active { border-bottom-color: var(--accent-primary); }
     .sv-rail__collapse { display: none; }
-
-    /* The pane has no fixed height when stacked, so give it the board's own
-       aspect ratio — `100cqh` then resolves against a real size. */
-    .sv-stage__board { aspect-ratio: 1 / 1; padding: 4px; }
 
     .runtime-alert { flex-wrap: wrap; gap: var(--space-1); }
     .runtime-alert__btn { margin-left: 0; }

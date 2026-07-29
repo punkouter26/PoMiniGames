@@ -12,6 +12,16 @@
 
 <PageTitle>Sports — Lobby</PageTitle>
 
+@* Header parity: this page hosts no <GameShell>, so nothing was projecting into
+   the top bar's game slot and the lobby was one of only two game routes showing
+   the bare brand with no game name. It already owns the right fragment for
+   GameIntro — the header slot gets the same one. *@
+<SectionContent SectionName="game-header">
+    <div class="gps-header-slot">
+        <span class="gps-game-title">@TitleContent</span>
+    </div>
+</SectionContent>
+
 @if (!_introDone)
 {
     <GameIntro Title="@TitleContent"

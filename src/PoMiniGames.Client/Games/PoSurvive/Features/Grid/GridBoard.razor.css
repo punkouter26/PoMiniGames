@@ -1,5 +1,82 @@
-.sv-grid-board {
+/* Board geometry — the single source of truth.
+ *
+ * This used to be split across two files that load by different mechanisms:
+ * `display/columns/gap` here (scoped, bundled into PoMiniGamesClient.styles.css,
+ * always live) and `width/aspect-ratio` in c64-theme.css (injected and REMOVED at
+ * runtime by PoSurviveTheme.load/unload). Half the board's layout could therefore
+ * vanish while the other half stayed. It all lives here now; c64-theme.css keeps
+ * only the tile *skin* (terrain art, team colours), which is what a theme is for.
+ *
+ * Sizing: `100cqw`/`100cqh` resolve against `.sv-stage__board`, which declares
+ * `container-type: size`. Never reintroduce a `calc(100vh - <chrome>)` chain —
+ * that is what silently omitted the platform header and overflowed the viewport. */
+
+.sv-grid-wrap {
+    --sv-cell-gap: 2px;
+    --sv-axis-w: 1.05rem;
+
+    display: flex;
+    flex-direction: column;
+    gap: var(--sv-cell-gap);
+
+    width: min(100cqw, 100cqh);
+    aspect-ratio: 1 / 1;
+}
+
+/* One leading column (row headers) and one leading row (the X ruler), both
+ * `--sv-axis-w`. Because the two are equal the tile area loses the same width and
+ * height, so tiles stay square without any further correction. */
+.sv-grid-row {
     display: grid;
-    grid-template-columns: repeat(10, 1fr);
-    gap: 2px;
+    grid-template-columns: var(--sv-axis-w) repeat(10, 1fr);
+    gap: var(--sv-cell-gap);
+    flex: 1 1 0;
+    min-height: 0;
+}
+
+.sv-grid-board {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sv-cell-gap);
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+/* The X ruler is a `.sv-grid-row` too, so it inherits the exact same track sizes
+ * as the tile rows — labels can never drift out of alignment with their column. */
+.sv-axis--x {
+    flex: 0 0 var(--sv-axis-w);
+}
+
+.sv-axis__tick {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+    font-family: var(--font-mono, monospace);
+    font-size: 10px;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    color: var(--c64-text-dim, #7e97ad);
+    user-select: none;
+}
+
+/* Recessive by default, per the chart-anatomy rule that axes never compete with
+ * the data. Slightly brighter on hover of the board so they can be read on demand. */
+.sv-grid-wrap:hover .sv-axis__tick { color: var(--c64-text, #d8e8f7); }
+
+.sv-grid-corner { min-width: 0; }
+
+/* Portrait phones: shrink the ruler, never remove it — the coordinates are the
+ * point of the exercise, and 0.8rem still leaves ~37px tiles at 390px wide.
+ *
+ * `display: none` on the ticks is specifically WRONG here, and was measurably so:
+ * the row template reserves a leading column for the row header, so hiding the
+ * header lets the 10 tiles auto-place into columns 1-10 — the first tile lands in
+ * the zero-width header column and every tile shifts one track left. Measured at
+ * 390px: 2px-wide tiles against 37px-tall ones. Shrink the track; keep its
+ * occupant. */
+@media (max-width: 480px) {
+    .sv-grid-wrap { --sv-axis-w: 0.8rem; --sv-cell-gap: 1px; }
+    .sv-axis__tick { font-size: 8px; }
 }

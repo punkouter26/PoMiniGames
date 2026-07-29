@@ -1,36 +1,83 @@
-﻿@using PoMiniGamesClient.Games.PoSurvive.Store
+@using PoMiniGamesClient.Games.PoSurvive.Store
 @using PoShared.Simulation.Models
 
-@* T053: GridBoard renders 10×10 CSS Grid, dispatches God-Click actions *@
+@* GridBoard — 10×10 board with X/Y rulers, dispatches God-Click actions.
+
+   Three things this markup gets right that the bare 100-tile version did not:
+
+   1. Coordinates are VISIBLE. They used to exist only in each tile's `title`
+      attribute — invisible on touch, invisible in a screenshot, and unreadable to
+      anyone not hovering.
+   2. The ARIA tree is legal. `role="grid"` had 100 direct `role="gridcell"`
+      children and no `role="row"` — an invalid structure that hands a screen
+      reader a flat run of 100 cells with no row or column context. Rows now wrap
+      the cells and the rulers are real headers.
+   3. Rows are explicit flex tracks, not implicit `auto` grid rows. The old board
+      was square only because `align-content: normal` happens to stretch auto
+      tracks; one tile with taller content and every row below it went uneven.
+
+   Layout contract (see GridBoard.razor.css): the ruler occupies one leading
+   COLUMN and one leading ROW of identical size, so the tile area loses the same
+   number of pixels on both axes and the tiles stay square. *@
 @inherits SurviveComponentBase
-<div class="grid-board sv-grid-board" data-testid="grid-board"
-     role="grid" aria-label="Simulation grid">
+<div class="sv-grid-wrap" data-testid="grid-board-wrap">
 
-    @for (var row = 0; row < 10; row++)
-    {
-        for (var col = 0; col < 10; col++)
+    @* X ruler. `aria-hidden` because the same information reaches assistive tech
+       through each cell's aria-label — announcing a bare row of digits first would
+       be noise, not context. *@
+    <div class="sv-grid-row sv-axis sv-axis--x" aria-hidden="true">
+        <span class="sv-grid-corner"></span>
+        @for (var col = 0; col < Size; col++)
         {
-            var x = col;
-            var y = row;
-
-            var isRock   = Store.Simulation.Rocks.Any(r => r.X == x && r.Y == y);
-            var food     = Store.Simulation.FoodNodes.FirstOrDefault(f => f.X == x && f.Y == y);
-            var agent    = Store.Simulation.Agents.FirstOrDefault(a => a.X == x && a.Y == y);
-            var selected = Store.Simulation.SelectedAgentId;
-
-            <GridTile X="@x" Y="@y"
-                      IsRock="@isRock"
-                      HasFood="@(food is not null)"
-                      Agent="@agent"
-                      IsSelected="@(agent is not null && agent.Id == selected)"
-                      OnAgentClicked="@((id) => HandleTileClick(id))"
-                      OnEmptyClicked="@(() => HandleEmptyClick())" />
+            <span class="sv-axis__tick">@col</span>
         }
-    }
+    </div>
 
+    <div class="sv-grid-board" data-testid="grid-board"
+         role="grid"
+         aria-label="Simulation grid, 10 by 10. Column 0 to 9 left to right, row 0 to 9 top to bottom.">
+
+        @* Per-turn spatial index, rebuilt once per render. The old version ran
+           three linear scans inside the tile loop — 100 tiles × 3 scans = 300 list
+           walks on every heartbeat, at up to 4 heartbeats/second in demo mode. *@
+        @{
+            var rocks = Store.Simulation.Rocks.Select(r => (r.X, r.Y)).ToHashSet();
+            var food = Store.Simulation.FoodNodes
+                .GroupBy(f => (f.X, f.Y))
+                .ToDictionary(g => g.Key, g => g.First());
+            var agents = Store.Simulation.Agents
+                .GroupBy(a => (a.X, a.Y))
+                .ToDictionary(g => g.Key, g => g.First());
+            var selected = Store.Simulation.SelectedAgentId;
+        }
+
+        @for (var row = 0; row < Size; row++)
+        {
+            var y = row;
+            <div class="sv-grid-row" role="row">
+                <span class="sv-axis__tick sv-axis__tick--row" role="rowheader">@y</span>
+                @for (var col = 0; col < Size; col++)
+                {
+                    var x = col;
+                    agents.TryGetValue((x, y), out var agent);
+
+                    <GridTile X="@x" Y="@y"
+                              IsRock="@rocks.Contains((x, y))"
+                              HasFood="@food.ContainsKey((x, y))"
+                              Agent="@agent"
+                              IsSelected="@(agent is not null && agent.Id == selected)"
+                              OnAgentClicked="@((id) => HandleTileClick(id))"
+                              OnEmptyClicked="@(() => HandleEmptyClick())" />
+                }
+            </div>
+        }
+
+    </div>
 </div>
 
 @code {
+    private const int Size = 10;
+
     private void HandleTileClick(string agentId)
         => Store.SelectAgent(agentId);
 

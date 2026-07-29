@@ -84,9 +84,7 @@
                             <span class="decision-inspector__option-name">@option.ActionName.ToUpperInvariant()</span>
                             <span class="decision-inspector__option-score">@option.Score</span>
                         </div>
-                        <div class="decision-inspector__option-track">
-                            <div class="decision-inspector__option-fill" style="width:@option.Score%"></div>
-                        </div>
+                        <MeterBar Value="@option.Score" AriaLabel="@($"{option.ActionName} fit")" />
                         <div class="decision-inspector__option-why">@option.Rationale</div>
                     </div>
                 }
@@ -96,15 +94,15 @@
                 <div class="decision-inspector__motivation-title" title="Motivation Profile">Personality</div>
                 @foreach (var trait in InsightService.GetSortedTraits(CurrentAgent).Take(3))
                 {
-                    <div class="decision-inspector__trait-row">
-                        <span class="decision-inspector__trait-label">@trait.Key</span>
-                        <div class="decision-inspector__trait-track">
-                            <div class="decision-inspector__trait-fill" style="width:@trait.Value%"></div>
-                        </div>
-                        <span class="decision-inspector__trait-value">@trait.Value%</span>
-                    </div>
+                    <MeterBar Label="@trait.Key" Value="@trait.Value" ValueText="@($"{trait.Value}%")" />
                 }
             </div>
+
+            @* How this agent got here. The causality cards above explain THIS
+               turn; the vitals series explains the pressure that built up to it —
+               a flee at 30% HP reads differently once you can see the slide. *@
+            <div class="decision-inspector__section-title" title="Vitals over the match">How it got here</div>
+            <VitalsChart AgentId="@CurrentAgent.Id" />
 
             @if (CurrentAgentHistory.Count > 1)
             {

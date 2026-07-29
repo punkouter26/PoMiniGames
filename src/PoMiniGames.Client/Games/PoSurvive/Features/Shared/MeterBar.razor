@@ -1,0 +1,57 @@
+@namespace PoMiniGamesClient.Games.PoSurvive.Features.Shared
+@using System.Globalization
+
+@* MeterBar — the one label / track / fill / value bar.
+
+   Replaces four near-identical implementations that had drifted apart: `dna-bar`
+   (DnaBar.razor), `hp-bar` (AgentSidebar), `decision-inspector__option-track/fill`
+   and `decision-inspector__trait-track/fill`. Same shape, four class prefixes,
+   ~55 lines of duplicated CSS, and four places to fix when the fill needed a
+   transition or an accessible name.
+
+   The value travels as a custom property rather than an inline `width`, so the
+   fill geometry is a stylesheet concern (one place to add the transition) and the
+   inline style carries data, not layout. *@
+
+<div class="sv-meter @(Compact ? "sv-meter--compact" : null) @Class" style="--sv-meter-v: @Percent.ToString("F1", CultureInfo.InvariantCulture)%">
+    @if (Label is not null)
+    {
+        <span class="sv-meter__label">@Label</span>
+    }
+    <div class="sv-meter__track sv-meter__track--@Tone"
+         role="meter"
+         aria-valuenow="@((int)Math.Round(Percent))"
+         aria-valuemin="0"
+         aria-valuemax="100"
+         aria-label="@(AriaLabel ?? Label ?? "Level")">
+        <div class="sv-meter__fill"></div>
+    </div>
+    @if (ValueText is not null)
+    {
+        <span class="sv-meter__value">@ValueText</span>
+    }
+</div>
+
+@code {
+    /// <summary>Optional leading label. Null renders no label cell at all.</summary>
+    [Parameter] public string? Label { get; set; }
+
+    /// <summary>Fill level, 0-100. Clamped — a stray 120 used to render a fill wider than its track.</summary>
+    [Parameter] public double Value { get; set; }
+
+    /// <summary>Optional trailing value text. Null renders no value cell.</summary>
+    [Parameter] public string? ValueText { get; set; }
+
+    /// <summary>Colour role: default | red | blue | good | warn | bad.</summary>
+    [Parameter] public string Tone { get; set; } = "default";
+
+    /// <summary>Thin variant used in dense lists (the agent roster's HP bar).</summary>
+    [Parameter] public bool Compact { get; set; }
+
+    [Parameter] public string? Class { get; set; }
+
+    /// <summary>Accessible name when the visible label is an abbreviation ("PRE").</summary>
+    [Parameter] public string? AriaLabel { get; set; }
+
+    private double Percent => Math.Clamp(Value, 0, 100);
+}

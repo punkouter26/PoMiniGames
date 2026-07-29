@@ -1,0 +1,109 @@
+@namespace PoMiniGamesClient.Games.PoSurvive.Features.Charts
+@using PoMiniGamesClient.Games.PoSurvive.Store
+@inherits SurviveComponentBase
+
+@* Team strength over time — two series, ONE axis (agents alive).
+
+   Deliberately plots the alive COUNT rather than total HP: count is the quantity
+   that decides the match, it is an integer so the axis labels are exact, and it
+   shares its scale between the two teams. (Total HP and alive count on one chart
+   would be a dual-axis chart, which is never correct — two measures of different
+   scale belong in two charts.)
+
+   Colour comes from the board's own team tokens, so a series is the same red or
+   blue as the agents it describes. Those two hues pass CVD separation (ΔE 18.5
+   deutan / 26.7 normal) and 3:1 contrast against the panel; they sit slightly
+   above the ideal dark-mode lightness band, which is accepted here because
+   matching the board's entity colours matters more than the band. Identity never
+   rests on colour alone regardless: both series carry a direct end label. *@
+
+@{
+    var history = Store.Simulation.TurnHistory;
+}
+
+@if (history.Count < 2)
+{
+    <p class="sv-chart__empty" data-testid="team-strength-empty">Trend appears once two turns have resolved.</p>
+}
+else
+{
+    var n = history.Count;
+    var maxY = Math.Max(1, history.Max(s => Math.Max(s.RedAlive, s.BlueAlive)));
+    var redPts = string.Join(' ', history.Select((s, i) => ChartGeometry.Point(ChartGeometry.X(i, n), ChartGeometry.Y(s.RedAlive, maxY))));
+    var bluePts = string.Join(' ', history.Select((s, i) => ChartGeometry.Point(ChartGeometry.X(i, n), ChartGeometry.Y(s.BlueAlive, maxY))));
+    var last = history[^1];
+
+    <figure class="sv-chart" data-testid="team-strength-chart">
+        <figcaption class="sv-chart__title">
+            Agents alive per turn
+            <span class="sv-chart__legend">
+                <span class="sv-chart__key"><span class="sv-chart__swatch sv-chart__swatch--red"></span>Red</span>
+                <span class="sv-chart__key"><span class="sv-chart__swatch sv-chart__swatch--blue"></span>Blue</span>
+            </span>
+        </figcaption>
+
+        <svg class="sv-chart__svg"
+             viewBox="0 0 @ChartGeometry.N(ChartGeometry.ViewW) @ChartGeometry.N(ChartGeometry.ViewH)"
+             preserveAspectRatio="xMidYMid meet"
+             role="img"
+             aria-label="Line chart of agents alive per turn. Red @last.RedAlive, Blue @last.BlueAlive at turn @last.Turn.">
+
+            @* Y axis: gridline + tick text. Recessive — the grid never competes
+               with the data it sits behind. *@
+            @foreach (var tick in ChartGeometry.YTicks(maxY))
+            {
+                var y = ChartGeometry.Y(tick, maxY);
+                <line class="sv-chart__grid"
+                      x1="@ChartGeometry.N(ChartGeometry.Left)" y1="@ChartGeometry.N(y)"
+                      x2="@ChartGeometry.N(ChartGeometry.Right)" y2="@ChartGeometry.N(y)" />
+                <SvgText Class="sv-chart__tick sv-chart__tick--y"
+                         X="@ChartGeometry.N(ChartGeometry.Left - 6)" Y="@ChartGeometry.N(y + 3)">@tick.ToString("0")</SvgText>
+            }
+
+            @* X axis: turn numbers. *@
+            @foreach (var i in ChartGeometry.TickIndices(n))
+            {
+                <SvgText Class="sv-chart__tick sv-chart__tick--x"
+                         X="@ChartGeometry.N(ChartGeometry.X(i, n))"
+                         Y="@ChartGeometry.N(ChartGeometry.Bottom + 14)">@history[i].Turn</SvgText>
+            }
+
+            @* Only the x axis is titled. A "ALIVE" title above the y ticks collided
+               with the topmost tick label, and the caption already names both
+               axes ("Agents alive per turn"), so it was redundant as well. *@
+            <SvgText Class="sv-chart__axis-title" X="@ChartGeometry.N(ChartGeometry.Left)" Y="@ChartGeometry.N(ChartGeometry.ViewH - 3)">TURN →</SvgText>
+
+            <polyline class="sv-chart__line sv-chart__line--red" points="@redPts" />
+            <polyline class="sv-chart__line sv-chart__line--blue" points="@bluePts" />
+
+            @* Direct end labels — identity without reading the legend, and the
+               reason a colourblind reader never has to resolve red vs blue.
+
+               Written as interpolated strings on purpose: `R@last.RedAlive` looks
+               like an email address to the Razor parser, which emits it as literal
+               text. The label rendered as the source code "R@last.RedAlive". *@
+            <SvgText Class="sv-chart__endlabel sv-chart__endlabel--red"
+                     X="@ChartGeometry.N(ChartGeometry.Right + 2)"
+                     Y="@ChartGeometry.N(ChartGeometry.Y(last.RedAlive, maxY) - 4)">@($"R{last.RedAlive}")</SvgText>
+            <SvgText Class="sv-chart__endlabel sv-chart__endlabel--blue"
+                     X="@ChartGeometry.N(ChartGeometry.Right + 2)"
+                     Y="@ChartGeometry.N(ChartGeometry.Y(last.BlueAlive, maxY) + 9)">@($"B{last.BlueAlive}")</SvgText>
+
+            @* Hover layer: one full-height band per turn carrying a native
+               tooltip. No JS, no crosshair state, and the hit target is the whole
+               column rather than a 2px line. *@
+            @for (var i = 0; i < n; i++)
+            {
+                var s = history[i];
+                var bandW = ChartGeometry.PlotW / Math.Max(1, n - 1);
+                <rect class="sv-chart__band"
+                      x="@ChartGeometry.N(ChartGeometry.X(i, n) - bandW / 2)"
+                      y="@ChartGeometry.N(ChartGeometry.Top)"
+                      width="@ChartGeometry.N(bandW)"
+                      height="@ChartGeometry.N(ChartGeometry.PlotH)">
+                    <title>Turn @s.Turn — Red @s.RedAlive alive (@s.RedHp HP), Blue @s.BlueAlive alive (@s.BlueHp HP)</title>
+                </rect>
+            }
+        </svg>
+    </figure>
+}

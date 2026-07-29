@@ -21,34 +21,121 @@
 @inject AuthStateService        AuthState
 @inject ToastService            ToastService
 
-@* ── ONE command bar (2026-07-29, "board-first" consolidation) ────────────────
-   Replaces three stacked rows that together ate 127px above a 602px board: the
-   platform `gl-top-bar` (47px), the game `toolbar` (52px), and the `statsbar`
-   (28px). Brand, transport, speed, AI status, live stats and auth now share a
-   single 48px row, and the "BATTLE GRID" pane header is gone — the board does
-   not need a label.
+@* ── Platform header + game control strip ────────────────────────────────────
+   PoSurvive wears the SAME top bar as every other game. The `gl-top-bar` markup
+   below is the one from MainLayout / EmptyLayout: PoMiniGames brand on the left,
+   FPS pill and game title in the centre, session controls on the right. Those
+   `.gl-*` rules live in app-shell.css, which is deliberately NON-scoped and
+   render-blocking precisely so a layout like this one can render the shared
+   chrome — read the header comment in that file, it was written after an earlier
+   hand-rolled copy of this header rendered completely unstyled.
 
-   Two contracts this markup depends on, both previously violated:
-     1. `.sv-bar` must NOT set `overflow: hidden`. The old `.toolbar` did, at a
-        fixed 52px, which clipped the Advanced drawer and the AI status pill out
-        of sight entirely. The Advanced panel and the dev-switch panel are
-        absolutely positioned and have to escape the bar's box.
-     2. Every `sv-*` class used here has to exist in c64-theme.css. When this
-        toolbar was refactored to `sv-*` names the stylesheet never landed, so
-        the whole control group rendered as unstyled browser defaults. *@
+   Before this, PoSurvive was the only game with no PoMiniGames branding: it had
+   a bespoke `.sv-bar` carrying a "Survive" wordmark, so the platform identity and
+   the universal "click the brand to get home" affordance were missing.
+
+   The game's own transport (start/pause, speed, live stats, the Advanced drawer)
+   drops to the slim `.sv-bar` strip below the header. That is two rows, not the
+   three the board-first pass removed, and adding the header back costs the board
+   no height at all: `.sv-shell` is a flex column and the stage is its flexible
+   child, so the stage is simply "what is left" no matter how tall the chrome
+   above it turns out to be. No `calc(100vh - <sum of chrome>)`, which is the
+   construct that silently omitted the platform header last time.
+
+   HARD CONSTRAINT — `.sv-bar` must NOT set `overflow: hidden`. The old `.toolbar`
+   did, at a fixed 52px, which clipped the Advanced drawer out of sight entirely.
+   The Advanced panel and the dev-switch panel are absolutely positioned and have
+   to escape the bar's box. Use the shrink order in the stylesheet (stats degrade
+   first) instead of clipping. *@
+<div class="sv-shell">
+<header class="gl-top-bar app-reveal">
+    <div class="gl-top-bar-left">
+        <a href="/" class="gl-brand" title="Back to PoMiniGames">
+            <span class="gl-brand-icon">
+                <svg width="22" height="22" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                    <rect x="3" y="5" width="14" height="14" rx="2" fill="currentColor" opacity="0.8"/>
+                    <rect x="23" y="5" width="14" height="14" rx="2" fill="currentColor" opacity="0.5"/>
+                    <rect x="3" y="23" width="14" height="14" rx="2" fill="currentColor" opacity="0.5"/>
+                    <rect x="23" y="23" width="14" height="14" rx="2" fill="currentColor" opacity="0.8"/>
+                </svg>
+            </span>
+            <span class="gl-brand-text">PoMiniGames</span>
+        </a>
+    </div>
+
+    <div class="gl-top-bar-center">
+        <FpsCounter />
+        <div class="gl-top-bar-game">
+            @* Same slot markup GameShell projects for every other game, rendered
+               inline because PoSurvive can't host GameShell (its own layout +
+               SurviveStore — see the note atop PoSurvivePage). *@
+            @* Emoji + name, matching every other game's title ("🃏 Joker",
+               "🏎️ Racer", …) and the shield this game's end-of-game modal uses. *@
+            <div class="gps-header-slot">
+                <span class="gps-game-title">🛡️ Survive</span>
+            </div>
+
+            @* ── Natural-language AI status pill ── *@
+            @if (Store.Boot.IsDegradedMode)
+            {
+                <span class="sv-status sv-status--warn" data-testid="inference-status-degraded" title="@DegradedModeSummary">Offline AI</span>
+            }
+            else if (HasInferenceIssue)
+            {
+                <span class="sv-status sv-status--error" data-testid="inference-status" title="@InferenceIssueSummary">AI issue</span>
+            }
+            else
+            {
+                <span class="sv-status sv-status--ok" data-testid="inference-status-ok" title="Live AI inference is running.">AI online</span>
+            }
+        </div>
+    </div>
+
+    <div class="gl-auth">
+        @* §10 dev-only "Switch user…" affordance. Renders only in Development +
+           Test environments where the /api/auth/dev-bypass endpoint exists; lets a
+           developer verify head-to-head flows from the same machine without
+           spinning up an incognito tab. Hidden in Production. *@
+        @if (ShowDevSwitch)
+        {
+            <details class="gl-overflow-menu gl-dev-switch">
+                <summary class="gl-overflow-trigger" aria-label="Developer tools"><Icon Name="wrench" Size="14" /></summary>
+                <div class="gl-overflow-panel">
+                    <div class="gl-dev-switch__title">Switch user (dev only)</div>
+                    <input class="gl-dev-switch__input" type="text"
+                           placeholder="@(AuthState.User?.DisplayName ?? "new-name")"
+                           @bind="_devUser"
+                           @bind:event="oninput"
+                           maxlength="32" />
+                    <button class="gl-overflow-item" @onclick="SwitchDevUserAsync" disabled="@(string.IsNullOrWhiteSpace(_devUser) || _switching)">
+                        @(_switching ? "Switching…" : "Switch identity")
+                    </button>
+                    @if (!string.IsNullOrEmpty(_switchError))
+                    {
+                        <div class="gl-dev-switch__error">@_switchError</div>
+                    }
+                    <div class="gl-dev-switch__hint">Replaces the current cookie; reloads match history.</div>
+                </div>
+            </details>
+        }
+        @if (AuthState.IsConfigured && !AuthState.IsLoading)
+        {
+            @if (AuthState.IsAuthenticated)
+            {
+                <span class="gl-auth-user" title="@AuthUserTitle">@AuthUserLabel</span>
+            }
+            <button class="gl-auth-button" @onclick="AuthState.IsAuthenticated ? SignOut : SignIn">
+                @(AuthState.IsAuthenticated ? "Sign out" : "Sign in")
+            </button>
+            @if (!AuthState.IsAuthenticated)
+            {
+                <button class="gl-auth-button gl-auth-button--anon" @onclick="SignInAnon" title="Continue as anonymous">ANON</button>
+            }
+        }
+    </div>
+</header>
+
 <div class="sv-bar app-reveal" data-testid="toolbar">
-    <a href="/" class="sv-bar__brand" title="Back to PoMiniGames">
-        <svg width="20" height="20" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-            <rect x="3" y="5" width="14" height="14" rx="2" fill="currentColor" opacity="0.8"/>
-            <rect x="23" y="5" width="14" height="14" rx="2" fill="currentColor" opacity="0.5"/>
-            <rect x="3" y="23" width="14" height="14" rx="2" fill="currentColor" opacity="0.5"/>
-            <rect x="23" y="23" width="14" height="14" rx="2" fill="currentColor" opacity="0.8"/>
-        </svg>
-        <span class="sv-bar__wordmark">Survive</span>
-    </a>
-
-    <span class="sv-bar__divider" aria-hidden="true"></span>
-
     @* ── North-Star control: one primary button that morphs with lifecycle ── *@
     @if (BootCanStartSimulation && !Store.Simulation.IsRunning && !Store.Simulation.IsPaused && Store.Simulation.Outcome is null && !Store.Simulation.ShowPostMortem)
     {
@@ -88,19 +175,8 @@
                 @onclick="() => SetSpeedPreset(1500)" data-testid="btn-speed-inspect" title="Slow — read every decision">Inspect</button>
     </div>
 
-    @* ── Natural-language AI status pill ── *@
-    @if (Store.Boot.IsDegradedMode)
-    {
-        <span class="sv-status sv-status--warn" data-testid="inference-status-degraded" title="@DegradedModeSummary">Offline AI</span>
-    }
-    else if (HasInferenceIssue)
-    {
-        <span class="sv-status sv-status--error" data-testid="inference-status" title="@InferenceIssueSummary">AI issue</span>
-    }
-    else
-    {
-        <span class="sv-status sv-status--ok" data-testid="inference-status-ok" title="Live AI inference is running.">AI online</span>
-    }
+    @* The AI status pill moved up into the header's game slot, beside the game
+       title — it is a statement about the session, not a transport control. *@
 
     @* The one flexible child: everything above sits left, everything below right.
        It carries the alignment rather than an auto-margin on the stats group,
@@ -205,64 +281,11 @@
             </div>
         </details>
 
-        @* §10 dev-only "Switch user…" affordance. Renders only in Development +
-           Test environments where the /api/auth/dev-bypass endpoint exists;
-           lets a developer verify head-to-head flows from the same machine
-           without spinning up an incognito tab. Hidden in Production. *@
-        @if (ShowDevSwitch)
-        {
-            <details class="gl-overflow-menu gl-dev-switch">
-                <summary class="gl-overflow-trigger" aria-label="Developer tools"><Icon Name="wrench" Size="14" /></summary>
-                <div class="gl-overflow-panel">
-                    <div class="gl-dev-switch__title">Switch user (dev only)</div>
-                    <input class="gl-dev-switch__input" type="text"
-                           placeholder="@(AuthState.User?.DisplayName ?? "new-name")"
-                           @bind="_devUser"
-                           @bind:event="oninput"
-                           maxlength="32" />
-                    <button class="gl-overflow-item" @onclick="SwitchDevUserAsync" disabled="@(string.IsNullOrWhiteSpace(_devUser) || _switching)">
-                        @(_switching ? "Switching…" : "Switch identity")
-                    </button>
-                    @if (!string.IsNullOrEmpty(_switchError))
-                    {
-                        <div class="gl-dev-switch__error">@_switchError</div>
-                    }
-                    <div class="gl-dev-switch__hint">Replaces the current cookie; reloads match history.</div>
-                </div>
-            </details>
-        }
-        @if (AuthState.IsConfigured && !AuthState.IsLoading)
-        {
-            <button class="sv-btn sv-btn--sm" @onclick="AuthState.IsAuthenticated ? SignOut : SignIn">
-                @(AuthState.IsAuthenticated ? "Sign out" : "Sign in")
-            </button>
-            @if (!AuthState.IsAuthenticated)
-            {
-                <button class="sv-btn sv-btn--sm" @onclick="SignInAnon" title="Continue as anonymous">ANON</button>
-            }
-        }
+        @* Session controls (sign in / out, ANON, the dev identity switcher) moved
+           into the header's `gl-auth` cluster, where every other game carries
+           them. They are platform chrome, not game transport. *@
     </div>
 </div>
-
-@if (_downloadToastVisible)
-{
-    <div class="app-toast app-toast--@_downloadToastKind" role="status" aria-live="polite" data-testid="download-toast">
-        @_downloadToastMessage
-    </div>
-}
-
-@if (StalledAtTurnZero)
-{
-    <div class="runtime-alert" role="alert" data-testid="runtime-watchdog-alert">
-        <span class="runtime-alert__title">INFERENCE WATCHDOG:</span>
-        <span class="runtime-alert__text">No heartbeat progress for @StalledTurnThresholdSec seconds. Runtime may be degraded.</span>
-        <button class="c64-btn runtime-alert__btn"
-                @onclick="RecoverFromInferenceStall"
-                data-testid="btn-recover-stall">
-            [ RECOVER ]
-        </button>
-    </div>
-}
 
 @* ── Two-pane stage: board + one tabbed intel rail ────────────────────────────
    Was a 3-pane grid (`1fr 260px` / `1fr 180px`). The 180px bottom console pane
@@ -274,8 +297,36 @@
    `.simulation-layout--agents` / `--log` to reveal the sidebar and console one
    at a time, but the razor hard-coded `--grid` and nothing ever set the other
    two — below 760px the intel and log panes were unreachable. One tab mechanism
-   now serves both breakpoints. *@
+   now serves both breakpoints.
+
+   The toast and the watchdog alert live INSIDE the stage. They used to be
+   viewport-fixed at `top: calc(var(--bar-h) + 8px)` — a constant that is only
+   correct while the command bar is exactly one row tall. Below 860px the bar
+   wraps to two or three rows, so both overlays landed directly on top of the
+   controls they were reporting about, covering the Start button. Anchored to the
+   stage they are correct at every breakpoint without a magic number. *@
 <div class="sv-stage @(_railCollapsed ? "sv-stage--rail-collapsed" : string.Empty)" data-testid="main-layout">
+
+    @if (_downloadToastVisible)
+    {
+        <div class="app-toast app-toast--@_downloadToastKind" role="status" aria-live="polite" data-testid="download-toast">
+            @_downloadToastMessage
+        </div>
+    }
+
+    @if (StalledAtTurnZero)
+    {
+        <div class="runtime-alert" role="alert" data-testid="runtime-watchdog-alert">
+            <span class="runtime-alert__title">INFERENCE WATCHDOG:</span>
+            <span class="runtime-alert__text">No heartbeat progress for @StalledTurnThresholdSec seconds. Runtime may be degraded.</span>
+            <button class="c64-btn runtime-alert__btn"
+                    @onclick="RecoverFromInferenceStall"
+                    data-testid="btn-recover-stall">
+                [ RECOVER ]
+            </button>
+        </div>
+    }
+
     <main class="sv-stage__board app-reveal">
         @Body
     </main>
@@ -340,6 +391,10 @@
             {
                 @if (Store.Simulation.IsRunning || Store.Simulation.Agents.Count > 0)
                 {
+                    @* Team strength over time. The roster below answers "who is
+                       alive right now"; this answers "which way is the match
+                       going", which no surface in the game used to show. *@
+                    <TeamStrengthChart />
                     <AgentSidebar />
                 }
                 else
@@ -351,6 +406,10 @@
             {
                 @if (Store.Simulation.IsRunning || Store.Simulation.ConsoleLog.Count > 0)
                 {
+                    @* The log's filter chips (ATTACK / FORAGE / FLEE / IDLE) are
+                       the same partition this chart draws, so the shape above the
+                       list explains what the filters are for. *@
+                    <ActionMixChart />
                     <TacticalLog />
                 }
                 else
@@ -360,6 +419,7 @@
             }
         </div>
     </aside>
+</div>
 </div>
 
 <PostMortemOverlay />
@@ -532,6 +592,29 @@
     private bool ShowDevSwitch =>
         HostEnv.IsDevelopment() ||
         string.Equals(HostEnv.Environment, "Test", StringComparison.OrdinalIgnoreCase);
+
+    // Identity pill in the header, mirroring MainLayout: prefer the display name,
+    // fall back to the email, and surface the full email on hover so a truncated
+    // name is still resolvable.
+    private string AuthUserLabel
+    {
+        get
+        {
+            var user = AuthState.User;
+            if (user is null) return string.Empty;
+            return string.IsNullOrWhiteSpace(user.DisplayName) ? user.Email ?? string.Empty : user.DisplayName;
+        }
+    }
+
+    private string AuthUserTitle
+    {
+        get
+        {
+            var user = AuthState.User;
+            if (user is null) return string.Empty;
+            return string.IsNullOrWhiteSpace(user.Email) ? AuthUserLabel : user.Email;
+        }
+    }
 
     protected override void OnInitialized()
     {

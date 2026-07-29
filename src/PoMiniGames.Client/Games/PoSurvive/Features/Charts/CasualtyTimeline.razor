@@ -1,0 +1,69 @@
+@namespace PoMiniGamesClient.Games.PoSurvive.Features.Charts
+@using PoMiniGamesClient.Games.PoSurvive.Store
+@inherits SurviveComponentBase
+
+@* Who was alive when — the post-mortem's one chart.
+
+   A lifespan bar per agent (survival on the x axis, one row per agent) answers
+   the question the end screen exists to answer: how the match actually unfolded.
+   The three summary figures above it — turns, kills, survivors — say what
+   happened but not when, and the scrolling log is gone by then.
+
+   Team colour carries identity here because these rows ARE agents, and agents are
+   red or blue everywhere else in the game. It is never colour-alone: every row is
+   labelled with its agent id, and the survival figure is printed at the end of
+   each bar. *@
+
+@{
+    var history = Store.Simulation.TurnHistory;
+    var lastTurn = history.Count > 0 ? history[^1].Turn : Store.Simulation.TurnNumber;
+
+    // Death turn = the first turn the agent's HP reached 0. Agents still standing
+    // run to the end of the match.
+    var rows = Store.Simulation.Agents
+        .OrderBy(a => a.Team)
+        .ThenBy(a => a.Id)
+        .Select(a => new
+        {
+            a.Id,
+            a.Team,
+            a.IsAlive,
+            EndTurn = history.FirstOrDefault(s => s.Vitals.Any(v => v.Id == a.Id && v.Hp <= 0))?.Turn ?? lastTurn,
+        })
+        .ToList();
+}
+
+@if (rows.Count == 0 || lastTurn <= 0)
+{
+    <p class="sv-chart__empty">No timeline — the match ended before the first turn resolved.</p>
+}
+else
+{
+    <figure class="sv-timeline" data-testid="casualty-timeline">
+        <figcaption class="sv-chart__title">Survival timeline</figcaption>
+
+        @foreach (var row in rows)
+        {
+            var pct = Math.Clamp((double)row.EndTurn / Math.Max(1, lastTurn) * 100, 2, 100);
+            <div class="sv-timeline__row">
+                <span class="sv-timeline__id @(row.Team == "Red" ? "text-red" : "text-blue")">@row.Id</span>
+                <div class="sv-timeline__track">
+                    <div class="sv-timeline__bar sv-timeline__bar--@(row.Team == "Red" ? "red" : "blue") @(row.IsAlive ? "sv-timeline__bar--survived" : null)"
+                         style="width:@ChartGeometry.N(pct)%"
+                         title="@row.Id @(row.IsAlive ? $"survived all {lastTurn} turns" : $"fell on turn {row.EndTurn}")"></div>
+                </div>
+                <span class="sv-timeline__value">@(row.IsAlive ? "✓" : $"T{row.EndTurn}")</span>
+            </div>
+        }
+
+        <div class="sv-timeline__row sv-timeline__row--axis" aria-hidden="true">
+            <span class="sv-timeline__id">TURN</span>
+            <div class="sv-timeline__track sv-timeline__track--axis">
+                <span>0</span>
+                <span>@(lastTurn / 2)</span>
+                <span>@lastTurn</span>
+            </div>
+            <span class="sv-timeline__value"></span>
+        </div>
+    </figure>
+}

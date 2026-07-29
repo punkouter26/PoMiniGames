@@ -28,6 +28,8 @@
 @code {
     private RenderFragment TitleContent => @<span>🛡️ Survive</span>;
 
+    // The chart rides inside the shared modal's summary fragment rather than
+    // needing a change to GameOverModal — every other game keeps the modal it has.
     private RenderFragment SummaryContent => @<div>
         <div>
             @(Store.Simulation.Outcome == "Draw"
@@ -35,6 +37,7 @@
                 : $"Victory: {Store.Simulation.WinningTeam?.ToUpperInvariant()} faction")
         </div>
         <div>@Store.Simulation.NarrativeText</div>
+        <CasualtyTimeline />
     </div>;
 
     // The old overlay carried a full per-agent standings table (ID/TEAM/HP/KILLS/

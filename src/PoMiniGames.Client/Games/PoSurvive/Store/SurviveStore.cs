@@ -21,6 +21,10 @@ public sealed class SurviveStore : ISimulationSink, IDisposable
 {
     private const int MaxConsoleEntries = 500;
 
+    // Charts render every point they are given, so the cap is a render budget, not
+    // just a memory one. 300 turns at ~1 point/px is already wider than the rail.
+    private const int MaxTurnHistory = 300;
+
     private readonly SimulationOrchestrator _orchestrator;
     private readonly AudioCues _audio;
     private readonly SessionLogService _log;
@@ -205,6 +209,7 @@ public sealed class SurviveStore : ISimulationSink, IDisposable
             Agents = e.Agents,
             FoodNodes = e.FoodNodes,
             ConsoleLog = log,
+            TurnHistory = AppendSnapshot(Simulation.TurnHistory, e),
             Outcome = e.Outcome,
             WinningTeam = e.WinningTeam,
             IsRunning = e.Outcome is null,
@@ -215,6 +220,31 @@ public sealed class SurviveStore : ISimulationSink, IDisposable
             await _log.AppendAsync(evt);
 
         await _audio.OnHeartbeatAsync(e.NewEntries, e.Outcome);
+    }
+
+    /// <summary>
+    /// Appends one plottable snapshot per turn. A heartbeat that re-reports the turn
+    /// already at the tail *replaces* it rather than appending — the orchestrator can
+    /// emit twice for one turn (deferred inference lands late), and a duplicated x
+    /// value would draw a vertical spike through every series.
+    /// </summary>
+    private static IReadOnlyList<TurnSnapshot> AppendSnapshot(
+        IReadOnlyList<TurnSnapshot> history, HeartbeatCompleted e)
+    {
+        var snapshot = new TurnSnapshot(
+            Turn: e.TurnNumber,
+            RedAlive: e.Agents.Count(a => a.IsAlive && a.Team == "Red"),
+            BlueAlive: e.Agents.Count(a => a.IsAlive && a.Team == "Blue"),
+            RedHp: e.Agents.Where(a => a.Team == "Red").Sum(a => a.Hp),
+            BlueHp: e.Agents.Where(a => a.Team == "Blue").Sum(a => a.Hp),
+            Vitals: e.Agents.Select(a => new AgentVitals(a.Id, a.Hp, a.Hunger)).ToList());
+
+        if (history.Count > 0 && history[^1].Turn == snapshot.Turn)
+            return [.. history.Take(history.Count - 1), snapshot];
+
+        return history.Count >= MaxTurnHistory
+            ? [.. history.Skip(history.Count - MaxTurnHistory + 1), snapshot]
+            : [.. history, snapshot];
     }
 
     public Task OnAgentDiedAsync(AgentDied e) => _audio.OnAgentDiedAsync();

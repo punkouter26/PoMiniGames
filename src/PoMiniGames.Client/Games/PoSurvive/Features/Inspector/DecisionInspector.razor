@@ -44,7 +44,7 @@
             <span class="decision-inspector__chip @(CurrentSeverity == "warn" ? "decision-inspector__chip--warn" : "decision-inspector__chip--info")">@CurrentSeverity.ToUpperInvariant()</span>
             @if (CurrentAgent is not null)
             {
-                <span class="decision-inspector__chip" title="Confidence score: how certain the model was about this action. Computed from momentum, HP, and trait alignment.">CONF @CurrentConfidence%</span>
+                <span class="decision-inspector__chip" title="How well this action fits the agent's personality and current pressure, scored 0-100 by the game's own heuristic (not by the model). The full ranking is under &quot;What else it considered&quot;.">FIT @CurrentActionFit</span>
             }
         </div>
 
@@ -175,8 +175,8 @@
                 .TakeLast(5)
                 .ToList();
 
-    private int CurrentConfidence
-        => InsightService.ComputeConfidence(CurrentAgent, CurrentEntry, CurrentAgentHistory);
+    private int CurrentActionFit
+        => InsightService.ComputeActionFit(CurrentAgent, CurrentEntry, CurrentAgentHistory);
 
     private IReadOnlyList<DecisionFactor> CausalityFactors
         => InsightService.BuildCausalityFactors(CurrentAgent, CurrentEntry, CurrentAgentHistory);

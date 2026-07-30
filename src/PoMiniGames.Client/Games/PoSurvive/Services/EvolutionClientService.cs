@@ -2,6 +2,7 @@ namespace PoMiniGamesClient.Games.PoSurvive.Services;
 
 using System.Net.Http.Json;
 using PoMiniGamesClient.Services;
+using PoShared.Simulation.Models;
 
 /// <summary>
 /// Client-side service that calls the server evolution API.
@@ -37,23 +38,6 @@ public sealed class EvolutionClientService
     }
 }
 
-/// <summary>Request body for recording evolution outcomes.</summary>
-public sealed record RecordEvolutionRequest(
-    string SessionId,
-    List<AgentEvolutionResult> Agents
-);
-
-/// <summary>Per-agent evolution result.</summary>
-public sealed record AgentEvolutionResult(
-    float Predatory,
-    float Scavenger,
-    float Paranoid,
-    float Altruistic,
-    float Methodical,
-    string AgentId,
-    string Team,
-    bool IsWinner,
-    int KillCount,
-    int FoodConsumed,
-    int DamageDealt
-);
+// The RecordEvolutionRequest / AgentEvolutionResult records that used to sit here now live in
+// PoShared (PoShared.Simulation.Models.EvolutionDtos) — one declaration shared with the
+// server endpoint that consumes them, instead of two that merely happened to match.

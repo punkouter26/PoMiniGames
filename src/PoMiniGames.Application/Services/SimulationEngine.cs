@@ -104,6 +104,16 @@ public sealed class SimulationEngine
             outcome = SimulationOutcome.RedWin;
             winner = TeamColor.Red;
         }
+        else if (config.MaxTurns > 0 && turnNumber >= config.MaxTurns)
+        {
+            // Stalemate cap. Without this the ONLY exit was a total team wipe, so two
+            // survivors who never became adjacent (Paranoid fleeing a Scavenger, both
+            // topping up on food) ran the heartbeat forever — no outcome, no
+            // post-mortem, no way out but a page reload. Reported as a Draw with
+            // survivors still standing, which is what the post-mortem keys off to tell
+            // a turn-limit draw apart from a mutual wipeout.
+            outcome = SimulationOutcome.Draw;
+        }
 
         return new TickResult(outcome, winner, diedThisTurn, witheredThisTurn);
     }

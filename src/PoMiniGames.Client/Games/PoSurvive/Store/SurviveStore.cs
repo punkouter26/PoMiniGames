@@ -47,8 +47,15 @@ public sealed class SurviveStore : ISimulationSink, IDisposable
 
     // ─── Simulation commands (UI → store) ─────────────────────────────────
 
+    /// <summary>
+    /// Starts a session at the speed the UI is currently reporting. Passing
+    /// <c>Simulation.SpeedMs</c> explicitly is what makes the speed chips true: the
+    /// orchestrator used to start every timer at <c>config.HeartbeatMaxMs</c>, so the bar
+    /// highlighted "Balanced" (900 ms) while the heartbeat actually ran at 2000 ms, and the
+    /// kiosk demo's 250 ms request was discarded.
+    /// </summary>
     public void StartSimulation(SimulationConfigDto config, bool isMockProvider)
-        => _orchestrator.Initialize(config, isMockProvider);
+        => _orchestrator.Initialize(config, isMockProvider, Simulation.SpeedMs);
 
     public void ResetSimulation()
     {

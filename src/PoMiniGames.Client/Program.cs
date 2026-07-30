@@ -141,6 +141,11 @@ builder.Services.AddScoped<SimulationLaunchService>();
 builder.Services.AddScoped<LocalModelBootstrapService>();
 builder.Services.AddScoped<DecisionInsightService>();
 builder.Services.AddScoped<EvolutionClientService>();
+// Brings inference online (cloud relay if the server has it, else the in-browser model).
+// Registered after IInferenceService is decided below — DI resolves lazily, so the order of
+// the AddScoped calls doesn't matter, but the dependency does: this is the only thing that
+// calls InitModelAsync / BootReady, which had no caller at all before.
+builder.Services.AddScoped<InferenceBootstrapper>();
 
 // Inference service. "Inference:UseMock" defaults to true to avoid a multi-GB model
 // download; set it false to activate the real WebLLM (local) + Azure relay (remote) router.

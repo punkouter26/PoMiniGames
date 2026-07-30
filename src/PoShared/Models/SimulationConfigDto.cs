@@ -12,5 +12,6 @@ public record SimulationConfigDto(
     int HeartbeatMinMs,
     int HeartbeatMaxMs,
     int InferenceTimeoutMs,
-    int MaxInferredAgentsPerTurn
+    int MaxInferredAgentsPerTurn,
+    int MaxTurns
 );

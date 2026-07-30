@@ -134,17 +134,30 @@ public sealed class DecisionInsightService
         return options.OrderByDescending(o => o.Score).ToList();
     }
 
-    public int ComputeConfidence(AgentDto? agent, ConsoleEntry? entry, IReadOnlyList<ConsoleEntry> history)
+    /// <summary>
+    /// How well the action the agent ACTUALLY took scores against this service's own
+    /// heuristic — 0-100, and 0 when there is nothing to score.
+    /// </summary>
+    /// <remarks>
+    /// This replaces a "confidence" figure that was wrong in three ways at once. It
+    /// returned the <em>margin</em> between the top two heuristic options, so a value of 3
+    /// rendered as "CONF 3%" and read as near-zero certainty. That margin was measured
+    /// between the two highest-scoring options rather than the chosen one, so whenever the
+    /// agent's action wasn't the heuristic's favourite the number described a decision that
+    /// never happened. And the chip's tooltip attributed it to the model, when every input
+    /// is computed here from DNA weights and keyword-matching the thought string — the
+    /// model contributes nothing to it. Scoring the chosen action is the honest version of
+    /// the same idea, and <see cref="BuildActionOptions"/> already publishes the full
+    /// ranking beside it so the reader can see where that action placed.
+    /// </remarks>
+    public int ComputeActionFit(AgentDto? agent, ConsoleEntry? entry, IReadOnlyList<ConsoleEntry> history)
     {
         if (agent is null || entry is null)
             return 0;
 
         var options = BuildActionOptions(agent, entry, history);
-        if (options.Count < 2)
-            return 0;
-
-        var ordered = options.OrderByDescending(o => o.Score).ToList();
-        return Math.Clamp(ordered[0].Score - ordered[1].Score, 0, 100);
+        var chosen = options.FirstOrDefault(o => o.IsCurrent);
+        return chosen?.Score ?? 0;
     }
 
     public IReadOnlyList<DecisionFactor> BuildCausalityFactors(AgentDto? agent, ConsoleEntry? entry, IReadOnlyList<ConsoleEntry> history)

@@ -41,8 +41,28 @@ public sealed class AzureOpenAIInferenceService : IInferenceService
             new(ChatRole.System, SimulationSystemPrompt),
             new(ChatRole.User,   BuildUserPrompt(gridJson, dna)),
         };
-        var response = await _chat.GetResponseAsync(messages, cancellationToken: ct);
-        return ParseInferenceResult(response.Text);
+        // Bounded output. The reply is one short JSON object, but nothing capped it, so the
+        // model was free to ramble and a measured round trip ran ~4.6 s — long enough that
+        // the simulation's per-turn budget cancelled the call before the answer landed. A
+        // hard ceiling cuts the latency that matters here and the per-call token cost with it.
+        var response = await _chat.GetResponseAsync(messages, ChatOptions, ct);
+        var parsed = ParseInferenceResult(response.Text);
+
+        // The two parse failures are indistinguishable in the UI otherwise — both surface as
+        // a thought the player can't act on — but they have opposite causes: an empty
+        // completion means the output budget was consumed before any text, while unparseable
+        // text means the model ignored the JSON contract. Log the raw reply so the next
+        // person doesn't have to bisect ChatOptions to find out which.
+        if (parsed.Thought is UnparseableThought or ParseErrorThought)
+        {
+            _logger.LogWarning(
+                "PoSurvive inference returned no usable JSON (reason={Reason}, rawLength={Length}). Raw: {Raw}",
+                parsed.Thought,
+                response.Text?.Length ?? 0,
+                Truncate(response.Text, 300));
+        }
+
+        return parsed;
     }
 
     /// <summary>
@@ -67,22 +87,50 @@ public sealed class AzureOpenAIInferenceService : IInferenceService
         return InferAsync(gridJson, dna, ct);
     }
 
+    /// <summary>
+    /// No per-call options are sent, and that is a measured decision rather than an omission.
+    /// </summary>
+    /// <remarks>
+    /// The deployment backing this game rejects or breaks under both of the obvious knobs:
+    /// <list type="bullet">
+    /// <item><b>Temperature.</b> Pinning it to 0 for determinism returned
+    /// <c>HTTP 400 invalid_request_error / unsupported_value — 'temperature' does not support
+    /// 0 with this model. Only the default (1) value is supported.</c> Every relayed call 503'd.</item>
+    /// <item><b>MaxOutputTokens.</b> It reasons before emitting visible text, so a cap starves
+    /// the answer instead of shortening it: 80 tokens and then 512 both produced a completion
+    /// of <c>rawLength=0</c> — a successful 200 carrying nothing to parse. Uncapped, the same
+    /// prompt returns the required JSON in ~4.5 s.</item>
+    /// </list>
+    /// Turn latency is therefore controlled where it actually belongs — the orchestrator runs
+    /// a turn's agents concurrently, so a turn costs the slowest call rather than their sum —
+    /// and the client's per-agent cancellation token remains the hard ceiling.
+    /// </remarks>
+    private static readonly ChatOptions? ChatOptions = null;
+
     private const string SimulationSystemPrompt =
-        "You are a survival agent in a 2D grid. Respond with a single JSON line: " +
-        "{\"action\": \"Attack|Forage|Flee|Idle\", \"thought\": \"<short>\"}.";
+        "You are a survival agent in a 2D grid. Respond with a single JSON line and nothing else: " +
+        "{\"action\": \"Attack|Forage|Flee|Idle\", \"thought\": \"<max 12 words>\"}.";
 
     private static string BuildUserPrompt(string gridJson, PersonalityDnaDto dna) =>
         $"grid={gridJson}; dna={System.Text.Json.JsonSerializer.Serialize(dna)}";
+
+    private const string UnparseableThought = "unparseable model response";
+    private const string ParseErrorThought = "parse_error";
+
+    private static string Truncate(string? text, int max)
+        => string.IsNullOrEmpty(text) ? "(empty)"
+         : text.Length <= max ? text
+         : text[..max] + "…";
 
     private static InferenceResult ParseInferenceResult(string raw)
     {
         // Defensive: the model sometimes emits prose around the JSON line. Pull the first
         // { … } block and deserialize.
-        var start = raw.IndexOf('{');
-        var end = raw.LastIndexOf('}');
-        if (start < 0 || end <= start)
+        var start = raw?.IndexOf('{') ?? -1;
+        var end = raw?.LastIndexOf('}') ?? -1;
+        if (raw is null || start < 0 || end <= start)
         {
-            return new InferenceResult(Thought: "unparseable model response", Action: "Idle");
+            return new InferenceResult(Thought: UnparseableThought, Action: "Idle");
         }
         var json = raw[start..(end + 1)];
         try
@@ -99,7 +147,7 @@ public sealed class AzureOpenAIInferenceService : IInferenceService
         }
         catch
         {
-            return new InferenceResult(Thought: "parse_error", Action: "Idle");
+            return new InferenceResult(Thought: ParseErrorThought, Action: "Idle");
         }
     }
 }

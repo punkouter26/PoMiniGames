@@ -74,6 +74,7 @@ namespace PoMiniGamesClient.Services;
 // PoSurvive — inference
 [JsonSerializable(typeof(InferRequestDto))]
 [JsonSerializable(typeof(InferenceResult))]
+[JsonSerializable(typeof(InferenceStatusDto))]
 [JsonSerializable(typeof(PersonalityDnaDto))]
 [JsonSerializable(typeof(GridStateDto))]
 // PoSurvive — evolution

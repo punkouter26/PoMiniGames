@@ -685,6 +685,31 @@ html, body {
 .grid-tile--selected { outline: 2px solid var(--c64-text-bright); outline-offset: -2px; z-index: 10; box-shadow: 0 0 6px var(--c64-text-bright); }
 .grid-tile--dead        { opacity: 0.3; animation: fadeout var(--transition-slow) forwards; }
 
+/* The one-shot death hit. GridTile has always emitted `tile__agent--dying` on the turn an
+   agent falls, but the class had no rule anywhere in the client — the only moment-of-death
+   cue on the board rendered as nothing at all. (The flag was also never cleared, so it
+   described "is dead" rather than "just died"; the orchestrator now retires it after the
+   turn, which is what makes a one-shot animation correct here.) */
+.tile__agent--dying {
+    animation: sv-agent-death 620ms ease-out forwards;
+    z-index: 3;
+}
+
+@keyframes sv-agent-death {
+    0%   { transform: scale(1);    filter: brightness(1)   saturate(1); opacity: 1; }
+    22%  { transform: scale(1.28); filter: brightness(2.6) saturate(0); opacity: 1; }
+    100% { transform: scale(0.72); filter: brightness(0.5) saturate(0); opacity: 0.35; }
+}
+
+/* Honour the platform's motion preference: keep the flash, drop the movement. */
+@media (prefers-reduced-motion: reduce) {
+    .tile__agent--dying {
+        animation: none;
+        filter: brightness(0.5) saturate(0);
+        opacity: 0.35;
+    }
+}
+
 /* ===== Meter ==============================================================
    ONE label / track / fill / value bar, used by the agent roster's HP bar, the
    inspector's action-fit rows and its personality rows. It replaces four

@@ -3,6 +3,7 @@ namespace PoMiniGames.Features.PoSurvive;
 using Microsoft.AspNetCore.Mvc;
 using PoMiniGames.Application.Simulation;
 using PoMiniGames.Domain.ValueObjects.Simulation;
+using PoShared.Simulation.Models;
 
 /// <summary>
 /// API endpoints for LLM-Powered Agent Evolution.
@@ -52,23 +53,6 @@ public static class EvolutionEndpoints
         return Results.Ok(new { recorded = agentResults.Count });
     }
 
-    /// <summary>Request body for recording evolution outcomes.</summary>
-    public sealed record RecordEvolutionRequest(
-        string SessionId,
-        List<AgentEvolutionResult> Agents
-    );
-
-    public sealed record AgentEvolutionResult(
-        float Predatory,
-        float Scavenger,
-        float Paranoid,
-        float Altruistic,
-        float Methodical,
-        string AgentId,
-        string Team,
-        bool IsWinner,
-        int KillCount,
-        int FoodConsumed,
-        int DamageDealt
-    );
+    // RecordEvolutionRequest / AgentEvolutionResult are no longer redeclared here: both are
+    // PoShared.Simulation.Models types now, shared with the client that posts them.
 }

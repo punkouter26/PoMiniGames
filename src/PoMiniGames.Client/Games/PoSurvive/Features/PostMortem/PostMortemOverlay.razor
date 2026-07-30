@@ -31,14 +31,30 @@
     // The chart rides inside the shared modal's summary fragment rather than
     // needing a change to GameOverModal — every other game keeps the modal it has.
     private RenderFragment SummaryContent => @<div>
-        <div>
-            @(Store.Simulation.Outcome == "Draw"
-                ? "⚠ Draw — no survivors"
-                : $"Victory: {Store.Simulation.WinningTeam?.ToUpperInvariant()} faction")
-        </div>
+        <div>@OutcomeLine</div>
         <div>@Store.Simulation.NarrativeText</div>
         <CasualtyTimeline />
     </div>;
+
+    /// <summary>
+    /// A Draw now has two causes, and they are not the same story. Mutual annihilation is
+    /// "no survivors"; hitting <c>SimulationDefaults.MaxTurns</c> with agents still standing
+    /// is a stand-off. The screen used to assert "no survivors" for both, which the survivor
+    /// count in the stats row directly contradicted.
+    /// </summary>
+    private string OutcomeLine
+    {
+        get
+        {
+            if (Store.Simulation.Outcome != "Draw")
+                return $"Victory: {Store.Simulation.WinningTeam?.ToUpperInvariant()} faction";
+
+            var standing = Store.Simulation.Agents.Count(a => a.IsAlive);
+            return standing == 0
+                ? "⚠ Draw — no survivors"
+                : $"⚠ Draw — turn limit reached with {standing} still standing";
+        }
+    }
 
     // The old overlay carried a full per-agent standings table (ID/TEAM/HP/KILLS/
     // FOOD/DAMAGE). That doesn't fit the shared modal, so it collapses to the
@@ -48,7 +64,9 @@
     [
         new StatItem { Value = Store.Simulation.TurnNumber.ToString(), Label = "Turns" },
         new StatItem { Value = Store.Simulation.Agents.Sum(a => a.KillCount).ToString(), Label = "Kills" },
-        new StatItem { Value = Store.Simulation.Agents.Count(a => a.Hp > 0).ToString(), Label = "Survivors" },
+        // IsAlive, matching every other survivor count in the game (the stats bar, the
+        // charts, the timeline). `Hp > 0` computed the same answer but said it differently.
+        new StatItem { Value = Store.Simulation.Agents.Count(a => a.IsAlive).ToString(), Label = "Survivors" },
     ];
 
     // Clear the run before OK navigates home, so the store doesn't come back with

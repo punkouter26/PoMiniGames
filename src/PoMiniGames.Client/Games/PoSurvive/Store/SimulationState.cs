@@ -1,5 +1,6 @@
 namespace PoMiniGamesClient.Games.PoSurvive.Store;
 
+using PoShared.Simulation.Constants;
 using PoShared.Simulation.Models;
 
 /// <summary>Immutable view state for one running simulation session. Owned by SurviveStore.</summary>
@@ -44,7 +45,8 @@ public sealed record SimulationState
     public bool ShowPostMortem { get; init; } = false;
 
     // ─── Observer controls ────────────────────────────────────────────────
-    public int SpeedMs { get; init; } = 900;  // matches BAL preset
+    // One shared constant with the "Balanced" chip and the orchestrator's start interval.
+    public int SpeedMs { get; init; } = SimulationDefaults.DefaultHeartbeatMs;
     public bool IsMockProvider { get; init; } = false;
     public bool IsPaused { get; init; } = false;
 

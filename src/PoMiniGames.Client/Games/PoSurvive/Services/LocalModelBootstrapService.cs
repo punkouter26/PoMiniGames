@@ -32,33 +32,10 @@ public sealed class LocalModelBootstrapService(IJSRuntime js, IConfiguration con
         return options;
     }
 
-    /// <summary>
-    /// Returns all available models — local WebLLM models first, then remote Azure OpenAI
-    /// models read from <c>Inference:RemoteModelOptions</c> in configuration.
-    /// </summary>
-    public List<ModelOption> ReadAllModelOptions()
-    {
-        var result = new List<ModelOption>();
-
-        // Local models
-        foreach (var local in ReadLocalModelOptions())
-            result.Add(new ModelOption(local.Id, local.Label, local.Description, IsRemote: false));
-
-        // Remote Azure OpenAI models
-        var remoteSection = config.GetSection("Inference:RemoteModelOptions");
-        foreach (var child in remoteSection.GetChildren())
-        {
-            var id = child["Id"];
-            if (string.IsNullOrWhiteSpace(id))
-                continue;
-
-            var label = child["Label"] ?? id;
-            var description = child["Description"] ?? string.Empty;
-            result.Add(new ModelOption(id!, label, description, IsRemote: true));
-        }
-
-        return result;
-    }
+    // ReadAllModelOptions() lived here and merged the local list with a client-side
+    // `Inference:RemoteModelOptions` list. That second list was the source of the
+    // client/server model-id mismatch, so the remote half now comes from the server itself —
+    // see InferenceBootstrapper.AvailableModels() and GET /api/infer/status.
 
     public string ResolveDefaultSelectedModelId(string? stateModelId, IReadOnlyList<LocalModelOption> options)
     {
@@ -73,21 +50,9 @@ public sealed class LocalModelBootstrapService(IJSRuntime js, IConfiguration con
         return options[0].Id;
     }
 
-    public string ResolveDefaultSelectedModelIdFromAll(string? stateModelId, IReadOnlyList<ModelOption> options)
-    {
-        if (!string.IsNullOrWhiteSpace(stateModelId) && options.Any(o => o.Id == stateModelId))
-            return stateModelId;
-
-        var configModelId = config["Inference:ModelId"];
-
-        if (!string.IsNullOrWhiteSpace(configModelId) && options.Any(o => o.Id == configModelId))
-            return configModelId;
-
-        return options[0].Id;
-    }
-
-    public string ResolveProviderKind(bool isMock, bool isRemote = false)
-        => isMock ? "MOCK" : isRemote ? "REMOTE" : "LOCAL";
+    // ResolveDefaultSelectedModelIdFromAll and ResolveProviderKind are gone: the first never
+    // had a caller, and the second was only used by the drawer's switch handler, which now
+    // delegates the whole decision to InferenceBootstrapper.SwitchToAsync.
 
     public async Task InitModelAsync<TBridgeCallbacks>(DotNetObjectReference<TBridgeCallbacks> callbacksRef, string modelId)
         where TBridgeCallbacks : class

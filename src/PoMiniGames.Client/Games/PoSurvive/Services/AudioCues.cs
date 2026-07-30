@@ -48,15 +48,11 @@ public sealed class AudioCues(AudioService audio)
             await audio.SetDynamicIntensityAsync(0.05f + combatRatio * 0.9f);
         }
 
+        // The fanfare belongs to OnPostMortemAsync, which the orchestrator calls immediately
+        // after this heartbeat on the deciding turn. Playing it here too meant every match
+        // ended with two overlapping fanfares. This hook only quiets the ambient bed.
         if (outcome is not null)
-        {
-            if (outcome is "RedWin" or "BlueWin")
-                await audio.PlayVictoryFanfareAsync();
-            else if (outcome == "Draw")
-                await audio.PlayDefeatFanfareAsync();
-
             await StopAmbientAsync();
-        }
     }
 
     public async Task OnResetAsync()

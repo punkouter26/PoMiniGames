@@ -89,8 +89,12 @@ public static class PoSurviveServiceExtensions
     public static IEndpointRouteBuilder MapPoSurviveEndpoints(this IEndpointRouteBuilder app, IConfiguration configuration)
     {
         app.MapEvolutionEndpoints();
-        if (configuration.GetValue<bool>("Inference:UseCloudFallback"))
-            app.MapInferEndpoints();
+
+        // Always mapped now. /api/infer/status has to answer "the relay is off" as well as
+        // "it is on" — skipping the whole group when cloud fallback was disabled left the
+        // client with a 404 it could not distinguish from a routing mistake, so it never
+        // asked, and always assumed the worst.
+        app.MapInferEndpoints(configuration.GetValue<bool>("Inference:UseCloudFallback"));
 
         return app;
     }

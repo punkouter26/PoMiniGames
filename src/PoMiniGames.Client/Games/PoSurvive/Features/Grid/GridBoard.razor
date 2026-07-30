@@ -45,9 +45,14 @@
             var food = Store.Simulation.FoodNodes
                 .GroupBy(f => (f.X, f.Y))
                 .ToDictionary(g => g.Key, g => g.First());
+            // `OrderByDescending(IsAlive).First()`, not `First()`. Corpses keep their final
+            // coordinates and the engine frees the tile they died on, so a living agent can
+            // walk onto a dead one's square. Plain First() returned whichever came earlier
+            // in creation order — often the corpse — and the living agent silently vanished
+            // from the board while still showing as alive in the roster and the stats bar.
             var agents = Store.Simulation.Agents
                 .GroupBy(a => (a.X, a.Y))
-                .ToDictionary(g => g.Key, g => g.First());
+                .ToDictionary(g => g.Key, g => g.OrderByDescending(a => a.IsAlive).First());
             var selected = Store.Simulation.SelectedAgentId;
         }
 

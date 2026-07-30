@@ -18,4 +18,7 @@ public sealed class SimulationConfig
     public int HeartbeatMaxMs { get; set; } = 2000;
     public int InferenceTimeoutMs { get; set; } = 10000;
     public int MaxInferredAgentsPerTurn { get; set; } = 1;
+
+    /// <summary>Turn ceiling; reaching it resolves the match as a Draw. See SimulationDefaults.MaxTurns.</summary>
+    public int MaxTurns { get; set; } = 300;
 }

@@ -9,15 +9,15 @@
 @using PoShared.Simulation.Models
 @using Microsoft.AspNetCore.Components.WebAssembly.Hosting
 @inherits SurviveLayoutBase
-@implements IDisposable
+@* No `@implements IDisposable` — SurviveLayoutBase already does, and re-declaring it here
+   is what let an explicit interface implementation shadow the base's cleanup. *@
 @inject SessionLogService       LogService
 @inject SimulationLaunchService LaunchService
 @inject IJSRuntime              JS
 @inject NavigationManager       Nav
 @inject IWebAssemblyHostEnvironment HostEnv
 @inject PoMiniGamesClient.Games.PoSurvive.Services.LocalModelBootstrapService ModelBootstrap
-@inject IServiceProvider Services
-@inject PoShared.Simulation.Interfaces.IInferenceService InferenceService
+@inject PoMiniGamesClient.Games.PoSurvive.Services.InferenceBootstrapper Bootstrapper
 @inject AuthStateService        AuthState
 @inject ToastService            ToastService
 
@@ -479,6 +479,11 @@
     // dispatches the update. (This used to be a property with a no-op setter.)
     private string ToolbarSelectedModelId => Store.Boot.ModelId;
 
+    // All of the provider-switching logic now lives in InferenceBootstrapper, which is also
+    // what performs the initial bootstrap — so the drawer and the page-load path can no
+    // longer disagree about what "switch to this model" means. The previous version flipped
+    // the router and the chip for a LOCAL pick but never started the model download and never
+    // called BootReady, so choosing an in-browser model silently left the game un-ready.
     private async Task OnToolbarModelChanged(ChangeEventArgs e)
     {
         var newId = e.Value?.ToString();
@@ -492,32 +497,7 @@
 
         try
         {
-            var isMock       = InferenceService is PoMiniGamesClient.Games.PoSurvive.Services.MockInferenceService;
-            var providerKind = ModelBootstrap.ResolveProviderKind(isMock, selected.IsRemote);
-
-            // Registered only outside mock mode — genuinely absent, not a sentinel.
-            var inferenceRouter = Services.GetService<PoMiniGamesClient.Games.PoSurvive.Services.InferenceRouter>();
-            if (!isMock && inferenceRouter is { } router)
-            {
-                if (selected.IsRemote) router.UseRemote(selected.Id);
-                else                   router.UseLocal();
-            }
-
-            Store.ResetInferenceBootstrap();
-            Store.InferenceConfigured(
-                providerKind: providerKind,
-                modelId:      selected.Id,
-                modelLabel:   selected.Label);
-
-            // Mock + remote models are ready instantly (no in-browser model download).
-            // LOCAL WebLLM models require the multi-MB download kicked off by the
-            // Mission Control picker's LoadSelectedModelAsync; here we only flip the
-            // router + provider chip and let the user open Mission Control to start
-            // the download if they want a local run.
-            if (isMock || selected.IsRemote)
-            {
-                Store.BootReady();
-            }
+            await Bootstrapper.SwitchToAsync(selected);
         }
         finally
         {
@@ -559,8 +539,19 @@
 
     private async Task ToggleHighContrast()
     {
-        _highContrast = !_highContrast;
-        await JS.InvokeVoidAsync("PoSurviveTheme.setHighContrast", _highContrast);
+        var next = !_highContrast;
+        try
+        {
+            // Flip only after the interop succeeds, so a failure can't leave the button
+            // label claiming a state the page isn't in. The call used to target a function
+            // that did not exist, and the unguarded JSException took the click handler down.
+            await JS.InvokeVoidAsync("PoSurviveTheme.setHighContrast", next);
+            _highContrast = next;
+        }
+        catch (JSException)
+        {
+            ToastService.Show("High contrast is unavailable in this browser.", ToastType.Error);
+        }
     }
 
     private string InferenceIssueSummary
@@ -619,9 +610,12 @@
     protected override void OnInitialized()
     {
         base.OnInitialized();
-        // Keep the toolbar's compact model switcher populated from the same
-        // configuration source as Mission Control.
-        ToolbarModelOptions = ModelBootstrap.ReadAllModelOptions();
+        // Seed the picker with the in-browser models (known without a round trip). The cloud
+        // entry is added in OnAfterRenderAsync once the server has told us whether its relay
+        // is up and which deployment serves this game — see InferenceBootstrapper.CloudStatus.
+        ToolbarModelOptions = ModelBootstrap.ReadLocalModelOptions()
+            .Select(l => new PoMiniGamesClient.Games.PoSurvive.Services.ModelOption(l.Id, l.Label, l.Description, IsRemote: false))
+            .ToList();
         _clockTimer = new System.Threading.Timer(_ => InvokeAsync(async () =>
         {
             StateHasChanged();
@@ -646,6 +640,17 @@
             // global CSS resets don't leak into the rest of the PoMiniGames platform.
             await JS.InvokeVoidAsync("PoSurviveTheme.load");
 
+            // `load` re-applies the persisted high-contrast preference to <body>; read it
+            // back so the toggle's label starts in agreement with the page.
+            try
+            {
+                _highContrast = await JS.InvokeAsync<bool>("PoSurviveTheme.isHighContrast");
+            }
+            catch (JSException)
+            {
+                _highContrast = false;
+            }
+
             // §GFX/SOUND (2026-07-29). Generative ambient bed + audio-reactive
             // visuals. Both are best-effort: a browser without Web Audio, or a
             // muted player, simply gets nothing. Never let ambience break the game.
@@ -658,6 +663,14 @@
             {
                 // Module not loaded (e.g. prerender or a stripped build) — ignore.
             }
+
+            // Idempotent: the page's BootArenaAsync also calls this, and children render
+            // before parents, so by now it has usually already run. We call it anyway
+            // because the layout is also reachable on its own, and then refresh the picker
+            // with whatever the server said about its relay.
+            await Bootstrapper.EnsureStartedAsync();
+            ToolbarModelOptions = Bootstrapper.AvailableModels();
+            StateHasChanged();
         }
     }
 
@@ -776,8 +789,16 @@
         await StartSimulation();
     }
 
-    void IDisposable.Dispose()
+    // `override`, NOT an explicit `void IDisposable.Dispose()`. SurviveLayoutBase already
+    // implements IDisposable to detach its Store.Changed handler; an explicit
+    // implementation here re-mapped the interface, so Blazor's `((IDisposable)c).Dispose()`
+    // landed on this method and base.Dispose() never ran. The subscription outlived every
+    // visit — SurviveStore is app-lifetime in WASM, so navigating away and back left a
+    // dead layout being re-rendered on every heartbeat, for as long as the tab lived.
+    // PoSurvivePage and AgentSidebar already used `override`; this file was the outlier.
+    public override void Dispose()
     {
+        base.Dispose();
         _clockTimer?.Dispose();
         _downloadToastCts?.Cancel();
         _downloadToastCts?.Dispose();

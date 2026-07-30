@@ -19,6 +19,7 @@
 @inject KioskCoordinator         Kiosk
 @inject GameStatsService         GameStats
 @inject PoMiniGamesClient.Games.PoSurvive.Services.SimulationLaunchService LaunchService
+@inject PoMiniGamesClient.Games.PoSurvive.Services.InferenceBootstrapper Bootstrapper
 
 <div data-testid="grid-container">
     @* 2026-07-16: the "Mission Control" idle screen was removed. It was an intro
@@ -106,8 +107,20 @@
     // rather than gate the game behind a model download — the same escape hatch
     // Mission Control offered as "[ PLAY NOW — FALLBACK AI ]", just automatic.
     // The command bar's [ START ] still exists for relaunching after a reset.
+    // How long to give a provider before starting anyway. The cloud relay resolves in one
+    // round trip, so the common path never waits near this long; it exists for the
+    // in-browser model, whose first load is a real download. A late-finishing download
+    // upgrades the NEXT battle rather than stalling this one — the page still never blocks.
+    private static readonly TimeSpan BootGrace = TimeSpan.FromSeconds(12);
+
     private async Task BootArenaAsync()
     {
+        // Kick the bootstrap off and give it a bounded moment. Without this the page went
+        // straight to ContinueDegradedMode() on every single visit, because nothing had ever
+        // set Boot.IsReady — which is what made the entire LLM feature unreachable.
+        await Bootstrapper.EnsureStartedAsync();
+        await Bootstrapper.WaitForReadyAsync(BootGrace);
+
         if (!CanLaunchSimulation)
         {
             Store.ContinueDegradedMode();

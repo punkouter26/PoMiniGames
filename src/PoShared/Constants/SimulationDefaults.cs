@@ -23,7 +23,25 @@ public static class SimulationDefaults
 
     public const int HeartbeatMinMs = 100;
     public const int HeartbeatMaxMs = 2000;
-    public const int DefaultHeartbeatMs = 1000;
+
+    /// <summary>
+    /// Starting turn interval. This is the value the "Balanced" speed chip reports, and
+    /// the one a fresh <c>SimulationState</c> carries — the three used to disagree
+    /// (state said 900, this said 1000, and the orchestrator actually started the timer
+    /// at <see cref="HeartbeatMaxMs"/>, so every battle ran at 2000 ms while the UI
+    /// highlighted Balanced). One constant now feeds all three.
+    /// </summary>
+    public const int DefaultHeartbeatMs = 900;
+
     public const int InferenceTimeoutMs = 15000;
     public const int MaxInferredAgentsPerTurn = 1;
+
+    /// <summary>
+    /// Hard turn ceiling. The engine only ended a match when a whole team was wiped, so
+    /// two survivors that never became adjacent (a Flee/Forage stand-off) ran forever —
+    /// there was no stalemate outcome at all. Reaching this cap resolves as a Draw.
+    /// 300 matches <c>SurviveStore.MaxTurnHistory</c>, so a capped match is exactly as
+    /// long as the charts can plot.
+    /// </summary>
+    public const int MaxTurns = 300;
 }

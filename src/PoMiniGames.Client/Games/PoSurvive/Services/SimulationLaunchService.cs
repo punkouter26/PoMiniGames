@@ -24,7 +24,9 @@ public sealed class SimulationLaunchService(IJSRuntime js, IConfiguration config
             HeartbeatMaxMs: SimulationDefaults.HeartbeatMaxMs,
             InferenceTimeoutMs: SimulationDefaults.InferenceTimeoutMs,
             MaxInferredAgentsPerTurn: overrides?.MaxInferredAgentsPerTurn
-                ?? (int.TryParse(config["Simulation:MaxInferredAgentsPerTurn"], out var _maxAgents) ? _maxAgents : SimulationDefaults.MaxInferredAgentsPerTurn));
+                ?? (int.TryParse(config["Simulation:MaxInferredAgentsPerTurn"], out var _maxAgents) ? _maxAgents : SimulationDefaults.MaxInferredAgentsPerTurn),
+            MaxTurns: overrides?.MaxTurns
+                ?? (int.TryParse(config["Simulation:MaxTurns"], out var _maxTurns) ? _maxTurns : SimulationDefaults.MaxTurns));
     }
 
     private async Task<E2EOverrides?> ReadOverridesAsync()
@@ -48,6 +50,7 @@ public sealed class SimulationLaunchService(IJSRuntime js, IConfiguration config
                 StarveHpLossPerTurn = TryGetInt(root, "starveHpLossPerTurn") ?? TryGetInt(root, "StarveHpLossPerTurn"),
                 BaseDamage = TryGetInt(root, "baseDamage") ?? TryGetInt(root, "BaseDamage"),
                 MaxInferredAgentsPerTurn = TryGetInt(root, "maxInferredAgentsPerTurn") ?? TryGetInt(root, "MaxInferredAgentsPerTurn"),
+                MaxTurns = TryGetInt(root, "maxTurns") ?? TryGetInt(root, "MaxTurns"),
             };
         }
         catch
@@ -79,5 +82,6 @@ public sealed class SimulationLaunchService(IJSRuntime js, IConfiguration config
         public int? StarveHpLossPerTurn { get; init; }
         public int? BaseDamage { get; init; }
         public int? MaxInferredAgentsPerTurn { get; init; }
+        public int? MaxTurns { get; init; }
     }
 }

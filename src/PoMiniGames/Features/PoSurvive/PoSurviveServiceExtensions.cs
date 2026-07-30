@@ -46,14 +46,19 @@ public static class PoSurviveServiceExtensions
                     // deployment, and each resolves to its own cached client. The relay used to
                     // advertise this on /api/infer and then serve every request from the default
                     // deployment regardless.
+                    //
+                    // Resolved through GameChatClientFactory, NOT the bare cache: the selected
+                    // deployment's client must carry the same resilience and telemetry decorators
+                    // as the game's default one. Going to the cache directly silently opted every
+                    // model-selecting call — i.e. all of them — out of both.
                     var deploymentMap = ReadRemoteModelAllowlist(configuration);
-                    var cache = sp.GetRequiredService<AIFoundryChatClientCache>();
+                    var clients = sp.GetRequiredService<GameChatClientFactory>();
 
                     return new AzureOpenAIInferenceService(
                         chat: chatClient,
                         deploymentMap: deploymentMap,
                         logger: sp.GetRequiredService<ILogger<AzureOpenAIInferenceService>>(),
-                        clientForDeployment: cache.ResolveDeploymentAsIChatClient);
+                        clientForDeployment: d => clients.ForDeployment(AIFoundryOptions.Games.Survive, d));
                 });
             }
             else

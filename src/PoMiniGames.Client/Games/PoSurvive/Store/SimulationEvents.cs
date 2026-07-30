@@ -18,6 +18,11 @@ public sealed record SimulationInitialised(
     bool IsMockProvider);
 
 /// <summary>One completed turn.</summary>
+/// <param name="Health">
+/// Provider health as of the end of this turn. Carried on every heartbeat so the status pill
+/// reflects what is happening now rather than what bootstrap concluded once — "AI online" stayed
+/// green through 15 consecutive failed relay calls because nothing ever revisited it.
+/// </param>
 public sealed record HeartbeatCompleted(
     int TurnNumber,
     IReadOnlyList<AgentDto> Agents,
@@ -25,7 +30,19 @@ public sealed record HeartbeatCompleted(
     IReadOnlyList<ConsoleEntry> NewEntries,
     string? Outcome,
     string? WinningTeam,
-    IReadOnlyList<HeartbeatEventDto> HeartbeatEvents);
+    IReadOnlyList<HeartbeatEventDto> HeartbeatEvents,
+    ProviderHealth Health);
+
+/// <param name="IsDegraded">True when the provider has failed enough consecutive calls to be
+/// treated as down; the game keeps playing on fallback tactics, but must stop claiming otherwise.</param>
+/// <param name="ConsecutiveFailures">Failed calls since the last success.</param>
+/// <param name="ModelDecisionsThisTurn">Agents whose action came from a real provider this turn.</param>
+/// <param name="FallbackDecisionsThisTurn">Agents whose action came from the local trait table.</param>
+public readonly record struct ProviderHealth(
+    bool IsDegraded,
+    int ConsecutiveFailures,
+    int ModelDecisionsThisTurn,
+    int FallbackDecisionsThisTurn);
 
 /// <summary>An agent died this turn (drives the death cue).</summary>
 public sealed record AgentDied(string AgentId, string Team);

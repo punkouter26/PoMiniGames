@@ -72,6 +72,19 @@ public sealed class SimulationOrchestrator : IDisposable
     // after an await and that is exactly the shape that stops being safe the moment it isn't.
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, (string Thought, string Action)> _inferenceCache = new();
 
+    /// <summary>
+    /// Rolling provider health. Published on every heartbeat so the status pill can stop saying
+    /// "AI online" while every agent is running on the fallback table.
+    /// </summary>
+    private readonly InferenceHealthTracker _health = new();
+
+    /// <summary>
+    /// Where each alive agent's action came from this turn (see <see cref="DecisionSource"/>).
+    /// Rebuilt per turn; consumed when the console entries are built so the Decision Inspector
+    /// can label a fallback pick as one instead of narrating it as the model's reasoning.
+    /// </summary>
+    private readonly Dictionary<string, string> _decisionSource = [];
+
     private System.Timers.Timer? _timer;
     private bool _ticking;
     private bool _stopped;
@@ -114,6 +127,10 @@ public sealed class SimulationOrchestrator : IDisposable
         _isMock = isMockProvider;
         _sessionLog.Clear();
         _deathTurn.Clear();
+        _decisionSource.Clear();
+        // A new battle starts with no opinion about the provider: a streak from last session must
+        // not paint this one degraded, and a success last session must not vouch for it either.
+        _health.Reset();
 
         // Cleared per session, not just per Reset: the cache keys carry HP/hunger/local
         // grid, all of which repeat across sessions, so a new battle could otherwise
@@ -199,7 +216,8 @@ public sealed class SimulationOrchestrator : IDisposable
                     AgentId: a.Id,
                     Team: a.Team.ToString(),
                     Thought: a.LastThought ?? "(thinking…)",
-                    Action: a.LastAction?.ToString() ?? "Idle"))
+                    Action: a.LastAction?.ToString() ?? "Idle",
+                    Source: _decisionSource.TryGetValue(a.Id, out var src) ? src : DecisionSource.Fallback))
                 .ToList();
 
             // 4. Build heartbeat DTOs for session log (same reporting set as the console)
@@ -243,7 +261,12 @@ public sealed class SimulationOrchestrator : IDisposable
                     NewEntries: newEntries,
                     Outcome: outcome,
                     WinningTeam: winnerTeam,
-                    HeartbeatEvents: heartbeats));
+                    HeartbeatEvents: heartbeats,
+                    Health: new ProviderHealth(
+                        IsDegraded: _health.IsDegraded,
+                        ConsecutiveFailures: _health.ConsecutiveFailures,
+                        ModelDecisionsThisTurn: _decisionSource.Count(kv => kv.Value == DecisionSource.Model),
+                        FallbackDecisionsThisTurn: _decisionSource.Count(kv => kv.Value == DecisionSource.Fallback))));
 
             // 7. If simulation ended, stop timer, record evolution, and generate narrative
             if (result.Outcome is not null)
@@ -308,6 +331,8 @@ public sealed class SimulationOrchestrator : IDisposable
             _sessionLog.Clear();
             _inferenceCache.Clear();
             _deathTurn.Clear();
+            _decisionSource.Clear();
+            _health.Reset();
             _turn = 0;
             _paused = false;
             _inferenceRoundRobinOffset = 0;
@@ -347,6 +372,7 @@ public sealed class SimulationOrchestrator : IDisposable
     private async Task<IReadOnlyDictionary<string, AgentAction>> InferActionsAsync()
     {
         var dict = new Dictionary<string, AgentAction>();
+        _decisionSource.Clear();
         var aliveAgents = _agents!
             .Where(a => a.IsAlive)
             .ToList();
@@ -399,12 +425,16 @@ public sealed class SimulationOrchestrator : IDisposable
                     dict[agent.Id] = Enum.TryParse<AgentAction>(mockResult.Action, true, out var mockAction)
                         ? mockAction
                         : AgentAction.Idle;
+                    // The scripted mock IS the configured provider in this mode, so its picks are
+                    // that provider's — not the fallback table's.
+                    _decisionSource[agent.Id] = DecisionSource.Model;
                     continue;
                 }
 
                 var fallback = GetFallbackInference(agent, "unavailable", preferReuseLastAction: false);
                 agent.LastThought = fallback.Thought;
                 dict[agent.Id] = fallback.Action;
+                _decisionSource[agent.Id] = DecisionSource.Fallback;
             }
         }
         else
@@ -428,10 +458,11 @@ public sealed class SimulationOrchestrator : IDisposable
             var inferred = await Task.WhenAll(agentsToInfer.Select(agent =>
                 InferOneAsync(agent, turnBudgetMs)));
 
-            foreach (var (agent, thought, action) in inferred)
+            foreach (var (agent, thought, action, source) in inferred)
             {
                 agent.LastThought = thought;
                 dict[agent.Id] = action;
+                _decisionSource[agent.Id] = source;
             }
         }
 
@@ -440,6 +471,7 @@ public sealed class SimulationOrchestrator : IDisposable
             var fallback = GetFallbackInference(skippedAgent, "deferred");
             skippedAgent.LastThought = fallback.Thought;
             dict[skippedAgent.Id] = fallback.Action;
+            _decisionSource[skippedAgent.Id] = DecisionSource.Fallback;
         }
 
         foreach (var agent in aliveAgents)
@@ -449,6 +481,7 @@ public sealed class SimulationOrchestrator : IDisposable
                 var fallback = GetFallbackInference(agent, "missing", preferReuseLastAction: false);
                 agent.LastThought = fallback.Thought;
                 dict[agent.Id] = fallback.Action;
+                _decisionSource[agent.Id] = DecisionSource.Fallback;
             }
         }
 
@@ -460,7 +493,7 @@ public sealed class SimulationOrchestrator : IDisposable
     /// mutating the agent, so the concurrent callers in <see cref="InferActionsAsync"/> only
     /// touch shared state after every call has settled.
     /// </summary>
-    private async Task<(Agent Agent, string Thought, AgentAction Action)> InferOneAsync(
+    private async Task<(Agent Agent, string Thought, AgentAction Action, string Source)> InferOneAsync(
         Agent agent, int budgetMs)
     {
         var localGridJson = SerialiseLocalGrid(agent, 3);
@@ -471,12 +504,18 @@ public sealed class SimulationOrchestrator : IDisposable
 
         if (_inferenceCache.TryGetValue(cacheKey, out var cached))
         {
+            // A memo hit is still a model decision — it is a model decision this session already
+            // paid for — so it must not be labelled as fallback.
             return (agent, cached.Thought,
-                Enum.TryParse<AgentAction>(cached.Action, true, out var hit) ? hit : AgentAction.Idle);
+                Enum.TryParse<AgentAction>(cached.Action, true, out var hit) ? hit : AgentAction.Idle,
+                DecisionSource.Model);
         }
 
         using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(budgetMs));
-        using var inferScope = (_inference as WebLlmInferenceService)
+        // Asked of the router, not of a concrete service: IInferenceService resolves to
+        // InferenceRouter, so `_inference as WebLlmInferenceService` was never once a match and
+        // the local path's per-agent diagnostics correlation never activated at all.
+        using var inferScope = (_inference as IInferenceDiagnostics)
             ?.BeginDiagnosticsScope(_turn, agent.Id, agent.Team.ToString());
 
         try
@@ -489,18 +528,23 @@ public sealed class SimulationOrchestrator : IDisposable
                 _inferenceCache.Clear();
             _inferenceCache[cacheKey] = (result.Thought, result.Action);
 
+            _health.RecordSuccess();
             return (agent, result.Thought,
-                Enum.TryParse<AgentAction>(result.Action, true, out var parsed) ? parsed : AgentAction.Idle);
+                Enum.TryParse<AgentAction>(result.Action, true, out var parsed) ? parsed : AgentAction.Idle,
+                DecisionSource.Model);
         }
         catch (OperationCanceledException)
         {
+            _health.RecordFailure();
             var fallback = GetFallbackInference(agent, "timeout");
-            return (agent, $"Inference timed out after {budgetMs} ms. {fallback.Thought}", fallback.Action);
+            return (agent, $"Inference timed out after {budgetMs} ms. {fallback.Thought}",
+                fallback.Action, DecisionSource.Fallback);
         }
         catch
         {
+            _health.RecordFailure();
             var fallback = GetFallbackInference(agent, "unavailable");
-            return (agent, fallback.Thought, fallback.Action);
+            return (agent, fallback.Thought, fallback.Action, DecisionSource.Fallback);
         }
     }
 

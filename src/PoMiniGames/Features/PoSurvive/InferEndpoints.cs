@@ -194,6 +194,23 @@ public static class InferEndpoints
             // The browser gave up first; nothing to report to a listener that has gone away.
             return Results.Problem("Inference cancelled by the caller.", statusCode: ClientClosedRequest);
         }
+        catch (System.ClientModel.ClientResultException ex) when (ex.Status == StatusCodes.Status429TooManyRequests)
+        {
+            // The provider is throttling us, which is a different thing from the relay being
+            // broken and a different thing again from the caller exhausting their own allowance.
+            // Reported distinctly so the log, the client and the health tracker can tell a quota
+            // ceiling (an Azure-side setting) from a fault (something to fix here).
+            var retryAfter = ex.GetRawResponse()?.Headers.TryGetValue("retry-after", out var value) == true
+                ? value
+                : "30";
+            http.Response.Headers.RetryAfter = retryAfter;
+            logger.LogWarning(
+                "Inference throttled by the provider (retry-after={RetryAfter}s). The deployment's request quota is the limit, not this host.",
+                retryAfter);
+            return Results.Problem(
+                "The model deployment is rate-limited right now.",
+                statusCode: StatusCodes.Status429TooManyRequests);
+        }
         catch (Exception ex)
         {
             logger.LogError(ex, "Inference error");

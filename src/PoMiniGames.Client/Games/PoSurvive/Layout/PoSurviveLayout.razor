@@ -80,13 +80,20 @@
             {
                 <span class="sv-status sv-status--warn" data-testid="inference-status-degraded" title="@DegradedModeSummary">Offline AI</span>
             }
+            else if (Store.Simulation.IsProviderDegraded)
+            {
+                @* Bootstrap said the provider was available and it may well have been; what
+                   matters here is that it has stopped answering. Reported from live call
+                   outcomes, which nothing used to look at after boot. *@
+                <span class="sv-status sv-status--warn" data-testid="inference-status-fallback" title="@ProviderDegradedSummary">Fallback tactics</span>
+            }
             else if (HasInferenceIssue)
             {
                 <span class="sv-status sv-status--error" data-testid="inference-status" title="@InferenceIssueSummary">AI issue</span>
             }
             else
             {
-                <span class="sv-status sv-status--ok" data-testid="inference-status-ok" title="Live AI inference is running.">AI online</span>
+                <span class="sv-status sv-status--ok" data-testid="inference-status-ok" title="@LiveInferenceSummary">AI online</span>
             }
         </div>
     </div>
@@ -524,6 +531,18 @@
 
     private string DegradedModeSummary
         => "Fallback tactics are active because real inference is unavailable.";
+
+    // Live wording, from the last heartbeat's own counts — not from what bootstrap concluded.
+    private string ProviderDegradedSummary
+        => $"{Store.Boot.ModelLabel} has failed {Store.Simulation.ProviderConsecutiveFailures} calls in a row. "
+         + "Agents are running on local fallback tactics until it answers again.";
+
+    private string LiveInferenceSummary
+        => Store.Simulation.ModelDecisionsThisTurn > 0
+            ? $"{Store.Boot.ModelLabel} decided {Store.Simulation.ModelDecisionsThisTurn} of "
+              + $"{Store.Simulation.ModelDecisionsThisTurn + Store.Simulation.FallbackDecisionsThisTurn} "
+              + "agent moves last turn (the rest reuse their standing orders)."
+            : "Live AI inference is running.";
 
     // Detail line shown inside the Advanced drawer (was a permanent toolbar chip).
     private string? InferenceDetailText

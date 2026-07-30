@@ -50,18 +50,54 @@ public sealed record SimulationState
     public bool IsMockProvider { get; init; } = false;
     public bool IsPaused { get; init; } = false;
 
+    // ─── Live provider health ─────────────────────────────────────────────
+    // Refreshed every heartbeat from the orchestrator. Bootstrap's verdict used to be the ONLY
+    // input to the status pill, so a relay that answered the availability probe and then failed
+    // every actual call still rendered as "AI online".
+    public bool IsProviderDegraded { get; init; } = false;
+    public int ProviderConsecutiveFailures { get; init; } = 0;
+
+    /// <summary>Agents whose action came from a real provider on the most recent turn.</summary>
+    public int ModelDecisionsThisTurn { get; init; } = 0;
+
+    /// <summary>Agents whose action came from the local fallback table on the most recent turn.</summary>
+    public int FallbackDecisionsThisTurn { get; init; } = 0;
+
     // ─── Config snapshot (for session persist) ────────────────────────────
     public SimulationConfigDto? Config { get; init; }
 }
 
 /// <summary>One entry in the tactical console log.</summary>
+/// <param name="Source">
+/// Where this decision came from: <c>MODEL</c> when a provider actually chose it, or
+/// <c>FALLBACK</c> when the orchestrator's trait table did (timeout, provider error, or an agent
+/// outside this turn's round-robin slice).
+/// </param>
+/// <remarks>
+/// <see cref="Source"/> exists because the two were indistinguishable downstream, and the UI
+/// therefore presented one as the other: the Decision Inspector narrated "Paranoid 58% … favored
+/// by risk cues, low survivability" over a thought that read "Inference timed out after 15000 ms",
+/// attributing the fallback table's pick to a model that had never answered. Callers that only
+/// have a thought string had been left to guess by keyword-matching it.
+/// </remarks>
 public sealed record ConsoleEntry(
     int TurnNumber,
     string AgentId,
     string Team,
     string Thought,
-    string Action
+    string Action,
+    string Source = DecisionSource.Model
 );
+
+/// <summary>Provenance values for <see cref="ConsoleEntry.Source"/>.</summary>
+public static class DecisionSource
+{
+    /// <summary>A real provider chose this action.</summary>
+    public const string Model = "MODEL";
+
+    /// <summary>The local trait-driven fallback table chose it.</summary>
+    public const string Fallback = "FALLBACK";
+}
 
 /// <summary>
 /// One turn's plottable state. Team totals are pre-aggregated (the charts would

@@ -49,6 +49,19 @@ internal static class GameServicesExtensions
                 {
                     opts.DefaultDeployment = defaultDeployment!;
                 }
+
+                // The vault stores the per-game map as ONE secret — PoMiniGames--AI--Deployments,
+                // "game=deployment,game=deployment" — which arrives as a scalar value at
+                // "<section>:Deployments" and cannot bind to a dictionary at all. Parsed here so
+                // the flat and nested forms produce the same options object; nested keys already
+                // bound above are kept, with the flat form filling gaps rather than overwriting.
+                var flat = Environment.GetEnvironmentVariable("PoMiniGames__AI__Deployments")
+                    ?? configuration[$"{AIFoundryOptions.SectionName}:Deployments"];
+                foreach (var (game, deployment) in ParseDeploymentPairs(flat))
+                {
+                    if (!opts.Deployments.Any(kv => string.Equals(kv.Key, game, StringComparison.OrdinalIgnoreCase)))
+                        opts.Deployments[game] = deployment;
+                }
             });
         services.AddSingleton<AIFoundryClientFactory>();
         services.AddSingleton<AIFoundryChatClientCache>();
@@ -168,5 +181,27 @@ internal static class GameServicesExtensions
         });
 
         return services;
+    }
+
+    /// <summary>
+    /// Parses the flat <c>game=deployment,game=deployment</c> form of the per-game deployment map.
+    /// Accepts <c>:</c> as the separator too, which is how the secret is documented.
+    /// </summary>
+    private static IEnumerable<(string Game, string Deployment)> ParseDeploymentPairs(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+            yield break;
+
+        foreach (var pair in raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var split = pair.IndexOfAny(['=', ':']);
+            if (split <= 0 || split == pair.Length - 1)
+                continue;
+
+            var game = pair[..split].Trim();
+            var deployment = pair[(split + 1)..].Trim();
+            if (game.Length > 0 && deployment.Length > 0)
+                yield return (game, deployment);
+        }
     }
 }

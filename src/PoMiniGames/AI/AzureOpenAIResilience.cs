@@ -52,8 +52,49 @@ public static class AzureOpenAIResilience
     /// <summary>Per-call outer timeout — includes all retries. Real-time games cannot wait longer than this.</summary>
     public static readonly TimeSpan TotalCallBudget = TimeSpan.FromSeconds(20);
 
-    /// <summary>Transient-failure retry attempts (in addition to the initial try) at the SDK layer.</summary>
-    public const int MaxSdkRetries = 2;
+    /// <summary>
+    /// Transient-failure retry attempts at the SDK layer. Zero — deliberately.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// This class already declares the orchestrating <see cref="ResiliencePipeline"/> to be "the
+    /// source of truth for total-call budget and circuit state", but left the SDK's own
+    /// <see cref="ClientRetryPolicy"/> at 2 retries underneath it, and the two fought:
+    /// </para>
+    /// <list type="bullet">
+    ///   <item>The original 51.6 s relay failure was 3 SDK attempts × the 15 s network timeout —
+    ///   the outer 20 s budget could not see inside a single "attempt" to stop it.</item>
+    ///   <item>Worse under throttling: the SDK honours <c>Retry-After</c> internally, so a 429
+    ///   carrying <c>retry-after: 30</c> became a 30-second sleep inside one call. Measured, that
+    ///   turned an <em>instant</em> 429 (0.2 s by curl) into a 9 s timeout in the app, and made
+    ///   the outer policy's fail-fast decision unreachable — it never saw the 429 at all.</item>
+    /// </list>
+    /// <para>
+    /// With SDK retries off, a throttle surfaces immediately, the Polly layer decides whether it
+    /// is worth outwaiting, and the circuit breaker sees real failure counts.
+    /// </para>
+    /// </remarks>
+    public const int MaxSdkRetries = 0;
+
+    /// <summary>
+    /// Model calls allowed in flight at once, across the whole host.
+    /// </summary>
+    /// <remarks>
+    /// Measured against the shared foundry account 2026-07-29, calling gpt-5.4-nano directly with
+    /// an AAD token and bypassing this app entirely: one call at a time returns in 1.0–2.6 s; two
+    /// concurrent return in 3.6 s and 9.0 s; three concurrent complete <b>one</b> and drop the
+    /// other two; a burst is then followed by immediate <c>429</c> on every subsequent call. The
+    /// account's quota simply does not serve a stampede, and PoSurvive was aiming three
+    /// concurrent calls per heartbeat at it. Queueing behind a small permit count converts that
+    /// into slightly slower answers instead of mostly-lost ones.
+    /// </remarks>
+    public const int MaxConcurrentCalls = 2;
+
+    /// <summary>Calls allowed to wait for a permit before the limiter rejects outright.</summary>
+    public const int ConcurrencyQueueLimit = 8;
+
+    /// <summary>Ceiling on a service-supplied <c>Retry-After</c> we are willing to honour.</summary>
+    private static readonly TimeSpan MaxRetryAfter = TimeSpan.FromSeconds(5);
 
     /// <summary>
     /// Registers the resilience pipeline used by every AI Foundry call. Called once from
@@ -68,6 +109,10 @@ public static class AzureOpenAIResilience
             {
                 Timeout = TotalCallBudget,
             });
+            // Bounds how many calls hit the account at once. Sits inside the outer timeout so a
+            // queued call cannot wait indefinitely, and outside the retry so a retried attempt
+            // keeps its permit rather than going to the back of the queue.
+            builder.AddConcurrencyLimiter(MaxConcurrentCalls, ConcurrencyQueueLimit);
             builder.AddRetry(new RetryStrategyOptions
             {
                 MaxRetryAttempts = 3,
@@ -75,7 +120,14 @@ public static class AzureOpenAIResilience
                 MaxDelay = TimeSpan.FromSeconds(2),
                 BackoffType = DelayBackoffType.Exponential,
                 UseJitter = true,
-                ShouldHandle = new PredicateBuilder().Handle<Exception>(IsTransient),
+                // A 429 is not a random transient fault — the service says when to come back. If
+                // that is longer than we are willing to wait, retrying is pure waste: it converts
+                // an instant, honest refusal into a full-budget timeout, and the game's fallback
+                // fires either way. Measured on the shared account, whose gpt-5.4-nano deployment
+                // reports `x-ratelimit-limit-requests: 1` and `retry-after: 30` — every retry
+                // there was spending nine seconds of a player's turn to be told no again.
+                ShouldHandle = args => new ValueTask<bool>(ShouldRetry(args.Outcome.Exception)),
+                DelayGenerator = args => new ValueTask<TimeSpan?>(RetryAfterOf(args.Outcome.Exception)),
             });
             builder.AddCircuitBreaker(new CircuitBreakerStrategyOptions
             {
@@ -105,8 +157,60 @@ public static class AzureOpenAIResilience
         TimeoutRejectedException => true,
         BrokenCircuitException => true,
         Azure.RequestFailedException rfe => rfe.Status >= 500 || rfe.Status == 408 || rfe.Status == 429,
+        // What the OpenAI SDK actually throws for a non-success status. Without this arm a 429
+        // from the account was classified non-transient, so neither the retry nor the breaker
+        // ever saw the one failure mode this deployment produces under load.
+        System.ClientModel.ClientResultException cre =>
+            cre.Status >= 500 || cre.Status == 408 || cre.Status == 429,
         HttpRequestException => true,
         TaskCanceledException => false, // user-initiated; not a transient fault
         _ => false,
     };
+
+    /// <summary>
+    /// Retry only a transient fault we can actually outwait. A service that asks for longer than
+    /// <see cref="MaxRetryAfter"/> is refused immediately so the caller can fall back now instead
+    /// of at the end of its budget. The circuit breaker still counts the failure, so a run of
+    /// these opens the circuit and later calls short-circuit without touching the network.
+    /// </summary>
+    private static bool ShouldRetry(Exception? ex)
+    {
+        if (ex is null || !IsTransient(ex))
+            return false;
+
+        // No Retry-After: an ordinary transient fault, so back off and try again.
+        return RawRetryAfter(ex) is not { } wait || wait <= MaxRetryAfter;
+    }
+
+    /// <summary>
+    /// The service's own <c>Retry-After</c>, capped. Null lets Polly use its exponential backoff.
+    /// </summary>
+    private static TimeSpan? RetryAfterOf(Exception? ex)
+    {
+        if (RawRetryAfter(ex) is not { } delay)
+            return null;
+
+        return delay > MaxRetryAfter ? MaxRetryAfter : delay;
+    }
+
+    /// <summary>The uncapped <c>Retry-After</c> the service supplied, if any.</summary>
+    private static TimeSpan? RawRetryAfter(Exception? ex)
+    {
+        var raw = ex switch
+        {
+            System.ClientModel.ClientResultException cre => HeaderOf(cre.GetRawResponse()),
+            _ => null,
+        };
+
+        return raw is not null
+            && double.TryParse(raw, System.Globalization.NumberStyles.Any,
+                System.Globalization.CultureInfo.InvariantCulture, out var seconds)
+            ? TimeSpan.FromSeconds(seconds)
+            : null;
+
+        static string? HeaderOf(System.ClientModel.Primitives.PipelineResponse? response)
+            => response is not null && response.Headers.TryGetValue("retry-after", out var value)
+                ? value
+                : null;
+    }
 }

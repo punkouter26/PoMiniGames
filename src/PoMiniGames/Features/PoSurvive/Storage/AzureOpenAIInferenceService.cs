@@ -117,21 +117,25 @@ public sealed class AzureOpenAIInferenceService : IInferenceService
     }
 
     /// <summary>
-    /// Bounded output plus minimal reasoning effort plus a strict schema — built once and shared,
-    /// since it never varies per call. See <see cref="AiDecisionChatOptions"/> for why all three
-    /// have to travel together.
-    /// </summary>
-    private static readonly ChatOptions DecisionOptions = AiDecisionChatOptions.ForStructuredDecision(
-        AgentDecisionSchema,
-        schemaName: "agent_decision",
-        maxOutputTokens: MaxOutputTokens,
-        schemaDescription: "One survival agent's chosen action and a short rationale.");
-
-    /// <summary>
     /// The reply contract, as a schema the service enforces rather than a sentence the model may
     /// ignore. The <c>enum</c> on <c>action</c> is the part that matters: it makes an
     /// out-of-vocabulary action impossible instead of silently coerced to Idle by the parser.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>.Clone()</c> is load-bearing: a <see cref="JsonElement"/> is a view over its
+    /// <see cref="JsonDocument"/>'s pooled buffer, so handing out the un-cloned root of a document
+    /// nobody holds throws <see cref="InvalidOperationException"/> the moment the document is
+    /// collected. Cloning detaches it onto its own buffer, which is what a static contract needs.
+    /// </para>
+    /// <para>
+    /// Declared BEFORE <see cref="DecisionOptions"/> and not after it. Static initialisers run in
+    /// textual order, and a <see cref="JsonElement"/> is a struct: with the two swapped, the
+    /// options were built from <c>default(JsonElement)</c> and the schema silently went over the
+    /// wire as <c>ValueKind.Undefined</c> — no exception, no schema, just the prose-scraping
+    /// parser back in charge.
+    /// </para>
+    /// </remarks>
     public static JsonElement AgentDecisionSchema { get; } = JsonDocument.Parse(
         """
         {
@@ -143,7 +147,18 @@ public sealed class AzureOpenAIInferenceService : IInferenceService
           "required": ["action", "thought"],
           "additionalProperties": false
         }
-        """).RootElement;
+        """).RootElement.Clone();
+
+    /// <summary>
+    /// Bounded output plus minimal reasoning effort plus a strict schema — built once and shared,
+    /// since it never varies per call. See <see cref="AiDecisionChatOptions"/> for why all three
+    /// have to travel together.
+    /// </summary>
+    private static readonly ChatOptions DecisionOptions = AiDecisionChatOptions.ForStructuredDecision(
+        AgentDecisionSchema,
+        schemaName: "agent_decision",
+        maxOutputTokens: MaxOutputTokens,
+        schemaDescription: "One survival agent's chosen action and a short rationale.");
 
     // Kept short: the schema now carries the output contract, so the prompt only has to carry the
     // role and the brevity budget. "max 12 words" alone did not hold — a schema-constrained run

@@ -220,6 +220,10 @@ public sealed class SurviveStore : ISimulationSink, IDisposable
             Outcome = e.Outcome,
             WinningTeam = e.WinningTeam,
             IsRunning = e.Outcome is null,
+            IsProviderDegraded = e.Health.IsDegraded,
+            ProviderConsecutiveFailures = e.Health.ConsecutiveFailures,
+            ModelDecisionsThisTurn = e.Health.ModelDecisionsThisTurn,
+            FallbackDecisionsThisTurn = e.Health.FallbackDecisionsThisTurn,
         };
         Emit();
 

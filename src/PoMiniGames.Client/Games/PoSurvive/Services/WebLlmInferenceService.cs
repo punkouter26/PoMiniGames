@@ -7,7 +7,7 @@ using PoShared.Simulation.Models;
 
 // GoF: Strategy — real WebLLM implementation; registered in DI only when InferenceMode != Mock
 // SOLID: SRP — responsible solely for bridging Blazor to the JS inferenceWorker.js
-public sealed class WebLlmInferenceService : IInferenceService, IAsyncDisposable
+public sealed class WebLlmInferenceService : IInferenceService, IInferenceDiagnostics, IAsyncDisposable
 {
     private readonly IJSRuntime _js;
     private readonly int _inferenceTimeoutMs;
@@ -36,7 +36,8 @@ public sealed class WebLlmInferenceService : IInferenceService, IAsyncDisposable
 
     // ── IInferenceService ────────────────────────────────────────────────────
 
-    public IDisposable BeginDiagnosticsScope(int turnNumber, string agentId, string? team)
+    /// <inheritdoc />
+    public IDisposable? BeginDiagnosticsScope(int turnNumber, string agentId, string? team)
     {
         var previous = CurrentDiagnosticsContext.Value;
         CurrentDiagnosticsContext.Value = new InferenceDiagnosticsContext(turnNumber, agentId, team);

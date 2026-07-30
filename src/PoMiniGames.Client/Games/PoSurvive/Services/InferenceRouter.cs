@@ -8,7 +8,7 @@ using PoShared.Simulation.Models;
 /// or the remote Azure OpenAI relay based on the user's current model selection.
 /// SOLID: OCP — new inference backends can be added without changing callers.
 /// </summary>
-public sealed class InferenceRouter : IInferenceService
+public sealed class InferenceRouter : IInferenceService, IInferenceDiagnostics
 {
     private readonly WebLlmInferenceService _local;
     private readonly RemoteRelayInferenceService _remote;
@@ -40,4 +40,13 @@ public sealed class InferenceRouter : IInferenceService
         PersonalityDnaDto dna,
         CancellationToken ct = default)
         => _active.InferAsync(gridJson, dna, ct);
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Forwards to the active provider. Without this the orchestrator's
+    /// <c>(_inference as WebLlmInferenceService)</c> cast never matched — DI hands it this router —
+    /// so per-agent diagnostics correlation was dead code on the local path.
+    /// </remarks>
+    public IDisposable? BeginDiagnosticsScope(int turnNumber, string agentId, string? team)
+        => (_active as IInferenceDiagnostics)?.BeginDiagnosticsScope(turnNumber, agentId, team);
 }

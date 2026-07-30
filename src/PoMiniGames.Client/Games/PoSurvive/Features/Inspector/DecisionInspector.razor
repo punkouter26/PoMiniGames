@@ -46,7 +46,23 @@
             {
                 <span class="decision-inspector__chip" title="How well this action fits the agent's personality and current pressure, scored 0-100 by the game's own heuristic (not by the model). The full ranking is under &quot;What else it considered&quot;.">FIT @CurrentActionFit</span>
             }
+            @* Provenance, stated rather than implied. The panel used to narrate a rich model-style
+               rationale over decisions the fallback table had made. *@
+            @if (InsightService.IsFallbackDecision(CurrentEntry))
+            {
+                <span class="decision-inspector__chip decision-inspector__chip--warn"
+                      data-testid="decision-source-fallback"
+                      title="@ProvenanceText">FALLBACK</span>
+            }
+            else
+            {
+                <span class="decision-inspector__chip decision-inspector__chip--info"
+                      data-testid="decision-source-model"
+                      title="@ProvenanceText">@Store.Boot.ProviderKind</span>
+            }
         </div>
+
+        <p class="decision-inspector__summary" data-testid="decision-provenance">@ProvenanceText</p>
 
         <p class="decision-inspector__summary">
             @if (Store.Simulation.SelectedAgentId is not null)
@@ -140,6 +156,9 @@
         : Store.Simulation.EventFilter;
 
     private string PlainSummary => InsightService.BuildPlainSummary(CurrentAgent, CurrentEntry);
+
+    private string ProvenanceText
+        => InsightService.DescribeProvenance(CurrentEntry, Store.Boot.ModelLabel);
 
     private bool IsChampion
         => CurrentAgent is not null && Store.Simulation.ChampionAgentId == CurrentAgent.Id;

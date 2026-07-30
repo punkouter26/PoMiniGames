@@ -40,7 +40,15 @@ public static class AiDecisionChatOptions
     /// extensible enum whose named members stop at Low; "minimal" is a newer service value, so
     /// it is constructed from the wire string rather than a member that does not exist yet.
     /// </summary>
+    /// <remarks>
+    /// OPENAI001 marks the reasoning-effort surface as evaluation-only in OpenAI 2.10.0. Suppressed
+    /// deliberately and narrowly: the wire field is what makes this game's deployment usable at all
+    /// (verified 200/6.8 s with it, hard timeout without), and the escape hatch if the type is ever
+    /// reshaped is the same one used here — a string.
+    /// </remarks>
+#pragma warning disable OPENAI001
     private static readonly ChatReasoningEffortLevel MinimalReasoning = new("minimal");
+#pragma warning restore OPENAI001
 
     /// <summary>
     /// Options for a call whose reply must satisfy <paramref name="schema"/>.
@@ -58,10 +66,15 @@ public static class AiDecisionChatOptions
         string? schemaDescription = null) => new()
         {
             MaxOutputTokens = maxOutputTokens,
-            ResponseFormat = ChatResponseFormat.ForJsonSchema(schema, schemaName, schemaDescription),
+            // Fully qualified: OpenAI.Chat has a same-named type, and `using OpenAI.Chat` is
+            // needed here for ChatCompletionOptions below.
+            ResponseFormat = Microsoft.Extensions.AI.ChatResponseFormat.ForJsonSchema(
+                schema, schemaName, schemaDescription),
+#pragma warning disable OPENAI001 // see MinimalReasoning
             RawRepresentationFactory = _ => new ChatCompletionOptions
             {
                 ReasoningEffortLevel = MinimalReasoning,
             },
+#pragma warning restore OPENAI001
         };
 }

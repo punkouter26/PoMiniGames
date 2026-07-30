@@ -19,39 +19,51 @@ public sealed class HealthEndpointTests : IClassFixture<TestWebApplicationFactor
         _client = factory.CreateClient();
     }
 
-    [Fact]
-    public async Task HealthPing_ReturnsOk()
+    /// <summary>
+    /// Every probe route the platform exposes: reachable, and carrying the JSON shape its
+    /// caller reads. Consolidated from four single-route facts (ping / root health /
+    /// liveness / mockables) into one parameterised method — they differed only in the route
+    /// and which keys they asserted, and the Integration tier is at its 50-method ceiling
+    /// (100/50/25/25 rule), so the slots were needed for the PoSurvive balance tests.
+    /// </summary>
+    [Theory]
+    // Bare reachability — the client's apiService.isAvailable() only reads the status code.
+    [InlineData("/api/health/ping", null, null, false)]
+    // Root health carries both the overall status and the per-check breakdown.
+    [InlineData("/health", "status", "checks", false)]
+    // The canonical Kubernetes / App Service liveness probe; same body as /api/health.
+    [InlineData("/api/health/liveness", "status", null, false)]
+    // §5: a well-formed JSON ARRAY of mock identifiers. Shape, not contents — the inventory
+    // depends on which game slices wired their IMockable into the test host.
+    [InlineData("/api/mockables", null, null, true)]
+    public async Task DiagnosticRoutes_ReturnOk_WithExpectedJsonShape(
+        string route, string? statusKey, string? checksKey, bool expectJsonArray)
     {
-        var response = await _client.GetAsync("/api/health/ping");
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-    }
-
-    [Fact]
-    public async Task RootHealthEndpoint_ReturnsStructuredJson()
-    {
-        var response = await _client.GetAsync("/health");
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-
-        var body = await response.Content.ReadAsStringAsync();
-        var json = JsonNode.Parse(body);
-
-        json.Should().NotBeNull();
-        json!["status"]!.GetValue<string>().Should().NotBeNullOrWhiteSpace();
-        json["checks"].Should().NotBeNull();
-    }
-
-    [Fact]
-    public async Task ApiHealthLiveness_ReturnsStructuredJson()
-    {
-        // /api/health/liveness is the canonical Kubernetes / App Service liveness
-        // probe; same body as /api/health.
-        var response = await _client.GetAsync("/api/health/liveness");
+        var response = await _client.GetAsync(route);
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var body = await response.Content.ReadAsStringAsync();
+        body.Should().NotBeNullOrWhiteSpace();
+
+        if (expectJsonArray)
+        {
+            var trimmed = body.TrimStart();
+            trimmed.Should().StartWith("[");
+            trimmed.Should().EndWith("]");
+            return;
+        }
+
+        if (statusKey is null && checksKey is null)
+            return;
+
         var json = JsonNode.Parse(body);
         json.Should().NotBeNull();
-        json!["status"]!.GetValue<string>().Should().NotBeNullOrWhiteSpace();
+
+        if (statusKey is not null)
+            json![statusKey]!.GetValue<string>().Should().NotBeNullOrWhiteSpace();
+
+        if (checksKey is not null)
+            json![checksKey].Should().NotBeNull();
     }
 
     [Fact]
@@ -103,21 +115,4 @@ public sealed class HealthEndpointTests : IClassFixture<TestWebApplicationFactor
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
-    [Fact]
-    public async Task Mockables_ReturnsOkAndValidJsonShape_WhenInDevelopment()
-    {
-        // §5: the diagnostic endpoint exists and returns a well-formed JSON array
-        // of mock identifiers. The exact contents depend on which game slices have
-        // their IMockable implementations wired into the test host — we assert the
-        // shape (array) rather than the count so the suite is not coupled to the
-        // exact mock inventory.
-        var response = await _client.GetAsync("/api/mockables");
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-
-        var body = await response.Content.ReadAsStringAsync();
-        body.Should().NotBeNullOrWhiteSpace();
-        var trimmed = body.TrimStart();
-        trimmed.Should().StartWith("[");
-        trimmed.Should().EndWith("]");
-    }
 }

@@ -40,35 +40,44 @@ public sealed class HomePageApiTests : IClassFixture<TestWebApplicationFactory>
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
-    // ── Leaderboard returns empty array when no data exists ──────────────────
+    // ── Leaderboard read contract: JSON array, content-type, limit ───────────
 
+    /// <summary>
+    /// The whole read contract for a game leaderboard in one place: 200, a JSON
+    /// content-type, a JSON array body, and a row count that honours the limit (10 by
+    /// default, or whatever <c>?limit=</c> asked for).
+    /// </summary>
+    /// <remarks>
+    /// Consolidated from four methods (empty-array / explicit-limit / default-limit /
+    /// content-type) that each re-issued the same GET and asserted one facet of the same
+    /// response. The Integration tier is at its 50-method ceiling (100/50/25/25 rule) and
+    /// the slots were needed for the PoSurvive balance tests; coverage is unchanged.
+    /// </remarks>
     [Theory]
-    [InlineData("connectfive")]
-    public async Task GetLeaderboard_ReturnsEmptyArray_WhenNoEntries(string gameId)
+    // Default limit is 10. connectfive is never written to by this suite (the round-trip
+    // tests use their own game ids), so it must still come back empty.
+    [InlineData("connectfive", null, 10, true)]
+    // An explicit limit caps the row count.
+    [InlineData("connectfive", 5, 5, true)]
+    // Second game, default limit — the contract is per-game, not per-route-instance.
+    [InlineData("tictactoe", null, 10, false)]
+    public async Task GetLeaderboard_ReturnsJsonArray_HonouringLimit(
+        string gameId, int? limit, int expectedMaxRows, bool expectEmpty)
     {
-        var entries = await _client.GetFromJsonAsync<object[]>($"/api/{gameId}/statistics/leaderboard");
-        entries.Should().NotBeNull();
-        entries.Should().BeEmpty();
-    }
+        var route = $"/api/{gameId}/statistics/leaderboard"
+                  + (limit is { } l ? $"?limit={l}" : string.Empty);
 
-    // ── Leaderboard respects the limit query parameter ───────────────────────
+        var response = await _client.GetAsync(route);
 
-    [Fact]
-    public async Task GetLeaderboard_RespectsLimitParameter()
-    {
-        var response = await _client.GetAsync("/api/connectfive/statistics/leaderboard?limit=5");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+
         var entries = await response.Content.ReadFromJsonAsync<object[]>();
         entries.Should().NotBeNull();
-        entries!.Length.Should().BeLessThanOrEqualTo(5);
-    }
+        entries!.Length.Should().BeLessThanOrEqualTo(expectedMaxRows);
 
-    [Fact]
-    public async Task GetLeaderboard_DefaultLimit_ReturnsTenOrFewer()
-    {
-        var entries = await _client.GetFromJsonAsync<object[]>("/api/tictactoe/statistics/leaderboard");
-        entries.Should().NotBeNull();
-        entries!.Length.Should().BeLessThanOrEqualTo(10);
+        if (expectEmpty)
+            entries.Should().BeEmpty();
     }
 
     // ── All game endpoints respond in parallel (simulates Home page load) ────
@@ -86,17 +95,6 @@ public sealed class HomePageApiTests : IClassFixture<TestWebApplicationFactory>
             response.StatusCode.Should().Be(HttpStatusCode.OK,
                 because: "every game leaderboard used on the Home page must be reachable");
         }
-    }
-
-    // ── Response content-type is JSON ────────────────────────────────────────
-
-    [Theory]
-    [InlineData("connectfive")]
-    [InlineData("tictactoe")]
-    public async Task GetLeaderboard_ReturnsJsonContentType(string gameId)
-    {
-        var response = await _client.GetAsync($"/api/{gameId}/statistics/leaderboard");
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
     }
 
     // ── Round-trip: save stats → player appears on leaderboard ───────────────
@@ -158,27 +156,22 @@ public sealed class HomePageApiTests : IClassFixture<TestWebApplicationFactory>
 
     // ── /api/statistics – aggregated statistics used by the home page ────────
 
+    /// <summary>Aggregated home-page statistics: reachable and served as JSON.</summary>
+    /// <remarks>
+    /// Was two facts issuing the identical GET to assert the status code and the
+    /// content-type separately. See the ceiling note on
+    /// <see cref="GetLeaderboard_ReturnsJsonArray_HonouringLimit"/>.
+    /// </remarks>
     [Fact]
-    public async Task GetAllStatistics_ReturnsOk()
+    public async Task GetAllStatistics_ReturnsJsonPayload()
     {
         var response = await _client.GetAsync("/api/statistics");
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-    }
 
-    [Fact]
-    public async Task GetAllStatistics_ReturnsJson()
-    {
-        var response = await _client.GetAsync("/api/statistics");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
     }
 
-    // ── Health ping used by apiService.isAvailable() ─────────────────────────
-
-    [Fact]
-    public async Task HealthPing_ReturnsOk_ForClientAvailabilityCheck()
-    {
-        var response = await _client.GetAsync("/api/health/ping");
-        response.StatusCode.Should().Be(HttpStatusCode.OK,
-            because: "the client uses this endpoint to decide whether the API is reachable");
-    }
+    // The client-availability ping that lived here was a verbatim duplicate of
+    // HealthEndpointTests' /api/health/ping coverage — same route, same assertion. It is
+    // now one row of that class's DiagnosticRoutes_ReturnOk_WithExpectedJsonShape theory.
 }

@@ -18,6 +18,27 @@ public sealed class DecisionInsightService
         return "info";
     }
 
+    /// <summary>
+    /// True when this entry's action came from the local fallback table rather than a provider.
+    /// </summary>
+    /// <remarks>
+    /// Everything else this service produces — the trait scores, the pressure index, the "what
+    /// else it considered" ranking — is computed here from DNA weights and keyword-matching the
+    /// thought string. That is fine as an explanation of a <em>model's</em> pick, but for a
+    /// fallback pick it explained a decision no model made: a live session showed
+    /// "FLEE 44 — favored by risk cues, low survivability and paranoid tendency" above a thought
+    /// reading "Inference timed out after 15000 ms". The inspector now says which it is.
+    /// </remarks>
+    public bool IsFallbackDecision(ConsoleEntry? entry)
+        => entry is not null && entry.Source == DecisionSource.Fallback;
+
+    /// <summary>One line naming what actually chose the action the panel is explaining.</summary>
+    public string DescribeProvenance(ConsoleEntry? entry, string providerLabel)
+        => IsFallbackDecision(entry)
+            ? "Chosen by local fallback tactics — the model did not answer for this turn. "
+              + "The breakdown below is this game's own heuristic, not the model's reasoning."
+            : $"Chosen by {providerLabel}. The breakdown below is this game's heuristic read of that choice.";
+
     // Plain-language, one-sentence "why did it do that?" summary — the hero line
     // that sits atop the Decision Inspector so a non-expert reads the intent
     // before any of the technical breakdown below it.

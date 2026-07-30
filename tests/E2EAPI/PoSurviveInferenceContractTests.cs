@@ -177,8 +177,13 @@ public sealed class PoSurviveInferenceContractTests
 
         sent.ResponseFormat.Should().BeOfType<ChatResponseFormatJson>(
             because: "a strict schema removes the prose-scraping parser's failure modes");
-        var schema = ((ChatResponseFormatJson)sent.ResponseFormat!).Schema!.Value.GetRawText();
-        schema.Should().Contain("Attack").And.Contain("Forage").And.Contain("Flee").And.Contain("Idle");
+        var json = (ChatResponseFormatJson)sent.ResponseFormat!;
+        json.SchemaName.Should().Be("agent_decision");
+        // ValueKind, not just HasValue: a JsonElement is a struct, so a schema that was never
+        // assigned travels as Undefined rather than null and no provider complains about it.
+        json.Schema!.Value.ValueKind.Should().Be(JsonValueKind.Object);
+        json.Schema.Value.GetRawText().Should()
+            .Contain("Attack").And.Contain("Forage").And.Contain("Flee").And.Contain("Idle");
 
         // The reasoning cap has no first-class ME.AI property, so it rides on the raw
         // provider options — assert on what actually goes over the wire.

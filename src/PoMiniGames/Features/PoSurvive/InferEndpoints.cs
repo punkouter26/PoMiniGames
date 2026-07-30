@@ -77,6 +77,12 @@ public static class InferEndpoints
     /// two resolvers disagreed in production: status advertised <c>gpt-4o-mini</c> (a deployment
     /// that did not exist on the account) while calls went to the Key Vault default.
     /// </para>
+    /// <para>
+    /// It also reports the full allowlist, not just the default. <c>POST /api/infer</c> has
+    /// accepted a per-request <c>ModelId</c> against <c>Inference:RemoteModelOptions</c> for as
+    /// long as the map has existed, but status never mentioned the other ids, so the picker's
+    /// cloud group could only ever hold one — on an account configured with three.
+    /// </para>
     /// </remarks>
     private static IResult GetStatus(
         IServiceProvider services,
@@ -103,7 +109,35 @@ public static class InferEndpoints
         return Results.Ok(new InferenceStatusDto(
             Available: available,
             ModelId: deployment,
-            Label: available ? $"{deployment} (cloud)" : deployment));
+            Label: available ? $"{deployment} (cloud)" : deployment,
+            Models: available ? ReadModelAllowlist(config, deployment) : null));
+    }
+
+    /// <summary>
+    /// The ids a client may name, read from the same <c>Inference:RemoteModelOptions</c> section
+    /// the relay validates against — one source, so the menu can never offer an id the relay
+    /// would reject. The resolved default is always present and always first, even when the
+    /// section omits it: it is the id every request that names nothing gets served by.
+    /// </summary>
+    private static List<InferenceModelDto> ReadModelAllowlist(IConfiguration config, string defaultDeployment)
+    {
+        var models = new List<InferenceModelDto>
+        {
+            new(defaultDeployment, $"{defaultDeployment} (default)"),
+        };
+
+        foreach (var child in config.GetSection("Inference:RemoteModelOptions").GetChildren())
+        {
+            var id = child["Id"];
+            if (string.IsNullOrWhiteSpace(id))
+                continue;
+            if (models.Any(m => string.Equals(m.Id, id, StringComparison.OrdinalIgnoreCase)))
+                continue;
+
+            models.Add(new InferenceModelDto(id, child["Label"] ?? id));
+        }
+
+        return models;
     }
 
     /// <summary>

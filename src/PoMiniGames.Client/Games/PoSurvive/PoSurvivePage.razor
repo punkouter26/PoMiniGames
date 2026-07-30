@@ -38,11 +38,15 @@
     // command bar's picker in PoSurviveLayout.
 
     // ── Demo (kiosk auto-cycle, mirrors PoCoupleQuiz demo pattern) ─────
-    // Lands on /posurvive?demo=1, bypasses Mission Control, runs a
-    // deterministic two-team match in degraded/mock mode at fast speed,
-    // and loops on post-mortem. The KioskCoordinator owns the 20-24s
-    // rotation between demo pages; this loop keeps the simulation itself
-    // playing continuously while the page is on screen.
+    // Lands on /posurvive?demo=1, runs a two-team match on the scripted
+    // provider at fast speed, and loops on post-mortem. The KioskCoordinator
+    // owns the 20-24s rotation between demo pages; this loop keeps the
+    // simulation itself playing continuously while the page is on screen.
+    //
+    // Scripted is the DEFAULT here, not the only option (2026-07-30). Picking a
+    // real model from the command bar's selector switches the demo to live
+    // inference — see OnSimStateChanged / GoLiveAsync. The reel stays free and
+    // fast until someone asks for the real thing.
     /// <summary>Route mode segment: "1player" | "demo" (?demo=1 is the legacy form).</summary>
     [Parameter] public string? Mode { get; set; }
     [SupplyParameterFromQuery(Name = "demo")] public int DemoQuery { get; set; } = 0;
@@ -51,10 +55,19 @@
     // Guards the one-shot launch on first render (demo reel or real play).
     private bool _booted;
     private bool _lastShowPostMortem;
+    private bool _liveDemo;
+    private bool _relaunchScheduled;
     private System.Threading.Timer? _demoLoopTimer;
     private const int DemoHeartbeatMs = 250;        // 4 turns/sec — fast enough for a 10-15s match
     private const int DemoRestartDelayMs = 3_500;   // how long the post-mortem stays on screen
     private const int DemoPreLaunchDelayMs = 500;   // brief gap so the reset+launch pair is visible
+
+    /// <summary>
+    /// Turn interval once the demo is running on a real model. 250 ms is a scripted-only speed:
+    /// a relay round trip measures 1.0-2.6 s at MaxInferredAgentsPerTurn=1, so a heartbeat that
+    /// fast would spend the whole match on standing orders and show none of the model's work.
+    /// </summary>
+    private const int LiveDemoHeartbeatMs = 1_200;
 
     protected override void OnInitialized()
     {
@@ -66,6 +79,11 @@
             // Register the demo with the KioskCoordinator so the on-screen
             // countdown / pause / skip / exit controls pick this game up.
             Kiosk.SetCurrent("posurvive-demo");
+
+            // Before ANY render, so it lands ahead of the layout's own
+            // EnsureStartedAsync: probe the relay to populate the model picker, but never
+            // start a WebLLM download on an attract screen.
+            Bootstrapper.UseKioskProfile();
         }
     }
 
@@ -90,16 +108,14 @@
             GameStats.RecordPlay("posurvive");
         }
 
-        if (_isDemo)
-        {
-            _lastShowPostMortem = Store.Simulation.ShowPostMortem;
-            Store.Changed += OnSimStateChanged;
-            _ = InvokeAsync(BootDemoAsync);
-        }
-        else
-        {
-            _ = InvokeAsync(BootArenaAsync);
-        }
+        // Both routes subscribe now: the demo needs the post-mortem → relaunch loop, and BOTH
+        // need to notice a model picked from the command bar (the selector is on the bar in
+        // every mode, so the restart-on-pick rule has to live in one place for both).
+        _lastShowPostMortem = Store.Simulation.ShowPostMortem;
+        Store.Changed += OnSimStateChanged;
+        Store.ProviderPickedByUser += OnProviderPickedByUser;
+
+        _ = InvokeAsync(_isDemo ? BootDemoAsync : BootArenaAsync);
     }
 
     // Real play now auto-launches, replacing the Mission Control screen + the
@@ -128,8 +144,7 @@
         }
 
         var config = await LaunchService.BuildConfigAsync();
-        Store.StartSimulation(
-            config, Store.Boot.IsMockProvider || Store.Boot.IsDegradedMode);
+        Store.StartSimulation(config);
     }
 
     private bool CanLaunchSimulation
@@ -137,43 +152,65 @@
 
     // ── Demo drivers ───────────────────────────────────────────────────
     // BootDemoAsync runs once when the demo page first renders. It:
-    //   1. forces the BootState to "ready" via the degraded-mode path
-    //      (no model download, mock inference; matches what the live
-    //      degraded-mode play would do),
+    //   1. runs the bootstrap under the kiosk profile — relay probed so the
+    //      model selector is populated, scripted provider selected, no
+    //      download started,
     //   2. cranks the heartbeat to 250ms so a match resolves in ~10-15s,
-    //   3. starts the simulation with a small deterministic config
-    //      (TeamSize 2, generous food spawn).
-    // The state-change subscription (OnSimStateChanged) handles the
-    // post-mortem → reset → re-launch cycle.
+    //   3. starts the simulation on the stock config.
+    // The state-change subscription (OnSimStateChanged) handles both the
+    // post-mortem → reset → re-launch cycle and the switch to live inference
+    // when the player picks a model.
     private async Task BootDemoAsync()
     {
         if (!_isDemo) return;
 
-        // Force degraded mode so the layout renders the grid instead of
-        // Mission Control. The store treats degraded as ready.
-        Store.ContinueDegradedMode();
+        // UseKioskProfile() ran in OnInitialized, so this settles on the scripted provider
+        // (ready, no download) after one cheap status probe. ContinueDegradedMode() used to
+        // stand in for this, which meant the reel always claimed the AI had FAILED — and
+        // pinned it to the fallback table's "standing by" filler instead of the scripted
+        // per-trait prose this mode is written around.
+        await Bootstrapper.EnsureStartedAsync();
 
-        // Crank speed — mock inference + tiny grid = much faster than the
+        // Crank speed — scripted inference + tiny grid = much faster than the
         // default 900ms/turn. Keeps the demo snappy on the kiosk reel.
         Store.SetSpeed(DemoHeartbeatMs);
 
         await Task.Yield();
 
         var config = await LaunchService.BuildConfigAsync();
-        Store.StartSimulation(config, isMockProvider: true);
+        Store.StartSimulation(config);
     }
 
-    // State-change handler: when the simulation finishes and the
-    // post-mortem overlay appears, schedule a reset + re-launch after a
-    // short pause so the kiosk viewer sees the narrative + outcome, then
-    // a fresh match starts. We track the previous value of ShowPostMortem
-    // so the timer only fires on the false→true edge transition (not on
-    // every state change while the overlay is up).
+    // State-change handler, watching two edges:
+    //
+    //   ShowPostMortem false→true — schedule a reset + re-launch after a short pause so the
+    //   kiosk viewer sees the narrative + outcome, then a fresh match starts. Suppressed once
+    //   the demo is live: a real match costs quota and minutes, so it plays once.
+    //
+    //   ProviderKind scripted→LOCAL/REMOTE — the player picked a model from the command bar.
+    //   Relaunch on it (GoLiveAsync). The reverse edge hands the reel back.
+    //
+    // We track the previous values so each fires on the transition only, not on every state
+    // change while the condition holds.
     private void OnSimStateChanged()
     {
         if (!_isDemo) return;
+
+        var isLiveProvider = Store.Boot.IsReady
+            && !Store.Boot.IsMockProvider
+            && !Store.Boot.IsDegradedMode
+            && Store.Boot.ProviderKind is "LOCAL" or "REMOTE";
+
+        if (isLiveProvider != _liveDemo && !_relaunchScheduled)
+        {
+            // Deferred, never inline: this handler runs inside Store.Emit(), and the relaunch
+            // emits again. InvokeAsync also gets us onto the renderer's context.
+            _relaunchScheduled = true;
+            _ = InvokeAsync(() => SwitchDemoModeAsync(goLive: isLiveProvider));
+        }
+
         var showPostMortem = Store.Simulation.ShowPostMortem;
-        if (showPostMortem && !_lastShowPostMortem)
+        if (showPostMortem && !_lastShowPostMortem && !_liveDemo)
         {
             _demoLoopTimer?.Dispose();
             _demoLoopTimer = new System.Threading.Timer(
@@ -182,12 +219,54 @@
                 DemoRestartDelayMs,
                 System.Threading.Timeout.Infinite);
         }
+
         _lastShowPostMortem = showPostMortem;
+    }
+
+    /// <summary>
+    /// Moves the demo between its two modes and restarts the battle on the new provider.
+    ///
+    /// Live: one match, at a heartbeat a model can actually answer inside, with the kiosk
+    /// rotation paused so the page isn't swapped out mid-thought. Reel: back to the fast
+    /// scripted loop and the rotation resumes.
+    /// </summary>
+    private async Task SwitchDemoModeAsync(bool goLive)
+    {
+        try
+        {
+            if (!_isDemo) return;
+
+            _liveDemo = goLive;
+            _demoLoopTimer?.Dispose();
+            _demoLoopTimer = null;
+
+            if (goLive)
+            {
+                Kiosk.Pause();
+            }
+            else
+            {
+                Kiosk.Resume();
+            }
+
+            Store.ResetSimulation();
+            Store.SetSpeed(goLive ? LiveDemoHeartbeatMs : DemoHeartbeatMs);
+
+            await Task.Delay(DemoPreLaunchDelayMs);
+            if (!_isDemo) return;
+
+            var config = await LaunchService.BuildConfigAsync();
+            Store.StartSimulation(config);
+        }
+        finally
+        {
+            _relaunchScheduled = false;
+        }
     }
 
     private async Task DemoRestartAsync()
     {
-        if (!_isDemo) return;
+        if (!_isDemo || _liveDemo) return;
         _demoLoopTimer?.Dispose();
         _demoLoopTimer = null;
 
@@ -197,10 +276,10 @@
         Store.SetSpeed(DemoHeartbeatMs);
 
         await Task.Delay(DemoPreLaunchDelayMs);
-        if (!_isDemo) return;
+        if (!_isDemo || _liveDemo) return;
 
         var config = await LaunchService.BuildConfigAsync();
-        Store.StartSimulation(config, isMockProvider: true);
+        Store.StartSimulation(config);
     }
 
     public override void Dispose()

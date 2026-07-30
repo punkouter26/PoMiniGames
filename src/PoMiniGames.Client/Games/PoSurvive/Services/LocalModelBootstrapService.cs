@@ -89,5 +89,14 @@ public sealed record LocalModelOption(string Id, string Label, string Descriptio
 /// Unified model option shown in the model picker.
 /// <c>IsRemote = false</c> → loaded via WebLLM in-browser.
 /// <c>IsRemote = true</c>  → relayed through POST /api/infer to Azure OpenAI Foundry.
+/// <c>IsScripted = true</c> → no model at all; <see cref="MockInferenceService"/> answers inline.
+/// The scripted entry is what makes the picker closed: every other option costs either a
+/// download or cloud quota, and without a way back to "neither" the only route to a free,
+/// instant battle was a bootstrap failure.
 /// </summary>
-public sealed record ModelOption(string Id, string Label, string Description, bool IsRemote);
+public sealed record ModelOption(
+    string Id,
+    string Label,
+    string Description,
+    bool IsRemote,
+    bool IsScripted = false);

@@ -50,6 +50,16 @@ public sealed class InferenceBootstrapper : IAsyncDisposable
 
     private DotNetObjectReference<InferenceBootstrapper>? _selfRef;
     private bool _started;
+    private bool _kioskProfile;
+
+    /// <summary>
+    /// Id of the scripted option. Never sent to a relay and never handed to WebLLM — the
+    /// picker and <see cref="SwitchToAsync"/> both branch on <see cref="ModelOption.IsScripted"/>
+    /// before the id is ever used as one.
+    /// </summary>
+    public const string ScriptedModelId = "scripted";
+
+    private const string ScriptedLabel = "Scripted (no AI)";
 
     public InferenceBootstrapper(
         SurviveStore store,
@@ -80,26 +90,56 @@ public sealed class InferenceBootstrapper : IAsyncDisposable
     public InferenceStatusDto? CloudStatus { get; private set; }
 
     /// <summary>
-    /// Model options that are actually usable right now: every configured in-browser model,
-    /// plus the server's deployment when the relay is up.
+    /// Model options that are actually usable right now: every Azure deployment the relay will
+    /// serve, every configured in-browser model, and the scripted stand-in.
+    ///
+    /// The cloud half comes from <see cref="InferenceStatusDto.Models"/> — the server's own
+    /// allowlist — rather than from anything the WASM app configures. That direction is the whole
+    /// point of the status endpoint: a client-side list is how the picker once ended up offering a
+    /// single id the relay refused to serve. When the server reports no allowlist we still offer
+    /// its default deployment, which is the id a request naming nothing is served by.
     /// </summary>
     public List<ModelOption> AvailableModels()
     {
-        var options = _models.ReadLocalModelOptions()
-            .Select(l => new ModelOption(l.Id, l.Label, l.Description, IsRemote: false))
-            .ToList();
+        var options = new List<ModelOption>();
 
         if (CloudStatus is { Available: true } cloud)
         {
-            options.Add(new ModelOption(
-                cloud.ModelId,
-                cloud.Label,
-                "Served by the host's inference relay — nothing to download.",
-                IsRemote: true));
+            var remote = cloud.Models is { Count: > 0 }
+                ? cloud.Models
+                : [new InferenceModelDto(cloud.ModelId, cloud.Label)];
+
+            options.AddRange(remote.Select(m => new ModelOption(
+                m.Id,
+                m.Label,
+                "Azure AI Foundry, via the host's relay — nothing to download.",
+                IsRemote: true)));
         }
+
+        options.AddRange(_models.ReadLocalModelOptions()
+            .Select(l => new ModelOption(l.Id, l.Label, l.Description, IsRemote: false)));
+
+        options.Add(new ModelOption(
+            ScriptedModelId,
+            ScriptedLabel,
+            "Deterministic scripted tactics. Instant, offline, and costs nothing.",
+            IsRemote: false,
+            IsScripted: true));
 
         return options;
     }
+
+    /// <summary>
+    /// Boot without ever starting a model download: probe the relay so the picker knows what is
+    /// on offer, then settle on the scripted provider and let the player upgrade from the bar.
+    ///
+    /// The kiosk reel needs this. The layout calls <see cref="EnsureStartedAsync"/> on every
+    /// route including <c>/posurvive/demo</c>, so an attract screen with no relay would quietly
+    /// begin pulling a multi-hundred-MB model from a CDN — the exact cost the demo's scripted
+    /// default exists to avoid. Must be called before the first <see cref="EnsureStartedAsync"/>;
+    /// the demo page sets it in <c>OnInitialized</c>, which precedes every render.
+    /// </summary>
+    public void UseKioskProfile() => _kioskProfile = true;
 
     /// <summary>
     /// Switches provider from the Advanced drawer. Handles the local case properly: the
@@ -111,19 +151,24 @@ public sealed class InferenceBootstrapper : IAsyncDisposable
     {
         _store.ResetInferenceBootstrap();
 
+        // Scripted is a destination, not a failure — and in a mock build (Inference:UseMock)
+        // it is the only destination there is, whichever row the player clicked. Saying so
+        // beats labelling the session REMOTE and never calling a relay.
+        if (option.IsScripted || _inference is MockInferenceService)
+        {
+            _store.ScriptedProviderSelected(
+                option.IsScripted ? ScriptedModelId : option.Id,
+                option.IsScripted ? ScriptedLabel : $"{option.Label} · scripted stand-in");
+            MarkReady();
+            return;
+        }
+
         if (option.IsRemote)
         {
             if (_services.GetService<InferenceRouter>() is { } router)
                 router.UseRemote(option.Id);
 
             _store.InferenceConfigured("REMOTE", option.Id, option.Label);
-            MarkReady();
-            return;
-        }
-
-        if (_inference is MockInferenceService)
-        {
-            _store.InferenceConfigured("MOCK", option.Id, option.Label);
             MarkReady();
             return;
         }
@@ -184,7 +229,18 @@ public sealed class InferenceBootstrapper : IAsyncDisposable
         if (_inference is MockInferenceService)
         {
             _store.GpuProbeCompleted("MOCK PROVIDER", isMockProvider: true);
-            _store.InferenceConfigured("MOCK", "mock", "Scripted mock");
+            _store.ScriptedProviderSelected(ScriptedModelId, ScriptedLabel);
+            MarkReady();
+            return;
+        }
+
+        // Kiosk: probe so the picker is populated, then stop. No relay activation and no
+        // download — the reel starts scripted and the player opts into a model from the bar.
+        if (_kioskProfile)
+        {
+            await ProbeCloudStatusAsync();
+            _store.GpuProbeCompleted("SCRIPTED", isMockProvider: true);
+            _store.ScriptedProviderSelected(ScriptedModelId, ScriptedLabel);
             MarkReady();
             return;
         }
@@ -195,22 +251,29 @@ public sealed class InferenceBootstrapper : IAsyncDisposable
         await StartLocalModelAsync();
     }
 
-    private async Task<bool> TryUseCloudRelayAsync()
+    /// <summary>
+    /// Asks the server about its relay and records the answer in <see cref="CloudStatus"/>.
+    /// Never throws and never activates anything — offline, a 401 before sign-in, or a missing
+    /// route all read as "no cloud", which the in-browser model does not need anyway.
+    /// </summary>
+    private async Task<InferenceStatusDto?> ProbeCloudStatusAsync()
     {
-        InferenceStatusDto? status;
         try
         {
-            status = await _http.GetFromJsonAsync(
+            CloudStatus = await _http.GetFromJsonAsync(
                 "api/infer/status", ApiJsonContext.Default.InferenceStatusDto);
         }
         catch (Exception)
         {
-            // Offline, 401 before sign-in, or the route genuinely absent. Not fatal: the
-            // in-browser model needs no server at all.
-            return false;
+            CloudStatus = null;
         }
 
-        CloudStatus = status;
+        return CloudStatus;
+    }
+
+    private async Task<bool> TryUseCloudRelayAsync()
+    {
+        var status = await ProbeCloudStatusAsync();
 
         if (status is not { Available: true } || string.IsNullOrWhiteSpace(status.ModelId))
             return false;

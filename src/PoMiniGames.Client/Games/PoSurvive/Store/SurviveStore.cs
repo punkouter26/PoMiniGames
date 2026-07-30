@@ -35,6 +35,20 @@ public sealed class SurviveStore : ISimulationSink, IDisposable
     /// <summary>Raised after any state transition.</summary>
     public event Action? Changed;
 
+    /// <summary>
+    /// Raised when the player picks a provider from the model selector — never on boot, and
+    /// never when a late model download completes.
+    ///
+    /// The distinction is the whole point: a deliberate pick should restart the battle on the
+    /// new model, while a bootstrap settling in must not yank a running match out from under
+    /// the viewer. <see cref="Boot"/> alone cannot tell the two apart, so the selector says so
+    /// explicitly and the page owns what happens next.
+    /// </summary>
+    public event Action? ProviderPickedByUser;
+
+    /// <summary>Announces a pick from the model selector. See <see cref="ProviderPickedByUser"/>.</summary>
+    public void NotifyProviderPickedByUser() => ProviderPickedByUser?.Invoke();
+
     public SurviveStore(SimulationOrchestrator orchestrator, AudioCues audio, SessionLogService log)
     {
         _orchestrator = orchestrator;
@@ -53,9 +67,15 @@ public sealed class SurviveStore : ISimulationSink, IDisposable
     /// orchestrator used to start every timer at <c>config.HeartbeatMaxMs</c>, so the bar
     /// highlighted "Balanced" (900 ms) while the heartbeat actually ran at 2000 ms, and the
     /// kiosk demo's 250 ms request was discarded.
+    ///
+    /// The provider mode is read from <see cref="Boot"/> rather than passed in. Callers used to
+    /// supply it, and each one composed the two flags its own way — the demo page hard-coded
+    /// <c>true</c>, which is what pinned the kiosk to scripted tactics no matter which model the
+    /// player selected. The store already holds the answer; there is nothing for a caller to
+    /// decide.
     /// </summary>
-    public void StartSimulation(SimulationConfigDto config, bool isMockProvider)
-        => _orchestrator.Initialize(config, isMockProvider, Simulation.SpeedMs);
+    public void StartSimulation(SimulationConfigDto config)
+        => _orchestrator.Initialize(config, Boot.IsMockProvider, Boot.IsDegradedMode, Simulation.SpeedMs);
 
     public void ResetSimulation()
     {
@@ -159,7 +179,36 @@ public sealed class SurviveStore : ISimulationSink, IDisposable
         Emit();
     }
 
-    /// <summary>Clears readiness/error/progress so a newly selected model can re-initialise.</summary>
+    /// <summary>
+    /// Selects the scripted provider: no download, no network, no quota. Distinct from
+    /// <see cref="ContinueDegradedMode"/>, which means "a real provider was wanted and could not
+    /// be had" — this one is a choice, so it clears the degraded and error flags rather than
+    /// setting them, and the picker can leave it again.
+    /// </summary>
+    public void ScriptedProviderSelected(string modelId, string modelLabel)
+    {
+        Boot = Boot with
+        {
+            ProviderKind = "MOCK",
+            ModelId = modelId,
+            ModelLabel = modelLabel,
+            IsMockProvider = true,
+            IsDegradedMode = false,
+            IsReady = true,
+            HasInferenceInitError = false,
+            InferenceInitError = null,
+            BytesLoaded = 0,
+            TotalBytes = 0,
+        };
+        Emit();
+    }
+
+    /// <summary>
+    /// Clears readiness/error/progress so a newly selected model can re-initialise.
+    /// <c>IsMockProvider</c> clears with the rest: it used to survive a switch, so picking a
+    /// real model after the scripted one left the session flagged mock, which is the flag the
+    /// orchestrator reads to decide whether to call the provider at all.
+    /// </summary>
     public void ResetInferenceBootstrap()
     {
         Boot = Boot with
@@ -168,6 +217,7 @@ public sealed class SurviveStore : ISimulationSink, IDisposable
             TotalBytes = 0,
             IsReady = false,
             IsDegradedMode = false,
+            IsMockProvider = false,
             HasInferenceInitError = false,
             InferenceInitError = null,
         };

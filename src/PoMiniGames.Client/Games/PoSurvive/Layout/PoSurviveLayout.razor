@@ -172,6 +172,69 @@
         </button>
     }
 
+    @* ── AI model picker, primary ──────────────────────────────────────────
+       Promoted out of the Advanced drawer (2026-07-30). Which intelligence is
+       driving the agents is the single most consequential choice on this page —
+       Azure deployment, in-browser model, or no model at all — and it sat two
+       clicks deep behind a gear icon, next to the log-export button.
+
+       The Azure group comes from the server's own allowlist via
+       GET /api/infer/status, never from client config: a client-side list is how
+       the picker once offered a single id the relay refused to serve. *@
+    <div class="sv-model" data-testid="model-picker">
+        <span class="sv-model__chip @InferenceIndicatorClass"
+              data-testid="inference-indicator"
+              title="Model ID: @Store.Boot.ModelId">
+            @Store.Boot.ProviderKind
+        </span>
+        <select id="toolbar-model-select"
+                class="sv-model__select"
+                value="@ToolbarSelectedModelId"
+                @onchange="OnToolbarModelChanged"
+                disabled="@(ToolbarModelOptions.Count == 0 || _switchingModel)"
+                data-testid="toolbar-model-select"
+                aria-label="AI model"
+                title="Which AI decides the agents' moves">
+            @if (ToolbarModelOptions.Any(o => o.IsRemote))
+            {
+                <optgroup label="Azure (cloud)">
+                    @foreach (var option in ToolbarModelOptions.Where(o => o.IsRemote))
+                    {
+                        <option value="@option.Id" title="@option.Description">@option.Label</option>
+                    }
+                </optgroup>
+            }
+            @if (ToolbarModelOptions.Any(o => !o.IsRemote && !o.IsScripted))
+            {
+                <optgroup label="In-browser (local)">
+                    @foreach (var option in ToolbarModelOptions.Where(o => !o.IsRemote && !o.IsScripted))
+                    {
+                        <option value="@option.Id" title="@option.Description">@option.Label ↓</option>
+                    }
+                </optgroup>
+            }
+            @if (ToolbarModelOptions.Any(o => o.IsScripted))
+            {
+                <optgroup label="No model">
+                    @foreach (var option in ToolbarModelOptions.Where(o => o.IsScripted))
+                    {
+                        <option value="@option.Id" title="@option.Description">@option.Label</option>
+                    }
+                </optgroup>
+            }
+        </select>
+        @* One line of live feedback in the one place the choice was made: a WebLLM pick is a
+           real download, and the picker used to give no sign it had started. *@
+        @if (_switchingModel)
+        {
+            <span class="sv-model__note" data-testid="model-switch-note">switching…</span>
+        }
+        else if (ModelDownloadPercent is { } percent)
+        {
+            <span class="sv-model__note" data-testid="model-download-note">downloading @percent%</span>
+        }
+    </div>
+
     @* ── Speed presets, primary (raw ms lives in Advanced) ── *@
     <div class="sv-speed" role="group" aria-label="Playback speed">
         <button class="sv-chip @(Store.Simulation.SpeedMs <= 400 ? "is-active" : string.Empty)"
@@ -214,43 +277,16 @@
     }
 
     <div class="sv-bar__tools">
-        @* ── Advanced drawer: model, raw speed, log export, contrast ── *@
+        @* ── Advanced drawer: raw speed, log export, contrast ──
+           The model <select> moved to the bar itself; what stays here is the detail
+           line about whichever provider is active. *@
         <details class="sv-advanced">
-            <summary class="sv-advanced__summary" title="Model, speed, export, accessibility"><Icon Name="gear" Size="13" /> Advanced</summary>
+            <summary class="sv-advanced__summary" title="Speed, export, accessibility"><Icon Name="gear" Size="13" /> Advanced</summary>
             <div class="sv-advanced__panel">
                 <span class="sv-advanced__provider @InferenceIndicatorClass"
-                      data-testid="inference-indicator"
                       title="Model ID: @Store.Boot.ModelId">
                     @Store.Boot.ProviderKind · @Store.Boot.ModelLabel
                 </span>
-
-                <label class="sv-advanced__label" for="toolbar-model-select">AI model</label>
-                <select id="toolbar-model-select"
-                        class="sv-advanced__select"
-                        value="@ToolbarSelectedModelId"
-                        @onchange="OnToolbarModelChanged"
-                        disabled="@(ToolbarModelOptions.Count == 0 || Store.Simulation.IsRunning || _switchingModel)"
-                        data-testid="toolbar-model-select"
-                        title="Switch between local (in-browser) and remote (cloud) inference models">
-                    @if (ToolbarModelOptions.Any(o => !o.IsRemote))
-                    {
-                        <optgroup label="In-browser (local)">
-                            @foreach (var option in ToolbarModelOptions.Where(o => !o.IsRemote))
-                            {
-                                <option value="@option.Id">@option.Label</option>
-                            }
-                        </optgroup>
-                    }
-                    @if (ToolbarModelOptions.Any(o => o.IsRemote))
-                    {
-                        <optgroup label="Cloud (remote)">
-                            @foreach (var option in ToolbarModelOptions.Where(o => o.IsRemote))
-                            {
-                                <option value="@option.Id">@option.Label</option>
-                            }
-                        </optgroup>
-                    }
-                </select>
 
                 <label class="sv-advanced__label" for="speed-range">Turn speed</label>
                 <div class="sv-advanced__row">
@@ -743,7 +779,7 @@
     {
         var config = await LaunchService.BuildConfigAsync();
 
-        Store.StartSimulation(config, Store.Boot.IsMockProvider || Store.Boot.IsDegradedMode);
+        Store.StartSimulation(config);
     }
 
     private void OnSpeedChange(ChangeEventArgs e)

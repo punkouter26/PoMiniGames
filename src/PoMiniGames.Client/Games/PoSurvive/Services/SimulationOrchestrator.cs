@@ -33,6 +33,16 @@ public sealed class SimulationOrchestrator : IDisposable
     public ISimulationSink? Sink { get; set; }
 
     private readonly IInferenceService _inference;
+
+    /// <summary>
+    /// The scripted provider, always available regardless of which service <see cref="_inference"/>
+    /// resolved to. Injected as a concrete type on purpose: the scripted branch below used to ask
+    /// <c>_inference is MockInferenceService</c>, which is false in every build that isn't
+    /// <c>Inference:UseMock</c> — so the one mode whose whole point is readable per-trait prose
+    /// silently ran the trait-hash fallback table instead.
+    /// </summary>
+    private readonly MockInferenceService _scripted;
+
     private readonly GridService _gridSvc;
     private readonly SimulationEngine _engine;
     private readonly NarrativeService _narrative;
@@ -46,7 +56,8 @@ public sealed class SimulationOrchestrator : IDisposable
     private DateTimeOffset _startedAt;
     private int _turn;
     private int _inferenceRoundRobinOffset;
-    private bool _isMock;
+    private bool _isScripted;
+    private bool _isDegraded;
     private readonly Random _rng = new();
 
     /// <summary>
@@ -93,12 +104,14 @@ public sealed class SimulationOrchestrator : IDisposable
 
     public SimulationOrchestrator(
         IInferenceService inference,
+        MockInferenceService scripted,
         GridService gridSvc,
         SimulationEngine engine,
         NarrativeService narrative,
         EvolutionClientService evolutionClient)
     {
         _inference = inference;
+        _scripted = scripted;
         _gridSvc = gridSvc;
         _engine = engine;
         _narrative = narrative;
@@ -110,6 +123,15 @@ public sealed class SimulationOrchestrator : IDisposable
     /// <summary>
     /// Builds the grid, places agents, and starts the heartbeat timer.
     /// </summary>
+    /// <param name="isScripted">
+    /// The player chose the scripted provider (or the build has no other): decisions come from
+    /// <see cref="MockInferenceService"/>, inline and free.
+    /// </param>
+    /// <param name="isDegraded">
+    /// A real provider was wanted and could not be brought up: decisions come from the trait-hash
+    /// fallback table, and the UI says so. Split from <paramref name="isScripted"/> because the
+    /// two arrived here as one flag and the branch could only serve one of them correctly.
+    /// </param>
     /// <param name="initialSpeedMs">
     /// Turn interval to run at. Optional: null keeps whatever the last <see cref="SetSpeed"/>
     /// asked for. This parameter exists because the old code started the timer at
@@ -117,14 +139,15 @@ public sealed class SimulationOrchestrator : IDisposable
     /// the "Balanced" chip rendered active while the sim ticked at the slowest setting, and
     /// the kiosk demo's 250 ms request was dropped entirely.
     /// </param>
-    public void Initialize(SimulationConfigDto configDto, bool isMockProvider, int? initialSpeedMs = null)
+    public void Initialize(SimulationConfigDto configDto, bool isScripted, bool isDegraded, int? initialSpeedMs = null)
     {
         _config = MapConfig(configDto);
         _sessionId = Guid.NewGuid();
         _startedAt = DateTimeOffset.UtcNow;
         _turn = 0;
         _inferenceRoundRobinOffset = 0;
-        _isMock = isMockProvider;
+        _isScripted = isScripted;
+        _isDegraded = isDegraded;
         _sessionLog.Clear();
         _deathTurn.Clear();
         _decisionSource.Clear();
@@ -158,7 +181,9 @@ public sealed class SimulationOrchestrator : IDisposable
             Agents: MapAgents(),
             Rocks: rocks,
             Config: configDto,
-            IsMockProvider: isMockProvider));
+            // One flag downstream: "no live model is deciding this battle", which is what the
+            // ⚠ banner and the turn-zero stall watchdog both key off.
+            IsMockProvider: isScripted || isDegraded));
 
         StartTimer(_pendingIntervalMs);
     }
@@ -401,32 +426,35 @@ public sealed class SimulationOrchestrator : IDisposable
 
         var turnBudgetMs = Math.Clamp(configuredTimeoutMs, MinTurnInferenceBudgetMs, MaxTurnInferenceBudgetMs);
 
-        // ── Mock / degraded: resolved inline, no I/O, no budget to spend ──────────
-        if (_isMock)
+        // ── Scripted / degraded: resolved inline, no I/O, no budget to spend ──────────
+        if (_isScripted || _isDegraded)
         {
             foreach (var agent in agentsToInfer)
             {
-                // Two very different situations arrive here as one flag.
+                // Two very different situations, now told apart by the caller rather than by
+                // sniffing the registered service.
                 //
-                // A registered MockInferenceService means the app was deliberately built
-                // without a real provider (Inference:UseMock). That service is synchronous,
-                // deterministic and scripted per dominant trait — exactly what this branch
-                // wants — yet it was never once invoked, because this short-circuit sat in
-                // front of it and substituted the trait-hash table. Every agent's "thought"
-                // read "Inference mock. Standing by."
+                // Scripted is a choice — the player picked "Scripted (no AI)", or the build has
+                // no real provider (Inference:UseMock). MockInferenceService is synchronous,
+                // deterministic and written per dominant trait, which is exactly what this
+                // branch wants. It used to be unreachable outside a mock build: the test was
+                // `_inference is MockInferenceService`, and outside that build _inference is the
+                // router, so every scripted battle silently ran the fallback table and each
+                // agent's "thought" read "Inference mock. Standing by."
                 //
-                // Degraded mode is the other case: a real provider exists but could not be
-                // brought up. Scripted prose would misrepresent that, so it keeps the
-                // fallback table and the honest wording.
-                if (_inference is MockInferenceService scripted)
+                // Degraded is the other case: a real provider was wanted and could not be
+                // brought up. Scripted prose would misrepresent that, so it keeps the fallback
+                // table and the honest wording.
+                if (_isScripted)
                 {
-                    var mockResult = await scripted.InferAsync(SerialiseLocalGrid(agent, 3), ToDna(agent), CancellationToken.None);
-                    agent.LastThought = mockResult.Thought;
-                    dict[agent.Id] = Enum.TryParse<AgentAction>(mockResult.Action, true, out var mockAction)
-                        ? mockAction
+                    var scriptedResult = await _scripted.InferAsync(
+                        SerialiseLocalGrid(agent, 3), ToDna(agent), CancellationToken.None);
+                    agent.LastThought = scriptedResult.Thought;
+                    dict[agent.Id] = Enum.TryParse<AgentAction>(scriptedResult.Action, true, out var scriptedAction)
+                        ? scriptedAction
                         : AgentAction.Idle;
-                    // The scripted mock IS the configured provider in this mode, so its picks are
-                    // that provider's — not the fallback table's.
+                    // The scripted provider IS the configured provider in this mode, so its picks
+                    // are that provider's — not the fallback table's.
                     _decisionSource[agent.Id] = DecisionSource.Model;
                     continue;
                 }

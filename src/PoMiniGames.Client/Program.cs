@@ -147,6 +147,14 @@ builder.Services.AddScoped<EvolutionClientService>();
 // calls InitModelAsync / BootReady, which had no caller at all before.
 builder.Services.AddScoped<InferenceBootstrapper>();
 
+// The scripted provider, registered as itself in every build — not only when it is THE
+// provider. The orchestrator's scripted branch used to test `_inference is MockInferenceService`,
+// which outside a mock build is an InferenceRouter, so it always missed and every scripted
+// battle fell through to the trait-hash table's "standing by" filler. The picker's
+// "Scripted (no AI)" option now resolves this concrete type instead of guessing from the
+// IInferenceService registration.
+builder.Services.AddSingleton<MockInferenceService>();
+
 // Inference service. "Inference:UseMock" defaults to true to avoid a multi-GB model
 // download; set it false to activate the real WebLLM (local) + Azure relay (remote) router.
 var useMock = !bool.TryParse(builder.Configuration["Inference:UseMock"], out var _b0) || _b0;
@@ -157,7 +165,7 @@ if (useMock)
     // http://localhost:0 — two deliberately unusable children, constructed only so the
     // layout's `@inject InferenceRouter` would resolve. The layout now asks for the
     // router optionally (GetService), which is what "may not exist" actually means.
-    builder.Services.AddSingleton<IInferenceService, MockInferenceService>();
+    builder.Services.AddSingleton<IInferenceService>(sp => sp.GetRequiredService<MockInferenceService>());
 }
 else
 {

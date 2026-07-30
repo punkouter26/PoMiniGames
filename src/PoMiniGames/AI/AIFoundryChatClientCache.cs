@@ -48,4 +48,22 @@ public sealed class AIFoundryChatClientCache
         var chat = Resolve(gameKey);
         return chat?.AsIChatClient();
     }
+
+    /// <summary>
+    /// Resolves a client for an explicit <b>deployment name</b> rather than a game key, for the
+    /// per-request model selection <c>/api/infer</c> exposes. Callers must have validated the name
+    /// against a server-side allowlist first — this method does not.
+    /// </summary>
+    /// <remarks>
+    /// Without this, per-request selection was impossible: the game's <see cref="IChatClient"/> is
+    /// bound to one deployment at construction, so <c>InferWithModelAsync</c> logged the requested
+    /// id and answered from the default anyway.
+    /// </remarks>
+    public IChatClient? ResolveDeploymentAsIChatClient(string deployment)
+    {
+        var foundry = _factory.Client;
+        if (foundry is null || string.IsNullOrWhiteSpace(deployment)) return null;
+
+        return _cache.GetOrAdd(deployment, foundry.GetChatClient(deployment)).AsIChatClient();
+    }
 }

@@ -31,16 +31,29 @@ public static class PoSurviveServiceExtensions
                 // No API key required (AAD bearer via DefaultAzureCredential on the
                 // Web App's system-assigned MI). The PoSurvive deployment is
                 // resolved through AIFoundryOptions.Deployments["survive"].
+                //
+                // The chat client comes from the keyed registration rather than straight out of
+                // AIFoundryChatClientCache, which is what puts the resilience pipeline and the
+                // usage/health telemetry in the call path — both were previously bypassed
+                // entirely (the pipeline had no consumers at all).
+                services.AddGameChatClient(AIFoundryOptions.Games.Survive);
+
                 services.AddSingleton<IInferenceService>(sp =>
                 {
-                    var chatClientCache = sp.GetRequiredService<AIFoundryChatClientCache>();
-                    var chatClient = chatClientCache.ResolveAsIChatClient(AIFoundryOptions.Games.Survive)
-                        ?? throw new InvalidOperationException(
-                            $"PoSurvive: AIFoundry not configured. Set {AIFoundryOptions.SectionName} in Key Vault (kv-poshared).");
+                    var chatClient = sp.GetRequiredKeyedService<IChatClient>(AIFoundryOptions.Games.Survive);
+
+                    // Per-request model selection: only ids on this allowlist may pick a
+                    // deployment, and each resolves to its own cached client. The relay used to
+                    // advertise this on /api/infer and then serve every request from the default
+                    // deployment regardless.
+                    var deploymentMap = ReadRemoteModelAllowlist(configuration);
+                    var cache = sp.GetRequiredService<AIFoundryChatClientCache>();
 
                     return new AzureOpenAIInferenceService(
                         chat: chatClient,
-                        logger: sp.GetRequiredService<ILogger<AzureOpenAIInferenceService>>());
+                        deploymentMap: deploymentMap,
+                        logger: sp.GetRequiredService<ILogger<AzureOpenAIInferenceService>>(),
+                        clientForDeployment: cache.ResolveDeploymentAsIChatClient);
                 });
             }
             else
@@ -55,14 +68,7 @@ public static class PoSurviveServiceExtensions
                 var apiKey = configuration["Inference:ApiKey"]
                     ?? throw new InvalidOperationException("Inference:ApiKey must be set when Inference:UseCloudFallback=true");
 
-                var deploymentMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-                foreach (var child in configuration.GetSection("Inference:RemoteModelOptions").GetChildren())
-                {
-                    var id = child["Id"];
-                    var deployment = child["DeploymentName"] ?? child["Id"];
-                    if (!string.IsNullOrWhiteSpace(id) && !string.IsNullOrWhiteSpace(deployment))
-                        deploymentMap[id!] = deployment!;
-                }
+                var deploymentMap = ReadRemoteModelAllowlist(configuration);
 
                 services.AddSingleton(_ => new Azure.AI.OpenAI.AzureOpenAIClient(
                     new Uri(endpoint),
@@ -83,6 +89,25 @@ public static class PoSurviveServiceExtensions
         }
 
         return services;
+    }
+
+    /// <summary>
+    /// The server-side allowlist of model ids a client may name in <c>InferRequestDto.ModelId</c>,
+    /// mapped to the deployment that serves each. Read from <c>Inference:RemoteModelOptions</c>;
+    /// an id absent from it falls back to the game's default deployment rather than being
+    /// forwarded, so a caller can never address an arbitrary deployment.
+    /// </summary>
+    private static Dictionary<string, string> ReadRemoteModelAllowlist(IConfiguration configuration)
+    {
+        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var child in configuration.GetSection("Inference:RemoteModelOptions").GetChildren())
+        {
+            var id = child["Id"];
+            var deployment = child["DeploymentName"] ?? child["Id"];
+            if (!string.IsNullOrWhiteSpace(id) && !string.IsNullOrWhiteSpace(deployment))
+                map[id!] = deployment!;
+        }
+        return map;
     }
 
     /// <summary>Maps PoSurvive minimal-API endpoints. /api/infer is mapped only when cloud fallback is enabled.</summary>

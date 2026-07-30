@@ -1,4 +1,6 @@
+using System.Text.Json;
 using Microsoft.Extensions.AI;
+using PoMiniGames.AI;
 using PoShared.Simulation.Interfaces;
 using PoShared.Simulation.Models;
 
@@ -14,140 +16,198 @@ namespace PoMiniGames.Features.PoSurvive.Storage;
 // `PoMiniGames.Infrastructure` is a layered platform project — not a
 // PoSurvive module). After the broader AI namespace consolidation the
 // file moved here where it conceptually belongs (the PoSurvive server
-// slice's storage boundary), and the namespace was renamed to
-// `PoSurvive.Server.Storage` to match the rest of the PoSurvive
-// server-side organisation.
+// slice's storage boundary).
 public sealed class AzureOpenAIInferenceService : IInferenceService
 {
+    /// <summary>
+    /// Output ceiling per decision. Generous on purpose: it is only safe because minimal
+    /// reasoning effort travels with it (see <see cref="AiDecisionChatOptions"/>). A tight cap
+    /// on its own returns HTTP 200 with a zero-length completion.
+    /// </summary>
+    public const int MaxOutputTokens = 300;
+
     private readonly IChatClient _chat;
     private readonly IReadOnlyDictionary<string, string> _deploymentMap;
+    private readonly Func<string, IChatClient?>? _clientForDeployment;
     private readonly ILogger<AzureOpenAIInferenceService> _logger;
 
     public AzureOpenAIInferenceService(
         IChatClient chat,
         IReadOnlyDictionary<string, string>? deploymentMap = null,
-        ILogger<AzureOpenAIInferenceService>? logger = null)
+        ILogger<AzureOpenAIInferenceService>? logger = null,
+        Func<string, IChatClient?>? clientForDeployment = null)
     {
         _chat = chat;
         _deploymentMap = deploymentMap ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        _clientForDeployment = clientForDeployment;
         _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<AzureOpenAIInferenceService>.Instance;
     }
 
     /// <inheritdoc />
-    public async Task<InferenceResult> InferAsync(string gridJson, PersonalityDnaDto dna, CancellationToken ct = default)
-    {
-        var messages = new List<ChatMessage>
-        {
-            new(ChatRole.System, SimulationSystemPrompt),
-            new(ChatRole.User,   BuildUserPrompt(gridJson, dna)),
-        };
-        // Bounded output. The reply is one short JSON object, but nothing capped it, so the
-        // model was free to ramble and a measured round trip ran ~4.6 s — long enough that
-        // the simulation's per-turn budget cancelled the call before the answer landed. A
-        // hard ceiling cuts the latency that matters here and the per-call token cost with it.
-        var response = await _chat.GetResponseAsync(messages, ChatOptions, ct);
-        var parsed = ParseInferenceResult(response.Text);
-
-        // The two parse failures are indistinguishable in the UI otherwise — both surface as
-        // a thought the player can't act on — but they have opposite causes: an empty
-        // completion means the output budget was consumed before any text, while unparseable
-        // text means the model ignored the JSON contract. Log the raw reply so the next
-        // person doesn't have to bisect ChatOptions to find out which.
-        if (parsed.Thought is UnparseableThought or ParseErrorThought)
-        {
-            _logger.LogWarning(
-                "PoSurvive inference returned no usable JSON (reason={Reason}, rawLength={Length}). Raw: {Raw}",
-                parsed.Thought,
-                response.Text?.Length ?? 0,
-                Truncate(response.Text, 300));
-        }
-
-        return parsed;
-    }
+    public Task<InferenceResult> InferAsync(string gridJson, PersonalityDnaDto dna, CancellationToken ct = default)
+        => InferWithClientAsync(_chat, gridJson, dna, ct);
 
     /// <summary>
-    /// Per-request model selection. Resolves <paramref name="modelId"/> through
-    /// <see cref="_deploymentMap"/>; falls back to the <see cref="IChatClient"/>'s
-    /// default deployment when the id is unknown (or null/empty).
+    /// Per-request model selection. Resolves <paramref name="modelId"/> through the allowlist and
+    /// serves it from a chat client bound to that deployment.
     /// </summary>
+    /// <remarks>
+    /// This used to log the requested id and then silently answer from the default deployment, so
+    /// <c>/api/infer</c> advertised per-request model selection that did not exist. An unknown or
+    /// absent id still falls back to the default — the allowlist is the security boundary, and a
+    /// caller must not be able to name an arbitrary deployment.
+    /// </remarks>
     public Task<InferenceResult> InferWithModelAsync(
         string gridJson,
         PersonalityDnaDto dna,
         string? modelId,
         CancellationToken ct = default)
     {
-        // The shared IChatClient is bound to a single deployment at construction time
-        // (AIFoundryChatClientCache.Resolve(gameKey)). Per-request deployment switching
-        // would require an IChatClient per deployment — out of scope for the cloud
-        // relay use case. We honour modelId only for logging/audit here.
-        if (!string.IsNullOrWhiteSpace(modelId))
+        var chat = ResolveClient(modelId) ?? _chat;
+        return InferWithClientAsync(chat, gridJson, dna, ct);
+    }
+
+    private IChatClient? ResolveClient(string? modelId)
+    {
+        if (string.IsNullOrWhiteSpace(modelId) || _clientForDeployment is null)
+            return null;
+
+        // Only ids on the server-side allowlist may select a deployment.
+        if (!_deploymentMap.TryGetValue(modelId!, out var deployment))
         {
-            _logger.LogDebug("InferWithModelAsync called with modelId={ModelId}; using the chat client's pre-bound deployment.", modelId);
+            _logger.LogDebug(
+                "Requested modelId={ModelId} is not on the server allowlist; serving from the default deployment.",
+                modelId);
+            return null;
         }
-        return InferAsync(gridJson, dna, ct);
+
+        return _clientForDeployment(deployment);
+    }
+
+    private async Task<InferenceResult> InferWithClientAsync(
+        IChatClient chat, string gridJson, PersonalityDnaDto dna, CancellationToken ct)
+    {
+        var messages = new List<ChatMessage>
+        {
+            new(ChatRole.System, SimulationSystemPrompt),
+            new(ChatRole.User,   BuildUserPrompt(gridJson, dna)),
+        };
+
+        var response = await chat.GetResponseAsync(messages, DecisionOptions, ct);
+        var parsed = ParseInferenceResult(response.Text);
+
+        if (parsed is null)
+        {
+            // Unusable output is a provider failure, not a decision. It used to be returned as a
+            // 200 carrying Action="Idle" and Thought="unparseable model response", which the
+            // client could not tell apart from an agent genuinely choosing to stand still — so a
+            // broken deployment looked like a cautious AI. The raw reply is logged because the two
+            // causes need different fixes: rawLength=0 means the output budget was consumed before
+            // any text (a reasoning-effort/token-cap problem), while unparseable text means the
+            // model ignored the schema.
+            _logger.LogWarning(
+                "PoSurvive inference returned no usable JSON (rawLength={Length}). Raw: {Raw}",
+                response.Text?.Length ?? 0,
+                Truncate(response.Text, 300));
+
+            throw new InferenceResponseUnusableException(response.Text?.Length ?? 0);
+        }
+
+        return parsed;
     }
 
     /// <summary>
-    /// No per-call options are sent, and that is a measured decision rather than an omission.
+    /// Bounded output plus minimal reasoning effort plus a strict schema — built once and shared,
+    /// since it never varies per call. See <see cref="AiDecisionChatOptions"/> for why all three
+    /// have to travel together.
     /// </summary>
-    /// <remarks>
-    /// The deployment backing this game rejects or breaks under both of the obvious knobs:
-    /// <list type="bullet">
-    /// <item><b>Temperature.</b> Pinning it to 0 for determinism returned
-    /// <c>HTTP 400 invalid_request_error / unsupported_value — 'temperature' does not support
-    /// 0 with this model. Only the default (1) value is supported.</c> Every relayed call 503'd.</item>
-    /// <item><b>MaxOutputTokens.</b> It reasons before emitting visible text, so a cap starves
-    /// the answer instead of shortening it: 80 tokens and then 512 both produced a completion
-    /// of <c>rawLength=0</c> — a successful 200 carrying nothing to parse. Uncapped, the same
-    /// prompt returns the required JSON in ~4.5 s.</item>
-    /// </list>
-    /// Turn latency is therefore controlled where it actually belongs — the orchestrator runs
-    /// a turn's agents concurrently, so a turn costs the slowest call rather than their sum —
-    /// and the client's per-agent cancellation token remains the hard ceiling.
-    /// </remarks>
-    private static readonly ChatOptions? ChatOptions = null;
+    private static readonly ChatOptions DecisionOptions = AiDecisionChatOptions.ForStructuredDecision(
+        AgentDecisionSchema,
+        schemaName: "agent_decision",
+        maxOutputTokens: MaxOutputTokens,
+        schemaDescription: "One survival agent's chosen action and a short rationale.");
 
+    /// <summary>
+    /// The reply contract, as a schema the service enforces rather than a sentence the model may
+    /// ignore. The <c>enum</c> on <c>action</c> is the part that matters: it makes an
+    /// out-of-vocabulary action impossible instead of silently coerced to Idle by the parser.
+    /// </summary>
+    public static JsonElement AgentDecisionSchema { get; } = JsonDocument.Parse(
+        """
+        {
+          "type": "object",
+          "properties": {
+            "action": { "type": "string", "enum": ["Attack", "Forage", "Flee", "Idle"] },
+            "thought": { "type": "string", "maxLength": 90 }
+          },
+          "required": ["action", "thought"],
+          "additionalProperties": false
+        }
+        """).RootElement;
+
+    // Kept short: the schema now carries the output contract, so the prompt only has to carry the
+    // role and the brevity budget. "max 12 words" alone did not hold — a schema-constrained run
+    // still returned a 30-word thought, which is why `thought` also has a maxLength above.
     private const string SimulationSystemPrompt =
-        "You are a survival agent in a 2D grid. Respond with a single JSON line and nothing else: " +
-        "{\"action\": \"Attack|Forage|Flee|Idle\", \"thought\": \"<max 12 words>\"}.";
+        "You are one survival agent on a 2D grid. Choose the single best action for the agent " +
+        "described as \"self\", given the nearby agents, food and rocks. Keep \"thought\" under " +
+        "twelve words.";
 
     private static string BuildUserPrompt(string gridJson, PersonalityDnaDto dna) =>
-        $"grid={gridJson}; dna={System.Text.Json.JsonSerializer.Serialize(dna)}";
-
-    private const string UnparseableThought = "unparseable model response";
-    private const string ParseErrorThought = "parse_error";
+        $"grid={gridJson}; dna={JsonSerializer.Serialize(dna, PoSurviveJsonContext.Default.PersonalityDnaDto)}";
 
     private static string Truncate(string? text, int max)
         => string.IsNullOrEmpty(text) ? "(empty)"
          : text.Length <= max ? text
          : text[..max] + "…";
 
-    private static InferenceResult ParseInferenceResult(string raw)
+    /// <summary>
+    /// Parses the model's reply, or returns null when there is nothing usable in it.
+    /// </summary>
+    /// <remarks>
+    /// Still tolerant of prose around the JSON — the schema makes that unnecessary for a compliant
+    /// provider, but a defensive parser costs nothing and the fallback path (a legacy key-based
+    /// deployment that predates structured output) can still hit it.
+    /// </remarks>
+    private static InferenceResult? ParseInferenceResult(string? raw)
     {
-        // Defensive: the model sometimes emits prose around the JSON line. Pull the first
-        // { … } block and deserialize.
         var start = raw?.IndexOf('{') ?? -1;
         var end = raw?.LastIndexOf('}') ?? -1;
         if (raw is null || start < 0 || end <= start)
-        {
-            return new InferenceResult(Thought: UnparseableThought, Action: "Idle");
-        }
-        var json = raw[start..(end + 1)];
+            return null;
+
         try
         {
-            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            using var doc = JsonDocument.Parse(raw[start..(end + 1)]);
             var root = doc.RootElement;
-            var action = root.TryGetProperty("action", out var a) && a.ValueKind == System.Text.Json.JsonValueKind.String
-                ? a.GetString()!
-                : "Idle";
-            var thought = root.TryGetProperty("thought", out var t) && t.ValueKind == System.Text.Json.JsonValueKind.String
+
+            if (!root.TryGetProperty("action", out var a) || a.ValueKind != JsonValueKind.String)
+                return null;
+
+            var thought = root.TryGetProperty("thought", out var t) && t.ValueKind == JsonValueKind.String
                 ? t.GetString()!
                 : string.Empty;
-            return new InferenceResult(Thought: thought, Action: action);
+
+            return new InferenceResult(Thought: thought, Action: a.GetString()!);
         }
-        catch
+        catch (JsonException)
         {
-            return new InferenceResult(Thought: ParseErrorThought, Action: "Idle");
+            return null;
         }
     }
+}
+
+/// <summary>
+/// Thrown when the model answered but the answer contains no decision — an empty completion or
+/// text that carries no <c>action</c>. Distinct from a transport failure so the relay can report
+/// it as a gateway error rather than passing a fabricated "Idle" back to the game.
+/// </summary>
+public sealed class InferenceResponseUnusableException : Exception
+{
+    public InferenceResponseUnusableException(int rawLength)
+        : base($"The model returned no usable decision (rawLength={rawLength}).")
+        => RawLength = rawLength;
+
+    /// <summary>Length of the reply text. Zero means the output budget was spent before any text.</summary>
+    public int RawLength { get; }
 }

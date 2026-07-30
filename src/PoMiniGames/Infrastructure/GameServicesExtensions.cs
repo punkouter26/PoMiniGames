@@ -54,7 +54,20 @@ internal static class GameServicesExtensions
         services.AddSingleton<AIFoundryChatClientCache>();
         // §3: register the resilience pipeline (retry + circuit breaker + outer timeout)
         // used by every AI Foundry consumer. Idempotent — safe to call multiple times.
+        // Consumed by ResilientChatClient, which every keyed game chat client is wrapped in;
+        // for a long while it was registered here and resolved nowhere, so a single call could
+        // (and did) run 51.6 s against its own documented 20 s ceiling.
         services.AddAzureOpenAIResilience();
+        // Cross-cutting AI concerns: usage/latency read-model, per-identity spend ceiling, and a
+        // startup check that every configured deployment name exists on the account.
+        services.AddSingleton<AiUsageAccumulator>();
+        services.AddOptions<AiTokenBudgetOptions>().BindConfiguration(AiTokenBudgetOptions.SectionName);
+        services.AddSingleton<AiTokenBudget>();
+        services.AddHttpClient(nameof(FoundryDeploymentValidator), client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(10);
+        });
+        services.AddHostedService<FoundryDeploymentValidator>();
         // PoRaceRagdoll feature removed.
 
         // Elo calculation with configurable options

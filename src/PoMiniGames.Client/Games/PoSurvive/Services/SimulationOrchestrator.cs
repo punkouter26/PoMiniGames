@@ -7,9 +7,9 @@ using PoMiniGamesClient.Games.PoSurvive.Store;
 using PoMiniGames.Domain.Entities.Simulation;
 using PoMiniGames.Domain.Enums.Simulation;
 using PoMiniGames.Domain.ValueObjects.Simulation;
-using PoShared.Simulation.Interfaces;
-using PoShared.Simulation.Models;
-using PoShared.Simulation.Constants;
+using PoMiniGames.Shared.Simulation.Interfaces;
+using PoMiniGames.Shared.Simulation.Models;
+using PoMiniGames.Shared.Simulation.Constants;
 
 /// <summary>
 /// Holds the mutable domain model for a running simulation and orchestrates heartbeat

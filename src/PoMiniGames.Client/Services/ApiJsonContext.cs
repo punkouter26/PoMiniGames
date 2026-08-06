@@ -3,9 +3,9 @@ using System.Text.Json.Serialization;
 // types by name, so importing the namespace wholesale would make them all ambiguous.
 using PoSportsHighScore = PoMiniGames.Domain.Models.PoSportsHighScore;
 using PoMiniGamesClient.Models;
-using PoShared.Games;
+using PoMiniGames.Shared.Games;
 using PoMiniGamesClient.Games.PoSurvive.Services;
-using PoShared.Simulation.Models;
+using PoMiniGames.Shared.Simulation.Models;
 
 namespace PoMiniGamesClient.Services;
 
@@ -27,6 +27,11 @@ namespace PoMiniGamesClient.Services;
 [JsonSerializable(typeof(AuthenticatedUserProfile))]
 [JsonSerializable(typeof(DevLoginRequest))]
 [JsonSerializable(typeof(AuthHandshake))]
+// §2 CSRF: AntiforgeryHandler deserializes the token endpoint's payload through this
+// context so the token fetch stays trim-safe (it runs on the WASM HttpClient pipeline).
+[JsonSerializable(typeof(AntiforgeryTokenDto))]
+// §2 /health status page
+[JsonSerializable(typeof(HealthReportDto))]
 // Stats + leaderboards
 [JsonSerializable(typeof(PlayerStatsDto))]
 [JsonSerializable(typeof(PlayerStatsDto[]))]
@@ -60,14 +65,14 @@ namespace PoMiniGamesClient.Services;
 [JsonSerializable(typeof(CoupleQuizTeamRow))]
 [JsonSerializable(typeof(List<CoupleQuizTeamRow>))]
 // PoJoker
-[JsonSerializable(typeof(PoShared.Games.PoJoker.JokeDto))]
-[JsonSerializable(typeof(PoShared.Games.PoJoker.JokeFlags))]
-[JsonSerializable(typeof(PoShared.Games.PoJoker.JokeAnalysisDto))]
+[JsonSerializable(typeof(PoMiniGames.Shared.Games.PoJoker.JokeDto))]
+[JsonSerializable(typeof(PoMiniGames.Shared.Games.PoJoker.JokeFlags))]
+[JsonSerializable(typeof(PoMiniGames.Shared.Games.PoJoker.JokeAnalysisDto))]
 // Disambiguate from client-side LeaderboardEntryDto: name the source-gen
 // metadata property JokerLeaderboardEntryDto so the PoJoker leaderboard page
 // resolves it.
-[JsonSerializable(typeof(PoShared.Games.PoJoker.LeaderboardEntryDto), TypeInfoPropertyName = "JokerLeaderboardEntryDto")]
-[JsonSerializable(typeof(List<PoShared.Games.PoJoker.LeaderboardEntryDto>), TypeInfoPropertyName = "ListJokerLeaderboardEntryDto")]
+[JsonSerializable(typeof(PoMiniGames.Shared.Games.PoJoker.LeaderboardEntryDto), TypeInfoPropertyName = "JokerLeaderboardEntryDto")]
+[JsonSerializable(typeof(List<PoMiniGames.Shared.Games.PoJoker.LeaderboardEntryDto>), TypeInfoPropertyName = "ListJokerLeaderboardEntryDto")]
 // PoRacer
 [JsonSerializable(typeof(PoRacerScoreDto))]
 [JsonSerializable(typeof(List<PoRacerScoreDto>))]

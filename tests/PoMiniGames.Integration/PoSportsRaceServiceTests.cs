@@ -5,7 +5,7 @@ using PoMiniGames.Application.DTOs;
 using PoMiniGames.Application.Services;
 using PoMiniGames.Domain.Models;
 using PoMiniGames.Features.PoSports;
-using PoShared.Games;
+using PoMiniGames.Shared.Games;
 
 namespace PoMiniGames.Integration;
 

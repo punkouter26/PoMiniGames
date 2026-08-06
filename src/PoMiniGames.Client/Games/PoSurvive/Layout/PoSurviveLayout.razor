@@ -5,8 +5,8 @@
 @using PoMiniGamesClient.Games.PoSurvive.Features.PostMortem
 @using PoMiniGamesClient.Games.PoSurvive.Services
 @using PoMiniGamesClient.Games.PoSurvive.Store
-@using PoShared.Simulation.Constants
-@using PoShared.Simulation.Models
+@using PoMiniGames.Shared.Simulation.Constants
+@using PoMiniGames.Shared.Simulation.Models
 @using Microsoft.AspNetCore.Components.WebAssembly.Hosting
 @inherits SurviveLayoutBase
 @* No `@implements IDisposable` — SurviveLayoutBase already does, and re-declaring it here
@@ -518,6 +518,28 @@
     private List<PoMiniGamesClient.Games.PoSurvive.Services.ModelOption> ToolbarModelOptions { get; set; } = new();
     private bool _switchingModel;
 
+    /// <summary>
+    /// Whole-percent progress of an in-flight WebLLM weight download, or <c>null</c> when there
+    /// is nothing to report. Fed by InferenceBootstrapper.OnModelProgress → Store.ModelLoadProgress.
+    ///
+    /// Null in three cases, all of which must render nothing rather than "downloading 0%":
+    /// a remote/scripted provider (never sets TotalBytes), a local model already cached by the
+    /// browser (progress jumps straight to complete), and a finished download. Only the genuinely
+    /// mid-flight case returns a value.
+    /// </summary>
+    private int? ModelDownloadPercent
+    {
+        get
+        {
+            var total = Store.Boot.TotalBytes;
+            var loaded = Store.Boot.BytesLoaded;
+            if (total <= 0 || loaded >= total) return null;
+            // Clamp: a truncated/over-reported byte count from the JS side must not render
+            // "downloading 103%" in the command bar.
+            return (int)Math.Clamp(loaded * 100 / total, 0, 100);
+        }
+    }
+
     // Read-only: the <select> is bound one-way from BootState and OnToolbarModelChanged
     // dispatches the update. (This used to be a property with a no-op setter.)
     private string ToolbarSelectedModelId => Store.Boot.ModelId;
@@ -753,7 +775,7 @@
     private double _lastIntensity = -1;
 
     // ── Champion strip (#2) ───────────────────────────────────────────────
-    private PoShared.Simulation.Models.AgentDto? Champion
+    private PoMiniGames.Shared.Simulation.Models.AgentDto? Champion
         => Store.Simulation.ChampionAgentId is { } id
             ? Store.Simulation.Agents.FirstOrDefault(a => a.Id == id)
             : null;

@@ -1,0 +1,131 @@
+/* §3 Scoped CSS only — every colour reads from the root tokens in wwwroot/css/app.css,
+   so this page follows the system light/dark scheme without a second rule set. */
+
+.hp {
+  max-width: 60rem;
+  margin: 0 auto;
+  padding: var(--space-6) var(--space-4);
+  color: var(--color-text-primary);
+}
+
+.hp-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-5);
+}
+
+.hp-title {
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  margin: 0;
+}
+
+.hp-head-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.hp-badge {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-pill);
+  border: 1px solid currentColor;
+}
+
+.hp-badge--healthy { color: var(--accent-success); background: var(--accent-success-soft); }
+.hp-badge--degraded { color: var(--accent-warning); background: var(--accent-warning-soft); }
+.hp-badge--unhealthy { color: var(--accent-danger); background: var(--accent-danger-soft); }
+
+.hp-refresh {
+  font: inherit;
+  font-size: var(--text-sm);
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-ring);
+  border-radius: var(--radius-sm);
+  padding: var(--space-1) var(--space-3);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-standard);
+}
+
+.hp-refresh:hover:not(:disabled) { background: var(--accent-bg); }
+.hp-refresh:disabled { opacity: 0.6; cursor: progress; }
+.hp-refresh:focus-visible { outline: 2px solid var(--accent-ring); outline-offset: 2px; }
+
+.hp-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.hp-table th,
+.hp-table td {
+  text-align: left;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+  font-size: var(--text-sm);
+}
+
+.hp-table tbody tr:last-child th,
+.hp-table tbody tr:last-child td { border-bottom: 0; }
+
+.hp-table thead th {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-secondary);
+  background: var(--surface-3);
+}
+
+.hp-name { font-weight: 600; }
+
+.hp-detail {
+  color: var(--color-text-secondary);
+  /* Health-check descriptions carry exception text, which is long and unbreakable.
+     Without this the table forces the page into a horizontal scroll on mobile. */
+  overflow-wrap: anywhere;
+}
+
+.hp-dot {
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: var(--radius-pill);
+  margin-right: var(--space-2);
+  vertical-align: baseline;
+}
+
+.hp-dot--healthy { background: var(--accent-success); }
+.hp-dot--degraded { background: var(--accent-warning); }
+.hp-dot--unhealthy { background: var(--accent-danger); }
+
+.hp-error {
+  color: var(--accent-danger);
+  background: var(--accent-danger-soft);
+  border: 1px solid var(--accent-danger);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  overflow-wrap: anywhere;
+}
+
+.hp-muted {
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+}
+
+.hp-foot { margin-top: var(--space-4); }
+
+.hp-foot code {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}

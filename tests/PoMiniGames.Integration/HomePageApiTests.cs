@@ -9,15 +9,20 @@ namespace PoMiniGames.Integration;
 /// leaderboards for all games, limit parameter, content-type, and
 /// round-trip save → retrieve.
 /// </summary>
-public sealed class HomePageApiTests : IClassFixture<TestWebApplicationFactory>
+public sealed class HomePageApiTests : IClassFixture<TestWebApplicationFactory>, IAsyncLifetime
 {
-    // All game IDs shown on the Home page
+    // All game IDs shown on the Home page.
+    //
+    // These are GameKey WIRE keys, not the client's route/folder names. The quiz games are
+    // "couplequiz"/"funquiz" — the "po"-prefixed spellings used here previously are not in
+    // GameKey's catalogue, so every call for them 400'd on GameKey.Parse rather than
+    // exercising the leaderboard. Keep this list in sync with GameKey.WellKnown.
     private static readonly string[] AllGameIds =
     [
         "connectfive",
         "tictactoe",
-        "pocouplequiz",
-        "pofunquiz",
+        "couplequiz",
+        "funquiz",
     ];
 
     private readonly HttpClient _client;
@@ -27,13 +32,24 @@ public sealed class HomePageApiTests : IClassFixture<TestWebApplicationFactory>
         _client = factory.CreateClient();
     }
 
+    // §2 CSRF: the player-stats PUTs are state-changing /api/* calls and are refused
+    // without a synchroniser token. Arming lives in InitializeAsync rather than the
+    // constructor because fetching the token is an HTTP round trip.
+    public Task InitializeAsync() => _client.ArmAntiforgeryAsync();
+
+    public Task DisposeAsync()
+    {
+        _client.Dispose();
+        return Task.CompletedTask;
+    }
+
     // ── Leaderboard returns OK for every game ────────────────────────────────
 
     [Theory]
     [InlineData("connectfive")]
     [InlineData("tictactoe")]
-    [InlineData("pocouplequiz")]
-    [InlineData("pofunquiz")]
+    [InlineData("couplequiz")]
+    [InlineData("funquiz")]
     public async Task GetLeaderboard_ReturnsOk_ForEachGame(string gameId)
     {
         var response = await _client.GetAsync($"/api/{gameId}/statistics/leaderboard");
@@ -102,9 +118,12 @@ public sealed class HomePageApiTests : IClassFixture<TestWebApplicationFactory>
     [Fact]
     public async Task SavePlayerStats_ThenLeaderboard_ContainsPlayer()
     {
-        // Use a game ID unique to this test to avoid affecting other assertions
-        const string game = "roundtrip_leaderboard";
-        const string player = "HomePageIntegrationPlayer";
+        // Isolation comes from a unique PLAYER, not a unique game. An invented game id
+        // ("roundtrip_leaderboard") cannot work: PlayerStatsEndpoints runs every game id
+        // through GameKey.TryParse as its §8 allowlist, so an off-catalogue key 400s before
+        // any storage is touched. Pick a real key and make the row unique instead.
+        const string game = "pomarblerace";
+        var player = $"HomePageIntegrationPlayer-{Guid.NewGuid():N}";
 
         // Build a minimal valid PlayerStats payload
         var stats = new
@@ -132,9 +151,9 @@ public sealed class HomePageApiTests : IClassFixture<TestWebApplicationFactory>
     [Fact]
     public async Task SavePlayerStats_ThenGetPlayerStats_MatchesSavedData()
     {
-        // Use a game ID unique to this test to avoid affecting other assertions
-        const string game = "roundtrip_stats";
-        const string player = "HomePageStatsRoundTrip";
+        // Real GameKey + unique player, for the same allowlist reason as above.
+        const string game = "poracer";
+        var player = $"HomePageStatsRoundTrip-{Guid.NewGuid():N}";
 
         var stats = new
         {

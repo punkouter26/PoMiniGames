@@ -171,7 +171,7 @@ if (Test-Command 'pip') {
 # browser build must be present or those tests fail at launch. The install
 # script ships next to the built E2E-UI assembly and is a no-op if already present.
 Write-Step 'Installing Playwright browsers (Chromium) for the E2E-UI tier'
-$playwrightScript = Join-Path $repoRoot 'tests/E2EUI/bin/Debug/net10.0/playwright.ps1'
+$playwrightScript = Join-Path $repoRoot 'tests/PoMiniGames.E2EUI/bin/Debug/net10.0/playwright.ps1'
 if (Test-Path $playwrightScript) {
     if ($WhatIf) {
         Write-Host "  [WHATIF] Would run: $playwrightScript install chromium"

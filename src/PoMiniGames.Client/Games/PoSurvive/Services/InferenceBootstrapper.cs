@@ -4,8 +4,8 @@ using System.Net.Http.Json;
 using Microsoft.JSInterop;
 using PoMiniGamesClient.Games.PoSurvive.Store;
 using PoMiniGamesClient.Services;
-using PoShared.Simulation.Interfaces;
-using PoShared.Simulation.Models;
+using PoMiniGames.Shared.Simulation.Interfaces;
+using PoMiniGames.Shared.Simulation.Models;
 
 /// <summary>
 /// Brings PoSurvive's inference online, once per app lifetime.

@@ -4,7 +4,7 @@ using PoMiniGames.Application.Simulation;
 using PoMiniGames.Domain.Entities.Simulation;
 using PoMiniGames.Domain.Enums.Simulation;
 using PoMiniGames.Domain.ValueObjects.Simulation;
-using PoShared.Simulation.Constants;
+using PoMiniGames.Shared.Simulation.Constants;
 
 // SOLID: SRP — owns only grid generation, agent placement, food spawning, and food wither
 public sealed class GridService

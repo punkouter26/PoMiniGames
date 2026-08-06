@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <!-- TFM / Nullable / ImplicitUsings inherited from Directory.Build.props -->
@@ -19,7 +19,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\PoMiniGames\PoMiniGames.csproj" />
+    <ProjectReference Include="..\..\src\PoMiniGames.API\PoMiniGames.API.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -264,6 +264,49 @@
         }
     }
 
+    /// <summary>
+    /// The player picked a model from the command bar's selector. Both routes subscribe (the
+    /// selector is on the bar in every mode), but only real play acts here.
+    ///
+    /// Demo already owns this transition: <see cref="OnSimStateChanged"/> watches the
+    /// scripted↔live provider edge and routes it through SwitchDemoModeAsync, which also
+    /// re-speeds the heartbeat and pauses the kiosk rotation. Relaunching here as well would
+    /// double-start the match — hence the early return rather than a shared code path.
+    ///
+    /// Real play has no such edge watcher, so without this a mid-match pick swapped the
+    /// router underneath a simulation that kept running on the old provider's turn budget.
+    /// </summary>
+    private void OnProviderPickedByUser()
+    {
+        if (_isDemo) return;
+
+        // Deferred, never inline: this fires from inside the store's notify path, and the
+        // relaunch below emits again. InvokeAsync also gets us onto the renderer's context.
+        _ = InvokeAsync(RelaunchOnPickedProviderAsync);
+    }
+
+    // Reset before launch so the new provider starts from turn 0 rather than inheriting the
+    // half-played board — the agents' memory is provider-specific and does not transfer.
+    private async Task RelaunchOnPickedProviderAsync()
+    {
+        if (_isDemo) return;
+
+        Store.ResetSimulation();
+        await Task.Yield();
+
+        if (!CanLaunchSimulation)
+        {
+            // A pick that cannot boot (download still running, relay unreachable) must not
+            // leave the page on a dead reset screen — fall through to the fallback AI, the
+            // same escape hatch BootArenaAsync uses.
+            Store.ContinueDegradedMode();
+            await Task.Yield();
+        }
+
+        var config = await LaunchService.BuildConfigAsync();
+        Store.StartSimulation(config);
+    }
+
     private async Task DemoRestartAsync()
     {
         if (!_isDemo || _liveDemo) return;
@@ -287,10 +330,14 @@
         base.Dispose();
         _demoLoopTimer?.Dispose();
         _demoLoopTimer = null;
-        // Only the demo reel subscribes (for its post-mortem → relaunch loop).
-        if (_isDemo && _booted)
+        // Both handlers are subscribed unconditionally in OnAfterRender, so both must come
+        // off unconditionally. The previous `_isDemo &&` guard leaked the whole page (and the
+        // store's reference to it) on every real-play visit, because OnSimStateChanged's own
+        // `if (!_isDemo) return` makes the handler a no-op but does NOT drop the subscription.
+        if (_booted)
         {
             Store.Changed -= OnSimStateChanged;
+            Store.ProviderPickedByUser -= OnProviderPickedByUser;
         }
     }
 

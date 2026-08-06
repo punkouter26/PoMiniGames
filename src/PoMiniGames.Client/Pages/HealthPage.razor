@@ -1,0 +1,158 @@
+@page "/health"
+@using System.Net.Http.Json
+@using System.Text.Json
+@using PoMiniGamesClient.Services
+@implements IDisposable
+@inject HttpClient Http
+
+@*
+    §2 /health — the human-facing status page for this app's external connections.
+
+    Reachable in a browser because the server's root /health endpoint content-negotiates:
+    an Accept containing text/html hands back the Blazor shell and the router lands here,
+    while monitors sending */* or application/json keep the JSON report unchanged
+    (see HealthEndpoints.PrefersHtml).
+
+    Distinct from /diag by audience, not data. /diag is the developer's configuration dump
+    — correlation ids, telemetry wiring, masked identity. This page answers one question for
+    whoever is on call: which dependency is down. Everything here is rendered from
+    /api/health's own check entries, so a dependency added to the health-check registration
+    shows up on this page with no change to this file.
+*@
+
+<div class="hp">
+    <header class="hp-head">
+        <h1 class="hp-title">Service health</h1>
+        <div class="hp-head-actions">
+            <span class="hp-badge hp-badge--@StatusSlug">@StatusLabel</span>
+            <button class="hp-refresh" @onclick="RefreshAsync" disabled="@_loading">
+                @(_loading ? "Checking…" : "Refresh")
+            </button>
+        </div>
+    </header>
+
+    @if (_error is not null)
+    {
+        @* An unreachable /api/health is itself the answer, and the most important one this
+           page can give — surface it as the result rather than as an empty table. *@
+        <p class="hp-error" role="alert">
+            Could not reach the health endpoint: @_error
+        </p>
+    }
+    else if (_report is null)
+    {
+        <p class="hp-muted">Contacting the API…</p>
+    }
+    else if (_report.Checks.Count == 0)
+    {
+        <p class="hp-muted">The API is reachable but reports no registered dependency checks.</p>
+    }
+    else
+    {
+        <table class="hp-table">
+            <thead>
+                <tr>
+                    <th scope="col">Connection</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Detail</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var check in _report.Checks)
+                {
+                    <tr>
+                        <th scope="row" class="hp-name">@check.Name</th>
+                        <td><span class="hp-dot hp-dot--@Slug(check.Status)" aria-hidden="true"></span>@check.Status</td>
+                        <td class="hp-detail">@(string.IsNullOrWhiteSpace(check.Description) ? "—" : check.Description)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+
+    <p class="hp-muted hp-foot">
+        Last checked @(_checkedAt?.ToLocalTime().ToString("HH:mm:ss") ?? "—").
+        Machine-readable report at <code>/api/health</code>; configuration diagnostics at <a href="/diag">/diag</a>.
+    </p>
+</div>
+
+@code {
+    private HealthReportDto? _report;
+    private string? _error;
+    private DateTimeOffset? _checkedAt;
+    private bool _loading;
+
+    // Polling keeps an on-call tab current without a manual refresh. 15s is slow enough
+    // that a parked tab costs the API almost nothing and fast enough to catch a dependency
+    // recovering while someone is watching.
+    private const int PollIntervalMs = 15_000;
+    private Timer? _poll;
+
+    // Cancels the in-flight fetch on navigation away. Without it, a slow response resolving
+    // after disposal calls StateHasChanged on a dead component.
+    private readonly CancellationTokenSource _cts = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshAsync();
+        _poll = new Timer(_ => _ = InvokeAsync(RefreshAsync), null, PollIntervalMs, PollIntervalMs);
+    }
+
+    private async Task RefreshAsync()
+    {
+        if (_loading || _cts.IsCancellationRequested) return;
+
+        _loading = true;
+        StateHasChanged();
+
+        try
+        {
+            // /api/health, not /health: the root alias would content-negotiate this fetch
+            // (HttpClient sends no Accept) into the JSON branch anyway, but naming the real
+            // route keeps this page independent of that negotiation rule.
+            using var response = await Http.GetAsync("/api/health", _cts.Token);
+
+            // 503 is the *expected* shape for an unhealthy service and carries the same body,
+            // so parse it rather than treating it as a transport failure.
+            _report = await response.Content.ReadFromJsonAsync(
+                ApiJsonContext.Default.HealthReportDto, _cts.Token);
+            _error = null;
+        }
+        catch (OperationCanceledException)
+        {
+            // Navigating away mid-fetch. Not a health signal — say nothing.
+        }
+        catch (Exception ex)
+        {
+            _report = null;
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+            _checkedAt = DateTimeOffset.UtcNow;
+            StateHasChanged();
+        }
+    }
+
+    private string StatusLabel => _error is not null ? "Unreachable" : _report?.Status ?? "Checking";
+
+    private string StatusSlug => _error is not null ? "unhealthy" : Slug(_report?.Status);
+
+    // Maps ASP.NET's HealthStatus names onto the three CSS states. Unknown values fall to
+    // "degraded" rather than "healthy": an unrecognised status must never render green.
+    private static string Slug(string? status) => status?.ToLowerInvariant() switch
+    {
+        "healthy" => "healthy",
+        "unhealthy" => "unhealthy",
+        null => "degraded",
+        _ => "degraded",
+    };
+
+    public void Dispose()
+    {
+        _poll?.Dispose();
+        _cts.Cancel();
+        _cts.Dispose();
+    }
+}

@@ -1,16 +1,16 @@
 <Solution>
   <Folder Name="/src/">
-    <Project Path="src/PoShared/PoShared.csproj" />
+    <Project Path="src/PoMiniGames.Shared/PoMiniGames.Shared.csproj" />
     <Project Path="src/PoMiniGames.Domain/PoMiniGames.Domain.csproj" />
     <Project Path="src/PoMiniGames.Application/PoMiniGames.Application.csproj" />
     <Project Path="src/PoMiniGames.Infrastructure/PoMiniGames.Infrastructure.csproj" />
     <Project Path="src/PoMiniGames.Client/PoMiniGamesClient.csproj" />
-    <Project Path="src/PoMiniGames/PoMiniGames.csproj" />
+    <Project Path="src/PoMiniGames.API/PoMiniGames.API.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Shared/PoMiniGames.TestUtilities.csproj" />
-    <Project Path="tests/E2EAPI/E2EAPI.csproj" />
-    <Project Path="tests/E2EUI/E2EUI.csproj" />
+    <Project Path="tests/PoMiniGames.E2EAPI/PoMiniGames.E2EAPI.csproj" />
+    <Project Path="tests/PoMiniGames.E2EUI/PoMiniGames.E2EUI.csproj" />
     <Project Path="tests/PoMiniGames.Integration/PoMiniGames.Integration.csproj" />
     <Project Path="tests/PoMiniGames.Unit/PoMiniGames.Unit.csproj" />
   </Folder>

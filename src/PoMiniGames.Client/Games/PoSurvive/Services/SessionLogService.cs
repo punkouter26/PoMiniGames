@@ -2,7 +2,7 @@ namespace PoMiniGamesClient.Games.PoSurvive.Services;
 
 using System.Text;
 using Microsoft.JSInterop;
-using PoShared.Simulation.Models;
+using PoMiniGames.Shared.Simulation.Models;
 
 /// <summary>
 /// Accumulates <see cref="HeartbeatEventDto"/> records in memory during a session;

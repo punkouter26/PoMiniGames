@@ -32,8 +32,8 @@ Set-Location $repoRoot
 $tiers = [ordered]@{
     'Unit'        = 'tests/PoMiniGames.Unit'
     'Integration' = 'tests/PoMiniGames.Integration'
-    'E2EAPI'      = 'tests/E2EAPI'
-    'E2EUI'       = 'tests/E2EUI'
+    'E2EAPI'      = 'tests/PoMiniGames.E2EAPI'
+    'E2EUI'       = 'tests/PoMiniGames.E2EUI'
 }
 
 if ($TierProject) {

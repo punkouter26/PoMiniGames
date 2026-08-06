@@ -65,7 +65,7 @@ dotnet build $slnx -c Debug --nologo -v minimal
 # ── Preflight 4: Playwright browsers ─────────────────────────────────────────
 if (-not $SkipPlaywrightInstall) {
     Write-Step 'Ensuring Playwright Chromium (E2E-UI tier)'
-    $pw = Join-Path $repoRoot 'tests/E2EUI/bin/Debug/net10.0/playwright.ps1'
+    $pw = Join-Path $repoRoot 'tests/PoMiniGames.E2EUI/bin/Debug/net10.0/playwright.ps1'
     if (Test-Path $pw) {
         try { & $pw install chromium | Out-Null; Write-Ok 'Playwright Chromium ready' }
         catch { Write-Warn "Playwright install failed: $($_.Exception.Message)" }
@@ -77,8 +77,8 @@ if (-not $SkipPlaywrightInstall) {
 $tiers = [ordered]@{
     'Unit'        = @{ Project = 'tests/PoMiniGames.Unit/PoMiniGames.Unit.csproj';                       Ceiling = 100 }
     'Integration' = @{ Project = 'tests/PoMiniGames.Integration/PoMiniGames.Integration.csproj';         Ceiling = 50 }
-    'E2EAPI'      = @{ Project = 'tests/E2EAPI/E2EAPI.csproj';                  Ceiling = 25 }
-    'E2EUI'       = @{ Project = 'tests/E2EUI/E2EUI.csproj';                    Ceiling = 25 }
+    'E2EAPI'      = @{ Project = 'tests/PoMiniGames.E2EAPI/PoMiniGames.E2EAPI.csproj';                  Ceiling = 25 }
+    'E2EUI'       = @{ Project = 'tests/PoMiniGames.E2EUI/PoMiniGames.E2EUI.csproj';                    Ceiling = 25 }
 }
 
 $summary = @()

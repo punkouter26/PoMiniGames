@@ -1,6 +1,6 @@
 namespace PoMiniGamesClient.Games.PoSurvive.Store;
 
-using PoShared.Simulation.Models;
+using PoMiniGames.Shared.Simulation.Models;
 
 // The orchestrator owns the mutable domain model and runs on a timer thread; the store
 // owns the immutable view state the UI binds to. These records are the handoff between

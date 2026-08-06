@@ -137,7 +137,7 @@ jobs:
 
       - name: Publish (push-to-master only)
         if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-        run: dotnet publish src/PoMiniGames/PoMiniGames.csproj -c Release -o ./publish
+        run: dotnet publish src/PoMiniGames.API/PoMiniGames.API.csproj -c Release -o ./publish
 
       - name: Upload publish artifact (push-to-master only)
         if: github.event_name == 'push' && github.ref == 'refs/heads/master'
@@ -242,7 +242,7 @@ jobs:
           echo "Resolved App Service: $APP_NAME"
           echo "APP_NAME=$APP_NAME" >> "$GITHUB_ENV"
           # Zip the publish *contents* (not the parent folder) so the host finds
-          # PoMiniGames.dll at the deployment root, not nested under publish/.
+          # PoMiniGames.API.dll at the deployment root, not nested under publish/.
           # Combined with WEBSITE_RUN_FROM_PACKAGE=1 (set in resources.bicep), the
           # zip is mounted atomically — no file-copy step on the host.
           ( cd publish && zip -qr ../app-deploy.zip . )

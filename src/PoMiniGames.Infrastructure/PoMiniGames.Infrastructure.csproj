@@ -15,6 +15,6 @@
   <ItemGroup>
     <ProjectReference Include="..\PoMiniGames.Application\PoMiniGames.Application.csproj" />
     <ProjectReference Include="..\PoMiniGames.Domain\PoMiniGames.Domain.csproj" />
-    <ProjectReference Include="..\PoShared\PoShared.csproj" />
+    <ProjectReference Include="..\PoMiniGames.Shared\PoMiniGames.Shared.csproj" />
   </ItemGroup>
 </Project>

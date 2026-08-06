@@ -1,7 +1,7 @@
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using PoMiniGames.Features.PoJoker;
-using PoShared.Games.PoJoker;
+using PoMiniGames.Shared.Games.PoJoker;
 
 namespace PoMiniGames.Unit.Features.PoJoker;
 

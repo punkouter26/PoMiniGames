@@ -11,13 +11,24 @@ namespace PoMiniGames.Integration;
 /// those games; the remaining boards (PoBrawl, marble race) live under
 /// UnifiedLeaderboardEndpoints and are exercised elsewhere.
 /// </summary>
-public sealed class LeaderboardEndpointTests : IClassFixture<TestWebApplicationFactory>
+public sealed class LeaderboardEndpointTests : IClassFixture<TestWebApplicationFactory>, IAsyncLifetime
 {
     private readonly HttpClient _client;
 
     public LeaderboardEndpointTests(TestWebApplicationFactory factory)
     {
         _client = factory.CreateClient();
+    }
+
+    // §2 CSRF: the high-score and ladder POSTs are state-changing /api/* calls and are
+    // refused without a synchroniser token. Arming lives in InitializeAsync rather than
+    // the constructor because fetching the token is an HTTP round trip.
+    public Task InitializeAsync() => _client.ArmAntiforgeryAsync();
+
+    public Task DisposeAsync()
+    {
+        _client.Dispose();
+        return Task.CompletedTask;
     }
 
     // ── Player stats – 404 path ────────────────────────────────────────────

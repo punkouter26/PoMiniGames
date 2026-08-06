@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <!-- TFM / Nullable / ImplicitUsings inherited from Directory.Build.props -->
@@ -20,7 +20,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\PoMiniGames\PoMiniGames.csproj" />
+    <ProjectReference Include="..\..\src\PoMiniGames.API\PoMiniGames.API.csproj" />
     <!-- Shared test utilities (TestBudgetGuard, etc.) — explicit ProjectReference
          so the fixture compiles whether or not tests/Shared/PoMiniGames.TestUtilities.csproj
          is registered in the solution. -->
@@ -29,6 +29,9 @@
 
   <ItemGroup>
     <Using Include="Xunit" />
+    <!-- ArmAntiforgeryAsync is needed by every test that writes; a global using keeps
+         the §2 CSRF plumbing out of each file's header. -->
+    <Using Include="PoMiniGames.TestUtilities" />
   </ItemGroup>
 
 </Project>

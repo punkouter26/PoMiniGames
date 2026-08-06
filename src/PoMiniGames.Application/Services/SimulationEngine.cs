@@ -3,7 +3,7 @@ namespace PoMiniGames.Application.Simulation;
 using PoMiniGames.Application.Simulation;
 using PoMiniGames.Domain.Entities.Simulation;
 using PoMiniGames.Domain.Enums.Simulation;
-using PoShared.Simulation.Constants;
+using PoMiniGames.Shared.Simulation.Constants;
 
 // GoF: Template Method — Tick() defines the invariant heartbeat algorithm; subclasses (if any) override steps
 // SOLID: OCP — new resolution strategies can be injected without modifying the template

@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.SignalR.Client;
 using PoMiniGamesClient.Services;
-using PoShared.Games;
+using PoMiniGames.Shared.Games;
 
 namespace PoMiniGamesClient.Games.PoSports.Services;
 
@@ -9,7 +9,7 @@ namespace PoMiniGamesClient.Games.PoSports.Services;
 /// (<c>/posports/lobby-hub</c>) carries the global room — join, character pick,
 /// ready, host start; the race connection (<c>/posports/race-hub</c>) carries the
 /// meet itself — 15 Hz snapshots in, sequence keys out. Contracts are the
-/// PoShared.Games records, shared with the server.
+/// PoMiniGames.Shared.Games records, shared with the server.
 /// </summary>
 public sealed class PoSportsHubService : IAsyncDisposable
 {

@@ -1,7 +1,7 @@
 namespace PoMiniGamesClient.Games.PoSurvive.Store;
 
 using PoMiniGamesClient.Games.PoSurvive.Services;
-using PoShared.Simulation.Models;
+using PoMiniGames.Shared.Simulation.Models;
 
 /// <summary>
 /// The single owner of PoSurvive's view state.

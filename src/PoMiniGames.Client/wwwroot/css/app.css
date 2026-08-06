@@ -132,6 +132,65 @@
   --disc-shadow: inset 0 -3px 6px rgba(0,0,0,0.32), 0 2px 5px rgba(0,0,0,0.4);
   --accent-glow: rgba(0,229,255,0.5);
   --accent-cyan: #00e5ff;
+
+  /* §3 Tell the UA which schemes this document supports, so native chrome the
+     stylesheet cannot reach — scrollbars, <select> popups, date pickers, form
+     control borders, the canvas behind an overscroll — is painted to match
+     instead of staying stark white against a dark page. The light override
+     below re-declares this so each branch advertises only what it renders. */
+  color-scheme: dark;
+}
+
+/* ── §3 System-native light theme ───────────────────────────────────────────
+   Overrides ONLY the surface/text/elevation tokens. Every component in the app
+   reads its colour through these variables, so re-pointing them here is the
+   whole light theme — no component rule is duplicated, and a new component is
+   themed correctly the moment it uses the tokens rather than raw hex.
+
+   Deliberately NOT overridden:
+     • Accent hues (--accent, --accent-success/warning/danger, --accent-cyan…).
+       They carry semantic meaning and are already AA-legible on both surfaces;
+       re-hueing them per scheme would fork the status vocabulary in two.
+     • Game-piece and per-game theme tokens (--disc-*, PoJoker's gold, PoSurvive's
+       amber). Those paint inside a canvas or a self-contained board that sets its
+       own backdrop, so a light page around them changes nothing they render.
+
+   Shadows drop to near-black at low alpha: the dark theme's heavy rgba(0,0,0,.35)
+   reads as dirt rather than depth on a light surface. */
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+
+    --color-bg: #f6f7fb;
+    --color-surface: #ffffff;
+    --color-surface-hover: #eef1f7;
+    --color-border: #d8dee9;
+    --color-text-primary: #0f172a;
+    --color-text-secondary: #475569;
+
+    --surface-1: rgba(255,255,255,0.65);
+    --surface-2: rgba(255,255,255,0.88);
+    --surface-3: rgba(241,245,249,0.75);
+    --surface-bar: rgba(255,255,255,0.9);
+    --surface-raised: rgba(255,255,255,0.95);
+
+    --elevation-1: 0 4px 20px rgba(15,23,42,0.08);
+    --elevation-2: 0 8px 30px rgba(99,102,241,0.12);
+    --elevation-3: 0 20px 60px rgba(15,23,42,0.12);
+
+    --glass-tint: rgba(255,255,255,0.6);
+
+    /* Toasts keep their hue but invert lightness: the dark theme's near-black
+       tinted backgrounds with pale text are unreadable on a light page. */
+    --toast-info-bg: #eff6ff;
+    --toast-info-text: #1e3a5f;
+    --toast-error-bg: #fef2f2;
+    --toast-error-text: #7f1d1d;
+    --toast-success-bg: #f0fdf4;
+    --toast-success-text: #14532d;
+    --toast-warning-bg: #fffbeb;
+    --toast-warning-text: #78350f;
+  }
 }
 
 html, body, #app {

@@ -29,7 +29,7 @@ public class AuthDevLoginEndpointsTests : IClassFixture<LocalAuthWebApplicationF
     [Fact]
     public async Task DevLogin_CreatesCookieSession_AndDevLogoutClearsIt()
     {
-        var client = CreateCookieClient();
+        var client = await CreateCookieClientAsync();
 
         // In dev mode with DevBypass, /api/auth/me may return a default user if no auth is present
         // This test focuses on the login/logout flow rather than auth enforcement
@@ -47,6 +47,10 @@ public class AuthDevLoginEndpointsTests : IClassFixture<LocalAuthWebApplicationF
         profile!.UserId.Should().Be("dev-user-a");
         profile.DisplayName.Should().Be("Dev User A");
 
+        // Re-arm: the token issued before login was bound to the anonymous principal, and
+        // this POST now carries the session cookie. That identity change is exactly what
+        // antiforgery invalidates on, so a stale token here would 403.
+        await client.ArmAntiforgeryAsync();
         var logoutResponse = await client.PostAsync("/api/auth/dev-logout", content: null);
         logoutResponse.StatusCode.Should().Be(HttpStatusCode.OK);
     }
@@ -54,7 +58,7 @@ public class AuthDevLoginEndpointsTests : IClassFixture<LocalAuthWebApplicationF
     [Fact]
     public async Task DevLogin_WithValidCredentials_PersistsAcrossRequests()
     {
-        var client = CreateCookieClient();
+        var client = await CreateCookieClientAsync();
 
         var loginResponse = await client.PostAsJsonAsync("/api/auth/dev-login", new
         {
@@ -79,7 +83,7 @@ public class AuthDevLoginEndpointsTests : IClassFixture<LocalAuthWebApplicationF
     [Fact]
     public async Task DevLogin_InvalidRequest_AllowsPartialData()
     {
-        var client = CreateCookieClient();
+        var client = await CreateCookieClientAsync();
 
         // Dev login accepts various input patterns in development
         var loginResponse = await client.PostAsJsonAsync("/api/auth/dev-login", new
@@ -96,8 +100,8 @@ public class AuthDevLoginEndpointsTests : IClassFixture<LocalAuthWebApplicationF
     [Fact]
     public async Task DevLogin_DifferentUsers_IsolateSession()
     {
-        var client1 = CreateCookieClient();
-        var client2 = CreateCookieClient();
+        var client1 = await CreateCookieClientAsync();
+        var client2 = await CreateCookieClientAsync();
 
         var login1 = await client1.PostAsJsonAsync("/api/auth/dev-login", new
         {
@@ -125,7 +129,7 @@ public class AuthDevLoginEndpointsTests : IClassFixture<LocalAuthWebApplicationF
     [Fact]
     public async Task DevLogout_IsAccessible()
     {
-        var client = CreateCookieClient();
+        var client = await CreateCookieClientAsync();
 
         // Dev logout endpoint should be accessible
         var logoutResponse = await client.PostAsync("/api/auth/dev-logout", content: null);
@@ -137,7 +141,7 @@ public class AuthDevLoginEndpointsTests : IClassFixture<LocalAuthWebApplicationF
     [Fact]
     public async Task AuthMe_WithCookie_RetainsEmailField()
     {
-        var client = CreateCookieClient();
+        var client = await CreateCookieClientAsync();
 
         var loginResponse = await client.PostAsJsonAsync("/api/auth/dev-login", new
         {
@@ -152,13 +156,18 @@ public class AuthDevLoginEndpointsTests : IClassFixture<LocalAuthWebApplicationF
         profile!.Email.Should().Be("test@example.com");
     }
 
-    private HttpClient CreateCookieClient()
+    // §2 CSRF: /api/auth/dev-login and /dev-logout are POSTs under /api/*, so they now sit
+    // behind the antiforgery gate like every other write. HandleCookies is what makes the
+    // paired cookie stick between the token fetch and the call it authorises.
+    private async Task<HttpClient> CreateCookieClientAsync()
     {
-        return _factory.CreateClient(new WebApplicationFactoryClientOptions
+        var client = _factory.CreateClient(new WebApplicationFactoryClientOptions
         {
             AllowAutoRedirect = false,
             HandleCookies = true,
         });
+
+        return await client.ArmAntiforgeryAsync();
     }
 
     private sealed record AuthConfigResponse(bool Enabled, bool DevLoginEnabled);

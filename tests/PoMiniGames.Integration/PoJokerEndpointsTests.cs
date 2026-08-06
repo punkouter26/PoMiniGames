@@ -4,7 +4,7 @@ using FluentAssertions;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using PoMiniGames.Features.PoJoker;
-using PoShared.Games.PoJoker;
+using PoMiniGames.Shared.Games.PoJoker;
 
 namespace PoMiniGames.Integration;
 
@@ -14,7 +14,7 @@ namespace PoMiniGames.Integration;
 /// touches the network; AI analysis already resolves to the in-process mock in the Development
 /// test environment (PoJoker:AzureOpenAI is unconfigured), so no live tokens are spent.
 /// </summary>
-public sealed class PoJokerEndpointsTests : IClassFixture<TestWebApplicationFactory>
+public sealed class PoJokerEndpointsTests : IClassFixture<TestWebApplicationFactory>, IAsyncLifetime
 {
     private readonly HttpClient _client;
 
@@ -27,6 +27,17 @@ public sealed class PoJokerEndpointsTests : IClassFixture<TestWebApplicationFact
                 services.AddSingleton<IJokeApiClient, FakeJokeApiClient>();
             }))
             .CreateClient();
+    }
+
+    // §2 CSRF: the analyze/explain POSTs are state-changing /api/* calls and are refused
+    // without a synchroniser token. Arming lives in InitializeAsync rather than the
+    // constructor because fetching the token is an HTTP round trip.
+    public Task InitializeAsync() => _client.ArmAntiforgeryAsync();
+
+    public Task DisposeAsync()
+    {
+        _client.Dispose();
+        return Task.CompletedTask;
     }
 
     [Fact]

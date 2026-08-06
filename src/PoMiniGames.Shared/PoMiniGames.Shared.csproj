@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- TFM / Nullable / ImplicitUsings inherited from Directory.Build.props.
+         §1.7 Trimming Safeguards. PoMiniGames.Shared is consumed by the WASM client; any
+         non-trim-safe API in a public type will surface here at build time. -->
+    <IsTrimmable>true</IsTrimmable>
+    <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
+  </PropertyGroup>
+</Project>

@@ -31,7 +31,9 @@ public sealed class PoSportsHighScoreTests : IClassFixture<TestWebApplicationFac
     public async Task SaveGetAndRatchet_RoundTrip()
     {
         if (!_factory.DockerAvailable) return;
-        var client = _factory.CreateClient();
+        // §2 CSRF: every POST below is a state-changing /api/* call and is refused
+        // without the synchroniser token.
+        var client = await _factory.CreateClient().ArmAntiforgeryAsync();
 
         // Save → get returns the row.
         var post = await client.PostAsJsonAsync("/api/posports/highscores", Meet("Ratchet Runner", 14.2, 21.3));
@@ -60,7 +62,9 @@ public sealed class PoSportsHighScoreTests : IClassFixture<TestWebApplicationFac
     public async Task Post_RejectsMalformedSubmissions()
     {
         if (!_factory.DockerAvailable) return;
-        var client = _factory.CreateClient();
+        // Armed so these assertions still exercise the *validation* rejection (400) rather than
+        // collapsing into a blanket antiforgery 403 that would pass for the wrong reason.
+        var client = await _factory.CreateClient().ArmAntiforgeryAsync();
 
         // Legs that don't sum to the total.
         var mismatched = Meet("Cheater", 10, 20);

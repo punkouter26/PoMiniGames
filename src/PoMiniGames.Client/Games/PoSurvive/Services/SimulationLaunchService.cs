@@ -1,7 +1,7 @@
 using System.Text.Json;
 using Microsoft.JSInterop;
-using PoShared.Simulation.Constants;
-using PoShared.Simulation.Models;
+using PoMiniGames.Shared.Simulation.Constants;
+using PoMiniGames.Shared.Simulation.Models;
 
 namespace PoMiniGamesClient.Games.PoSurvive.Services;
 

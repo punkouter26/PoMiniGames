@@ -1,6 +1,6 @@
 using FluentAssertions;
 using PoMiniGames.Features.PoRacer;
-using PoShared.Games;
+using PoMiniGames.Shared.Games;
 using Xunit.Abstractions;
 
 namespace PoMiniGames.Unit.Features.PoRacer;

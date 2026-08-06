@@ -1,7 +1,7 @@
 using System.Net.Http;
 using System.Net.Http.Json;
 using PoMiniGamesClient.Services;
-using PoShared.Games.PoJoker;
+using PoMiniGames.Shared.Games.PoJoker;
 
 namespace PoMiniGamesClient.Games.PoJoker;
 

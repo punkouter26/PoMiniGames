@@ -2,8 +2,8 @@ namespace PoMiniGamesClient.Games.PoSurvive.Services;
 
 using System.Net.Http.Json;
 using PoMiniGamesClient.Services;
-using PoShared.Simulation.Interfaces;
-using PoShared.Simulation.Models;
+using PoMiniGames.Shared.Simulation.Interfaces;
+using PoMiniGames.Shared.Simulation.Models;
 
 /// <summary>
 /// GoF: Strategy — client-side relay that calls POST /api/infer on the server,

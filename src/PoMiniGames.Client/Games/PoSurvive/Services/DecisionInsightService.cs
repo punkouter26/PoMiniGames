@@ -1,4 +1,4 @@
-using PoShared.Simulation.Models;
+using PoMiniGames.Shared.Simulation.Models;
 using PoMiniGamesClient.Games.PoSurvive.Store;
 
 namespace PoMiniGamesClient.Games.PoSurvive.Services;

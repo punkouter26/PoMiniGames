@@ -1,3 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <!-- TFM / Nullable / ImplicitUsings inherited from Directory.Build.props -->
+  <PropertyGroup>
+    <!-- TFM / Nullable / ImplicitUsings inherited from Directory.Build.props.
+         §1.7 Trimming Safeguards. Domain is pulled into the WASM client through
+         PoMiniGames.Application, so a non-trim-safe API in a public type here
+         reaches the browser payload. Analyse it at its own source, not at the
+         far end of the reference chain where the diagnostic loses its origin. -->
+    <IsTrimmable>true</IsTrimmable>
+    <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
+  </PropertyGroup>
 </Project>

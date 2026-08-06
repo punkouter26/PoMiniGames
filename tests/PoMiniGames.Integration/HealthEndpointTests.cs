@@ -82,8 +82,17 @@ public sealed class HealthEndpointTests : IClassFixture<TestWebApplicationFactor
         // (System.Text.Json default policy preserves the C# PascalCase names).
         json!["Identity"]!.Should().NotBeNull();
         json["Identity"]!["Ports"]!["Http"]!.GetValue<int>().Should().Be(5000);
-        json["Environment"]!["Name"]!.GetValue<string>().Should().Be("Development");
-        json["Environment"]!["ApplicationName"]!.GetValue<string>().Should().Be("PoMiniGames");
+        // "Test", not "Development": every integration/E2E fixture boots the host under the
+        // Test environment (see TestWebApplicationFactory — it is what activates
+        // StartupSecretValidator's Test-skip branch). This assertion had said "Development"
+        // since before that policy landed and could never have passed.
+        json["Environment"]!["Name"]!.GetValue<string>().Should().Be("Test");
+        // ApplicationName comes from IWebHostEnvironment, which the framework derives from the
+        // ENTRY ASSEMBLY name — so this tracks the host project rename to PoMiniGames.API.
+        // Note this is display-only. The identity that actually matters, Data Protection's
+        // SetApplicationName("PoMiniGames"), is a hardcoded constant and deliberately did NOT
+        // move with the assembly; had it, the rename would have invalidated every auth cookie.
+        json["Environment"]!["ApplicationName"]!.GetValue<string>().Should().Be("PoMiniGames.API");
         body.Should().NotContain("APPLICATIONINSIGHTS_CONNECTION_STRING");
         body.Should().NotContain("InstrumentationKey", because: "diag should not expose raw secret values");
     }

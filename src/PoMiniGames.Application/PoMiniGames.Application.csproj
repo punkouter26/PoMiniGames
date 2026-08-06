@@ -1,7 +1,14 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <!-- TFM / Nullable / ImplicitUsings inherited from Directory.Build.props -->
+  <PropertyGroup>
+    <!-- TFM / Nullable / ImplicitUsings inherited from Directory.Build.props.
+         §1.7 Trimming Safeguards. PoSurvive runs this project's simulation logic
+         in the browser (PoMiniGamesClient.csproj references it directly), so it
+         ships in the trimmed WASM payload and must be analysed as such. -->
+    <IsTrimmable>true</IsTrimmable>
+    <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
+  </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\PoMiniGames.Domain\PoMiniGames.Domain.csproj" />
-    <ProjectReference Include="..\PoShared\PoShared.csproj" />
+    <ProjectReference Include="..\PoMiniGames.Shared\PoMiniGames.Shared.csproj" />
   </ItemGroup>
 </Project>

@@ -1,0 +1,80 @@
+using PoMiniGames.Features.Auth;
+using PoMiniGames.Features.Diagnostics;
+using PoMiniGames.Features.Health;
+using PoMiniGames.Features.HighScores;     // MarbleRace / PoBrawl mappers
+using PoMiniGames.Features.Leaderboard;
+using PoMiniGames.Features.MatchHistory;
+using PoMiniGames.Features.PoCoupleQuiz;
+using PoMiniGames.Features.PoFunQuiz;
+using PoMiniGames.Features.PoJoker;
+using PoMiniGames.Features.PoRacer;
+using PoMiniGames.Features.PoSurvive;
+
+namespace PoMiniGames.Infrastructure;
+
+/// <summary>
+/// Single, ordered registration point for every HTTP endpoint and SignalR hub.
+/// Program.cs maps the whole surface with one <c>app.MapPoMiniGamesEndpoints()</c>
+/// call, so the route table is described in exactly one place.
+///
+/// Groups use <c>MapGroup("")</c> (empty prefix) to preserve existing route paths
+/// while applying cross-cutting policies — auth and per-game rate limits — at the
+/// group boundary rather than per-endpoint. SignalR hubs are mapped directly on
+/// <c>app</c> because <c>MapHub&lt;T&gt;</c> returns <c>IHubEndpointConventionBuilder</c>,
+/// which is not an <c>IEndpointConventionBuilder</c> and cannot be composed inside a group.
+/// </summary>
+internal static class EndpointRouteExtensions
+{
+    public static WebApplication MapPoMiniGamesEndpoints(this WebApplication app)
+    {
+        // ── Platform: unprotected (auth flow, health probes, diagnostics) ──
+        app.MapAuthEndpoints();
+        // §2 CSRF token issuer. Anonymous + GET, so it stays reachable before sign-in
+        // and is itself exempt from the validation gate it feeds.
+        app.MapAntiforgeryEndpoints();
+        app.MapHealthEndpoints();
+        app.MapDiagEndpoints();
+        app.MapMockablesEndpoints();
+        app.MapTelemetryStatusEndpoints();
+        app.MapTestHarnessEndpoints(app.Environment);
+
+        // ── Public read-only leaderboards (guest-first) ────────────────────
+        // §10 A brand-new visitor can browse the boards before signing in, so
+        // the leaderboard READ endpoints are anonymous. These are pure GETs
+        // (no writes), and default authorization is anonymous — the only reason
+        // they were gated before was the authenticated group below. Score
+        // SUBMIT paths stay authenticated (guests park scores locally and flush
+        // them on sign-in), so anonymous read never becomes anonymous write.
+        app.MapGetLeaderboard();
+        app.MapUnifiedLeaderboardEndpoints();
+
+        // ── Authenticated game API ─────────────────────────────────────────
+        // All game-data endpoints require a valid session. Per-endpoint rate
+        // limits (highscores, ai-generation, face-analysis, infer) are declared
+        // inside each slice; the group adds the auth gate only.
+        var gameApi = app.MapGroup("").RequireAuthorization();
+
+        gameApi.MapGetPlayerStats();
+        gameApi.MapSavePlayerStats();
+        gameApi.MapGetAllPlayerStatistics();
+        gameApi.MapMarbleRaceHighScoresEndpoints();
+        gameApi.MapPoBrawlHighScoresEndpoints();
+        gameApi.MapMatchHistoryEndpoints();
+        gameApi.MapCoupleQuizEndpoints();
+        gameApi.MapFunQuizEndpoints();
+        gameApi.MapPoJokerEndpoints();
+        gameApi.MapPoRacerScoreEndpoints();
+        gameApi.MapPoSportsHighScoresEndpoints();
+        gameApi.MapPoSurviveEndpoints(app.Configuration);
+
+        // ── SignalR hubs (auth required; not part of MapGroup) ────────────
+        app.MapHub<CoupleQuizHub>("/couplequiz/hubs/game").RequireAuthorization();
+        app.MapHub<FunQuizHub>("/funquiz/gamehub").RequireAuthorization();
+        app.MapHub<PoRacerLobbyHub>("/poracer/lobby-hub").RequireAuthorization();
+        app.MapHub<PoRacerRaceHub>("/poracer/race-hub").RequireAuthorization();
+        app.MapHub<PoMiniGames.Features.PoSports.PoSportsLobbyHub>("/posports/lobby-hub").RequireAuthorization();
+        app.MapHub<PoMiniGames.Features.PoSports.PoSportsRaceHub>("/posports/race-hub").RequireAuthorization();
+
+        return app;
+    }
+}

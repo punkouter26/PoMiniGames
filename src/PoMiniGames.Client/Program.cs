@@ -10,7 +10,7 @@ using PoMiniGamesClient.Services;
 using PoMiniGames.Application.Simulation;
 using PoMiniGamesClient.Games.PoSurvive.Services;
 using PoMiniGamesClient.Games.PoSurvive.Store;
-using PoShared.Simulation.Interfaces;
+using PoMiniGames.Shared.Simulation.Interfaces;
 
 var builder = WebAssemblyHostBuilder.CreateDefault(args);
 builder.RootComponents.Add<App>("#app");
@@ -47,17 +47,24 @@ if (string.IsNullOrWhiteSpace(apiBase))
 // The HttpClient is built over an explicit DelegatingHandler pipeline so
 // credential inclusion has a code-level guarantee (IncludeCredentialsHandler),
 // not only the JS monkey-patch, and so transient GET failures get a bounded
-// retry (TransientRetryHandler). Order (outer → inner):
-//   TransientRetryHandler → IncludeCredentialsHandler → HttpClientHandler
+// retry (TransientRetryHandler), and so §2 CSRF tokens are attached without every
+// call site remembering to (AntiforgeryHandler). Order (outer → inner):
+//   TransientRetryHandler → AntiforgeryHandler → IncludeCredentialsHandler → HttpClientHandler
 // Retry is outermost so each replayed clone passes back through
 // IncludeCredentialsHandler and gets the credentials mode re-applied before it
 // reaches the browser transport (HttpClientHandler backs the WASM fetch shim).
+// AntiforgeryHandler sits directly beneath it, and ABOVE IncludeCredentialsHandler:
+// the token fetch it makes must carry credentials, because the response sets the
+// paired antiforgery cookie the server validates the header against.
 builder.Services.AddScoped(sp => new HttpClient(
     new TransientRetryHandler
     {
-        InnerHandler = new IncludeCredentialsHandler
+        InnerHandler = new AntiforgeryHandler
         {
-            InnerHandler = new HttpClientHandler()
+            InnerHandler = new IncludeCredentialsHandler
+            {
+                InnerHandler = new HttpClientHandler()
+            }
         }
     })
 {
@@ -115,7 +122,7 @@ builder.Services.AddScoped<PoMiniGamesClient.Games.PoJoker.IJokerSpeechService,
     PoMiniGamesClient.Games.PoJoker.JokerSpeechService>();
 builder.Services.AddScoped<PoMiniGamesClient.Games.PoJoker.IJokerAudioService,
     PoMiniGamesClient.Games.PoJoker.JokerAudioService>();
-builder.Services.AddSingleton<PoShared.Games.PoJoker.PerformanceSettings>();
+builder.Services.AddSingleton<PoMiniGames.Shared.Games.PoJoker.PerformanceSettings>();
 
 // ─── PoSurvive (agent survival simulation) ───────────────────────────
 // State lives in SurviveStore — a plain observable store. This replaced Fluxor, whose

@@ -3,7 +3,7 @@ namespace PoMiniGames.Application.Simulation;
 using PoMiniGames.Application.Simulation;
 using PoMiniGames.Domain.Entities.Simulation;
 using PoMiniGames.Domain.Enums.Simulation;
-using PoShared.Simulation.Models;
+using PoMiniGames.Shared.Simulation.Models;
 
 // GoF: Template Method — GenerateNarrative() selects and fills in a template based on outcome + winner DNA
 public sealed class NarrativeService

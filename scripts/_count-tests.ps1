@@ -6,7 +6,7 @@ $ErrorActionPreference = 'Stop'
 Set-Location -LiteralPath (Split-Path -Parent $PSScriptRoot)
 $root = (Get-Location).Path
 
-$tiers = @('PoMiniGames.Unit','PoMiniGames.Integration','E2EAPI','E2EUI')
+$tiers = @('PoMiniGames.Unit','PoMiniGames.Integration','PoMiniGames.E2EAPI','PoMiniGames.E2EUI')
 foreach ($t in $tiers) {
     $p = Join-Path 'tests' $t
     if (-not (Test-Path $p)) { continue }

@@ -1,6 +1,6 @@
 using FluentAssertions;
 using PoMiniGames.Features.PoJoker;
-using PoShared.Games.PoJoker;
+using PoMiniGames.Shared.Games.PoJoker;
 
 namespace PoMiniGames.Integration;
 

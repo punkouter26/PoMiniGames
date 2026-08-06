@@ -1,7 +1,7 @@
 namespace PoMiniGamesClient.Games.PoSurvive.Store;
 
-using PoShared.Simulation.Constants;
-using PoShared.Simulation.Models;
+using PoMiniGames.Shared.Simulation.Constants;
+using PoMiniGames.Shared.Simulation.Models;
 
 /// <summary>Immutable view state for one running simulation session. Owned by SurviveStore.</summary>
 public sealed record SimulationState

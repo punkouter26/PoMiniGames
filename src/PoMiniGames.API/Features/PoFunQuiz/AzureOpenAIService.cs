@@ -1,15 +1,15 @@
-using System.ClientModel;
 using System.Text.Json;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using OpenAI.Chat;
+using Microsoft.Extensions.Options;
 
 namespace PoMiniGames.Features.PoFunQuiz;
 
 /// <summary>
 /// Server-side Azure OpenAI question generator for PoFunQuiz. Backed by the shared
 /// Azure AI Foundry hub in the <c>PoShared</c> resource group; the <c>funquiz</c>
-/// deployment name is resolved through <see cref="AIFoundryChatClientCache"/>.
+/// deployment is resolved through <see cref="AIFoundryOptions"/>.
 ///
 /// <para><b>Mock fallback</b>: gated on <c>IsDevelopment() || IsEnvironment("Test")</c>
 /// AND the explicit <c>UseMockAI</c> flag. In Production, missing config causes an
@@ -17,33 +17,63 @@ namespace PoMiniGames.Features.PoFunQuiz;
 /// fabricated data — see the 2026-06-13 mock-data fix (user memory
 /// <c>pofunquiz-mock-data-fix.md</c>).</para>
 /// </summary>
+/// <remarks>
+/// <para>
+/// <b>Chat client.</b> Resolved from the keyed <see cref="IChatClient"/> registration, not from
+/// <c>AIFoundryChatClientCache</c>. Going to the cache handed back a bare SDK <c>ChatClient</c>,
+/// which meant this game — like PoCoupleQuiz and PoJoker — ran with no resilience pipeline, no
+/// circuit breaker, no concurrency limit, no token accounting and no health tracking. Every
+/// cross-cutting guarantee the AI layer documents was, for this service, not in the call path at all.
+/// </para>
+/// <para>
+/// <b>Output contract.</b> The reply is schema-constrained where the deployment supports it
+/// (see <see cref="AiModelCapabilities"/>), so <c>correctOptionIndex</c> arrives as an integer in
+/// range and <c>difficulty</c> as one of three known strings, rather than being hoped for from a
+/// JSON-object-mode reply and silently dropped by the parser when it was not.
+/// </para>
+/// </remarks>
 public sealed class AzureOpenAIService : IOpenAIService
 {
+    /// <summary>
+    /// Output ceiling for a generation call, scaled by how many questions were asked for.
+    /// </summary>
+    /// <remarks>
+    /// A fixed cap cannot work across a request range of 1–50 questions: sized for 50 it is a
+    /// blank cheque for a request of 3, and sized for 3 it truncates a request for 50 into an
+    /// unparseable reply. ~90 tokens per question plus headroom for the envelope, measured against
+    /// four-option questions with a difficulty label.
+    /// </remarks>
+    private const int TokensPerQuestion = 90;
+    private const int EnvelopeTokens = 200;
+
+    /// <summary>Hard cap on questions per call, mirrored by the endpoint's own guard.</summary>
+    public const int MaxQuestionsPerCall = 50;
+
     private readonly IConfiguration _configuration;
     private readonly IHostEnvironment _environment;
     private readonly ILogger<AzureOpenAIService> _logger;
-    private readonly AIFoundryChatClientCache _chatClientCache;
-    private readonly AIFoundryOptions _foundryOptions;
+    private readonly GameChatClientFactory _clients;
+    private readonly IOptionsMonitor<AIFoundryOptions> _foundryOptions;
 
     public AzureOpenAIService(
         IConfiguration configuration,
         IHostEnvironment environment,
         ILogger<AzureOpenAIService> logger,
-        AIFoundryChatClientCache chatClientCache,
-        Microsoft.Extensions.Options.IOptionsMonitor<AIFoundryOptions> foundryOptions)
+        GameChatClientFactory clients,
+        IOptionsMonitor<AIFoundryOptions> foundryOptions)
     {
         _configuration = configuration;
         _environment = environment;
         _logger = logger;
-        _chatClientCache = chatClientCache;
-        _foundryOptions = foundryOptions.CurrentValue;
+        _clients = clients;
+        _foundryOptions = foundryOptions;
     }
 
     public async Task<IReadOnlyList<QuizQuestion>> GenerateQuizQuestionsAsync(
         QuestionCategory category, int count, CancellationToken cancellationToken = default)
     {
         if (count <= 0) return Array.Empty<QuizQuestion>();
-        count = Math.Min(count, 50); // hard cap
+        count = Math.Min(count, MaxQuestionsPerCall); // hard cap
 
         var useMock = _configuration.GetValue<bool>("PoFunQuiz:Features:UseMockAI");
         if (useMock && IsNonProduction())
@@ -52,7 +82,11 @@ public sealed class AzureOpenAIService : IOpenAIService
             return MockOpenAIService.GenerateQuestions(category, count);
         }
 
-        var chatClient = _chatClientCache.Resolve(AIFoundryOptions.Games.FunQuiz);
+        var deployment = _clients.DeploymentFor(AIFoundryOptions.Games.FunQuiz);
+        var chatClient = _foundryOptions.CurrentValue.IsConfigured
+            ? _clients.ForDeployment(AIFoundryOptions.Games.FunQuiz, deployment)
+            : null;
+
         if (chatClient is null)
         {
             if (IsNonProduction())
@@ -64,22 +98,35 @@ public sealed class AzureOpenAIService : IOpenAIService
                 $"PoFunQuiz: AIFoundry not configured. Set {AIFoundryOptions.SectionName} in Key Vault (kv-poshared).");
         }
 
-        var systemPrompt = "You generate multiple-choice trivia questions. Respond with a JSON object: " +
-                           "{\"questions\":[{\"text\":\"<q>\",\"options\":[\"a\",\"b\",\"c\",\"d\"],\"correctOptionIndex\":<0-3>,\"difficulty\":\"Easy|Medium|Hard\"}]}. " +
-                           "No explanations. Exactly 4 options per question. Difficulty is a mix unless asked otherwise.";
-        var userPrompt = $"Generate {count} {category} trivia questions. Mix Easy/Medium/Hard.";
+        var systemPrompt =
+            "You generate multiple-choice trivia questions. Every question has exactly 4 options and " +
+            "exactly one correct answer, identified by its zero-based index. Vary difficulty across " +
+            "Easy, Medium and Hard unless asked otherwise. Do not repeat a question within one response. " +
+            "No explanations, no commentary — emit only the JSON object described by the schema: " +
+            "{\"questions\":[{\"text\":\"<q>\",\"options\":[\"a\",\"b\",\"c\",\"d\"]," +
+            "\"correctOptionIndex\":<0-3>,\"difficulty\":\"Easy|Medium|Hard\"}]}.";
+
+        // The category is one of our own enum values, not user text, so it needs no fencing.
+        var userPrompt = $"Generate {count} trivia questions in the category: {category}.";
 
         try
         {
             var messages = new List<ChatMessage>
             {
-                new SystemChatMessage(systemPrompt),
-                new UserChatMessage(userPrompt)
+                new(ChatRole.System, systemPrompt),
+                new(ChatRole.User, userPrompt),
             };
-            var options = new ChatCompletionOptions { ResponseFormat = ChatResponseFormat.CreateJsonObjectFormat() };
-            var completion = await chatClient.CompleteChatAsync(messages, options, cancellationToken);
-            var json = completion.Value.Content[0].Text;
-            return ParseQuestions(json, category, count);
+
+            var options = AiDecisionChatOptions.ForStructuredJson(
+                QuestionsSchema,
+                schemaName: "quiz_questions",
+                maxOutputTokens: EnvelopeTokens + (count * TokensPerQuestion),
+                deployment: deployment,
+                schemaDescription: "A batch of four-option multiple-choice trivia questions.",
+                capabilityOverrides: _clients.CapabilityOverrides);
+
+            var response = await chatClient.GetResponseAsync(messages, options, cancellationToken);
+            return ParseQuestions(response.Text, category, count, _logger);
         }
         catch (Exception ex)
         {
@@ -89,51 +136,199 @@ public sealed class AzureOpenAIService : IOpenAIService
         }
     }
 
-    private static IReadOnlyList<QuizQuestion> ParseQuestions(string json, QuestionCategory category, int expected)
+    /// <summary>
+    /// The reply contract as a schema the service enforces. <c>correctOptionIndex</c> is bounded
+    /// and <c>difficulty</c> is an enum, which is what stops a malformed item from being silently
+    /// dropped by the parser below and the caller quietly receiving fewer questions than it asked for.
+    /// </summary>
+    /// <remarks>
+    /// <c>.Clone()</c> is load-bearing — a <see cref="JsonElement"/> is a view over its
+    /// <see cref="JsonDocument"/>'s pooled buffer, and handing out the un-cloned root of a document
+    /// nobody holds throws once that document is collected.
+    /// </remarks>
+    public static JsonElement QuestionsSchema { get; } = JsonDocument.Parse(
+        """
+        {
+          "type": "object",
+          "properties": {
+            "questions": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "text": { "type": "string" },
+                  "options": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "minItems": 4,
+                    "maxItems": 4
+                  },
+                  "correctOptionIndex": { "type": "integer", "minimum": 0, "maximum": 3 },
+                  "difficulty": { "type": "string", "enum": ["Easy", "Medium", "Hard"] }
+                },
+                "required": ["text", "options", "correctOptionIndex", "difficulty"],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": ["questions"],
+          "additionalProperties": false
+        }
+        """).RootElement.Clone();
+
+    /// <summary>
+    /// Parses the reply into questions. Throws <see cref="QuizGenerationUnusableException"/> when
+    /// nothing usable came back.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// This used to end with <c>if (results.Count == 0) return MockOpenAIService.GenerateQuestions(...)</c>
+    /// — unconditionally, in every environment. So a Production deployment that returned unparseable
+    /// JSON served players a fixed pool of hardcoded questions that looked exactly like real output,
+    /// which is precisely the failure the class's own "never silently serves fabricated data" contract
+    /// was written to prevent. The mock decision belongs to the caller, which knows the environment;
+    /// a parser's job is to report that it parsed nothing.
+    /// </para>
+    /// <para>
+    /// The surrounding <c>catch</c> also swallowed the <see cref="JsonException"/> without logging,
+    /// so the one signal that would have identified the cause was discarded too.
+    /// </para>
+    /// <para>
+    /// Still tolerant of prose around the JSON: the schema makes that unnecessary for a compliant
+    /// provider, but the JSON-object-mode fallback (used by deployments without schema support)
+    /// can still produce it.
+    /// </para>
+    /// </remarks>
+    private static IReadOnlyList<QuizQuestion> ParseQuestions(
+        string? raw, QuestionCategory category, int expected, ILogger logger)
     {
+        var start = raw?.IndexOf('{') ?? -1;
+        var end = raw?.LastIndexOf('}') ?? -1;
+        if (raw is null || start < 0 || end <= start)
+        {
+            logger.UnparseableReply("PoFunQuiz", "no JSON object in the reply", Truncate(raw, 300));
+            throw new QuizGenerationUnusableException(raw?.Length ?? 0, expected);
+        }
+
         var results = new List<QuizQuestion>();
+        var rejected = 0;
         try
         {
-            using var doc = JsonDocument.Parse(json);
-            JsonElement array;
-            if (doc.RootElement.TryGetProperty("questions", out var q))
-                array = q;
-            else if (doc.RootElement.ValueKind == JsonValueKind.Array)
-                array = doc.RootElement;
-            else
-                array = doc.RootElement; // single object fallback
+            using var doc = JsonDocument.Parse(raw[start..(end + 1)]);
+
+            var array = doc.RootElement.TryGetProperty("questions", out var q)
+                ? q
+                : doc.RootElement;
+
+            if (array.ValueKind != JsonValueKind.Array)
+            {
+                logger.UnparseableReply("PoFunQuiz", "reply carried no questions array", Truncate(raw, 300));
+                throw new QuizGenerationUnusableException(raw.Length, expected);
+            }
 
             foreach (var item in array.EnumerateArray())
             {
-                var text = item.GetProperty("text").GetString() ?? string.Empty;
-                var options = item.GetProperty("options").EnumerateArray().Select(o => o.GetString() ?? "").ToList();
-                var correct = item.GetProperty("correctOptionIndex").GetInt32();
-                var diff = item.TryGetProperty("difficulty", out var d) && Enum.TryParse<DifficultyLevel>(d.GetString(), true, out var dval)
-                    ? dval
-                    : DifficultyLevel.Medium;
-                if (options.Count != 4 || correct < 0 || correct > 3) continue;
-                results.Add(new QuizQuestion
-                {
-                    Text = text,
-                    Options = options,
-                    CorrectOptionIndex = correct,
-                    Category = category,
-                    Difficulty = diff
-                });
+                if (TryReadQuestion(item, category) is { } question)
+                    results.Add(question);
+                else
+                    rejected++;
             }
         }
-        catch
+        catch (JsonException ex)
         {
-            // JSON parse failure — return whatever we have (possibly empty).
+            logger.UnparseableReply("PoFunQuiz", $"invalid JSON ({ex.Message})", Truncate(raw, 300));
+            throw new QuizGenerationUnusableException(raw.Length, expected);
         }
+
         if (results.Count == 0)
         {
-            return MockOpenAIService.GenerateQuestions(category, expected);
+            logger.UnparseableReply(
+                "PoFunQuiz", $"every one of {rejected} item(s) failed validation", Truncate(raw, 300));
+            throw new QuizGenerationUnusableException(raw.Length, expected);
         }
+
+        if (rejected > 0)
+        {
+            // A partial batch is served rather than failed — the game can run on fewer questions —
+            // but silently returning less than was asked for is how a slow degradation goes unnoticed.
+            logger.PartialQuestionBatch(results.Count, expected, rejected);
+        }
+
         return results;
     }
 
+    /// <summary>Reads one question, or null when it does not satisfy the game's invariants.</summary>
+    private static QuizQuestion? TryReadQuestion(JsonElement item, QuestionCategory category)
+    {
+        if (item.ValueKind != JsonValueKind.Object
+            || !item.TryGetProperty("text", out var textEl)
+            || textEl.ValueKind != JsonValueKind.String
+            || !item.TryGetProperty("options", out var optionsEl)
+            || optionsEl.ValueKind != JsonValueKind.Array
+            || !item.TryGetProperty("correctOptionIndex", out var correctEl)
+            || !correctEl.TryGetInt32(out var correct))
+        {
+            return null;
+        }
+
+        var text = textEl.GetString();
+        if (string.IsNullOrWhiteSpace(text)) return null;
+
+        var options = new List<string>(4);
+        foreach (var option in optionsEl.EnumerateArray())
+        {
+            if (option.ValueKind != JsonValueKind.String) return null;
+            var value = option.GetString();
+            if (string.IsNullOrWhiteSpace(value)) return null;
+            options.Add(value);
+        }
+
+        if (options.Count != 4 || correct < 0 || correct > 3) return null;
+
+        var difficulty =
+            item.TryGetProperty("difficulty", out var d)
+            && d.ValueKind == JsonValueKind.String
+            && Enum.TryParse<DifficultyLevel>(d.GetString(), ignoreCase: true, out var parsed)
+                ? parsed
+                : DifficultyLevel.Medium;
+
+        return new QuizQuestion
+        {
+            Text = text,
+            Options = options,
+            CorrectOptionIndex = correct,
+            Category = category,
+            Difficulty = difficulty,
+        };
+    }
+
+    private static string Truncate(string? text, int max)
+        => string.IsNullOrEmpty(text) ? "(empty)"
+         : text.Length <= max ? text
+         : text[..max] + "…";
+
     private bool IsNonProduction() => _environment.IsDevelopment() || _environment.IsEnvironment("Test");
+}
+
+/// <summary>
+/// Thrown when the model answered but the reply contained no usable question. Distinct from a
+/// transport failure so the caller can decide what to do about it — which, in Production, is
+/// surface the failure, not substitute fabricated questions.
+/// </summary>
+public sealed class QuizGenerationUnusableException : Exception
+{
+    public QuizGenerationUnusableException(int rawLength, int requested)
+        : base($"The model returned no usable questions (rawLength={rawLength}, requested={requested}).")
+    {
+        RawLength = rawLength;
+        Requested = requested;
+    }
+
+    /// <summary>Length of the reply. Zero means the output budget was spent before any text.</summary>
+    public int RawLength { get; }
+
+    /// <summary>How many questions were asked for.</summary>
+    public int Requested { get; }
 }
 
 /// <summary>

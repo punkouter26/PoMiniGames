@@ -76,11 +76,28 @@ internal static class GameServicesExtensions
         services.AddSingleton<AiUsageAccumulator>();
         services.AddOptions<AiTokenBudgetOptions>().BindConfiguration(AiTokenBudgetOptions.SectionName);
         services.AddSingleton<AiTokenBudget>();
+        // Embeddings for the similarity-scoring path. Dormant unless
+        // PoMiniGames:AI:EmbeddingDeployment names a deployment — the shared account currently has
+        // none, so PoCoupleQuiz still scores via chat; see AiEmbeddingService.
+        services.AddSingleton<AiEmbeddingService>();
         services.AddHttpClient(nameof(FoundryDeploymentValidator), client =>
         {
             client.Timeout = TimeSpan.FromSeconds(10);
         });
         services.AddHostedService<FoundryDeploymentValidator>();
+        // Every AI-consuming slice now resolves its chat client through GameChatClientFactory, so
+        // each gets the resilience pipeline, the spend ceiling and the telemetry by construction.
+        // Registering the keys here (rather than in each slice) keeps the set in one place and
+        // makes the health-tracker keys predictable. Idempotent — PoSurvive registers its own too.
+        services.AddGameChatClient(AIFoundryOptions.Games.CoupleQuiz);
+        services.AddGameChatClient(AIFoundryOptions.Games.FunQuiz);
+        services.AddGameChatClient(AIFoundryOptions.Games.Joker);
+        // /health gains an AI check, and /api/health/ai exposes the usage read-model that
+        // AiUsageAccumulator has been filling with no reader.
+        services.AddHealthChecks()
+            .AddCheck<AiFoundryHealthCheck>(
+                "AiFoundry",
+                tags: ["ai", "ready"]);
         // PoRaceRagdoll feature removed.
 
         // Elo calculation with configurable options

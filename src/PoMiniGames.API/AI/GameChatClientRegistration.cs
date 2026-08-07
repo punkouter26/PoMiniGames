@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Polly.Registry;
 using PoMiniGames.Shared.Simulation.Models;
@@ -20,12 +21,16 @@ namespace PoMiniGames.AI;
 /// </para>
 /// <code>
 /// ResilientChatClient          // total-call budget, retry, circuit breaker
-///   └─ InstrumentedChatClient  // token/latency logging, health tracking
-///        └─ foundry ChatClient // the cached per-deployment client
+///   └─ BudgetedChatClient      // per-identity daily token ceiling
+///        └─ InstrumentedChatClient  // token/latency logging, health tracking
+///             └─ foundry ChatClient // the cached per-deployment client
 /// </code>
 /// <para>
 /// The decorators nest in that order on purpose: telemetry inside the pipeline measures one
-/// attempt's real service latency, and counts a retried attempt as the failure it was.
+/// attempt's real service latency, and counts a retried attempt as the failure it was. The spend
+/// ceiling sits between them — inside the pipeline so a refusal is not retried and does not count
+/// toward the circuit breaker, outside the telemetry so a refused call is not recorded as a
+/// provider failure. A caller out of allowance is not a sick deployment.
 /// </para>
 /// <para>
 /// Composition is per <b>deployment</b>, not per game, because <c>/api/infer</c> lets a caller
@@ -44,6 +49,7 @@ public sealed class GameChatClientFactory
     private readonly AiUsageAccumulator _usage;
     private readonly IServiceProvider _services;
     private readonly ResiliencePipelineProvider<string> _pipelines;
+    private readonly AiTokenBudget _budget;
 
     private readonly ConcurrentDictionary<string, IChatClient> _composed =
         new(StringComparer.OrdinalIgnoreCase);
@@ -54,7 +60,8 @@ public sealed class GameChatClientFactory
         ILoggerFactory loggerFactory,
         AiUsageAccumulator usage,
         IServiceProvider services,
-        ResiliencePipelineProvider<string> pipelines)
+        ResiliencePipelineProvider<string> pipelines,
+        AiTokenBudget budget)
     {
         _cache = cache;
         _options = options;
@@ -62,7 +69,18 @@ public sealed class GameChatClientFactory
         _usage = usage;
         _services = services;
         _pipelines = pipelines;
+        _budget = budget;
     }
+
+    /// <summary>
+    /// The deployment name <paramref name="gameKey"/> resolves to. Exposed so a caller can build
+    /// capability-correct <see cref="Microsoft.Extensions.AI.ChatOptions"/> for the model that will
+    /// actually serve the call — see <see cref="AiDecisionChatOptions.ForStructuredJson"/>.
+    /// </summary>
+    public string DeploymentFor(string gameKey) => _options.CurrentValue.ResolveDeployment(gameKey);
+
+    /// <summary>Capability overrides from configuration, for the same options-building path.</summary>
+    public IReadOnlyDictionary<string, string> CapabilityOverrides => _options.CurrentValue.ModelCapabilityOverrides;
 
     /// <summary>
     /// The decorated client for <paramref name="gameKey"/>'s configured deployment. Throws when the
@@ -93,20 +111,48 @@ public sealed class GameChatClientFactory
         if (bare is null)
             return null;
 
+        var logger = _loggerFactory.CreateLogger($"PoMiniGames.AI.{gameKey}");
+
+        // Health trackers are registered per game, and a task key ("joker.rating") shares its
+        // game's tracker: a task is not a separate dependency to be healthy or unhealthy about.
+        var healthKey = HealthKeyFor(gameKey);
+
         var instrumented = new InstrumentedChatClient(
             bare,
             gameKey,
             deployment,
-            _loggerFactory.CreateLogger($"PoMiniGames.AI.{gameKey}"),
+            logger,
             _usage,
-            _services.GetRequiredKeyedService<InferenceHealthTracker>(gameKey));
+            _services.GetRequiredKeyedService<InferenceHealthTracker>(healthKey));
+
+        var budgeted = new BudgetedChatClient(instrumented, _budget, gameKey, logger);
 
         var composed = new ResilientChatClient(
-            instrumented,
-            _pipelines.GetPipeline(AzureOpenAIResilience.PipelineName));
+            budgeted,
+            ResolvePipeline(healthKey));
 
         return _composed.GetOrAdd(key, composed);
     }
+
+    /// <summary>
+    /// The game a key belongs to. <c>joker.rating</c> → <c>joker</c>; anything without a task
+    /// suffix is already a game key.
+    /// </summary>
+    private static string HealthKeyFor(string gameKey)
+    {
+        var dot = gameKey.IndexOf('.');
+        return dot > 0 ? gameKey[..dot] : gameKey;
+    }
+
+    /// <summary>
+    /// The game's own resilience partition, or the shared pipeline for a game that has none. Each
+    /// partitioned game gets its own concurrency permits and its own circuit state — see
+    /// <see cref="AzureOpenAIResilience.PartitionedGames"/> for why sharing them is a starvation bug.
+    /// </summary>
+    private Polly.ResiliencePipeline ResolvePipeline(string gameKey)
+        => _pipelines.TryGetPipeline(AzureOpenAIResilience.PipelineNameFor(gameKey), out var partitioned)
+            ? partitioned
+            : _pipelines.GetPipeline(AzureOpenAIResilience.PipelineName);
 }
 
 /// <summary>DI registration for <see cref="GameChatClientFactory"/>-backed game chat clients.</summary>
@@ -116,11 +162,18 @@ public static class GameChatClientRegistration
     /// Adds the keyed <see cref="IChatClient"/> and per-game
     /// <see cref="InferenceHealthTracker"/> for <paramref name="gameKey"/>.
     /// </summary>
+    /// <remarks>
+    /// Idempotent. Every registration here is a <c>TryAdd</c> so the four slices that now call this
+    /// — plus PoSurvive, which called it first — cannot double-register a health tracker or fight
+    /// over the keyed client. Task-scoped clients (<c>joker.rating</c>) are NOT registered here:
+    /// they share their game's tracker and are resolved from <see cref="GameChatClientFactory"/>
+    /// directly, because a task is a call-site concern, not a dependency.
+    /// </remarks>
     public static IServiceCollection AddGameChatClient(this IServiceCollection services, string gameKey)
     {
         services.TryAddSingletonFactory();
-        services.AddKeyedSingleton(gameKey, (_, _) => new InferenceHealthTracker());
-        services.AddKeyedSingleton<IChatClient>(gameKey, (sp, key) =>
+        services.TryAddKeyedSingleton<InferenceHealthTracker>(gameKey, (_, _) => new InferenceHealthTracker());
+        services.TryAddKeyedSingleton<IChatClient>(gameKey, (sp, key) =>
             sp.GetRequiredService<GameChatClientFactory>().ForGame((string)key!));
         return services;
     }

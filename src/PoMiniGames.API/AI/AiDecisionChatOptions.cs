@@ -77,4 +77,86 @@ public static class AiDecisionChatOptions
             },
 #pragma warning restore OPENAI001
         };
+
+    /// <summary>
+    /// The same bounded, machine-read shape as <see cref="ForStructuredDecision"/>, but built for
+    /// the deployment that will actually serve it — so a task can be moved onto a cheaper model
+    /// without the call starting to 400.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <see cref="ForStructuredDecision"/> hard-codes both wire fields, which is correct for
+    /// PoSurvive (pinned to a gpt-5 nano deployment) and wrong for anything that might be pointed
+    /// at <c>Phi-4-mini-instruct</c>: that deployment rejects <c>reasoning_effort</c> and does not
+    /// implement <c>json_schema</c>. Each field is therefore attached only when
+    /// <see cref="AiModelCapabilities"/> says the deployment takes it.
+    /// </para>
+    /// <para>
+    /// When the schema cannot be sent the response format degrades to JSON-object mode. That is
+    /// strictly weaker — the contract is then a request in the prompt rather than something the
+    /// service enforces — so callers must keep a defensive parser. Every caller here does; the
+    /// schema upgrades them from "hopefully valid" to "cannot be otherwise", it does not replace
+    /// the parsing.
+    /// </para>
+    /// </remarks>
+    /// <param name="deployment">Deployment the call will be routed to. Determines which wire
+    /// fields are safe to send.</param>
+    /// <param name="capabilityOverrides">Optional name → profile map from configuration; see
+    /// <see cref="AIFoundryOptions.ModelCapabilityOverrides"/>.</param>
+    public static ChatOptions ForStructuredJson(
+        JsonElement schema,
+        string schemaName,
+        int maxOutputTokens,
+        string deployment,
+        string? schemaDescription = null,
+        IReadOnlyDictionary<string, string>? capabilityOverrides = null)
+    {
+        var caps = AiModelCapabilities.For(deployment, capabilityOverrides);
+
+        var options = new ChatOptions
+        {
+            MaxOutputTokens = maxOutputTokens,
+            ResponseFormat = caps.SupportsJsonSchema
+                ? Microsoft.Extensions.AI.ChatResponseFormat.ForJsonSchema(schema, schemaName, schemaDescription)
+                : Microsoft.Extensions.AI.ChatResponseFormat.Json,
+        };
+
+        if (caps.SupportsReasoningEffort)
+        {
+#pragma warning disable OPENAI001 // see MinimalReasoning
+            options.RawRepresentationFactory = _ => new ChatCompletionOptions
+            {
+                ReasoningEffortLevel = MinimalReasoning,
+            };
+#pragma warning restore OPENAI001
+        }
+
+        return options;
+    }
+
+    /// <summary>
+    /// Plain bounded text, for the one output in this solution that is genuinely prose (PoJoker's
+    /// punchline prediction and its two-sentence explanation). Still capability-aware: the output
+    /// ceiling is only safe on a reasoning deployment when minimal effort travels with it.
+    /// </summary>
+    public static ChatOptions ForBoundedText(
+        int maxOutputTokens,
+        string deployment,
+        IReadOnlyDictionary<string, string>? capabilityOverrides = null)
+    {
+        var caps = AiModelCapabilities.For(deployment, capabilityOverrides);
+        var options = new ChatOptions { MaxOutputTokens = maxOutputTokens };
+
+        if (caps.SupportsReasoningEffort)
+        {
+#pragma warning disable OPENAI001 // see MinimalReasoning
+            options.RawRepresentationFactory = _ => new ChatCompletionOptions
+            {
+                ReasoningEffortLevel = MinimalReasoning,
+            };
+#pragma warning restore OPENAI001
+        }
+
+        return options;
+    }
 }

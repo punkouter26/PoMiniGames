@@ -29,4 +29,8 @@ internal static partial class FunQuizLog
     [LoggerMessage(EventId = 4105, Level = LogLevel.Information,
         Message = "PoFunQuiz {Code}: {Name} joined")]
     public static partial void PlayerJoined(this ILogger logger, string code, string name);
+
+    [LoggerMessage(EventId = 4106, Level = LogLevel.Warning,
+        Message = "PoFunQuiz: serving {Served} of {Requested} requested questions; {Rejected} item(s) failed validation. A partial batch still plays, but a rising count here means the deployment is drifting off the schema.")]
+    public static partial void PartialQuestionBatch(this ILogger logger, int served, int requested, int rejected);
 }

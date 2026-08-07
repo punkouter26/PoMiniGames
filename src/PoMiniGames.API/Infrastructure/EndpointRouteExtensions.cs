@@ -33,6 +33,10 @@ internal static class EndpointRouteExtensions
         // and is itself exempt from the validation gate it feeds.
         app.MapAntiforgeryEndpoints();
         app.MapHealthEndpoints();
+        // AI usage read-model. Grouped with the health probes rather than behind the game-API auth
+        // gate because it is a diagnostics surface, and it reports no other identity's spend — only
+        // aggregate per-game counters plus the caller's own allowance.
+        app.MapAiUsageEndpoints();
         app.MapDiagEndpoints();
         app.MapMockablesEndpoints();
         app.MapTelemetryStatusEndpoints();

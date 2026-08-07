@@ -40,10 +40,21 @@ public static class FunQuizEndpoints
                 : QuestionCategory.General;
             var key = $"funquiz:q:{cat}:{count}";
 
+            // The identity travels in the factory's state because HybridCache does not run the
+            // factory on this flow — its stampede protection lets one factory serve several
+            // waiters, so the AsyncLocal the request middleware set does not reach inside it.
+            // Without this the generation call is recorded by the telemetry and charged to nobody:
+            // measured at 809 tokens spent against a 0-token budget entry.
+            var identity = AiUsageScope.CurrentIdentity;
+
             var questions = await cache.GetOrCreateAsync(
                 key,
-                (Ai: ai, Cat: cat, Count: count),
-                static async (state, ct) => await state.Ai.GenerateQuizQuestionsAsync(state.Cat, state.Count, ct),
+                (Ai: ai, Cat: cat, Count: count, Identity: identity),
+                static async (state, ct) =>
+                {
+                    using var scope = AiUsageScope.Restore(state.Identity);
+                    return await state.Ai.GenerateQuizQuestionsAsync(state.Cat, state.Count, ct);
+                },
                 new HybridCacheEntryOptions { Expiration = TimeSpan.FromSeconds(60) },
                 cancellationToken: cancellationToken);
             return Results.Ok(questions);

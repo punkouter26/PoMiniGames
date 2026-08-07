@@ -173,7 +173,10 @@ public static class InferEndpoints
                 });
 
         // ── Cost ceiling ──────────────────────────────────────────────────────
-        var identity = ResolveBudgetIdentity(http);
+        // Checked here as well as in BudgetedChatClient: refusing before the relay does any work
+        // gives the caller a Retry-After and a clear 429, rather than surfacing as an exception
+        // from inside the chat pipeline. The decorator is the guarantee; this is the good error.
+        var identity = AiUsageScopeExtensions.ResolveIdentity(http);
         var verdict = tokenBudget.Check(identity);
         if (!verdict.Allowed)
         {
@@ -190,7 +193,9 @@ public static class InferEndpoints
         budget.CancelAfter(ResolveServerBudget(config));
 
         // Collects the provider's own usage report so the allowance is charged what was billed.
-        using var usage = AiUsageScope.Begin();
+        // Names the identity too, so the nested BudgetedChatClient charges the same ledger this
+        // handler just checked rather than treating the call as unattributed.
+        using var usage = AiUsageScope.Begin(identity);
 
         try
         {
@@ -202,9 +207,23 @@ public static class InferEndpoints
             else
                 result = await inferenceService.InferAsync(request.GridJson, request.Dna, budget.Token);
 
-            tokenBudget.Record(identity, usage.TotalTokens > 0 ? usage.TotalTokens : EstimatedTokens(request, result));
+            // Charge ONLY what the decorator could not. BudgetedChatClient already recorded the
+            // provider's reported usage for every call in this scope; recording it again here
+            // would double-charge every caller. What remains is the case the decorator cannot
+            // cover — a provider that reported no usage at all, which it records as zero — so the
+            // deliberate over-estimate below is applied just to that.
+            if (usage.TotalTokens <= 0)
+                tokenBudget.Record(identity, EstimatedTokens(request, result));
+
             logger.LogInformation("Infer completed. Model={ModelId} Action={Action}", request.ModelId ?? "default", result.Action);
             return Results.Ok(result);
+        }
+        catch (AiTokenBudgetExceededException ex)
+        {
+            // The ceiling was reached by calls made inside this request, after the pre-check above
+            // passed. Same answer as the pre-check, so a caller cannot tell the two apart.
+            http.Response.Headers.RetryAfter = ex.RetryAfterSeconds.ToString(CultureInfo.InvariantCulture);
+            return Results.Problem(ex.Message, statusCode: StatusCodes.Status429TooManyRequests);
         }
         catch (InferenceResponseUnusableException ex)
         {
@@ -250,18 +269,6 @@ public static class InferEndpoints
             logger.LogError(ex, "Inference error");
             return Results.Problem("Inference failed.", statusCode: StatusCodes.Status503ServiceUnavailable);
         }
-    }
-
-    /// <summary>
-    /// Budget key: the signed-in identity, falling back to the remote address so an anonymous or
-    /// guest caller still cannot spend without limit.
-    /// </summary>
-    private static string ResolveBudgetIdentity(HttpContext http)
-    {
-        var identity = RequestIdentity.Resolve(http.User);
-        return !string.IsNullOrEmpty(identity.UserId)
-            ? $"id:{identity.UserId}"
-            : $"ip:{http.Connection.RemoteIpAddress?.ToString() ?? "unknown"}";
     }
 
     /// <summary>

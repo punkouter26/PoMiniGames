@@ -62,6 +62,39 @@ public sealed class AIFoundryOptions
     /// </remarks>
     public Dictionary<string, string> Deployments { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// Deployment serving embedding requests, or empty when the account has none. Resolved from
+    /// <c>PoMiniGames--AI--EmbeddingDeployment</c>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Optional on purpose. PoCoupleQuiz's answer-similarity scoring prefers embeddings — one float
+    /// is an absurd thing to spend a chat completion on, and cosine over two vectors is both
+    /// cheaper by orders of magnitude and deterministic, which makes it permanently cacheable
+    /// rather than cacheable-until-the-model-drifts.
+    /// </para>
+    /// <para>
+    /// But the deployment inventory verified on the shared account (2026-07-29) lists only
+    /// <c>gpt-5.4-nano</c>, <c>gpt-5-nano</c>, <c>gpt-5.4-mini</c>, <c>Phi-4-mini-instruct</c> and
+    /// <c>Phi-4</c> — <b>no embedding model</b>. So this is left empty by default and the scorer
+    /// falls back to the chat path when it is. Deploy <c>text-embedding-3-small</c> and set this to
+    /// switch the cheaper path on; nothing else has to change.
+    /// </para>
+    /// </remarks>
+    public string EmbeddingDeployment { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Deployment name → capability profile, overriding the name heuristic in
+    /// <see cref="AiModelCapabilities"/>. Recognised profiles: <c>reasoning</c>,
+    /// <c>conventional</c>, <c>basic</c>.
+    /// </summary>
+    /// <remarks>
+    /// The heuristic reads the deployment name, which is inference rather than fact — a deployment
+    /// can be called anything. This is the escape hatch for an account whose names do not describe
+    /// what they serve, and the safe way to correct a wrong guess without a code change.
+    /// </remarks>
+    public Dictionary<string, string> ModelCapabilityOverrides { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
     /// <summary>Game keys recognised in <see cref="Deployments"/>.</summary>
     public static class Games
     {
@@ -73,31 +106,75 @@ public sealed class AIFoundryOptions
     }
 
     /// <summary>
+    /// Task keys, appended to a game key as <c>game.task</c> to give one task inside a game its own
+    /// deployment.
+    /// </summary>
+    /// <remarks>
+    /// Model choice is per game, but cost is per task, and inside a single game the tasks are not
+    /// remotely alike. PoJoker asks a model to invent a punchline (wants a capable model) and, in
+    /// the same breath, to emit three numbers between 0 and 1 (wants the cheapest thing that can
+    /// count). Pinning both to one deployment means paying the harder task's rate for the easier
+    /// one on every joke.
+    /// </remarks>
+    public static class Tasks
+    {
+        /// <summary>PoJoker: scoring a joke's originality/cleverness/humour.</summary>
+        public const string JokerRating = "joker.rating";
+
+        /// <summary>PoJoker: rewriting a flagged joke.</summary>
+        public const string JokerRewrite = "joker.rewrite";
+
+        /// <summary>PoCoupleQuiz: scoring similarity between two answers (chat fallback path).</summary>
+        public const string CoupleQuizSimilarity = "couplequiz.similarity";
+    }
+
+    /// <summary>
     /// Returns the deployment name for the supplied game key, falling back to
     /// <see cref="DefaultDeployment"/> when no override is configured. The single resolver for
     /// this question — <c>/api/infer/status</c> and the chat-client construction both go through
     /// it, having previously used different logic and disagreed.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// Compares case-insensitively over the entries rather than relying on the dictionary's
     /// comparer, because the configuration binder supplies its own instance (ordinal) and there
     /// are at most a handful of games.
+    /// </para>
+    /// <para>
+    /// A key of the form <c>game.task</c> (see <see cref="Tasks"/>) resolves in two steps: the full
+    /// task key first, then the bare game key, then the default. That ordering is what lets a task
+    /// override be added or removed in configuration alone, with the game's own entry as the
+    /// standing answer — and it means an unconfigured task never resolves to something surprising,
+    /// it resolves to whatever its game already used.
+    /// </para>
     /// </remarks>
     public string ResolveDeployment(string gameKey)
     {
         if (string.IsNullOrWhiteSpace(gameKey))
             return DefaultDeployment;
 
-        foreach (var (key, deployment) in Deployments)
-        {
-            if (string.Equals(key, gameKey, StringComparison.OrdinalIgnoreCase)
-                && !string.IsNullOrWhiteSpace(deployment))
-            {
-                return deployment;
-            }
-        }
+        if (Lookup(gameKey) is { } exact)
+            return exact;
+
+        // "joker.rating" with no entry of its own falls back to "joker" before the global default.
+        var dot = gameKey.IndexOf('.');
+        if (dot > 0 && Lookup(gameKey[..dot]) is { } game)
+            return game;
 
         return DefaultDeployment;
+
+        string? Lookup(string key)
+        {
+            foreach (var (candidate, deployment) in Deployments)
+            {
+                if (string.Equals(candidate, key, StringComparison.OrdinalIgnoreCase)
+                    && !string.IsNullOrWhiteSpace(deployment))
+                {
+                    return deployment;
+                }
+            }
+            return null;
+        }
     }
 
     /// <summary>True when the endpoint is configured; callers may use this to short-circuit

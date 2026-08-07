@@ -93,6 +93,44 @@ public static class AzureOpenAIResilience
     /// <summary>Calls allowed to wait for a permit before the limiter rejects outright.</summary>
     public const int ConcurrencyQueueLimit = 8;
 
+    /// <summary>
+    /// Games that get their own pipeline instance, and therefore their own concurrency permits and
+    /// their own circuit state.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A single shared pipeline was correct while PoSurvive was the only consumer. It stops being
+    /// correct the moment the other four services join it, for two reasons:
+    /// </para>
+    /// <list type="bullet">
+    ///   <item><b>Concurrency.</b> <see cref="MaxConcurrentCalls"/> is 2 for the whole host. PoSurvive
+    ///   issues a call per agent per heartbeat and would hold both permits essentially continuously,
+    ///   so PoJoker's two-calls-per-joke would spend its life in the queue and then be rejected by
+    ///   <see cref="ConcurrencyQueueLimit"/>. Sharing a global permit count between a real-time loop
+    ///   and an interactive request is a starvation bug, not a safety property.</item>
+    ///   <item><b>Circuit state.</b> One breaker across all games means PoSurvive failing 30% of a
+    ///   30-second window opens the circuit for PoFunQuiz too — a game that may be on a different
+    ///   deployment entirely, and is fine. Failures should isolate to the game that produced them.</item>
+    /// </list>
+    /// <para>
+    /// The permit counts stay small per game on purpose: the measured ceiling in
+    /// <see cref="MaxConcurrentCalls"/> is an account-wide quota, not a per-game one, so the sum
+    /// across games is still meant to be modest. Partitioning buys isolation and fairness, not more
+    /// total throughput.
+    /// </para>
+    /// </remarks>
+    public static readonly string[] PartitionedGames =
+    [
+        AIFoundryOptions.Games.Survive,
+        AIFoundryOptions.Games.CoupleQuiz,
+        AIFoundryOptions.Games.FunQuiz,
+        AIFoundryOptions.Games.Joker,
+        AIFoundryOptions.Games.Face,
+    ];
+
+    /// <summary>Pipeline name for one game's partition.</summary>
+    public static string PipelineNameFor(string gameKey) => $"{PipelineName}:{gameKey}";
+
     /// <summary>Ceiling on a service-supplied <c>Retry-After</c> we are willing to honour.</summary>
     private static readonly TimeSpan MaxRetryAfter = TimeSpan.FromSeconds(5);
 
@@ -103,42 +141,50 @@ public static class AzureOpenAIResilience
     /// </summary>
     public static IServiceCollection AddAzureOpenAIResilience(this IServiceCollection services)
     {
-        services.AddResiliencePipeline(PipelineName, builder =>
-        {
-            builder.AddTimeout(new TimeoutStrategyOptions
-            {
-                Timeout = TotalCallBudget,
-            });
-            // Bounds how many calls hit the account at once. Sits inside the outer timeout so a
-            // queued call cannot wait indefinitely, and outside the retry so a retried attempt
-            // keeps its permit rather than going to the back of the queue.
-            builder.AddConcurrencyLimiter(MaxConcurrentCalls, ConcurrencyQueueLimit);
-            builder.AddRetry(new RetryStrategyOptions
-            {
-                MaxRetryAttempts = 3,
-                Delay = TimeSpan.FromMilliseconds(200),
-                MaxDelay = TimeSpan.FromSeconds(2),
-                BackoffType = DelayBackoffType.Exponential,
-                UseJitter = true,
-                // A 429 is not a random transient fault — the service says when to come back. If
-                // that is longer than we are willing to wait, retrying is pure waste: it converts
-                // an instant, honest refusal into a full-budget timeout, and the game's fallback
-                // fires either way. Measured on the shared account, whose gpt-5.4-nano deployment
-                // reports `x-ratelimit-limit-requests: 1` and `retry-after: 30` — every retry
-                // there was spending nine seconds of a player's turn to be told no again.
-                ShouldHandle = args => new ValueTask<bool>(ShouldRetry(args.Outcome.Exception)),
-                DelayGenerator = args => new ValueTask<TimeSpan?>(RetryAfterOf(args.Outcome.Exception)),
-            });
-            builder.AddCircuitBreaker(new CircuitBreakerStrategyOptions
-            {
-                FailureRatio = 0.3,
-                MinimumThroughput = 10,
-                SamplingDuration = TimeSpan.FromSeconds(30),
-                BreakDuration = TimeSpan.FromSeconds(15),
-                ShouldHandle = new PredicateBuilder().Handle<Exception>(IsTransient),
-            });
-        });
+        // The unpartitioned pipeline stays registered as the fallback for a game key that has no
+        // partition of its own (and for the legacy api-key path in PoSurviveServiceExtensions).
+        services.AddResiliencePipeline(PipelineName, ConfigurePipeline);
+
+        foreach (var game in PartitionedGames)
+            services.AddResiliencePipeline(PipelineNameFor(game), ConfigurePipeline);
+
         return services;
+    }
+
+    private static void ConfigurePipeline(ResiliencePipelineBuilder builder)
+    {
+        builder.AddTimeout(new TimeoutStrategyOptions
+        {
+            Timeout = TotalCallBudget,
+        });
+        // Bounds how many calls hit the account at once. Sits inside the outer timeout so a
+        // queued call cannot wait indefinitely, and outside the retry so a retried attempt
+        // keeps its permit rather than going to the back of the queue.
+        builder.AddConcurrencyLimiter(MaxConcurrentCalls, ConcurrencyQueueLimit);
+        builder.AddRetry(new RetryStrategyOptions
+        {
+            MaxRetryAttempts = 3,
+            Delay = TimeSpan.FromMilliseconds(200),
+            MaxDelay = TimeSpan.FromSeconds(2),
+            BackoffType = DelayBackoffType.Exponential,
+            UseJitter = true,
+            // A 429 is not a random transient fault — the service says when to come back. If
+            // that is longer than we are willing to wait, retrying is pure waste: it converts
+            // an instant, honest refusal into a full-budget timeout, and the game's fallback
+            // fires either way. Measured on the shared account, whose gpt-5.4-nano deployment
+            // reports `x-ratelimit-limit-requests: 1` and `retry-after: 30` — every retry
+            // there was spending nine seconds of a player's turn to be told no again.
+            ShouldHandle = args => new ValueTask<bool>(ShouldRetry(args.Outcome.Exception)),
+            DelayGenerator = args => new ValueTask<TimeSpan?>(RetryAfterOf(args.Outcome.Exception)),
+        });
+        builder.AddCircuitBreaker(new CircuitBreakerStrategyOptions
+        {
+            FailureRatio = 0.3,
+            MinimumThroughput = 10,
+            SamplingDuration = TimeSpan.FromSeconds(30),
+            BreakDuration = TimeSpan.FromSeconds(15),
+            ShouldHandle = new PredicateBuilder().Handle<Exception>(IsTransient),
+        });
     }
 
     /// <summary>Client options with a bounded per-attempt timeout and explicit retry count.</summary>

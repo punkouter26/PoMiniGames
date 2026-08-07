@@ -1,5 +1,7 @@
+using System.Text.Json;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Hosting;
-using OpenAI.Chat;
+using Microsoft.Extensions.Options;
 using PoMiniGames.Shared.Games.PoJoker;
 
 namespace PoMiniGames.Features.PoJoker;
@@ -27,13 +29,21 @@ namespace PoMiniGames.Features.PoJoker;
 /// </remarks>
 public sealed class JokeRewriteService : IJokeRewriteService
 {
+    /// <summary>Output ceiling for a rewrite. Two short lines by contract.</summary>
+    private const int RewriteMaxTokens = 250;
+
     private readonly ILogger<JokeRewriteService> _logger;
     private readonly IHostEnvironment _environment;
-    private readonly AIFoundryChatClientCache _chatClientCache;
+    private readonly GameChatClientFactory _clients;
+    private readonly IOptionsMonitor<AIFoundryOptions> _foundryOptions;
     private readonly int _timeoutSeconds;
 
     // Asks for a replacement joke rather than a cleaned copy of the original: the
     // point is to lose the premise, keeping only the comedic form.
+    //
+    // The fencing instruction matters more here than anywhere else in the solution: this is the one
+    // prompt that asks a model to RESTATE text an attacker may have influenced, which is the shape
+    // where a stray instruction inside that text is most likely to be acted on.
     private const string SystemPrompt = """
         You rewrite jokes so they are inoffensive.
 
@@ -46,22 +56,21 @@ public sealed class JokeRewriteService : IJokeRewriteService
         The result must be genuinely funny and stand on its own to someone who has
         never seen the original.
 
-        Respond with EXACTLY two lines and nothing else:
-        SETUP: <the setup>
-        PUNCHLINE: <the punchline>
-
-        If you cannot do this, respond with exactly: CANNOT
-        """;
+        Emit only the JSON object described by the schema. Set "canRewrite" to false,
+        leaving setup and punchline empty, if you cannot do this.
+        """ + "\n" + AiPrompt.FencingInstruction;
 
     public JokeRewriteService(
         IConfiguration configuration,
         IHostEnvironment environment,
         ILogger<JokeRewriteService> logger,
-        AIFoundryChatClientCache chatClientCache)
+        GameChatClientFactory clients,
+        IOptionsMonitor<AIFoundryOptions> foundryOptions)
     {
         _logger = logger;
         _environment = environment;
-        _chatClientCache = chatClientCache;
+        _clients = clients;
+        _foundryOptions = foundryOptions;
         // Deliberately NOT the shared PoJoker:AzureOpenAI:TimeoutSeconds (30s) that
         // analysis uses. Analysis runs while the joke is already on screen, so it can
         // afford to wait; this call blocks the fetch, so every second is dead air
@@ -76,7 +85,14 @@ public sealed class JokeRewriteService : IJokeRewriteService
     /// <inheritdoc />
     public async Task<JokeDto?> TryRewriteAsync(JokeDto joke, CancellationToken cancellationToken = default)
     {
-        var chatClient = _chatClientCache.Resolve(AIFoundryOptions.Games.Joker);
+        // Own task key so the rewrite can be pointed at a different deployment from the Jester's
+        // punchline prediction — this call blocks the fetch, so it is the one that most wants a
+        // fast model.
+        var deployment = _clients.DeploymentFor(AIFoundryOptions.Tasks.JokerRewrite);
+        var chatClient = _foundryOptions.CurrentValue.IsConfigured
+            ? _clients.ForDeployment(AIFoundryOptions.Tasks.JokerRewrite, deployment)
+            : null;
+
         if (chatClient is null)
         {
             // Unlike AiJesterService there is no mock stand-in: a fabricated "rewrite"
@@ -92,23 +108,31 @@ public sealed class JokeRewriteService : IJokeRewriteService
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             cts.CancelAfter(TimeSpan.FromSeconds(_timeoutSeconds));
 
-            var messages = new ChatMessage[]
+            var messages = new List<ChatMessage>
             {
-                new SystemChatMessage(SystemPrompt),
-                new UserChatMessage($"Setup: \"{joke.Setup}\"\nPunchline: \"{joke.Punchline}\""),
+                new(ChatRole.System, SystemPrompt),
+                new(ChatRole.User, AiPrompt.FenceAll(("Setup", joke.Setup), ("Punchline", joke.Punchline))),
             };
 
-            var response = await chatClient.CompleteChatAsync(messages, cancellationToken: cts.Token);
+            var response = await chatClient.GetResponseAsync(
+                messages,
+                AiDecisionChatOptions.ForStructuredJson(
+                    RewriteSchema,
+                    schemaName: "joke_rewrite",
+                    maxOutputTokens: RewriteMaxTokens,
+                    deployment: deployment,
+                    schemaDescription: "A clean replacement joke, or a refusal.",
+                    capabilityOverrides: _clients.CapabilityOverrides),
+                cts.Token);
 
-            if (response.Value.FinishReason == ChatFinishReason.ContentFilter)
+            if (response.FinishReason == ChatFinishReason.ContentFilter)
             {
                 _logger.LogInformation(
                     "PoJoker: rewrite of joke {JokeId} was content-filtered; falling back.", joke.Id);
                 return null;
             }
 
-            var text = response.Value.Content.Count > 0 ? response.Value.Content[0].Text : null;
-            return Parse(text, joke);
+            return Parse(response.Text, joke);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -124,33 +148,72 @@ public sealed class JokeRewriteService : IJokeRewriteService
     }
 
     /// <summary>
-    /// Pulls SETUP/PUNCHLINE out of the reply. Anything that does not parse into two
-    /// non-empty halves is treated as a refusal — better to fall through than to
-    /// perform a malformed joke.
+    /// The rewrite contract, as a schema rather than a two-line text protocol.
+    /// </summary>
+    /// <remarks>
+    /// The previous contract was <c>SETUP: …</c> / <c>PUNCHLINE: …</c> lines, or the literal string
+    /// <c>CANNOT</c>. Both halves of that are fragile in the same direction: a model that adds a
+    /// preamble, wraps the lines, or writes "I cannot do this" instead of the exact token produces
+    /// a reply the parser reads as a malformed rewrite rather than as the refusal it is. Making the
+    /// refusal a boolean field means it cannot be misspelled.
+    /// </remarks>
+    public static JsonElement RewriteSchema { get; } = JsonDocument.Parse(
+        """
+        {
+          "type": "object",
+          "properties": {
+            "canRewrite": { "type": "boolean" },
+            "setup": { "type": "string" },
+            "punchline": { "type": "string" }
+          },
+          "required": ["canRewrite", "setup", "punchline"],
+          "additionalProperties": false
+        }
+        """).RootElement.Clone();
+
+    /// <summary>
+    /// Reads the rewrite out of the reply. Anything that does not yield two non-empty halves is
+    /// treated as a refusal — better to fall through to the next step of the chain than to perform
+    /// a malformed joke.
     /// </summary>
     private JokeDto? Parse(string? text, JokeDto original)
     {
         if (string.IsNullOrWhiteSpace(text)) return null;
 
-        var trimmed = text.Trim();
-        if (trimmed.StartsWith("CANNOT", StringComparison.OrdinalIgnoreCase))
+        var start = text.IndexOf('{');
+        var end = text.LastIndexOf('}');
+        if (start < 0 || end <= start)
         {
-            _logger.LogInformation("PoJoker: model declined to rewrite joke {JokeId}.", original.Id);
+            _logger.LogInformation(
+                "PoJoker: rewrite of joke {JokeId} returned no JSON object; treating as a refusal.", original.Id);
             return null;
         }
 
-        string? setup = null, punchline = null;
-        foreach (var line in trimmed.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+        string? setup, punchline;
+        try
         {
-            var l = line.Trim();
-            if (l.StartsWith("SETUP:", StringComparison.OrdinalIgnoreCase))
+            using var doc = JsonDocument.Parse(text[start..(end + 1)]);
+            var root = doc.RootElement;
+
+            if (root.TryGetProperty("canRewrite", out var can)
+                && can.ValueKind == JsonValueKind.False)
             {
-                setup = l["SETUP:".Length..].Trim().Trim('"');
+                _logger.LogInformation("PoJoker: model declined to rewrite joke {JokeId}.", original.Id);
+                return null;
             }
-            else if (l.StartsWith("PUNCHLINE:", StringComparison.OrdinalIgnoreCase))
-            {
-                punchline = l["PUNCHLINE:".Length..].Trim().Trim('"');
-            }
+
+            setup = root.TryGetProperty("setup", out var s) && s.ValueKind == JsonValueKind.String
+                ? s.GetString()?.Trim()
+                : null;
+            punchline = root.TryGetProperty("punchline", out var p) && p.ValueKind == JsonValueKind.String
+                ? p.GetString()?.Trim()
+                : null;
+        }
+        catch (JsonException)
+        {
+            _logger.LogInformation(
+                "PoJoker: rewrite of joke {JokeId} was not valid JSON; treating as a refusal.", original.Id);
+            return null;
         }
 
         if (string.IsNullOrWhiteSpace(setup) || string.IsNullOrWhiteSpace(punchline))

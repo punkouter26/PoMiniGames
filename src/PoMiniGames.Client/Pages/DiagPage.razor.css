@@ -4,17 +4,17 @@
     max-width: 960px;
     margin: 0 auto;
     font-family: monospace;
-    color: #cdd5e0;
+    color: var(--color-text-primary);
 }
 
 .diag-h1 {
     font-size: var(--text-xl);
     margin-bottom: var(--space-1);
-    color: #fff;
+    color: var(--color-text-primary);
 }
 
 .diag-lead {
-    color: #64748b;
+    color: var(--color-text-secondary);
     margin-bottom: var(--space-6);
     font-size: var(--text-sm);
 }
@@ -27,8 +27,8 @@
     font-size: var(--text-xs);
     text-transform: uppercase;
     letter-spacing: 0.1em;
-    color: #94a3b8;
-    border-bottom: 1px solid #1e293b;
+    color: var(--color-text-secondary);
+    border-bottom: 1px solid var(--color-border);
     padding-bottom: 0.4rem;
     margin-bottom: var(--space-3);
 }
@@ -45,13 +45,13 @@
     gap: var(--space-4);
 }
 
-.diag-k { color: #64748b; }
-.diag-v { color: #e2e8f0; }
+.diag-k { color: var(--color-text-secondary); }
+.diag-v { color: var(--color-text-primary); }
 .diag-v.mono { font-family: var(--font-mono); font-size: 0.78rem; }
-.diag-v--off { color: #fb7185; font-style: italic; }
+.diag-v--off { color: var(--accent-danger); font-style: italic; }
 
 /* Bug fix QA #7 additions */
-.diag-mock-list { list-style: square inside; padding: 0; margin: 0; color: #fbbf24; }
+.diag-mock-list { list-style: square inside; padding: 0; margin: 0; color: var(--accent-warning); }
 .diag-mock-list li { padding: 0.15rem 0; }
 .diag-mock-list code { background: rgba(251, 191, 36, 0.08); padding: 0.05rem 0.35rem; border-radius: 4px; }
 
@@ -64,9 +64,9 @@
     text-transform: uppercase;
     letter-spacing: 0.05em;
 }
-.diag-status--configured     { background: rgba(34, 197, 94, 0.18); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.4); }
-.diag-status--healthy        { background: rgba(34, 197, 94, 0.18); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.4); }
-.diag-status--not-configured { background: rgba(148, 163, 184, 0.12); color: #94a3b8; border: 1px solid rgba(148, 163, 184, 0.25); }
+.diag-status--configured     { background: var(--accent-success-soft); color: var(--accent-success); border: 1px solid rgba(34, 197, 94, 0.4); }
+.diag-status--healthy        { background: var(--accent-success-soft); color: var(--accent-success); border: 1px solid rgba(34, 197, 94, 0.4); }
+.diag-status--not-configured { background: var(--surface-3); color: var(--color-text-secondary); border: 1px solid rgba(148, 163, 184, 0.25); }
 
 .diag-log-controls {
     display: flex;
@@ -75,7 +75,7 @@
     margin-bottom: var(--space-2);
     font-size: var(--text-sm);
 }
-.diag-corr-filter { display: inline-flex; align-items: center; gap: 0.4rem; color: #94a3b8; }
+.diag-corr-filter { display: inline-flex; align-items: center; gap: 0.4rem; color: var(--color-text-secondary); }
 .diag-refresh {
     background: transparent;
     border: 1px solid var(--color-border);
@@ -92,8 +92,8 @@
     overflow: auto;
     font-size: 0.72rem;
     line-height: 1.4;
-    background: #0f172a;
-    border: 1px solid #1e293b;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
 }
 
 @media (max-width: 640px) {
@@ -102,7 +102,7 @@
 }
 
 .diag-error { color: var(--color-error); margin: 0; }
-.diag-muted { color: #64748b; margin: 0; }
+.diag-muted { color: var(--color-text-secondary); margin: 0; }
 
 .diag-pre {
     margin: 0;
@@ -121,15 +121,15 @@
 .diag-table td {
     text-align: left;
     padding: 0.4rem 0.75rem;
-    border-bottom: 1px solid #1e293b;
+    border-bottom: 1px solid var(--color-border);
 }
 
 .diag-table th {
-    color: #94a3b8;
+    color: var(--color-text-secondary);
     font-weight: 600;
 }
 
-.diag-table td { color: #e2e8f0; }
+.diag-table td { color: var(--color-text-primary); }
 
 /* Mobile portrait: stack the fixed 260px key column. */
 @media (max-width: 640px) {

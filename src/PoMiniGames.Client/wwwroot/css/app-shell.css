@@ -10,9 +10,139 @@
 
    These rules are the single source of truth for the app-wide top bar and MUST
    stay non-scoped so every layout that renders the `gl-top-bar` header inherits
-   identical chrome. MainLayout.razor.css keeps only its layout-unique pieces
-   (page shell, mock banner, toasts, demo bar).
+   identical chrome.
+
+   ── 2026-08-07 de-duplication ──────────────────────────────────────────────
+   MainLayout.razor.css used to carry a SECOND copy of every selector below,
+   with a header instructing that the two be "kept byte-identical … edit BOTH
+   together". They were not identical by the time anyone checked: this file had
+   been migrated to design tokens (--radius-sm, --elevation-1,
+   --accent-warning-soft, --toast-error-text) while the scoped copy still held
+   the pre-token literals (8px, `0 8px 24px rgba(0,0,0,.3)`,
+   `rgba(245,158,11,.14)`, #fecaca). Which one a user saw depended on which
+   layout rendered the bar, because scoped CSS only ever applied to MainLayout's
+   own markup — PoSurviveLayout and EmptyLayout always read this file.
+
+   So the rule is now structural rather than clerical: anything rendered by more
+   than one layout lives HERE, and MainLayout.razor.css keeps only what is
+   unique to MainLayout's markup (the offline banner, .gl-content, the toast
+   stack). Nothing needs to be edited in two places.
    ───────────────────────────────────────────────────────────────────────── */
+
+/* ── Page shell ──────────────────────────────────────────────────────────────
+   Shared: MainLayout and EmptyLayout both render `.gl-page` as their root. */
+.gl-page {
+    display: flex;
+    flex-direction: column;
+    min-height: 100svh;
+}
+
+/* §7 Page-entry animation — GPU-only transform/opacity, runs on the compositor.
+   Pairs with the @view-transition block in css/app.css for browsers that
+   support the cross-document navigation API. */
+@media (prefers-reduced-motion: no-preference) {
+    .gl-page {
+        /* `backwards` (not `both`): fill the FROM state before the run to avoid an
+           initial flash, but do NOT retain the final transform. A retained
+           `transform: translateY(0)` turns .gl-page into the containing block for
+           every position:fixed descendant (game-over modal, toasts), anchoring
+           them to the over-tall page instead of the viewport. */
+        animation: gl-page-enter var(--dur-base) var(--ease-out) backwards;
+    }
+
+    @keyframes gl-page-enter {
+        from { opacity: 0; transform: translateY(6px); }
+        to   { opacity: 1; transform: translateY(0); }
+    }
+}
+
+/* ── Mock-data banner ────────────────────────────────────────────────────────
+   Shared: MainLayout and EmptyLayout both render it. Highly visible banner shown
+   when mock (IMockable) services are active — the "USING MOCK DATA" guard.
+
+   Deliberately scheme-invariant, like the game-piece tokens: this is a
+   developer-facing hazard stripe, and hazard yellow that re-hues per theme stops
+   reading as a warning. The colours are named tokens rather than inline literals
+   so the two banner variants below cannot drift apart.
+
+   §10 GPU-only shimmer: a linear-gradient with a background-position shift runs
+   on the compositor thread (no JS, no per-frame layout work). */
+.gl-mock-banner,
+.gl-mock-banner--dot[open] {
+    --mock-ink: #1a1a00;
+    --mock-hi: #fff36e;
+    --mock-lo: #ffd400;
+}
+
+.gl-mock-banner {
+    width: 100%;
+    text-align: center;
+    padding: var(--space-2) var(--space-4);
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--mock-ink);
+    background: linear-gradient(90deg,
+        var(--mock-lo) 0%,
+        var(--mock-hi) 35%,
+        var(--mock-lo) 65%,
+        var(--mock-hi) 100%);
+    background-size: 200% 100%;
+    border-bottom: 2px solid rgba(0, 0, 0, 0.85);
+    position: sticky;
+    top: 0;
+    z-index: var(--z-banner);
+    animation: gl-mock-shimmer 3.5s linear infinite;
+    /* No permanent will-change: the background-position shimmer composites fine
+       without reserving a GPU layer for the banner's entire lifetime. */
+}
+
+@keyframes gl-mock-shimmer {
+    from { background-position: 200% 0; }
+    to   { background-position: -200% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .gl-mock-banner { animation: none; }
+}
+
+/* §9 mobile mock-banner: on portrait phones the banner eats ~36px of permanent
+   chrome above the top bar. Collapse to a tiny indicator dot in the top-bar left
+   rail so the game list isn't pushed off the fold. Tap-to-expand is handled by
+   the <details> wrapping the dot in the layout markup. */
+.gl-mock-banner--dot {
+    width: 10px;
+    height: 10px;
+    border-radius: var(--radius-pill);
+    background: var(--color-warning);
+    box-shadow: 0 0 6px var(--accent-warning-soft);
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.gl-mock-banner--dot[open] {
+    width: auto;
+    height: auto;
+    padding: 0.4rem 0.7rem;
+    background: linear-gradient(90deg, var(--mock-lo), var(--mock-hi));
+    color: var(--mock-ink);
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    font-size: 0.7rem;
+    box-shadow: 0 0 12px var(--accent-warning-soft);
+}
+
+.gl-mock-banner--dot > summary {
+    list-style: none;
+    cursor: pointer;
+}
+
+.gl-mock-banner--dot > summary::-webkit-details-marker { display: none; }
+
+@media (min-width: 641px) {
+    .gl-mock-banner--dot { display: none; }
+}
 
 /* Spatial contract: Left (branding) — Center (FPS + game status) — Right (session). */
 .gl-top-bar {
@@ -87,68 +217,138 @@
     white-space: nowrap;
 }
 
-.gl-auth-button,
-.gl-center-action {
+.gl-auth-button {
     background: transparent;
     border: 1px solid var(--color-border);
     color: var(--color-text-secondary);
     padding: 0.35rem 0.85rem;
     border-radius: var(--radius-pill);
     font-size: var(--text-sm);
+    /* Keep "Sign out" on one line — it was wrapping to two rows and bloating
+       the top-bar height on narrow phones. */
     white-space: nowrap;
     transition: border-color var(--dur-base) var(--ease-standard),
                 color var(--dur-base) var(--ease-standard),
                 background var(--dur-base) var(--ease-standard);
 }
 
-.gl-auth-button:hover,
-.gl-center-action:hover {
+.gl-auth-button:hover {
     border-color: var(--color-text-secondary);
     color: var(--color-text-primary);
 }
 
-.gl-center-action {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-    font-weight: 600;
-}
+/* (Removed: `.gl-center-action*` and `.gl-sync-pill*`. The kiosk centre-action
+   button and the pending-score sync pill were both dropped from the top bar in
+   the 2026-07 cleanups; no layout renders either class. ScoreSyncService still
+   flushes parked scores on sign-in — it just reports through a toast now
+   instead of a persistent pill. */
 
-.gl-center-action--active {
-    border-color: var(--color-warning);
-    color: #fcd34d;
-    background: var(--accent-warning-soft);
-}
-
-/* ── Overflow / dev-switch dropdowns (shared by both layouts) ── */
-.gl-overflow-menu { position: relative; display: inline-block; }
+/* ── Overflow / dev-switch dropdowns (shared by both layouts) ─────────────────
+   Native Popover API. The trigger is a plain <button popovertarget>, the panel a
+   <div popover="auto"> — the browser supplies light-dismiss, Escape-to-close,
+   focus management and top-layer promotion, all of which the previous
+   <details>/<summary> version lacked. */
 .gl-overflow-menu--anon { display: none; }
 
 .gl-overflow-trigger {
-    list-style: none;
     cursor: pointer;
     background: transparent;
-    border: 1px solid var(--color-border, rgba(255, 255, 255, 0.2));
+    border: 1px solid var(--color-border);
     border-radius: var(--radius-sm);
     padding: 0.35rem 0.6rem;
     color: inherit;
     font-size: 1rem;
     line-height: 1;
+    /* Names this element as the anchor its panel positions against. Inert on
+       browsers without anchor positioning. */
+    anchor-name: var(--gl-anchor);
 }
 
-.gl-overflow-trigger::-webkit-details-marker { display: none; }
+.gl-overflow-menu--anon { --gl-anchor: --gl-anchor-anon; }
+.gl-dev-switch { --gl-anchor: --gl-anchor-dev; }
 
 .gl-overflow-panel {
-    position: absolute;
-    right: 0;
-    top: calc(100% + 0.4rem);
-    background: var(--color-surface, #1a1a24);
-    border: 1px solid var(--color-border, rgba(255, 255, 255, 0.2));
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
     border-radius: var(--radius-md);
     padding: 0.4rem;
     min-width: 12rem;
     box-shadow: var(--elevation-1);
-    z-index: var(--z-dropdown);
+
+    /* Reset the UA popover defaults (which centre it in the viewport). */
+    margin: 0;
+    inset: auto;
+    overflow: visible;
+    color: var(--color-text-primary);
+
+    /* ── Fallback path (no anchor positioning) ──
+       Both triggers live in the top bar's right-hand rail, so pinning the panel
+       under the bar's right edge lands it within a few pixels of where anchoring
+       would put it. This is what Firefox and older Safari get, and it needs no
+       JS measurement — which is the whole reason the panel is positioned in CSS
+       rather than by a resize/scroll listener. */
+    position: fixed;
+    top: 3.25rem;
+    right: var(--space-4);
+}
+
+/* Entry/exit transition for the panel.
+   `@starting-style` is what makes this possible without a keyframe: a popover
+   goes from `display: none` to shown, and a transition normally has no "before"
+   state to start from, so the panel used to just appear. This declares that
+   before-state. `allow-discrete` on `display` and `overlay` is the other half —
+   without it the browser would snap both properties at the start of the
+   transition and the exit animation would never be seen, because the element is
+   already gone by the first frame.
+
+   Costs nothing where unsupported: the panel simply appears instantly, exactly
+   as it did before. */
+.gl-overflow-panel {
+    opacity: 0;
+    transform: translateY(-0.35rem);
+    transition:
+        opacity var(--dur-fast) var(--ease-out),
+        transform var(--dur-fast) var(--ease-out),
+        overlay var(--dur-fast) allow-discrete,
+        display var(--dur-fast) allow-discrete;
+}
+
+.gl-overflow-panel:popover-open {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+@starting-style {
+    .gl-overflow-panel:popover-open {
+        opacity: 0;
+        transform: translateY(-0.35rem);
+    }
+}
+
+/* The dimmed page behind an open menu. ::backdrop is free with the Popover API
+   and is what makes "click outside to close" legible rather than invisible. */
+.gl-overflow-panel::backdrop {
+    background: rgba(0, 0, 0, 0.18);
+}
+
+/* No z-index anywhere in this block: an open popover is in the TOP LAYER, above
+   every stacking context on the page by definition. The old --z-dropdown value
+   existed only because the <details> panel rendered in normal flow. */
+@supports (anchor-name: --a) {
+    .gl-overflow-panel {
+        position: absolute;
+        position-anchor: var(--gl-anchor);
+        /* Below the trigger, right edges aligned. */
+        position-area: block-end span-inline-start;
+        margin-block-start: 0.4rem;
+        top: auto;
+        right: auto;
+        /* Flip above the trigger if there isn't room below (landscape phones). */
+        position-try-fallbacks: flip-block;
+    }
+
+    #gl-anon-overflow { --gl-anchor: --gl-anchor-anon; }
+    #gl-dev-switch-panel { --gl-anchor: --gl-anchor-dev; }
 }
 
 .gl-overflow-item {

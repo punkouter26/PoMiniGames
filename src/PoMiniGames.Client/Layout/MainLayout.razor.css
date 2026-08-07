@@ -1,28 +1,30 @@
-/* App shell — scoped to MainLayout. These classes only appear in this
-   component's markup, so scoping keeps them off the global style-recalc path.
-   Design tokens (--color-*, --radius-*, --surface-*, --dur-*) are inherited
-   from the global :root in css/app.css.
+/* MainLayout-exclusive chrome.
+   Design tokens (--color-*, --radius-*, --surface-*, --dur-*) are inherited from
+   the global :root in css/app.css.
 
-   NOTE: the top-bar chrome (.gl-top-bar*, .gl-brand*, .gl-auth*, .gl-overflow-*,
-   .gl-dev-switch*) is ALSO defined non-scoped in css/app-shell.css so other
-   layouts that reuse the gl-top-bar header (PoSurviveLayout) inherit it. The
-   scoped copies below win the specificity tie for MainLayout's own markup and
-   are kept byte-identical to app-shell.css — edit BOTH together. */
+   ── What is deliberately NOT here ──────────────────────────────────────────
+   The shared top-bar chrome (.gl-page, .gl-mock-banner*, .gl-top-bar*, .gl-brand*,
+   .gl-auth*, .gl-overflow-*, .gl-dev-switch*) lives in css/app-shell.css and ONLY
+   there. It used to be duplicated into this file under an instruction to keep the
+   two copies byte-identical; they had already drifted apart, and because Blazor
+   compiles this file as component-scoped CSS (`.gl-top-bar[b-xxxxx]`) the scoped
+   copy only ever applied to MainLayout's own markup — EmptyLayout and
+   PoSurviveLayout render the same header and always read app-shell.css. Editing
+   the bar here would change one layout and silently not the other two.
 
-.gl-page {
-    display: flex;
-    flex-direction: column;
-    min-height: 100vh;
-}
+   The test for whether a rule belongs in this file: does its markup appear ONLY
+   in MainLayout.razor? Offline banner, .gl-content and the toast stack pass.
+   Everything else does not.
 
-/* Highly visible banner shown when mock (IMockable) services are active —
-   the top-navigation "USING MOCK DATA" guard (Layout Spatial Contract).
-   §10 GPU-only shimmer: a linear-gradient with background-position shift runs
-   on the compositor thread (no JS, no per-frame work). respects
-   prefers-reduced-motion. */
-/* Offline banner. Deliberately calmer than the mock-data banner below: being
-   offline is a supported state the app keeps working in, not a developer warning,
-   so it informs without shimmering or shouting. */
+   Also removed as dead: `.demo-bar*` (the kiosk progress bar, deleted along with
+   KioskControlBar), `.bottom-tab-bar` (deleted 2026-07-05), `.gl-sync-pill*` /
+   `.gl-center-action*` (no markup in any layout), and the `gl-fade-in-up` /
+   `gl-pulse` keyframes, which had no remaining consumers. */
+
+/* ── Offline banner ─────────────────────────────────────────────────────────
+   Deliberately calmer than the mock-data banner: being offline is a supported
+   state the app keeps working in, not a developer warning, so it informs without
+   shimmering or shouting. */
 .gl-offline-banner {
     width: 100%;
     display: flex;
@@ -32,6 +34,8 @@
     padding: var(--space-2) var(--space-4);
     font-size: 0.82rem;
     font-weight: 600;
+    /* Reads on the slate fill in both schemes, so it is stated once rather than
+       re-pointed per theme — the fill is opaque and scheme-invariant by design. */
     color: #f8fafc;
     background: rgba(71, 85, 105, 0.96);
     border-bottom: 1px solid rgba(148, 163, 184, 0.35);
@@ -43,8 +47,8 @@
 .gl-offline-dot {
     width: 0.5rem;
     height: 0.5rem;
-    border-radius: 50%;
-    background: #f59e0b;
+    border-radius: var(--radius-pill);
+    background: var(--color-warning);
     flex: 0 0 auto;
 }
 
@@ -55,400 +59,20 @@
     }
 }
 
-.gl-mock-banner {
-    width: 100%;
-    text-align: center;
-    padding: var(--space-2) var(--space-4);
-    font-weight: 800;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: #1a1a00;
-    background: linear-gradient(90deg,
-        #ffd400 0%,
-        #fff36e 35%,
-        #ffd400 65%,
-        #fff36e 100%);
-    background-size: 200% 100%;
-    border-bottom: 2px solid #111;
-    position: sticky;
-    top: 0;
-    z-index: var(--z-banner);
-    animation: gl-mock-shimmer 3.5s linear infinite;
-    /* No permanent will-change: the background-position shimmer composites fine
-       without reserving a GPU layer for the banner's entire lifetime. */
-}
-
-@keyframes gl-mock-shimmer {
-    from { background-position: 200% 0; }
-    to   { background-position: -200% 0; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-    .gl-mock-banner { animation: none; }
-}
-
-/* §9 mobile mock-banner: on portrait phones the banner eats ~36 px of
-   permanent chrome above the top bar. Collapse to a tiny indicator dot in
-   the top-bar left rail so the game list isn't pushed off the fold.
-   Tap-to-expand handled by MainLayout.razor's <details> wrapping the dot. */
-.gl-mock-banner--dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    background: var(--color-warning, #f59e0b);
-    box-shadow: 0 0 6px rgba(245, 158, 11, 0.7);
-    cursor: pointer;
-    flex-shrink: 0;
-}
-
-.gl-mock-banner--dot[open] {
-    width: auto;
-    height: auto;
-    padding: 0.4rem 0.7rem;
-    border-radius: var(--radius-pill);
-    background: linear-gradient(90deg, #ffd400, #fff36e);
-    color: #1a1a00;
-    font-weight: 800;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    font-size: 0.7rem;
-    box-shadow: 0 0 12px rgba(245, 158, 11, 0.5);
-}
-
-.gl-mock-banner--dot > summary {
-    list-style: none;
-    cursor: pointer;
-}
-
-.gl-mock-banner--dot > summary::-webkit-details-marker { display: none; }
-
-@media (min-width: 641px) {
-    .gl-mock-banner--dot {
-        display: none;
-    }
-}
-
-/* Spatial contract: Left (branding) — Center (FPS + game status) — Right (session).
-   2026-07-12 rework: the FPS counter now lives in the dedicated centre rail
-   (visually anchored between the brand and the session controls). The game
-   status, formerly anchored to the right, sits inside the centre rail too so
-   the bar reads as brand | FPS · game | session. */
-.gl-top-bar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0.6rem var(--space-5);
-    background: var(--surface-bar);
-    backdrop-filter: var(--glass-2);
-    border-bottom: 1px solid var(--color-border);
-    position: sticky;
-    top: 0;
-    z-index: var(--z-sticky);
-    gap: var(--space-4);
-}
-
-.gl-top-bar-left {
-    display: flex;
-    align-items: center;
-    gap: var(--space-5);
-    min-width: 0;
-    flex: 0 0 auto;
-}
-
-/* Center: FPS pill anchored next to the brand side; the game-status subslot
-   uses margin-left: auto to push itself to the right edge of the centre rail.
-   The visible gap between them makes the FPS pill read as the centre element.
-   (Blazor's per-component CSS scoping rules out a single absolute-positioning
-   rule across the MainLayout → FpsCounter boundary, so we lay out with flex
-   instead. Result on home page, where there's no game status, is also correct:
-   the rail flexes the FPS pill to its natural centre.) */
-.gl-top-bar-center {
-    display: flex;
-    flex: 1 1 auto;
-    align-items: center;
-    justify-content: center;
-    gap: var(--space-3);
-    min-width: 0;
-    padding: 0 var(--space-3);
-}
-
-/* Game status subslot: grows to fill space, pushes itself to the right edge of
-   the centre rail with margin-left: auto. */
-.gl-top-bar-game {
-    display: flex;
-    flex: 0 1 auto;
-    align-items: center;
-    justify-content: flex-end;
-    gap: var(--space-2);
-    min-width: 0;
-    margin-left: auto;
-    overflow: hidden;
-}
-
-.gl-brand {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    color: var(--color-text-primary);
-    text-decoration: none;
-    font-weight: 700;
-    font-size: 1.1rem;
-    white-space: nowrap;
-}
-
-.gl-brand-icon {
-    font-size: 1.3rem;
-}
-
-/* Breadcrumbs removed — the top nav now relies on the PoMiniGames brand link to
-   return to the home page. */
-
-.gl-auth {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: var(--space-3);
-    min-width: 0;
-}
-
-.gl-auth-user {
-    font-size: var(--text-sm);
-    color: var(--color-text-secondary);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.gl-auth-button,
-.gl-center-action {
-    background: transparent;
-    border: 1px solid var(--color-border);
-    color: var(--color-text-secondary);
-    padding: 0.35rem 0.85rem;
-    border-radius: var(--radius-pill);
-    font-size: var(--text-sm);
-    /* Keep "Sign out" on one line — it was wrapping to two rows and bloating
-       the top-bar height on narrow phones. */
-    white-space: nowrap;
-    transition: border-color var(--dur-base) var(--ease-standard),
-                color var(--dur-base) var(--ease-standard),
-                background var(--dur-base) var(--ease-standard);
-}
-
-.gl-auth-button:hover,
-.gl-center-action:hover {
-    border-color: var(--color-text-secondary);
-    color: var(--color-text-primary);
-}
-
-/* Active state when the kiosk demo auto-cycle is running. */
-.gl-center-action {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-    font-weight: 600;
-}
-
-.gl-center-action--active {
-    border-color: var(--color-warning);
-    color: #fcd34d;
-    background: rgba(245, 158, 11, 0.14);
-}
-
-/* Pending-sync pill: amber, gently pulsing so unsynced scores are noticed, not alarming.
-   Bug fix QA #8: now has two visual states — idle (neutral green/teal "synced")
-   and has-pending (amber pulsing). Both are always rendered so the affordance is
-   discoverable without first failing a game. */
-.gl-sync-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-    padding: 0.35rem 0.7rem;
-    border-radius: var(--radius-pill);
-    border: 1px solid var(--color-border);
-    background: transparent;
-    color: var(--color-text-secondary);
-    font-size: var(--text-sm);
-    font-weight: 600;
-    cursor: pointer;
-    transition: border-color var(--dur-base) var(--ease-standard),
-                background var(--dur-base) var(--ease-standard),
-                color var(--dur-base) var(--ease-standard);
-}
-
-.gl-sync-pill--idle:hover {
-    border-color: var(--color-text-secondary);
-    color: var(--color-text-primary);
-    background: var(--color-surface-hover);
-}
-
-.gl-sync-pill--has-pending {
-    border-color: var(--color-warning, #f59e0b);
-    background: rgba(245, 158, 11, 0.14);
-    color: #fcd34d;
-    animation: gl-sync-pulse 2s ease-in-out infinite;
-}
-
-.gl-sync-pill--has-pending:hover {
-    background: rgba(245, 158, 11, 0.24);
-}
-
-.gl-sync-icon {
-    display: inline-block;
-    font-size: 0.95em;
-    line-height: 1;
-}
-
-.gl-sync-count {
-    font-variant-numeric: tabular-nums;
-}
-
-@keyframes gl-sync-pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.6; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-    .gl-sync-pill { animation: none; }
-}
-
+/* ── Content well ── */
 .gl-content {
     flex: 1;
     display: flex;
     flex-direction: column;
+    /* Respect the home-indicator inset on phones. This used to be
+       `calc(56px + env(safe-area-inset-bottom) + var(--space-3))`, reserving 56px
+       for the bottom tab bar deleted on 2026-07-05 — a strip of empty space under
+       every page for a bar that no longer rendered. Only the real inset remains. */
+    padding-bottom: env(safe-area-inset-bottom, 0);
 }
 
-/* §7 Page-entry animation — GPU-only transform/opacity, runs on the compositor.
-   Pairs with the @view-transition block in wwwroot/css/app.css for browsers
-   that support the cross-document navigation API. */
-@media (prefers-reduced-motion: no-preference) {
-    .gl-page {
-        /* `backwards` (not `both`): fill the FROM state before the run to avoid an
-           initial flash, but do NOT retain the final transform. A retained
-           `transform: translateY(0)` turns .gl-page into the containing block for
-           every position:fixed descendant (kiosk bar, game-over modal, toasts),
-           anchoring them to the over-tall page instead of the viewport — which
-           clipped the kiosk control bar off the bottom edge during demos. */
-        animation: gl-page-enter var(--dur-base) var(--ease-out) backwards;
-    }
-    @keyframes gl-page-enter {
-        from { opacity: 0; transform: translateY(6px); }
-        to   { opacity: 1; transform: translateY(0); }
-    }
-}
-
-/* §9 Bottom-tab-bar for portrait phones. Hidden on >= 641 px so the desktop /
-   landscape layout keeps the L-C-R top-bar contract intact. */
-.bottom-tab-bar {
-    display: none;
-}
-
-/* ── §10 overflow menu: ANON button is the redundant text path on wide screens,
-     the ⋯ trigger is the canonical path on narrow portrait phones. ─────────── */
-/* The settings (⚙️) and dev-switch (🔧) menus reuse this dropdown mechanic and
-   must stay reachable on every viewport — the mute/FPS toggle is a global
-   control. Only the redundant anonymous-login "⋯" overflow is conditionally
-   shown (hidden here by default; surfaced on portrait phones below). */
-.gl-overflow-menu {
-    position: relative;
-    display: inline-block;
-}
-
-.gl-overflow-menu--anon {
-    display: none;
-}
-
-.gl-overflow-trigger {
-    list-style: none;
-    cursor: pointer;
-    background: transparent;
-    border: 1px solid var(--color-border, rgba(255, 255, 255, 0.2));
-    border-radius: 8px;
-    padding: 0.35rem 0.6rem;
-    color: inherit;
-    font-size: 1rem;
-    line-height: 1;
-}
-
-.gl-overflow-trigger::-webkit-details-marker { display: none; }
-
-.gl-overflow-panel {
-    position: absolute;
-    right: 0;
-    top: calc(100% + 0.4rem);
-    background: var(--color-surface, #1a1a24);
-    border: 1px solid var(--color-border, rgba(255, 255, 255, 0.2));
-    border-radius: 10px;
-    padding: 0.4rem;
-    min-width: 12rem;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
-    z-index: var(--z-dropdown);
-}
-
-.gl-overflow-item {
-    display: block;
-    width: 100%;
-    text-align: left;
-    background: transparent;
-    border: 0;
-    padding: 0.55rem 0.75rem;
-    color: inherit;
-    font: inherit;
-    border-radius: 6px;
-    cursor: pointer;
-}
-
-.gl-overflow-item:hover,
-.gl-overflow-item:focus {
-    background: var(--color-surface-hover, rgba(255, 255, 255, 0.08));
-}
-
-/* ── §10 dev-only "Switch user" panel ── */
-.gl-dev-switch {
-    display: inline-block;
-}
-
-.gl-dev-switch__title {
-    padding: 0.4rem 0.75rem 0.25rem;
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: rgba(255, 255, 255, 0.55);
-}
-
-.gl-dev-switch__input {
-    width: 100%;
-    box-sizing: border-box;
-    margin: 0.25rem 0.4rem 0.4rem;
-    width: calc(100% - 0.8rem);
-    background: rgba(255, 255, 255, 0.06);
-    color: inherit;
-    border: 1px solid rgba(255, 255, 255, 0.18);
-    border-radius: 6px;
-    padding: 0.4rem 0.55rem;
-    font: inherit;
-}
-
-.gl-dev-switch__input:focus {
-    outline: none;
-    border-color: #93c5fd;
-    background: rgba(147, 197, 253, 0.08);
-}
-
-.gl-dev-switch__error {
-    padding: 0.4rem 0.75rem;
-    color: #fecaca;
-    font-size: 12px;
-}
-
-.gl-dev-switch__hint {
-    padding: 0.25rem 0.75rem 0.4rem;
-    color: rgba(255, 255, 255, 0.5);
-    font-size: 11px;
-}
-
-/* ── Toast stack — rendered by MainLayout's @foreach toast loop. Lives here
-     because MainLayout owns the markup. ── */
+/* ── Toast stack — rendered by MainLayout's @foreach toast loop, and only there.
+     (PoSurviveLayout has its own `.app-toast`.) ── */
 .toast-stack {
     position: fixed;
     bottom: 1.5rem;
@@ -460,15 +84,28 @@
     max-width: 380px;
 }
 
+/* Entry via @starting-style rather than a keyframe. A keyframe animation replays
+   on every style recalc that re-triggers it and cannot be interrupted cleanly if
+   a second toast lands mid-flight; a transition from a declared start state just
+   interpolates from wherever the element currently is. Browsers without
+   @starting-style paint the toast in place, which is the correct fallback. */
 .toast {
     display: flex;
     align-items: center;
     gap: 0.75rem;
     padding: 0.75rem 1rem;
-    border-radius: 0.5rem;
+    border-radius: var(--radius-sm);
     font-size: 0.85rem;
-    animation: gl-toast-in var(--dur-base) var(--ease-out);
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    box-shadow: var(--elevation-1);
+    transition: transform var(--dur-base) var(--ease-out),
+                opacity var(--dur-base) var(--ease-out);
+}
+
+@starting-style {
+    .toast {
+        transform: translateX(100%);
+        opacity: 0;
+    }
 }
 
 .toast--info { background: var(--toast-info-bg); border: 1px solid var(--toast-info-border); color: var(--toast-info-text); }
@@ -491,10 +128,11 @@
 
 /* Action button on an actionable toast (currently the service-worker update
    prompt). Reads as the primary control on the toast — it is the only way to
-   actually take the update. */
+   actually take the update. currentColor keeps it legible against all four
+   toast tints in both schemes without four separate rules. */
 .toast-action {
     flex: 0 0 auto;
-    background: rgba(255, 255, 255, 0.16);
+    background: color-mix(in srgb, currentColor 16%, transparent);
     border: 1px solid currentColor;
     border-radius: var(--radius-pill);
     color: inherit;
@@ -504,143 +142,19 @@
     cursor: pointer;
 }
 
-.toast-action:hover { background: rgba(255, 255, 255, 0.28); }
+.toast-action:hover { background: color-mix(in srgb, currentColor 28%, transparent); }
 
-@keyframes gl-toast-in {
-    from { transform: translateX(100%); opacity: 0; }
-    to   { transform: translateX(0); opacity: 1; }
-}
+/* (`@keyframes gl-toast-in` removed — replaced by the @starting-style transition
+   above, which is its only former consumer.) */
 
-/* ── Kiosk demo progress bar (rendered conditionally by @if Demo?.IsActive)
-     — co-located with MainLayout because both renderers share chrome. ── */
-.demo-bar {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    padding: 0.5rem 1.5rem;
-    background: rgba(17, 24, 39, 0.95);
-    border-top: 1px solid var(--color-border);
-    backdrop-filter: blur(8px);
-    font-size: 0.8rem;
-    z-index: var(--z-kiosk);
-}
-
-.demo-bar__progress {
-    position: absolute;
-    top: 0;
-    left: 0;
-    height: 2px;
-    background: var(--color-accent);
-    transition: width 1s linear;
-}
-
-.demo-bar__label {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    color: var(--color-text-secondary);
-}
-
-.demo-bar__dot {
-    width: 6px;
-    height: 6px;
-    background: var(--color-accent);
-    border-radius: 50%;
-    animation: gl-pulse 1.5s ease-in-out infinite;
-}
-
-.demo-bar__next { color: var(--color-text-secondary); font-size: 0.7rem; }
-
-.demo-bar__stop {
-    margin-left: auto;
-    background: transparent;
-    border: 1px solid var(--color-border);
-    color: var(--color-text-secondary);
-    padding: 0.2rem 0.65rem;
-    border-radius: var(--radius-pill);
-    font-size: 0.7rem;
-    display: flex;
-    align-items: center;
-    gap: 0.3rem;
-}
-
-.demo-bar__stop:hover { border-color: var(--color-error); color: var(--color-error); }
-
-@keyframes gl-pulse {
-    0%, 100% { opacity: 1; }
-    50%      { opacity: 0.5; }
-}
-
-/* ── Generic fade-in keyframe used by Lists/Rows across multiple pages.
-     Lives here so page-scoped CSS can reuse without redeclaring. ── */
-@keyframes gl-fade-in-up {
-    from { opacity: 0; transform: translateY(12px); }
-    to   { opacity: 1; transform: translateY(0); }
-}
-
-/* ── Mobile portrait audit ── */
+/* Toasts are pinned to the bottom-right on desktop; on a phone that corner is
+   thumb territory and the stack can cover a game's controls. Span the width
+   instead, above the home-indicator inset. */
 @media (max-width: 640px) {
-    .gl-top-bar {
-        padding: 0.6rem var(--space-4);
-        gap: var(--space-2);
+    .toast-stack {
+        left: var(--space-3);
+        right: var(--space-3);
+        bottom: calc(var(--space-3) + env(safe-area-inset-bottom, 0));
+        max-width: none;
     }
-
-    .gl-top-bar-left {
-        gap: var(--space-3);
-        flex-shrink: 0;
-    }
-
-    /* Compact the centre rail so the FPS pill fits between the brand and the
-       session controls on portrait phones. */
-    .gl-top-bar-center {
-        gap: var(--space-2);
-        padding: 0 var(--space-2);
-    }
-
-    .gl-top-bar-game {
-        justify-content: flex-end;
-    }
-
-    /* Reclaim horizontal space on small screens. */
-    .gl-breadcrumbs,
-    .gl-auth-user {
-        display: none;
-    }
-
-    /* Center action + sync pill collapse to icon-only to stay one-tap without crowding. */
-    .gl-center-action .gl-center-action-label,
-    .gl-sync-pill .gl-center-action-label {
-        display: none;
-    }
-
-    /* Hide the standalone ANON button on narrow screens; the ⋯ overflow menu takes over. */
-    .gl-auth-button--anon { display: none; }
-    .gl-overflow-menu--anon { display: inline-block; }
-
-    /* Collapse the sync pill to a single icon glyph with a numeric badge so the
-       kiosk button doesn't get pushed off-screen on sub-360px devices. */
-    .gl-sync-pill { padding: 0.35rem 0.55rem; }
-
-    /* §9: leave room for the fixed bottom-tab-bar so the last row of content
-       isn't covered by the bar's 56 px + safe-area inset. */
-    .gl-content {
-        padding-bottom: calc(56px + env(safe-area-inset-bottom, 0) + var(--space-3));
-    }
-}
-
-/* 2026-07-12: the anonymous "⋯" overflow is hidden on wide screens via the
-   `--anon` base rule (the standalone ANON button is the canonical path there),
-   so no blanket !important hide is needed — that rule previously also nuked the
-   settings gear and dev-switch, making the global mute/FPS toggle and anonymous
-   login unreachable on every viewport. */
-
-/* Hide only the Developer tools (🔧) on portrait phones: on a 390px viewport the
-   dev icon + settings + brand + sign-in button crowd the top bar past the
-   viewport. The settings gear and (when unauthenticated) the ⋯ menu remain. */
-@media (max-width: 640px) {
-    .gl-dev-switch { display: none !important; }
 }

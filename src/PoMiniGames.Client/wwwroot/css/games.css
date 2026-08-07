@@ -538,7 +538,7 @@
 /* Narrow viewports: stack the two halves vertically so the keyboard rows
    don't fight for horizontal space. The 2P shared-screen design targets
    landscape monitors but must also work on portrait tablets. */
-@media (max-width: 720px) {
+@media (max-width: 640px) {
   .fq-split__board {
     grid-template-columns: 1fr;
   }
@@ -747,59 +747,11 @@
   box-shadow: 0 0 0 3px var(--accent-ring);
   border-color: var(--accent);
 }
+/* (Removed: the `.gps-hud*` universal-HUD block. Its only markup lived in
+   Components/GameHud.razor, which had no mount site anywhere in the app and has
+   been deleted. Live per-game HUDs are .pb-hud / .ps-hud / .racer-hud / .hud-panel
+   and are unaffected.) */
 
-/* ── Universal Game HUD (`.gps-hud`) ──
-   Three-slot row used by every game that wants score / timer / status. Add
-   inside `<GameShell>` and put each piece in the matching slot. The grid
-   collapses to one column on portrait phones. */
-.gps-hud {
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  gap: 0.75rem;
-  align-items: center;
-  padding: 0.75rem 1rem;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  font-family: var(--font-body);
-}
-.gps-hud-left   { justify-self: start;  text-align: left;  }
-.gps-hud-center { justify-self: center; text-align: center; min-width: 0; }
-.gps-hud-right  { justify-self: end;    text-align: right; }
-
-/* Each HUD slot is one or more `.gps-hud-cell` items — a label and a value
-   that sit on a single line. */
-.gps-hud-cell {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 0.35rem;
-  padding: 0.25rem 0.6rem;
-  background: var(--color-surface-hover);
-  border-radius: var(--radius-sm);
-  font-size: 0.85rem;
-  margin: 0.15rem 0.15rem;
-}
-.gps-hud-cell-label {
-  font-size: 0.7rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--color-text-secondary);
-}
-.gps-hud-cell-value {
-  font-family: var(--font-display);
-  font-size: 1rem;
-  font-weight: 700;
-  color: var(--color-text-primary);
-}
-
-@media (max-width: 640px) {
-  .gps-hud {
-    grid-template-columns: 1fr;
-    text-align: center;
-  }
-  .gps-hud-left, .gps-hud-center, .gps-hud-right { justify-self: stretch; text-align: center; }
-}
 
 /* Common game-area container — every game gets the same max-width, padding,
    and vertical rhythm. */
@@ -1120,119 +1072,34 @@
   margin-top: 0.25rem;
 }
 
-/* ── First-run "how to play" onboarding (GameShell) ─────────────────────────
-   The "?" recall button lives in the consolidated game header; the overlay
-   reuses the shared gps-modal so onboarding looks identical in every game. */
-.gps-howto-btn {
-  width: 1.5rem;
-  height: 1.5rem;
-  border-radius: 50%;
-  border: 1px solid var(--color-border, rgba(150, 160, 220, 0.45));
-  background: transparent;
-  color: var(--color-text-secondary, #9aa3c0);
-  font-weight: 700;
-  font-size: 0.85rem;
-  line-height: 1;
-  cursor: pointer;
-  flex: 0 0 auto;
-}
+/* (Removed: the `.gps-howto-btn` / `.gps-howto-popover*` onboarding block. The "?"
+   trigger was deleted from the consolidated game header in the 2026-07-13 top-bar
+   cleanup, which left nothing able to set GameShell.HowToPlayOpen — the popover
+   markup was unreachable and has now been removed from GameShell along with its
+   HowToPlay parameter. Controls text still reaches players through
+   <GameIntro Controls="…"> and its .gps-intro-controls styling. */
 
-.gps-howto-btn:hover,
-.gps-howto-btn.is-open {
-  color: var(--color-text-primary, #e8eaf6);
-  border-color: currentColor;
-  background: rgba(150, 160, 220, 0.08);
-}
+/* ── §GFX-1 PoRacer WebGL composite layer ────────────────────────────────
+   poracerGl.js inserts this canvas as a sibling of the 2D race canvas and
+   sets the 2D canvas to opacity 0. The 2D canvas keeps drawing — it is the
+   texture source for the shader — it just stops being what the player sees.
 
-/* ── How-to-play popover (2026-07-12) ──────────────────────────────────────
-   Replaces the previous full-screen modal: no overlay backdrop, no
-   auto-show on first visit. The popover sits at the top of the game area
-   inside .gps-shell, anchored to whichever side has free space, and is
-   dismissed by clicking outside it, the × button, or the Got it button. */
-
-.gps-howto-popover {
+   Positioned by the same rules as the canvas it shadows, so it tracks the
+   layout without either element knowing about the other. */
+/* The wrapper has no styling of its own, so without this the absolutely
+   positioned GL canvas would escape to whatever ancestor happens to be
+   positioned — or to the viewport. It is a plain block div; making it a
+   containing block changes nothing about its layout. */
+.racer-canvas-wrap {
   position: relative;
-  max-width: min(420px, 100%);
-  margin: 0.75rem auto 0;
-  padding: 0.75rem 0.9rem 0.85rem;
-  background: var(--color-card-bg, #1c1f2e);
-  color: var(--color-text-primary, #e8eaf6);
-  border: 1px solid var(--color-border, rgba(150, 160, 220, 0.45));
-  border-radius: var(--radius-md);
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
-  text-align: left;
-  font-size: 0.95rem;
-  line-height: 1.55;
-  /* Slide-down from the header so it feels like an extension of the "?" trigger */
-  animation: gps-howto-pop-in 160ms ease-out;
 }
 
-@keyframes gps-howto-pop-in {
-  from { opacity: 0; transform: translateY(-6px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-
-.gps-howto-popover-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  margin-bottom: 0.45rem;
-}
-
-.gps-howto-popover-title {
-  font-weight: 700;
-  font-size: 1rem;
-  letter-spacing: 0.01em;
-  flex: 1 1 auto;
-  min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.gps-howto-close {
-  width: 1.5rem;
-  height: 1.5rem;
-  border-radius: 50%;
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--color-text-secondary, #9aa3c0);
-  font-size: 1.1rem;
-  line-height: 1;
-  cursor: pointer;
-  flex: 0 0 auto;
-  padding: 0;
-}
-
-.gps-howto-close:hover {
-  color: var(--color-text-primary, #e8eaf6);
-  border-color: var(--color-border, rgba(150, 160, 220, 0.45));
-}
-
-.gps-howto-popover-body {
-  font-size: 0.95rem;
-  line-height: 1.55;
-}
-
-.gps-howto-popover-body ul {
-  margin: 0.5rem 0 0;
-  padding-left: 1.1rem;
-}
-
-.gps-howto-popover-body li { margin-bottom: 0.3rem; }
-
-.gps-howto-popover-body kbd {
-  padding: 0.05rem 0.4rem;
-  border-radius: 4px;
-  border: 1px solid var(--color-border, rgba(150, 160, 220, 0.45));
-  background: rgba(0, 0, 0, 0.35);
-  font-family: inherit;
-  font-size: 0.85em;
-}
-
-.gps-howto-popover-actions {
-  margin-top: 0.75rem;
-  display: flex;
-  justify-content: flex-end;
+.racer-gl {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  display: block;
+  border-radius: inherit;
 }

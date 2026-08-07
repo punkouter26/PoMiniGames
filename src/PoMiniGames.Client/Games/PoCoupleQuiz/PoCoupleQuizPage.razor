@@ -11,8 +11,7 @@
 <GameShell Title=@TitleContent Player="@_playerName" BackTo="/"
            GameOver="@(_solo && _soloFinished && !_isDemo)"
            GameKey="pocouplequiz"
-           GameSummary="@GameSummaryContent"
-           HowToPlay="@HowToPlayContent">
+           GameSummary="@GameSummaryContent">
     @if (!_introDone)
     {
         <GameIntro Title="@TitleContent"

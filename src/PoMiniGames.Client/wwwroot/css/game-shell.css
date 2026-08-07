@@ -108,6 +108,45 @@
    Populated from the unified leaderboard read-model via GameShell's GameKey.
    Hidden entirely when the game has no board, so these rules never need a
    per-game override. */
+/* Where the player landed on this game's board. Sits above the top 3, since
+   "you are #4" is the more personal fact. Absent entirely when they have no row
+   on the board — see GameOverModal's _myRank. */
+.gps-modal-rank {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.4rem;
+  width: 100%;
+  padding: 0.5rem 0;
+}
+
+.gps-modal-rank-pos {
+  font-size: 1.5rem;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--color-text-primary);
+}
+
+.gps-modal-rank-of {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+}
+
+/* Only ever shown for an improvement, so it is unconditionally the success
+   colour — there is no "down" variant to pair with it. */
+.gps-modal-rank-delta {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--accent-success);
+  background: var(--accent-success-soft);
+  border-radius: var(--radius-pill);
+  padding: 0.1rem 0.45rem;
+}
+
+.gps-modal-rank--up .gps-modal-rank-pos {
+  color: var(--accent-success);
+}
+
 .gps-modal-board {
   width: 100%;
   padding-top: 0.75rem;

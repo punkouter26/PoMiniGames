@@ -49,11 +49,9 @@
            Player="@_playerName"
            BackTo="/"
            Fullscreen="true"
-           Status="@StatusContent"
            GameOver="@(Phase == GamePhase.Finished && !_isDemo)"
            GameKey="poracer"
-           GameSummary="@RaceSummaryContent"
-           HowToPlay="@HowToPlayContent">
+           GameSummary="@RaceSummaryContent">
 @if (!_introDone)
 {
     <GameIntro Title="@TitleContent"
@@ -238,14 +236,9 @@
             <li>Best race times land on the leaderboard — smooth lines beat raw speed</li>
         </ul>
     </div>;
+
+    // Credited on the leaderboard submission via GameShell.Player → GameOverModal.
     private string _playerName = string.Empty;
-    private RenderFragment StatusContent => _isDemo
-        ? @<span class="gps-status-badge demo">🤖 Demo</span>
-        : Phase == GamePhase.Racing
-            ? @<span class="gps-status-badge player">Lap @(Math.Min(Player?.Lap ?? 1, TotalLaps)) / @TotalLaps</span>
-            : Phase == GamePhase.Finished
-                ? @<span class="gps-status-badge draw">🏁 Finished</span>
-                : @<span class="gps-status-badge turn">Multiplayer arcade racing</span>;
 
     // End-of-race content for the shared GameShell modal: result line, final
     // standings, and the score-submit status (with retry). Same contract as
@@ -363,6 +356,15 @@
         // JS-side bridge: a thin shim that reads window.__poInput (filled by
         // keyboard + touch) and invokes onInputChange(...) on every change.
         _selfRef = DotNetObjectReference.Create(this);
+        // Route-gated engine load (see wwwroot/js/engineLoader.js). The engine is
+        // no longer in index.html, so it has to be pulled in before the first
+        // interop call. Cheap and idempotent after the first await.
+        if (!await JS.InvokeAsync<bool>("loadEngine", "poracer"))
+        {
+            Console.Error.WriteLine("[poracer] engine failed to load");
+            return;
+        }
+
         await JS.InvokeVoidAsync("PoRacer.start", "racerCanvas", _selfRef);
 
         // The race no longer auto-starts here — the intro card gates it. Once the

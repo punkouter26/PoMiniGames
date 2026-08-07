@@ -209,60 +209,12 @@
   20%  { opacity: 1; transform: translateY(-12px) scale(1.1); }
   100% { opacity: 0; transform: translateY(-60px) scale(1); }
 }
+/* (Removed: the `.kiosk-bar*` / `.kiosk-btn*` floating demo-control block. The bar
+   was dropped from MainLayout in the 2026-07-04 mobile-portrait cleanup and its
+   component, Components/KioskControlBar.razor, had no mount site left; these rules
+   matched nothing. KioskCoordinator still drives demo auto-rotation from the home
+   page — only the floating control surface is gone. */
 
-/* Kiosk control bar — 2026 floating controls */
-.kiosk-bar {
-  position: fixed;
-  bottom: 1.2rem;
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  align-items: center;
-  gap: 0.8rem;
-  padding: 0.6rem 1rem;
-  background: rgba(2, 6, 23, 0.85);
-  border: 1px solid rgba(148, 163, 184, 0.25);
-  border-radius: 999px;
-  backdrop-filter: blur(12px);
-  box-shadow: 0 12px 32px -8px rgba(0, 0, 0, 0.6);
-  z-index: var(--z-modal);
-  transition: opacity 280ms ease, transform 280ms ease;
-  font-size: 0.9rem;
-  color: #e2e8f0;
-}
-.kiosk-bar--hidden { opacity: 0; transform: translateX(-50%) translateY(8px); pointer-events: none; }
-.kiosk-bar__countdown { display: flex; align-items: center; gap: 0.5rem; padding-right: 0.8rem; border-right: 1px solid rgba(148, 163, 184, 0.2); }
-.kiosk-bar__name { font-weight: 700; }
-.kiosk-bar__timer { font-variant-numeric: tabular-nums; color: #facc15; min-width: 2.4ch; text-align: right; }
-.kiosk-bar__actions { display: flex; gap: 0.4rem; }
-.kiosk-btn {
-  background: rgba(148, 163, 184, 0.12);
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  color: inherit;
-  width: 2.2rem;
-  height: 2.2rem;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  cursor: pointer;
-  font-size: 1rem;
-  transition: background 120ms ease, transform 120ms ease;
-}
-.kiosk-btn:hover { background: rgba(148, 163, 184, 0.25); transform: scale(1.08); }
-.kiosk-btn--exit { background: rgba(239, 68, 68, 0.2); border-color: rgba(239, 68, 68, 0.4); }
-.kiosk-btn--exit:hover { background: rgba(239, 68, 68, 0.35); }
-
-.kiosk-bar__esc {
-  margin-left: 0.4rem;
-  padding: 0.1rem 0.4rem;
-  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
-  font-size: 0.7rem;
-  background: rgba(148, 163, 184, 0.12);
-  border: 1px solid rgba(148, 163, 184, 0.25);
-  border-radius: 4px;
-  color: rgba(226, 232, 240, 0.7);
-  letter-spacing: 0.05em;
-}
 
 /* === §PoFight Start ========================================================
    A full-width ▶ START button rendered under the arena in the ready state.

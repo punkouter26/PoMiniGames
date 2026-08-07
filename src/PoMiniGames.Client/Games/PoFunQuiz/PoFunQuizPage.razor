@@ -17,8 +17,7 @@
            GameOver="@IsGameOver"
            GameKey="@(_playMode == "solo" ? "pofunquiz" : null)"
            Stats="@_statItems"
-           GameSummary="@GameSummaryContent"
-           HowToPlay="@HowToPlayContent">
+           GameSummary="@GameSummaryContent">
     @if (!_introDone)
     {
         <GameIntro Title="@TitleContent"

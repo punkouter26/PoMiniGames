@@ -139,6 +139,139 @@
     animation: fx-rotate-angle 8s linear infinite;
 }
 
+/* ===== §GFX-6 Advanced surface primitives ==================================
+ * The four below are what separate "translucent panel" from "pane of glass".
+ * All are opt-in utilities; the applied layer that puts them on real chrome is
+ * glass.css, kept separate so this file stays free of side effects.
+ */
+
+/* Specular sweep on hover. A skewed highlight travelling across the surface —
+ * the single most convincing cue that a surface is glossy and lit.
+ *
+ * Animated with `translate` on a pseudo-element rather than `background-position`
+ * because a moving gradient position repaints the element every frame, while a
+ * transform on an already-composited layer costs nothing. */
+.fx-sheen {
+    position: relative;
+    overflow: hidden;
+    isolation: isolate;
+}
+.fx-sheen::after {
+    content: '';
+    position: absolute;
+    top: -50%;
+    bottom: -50%;
+    left: -60%;
+    width: 40%;
+    background: linear-gradient(100deg,
+        transparent,
+        rgba(255, 255, 255, 0.16) 45%,
+        rgba(255, 255, 255, 0.28) 50%,
+        rgba(255, 255, 255, 0.16) 55%,
+        transparent);
+    transform: translateX(0) skewX(-18deg);
+    opacity: 0;
+    pointer-events: none;
+    z-index: 1;
+}
+.fx-sheen:hover::after,
+.fx-sheen:focus-visible::after {
+    opacity: 1;
+    animation: fx-sheen-sweep 0.75s cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes fx-sheen-sweep {
+    from { transform: translateX(0) skewX(-18deg); }
+    to   { transform: translateX(420%) skewX(-18deg); }
+}
+
+/* Iridescent text. `background-clip: text` paints a gradient through the
+ * glyphs; animating --fx-angle rotates it. Used sparingly — on scores and
+ * titles, never on body copy, where the reduced contrast would hurt. */
+.fx-iridescent {
+    background: linear-gradient(var(--fx-angle),
+        var(--fx-accent, #66b6ff),
+        var(--fx-accent-2, #00e5ff) 35%,
+        var(--fx-accent-3, #facc15) 65%,
+        var(--fx-accent, #66b6ff));
+    background-size: 200% 200%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: fx-rotate-angle 6s linear infinite;
+}
+/* Engines without background-clip:text would render invisible text. Restoring
+   an explicit colour is a correctness guard, not a style choice. */
+@supports not ((-webkit-background-clip: text) or (background-clip: text)) {
+    .fx-iridescent { color: var(--fx-accent, #66b6ff); background: none; }
+}
+
+/* Pointer-tracked 3D tilt. fxTilt.js publishes --fx-mx/--fx-my in -1..1 on the
+ * element; everything else is declarative.
+ *
+ * The parent needs the perspective, not the tilted element — perspective on the
+ * element itself is applied AFTER its own transform and produces a flat shear
+ * instead of depth. */
+.fx-tilt-scene { perspective: 900px; }
+.fx-tilt {
+    transform:
+        rotateY(calc(var(--fx-mx, 0) * 7deg))
+        rotateX(calc(var(--fx-my, 0) * -7deg))
+        translateZ(0);
+    transform-style: preserve-3d;
+    transition: transform 0.12s ease-out;
+    will-change: transform;
+}
+/* The highlight tracks the pointer across the surface, which is what sells the
+   tilt as a physical object catching a light rather than a rotating rectangle. */
+.fx-tilt-glare {
+    position: relative;
+    overflow: hidden;
+}
+.fx-tilt-glare::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(
+        circle at calc(50% + var(--fx-mx, 0) * 45%) calc(50% + var(--fx-my, 0) * 45%),
+        rgba(255, 255, 255, 0.20),
+        transparent 55%);
+    opacity: 0;
+    transition: opacity 0.2s ease-out;
+    pointer-events: none;
+}
+.fx-tilt-glare:hover::before { opacity: 1; }
+
+/* Frosted glass with grain. Real frosted glass is not smooth — the
+ * micro-texture is what stops a large blurred panel from looking like a flat
+ * wash, and it also masks the banding that backdrop-filter produces across a
+ * wide gradient.
+ *
+ * The grain is an inline SVG feTurbulence: ~200 bytes, no request, and it
+ * scales to any size without a raster asset. */
+.fx-frost {
+    position: relative;
+}
+.fx-frost::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    opacity: 0.035;
+    mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+:root[data-gfx='low'] .fx-frost::after,
+:root[data-gfx='low'] .fx-tilt-glare::before { display: none; }
+:root[data-gfx='low'] .fx-tilt { transform: none; }
+
+@media (prefers-reduced-motion: reduce) {
+    .fx-sheen::after { animation: none; opacity: 0; }
+    .fx-iridescent { animation: none; }
+    .fx-tilt { transform: none; transition: none; }
+}
+
 /* ===== §8 Audio-reactive surfaces ==========================================
  * Consumes the CSS variables visualRuntime.js pumps from the AnalyserNode.
  * Purely declarative — no per-element JS.
@@ -202,6 +335,88 @@
     40%, 60% { transform: translate3d(7px, 0, 0); }
 }
 
+
+/* ===== §8 Impact / game feel ===============================================
+ * impactBus.js publishes --po-punch and --po-shake on <html> and drives the
+ * flash layer's opacity directly. Everything here is the *declarative* half:
+ * what those numbers look like.
+ */
+
+/* Full-screen tint spike. Injected once by impactBus.js and left in the DOM —
+ * it is a single always-composited layer at opacity 0, which is cheaper than
+ * creating and destroying an element per hit (each creation would force a
+ * style/layout pass at exactly the moment the frame budget is tightest).
+ *
+ * `mix-blend-mode: screen` rather than a flat white overlay: screen lifts the
+ * existing image toward white instead of washing it out, so the playfield stays
+ * readable through the flash.
+ */
+.po-impact-flash {
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-fx-flash, 9990);
+    pointer-events: none;
+    opacity: 0;
+    background: radial-gradient(ellipse at center,
+        color-mix(in srgb, var(--fx-accent, #66b6ff) 45%, #ffffff) 0%,
+        color-mix(in srgb, var(--fx-accent, #66b6ff) 30%, transparent) 55%,
+        transparent 100%);
+    mix-blend-mode: screen;
+    will-change: opacity;
+    contain: strict;
+}
+
+/* ===== §7 Shared GPU particle overlay ======================================
+ * gpuFx.js injects this canvas once, lazily, on the first burst. See the
+ * --z-fx-* tokens in app.css for why it sits above the modal layer.
+ *
+ * `opacity: 0` at rest is load-bearing. gpuFx.js stops its rAF loop the moment
+ * the last particle dies, and a fully transparent canvas lets the compositor
+ * drop the layer entirely instead of keeping a viewport-sized texture resident
+ * for the rest of the session.
+ */
+.po-gpufx {
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-fx-particles, 9991);
+    pointer-events: none;
+    opacity: 0;
+    contain: strict;
+}
+
+/* Punch on a DOM element. A true RGB split needs a shader, but a saturation +
+ * contrast lift driven off the same envelope reads as the same event to the
+ * player, and `filter` stays on the compositor.
+ *
+ * Applied opt-in: `filter` on an ancestor creates a containing block for
+ * fixed-position descendants, which would silently reposition any modal inside
+ * it. Never put this on a wrapper that can contain overlay UI. */
+.fx-punch {
+    filter:
+        saturate(calc(100% + var(--po-punch, 0) * 60%))
+        contrast(calc(100% + var(--po-punch, 0) * 18%))
+        brightness(calc(100% + var(--po-punch, 0) * 10%));
+}
+
+/* Chromatic-fringe approximation for DOM text/badges: two offset shadows in
+ * complementary hues, scaled by the punch envelope. At punch 0 the offsets are
+ * 0px and the shadows collapse to nothing, so this costs nothing at rest. */
+.fx-punch-text {
+    text-shadow:
+        calc(var(--po-punch, 0) * -3px) 0 0 rgba(255, 0, 80, 0.55),
+        calc(var(--po-punch, 0) * 3px) 0 0 rgba(0, 200, 255, 0.55);
+}
+
+:root[data-gfx='low'] .po-impact-flash { display: none; }
+:root[data-gfx='low'] .fx-punch { filter: none; }
+
+@media (prefers-reduced-motion: reduce) {
+    /* Suppressed outright, not merely damped. A repeated full-screen brightness
+       spike is a strobe, and reduced-motion is the closest signal the platform
+       gives us for photosensitivity. The hit still reports through audio and
+       haptics, so no feedback is actually lost. */
+    .po-impact-flash { opacity: 0 !important; }
+}
 
 /* ===== §6 Offscreen work skipping ==========================================
  * `content-visibility: auto` lets the browser skip layout, paint AND style for

@@ -1,0 +1,312 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   glass.css — the APPLIED glassmorphism layer (§GFX-6).
+
+   fx.css defines primitives and deliberately restyles nothing. This file is the
+   other half: it puts those primitives onto the app's real chrome surfaces.
+   Keeping them apart matters — fx.css can be loaded anywhere without risk,
+   while this file is by definition opinionated and has to load last.
+
+   WHY SELECTORS AND NOT MARKUP
+   The alternative was adding `class="fx-glass fx-glass--lit"` to forty .razor
+   files. That is forty diffs to review, forty chances to break a layout, and it
+   scatters one visual decision across the whole component tree. The surfaces
+   here already have stable, semantic class names; targeting them keeps the
+   entire treatment in one reviewable place and makes it removable in one line.
+
+   WHY THE DOUBLED SELECTORS (`.gps-modal.gps-modal`)
+   Several targets are styled by Blazor scoped CSS, whose rules carry an extra
+   `[b-xxxxxxxxxx]` attribute selector and therefore beat a single class. Doubling
+   the class raises specificity to match, and this file loading after
+   PoMiniGamesClient.styles.css wins the tie. It is not a hack for its own sake —
+   without it, exactly the game HUDs that most want the treatment would silently
+   not get it.
+
+   ORDER: this file MUST stay last in index.html's stylesheet list.
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* ── Shared recipe ────────────────────────────────────────────────────────
+   One place to change what "a glass surface in this app" means. Everything
+   below composes from these. */
+:root {
+    --glass-fill: color-mix(in srgb, var(--color-surface) 42%, transparent);
+    --glass-fill-strong: color-mix(in srgb, var(--color-surface) 68%, transparent);
+    --glass-edge: color-mix(in srgb, var(--color-text-primary) 12%, transparent);
+    --glass-edge-lit: color-mix(in srgb, var(--color-text-primary) 26%, transparent);
+    --glass-inner: inset 0 1px 0 var(--glass-edge-lit);
+}
+
+/* Light mode needs a *lighter* fill, not the same dark one at lower opacity —
+   re-pointing the two fills is enough because everything else is derived. */
+:root[data-theme='light'] {
+    --glass-fill: rgba(255, 255, 255, 0.58);
+    --glass-fill-strong: rgba(255, 255, 255, 0.82);
+    --glass-edge: rgba(15, 23, 42, 0.10);
+    --glass-edge-lit: rgba(255, 255, 255, 0.9);
+}
+
+/* ── Top bar ──────────────────────────────────────────────────────────────
+   The one surface on screen at all times, so it is the one that most defines
+   whether the app reads as glass. Blur is stronger here than anywhere else
+   because content scrolls underneath it. */
+.gl-top-bar.gl-top-bar {
+    background: var(--glass-fill-strong);
+    border-bottom: 1px solid var(--glass-edge);
+    box-shadow: var(--glass-inner), 0 1px 24px rgba(0, 0, 0, 0.22);
+}
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+    .gl-top-bar.gl-top-bar {
+        background: var(--glass-fill);
+        -webkit-backdrop-filter: blur(var(--gfx-blur)) saturate(170%);
+        backdrop-filter: blur(var(--gfx-blur)) saturate(170%);
+    }
+}
+
+.gl-overflow-panel.gl-overflow-panel {
+    background: var(--glass-fill-strong);
+    border: 1px solid var(--glass-edge);
+    box-shadow: var(--glass-inner), var(--elevation-3);
+    -webkit-backdrop-filter: var(--glass-2);
+    backdrop-filter: var(--glass-2);
+}
+
+/* ── The end-of-game modal ────────────────────────────────────────────────
+   Every game funnels into this. It gets the full treatment: heavy backdrop
+   blur, a lit top edge, grain, and a rotating conic ring — this is the app's
+   single most-seen moment and the one place the extra compositor cost is
+   unambiguously worth it. */
+.gps-modal-overlay.gps-modal-overlay {
+    background: color-mix(in srgb, #020617 55%, transparent);
+    -webkit-backdrop-filter: blur(calc(var(--gfx-blur) * 0.6)) saturate(120%);
+    backdrop-filter: blur(calc(var(--gfx-blur) * 0.6)) saturate(120%);
+}
+
+.gps-modal.gps-modal {
+    position: relative;
+    background: var(--glass-fill-strong);
+    border: 1px solid var(--glass-edge);
+    box-shadow:
+        var(--glass-inner),
+        var(--elevation-3),
+        0 0 60px color-mix(in srgb, var(--fx-accent) 14%, transparent);
+    -webkit-backdrop-filter: var(--glass-3);
+    backdrop-filter: var(--glass-3);
+    /* NOT overflow:hidden. game-shell.css sets overflow-y:auto so a tall modal
+       (many stats + a top-3 board) can scroll on a short viewport; clipping it
+       here would strand the OK button off-screen. The ring below is masked
+       rather than clipped, so it does not need the clip anyway. */
+}
+
+/* Rotating conic edge. Inlined rather than reusing .fx-ring because the modal
+   needs it on ::before — ::after is already spoken for by the grain below. */
+.gps-modal.gps-modal::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    background: conic-gradient(from var(--fx-angle),
+        transparent 0deg,
+        color-mix(in srgb, var(--fx-accent) 70%, transparent) 60deg,
+        transparent 140deg,
+        color-mix(in srgb, var(--fx-accent-2) 70%, transparent) 240deg,
+        transparent 320deg);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    mask-composite: exclude;
+    animation: fx-rotate-angle 9s linear infinite;
+    pointer-events: none;
+}
+
+.gps-modal.gps-modal::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.04;
+    mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* The result headline is the emotional peak of a session — the one place an
+   animated gradient on text earns its keep. */
+.gps-modal-title.gps-modal-title {
+    background: linear-gradient(var(--fx-angle),
+        var(--fx-accent), var(--fx-accent-2) 45%, var(--fx-accent-3) 70%, var(--fx-accent));
+    background-size: 220% 220%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: fx-rotate-angle 7s linear infinite;
+}
+@supports not ((-webkit-background-clip: text) or (background-clip: text)) {
+    .gps-modal-title.gps-modal-title { color: var(--color-text-primary); background: none; }
+}
+
+.gps-modal-board.gps-modal-board,
+.gps-modal-stats.gps-modal-stats {
+    background: color-mix(in srgb, var(--color-surface) 30%, transparent);
+    border: 1px solid var(--glass-edge);
+    box-shadow: var(--glass-inner);
+}
+
+/* (Removed: the `.gps-hud` / `.gps-hud-cell-value` glass treatment. Those
+   selectors only ever matched Components/GameHud.razor, an unmounted component
+   now deleted along with its `.gps-hud*` rules in games.css. The per-game HUDs
+   below are the live ones.) */
+
+/* ── Per-game HUDs ────────────────────────────────────────────────────────
+   These live in scoped CSS, hence the doubling. Grouped so a new game gets the
+   treatment by adding one selector rather than a new block.
+   (`.kiosk-bar` dropped with the deleted KioskControlBar component.) */
+.pb-hud.pb-hud,
+.ps-hud.ps-hud,
+.racer-hud.racer-hud,
+.hud-panel.hud-panel {
+    background: var(--glass-fill);
+    border: 1px solid var(--glass-edge);
+    box-shadow: var(--glass-inner);
+    -webkit-backdrop-filter: blur(calc(var(--gfx-blur) * 0.6)) saturate(150%);
+    backdrop-filter: blur(calc(var(--gfx-blur) * 0.6)) saturate(150%);
+}
+
+/* ── Cards, tiles and panels ──────────────────────────────────────────────
+   NOT given backdrop-filter. These repeat — a home screen has a dozen game
+   chips, a leaderboard has fifty rows — and each blurred surface forces its own
+   compositor layer plus a re-sample of everything beneath it. A dozen of them
+   halves the frame rate on integrated graphics for a difference nobody would
+   notice on a 90 px tile. They get the fill, the lit edge and the sheen, which
+   is where the perceived quality actually comes from. */
+.home-mode-btn.home-mode-btn,
+.home-game-chip.home-game-chip,
+.home-score-card.home-score-card,
+.gps-game-card.gps-game-card,
+.gps-intro-card.gps-intro-card,
+.sp-card.sp-card,
+.sp-game-card.sp-game-card {
+    background: var(--glass-fill);
+    border: 1px solid var(--glass-edge);
+    box-shadow: var(--glass-inner);
+    position: relative;
+    overflow: hidden;
+    isolation: isolate;
+}
+
+/* Sheen on the interactive ones only. A highlight sweeping across something you
+   cannot press is a lie about affordance. */
+.home-mode-btn.home-mode-btn::after,
+.home-game-chip.home-game-chip::after,
+.home-score-card.home-score-card::after,
+.gps-game-card.gps-game-card::after {
+    content: '';
+    position: absolute;
+    top: -50%;
+    bottom: -50%;
+    left: -60%;
+    width: 40%;
+    background: linear-gradient(100deg,
+        transparent,
+        rgba(255, 255, 255, 0.14) 45%,
+        rgba(255, 255, 255, 0.26) 50%,
+        rgba(255, 255, 255, 0.14) 55%,
+        transparent);
+    transform: translateX(0) skewX(-18deg);
+    opacity: 0;
+    pointer-events: none;
+    z-index: 1;
+}
+.home-mode-btn.home-mode-btn:hover::after,
+.home-game-chip.home-game-chip:hover::after,
+.home-score-card.home-score-card:hover::after,
+.gps-game-card.gps-game-card:hover::after,
+.home-mode-btn.home-mode-btn:focus-visible::after,
+.home-game-chip.home-game-chip:focus-visible::after,
+.home-score-card.home-score-card:focus-visible::after,
+.gps-game-card.gps-game-card:focus-visible::after {
+    opacity: 1;
+    animation: fx-sheen-sweep 0.75s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Static tiles (the mode labels that are not buttons) must not look pressable.
+   `--static` is the existing marker for exactly that. */
+.home-mode-btn--static.home-mode-btn--static::after { content: none; }
+
+/* ── Tilt scenes ──────────────────────────────────────────────────────────
+   `perspective` belongs on the PARENT of the tilted element. Applied to the
+   element itself it is composed after that element's own rotation and produces
+   a flat shear instead of depth — the classic reason a CSS tilt "does nothing".
+
+   Elements opt in from markup with data-fx-tilt (see fxTilt.js); these two
+   rules just make the containers projective. */
+.home-section-games { perspective: 900px; }
+.gps-modal-overlay.gps-modal-overlay { perspective: 1400px; }
+
+/* Pointer-tracked glare, painted as a background-image rather than on a
+   pseudo-element: ::before is already taken on these cards, and ::after now
+   carries the sheen. A background-image cannot collide with anything, which is
+   why the glare can be applied more widely than the rotation. */
+.home-game-chip.home-game-chip {
+    background-image: radial-gradient(
+        circle at calc(50% + var(--fx-mx, 0) * 40%) calc(50% + var(--fx-my, 0) * 40%),
+        color-mix(in srgb, #ffffff 14%, transparent),
+        transparent 60%);
+}
+
+/* ── Toasts ───────────────────────────────────────────────────────────────
+   Few on screen at once and always over arbitrary content, so blur is
+   affordable and genuinely helps legibility. */
+.toast.toast {
+    background: var(--glass-fill-strong);
+    border: 1px solid var(--glass-edge);
+    box-shadow: var(--glass-inner), var(--elevation-3);
+    -webkit-backdrop-filter: var(--glass-2);
+    backdrop-filter: var(--glass-2);
+}
+
+/* ── Leaderboard panels ───────────────────────────────────────────────────
+   The tables themselves stay opaque: text over a blurred, moving background is
+   measurably harder to read, and a leaderboard exists to be read. */
+.cq-leaderboard.cq-leaderboard,
+.fq-leaderboard.fq-leaderboard {
+    background: var(--glass-fill-strong);
+    border: 1px solid var(--glass-edge);
+    box-shadow: var(--glass-inner);
+}
+
+/* ── Adaptive degradation ─────────────────────────────────────────────────
+   Mirrors fx.css's policy for the surfaces this file introduced. `low` drops
+   every backdrop-filter to an opaque fill: the blur is the expensive part, and
+   an opaque panel is a legitimate look rather than a broken one. */
+:root[data-gfx='low'] .gl-top-bar.gl-top-bar,
+:root[data-gfx='low'] .gps-modal.gps-modal,
+:root[data-gfx='low'] .toast.toast,
+:root[data-gfx='low'] .gl-overflow-panel.gl-overflow-panel,
+:root[data-gfx='low'] .pb-hud.pb-hud,
+:root[data-gfx='low'] .ps-hud.ps-hud,
+:root[data-gfx='low'] .racer-hud.racer-hud,
+:root[data-gfx='low'] .hud-panel.hud-panel {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: var(--color-surface);
+}
+:root[data-gfx='low'] .gps-modal.gps-modal::before,
+:root[data-gfx='low'] .gps-modal.gps-modal::after {
+    display: none;
+}
+:root[data-gfx='low'] .gps-modal-title.gps-modal-title {
+    animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .gps-modal.gps-modal::before,
+    .gps-modal-title.gps-modal-title {
+        animation: none;
+    }
+    .home-mode-btn.home-mode-btn::after,
+    .home-game-chip.home-game-chip::after,
+    .home-score-card.home-score-card::after,
+    .gps-game-card.gps-game-card::after {
+        animation: none;
+        opacity: 0;
+    }
+}

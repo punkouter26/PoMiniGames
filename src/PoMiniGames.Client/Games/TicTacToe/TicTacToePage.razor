@@ -1,6 +1,7 @@
 @page "/tictactoe"
 @page "/tictactoe/{Mode}"
 @implements IDisposable;
+@implements IAsyncDisposable;
 @using PoMiniGamesClient.Components;
 @using PoMiniGamesClient.Enums;
 @using PoMiniGamesClient.Models;
@@ -28,9 +29,7 @@
     GameKey="@(PlayMode == "ai" ? "tictactoe" : null)"
     Stats="@(PlayMode == "ai" ? _statItems : null)"
     Elo="@(PlayMode == "ai" ? _rating.Elo : (int?)null)"
-    Status="@StatusContent"
-    GameSummary="@GameSummaryContent"
-    HowToPlay="@HowToPlayContent">
+    GameSummary="@GameSummaryContent">
     @if (!_introDone)
     {
         <GameIntro Title="@TitleContent"
@@ -39,7 +38,14 @@
                    Mode="@_introMode"
                    OnStart="DismissIntro" />
     }
-    <div class="ttt-board @(_isAiTurn ? "ttt-board--thinking" : "") @ResultClass" role="grid" aria-label="Tic-Tac-Toe game board">
+    <div class="ttt-board @(_isAiTurn ? "ttt-board--thinking" : "") @ResultClass @(_glMounted ? "ttt-board--gl" : null)" role="grid" aria-label="Tic-Tac-Toe game board">
+        @* §GFX-4 GPU board layer. Sits BEHIND the cell grid and never receives
+           input — every click, aria-label and keyboard focus stays on the DOM
+           cells below, so the a11y tree and the Playwright selectors are
+           unchanged. When it mounts, .ttt-board--gl fades the SVG marks out and
+           these meshes stand in for them; when WebGL/WebGPU is unavailable
+           nothing mounts and the board renders exactly as it always did. *@
+        <canvas @ref="_glCanvas" class="ttt-gl" aria-hidden="true"></canvas>
         @for (int r = 0; r < TicTacToeBoard.Size; r++)
         {
             @for (int c = 0; c < TicTacToeBoard.Size; c++)
@@ -217,11 +223,6 @@
     // drawer was removed 2026-07-06) and is intentionally gone. The manual
     // difficulty picker is gone too — 1-player strength is always matched to
     // the player's adaptive ELO, exactly like ConnectFive.
-
-    private RenderFragment StatusContent => @<span class="@GetStatusClass()">
-        @((MarkupString)GetStatusIcon()) @GetStatusText()
-    </span>;
-
     private RenderFragment? GameSummaryContent => _isGameOver
         ? @<div>
             @if (_gameResult == GameResult.Win)
@@ -336,6 +337,120 @@
     {
         _demoCts?.Cancel();
         // BUG FIX (#1): _kioskTimer removed; KioskCoordinator owns it.
+    }
+
+    // ── §GFX-4 GPU board layer ───────────────────────────────────────────
+    private ElementReference _glCanvas;
+    private IJSObjectReference? _glModule;
+    private IJSObjectReference? _glBoard;
+    private bool _glMounted;
+    // Guards the interop call: OnAfterRenderAsync fires on every state change
+    // (hover, thinking spinner, stat drawer) and pushing an unchanged board
+    // across the JS boundary each time is pure waste.
+    private string _glSignature = string.Empty;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try
+            {
+                _glModule = await JSRuntime.InvokeAsync<IJSObjectReference>(
+                    "import", "./js/boardGl.js");
+                _glBoard = await _glModule.InvokeAsync<IJSObjectReference>(
+                    "mount", _glCanvas, new
+                    {
+                        cols = TicTacToeBoard.Size,
+                        rows = TicTacToeBoard.Size,
+                        kind = "tictactoe",
+                        color1 = "#ff6b6b",
+                        color2 = "#22d3ee",
+                    });
+                _glMounted = _glBoard is not null;
+                if (_glMounted) StateHasChanged();
+            }
+            catch (JSException)
+            {
+                // No GPU backend, a blocked module fetch, or a failed context.
+                // All are supported outcomes: the DOM board is already on
+                // screen and fully playable without this layer.
+                _glMounted = false;
+            }
+            catch (TaskCanceledException)
+            {
+                // Navigated away mid-import; nothing to clean up yet.
+                return;
+            }
+        }
+
+        if (_glBoard is null) return;
+        await PushBoardToGlAsync();
+    }
+
+    private async Task PushBoardToGlAsync()
+    {
+        var size = TicTacToeBoard.Size;
+        var cells = new int[size * size];
+        for (var r = 0; r < size; r++)
+        {
+            for (var c = 0; c < size; c++)
+            {
+                cells[r * size + c] = _board.Get(r, c) switch
+                {
+                    CellValue.X => 1,
+                    CellValue.O => 2,
+                    _ => 0,
+                };
+            }
+        }
+
+        var signature = string.Concat(cells) + "|" + string.Join(",", _winCells.Select(w => $"{w.Row}{w.Col}"));
+        if (signature == _glSignature) return;
+        _glSignature = signature;
+
+        // Captured into a local: `_glBoard` is a field, so the compiler cannot
+        // prove it is still non-null across the await — and it genuinely might
+        // not be, since the catch below nulls it.
+        var board = _glBoard;
+        if (board is null) return;
+
+        try
+        {
+            await board.InvokeVoidAsync("setCells", cells);
+            await board.InvokeVoidAsync(
+                "setWin",
+                _winCells.Select(w => new { row = w.Row, col = w.Col }).ToArray());
+        }
+        catch (JSDisconnectedException)
+        {
+            // Circuit/page is going away mid-push; the board is about to be
+            // disposed anyway.
+        }
+        catch (JSException)
+        {
+            // A dead GL context (tab suspended, driver reset). Stop pushing
+            // rather than throwing on every subsequent render.
+            _glBoard = null;
+            _glMounted = false;
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        Dispose();
+        try
+        {
+            if (_glBoard is not null) await _glBoard.InvokeVoidAsync("dispose");
+        }
+        catch (JSException) { /* context already gone */ }
+        catch (JSDisconnectedException) { /* page unloading */ }
+        finally
+        {
+            if (_glBoard is not null) await _glBoard.DisposeAsync();
+            if (_glModule is not null) await _glModule.DisposeAsync();
+            _glBoard = null;
+            _glModule = null;
+        }
     }
 
     // Rebuild the ELO/CPU/W/L/D/Rate tiles from the adaptive rating so the stats
@@ -484,68 +599,4 @@
         CellValue.O => "O",
         _ => "Empty cell"
     };
-    
-    private string GetStatusIcon()
-    {
-        if (PlayMode == "demo") return "🎮";
-        if (PlayMode == "2p")
-        {
-            return _gameResult switch
-            {
-                GameResult.Win or GameResult.Loss => "🏆",
-                GameResult.Draw => "👥",
-                _ => _current2pToken == CellValue.X ? "❌" : "⭕"
-            };
-        }
-        return _gameResult switch
-        {
-            GameResult.Win => "🏆",
-            GameResult.Loss => "😤",
-            GameResult.Draw => "👥",
-            _ => _isAiTurn ? "🤔" : "❌"
-        };
-    }
-
-    private string GetStatusText()
-    {
-        if (PlayMode == "demo") return "Demo mode";
-        if (PlayMode == "2p")
-        {
-            return _gameResult switch
-            {
-                GameResult.Win => $"{P1Name} wins!",
-                GameResult.Loss => $"{_player2Name} wins!",
-                GameResult.Draw => "Draw!",
-                _ => _current2pToken == CellValue.X ? $"{P1Name}'s turn (❌)" : $"{_player2Name}'s turn (⭕)"
-            };
-        }
-        return _gameResult switch
-        {
-            GameResult.Win => "You Win!",
-            GameResult.Loss => "AI Wins!",
-            GameResult.Draw => "Draw!",
-            _ => _isAiTurn ? $"CPU {_cpuElo} thinking..." : $"Your turn (X) · vs CPU {_cpuElo}"
-        };
-    }
-
-    private string GetStatusClass()
-    {
-        if (PlayMode == "demo") return "gps-status-badge turn";
-        if (PlayMode == "2p")
-        {
-            return _gameResult switch
-            {
-                GameResult.Win or GameResult.Loss => "gps-status-badge win",
-                GameResult.Draw => "gps-status-badge draw",
-                _ => "gps-status-badge turn"
-            };
-        }
-        return _gameResult switch
-        {
-            GameResult.Win => "gps-status-badge win",
-            GameResult.Loss => "gps-status-badge loss",
-            GameResult.Draw => "gps-status-badge draw",
-            _ => _isAiTurn ? "gps-status-badge thinking" : "gps-status-badge turn"
-        };
-    }
 }

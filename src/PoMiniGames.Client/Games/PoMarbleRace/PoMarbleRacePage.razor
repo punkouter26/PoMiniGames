@@ -18,8 +18,7 @@
            Stats="@_statItems"
            GameOver="@(_phase == "result" && !_demo)"
            GameKey="pomarblerace"
-           GameSummary="@GameSummaryContent"
-           HowToPlay="@HowToPlayContent">
+           GameSummary="@GameSummaryContent">
     @if (!_introDone)
     {
         <GameIntro Title="@TitleContent"
@@ -299,6 +298,15 @@
         _ref = DotNetObjectReference.Create(this);
         try
         {
+            // Route-gated engine load (see wwwroot/js/engineLoader.js). The engine is
+            // no longer in index.html, so it has to be pulled in before the first
+            // interop call. Cheap and idempotent after the first await.
+            if (!await JSRuntime.InvokeAsync<bool>("loadEngine", "marblerace"))
+            {
+                Console.Error.WriteLine("[marblerace] engine failed to load");
+                return;
+            }
+
             await JSRuntime.InvokeVoidAsync("PoMarbleRace.start", "marble-race-container", _ref, _demo);
             await JSRuntime.InvokeVoidAsync("PoMarbleRace.resume");
         }

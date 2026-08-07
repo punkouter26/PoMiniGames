@@ -55,7 +55,7 @@
     display: none;
 }
 
-@media (hover: none) and (pointer: coarse), (max-width: 700px) and (orientation: portrait) {
+@media (hover: none) and (pointer: coarse), (max-width: 640px) and (orientation: portrait) {
     .pb-canvas-host ::deep .pb-touch {
         position: fixed;
         left: 0;
@@ -339,155 +339,28 @@
     margin: 6px 0 14px;
 }
 
-.pb-pick-row {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin-bottom: 10px;
-}
+/* (Removed: the dead character-select / ladder block — `.pb-pick-row`,
+   `.pb-pick-label`, `.pb-pick-grid`, `.pb-pick-btn`, `.pb-picked`,
+   `.pb-pick-swatch`, `.pb-ladder-*`, `.pb-vs-*`, `.pb-dot*`, `.pb-champion`
+   and `.pb-fight-btn`. None of these class names appear in PoBrawlPage.razor or
+   anywhere under wwwroot/js/pobrawl/ — character select is rendered by
+   <GameIntro Options="…"> now, and the 1P ladder surfaces through the engine's
+   own canvas splash. `.pb-clock` is the only survivor of this family and is
+   kept above.
 
-.pb-pick-label {
-    width: 70px;
-    text-align: right;
-    font-size: 0.8rem;
-    font-weight: 700;
-    color: #cdd3ee;
-    flex-shrink: 0;
-}
+   Three of the deleted rules were also MALFORMED, and that is worth recording
+   because the failure was silent:
 
-.pb-pick-grid {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-}
+       .pb-vs-nafamily: 'Bungee', …;      ← "-name { font-family" mangled
+       .pb-vs-tafamily: 'Bungee Inline', …;  ← "-tag { font-family" mangled
+       letter-spacing: 0.06                ← unterminated, no unit
+       letter-spacing: 0.32emem;           ← invalid unit
 
-.pb-pick-btn {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 6px 12px;
-    border-radius: 10px;
-    border: 2px solid transparent;
-    background: rgba(255, 255, 255, 0.08);
-    color: #e8eaf6;
-    font-weight: 600;
-    cursor: pointer;
-}
-
-.pb-pick-btn:hover {
-    background: rgba(255, 255, 255, 0.16);
-}
-
-.pb-picked {
-    border-color: #ffd166;
-    background: rgba(255, 209, 102, 0.15);
-}
-
-.pb-pick-swatch {
-    width: 16px;
-    height: 16px;
-    border-radius: 4px;
-    background: linear-gradient(135deg, var(--suit) 60%, var(--tie) 60%);
-}
-
-/* ── 1P presidents ladder ────────────────────────────── */
-
-.pb-ladder-meta {
-    display: flex;
-    justify-content: center;
-    gap: 16px;
-    font-size: 0.8rem;
-    color: #9aa3c0;
-    margin-bottom: 12px;
-}
-
-.pb-ladder-match {
-    font-weight: 700;
-    color: #cdd3ee;
-}
-
-.pb-ladder-elo {
-    font-variant-numeric: tabular-nums;
-}
-
-.pb-vs-row {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 14px;
-    margin: 10px 0 12px;
-}
-
-.pb-vs-nafamily: 'Bungee', 'Russo One', 'Impact', sans-serif;
-    font-size: 1.4rem;
-    letter-spacing: 0.06
-    letter-spacing: 0.04em;
-    color: #e8eaf6;
-}
-
-.pb-vs-bob {
-    color: #7fd0ff;
-}
-
-.pb-vs-tafamily: 'Bungee Inline', 'Russo One', 'Impact', sans-serif;
-    font-size: 0.9rem;
-    letter-spacing: 0.32emem;
-    font-weight: 800;
-    color: #ef4444;
-}
-
-.pb-ladder-dots {
-    display: flex;
-    justify-content: center;
-    gap: 6px;
-    margin-bottom: 8px;
-}
-
-.pb-dot {
-    width: 24px;
-    height: 24px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 50%;
-    font-size: 0.7rem;
-    background: rgba(255, 255, 255, 0.07);
-    color: #6b7394;
-}
-
-.pb-dot-beaten {
-    background: rgba(34, 197, 94, 0.22);
-    color: #86efac;
-}
-
-.pb-dot-current {
-    background: rgba(255, 209, 102, 0.22);
-    outline: 1px solid #ffd166;
-}
-
-.pb-champion {
-    color: #ffd166;
-    font-weight: 700;
-    font-size: 0.9rem;
-    margin: 4px 0 10px;
-}
-
-.pb-fight-btn {
-    margin-top: 10px;
-    padding: 10px 34px;
-    font-size: 1.1rem;
-    font-weight: 900;
-    letter-spacing: 0.05em;
-    border: none;
-    border-radius: 12px;
-    background: linear-gradient(135deg, #ef4444, #f59e0b);
-    color: #fff;
-    cursor: pointer;
-}
-
-.pb-fight-btn:hover {
-    filter: brightness(1.1);
-}
+   A selector followed by `:` and no `{` is not a declaration — the CSS parser
+   treats it as the start of a qualified rule and consumes everything up to the
+   NEXT `{`, so each of those two lines swallowed the rule that followed it
+   (`.pb-vs-bob` and `.pb-ladder-dots` respectively) and dropped it. Nothing was
+   visibly broken only because the whole family was already unused. */
 
 /* ── Fastest-KO board ────────────────────────────────── */
 
@@ -541,18 +414,6 @@
 .pb-board-time {
     font-variant-numeric: tabular-nums;
     font-weight: 700;
-}
-
-@media (max-width: 560px) {
-    .pb-pick-label {
-        width: 56px;
-        font-size: 0.7rem;
-    }
-
-    .pb-pick-btn {
-        padding: 5px 8px;
-        font-size: 0.8rem;
-    }
 }
 
 /* ── KO chromatic-aberration flash overlay ─────────────

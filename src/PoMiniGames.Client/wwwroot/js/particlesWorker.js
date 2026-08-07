@@ -1,16 +1,16 @@
-// particlesWorker.js — the ambient field, rendered off the main thread.
+// particlesWorker.js — the ambient background, rendered off the main thread.
 //
 // In Blazor WASM the main thread runs the .NET runtime, so a main-thread rAF
 // loop competes with game logic and with GC pauses: the field visibly hitches
 // during a collection even though the GPU is idle. Rendering from a worker with
-// an OffscreenCanvas decouples the two entirely — particles keep flowing at
-// full rate while the runtime is busy.
+// an OffscreenCanvas decouples the two entirely — the background keeps flowing
+// at full rate while the runtime is busy.
 //
 // The main thread stays responsible for anything DOM-shaped (pointer position,
-// element size, viewport intersection) and forwards it as messages; this file
-// never touches the DOM because a worker cannot.
+// element size, viewport intersection, the analyser bands) and forwards it as
+// messages; this file never touches the DOM because a worker cannot.
 
-import { initGl, drawFrame, POINT_COUNT } from './particlesCore.js';
+import { initGl, drawFrame, disposeGl, DEFAULT_HUE_A, DEFAULT_HUE_B } from './particlesCore.js';
 
 let gl = null;
 let u = null;
@@ -22,13 +22,39 @@ let mouseX = 0.5;
 let mouseY = 0.5;
 let visible = true;
 let inViewport = true;
-let count = POINT_COUNT;
-let qualityScale = 1;
+let quality = 1;
+
+let hueA = DEFAULT_HUE_A;
+let hueB = DEFAULT_HUE_B;
+
+// Analyser bands arrive at ~15 Hz (see ambientParticles.js — posting them every
+// frame would cost a structured clone per frame for three floats). Rendering
+// straight off that would make the volume update in visible 66 ms steps, so the
+// live values chase the targets exponentially and the motion stays smooth
+// between messages.
+const bands = { bass: 0, mid: 0, treble: 0 };
+const target = { bass: 0, mid: 0, treble: 0 };
+const BAND_CHASE = 0.12;
+
+// Passed to drawFrame every tick. Allocated once: a fresh object literal per
+// frame is exactly the kind of garbage this worker exists to avoid.
+const state = { quality: 1, bass: 0, mid: 0, treble: 0, hueA, hueB };
 
 function tick(now) {
     if (!gl) return;
     if (visible && inViewport) {
-        drawFrame(gl, u, canvas.width, canvas.height, now - startTime, mouseX, mouseY, count);
+        bands.bass += (target.bass - bands.bass) * BAND_CHASE;
+        bands.mid += (target.mid - bands.mid) * BAND_CHASE;
+        bands.treble += (target.treble - bands.treble) * BAND_CHASE;
+
+        state.quality = quality;
+        state.bass = bands.bass;
+        state.mid = bands.mid;
+        state.treble = bands.treble;
+        state.hueA = hueA;
+        state.hueB = hueB;
+
+        drawFrame(gl, u, canvas.width, canvas.height, now - startTime, mouseX, mouseY, state);
     }
     raf = requestAnimationFrame(tick);
 }
@@ -38,13 +64,15 @@ self.onmessage = (e) => {
     switch (m.type) {
         case 'init': {
             canvas = m.canvas;
-            gl = canvas.getContext('webgl2', { alpha: true, antialias: true, premultipliedAlpha: true });
+            gl = canvas.getContext('webgl2', { alpha: true, antialias: false, premultipliedAlpha: true });
+            // antialias is off deliberately: this is a full-screen shader with no
+            // geometric edges to alias, so MSAA would allocate a multisampled
+            // buffer and resolve it every frame for no visual difference.
             if (!gl) { self.postMessage({ type: 'failed' }); return; }
             u = initGl(gl);
             if (!u) { self.postMessage({ type: 'failed' }); return; }
             canvas.width = m.width;
             canvas.height = m.height;
-            gl.viewport(0, 0, canvas.width, canvas.height);
             startTime = performance.now();
             raf = requestAnimationFrame(tick);
             self.postMessage({ type: 'started' });
@@ -54,7 +82,6 @@ self.onmessage = (e) => {
             if (!gl || !canvas) return;
             canvas.width = m.width;
             canvas.height = m.height;
-            gl.viewport(0, 0, canvas.width, canvas.height);
             break;
         }
         case 'pointer':
@@ -68,15 +95,23 @@ self.onmessage = (e) => {
             inViewport = m.inViewport;
             break;
         case 'quality':
-            // Driven by visualRuntime.js's adaptive tier (§10). The old
-            // per-worker thermal heuristic is gone: one authority for quality
-            // beats two that can disagree.
-            qualityScale = Math.max(0.05, Math.min(1, m.scale));
-            count = Math.max(20, Math.round(POINT_COUNT * qualityScale));
+            // Driven by visualRuntime.js's adaptive tier (§10). One authority for
+            // quality beats two that can disagree.
+            quality = Math.max(0.05, Math.min(1, m.scale));
+            break;
+        case 'bands':
+            target.bass = m.bass || 0;
+            target.mid = m.mid || 0;
+            target.treble = m.treble || 0;
+            break;
+        case 'tint':
+            if (Array.isArray(m.hueA) && m.hueA.length === 3) hueA = m.hueA;
+            if (Array.isArray(m.hueB) && m.hueB.length === 3) hueB = m.hueB;
             break;
         case 'stop':
             if (raf) cancelAnimationFrame(raf);
             raf = 0;
+            disposeGl(gl, u);
             gl = null;
             u = null;
             canvas = null;

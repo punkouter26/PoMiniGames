@@ -9,7 +9,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
-import { buildArena, animateCrowd, updateAtmosphere, updateRopes, updateBanners, twangRope, damagePost, RING_HALF } from './arena.js';
+import { buildArena, animateCrowd, updateAtmosphere, updateRopes, updateBanners, twangRope, damagePost, disposeArenaReflector, RING_HALF } from './arena.js';
 import { buildProps, resetProps, updateProps, disposeProps } from './props.js';
 import { buildFighter, updateJiggles, setExpression, CHARACTERS, CHARACTER_IDS } from './fighters.js';
 import { Animator } from './animation.js';
@@ -18,6 +18,7 @@ import { AiController } from './ai.js';
 import { RandomGenerator } from './rng.js';
 import { CombatPlay, COMBAT_EVENTS, REGIONS, regionEffect } from './combat.js';
 import { PERSONALITIES, makePersonalityState } from './personalities.js';
+import * as PostFx from '../postFx.js';
 import { AudioBus } from './audio.js';
 import { ReplayBuffer } from './replay.js';
 import { CannonRagdoll, SeveredArm } from './ragdoll-physics.js';
@@ -475,6 +476,9 @@ export class BrawlGame {
       this.camera.updateProjectionMatrix();
       this.renderer.setSize(cw, ch);
       this.composer.setSize(cw, ch);
+      // BokehPass owns render targets sized independently of the composer's;
+      // without this its depth buffer keeps the old aspect and the blur skews.
+      if (this.rackFocus) this.rackFocus.setSize(cw, ch);
     };
     window.addEventListener('resize', this._onResize);
 
@@ -564,6 +568,9 @@ export class BrawlGame {
     }
     this.bloomPass = null;
     this.fxPass = null;
+    // Disposed above with the rest of the passes; drop the handle so a stale
+    // one cannot be updated against the new composer.
+    this.rackFocus = null;
 
     const pixelRatio = Math.min(window.devicePixelRatio, 2);
     this.renderer.setPixelRatio(pixelRatio);
@@ -589,6 +596,14 @@ export class BrawlGame {
     } catch { /* AO is a nicety — never block the game on it */ }
     this.bloomPass = new UnrealBloomPass(new THREE.Vector2(w, h), 0.32, 0.55, 0.8);
     this.composer.addPass(this.bloomPass);
+    // §GFX-2 rack focus. Disabled during the fight and enabled for the KO, when
+    // the action has already stopped — see postFx.js for why a permanent DoF
+    // pass is not affordable here (it doubles the scene's draw calls).
+    // Deliberately AFTER bloom: blurring an already-bloomed frame keeps the
+    // highlights blooming and then throws them out of focus together, which is
+    // what a real lens does. Before bloom, the bloom would re-sharpen them.
+    this.rackFocus = PostFx.createRackFocus(this.scene, this.camera, w, h);
+    this.composer.addPass(this.rackFocus.pass);
     this.fxPass = new ShaderPass(CAVignetteShader);
     this.composer.addPass(this.fxPass);
     this.composer.addPass(new OutputPass());
@@ -2717,6 +2732,15 @@ export class BrawlGame {
         this.caPulse = 0;
         this.bloomPulse = 0;
         this.exposurePulse = 0.35;
+        // §GFX-2 — rack onto the fallen fighter. Focus distance is measured to
+        // the actual body rather than assumed, because the KO camera has two
+        // shots (low side push-in and overhead) at very different ranges, and a
+        // fixed distance would put the subject out of focus on one of them.
+        if (this.rackFocus) {
+          this.rackFocus.trigger(this.camera.position.distanceTo(dpos), 1.4, 1.2);
+        }
+        // The shared feel layer: this is the heaviest event the app produces.
+        window.PoImpact?.impact('heavy', 1.6);
         // Big warm flash over the fallen fighter as the house lights dim.
         this._flashImpactLight(
           new THREE.Vector3(dpos.x, dpos.y + 1.0, dpos.z), 22, 0xfff0d0, 0.4);
@@ -2844,9 +2868,17 @@ export class BrawlGame {
     this.bloomPulse *= Math.exp(-dt * 5);
     this.exposurePulse *= Math.exp(-dt * 5);
     this.radialPulse *= Math.exp(-dt * 7);
+    // §GFX-2 — no-op unless a KO is running.
+    if (this.rackFocus) this.rackFocus.update(dt);
     if (this.fxPass) {
-      this.fxPass.uniforms.uCA.value = this.caPulse;
-      this.fxPass.uniforms.uRadial.value = this.radialPulse;
+      // The shared impact envelope is ADDED to this game's own pulses rather
+      // than replacing them. PoBrawl's per-attack feedback is tuned to the
+      // attack (a kick smears more than a jab) and that nuance is worth
+      // keeping; impactBus contributes the part that is common to every game,
+      // so a hit now punches the 3D image and shakes the DOM chrome on one
+      // shared curve instead of two that drift apart.
+      this.fxPass.uniforms.uCA.value = this.caPulse + PostFx.punchAberration(0.8);
+      this.fxPass.uniforms.uRadial.value = this.radialPulse + PostFx.punchRadial(0.35);
       // KO color drain rides the lights-down blend (keeps the reds hot).
       this.fxPass.uniforms.uDesat.value = this.lightsDim * 0.55;
 
@@ -4097,6 +4129,9 @@ export class BrawlGame {
       }
     }
     this._physics = null;
+    // Before the traverse: a Reflector's render target is invisible to a
+    // geometry/material walk. See disposeArenaReflector.
+    disposeArenaReflector();
     if (this.scene) {
       this.scene.traverse((obj) => {
         if (obj.geometry) obj.geometry.dispose();

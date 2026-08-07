@@ -444,7 +444,7 @@
     }
     /* Belt-and-braces: also show touch on small viewports even if the pointer
        query hasn't fired yet (some embedded WebViews mis-report the pointer). */
-    @@media (max-width: 600px) {
+    @@media (max-width: 640px) {
         .racer-touch.is-active { display: flex; }
         .hud-right { display: none; }
     }

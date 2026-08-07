@@ -214,3 +214,51 @@
   }
   .cf-cell { font-size: 0.75rem; }
 }
+/* ── §GFX-4 GPU board layer ──────────────────────────────────────────────
+   boardGl.js renders clearcoated chips that fall on a real spring into this
+   canvas behind the DOM grid. The grid keeps every click handler, hover
+   preview, role and aria-label; only the CSS discs are faded while the GL
+   layer stands in for them.
+
+   The discs stay in the DOM rather than being removed because they are what
+   the accessibility tree and the Playwright suite read — a canvas is opaque to
+   both. */
+
+/* Required for the absolutely-positioned canvas to anchor to the board rather
+   than to the page. .cf-board is a grid container, so relative positioning
+   changes nothing about its layout. */
+.cf-board {
+  position: relative;
+}
+
+.cf-gl {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  /* Behind the cells and inert — otherwise the canvas would swallow every
+     click and pointerenter the column preview depends on. */
+  pointer-events: none;
+  z-index: 0;
+  border-radius: inherit;
+}
+
+.cf-board--gl .cf-cell {
+  z-index: 1;
+}
+
+/* Fade rather than hide: display:none would remove them from the a11y tree
+   along with the pixels. The ghost preview is the exception — it is a hover
+   affordance with no GL equivalent, so it stays visible. */
+.cf-board--gl .cf-cell .piece:not(.ghost-piece) {
+  opacity: 0;
+  transition: opacity 0.2s var(--ease-standard);
+}
+
+/* The GL slab is the board surface now; the CSS panel would show through the
+   canvas alpha as a second, offset frame. */
+.cf-board--gl {
+  background: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}

@@ -27,11 +27,13 @@
 // suspended until a user gesture — mobile autoplay policy is not negotiable.
 
 const MUTE_KEY = 'pomini_muted';
+const VOLUME_KEY = 'pomini_volume';
 
 let _ctx = null;
 let _initPromise = null;
 let _nodes = null;
 let _muted = readMutedFromStorage();
+let _volume = readVolumeFromStorage();
 let _analyserData = null;
 
 function readMutedFromStorage() {
@@ -39,6 +41,26 @@ function readMutedFromStorage() {
         return (localStorage.getItem(MUTE_KEY) || '').indexOf('1') !== -1;
     } catch {
         return false;
+    }
+}
+
+/**
+ * Master volume, 0..1, persisted as an integer percentage.
+ * Read here rather than pushed in from C# so the very first sound of the
+ * session is already at the right level: audio can fire from a game's own JS
+ * engine before SettingsService has had a chance to run any interop.
+ * Anything unparseable falls back to full volume rather than silence — a
+ * corrupt key must never look like broken audio.
+ */
+function readVolumeFromStorage() {
+    try {
+        const raw = localStorage.getItem(VOLUME_KEY);
+        if (raw === null) return 1;
+        const pct = parseInt(raw, 10);
+        if (!Number.isFinite(pct)) return 1;
+        return Math.max(0, Math.min(100, pct)) / 100;
+    } catch {
+        return 1;
     }
 }
 
@@ -97,7 +119,7 @@ export function busSync(name) {
 
 function buildGraph(ctx) {
     const masterGain = ctx.createGain();
-    masterGain.gain.value = _muted ? 0 : 1;
+    masterGain.gain.value = targetGain();
 
     // Analyser last in the chain so it observes exactly what the player hears.
     // fftSize 512 -> 256 bins; plenty of resolution for a 3-band visual read
@@ -181,6 +203,28 @@ export function isMuted() {
     return _muted;
 }
 
+/** Master volume as 0..1. */
+export function getVolume() {
+    return _volume;
+}
+
+/**
+ * The gain the master node should sit at right now. Mute is a hard override
+ * rather than a volume of 0, so that unmuting restores the level the player
+ * chose instead of resurrecting silence.
+ */
+function targetGain() {
+    return _muted ? 0 : _volume;
+}
+
+/** Ramp the master node to the current target. Shared by setMuted/setVolume. */
+function applyGain() {
+    if (!_nodes || !_ctx) return;
+    const t = _ctx.currentTime;
+    _nodes.masterGain.gain.cancelScheduledValues(t);
+    _nodes.masterGain.gain.setTargetAtTime(targetGain(), t, 0.02);
+}
+
 /**
  * Global mute. Ramped rather than hard-set so toggling mid-tone doesn't click.
  * @param {boolean} muted
@@ -188,11 +232,20 @@ export function isMuted() {
 export function setMuted(muted) {
     _muted = !!muted;
     try { localStorage.setItem(MUTE_KEY, _muted ? '1' : '0'); } catch { /* private mode */ }
-    if (_nodes && _ctx) {
-        const t = _ctx.currentTime;
-        _nodes.masterGain.gain.cancelScheduledValues(t);
-        _nodes.masterGain.gain.setTargetAtTime(_muted ? 0 : 1, t, 0.02);
-    }
+    applyGain();
+}
+
+/**
+ * Master volume, 0..1. Ramped for the same anti-click reason as mute, which
+ * also makes it safe to call on every input event while a slider is dragged.
+ * Persisted as an integer percent so the value stays readable in DevTools.
+ * @param {number} volume
+ */
+export function setVolume(volume) {
+    const v = Number(volume);
+    _volume = Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 1;
+    try { localStorage.setItem(VOLUME_KEY, String(Math.round(_volume * 100))); } catch { /* private mode */ }
+    applyGain();
 }
 
 /**
@@ -210,6 +263,26 @@ export async function duck(amount, holdMs) {
     g.cancelScheduledValues(t);
     g.setTargetAtTime(a, t, 0.03);
     g.setTargetAtTime(1, t + hold, 0.25);
+}
+
+/**
+ * Swap the convolver's impulse response — the app's "acoustic space" (§GFX-10).
+ *
+ * The default IR built above is a generic small room, which is the wrong answer
+ * everywhere: PoBrawl happens in a hard-walled arena, PoRacer outdoors where
+ * there are no reflective surfaces at all, ConnectFive on a plastic board a
+ * foot from your face. acoustics.js generates the per-game buffers; this is
+ * where they land.
+ *
+ * Assignment is instant and NOT crossfaded. A convolver keeps a tail of the
+ * previous input, so swapping mid-tail truncates it with a click — always swap
+ * on a scene change (route entry, round start), never during play.
+ * @param {AudioBuffer|null} buffer null restores the default room
+ */
+export async function setSpaceBuffer(buffer) {
+    const ctx = await context();
+    if (!ctx || !_nodes) return;
+    _nodes.convolver.buffer = buffer || makeImpulseResponse(ctx, 1.9, 3.2);
 }
 
 /**
@@ -298,7 +371,7 @@ if (typeof window !== 'undefined') {
     // modules silently falls back to constructing its own AudioContext and the
     // shared graph quietly stops being shared.
     window.PoAudioBus = {
-        context, contextSync, bus, busSync, isMuted, setMuted, duck, setReverb,
-        reverbSend, panner, getLevels, resume, isAvailable,
+        context, contextSync, bus, busSync, isMuted, setMuted, getVolume, setVolume,
+        duck, setReverb, setSpaceBuffer, reverbSend, panner, getLevels, resume, isAvailable,
     };
 }

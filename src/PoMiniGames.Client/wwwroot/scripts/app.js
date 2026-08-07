@@ -22,20 +22,17 @@
     });
   });
 
-  // ----- 2. Global keyboard shortcuts (2026 kiosk UX) -----
-  // ESC: exit the demo kiosk if active. The KioskControlBar component
-  // registers a .NET callback via kioskRegisterEscHandler; we just
-  // forward the ESC keypress to whatever .NET instance was last
-  // registered.
-  var _escDotNetRef = null;
-  window.kioskRegisterEscHandler = function (dotNetRef) {
-    _escDotNetRef = dotNetRef;
-    document.addEventListener('keydown', function (e) {
-      if (e.key === 'Escape' && _escDotNetRef) {
-        _escDotNetRef.invokeMethodAsync('ExitKioskFromJs');
-      }
-    });
-  };
+  // ----- 2. (Removed) kiosk ESC handler -----
+  // `window.kioskRegisterEscHandler` had exactly one caller, KioskControlBar,
+  // which was dropped from MainLayout in the 2026-07-04 mobile-portrait cleanup
+  // and has now been deleted. Nothing ever registered a callback, so the ESC key
+  // already did nothing for kiosk mode — this only removes the dead scaffolding,
+  // not a working shortcut. It also leaked: every registration added another
+  // unremoved document keydown listener.
+  //
+  // If ESC-to-exit-demo is wanted again, it belongs on the page that starts the
+  // kiosk (Pages/Index.razor owns KioskCoordinator.Start/Stop) rather than on a
+  // floating bar, and can be a plain @onkeydown there with no JS interop at all.
 
   // ----- 3. WebGL2 + device capability probe (callable from Blazor) -----
   // §2: gates the home page ambient particle field. Skips WebGL entirely on

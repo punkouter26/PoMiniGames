@@ -113,13 +113,13 @@
    viewports. Without this the page was 1235px tall on a 768px desktop and
    even worse on a 390px phone — the charts row + 6 stacked sections
    forced the user to scroll past 5× the viewport. */
-@media (max-width: 768px) {
+@media (max-width: 640px) {
     .prf-hero { flex-direction: column; align-items: flex-start; padding: 1rem; }
     .prf-h2h-cols { grid-template-columns: 1fr; }
     .prf-charts { grid-template-columns: 1fr; }
     .prf-game-grid { grid-template-columns: 1fr 1fr; }
 }
-@media (max-width: 560px) {
+@media (max-width: 480px) {
     .prf-charts { grid-template-columns: 1fr; }
     .prf-game-grid { grid-template-columns: 1fr; }
     .prf-page { gap: 1rem; padding: 1rem 0.75rem 3rem; }
@@ -188,9 +188,9 @@
     border-radius: 50%;
 }
 
-.prf-legend-win  { background: #22c55e; }
-.prf-legend-draw { background: #f59e0b; }
-.prf-legend-loss { background: #ef4444; }
+.prf-legend-win  { background: var(--accent-success); }
+.prf-legend-draw { background: var(--accent-warning); }
+.prf-legend-loss { background: var(--accent-danger); }
 
 /* ── Callouts ── */
 .prf-callouts {
@@ -304,7 +304,7 @@
 .prf-game-wr {
     font-size: 0.8rem;
     font-weight: 700;
-    color: #22c55e;
+    color: var(--accent-success);
     background: rgba(34,197,94,0.1);
     border-radius: 0.35rem;
     padding: 0.1rem 0.4rem;
@@ -319,9 +319,9 @@
     overflow: hidden;
 }
 
-.prf-bar-win  { background: #22c55e; width: var(--win-pct, 0); transition: width 0.4s ease; }
-.prf-bar-draw { background: #f59e0b; width: var(--draw-pct, 0); transition: width 0.4s ease; }
-.prf-bar-loss { background: #ef4444; width: var(--loss-pct, 0); transition: width 0.4s ease; }
+.prf-bar-win  { background: var(--accent-success); width: var(--win-pct, 0); transition: width 0.4s ease; }
+.prf-bar-draw { background: var(--accent-warning); width: var(--draw-pct, 0); transition: width 0.4s ease; }
+.prf-bar-loss { background: var(--accent-danger); width: var(--loss-pct, 0); transition: width 0.4s ease; }
 
 /* ── Difficulty rows ── */
 .prf-diffs {
@@ -347,9 +347,9 @@
     letter-spacing: 0.04em;
 }
 
-.prf-diff-easy   { background: rgba(34,197,94,0.15);  color: #4ade80; }
-.prf-diff-medium { background: rgba(245,158,11,0.15); color: #fbbf24; }
-.prf-diff-hard   { background: rgba(239,68,68,0.15);  color: #f87171; }
+.prf-diff-easy   { background: var(--accent-success-soft); color: var(--accent-success); }
+.prf-diff-medium { background: var(--accent-warning-soft); color: var(--accent-warning); }
+.prf-diff-hard   { background: var(--accent-danger-soft); color: var(--accent-danger); }
 
 .prf-diff-wld {
     color: var(--color-text-secondary);
@@ -357,7 +357,7 @@
 }
 
 .prf-diff-elo {
-    color: #818cf8;
+    color: var(--accent);
     font-weight: 600;
     font-size: 0.68rem;
     background: rgba(99,102,241,0.12);
@@ -389,7 +389,7 @@
 .prf-game-plays-val {
     font-size: 1.05rem;
     font-weight: 700;
-    color: var(--color-text-primary, #f1f5f9);
+    color: var(--color-text-primary);
 }
 
 .prf-game-plays-lbl {
@@ -451,7 +451,7 @@
     padding: 0.3rem 0.5rem;
     border-bottom: 1px solid var(--color-border);
 }
-.prf-h2h-table td { padding: 0.4rem 0.5rem; border-bottom: 1px solid rgba(255,255,255,0.04); }
+.prf-h2h-table td { padding: 0.4rem 0.5rem; border-bottom: 1px solid var(--hairline); }
 
 /* §2 Virtualizer wrapper for the opponent table: bounded height + overscroll
    containment so a long head-to-head history doesn't push the page down on
@@ -467,8 +467,8 @@
 }
 .prf-h2h-table th:not(:first-child), .prf-h2h-table td:not(:first-child) { text-align: center; width: 2.5rem; }
 .prf-h2h-name { display: flex; align-items: center; gap: 0.45rem; font-weight: 500; }
-.prf-h2h-w { color: #22c55e; font-weight: 600; }
-.prf-h2h-l { color: #ef4444; font-weight: 600; }
+.prf-h2h-w { color: var(--accent-success); font-weight: 600; }
+.prf-h2h-l { color: var(--accent-danger); font-weight: 600; }
 .prf-h2h-d { color: var(--color-text-secondary); }
 .prf-h2h-badge {
     font-size: 0.6rem;

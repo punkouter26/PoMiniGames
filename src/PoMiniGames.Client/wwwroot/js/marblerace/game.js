@@ -479,6 +479,13 @@ export class Game {
         // instead of stacking a hundred identical chimes dead centre.
         this.audio.playFinish(this.scene.audioCue(m.mesh.position));
       }
+      // §GFX-2 — rack the focus for the WINNER only. Firing it per finisher
+      // would re-trigger it a hundred times as the pack crosses, which reads as
+      // the image pumping rather than as a photo finish.
+      if (justFinished.length && justFinished.some((m) => m.finishOrder === 0)) {
+        this.scene.photoFinish();
+        window.PoImpact?.impact('win', 1);
+      }
       // Podium: the moment the 3rd marble crosses, freeze the top-3 (winner + 2)
       // with their gaps behind the winner and push it to the HUD overlay.
       if (!this._podiumSent && this.marbleSet.marbles.filter((m) => m.finished).length >= 3) {

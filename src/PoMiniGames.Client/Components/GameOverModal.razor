@@ -15,7 +15,11 @@
    ───────────────────────────────────────────────────────────────────────── *@
 
 <div class="gps-modal-overlay" role="presentation">
-    <div class="gps-modal" role="dialog" aria-modal="true" aria-label="Game over">
+    @* data-fx-tilt: a small pointer-tracked tilt (fxTilt.js) plus the glare in
+       glass.css. Written to the independent `rotate` property, so it composes
+       with the gps-modal-pop entry animation's transform rather than fighting
+       it. Perspective is on .gps-modal-overlay. *@
+    <div class="gps-modal" role="dialog" aria-modal="true" aria-label="Game over" data-fx-tilt="5">
         <div class="gps-modal-title">@Title</div>
 
         @if (GameSummary != null)
@@ -32,6 +36,20 @@
                         <span class="gps-stat-value">@stat.Value</span>
                         <span class="gps-stat-label">@stat.Label</span>
                     </div>
+                }
+            </div>
+        }
+
+        @* Where the player actually stands. Silently absent when they have no row
+           on this board yet — an end-of-game modal should never invent a rank. *@
+        @if (_myRank is int rank)
+        {
+            <div class="gps-modal-rank @(_delta > 0 ? "gps-modal-rank--up" : null)">
+                <span class="gps-modal-rank-pos">#@rank</span>
+                <span class="gps-modal-rank-of">of @BoardSizeLabel</span>
+                @if (_delta > 0)
+                {
+                    <span class="gps-modal-rank-delta" title="@_delta places since your last game">▲@_delta</span>
                 }
             </div>
         }
@@ -98,23 +116,117 @@
 
     [Inject] private NavigationManager Navigation { get; set; } = null!;
     [Inject] private Services.ApiService Api { get; set; } = null!;
+    [Inject] private Services.UiFeedbackService Feedback { get; set; } = null!;
 
     private Models.GameLeaderboardDto? _board;
 
+    /// <summary>The player's own rank on this board, when they have a row on it.</summary>
+    private int? _myRank;
+
+    /// <summary>How many ranked rows came back, for the "of N" denominator.</summary>
+    private int _boardSize;
+
+    /// <summary>
+    /// The denominator, marked "100+" when the read filled the server's page.
+    /// A full page means there may be more players below it, so printing a bare
+    /// "of 100" would state a total we did not actually measure.
+    /// </summary>
+    private string BoardSizeLabel =>
+        _boardSize >= RankSearchDepth ? $"{RankSearchDepth}+" : _boardSize.ToString();
+
+    /// <summary>
+    /// Places gained since the last time this player saw this board. Zero when
+    /// they lost ground, held station, or have no previous rank recorded — the
+    /// modal only ever celebrates an improvement, never rubs in a drop.
+    /// </summary>
+    private int _delta;
+
     /// <summary>Mirrors the server's padding sentinel (UnifiedLeaderboardEndpoints.PlaceholderName).</summary>
     private const string PlaceholderName = "XXX";
+
+    /// <summary>
+    /// How deep to look for the player's own row. The visible top 3 cannot rank
+    /// anyone outside it, and one wider read is cheaper than a second
+    /// round-trip. A player ranked below this gets no rank line, which is the
+    /// same graceful nothing as being offline.
+    /// </summary>
+    /// <remarks>
+    /// 100 is the server's ceiling, not a preference:
+    /// <c>UnifiedLeaderboardEndpoints</c> does <c>Math.Clamp(limit, 1, 100)</c>,
+    /// so asking for more is silently truncated and would make this constant a
+    /// lie about how deep the search actually goes.
+    /// </remarks>
+    private const int RankSearchDepth = 100;
+
+    /// <summary>
+    /// Last seen rank per game, so the next game can show the delta.
+    /// Deliberately local-only: this is a personal "am I climbing?" cue, not a
+    /// leaderboard fact, and it must survive being signed out.
+    /// </summary>
+    private static string RankKey(string gameKey) => $"pomini_lastrank_{gameKey}";
 
     protected override async Task OnInitializedAsync()
     {
         if (string.IsNullOrEmpty(GameKey)) return;
 
-        var board = await Api.GetGameLeaderboardAsync(GameKey, limit: 3);
+        // One read serves both the top 3 and the rank lookup.
+        var board = await Api.GetGameLeaderboardAsync(GameKey, limit: RankSearchDepth);
         if (board is null) return;
 
         // Drop the server's "XXX" padding rows — an end-of-game modal should show
-        // the real top 3 or nothing, not filler.
-        board.Entries = board.Entries.Where(e => e.Name != PlaceholderName).ToList();
+        // the real top 3 or nothing, not filler. Padding rows must also not count
+        // toward the "of N" denominator, or a near-empty board claims 10 players.
+        var ranked = board.Entries.Where(e => e.Name != PlaceholderName).ToList();
+        _boardSize = ranked.Count;
+
+        ResolveMyRank(ranked);
+
+        // The board the modal renders is only ever the top 3.
+        board.Entries = ranked.Take(3).ToList();
         _board = board;
+
+        // Celebrate a climb with the existing personal-best cue. Fired here
+        // rather than on save so it lands with the rank appearing on screen.
+        if (_delta > 0) await Feedback.PersonalBestAsync();
+    }
+
+    /// <summary>
+    /// Find the player's row, then diff against their last recorded rank.
+    /// </summary>
+    /// <remarks>
+    /// Name matching is all that is available here: <c>LeaderboardEntryDto</c>
+    /// carries no user id (unlike the raw per-game boards the profile page
+    /// reads). That means a player sharing a display name with someone else on
+    /// the same board can be shown the wrong row — accepted, because the
+    /// alternative is no rank line at all, and the unified DTO would have to
+    /// grow a field to do better.
+    /// </remarks>
+    private void ResolveMyRank(List<Models.LeaderboardEntryDto> ranked)
+    {
+        if (string.IsNullOrWhiteSpace(Player)) return;
+
+        var mine = ranked.FirstOrDefault(e => e.Name.Equals(Player, StringComparison.OrdinalIgnoreCase));
+        if (mine is null) return;
+
+        _myRank = mine.Rank;
+
+        try
+        {
+            var key = RankKey(GameKey!);
+            var previous = Services.LocalStorageService.GetItem<string>(key);
+            // A smaller rank number is a better position, so the gain is
+            // previous - current.
+            if (int.TryParse(previous, out var prev) && prev > mine.Rank)
+            {
+                _delta = prev - mine.Rank;
+            }
+            Services.LocalStorageService.SetItem(key, mine.Rank.ToString());
+        }
+        catch
+        {
+            // Storage unavailable (private mode) — the rank still shows, just
+            // without a delta.
+        }
     }
 
     private bool IsMe(Models.LeaderboardEntryDto e) =>

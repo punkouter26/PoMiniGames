@@ -83,15 +83,29 @@
                 }
                 @* §10 narrow-screen overflow: the ANON button is hidden on portrait phones
                    (< 480px) and surfaced via the ⋯ overflow menu instead of competing for
-                   horizontal space with the Sign in button. *@
+                   horizontal space with the Sign in button.
+
+                   Uses the native Popover API rather than the <details>/<summary>
+                   disclosure this used to be. <details> is a disclosure widget, not a
+                   menu: it has no light-dismiss (the panel stayed open until you hit
+                   the ⋯ again — clicking anywhere else on the page left it hanging),
+                   no Escape-to-close, and it renders in normal flow, which is why the
+                   panel needed a --z-dropdown value to sit above the page at all.
+                   `popover` gives all three for free and promotes the panel to the top
+                   layer, so it can never be trapped by an ancestor's stacking context. *@
                 @if (!AuthState.IsAuthenticated)
                 {
-                    <details class="gl-overflow-menu gl-overflow-menu--anon">
-                        <summary class="gl-overflow-trigger" aria-label="More">⋯</summary>
-                        <div class="gl-overflow-panel">
-                            <button class="gl-overflow-item" @onclick="SignInAnon">Continue as anonymous</button>
-                        </div>
-                    </details>
+                    <button class="gl-overflow-trigger gl-overflow-menu--anon"
+                            popovertarget="gl-anon-overflow"
+                            aria-label="More">⋯</button>
+                    <div id="gl-anon-overflow" popover="auto" class="gl-overflow-panel">
+                        @* popovertargetaction="hide" closes the panel on activation;
+                           the @onclick still runs. Without it the menu would stay open
+                           behind the sign-in flow it just started. *@
+                        <button class="gl-overflow-item"
+                                popovertarget="gl-anon-overflow" popovertargetaction="hide"
+                                @onclick="SignInAnon">Continue as anonymous</button>
+                    </div>
                 }
             }
         </div>
@@ -185,6 +199,10 @@
         if (!firstRender) return;
         await OnlineStatus.InitializeAsync();
         await AppUpdate.InitializeAsync();
+        // The pre-paint script in index.html has already stamped the theme, so
+        // this is not what avoids a flash. It attaches the OS-preference
+        // listener that keeps "Auto" live when the system flips mid-session.
+        await Settings.ApplyAsync();
     }
 
     // Dismiss first: the update action reloads the page, and leaving the toast up

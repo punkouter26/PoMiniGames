@@ -105,10 +105,16 @@
            spinning up an incognito tab. Hidden in Production. *@
         @if (ShowDevSwitch)
         {
-            <details class="gl-overflow-menu gl-dev-switch">
-                <summary class="gl-overflow-trigger" aria-label="Developer tools"><Icon Name="wrench" Size="14" /></summary>
-                <div class="gl-overflow-panel">
-                    <div class="gl-dev-switch__title">Switch user (dev only)</div>
+            @* Native Popover API — see the note on MainLayout's overflow menu for why
+               this is no longer a <details> disclosure. It matters more here: this
+               panel contains a text input, and with <details> a click on the input
+               could not dismiss a sibling menu, while a click anywhere outside left
+               this one open indefinitely. *@
+            <button class="gl-overflow-trigger gl-dev-switch"
+                    popovertarget="gl-dev-switch-panel"
+                    aria-label="Developer tools"><Icon Name="wrench" Size="14" /></button>
+            <div id="gl-dev-switch-panel" popover="auto" class="gl-overflow-panel">
+                <div class="gl-dev-switch__title">Switch user (dev only)</div>
                     <input class="gl-dev-switch__input" type="text"
                            placeholder="@(AuthState.User?.DisplayName ?? "new-name")"
                            @bind="_devUser"
@@ -121,9 +127,8 @@
                     {
                         <div class="gl-dev-switch__error">@_switchError</div>
                     }
-                    <div class="gl-dev-switch__hint">Replaces the current cookie; reloads match history.</div>
-                </div>
-            </details>
+                <div class="gl-dev-switch__hint">Replaces the current cookie; reloads match history.</div>
+            </div>
         }
         @if (AuthState.IsConfigured && !AuthState.IsLoading)
         {

@@ -7,8 +7,10 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
+import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import * as PostFx from '../postFx.js';
 
 const BG = 0x0f172a;            // cyberpunk dark slate
 // Broadcast-style chase cam: higher and further back for a cleaner, more
@@ -60,11 +62,16 @@ const FOV_SPEED_HI = 90;        // speed at which it saturates
 // they cost some extra taps and a handful of ALU on a pass that was already running. `uBlur`
 // gates the taps and is a uniform, so when the marble is slow the branch is coherent across
 // every invocation and the taps genuinely do not execute.
+// Resting chromatic fringe. Named because updatePost now ADDS the impact
+// envelope to it each frame and needs to know where "no impact" sits — reading
+// the current uniform value back would integrate the punch into the baseline.
+const ABERRATION_BASE = 0.0016;
+
 const PostShader = {
   uniforms: {
     tDiffuse: { value: null },
     uVignette: { value: 1.15 },
-    uAberration: { value: 0.0016 },
+    uAberration: { value: ABERRATION_BASE },
     uBlur: { value: 0.0 },              // #2 — radial smear strength, 0 = off
     uTint: { value: new THREE.Vector3(1, 1, 1) },   // #3 — grade
     uContrast: { value: 1.0 },
@@ -238,11 +245,37 @@ export function createScene(container) {
   const composer = new EffectComposer(renderer);
   composer.setPixelRatio(renderer.getPixelRatio());
   composer.addPass(new RenderPass(scene, camera));
+
+  // GTAO (§GFX-2). The chute is a big diffuse trough lit by one key light and an
+  // environment map, so before this the marbles read as *hovering over* the road
+  // rather than rolling on it — there was no contact darkening anywhere. Ground
+  // truth ambient occlusion is what puts them back in contact with the floor.
+  //
+  // High tier only, and OFF rather than degraded below it: GTAO costs a depth +
+  // normal prepass, which is the wrong thing to be paying for on a machine that
+  // is already dropping frames. The scene still reads correctly without it.
+  let gtao = null;
+  if (PostFx.allowHeavy()) {
+    gtao = new GTAOPass(scene, camera, 1, 1);
+    gtao.output = GTAOPass.OUTPUT.Default;
+    // Radius in world units. The track is ~64 wide and marbles are radius 1, so
+    // a small radius is right — a large one would darken whole berms instead of
+    // the crease where a marble meets the road.
+    gtao.updateGtaoMaterial({ radius: 2.2, distanceExponent: 1.0, thickness: 1.0, scale: 1.1 });
+    composer.addPass(gtao);
+  }
+
   // Bloom strength dropped (0.75 → 0.18) and threshold raised (0.82 → 0.92) so the
   // pass adds only a faint highlight to the brightest specular spots instead of
   // glowing every emissive marble into a halo.
   const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.18, 0.6, 0.92); // strength, radius, threshold
   composer.addPass(bloom);                                // #1 — bloom
+
+  // Rack focus (§GFX-2). Disabled during the race; the photo finish turns it on
+  // for a beat. See postFx.js for why a transient DoF pass is affordable and a
+  // permanent one is not.
+  const rackFocus = PostFx.createRackFocus(scene, camera, 1, 1);
+  composer.addPass(rackFocus.pass);
   // ShaderPass CLONES the uniforms off the descriptor, so drive `post.uniforms` — writing to
   // PostShader.uniforms would touch the module-level template and leak between scenes.
   const post = new ShaderPass(PostShader);                // #10 vignette/aberration + #2 blur + #3 grade
@@ -437,11 +470,18 @@ export function createScene(container) {
     u.uSaturation.value = gradeNow.saturation;
     u.uVignette.value = gradeNow.vignette;
 
+    // §GFX-2/8 — the shared impact envelope rides on top of the baseline fringe.
+    // Adding rather than assigning keeps the permanent slight aberration the
+    // look depends on; a collision now widens it for as long as impactBus says
+    // the hit is still ringing, so the 3D image and the DOM chrome react to the
+    // same event on the same curve.
+    u.uAberration.value = ABERRATION_BASE + PostFx.punchAberration();
+
     // Blur: speed ramp + the decaying punch, eased so it never steps.
     let target = 0;
     if (!REDUCED_MOTION) {
       const t = Math.max(0, Math.min(1, (speed - BLUR_SPEED_LO) / (BLUR_SPEED_HI - BLUR_SPEED_LO)));
-      target = Math.min(BLUR_MAX, t * BLUR_MAX + blurPunch);
+      target = Math.min(BLUR_MAX, t * BLUR_MAX + blurPunch + PostFx.punchRadial(0.8));
     }
     u.uBlur.value += (target - u.uBlur.value) * (1 - Math.exp(-6 * dt));
     if (u.uBlur.value < 0.002) u.uBlur.value = 0;   // snap to exactly off so the shader takes the cheap branch
@@ -491,6 +531,11 @@ export function createScene(container) {
     composer.setSize(w, h);
     bloom.setSize(w, h);
     smaa.setSize(w, h);
+    // Both of these own internal render targets sized independently of the
+    // composer's; missing either leaves it sampling a stale buffer at the old
+    // aspect, which shows up as the AO or the bokeh being stretched.
+    if (gtao) gtao.setSize(w, h);
+    rackFocus.setSize(w, h);
   }
   resize();
   window.addEventListener('resize', resize);
@@ -571,9 +616,16 @@ export function createScene(container) {
     camera.updateProjectionMatrix();
     fovPunch = Math.abs(fovPunch) > 0.05 ? fovPunch * Math.exp(-6 * dt) : 0;
 
+    // §GFX-8 — camera shake, applied LAST so it offsets the final framing. Put
+    // before lookAt it would be cancelled out, because lookAt recomputes the
+    // orientation from the (already shaken) position and the shake would only
+    // translate the eye without moving the image.
+    PostFx.applyCameraShake(camera, performance.now() / 1000, 1.4);
+
     updateSparks(dt);
     updateRings(dt);            // #4 — expanding shockwave rings
     updatePost(dt, spd);        // #2 blur + #3 grade, driven by the same speed the FOV uses
+    rackFocus.update(dt);       // §GFX-2 — no-op unless a photo finish is running
   }
 
   return {
@@ -590,6 +642,15 @@ export function createScene(container) {
     setGrade,         // #3
     punchBlur,        // #2
     punchFov,
+    /**
+     * §GFX-2 — rack the focus for the photo finish. `distance` is how far the
+     * winning marble is from the camera; the chase cam holds it at roughly
+     * CAM_BACK, so that is the default and callers only need to pass a value if
+     * they are framing something else.
+     */
+    photoFinish(distance) {
+      rackFocus.trigger(distance == null ? CAM_BACK : distance, 1.1, 1);
+    },
     render() { composer.render(); },
     resize,
     dispose() {
@@ -605,6 +666,8 @@ export function createScene(container) {
       for (const r of ringPool) r.mat.dispose();
       bgTexture.dispose();
       envRT.texture.dispose();
+      rackFocus.dispose();
+      gtao?.dispose?.();
       composer.dispose();
       renderer.dispose();
       if (renderer.domElement && renderer.domElement.parentNode) {

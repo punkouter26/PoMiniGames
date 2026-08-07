@@ -213,9 +213,16 @@ export async function playChipDrop(opts) {
  */
 export async function vibrate(pattern) {
     try {
-        // Honour the same global master-mute as audio — a muted player wants
+        // Honour the global master-mute as audio does — a muted player wants
         // silence and stillness, not a buzzing pocket.
         if (AudioBus.isMuted()) return;
+        // Haptics also have their own opt-out (Profile → Preferences), because
+        // mute is the wrong lever for "sound yes, buzzing no" — which is the
+        // common case on a phone held in the hand rather than pocketed.
+        // Read straight from storage rather than caching: this fires at most
+        // once per interaction, and a stale cache would ignore the toggle until
+        // the next reload.
+        if (localStorage.getItem('pomini_haptics') === '0') return;
         if (navigator && typeof navigator.vibrate === 'function') {
             navigator.vibrate(pattern);
         }

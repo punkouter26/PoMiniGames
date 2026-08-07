@@ -27,7 +27,7 @@
     <p class="home-subtitle">Choose how you want to play</p>
 
     <div class="home-sections" id="home-modes">
-            <section class="home-section @(_sectionOpen[0] ? "" : "home-section--collapsed")">
+            <section class="home-section">
                 <div class="home-mode-col">
                     <button type="button"
                             class="home-mode-btn home-mode-btn--demo @(Kiosk.IsActive ? "home-mode-btn--demo-on" : null)"
@@ -60,7 +60,7 @@
                 </div>
             </section>
 
-            <section class="home-section @(_sectionOpen[1] ? "" : "home-section--collapsed")">
+            <section class="home-section">
                 <div class="home-mode-col">
                     <div class="home-mode-btn home-mode-btn--1p home-mode-btn--static">
                         <span class="home-mode-icon">
@@ -84,7 +84,7 @@
                 </div>
             </section>
 
-            <section class="home-section @(_sectionOpen[2] ? "" : "home-section--collapsed")">
+            <section class="home-section">
                 <div class="home-mode-col">
                     <div class="home-mode-btn home-mode-btn--2p home-mode-btn--static">
                         <span class="home-mode-icon">
@@ -110,7 +110,7 @@
                 </div>
             </section>
 
-            <section class="home-section @(_sectionOpen[3] ? "" : "home-section--collapsed")">
+            <section class="home-section">
                 <div class="home-mode-col">
                     <div class="home-mode-btn home-mode-btn--multi home-mode-btn--static">
                         <span class="home-mode-icon">
@@ -181,7 +181,9 @@
     private IReadOnlyList<ActivityFeedService.FeedItem> _activity = Array.Empty<ActivityFeedService.FeedItem>();
 
     // Collapsible home sections — only takes visual effect on phones (see .home-section-toggle
-    // / .home-section--collapsed CSS, both mobile-only). Desktop always shows every game, so
+    // CSS, mobile-only). The collapsed state is published ONCE, as aria-expanded on the
+    // toggle button; Index.razor.css reads it back with :has() instead of a second
+    // "home-section--collapsed" class that said the same thing. Desktop always shows every game, so
     // starting the sections "closed" trims the long mobile scroll without touching
     // the desktop layout. Order: Demo, 1 Player, 2 Player, Multiplayer.
     // §6 the 1-Player section (index 1) starts expanded — it's the primary flow,
@@ -198,7 +200,11 @@
                      title="Needs a connection — unavailable offline">
                    <span class="home-game-chip-icon">@g.Icon</span>@g.Title
                </span>
-            : @<a class="home-game-chip" href="@g.Url">
+            @* data-fx-tilt: fxTilt.js gives the chip a pointer-tracked 3D tilt.
+               Only the navigable variant gets it — tilting a disabled chip
+               would advertise an affordance that is not there. The perspective
+               lives on .home-section-games in glass.css. *@
+            : @<a class="home-game-chip" href="@g.Url" data-fx-tilt="9">
                    <span class="home-game-chip-icon">@g.Icon</span>@g.Title
                </a>;
 

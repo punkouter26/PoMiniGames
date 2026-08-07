@@ -120,7 +120,7 @@
 .home-score-card {
     flex: 0 0 250px;
     scroll-snap-align: start;
-    background: rgba(15, 23, 42, 0.6);
+    background: var(--surface-3);
     border: 1px solid var(--color-border);
     border-radius: 0.75rem;
     padding: 1rem;
@@ -204,7 +204,7 @@
     position: relative;
     width: 100%;
     padding-top: 56.25%;
-    background: rgba(15, 23, 42, 0.6);
+    background: var(--surface-3);
     border: 1px solid var(--color-border);
     border-radius: 0.75rem;
     overflow: hidden;
@@ -270,7 +270,7 @@
 /* ── High scores block (tabs + rows) ── */
 .home-highscores {
     margin-top: 2rem;
-    background: rgba(15, 23, 42, 0.4);
+    background: var(--surface-1);
     border: 1px solid var(--color-border);
     border-radius: 0.75rem;
     padding: 1.5rem;
@@ -412,7 +412,7 @@
 
 .home-highscores-bar-wrap {
     height: 4px;
-    background: rgba(255, 255, 255, 0.06);
+    background: var(--hairline);
     border-radius: 2px;
     overflow: hidden;
 }
@@ -436,8 +436,8 @@
 }
 
 .home-highscores-row--rank1 .home-highscores-name { color: var(--color-warning); }
-.home-highscores-row--rank2 .home-highscores-name { color: #94a3b8; }
-.home-highscores-row--rank3 .home-highscores-name { color: #cd853f; }
+.home-highscores-row--rank2 .home-highscores-name { color: var(--rank-silver); }
+.home-highscores-row--rank3 .home-highscores-name { color: var(--rank-bronze); }
 
 /* ── Recent activity feed (bottom of home page) ── */
 .home-activity {
@@ -568,12 +568,12 @@
 }
 
 .home-mode-btn--active:hover {
-    border-color: #fbbf24;
+    border-color: var(--accent-warning);
     background: rgba(245, 158, 11, 0.2);
 }
 
 .home-mode-btn--active .home-mode-icon,
-.home-mode-btn--active .home-mode-label { color: #fcd34d; }
+.home-mode-btn--active .home-mode-label { color: var(--rank-gold); }
 
 /* Static section-identity tiles (1 Player / 2 Player / Multiplayer). These are
    NOT interactive — the games beside them are the actions — so they must not
@@ -658,7 +658,7 @@
     margin: 0;
     text-align: center;
     font-size: 0.78rem;
-    color: var(--color-text-secondary, #94a3b8);
+    color: var(--color-text-secondary);
 }
 
 .home-section-toggle { display: none; }
@@ -674,8 +674,8 @@
         margin-top: 0.1rem;
         border: 1px solid var(--color-border);
         border-radius: 0.6rem;
-        background: rgba(30, 41, 59, 0.6);
-        color: var(--color-text-secondary, #94a3b8);
+        background: var(--surface-raised);
+        color: var(--color-text-secondary);
         font-size: 0.8rem;
         font-weight: 600;
         cursor: pointer;
@@ -683,7 +683,16 @@
 
     .home-section-toggle-chev { font-size: 0.75rem; line-height: 1; }
 
-    .home-section--collapsed .home-section-games { display: none; }
+    /* Collapse state is read from the toggle's own `aria-expanded`, via :has().
+       It used to be expressed TWICE from the same C# bool — once as
+       aria-expanded on the button, once as a `home-section--collapsed` class on
+       the section — which is two things to keep in sync for one piece of state,
+       and the accessible name and the visual state could silently disagree.
+       Now the ARIA attribute is the single source of truth and the styling
+       follows it, so they cannot drift. */
+    .home-section:has(.home-section-toggle[aria-expanded="false"]) .home-section-games {
+        display: none;
+    }
 
     /* §9 mobile border audit: the outer section is only a grouping container.
        On a ~360px column its frame competes with the inner mode-button and game
@@ -696,6 +705,37 @@
         background: transparent;
         backdrop-filter: none;
         padding: 0.25rem 0;
+    }
+}
+
+/* ── Scroll-driven section reveal ────────────────────────────────────────────
+   The home page is four stacked sections; below the fold they used to arrive
+   fully formed the instant you scrolled to them. This fades and lifts each one
+   as it enters the viewport, scrubbed by scroll position rather than by a timer.
+
+   `animation-timeline: view()` runs entirely on the compositor — there is no
+   scroll listener, no IntersectionObserver, and no per-frame JS, which is what
+   made this pattern expensive to do by hand. `animation-range` ends the effect
+   once the section is 40% up the viewport so it is settled well before it is
+   read, and `both` holds the end state so a section scrolled past stays put.
+
+   Progressive enhancement: browsers without scroll-driven animations ignore the
+   timeline and would otherwise run this as a normal time-based animation, so it
+   is wrapped in @supports — without that guard, unsupporting browsers would
+   fade every section in at once on load. The reduced-motion opt-out is the
+   global `[data-motion="reduce"]` guard in app.css, which zeroes the duration. */
+@supports (animation-timeline: view()) {
+    @media (prefers-reduced-motion: no-preference) {
+        .home-section {
+            animation: home-section-reveal linear both;
+            animation-timeline: view();
+            animation-range: entry 0% cover 40%;
+        }
+
+        @keyframes home-section-reveal {
+            from { opacity: 0; transform: translateY(1.25rem); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
     }
 }
 
@@ -728,7 +768,7 @@
 .home-mode-btn--static:hover {
     transform: none;
     border-color: var(--color-border);
-    background: rgba(17, 24, 39, 0.8);
+    background: var(--surface-2);
     box-shadow: none;
 }
 

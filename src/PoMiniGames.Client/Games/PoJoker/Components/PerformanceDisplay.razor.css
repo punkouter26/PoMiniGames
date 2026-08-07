@@ -57,7 +57,7 @@
     overflow-y: auto;
 }
 
-@media (max-width: 680px) {
+@media (max-width: 640px) {
     .completion-screen {
         padding: 1.5rem 1rem;
     }

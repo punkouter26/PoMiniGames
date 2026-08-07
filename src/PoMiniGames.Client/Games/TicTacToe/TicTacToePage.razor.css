@@ -244,3 +244,50 @@
     .ttt-winline { transform: rotate(var(--wl-angle, 0deg)); }
     .ttt-cell { animation: none; }
 }
+
+/* ── §GFX-4 GPU board layer ──────────────────────────────────────────────
+   boardGl.js renders beveled, clearcoated X/O meshes into this canvas behind
+   the DOM grid. The grid itself is untouched: cells keep their size, their
+   click handlers, their roles and their aria-labels, and only the SVG glyphs
+   are faded out while the GL layer is standing in for them.
+
+   Keeping the SVGs in the DOM rather than removing them is deliberate — they
+   are what the accessibility tree and the Playwright suite read, and a canvas
+   is opaque to both. */
+.ttt-gl {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    /* Behind the cells, and inert: every pointer event belongs to the DOM grid
+       above. Without this the canvas would swallow every click on the board. */
+    pointer-events: none;
+    z-index: 0;
+    border-radius: inherit;
+}
+
+/* Cells sit above the canvas. They are already position:relative, which is
+   what makes z-index apply to them at all. */
+.ttt-board--gl .ttt-cell {
+    z-index: 1;
+}
+
+/* Fade, do not hide. `visibility: hidden` or `display: none` would take the
+   marks out of the accessibility tree along with the pixels. */
+.ttt-board--gl .ttt-mark {
+    opacity: 0;
+    transition: opacity 0.2s var(--ease-standard);
+}
+
+/* The DOM strike-through is replaced by the GL beam, which is drawn in the same
+   place with real depth. Showing both would double it. */
+.ttt-board--gl .ttt-winline {
+    display: none;
+}
+
+/* The slab rendered in the canvas IS the board surface now, so the CSS
+   backdrop would show through the GL layer's alpha as a second, offset panel. */
+.ttt-board--gl {
+    background: transparent;
+    backdrop-filter: none;
+}

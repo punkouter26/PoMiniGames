@@ -7,8 +7,7 @@
 @inject NavigationManager Navigation
 @implements IAsyncDisposable
 
-<GameShell Title=@TitleContent Player="@_playerName" BackTo="/couplequiz"
-           HowToPlay="@HowToPlayContent">
+<GameShell Title=@TitleContent Player="@_playerName" BackTo="/couplequiz">
     @if (!_introDone)
     {
         <GameIntro Title="@TitleContent"

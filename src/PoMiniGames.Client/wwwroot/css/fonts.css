@@ -1,0 +1,67 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   fonts.css — self-hosted webfonts.
+
+   Replaces two third-party stylesheets that used to sit on the render path:
+     • https://rsms.me/inter/inter.css        (Inter, the display face)
+     • https://fonts.googleapis.com/css2?…    (Bungee + Bungee Inline, PoBrawl)
+
+   Why they were moved in-repo:
+     • Third-party origin on the critical path. Each was a DNS + TLS + fetch to
+       a host we do not control, and the Google URL is a stylesheet that itself
+       then fetches from a THIRD origin (fonts.gstatic.com) — so the real font
+       bytes were four hops deep. Self-hosting collapses that to a same-origin
+       request the service worker can cache with everything else.
+     • Privacy. Every visitor's IP and User-Agent went to two external services
+       purely to render a menu.
+     • CSP. Locking the app down to `default-src 'self'` was impossible while
+       styles and fonts came from two other origins.
+     • Offline. The app ships a service worker and advertises offline play; a
+       CDN font is the one asset that could not be served from cache on a cold
+       offline start.
+
+   Subsetting: Bungee ships in vietnamese / latin-ext / latin cuts. Only `latin`
+   is stored here — Bungee is used exclusively for PoBrawl's HUD, banner and
+   inter-round splash, which are fixed English strings. Inter is the full
+   variable font (one file, weights 100–900) because it renders user-supplied
+   display names and leaderboard entries, which are not constrained to latin.
+   That is 352 KB against ~14 KB for a static cut, and it is the right trade:
+   the alternative is a name rendering in a fallback face mid-list.
+
+   `font-display: swap` throughout — text paints immediately in the system
+   fallback and swaps when the file lands, so a slow font never blocks content.
+   The type tokens in app.css list system-ui first for the same reason.
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* Inter — variable, covers the whole 100–900 range in a single file, which is
+   why no per-weight @font-face rules are needed. The app references it as
+   "InterVariable" via --font-display in app.css. */
+@font-face {
+    font-family: InterVariable;
+    font-style: normal;
+    font-weight: 100 900;
+    font-display: swap;
+    src: url('../fonts/InterVariable.woff2') format('woff2');
+}
+
+/* Bungee — PoBrawl's stencil/broadcast face. Latin subset only (see above). */
+@font-face {
+    font-family: 'Bungee';
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url('../fonts/bungee-latin.woff2') format('woff2');
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+                   U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122,
+                   U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+    font-family: 'Bungee Inline';
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url('../fonts/bungee-inline-latin.woff2') format('woff2');
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+                   U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122,
+                   U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}

@@ -1,6 +1,7 @@
 @page "/connectfive"
 @page "/connectfive/{Mode}"
 @implements IDisposable;
+@implements IAsyncDisposable;
 @using PoMiniGamesClient.Components;
 @using PoMiniGamesClient.Enums;
 @using PoMiniGamesClient.Models;
@@ -12,6 +13,7 @@
 @inject KioskCoordinator Kiosk;
 @inject UiFeedbackService Feedback;
 @inject GameResultService GameResults;
+@inject IJSRuntime JSRuntime;
 
 <GameShell
     Title=@TitleContent
@@ -21,9 +23,7 @@
     Elo="@(PlayMode == "ai" ? _rating.Elo : (int?)null)"
     GameKey="@(PlayMode == "ai" ? "connectfive" : null)"
     Stats="@(PlayMode == "ai" ? _statItems : null)"
-    Status="@StatusContent"
-    GameSummary="@GameSummaryContent"
-    HowToPlay="@HowToPlayContent">
+    GameSummary="@GameSummaryContent">
 
     @if (!_introDone)
     {
@@ -37,8 +37,14 @@
     <div class="cf-layout">
         @* §3 Hover-ghost: pointerleave on the board clears the column preview so
            the ghost disc never sticks when the cursor exits the grid. *@
-        <div class="cf-board" role="grid" aria-label="Connect Five game board"
+        <div class="cf-board @(_glMounted ? "cf-board--gl" : null)" role="grid" aria-label="Connect Five game board"
              @onpointerleave="ClearHover">
+            @* §GFX-4 GPU board layer. Behind the cell grid and pointer-inert —
+               clicks, hover previews, roles and aria-labels all stay on the DOM
+               cells. When it mounts, .cf-board--gl fades the CSS discs out and
+               real spring-dropped chips stand in for them; with no GPU backend
+               nothing mounts and the board is exactly what it was. *@
+            <canvas @ref="_glCanvas" class="cf-gl" aria-hidden="true"></canvas>
             @for (int r = 0; r < ConnectFiveBoard.Rows; r++)
             {
                 @for (int c = 0; c < ConnectFiveBoard.Cols; c++)
@@ -219,30 +225,6 @@
             <li>Your rating and the CPU's show in the header — climb as high as you can</li>
         </ul>
     </div>;
-
-    // Unified gps-status-badge.* vocabulary — every game identifies its turn /
-    // result in the same way. The legacy `.cf-status--*` aliases still forward
-    // to the same palette so muscle memory doesn't break.
-    private RenderFragment StatusContent => PlayMode == "demo" ? @<span class="gps-status-badge demo">🎮 Demo mode</span>
-        : PlayMode == "2p"
-            ? (_gameResult == GameResult.InProgress
-                ? (_current2pPlayer == Player.Red
-                    ? @<span class="gps-status-badge player">🔴 @P1Name's turn</span>
-                    : @<span class="gps-status-badge ai">🟡 @_player2Name's turn</span>)
-                : _gameResult == GameResult.Win
-                    ? @<span class="gps-status-badge win">🎉 @P1Name wins!</span>
-                    : _gameResult == GameResult.Loss
-                        ? @<span class="gps-status-badge win">🎉 @_player2Name wins!</span>
-                        : @<span class="gps-status-badge draw">🤝 Draw!</span>)
-            : _gameResult == GameResult.InProgress
-                ? (_isAiTurn
-                    ? @<span class="gps-status-badge thinking">🤖 CPU @_cpuElo thinking…</span>
-                    : @<span class="gps-status-badge player">🔴 Your turn · vs CPU @_cpuElo</span>)
-                : _gameResult == GameResult.Win
-                    ? @<span class="gps-status-badge win">🎉 You win!</span>
-                    : _gameResult == GameResult.Loss
-                        ? @<span class="gps-status-badge loss">🤖 AI wins</span>
-                        : @<span class="gps-status-badge draw">🤝 Draw!</span>;
 
     private RenderFragment? GameSummaryContent => !_isGameOver ? null
         : PlayMode == "2p" ? TwoPlayerSummary : AiSummary;
@@ -446,6 +428,116 @@
         _aiMoveCts?.Cancel();
         _aiMoveCts?.Dispose();
         // BUG FIX (#1): _kioskTimer removed; KioskCoordinator owns it.
+    }
+
+    // ── §GFX-4 GPU board layer ───────────────────────────────────────────
+    private ElementReference _glCanvas;
+    private IJSObjectReference? _glModule;
+    private IJSObjectReference? _glBoard;
+    private bool _glMounted;
+    // OnAfterRenderAsync runs on every state change — the hover ghost alone
+    // fires it on each pointerenter. Only push when the board actually differs.
+    private string _glSignature = string.Empty;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try
+            {
+                _glModule = await JSRuntime.InvokeAsync<IJSObjectReference>(
+                    "import", "./js/boardGl.js");
+                _glBoard = await _glModule.InvokeAsync<IJSObjectReference>(
+                    "mount", _glCanvas, new
+                    {
+                        cols = ConnectFiveBoard.Cols,
+                        rows = ConnectFiveBoard.Rows,
+                        kind = "connectfive",
+                        color1 = "#ff4d5a",
+                        color2 = "#ffd166",
+                    });
+                _glMounted = _glBoard is not null;
+                if (_glMounted) StateHasChanged();
+            }
+            catch (JSException)
+            {
+                // No GPU backend, blocked module fetch, or a failed context.
+                // Supported outcome: the DOM board is already playable.
+                _glMounted = false;
+            }
+            catch (TaskCanceledException)
+            {
+                return;
+            }
+        }
+
+        if (_glBoard is null) return;
+        await PushBoardToGlAsync();
+    }
+
+    private async Task PushBoardToGlAsync()
+    {
+        var rows = ConnectFiveBoard.Rows;
+        var cols = ConnectFiveBoard.Cols;
+        var cells = new int[rows * cols];
+        for (var r = 0; r < rows; r++)
+        {
+            for (var c = 0; c < cols; c++)
+            {
+                cells[r * cols + c] = _board.Get(r, c) switch
+                {
+                    Piece.Red => 1,
+                    Piece.Yellow => 2,
+                    _ => 0,
+                };
+            }
+        }
+
+        var signature = string.Concat(cells) + "|" + string.Join(",", _winCells.Select(w => $"{w.Row}{w.Col}"));
+        if (signature == _glSignature) return;
+        _glSignature = signature;
+
+        // Captured into a local: `_glBoard` is a field, so the compiler cannot
+        // prove it is still non-null across the await — and it genuinely might
+        // not be, since the catch below nulls it.
+        var board = _glBoard;
+        if (board is null) return;
+
+        try
+        {
+            await board.InvokeVoidAsync("setCells", cells);
+            await board.InvokeVoidAsync(
+                "setWin",
+                _winCells.Select(w => new { row = w.Row, col = w.Col }).ToArray());
+        }
+        catch (JSDisconnectedException)
+        {
+            // Page is unloading mid-push.
+        }
+        catch (JSException)
+        {
+            // Dead GL context. Stop pushing rather than throwing every render.
+            _glBoard = null;
+            _glMounted = false;
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        Dispose();
+        try
+        {
+            if (_glBoard is not null) await _glBoard.InvokeVoidAsync("dispose");
+        }
+        catch (JSException) { /* context already gone */ }
+        catch (JSDisconnectedException) { /* page unloading */ }
+        finally
+        {
+            if (_glBoard is not null) await _glBoard.DisposeAsync();
+            if (_glModule is not null) await _glModule.DisposeAsync();
+            _glBoard = null;
+            _glModule = null;
+        }
     }
 
     private void HandleDrop(int col)

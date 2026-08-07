@@ -1,18 +1,18 @@
-// §4 WebGL ambient particle field. 200 GPU-resident points rendered with a
-// single fragment shader that computes a soft-circle + slow drift. Zero JS
-// per-frame allocations; runs only when the page is visible.
+// §4 WebGL ambient background. As of §GFX-5 this is a full-screen ray-marched
+// volume (see particlesCore.js) rather than a field of drifting points.
 //
 // §7 (2026-07-29) Rendering moved to a worker + OffscreenCanvas. In Blazor WASM
 // the main thread runs the .NET runtime, so the old main-thread rAF loop shared
 // a thread with game logic and stuttered visibly during GC. The worker path
 // decouples them. Browsers without `transferControlToOffscreen` fall back to the
-// original in-thread renderer below — same shader, via particlesCore.js.
+// in-thread renderer below — same shader, via particlesCore.js.
 //
 // This file keeps ownership of everything DOM-shaped (pointer, resize,
-// intersection, visibility) because a worker cannot touch the DOM; it forwards
-// those as messages.
+// intersection, visibility, the CSS accent tokens, the analyser read) because a
+// worker cannot touch the DOM; it forwards those as messages.
 
-import { initGl, drawFrame, POINT_COUNT } from './particlesCore.js';
+import { initGl, drawFrame, disposeGl, DEFAULT_HUE_A, DEFAULT_HUE_B } from './particlesCore.js';
+import * as AudioBus from './audioBus.js';
 
 let worker = null;
 
@@ -24,7 +24,9 @@ let visible = true;
 let inViewport = true;
 let lastX = 0.5;
 let lastY = 0.5;
-let currentPointCount = POINT_COUNT;
+let quality = 1;
+let hueA = DEFAULT_HUE_A;
+let hueB = DEFAULT_HUE_B;
 
 // Shared DOM observers (both paths).
 let resizeObs = null;
@@ -34,6 +36,17 @@ let onPointerMove = null;
 let onTierChange = null;
 let onVisibilityChange = null;
 let onPageHide = null;
+let bandTimer = 0;
+
+// The march costs far more per pixel than the old point field did, so the
+// backing store is deliberately smaller than the display. The volume has no
+// hard edges — there is nothing in it that a human can see aliasing on — which
+// is exactly the case where rendering under-resolution is free quality.
+const MAX_DPR = 1.25;
+
+// Analyser → worker at ~15 Hz. The worker interpolates between messages, so the
+// visual is smooth; posting per frame would clone a message 60×/s for 3 floats.
+const BAND_INTERVAL_MS = 66;
 
 function currentQualityScale() {
     try {
@@ -45,14 +58,54 @@ function currentQualityScale() {
     }
 }
 
+/** Backing-store scale for a quality tier. Resolution drops before step count. */
+function renderScale(q) {
+    return 0.55 + 0.45 * Math.max(0, Math.min(1, q));
+}
+
+function backingSize(canvas, q) {
+    const dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR) * renderScale(q);
+    return {
+        w: Math.max(1, Math.floor(canvas.clientWidth * dpr)),
+        h: Math.max(1, Math.floor(canvas.clientHeight * dpr)),
+    };
+}
+
+/**
+ * Read a CSS colour token and return linear-ish 0..1 RGB for the shader.
+ * Falls back to the built-in palette for anything that does not parse — a game
+ * with an exotic accent (a gradient, a colour space the browser resolves lazily)
+ * must not blank the background.
+ */
+function readTint(varName, fallback) {
+    try {
+        const raw = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+        if (!raw) return fallback;
+        // getComputedStyle resolves a custom property to its authored text, not
+        // to rgb(). Parsing every possible colour syntax by hand is a losing
+        // game, so hand it to the engine and read back what it computed.
+        const probe = document.createElement('span');
+        probe.style.color = raw;
+        probe.style.display = 'none';
+        document.body.appendChild(probe);
+        const resolved = getComputedStyle(probe).color;
+        probe.remove();
+        const m = /rgba?\(([^)]+)\)/.exec(resolved);
+        if (!m) return fallback;
+        const parts = m[1].split(/[,\s/]+/).map(Number);
+        if (parts.length < 3 || parts.some((n) => !Number.isFinite(n))) return fallback;
+        return [parts[0] / 255, parts[1] / 255, parts[2] / 255];
+    } catch {
+        return fallback;
+    }
+}
+
 function attachDomObservers(canvas, onResize, onPointer, onVisible, onViewport, onQuality) {
     boundCanvas = canvas;
 
     resizeObs = new ResizeObserver(() => {
-        const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
-        onResize(
-            Math.max(1, Math.floor(canvas.clientWidth * dpr)),
-            Math.max(1, Math.floor(canvas.clientHeight * dpr)));
+        const s = backingSize(canvas, quality);
+        onResize(s.w, s.h);
     });
     resizeObs.observe(canvas);
 
@@ -78,22 +131,42 @@ function attachDomObservers(canvas, onResize, onPointer, onVisible, onViewport, 
     intersectObs.observe(canvas);
 
     // §10 adaptive quality: visualRuntime.js is the single authority on how much
-    // the machine can afford. The old local "60 slow frames -> halve the points"
-    // heuristic is gone; two independent throttles could disagree and fight.
-    onTierChange = () => onQuality(currentQualityScale());
+    // the machine can afford. A tier change now also resizes the backing store,
+    // not just the step count — resolution is the bigger lever for a per-pixel
+    // shader, and changing only the steps would leave a slow machine rendering
+    // 34-step-quality pixel counts at 10-step quality.
+    onTierChange = () => {
+        quality = currentQualityScale();
+        onQuality(quality);
+        const s = backingSize(canvas, quality);
+        onResize(s.w, s.h);
+    };
     window.addEventListener('po-gfx-tier', onTierChange);
-    onQuality(currentQualityScale());
+    quality = currentQualityScale();
+    onQuality(quality);
+}
+
+/**
+ * Re-read the FX accent triad (defined in app.css :root, re-pointed inside each
+ * game's theme root). Call after a game changes its theme so the background
+ * curtains match the UI in front of them.
+ */
+export function refreshTint() {
+    hueA = readTint('--fx-accent', DEFAULT_HUE_A);
+    hueB = readTint('--fx-accent-2', DEFAULT_HUE_B);
+    if (worker) worker.postMessage({ type: 'tint', hueA, hueB });
 }
 
 export function start(canvas) {
+    refreshTint();
+
     // ── Preferred path: render in a worker ─────────────────────────────
     if (typeof Worker === 'function' && typeof canvas.transferControlToOffscreen === 'function') {
         try {
-            const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+            const s = backingSize(canvas, currentQualityScale());
             const off = canvas.transferControlToOffscreen();
             worker = new Worker(new URL('./particlesWorker.js', import.meta.url), { type: 'module' });
 
-            let failed = false;
             worker.onmessage = (e) => {
                 if (e.data && e.data.type === 'failed') {
                     // WebGL2 unavailable inside the worker. The canvas has
@@ -101,18 +174,12 @@ export function start(canvas) {
                     // cannot retry in-thread — leave it blank and let the CSS
                     // gradient behind it show through, same as the old
                     // no-WebGL behaviour.
-                    failed = true;
                     stop();
                 }
             };
-            if (failed) return false;
 
-            worker.postMessage({
-                type: 'init',
-                canvas: off,
-                width: Math.max(1, Math.floor(canvas.clientWidth * dpr)),
-                height: Math.max(1, Math.floor(canvas.clientHeight * dpr)),
-            }, [off]);
+            worker.postMessage({ type: 'init', canvas: off, width: s.w, height: s.h }, [off]);
+            worker.postMessage({ type: 'tint', hueA, hueB });
 
             attachDomObservers(
                 canvas,
@@ -121,6 +188,10 @@ export function start(canvas) {
                 () => worker && worker.postMessage({ type: 'visibility', visible: !document.hidden }),
                 (iv) => worker && worker.postMessage({ type: 'viewport', inViewport: iv }),
                 (scale) => worker && worker.postMessage({ type: 'quality', scale }));
+
+            startBandPump((b) => worker && worker.postMessage({
+                type: 'bands', bass: b.bass, mid: b.mid, treble: b.treble,
+            }));
             return true;
         } catch {
             // Fall through to the in-thread renderer.
@@ -128,8 +199,8 @@ export function start(canvas) {
         }
     }
 
-    // ── Fallback: original main-thread renderer ────────────────────────
-    gl = canvas.getContext('webgl2', { alpha: true, antialias: true, premultipliedAlpha: true });
+    // ── Fallback: main-thread renderer ─────────────────────────────────
+    gl = canvas.getContext('webgl2', { alpha: true, antialias: false, premultipliedAlpha: true });
     if (!gl) {
         // Leave the canvas blank. The CSS gradient behind it stays visible.
         return false;
@@ -144,19 +215,29 @@ export function start(canvas) {
                 canvas.width = w;
                 canvas.height = h;
             }
-            gl.viewport(0, 0, canvas.width, canvas.height);
         },
         (x, y) => { lastX = x; lastY = y; },
         () => { visible = !document.hidden; },
         (iv) => { inViewport = iv; },
-        (scale) => { currentPointCount = Math.max(20, Math.round(POINT_COUNT * scale)); });
+        () => { /* quality is read straight off the module-level `quality` */ });
 
+    // Reused across frames — see the same note in particlesWorker.js.
+    const state = { quality: 1, bass: 0, mid: 0, treble: 0, hueA, hueB };
     const startTime = performance.now();
     function tick(now) {
         if (!gl) return;
         if (visible && inViewport) {
-            drawFrame(gl, uniforms, canvas.width, canvas.height,
-                now - startTime, lastX, lastY, currentPointCount);
+            // No message hop on this path, so the analyser can be read directly
+            // each frame — getLevels() is a single getByteFrequencyData plus a
+            // 256-element reduce, which is cheaper than a postMessage would be.
+            const l = AudioBus.getLevels();
+            state.quality = quality;
+            state.bass = l.bass;
+            state.mid = l.mid;
+            state.treble = l.treble;
+            state.hueA = hueA;
+            state.hueB = hueB;
+            drawFrame(gl, uniforms, canvas.width, canvas.height, now - startTime, lastX, lastY, state);
         }
         raf = requestAnimationFrame(tick);
     }
@@ -164,9 +245,28 @@ export function start(canvas) {
     return true;
 }
 
+/**
+ * Poll the analyser on a timer and hand the bands to the worker.
+ * A timer rather than rAF: this is a data feed at a deliberately low rate, and
+ * rAF would tie it to the display refresh (240 Hz on some panels) for no gain.
+ */
+function startBandPump(send) {
+    stopBandPump();
+    bandTimer = setInterval(() => {
+        if (document.hidden || !inViewport) return;
+        send(AudioBus.getLevels());
+    }, BAND_INTERVAL_MS);
+}
+
+function stopBandPump() {
+    if (bandTimer) clearInterval(bandTimer);
+    bandTimer = 0;
+}
+
 export function stop() {
     if (raf) cancelAnimationFrame(raf);
     raf = 0;
+    stopBandPump();
 
     if (worker) {
         try { worker.postMessage({ type: 'stop' }); } catch { /* already dead */ }
@@ -190,10 +290,11 @@ export function stop() {
     onPointerMove = null;
     boundCanvas = null;
 
-    if (gl) {
-        if (uniforms && uniforms.buffer) gl.deleteBuffer(uniforms.buffer);
-        if (uniforms && uniforms.program) gl.deleteProgram(uniforms.program);
-    }
+    disposeGl(gl, uniforms);
     uniforms = null;
     gl = null;
+}
+
+if (typeof window !== 'undefined') {
+    window.PoAmbient = { start, stop, refreshTint };
 }

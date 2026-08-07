@@ -25,8 +25,7 @@
            Stats="@_statItems"
            GameOver="@(_phase == "podium" && !_demo)"
            GameKey="@(_mode == "1p" ? "posports" : null)"
-           GameSummary="@GameSummaryContent"
-           HowToPlay="@HowToPlayContent">
+           GameSummary="@GameSummaryContent">
     @if (!_introDone)
     {
         <GameIntro Title="@TitleContent"
@@ -301,6 +300,13 @@
 
         try
         {
+            // Route-gated engine load (see wwwroot/js/engineLoader.js).
+            if (!await JSRuntime.InvokeAsync<bool>("loadEngine", "posports"))
+            {
+                Console.Error.WriteLine("[PoSports] engine failed to load");
+                return;
+            }
+
             await JSRuntime.InvokeVoidAsync("PoSports.init", "posports-container", _ref,
                 new { mode = "online", players, layout = 1 });
             await JSRuntime.InvokeVoidAsync("PoSports.applySnapshot", snap);
@@ -431,6 +437,13 @@
 
         try
         {
+            // Route-gated engine load (see wwwroot/js/engineLoader.js).
+            if (!await JSRuntime.InvokeAsync<bool>("loadEngine", "posports"))
+            {
+                Console.Error.WriteLine("[PoSports] engine failed to load");
+                return;
+            }
+
             await JSRuntime.InvokeVoidAsync("PoSports.init", "posports-container", _ref,
                 new { mode = _mode, players, difficulty = "medium" });
         }

@@ -9,7 +9,7 @@
     box-shadow: 0 0 20px rgba(184, 149, 106, 0.3);
 }
 
-@media (max-width: 680px) {
+@media (max-width: 640px) {
     .jester-stage {
         padding: 1rem;
         border-radius: 10px;

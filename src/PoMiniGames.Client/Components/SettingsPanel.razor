@@ -1,0 +1,196 @@
+@namespace PoMiniGamesClient.Components
+@using PoMiniGamesClient.Services
+@inject SettingsService Settings
+@inject UiFeedbackService Feedback
+@implements IDisposable
+
+@* ─────────────────────────────────────────────────────────────────────────
+   Preferences: colour scheme, audio, haptics, motion, FPS badge.
+
+   Lives on the Profile page rather than the top bar. The ⚙️ gear was removed
+   from the top bar on 2026-07-13 by explicit request, and re-adding chrome
+   there to host this would undo that — so the settings live on the one page
+   the user already visits to look at their own account.
+   ───────────────────────────────────────────────────────────────────────── *@
+
+<section class="prefs" aria-labelledby="prefs-title">
+    <h2 class="prf-section-title" id="prefs-title">Preferences</h2>
+
+    <div class="prefs-grid">
+
+        <!-- ── Appearance ── -->
+        <div class="prefs-row">
+            <div class="prefs-label">
+                <span class="prefs-name">Theme</span>
+                <span class="prefs-hint">Auto follows your device setting.</span>
+            </div>
+            <div class="prefs-seg" role="radiogroup" aria-label="Theme">
+                @foreach (var mode in ThemeModes)
+                {
+                    <button type="button"
+                            role="radio"
+                            class="prefs-seg-btn @(Settings.Theme == mode ? "prefs-seg-btn--on" : null)"
+                            aria-checked="@(Settings.Theme == mode)"
+                            @onclick="() => SetTheme(mode)">
+                        @ThemeLabel(mode)
+                    </button>
+                }
+            </div>
+        </div>
+
+        <!-- ── Audio ── -->
+        <div class="prefs-row">
+            <div class="prefs-label">
+                <span class="prefs-name">Sound</span>
+                <span class="prefs-hint">Mutes music, effects and UI cues.</span>
+            </div>
+            <button type="button"
+                    class="prefs-toggle @(Settings.Muted ? null : "prefs-toggle--on")"
+                    role="switch"
+                    aria-checked="@(!Settings.Muted)"
+                    aria-label="Sound"
+                    @onclick="ToggleMuted">
+                <span class="prefs-toggle-knob"></span>
+            </button>
+        </div>
+
+        <div class="prefs-row @(Settings.Muted ? "prefs-row--disabled" : null)">
+            <div class="prefs-label">
+                <span class="prefs-name">Volume</span>
+                <span class="prefs-hint">@Settings.Volume%</span>
+            </div>
+            @* Bound on oninput so the level tracks the drag. audioBus ramps the
+               gain node, so a per-pixel update neither clicks nor thrashes. *@
+            <input type="range" class="prefs-range"
+                   min="0" max="100" step="5"
+                   aria-label="Volume"
+                   disabled="@Settings.Muted"
+                   value="@Settings.Volume"
+                   @oninput="OnVolumeInput" />
+        </div>
+
+        <div class="prefs-row">
+            <div class="prefs-label">
+                <span class="prefs-name">Haptics</span>
+                <span class="prefs-hint">Vibration cues on supported devices.</span>
+            </div>
+            <button type="button"
+                    class="prefs-toggle @(Settings.Haptics ? "prefs-toggle--on" : null)"
+                    role="switch"
+                    aria-checked="@Settings.Haptics"
+                    aria-label="Haptics"
+                    @onclick="ToggleHaptics">
+                <span class="prefs-toggle-knob"></span>
+            </button>
+        </div>
+
+        <!-- ── Motion & chrome ── -->
+        <div class="prefs-row">
+            <div class="prefs-label">
+                <span class="prefs-name">Reduce motion</span>
+                <span class="prefs-hint">
+                    @if (_osReducedMotion)
+                    {
+                        @:Your device already asks for reduced motion.
+                    }
+                    else
+                    {
+                        @:Trims animations and transitions.
+                    }
+                </span>
+            </div>
+            <button type="button"
+                    class="prefs-toggle @(Settings.ReducedMotion ? "prefs-toggle--on" : null)"
+                    role="switch"
+                    aria-checked="@Settings.ReducedMotion"
+                    aria-label="Reduce motion"
+                    @onclick="ToggleReducedMotion">
+                <span class="prefs-toggle-knob"></span>
+            </button>
+        </div>
+
+        <div class="prefs-row">
+            <div class="prefs-label">
+                <span class="prefs-name">FPS badge</span>
+                <span class="prefs-hint">Frame-rate readout in the top bar.</span>
+            </div>
+            <button type="button"
+                    class="prefs-toggle @(Settings.ShowFps ? "prefs-toggle--on" : null)"
+                    role="switch"
+                    aria-checked="@Settings.ShowFps"
+                    aria-label="FPS badge"
+                    @onclick="ToggleFps">
+                <span class="prefs-toggle-knob"></span>
+            </button>
+        </div>
+
+    </div>
+</section>
+
+@code {
+    private static readonly ThemeMode[] ThemeModes = [ThemeMode.Auto, ThemeMode.Light, ThemeMode.Dark];
+
+    private bool _osReducedMotion;
+
+    private static string ThemeLabel(ThemeMode mode) => mode switch
+    {
+        ThemeMode.Light => "Light",
+        ThemeMode.Dark => "Dark",
+        _ => "Auto",
+    };
+
+    protected override void OnInitialized() => Settings.Changed += OnSettingsChanged;
+
+    protected override async Task OnInitializedAsync()
+        => _osReducedMotion = await Settings.OsPrefersReducedMotionAsync();
+
+    private void OnSettingsChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Settings.Changed -= OnSettingsChanged;
+
+    private async Task SetTheme(ThemeMode mode)
+    {
+        if (Settings.Theme == mode) return;
+        await Settings.SetThemeAsync(mode);
+        await Feedback.ClickAsync();
+    }
+
+    // Audio feedback fires only when turning sound ON — playing a confirmation
+    // tone as the user mutes would be the one cue they just asked not to hear.
+    // (audioBus ramps over ~20 ms, so the cue would still be audible.)
+    private async Task ToggleMuted()
+    {
+        var nowMuted = !Settings.Muted;
+        await Settings.SetMutedAsync(nowMuted);
+        if (!nowMuted) await Feedback.ClickAsync();
+    }
+
+    private async Task OnVolumeInput(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var pct))
+        {
+            await Settings.SetVolumeAsync(pct);
+        }
+    }
+
+    // Fire the haptic *after* enabling so the user feels the setting they just
+    // turned on; skip it when disabling, for the same reason as mute above.
+    private async Task ToggleHaptics()
+    {
+        var enabled = !Settings.Haptics;
+        Settings.SetHaptics(enabled);
+        if (enabled) await Feedback.TapAsync();
+    }
+
+    private async Task ToggleReducedMotion()
+    {
+        await Settings.SetReducedMotionAsync(!Settings.ReducedMotion);
+        await Feedback.ClickAsync();
+    }
+
+    private async Task ToggleFps()
+    {
+        Settings.SetShowFps(!Settings.ShowFps);
+        await Feedback.ClickAsync();
+    }
+}

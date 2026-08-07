@@ -31,8 +31,27 @@
   --accent-amber: #facc15;
   --accent-gold: #d4af37;
   --accent-jester: #4a0080;
+
+  /* ── §GFX FX triad ────────────────────────────────────────────────────────
+     fx.css and the ray-marched background (particlesCore.js) both need "the
+     two or three colours this screen is about". They used to hard-code their
+     own fallbacks, which meant a game could retheme its whole UI and the glow
+     behind it stayed indigo.
+     Declaring the triad here and re-pointing it inside a game's theme root
+     (e.g. `.pojoker-root { --fx-accent: var(--accent-gold); }`) retints every
+     glass edge, aurora ring, impact flash and background curtain at once.
+     Kept as plain colours, not gradients: the shader parses these through
+     getComputedStyle and needs something that resolves to rgb(). */
+  --fx-accent: var(--accent);
+  --fx-accent-2: var(--accent-cyan);
+  --fx-accent-3: var(--accent-amber);
   /* Typography (Suggestion #4) */
-  --font-display: 'Inter', system-ui, -apple-system, sans-serif;
+  /* "InterVariable" is the family name the self-hosted variable file declares
+     (css/fonts.css). It was 'Inter' while the app loaded rsms.me's stylesheet,
+     which declared BOTH a static `Inter` and a variable `InterVariable`; only
+     the variable file is vendored, so naming the static family here would have
+     silently fallen through to system-ui on every heading. */
+  --font-display: 'InterVariable', system-ui, -apple-system, sans-serif;
   --font-body: system-ui, -apple-system, sans-serif;
   /* Single source of truth for monospace UI (FPS counter, diagnostics, code).
      Previously each component hand-rolled its own mono stack. */
@@ -46,6 +65,25 @@
   --text-xl: 1.5rem;
   --text-2xl: 2rem;
   --text-3xl: 3rem;
+
+  /* ── Tints & hairlines ─────────────────────────────────────────────────────
+     Zebra striping, inset meter tracks and 1px separators were authored across
+     the page stylesheets as rgba(255,255,255,0.02…0.08) — a white film that is
+     literally invisible on a light surface, so tables lost their striping and
+     meters lost their track. Routing them through tokens is what lets the light
+     block below flip them to a dark film of the same weight. */
+  --tint-subtle: rgba(255,255,255,0.02);
+  --tint-soft:   rgba(255,255,255,0.04);
+  --tint-medium: rgba(255,255,255,0.08);
+  --hairline:    rgba(255,255,255,0.06);
+
+  /* Podium ranks. Semantic (gold/silver/bronze reads as 1st/2nd/3rd), but unlike
+     the status accents these are NOT legible on both surfaces — pale gold on
+     white is roughly 1.5:1 — so the light block re-points them to the same hue
+     at a darker value rather than leaving them scheme-invariant. */
+  --rank-gold:   #fcd34d;
+  --rank-silver: #cbd5e1;
+  --rank-bronze: #d8a06a;
 
   /* Translucent surfaces (single source of truth — replaces scattered raw rgba) */
   --surface-1: rgba(17,24,39,0.55);   /* low-emphasis panels */
@@ -88,6 +126,13 @@
   --z-banner: 2000;
   --z-toast: 3000;
   --z-toast-stack: 3000;
+  /* §GFX overlays. Above the modal/toast layers on purpose: confetti that
+     stops at the edge of the "You win!" dialog reads as a z-index bug, and the
+     impact flash has to cover whatever is on screen or it is not a flash.
+     Both are pointer-events:none, so sitting on top costs no interactivity.
+     Still below the error overlay — a crash report must never be confettied. */
+  --z-fx-flash: 9990;
+  --z-fx-particles: 9991;
   --z-error-overlay: 9999;
 
   /* Glassmorphism primitives (§3 — one source of truth for translucent chrome) */
@@ -131,7 +176,32 @@
      var()s would resolve against :root (out of scope) and compute to empty. */
   --disc-shadow: inset 0 -3px 6px rgba(0,0,0,0.32), 0 2px 5px rgba(0,0,0,0.4);
   --accent-glow: rgba(0,229,255,0.5);
-  --accent-cyan: #00e5ff;
+  /* (--accent-cyan was re-declared here, identically to its definition in the
+     accent bag above. A second declaration in the same rule is dead weight and
+     an invitation to change one copy and not the other.) */
+
+  /* ── Breakpoint scale (documentation, not consumable) ───────────────────────
+     Media queries cannot read custom properties, so these cannot be var()'d into
+     an `@media` — they are recorded here so the canonical widths have one home
+     and a reviewer can see the whole scale at a glance:
+
+       360px  xs  tiny phone (game boards only — never chrome)
+       480px  sm  compact phone portrait
+       640px  md  phone / small tablet portrait
+       960px  lg  tablet landscape / small desktop
+
+     This replaced an ad-hoc spread of 360/480/560/600/640/680/700/720/768/960.
+     The same component reflowed at a different width depending on which page it
+     was on, because each page picked its own number. Everything on the old list
+     was folded into the nearest tier above (560→480; 600/680/700/720/768→640).
+
+     Two documented exceptions, both in css/posurvive/c64-theme.css: `.sv-stage`
+     keeps 1100px and 860px. They are two distinct tiers of a dense two-column
+     tactical dashboard (wide → narrow columns → stacked), and collapsing both to
+     960px would merge them into one, dropping the intermediate layout entirely.
+
+     Prefer a container query (`@container`) over any of these for a component
+     that should react to its own slot rather than to the viewport. */
 
   /* §3 Tell the UA which schemes this document supports, so native chrome the
      stylesheet cannot reach — scrollbars, <select> popups, date pickers, form
@@ -141,7 +211,7 @@
   color-scheme: dark;
 }
 
-/* ── §3 System-native light theme ───────────────────────────────────────────
+/* ── §3 Light theme ─────────────────────────────────────────────────────────
    Overrides ONLY the surface/text/elevation tokens. Every component in the app
    reads its colour through these variables, so re-pointing them here is the
    whole light theme — no component rule is duplicated, and a new component is
@@ -156,9 +226,19 @@
        own backdrop, so a light page around them changes nothing they render.
 
    Shadows drop to near-black at low alpha: the dark theme's heavy rgba(0,0,0,.35)
-   reads as dirt rather than depth on a light surface. */
-@media (prefers-color-scheme: light) {
-  :root {
+   reads as dirt rather than depth on a light surface.
+
+   ── Why an attribute and not `@media (prefers-color-scheme: light)` ──
+   This block was a media query until Preferences (Profile page) gained a manual
+   Auto/Light/Dark switch. A media query cannot be overridden by a user choice —
+   the OS would always win — and duplicating the palette into a second
+   `[data-theme="light"]` rule would leave two copies to drift apart.
+   So the OS preference is resolved to a concrete value exactly once, by the
+   inline script in index.html, which stamps `<html data-theme="light|dark">`
+   before first paint. "auto" still tracks the OS: appPrefs.js re-stamps on
+   matchMedia change. Blazor WASM is required to run this app at all, so there is
+   no no-JS path left to serve. */
+:root[data-theme="light"] {
     color-scheme: light;
 
     --color-bg: #f6f7fb;
@@ -173,6 +253,18 @@
     --surface-3: rgba(241,245,249,0.75);
     --surface-bar: rgba(255,255,255,0.9);
     --surface-raised: rgba(255,255,255,0.95);
+
+    /* Same visual weight, opposite polarity — a white film adds nothing to a
+       white page, so striping/tracks/separators invert to a dark film. */
+    --tint-subtle: rgba(15,23,42,0.03);
+    --tint-soft:   rgba(15,23,42,0.05);
+    --tint-medium: rgba(15,23,42,0.09);
+    --hairline:    rgba(15,23,42,0.08);
+
+    /* Darkened to keep the podium readable on a light surface (see note above). */
+    --rank-gold:   #b45309;
+    --rank-silver: #64748b;
+    --rank-bronze: #9a5b2d;
 
     --elevation-1: 0 4px 20px rgba(15,23,42,0.08);
     --elevation-2: 0 8px 30px rgba(99,102,241,0.12);
@@ -190,7 +282,42 @@
     --toast-success-text: #14532d;
     --toast-warning-bg: #fffbeb;
     --toast-warning-text: #78350f;
-  }
+}
+
+/* ── Reduce motion (single source of truth) ─────────────────────────────────
+   `data-motion="reduce"` is set when EITHER the user opted in (Profile →
+   Preferences) OR the OS asks for reduced motion. Both are resolved to this one
+   attribute by the pre-paint script in index.html and kept live by appPrefs.js,
+   mirroring how `data-theme` resolves `prefers-color-scheme`. Resolving in JS is
+   what lets the two sources share one rule instead of needing a duplicate
+   `@media (prefers-reduced-motion)` copy of every declaration below — see the
+   note at the foot of this file.
+
+   Collapsing the motion tokens is most of the job, since animated components
+   read their timing from them. The blanket rule catches the hand-rolled keyframe
+   animations that predate the tokens. `!important` is load-bearing: it has to
+   beat per-component scoped-CSS animation declarations it knows nothing about. */
+:root[data-motion="reduce"] {
+  --dur-fast: 0s;
+  --dur-base: 0s;
+  --dur-slow: 0s;
+}
+
+:root[data-motion="reduce"] *,
+:root[data-motion="reduce"] *::before,
+:root[data-motion="reduce"] *::after {
+  animation-duration: 0.001s !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001s !important;
+  scroll-behavior: auto !important;
+}
+
+/* Ambient/decorative loops are stopped outright rather than run at 0.001s —
+   an infinite animation still schedules frames at any duration. */
+:root[data-motion="reduce"] .home-mesh,
+:root[data-motion="reduce"] .login-mesh,
+:root[data-motion="reduce"] .skeleton {
+  animation: none !important;
 }
 
 html, body, #app {
@@ -425,12 +552,6 @@ h3:focus-visible {
   margin-bottom: 1.5rem;
 }
 
-.sp-auth-banner-actions {
-  display: flex;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-}
-
 .sp-btn-primary {
   background: var(--color-accent);
   border: none;
@@ -457,261 +578,29 @@ h3:focus-visible {
 }
 .sp-btn-secondary:hover { border-color: var(--color-text-secondary); color: var(--color-text-primary); }
 
-.sp-offline-banner {
-  background: #78350f;
-  border: 1px solid #b45309;
-  color: #fde68a;
-  padding: 0.5rem 1rem;
-  border-radius: 0.5rem;
-  margin-bottom: 1rem;
-  font-size: 0.8rem;
-}
+/* (Removed: dead `.sp-offline-banner`, `.sp-search*`, `.sp-game-*`, `.sp-mode-pill*`
+   and `.sp-empty-*` blocks. The single-player game grid, its search box and its
+   empty state were replaced by the home page's `.home-game-chip` sections; the
+   only surviving `.sp-*` consumers are the PoRacer / PoSports lobbies, which use
+   `.sp-page` / `.sp-card` / `.sp-header` / `.sp-back` / `.sp-title` /
+   `.sp-subtitle` / `.sp-btn-*` and nothing else. Offline is now announced once by
+   MainLayout's `.gl-offline-banner`, not per page. */
 
-/* Search (Suggestion #7 enhancements) */
-.sp-search-wrap {
-  position: relative;
-  margin-bottom: 1.5rem;
-}
-.sp-search-icon {
-  position: absolute;
-  left: 0.75rem;
-  top: 50%;
-  transform: translateY(-50%);
-  font-size: 0.9rem;
-  z-index: 1;
-}
-.sp-search {
-  width: 100%;
-  background: rgba(15,23,42,0.8);
-  border: 1px solid var(--color-border);
-  color: var(--color-text-primary);
-  padding: 0.6rem 2.5rem 0.6rem 2.5rem;
-  border-radius: 0.5rem;
-  font-size: 0.9rem;
-  outline: none;
-  transition: border-color 0.2s, box-shadow 0.2s;
-  font-family: var(--font-body);
-}
-.sp-search:focus {
-  border-color: var(--color-accent);
-  box-shadow: 0 0 0 3px rgba(99,102,241,0.15);
-}
-
-.sp-search-clear {
-  position: absolute;
-  right: 0.5rem;
-  top: 50%;
-  transform: translateY(-50%);
-  background: transparent;
-  border: none;
-  color: var(--color-text-secondary);
-  font-size: 1.1rem;
-  padding: 0.25rem;
-  border-radius: 50%;
-  line-height: 1;
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.2s;
-}
-.sp-search-wrap.has-text .sp-search-clear {
-  opacity: 1;
-}
-.sp-search-clear:hover { color: var(--color-text-primary); }
-
-.sp-search-result-count {
-  font-size: var(--text-xs);
-  color: var(--color-text-secondary);
-  margin-top: -1rem;
-  margin-bottom: 1rem;
-  text-align: right;
-}
-
-/* ── Game Card Grid (Suggestion #3: 3D Tilt) ── */
-.sp-game-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 1rem;
-}
-
-.sp-game-card {
-  display: grid;
-  grid-template-columns: 60px 1fr;
-  gap: 1rem;
-  align-items: center;
-  min-height: 120px;
-  background: rgba(15,23,42,0.6);
-  border: 1px solid var(--color-border);
-  border-radius: 0.75rem;
-  overflow: hidden;
-  text-align: left;
-  color: var(--color-text-primary);
-  transition: all 0.25s;
-  animation: fadeInUp 0.4s ease-out both;
-  perspective: 800px;
-  transform-style: preserve-3d;
-  position: relative;
-}
-.sp-game-card:hover {
-  border-color: var(--accent, var(--color-accent));
-  transform: var(--tilt, perspective(800px) rotateX(2deg) rotateY(0deg)) translateY(-4px);
-  box-shadow: 0 8px 30px var(--accent-glow, rgba(99,102,241,0.2));
-}
-
-.sp-game-card::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(circle at var(--ripple-x, 50%) var(--ripple-y, 50%), rgba(255,255,255,0.2) 0%, transparent 70%);
-  opacity: 0;
-  transition: opacity 0.3s;
-  pointer-events: none;
-}
-.sp-game-card:active::after {
-  opacity: 1;
-}
-
-.sp-game-card--loading {
-  opacity: 0.6;
-  cursor: wait;
-  pointer-events: none;
-}
-
-.sp-game-card-preview {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0.75rem;
-  min-height: 60px;
-  position: relative;
-}
-.sp-game-card-preview::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 100%;
-  background: linear-gradient(135deg, var(--accent, var(--color-accent)), transparent 70%);
-  opacity: 0.1;
-  border-radius: 0;
-  transition: opacity 0.25s;
-}
-.sp-game-card:hover .sp-game-card-preview::before {
-  opacity: 0.2;
-}
-
-.sp-game-icon { font-size: 2.5rem; display: flex; gap: 0.3rem; position: relative; z-index: 1; }
-
-.sp-game-card-body {
-  padding: 1rem 1.5rem 1.5rem;
-  position: relative;
-  z-index: 1;
-}
-.sp-game-card-body h2 {
-  font-size: 1.05rem;
-  font-weight: 700;
-  margin-bottom: 0.35rem;
-  font-family: var(--font-display);
-}
-.sp-game-card-body p {
-  font-size: 0.8rem;
-  color: var(--color-text-secondary);
-  line-height: 1.4;
-}
-
-.sp-game-modes {
-  display: flex;
-  gap: 0.35rem;
-  margin-top: 0.75rem;
-}
-
-.sp-mode-pill {
-  font-size: 0.68rem;
-  padding: 0.15rem 0.5rem;
-  border-radius: 9999px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-.sp-mode-pill--1p { background: rgba(99,102,241,0.2); color: #a5b4fc; }
-.sp-mode-pill--2p { background: rgba(34,197,94,0.2); color: #86efac; }
-.sp-mode-pill--demo { background: rgba(245,158,11,0.2); color: #fcd34d; }
-.sp-mode-pill--multi { background: rgba(236,72,153,0.2); color: #f9a8d4; }
-
-/* ── Empty State (Suggestion #9) ── */
-.sp-empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1rem;
-  padding: 3rem 1rem;
-  text-align: center;
-}
-
-.sp-empty-svg {
-  width: 120px;
-  height: 120px;
-  opacity: 0.6;
-}
-
-.sp-empty-text {
-  color: var(--color-text-secondary);
-  font-size: 0.9rem;
-  max-width: 300px;
-}
-
-.sp-empty-actions {
-  display: flex;
-  gap: 0.5rem;
-  margin-top: 0.5rem;
-}
 
 /* ── High Scores (Suggestion #9: empty states) — moved to scoped
      Pages/Index.razor.css and Components/HomeHighScores.razor.css ── */
 
-/* ── Responsive ── */
-@media (max-width: 640px) {
-  /* Reclaim the fold: shrink the decorative hero so live scores sit above it. */
-  .home-title { font-size: 1.25rem; margin-bottom: 0.1rem; }
-  .home-title-icon { display: none; }
-  .home-subtitle { display: none; }
-  .home-modes { flex-direction: column; width: 100%; }
-  .home-mode-btn { width: 100%; padding: 1rem 1.5rem; min-height: 44px; }
-  .sp-game-grid { grid-template-columns: 1fr; }
-  .sp-page { padding: 1rem; }
-  .sp-card { padding: 1.25rem; }
-}
-
-/* (Removed: dead .gl-bottom-nav block — the bottom nav was deleted long ago and
-   these rules matched nothing. The live mobile top-bar tweaks moved to the
-   scoped MainLayout.razor.css.) */
-
-/* ── Home Scores Preview Carousel (UI 2) — moved to scoped Index.razor.css ── */
-/* ── Enhanced Game Card Touch Feedback (UI 4) ── */
-@media (max-width: 768px) {
-  .sp-game-card {
-    min-height: 80px;
-    padding: 1rem;
-    grid-template-columns: 50px 1fr;
-    gap: 0.75rem;
-  }
-  .sp-game-card h2 {
-    font-size: 1rem;
-  }
-  .sp-mode-pill {
-    font-size: 0.7rem;
-    padding: 0.2rem 0.5rem;
-  }
-  .sp-game-card,
-  .sp-back,
-  .sp-btn-primary,
-  .sp-btn-secondary {
-    min-height: 44px;
-  }
-}
-
-/* ── Mobile-Optimized Gradient Mesh (UI 5) ── */
-@media (max-width: 768px) {
+/* ── Responsive ──────────────────────────────────────────────────────────────
+   Canonical breakpoint scale (see --bp-* documentation in the token block).
+   App chrome uses ONLY these three widths:
+     ≤480px  compact phone portrait
+     ≤640px  phone / small tablet portrait
+     ≤960px  tablet landscape / small desktop
+   Anything between them (the old 560/600/680/768/900/920/1100 one-offs) made the
+   same component reflow at a different width depending on which page it was on.
+   Per-game boards under css/games.css keep their own board-specific widths —
+   those are tuned to a fixed aspect grid, not to the chrome. */
+@media (max-width: 960px) {
   /* The animated full-viewport mesh is the most expensive thing on a phone GPU,
      especially under all the translucent blurred panels. Freeze it (static
      gradient only) and strip the stacked backdrop-filters on the many small
@@ -724,56 +613,50 @@ h3:focus-visible {
   .home-section,
   .sp-card,
   .login-card,
-  .toast,
-  .demo-bar {
+  .toast {
     backdrop-filter: none;
   }
-}
 
-/* ── Thumb-Friendly Mode Toggle (UI 4 enhancement) ── */
-@media (max-width: 768px) {
-  .sp-auth-banner-actions {
-    position: fixed;
-    bottom: 70px;
-    left: 0;
-    right: 0;
-    display: flex;
-    background: rgba(17, 24, 39, 0.95);
-    backdrop-filter: blur(12px);
-    padding: 0.5rem;
-    z-index: 99;
-    justify-content: center;
-    gap: 0.5rem;
-    border-top: 1px solid var(--color-border);
-  }
-  .sp-auth-banner-actions .sp-btn-primary,
-  .sp-auth-banner-actions .sp-btn-secondary {
-    flex: 1;
-    max-width: 150px;
-    justify-content: center;
-    display: flex;
-    align-items: center;
+  /* Touch-target floor. Applies from the tablet breakpoint down because a
+     touchscreen is not exclusive to phone widths. */
+  .sp-back,
+  .sp-btn-primary,
+  .sp-btn-secondary {
     min-height: 44px;
   }
-  .sp-page {
-    padding-bottom: 120px;
-  }
 }
 
-/* ── Accessibility: honor reduced-motion (Zero-Waste Motion) ──
-   One global guard so every animation/transition/scroll respects the OS
-   setting. Individual components no longer need their own opt-out. */
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.001ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.001ms !important;
-    scroll-behavior: auto !important;
-  }
-  .home-mesh,
-  .login-mesh,
-  .demo-bar__dot,
-  .skeleton { animation: none !important; }
+@media (max-width: 640px) {
+  /* Reclaim the fold: shrink the decorative hero so live scores sit above it. */
+  .home-title { font-size: 1.25rem; margin-bottom: 0.1rem; }
+  .home-title-icon { display: none; }
+  .home-subtitle { display: none; }
+  .home-mode-btn { width: 100%; padding: 1rem 1.5rem; min-height: 44px; }
+  .sp-page { padding: 1rem; }
+  .sp-card { padding: 1.25rem; }
 }
+
+/* (Removed: dead .gl-bottom-nav block, the dead `.sp-auth-banner-actions` fixed
+   bar and its `.sp-page { padding-bottom: 120px }` spacer. That bar was pinned at
+   `bottom: 70px` to clear a bottom tab bar deleted on 2026-07-05, and the padding
+   reserved 120px of empty space below every lobby for a bar that no longer
+   rendered. Both matched zero markup. The live mobile top-bar tweaks are in the
+   scoped MainLayout.razor.css.) */
+
+/* ── Accessibility: reduced motion ───────────────────────────────────────────
+   ONE universal-selector guard, keyed on `<html data-motion="reduce">`, defined
+   next to the token collapse in the :root[data-motion] block above.
+
+   This file used to carry a second, near-identical `@media (prefers-reduced-motion)`
+   universal rule. Two `*, *::before, *::after` blocks meant every element on the
+   page was matched twice on every style recalc, for one behaviour.
+
+   The OS preference is now resolved into the same attribute — by the pre-paint
+   script in index.html, and kept live by appPrefs.js — exactly as the OS colour
+   preference is resolved into `data-theme`. Same reasoning as the light palette:
+   resolve the media query to a concrete value once, in one place, so an explicit
+   user choice can win and the stylesheet has a single source of truth.
+
+   The per-component `@media (prefers-reduced-motion: reduce)` opt-outs elsewhere
+   (the spinner, the mock banner, the view transition) are narrow and still stand
+   on their own — they are not universal selectors. */

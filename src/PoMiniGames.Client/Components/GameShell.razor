@@ -24,12 +24,24 @@
            unrated modes, which emits nothing. *@
 
         @* 2026-07-13 top-bar cleanup (user request): the in-game Player name, the
-           live Status pill, and the "?" how-to trigger were removed from the header
-           to save horizontal space. The signed-in identity now lives once on the
-           right (next to Sign out), the game result surfaces in the end-of-game
-           modal, and the how-to popover is no longer exposed from the top bar.
-           The Player / Status / HowToPlay parameters remain accepted (pages still
-           pass them) but are intentionally not projected here. *@
+           live Status pill, and the "?" how-to trigger were removed from the
+           header to save horizontal space. The signed-in identity now lives once
+           on the right (next to Sign out) and the game result surfaces in the
+           end-of-game modal.
+
+           The `Status` and `HowToPlay` parameters that survived that cleanup have
+           now been removed as well. Nothing rendered them and nothing could: the
+           "?" trigger was the only thing that ever set HowToPlayOpen, so once it
+           went the popover became unreachable markup behind a permanently-false
+           flag, while every game page kept building a Status fragment on each
+           render for output that was discarded.
+
+           Controls text is not lost. Pages feed the same HowToPlayContent
+           fragment to <GameIntro Controls="…">, which is the live surface for it
+           and is what players actually see before a round starts.
+
+           `Player` is NOT dead and stays — it is forwarded to GameOverModal
+           below, which uses it to attribute the score. *@
     </div>
 </SectionContent>
 
@@ -41,7 +53,7 @@
 }
 
 <SwipeBack BackTo="@BackTo" Class="gps-shell-wrap">
-<div class="gps-shell" @onclick="OnShellClick">
+<div class="gps-shell">
     <div class="gps-game-area @(Fullscreen ? "gps-game-area--fullscreen" : "")">
         @ChildContent
     </div>
@@ -51,24 +63,6 @@
        game's top 3 (fetched from GameKey), and a single OK that returns to the
        home menu. There is intentionally no backdrop-dismiss and no Play Again —
        OK is the only exit, so the flow is identical in every game. *@
-    @* How-to-play popover: a small inline card toggled by the header "?". Replaces
-       the 2026-07-12 full-screen modal — no overlay, no auto-show, no localStorage.
-       The popover sits at the top of the game area and is dismissed by clicking
-       the "?" again, the Got it button, or anywhere outside the card. *@
-    @if (HowToPlayOpen && HowToPlay != null)
-    {
-        <aside id="gps-howto-popover" class="gps-howto-popover" role="region" aria-label="How to play" @onclick:stopPropagation="true">
-            <div class="gps-howto-popover-head">
-                <span class="gps-howto-popover-title">@Title</span>
-                <button class="gps-howto-close" @onclick="DismissHowTo" aria-label="Close how to play" title="Close">×</button>
-            </div>
-            <div class="gps-howto-popover-body">@HowToPlay</div>
-            <div class="gps-howto-popover-actions">
-                <button class="gps-btn gps-btn--secondary" @onclick="DismissHowTo">Got it</button>
-            </div>
-        </aside>
-    }
-
     @if (GameOver)
     {
         <GameOverModal Title="@Title"
@@ -83,13 +77,15 @@
 
 @code {
     [Parameter] public RenderFragment? Title { get; set; }
+    // Display name credited on the end-of-game modal's leaderboard submission.
+    // Passed straight through to GameOverModal — this shell renders it nowhere
+    // itself, which is why it looks unused at a glance.
     [Parameter] public string? Player { get; set; }
     // Current ELO for single-player, rated modes. When set, it renders as a
     // small badge beside the signed-in identity in the top bar (via the
     // "game-elo" section outlet in MainLayout). Leave null for 2-player, demo
     // and other unrated modes — nothing is projected.
     [Parameter] public int? Elo { get; set; }
-    [Parameter] public RenderFragment? Status { get; set; }
     [Parameter] public List<Models.StatItem>? Stats { get; set; }
     [Parameter] public bool Fullscreen { get; set; }
     // Where the Home button on the end-of-game modal navigates. Default is the
@@ -104,29 +100,7 @@
     [Parameter] public string? GameKey { get; set; }
     [Parameter] public RenderFragment? GameSummary { get; set; }
     [Parameter] public RenderFragment ChildContent { get; set; } = null!;
-    // Optional "how to play" content. Surfaces as a compact popover toggled by the
-    // header "?" button — no full-screen modal, no auto-show, no persisted
-    // dismissal. Pass null (demo pages) to hide the trigger entirely.
-    [Parameter] public RenderFragment? HowToPlay { get; set; }
-    // Optional initial open state. False by default so first-time visitors land on
-    // the playable game without an interstitial. Hosts that want the popover open
-    // by default (e.g. kiosk layout previews) can opt in here.
-    [Parameter] public bool HowToPlayOpen { get; set; }
 
     // The top-3 fetch and the OK action live in GameOverModal — this shell just
     // decides when to show it and passes the game's data through.
-
-    private void ToggleHowTo() => HowToPlayOpen = !HowToPlayOpen;
-
-    private void DismissHowTo() => HowToPlayOpen = false;
-
-    // The popover itself stops propagation, so any click that reaches the shell
-    // container is "outside the popover" — close it. Host pages that listen on
-    // <ChildContent> elements keep their own click handlers (the outer click
-    // bubbles here only after them, but the dismissal is idempotent).
-    private void OnShellClick()
-    {
-        if (HowToPlayOpen) HowToPlayOpen = false;
-    }
-
 }

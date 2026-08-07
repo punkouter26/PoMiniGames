@@ -19,8 +19,7 @@
            Stats="@_statItems"
            GameOver="@(_phase == "result" && !_demo)"
            GameKey="@(_mode == "1p" ? "pobrawl" : null)"
-           GameSummary="@GameSummaryContent"
-           HowToPlay="@HowToPlayContent">
+           GameSummary="@GameSummaryContent">
     @if (!_introDone)
     {
         <GameIntro Title="@TitleContent"
@@ -330,6 +329,15 @@
         object difficulty = _mode == "1p" ? _ladder + 1 : "medium";
         try
         {
+            // Route-gated engine load (see wwwroot/js/engineLoader.js). The engine is
+            // no longer in index.html, so it has to be pulled in before the first
+            // interop call. Cheap and idempotent after the first await.
+            if (!await JSRuntime.InvokeAsync<bool>("loadEngine", "pobrawl"))
+            {
+                Console.Error.WriteLine("[pobrawl] engine failed to load");
+                return;
+            }
+
             await JSRuntime.InvokeVoidAsync("PoBrawl.init", "pobrawl-container", _ref,
                 new { mode = _mode, p1Character = _p1Char, p2Character = _p2Char, difficulty });
             // Honour the global ⚙️ master-mute setting on every engine boot.

@@ -44,8 +44,18 @@
     grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
     gap: var(--space-2);
 }
-@media (max-width: 640px) {
-    .lb-grid { grid-template-columns: 1fr; }
+
+/* `auto-fill` already collapses to one column below ~520px, so the old
+   `@media (max-width: 640px) { grid-template-columns: 1fr }` was doing nothing
+   the intrinsic sizing wasn't — except at 520–640px, where it forced a single
+   column that had room for two. Removed.
+
+   A lone board used to sit in a 260px column with the rest of the row empty.
+   `:has()` lets the grid react to its own content — no marker class, and no
+   render-time branch in LeaderboardsPage.razor to count the boards. */
+.lb-grid:has(> .lb-board:only-child) {
+    grid-template-columns: minmax(0, 34rem);
+    justify-content: center;
 }
 .lb-board-title {
     font-size: 1rem;
@@ -121,8 +131,17 @@
     flex-direction: column;
     padding: var(--space-3);
     border: 1px solid var(--color-border);
-    border-radius: var(--radius-md, 12px);
-    background: rgba(255, 255, 255, 0.02);
+    border-radius: var(--radius-md);
+    background: var(--tint-subtle);
+
+    /* Each board is its own layout context. A board's rows should reflow on how
+       wide THE BOARD is, not how wide the window is — the grid above puts one,
+       two or three boards per row depending on viewport, so a viewport media
+       query cannot answer "is this particular card narrow?". At 1400px with
+       three columns each board is ~430px; at 700px with two it is ~330px. The
+       old rules keyed both off the viewport and got the 700px case wrong. */
+    container-type: inline-size;
+    container-name: lb-board;
 }
 
 .lb-board-head {
@@ -162,7 +181,21 @@
 }
 
 .lb-row:nth-child(odd) {
-    background: rgba(255, 255, 255, 0.02);
+    background: var(--tint-subtle);
+}
+
+/* Narrow board: drop the fixed rank gutter and let the name take the width.
+   Keyed on the CARD, so a board squeezed into a three-up desktop row gets the
+   same treatment as one on a phone — which is the point of a container query. */
+@container lb-board (inline-size < 20rem) {
+    .lb-row {
+        grid-template-columns: 1.6rem minmax(0, 1fr) auto;
+        gap: var(--space-1);
+        padding: 0.45rem 0.35rem;
+        font-size: var(--text-xs);
+    }
+
+    .lb-board-head h2 { font-size: var(--text-base); }
 }
 
 .lb-rank {
@@ -173,9 +206,9 @@
 }
 
 .lb-row--top .lb-rank { color: var(--color-text-primary); }
-.lb-row--1 .lb-rank { color: #fcd34d; }
-.lb-row--2 .lb-rank { color: #cbd5e1; }
-.lb-row--3 .lb-rank { color: #d8a06a; }
+.lb-row--1 .lb-rank { color: var(--rank-gold); }
+.lb-row--2 .lb-rank { color: var(--rank-silver); }
+.lb-row--3 .lb-rank { color: var(--rank-bronze); }
 
 .lb-name {
     color: var(--color-text-primary);
@@ -217,7 +250,7 @@
 .lb-skel {
     height: 2.6rem;
     border-radius: var(--radius-sm, 0.375rem);
-    background: linear-gradient(90deg, rgba(255,255,255,0.04), rgba(255,255,255,0.08), rgba(255,255,255,0.04));
+    background: linear-gradient(90deg, var(--tint-soft), var(--tint-medium), var(--tint-soft));
     background-size: 200% 100%;
     animation: lb-shimmer 1.2s ease-in-out infinite;
 }

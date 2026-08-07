@@ -17,24 +17,63 @@
          their unhashed names 404s and pollutes DevTools with red noise. -->
     <link rel="modulepreload" href="_framework/blazor.webassembly.js" />
 
-    <!-- Typography (non-render-blocking): fonts load async so first paint is not
-         gated on three third-party stylesheets. system-ui renders immediately and
-         swaps to the webfont when ready (the type tokens fall back to system-ui). -->
-    <link rel="preconnect" href="https://rsms.me/" />
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <!-- Theme resolution, inline and render-blocking ON PURPOSE.
+         app.css keys the light palette off `<html data-theme="light">` rather than
+         a `prefers-color-scheme` media query, so that an explicit user choice
+         (Profile → Preferences) can beat the OS. That means SOMETHING has to stamp
+         the attribute, and it has to happen before first paint or a dark-default
+         page flashes at a light-mode user on every navigation.
+         Blazor WASM cannot do it — it boots long after first paint — so this runs
+         here, ahead of the stylesheet. Keep it inline: an external file would be a
+         second round-trip in front of the render.
+         "auto" (or an unset/corrupt value) resolves against the OS preference and
+         is re-resolved live by the matchMedia listener in appPrefs.js. -->
+    <script>
+        (function () {
+            try {
+                var mode = localStorage.getItem('pomini_theme') || 'auto';
+                if (mode !== 'light' && mode !== 'dark') {
+                    mode = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+                }
+                document.documentElement.setAttribute('data-theme', mode);
+                // Same story for motion, and for the same reason app.css keys the
+                // light palette off an attribute: resolving `prefers-reduced-motion`
+                // to a concrete value HERE is what lets the stylesheet carry one
+                // universal-selector guard instead of an attribute rule plus a
+                // duplicate @media copy of it. Either source wins — an explicit
+                // opt-in, or an OS that already asked for less motion. Turning the
+                // app toggle off therefore does not re-enable motion for someone
+                // whose system requested it. appPrefs.js keeps this live.
+                if (localStorage.getItem('pomini_reducedmotion') === '1'
+                    || matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                    document.documentElement.setAttribute('data-motion', 'reduce');
+                }
+            } catch (e) {
+                // Private mode / storage disabled — fall back to the dark default.
+                document.documentElement.setAttribute('data-theme', 'dark');
+            }
+        })();
+    </script>
 
-    <!-- Inter (display) -->
-    <link rel="preload" href="https://rsms.me/inter/inter.css" as="style"
-          onload="this.onload=null;this.rel='stylesheet'" />
-    <!-- PoBrawl: stencil/broadcast feel for the HUD, banner and inter-round splash -->
-    <link rel="preload"
-          href="https://fonts.googleapis.com/css2?family=Bungee&family=Bungee+Inline&display=swap"
-          as="style" onload="this.onload=null;this.rel='stylesheet'" />
-    <noscript>
-        <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
-        <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&family=Bungee+Inline&display=swap" />
-    </noscript>
+    <!-- Typography — self-hosted (see css/fonts.css for the full rationale).
+         This replaces preconnects + preloads to rsms.me and fonts.googleapis.com.
+         Those were two external origins on the render path, and the Google one is
+         itself a stylesheet that then fetches from fonts.gstatic.com — the actual
+         font bytes were four hops deep, could not be service-worker cached for
+         offline play, and leaked every visitor's IP to two third parties.
+
+         Now same-origin: one small stylesheet plus the woff2 files it points at.
+         The sheet is render-blocking (it is ~70 lines and same-origin, so it costs
+         nothing meaningful) while the FONT FILES are not — `font-display: swap`
+         means text paints in system-ui immediately and swaps when they land.
+
+         The Inter file is preloaded because it is used by every page's headings;
+         Bungee is not, because only PoBrawl uses it and preloading it would fetch
+         35 KB on every visit for one game. The `crossorigin` on the preload is
+         required even same-origin: fonts are always fetched in CORS mode, and
+         without it the browser fetches the file twice. -->
+    <link rel="preload" href="fonts/InterVariable.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="stylesheet" href="css/fonts.css" />
 
     <!-- Remove Bootstrap – all styles are custom (payload savings ~187KB) -->
     <!-- app.css carries the design tokens + app shell — render-blocking on purpose
@@ -73,6 +112,15 @@
     <meta property="og:image" content="og-image.svg" />
     <meta name="twitter:card" content="summary_large_image" />
     <link href="PoMiniGamesClient.styles.css" rel="stylesheet" />
+    <!-- §GFX-6 glass.css is the APPLIED glassmorphism layer (fx.css holds the
+         primitives). It must stay LAST: several of its targets are styled by
+         Blazor scoped CSS, whose `[b-xxxxxxxxxx]` selectors it matches on
+         specificity via doubled class names and then beats on source order.
+         Move this line above PoMiniGamesClient.styles.css and every per-game
+         HUD silently loses the treatment. Not preloaded-async for the same
+         reason — the swap would reinsert it at its original position anyway,
+         but a render-blocking load also avoids a flash of unglassed chrome. -->
+    <link rel="stylesheet" href="css/glass.css" />
     <script type="importmap">
     {
       "imports": {
@@ -119,11 +167,37 @@
     <script src="js/pojoker-speech-interop.js"></script>
     <script src="js/pojoker-audio-interop.js"></script>
     <script src="_framework/blazor.webassembly.js"></script>
-    <script type="module" src="js/marblerace/index.js"></script>
-    <script type="module" src="js/pobrawl/index.js"></script>
-    <script type="module" src="js/posports/index.js"></script>
-    <script src="js/racingInterop.js"></script>
-    <!-- PoSurvive: inert global helpers (define window.* objects, no side effects until invoked) -->
+
+    <!-- ── Game engines: route-gated, NOT loaded here ──────────────────────────
+         marblerace, pobrawl, posports and poracer used to be five eager <script>
+         tags at this position. Together with their three.js / cannon-es imports
+         that is ~24,600 lines of JavaScript parsed on first paint to render a
+         menu, and almost no session opens more than one game.
+
+         They are now pulled in by js/engineLoader.js when a game page actually
+         mounts. The interop contract is unchanged — each engine still registers
+         its window.PoBrawl / window.PoMarbleRace / … global, and pages still call
+         through it; the page just awaits `loadEngine('<name>')` first.
+
+         racingInterop.js is a CLASSIC script that poracerGl.js patches, so the
+         loader injects it before importing the module — the ordering dependency
+         that used to be expressed by these tags' positions is now expressed in
+         engineLoader.js's CLASSIC_DEPS. -->
+    <script type="module" src="js/engineLoader.js"></script>
+
+    <!-- PoSurvive: inert global helpers (define window.* objects, no side effects until invoked)
+
+         DELIBERATELY still eager, unlike the game engines above. These six globals
+         are reached from four independent C# services (AudioService,
+         SessionLogService, LocalModelBootstrapService, InferenceBootstrapper) as
+         well as PoSurviveLayout — there is no single bootstrap call to gate on, and
+         Blazor fires OnAfterRenderAsync child-first, so gating in the layout would
+         still let a page-level service call land before the scripts arrived. Every
+         one of those call sites is best-effort try/catch, so the failure mode is
+         silent (no audio, no session log) rather than loud.
+         Deferring these correctly means giving PoSurvive one bootstrap entry point
+         first; that is a refactor of the game, not of the loading strategy. At
+         ~1,500 lines they are ~6% of what the engine deferral above removed. -->
     <script src="js/posurvive/theme.js"></script>
     <script src="js/posurvive/uiHelpers.js"></script>
     <script src="js/posurvive/gpuProbe.js"></script>
@@ -140,7 +214,26 @@
     <script type="module" src="js/audioBus.js"></script>
     <script type="module" src="js/visualRuntime.js"></script>
     <script type="module" src="js/spatialAudio.js"></script>
+    <!-- §GFX-10 synthesis moved to an AudioWorklet; dsp.js is the main-thread
+         front end and acoustics.js owns the per-game reverb spaces. Both are
+         inert until first use — the worklet module is fetched lazily on the
+         first cue, not here, because addModule() needs a live AudioContext and
+         that only exists after a user gesture. -->
+    <script type="module" src="js/dsp.js"></script>
+    <script type="module" src="js/acoustics.js"></script>
+    <!-- §GFX-11 the sound vocabulary. Imports dsp/impact/gpuFx and is what call
+         sites should use: one fire() gets audio, screen feel and particles. -->
+    <script type="module" src="js/gameCues.js"></script>
     <script type="module" src="js/ambientMusic.js"></script>
+    <!-- §GFX-7/8 shared feel layer. Both are inert on load: impactBus.js only
+         appends its flash div, gpuFx.js does not touch WebGL until the first
+         burst. Loading them here rather than lazily means a game's first hit
+         does not pay a module fetch at the exact frame it needs to be smooth. -->
+    <script type="module" src="js/impactBus.js"></script>
+    <script type="module" src="js/gpuFx.js"></script>
+    <!-- §GFX-6 pointer-tracked tilt for [data-fx-tilt] surfaces. One delegated
+         listener; idle until something is hovered. -->
+    <script type="module" src="js/fxTilt.js"></script>
     <!-- PWA: service worker registration + connectivity signals. Registration is
          kicked off from MainLayout (not here) so the update toast has a live Blazor
          renderer to display into. -->

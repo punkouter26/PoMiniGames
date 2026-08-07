@@ -23,13 +23,33 @@
 // after the player reconnects) can genuinely re-attempt instead of replaying a
 // rejected promise forever.
 
+// Paths are relative to the DOCUMENT base (index.html's <base href>), never to
+// this module. See resolve() for why that distinction is load-bearing.
 const REGISTRY = {
-    // key            module entry                    global it registers
-    marblerace: ['./js/marblerace/index.js', 'PoMarbleRace'],
-    pobrawl: ['./js/pobrawl/index.js', 'PoBrawl'],
-    posports: ['./js/posports/index.js', 'PoSports'],
-    poracer: ['./js/poracerGl.js', 'PoRacerRender'],
+    // key            module entry                  global it registers
+    marblerace: ['js/marblerace/index.js', 'PoMarbleRace'],
+    pobrawl: ['js/pobrawl/index.js', 'PoBrawl'],
+    posports: ['js/posports/index.js', 'PoSports'],
+    poracer: ['js/poracerGl.js', 'PoRacerRender'],
 };
+
+/**
+ * Resolve an engine asset path against the document base.
+ *
+ * A bare or './'-prefixed specifier passed to `import()` resolves against the
+ * URL of the MODULE DOING THE IMPORTING — not against the document — while the
+ * same string on a <script src> resolves against the document base. This module
+ * is served from /js/, so the two conventions silently disagree by one path
+ * segment: './js/pobrawl/index.js' imported from /js/engineLoader.js requests
+ * /js/js/pobrawl/index.js and 404s, taking every engine down with it while the
+ * classic-script deps beside it loaded fine.
+ *
+ * Resolving explicitly against document.baseURI makes both tables mean the same
+ * thing, and keeps working if the app is ever served from a sub-path.
+ */
+function resolve(path) {
+    return new URL(path, document.baseURI).href;
+}
 
 // Classic (non-module) scripts an engine also needs. These assign their globals
 // as a side effect of executing, so they are injected as <script> and awaited on
@@ -40,20 +60,22 @@ const CLASSIC_DEPS = {
 
 const _pending = new Map();
 
+// The settle callback is named `ok` rather than `resolve` so it cannot shadow
+// the module-level resolve() used for the src below.
 function loadClassic(src) {
-    return new Promise((resolve, reject) => {
+    return new Promise((ok, reject) => {
         // Idempotent: a second request for the same file resolves immediately
         // rather than re-executing it and clobbering live engine state.
         const existing = document.querySelector(`script[data-engine-dep="${src}"]`);
         if (existing) {
-            if (existing.dataset.loaded === '1') resolve();
-            else existing.addEventListener('load', () => resolve(), { once: true });
+            if (existing.dataset.loaded === '1') ok();
+            else existing.addEventListener('load', () => ok(), { once: true });
             return;
         }
         const el = document.createElement('script');
-        el.src = src;
+        el.src = resolve(src);
         el.dataset.engineDep = src;
-        el.addEventListener('load', () => { el.dataset.loaded = '1'; resolve(); }, { once: true });
+        el.addEventListener('load', () => { el.dataset.loaded = '1'; ok(); }, { once: true });
         el.addEventListener('error', () => reject(new Error(`failed to load ${src}`)), { once: true });
         document.head.appendChild(el);
     });
@@ -85,7 +107,7 @@ export async function loadEngine(name) {
             for (const dep of CLASSIC_DEPS[name] ?? []) {
                 await loadClassic(dep);
             }
-            await import(modulePath);
+            await import(resolve(modulePath));
             if (!window[globalName]) {
                 throw new Error(`${modulePath} did not register window.${globalName}`);
             }

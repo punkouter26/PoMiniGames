@@ -14,8 +14,13 @@
 // which in three r165 is WebGL-only — WebGPU postprocessing is a different API
 // built on TSL nodes. Swapping their renderer would not "fall back gracefully",
 // it would throw on the first composer.addPass(). Those two stay on WebGL2 by
-// design, and `supportsEffectComposer()` below is how a caller checks that
-// rather than finding out at runtime.
+// design — they call createRenderer({ preferWebGPU: false }) directly rather
+// than asking whether the backend supports a composer.
+//
+// (A supportsEffectComposer(backend) predicate used to live here for that check.
+// Removed 2026-08-07: nothing ever called it. The two composer games pin the
+// backend at the call site instead, which is the check — a predicate that has to
+// be remembered is weaker than a parameter that cannot be forgotten.)
 //
 // Scenes with no composer — the board games, and anything added later — get
 // WebGPU when the browser has it and WebGL2 when it does not, from the same
@@ -57,15 +62,6 @@ export function probeWebGPU() {
 }
 
 /**
- * Whether a backend can host the EffectComposer post-processing chain.
- * See the header: this is a hard constraint of three r165, not a policy.
- * @param {'webgpu'|'webgl2'} backend
- */
-export function supportsEffectComposer(backend) {
-    return backend !== 'webgpu';
-}
-
-/**
  * Create the best renderer available for a scene.
  *
  * @param {object} [opts]
@@ -81,6 +77,16 @@ export async function createRenderer(opts) {
     const THREE = await import('three');
     const antialias = o.antialias !== false;
     const alpha = !!o.alpha;
+    // Render INTO the caller's canvas when it supplies one, rather than letting
+    // three.js allocate its own and leaving the caller to swap the two.
+    //
+    // That swap is not a safe operation under Blazor. Scoped CSS is applied via a
+    // generated `b-*` attribute that the framework stamps on the elements a
+    // component renders; a canvas three.js created has no such attribute, so
+    // every scoped rule silently stops matching it. Copying className across —
+    // which is what the old swap did — preserves the selector but not the scope,
+    // so the rule still cannot match. See boardGl.mount.
+    const canvas = o.canvas || undefined;
 
     if (o.preferWebGPU !== false) {
         const probe = await probeWebGPU();
@@ -88,7 +94,7 @@ export async function createRenderer(opts) {
             try {
                 const mod = await import('three/addons/renderers/webgpu/WebGPURenderer.js');
                 const WebGPURenderer = mod.default || mod.WebGPURenderer;
-                const renderer = new WebGPURenderer({ antialias, alpha });
+                const renderer = new WebGPURenderer({ antialias, alpha, canvas });
                 // init() compiles the pipeline and acquires the device. It can
                 // still reject after a successful adapter probe — a device is a
                 // separate request and can fail on memory pressure — which is
@@ -104,7 +110,7 @@ export async function createRenderer(opts) {
         }
     }
 
-    const renderer = new THREE.WebGLRenderer({ antialias, alpha });
+    const renderer = new THREE.WebGLRenderer({ antialias, alpha, canvas });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, o.maxPixelRatio || 2));
     markBackend('webgl2');
     return { renderer, backend: 'webgl2', isWebGPU: false };
@@ -137,5 +143,5 @@ export function renderFrame(renderer, scene, camera) {
 }
 
 if (typeof window !== 'undefined') {
-    window.PoRenderFactory = { probeWebGPU, createRenderer, supportsEffectComposer, renderFrame };
+    window.PoRenderFactory = { probeWebGPU, createRenderer, renderFrame };
 }

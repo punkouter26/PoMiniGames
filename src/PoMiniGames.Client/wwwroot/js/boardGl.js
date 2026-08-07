@@ -76,6 +76,7 @@ export async function mount(canvas, opts) {
             antialias: true,
             alpha: true,          // the page's own background shows through
             maxPixelRatio: 2,
+            canvas,               // render into the page's own canvas — see below
         });
     } catch {
         // No GPU at all. The DOM board carries on alone.
@@ -87,11 +88,27 @@ export async function mount(canvas, opts) {
     const rows = Math.max(1, opts.rows | 0);
     const kind = opts.kind === 'connectfive' ? 'connectfive' : 'tictactoe';
 
-    // Reuse the page's canvas rather than the one the renderer made for itself,
-    // so layout and CSS keep working and nothing has to be re-parented.
+    // The renderer is constructed against the page's canvas (see the `canvas`
+    // option above), so this is normally a no-op. It stays as a guard for a
+    // backend that ignores the option and allocates its own element.
+    //
+    // The swap is a LAST RESORT, and it copies every attribute rather than just
+    // className. Blazor applies scoped CSS through a generated `b-*` attribute
+    // stamped on the elements a component renders — a canvas three.js created
+    // has none, so `.cf-gl { position: absolute; inset: 0 }` in
+    // ConnectFivePage.razor.css stopped matching. The canvas then fell back to
+    // static positioning at the HTML default 300x150, which made it a grid ITEM
+    // inside .cf-board: it consumed the first grid slot, pushed every cell one
+    // place along, and rendered the whole board into a 300x150 corner while the
+    // DOM discs stayed hidden by .cf-board--gl. The board looked empty.
     if (renderer.domElement !== canvas) {
         const parent = canvas.parentNode;
-        renderer.domElement.className = canvas.className;
+        for (const { name, value } of canvas.attributes) {
+            // width/height are the renderer's backing-store size and are owned by
+            // setSize(); copying the old element's would fight it on first frame.
+            if (name === 'width' || name === 'height') continue;
+            renderer.domElement.setAttribute(name, value);
+        }
         renderer.domElement.setAttribute('aria-hidden', 'true');
         if (parent) parent.replaceChild(renderer.domElement, canvas);
         canvas = renderer.domElement;
@@ -109,7 +126,14 @@ export async function mount(canvas, opts) {
     const boardH = rows * CELL;
     // Framed from the diagonal distance so a wide ConnectFive board and a square
     // TicTacToe board both fill the frame with the same margin.
-    const dist = Math.max(boardW, boardH) * 2.35;
+    //
+    // 2.35 -> 1.95: at a 30 deg vertical FOV the visible height at the board plane
+    // is 2*d*tan(15deg) ~= 0.536*d, so 2.35 framed the board across only ~79% of
+    // the canvas and left a ring of bare DOM cell sockets showing around the GL
+    // slab. That margin was invisible while the canvas was mis-sized at the HTML
+    // default 300x150 (see the scope-attribute note in mount), so this framing had
+    // never actually been seen at the size it ships at.
+    const dist = Math.max(boardW, boardH) * 1.95;
     camera.position.set(0, dist * 0.82, dist * 0.58);
     camera.lookAt(0, 0, 0);
 

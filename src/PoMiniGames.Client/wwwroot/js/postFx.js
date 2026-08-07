@@ -27,7 +27,6 @@
 // A disabled pass is skipped entirely by EffectComposer, including its depth
 // prepass, so the off state really is free.
 
-import * as THREE from 'three';
 import { BokehPass } from 'three/addons/postprocessing/BokehPass.js';
 import * as Impact from './impactBus.js';
 
@@ -160,53 +159,8 @@ export function applyCameraShake(camera, nowSec, amplitude) {
     camera.translateY(y);
 }
 
-/**
- * Planar reflection floor. A mirrored-camera render into a texture — a real
- * reflection, not a screen-space approximation, so it does not lose objects at
- * the edges of the frame or smear where geometry is occluded. That matters for
- * a fighting game: SSR's failure mode is exactly "the fighter's reflection
- * disappears when they move to the edge", which is where fighters spend half
- * their time.
- *
- * Costs one extra scene render, so it is high-tier only and the resolution is
- * deliberately half — a reflection in a scuffed arena floor is blurry anyway.
- *
- * @param {THREE.Scene} scene
- * @param {number} width  plane size
- * @param {number} depth
- * @param {number} y      floor height
- * @returns {Promise<{mesh: THREE.Mesh, dispose: Function}|null>}
- */
-export async function createReflectiveFloor(scene, width, depth, y) {
-    if (!allowHeavy()) return null;
-    let Reflector;
-    try {
-        // Dynamic import: the module is only fetched on machines that will
-        // actually use it, and a CDN hiccup degrades to "no reflection"
-        // rather than to "the game does not start".
-        ({ Reflector } = await import('three/addons/objects/Reflector.js'));
-    } catch {
-        return null;
-    }
-    const geo = new THREE.PlaneGeometry(width, depth);
-    const mesh = new Reflector(geo, {
-        clipBias: 0.003,
-        textureWidth: 512,
-        textureHeight: 512,
-        color: 0x223044,
-    });
-    mesh.rotation.x = -Math.PI / 2;
-    mesh.position.y = y;
-    // Below the real floor in draw order: the reflection is an underlay that the
-    // semi-transparent floor material sits on top of, not a replacement for it.
-    mesh.renderOrder = -1;
-    scene.add(mesh);
-    return {
-        mesh,
-        dispose() {
-            scene.remove(mesh);
-            geo.dispose();
-            mesh.dispose?.();
-        },
-    };
-}
+// The planar reflection floor (createReflectiveFloor) was removed 2026-08-07 per
+// user request, along with PoBrawl's use of it — PoBrawl was its only caller, so
+// nothing here is left unreachable. The `three` import went with it: THREE was
+// referenced at runtime only by that function's PlaneGeometry, everywhere else in
+// this module it appears solely in JSDoc types.

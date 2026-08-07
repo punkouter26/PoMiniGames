@@ -3,24 +3,20 @@
 // the env map that the engine can attach at startup.
 import * as THREE from 'three';
 import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUniformsLib.js';
-import * as PostFx from '../postFx.js';
 
 export const RING_HALF = 5.2; // playable clamp radius (ring is 12x12, keep a margin)
 
-// §GFX-2 planar-reflection floor, when the tier allows one. Module-level rather
-// than hung off the arena object because it is created asynchronously, after
-// buildArena has already returned its result to the caller.
-let _reflector = null;
-
 /**
- * Release the reflection floor's render target.
- * Must be called BEFORE the generic scene.traverse() teardown in game.js: that
- * walk disposes geometries and materials, but a Reflector also owns a
- * WebGLRenderTarget that nothing in a traverse would ever find.
+ * No-op retained for API compatibility with game.js's teardown, which calls this
+ * before its generic scene.traverse() walk.
+ *
+ * It used to release the planar-reflection floor's WebGLRenderTarget — a resource
+ * a geometry/material traverse can never find, hence the dedicated hook. The
+ * reflection floor is gone (2026-08-07), so there is nothing left to release, but
+ * the export stays rather than being deleted along with its caller: the ordering
+ * requirement it documents is the kind that gets silently reintroduced.
  */
-export function disposeArenaReflector() {
-  if (_reflector) { _reflector.dispose(); _reflector = null; }
-}
+export function disposeArenaReflector() { /* no reflector to dispose */ }
 
 // Procedural ring-canvas texture: lavender-blue vinyl with scuff noise, a
 // worn (lighter) center from footwork, and a faint center-ring logo.
@@ -81,31 +77,11 @@ export function buildArena(scene) {
   floor.receiveShadow = true;
   scene.add(floor);
 
-  // §GFX-2 — planar reflection in the hall floor. A polished arena floor
-  // catching the ring lights and the fighters is the single biggest "this looks
-  // expensive" change available here, and it costs one extra half-resolution
-  // scene render.
-  //
-  // Planar, not screen-space: SSR's failure mode is that a reflection vanishes
-  // when its source leaves the frame, and fighters spend half a match near the
-  // frame edge. A mirrored camera has no such edge.
-  //
-  // Only the OUTER floor gets it. The ring canvas stays matte because a
-  // wrestling mat is vinyl — a reflective one would look wrong, not luxurious.
-  //
-  // Fire-and-forget: createReflectiveFloor resolves null below the high tier or
-  // if the Reflector module fails to load, in which case the floor simply stays
-  // opaque and nothing else changes.
-  PostFx.createReflectiveFloor(scene, 120, 120, -0.505).then((refl) => {
-    if (!refl) return;
-    _reflector = refl;
-    // The reflection sits under the floor, so the floor has to let it through.
-    // 0.82 keeps the floor's own colour dominant — a fully mirrored hall floor
-    // reads as ice, not as polished concrete.
-    floor.material.transparent = true;
-    floor.material.opacity = 0.82;
-    floor.material.needsUpdate = true;
-  });
+  // The §GFX-2 planar-reflection floor was removed per user request (2026-08-07),
+  // completing the reflection removal that had already taken out the IBL / env-map
+  // pass (see game.js). The floor is now plainly opaque: it no longer goes
+  // transparent to let a mirrored render show through from underneath, so nothing
+  // else in the arena needs to compensate.
 
   const grid = new THREE.GridHelper(80, 40, 0x232848, 0x1a1e38);
   grid.position.y = -0.49;

@@ -10,7 +10,8 @@
 <GameShell Title=@TitleContent Player="@_playerName" BackTo="/couplequiz">
     @if (!_introDone)
     {
-        <GameIntro Title="@TitleContent"
+        <GameIntro CueScope="quiz"
+                   Title="@TitleContent"
                    Objective="Play Couple Quiz online — match your partner's answers to score. Join a lobby, then the host starts."
                    Controls="@HowToPlayContent"
                    Mode="GameIntro.IntroMode.OnePlayer"

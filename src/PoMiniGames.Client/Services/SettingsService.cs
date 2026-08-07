@@ -54,10 +54,11 @@ public sealed class SettingsService : IAsyncDisposable
 
     public bool Muted { get; private set; }
 
-    // FPS badge lives in the centre of the top bar (always visible at a glance)
-    // — on by default per the 2026-07-12 nav cleanup. Users can still hide it via
-    // Profile → Preferences if they need the chrome strip narrower.
-    public bool ShowFps { get; private set; } = true;
+    // FPS badge. OFF by default: it is a developer diagnostic, and defaulting it on
+    // put a rendering counter in the centre of the top bar — the most valuable chrome
+    // on every page — for every player, most of whom have no use for it. Opt in via
+    // /settings; /diag reports the same number for one-off checks.
+    public bool ShowFps { get; private set; }
 
     /// <summary>Colour scheme. <see cref="ThemeMode.Auto"/> tracks the OS.</summary>
     public ThemeMode Theme { get; private set; } = ThemeMode.Auto;
@@ -82,9 +83,9 @@ public sealed class SettingsService : IAsyncDisposable
         try
         {
             Muted = LocalStorageService.GetItem<string>(MutedKey) == "1";
-            // Default on; persisted value still wins so users who hid the badge
-            // keep their preference across reloads.
-            ShowFps = LocalStorageService.GetItem<string>(ShowFpsKey) != "0";
+            // Default off; an explicit "1" is the only thing that shows the badge, so
+            // a user who opted in keeps it across reloads.
+            ShowFps = LocalStorageService.GetItem<string>(ShowFpsKey) == "1";
             Theme = ParseTheme(LocalStorageService.GetItem<string>(ThemeKey));
             Volume = ParseVolume(LocalStorageService.GetItem<string>(VolumeKey));
             Haptics = LocalStorageService.GetItem<string>(HapticsKey) != "0";

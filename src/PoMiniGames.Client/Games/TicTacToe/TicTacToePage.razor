@@ -27,12 +27,14 @@
     BackTo="@_backTo"
     GameOver="@_isGameOver"
     GameKey="@(PlayMode == "ai" ? "tictactoe" : null)"
+    Outcome="@OutcomeForCue"
     Stats="@(PlayMode == "ai" ? _statItems : null)"
     Elo="@(PlayMode == "ai" ? _rating.Elo : (int?)null)"
     GameSummary="@GameSummaryContent">
     @if (!_introDone)
     {
-        <GameIntro Title="@TitleContent"
+        <GameIntro CueScope="tictactoe"
+                   Title="@TitleContent"
                    Objective="@($"Line up {TicTacToeBoard.WinLength} in a row on the {TicTacToeBoard.Size}×{TicTacToeBoard.Size} grid before your opponent.")"
                    Controls="@HowToPlayContent"
                    Mode="@_introMode"
@@ -96,12 +98,15 @@
 </GameShell>
 
 @code {
-    /// <summary>Route mode segment: "1player" | "2player" | "demo" ("1" is the legacy demo form).</summary>
+    /// <summary>Route mode segment. Parsed by <see cref="GameModes.Parse"/>, which
+    /// owns every accepted spelling and legacy form — see GameMode.cs.</summary>
     [Parameter] public string? Mode { get; set; }
     [SupplyParameterFromQuery(Name = "kiosk")] public int KioskNext { get; set; } = -1;
     [SupplyParameterFromQuery(Name = "mode")] public string? ModeQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "demo")] public int DemoQuery { get; set; }
 
-    private bool IsDemo => Mode is "demo" or "1";
+    private GameMode RouteMode => GameModes.Parse(Mode, ModeQuery, DemoQuery);
+    private bool IsDemo => RouteMode == GameMode.Demo;
 
     private TicTacToeBoard _board = new();
     private TicTacToeAI _ai = new();
@@ -109,6 +114,19 @@
     // driven by the adaptive ELO (see _cpuElo), not this field.
     private readonly Difficulty _difficulty = Difficulty.Medium;
     private GameResult _gameResult = GameResult.InProgress;
+
+    // Outcome for the end-of-game cue (GameOverModal picks the sound from this).
+    // Only the vs-CPU mode reports one: in local 2-player "you" is ambiguous —
+    // one of the two people at the keyboard just won — so it stays Unknown and
+    // the modal sounds the neutral round-over instead of celebrating at someone.
+    private GameOutcome OutcomeForCue => PlayMode != "ai" ? GameOutcome.Unknown : _gameResult switch
+    {
+        GameResult.Win => GameOutcome.Win,
+        GameResult.Loss => GameOutcome.Loss,
+        GameResult.Draw => GameOutcome.Draw,
+        _ => GameOutcome.Unknown,
+    };
+
     // Adaptive 1-player rating (same system as ConnectFive/PoBrawl). The CPU is
     // matched to _cpuElo — the player's rating at the start of the game — so the
     // opponent gets stronger as the player's ELO climbs and eases off after losses.
@@ -251,9 +269,7 @@
     protected override void OnInitialized()
     {
         _playerName = PlayerNameService.GetPlayerName();
-        if (!IsDemo && (string.Equals(Mode, "2player", StringComparison.OrdinalIgnoreCase)
-                        || string.Equals(ModeQuery, "2p", StringComparison.OrdinalIgnoreCase)))
-            _playMode = "2p";
+        if (RouteMode == GameMode.TwoPlayer) _playMode = "2p";
         ResetGame();
         if (PlayMode == "demo") Kiosk.SetCurrent("tictactoe-demo");
     }

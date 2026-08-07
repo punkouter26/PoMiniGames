@@ -7,15 +7,19 @@
 @* ─────────────────────────────────────────────────────────────────────────
    Preferences: colour scheme, audio, haptics, motion, FPS badge.
 
-   Lives on the Profile page rather than the top bar. The ⚙️ gear was removed
-   from the top bar on 2026-07-13 by explicit request, and re-adding chrome
-   there to host this would undo that — so the settings live on the one page
-   the user already visits to look at their own account.
+   Hosted by Pages/SettingsPage.razor (/settings), reached from the home action
+   row. The ⚙️ gear was removed from the top bar on 2026-07-13 by explicit
+   request and stays removed — a destination page gives preferences an
+   addressable URL without putting chrome back.
+
+   The panel renders no heading of its own: it used to carry an
+   `<h2 class="prf-section-title">`, but that class is scoped to
+   ProfilePage.razor.css, so the rule's generated `[b-syldjlwxog]` attribute
+   was never stamped on this component's markup and the heading rendered
+   unstyled wherever it was mounted. The host page owns the title instead.
    ───────────────────────────────────────────────────────────────────────── *@
 
-<section class="prefs" aria-labelledby="prefs-title">
-    <h2 class="prf-section-title" id="prefs-title">Preferences</h2>
-
+<section class="prefs" aria-label="Preferences">
     <div class="prefs-grid">
 
         <!-- ── Appearance ── -->

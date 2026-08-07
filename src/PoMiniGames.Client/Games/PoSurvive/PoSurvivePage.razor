@@ -50,6 +50,7 @@
     /// <summary>Route mode segment: "1player" | "demo" (?demo=1 is the legacy form).</summary>
     [Parameter] public string? Mode { get; set; }
     [SupplyParameterFromQuery(Name = "demo")] public int DemoQuery { get; set; } = 0;
+    [SupplyParameterFromQuery(Name = "mode")] public string? ModeQuery { get; set; }
     [SupplyParameterFromQuery(Name = "kiosk")] public int KioskNext { get; set; } = -1;
     private bool _isDemo;
     // Guards the one-shot launch on first render (demo reel or real play).
@@ -73,7 +74,7 @@
     {
         base.OnInitialized();
 
-        if (DemoQuery == 1 || Mode is "demo")
+        if (GameModes.Parse(Mode, ModeQuery, DemoQuery) == GameMode.Demo)
         {
             _isDemo = true;
             // Register the demo with the KioskCoordinator so the on-screen

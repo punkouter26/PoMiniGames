@@ -1,0 +1,88 @@
+@namespace PoMiniGamesClient.Components
+@using PoMiniGamesClient.Services
+@inject KioskCoordinator Kiosk
+@inject UiFeedbackService Feedback
+@implements IDisposable
+
+@* ─────────────────────────────────────────────────────────────────────────
+   Kiosk controls — pause / skip / exit for the "Watch all demos" reel.
+
+   KioskCoordinator's own class doc has always promised these controls
+   ("Users can Pause/Resume/Skip/Exit via KioskControlBar.razor"), but the
+   component was deleted in the 2026-07-04 mobile-portrait cleanup and never
+   replaced. That left TogglePause, SkipNext, Exit, IsPaused,
+   SecondsUntilAdvance and CurrentGameName as a live, correct, completely
+   unreachable API — and left a player who started the reel with no way out of
+   a 20-second auto-rotation except the browser's back button.
+
+   This is not general chrome coming back: it renders only while the reel is
+   actually running, and disappears the moment it stops.
+   ───────────────────────────────────────────────────────────────────────── *@
+
+@if (Kiosk.IsActive)
+{
+    <div class="kiosk-bar" role="toolbar" aria-label="Demo reel controls">
+        <span class="kiosk-bar-now">
+            <span class="kiosk-bar-dot @(Kiosk.IsPaused ? "kiosk-bar-dot--paused" : null)" aria-hidden="true"></span>
+            @* CurrentGameName is null until a demo page reports itself via
+               SetCurrent, so fall back rather than rendering an empty pill. *@
+            <span class="kiosk-bar-title">@(Kiosk.CurrentGameName ?? "Demo reel")</span>
+        </span>
+
+        @* aria-live on the countdown would announce a new number every second,
+           which is unusable with a screen reader. The number is decoration; the
+           buttons carry the actual affordances. *@
+        <span class="kiosk-bar-count" aria-hidden="true">
+            @(Kiosk.IsPaused ? "paused" : $"{Kiosk.SecondsUntilAdvance}s")
+        </span>
+
+        <button type="button" class="kiosk-bar-btn"
+                aria-label="@(Kiosk.IsPaused ? "Resume the demo reel" : "Pause the demo reel")"
+                title="@(Kiosk.IsPaused ? "Resume" : "Pause")"
+                @onclick="TogglePauseAsync">@(Kiosk.IsPaused ? "▶" : "❚❚")</button>
+
+        <button type="button" class="kiosk-bar-btn"
+                aria-label="Skip to the next demo" title="Next demo"
+                @onclick="SkipAsync">⏭</button>
+
+        <button type="button" class="kiosk-bar-btn kiosk-bar-btn--exit"
+                aria-label="Stop watching demos and return home" title="Exit"
+                @onclick="ExitAsync">✕</button>
+    </div>
+}
+
+@code {
+    private Action? _onChanged;
+
+    protected override void OnInitialized()
+    {
+        // Changed fires from the coordinator's System.Threading.Timer thread, so
+        // the re-render has to be marshalled back onto the renderer's context —
+        // calling StateHasChanged directly from the tick would throw.
+        _onChanged = () => InvokeAsync(StateHasChanged);
+        Kiosk.Changed += _onChanged;
+    }
+
+    private async Task TogglePauseAsync()
+    {
+        await Feedback.ClickAsync();
+        Kiosk.TogglePause();
+    }
+
+    private async Task SkipAsync()
+    {
+        await Feedback.TapAsync();
+        Kiosk.SkipNext();
+    }
+
+    private async Task ExitAsync()
+    {
+        await Feedback.SwipeBackAsync();
+        Kiosk.Exit();
+    }
+
+    public void Dispose()
+    {
+        if (_onChanged is not null) Kiosk.Changed -= _onChanged;
+    }
+}

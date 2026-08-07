@@ -3,24 +3,36 @@ using Microsoft.JSInterop;
 namespace PoMiniGamesClient.Services;
 
 /// <summary>
-/// §5 Native Web Audio micro-feedback service. Generates triangle/sine oscillator
-/// bursts at the call site — zero audio assets to ship. Lazy <c>AudioContext</c>
-/// init on first invocation (honours mobile autoplay rules; the first tap will
-/// fall back to no-op if the gesture has not happened).
+/// The app's single feedback surface: audio, screen impact and particles, fired
+/// together as one named cue. Zero audio assets to ship — everything is
+/// synthesised. Lazy <c>AudioContext</c> init on first invocation (honours mobile
+/// autoplay rules; the first tap falls back to a no-op if the gesture has not
+/// happened yet).
 /// </summary>
 /// <remarks>
 /// <para>
-/// Pattern: Adapter. The Blazor layer speaks <see cref="Task"/>; the underlying
-/// store is the browser's Web Audio API. The adapter maps semantic feedback
-/// intents (<see cref="TapAsync"/>, <see cref="CompleteAsync"/>, <see cref="ErrorAsync"/>,
-/// <see cref="GameStartAsync"/>) to a fixed chord + envelope so every game
-/// shares the same audio vocabulary.
+/// Pattern: Adapter over the shared cue vocabulary in <c>gameCues.js</c>. Each
+/// semantic intent below (<see cref="TapAsync"/>, <see cref="CompleteAsync"/>,
+/// <see cref="ErrorAsync"/>, …) resolves to a cue name in that table, so the
+/// sound, the impact envelope and the particle burst leave together instead of
+/// being three independent calls that can drift apart.
+/// </para>
+/// <para>
+/// <b>This used to be a second, parallel audio stack.</b> The methods here each
+/// hand-rolled an oscillator burst (<c>playTone(880, 40, 0.18, "triangle")</c>),
+/// while <c>gameCues.js</c> — a per-game timbre table wired to impact and
+/// particles — was loaded on every page and called by nothing. The result was
+/// that all ten games shared the same three oscillators, and only the ten pages
+/// that happened to inject this service made any sound at all. Routing these
+/// intents through the vocabulary is what gives each game its own voice; use
+/// <see cref="CueAsync"/> to reach a game-specific cue directly.
 /// </para>
 /// <para>
 /// <b>Failure modes</b>: silent. If the AudioContext is unavailable (very old
 /// browsers, sandboxed iframes, autoplay blocked before the first gesture) the
 /// JS module throws and the await swallows it — feedback is best-effort, never
-/// a blocker.
+/// a blocker. An unknown cue name degrades to the primitive tone rather than to
+/// silence.
 /// </para>
 /// </remarks>
 public sealed class UiFeedbackService : IAsyncDisposable
@@ -46,39 +58,104 @@ public sealed class UiFeedbackService : IAsyncDisposable
     private static readonly int[] HapticError = { 40 };
     private static readonly int[] HapticStart = { 10, 30, 16 };
 
-    /// <summary>A short tap (40 ms, A5, 18 % gain + light haptic tick) for button presses.</summary>
+    /// <summary>
+    /// Fire a named cue from the shared vocabulary, with the game's own timbre.
+    /// This is the general entry point — the intents below are the handful of
+    /// cross-game shorthands. Pass the game key as <paramref name="scope"/>
+    /// ("tictactoe", "pobrawl", "quiz", …) to get that game's voice; the "ui"
+    /// scope is the shared fallback for anything not in the game's table.
+    /// </summary>
+    /// <param name="scope">Cue scope — a game key, or "ui".</param>
+    /// <param name="name">Cue name within that scope.</param>
+    /// <param name="haptic">Optional vibration to fire alongside it.</param>
+    /// <returns>True if a cue matched; false if the name is unknown to the table.</returns>
+    public async ValueTask<bool> CueAsync(string scope, string name, int[]? haptic = null)
+    {
+        if (_disposed) return false;
+        try
+        {
+            var module = await _module.Value;
+            var fired = await module.InvokeAsync<bool>("cue", scope, name);
+            if (haptic is { Length: > 0 }) await module.InvokeVoidAsync("vibrate", haptic);
+            return fired;
+        }
+        catch
+        {
+            // Best-effort — never throw from a feedback path.
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Fire the first cue in <paramref name="names"/> that this scope actually
+    /// defines. Outcome cues are not named uniformly across games — a win is
+    /// "win" in TicTacToe, "ko" in Brawl, "finish" in Marble Race, "goal" in
+    /// Sports, "fanfare" in Joker — so a shared component that wants "whatever
+    /// this game calls winning" has to ask for a list, not a name.
+    /// </summary>
+    public async ValueTask<bool> CueFirstAsync(string scope, string[] names, int[]? haptic = null)
+    {
+        foreach (var name in names)
+        {
+            if (await CueAsync(scope, name, haptic)) return true;
+        }
+        return false;
+    }
+
+    /// <summary>A short tap for button presses — the "ui/tap" cue, plus a light haptic tick.</summary>
     public async ValueTask TapAsync()
     {
-        await PlayToneAsync(880, 40, 0.18, "triangle");
-        await VibrateAsync(HapticTap);
+        if (!await CueAsync("ui", "tap", HapticTap))
+        {
+            await PlayToneAsync(880, 40, 0.18, "triangle");
+            await VibrateAsync(HapticTap);
+        }
     }
 
-    /// <summary>A bright completion cue (220 ms C-E-G chord at 12 % gain + haptic).</summary>
+    /// <summary>A bright completion cue — "ui/confirm", plus a three-beat haptic.</summary>
     public async ValueTask CompleteAsync()
     {
-        await PlayChordAsync(new[] { 523.25, 659.25, 783.99 }, 220, 0.12);
-        await VibrateAsync(HapticComplete);
+        if (!await CueAsync("ui", "confirm", HapticComplete))
+        {
+            await PlayChordAsync(new[] { 523.25, 659.25, 783.99 }, 220, 0.12);
+            await VibrateAsync(HapticComplete);
+        }
     }
 
-    /// <summary>A low error buzz (120 ms A3 square wave at 22 % gain + haptic buzz).</summary>
+    /// <summary>A low error buzz — "ui/error" (two voices 11 Hz apart), plus a haptic buzz.</summary>
     public async ValueTask ErrorAsync()
     {
-        await PlayToneAsync(220, 120, 0.22, "square");
-        await VibrateAsync(HapticError);
+        if (!await CueAsync("ui", "error", HapticError))
+        {
+            await PlayToneAsync(220, 120, 0.22, "square");
+            await VibrateAsync(HapticError);
+        }
     }
 
-    /// <summary>A confident game-start chord (280 ms G-C-E triangle at 15 % gain + haptic).</summary>
-    public async ValueTask GameStartAsync()
+    /// <summary>
+    /// A confident game-start cue. Prefers the game's own "start" cue when a scope
+    /// is given, so a round of Brawl opens in Brawl's voice rather than in the
+    /// generic one; falls back to the shared rising "ui/open".
+    /// </summary>
+    /// <param name="scope">Optional game key for a game-specific start cue.</param>
+    public async ValueTask GameStartAsync(string? scope = null)
     {
-        await PlayChordAsync(new[] { 392.00, 523.25, 659.25 }, 280, 0.15);
-        await VibrateAsync(HapticStart);
+        if (scope is not null && await CueAsync(scope, "start", HapticStart)) return;
+        if (!await CueAsync("ui", "open", HapticStart))
+        {
+            await PlayChordAsync(new[] { 392.00, 523.25, 659.25 }, 280, 0.15);
+            await VibrateAsync(HapticStart);
+        }
     }
 
-    /// <summary>A subtle UI confirmation (60 ms C6 sine, 10 % gain + faint haptic).</summary>
+    /// <summary>A subtle UI confirmation — "ui/toggle", plus a faint haptic.</summary>
     public async ValueTask ClickAsync()
     {
-        await PlayToneAsync(1046.50, 60, 0.10, "sine");
-        await VibrateAsync(HapticClick);
+        if (!await CueAsync("ui", "toggle", HapticClick))
+        {
+            await PlayToneAsync(1046.50, 60, 0.10, "sine");
+            await VibrateAsync(HapticClick);
+        }
     }
 
     /// <summary>
@@ -130,18 +207,34 @@ public sealed class UiFeedbackService : IAsyncDisposable
     /// §10 Swipe-back gesture feedback — a 90 ms downsweep from C5 → A3 with
     /// a soft attack. Matches the navigation gesture direction (low = leaving).
     /// </summary>
-    public ValueTask SwipeBackAsync() => PlaySweepAsync(523.25, 220.00, 90, 0.14, "triangle");
+    public async ValueTask SwipeBackAsync()
+    {
+        // "ui/back" is the same idea expressed in the vocabulary: a downward sweep,
+        // because players read rising as forward and falling as backward.
+        if (!await CueAsync("ui", "back"))
+        {
+            await PlaySweepAsync(523.25, 220.00, 90, 0.14, "triangle");
+        }
+    }
 
     /// <summary>
     /// §10 Personal-best celebration — three ascending arpeggio notes (C5 → E5 → G5)
     /// with a short vibration burst on supporting devices. The audio is the
     /// milestone cue; the haptic reinforces it for tactile-first users.
     /// </summary>
-    public ValueTask PersonalBestAsync() => PlayArpeggioAsync(
-        new[] { 523.25, 659.25, 783.99 },
-        new[] { 80, 80, 180 },
-        0.16,
-        vibrate: new[] { 12, 40, 18 });
+    public async ValueTask PersonalBestAsync()
+    {
+        // "ui/confirm" carries the milestone; the win-scale haptic distinguishes it
+        // from an ordinary confirmation on tactile-first devices.
+        if (!await CueAsync("ui", "confirm", new[] { 12, 40, 18 }))
+        {
+            await PlayArpeggioAsync(
+                new[] { 523.25, 659.25, 783.99 },
+                new[] { 80, 80, 180 },
+                0.16,
+                vibrate: new[] { 12, 40, 18 });
+        }
+    }
 
     /// <summary>
     /// §10 Mock-data environment cue — a single low buzz (140 ms, F3, 14 % gain)

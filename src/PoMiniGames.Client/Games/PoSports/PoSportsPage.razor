@@ -28,7 +28,8 @@
            GameSummary="@GameSummaryContent">
     @if (!_introDone)
     {
-        <GameIntro Title="@TitleContent"
+        <GameIntro CueScope="posports"
+                   Title="@TitleContent"
                    Objective="@IntroObjective"
                    Controls="@HowToPlayContent"
                    Mode="@_introMode"
@@ -77,11 +78,13 @@
 </GameShell>
 
 @code {
-    /// <summary>Route mode segment: "1player" | "2player" | "demo" ("1" is the legacy demo form).</summary>
+    /// <summary>Route mode segment. Parsed by <see cref="GameModes.Parse"/>, which
+    /// owns every accepted spelling and legacy form — see GameMode.cs.</summary>
     [Parameter] public string? Mode { get; set; }
     /// <summary>Race code from the lobby's gameStarted broadcast — presence selects online mode.</summary>
     [Parameter] public string? Code { get; set; }
     [SupplyParameterFromQuery(Name = "mode")] public string? ModeQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "demo")] public int DemoQuery { get; set; }
 
     /// <summary>Lane setup passed to PoSports.init — lower-case members to match the JS shape.</summary>
     private sealed record PlayerSetup(string character, string name, bool human, int? layout);
@@ -240,10 +243,13 @@
 
     protected override void OnInitialized()
     {
-        _demo = Mode is "demo" or "1";
+        var routeMode = GameModes.Parse(Mode, ModeQuery, DemoQuery);
+        _demo = routeMode == GameMode.Demo;
+        // A race code always wins: it means the lobby already handed this page a
+        // live match, whatever the mode segment says.
         _mode = !string.IsNullOrEmpty(Code) ? "online"
               : _demo ? "demo"
-              : (string.Equals(Mode, "2player", StringComparison.OrdinalIgnoreCase) || ModeQuery == "2p") ? "2p"
+              : routeMode == GameMode.TwoPlayer ? "2p"
               : "1p";
         _playerName = PlayerNameService.GetPlayerName();
         _stats = _gameStats.GetStats("posports", _playerName);

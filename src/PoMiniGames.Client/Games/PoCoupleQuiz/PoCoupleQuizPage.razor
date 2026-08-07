@@ -14,7 +14,8 @@
            GameSummary="@GameSummaryContent">
     @if (!_introDone)
     {
-        <GameIntro Title="@TitleContent"
+        <GameIntro CueScope="quiz"
+                   Title="@TitleContent"
                    Objective="Match your partner's answers — the King sets a secret, everyone else tries to match it."
                    Controls="@HowToPlayContent"
                    Mode="@_introMode"
@@ -73,7 +74,7 @@
                                 <li>@kv.Key — @kv.Value</li>
                             }
                         </ol>
-                        <a class="gps-btn gps-btn gps-btn--primary" href="/couplequiz/leaderboard">View leaderboard</a>
+                        <a class="gps-btn gps-btn gps-btn--primary" href="/leaderboards">View leaderboard</a>
                     </div>
                 }
             </div>
@@ -189,9 +190,10 @@
     /// <summary>Route mode segment: "1player" | "demo" (?demo=1 is the legacy form).</summary>
     [Parameter] public string? Mode { get; set; }
     [SupplyParameterFromQuery(Name = "demo")] public int DemoQuery { get; set; } = 0;
+    [SupplyParameterFromQuery(Name = "mode")] public string? ModeQuery { get; set; }
     [SupplyParameterFromQuery(Name = "kiosk")] public int KioskNext { get; set; } = -1;
 
-    private bool IsDemoMode => DemoQuery == 1 || Mode is "demo";
+    private bool IsDemoMode => GameModes.Parse(Mode, ModeQuery, DemoQuery) == GameMode.Demo;
 
     private RenderFragment TitleContent => @<span>💕 Couple Quiz</span>;
 

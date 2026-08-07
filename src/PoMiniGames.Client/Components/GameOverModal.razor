@@ -114,6 +114,14 @@
     /// </summary>
     [Parameter] public EventCallback OnOk { get; set; }
 
+    /// <summary>
+    /// How the match ended, so the modal can sound the right cue. Left
+    /// <see cref="Models.GameOutcome.Unknown"/> by games that do not report it,
+    /// which sounds a neutral round-over rather than guessing — celebrating a
+    /// loss is worse than saying nothing.
+    /// </summary>
+    [Parameter] public Models.GameOutcome Outcome { get; set; } = Models.GameOutcome.Unknown;
+
     [Inject] private NavigationManager Navigation { get; set; } = null!;
     [Inject] private Services.ApiService Api { get; set; } = null!;
     [Inject] private Services.UiFeedbackService Feedback { get; set; } = null!;
@@ -164,6 +172,55 @@
     /// leaderboard fact, and it must survive being signed out.
     /// </summary>
     private static string RankKey(string gameKey) => $"pomini_lastrank_{gameKey}";
+
+    /// <summary>
+    /// Outcome cue names, in the order to try them. Games name winning
+    /// differently — "win" in TicTacToe/ConnectFive, "ko" in Brawl, "finish" in
+    /// Marble Race, "goal" in Sports, "fanfare" in Joker — so the modal asks for
+    /// the family and takes whichever this game defines. The final entry in each
+    /// list is the shared "ui" fallback, which every scope resolves.
+    /// </summary>
+    private static readonly string[] WinCues = ["win", "ko", "finish", "goal", "fanfare", "correct", "confirm"];
+    private static readonly string[] LossCues = ["death", "bust", "crash", "wrong", "timeout", "error"];
+    private static readonly string[] DrawCues = ["draw", "whistle", "reveal", "confirm"];
+
+    /// <summary>
+    /// Sound the end of the match once, on first render.
+    /// </summary>
+    /// <remarks>
+    /// This runs in <c>OnAfterRenderAsync</c> rather than <c>OnInitializedAsync</c>
+    /// deliberately: the leaderboard fetch below awaits the network, and a cue
+    /// queued behind it would land seconds after the modal appeared — or never,
+    /// offline. The result is on screen the moment this fires.
+    /// </remarks>
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _outcomeCued) return;
+        _outcomeCued = true;
+
+        // GameKey is null in unranked modes (local 2-player, demo). "ui" is the
+        // shared scope and defines every fallback name above, so the modal still
+        // sounds — it just does not carry the game's timbre.
+        var scope = string.IsNullOrEmpty(GameKey) ? "ui" : GameKey;
+
+        var cues = Outcome switch
+        {
+            Models.GameOutcome.Win => WinCues,
+            Models.GameOutcome.Loss => LossCues,
+            Models.GameOutcome.Draw => DrawCues,
+            _ => null,
+        };
+
+        if (cues is null)
+        {
+            await Feedback.CueAsync("ui", "confirm");
+            return;
+        }
+
+        await Feedback.CueFirstAsync(scope, cues);
+    }
+
+    private bool _outcomeCued;
 
     protected override async Task OnInitializedAsync()
     {

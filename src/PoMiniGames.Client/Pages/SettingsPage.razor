@@ -1,0 +1,20 @@
+@page "/settings"
+@using PoMiniGamesClient.Components
+
+@* ─────────────────────────────────────────────────────────────────────────
+   Settings.
+
+   Preferences used to be reachable only by scrolling to the bottom of
+   /profile — a page about your match record, not your app configuration. The
+   top-bar ⚙️ gear was removed on 2026-07-13 by explicit request and that
+   removal stands; this is a destination page reached from the home action row
+   instead, so theme / audio / haptics / motion get an addressable URL without
+   putting chrome back in the top bar.
+   ───────────────────────────────────────────────────────────────────────── *@
+
+<PageTitle>Settings · PoMiniGames</PageTitle>
+
+<div class="set-page">
+    <h1 class="set-title">Settings</h1>
+    <SettingsPanel />
+</div>

@@ -120,6 +120,17 @@
     /// <summary>Raw keydowns while the intro is up (used by TwoPlayer selection).</summary>
     [Parameter] public EventCallback<KeyboardEventArgs> OnKey { get; set; }
 
+    /// <summary>
+    /// Cue scope for the start sound — the game key ("tictactoe", "pobrawl", …).
+    /// When set, the round opens in that game's own timbre; otherwise it falls
+    /// back to the shared rising "ui/open". Every game passes through this
+    /// component, so wiring the cue here is what makes the start sound universal
+    /// instead of present only in the pages that inject the feedback service.
+    /// </summary>
+    [Parameter] public string? CueScope { get; set; }
+
+    [Inject] private Services.UiFeedbackService Feedback { get; set; } = null!;
+
     private ElementReference _root;
     private bool _started;
     private Timer? _demoTimer;
@@ -153,6 +164,16 @@
         _started = true;
         _demoTimer?.Dispose();
         _demoTimer = null;
+
+        // Demo starts on a timer, not a gesture. Playing a sound there would be
+        // audio the player never asked for, and on mobile the AudioContext is
+        // still locked anyway (no gesture has happened), so it would be a no-op
+        // that only looks like it works on desktop.
+        if (Mode != IntroMode.Demo)
+        {
+            await Feedback.GameStartAsync(CueScope);
+        }
+
         if (OnStart.HasDelegate) await OnStart.InvokeAsync();
     }
 

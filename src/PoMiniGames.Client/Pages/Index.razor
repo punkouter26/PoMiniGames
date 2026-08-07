@@ -7,6 +7,24 @@
 @inject OnlineStatusService OnlineStatus
 @implements IAsyncDisposable
 
+@* ─────────────────────────────────────────────────────────────────────────
+   Home — one card per game, one chip per mode.
+
+   This replaced four mode-keyed sections (Demo / 1P / 2P / Multiplayer), each
+   of which listed the games that supported it. That shape had two costs:
+
+     • Nine of ten games appeared two-to-four times on one screen, and each
+       section carried its own duplicate 🏆 Leaderboard link to the same URL.
+     • A game was only discoverable in a mode if someone remembered to add it
+       to that section's list. PoSurvive and PoJoker were never added to any
+       interactive section, so the two of them were watch-only from here
+       despite both having working single-player routes.
+
+   Pivoting to game-major fixes both: the card is the game, the chips are
+   whatever modes it declares in GameCatalog, so a supported mode cannot go
+   un-listed. See GameCatalog.All.
+   ───────────────────────────────────────────────────────────────────────── *@
+
 <div class="home-container">
     <span class="home-mesh" aria-hidden="true"></span>
     @* §4 GPU-accelerated ambient particle field. WebGL2-only; falls back to the
@@ -24,131 +42,77 @@
         </span>
         PoMiniGames
     </h1>
-    <p class="home-subtitle">Choose how you want to play</p>
+    <p class="home-subtitle">Pick a game, then pick how you want to play</p>
 
-    <div class="home-sections" id="home-modes">
-            <section class="home-section">
-                <div class="home-mode-col">
-                    <button type="button"
-                            class="home-mode-btn home-mode-btn--demo @(Kiosk.IsActive ? "home-mode-btn--demo-on" : null)"
-                            aria-pressed="@Kiosk.IsActive"
-                            aria-label="@(Kiosk.IsActive ? "Stop demo auto-cycle" : "Watch all demos")"
-                            title="@(Kiosk.IsActive ? "Stop watching all demos" : "Watch all demos")"
-                            @onclick="ToggleWatchAll">
-                        <span class="home-mode-icon">
-                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <rect x="2" y="3" width="20" height="14" rx="2"/>
-                                <path d="M8 21h8"/>
-                                <path d="M12 17v4"/>
-                                <polygon points="10 8 15 10.5 10 13 10 8" fill="currentColor" stroke="none"/>
-                            </svg>
-                        </span>
-                        <span class="home-mode-label">@(Kiosk.IsActive ? "Stop" : "Demo")</span>
-                    </button>
-                    <p class="home-mode-caption">@(Kiosk.IsActive ? "Auto-cycling demos…" : "Sit back and watch")</p>
-                    @SectionToggle(0, GameCatalog.Demo.Count)
-                </div>
-                <div class="home-section-games">
-                    @* The big Demo card on the left toggles "watch all demos" (the
-                       auto-rotating kiosk over every demo chip). Individual chips below
-                       play one game in demo mode continuously until the user navigates
-                       home, mirroring the BottomTabBar's Demo toggle. *@
-                    @foreach (var g in GameCatalog.Demo.OrderBy(x => x.Title, StringComparer.OrdinalIgnoreCase))
-                    {
-                        @GameChip(g)
-                    }
-                </div>
-            </section>
+    @* One action row. Previously the Leaderboard link was rendered three times
+       (once per non-demo section) pointing at the same page, and My Stats sat in
+       a separate block below the grid. *@
+    <div class="home-actions">
+        <button type="button"
+                class="home-action home-action--demo @(Kiosk.IsActive ? "home-action--on" : null)"
+                aria-pressed="@Kiosk.IsActive"
+                title="@(Kiosk.IsActive ? "Stop watching all demos" : "Auto-play every demo in turn")"
+                @onclick="ToggleWatchAll">
+            <span class="home-action-icon" aria-hidden="true">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="2" y="3" width="20" height="14" rx="2"/>
+                    <path d="M8 21h8"/><path d="M12 17v4"/>
+                    <polygon points="10 8 15 10.5 10 13 10 8" fill="currentColor" stroke="none"/>
+                </svg>
+            </span>
+            @(Kiosk.IsActive ? "Stop demos" : "Watch all demos")
+        </button>
 
-            <section class="home-section">
-                <div class="home-mode-col">
-                    <div class="home-mode-btn home-mode-btn--1p home-mode-btn--static">
-                        <span class="home-mode-icon">
-                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-                                <circle cx="12" cy="7" r="4"/>
-                            </svg>
-                        </span>
-                        <span class="home-mode-label">1 Player</span>
-                    </div>
-                    <a class="home-lb-btn" href="/leaderboards">
-                        <span class="home-lb-icon" aria-hidden="true">🏆</span>Leaderboard
+        <a class="home-action" href="/leaderboards">
+            <span class="home-action-icon" aria-hidden="true">🏆</span>Leaderboards
+        </a>
+
+        <button type="button" class="home-action" @onclick="GoToStats">
+            <span class="home-action-icon" aria-hidden="true">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                    <circle cx="12" cy="7" r="4"/><path d="M17 11l2 2 4-4"/>
+                </svg>
+            </span>My Stats
+        </button>
+
+        <a class="home-action" href="/settings">
+            <span class="home-action-icon" aria-hidden="true">⚙️</span>Settings
+        </a>
+    </div>
+
+    <div class="home-grid">
+        @foreach (var game in GameCatalog.AllSorted)
+        {
+            <article class="home-card" aria-labelledby="@($"home-card-{game.Key.Value}")">
+                @* The whole card heading is the primary action — the richest
+                   interactive mode (see CatalogGame.Primary), never Demo. The
+                   chips below still address each mode individually. *@
+                @if (IsPlayable(game.Primary))
+                {
+                    <a class="home-card-head" href="@game.Primary.Url" data-fx-tilt="9">
+                        <span class="home-card-icon" aria-hidden="true">@game.Icon</span>
+                        <span class="home-card-title" id="@($"home-card-{game.Key.Value}")">@game.Title</span>
                     </a>
-                    @SectionToggle(1, GameCatalog.SinglePlayer.Count)
-                </div>
-                <div class="home-section-games">
-                    @foreach (var g in GameCatalog.SinglePlayer.OrderBy(x => x.Title, StringComparer.OrdinalIgnoreCase))
+                }
+                else
+                {
+                    <span class="home-card-head home-card-head--offline" aria-disabled="true"
+                          title="Needs a connection — unavailable offline">
+                        <span class="home-card-icon" aria-hidden="true">@game.Icon</span>
+                        <span class="home-card-title" id="@($"home-card-{game.Key.Value}")">@game.Title</span>
+                    </span>
+                }
+
+                <div class="home-card-modes">
+                    @foreach (var m in game.Modes)
                     {
-                        @GameChip(g)
+                        @ModeChip(game, m)
                     }
                 </div>
-            </section>
-
-            <section class="home-section">
-                <div class="home-mode-col">
-                    <div class="home-mode-btn home-mode-btn--2p home-mode-btn--static">
-                        <span class="home-mode-icon">
-                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-                                <circle cx="9" cy="7" r="4"/>
-                                <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
-                                <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-                            </svg>
-                        </span>
-                        <span class="home-mode-label">2 Player (local)</span>
-                    </div>
-                    <a class="home-lb-btn" href="/leaderboards">
-                        <span class="home-lb-icon" aria-hidden="true">🏆</span>Leaderboard
-                    </a>
-                    @SectionToggle(2, GameCatalog.LocalTwoPlayer.Count)
-                </div>
-                <div class="home-section-games">
-                    @foreach (var g in GameCatalog.LocalTwoPlayer.OrderBy(x => x.Title, StringComparer.OrdinalIgnoreCase))
-                    {
-                        @GameChip(g)
-                    }
-                </div>
-            </section>
-
-            <section class="home-section">
-                <div class="home-mode-col">
-                    <div class="home-mode-btn home-mode-btn--multi home-mode-btn--static">
-                        <span class="home-mode-icon">
-                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <circle cx="12" cy="12" r="10"/>
-                                <path d="M2 12h20"/>
-                                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
-                            </svg>
-                        </span>
-                        <span class="home-mode-label">Multi player (online)</span>
-                    </div>
-                    <a class="home-lb-btn" href="/leaderboards">
-                        <span class="home-lb-icon" aria-hidden="true">🏆</span>Leaderboard
-                    </a>
-                    @SectionToggle(3, GameCatalog.Multiplayer.Count)
-                </div>
-                <div class="home-section-games">
-                    @foreach (var g in GameCatalog.Multiplayer.OrderBy(x => x.Title, StringComparer.OrdinalIgnoreCase))
-                    {
-                        @GameChip(g)
-                    }
-                </div>
-            </section>
-
-        </div>
-
-        <div class="home-stats-cta">
-            <button type="button" class="home-mode-btn home-mode-btn--profile" aria-label="View my stats" @onclick="GoToStats">
-                <span class="home-mode-icon">
-                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-                        <circle cx="12" cy="7" r="4"/>
-                        <path d="M17 11l2 2 4-4"/>
-                    </svg>
-                </span>
-                <span class="home-mode-label">My Stats</span>
-            </button>
-        </div>
+            </article>
+        }
+    </div>
 
     @* §9 home page activity feed: surfaces the player's most recent matches
        so the page never feels empty even on a fresh install. Pulled from the
@@ -180,48 +144,32 @@
     // §9: activity feed (recent matches).
     private IReadOnlyList<ActivityFeedService.FeedItem> _activity = Array.Empty<ActivityFeedService.FeedItem>();
 
-    // Collapsible home sections — only takes visual effect on phones (see .home-section-toggle
-    // CSS, mobile-only). The collapsed state is published ONCE, as aria-expanded on the
-    // toggle button; Index.razor.css reads it back with :has() instead of a second
-    // "home-section--collapsed" class that said the same thing. Desktop always shows every game, so
-    // starting the sections "closed" trims the long mobile scroll without touching
-    // the desktop layout. Order: Demo, 1 Player, 2 Player, Multiplayer.
-    // §6 the 1-Player section (index 1) starts expanded — it's the primary flow,
-    // so a portrait player lands on a visible game list instead of four collapsed
-    // accordions requiring a tap to reveal anything.
-    // One chip renderer for all four sections. Offline, a hub-backed or API-backed
-    // entry renders as a non-link: with the service worker installed the shell loads
-    // fine without a network, so leaving these navigable would drop the player into a
-    // lobby that can never connect. Local games stay fully playable.
-    private RenderFragment GameChip(CatalogGame g) =>
-        g.RequiresNetwork && !OnlineStatus.IsOnline
-            ? @<span class="home-game-chip home-game-chip--offline"
-                     aria-disabled="true"
-                     title="Needs a connection — unavailable offline">
-                   <span class="home-game-chip-icon">@g.Icon</span>@g.Title
-               </span>
-            @* data-fx-tilt: fxTilt.js gives the chip a pointer-tracked 3D tilt.
-               Only the navigable variant gets it — tilting a disabled chip
-               would advertise an affordance that is not there. The perspective
-               lives on .home-section-games in glass.css. *@
-            : @<a class="home-game-chip" href="@g.Url" data-fx-tilt="9">
-                   <span class="home-game-chip-icon">@g.Icon</span>@g.Title
-               </a>;
+    // Offline, a hub-backed or API-backed mode is not playable: with the service
+    // worker installed the shell loads fine without a network, so leaving these
+    // navigable would drop the player into a lobby that can never connect. Modes
+    // that run locally stay fully playable.
+    private bool IsPlayable(CatalogMode mode) => !mode.RequiresNetwork || OnlineStatus.IsOnline;
 
-    private readonly bool[] _sectionOpen = { false, true, false, false };
-    private void ToggleSection(int i) => _sectionOpen[i] = !_sectionOpen[i];
-    private RenderFragment SectionToggle(int i, int count) => @<button type="button"
-        class="home-section-toggle" aria-expanded="@_sectionOpen[i]"
-        @onclick="() => ToggleSection(i)">
-        <span class="home-section-toggle-chev">@(_sectionOpen[i] ? "▾" : "▸")</span>@count games
-    </button>;
+    // data-fx-tilt: fxTilt.js gives the chip a pointer-tracked 3D tilt. Only the
+    // navigable variant gets it — tilting a disabled chip would advertise an
+    // affordance that is not there.
+    private RenderFragment ModeChip(CatalogGame game, CatalogMode m) =>
+        IsPlayable(m)
+            ? @<a class="home-mode-chip home-mode-chip--@(m.Mode.ToString().ToLowerInvariant())"
+                  href="@m.Url"
+                  title="@($"{game.Title} — {GameModes.ToDescription(m.Mode)}")"
+                  aria-label="@($"{game.Title}, {GameModes.ToDescription(m.Mode)}")">@GameModes.ToLabel(m.Mode)</a>
+            : @<span class="home-mode-chip home-mode-chip--offline"
+                     aria-disabled="true"
+                     aria-label="@($"{game.Title}, {GameModes.ToDescription(m.Mode)} — unavailable offline")"
+                     title="Needs a connection — unavailable offline">@GameModes.ToLabel(m.Mode)</span>;
 
     protected override void OnInitialized()
     {
         // Subscribe to kiosk state so the Demo button (Start ↔ Stop) updates
         // reactively when the coordinator starts/stops/pauses/advances.
         Kiosk.Changed += OnKioskStateChanged;
-        // Connectivity drives which chips are navigable (see GameChip), so the grid
+        // Connectivity drives which chips are navigable (see IsPlayable), so the grid
         // has to re-render the moment the browser goes offline or comes back.
         OnlineStatus.StateChanged += OnOnlineStateChanged;
     }
@@ -294,8 +242,7 @@
         NavigationManager.NavigateTo("/profile");
     }
 
-    // "Play all": start (or stop) the auto-rotating kiosk over every demo game.
-    // Mirrors BottomTabBar's toggle so both entry points share one coordinator.
+    // "Watch all demos": start (or stop) the auto-rotating kiosk over every demo game.
     private async Task ToggleWatchAll()
     {
         await Feedback.TapAsync();

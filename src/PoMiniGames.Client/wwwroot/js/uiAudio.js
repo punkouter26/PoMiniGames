@@ -9,6 +9,37 @@
 // than ctx.destination so they can be ducked and metered with everything else.
 
 import * as AudioBus from './audioBus.js';
+import * as Cue from './gameCues.js';
+
+/**
+ * Fire a named cue from the shared vocabulary (gameCues.js).
+ *
+ * This is the bridge the Blazor UiFeedbackService now calls. Before it existed
+ * the app had two parallel audio stacks: gameCues.js — a full per-game timbre
+ * table wired to impact and particles — and the hand-rolled oscillator bursts
+ * below, which is what C# actually reached. The cue table was loaded on every
+ * page and fired by nothing, so every game shared the same three oscillators
+ * while the vocabulary written to give them identities sat unused.
+ *
+ * The playTone/playChord/playSweep/playArpeggio primitives are kept: they are
+ * what dsp.js-free call sites (and playChipDrop below) still use, and a cue
+ * that does not exist should degrade to a primitive rather than to silence.
+ *
+ * @param {string} scope game key ('tictactoe', 'quiz', 'ui', …)
+ * @param {string} name  cue name within that scope
+ * @param {object} [opts] see gameCues.fire — { el, x, y, pan, pitch, gain, scale }
+ * @returns {boolean} true if a cue was fired, false if the name is unknown
+ */
+export function cue(scope, name, opts) {
+    try {
+        if (!Cue.has(scope, name)) return false;
+        Cue.fire(scope, name, opts);
+        return true;
+    } catch {
+        // Feedback is best-effort — never throw into a game loop.
+        return false;
+    }
+}
 
 async function getCtx() {
     return AudioBus.context();

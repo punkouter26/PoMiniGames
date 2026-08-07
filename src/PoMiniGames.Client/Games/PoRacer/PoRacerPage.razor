@@ -54,7 +54,8 @@
            GameSummary="@RaceSummaryContent">
 @if (!_introDone)
 {
-    <GameIntro Title="@TitleContent"
+    <GameIntro CueScope="poracer"
+                   Title="@TitleContent"
                Objective="Beat the pack to the finish line — 3 laps, first across wins."
                Controls="@HowToPlayContent"
                Mode="@_introMode"

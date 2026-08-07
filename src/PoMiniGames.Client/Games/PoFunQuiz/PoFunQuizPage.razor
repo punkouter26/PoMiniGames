@@ -20,7 +20,8 @@
            GameSummary="@GameSummaryContent">
     @if (!_introDone)
     {
-        <GameIntro Title="@TitleContent"
+        <GameIntro CueScope="quiz"
+                   Title="@TitleContent"
                    Objective="Answer the multiple-choice questions — chain correct answers for a streak bonus."
                    Controls="@HowToPlayContent"
                    Mode="@_introMode"
@@ -149,9 +150,11 @@
 </GameShell>
 
 @code {
-    /// <summary>Route mode segment: "1player" | "2player" | "demo" ("1" is the legacy demo form).</summary>
+    /// <summary>Route mode segment. Parsed by <see cref="GameModes.Parse"/>, which
+    /// owns every accepted spelling and legacy form — see GameMode.cs.</summary>
     [Parameter] public string? Mode { get; set; }
     [SupplyParameterFromQuery(Name = "mode")] public string? ModeQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "demo")] public int DemoQuery { get; set; }
     // §Best-practice (2026-07-07): split-screen local 2P. Two players share
     // one keyboard + one display. Left side keys 1/2/3/4, right side keys
     // 6/7/8/9 (the 5 is unused — it's where a USB keyboard's gap sits, so
@@ -321,19 +324,24 @@
 
     protected override void OnInitialized()
     {
-        _playMode = string.Equals(ModeQuery, "2ps", StringComparison.OrdinalIgnoreCase) ? "2ps"
-                  : string.Equals(ModeQuery, "2p",  StringComparison.OrdinalIgnoreCase) ? "2p"
-                  : string.Equals(Mode, "2player", StringComparison.OrdinalIgnoreCase) ? "2ps"
-                  : "solo";
+        // Demo runs forever (GameOver stays suppressed), so it is resolved first and
+        // overrides whatever ?mode= the user supplied. Split-screen is a sub-variant
+        // of two-player, not a mode of its own — see GameModes.IsSplitScreen.
+        // The canonical /funquiz/2player route means SPLIT-screen; only the legacy
+        // ?mode=2p form selects the shared-screen, alternating-turns variant. That
+        // asymmetry predates the uniform mode scheme and is preserved deliberately —
+        // flipping it would silently change what an existing bookmark opens.
+        var routeMode = GameModes.Parse(Mode, ModeQuery, DemoQuery);
+        var sharedScreen = string.Equals(ModeQuery, "2p", StringComparison.OrdinalIgnoreCase)
+                           && !GameModes.IsSplitScreen(Mode, ModeQuery);
+        _playMode = routeMode switch
+        {
+            GameMode.Demo => "demo",
+            GameMode.TwoPlayer => sharedScreen ? "2p" : "2ps",
+            _ => "solo",
+        };
         _splitScreen = _playMode == "2ps";
         _playerName = PlayerNameService.GetPlayerName();
-        // Demo mode runs forever — disable GameOver so the modal never surfaces.
-        // The route param overrides whatever ?mode= the user supplied.
-        if (Mode is "demo" or "1")
-        {
-            _playMode = "demo";
-            _splitScreen = false;
-        }
     }
 
     // Load the questions and start playing on navigation — there is no longer a

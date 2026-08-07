@@ -59,10 +59,13 @@ public class MobileGoldenPathTests
         });
         (await page.Locator(".home-title").InnerTextAsync()).Should().Contain("PoMiniGames");
 
-        // …and the single-player catalog renders at least one playable game chip.
-        var chips = page.Locator(".home-game-chip");
-        (await chips.CountAsync()).Should().BeGreaterThan(0,
-            because: "the home page must surface playable games on a phone");
+        // …and the catalog renders game cards with playable mode chips. The grid is
+        // game-major now (a card per game, a chip per mode), so both layers are
+        // asserted: a card with no chips would look like a catalog and play nothing.
+        (await page.Locator(".home-card").CountAsync()).Should().BeGreaterThan(0,
+            because: "the home page must surface the game catalog on a phone");
+        (await page.Locator("a.home-mode-chip").CountAsync()).Should().BeGreaterThan(0,
+            because: "every card must offer at least one navigable mode");
 
         // In a normal (non-mock) environment the mock banner must NOT be present.
         (await page.Locator(".gl-mock-banner").CountAsync()).Should().Be(0,
@@ -77,13 +80,11 @@ public class MobileGoldenPathTests
             BrowserLaunch.Options());
         var page = await OpenHomeAsync(browser);
 
-        // §9 mobile section collapse: the home page has four sections (Demo / 1P / 2P / Multi),
-        // and on a portrait viewport the Demo / 2P / Multi sections are collapsed by
-        // default (.home-section--collapsed .home-section-games { display: none }). The
-        // DOM-order first chip can therefore be hidden — Playwright would never see it
-        // as visible. Filter to visible-only so we always pick a chip the player can
-        // actually see (the 1-Player section starts open per Index.razor's defaults).
-        var firstChip = page.Locator(".home-game-chip:visible").First;
+        // The grid is game-major and nothing collapses, so every chip is on screen —
+        // but :visible is kept deliberately. It costs nothing and it is what stops
+        // this test from passing on a chip the player could not have tapped, which
+        // is exactly the regression the old collapsed-section layout could produce.
+        var firstChip = page.Locator("a.home-mode-chip:visible").First;
         await firstChip.WaitForAsync(new LocatorWaitForOptions
         {
             State = WaitForSelectorState.Visible,

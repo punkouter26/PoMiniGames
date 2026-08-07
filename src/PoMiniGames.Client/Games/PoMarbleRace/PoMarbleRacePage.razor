@@ -21,7 +21,8 @@
            GameSummary="@GameSummaryContent">
     @if (!_introDone)
     {
-        <GameIntro Title="@TitleContent"
+        <GameIntro CueScope="marblerace"
+                   Title="@TitleContent"
                    Objective="You control the one RED marble in a pack of 101. Finish in the top 10 to score."
                    Controls="@HowToPlayContent"
                    Mode="@_introMode"
@@ -165,10 +166,12 @@
 </GameShell>
 
 @code {
-    /// <summary>Route mode segment: "1player" | "demo" (?demo=1 is the legacy form).</summary>
+    /// <summary>Route mode segment. Parsed by <see cref="GameModes.Parse"/>, which
+    /// owns every accepted spelling and legacy form — see GameMode.cs.</summary>
     [Parameter] public string? Mode { get; set; }
     [SupplyParameterFromQuery(Name = "demo")]
     public int Demo { get; set; }
+    [SupplyParameterFromQuery(Name = "mode")] public string? ModeQuery { get; set; }
 
     private const int MarbleCount = 101;   // mirrors MARBLE_COUNT in marbles.js (1 red + 100 blue)
     private const int PlayerIndex = 0;     // the red marble the player controls
@@ -265,7 +268,7 @@
 
     protected override void OnInitialized()
     {
-        _demo = Demo == 1 || Mode is "demo";
+        _demo = GameModes.Parse(Mode, ModeQuery, Demo) == GameMode.Demo;
         _playerName = PlayerNameService.GetPlayerName();
         _stats = _gameStats.GetStats("pomarblerace", _playerName);
         UpdateStats();

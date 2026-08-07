@@ -132,9 +132,12 @@
         </div>
     }
 
-    <!-- Floating kiosk control bar removed per 2026-07-04 mobile-portrait cleanup.
-         The KioskCoordinator still drives demo auto-rotation when started from the
-         home page; only the floating control surface is gone. -->
+    @* Kiosk reel controls. Restored after the 2026-07-04 cleanup removed the bar
+       but left the coordinator's Pause/Skip/Exit API — and left a player who
+       started the reel unable to stop it from inside a demo. Renders nothing
+       unless the reel is actually running, so the portrait-chrome concern that
+       motivated the original removal does not apply. *@
+    <KioskControlBar />
 
     <!-- §9 Bottom-tab-bar REMOVED per user request (2026-07-05): the 3-icon
          Home/Scores/Me strip on mobile portrait was removed. The top bar's

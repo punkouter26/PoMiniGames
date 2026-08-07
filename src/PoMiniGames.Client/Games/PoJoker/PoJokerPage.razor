@@ -20,7 +20,8 @@
            GameSummary="@GameSummaryContent">
     @if (!_introDone)
     {
-        <GameIntro Title="@TitleContent"
+        <GameIntro CueScope="pojoker"
+                   Title="@TitleContent"
                    Objective="The digital Jester performs a 10-joke set — see how many land."
                    Controls="@HowToPlayContent"
                    Mode="GameIntro.IntroMode.Demo"

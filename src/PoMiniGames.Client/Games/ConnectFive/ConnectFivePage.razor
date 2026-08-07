@@ -22,12 +22,14 @@
     GameOver="@_isGameOver"
     Elo="@(PlayMode == "ai" ? _rating.Elo : (int?)null)"
     GameKey="@(PlayMode == "ai" ? "connectfive" : null)"
+    Outcome="@OutcomeForCue"
     Stats="@(PlayMode == "ai" ? _statItems : null)"
     GameSummary="@GameSummaryContent">
 
     @if (!_introDone)
     {
-        <GameIntro Title="@TitleContent"
+        <GameIntro CueScope="connectfive"
+                   Title="@TitleContent"
                    Objective="Connect five of your discs in a row — horizontal, vertical or diagonal — before your opponent."
                    Controls="@HowToPlayContent"
                    Mode="@_introMode"
@@ -103,12 +105,15 @@
 </GameShell>
 
 @code {
-    /// <summary>Route mode segment: "1player" | "2player" | "demo" ("1" is the legacy demo form).</summary>
+    /// <summary>Route mode segment. Parsed by <see cref="GameModes.Parse"/>, which
+    /// owns every accepted spelling and legacy form — see GameMode.cs.</summary>
     [Parameter] public string? Mode { get; set; }
     [SupplyParameterFromQuery(Name = "kiosk")] public int KioskNext { get; set; } = -1;
     [SupplyParameterFromQuery(Name = "mode")] public string? ModeQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "demo")] public int DemoQuery { get; set; }
 
-    private bool IsDemo => Mode is "demo" or "1";
+    private GameMode RouteMode => GameModes.Parse(Mode, ModeQuery, DemoQuery);
+    private bool IsDemo => RouteMode == GameMode.Demo;
 
     private ConnectFiveBoard _board = new();
     private ConnectFiveAI _ai = new();
@@ -121,6 +126,19 @@
     private int _demoPly;
     private const int DemoOpeningRandomPlies = 2;
     private GameResult _gameResult = GameResult.InProgress;
+
+    // Outcome for the end-of-game cue (GameOverModal picks the sound from this).
+    // Only the vs-CPU mode reports one: in local 2-player "you" is ambiguous —
+    // one of the two people at the keyboard just won — so it stays Unknown and
+    // the modal sounds the neutral round-over instead of celebrating at someone.
+    private GameOutcome OutcomeForCue => PlayMode != "ai" ? GameOutcome.Unknown : _gameResult switch
+    {
+        GameResult.Win => GameOutcome.Win,
+        GameResult.Loss => GameOutcome.Loss,
+        GameResult.Draw => GameOutcome.Draw,
+        _ => GameOutcome.Unknown,
+    };
+
     private bool _isAiTurn;
     // "ai" (vs CPU) or "2p" (local pass-and-play); "demo" is driven by the route param.
     private string _playMode = "ai";
@@ -269,9 +287,7 @@
     protected override void OnInitialized()
     {
         _playerName = PlayerNameService.GetPlayerName();
-        if (!IsDemo && (string.Equals(Mode, "2player", StringComparison.OrdinalIgnoreCase)
-                        || string.Equals(ModeQuery, "2p", StringComparison.OrdinalIgnoreCase)))
-            _playMode = "2p";
+        if (RouteMode == GameMode.TwoPlayer) _playMode = "2p";
         ResetGame();
         if (IsDemo) Kiosk.SetCurrent("connectfive-demo");
     }

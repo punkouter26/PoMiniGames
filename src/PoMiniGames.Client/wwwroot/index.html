@@ -133,8 +133,6 @@
 
     <!-- View Transitions + App enhancements (Suggestion #5) -->
     <script src="scripts/app.js" defer></script>
-    <!-- Native Web Audio micro-feedback on tap targets (Suggestion #9) -->
-    <script src="js/uiFeedback.js" defer></script>
     <!-- AppErrorBoundary fallback clipboard helper (non-secure-context safe) -->
     <script src="js/appErrorBoundary.js" defer></script>
     <!-- PoFunQuiz split-screen local 2P hotkey bridge. Loaded eagerly because
@@ -213,7 +211,6 @@
          analyser bands (--audio-*) and the adaptive-quality tier (data-gfx). -->
     <script type="module" src="js/audioBus.js"></script>
     <script type="module" src="js/visualRuntime.js"></script>
-    <script type="module" src="js/spatialAudio.js"></script>
     <!-- §GFX-10 synthesis moved to an AudioWorklet; dsp.js is the main-thread
          front end and acoustics.js owns the per-game reverb spaces. Both are
          inert until first use — the worklet module is fetched lazily on the

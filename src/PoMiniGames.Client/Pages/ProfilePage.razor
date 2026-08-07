@@ -261,9 +261,13 @@ else
     </div>
 
     <!-- ── Preferences ── -->
-    @* Hosted here rather than in the top bar: the ⚙️ gear was removed from the
-       top bar on 2026-07-13 by explicit request, so this is the settings surface. *@
-    <SettingsPanel />
+    @* The panel itself moved to /settings. This page is about the player's match
+       record; burying app configuration at the bottom of it was the only way in,
+       which is why nobody found it. The link keeps the old path discoverable. *@
+    <div class="prf-section">
+        <h2 class="prf-section-title">Preferences</h2>
+        <a class="prf-settings-link" href="/settings">⚙️ Theme, sound, haptics and motion →</a>
+    </div>
 
 }
 </div>

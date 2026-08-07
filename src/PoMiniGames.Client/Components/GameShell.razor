@@ -70,6 +70,7 @@
                        Stats="@Stats"
                        GameKey="@GameKey"
                        Player="@Player"
+                       Outcome="@Outcome"
                        BackTo="@BackTo" />
     }
 </div>
@@ -98,6 +99,10 @@
     // When set, the end-of-game modal fetches and renders that game's top 3.
     // Leave null for modes with no meaningful board (local 2-player, demo).
     [Parameter] public string? GameKey { get; set; }
+    // How the match ended, forwarded to GameOverModal so the closing cue matches
+    // the result. Left Unknown by games that do not report it, which sounds a
+    // neutral round-over instead of guessing.
+    [Parameter] public Models.GameOutcome Outcome { get; set; } = Models.GameOutcome.Unknown;
     [Parameter] public RenderFragment? GameSummary { get; set; }
     [Parameter] public RenderFragment ChildContent { get; set; } = null!;
 

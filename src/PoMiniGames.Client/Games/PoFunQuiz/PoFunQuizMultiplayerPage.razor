@@ -11,7 +11,8 @@
 <GameShell Title=@TitleContent Player="@_playerName" BackTo="/funquiz">
     @if (!_introDone)
     {
-        <GameIntro Title="@TitleContent"
+        <GameIntro CueScope="quiz"
+                   Title="@TitleContent"
                    Objective="Play Fun Quiz head-to-head online. Create or join a game, then answer faster and smarter than your opponent."
                    Controls="@HowToPlayContent"
                    Mode="GameIntro.IntroMode.OnePlayer"
@@ -126,7 +127,7 @@
                             <li>@kv.Key — @kv.Value</li>
                         }
                     </ul>
-                    <a class="gps-btn gps-btn gps-btn--primary" href="/funquiz/leaderboard">View leaderboard</a>
+                    <a class="gps-btn gps-btn gps-btn--primary" href="/leaderboards">View leaderboard</a>
                 </div>
             }
         </div>

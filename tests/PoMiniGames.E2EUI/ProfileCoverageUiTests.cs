@@ -97,18 +97,16 @@ public class ProfileCoverageUiTests
         await page.GotoAsync($"{_fixture.ServerAddress}?autoGuest=1",
             new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
 
-        // On portrait the home sections start collapsed except 1-Player, so the first
-        // chip in DOM order is present but hidden. Expand the Multiplayer section so
-        // the assertions below cover what a player can actually see and tap.
-        var toggles = page.Locator(".home-section-toggle");
-        await toggles.First.WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
-        await toggles.Nth(3).ClickAsync();
-        await page.Locator("a.home-game-chip[href='/couplequiz/multi']").WaitForAsync(
-            new LocatorWaitForOptions { Timeout = 15_000 });
+        // The home page is one game-major grid: a card per game, a chip per mode,
+        // all of it visible at once. Nothing has to be expanded first — the four
+        // collapsible mode sections (and their .home-section-toggle buttons) were
+        // replaced when the page moved to GameCatalog.All.
+        await page.Locator("a.home-mode-chip[href='/couplequiz/multi']").WaitForAsync(
+            new LocatorWaitForOptions { Timeout = 30_000 });
 
         // Online: nothing is suppressed.
         (await page.Locator(".gl-offline-banner").CountAsync()).Should().Be(0);
-        (await page.Locator(".home-game-chip--offline").CountAsync()).Should().Be(0);
+        (await page.Locator(".home-mode-chip--offline").CountAsync()).Should().Be(0);
 
         await page.Context.SetOfflineAsync(true);
 
@@ -120,13 +118,23 @@ public class ProfileCoverageUiTests
 
         // Every hub-backed entry must stop being navigable — otherwise the player is
         // dropped into a lobby that can never connect.
-        var offlineChips = await page.Locator(".home-game-chip--offline").AllInnerTextsAsync();
-        offlineChips.Should().NotBeEmpty();
-        offlineChips.Should().Contain(c => c.Contains("Couple Quiz"));
+        //
+        // Asserted on aria-label rather than inner text: a mode chip's text is just
+        // its mode ("Online", "1P"), so the game it belongs to is only recoverable
+        // from the accessible name. That is also the name a screen-reader user gets,
+        // which makes it the right thing to be asserting on.
+        (await page.Locator(".home-mode-chip--offline").CountAsync())
+            .Should().BeGreaterThan(0, because: "hub-backed modes must be suppressed offline");
+        (await page.Locator(".home-mode-chip--offline[aria-label*='Couple Quiz']").CountAsync())
+            .Should().BeGreaterThan(0, because: "Couple Quiz is hub-backed in every mode");
+
+        // The multiplayer chip must also stop being a link, not merely look disabled.
+        (await page.Locator("a.home-mode-chip[href='/couplequiz/multi']").CountAsync())
+            .Should().Be(0, because: "an unreachable lobby must not stay navigable");
 
         // Local games stay playable — that is the point of offline support.
-        var stillPlayable = await page.Locator("a.home-game-chip").AllInnerTextsAsync();
-        stillPlayable.Should().Contain(c => c.Contains("Tic-Tac-Toe"));
+        (await page.Locator("a.home-mode-chip[href='/tictactoe/1player']").CountAsync())
+            .Should().Be(1, because: "Tic-Tac-Toe runs entirely in the browser");
 
         await page.Context.SetOfflineAsync(false);
         await page.Locator(".gl-offline-banner").WaitForAsync(new LocatorWaitForOptions

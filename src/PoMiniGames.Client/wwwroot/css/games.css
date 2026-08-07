@@ -10,15 +10,6 @@
   background: var(--color-bg);
 }
 
-/* Game header slot — projected into the app top bar (SectionOutlet in
-   MainLayout). Replaces the old standalone `.gps-info-bar` second row. */
-.gps-header-slot {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  min-width: 0;
-}
-
 /* Universal game title — every game page binds `<Title>` to a fragment that
    reads "🔴 Connect Five" / "❌ Tic Tac Toe" / etc. Renders as the first child
    of the chrome slot so the user can always identify which game they're in
@@ -38,37 +29,10 @@
   text-overflow: ellipsis;
 }
 
-.gps-header-status {
-  display: inline-flex;
-  align-items: center;
-  min-width: 0;
-}
-
-.gps-player {
-  font-size: 0.85rem;
-  color: var(--color-text-secondary);
-  padding: 0.2rem 0.6rem;
-  background: var(--color-surface-hover);
-  border-radius: 9999px;
-  white-space: nowrap;
-}
-
 /* On phones the top bar drops the breadcrumb + auth email; keep the game slot
    to status + settings only so it never gets pushed off-screen. */
-@media (max-width: 640px) {
-  .gps-header-slot .gps-player {
-    display: none;
-  }
-}
-
-/* ── Unified status badge (`.gps-status-badge.*`) ──
-   The single status system used across the top bar. ConnectFive
-   used the older `.cf-status--*` family; those rules and the
-   `.gps-settings-*` drawer were the last two legacy chrome surfaces and are
-   removed in 2026-07-06 cleanup. Every game now binds `<Status>` to a
-   fragment that uses one of the modifiers below — win, loss, draw, player,
-   ai, thinking, turn, demo. */
-.gps-status-badge {
+@media (max-width: 640px) {} loss, draw, player,
+   ai, thinking, turn{
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
@@ -84,16 +48,7 @@
 }
 @keyframes gps-status-in {
   from { opacity: 0; transform: translateY(-4px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-.gps-status-badge.win      { background: var(--accent-success-soft); color: var(--accent-success); border: 1px solid var(--accent-success-soft); }
-.gps-status-badge.loss     { background: var(--accent-danger-soft);  color: var(--accent-danger);  border: 1px solid var(--accent-danger-soft); }
-.gps-status-badge.draw     { background: rgba(148, 163, 184, 0.18);  color: #94a3b8; border: 1px solid rgba(148, 163, 184, 0.3); }
-.gps-status-badge.player   { background: var(--accent-danger-soft);  color: var(--accent-danger);  border: 1px solid var(--accent-danger-soft); }
-.gps-status-badge.ai       { background: rgba(250, 204, 21, 0.18);  color: var(--accent-amber);   border: 1px solid rgba(250, 204, 21, 0.4); }
-.gps-status-badge.thinking { background: var(--accent-soft);         color: var(--accent);        border: 1px solid var(--accent-soft); }
-.gps-status-badge.turn     { background: rgba(0, 229, 255, 0.18);   color: var(--accent-cyan);   border: 1px solid rgba(0, 229, 255, 0.4); }
-.gps-status-badge.demo     { background: rgba(192, 132, 252, 0.18); color: #c084fc; border: 1px solid rgba(192, 132, 252, 0.4); }
+  to   { opacity: 1; transform: translateY(0); }}
 
 /* Live ELO badge shown in the top bar beside the signed-in identity during
    single-player rated games. Projected by GameShell into MainLayout's
@@ -116,123 +71,9 @@
 /* On narrow phones the identity label is already hidden (see MainLayout.css);
    drop the ELO chip too so the top bar keeps Sign out on one line. */
 @media (max-width: 480px) {
-  .gps-elo-badge { display: none; }
-}
+  .gps-elo-badge { display: none; }}
 
-/* Legacy `.cf-status--*` alias block was deleted once ConnectFive
-   migrated to `.gps-status-badge.*` (see the unified block above). */
-
-.gps-settings-wrap {
-  position: relative;
-}
-
-/* Legacy `.gps-settings-*` (gear button + drawer) was removed 2026-07-06
-   along with the ShowSettings parameter on GameShell. Stats still surface
-   inline in the end-of-game modal — see `.gps-modal-stats` further down. */
-
-/* `.gps-stat*` moved to game-shell.css (2026-07-16) — it is shared game-over
-   chrome, not a per-game rule. */
-
-/* The `.gps-controls` button pill bar used to render in the second-row game
-   header before the gear was retired. It's still used by the ConnectFive /
-   TicTacToe landing cards (mode + difficulty picker) so we keep the rule but
-   release it from any drawer dependency. */
-.gps-controls {
-  display: flex;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-  align-items: center;
-}
-
-.gps-controls button {
-  padding: 0.35rem 0.75rem;
-  background: var(--color-surface-hover);
-  border: 1px solid var(--color-border);
-  color: var(--color-text-secondary);
-  border-radius: var(--radius-sm);
-  font-size: 0.8rem;
-  /* §9 Native micro-interaction: transform-only press for instant tactile
-     feedback; discrete props (no `all`) so the browser only composites. */
-  transition: border-color var(--dur-base) var(--ease-standard),
-              color var(--dur-base) var(--ease-standard),
-              transform var(--dur-fast) var(--ease-standard),
-              box-shadow var(--dur-fast) var(--ease-standard);
-}
-
-.gps-controls button:hover {
-  border-color: var(--color-accent);
-  color: var(--color-text-primary);
-}
-
-/* §9 Instant press feedback + keyboard-visible focus ring (accessible, not
-   mouse-only). :active dips the button; :focus-visible draws the accent halo. */
-.gps-controls button:active { transform: scale(0.94); }
-.gps-controls button:focus-visible,
-.gps-name-input:focus-visible {
-  outline: none;
-  border-color: var(--color-accent);
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.35);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .gps-controls button { transition: border-color var(--dur-base), color var(--dur-base); }
-  .gps-controls button:active { transform: none; }
-}
-
-.gps-controls button.active {
-  background: var(--color-accent);
-  border-color: var(--color-accent);
-  color: white;
-}
-
-.gps-controls select {
-  padding: 0.35rem 0.75rem;
-  background: var(--color-surface-hover);
-  border: 1px solid var(--color-border);
-  color: var(--color-text-primary);
-  border-radius: 6px;
-  font-size: 0.8rem;
-}
-
-/* ── Pill-button difficulty picker (used in ConnectFive / TicTacToe / Snake) ──
-   Replaces the native `<select>` for ≤ 3 options. Active option matches the
-   primary accent so the user has the same visual language as the controls bar. */
-.gps-pills {
-  display: inline-flex;
-  gap: 0.25rem;
-  padding: 0.2rem;
-  background: var(--color-surface-hover);
-  border: 1px solid var(--color-border);
-  border-radius: 9999px;
-}
-.gps-pills button {
-  padding: 0.3rem 0.85rem;
-  background: transparent;
-  border: none;
-  color: var(--color-text-secondary);
-  border-radius: 9999px;
-  font-size: 0.8rem;
-  font-weight: 600;
-  transition: color 0.15s, background 0.15s;
-  cursor: pointer;
-}
-.gps-pills button:hover {
-  color: var(--color-text-primary);
-}
-.gps-pills button.active {
-  background: var(--color-accent);
-  color: white;
-}
-
-.gps-name-input {
-  padding: 0.35rem 0.75rem;
-  background: var(--color-surface-hover);
-  border: 1px solid var(--color-border);
-  color: var(--color-text-primary);
-  border-radius: 6px;
-  font-size: 0.8rem;
-  min-width: 120px;
-}
+/* §9 Instant press feedback + keyboard-visible focus ring (accessible{ transform: scale(0.94); }
 
 .gps-game-area {
   flex: 1;
@@ -263,16 +104,6 @@
    opting every inner element in. */
 .gps-game-area > * {
   pointer-events: auto;
-}
-
-.gps-play-again-bar {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 1rem 1rem 1.25rem;
-  background: var(--color-surface);
-  border-top: 1px solid var(--color-border);
 }
 
 /* `.gps-game-summary` moved to game-shell.css (2026-07-16). */
@@ -307,11 +138,7 @@
 
 /* The whole end-of-game modal (`.gps-modal*`, `.gps-play-again-*`, and its
    keyframes) moved to game-shell.css (2026-07-16). It is shared chrome owned
-   by Components/GameShell.razor — every game inherits it, none override it.
-   The old rules here docked the panel to the top with no backdrop; the shared
-   version is a genuinely centered blocking dialog. */
-
-.gps-status-badge {
+   by Components/GameShell.razor — every game inherits it{
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
@@ -319,18 +146,7 @@
   border-radius: 9999px;
   font-size: 0.85rem;
   font-weight: 500;
-}
-
-/* `.gps-status-badge.*` is defined once at the top of this file (see
-   "Unified status badge" above). TicTacToe previously had its own copy
-   of these rules here; they've been removed in favour of the unified
-   palette. */
-
-
-/* ── Connect Five Styles moved to Games/ConnectFive/ConnectFivePage.razor.css ──
-   §2 style isolation: the 9x9 board's ~15 selectors now live in a scoped
-   component stylesheet so they no longer participate in every other game's
-   style-matching. Shared badges (.cf-status--*, .cf-result--*) remain global
+} .cf-result--*) remain global
    above — they're a cross-game vocabulary. */
 
 /* ── FunQuiz multiplayer: reconnecting banner ── */
@@ -532,8 +348,7 @@
 
 @keyframes fq-split-pulse {
   0%, 100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
-  50%      { box-shadow: 0 0 0 6px rgba(34, 197, 94, 0.15); }
-}
+  50%      { box-shadow: 0 0 0 6px rgba(34, 197, 94, 0.15); }}
 
 /* Narrow viewports: stack the two halves vertically so the keyboard rows
    don't fight for horizontal space. The 2P shared-screen design targets
@@ -542,8 +357,7 @@
   .fq-split__board {
     grid-template-columns: 1fr;
   }
-  .fq-split__vs { padding: 0.25rem 0; }
-}
+  .fq-split__vs { padding: 0.25rem 0; }}
 
 .fq-reconnecting__pulse {
   display: inline-block;
@@ -558,51 +372,15 @@
 @keyframes fq-pulse {
   0%   { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.6); }
   70%  { box-shadow: 0 0 0 8px rgba(251, 191, 36, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0); }
-}
-
-/* ── AppErrorBoundary banner ── */
-.app-error-boundary {
-  margin: 24px auto;
-  max-width: 560px;
-  padding: 20px 22px;
-  border-radius: 14px;
-  background: linear-gradient(180deg, rgba(248, 113, 113, 0.12), rgba(248, 113, 113, 0.04));
-  border: 1px solid rgba(248, 113, 113, 0.45);
-  color: var(--app-text, #f1f5f9);
-  font-family: var(--font-display);
-  box-shadow: 0 12px 32px rgba(248, 113, 113, 0.12);
-}
+  100% { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0); }}
 
 .app-error-boundary__icon { font-size: 28px; margin-bottom: 6px; }
-.app-error-boundary__title { margin: 0 0 8px; font-size: 18px; font-weight: 700; color: #fecaca; }
 .app-error-boundary__message { margin: 0 0 12px; font-size: 14px; line-height: 1.5; }
 .app-error-boundary__message code {
   background: rgba(15, 23, 42, 0.6); padding: 1px 6px; border-radius: 4px; font-size: 12px;
 }
-.app-error-boundary__details { margin: 8px 0 12px; font-size: 12px; }
-.app-error-boundary__details summary { cursor: pointer; color: #fca5a5; margin-bottom: 4px; }
-.app-error-boundary__details pre {
-  max-height: 160px; overflow: auto; background: rgba(15, 23, 42, 0.85);
-  padding: 10px; border-radius: 6px; color: #e2e8f0; font-size: 11px; line-height: 1.4;
-}
 .app-error-boundary__id { margin: 0 0 14px; font-size: 12px; color: rgba(241, 245, 249, 0.7); }
 .app-error-boundary__id code { background: rgba(15, 23, 42, 0.6); padding: 1px 6px; border-radius: 4px; }
-.app-error-boundary__copy {
-  margin-left: 8px; background: transparent; border: 1px solid rgba(148, 163, 184, 0.3);
-  color: #cbd5e1; font-size: 11px; padding: 2px 8px; border-radius: 4px; cursor: pointer;
-}
-.app-error-boundary__copy:hover { background: rgba(148, 163, 184, 0.1); }
-.app-error-boundary__actions { display: flex; gap: 8px; }
-.app-error-boundary__btn {
-  background: linear-gradient(135deg, #f43f5e, #e11d48); color: white; border: 0;
-  padding: 8px 14px; border-radius: var(--radius-sm); font-weight: 600; font-size: 13px;
-  text-decoration: none; cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
-}
-.app-error-boundary__btn--ghost {
-  background: transparent; color: #cbd5e1; border: 1px solid rgba(148, 163, 184, 0.4);
-}
-.app-error-boundary__btn:hover { filter: brightness(1.1); }
 
 /* Home page activity-stream styles removed from this global sheet — they were a
    stale duplicate of the scoped rules in Index.razor.css (which win on the home
@@ -661,18 +439,10 @@
 
 @keyframes profile-shimmer {
   0%   { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
-}
+  100% { background-position: -200% 0; }}
 
 /* ── Unified `.gps-*` game styles (consistency pass 2026-07-01) ──
-   Previously seven games referenced `.cq-*`, `.fq-*`, `.pf-*`,
-   `.baby-touch-*`, `.horse-*`, `.ragdoll-*`, `.racer-*`, `.race-*`,
-   `.snake-board`, `.snake-dpad` etc. that no stylesheet defined, so they
-   fell through to browser defaults. The block below maps those names onto
-   the established `.gps-controls` / `.cf-status` / `--color-*` tokens so
-   every 1-Player game now renders with the shared shell chrome. */
-
-/* Phase / in-page header (eyebrow style — small caps, single line).
+   Previously seven games referenced `.cq-*`, `.fq-*`, `.ragdoll-*`, `.racer-*`, `.race-*`, single line).
    Replaces ad-hoc `<h1>` / `<h2>` in game bodies (Fix #5). */
 .gps-phase-h {
   margin: 0;
@@ -746,16 +516,7 @@
   outline: none;
   box-shadow: 0 0 0 3px var(--accent-ring);
   border-color: var(--accent);
-}
-/* (Removed: the `.gps-hud*` universal-HUD block. Its only markup lived in
-   Components/GameHud.razor, which had no mount site anywhere in the app and has
-   been deleted. Live per-game HUDs are .pb-hud / .ps-hud / .racer-hud / .hud-panel
-   and are unaffected.) */
-
-
-/* Common game-area container — every game gets the same max-width, padding,
-   and vertical rhythm. */
-.gps-page {
+} padding{
   width: 100%;
   max-width: 720px;
   margin: 0 auto;
@@ -763,24 +524,6 @@
   flex-direction: column;
   gap: 1rem;
   padding: 0.5rem;
-}
-
-/* Generic primary / secondary button pair — replaces `.cq-btn-*`,
-   `.fq-btn-*`, `.pf-btn-*`, `.start-race-btn` etc. */
-.gps-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.4rem;
-  padding: 0.6rem 1.25rem;
-  border-radius: var(--radius-sm);
-  font-size: 0.9rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: filter 0.18s ease, border-color 0.18s ease, color 0.18s ease;
-  border: 1px solid transparent;
-  background: var(--color-surface-hover);
-  color: var(--color-text-primary);
 }
 .gps-btn:hover { filter: brightness(1.1); }
 .gps-btn:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -795,9 +538,6 @@
   color: var(--color-text-secondary);
 }
 .gps-btn--secondary:hover { border-color: var(--color-text-secondary); color: var(--color-text-primary); }
-
-/* Layout helpers used by CoupleQuiz / FunQuiz / Face. */
-.gps-stack { display: flex; flex-direction: column; gap: 0.75rem; }
 .gps-row   { display: flex; align-wrap: wrap; gap: 0.5rem; align-items: center; }
 .gps-error { color: #fca5a5; font-weight: 600; }
 
@@ -900,78 +640,17 @@
 .cq-results li:last-child,
 .cq-gameover li:last-child { border-bottom: none; }
 
-/* Leaderboard page. */
-.cq-leaderboard { display: flex; flex-direction: column; gap: 0.75rem; }
-.cq-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.9rem;
-}
-.cq-table th {
-  padding: 0.4rem 0.6rem;
-  text-align: left;
-  font-size: 0.7rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--color-text-secondary);
-  border-bottom: 1px solid var(--color-border);
-}
-.cq-table td {
-  padding: 0.45rem 0.6rem;
-  border-bottom: 1px solid var(--color-border);
-  color: var(--color-text-primary);
-}
-
 /* ── PoFunQuiz (`.fq-*` aliases) ── */
 .fq-join { display: flex; flex-direction: column; gap: 0.75rem; }
 
 /* Pre-game setup form (name + category). Replaces the old bare inline
    `<label>` fields with a proper labelled-field stack so the landing card
-   matches the rest of the shell (surface tokens, focus ring, radius). */
-.fq-setup {
+   matches the rest of the shell (surface tokens, focus ring{
   display: flex;
   flex-direction: column;
   gap: 1rem;
   width: 100%;
   text-align: left;
-}
-/* The two name inputs pair up side-by-side on a wide card and collapse to a
-   single column on narrow ones. auto-fit means solo mode's lone field spans
-   the full width without an empty cell. */
-.fq-names {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 1rem;
-}
-.fq-field { display: flex; flex-direction: column; gap: 0.4rem; }
-.fq-field label {
-  font-size: 0.7rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--color-text-secondary);
-}
-.fq-field input,
-.fq-field select {
-  width: 100%;
-  padding: 0.65rem 0.85rem;
-  background: var(--color-surface-hover);
-  border: 1px solid var(--color-border);
-  color: var(--color-text-primary);
-  border-radius: 10px;
-  font-family: var(--font-body);
-  font-size: 0.95rem;
-  transition: border-color var(--dur-fast) var(--ease-standard),
-              box-shadow var(--dur-fast) var(--ease-standard);
-}
-.fq-field select { cursor: pointer; }
-.fq-field input::placeholder { color: var(--color-text-secondary); opacity: 0.55; }
-.fq-field input:focus-visible,
-.fq-field select:focus-visible {
-  outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-ring);
 }
 
 /* Buttons consolidated into `.gps-btn*` above (NET_CLEAN_10). */
@@ -989,13 +668,11 @@
 .fq-option:hover { filter: brightness(1.1); }
 .fq-option:disabled { opacity: 0.5; cursor: not-allowed; }
 .fq-option--selected { background: var(--color-accent); color: #fff; border-color: var(--color-accent); }
-.fq-results { display: flex; flex-direction: column; gap: 0.75rem; }
 
 /* ── PoFunQuiz leaderboard page. Was completely unstyled (bare browser buttons
    + default table); these rules bring it in line with the rest of the shell:
    a card wrapper, a scrollable segmented category selector with real tap
-   targets, and a token-styled score table. ── */
-.fq-leaderboard {
+   targets{
   width: min(94vw, 560px);
   margin: 0 auto;
   display: flex;
@@ -1007,74 +684,7 @@
   border-radius: var(--radius-lg);
   box-shadow: var(--elevation-1);
   text-align: left;
-}
-/* Category selector: a horizontally scrollable pill row so all 8 categories
-   stay reachable on a phone without wrapping into a cramped 9-target grid. */
-.fq-leaderboard-tabs {
-  display: flex;
-  gap: 0.4rem;
-  overflow-x: auto;
-  padding-bottom: 0.35rem;
-  scrollbar-width: thin;
-  -webkit-overflow-scrolling: touch;
-}
-.fq-leaderboard-tab {
-  flex: 0 0 auto;
-  min-height: 40px;
-  padding: 0.5rem 0.9rem;
-  border-radius: var(--radius-pill);
-  border: 1px solid var(--color-border);
-  background: var(--color-surface-hover);
-  color: var(--color-text-secondary);
-  font-family: var(--font-body);
-  font-size: 0.85rem;
-  font-weight: 600;
-  white-space: nowrap;
-  cursor: pointer;
-  transition: border-color var(--dur-fast) var(--ease-standard),
-              color var(--dur-fast) var(--ease-standard),
-              background var(--dur-fast) var(--ease-standard);
-}
-.fq-leaderboard-tab:hover { color: var(--color-text-primary); border-color: var(--color-text-secondary); }
-.fq-leaderboard-tab--active {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
-}
-.fq-leaderboard-tab:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 3px var(--accent-ring);
-}
-.fq-leaderboard-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.85rem;
-}
-.fq-leaderboard-table thead th {
-  text-align: left;
-  padding: 0.4rem 0.5rem;
-  font-size: 0.7rem;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--color-text-secondary);
-  border-bottom: 1px solid var(--color-border);
-}
-.fq-leaderboard-table tbody td {
-  padding: 0.45rem 0.5rem;
-  border-bottom: 1px solid var(--color-border);
-  color: var(--color-text-primary);
-  font-variant-numeric: tabular-nums;
-}
-.fq-leaderboard-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.6rem;
-  margin-top: 0.25rem;
-}
-
-/* (Removed: the `.gps-howto-btn` / `.gps-howto-popover*` onboarding block. The "?"
-   trigger was deleted from the consolidated game header in the 2026-07-13 top-bar
-   cleanup, which left nothing able to set GameShell.HowToPlayOpen — the popover
+} which left nothing able to set GameShell.HowToPlayOpen — the popover
    markup was unreachable and has now been removed from GameShell along with its
    HowToPlay parameter. Controls text still reaches players through
    <GameIntro Controls="…"> and its .gps-intro-controls styling. */

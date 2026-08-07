@@ -2,7 +2,10 @@ using PoMiniGames.Application.Services;
 using PoMiniGames.Domain.Models;
 using PoMiniGames.Features.Auth;
 
-namespace PoMiniGames.Features.HighScores;
+// Namespace follows the folder (Features/PoMarbleRace). It previously said
+// Features.HighScores, which is a different slice that already exists — so this
+// file sat in one vertical slice while claiming membership of another.
+namespace PoMiniGames.Features.PoMarbleRace;
 
 /// <summary>Minimal API endpoints for PoMarbleRace high scores (higher score is better).</summary>
 public static class MarbleRaceHighScoresEndpoints

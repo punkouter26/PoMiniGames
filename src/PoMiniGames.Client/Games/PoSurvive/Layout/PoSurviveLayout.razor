@@ -738,6 +738,12 @@
             // muted player, simply gets nothing. Never let ambience break the game.
             try
             {
+                // Imported here rather than loaded from a <script> tag in index.html.
+                // ambientMusic.js is 21 KB and PoSurvive is its only consumer, so as a
+                // global script it was the single largest thing every other page in the
+                // app downloaded and parsed for nothing. Evaluating the module is what
+                // publishes window.PoAmbientMusic, which the calls below use.
+                await JS.InvokeAsync<IJSObjectReference>("import", "./js/ambientMusic.js");
                 await JS.InvokeVoidAsync("PoAmbientMusic.start", "posurvive", 0.12);
                 await JS.InvokeVoidAsync("PoVisualRuntime.enableAudioReactive", true);
             }

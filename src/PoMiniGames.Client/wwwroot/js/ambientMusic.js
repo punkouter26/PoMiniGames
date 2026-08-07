@@ -75,7 +75,7 @@ const PRESETS = {
     posurvive:  { root: 55.00, scale: 'minorPentatonic', cutoff: 520, drift: 0.045, pluck: 0.55, wave: 'sawtooth', space: 'cavern',   bpm: 76,  bassWave: 'square',   arpWave: 'triangle' },
     pojoker:    { root: 65.41, scale: 'dorian',          cutoff: 760, drift: 0.070, pluck: 0.85, wave: 'triangle', space: 'hall',     bpm: 92,  bassWave: 'triangle', arpWave: 'square' },
     poracer:    { root: 73.42, scale: 'wholeTone',       cutoff: 900, drift: 0.110, pluck: 0.25, wave: 'sawtooth', space: 'outdoor',  bpm: 128, bassWave: 'saw',      arpWave: 'square' },
-    marblerace: { root: 49.00, scale: 'lydian',          cutoff: 640, drift: 0.050, pluck: 0.65, wave: 'triangle', space: 'tunnel',   bpm: 100, bassWave: 'triangle', arpWave: 'triangle' },
+    pomarblerace: { root: 49.00, scale: 'lydian',          cutoff: 640, drift: 0.050, pluck: 0.65, wave: 'triangle', space: 'tunnel',   bpm: 100, bassWave: 'triangle', arpWave: 'triangle' },
     pobrawl:    { root: 61.74, scale: 'aeolian',         cutoff: 700, drift: 0.080, pluck: 0.30, wave: 'sawtooth', space: 'arena',    bpm: 112, bassWave: 'saw',      arpWave: 'square' },
     quiz:       { root: 58.27, scale: 'majorPentatonic', cutoff: 820, drift: 0.060, pluck: 0.70, wave: 'triangle', space: 'hall',     bpm: 96,  bassWave: 'triangle', arpWave: 'triangle' },
     board:      { root: 55.00, scale: 'lydian',          cutoff: 700, drift: 0.040, pluck: 0.60, wave: 'triangle', space: 'tabletop', bpm: 84,  bassWave: 'triangle', arpWave: 'triangle' },

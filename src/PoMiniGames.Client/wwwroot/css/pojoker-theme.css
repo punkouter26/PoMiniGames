@@ -40,48 +40,6 @@
     font-family: var(--font-body);
 }
 
-.pojoker-root .pojoker-link {
-    display: inline-block;
-    color: var(--gold-accent);
-    text-decoration: none;
-    font-weight: 600;
-    font-size: 0.9rem;
-    padding: 0.35rem 0.8rem;
-    border: 1px solid rgba(212, 175, 55, 0.4);
-    border-radius: 8px;
-    transition: background 150ms ease;
-}
-
-.pojoker-root .pojoker-link:hover {
-    background: rgba(212, 175, 55, 0.12);
-}
-
-/* ── Leaderboard page ─────────────────────────────────────────────── */
-.pojoker-root .leaderboard-header {
-    text-align: center;
-    margin-bottom: 1rem;
-}
-
-.pojoker-root .leaderboard-header h1 {
-    color: var(--gold-accent);
-    margin-bottom: 0.25rem;
-}
-
-.pojoker-root .leaderboard-header .subtitle {
-    color: var(--text-secondary);
-}
-
-.pojoker-root .leaderboard-controls {
-    display: flex;
-    justify-content: center;
-    margin-bottom: 1rem;
-}
-
-.pojoker-root .leaderboard-container {
-    max-width: 900px;
-    margin: 0 auto;
-}
-
 .pojoker-root .loading-state,
 .pojoker-root .empty-state {
     text-align: center;

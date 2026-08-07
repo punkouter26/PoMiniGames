@@ -27,6 +27,23 @@ public readonly record struct GameKey(string Value) : IComparable<GameKey>
     /// <summary>True when the underlying string is empty (the zero value).</summary>
     public bool IsEmpty => string.IsNullOrEmpty(Value);
 
+    /// <summary>
+    /// Case-insensitive equality. Game keys arrive from URLs, storage row keys and the
+    /// client, none of which guarantee casing, so an ordinal comparison would make
+    /// <c>"FunQuiz"</c> and <c>"funquiz"</c> different games.
+    /// </summary>
+    public bool Equals(GameKey other) =>
+        string.Equals(Value, other.Value, StringComparison.OrdinalIgnoreCase);
+
+    public override int GetHashCode() =>
+        StringComparer.OrdinalIgnoreCase.GetHashCode(Value ?? string.Empty);
+
+    // Implicit conversions so render sites (string interpolation, attribute binding)
+    // read naturally while definition sites stay strongly typed. These moved here
+    // from the client's duplicate copy of this type — see the remarks above.
+    public static implicit operator string(GameKey key) => key.Value;
+    public static implicit operator GameKey(string value) => new(value);
+
     /// <summary>Lexicographic comparison so callers can sort by canonical wire form.</summary>
     public int CompareTo(GameKey other) =>
         string.Compare(Value, other.Value, StringComparison.OrdinalIgnoreCase);
@@ -59,9 +76,12 @@ public readonly record struct GameKey(string Value) : IComparable<GameKey>
     {
         if (string.IsNullOrWhiteSpace(input)) return null;
         var normalized = input.Trim().ToLowerInvariant();
+        // The null arm is cast explicitly: with an implicit string -> GameKey
+        // conversion in scope, a bare `null` is ambiguous between "no key" and
+        // "a GameKey built from a null string", and the compiler rejects it.
         return WellKnownLookup.TryGetValue(normalized, out var canonical)
             ? canonical
-            : null;
+            : (GameKey?)null;
     }
 
     // ── Well-known keys (canonical wire form) ────────────────────────────
@@ -92,8 +112,45 @@ public readonly record struct GameKey(string Value) : IComparable<GameKey>
 
     private static readonly string[] WellKnownNames = All.Select(k => k.Value).ToArray();
 
+    /// <summary>
+    /// Accepted non-canonical spellings, mapped to the canonical key.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The app never settled on whether the "Po" prefix belongs in an identifier. This
+    /// catalogue says <c>funquiz</c>; the client's <c>GameKeys</c> list says
+    /// <c>pofunquiz</c>; the routes say <c>/funquiz</c> but <c>/pobrawl</c>; the API
+    /// groups say <c>/api/joker</c> but <c>/api/poracer</c>. Four games are affected.
+    /// </para>
+    /// <para>
+    /// This table is the single place that reconciles them. It replaces an inline
+    /// <c>"pofunquiz" or "funquiz" =&gt; …</c> switch in UnifiedLeaderboardEndpoints,
+    /// which resolved the same ambiguity by hand at one call site and left every other
+    /// call site to get it wrong.
+    /// </para>
+    /// <para>
+    /// <b>Both spellings must keep resolving.</b> These strings are not cosmetic: they
+    /// are leaderboard partition keys in Table Storage and cached stat keys in browser
+    /// localStorage. Dropping an alias silently orphans live data, so the fix is to
+    /// canonicalise on read — not to rename the wire format.
+    /// </para>
+    /// </remarks>
+    private static readonly Dictionary<string, GameKey> Aliases = new(StringComparer.OrdinalIgnoreCase)
+    {
+        // "Po"-prefixed forms the client sends for keys this catalogue stores bare.
+        ["pocouplequiz"] = CoupleQuiz,
+        ["pofunquiz"] = FunQuiz,
+        ["pojoker"] = Joker,
+        ["posurvive"] = Survive,
+        // Bare forms for keys this catalogue stores prefixed — the drift runs both ways.
+        ["marblerace"] = PoMarbleRace,
+        ["sports"] = PoSports,
+    };
+
     private static readonly Dictionary<string, GameKey> WellKnownLookup =
-        All.ToDictionary(k => k.Value, StringComparer.OrdinalIgnoreCase);
+        All.ToDictionary(k => k.Value, StringComparer.OrdinalIgnoreCase)
+           .Concat(Aliases)
+           .ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase);
 
     public static IReadOnlyCollection<GameKey> WellKnown => All;
 }

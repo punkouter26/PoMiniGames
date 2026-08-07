@@ -15,7 +15,7 @@
 //   3. **Push-apart** — when two rig-root kinematic bodies come too close,
 //      cannon-es pushes them apart naturally, replacing MIN_SEPARATION.
 //
-// Architecture follows marblerace/physics.js closely:
+// Architecture follows pomarblerace/physics.js closely:
 //   • `CANNON.World` with SAP broadphase and 14 solver iterations
 //   • Fixed timestep of 1/120 driven by the engine's 1/60 SIM_DT step
 //   • ContactMaterials named after the body kinds for tunable response

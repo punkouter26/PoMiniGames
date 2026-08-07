@@ -98,7 +98,11 @@
          classes — nothing in it restyles an existing element, so it is safe to
          load async alongside the per-game sheets. -->
     <link rel="preload" href="css/fx.css" as="style" onload="this.onload=null;this.rel='stylesheet'" />
-    <link rel="preload" href="css/fight.css" as="style" onload="this.onload=null;this.rel='stylesheet'" />
+    <!-- fight.css deleted 2026-08-07: 22 classes, none referenced by any markup.
+         It was the stylesheet for the old PoFight game and did not follow that
+         game through its rename to PoBrawl, which styles itself from
+         PoBrawlPage.razor.css (.pb-*). It stayed preloaded on every page for
+         7.8 KB that could never match an element. -->
     <!-- PoJoker (demo game): hand-written medieval-dark theme (scoped to .pojoker-root) -->
     <link rel="preload" href="css/pojoker-theme.css" as="style" onload="this.onload=null;this.rel='stylesheet'" />
     <link rel="icon" type="image/svg+xml" href="favicon.svg" />
@@ -135,10 +139,6 @@
     <script src="scripts/app.js" defer></script>
     <!-- AppErrorBoundary fallback clipboard helper (non-secure-context safe) -->
     <script src="js/appErrorBoundary.js" defer></script>
-    <!-- PoFunQuiz split-screen local 2P hotkey bridge. Loaded eagerly because
-         the page invokes window.poFunQuizSplitHotkeys.register() inside
-         OnAfterRenderAsync on first render; a deferred script would miss it. -->
-    <script src="js/poFunQuizSplitHotkeys.js"></script>
     <!-- Microsoft sign-in (MSAL.js + interop wrapper). Loaded eagerly so the
          login gate can call poAuth.* during startup when OAuth is configured.
          NOTE: consider pinning a Subresource Integrity hash for this CDN script
@@ -161,9 +161,15 @@
         <a href="." class="reload">Reload</a>
         <span class="dismiss">🗙</span>
     </div>
-    <!-- PoJoker: TTS/Web-Audio effect generators -->
-    <script src="js/pojoker-speech-interop.js"></script>
-    <script src="js/pojoker-audio-interop.js"></script>
+    <!-- Per-game interop is NOT loaded here any more (2026-08-07).
+         poFunQuizSplitHotkeys.js, pojoker-speech-interop.js,
+         pojoker-audio-interop.js, gl-fps.js and ambientMusic.js were global
+         <script> tags, so every page in the app fetched and parsed ~39 KB of
+         code that exactly one game (or one opt-out diagnostic) ever calls.
+         Each is now imported at its point of use — see JokerAudioService,
+         JokerSpeechService, PoFunQuizPage, FpsCounter and PoSurviveLayout.
+         They assign their window.* globals on evaluation, so the existing
+         InvokeVoidAsync("poJokerAudio.…") style call sites are unchanged. -->
     <script src="_framework/blazor.webassembly.js"></script>
 
     <!-- ── Game engines: route-gated, NOT loaded here ──────────────────────────
@@ -202,7 +208,6 @@
     <script src="js/posurvive/indexedDbStore.js"></script>
     <script src="js/posurvive/inferenceWorkerBridge.js"></script>
     <script src="js/posurvive/audioEngine.js" defer></script>
-    <script src="js/gl-fps.js"></script>
     <!-- §GFX/SOUND platform runtime (2026-07-29).
          audioBus.js owns the app's ONE AudioContext and the master/music/sfx/ui
          mix graph; five modules used to construct a context each. It must be
@@ -221,7 +226,6 @@
     <!-- §GFX-11 the sound vocabulary. Imports dsp/impact/gpuFx and is what call
          sites should use: one fire() gets audio, screen feel and particles. -->
     <script type="module" src="js/gameCues.js"></script>
-    <script type="module" src="js/ambientMusic.js"></script>
     <!-- §GFX-7/8 shared feel layer. Both are inert on load: impactBus.js only
          appends its flash div, gpuFx.js does not touch WebGL until the first
          burst. Loading them here rather than lazily means a game's first hit

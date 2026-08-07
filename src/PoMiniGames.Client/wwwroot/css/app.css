@@ -311,10 +311,6 @@
   transition-duration: 0.001s !important;
   scroll-behavior: auto !important;
 }
-
-/* Ambient/decorative loops are stopped outright rather than run at 0.001s —
-   an infinite animation still schedules frames at any duration. */
-:root[data-motion="reduce"] .home-mesh,
 :root[data-motion="reduce"] .login-mesh,
 :root[data-motion="reduce"] .skeleton {
   animation: none !important;
@@ -327,10 +323,7 @@ html, body, #app {
 }
 
 /* §7 Cross-document navigation transition — uses the browser's native
-   View Transitions API where supported (Chrome/Edge 111+, Safari TP) for a
-   zero-JS page-change animation. Falls back to the .gl-page-enter keyframe
-   in MainLayout.razor.css on browsers that don't support it. */
-@view-transition {
+   View Transitions API where supported (Chrome/Edge 111+{
   navigation: auto;
 }
 
@@ -347,8 +340,7 @@ html, body, #app {
   ::view-transition-old(root),
   ::view-transition-new(root) {
     animation: none;
-  }
-}
+  }}
 
 /* Conditional glass: when the OS/user asks to reduce transparency, collapse the
    glassmorphism blur tokens to `none` in one place. Because every glass surface
@@ -361,8 +353,7 @@ html, body, #app {
     --glass-1: none;
     --glass-2: none;
     --glass-3: none;
-  }
-}
+  }}
 
 body {
   font-family: var(--font-body);
@@ -424,8 +415,7 @@ h3:focus-visible {
 
 @keyframes shimmer {
   0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
-}
+  100% { background-position: -200% 0; }}
 
 /* ── Shared inline loader (single source of truth for "Loading…" states) ──
    Replaces the app's three ad-hoc idioms (bare left-aligned <p>Loading...</p>,
@@ -450,50 +440,14 @@ h3:focus-visible {
   border-radius: var(--radius-pill);
   animation: app-spin 0.8s linear infinite;
 }
-@keyframes app-spin { to { transform: rotate(360deg); } }
+@keyframes app-spin { to { transform: rotate(360deg); }}
 @media (prefers-reduced-motion: reduce) {
-  .app-loading__spinner { animation: none; }
-}
-
-
-/* ── Layout ──
-   The app shell (.gl-page / .gl-mock-banner / .gl-top-bar* / .gl-brand* /
-   .gl-breadcrumb* / .gl-auth* / .gl-content) now lives in the scoped
-   MainLayout.razor.css — those classes only ever appear in MainLayout markup,
-   so scoping them removes them from the global style-recalc surface. */
-
-/* ── Home Page (Suggestion #1: Morphing Mesh)── */
-.home-container {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  min-height: calc(100vh - 56px);
-  position: relative;
-  overflow: hidden;
-  padding: 2rem;
-}
-
-.home-mesh {
-  position: absolute;
-  inset: -50%;
-  background:
-    radial-gradient(ellipse at 20% 50%, rgba(99,102,241,0.15) 0%, transparent 50%),
-    radial-gradient(ellipse at 80% 20%, rgba(236,72,153,0.12) 0%, transparent 50%),
-    radial-gradient(ellipse at 40% 80%, rgba(6,182,212,0.1) 0%, transparent 50%),
-    radial-gradient(ellipse at 60% 30%, rgba(245,158,11,0.08) 0%, transparent 50%);
-  animation: meshShift 20s ease-in-out infinite alternate;
-  pointer-events: none;
-  /* Promote to its own GPU layer so the scale/rotate never repaints siblings. */
-  will-change: transform;
-  transform: translateZ(0);
-}
+  .app-loading__spinner { animation: none; }}
 
 @keyframes meshShift {
   0% { transform: scale(1) rotate(0deg); }
   50% { transform: scale(1.1) rotate(2deg); }
-  100% { transform: scale(1) rotate(-1deg); }
-}
+  100% { transform: scale(1) rotate(-1deg); }}
 
 /* Home page selectors (.home-*) migrated to scoped Pages/Index.razor.css. */
 
@@ -576,15 +530,7 @@ h3:focus-visible {
   font-size: 0.8rem;
   transition: all 0.2s;
 }
-.sp-btn-secondary:hover { border-color: var(--color-text-secondary); color: var(--color-text-primary); }
-
-/* (Removed: dead `.sp-offline-banner`, `.sp-search*`, `.sp-game-*`, `.sp-mode-pill*`
-   and `.sp-empty-*` blocks. The single-player game grid, its search box and its
-   empty state were replaced by the home page's `.home-game-chip` sections; the
-   only surviving `.sp-*` consumers are the PoRacer / PoSports lobbies, which use
-   `.sp-page` / `.sp-card` / `.sp-header` / `.sp-back` / `.sp-title` /
-   `.sp-subtitle` / `.sp-btn-*` and nothing else. Offline is now announced once by
-   MainLayout's `.gl-offline-banner`, not per page. */
+.sp-btn-secondary:hover { border-color: var(--color-text-secondary); color: var(--color-text-primary); } not per page. */
 
 
 /* ── High Scores (Suggestion #9: empty states) — moved to scoped
@@ -601,16 +547,10 @@ h3:focus-visible {
    Per-game boards under css/games.css keep their own board-specific widths —
    those are tuned to a fixed aspect grid, not to the chrome. */
 @media (max-width: 960px) {
-  /* The animated full-viewport mesh is the most expensive thing on a phone GPU,
-     especially under all the translucent blurred panels. Freeze it (static
-     gradient only) and strip the stacked backdrop-filters on the many small
-     surfaces — keep blur only on the sticky top bar. (GPU-Accelerated audit) */
-  .home-mesh {
+  /* The animated full-viewport mesh is the most expensive thing on a phone GPU{
     animation: none;
     opacity: 0.6;
   }
-  .home-mode-btn,
-  .home-section,
   .sp-card,
   .login-card,
   .toast {
@@ -623,18 +563,11 @@ h3:focus-visible {
   .sp-btn-primary,
   .sp-btn-secondary {
     min-height: 44px;
-  }
-}
+  }}
 
 @media (max-width: 640px) {
-  /* Reclaim the fold: shrink the decorative hero so live scores sit above it. */
-  .home-title { font-size: 1.25rem; margin-bottom: 0.1rem; }
-  .home-title-icon { display: none; }
-  .home-subtitle { display: none; }
-  .home-mode-btn { width: 100%; padding: 1rem 1.5rem; min-height: 44px; }
   .sp-page { padding: 1rem; }
-  .sp-card { padding: 1.25rem; }
-}
+  .sp-card { padding: 1.25rem; }}
 
 /* (Removed: dead .gl-bottom-nav block, the dead `.sp-auth-banner-actions` fixed
    bar and its `.sp-page { padding-bottom: 120px }` spacer. That bar was pinned at

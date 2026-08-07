@@ -1,7 +1,7 @@
 // engineLoader.js — route-gated loading for the per-game engines.
 //
 // ── Why ────────────────────────────────────────────────────────────────────
-// index.html used to load every game engine eagerly on first paint: marblerace,
+// index.html used to load every game engine eagerly on first paint: pomarblerace,
 // pobrawl, posports, poracer and posurvive, plus their three.js / cannon-es
 // imports. That is ~24,600 lines of JavaScript parsed and executed to render a
 // menu — and the overwhelming majority of sessions never open more than one
@@ -27,7 +27,7 @@
 // this module. See resolve() for why that distinction is load-bearing.
 const REGISTRY = {
     // key            module entry                  global it registers
-    marblerace: ['js/marblerace/index.js', 'PoMarbleRace'],
+    pomarblerace: ['js/pomarblerace/index.js', 'PoMarbleRace'],
     pobrawl: ['js/pobrawl/index.js', 'PoBrawl'],
     posports: ['js/posports/index.js', 'PoSports'],
     poracer: ['js/poracerGl.js', 'PoRacerRender'],

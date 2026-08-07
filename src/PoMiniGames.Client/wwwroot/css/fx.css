@@ -74,8 +74,7 @@
         background-color: var(--fx-glass-bg);
         -webkit-backdrop-filter: blur(var(--gfx-blur)) saturate(150%);
         backdrop-filter: blur(var(--gfx-blur)) saturate(150%);
-    }
-}
+    }}
 
 /* Specular top edge — sells "pane of glass" far more than the blur alone. */
 .fx-glass--lit {
@@ -95,49 +94,8 @@
     pointer-events: none;
 }
 
-/* ===== §5 Dynamic gradients ================================================ */
-
-/* Rotating conic ring. Animating --fx-angle (a registered custom property)
-   rather than `background` means the gradient is recomputed on the compositor
-   rather than re-parsed each frame. */
-.fx-aurora {
-    position: relative;
-    background:
-        conic-gradient(from var(--fx-angle),
-            color-mix(in oklch, var(--fx-accent, #66b6ff) 85%, transparent),
-            color-mix(in oklch, var(--fx-accent-2, #ffd166) 85%, transparent),
-            color-mix(in oklch, var(--fx-accent-3, #ef5f67) 85%, transparent),
-            color-mix(in oklch, var(--fx-accent, #66b6ff) 85%, transparent));
-    animation: fx-rotate-angle 12s linear infinite;
-}
-
 @keyframes fx-rotate-angle {
-    to { --fx-angle: 360deg; }
-}
-
-/* Gradient border without a wrapper element: paint the gradient on the padding
-   box and mask out the middle. */
-.fx-ring {
-    position: relative;
-    isolation: isolate;
-}
-.fx-ring::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    border-radius: inherit;
-    padding: 1px;
-    background: conic-gradient(from var(--fx-angle),
-        var(--fx-accent, #66b6ff),
-        var(--fx-accent-2, #ffd166),
-        var(--fx-accent, #66b6ff));
-    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-    -webkit-mask-composite: xor;
-    mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-    mask-composite: exclude;
-    pointer-events: none;
-    animation: fx-rotate-angle 8s linear infinite;
-}
+    to { --fx-angle: 360deg; }}
 
 /* ===== §GFX-6 Advanced surface primitives ==================================
  * The four below are what separate "translucent panel" from "pane of glass".
@@ -149,45 +107,18 @@
  * the single most convincing cue that a surface is glossy and lit.
  *
  * Animated with `translate` on a pseudo-element rather than `background-position`
- * because a moving gradient position repaints the element every frame, while a
- * transform on an already-composited layer costs nothing. */
-.fx-sheen {
+ * because a moving gradient position repaints the element every frame{
     position: relative;
     overflow: hidden;
     isolation: isolate;
 }
-.fx-sheen::after {
-    content: '';
-    position: absolute;
-    top: -50%;
-    bottom: -50%;
-    left: -60%;
-    width: 40%;
-    background: linear-gradient(100deg,
-        transparent,
-        rgba(255, 255, 255, 0.16) 45%,
-        rgba(255, 255, 255, 0.28) 50%,
-        rgba(255, 255, 255, 0.16) 55%,
-        transparent);
-    transform: translateX(0) skewX(-18deg);
-    opacity: 0;
-    pointer-events: none;
-    z-index: 1;
-}
-.fx-sheen:hover::after,
-.fx-sheen:focus-visible::after {
-    opacity: 1;
-    animation: fx-sheen-sweep 0.75s cubic-bezier(0.22, 1, 0.36, 1);
-}
 @keyframes fx-sheen-sweep {
     from { transform: translateX(0) skewX(-18deg); }
-    to   { transform: translateX(420%) skewX(-18deg); }
-}
+    to   { transform: translateX(420%) skewX(-18deg); }}
 
 /* Iridescent text. `background-clip: text` paints a gradient through the
  * glyphs; animating --fx-angle rotates it. Used sparingly — on scores and
- * titles, never on body copy, where the reduced contrast would hurt. */
-.fx-iridescent {
+ * titles, never on body copy{
     background: linear-gradient(var(--fx-angle),
         var(--fx-accent, #66b6ff),
         var(--fx-accent-2, #00e5ff) 35%,
@@ -201,17 +132,12 @@
 }
 /* Engines without background-clip:text would render invisible text. Restoring
    an explicit colour is a correctness guard, not a style choice. */
-@supports not ((-webkit-background-clip: text) or (background-clip: text)) {
-    .fx-iridescent { color: var(--fx-accent, #66b6ff); background: none; }
-}
+@supports not ((-webkit-background-clip: text) or (background-clip: text)) {}
 
 /* Pointer-tracked 3D tilt. fxTilt.js publishes --fx-mx/--fx-my in -1..1 on the
  * element; everything else is declarative.
  *
- * The parent needs the perspective, not the tilted element — perspective on the
- * element itself is applied AFTER its own transform and produces a flat shear
- * instead of depth. */
-.fx-tilt-scene { perspective: 900px; }
+ * The parent needs the perspective{ perspective: 900px; }
 .fx-tilt {
     transform:
         rotateY(calc(var(--fx-mx, 0) * 7deg))
@@ -221,98 +147,33 @@
     transition: transform 0.12s ease-out;
     will-change: transform;
 }
-/* The highlight tracks the pointer across the surface, which is what sells the
-   tilt as a physical object catching a light rather than a rotating rectangle. */
-.fx-tilt-glare {
+/* The highlight tracks the pointer across the surface{
     position: relative;
     overflow: hidden;
 }
-.fx-tilt-glare::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: radial-gradient(
-        circle at calc(50% + var(--fx-mx, 0) * 45%) calc(50% + var(--fx-my, 0) * 45%),
-        rgba(255, 255, 255, 0.20),
-        transparent 55%);
-    opacity: 0;
-    transition: opacity 0.2s ease-out;
-    pointer-events: none;
-}
-.fx-tilt-glare:hover::before { opacity: 1; }
 
 /* Frosted glass with grain. Real frosted glass is not smooth — the
  * micro-texture is what stops a large blurred panel from looking like a flat
  * wash, and it also masks the banding that backdrop-filter produces across a
  * wide gradient.
  *
- * The grain is an inline SVG feTurbulence: ~200 bytes, no request, and it
- * scales to any size without a raster asset. */
-.fx-frost {
+ * The grain is an inline SVG feTurbulence: ~200 bytes, no request{
     position: relative;
 }
-.fx-frost::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    border-radius: inherit;
-    pointer-events: none;
-    opacity: 0.035;
-    mix-blend-mode: overlay;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)'/%3E%3C/svg%3E");
-}
-
-:root[data-gfx='low'] .fx-frost::after,
-:root[data-gfx='low'] .fx-tilt-glare::before { display: none; }
 :root[data-gfx='low'] .fx-tilt { transform: none; }
 
 @media (prefers-reduced-motion: reduce) {
-    .fx-sheen::after { animation: none; opacity: 0; }
-    .fx-iridescent { animation: none; }
-    .fx-tilt { transform: none; transition: none; }
-}
-
-/* ===== §8 Audio-reactive surfaces ==========================================
- * Consumes the CSS variables visualRuntime.js pumps from the AnalyserNode.
- * Purely declarative — no per-element JS.
- */
-.fx-audio-glow {
-    box-shadow:
-        0 0 calc(var(--audio-bass) * 42px) calc(var(--audio-bass) * 6px)
-        color-mix(in srgb, var(--fx-accent, #66b6ff) calc(var(--audio-bass) * 70%), transparent);
-}
-
-.fx-audio-pulse {
-    /* scale() is compositor-only; animating width/height here would trigger
-       layout on every audio frame. */
-    transform: scale(calc(1 + var(--audio-peak) * 0.04));
-    will-change: transform;
-}
-
-.fx-audio-tint {
-    border-color: color-mix(in oklch,
-        var(--fx-accent, #66b6ff) calc(30% + var(--audio-mid) * 60%),
-        transparent);
-}
+    .fx-tilt { transform: none; transition: none; }}
 
 /* ===== §6 Compositor-only motion ===========================================
  * Every primitive here animates ONLY transform and opacity. In Blazor WASM the
- * main thread runs the .NET runtime, so an animation that triggers layout or
- * paint competes directly with game logic; transform/opacity stay on the
- * compositor and cost the main thread nothing once started.
- *
- * `will-change` is applied for the animation's duration only. Leaving it on
- * permanently pins a compositor layer per element and costs GPU memory — the
- * classic way to make a page slower while trying to make it faster.
- */
-.fx-rise {
+ * main thread runs the .NET runtime{
     animation: fx-rise 0.38s cubic-bezier(0.165, 0.84, 0.44, 1) both;
     will-change: transform, opacity;
 }
 @keyframes fx-rise {
     from { opacity: 0; transform: translate3d(0, 8px, 0); }
-    to   { opacity: 1; transform: translate3d(0, 0, 0); }
-}
+    to   { opacity: 1; transform: translate3d(0, 0, 0); }}
 
 .fx-pop {
     animation: fx-pop 0.26s cubic-bezier(0.34, 1.56, 0.64, 1) both;
@@ -321,19 +182,12 @@
 @keyframes fx-pop {
     0%   { transform: scale(0.86); }
     60%  { transform: scale(1.04); }
-    100% { transform: scale(1); }
-}
-
-.fx-shake {
-    animation: fx-shake 0.4s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
-    will-change: transform;
-}
+    100% { transform: scale(1); }}
 @keyframes fx-shake {
     10%, 90% { transform: translate3d(-2px, 0, 0); }
     20%, 80% { transform: translate3d(4px, 0, 0); }
     30%, 50%, 70% { transform: translate3d(-7px, 0, 0); }
-    40%, 60% { transform: translate3d(7px, 0, 0); }
-}
+    40%, 60% { transform: translate3d(7px, 0, 0); }}
 
 
 /* ===== §8 Impact / game feel ===============================================
@@ -389,9 +243,7 @@
  * player, and `filter` stays on the compositor.
  *
  * Applied opt-in: `filter` on an ancestor creates a containing block for
- * fixed-position descendants, which would silently reposition any modal inside
- * it. Never put this on a wrapper that can contain overlay UI. */
-.fx-punch {
+ * fixed-position descendants{
     filter:
         saturate(calc(100% + var(--po-punch, 0) * 60%))
         contrast(calc(100% + var(--po-punch, 0) * 18%))
@@ -400,38 +252,27 @@
 
 /* Chromatic-fringe approximation for DOM text/badges: two offset shadows in
  * complementary hues, scaled by the punch envelope. At punch 0 the offsets are
- * 0px and the shadows collapse to nothing, so this costs nothing at rest. */
-.fx-punch-text {
+ * 0px and the shadows collapse to nothing{
     text-shadow:
         calc(var(--po-punch, 0) * -3px) 0 0 rgba(255, 0, 80, 0.55),
         calc(var(--po-punch, 0) * 3px) 0 0 rgba(0, 200, 255, 0.55);
 }
 
 :root[data-gfx='low'] .po-impact-flash { display: none; }
-:root[data-gfx='low'] .fx-punch { filter: none; }
 
 @media (prefers-reduced-motion: reduce) {
     /* Suppressed outright, not merely damped. A repeated full-screen brightness
        spike is a strobe, and reduced-motion is the closest signal the platform
        gives us for photosensitivity. The hit still reports through audio and
        haptics, so no feedback is actually lost. */
-    .po-impact-flash { opacity: 0 !important; }
-}
+    .po-impact-flash { opacity: 0 !important; }}
 
 /* ===== §6 Offscreen work skipping ==========================================
  * `content-visibility: auto` lets the browser skip layout, paint AND style for
  * subtrees that are offscreen. On a long leaderboard this is the single largest
- * win available, and unlike virtualisation it needs no component changes.
- * `contain-intrinsic-size` supplies a placeholder height so the scrollbar does
- * not jump as rows are skipped and realised.
- */
-.fx-defer {
+ * win available{
     content-visibility: auto;
     contain-intrinsic-size: auto 48px;
-}
-.fx-defer--card {
-    content-visibility: auto;
-    contain-intrinsic-size: auto 220px;
 }
 
 /* ===== §10 Adaptive degradation ============================================
@@ -444,14 +285,6 @@
     backdrop-filter: none;
     background-color: rgba(10, 20, 30, 0.72);
 }
-:root[data-gfx='low'] .fx-aurora,
-:root[data-gfx='low'] .fx-ring::after {
-    animation: none;
-}
-:root[data-gfx='low'] .fx-audio-glow,
-:root[data-gfx='medium'] .fx-audio-glow {
-    box-shadow: none;
-}
 :root[data-gfx='low'] .fx-glass--lit::before {
     display: none;
 }
@@ -461,12 +294,6 @@
  * is removed; the audio-reactive *colour* channels are kept, since they are not
  * movement and carry real information about the mix.
  */
-@media (prefers-reduced-motion: reduce) {
-    .fx-rise, .fx-pop, .fx-shake,
-    .fx-aurora, .fx-ring::after {
+@media (prefers-reduced-motion: reduce) { .fx-pop{
         animation: none !important;
-    }
-    .fx-audio-pulse {
-        transform: none;
-    }
-}
+    }}

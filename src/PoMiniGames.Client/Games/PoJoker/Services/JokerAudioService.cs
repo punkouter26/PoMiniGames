@@ -19,6 +19,13 @@ public sealed class JokerAudioService(IJSRuntime jsRuntime, ILogger<JokerAudioSe
         if (_initialized) return;
         try
         {
+            // Fetch the interop script here rather than from a <script> tag in
+            // index.html. It used to load on every page in the app — 9 KB parsed
+            // by every player, for a global only this one game ever calls. The
+            // module assigns window.poJokerAudio on evaluation, so importing it
+            // is what makes the calls below resolve; the browser's module cache
+            // makes a repeat import free.
+            await _jsRuntime.InvokeAsync<IJSObjectReference>("import", "./js/pojoker-audio-interop.js");
             await _jsRuntime.InvokeVoidAsync("poJokerAudio.init");
             _initialized = true;
         }

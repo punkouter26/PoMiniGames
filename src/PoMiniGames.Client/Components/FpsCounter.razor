@@ -25,18 +25,56 @@
 
     protected override void OnInitialized()
     {
-        _onSettingsChanged = () => InvokeAsync(StateHasChanged);
+        // Re-render AND reconcile the sampler: toggling the badge on is what starts
+        // it now, so the handler cannot be a bare StateHasChanged any more.
+        _onSettingsChanged = () => InvokeAsync(async () =>
+        {
+            await SyncSamplerAsync();
+            StateHasChanged();
+        });
         Settings.Changed += _onSettingsChanged;
     }
 
-    protected override void OnAfterRender(bool firstRender)
+    protected override Task OnAfterRenderAsync(bool firstRender) =>
+        firstRender ? SyncSamplerAsync() : Task.CompletedTask;
+
+    /// <summary>
+    /// Start the sampler when the badge is on, stop it when it is off.
+    /// </summary>
+    /// <remarks>
+    /// It used to start unconditionally on first render and never stop, on the
+    /// reasoning that re-enabling the badge should show a value instantly. That
+    /// traded a permanent per-frame rAF callback and a JS interop round trip every
+    /// tick for one moment of latency — and once the badge became opt-out rather
+    /// than opt-in (it now defaults off), it was a cost almost every player paid
+    /// for a readout they had not asked for. Starting on demand costs one frame.
+    /// </remarks>
+    private async Task SyncSamplerAsync()
     {
-        if (!firstRender || _running) return;
-        _running = true;
-        _ref = DotNetObjectReference.Create(this);
-        // JS interop can throw during SSR / pre-render — swallow and let the
-        // placeholder label stand so the page still renders.
-        try { JSRuntime.InvokeVoidAsync("glFps.start", _ref); } catch { }
+        try
+        {
+            if (Settings.ShowFps && !_running)
+            {
+                _running = true;
+                // Imported here, not from a <script> tag: the badge is off by
+                // default, so the module should not be on the critical path of
+                // every page load.
+                await JSRuntime.InvokeAsync<IJSObjectReference>("import", "./js/gl-fps.js");
+                _ref ??= DotNetObjectReference.Create(this);
+                await JSRuntime.InvokeVoidAsync("glFps.start", _ref);
+            }
+            else if (!Settings.ShowFps && _running)
+            {
+                _running = false;
+                _hasReading = false;
+                await JSRuntime.InvokeVoidAsync("glFps.stop");
+            }
+        }
+        catch
+        {
+            // Interop can throw during pre-render, or the module may be blocked.
+            // The badge is a diagnostic — never let it break a page.
+        }
     }
 
     [JSInvokable]

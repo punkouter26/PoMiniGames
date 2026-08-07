@@ -3,7 +3,7 @@
 // WHY THIS EXISTS
 // Before 2026-07-29 five modules each called `new AudioContext()` of their own:
 // uiAudio.js, posurvive/audioEngine.js, pojoker-audio-interop.js,
-// pobrawl/audio.js and marblerace/audio.js. That cost us three real things:
+// pobrawl/audio.js and pomarblerace/audio.js. That cost us three real things:
 //   1. Browsers cap concurrent hardware AudioContexts (Chrome historically ~6).
 //      Five was uncomfortably close, and each one holds a hardware output.
 //   2. There was no global mix. Nothing could duck music under a cue, because
@@ -86,7 +86,7 @@ export async function context() {
 /**
  * Synchronous context accessor for the non-module interop files
  * (pojoker-audio-interop.js, pobrawl/audio.js, posurvive/audioEngine.js,
- * marblerace/audio.js). Those acquire their context inside synchronous
+ * pomarblerace/audio.js). Those acquire their context inside synchronous
  * functions and cannot await.
  *
  * Constructing an AudioContext IS synchronous — only resume() is async — so
@@ -366,7 +366,7 @@ if (typeof window !== 'undefined') {
     }
     // Cross-module access for the non-ESM interop files.
     // contextSync/busSync MUST be here: pojoker-audio-interop.js,
-    // pobrawl/audio.js, marblerace/audio.js and posurvive/audioEngine.js all
+    // pobrawl/audio.js, pomarblerace/audio.js and posurvive/audioEngine.js all
     // call them through this object. If they are missing, every one of those
     // modules silently falls back to constructing its own AudioContext and the
     // shared graph quietly stops being shared.

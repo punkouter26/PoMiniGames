@@ -97,15 +97,23 @@ public static class UnifiedLeaderboardEndpoints
         if (winRate.Key is not null)
             return await BuildWinRateAsync(storage, winRate.Key, winRate.Title, limit);
 
-        return key switch
+        // Canonicalise first, then dispatch on the one true key. Every arm here used to
+        // list its own accepted spellings ("pofunquiz" or "funquiz", …) because the
+        // client and this server disagree on whether the "Po" prefix belongs in an
+        // identifier. That knowledge now lives in GameKey's alias table, so adding a
+        // game means adding one arm rather than remembering both of its names.
+        var canonical = Domain.Primitives.GameKey.TryParse(key);
+        if (canonical is not { } id) return null;
+
+        return id.Value switch
         {
-            "pomarblerace" or "marblerace" => await BuildMarbleAsync(storage, limit),
+            "pomarblerace" => await BuildMarbleAsync(storage, limit),
             "poracer" => await BuildPoRacerAsync(storage, limit),
-            "posports" or "sports" => await BuildPoSportsAsync(storage, limit),
+            "posports" => await BuildPoSportsAsync(storage, limit),
             "pobrawl" => await BuildPoBrawlAsync(storage, limit),
-            "pofunquiz" or "funquiz" => await BuildFunQuizAsync(funQuiz, limit),
-            "pocouplequiz" or "couplequiz" => await BuildCoupleQuizAsync(teams, limit),
-            "pojoker" or "joker" => await BuildPoJokerAsync(joker, limit),
+            "funquiz" => await BuildFunQuizAsync(funQuiz, limit),
+            "couplequiz" => await BuildCoupleQuizAsync(teams, limit),
+            "joker" => await BuildPoJokerAsync(joker, limit),
             _ => null,
         };
     }

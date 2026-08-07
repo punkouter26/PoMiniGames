@@ -58,8 +58,7 @@
         background: var(--glass-fill);
         -webkit-backdrop-filter: blur(var(--gfx-blur)) saturate(170%);
         backdrop-filter: blur(var(--gfx-blur)) saturate(170%);
-    }
-}
+    }}
 
 .gl-overflow-panel.gl-overflow-panel {
     background: var(--glass-fill-strong);
@@ -96,28 +95,6 @@
        rather than clipped, so it does not need the clip anyway. */
 }
 
-/* Rotating conic edge. Inlined rather than reusing .fx-ring because the modal
-   needs it on ::before — ::after is already spoken for by the grain below. */
-.gps-modal.gps-modal::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    border-radius: inherit;
-    padding: 1px;
-    background: conic-gradient(from var(--fx-angle),
-        transparent 0deg,
-        color-mix(in srgb, var(--fx-accent) 70%, transparent) 60deg,
-        transparent 140deg,
-        color-mix(in srgb, var(--fx-accent-2) 70%, transparent) 240deg,
-        transparent 320deg);
-    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-    -webkit-mask-composite: xor;
-    mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-    mask-composite: exclude;
-    animation: fx-rotate-angle 9s linear infinite;
-    pointer-events: none;
-}
-
 .gps-modal.gps-modal::after {
     content: '';
     position: absolute;
@@ -140,8 +117,7 @@
     animation: fx-rotate-angle 7s linear infinite;
 }
 @supports not ((-webkit-background-clip: text) or (background-clip: text)) {
-    .gps-modal-title.gps-modal-title { color: var(--color-text-primary); background: none; }
-}
+    .gps-modal-title.gps-modal-title { color: var(--color-text-primary); background: none; }}
 
 .gps-modal-board.gps-modal-board,
 .gps-modal-stats.gps-modal-stats {
@@ -149,17 +125,6 @@
     border: 1px solid var(--glass-edge);
     box-shadow: var(--glass-inner);
 }
-
-/* (Removed: the `.gps-hud` / `.gps-hud-cell-value` glass treatment. Those
-   selectors only ever matched Components/GameHud.razor, an unmounted component
-   now deleted along with its `.gps-hud*` rules in games.css. The per-game HUDs
-   below are the live ones.) */
-
-/* ── Per-game HUDs ────────────────────────────────────────────────────────
-   These live in scoped CSS, hence the doubling. Grouped so a new game gets the
-   treatment by adding one selector rather than a new block.
-   (`.kiosk-bar` dropped with the deleted KioskControlBar component.) */
-.pb-hud.pb-hud,
 .ps-hud.ps-hud,
 .racer-hud.racer-hud,
 .hud-panel.hud-panel {
@@ -175,15 +140,10 @@
    chips, a leaderboard has fifty rows — and each blurred surface forces its own
    compositor layer plus a re-sample of everything beneath it. A dozen of them
    halves the frame rate on integrated graphics for a difference nobody would
-   notice on a 90 px tile. They get the fill, the lit edge and the sheen, which
-   is where the perceived quality actually comes from. */
-.home-mode-btn.home-mode-btn,
-.home-game-chip.home-game-chip,
-.home-score-card.home-score-card,
+   notice on a 90 px tile. They get the fill, the lit edge and the sheen,
 .gps-game-card.gps-game-card,
 .gps-intro-card.gps-intro-card,
-.sp-card.sp-card,
-.sp-game-card.sp-game-card {
+.sp-card.sp-card{
     background: var(--glass-fill);
     border: 1px solid var(--glass-edge);
     box-shadow: var(--glass-inner);
@@ -191,12 +151,6 @@
     overflow: hidden;
     isolation: isolate;
 }
-
-/* Sheen on the interactive ones only. A highlight sweeping across something you
-   cannot press is a lie about affordance. */
-.home-mode-btn.home-mode-btn::after,
-.home-game-chip.home-game-chip::after,
-.home-score-card.home-score-card::after,
 .gps-game-card.gps-game-card::after {
     content: '';
     position: absolute;
@@ -215,37 +169,16 @@
     pointer-events: none;
     z-index: 1;
 }
-.home-mode-btn.home-mode-btn:hover::after,
-.home-game-chip.home-game-chip:hover::after,
-.home-score-card.home-score-card:hover::after,
 .gps-game-card.gps-game-card:hover::after,
-.home-mode-btn.home-mode-btn:focus-visible::after,
-.home-game-chip.home-game-chip:focus-visible::after,
-.home-score-card.home-score-card:focus-visible::after,
 .gps-game-card.gps-game-card:focus-visible::after {
     opacity: 1;
     animation: fx-sheen-sweep 0.75s cubic-bezier(0.22, 1, 0.36, 1);
 }
-
-/* Static tiles (the mode labels that are not buttons) must not look pressable.
-   `--static` is the existing marker for exactly that. */
-.home-mode-btn--static.home-mode-btn--static::after { content: none; }
-
-/* ── Tilt scenes ──────────────────────────────────────────────────────────
-   `perspective` belongs on the PARENT of the tilted element. Applied to the
-   element itself it is composed after that element's own rotation and produces
-   a flat shear instead of depth — the classic reason a CSS tilt "does nothing".
-
-   Elements opt in from markup with data-fx-tilt (see fxTilt.js); these two
-   rules just make the containers projective. */
-.home-section-games { perspective: 900px; }
 .gps-modal-overlay.gps-modal-overlay { perspective: 1400px; }
 
 /* Pointer-tracked glare, painted as a background-image rather than on a
    pseudo-element: ::before is already taken on these cards, and ::after now
-   carries the sheen. A background-image cannot collide with anything, which is
-   why the glare can be applied more widely than the rotation. */
-.home-game-chip.home-game-chip {
+   carries the sheen. A background-image cannot collide with anything{
     background-image: radial-gradient(
         circle at calc(50% + var(--fx-mx, 0) * 40%) calc(50% + var(--fx-my, 0) * 40%),
         color-mix(in srgb, #ffffff 14%, transparent),
@@ -265,9 +198,7 @@
 
 /* ── Leaderboard panels ───────────────────────────────────────────────────
    The tables themselves stay opaque: text over a blurred, moving background is
-   measurably harder to read, and a leaderboard exists to be read. */
-.cq-leaderboard.cq-leaderboard,
-.fq-leaderboard.fq-leaderboard {
+   measurably harder to read{
     background: var(--glass-fill-strong);
     border: 1px solid var(--glass-edge);
     box-shadow: var(--glass-inner);
@@ -302,11 +233,7 @@
     .gps-modal-title.gps-modal-title {
         animation: none;
     }
-    .home-mode-btn.home-mode-btn::after,
-    .home-game-chip.home-game-chip::after,
-    .home-score-card.home-score-card::after,
     .gps-game-card.gps-game-card::after {
         animation: none;
         opacity: 0;
-    }
-}
+    }}

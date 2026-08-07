@@ -256,6 +256,11 @@ public class ApiService
         try
         {
             return await _http.GetFromJsonAsync(
+                // Route kept as /api/marblerace/ despite the game being PoMarbleRace
+                // everywhere else. It is a live HTTP contract, and the PWA service worker
+                // can serve a cached older client after a deploy — that client would call
+                // the old path and 404. GameKey's alias table canonicalises the identifier
+                // where it matters (leaderboards/stats); the URL is left alone deliberately.
                 $"/api/marblerace/highscores?count={count}", ApiJsonContext.Default.MarbleRaceHighScoreArray);
         }
         catch

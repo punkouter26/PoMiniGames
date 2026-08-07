@@ -355,6 +355,12 @@
             // §Best-practice: register a window-level keydown listener via a tiny
             // JS interop. We can't do this purely in Blazor because Razor can't
             // subscribe to global keyboard events without a DOM hook.
+            // Imported here rather than loaded eagerly from index.html. The old
+            // comment in poFunQuizSplitHotkeys.js explained it had to be a
+            // non-deferred global script precisely because this call runs on first
+            // render — awaiting the import removes that constraint, and the other
+            // ~25 pages in the app stop fetching a split-screen quiz hotkey handler.
+            await JS.InvokeAsync<IJSObjectReference>("import", "./js/poFunQuizSplitHotkeys.js");
             await JS.InvokeVoidAsync("poFunQuizSplitHotkeys.register", DotNetObjectReference.Create(this));
         }
     }

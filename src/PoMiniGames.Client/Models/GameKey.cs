@@ -1,31 +1,38 @@
+// The GameKey value object itself lives in PoMiniGames.Domain.Primitives and is
+// re-exported here under the client's Models namespace.
+//
+// There used to be two of them: this file declared its own `readonly record struct
+// GameKey` with the same purpose, the same implicit string conversions and the same
+// case-insensitive equality as the Domain one. Two implementations of one concept is
+// how the catalogues drifted apart in the first place — the client's list said
+// "pofunquiz" while the Domain catalogue said "funquiz", and the leaderboard endpoint
+// grew a `"pofunquiz" or "funquiz"` switch to paper over it.
+//
+// A using-alias rather than a wrapper: the client needs the type under
+// PoMiniGamesClient.Models (every razor page resolves it from there via _Imports),
+// but it must be the SAME type as the server validates against, not a lookalike.
+global using GameKey = PoMiniGames.Domain.Primitives.GameKey;
+
 namespace PoMiniGamesClient.Models;
 
 /// <summary>
-/// Strongly-typed identifier for a game in the catalog. Replaces raw <see cref="string"/>
-/// keys ("connectfive", "pofunquiz", …) that were compared ad-hoc across the client, where a
-/// typo compiled cleanly and failed only at runtime.
+/// The game keys the client sends on the wire. Reference these instead of magic
+/// string literals.
 /// </summary>
 /// <remarks>
-/// Implicit conversions to/from <see cref="string"/> are provided so existing render sites
-/// (string interpolation, attribute binding) keep working, while definition sites and
-/// comparisons can use the named <see cref="GameKeys"/> instances for compile-time safety.
-/// Equality is ordinal and case-insensitive to match how the keys were historically compared.
+/// <para>
+/// Four of these are <em>aliases</em> rather than canonical keys: the Domain catalogue
+/// stores Couple Quiz, Fun Quiz, Joker and Survive without the "Po" prefix. The values
+/// here are kept as they are on purpose — they are already live leaderboard partition
+/// keys in Table Storage and cached stat keys in browser localStorage, so renaming them
+/// would orphan real data rather than tidy it.
+/// </para>
+/// <para>
+/// <see cref="PoMiniGames.Domain.Primitives.GameKey.TryParse"/> canonicalises both
+/// spellings, so the server resolves whichever form arrives. That alias table is the
+/// one place the discrepancy is expressed.
+/// </para>
 /// </remarks>
-public readonly record struct GameKey(string Value)
-{
-    public bool Equals(GameKey other) =>
-        string.Equals(Value, other.Value, StringComparison.OrdinalIgnoreCase);
-
-    public override int GetHashCode() =>
-        StringComparer.OrdinalIgnoreCase.GetHashCode(Value ?? string.Empty);
-
-    public override string ToString() => Value;
-
-    public static implicit operator string(GameKey key) => key.Value;
-    public static implicit operator GameKey(string value) => new(value);
-}
-
-/// <summary>The canonical set of game keys. Reference these instead of magic string literals.</summary>
 public static class GameKeys
 {
     public static readonly GameKey ConnectFive = new("connectfive");

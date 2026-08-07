@@ -72,7 +72,12 @@
 
     <p class="hp-muted hp-foot">
         Last checked @(_checkedAt?.ToLocalTime().ToString("HH:mm:ss") ?? "—").
-        Machine-readable report at <code>/api/health</code>; configuration diagnostics at <a href="/diag">/diag</a>.
+        @* The /diag Razor page was removed 2026-08-07. It was 505 lines of developer
+           chrome shipped in every player's WASM bundle, and every section of it only
+           rendered JSON that these endpoints already return. Pointing at the JSON
+           directly keeps the capability and drops the payload. *@
+        Machine-readable report at <code>/api/health</code>. Configuration diagnostics:
+        <code>/api/diag</code>, <code>/api/mockables</code>, <code>/api/logs/tail</code>.
     </p>
 </div>
 

@@ -17,7 +17,7 @@
 //   tictactoe   struck wood — fast attack, short pitched decay, no sustain
 //   connectfive hard plastic on plastic, low body, high click
 //   pobrawl     heavy, driven, low-mid; everything has weight and grit
-//   marblerace  glass and steel — bright, ringing, clean
+//   pomarblerace glass and steel — bright, ringing, clean
 //   poracer     motorised — saws, filter sweeps, no pitched melody at all
 //   posports    rubber and air — bouncy sine blips, whistle
 //   pojoker     courtly brass and bells; square waves, dotted rhythms
@@ -193,7 +193,7 @@ const CUES = {
     },
 
     // ── PoMarbleRace — glass and steel ─────────────────────────────────
-    marblerace: {
+    pomarblerace: {
         click: {
             voices: [
                 v('sine', 2400, 0.03, 0.09, { decay: 0.025 }),

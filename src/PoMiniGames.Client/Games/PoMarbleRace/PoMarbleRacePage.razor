@@ -21,7 +21,7 @@
            GameSummary="@GameSummaryContent">
     @if (!_introDone)
     {
-        <GameIntro CueScope="marblerace"
+        <GameIntro CueScope="pomarblerace"
                    Title="@TitleContent"
                    Objective="You control the one RED marble in a pack of 101. Finish in the top 10 to score."
                    Controls="@HowToPlayContent"
@@ -304,9 +304,9 @@
             // Route-gated engine load (see wwwroot/js/engineLoader.js). The engine is
             // no longer in index.html, so it has to be pulled in before the first
             // interop call. Cheap and idempotent after the first await.
-            if (!await JSRuntime.InvokeAsync<bool>("loadEngine", "marblerace"))
+            if (!await JSRuntime.InvokeAsync<bool>("loadEngine", "pomarblerace"))
             {
-                Console.Error.WriteLine("[marblerace] engine failed to load");
+                Console.Error.WriteLine("[pomarblerace] engine failed to load");
                 return;
             }
 

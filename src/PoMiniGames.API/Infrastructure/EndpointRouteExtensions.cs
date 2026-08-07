@@ -1,7 +1,9 @@
 using PoMiniGames.Features.Auth;
 using PoMiniGames.Features.Diagnostics;
 using PoMiniGames.Features.Health;
-using PoMiniGames.Features.HighScores;     // MarbleRace / PoBrawl mappers
+using PoMiniGames.Features.HighScores;     // PoBrawl mapper
+using PoMiniGames.Features.PoMarbleRace;   // moved out of Features.HighScores so the
+                                           // namespace matches its own slice folder
 using PoMiniGames.Features.Leaderboard;
 using PoMiniGames.Features.MatchHistory;
 using PoMiniGames.Features.PoCoupleQuiz;
@@ -40,7 +42,11 @@ internal static class EndpointRouteExtensions
         app.MapDiagEndpoints();
         app.MapMockablesEndpoints();
         app.MapTelemetryStatusEndpoints();
-        app.MapTestHarnessEndpoints(app.Environment);
+        // MapTestHarnessEndpoints removed 2026-08-07. The three /test/* routes
+        // (offline-mode, render-diagnostics, api-timeout) returned instructions for a
+        // developer to follow by hand, and their only consumer was Pages/TestPage.razor,
+        // which was deleted with the rest of the dev-only UI. They were already
+        // Development-gated, so nothing shipped — but nothing called them either.
 
         // ── Public read-only leaderboards (guest-first) ────────────────────
         // §10 A brand-new visitor can browse the boards before signing in, so

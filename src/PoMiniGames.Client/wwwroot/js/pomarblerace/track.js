@@ -139,28 +139,168 @@ function boostTexture() {
   return t;
 }
 
-// Asphalt road surface: a dark bed flecked with aggregate speckle + faint longitudinal wear,
+// Asphalt road surface: a grey bed flecked with aggregate speckle + faint longitudinal wear,
 // so the ground reads as tarmac rather than a neon grid. Built once.
+//
+// 2026-08-08 (user request: "give the ground a road grey texture so it's not black"). Every
+// colour here used to be a dark blue-black keyed to the cyberpunk palette — a #1a2130 bed with
+// blue-tinted speckle and blue wear lines. Under the old image-based lighting that still read
+// as a surface; with the IBL removed (#17) it collapsed to near-black. These are now neutral
+// greys at genuine asphalt values, so the road reads as road under direct light alone.
+// Resolution for the tiling road maps. 2026-08-08 realism pass #6: was 256. One tile covers
+// CELL (22) world units and the camera sits ~60 units from the marble, so at 256 a single
+// aggregate chip was sub-pixel and the surface averaged out to flat grey under minification.
+const ROAD_TEX_N = 512;
+
+// Shared aggregate scatter, so the albedo and the roughness map describe THE SAME stones.
+// Generating them from independent random draws is the classic mistake here: the roughness
+// highlight then lands where there is no chip, and the surface reads as two materials sliding
+// over each other. Seeded and cached, walked identically by both consumers.
+let _aggregate = null;
+function aggregate() {
+  if (_aggregate) return _aggregate;
+  const rnd = mulberry32(0x51ced);
+  const out = [];
+  for (let k = 0; k < 9000; k++) {
+    out.push({
+      x: rnd() * ROAD_TEX_N, y: rnd() * ROAD_TEX_N,
+      r: rnd() * 3.0 + 0.6,
+      // kind: 0 = mid chip, 1 = dark void, 2 = bright polished stone
+      kind: rnd() < 0.5 ? 0 : (rnd() < 0.7 ? 1 : 2),
+    });
+  }
+  _aggregate = out;
+  return out;
+}
+
 let _roadTex = null;
 function roadTexture() {
   if (_roadTex) return _roadTex;
   const c = document.createElement('canvas');
-  c.width = c.height = 256;
+  c.width = c.height = ROAD_TEX_N;
   const g = c.getContext('2d');
-  g.fillStyle = '#1a2130'; g.fillRect(0, 0, 256, 256);
-  for (let k = 0; k < 4600; k++) {
-    const x = Math.random() * 256, y = Math.random() * 256, r = Math.random() * 1.5 + 0.3;
-    const v = Math.random();
-    g.fillStyle = v < 0.5 ? 'rgba(58,70,92,0.5)' : (v < 0.85 ? 'rgba(9,13,22,0.55)' : 'rgba(120,140,175,0.32)');
-    g.beginPath(); g.arc(x, y, r, 0, 6.283); g.fill();
+  g.fillStyle = '#57595e'; g.fillRect(0, 0, ROAD_TEX_N, ROAD_TEX_N);
+  // Aggregate. 2026-08-08 realism pass #5: each chip now gets a soft dark rim BEFORE the chip
+  // itself is drawn — micro ambient occlusion in the crevice around the stone. This is what
+  // separates "grey noise" from "stones set in tar": the eye reads the contact shadow, not the
+  // speckle. Baked into the albedo because GTAO only runs on the high tier, so most machines
+  // otherwise get no occlusion anywhere on the largest surface in the scene.
+  for (const a of aggregate()) {
+    const rim = g.createRadialGradient(a.x, a.y, a.r * 0.6, a.x, a.y, a.r * 1.9);
+    rim.addColorStop(0, 'rgba(30,31,34,0.30)');
+    rim.addColorStop(1, 'rgba(30,31,34,0)');
+    g.fillStyle = rim;
+    g.beginPath(); g.arc(a.x, a.y, a.r * 1.9, 0, 6.283); g.fill();
+    g.fillStyle = a.kind === 0 ? 'rgba(108,111,117,0.55)'
+      : a.kind === 1 ? 'rgba(50,52,57,0.6)'
+        : 'rgba(166,169,174,0.38)';
+    g.beginPath(); g.arc(a.x, a.y, a.r, 0, 6.283); g.fill();
   }
-  g.strokeStyle = 'rgba(90,150,230,0.05)'; g.lineWidth = 1;
-  for (let x = 6; x < 256; x += 24) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x + (Math.random() * 6 - 3), 256); g.stroke(); }
+  // Longitudinal wear — faint polished tracks down the road, neutral rather than blue.
+  g.strokeStyle = 'rgba(140,143,150,0.07)'; g.lineWidth = 1;
+  for (let x = 6; x < ROAD_TEX_N; x += 24) {
+    g.beginPath(); g.moveTo(x, 0); g.lineTo(x + (Math.random() * 6 - 3), ROAD_TEX_N); g.stroke();
+  }
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   t.anisotropy = MAX_ANISO();
   _roadTex = t;
+  return t;
+}
+
+// Dedicated roughness map (2026-08-08 realism pass #4).
+//
+// The floor used `roughnessMap: road` — the ALBEDO — which ties roughness to brightness and so
+// gets asphalt exactly backwards: the bright polished chips came out smooth-ish only by accident,
+// while the dark tar voids between them read as the SMOOTHEST part of the road. Tar is the rough
+// part. This map states it directly: mid-rough bed, rougher voids, genuinely polished stones.
+//
+// Linear colour space, not sRGB — a roughness map is data, and tagging it sRGB would push every
+// value through a gamma curve it is not meant to have.
+let _roadRoughTex = null;
+function roadRoughnessTexture() {
+  if (_roadRoughTex) return _roadRoughTex;
+  const c = document.createElement('canvas');
+  c.width = c.height = ROAD_TEX_N;
+  const g = c.getContext('2d');
+  g.fillStyle = '#b4b4b4'; g.fillRect(0, 0, ROAD_TEX_N, ROAD_TEX_N);   // bed ≈ 0.71 × material roughness
+  for (const a of aggregate()) {
+    // Same stones as the albedo, opposite intent: polished chips are SMOOTH (dark here),
+    // the tar voids around them are ROUGH (bright).
+    g.fillStyle = a.kind === 2 ? 'rgba(90,90,90,0.55)'
+      : a.kind === 1 ? 'rgba(240,240,240,0.5)'
+        : 'rgba(150,150,150,0.35)';
+    g.beginPath(); g.arc(a.x, a.y, a.r, 0, 6.283); g.fill();
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.NoColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.anisotropy = MAX_ANISO();
+  _roadRoughTex = t;
+  return t;
+}
+
+// Road-scale wear + occlusion map (2026-08-08 realism passes #7 and #8).
+//
+// Bound as `aoMap`, which in three r165 samples the SECOND uv set (`uv1`) — and buildFloorRibbon
+// now writes a uv1 that runs 0..1 across the road and 0..1 along it. That is the whole point:
+// the albedo above tiles every 22 world units, so anything painted into it repeats ~3× across a
+// 64-wide road and could never express "the middle of the road" or "the edge". This map is laid
+// over the track ONCE, so it can:
+//
+//   * darken and polish a racing line down the centre, where 101 marbles actually run;
+//   * cake grime into both edges where the road meets the berm and nothing ever sweeps;
+//   * lay very low-frequency blotches over everything, which is what breaks the eye's lock on
+//     the tiling albedo underneath (#7) — the repeat is still there, it just stops being legible.
+let _roadMacroTex = null;
+function roadMacroTexture() {
+  if (_roadMacroTex) return _roadMacroTex;
+  const W = 256, H = 1024;                 // across × along; the road is far longer than it is wide
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  g.fillStyle = '#ffffff'; g.fillRect(0, 0, W, H);   // white = unoccluded
+
+  // Edge grime: a gradient into both rails.
+  const edge = g.createLinearGradient(0, 0, W, 0);
+  edge.addColorStop(0.00, 'rgba(70,70,70,0.85)');
+  edge.addColorStop(0.13, 'rgba(120,120,120,0)');
+  edge.addColorStop(0.87, 'rgba(120,120,120,0)');
+  edge.addColorStop(1.00, 'rgba(70,70,70,0.85)');
+  g.fillStyle = edge; g.fillRect(0, 0, W, H);
+
+  // Racing line: a wandering darker band down the middle. Wanders because a dead-straight strip
+  // on a track that curves would read as a painted marking rather than as wear.
+  const rnd = mulberry32(0x2ace);
+  g.lineCap = 'round';
+  for (let pass = 0; pass < 3; pass++) {
+    g.strokeStyle = `rgba(150,150,150,${0.20 - pass * 0.05})`;
+    g.lineWidth = W * (0.18 + pass * 0.12);
+    g.beginPath();
+    g.moveTo(W * 0.5, 0);
+    for (let y = 0; y <= H; y += 64) {
+      g.lineTo(W * (0.5 + Math.sin(y / H * 6.283 * 1.5 + pass) * 0.07 + (rnd() - 0.5) * 0.03), y);
+    }
+    g.stroke();
+  }
+
+  // Macro blotches — patches of dirtier and cleaner tarmac at a scale far larger than the tile.
+  for (let k = 0; k < 90; k++) {
+    const x = rnd() * W, y = rnd() * H, r = 30 + rnd() * 150;
+    const dark = rnd() < 0.6;
+    const blob = g.createRadialGradient(x, y, 0, x, y, r);
+    blob.addColorStop(0, dark ? 'rgba(120,120,120,0.30)' : 'rgba(255,255,255,0.22)');
+    blob.addColorStop(1, dark ? 'rgba(120,120,120,0)' : 'rgba(255,255,255,0)');
+    g.fillStyle = blob;
+    g.beginPath(); g.arc(x, y, r, 0, 6.283); g.fill();
+  }
+
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.NoColorSpace;   // data, not colour
+  t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;   // laid over the track once
+  t.anisotropy = MAX_ANISO();
+  _roadMacroTex = t;
   return t;
 }
 
@@ -178,7 +318,9 @@ function roadTexture() {
 let _roadNormalTex = null;
 function roadNormalTexture() {
   if (_roadNormalTex) return _roadNormalTex;
-  const N = 256;
+  // 2026-08-08 realism pass #6: 256 → ROAD_TEX_N (512), matching the albedo so the relief and
+  // the colour resolve the same stones instead of one blurring across the other.
+  const N = ROAD_TEX_N;
   // Height field: mostly flat, with the same density of small round aggregate as the albedo.
   const h = new Float32Array(N * N);
   for (let k = 0; k < 3000; k++) {
@@ -234,12 +376,24 @@ let _kerbTex = null;
 function kerbTexture() {
   if (_kerbTex) return _kerbTex;
   const c = document.createElement('canvas');
-  c.width = c.height = 128;
+  // 2026-08-08 realism pass #6: 128 → 512. The kerb runs the entire length of both rails and is
+  // the highest-contrast edge in frame, so it was the most obvious thing aliasing under the
+  // chase cam. Every offset below is derived from K rather than hard-coded, so the band layout
+  // (two red bands, 50% duty) is unchanged.
+  const K = 512;
+  c.width = c.height = K;
   const g = c.getContext('2d');
-  g.fillStyle = '#eef2f7'; g.fillRect(0, 0, 128, 128);   // white
+  g.fillStyle = '#eef2f7'; g.fillRect(0, 0, K, K);       // white
   g.fillStyle = '#dc2626';                                // two red bands → 50% duty
-  g.fillRect(0, 0, 128, 32);
-  g.fillRect(0, 64, 128, 32);
+  g.fillRect(0, 0, K, K / 4);
+  g.fillRect(0, K / 2, K, K / 4);
+  // Scuffing (#8): marbles clip these constantly, so the bands are grazed rather than pristine.
+  const krnd = mulberry32(0x4b3);
+  for (let k = 0; k < 900; k++) {
+    const x = krnd() * K, y = krnd() * K, w = 2 + krnd() * 14;
+    g.fillStyle = krnd() < 0.5 ? 'rgba(60,62,66,0.16)' : 'rgba(255,255,255,0.12)';
+    g.fillRect(x, y, w, 1 + krnd() * 2);
+  }
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
@@ -361,9 +515,21 @@ export function generateTrack(world, materials, seed, marbleCount = 8) {
   // The normal map stays; that is surface relief, not a reflection.
   const roadNormal = roadNormalTexture();
   const floorMat = new THREE.MeshStandardMaterial({
-    color: 0x2a3446, emissive: 0x0a0f1c, emissiveIntensity: 0.16,
+    // `color` MULTIPLIES the map, so a dark blue tint here (was 0x2a3446) dragged the road
+    // texture back down to near-black however grey the texture itself was — this is the other
+    // half of the "not black" fix. White leaves the tarmac exactly the grey the texture paints.
+    // The emissive lift is likewise neutral now rather than blue, and only enough to keep the
+    // surface off pure black in shadow.
+    color: 0xffffff, emissive: 0x141518, emissiveIntensity: 0.25,
     roughness: 0.82, metalness: 0.0,
-    map: road, roughnessMap: road,
+    map: road,
+    // Was `roughnessMap: road` — see roadRoughnessTexture() for why reusing the albedo inverted
+    // the material's own story about itself.
+    roughnessMap: roadRoughnessTexture(),
+    // Samples uv1 (the road-scale set written by buildFloorRibbon), NOT uv0. Racing line, edge
+    // grime and the macro blotches that break the tile repeat all live in here.
+    aoMap: roadMacroTexture(),
+    aoMapIntensity: 1.0,
     normalMap: roadNormal,
     // Restrained: at full strength the aggregate reads as gravel and the road stops looking
     // fast. This is enough to break the highlight up, not enough to texture the silhouette.
@@ -453,7 +619,7 @@ export function generateTrack(world, materials, seed, marbleCount = 8) {
   const buildFloorRibbon = (sA, sB, eps, cell) => {
     const steps = Math.max(2, Math.round(RIBBON_N * (sB - sA)));
     const cols = FLOOR_LAT + 1;
-    const pos = [], uv = [], idx = [];
+    const pos = [], uv = [], uv1 = [], idx = [];
     for (let i = 0; i <= steps; i++) {
       const s = sA + (sB - sA) * (i / steps);
       const f = frameAt(s), w = widthAt(s);
@@ -464,6 +630,11 @@ export function generateTrack(world, materials, seed, marbleCount = 8) {
         const P = f.p.clone().addScaledVector(f.rb, u * w / 2).addScaledVector(f.up, lift);
         pos.push(P.x, P.y, P.z);
         uv.push((u * w / 2) / cell, v);
+        // Second UV set — ROAD-SCALE, laid over the whole ribbon exactly once (2026-08-08
+        // realism passes #7/#8). uv above tiles every `cell` world units in both directions, so
+        // it can never say "centre of the road" or "near the rail"; this one can. three r165
+        // feeds `uv1` to aoMap, which is what roadMacroTexture() is bound to.
+        uv1.push((u + 1) * 0.5, s);
       }
       if (i < steps) {
         const row = i * cols, next = (i + 1) * cols;
@@ -476,6 +647,9 @@ export function generateTrack(world, materials, seed, marbleCount = 8) {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    // aoMap reads this one. Named `uv1` for three r152+; it was `uv2` in older releases, and
+    // getting the name wrong fails silently — the map simply never appears.
+    g.setAttribute('uv1', new THREE.Float32BufferAttribute(uv1, 2));
     g.setIndex(idx); g.computeVertexNormals();
     return g;
   };

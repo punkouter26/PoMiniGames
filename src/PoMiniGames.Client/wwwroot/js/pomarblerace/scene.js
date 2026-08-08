@@ -160,8 +160,12 @@ export function createScene(container) {
   // The ambient is also re-tinted from a dim blue (0x33405c) toward a neutral slate: the blue
   // was there to sit under a warm env map that no longer exists, and on its own it drained the
   // road's colour. Values chosen by measuring the composited frame back to the original range.
-  scene.add(new THREE.AmbientLight(0x8899b8, 3.6));
-  scene.add(new THREE.HemisphereLight(0x88aaff, 0x1a2333, 2.2));
+  // Near-neutral on purpose. These were blue (0x8899b8 ambient, 0x88aaff sky) to match the
+  // cyberpunk palette, but a blue fill lands on the largest surface in the scene and made the
+  // asphalt read as blue-grey — measured at a +37 blue bias over the road, which is what the
+  // grey road texture was fighting. A faint cool sky tint is kept so the scene is not sterile.
+  scene.add(new THREE.AmbientLight(0xb6b8bd, 3.6));
+  scene.add(new THREE.HemisphereLight(0xc2ccdd, 0x3a3c42, 2.2));
   const key = new THREE.DirectionalLight(0xffffff, 3.0);
   key.position.set(40, 80, -30);
   key.castShadow = true;
@@ -173,16 +177,64 @@ export function createScene(container) {
   key.shadow.mapSize.set(2048, 2048);
   key.shadow.camera.near = 1;
   key.shadow.camera.far = 220;
-  // Frustum widened to cover the 64-wide road — at ±42 the shadows were being clipped off
-  // the outer thirds of the chute.
-  key.shadow.camera.left = -75; key.shadow.camera.right = 75;
-  key.shadow.camera.top = 75; key.shadow.camera.bottom = -75;
+  // 2026-08-08 realism pass #10: frustum tightened 150 -> 96 wide.
+  //
+  // The road is CHANNEL_WIDTH 64. At ±75 more than half the shadow map was being spent on
+  // empty space either side of the chute, so a marble's contact shadow — a ~2-unit feature —
+  // had barely 27 texels to live in and resolved as a smudge rather than a contact. ±48 still
+  // clears the 64-wide road plus the berms either side (they are ~14 further out and only need
+  // to receive, which the road itself covers), and it more than halves the texel size: 0.073
+  // world units versus 0.073*1.56. That is the difference between a marble looking like it is
+  // ON the road and looking like it is over a dark patch.
+  //
+  // The frustum tracks the followed marble (see followTarget), so a narrower one is not a
+  // coverage risk — it is always centred on the action.
+  const SHADOW_HALF = 48;
+  key.shadow.camera.left = -SHADOW_HALF; key.shadow.camera.right = SHADOW_HALF;
+  key.shadow.camera.top = SHADOW_HALF; key.shadow.camera.bottom = -SHADOW_HALF;
   key.shadow.bias = -0.0008;
+  // A tighter frustum means a smaller texel, which means acne appears at a bias that used to be
+  // fine. normalBias offsets along the surface normal and is the right control for curved
+  // receivers (every marble in the pack is one).
+  key.shadow.normalBias = 0.02;
   // frustum width ÷ map size — the world size of one shadow texel; followTarget snaps the
   // light to this grid so the map doesn't crawl as the camera follows.
-  const SHADOW_TEXEL = 150 / 2048;
+  const SHADOW_TEXEL = (SHADOW_HALF * 2) / 2048;
   scene.add(key);
   scene.add(key.target);
+
+  // ── Marble-only environment (2026-08-08 realism pass #3) ──────────────
+  // Glass spheres are defined by their highlight. With scene.environment gone (#17) the marbles
+  // had no specular response at all and rendered as matte putty — the one material in the scene
+  // that most needs reflection was the one hurt most by removing it.
+  //
+  // This is deliberately NOT scene.environment. It is handed to marbles.js and set as `envMap`
+  // on the marble materials alone, so the road, berms and hazards stay matte exactly as asked;
+  // only the 101 spheres get something to catch. The source is a tiny 2-stop vertical gradient
+  // (cool sky over dark ground), not a room capture, so nothing recognisable is mirrored — it
+  // reads as a lit environment rather than as a reflection of a place.
+  //
+  // PMREM-prefiltered because MeshStandardMaterial needs roughness-aware mips; feeding a raw
+  // texture as envMap gives a hard mirror at every roughness.
+  const marbleEnv = (() => {
+    const c = document.createElement('canvas');
+    c.width = 16; c.height = 64;
+    const g = c.getContext('2d');
+    const grd = g.createLinearGradient(0, 0, 0, 64);
+    grd.addColorStop(0.00, '#dfe8f5');   // sky
+    grd.addColorStop(0.48, '#8f9db4');
+    grd.addColorStop(0.52, '#3c4048');   // horizon break — this is what makes a highlight read
+    grd.addColorStop(1.00, '#191b1f');   // ground
+    g.fillStyle = grd; g.fillRect(0, 0, 16, 64);
+    const src = new THREE.CanvasTexture(c);
+    src.mapping = THREE.EquirectangularReflectionMapping;
+    src.colorSpace = THREE.SRGBColorSpace;
+    const pm = new THREE.PMREMGenerator(renderer);
+    const rt = pm.fromEquirectangular(src);
+    pm.dispose();
+    src.dispose();
+    return rt;   // caller disposes rt.texture via dispose() below
+  })();
 
   // ── Post-processing composer ──────────────────────────────────────────
   const composer = new EffectComposer(renderer);
@@ -502,6 +554,8 @@ export function createScene(container) {
     scene,
     camera,
     renderer,
+    // Handed to createMarbles so ONLY the marble materials get a specular environment (#3).
+    marbleEnv: marbleEnv.texture,
     add(obj) { scene.add(obj); },
     remove(obj) { scene.remove(obj); },
     followTarget,
@@ -532,6 +586,7 @@ export function createScene(container) {
       window.removeEventListener('pointerup', onPointerUp);
       sparkGeo.dispose();
       sparkMat.dispose();
+      marbleEnv.dispose();   // PMREM render target + its texture
       rackFocus.dispose();
       gtao?.dispose?.();
       composer.dispose();

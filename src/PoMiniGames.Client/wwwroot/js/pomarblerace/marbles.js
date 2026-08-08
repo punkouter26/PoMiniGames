@@ -245,7 +245,12 @@ function blobTexture() {
   return _blobTex;
 }
 
-export function createMarbles(world, materials, startPositions, chosenIndex, onCollide) {
+/**
+ * @param {THREE.Texture} [envMap] PMREM-prefiltered environment, applied to the marble materials
+ *   ONLY (realism pass #3). The scene has no global environment — see scene.js — so this is what
+ *   gives the spheres a specular highlight without putting reflections on the track.
+ */
+export function createMarbles(world, materials, startPositions, chosenIndex, onCollide, envMap) {
   const marbles = [];
   let finishCounter = 0;
 
@@ -264,17 +269,24 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
   // than from separate materials. The red player marble owns its own geometry/material (and is
   // the only marble with a trail, blob and collision sparks). Low-poly sphere: 100 of them, so
   // the segment count matters.
-  // 12×8 rather than the old 16×12. Measured, not guessed: as separate meshes the pack was
-  // frustum-culled per marble, so only the dozen-odd on screen were ever drawn. One InstancedMesh
-  // cannot be culled per instance (its bounds span the whole track), so all 100 are submitted
-  // every frame — which pushed the frame's triangle count UP even as draw calls and scene-graph
-  // nodes came down. Halving the tessellation (352 → 168 triangles per marble) pays that back.
-  // Invisible at the size these render: a pack marble is a ~1-unit sphere seen from 60+ units.
-  const packGeo = new THREE.SphereGeometry(1.0, 12, 8);
+  // 2026-08-08 realism pass #2: 12×8 → 20×14. The note this replaces argued 12×8 was "invisible
+  // at the size these render", which held for the old pack-overview camera. The camera is a chase
+  // cam now (scene.js CAM_BACK) and marbles regularly fill a good part of the frame, where an
+  // 8-band sphere reads as a faceted lump rather than a ball — the silhouette gives it away even
+  // when the shading does not. 168 → 504 triangles each; at 100 instances in ONE draw call that
+  // is still a rounding error next to the track ribbon, and it buys a round silhouette in exactly
+  // the shots the player is looking at.
+  const packGeo = new THREE.SphereGeometry(1.0, 20, 14);
   const atlas = marbleAtlas();
+  // Realism pass #3: roughness pulled in and a scoped env map attached. Glass reads as glass
+  // because of one tight highlight and a hint of what is around it; with no environment at all
+  // (scene.environment was removed) a 0.34-rough sphere lit by three lights is indistinguishable
+  // from matte putty. `envMapIntensity` is kept low — this is a sheen, not a chrome ball.
   const packMat = new THREE.MeshStandardMaterial({
-    color: 0xffffff, emissive: 0x000000, emissiveIntensity: 0, roughness: 0.34, metalness: 0.0,
+    color: 0xffffff, emissive: 0x000000, emissiveIntensity: 0, roughness: 0.18, metalness: 0.0,
     map: atlas,
+    envMap: envMap || null,
+    envMapIntensity: envMap ? 0.85 : 0,
   });
   // NOTE the white base colour above: with an InstancedMesh, `instanceColor` MULTIPLIES both the
   // material colour and the sampled texel. White here means a marble's rendered colour is exactly
@@ -285,6 +297,14 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
   // The pack spans the whole track and is a single draw call, so per-object frustum culling has
   // nothing to win and would only risk popping the whole field out at once.
   pack.frustumCulled = false;
+  // 2026-08-08 realism pass #1: the pack cast NO shadow at all — only the player's marble did —
+  // so 100 of the 101 marbles floated over the road with nothing tying them to it. Contact
+  // shadow is the single strongest cue that an object is resting on a surface, and its absence
+  // is most of why the pack read as sprites laid over the track. An InstancedMesh casts for
+  // every instance from one shadow draw, so this is one extra pass over the pack, not a hundred.
+  pack.castShadow = true;
+  // Receive too: marbles in a pile-up should darken the ones beneath them.
+  pack.receiveShadow = true;
   pack.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   // Per-instance colour — impossible while the pack shared one material. Each marble carries its
   // own palette colour for the whole race.
@@ -348,7 +368,11 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
       const pc = atlasCell(PLAYER_INDEX + 3);   // a cat's-eye cell — the most "marble" of the four
       playerTex.offset.set((pc % ATLAS_COLS) / ATLAS_COLS, ((pc / ATLAS_COLS) | 0) / ATLAS_ROWS);
       mat = new THREE.MeshStandardMaterial({
-        color: RED, emissive: 0x3b0a0a, emissiveIntensity: 0.25, roughness: 0.28, metalness: 0.0,
+        // Same treatment as the pack (realism pass #3), a touch glossier still: this is the one
+        // marble the camera is locked to, so it carries the closest look.
+        color: RED, emissive: 0x3b0a0a, emissiveIntensity: 0.25, roughness: 0.14, metalness: 0.0,
+        envMap: envMap || null,
+        envMapIntensity: envMap ? 0.95 : 0,
         map: playerTex,
       });
       mesh = new THREE.Mesh(sphereGeo, mat);
@@ -471,7 +495,14 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
     if (m.blob) m.blob.visible = false;
   }
 
-  function sync() {
+  /**
+   * Push physics transforms into the render meshes.
+   *
+   * @param {(z:number)=>number} [floorYAt] Centreline floor height at a forward Z. Optional —
+   *   without it the contact blob falls back to riding under the marble as before. With it, the
+   *   blob is planted on the ground and reacts to height (2026-08-08 realism pass #9).
+   */
+  function sync(floorYAt) {
     let packDirty = false;
     for (const m of marbles) {
       if (m.eliminated) continue;
@@ -500,8 +531,29 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
         tp[0] = m.body.position.x; tp[1] = m.body.position.y; tp[2] = m.body.position.z;
         m.trail.geometry.attributes.position.needsUpdate = true;
       }
-      // Contact blob sits just under the marble (#8).
-      if (m.blob) m.blob.position.set(m.body.position.x, m.body.position.y - m.radius * 0.92, m.body.position.z);
+      // Contact blob (#8). 2026-08-08 realism pass #9: this used to be pinned a fixed distance
+      // under the marble, so it flew with it — a "contact" shadow that left the ground the
+      // moment the marble did, always the same size and always the same 50% black. A real one
+      // stays on the floor and reads the gap: tight and dark on contact, wide and faint as the
+      // marble climbs a berm or takes air off a kicker. That gap is the cue the eye uses to
+      // judge height, and it is free here because the track can report its own floor.
+      if (m.blob) {
+        if (floorYAt) {
+          const fy = floorYAt(m.body.position.z);
+          // Height of the marble's underside above the floor, in radii.
+          const gap = Math.max(0, (m.body.position.y - m.radius) - fy) / m.radius;
+          // 0 at contact → 1 fully airborne, saturating at 6 radii up.
+          const t = Math.min(1, gap / 6);
+          m.blob.position.set(m.body.position.x, fy + 0.06, m.body.position.z);
+          // Spread as it rises (1.0 → 2.2×) and fade hard (0.55 → 0.06).
+          const s = 1 + t * 1.2;
+          m.blob.scale.set(s, s, s);
+          m.blob.material.opacity = 0.55 * (1 - t) * (1 - t) + 0.06;
+          m.blob.visible = true;
+        } else {
+          m.blob.position.set(m.body.position.x, m.body.position.y - m.radius * 0.92, m.body.position.z);
+        }
+      }
     }
     // One upload per frame for the whole 100-marble pack, not one per marble. Only the matrices
     // move — instanceColor and the atlas offsets are static after construction.

@@ -226,6 +226,11 @@ export class Game {
     this._podiumSent = false; // reset the top-3 podium for the new race
     this.track = generateTrack(this.world, this.materials, this.seed >>> 0, MARBLE_COUNT);
     this.scene.add(this.track.group);
+    // Bound once per track and handed to marbleSet.sync() every frame, so the contact shadow can
+    // be planted on the floor rather than flown under the marble (marbles.js realism pass #9).
+    // Bound here rather than passed as `this.track.floorY` at the call site because the track is
+    // rebuilt between races and a stale reference would silently shadow the old geometry.
+    this._floorYAt = (z) => this.track.floorY(z);
     this.marbleSet = createMarbles(this.world, this.materials, this.track.startPositions, -1,
       (v, pos, color) => {
         // Only BIG collisions make a sound — the constant clinking from every
@@ -236,7 +241,10 @@ export class Game {
         // #4: a genuinely heavy hit also throws a shockwave ring. Gated harder than the clink —
         // a ring on every tap would leave the road permanently covered in them.
         if (v > 14) this.scene.burstRing(pos, color, Math.min(1.5, 0.6 + v * 0.05));
-      });
+      },
+      // Marble-only specular environment (realism pass #3). Bound as `envMap` on the marble
+      // materials alone — deliberately NOT scene.environment, so the track stays matte.
+      this.scene.marbleEnv);
     // One group, not 101 meshes: the pack is a single InstancedMesh now (marbles.js #1), and the
     // player's Mesh rides in the same group.
     this.scene.add(this.marbleSet.group);
@@ -444,7 +452,7 @@ export class Game {
       this._applySteer(sdt);   // player's held steering, integrated by the step below
       this._applyKickers();    // #6 telegraphed kicker band (push-only)
       stepWorld(this.world, sdt);
-      this.marbleSet.sync();
+      this.marbleSet.sync(this._floorYAt);
       for (const t of this.track.turnstiles) { t.mesh.position.copy(t.body.position); t.mesh.quaternion.copy(t.body.quaternion); }
 
       this.raceClock += sdt;
@@ -543,7 +551,7 @@ export class Game {
       if (this.tickAccum >= TICK_INTERVAL) { this.tickAccum = 0; this._sendTick(); }
     } else if (this.phase === 'result') {
       // keep turnstiles/marbles visually settled; advance after the banner
-      this.marbleSet.sync();
+      this.marbleSet.sync(this._floorYAt);
       this.resultTimer -= dt;
       const winner = this.marbleSet.leaderboard()[0];
       if (winner) {

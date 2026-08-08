@@ -273,7 +273,7 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
   const packGeo = new THREE.SphereGeometry(1.0, 12, 8);
   const atlas = marbleAtlas();
   const packMat = new THREE.MeshStandardMaterial({
-    color: 0xffffff, emissive: 0x000000, emissiveIntensity: 0, roughness: 0.18, metalness: 0.5,
+    color: 0xffffff, emissive: 0x000000, emissiveIntensity: 0, roughness: 0.34, metalness: 0.0,
     map: atlas,
   });
   // NOTE the white base colour above: with an InstancedMesh, `instanceColor` MULTIPLIES both the
@@ -348,7 +348,7 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
       const pc = atlasCell(PLAYER_INDEX + 3);   // a cat's-eye cell — the most "marble" of the four
       playerTex.offset.set((pc % ATLAS_COLS) / ATLAS_COLS, ((pc / ATLAS_COLS) | 0) / ATLAS_ROWS);
       mat = new THREE.MeshStandardMaterial({
-        color: RED, emissive: 0x3b0a0a, emissiveIntensity: 0.25, roughness: 0.1, metalness: 0.5,
+        color: RED, emissive: 0x3b0a0a, emissiveIntensity: 0.25, roughness: 0.28, metalness: 0.0,
         map: playerTex,
       });
       mesh = new THREE.Mesh(sphereGeo, mat);

@@ -1,15 +1,16 @@
-// scene.js — Three.js renderer/scene/lights + smooth orbit-follow camera, plus the full
-// post-processing pipeline: ACES tone mapping, image-based lighting, dynamic shadows, bloom,
-// vignette + chromatic aberration, SMAA, a graded background, a start FOV punch, and GPU sparks.
+// scene.js — Three.js renderer/scene/lights + smooth orbit-follow camera, plus the
+// post-processing pipeline: ACES tone mapping, dynamic shadows, GTAO, a transient rack focus,
+// a colour grade, SMAA, a speed-reactive FOV and GPU sparks.
+//
+// 2026-08-08 (user request) removed from this file: bloom (#2), the vignette (#6), chromatic
+// aberration (#7), image-based lighting (#17) and the graded background (#20).
 import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import * as PostFx from '../postFx.js';
 
 const BG = 0x0f172a;            // cyberpunk dark slate
@@ -53,70 +54,29 @@ const FOV_SPEED_ADD = 10;       // max degrees added at top speed
 const FOV_SPEED_LO = 25;        // speed at which the widening starts
 const FOV_SPEED_HI = 90;        // speed at which it saturates
 
-// Vignette + chromatic-aberration post pass (#10), now also carrying speed-reactive radial
-// motion blur (GFX #2) and the state-driven colour grade (GFX #3). Runs in linear HDR before
-// OutputPass.
+// Colour-grade post pass (#3). Runs in linear HDR before OutputPass.
 //
-// Both new effects live in THIS pass on purpose. A separate blur pass and a separate grading
-// pass would each cost a full-screen render target and a full-screen resolve; folded in here
-// they cost some extra taps and a handful of ALU on a pass that was already running. `uBlur`
-// gates the taps and is a uniform, so when the marble is slow the branch is coherent across
-// every invocation and the taps genuinely do not execute.
-// Resting chromatic fringe. Named because updatePost now ADDS the impact
-// envelope to it each frame and needs to know where "no impact" sits — reading
-// the current uniform value back would integrate the punch into the baseline.
-const ABERRATION_BASE = 0.0016;
-
+// 2026-08-08 (user request): this pass used to also do a vignette (#6) and a
+// chromatic aberration (#7). Both are gone, along with the radial blur (#2)
+// removed earlier, so what remains is purely the colour grade (#3) — a straight
+// 1:1 texture read with saturation/contrast/tint applied. No multi-tap sampling
+// of any kind, which is why the split-sample helper and the blur branch are gone
+// rather than merely switched off.
 const PostShader = {
   uniforms: {
     tDiffuse: { value: null },
-    uVignette: { value: 1.15 },
-    uAberration: { value: ABERRATION_BASE },
-    uBlur: { value: 0.0 },              // #2 — radial smear strength, 0 = off
     uTint: { value: new THREE.Vector3(1, 1, 1) },   // #3 — grade
     uContrast: { value: 1.0 },
     uSaturation: { value: 1.0 },
   },
   vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
   fragmentShader: `
-    uniform sampler2D tDiffuse; uniform float uVignette; uniform float uAberration;
-    uniform float uBlur; uniform vec3 uTint; uniform float uContrast; uniform float uSaturation;
+    uniform sampler2D tDiffuse;
+    uniform vec3 uTint; uniform float uContrast; uniform float uSaturation;
     varying vec2 vUv;
 
-    const int BLUR_TAPS = 6;
-
-    // One chromatically-split sample. The R/B split is the pre-existing aberration; reusing it
-    // inside the blur taps is what gives the smear its prismatic edge, so the "speed streaks"
-    // cost nothing beyond the taps themselves.
-    vec3 sampleSplit(vec2 uv, vec2 off) {
-      return vec3(texture2D(tDiffuse, uv + off).r,
-                  texture2D(tDiffuse, uv).g,
-                  texture2D(tDiffuse, uv - off).b);
-    }
-
     void main() {
-      vec2 c = vUv - 0.5;
-      float d = dot(c, c);
-      vec2 off = c * uAberration;
-
-      vec3 col;
-      if (uBlur > 0.001) {
-        // Radial smear: successive taps march back toward frame centre, so the centre (where
-        // the marble you steer sits) stays sharp and the edges streak. Weighted toward the
-        // un-displaced tap so the image never goes soft, only fast.
-        vec3 acc = vec3(0.0);
-        float wsum = 0.0;
-        for (int i = 0; i <= BLUR_TAPS; i++) {
-          float t = float(i) / float(BLUR_TAPS);
-          float s = 1.0 - t * uBlur * 0.09;
-          float w = 1.0 - t * 0.55;
-          acc += sampleSplit(0.5 + c * s, off) * w;
-          wsum += w;
-        }
-        col = acc / wsum;
-      } else {
-        col = sampleSplit(vUv, off);
-      }
+      vec3 col = texture2D(tDiffuse, vUv).rgb;
 
       // Grade (#3): saturation, then contrast about mid-grey, then tint. Clamped at zero —
       // this runs in linear HDR, where a contrast push can otherwise drive channels negative
@@ -126,51 +86,24 @@ const PostShader = {
       col = (col - 0.5) * uContrast + 0.5;
       col = max(col * uTint, 0.0);
 
-      float vig = smoothstep(0.95, 0.15, d * uVignette);
-      gl_FragColor = vec4(col * mix(0.5, 1.0, vig), 1.0);
+      gl_FragColor = vec4(col, 1.0);
     }`,
 };
 
 // #3 grade presets. Eased toward, never snapped — see the grade easing in followTarget.
-// `vignette` rides along so the frame closes in as the race gets tense.
+// The per-preset `vignette` field went with the vignette itself (2026-08-08).
 const GRADES = {
   // Pre-race on the grid: cool, desaturated, flat. Clinical — nothing has happened yet.
-  pick: { tint: [0.88, 0.94, 1.10], contrast: 0.94, saturation: 0.78, vignette: 1.30 },
+  pick: { tint: [0.88, 0.94, 1.10], contrast: 0.94, saturation: 0.78 },
   // The baseline look the game shipped with.
-  racing: { tint: [1.00, 1.00, 1.00], contrast: 1.00, saturation: 1.00, vignette: 1.15 },
+  racing: { tint: [1.00, 1.00, 1.00], contrast: 1.00, saturation: 1.00 },
   // Final stretch: warm, contrasty, tighter vignette. Matches the HUD's own 0.86 threshold.
-  final: { tint: [1.12, 1.02, 0.90], contrast: 1.12, saturation: 1.14, vignette: 1.55 },
+  final: { tint: [1.12, 1.02, 0.90], contrast: 1.12, saturation: 1.14 },
   // Won: brief lift in saturation and exposure.
-  win: { tint: [1.16, 1.10, 0.98], contrast: 1.08, saturation: 1.30, vignette: 1.05 },
+  win: { tint: [1.16, 1.10, 0.98], contrast: 1.08, saturation: 1.30 },
   // Lost or eliminated: drain the colour out.
-  loss: { tint: [0.92, 0.92, 0.96], contrast: 0.96, saturation: 0.35, vignette: 1.70 },
+  loss: { tint: [0.92, 0.92, 0.96], contrast: 0.96, saturation: 0.35 },
 };
-
-// Users who ask for reduced motion get the grade (a colour change, not motion) but never the
-// radial blur. Matches the prefers-reduced-motion blocks already in PoMarbleRacePage.razor.css.
-const REDUCED_MOTION = typeof window !== 'undefined' && window.matchMedia
-  ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  : false;
-
-// #2 blur mapping. Blur starts later than the FOV widening does — a mild speed should read as
-// FOV alone, with the smear reserved for genuinely quick running so it stays meaningful.
-const BLUR_SPEED_LO = 45;
-const BLUR_SPEED_HI = 110;
-const BLUR_MAX = 1.0;
-
-function makeBgGradient() {
-  const c = document.createElement('canvas');
-  c.width = 4; c.height = 256;
-  const g = c.getContext('2d');
-  const grd = g.createLinearGradient(0, 0, 0, 256);
-  grd.addColorStop(0, '#070b18');
-  grd.addColorStop(0.55, '#0f172a');
-  grd.addColorStop(1, '#16203c');
-  g.fillStyle = grd; g.fillRect(0, 0, 4, 256);
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  return t;
-}
 
 export function createScene(container) {
   const renderer = new THREE.WebGLRenderer({ antialias: false, alpha: false });
@@ -192,8 +125,10 @@ export function createScene(container) {
   renderer.domElement.style.display = 'block';
 
   const scene = new THREE.Scene();
-  const bgTexture = makeBgGradient();                     // #10 — graded background
-  scene.background = bgTexture;
+  // Graded background (#20) removed 2026-08-08 (user request). It was a 4x256 canvas
+  // gradient ramping #070b18 -> #0f172a -> #16203c up the sky. A flat BG matches the fog
+  // colour exactly, so the horizon no longer shows a seam where fog meets sky.
+  scene.background = new THREE.Color(BG);
   // Fog pushed out with the camera: at 70/240 the far wall of a wide, sharply-turning chute
   // faded out before the turn it belongs to was readable. Pushed out again with CAM_BACK 38→62:
   // the marble alone now sits ~82 units from the eye, so at 110/340 the haze started biting a
@@ -201,11 +136,11 @@ export function createScene(container) {
   // to show.
   scene.fog = new THREE.Fog(BG, 170, 560);
 
-  // #4 — image-based lighting so the glossy marbles/floor have something to reflect.
-  const pmrem = new THREE.PMREMGenerator(renderer);
-  const envRT = pmrem.fromScene(new RoomEnvironment(), 0.04);
-  scene.environment = envRT.texture;
-  pmrem.dispose();
+  // Image-based lighting (#17) removed 2026-08-08 (user request). A RoomEnvironment PMREM
+  // used to sit on scene.environment purely so the glossy marbles and floor had something to
+  // reflect. The ambient + hemisphere + key rig below carries the lighting on its own; the
+  // marble and road materials had their metalness dropped to 0 to suit (a metal with nothing
+  // to reflect renders black, which is what removing the env map alone would have caused).
 
   // FLICKER FIX (2/4) — depth precision. near 0.1 / far 2000 is a 20000:1 range, which leaves
   // almost no usable depth resolution out where the track is; the rumble/boost/kicker bands sit
@@ -217,9 +152,17 @@ export function createScene(container) {
   camera.position.set(0, CAM_HEIGHT, -CAM_BACK);
 
   // Lighting — soft ambient + a shadow-casting key light; neon comes from emissive materials.
-  scene.add(new THREE.AmbientLight(0x33405c, 0.9));
-  scene.add(new THREE.HemisphereLight(0x5577ff, 0x0a0f1c, 0.5));
-  const key = new THREE.DirectionalLight(0xffffff, 1.5);
+  //
+  // 2026-08-08: these were rebalanced UPWARD when the image-based lighting (#17) came out.
+  // RoomEnvironment was not a subtle reflection layer — it was carrying most of the scene's
+  // actual illumination, and deleting it alone dropped the rendered frame from a mean
+  // luminance of ~138 to ~27 (measured over the demo track), i.e. a barely-visible picture.
+  // The ambient is also re-tinted from a dim blue (0x33405c) toward a neutral slate: the blue
+  // was there to sit under a warm env map that no longer exists, and on its own it drained the
+  // road's colour. Values chosen by measuring the composited frame back to the original range.
+  scene.add(new THREE.AmbientLight(0x8899b8, 3.6));
+  scene.add(new THREE.HemisphereLight(0x88aaff, 0x1a2333, 2.2));
+  const key = new THREE.DirectionalLight(0xffffff, 3.0);
   key.position.set(40, 80, -30);
   key.castShadow = true;
   // FLICKER FIX (3/4) — shadow crawl. The shadow camera is dragged along by the followed
@@ -265,11 +208,7 @@ export function createScene(container) {
     composer.addPass(gtao);
   }
 
-  // Bloom strength dropped (0.75 → 0.18) and threshold raised (0.82 → 0.92) so the
-  // pass adds only a faint highlight to the brightest specular spots instead of
-  // glowing every emissive marble into a halo.
-  const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.18, 0.6, 0.92); // strength, radius, threshold
-  composer.addPass(bloom);                                // #1 — bloom
+  // Bloom (#2) removed 2026-08-08 (user request).
 
   // Rack focus (§GFX-2). Disabled during the race; the photo finish turns it on
   // for a beat. See postFx.js for why a transient DoF pass is affordable and a
@@ -278,9 +217,9 @@ export function createScene(container) {
   composer.addPass(rackFocus.pass);
   // ShaderPass CLONES the uniforms off the descriptor, so drive `post.uniforms` — writing to
   // PostShader.uniforms would touch the module-level template and leak between scenes.
-  const post = new ShaderPass(PostShader);                // #10 vignette/aberration + #2 blur + #3 grade
+  const post = new ShaderPass(PostShader);                // #3 colour grade (all this pass still does)
   composer.addPass(post);
-  const smaa = new SMAAPass(1, 1);                        // #10 — anti-aliasing for the bloom pipeline
+  const smaa = new SMAAPass(1, 1);                        // #10 — anti-aliasing
   composer.addPass(smaa);
   composer.addPass(new OutputPass());                     // tone-map + sRGB to screen
 
@@ -353,58 +292,10 @@ export function createScene(container) {
     if (any) { sparkGeo.attributes.position.needsUpdate = true; sparkGeo.attributes.color.needsUpdate = true; }
   }
 
-  // ── Shockwave rings (#4) ──────────────────────────────────────────────
-  // A fixed pool of flat rings that expand and fade on a heavy impact. Additive and unlit with
-  // depthWrite off, so they cost no lighting, cast no shadow, and never z-fight the road they
-  // sit above. Same fire/age/recycle shape as the spark pool above — pre-allocated once, so a
-  // 30-marble pile-up allocates nothing.
-  const RINGS = 8;
-  const RING_LIFE = 0.42;       // seconds from fire to fully faded
-  const RING_R0 = 0.9;          // starting radius (about a marble)
-  const RING_R1 = 13;           // radius at end of life
-  const ringGeo = new THREE.RingGeometry(1, 1.14, 32);
-  const ringPool = [];
-  let ringHead = 0;
-  for (let i = 0; i < RINGS; i++) {
-    const mat = new THREE.MeshBasicMaterial({
-      color: 0xffffff, transparent: true, opacity: 0,
-      blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
-    });
-    const mesh = new THREE.Mesh(ringGeo, mat);
-    mesh.rotation.x = -Math.PI / 2;   // lie flat on the road
-    mesh.visible = false;
-    mesh.frustumCulled = false;
-    mesh.renderOrder = 2;
-    scene.add(mesh);
-    ringPool.push({ mesh, mat, life: 0 });
-  }
-
-  // Fire one ring at a world position. Recycles the oldest slot when the pool is exhausted,
-  // which is the correct behaviour here: in a pile-up the newest impacts are the ones worth
-  // seeing.
-  function burstRing(pos, colorHex, scale = 1) {
-    const r = ringPool[ringHead];
-    ringHead = (ringHead + 1) % RINGS;
-    r.life = RING_LIFE;
-    r.scale = scale;
-    r.mat.color.set(colorHex ?? 0xffd9a0);
-    r.mesh.position.set(pos.x, pos.y + 0.35, pos.z);
-    r.mesh.visible = true;
-  }
-
-  function updateRings(dt) {
-    for (const r of ringPool) {
-      if (r.life <= 0) continue;
-      r.life -= dt;
-      if (r.life <= 0) { r.mesh.visible = false; r.mat.opacity = 0; continue; }
-      const t = 1 - r.life / RING_LIFE;               // 0 at fire → 1 at death
-      const rad = (RING_R0 + (RING_R1 - RING_R0) * t) * (r.scale || 1);
-      r.mesh.scale.set(rad, rad, rad);
-      // Fade out on a curve rather than linearly, so the ring reads as a snap rather than a
-      // slow bloom.
-      r.mat.opacity = (1 - t) * (1 - t) * 0.85;
-    }
-  }
+  // Shockwave rings (#4) removed 2026-08-08 (user request). A pool of 8 additive flat
+  // rings used to expand and fade on heavy impacts and off the kicker band. The pool,
+  // burstRing() and updateRings() all went with it; game.js's two call sites now go
+  // through the no-op kept on the returned object below.
 
   // ── Audio spatialization helper (#9) ──────────────────────────────────
   // Turns a world position into a stereo pan and a distance gain relative to the LIVE camera,
@@ -432,14 +323,15 @@ export function createScene(container) {
   let fovPunch = 0;
   function punchFov() { fovPunch = -9; }
 
-  // ── #2 blur + #3 grade state ──────────────────────────────────────────
+  // ── #3 grade state ────────────────────────────────────────────────────
   // Live values are eased toward the targets every frame so a grade change is always a
-  // transition and never a cut. `blurPunch` is a decaying transient laid over the speed-driven
-  // blur, fired at the start gun and on boost-pad entry.
-  let blurPunch = 0;
+  // transition and never a cut.
+  //
+  // The radial blur (#2), vignette (#6) and chromatic aberration (#7) that used to be driven
+  // from here are all removed; the grade is the only thing this pass still does.
   let gradeTo = GRADES.racing;
   const gradeNow = {
-    tint: new THREE.Vector3(1, 1, 1), contrast: 1, saturation: 1, vignette: 1.15,
+    tint: new THREE.Vector3(1, 1, 1), contrast: 1, saturation: 1,
   };
 
   // Name one of GRADES ('pick' | 'racing' | 'final' | 'win' | 'loss'). Unknown names are
@@ -450,47 +342,22 @@ export function createScene(container) {
     if (g) gradeTo = g;
   }
 
-  function punchBlur(amount = 0.55) {
-    if (REDUCED_MOTION) return;
-    blurPunch = Math.max(blurPunch, amount);
-  }
+  // Kept as a no-op so the start-gun and boost-pad call sites in game.js stay valid; the
+  // smear they used to fire is gone (2026-08-07 user request).
+  function punchBlur() { /* radial blur removed */ }
 
-  function updatePost(dt, speed) {
+  function updatePost(dt) {
     const k = 1 - Math.exp(-3.2 * dt);      // grade easing; slower than the FOV so it reads as a mood shift
     gradeNow.tint.x += (gradeTo.tint[0] - gradeNow.tint.x) * k;
     gradeNow.tint.y += (gradeTo.tint[1] - gradeNow.tint.y) * k;
     gradeNow.tint.z += (gradeTo.tint[2] - gradeNow.tint.z) * k;
     gradeNow.contrast += (gradeTo.contrast - gradeNow.contrast) * k;
     gradeNow.saturation += (gradeTo.saturation - gradeNow.saturation) * k;
-    gradeNow.vignette += (gradeTo.vignette - gradeNow.vignette) * k;
 
     const u = post.uniforms;
     u.uTint.value.copy(gradeNow.tint);
     u.uContrast.value = gradeNow.contrast;
     u.uSaturation.value = gradeNow.saturation;
-    u.uVignette.value = gradeNow.vignette;
-
-    // §GFX-2/8 — the shared impact envelope rides on top of the baseline fringe.
-    // Adding rather than assigning keeps the permanent slight aberration the
-    // look depends on; a collision now widens it for as long as impactBus says
-    // the hit is still ringing, so the 3D image and the DOM chrome react to the
-    // same event on the same curve.
-    u.uAberration.value = ABERRATION_BASE + PostFx.punchAberration();
-
-    // Radial motion blur: REMOVED 2026-08-07 (user request).
-    //
-    // This ramped a radial smear in with speed (from BLUR_SPEED_LO up to
-    // BLUR_MAX), plus a decaying punch fired at the start gun and on every
-    // boost pad. Because the player's marble spends most of a race above the
-    // ramp's lower bound, the smear was effectively on for the whole run —
-    // it did not read as "fast", it read as an out-of-focus picture.
-    //
-    // Pinned to 0, which is also the value the shader branches on to skip the
-    // blur taps entirely, so this is a straight saving. `blurPunch` is still
-    // decayed below so the boost/start-gun callers that raise it stay harmless
-    // no-ops rather than accumulating forever.
-    u.uBlur.value = 0;
-    blurPunch = blurPunch > 0.005 ? blurPunch * Math.exp(-3.5 * dt) : 0;
   }
 
   // ── Left-drag mouse orbit around the followed target ──────────────────
@@ -534,7 +401,6 @@ export function createScene(container) {
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
     composer.setSize(w, h);
-    bloom.setSize(w, h);
     smaa.setSize(w, h);
     // Both of these own internal render targets sized independently of the
     // composer's; missing either leaves it sampling a stale buffer at the old
@@ -628,8 +494,7 @@ export function createScene(container) {
     PostFx.applyCameraShake(camera, performance.now() / 1000, 1.4);
 
     updateSparks(dt);
-    updateRings(dt);            // #4 — expanding shockwave rings
-    updatePost(dt, spd);        // #2 blur + #3 grade, driven by the same speed the FOV uses
+    updatePost(dt);             // #3 colour grade
     rackFocus.update(dt);       // §GFX-2 — no-op unless a photo finish is running
   }
 
@@ -642,7 +507,9 @@ export function createScene(container) {
     followTarget,
     burstSparks,
     burstConfetti,
-    burstRing,        // #4
+    // #4 shockwave rings removed; kept as a no-op so game.js impact/kicker call
+    // sites stay valid without each needing a guard.
+    burstRing() { /* shockwave rings removed */ },
     audioCue,         // #9
     setGrade,         // #3
     punchBlur,        // #2
@@ -665,12 +532,6 @@ export function createScene(container) {
       window.removeEventListener('pointerup', onPointerUp);
       sparkGeo.dispose();
       sparkMat.dispose();
-      // Rings share one geometry across the pool; each owns its own material (they carry
-      // independent colour + opacity), so the geometry is disposed once and the materials each.
-      ringGeo.dispose();
-      for (const r of ringPool) r.mat.dispose();
-      bgTexture.dispose();
-      envRT.texture.dispose();
       rackFocus.dispose();
       gtao?.dispose?.();
       composer.dispose();

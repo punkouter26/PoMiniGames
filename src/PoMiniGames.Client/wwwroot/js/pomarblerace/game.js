@@ -439,7 +439,7 @@ export class Game {
         (this.track.finishZ - leaderPre.body.position.z) < SLOWMO_DIST;
       const sdt = this.slowmo ? dt * SLOWMO_SCALE : dt;
 
-      this.track.driveMotors(this.raceClock);   // clock also breathes the boost light shafts (#4b)
+      this.track.driveMotors(this.raceClock);   // arg now unused (boost light shafts removed)
       this._applyBoost(sdt);
       this._applySteer(sdt);   // player's held steering, integrated by the step below
       this._applyKickers();    // #6 telegraphed kicker band (push-only)

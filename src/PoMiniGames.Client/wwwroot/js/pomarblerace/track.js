@@ -164,30 +164,12 @@ function roadTexture() {
   return t;
 }
 
-// GFX #4b — vertical falloff for the boost-pad light shafts. Bright and solid where the shaft
-// meets the road, fading to nothing at the top so the cone has no visible cut-off edge. Cylinder
-// UVs run v=0 at the base to v=1 at the top, so the gradient is written bottom-up. Built once.
-let _shaftTex = null;
-function shaftTexture() {
-  if (_shaftTex) return _shaftTex;
-  const c = document.createElement('canvas');
-  c.width = 4; c.height = 64;
-  const g = c.getContext('2d');
-  const grd = g.createLinearGradient(0, 64, 0, 0);   // y=64 is v=0 (base)
-  grd.addColorStop(0, 'rgba(255,255,255,1)');
-  grd.addColorStop(0.35, 'rgba(255,255,255,0.45)');
-  grd.addColorStop(1, 'rgba(255,255,255,0)');
-  g.fillStyle = grd; g.fillRect(0, 0, 4, 64);
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  _shaftTex = t;
-  return t;
-}
+// (The #4b vertical-falloff gradient that fed the boost-pad light shafts lived here. The shafts
+// were removed 2026-08-08 and it had no other consumer, so it went with them.)
 
-// GFX #5 — road normal map. The floor material already carried clearcoat, but with a perfectly
-// flat surface normal the clearcoat highlight was a single smooth sweep that read as polished
-// plastic. This bumps the aggregate so the highlight BREAKS UP across the surface, which is what
-// sells wet tarmac. Derived from the same speckle logic as roadTexture() and generated on canvas
+// GFX #5 — road normal map. Bumps the aggregate so the key light's highlight BREAKS UP across
+// the surface instead of sweeping it as one smooth sheet. It originally paired with the road
+// clearcoat (removed 2026-08-08) but earns its keep on the matte surface too. Derived from the same speckle logic as roadTexture() and generated on canvas
 // like every other texture here — no asset file.
 //
 // Built by sampling a grey-height field and taking its gradient (a Sobel-lite central
@@ -366,31 +348,26 @@ export function generateTrack(world, materials, seed, marbleCount = 8) {
     return { p, dir, up, rb, q };
   };
 
-  // Materials. Floor is now an ASPHALT ROAD — a matte-ish tarmac (rough, low metal, a whisper
-  // of clearcoat for wet sheen) carrying the speckled road texture, so the ground reads as a
-  // road surface rather than a neon grid. The grid is still used by the rumble/kicker bands.
+  // Materials. Floor is an ASPHALT ROAD — matte tarmac carrying the speckled road texture, so
+  // the ground reads as a road surface rather than a neon grid. The grid is still used by the
+  // rumble/kicker bands.
   const grid = gridTexture();
   const road = roadTexture();
-  // GFX #5 — WET SHEEN. clearcoat was already enabled here, which is the whole reason this is
-  // cheap: the clearcoat shader permutation is already compiled, so pushing its strength up
-  // costs literally nothing at runtime. Raising clearcoat and dropping clearcoatRoughness turns
-  // the flat matte tarmac into a rain-slick surface that picks up the key light and the IBL.
-  // envMapIntensity is lifted because the scene HAS an environment (scene.js PMREM/RoomEnvironment)
-  // that this material was barely sampling.
-  //
-  // Deliberately NOT using MeshPhysicalMaterial.anisotropy: it's available in three r165 and
-  // would look good, but it compiles a new shader feature onto the single largest surface in the
-  // scene. normalMap + free clearcoat tuning buys most of the look for a fraction of the cost.
+  // Road sheen (#19) removed 2026-08-08 (user request). The floor carried a clearcoat 0.55 /
+  // clearcoatRoughness 0.25 "wet sheen" plus a lifted envMapIntensity, which turned the matte
+  // tarmac into a rain-slick surface. Both are gone: MeshStandardMaterial has no clearcoat lobe
+  // at all, and with the image-based lighting removed (#17) there is no environment left to
+  // sample, so metalness drops to 0 with it — a metal with nothing to reflect renders black.
+  // The normal map stays; that is surface relief, not a reflection.
   const roadNormal = roadNormalTexture();
-  const floorMat = new THREE.MeshPhysicalMaterial({
+  const floorMat = new THREE.MeshStandardMaterial({
     color: 0x2a3446, emissive: 0x0a0f1c, emissiveIntensity: 0.16,
-    roughness: 0.72, metalness: 0.1, clearcoat: 0.55, clearcoatRoughness: 0.25,
+    roughness: 0.82, metalness: 0.0,
     map: road, roughnessMap: road,
     normalMap: roadNormal,
     // Restrained: at full strength the aggregate reads as gravel and the road stops looking
     // fast. This is enough to break the highlight up, not enough to texture the silhouette.
     normalScale: new THREE.Vector2(0.45, 0.45),
-    envMapIntensity: 1.25,
   });
   // Rumble/boost/kicker bands are overlay ribbons floated 0.05–0.06 above the floor ribbon they
   // share a shape with. That gap is far too small to survive depth quantisation out where the
@@ -400,9 +377,9 @@ export function generateTrack(world, materials, seed, marbleCount = 8) {
   // distance. Negative factor/units = pulled toward the camera.
   const OVERLAY_OFFSET = { polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 };
   // #5 rumble-band floor: warm amber so the friction stretches read at a glance.
-  const rumbleFloorMat = new THREE.MeshPhysicalMaterial({
+  const rumbleFloorMat = new THREE.MeshStandardMaterial({
     color: 0x3a2410, emissive: 0xfb923c, emissiveIntensity: 0.55,
-    roughness: 0.7, metalness: 0.15, clearcoat: 0.25, clearcoatRoughness: 0.5,
+    roughness: 0.8, metalness: 0.0,
     map: grid, roughnessMap: grid,
     ...OVERLAY_OFFSET,
   });
@@ -410,7 +387,7 @@ export function generateTrack(world, materials, seed, marbleCount = 8) {
   const boostTex = boostTexture();
   const boostFloorMat = new THREE.MeshStandardMaterial({
     color: 0x0e7490, emissive: 0x22d3ee, emissiveIntensity: 0.75,
-    roughness: 0.3, metalness: 0.2, map: boostTex,
+    roughness: 0.42, metalness: 0.0, map: boostTex,
     ...OVERLAY_OFFSET,
   });
   // Berms replace the old flat cyan walls: red/white racing kerbs that curve up out of the road
@@ -418,7 +395,7 @@ export function generateTrack(world, materials, seed, marbleCount = 8) {
   const kerb = kerbTexture();
   const bermMat = new THREE.MeshStandardMaterial({
     color: 0xffffff, emissive: 0x1a0303, emissiveIntensity: 0.18,
-    roughness: 0.55, metalness: 0.15, map: kerb,
+    roughness: 0.66, metalness: 0.0, map: kerb,
   });
 
   const addBody = (body) => { world.addBody(body); bodies.push(body); };
@@ -579,48 +556,10 @@ export function generateTrack(world, materials, seed, marbleCount = 8) {
     group.add(bm);
   }
 
-  // GFX #4b — BOOST LIGHT SHAFTS. Volumetric-looking cones of light standing on each pad.
-  // Additive, unlit, depthWrite off: no lighting cost, no shadow cost, nothing to z-fight.
-  // All of them are ONE InstancedMesh — a single draw call for the whole set.
-  //
-  // This is as much a gameplay read as a visual one. Boost pads are the one genuinely good
-  // surface on the track, and a flat cyan ribbon on the floor is invisible until you're nearly
-  // on it. A shaft standing 30 units in the air is readable from far enough down the chute to
-  // actually steer for, which is the whole verb of the game.
-  const SHAFTS_PER_BAND = 4;
-  const SHAFT_H = 30;
-  const shaftGeo = new THREE.CylinderGeometry(5.5, 2.6, SHAFT_H, 8, 1, true);
-  // Cylinder geometry is centred on its own origin; shift it up so the instance transform can
-  // place its BASE on the road rather than its middle.
-  shaftGeo.translate(0, SHAFT_H / 2, 0);
-  const shaftMat = new THREE.MeshBasicMaterial({
-    color: 0x22d3ee, map: shaftTexture(), transparent: true, opacity: 0.34,
-    blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
-  });
-  const shaftCount = ZONES.BOOST.length * SHAFTS_PER_BAND;
-  const shafts = new THREE.InstancedMesh(shaftGeo, shaftMat, shaftCount);
-  shafts.frustumCulled = false;
-  {
-    const m4 = new THREE.Matrix4();
-    const scl = new THREE.Vector3(1, 1, 1);
-    const pos = new THREE.Vector3();
-    let n = 0;
-    for (const [a, b] of ZONES.BOOST) {
-      for (let k = 0; k < SHAFTS_PER_BAND; k++) {
-        // Spread the shafts down the band and across the channel, so they frame the pad as a
-        // gate to aim through instead of a single post.
-        const s = a + (b - a) * ((k + 0.5) / SHAFTS_PER_BAND);
-        const f = frameAt(s);
-        const across = (k % 2 === 0 ? -1 : 1) * TRACK.CHANNEL_WIDTH * 0.29;
-        pos.copy(f.p).addScaledVector(f.rb, across);
-        // Orient along the track's own up vector so shafts stand square to a banked road
-        // instead of leaning through it.
-        m4.compose(pos, f.q, scl);
-        shafts.setMatrixAt(n++, m4);
-      }
-    }
-  }
-  group.add(shafts);
+  // Boost light shafts (#18) removed 2026-08-08 (user request). Four additive 30-unit cones
+  // stood on each boost band as a long-range read for where to steer. Note the trade-off: the
+  // pads are still marked, but only by the flat cyan chevron ribbon on the road, which does not
+  // become visible until you are much closer to it.
 
   // #6 telegraphed KICKER band: push-only (no collider, like the boost pads) but it fires on a
   // cycle — charging up (brightening magenta) for a beat as a TELL, then flashing and shoving
@@ -630,7 +569,7 @@ export function generateTrack(world, materials, seed, marbleCount = 8) {
   // impulse (see _applyKickers). Magenta so it never reads as a friendly cyan boost.
   const kickerMat = new THREE.MeshStandardMaterial({
     color: 0x3b0a52, emissive: 0xe879f9, emissiveIntensity: 0.5,
-    roughness: 0.35, metalness: 0.25, map: grid,
+    roughness: 0.5, metalness: 0.0, map: grid,
     ...OVERLAY_OFFSET,
   });
   kickerMat.side = THREE.DoubleSide;
@@ -655,8 +594,8 @@ export function generateTrack(world, materials, seed, marbleCount = 8) {
   //    player marbles — every obstacle here is a cylinder or box primitive. ──
   const bumpMat = new THREE.MeshStandardMaterial({ color: 0x7c2d12, emissive: 0xfb923c, emissiveIntensity: 0.8, roughness: 0.5 });
   const pinMat = new THREE.MeshStandardMaterial({ color: 0x4a1d52, emissive: 0xe879f9, emissiveIntensity: 0.85, roughness: 0.4 });
-  const padMat = new THREE.MeshStandardMaterial({ color: 0x14532d, emissive: 0x4ade80, emissiveIntensity: 0.85, roughness: 0.4, metalness: 0.2 });
-  const rotorMat = new THREE.MeshStandardMaterial({ color: 0x7f1d1d, emissive: 0xf87171, emissiveIntensity: 0.9, roughness: 0.35, metalness: 0.35 });
+  const padMat = new THREE.MeshStandardMaterial({ color: 0x14532d, emissive: 0x4ade80, emissiveIntensity: 0.85, roughness: 0.52, metalness: 0.0 });
+  const rotorMat = new THREE.MeshStandardMaterial({ color: 0x7f1d1d, emissive: 0xf87171, emissiveIntensity: 0.9, roughness: 0.5, metalness: 0.0 });
 
   // ZONE 1 — #6 washboard ridges: shallow transverse CYLINDERS the marbles roll
   // smoothly over, jostling the pack without pinballing it. The rounded top keeps
@@ -901,7 +840,7 @@ export function generateTrack(world, materials, seed, marbleCount = 8) {
   const finishF = frameAt(0.995);
   // Black-and-white checkerboard ground over the final stretch marks the finish.
   const checkerMat = new THREE.MeshStandardMaterial({
-    map: checkerTexture(), roughness: 0.5, metalness: 0.1, side: THREE.DoubleSide,
+    map: checkerTexture(), roughness: 0.6, metalness: 0.0, side: THREE.DoubleSide,
   });
   const checkerMesh = new THREE.Mesh(buildFloorRibbon(ZONES.FINISH[0], ZONES.FINISH[1], 0.06, 16), checkerMat);
   checkerMesh.receiveShadow = true;
@@ -982,13 +921,11 @@ export function generateTrack(world, materials, seed, marbleCount = 8) {
     // Cannon zeroes a motor's target the moment something stalls it hard; re-arming
     // every frame keeps the Gauntlet turning instead of seizing on a wedged marble.
     //
-    // Also breathes the boost-pad light shafts (#4b). It rides here rather than on a call site
-    // of its own because game.js already invokes this once per racing frame with the clock to
-    // hand — one shared material opacity, so the pulse costs a single uniform write for all
-    // twelve shafts.
-    driveMotors(t) {
+    // This also used to breathe the boost-pad light shafts' shared opacity; the shafts were
+    // removed 2026-08-08, so `t` is now unused. It is kept in the signature because game.js
+    // calls driveMotors(clock) once per racing frame and an arity change buys nothing.
+    driveMotors() {
       for (const m of motors) m.hinge.setMotorSpeed(m.speed);
-      if (typeof t === 'number') shaftMat.opacity = 0.26 + 0.14 * (0.5 + 0.5 * Math.sin(t * 2.4));
     },
     // Centerline (floor-top) Y at a given forward Z — used to detect marbles that
     // have fallen off the track (their Y drops well below this).
@@ -999,12 +936,12 @@ export function generateTrack(world, materials, seed, marbleCount = 8) {
       group.traverse((o) => {
         if (o.geometry) o.geometry.dispose();
         // InstancedMesh also owns instance attribute buffers; geometry.dispose() alone leaves
-        // those allocated. (The shafts are the only instanced node the track builds.)
+        // those allocated.
         if (o.isInstancedMesh) o.dispose();
       });
-      // The shaft material is per-track (its opacity is animated), unlike the procedural
-      // textures above, which are module-level singletons deliberately shared across tracks.
-      shaftMat.dispose();
+      // The per-track shaft material was disposed here; the shafts were removed 2026-08-08.
+      // Every material still in use is a module-level singleton shared across tracks, so there
+      // is nothing left for this to free beyond the traversal above.
     },
   };
 }

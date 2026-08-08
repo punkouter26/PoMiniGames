@@ -88,6 +88,21 @@
             </button>
         </div>
 
+        <div class="prefs-row">
+            <div class="prefs-label">
+                <span class="prefs-name">Game intros</span>
+                <span class="prefs-hint">Show the controls card before each 1-player game.</span>
+            </div>
+            <button type="button"
+                    class="prefs-toggle @(Settings.ShowGameIntros ? "prefs-toggle--on" : null)"
+                    role="switch"
+                    aria-checked="@Settings.ShowGameIntros"
+                    aria-label="Game intros"
+                    @onclick="ToggleGameIntros">
+                <span class="prefs-toggle-knob"></span>
+            </button>
+        </div>
+
         <!-- ── Motion & chrome ── -->
         <div class="prefs-row">
             <div class="prefs-label">
@@ -195,6 +210,14 @@
     private async Task ToggleFps()
     {
         Settings.SetShowFps(!Settings.ShowFps);
+        await Feedback.ClickAsync();
+    }
+
+    // The only way back once a player has ticked "Don't show this again" on a
+    // game's controls card (browser audit #4).
+    private async Task ToggleGameIntros()
+    {
+        Settings.SetShowGameIntros(!Settings.ShowGameIntros);
         await Feedback.ClickAsync();
     }
 }

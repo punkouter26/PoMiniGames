@@ -12,6 +12,8 @@
 @inject KioskCoordinator Kiosk
 @inject SettingsService Settings
 
+<PageTitle>Brawl · PoMiniGames</PageTitle>
+
 <GameShell Title=@TitleContent
            Player="@_playerName"
            Elo="@(_mode == "1p" ? _rating.Elo : (int?)null)"
@@ -20,6 +22,7 @@
            GameOver="@(_phase == "result" && !_demo)"
            GameKey="@(_mode == "1p" ? "pobrawl" : null)"
            Outcome="@OutcomeForCue"
+           RequiresWebGl="true"
            GameSummary="@GameSummaryContent">
     @if (!_introDone)
     {
@@ -37,7 +40,11 @@
                    OnStart="OnIntroStartAsync" />
     }
     <div class="pb-wrap">
-        <div id="pobrawl-container" class="pb-canvas-host"></div>
+        @* Labelled host — see the note on PoSports (browser audit #6): the engine
+           appends its <canvas> here, so this is the only node this component can
+           attach an accessible name to. *@
+        <div id="pobrawl-container" class="pb-canvas-host"
+             role="img" aria-label="Brawl arena — the fight renders here"></div>
 
         @* HP bar HUD, fed by the JS engine's OnHud callback *@
         @if (_phase == "fighting" || _demo)

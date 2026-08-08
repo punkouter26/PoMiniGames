@@ -21,6 +21,8 @@
    2026-07-19 browser audit #7: the header was missing the ELO badge that
    Connect Five and Brawl both render — now passed through GameShell.Elo
    so the live rating shows next to the signed-in identity on 1P AI. *@
+<PageTitle>Tic-Tac-Toe · PoMiniGames</PageTitle>
+
 <GameShell
     Title=@TitleContent
     Player="@_playerName"
@@ -30,6 +32,7 @@
     Outcome="@OutcomeForCue"
     Stats="@(PlayMode == "ai" ? _statItems : null)"
     Elo="@(PlayMode == "ai" ? _rating.Elo : (int?)null)"
+    Announcement="@Announcement"
     GameSummary="@GameSummaryContent">
     @if (!_introDone)
     {
@@ -127,6 +130,19 @@
         _ => GameOutcome.Unknown,
     };
 
+    // Spoken by GameShell's shared live region (browser audit #6). The board is a
+    // grid of labelled cells, so a screen reader can read the position — what it
+    // could not tell was whose turn it is or that the game had ended. Demo drives
+    // itself with nobody listening, so it announces nothing.
+    private string? Announcement => PlayMode == "demo" ? null : _gameResult switch
+    {
+        GameResult.Win => "You win.",
+        GameResult.Loss => PlayMode == "ai" ? "You lose." : "Circles win.",
+        GameResult.Draw => "It's a draw.",
+        _ when _isAiTurn => "Opponent is thinking.",
+        _ => "Your turn.",
+    };
+
     // Adaptive 1-player rating (same system as ConnectFive/PoBrawl). The CPU is
     // matched to _cpuElo — the player's rating at the start of the game — so the
     // opponent gets stronger as the player's ELO climbs and eases off after losses.
@@ -162,10 +178,16 @@
     // Intro/welcome gate — overlay blocks the board until dismissed (OK); demo
     // flashes it for 2s. Nothing auto-moves in human modes, so the overlay is
     // the only gate needed.
+    // Audit #5: 2-player route used to inherit the 1P intro ("the CPU answers
+    // with ⭕") even though there is no CPU. Branch on PlayMode so each
+    // variant surfaces the controls that actually apply.
     private bool _introDone;
-    private GameIntro.IntroMode _introMode => PlayMode == "demo"
-        ? GameIntro.IntroMode.Demo
-        : GameIntro.IntroMode.OnePlayer;
+    private GameIntro.IntroMode _introMode => PlayMode switch
+    {
+        "demo" => GameIntro.IntroMode.Demo,
+        "2p"   => GameIntro.IntroMode.TwoPlayer,
+        _      => GameIntro.IntroMode.OnePlayer,
+    };
     private void DismissIntro() => _introDone = true;
 
     // 2026-07-19 browser audit #8: the title used to leak the grid dimension
@@ -174,14 +196,35 @@
     // details.
     private RenderFragment TitleContent => @<span>❌ Tic-Tac-Toe</span>;
 
-    private RenderFragment HowToPlayContent => @<div>
-        <p>Line up @TicTacToeBoard.WinLength in a row on the @TicTacToeBoard.Size×@TicTacToeBoard.Size board.</p>
-        <ul>
-            <li>Tap an empty cell to place your ❌ — the CPU answers with ⭕</li>
-            <li>The CPU is matched to your ELO: win and it gets stronger, lose and it eases off</li>
-            <li>Even the top CPU makes the occasional mistake — stay sharp</li>
-        </ul>
-    </div>;
+    // Audit #5: mode-specific HowToPlay. 1P talks about the CPU and ELO, 2P
+    // talks about two players taking turns, the demo is a CPU-vs-CPU exhibition.
+    private RenderFragment HowToPlayContent => PlayMode switch
+    {
+        "demo" => @<div>
+            <p>Watch two CPUs play 4-in-a-row on a @TicTacToeBoard.Size×@TicTacToeBoard.Size grid.</p>
+            <ul>
+                <li>No input — the board runs itself for the duration of the demo reel</li>
+                <li>First to line up @TicTacToeBoard.WinLength in a row wins</li>
+                <li>The demo loops on the post-game screen until the reel advances</li>
+            </ul>
+        </div>,
+        "2p" => @<div>
+            <p>Two players, one device — ❌ goes first, then ⭕.</p>
+            <ul>
+                <li>Tap an empty cell on your turn; the next player taps on theirs</li>
+                <li>First to @TicTacToeBoard.WinLength in a row — horizontal, vertical or diagonal — wins</li>
+                <li>No CPU and no rating: just take turns</li>
+            </ul>
+        </div>,
+        _ => @<div>
+            <p>Line up @TicTacToeBoard.WinLength in a row on the @TicTacToeBoard.Size×@TicTacToeBoard.Size board.</p>
+            <ul>
+                <li>Tap an empty cell to place your ❌ — the CPU answers with ⭕</li>
+                <li>The CPU is matched to your ELO: win and it gets stronger, lose and it eases off</li>
+                <li>Even the top CPU makes the occasional mistake — stay sharp</li>
+            </ul>
+        </div>,
+    };
 
     // Board state → CSS modifier: "decided" spotlights the winning line (works for
     // a vs-AI win, a vs-AI loss, and either side of a 2P game); "draw" greys out.

@@ -150,9 +150,14 @@ const CAVignetteShader = {
     uDesat: { value: 0 },
     // Film grain (idea #10): animated luminance-weighted noise. uGrain is the
     // amount (0 = off); uTime drives the per-frame hash so the grain crawls.
-    // 0.04 reads as subtle film texture on hardware GL; nudge up toward 0.08 for
-    // a grittier look or down to 0 to disable.
-    uGrain: { value: 0.04 },
+    //
+    // 2026-08-07 (user request): OFF. At 0.04 the noise was weighted into the
+    // shadows, and PoBrawl's fighters are mostly dark suits against a dark
+    // hall — so instead of reading as film texture it read as a crawling
+    // cross-hatch woven over the whole image, which is what it looked like on
+    // the KO frames. The shader branch below is skipped entirely at 0, so this
+    // costs nothing; raise it if the look is ever wanted back.
+    uGrain: { value: 0.0 },
     uTime: { value: 0 },
     // ── Godrays / lens-flare uniforms (idea #10) ───────────────────
     // uGodrays     : intensity (0 = off). Drives the spotlight blade.
@@ -1742,7 +1747,8 @@ export class BrawlGame {
     this.hitstopT = 6 * SIM_DT;
     this.shakeT = 0.16;
     this.shakeAmp = 0.1;
-    this.radialPulse = Math.max(this.radialPulse, 0.45);
+    // Radial streak on a block removed 2026-08-07 alongside the per-hit pulses
+    // in _hitFeedback — blocks come in bursts too, so this was the same flicker.
     // Chromatic-aberration colour pulse removed per user request.
     this.audio.block(mid);
     this.excited = Math.max(this.excited, 0.5);
@@ -2747,11 +2753,12 @@ export class BrawlGame {
         this.excited = 1;
         this._spawnConfetti();
 
-        // Arm the KO limelight: it'll sweep the loser for the duration of
-        // the cinematic, tracking their hips each frame.
-        this._limelightActive = 3.5;
-        const lf = this.fighters.find((f) => f !== wf);
-        if (lf) this._limelightTarget.set(lf.rig.root.position.x, 1.0, lf.rig.root.position.z);
+        // The KO limelight went with the lights-down cinematic (2026-08-07).
+        // A 6.0-intensity white spot only reads as "dramatic" against a dark
+        // hall; with the house lights now staying up it was just a blown-out
+        // hotspot on the fallen fighter. Left disarmed rather than deleted so
+        // the rig is still there if the cinematic is ever wanted back.
+        this._limelightActive = 0;
       }
     }
 
@@ -2849,17 +2856,22 @@ export class BrawlGame {
     this.shakeT = 0.14;
     this.shakeAmp = (attack.name === 'kick' ? 0.09 : 0.06) * chargeMul;
     this.fovPunch = (attack.name === 'kick' ? 5.0 : 3.0) * chargeMul;
-    // Post-FX spike: bloom flares and the exposure "blooms open" for a beat on
-    // heavy hits. The chromatic-aberration (colour-fringe) pulse was removed per
-    // user request — hits no longer tint/split the frame's colour. Dialled down
-    // per user request so the dark-edge / teal-grade "black & green" pulse on
-    // each hit reads as a subtle beat rather than a full-frame flash.
-    this.bloomPulse = Math.max(this.bloomPulse, (attack.name === 'kick' ? 0.35 : 0.2) * chargeMul);
-    this.exposurePulse = Math.max(this.exposurePulse, (attack.name === 'kick' ? 0.08 : 0.045) * chargeMul);
-    // One-beat radial streak toward the frame center — reads as the impact
-    // shockwave. Scales with attack weight and stored charge. Halved so the
-    // edge-darkening (the "black closing in" part) stays gentle.
-    this.radialPulse = Math.max(this.radialPulse, (attack.name === 'kick' ? 0.28 : 0.16) * chargeMul);
+    // Post-FX spikes on impact: REMOVED 2026-08-07 (user request).
+    //
+    // A hit used to flare the bloom, blow the exposure open and fire a radial
+    // streak that darkened the frame edges. Each one is a full-frame luminance
+    // change lasting a few hundred ms, and in a normal exchange — several hits a
+    // second, each re-arming the pulse via Math.max before the previous had
+    // decayed — they overlapped into a continuous flicker across the whole
+    // image. The chromatic-aberration pulse went earlier for the same reason,
+    // and bloom/radial had already been halved twice without fixing it, so they
+    // are off rather than dialled down again.
+    //
+    // The hit still lands hard: hitstop, camera shake, the FOV punch, the
+    // directional spring impulse, the impact spark light, audio and haptics are
+    // all untouched above. What is gone is only the part that strobed the
+    // picture. _updateFx still decays these fields, so nothing else needs to
+    // know they are now always zero.
   }
 
   // Decay the post-FX pulses and push them into the passes.
@@ -2891,24 +2903,20 @@ export class BrawlGame {
       this.fxPass.uniforms.uVignette.value =
         0.5 + 0.04 * Math.sin(this.atmoT * 0.7) + this.lightsDim * 0.35;
 
-      // ── Godrays (idea #10) ───────────────────────────────────────
-      // Project the spotlight's world position to screen-space UV and feed
-      // it to the shader as the origin. Strength pulses with the
-      // lights-dim blend (the KO) — at the dramatic moment the spotlight
-      // reads as a proper cinema shaft.
-      const spotPos = this._godraysTarget || new THREE.Vector3(0, 11, 0);
-      const projected = spotPos.clone().project(this.camera);
-      const sx = (projected.x + 1) / 2;
-      const sy = (projected.y + 1) / 2;
-      this.fxPass.uniforms.uGodraysOrig.value[0] = sx;
-      this.fxPass.uniforms.uGodraysOrig.value[1] = sy;
-      // Intensity rises with lights-dim and the limelight activity. A small
-      // always-on baseline (idea #4) keeps the overhead shaft reading as
-      // volumetric during normal play, not just at the KO; the KO ramp then
-      // blows it out to a full cinema blade.
-      const limelightOn = this._limelightActive > 0 ? 1 : 0;
-      this.fxPass.uniforms.uGodrays.value =
-        0.07 + 0.32 * this.lightsDim + 0.45 * limelightOn * this.lightsDim;
+      // ── Godrays (idea #10) — REMOVED 2026-08-07 (user request) ───────
+      // This was a 16-tap radial smear from every pixel toward the overhead
+      // spotlight's projected screen position, so it drew visible streaks
+      // fanning out from wherever that light happened to land — usually the
+      // upper-left of the frame. It ran at a constant 0.07 baseline during
+      // normal play ("keeps the overhead shaft reading as volumetric") on top
+      // of the KO ramp, so it never actually switched off; killing the KO
+      // lights-down left the streaks behind.
+      //
+      // Held at 0 so the shader's `if (uGodrays > 0.003)` branch is skipped
+      // outright — that also drops 16 texture samples per pixel per frame.
+      // The projection maths that fed uGodraysOrig went with it; nothing else
+      // reads that uniform.
+      this.fxPass.uniforms.uGodrays.value = 0;
     }
     if (this.bloomPass) this.bloomPass.strength = 0.32 + this.bloomPulse;
     this.renderer.toneMappingExposure = this.exposureBase + this.exposurePulse;
@@ -2934,14 +2942,22 @@ export class BrawlGame {
     slot.light.intensity = peak;
   }
 
-  // House-light choreography. Normally static; on KO the house dims over
-  // ~0.5s, the overhead spotlight brightens and hunts the fallen fighter.
-  // Backlights track their fighters every frame for rim separation.
+  // House-light choreography. Backlights track their fighters every frame for
+  // rim separation.
+  //
+  // 2026-08-07 (user request): the KO "lights-down" cinematic is removed. It
+  // used to ramp `lightsDim` to 1 on a KO, which cut hemi/key/fill by 75-85%,
+  // pulled the vignette from 0.50 to 0.85, drained 55% of the colour and blew
+  // the godrays out to a full shaft. On anything but a bright display the
+  // result was a screen that simply went black for a second and came back
+  // washed-out and grainy. Pinned to 0 so every consumer of `lightsDim`
+  // (uDesat, uVignette, uGodrays and the four house lights below) collapses to
+  // its neutral, lights-up value. The KO still reads through the flash, the
+  // slow-mo fall, the replay and the banner.
   _updateLighting(dt) {
     const L = this.arena && this.arena.lights;
     if (!L) return;
-    const target = this.cameraMode === 'ko' ? 1 : 0;
-    this.lightsDim = THREE.MathUtils.lerp(this.lightsDim, target, Math.min(1, dt * 2.5));
+    this.lightsDim = 0;
     const d = this.lightsDim;
     L.hemi.intensity = 0.22 * (1 - d * 0.85);
     L.key.intensity = 3.4 * (1 - d * 0.75);
@@ -3050,9 +3066,9 @@ export class BrawlGame {
       atmo.cone.position.copy(L.spot.position).addScaledVector(_beamDir, -5.4);
     }
 
-    // Godrays/idea #10 — feed the spotlight's world position to the post
-    // shader so the godray blade projects from there in screen-space.
-    this._godraysTarget = L.spot.position;
+    // (The godray blade's screen-space origin was fed from L.spot.position
+    // here. Godrays were removed 2026-08-07 — see the uGodrays note in
+    // _updateFx — so nothing consumes it any more.)
 
     // Backlights: behind each fighter, opposite the camera.
     if (this.fighters && this._backlights) {
@@ -3571,8 +3587,12 @@ export class BrawlGame {
         b.classList.add('pb-touch-held');
         window.dispatchEvent(new KeyboardEvent('keydown', { code }));
         // §7 Haptic tick on press — heavier for strikes (punch/kick) than movement.
+        // Bug fix (2026-08-07): skip on kiosk/demo routes — no user gesture
+        // means every call below would emit a console error.
         try {
-          if ((localStorage.getItem('pomini_muted') || '').indexOf('1') === -1 && navigator.vibrate) {
+          const onKiosk = (location.search || '').indexOf('kiosk=') >= 0
+            || /\/demo(\b|\/|$)/i.test(location.pathname || '');
+          if (!onKiosk && (localStorage.getItem('pomini_muted') || '').indexOf('1') === -1 && navigator.vibrate) {
             navigator.vibrate((code === 'KeyF' || code === 'KeyG') ? 16 : 8);
           }
         } catch { }

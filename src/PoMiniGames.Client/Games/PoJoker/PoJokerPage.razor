@@ -5,7 +5,7 @@
 @inject NavigationManager Navigation
 @inject GameStatsService GameStats
 
-<PageTitle>Joker — The Digital Jester</PageTitle>
+<PageTitle>Joker · PoMiniGames</PageTitle>
 
 @* 2026-07-16: this page wrapped GameShell but never passed GameOver, so the
    shared modal could never render and the show ended on an inline, non-blocking
@@ -24,7 +24,7 @@
                    Title="@TitleContent"
                    Objective="The digital Jester performs a 10-joke set — see how many land."
                    Controls="@HowToPlayContent"
-                   Mode="GameIntro.IntroMode.Demo"
+                   Mode="@(_isDemo ? GameIntro.IntroMode.Demo : GameIntro.IntroMode.OnePlayer)"
                    OnStart="DismissIntro" />
     }
     <div class="pojoker-root">
@@ -52,8 +52,11 @@
     private int _triumphs;
     private List<StatItem>? _statItems;
 
-    // Intro/welcome gate — a 2s flash (this is a watch-only performance); the
-    // show runs behind it and the card auto-clears.
+    // Intro/welcome gate. /pojoker/demo gets the 2s auto-clearing flash (nobody
+    // is there to press OK); /pojoker gets the same OK-gated controls card as the
+    // other nine games. It used to hard-code Demo on both routes, so a player who
+    // chose Joker from the home page had the card yanked away after two seconds
+    // before they could read it (2026-08-07 browser audit #10).
     private bool _introDone;
     private void DismissIntro() => _introDone = true;
 

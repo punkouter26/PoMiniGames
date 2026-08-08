@@ -10,15 +10,19 @@
 @inject PoSportsHubService Hub
 @implements IAsyncDisposable
 
-<PageTitle>Sports — Lobby</PageTitle>
+<PageTitle>Sports — Lobby · PoMiniGames</PageTitle>
 
 @* Header parity: this page hosts no <GameShell>, so nothing was projecting into
    the top bar's game slot and the lobby was one of only two game routes showing
    the bare brand with no game name. It already owns the right fragment for
    GameIntro — the header slot gets the same one. *@
+@* 2026-08-07 browser audit #9: mirror GameShell exactly — an <h1> (this was a
+   styled <span>, so the page had no heading at all for a screen reader) plus the
+   same "← Home" affordance every GameShell game gets. *@
 <SectionContent SectionName="game-header">
     <div class="gps-header-slot">
-        <span class="gps-game-title">@TitleContent</span>
+        <h1 class="gps-game-title">@TitleContent</h1>
+        <a class="gps-back-link" href="/" aria-label="Back to home" title="Back to home">← Home</a>
     </div>
 </SectionContent>
 

@@ -124,18 +124,42 @@ export async function mount(canvas, opts) {
 
     const boardW = cols * CELL;
     const boardH = rows * CELL;
-    // Framed from the diagonal distance so a wide ConnectFive board and a square
-    // TicTacToe board both fill the frame with the same margin.
+
+    // ── Framing (2026-08-07 browser audit) ──────────────────────────────────
+    // The camera looks STRAIGHT DOWN at the board, and the distance is solved so
+    // the board fills the canvas exactly. Both halves of that matter:
     //
-    // 2.35 -> 1.95: at a 30 deg vertical FOV the visible height at the board plane
-    // is 2*d*tan(15deg) ~= 0.536*d, so 2.35 framed the board across only ~79% of
-    // the canvas and left a ring of bare DOM cell sockets showing around the GL
-    // slab. That margin was invisible while the canvas was mis-sized at the HTML
-    // default 300x150 (see the scope-attribute note in mount), so this framing had
-    // never actually been seen at the size it ships at.
-    const dist = Math.max(boardW, boardH) * 1.95;
-    camera.position.set(0, dist * 0.82, dist * 0.58);
-    camera.lookAt(0, 0, 0);
+    //  * Straight down, because this canvas is an underlay for a real DOM grid.
+    //    The cells above it own every click, the hover ghost and the focus ring,
+    //    and they are laid out flat by CSS grid. The previous rig sat high and
+    //    forward (`0, 0.82d, 0.58d`), which drew the slab as a trapezoid in
+    //    three-quarter perspective: the GL wells landed nowhere near the DOM
+    //    cells sitting on top of them, so the board read as two grids sliding
+    //    past each other and the hover ring pointed at the wrong column. Only an
+    //    axis-aligned view maps board space 1:1 onto the CSS grid. Pieces keep
+    //    their depth from geometry, lighting and contact shadows rather than
+    //    from camera convergence.
+    //
+    //  * Solved rather than guessed, because `resize()` updates `camera.aspect`
+    //    but a hard-coded distance cannot know about it. The old constant framed
+    //    a square canvas only; anything else cropped the board (the ConnectFive
+    //    slab lost its bottom row) or left a margin of bare DOM sockets showing.
+    //
+    // Visible half-extent at the board plane is d*tan(fov/2) vertically and that
+    // times the aspect horizontally, so solve d for whichever axis binds.
+    camera.up.set(0, 0, -1);   // -Z is screen-up, so row 0 renders at the top
+    function frameCamera() {
+        const halfFov = (camera.fov * Math.PI) / 360;   // fov/2 in radians
+        const t = Math.tan(halfFov);
+        const margin = 1.02;                            // a hair of breathing room
+        const forHeight = (boardH / 2) / t;
+        const forWidth = (boardW / 2) / (t * Math.max(camera.aspect, 0.0001));
+        const d = Math.max(forHeight, forWidth) * margin;
+        camera.position.set(0, d, 0);
+        camera.lookAt(0, 0, 0);
+        camera.updateProjectionMatrix();
+    }
+    frameCamera();
 
     // Root group — parallax tilts this, so nothing inside needs to know.
     const root = new THREE.Group();
@@ -145,7 +169,9 @@ export async function mount(canvas, opts) {
     // A three-point rig instead of an environment map. PMREMGenerator is a
     // WebGL-only code path in this three version, and the whole reason this
     // scene can run on WebGPU is that it avoids anything backend-specific.
-    // Clearcoat plus a bright key gives the pieces their gloss without one.
+    // The rig now does all the shaping on its own: the pieces and slab are
+    // matte since the clearcoat came out (2026-08-07), so form reads from the
+    // key/fill/rim falloff rather than from a specular highlight.
     scene.add(new THREE.AmbientLight(0xffffff, 0.55));
     const key = new THREE.DirectionalLight(0xffffff, 2.2);
     key.position.set(-3, 8, 4);
@@ -158,12 +184,13 @@ export async function mount(canvas, opts) {
     scene.add(rim);
 
     // ── Board slab ────────────────────────────────────────────────────
-    const slabMat = new THREE.MeshPhysicalMaterial({
+    // Matte for the same reason as the pieces above: the clearcoat 0.6 gloss
+    // layer put a broad sheen across the board that competed with the discs
+    // for attention (2026-08-07, user request).
+    const slabMat = new THREE.MeshStandardMaterial({
         color: 0x1b2439,
-        roughness: 0.42,
-        metalness: 0.15,
-        clearcoat: 0.6,
-        clearcoatRoughness: 0.35,
+        roughness: 0.78,
+        metalness: 0.05,
     });
     const slab = new THREE.Mesh(
         roundedBox(boardW + 0.36, SLAB_T, boardH + 0.36, 0.14),
@@ -171,10 +198,16 @@ export async function mount(canvas, opts) {
     slab.position.y = -SLAB_T / 2 - 0.02;
     root.add(slab);
 
-    // Cell wells — shallow recesses that catch the key light along one edge.
-    // This is what makes the slab read as a moulded board and not a painted
-    // rectangle, and it costs one instanced ring.
-    const wellGeo = new THREE.TorusGeometry(PIECE_R + 0.10, 0.028, 6, 28);
+    // Cell wells — recesses that catch the key light along one edge. This is
+    // what makes the slab read as a moulded board and not a painted rectangle,
+    // and it costs one instanced ring.
+    //
+    // 2026-08-07: detail pass. The ring was 6 tube segments around 28 radial —
+    // low enough that from the new straight-down camera each well was a visibly
+    // faceted polygon rather than a circle. 14x48 rounds them out, and the
+    // slightly fatter tube gives the rim a readable highlight/shadow pair
+    // instead of a hairline. Still one instanced draw for the whole board.
+    const wellGeo = new THREE.TorusGeometry(PIECE_R + 0.10, 0.042, 14, 48);
     const wellMat = new THREE.MeshStandardMaterial({
         color: 0x2b3550, roughness: 0.8, metalness: 0.1,
     });
@@ -194,15 +227,17 @@ export async function mount(canvas, opts) {
     // ── Piece materials ───────────────────────────────────────────────
     const col1 = new THREE.Color(opts.color1 || '#ff6b6b');
     const col2 = new THREE.Color(opts.color2 || '#22d3ee');
-    const pieceMat = (c) => new THREE.MeshPhysicalMaterial({
+    // 2026-08-07 (user request): the reflective clearcoat is gone. It was a
+    // `clearcoat: 1.0 / clearcoatRoughness: 0.06` layer — a near-mirror finish
+    // that threw a hard white specular blob onto every disc, and with a
+    // top-down camera that highlight sits dead centre on all of them at once.
+    // MeshStandardMaterial (no clearcoat lobe at all) with a matte roughness
+    // reads as the moulded-plastic counter it is meant to be, and drops a
+    // shading feature the GPU no longer has to evaluate per piece.
+    const pieceMat = (c) => new THREE.MeshStandardMaterial({
         color: c,
-        roughness: 0.22,
-        metalness: 0.05,
-        // Clearcoat is the whole look: a thin, smooth, highly-reflective layer
-        // over a diffuse body is exactly what moulded plastic is, and it gives
-        // a tight specular highlight the diffuse term cannot.
-        clearcoat: 1.0,
-        clearcoatRoughness: 0.06,
+        roughness: 0.68,
+        metalness: 0.0,
         emissive: c.clone().multiplyScalar(0.12),
     });
     const mats = { [P1]: pieceMat(col1), [P2]: pieceMat(col2) };
@@ -211,7 +246,32 @@ export async function mount(canvas, opts) {
     // differ. Built once here rather than per placement.
     const geoO = new THREE.TorusGeometry(PIECE_R * 0.78, PIECE_R * 0.26, 16, 40);
     const geoXArm = roundedBox(PIECE_R * 1.9, PIECE_R * 0.44, PIECE_R * 0.44, 0.06);
-    const geoChip = new THREE.CylinderGeometry(PIECE_R, PIECE_R, 0.20, 40);
+
+    // ── Counter profile (2026-08-07 detail pass) ────────────────────────────
+    // Was a bare CylinderGeometry: from straight above that is a flat coloured
+    // circle with no edge at all, which is why the board read as printed rather
+    // than moulded. A lathed profile gives a real counter — a recessed centre
+    // boss, a raised annulus, then a chamfer down to the rim — so the key light
+    // lays a highlight on the raised ring and a shadow in the groove, and the
+    // disc reads as an object from the one angle the camera ever sees it.
+    //
+    // Profile is in the XY half-plane (x = radius, y = height); LatheGeometry
+    // revolves it around Y. Points run centre -> rim -> down -> under.
+    const CHIP_H = 0.20;
+    const chipProfile = [
+        new THREE.Vector2(0.00, CHIP_H * 0.40),          // centre, slightly sunk
+        new THREE.Vector2(PIECE_R * 0.30, CHIP_H * 0.40),
+        new THREE.Vector2(PIECE_R * 0.42, CHIP_H * 0.50), // rise out of the boss
+        new THREE.Vector2(PIECE_R * 0.86, CHIP_H * 0.50), // flat annulus (catches the key)
+        new THREE.Vector2(PIECE_R * 0.97, CHIP_H * 0.42), // chamfer
+        new THREE.Vector2(PIECE_R, CHIP_H * 0.26),       // rim
+        new THREE.Vector2(PIECE_R, -CHIP_H * 0.26),      // side wall
+        new THREE.Vector2(PIECE_R * 0.97, -CHIP_H * 0.42),
+        new THREE.Vector2(PIECE_R * 0.86, -CHIP_H * 0.50),
+        new THREE.Vector2(0.00, -CHIP_H * 0.50),         // flat underside
+    ];
+    const geoChip = new THREE.LatheGeometry(chipProfile, 48);
+    geoChip.computeVertexNormals();
 
     /** @type {Map<number, {mesh: THREE.Object3D, vy: number, targetY: number, settled: boolean}>} */
     const pieces = new Map();
@@ -360,7 +420,9 @@ export async function mount(canvas, opts) {
         const h = canvas.clientHeight || host.clientHeight || 320;
         renderer.setSize(w, h, false);
         camera.aspect = w / h;
-        camera.updateProjectionMatrix();
+        // Re-solve the distance for the new aspect — see frameCamera(). Without
+        // this the board only fitted the aspect it happened to mount at.
+        frameCamera();
         wake();
     }
     // ── Loop state ────────────────────────────────────────────────────

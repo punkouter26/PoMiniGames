@@ -52,6 +52,14 @@ public sealed class AppUpdateService : IAsyncDisposable
     public void OnUpdateAvailable()
     {
         if (UpdateAvailable) return;
+        // Bug fix (2026-08-07): the update toast was surfacing to kiosk
+        // spectators, where it competes for attention with the attract reel.
+        // The reel cycles every 12-24s and never has a visitor who would
+        // press "Update now" — leaving the toast on screen until the next
+        // page change is just visual noise. Detection is path-based: any
+        // /{game}/demo or ?kiosk=N segment, which is the same shape
+        // KioskCoordinator uses to identify its own navigations.
+        if (IsOnKioskRoute()) return;
         UpdateAvailable = true;
         StateChanged?.Invoke();
         // Deliberately an action, not "press F5": a waiting worker keeps waiting
@@ -59,6 +67,27 @@ public sealed class AppUpdateService : IAsyncDisposable
         // the old worker is gone), so telling the player to reload would be telling
         // them to do something that does not work.
         _toast.ShowAction("A new version is ready.", "Update now", ApplyUpdateAsync, ToastType.Info);
+    }
+
+    /// <summary>
+    /// True when the current URL is part of the auto-cycling attract reel
+    /// (any ?kiosk=N or /{game}/demo). Demo and kiosk share this surface.
+    /// </summary>
+    private bool IsOnKioskRoute()
+    {
+        try
+        {
+            var href = _js.InvokeAsync<string>("eval", "location.href").AsTask().GetAwaiter().GetResult();
+            var uri = new Uri(href);
+            if (uri.Query.Contains("kiosk=", StringComparison.OrdinalIgnoreCase)) return true;
+            return uri.AbsolutePath.EndsWith("/demo", StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            // JS interop can be unavailable during teardown; default to
+            // showing the toast so a real visitor still gets the prompt.
+            return false;
+        }
     }
 
     /// <summary>Activate the waiting worker and reload onto the new build.</summary>

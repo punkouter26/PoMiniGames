@@ -267,8 +267,24 @@ export function vibrate(pattern) {
     try {
         if (localStorage.getItem(HAPTICS_KEY) === '0') return;
         if (motionReduced()) return;
+        // Bug fix (2026-08-07): kiosk/demo runs without a user gesture, so
+        // every browser vibrate call below would emit a console error. Skip
+        // the call entirely on any /{game}/demo or ?kiosk=N route — the
+        // attract reel has no one to vibrate.
+        if (isOnKioskRoute()) return;
         if (navigator && typeof navigator.vibrate === 'function') navigator.vibrate(pattern);
     } catch { /* unsupported or storage blocked */ }
+}
+
+// Cheap URL probe — kiosk coordinator decides whether the reel is running
+// but every demo also shares the same "no human in front of the screen" surface.
+function isOnKioskRoute() {
+    try {
+        if ((location.search || '').indexOf('kiosk=') >= 0) return true;
+        return /\/demo(\b|\/|$)/i.test(location.pathname || '');
+    } catch {
+        return false;
+    }
 }
 
 /**

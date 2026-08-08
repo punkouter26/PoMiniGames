@@ -19,6 +19,8 @@
 @inject NavigationManager Nav
 @inject ToastService ToastService
 
+<PageTitle>Sports · PoMiniGames</PageTitle>
+
 <GameShell Title=@TitleContent
            Player="@_playerName"
            BackTo="/"
@@ -42,11 +44,33 @@
                    OnStart="OnIntroStartAsync" />
     }
     <div class="ps-wrap">
-        <div id="posports-container" class="ps-canvas-host"></div>
+        @* The renderer appends its <canvas> here. Labelling the host (rather than
+           the canvas, which this component never sees) presents the whole race
+           view to a screen reader as one described image instead of an anonymous
+           "canvas" node — 2026-08-07 browser audit #6. Live commentary is the
+           .ps-a11y-status region below, not this label. *@
+        <div id="posports-container" class="ps-canvas-host"
+             role="img" aria-label="Track meet — the race renders here"></div>
 
         @if (_demo)
         {
             <div class="ps-demo-badge">🎮 Demo — CPU family race</div>
+            @* Bug fix (2026-08-07): the race itself renders on a canvas and is
+               invisible to anyone relying on accessible text. Show the family
+               roster by name when no race leg is in flight so the kiosk reel
+               always has something readable on screen. *@
+            @if (_phase != "racing" && _phase != "interstitial" && _phase != "countdown")
+            {
+                <div class="ps-demo-a11y" aria-live="polite">
+                    <span class="ps-demo-a11y__title">Family runners</span>
+                    <ol class="ps-demo-a11y__list">
+                        @foreach (var c in Roster)
+                        {
+                            <li>@c.Emoji @c.Name — sprint + hurdles</li>
+                        }
+                    </ol>
+                </div>
+            }
         }
 
         @* Meet HUD: per-human sequence progress + leg clock, fed by game.js OnHud. *@

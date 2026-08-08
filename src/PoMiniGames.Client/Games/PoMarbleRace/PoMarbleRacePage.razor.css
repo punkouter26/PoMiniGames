@@ -522,6 +522,23 @@
     isolation: isolate;
 }
 
+/* 2026-08-07 browser audit #2: this panel's base is hard-coded dark (it floats
+   over the track), but two of its descendants coloured themselves from the
+   theme — `.mr-tel-clock` via `--color-text-primary`, which in light mode is
+   near-black, so the race clock read 1.09:1 against the panel behind it. The
+   dim labels sat at 4.10:1, also under AA. Both are pinned here rather than at
+   each declaration so the panel owns the contract for everything inside it:
+   this is a canvas overlay and its contents never follow the colour scheme. */
+.mr-telemetry .mr-tel-clock {
+    color: #e2e8f0;
+}
+
+.mr-telemetry .mr-tel-speed-unit,
+.mr-telemetry .mr-tel-field,
+.mr-telemetry .mr-tel-edge-cap {
+    color: #94a3b8;
+}
+
 /* GFX #6 — the heat wash. Driven by --mr-heat (0..1, set inline from leader progress) as an
    OPACITY, not by swapping the background: a gradient can't be transitioned, but opacity can,
    and opacity stays on the compositor so warming the HUD never contends with the WebGL loop on

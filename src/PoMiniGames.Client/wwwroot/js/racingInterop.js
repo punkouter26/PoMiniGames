@@ -56,8 +56,12 @@ const PoRacer = (() => {
         input[t.key] = true;
         t.el.classList.add('is-pressed');
         // §7 Light haptic tick on control press (mute-aware, mobile only).
+        // Bug fix (2026-08-07): skip on kiosk/demo routes — the attract reel
+        // has no user gesture so the browser blocks every vibrate call.
         try {
-            if ((localStorage.getItem('pomini_muted') || '').indexOf('1') === -1 && navigator.vibrate) {
+            const onKiosk = (location.search || '').indexOf('kiosk=') >= 0
+                || /\/demo(\b|\/|$)/i.test(location.pathname || '');
+            if (!onKiosk && (localStorage.getItem('pomini_muted') || '').indexOf('1') === -1 && navigator.vibrate) {
                 navigator.vibrate(t.key === 'space' ? 14 : 8);
             }
         } catch { }

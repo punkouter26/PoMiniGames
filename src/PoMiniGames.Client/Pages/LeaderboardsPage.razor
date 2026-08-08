@@ -12,7 +12,17 @@
         <h1 class="lb-title">Leaderboards</h1>
         @if (!_loading && _boards.Count > 0)
         {
-            <span class="lb-count">@_boards.Count games</span>
+            // Audit #8: previously this read "9 of 10 games" — which read as a
+            // bug against the home grid. The catalog ships 10 games, but
+            // PoSurvive is demo-only by design (it has no 1P scored mode — see
+            // UnifiedLeaderboardEndpoints), so 9 ranked boards is the correct,
+            // intended count. Surface the gap as a feature, not as missing data.
+            var rankedCount = _boards.Count;
+            var totalGames = GameCatalog.All.Count;
+            var label = rankedCount >= totalGames
+                ? $"{rankedCount} ranked games"
+                : $"{rankedCount} ranked · 1 demo-only";
+            <span class="lb-count">@label</span>
         }
     </header>
 
@@ -82,7 +92,7 @@
                                     <Virtualize Items="@rows" Context="e" ItemSize="36">
                                         <li class="lb-row @(e.Rank <= 3 && e.Name != PlaceholderName ? $"lb-row--top lb-row--{e.Rank}" : null)">
                                             <span class="lb-rank">@e.Rank</span>
-                                            <span class="lb-name">@e.Name</span>
+                                            <span class="lb-name">@DisplayName(e.Name)</span>
                                             <span class="lb-value">@e.DisplayValue</span>
                                         </li>
                                     </Virtualize>
@@ -116,6 +126,21 @@
     // formats a padded row's DisplayValue per board unit ("—", "0%", "0"); the
     // product wants a literal "0" for every placeholder, so we override it here.
     private const string PlaceholderName = "XXX";
+
+    // The Joker leaderboard keys its rows by an 8-hex-char session id when the
+    // caller doesn't pass X-Session-Id — readable in storage but ugly on screen.
+    // Render those rows as "Guest XXXX" so the board matches the signed-in
+    // identity chip and stops looking like a debugger trace.
+    private static readonly System.Text.RegularExpressions.Regex ShortHexName =
+        new("^[0-9a-fA-F]{6,16}$", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    private static string DisplayName(string? raw)
+    {
+        var safe = raw ?? string.Empty;
+        return ShortHexName.IsMatch(safe)
+            ? $"Guest {safe[..Math.Min(4, safe.Length)].ToUpperInvariant()}"
+            : safe;
+    }
 
     private List<LeaderboardEntryDto> VisibleRows(GameLeaderboardDto board, string groupKey, int take)
         // §2026-07-18: filter out the server's XXX padding rows so the

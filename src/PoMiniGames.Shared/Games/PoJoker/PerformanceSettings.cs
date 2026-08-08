@@ -12,6 +12,13 @@ public class PerformanceSettings
     /// <summary>Duration of the AI prediction/analysis in seconds. Default: 2.</summary>
     public int PredictionDurationSeconds { get; set; } = 2;
 
+    /// <summary>
+    /// Hard cap on a single /api/joker/analyze round-trip in seconds. Exceeding it
+    /// surfaces a shrug-line "the jester has nothing to add" instead of letting the
+    /// demo stall on "Jester is thinking…". Default: 8.
+    /// </summary>
+    public int AnalysisTimeoutSeconds { get; set; } = 8;
+
     /// <summary>Delay before revealing the punchline in seconds. Default: 1.</summary>
     public int PunchlineDelaySeconds { get; set; } = 1;
 
@@ -35,6 +42,8 @@ public class PerformanceSettings
             throw new InvalidOperationException("SetupDurationSeconds must be >= 0");
         if (PredictionDurationSeconds < 0)
             throw new InvalidOperationException("PredictionDurationSeconds must be >= 0");
+        if (AnalysisTimeoutSeconds <= 0)
+            throw new InvalidOperationException("AnalysisTimeoutSeconds must be > 0");
         if (PunchlineDelaySeconds < 0)
             throw new InvalidOperationException("PunchlineDelaySeconds must be >= 0");
         if (PunchlineDurationSeconds < 0)

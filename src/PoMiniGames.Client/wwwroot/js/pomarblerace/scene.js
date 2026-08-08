@@ -477,14 +477,19 @@ export function createScene(container) {
     // same event on the same curve.
     u.uAberration.value = ABERRATION_BASE + PostFx.punchAberration();
 
-    // Blur: speed ramp + the decaying punch, eased so it never steps.
-    let target = 0;
-    if (!REDUCED_MOTION) {
-      const t = Math.max(0, Math.min(1, (speed - BLUR_SPEED_LO) / (BLUR_SPEED_HI - BLUR_SPEED_LO)));
-      target = Math.min(BLUR_MAX, t * BLUR_MAX + blurPunch + PostFx.punchRadial(0.8));
-    }
-    u.uBlur.value += (target - u.uBlur.value) * (1 - Math.exp(-6 * dt));
-    if (u.uBlur.value < 0.002) u.uBlur.value = 0;   // snap to exactly off so the shader takes the cheap branch
+    // Radial motion blur: REMOVED 2026-08-07 (user request).
+    //
+    // This ramped a radial smear in with speed (from BLUR_SPEED_LO up to
+    // BLUR_MAX), plus a decaying punch fired at the start gun and on every
+    // boost pad. Because the player's marble spends most of a race above the
+    // ramp's lower bound, the smear was effectively on for the whole run —
+    // it did not read as "fast", it read as an out-of-focus picture.
+    //
+    // Pinned to 0, which is also the value the shader branches on to skip the
+    // blur taps entirely, so this is a straight saving. `blurPunch` is still
+    // decayed below so the boost/start-gun callers that raise it stay harmless
+    // no-ops rather than accumulating forever.
+    u.uBlur.value = 0;
     blurPunch = blurPunch > 0.005 ? blurPunch * Math.exp(-3.5 * dt) : 0;
   }
 

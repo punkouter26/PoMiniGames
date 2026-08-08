@@ -207,9 +207,21 @@
     font-family: 'Bungee', 'Russo One', 'Impact', sans-serif;
     font-size: 0.78rem;
     letter-spacing: 0.06em;
-    color: #e8eaf6;
+    /* 2026-08-07 browser audit #2: was a hard-coded near-white (#e8eaf6). The
+       HP bar sits on `.pb-hud`, which IS a theme surface, so in light mode both
+       fighter names rendered at 1.20:1 — effectively invisible. Following the
+       theme keeps them readable in both schemes; the dark text-shadow below is
+       dropped in light mode for the same reason. */
+    color: var(--color-text-primary);
     text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
 }
+
+@media (prefers-color-scheme: light) {
+    .pb-hp-name { text-shadow: none; }
+}
+
+:root[data-theme='dark'] .pb-hp-name { text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8); }
+:root[data-theme='light'] .pb-hp-name { text-shadow: none; }
 
 .pb-hp-track {
     width: 100%;
@@ -254,7 +266,13 @@
     transition: width 0.25s linear;
 }
 
-.pb-hp-right .pb-en-fill {
+/* P2's whole side is right-aligned (`.pb-hp-right { align-items: flex-end }`),
+   so both of its bars anchor to the right edge and drain inward toward the
+   centre clock — mirroring P1, which anchors left and drains inward too.
+   2026-08-07 browser audit: only the energy fill carried this, so P2's HP bar
+   drained the opposite way to the energy bar sitting directly under it. */
+.pb-hp-right .pb-en-fill,
+.pb-hp-right .pb-hp-fill {
     margin-left: auto;
 }
 

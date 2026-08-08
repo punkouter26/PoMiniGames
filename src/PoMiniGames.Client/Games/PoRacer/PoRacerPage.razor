@@ -43,7 +43,7 @@
 @inject ToastService ToastService
 @implements IAsyncDisposable
 
-<PageTitle>Racer — Arcade Racing</PageTitle>
+<PageTitle>Racer · PoMiniGames</PageTitle>
 
 <GameShell Title="@TitleContent"
            Player="@_playerName"
@@ -51,6 +51,7 @@
            Fullscreen="true"
            GameOver="@(Phase == GamePhase.Finished && !_isDemo)"
            GameKey="poracer"
+           RequiresWebGl="true"
            GameSummary="@RaceSummaryContent">
 @if (!_introDone)
 {
@@ -64,7 +65,11 @@
 <div class="racer-shell-wrap">
 <div class="racer-root @(_crtOn ? "crt-enabled" : "") po-page-transition" tabindex="0">
     <div class="racer-canvas-wrap">
-        <canvas id="racerCanvas" class="racer-canvas racer-canvas--interactive"></canvas>
+        @* role="img" + a name so this is not an anonymous "canvas" node to a
+           screen reader (browser audit #6). The live position/lap/time readout is
+           the .racer-a11y-status region below, which is what actually announces. *@
+        <canvas id="racerCanvas" class="racer-canvas racer-canvas--interactive"
+                role="img" aria-label="Race track — the race renders here"></canvas>
     </div>
 
     @if (_crtOn)

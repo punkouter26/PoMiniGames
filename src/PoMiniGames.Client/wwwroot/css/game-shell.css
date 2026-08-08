@@ -236,7 +236,7 @@
 }
 
 .gps-play-again-btn--primary {
-  background: var(--color-accent);
+  background: var(--color-accent-solid);
   border: none;
   color: white;
   min-width: 7rem;
@@ -271,7 +271,7 @@
 }
 
 .gps-intro-btn--primary {
-  background: var(--color-accent);
+  background: var(--color-accent-solid);
   border: none;
   color: white;
   min-width: 7rem;
@@ -424,6 +424,26 @@
   margin: 0;
   font-size: 0.8rem;
   color: var(--color-text-secondary);
+}
+
+/* "Don't show this again" — 1P only. Deliberately quiet: it sits below the
+   controls and above the OK button, so it reads as a footnote to the card
+   rather than competing with the primary action (browser audit #4). */
+.gps-intro-skip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.gps-intro-skip input {
+  width: 1rem;
+  height: 1rem;
+  accent-color: var(--color-accent);
+  cursor: pointer;
 }
 
 .gps-intro-demo-hint {

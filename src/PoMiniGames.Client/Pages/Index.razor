@@ -25,6 +25,8 @@
    un-listed. See GameCatalog.All.
    ───────────────────────────────────────────────────────────────────────── *@
 
+<PageTitle>PoMiniGames — pick a game</PageTitle>
+
 <div class="home-container">
     <span class="home-mesh" aria-hidden="true"></span>
     @* §4 GPU-accelerated ambient particle field. WebGL2-only; falls back to the
@@ -93,6 +95,13 @@
                     <a class="home-card-head" href="@game.Primary.Url" data-fx-tilt="9">
                         <span class="home-card-icon" aria-hidden="true">@game.Icon</span>
                         <span class="home-card-title" id="@($"home-card-{game.Key.Value}")">@game.Title</span>
+                        @* Audit #10: optional subtitle clarifies variants whose
+                           product name does not by itself describe the rules
+                           (e.g. "Tic-Tac-Toe" is actually 4-in-a-row on 6×6). *@
+                        @if (!string.IsNullOrWhiteSpace(game.Subtitle))
+                        {
+                            <span class="home-card-subtitle" aria-label="@game.Subtitle">@game.Subtitle</span>
+                        }
                     </a>
                 }
                 else
@@ -101,6 +110,10 @@
                           title="Needs a connection — unavailable offline">
                         <span class="home-card-icon" aria-hidden="true">@game.Icon</span>
                         <span class="home-card-title" id="@($"home-card-{game.Key.Value}")">@game.Title</span>
+                        @if (!string.IsNullOrWhiteSpace(game.Subtitle))
+                        {
+                            <span class="home-card-subtitle" aria-label="@game.Subtitle">@game.Subtitle</span>
+                        }
                     </span>
                 }
 

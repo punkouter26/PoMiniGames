@@ -33,6 +33,20 @@
     --glass-edge: color-mix(in srgb, var(--color-text-primary) 12%, transparent);
     --glass-edge-lit: color-mix(in srgb, var(--color-text-primary) 26%, transparent);
     --glass-inner: inset 0 1px 0 var(--glass-edge-lit);
+
+    /* ── Over-canvas glass (2026-08-07 browser audit #2) ──
+       HUDs that float on a game's own 3D scene rather than on an app surface.
+       That scene is dark in every colour scheme, so these tokens are
+       deliberately NOT re-pointed in the light block below — the same rule the
+       theming policy in CLAUDE.md states for per-game/canvas tokens.
+
+       The racer and sports HUDs used to consume the ordinary `--glass-fill`,
+       which light mode re-points to `rgba(255,255,255,0.58)`. The result was a
+       near-white panel carrying the white text it was designed to show against
+       a dark scene: lap, speed and the race clock all measured 1.00:1. */
+    --glass-fill-canvas: rgba(8, 14, 26, 0.72);
+    --glass-edge-canvas: rgba(148, 197, 255, 0.22);
+    --glass-inner-canvas: inset 0 1px 0 rgba(255, 255, 255, 0.10);
 }
 
 /* Light mode needs a *lighter* fill, not the same dark one at lower opacity —
@@ -125,12 +139,14 @@
     border: 1px solid var(--glass-edge);
     box-shadow: var(--glass-inner);
 }
+/* These three sit ON the game canvas, not on an app surface — see the
+   `--glass-*-canvas` note above for why they must not follow the scheme. */
 .ps-hud.ps-hud,
 .racer-hud.racer-hud,
 .hud-panel.hud-panel {
-    background: var(--glass-fill);
-    border: 1px solid var(--glass-edge);
-    box-shadow: var(--glass-inner);
+    background: var(--glass-fill-canvas);
+    border: 1px solid var(--glass-edge-canvas);
+    box-shadow: var(--glass-inner-canvas);
     -webkit-backdrop-filter: blur(calc(var(--gfx-blur) * 0.6)) saturate(150%);
     backdrop-filter: blur(calc(var(--gfx-blur) * 0.6)) saturate(150%);
 }
@@ -212,13 +228,25 @@
 :root[data-gfx='low'] .gps-modal.gps-modal,
 :root[data-gfx='low'] .toast.toast,
 :root[data-gfx='low'] .gl-overflow-panel.gl-overflow-panel,
-:root[data-gfx='low'] .pb-hud.pb-hud,
+:root[data-gfx='low'] .pb-hud.pb-hud {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: var(--color-surface);
+}
+
+/* Same "drop the blur" treatment for the over-canvas HUDs, but landing on an
+   opaque DARK panel rather than `--color-surface` — which in light mode is the
+   white that made this HUD text unreadable in the first place (audit #2).
+
+   `.pb-hud` is deliberately NOT in this group: PoBrawl's health bars sit in
+   normal page flow beneath the arena, not on the canvas, and their text follows
+   the theme. Giving it a dark panel put near-black text on near-black. */
 :root[data-gfx='low'] .ps-hud.ps-hud,
 :root[data-gfx='low'] .racer-hud.racer-hud,
 :root[data-gfx='low'] .hud-panel.hud-panel {
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
-    background: var(--color-surface);
+    background: rgb(12, 18, 32);
 }
 :root[data-gfx='low'] .gps-modal.gps-modal::before,
 :root[data-gfx='low'] .gps-modal.gps-modal::after {

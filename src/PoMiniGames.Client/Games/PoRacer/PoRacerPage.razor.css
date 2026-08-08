@@ -244,7 +244,28 @@
         .racer-start .racer-card::before { animation: none; }
     }
 
-    /* -------- HUD -------- */
+    /* -------- HUD --------
+       2026-08-07 browser audit #2: every one of these tokens was *consumed*
+       below but never *defined* anywhere in the project, so `background:
+       var(--hud-bg)` was an invalid value — the panels rendered with no
+       background at all and `color: var(--muted)` silently inherited. Against
+       the dark 3D scene that was survivable; in light mode the page showed
+       through and the HUD became white text on white (lap, speed and race clock
+       all measured at 1.00:1).
+
+       Defined on `.racer-root` rather than `:root` so they stay local to the
+       game, and deliberately scheme-invariant: this HUD always floats over the
+       dark racing canvas, so it is a canvas token in the sense of the theming
+       policy in CLAUDE.md and must not follow the light/dark surface tokens. */
+    .racer-root {
+        --hud-bg: rgba(8, 14, 26, 0.72);
+        --hud-border: rgba(120, 200, 255, 0.25);
+        --hud-glow: 0 8px 30px rgba(0, 0, 0, 0.45);
+        --text: #f1f5f9;
+        --muted: #9bb1cc;
+        --accent-warm: #ffd166;
+    }
+
     .racer-hud {
         position: absolute;
         inset: 0;

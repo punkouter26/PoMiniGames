@@ -124,6 +124,18 @@
 			"label": "kill-and-inspect",
 			"type": "shell",
 			"command": "taskkill /F /IM dotnet.exe /T 2>nul; Start-Sleep -Seconds 2; Write-Output 'KILLED'; Get-Process -Name dotnet -ErrorAction SilentlyContinue | Format-Table Id, ProcessName, StartTime -AutoSize"
+		},
+		{
+			"label": "restart-api",
+			"type": "shell",
+			"command": "dotnet run --project src/PoMiniGames.API/PoMiniGames.API.csproj",
+			"isBackground": true
+		},
+		{
+			"label": "restart-api",
+			"type": "shell",
+			"command": "dotnet run --project src/PoMiniGames.API/PoMiniGames.API.csproj",
+			"isBackground": true
 		}
 	]
 }

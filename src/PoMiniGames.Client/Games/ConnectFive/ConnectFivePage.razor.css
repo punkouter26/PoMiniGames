@@ -245,6 +245,16 @@
 
 .cf-board--gl .cf-cell {
   z-index: 1;
+  /* 2026-08-07 browser audit: the GL slab draws its own recessed wells, but the
+     DOM socket kept painting its dark circle + inset shadow on top of it (this
+     rule already lifts the cell ABOVE the canvas). The two grids are the same
+     logical board but not the same pixels, so the player saw a flat CSS grid
+     floating over the rendered one — the "two boards" effect. The cell stays in
+     the layout, the a11y tree and the hit-testing path; it just stops painting.
+     Only the socket chrome is dropped — `:hover` still draws its ring below. */
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
 }
 
 /* Fade rather than hide: display:none would remove them from the a11y tree
@@ -252,7 +262,19 @@
    affordance with no GL equivalent, so it stays visible. */
 .cf-board--gl .cf-cell .piece:not(.ghost-piece) {
   opacity: 0;
-  transition: opacity 0.2s var(--ease-standard);
+  /* 2026-08-07 (user request: "remove the flickering of pieces when they are
+     placed"). This used to carry `transition: opacity 0.2s`, so every newly
+     placed disc faded 1 -> 0 over a fifth of a second while the GL chip was
+     doing its own spring drop into the same cell. Two discs, briefly both
+     visible, one of them fading — that double image is the flicker. The DOM
+     disc is decorative under GL, so it now goes invisible instantly.
+     No transition also means Blazor re-renders during rapid demo drops can no
+     longer restart a fade. */
+  transition: none;
+  /* The CSS drop keyframe is invisible under GL (the element is transparent)
+     but still animates a compositor layer on every placement. The GL chip owns
+     the drop now. */
+  animation: none;
 }
 
 /* The GL slab is the board surface now; the CSS panel would show through the

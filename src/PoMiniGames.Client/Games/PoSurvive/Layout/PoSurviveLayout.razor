@@ -70,9 +70,15 @@
                inline because PoSurvive can't host GameShell (its own layout +
                SurviveStore — see the note atop PoSurvivePage). *@
             @* Emoji + name, matching every other game's title ("🃏 Joker",
-               "🏎️ Racer", …) and the shield this game's end-of-game modal uses. *@
+               "🏎️ Racer", …) and the shield this game's end-of-game modal uses.
+               Audit #7: this is a real <h1> so the top-bar identifies itself
+               to screen readers; default <h1> margins are stripped in games.css. *@
             <div class="gps-header-slot">
-                <span class="gps-game-title">🛡️ Survive</span>
+                <h1 class="gps-game-title">🛡️ Survive</h1>
+                @* Audit #6: every game page gets an explicit "← Home" affordance
+                   next to its title, so a returning player on a small phone does
+                   not have to find the 14×14 brand mark in the corner. *@
+                <a class="gps-back-link" href="/" aria-label="Back to home" title="Back to home">← Home</a>
             </div>
 
             @* ── Natural-language AI status pill ── *@
@@ -103,7 +109,11 @@
            Test environments where the /api/auth/dev-bypass endpoint exists; lets a
            developer verify head-to-head flows from the same machine without
            spinning up an incognito tab. Hidden in Production. *@
-        @if (ShowDevSwitch)
+        @* Bug fix (2026-08-07): the dev-tools button is gated on env above
+           but NOT on route — it appears on /posurvive/demo too, where it
+           leaks the dev identity switch into the attract reel. Treat any
+           demo or kiosk route as off-limits to dev chrome. *@
+        @if (ShowDevSwitch && !IsOnKioskRoute)
         {
             @* Native Popover API — see the note on MainLayout's overflow menu for why
                this is no longer a <details> disclosure. It matters more here: this
@@ -209,7 +219,12 @@
                     }
                 </optgroup>
             }
-            @if (ToolbarModelOptions.Any(o => !o.IsRemote && !o.IsScripted))
+            @* Browser audit #3: in-browser model ids (SmolLM2 / Qwen / Llama) are
+               developer inventory, not curated player choices — each one triggers
+               a multi-hundred-MB weight download on first use. End users get the
+               Scripted stand-in or the curated Azure group; the Local group only
+               appears in Development / Test where someone might actually pick one. *@
+            @if (HostEnv.IsDevelopment() && ToolbarModelOptions.Any(o => !o.IsRemote && !o.IsScripted))
             {
                 <optgroup label="In-browser (local)">
                     @foreach (var option in ToolbarModelOptions.Where(o => !o.IsRemote && !o.IsScripted))
@@ -484,7 +499,10 @@
     {
         "LOCAL"  => "sv-advanced__provider--local",
         "REMOTE" => "sv-advanced__provider--remote",
-        "MOCK"   => "sv-advanced__provider--mock",
+        // "SCRIPT" replaced the older "MOCK" provider kind (2026-08-07) so the
+        // chip's user-visible text matches the rest of the UI. Accept both
+        // for safety in case a stale worker delivers the old value.
+        "SCRIPT" or "MOCK" => "sv-advanced__provider--mock",
         _         => string.Empty,
     };
 
@@ -665,6 +683,21 @@
     private bool ShowDevSwitch =>
         HostEnv.IsDevelopment() ||
         string.Equals(HostEnv.Environment, "Test", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// True on any /posurvive/demo route or when the reel has tagged the URL with
+    /// ?kiosk=N. Both shapes identify the kiosk attract reel, which must not
+    /// carry the developer-tools affordance into a public-facing view.
+    /// </summary>
+    private bool IsOnKioskRoute
+    {
+        get
+        {
+            var path = Nav.Uri ?? string.Empty;
+            if (path.Contains("kiosk=", StringComparison.OrdinalIgnoreCase)) return true;
+            return path.Contains("/posurvive/demo", StringComparison.OrdinalIgnoreCase);
+        }
+    }
 
     // Identity pill in the header, mirroring MainLayout: prefer the display name,
     // fall back to the email, and surface the full email on hover so a truncated

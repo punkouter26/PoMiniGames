@@ -8,6 +8,8 @@
 @inject KioskCoordinator Kiosk
 @implements IAsyncDisposable
 
+<PageTitle>Couple Quiz · PoMiniGames</PageTitle>
+
 <GameShell Title=@TitleContent Player="@_playerName" BackTo="/"
            GameOver="@(_solo && _soloFinished && !_isDemo)"
            GameKey="pocouplequiz"

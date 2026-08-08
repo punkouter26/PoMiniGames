@@ -2,23 +2,65 @@
    inline inside App.razor's <AuthorizeRouteView>. Kept scoped so the global
    style-recalc surface shrinks. */
 
+/* 2026-08-07 browser audit #2: these three used hard-coded dark-scheme hexes
+   (#1d2230 panel, #cdd5e0 text, #7eb6ff link). In light mode that left pale grey
+   body text on a near-white page. Routed through the theme tokens so both
+   schemes work — the same rule CLAUDE.md states for every non-canvas surface. */
 .app-fallback {
     max-width: 480px;
     margin: 4rem auto;
     text-align: center;
     padding: var(--space-5);
     border-radius: var(--radius-lg);
-    background: #1d2230;
-    color: #cdd5e0;
+    background: var(--surface-1);
+    border: 1px solid var(--color-border);
+    color: var(--color-text-secondary);
 }
 
-.app-fallback h1 { margin: 0 0 var(--space-2) 0; }
+.app-fallback h1 { margin: 0 0 var(--space-2) 0; color: var(--color-text-primary); }
 .app-fallback p { margin: 0 0 var(--space-4) 0; line-height: 1.45; }
 
-.app-fallback-link { color: #7eb6ff; text-decoration: none; }
+.app-fallback-link { color: var(--color-accent); text-decoration: none; }
 
 .app-fallback--plain {
-    color: #cdd5e0;
+    color: var(--color-text-secondary);
     text-align: center;
-    padding: 3rem;
+    padding: 0;
+    margin: 0;
+    line-height: 1.5;
+}
+
+/* ── 404 ── */
+.app-notfound {
+    max-width: 30rem;
+    margin: 4rem auto;
+    padding: var(--space-5);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-3);
+    text-align: center;
+}
+
+.app-notfound__title {
+    margin: 0;
+    font-size: 1.4rem;
+    font-weight: 800;
+    color: var(--color-text-primary);
+}
+
+.app-notfound__link {
+    padding: 0.5rem 1rem;
+    border-radius: var(--radius-pill);
+    border: 1px solid var(--color-border);
+    color: var(--color-text-primary);
+    font-size: 0.9rem;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.app-notfound__link:hover {
+    border-color: var(--color-accent-solid);
+    background: var(--color-accent-solid);
+    color: var(--color-accent-contrast);
 }

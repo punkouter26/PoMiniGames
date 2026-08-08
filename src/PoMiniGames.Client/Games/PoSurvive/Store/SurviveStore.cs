@@ -189,7 +189,11 @@ public sealed class SurviveStore : ISimulationSink, IDisposable
     {
         Boot = Boot with
         {
-            ProviderKind = "MOCK",
+            // Bug fix (2026-08-07): the chip used to read "MOCK", which read as
+            // dev chrome in the attract reel and contradicted the rest of the
+            // UI's tone. "SCRIPT" is the user-visible label; IsMockProvider is
+            // the internal flag the orchestrator reads (unchanged).
+            ProviderKind = "SCRIPT",
             ModelId = modelId,
             ModelLabel = modelLabel,
             IsMockProvider = true,

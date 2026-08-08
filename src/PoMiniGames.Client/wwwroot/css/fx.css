@@ -250,13 +250,13 @@
         brightness(calc(100% + var(--po-punch, 0) * 10%));
 }
 
-/* Chromatic-fringe approximation for DOM text/badges: two offset shadows in
- * complementary hues, scaled by the punch envelope. At punch 0 the offsets are
- * 0px and the shadows collapse to nothing{
-    text-shadow:
-        calc(var(--po-punch, 0) * -3px) 0 0 rgba(255, 0, 80, 0.55),
-        calc(var(--po-punch, 0) * 3px) 0 0 rgba(0, 200, 255, 0.55);
-}
+/* 2026-08-07 browser audit: `.fx-punch-text` (a chromatic-fringe text shadow)
+ * and its `[data-gfx='low']` opt-out stood here as a half-deleted block — the
+ * comment's `*/` and the selector had both been eaten, leaving a bare
+ * declaration list that made the rest of this file parse one brace out of step.
+ * Completing the deletion rather than restoring it: neither `.fx-punch-text`
+ * nor `.fx-punch` is referenced by any .razor, .cs or .js in the project, so
+ * the prune that mangled this was right about the intent. */
 
 :root[data-gfx='low'] .po-impact-flash { display: none; }
 
@@ -268,12 +268,14 @@
     .po-impact-flash { opacity: 0 !important; }}
 
 /* ===== §6 Offscreen work skipping ==========================================
- * `content-visibility: auto` lets the browser skip layout, paint AND style for
- * subtrees that are offscreen. On a long leaderboard this is the single largest
- * win available{
-    content-visibility: auto;
-    contain-intrinsic-size: auto 48px;
-}
+ * The `.fx-defer` / `.fx-defer--card` `content-visibility: auto` helpers used to
+ * live here and were left in the same half-deleted state as the punch block
+ * above: comment terminator and selector gone, an orphan declaration list left
+ * behind. That stray block is what put fx.css one closing brace ahead of itself.
+ * Deleted rather than restored for the same reason — no .razor, .cs or .js
+ * references either class. If offscreen skipping is wanted again, reintroduce it
+ * with the markup that uses it.
+ */
 
 /* ===== §10 Adaptive degradation ============================================
  * visualRuntime.js sets data-gfx on <html>. Rules here are what "degrade"

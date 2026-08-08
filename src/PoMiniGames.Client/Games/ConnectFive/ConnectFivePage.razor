@@ -15,6 +15,8 @@
 @inject GameResultService GameResults;
 @inject IJSRuntime JSRuntime;
 
+<PageTitle>Connect Five · PoMiniGames</PageTitle>
+
 <GameShell
     Title=@TitleContent
     Player="@_playerName"
@@ -24,6 +26,7 @@
     GameKey="@(PlayMode == "ai" ? "connectfive" : null)"
     Outcome="@OutcomeForCue"
     Stats="@(PlayMode == "ai" ? _statItems : null)"
+    Announcement="@Announcement"
     GameSummary="@GameSummaryContent">
 
     @if (!_introDone)
@@ -139,6 +142,19 @@
         _ => GameOutcome.Unknown,
     };
 
+    // Spoken by GameShell's shared live region (browser audit #6). The board is a
+    // role="grid" of labelled cells, so a screen reader can read the position —
+    // what it could not tell was whose turn it is or that the game had ended.
+    // Demo drives itself with nobody listening, so it announces nothing.
+    private string? Announcement => PlayMode == "demo" ? null : _gameResult switch
+    {
+        GameResult.Win => "You win.",
+        GameResult.Loss => PlayMode == "ai" ? "You lose." : "Yellow wins.",
+        GameResult.Draw => "It's a draw.",
+        _ when _isAiTurn => "Opponent is thinking.",
+        _ => "Your turn.",
+    };
+
     private bool _isAiTurn;
     // "ai" (vs CPU) or "2p" (local pass-and-play); "demo" is driven by the route param.
     private string _playMode = "ai";
@@ -227,22 +243,50 @@
     // Intro/welcome gate: the board is blocked behind the intro card until the
     // player dismisses it (OK), or the demo flashes it for 2s. Nothing on this
     // board auto-moves in human modes, so the overlay alone gates play.
+    // Audit #5: the 2-player route used to inherit the 1P intro — same "CPU is
+    // matched to your ELO…" copy in a mode with no CPU. Branch on PlayMode so
+    // each variant shows the controls that actually apply.
     private bool _introDone;
-    private GameIntro.IntroMode _introMode => PlayMode == "demo"
-        ? GameIntro.IntroMode.Demo
-        : GameIntro.IntroMode.OnePlayer;
+    private GameIntro.IntroMode _introMode => PlayMode switch
+    {
+        "demo" => GameIntro.IntroMode.Demo,
+        "2p"   => GameIntro.IntroMode.TwoPlayer,
+        _      => GameIntro.IntroMode.OnePlayer,
+    };
     private void DismissIntro() => _introDone = true;
 
     private RenderFragment TitleContent => @<span>🔴 Connect Five</span>;
 
-    private RenderFragment HowToPlayContent => @<div>
-        <p>Get five discs in a row — horizontally, vertically or diagonally.</p>
-        <ul>
-            <li>Click or tap a column to drop your disc</li>
-            <li>The CPU is matched to your ELO: win and it gets stronger, lose and it eases off</li>
-            <li>Your rating and the CPU's show in the header — climb as high as you can</li>
-        </ul>
-    </div>;
+    // Audit #5: mode-specific HowToPlay. 1P talks about the CPU and ELO, 2P
+    // talks about two players and a hot seat, and the demo explains it is a
+    // CPU-vs-CPU exhibition.
+    private RenderFragment HowToPlayContent => PlayMode switch
+    {
+        "demo" => @<div>
+            <p>Watch two CPUs play Connect Five.</p>
+            <ul>
+                <li>No input — the board runs itself for the duration of the demo reel</li>
+                <li>First to five discs in a row wins the round</li>
+                <li>The demo loops on the post-game screen until the reel advances</li>
+            </ul>
+        </div>,
+        "2p" => @<div>
+            <p>Two players, one device — pass it back and forth.</p>
+            <ul>
+                <li>Player 1 drops 🔴, then Player 2 drops 🟡, and so on</li>
+                <li>First to five in a row — horizontal, vertical or diagonal — wins</li>
+                <li>No CPU and no rating: just take turns</li>
+            </ul>
+        </div>,
+        _ => @<div>
+            <p>Get five discs in a row — horizontally, vertically or diagonally.</p>
+            <ul>
+                <li>Click or tap a column to drop your disc</li>
+                <li>The CPU is matched to your ELO: win and it gets stronger, lose and it eases off</li>
+                <li>Your rating and the CPU's show in the header — climb as high as you can</li>
+            </ul>
+        </div>,
+    };
 
     private RenderFragment? GameSummaryContent => !_isGameOver ? null
         : PlayMode == "2p" ? TwoPlayerSummary : AiSummary;

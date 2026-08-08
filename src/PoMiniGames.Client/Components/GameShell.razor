@@ -10,11 +10,29 @@
 <SectionContent SectionName="game-header">
     <div class="gps-header-slot">
         @* Game title — always rendered as the first child of the chrome slot so
-           every game page identifies itself in the top bar. Plain text; the
-           page's `Title` fragment may compose an icon + name. *@
+           every game page identifies itself in the top bar. Renders as an
+           <h1> (audit #7) so screen readers see a heading hierarchy, not a
+           styled <span>. The page's `Title` fragment may compose an icon + name.
+           The H1 inherits the same --font-display / 0.95rem styling as the
+           span used to, with browser-default margins stripped. *@
         @if (Title != null)
         {
-            <span class="gps-game-title">@Title</span>
+            <h1 class="gps-game-title">@Title</h1>
+        }
+
+        @* Audit #6: every game gets an explicit "← Back to home" affordance in
+           the top bar, not just the PoMiniGames brand. The brand already
+           navigates home, but it is a 14×14 wordmark next to a settings gear —
+           a returning player on a small phone misses it. A labelled button is
+           unambiguous and keyboard-reachable. Always rendered here:
+           GameShell is only used from inside a game page, so the back link
+           cannot point at the page the user is already on. (The Home button on
+           <GameOverModal> uses the same `BackTo` parameter; sub-lobby games
+           like PoCoupleQuiz override it to "/couplequiz", and the back link
+           correctly points there instead.) *@
+        @if (!string.IsNullOrEmpty(BackTo))
+        {
+            <a class="gps-back-link" href="@BackTo" aria-label="Back to home" title="Back to home">← Home</a>
         }
 
         @* Live rating badge for single-player, ELO-rated modes: the page passes
@@ -54,8 +72,38 @@
 
 <SwipeBack BackTo="@BackTo" Class="gps-shell-wrap">
 <div class="gps-shell">
+    @* 2026-08-07 browser audit #6: every game's state lived only in pixels — on a
+       canvas, or in DOM that changes without announcing itself — so a screen
+       reader user got no turn, score or result. This is the one polite live
+       region every game shares; a page opts in by passing `Announcement`, and
+       whatever it sets is read out on change. Visually hidden (`.gps-sr-only`),
+       never a layout concern. Kept OUTSIDE `.gps-game-area` so a game that
+       replaces its whole area (fullscreen renderers) can't tear the region out
+       of the DOM — a live region that gets removed and re-added is not announced. *@
+    <div class="gps-sr-only" role="status" aria-live="polite" aria-atomic="true">@Announcement</div>
+
     <div class="gps-game-area @(Fullscreen ? "gps-game-area--fullscreen" : "")">
-        @ChildContent
+        @* Games that cannot render without WebGL get an explanation instead of a
+           crash (browser audit #5). ChildContent is not rendered at all, so the
+           engine's container never exists and its `init` bails on "container not
+           found" rather than throwing from inside three.js. *@
+        @if (RequiresWebGl && _webGlChecked && !_webGlAvailable)
+        {
+            <div class="gps-nogl" role="alert">
+                <div class="gps-nogl-icon" aria-hidden="true">🎮</div>
+                <h2 class="gps-nogl-title">This game needs 3D graphics</h2>
+                <p class="gps-nogl-body">
+                    Your browser could not start WebGL, which this game renders with.
+                    Turning on hardware acceleration in your browser settings usually
+                    fixes it — or try a different browser or device.
+                </p>
+                <a class="gps-nogl-link" href="/">← Back to all games</a>
+            </div>
+        }
+        else
+        {
+            @ChildContent
+        }
     </div>
 
     @* End-of-game modal: the one centered, blocking dialog every game ends on.
@@ -104,7 +152,52 @@
     // neutral round-over instead of guessing.
     [Parameter] public Models.GameOutcome Outcome { get; set; } = Models.GameOutcome.Unknown;
     [Parameter] public RenderFragment? GameSummary { get; set; }
+
+    /// <summary>
+    /// Sentence read aloud by the shared polite live region whenever it changes —
+    /// whose turn it is, the score, how the round ended. Plain prose, not a label:
+    /// it is spoken, so "Your turn" beats "TURN: X". Leave null in modes with
+    /// nothing meaningful to announce (demos nobody is driving); an unset value
+    /// renders an empty region, which is silent.
+    /// </summary>
+    [Parameter] public string? Announcement { get; set; }
+
+    /// <summary>
+    /// Set by games whose renderer is three.js and therefore cannot run at all
+    /// without a WebGL context (PoBrawl, PoMarbleRace, PoRacer). Leave false for
+    /// games that only use GL as an enhancement over a working DOM/2D board —
+    /// TicTacToe and ConnectFive both degrade cleanly on their own and must keep
+    /// rendering here.
+    /// </summary>
+    [Parameter] public bool RequiresWebGl { get; set; }
+
     [Parameter] public RenderFragment ChildContent { get; set; } = null!;
+
+    [Inject] private IJSRuntime JS { get; set; } = null!;
+
+    private bool _webGlChecked;
+    private bool _webGlAvailable = true;
+
+    // Probed once, after the first render (JS interop is not available before
+    // it). Defaults to "available" so the game renders normally on the first
+    // pass and in any host where interop fails — the fallback notice is for a
+    // confirmed negative, never for an inconclusive probe.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || !RequiresWebGl || _webGlChecked) return;
+
+        try
+        {
+            _webGlAvailable = await JS.InvokeAsync<bool>("isWebGlAvailable");
+        }
+        catch
+        {
+            _webGlAvailable = true;
+        }
+
+        _webGlChecked = true;
+        StateHasChanged();
+    }
 
     // The top-3 fetch and the OK action live in GameOverModal — this shell just
     // decides when to show it and passes the game's data through.

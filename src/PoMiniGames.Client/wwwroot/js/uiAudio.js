@@ -254,10 +254,31 @@ export async function vibrate(pattern) {
         // once per interaction, and a stale cache would ignore the toggle until
         // the next reload.
         if (localStorage.getItem('pomini_haptics') === '0') return;
+        // Bug fix (2026-08-07): the kiosk attract reel runs without a user
+        // gesture, so every navigator.vibrate call below this guard would
+        // emit "Blocked call to navigator.vibrate because user hasn't tapped"
+        // to the console — a dozen or so per second on Connect Five, drowning
+        // the real errors. No one is holding a kiosk screen, so skip entirely
+        // on any ?kiosk=N or /{game}/demo route.
+        if (isOnKioskRoute()) return;
         if (navigator && typeof navigator.vibrate === 'function') {
             navigator.vibrate(pattern);
         }
     } catch { /* fail silently */ }
+}
+
+// Cheap URL probe — the kiosk coordinator decides whether the reel is running
+// but every demo also shares the same "no human in front of the screen" surface,
+// so we treat both as kiosk.
+function isOnKioskRoute() {
+    try {
+        const path = location.pathname || '';
+        const search = location.search || '';
+        if (search.indexOf('kiosk=') >= 0) return true;
+        return /\/demo(\b|\/|$)/i.test(path);
+    } catch {
+        return false;
+    }
 }
 
 export function isAudioAvailable() {

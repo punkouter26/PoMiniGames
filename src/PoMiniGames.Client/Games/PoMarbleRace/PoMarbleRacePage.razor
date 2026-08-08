@@ -12,12 +12,15 @@
 @inject IJSRuntime JSRuntime
 @inject NavigationManager Navigation
 
+<PageTitle>Marble Race · PoMiniGames</PageTitle>
+
 <GameShell Title=@TitleContent
            Player="@_playerName"
            BackTo="/"
            Stats="@_statItems"
            GameOver="@(_phase == "result" && !_demo)"
            GameKey="pomarblerace"
+           RequiresWebGl="true"
            GameSummary="@GameSummaryContent">
     @if (!_introDone)
     {
@@ -33,7 +36,9 @@
        HUD and the HUD never sits on top of the marble track. *@
     <div class="mr-wrap-row">
         <div class="mr-wrap">
-            <div id="marble-race-container" class="mr-canvas-host"></div>
+            @* Labelled host — see the note on PoSports (browser audit #6). *@
+            <div id="marble-race-container" class="mr-canvas-host"
+                 role="img" aria-label="Marble race track — the race renders here"></div>
 
             @* Start overlay — a short countdown, not an intro page: the race is already up and
                the clock is running. There's nothing to choose now — you always control the one

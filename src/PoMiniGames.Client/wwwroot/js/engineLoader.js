@@ -124,7 +124,41 @@ export async function loadEngine(name) {
     return _pending.get(name);
 }
 
+/**
+ * Is a WebGL context obtainable at all?
+ *
+ * 2026-08-07 browser audit #5: three of the engines (PoBrawl, PoMarbleRace,
+ * PoRacer) are three.js and cannot render without one. When the context could
+ * not be created — a blocklisted GPU driver, hardware acceleration switched off,
+ * some enterprise policies, a very old device — they threw from inside their
+ * constructor and the player got Blazor's raw "An unhandled error has occurred.
+ * Reload" bar with no explanation. GameShell probes this first and shows a real
+ * message instead.
+ *
+ * The probe result is cached: creating and discarding contexts is not free, and
+ * WebGL availability cannot change within a page lifetime. The throwaway canvas
+ * is never attached to the DOM, and we explicitly lose the context so the probe
+ * does not consume one of the browser's small pool of live contexts.
+ */
+let _webglSupported = null;
+export function isWebGlAvailable() {
+    if (_webglSupported !== null) return _webglSupported;
+    try {
+        const c = document.createElement('canvas');
+        const gl = c.getContext('webgl2') || c.getContext('webgl');
+        _webglSupported = !!gl;
+        // `failIfMajorPerformanceCaveat` is deliberately NOT set: a software
+        // renderer is slow but playable, and refusing it would send people to
+        // the fallback notice who could actually have played.
+        gl?.getExtension('WEBGL_lose_context')?.loseContext();
+    } catch {
+        _webglSupported = false;
+    }
+    return _webglSupported;
+}
+
 // Blazor's IJSRuntime resolves dotted paths off `window`, and this module is
-// loaded with type="module" (so it has its own scope). Publish the one entry
-// point the pages call.
+// loaded with type="module" (so it has its own scope). Publish the entry points
+// the pages call.
 window.loadEngine = loadEngine;
+window.isWebGlAvailable = isWebGlAvailable;

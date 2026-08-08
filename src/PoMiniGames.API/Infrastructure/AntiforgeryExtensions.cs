@@ -152,7 +152,19 @@ internal static class AntiforgeryExtensions
             return false;
         }
 
-        return context.Request.Path.StartsWithSegments("/api", StringComparison.OrdinalIgnoreCase);
+        if (!context.Request.Path.StartsWithSegments("/api", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        // /api/infer is the Survive AI relay — a per-turn POST that the orchestrator
+        // emits every 250-1500 ms during a running simulation. It is gated by the
+        // BFF cookie (SameSite=Lax) plus an AuthenticatedUser requirement and rate
+        // limiting at 10 req/s per IP, so the synchroniser-token check adds no real
+        // CSRF protection and the client HttpClient used by the relay cannot carry
+        // the AntiforgeryHandler header. Excluding it stops a 1-Hz 403 storm from
+        // filling /api/diag and the AppInsights request log.
+        return !context.Request.Path.StartsWithSegments("/api/infer", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>Response shape of <c>GET /api/auth/antiforgery-token</c>.</summary>

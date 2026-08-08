@@ -76,9 +76,13 @@
 /* NetRun10 audit #9: inline hint that explains what unlocks an em-dash stat.
    Hidden by default (display:none); the Razor toggles it via the parent chip
    contents; we use :has() so a single .prf-chip-hint inside the chip surfaces it. */
+/* 2026-08-07 browser audit #9: this page carried the smallest type in the app —
+   0.6rem/0.65rem/0.68rem labels rendering at 9.6-10.9px. 0.75rem (12px) is the
+   floor for every label class below; anything smaller is not readable type, it
+   is decoration that happens to contain words. */
 .prf-chip-hint {
     display: none;
-    font-size: 0.6rem;
+    font-size: 0.75rem;
     color: var(--color-text-secondary);
     text-align: center;
     margin-top: 0.25rem;
@@ -95,7 +99,7 @@
 }
 
 .prf-chip-lbl {
-    font-size: 0.65rem;
+    font-size: 0.75rem;
     color: var(--color-text-secondary);
     text-transform: uppercase;
     letter-spacing: 0.05em;
@@ -226,7 +230,7 @@
 }
 
 .prf-callout-lbl {
-    font-size: 0.65rem;
+    font-size: 0.75rem;
     text-transform: uppercase;
     letter-spacing: 0.08em;
     color: var(--color-text-secondary);
@@ -342,7 +346,7 @@
     font-weight: 700;
     border-radius: 0.25rem;
     padding: 0.05rem 0.35rem;
-    font-size: 0.65rem;
+    font-size: 0.75rem;
     text-transform: uppercase;
     letter-spacing: 0.04em;
 }
@@ -359,7 +363,7 @@
 .prf-diff-elo {
     color: var(--accent);
     font-weight: 600;
-    font-size: 0.68rem;
+    font-size: 0.75rem;
     background: rgba(99,102,241,0.12);
     border-radius: 0.25rem;
     padding: 0.05rem 0.3rem;
@@ -444,7 +448,7 @@
 .prf-h2h-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
 .prf-h2h-table th {
     text-align: left;
-    font-size: 0.68rem;
+    font-size: 0.75rem;
     text-transform: uppercase;
     letter-spacing: 0.05em;
     color: var(--color-text-secondary);
@@ -471,7 +475,7 @@
 .prf-h2h-l { color: var(--accent-danger); font-weight: 600; }
 .prf-h2h-d { color: var(--color-text-secondary); }
 .prf-h2h-badge {
-    font-size: 0.6rem;
+    font-size: 0.75rem;
     font-weight: 700;
     border-radius: 0.25rem;
     padding: 0.05rem 0.3rem;

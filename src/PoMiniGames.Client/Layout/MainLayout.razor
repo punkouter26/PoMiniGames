@@ -10,6 +10,12 @@
 @inject AppUpdateService AppUpdate
 
 <div class="gl-page">
+    @* 2026-08-07 browser audit #9: first tab stop on every route. The header is
+       persistent chrome (brand, game title, back link, identity, Sign out), so a
+       keyboard or screen-reader user had to walk all of it again on every single
+       navigation before reaching the game. Visually hidden until focused. *@
+    <a class="gl-skip-link" href="#main-content">Skip to content</a>
+
     @* Offline is silent without this: the service worker serves a fully working app
        shell with no network, so an online-only game failing would read as a bug
        rather than as a connection problem. Scores earned offline are parked by
@@ -111,7 +117,10 @@
         </div>
     </header>
 
-    <main class="gl-content">
+    @* tabindex="-1" so the skip link can actually move focus here: without it the
+       browser scrolls to <main> but leaves focus on the link, and the next Tab
+       goes straight back into the header. *@
+    <main class="gl-content" id="main-content" tabindex="-1">
         @Body
     </main>
 

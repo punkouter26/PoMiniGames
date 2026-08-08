@@ -9,6 +9,21 @@
   --color-text-primary: #f1f5f9;
   --color-text-secondary: #b0bec5;
   --color-accent: #6366f1;
+  /* Foreground for anything sitting ON --color-accent. Consumed by
+     `.gps-back-link:hover` (games.css) but never defined, so that hover state
+     resolved to an invalid colour and inherited the surrounding text colour
+     instead — near-black on indigo (2026-08-07 browser audit #2). Scheme-
+     invariant: the accent itself does not change between light and dark, so
+     neither does the text that sits on it. */
+  --color-accent-contrast: #ffffff;
+  /* Accent for SOLID fills that carry --color-accent-contrast text on top.
+     White on --color-accent (#6366f1) measures 4.47:1 — under the 4.5:1 AA
+     floor by a hair, and that is the app's primary CTA (every "OK", "Start",
+     "Play again", the quiz's selected answer). One step darker clears it at
+     ~6.3:1 and is visually all but identical. --color-accent itself is left
+     alone: it is also the link colour, the focus ring and a border hue, none of
+     which want to shift. 2026-08-07 browser audit #2. */
+  --color-accent-solid: #4f46e5;
   --color-warning: #f59e0b;
   --color-error: #ef4444;
   /* ── Tiered accent bag (Fix #8 — single source of truth for status colour) ──
@@ -507,7 +522,7 @@ h3:focus-visible {
 }
 
 .sp-btn-primary {
-  background: var(--color-accent);
+  background: var(--color-accent-solid);
   border: none;
   color: #fff;
   padding: 0.45rem 1.2rem;

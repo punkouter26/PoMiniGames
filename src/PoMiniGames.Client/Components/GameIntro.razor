@@ -49,6 +49,17 @@
             <div class="gps-intro-options">@Options</div>
         }
 
+        @* Only offered on the 1P card. The 2P card also carries character
+           selection, so skipping it would skip a required choice; the demo card
+           auto-starts on a timer and is never dismissed by hand. *@
+        @if (Mode == IntroMode.OnePlayer)
+        {
+            <label class="gps-intro-skip">
+                <input type="checkbox" checked="@_dontShowAgain" @onchange="OnDontShowAgainChanged" />
+                <span>Don't show this again</span>
+            </label>
+        }
+
         <div class="gps-intro-actions">
             @switch (Mode)
             {
@@ -130,9 +141,11 @@
     [Parameter] public string? CueScope { get; set; }
 
     [Inject] private Services.UiFeedbackService Feedback { get; set; } = null!;
+    [Inject] private Services.SettingsService Settings { get; set; } = null!;
 
     private ElementReference _root;
     private bool _started;
+    private bool _dontShowAgain;
     private Timer? _demoTimer;
 
     private string ModeClass => Mode switch
@@ -145,6 +158,15 @@
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender) return;
+
+        // A returning player who ticked "Don't show this again" goes straight
+        // into the game. Checked here rather than in each page so all nine 1P
+        // games inherit it from the one component they already share.
+        if (Mode == IntroMode.OnePlayer && !Settings.ShowGameIntros)
+        {
+            await StartAsync();
+            return;
+        }
 
         // Focus the overlay so Enter/Space (1P) and the per-player select keys
         // (2P) land here without the player having to click first.
@@ -181,15 +203,34 @@
     {
         if (Mode == IntroMode.TwoPlayer)
         {
+            // Escape is the one key the 2P card handles itself: this is a
+            // role="dialog" aria-modal="true", and a modal that ignores Escape
+            // is a keyboard trap. It still respects StartEnabled, so it cannot
+            // start a match before both players have picked (audit #4).
+            if (e.Key == "Escape")
+            {
+                await StartAsync();
+                return;
+            }
+
             if (OnKey.HasDelegate) await OnKey.InvokeAsync(e);
             return;
         }
 
         // 1P: keyboard players can dismiss without reaching for the mouse.
-        if (e.Key is "Enter" or " " or "Spacebar")
+        // Escape included — see above.
+        if (e.Key is "Enter" or " " or "Spacebar" or "Escape")
         {
             await StartAsync();
         }
+    }
+
+    private void OnDontShowAgainChanged(ChangeEventArgs e)
+    {
+        _dontShowAgain = e.Value is true;
+        // Persisted immediately rather than on dismiss, so the choice survives a
+        // player who ticks the box and then navigates away instead of pressing OK.
+        Settings.SetShowGameIntros(!_dontShowAgain);
     }
 
     public void Dispose()

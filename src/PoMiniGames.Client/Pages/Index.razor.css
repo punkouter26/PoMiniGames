@@ -14,10 +14,17 @@
 
 .home-container {
     position: relative;
-    max-width: 1100px;
+    max-width: min(1100px, 100%);
     margin: 0 auto;
     padding: var(--space-6) var(--space-4) var(--space-8);
     isolation: isolate; /* contain the WebGL canvas stacking context */
+    /* This is a flex item of `main.gl-content` (a column flex container), where
+       the default `min-width: auto` lets an item grow past its parent to fit its
+       content's min-content width. A card title that could not wrap pushed this
+       to 399px inside a 390px phone, so the whole home page scrolled sideways.
+       `min-width: 0` lets it shrink to the viewport and hands the wrapping job
+       to the cards, which now do it. 2026-08-07 browser audit #7. */
+    min-width: 0;
 }
 
 /* §4 GPU ambient particle canvas — sits behind the mesh gradient and content.
@@ -157,7 +164,14 @@
     color: var(--color-text-primary);
     text-decoration: none;
     transition: color 0.18s var(--ease-standard);
+    /* Let the title/subtitle pair drop to a second line rather than shooting
+       past the card edge on a 390px phone (browser audit #7). */
+    flex-wrap: wrap;
 }
+
+/* Without this the title is a flex item at its max-content width and refuses to
+   wrap, pushing the nowrap subtitle chip outside the card. */
+.home-card-title { min-width: 0; }
 
 .home-card-head:hover { color: var(--color-accent); }
 
@@ -167,6 +181,29 @@
     font-size: 1rem;
     font-weight: 700;
     font-family: var(--font-display);
+}
+
+/* Audit #10: optional subtitle under the card title — small, muted, single
+   line — used for variants whose product name does not by itself describe the
+   rules (e.g. Tic-Tac-Toe is actually 4-in-a-row on a 6×6 grid). */
+.home-card-subtitle {
+    font-size: 0.72rem;
+    font-weight: 500;
+    color: var(--color-text-secondary);
+    opacity: 0.85;
+    padding: 0.1rem 0.45rem;
+    border-radius: var(--radius-pill);
+    background: var(--surface-2);
+    border: 1px solid var(--color-border);
+    white-space: nowrap;
+    /* Spacing comes from `.home-card-head`'s gap; the margin-left this rule used
+       to carry doubled up with it. The chip is also the last thing that should
+       win a width fight — let it shrink and ellipsise rather than overflow the
+       card on a 390px phone (browser audit #7). */
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 /* Every mode of this game needs a server and the browser is offline. Kept
@@ -233,9 +270,16 @@
 
 /* ── Scroll-driven card reveal ───────────────────────────────────────────────
    `animation-timeline: view()` runs entirely on the compositor — no scroll
-   listener, no IntersectionObserver, no per-frame JS. `animation-range` ends the
-   effect once the card is 40% up the viewport so it is settled well before it is
-   read, and `both` holds the end state so a card scrolled past stays put.
+   listener, no IntersectionObserver, no per-frame JS. `both` holds the end state
+   so a card scrolled past stays put.
+
+   The range ends at `entry 100%` — the instant the card is fully inside the
+   scrollport — NOT at `cover 40%`, which is much later for a short element.
+   2026-08-07 browser audit #3: with `cover 40%` any card that was already fully
+   on screen at load was still only part-way through the animation, so at
+   1440x900 (where this page scrolls barely 50px) the bottom row was pinned at
+   opacity 0.45 with no scroll left to finish it — two games permanently looked
+   disabled. Anchoring the end to `entry` guarantees anything visible is opaque.
 
    Wrapped in @supports because browsers without scroll-driven animations would
    otherwise run this as a normal time-based animation and fade every card in at
@@ -246,7 +290,7 @@
         .home-card {
             animation: home-card-reveal linear both;
             animation-timeline: view();
-            animation-range: entry 0% cover 40%;
+            animation-range: entry 0% entry 100%;
         }
 
         @keyframes home-card-reveal {

@@ -15,6 +15,53 @@
     width: 100%;
 }
 
+/* 2026-08-07 browser audit #10: the Begin/Stop buttons markup lives in THIS
+   component, but `.btn` and `.btn-primary` were only ever declared in
+   JesterStage.razor.css. Blazor scopes each `.razor.css` to its own component's
+   `[b-hash]`, so those rules never matched these buttons — Stop rendered with a
+   dark-red background and otherwise stock browser chrome (no padding, no radius,
+   a default border), which read as a broken control. The base lives here now so
+   the component is self-contained. */
+.btn {
+    padding: 0.7rem 1.5rem;
+    font-size: 0.9rem;
+    font-weight: 700;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+                box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    min-height: 44px;
+}
+
+.btn-primary {
+    background: linear-gradient(135deg, #b8956a 0%, #d4af37 50%, #b8956a 100%);
+    color: #1a1a2e;
+    box-shadow: 0 4px 15px rgba(184, 149, 106, 0.3);
+}
+
+.btn-primary:hover {
+    transform: translateY(-3px) scale(1.02);
+    box-shadow: 0 8px 25px rgba(184, 149, 106, 0.5);
+}
+
+.btn-primary:active,
+.btn-danger:active {
+    transform: translateY(0) scale(0.98);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .btn,
+    .btn-large:hover,
+    .btn-primary:hover,
+    .btn-danger:hover {
+        transform: none;
+        transition: none;
+    }
+}
+
 .btn-large {
     padding: 1rem 2.5rem !important;
     font-size: 1.1rem !important;

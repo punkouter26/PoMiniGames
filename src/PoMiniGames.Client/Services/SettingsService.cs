@@ -39,6 +39,7 @@ public sealed class SettingsService : IAsyncDisposable
     private const string VolumeKey = "pomini_volume";
     private const string HapticsKey = "pomini_haptics";
     private const string ReducedMotionKey = "pomini_reducedmotion";
+    private const string ShowGameIntrosKey = "pomini_showgameintros";
 
     private readonly Lazy<Task<IJSObjectReference>> _prefs;
     private bool _disposed;
@@ -77,6 +78,17 @@ public sealed class SettingsService : IAsyncDisposable
     /// </summary>
     public bool ReducedMotion { get; private set; }
 
+    /// <summary>
+    /// Whether the controls card opens each single-player game. ON by default —
+    /// a first-time player needs the rules — but a returning player replaying the
+    /// same game had to dismiss the identical card on every single load
+    /// (2026-08-07 browser audit #4). Ticking "Don't show this again" on the card
+    /// clears this; /settings turns it back on. Two-player intros ignore the flag
+    /// because that card also carries character selection, and demos already
+    /// auto-start on a timer.
+    /// </summary>
+    public bool ShowGameIntros { get; private set; } = true;
+
     /// <summary>Read persisted values. Call once JS interop is available.</summary>
     public void Load()
     {
@@ -90,6 +102,9 @@ public sealed class SettingsService : IAsyncDisposable
             Volume = ParseVolume(LocalStorageService.GetItem<string>(VolumeKey));
             Haptics = LocalStorageService.GetItem<string>(HapticsKey) != "0";
             ReducedMotion = LocalStorageService.GetItem<string>(ReducedMotionKey) == "1";
+            // Default ON: only an explicit "0" (the player ticking "Don't show
+            // this again") suppresses the controls card.
+            ShowGameIntros = LocalStorageService.GetItem<string>(ShowGameIntrosKey) != "0";
         }
         catch { /* pre-render — defaults stand */ }
     }
@@ -157,6 +172,13 @@ public sealed class SettingsService : IAsyncDisposable
     {
         Haptics = enabled;
         LocalStorageService.SetItem(HapticsKey, enabled ? "1" : "0");
+        Changed?.Invoke();
+    }
+
+    public void SetShowGameIntros(bool show)
+    {
+        ShowGameIntros = show;
+        LocalStorageService.SetItem(ShowGameIntrosKey, show ? "1" : "0");
         Changed?.Invoke();
     }
 

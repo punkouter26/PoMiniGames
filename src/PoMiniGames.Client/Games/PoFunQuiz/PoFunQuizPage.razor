@@ -13,6 +13,8 @@
 @inject HttpClient Http
 @implements IAsyncDisposable
 
+<PageTitle>Fun Quiz · PoMiniGames</PageTitle>
+
 <GameShell Title=@TitleContent Player="@_playerName" BackTo="/"
            GameOver="@IsGameOver"
            GameKey="@(_playMode == "solo" ? "pofunquiz" : null)"
@@ -243,6 +245,9 @@
     // (2026-07-16) — nothing renders a landing screen any more.
     private readonly Dictionary<int, (int selected, bool correct)> _selected = new();
     private List<StatItem>? _statItems;
+    // Bug fix (2026-08-07): demo auto-pick loop sets this on Dispose so a
+    // late callback doesn't touch disposed state.
+    private bool _disposed;
 
     private bool IsGameOver => _questions.Count > 0
         && _currentIndex >= _questions.Count
@@ -386,6 +391,12 @@
 
     public async ValueTask DisposeAsync()
     {
+        _disposed = true;
+        if (_demoTimer is not null)
+        {
+            await _demoTimer.DisposeAsync();
+            _demoTimer = null;
+        }
         if (_splitScreen)
         {
             try { await JS.InvokeVoidAsync("poFunQuizSplitHotkeys.unregister"); } catch { /* disposed */ }
@@ -422,6 +433,20 @@
             _selected.Clear();
             _scoreSubmitted = false;
             _statItems = null;
+            // Bug fix (2026-08-07): /funquiz/demo used to load Q1 and then
+            // freeze, because SelectAnswer only fires on a real click and the
+            // kiosk has no one to click. Spawn a detached loop that auto-picks
+            // an answer every few seconds and rolls through all 10 questions,
+            // so the attract reel shows question variety instead of a stuck
+            // "What is the capital of France?".
+            if (_playMode == "demo" && _demoTimer is null)
+            {
+                _demoTimer = new System.Threading.Timer(
+                    async _ => await InvokeAsync(DemoAdvanceAsync),
+                    null,
+                    DemoAutoPickDelayMs,
+                    DemoAutoPickDelayMs);
+            }
         }
         catch (Exception ex)
         {
@@ -430,6 +455,45 @@
         finally
         {
             _isLoading = false;
+        }
+    }
+
+    // Demo auto-pick loop (2026-08-07). Picks a random option, reveals, advances.
+    private System.Threading.Timer? _demoTimer;
+    private const int DemoAutoPickDelayMs = 2800;
+    private async Task DemoAdvanceAsync()
+    {
+        if (_playMode != "demo" || _disposed) return;
+        if (_isLoading || _questions.Count == 0) return;
+        if (_currentIndex >= _questions.Count)
+        {
+            // End of the deck — reshuffle and start over so the reel keeps
+            // cycling without a network round-trip.
+            _currentIndex = 0;
+            _score = 0;
+            _streak = 0;
+            _maxStreak = 0;
+            _selected.Clear();
+            _scoreSubmitted = false;
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+        if (!_selected.ContainsKey(_currentIndex))
+        {
+            var q = _questions[_currentIndex];
+            var pick = Random.Shared.Next(q.Options.Count);
+            SelectAnswer(pick);
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+        // Already selected; wait one tick to let the reveal phase render
+        // before advancing.
+        await Task.Delay(900);
+        if (_disposed) return;
+        if (_selected.ContainsKey(_currentIndex))
+        {
+            _currentIndex++;
+            await InvokeAsync(StateHasChanged);
         }
     }
 

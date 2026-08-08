@@ -278,17 +278,40 @@ public sealed class PerformanceOrchestrator : IAsyncDisposable
         var request = new HttpRequestMessage(HttpMethod.Post, "/api/joker/analyze");
         request.Headers.Add("X-Session-Id", SessionId);
         request.Content = JsonContent.Create(CurrentJoke, ApiJsonContext.Default.JokeDto);
-        var analysisResponse = await _http.SendAsync(request, cancellationToken);
+
+        // Hard timeout so a slow model can't pin the demo on "Jester is thinking…".
+        // WaitAsync throws TimeoutException on expiry; the catch below surfaces a
+        // shrug-line analysis so the show keeps moving. The drum-roll and any
+        // already-buffered audio still complete before we move on.
+        HttpResponseMessage? analysisResponse = null;
+        try
+        {
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeoutCts.CancelAfter(TimeSpan.FromSeconds(_settings.AnalysisTimeoutSeconds));
+            analysisResponse = await _http.SendAsync(request, timeoutCts.Token);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            CurrentAnalysis = FallbackAnalysis();
+        }
+        catch (HttpRequestException)
+        {
+            CurrentAnalysis = FallbackAnalysis();
+        }
 
         // Content filter (451) — skip the joke silently.
-        if ((int)analysisResponse.StatusCode == 451)
+        if (analysisResponse is not null && (int)analysisResponse.StatusCode == 451)
+        {
+            analysisResponse.Dispose();
             return;
+        }
 
-        if (analysisResponse.IsSuccessStatusCode)
+        if (analysisResponse is not null && analysisResponse.IsSuccessStatusCode)
         {
             CurrentAnalysis = await analysisResponse.Content.ReadFromJsonAsync(
                 ApiJsonContext.Default.JokeAnalysisDto, cancellationToken);
         }
+        analysisResponse?.Dispose();
 
         await drumRollTask;
 
@@ -299,6 +322,27 @@ public sealed class PerformanceOrchestrator : IAsyncDisposable
 
         NotifyStateChanged();
         await Task.Delay(TimeSpan.FromSeconds(_settings.PredictionDurationSeconds), cancellationToken);
+    }
+
+    /// <summary>
+    /// The shrug-line the Jester delivers when the analyze endpoint times out or errors.
+    /// Scored as a defeat (IsTriumph=false, zeroed rating) so the running triumph tally
+    /// reflects what the audience actually saw: a joke the Jester could not land.
+    /// </summary>
+    private JokeAnalysisDto FallbackAnalysis()
+    {
+        // OriginalJoke is a required DTO field; the fallback is rendered but never
+        // re-serialized to the server, so a placeholder is acceptable. If a real
+        // joke is on stage we reuse it (cheap, accurate shape); otherwise emit the
+        // smallest valid DTO the C# required-modifier will accept.
+        var original = CurrentJoke ?? new JokeDto { Id = 0 };
+        return new JokeAnalysisDto
+        {
+            OriginalJoke = original,
+            AiPunchline = "…the jester has nothing to add.",
+            IsTriumph = false,
+            Rating = new JokeRatingDto { Commentary = "Analyzer timed out before the punchline could be guessed." },
+        };
     }
 
     private async Task RevealPunchlineAsync(CancellationToken cancellationToken)

@@ -75,15 +75,27 @@ const PoRacer = (() => {
     document.addEventListener('pointerup', releaseTouch);
     document.addEventListener('pointercancel', releaseTouch);
 
+    // 2026-08-08: MAX_CSS_W/H used to be 1600x900 and were applied as a hard clamp on the
+    // DRAWING size while the canvas kept its full CSS box. On a window taller than 900 css px
+    // that meant a 900-tall image stretched over (say) 950 css px — non-square pixels, so the
+    // whole frame was both softened and vertically squashed, and every circle in it became an
+    // ellipse. A resolution cap has to preserve aspect or it is a distortion, not a cap.
+    //
+    // The cap is now expressed as a PIXEL BUDGET and applied through `dpr`, which scales both
+    // axes together. Above the budget the backing store shrinks uniformly and the browser
+    // scales it back up — still a softer image on very large windows, but a correctly
+    // proportioned one, and it stays sharp at every ordinary size.
     const MAX_DPR = 1.25;
-    const MAX_CSS_W = 1600;
-    const MAX_CSS_H = 900;
+    const MAX_PIXELS = 1600 * 900;   // backing-store budget, ~1.44 Mpx
 
     function resize() {
         if (!canvas) return;
-        const dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR);
-        const w = Math.min(canvas.clientWidth, MAX_CSS_W);
-        const h = Math.min(canvas.clientHeight, MAX_CSS_H);
+        const w = canvas.clientWidth;
+        const h = canvas.clientHeight;
+        let dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR);
+        // Shrink both axes by the same factor if the budget is exceeded.
+        const over = (w * h * dpr * dpr) / MAX_PIXELS;
+        if (over > 1) dpr /= Math.sqrt(over);
         lastSize = { w, h };
         const bw = Math.max(1, Math.floor(w * dpr));
         const bh = Math.max(1, Math.floor(h * dpr));

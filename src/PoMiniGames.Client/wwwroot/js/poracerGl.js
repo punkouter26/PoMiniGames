@@ -24,9 +24,11 @@
 //    to the server anyway.
 //
 // 2. WEBGL2 COMPOSITE. The 2D scene is uploaded as a texture and passed through
-//    a fragment shader for radial motion blur, chromatic aberration, heat
-//    shimmer, speed lines and a bright-pass bloom — all scaled by actual speed,
-//    plus the shared impact envelope on collisions.
+//    a fragment shader for chromatic aberration, heat shimmer, speed lines, a
+//    bright-pass bloom and a speed vignette — all scaled by actual speed, plus
+//    the shared impact envelope on collisions.
+//    (The radial motion blur this list used to lead with was removed 2026-08-08
+//    at the user's request — see the note in the shader.)
 //
 //    KEEPING THE 2D DRAWING WAS DELIBERATE. Reimplementing racingInterop.js's
 //    ~1,400 lines of track, weather, smoke, skid and car rendering in WebGL
@@ -60,7 +62,6 @@ uniform vec2  uRes;
 uniform float uTime;
 uniform float uSpeed;    // 0..1 normalised road speed
 uniform float uPunch;    // 0..1 impact envelope
-uniform int   uTaps;     // motion-blur sample count, from the quality tier
 
 in vec2 vUv;
 out vec4 frag;
@@ -86,28 +87,18 @@ void main() {
         sin(uv.y * 46.0 + uTime * 3.1) * haze,
         cos(uv.x * 38.0 + uTime * 2.4) * haze * 0.6);
 
-    // ── Radial motion blur ─────────────────────────────────────────────
-    // Radial and not directional: the camera is locked behind the car, so on
-    // screen the world streams outward from the vanishing point. Blurring along
-    // the velocity vector would be correct for a fixed camera and wrong here.
+    // ── Radial motion blur — REMOVED 2026-08-08 (user request) ─────────
+    // This ran up to 12 weighted taps smeared outward from the frame centre,
+    // ramped by uSpeed*0.055 + uPunch*0.10. Because a racing game spends
+    // almost all of its time at speed, the smear was effectively always on and
+    // the whole picture outside the very centre read as out of focus rather
+    // than as fast — the same reason the equivalent effect came out of
+    // PoMarbleRace. A single sharp read replaces the tap loop, so this is also
+    // 11 fewer texture fetches per pixel per frame.
     //
-    // Strength is zero at the centre and grows with radius — the middle of the
-    // frame is where the player is looking and where the car is, and smearing
-    // it makes the game feel drunk rather than fast.
-    float amount = (uSpeed * 0.055 + uPunch * 0.10) * smoothstep(0.05, 0.75, r);
-    vec3 col = vec3(0.0);
-    float total = 0.0;
-    for (int i = 0; i < 16; i++) {
-        if (i >= uTaps) break;
-        float t = float(i) / float(uTaps);
-        // Weight the near samples more heavily: an unweighted box smear reads
-        // as a ghost image, a weighted one reads as motion.
-        float wgt = 1.0 - t * 0.65;
-        vec2 s = uv - toC * (t * amount);
-        col += texture(tScene, s).rgb * wgt;
-        total += wgt;
-    }
-    col /= max(total, 0.0001);
+    // The uTaps uniform went with the loop. tierTaps() stays: returning 0 is still what
+    // switches the whole GL layer off on the low tier (see the guard in installGl()).
+    vec3 col = texture(tScene, uv).rgb;
 
     // ── Chromatic aberration ───────────────────────────────────────────
     // Radial, scaled by the same radius mask, so the frame edges fringe and the
@@ -176,7 +167,6 @@ let uRes = null;
 let uTime = null;
 let uSpeed = null;
 let uPunch = null;
-let uTaps = null;
 let sceneCanvas = null;
 let glReady = false;
 let startTime = 0;
@@ -274,7 +264,6 @@ function ensureGl(canvas2d) {
     uTime = gl.getUniformLocation(prog, 'uTime');
     uSpeed = gl.getUniformLocation(prog, 'uSpeed');
     uPunch = gl.getUniformLocation(prog, 'uPunch');
-    uTaps = gl.getUniformLocation(prog, 'uTaps');
     gl.uniform1i(gl.getUniformLocation(prog, 'tScene'), 0);
 
     // The 2D canvas keeps drawing — it is the texture source — but stops being
@@ -325,7 +314,6 @@ function composite(speed01) {
     gl.uniform1f(uTime, (performance.now() - startTime) / 1000);
     gl.uniform1f(uSpeed, speed01);
     gl.uniform1f(uPunch, Impact.getPunch());
-    gl.uniform1i(uTaps, tierTaps());
     gl.drawArrays(gl.TRIANGLES, 0, 3);
 }
 

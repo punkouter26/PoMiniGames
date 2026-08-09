@@ -11,6 +11,7 @@
 @inject IJSRuntime JSRuntime
 @inject KioskCoordinator Kiosk
 @inject SettingsService Settings
+@inject AuthStateService Auth
 
 <PageTitle>Brawl · PoMiniGames</PageTitle>
 
@@ -70,7 +71,6 @@
         {
             <div class="pb-demo-badge">🎮 Demo — CPU vs CPU</div>
         }
-
         @* 2026-07-16: the pre-fight overlay (presidential ladder card in 1P,
            fighter picker in 2P, both gated behind a "FIGHT" button) was removed.
            It sat between the home page and the game and configured what the page
@@ -79,6 +79,64 @@
            The "Fastest KO" / "Ladder Legends" boards it hosted are superseded by
            the top 3 in the shared end-of-game modal. *@
     </div>
+
+    @* Fighter Elo board. Demo mode is the only thing that feeds it, so it lives here
+       rather than in the end-of-game modal (which demo never shows). Ratings are
+       head-to-head between presidents — both CPUs fight at the same difficulty, so this
+       measures roster balance, not anyone's skill.
+
+       Deliberately a SIBLING of .pb-wrap, not a child. .pb-wrap is the positioning
+       context for .pb-demo-badge (`position: absolute; bottom: 10px`), so a board nested
+       inside it grows the wrap and drops the badge on top of the table — which is exactly
+       what happened the first time. Keeping the board outside leaves the arena as the
+       badge's anchor. *@
+    @if (_demo)
+    {
+        <section class="pb-elo" aria-labelledby="pb-elo-title">
+            <h2 id="pb-elo-title" class="pb-elo-title">Fighter Ratings — Top 10</h2>
+            @if (_fighterRatings is null)
+            {
+                <p class="pb-elo-empty">Loading ratings…</p>
+            }
+            else if (_fighterRatings.Length == 0)
+            {
+                <p class="pb-elo-empty">No demo matches recorded yet — the board fills as fights finish.</p>
+            }
+            else
+            {
+                <table class="pb-elo-table">
+                    <caption class="pb-visually-hidden">
+                        PoBrawl fighters ranked by head-to-head Elo from CPU-vs-CPU demo matches
+                    </caption>
+                    <thead>
+                        <tr>
+                            <th scope="col" class="pb-elo-rank">#</th>
+                            <th scope="col">Fighter</th>
+                            <th scope="col" class="pb-elo-num">Elo</th>
+                            <th scope="col" class="pb-elo-num">W</th>
+                            <th scope="col" class="pb-elo-num">L</th>
+                            <th scope="col" class="pb-elo-num">D</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @for (var i = 0; i < _fighterRatings.Length; i++)
+                        {
+                            var r = _fighterRatings[i];
+                            var isLive = r.FighterId == _p1Char || r.FighterId == _p2Char;
+                            <tr class="@(isLive ? "pb-elo-live" : "")">
+                                <td class="pb-elo-rank">@(i + 1)</td>
+                                <td>@r.DisplayName @if (isLive) { <span class="pb-elo-now" aria-label="fighting now">● now</span> }</td>
+                                <td class="pb-elo-num pb-elo-score">@r.Elo</td>
+                                <td class="pb-elo-num">@r.Wins</td>
+                                <td class="pb-elo-num">@r.Losses</td>
+                                <td class="pb-elo-num">@r.Draws</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </section>
+    }
 </GameShell>
 
 @code {
@@ -186,6 +244,11 @@
     private int _lastEloDelta;
     private string LadderKey => $"pobrawl_ladder_{_playerName}";
 
+    // ── Demo-mode fighter Elo board ───────────────────────────────────────
+    // Null until the first fetch resolves, so the table can tell "still loading" from
+    // "genuinely empty" — the two look identical if you seed with an empty array.
+    private PoMiniGames.Domain.Models.PoBrawlFighterRating[]? _fighterRatings;
+
     private RenderFragment TitleContent => @<span><span aria-hidden="true">🥊</span> Brawl</span>;
 
     private RenderFragment HowToPlayContent => @<div>
@@ -279,6 +342,32 @@
         UpdateStats();
 
         if (_demo) Kiosk.SetCurrent("pobrawl-demo");
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!_demo) return;
+
+        // Show the standing board immediately rather than waiting for the first fight of
+        // this session to finish — the kiosk may only dwell here for one match.
+        //
+        // The subscription is not optional. On a demo route AuthGate renders its children
+        // while the background guest sign-in is still in flight (its "signed out" branch is
+        // guarded on !_silentDevLoginInFlight, so the in-flight window falls through to
+        // ChildContent), which means this page can initialize before a session exists. The
+        // first fetch then 401s and — with no retry — the board would sit on "Loading
+        // ratings…" for as long as the kiosk was left running. Measured, not theorised.
+        Auth.StateChanged += OnAuthStateChanged;
+        if (Auth.IsAuthenticated) await LoadFighterRatingsAsync();
+    }
+
+    private void OnAuthStateChanged()
+    {
+        // Only fills the initial gap; later refreshes ride on match results.
+        if (_fighterRatings is null && Auth.IsAuthenticated)
+        {
+            _ = LoadFighterRatingsAsync();
+        }
     }
 
     protected override void OnAfterRender(bool firstRender)
@@ -385,9 +474,33 @@
         try { await JSRuntime.InvokeVoidAsync("PoBrawl.setMuted", _muted); } catch { }
     }
 
+    /// <summary>
+    /// HUD pump from the JS engine (<c>game.js _pushHud</c>, ~4×/sec).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The parameter list is an exact arity contract with the engine — keep them in
+    /// step.</b> <c>invokeMethodAsync</c> fails outright when the argument count does not
+    /// match, and the engine's call is wrapped in <c>.catch(() =&gt; {})</c>, so a mismatch
+    /// is silent: no console error, no exception, just a HUD that never updates.
+    /// </para>
+    /// <para>
+    /// That is exactly what happened. The engine grew four super-meter arguments (2026-08)
+    /// and this method was never widened past seven, so EVERY OnHud call had been failing —
+    /// the HP bars, the clock and the energy bars had all been frozen at their C# field
+    /// initializers (100/100, 0, 33/33) for the whole life of the regression. The "energy
+    /// bars never move" report was this, not the energy model.
+    /// </para>
+    /// <para>
+    /// The four super values are accepted and discarded: nothing in this HUD renders a super
+    /// meter yet. They are named rather than swallowed by a params array so the next person
+    /// to add that UI has them already wired to the right slots.
+    /// </para>
+    /// </remarks>
     [JSInvokable]
     public void OnHud(int p1Hp, int p2Hp, double elapsed, int[]? p1Regions, int[]? p2Regions,
-        int p1Energy = 50, int p2Energy = 50)
+        int p1Energy, int p2Energy,
+        int p1Super, int p2Super, int p1SuperReady, int p2SuperReady)
     {
         _p1Hp = p1Hp;
         _p2Hp = p2Hp;
@@ -454,6 +567,10 @@
         if (_demo || _mode != "1p")
         {
             _phase = "result";
+            // Demo is CPU vs CPU, so the result rates the two fighters against each other
+            // rather than any player. 2P is excluded: those fighters are human-picked and
+            // human-driven, which measures the players, not the roster.
+            if (_demo) await RecordDemoFighterEloAsync(winner);
             await InvokeAsync(StateHasChanged);
             return;
         }
@@ -542,6 +659,52 @@
         await InvokeAsync(StateHasChanged);
     }
 
+    /// <summary>
+    /// Reports one finished demo match to the fighter-Elo board and refreshes it.
+    /// </summary>
+    /// <param name="winner">1 = the left fighter, 2 = the right fighter, 0 = a draw.</param>
+    private async Task RecordDemoFighterEloAsync(int winner)
+    {
+        // Every game-data write requires auth. AuthGate signs the visitor in before this
+        // page renders (minting a guest on demo routes where dev-login is enabled), so
+        // this is normally true — but if it isn't, watch silently rather than firing a
+        // 401 after every match for as long as the kiosk is left running.
+        if (!Auth.IsAuthenticated) return;
+
+        // The engine reshuffles its own roster on restart and reports the pairing through
+        // OnMatchStart. A degenerate self-pairing would be rejected server-side, so skip it
+        // here instead of spending the request.
+        if (string.IsNullOrEmpty(_p1Char) || string.IsNullOrEmpty(_p2Char) || _p1Char == _p2Char) return;
+
+        // On a draw the order is arbitrary — IsDraw is what scores the match.
+        var request = winner == 0
+            ? new PoBrawlDemoResultRequest(_p1Char, _p2Char, true)
+            : new PoBrawlDemoResultRequest(
+                WinnerFighterId: winner == 1 ? _p1Char : _p2Char,
+                LoserFighterId: winner == 1 ? _p2Char : _p1Char,
+                IsDraw: false);
+
+        // Re-read the whole board rather than patching the two returned rows in place: the
+        // new ratings may have changed the ranking, and the response only covers this match.
+        if (await ApiService.SubmitPoBrawlDemoResultAsync(request) is not null)
+        {
+            await LoadFighterRatingsAsync();
+        }
+    }
+
+    private async Task LoadFighterRatingsAsync()
+    {
+        // A failed fetch leaves the previous board on screen (or the loading line on the
+        // very first attempt) instead of blanking it — an unattended screen should degrade
+        // to stale, not to empty.
+        var ratings = await ApiService.GetPoBrawlFighterRatingsAsync(10);
+        if (ratings is not null)
+        {
+            _fighterRatings = ratings;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
     private void UpdateStats()
     {
         var bucket = _gameStats.GetDifficultyBucket(_stats, Difficulty.Medium);
@@ -590,6 +753,9 @@
 
     public async ValueTask DisposeAsync()
     {
+        // Unsubscribe before anything else: AuthStateService outlives this page, so a
+        // leaked handler would keep a disposed component reachable across kiosk rotations.
+        Auth.StateChanged -= OnAuthStateChanged;
         try { await JSRuntime.InvokeVoidAsync("PoBrawl.destroy"); } catch { }
         _ref?.Dispose();
     }

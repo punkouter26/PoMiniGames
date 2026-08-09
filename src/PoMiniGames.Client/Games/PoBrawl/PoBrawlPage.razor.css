@@ -463,3 +463,95 @@
 .pb-canvas-host ::deep .pb-banner {
     transition: font-size 0.2s ease-out;
 }
+
+/* ── Demo-mode fighter Elo board ───────────────────────
+   Head-to-head ratings for the presidents, fed only by CPU-vs-CPU demo matches.
+   Colours go through the theme tokens so the board is legible in light mode too;
+   the raw hex further up this file predates that rule and is not a pattern to copy. */
+
+.pb-elo {
+    margin: 16px auto 0;
+    max-width: 34rem;
+    padding: 12px 14px;
+    background: var(--surface-2);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+}
+
+.pb-elo-title {
+    margin: 0 0 8px;
+    font-size: var(--text-sm);
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--color-text-secondary);
+}
+
+.pb-elo-empty {
+    margin: 0;
+    font-size: var(--text-sm);
+    color: var(--color-text-secondary);
+}
+
+.pb-elo-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--text-sm);
+    color: var(--color-text-primary);
+}
+
+.pb-elo-table th {
+    padding: 4px 6px;
+    text-align: left;
+    font-weight: 600;
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--color-text-secondary);
+    border-bottom: 1px solid var(--color-border);
+}
+
+.pb-elo-table td {
+    padding: 4px 6px;
+    border-bottom: 1px solid transparent;
+}
+
+.pb-elo-rank,
+.pb-elo-num {
+    text-align: right;
+    /* Tabular figures so the rating column doesn't jitter as numbers change under a
+       kiosk that re-renders this table after every match. */
+    font-variant-numeric: tabular-nums;
+}
+
+.pb-elo-rank {
+    width: 2rem;
+    color: var(--color-text-secondary);
+}
+
+.pb-elo-score {
+    font-weight: 700;
+}
+
+/* The two fighters currently on screen, so a passer-by can connect the fight to the board. */
+.pb-elo-live {
+    background: var(--accent-soft);
+}
+
+.pb-elo-now {
+    margin-left: 6px;
+    font-size: var(--text-xs);
+    color: var(--accent-ink);
+}
+
+.pb-visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}

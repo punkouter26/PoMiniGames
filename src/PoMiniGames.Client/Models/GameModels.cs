@@ -113,6 +113,17 @@ public class PoBrawlLadderEntry
     public string Date { get; set; } = "";
 }
 
+// Fighter Elo rows use PoMiniGames.Domain.Models.PoBrawlFighterRating directly, for the
+// same reason PoSports does above.
+
+/// <summary>
+/// One finished CPU-vs-CPU demo match. Carries who fought and who won, and nothing else:
+/// the ratings, the deltas, and the fighters' display names are all resolved server-side,
+/// so there is no field here to forge a rating in. On a draw the winner/loser split is
+/// arbitrary and <see cref="IsDraw"/> decides the scoring.
+/// </summary>
+public sealed record PoBrawlDemoResultRequest(string WinnerFighterId, string LoserFighterId, bool IsDraw);
+
 /// <summary>
 /// Queued PlayerStats PUT for the offline score-sync pipeline: a stats snapshot
 /// that failed to reach the server is parked and replayed by ScoreSyncService.

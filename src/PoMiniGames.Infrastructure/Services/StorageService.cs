@@ -7,6 +7,7 @@ using Microsoft.Extensions.Configuration;
 using PoMiniGames.Application.DTOs;
 using PoMiniGames.Application.Services;
 using PoMiniGames.Domain.Models;
+using PoMiniGames.Domain.Primitives;
 using PoMiniGames.Domain.Services;
 using PoMiniGames.Infrastructure.Storage;
 
@@ -23,6 +24,7 @@ public class StorageService : IStorageService
     private const string MarbleRaceTable = "MarbleRaceHighScores";
     private const string PoBrawlTable = "PoBrawlHighScores";
     private const string PoBrawlLadderTable = "PoBrawlLadder";
+    private const string PoBrawlEloTable = "PoBrawlFighterRatings";
     private const string PoRacerTable = "PoRacerHighScores";
     private const string PoSportsTable = "PoSportsHighScores";
 
@@ -30,11 +32,13 @@ public class StorageService : IStorageService
     private const string MarbleRacePartition = "marblerace";
     private const string PoBrawlPartition = "pobrawl";
     private const string PoBrawlLadderPartition = "pobrawlladder";
+    private const string PoBrawlEloPartition = "pobrawlelo";
     private const string PoRacerPartition = "poracer";
     private const string PoSportsPartition = "posports";
 
     private readonly TableServiceClient _serviceClient;
     private readonly EloCalculator _eloCalculator;
+    private readonly PairwiseEloCalculator _fighterElo;
     private readonly HashSet<string> _ensuredTables = new();
     private readonly object _ensureLock = new();
 
@@ -43,9 +47,10 @@ public class StorageService : IStorageService
             .Concat(new[] { '\'', '"', ';', '\\', '/', '#', '?', '\t', '\n', '\r' })
             .ToHashSet();
 
-    public StorageService(IConfiguration configuration, EloCalculator eloCalculator)
+    public StorageService(IConfiguration configuration, EloCalculator eloCalculator, PairwiseEloCalculator fighterElo)
     {
         _eloCalculator = eloCalculator;
+        _fighterElo = fighterElo;
 
         var section = configuration.GetSection("PoMiniGames:Storage:TableService");
         var connectionString = section["ConnectionString"];
@@ -76,7 +81,7 @@ public class StorageService : IStorageService
     /// </summary>
     public void Initialize()
     {
-        foreach (var table in new[] { PlayerStatsTable, MarbleRaceTable, PoBrawlTable, PoBrawlLadderTable, PoRacerTable, PoSportsTable })
+        foreach (var table in new[] { PlayerStatsTable, MarbleRaceTable, PoBrawlTable, PoBrawlLadderTable, PoBrawlEloTable, PoRacerTable, PoSportsTable })
         {
             try { Table(table); } catch { /* ensured lazily on first use */ }
         }
@@ -557,6 +562,158 @@ public class StorageService : IStorageService
                 return true;
             });
         return sanitized;
+    }
+
+    // ── PoBrawl demo-mode fighter Elo ─────────────────────────────────────
+    // One row per fighter, RowKey = canonical fighter id, so the partition is bounded at
+    // PoBrawlRoster.Count rows for all time. Unlike every board above, this is not a
+    // "best result wins" ratchet: a rating is an accumulator that moves both ways, so
+    // every write is a read-modify-write through TableConcurrency and there is no
+    // ShouldOverwrite veto to express.
+
+    public async Task<List<PoBrawlFighterRating>> GetPoBrawlFighterRatingsAsync(int limit = 10)
+    {
+        var ratings = new List<PoBrawlFighterRating>();
+        await foreach (var e in Table(PoBrawlEloTable).QueryAsync<TableEntity>(
+            filter: $"PartitionKey eq '{PoBrawlEloPartition}'",
+            maxPerPage: 1000))
+        {
+            ratings.Add(FighterRatingFrom(e));
+        }
+
+        // Highest rating first. Matches played breaks ties ahead of the name so a fighter
+        // with a real sample outranks one sitting on its seed rating, and the id is the
+        // final tiebreaker to keep the order stable between reads.
+        return ratings
+            .OrderByDescending(r => r.Elo)
+            .ThenByDescending(r => r.Matches)
+            .ThenBy(r => r.FighterId, StringComparer.Ordinal)
+            .Take(limit)
+            .ToList();
+    }
+
+    public async Task<List<PoBrawlFighterRating>> RecordPoBrawlDemoResultAsync(
+        string winnerFighterId, string loserFighterId, bool isDraw)
+    {
+        var winnerId = PoBrawlRoster.Canonicalize(winnerFighterId)
+            ?? throw new ArgumentException($"'{winnerFighterId}' is not a rateable PoBrawl fighter.", nameof(winnerFighterId));
+        var loserId = PoBrawlRoster.Canonicalize(loserFighterId)
+            ?? throw new ArgumentException($"'{loserFighterId}' is not a rateable PoBrawl fighter.", nameof(loserFighterId));
+
+        if (string.Equals(winnerId, loserId, StringComparison.Ordinal))
+        {
+            throw new ArgumentException("A fighter cannot fight itself.", nameof(loserFighterId));
+        }
+
+        var table = Table(PoBrawlEloTable);
+
+        // Snapshot both ratings to price the match. The two rows cannot be read atomically,
+        // so these may already be stale by the time we write — which is exactly why the
+        // delta is applied as an increment below rather than as an absolute rating.
+        var winnerBefore = await ReadFighterEloAsync(table, winnerId);
+        var loserBefore = await ReadFighterEloAsync(table, loserId);
+
+        var delta = _fighterElo.Delta(winnerBefore, loserBefore, isDraw);
+        var stamp = DateTime.UtcNow.ToString("o");
+
+        await ApplyFighterDeltaAsync(table, winnerId, delta, isDraw ? MatchResult.Draw : MatchResult.Win, stamp);
+        await ApplyFighterDeltaAsync(table, loserId, -delta, isDraw ? MatchResult.Draw : MatchResult.Loss, stamp);
+
+        // Read back rather than reconstructing from the snapshot: a concurrent demo match
+        // may have moved either fighter between the two writes, and the caller should see
+        // what is actually stored.
+        return
+        [
+            await GetFighterRatingAsync(table, winnerId),
+            await GetFighterRatingAsync(table, loserId),
+        ];
+    }
+
+    private enum MatchResult { Win, Loss, Draw }
+
+    /// <summary>
+    /// Current stored rating for a fighter, or the configured seed when it has never fought.
+    /// </summary>
+    private async Task<int> ReadFighterEloAsync(TableClient table, string fighterId)
+    {
+        try
+        {
+            var entity = await table.GetEntityAsync<TableEntity>(PoBrawlEloPartition, fighterId);
+            return entity.Value.GetInt32("Elo") ?? _fighterElo.SeedElo;
+        }
+        catch (RequestFailedException ex) when (ex.Status == 404)
+        {
+            return _fighterElo.SeedElo;
+        }
+    }
+
+    private async Task<PoBrawlFighterRating> GetFighterRatingAsync(TableClient table, string fighterId)
+    {
+        try
+        {
+            var entity = await table.GetEntityAsync<TableEntity>(PoBrawlEloPartition, fighterId);
+            return FighterRatingFrom(entity.Value);
+        }
+        catch (RequestFailedException ex) when (ex.Status == 404)
+        {
+            // Only reachable if the row was deleted between write and read-back.
+            return new PoBrawlFighterRating
+            {
+                FighterId = fighterId,
+                DisplayName = PoBrawlRoster.DisplayName(fighterId),
+                Elo = _fighterElo.SeedElo,
+            };
+        }
+    }
+
+    /// <summary>
+    /// Adds <paramref name="delta"/> to a fighter's stored rating and bumps its record.
+    /// </summary>
+    /// <remarks>
+    /// The mutation reads the rating from the entity the concurrency loop just fetched, so a
+    /// retry after a 412 re-applies the increment to the winner's value rather than replaying
+    /// a stale absolute. This is what makes two concurrent demo matches compose instead of
+    /// one clobbering the other.
+    /// </remarks>
+    private Task ApplyFighterDeltaAsync(
+        TableClient table, string fighterId, int delta, MatchResult result, string stamp) =>
+        TableConcurrency.UpdateWithRetryAsync<TableEntity>(
+            table,
+            partitionKey: PoBrawlEloPartition,
+            rowKey: fighterId,
+            factory: () => new TableEntity(PoBrawlEloPartition, fighterId),
+            mutate: e =>
+            {
+                var current = e.GetInt32("Elo") ?? _fighterElo.SeedElo;
+                e["FighterId"] = fighterId;
+                // Resolved server-side every write, so a roster rename lands on the next match
+                // instead of leaving the board showing a name nobody uses any more.
+                e["DisplayName"] = PoBrawlRoster.DisplayName(fighterId);
+                e["Elo"] = _fighterElo.ApplyDelta(current, delta);
+                e["Wins"] = (e.GetInt32("Wins") ?? 0) + (result == MatchResult.Win ? 1 : 0);
+                e["Losses"] = (e.GetInt32("Losses") ?? 0) + (result == MatchResult.Loss ? 1 : 0);
+                e["Draws"] = (e.GetInt32("Draws") ?? 0) + (result == MatchResult.Draw ? 1 : 0);
+                e["LastUpdated"] = stamp;
+                return true;
+            });
+
+    private static PoBrawlFighterRating FighterRatingFrom(TableEntity e)
+    {
+        var id = e.GetString("FighterId") ?? e.RowKey;
+        return new PoBrawlFighterRating
+        {
+            FighterId = id,
+            // Prefer the live roster name over the stored one so a rename shows immediately
+            // on read; the stored column is the fallback for an id the roster has dropped.
+            DisplayName = PoBrawlRoster.IsRateable(id)
+                ? PoBrawlRoster.DisplayName(id)
+                : e.GetString("DisplayName") ?? id,
+            Elo = e.GetInt32("Elo") ?? 0,
+            Wins = e.GetInt32("Wins") ?? 0,
+            Losses = e.GetInt32("Losses") ?? 0,
+            Draws = e.GetInt32("Draws") ?? 0,
+            LastUpdated = e.GetString("LastUpdated") ?? "",
+        };
     }
 
     // The one shared high-score read: scan the game's partition, rebuild entries, rank, take.

@@ -110,6 +110,13 @@ internal static class GameServicesExtensions
             var config = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<EloOptions>>();
             return new EloCalculator(config.Value);
         });
+        // Head-to-head ratings for the PoBrawl demo board. A distinct calculator, not a mode
+        // of EloCalculator — see PairwiseEloCalculator's remarks for why the two cannot merge.
+        services.AddSingleton(sp =>
+        {
+            var config = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<EloOptions>>();
+            return new PairwiseEloCalculator(config.Value);
+        });
 
         // Storage initializer for the consolidated games (PoCoupleQuiz, PoFunQuiz).
         // Ensures all per-game tables and blob containers exist at host startup.

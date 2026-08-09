@@ -2,6 +2,7 @@ using System.Text.Json.Serialization;
 // Alias, not a namespace import: PoMiniGamesClient.Models mirrors several other Domain
 // types by name, so importing the namespace wholesale would make them all ambiguous.
 using PoSportsHighScore = PoMiniGames.Domain.Models.PoSportsHighScore;
+using PoBrawlFighterRating = PoMiniGames.Domain.Models.PoBrawlFighterRating;
 using PoMiniGamesClient.Models;
 using PoMiniGames.Shared.Games;
 using PoMiniGamesClient.Games.PoSurvive.Services;
@@ -44,6 +45,9 @@ namespace PoMiniGamesClient.Services;
 [JsonSerializable(typeof(PoBrawlHighScore[]))]
 [JsonSerializable(typeof(PoBrawlLadderEntry))]
 [JsonSerializable(typeof(PoBrawlLadderEntry[]))]
+[JsonSerializable(typeof(PoBrawlFighterRating))]
+[JsonSerializable(typeof(PoBrawlFighterRating[]))]
+[JsonSerializable(typeof(PoBrawlDemoResultRequest))]
 [JsonSerializable(typeof(PoSportsHighScore))]
 [JsonSerializable(typeof(PoSportsHighScore[]))]
 [JsonSerializable(typeof(PendingPlayerStats))]

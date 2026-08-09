@@ -53,6 +53,13 @@ public sealed class PoSportsRaceServiceTests
         public Task<List<PoBrawlLadderEntry>> GetPoBrawlLadderAsync(int limit = 10) =>
             Task.FromResult(new List<PoBrawlLadderEntry>());
         public Task<PoBrawlLadderEntry> SavePoBrawlLadderAsync(PoBrawlLadderEntry entry) => Task.FromResult(entry);
+
+        public Task<List<PoBrawlFighterRating>> GetPoBrawlFighterRatingsAsync(int limit = 10) =>
+            Task.FromResult(new List<PoBrawlFighterRating>());
+
+        public Task<List<PoBrawlFighterRating>> RecordPoBrawlDemoResultAsync(
+            string winnerFighterId, string loserFighterId, bool isDraw) =>
+            Task.FromResult(new List<PoBrawlFighterRating>());
     }
 
     private static (PoSportsRaceService race, PoSportsLobbyService lobby, CapturingStorage storage) StartedRace()

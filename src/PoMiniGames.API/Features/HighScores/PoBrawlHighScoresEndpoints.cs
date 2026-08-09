@@ -1,5 +1,6 @@
 using PoMiniGames.Application.Services;
 using PoMiniGames.Domain.Models;
+using PoMiniGames.Domain.Primitives;
 
 namespace PoMiniGames.Features.HighScores;
 
@@ -76,6 +77,58 @@ public static class PoBrawlHighScoresEndpoints
             .Produces<PoBrawlLadderEntry>(StatusCodes.Status201Created)
             .RequireRateLimiting("highscores");
 
+        // ── Demo-mode fighter Elo ─────────────────────────────────────────
+        // Head-to-head ratings for the presidents, accumulated from CPU-vs-CPU demo
+        // matches. Rates characters, not players — see PoBrawlFighterRating.
+        var elo = app.MapGroup("/api/pobrawl/elo").WithTags("HighScores");
+
+        elo.MapGet("",
+            async (IStorageService storage, int count = 10) =>
+            {
+                var ratings = await storage.GetPoBrawlFighterRatingsAsync(count);
+                return Results.Ok(ratings);
+            })
+            .WithName("GetPoBrawlFighterRatings")
+            .WithSummary("Top PoBrawl fighters by head-to-head Elo")
+            .Produces<IEnumerable<PoBrawlFighterRating>>(StatusCodes.Status200OK);
+
+        elo.MapPost("",
+            async (PoBrawlDemoResultRequest request, IStorageService storage) =>
+            {
+                // The server owns the Elo arithmetic and the roster: the submission names
+                // only who fought and who won. Ratings are never accepted from the client,
+                // and an id outside the roster is rejected rather than creating a row —
+                // the rating partition stays bounded at the roster size.
+                if (!PoBrawlRoster.IsRateable(request.WinnerFighterId) ||
+                    !PoBrawlRoster.IsRateable(request.LoserFighterId))
+                {
+                    return Results.BadRequest(new { error = "Both fighters must be on the PoBrawl presidents roster" });
+                }
+
+                if (string.Equals(request.WinnerFighterId, request.LoserFighterId, StringComparison.OrdinalIgnoreCase))
+                {
+                    return Results.BadRequest(new { error = "A fighter cannot fight itself" });
+                }
+
+                var updated = await storage.RecordPoBrawlDemoResultAsync(
+                    request.WinnerFighterId, request.LoserFighterId, request.IsDraw);
+                return Results.Ok(updated);
+            })
+            .WithName("RecordPoBrawlDemoResult")
+            .WithSummary("Record one CPU-vs-CPU demo match and move both fighters' Elo")
+            .Produces<IEnumerable<PoBrawlFighterRating>>(StatusCodes.Status200OK)
+            .ProducesValidationProblem()
+            // 10/min is comfortably above the real demo cadence (a match runs tens of
+            // seconds), so a 429 here means something other than the kiosk is posting.
+            // A dropped match costs the board one sample and nothing else.
+            .RequireRateLimiting("highscores");
+
         return app;
     }
 }
+
+/// <summary>
+/// One completed CPU-vs-CPU demo match. On a draw the winner/loser split is arbitrary —
+/// the two fighters are interchangeable and <see cref="IsDraw"/> decides the scoring.
+/// </summary>
+public sealed record PoBrawlDemoResultRequest(string WinnerFighterId, string LoserFighterId, bool IsDraw);

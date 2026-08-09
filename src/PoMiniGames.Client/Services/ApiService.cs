@@ -404,6 +404,50 @@ public class ApiService
         }
     }
 
+    // ─── PoBrawl demo-mode fighter Elo ───────────────────────────────────
+
+    public async Task<PoMiniGames.Domain.Models.PoBrawlFighterRating[]?> GetPoBrawlFighterRatingsAsync(int count = 10)
+    {
+        try
+        {
+            return await _http.GetFromJsonAsync(
+                $"/api/pobrawl/elo?count={count}", ApiJsonContext.Default.PoBrawlFighterRatingArray);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Reports one finished CPU-vs-CPU demo match. Returns the two updated rows, or null
+    /// when the submit did not land.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately <b>not</b> queued through the offline score-sync pipeline the player
+    /// boards use. A rating is priced against the opponent's rating at the time of the
+    /// match, so a demo result replayed an hour later would be scored against ratings that
+    /// have since moved — a wrong number is worse here than a missing one. Attract-mode
+    /// matches are also effectively unlimited, so dropping the ones that fail costs the
+    /// board nothing but a little precision.
+    /// </remarks>
+    public async Task<PoMiniGames.Domain.Models.PoBrawlFighterRating[]?> SubmitPoBrawlDemoResultAsync(
+        PoBrawlDemoResultRequest request)
+    {
+        try
+        {
+            var response = await _http.PostAsJsonAsync(
+                "/api/pobrawl/elo", request, ApiJsonContext.Default.PoBrawlDemoResultRequest);
+            return response.IsSuccessStatusCode
+                ? await response.Content.ReadFromJsonAsync(ApiJsonContext.Default.PoBrawlFighterRatingArray)
+                : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     // ─── Head-to-head match history ──────────────────────────────────────
 
     public async Task<bool> RecordMatchAsync(MatchRecordRequest request)

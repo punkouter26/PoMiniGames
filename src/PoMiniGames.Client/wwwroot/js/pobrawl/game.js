@@ -124,11 +124,26 @@ const CHARGE_MAX_MUL = 2.0;
 // ── Energy meter ─────────────────────────────────────────────────────────
 // One 0..1 pool per fighter, shown under the HP bar in the Blazor HUD. It IS
 // the stored attack power: a release spends ALL of it (chargeMul 1x when
-// empty → CHARGE_MAX_MUL when full). ONLY two things move the bar: winding up
-// a punch/kick (the charge state) fills it toward the peak, and releasing the
-// attack empties it to zero. Every fighter starts each match banked at 1/3 —
-// there is no idle regen, no block reward, and taking a hit doesn't touch it.
+// empty → CHARGE_MAX_MUL when full). THREE things move the bar: winding up a
+// punch/kick (the charge state) fills it toward the peak, releasing the attack
+// empties it to zero, and it bleeds away on its own the rest of the time (see
+// ENERGY_DECAY_PER_SEC). Every fighter starts each match banked at 1/3. There
+// is still no block reward, and taking a hit doesn't touch it.
 const ENERGY_DEFAULT = 1 / 3;
+
+// Idle bleed for the banked pool, as a fraction of a full bar per second. A
+// full coil left unspent empties in ~14 s, so banked power is a decaying asset
+// rather than something a fighter can hold indefinitely and open with whenever
+// it suits them: use it or lose it.
+//
+// Applied everywhere EXCEPT the charge state (the wind-up is what fills the
+// pool — taxing it there would only slow the coil, which CHARGE_TIME already
+// governs) and the KO state (the match is decided; a bar still draining behind
+// the K.O. banner reads as a bug). Because the pool is spent in full on every
+// release, this only ever bites a fighter who is sitting on charge they never
+// threw — an attack at empty is still a legal attack at the 1x multiplier, so
+// the decay costs power, never the ability to fight.
+const ENERGY_DECAY_PER_SEC = 1 / 14;
 
 // Fighters never leave their feet before the final blow — heavy hits get a
 // hard stagger (extra knockback + lean) instead of a mid-fight knockdown.
@@ -1378,6 +1393,24 @@ export class BrawlGame {
 
   _tickFighter(f, opp, intent, dt) {
     f.stateT += dt;
+
+    // ── Idle energy bleed ─────────────────────────────────────────────
+    // See ENERGY_DECAY_PER_SEC for the rationale and the exempt states.
+    // No hudDirty here on purpose: _pushHud already flushes every 0.25 s, so a
+    // continuous drain reaches the HUD four times a second without flagging a
+    // push on every single frame.
+    //
+    // Biden's "THE BIG GUY" super is also exempt for the length of its lock
+    // window: its whole payload is a *guaranteed* max-power strike (it sets
+    // energy to 1.0 once on activation), and bleeding that back down before he
+    // can throw it would quietly convert a guarantee into "~0.9 if you're
+    // quick". Every other route to a full bar is a wind-up the fighter is
+    // holding, which is already exempt via the charge state.
+    const bigGuyLocked = f.personality?._bigGuyLockUntil
+      && this.t < f.personality._bigGuyLockUntil;
+    if (f.state !== 'charge' && f.state !== 'ko' && !bigGuyLocked) {
+      f.energy = Math.max(0, f.energy - dt * ENERGY_DECAY_PER_SEC);
+    }
     const pos = f.rig.root.position;
     const effect = regionEffect(f.regionDmg);
     const moveSpeed = intent.move > 0 ? 2.4 : 1.9;
@@ -1460,8 +1493,10 @@ export class BrawlGame {
         // attack scaled by the stored charge.
         const held = f.chargeName === 'punch' ? intent.punchHeld : intent.kickHeld;
         // Holding pumps the shared energy pool; the coil animation shows the
-        // TRUE banked power (idle regen + block rewards included), so a
-        // fighter who blocked a haymaker coils near-full almost instantly.
+        // TRUE banked power, so a fighter resuming a wind-up coils from
+        // whatever is still banked rather than from zero. (This used to read
+        // "idle regen + block rewards included" — both of those systems are
+        // gone; the pool now only fills here and bleeds off elsewhere.)
         f.energy = Math.min(1, f.energy + dt / CHARGE_TIME);
         f.chargeAmt = f.energy;
         f.animator.setCharge(f.chargeName, f.chargeAmt);
@@ -1567,8 +1602,9 @@ export class BrawlGame {
       f.swingWindupMul = PERSONALITIES.eisenhower.onSwingP.overWindupMul || 1.0;
       f.swingActiveMul = PERSONALITIES.eisenhower.onSwingP.overActiveMul || 1.0;
     }
-    // Spend-it-all: the swing consumes the whole energy pool. Regen crawls
-    // back toward the 50% idle cap; blocks are the fast way to reload.
+    // Spend-it-all: the swing consumes the whole energy pool. Winding up the
+    // next attack is the ONLY way to refill it — there is no idle regen and no
+    // block reward (both were removed), and the pool bleeds while idle.
     f.energy = 0;
     this.hudDirty = true;
     f.animator.play(name);

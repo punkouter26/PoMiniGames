@@ -18,7 +18,7 @@ namespace PoMiniGames.Domain.Services;
 /// <b>Zero-sum by construction.</b> The delta is computed once, rounded once, and applied as
 /// <c>+d</c> to one side and <c>-d</c> to the other, so the rating pool is conserved exactly
 /// and cannot drift from rounding both sides independently. The one exception is
-/// <see cref="EloOptions.FighterFloorElo"/>: a fighter already at the floor absorbs less than
+/// <see cref="PairwiseEloOptions.FloorElo"/>: a fighter already at the floor absorbs less than
 /// the full loss, and the floor deliberately wins over conservation. Without it a roster
 /// outlier left running on an unattended kiosk grinds to a negative rating that reads as a
 /// bug on the board.
@@ -32,21 +32,21 @@ namespace PoMiniGames.Domain.Services;
 /// </remarks>
 public sealed class PairwiseEloCalculator
 {
-    private readonly EloOptions _options;
+    private readonly PairwiseEloOptions _options;
 
-    public PairwiseEloCalculator(EloOptions options)
+    public PairwiseEloCalculator(PairwiseEloOptions options)
     {
         _options = options;
     }
 
     /// <summary>The rating a fighter starts at before its first rated match.</summary>
-    public int SeedElo => _options.FighterSeedElo;
+    public int SeedElo => _options.SeedElo;
 
     /// <summary>
     /// Expected score for <paramref name="ratingA"/> against <paramref name="ratingB"/> —
     /// the probability-like value in [0,1] that the standard logistic Elo curve predicts.
     /// </summary>
-    public static double Expected(int ratingA, int ratingB) =>
+    private static double Expected(int ratingA, int ratingB) =>
         1.0 / (1.0 + Math.Pow(10, (ratingB - ratingA) / 400.0));
 
     /// <summary>
@@ -67,7 +67,7 @@ public sealed class PairwiseEloCalculator
 
         // MidpointRounding.AwayFromZero so a ±0.5 delta is never rounded to nothing; banker's
         // rounding here would quietly discard the smallest real rating movements.
-        return (int)Math.Round(_options.FighterK * (actual - expected), MidpointRounding.AwayFromZero);
+        return (int)Math.Round(_options.K * (actual - expected), MidpointRounding.AwayFromZero);
     }
 
     /// <summary>
@@ -75,5 +75,5 @@ public sealed class PairwiseEloCalculator
     /// addition so every write path clamps identically.
     /// </summary>
     public int ApplyDelta(int currentRating, int delta) =>
-        Math.Max(_options.FighterFloorElo, currentRating + delta);
+        Math.Max(_options.FloorElo, currentRating + delta);
 }

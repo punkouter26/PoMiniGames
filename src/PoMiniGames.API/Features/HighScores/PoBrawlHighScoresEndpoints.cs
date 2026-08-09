@@ -90,6 +90,11 @@ public static class PoBrawlHighScoresEndpoints
             })
             .WithName("GetPoBrawlFighterRatings")
             .WithSummary("Top PoBrawl fighters by head-to-head Elo")
+            // §10 leaderboard READS are anonymous, writes are not. This board holds no
+            // per-identity data at all — it rates characters — and the demo route renders
+            // while AuthGate's background guest sign-in is still in flight, so gating the
+            // read would strand an unattended kiosk on "Loading…" until a session appeared.
+            .AllowAnonymous()
             .Produces<IEnumerable<PoBrawlFighterRating>>(StatusCodes.Status200OK);
 
         elo.MapPost("",
@@ -115,7 +120,7 @@ public static class PoBrawlHighScoresEndpoints
                 return Results.Ok(updated);
             })
             .WithName("RecordPoBrawlDemoResult")
-            .WithSummary("Record one CPU-vs-CPU demo match and move both fighters' Elo")
+            .WithSummary("Record one CPU-vs-CPU demo match and return the re-ranked board")
             .Produces<IEnumerable<PoBrawlFighterRating>>(StatusCodes.Status200OK)
             .ProducesValidationProblem()
             // 10/min is comfortably above the real demo cadence (a match runs tens of

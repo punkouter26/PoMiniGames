@@ -1,62 +1,79 @@
 namespace PoMiniGames.Domain.Primitives;
 
+/// <summary>One PoBrawl fighter: canonical id and the name every surface renders.</summary>
+public sealed record PoBrawlFighter(string Id, string Name);
+
 /// <summary>
-/// Server-side allowlist of the PoBrawl fighters that may appear on the demo-mode
-/// Elo board, with their canonical display names.
+/// The PoBrawl roster, and the server-side allowlist of the fighters that may appear on the
+/// demo-mode Elo board.
 /// </summary>
 /// <remarks>
 /// <para>
-/// This duplicates the roster the client renders (<c>PoBrawlPage.Roster</c>) and the
-/// engine simulates (<c>wwwroot/js/pobrawl/fighters.js</c> <c>CHARACTERS</c>), and it
-/// duplicates it deliberately. The rating rows are keyed by fighter id, so an unvalidated
-/// id is a free row-multiplier against the board — exactly the hazard
-/// <see cref="T:PoMiniGames.Infrastructure.Services.HighScoreDescriptor`1"/> warns about
-/// for RowKey fields. Accepting only ids that exist here keeps the partition bounded at
-/// <see cref="Count"/> rows forever, no matter what a caller posts.
+/// This is the single C# definition of the roster: the client projects
+/// <c>PoBrawlPage.Roster</c> and its display names from <see cref="Fighters"/> rather than
+/// restating them, so a rename lands on the ladder, the HUD and the Elo board together.
+/// One cross-language copy remains — <c>wwwroot/js/pobrawl/fighters.js</c> <c>CHARACTERS</c>,
+/// which the engine simulates — and it is the only list that has to be kept in step by hand.
 /// </para>
 /// <para>
-/// The display name is resolved here rather than taken from the request for the same
-/// reason: the board must not render caller-supplied strings.
+/// The allowlist is what bounds the board. Rating rows are keyed by fighter id, so an
+/// unvalidated id is a free row-multiplier — exactly the hazard
+/// <see cref="T:PoMiniGames.Infrastructure.Services.HighScoreDescriptor`1"/> warns about for
+/// RowKey fields. Accepting only ids that exist here keeps the partition bounded at
+/// <see cref="Count"/> rows forever, no matter what a caller posts. The display name is
+/// resolved here rather than taken from the request for the same reason: the board must not
+/// render caller-supplied strings.
 /// </para>
 /// <para>
-/// <b>BOB is intentionally absent.</b> He is the 1-player avatar and the 2-player pick,
-/// never a demo-mode combatant (demo draws both fighters from the presidents roster), so
-/// admitting him would create a permanently 0-match row on the board.
+/// <b><see cref="Bob"/> is deliberately not in <see cref="Fighters"/>.</b> He is the 1-player
+/// avatar and a 2-player pick, never a demo-mode combatant (demo draws both fighters from the
+/// presidents roster), so admitting him would create a permanently 0-match row on the board.
+/// He is exposed separately because the client still has to name and render him.
 /// </para>
 /// </remarks>
 public static class PoBrawlRoster
 {
-    // Ladder order — most recent president first, marching back to FDR. The order is not
-    // load-bearing here (the board ranks by rating), but it is kept identical to the
-    // client roster so the two lists stay diffable by eye.
-    private static readonly Dictionary<string, string> Fighters = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ["trump"] = "Trump",
-        ["biden"] = "Biden",
-        ["obama"] = "Obama",
-        ["bush"] = "Bush",
-        ["clinton"] = "Clinton",
-        ["bushsr"] = "Bush Sr.",
-        ["reagan"] = "Reagan",
-        ["carter"] = "Carter",
-        ["ford"] = "Ford",
-        ["nixon"] = "Nixon",
-        ["lbj"] = "LBJ",
-        ["jfk"] = "JFK",
-        ["eisenhower"] = "Eisenhower",
-        ["truman"] = "Truman",
-        ["fdr"] = "FDR",
-    };
+    /// <summary>
+    /// The rateable presidents, in ladder order — most recent first, marching back to FDR.
+    /// </summary>
+    /// <remarks>
+    /// The order is load-bearing for the client, not for this class: the board ranks by
+    /// rating, but <c>PoBrawlPage</c> indexes this list as the 1-player ladder, where the rung
+    /// index doubles as the CPU difficulty level (index + 1 → 1-15, the range ai.js
+    /// LEVELS/MAX_RUNG defines). Reordering it reorders the ladder.
+    /// </remarks>
+    public static readonly IReadOnlyList<PoBrawlFighter> Fighters =
+    [
+        new("trump", "Trump"),
+        new("biden", "Biden"),
+        new("obama", "Obama"),
+        new("bush", "Bush"),
+        new("clinton", "Clinton"),
+        new("bushsr", "Bush Sr."),
+        new("reagan", "Reagan"),
+        new("carter", "Carter"),
+        new("ford", "Ford"),
+        new("nixon", "Nixon"),
+        new("lbj", "LBJ"),
+        new("jfk", "JFK"),
+        new("eisenhower", "Eisenhower"),
+        new("truman", "Truman"),
+        new("fdr", "FDR"),
+    ];
+
+    /// <summary>The 1-player avatar and 2-player pick. Never rateable — see the type remarks.</summary>
+    public static readonly PoBrawlFighter Bob = new("bob", "BOB");
+
+    // Case-insensitive so a caller's casing can never split one fighter across two rows.
+    private static readonly Dictionary<string, string> NamesById =
+        Fighters.ToDictionary(f => f.Id, f => f.Name, StringComparer.OrdinalIgnoreCase);
 
     /// <summary>Number of rateable fighters — the hard ceiling on rows in the Elo partition.</summary>
     public static int Count => Fighters.Count;
 
-    /// <summary>Every rateable fighter id, lowercase and canonical.</summary>
-    public static IEnumerable<string> Ids => Fighters.Keys;
-
     /// <summary>True when <paramref name="fighterId"/> is a fighter the Elo board accepts.</summary>
     public static bool IsRateable(string? fighterId) =>
-        !string.IsNullOrWhiteSpace(fighterId) && Fighters.ContainsKey(fighterId);
+        !string.IsNullOrWhiteSpace(fighterId) && NamesById.ContainsKey(fighterId);
 
     /// <summary>
     /// The canonical lowercase id for a fighter, or <c>null</c> when the id is not rateable.
@@ -67,9 +84,9 @@ public static class PoBrawlRoster
         IsRateable(fighterId) ? fighterId!.ToLowerInvariant() : null;
 
     /// <summary>
-    /// Display name for a fighter id. Falls back to the id itself for a row written by an
-    /// older build whose roster has since changed — a stale row should still render.
+    /// Display name for a rateable fighter id. Falls back to the id itself for a row written
+    /// by an older build whose roster has since changed — a stale row should still render.
     /// </summary>
     public static string DisplayName(string fighterId) =>
-        Fighters.TryGetValue(fighterId, out var name) ? name : fighterId;
+        NamesById.TryGetValue(fighterId, out var name) ? name : fighterId;
 }

@@ -2,6 +2,7 @@ using System.Net.Http.Json;
 // Alias, not a namespace import: PoMiniGamesClient.Models mirrors several other Domain
 // types by name, so importing the namespace wholesale would make them all ambiguous.
 using PoSportsHighScore = PoMiniGames.Domain.Models.PoSportsHighScore;
+using PoBrawlFighterRating = PoMiniGames.Domain.Models.PoBrawlFighterRating;
 using PoMiniGamesClient.Models;
 
 namespace PoMiniGamesClient.Services;
@@ -406,7 +407,7 @@ public class ApiService
 
     // ─── PoBrawl demo-mode fighter Elo ───────────────────────────────────
 
-    public async Task<PoMiniGames.Domain.Models.PoBrawlFighterRating[]?> GetPoBrawlFighterRatingsAsync(int count = 10)
+    public async Task<PoBrawlFighterRating[]?> GetPoBrawlFighterRatingsAsync(int count = 10)
     {
         try
         {
@@ -420,8 +421,8 @@ public class ApiService
     }
 
     /// <summary>
-    /// Reports one finished CPU-vs-CPU demo match. Returns the two updated rows, or null
-    /// when the submit did not land.
+    /// Reports one finished CPU-vs-CPU demo match. Returns the re-ranked board, or null when
+    /// the submit did not land — so recording a result also refreshes the board in one call.
     /// </summary>
     /// <remarks>
     /// Deliberately <b>not</b> queued through the offline score-sync pipeline the player
@@ -431,7 +432,7 @@ public class ApiService
     /// matches are also effectively unlimited, so dropping the ones that fail costs the
     /// board nothing but a little precision.
     /// </remarks>
-    public async Task<PoMiniGames.Domain.Models.PoBrawlFighterRating[]?> SubmitPoBrawlDemoResultAsync(
+    public async Task<PoBrawlFighterRating[]?> SubmitPoBrawlDemoResultAsync(
         PoBrawlDemoResultRequest request)
     {
         try

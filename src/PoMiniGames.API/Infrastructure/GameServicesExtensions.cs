@@ -110,11 +110,15 @@ internal static class GameServicesExtensions
             var config = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<EloOptions>>();
             return new EloCalculator(config.Value);
         });
-        // Head-to-head ratings for the PoBrawl demo board. A distinct calculator, not a mode
-        // of EloCalculator — see PairwiseEloCalculator's remarks for why the two cannot merge.
+        // Head-to-head ratings for the PoBrawl demo board. A distinct calculator with its own
+        // options section, not a mode of EloCalculator — see PairwiseEloCalculator's remarks
+        // for why the two cannot merge.
+        // BindConfiguration rather than Configure(section): this extension takes no
+        // IConfiguration, and resolving it from DI keeps the signature unchanged.
+        services.AddOptions<PairwiseEloOptions>().BindConfiguration(PairwiseEloOptions.SectionName);
         services.AddSingleton(sp =>
         {
-            var config = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<EloOptions>>();
+            var config = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<PairwiseEloOptions>>();
             return new PairwiseEloCalculator(config.Value);
         });
 

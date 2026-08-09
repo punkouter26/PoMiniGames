@@ -1,0 +1,100 @@
+@* Alias, not a namespace import — see the note in PoBrawlPage.razor. *@
+@using PoBrawlFighterRating = PoMiniGames.Domain.Models.PoBrawlFighterRating
+
+@* Demo-mode fighter Elo board.
+
+   A separate component purely to keep it out of PoBrawlPage's render loop. The page's
+   OnHud callback fires from the JS engine four times a second and calls StateHasChanged
+   unconditionally to move the HP/energy bars; this table changes once per match, which is
+   tens of seconds. Left inline it was ~100 extra nodes diffed 4×/sec, forever, on a kiosk
+   already running a three.js fight at 60fps.
+
+   Being a child component is not enough on its own — ComponentBase.ShouldRender defaults
+   to true, so a parent re-render re-renders the child regardless. The override below is
+   what actually stops the work. *@
+
+<section class="pb-elo" aria-labelledby="pb-elo-title">
+    <h2 id="pb-elo-title" class="gps-phase-h pb-elo-title">Fighter Ratings — Top 10</h2>
+    @if (Ratings is null)
+    {
+        <p class="pb-elo-empty">Loading ratings…</p>
+    }
+    else if (Ratings.Length == 0)
+    {
+        <p class="pb-elo-empty">No demo matches recorded yet — the board fills as fights finish.</p>
+    }
+    else
+    {
+        <table class="pb-elo-table">
+            <caption class="gps-sr-only">
+                PoBrawl fighters ranked by head-to-head Elo from CPU-vs-CPU demo matches
+            </caption>
+            <thead>
+                <tr>
+                    <th scope="col" class="pb-elo-rank">#</th>
+                    <th scope="col">Fighter</th>
+                    <th scope="col" class="pb-elo-num">Elo</th>
+                    <th scope="col" class="pb-elo-num">W</th>
+                    <th scope="col" class="pb-elo-num">L</th>
+                    <th scope="col" class="pb-elo-num">D</th>
+                </tr>
+            </thead>
+            <tbody>
+                @for (var i = 0; i < Ratings.Length; i++)
+                {
+                    var r = Ratings[i];
+                    var isLive = r.FighterId == Player1Id || r.FighterId == Player2Id;
+                    <tr class="@(isLive ? "pb-elo-live" : "")">
+                        <td class="pb-elo-rank">@(i + 1)</td>
+                        <td>@r.DisplayName @if (isLive) { <span class="pb-elo-now" aria-label="fighting now">● now</span> }</td>
+                        <td class="pb-elo-num pb-elo-score">@r.Elo</td>
+                        <td class="pb-elo-num">@r.Wins</td>
+                        <td class="pb-elo-num">@r.Losses</td>
+                        <td class="pb-elo-num">@r.Draws</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</section>
+
+@code {
+    /// <summary>
+    /// The ranked board. Null until the first fetch resolves, so the table can tell "still
+    /// loading" from "genuinely empty" — the two look identical if you seed with an empty array.
+    /// </summary>
+    [Parameter] public PoBrawlFighterRating[]? Ratings { get; set; }
+
+    /// <summary>Left fighter currently on screen — highlighted so a passer-by can connect the fight to the board.</summary>
+    [Parameter] public string? Player1Id { get; set; }
+
+    /// <summary>Right fighter currently on screen.</summary>
+    [Parameter] public string? Player2Id { get; set; }
+
+    private PoBrawlFighterRating[]? _renderedRatings;
+    private string? _renderedP1;
+    private string? _renderedP2;
+
+    /// <summary>
+    /// Renders only when something this component actually shows has changed.
+    /// </summary>
+    /// <remarks>
+    /// Reference equality on <see cref="Ratings"/> is the right test, not a deep compare: the
+    /// page replaces the array wholesale on every refresh and never mutates it in place, so a
+    /// new reference is exactly "the board moved".
+    /// </remarks>
+    protected override bool ShouldRender()
+    {
+        if (ReferenceEquals(_renderedRatings, Ratings) &&
+            _renderedP1 == Player1Id &&
+            _renderedP2 == Player2Id)
+        {
+            return false;
+        }
+
+        _renderedRatings = Ratings;
+        _renderedP1 = Player1Id;
+        _renderedP2 = Player2Id;
+        return true;
+    }
+}

@@ -607,26 +607,27 @@ public class StorageService : IStorageService
 
         var table = Table(PoBrawlEloTable);
 
-        // Snapshot both ratings to price the match. The two rows cannot be read atomically,
-        // so these may already be stale by the time we write — which is exactly why the
-        // delta is applied as an increment below rather than as an absolute rating.
-        var winnerBefore = await ReadFighterEloAsync(table, winnerId);
-        var loserBefore = await ReadFighterEloAsync(table, loserId);
+        // Snapshot both ratings to price the match. Read together: they are distinct rows that
+        // cannot be read atomically in any case, so sequencing them buys nothing — which is
+        // exactly why the delta is applied as an increment below rather than as an absolute.
+        var before = await Task.WhenAll(
+            ReadFighterEloAsync(table, winnerId),
+            ReadFighterEloAsync(table, loserId));
 
-        var delta = _fighterElo.Delta(winnerBefore, loserBefore, isDraw);
+        var delta = _fighterElo.Delta(before[0], before[1], isDraw);
         var stamp = DateTime.UtcNow.ToString("o");
 
-        await ApplyFighterDeltaAsync(table, winnerId, delta, isDraw ? MatchResult.Draw : MatchResult.Win, stamp);
-        await ApplyFighterDeltaAsync(table, loserId, -delta, isDraw ? MatchResult.Draw : MatchResult.Loss, stamp);
+        // Two distinct rows, each with its own optimistic-concurrency loop, and the increments
+        // commute — so the writes are independent and run together rather than back to back.
+        await Task.WhenAll(
+            ApplyFighterDeltaAsync(table, winnerId, delta, isDraw ? MatchResult.Draw : MatchResult.Win, stamp),
+            ApplyFighterDeltaAsync(table, loserId, -delta, isDraw ? MatchResult.Draw : MatchResult.Loss, stamp));
 
-        // Read back rather than reconstructing from the snapshot: a concurrent demo match
-        // may have moved either fighter between the two writes, and the caller should see
-        // what is actually stored.
-        return
-        [
-            await GetFighterRatingAsync(table, winnerId),
-            await GetFighterRatingAsync(table, loserId),
-        ];
+        // Return the re-ranked board, not the two rows just written. A rating only means
+        // anything against the ranking, so every caller wanted the board and had to fetch it
+        // in a second round-trip; one bounded partition query replaces two point read-backs
+        // here and an entire HTTP call at the client.
+        return await GetPoBrawlFighterRatingsAsync();
     }
 
     private enum MatchResult { Win, Loss, Draw }
@@ -644,25 +645,6 @@ public class StorageService : IStorageService
         catch (RequestFailedException ex) when (ex.Status == 404)
         {
             return _fighterElo.SeedElo;
-        }
-    }
-
-    private async Task<PoBrawlFighterRating> GetFighterRatingAsync(TableClient table, string fighterId)
-    {
-        try
-        {
-            var entity = await table.GetEntityAsync<TableEntity>(PoBrawlEloPartition, fighterId);
-            return FighterRatingFrom(entity.Value);
-        }
-        catch (RequestFailedException ex) when (ex.Status == 404)
-        {
-            // Only reachable if the row was deleted between write and read-back.
-            return new PoBrawlFighterRating
-            {
-                FighterId = fighterId,
-                DisplayName = PoBrawlRoster.DisplayName(fighterId),
-                Elo = _fighterElo.SeedElo,
-            };
         }
     }
 
@@ -697,7 +679,7 @@ public class StorageService : IStorageService
                 return true;
             });
 
-    private static PoBrawlFighterRating FighterRatingFrom(TableEntity e)
+    private PoBrawlFighterRating FighterRatingFrom(TableEntity e)
     {
         var id = e.GetString("FighterId") ?? e.RowKey;
         return new PoBrawlFighterRating
@@ -708,7 +690,10 @@ public class StorageService : IStorageService
             DisplayName = PoBrawlRoster.IsRateable(id)
                 ? PoBrawlRoster.DisplayName(id)
                 : e.GetString("DisplayName") ?? id,
-            Elo = e.GetInt32("Elo") ?? 0,
+            // Seed, not zero: a row can only exist if ApplyFighterDeltaAsync wrote the column,
+            // so this is the same unreachable-fallback contract ReadFighterEloAsync uses, and
+            // the two must not disagree about what "no rating stored" means.
+            Elo = e.GetInt32("Elo") ?? _fighterElo.SeedElo,
             Wins = e.GetInt32("Wins") ?? 0,
             Losses = e.GetInt32("Losses") ?? 0,
             Draws = e.GetInt32("Draws") ?? 0,

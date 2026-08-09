@@ -39,7 +39,11 @@ public interface IStorageService
     /// </summary>
     /// <param name="winnerFighterId">Winning fighter, or either side when <paramref name="isDraw"/>.</param>
     /// <param name="loserFighterId">Losing fighter, or the other side when <paramref name="isDraw"/>.</param>
-    /// <returns>Both updated rows, winner first.</returns>
+    /// <returns>
+    /// The re-ranked board, same shape as <see cref="GetPoBrawlFighterRatingsAsync"/>. Returning
+    /// only the two changed rows would be useless on its own — a rating reads against the
+    /// ranking — and every caller followed the write with a board fetch anyway.
+    /// </returns>
     Task<List<PoBrawlFighterRating>> RecordPoBrawlDemoResultAsync(
         string winnerFighterId, string loserFighterId, bool isDraw);
 

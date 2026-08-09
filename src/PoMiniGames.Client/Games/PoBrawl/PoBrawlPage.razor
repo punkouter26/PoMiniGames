@@ -4,6 +4,12 @@
 @using PoMiniGamesClient.Enums
 @using PoMiniGamesClient.Models
 @using PoMiniGamesClient.Services
+@* Aliases, not namespace imports: PoMiniGamesClient.Models mirrors several Domain types by
+   name (PlayerStats, GameOutcome), so importing either namespace wholesale makes them all
+   ambiguous. Same convention as ApiService.cs. *@
+@using PoBrawlFighter = PoMiniGames.Domain.Primitives.PoBrawlFighter
+@using PoBrawlRoster = PoMiniGames.Domain.Primitives.PoBrawlRoster
+@using PoBrawlFighterRating = PoMiniGames.Domain.Models.PoBrawlFighterRating
 @implements IAsyncDisposable
 @inject PlayerNameService PlayerNameService
 @inject ApiService ApiService
@@ -92,50 +98,10 @@
        badge's anchor. *@
     @if (_demo)
     {
-        <section class="pb-elo" aria-labelledby="pb-elo-title">
-            <h2 id="pb-elo-title" class="pb-elo-title">Fighter Ratings — Top 10</h2>
-            @if (_fighterRatings is null)
-            {
-                <p class="pb-elo-empty">Loading ratings…</p>
-            }
-            else if (_fighterRatings.Length == 0)
-            {
-                <p class="pb-elo-empty">No demo matches recorded yet — the board fills as fights finish.</p>
-            }
-            else
-            {
-                <table class="pb-elo-table">
-                    <caption class="pb-visually-hidden">
-                        PoBrawl fighters ranked by head-to-head Elo from CPU-vs-CPU demo matches
-                    </caption>
-                    <thead>
-                        <tr>
-                            <th scope="col" class="pb-elo-rank">#</th>
-                            <th scope="col">Fighter</th>
-                            <th scope="col" class="pb-elo-num">Elo</th>
-                            <th scope="col" class="pb-elo-num">W</th>
-                            <th scope="col" class="pb-elo-num">L</th>
-                            <th scope="col" class="pb-elo-num">D</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @for (var i = 0; i < _fighterRatings.Length; i++)
-                        {
-                            var r = _fighterRatings[i];
-                            var isLive = r.FighterId == _p1Char || r.FighterId == _p2Char;
-                            <tr class="@(isLive ? "pb-elo-live" : "")">
-                                <td class="pb-elo-rank">@(i + 1)</td>
-                                <td>@r.DisplayName @if (isLive) { <span class="pb-elo-now" aria-label="fighting now">● now</span> }</td>
-                                <td class="pb-elo-num pb-elo-score">@r.Elo</td>
-                                <td class="pb-elo-num">@r.Wins</td>
-                                <td class="pb-elo-num">@r.Losses</td>
-                                <td class="pb-elo-num">@r.Draws</td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
-            }
-        </section>
+        @* @-prefixed: Player1Id/Player2Id are string parameters, and Razor passes a quoted
+           value to a string parameter as a literal — "_p1Char" would reach the board as
+           that text and the "fighting now" highlight would silently never match. *@
+        <PoBrawlEloBoard Ratings="@_fighterRatings" Player1Id="@_p1Char" Player2Id="@_p2Char" />
     }
 </GameShell>
 
@@ -146,35 +112,21 @@
     [SupplyParameterFromQuery(Name = "mode")] public string? ModeQuery { get; set; }
     [SupplyParameterFromQuery(Name = "demo")] public int DemoQuery { get; set; }
 
-    private sealed record RosterEntry(string Id, string Name, string Suit, string Tie);
+    // 1-player ladder: PoBrawlRoster.Fighters in ladder order — most recent president first,
+    // marching back in time to FDR. Rung index doubles as the CPU difficulty level (index + 1
+    // → 1-15, the full range ai.js LEVELS/MAX_RUNG defines); the ladder walks every fighter.
+    //
+    // Projected from the Domain roster rather than restated here. The same fifteen names used
+    // to live in this file AND in PoBrawlRoster, so a rename could leave the HUD and the Elo
+    // board labelling the same fighter two different ways on one screen. fighters.js
+    // CHARACTERS is now the only copy left to keep in step by hand.
+    private static readonly PoBrawlFighter[] Roster = [.. PoBrawlRoster.Fighters];
 
-    // 1-player ladder order: most recent president first, marching back in
-    // time to FDR. Rung index doubles as the CPU difficulty level (index + 1 →
-    // 1-15, the full range ai.js LEVELS/MAX_RUNG defines). All 15 fighters are
-    // defined in fighters.js CHARACTERS; the ladder walks every one of them.
-    private static readonly RosterEntry[] Roster =
-    [
-        new("trump", "Trump", "#1b2a52", "#d62828"),
-        new("biden", "Biden", "#24365e", "#7fb2e5"),
-        new("obama", "Obama", "#3a3f44", "#2456c9"),
-        new("bush", "Bush", "#17181c", "#b02323"),
-        new("clinton", "Clinton", "#2c3e6b", "#c0392b"),
-        new("bushsr", "Bush Sr.", "#3b4a63", "#30549c"),
-        new("reagan", "Reagan", "#5a3a35", "#99282e"),
-        new("carter", "Carter", "#6b7a8f", "#3f7a4d"),
-        new("ford", "Ford", "#2f3a4a", "#8f6b2f"),
-        new("nixon", "Nixon", "#23252b", "#5d6d7e"),
-        new("lbj", "LBJ", "#2b3e5e", "#c0392b"),
-        new("jfk", "JFK", "#1a2a4e", "#4a7ba8"),
-        new("eisenhower", "Eisenhower", "#4a5a6a", "#8a6028"),
-        new("truman", "Truman", "#3a3f4a", "#8a7a5a"),
-        new("fdr", "FDR", "#1c2538", "#4a5a8a"),
-    ];
+    private static readonly PoBrawlFighter Bob = PoBrawlRoster.Bob;
 
-    private static readonly RosterEntry Bob = new("bob", "BOB", "#e9e6de", "#3566a8");
-
-    // 2-player select can pick anyone, BOB included.
-    private static readonly RosterEntry[] PickableRoster = [Bob, .. Roster];
+    // 2-player select can pick anyone, BOB included — he is deliberately not on the rateable
+    // roster (see PoBrawlRoster), which is why he is prepended rather than sorted in.
+    private static readonly PoBrawlFighter[] PickableRoster = [Bob, .. Roster];
 
     // Fixed rating per ladder rung for the ELO math: rung 1 (Trump) is a
     // pushover at 800; rung 15 (FDR) tops out near 2660. Beating an easy rung
@@ -245,9 +197,11 @@
     private string LadderKey => $"pobrawl_ladder_{_playerName}";
 
     // ── Demo-mode fighter Elo board ───────────────────────────────────────
-    // Null until the first fetch resolves, so the table can tell "still loading" from
-    // "genuinely empty" — the two look identical if you seed with an empty array.
-    private PoMiniGames.Domain.Models.PoBrawlFighterRating[]? _fighterRatings;
+    // Null until the first fetch resolves, so the board can tell "still loading" from
+    // "genuinely empty" — the two look identical if you seed with an empty array. Replaced
+    // wholesale on every refresh, never mutated: PoBrawlEloBoard.ShouldRender compares by
+    // reference, so an in-place edit would not repaint.
+    private PoBrawlFighterRating[]? _fighterRatings;
 
     private RenderFragment TitleContent => @<span><span aria-hidden="true">🥊</span> Brawl</span>;
 
@@ -348,26 +302,13 @@
     {
         if (!_demo) return;
 
-        // Show the standing board immediately rather than waiting for the first fight of
-        // this session to finish — the kiosk may only dwell here for one match.
-        //
-        // The subscription is not optional. On a demo route AuthGate renders its children
-        // while the background guest sign-in is still in flight (its "signed out" branch is
-        // guarded on !_silentDevLoginInFlight, so the in-flight window falls through to
-        // ChildContent), which means this page can initialize before a session exists. The
-        // first fetch then 401s and — with no retry — the board would sit on "Loading
-        // ratings…" for as long as the kiosk was left running. Measured, not theorised.
-        Auth.StateChanged += OnAuthStateChanged;
-        if (Auth.IsAuthenticated) await LoadFighterRatingsAsync();
-    }
-
-    private void OnAuthStateChanged()
-    {
-        // Only fills the initial gap; later refreshes ride on match results.
-        if (_fighterRatings is null && Auth.IsAuthenticated)
-        {
-            _ = LoadFighterRatingsAsync();
-        }
+        // Show the standing board immediately rather than waiting for the first fight of this
+        // session to finish — the kiosk may only dwell here for one match. GET /api/pobrawl/elo
+        // is anonymous (§10: leaderboard reads are), so this needs no session and no retry: on
+        // a demo route AuthGate renders its children while the background guest sign-in is
+        // still in flight, and this page used to carry an auth subscription purely to recover
+        // from the 401 that window produced.
+        await LoadFighterRatingsAsync();
     }
 
     protected override void OnAfterRender(bool firstRender)
@@ -676,33 +617,30 @@
         // here instead of spending the request.
         if (string.IsNullOrEmpty(_p1Char) || string.IsNullOrEmpty(_p2Char) || _p1Char == _p2Char) return;
 
-        // On a draw the order is arbitrary — IsDraw is what scores the match.
-        var request = winner == 0
-            ? new PoBrawlDemoResultRequest(_p1Char, _p2Char, true)
-            : new PoBrawlDemoResultRequest(
-                WinnerFighterId: winner == 1 ? _p1Char : _p2Char,
-                LoserFighterId: winner == 1 ? _p2Char : _p1Char,
-                IsDraw: false);
+        // Only the left fighter takes the winner slot unless the right one actually won. On a
+        // draw the order is arbitrary — IsDraw is what scores the match.
+        var leftWon = winner != 2;
+        var request = new PoBrawlDemoResultRequest(
+            WinnerFighterId: leftWon ? _p1Char : _p2Char,
+            LoserFighterId: leftWon ? _p2Char : _p1Char,
+            IsDraw: winner == 0);
 
-        // Re-read the whole board rather than patching the two returned rows in place: the
-        // new ratings may have changed the ranking, and the response only covers this match.
-        if (await ApiService.SubmitPoBrawlDemoResultAsync(request) is not null)
-        {
-            await LoadFighterRatingsAsync();
-        }
+        // The POST answers with the re-ranked board, so the ranking change this match caused
+        // arrives with it — no follow-up fetch.
+        await ApplyRatingsAsync(await ApiService.SubmitPoBrawlDemoResultAsync(request));
     }
 
-    private async Task LoadFighterRatingsAsync()
+    private async Task LoadFighterRatingsAsync() =>
+        await ApplyRatingsAsync(await ApiService.GetPoBrawlFighterRatingsAsync(10));
+
+    private async Task ApplyRatingsAsync(PoBrawlFighterRating[]? ratings)
     {
         // A failed fetch leaves the previous board on screen (or the loading line on the
         // very first attempt) instead of blanking it — an unattended screen should degrade
         // to stale, not to empty.
-        var ratings = await ApiService.GetPoBrawlFighterRatingsAsync(10);
-        if (ratings is not null)
-        {
-            _fighterRatings = ratings;
-            await InvokeAsync(StateHasChanged);
-        }
+        if (ratings is null) return;
+        _fighterRatings = ratings;
+        await InvokeAsync(StateHasChanged);
     }
 
     private void UpdateStats()
@@ -753,9 +691,6 @@
 
     public async ValueTask DisposeAsync()
     {
-        // Unsubscribe before anything else: AuthStateService outlives this page, so a
-        // leaked handler would keep a disposed component reachable across kiosk rotations.
-        Auth.StateChanged -= OnAuthStateChanged;
         try { await JSRuntime.InvokeVoidAsync("PoBrawl.destroy"); } catch { }
         _ref?.Dispose();
     }

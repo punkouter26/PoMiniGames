@@ -552,7 +552,7 @@
         {
             if (_ladder >= Roster.Length - 1)
             {
-                _champion = true;   // cleared rung 10 → triumphant end, show the modal
+                _champion = true;   // cleared the last rung → triumphant end, show the modal
                 _ladder = 0;
             }
             else
@@ -562,9 +562,11 @@
             }
             SaveLadder();
 
-            // Global ladder board: presidents beaten this run (10 on a full
-            // clear — _ladder has already wrapped to 0 by then). The server
-            // keeps each player's best, so this is safe to fire every win.
+            // Global ladder board: presidents beaten this run (Roster.Length on a
+            // full clear — _ladder has already wrapped to 0 by then). The server
+            // keeps each player's best, so this is safe to fire every win, and its
+            // rung ceiling is the same roster, so no rung can be rejected as
+            // out of range.
             _ = await ApiService.SubmitPoBrawlLadderAsync(new PoBrawlLadderEntry
             {
                 PlayerName = _playerName,

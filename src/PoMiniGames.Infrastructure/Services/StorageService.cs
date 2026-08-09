@@ -4,6 +4,8 @@ using Azure;
 using Azure.Data.Tables;
 using Azure.Identity;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using PoMiniGames.Application.DTOs;
 using PoMiniGames.Application.Services;
 using PoMiniGames.Domain.Models;
@@ -39,6 +41,7 @@ public class StorageService : IStorageService
     private readonly TableServiceClient _serviceClient;
     private readonly EloCalculator _eloCalculator;
     private readonly PairwiseEloCalculator _fighterElo;
+    private readonly ILogger<StorageService> _logger;
     private readonly HashSet<string> _ensuredTables = new();
     private readonly object _ensureLock = new();
 
@@ -47,10 +50,17 @@ public class StorageService : IStorageService
             .Concat(new[] { '\'', '"', ';', '\\', '/', '#', '?', '\t', '\n', '\r' })
             .ToHashSet();
 
-    public StorageService(IConfiguration configuration, EloCalculator eloCalculator, PairwiseEloCalculator fighterElo)
+    public StorageService(
+        IConfiguration configuration,
+        EloCalculator eloCalculator,
+        PairwiseEloCalculator fighterElo,
+        ILogger<StorageService>? logger = null)
     {
         _eloCalculator = eloCalculator;
         _fighterElo = fighterElo;
+        // Optional so the test harnesses that construct this service by hand keep working;
+        // the container always supplies one.
+        _logger = logger ?? NullLogger<StorageService>.Instance;
 
         var section = configuration.GetSection("PoMiniGames:Storage:TableService");
         var connectionString = section["ConnectionString"];
@@ -506,7 +516,7 @@ public class StorageService : IStorageService
     // Unlike the high-score boards (append + dedupe by content hash), the ladder
     // keeps exactly one row per player: RowKey = sanitized player name, and
     // PresidentsBeaten only ever ratchets up. Elo/Date follow the run that set
-    // (or matched) the best, so a later worse run can't erase a 10/10 clear.
+    // (or matched) the best, so a later worse run can't erase a full clear.
 
     public async Task<List<PoBrawlLadderEntry>> GetPoBrawlLadderAsync(int limit = 10)
     {
@@ -538,7 +548,10 @@ public class StorageService : IStorageService
         var sanitized = entry with
         {
             PlayerName = SanitizeName(entry.PlayerName),
-            PresidentsBeaten = Math.Clamp(entry.PresidentsBeaten, 0, 10),
+            // Roster-derived, not a literal: a hardcoded 10 truncated every clear past the
+            // tenth rung to 10 once the roster grew to 15, so a champion run and a ten-rung
+            // run stored the same value and the board could never separate them.
+            PresidentsBeaten = Math.Clamp(entry.PresidentsBeaten, 0, PoBrawlRoster.Count),
             Date = DefaultDate(entry.Date),
         };
 
@@ -617,11 +630,40 @@ public class StorageService : IStorageService
         var delta = _fighterElo.Delta(before[0], before[1], isDraw);
         var stamp = DateTime.UtcNow.ToString("o");
 
-        // Two distinct rows, each with its own optimistic-concurrency loop, and the increments
-        // commute — so the writes are independent and run together rather than back to back.
-        await Task.WhenAll(
-            ApplyFighterDeltaAsync(table, winnerId, delta, isDraw ? MatchResult.Draw : MatchResult.Win, stamp),
-            ApplyFighterDeltaAsync(table, loserId, -delta, isDraw ? MatchResult.Draw : MatchResult.Loss, stamp));
+        // Two distinct rows, each with its own optimistic-concurrency loop. The increments
+        // commute, so these COULD run together — but they must not. A rating change is
+        // zero-sum by construction (+delta / -delta), and PairwiseEloCalculator documents the
+        // pool as conserved exactly; running them under Task.WhenAll lets one side land while
+        // the other throws (503, timeout, or the 412 loop exhausting its attempts), which
+        // silently drains or inflates the pool with no record that it happened. Sequencing
+        // them means a failure on the first aborts before the second is ever attempted.
+        // The residual window — first write commits, second fails — is unavoidable without a
+        // cross-partition transaction Table Storage does not offer, so it is compensated below.
+        await ApplyFighterDeltaAsync(table, winnerId, delta, isDraw ? MatchResult.Draw : MatchResult.Win, stamp);
+        try
+        {
+            await ApplyFighterDeltaAsync(table, loserId, -delta, isDraw ? MatchResult.Draw : MatchResult.Loss, stamp);
+        }
+        catch
+        {
+            // Undo the half-applied match so the pool stays conserved. The compensation is
+            // itself an increment, so it composes with any concurrent match the same way the
+            // forward write does. If it also fails there is nothing further to try — the
+            // original exception still propagates and the caller sees the match as dropped.
+            try
+            {
+                await ApplyFighterDeltaAsync(
+                    table, winnerId, -delta, isDraw ? MatchResult.Draw : MatchResult.Win, stamp, undo: true);
+            }
+            catch (Exception compensationFailure)
+            {
+                _logger.LogError(
+                    compensationFailure,
+                    "PoBrawl Elo: failed to compensate a half-applied demo match for {WinnerId}; the rating pool is off by {Delta}.",
+                    winnerId, delta);
+            }
+            throw;
+        }
 
         // Return the re-ranked board, not the two rows just written. A rating only means
         // anything against the ranking, so every caller wanted the board and had to fetch it
@@ -652,13 +694,23 @@ public class StorageService : IStorageService
     /// Adds <paramref name="delta"/> to a fighter's stored rating and bumps its record.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// The mutation reads the rating from the entity the concurrency loop just fetched, so a
     /// retry after a 412 re-applies the increment to the winner's value rather than replaying
     /// a stale absolute. This is what makes two concurrent demo matches compose instead of
     /// one clobbering the other.
+    /// </para>
+    /// <para>
+    /// <paramref name="undo"/> rolls the same match back: the caller passes the negated delta
+    /// and the original <paramref name="result"/>, and the record counter for that result is
+    /// decremented instead of incremented, so a compensated match leaves no trace in either the
+    /// rating or the win/loss/draw tally. The rating itself can still come back a point short if
+    /// the roll-back would push the fighter under <c>FloorElo</c> — the floor deliberately wins
+    /// over conservation, exactly as PairwiseEloCalculator documents for the forward path.
+    /// </para>
     /// </remarks>
     private Task ApplyFighterDeltaAsync(
-        TableClient table, string fighterId, int delta, MatchResult result, string stamp) =>
+        TableClient table, string fighterId, int delta, MatchResult result, string stamp, bool undo = false) =>
         TableConcurrency.UpdateWithRetryAsync<TableEntity>(
             table,
             partitionKey: PoBrawlEloPartition,
@@ -667,14 +719,17 @@ public class StorageService : IStorageService
             mutate: e =>
             {
                 var current = e.GetInt32("Elo") ?? _fighterElo.SeedElo;
+                var step = undo ? -1 : 1;
                 e["FighterId"] = fighterId;
                 // Resolved server-side every write, so a roster rename lands on the next match
                 // instead of leaving the board showing a name nobody uses any more.
                 e["DisplayName"] = PoBrawlRoster.DisplayName(fighterId);
                 e["Elo"] = _fighterElo.ApplyDelta(current, delta);
-                e["Wins"] = (e.GetInt32("Wins") ?? 0) + (result == MatchResult.Win ? 1 : 0);
-                e["Losses"] = (e.GetInt32("Losses") ?? 0) + (result == MatchResult.Loss ? 1 : 0);
-                e["Draws"] = (e.GetInt32("Draws") ?? 0) + (result == MatchResult.Draw ? 1 : 0);
+                // Max(0, …) so a roll-back can never drive a counter negative if the row it is
+                // undoing was itself lost to a concurrent rewrite.
+                e["Wins"] = Math.Max(0, (e.GetInt32("Wins") ?? 0) + (result == MatchResult.Win ? step : 0));
+                e["Losses"] = Math.Max(0, (e.GetInt32("Losses") ?? 0) + (result == MatchResult.Loss ? step : 0));
+                e["Draws"] = Math.Max(0, (e.GetInt32("Draws") ?? 0) + (result == MatchResult.Draw ? step : 0));
                 e["LastUpdated"] = stamp;
                 return true;
             });

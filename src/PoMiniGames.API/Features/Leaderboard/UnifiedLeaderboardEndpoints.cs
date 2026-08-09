@@ -5,6 +5,7 @@ using PoMiniGames.Features.PoCoupleQuiz.Storage;
 using PoMiniGames.Features.PoFunQuiz;
 using PoMiniGames.Features.PoFunQuiz.Storage;
 using PoMiniGames.Features.PoJoker;
+using PoMiniGames.Domain.Primitives;
 
 namespace PoMiniGames.Features.Leaderboard;
 
@@ -268,10 +269,12 @@ public static class UnifiedLeaderboardEndpoints
             .ThenBy(l => BestKo(l.PlayerName))
             .ThenByDescending(l => l.Elo)
             .Take(limit)
+            // Denominator comes from the roster so the rung display tracks it; a literal 10
+            // rendered "15/10" the moment the roster grew.
             .Select((l, i) => new LeaderboardEntryDto(
-                i + 1, l.PlayerName, l.PresidentsBeaten, $"{l.PresidentsBeaten}/10"))
+                i + 1, l.PlayerName, l.PresidentsBeaten, $"{l.PresidentsBeaten}/{PoBrawlRoster.Count}"))
             .ToList();
-        PadWithPlaceholders(entries, limit, "0/10");
+        PadWithPlaceholders(entries, limit, $"0/{PoBrawlRoster.Count}");
         return new GameLeaderboardDto("pobrawl", "Brawl", "Best rung", HigherIsBetter: true, entries);
     }
 

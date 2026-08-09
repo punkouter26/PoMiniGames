@@ -43,8 +43,11 @@ public static class PoBrawlHighScoresEndpoints
             .RequireRateLimiting("highscores");
 
         // ── Presidents-ladder leaderboard ─────────────────────────────────
-        // One row per player; ranks by how many of the 10 presidents the player
-        // has beaten in 1-player mode (best run ever), Elo as the tiebreaker.
+        // One row per player; ranks by how many of the presidents the player has beaten in
+        // 1-player mode (best run ever), Elo as the tiebreaker. The rung ceiling is
+        // PoBrawlRoster.Count, never a literal: the client ladder walks PoBrawlRoster.Fighters,
+        // so a hardcoded 10 rejected every rung past the tenth once the roster grew to 15 —
+        // and because the client discards the submit result, the board silently froze at 10.
         var ladder = app.MapGroup("/api/pobrawl/ladder").WithTags("HighScores");
 
         ladder.MapGet("",
@@ -54,7 +57,7 @@ public static class PoBrawlHighScoresEndpoints
                 return Results.Ok(entries);
             })
             .WithName("GetPoBrawlLadder")
-            .WithSummary("Top PoBrawl ladder runs (presidents beaten out of 10)")
+            .WithSummary($"Top PoBrawl ladder runs (presidents beaten out of {PoBrawlRoster.Count})")
             .Produces<IEnumerable<PoBrawlLadderEntry>>(StatusCodes.Status200OK);
 
         ladder.MapPost("",
@@ -66,8 +69,8 @@ public static class PoBrawlHighScoresEndpoints
                 if (entry.PlayerName.Trim().Length > 24)
                     return Results.BadRequest(new { error = "Player name must be 24 characters or fewer" });
 
-                if (entry.PresidentsBeaten is < 0 or > 10)
-                    return Results.BadRequest(new { error = "Presidents beaten must be between 0 and 10" });
+                if (entry.PresidentsBeaten < 0 || entry.PresidentsBeaten > PoBrawlRoster.Count)
+                    return Results.BadRequest(new { error = $"Presidents beaten must be between 0 and {PoBrawlRoster.Count}" });
 
                 var saved = await storage.SavePoBrawlLadderAsync(entry);
                 return Results.Created("/api/pobrawl/ladder", saved);
@@ -95,6 +98,12 @@ public static class PoBrawlHighScoresEndpoints
             // while AuthGate's background guest sign-in is still in flight, so gating the
             // read would strand an unattended kiosk on "Loading…" until a session appeared.
             .AllowAnonymous()
+            // The rate limit is not optional here, it is what AllowAnonymous costs: dropping
+            // the group's auth gate removes this GET's only throttle, and the handler drives a
+            // Table Storage partition query per request on an F1 plan. Its own read policy
+            // rather than "highscores" — see RateLimitingExtensions; sharing the write bucket
+            // would let the demo page's board load eat the budget for its own match submit.
+            .RequireRateLimiting("leaderboard-read")
             .Produces<IEnumerable<PoBrawlFighterRating>>(StatusCodes.Status200OK);
 
         elo.MapPost("",

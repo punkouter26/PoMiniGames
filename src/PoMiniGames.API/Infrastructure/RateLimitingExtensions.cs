@@ -39,6 +39,25 @@ internal static class RateLimitingExtensions
                         QueueLimit = 0,
                     }));
 
+            // Anonymous leaderboard READS. Separate from "highscores" on both axes:
+            // a read is cheaper than a write (one bounded partition query, no
+            // read-modify-write), and sharing a bucket would let a page that reads a
+            // board before submitting to it starve its own write. 60/min still caps an
+            // unauthenticated flood at ~1 rps per partition, which is what an endpoint
+            // carrying AllowAnonymous needs — dropping the group's auth gate removes the
+            // only other thing standing between a caller and Table Storage on an F1 plan.
+            opts.AddPolicy("leaderboard-read", ctx =>
+                RateLimitPartition.GetFixedWindowLimiter(
+                    partitionKey: BuildPartitionKey(ctx),
+                    factory: _ => new FixedWindowRateLimiterOptions
+                    {
+                        Window = TimeSpan.FromMinutes(1),
+                        PermitLimit = 60,
+                        AutoReplenishment = true,
+                        QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                        QueueLimit = 0,
+                    }));
+
             opts.AddPolicy("infer", ctx =>
                 RateLimitPartition.GetFixedWindowLimiter(
                     partitionKey: BuildPartitionKey(ctx),

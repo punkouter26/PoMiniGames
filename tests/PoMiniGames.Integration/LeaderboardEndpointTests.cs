@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using FluentAssertions;
+using PoMiniGames.Domain.Primitives;
 
 namespace PoMiniGames.Integration;
 
@@ -87,8 +88,11 @@ public sealed class LeaderboardEndpointTests : IClassFixture<TestWebApplicationF
         (await _client.PostAsJsonAsync("/api/pobrawl/ladder",
             new { PlayerName = name, PresidentsBeaten = 2, Elo = 1250 })).StatusCode
             .Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.Created);
+        // A full clear posts the whole roster, not a literal 10. The ceiling used to be
+        // hardcoded at 10 while the client ladder walked all 15 fighters, so every rung past
+        // the tenth 400'd and the board silently froze one rung short of the roster.
         (await _client.PostAsJsonAsync("/api/pobrawl/ladder",
-            new { PlayerName = rival, PresidentsBeaten = 10, Elo = 1700 })).StatusCode
+            new { PlayerName = rival, PresidentsBeaten = PoBrawlRoster.Count, Elo = 1700 })).StatusCode
             .Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.Created);
 
         var entries = await _client.GetFromJsonAsync<List<System.Text.Json.JsonElement>>("/api/pobrawl/ladder?count=50");
@@ -109,7 +113,7 @@ public sealed class LeaderboardEndpointTests : IClassFixture<TestWebApplicationF
             new { PlayerName = "", PresidentsBeaten = 3 })).StatusCode
             .Should().Be(HttpStatusCode.BadRequest);
         (await _client.PostAsJsonAsync("/api/pobrawl/ladder",
-            new { PlayerName = "abc", PresidentsBeaten = 11 })).StatusCode
+            new { PlayerName = "abc", PresidentsBeaten = PoBrawlRoster.Count + 1 })).StatusCode
             .Should().Be(HttpStatusCode.BadRequest);
     }
 }

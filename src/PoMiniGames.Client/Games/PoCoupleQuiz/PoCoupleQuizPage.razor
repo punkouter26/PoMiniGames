@@ -197,7 +197,7 @@
 
     private bool IsDemoMode => GameModes.Parse(Mode, ModeQuery, DemoQuery) == GameMode.Demo;
 
-    private RenderFragment TitleContent => @<span>💕 Couple Quiz</span>;
+    private RenderFragment TitleContent => @<span><span aria-hidden="true">💕</span> Couple Quiz</span>;
 
     // Intro/welcome gate — demo flashes it for 2s; the lobby/solo screen waits
     // for OK. Keyed off the demo query so the mode is right on the first render

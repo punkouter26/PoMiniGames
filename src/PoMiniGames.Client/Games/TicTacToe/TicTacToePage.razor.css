@@ -35,6 +35,11 @@
         inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
+/* ARIA row wrapper (audit #2). `display: contents` keeps the 36 cells as direct
+   grid items of .ttt-board, so the 6×6 template above still lays them out — the
+   element exists purely to satisfy grid > row > gridcell in the a11y tree. */
+.ttt-row { display: contents; }
+
 /* ── Cell ── */
 .ttt-cell {
     position: relative;

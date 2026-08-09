@@ -1,5 +1,6 @@
 ﻿@inherits LayoutComponentBase
 @implements IDisposable
+@using PoMiniGamesClient.Models
 @inject AuthStateService AuthState
 @inject ToastService ToastService
 @inject KioskCoordinator Kiosk
@@ -8,6 +9,7 @@
 @inject SettingsService Settings
 @inject OnlineStatusService OnlineStatus
 @inject AppUpdateService AppUpdate
+@inject NavigationManager NavigationManager
 
 <div class="gl-page">
     @* 2026-08-07 browser audit #9: first tab stop on every route. The header is
@@ -39,7 +41,13 @@
         </details>
     }
     <header class="gl-top-bar">
-        <div class="gl-top-bar-left">
+        @* 2026-08-08 audit #10: <nav> landmark. The brand link and the game
+           Quick Switcher ARE this app's persistent navigation on every route,
+           but they were plain <div>s, so a screen-reader user had no landmark to
+           jump to — an axe sweep found zero navigation landmarks across all 20
+           pages. Labelled because a second <nav> (in-game) may appear later, and
+           unlabelled sibling landmarks are indistinguishable in a landmark list. *@
+        <nav class="gl-top-bar-left" aria-label="Main">
             <a href="/" class="gl-brand">
                 <span class="gl-brand-icon">
                     <svg width="22" height="22" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -51,7 +59,40 @@
                 </span>
                 <span class="gl-brand-text">PoMiniGames</span>
             </a>
-        </div>
+
+            @* 2026-08-08 audit #17: persistent cross-page navigation. The home
+               page is the only nav surface, so any non-home, non-game page
+               (Profile, Leaderboards, Settings, Health) forces a Home → page
+               trip to reach another page. The Quick Switcher mirrors the home
+               grid: every game opens in one tap from any route, with the same
+               popover pattern the user already knows from the ANON overflow
+               menu. Hidden on the home page itself — the grid is right there. *@
+            @if (!IsHome)
+            {
+                <button class="gl-overflow-trigger gl-games-switcher"
+                        style="anchor-name: --gl-anchor-games"
+                        popovertarget="gl-games-switcher-panel"
+                        aria-label="Switch game">
+                    <span aria-hidden="true">🎮</span>
+                    <span class="gl-games-switcher__label">Games</span>
+                </button>
+                <div id="gl-games-switcher-panel" popover="auto"
+                     class="gl-overflow-panel gl-games-switcher-panel">
+                    <div class="gl-dev-switch__title">Pick a game</div>
+                    @foreach (var game in GameCatalog.AllSorted)
+                    {
+                        <a class="gl-overflow-item gl-games-switcher-item"
+                           href="@game.Primary.Url"
+                           popovertarget="gl-games-switcher-panel"
+                           popovertargetaction="hide">
+                            <span class="gl-games-switcher-item__icon" aria-hidden="true">@game.Icon</span>
+                            <span class="gl-games-switcher-item__title">@game.Title</span>
+                            <span class="gl-games-switcher-item__mode">@GameModes.ToLabel(game.Primary.Mode)</span>
+                        </a>
+                    }
+                </div>
+            }
+        </nav>
 
         @* Consolidated game header: the active game (via GameShell) projects its
            status + settings into this single top bar, so game pages no longer
@@ -178,6 +219,20 @@
             var user = AuthState.User;
             if (user is null) return string.Empty;
             return string.IsNullOrWhiteSpace(user.Email) ? AuthUserLabel : user.Email;
+        }
+    }
+
+    // 2026-08-08 audit #17: the quick switcher on the top bar mirrors the home
+    // grid. Showing it on the home page itself would be noise (the grid is
+    // already right there), so gate on the active route. Only "/" qualifies —
+    // every other URL is more than zero levels deep and benefits from the
+    // cross-page shortcut.
+    private bool IsHome
+    {
+        get
+        {
+            var path = new Uri(NavigationManager.Uri).AbsolutePath;
+            return string.Equals(path, "/", StringComparison.Ordinal);
         }
     }
 

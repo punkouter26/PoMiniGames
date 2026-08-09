@@ -35,6 +35,12 @@
     display: flex;
     flex-direction: column;
     min-height: 100svh;
+    /* 2026-08-08 audit #12: stop any sub-pixel overflow from any descendant from
+       promoting a horizontal scrollbar on the page. Per-component `overflow-x:
+       clip` rules (Index.razor.css) still win where they exist; this is the
+       last-resort guard so a 390 px phone never lands on a sideways scroll.
+       `clip` over `hidden` so a sticky descendant's box-shadow is not clipped. */
+    overflow-x: clip;
 }
 
 /* §7 Page-entry animation — GPU-only transform/opacity, runs on the compositor.
@@ -434,4 +440,103 @@
     .gl-overflow-menu--anon { display: inline-block; }
 
     .gl-dev-switch { display: none !important; }
+
+    /* 2026-08-08 audit #17: drop the "Games" label on portrait phones so the
+       brand + icon-only switcher stay on one line. The icon (🎮) plus the
+       panel contents make the trigger legible without the word. */
+    .gl-games-switcher__label { display: none; }
+}
+
+/* ── Quick switcher (audit #17) ──
+   Cross-page navigation surface in the top bar. Mirrors the home grid but
+   one tap from any route. Reuses the popover chrome and styles already used
+   by the ANON overflow menu so the panel matches what users already know. */
+.gl-games-switcher {
+    anchor-name: --gl-anchor-games;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.35rem 0.7rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+
+.gl-games-switcher-panel {
+    /* Override the default right-aligned popover so it lands under the brand area
+       instead of cramming against the auth rail. */
+    inset: auto;
+    min-width: 18rem;
+    max-width: 22rem;
+    max-height: min(70vh, 32rem);
+    overflow-y: auto;
+}
+
+@supports (anchor-name: --a) {
+    .gl-games-switcher-panel {
+        position: absolute;
+        position-anchor: --gl-anchor-games;
+        position-area: block-end span-inline-start;
+        margin-block-start: 0.4rem;
+        top: auto;
+        right: auto;
+    }
+}
+
+.gl-games-switcher-item {
+    display: grid;
+    grid-template-columns: 1.5rem 1fr auto;
+    gap: 0.6rem;
+    align-items: center;
+    padding: 0.55rem 0.75rem;
+}
+
+.gl-games-switcher-item__icon {
+    font-size: 1.05rem;
+    line-height: 1;
+}
+
+.gl-games-switcher-item__title {
+    font-weight: 600;
+    color: var(--color-text-primary);
+}
+
+.gl-games-switcher-item__mode {
+    font-size: 0.72rem;
+    color: var(--color-text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+/* ── FPS pill (shared style, used by top-bar FpsCounter and SettingsPanel preview).
+   Moved here (audit #16) from FpsCounter.razor.css where it wass component-scoped
+   and so could not be reused by the SettingsPanel preview chip. The runtime
+   sampler lives in FpsCounter; only the visual rules live here. */
+.gl-fps {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.25rem 0.6rem;
+    border-radius: var(--radius-pill);
+    background: rgba(10, 12, 24, 0.55);
+    border: 1px solid var(--color-border);
+    color: #6bff6b;
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.1;
+    min-width: 5.4ch;
+    text-align: center;
+    transition: color var(--dur-base) var(--ease-standard);
+}
+
+.gl-fps[data-tier="warn"] { color: #ffd24e; }
+.gl-fps[data-tier="bad"]  { color: #ff6b6b; }
+
+@media (max-width: 640px) {
+    .gl-fps {
+        font-size: 0.66rem;
+        padding: 0.18rem 0.5rem;
+        min-width: 4.6ch;
+    }
 }

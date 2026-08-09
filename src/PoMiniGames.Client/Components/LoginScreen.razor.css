@@ -33,16 +33,26 @@
     padding: 2.25rem 2rem;
     border: 1px solid var(--color-border);
     border-radius: 1.25rem;
-    background: rgba(17, 24, 39, 0.82);
+    /* 2026-08-09: was a hard-coded rgba(17, 24, 39, 0.82) — a near-black card —
+       while every piece of text inside it read --color-text-primary /
+       --color-text-secondary. In light mode those tokens flip to dark ink, so
+       the card rendered dark-on-dark and the sign-in copy was unreadable.
+       (Same failure mode as PoBrawl's .pb-hp-name: a fixed surface under
+       theme-following text.) Now the surface follows the theme too, which is
+       also what the app-wide token rule requires. */
+    background: var(--surface-raised);
     backdrop-filter: blur(10px);
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+    box-shadow: var(--elevation-3);
     text-align: center;
 }
 
+/* Now an <h1> (see the note in the .razor) — margin: 0 so the UA heading margin
+   does not appear, keeping the card's spacing exactly as it was. */
 .login-brand {
     display: flex;
     align-items: center;
     gap: 0.6rem;
+    margin: 0;
     font-size: 1.5rem;
     font-weight: 800;
     color: var(--color-text-primary);
@@ -72,25 +82,33 @@
 .login-btn:hover:not(:disabled) { transform: translateY(-1px); }
 .login-btn:disabled { opacity: 0.6; cursor: default; }
 
+/* Microsoft's brand guidance fixes this button to a white field, so its text
+   must be fixed too — a theme token would go white-on-white in dark mode. It was
+   previously `color: var(--color-border)`, a BORDER token used as a text colour,
+   which resolved to a pale grey and measured well under AA on white. */
 .login-btn--ms {
     background: #ffffff;
-    color: var(--color-border);
-    border-color: #ffffff;
+    color: #1f2937;
+    border-color: #d8dee9;
 }
 
 .login-btn--ms:hover:not(:disabled) { background: #f3f4f6; }
 
+/* Secondary action: themed surface, not the hard-coded slate it used to be
+   (which was invisible against the now-themed card in light mode). */
 .login-btn--guest {
-    background: rgba(30, 41, 59, 0.8);
+    background: var(--surface-3);
     color: var(--color-text-primary);
 }
 
 .login-btn--guest:hover:not(:disabled) {
     border-color: var(--color-accent);
-    background: rgba(51, 65, 85, 0.9);
+    background: var(--color-surface-hover);
 }
 
-.login-error { color: #fca5a5; font-size: 0.82rem; margin: 0.25rem 0 0 0; }
+/* --accent-danger-ink, not a raw #fca5a5: that light red was picked for a dark
+   card and drops under AA now that the card follows the theme. */
+.login-error { color: var(--accent-danger-ink); font-size: 0.82rem; margin: 0.25rem 0 0 0; }
 
 .login-env-note {
     color: var(--color-text-secondary);
@@ -101,7 +119,9 @@
 .login-spinner {
     width: 36px;
     height: 36px;
-    border: 3px solid rgba(255, 255, 255, 0.15);
+    /* --tint-medium rather than a white film: a white ring is invisible on the
+       light-mode card, so the spinner looked like a lone rotating arc. */
+    border: 3px solid var(--tint-medium);
     border-top-color: var(--color-accent);
     border-radius: 50%;
     animation: login-spin 0.8s linear infinite;

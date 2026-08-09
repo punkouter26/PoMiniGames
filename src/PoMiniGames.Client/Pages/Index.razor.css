@@ -25,6 +25,13 @@
        `min-width: 0` lets it shrink to the viewport and hands the wrapping job
        to the cards, which now do it. 2026-08-07 browser audit #7. */
     min-width: 0;
+    /* 2026-08-08 audit #12: at 375×844 the home grid still reported
+       scrollWidth = 383 (~8 px past viewport) — single sub-pixel overflow from
+       either the WebGL canvas or the fxTilt perspective offset. `overflow-x:
+       clip` is the only thing that stops it without re-introducing a horizontal
+       scrollbar. (overflow: hidden would also clip a sticky descendant's
+       shadow.) */
+    overflow-x: clip;
 }
 
 /* §4 GPU ambient particle canvas — sits behind the mesh gradient and content.

@@ -6,7 +6,11 @@
 
 <section class="decision-inspector app-reveal" data-testid="decision-inspector">
     <div class="decision-inspector__header">
-        <h3 class="decision-inspector__title">Why this move?</h3>
+        @* h2, not h3 (2026-08-08 audit #9): the only heading above this on the
+           PoSurvive page is the top bar's <h1>, so an h3 skipped a level and axe
+           flagged heading-order. The class carries the visual size, so nothing
+           moves — this is purely the outline level. *@
+        <h2 class="decision-inspector__title">Why this move?</h2>
         <div class="decision-inspector__header-actions">
             @if (CurrentAgent is not null)
             {

@@ -13,7 +13,10 @@
     --c64-bg:            #091722;
     --c64-screen:        #10293b;
     --c64-text:          #d8e8f7;
-    --c64-text-dim:      #7e97ad;
+    /* audit #3: was #7e97ad, which is 4.0:1 on --c64-surface-3 even at full
+       opacity — under AA before any dimming is applied on top. Lifted to clear
+       4.5:1 against the darkest panel this token is used on. */
+    --c64-text-dim:      #9ab2c6;
     --c64-text-bright:   #f4fbff;
     --c64-border:        #244258;
     --c64-cursor:        #9ec9ec;
@@ -368,7 +371,7 @@ html, body {
 /* AI status pill */
 .sv-status {
     font-size: var(--font-size-xs); flex: 0 0 auto;
-    border: 1px solid var(--panel-border); border-radius: 999px;
+    border: 1px solid var(--panel-border); border-radius: var(--radius-pill);
     padding: 0.2rem 0.6rem; letter-spacing: 0.05em; white-space: nowrap;
 }
 .sv-status--ok    { color: #8cf0b0; border-color: #2f8f57; background-color: #102b1b; }
@@ -537,8 +540,10 @@ html, body {
 }
 
 .sv-rail__hint {
+    /* audit #3: the 0.7 opacity took the dim token down to 2.84:1. The token is
+       already the "quiet" colour — dimming it further only broke it. */
     font-size: var(--font-size-xs); color: var(--c64-text-dim);
-    opacity: 0.7; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
 .sv-rail__collapse {
@@ -603,7 +608,7 @@ html, body {
     display: flex; align-items: center; gap: 0.3rem; min-width: 0;
     font-size: var(--font-size-xs); color: var(--c64-text);
     background-color: rgba(8, 22, 32, 0.6);
-    border: 1px solid var(--panel-border); border-radius: 999px;
+    border: 1px solid var(--panel-border); border-radius: var(--radius-pill);
     padding: 0.14rem 0.45rem;
     overflow: hidden; white-space: nowrap;
 }
@@ -730,14 +735,14 @@ html, body {
     flex: 1 1 auto; min-width: 0;
     height: 5px;
     background-color: var(--panel-border);
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     overflow: hidden;
 }
 .sv-meter__fill {
     width: var(--sv-meter-v, 0%);
     height: 100%;
     background-color: var(--c64-text);
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     transition: width var(--transition-medium);
 }
 .sv-meter__value {
@@ -959,7 +964,12 @@ html, body {
 }
 
 .decision-inspector__title {
+    /* Size and weight live here, not on the tag, so the element can carry the
+       correct outline level (h2 — audit #9) without changing appearance.
+       margin: 0 because the UA heading margin would otherwise reappear. */
     font-size: var(--font-size-sm);
+    font-weight: 700;
+    margin: 0;
     letter-spacing: 0.08em;
     color: var(--c64-text-bright);
 }
@@ -1006,7 +1016,7 @@ html, body {
     font-size: 10px;
     border: 1px solid var(--panel-border);
     padding: 0.12rem 0.3rem;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     color: var(--c64-text-dim);
     background-color: rgba(6, 18, 27, 0.8);
 }
@@ -1241,7 +1251,7 @@ html, body {
 .agent-hp-pill {
     font-size: var(--font-size-xs);
     padding: 0 var(--space-1);
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     border: 1px solid;
 }
 .agent-hp-pill--high { color: var(--accent-success); border-color: var(--accent-success); }
@@ -1365,7 +1375,7 @@ html, body {
     background: rgba(51, 39, 15, 0.75);
     font-family: var(--font-mono);
     font-size: 10px;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     padding: 0 0.3rem;
     flex: 0 0 auto;
 }

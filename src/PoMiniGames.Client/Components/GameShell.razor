@@ -29,10 +29,19 @@
            cannot point at the page the user is already on. (The Home button on
            <GameOverModal> uses the same `BackTo` parameter; sub-lobby games
            like PoCoupleQuiz override it to "/couplequiz", and the back link
-           correctly points there instead.) *@
+           correctly points there instead.)
+
+           2026-08-08 audit #13: copy is route-aware so the link text matches
+           the destination. "/" → "All games" (the catalog grid); a non-root
+           route → "Game hub" (e.g. /couplequiz is the Couple Quiz lobby list,
+           not the home page). Same pill, same target attribute — only the
+           visible word changes, so the visual chrome is identical across
+           games but the destination is no longer misleading. *@
         @if (!string.IsNullOrEmpty(BackTo))
         {
-            <a class="gps-back-link" href="@BackTo" aria-label="Back to home" title="Back to home">← Home</a>
+            var isHome = string.Equals(BackTo, "/", StringComparison.Ordinal);
+            var label = isHome ? "All games" : "Game hub";
+            <a class="gps-back-link" href="@BackTo" aria-label="@label" title="@label">← @label</a>
         }
 
         @* Live rating badge for single-player, ELO-rated modes: the page passes

@@ -250,7 +250,7 @@
         ? GameIntro.IntroMode.Demo
         : GameIntro.IntroMode.OnePlayer;
 
-    private RenderFragment TitleContent => @<span>🔮 Marble Race</span>;
+    private RenderFragment TitleContent => @<span><span aria-hidden="true">🔮</span> Marble Race</span>;
 
     private RenderFragment HowToPlayContent => @<div>
         <p>You control the one RED marble in a pack of 101. Finish in the top 10 to score.</p>

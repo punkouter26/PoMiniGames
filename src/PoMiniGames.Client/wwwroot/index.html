@@ -135,6 +135,10 @@
     }
     </script>
 
+    <!-- Shared canvas resolution policy (audit #8). Not deferred and listed
+         first among the game scripts: racingInterop.js and the engine modules
+         read window.PoCanvasDpr during their own setup. -->
+    <script src="js/canvasDpr.js"></script>
     <!-- View Transitions + App enhancements (Suggestion #5) -->
     <script src="scripts/app.js" defer></script>
     <!-- AppErrorBoundary fallback clipboard helper (non-secure-context safe) -->

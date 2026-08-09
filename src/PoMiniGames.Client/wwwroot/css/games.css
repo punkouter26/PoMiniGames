@@ -94,7 +94,9 @@
   letter-spacing: 0.02em;
   white-space: nowrap;
   background: rgba(250, 204, 21, 0.16);
-  color: var(--accent-amber);
+  /* audit #3: --accent-amber on this tint measured 1.38:1 in light mode — the
+     ELO number was effectively invisible on every rated game's header. */
+  color: var(--accent-amber-ink);
   border: 1px solid rgba(250, 204, 21, 0.4);
 }
 /* On narrow phones the identity label is already hidden (see MainLayout.css);

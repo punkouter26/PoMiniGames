@@ -169,7 +169,7 @@
         _ => "A two-leg family track meet: 100m sprint, then 110m hurdles. Lowest combined time tops the board.",
     };
 
-    private RenderFragment TitleContent => @<span>🏃 Sports</span>;
+    private RenderFragment TitleContent => @<span><span aria-hidden="true">🏃</span> Sports</span>;
 
     @* Key labels come from PoSportsLayouts so rebinding input.js can't leave the tutorial
        teaching keys that no longer do anything. *@
@@ -205,11 +205,18 @@
     /// <summary>KeyboardEvent.code for a layout's Nth sequence key ("Q" → "KeyQ").</summary>
     private static string SelectCode(int layout, int index) => "Key" + PoSportsLayouts.For(layout).Sequence[index];
 
+    @* role="listbox" requires role="option" children (2026-08-08 audit #2). The
+       buttons carried the implicit `button` role, so the listbox announced as
+       empty and the picked runner was never conveyed. role="option" +
+       aria-selected on each card fixes both; the element stays a <button> so
+       click, Enter/Space and focus behaviour are unchanged. *@
     private RenderFragment OnePlayerSelect => @<div class="ps-select-grid" role="listbox" aria-label="Choose your runner">
         @for (var i = 0; i < Roster.Count; i++)
         {
             var idx = i;
             <button type="button"
+                    role="option"
+                    aria-selected="@(idx == _p1Sel ? "true" : "false")"
                     class="ps-select-card @(idx == _p1Sel ? "ps-select-card--picked" : "")"
                     @onclick="() => { _p1Sel = idx; }">
                 <span class="ps-select-emoji">@Roster[idx].Emoji</span>

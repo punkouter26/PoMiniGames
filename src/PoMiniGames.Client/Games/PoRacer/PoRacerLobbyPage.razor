@@ -147,7 +147,7 @@ else
     // Intro/welcome gate — the controls card shows first; only on OK do we connect
     // to the lobby hub and Join, so the player appears to others only when ready.
     private bool _introDone;
-    private RenderFragment TitleContent => @<span>🏎️ Racer · Multiplayer</span>;
+    private RenderFragment TitleContent => @<span><span aria-hidden="true">🏎️</span> Racer · Multiplayer</span>;
     private RenderFragment HowToPlayContent => @<div>
         <p>Race online against up to 8 players. Ready up in the lobby, then the host starts the race.</p>
         <ul>

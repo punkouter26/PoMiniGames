@@ -231,6 +231,11 @@
   position: relative;
 }
 
+/* ARIA row wrapper (audit #2). `display: contents` keeps all 81 cells as direct
+   grid items of .cf-board so the 9×9 template above still lays them out — the
+   element exists purely to satisfy grid > row > gridcell in the a11y tree. */
+.cf-row { display: contents; }
+
 .cf-gl {
   position: absolute;
   inset: 0;

@@ -138,7 +138,7 @@
 </GameShell>
 
 @code {
-    private RenderFragment TitleContent => @<span>🧠 Fun Quiz · Multiplayer</span>;
+    private RenderFragment TitleContent => @<span><span aria-hidden="true">🧠</span> Fun Quiz · Multiplayer</span>;
 
     // Intro/welcome gate — controls card first; the hub connect waits for OK so
     // the player joins the lobby only after seeing the controls.

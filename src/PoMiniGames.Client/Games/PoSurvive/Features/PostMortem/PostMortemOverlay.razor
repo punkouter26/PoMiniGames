@@ -26,7 +26,7 @@
 }
 
 @code {
-    private RenderFragment TitleContent => @<span>🛡️ Survive</span>;
+    private RenderFragment TitleContent => @<span><span aria-hidden="true">🛡️</span> Survive</span>;
 
     // The chart rides inside the shared modal's summary fragment rather than
     // needing a change to GameOverModal — every other game keeps the modal it has.

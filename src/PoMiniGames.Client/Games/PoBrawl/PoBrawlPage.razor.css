@@ -207,21 +207,22 @@
     font-family: 'Bungee', 'Russo One', 'Impact', sans-serif;
     font-size: 0.78rem;
     letter-spacing: 0.06em;
-    /* 2026-08-07 browser audit #2: was a hard-coded near-white (#e8eaf6). The
-       HP bar sits on `.pb-hud`, which IS a theme surface, so in light mode both
-       fighter names rendered at 1.20:1 — effectively invisible. Following the
-       theme keeps them readable in both schemes; the dark text-shadow below is
-       dropped in light mode for the same reason. */
-    color: var(--color-text-primary);
-    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
-}
+    /* 2026-08-08 audit #3 — this is the SECOND fix here; the first one made it
+       worse, so read before changing.
 
-@media (prefers-color-scheme: light) {
-    .pb-hp-name { text-shadow: none; }
-}
+       The 2026-08-07 pass assumed ".pb-hud IS a theme surface" and switched this
+       to var(--color-text-primary). It is not: .pb-hud is `position: absolute`
+       with no background of its own (see the rule above), so it floats over the
+       dark fight arena in BOTH schemes. Following the theme therefore painted
+       near-black ink on the near-black arena in light mode — measured #0f172a on
+       #0d0f1a = 1.06:1, worse than the 1.20:1 it was meant to repair.
 
-:root[data-theme='dark'] .pb-hp-name { text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8); }
-:root[data-theme='light'] .pb-hp-name { text-shadow: none; }
+       The arena is scheme-invariant, so the text over it must be too: a fixed
+       near-white plus the shadow that lifts it off bright sprite pixels, in both
+       schemes. Do not re-point this at a theme token. */
+    color: #f4f6ff;
+    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.85);
+}
 
 .pb-hp-track {
     width: 100%;
@@ -328,7 +329,7 @@
     color: #cbd5e1;
     font-size: 0.8rem;
     padding: 4px 12px;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     pointer-events: none;
 }
 

@@ -355,7 +355,7 @@ export class BrawlGame {
     // multisampled default framebuffer would be allocated and never resolved
     // against any geometry. The `samples` on composerRT is the real AA.
     this.renderer = new THREE.WebGLRenderer({ antialias: false });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.setPixelRatio(window.PoCanvasDpr.ceiling());   // audit #8: shared policy, js/canvasDpr.js
     this.renderer.setSize(w, h);
     this.renderer.shadowMap.enabled = true;
     // PCFSoft: percentage-closer soft edges — the fighters' shadows get a
@@ -577,7 +577,7 @@ export class BrawlGame {
     // one cannot be updated against the new composer.
     this.rackFocus = null;
 
-    const pixelRatio = Math.min(window.devicePixelRatio, 2);
+    const pixelRatio = window.PoCanvasDpr.ceiling();   // audit #8: shared policy, js/canvasDpr.js
     this.renderer.setPixelRatio(pixelRatio);
     this.renderer.setSize(w, h);
 

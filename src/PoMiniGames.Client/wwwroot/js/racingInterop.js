@@ -85,17 +85,17 @@ const PoRacer = (() => {
     // axes together. Above the budget the backing store shrinks uniformly and the browser
     // scales it back up — still a softer image on very large windows, but a correctly
     // proportioned one, and it stays sharp at every ordinary size.
-    const MAX_DPR = 1.25;
-    const MAX_PIXELS = 1600 * 900;   // backing-store budget, ~1.44 Mpx
-
+    // audit #8: the pixel-budget reasoning above is right and now lives in
+    // js/canvasDpr.js, shared with every other canvas game. The local
+    // MAX_DPR = 1.25 that used to sit here was the outlier — it rendered PoRacer
+    // at 1.25x on a 3x phone while the board games rendered at 2x, so the racer
+    // was the one visibly soft screen in the app. The budget alone is what keeps
+    // large desktop windows in check; the ceiling is now the shared 2.
     function resize() {
         if (!canvas) return;
         const w = canvas.clientWidth;
         const h = canvas.clientHeight;
-        let dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR);
-        // Shrink both axes by the same factor if the budget is exceeded.
-        const over = (w * h * dpr * dpr) / MAX_PIXELS;
-        if (over > 1) dpr /= Math.sqrt(over);
+        const dpr = window.PoCanvasDpr.resolve(w, h);
         lastSize = { w, h };
         const bw = Math.max(1, Math.floor(w * dpr));
         const bh = Math.max(1, Math.floor(h * dpr));

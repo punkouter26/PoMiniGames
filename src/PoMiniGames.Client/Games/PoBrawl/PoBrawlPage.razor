@@ -186,7 +186,7 @@
     private int _lastEloDelta;
     private string LadderKey => $"pobrawl_ladder_{_playerName}";
 
-    private RenderFragment TitleContent => @<span>🥊 Brawl</span>;
+    private RenderFragment TitleContent => @<span><span aria-hidden="true">🥊</span> Brawl</span>;
 
     private RenderFragment HowToPlayContent => @<div>
         <p>Knock out your opponent — charge attacks and block at the right moment.</p>

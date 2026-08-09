@@ -39,14 +39,18 @@
   border: 1px solid currentColor;
 }
 
-.hp-badge--healthy { color: var(--accent-success); background: var(--accent-success-soft); }
-.hp-badge--degraded { color: var(--accent-warning); background: var(--accent-warning-soft); }
-.hp-badge--unhealthy { color: var(--accent-danger); background: var(--accent-danger-soft); }
+/* audit #3: these read the raw fill hues, which measured 1.48:1 (healthy) on
+   their own tint in light mode. The -ink variants are the same hues tuned for
+   text on that tint. */
+.hp-badge--healthy { color: var(--accent-success-ink); background: var(--accent-success-soft); }
+.hp-badge--degraded { color: var(--accent-warning-ink); background: var(--accent-warning-soft); }
+.hp-badge--unhealthy { color: var(--accent-danger-ink); background: var(--accent-danger-soft); }
 
 .hp-refresh {
   font: inherit;
   font-size: var(--text-sm);
-  color: var(--accent);
+  /* audit #3: --accent on --accent-soft measured 3.61:1 light / 3.85:1 dark. */
+  color: var(--accent-ink);
   background: var(--accent-soft);
   border: 1px solid var(--accent-ring);
   border-radius: var(--radius-sm);

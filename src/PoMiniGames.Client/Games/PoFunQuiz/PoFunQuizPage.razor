@@ -165,7 +165,7 @@
     // lock in, the correct answer reveals and the round advances.
     private bool _splitScreen;
 
-    private RenderFragment TitleContent => @<span>🧠 Fun Quiz</span>;
+    private RenderFragment TitleContent => @<span><span aria-hidden="true">🧠</span> Fun Quiz</span>;
 
     // Intro/welcome gate — overlay blocks the quiz until dismissed (OK); demo
     // flashes it for 2s. Questions load behind the card, so no extra gating.

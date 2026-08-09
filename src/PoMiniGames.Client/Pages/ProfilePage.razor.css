@@ -283,7 +283,17 @@
     border-color: rgba(99,102,241,0.4);
 }
 
+/* 2026-08-08 audit #3: this used to be `opacity: 0.55` on the whole card, which
+   multiplied through to the text and dropped .prf-game-name to 4.04:1 and
+   .prf-game-unplayed to 2.61:1 in light mode (both under the 4.5:1 AA floor).
+   De-emphasis now comes from a recessed surface plus a dimmed icon, so the card
+   still reads as "not played yet" while its text keeps full token contrast.
+   Rule of thumb for this file: never put opacity on a container that holds text. */
 .prf-game-card--unplayed {
+    background: var(--surface-1);
+}
+
+.prf-game-card--unplayed .prf-game-icon {
     opacity: 0.55;
 }
 
@@ -317,7 +327,7 @@
 /* ── W/L/D bar ── */
 .prf-bar {
     height: 5px;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     background: var(--color-bg);
     display: flex;
     overflow: hidden;
@@ -416,7 +426,10 @@
     border-radius: 0.65rem;
     padding: 0.7rem 0.85rem;
 }
-.prf-hs-card--empty { opacity: 0.55; }
+/* audit #3 — same container-opacity trap as .prf-game-card--unplayed above:
+   .prf-hs-game and .prf-hs-sub measured 2.61:1 in light / 3.6:1 in dark. */
+.prf-hs-card--empty { background: var(--surface-1); }
+.prf-hs-card--empty .prf-hs-icon { opacity: 0.55; }
 .prf-hs-icon { font-size: 1.5rem; line-height: 1; }
 .prf-hs-body { display: flex; flex-direction: column; min-width: 0; }
 .prf-hs-game {

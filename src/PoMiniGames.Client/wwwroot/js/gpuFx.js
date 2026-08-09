@@ -242,7 +242,7 @@ function resize() {
     // Particles are small bright shapes with hard-ish edges, so unlike the
     // background volume they do benefit from real resolution — but 2 is the
     // point of diminishing returns for a 7 px sprite.
-    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    dpr = window.PoCanvasDpr.ceiling();   // audit #8: shared policy, js/canvasDpr.js
     canvas.width = Math.max(1, Math.floor(cssW * dpr));
     canvas.height = Math.max(1, Math.floor(cssH * dpr));
     canvas.style.width = cssW + 'px';

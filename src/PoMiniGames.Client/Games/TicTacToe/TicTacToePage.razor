@@ -51,8 +51,15 @@
            these meshes stand in for them; when WebGL/WebGPU is unavailable
            nothing mounts and the board renders exactly as it always did. *@
         <canvas @ref="_glCanvas" class="ttt-gl" aria-hidden="true"></canvas>
+        @* role="grid" requires role="row" between it and its gridcells (2026-08-08
+           audit #2 — 234 axe violations across this board and Connect Five). The
+           wrapper is `display: contents` so all 36 cells stay direct grid items of
+           .ttt-board and the 6×6 template, the --ci stagger and the win-line
+           geometry are all untouched. *@
         @for (int r = 0; r < TicTacToeBoard.Size; r++)
         {
+            var rowIndex = r;
+            <div class="ttt-row" role="row" aria-rowindex="@(rowIndex + 1)" @key="(_gameId, rowIndex)">
             @for (int c = 0; c < TicTacToeBoard.Size; c++)
             {
                 var row = r;
@@ -69,6 +76,7 @@
                      @key="(_gameId, row, col)"
                      @onclick="() => HandleCellClick(row, col)"
                      role="gridcell"
+                     aria-colindex="@(col + 1)"
                      aria-label="@GetCellAriaLabel(cellValue)"
                      tabindex="@(isDisabled ? -1 : 0)">
                     @if (cellValue == CellValue.X)
@@ -86,6 +94,7 @@
                     }
                 </div>
             }
+            </div>
         }
         @* §2 animated strike through the winning run — geometry computed from the
            shared --ttt-* grid tokens so it lines up at any cell size. *@
@@ -194,7 +203,7 @@
     // ("TicTacToe6") into the product name. Surface the classic "Tic-Tac-Toe"
     // and let the in-game intro / how-to-play carry the 6×6 / 4-in-a-row
     // details.
-    private RenderFragment TitleContent => @<span>❌ Tic-Tac-Toe</span>;
+    private RenderFragment TitleContent => @<span><span aria-hidden="true">❌</span> Tic-Tac-Toe</span>;
 
     // Audit #5: mode-specific HowToPlay. 1P talks about the CPU and ELO, 2P
     // talks about two players taking turns, the demo is a CPU-vs-CPU exhibition.

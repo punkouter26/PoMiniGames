@@ -22,8 +22,18 @@
    shared end-of-game modal so intro + outro read as one system.
    ───────────────────────────────────────────────────────────────────────── *@
 
+@* 2026-08-08 audit #6: this card sits between the player and every 1-player
+   game, so dismissing it must not require aiming. Keyboard users already had
+   Enter/Space/Escape (HandleKey); pointer users had only the OK button, a
+   112x38 target on a phone. The overlay itself now dismisses on tap for the
+   modes where the card is purely informational.
+
+   NOT applied to TwoPlayer: that card carries character selection, so a stray
+   tap would start the match before both players have chosen. Demo is included —
+   it is already auto-starting on a timer, so a tap only skips the wait. *@
 <div class="gps-intro-overlay" role="dialog" aria-modal="true" aria-label="Game intro"
      @ref="_root" tabindex="0"
+     @onclick="HandleOverlayClick"
      @onkeydown="HandleKey" @onkeydown:preventDefault="CaptureKeys">
     <div class="gps-intro-card gps-intro-card--@ModeClass">
         @if (Title != null)
@@ -54,7 +64,9 @@
            auto-starts on a timer and is never dismissed by hand. *@
         @if (Mode == IntroMode.OnePlayer)
         {
-            <label class="gps-intro-skip">
+            @* stopPropagation so ticking the box does not also trip the
+               overlay's tap-to-dismiss and launch the game (audit #6). *@
+            <label class="gps-intro-skip" @onclick:stopPropagation="true">
                 <input type="checkbox" checked="@_dontShowAgain" @onchange="OnDontShowAgainChanged" />
                 <span>Don't show this again</span>
             </label>
@@ -197,6 +209,17 @@
         }
 
         if (OnStart.HasDelegate) await OnStart.InvokeAsync();
+    }
+
+    /// <summary>
+    /// Tap-anywhere dismissal for the informational cards (audit #6). TwoPlayer
+    /// opts out because its card carries character selection — a stray tap there
+    /// would start the match before both players have chosen.
+    /// </summary>
+    private async Task HandleOverlayClick()
+    {
+        if (Mode == IntroMode.TwoPlayer) return;
+        await StartAsync();
     }
 
     private async Task HandleKey(KeyboardEventArgs e)

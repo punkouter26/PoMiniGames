@@ -1,36 +1,11 @@
-/* FPS pill: small monospace chip in the top bar mirroring the global
-   requestAnimationFrame sampler.
+/* FPS pill — runtime instance.
 
-   2026-07-12 layout: kept here (rather than in MainLayout.razor.css) so
-   Blazor's per-component scoped-CSS hash matches the pill itself; the
-   MainLayout arranges .gl-top-bar-center around it. */
-
-.gl-fps {
-    display: inline-flex;
-    align-items: center;
-    padding: 0.25rem 0.6rem;
-    border-radius: var(--radius-pill);
-    background: rgba(10, 12, 24, 0.55);
-    border: 1px solid var(--color-border);
-    color: #6bff6b;
-    font-family: var(--font-mono);
-    font-size: 0.72rem;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    font-variant-numeric: tabular-nums;
-    line-height: 1.1;
-    min-width: 5.4ch;
-    text-align: center;
-    transition: color var(--dur-base) var(--ease-standard);
-}
-
-.gl-fps[data-tier="warn"] { color: #ffd24e; }
-.gl-fps[data-tier="bad"]  { color: #ff6b6b; }
-
-@media (max-width: 640px) {
-    .gl-fps {
-        font-size: 0.66rem;
-        padding: 0.18rem 0.5rem;
-        min-width: 4.6ch;
-    }
+   The shared visual rules live in app-shell.css (`.gl-fps`, tiers, mobile
+   sizing) so the SettingsPanel can mirror the chip in a preview without
+   re-introducing component-scoped hashes. This file only carries the
+   ‹centered› variant used by FpsCounter itself — the top bar centre rail
+   moves the chip to the middle of the rail, distinct from a left-anchored
+   desktop variant. */
+.gl-fps--centered {
+    margin: 0 auto;
 }

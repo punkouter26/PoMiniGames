@@ -94,7 +94,7 @@
 </GameShell>
 
 @code {
-    private RenderFragment TitleContent => @<span>💕 Couple Quiz · Lobby</span>;
+    private RenderFragment TitleContent => @<span><span aria-hidden="true">💕</span> Couple Quiz · Lobby</span>;
 
     // Intro/welcome gate — the controls card shows first; only on OK do we connect
     // to the lobby hub (so the player doesn't appear to others until they're ready).

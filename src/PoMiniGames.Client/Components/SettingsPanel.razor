@@ -34,7 +34,7 @@
                     <button type="button"
                             role="radio"
                             class="prefs-seg-btn @(Settings.Theme == mode ? "prefs-seg-btn--on" : null)"
-                            aria-checked="@(Settings.Theme == mode)"
+                            aria-checked="@Aria(Settings.Theme == mode)"
                             @onclick="() => SetTheme(mode)">
                         @ThemeLabel(mode)
                     </button>
@@ -51,7 +51,7 @@
             <button type="button"
                     class="prefs-toggle @(Settings.Muted ? null : "prefs-toggle--on")"
                     role="switch"
-                    aria-checked="@(!Settings.Muted)"
+                    aria-checked="@Aria(!Settings.Muted)"
                     aria-label="Sound"
                     @onclick="ToggleMuted">
                 <span class="prefs-toggle-knob"></span>
@@ -81,7 +81,7 @@
             <button type="button"
                     class="prefs-toggle @(Settings.Haptics ? "prefs-toggle--on" : null)"
                     role="switch"
-                    aria-checked="@Settings.Haptics"
+                    aria-checked="@Aria(Settings.Haptics)"
                     aria-label="Haptics"
                     @onclick="ToggleHaptics">
                 <span class="prefs-toggle-knob"></span>
@@ -96,7 +96,7 @@
             <button type="button"
                     class="prefs-toggle @(Settings.ShowGameIntros ? "prefs-toggle--on" : null)"
                     role="switch"
-                    aria-checked="@Settings.ShowGameIntros"
+                    aria-checked="@Aria(Settings.ShowGameIntros)"
                     aria-label="Game intros"
                     @onclick="ToggleGameIntros">
                 <span class="prefs-toggle-knob"></span>
@@ -121,7 +121,7 @@
             <button type="button"
                     class="prefs-toggle @(Settings.ReducedMotion ? "prefs-toggle--on" : null)"
                     role="switch"
-                    aria-checked="@Settings.ReducedMotion"
+                    aria-checked="@Aria(Settings.ReducedMotion)"
                     aria-label="Reduce motion"
                     @onclick="ToggleReducedMotion">
                 <span class="prefs-toggle-knob"></span>
@@ -133,23 +133,56 @@
                 <span class="prefs-name">FPS badge</span>
                 <span class="prefs-hint">Frame-rate readout in the top bar.</span>
             </div>
-            <button type="button"
-                    class="prefs-toggle @(Settings.ShowFps ? "prefs-toggle--on" : null)"
-                    role="switch"
-                    aria-checked="@Settings.ShowFps"
-                    aria-label="FPS badge"
-                    @onclick="ToggleFps">
-                <span class="prefs-toggle-knob"></span>
-            </button>
+            <div class="prefs-control-cluster">
+                @* 2026-08-08 audit #16: render a static preview of the FPS chip so a
+                   player who toggles the badge on knows what they're enabling. The
+                   live chip itself lives in the top bar and is also drawn from
+                   .gl-fps--centered, so the preview mirrors the real one visually.
+                   The text is mocked ("60 FPS") rather than a live reading — a
+                   setting page is not a render benchmark. *@
+                <span class="gl-fps gl-fps--centered gl-fps--preview" aria-hidden="true"
+                      data-tier="@(Settings.ShowFps ? "ok" : "off")">
+                    @(_fpsPreviewLabel)
+                </span>
+                <button type="button"
+                        class="prefs-toggle @(Settings.ShowFps ? "prefs-toggle--on" : null)"
+                        role="switch"
+                        aria-checked="@Aria(Settings.ShowFps)"
+                        aria-label="FPS badge"
+                        @onclick="ToggleFps">
+                    <span class="prefs-toggle-knob"></span>
+                </button>
+            </div>
         </div>
 
     </div>
 </section>
 
 @code {
+    /// <summary>
+    /// Renders a bool as the literal string ARIA requires.
+    /// <para>
+    /// Binding a <c>bool</c> straight into <c>aria-checked</c> does NOT work:
+    /// Blazor treats a bool-valued attribute as an HTML *boolean* attribute, so
+    /// `true` emits <c>aria-checked=""</c> and `false` omits it entirely. ARIA
+    /// state attributes are enumerated strings, not boolean attributes — an empty
+    /// value is invalid and assistive tech reports the control as having no state.
+    /// Caught by axe as 16 `aria-required-attr` violations on this panel alone
+    /// (2026-08-08 audit #4); every role="switch"/"radio" below routes through
+    /// here. Never inline a bare bool into an aria-* attribute.
+    /// </para>
+    /// </summary>
+    private static string Aria(bool value) => value ? "true" : "false";
+
     private static readonly ThemeMode[] ThemeModes = [ThemeMode.Auto, ThemeMode.Light, ThemeMode.Dark];
 
     private bool _osReducedMotion;
+
+    // 2026-08-08 audit #16: a faux "60 FPS" or "— FPS" label so the preview chip
+    // shows what the player is enabling / disabling. The real chip lives in the
+    // top bar and reads a live RAF value; the settings page is a configuration
+    // surface, not a benchmark, so a stable label is the more honest preview.
+    private string _fpsPreviewLabel => Settings.ShowFps ? "60 FPS" : "— FPS";
 
     private static string ThemeLabel(ThemeMode mode) => mode switch
     {

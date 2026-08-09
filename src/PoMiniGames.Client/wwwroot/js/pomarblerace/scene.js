@@ -107,7 +107,7 @@ const GRADES = {
 
 export function createScene(container) {
   const renderer = new THREE.WebGLRenderer({ antialias: false, alpha: false });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setPixelRatio(window.PoCanvasDpr.ceiling());   // audit #8: shared policy, js/canvasDpr.js
   renderer.setClearColor(BG, 1);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;   // #2 — filmic highlight rolloff
   renderer.toneMappingExposure = 1.15;

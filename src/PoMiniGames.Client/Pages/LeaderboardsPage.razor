@@ -12,17 +12,20 @@
         <h1 class="lb-title">Leaderboards</h1>
         @if (!_loading && _boards.Count > 0)
         {
-            // Audit #8: previously this read "9 of 10 games" — which read as a
-            // bug against the home grid. The catalog ships 10 games, but
+            // 2026-08-08 audit #11: previously read "9 ranked · 1 demo-only",
+            // which read as a missing leaderboard rather than a missing game.
             // PoSurvive is demo-only by design (it has no 1P scored mode — see
-            // UnifiedLeaderboardEndpoints), so 9 ranked boards is the correct,
-            // intended count. Surface the gap as a feature, not as missing data.
+            // UnifiedLeaderboardEndpoints), so it is one of the 10 catalog
+            // games with no board. Surface that as a feature, not a gap:
+            //   • all 9 ranked games       (rankedCount of totalGames-1)
+            //   • 1 of 10 is demo-only      (PoSurvive)
             var rankedCount = _boards.Count;
             var totalGames = GameCatalog.All.Count;
-            var label = rankedCount >= totalGames
+            var demoOnlyCount = totalGames - rankedCount;
+            string label = totalGames > 0 && demoOnlyCount == 0
                 ? $"{rankedCount} ranked games"
-                : $"{rankedCount} ranked · 1 demo-only";
-            <span class="lb-count">@label</span>
+                : $"{rankedCount} ranked games · {demoOnlyCount} demo-only";
+            <span class="lb-count" title="@demoOnlyCount of @totalGames games are demo-only by design and have no leaderboard">@label</span>
         }
     </header>
 

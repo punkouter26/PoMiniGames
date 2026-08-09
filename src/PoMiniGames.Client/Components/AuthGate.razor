@@ -1,5 +1,6 @@
 @namespace PoMiniGamesClient.Components
 @using PoMiniGamesClient.Services
+@using Microsoft.AspNetCore.Components.Routing
 @inject AuthStateService AuthState
 @inject NavigationManager Navigation
 @implements IDisposable
@@ -14,32 +15,46 @@
         </div>
     </div>
 }
-else if (AuthState.DevLoginEnabled && !AuthState.IsAuthenticated && !_silentDevLoginInFlight)
+else if (IsAuthExemptRoute())
 {
-    @* Dev env: force an explicit login — unless the visitor landed on a
-       /demo or /<route>/demo URL (e.g. /pobrawl/1, /connectfive/1,
-       /poracer/demo). Demo routes are meant to be zero-friction for the
-       attraction loop, so we silently mint a Guest session instead of
-       flashing the LoginScreen and asking the visitor to tap "Continue as
-       Guest" a second time. _ensureDemoGuest() is idempotent and runs
-       once per page load; the regular LoginScreen path is still used
-       for every non-demo route. *@
-    if (IsDemoRoute())
+    @* The OAuth landing routes (/auth/callback, /auth/login/microsoft) MUST
+       render while signed out — AuthCallbackPage is what drains the MSAL auth
+       code from the URL and completes the session. Gating them would deadlock
+       sign-in: no session, so the gate shows the login screen; login redirects
+       back here; the page that would have created the session never renders. *@
+    @ChildContent
+}
+else if (!AuthState.IsAuthenticated && !_silentDevLoginInFlight)
+{
+    @* Demo URLs stay zero-friction for the attraction/kiosk loop: they mint a
+       Guest session in the background rather than stopping on the login screen.
+       That is still an authenticated session — it just isn't hand-typed. Dev
+       only, because the silent path goes through the dev-login endpoint. *@
+    if (AuthState.DevLoginEnabled && IsDemoRoute())
     {
         _ = EnsureDemoGuestAsync();
     }
     else
     {
+        @* 2026-08-09, by request: the app is gated again. Everyone signs in —
+           Guest or Microsoft in dev, Microsoft in production — before any route
+           renders.
+
+           This deliberately reverses two earlier decisions, so if you are here
+           to "restore" one of them, read this first:
+             · "§10 Guest-first" made the app open and offered sign-in on demand.
+             · 2026-08-08 audit #15 replaced a hard gate with a banner over the
+               real page, because a bare login screen made /leaderboards and
+               friends look broken to a first-time visitor.
+           Audit #15's concern is real and is now handled inside LoginScreen's
+           copy rather than by letting the page through. Deep links still work:
+           the requested URL is untouched, so completing sign-in lands the user
+           exactly where they were headed. *@
         <LoginScreen />
     }
 }
 else
 {
-    @* §10 Guest-first: the app is NOT gated. Anonymous visitors get straight to
-       the home page and can tap any single-player game and play immediately.
-       Sign-in is offered on demand (top-bar "Sign in") and prompted at the
-       score-save moment — see GameResultService. LoginScreen is still reachable
-       as a route/overlay; it is no longer the app's front door. *@
     @ChildContent
 }
 
@@ -57,14 +72,44 @@ else
     private bool _silentDevLoginInFlight;
     private bool _demoGuestStarted;
 
+    /// <summary>
+    /// Routes that must render without a session. Only the OAuth landing pages
+    /// qualify — see the note in the markup for why gating them deadlocks
+    /// sign-in. Both of AuthCallbackPage's @@page templates are listed; adding a
+    /// third there means adding it here too.
+    /// </summary>
+    private static readonly string[] AuthExemptPaths =
+    [
+        "/auth/callback",
+        "/auth/login/microsoft",
+    ];
+
+    private bool IsAuthExemptRoute()
+    {
+        var path = new Uri(Navigation.Uri).AbsolutePath.TrimEnd('/');
+        if (path.Length == 0) return false;
+        foreach (var exempt in AuthExemptPaths)
+        {
+            if (string.Equals(path, exempt, StringComparison.OrdinalIgnoreCase)) return true;
+        }
+        return false;
+    }
+
     protected override async Task OnInitializedAsync()
     {
         AuthState.StateChanged += OnAuthStateChanged;
+        // Both gate decisions (IsAuthExemptRoute, IsDemoRoute) read the current
+        // URL, but this component sits ABOVE the Router, so a navigation does not
+        // re-render it on its own — without this subscription the gate would keep
+        // acting on the URL the app was first loaded with.
+        Navigation.LocationChanged += OnLocationChanged;
         var query = new Uri(Navigation.Uri).Query;
         await AuthState.InitializeAsync(query);
     }
 
     private void OnAuthStateChanged() => InvokeAsync(StateHasChanged);
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e) => InvokeAsync(StateHasChanged);
 
     /// <summary>
     /// Demo URL patterns the app treats as zero-friction: any path ending in
@@ -138,5 +183,9 @@ else
         }
     }
 
-    public void Dispose() => AuthState.StateChanged -= OnAuthStateChanged;
+    public void Dispose()
+    {
+        AuthState.StateChanged -= OnAuthStateChanged;
+        Navigation.LocationChanged -= OnLocationChanged;
+    }
 }

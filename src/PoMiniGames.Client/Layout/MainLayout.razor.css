@@ -59,35 +59,12 @@
     }
 }
 
-/* ── Skip link (browser audit #9) ──
-   Off-screen rather than `display: none` / `visibility: hidden`, both of which
-   would take it out of the tab order and defeat the point. It reveals itself on
-   :focus-visible only, so a pointer user never sees it. */
-.gl-skip-link {
-    position: absolute;
-    top: var(--space-2);
-    left: var(--space-2);
-    z-index: 1000;
-    padding: var(--space-2) var(--space-3);
-    border-radius: var(--radius-md);
-    /* Not `--color-accent`: white on #6366f1 measures 4.47:1, a hair under the
-       4.5:1 AA floor. A link that exists purely for accessibility has no excuse
-       to miss it, so this uses a darkened accent that clears the bar in both
-       schemes (white on #4338ca ≈ 8.2:1). */
-    background: #4338ca;
-    color: #ffffff;
-    font-size: 0.85rem;
-    font-weight: 700;
-    text-decoration: none;
-    /* Parked just off the top edge; the transform is what hides it. */
-    transform: translateY(-200%);
-}
-
-.gl-skip-link:focus-visible {
-    transform: translateY(0);
-    outline: 2px solid var(--color-text-primary);
-    outline-offset: 2px;
-}
+/* ── Skip link ──
+   The rule moved to wwwroot/css/app.css (2026-08-08 audit #9). It lived here, in
+   a SCOPED stylesheet, which meant the class only worked inside MainLayout —
+   PoSurvive runs its own PoSurviveLayout, so its skip link would have rendered
+   as unstyled text sitting on top of the page. An accessibility affordance every
+   layout is expected to carry cannot live in one layout's scoped file. */
 
 /* The skip target must not draw a focus ring of its own when focused
    programmatically — that would outline the entire page. */

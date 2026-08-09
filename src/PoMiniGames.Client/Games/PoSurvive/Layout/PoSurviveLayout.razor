@@ -48,8 +48,14 @@
    to escape the bar's box. Use the shrink order in the stylesheet (stats degrade
    first) instead of clipping. *@
 <div class="sv-shell">
+@* audit #9: PoSurvive was the one page in the app with no skip link — its
+   toolbar alone is ~16 tab stops before the board. Same class and same target id
+   as MainLayout so the behaviour is identical; the rule now lives in app.css
+   rather than MainLayout's scoped sheet precisely so this layout can use it. *@
+<a class="gl-skip-link" href="#main-content">Skip to content</a>
 <header class="gl-top-bar app-reveal">
-    <div class="gl-top-bar-left">
+    @* <nav> landmark, matching MainLayout (audit #10). *@
+    <nav class="gl-top-bar-left" aria-label="Main">
         <a href="/" class="gl-brand" title="Back to PoMiniGames">
             <span class="gl-brand-icon">
                 <svg width="22" height="22" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -61,7 +67,7 @@
             </span>
             <span class="gl-brand-text">PoMiniGames</span>
         </a>
-    </div>
+    </nav>
 
     <div class="gl-top-bar-center">
         <FpsCounter />
@@ -157,7 +163,12 @@
     </div>
 </header>
 
-<div class="sv-bar app-reveal" data-testid="toolbar">
+@* 2026-08-08 audit #9: this strip held the model picker, speed chips, stats and
+   the Advanced panel but sat in no landmark at all, so axe reported six `region`
+   violations here and a screen-reader user had no way to reach the simulation
+   controls other than tabbing through the whole page. <section> + an accessible
+   name promotes it to a region; the element and its classes are unchanged. *@
+<section class="sv-bar app-reveal" data-testid="toolbar" aria-label="Simulation controls">
     @* ── North-Star control: one primary button that morphs with lifecycle ── *@
     @if (BootCanStartSimulation && !Store.Simulation.IsRunning && !Store.Simulation.IsPaused && Store.Simulation.Outcome is null && !Store.Simulation.ShowPostMortem)
     {
@@ -348,7 +359,7 @@
            into the header's `gl-auth` cluster, where every other game carries
            them. They are platform chrome, not game transport. *@
     </div>
-</div>
+</section>
 
 @* ── Two-pane stage: board + one tabbed intel rail ────────────────────────────
    Was a 3-pane grid (`1fr 260px` / `1fr 180px`). The 180px bottom console pane
@@ -390,7 +401,9 @@
         </div>
     }
 
-    <main class="sv-stage__board app-reveal">
+    @* id + tabindex so the skip link above can actually move focus here, matching
+       MainLayout's <main> (audit #9). *@
+    <main class="sv-stage__board app-reveal" id="main-content" tabindex="-1">
         @Body
     </main>
 
@@ -681,8 +694,61 @@
     private string? _switchError;
 
     private bool ShowDevSwitch =>
-        HostEnv.IsDevelopment() ||
-        string.Equals(HostEnv.Environment, "Test", StringComparison.OrdinalIgnoreCase);
+        // 2026-08-08 audit #14: previously the dev swap was simply on for any
+        // Development or Test environment, which meant a QA build that shipped
+        // with appsettings.Development.json leaked the "Switch user" backdoor
+        // to testers. The fix is a strict opt-in: BOTH the env must be non-
+        // Production AND the URL must carry ?dev=1 (or localStorage has
+        // explicitly enabled the panel once). Same shape as how the kiosk
+        // reel is gated on a separate query string — quietly opt-in, never
+        // accidentally on.
+        _devSwitchOptIn && (
+            HostEnv.IsDevelopment() ||
+            string.Equals(HostEnv.Environment, "Test", StringComparison.OrdinalIgnoreCase));
+
+    private bool _devSwitchOptIn;
+
+    // Persisted in localStorage so a developer who enables the panel once
+    // doesn't need to keep ?dev=1 in every bookmark. The setter is one
+    // direction — turning the opt-in OFF requires a fresh page load without
+    // ?dev=1 — to avoid a stale flag hanging around after a teammate shares
+    // the same browser.
+    private const string DevSwitchOptInKey = "pominigames.devSwitch";
+
+    private async Task EnsureDevSwitchOptInAsync()
+    {
+        if (_devSwitchOptIn) return;
+
+        // Query string: ?dev=1 enables for this load only.
+        var uri = Nav.Uri ?? string.Empty;
+        var queryIdx = uri.IndexOf('?');
+        if (queryIdx >= 0)
+        {
+            var qs = uri[(queryIdx + 1)..];
+            foreach (var part in qs.Split('&', StringSplitOptions.RemoveEmptyEntries))
+            {
+                var eq = part.IndexOf('=');
+                if (eq <= 0) continue;
+                var key = part[..eq];
+                var val = part[(eq + 1)..];
+                if (string.Equals(key, "dev", StringComparison.OrdinalIgnoreCase)
+                    && (val == "1" || string.Equals(val, "true", StringComparison.OrdinalIgnoreCase)))
+                {
+                    _devSwitchOptIn = true;
+                    try { await JS.InvokeVoidAsync("localStorage.setItem", DevSwitchOptInKey, "1"); } catch { /* private mode */ }
+                    return;
+                }
+            }
+        }
+
+        // Otherwise honour a previously set opt-in.
+        try
+        {
+            var stored = await JS.InvokeAsync<string?>("localStorage.getItem", DevSwitchOptInKey);
+            if (stored == "1") _devSwitchOptIn = true;
+        }
+        catch { /* SSR / no JS — env already gates the panel */ }
+    }
 
     /// <summary>
     /// True on any /posurvive/demo route or when the reel has tagged the URL with
@@ -754,6 +820,12 @@
             // Inject PoSurvive's stylesheets only while this layout is mounted so its
             // global CSS resets don't leak into the rest of the PoMiniGames platform.
             await JS.InvokeVoidAsync("PoSurviveTheme.load");
+
+            // 2026-08-08 audit #14: read the persisted ?dev=1 / localStorage opt-in
+            // before the first render that touches ShowDevSwitch. Without this the
+            // panel would either always show on first paint (env gate) or never show
+            // (no opt-in echoed back). Idempotent; safe to call again.
+            await EnsureDevSwitchOptInAsync();
 
             // `load` re-applies the persisted high-contrast preference to <body>; read it
             // back so the toggle's label starts in agreement with the page.

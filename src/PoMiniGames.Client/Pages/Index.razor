@@ -50,9 +50,20 @@
        (once per non-demo section) pointing at the same page, and My Stats sat in
        a separate block below the grid. *@
     <div class="home-actions">
+        @* aria-pressed below is a literal string, not a bare bool: Blazor renders
+           a bool-valued attribute as an HTML boolean attribute, which emits
+           aria-pressed="" when true and drops it entirely when false — neither is
+           a valid ARIA state (2026-08-08 audit #4).
+
+           Note this comment sits OUTSIDE the tag on purpose. A Razor comment
+           block inside an attribute list is not treated as a comment at all —
+           it is parsed as an attribute NAME, and the runtime then throws
+           InvalidCharacterError from setAttribute, taking down the whole page
+           render. Keep markup comments between elements, never between
+           attributes. *@
         <button type="button"
                 class="home-action home-action--demo @(Kiosk.IsActive ? "home-action--on" : null)"
-                aria-pressed="@Kiosk.IsActive"
+                aria-pressed="@(Kiosk.IsActive ? "true" : "false")"
                 title="@(Kiosk.IsActive ? "Stop watching all demos" : "Auto-play every demo in turn")"
                 @onclick="ToggleWatchAll">
             <span class="home-action-icon" aria-hidden="true">

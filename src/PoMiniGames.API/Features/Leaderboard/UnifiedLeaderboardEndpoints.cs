@@ -137,6 +137,28 @@ public static class UnifiedLeaderboardEndpoints
         }
     }
 
+    // ── The closed vocabulary for GameLeaderboardDto.Unit ─────────────────────
+    // Unit is the label printed on each leaderboard card beside the game title.
+    // One label per distinct MEASURE, and no synonyms.
+    //
+    // A 2026-08-08 UI audit found nine cards carrying seven labels for five real
+    // measures: Sports said "Best meet" for the same seconds-lower-is-better
+    // value Racer called "Best time", while Marble Race said "Points", Fun Quiz
+    // and Joker said "Score", and Couple Quiz said "High score" — all for a plain
+    // point total. Read as a page, that noise implies the games are scored
+    // differently when they are not.
+    //
+    //   ELO        adaptive rating (see AdaptiveEloGames below)
+    //   Win rate   a percentage
+    //   Score      a point total, higher is better
+    //   Best time  seconds, LOWER is better
+    //   Best rung  PoBrawl's "N/10" ladder progress
+    //
+    // Adding a board? Reuse one of these. Only mint a new label when the measure
+    // itself is genuinely new — and add it here when you do. Kept as a comment
+    // rather than an enum because Unit crosses the wire as a display string and
+    // the client renders it verbatim.
+
     /// <summary>
     /// Games whose 1-player CPU is matched to the player's adaptive ELO. Their
     /// boards rank by that rating — the adaptive matchmaking pins win rate near
@@ -178,7 +200,7 @@ public static class UnifiedLeaderboardEndpoints
                 i + 1, s.PlayerInitials, s.BestScore, s.BestScore.ToString("N0", CultureInfo.InvariantCulture)))
             .ToList();
         PadWithPlaceholders(entries, limit, "0");
-        return new GameLeaderboardDto("pomarblerace", "Marble Race", "Points", HigherIsBetter: true, entries);
+        return new GameLeaderboardDto("pomarblerace", "Marble Race", "Score", HigherIsBetter: true, entries);
     }
 
     /// <summary>Best race time per player (lower is better) from the PoRacer score table.</summary>
@@ -211,7 +233,7 @@ public static class UnifiedLeaderboardEndpoints
                 s.TotalTimeSeconds.ToString("0.0", CultureInfo.InvariantCulture) + "s"))
             .ToList();
         PadWithPlaceholders(entries, limit, "—");
-        return new GameLeaderboardDto("posports", "Sports", "Best meet", HigherIsBetter: false, entries);
+        return new GameLeaderboardDto("posports", "Sports", "Best time", HigherIsBetter: false, entries);
     }
 
     /// <summary>
@@ -250,7 +272,7 @@ public static class UnifiedLeaderboardEndpoints
                 i + 1, l.PlayerName, l.PresidentsBeaten, $"{l.PresidentsBeaten}/10"))
             .ToList();
         PadWithPlaceholders(entries, limit, "0/10");
-        return new GameLeaderboardDto("pobrawl", "Brawl", "Ladder", HigherIsBetter: true, entries);
+        return new GameLeaderboardDto("pobrawl", "Brawl", "Best rung", HigherIsBetter: true, entries);
     }
 
     /// <summary>
@@ -292,7 +314,7 @@ public static class UnifiedLeaderboardEndpoints
                 i + 1, t.Name, t.HighScore, t.HighScore.ToString("N0", CultureInfo.InvariantCulture)))
             .ToList();
         PadWithPlaceholders(entries, limit, "0");
-        return new GameLeaderboardDto("pocouplequiz", "Couple Quiz", "High score", HigherIsBetter: true, entries);
+        return new GameLeaderboardDto("pocouplequiz", "Couple Quiz", "Score", HigherIsBetter: true, entries);
     }
 
     /// <summary>

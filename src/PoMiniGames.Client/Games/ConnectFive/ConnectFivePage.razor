@@ -50,8 +50,14 @@
                real spring-dropped chips stand in for them; with no GPU backend
                nothing mounts and the board is exactly what it was. *@
             <canvas @ref="_glCanvas" class="cf-gl" aria-hidden="true"></canvas>
+            @* role="grid" requires role="row" between it and its gridcells
+               (2026-08-08 audit #2). `display: contents` keeps all 81 cells as
+               direct grid items of .cf-board, so the 9×9 template, the drop
+               animation and the GL overlay alignment are unchanged. *@
             @for (int r = 0; r < ConnectFiveBoard.Rows; r++)
             {
+                var rowIndex = r;
+                <div class="cf-row" role="row" aria-rowindex="@(rowIndex + 1)">
                 @for (int c = 0; c < ConnectFiveBoard.Cols; c++)
                 {
                     var row = r;
@@ -75,6 +81,7 @@
                          @onclick="() => HandleDrop(col)"
                          @onpointerenter="() => SetHover(col)"
                          role="gridcell"
+                         aria-colindex="@(col + 1)"
                          aria-label="@GetPieceAriaLabel(piece)">
                         @* The disc IS the piece: a single glossy CSS disc drops in
                            from above the board. --drop-rows sets how far it falls:
@@ -102,6 +109,7 @@
                         }
                     </div>
                 }
+                </div>
             }
         </div>
     </div>
@@ -255,7 +263,7 @@
     };
     private void DismissIntro() => _introDone = true;
 
-    private RenderFragment TitleContent => @<span>🔴 Connect Five</span>;
+    private RenderFragment TitleContent => @<span><span aria-hidden="true">🔴</span> Connect Five</span>;
 
     // Audit #5: mode-specific HowToPlay. 1P talks about the CPU and ELO, 2P
     // talks about two players and a hot seat, and the demo explains it is a

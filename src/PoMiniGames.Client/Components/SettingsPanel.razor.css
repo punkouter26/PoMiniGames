@@ -90,8 +90,11 @@
 }
 
 .prefs-seg-btn--on {
-    background: var(--accent);
-    color: #fff;
+    /* audit #3: white on --accent (#6366f1) is 4.46:1 — a hair under AA at this
+       12px size. --color-accent-solid exists for exactly this case (see its note
+       in app.css) and clears the floor at ~6.3:1. */
+    background: var(--color-accent-solid);
+    color: var(--color-accent-contrast);
 }
 
 /* ── Switch ── */
@@ -141,6 +144,40 @@
 .prefs-range:disabled {
     cursor: not-allowed;
     opacity: 0.4;
+}
+
+/* 2026-08-08 audit #16: control cluster for the FPS-badge row, so the toggle
+   can sit beside a static preview of the FPS chip. The chip itself is the same
+   .gl-fps class the top bar uses, so a player who flips the toggle on
+   recognises the readout that lands in the top bar. */
+.prefs-control-cluster {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-3);
+    flex: 0 0 auto;
+}
+
+.gl-fps--preview {
+    /* Off state: the em-dash is muted and lowercase so the player can see at a
+       glance that the preview is hidden, not showing a low framerate.
+       audit #3: the mute used to be `opacity: 0.6`, which multiplied the
+       secondary token down to 2.75:1 in light mode. The [data-tier="off"] rule
+       below already conveys "off" through colour and surface, so the extra
+       opacity was buying nothing but a contrast failure. */
+    font-size: 0.7rem;
+    letter-spacing: 0.04em;
+}
+
+.gl-fps--preview[data-tier="off"] {
+    color: var(--color-text-secondary);
+    background: var(--surface-3);
+    border-color: var(--color-border);
+}
+
+.gl-fps--preview[data-tier="ok"] {
+    /* On state inherits the default .gl-fps--centered treatment so the preview
+       matches what the top bar will show. */
+    opacity: 1;
 }
 
 .prefs-seg-btn:focus-visible,

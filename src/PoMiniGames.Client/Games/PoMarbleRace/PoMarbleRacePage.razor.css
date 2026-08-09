@@ -834,7 +834,7 @@
     align-items: center;
     gap: 8px;
     padding: 6px 18px;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     background: rgba(12, 8, 20, 0.8);
     border: 1px solid rgba(253, 224, 71, 0.7);
     font-size: 0.9rem;

@@ -15,7 +15,7 @@
     {
         <GameIntro CueScope="quiz"
                    Title="@TitleContent"
-                   Objective="Play Fun Quiz head-to-head online. Create or join a game, then answer faster and smarter than your opponent."
+                   Objective="Play Fun Quiz head-to-head online. Join the lobby, then answer faster and smarter than your opponent."
                    Controls="@HowToPlayContent"
                    Mode="GameIntro.IntroMode.OnePlayer"
                    RespectSkipToggle="false"
@@ -36,6 +36,10 @@
     }
     else if (_state is null)
     {
+        @* There is exactly one lobby, so there is nothing to name and nothing to look up.
+           The game-code box and its "Join by code" button are gone (user decision,
+           2026-08-10), matching the same call made for Couple Quiz: one button seats you
+           with whoever is waiting, and opens the lobby if nobody is. *@
         <div class="fq-join">
             <h2 class="gps-phase-h">Two-player · Fun Quiz</h2>
             <label class="fq-join__field">
@@ -44,8 +48,9 @@
                        autocomplete="nickname" />
             </label>
             <label class="fq-join__field">
-                <span class="fq-join__label">Category</span>
-                <select @bind="_category" disabled="@(_busy || !_isConnected)">
+                <span class="fq-join__label">Category <span class="fq-join__hint">used if you're first in</span></span>
+                <select @bind="_category" disabled="@(_busy || !_isConnected)"
+                        aria-describedby="fq-category-hint">
                     <option value="General" selected>General</option>
                     <option value="Science">Science</option>
                     <option value="History">History</option>
@@ -55,14 +60,9 @@
                     <option value="Technology">Technology</option>
                     <option value="ArtCulture">Art &amp; Culture</option>
                 </select>
-            </label>
-            <label class="fq-join__field">
-                <span class="fq-join__label">Game code <span class="fq-join__hint">leave empty to create a new game</span></span>
-                <input @bind="_joinCode" maxlength="6" disabled="@_busy"
-                       placeholder="6 letters"
-                       autocomplete="off"
-                       aria-describedby="fq-join-code-hint" />
-                <span id="fq-join-code-hint" class="fq-join__help">Optional — only fill this in if a friend shared a code.</span>
+                @* Say this out loud rather than silently discarding the joiner's pick —
+                   the same honesty fix made for Couple Quiz's host-only round count. *@
+                <span id="fq-category-hint" class="fq-join__help">If someone is already waiting, you'll play their category.</span>
             </label>
             <div class="fq-actions">
                 @* Bug fix QA #6: aria-busy + disabled state while the SignalR handshake
@@ -70,14 +70,8 @@
                 <button class="gps-btn gps-btn--primary"
                         aria-busy="@_busy"
                         disabled="@_busy"
-                        @onclick="OnCreate">
-                    @(_busy ? "Creating…" : "Create new game")
-                </button>
-                <button class="gps-btn gps-btn--secondary"
-                        aria-busy="@_busyJoin"
-                        disabled="@(_busyJoin || string.IsNullOrWhiteSpace(_joinCode))"
                         @onclick="OnJoin">
-                    @(_busyJoin ? "Joining…" : "Join by code")
+                    @(_busy ? "Joining…" : "Join the lobby")
                 </button>
             </div>
             @if (!string.IsNullOrEmpty(_error))
@@ -92,7 +86,9 @@
     else
     {
         <div class="fq-multi">
-            <h2 class="gps-phase-h">Game · @_state.GameId</h2>
+            @* No code to read out, so the heading carries the thing that actually
+               differs between lobbies — the category everyone is about to play. *@
+            <h2 class="gps-phase-h">@(IsWaiting ? "Lobby" : "Fun Quiz") · @CategoryLabel</h2>
             <h3>Players</h3>
             <ul>
                 @foreach (var p in _state.Players)
@@ -100,6 +96,10 @@
                     <li>@p.Name — @p.Score @(p.Name == _state.HostName ? "👑" : "")</li>
                 }
             </ul>
+            @if (IsWaiting && _state.Players.Count < 2)
+            {
+                <p class="fq-waiting" role="status" aria-live="polite">Waiting for an opponent to join…</p>
+            }
             @if (IsWaiting && _playerName == _state.HostName && _state.Players.Count >= 2)
             {
                 <button class="gps-btn gps-btn gps-btn--primary" @onclick="OnStart">Start game</button>
@@ -158,19 +158,17 @@
         <p>Two players answer the same questions online. Correct answers score points; build a streak for a bonus.</p>
         <ul>
             <li>Tap or click the answer you think is right</li>
-            <li>Create a game and share the code, or join with a friend's code</li>
+            <li>Press "Join the lobby" — you're matched with whoever is waiting</li>
             <li>The host starts once both players are in</li>
         </ul>
     </div>;
 
     private string _playerName = string.Empty;
     private string _category = "General";
-    private string? _joinCode;
     private string? _error;
     private bool _isConnected;
     private bool _reconnecting;
     private bool _busy;
-    private bool _busyJoin;
     private FunQuizGameStateDto? _state;
     private FunQuizGameFinishedDto? _finished;
     private FunQuizQuestionDto? _currentQuestion;
@@ -182,6 +180,9 @@
     // case-insensitively rather than against a PascalCase literal.
     private bool IsWaiting => string.Equals(_state?.State, "Waiting", StringComparison.OrdinalIgnoreCase);
     private bool IsInProgress => string.Equals(_state?.State, "InProgress", StringComparison.OrdinalIgnoreCase);
+
+    // "ArtCulture" is the wire value; spell it the way the picker does.
+    private string CategoryLabel => _state?.Category == "ArtCulture" ? "Art & Culture" : (_state?.Category ?? "General");
 
     private int MyScore => _state?.Players.FirstOrDefault(p => p.Name == _playerName)?.Score ?? 0;
     private int OpponentScore => _state?.Players.FirstOrDefault(p => p.Name != _playerName)?.Score ?? 0;
@@ -259,7 +260,7 @@
         InvokeAsync(StateHasChanged);
     }
 
-    private async Task OnCreate()
+    private async Task OnJoin()
     {
         if (_busy || _state is not null) return;
         if (string.IsNullOrWhiteSpace(_playerName)) { _error = "Enter a name."; return; }
@@ -269,38 +270,15 @@
         StateHasChanged();
         try
         {
-            await Hub.CreateGame(_playerName, _category, 10);
+            await Hub.JoinLobby(_playerName, _category, 10);
         }
         catch (Exception ex)
         {
-            _error = $"Could not create game: {ex.Message}";
+            _error = $"Could not join the lobby: {ex.Message}";
         }
         finally
         {
             _busy = false;
-            StateHasChanged();
-        }
-    }
-
-    private async Task OnJoin()
-    {
-        if (_busyJoin || _state is not null) return;
-        if (string.IsNullOrWhiteSpace(_joinCode)) { _error = "Enter a code."; return; }
-        PlayerNameService.SetPlayerName(_playerName);
-        _busyJoin = true;
-        _error = null;
-        StateHasChanged();
-        try
-        {
-            await Hub.JoinGame(_joinCode.Trim().ToUpperInvariant(), _playerName);
-        }
-        catch (Exception ex)
-        {
-            _error = $"Could not join by code: {ex.Message}";
-        }
-        finally
-        {
-            _busyJoin = false;
             StateHasChanged();
         }
     }
@@ -323,7 +301,7 @@
     private async Task OnStart()
     {
         if (_state is null) return;
-        await Hub.StartGame(_state.GameId);
+        await Hub.StartGame();
     }
 
     private void HandleState(FunQuizGameStateDto s)
@@ -394,11 +372,11 @@
         var isCorrect = option == _currentQuestion.CorrectOptionIndex;
         _hasAnswered = true;
         // For the consolidation MVP we treat every answer as 1.0× speed (no timer running yet).
-        await Hub.UpdateScore(_state.GameId, isCorrect, speedMultiplier: 1.0, secondsRemaining: 0);
+        await Hub.UpdateScore(isCorrect, speedMultiplier: 1.0, secondsRemaining: 0);
         // Mark the local player as finished for this question — once both
         // players finish, the server advances to the next question (or ends
         // the game on the last one).
-        await Hub.PlayerFinished(_state.GameId);
+        await Hub.PlayerFinished();
     }
 
     public async ValueTask DisposeAsync()

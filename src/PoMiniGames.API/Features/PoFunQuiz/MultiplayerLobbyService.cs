@@ -8,6 +8,18 @@ namespace PoMiniGames.Features.PoFunQuiz;
 /// sufficient. The reaper background service is intentionally not included —
 /// idle rooms are cleaned up when the host disconnects.
 /// </summary>
+/// <remarks>
+/// <para><b>2026-08-10 — one lobby, no game codes (user decision).</b> There used to be
+/// <c>CreateAsync</c> + <c>Join(gameId, …)</c> behind a "create a game / join by 6-letter
+/// code" screen. Both collapse into <see cref="JoinOrCreateAsync"/>: a player presses one
+/// button and lands in the single open lobby, opening it themselves only if nobody is
+/// waiting. <see cref="MultiplayerGame.GameId"/> survives as the internal SignalR group
+/// key and log correlation id — it is never shown to a player and never typed in.</para>
+///
+/// <para>A match still gets its own game object once it starts, so a second pair can be
+/// matched while the first pair plays. "Single lobby" is about the <em>entry point</em>:
+/// at most one game is ever in <see cref="GameState.Waiting"/> with a free seat.</para>
+/// </remarks>
 public class MultiplayerLobbyService(IOpenAIService ai, ILogger<MultiplayerLobbyService> logger)
 {
     private readonly ConcurrentDictionary<string, MultiplayerGame> _games = new();
@@ -15,30 +27,66 @@ public class MultiplayerLobbyService(IOpenAIService ai, ILogger<MultiplayerLobby
     private readonly IOpenAIService _ai = ai;
     private readonly ILogger<MultiplayerLobbyService> _logger = logger;
 
-    public async Task<MultiplayerGame> CreateAsync(string hostConnectionId, string hostName, QuestionCategory category, int questionCount, CancellationToken ct)
+    // Guards lobby *membership* (open-seat search, player add, player removal). The
+    // concurrent dictionaries make the game lookup safe, but MultiplayerGame.Players is a
+    // plain List whose "is there a free seat?" check and its Add must be atomic together —
+    // without that, two players pressing the single button at the same moment both see the
+    // free seat and one silently overflows a 2-player game to 3.
+    private readonly Lock _gate = new();
+
+    /// <summary>
+    /// Seat this connection in the one open lobby, opening a fresh one if nobody is
+    /// waiting. Returns the game plus whether this player opened it (i.e. is the host).
+    /// </summary>
+    public async Task<(MultiplayerGame Game, bool Created)> JoinOrCreateAsync(
+        string connectionId, string playerName, QuestionCategory category, int questionCount, CancellationToken ct)
     {
-        var game = new MultiplayerGame
+        lock (_gate)
         {
-            GameId = Guid.NewGuid().ToString("N").Substring(0, 6).ToUpperInvariant(),
-            Category = category,
-            HostConnectionId = hostConnectionId,
-            State = GameState.Waiting,
-            Players = new List<MultiplayerPlayer>
+            var open = TryTakeOpenSeat(connectionId, playerName);
+            if (open is not null) return (open, false);
+        }
+
+        // Nobody waiting → this player opens the lobby, and its questions are generated
+        // for the category *they* picked. Deliberately outside the gate: the AI call takes
+        // seconds, and holding a lock across it would stall every other player's join.
+        var questions = (await _ai.GenerateQuizQuestionsAsync(category, questionCount, ct)).ToList();
+
+        lock (_gate)
+        {
+            // Someone may have opened a lobby while we were waiting on the AI. Prefer
+            // theirs — otherwise two players who pressed the button together end up
+            // alone in two separate lobbies, which is the exact failure the single
+            // lobby exists to prevent. Our freshly generated questions are discarded.
+            var open = TryTakeOpenSeat(connectionId, playerName);
+            if (open is not null) return (open, false);
+
+            var game = new MultiplayerGame
             {
-                new() { ConnectionId = hostConnectionId, Name = hostName, PlayerNumber = 1 }
-            },
-            Questions = (await _ai.GenerateQuizQuestionsAsync(category, questionCount, ct)).ToList()
-        };
-        _games[game.GameId] = game;
-        _connectionToGame[hostConnectionId] = game.GameId;
-        return game;
+                GameId = Guid.NewGuid().ToString("N").Substring(0, 6).ToUpperInvariant(),
+                Category = category,
+                HostConnectionId = connectionId,
+                State = GameState.Waiting,
+                Players = new List<MultiplayerPlayer>
+                {
+                    new() { ConnectionId = connectionId, Name = playerName, PlayerNumber = 1 }
+                },
+                Questions = questions
+            };
+            _games[game.GameId] = game;
+            _connectionToGame[connectionId] = game.GameId;
+            return (game, true);
+        }
     }
 
-    public MultiplayerGame? Join(string gameId, string connectionId, string playerName)
+    /// <summary>
+    /// Adds the player to the waiting game with a free seat, or returns null if there
+    /// isn't one. Caller must hold <see cref="_gate"/>.
+    /// </summary>
+    private MultiplayerGame? TryTakeOpenSeat(string connectionId, string playerName)
     {
-        if (!_games.TryGetValue(gameId, out var game)) return null;
-        if (game.State != GameState.Waiting) return null;
-        if (game.Players.Count >= 2) return null; // 2-player only
+        var game = _games.Values.FirstOrDefault(g => g.State == GameState.Waiting && g.Players.Count < 2);
+        if (game is null) return null;
         // If this connection re-joins, drop the old slot first.
         game.Players.RemoveAll(p => p.ConnectionId == connectionId);
         // Two anonymous players share one "Guest######" identity when they sign in
@@ -71,20 +119,23 @@ public class MultiplayerLobbyService(IOpenAIService ai, ILogger<MultiplayerLobby
 
     public void RemovePlayer(string connectionId, out bool sessionEmpty)
     {
-        sessionEmpty = false;
-        if (!_connectionToGame.TryRemove(connectionId, out var gameId)) return;
-        if (!_games.TryGetValue(gameId, out var game)) return;
-        game.Players.RemoveAll(p => p.ConnectionId == connectionId);
-        if (game.Players.Count == 0)
+        lock (_gate)
         {
-            _games.TryRemove(gameId, out _);
-            sessionEmpty = true;
-            return;
-        }
-        // Host left → promote the remaining player to host.
-        if (game.HostConnectionId == connectionId)
-        {
-            game.HostConnectionId = game.Players[0].ConnectionId;
+            sessionEmpty = false;
+            if (!_connectionToGame.TryRemove(connectionId, out var gameId)) return;
+            if (!_games.TryGetValue(gameId, out var game)) return;
+            game.Players.RemoveAll(p => p.ConnectionId == connectionId);
+            if (game.Players.Count == 0)
+            {
+                _games.TryRemove(gameId, out _);
+                sessionEmpty = true;
+                return;
+            }
+            // Host left → promote the remaining player to host.
+            if (game.HostConnectionId == connectionId)
+            {
+                game.HostConnectionId = game.Players[0].ConnectionId;
+            }
         }
     }
 

@@ -8,6 +8,12 @@ namespace PoMiniGames.Features.PoFunQuiz;
 /// state lives in <see cref="MultiplayerLobbyService"/> (singleton). Clients are
 /// pure views driven by <see cref="IFunQuizClient"/> events.
 /// </summary>
+/// <remarks>
+/// <b>2026-08-10 — no game codes.</b> <c>CreateGame</c> + <c>JoinGame(gameId, …)</c> are one
+/// <see cref="JoinLobby"/>. Every other method dropped its <c>gameId</c> argument as well:
+/// the caller's game is resolved from their connection, so a client can no longer name a
+/// game it isn't in, and the "normalize the code, then look it up twice" dance is gone.
+/// </remarks>
 [AllowAnonymous]
 public class FunQuizHub : Hub<IFunQuizClient>
 {
@@ -20,7 +26,13 @@ public class FunQuizHub : Hub<IFunQuizClient>
         _logger = logger;
     }
 
-    public async Task CreateGame(string playerName, string category, int questionCount = 10)
+    /// <summary>
+    /// The only way into multiplayer: seats the caller in the single open lobby, or opens
+    /// it for them if nobody is waiting. <paramref name="category"/> and
+    /// <paramref name="questionCount"/> apply only when this call opens the lobby — a
+    /// joiner plays the quiz the waiting player already has.
+    /// </summary>
+    public async Task JoinLobby(string playerName, string category, int questionCount = 10)
     {
         if (string.IsNullOrWhiteSpace(playerName))
         {
@@ -29,27 +41,17 @@ public class FunQuizHub : Hub<IFunQuizClient>
         }
         var cat = Enum.TryParse<QuestionCategory>(category, true, out var c) ? c : QuestionCategory.General;
         questionCount = Math.Clamp(questionCount, 1, 50);
-        var game = await _lobby.CreateAsync(Context.ConnectionId, playerName.Trim(), cat, questionCount, Context.ConnectionAborted);
+        var (game, created) = await _lobby.JoinOrCreateAsync(
+            Context.ConnectionId, playerName.Trim(), cat, questionCount, Context.ConnectionAborted);
         await Groups.AddToGroupAsync(Context.ConnectionId, game.GameId);
-        _logger.GameCreated(game.GameId, playerName);
-        await Clients.Caller.GameCreated(BuildState(game));
-    }
 
-    public async Task JoinGame(string gameId, string playerName)
-    {
-        if (string.IsNullOrWhiteSpace(gameId) || string.IsNullOrWhiteSpace(playerName))
+        if (created)
         {
-            await Clients.Caller.LobbyError(new FunQuizLobbyError(gameId ?? string.Empty, "Game code and player name are required."));
+            _logger.GameCreated(game.GameId, playerName);
+            await Clients.Caller.GameCreated(BuildState(game));
             return;
         }
-        var normalized = gameId.Trim().ToUpperInvariant();
-        var game = _lobby.Join(normalized, Context.ConnectionId, playerName.Trim());
-        if (game is null)
-        {
-            await Clients.Caller.LobbyError(new FunQuizLobbyError(normalized, "Could not join. Check the code and try again."));
-            return;
-        }
-        await Groups.AddToGroupAsync(Context.ConnectionId, game.GameId);
+
         _logger.PlayerJoined(game.GameId, playerName);
         await Clients.Caller.GameJoined(BuildState(game));
         // Push the FULL updated state to the host (and any other members), not just a
@@ -60,42 +62,29 @@ public class FunQuizHub : Hub<IFunQuizClient>
         await Clients.OthersInGroup(game.GameId).GameUpdated(BuildState(game));
     }
 
-    public async Task GetOpenGames()
+    public async Task StartGame()
     {
-        // Reserved for the lobby browser; clients can also call
-        // /api/funquiz/lobby/open (the HTTP version below).
-        await Task.CompletedTask;
-    }
-
-    public async Task StartGame(string gameId)
-    {
-        if (string.IsNullOrWhiteSpace(gameId)) return;
-        var normalized = gameId.Trim().ToUpperInvariant();
-        if (!_lobby.StartGame(normalized, Context.ConnectionId)) return;
         var game = _lobby.GetByConnection(Context.ConnectionId);
         if (game is null) return;
+        if (!_lobby.StartGame(game.GameId, Context.ConnectionId)) return;
         await Clients.Group(game.GameId).GameStarted(BuildState(game));
     }
 
-    public async Task UpdateScore(string gameId, bool isCorrect, double speedMultiplier, int secondsRemaining)
+    public async Task UpdateScore(bool isCorrect, double speedMultiplier, int secondsRemaining)
     {
-        if (string.IsNullOrWhiteSpace(gameId)) return;
-        var normalized = gameId.Trim().ToUpperInvariant();
-        if (!_lobby.UpdateScore(normalized, Context.ConnectionId, isCorrect, speedMultiplier, secondsRemaining)) return;
         var game = _lobby.GetByConnection(Context.ConnectionId);
         if (game is null) return;
+        if (!_lobby.UpdateScore(game.GameId, Context.ConnectionId, isCorrect, speedMultiplier, secondsRemaining)) return;
         var player = game.Players.FirstOrDefault(p => p.ConnectionId == Context.ConnectionId);
         if (player is null) return;
         await Clients.Group(game.GameId).ScoreUpdated(new FunQuizScoreUpdate(
             game.GameId, player.Name, player.Score, player.CurrentStreak, player.MaxStreak));
     }
 
-    public async Task PlayerFinished(string gameId)
+    public async Task PlayerFinished()
     {
-        if (string.IsNullOrWhiteSpace(gameId)) return;
-        var normalized = gameId.Trim().ToUpperInvariant();
         var game = _lobby.GetByConnection(Context.ConnectionId);
-        if (game is null || game.GameId != normalized) return;
+        if (game is null) return;
         // Mark this player as finished for the *current* question. When both
         // have finished the question, advance. Once we've burned through every
         // question, declare the winner.
@@ -143,13 +132,11 @@ public class FunQuizHub : Hub<IFunQuizClient>
         }
     }
 
-    public async Task AdvanceQuestion(string gameId)
+    public async Task AdvanceQuestion()
     {
-        if (string.IsNullOrWhiteSpace(gameId)) return;
-        var normalized = gameId.Trim().ToUpperInvariant();
-        if (!_lobby.AdvanceQuestion(normalized, Context.ConnectionId)) return;
         var game = _lobby.GetByConnection(Context.ConnectionId);
         if (game is null) return;
+        if (!_lobby.AdvanceQuestion(game.GameId, Context.ConnectionId)) return;
         await Clients.Group(game.GameId).GameUpdated(BuildState(game));
     }
 

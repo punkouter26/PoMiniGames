@@ -41,9 +41,14 @@ public record FunQuizLobbySummaryDto(string GameId, string HostName, List<string
 
 /// <summary>
 /// Client-side wrapper over <c>/funquiz/gamehub</c>. Two-player SignalR trivia:
-/// CreateGame → JoinGame → StartGame → UpdateScore loop → PlayerFinished →
-/// GameFinished.
+/// JoinLobby → StartGame → UpdateScore loop → PlayerFinished → GameFinished.
 /// </summary>
+/// <remarks>
+/// There are no game codes (2026-08-10): <c>JoinLobby</c> seats you in the one open lobby
+/// and the server tracks which game you are in by connection, so nothing downstream needs
+/// a game id. <c>GameId</c> stays on the payload records purely as the server's correlation
+/// value — the UI does not show it and never sends it back.
+/// </remarks>
 public sealed class FunQuizHubService : IAsyncDisposable
 {
     private readonly NavigationManager _navigation;
@@ -140,40 +145,35 @@ public sealed class FunQuizHubService : IAsyncDisposable
         await _connection.StartAsync();
     }
 
-    public Task CreateGame(string playerName, string category, int questionCount = 10)
+    /// <summary>Join the one open lobby (opening it if empty). Category applies only if you open it.</summary>
+    public Task JoinLobby(string playerName, string category, int questionCount = 10)
     {
         EnsureConnected();
-        return _connection!.InvokeAsync("CreateGame", playerName, category, questionCount);
+        return _connection!.InvokeAsync("JoinLobby", playerName, category, questionCount);
     }
 
-    public Task JoinGame(string gameId, string playerName)
+    public Task StartGame()
     {
         EnsureConnected();
-        return _connection!.InvokeAsync("JoinGame", gameId, playerName);
+        return _connection!.InvokeAsync("StartGame");
     }
 
-    public Task StartGame(string gameId)
+    public Task UpdateScore(bool isCorrect, double speedMultiplier, int secondsRemaining)
     {
         EnsureConnected();
-        return _connection!.InvokeAsync("StartGame", gameId);
+        return _connection!.InvokeAsync("UpdateScore", isCorrect, speedMultiplier, secondsRemaining);
     }
 
-    public Task UpdateScore(string gameId, bool isCorrect, double speedMultiplier, int secondsRemaining)
+    public Task PlayerFinished()
     {
         EnsureConnected();
-        return _connection!.InvokeAsync("UpdateScore", gameId, isCorrect, speedMultiplier, secondsRemaining);
+        return _connection!.InvokeAsync("PlayerFinished");
     }
 
-    public Task PlayerFinished(string gameId)
+    public Task AdvanceQuestion()
     {
         EnsureConnected();
-        return _connection!.InvokeAsync("PlayerFinished", gameId);
-    }
-
-    public Task AdvanceQuestion(string gameId)
-    {
-        EnsureConnected();
-        return _connection!.InvokeAsync("AdvanceQuestion", gameId);
+        return _connection!.InvokeAsync("AdvanceQuestion");
     }
 
     private void EnsureConnected()

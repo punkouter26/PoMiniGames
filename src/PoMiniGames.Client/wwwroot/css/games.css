@@ -729,6 +729,15 @@
   line-height: 1.4;
 }
 
+/* 2026-08-10: with game codes gone there is nothing to copy and share while you
+   sit in the lobby, so the wait needs its own visible status line — otherwise a
+   player alone in the lobby sees only their own name and assumes it is broken. */
+.fq-waiting {
+  margin: 0.25rem 0 0;
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+}
+
 /* In-round screens (game / results). Card chrome matches the rest of the shell
    (surface + border + 16px radius). */
 .cq-game {

@@ -207,17 +207,47 @@ export async function mount(canvas, opts) {
     // faceted polygon rather than a circle. 14x48 rounds them out, and the
     // slightly fatter tube gives the rim a readable highlight/shadow pair
     // instead of a hairline. Still one instanced draw for the whole board.
+    //
+    // 2026-08-09 readability pass. The rim alone was #2b3550 on a #1b2439 slab —
+    // about 1.4:1. On anything but a bright, well-calibrated monitor the whole
+    // board read as one featureless dark slab, so a player could not see the
+    // 9x9 grid at all and had to guess which column a drop would land in.
+    //
+    // The fix is not simply "brighten the ring", which just makes a flat board
+    // with lighter circles printed on it. A hole reads as a hole because the
+    // inside is DARKER than the surface and the rim is LIGHTER: two instanced
+    // draws, one dark socket floor and one bright rim, and the contrast between
+    // them does the work rather than the contrast against the slab.
     const wellGeo = new THREE.TorusGeometry(PIECE_R + 0.10, 0.042, 14, 48);
     const wellMat = new THREE.MeshStandardMaterial({
-        color: 0x2b3550, roughness: 0.8, metalness: 0.1,
+        color: 0x5468a0, roughness: 0.62, metalness: 0.12,
     });
-    const wells = new THREE.InstancedMesh(wellGeo, wellMat, cols * rows);
     const m4 = new THREE.Matrix4();
     const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0));
     const one = new THREE.Vector3(1, 1, 1);
+
+    // Socket floor: a flat disc sunk just above the slab surface, well darker
+    // than the slab. Its outer radius meets the rim's inner edge (the torus
+    // inner edge sits at PIECE_R + 0.10 - 0.042), so the two read as one
+    // moulded recess rather than a disc with a ring floating around it.
+    const socketGeo = new THREE.CircleGeometry(PIECE_R + 0.058, 40);
+    const socketMat = new THREE.MeshStandardMaterial({
+        color: 0x090d17, roughness: 0.95, metalness: 0.0,
+    });
+    const sockets = new THREE.InstancedMesh(socketGeo, socketMat, cols * rows);
     for (let r = 0; r < rows; r++) {
         for (let c = 0; c < cols; c++) {
-            m4.compose(cellPos(c, r, 0.002), q, one);
+            m4.compose(cellPos(c, r, 0.001), q, one);
+            sockets.setMatrixAt(r * cols + c, m4);
+        }
+    }
+    sockets.instanceMatrix.needsUpdate = true;
+    root.add(sockets);
+
+    const wells = new THREE.InstancedMesh(wellGeo, wellMat, cols * rows);
+    for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+            m4.compose(cellPos(c, r, 0.004), q, one);
             wells.setMatrixAt(r * cols + c, m4);
         }
     }
@@ -528,6 +558,9 @@ export async function mount(canvas, opts) {
         wellGeo.dispose();
         wellMat.dispose();
         wells.dispose();
+        socketGeo.dispose();
+        socketMat.dispose();
+        sockets.dispose();
         slab.geometry.dispose();
         slabMat.dispose();
         beam.geometry.dispose();

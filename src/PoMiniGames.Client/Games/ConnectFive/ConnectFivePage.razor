@@ -40,6 +40,28 @@
     }
 
     <div class="cf-layout">
+        @* Visible turn/status bar.
+
+           Whose turn it is already existed — but only as text inside GameShell's
+           `gps-sr-only` live region, so it was spoken to screen readers and shown
+           to nobody. A sighted player had no indication of turn, of the CPU
+           thinking, or of which colour they were; the screen was a board and
+           nothing else.
+
+           aria-hidden on purpose: the polite live region above is still the
+           accessible source of this information, and exposing both would make a
+           screen reader announce every turn change twice. *@
+        <div class="cf-status" aria-hidden="true">
+            <span class="cf-status-side @(IsRedTurn ? "cf-status-side--active" : "")">
+                <span class="cf-status-dot cf-status-dot--red"></span>
+                <span class="cf-status-name">@RedName</span>
+            </span>
+            <span class="cf-status-text">@StatusText</span>
+            <span class="cf-status-side cf-status-side--right @(IsYellowTurn ? "cf-status-side--active" : "")">
+                <span class="cf-status-name">@YellowName</span>
+                <span class="cf-status-dot cf-status-dot--yellow"></span>
+            </span>
+        </div>
         @* §3 Hover-ghost: pointerleave on the board clears the column preview so
            the ghost disc never sticks when the cursor exits the grid. *@
         <div class="cf-board @(_glMounted ? "cf-board--gl" : null)" role="grid" aria-label="Connect Five game board"
@@ -161,6 +183,45 @@
         GameResult.Draw => "It's a draw.",
         _ when _isAiTurn => "Opponent is thinking.",
         _ => "Your turn.",
+    };
+
+    // ── Visible status bar (see .cf-status in the markup) ────────────────────
+    // Deliberately derived from the SAME state the sr-only Announcement reads,
+    // rather than tracking its own: two turn indicators that can disagree is
+    // worse than one that is only spoken.
+    private string RedName => PlayMode == "demo" ? "Red" : P1Name;
+    private string YellowName => PlayMode switch
+    {
+        "ai" => "CPU",
+        "demo" => "Yellow",
+        _ => _player2Name,
+    };
+
+    // Demo plays itself, so neither side is "waiting on you" and nothing is
+    // highlighted. Red moves in 1P whenever the CPU is not thinking.
+    private bool IsRedTurn => _gameResult == GameResult.InProgress && PlayMode switch
+    {
+        "demo" => false,
+        "ai" => !_isAiTurn,
+        _ => _current2pPlayer == Player.Red,
+    };
+
+    private bool IsYellowTurn => _gameResult == GameResult.InProgress && PlayMode switch
+    {
+        "demo" => false,
+        "ai" => _isAiTurn,
+        _ => _current2pPlayer == Player.Yellow,
+    };
+
+    private string StatusText => _gameResult switch
+    {
+        GameResult.Win => PlayMode == "ai" ? "You win!" : $"{RedName} wins!",
+        GameResult.Loss => PlayMode == "ai" ? "You lose" : $"{YellowName} wins!",
+        GameResult.Draw => "Draw",
+        _ when PlayMode == "demo" => "Demo — CPU vs CPU",
+        _ when _isAiTurn => "CPU thinking…",
+        _ when PlayMode == "ai" => "Your turn",
+        _ => $"{(_current2pPlayer == Player.Red ? RedName : YellowName)}'s turn",
     };
 
     private bool _isAiTurn;

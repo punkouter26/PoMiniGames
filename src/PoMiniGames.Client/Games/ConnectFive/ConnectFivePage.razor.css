@@ -8,7 +8,14 @@
    Cell size respects 100dvh + 100dvw so the 9x9 board scales to fit portrait
    phones instead of overflowing. */
 .cf-layout {
-  --cf-cell: clamp(28px, min(calc((100dvh - 240px) / 9), calc((100dvw - 56px) / 9)), 56px);
+  /* Cell size. The 56px ceiling used to bind on essentially every desktop: at
+     900px of viewport height the height term already allows ~73px, so the board
+     was pinned to 548px and sat as a small square in a large empty page while
+     the space to grow into went unused.
+     The ceiling is now 84px, which lets the height term actually decide, and the
+     height reserve grows 240px -> 310px to pay for the status bar added above
+     the board (plus the app header the old figure was already covering). */
+  --cf-cell: clamp(28px, min(calc((100dvh - 310px) / 9), calc((100dvw - 56px) / 9)), 84px);
   --cf-cell-stride: calc(var(--cf-cell) + 3px);
   /* Audit #2: every disc drops the full board depth (Rows), not (row + 1).
      Without this, a piece in row 0 only travels 1 cell (~50px) while a piece
@@ -22,6 +29,81 @@
   max-width: 100%;
   margin: 0 auto;
   min-width: 0;
+}
+
+/* ── Turn / status bar ────────────────────────────────────────────────────
+   Unlike PoBrawl's HUD, this one sits on the normal themed page rather than
+   over a scheme-invariant canvas, so it reads its colours from the theme
+   tokens and follows light/dark like the rest of the app. The two disc colours
+   are the exception: they identify the players and must match the pieces on
+   the board in both schemes. */
+.cf-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  width: calc(var(--cf-cell) * 9 + 3px * 8 + 20px);
+  max-width: 100%;
+  margin: 0 auto;
+  padding: 0.45rem 0.85rem;
+  border-radius: var(--radius-lg);
+  background: var(--glass-tint);
+  -webkit-backdrop-filter: var(--glass-2);
+  backdrop-filter: var(--glass-2);
+  border: 1px solid var(--color-border);
+  font-size: 0.85rem;
+}
+
+.cf-status-side {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+  /* Dimmed until it is that player's move — the active side is the signal, so
+     the inactive one has to give up contrast for it to read as one. */
+  opacity: 0.45;
+  transition: opacity var(--dur-fast) var(--ease-standard);
+}
+
+.cf-status-side--right { justify-content: flex-end; }
+
+.cf-status-side--active { opacity: 1; }
+
+.cf-status-name {
+  color: var(--color-text-primary);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cf-status-dot {
+  width: 0.85rem;
+  height: 0.85rem;
+  border-radius: 50%;
+  flex: none;
+  box-shadow: inset 0 -2px 3px rgba(0, 0, 0, 0.35);
+}
+
+/* Read from the same tokens the board discs use, so the bar cannot drift out
+   of sync with the colour of the pieces it is labelling. */
+.cf-status-dot--red { background: var(--disc-red-mid); }
+.cf-status-dot--yellow { background: var(--disc-yellow-mid); }
+
+/* The active player's disc gets a halo so turn state survives being read at a
+   glance mid-game, when the eye is on the board and not the bar. */
+.cf-status-side--active .cf-status-dot {
+  box-shadow:
+    inset 0 -2px 3px rgba(0, 0, 0, 0.35),
+    0 0 0 3px var(--color-accent);
+}
+
+.cf-status-text {
+  color: var(--color-text-secondary);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-align: center;
+  white-space: nowrap;
 }
 
 /* §6 Glassmorphism board frame + depth layers. A translucent, blurred slab with

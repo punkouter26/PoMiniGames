@@ -137,9 +137,14 @@
                        URL; render a small "How to play" pill on cards that
                        would otherwise have zero chips so the row is never
                        visually orphaned. *@
+                    @* 2026-08-10: CatalogGame.ChipPrimary opts a card out of that
+                       suppression. Marble Race's only non-primary mode is Demo, so
+                       hiding the 1P chip left the card advertising "Demo" alone and
+                       players took it for a watch-only game. *@
                     @{
                         var visibleChips = game.Modes
-                            .Where(m => !string.Equals(m.Url, game.Primary.Url, StringComparison.OrdinalIgnoreCase))
+                            .Where(m => game.ChipPrimary
+                                        || !string.Equals(m.Url, game.Primary.Url, StringComparison.OrdinalIgnoreCase))
                             .ToList();
                     }
                     @foreach (var m in visibleChips)

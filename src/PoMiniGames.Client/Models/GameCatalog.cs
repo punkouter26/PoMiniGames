@@ -32,6 +32,15 @@ public sealed record CatalogGame(GameKey Key, string Title, string Icon, IReadOn
     /// home page. See <see cref="CatalogGame"/> remarks.</summary>
     public string? Subtitle { get; init; }
 
+    /// <summary>
+    /// Render a chip for <see cref="Primary"/> even though the card title already links
+    /// there. Off by default: the duplicate chip normally reads as a broken second link
+    /// (see Index.razor). Opt in where suppressing it makes the card look like the game
+    /// has no playable mode at all — Marble Race's only other mode is Demo, so the card
+    /// advertised "Demo" and nothing else, and players read it as demo-only.
+    /// </summary>
+    public bool ChipPrimary { get; init; }
+
     /// <summary>The mode a card's title links to — the richest interactive mode available.
     /// Demo is last-resort only: a card whose primary action is "watch" is a card the
     /// player cannot play.</summary>
@@ -118,11 +127,14 @@ public static class GameCatalog
             new(GameMode.Demo, "/poracer/demo"),
         ]),
 
+        // ChipPrimary: 1P is the card head, so the chip row would otherwise show a lone
+        // "Demo" and the game reads as unplayable. It is very much playable — you steer
+        // the red marble with the arrow keys.
         new(GameKeys.PoMarbleRace, "Marble Race", "🔮",
         [
             new(GameMode.OnePlayer, "/pomarblerace/1player"),
             new(GameMode.Demo, "/pomarblerace/demo"),
-        ]),
+        ]) { ChipPrimary = true },
 
         // 1-player defaults to the scripted provider, so it runs fully offline. Only
         // picking a real model from the command bar reaches the relay, and that is an

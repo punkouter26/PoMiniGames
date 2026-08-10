@@ -42,11 +42,36 @@ const CELL = 1.0;
 const PIECE_R = 0.36;
 const SLAB_T = 0.28;
 
-// Spring constants for the chip drop. Underdamped on purpose — a chip that
-// settles without a bounce reads as being placed, not dropped. zeta ≈ 0.42.
-const SPRING_K = 260;
-const SPRING_D = 13.5;
-const REST_EPS = 0.004;
+// ── Chip drop (2026-08-10 rewrite) ────────────────────────────────────────
+// This used to be a damped spring pulling the chip toward its rest height
+// (k=260, d=13.5, zeta≈0.42). That is the wrong model and it visibly corrupted
+// the board.
+//
+// A spring is SYMMETRIC about its target: released from a displacement it
+// overshoots past that target by a fixed fraction of the distance travelled.
+// The drop distance here is up to ~10 board units, so the overshoot was
+// proportionally enormous — measured against the shipped constants, a chip
+// dipped BELOW its rest height by 0.51 units landing in the bottom row, 1.36 in
+// the middle and 2.21 at the top. The slab surface is at y = -0.02 and a chip
+// is 0.20 tall, so every single drop punched the chip through the board, hid it
+// under the slab, and bounced it back up. It read as discs flickering through
+// the playfield, and it got much more obvious once the cell sockets became
+// opaque enough to see (they now cleanly occlude a sunken chip).
+//
+// A falling counter is not a spring — it is free fall against a hard floor.
+// Gravity down, clamp at the rest height, and keep a fraction of the impact
+// speed as a bounce. The clamp is the load-bearing part: the chip is now
+// mathematically incapable of rendering below the slot it lands in.
+const CHIP_G = 62;             // board units/s² — tallest drop lands in ~0.55 s
+const CHIP_RESTITUTION = 0.18; // speed kept per bounce; ~0.3 cell first hop
+// Settle when the NEXT hop would be too small to see, expressed as a height
+// rather than a speed. A speed threshold cannot work here: the frame dt is
+// capped at 50 ms, and at that step gravity alone adds 3.1 units/s of impact
+// every frame — far above any speed small enough to call "resting". A chip on a
+// slow device therefore bounced forever (measured: 1988 bounces, never
+// settling), which also pinned the render loop awake because it never went
+// idle. Comparing hop APEX is frame-rate independent.
+const CHIP_MIN_HOP = 0.004;    // board units; below this a bounce is invisible
 
 /**
  * Mount a board renderer onto a canvas.
@@ -382,7 +407,14 @@ export async function mount(canvas, opts) {
             // in rows so a chip landing at the bottom of the column visibly
             // falls further than one landing at the top — the single cue that
             // makes the column feel like a physical slot.
-            mesh.position.y = rest.y + (rows - r + 1.4) * CELL;
+            //
+            // 2026-08-10: the row term was inverted. ConnectFiveBoard seeds
+            // `_topRow[c] = Rows - 1` and decrements, so row 8 is the BOTTOM of
+            // a column and row 0 the top. `(rows - r)` therefore gave the
+            // first chip into an empty column the SHORTEST fall (2.4 units) and
+            // a chip landing on an almost-full stack the longest (10.4) — the
+            // exact opposite of both the physics and the comment above it.
+            mesh.position.y = rest.y + (r + 1.4) * CELL;
             pieces.set(i, { mesh, vy: 0, targetY: rest.y, settled: false });
         } else {
             // Marks are stamped, not dropped: they pop in from a squash.
@@ -492,15 +524,26 @@ export async function mount(canvas, opts) {
             if (p.settled) continue;
             busy = true;
             if (kind === 'connectfive') {
-                // Semi-implicit Euler. Explicit Euler on a stiff spring at 60 Hz
-                // gains energy every step and the chip climbs out of the board.
-                const x = p.mesh.position.y - p.targetY;
-                p.vy += (-SPRING_K * x - SPRING_D * p.vy) * scaled;
+                // Free fall, then a hard floor at the rest height with a little
+                // restitution. See the CHIP_G note above for why this replaced
+                // the spring.
+                p.vy -= CHIP_G * scaled;
                 p.mesh.position.y += p.vy * scaled;
-                if (Math.abs(x) < REST_EPS && Math.abs(p.vy) < 0.05) {
+                if (p.mesh.position.y <= p.targetY) {
+                    // Clamp FIRST, unconditionally. A long frame (the dt cap is
+                    // 50 ms) can carry the chip well past the floor in one step,
+                    // and without this the overshoot would be drawn before the
+                    // bounce corrected it — which is the whole class of bug this
+                    // rewrite exists to remove.
                     p.mesh.position.y = p.targetY;
-                    p.vy = 0;
-                    p.settled = true;
+                    const bounceV = Math.max(0, -p.vy) * CHIP_RESTITUTION;
+                    // Apex of the hop this bounce would produce, v²/2g.
+                    if (bounceV * bounceV < 2 * CHIP_G * CHIP_MIN_HOP) {
+                        p.vy = 0;
+                        p.settled = true;
+                    } else {
+                        p.vy = bounceV;
+                    }
                 }
             } else {
                 p.stamp = Math.min(1, (p.stamp || 0) + scaled * 4.2);

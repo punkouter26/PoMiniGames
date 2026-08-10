@@ -16,15 +16,24 @@ window.PoBrawl = {
   },
   reset() { if (game) game.resetMatch(false); },
   /**
-   * 1P ladder: after a win, roll straight into the next president without a
-   * full re-init. Swaps the opponent + difficulty on the live game and runs
-   * the "NEXT ROUND" splash → countdown (same path demo mode uses between
-   * rounds), so no end-of-game modal appears between rungs.
+   * Roll straight into the next round without a full re-init, running the
+   * splash → countdown path demo mode already uses between rounds, so no
+   * end-of-game modal appears in between.
+   *
+   * Two callers, and the null-tolerance below is what lets them share it:
+   *   • the 1P ladder passes the next president + difficulty (new opponent);
+   *   • the 2P best-of-3 passes neither, keeping both players' picks, and
+   *     passes `roundLabel` so the splash names the round.
+   *
+   * @param {string|null} p2Character  new opponent, or null to keep the current one
+   * @param {number|string|null} difficulty  new CPU level, or null to keep it
+   * @param {string|null} roundLabel  one-shot splash heading (e.g. "ROUND 2")
    */
-  next(p2Character, difficulty) {
+  next(p2Character, difficulty, roundLabel) {
     if (!game) return;
     if (p2Character) game.options.p2Character = p2Character;
     if (difficulty !== undefined && difficulty !== null) game.options.difficulty = difficulty;
+    game._roundLabel = roundLabel || null;
     game.resetMatch(false);
   },
   setMuted(muted) { if (game) game.setMuted(muted); },

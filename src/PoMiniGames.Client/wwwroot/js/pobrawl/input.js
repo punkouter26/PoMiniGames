@@ -71,10 +71,19 @@ export class KeyboardController {
       punchHeld: this.down.has(this.map.punch) || this.punchQueued,
       kickHeld: this.down.has(this.map.kick) || this.kickQueued,
       block,
+      // Edge-triggered, exactly like punch/kick. Its absence here is what made
+      // the signature-super system unreachable for human players: `superQueued`
+      // was set on the E/O keydown but never published on the intent and never
+      // cleared, so `_tickFighter`'s `if (intent.super)` branch read undefined
+      // on every frame of every match. The AI path was dead for a different
+      // reason (see game.js `superMeterFull`); both are fixed together, because
+      // fixing either alone still leaves the HUD advertising a dead key.
+      super: this.superQueued,
     };
     this.punchQueued = false;
     this.kickQueued = false;
     this.sideQueued = 0;
+    this.superQueued = false;
     return intent;
   }
 

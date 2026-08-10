@@ -150,6 +150,21 @@ const ENERGY_DECAY_PER_SEC = 1 / 14;
 // The KO ragdoll is the only way to the canvas.
 const HEAVY_HIT_DMG = 13; // threshold for the amplified stagger reaction (¼ of the old 50, matching the ¼ damage table)
 
+// ── Hit feedback (damage numbers + combo readout) ────────────────────────
+// A combo is a run of landed hits with no more than COMBO_WINDOW between
+// them. It is deliberately longer than HITSTUN (0.35 s): hitstun is how long
+// the defender is *locked*, and requiring the next hit inside that window
+// would only ever count true frame-traps, which this engine's charge-and-
+// release rhythm essentially never produces. 1.1 s reads as "kept the
+// pressure up", which is the thing worth showing the player.
+const COMBO_WINDOW = 1.1;
+// A combo only surfaces at 2+; a "1 HIT" badge on every jab is noise.
+const COMBO_MIN_SHOWN = 2;
+// Hard ceiling on live damage-number nodes. A full-charge flurry can land
+// several hits inside one animation lifetime, and on a phone the compositor
+// cost of unbounded absolutely-positioned text is real. Oldest is evicted.
+const MAX_DAMAGE_NUMBERS = 14;
+
 // ── Post-processing: CA + vignette + radial blur + broadcast grade ───────
 // Runs after bloom, before OutputPass (so it operates on the linear HDR
 // frame). uCA and uRadial are pulsed by hits and the KO flash; uDesat rides
@@ -298,6 +313,7 @@ const _blobPos = new THREE.Vector3();
 const _sweatPos = new THREE.Vector3();
 const _trailPos = new THREE.Vector3();
 // Scratch vectors for contact-impulse resolution.
+const _dmgProj = new THREE.Vector3();
 const _leverArm = new THREE.Vector3();
 const _impLocal = new THREE.Vector3();
 // Scratch vector for the overhead KO face shot (tracks the ragdoll head).
@@ -344,7 +360,29 @@ export class BrawlGame {
     // KO "lights down" blend (0 = house lights, 1 = spotlight-only).
     this.lightsDim = 0;
     // Atmosphere clock — always advances (this.clock only runs while fighting).
+    // Driven by the RENDER loop, so it is wall-clock seconds, not sim seconds.
     this.atmoT = 0;
+    // ── Simulation clock ────────────────────────────────────────────────
+    // Monotonic seconds accumulated in _tick, the fixed-step sim tick. This is
+    // the "now" that every timed personality effect is written against:
+    // `per.modeExpiresAt = this.t + cfg.durationSecs`, `this.t < per.iframesUntil`,
+    // `_inputBlindUntil`, `lbjMissKBUntil`, Ford's stumble/retaliate windows,
+    // JFK's dash, FDR's startup boost, and the super meter's prompt window.
+    //
+    // It was never declared and never assigned. Roughly forty sites read it, so
+    // every one of them was evaluating against `undefined`: the comparisons
+    // (`this.t < X`) were uniformly false and the arithmetic (`this.t + X`)
+    // produced NaN, which then made its own comparisons false as well. The net
+    // effect was that no timed personality effect in the game had ever applied —
+    // including every signature super, which is why the feature looked inert
+    // even after the meter and the input path were connected.
+    //
+    // Deliberately NOT reset between rounds: it only has to be monotonic, and
+    // per-round state is rebuilt by makePersonalityState on respawn anyway.
+    // Advancing on the sim tick rather than alongside atmoT keeps effect
+    // durations in step with the simulation that consumes them — hitstop pauses
+    // both together instead of letting buffs bleed out during a frozen frame.
+    this.t = 0;
     // Cinematic state: KO zoom + replay buffer.
     this.cameraMode = 'normal'; // 'normal' | 'ko' | 'replay'
     this.cameraModeT = 0;
@@ -467,6 +505,23 @@ export class BrawlGame {
     this.flash = document.createElement('div');
     this.flash.className = 'pb-flash';
     this.container.appendChild(this.flash);
+
+    // Floating hit feedback: damage numbers rising off the contact point and a
+    // per-fighter combo readout. DOM rather than sprites on purpose — these are
+    // screen-space text that must stay crisp and theme-independent, and routing
+    // them through three.js would mean a texture atlas and a draw call per
+    // number for something the compositor already does for free.
+    this.fx = document.createElement('div');
+    this.fx.className = 'pb-fx';
+    this.fx.innerHTML = `
+      <div class="pb-combo pb-combo--p1"><span class="pb-combo__n"></span><span class="pb-combo__label">HIT</span></div>
+      <div class="pb-combo pb-combo--p2"><span class="pb-combo__n"></span><span class="pb-combo__label">HIT</span></div>`;
+    this.container.appendChild(this.fx);
+    this._comboEls = [
+      this.fx.querySelector('.pb-combo--p1'),
+      this.fx.querySelector('.pb-combo--p2'),
+    ];
+    this._dmgNodes = [];
 
     // Virtual touch controls for coarse-pointer / portrait-mobile layouts
     // (CSS decides visibility). Buttons dispatch synthetic KeyboardEvents,
@@ -807,10 +862,19 @@ export class BrawlGame {
         chargeAmt: 0,      // 0..1 stored charge (mirrors energy while charging)
         chargeMul: 1,      // damage/knockback multiplier of the current swing
         energy: ENERGY_DEFAULT, // 0..1 banked attack power; starts at 1/3 (see ENERGY_DEFAULT)
-        // Super meter (0..1): fills by taking damage. ≥ 1 → superQueued fires
-        // PERSONALITIES[charId].onSuper; consumes to zero regardless of fill.
-        // Driven by _tickSuperMeter each tick; updated by _fireSuper on press.
-        superMeter: 0,
+        // The super meter is NOT here. It lives on `personality.superMeter`
+        // (makePersonalityState), which is where _applyHit fills it and
+        // _fireSuper consumes it. A duplicate field on the fighter used to sit
+        // at this line, and because it read plausibly the HUD push and the AI's
+        // superMeterFull check both bound to it instead — the dead copy — which
+        // is what kept the whole signature-super feature inert. Don't add it back.
+        // ── Per-round scorecard ───────────────────────────────────────
+        // Counters for the end-of-fight recap and the on-screen combo readout.
+        // Every round (including a best-of-3 rematch) goes through
+        // _spawnFighters, so initialising here IS the per-round reset.
+        stats: { hits: 0, blocks: 0, biggestHit: 0, bestCombo: 0 },
+        comboN: 0,      // consecutive landed hits inside COMBO_WINDOW
+        comboT: -99,    // engine time of this fighter's last landed hit
         chargeCued: false, // full-charge audio cue fired
         chargeSparkT: 0,   // spark-mote emission timer
         // ── Momentum + weight ─────────────────────────────────────────
@@ -894,6 +958,8 @@ export class BrawlGame {
     this.winner = 0;
     // Rebuild the corner crate stacks so each round opens with an intact ring.
     if (this.props) resetProps(this.props);
+    // Drop the previous round's floating numbers and combo badges.
+    this._clearFx();
     // Land the previous match's celebrant before the fresh countdown.
     if (this.celebrant) this.celebrant.rig.root.position.y = 0;
     this.celebrant = null;
@@ -969,8 +1035,13 @@ export class BrawlGame {
   _showSplash(p1Char, p2Char, holdMs) {
     const p1 = CHARACTERS[p1Char]?.name ?? p1Char;
     const p2 = CHARACTERS[p2Char]?.name ?? p2Char;
-    this.splash.querySelector('.pb-splash__round').textContent =
-      this.options.mode === 'demo' ? 'DEMO' : 'NEXT ROUND';
+    // `roundLabel` is a one-shot override set by PoBrawl.next() — the 2-player
+    // best-of-3 uses it to name the round ("ROUND 2"), where the generic
+    // "NEXT ROUND" would leave the players unable to tell which round is
+    // starting. Consumed here so it can never leak into the following match.
+    const label = this._roundLabel || (this.options.mode === 'demo' ? 'DEMO' : 'NEXT ROUND');
+    this._roundLabel = null;
+    this.splash.querySelector('.pb-splash__round').textContent = label;
     this.splash.querySelector('.pb-splash__p1').textContent = p1;
     this.splash.querySelector('.pb-splash__p2').textContent = p2;
     this.splash.classList.add('pb-splash--visible');
@@ -983,6 +1054,9 @@ export class BrawlGame {
   // ── simulation ──────────────────────────────────────────────────────────
 
   _tick(dt) {
+    // The sim clock every timed personality effect is written against. See the
+    // declaration in the constructor — it was missing entirely until now.
+    this.t += dt;
     this.phaseT += dt;
 
     if (this.phase === 'countdown') {
@@ -996,6 +1070,7 @@ export class BrawlGame {
     } else if (this.phase === 'fighting') {
       this.clock += dt;
       this._tickFighting(dt);
+      this._tickCombos();
       if (this.clock >= TIME_LIMIT && this.phase === 'fighting') {
         const h1 = this._hp(this.fighters[0]), h2 = this._hp(this.fighters[1]);
         // Per user request: a no-KO finish always has a winner. The fighter
@@ -1387,7 +1462,15 @@ export class BrawlGame {
       // Super meter full? Exposed so the AI's super-activation block knows
       // when it has a budget to spend. Player controllers don't read this —
       // their intent.super is driven by the super key directly.
-      superMeterFull: (f.superMeter || 0) >= 1.0,
+      //
+      // Reads `f.personality.superMeter`, NOT `f.superMeter`. The meter is
+      // filled (_applyHit) and consumed (_fireSuper) on the personality state,
+      // but this check and _pushHud both used to read a same-named field on the
+      // fighter that is initialised to 0 and never written again — so the flag
+      // was permanently false and no CPU president ever fired its signature
+      // super in the game's history. The fighter-level `superMeter` field is
+      // gone; personality state is the one home for it.
+      superMeterFull: (f.personality?.superMeter || 0) >= 1.0,
     };
   }
 
@@ -2478,6 +2561,9 @@ export class BrawlGame {
       defender.animator.applyReaction('elbowL', -3.5, 0, 0);
       defender.animator.applyReaction('elbowR', -3.5, 0, 0);
       defender.animator.applyReaction('torso', -1.5, 0, 0);
+      // Scorecard: a block is credited to the fighter who put the guard up, not
+      // to the fighter whose swing it stopped.
+      defender.stats.blocks += 1;
       this._hitFeedback(attack, false);
       this.audio.block(hit.point);
       return;
@@ -2601,6 +2687,11 @@ export class BrawlGame {
     }
 
     this.combat.damage({ playerId: defender.playerId, amount: baseDmg, sourceId: attacker.playerId });
+    // Scorecard + combo run + the floating damage number. Placed here rather
+    // than further down because `baseDmg` is final at this point — everything
+    // below is knockback, reactions and region wear, none of which feed back
+    // into the number the player is shown.
+    this._registerLandedHit(attacker, defender, baseDmg, hit.point, region);
     // A hit interrupts a wind-up (state → hitstun below) but no longer drains
     // the energy bar — per the rule that only winding up or attacking moves it.
     defender.state = 'hitstun';
@@ -3457,8 +3548,26 @@ export class BrawlGame {
     this.cameraMode = 'normal';
     this.cameraModeT = 0;
     if (this.dotnet) {
-      this.dotnet.invokeMethodAsync('OnMatchEnd', this.winner, Math.round(this.clock * 100) / 100)
-        .catch(() => {});
+      // The recap rides as ONE object rather than eight more positional
+      // arguments. `invokeMethodAsync` fails outright on an argument-count
+      // mismatch and the call is swallowed by `.catch`, so every widening of a
+      // positional interop signature is a silent-breakage risk — exactly the
+      // failure documented on OnHud, where four appended super arguments froze
+      // the entire HUD for months. An object grows by adding a property, which
+      // a C# record simply ignores if it doesn't know it yet.
+      //
+      // Blazor's interop serializer is camelCase (JsonSerializerDefaults.Web),
+      // so these names bind to PascalCase properties on the C# side.
+      this.dotnet.invokeMethodAsync('OnMatchEnd', this.winner, Math.round(this.clock * 100) / 100, {
+        p1Hits: this.fighters[0].stats.hits,
+        p2Hits: this.fighters[1].stats.hits,
+        p1Blocks: this.fighters[0].stats.blocks,
+        p2Blocks: this.fighters[1].stats.blocks,
+        p1BestCombo: this.fighters[0].stats.bestCombo,
+        p2BestCombo: this.fighters[1].stats.bestCombo,
+        p1BiggestHit: Math.round(this.fighters[0].stats.biggestHit),
+        p2BiggestHit: Math.round(this.fighters[1].stats.biggestHit),
+      }).catch(() => {});
     }
   }
 
@@ -3650,10 +3759,31 @@ export class BrawlGame {
     left.append(mk('KeyA', '◀'), mk('KeyD', '▶'));
     const right = document.createElement('div');
     right.className = 'pb-touch-cluster';
-    right.append(mk('KeyW', '⬆', true), mk('KeyS', '🛡', true), mk('KeyF', '👊'), mk('KeyG', '🦵'));
+    // The super button (KeyE) is only reachable by touch through this panel —
+    // there is no on-canvas gesture for it — so without it a phone player could
+    // fill the meter and never spend it. `pb-touch-super` is styled to light up
+    // when the meter is ready; setSuperReady drives that class from the HUD tick.
+    this._touchSuperBtn = mk('KeyE', '⚡', true);
+    this._touchSuperBtn.classList.add('pb-touch-super');
+    right.append(mk('KeyW', '⬆', true), mk('KeyS', '🛡', true),
+      this._touchSuperBtn, mk('KeyF', '👊'), mk('KeyG', '🦵'));
     panel.append(left, right);
     this.container.appendChild(panel);
     this.touchEl = panel;
+  }
+
+  // Mirrors P1's super state onto the touch button so it matches the HUD bar:
+  // hidden outright for a fighter with no signature move (BOB), dim while the
+  // meter is filling, lit once it is armed. Called from _pushHud, which already
+  // runs on the 4 Hz HUD cadence — cheap because classList.toggle is a no-op
+  // when the state has not changed.
+  _syncTouchSuper(f) {
+    const btn = this._touchSuperBtn;
+    if (!btn || !f) return;
+    const hasSuper = !!PERSONALITIES[f.charId]?.onSuper;
+    btn.classList.toggle('pb-touch-super--absent', !hasSuper);
+    btn.classList.toggle('pb-touch-super--ready',
+      hasSuper && (f.personality?.superMeter || 0) >= 1.0);
   }
 
   // ── Strike trails ────────────────────────────────────────────────────
@@ -4137,11 +4267,104 @@ export class BrawlGame {
     if (this.banner && this.banner.textContent !== text) this.banner.textContent = text;
   }
 
+  // ── Hit feedback: damage numbers + combo readout ─────────────────────
+  // One call per landed (unblocked) hit. Owns the three things that all key off
+  // that single event: the per-round scorecard the end-of-fight recap reads, the
+  // combo run length, and the floating number at the contact point. Blocked
+  // hits deliberately don't come through here — they bump the DEFENDER's block
+  // count at the call site instead, and a blocked blow neither extends a combo
+  // nor deserves a damage number.
+  _registerLandedHit(attacker, defender, dmg, point, region) {
+    const s = attacker.stats;
+    s.hits += 1;
+    if (dmg > s.biggestHit) s.biggestHit = dmg;
+
+    // The combo run continues while the gap since this attacker's last landed
+    // hit is under COMBO_WINDOW. Measured on the sim clock (`this.t`), not
+    // wall-clock, so hitstop pauses the window instead of eating into it.
+    attacker.comboN = (this.t - attacker.comboT) <= COMBO_WINDOW ? attacker.comboN + 1 : 1;
+    attacker.comboT = this.t;
+    if (attacker.comboN > s.bestCombo) s.bestCombo = attacker.comboN;
+    // Taking a hit ends YOUR run. Without this, two fighters trading blows both
+    // show a climbing counter, which reads as a combo when it is the opposite.
+    defender.comboN = 0;
+    defender.comboT = -99;
+
+    this._showCombo(attacker);
+    this._showCombo(defender);
+    this._spawnDamageNumber(point, dmg, region);
+  }
+
+  _showCombo(f) {
+    const el = this._comboEls?.[this.fighters.indexOf(f)];
+    if (!el) return;
+    if (f.comboN < COMBO_MIN_SHOWN) { el.classList.remove('pb-combo--on'); return; }
+    el.querySelector('.pb-combo__n').textContent = String(f.comboN);
+    // Replay the pop on every increment. Dropping the class and reading
+    // offsetWidth to force a synchronous reflow before re-adding it is the only
+    // reliable way to restart a CSS animation — re-adding it in the same frame
+    // without the reflow is coalesced into no change at all.
+    el.classList.remove('pb-combo--on');
+    void el.offsetWidth;
+    el.classList.add('pb-combo--on');
+  }
+
+  // Expires stale combo runs so the badge disappears when the pressure stops,
+  // rather than hanging until the next hit lands.
+  _tickCombos() {
+    for (const f of this.fighters) {
+      if (f.comboN > 0 && (this.t - f.comboT) > COMBO_WINDOW) {
+        f.comboN = 0;
+        this._showCombo(f);
+      }
+    }
+  }
+
+  _spawnDamageNumber(point, dmg, region) {
+    if (!this.fx) return;
+    const w = this.container.clientWidth, h = this.container.clientHeight;
+    if (!w || !h) return;
+    _dmgProj.copy(point).project(this.camera);
+    // A point behind the near plane projects to a mirrored on-screen position,
+    // so it would draw a number somewhere the hit did not happen. Skip it.
+    if (_dmgProj.z > 1) return;
+    const el = document.createElement('span');
+    el.className = 'pb-dmg'
+      + (region === REGIONS.HEAD ? ' pb-dmg--head' : '')
+      + (dmg >= HEAVY_HIT_DMG ? ' pb-dmg--heavy' : '');
+    el.textContent = String(Math.max(1, Math.round(dmg)));
+    // Horizontal jitter so a flurry into one capsule doesn't overprint into an
+    // unreadable smear. Seeded RNG, so a demo replay jitters identically.
+    el.style.left = `${(_dmgProj.x * 0.5 + 0.5) * w + (this.rng.random() - 0.5) * 26}px`;
+    el.style.top = `${(-_dmgProj.y * 0.5 + 0.5) * h}px`;
+    this.fx.appendChild(el);
+    this._dmgNodes.push(el);
+    // Cap the live node count. This is also the safety net for the case where
+    // `animationend` never fires (animations disabled at the OS/browser level):
+    // eviction, not the listener, is what guarantees the list stays bounded.
+    while (this._dmgNodes.length > MAX_DAMAGE_NUMBERS) this._dmgNodes.shift()?.remove();
+    el.addEventListener('animationend', () => {
+      const i = this._dmgNodes.indexOf(el);
+      if (i >= 0) this._dmgNodes.splice(i, 1);
+      el.remove();
+    }, { once: true });
+  }
+
+  // Wipes floating feedback between rounds so a new round never opens with the
+  // previous one's numbers still drifting up the screen.
+  _clearFx() {
+    for (const el of this._dmgNodes || []) el.remove();
+    if (this._dmgNodes) this._dmgNodes.length = 0;
+    for (const f of this.fighters || []) { f.comboN = 0; f.comboT = -99; }
+    for (const el of this._comboEls || []) el?.classList.remove('pb-combo--on');
+  }
+
   _pushHud(dt) {
     this.hudTimer += dt;
     if (!this.hudDirty && this.hudTimer < 0.25) return;
     this.hudTimer = 0;
     this.hudDirty = false;
+    this._syncTouchSuper(this.fighters[0]);
     if (this.dotnet) {
       // Region damage rides along as [head, torso, arms, legs] per fighter so
       // the Blazor HUD can render the body-diagram damage readout.
@@ -4149,16 +4372,31 @@ export class BrawlGame {
         Math.round(f.regionDmg.head), Math.round(f.regionDmg.torso),
         Math.round(f.regionDmg.arms), Math.round(f.regionDmg.legs),
       ];
+      // Super meter per fighter, plus a 1/0 "armed" flag the HUD uses to show
+      // the "PRESS E/O" prompt.
+      //
+      // Sourced from personality state — see the superMeterFull note in
+      // _fighterCtx for why the same-named fighter field was the wrong (and
+      // always-zero) one.
+      //
+      // -1 means "this fighter has no signature super", which is NOT the same
+      // as an empty meter and must not render as one. Only fighters with an
+      // onSuper config can ever fill (_tickSuperMeter pins the rest to zero),
+      // and BOB — the 1-player avatar — is one of the ones that cannot. Sending
+      // 0 for him would draw a bar that never moves next to a documented key
+      // that does nothing, which is the exact failure this whole feature exists
+      // to remove. The HUD omits the bar entirely on -1.
+      const superPct = (f) => (PERSONALITIES[f.charId]?.onSuper
+        ? Math.round((f.personality?.superMeter || 0) * 100)
+        : -1);
+      const superReady = (f) => ((PERSONALITIES[f.charId]?.onSuper
+        && (f.personality?.superMeter || 0) >= 1.0) ? 1 : 0);
       this.dotnet.invokeMethodAsync('OnHud',
         this._hp(this.fighters[0]), this._hp(this.fighters[1]), Math.round(this.clock * 10) / 10,
         regions(this.fighters[0]), regions(this.fighters[1]),
         Math.round(this.fighters[0].energy * 100), Math.round(this.fighters[1].energy * 100),
-        // Super meter (0..100) per fighter + 1/0 "ready" flag for the HUD
-        // to show the "PRESS E/O" prompt when full.
-        Math.round((this.fighters[0].superMeter || 0) * 100),
-        Math.round((this.fighters[1].superMeter || 0) * 100),
-        (this.fighters[0].superMeter || 0) >= 1.0 ? 1 : 0,
-        (this.fighters[1].superMeter || 0) >= 1.0 ? 1 : 0)
+        superPct(this.fighters[0]), superPct(this.fighters[1]),
+        superReady(this.fighters[0]), superReady(this.fighters[1]))
         .catch(() => {});
     }
   }
@@ -4204,6 +4442,10 @@ export class BrawlGame {
     }
     if (this.banner) this.banner.remove();
     if (this.flash) this.flash.remove();
+    // Removing the fx layer takes its damage numbers and combo badges with it;
+    // dropping the node list too so a disposed game holds no detached elements.
+    if (this.fx) this.fx.remove();
+    if (this._dmgNodes) this._dmgNodes.length = 0;
     this.dotnet = null;
   }
 }

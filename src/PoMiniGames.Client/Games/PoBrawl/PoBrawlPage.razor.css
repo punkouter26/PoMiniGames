@@ -105,6 +105,125 @@
         border-color: rgba(190, 200, 255, 0.8);
         transform: scale(1.08);
     }
+
+    /* The super button is the only touch affordance for a key that does nothing
+       most of the time, so it stays dim until the meter is actually armed —
+       otherwise it reads as a broken button for the first half of every fight. */
+    .pb-canvas-host ::deep .pb-touch button.pb-touch-super {
+        border-color: rgba(168, 85, 247, 0.45);
+        opacity: 0.5;
+    }
+
+    /* Fighters with no signature move (BOB) get no button at all, matching the
+       HUD, which draws no super bar for them. */
+    .pb-canvas-host ::deep .pb-touch button.pb-touch-super--absent {
+        display: none;
+    }
+
+    .pb-canvas-host ::deep .pb-touch button.pb-touch-super--ready {
+        opacity: 1;
+        border-color: rgba(240, 171, 252, 0.9);
+        background: rgba(124, 58, 237, 0.55);
+        box-shadow: 0 0 12px rgba(217, 130, 255, 0.8);
+    }
+}
+
+/* ── Floating hit feedback (engine-created; see game.js `this.fx`) ─────
+   Damage numbers rise off the contact point and a combo badge counts the run.
+   The layer never takes pointer events — the touch controls sit above it and
+   the canvas below, and neither may be shadowed by a transparent overlay. */
+
+.pb-canvas-host ::deep .pb-fx {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    overflow: hidden;
+    z-index: 4; /* under the splash (5), over the canvas */
+}
+
+.pb-canvas-host ::deep .pb-dmg {
+    position: absolute;
+    /* The engine writes left/top as the projected contact point, so the node has
+       to be centred on it rather than hanging off its top-left corner. */
+    transform: translate(-50%, -50%);
+    font-family: 'Bungee', 'Russo One', 'Impact', sans-serif;
+    font-size: 1.05rem;
+    font-weight: 900;
+    color: #ffe9b0;
+    text-shadow: 0 2px 6px rgba(0, 0, 0, 0.85);
+    will-change: transform, opacity;
+    animation: pb-dmg-rise 0.75s cubic-bezier(.22, 1, .36, 1) forwards;
+}
+
+.pb-canvas-host ::deep .pb-dmg--head {
+    color: #ff8a7a;
+}
+
+.pb-canvas-host ::deep .pb-dmg--heavy {
+    font-size: 1.5rem;
+    color: #ff5530;
+    text-shadow: 0 2px 10px rgba(0, 0, 0, 0.9), 0 0 14px rgba(255, 85, 48, 0.5);
+}
+
+@keyframes pb-dmg-rise {
+    0%   { transform: translate(-50%, -50%) scale(0.6); opacity: 0; }
+    18%  { transform: translate(-50%, -80%) scale(1.15); opacity: 1; }
+    100% { transform: translate(-50%, -190%) scale(0.95); opacity: 0; }
+}
+
+.pb-canvas-host ::deep .pb-combo {
+    position: absolute;
+    top: 22%;
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+    font-family: 'Bungee', 'Russo One', 'Impact', sans-serif;
+    color: #ffd166;
+    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.85);
+    opacity: 0;
+}
+
+.pb-canvas-host ::deep .pb-combo--p1 { left: 8%; }
+.pb-canvas-host ::deep .pb-combo--p2 { right: 8%; }
+
+.pb-canvas-host ::deep .pb-combo__n { font-size: 1.9rem; }
+.pb-canvas-host ::deep .pb-combo__label { font-size: 0.75rem; letter-spacing: 0.12em; }
+
+/* Held for the length of the combo window (game.js COMBO_WINDOW = 1.1 s), then
+   the engine drops the class. The pop is restarted on each increment by a
+   remove → reflow → add cycle in _showCombo. */
+.pb-canvas-host ::deep .pb-combo--on {
+    opacity: 1;
+    animation: pb-combo-pop 0.28s cubic-bezier(.22, 1, .36, 1) both;
+}
+
+@keyframes pb-combo-pop {
+    0%   { transform: scale(1.5); opacity: 0.4; }
+    100% { transform: scale(1);   opacity: 1; }
+}
+
+/* Motion here is pure decoration over a game that is itself constant motion, so
+   reduced-motion gets the information without the travel. The fade is kept (not
+   set to `animation: none`) on purpose: `animationend` is what removes a damage
+   node, and killing the animation outright would leave every number on screen
+   until the MAX_DAMAGE_NUMBERS cap evicted it. */
+@media (prefers-reduced-motion: reduce) {
+    .pb-canvas-host ::deep .pb-dmg {
+        animation: pb-dmg-fade 0.6s linear forwards;
+    }
+
+    .pb-canvas-host ::deep .pb-combo--on,
+    .pb-canvas-host ::deep .pb-su-fill--ready,
+    .pb-su-fill--ready,
+    .pb-su-prompt,
+    .pb-rung--now {
+        animation: none;
+    }
+
+    @keyframes pb-dmg-fade {
+        0%   { opacity: 1; }
+        100% { opacity: 0; }
+    }
 }
 
 
@@ -280,6 +399,162 @@
 .pb-en-hot {
     background: linear-gradient(90deg, #ffb020, #ffd257);
     box-shadow: 0 0 6px rgba(255, 210, 87, 0.75);
+}
+
+/* ── Super meter ──────────────────────────────────────────────────────
+   Third bar in the stack: health (thick) → energy (thin, gold when banked)
+   → super (thin, violet). Violet because both existing bars are already
+   spoken for — green/red is "how alive am I", gold is "how hard is my next
+   hit" — and the super is neither; it is a one-shot the player either holds
+   or does not. The ready state is the load-bearing part of this bar, so it
+   gets a pulse rather than just a colour change.
+
+   Colours are raw hex, like the rest of this HUD: .pb-hud floats over the
+   scheme-invariant arena, so it must not follow the theme. See the long note
+   on .pb-hp-name — that mistake has already been made here once. */
+.pb-su {
+    /* .pb-hp-right sets align-items:flex-end, which shrink-wraps any child
+       without an explicit width — the track would then be 100% of nothing. */
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.pb-hp-right .pb-su {
+    align-items: flex-end;
+}
+
+.pb-su-track {
+    width: 100%;
+    height: 5px;
+    border-radius: 3px;
+    background: rgba(0, 0, 0, 0.55);
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.pb-su-fill {
+    height: 100%;
+    width: var(--su, 0%);
+    background: linear-gradient(90deg, #7c3aed, #c084fc);
+    transition: width 0.25s linear;
+}
+
+.pb-hp-right .pb-su-fill {
+    margin-left: auto;
+}
+
+.pb-su-fill--ready {
+    background: linear-gradient(90deg, #a855f7, #f0abfc);
+    box-shadow: 0 0 8px rgba(217, 130, 255, 0.9);
+    animation: pb-su-pulse 0.85s ease-in-out infinite;
+}
+
+@keyframes pb-su-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.55; }
+}
+
+.pb-su-prompt {
+    font-family: 'Bungee', 'Russo One', 'Impact', sans-serif;
+    font-size: 0.62rem;
+    letter-spacing: 0.08em;
+    color: #f0abfc;
+    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
+    animation: pb-su-pulse 0.85s ease-in-out infinite;
+}
+
+.pb-su-prompt kbd {
+    font: inherit;
+    background: rgba(124, 58, 237, 0.35);
+    border: 1px solid rgba(240, 171, 252, 0.6);
+    border-radius: 3px;
+    padding: 0 3px;
+}
+
+/* ── Centre column: clock + best-of-three score ───────────────────────── */
+
+.pb-centre {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+}
+
+.pb-rounds {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.62rem;
+    letter-spacing: 0.1em;
+    color: #f4f6ff;
+    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.85);
+}
+
+.pb-rounds-pips {
+    letter-spacing: 0.05em;
+    color: #ffd166;
+}
+
+.pb-rounds-label {
+    font-family: 'Bungee', 'Russo One', 'Impact', sans-serif;
+    opacity: 0.75;
+}
+
+/* ── 1P ladder rail ───────────────────────────────────────────────────
+   Fifteen pips under the HUD: cleared, current, still to come. Sits in the
+   arena's dead strip below the bars, so it follows the same raw-hex rule. */
+
+.pb-ladder {
+    position: absolute;
+    top: 62px;
+    left: 12px;
+    right: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    pointer-events: none;
+    font-size: 0.62rem;
+    letter-spacing: 0.06em;
+    color: #c7cbe8;
+    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
+}
+
+.pb-ladder-count {
+    font-variant-numeric: tabular-nums;
+    font-weight: 700;
+    color: #f4f6ff;
+}
+
+.pb-ladder-rail {
+    display: flex;
+    gap: 3px;
+    align-items: center;
+}
+
+.pb-rung {
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.18);
+    border: 1px solid rgba(0, 0, 0, 0.5);
+}
+
+.pb-rung--done {
+    background: linear-gradient(180deg, #22c55e, #16a34a);
+}
+
+.pb-rung--now {
+    background: #ffd166;
+    box-shadow: 0 0 7px rgba(255, 209, 102, 0.9);
+    animation: pb-su-pulse 1.4s ease-in-out infinite;
+}
+
+.pb-ladder-now {
+    font-family: 'Bungee', 'Russo One', 'Impact', sans-serif;
+    color: #ffd166;
 }
 
 /* Region-damage body diagram: one 4-zone silhouette per fighter, flanking the
@@ -464,5 +739,111 @@
     transition: font-size 0.2s ease-out;
 }
 
-/* The demo-mode fighter Elo board styles itself — see PoBrawlEloBoard.razor.css. It is a
+/* The fighter Elo board styles itself — see PoBrawlEloBoard.razor.css. It is a
    child component so the HUD's 4×/sec re-render does not drag the table along with it. */
+
+/* ── "Know your opponent" scouting card (1P intro) ────────────────────
+   Rendered into <GameIntro Options>, which sits on a real theme surface — so
+   unlike the HUD above, this reads its colours from the tokens. */
+
+.pb-scout {
+    text-align: left;
+    padding: 10px 12px;
+    background: var(--surface-2);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+}
+
+.pb-scout-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 8px;
+    border-bottom: 1px solid var(--color-border);
+    padding-bottom: 6px;
+}
+
+.pb-scout-rung {
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--color-text-secondary);
+}
+
+.pb-scout-name {
+    font-family: 'Bungee', 'Russo One', 'Impact', sans-serif;
+    font-size: 1.15rem;
+    color: var(--accent-ink);
+}
+
+.pb-scout-list {
+    margin: 0;
+    display: grid;
+    /* Label column sized to the longer of the two labels so both descriptions
+       start on the same line; the description column takes the rest. */
+    grid-template-columns: auto 1fr;
+    gap: 4px 10px;
+    font-size: var(--text-sm);
+}
+
+.pb-scout-list dt {
+    white-space: nowrap;
+    color: var(--color-text-secondary);
+}
+
+.pb-scout-list dd {
+    margin: 0;
+    color: var(--color-text-primary);
+}
+
+/* ── Fight recap (end-of-game modal) ──────────────────────────────────── */
+
+.pb-recap {
+    width: 100%;
+    max-width: 24rem;
+    margin: 10px auto 0;
+    border-collapse: collapse;
+    font-size: var(--text-sm);
+    color: var(--color-text-primary);
+}
+
+.pb-recap caption {
+    text-align: left;
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--color-text-secondary);
+    padding-bottom: 4px;
+}
+
+.pb-recap th,
+.pb-recap td {
+    padding: 3px 6px;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.pb-recap thead th {
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--color-text-secondary);
+}
+
+/* Row headers are the stat names (left), data cells are the two fighters' values
+   (right) — tabular figures so the two columns line up digit for digit. */
+.pb-recap tbody th {
+    text-align: left;
+    font-weight: 500;
+    color: var(--color-text-secondary);
+}
+
+.pb-recap td,
+.pb-recap thead th:not(.pb-recap-stat) {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.pb-recap-stat {
+    text-align: left;
+}

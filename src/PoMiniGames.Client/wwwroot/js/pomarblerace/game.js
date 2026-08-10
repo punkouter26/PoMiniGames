@@ -2,29 +2,34 @@
 // and C# callbacks.
 import { createScene } from './scene.js';
 import { createWorld, stepWorld } from './physics.js';
-import { generateTrack } from './track.js';
+import { mapById, DEFAULT_MAP_ID } from './maps.js';
 import { createMarbles, MARBLE_COUNT } from './marbles.js';
 import { createAudio } from './audio.js';
 
 const RESULT_MS = 3600;     // how long the result banner shows before next track
-const RACE_TIMEOUT = 180;   // s — failsafe for the lengthened chute + friction bands + Gauntlet
+const RACE_TIMEOUT = 180;   // s — failsafe, and now the only backstop for a marble that stalls
+                            // at the foot of one of the course's uphill loops (see track.js)
 const TICK_INTERVAL = 0.1;  // s — throttle for OnRaceTick to C#
 const BEST_KEY = 'pomarblerace_best';
 const LB_SHOWN = 6;         // leaderboard rows sent to the HUD (top N of the 101-marble field)
 
 // ── The player's verb ──
 // Continuous lateral steering. Holding left/right adds sideways acceleration to the picked
-// marble for as long as it's held — this is the entire interactive surface of the game, so
-// the player is always able to fight for the boost-pad line or steer off a Gauntlet rotor.
-// The force is divided by mass, so the roster's heavyweights are genuinely harder to steer:
-// the trade for the momentum they carry through the Gauntlet.
+// marble for as long as it's held — this is the entire interactive surface of the game, so the
+// player is always able to pick a lane at a split, take the Catch line over the Penalty ramp, or
+// steer off a paddle. The force is divided by mass; every marble in this field has mass 1, so
+// that division is currently a no-op and exists for the roster to vary again.
 const STEER_ACCEL = 72;      // lateral units/s² — raised with gravity so steering keeps its bite
 
-// ── Boost pads ──
+// ── Boost pads and kickers ──
+// These are surfaces a MAP may or may not have. The procedural chute paints boost pads, rumble
+// bands and telegraphed kicker bands onto itself; the authored GLB course has no equivalent and
+// exposes neither, so _applyBoost and _applyKickers below feature-detect and simply do nothing
+// on a map without them. See the optional part of the track interface in maps.js.
 const BOOST_ACCEL = 40;      // units/s² along the track tangent while on a pad
 const BOOST_MAX_SPEED = 150; // don't let a marble that camps a pad accelerate without bound
 
-// ── Kickers (#6) ── telegraphed push-only band that fires on a cycle, shoving marbles sideways.
+// Kickers: a telegraphed push-only band that fires on a cycle, shoving marbles sideways.
 const KICK_DV = 16;          // lateral velocity punch at mass 1 when it fires (÷ mass — heavies resist)
 const KICK_UP = 4;           // small upward pop so the kick reads as a jolt, not a slide
 const KICK_CHARGE = 0.34;    // fraction of each cycle spent visibly charging up — the TELL
@@ -54,21 +59,30 @@ const SLOWMO_SCALE = 0.35;
 const SHOT_MIN_HOLD = 3.0;    // seconds a shot must run before another marble can take it
 const SHOT_LEAD_MARGIN = 14;  // units the leader must be up on the current subject to take the shot
 
-// How far under the track centerline a marble may legitimately be before it counts as
-// having fallen off. Sized against the banked inner edge of the wide road — see the
-// out-of-bounds check in _frame. Raised with gravity: faster, weightier marbles ride the
-// banks higher, so a tighter margin would eliminate them for taking the outside line.
-const OOB_MARGIN = 58;
+// Out-of-bounds is no longer a world-Y test — the course banks to near-vertical, so "well below
+// the centerline" would eliminate marbles for riding a wall-of-death. track.isOutOfBounds()
+// judges it in the local frame instead; see the note there.
 
 // Ceiling on a reported time gap; beyond this the HUD shows "+60s" rather than a number
 // whose precision it hasn't earned. See _gapSeconds.
 const GAP_MAX = 60;
 
 export class Game {
-  constructor(containerId, dotnetRef, demo) {
+  /**
+   * @param {string} containerId
+   * @param {object|null} dotnetRef
+   * @param {boolean} demo
+   * @param {number} mapId which map to race (see maps.js). Falls back to the default.
+   * @param {*} asset whatever that map's load() resolved to — a parsed glTF scene for the GLB
+   *   course, null for the procedural one. Loading happens BEFORE the Game is constructed so the
+   *   frame loop never has to run trackless; index.js owns that await.
+   */
+  constructor(containerId, dotnetRef, demo, mapId, asset) {
     this.container = document.getElementById(containerId);
     this.dotnet = dotnetRef || null;
     this.demo = !!demo;
+    this.map = mapById(mapId === undefined ? DEFAULT_MAP_ID : mapId);
+    this.mapAsset = asset;
     this.scene = createScene(this.container);
     const w = createWorld();
     this.world = w.world;
@@ -80,6 +94,9 @@ export class Game {
     this.streak = 0;
     this.best = parseInt(localStorage.getItem(BEST_KEY) || '0', 10) || 0;
     this.chosen = -1;
+    // Only procedural maps re-roll between races (map.regenerate). The authored course is fixed
+    // content, so _nextTrack() resets the field on the SAME track rather than rebuilding it —
+    // which also spares it rebuilding hundreds of trimesh colliders every race.
     // Date.parse(new Date().toString()) round-trips through a second-precision string, so two
     // loads in the same second raced the identical track. Use the raw epoch ms.
     this.seed = ((Date.now() & 0xffffff) ^ 0x9e3779) >>> 0;
@@ -179,16 +196,16 @@ export class Game {
     const m = this.marbleSet.marbles[this.chosen];
     if (!m || m.finished || m.eliminated) return;
 
-    const rb = this.track.rightAt(m.body.position.z);
+    const rb = this.track.rightAt(m.s);
     // A lateral acceleration (÷ mass so it's independent of the mass unit), applied along the
     // track's local right vector.
     //
-    // NEGATED: rightAt() returns the track's local +X (track.js frameAt), but the chase camera
-    // sits BEHIND the marble looking down +Z, and a camera looking down +Z has world -X on its
-    // screen-right. So track-right rendered as screen-LEFT and the arrow keys were inverted.
-    // Negate here rather than in rightAt(): that same basis vector feeds track.lateralOf(),
-    // which drives the HUD edge gauge, and flipping it there would silently invert the gauge too.
-    const dv = (STEER_ACCEL / m.body.mass) * -dir * sdt;
+    // NOT negated, unlike the procedural chute this replaced. The baked basis defines
+    // right = dir x up, and the chase camera looks ALONG dir with roughly world up — and a
+    // camera's own screen-right is likewise forward x up. So track-right is screen-right at
+    // every point on the course, including through the inverted-feeling banked loops, and the
+    // sign correction the old flat +Z chute needed is no longer correct here.
+    const dv = (STEER_ACCEL / m.body.mass) * dir * sdt;
     m.body.velocity.x += rb.x * dv;
     m.body.velocity.y += rb.y * dv;
     m.body.velocity.z += rb.z * dv;
@@ -222,15 +239,20 @@ export class Game {
   }
 
   // ── internals ──
+  // Builds the course through the active map. A map that says it can regenerate (the procedural
+  // chute) gets a fresh track per race; one that cannot (an authored model) is built once and
+  // reused, which also spares it rebuilding hundreds of trimesh colliders every race.
   _buildTrack() {
     this._podiumSent = false; // reset the top-3 podium for the new race
-    this.track = generateTrack(this.world, this.materials, this.seed >>> 0, MARBLE_COUNT);
-    this.scene.add(this.track.group);
-    // Bound once per track and handed to marbleSet.sync() every frame, so the contact shadow can
-    // be planted on the floor rather than flown under the marble (marbles.js realism pass #9).
-    // Bound here rather than passed as `this.track.floorY` at the call site because the track is
-    // rebuilt between races and a stale reference would silently shadow the old geometry.
-    this._floorYAt = (z) => this.track.floorY(z);
+    if (this.track && this.track.regenerate) {
+      this.scene.remove(this.track.group);
+      this.track.dispose();
+      this.track = null;
+    }
+    if (!this.track) {
+      this.track = this.map.build(this.world, this.materials, MARBLE_COUNT, this.mapAsset, this.seed);
+      this.scene.add(this.track.group);
+    }
     this.marbleSet = createMarbles(this.world, this.materials, this.track.startPositions, -1,
       (v, pos, color) => {
         // Only BIG collisions make a sound — the constant clinking from every
@@ -258,8 +280,7 @@ export class Game {
     this._lastFocus = null;
     this._setPhase('pick');
     // frame the start gate from above, looking along the track rather than down world +Z
-    const ov = this.track.overviewTarget;
-    this.scene.followTarget(ov, 0, true, this.track.dirAt(ov.z));
+    this.scene.followTarget(this.track.overviewTarget, 0, true, this.track.dirAt(0));
   }
 
   // #3 — request a colour grade. Deduped because this is called from the frame loop: setGrade
@@ -289,8 +310,8 @@ export class Game {
 
   _nextTrack() {
     if (this.marbleSet) { this.scene.remove(this.marbleSet.group); this.scene.remove(this.marbleSet.decorations); this.marbleSet.dispose(); }
-    if (this.track) { this.scene.remove(this.track.group); this.track.dispose(); }
     this.seed = (this.seed * 1664525 + 1013904223) >>> 0;
+    // Whether that seed produces a NEW track depends on the map — see _buildTrack.
     this._buildTrack();
     if (this.demo) this._autoPickSoon();
   }
@@ -330,7 +351,7 @@ export class Game {
       // Returning `cur` without take() deliberately leaves _shotSince alone — the shot is
       // continuing, not restarting.
       const held = (now - this._shotSince) / 1000;
-      const behind = leader.body.position.z - cur.body.position.z;
+      const behind = leader.s - cur.s;
       if (held < SHOT_MIN_HOLD || behind < SHOT_LEAD_MARGIN) { this.shotReason = 'LEADER'; return cur; }
       return take(leader, 'LEADER');
     }
@@ -355,20 +376,22 @@ export class Game {
   _gapSeconds(m, leader) {
     if (!leader || m === leader) return 0;
     if (m.finished && leader.finished) return Math.max(0, m.finishTime - leader.finishTime);
-    const dz = leader.body.position.z - m.body.position.z;
-    if (dz <= 0) return 0;
-    return Math.min(GAP_MAX, dz / Math.max(4, m.speed));
+    const ds = leader.s - m.s;
+    if (ds <= 0) return 0;
+    return Math.min(GAP_MAX, ds / Math.max(4, m.speed));
   }
 
+  // Boost pads. A no-op on maps that have none — see the track interface in maps.js.
   _applyBoost(sdt) {
+    if (!this.track.inBoost) return;
     const me = this.chosen >= 0 ? this.marbleSet.marbles[this.chosen] : null;
     let playerBoosting = false;
     for (const m of this.marbleSet.marbles) {
       if (m.finished || m.eliminated) continue;
-      if (!this.track.inBoost(m.body.position.z)) continue;
+      if (!this.track.inBoost(m.s)) continue;
       const v = m.body.velocity;
       if (v.length() < BOOST_MAX_SPEED) {
-        const d = this.track.dirAt(m.body.position.z);
+        const d = this.track.dirAt(m.s);
         v.x += d.x * BOOST_ACCEL * sdt;
         v.y += d.y * BOOST_ACCEL * sdt;
         v.z += d.z * BOOST_ACCEL * sdt;
@@ -385,13 +408,14 @@ export class Game {
   }
 
   // #6 Kickers: drive the telegraph (brightening pad) and the fire moment. Push-only, so it
-  // can scatter the pack and force a steering correction but never trap a marble.
+  // can scatter the pack and force a steering correction but never trap a marble. A no-op on
+  // maps that have none.
   _applyKickers() {
     const kickers = this.track.kickers;
     if (!kickers) return;
     const t = this.raceClock;
     for (const k of kickers) {
-      const phase = (t % k.period) / k.period;         // 0..1 within the charge→fire cycle
+      const phase = (t % k.period) / k.period;         // 0..1 within the charge->fire cycle
       // Tell: brighten over the last KICK_CHARGE of the cycle, easing in so it "winds up".
       const charge = phase > (1 - KICK_CHARGE) ? (phase - (1 - KICK_CHARGE)) / KICK_CHARGE : 0;
       k.mat.emissiveIntensity = 0.5 + charge * charge * 2.4;
@@ -408,10 +432,10 @@ export class Game {
     let lastHitPos = null;
     for (const m of this.marbleSet.marbles) {
       if (m.finished || m.eliminated) continue;
-      const s = m.body.position.z / len;
-      if (s < a || s > b) continue;
+      const frac = m.s / len;
+      if (frac < a || frac > b) continue;
       lastHitPos = m.mesh.position;
-      const rb = this.track.rightAt(m.body.position.z);
+      const rb = this.track.rightAt(m.s);
       // Alternate the kick direction by marble index so a fire splits the pack rather than
       // shoving everyone the same way — and the player has to steer back to their line.
       const dv = (KICK_DV / m.body.mass) * (m.index % 2 === 0 ? 1 : -1);
@@ -425,7 +449,7 @@ export class Game {
     if (hits > 0) {
       // ...but only make noise when it actually connects, and place it where it connected (#9).
       this.audio.playWhoosh(this.scene.audioCue(lastHitPos));
-      // #4 — a magenta shockwave off the band, which is what makes the kick read as a discharge
+      // #4 - a magenta shockwave off the band, which is what makes the kick read as a discharge
       // rather than the pack spontaneously scattering.
       this.scene.burstRing(lastHitPos, 0xe879f9, 1.5);
     }
@@ -444,37 +468,41 @@ export class Game {
       // Slow-motion as the leader runs at the line. sdt scales the simulation, so finish
       // times stay measured in simulation seconds and remain comparable across races.
       this.slowmo = !!leaderPre && !leaderPre.finished &&
-        (this.track.finishZ - leaderPre.body.position.z) < SLOWMO_DIST;
+        (this.track.finishS - leaderPre.s) < SLOWMO_DIST;
       const sdt = this.slowmo ? dt * SLOWMO_SCALE : dt;
 
-      this.track.driveMotors(this.raceClock);   // arg now unused (boost light shafts removed)
-      this._applyBoost(sdt);
+      this.track.driveMotors();
       this._applySteer(sdt);   // player's held steering, integrated by the step below
-      this._applyKickers();    // #6 telegraphed kicker band (push-only)
       stepWorld(this.world, sdt);
-      this.marbleSet.sync(this._floorYAt);
-      for (const t of this.track.turnstiles) { t.mesh.position.copy(t.body.position); t.mesh.quaternion.copy(t.body.quaternion); }
+      // Interlock, not tuning: cannon-es has no CCD and the course's collision shell is a single
+      // surface with nothing behind it, so a marble must never carry a velocity that would step
+      // it further than its own diameter. See MAX_SPEED in marbles.js.
+      this.marbleSet.clampSpeeds();
+      // Re-project the field onto the centerline FIRST: `s` is the ranking key, the finish test
+      // and the bounds test, and every one of those below would read last frame's positions
+      // otherwise.
+      this.marbleSet.updateProgress(this.track);
+      // Both read each marble's `s`, so they run after the re-projection above. Their impulses
+      // land on the next step, exactly as they did when this was keyed on world z.
+      this._applyBoost(sdt);
+      this._applyKickers();
+      this.marbleSet.sync(this.track);
+      for (const p of this.track.paddles) { p.mesh.position.copy(p.body.position); p.mesh.quaternion.copy(p.body.quaternion); }
 
       this.raceClock += sdt;
       // Finishes are resolved BEFORE the out-of-bounds sweep. Crossing the line is terminal:
       // a marble that has already finished is frozen and can't fall, and one that crosses and
       // drops in the same step has still finished. Sweeping first meant a marble past the
-      // line could be scored as eliminated instead of a finisher (seen headless: Sprout
-      // eliminated at z=1863 with the line at z=1791).
-      const { justFinished } = this.marbleSet.checkFinishes(this.track.finishZ, this.raceClock);
+      // line could be scored as eliminated instead of a finisher.
+      const { justFinished } = this.marbleSet.checkFinishes(this.track.finishS, this.raceClock);
 
-      // Remove any marble that has fallen out of bounds (dropped well below the
-      // track surface at its position) — it's out of the race.
-      //
-      // floorY() is the CENTERLINE height, and the margin has to clear how far below it a
-      // marble can legitimately sit. On a 64-wide road banked to 0.6 rad the inner edge is
-      // ~18 units under the centerline, plus ~10 of vertical undulation — the old 30-unit
-      // margin would have eliminated marbles for the crime of taking the inside line.
+      // Remove any marble that has left the course. The test lives in track.js because it has
+      // to be made in the track's LOCAL frame: this course banks to near-vertical, so a marble
+      // riding a wall-of-death is far "below" the centerline in world Y while still perfectly
+      // in bounds.
       for (const m of this.marbleSet.marbles) {
         if (m.finished || m.eliminated) continue;
-        if (m.body.position.y < this.track.floorY(m.body.position.z) - OOB_MARGIN) {
-          this.marbleSet.eliminate(m);
-        }
+        if (m.proj && this.track.isOutOfBounds(m.proj)) this.marbleSet.eliminate(m);
       }
 
       // Recomputed after the sweep rather than taken from checkFinishes: a marble eliminated
@@ -516,7 +544,7 @@ export class Game {
       // and sooner as the leader runs at the line — the music leans into the finish.
       const leaderNow = order[0];
       const nearRaw = leaderNow
-        ? 1 - Math.max(0, Math.min(1, (this.track.finishZ - leaderNow.body.position.z) / 300))
+        ? 1 - Math.max(0, Math.min(1, (this.track.finishS - leaderNow.s) / 300))
         : 0;
       const nearFinish = Math.pow(nearRaw, 0.6);
       this.audio.updateBeds(leaderNow ? leaderNow.speed : 0, nearFinish, this.phase === 'racing');
@@ -541,22 +569,22 @@ export class Game {
         // anchor no longer inherits per-frame physics jitter from the marble.
         // Also feed the camera the heading (so it looks along the track ahead, #2) and the
         // subject's speed (so the FOV widens with pace, #4).
-        const fz = focus.body.position.z;
-        const fwd = this.track.dirAt(fz);
-        this.scene.followTarget(this.track.centerAt(fz), dt, focus !== this._lastFocus, fwd, focus.speed);
+        const fs = focus.s;
+        const fwd = this.track.dirAt(fs);
+        this.scene.followTarget(this.track.centerAt(fs), dt, focus !== this._lastFocus, fwd, focus.speed);
         this._lastFocus = focus;
       }
 
       this.tickAccum += dt;
       if (this.tickAccum >= TICK_INTERVAL) { this.tickAccum = 0; this._sendTick(); }
     } else if (this.phase === 'result') {
-      // keep turnstiles/marbles visually settled; advance after the banner
-      this.marbleSet.sync(this._floorYAt);
+      // keep the paddles/marbles visually settled; advance after the banner
+      this.marbleSet.sync(this.track);
       this.resultTimer -= dt;
       const winner = this.marbleSet.leaderboard()[0];
       if (winner) {
-        const wz = winner.body.position.z;
-        this.scene.followTarget(this.track.centerAt(wz), dt, false, this.track.dirAt(wz));
+        const ws = winner.s;
+        this.scene.followTarget(this.track.centerAt(ws), dt, false, this.track.dirAt(ws));
       }
       if (this.resultTimer <= 0) this._nextTrack();
     } else {
@@ -564,7 +592,7 @@ export class Game {
       // it the camera sat straight back in world -Z while the track headed off at an angle,
       // which threw the road across one side of the frame before the race even started.
       const ov = this.track.overviewTarget;
-      this.scene.followTarget(ov, dt, false, this.track.dirAt(ov.z));
+      this.scene.followTarget(ov, dt, false, this.track.dirAt(0));
     }
 
     this.scene.render();
@@ -657,7 +685,7 @@ export class Game {
 
     // #3 lateral position of the player's marble across the channel (−1 left edge … +1 right
     // edge), for the HUD edge gauge. 0 when the player has no live marble.
-    const myLateral = (me && !me.eliminated) ? this.track.lateralOf(me.body.position) : 0;
+    const myLateral = (me && !me.eliminated && me.proj) ? this.track.lateralOf(me.proj) : 0;
 
     // With 101 marbles the HUD can't render the whole field, so only the top LB_SHOWN are sent
     // for the leaderboard list. The player's own standing is sent separately (place / field /

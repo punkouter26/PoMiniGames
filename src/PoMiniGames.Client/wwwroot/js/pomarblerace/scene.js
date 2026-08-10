@@ -30,13 +30,18 @@ const BG = 0x0f172a;            // cyberpunk dark slate
 // so the frame was floor-plus-berms and the road ahead was a thin sliver at the top — the ramp
 // was unreadable. Pulling BACK rather than UP flattens the look angle to ≈40° and lets the
 // chute recede into frame, which is what makes the ramp legible.
-// Constraint on CAM_HEIGHT: the berms rise TRACK.WALL_HEIGHT (44) above the road, so the eye
-// must stay above ~50 or the near berm walls the shot in on turns. 46 + the pitch lift keeps
-// it clear (see `vert` below) without going back to a top-down.
-const CAM_HEIGHT = 46;          // base vantage height above the followed marble
-const CAM_BACK = 62;            // behind the marble; the depth that lets the chute recede and read
-const CAM_LOOKAHEAD = 20;       // aims down-track so the road ahead owns the frame, not the floor underfoot
-const CAM_LOOK_LIFT = 6;        // lifts the aim point; the marble settles into the lower third, road above it
+// RESCALED for the authored course (2026-08-10). The old 46/62 vantage was sized against the
+// procedural chute: a 64-wide road with 44-tall berms, straight enough that a 62-unit lookback
+// still saw down it. The authored course is a different size in both directions — the channel
+// is 24-30 units across for most of its length (17 through Lane2) and the walls are 8.3 tall —
+// and, more importantly, the start helix turns on a 56-unit radius. A camera 62 units back from
+// a marble on that helix sits outside the spiral entirely and shoots through the track above it.
+// Pulled in to roughly the same fraction of the channel width the old framing had. The berm
+// clearance that pinned CAM_HEIGHT above ~50 no longer applies at all.
+const CAM_HEIGHT = 20;          // base vantage height above the followed marble
+const CAM_BACK = 28;            // behind the marble; the depth that lets the course recede and read
+const CAM_LOOKAHEAD = 12;       // aims down-track so the road ahead owns the frame, not the floor underfoot
+const CAM_LOOK_LIFT = 3;        // lifts the aim point; the marble settles into the lower third, road above it
 const CAM_DEFAULT_PITCH = 0.12;  // positive → camera rides above and looks down into the chute
 const CAM_LERP = 3.4;          // slightly smoother follow reads more cinematic
 // Shot changes used to teleport the camera (a === 1). With the demo camera on the leader of a
@@ -116,7 +121,7 @@ export function createScene(container) {
   // FLICKER FIX (1/4) — anisotropy. Every procedural texture in track.js pinned itself to 4,
   // and the kerb stripes (hard red/white, seen at grazing angles by a chase cam) aliased into
   // crawling moiré at that level. Textures inherit this default, so raising it here raises it
-  // for the whole track — createScene runs before generateTrack, and track.js's texture
+  // for the whole track — createScene runs before buildTrack, and track.js's texture
   // singletons are built lazily on first use, so the ordering holds.
   THREE.Texture.DEFAULT_ANISOTROPY = renderer.capabilities.getMaxAnisotropy();
   container.style.position = 'relative';
@@ -129,12 +134,12 @@ export function createScene(container) {
   // gradient ramping #070b18 -> #0f172a -> #16203c up the sky. A flat BG matches the fog
   // colour exactly, so the horizon no longer shows a seam where fog meets sky.
   scene.background = new THREE.Color(BG);
-  // Fog pushed out with the camera: at 70/240 the far wall of a wide, sharply-turning chute
-  // faded out before the turn it belongs to was readable. Pushed out again with CAM_BACK 38→62:
-  // the marble alone now sits ~82 units from the eye, so at 110/340 the haze started biting a
-  // few units past it and greyed out the exact stretch of ramp the pulled-back framing exists
-  // to show.
-  scene.fog = new THREE.Fog(BG, 170, 560);
+  // Fog tracks the camera distance: the haze must start comfortably PAST the followed marble or
+  // it greys out the exact stretch of course the framing exists to show. Pulled in with
+  // CAM_BACK 62→28 for the authored course — at 170/560 the fog now sat so far beyond the
+  // subject that it never resolved anything, which on a course that spirals back over itself
+  // costs real depth cues.
+  scene.fog = new THREE.Fog(BG, 78, 260);
 
   // Image-based lighting (#17) removed 2026-08-08 (user request). A RoomEnvironment PMREM
   // used to sit on scene.environment purely so the glossy marbles and floor had something to
@@ -189,7 +194,10 @@ export function createScene(container) {
   //
   // The frustum tracks the followed marble (see followTarget), so a narrower one is not a
   // coverage risk — it is always centred on the action.
-  const SHADOW_HALF = 48;
+  // Narrowed with the camera (48→30): the frustum only has to cover what the shot frames, and a
+  // tighter one halves the texel size again on a course whose channel is less than half the
+  // width of the chute this was sized for.
+  const SHADOW_HALF = 30;
   key.shadow.camera.left = -SHADOW_HALF; key.shadow.camera.right = SHADOW_HALF;
   key.shadow.camera.top = SHADOW_HALF; key.shadow.camera.bottom = -SHADOW_HALF;
   key.shadow.bias = -0.0008;

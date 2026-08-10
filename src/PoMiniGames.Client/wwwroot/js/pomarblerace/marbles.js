@@ -24,7 +24,7 @@
 // alongside it — see docs/superpowers/specs/2026-07-28-pomarblerace-gfx-audio-design.md.
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
-import { TRACK } from './track.js';
+import { newProjection } from './maps.js';
 
 export const MARBLE_COUNT = 101;    // 1 red player + 100 AI rivals
 export const PLAYER_INDEX = 0;      // index 0 is the red marble the player controls
@@ -65,13 +65,41 @@ export function marbleColor(index) {
 // and solid soda-lime glass (~2500 kg/m³) makes that ≈ 10.5 g. Mass is carried here as 1.0
 // "marble unit" (the obstacle masses in track.js are multiples of it), and cannon-es derives a
 // real SOLID-SPHERE moment of inertia (I = 2/5·m·r²) from the sphere shape — so the marbles
-// carry realistic rotational momentum and roll true. Damping is near zero: real glass has
-// negligible rolling resistance and air drag at this size, so a marble keeps its spin.
+// carry realistic rotational momentum and roll true.
+//
+// ANGULAR damping stays near zero — real glass has negligible rolling resistance at this size,
+// so a marble keeps its spin. LINEAR damping does NOT, and was raised from 0.003 to 0.09 for the
+// authored course (2026-08-10). The old chute was short; this one is a single continuous
+// 3644-unit descent, and with negligible drag marbles simply accelerated the whole way, arriving
+// at 100-113 u/s — roughly three times the speed the course's banked turns are shaped for, and
+// fast enough to step straight through the floor between physics ticks. Drag gives them a
+// terminal velocity instead, which is what a real marble run has and what this track assumes.
 export const MARBLE_ROSTER = Array.from({ length: MARBLE_COUNT }, (_, i) => ({
   name: i === PLAYER_INDEX ? 'You' : 'Marble',
   color: marbleColor(i),
-  radius: 1.0, mass: 1.0, linDamp: 0.003, angDamp: 0.002,
+  radius: 1.0, mass: 1.0, linDamp: 0.04, angDamp: 0.002,
 }));
+
+// Hard ceiling on marble speed, world units/s. This is a SAFETY interlock, not a game feel knob.
+//
+// cannon-es has no continuous collision detection, and the course's collision shell is a single
+// open surface with no thickness behind it (track-collision.js). A marble is caught only if it
+// still overlaps the surface at the instant a step is sampled, so it must not travel more than
+// its own diameter (2 units) between steps. At physics.FIXED_DT = 1/60 that puts the hard limit
+// at 120 u/s; 85 leaves a 40% margin.
+//
+// It is needed because the course is one continuous 3644-unit descent: marbles were measured
+// arriving at Track-Mid at 100-113 u/s, punching clean through the floor and being scored as
+// having fallen off. linDamp above is the primary fix — real marbles have drag, and the old
+// chute was short enough that near-zero damping never mattered — while this clamp is the
+// guarantee that no drop or chain of collisions can produce an unsafe step regardless.
+//
+// The FLOOR under this value is set by the course, not by comfort: Track-LowerA and Track-LowerB
+// each contain an uphill loop that rises ~24 world units, which needs sqrt(2*g*h) = 59 u/s at
+// the bottom just to crest, before friction. An earlier cap of 55 was under that, and the entire
+// field piled up at the foot of the LowerA loop and never finished. Anything below ~75 will do
+// that again.
+export const MAX_SPEED = 85;
 
 export const MARBLE_COLORS = MARBLE_ROSTER.map((m) => m.color);
 
@@ -251,6 +279,8 @@ function blobTexture() {
  *   gives the spheres a specular highlight without putting reflections on the track.
  */
 export function createMarbles(world, materials, startPositions, chosenIndex, onCollide, envMap) {
+  // Set by updateProgress() from the active map; only used to normalise progress to 0..1.
+  let courseLength = 1;
   const marbles = [];
   let finishCounter = 0;
 
@@ -448,6 +478,15 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
       prevPlace: -1,
       eliminated: false,
       speed: 0,
+      // Progress along the baked centerline, in world units, plus the sample index it was found
+      // at. The course branches and descends in -Y, so there is no world coordinate that orders
+      // the field — `s` is the ONLY ranking key, and `pathIndex` is the hint that keeps the
+      // per-frame projection to a short local scan instead of a search over 1041 samples.
+      // Both are refreshed once per frame by updateProgress(); nothing else may write them.
+      s: 0,
+      pathIndex: -1,
+      // Owned and reused, never reallocated — updateProgress() writes into it in place.
+      proj: newProjection(),
     });
   }
 
@@ -496,13 +535,51 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
   }
 
   /**
+   * Hold every marble under MAX_SPEED. Must run immediately after each physics step, so no
+   * unsafe velocity is ever carried into the next one — see MAX_SPEED for why this is a
+   * correctness interlock rather than a tuning choice.
+   */
+  function clampSpeeds() {
+    for (const m of marbles) {
+      if (m.eliminated || m.finished) continue;
+      const v = m.body.velocity;
+      const sp = v.length();
+      if (sp > MAX_SPEED) v.scale(MAX_SPEED / sp, v);
+    }
+  }
+
+  /**
+   * Refresh every live marble's position along the course. Must run once per physics frame,
+   * BEFORE anything reads standings, finishes or bounds — `s` is the ranking key for the whole
+   * game and a stale one silently mis-orders the field.
+   *
+   * Each marble re-projects from its own previous sample index, so this is a short local scan
+   * per marble rather than a search of the full centerline. track.project() re-acquires globally
+   * on its own when a marble has been flung far enough that the hint is useless.
+   *
+   * @param {object} track the object returned by buildTrack()
+   */
+  function updateProgress(track) {
+    // The two maps have very different lengths, so progress is normalised against whichever one
+    // is loaded rather than a module-level constant.
+    courseLength = track.length;
+    for (const m of marbles) {
+      if (m.eliminated || m.finished) continue;
+      const p = track.project(m.body.position, m.pathIndex, m.proj);
+      m.s = p.s;
+      m.pathIndex = p.index;
+    }
+  }
+
+  /**
    * Push physics transforms into the render meshes.
    *
-   * @param {(z:number)=>number} [floorYAt] Centreline floor height at a forward Z. Optional —
-   *   without it the contact blob falls back to riding under the marble as before. With it, the
-   *   blob is planted on the ground and reacts to height (2026-08-08 realism pass #9).
+   * @param {object} [track] the built track. Optional — without it the contact blob falls back
+   *   to riding under the marble as before. With it the blob is planted on the floor PLANE
+   *   (which is banked to near-vertical in places, so a world-Y height would not do) and reacts
+   *   to the gap the way the 2026-08-08 realism pass intended.
    */
-  function sync(floorYAt) {
+  function sync(track) {
     let packDirty = false;
     for (const m of marbles) {
       if (m.eliminated) continue;
@@ -538,13 +615,14 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
       // marble climbs a berm or takes air off a kicker. That gap is the cue the eye uses to
       // judge height, and it is free here because the track can report its own floor.
       if (m.blob) {
-        if (floorYAt) {
-          const fy = floorYAt(m.body.position.z);
-          // Height of the marble's underside above the floor, in radii.
-          const gap = Math.max(0, (m.body.position.y - m.radius) - fy) / m.radius;
+        if (track && m.pathIndex >= 0) {
+          // `proj.height` is the marble's signed offset along the track's LOCAL up axis, so this
+          // reads the true gap to the floor on a banked turn where a world-Y difference would
+          // report the marble metres in the air while it is in fact hugging the surface.
+          const gap = Math.max(0, m.proj.height - m.radius) / m.radius;
           // 0 at contact → 1 fully airborne, saturating at 6 radii up.
           const t = Math.min(1, gap / 6);
-          m.blob.position.set(m.body.position.x, fy + 0.06, m.body.position.z);
+          track.floorPoint(m.body.position, m.proj, m.blob.position);
           // Spread as it rises (1.0 → 2.2×) and fade hard (0.55 → 0.06).
           const s = 1 + t * 1.2;
           m.blob.scale.set(s, s, s);
@@ -574,11 +652,11 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
     try { world.removeBody(m.body); } catch { }
   }
 
-  function checkFinishes(finishZ, raceClock) {
+  function checkFinishes(finishS, raceClock) {
     const justFinished = [];
     for (const m of marbles) {
       if (m.eliminated || m.finished) continue;
-      if (m.body.position.z >= finishZ) {
+      if (m.s >= finishS) {
         m.finished = true;
         m.finishOrder = finishCounter++;
         m.finishTime = raceClock || 0;
@@ -594,7 +672,7 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
 
   // Force-finish any stragglers (failsafe) ordered by current progress.
   function forceFinishRemaining(raceClock) {
-    const rest = marbles.filter((m) => !m.finished && !m.eliminated).sort((a, b) => b.body.position.z - a.body.position.z);
+    const rest = marbles.filter((m) => !m.finished && !m.eliminated).sort((a, b) => b.s - a.s);
     for (const m of rest) { m.finished = true; m.finishOrder = finishCounter++; m.finishTime = raceClock || 0; freezeMarble(m); }
   }
 
@@ -605,7 +683,7 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
       if (a.finished && b.finished) return a.finishOrder - b.finishOrder;
       if (a.finished) return -1;
       if (b.finished) return 1;
-      return b.body.position.z - a.body.position.z;
+      return b.s - a.s;
     });
     order.forEach((m, idx) => { m.place = idx + 1; });
     return order;
@@ -614,15 +692,15 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
   // Max progress (0..1) across the marbles still in the race — the LEADER's progress.
   function progress() {
     let max = 0;
-    for (const m of marbles) { if (!m.eliminated) max = Math.max(max, m.body.position.z); }
-    return Math.max(0, Math.min(1, max / TRACK.LENGTH));
+    for (const m of marbles) { if (!m.eliminated) max = Math.max(max, m.s); }
+    return Math.max(0, Math.min(1, max / courseLength));
   }
 
   // One marble's own progress (0..1). The HUD showed only progress() above, so the bar
   // tracked the leader — a player running last watched a bar that wasn't theirs fill up.
   function progressOf(m) {
     if (!m) return 0;
-    return Math.max(0, Math.min(1, m.body.position.z / TRACK.LENGTH));
+    return Math.max(0, Math.min(1, m.s / courseLength));
   }
 
   function dispose() {
@@ -649,5 +727,5 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
     }
   }
 
-  return { marbles, group, pack, decorations, sync, eliminate, checkFinishes, forceFinishRemaining, leaderboard, progress, progressOf, dispose };
+  return { marbles, group, pack, decorations, clampSpeeds, updateProgress, sync, eliminate, checkFinishes, forceFinishRemaining, leaderboard, progress, progressOf, dispose };
 }

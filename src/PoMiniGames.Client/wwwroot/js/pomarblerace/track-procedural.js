@@ -1101,6 +1101,9 @@ export function generateTrack(world, materials, seed, marbleCount = 8) {
     driveMotors() {
       for (const m of motors) m.hinge.setMotorSpeed(m.speed);
     },
+    // Half the channel width at a forward position. Exposed for the map adapter in maps.js,
+    // which needs it to express this track through the same interface as the GLB course.
+    halfWidthAt: (z) => widthAt(sAt(z)) / 2,
     // Centerline (floor-top) Y at a given forward Z — used to detect marbles that
     // have fallen off the track (their Y drops well below this).
     floorY: (z) => sample(sAt(z)).y,

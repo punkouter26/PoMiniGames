@@ -972,3 +972,93 @@
     .mr-tel-clock { font-size: 1.1rem; }
     .mr-nudge-pad { width: 50px; height: 50px; }
 }
+
+/* ── Track picker (intro card) ───────────────────────────────────────────────
+   Rendered into GameIntro's Options slot, so it is authored here and inherits
+   this component's CSS scope. Colours go through the theme tokens rather than
+   raw hex so the card is readable in the light scheme too; the purple accent
+   matches the pick card above, which is scheme-invariant by design. */
+.mr-mapsel {
+    margin-top: 4px;
+}
+
+.mr-mapsel-label {
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-text-secondary);
+    margin-bottom: 6px;
+}
+
+.mr-mapsel-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.mr-mapsel-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px;
+    border-radius: 10px;
+    cursor: pointer;
+    font: inherit;
+    color: var(--color-text-primary);
+    background: var(--color-surface-hover);
+    border: 1px solid rgba(168, 85, 247, 0.35);
+    transition: border-color 120ms ease, box-shadow 120ms ease, background 120ms ease;
+}
+
+.mr-mapsel-btn:hover {
+    border-color: rgba(168, 85, 247, 0.7);
+}
+
+.mr-mapsel-btn.is-on {
+    border-color: rgba(168, 85, 247, 0.95);
+    box-shadow: 0 0 16px rgba(168, 85, 247, 0.35);
+    background: rgba(168, 85, 247, 0.16);
+}
+
+/* The slot number, so "map 3" in a bug report matches what the player sees. */
+.mr-mapsel-num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 6px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--color-text-primary);
+    background: rgba(168, 85, 247, 0.3);
+}
+
+.mr-mapsel-name {
+    font-size: 0.9rem;
+}
+
+.mr-mapsel-blurb {
+    margin: 8px 0 0;
+    font-size: 0.78rem;
+    color: var(--color-text-secondary);
+    min-height: 2.2em;
+}
+
+/* The picker lives in the start overlay, which is a compact card — keep the nine
+   slots on one tidy block rather than letting them stretch it. */
+.mr-mapsel-row {
+    justify-content: center;
+}
+
+.mr-mapsel-btn:disabled {
+    cursor: default;
+}
+
+/* Empty slots: present but obviously not choosable, so the room for more courses
+   reads as room rather than as a broken button. */
+.mr-mapsel-btn.is-empty {
+    opacity: 0.32;
+    padding: 8px 10px;
+    border-style: dashed;
+}

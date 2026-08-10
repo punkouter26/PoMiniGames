@@ -1,14 +1,39 @@
 // index.js — public interop surface for PoMarbleRace. The Blazor page calls these.
 import { Game } from './game.js';
+import { mapById, mapMenu, DEFAULT_MAP_ID } from './maps.js';
 
 let game = null;
+// Monotonic token for the in-flight start(). The course model is fetched over the network, so
+// two starts can overlap (navigate away and back, or the kiosk cycling a demo) and the slower
+// one would otherwise install its Game over the newer one's. Only the latest token may install.
+let startToken = 0;
 
 window.PoMarbleRace = {
-  start(containerId, dotnetRef, demo) {
+  /** Slot ids and names for the host's map picker. */
+  maps() { return mapMenu(); },
+
+  /** The slot used when the host does not name one. */
+  defaultMap() { return DEFAULT_MAP_ID; },
+
+  // Async because a map may have to fetch an authored model before anything can be built. The
+  // Blazor page calls this without awaiting; every other entry point below is a no-op until
+  // `game` exists, which is the same guard they already had.
+  async start(containerId, dotnetRef, demo, mapId) {
+    const token = ++startToken;
     if (game) { game.dispose(); game = null; }
     const el = document.getElementById(containerId);
     if (!el) { console.error('[PoMarbleRace] container not found:', containerId); return; }
-    game = new Game(containerId, dotnetRef, demo);
+    const map = mapById(mapId === undefined || mapId === null ? DEFAULT_MAP_ID : mapId);
+    let asset;
+    try {
+      asset = await map.load();
+    } catch (err) {
+      console.error(`[PoMarbleRace] failed to load map ${map.id} (${map.name}):`, err);
+      return;
+    }
+    // A newer start() (or a stop()) landed while the map was in flight — stand down.
+    if (token !== startToken) return;
+    game = new Game(containerId, dotnetRef, demo, map.id, asset);
     game.start();
   },
   // 2026-07-19 browser audit #1: host calls resume() after the intro OK is
@@ -25,7 +50,9 @@ window.PoMarbleRace = {
   beep(final) { if (game) game.beep(final); },
   regenerate() { if (game) game.regenerate(); },
   setMuted(muted) { if (game) game.setMuted(muted); },
-  stop() { if (game) { game.dispose(); game = null; } },
+  // Bumping the token here too, so a start() still waiting on the model fetch cannot install a
+  // Game after the host has torn the page down.
+  stop() { startToken++; if (game) { game.dispose(); game = null; } },
 };
 
 // TEMP DEBUG — headless verification hooks.
@@ -35,10 +62,11 @@ window.PoMarbleRace = {
 window.__game = () => game;
 window.__ff = (steps) => {
   if (!game || !game.marbleSet) return null;
-  for (let i = 0; i < steps; i++) game.world.step(1 / 120, 1 / 120, 1);
-  game.marbleSet.sync();
-  const zs = game.marbleSet.marbles.map(m => m.body.position.z);
-  return { min: Math.round(Math.min(...zs)), max: Math.round(Math.max(...zs)), finishZ: Math.round(game.track.finishZ) };
+  for (let i = 0; i < steps; i++) { game.world.step(1 / 60, 1 / 60, 1); game.marbleSet.clampSpeeds(); }
+  game.marbleSet.updateProgress(game.track);
+  game.marbleSet.sync(game.track);
+  const ss = game.marbleSet.marbles.map(m => m.s);
+  return { min: Math.round(Math.min(...ss)), max: Math.round(Math.max(...ss)), finishS: Math.round(game.track.finishS) };
 };
 window.__fin = () => game && game.marbleSet ? game.marbleSet.marbles.map(m => ({
   fin: m.finished, elim: m.eliminated,
@@ -46,15 +74,17 @@ window.__fin = () => game && game.marbleSet ? game.marbleSet.marbles.map(m => ({
   vis: m.mesh.visible,
   inWorld: game.world.bodies.includes(m.body),
 })) : null;
-// Per-marble diagnostic: where each marble is relative to the track surface under it, and
-// how fast. `dy` is the gap to the centerline — a marble that fell off the track trends to
-// large negative; one that is merely low on a banked turn sits at a stable negative.
+// Per-marble diagnostic, reported in the TRACK's local frame rather than world coordinates —
+// on a course that spirals and banks to near-vertical, world x/y/z say nothing about whether a
+// marble is in trouble. `s` is progress along the course, `lat` the offset across the channel
+// (compare against `hw`, the half-width there), and `h` the height above the floor plane.
 window.__diag = () => game && game.marbleSet ? game.marbleSet.marbles.map(m => ({
   i: m.index,
   n: m.spec.name,
-  x: Math.round(m.body.position.x * 100) / 100,
-  z: Math.round(m.body.position.z),
-  dy: Math.round(m.body.position.y - game.track.floorY(m.body.position.z)),
+  s: Math.round(m.s),
+  lat: m.proj ? Math.round(m.proj.lateral * 10) / 10 : null,
+  hw: m.proj ? Math.round(game.track.halfWidthAt(m.s)) : null,
+  h: m.proj ? Math.round(m.proj.height * 10) / 10 : null,
   sp: Math.round(m.speed),
   fin: m.finished,
   el: m.eliminated,

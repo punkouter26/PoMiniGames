@@ -58,7 +58,10 @@
                "Starting in 0…" while the intro card is up. The countdown
                is also gated on `_pickCountdown > 0` so the very first
                paint can't render a stale 0 either. *@
-            @if (_introDone && _phase == "pick" && !_demo && _pickCountdown > 0)
+            @* Also held open while a track swap is in flight: the countdown is stopped for the
+               duration, and without this the card would blink out mid-swap and take the picker
+               with it. *@
+            @if (_introDone && _phase == "pick" && !_demo && (_pickCountdown > 0 || _switchingMap))
             {
                 <div class="mr-overlay">
                     <div class="mr-pick-card">
@@ -67,8 +70,16 @@
                             100 rivals, every one a different colour. One red — yours. Steer with
                             <kbd>←</kbd> <kbd>→</kbd> and finish in the top @ScoreTop to score.
                         </p>
+                        @MapPickerContent
                         <p class="mr-pick-sub">
-                            Starting in <strong class="mr-pick-count">@_pickCountdown</strong>…
+                            @if (_switchingMap)
+                            {
+                                <span>Loading track…</span>
+                            }
+                            else
+                            {
+                                <text>Starting in <strong class="mr-pick-count">@_pickCountdown</strong>…</text>
+                            }
                         </p>
                     </div>
                 </div>
@@ -133,8 +144,8 @@
                     }
                 </div>
 
-                @* #10 FINAL STRETCH klaxon: once the leader hits the Gauntlet run to the line,
-                   the stakes are set — shout it so the ending has weight. *@
+                @* #10 FINAL STRETCH klaxon: once the leader is through the hazard fan and onto
+                   the run to the line, the stakes are set — shout it so the ending has weight. *@
                 @if (_progress >= 0.86)
                 {
                     <div class="mr-final" role="status" aria-live="polite">@FlagIcon <span>FINAL STRETCH</span></div>
@@ -261,11 +272,103 @@
 
     private RenderFragment TitleContent => @<span><span aria-hidden="true">🔮</span> Marble Race</span>;
 
+    // ── Map picker ──
+    // MIRRORED IN JS: this list reproduces the registry in wwwroot/js/pomarblerace/maps.js, and
+    // `Id` is the contract between the two — it is the only thing that crosses the interop
+    // boundary. Adding a map means an entry there AND an entry here; the ids must agree.
+    private sealed record MarbleMap(int Id, string Name, string Blurb);
+
+    /// <summary>Slots the game ships with. Everything up to <see cref="MapSlots"/> is offered.</summary>
+    private static readonly MarbleMap[] Maps =
+    [
+        new(1, "Neon Chute", "Procedurally generated — a new track every race."),
+        new(2, "Spiral Works", "Authored course: helix, split lanes, funnel and loops."),
+    ];
+
+    // The picker always shows nine slots. The empty ones are rendered disabled rather than
+    // hidden, so the room for more courses is visible and a slot number in a bug report always
+    // means the same track.
+    private const int MapSlots = 9;
+
+    // Mirrors DEFAULT_MAP_ID in maps.js.
+    private int _mapId = 2;
+
+    private static MarbleMap? MapAt(int id) => Maps.FirstOrDefault(m => m.Id == id);
+
+    /// <summary>
+    /// Switch tracks from the start overlay. The engine is already up by the time that overlay is
+    /// on screen, and a map is chosen at build time, so changing it means tearing the engine down
+    /// and starting it again on the new one. The countdown is re-armed afterwards so browsing the
+    /// list never costs the player the seconds they had left.
+    /// </summary>
+    private async Task SelectMapAsync(int id)
+    {
+        if (id == _mapId || MapAt(id) is null) return;
+        _mapId = id;
+
+        if (!_engineStarted)
+        {
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        StopPickCountdown();
+        _switchingMap = true;
+        await InvokeAsync(StateHasChanged);
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("PoMarbleRace.stop");
+            // Demo mode has no picker (the overlay carrying it is 1P-only), so the kiosk shows
+            // the whole catalogue over time by taking a random track each cycle instead.
+            if (_demo) _mapId = Maps[Random.Shared.Next(Maps.Length)].Id;
+            await JSRuntime.InvokeVoidAsync("PoMarbleRace.start", "marble-race-container", _ref, _demo, _mapId);
+            await JSRuntime.InvokeVoidAsync("PoMarbleRace.resume");
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[PoMarbleRace] map switch failed: {ex.Message}");
+        }
+        _switchingMap = false;
+        _phase = "pick";
+        StartPickCountdown();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    // True while the engine is being rebuilt on a new map — an authored course has a model to
+    // fetch, so the swap is not instant and the picker says so rather than looking dead.
+    private bool _switchingMap;
+
+    private RenderFragment MapPickerContent => @<div class="mr-mapsel">
+        <div class="mr-mapsel-label">Track @(_switchingMap ? "— loading…" : "")</div>
+        <div class="mr-mapsel-row" role="radiogroup" aria-label="Choose a track">
+            @for (var slot = 1; slot <= MapSlots; slot++)
+            {
+                var id = slot;
+                var m = MapAt(id);
+                <button type="button"
+                        role="radio"
+                        aria-checked="@(id == _mapId ? "true" : "false")"
+                        aria-label="@(m is null ? $"Track slot {id}, empty" : $"Track {id}, {m.Name}")"
+                        disabled="@(m is null || _switchingMap)"
+                        class="mr-mapsel-btn @(id == _mapId ? "is-on" : "") @(m is null ? "is-empty" : "")"
+                        title="@(m?.Blurb ?? "Empty slot")"
+                        @onclick="() => SelectMapAsync(id)">
+                    <span class="mr-mapsel-num">@id</span>
+                    @if (m is not null)
+                    {
+                        <span class="mr-mapsel-name">@m.Name</span>
+                    }
+                </button>
+            }
+        </div>
+        <p class="mr-mapsel-blurb">@(MapAt(_mapId)?.Blurb)</p>
+    </div>;
+
     private RenderFragment HowToPlayContent => @<div>
         <p>You control the one RED marble in a pack of 101. Finish in the top 10 to score.</p>
         <ul>
             <li><kbd>←</kbd>/<kbd>→</kbd> hold to steer your marble</li>
-            <li><kbd>R</kbd> new track · <kbd>M</kbd> mute</li>
+            <li><kbd>R</kbd> restart race · <kbd>M</kbd> mute</li>
             <li>String finishes together for a points multiplier — mind the edges</li>
         </ul>
     </div>;
@@ -324,7 +427,7 @@
                 return;
             }
 
-            await JSRuntime.InvokeVoidAsync("PoMarbleRace.start", "marble-race-container", _ref, _demo);
+            await JSRuntime.InvokeVoidAsync("PoMarbleRace.start", "marble-race-container", _ref, _demo, _mapId);
             await JSRuntime.InvokeVoidAsync("PoMarbleRace.resume");
         }
         catch (Exception ex)
@@ -349,9 +452,11 @@
     private bool EdgeDanger => Math.Abs(_myLateral) > 0.82;
 
     // ── GFX #6 gauge maths ──
-    // SpeedMax mirrors BOOST_MAX_SPEED in game.js: that's the hard ceiling the engine imposes on
-    // a marble camping a boost pad, so it's the only honest full-scale value for the ring.
-    private const double SpeedMax = 150;
+    // Full-scale for the speed ring. MIRRORS MAX_SPEED in marbles.js, which is the engine's hard
+    // ceiling on marble speed (a tunnelling interlock, not a tuning knob). Keeping the two equal
+    // is what makes a full ring mean "flat out" rather than an arbitrary fraction of it — if
+    // MAX_SPEED changes, change this with it.
+    private const double SpeedMax = 55;
 
     private double SpeedFraction => Math.Clamp(_mySpeed / SpeedMax, 0, 1);
 
@@ -390,10 +495,14 @@
     }
 
     // ── Start countdown ──
-    // There's nothing to choose anymore — the player always controls the red marble — so this
-    // is just a "get ready" beat that frames the start gate, then the race begins with the red
-    // marble (PlayerIndex) assigned. JS ignores a second pick once the phase leaves "pick".
-    private const int PickSeconds = 3;
+    // A "get ready" beat that frames the start gate, then the race begins with the red marble
+    // (PlayerIndex) assigned. JS ignores a second pick once the phase leaves "pick".
+    //
+    // 3 seconds while this card only told you which marble was yours; 6 now that it also carries
+    // the track picker. A timer that short on a card with a DECISION on it is hostile — you
+    // cannot read nine slots and choose one before it fires. Selecting a track also re-arms this
+    // (see SelectMapAsync), so browsing never costs you the race.
+    private const int PickSeconds = 6;
     private int _pickCountdown;
 
     // Cancellation, not a System.Timers.Timer: that fired its Elapsed handler on a threadpool

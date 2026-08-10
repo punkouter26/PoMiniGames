@@ -361,8 +361,19 @@ app.Use(async (ctx, next) =>
     }
     await next(ctx);
 });
+// glTF binary is not in the framework's default extension→MIME map, and StaticFileMiddleware
+// SKIPS any file whose content type it cannot resolve — the request falls through to the SPA
+// fallback and the caller gets the Blazor shell (or a 404) instead of the asset. PoMarbleRace
+// loads its whole course from wwwroot/models/marble_track.glb, so without this registration the
+// game has no track at all. Registered on a copy of the default provider rather than by mutating
+// a shared static, so nothing else in the pipeline inherits the change.
+var contentTypeProvider = new Microsoft.AspNetCore.StaticFiles.FileExtensionContentTypeProvider();
+contentTypeProvider.Mappings[".glb"] = "model/gltf-binary";
+contentTypeProvider.Mappings[".gltf"] = "model/gltf+json";
+
 app.UseStaticFiles(new Microsoft.AspNetCore.Builder.StaticFileOptions
 {
+    ContentTypeProvider = contentTypeProvider,
     OnPrepareResponse = ctx =>
     {
         // Allow compression middleware to wrap the body.

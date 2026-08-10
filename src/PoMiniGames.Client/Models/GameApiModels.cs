@@ -38,16 +38,7 @@ public class FunQuizLeaderboardSubmission
     public int Losses { get; set; }
 }
 
-// ---------------------------------------------------------------------------
-// PoCoupleQuiz
-// ---------------------------------------------------------------------------
-
-/// <summary>Team row returned by GET /api/couplequiz/teams.</summary>
-public class CoupleQuizTeamRow
-{
-    public string Name { get; set; } = string.Empty;
-    public int HighScore { get; set; }
-    public int TotalQuestionsAnswered { get; set; }
-    public int CorrectAnswers { get; set; }
-    public DateTime LastPlayed { get; set; }
-}
+// PoCoupleQuiz had a CoupleQuizTeamRow here, the shape of GET /api/couplequiz/teams.
+// Nothing ever called that endpoint and nothing ever wrote a team, so the DTO, the
+// endpoint and the table behind it were all removed on 2026-08-10. Couple Quiz now
+// ranks on the shared PlayerStats board like the other win-rate games.

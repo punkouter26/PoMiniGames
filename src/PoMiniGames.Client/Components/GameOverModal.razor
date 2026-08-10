@@ -77,6 +77,19 @@
         }
 
         <div class="gps-play-again-actions">
+            @* 2026-08-10 audit: local 2-player FunQuiz had no Play Again —
+               repeating a split-screen round meant leaving the modal, going
+               home, picking Fun Quiz, picking 2P, dismissing the intro. Four
+               taps to do what "Play again" should be one tap. The button is
+               only shown when the page opts in via PlayAgain (default null
+               = OK only, preserving every other game's flow). *@
+            @if (PlayAgain.HasDelegate)
+            {
+                <button class="gps-play-again-btn gps-play-again-btn--secondary"
+                        @onclick="() => PlayAgain.InvokeAsync()">
+                    Play again
+                </button>
+            }
             <button class="gps-play-again-btn gps-play-again-btn--primary" @onclick="Ok" autofocus>
                 OK
             </button>
@@ -113,6 +126,16 @@
     /// modal would still be up when the player next opens the game.
     /// </summary>
     [Parameter] public EventCallback OnOk { get; set; }
+
+    /// <summary>
+    /// 2026-08-10: optional "Play again" handler. When set, the modal shows
+    /// a secondary button next to OK that re-runs the page (the page owns the
+    /// reset). Leave null (the default) to keep the OK-only flow every other
+    /// game uses. Only ever opt in for modes without a server leaderboard at
+    /// stake — solo should not show it (the previous run just got submitted),
+    /// local 2-player split-screen is the intended user.
+    /// </summary>
+    [Parameter] public EventCallback PlayAgain { get; set; }
 
     /// <summary>
     /// How the match ended, so the modal can sound the right cue. Left

@@ -101,7 +101,7 @@ public class ProfileCoverageUiTests
         // all of it visible at once. Nothing has to be expanded first — the four
         // collapsible mode sections (and their .home-section-toggle buttons) were
         // replaced when the page moved to GameCatalog.All.
-        await page.Locator("a.home-mode-chip[href='/couplequiz/multi']").WaitForAsync(
+        await page.Locator("a.home-mode-chip[href='/couplequiz']").WaitForAsync(
             new LocatorWaitForOptions { Timeout = 30_000 });
 
         // Online: nothing is suppressed.
@@ -129,7 +129,7 @@ public class ProfileCoverageUiTests
             .Should().BeGreaterThan(0, because: "Couple Quiz is hub-backed in every mode");
 
         // The multiplayer chip must also stop being a link, not merely look disabled.
-        (await page.Locator("a.home-mode-chip[href='/couplequiz/multi']").CountAsync())
+        (await page.Locator("a.home-mode-chip[href='/couplequiz']").CountAsync())
             .Should().Be(0, because: "an unreachable lobby must not stay navigable");
 
         // Local games stay playable — that is the point of offline support.

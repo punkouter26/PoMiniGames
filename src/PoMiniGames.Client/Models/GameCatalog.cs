@@ -149,12 +149,14 @@ public static class GameCatalog
             new(GameMode.Multiplayer, "/funquiz/multi", RequiresNetwork: true),
         ]),
 
-        // 1-player lands on the lobby page, which offers "Play solo (vs AI partner)".
-        // The hub connection is attempted on load either way, so it is network-bound.
+        // Multiplayer only (user decision, 2026-08-10). The 1-player entry here never
+        // started a 1-player game: /couplequiz/1player landed on the multiplayer lobby
+        // card, which merely offered a "Play solo (vs AI partner)" button for a mode whose
+        // "AI partner" was a hardcoded answer index. Both are gone. There is no Demo entry
+        // because this game was never in the kiosk reel below.
         new(GameKeys.PoCoupleQuiz, "Couple Quiz", "💕",
         [
-            new(GameMode.OnePlayer, "/couplequiz/1player", RequiresNetwork: true),
-            new(GameMode.Multiplayer, "/couplequiz/multi", RequiresNetwork: true),
+            new(GameMode.Multiplayer, "/couplequiz", RequiresNetwork: true),
         ]),
     ];
 

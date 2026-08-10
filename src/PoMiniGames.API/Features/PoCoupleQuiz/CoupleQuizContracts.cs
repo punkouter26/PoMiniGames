@@ -1,52 +1,52 @@
 namespace PoMiniGames.Features.PoCoupleQuiz;
 
 // ── Strongly-typed client interface (compile-time-safe SignalR events) ──────
+//
+// 2026-08-10 simplification: every payload used to carry a GameCode and an
+// AiMode. Both are gone. There is exactly ONE lobby in the process, so a code
+// identifies nothing; and "AI mode" was a string that only ever held "Remote"
+// (no browser-side engine was ever implemented) while being threaded through
+// six payloads, three hub methods and the lobby UI. `Difficulty` went the same
+// way — it only ever selected the round count, so the lobby now says what it
+// means and sends `MaxRounds`.
 
 public record GamePlayerState(string Name, bool IsKingPlayer, int Score);
 
 public record LobbyEventPayload(
-    string GameCode,
     bool IsHost,
     string PlayerName,
     List<string> Players,
     List<string> ReadyPlayers,
     string HostName,
-    string Difficulty,
-    string AiMode = "Remote");
+    int MaxRounds);
 
 public record LobbyUpdatedPayload(
-    string GameCode,
     List<string> Players,
     List<string> ReadyPlayers,
     string HostName,
-    string? Difficulty = null,
-    string? AiMode = null);
+    int MaxRounds);
 
 public record GameStartedPayload(
-    string GameCode,
     string KingPlayerName,
     List<GamePlayerState> Players,
     string QuestionText,
     string QuestionCategory,
     int RoundIndex,
     int MaxRounds,
-    string Difficulty,
-    string AiMode = "Remote");
+    int RoundSeconds);
 
 public record RoundStartedPayload(
-    string GameCode,
     int RoundIndex,
     int MaxRounds,
     string KingPlayerName,
     List<GamePlayerState> Players,
     string QuestionText,
     string QuestionCategory,
-    string AiMode = "Remote");
+    int RoundSeconds);
 
 public record AnswerRecordedPayload(string PlayerName, int RoundIndex);
 
 public record RoundResultPayload(
-    string GameCode,
     int RoundIndex,
     string KingAnswer,
     List<string> MatchedPlayers,
@@ -55,15 +55,11 @@ public record RoundResultPayload(
     List<GamePlayerState> Players);
 
 public record GameOverPayload(
-    string GameCode,
     IReadOnlyDictionary<string, int> FinalScores,
     List<GamePlayerState> Players);
 
-public record HostChangedPayload(string GameCode, string NewHostName);
-
 public interface IGameClient
 {
-    Task LobbyCreated(LobbyEventPayload payload);
     Task LobbyJoined(LobbyEventPayload payload);
     Task LobbyUpdated(LobbyUpdatedPayload payload);
     Task LobbyError(string message);
@@ -76,5 +72,4 @@ public interface IGameClient
     Task GameError(string message);
 
     Task PlayerDisconnected(LobbyUpdatedPayload payload);
-    Task HostChanged(HostChangedPayload payload);
 }

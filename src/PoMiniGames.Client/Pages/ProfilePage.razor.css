@@ -50,7 +50,20 @@
 .prf-name {
     font-size: 1.5rem;
     font-weight: 700;
-    margin-bottom: 0.75rem;
+    margin-bottom: 0.15rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* 2026-08-10 audit: H1 is the page title ("My Stats") — the display name is
+   surfaced as a subtitle so it still appears prominently but no longer
+   shadows the actual page heading. Consistent with every other page
+   (Settings, Leaderboards) where H1 == the destination label. */
+.prf-handle {
+    font-size: 0.9rem;
+    color: var(--color-text-secondary);
+    margin-bottom: 0.65rem;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;

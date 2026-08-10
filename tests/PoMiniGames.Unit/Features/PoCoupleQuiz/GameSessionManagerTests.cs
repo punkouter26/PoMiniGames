@@ -5,218 +5,240 @@ namespace PoMiniGames.Unit.Features.PoCoupleQuiz;
 
 /// <summary>
 /// Unit tests for the in-memory game session manager — the authoritative
-/// state holder for PoCoupleQuiz lobbies (sessions do NOT survive restarts).
+/// state holder for the single PoCoupleQuiz lobby (state does NOT survive restarts).
 /// </summary>
 /// <remarks>
-/// <b>§1 100/50/25/25 Rule.</b> Originally 19 single-case <c>[Fact]</c>s; consolidated
-/// into 6 <c>[Theory]</c>s + 5 <c>[Fact]</c>s over the lobby / host-transition / answer /
-/// round / state surfaces. Each theory has the same discoverable signal as its Fact
-/// predecessors; the maintenance surface drops from 19 methods to 11.
+/// <para><b>§1 100/50/25/25 Rule.</b> Held at 11 methods (8 <c>[Fact]</c>s + 3
+/// <c>[Theory]</c>s), the same count as before the 2026-08-10 rewrite — the surfaces
+/// changed, the budget did not. Tests that covered deleted code (game-code uniqueness,
+/// lookup-by-bad-code, AI-mode host enforcement) were replaced rather than added to;
+/// host-only enforcement is now asserted against <c>SetMaxRounds</c>, the one host-gated
+/// setting that survives.</para>
+/// <para>The scoreboard test flipped meaning on purpose: it used to assert the King was
+/// EXCLUDED. See <see cref="Game.CurrentKingPlayerIndex"/> for why that was the bug.</para>
 /// </remarks>
 public sealed class GameSessionManagerTests
 {
-    // ─── Lobby creation & lookup ────────────────────────────────────────
-
-    [Fact]
-    public void CreateLobby_ReturnsUniqueFiveCharacterCode()
+    /// <summary>A lobby with the given names, in join order. The first is the host.</summary>
+    private static GameSessionManager LobbyOf(params string[] names)
     {
         var mgr = new GameSessionManager();
-        var s1 = mgr.CreateLobby("conn1", "Alice", DifficultyLevel.Medium);
-        var s2 = mgr.CreateLobby("conn2", "Bob", DifficultyLevel.Medium);
-
-        s1.GameCode.Should().HaveLength(5);
-        s2.GameCode.Should().HaveLength(5);
-        s1.GameCode.Should().NotBe(s2.GameCode);
-    }
-
-    [Fact]
-    public void CreateLobby_SetsHostAndIncludesHostInPlayers()
-    {
-        var mgr = new GameSessionManager();
-        var s = mgr.CreateLobby("conn1", "Alice", DifficultyLevel.Easy);
-        s.HostConnectionId.Should().Be("conn1");
-        s.Players.Should().ContainSingle(p => p.Name == "Alice" && p.ConnectionId == "conn1");
-        s.State.Should().Be(SessionState.Waiting);
-    }
-
-    [Theory]
-    [InlineData(false, true)]  // no waiting lobby → creates new
-    [InlineData(true, false)] // waiting lobby exists → reuses
-    public void JoinOrCreate_RespectsWaitingLobbyState(bool seedWaitingLobby, bool expectCreated)
-    {
-        var mgr = new GameSessionManager();
-        if (seedWaitingLobby)
+        for (var i = 0; i < names.Length; i++)
         {
-            mgr.CreateLobby("conn1", "Alice", DifficultyLevel.Medium);
+            mgr.Join($"conn{i + 1}", names[i], out _);
         }
+        return mgr;
+    }
 
-        mgr.JoinOrCreateLobby("conn2", "Bob", DifficultyLevel.Medium, out var created);
-        created.Should().Be(expectCreated);
+    // ─── Lobby membership ───────────────────────────────────────────────
+
+    [Fact]
+    public void Join_OpensOneLobby_ReusesIt_AndDisambiguatesNames()
+    {
+        var mgr = new GameSessionManager();
+
+        var first = mgr.Join("conn1", "Alice", out var created);
+        created.Should().BeTrue();
+        first.HostConnectionId.Should().Be("conn1");
+        first.State.Should().Be(SessionState.Waiting);
+        first.MaxRounds.Should().Be(Game.DefaultRounds);
+
+        var second = mgr.Join("conn2", "Bob", out var createdAgain);
+        createdAgain.Should().BeFalse();
+        second.Should().BeSameAs(first, "there is exactly one lobby per process");
+
+        // Two guests from one browser share a "Guest######" identity, and the name is the
+        // scoring key — a collision would collapse both players into one row.
+        var third = mgr.Join("conn3", "bob", out _);
+        third.Players.Select(p => p.Name).Should().Equal("Alice", "Bob", "bob (2)");
     }
 
     [Theory]
-    [InlineData("conn2", "conn1", true)]  // non-host leaves → session kept, host unchanged
-    [InlineData("conn1", "conn2", false)] // host leaves → conn2 promoted, session kept
-    public void RemovePlayer_PromotesNewHostWhenHostLeaves(string hostConn, string leaverConn, bool leavesLast)
+    [InlineData("conn2", "conn1")] // non-host leaves → host unchanged
+    [InlineData("conn1", "conn2")] // host leaves → conn2 promoted
+    public void RemovePlayer_PromotesANewHostWhenTheHostLeaves(string leaverConn, string expectedHostConn)
     {
-        var mgr = new GameSessionManager();
-        var s = mgr.CreateLobby("conn1", "Alice", DifficultyLevel.Medium);
-        mgr.JoinLobby(s.GameCode, "conn2", "Bob");
-        mgr.RemovePlayer(leaverConn, out _);
-        var remaining = mgr.GetSession(s.GameCode);
-        remaining.Should().NotBeNull();
-        remaining!.HostConnectionId.Should().Be(hostConn);
-        _ = leavesLast; // documented intent: host-promotion path is exercised; last-player cleanup is its own [Fact]
+        var mgr = LobbyOf("Alice", "Bob");
+
+        mgr.RemovePlayer(leaverConn, out var sessionEmpty);
+
+        sessionEmpty.Should().BeFalse();
+        mgr.Current.Should().NotBeNull();
+        mgr.Current!.HostConnectionId.Should().Be(expectedHostConn);
     }
 
     [Fact]
-    public void RemovePlayer_RemovesSessionWhenLastPlayerLeaves()
+    public void RemovePlayer_PrunesTheLiveRoster_AndClosesTheLobbyWhenTheLastPlayerLeaves()
     {
-        var mgr = new GameSessionManager();
-        var s = mgr.CreateLobby("conn1", "Alice", DifficultyLevel.Medium);
-        mgr.RemovePlayer("conn1", out var sessionEmpty);
-        sessionEmpty.Should().BeTrue();
-        mgr.GetSession(s.GameCode).Should().BeNull();
+        var mgr = LobbyOf("Alice", "Bob", "Carla");
+        var game = mgr.StartGame("Q?", "Hobbies");
+
+        // A leaver must also leave the Game's roster, or AllPlayersAnswered waits forever on
+        // a name nobody will submit and the rotating King seat can land on an empty chair.
+        mgr.RemovePlayer("conn2", out var empty);
+        empty.Should().BeFalse();
+        game.Players.Select(p => p.Name).Should().Equal("Alice", "Carla");
+
+        mgr.RemovePlayer("conn1", out _);
+        mgr.RemovePlayer("conn3", out var nowEmpty);
+        nowEmpty.Should().BeTrue();
+        mgr.Current.Should().BeNull();
     }
 
     // ─── Game lifecycle ─────────────────────────────────────────────────
 
     [Fact]
-    public void StartGame_SetsStateInProgress_AndCreatesGameWithFirstQuestion()
+    public void StartGame_CreatesTheMatchAtTheChosenRoundCount_AndThrowsWithoutALobby()
     {
-        var mgr = new GameSessionManager();
-        var s = mgr.CreateLobby("conn1", "Alice", DifficultyLevel.Medium);
-        mgr.JoinLobby(s.GameCode, "conn2", "Bob");
-        var game = mgr.StartGame(s.GameCode, "What is Alice's favorite color?", "Preferences");
-        game.Difficulty.Should().Be(DifficultyLevel.Medium);
-        game.MaxRounds.Should().Be(5);
-        game.Players.Should().HaveCount(2);
-        game.KingPlayer.Should().NotBeNull();
-        // The first player to join is the King.
-        game.KingPlayer!.Name.Should().Be("Alice");
-        mgr.GetSession(s.GameCode)!.State.Should().Be(SessionState.InProgress);
-    }
-
-    [Fact]
-    public void StartGame_ThrowsWhenSessionMissing()
-    {
-        var mgr = new GameSessionManager();
-        var act = () => mgr.StartGame("ZZZZZ", "Q?", "Hobbies");
+        var empty = new GameSessionManager();
+        var act = () => empty.StartGame("Q?", "Hobbies");
         act.Should().Throw<InvalidOperationException>();
+
+        var mgr = LobbyOf("Alice", "Bob");
+        mgr.SetMaxRounds("conn1", 7);
+
+        var game = mgr.StartGame("What is Alice's favorite color?", "Preferences");
+
+        game.MaxRounds.Should().Be(7);
+        game.Players.Should().HaveCount(2);
+        game.KingPlayer!.Name.Should().Be("Alice", "round 0 puts the first player in the King seat");
+        mgr.Current!.State.Should().Be(SessionState.InProgress);
     }
 
     [Fact]
-    public void AdvanceRound_IncrementsRoundAndClearsAnswers()
+    public void AdvanceRound_IncrementsTheRoundAndRotatesTheKing()
     {
-        var mgr = new GameSessionManager();
-        var s = mgr.CreateLobby("conn1", "Alice", DifficultyLevel.Easy);
-        mgr.JoinLobby(s.GameCode, "conn2", "Bob");
-        mgr.StartGame(s.GameCode, "Q1?", "Hobbies");
-        mgr.RecordAnswer(s.GameCode, "Bob", "pizza");
-        var next = mgr.AdvanceRound(s.GameCode);
+        var mgr = LobbyOf("Alice", "Bob");
+        mgr.StartGame("Q1?", "Hobbies");
+
+        var next = mgr.AdvanceRound();
+
         next.CurrentRound.Should().Be(1);
-        mgr.GetSession(s.GameCode)!.RoundAnswers.Should().BeEmpty();
+        next.KingPlayer!.Name.Should().Be("Bob", "the King seat moves round the table every round");
+    }
+
+    [Fact]
+    public void RoundCompletion_RoutesTheKingToTheSecret_AndWaitsForEveryGuess()
+    {
+        var mgr = LobbyOf("Alice", "Bob", "Carla"); // Alice is King for round 0
+        var game = mgr.StartGame("Q?", "Hobbies");
+        var q = game.CurrentQuestion!;
+
+        game.AllPlayersAnswered().Should().BeFalse();
+
+        mgr.RecordAnswer("Bob", "pizza").Should().BeTrue();
+        mgr.RecordAnswer("Carla", "sushi").Should().BeTrue();
+        game.AllPlayersAnswered().Should().BeFalse("the King has not locked a secret yet");
+
+        mgr.RecordAnswer("Alice", "pizza").Should().BeTrue();
+        game.AllPlayersAnswered().Should().BeTrue();
+
+        // The live question is reused in place across rounds. It used to be element 0 of a
+        // list that never grew while AllPlayersAnswered indexed that list by round number,
+        // so completion silently reported false from round 1 onward.
+        mgr.AdvanceRound();
+        game.CurrentQuestion.Should().BeSameAs(q);
+
+        q.KingPlayerAnswer.Should().Be("pizza");
+        q.PlayerAnswers.Should().ContainKey("Bob").WhoseValue.Should().Be("pizza");
+        q.PlayerAnswers.Should().NotContainKey("Alice", "the King's submission is the secret, not a guess");
     }
 
     [Fact]
     public void ApplyRoundScores_UpdatesScoresAndStats()
     {
-        var mgr = new GameSessionManager();
-        var s = mgr.CreateLobby("conn1", "Alice", DifficultyLevel.Easy);
-        mgr.JoinLobby(s.GameCode, "conn2", "Bob");
-        var game = mgr.StartGame(s.GameCode, "Q?", "Hobbies");
-        mgr.ApplyRoundScores(s.GameCode, new Dictionary<string, int> { ["Bob"] = 10 });
+        var mgr = LobbyOf("Alice", "Bob");
+        var game = mgr.StartGame("Q?", "Hobbies");
+
+        mgr.ApplyRoundScores(new Dictionary<string, int> { ["Bob"] = 10 });
+
         var bob = game.Players.First(p => p.Name == "Bob");
         bob.Score.Should().Be(10);
         bob.TotalCorrectGuesses.Should().Be(1);
         bob.TotalRoundsPlayed.Should().Be(1);
     }
 
-    [Fact]
-    public void FinishGame_SetsStateFinished()
-    {
-        var mgr = new GameSessionManager();
-        var s = mgr.CreateLobby("conn1", "Alice", DifficultyLevel.Easy);
-        mgr.JoinLobby(s.GameCode, "conn2", "Bob");
-        mgr.StartGame(s.GameCode, "Q?", "Hobbies");
-        mgr.FinishGame(s.GameCode);
-        mgr.GetSession(s.GameCode)!.State.Should().Be(SessionState.Finished);
-    }
-
     // ─── Lobby orchestration ────────────────────────────────────────────
 
     [Fact]
-    public void MarkReady_TracksConnectionIds()
+    public void ReadyState_NeedsEnoughPlayers_AndResetToLobbyKeepsThem()
     {
-        var mgr = new GameSessionManager();
-        var s = mgr.CreateLobby("conn1", "Alice", DifficultyLevel.Medium);
-        mgr.JoinLobby(s.GameCode, "conn2", "Bob");
-        mgr.MarkPlayerReady(s.GameCode, "conn1");
-        mgr.MarkPlayerReady(s.GameCode, "conn2");
-        var state = mgr.GetLobbyReadyState(s.GameCode);
-        state.Should().NotBeNull();
-        state!.AllReady.Should().BeTrue();
-        state.ReadyPlayers.Should().BeEquivalentTo(new[] { "Alice", "Bob" });
+        var mgr = LobbyOf("Alice");
+
+        // One ready player out of one is NOT a startable match. The old BuildReadyState
+        // reported AllReady here and left the minimum-player check to every caller.
+        mgr.MarkPlayerReady("conn1")!.AllReady.Should().BeFalse();
+
+        mgr.Join("conn2", "Bob", out _);
+        mgr.MarkPlayerReady("conn2");
+        var ready = mgr.GetLobbyReadyState()!;
+        ready.AllReady.Should().BeTrue();
+        ready.ReadyPlayers.Should().BeEquivalentTo(new[] { "Alice", "Bob" });
+
+        mgr.StartGame("Q?", "Hobbies");
+        mgr.FinishGame();
+        var reset = mgr.ResetToLobby()!;
+
+        reset.Players.Should().Equal("Alice", "Bob");
+        reset.ReadyPlayers.Should().BeEmpty();
+        mgr.Current!.State.Should().Be(SessionState.Waiting);
+        mgr.Current.ActiveGame.Should().BeNull();
     }
 
     [Theory]
-    [InlineData("conn2", false)] // non-host cannot change
-    [InlineData("conn1", true)]  // host can change
-    public void UpdateLobbyAiMode_HostOnlyEnforcement(string actingConn, bool expectSuccess)
+    [InlineData("conn1", 7, true)]  // host, legal value
+    [InlineData("conn2", 7, false)] // non-host
+    [InlineData("conn1", 4, false)] // host, value not on the menu
+    public void SetMaxRounds_IsHostOnlyAndValidated(string actingConn, int rounds, bool expectApplied)
     {
-        var mgr = new GameSessionManager();
-        var s = mgr.CreateLobby("conn1", "Alice", DifficultyLevel.Medium, aiMode: "Remote");
-        mgr.JoinLobby(s.GameCode, "conn2", "Bob");
+        var mgr = LobbyOf("Alice", "Bob");
 
-        var updated = mgr.UpdateLobbyAiMode(s.GameCode, actingConn, "Browser");
+        var updated = mgr.SetMaxRounds(actingConn, rounds);
 
-        if (expectSuccess)
+        if (expectApplied)
         {
             updated.Should().NotBeNull();
-            updated!.AiMode.Should().Be("Browser");
+            updated!.MaxRounds.Should().Be(rounds);
         }
         else
         {
-            updated.Should().BeNull("non-hosts cannot change AI mode");
+            updated.Should().BeNull();
+            mgr.Current!.MaxRounds.Should().Be(Game.DefaultRounds);
         }
     }
 
     // ─── Game scoring ───────────────────────────────────────────────────
 
     [Fact]
-    public void Game_ScoreboardExcludesKing()
+    public void Game_ScoreboardIncludesEveryPlayer()
     {
-        var game = new Game { Difficulty = DifficultyLevel.Easy };
-        game.AddPlayer(new Player { Name = "Alice", IsKingPlayer = true });
+        // Previously the scoreboard EXCLUDED the King. Combined with a King seat pinned to
+        // index 0 for the whole match, that meant one player in a two-player couple game
+        // was a permanent non-competitor: no score, no match-history row, no profile result.
+        var game = new Game();
+        game.AddPlayer(new Player { Name = "Alice", Score = 20 });
         game.AddPlayer(new Player { Name = "Bob", Score = 8 });
         game.AddPlayer(new Player { Name = "Carla", Score = 12 });
+
+        game.IsKing("Alice").Should().BeTrue("round 0's King is player 0");
+
         var board = game.GetScoreboard();
-        board.Keys.Should().BeEquivalentTo(new[] { "Carla", "Bob" });
-        board.Values.Should().Equal(new[] { 12, 8 });
+        board.Keys.Should().Equal("Alice", "Carla", "Bob");
+        board.Values.Should().Equal(20, 12, 8);
     }
 
     [Theory]
-    [InlineData(DifficultyLevel.Easy, 3)]
-    [InlineData(DifficultyLevel.Medium, 5)]
-    [InlineData(DifficultyLevel.Hard, 7)]
-    public void Game_MaxRounds_MapsDifficulty(DifficultyLevel difficulty, int expectedRounds)
+    [InlineData(0, "Alice")]
+    [InlineData(1, "Bob")]
+    [InlineData(2, "Carla")]
+    [InlineData(3, "Alice")] // wraps
+    public void Game_KingRotatesEveryRound(int round, string expectedKing)
     {
-        new Game { Difficulty = difficulty }.MaxRounds.Should().Be(expectedRounds);
-    }
-
-    [Fact]
-    public void AllPlayersAnswered_FalseUntilEveryoneHasAnswered()
-    {
-        var game = new Game { Difficulty = DifficultyLevel.Easy };
-        game.AddPlayer(new Player { Name = "Alice", IsKingPlayer = true });
+        var game = new Game { CurrentRound = round };
+        game.AddPlayer(new Player { Name = "Alice" });
         game.AddPlayer(new Player { Name = "Bob" });
         game.AddPlayer(new Player { Name = "Carla" });
-        game.Questions.Add(new GameQuestion { Text = "Q?" });
 
-        game.AllPlayersAnswered(0).Should().BeFalse();
-        game.Questions[0].PlayerAnswers["Bob"] = "x";
-        game.AllPlayersAnswered(0).Should().BeFalse();
-        game.Questions[0].PlayerAnswers["Carla"] = "y";
-        game.AllPlayersAnswered(0).Should().BeTrue();
+        game.KingPlayer!.Name.Should().Be(expectedKing);
     }
 }

@@ -1,7 +1,6 @@
 using System.Globalization;
 using PoMiniGames.Application.DTOs;
 using PoMiniGames.Application.Services;
-using PoMiniGames.Features.PoCoupleQuiz.Storage;
 using PoMiniGames.Features.PoFunQuiz;
 using PoMiniGames.Features.PoFunQuiz.Storage;
 using PoMiniGames.Features.PoJoker;
@@ -23,6 +22,12 @@ public static class UnifiedLeaderboardEndpoints
     private static readonly (string Key, string Title)[] WinRateGames =
     [
         ("connectfive", "Connect Five"),
+        // Couple Quiz joined this list on 2026-08-10. It used to rank named "teams" from
+        // the PoCoupleQuizTeams table — a table nothing ever wrote to, so the board served
+        // ten padded "XXX" rows forever. The game does report a per-match outcome, and with
+        // the King seat now rotating every round both partners genuinely compete, so win
+        // rate over those matches is a real measure with a real write path behind it.
+        ("pocouplequiz", "Couple Quiz"),
         // Titles must match GameCatalog on the client — the product-name authority per the
         // 2026-07-19 audit, which removed the grid dimension from the name. The storage key
         // stays "tictactoe"; only the label changed.
@@ -35,11 +40,11 @@ public static class UnifiedLeaderboardEndpoints
         var boards = app.MapGroup("/api/leaderboards").WithTags("Statistics");
 
         boards.MapGet("",
-            async (IStorageService storage, ILeaderboardRepository funQuiz, ITeamsRepository teams,
+            async (IStorageService storage, ILeaderboardRepository funQuiz,
                    IJokeStorageClient joker, int limit = 5) =>
             {
                 limit = Math.Clamp(limit, 1, 100);
-                var all = await BuildAllAsync(storage, funQuiz, teams, joker, limit);
+                var all = await BuildAllAsync(storage, funQuiz, joker, limit);
                 return Results.Ok(all);
             })
             .WithName("GetUnifiedLeaderboards")
@@ -47,11 +52,11 @@ public static class UnifiedLeaderboardEndpoints
             .Produces<IEnumerable<GameLeaderboardDto>>(StatusCodes.Status200OK);
 
         boards.MapGet("/{game}",
-            async (string game, IStorageService storage, ILeaderboardRepository funQuiz, ITeamsRepository teams,
+            async (string game, IStorageService storage, ILeaderboardRepository funQuiz,
                    IJokeStorageClient joker, int limit = 10) =>
             {
                 limit = Math.Clamp(limit, 1, 100);
-                var board = await BuildOneAsync(storage, funQuiz, teams, joker, game, limit);
+                var board = await BuildOneAsync(storage, funQuiz, joker, game, limit);
                 return board is null ? Results.NotFound(new { message = $"No leaderboard for game '{game}'" })
                                      : Results.Ok(board);
             })
@@ -64,7 +69,7 @@ public static class UnifiedLeaderboardEndpoints
     }
 
     private static async Task<List<GameLeaderboardDto>> BuildAllAsync(
-        IStorageService storage, ILeaderboardRepository funQuiz, ITeamsRepository teams,
+        IStorageService storage, ILeaderboardRepository funQuiz,
         IJokeStorageClient joker, int limit)
     {
         // §6: each board is an independent storage read, so fan them out concurrently instead
@@ -78,7 +83,6 @@ public static class UnifiedLeaderboardEndpoints
             BuildPoSportsAsync(storage, limit),
             BuildPoBrawlAsync(storage, limit),
             BuildFunQuizAsync(funQuiz, limit),
-            BuildCoupleQuizAsync(teams, limit),
             BuildPoJokerAsync(joker, limit),
         };
 
@@ -90,7 +94,7 @@ public static class UnifiedLeaderboardEndpoints
     }
 
     private static async Task<GameLeaderboardDto?> BuildOneAsync(
-        IStorageService storage, ILeaderboardRepository funQuiz, ITeamsRepository teams,
+        IStorageService storage, ILeaderboardRepository funQuiz,
         IJokeStorageClient joker, string game, int limit)
     {
         var key = game.ToLowerInvariant();
@@ -113,7 +117,9 @@ public static class UnifiedLeaderboardEndpoints
             "posports" => await BuildPoSportsAsync(storage, limit),
             "pobrawl" => await BuildPoBrawlAsync(storage, limit),
             "funquiz" => await BuildFunQuizAsync(funQuiz, limit),
-            "couplequiz" => await BuildCoupleQuizAsync(teams, limit),
+            // GameKey canonicalises "pocouplequiz" to "couplequiz", but the board is keyed by
+            // the storage key the client writes stats under.
+            "couplequiz" => await BuildWinRateAsync(storage, "pocouplequiz", "Couple Quiz", limit),
             "joker" => await BuildPoJokerAsync(joker, limit),
             _ => null,
         };
@@ -147,7 +153,8 @@ public static class UnifiedLeaderboardEndpoints
     // value Racer called "Best time", while Marble Race said "Points", Fun Quiz
     // and Joker said "Score", and Couple Quiz said "High score" — all for a plain
     // point total. Read as a page, that noise implies the games are scored
-    // differently when they are not.
+    // differently when they are not. (Couple Quiz has since moved to "Win rate",
+    // which is a genuinely different measure.)
     //
     //   ELO        adaptive rating (see AdaptiveEloGames below)
     //   Win rate   a percentage
@@ -300,24 +307,6 @@ public static class UnifiedLeaderboardEndpoints
             .ToList();
         PadWithPlaceholders(entries, limit, "0");
         return new GameLeaderboardDto("pofunquiz", "Fun Quiz", "Score", HigherIsBetter: true, entries);
-    }
-
-    /// <summary>
-    /// PoCoupleQuiz is played by a named team rather than an individual, so its board ranks
-    /// teams by their all-time high score.
-    /// </summary>
-    private static async Task<GameLeaderboardDto> BuildCoupleQuizAsync(ITeamsRepository repo, int limit)
-    {
-        var teams = await repo.GetAllTeamsAsync();
-        var entries = teams
-            .OrderByDescending(t => t.HighScore)
-            .ThenByDescending(t => t.CorrectAnswers)
-            .Take(limit)
-            .Select((t, i) => new LeaderboardEntryDto(
-                i + 1, t.Name, t.HighScore, t.HighScore.ToString("N0", CultureInfo.InvariantCulture)))
-            .ToList();
-        PadWithPlaceholders(entries, limit, "0");
-        return new GameLeaderboardDto("pocouplequiz", "Couple Quiz", "Score", HigherIsBetter: true, entries);
     }
 
     /// <summary>

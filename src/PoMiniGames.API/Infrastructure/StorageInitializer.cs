@@ -21,11 +21,12 @@ namespace PoMiniGames.Infrastructure;
 /// </remarks>
 public sealed class StorageInitializer
 {
-    /// <summary>Tables used by the three consolidated games (PoCoupleQuiz, PoFunQuiz).</summary>
+    /// <summary>Tables used by the consolidated games.</summary>
     public static readonly string[] AdditionalTables =
     [
-        "PoCoupleQuizTeams",
-        "PoCoupleQuizHistory",
+        // "PoCoupleQuizTeams" and "PoCoupleQuizHistory" were dropped with the Teams
+        // subsystem (2026-08-10): nothing in the game ever wrote a row to either, so both
+        // tables were created on every boot and stayed empty for the life of the app.
         "PoFunQuizPlayers",
         // PoSurvive persistence: backs /api/evolution/record. Without eager creation
         // that endpoint returns 500 with "No Azure Table…". Name must match the

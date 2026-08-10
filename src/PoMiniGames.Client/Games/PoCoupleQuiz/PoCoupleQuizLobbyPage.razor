@@ -1,3 +1,19 @@
+@* The ONE Couple Quiz lobby page.
+
+   Until 2026-08-10 there were two, both hand-maintained and drifted apart:
+   PoCoupleQuizPage (/couplequiz, /couplequiz/{Mode}) and this one
+   (/couplequiz/multi, /couplequiz/lobby). Only this one had busy-state guards on
+   the join buttons, a retry path when the hub was wedged, and a ready tick in the
+   player list; only the other one connected to the hub before the player had
+   dismissed the intro. Everything now lands here, so those routes are all bound to
+   this single component.
+
+   Couple Quiz is multiplayer-only (user decision, 2026-08-10). The solo "vs AI
+   partner" mode was a 16-question hardcoded bank whose "partner" was a fixed
+   answer index — a coin flip with no AI in it and no relation to the real game —
+   and the kiosk demo mode was unreachable dead code, since this game was never in
+   GameCatalog.Demo's reel. Both are gone. *@
+@page "/couplequiz"
 @page "/couplequiz/multi"
 @page "/couplequiz/lobby"
 @using PoMiniGamesClient.Games.PoCoupleQuiz.Services
@@ -7,14 +23,21 @@
 @inject NavigationManager Navigation
 @implements IAsyncDisposable
 
-<PageTitle>Couple Quiz — Lobby · PoMiniGames</PageTitle>
+<PageTitle>Couple Quiz · PoMiniGames</PageTitle>
 
-<GameShell Title=@TitleContent Player="@_playerName" BackTo="/couplequiz">
+<GameShell Title=@TitleContent Player="@_playerName" BackTo="/">
+    @* OnePlayer is the "one person is reading this screen" intro mode — it
+       honours the player's ShowGameIntros setting. There is no Multiplayer
+       member; TwoPlayer means a shared-device ready-up, which this isn't.
+       This comment must stay OUTSIDE the <GameIntro /> attribute list — Razor
+       otherwise parses the entire Razor-comment block as an attribute name,
+       and the runtime throws InvalidCharacterError from setAttribute (taking
+       the whole page render with it). See Index.razor for the same warning. *@
     @if (!_introDone)
     {
         <GameIntro CueScope="quiz"
                    Title="@TitleContent"
-                   Objective="Play Couple Quiz online — match your partner's answers to score. Join a lobby, then the host starts."
+                   Objective="Match your partner's answers. Each round one of you is the King and types a secret answer; everyone else tries to match it."
                    Controls="@HowToPlayContent"
                    Mode="GameIntro.IntroMode.OnePlayer"
                    OnStart="OnIntroStartAsync" />
@@ -27,33 +50,26 @@
     {
         <div class="gps-game-card">
             <h2 class="gps-phase-h">Multiplayer · Couple Quiz</h2>
-            <h3 class="gps-game-h">💕 Join a lobby</h3>
-            <p>Two or more players answer questions about each other. The "King" types the secret answer; the rest try to match — scored by AI.</p>
+            <h3 class="gps-game-h">💕 Join the lobby</h3>
+            <p>
+                Two or more players answer questions about each other. Each round one player is
+                the King and types the secret answer; everyone else tries to match it — scored
+                by AI. The King seat moves round the table every round.
+            </p>
+            @* There is exactly one lobby, so there is nothing to name and nothing to look up.
+               The game-code box and its "Join by code" button are gone (user decision,
+               2026-08-10) — the old "Find or create a lobby" button already auto-joined the
+               first waiting lobby, so the code was almost always a slower path to the same
+               place, with "the code may be invalid" as its own failure mode. *@
             <label>Your name: <input @bind="_playerName" maxlength="24" disabled="@_busy" /></label>
-            <label>Difficulty:
-                <select @bind="_difficulty" disabled="@_busy">
-                    <option value="Easy">Easy (3 rounds)</option>
-                    <option value="Medium" selected>Medium (5 rounds)</option>
-                    <option value="Hard">Hard (7 rounds)</option>
-                </select>
-            </label>
-            <label>Game code (optional):
-                <input @bind="_joinCode" maxlength="6" disabled="@_busy" />
-            </label>
             <div class="gps-row">
                 @* Bug fix QA #6: aria-busy + disabled state while the SignalR handshake
                    is in flight, so the primary button cannot fire twice on touch. *@
                 <button class="gps-cta"
                         aria-busy="@_busy"
                         disabled="@_busy"
-                        @onclick="OnJoinOrCreate">
-                    @(_busy ? "Connecting…" : "Find or create a lobby")
-                </button>
-                <button class="gps-btn gps-btn--secondary"
-                        aria-busy="@_busyJoin"
-                        disabled="@(_busyJoin || string.IsNullOrWhiteSpace(_joinCode))"
-                        @onclick="OnJoinByCode">
-                    @(_busyJoin ? "Joining…" : "Join by code")
+                        @onclick="OnJoin">
+                    @(_busy ? "Joining…" : "Join the lobby")
                 </button>
             </div>
             @if (!string.IsNullOrEmpty(_error))
@@ -68,10 +84,31 @@
     else
     {
         <div class="gps-game-card">
-            <h2 class="gps-phase-h">Lobby · @_lobby.GameCode</h2>
+            <h2 class="gps-phase-h">Lobby</h2>
             <h3 class="gps-game-h">💕 Waiting for players</h3>
-            <p>Difficulty: <strong>@_lobby.Difficulty</strong> · AI mode: <strong>@_lobby.AiMode</strong></p>
             <p>Host: <strong>@_lobby.HostName</strong></p>
+
+            @* Rounds is host-only. It used to be a "Difficulty" select every player saw,
+               which mapped to nothing but the round count — and belonged to whoever created
+               the lobby, so a joiner picked "Hard", had it silently discarded, and got no
+               hint why. Non-hosts now read the value instead of setting it. *@
+            @if (_lobby.IsHost)
+            {
+                <label>
+                    Rounds:
+                    <select value="@_lobby.MaxRounds" @onchange="OnRoundsChanged">
+                        @foreach (var n in RoundChoices)
+                        {
+                            <option value="@n">@n rounds</option>
+                        }
+                    </select>
+                </label>
+            }
+            else
+            {
+                <p>Rounds: <strong>@_lobby.MaxRounds</strong></p>
+            }
+
             <h3>Players (@_lobby.Players.Count)</h3>
             <ul>
                 @foreach (var p in _lobby.Players)
@@ -80,40 +117,46 @@
                     <li>@p @(p == _lobby.HostName ? "👑" : "") @(isReady ? "✅" : "")</li>
                 }
             </ul>
+
+            @* One start path. The host's "Start game" button used to sit beside the
+               ready-up flow and race it — the server auto-started the moment everyone was
+               ready anyway, so the button could only ever start a match early or do nothing. *@
             <div class="cq-actions">
-                <button class="gps-btn gps-btn gps-btn--primary" @onclick="OnReady">I'm ready</button>
+                <button class="gps-btn gps-btn--primary" disabled="@_ready" @onclick="OnReady">
+                    @(_ready ? "Ready ✓" : "I'm ready")
+                </button>
             </div>
-            @if (_lobby.IsHost && _lobby.Players.Count >= 2)
-            {
-                <div class="cq-actions">
-                    <button class="gps-btn gps-btn gps-btn--secondary" @onclick="OnStart">Start game</button>
-                </div>
-            }
+            <p class="cq-hint">
+                @(_lobby.Players.Count < 2
+                    ? "Waiting for another player to join…"
+                    : "The match starts as soon as everyone is ready.")
+            </p>
         </div>
     }
 </GameShell>
 
 @code {
-    private RenderFragment TitleContent => @<span><span aria-hidden="true">💕</span> Couple Quiz · Lobby</span>;
+    private static readonly int[] RoundChoices = [3, 5, 7];
+
+    private RenderFragment TitleContent => @<span><span aria-hidden="true">💕</span> Couple Quiz</span>;
 
     // Intro/welcome gate — the controls card shows first; only on OK do we connect
     // to the lobby hub (so the player doesn't appear to others until they're ready).
     private bool _introDone;
     private RenderFragment HowToPlayContent => @<div>
-        <p>Answer questions about each other. The "King" locks a secret answer; everyone else tries to match it — matches score points.</p>
+        <p>Answer questions about each other. Each round one player is the King and locks a secret answer; everyone else tries to match it — matches score points.</p>
         <ul>
-            <li>Tap the option you think matches your partner</li>
-            <li>Wait for another player to join, ready up, then the host starts</li>
+            <li>Type your answer and submit — the round scores itself once everyone is in</li>
+            <li>The King seat rotates every round, so you both get asked about</li>
+            <li>Rounds are timed; whatever you've typed when the clock runs out is what counts</li>
         </ul>
     </div>;
 
     private string _playerName = string.Empty;
-    private string _difficulty = "Medium";
-    private string? _joinCode;
     private string? _error;
     private bool _isConnected;
     private bool _busy;
-    private bool _busyJoin;
+    private bool _ready;
     private CoupleQuizLobbyEventPayload? _lobby;
 
     protected override void OnInitialized()
@@ -122,9 +165,9 @@
         // intro's OK (see OnIntroStartAsync) so the player joins the lobby only
         // after seeing the controls.
         _playerName = PlayerNameService.GetPlayerName();
-        Hub.OnLobbyCreated += HandleLobbyCreated;
         Hub.OnLobbyJoined += HandleLobbyJoined;
         Hub.OnLobbyUpdated += HandleLobbyUpdated;
+        Hub.OnPlayerDisconnected += HandleLobbyUpdated;
         Hub.OnLobbyError += HandleError;
         Hub.OnGameStarted += HandleGameStarted;
     }
@@ -145,7 +188,7 @@
         StateHasChanged();
     }
 
-    private async Task OnJoinOrCreate()
+    private async Task OnJoin()
     {
         if (_busy || _lobby is not null) return;
         if (string.IsNullOrWhiteSpace(_playerName)) { _error = "Enter a name."; return; }
@@ -155,42 +198,15 @@
         StateHasChanged();
         try
         {
-            // Cap the wait at 5 s; if the hub is silently wedged, surface a retry path
-            // rather than leaving the user staring at "Connecting…" forever.
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-            await Hub.JoinOrCreateAsync(_playerName, _difficulty);
+            await Hub.JoinAsync(_playerName);
         }
         catch (Exception ex)
         {
-            _error = $"Could not join lobby: {ex.Message}";
+            _error = $"Could not join the lobby: {ex.Message}";
         }
         finally
         {
             _busy = false;
-            StateHasChanged();
-        }
-    }
-
-    private async Task OnJoinByCode()
-    {
-        if (_busyJoin || _lobby is not null) return;
-        if (string.IsNullOrWhiteSpace(_joinCode)) { _error = "Enter a code."; return; }
-        PlayerNameService.SetPlayerName(_playerName);
-        _busyJoin = true;
-        _error = null;
-        StateHasChanged();
-        try
-        {
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-            await Hub.JoinLobbyAsync(_joinCode.Trim().ToUpperInvariant(), _playerName);
-        }
-        catch (Exception ex)
-        {
-            _error = $"Could not join by code: {ex.Message}";
-        }
-        finally
-        {
-            _busyJoin = false;
             StateHasChanged();
         }
     }
@@ -212,54 +228,65 @@
 
     private async Task OnReady()
     {
-        if (_lobby is null) return;
-        await Hub.SetReadyAsync(_lobby.GameCode);
+        if (_lobby is null || _ready) return;
+        _ready = true;
+        await Hub.SetReadyAsync();
     }
 
-    private async Task OnStart()
+    private async Task OnRoundsChanged(ChangeEventArgs e)
     {
-        if (_lobby is null) return;
-        await Hub.StartGameAsync(_lobby.GameCode);
+        if (_lobby is null || !int.TryParse(e.Value?.ToString(), out var rounds)) return;
+        await Hub.SetRoundsAsync(rounds);
     }
 
     // NB: SignalR `.On` callbacks run outside Blazor's render loop, so each handler
     // must marshal a StateHasChanged onto the renderer's context — otherwise the UI
     // only repaints when some *other* UI event happens to fire (a latent race that
     // left the lobby stuck on the join card even after the server created it).
-    private void HandleLobbyCreated(CoupleQuizLobbyEventPayload p)
-    {
-        _lobby = p;
-        _ = InvokeAsync(StateHasChanged);
-    }
     private void HandleLobbyJoined(CoupleQuizLobbyEventPayload p)
     {
-        _lobby = p;
-        _ = InvokeAsync(StateHasChanged);
-    }
-    private void HandleLobbyUpdated(CoupleQuizLobbyUpdatedPayload p)
-    {
-        if (_lobby is not null && _lobby.GameCode == p.GameCode)
+        // A malformed payload used to overwrite _lobby with null and trigger a
+        // NullReferenceException render loop (audit #5).
+        if (p is null)
         {
-            _lobby = _lobby with
-            {
-                Players = p.Players,
-                ReadyPlayers = p.ReadyPlayers,
-                HostName = p.HostName,
-                Difficulty = p.Difficulty ?? _lobby.Difficulty,
-                AiMode = p.AiMode ?? _lobby.AiMode
-            };
+            _error = "The server returned an empty lobby. Please try again.";
             _ = InvokeAsync(StateHasChanged);
+            return;
         }
-    }
-    private void HandleError(string message)
-    {
-        _error = message;
+        _lobby = p;
         _ = InvokeAsync(StateHasChanged);
     }
 
-    // The game auto-starts once everyone readies up (or the host hits "Start game"),
-    // which broadcasts GameStarted to the whole group. Move every player to the board;
-    // the hub service buffers the payload so the game page hydrates from it on mount.
+    private void HandleLobbyUpdated(CoupleQuizLobbyUpdatedPayload p)
+    {
+        if (p is null || _lobby is null) return;
+        _lobby = _lobby with
+        {
+            Players = p.Players,
+            ReadyPlayers = p.ReadyPlayers,
+            HostName = p.HostName,
+            MaxRounds = p.MaxRounds,
+            // The host can leave, and whoever is promoted needs the rounds control.
+            IsHost = string.Equals(p.HostName, _lobby.PlayerName, StringComparison.Ordinal),
+        };
+        // The server clears ready flags when a match ends and the lobby reopens.
+        _ready = p.ReadyPlayers.Contains(_lobby.PlayerName);
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void HandleError(string? message)
+    {
+        // Null/empty guard — the UI renders @_error directly and crashes on
+        // null string interpolation otherwise.
+        _error = string.IsNullOrEmpty(message)
+            ? "An unknown error occurred. Please try again."
+            : message;
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    // The match auto-starts once everyone readies up, which broadcasts GameStarted to the
+    // whole lobby. Move every player to the board; the hub service buffers the payload so
+    // the game page hydrates from it on mount.
     private void HandleGameStarted(CoupleQuizGameStartedPayload _) =>
         Navigation.NavigateTo("/couplequiz/game");
 
@@ -269,9 +296,9 @@
     // the DI container owns the connection's lifetime.
     public ValueTask DisposeAsync()
     {
-        Hub.OnLobbyCreated -= HandleLobbyCreated;
         Hub.OnLobbyJoined -= HandleLobbyJoined;
         Hub.OnLobbyUpdated -= HandleLobbyUpdated;
+        Hub.OnPlayerDisconnected -= HandleLobbyUpdated;
         Hub.OnLobbyError -= HandleError;
         Hub.OnGameStarted -= HandleGameStarted;
         return ValueTask.CompletedTask;

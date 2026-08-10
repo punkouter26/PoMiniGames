@@ -27,11 +27,17 @@ internal static partial class CoupleQuizLog
         Message = "PoCoupleQuiz: Azure OpenAI similarity scoring failed.")]
     public static partial void SimilarityScoringFailed(this ILogger logger, Exception ex);
 
+    // 5105/5106 both logged "lobby {Code} created by {Host}" from the two join paths.
+    // There is one lobby and one join path now, so there is one message.
     [LoggerMessage(EventId = 5105, Level = LogLevel.Information,
-        Message = "Lobby {Code} created by {Host}")]
-    public static partial void LobbyCreated(this ILogger logger, string code, string? host);
+        Message = "PoCoupleQuiz: lobby opened by {Host}")]
+    public static partial void LobbyOpened(this ILogger logger, string? host);
 
-    [LoggerMessage(EventId = 5106, Level = LogLevel.Information,
-        Message = "JoinOrCreate: lobby {Code} created by {Host}")]
-    public static partial void JoinOrCreateLobbyCreated(this ILogger logger, string code, string? host);
+    [LoggerMessage(EventId = 5107, Level = LogLevel.Error,
+        Message = "PoCoupleQuiz: the round timer callback threw; the lobby is left recoverable.")]
+    public static partial void RoundTimerFailed(this ILogger logger, Exception ex);
+
+    [LoggerMessage(EventId = 5108, Level = LogLevel.Error,
+        Message = "PoCoupleQuiz: could not generate the next question; the match will end early.")]
+    public static partial void RoundAdvanceFailed(this ILogger logger, Exception ex);
 }

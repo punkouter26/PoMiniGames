@@ -97,7 +97,7 @@
                 default:
                     <button class="gps-intro-btn gps-intro-btn--primary"
                             @onclick="StartAsync">
-                        @(StartLabel ?? "OK")
+                        @(StartLabel ?? "Start")
                     </button>
                     break;
             }
@@ -152,6 +152,17 @@
     /// </summary>
     [Parameter] public string? CueScope { get; set; }
 
+    /// <summary>
+    /// 2026-08-10 audit: when false, the Settings → "Show game intros" toggle
+    /// does NOT auto-skip this card. FunQuiz's 2-player and online-multiplayer
+    /// intros pass <c>IntroMode.OnePlayer</c> because they want the standard
+    /// card chrome, but they should still surface every time — the toggle is
+    /// labelled "Show the controls card before each 1-player game" and that
+    /// is the contract. Defaults true so existing 1P games inherit the
+    /// behaviour unchanged.
+    /// </summary>
+    [Parameter] public bool RespectSkipToggle { get; set; } = true;
+
     [Inject] private Services.UiFeedbackService Feedback { get; set; } = null!;
     [Inject] private Services.SettingsService Settings { get; set; } = null!;
 
@@ -174,7 +185,9 @@
         // A returning player who ticked "Don't show this again" goes straight
         // into the game. Checked here rather than in each page so all nine 1P
         // games inherit it from the one component they already share.
-        if (Mode == IntroMode.OnePlayer && !Settings.ShowGameIntros)
+        // RespectSkipToggle lets modes that pass IntroMode.OnePlayer for layout
+        // reasons (FunQuiz's 2P/multiplayer intros) opt out of the global skip.
+        if (RespectSkipToggle && Mode == IntroMode.OnePlayer && !Settings.ShowGameIntros)
         {
             await StartAsync();
             return;

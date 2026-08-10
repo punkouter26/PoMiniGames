@@ -69,13 +69,13 @@ public sealed class AzureOpenAIQuestionService : IQuestionService
     }
 
     public async Task<Question> GenerateQuestionAsync(
-        DifficultyLevel difficulty, QuestionCategory? category = null, CancellationToken cancellationToken = default)
+        QuestionCategory? category = null, CancellationToken cancellationToken = default)
     {
         var options = _optionsMonitor.CurrentValue;
         if (options.Features.UseMockAI && IsNonProduction())
         {
             _logger.UsingMockQuestion(_environment.EnvironmentName);
-            return await _mock.GenerateQuestionAsync(difficulty, category, cancellationToken);
+            return await _mock.GenerateQuestionAsync(category, cancellationToken);
         }
 
         var deployment = _clients.DeploymentFor(AIFoundryOptions.Games.CoupleQuiz);
@@ -85,7 +85,7 @@ public sealed class AzureOpenAIQuestionService : IQuestionService
             if (IsNonProduction())
             {
                 _logger.FoundryUnconfiguredUsingMock(_environment.EnvironmentName);
-                return await _mock.GenerateQuestionAsync(difficulty, category, cancellationToken);
+                return await _mock.GenerateQuestionAsync(category, cancellationToken);
             }
             throw new InvalidOperationException(
                 $"PoCoupleQuiz: AIFoundry not configured. Set {AIFoundryOptions.SectionName} in Key Vault (kv-poshared).");
@@ -98,7 +98,7 @@ public sealed class AzureOpenAIQuestionService : IQuestionService
             "single short answer the King would actually know about themselves. Keep it under 12 " +
             "words. No explanations — emit only the JSON object described by the schema.";
         var userPrompt =
-            $"Difficulty: {difficulty}. Category preference: {categoryHint}. Generate one question.";
+            $"Category preference: {categoryHint}. Generate one question.";
 
         try
         {
@@ -124,7 +124,7 @@ public sealed class AzureOpenAIQuestionService : IQuestionService
             _logger.QuestionGenerationFailed(ex);
             if (IsNonProduction())
             {
-                return await _mock.GenerateQuestionAsync(difficulty, category, cancellationToken);
+                return await _mock.GenerateQuestionAsync(category, cancellationToken);
             }
             throw;
         }

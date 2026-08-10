@@ -65,9 +65,6 @@ namespace PoMiniGamesClient.Services;
 [JsonSerializable(typeof(List<FunQuizLeaderboardRow>))]
 [JsonSerializable(typeof(FunQuizLeaderboardRow[]))]
 [JsonSerializable(typeof(FunQuizLeaderboardSubmission))]
-// PoCoupleQuiz
-[JsonSerializable(typeof(CoupleQuizTeamRow))]
-[JsonSerializable(typeof(List<CoupleQuizTeamRow>))]
 // PoJoker
 [JsonSerializable(typeof(PoMiniGames.Shared.Games.PoJoker.JokeDto))]
 [JsonSerializable(typeof(PoMiniGames.Shared.Games.PoJoker.JokeFlags))]

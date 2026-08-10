@@ -275,6 +275,23 @@
     color: var(--color-text-secondary);
 }
 
+/* 2026-08-10 audit #3: cards with only one mode (Couple Quiz) used to render
+   an empty chip row or a duplicate-of-the-card-head link. The empty-state
+   chip now reads "How to play" — visually distinct from a mode pill, points
+   to the same destination, and gives every card the same chip-row weight
+   regardless of how many modes it supports. */
+.home-mode-chip--info {
+    border-style: dashed;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+}
+
+.home-mode-chip--info:hover {
+    border-color: var(--color-accent);
+    background: rgba(99, 102, 241, 0.10);
+    color: var(--color-text-primary);
+}
+
 /* ── Scroll-driven card reveal ───────────────────────────────────────────────
    `animation-timeline: view()` runs entirely on the compositor — no scroll
    listener, no IntersectionObserver, no per-frame JS. `both` holds the end state

@@ -22,6 +22,22 @@
     height: 100%;
 }
 
+/* 2026-08-10 audit #10: when the WebGL canvas mounts inside the host, fade
+   it in over the host's own track-gradient background. The three.js scene
+   takes a frame or two to paint its first frame; without this fade a
+   player sees a black flash, then the static gradient, then the live
+   scene. The fade hides both transitions behind a single opacity ramp
+   that completes before the player notices. */
+.mr-canvas-host canvas {
+    opacity: 0;
+    animation: mr-canvas-in 0.45s var(--ease-standard, ease-out) 0.15s forwards;
+}
+
+@keyframes mr-canvas-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+
 /* ── Top-3 podium overlay (broadcast banner, top-centre of the canvas) ── */
 .mr-podium {
     position: absolute;

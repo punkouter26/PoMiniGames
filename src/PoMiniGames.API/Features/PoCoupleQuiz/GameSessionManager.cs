@@ -1,244 +1,255 @@
-using System.Collections.Concurrent;
-
 namespace PoMiniGames.Features.PoCoupleQuiz;
 
 /// <summary>
-/// In-memory implementation of <see cref="IGameSessionManager"/>. Uses
-/// <see cref="ConcurrentDictionary{TKey,TValue}"/> for the session table and
-/// a separate connection-to-game-code map so the SignalR hub can look up a
-/// session by connection id on disconnect.
+/// In-memory implementation of <see cref="IGameSessionManager"/>. Holds exactly one
+/// <see cref="GameSession"/> plus a connection-to-player map so the SignalR hub can
+/// identify a caller by connection id.
 /// </summary>
 /// <remarks>
-/// Pattern: Singleton + Active-Record. Each <see cref="GameSession"/> is mutated
-/// in place; the manager is the only writer. Lock-free reads from SignalR hub
-/// methods are safe because each operation is either <c>GetOrAdd</c> (atomic)
-/// or a <c>TryGetValue</c> + <c>Update</c> via <see cref="ConcurrentDictionary{TKey,TValue}"/>.
+/// <para>Pattern: Singleton + Active-Record. The session is mutated in place; this class is
+/// the only writer. Where the old implementation leaned on <c>ConcurrentDictionary</c>'s
+/// atomicity for a table of lobbies, one session needs a plain lock — the interesting
+/// operations (join, record answer, advance) are multi-field and were never atomic under
+/// the dictionary either.</para>
+/// <para>Locking is deliberately coarse: every operation here is a handful of list/set
+/// mutations with no I/O. The AI calls that DO take time happen in
+/// <see cref="CoupleQuizRoundDirector"/>, outside this lock.</para>
 /// </remarks>
 public sealed class GameSessionManager : IGameSessionManager
 {
-    private const int MinPlayersToStart = 2;
-    private const int GameCodeLength = 5;
+    private readonly Lock _gate = new();
+    private GameSession? _session;
 
-    private readonly ConcurrentDictionary<string, GameSession> _sessions = new();
-    private readonly ConcurrentDictionary<string, string> _connectionToGameCode = new();
-
-    public GameSession CreateLobby(string hostConnectionId, string hostName, DifficultyLevel difficulty, string aiMode = "Remote")
+    public GameSession? Current
     {
-        var code = GenerateUniqueGameCode();
-        var session = new GameSession
-        {
-            GameCode = code,
-            HostConnectionId = hostConnectionId,
-            Difficulty = difficulty,
-            AiMode = aiMode,
-            State = SessionState.Waiting,
-            Players = new List<LobbyPlayer>
-            {
-                new(hostName, hostConnectionId)
-            }
-        };
-        _sessions[code] = session;
-        _connectionToGameCode[hostConnectionId] = code;
-        return session;
+        get { lock (_gate) { return _session; } }
     }
 
-    public GameSession? JoinLobby(string gameCode, string connectionId, string playerName)
+    public GameSession Join(string connectionId, string playerName, out bool created)
     {
-        if (!_sessions.TryGetValue(gameCode, out var session)) return null;
-        if (session.State != SessionState.Waiting) return null;
+        lock (_gate)
+        {
+            if (_session is null)
+            {
+                created = true;
+                _session = new GameSession
+                {
+                    HostConnectionId = connectionId,
+                    State = SessionState.Waiting,
+                    Players = [new LobbyPlayer(playerName, connectionId)],
+                };
+                return _session;
+            }
 
-        // Disconnect an existing entry for this connection id (e.g. reconnect).
-        _connectionToGameCode.TryRemove(connectionId, out _);
+            created = false;
 
-        // Two anonymous players share one "Guest######" identity when they sign in
-        // from the same browser (shared session cookie), so the same name can join
-        // twice. The name is the identity key for round scoring, so a collision
-        // collapses both players into one. Disambiguate with a numeric suffix.
-        var uniqueName = EnsureUniqueName(session, playerName);
-        session.Players.Add(new LobbyPlayer(uniqueName, connectionId));
-        _connectionToGameCode[connectionId] = gameCode;
-        return session;
+            // Already in? Re-joining from the same connection is a no-op rather than a
+            // second seat at the table.
+            if (_session.Players.Any(p => p.ConnectionId == connectionId)) return _session;
+
+            // Two anonymous players share one "Guest######" identity when they sign in from
+            // the same browser (shared session cookie), so the same name can join twice. The
+            // name is the identity key for round scoring, so a collision would collapse both
+            // players into one. Disambiguate with a numeric suffix.
+            _session.Players.Add(new LobbyPlayer(EnsureUniqueName(_session, playerName), connectionId));
+            return _session;
+        }
     }
 
     public GameSession? RemovePlayer(string connectionId, out bool sessionEmpty)
     {
         sessionEmpty = false;
-        if (!_connectionToGameCode.TryRemove(connectionId, out var code)) return null;
-        if (!_sessions.TryGetValue(code, out var session)) return null;
-
-        session.Players.RemoveAll(p => p.ConnectionId == connectionId);
-        session.ReadyConnectionIds.Remove(connectionId);
-
-        if (session.Players.Count == 0)
+        lock (_gate)
         {
-            _sessions.TryRemove(code, out _);
-            sessionEmpty = true;
+            if (_session is null) return null;
+            if (_session.Players.All(p => p.ConnectionId != connectionId)) return null;
+
+            var session = _session;
+            session.Players.RemoveAll(p => p.ConnectionId == connectionId);
+            session.ReadyConnectionIds.Remove(connectionId);
+
+            if (session.Players.Count == 0)
+            {
+                session.DisarmTimer();
+                _session = null;
+                sessionEmpty = true;
+                return session;
+            }
+
+            // If the host left, promote the next player.
+            if (session.HostConnectionId == connectionId)
+            {
+                session.HostConnectionId = session.Players[0].ConnectionId;
+            }
+
+            // A player leaving mid-match also leaves the Game's roster, or the round can
+            // never complete: AllPlayersAnswered waits on a name nobody will submit, and
+            // the rotating King seat could land on an empty chair.
+            session.ActiveGame?.Players.RemoveAll(
+                p => session.Players.All(lp => lp.Name != p.Name));
+
             return session;
         }
-
-        // If the host left, promote the next player.
-        if (session.HostConnectionId == connectionId)
-        {
-            session.HostConnectionId = session.Players[0].ConnectionId;
-        }
-
-        return session;
     }
 
-    public GameSession? GetSessionByConnection(string connectionId) =>
-        _connectionToGameCode.TryGetValue(connectionId, out var code) && _sessions.TryGetValue(code, out var s) ? s : null;
-
-    public GameSession? GetSession(string gameCode) =>
-        _sessions.TryGetValue(gameCode, out var s) ? s : null;
-
-    public bool LobbyExists(string gameCode) => _sessions.ContainsKey(gameCode);
-
-    public Game StartGame(string gameCode, string questionText, string category)
+    public GameSession? GetSessionByConnection(string connectionId)
     {
-        if (!_sessions.TryGetValue(gameCode, out var session))
+        lock (_gate)
         {
-            throw new InvalidOperationException($"Game session '{gameCode}' not found.");
+            return _session is not null && _session.Players.Any(p => p.ConnectionId == connectionId)
+                ? _session
+                : null;
         }
+    }
 
-        var kingIndex = 0; // The first player to join stays King for the whole game.
-        var game = new Game
+    public Game StartGame(string questionText, string category)
+    {
+        lock (_gate)
         {
-            Difficulty = session.Difficulty,
-            CurrentKingPlayerIndex = kingIndex
-        };
-        foreach (var p in session.Players)
-        {
-            game.AddPlayer(new Player
+            var session = _session ?? throw new InvalidOperationException("No PoCoupleQuiz lobby to start.");
+
+            var game = new Game { MaxRounds = session.MaxRounds };
+            foreach (var p in session.Players)
             {
-                Name = p.Name,
-                IsKingPlayer = p.ConnectionId == session.Players[kingIndex].ConnectionId
-            });
-        }
-
-        var firstQuestion = new GameQuestion
-        {
-            Text = questionText,
-            Category = Enum.TryParse<QuestionCategory>(category, out var cat) ? cat : QuestionCategory.Preferences
-        };
-        game.Questions.Add(firstQuestion);
-        game.CurrentRound = 0;
-
-        session.ActiveGame = game;
-        session.CurrentQuestion = firstQuestion;
-        session.State = SessionState.InProgress;
-        session.LastEvaluatedRound = -1;
-        session.LastAdvancedFromRound = -1;
-        session.RoundAnswers.Clear();
-        session.ReadyConnectionIds.Clear();
-
-        return game;
-    }
-
-    public bool RecordAnswer(string gameCode, string playerName, string answer)
-    {
-        if (!_sessions.TryGetValue(gameCode, out var session)) return false;
-        if (session.ActiveGame is null || session.CurrentQuestion is null) return false;
-
-        session.CurrentQuestion.PlayerAnswers[playerName] = answer;
-        session.RoundAnswers[playerName] = answer;
-        return true;
-    }
-
-    public Game AdvanceRound(string gameCode)
-    {
-        if (!_sessions.TryGetValue(gameCode, out var session) || session.ActiveGame is null)
-        {
-            throw new InvalidOperationException($"Cannot advance round: session '{gameCode}' has no active game.");
-        }
-
-        var game = session.ActiveGame;
-        game.CurrentRound++;
-        session.LastAdvancedFromRound = game.CurrentRound - 1;
-        session.LastEvaluatedRound = -1;
-        session.RoundAnswers.Clear();
-        session.ReadyConnectionIds.Clear();
-        return game;
-    }
-
-    public void ApplyRoundScores(string gameCode, Dictionary<string, int> pointsEarned)
-    {
-        if (!_sessions.TryGetValue(gameCode, out var session) || session.ActiveGame is null) return;
-        foreach (var player in session.ActiveGame.Players)
-        {
-            if (pointsEarned.TryGetValue(player.Name, out var pts))
-            {
-                player.Score += pts;
-                player.TotalCorrectGuesses += pts > 0 ? 1 : 0;
+                game.AddPlayer(new Player { Name = p.Name });
             }
-            player.TotalRoundsPlayed++;
+
+            game.CurrentQuestion = new GameQuestion
+            {
+                Text = questionText,
+                Category = Enum.TryParse<QuestionCategory>(category, out var cat) ? cat : QuestionCategory.Preferences
+            };
+            game.CurrentRound = 0;
+
+            session.ActiveGame = game;
+            session.State = SessionState.InProgress;
+            session.Phase = RoundPhase.Answering;
+            session.LastEvaluatedRound = -1;
+            session.ReadyConnectionIds.Clear();
+
+            return game;
         }
     }
 
-    public void FinishGame(string gameCode)
+    public bool RecordAnswer(string playerName, string answer)
     {
-        if (!_sessions.TryGetValue(gameCode, out var session)) return;
-        session.State = SessionState.Finished;
-    }
-
-    public string? PromoteNextHost(string gameCode)
-    {
-        if (!_sessions.TryGetValue(gameCode, out var session) || session.Players.Count == 0) return null;
-        var next = session.Players.First();
-        session.HostConnectionId = next.ConnectionId;
-        return next.Name;
-    }
-
-    public GameSession? GetWaitingLobby() =>
-        _sessions.Values.FirstOrDefault(s => s.State == SessionState.Waiting && s.Players.Count < 8);
-
-    public LobbyReadyState? MarkPlayerReady(string gameCode, string connectionId)
-    {
-        if (!_sessions.TryGetValue(gameCode, out var session)) return null;
-        session.ReadyConnectionIds.Add(connectionId);
-        return BuildReadyState(session);
-    }
-
-    public LobbyReadyState? GetLobbyReadyState(string gameCode) =>
-        _sessions.TryGetValue(gameCode, out var s) ? BuildReadyState(s) : null;
-
-    public LobbyReadyState? UpdateLobbyAiMode(string gameCode, string connectionId, string aiMode)
-    {
-        if (!_sessions.TryGetValue(gameCode, out var session)) return null;
-        if (session.HostConnectionId != connectionId) return null;
-        session.AiMode = string.IsNullOrWhiteSpace(aiMode) ? "Remote" : aiMode;
-        return BuildReadyState(session);
-    }
-
-    public LobbyReadyState? ResetReadyState(string gameCode)
-    {
-        if (!_sessions.TryGetValue(gameCode, out var session)) return null;
-        session.ReadyConnectionIds.Clear();
-        return BuildReadyState(session);
-    }
-
-    public GameSession JoinOrCreateLobby(string connectionId, string playerName, DifficultyLevel difficulty, out bool created, string aiMode = "Remote")
-    {
-        var existing = GetWaitingLobby();
-        if (existing is not null)
+        lock (_gate)
         {
-            created = false;
-            var session = JoinLobby(existing.GameCode, connectionId, playerName);
-            return session ?? existing;
-        }
+            if (_session?.ActiveGame is not { } game || game.CurrentQuestion is not { } question) return false;
 
-        created = true;
-        return CreateLobby(connectionId, playerName, difficulty, aiMode);
+            // The King's submission is the round's secret answer; everyone else's is a guess.
+            if (game.IsKing(playerName))
+            {
+                question.KingPlayerAnswer = answer;
+            }
+            else
+            {
+                question.PlayerAnswers[playerName] = answer;
+            }
+            return true;
+        }
+    }
+
+    public Game AdvanceRound()
+    {
+        lock (_gate)
+        {
+            if (_session?.ActiveGame is not { } game)
+            {
+                throw new InvalidOperationException("Cannot advance round: there is no active PoCoupleQuiz game.");
+            }
+
+            game.CurrentRound++;
+            _session.Phase = RoundPhase.Answering;
+            _session.ReadyConnectionIds.Clear();
+            return game;
+        }
+    }
+
+    public void ApplyRoundScores(Dictionary<string, int> pointsEarned)
+    {
+        lock (_gate)
+        {
+            if (_session?.ActiveGame is not { } game) return;
+            foreach (var player in game.Players)
+            {
+                if (pointsEarned.TryGetValue(player.Name, out var pts))
+                {
+                    player.Score += pts;
+                    player.TotalCorrectGuesses += pts > 0 ? 1 : 0;
+                }
+                player.TotalRoundsPlayed++;
+            }
+        }
+    }
+
+    public void FinishGame()
+    {
+        lock (_gate)
+        {
+            if (_session is null) return;
+            _session.State = SessionState.Finished;
+            _session.DisarmTimer();
+        }
+    }
+
+    public LobbyReadyState? MarkPlayerReady(string connectionId)
+    {
+        lock (_gate)
+        {
+            if (_session is null) return null;
+            _session.ReadyConnectionIds.Add(connectionId);
+            return BuildReadyState(_session);
+        }
+    }
+
+    public LobbyReadyState? GetLobbyReadyState()
+    {
+        lock (_gate)
+        {
+            return _session is null ? null : BuildReadyState(_session);
+        }
+    }
+
+    public LobbyReadyState? SetMaxRounds(string connectionId, int rounds)
+    {
+        lock (_gate)
+        {
+            if (_session is null) return null;
+            // Host-only, and only while waiting. Previously the round count belonged to
+            // whoever happened to create the lobby, so a joiner picked a value, saw it
+            // silently discarded, and got no hint why.
+            if (_session.HostConnectionId != connectionId) return null;
+            if (_session.State != SessionState.Waiting) return null;
+            if (!Game.AllowedRounds.Contains(rounds)) return null;
+
+            _session.MaxRounds = rounds;
+            return BuildReadyState(_session);
+        }
+    }
+
+    public LobbyReadyState? ResetToLobby()
+    {
+        lock (_gate)
+        {
+            if (_session is null) return null;
+            _session.DisarmTimer();
+            _session.State = SessionState.Waiting;
+            _session.ActiveGame = null;
+            _session.Phase = RoundPhase.Answering;
+            _session.LastEvaluatedRound = -1;
+            _session.ReadyConnectionIds.Clear();
+            return BuildReadyState(_session);
+        }
     }
 
     private static LobbyReadyState BuildReadyState(GameSession s) => new(
-        s.GameCode,
         s.Players.Select(p => p.Name).ToList(),
         s.Players.Where(p => s.ReadyConnectionIds.Contains(p.ConnectionId)).Select(p => p.Name).ToList(),
         s.HostName ?? string.Empty,
-        s.Difficulty.ToString(),
-        s.AiMode,
-        s.Players.Count > 0 && s.ReadyConnectionIds.Count >= s.Players.Count,
-        MinPlayersToStart);
+        s.MaxRounds,
+        s.Players.Count >= Game.MinimumPlayers && s.ReadyConnectionIds.Count >= s.Players.Count,
+        Game.MinimumPlayers);
 
     // Ensure a joining player's name is unique within the lobby (case-insensitive).
     // Shared "Guest######" identities collide otherwise; append " (2)", " (3)", …
@@ -251,19 +262,5 @@ public sealed class GameSessionManager : IGameSessionManager
             var candidate = $"{requested} ({i})";
             if (!taken.Contains(candidate)) return candidate;
         }
-    }
-
-    private string GenerateUniqueGameCode()
-    {
-        const string alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // skip confusables
-        var rng = System.Security.Cryptography.RandomNumberGenerator.Create();
-        for (var attempts = 0; attempts < 50; attempts++)
-        {
-            var bytes = new byte[GameCodeLength];
-            rng.GetBytes(bytes);
-            var code = new string(bytes.Select(b => alphabet[b % alphabet.Length]).ToArray());
-            if (!_sessions.ContainsKey(code)) return code;
-        }
-        throw new InvalidOperationException("Could not generate a unique game code after 50 attempts.");
     }
 }

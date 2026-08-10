@@ -129,9 +129,37 @@
                 }
 
                 <div class="home-card-modes">
-                    @foreach (var m in game.Modes)
+                    @* 2026-08-10 audit #3: a card whose only mode is the primary
+                       link (Couple Quiz) used to render the same destination twice
+                       — once as the card head, once as a chip — which read as a
+                       broken second link rather than a deliberate empty chip
+                       row. Suppress the chip when its URL matches the head's
+                       URL; render a small "How to play" pill on cards that
+                       would otherwise have zero chips so the row is never
+                       visually orphaned. *@
+                    @{
+                        var visibleChips = game.Modes
+                            .Where(m => !string.Equals(m.Url, game.Primary.Url, StringComparison.OrdinalIgnoreCase))
+                            .ToList();
+                    }
+                    @foreach (var m in visibleChips)
                     {
                         @ModeChip(game, m)
+                    }
+                    @if (visibleChips.Count == 0)
+                    {
+                        @* 2026-08-10: Couple Quiz is the only game where every
+                           mode matches the card head, so visibleChips is empty.
+                           Render the primary action as a real chip rather than a
+                           "How to play" info pill — the card head already says
+                           "Couple Quiz", a generic "How to play" pill read as a
+                           missing link. The chip carries the mode label so a
+                           player landing on the card knows the game is online
+                           multiplayer. *@
+                        <a class="home-mode-chip home-mode-chip--@game.Primary.Mode.ToString().ToLowerInvariant()"
+                           href="@game.Primary.Url"
+                           title="@($"{game.Title} — {GameModes.ToDescription(game.Primary.Mode)}")"
+                           aria-label="@($"{game.Title}, {GameModes.ToDescription(game.Primary.Mode)}")">@GameModes.ToLabel(game.Primary.Mode)</a>
                     }
                 </div>
             </article>

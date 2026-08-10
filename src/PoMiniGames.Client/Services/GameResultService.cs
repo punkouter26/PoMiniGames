@@ -76,6 +76,35 @@ public sealed class GameResultService
     public Task<PlayerStats> RecordAsync(string gameKey, string playerName, Difficulty difficulty, GameResult result) =>
         _stats.RecordResult(gameKey, playerName, difficulty, result);
 
+    /// <summary>
+    /// Records the outcome locally AND pushes the updated stats to the server board, parking
+    /// them in the offline queue if the write fails.
+    /// </summary>
+    /// <remarks>
+    /// For win-rate games with no separate high-score payload. <see cref="RecordAsync"/> writes
+    /// only to localStorage, so a game that used it and nothing else could never appear on its
+    /// own leaderboard — which is exactly what happened to PoCoupleQuiz. This is
+    /// <see cref="SubmitAdaptiveStatsAsync"/>'s flow without the adaptive-ELO mirroring, which
+    /// only applies to games whose CPU is matched to the player's rating.
+    /// </remarks>
+    public async Task<PlayerStats> RecordAndSyncStatsAsync(
+        string gameKey, string playerName, Difficulty difficulty, GameResult result)
+    {
+        var stats = await _stats.RecordResult(gameKey, playerName, difficulty, result);
+        var (ok, _) = await _api.SavePlayerStatsAsync(gameKey, playerName, stats);
+        if (!ok)
+        {
+            _sync.EnqueuePlayerStats(new PendingPlayerStats
+            {
+                GameKey = gameKey,
+                PlayerName = playerName,
+                Stats = stats,
+            });
+            await OnScoreParkedAsync();
+        }
+        return stats;
+    }
+
     /// <summary>How a server high-score submit resolved; drives the shared feedback path.</summary>
     private enum SubmitOutcome
     {

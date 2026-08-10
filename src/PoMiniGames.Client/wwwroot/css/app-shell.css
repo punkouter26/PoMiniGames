@@ -440,72 +440,10 @@
     .gl-overflow-menu--anon { display: inline-block; }
 
     .gl-dev-switch { display: none !important; }
-
-    /* 2026-08-08 audit #17: drop the "Games" label on portrait phones so the
-       brand + icon-only switcher stay on one line. The icon (🎮) plus the
-       panel contents make the trigger legible without the word. */
-    .gl-games-switcher__label { display: none; }
 }
 
-/* ── Quick switcher (audit #17) ──
-   Cross-page navigation surface in the top bar. Mirrors the home grid but
-   one tap from any route. Reuses the popover chrome and styles already used
-   by the ANON overflow menu so the panel matches what users already know. */
-.gl-games-switcher {
-    anchor-name: --gl-anchor-games;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-    padding: 0.35rem 0.7rem;
-    font-size: 0.85rem;
-    font-weight: 600;
-}
-
-.gl-games-switcher-panel {
-    /* Override the default right-aligned popover so it lands under the brand area
-       instead of cramming against the auth rail. */
-    inset: auto;
-    min-width: 18rem;
-    max-width: 22rem;
-    max-height: min(70vh, 32rem);
-    overflow-y: auto;
-}
-
-@supports (anchor-name: --a) {
-    .gl-games-switcher-panel {
-        position: absolute;
-        position-anchor: --gl-anchor-games;
-        position-area: block-end span-inline-start;
-        margin-block-start: 0.4rem;
-        top: auto;
-        right: auto;
-    }
-}
-
-.gl-games-switcher-item {
-    display: grid;
-    grid-template-columns: 1.5rem 1fr auto;
-    gap: 0.6rem;
-    align-items: center;
-    padding: 0.55rem 0.75rem;
-}
-
-.gl-games-switcher-item__icon {
-    font-size: 1.05rem;
-    line-height: 1;
-}
-
-.gl-games-switcher-item__title {
-    font-weight: 600;
-    color: var(--color-text-primary);
-}
-
-.gl-games-switcher-item__mode {
-    font-size: 0.72rem;
-    color: var(--color-text-secondary);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-}
+/* The top-bar quick switcher (.gl-games-switcher*) was removed on 2026-08-10 along
+   with its markup in MainLayout — see the comment there. Its rules lived here. */
 
 /* ── FPS pill (shared style, used by top-bar FpsCounter and SettingsPanel preview).
    Moved here (audit #16) from FpsCounter.razor.css where it wass component-scoped
@@ -539,4 +477,62 @@
         padding: 0.18rem 0.5rem;
         min-width: 4.6ch;
     }
+}
+
+/* ── FPS preview chip (settings page) ──────────────────────────────────────
+   Audit #4: when the badge is OFF the preview rendered a literal "— FPS"
+   string that read as a stray data field on the row. The OFF state now
+   renders an empty placeholder box (no text), so the preview matches the
+   toggle's visual off-state instead of leaking the placeholder text. */
+.gl-fps--preview {
+    min-width: 4.4rem;
+    justify-content: center;
+}
+
+.gl-fps--preview-off {
+    background: transparent;
+    border-style: dashed;
+    color: transparent;
+    pointer-events: none;
+}
+
+/* ── Footer landmark ────────────────────────────────────────────────────────
+   2026-08-10 audit: every page rendered <header>, <nav>, and <main> but no
+   <footer>, so screen-reader users had no site-info landmark to jump to.
+   Below-content strip with build label + two outbound links. Visual contract:
+   small, low contrast, non-interactive chrome — never competes with the
+   sticky top bar for attention. */
+.gl-footer {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-5);
+    padding: 0.85rem var(--space-5);
+    border-top: 1px solid var(--color-border);
+    background: var(--surface-2);
+    color: var(--color-text-secondary);
+    font-size: var(--text-xs);
+    flex-wrap: wrap;
+}
+
+.gl-footer-build {
+    font-weight: 700;
+    color: var(--color-text-primary);
+    letter-spacing: 0.04em;
+}
+
+.gl-footer-link {
+    color: var(--color-text-secondary);
+    text-decoration: none;
+    border-radius: var(--radius-sm);
+    padding: 0.15rem 0.4rem;
+    transition: color var(--dur-base) var(--ease-standard),
+                background var(--dur-base) var(--ease-standard);
+}
+
+.gl-footer-link:hover,
+.gl-footer-link:focus-visible {
+    color: var(--color-text-primary);
+    background: var(--surface-3);
+    outline: none;
 }

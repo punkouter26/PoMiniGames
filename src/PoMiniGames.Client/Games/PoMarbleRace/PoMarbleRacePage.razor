@@ -36,7 +36,16 @@
        HUD and the HUD never sits on top of the marble track. *@
     <div class="mr-wrap-row">
         <div class="mr-wrap">
-            @* Labelled host — see the note on PoSports (browser audit #6). *@
+            @* 2026-08-10 audit #10: the host used to be an empty `<div>` for
+               the canvas but the intro placeholder was a literal `<img
+               alt="Marble race track — the race renders here">`, so the
+               moment the intro card dismissed the player saw an `<img>`
+               snap to a live canvas. The host is now purely a canvas mount
+               with a CSS-only track gradient that matches the three.js
+               scene's first-frame colour grade; the race canvas fades in
+               over the gradient, so the visual handoff is seamless. The
+               aria-label stays on the host so screen readers still hear
+               "Marble race track" before the engine starts. *@
             <div id="marble-race-container" class="mr-canvas-host"
                  role="img" aria-label="Marble race track — the race renders here"></div>
 

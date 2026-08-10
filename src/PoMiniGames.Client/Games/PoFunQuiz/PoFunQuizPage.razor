@@ -19,7 +19,8 @@
            GameOver="@IsGameOver"
            GameKey="@(_playMode == "solo" ? "pofunquiz" : null)"
            Stats="@_statItems"
-           GameSummary="@GameSummaryContent">
+           GameSummary="@GameSummaryContent"
+           PlayAgain="@OnPlayAgain">
     @if (!_introDone)
     {
         <GameIntro CueScope="quiz"
@@ -27,6 +28,7 @@
                    Objective="Answer the multiple-choice questions — chain correct answers for a streak bonus."
                    Controls="@HowToPlayContent"
                    Mode="@_introMode"
+                   RespectSkipToggle="@(_playMode == "solo")"
                    OnStart="DismissIntro" />
     }
     @* 2026-07-16: the GameLanding setup card (Player 1 / Player 2 name inputs +
@@ -50,17 +52,38 @@
     else if (_currentIndex < _questions.Count && !_splitScreen)
     {
         var q = _questions[_currentIndex];
+        var showReveal = _selected.ContainsKey(_currentIndex) && _playMode != "demo";
+        var pickIdx = showReveal ? _selected[_currentIndex].selected : -1;
+        var correctIdx = showReveal ? q.CorrectOptionIndex : -1;
         <div class="fq-question">
             <h2 class="gps-phase-h">Question @(_currentIndex + 1) of @_questions.Count@(_playMode == "2p" ? $" · {_currentPlayerLabel}'s turn" : "")</h2>
             <p class="fq-text">@q.Text</p>
+            @* Solo/2P-shared-screen options now share the same numbered-key
+               affordance as the split-screen board so the two modes look like
+               one product. Solo also borrows the split-screen's correct/wrong
+               highlight classes (--correct / --wrong) so a wrong answer is
+               visible to the eye, not only to the next question. Demo mode
+               suppresses both — the kiosk never pauses for a reveal. *@
             <div class="fq-options">
                 @for (var i = 0; i < q.Options.Count; i++)
                 {
                     var captured = i;
-                    <button class="fq-option @(HasAnswered(captured) ? (captured == _selected[_currentIndex].selected ? "fq-option--selected" : "") : "")"
-                            disabled="@HasAnswered(captured)"
+                    var optClass = !showReveal
+                        ? ""
+                        : captured == correctIdx
+                            ? "fq-option--correct"
+                            : captured == pickIdx
+                                ? "fq-option--wrong"
+                                : "fq-option--muted";
+                    <button class="fq-option @optClass"
+                            disabled="@(showReveal || _playMode == "demo")"
                             @onclick="() => SelectAnswer(captured)">
-                        @q.Options[i]
+                        <span class="fq-option__key" aria-hidden="true">@(captured + 1)</span>
+                        <span class="fq-option__label">@q.Options[i]</span>
+                        @if (showReveal && captured == correctIdx)
+                        {
+                            <span class="fq-option__badge" aria-hidden="true">✓</span>
+                        }
                     </button>
                 }
             </div>
@@ -71,6 +94,25 @@
             else
             {
                 <p>Score: <strong>@_score</strong> · Streak: @_streak</p>
+            }
+            @* Solo-mode reveal line: shows the correct option and your pick
+               after a wrong answer. The line fades out on the advance timer so
+               the quiz never stops moving. *@
+            @if (showReveal)
+            {
+                var picked = _selected[_currentIndex];
+                var streakText = _streak > 1 ? $"Streak {_streak} 🔥" : "";
+                <p class="fq-solo-reveal" role="status">
+                    @if (picked.correct)
+                    {
+                        <strong>Correct!</strong> @streakText
+                    }
+                    else
+                    {
+                        var revealLabel = q.Options[correctIdx];
+                        <text><strong>Not quite.</strong> The answer was <em>@revealLabel</em>.</text>
+                    }
+                </p>
             }
         </div>
     }
@@ -84,6 +126,19 @@
         // join in. The reveal overlay flashes the correct option after both
         // players lock in, then advances on a short timer.
         var q = _questions[_currentIndex];
+        // Per-player reveal class: each side colours its OWN pick (--picked)
+        // and tints the actual correct option green if neither side got it.
+        // This is the 2P counterpart of the solo --correct/--wrong/--muted
+        // treatment — the audit found both modes showed the same amber for
+        // every pick, with no signal for "which one was actually right".
+        Func<int, int, int, string> SplitOptClass = (side, captured, correctIdx) =>
+        {
+            if (_splitPicks[side] < 0) return "";
+            if (captured == correctIdx) return "fq-split__opt--correct";
+            return captured == _splitPicks[side]
+                ? (_splitResults[side] ? "fq-split__opt--picked" : "fq-split__opt--wrong")
+                : "fq-split__opt--muted";
+        };
         <div class="fq-split">
             <div class="fq-split__header">
                 <h2 class="gps-phase-h">Question @(_currentIndex + 1) of @_questions.Count</h2>
@@ -99,14 +154,18 @@
                         {
                             var captured = i;
                             var picked = _splitPicks[1] == captured;
-                            <button class="fq-split__opt @(picked ? "fq-split__opt--picked" : "")"
+                            <button class="fq-split__opt @SplitOptClass(1, captured, q.CorrectOptionIndex)"
                                     disabled="@(_splitPicks[1] >= 0)"
                                     @onclick="() => SelectSplitAnswer(1, captured)">
                                 <span class="fq-split__key">@(captured + 1)</span>
                                 <span class="fq-split__label">@q.Options[i]</span>
-                                @if (picked)
+                                @if (picked && _splitResults[1])
                                 {
                                     <span class="fq-split__badge">✓</span>
+                                }
+                                else if (picked && !_splitResults[1])
+                                {
+                                    <span class="fq-split__badge fq-split__badge--wrong" aria-hidden="true">✗</span>
                                 }
                             </button>
                         }
@@ -123,14 +182,18 @@
                         {
                             var captured = i;
                             var picked = _splitPicks[2] == captured;
-                            <button class="fq-split__opt @(picked ? "fq-split__opt--picked" : "")"
+                            <button class="fq-split__opt @SplitOptClass(2, captured, q.CorrectOptionIndex)"
                                     disabled="@(_splitPicks[2] >= 0)"
                                     @onclick="() => SelectSplitAnswer(2, captured)">
                                 <span class="fq-split__key">@(captured + 6)</span>
                                 <span class="fq-split__label">@q.Options[i]</span>
-                                @if (picked)
+                                @if (picked && _splitResults[2])
                                 {
                                     <span class="fq-split__badge">✓</span>
+                                }
+                                else if (picked && !_splitResults[2])
+                                {
+                                    <span class="fq-split__badge fq-split__badge--wrong" aria-hidden="true">✗</span>
                                 }
                             </button>
                         }
@@ -175,14 +238,29 @@
         : GameIntro.IntroMode.OnePlayer;
     private void DismissIntro() => _introDone = true;
 
-    private RenderFragment HowToPlayContent => @<div>
-        <p>Answer each multiple-choice question. Correct answers in a row build a streak for bonus points.</p>
-        <ul>
-            <li>Tap or click the answer you think is right</li>
-            <li>Local 2-player: players 1 &amp; 2 use their own keys on the split-screen board</li>
-            <li>Chain correct answers for a scoring multiplier</li>
-        </ul>
-    </div>;
+    private RenderFragment HowToPlayContent => _playMode switch
+    {
+        // 2P intro used to say "players 1 & 2 use their own keys" without
+        // listing them, so the keyboard layout was undiscoverable until the
+        // player stumbled onto a button mid-round.
+        "2ps" => @<div>
+            <p>Both players see the same question and lock in their answer at the same time.</p>
+            <ul>
+                <li>Player 1 (left): keys <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> <kbd>4</kbd></li>
+                <li>Player 2 (right): keys <kbd>6</kbd> <kbd>7</kbd> <kbd>8</kbd> <kbd>9</kbd></li>
+                <li>Mouse works too — click any option on your side</li>
+                <li>Chain correct answers for a scoring multiplier</li>
+            </ul>
+        </div>,
+        _ => @<div>
+            <p>Answer each multiple-choice question. Correct answers in a row build a streak for bonus points.</p>
+            <ul>
+                <li>Tap or click an answer, or use keys <kbd>1</kbd>–<kbd>4</kbd></li>
+                <li>The correct option highlights green; a wrong pick goes red</li>
+                <li>Chain correct answers for a scoring multiplier</li>
+            </ul>
+        </div>,
+    };
 
     private RenderFragment GameSummaryContent => _playMode switch
     {
@@ -355,7 +433,8 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender && _splitScreen)
+        if (!firstRender) return;
+        if (_splitScreen)
         {
             // §Best-practice: register a window-level keydown listener via a tiny
             // JS interop. We can't do this purely in Blazor because Razor can't
@@ -367,6 +446,17 @@
             // ~25 pages in the app stop fetching a split-screen quiz hotkey handler.
             await JS.InvokeAsync<IJSObjectReference>("import", "./js/poFunQuizSplitHotkeys.js");
             await JS.InvokeVoidAsync("poFunQuizSplitHotkeys.register", DotNetObjectReference.Create(this));
+        }
+        // 2026-08-10 audit: solo mode had no keyboard handling at all — the
+        // hotkey JS only registered for _splitScreen, so a player on a laptop
+        // had to aim with the mouse. Reuse the same bridge by registering with
+        // side="S" (solo); the script already routes 1-4 to whatever side is
+        // registered and ignores inputs/textareas. A second DotNetObjectReference
+        // would be wasted — the same instance handles both invocations.
+        else if (_playMode is "solo" or "2p")
+        {
+            await JS.InvokeAsync<IJSObjectReference>("import", "./js/poFunQuizSplitHotkeys.js");
+            await JS.InvokeVoidAsync("poFunQuizSplitHotkeys.registerSolo", DotNetObjectReference.Create(this));
         }
     }
 
@@ -389,6 +479,26 @@
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// Invoked from JS when a solo / shared-screen-2P hotkey fires. Routes
+    /// the digit to SelectAnswer for whichever 2P turn is active. Side 'L'
+    /// keys 1-4 (used by both solo and the alternating-turns 2p variant).
+    /// 'S' (solo) and 'L' (2p) share the same key range deliberately.
+    /// </summary>
+    [JSInvokable]
+    public Task OnSoloHotkeyAsync(string side, int optionIndex)
+    {
+        if (_splitScreen) return Task.CompletedTask;
+        if (_playMode != "solo" && _playMode != "2p") return Task.CompletedTask;
+        if (_currentIndex >= _questions.Count) return Task.CompletedTask;
+        if (_selected.ContainsKey(_currentIndex)) return Task.CompletedTask; // already revealed
+        var q = _questions[_currentIndex];
+        if (optionIndex < 0 || optionIndex >= q.Options.Count) return Task.CompletedTask;
+        SelectAnswer(optionIndex);
+        InvokeAsync(StateHasChanged);
+        return Task.CompletedTask;
+    }
+
     public async ValueTask DisposeAsync()
     {
         _disposed = true;
@@ -397,10 +507,7 @@
             await _demoTimer.DisposeAsync();
             _demoTimer = null;
         }
-        if (_splitScreen)
-        {
-            try { await JS.InvokeVoidAsync("poFunQuizSplitHotkeys.unregister"); } catch { /* disposed */ }
-        }
+        try { await JS.InvokeVoidAsync("poFunQuizSplitHotkeys.unregister"); } catch { /* disposed */ }
     }
 
     private async Task StartGame()
@@ -486,15 +593,10 @@
             await InvokeAsync(StateHasChanged);
             return;
         }
-        // Already selected; wait one tick to let the reveal phase render
-        // before advancing.
-        await Task.Delay(900);
-        if (_disposed) return;
-        if (_selected.ContainsKey(_currentIndex))
-        {
-            _currentIndex++;
-            await InvokeAsync(StateHasChanged);
-        }
+        // 2026-08-10: SelectAnswer now schedules its own reveal-timer advance
+        // (AdvanceAfterSoloRevealAsync) for every play mode including demo,
+        // so the demo timer just has to wait for that to land. The previous
+        // synchronous _currentIndex++ path in here was dead and is gone.
     }
 
     private void SelectAnswer(int option)
@@ -543,6 +645,27 @@
             }
         }
 
+        // 2026-08-10 audit: solo/2p-shared-screen used to increment
+        // _currentIndex synchronously here, so the reveal highlight and the
+        // "Not quite / correct was X" line flashed for zero frames before the
+        // page re-rendered Q2. Schedule the advance on a short timer instead
+        // — long enough for the player to read the highlight, short enough
+        // that the quiz never feels stuck. Demo mode also routes through the
+        // timer so its auto-pick loop can pick up the revealed state on the
+        // next tick.
+        _ = AdvanceAfterSoloRevealAsync();
+    }
+
+    // Reveal delay for solo / alternating-turns 2P. Detached: SelectAnswer is
+    // a void handler, and we need StateHasChanged to fire on the reveal tick
+    // before the advance. 1.2s matches the split-screen reveal overlay so the
+    // two modes feel like one product.
+    private const int SoloRevealDelayMs = 1200;
+    private async Task AdvanceAfterSoloRevealAsync()
+    {
+        try { await Feedback.CompleteAsync(); } catch { /* best-effort */ }
+        await Task.Delay(SoloRevealDelayMs);
+        if (_disposed) return;
         _currentIndex++;
         if (IsGameOver && _playMode == "solo" && !_scoreSubmitted)
         {
@@ -562,6 +685,7 @@
                 new StatItem { Label = "P2 streak", Value = _maxStreak2.ToString() },
             };
         }
+        await InvokeAsync(StateHasChanged);
     }
 
     private int StreakBonus() => _streak switch
@@ -629,5 +753,18 @@
             : (winner == _playerName ? MatchOutcome.Win : MatchOutcome.Loss);
         try { await MatchHistory.RecordAsync("pofunquiz", MatchMode.Local2P, _player2Name, outcome); }
         catch { /* best-effort */ }
+    }
+
+    // 2026-08-10: "Play again" handler. Local 2P modes (split-screen and
+    // shared-screen) replay through this — solo does NOT, because the prior
+    // run already submitted to the leaderboard and a replay would either
+    // double-submit or feel jarring. The handler reruns the load + state
+    // reset the initial mount does (StartGame handles the rest) and hides
+    // the modal because IsGameOver goes false as soon as _currentIndex is 0.
+    private async Task OnPlayAgain()
+    {
+        if (_playMode != "2ps" && _playMode != "2p") return;
+        await StartGame();
+        StateHasChanged();
     }
 }

@@ -9,11 +9,35 @@
 .prefs-grid {
     display: flex;
     flex-direction: column;
-    gap: var(--space-1);
+    gap: var(--space-4);
     background: var(--surface-2);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-lg);
-    padding: var(--space-2);
+    padding: var(--space-3);
+}
+
+/* 2026-08-10 audit #8: <fieldset> + <legend> give the four settings
+   categories (Display / Audio / Accessibility / Developer) named
+   landmarks. Reset the user-agent fieldset chrome so the legend reads as a
+   small section label rather than an outline frame, but keep the native
+   grouping (focus moves between groups on Tab). */
+.prefs-group {
+    border: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    min-width: 0;
+}
+
+.prefs-group-legend {
+    padding: 0 var(--space-2) var(--space-2);
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--color-text-secondary);
+    font-weight: 700;
 }
 
 .prefs-row {

@@ -180,6 +180,20 @@
     font-size: var(--text-sm);
 }
 
+/* 2026-08-10 audit #9: header row uses the same grid template as data rows so
+   columns stay aligned. Visually subdued — uppercase + letter-spacing mirrors
+   the styled .lb-unit label so the table reads as "Rank / Player / Score" at
+   a glance, but the header stays out of the way of the actual data. */
+.lb-row--head {
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: var(--text-xs);
+    color: var(--color-text-secondary);
+    font-weight: 700;
+    border-bottom: 1px solid var(--color-border-strong, var(--color-border));
+    background: transparent;
+}
+
 .lb-row:nth-child(odd) {
     background: var(--tint-subtle);
 }

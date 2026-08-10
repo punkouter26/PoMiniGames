@@ -402,6 +402,29 @@
   box-shadow: 0 0 0 2px rgba(250, 204, 21, 0.45) inset;
 }
 
+/* 2026-08-10: 2P split-screen reveal treatment — the pre-audit code only
+   had --picked (amber for any pick), so a wrong answer looked identical to
+   a correct one until the bottom-of-card text caught up. Now: --correct
+   highlights the right option in green regardless of who picked it;
+   --wrong tints a side's wrong pick red; --muted dims the options neither
+   side touched. The badge inside the wrong pill switches from ✓ to ✗
+   so the player can tell at a glance even without colour vision. */
+.fq-split__opt--correct {
+  border-color: rgba(74, 222, 128, 0.6);
+  background: rgba(74, 222, 128, 0.18);
+  box-shadow: 0 0 0 2px rgba(74, 222, 128, 0.35) inset;
+}
+.fq-split__opt--wrong {
+  border-color: rgba(248, 113, 113, 0.6);
+  background: rgba(248, 113, 113, 0.18);
+  box-shadow: 0 0 0 2px rgba(248, 113, 113, 0.35) inset;
+}
+.fq-split__opt--muted { opacity: 0.45; }
+.fq-split__badge--wrong {
+  background: var(--accent-danger, #f87171);
+  color: #450a0a;
+}
+
 .fq-split__key {
   display: inline-flex;
   align-items: center;
@@ -654,22 +677,16 @@
 .gps-row   { display: flex; align-wrap: wrap; gap: 0.5rem; align-items: center; }
 .gps-error { color: #fca5a5; font-weight: 600; }
 
-/* ── PoCoupleQuiz (`.cq-*` aliases) ── */
-.cq-solo,
-.cq-connecting,
-.cq-join,
-.cq-lobby { display: flex; flex-direction: column; gap: 0.75rem; }
-.cq-solo-hint { color: var(--color-text-secondary); font-size: 0.9rem; }
-.cq-solo-question { font-size: 1.05rem; }
+/* ── PoCoupleQuiz (`.cq-*` aliases) ──
+   The solo, connecting, join-card and lobby-list rules were removed on 2026-08-10
+   with the solo mode, the kiosk demo and the duplicate lobby page. What is left is
+   what the one lobby page and the in-round screens still use; the lobby now renders
+   on the shared `.gps-game-card` chrome. */
 /* Buttons consolidated into `.gps-btn*` above (NET_CLEAN_10). */
 .cq-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
-.cq-actions--wrap { flex-wrap: wrap; }
-.cq-error { color: #fca5a5; font-weight: 600; }
-.cq-join label,
+.cq-hint { color: var(--color-text-secondary); font-size: 0.9rem; }
 .fq-join label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.9rem; }
-.cq-join input,
 .fq-join input,
-.cq-join select,
 .fq-join select {
   padding: 0.5rem 0.75rem;
   background: var(--color-surface-hover);
@@ -678,12 +695,42 @@
   border-radius: 6px;
   font-size: 0.9rem;
 }
-.cq-lobby ul { list-style: none; margin: 0; padding: 0; }
-.cq-lobby li { padding: 0.25rem 0; }
 
-/* In-round screens (game / results / game-over) — these classes are shared by
-   the real multiplayer page and the kiosk demo. Card chrome matches the rest
-   of the shell (surface + border + 16px radius). */
+/* 2026-08-10: explicit field/label split for the multiplayer lobby. The old
+   markup put label text and field on the same line in a single <label> wrap,
+   which left the screen reader reading "Your name Guest723664" as one
+   phrase and made it hard to scan which label belonged to which field.
+   The new pattern is label-above-field with optional hint + help text. */
+.fq-join__field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.fq-join__label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  letter-spacing: 0.02em;
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+.fq-join__hint {
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  opacity: 0.8;
+}
+.fq-join__help {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  opacity: 0.85;
+  line-height: 1.4;
+}
+
+/* In-round screens (game / results). Card chrome matches the rest of the shell
+   (surface + border + 16px radius). */
 .cq-game {
   width: min(92vw, 480px);
   margin: 0 auto;
@@ -780,7 +827,79 @@
 }
 .fq-option:hover { filter: brightness(1.1); }
 .fq-option:disabled { opacity: 0.5; cursor: not-allowed; }
-.fq-option--selected { background: var(--color-accent-solid); color: #fff; border-color: var(--color-accent-solid); }
+
+/* 2026-08-10: solo/2p-shared-screen answer reveal. The pre-audit code had
+   just --selected (amber for any pick) with no signal for correct vs wrong.
+   Now: --correct = green, --wrong = red, --muted = dim the un-picked
+   options so the eye finds the answer. Demo mode never enters this state
+   (the page sets showReveal=false there). */
+.fq-option--correct {
+  background: rgba(74, 222, 128, 0.18);
+  border-color: rgba(74, 222, 128, 0.6);
+  color: var(--color-text-primary);
+}
+.fq-option--wrong {
+  background: rgba(248, 113, 113, 0.18);
+  border-color: rgba(248, 113, 113, 0.6);
+  color: var(--color-text-primary);
+}
+.fq-option--muted { opacity: 0.45; }
+
+/* Numbered-key prefix on every fq-option button — solo and 2P-shared-screen
+   now match the split-screen layout's "1 Berlin / 2 Madrid" affordance. The
+   key chip is non-interactive and aria-hidden so screen readers skip it. */
+.fq-option__key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 0.4rem;
+  border-radius: 6px;
+  font-family: ui-monospace, "JetBrains Mono", "SFMono-Regular", monospace;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  font-size: 0.85rem;
+  flex-shrink: 0;
+}
+.fq-option__label { flex: 1; }
+.fq-option__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--accent-success);
+  color: #052e16;
+  font-weight: 800;
+  font-size: 0.85rem;
+  flex-shrink: 0;
+}
+
+/* Solo reveal line under the options. Sits below the score row and stays
+   through the reveal window (1.2s). Subtle entrance animation so it doesn't
+   snap in. */
+.fq-solo-reveal {
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  background: rgba(250, 204, 21, 0.08);
+  border: 1px solid rgba(250, 204, 21, 0.25);
+  font-size: 0.9rem;
+  color: var(--color-text-primary);
+  animation: fq-solo-reveal-in 0.18s ease-out both;
+}
+.fq-solo-reveal strong { color: var(--color-text-primary); }
+.fq-solo-reveal em { font-style: normal; font-weight: 700; color: var(--accent-success); }
+@keyframes fq-solo-reveal-in {
+  from { opacity: 0; transform: translateY(-2px); }
+  to   { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fq-solo-reveal { animation: none; }
+}
 
 /* ── PoFunQuiz leaderboard page. Was completely unstyled (bare browser buttons
    + default table); these rules bring it in line with the rest of the shell:

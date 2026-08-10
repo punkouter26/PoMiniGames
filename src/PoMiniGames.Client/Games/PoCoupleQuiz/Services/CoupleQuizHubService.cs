@@ -9,51 +9,49 @@ namespace PoMiniGamesClient.Games.PoCoupleQuiz.Services;
 /// project so the WASM doesn't depend on the host's types. Field shapes match the
 /// server payloads exactly (camelCase via JSON).
 /// </summary>
+/// <remarks>
+/// 2026-08-10: <c>GameCode</c>, <c>AiMode</c> and <c>Difficulty</c> are gone from every
+/// payload. There is one lobby per server so a code names nothing; "AI mode" was a string
+/// that only ever held "Remote"; and "difficulty" only ever picked the round count, which
+/// is now sent as <c>MaxRounds</c>.
+/// </remarks>
 public record CoupleQuizGamePlayerState(string Name, bool IsKingPlayer, int Score);
 
 public record CoupleQuizLobbyEventPayload(
-    string GameCode,
     bool IsHost,
     string PlayerName,
     List<string> Players,
     List<string> ReadyPlayers,
     string HostName,
-    string Difficulty,
-    string AiMode = "Remote");
+    int MaxRounds);
 
 public record CoupleQuizLobbyUpdatedPayload(
-    string GameCode,
     List<string> Players,
     List<string> ReadyPlayers,
     string HostName,
-    string? Difficulty = null,
-    string? AiMode = null);
+    int MaxRounds);
 
 public record CoupleQuizGameStartedPayload(
-    string GameCode,
     string KingPlayerName,
     List<CoupleQuizGamePlayerState> Players,
     string QuestionText,
     string QuestionCategory,
     int RoundIndex,
     int MaxRounds,
-    string Difficulty,
-    string AiMode = "Remote");
+    int RoundSeconds);
 
 public record CoupleQuizRoundStartedPayload(
-    string GameCode,
     int RoundIndex,
     int MaxRounds,
     string KingPlayerName,
     List<CoupleQuizGamePlayerState> Players,
     string QuestionText,
     string QuestionCategory,
-    string AiMode = "Remote");
+    int RoundSeconds);
 
 public record CoupleQuizAnswerRecordedPayload(string PlayerName, int RoundIndex);
 
 public record CoupleQuizRoundResultPayload(
-    string GameCode,
     int RoundIndex,
     string KingAnswer,
     List<string> MatchedPlayers,
@@ -62,16 +60,13 @@ public record CoupleQuizRoundResultPayload(
     List<CoupleQuizGamePlayerState> Players);
 
 public record CoupleQuizGameOverPayload(
-    string GameCode,
     IReadOnlyDictionary<string, int> FinalScores,
     List<CoupleQuizGamePlayerState> Players);
-
-public record CoupleQuizHostChangedPayload(string GameCode, string NewHostName);
 
 /// <summary>
 /// Client-side wrapper around the <c>/couplequiz/hubs/game</c> SignalR connection.
 /// Exposes the server events as C# events for the page to subscribe to. The page
-/// should call <see cref="ConnectAsync"/> on init, then <see cref="JoinOrCreateAsync"/>
+/// should call <see cref="ConnectAsync"/> on init, then <see cref="JoinAsync"/>
 /// once a name is known.
 /// </summary>
 public sealed class CoupleQuizHubService : IAsyncDisposable
@@ -89,7 +84,6 @@ public sealed class CoupleQuizHubService : IAsyncDisposable
     /// </summary>
     public CoupleQuizGameStartedPayload? LastGameStarted { get; private set; }
 
-    public event Action<CoupleQuizLobbyEventPayload>? OnLobbyCreated;
     public event Action<CoupleQuizLobbyEventPayload>? OnLobbyJoined;
     public event Action<CoupleQuizLobbyUpdatedPayload>? OnLobbyUpdated;
     public event Action<string>? OnLobbyError;
@@ -100,7 +94,6 @@ public sealed class CoupleQuizHubService : IAsyncDisposable
     public event Action<CoupleQuizGameOverPayload>? OnGameOver;
     public event Action<string>? OnGameError;
     public event Action<CoupleQuizLobbyUpdatedPayload>? OnPlayerDisconnected;
-    public event Action<CoupleQuizHostChangedPayload>? OnHostChanged;
 
     public CoupleQuizHubService(NavigationManager navigation, ApiEndpoints endpoints) =>
         (_navigation, _endpoints) = (navigation, endpoints);
@@ -116,7 +109,6 @@ public sealed class CoupleQuizHubService : IAsyncDisposable
         // factory (see HubConnectionFactory for the §2026-07-16 cookie contract).
         _connection = HubConnectionFactory.Create(_endpoints.Hub("couplequiz/hubs/game"));
 
-        _connection.On<CoupleQuizLobbyEventPayload>("LobbyCreated", p => OnLobbyCreated?.Invoke(p));
         _connection.On<CoupleQuizLobbyEventPayload>("LobbyJoined", p => OnLobbyJoined?.Invoke(p));
         _connection.On<CoupleQuizLobbyUpdatedPayload>("LobbyUpdated", p => OnLobbyUpdated?.Invoke(p));
         _connection.On<string>("LobbyError", m => OnLobbyError?.Invoke(m));
@@ -136,51 +128,33 @@ public sealed class CoupleQuizHubService : IAsyncDisposable
         });
         _connection.On<string>("GameError", m => OnGameError?.Invoke(m));
         _connection.On<CoupleQuizLobbyUpdatedPayload>("PlayerDisconnected", p => OnPlayerDisconnected?.Invoke(p));
-        _connection.On<CoupleQuizHostChangedPayload>("HostChanged", p => OnHostChanged?.Invoke(p));
 
         await _connection.StartAsync();
     }
 
-    public Task CreateLobbyAsync(string playerName, string difficulty, string aiMode = "Remote")
+    public Task JoinAsync(string playerName)
     {
         EnsureConnected();
-        return _connection!.InvokeAsync("CreateLobby", playerName, difficulty, aiMode);
+        return _connection!.InvokeAsync("Join", playerName);
     }
 
-    public Task JoinLobbyAsync(string gameCode, string playerName)
+    public Task SetReadyAsync()
     {
         EnsureConnected();
-        return _connection!.InvokeAsync("JoinLobby", gameCode, playerName);
+        return _connection!.InvokeAsync("SetReady");
     }
 
-    public Task JoinOrCreateAsync(string playerName, string difficulty, string aiMode = "Remote")
+    /// <summary>Host-only; the server ignores it from anyone else.</summary>
+    public Task SetRoundsAsync(int rounds)
     {
         EnsureConnected();
-        return _connection!.InvokeAsync("JoinOrCreate", playerName, difficulty, aiMode);
+        return _connection!.InvokeAsync("SetRounds", rounds);
     }
 
-    public Task SetReadyAsync(string gameCode)
+    public Task SubmitAnswerAsync(string answer)
     {
         EnsureConnected();
-        return _connection!.InvokeAsync("SetReady", gameCode);
-    }
-
-    public Task StartGameAsync(string gameCode)
-    {
-        EnsureConnected();
-        return _connection!.InvokeAsync("StartGame", gameCode);
-    }
-
-    public Task SubmitAnswerAsync(string gameCode, string answer, int roundIndex)
-    {
-        EnsureConnected();
-        return _connection!.InvokeAsync("SubmitAnswer", gameCode, answer, roundIndex);
-    }
-
-    public Task RequestNextRoundAsync(string gameCode)
-    {
-        EnsureConnected();
-        return _connection!.InvokeAsync("RequestNextRound", gameCode);
+        return _connection!.InvokeAsync("SubmitAnswer", answer);
     }
 
     private void EnsureConnected()

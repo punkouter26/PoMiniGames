@@ -1,6 +1,5 @@
 using PoMiniGames.Domain.Services;
 using PoMiniGames.Features.PoCoupleQuiz;
-using PoMiniGames.Features.PoCoupleQuiz.Storage;
 using PoMiniGames.Features.PoFunQuiz;
 using PoMiniGames.Features.PoFunQuiz.Storage;
 using PoMiniGames.Features.PoJoker;
@@ -142,13 +141,14 @@ internal static class GameServicesExtensions
         // CoupleQuizOptions is bound in Program.cs before AddPoMiniGamesGameServices.
         services.AddSingleton<IGameSessionManager, GameSessionManager>();
         // Note: GameSessionManager is a pure in-memory state holder, not a hosted service.
-        // Background timers (round timers, host-promote grace periods) are owned by the hub.
+        // The round timer lives in CoupleQuizRoundDirector below.
         // Every consumer injects IGameSessionManager; nothing resolves the concrete type, so
         // the previous concrete-forwarding registration was dead and has been removed.
         services.AddSingleton<IQuestionService, AzureOpenAIQuestionService>();
         services.AddSingleton<MockQuestionService>();
-        services.AddSingleton<ITeamsRepository, TeamsRepository>();
-        services.AddSingleton<IGameHistoryRepository, GameHistoryRepository>();
+        // Owns the round clock. A Hub instance lives for one invocation and cannot hold a
+        // timer, so rounds are driven from this singleton over a long-lived IHubContext.
+        services.AddSingleton<CoupleQuizRoundDirector>();
 
         // PoFunQuiz — Phase 2 of the consolidation. See Features/PoFunQuiz/.
         // AzureOpenAIService is the production path; mock fallback is gated to Dev/Test

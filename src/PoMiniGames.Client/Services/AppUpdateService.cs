@@ -60,6 +60,11 @@ public sealed class AppUpdateService : IAsyncDisposable
         // /{game}/demo or ?kiosk=N segment, which is the same shape
         // KioskCoordinator uses to identify its own navigations.
         if (IsOnKioskRoute()) return;
+        // 2026-08-10: silence the update nag during local dev. Every `dotnet build`
+        // ships a fresh boot.json that the SW sees as "new", and a developer who
+        // rebuilds twice in an hour gets the toast twice in an hour. Production
+        // users still see it — only the localhost/127.0.0.1 hosts are gated.
+        if (IsDevelopmentHost()) return;
         UpdateAvailable = true;
         StateChanged?.Invoke();
         // Deliberately an action, not "press F5": a waiting worker keeps waiting
@@ -86,6 +91,30 @@ public sealed class AppUpdateService : IAsyncDisposable
         {
             // JS interop can be unavailable during teardown; default to
             // showing the toast so a real visitor still gets the prompt.
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// True when the page is being served from a local dev host. The
+    /// service worker fires onUpdateAvailable every time a fresh build
+    /// lands — fine for production, noisy for a developer who rebuilds
+    /// twice in an hour. Production URLs (the Azure host name) never
+    /// match localhost / 127.0.0.1, so the toast still surfaces there.
+    /// </summary>
+    private bool IsDevelopmentHost()
+    {
+        try
+        {
+            var href = _js.InvokeAsync<string>("eval", "location.href").AsTask().GetAwaiter().GetResult();
+            var host = new Uri(href).Host;
+            return host.Equals("localhost", StringComparison.OrdinalIgnoreCase)
+                || host.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            // JS interop unavailable — assume non-dev so production
+            // visitors always get the update prompt.
             return false;
         }
     }

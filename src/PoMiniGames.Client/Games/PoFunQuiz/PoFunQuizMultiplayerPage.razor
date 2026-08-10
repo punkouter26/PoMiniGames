@@ -18,6 +18,7 @@
                    Objective="Play Fun Quiz head-to-head online. Create or join a game, then answer faster and smarter than your opponent."
                    Controls="@HowToPlayContent"
                    Mode="GameIntro.IntroMode.OnePlayer"
+                   RespectSkipToggle="false"
                    OnStart="OnIntroStartAsync" />
     }
     else
@@ -37,8 +38,13 @@
     {
         <div class="fq-join">
             <h2 class="gps-phase-h">Two-player · Fun Quiz</h2>
-            <label>Your name: <input @bind="_playerName" maxlength="24" disabled="@(_busy || !_isConnected)" /></label>
-            <label>Category:
+            <label class="fq-join__field">
+                <span class="fq-join__label">Your name</span>
+                <input @bind="_playerName" maxlength="24" disabled="@(_busy || !_isConnected)"
+                       autocomplete="nickname" />
+            </label>
+            <label class="fq-join__field">
+                <span class="fq-join__label">Category</span>
                 <select @bind="_category" disabled="@(_busy || !_isConnected)">
                     <option value="General" selected>General</option>
                     <option value="Science">Science</option>
@@ -50,19 +56,24 @@
                     <option value="ArtCulture">Art &amp; Culture</option>
                 </select>
             </label>
-            <label>Game code (optional):
-                <input @bind="_joinCode" maxlength="6" disabled="@_busy" />
+            <label class="fq-join__field">
+                <span class="fq-join__label">Game code <span class="fq-join__hint">leave empty to create a new game</span></span>
+                <input @bind="_joinCode" maxlength="6" disabled="@_busy"
+                       placeholder="6 letters"
+                       autocomplete="off"
+                       aria-describedby="fq-join-code-hint" />
+                <span id="fq-join-code-hint" class="fq-join__help">Optional — only fill this in if a friend shared a code.</span>
             </label>
             <div class="fq-actions">
                 @* Bug fix QA #6: aria-busy + disabled state while the SignalR handshake
                    is in flight, so the primary button cannot fire twice on touch. *@
-                <button class="gps-btn gps-btn gps-btn--primary"
+                <button class="gps-btn gps-btn--primary"
                         aria-busy="@_busy"
                         disabled="@_busy"
                         @onclick="OnCreate">
                     @(_busy ? "Creating…" : "Create new game")
                 </button>
-                <button class="gps-btn gps-btn gps-btn--secondary"
+                <button class="gps-btn gps-btn--secondary"
                         aria-busy="@_busyJoin"
                         disabled="@(_busyJoin || string.IsNullOrWhiteSpace(_joinCode))"
                         @onclick="OnJoin">
@@ -73,7 +84,7 @@
             {
                 <p class="fq-error">
                     @_error
-                    <button class="gps-btn gps-btn gps-btn--secondary gps-btn-retry" @onclick="RetryConnect">Retry</button>
+                    <button class="gps-btn gps-btn--secondary gps-btn-retry" @onclick="RetryConnect">Retry</button>
                 </p>
             }
         </div>

@@ -21,12 +21,22 @@ public static class DevLoginIntake
         var rawName = request?.DisplayName ?? userName;
         var displayName = SanitizeDisplayName(rawName, fallbackName);
 
-        // Append a random 6-digit suffix for ANON logins so each session is unique (e.g. ANON463443).
-        // This satisfies the requirement that ANON users are distinguishable in the leaderboard.
+        // 2026-08-10: every dev login gets a random 6-digit suffix so two tabs of the
+        // same browser — or two kiosks auto-spawning "Guest" — produce distinct
+        // identities. Previously only the literal "ANON" name was suffixed, which
+        // meant three Couple Quiz tabs in one browser (or two re-opens in the same
+        // session) all collided on "GuestXXX" and the server's name-keyed session
+        // merged them into one player. With a per-login suffix, "Alice" becomes
+        // "Alice-463443" on tab 1, "Alice-781029" on tab 2, and the leaderboard
+        // distinguishes them automatically.
+        var suffix = Random.Shared.Next(100_000, 999_999);
         if (string.Equals(displayName, "ANON", StringComparison.OrdinalIgnoreCase))
         {
-            var suffix = Random.Shared.Next(100_000, 999_999);
             displayName = $"ANON{suffix}";
+        }
+        else
+        {
+            displayName = $"{displayName}-{suffix}";
         }
 
         var slug = displayName.ToLowerInvariant().Replace(" ", "-", StringComparison.Ordinal);

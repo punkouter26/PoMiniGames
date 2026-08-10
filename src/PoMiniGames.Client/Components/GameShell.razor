@@ -20,29 +20,14 @@
             <h1 class="gps-game-title">@Title</h1>
         }
 
-        @* Audit #6: every game gets an explicit "← Back to home" affordance in
-           the top bar, not just the PoMiniGames brand. The brand already
-           navigates home, but it is a 14×14 wordmark next to a settings gear —
-           a returning player on a small phone misses it. A labelled button is
-           unambiguous and keyboard-reachable. Always rendered here:
-           GameShell is only used from inside a game page, so the back link
-           cannot point at the page the user is already on. (The Home button on
-           <GameOverModal> uses the same `BackTo` parameter; sub-lobby games
-           like PoCoupleQuiz override it to "/couplequiz", and the back link
-           correctly points there instead.)
+        @* The "← All games" / "← Game hub" pill was removed on 2026-08-10 (user
+           request). It was the third navigate-away control in a header that also
+           carried the brand wordmark and the 🎮 Games switcher (itself now gone),
+           and it competed for width with the game title on a phone. Leaving a game
+           is still one tap on the brand, plus the swipe-back gesture below.
 
-           2026-08-08 audit #13: copy is route-aware so the link text matches
-           the destination. "/" → "All games" (the catalog grid); a non-root
-           route → "Game hub" (e.g. /couplequiz is the Couple Quiz lobby list,
-           not the home page). Same pill, same target attribute — only the
-           visible word changes, so the visual chrome is identical across
-           games but the destination is no longer misleading. *@
-        @if (!string.IsNullOrEmpty(BackTo))
-        {
-            var isHome = string.Equals(BackTo, "/", StringComparison.Ordinal);
-            var label = isHome ? "All games" : "Game hub";
-            <a class="gps-back-link" href="@BackTo" aria-label="@label" title="@label">← @label</a>
-        }
+           `BackTo` is NOT dead — it still drives SwipeBack and the Home button on
+           <GameOverModal>, which is why it stays a parameter. *@
 
         @* Live rating badge for single-player, ELO-rated modes: the page passes
            its current rating via Elo and it renders next to the signed-in
@@ -128,7 +113,8 @@
                        GameKey="@GameKey"
                        Player="@Player"
                        Outcome="@Outcome"
-                       BackTo="@BackTo" />
+                       BackTo="@BackTo"
+                       PlayAgain="@PlayAgain" />
     }
 </div>
 </SwipeBack>
@@ -161,6 +147,13 @@
     // neutral round-over instead of guessing.
     [Parameter] public Models.GameOutcome Outcome { get; set; } = Models.GameOutcome.Unknown;
     [Parameter] public RenderFragment? GameSummary { get; set; }
+
+    /// <summary>
+    /// 2026-08-10: optional "Play again" callback forwarded to GameOverModal.
+    /// Local 2P FunQuiz opts in so the end-of-round modal offers a single-tap
+    /// replay — every other game leaves this null and gets the OK-only flow.
+    /// </summary>
+    [Parameter] public EventCallback PlayAgain { get; set; }
 
     /// <summary>
     /// Sentence read aloud by the shared polite live region whenever it changes —

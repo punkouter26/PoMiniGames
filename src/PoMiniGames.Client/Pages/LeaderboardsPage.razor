@@ -71,12 +71,20 @@
            inside. *@
         @foreach (var group in _groupedBoards)
         {
+            // 2026-08-10 audit #7: previous `<h2>1 PLAYER</h2>` was a styled
+            // heading with no useful screen-reader label. aria-label here
+            // turns the heading text into a real landmark name; combined
+            // with the <section aria-labelledby> wrapper, screen readers
+            // announce the section's purpose before listing boards.
             <section class="lb-group" aria-labelledby="@($"lb-group-{group.Key}")">
-                <h2 id="@($"lb-group-{group.Key}")" class="gps-phase-h">@group.Title</h2>
+                <h2 id="@($"lb-group-{group.Key}")" class="gps-phase-h"
+                    aria-label="@($"{GroupAriaLabel(group.Title)} leaderboards")">
+                    @group.Title
+                </h2>
                 <div class="lb-grid">
                     @foreach (var board in group.Boards)
                     {
-                        <article class="lb-board" aria-label="@board.Title leaderboard">
+                        <article class="lb-board" aria-label="@($"{board.Title} leaderboard, scored by {board.Unit}")">
                             <div class="lb-board-head">
                                 <h3 class="lb-board-title">@board.Title</h3>
                                 <span class="lb-unit">@board.Unit</span>
@@ -89,17 +97,32 @@
                             }
                             else
                             {
-                                <ol class="lb-rows">
+                                // 2026-08-10 audit #9: the data is tabular (rank +
+                                // player + score) but was rendered as <ol> with
+                                // spans — screen readers couldn't announce column
+                                // relationships. The role="table" wrapper + role
+                                // rows + scope=col headers gives the same DOM
+                                // grid (the CSS keeps using `display:grid`) but
+                                // semantic landmarks that assistive tech can
+                                // navigate by column.
+                                <div role="table"
+                                     aria-label="@($"{board.Title} top {rows.Count}, scored by {board.Unit}")"
+                                     class="lb-rows">
+                                    <div role="row" class="lb-row lb-row--head">
+                                        <span role="columnheader" class="lb-rank" aria-label="Rank">#</span>
+                                        <span role="columnheader" class="lb-name">Player</span>
+                                        <span role="columnheader" class="lb-value" aria-label="@board.Unit">@board.Unit</span>
+                                    </div>
                                     @* §5: <Virtualize> keeps the DOM flat even when
                                        a board's Top-N grows past the section cap. *@
                                     <Virtualize Items="@rows" Context="e" ItemSize="36">
-                                        <li class="lb-row @(e.Rank <= 3 && e.Name != PlaceholderName ? $"lb-row--top lb-row--{e.Rank}" : null)">
-                                            <span class="lb-rank">@e.Rank</span>
-                                            <span class="lb-name">@DisplayName(e.Name)</span>
-                                            <span class="lb-value">@e.DisplayValue</span>
-                                        </li>
+                                        <div role="row" class="lb-row @(e.Rank <= 3 && e.Name != PlaceholderName ? $"lb-row--top lb-row--{e.Rank}" : null)">
+                                            <span role="cell" class="lb-rank" aria-label="@($"Rank {e.Rank}")">@e.Rank</span>
+                                            <span role="cell" class="lb-name">@DisplayName(e.Name)</span>
+                                            <span role="cell" class="lb-value">@e.DisplayValue</span>
+                                        </div>
                                     </Virtualize>
-                                </ol>
+                                </div>
                             }
                         </article>
                     }
@@ -155,6 +178,20 @@
             .Where(e => e.Name != PlaceholderName)
             .Take(take)
             .ToList();
+
+    // 2026-08-10 audit #7: the visible heading is a stylised "1 PLAYER" /
+    // "MULTIPLAYER" string. Screen readers announce exactly that, which
+    // gives the section a meaningful landmark name — except it's shouting
+    // abbreviations. GroupAriaLabel is the human-readable form ("Single
+    // player games") used for aria-label, so the visible label and the
+    // spoken label do not have to be the same string.
+    private static string GroupAriaLabel(string title) => title switch
+    {
+        "1 Player" => "Single-player games",
+        "2 Player" => "Two-player games on one device",
+        "Multiplayer" => "Online multiplayer games",
+        _ => title,
+    };
 
     // Every board shows its top 3 so many games' boards fit on screen at once
     // (was top-3 mobile / top-10 desktop). Keeps each section compact.

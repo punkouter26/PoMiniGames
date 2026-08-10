@@ -60,38 +60,12 @@
                 <span class="gl-brand-text">PoMiniGames</span>
             </a>
 
-            @* 2026-08-08 audit #17: persistent cross-page navigation. The home
-               page is the only nav surface, so any non-home, non-game page
-               (Profile, Leaderboards, Settings, Health) forces a Home → page
-               trip to reach another page. The Quick Switcher mirrors the home
-               grid: every game opens in one tap from any route, with the same
-               popover pattern the user already knows from the ANON overflow
-               menu. Hidden on the home page itself — the grid is right there. *@
-            @if (!IsHome)
-            {
-                <button class="gl-overflow-trigger gl-games-switcher"
-                        style="anchor-name: --gl-anchor-games"
-                        popovertarget="gl-games-switcher-panel"
-                        aria-label="Switch game">
-                    <span aria-hidden="true">🎮</span>
-                    <span class="gl-games-switcher__label">Games</span>
-                </button>
-                <div id="gl-games-switcher-panel" popover="auto"
-                     class="gl-overflow-panel gl-games-switcher-panel">
-                    <div class="gl-dev-switch__title">Pick a game</div>
-                    @foreach (var game in GameCatalog.AllSorted)
-                    {
-                        <a class="gl-overflow-item gl-games-switcher-item"
-                           href="@game.Primary.Url"
-                           popovertarget="gl-games-switcher-panel"
-                           popovertargetaction="hide">
-                            <span class="gl-games-switcher-item__icon" aria-hidden="true">@game.Icon</span>
-                            <span class="gl-games-switcher-item__title">@game.Title</span>
-                            <span class="gl-games-switcher-item__mode">@GameModes.ToLabel(game.Primary.Mode)</span>
-                        </a>
-                    }
-                </div>
-            }
+            @* The 🎮 "Games" quick-switcher popover was removed on 2026-08-10 (user
+               request). It sat next to the brand wordmark on every non-home route and
+               duplicated its destination: the brand already returns to the catalog grid,
+               which is one tap from any game. Between it and GameShell's "← Game hub"
+               pill (also removed), a game's header carried three separate controls that
+               all navigated away from the game. *@
         </nav>
 
         @* Consolidated game header: the active game (via GameShell) projects its
@@ -192,6 +166,17 @@
     <!-- §9 Bottom-tab-bar REMOVED per user request (2026-07-05): the 3-icon
          Home/Scores/Me strip on mobile portrait was removed. The top bar's
          brand + Sign in/Sign out affordance is the only nav surface now. -->
+
+    @* 2026-08-10 audit: the app had <header>, <nav>, and <main> landmarks but
+       no <footer>, so a screen-reader user had no site-info landmark to jump
+       to on the 18 routes. Footer renders below the page content (no overlap
+       with the sticky top bar) and surfaces the build version + a "support"
+       link — both of which were previously only available via /api/diag. *@
+    <footer class="gl-footer" aria-label="Site information">
+        <span class="gl-footer-build">PoMiniGames</span>
+        <a class="gl-footer-link" href="/health" aria-label="Service health">Status</a>
+        <a class="gl-footer-link" href="/settings" aria-label="Settings">Settings</a>
+    </footer>
 </div>
 
 @code {
@@ -222,19 +207,8 @@
         }
     }
 
-    // 2026-08-08 audit #17: the quick switcher on the top bar mirrors the home
-    // grid. Showing it on the home page itself would be noise (the grid is
-    // already right there), so gate on the active route. Only "/" qualifies —
-    // every other URL is more than zero levels deep and benefits from the
-    // cross-page shortcut.
-    private bool IsHome
-    {
-        get
-        {
-            var path = new Uri(NavigationManager.Uri).AbsolutePath;
-            return string.Equals(path, "/", StringComparison.Ordinal);
-        }
-    }
+    // `IsHome` lived here to gate the 🎮 quick switcher on non-home routes. The switcher
+    // was removed on 2026-08-10 and nothing else read the property, so it went with it.
 
     protected override void OnInitialized()
     {

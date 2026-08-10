@@ -13,40 +13,27 @@ namespace PoMiniGames.Features.PoCoupleQuiz;
 /// </remarks>
 public sealed class MockQuestionService : IQuestionService
 {
-    private static readonly string[] EasyQuestions =
+    // One pool. The three difficulty-keyed banks went with DifficultyLevel — the questions
+    // were never actually harder, only differently worded, and nothing selected between them
+    // that a player could perceive.
+    private static readonly string[] Questions =
     [
         "What is your partner's favorite snack?",
         "What is your partner's favorite color?",
-        "What is your partner's go-to comfort food?"
-    ];
-
-    private static readonly string[] MediumQuestions =
-    [
+        "What is your partner's go-to comfort food?",
         "What is the title of your partner's comfort movie?",
         "What song does your partner sing in the shower?",
-        "What is your partner's dream vacation destination?"
-    ];
-
-    private static readonly string[] HardQuestions =
-    [
+        "What is your partner's dream vacation destination?",
         "What is your partner's biggest irrational fear?",
         "What hobby would your partner pick up if money were no object?",
         "What is the most embarrassing thing on your partner's bucket list?"
     ];
 
-    public Task<Question> GenerateQuestionAsync(DifficultyLevel difficulty, QuestionCategory? category = null, CancellationToken cancellationToken = default)
+    public Task<Question> GenerateQuestionAsync(QuestionCategory? category = null, CancellationToken cancellationToken = default)
     {
-        var pool = difficulty switch
-        {
-            DifficultyLevel.Easy => EasyQuestions,
-            DifficultyLevel.Medium => MediumQuestions,
-            DifficultyLevel.Hard => HardQuestions,
-            _ => MediumQuestions
-        };
-
         // Deterministic based on ticks so multiple callers in the same test get the same answer.
-        var idx = (int)(DateTime.UtcNow.Ticks % pool.Length);
-        var text = pool[idx];
+        var idx = (int)(DateTime.UtcNow.Ticks % Questions.Length);
+        var text = Questions[idx];
         var chosenCategory = category ?? QuestionCategory.Preferences;
         return Task.FromResult(new Question { Text = text, Category = chosenCategory });
     }

@@ -12,18 +12,18 @@ namespace PoMiniGames.Unit.Features.PoCoupleQuiz;
 /// <b>§1 100/50/25/25 Rule.</b> Originally 7 single-case <c>[Fact]</c>s + 1
 /// <c>[Theory]</c>; consolidated to 2 <c>[Theory]</c>s + 1 <c>[Fact]</c>. The
 /// CheckSimilarity facts collapse into one theory parameterized over (a, b, expected).
+/// The difficulty theory became a single fact when DifficultyLevel was removed.
 /// </remarks>
 public sealed class MockQuestionServiceTests
 {
     private readonly MockQuestionService _service = new();
 
-    [Theory]
-    [InlineData(DifficultyLevel.Easy)]
-    [InlineData(DifficultyLevel.Medium)]
-    [InlineData(DifficultyLevel.Hard)]
-    public async Task GenerateQuestion_ReturnsNonEmptyText_ForEveryDifficulty(DifficultyLevel difficulty)
+    [Fact]
+    public async Task GenerateQuestion_ReturnsNonEmptyText()
     {
-        var q = await _service.GenerateQuestionAsync(difficulty);
+        // Was a [Theory] over DifficultyLevel. That enum is gone: it was surfaced to
+        // players as "Difficulty" but only ever chose the round count.
+        var q = await _service.GenerateQuestionAsync();
         q.Text.Should().NotBeNullOrWhiteSpace();
         q.Category.Should().BeDefined();
     }
@@ -45,7 +45,7 @@ public sealed class MockQuestionServiceTests
     [Fact]
     public async Task GenerateQuestion_RespectsExplicitCategory()
     {
-        var q = await _service.GenerateQuestionAsync(DifficultyLevel.Medium, QuestionCategory.Hobbies);
+        var q = await _service.GenerateQuestionAsync(QuestionCategory.Hobbies);
         q.Category.Should().Be(QuestionCategory.Hobbies);
     }
 }

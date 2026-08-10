@@ -1,4 +1,12 @@
-// boardGl.js — GPU board renderer for TicTacToe and ConnectFive (§GFX-4).
+// boardGl.js — GPU board renderer for TicTacToe (§GFX-4).
+//
+// 2026-08-10: ConnectFive no longer mounts this. Its 9x9 grid of falling chips
+// never rendered reliably here and was replaced by the plain CSS board that had
+// always been the fallback — see the note in ConnectFivePage.razor. TicTacToe's
+// 3x3 of stamped marks does not drop anything and never had the problem, so it
+// keeps this. The ConnectFive code paths below (`kind: 'connectfive'`, the chip
+// lathe, the drop integrator, the win beam) are retained and still correct;
+// they are simply unused until something mounts with that kind again.
 //
 // Both games were pure DOM: an SVG glyph per cell, a CSS grid, a div for the
 // win line. That is a perfectly good way to render a board and a poor way to
@@ -120,12 +128,16 @@ export async function mount(canvas, opts) {
     // The swap is a LAST RESORT, and it copies every attribute rather than just
     // className. Blazor applies scoped CSS through a generated `b-*` attribute
     // stamped on the elements a component renders — a canvas three.js created
-    // has none, so `.cf-gl { position: absolute; inset: 0 }` in
-    // ConnectFivePage.razor.css stopped matching. The canvas then fell back to
-    // static positioning at the HTML default 300x150, which made it a grid ITEM
-    // inside .cf-board: it consumed the first grid slot, pushed every cell one
-    // place along, and rendered the whole board into a 300x150 corner while the
-    // DOM discs stayed hidden by .cf-board--gl. The board looked empty.
+    // has none, so the `position: absolute; inset: 0` rule in the host page's
+    // scoped stylesheet stopped matching. The canvas then fell back to static
+    // positioning at the HTML default 300x150, which made it a grid ITEM inside
+    // the board: it consumed the first grid slot, pushed every cell one place
+    // along, and rendered the whole board into a 300x150 corner while the DOM
+    // marks stayed hidden. The board looked empty.
+    //
+    // (Originally hit on ConnectFive, which no longer uses this module — see
+    // the 2026-08-10 note in ConnectFivePage.razor. TicTacToe is subject to the
+    // identical failure, hence the swap stays.)
     if (renderer.domElement !== canvas) {
         const parent = canvas.parentNode;
         for (const { name, value } of canvas.attributes) {

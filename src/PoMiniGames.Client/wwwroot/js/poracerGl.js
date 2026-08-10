@@ -23,6 +23,28 @@
 //    than the extra 30 ms of latency, since PoRacer's input already round-trips
 //    to the server anyway.
 //
+//    2026-08-10 — THE BUFFER MUST BE DEEPER THAN THE DELAY. This held exactly two
+//    snapshots (`prev`/`cur`) while rendering 80 ms in the past, i.e. it kept 50 ms
+//    of history to serve a 80 ms lookback. On roughly 60% of frames `renderAt` fell
+//    BEFORE the older of the two and the code fell through to "draw the newest
+//    snapshot as-is" — which is 80 ms in the *future* of where the frame should be.
+//    A car at constant speed rendered 50,50,50,50 → 0,5,10,15 → 100,100,100 →
+//    50,55,60: a full-interval jump forward followed by a two-interval snap back,
+//    twenty times a second. That was the "cars shake back and forth" report, and it
+//    was the interpolator causing it, not the network.
+//
+//    The buffer is now a time-indexed ring and the lookback is clamped to the
+//    history it actually holds, so the bracketing pair always exists.
+//
+// 1b. SERVER-CLOCK TIMELINE. Snapshots used to be stamped with their ARRIVAL time,
+//    so playback speed tracked packet spacing: a pair delivered 30 ms apart replayed
+//    50 ms of motion in 30 ms, the next pair at 70 ms replayed it slow. Every
+//    delivery hiccup became a visible speed wobble. Each snapshot already carries
+//    the sim's own monotonic clock (PoRacerRaceSnapshot.ServerTimeMs), so we
+//    interpolate on THAT and keep a smoothed local→server offset. Positions and
+//    their timestamps then come from the same clock, and arrival jitter is absorbed
+//    by the offset filter instead of being rendered.
+//
 // 2. WEBGL2 COMPOSITE. The 2D scene is uploaded as a texture and passed through
 //    a fragment shader for chromatic aberration, heat shimmer, speed lines, a
 //    bright-pass bloom and a speed vignette — all scaled by actual speed, plus
@@ -45,6 +67,12 @@ const RENDER_DELAY_MS = 80;
 // with a stale buffer, and interpolating across that gap would slide every car
 // across the map.
 const STALE_MS = 1500;
+// Snapshots retained for interpolation. Must comfortably exceed
+// RENDER_DELAY_MS / snapshot-interval (80/50 ≈ 1.6) or `renderAt` falls off the
+// back of the buffer and there is no pair to interpolate between — see the note
+// at the top of this file for what that looked like. Six entries is 300 ms of
+// history, enough to also ride out a couple of dropped packets.
+const BUFFER_MAX = 6;
 
 const VERT_SRC = `#version 300 es
 out vec2 vUv;
@@ -149,8 +177,13 @@ void main() {
 
 // ── Snapshot buffer ────────────────────────────────────────────────────────
 
-let prev = null;      // {t, elapsedSec, weather, cars}
-let cur = null;
+// Ascending by `st` (server clock, ms). Newest last.
+/** @type {Array<{st:number, t:number, elapsedSec:number, weather:number, cars:Array}>} */
+let buf = [];
+// Local→server clock offset: serverNow ≈ performance.now() + clockOffset. Both
+// clocks tick at the same rate, so this is a constant plus network jitter; the
+// easing below is what filters the jitter out.
+let clockOffset = null;
 let mainId = null;
 let miniId = null;
 let origDrawSnapshot = null;
@@ -214,6 +247,41 @@ function interpolate(a, b, t) {
         };
     }
     return out;
+}
+
+/**
+ * Car positions at server-clock instant `ts`.
+ *
+ * Every branch returns a value that is CONTINUOUS with its neighbours: clamped
+ * to the oldest sample when we are behind the buffer, interpolated inside it,
+ * and briefly extrapolated past the newest. The bug this replaced broke exactly
+ * that property — its "behind the buffer" branch returned the NEWEST sample, so
+ * falling off the back of the buffer teleported every car forward.
+ */
+function sampleAt(ts) {
+    const n = buf.length;
+    if (n === 0) return null;
+    if (n === 1) return buf[0].cars;
+
+    if (ts <= buf[0].st) return buf[0].cars;
+
+    const last = buf[n - 1];
+    if (ts >= last.st) {
+        // Past the newest snapshot — a packet is late. Extrapolate along the last
+        // known trajectory, but only briefly: beyond about one interval the guess
+        // diverges badly on corners, and a car that visibly drives through a wall
+        // and snaps back is worse than one that pauses.
+        const before = buf[n - 2];
+        const span = last.st - before.st;
+        if (span <= 0) return last.cars;
+        return interpolate(before, last, 1 + Math.min(ts - last.st, 60) / span);
+    }
+
+    for (let i = n - 1; i > 0; i--) {
+        const a = buf[i - 1], b = buf[i];
+        if (ts >= a.st) return interpolate(a, b, (ts - a.st) / (b.st - a.st));
+    }
+    return buf[0].cars;
 }
 
 // ── GL composite ───────────────────────────────────────────────────────────
@@ -321,31 +389,26 @@ function composite(speed01) {
 
 function frame() {
     raf = requestAnimationFrame(frame);
-    if (!cur || !origDrawSnapshot) return;
+    if (!buf.length || !origDrawSnapshot) return;
     if (document.hidden) return;
 
+    const newest = buf[buf.length - 1];
     const now = performance.now();
-    if (now - cur.t > STALE_MS) return;   // connection stalled; hold the last frame
+    if (now - newest.t > STALE_MS) return;   // connection stalled; hold the last frame
 
-    const renderAt = now - RENDER_DELAY_MS;
-    let cars;
-    if (prev && renderAt >= prev.t && renderAt <= cur.t && cur.t > prev.t) {
-        cars = interpolate(prev, cur, (renderAt - prev.t) / (cur.t - prev.t));
-    } else if (prev && renderAt > cur.t) {
-        // Ahead of the newest snapshot — a packet is late. Extrapolate along the
-        // last known trajectory, but only briefly: beyond about one interval the
-        // guess diverges badly on corners, and a car that visibly drives through
-        // a wall and snaps back is worse than one that pauses.
-        const over = Math.min(renderAt - cur.t, 60) / Math.max(1, cur.t - prev.t);
-        cars = interpolate(prev, cur, 1 + over);
-    } else {
-        cars = cur.cars;
-    }
+    // Where in server time this frame should show. The delay is FIXED — deriving
+    // it from the buffer's current span instead makes it grow as the buffer fills,
+    // which walks the sample point backwards during warm-up and reintroduces the
+    // very stutter this is here to remove. sampleAt() clamps to the oldest sample
+    // if the lookback outruns the history, which holds the frame for a moment
+    // rather than jumping.
+    const cars = sampleAt(now + clockOffset - RENDER_DELAY_MS);
+    if (!cars) return;
 
     const player = cars.find((c) => c.isPlayer) || cars[0];
     const speed01 = player ? Math.min(1, Math.abs(player.v || 0) / MAX_SPEED) : 0;
 
-    origDrawSnapshot(mainId, miniId, cur.elapsedSec, cur.weather, cars);
+    origDrawSnapshot(mainId, miniId, newest.elapsedSec, newest.weather, cars);
 
     if (tierTaps() > 0) {
         if (!glReady) {
@@ -370,17 +433,38 @@ export function install() {
     if (!R || typeof R.drawSnapshot !== 'function') return false;
 
     origDrawSnapshot = R.drawSnapshot.bind(R);
-    R.drawSnapshot = (mainCanvasId, miniCanvasId, elapsedSec, weather, cars) => {
+    R.drawSnapshot = (mainCanvasId, miniCanvasId, elapsedSec, weather, cars, serverTimeMs) => {
         if (!cars || !cars.length) return;
         mainId = mainCanvasId;
         miniId = miniCanvasId;
-        prev = cur;
+
+        const t = performance.now();
+        // Fall back to arrival time if the caller predates the serverTimeMs
+        // argument. Then the timeline is jittery again, but never wrong.
+        const st = Number.isFinite(serverTimeMs) ? serverTimeMs : t;
+
+        // Re-seed on the first snapshot, on a race restart (the sim's stopwatch
+        // is per-race, so `st` walks backwards), and after a stall — in each case
+        // the old buffer describes a different world and interpolating into it
+        // would slide every car across the map.
+        const offsetNow = st - t;
+        if (clockOffset === null || !buf.length
+            || st < buf[buf.length - 1].st
+            || Math.abs(offsetNow - clockOffset) > STALE_MS) {
+            buf = [];
+            clockOffset = offsetNow;
+        } else {
+            // Same rate on both clocks, so this only ever chases network jitter.
+            // Ease rather than track: a single late packet must not shove the
+            // playback clock, which is what would make the whole field lurch.
+            clockOffset += (offsetNow - clockOffset) * 0.05;
+        }
+
         // The .NET marshaller hands us a fresh array each call, so the reference
         // is safe to retain; `cars` is never mutated after this point.
-        cur = { t: performance.now(), elapsedSec, weather, cars };
-        // A snapshot arriving after a stall would otherwise be interpolated
-        // against a snapshot from before it, sliding every car across the map.
-        if (prev && cur.t - prev.t > STALE_MS) prev = null;
+        buf.push({ st, t, elapsedSec, weather, cars });
+        if (buf.length > BUFFER_MAX) buf.shift();
+
         if (!raf) raf = requestAnimationFrame(frame);
     };
 
@@ -401,7 +485,8 @@ export function uninstall() {
         window.PoRacerRender.drawSnapshot = origDrawSnapshot;
     }
     teardownGl();
-    prev = cur = null;
+    buf = [];
+    clockOffset = null;
     origDrawSnapshot = null;
     installed = false;
 }

@@ -547,7 +547,12 @@
                     isPlayer = c.IsPlayer, name = c.Name, lap = c.Lap,
                     position = c.Position, finished = c.Finished,
                     boost = c.BoostGlow, skid = c.SkidIntensity,
-                }).ToArray());
+                }).ToArray(),
+                // The interpolator's timeline (js/poracerGl.js). Interpolating on
+                // ARRIVAL time made playback speed track packet spacing, so every
+                // delivery hiccup showed up as a speed wobble; this is the clock the
+                // positions were actually sampled against.
+                snap.ServerTimeMs);
         }
         catch { }
         if (snap.Finished && Phase != GamePhase.Finished)

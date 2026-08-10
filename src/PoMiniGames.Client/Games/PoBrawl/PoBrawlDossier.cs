@@ -26,8 +26,10 @@ public sealed record PoBrawlDossierEntry(string SuperName, string SuperEffect, s
 /// </para>
 /// <para>
 /// Keyed by the same lowercase fighter ids as <see cref="PoBrawlRoster"/>. A missing id is not
-/// an error — <see cref="For"/> answers <c>null</c> and the intro card simply omits the panel,
-/// which is the right behaviour for BOB (the player avatar has no scouting report to show).
+/// an error — <see cref="For"/> answers <c>null</c> and the intro card simply omits the panel.
+/// BOB is deliberately absent and must stay that way: he is the generic avatar the fifteen
+/// presidents are characterised against, with no personality profile and no signature super,
+/// so there is nothing to scout. Adding an entry for him would promise a move he does not have.
 /// </para>
 /// </remarks>
 public static class PoBrawlDossier

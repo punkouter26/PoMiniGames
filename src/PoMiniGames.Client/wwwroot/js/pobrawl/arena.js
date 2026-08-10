@@ -313,6 +313,11 @@ export function buildArena(scene) {
 
   return {
     posts, crowd, atmo, flashes, ropes, backdrop,
+    // The ring-mat material, so the engine can inject its knockdown ripple
+    // (GFX/SOUND #10). Returned rather than looked up by traversal: `top` is
+    // one of three boxes stacked at the ring and picking the right one from
+    // outside would mean matching on dimensions.
+    canvasMat,
     lights: { hemi, key, rim, fill, spot, cornerA, cornerB, rectA, rectB },
   };
 }
@@ -370,6 +375,11 @@ function buildBackdrop(scene) {
         emissiveIntensity: 1.4, roughness: 0.4,
       }));
       lens.position.set(x, trussY - 0.28, z);
+      // Tagged so the engine can find them without matching on geometry or
+      // material shape (GFX/SOUND #10 — audio-reactive rig LEDs). Each lens
+      // owns its own material, which is what lets them pulse independently.
+      lens.userData.rigLens = true;
+      lens.userData.baseEmissive = 1.4;
       group.add(lens);
       li++;
     }

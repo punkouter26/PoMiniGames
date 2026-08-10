@@ -300,6 +300,27 @@
 
 /* ── HUD ─────────────────────────────────────────────── */
 
+/* ── Glassmorphic, audio-reactive chrome (GFX/SOUND #8) ────────────────────
+   The HUD was flat rectangles on a transparent layer. It is now a glass plate:
+   a frosted, saturated backdrop, a specular highlight raked across the top
+   edge, and a rim light that breathes on the music's low end.
+
+   TWO PLATFORM VARIABLES DRIVE THIS, AND BOTH NEED FALLBACKS:
+
+   --gfx-blur is published by visualRuntime.js's adaptive-quality tier, but ONLY
+   from applyTier(), which early-returns when the tier has not changed — and the
+   tier starts at 'high'. So on a machine that never drops a frame the variable
+   is NEVER SET. Every use here carries its own fallback; do not remove them
+   assuming the tier will provide one.
+
+   --audio-bass is published by the same module's §8 pump, which PoBrawl now
+   switches on in game.js start(). It is 0 whenever audio is muted or the
+   context has not been unlocked, and unset if the pump is off — so it is only
+   ever used to ADD glow on top of a value that stands on its own.
+
+   Everything is raw hex, like the rest of this HUD: .pb-hud floats over the
+   scheme-invariant arena and must not follow the theme. See the long note on
+   .pb-hp-name. */
 .pb-hud {
     position: absolute;
     top: 10px;
@@ -315,11 +336,73 @@
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 3px;
+    padding: 7px 10px 8px;
+    border-radius: 12px;
+    /* Two-stop wash rather than a flat tint: the plate has to read as a pane
+       catching light from above, and a uniform fill reads as a card. */
+    background: linear-gradient(160deg, rgba(146, 166, 226, 0.20), rgba(10, 14, 30, 0.34));
+    /* saturate() is what separates glassmorphism from a plain blur — the arena
+       behind is highly saturated, and letting that colour bleed through is the
+       whole effect. */
+    backdrop-filter: blur(var(--gfx-blur, 14px)) saturate(150%);
+    -webkit-backdrop-filter: blur(var(--gfx-blur, 14px)) saturate(150%);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    /* Outer drop, then an inset top highlight (the lit edge of the pane) and an
+       inset bottom shade (its thickness). The middle shadow is the audio-driven
+       one: --audio-bass scales a cool rim glow, so the plate pulses with the
+       music's low end and flares on every impact the SFX bus passes. */
+    box-shadow:
+        0 6px 20px rgba(0, 0, 0, 0.45),
+        0 0 calc(var(--audio-bass, 0) * 26px) rgba(122, 152, 255, calc(0.15 + var(--audio-bass, 0) * 0.5)),
+        inset 0 1px 0 rgba(255, 255, 255, 0.22),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.3);
+    position: relative;
+    overflow: hidden;
+}
+
+/* Raked specular streak. A single wide diagonal band at low alpha — the giveaway
+   of cheap glass is a plate with no highlight travelling across it. Static
+   (not animated): this sits over a 60 fps canvas and an animated sheen on the
+   HUD competes with the fight for the eye. */
+.pb-hp-side::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(104deg,
+        rgba(255, 255, 255, 0) 32%,
+        rgba(255, 255, 255, 0.11) 47%,
+        rgba(255, 255, 255, 0) 60%);
+    pointer-events: none;
 }
 
 .pb-hp-right {
     align-items: flex-end;
+    /* Mirror the light: P2's plate is lit from the opposite side, so the two
+       glass panes read as facing each other across the ring. */
+    background: linear-gradient(200deg, rgba(146, 166, 226, 0.20), rgba(10, 14, 30, 0.34));
+}
+
+.pb-hp-right::before {
+    background: linear-gradient(76deg,
+        rgba(255, 255, 255, 0) 32%,
+        rgba(255, 255, 255, 0.11) 47%,
+        rgba(255, 255, 255, 0) 60%);
+}
+
+/* The blur is the expensive part of this HUD, and on the low tier
+   visualRuntime sets --gfx-blur to 0 precisely because the machine is already
+   dropping frames. A blur(0) backdrop-filter still promotes the element to its
+   own compositing layer and still costs a readback, so at that tier the filter
+   is dropped ENTIRELY and the plate falls back to a solid scrim. */
+:root[data-gfx="low"] .pb-hp-side {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background: rgba(10, 14, 30, 0.72);
+}
+
+:root[data-gfx="low"] .pb-hp-side::before {
+    display: none;
 }
 
 .pb-hp-name {
@@ -343,27 +426,60 @@
     text-shadow: 0 1px 4px rgba(0, 0, 0, 0.85);
 }
 
+/* Tracks are recessed channels cut into the glass: a dark well, an inset top
+   shadow so the fill sits *in* it rather than on it, and a hairline lip. */
 .pb-hp-track {
     width: 100%;
     height: 12px;
     border-radius: 6px;
-    background: rgba(0, 0, 0, 0.55);
+    background: rgba(4, 7, 18, 0.62);
     overflow: hidden;
-    border: 1px solid rgba(255, 255, 255, 0.25);
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    box-shadow:
+        inset 0 2px 4px rgba(0, 0, 0, 0.55),
+        inset 0 -1px 0 rgba(255, 255, 255, 0.08);
 }
 
 .pb-hp-fill {
     height: 100%;
     width: var(--hp, 100%);
     transition: width 0.15s ease-out;
+    position: relative;
+    /* Gloss on the fill itself — the top half of the bar catches light. Layered
+       over each side's own colour gradient below via background-image stacking,
+       so the P1/P2 rules keep owning the hue. */
+    background-blend-mode: overlay, normal;
+}
+
+/* Bright leading edge on the health bar. It is the thing the eye tracks when
+   damage lands, and on a flat fill there was nothing to track — the bar just
+   got shorter. */
+.pb-hp-fill::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 3px;
+    height: 100%;
+    background: rgba(255, 255, 255, 0.85);
+    box-shadow: 0 0 7px rgba(255, 255, 255, 0.85);
+}
+
+.pb-hp-right .pb-hp-fill::after {
+    right: auto;
+    left: 0;
 }
 
 .pb-hp-p1 {
-    background: linear-gradient(90deg, #22c55e, #86efac);
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.32), rgba(255, 255, 255, 0) 55%),
+        linear-gradient(90deg, #22c55e, #86efac);
 }
 
 .pb-hp-p2 {
-    background: linear-gradient(90deg, #f87171, #ef4444);
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.32), rgba(255, 255, 255, 0) 55%),
+        linear-gradient(90deg, #f87171, #ef4444);
     margin-left: auto;
 }
 
@@ -374,15 +490,18 @@
     width: 100%;
     height: 6px;
     border-radius: 3px;
-    background: rgba(0, 0, 0, 0.55);
+    background: rgba(4, 7, 18, 0.62);
     overflow: hidden;
     border: 1px solid rgba(255, 255, 255, 0.18);
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.55);
 }
 
 .pb-en-fill {
     height: 100%;
     width: var(--en, 50%);
-    background: linear-gradient(90deg, #5b7cfa, #8aa4ff);
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0) 60%),
+        linear-gradient(90deg, #5b7cfa, #8aa4ff);
     transition: width 0.25s linear;
 }
 
@@ -429,9 +548,10 @@
     width: 100%;
     height: 5px;
     border-radius: 3px;
-    background: rgba(0, 0, 0, 0.55);
+    background: rgba(4, 7, 18, 0.62);
     overflow: hidden;
     border: 1px solid rgba(255, 255, 255, 0.15);
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.55);
 }
 
 .pb-su-fill {
@@ -445,10 +565,29 @@
     margin-left: auto;
 }
 
+/* Ready state: a CONIC gradient swept around the fill, so the charge reads as
+   circulating energy rather than a bar that changed colour. This is the one
+   place in the HUD that animates, and it earns it — "your super is available"
+   is the single most actionable piece of information on screen, and the old
+   opacity blink was easy to miss against a moving arena.
+
+   Rotating a conic gradient is a paint-only animation, so it is declared on a
+   registered-style custom property... which CSS cannot do without @property
+   support. Instead the ELEMENT rotates a wider-than-needed background via
+   background-position, which stays on the compositor. */
 .pb-su-fill--ready {
-    background: linear-gradient(90deg, #a855f7, #f0abfc);
-    box-shadow: 0 0 8px rgba(217, 130, 255, 0.9);
-    animation: pb-su-pulse 0.85s ease-in-out infinite;
+    background: conic-gradient(from 0deg,
+        #a855f7, #f0abfc, #ffffff, #f0abfc, #a855f7, #7c3aed, #a855f7);
+    box-shadow:
+        0 0 8px rgba(217, 130, 255, 0.9),
+        0 0 calc(4px + var(--audio-bass, 0) * 16px) rgba(240, 171, 252, 0.85);
+    animation: pb-su-sweep 1.6s linear infinite;
+}
+
+@keyframes pb-su-sweep {
+    from { filter: hue-rotate(0deg) brightness(1); }
+    50%  { filter: hue-rotate(18deg) brightness(1.35); }
+    to   { filter: hue-rotate(0deg) brightness(1); }
 }
 
 @keyframes pb-su-pulse {

@@ -9,6 +9,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
+import { AfterimagePass } from 'three/addons/postprocessing/AfterimagePass.js';
 import { buildArena, animateCrowd, updateAtmosphere, updateRopes, updateBanners, twangRope, damagePost, disposeArenaReflector, RING_HALF } from './arena.js';
 import { buildProps, resetProps, updateProps, disposeProps } from './props.js';
 import { buildFighter, updateJiggles, setExpression, CHARACTERS, CHARACTER_IDS } from './fighters.js';
@@ -19,6 +20,7 @@ import { RandomGenerator } from './rng.js';
 import { CombatPlay, COMBAT_EVENTS, REGIONS, regionEffect } from './combat.js';
 import { PERSONALITIES, makePersonalityState } from './personalities.js';
 import * as PostFx from '../postFx.js';
+import * as VisualRuntime from '../visualRuntime.js';
 import { AudioBus } from './audio.js';
 import { ReplayBuffer } from './replay.js';
 import { CannonRagdoll, SeveredArm } from './ragdoll-physics.js';
@@ -61,6 +63,27 @@ const HOUSE_LIGHT_HEIGHT = 11;
 const HOUSE_LIGHT_SPEED = (Math.PI * 2) / 12; // rad/s — one lap per ~12 s (was 26)
 
 const MIN_SEPARATION = 0.95;
+
+// ── IBL strength (GFX/SOUND #1) ───────────────────────────────────────────
+// scene.environmentIntensity. 0 disables image-based lighting entirely and
+// restores the pre-2026-08-09 lights-only look (exposureBase follows it). At
+// 0.38 the env is a fill: it puts a reflection in the clearcoat and sheen
+// lobes without contributing enough diffuse to lift the shadows, which is the
+// specific failure that got the previous env map deleted.
+const ENV_INTENSITY = 0.38;
+
+// ── Ink edge (GFX/SOUND #4) ───────────────────────────────────────────────
+// Fresnel-driven edge darkening injected into the fighters' own materials.
+//
+// WHY NOT AN INVERTED HULL / OutlinePass: both cost a second draw of every
+// fighter mesh, every frame — ~40 extra draw calls per fighter on a rig that
+// is already the most expensive thing in the scene. And they buy nothing here,
+// because this rig is built entirely from capsules and spheres: on smooth
+// convex geometry a grazing-angle darkening and an extruded hull resolve to
+// visually the same ink line. This one is free — it rides the existing draw.
+const INK_BASE = 0.55;      // resting edge strength
+const INK_POWER = 2.6;      // Fresnel exponent — higher = tighter line
+
 
 // Frame-data table. cancelInto = minimum stateT to transition into each named
 // state. { idle: 0 } means recovery auto-completes when stateT reaches the end.
@@ -198,6 +221,13 @@ const CAVignetteShader = {
     uGodraysOrig: { value: [0.5, 1.05] },
     uGodraysDecay: { value: 0.94 },
     uGodraysTint: { value: [1.0, 0.94, 0.78] },
+    // ── Speedlines (GFX/SOUND #3 / #2) ──────────────────────────────
+    // Radial manga speedlines, drawn in screen space and masked away from the
+    // frame centre so the fighters are never behind them. 0 = off and the
+    // branch is skipped outright. Spiked for ~2 frames on a heavy impact and
+    // held up through the super cinematic.
+    uSpeed: { value: 0 },
+    uSpeedTint: { value: [1.0, 0.97, 0.88] },
   },
   vertexShader: /* glsl */`
     varying vec2 vUv;
@@ -218,6 +248,8 @@ const CAVignetteShader = {
     uniform vec3 uGodraysTint;
     uniform float uGrain;
     uniform float uTime;
+    uniform float uSpeed;
+    uniform vec3 uSpeedTint;
     varying vec2 vUv;
     // Cheap hash for the film grain — no texture fetch.
     float hash21(vec2 p) {
@@ -270,6 +302,28 @@ const CAVignetteShader = {
           vec3 blade = acc / weight;
           col += blade * uGodrays * uGodraysTint;
         }
+      }
+
+      // Speedlines: radial streaks fanning out from the frame centre. The
+      // angle is quantised into lanes, each lane hashed for its own brightness
+      // and phase, so the fan is irregular the way an inked one is rather than
+      // a clean starburst. Added BEFORE the grade so the grade's shoulder rolls
+      // the hot ends of the lines off instead of leaving them clipped white.
+      if (uSpeed > 0.003) {
+        vec2 sd = vUv - 0.5;
+        float srad = length(sd) * 2.0;
+        float sang = atan(sd.y, sd.x) * 0.15915494 + 0.5;   // 0..1
+        float lane = floor(sang * 110.0);
+        float n = hash21(vec2(lane, 3.0));
+        // ~40% of lanes carry a line; the rest stay empty so the fan breathes.
+        float streak = smoothstep(0.58, 0.98, n);
+        // Nothing inside 0.3 of centre (that is where the fighters are) and
+        // nothing past the corners, so the lines read as framing, not overlay.
+        float radMask = smoothstep(0.30, 0.92, srad) * (1.0 - smoothstep(1.24, 1.72, srad));
+        // Each lane drifts outward on its own phase — static lines read as a
+        // texture laid over the frame instead of speed through it.
+        float phase = fract(n * 13.0 + uTime * 2.4);
+        col += uSpeedTint * streak * radMask * uSpeed * (0.30 + 0.70 * phase);
       }
 
       // Broadcast grade: teal-pushed shadows, warm highlights, +saturation.
@@ -402,6 +456,15 @@ export class BrawlGame {
     const w = this.container.clientWidth || 800;
     const h = this.container.clientHeight || 540;
 
+    // ── Audio-reactive HUD (GFX/SOUND #8) ────────────────────────────────
+    // visualRuntime.js has published --audio-bass/mid/treble/peak since it was
+    // written, but `_audioReactive` defaults to FALSE and nothing in the app
+    // had ever called this — the analyser pump was dead code and every
+    // stylesheet reading those variables was reading an unset value. Switched
+    // on here (and off again in dispose) so the cost is paid only by the page
+    // that consumes it, which is the contract that module documents.
+    try { VisualRuntime.enableAudioReactive(true); } catch { /* never block the game on chrome */ }
+
     // antialias:false is deliberate. Every frame is rendered into the
     // composer's own MSAA target (see _buildComposer) and reaches the canvas
     // as a fullscreen quad in OutputPass — a quad has no interior edges, so a
@@ -426,22 +489,40 @@ export class BrawlGame {
     // lever is the hemisphere cut + hotter key in arena.js; exposure only takes
     // the small step needed to keep overall level after that cut.
     //
-    // Bumped 1.3 → 1.5 to compensate for the removed IBL fill — without the
-    // env map the rig now has to carry the full ambient level on its own, and
-    // exposure is the simplest way to keep the ring reading bright without
-    // flattening contrast (the hemisphere is still cut hard below).
-    this.exposureBase = 1.5;
+    // Was bumped 1.3 → 1.5 when the IBL fill was removed, because the rig then
+    // had to carry the full ambient level alone. #1 puts a (much dimmer,
+    // arena-coloured) environment back, so the compensation comes back off —
+    // leaving exposure at 1.5 on top of env fill would re-flatten exactly the
+    // contrast the hemisphere cut was protecting. Tied to ENV_INTENSITY so the
+    // two can never drift: zero the env and the exposure returns on its own.
+    this.exposureBase = ENV_INTENSITY > 0 ? 1.36 : 1.5;
     this.renderer.toneMappingExposure = this.exposureBase;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.container.appendChild(this.renderer.domElement);
 
     this.scene = new THREE.Scene();
-    // Reflection effects removed entirely per user request — no IBL, no
-    // scene.environment, no PMREM/RoomEnvironment generation. The real
-    // key/rim/spot/RectArea-panel rig plus the brighter house lights carry
-    // all of the scene's illumination now, so the ring reads bright without
-    // the softbox speculars that a PBR env map would lay on top.
+    // ── IBL (GFX/SOUND #1) ──────────────────────────────────────────────
+    // Re-added 2026-08-09 by request, but NOT the way it was before.
+    //
+    // History matters here: IBL was removed once already because
+    // RoomEnvironment's bright white boxes laid softbox speculars over
+    // everything and washed the hall out. Handing a PBR renderer a generic
+    // studio and hoping is what failed — not image-based lighting itself.
+    //
+    // What goes in now is an environment built FROM this arena's own palette
+    // (see _buildEnvironment): a dark hall, one warm pool overhead where the
+    // house light actually hangs, cool bounce off the canvas below, and the
+    // red/blue corner accents in the right places. The wardrobe's sheen and
+    // clearcoat lobes finally have something to reflect, and what they reflect
+    // is the room they are standing in.
+    //
+    // Held well under 1 so it fills rather than lights. Set ENV_INTENSITY to 0
+    // to get the pre-2026-08-09 look back — nothing else needs changing.
+    this._buildEnvironment();
     this.arena = buildArena(this.scene);
+    // #10 — before _applyTextureAnisotropy, so the jumbotron canvas texture it
+    // installs gets filtered along with everything else.
+    this._initReactiveArena();
 
     this.camera = new THREE.PerspectiveCamera(55, w / h, 0.1, 100);
     this.camera.position.set(0, 2.4, 7);
@@ -455,6 +536,9 @@ export class BrawlGame {
     // per spark). Additive blending means "fade" is just color → black, so
     // no per-particle alpha attribute is needed.
     this._initParticles();
+
+    // Pooled shock rings + the flat-silhouette / speedline / smear timers (#3).
+    this._initImpactFrames();
 
     // Impact light pool: reused PointLights flashed at hit points. A fixed
     // pool keeps the scene's light count constant (adding/removing lights at
@@ -582,6 +666,10 @@ export class BrawlGame {
     const resumeAudio = () => {
       this.audio.resume();
       this.audio.startMusic();
+      // #6 — the hall bed can only start once the context is unsuspended;
+      // starting looping sources on a suspended context leaves them silently
+      // stalled and they never recover on resume.
+      this.audio.startCrowd();
       window.removeEventListener('pointerdown', resumeAudio);
       window.removeEventListener('keydown', resumeAudio);
     };
@@ -643,6 +731,7 @@ export class BrawlGame {
     }
     this.bloomPass = null;
     this.fxPass = null;
+    this.afterimage = null;
     // Disposed above with the rest of the passes; drop the handle so a stale
     // one cannot be updated against the new composer.
     this.rackFocus = null;
@@ -671,6 +760,24 @@ export class BrawlGame {
     } catch { /* AO is a nicety — never block the game on it */ }
     this.bloomPass = new UnrealBloomPass(new THREE.Vector2(w, h), 0.32, 0.55, 0.8);
     this.composer.addPass(this.bloomPass);
+    // ── Afterimage / velocity smear (GFX/SOUND #9) ─────────────────────
+    // Frame-feedback trails for dashes, launches and the super. Placed after
+    // bloom so the trail carries the glow with it — a smear of the pre-bloom
+    // frame reads as a dirty buffer, not as speed.
+    //
+    // WHY A FULL-SCREEN PASS RATHER THAN GHOST COPIES OF THE RIG: the classic
+    // implementation clones the skeleton three or four times and draws it with
+    // a fading additive material, which is 40-odd extra draw calls per ghost on
+    // the heaviest object in the scene. Feedback costs one fullscreen quad and
+    // produces a continuous trail instead of discrete stamps. It also cannot
+    // smear the static arena: a pixel that did not change blends with itself.
+    //
+    // DISABLED by default. EffectComposer skips a disabled pass entirely, so
+    // the off state is genuinely free — this only runs during the fraction of a
+    // second something is actually moving fast enough to warrant it.
+    this.afterimage = new AfterimagePass(0.0);
+    this.afterimage.enabled = false;
+    this.composer.addPass(this.afterimage);
     // §GFX-2 rack focus. Disabled during the fight and enabled for the KO, when
     // the action has already stopped — see postFx.js for why a permanent DoF
     // pass is not affordable here (it doubles the scene's draw calls).
@@ -682,6 +789,372 @@ export class BrawlGame {
     this.fxPass = new ShaderPass(CAVignetteShader);
     this.composer.addPass(this.fxPass);
     this.composer.addPass(new OutputPass());
+  }
+
+  // ══ Reactive arena (GFX/SOUND #10) ═══════════════════════════════════
+  // The hall was scenery: a jumbotron showing procedural static, rig lenses at
+  // a constant emissive, and a ring mat that never acknowledged a body hitting
+  // it. All three now respond to the match.
+
+  _initReactiveArena() {
+    // ── Rig LEDs ──────────────────────────────────────────────────────
+    this._rigLenses = [];
+    this.arena.backdrop?.traverse((o) => {
+      if (o.userData?.rigLens && o.material) this._rigLenses.push(o);
+    });
+
+    // ── Live jumbotron ────────────────────────────────────────────────
+    // 256×128 — the screens are 14 m from the camera behind a fog falloff, so
+    // anything sharper is texture upload cost nobody can resolve. Both screens
+    // share one material (see arena.js buildBackdrop), hence one canvas.
+    const c = document.createElement('canvas');
+    c.width = 256; c.height = 128;
+    this._jumboCanvas = c;
+    this._jumboCtx = c.getContext('2d');
+    this._jumboTex = new THREE.CanvasTexture(c);
+    this._jumboTex.colorSpace = THREE.SRGBColorSpace;
+    const screenMat = this.arena.backdrop?.userData?.screenMat;
+    if (screenMat) {
+      // The outgoing map is arena.js's module-level cached singleton, shared
+      // with any future arena build — replace the reference, never dispose it.
+      screenMat.map = this._jumboTex;
+      screenMat.needsUpdate = true;
+    }
+    this._jumboT = 0;
+    this._jumboFlash = '';   // one-shot centre caption ('K.O.', 'FIGHT', …)
+    this._jumboFlashT = 0;
+
+    // ── Ring-mat ripple ───────────────────────────────────────────────
+    // A SHADING ripple, not a displacement: the mat is a BoxGeometry with one
+    // segment per face, so there are no interior vertices to push and adding
+    // them would mean re-tessellating the ring to animate a few centimetres
+    // nobody would see at this camera distance. Concentric bands of light and
+    // shadow racing out from the impact read as the canvas taking the weight,
+    // and cost one branch in a fragment shader that already runs.
+    this._ripple = {
+      origin: new THREE.Vector2(0, 0),
+      t: { value: 99 },          // seconds since the strike; >2 = idle
+      amp: { value: 0 },
+      originU: { value: new THREE.Vector2(0, 0) },
+    };
+    const mat = this.arena.canvasMat;
+    if (mat) {
+      const R = this._ripple;
+      mat.onBeforeCompile = (shader) => {
+        shader.uniforms.uRippleT = R.t;
+        shader.uniforms.uRippleAmp = R.amp;
+        shader.uniforms.uRippleOrigin = R.originU;
+        shader.vertexShader = shader.vertexShader
+          .replace('void main() {', 'varying vec2 vMatXZ;\nvoid main() {')
+          // World XZ of the fragment. Piggybacks on begin_vertex (which defines
+          // `transformed`) rather than on worldpos_vertex, because that chunk
+          // only emits a world position when an envmap/shadow define happens to
+          // be set — which would make this silently break if lighting changed.
+          .replace('#include <begin_vertex>',
+            '#include <begin_vertex>\n  vMatXZ = (modelMatrix * vec4(transformed, 1.0)).xz;');
+        shader.fragmentShader = shader.fragmentShader
+          .replace('void main() {', /* glsl */`
+            uniform float uRippleT;
+            uniform float uRippleAmp;
+            uniform vec2 uRippleOrigin;
+            varying vec2 vMatXZ;
+            void main() {`)
+          .replace('#include <opaque_fragment>', /* glsl */`
+            #include <opaque_fragment>
+            if (uRippleAmp > 0.001) {
+              float _d = distance(vMatXZ, uRippleOrigin);
+              // Expanding wave front at ~4.5 m/s with a gaussian envelope, so
+              // the disturbance is a moving band rather than the whole mat
+              // pulsing at once.
+              float _front = uRippleT * 4.5;
+              float _band = exp(-pow((_d - _front) * 1.9, 2.0));
+              float _wave = sin(_d * 7.0 - uRippleT * 22.0);
+              // Falls off with distance travelled AND with age — a ripple that
+              // only faded with time would still be visible at the ropes.
+              float _fade = uRippleAmp * exp(-_d * 0.24) * exp(-uRippleT * 1.7);
+              gl_FragColor.rgb *= 1.0 + _wave * _band * _fade * 0.55;
+            }`);
+      };
+      mat.needsUpdate = true;
+    }
+  }
+
+  /** Kick a ripple out from a world XZ point — a knockdown, a KO, a body slam. */
+  _ringRipple(x, z, amp = 1) {
+    if (!this._ripple) return;
+    this._ripple.originU.value.set(x, z);
+    this._ripple.t.value = 0;
+    this._ripple.amp.value = Math.min(1.2, amp);
+  }
+
+  _updateReactiveArena(dt) {
+    // Rig LEDs ride the audio envelope plus crowd excitement. The envelope is
+    // the same signal the bloom pulse reads, so the lamps flare on the same
+    // frame the impact is heard rather than a frame or two behind it.
+    if (this._rigLenses && this._rigLenses.length) {
+      const env = this.audio ? this.audio.getEnvelope() : 0;
+      const exc = Math.min(1, this.excited || 0);
+      for (let i = 0; i < this._rigLenses.length; i++) {
+        const lens = this._rigLenses[i];
+        // Per-lamp phase so the truss chases rather than strobing as one block
+        // — eight lamps flashing in unison reads as a bug in the renderer.
+        const phase = Math.sin(this.atmoT * 3.1 + i * 0.8) * 0.5 + 0.5;
+        lens.material.emissiveIntensity =
+          (lens.userData.baseEmissive || 1.4) * (1 + env * 1.6 + exc * 0.5 * phase);
+      }
+    }
+
+    // Ripple clock. Parked at a high value when idle so the shader branch is
+    // skipped via uRippleAmp rather than left running on a stale phase.
+    if (this._ripple && this._ripple.amp.value > 0) {
+      this._ripple.t.value += dt;
+      if (this._ripple.t.value > 2.2) this._ripple.amp.value = 0;
+    }
+
+    // Jumbotron: redraw at ~8 Hz. It is a texture upload, so it does NOT want
+    // to be on the frame clock — at 60 fps that is 60 canvas repaints and 60
+    // GPU uploads a second for a screen the size of a postage stamp on screen.
+    this._jumboT = (this._jumboT || 0) + dt;
+    if (this._jumboFlashT > 0) this._jumboFlashT -= dt;
+    if (this._jumboT >= 0.125) { this._jumboT = 0; this._drawJumbotron(); }
+  }
+
+  /** One-shot big caption on the jumbotron. */
+  _jumboCaption(text, secs = 1.6) {
+    this._jumboFlash = text;
+    this._jumboFlashT = secs;
+    this._jumboT = 99; // force a redraw on the next update rather than waiting
+  }
+
+  _drawJumbotron() {
+    const g = this._jumboCtx;
+    if (!g || !this.fighters || !this.combat) return;
+    const W = 256, H = 128;
+    g.fillStyle = '#08101f';
+    g.fillRect(0, 0, W, H);
+
+    // Header strip.
+    g.fillStyle = 'rgba(90,124,250,0.18)';
+    g.fillRect(0, 0, W, 18);
+    g.font = 'bold 11px Impact, sans-serif';
+    g.textBaseline = 'middle';
+    g.fillStyle = '#cfe0ff';
+    g.textAlign = 'left';
+    g.fillText('PO BRAWL', 8, 9);
+    g.textAlign = 'right';
+    g.fillText(`${Math.floor(this.clock || 0)}"`, W - 8, 9);
+
+    // Two name plates with live HP.
+    const names = this.fighters.map((f) => (f.rig.config.name || '').toUpperCase());
+    const hps = this.fighters.map((f) => this._hp(f) / MAX_HP);
+    for (let i = 0; i < 2; i++) {
+      const y = 30 + i * 30;
+      g.textAlign = 'left';
+      g.font = 'bold 12px Impact, sans-serif';
+      g.fillStyle = '#e8eeff';
+      g.fillText(names[i].slice(0, 14), 10, y);
+      g.fillStyle = 'rgba(0,0,0,0.55)';
+      g.fillRect(10, y + 9, W - 20, 7);
+      g.fillStyle = i === 0 ? '#22c55e' : '#ef4444';
+      g.fillRect(10, y + 9, Math.max(0, (W - 20) * hps[i]), 7);
+    }
+
+    // Centre caption: an explicit one-shot beats a live combo, which beats
+    // nothing. Combos are the common case, so they cost no extra state.
+    let caption = this._jumboFlashT > 0 ? this._jumboFlash : '';
+    if (!caption) {
+      const best = this.fighters.reduce((a, b) => (b.comboN > a.comboN ? b : a));
+      if (best.comboN >= COMBO_MIN_SHOWN) caption = `${best.comboN} HIT`;
+    }
+    if (caption) {
+      g.textAlign = 'center';
+      g.font = 'bold 30px Impact, sans-serif';
+      g.fillStyle = 'rgba(255,214,102,0.92)';
+      g.fillText(caption, W / 2, H - 22);
+    }
+
+    // Scanlines last, over everything — this is a screen being filmed, and the
+    // banding is what stops the panel reading as a flat lit quad.
+    g.fillStyle = 'rgba(0,0,0,0.22)';
+    for (let y = 0; y < H; y += 3) g.fillRect(0, y, W, 1);
+
+    this._jumboTex.needsUpdate = true;
+  }
+
+  // ── Ink edge (GFX/SOUND #4) ────────────────────────────────────────────
+  // Injects a Fresnel edge-darkening term into every material on one fighter
+  // rig, so the caricature reads as a drawn figure against the photoreal-ish
+  // hall instead of dissolving into it. Returns the uniform objects so the
+  // super cinematic can drive them.
+  //
+  // The injection point is `opaque_fragment` — after all lighting, before tone
+  // mapping. That ordering is load-bearing: the composer renders into a
+  // HalfFloat target, so three compiles these materials with NoToneMapping and
+  // OutputPass tone-maps at the end. Darkening before the curve means the line
+  // survives AgX's shoulder instead of being rolled flat by it.
+  _applyInkEdge(rig) {
+    if (INK_BASE <= 0) return [];
+    const uniforms = [];
+    const seen = new Set();
+    rig.root.traverse((obj) => {
+      const mats = obj.material
+        ? (Array.isArray(obj.material) ? obj.material : [obj.material])
+        : [];
+      for (const m of mats) {
+        // Materials are shared across meshes within a rig (one suitMat dresses
+        // a dozen parts), and compiling the same program twice with two
+        // different uniform objects would leave half the rig on a stale one.
+        if (!m || seen.has(m.uuid)) continue;
+        seen.add(m.uuid);
+        // Basic materials (blob shadows, trails) have no `normal` in scope and
+        // no lighting to darken — the chunk replace below would fail to match
+        // and silently do nothing, so skip them explicitly.
+        if (!m.isMeshStandardMaterial && !m.isMeshPhysicalMaterial) continue;
+
+        const u = {
+          uInk: { value: INK_BASE },
+          uInkPower: { value: INK_POWER },
+          // Near-black navy rather than pure black: a true 0,0,0 line reads as
+          // a hole punched in the frame once bloom lights up around it.
+          uInkColor: { value: new THREE.Color(0x05070f) },
+          // #3 — flat-fill amount. Driven to 1 for the two frames of an impact
+          // frame, which blows the fighter out to a solid silhouette.
+          //
+          // This is why the anime impact frame costs nothing: the obvious
+          // implementation re-renders the rigs with an override material into a
+          // second target, which is a whole extra draw of the most expensive
+          // objects in the scene. Folding it into a uniform the fighters'
+          // materials already carry makes the silhouette a branch in a shader
+          // that was going to run anyway — and it masks perfectly, because only
+          // the fighters have this injection at all.
+          uFlat: { value: 0 },
+          uFlatColor: { value: new THREE.Color(0xffffff) },
+        };
+        m.onBeforeCompile = (shader) => {
+          shader.uniforms.uInk = u.uInk;
+          shader.uniforms.uInkPower = u.uInkPower;
+          shader.uniforms.uInkColor = u.uInkColor;
+          shader.uniforms.uFlat = u.uFlat;
+          shader.uniforms.uFlatColor = u.uFlatColor;
+          shader.fragmentShader = shader.fragmentShader
+            .replace('void main() {', /* glsl */`
+              uniform float uInk;
+              uniform float uInkPower;
+              uniform vec3 uInkColor;
+              uniform float uFlat;
+              uniform vec3 uFlatColor;
+              void main() {`)
+            .replace('#include <opaque_fragment>', /* glsl */`
+              #include <opaque_fragment>
+              {
+                // vViewPosition is fragment→camera in view space; \`normal\` is
+                // the shaded view-space normal (post normal-map). Their dot
+                // falling toward 0 IS the silhouette.
+                float _facing = clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0);
+                float _ink = pow(1.0 - _facing, uInkPower) * uInk;
+                gl_FragColor.rgb = mix(gl_FragColor.rgb, uInkColor, clamp(_ink, 0.0, 1.0));
+                // Flat fill last, so an impact frame overrides the ink line too
+                // — a silhouette with its own edge drawn on reads as a mistake.
+                gl_FragColor.rgb = mix(gl_FragColor.rgb, uFlatColor, clamp(uFlat, 0.0, 1.0));
+              }`);
+        };
+        // Materials are cached by program key; two rigs whose materials differ
+        // only in uniform VALUES share a program, which is what we want. Bump
+        // needsUpdate so the injection is picked up on this material's first
+        // compile rather than whenever something else happens to dirty it.
+        m.needsUpdate = true;
+        uniforms.push(u);
+      }
+    });
+    return uniforms;
+  }
+
+  // ── Image-based lighting (GFX/SOUND #1) ────────────────────────────────
+  // Paints a 512×256 equirectangular canvas of THIS arena and runs it through
+  // PMREMGenerator to get the prefiltered mip chain a PBR roughness lobe needs.
+  //
+  // A painted equirect rather than a rendered cubemap of the real scene: the
+  // scene is rebuilt every round and a live cubemap would have to be re-rendered
+  // with it (six faces plus prefiltering), for reflections nobody can resolve on
+  // a capsule. The layout below is a deliberate caricature of the room — the
+  // things a fighter's shoulder actually catches, in the directions it catches
+  // them from.
+  _buildEnvironment() {
+    if (ENV_INTENSITY <= 0) return;
+    const c = document.createElement('canvas');
+    c.width = 512; c.height = 256;
+    const g = c.getContext('2d');
+
+    // Vertical base: dark hall at the horizon, a touch of cool lift toward the
+    // ceiling, and the canvas bouncing blue-violet up from below. v=0 is +Y
+    // (up) in three's equirect convention, v=1 is −Y (down).
+    const sky = g.createLinearGradient(0, 0, 0, 256);
+    sky.addColorStop(0.00, '#39406e');   // ceiling / truss haze
+    sky.addColorStop(0.42, '#161a2e');   // the dark upper hall
+    sky.addColorStop(0.58, '#121526');   // horizon — darkest band
+    sky.addColorStop(1.00, '#3d4680');   // ring canvas bounce (matches arena.js)
+    g.fillStyle = sky;
+    g.fillRect(0, 0, 512, 256);
+
+    // The overhead house light: one hot warm pool near the top. This is the
+    // highlight that will actually appear in a clearcoat lobe, so it is the
+    // single most important thing on this canvas.
+    const pool = g.createRadialGradient(256, 26, 4, 256, 26, 120);
+    pool.addColorStop(0, 'rgba(255, 246, 222, 1)');
+    pool.addColorStop(0.35, 'rgba(255, 232, 186, 0.5)');
+    pool.addColorStop(1, 'rgba(255, 232, 186, 0)');
+    g.fillStyle = pool;
+    g.fillRect(0, 0, 512, 160);
+
+    // Rig lenses along the truss — a row of small warm/cool sources that give
+    // a moving fighter a sequence of highlights rather than one static blob.
+    const lens = ['#fff2d0', '#bcd0ff', '#fff2d0', '#ffd0d0'];
+    for (let i = 0; i < 8; i++) {
+      const x = 32 + i * 64;
+      const lg = g.createRadialGradient(x, 58, 2, x, 58, 34);
+      lg.addColorStop(0, lens[i % lens.length]);
+      lg.addColorStop(1, 'rgba(0,0,0,0)');
+      g.globalAlpha = 0.5;
+      g.fillStyle = lg;
+      g.fillRect(x - 34, 24, 68, 68);
+    }
+    g.globalAlpha = 1;
+
+    // Corner accents at the horizon: the red and blue corner lights, 180° apart
+    // so a fighter turning between them picks up opposing warm/cool rims.
+    for (const [x, col] of [[96, 'rgba(255, 92, 92, 0.55)'], [352, 'rgba(96, 140, 255, 0.55)']]) {
+      const cg = g.createRadialGradient(x, 148, 3, x, 148, 90);
+      cg.addColorStop(0, col);
+      cg.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = cg;
+      g.fillRect(x - 90, 58, 180, 180);
+    }
+
+    // Crowd band: a dim speckled ring at eye level. Contributes almost no light
+    // but breaks the horizon up, so a polished shoe reflects a textured hall
+    // instead of a flat grey stripe.
+    for (let i = 0; i < 260; i++) {
+      const x = Math.random() * 512;
+      const y = 132 + Math.random() * 34;
+      g.fillStyle = `rgba(${120 + Math.random() * 60 | 0}, ${130 + Math.random() * 60 | 0}, 190, ${0.05 + Math.random() * 0.13})`;
+      g.fillRect(x, y, 3 + Math.random() * 5, 2 + Math.random() * 3);
+    }
+
+    const tex = new THREE.CanvasTexture(c);
+    tex.mapping = THREE.EquirectangularReflectionMapping;
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const pmrem = new THREE.PMREMGenerator(this.renderer);
+    pmrem.compileEquirectangularShader();
+    // fromEquirectangular hands back a render target we own; keep the handle so
+    // dispose() can release it. A scene.traverse() walk cannot reach it — the
+    // same class of leak disposeArenaReflector exists to document.
+    this._envRT = pmrem.fromEquirectangular(tex);
+    this.scene.environment = this._envRT.texture;
+    this.scene.environmentIntensity = ENV_INTENSITY;
+    // The source canvas texture and the generator have both done their job the
+    // moment the mip chain exists.
+    tex.dispose();
+    pmrem.dispose();
   }
 
   // Anisotropic filtering for every texture in the scene. The ring mat is a
@@ -784,6 +1257,10 @@ export class BrawlGame {
       const charId = index === 1 ? p1Char : p2Char;
       const resolvedId = CHARACTERS[charId] ? charId : CHARACTER_IDS[0];
       const rig = buildFighter(resolvedId);
+      // #4 — must run before the first render: onBeforeCompile only fires on
+      // initial program compile, so injecting after a material has been drawn
+      // once does nothing until something else dirties it.
+      const inkUniforms = this._applyInkEdge(rig);
       // Spawn on the same side as this fighter's energy bar in the Blazor HUD
       // (see SPAWN_X_BY_SIDE at the top of the file). The camera at +Z
       // looking toward −Z renders negative X on the screen-left and positive
@@ -846,6 +1323,10 @@ export class BrawlGame {
         // names always match the actual fighters).
         charId: resolvedId,
         rig,
+        // #4 — the ink-edge uniform objects for this rig's materials, so the
+        // super cinematic can spike the edge to the character's accent colour
+        // and let it fall back without re-walking the hierarchy every frame.
+        inkUniforms,
         // Stance offsets give each president a personal idle silhouette
         // (Trump's chin-up lean, Nixon's hunch) on top of the shared guard.
         animator: new Animator(rig.joints, rig.config.stance),
@@ -968,6 +1449,13 @@ export class BrawlGame {
     this.timeScale = 1;
     this.cameraMode = 'normal';
     this.cameraModeT = 0;
+    // A super fired on the last frame of the previous round would otherwise
+    // still own timeScale and the camera into this countdown (#2).
+    this._superT = 0;
+    this._superFighter = null;
+    // Re-arm the PA count (#7); without this the new round's "3" matches the
+    // remembered value and the announcer sits out the whole countdown.
+    this._lastCount = null;
     // Snap the boom back to the canonical +Z side before the round starts.
     // The KO cinematic swings the camera around to the −Z side of the ring
     // (see _updateCamera 'ko' branch), and the normal spring camera's
@@ -1062,6 +1550,18 @@ export class BrawlGame {
     if (this.phase === 'countdown') {
       const remaining = 3 - Math.floor(this.phaseT);
       this._setBanner(remaining > 0 ? String(remaining) : 'FIGHT!');
+      // #7 — the PA calls the count. Edge-triggered off the banner value rather
+      // than a timer of its own, so the voice can never drift out of step with
+      // the number on screen.
+      if (remaining !== this._lastCount) {
+        this._lastCount = remaining;
+        if (remaining > 0) this.audio?.announce(String(remaining), { rate: 1.05, pitch: 0.6, duckSec: 0.25 });
+        else {
+          this.audio?.announce('Fight!', { rate: 1.1, pitch: 0.5, duckSec: 0.5 });
+          this._jumboCaption('FIGHT', 1.4);
+          this.audio?.crowdSwell(0.85);
+        }
+      }
       if (this.phaseT >= 3.7) {
         this.phase = 'fighting';
         this.combat.startGame();
@@ -2107,10 +2607,11 @@ export class BrawlGame {
     // superDirtySwingsLeft, superPumpSwingsLeft, lbjMissKBUntil, etc.).
     this._applySuperEffect(f, cfg);
     // ── Feedback ────────────────────────────────────────────────────────
-    // Camera pulse (handled via exposurePulse, which is read every frame in
-    // _updateEffects) and a full-screen flash overlay. Audio cue is a quick
-    // rising whoosh — the existing audio.whoosh() is too generic; we use a
-    // dedicated gain via audio.bigWhoosh() if present, fall back to whoosh.
+    // Was: an exposure bump, a DOM flash, and audio.whoosh() — the same sound a
+    // MISSED JAB makes. For the roster's marquee mechanic that was far too
+    // thin, so the whole moment is now a directed cinematic. See
+    // _startSuperCinematic; everything below it is the one-frame kick that
+    // opens it.
     this.exposurePulse = Math.max(this.exposurePulse || 0, 0.55);
     this.hitstopT = Math.max(this.hitstopT || 0, 0.18);
     if (this.flash) {
@@ -2124,7 +2625,97 @@ export class BrawlGame {
         }
       }, 60);
     }
-    if (this.audio) this.audio.whoosh?.();
+    this._startSuperCinematic(f);
+  }
+
+  // ══ Signature-super cinematic (GFX/SOUND #2) ═════════════════════════
+  // A directed ~1.3 s beat, on wall-clock rather than sim time so the time
+  // dilation it applies cannot slow down its own timeline.
+  //
+  //   TIME     the sim drops to ~0.22× and eases back to 1×
+  //   CAMERA   cuts to a low hero angle on the firing fighter and pushes in
+  //   EDGE     the ink line spikes to the character's accent colour
+  //   SMEAR    the afterimage pass is held on for the whole beat
+  //   LINES    speedlines are re-armed every frame so they stay up
+  //   SOUND    a dedicated stinger, and the PA calls the move
+  _startSuperCinematic(f) {
+    this._superDur = 1.3;
+    this._superT = this._superDur;
+    this._superFighter = f;
+    this.cameraMode = 'super';
+    this.cameraModeT = 0;
+    // Cleared so the orbit re-seeds from wherever the boom actually is on the
+    // first frame of THIS super, rather than reusing the previous one's arc.
+    this._superAngle = undefined;
+    this._camVel.set(0, 0, 0);
+    if (this.audio) {
+      this.audio.superStinger();
+      // Suit the announcement to the fighter rather than a generic call.
+      this.audio.announce(`${f.rig.config.name}! ${this._superMoveName(f)}!`,
+        { rate: 1.0, pitch: 0.55, duckSec: 0.8 });
+    }
+    // Accent the ink edge with the fighter's own suit/tie colour so the
+    // silhouette reads as "charged" rather than just outlined.
+    const accent = f.rig.baseColors?.tie || f.rig.baseColors?.suit;
+    for (const u of f.inkUniforms || []) {
+      if (accent) u.uInkColor.value.copy(accent).lerp(new THREE.Color(0xffffff), 0.35);
+    }
+  }
+
+  // Spoken name of a fighter's signature move, for the PA call.
+  //
+  // Derived from the personality's `mode` rather than read from a new `label`
+  // field, deliberately: the fifteen onSuper blocks in personalities.js are
+  // gameplay config, and adding a display string to each one is fifteen places
+  // for the announcer to fall out of sync with the mechanic. 'droneStrike'
+  // → "Drone Strike". An explicit `label` still wins if one is ever added.
+  _superMoveName(f) {
+    const cfg = PERSONALITIES[f.charId]?.onSuper;
+    if (!cfg) return 'Super';
+    if (cfg.label) return cfg.label;
+    return String(cfg.mode || 'super')
+      .replace(/([A-Z])/g, ' $1')
+      .replace(/^./, (ch) => ch.toUpperCase())
+      .trim();
+  }
+
+  _tickSuperCinematic(dt) {
+    if (!this._superT) return;
+    // A KO always outranks a super — the KO path owns timeScale and the camera
+    // from the moment it fires, and two directors fighting over both is how you
+    // get a camera stuck between two targets at 0.35× forever.
+    if (this.phase === 'ko' || this.phase === 'result') { this._endSuperCinematic(); return; }
+
+    this._superT = Math.max(0, this._superT - dt);
+    const k = 1 - this._superT / this._superDur;    // 0 → 1 across the beat
+
+    // Time dilation: slam down, ease back. Cubic on the way out so most of the
+    // recovery happens in the last third and the hit lands at full speed.
+    this.timeScale = 0.22 + 0.78 * (k * k * k);
+    // Held effects. Both are Math.max-style arming, so an impact landing during
+    // the super can still push them higher without this stomping it.
+    this._speedPulse = Math.max(this._speedPulse || 0, 0.22 + 0.34 * (1 - k));
+    this._smear(0.1, 0.70);
+    this.exposurePulse = Math.max(this.exposurePulse || 0, 0.22 * (1 - k));
+
+    if (this._superT <= 0) this._endSuperCinematic();
+  }
+
+  _endSuperCinematic() {
+    if (!this._superT && !this._superFighter) return;
+    this._superT = 0;
+    // Only hand time and the camera back if nothing else has claimed them —
+    // the KO branch sets both, and this runs after it on the same frame.
+    if (this.phase !== 'ko' && this.phase !== 'result') {
+      this.timeScale = 1;
+      if (this.cameraMode === 'super') { this.cameraMode = 'normal'; this.cameraModeT = 0; }
+    } else if (this.cameraMode === 'super') {
+      this.cameraMode = 'normal';
+    }
+    for (const u of this._superFighter?.inkUniforms || []) {
+      u.uInkColor.value.setHex(0x05070f);
+    }
+    this._superFighter = null;
   }
 
   // Per-mode super effect applier. Reads PERSONALITIES[id].onSuper and writes
@@ -2845,6 +3436,19 @@ export class BrawlGame {
         // push-in. Seeded RNG keeps demo replays reproducible.
         this.koShot = this.rng.random() < 0.4 ? 'overhead' : 'side';
         this.winner = ev.winnerTeamId ? Number(ev.winnerTeamId) : 0;
+        // ── KO presentation (GFX/SOUND #3, #5, #6, #7, #10) ──────────
+        // The one moment in the match where every layer fires at once, and
+        // the only place the full-strength concussion is allowed.
+        const loser = this.fighters.find((f) => f !== (this.winner ? this.fighters[this.winner - 1] : null));
+        if (this.audio) {
+          this.audio.concussion(1.0);
+          this.audio.crowdSwell(1.0);
+          this.audio.announce('K O!', { rate: 0.85, pitch: 0.45, duckSec: 1.5 });
+        }
+        this._jumboCaption('K.O.', 2.4);
+        this._speedPulse = Math.max(this._speedPulse || 0, 0.6);
+        this._smear(0.5, 0.78);
+        if (loser) this._ringRipple(loser.rig.root.position.x, loser.rig.root.position.z, 1.2);
         // Winner flashes the grin; the KO'd fighter keeps the dazed face
         // (expressionT stays 0 so nothing resets either one).
         const wf = this.winner ? this.fighters[this.winner - 1] : null;
@@ -3003,10 +3607,45 @@ export class BrawlGame {
 
   // Decay the post-FX pulses and push them into the passes.
   _updateFx(dt) {
+    // #2 runs on WALL-CLOCK dt, which is why it lives here rather than in
+    // _tick: the cinematic's own time dilation would otherwise stretch its
+    // timeline, and a beat that slows itself down never ends.
+    this._tickSuperCinematic(dt);
     this.caPulse *= Math.exp(-dt * 4);
     this.bloomPulse *= Math.exp(-dt * 5);
     this.exposurePulse *= Math.exp(-dt * 5);
     this.radialPulse *= Math.exp(-dt * 7);
+    // #3 speedlines decay fast — they are a stamp, not a state. The super
+    // cinematic re-arms them every frame while it runs, which is what keeps
+    // them up for its duration without needing a second code path.
+    this._speedPulse = (this._speedPulse || 0) * Math.exp(-dt * 6.5);
+    if (this._speedPulse < 0.002) this._speedPulse = 0;
+    this._updateImpactFrames(dt);
+
+    // #5 — the room drops out for the length of the freeze. Driven from the
+    // renderer rather than from _hitFeedback so it tracks the ACTUAL pause
+    // (which _tick decrements) instead of the requested one; every path that
+    // sets hitstopT — hits, clashes, supers — gets it for free.
+    if (this.audio) this.audio.setHitstop(this.hitstopT > 0);
+
+    // #9 afterimage. The pass is switched off (not just faded to 0) the moment
+    // the window closes, because a damp-0 AfterimagePass still costs a full
+    // screen blit and a target swap every frame; a disabled one costs nothing.
+    if (this.afterimage) {
+      if (this._smearT > 0) {
+        this._smearT -= dt;
+        this.afterimage.enabled = true;
+        this.afterimage.uniforms.damp.value = this._smearAmt;
+        if (this._smearT <= 0) {
+          this._smearT = 0;
+          this._smearAmt = 0;
+          this.afterimage.enabled = false;
+        }
+      } else if (this.afterimage.enabled) {
+        this.afterimage.enabled = false;
+      }
+    }
+
     // §GFX-2 — no-op unless a KO is running.
     if (this.rackFocus) this.rackFocus.update(dt);
     if (this.fxPass) {
@@ -3020,6 +3659,9 @@ export class BrawlGame {
       this.fxPass.uniforms.uRadial.value = this.radialPulse + PostFx.punchRadial(0.35);
       // KO color drain rides the lights-down blend (keeps the reds hot).
       this.fxPass.uniforms.uDesat.value = this.lightsDim * 0.55;
+      // #3 / #2 — one uniform serves both the impact stamp and the super, which
+      // simply keeps re-arming _speedPulse while its cinematic runs.
+      this.fxPass.uniforms.uSpeed.value = this._speedPulse || 0;
 
       // Film grain clock (idea #10). atmoT always advances, even between
       // rounds, so the grain never freezes on a paused frame.
@@ -3054,6 +3696,96 @@ export class BrawlGame {
         s.life = Math.max(0, s.life - dt);
         s.light.intensity = s.peak * (s.life / s.dur);
       }
+    }
+  }
+
+  // ══ Anime impact frames (GFX/SOUND #3) ═══════════════════════════════
+  // On a heavy connect only — three things fire on the same frame the hitstop
+  // starts, and all three are gone within a fifth of a second:
+  //   • the fighters blow out to flat white silhouettes (uFlat, see _applyInkEdge)
+  //   • a shock ring snaps outward from the contact point in world space
+  //   • speedlines rake in from the frame edges
+  // Deliberately gated to heavy hits. The reason the old bloom/exposure pulses
+  // were deleted is that they fired on EVERY hit and overlapped into a
+  // continuous flicker; anything this loud has to stay rare to stay readable.
+
+  _initImpactFrames() {
+    // Three rings is enough for a flurry — a fourth heavy hit inside 200 ms
+    // recycles the oldest, which is invisible at that rate.
+    const geo = new THREE.RingGeometry(0.42, 0.5, 40);
+    this._shockRings = Array.from({ length: 3 }, () => {
+      const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+        color: 0xfff4d8, transparent: true, opacity: 0,
+        blending: THREE.AdditiveBlending, depthWrite: false,
+        side: THREE.DoubleSide, fog: false,
+      }));
+      m.visible = false;
+      m.renderOrder = 4;
+      this.scene.add(m);
+      return { mesh: m, life: 0, dur: 0.22, power: 1 };
+    });
+    this._shockCursor = 0;
+    // Shared geometry — the per-ring material is what differs. Held so dispose
+    // can release it once rather than three times through the traverse.
+    this._shockGeo = geo;
+    this._flatT = 0;      // seconds left on the flat-white silhouette
+    this._speedPulse = 0; // speedline intensity, decayed in _updateFx
+    this._smearT = 0;     // seconds left on the afterimage smear
+    this._smearAmt = 0;   // 0..1 target damp for the afterimage pass
+  }
+
+  /**
+   * @param {THREE.Vector3} point world-space contact point
+   * @param {number} power 0..1 how hard the hit was
+   */
+  _impactFrame(point, power = 1) {
+    const p = Math.max(0, Math.min(1, power));
+    // Flat silhouette for two frames. Longer and it stops reading as a single
+    // drawn frame and starts reading as the fighters turning white.
+    this._flatT = Math.max(this._flatT, SIM_DT * 2);
+    this._speedPulse = Math.max(this._speedPulse, 0.34 + 0.30 * p);
+    // A short smear so the recoil that follows the freeze has a tail on it.
+    this._smear(0.16 + 0.1 * p, 0.62 + 0.12 * p);
+
+    if (!this._shockRings) return;
+    const slot = this._shockRings[this._shockCursor++ % this._shockRings.length];
+    slot.mesh.position.copy(point);
+    // Billboarded: the ring is a flat disc and the camera orbits, so without
+    // this it edge-ons into an invisible line at exactly the wrong moment.
+    slot.mesh.quaternion.copy(this.camera.quaternion);
+    slot.mesh.scale.setScalar(0.25);
+    slot.mesh.material.opacity = 0.9;
+    slot.mesh.visible = true;
+    slot.power = p;
+    slot.dur = 0.2 + 0.08 * p;
+    slot.life = slot.dur;
+  }
+
+  /** Arm the afterimage pass for `secs` at `amount` (0..1 feedback damp). */
+  _smear(secs, amount) {
+    this._smearT = Math.max(this._smearT || 0, secs);
+    this._smearAmt = Math.max(this._smearAmt || 0, Math.min(0.92, amount));
+  }
+
+  _updateImpactFrames(dt) {
+    // Flat-white silhouette timer → the per-fighter uFlat uniforms.
+    if (this._flatT > 0) {
+      this._flatT -= dt;
+      const on = this._flatT > 0 ? 1 : 0;
+      for (const f of this.fighters || []) {
+        for (const u of f.inkUniforms || []) u.uFlat.value = on;
+      }
+    }
+    for (const s of this._shockRings || []) {
+      if (s.life <= 0) continue;
+      s.life -= dt;
+      const k = 1 - Math.max(0, s.life) / s.dur;       // 0 → 1 over the life
+      // Ease-out expansion: fast off the contact, decelerating. A linear ring
+      // reads as a growing circle; this reads as a shockwave.
+      const ease = 1 - Math.pow(1 - k, 3);
+      s.mesh.scale.setScalar(0.25 + (2.6 + 1.8 * s.power) * ease);
+      s.mesh.material.opacity = 0.9 * (1 - ease);
+      if (s.life <= 0) { s.mesh.visible = false; s.mesh.material.opacity = 0; }
     }
   }
 
@@ -3670,6 +4402,38 @@ export class BrawlGame {
         this.camera.fov = this.fovBase + Math.max(0, 4 - this.cameraModeT * 1.4);
       }
       this.camera.updateProjectionMatrix();
+    } else if (this.cameraMode === 'super' && this._superFighter) {
+      // ── Super hero shot (GFX/SOUND #2) ──────────────────────────────
+      // Low, close, and swinging around the firing fighter. The orbit is what
+      // does the work: a static close-up of a rig mid-animation just reads as
+      // the camera having got stuck.
+      this._camVel.set(0, 0, 0);
+      this.cameraModeT += dt;
+      const sf = this._superFighter;
+      const sp = sf.rig.root.position;
+      const k2 = 1 - this._superT / this._superDur;    // 0 → 1 across the beat
+      // Start on the side the fight was already framed from so the cut is a
+      // move, not a jump, then arc ~50° around while pushing in from 3.1 → 1.9.
+      const base = Math.atan2(this.camera.position.z - sp.z, this.camera.position.x - sp.x);
+      const ang = (this._superAngle ??= base) + k2 * 0.9;
+      const dist = 3.1 - 1.2 * k2;
+      const target = new THREE.Vector3(
+        sp.x + Math.cos(ang) * dist,
+        1.05 + 0.35 * k2,
+        sp.z + Math.sin(ang) * dist);
+      // Same audience-side and ring-envelope clamps the other two modes use —
+      // an orbit that swings behind the backdrop shows the player the inside of
+      // the hall's back wall at the loudest moment of the match.
+      target.z = Math.max(target.z, 0.6);
+      target.x = THREE.MathUtils.clamp(target.x, -(RING_HALF + 1.0), RING_HALF + 1.0);
+      // Hard lerp rather than the spring: the spring's overshoot is tuned for
+      // reacting to hits, and here the camera is being *directed*.
+      this.camera.position.lerp(target, 1 - Math.exp(-dt * 9));
+      this.camera.lookAt(sp.x, sp.y + 1.05, sp.z);
+      // Long lens: narrowing the FOV while pushing in compresses the fighter
+      // against the background — the classic "this one matters" shot.
+      this.camera.fov = this.fovBase - 12 * k2;
+      this.camera.updateProjectionMatrix();
     } else {
       // Spring-damper camera boom: slightly underdamped, so hard cuts and
       // hit impulses overshoot and settle like a real operator. Directional
@@ -3695,12 +4459,15 @@ export class BrawlGame {
       this.camera.lookAt(lookAt.x, lookAt.y, lookAt.z);
     }
 
-    // FOV punch (decays each frame).
-    if (this.fovPunch > 0.01) {
+    // FOV punch (decays each frame). The 'super' mode is excluded from both
+    // branches: it drives the FOV itself as part of the push-in, and letting a
+    // punch overwrite it — or the relax branch drag it back to base — would
+    // undo the long-lens compression mid-shot.
+    if (this.fovPunch > 0.01 && this.cameraMode !== 'super') {
       this.camera.fov = this.fovBase + this.fovPunch;
       this.camera.updateProjectionMatrix();
       this.fovPunch *= Math.max(0, 1 - dt * 9);
-    } else if (this.cameraMode !== 'ko') {
+    } else if (this.cameraMode !== 'ko' && this.cameraMode !== 'super') {
       this.camera.fov = THREE.MathUtils.lerp(this.camera.fov, this.fovBase, Math.min(1, dt * 6));
       this.camera.updateProjectionMatrix();
     }
@@ -4261,6 +5028,28 @@ export class BrawlGame {
   _updateCrowd(dt) {
     animateCrowd(this.arena.crowd, dt, this.clock, this.excited);
     this.excited = Math.max(0, this.excited - dt * 0.4);
+    // #10 — the reactive hall shares the crowd's clock because it is driven by
+    // the same two signals (excitement and the audio envelope).
+    this._updateReactiveArena(dt);
+    // #6 — the crowd you HEAR is fed the same excitement value as the crowd you
+    // SEE, plus a floor that rises as the round wears on and a lift when either
+    // fighter is nearly out. One signal, so the hall can never look tense and
+    // sound bored.
+    if (this.audio && this.fighters && this.combat) {
+      const lowest = Math.min(this._hp(this.fighters[0]), this._hp(this.fighters[1])) / MAX_HP;
+      const desperation = 1 - lowest;
+      const late = Math.min(1, (this.clock || 0) / TIME_LIMIT);
+      const want = Math.min(1, 0.18 + this.excited * 0.45 + desperation * 0.4 + late * 0.15);
+      // Throttled: each call cancels and rewrites automation on three
+      // AudioParams, and at 60 fps that is 180 scheduled ramps a second for a
+      // value that moves slowly. Every ramp is 0.6 s long anyway, so pushing
+      // more often than the change is audible only cancels the previous ramp
+      // before it arrives — the level would crawl instead of gliding.
+      if (Math.abs(want - (this._crowdPushed ?? -1)) > 0.03) {
+        this._crowdPushed = want;
+        this.audio.setCrowdIntensity(want);
+      }
+    }
   }
 
   _setBanner(text) {
@@ -4293,6 +5082,31 @@ export class BrawlGame {
     this._showCombo(attacker);
     this._showCombo(defender);
     this._spawnDamageNumber(point, dmg, region);
+
+    // ── Reaction layer (GFX/SOUND #3, #5, #6) ─────────────────────────
+    // Every landed hit already had a sound; what it did not have was a mix and
+    // a room that reacted to it. All of it hangs off this one call site so the
+    // visual stamp, the sidechain and the crowd can never disagree about what
+    // counted as a hit — the bug that would follow from wiring each of them
+    // into its own place in the damage path.
+    //
+    // `power` normalises damage against twice the heavy threshold, so a jab is
+    // ~0.35 and a fully-charged head kick saturates at 1.
+    const power = Math.min(1, dmg / (HEAVY_HIT_DMG * 2));
+    if (this.audio) {
+      this.audio.duckMusic(power);
+      this.audio.crowdSwell(power);
+      // The concussion is reserved for a heavy blow to the HEAD. On a torso hit
+      // it makes no sense, and on every hit it would be a permanent lowpass.
+      if (region === REGIONS.HEAD && dmg >= HEAVY_HIT_DMG) {
+        this.audio.concussion(0.55 + 0.45 * power);
+      }
+    }
+    // A near-KO makes the hall inhale.
+    if (this.audio && this._hp(defender) <= 18 && this._hp(defender) > 0 && dmg >= HEAVY_HIT_DMG) {
+      this.audio.crowdGasp();
+    }
+    if (dmg >= HEAVY_HIT_DMG) this._impactFrame(point, power);
   }
 
   _showCombo(f) {
@@ -4381,11 +5195,17 @@ export class BrawlGame {
       //
       // -1 means "this fighter has no signature super", which is NOT the same
       // as an empty meter and must not render as one. Only fighters with an
-      // onSuper config can ever fill (_tickSuperMeter pins the rest to zero),
-      // and BOB — the 1-player avatar — is one of the ones that cannot. Sending
-      // 0 for him would draw a bar that never moves next to a documented key
-      // that does nothing, which is the exact failure this whole feature exists
-      // to remove. The HUD omits the bar entirely on -1.
+      // onSuper config can ever fill (_tickSuperMeter pins the rest to zero).
+      //
+      // BOB is the one who cannot, and that is DELIBERATE, not a gap waiting to
+      // be filled: he is the generic avatar the presidents are characterised
+      // against, so he has no signature move by design. Do not add an `onSuper`
+      // for him in personalities.js — the fifteen presidents each having one and
+      // BOB having none is the point of the roster.
+      //
+      // Hence the -1 rather than 0: sending 0 would draw a bar that never moves
+      // next to a documented key that does nothing, which is the exact failure
+      // this whole feature exists to remove. The HUD omits the bar entirely.
       const superPct = (f) => (PERSONALITIES[f.charId]?.onSuper
         ? Math.round((f.personality?.superMeter || 0) * 100)
         : -1);
@@ -4409,6 +5229,10 @@ export class BrawlGame {
   dispose() {
     this.disposed = true;
     cancelAnimationFrame(this.raf);
+    // #8 — hand the analyser pump back. Leaving it on would keep a rAF loop
+    // alive on every page the player visits afterwards, writing CSS variables
+    // nothing reads.
+    try { VisualRuntime.enableAudioReactive(false); } catch { /* */ }
     window.removeEventListener('resize', this._onResize);
     if (this.touchEl) this.touchEl.remove();
     if (this.fighters) for (const f of this.fighters) f.controller.dispose();
@@ -4435,7 +5259,17 @@ export class BrawlGame {
       });
     }
     if (this.composer) this.composer.dispose?.();
+    // PMREM output target (#1) — a WebGLRenderTarget, invisible to the
+    // geometry/material traverse above, exactly like the old reflector.
+    if (this._envRT) { this._envRT.dispose(); this._envRT = null; }
+    if (this.scene) this.scene.environment = null;
     if (this._blobTex) this._blobTex.dispose();
+    // #10 — the live jumbotron canvas texture. The traverse above disposes
+    // materials but never their maps, and this one is ours (arena.js's cached
+    // static texture, which we replaced, deliberately is not touched).
+    if (this._jumboTex) { this._jumboTex.dispose(); this._jumboTex = null; }
+    this._jumboCanvas = this._jumboCtx = null;
+    this._rigLenses = null;
     if (this.renderer) {
       this.renderer.dispose();
       this.renderer.domElement.remove();

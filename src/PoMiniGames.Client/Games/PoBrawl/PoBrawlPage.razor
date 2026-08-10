@@ -313,10 +313,11 @@
                unreachable besides (see input.js). Both are fixed; this is the line that
                tells the player the mechanic exists at all.
 
-               Only shown where it is TRUE. Signature supers belong to the presidents,
-               and 1P puts you in BOB, who has none — so in 1P the key is named nowhere
-               and no super bar is drawn for you. What the presidents can do to you is
-               covered instead by the scouting card (see ScoutingContent). *@
+               Only shown where it is TRUE. Signature supers belong to the presidents;
+               BOB is the generic avatar and has none by design, so 1P names the key
+               nowhere and draws you no super bar. What the president across the ring
+               can do to you is covered instead by the scouting card (ScoutingContent),
+               which is the 1P player's side of this mechanic. *@
             @if (_mode == "2p")
             {
                 <li><kbd>E</kbd> <b>SUPER</b> — the purple bar fills as you <em>take</em> damage.
@@ -340,11 +341,13 @@
     //
     // A NEGATIVE value means the fighter has no signature super at all — see the
     // -1 contract in game.js _pushHud, which is distinct from an empty meter.
-    // Only the presidents have one; BOB, the 1-player avatar and a 2-player pick,
-    // does not, so in 1P no bar is drawn on the left at all. That is deliberate:
-    // an always-empty meter beside a documented key that does nothing is worse
-    // than no meter, and it is the same class of mistake this feature exists to
-    // undo.
+    //
+    // Only the presidents have one. BOB is the generic avatar they are
+    // characterised against and has no signature move BY DESIGN, so in 1P no
+    // bar is drawn on the left at all and the E key is named nowhere. That is
+    // the intended end state, not a placeholder: an always-empty meter beside a
+    // documented key that does nothing is the same class of mistake this
+    // feature exists to undo.
     @* The wrapper carries width:100% deliberately: .pb-hp-right sets
        align-items:flex-end, which shrink-wraps any child that does not claim a
        width — the track inside would then be 100% of nothing. *@

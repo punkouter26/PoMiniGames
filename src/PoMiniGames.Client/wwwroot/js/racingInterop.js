@@ -159,22 +159,28 @@ window.PoRacer = PoRacer;
     /** @type {Float32Array|null} */ let wallsXY = null;
     let centerN = 0, wallsM = 0, trackWidth = 0;
 
-    let grassTex = null, grassW = 0, grassH = 0;
+    let grassTex = null, grassW = 0, grassH = 0, grassDpr = 0;
     // Track is cached in WORLD space (origin = bbox min) at a given scale, then
     // blitted with a camera offset each frame. trackOriginX/Y is the world
     // coordinate that maps to the bitmap's TRACK_MARGIN,TRACK_MARGIN pixel.
     const TRACK_MARGIN = 64;
     let trackTex = null, trackTexW = 0, trackTexH = 0;
     let trackOriginX = 0, trackOriginY = 0, trackScale = 1;
+    // trackTexCssW/H: the bitmap's size in CSS pixels, which is what the blit needs
+    // now that its backing store is trackDpr times that. trackReqDpr is the dpr draw()
+    // last asked for — the rebuild key, kept separate from the trackDpr actually
+    // granted, because the area budget can hand back less and a key that never
+    // matches would rebuild the whole track every frame.
+    let trackTexCssW = 0, trackTexCssH = 0, trackDpr = 0, trackReqDpr = 0;
 
     // Cached canvas references (avoid getElementById every frame)
     let mainCanvasEl = null, mainCanvasId_ = null;
     let mainCtx_ = null; // cached 2D context
     let miniCanvasEl = null, miniCanvasId_ = null;
     // Cached vignette gradient (recreated only on resize)
-    let vignetteTex = null, vignetteW = 0, vignetteH = 0;
+    let vignetteTex = null, vignetteW = 0, vignetteH = 0, vignetteDpr = 0;
     // Cached fog texture (recreated only on resize)
-    let fogTex = null, fogTexW = 0, fogTexH = 0;
+    let fogTex = null, fogTexW = 0, fogTexH = 0, fogDpr = 0;
 
     // Pre-computed skid bucket color strings (8 buckets, never change)
     const SKID_BUCKETS = 8;
@@ -197,7 +203,7 @@ window.PoRacer = PoRacer;
     let minimapTex = null, minimapBbox = null;
 
     // Feature 4: Parallax
-    let parallaxFar = null, parallaxMid = null, parallaxW = 0, parallaxH = 0;
+    let parallaxFar = null, parallaxMid = null, parallaxW = 0, parallaxH = 0, parallaxDpr = 0;
 
     // Feature 3: Screen shake
     let shakeX = 0, shakeY = 0, shakeDecay = 0;
@@ -237,6 +243,37 @@ window.PoRacer = PoRacer;
         if (typeof OffscreenCanvas !== 'undefined') return new OffscreenCanvas(w, h);
         const c = document.createElement('canvas'); c.width = w; c.height = h; return c;
     }
+
+    // 2026-08-10: full-screen layers (grass, both parallax planes, fog, vignette)
+    // are cached as offscreen bitmaps and blitted with drawImage(tex, 0, 0, w, h).
+    // `w`/`h` are CSS pixels — draw() takes them from PoRacer.getSize(), which
+    // returns clientWidth/clientHeight — while the destination context carries a
+    // setTransform(dpr, ...). So a bitmap built at the CSS size was stretched over
+    // w*dpr x h*dpr device pixels and the browser upscaled it. Those layers cover
+    // essentially the whole frame, so on any HiDPI screen the picture read as out
+    // of focus even though the track and cars (vector-drawn straight into the
+    // scaled context) stayed sharp. It was worst where it was most visible: the
+    // spectator camera frames mostly background.
+    //
+    // Build them at the BACKING-STORE size and pre-apply the same dpr transform,
+    // so every drawing call below still works in CSS units and the blit lands 1:1
+    // on device pixels. dpr belongs in each layer's cache key too — a window
+    // dragged between monitors of different scaling changes it without changing
+    // the CSS size, which would otherwise keep a stale, wrong-resolution bitmap.
+    function createLayer(w, h, dpr) {
+        const c = createOffscreen(Math.max(1, Math.round(w * dpr)), Math.max(1, Math.round(h * dpr)));
+        const ctx = c.getContext('2d');
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        return { canvas: c, ctx: ctx };
+    }
+
+    /** Backing-store pixels per CSS pixel for the context being drawn into. The
+     *  canvas element is the single source of truth here, so this cannot drift
+     *  from whatever resize() last decided (see PoCanvasDpr). */
+    function dprOf(g, w) {
+        const c = g && g.canvas;
+        return (c && w > 0 && c.width > 0) ? c.width / w : 1;
+    }
     function packColor(hex) {
         if (!hex || hex[0] !== '#' || hex.length < 7) return 0xffffff;
         return (parseInt(hex.substr(1, 2), 16) << 16)
@@ -249,11 +286,12 @@ window.PoRacer = PoRacer;
     }
 
     // --- Feature 4: Parallax layers ---
-    function ensureParallaxLayers(w, h) {
-        if (parallaxW === w && parallaxH === h && parallaxFar && parallaxMid) return;
-        parallaxW = w; parallaxH = h;
-        const farOff = createOffscreen(w, h);
-        const farCtx = farOff.getContext('2d');
+    function ensureParallaxLayers(w, h, dpr) {
+        if (parallaxW === w && parallaxH === h && parallaxDpr === dpr && parallaxFar && parallaxMid) return;
+        parallaxW = w; parallaxH = h; parallaxDpr = dpr;
+        const farLayer = createLayer(w, h, dpr);
+        const farOff = farLayer.canvas;
+        const farCtx = farLayer.ctx;
         const farGrad = farCtx.createLinearGradient(0, 0, 0, h);
         farGrad.addColorStop(0, 'rgba(8,20,12,0.3)'); farGrad.addColorStop(1, 'rgba(4,10,6,0.5)');
         farCtx.fillStyle = farGrad; farCtx.fillRect(0, 0, w, h);
@@ -261,8 +299,9 @@ window.PoRacer = PoRacer;
         const rng = mulberry32(42);
         for (let i = 0; i < 40; i++) { const tx = rng() * w, ty = rng() * h * 0.6 + h * 0.2, th = 20 + rng() * 40, tw = 10 + rng() * 15; farCtx.beginPath(); farCtx.moveTo(tx, ty); farCtx.lineTo(tx - tw, ty + th); farCtx.lineTo(tx + tw, ty + th); farCtx.closePath(); farCtx.fill(); }
         parallaxFar = farOff;
-        const midOff = createOffscreen(w, h);
-        const midCtx = midOff.getContext('2d');
+        const midLayer = createLayer(w, h, dpr);
+        const midOff = midLayer.canvas;
+        const midCtx = midLayer.ctx;
         midCtx.fillStyle = 'rgba(20,50,30,0.25)';
         const rng2 = mulberry32(99);
         for (let i = 0; i < 60; i++) { midCtx.beginPath(); midCtx.arc(rng2() * w, rng2() * h, 4 + rng2() * 12, 0, Math.PI * 2); midCtx.fill(); }
@@ -325,11 +364,12 @@ window.PoRacer = PoRacer;
     }
 
     // --- Feature 8: Post-processing ---
-    function drawVignette(g, w, h) {
-        if (!vignetteTex || vignetteW !== w || vignetteH !== h) {
-            vignetteW = w; vignetteH = h;
-            vignetteTex = createOffscreen(w, h);
-            const vc = vignetteTex.getContext('2d');
+    function drawVignette(g, w, h, dpr) {
+        if (!vignetteTex || vignetteW !== w || vignetteH !== h || vignetteDpr !== dpr) {
+            vignetteW = w; vignetteH = h; vignetteDpr = dpr;
+            const layer = createLayer(w, h, dpr);
+            vignetteTex = layer.canvas;
+            const vc = layer.ctx;
             const vg = vc.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.3, w / 2, h / 2, Math.max(w, h) * 0.8);
             vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,0.6)');
             vc.fillStyle = vg; vc.fillRect(0, 0, w, h);
@@ -338,8 +378,14 @@ window.PoRacer = PoRacer;
     }
     // Bloom: cached context and half-res offscreen to cut filter cost ~4x
     let bloomCtx = null;
-    function drawBloom(g, w, h) {
-        const hw = w >> 1, hh = h >> 1; // half-res: blur on smaller surface is 4x cheaper
+    function drawBloom(g, w, h, dpr) {
+        // Half of the BACKING-STORE size, not half the CSS size. At the CSS size the
+        // surface was (w*dpr)/2 device pixels wide and then stretched back over w*dpr,
+        // so the round trip cost a factor of 2*dpr rather than the intended 2. Bloom is
+        // deliberately soft, so this mattered less than the layers above — but it is the
+        // same mistake and it compounds with them. Still a quarter of the pixels of a
+        // full-resolution pass, so the 4x saving the half-res trick buys is unchanged.
+        const hw = Math.max(1, Math.round(w * dpr) >> 1), hh = Math.max(1, Math.round(h * dpr) >> 1);
         if (!bloomTex || bloomW !== hw || bloomH !== hh) {
             bloomTex = createOffscreen(hw, hh); bloomW = hw; bloomH = hh;
             bloomCtx = bloomTex.getContext('2d');
@@ -365,12 +411,13 @@ window.PoRacer = PoRacer;
         }
         g.restore();
     }
-    function drawFog(g, w, h, density) {
+    function drawFog(g, w, h, density, dpr) {
         if (density < 0.01) return;
-        if (!fogTex || fogTexW !== w || fogTexH !== h) {
-            fogTexW = w; fogTexH = h;
-            fogTex = createOffscreen(w, h);
-            const fc = fogTex.getContext('2d');
+        if (!fogTex || fogTexW !== w || fogTexH !== h || fogDpr !== dpr) {
+            fogTexW = w; fogTexH = h; fogDpr = dpr;
+            const layer = createLayer(w, h, dpr);
+            fogTex = layer.canvas;
+            const fc = layer.ctx;
             const fg = fc.createRadialGradient(w/2, h/2, Math.min(w,h)*0.15, w/2, h/2, Math.max(w,h)*0.65);
             fg.addColorStop(0, 'rgba(180,190,200,0)');
             fg.addColorStop(1, 'rgba(180,190,200,1)');
@@ -484,9 +531,10 @@ window.PoRacer = PoRacer;
     }
 
     // --- Grass ---
-    function ensureGrass(w, h) {
-        if (grassTex && grassW === w && grassH === h) return;
-        const off = createOffscreen(w, h), g = off.getContext('2d');
+    function ensureGrass(w, h, dpr) {
+        if (grassTex && grassW === w && grassH === h && grassDpr === dpr) return;
+        const layer = createLayer(w, h, dpr), off = layer.canvas, g = layer.ctx;
+        grassDpr = dpr;
         const grad = g.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, Math.max(w, h) * 0.7);
         grad.addColorStop(0, '#1f5a2f'); grad.addColorStop(0.5, '#163f20'); grad.addColorStop(1, '#0c2412');
         g.fillStyle = grad; g.fillRect(0, 0, w, h);
@@ -508,7 +556,7 @@ window.PoRacer = PoRacer;
         // World -> track-texture pixel space (fixed origin at the bbox min).
         return [(x - trackOriginX) * trackScale + TRACK_MARGIN, (y - trackOriginY) * trackScale + TRACK_MARGIN];
     }
-    function buildTrackBitmap(scale) {
+    function buildTrackBitmap(scale, dpr) {
         if (!centerXY) return;
 
         // World bounding box of the centerline (+0.92 inset used by patches).
@@ -526,7 +574,30 @@ window.PoRacer = PoRacer;
         const texW = Math.max(1, Math.ceil((maxX - minX) * scale + TRACK_MARGIN * 2));
         const texH = Math.max(1, Math.ceil((maxY - minY) * scale + TRACK_MARGIN * 2));
 
-        const off = createOffscreen(texW, texH), g = off.getContext('2d');
+        // Same CSS-vs-device mismatch as the full-screen layers, and the one that hurt
+        // most: the asphalt, curbs and rumble strips ARE the subject of the frame. The
+        // blit below (see draw()) had no destination size, so one bitmap pixel became
+        // one CSS pixel and the whole track was upscaled by dpr.
+        //
+        // Unlike those layers this bitmap is sized to the track's bounding box at the
+        // current zoom, not to the viewport, so it can be far larger than the screen —
+        // squaring dpr into it without a limit risks a canvas the browser refuses to
+        // allocate, and a failed allocation here means no track at all. Cap the extra
+        // resolution by area and fall back toward 1x rather than overshooting; the
+        // texture keeps its CSS-space coordinate system either way, so nothing below
+        // this line needs to know which happened.
+        const TRACK_TEX_BUDGET = 24e6;   // ~24 Mpx, comfortably inside browser limits
+        const reqDpr = Math.max(1, dpr || 1);
+        let texDpr = reqDpr;
+        const over = (texW * texH * texDpr * texDpr) / TRACK_TEX_BUDGET;
+        if (over > 1) texDpr = Math.max(1, texDpr / Math.sqrt(over));
+        trackDpr = texDpr;          // what we actually got
+        trackReqDpr = reqDpr;       // what draw() asked for; the rebuild key
+        trackTexCssW = texW; trackTexCssH = texH;
+
+        const off = createOffscreen(Math.max(1, Math.round(texW * texDpr)), Math.max(1, Math.round(texH * texDpr)));
+        const g = off.getContext('2d');
+        g.setTransform(texDpr, 0, 0, texDpr, 0, 0);
         const wpx = trackWidth * scale;
 
         // Base asphalt
@@ -699,7 +770,9 @@ window.PoRacer = PoRacer;
         setFogDensity(d) { fogDensity = d; },
         setBloom(enabled) { bloomEnabled = !!enabled; },
         clearParticles() { _jsSmoke.fill(0); _jsSmokeHead=0; _jsSkids.fill(0); _jsSkidHead=0; _jsWeather.fill(0); _jsWeatherHead=0; window._smokeSprite=null; },
-        invalidateBitmaps() { grassTex=null; trackTex=null; minimapTex=null; parallaxFar=null; parallaxMid=null; bloomTex=null; bloomCtx=null; vignetteTex=null; fogTex=null; mainCtx_=null; mainCanvasEl=null; mainCanvasId_=null; miniCanvasEl=null; miniCanvasId_=null; },
+        // Also clears the per-layer dpr keys. resize() calls this when the backing
+        // store changes, which is exactly when those keys are stale.
+        invalidateBitmaps() { grassTex=null; trackTex=null; trackReqDpr=0; trackDpr=0; minimapTex=null; parallaxFar=null; parallaxMid=null; bloomTex=null; bloomCtx=null; vignetteTex=null; fogTex=null; grassDpr=0; parallaxDpr=0; vignetteDpr=0; fogDpr=0; mainCtx_=null; mainCanvasEl=null; mainCanvasId_=null; miniCanvasEl=null; miniCanvasId_=null; },
 
         // drawSnapshot — multiplayer thin-client entry point. Server pushes
         // a snapshot every ~50ms; we compute the camera and render in one call.
@@ -829,6 +902,12 @@ window.PoRacer = PoRacer;
             if (tod !== undefined) timeOfDay = tod;
             if (fogD !== undefined) fogDensity = fogD;
 
+            // Resolution of the cached full-screen layers below. Read off the canvas
+            // rather than window.devicePixelRatio: resize() derives the backing store
+            // through PoCanvasDpr, which lowers the ratio once the pixel budget is hit,
+            // so the two are NOT the same number on a large window.
+            const layerDpr = dprOf(g, w);
+
             if (shakeIntensity && shakeIntensity > 0.01) applyShake(shakeIntensity);
             updateShake(); updateSparks();
 
@@ -840,7 +919,7 @@ window.PoRacer = PoRacer;
             if (Math.abs(shakeX) > 0.1 || Math.abs(shakeY) > 0.1) { g.save(); g.translate(shakeX, shakeY); }
 
             // Feature 4: Parallax backgrounds
-            ensureParallaxLayers(w, h); ensureGrass(w, h);
+            ensureParallaxLayers(w, h, layerDpr); ensureGrass(w, h, layerDpr);
             g.drawImage(grassTex, 0, 0, w, h);
             const farOffX = (camX * 0.3) % w, farOffY = (camY * 0.3) % h;
             g.globalAlpha = 0.5;
@@ -858,10 +937,13 @@ window.PoRacer = PoRacer;
             // changes (not when the camera pans). Blit at the camera-relative
             // position: the bitmap's (TRACK_MARGIN,TRACK_MARGIN) pixel is the
             // world point (trackOriginX, trackOriginY).
-            if (!trackTex || Math.abs(trackScale - scale) > 0.001)
-                buildTrackBitmap(scale);
+            if (!trackTex || Math.abs(trackScale - scale) > 0.001 || trackReqDpr !== layerDpr)
+                buildTrackBitmap(scale, layerDpr);
             const [tox, toy] = project(trackOriginX, trackOriginY, camX, camY, scale, w, h);
-            g.drawImage(trackTex, tox - TRACK_MARGIN, toy - TRACK_MARGIN);
+            // Explicit destination size: the bitmap is now backed by texDpr device pixels
+            // per CSS pixel, so without it the track would be drawn at texDpr times its
+            // intended size rather than at its intended size in higher resolution.
+            g.drawImage(trackTex, tox - TRACK_MARGIN, toy - TRACK_MARGIN, trackTexCssW, trackTexCssH);
 
             // Feature 6: Wall outlines — single batched path (was 312 stroke calls)
             if (wallsM > 0) {
@@ -919,14 +1001,14 @@ window.PoRacer = PoRacer;
             drawAmbientOverlay(g, w, h, timeOfDay, weatherType);
 
             // Feature 10: Fog
-            drawFog(g, w, h, fogDensity);
+            drawFog(g, w, h, fogDensity, layerDpr);
 
             // Feature 5: Speed lines
             for (let i = 0; i < carCount; i++) { const o = i * 6; if (carBuf[o + 4] !== 0) { drawSpeedLines(g, w, h, Math.abs(carBuf[o + 3]) * 1.2, 340); break; } }
 
             // Feature 8: Post-processing
-            drawVignette(g, w, h);
-            if (bloomEnabled) drawBloom(g, w, h);
+            drawVignette(g, w, h, layerDpr);
+            if (bloomEnabled) drawBloom(g, w, h, layerDpr);
 
             if (shakeX || shakeY) g.restore();
 

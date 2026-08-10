@@ -139,10 +139,22 @@
     border: 1px solid var(--glass-edge);
     box-shadow: var(--glass-inner);
 }
-/* These three sit ON the game canvas, not on an app surface — see the
-   `--glass-*-canvas` note above for why they must not follow the scheme. */
+/* These sit ON the game canvas, not on an app surface — see the
+   `--glass-*-canvas` note above for why they must not follow the scheme.
+
+   2026-08-10: `.racer-hud` was in this group and must not be. Unlike `.ps-hud`
+   (a flex bar with its own padding and background) and `.hud-panel` (PoRacer's
+   actual corner panels), `.racer-hud` is PoRacer's full-screen HUD *container* —
+   `position: absolute; inset: 0; pointer-events: none`, a bare positioning layer
+   whose children are the panels. Glassing it painted the 72%-opaque canvas fill
+   over the ENTIRE race and ran an 8.4px backdrop blur across everything behind
+   it, so the track, cars and background were permanently blurred and washed out
+   while the HUD text on top stayed sharp. `.hud-panel` below already covers the
+   panels that were meant to be glass, so nothing is lost by dropping it.
+
+   Rule of thumb for this list: only ever add a selector that names an element
+   which paints its own background. A full-bleed overlay does not belong here. */
 .ps-hud.ps-hud,
-.racer-hud.racer-hud,
 .hud-panel.hud-panel {
     background: var(--glass-fill-canvas);
     border: 1px solid var(--glass-edge-canvas);
@@ -242,7 +254,6 @@
    normal page flow beneath the arena, not on the canvas, and their text follows
    the theme. Giving it a dark panel put near-black text on near-black. */
 :root[data-gfx='low'] .ps-hud.ps-hud,
-:root[data-gfx='low'] .racer-hud.racer-hud,
 :root[data-gfx='low'] .hud-panel.hud-panel {
     -webkit-backdrop-filter: none;
     backdrop-filter: none;

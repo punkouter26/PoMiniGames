@@ -199,7 +199,7 @@
     private static string SelectHint(int layout)
     {
         var l = PoSportsLayouts.For(layout);
-        return $"{l.Sequence[0]} / {l.Sequence[1]} cycle · {l.Sequence[3]} lock in";
+        return $"{l.Sequence[0]} / {l.Sequence[1]} cycle · {l.Sequence[3]} lock in — or tap a name";
     }
 
     /// <summary>KeyboardEvent.code for a layout's Nth sequence key ("Q" → "KeyQ").</summary>
@@ -225,6 +225,13 @@
         }
     </div>;
 
+    @* 2026-08-10: the roster was inert <li> elements and the only way to pick or
+       lock in was the keyboard, so a pointer user saw a disabled RACE button with
+       no reachable way to enable it — the card looked broken rather than gated.
+       This is the same pointer route PoBrawl's 2P select already carries, down to
+       the shared button.gps-intro-roster-item / .gps-intro-lock styling; the
+       keyboard path (OnIntroKey) is untouched and the two agree on when a meet
+       starts. *@
     private RenderFragment TwoPlayerSelect => @<div class="gps-intro-versus">
         <div>
             <div class="gps-intro-side-title">Player 1</div>
@@ -233,12 +240,20 @@
                 @for (var i = 0; i < Roster.Count; i++)
                 {
                     var idx = i;
-                    <li class="gps-intro-roster-item @(idx == _p1Sel ? "gps-intro-roster-item--cursor" : "") @(_p1Locked && idx == _p1Sel ? "gps-intro-roster-item--locked" : "")">
-                        @Roster[idx].Emoji @Roster[idx].Name
+                    <li>
+                        <button type="button"
+                                class="gps-intro-roster-item @(idx == _p1Sel ? "gps-intro-roster-item--cursor" : "") @(_p1Locked && idx == _p1Sel ? "gps-intro-roster-item--locked" : "")"
+                                aria-pressed="@(idx == _p1Sel)"
+                                @onclick="() => PickCharacter(1, idx)">
+                            @Roster[idx].Emoji @Roster[idx].Name
+                        </button>
                     </li>
                 }
             </ul>
-            <div class="gps-intro-ready">@(_p1Locked ? "✓ Ready" : "")</div>
+            <button type="button" class="gps-intro-lock @(_p1Locked ? "gps-intro-lock--on" : "")"
+                    @onclick="() => ToggleLock(1)">
+                @(_p1Locked ? "✓ Ready" : "Lock in")
+            </button>
         </div>
         <div class="gps-intro-vs-divider">VS</div>
         <div>
@@ -248,12 +263,20 @@
                 @for (var i = 0; i < Roster.Count; i++)
                 {
                     var idx = i;
-                    <li class="gps-intro-roster-item @(idx == _p2Sel ? "gps-intro-roster-item--cursor" : "") @(_p2Locked && idx == _p2Sel ? "gps-intro-roster-item--locked" : "")">
-                        @Roster[idx].Emoji @Roster[idx].Name
+                    <li>
+                        <button type="button"
+                                class="gps-intro-roster-item @(idx == _p2Sel ? "gps-intro-roster-item--cursor" : "") @(_p2Locked && idx == _p2Sel ? "gps-intro-roster-item--locked" : "")"
+                                aria-pressed="@(idx == _p2Sel)"
+                                @onclick="() => PickCharacter(2, idx)">
+                            @Roster[idx].Emoji @Roster[idx].Name
+                        </button>
                     </li>
                 }
             </ul>
-            <div class="gps-intro-ready">@(_p2Locked ? "✓ Ready" : "")</div>
+            <button type="button" class="gps-intro-lock @(_p2Locked ? "gps-intro-lock--on" : "")"
+                    @onclick="() => ToggleLock(2)">
+                @(_p2Locked ? "✓ Ready" : "Lock in")
+            </button>
         </div>
     </div>;
 
@@ -418,6 +441,27 @@
         else return;
         if (_p1Locked && _p2Locked) { _ = OnIntroStartAsync(); return; }
         StateHasChanged();
+    }
+
+    /// <summary>Pointer equivalent of the Q/W and I/O cycle keys. Re-picking clears
+    /// that side's lock, so a player cannot end up locked to a name they just
+    /// changed away from.</summary>
+    private void PickCharacter(int side, int idx)
+    {
+        if (_introDone) return;
+        if (side == 1) { _p1Sel = idx; _p1Locked = false; }
+        else { _p2Sel = idx; _p2Locked = false; }
+    }
+
+    /// <summary>Pointer equivalent of the S and L lock-in keys.</summary>
+    private void ToggleLock(int side)
+    {
+        if (_introDone) return;
+        if (side == 1) _p1Locked = !_p1Locked; else _p2Locked = !_p2Locked;
+        // Match the keyboard path in OnIntroKey: both sides ready starts the meet.
+        // Starting here too means the pointer and keyboard routes cannot disagree
+        // about when a race begins.
+        if (_p1Locked && _p2Locked) _ = OnIntroStartAsync();
     }
 
     private async Task OnIntroStartAsync()

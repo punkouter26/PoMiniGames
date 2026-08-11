@@ -542,10 +542,10 @@
   font-weight: 700;
 }
 
-/* Pointer-selectable roster entries (PoBrawl 2P). Deliberately scoped to
-   `button.` rather than folded into the base rule: PoSports renders the same
-   class on inert <li> elements, and giving those a pointer cursor and a hover
-   state would advertise an interaction they do not have. */
+/* Pointer-selectable roster entries (PoBrawl and PoSports 2P). Kept scoped to
+   `button.` rather than folded into the base rule so the class stays safe to use
+   on a non-interactive element: a pointer cursor and hover state on inert markup
+   advertises an interaction that isn't there. */
 button.gps-intro-roster-item {
   display: block;
   width: 100%;
@@ -600,13 +600,8 @@ button.gps-intro-roster-item:focus-visible {
   border-color: rgba(34, 197, 94, 0.55);
 }
 
-.gps-intro-ready {
-  font-size: 0.7rem;
-  font-weight: 700;
-  color: #22c55e;
-  margin-top: 0.4rem;
-  min-height: 1rem;
-}
+/* .gps-intro-ready removed 2026-08-10 — PoSports was its last consumer and now
+   uses the interactive .gps-intro-lock button, same as PoBrawl. */
 
 @keyframes gps-intro-spin {
   to { transform: rotate(360deg); }

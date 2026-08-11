@@ -112,13 +112,18 @@ public static class GameCatalog
             new(GameMode.Demo, "/pobrawl/demo"),
         ]),
 
+        // ChipPrimary: 1P is the card head, so the chip row would otherwise read
+        // "2P Online Demo" — three chips, none of them solo. A player looking for a
+        // game to play on their own scans the chips and concludes Sports needs a
+        // second person or a lobby. It does not: /posports/1player is a full meet
+        // against CPU family members.
         new(GameKeys.PoSports, "Sports", "🏃",
         [
             new(GameMode.OnePlayer, "/posports/1player"),
             new(GameMode.TwoPlayer, "/posports/2player"),
             new(GameMode.Multiplayer, "/posports/multi", RequiresNetwork: true),
             new(GameMode.Demo, "/posports/demo"),
-        ]),
+        ]) { ChipPrimary = true },
 
         new(GameKeys.PoRacer, "Racer", "🏎️",
         [

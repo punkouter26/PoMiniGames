@@ -172,14 +172,27 @@
     private RenderFragment TitleContent => @<span><span aria-hidden="true">🏃</span> Sports</span>;
 
     @* Key labels come from PoSportsLayouts so rebinding input.js can't leave the tutorial
-       teaching keys that no longer do anything. *@
+       teaching keys that no longer do anything.
+
+       2026-08-10: this used to list PoSportsLayouts.All unconditionally, so the 1P and
+       online cards taught "Player 1: QWAS … Player 2: IOKL" to someone racing alone —
+       half the instructions were for a person who wasn't there, and the solo player had
+       to work out which row was theirs. Only 2P actually uses the second layout; 1P and
+       online both run on layout 1 (see InitEngine and InitOnlineAsync). *@
     private RenderFragment HowToPlayContent => @<div>
         <p>Type your four keys <b>in order</b> to sprint — every completed cycle is a burst of speed. A wrong key restarts the cycle!</p>
         <ul>
-            @foreach (var l in PoSportsLayouts.All)
+            @foreach (var l in (_mode == "2p" ? PoSportsLayouts.All : [PoSportsLayouts.For(1)]))
             {
                 <li>
-                    Player @l.Layout:
+                    @if (_mode == "2p")
+                    {
+                        <text>Player @l.Layout: </text>
+                    }
+                    else
+                    {
+                        <text>Your keys: </text>
+                    }
                     @foreach (var k in l.Sequence)
                     {
                         <kbd>@k</kbd><text> </text>

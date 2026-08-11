@@ -45,4 +45,12 @@ public static class GameKeys
     public static readonly GameKey PoJoker = new("pojoker");
     public static readonly GameKey PoBrawl = new("pobrawl");
     public static readonly GameKey PoSports = new("posports");
+
+    // 2026-08-11: "pobrawldemo" is the leaderboard-only key for the Brawl demo-mode
+    // fighter ELO board. It mirrors GameKey.PoBrawlDemo on the server so a client that
+    // happens to build its own lookup (e.g. a "view Brawl Demo board" link) can default
+    // to the same wire form the unified /api/leaderboards/{game} route returns. The
+    // /leaderboards page currently reaches the board via the all-boards response, so
+    // this constant is for forward use rather than for the current render path.
+    public static readonly GameKey PoBrawlDemo = new("pobrawldemo");
 }

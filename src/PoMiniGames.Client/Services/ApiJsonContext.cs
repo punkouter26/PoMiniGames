@@ -43,8 +43,10 @@ namespace PoMiniGamesClient.Services;
 [JsonSerializable(typeof(MarbleRaceHighScoreRequest))]
 [JsonSerializable(typeof(PoBrawlHighScore))]
 [JsonSerializable(typeof(PoBrawlHighScore[]))]
+// Single entry only — the client POSTs ladder progress but never reads the board back
+// (the unified /api/leaderboards/pobrawl route serves it). The array registration went
+// with GetPoBrawlLadderAsync on 2026-08-11.
 [JsonSerializable(typeof(PoBrawlLadderEntry))]
-[JsonSerializable(typeof(PoBrawlLadderEntry[]))]
 [JsonSerializable(typeof(PoBrawlFighterRating))]
 [JsonSerializable(typeof(PoBrawlFighterRating[]))]
 [JsonSerializable(typeof(PoBrawlDemoResultRequest))]

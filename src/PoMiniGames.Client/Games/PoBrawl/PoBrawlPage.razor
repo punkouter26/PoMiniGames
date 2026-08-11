@@ -557,6 +557,12 @@
                  Player1Id="@_p1Char"
                  Player2Id="@_p2Char"
                  ContextHint="Current matchup is highlighted as now." />
+
+        @* No ladder board here on purpose. The presidents-ladder standings ARE shown on
+           this modal — GameOverModal renders them as its "🏆 Top 3 / Best rung" panel,
+           fed by /api/leaderboards/pobrawl (UnifiedLeaderboardEndpoints.BuildPoBrawlAsync
+           reads the same PoBrawlLadder table). A dedicated board here was added and removed
+           on 2026-08-11 after it turned out to duplicate that panel a few rows further up. *@
     </div>;
 
     protected override void OnInitialized()

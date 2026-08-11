@@ -59,16 +59,14 @@ public static class PoBrawlLeaderboardEndpoints
         // and because the client discards the submit result, the board silently froze at 10.
         var ladder = app.MapGroup("/api/pobrawl/ladder").WithTags("HighScores");
 
-        ladder.MapGet("",
-            async (IStorageService storage, int count = 10) =>
-            {
-                var entries = await storage.GetPoBrawlLadderAsync(count);
-                return Results.Ok(entries);
-            })
-            .WithName("GetPoBrawlLadder")
-            .WithSummary($"Top PoBrawl ladder runs (presidents beaten out of {PoBrawlRoster.Count})")
-            .Produces<IEnumerable<PoBrawlLadderEntry>>(StatusCodes.Status200OK);
-
+        // WRITE ONLY, and deliberately so. There is no GET here because the ladder
+        // standings are already served by the unified board:
+        // UnifiedLeaderboardEndpoints.BuildPoBrawlAsync reads the same PoBrawlLadder
+        // table through IStorageService and exposes it at /api/leaderboards/pobrawl,
+        // which is what GameOverModal's "Top 3 / Best rung" panel and the leaderboards
+        // list both render. A dedicated GET here existed for months with no caller in
+        // the client at all; it was removed 2026-08-11. If you need to read the ladder,
+        // use the unified route — do not add a second one.
         ladder.MapPost("",
             async (PoBrawlLadderEntry entry, IStorageService storage) =>
             {

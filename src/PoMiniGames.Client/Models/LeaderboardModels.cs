@@ -7,6 +7,13 @@ public sealed class LeaderboardEntryDto
     public string Name { get; set; } = "";
     public double Value { get; set; }
     public string DisplayValue { get; set; } = "";
+
+    /// <summary>
+    /// Long-form text for a row whose <see cref="Name"/> was clipped to fit the column,
+    /// rendered as the row's hover title. Only PoJoker sends it (a row there is a joke);
+    /// null on every other board, and a null title attribute is omitted entirely.
+    /// </summary>
+    public string? Detail { get; set; }
 }
 
 /// <summary>A single game's normalized leaderboard. Mirrors the server's GameLeaderboardDto.</summary>

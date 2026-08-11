@@ -1,7 +1,9 @@
 using PoMiniGames.Features.Auth;
 using PoMiniGames.Features.Diagnostics;
 using PoMiniGames.Features.Health;
-using PoMiniGames.Features.HighScores;     // PoBrawl mapper
+using PoMiniGames.Features.HighScores;     // PoSports mapper
+using PoMiniGames.Features.PoBrawl;        // moved out of Features.HighScores 2026-08-11,
+                                           // same correction PoMarbleRace already had
 using PoMiniGames.Features.PoMarbleRace;   // moved out of Features.HighScores so the
                                            // namespace matches its own slice folder
 using PoMiniGames.Features.Leaderboard;
@@ -68,7 +70,7 @@ internal static class EndpointRouteExtensions
         gameApi.MapSavePlayerStats();
         gameApi.MapGetAllPlayerStatistics();
         gameApi.MapMarbleRaceHighScoresEndpoints();
-        gameApi.MapPoBrawlHighScoresEndpoints();
+        gameApi.MapPoBrawlLeaderboardEndpoints();
         gameApi.MapMatchHistoryEndpoints();
         gameApi.MapCoupleQuizEndpoints();
         gameApi.MapFunQuizEndpoints();

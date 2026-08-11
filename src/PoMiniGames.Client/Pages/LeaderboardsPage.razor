@@ -125,7 +125,10 @@
                                     <Virtualize Items="@rows" Context="e" ItemSize="36">
                                         <div role="row" class="lb-row @(e.Rank <= 3 && e.Name != PlaceholderName ? $"lb-row--top lb-row--{e.Rank}" : null)">
                                             <span role="cell" class="lb-rank" aria-label="@($"Rank {e.Rank}")">@e.Rank</span>
-                                            <span role="cell" class="lb-name">@DisplayName(e.Name)</span>
+                                            @* title only when the row carries long-form text it
+                                               had to clip (PoJoker jokes) — null everywhere else,
+                                               and Blazor omits a null attribute entirely. *@
+                                            <span role="cell" class="lb-name" title="@e.Detail">@DisplayName(e.Name)</span>
                                             <span role="cell" class="lb-value">@e.DisplayValue</span>
                                         </div>
                                     </Virtualize>
@@ -251,6 +254,18 @@
         var lpKeys = GameCatalog.LocalTwoPlayer.Select(g => g.Key).ToHashSet();
         var mpKeys = GameCatalog.Multiplayer.Select(g => g.Key).ToHashSet();
 
+        // 2026-08-11: the Brawl Demo board (fighter ELO from CPU-vs-CPU matches) is
+        // an associative view of the Brawl game — its rows are characters, not the
+        // player's own performance — so it isn't a 1P "achievement" board the way
+        // the presidents ladder is. But it IS the Brawl game's sibling board, and
+        // dropping it into 1P keeps the Brawl pair together on the page so a
+        // visitor walking through the Brawl presidents ladder sees the demo ELO
+        // board right next to it. Left in "Other" it would sit at the bottom of a
+        // long page below the fold, which the <Virtualize> rows below would then
+        // defer rendering until the visitor scrolled — defeating the "dedicated
+        // top-3 board" framing the feature was built for.
+        var brawlDemoKey = "pobrawldemo";
+
         // 2026-07-26 browser audit #6: storage keeps a single global board per game (no
         // 1P/2P/multiplayer partition), so a game listed in several catalogs rendered the
         // SAME rows in each column. Rather than a per-column filter (the original fix
@@ -264,7 +279,7 @@
 
         _groupedBoards = new List<BoardGroup>
         {
-            new BoardGroup("1p",      "1 Player",       Claim(b => spKeys.Contains(b.GameKey))),
+            new BoardGroup("1p",      "1 Player",       Claim(b => spKeys.Contains(b.GameKey) || string.Equals(b.GameKey, brawlDemoKey, StringComparison.OrdinalIgnoreCase))),
             new BoardGroup("2p",      "2 Player",       Claim(b => lpKeys.Contains(b.GameKey))),
             new BoardGroup("multi",   "Multiplayer",    Claim(b => mpKeys.Contains(b.GameKey))),
             new BoardGroup("other",   "Other",          Claim(_ => true)),

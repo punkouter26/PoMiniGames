@@ -372,18 +372,10 @@ public class ApiService
         }
     }
 
-    public async Task<PoBrawlLadderEntry[]?> GetPoBrawlLadderAsync(int count = 10)
-    {
-        try
-        {
-            return await _http.GetFromJsonAsync(
-                $"/api/pobrawl/ladder?count={count}", ApiJsonContext.Default.PoBrawlLadderEntryArray);
-        }
-        catch
-        {
-            return null;
-        }
-    }
+    // No GetPoBrawlLadderAsync. The ladder standings reach the UI through the unified
+    // board (/api/leaderboards/pobrawl), which GameOverModal already renders as its
+    // "Top 3 / Best rung" panel. A dedicated reader here had no callers and was removed
+    // 2026-08-11 along with the GET route it wrapped.
 
     /// <summary>
     /// Submits ladder progress. The server keeps one row per player with

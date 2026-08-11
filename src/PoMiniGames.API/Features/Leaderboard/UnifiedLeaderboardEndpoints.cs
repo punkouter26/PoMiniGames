@@ -82,6 +82,12 @@ public static class UnifiedLeaderboardEndpoints
             BuildPoRacerAsync(storage, limit),
             BuildPoSportsAsync(storage, limit),
             BuildPoBrawlAsync(storage, limit),
+            // 2026-08-11: dedicated top-3 board for the PoBrawl demo-mode fighter ELO.
+            // Ratings characters, not players — see BuildPoBrawlDemoAsync's docstring —
+            // so the board shares storage with the existing /api/pobrawl/elo read but
+            // is served through the unified leaderboards so the /leaderboards page can
+            // pick it up alongside the per-player boards.
+            BuildPoBrawlDemoAsync(storage, limit),
             BuildFunQuizAsync(funQuiz, limit),
             BuildPoJokerAsync(joker, limit),
         };
@@ -116,6 +122,12 @@ public static class UnifiedLeaderboardEndpoints
             "poracer" => await BuildPoRacerAsync(storage, limit),
             "posports" => await BuildPoSportsAsync(storage, limit),
             "pobrawl" => await BuildPoBrawlAsync(storage, limit),
+            // 2026-08-11: dedicated top-3 board for the PoBrawl demo-mode fighter ELO.
+            // Ratings characters, not players — see BuildPoBrawlDemoAsync's docstring —
+            // so the board shares storage with the existing /api/pobrawl/elo read but
+            // is served through the unified leaderboards so the /leaderboards page can
+            // pick it up alongside the per-player boards.
+            "pobrawldemo" => await BuildPoBrawlDemoAsync(storage, limit),
             "funquiz" => await BuildFunQuizAsync(funQuiz, limit),
             // GameKey canonicalises "pocouplequiz" to "couplequiz", but the board is keyed by
             // the storage key the client writes stats under.
@@ -286,6 +298,38 @@ public static class UnifiedLeaderboardEndpoints
     }
 
     /// <summary>
+    /// PoBrawl demo-mode fighter ELO. The row subject is the character, not the player —
+    /// demo matches are CPU-vs-CPU, so "Trump" or "Obama" is what climbs the board, not
+    /// the human who walked past the kiosk. Serve the same partition as
+    /// <c>/api/pobrawl/elo</c> so a write to one surface shows up on the other; the unified
+    /// path exists so the <c>/leaderboards</c> page can render this alongside the per-player
+    /// boards without bolting a second component onto <c>PoBrawlEloBoard</c>.
+    /// </summary>
+    /// <remarks>
+    /// Roster is bounded at <see cref="PoBrawlRoster.Count"/> (15), so a top-3 view is
+    /// always the headline of the board; <c>limit</c> controls the size of the canned
+    /// "XXX" padding rows the rest of the BFF emits, not the real content. Unit is "ELO"
+    /// because the climbing value is the same head-to-head adaptive rating the
+    /// <c>connectfive</c>/<c>tictactoe</c> boards use — the closed-vocabulary comment
+    /// above forbids a separate "Rating" label for the same measure.
+    /// </remarks>
+    private static async Task<GameLeaderboardDto> BuildPoBrawlDemoAsync(IStorageService storage, int limit)
+    {
+        var ratings = await storage.GetPoBrawlFighterRatingsAsync(limit);
+        var entries = ratings
+            .Select((r, i) => new LeaderboardEntryDto(
+                i + 1,
+                // DisplayName is resolved server-side from PoBrawlRoster (the row never
+                // carries a caller-supplied name — see PoBrawlLeaderboardEndpoints' POST).
+                r.DisplayName,
+                r.Elo,
+                r.Elo.ToString("N0", CultureInfo.InvariantCulture)))
+            .ToList();
+        PadWithPlaceholders(entries, limit, "0");
+        return new GameLeaderboardDto("pobrawldemo", "Brawl Demo", "ELO", HigherIsBetter: true, entries);
+    }
+
+    /// <summary>
     /// PoFunQuiz ranks by best single-run score. The repository partitions by category, so an
     /// overall board means scanning every category and keeping each player's personal best —
     /// otherwise a player who played three categories would occupy three rows.
@@ -314,25 +358,50 @@ public static class UnifiedLeaderboardEndpoints
     /// player (the show has no sign-in), so the display name is the shortened session id —
     /// mirroring what /pojoker/leaderboard already shows.
     /// </summary>
+    /// <summary>
+    /// Ranks the best JOKES, not the best sessions.
+    /// </summary>
+    /// <remarks>
+    /// This board used to list sessions by score, rendered as a truncated session id
+    /// ("a3f9…"). That is an opaque identifier: it told a reader nothing, could not be
+    /// matched to a person, and made the one board in the app whose subject is content
+    /// look like a debug dump. Every other board shows the achievement; here the
+    /// achievement IS the joke, so the joke is what it shows — ranked by the AI Jester's
+    /// own humour/cleverness/originality scores. See <see cref="TopJokeDto"/>.
+    /// </remarks>
     private static async Task<GameLeaderboardDto> BuildPoJokerAsync(IJokeStorageClient client, int limit)
     {
-        var sessions = await client.GetLeaderboardAsync(limit);
-        var entries = sessions
-            .OrderByDescending(s => s.Score)
-            .Take(limit)
-            .Select((s, i) => new LeaderboardEntryDto(
-                i + 1, ShortSession(s.SessionId), s.Score,
-                s.Score.ToString("F1", CultureInfo.InvariantCulture)))
+        var jokes = await client.GetTopJokesAsync(limit);
+        var entries = jokes
+            .Select((j, i) => new LeaderboardEntryDto(
+                i + 1, Ellipsize(j.Setup, JokeRowChars), j.Score,
+                j.Score.ToString("F1", CultureInfo.InvariantCulture),
+                // Full text on hover: the row is clipped to fit a narrow column, and the
+                // punchline is deliberately not in the visible part — a board should not
+                // spoil every joke on it at a glance.
+                Detail: j.FullText))
             .ToList();
         PadWithPlaceholders(entries, limit, "0.0");
-        return new GameLeaderboardDto("pojoker", "Joker", "Score", HigherIsBetter: true, entries);
+        return new GameLeaderboardDto("pojoker", "Joker", "Rating", HigherIsBetter: true, entries);
     }
 
-    /// <summary>First segment of a session GUID — enough to tell rows apart without overflowing.</summary>
-    private static string ShortSession(string sessionId) =>
-        string.IsNullOrWhiteSpace(sessionId) ? "—"
-        : sessionId.Length <= 8 ? sessionId
-        : sessionId[..8];
+    /// <summary>Visible characters of a joke setup before it is clipped.</summary>
+    private const int JokeRowChars = 48;
+
+    /// <summary>Clip to <paramref name="max"/> characters on a word boundary, with an ellipsis.</summary>
+    private static string Ellipsize(string text, int max)
+    {
+        var clean = text.Replace('\n', ' ').Replace('\r', ' ').Trim();
+        if (clean.Length <= max) return clean;
+        // Break at the last space inside the budget so the row never ends mid-word; fall back
+        // to a hard cut for text with no spaces in range (long URLs, agglutinative languages).
+        var cut = clean.LastIndexOf(' ', Math.Min(max, clean.Length - 1));
+        if (cut < max / 2) cut = max;
+        return string.Concat(clean.AsSpan(0, cut).TrimEnd(), "…");
+    }
+
+    // ShortSession() removed 2026-08-11 with the PoJoker session board it existed for —
+    // it truncated a session GUID for display, and no board shows a session id any more.
 
     /// <summary>Mirror of the client's Initials(): first 3 alphanumeric chars, uppercased.</summary>
     private static string InitialsOf(string name)

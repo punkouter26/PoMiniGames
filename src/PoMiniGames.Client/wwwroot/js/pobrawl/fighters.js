@@ -1076,8 +1076,31 @@ export function setExpression(rig, name) {
 /**
  * Builds one fighter rig. Returns { root, joints, materials, config, baseColors }.
  */
-export function buildFighter(charId) {
+/**
+ * @param {string} charId
+ * @param {{physicalMaterials?: boolean}} [quality]
+ *        physicalMaterials: false swaps the whole wardrobe from
+ *        MeshPhysicalMaterial to MeshStandardMaterial. See `dress()` below.
+ */
+export function buildFighter(charId, quality = {}) {
   const c = CHARACTERS[charId];
+  // ── Wardrobe material tier (2026-08-11 audit #5) ──────────────────────────
+  // MeshPhysicalMaterial is three's heaviest lighting path: `sheen` and
+  // `clearcoat` each add a full extra BRDF lobe evaluated per fragment, per
+  // light. The fighters are the most-drawn objects in the frame and every one of
+  // their materials was physical, so this is the single largest per-pixel cost in
+  // the scene — and it was paid identically on a laptop iGPU and a workstation.
+  //
+  // Below the top tier the wardrobe drops to MeshStandardMaterial. The sheen and
+  // clearcoat *properties* are still passed and simply ignored by the standard
+  // shader, which is deliberate: it keeps one construction path instead of two
+  // divergent ones, and it means _applyDamageWear can go on ramping `clearcoat`
+  // with sweat without caring which material it is talking to (on a standard
+  // material that assignment is an inert property write, not an error).
+  const physical = quality.physicalMaterials !== false;
+  const dress = (params) => (physical
+    ? new THREE.MeshPhysicalMaterial(params)
+    : new THREE.MeshStandardMaterial(params));
   const b = c.buildScale;
   const casual = c.outfit === 'casual';
   // Caricature ratios layered on the base build.
@@ -1096,7 +1119,7 @@ export function buildFighter(charId) {
   // MeshPhysicalMaterial throughout the wardrobe: `sheen` gives wool/silk
   // their grazing-angle backscatter (real fabric glows at silhouette edges),
   // `clearcoat` gives polished hair and dress shoes a second specular lobe.
-  const suitMat = new THREE.MeshPhysicalMaterial({
+  const suitMat = dress({
     color: casual ? c.shirtColor : c.suit,
     roughness: casual ? 0.9 : 0.95, metalness: casual ? 0.0 : 0.05,
     sheen: casual ? 0.3 : 0.55, sheenRoughness: 0.75,
@@ -1108,7 +1131,7 @@ export function buildFighter(charId) {
     normalScale: new THREE.Vector2(casual ? 0.35 : 0.7, casual ? 0.35 : 0.7),
   });
   const legMat = casual
-    ? new THREE.MeshPhysicalMaterial({
+    ? dress({
         color: c.jeans, roughness: 0.98, metalness: 0.0,
         sheen: 0.25, sheenRoughness: 0.9,
         sheenColor: new THREE.Color(c.jeans).lerp(new THREE.Color(0xffffff), 0.3),
@@ -1121,7 +1144,7 @@ export function buildFighter(charId) {
   // to bleed through at grazing angles (ears, nose bridge, knuckles). The
   // pore normal (idea #5) scatters that sheen highlight so skin stops
   // reading as smooth plastic.
-  const skinMat = new THREE.MeshPhysicalMaterial({
+  const skinMat = dress({
     color: c.skin, roughness: 0.55, metalness: 0.0,
     sheen: 0.32, sheenRoughness: 0.5, sheenColor: new THREE.Color(0xff7a55),
     roughnessMap: skinNoiseTexture(),
@@ -1135,7 +1158,7 @@ export function buildFighter(charId) {
   });
   // Face-only skin: lets Trump's face run oranger than his hands.
   const faceMat = c.faceTint
-    ? new THREE.MeshPhysicalMaterial({
+    ? dress({
         color: c.faceTint, roughness: 0.55, metalness: 0.0,
         sheen: 0.32, sheenRoughness: 0.5, sheenColor: new THREE.Color(0xff7a55),
         roughnessMap: skinNoiseTexture(),
@@ -1145,18 +1168,18 @@ export function buildFighter(charId) {
       })
     : skinMat;
   // Silk tie: strong anisotropic-looking sheen is what reads as silk.
-  const tieMat = new THREE.MeshPhysicalMaterial({
+  const tieMat = dress({
     color: c.tie ?? c.jeans ?? 0x444444, roughness: 0.5, metalness: 0.0,
     sheen: 0.8, sheenRoughness: 0.35,
     sheenColor: new THREE.Color(c.tie ?? c.jeans ?? 0x444444).lerp(new THREE.Color(0xffffff), 0.5),
     normalMap: weaveNormalTexture(),
     normalScale: new THREE.Vector2(0.35, 0.35),
   });
-  const hairMat = new THREE.MeshPhysicalMaterial({
+  const hairMat = dress({
     color: c.hair, roughness: c.hairShine ? 0.45 : 0.85, metalness: 0.0,
     clearcoat: c.hairShine ? 0.7 : 0.12, clearcoatRoughness: 0.35,
   });
-  const shoeMat = new THREE.MeshPhysicalMaterial({
+  const shoeMat = dress({
     color: casual ? c.sneaker : 0x111111,
     roughness: casual ? 0.7 : 0.35, metalness: 0.05,
     clearcoat: casual ? 0.0 : 0.55, clearcoatRoughness: 0.25,

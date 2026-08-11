@@ -99,6 +99,14 @@ public readonly record struct GameKey(string Value) : IComparable<GameKey>
     public static readonly GameKey PoBrawl = new("pobrawl");
     public static readonly GameKey PoSports = new("posports");
 
+    // PoBrawlDemo is a leaderboard-only key — it has no PlayerStats shadow (demo matches
+    // are CPU-vs-CPU, so no player ever submits stats for it). It is in the catalogue
+    // because the unified /api/leaderboards/{game} route runs every input through
+    // TryParse, and the demo board would 404 without this entry. Mirroring PoBrawl so
+    // "pobrawldemo" reads as a sibling of "pobrawl" on the /leaderboards page, even
+    // though the fight rankings are independent of the presidents-ladder board.
+    public static readonly GameKey PoBrawlDemo = new("pobrawldemo");
+
     // This catalogue gates PlayerStats reads/writes (PlayerStatsEndpoints uses TryParse as
     // the §8 allowlist), so it must cover every game the client can mirror stats for —
     // it had drifted behind the client's GameKeys list (poracer/pobrawl/posports missing),
@@ -107,7 +115,7 @@ public readonly record struct GameKey(string Value) : IComparable<GameKey>
     {
         CoupleQuiz, FunQuiz, Face, Joker, Survive,
         ConnectFive, TicTacToe, PoMarbleRace,
-        PoRacer, PoBrawl, PoSports,
+        PoRacer, PoBrawl, PoBrawlDemo, PoSports,
     };
 
     private static readonly string[] WellKnownNames = All.Select(k => k.Value).ToArray();

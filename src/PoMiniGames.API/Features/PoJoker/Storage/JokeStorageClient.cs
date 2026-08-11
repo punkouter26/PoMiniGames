@@ -126,6 +126,37 @@ public sealed class JokeStorageClient : IJokeStorageClient
             .ToList();
     }
 
+    public async Task<IReadOnlyList<TopJokeDto>> GetTopJokesAsync(
+        int top = 10,
+        CancellationToken cancellationToken = default)
+    {
+        // Same unpartitioned scan caveat as GetLeaderboardAsync above — and the same follow-up
+        // applies if this table grows: pre-roll a per-joke aggregate row rather than re-reducing
+        // all of history on every board request.
+        //
+        // This method owns ONLY the I/O. Every ranking decision lives in TopJokeRanking.Rank,
+        // which is pure and hermetically unit-tested — the scoring, the eligibility rules and the
+        // dedup are the parts that can be quietly wrong, and they should not need Azurite to
+        // verify. (The Integration tier is also at its 50-method ceiling, so a storage-backed
+        // test for this had nowhere to go.)
+        var rows = new List<JokePerformanceEntity>();
+        try
+        {
+            await foreach (var entity in _tableClient.QueryAsync<JokePerformanceEntity>(
+                maxPerPage: 1000, cancellationToken: cancellationToken))
+            {
+                rows.Add(entity);
+            }
+        }
+        catch (RequestFailedException ex)
+        {
+            _logger.LogWarning(ex, "Failed to get top jokes from table storage; returning an empty board.");
+            return [];
+        }
+
+        return TopJokeRanking.Rank(rows, top);
+    }
+
     private static string GenerateRowKey(DateTimeOffset timestamp, Guid performanceId)
     {
         var invertedTicks = DateTimeOffset.MaxValue.Ticks - timestamp.Ticks;

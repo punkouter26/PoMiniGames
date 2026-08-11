@@ -111,5 +111,36 @@ public sealed class PoBrawlFighterEloTests : IClassFixture<TestWebApplicationFac
         board!.Should().NotContain(r => r.FighterId == "notapresident" || r.FighterId == "bob",
             "a rejected submission must not have created a row");
         board.Should().BeInDescendingOrder(r => r.Elo, "the board ranks by rating");
+
+        // ── The unified BFF exposes the same partition as the demo board ──────
+        // /api/leaderboards/pobrawldemo is the route the /leaderboards page calls
+        // when it renders the top-3 Brawl Demo trophy case. It reads the same
+        // storage partition /api/pobrawl/elo writes to, so the rows above must
+        // surface under the unified DTO with the right gameKey/title/unit and
+        // rank ordered by Elo. The page filters the "XXX" placeholder, but the
+        // BFF still emits it so the rank list always fills out to the limit.
+        var demoBoard = await client.GetFromJsonAsync<System.Text.Json.JsonElement>(
+            "/api/leaderboards/pobrawldemo?limit=3");
+        demoBoard.GetProperty("gameKey").GetString().Should().Be("pobrawldemo");
+        demoBoard.GetProperty("title").GetString().Should().Be("Brawl Demo");
+        demoBoard.GetProperty("unit").GetString().Should().Be("ELO");
+        demoBoard.GetProperty("higherIsBetter").GetBoolean().Should().BeTrue();
+
+        var demoEntries = demoBoard.GetProperty("entries").EnumerateArray().ToList();
+        demoEntries.Should().HaveCount(3, because: "limit=3 caps the unified board at three rows");
+        var demoElos = demoEntries.Select(e => e.GetProperty("value").GetDouble()).ToList();
+        demoElos.Should().BeInDescendingOrder(because: "highest ELO ranks first");
+        demoEntries.Take(2).Select(e => e.GetProperty("name").GetString())
+            .Should().BeEquivalentTo(new[] { "FDR", "Truman" },
+                because: "the two fighters under test are the only real rows on this pass");
+
+        // Same board must also appear in the all-boards response, alongside the
+        // per-player boards, with the same shape.
+        var allBoards = await client.GetFromJsonAsync<List<System.Text.Json.JsonElement>>(
+            "/api/leaderboards?limit=3");
+        var demoBoards = allBoards!.Where(b => b.GetProperty("gameKey").GetString() == "pobrawldemo").ToList();
+        demoBoards.Should().ContainSingle(
+            because: "the demo board is exactly one of the unified leaderboards");
+        demoBoards.Single().GetProperty("title").GetString().Should().Be("Brawl Demo");
     }
 }

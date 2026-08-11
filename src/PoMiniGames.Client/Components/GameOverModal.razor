@@ -68,7 +68,9 @@
                     {
                         <li class="gps-modal-board-row gps-modal-board-row--@e.Rank @(IsMe(e) ? "gps-modal-board-row--me" : null)">
                             <span class="gps-modal-board-rank">@e.Rank</span>
-                            <span class="gps-modal-board-name">@e.Name</span>
+                            @* See LeaderboardsPage: Detail is the un-clipped text for boards
+                               whose Name had to be truncated (PoJoker), null for every other. *@
+                            <span class="gps-modal-board-name" title="@e.Detail">@e.Name</span>
                             <span class="gps-modal-board-value">@e.DisplayValue</span>
                         </li>
                     }

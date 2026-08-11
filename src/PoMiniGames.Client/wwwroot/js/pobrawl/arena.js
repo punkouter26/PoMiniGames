@@ -53,7 +53,17 @@ function ringCanvasTexture() {
   return _canvasTex;
 }
 
-export function buildArena(scene) {
+/**
+ * @param {THREE.Scene} scene
+ * @param {{rectAreaLights?: number}} [quality]
+ *        rectAreaLights: how many of the two studio rig panels to build (0-2).
+ *        Build-time only, and deliberately so — scene light counts are shader
+ *        #defines, so adding or removing one recompiles every lit material in the
+ *        scene at once. That stall is exactly what you must not introduce on a
+ *        machine already dropping frames, so the count is fixed by the tier the
+ *        game booted at rather than tracking live tier changes. See quality.js.
+ */
+export function buildArena(scene, quality = {}) {
   // 2026-07-26 browser audit #4: brighten the empty-hall background from
   // #0d0f1a to #1a2040. When the camera flies outside the ring edge and
   // points at empty space, the original near-black background read as "the
@@ -203,10 +213,16 @@ export function buildArena(scene) {
   const key = new THREE.DirectionalLight(0xfff1d0, 3.4);
   key.position.set(6, 12, 4);
   key.castShadow = true;
-  // 4096 over the tight ±6.5 frustum (idea #7): halving the texel size gives
-  // the fighters' contact shadows a crisp, grounded edge at the feet instead
-  // of the mushy penumbra a 2048 map left toward the far side of the ring.
-  key.shadow.mapSize.set(4096, 4096);
+  // 2048 over the tight ±6.5 frustum. This was 4096 (idea #7, chasing a crisper
+  // contact edge at the feet), which is a ~64 MB depth target re-rendering the
+  // whole scene every frame — the second-largest fixed cost in the renderer after
+  // the post chain. Over this frustum 2048 still lands ~157 texels per world metre
+  // under the fighters, which is finer than PCFSoft's fixed kernel can resolve at
+  // this camera distance, so the 4× memory and fill bought no visible edge.
+  //
+  // This is the BUILD-TIME default and equals the 'high' tier. quality.js retunes
+  // it per tier immediately after buildArena — see BrawlGame._applyQuality.
+  key.shadow.mapSize.set(2048, 2048);
   // Frustum hugs the ring (fight area is ±5.2, posts at ±5.8) — tighter
   // bounds roughly double the effective shadow resolution vs the old ±10.
   key.shadow.camera.left = -6.5;
@@ -241,9 +257,14 @@ export function buildArena(scene) {
   spot.position.set(0, 11, 0);
   spot.target.position.set(0, 0, 0);
   spot.castShadow = true;
-  // 2048 (idea #7): the KO cinematic pushes in on the tight overhead shadow
-  // under the fallen body — 1024 pixelated its edge at that framing.
-  spot.shadow.mapSize.set(2048, 2048);
+  // 1024, down from 2048. This map only ever reads during the KO push-in, but it
+  // was rendering a second full shadow pass on every frame of every fight to stay
+  // ready for it. 1024 holds up at that framing (the body fills the frame, so the
+  // shadow is a few metres of world space, not the whole ring) at a quarter the cost.
+  //
+  // BUILD-TIME default = the 'high' tier; below high the spot stops casting
+  // altogether. See quality.js.
+  spot.shadow.mapSize.set(1024, 1024);
   spot.shadow.bias = -0.0005;
   spot.shadow.normalBias = 0.02;
   spot.shadow.radius = 6;
@@ -255,15 +276,31 @@ export function buildArena(scene) {
   // that point/spot lights can't fake. No shadows (RectArea can't cast) —
   // the key/spot still own shadowing. Intensity bumped (2.6/1.8 → 3.4/2.6)
   // so the rig still reads "studio panels" without the IBL contribution.
-  RectAreaLightUniformsLib.init();
-  const rectA = new THREE.RectAreaLight(0xfff0d8, 3.4, 4.5, 3.2);
-  rectA.position.set(-3.6, 8.5, 3.6);
-  rectA.lookAt(0, 0, 0);
-  scene.add(rectA);
-  const rectB = new THREE.RectAreaLight(0xdfe6ff, 2.6, 4.5, 3.2);
-  rectB.position.set(3.6, 8.5, -3.6);
-  rectB.lookAt(0, 0, 0);
-  scene.add(rectB);
+  //
+  // They are also the most expensive light type in the scene: each one adds a
+  // linearly-transformed-cosine texture lookup to EVERY lit fragment of every
+  // MeshPhysicalMaterial, and the fighters — the most-drawn objects in the frame —
+  // are all physical. Hence the tier budget: two at 'high', one at 'medium', none
+  // at 'low'. `rectA` is dropped before `rectB` so the surviving panel is the
+  // cooler back-right one, which is what separates the fighters from the dark
+  // backdrop; losing the warm front-left panel only flattens the key side, where
+  // the directional key is already doing the work.
+  const rectCount = quality.rectAreaLights ?? 2;
+  let rectA = null;
+  let rectB = null;
+  if (rectCount > 0) {
+    RectAreaLightUniformsLib.init();
+    rectB = new THREE.RectAreaLight(0xdfe6ff, 2.6, 4.5, 3.2);
+    rectB.position.set(3.6, 8.5, -3.6);
+    rectB.lookAt(0, 0, 0);
+    scene.add(rectB);
+  }
+  if (rectCount > 1) {
+    rectA = new THREE.RectAreaLight(0xfff0d8, 3.4, 4.5, 3.2);
+    rectA.position.set(-3.6, 8.5, 3.6);
+    rectA.lookAt(0, 0, 0);
+    scene.add(rectA);
+  }
 
   // Corner identity lighting: red vs blue side, matching the HUD bars.
   // Fighters pick up a warm/cool gradient as they cross the ring. Bumped

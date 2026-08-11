@@ -176,3 +176,40 @@ public sealed record JokeExplanationDto
 {
     public required string Explanation { get; init; }
 }
+
+/// <summary>
+/// One joke on the "best jokes" board, ranked by how the AI Jester scored it.
+/// </summary>
+/// <remarks>
+/// One row per <see cref="JokeId"/>, carrying that joke's BEST performance: the same joke is
+/// drawn for many sessions and rated slightly differently each time, and without the collapse a
+/// single popular joke fills the whole board.
+///
+/// <para><b>What <see cref="Score"/> is.</b> The mean of the three dimensions the LLM is actually
+/// asked for — humour, cleverness and originality — on the 1-10 scale the ratings are stored at.
+/// It is deliberately NOT <c>JokeRatingDto.Average</c>: that divides by four to include
+/// <c>Rudeness</c>, which <c>AiJesterService</c> hardcodes to 1 for every joke, so it only ever
+/// drags every score toward the floor by a constant and contributes no ranking signal.</para>
+///
+/// <para><b>Field-name warning.</b> The rating prompt asks for originality/cleverness/humor, but
+/// the results are stored under legacy names for row compatibility: humour lives in
+/// <c>Difficulty</c> and originality in <c>Complexity</c> (see the mapping note in
+/// <c>AiJesterService.RateJokeUncachedAsync</c>). Read that mapping before changing this score.</para>
+/// </remarks>
+public sealed record TopJokeDto
+{
+    /// <summary>JokeAPI id — the identity this board collapses on.</summary>
+    public required int JokeId { get; init; }
+
+    /// <summary>Setup line for a two-part joke, or the whole joke for a one-liner.</summary>
+    public required string Setup { get; init; }
+
+    /// <summary>Punchline for a two-part joke; empty for a one-liner.</summary>
+    public string Punchline { get; init; } = string.Empty;
+
+    /// <summary>Mean of humour, cleverness and originality (1-10).</summary>
+    public required double Score { get; init; }
+
+    /// <summary>Setup and punchline joined for the row's hover text.</summary>
+    public string FullText => string.IsNullOrWhiteSpace(Punchline) ? Setup : $"{Setup} — {Punchline}";
+}

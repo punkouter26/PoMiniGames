@@ -54,4 +54,11 @@ public interface IJokeStorageClient
     Task<IReadOnlyList<JokePerformanceDto>> GetSessionPerformancesAsync(string sessionId, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<LeaderboardEntryDto>> GetLeaderboardAsync(int top = 10, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// The best-rated jokes across every session, one row per joke id, highest score first.
+    /// Feeds the unified <c>/api/leaderboards/pojoker</c> board — see <see cref="TopJokeDto"/>
+    /// for what "best" means and why it is not the stored rating average.
+    /// </summary>
+    Task<IReadOnlyList<TopJokeDto>> GetTopJokesAsync(int top = 10, CancellationToken cancellationToken = default);
 }

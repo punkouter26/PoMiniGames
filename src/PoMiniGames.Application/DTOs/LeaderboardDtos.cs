@@ -5,7 +5,14 @@ namespace PoMiniGames.Application.DTOs;
 /// <see cref="DisplayValue"/> is the already-formatted string for the UI (e.g. "73%", "1,240", "8.4s"),
 /// so the client never has to know whether a game is scored by win-rate, points, or survival time.
 /// </summary>
-public sealed record LeaderboardEntryDto(int Rank, string Name, double Value, string DisplayValue);
+/// <param name="Detail">
+/// Optional long-form text for a row whose <paramref name="Name"/> has to be truncated to fit —
+/// rendered as the row's hover title. Only PoJoker uses it today (a board row is a joke, and the
+/// setup alone overflows the column), so it is nullable and every other board leaves it null
+/// rather than every board growing a field for one game's benefit.
+/// </param>
+public sealed record LeaderboardEntryDto(
+    int Rank, string Name, double Value, string DisplayValue, string? Detail = null);
 
 /// <summary>
 /// A single game's leaderboard in a shape that is identical across every game. Collapses the

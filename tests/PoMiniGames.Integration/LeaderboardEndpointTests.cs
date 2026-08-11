@@ -95,17 +95,28 @@ public sealed class LeaderboardEndpointTests : IClassFixture<TestWebApplicationF
             new { PlayerName = rival, PresidentsBeaten = PoBrawlRoster.Count, Elo = 1700 })).StatusCode
             .Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.Created);
 
-        var entries = await _client.GetFromJsonAsync<List<System.Text.Json.JsonElement>>("/api/pobrawl/ladder?count=50");
-        entries.Should().NotBeNull();
+        // Read back through the UNIFIED board, not a PoBrawl-specific GET. That is the
+        // only route the ladder is ever read over: /api/pobrawl/ladder is write-only
+        // (see PoBrawlLeaderboardEndpoints), and GameOverModal's "Top 3 / Best rung"
+        // panel and the leaderboards list are both fed from here. Asserting against the
+        // route real users hit also covers BuildPoBrawlAsync's ranking, which the old
+        // PoBrawl-only GET did not exercise at all.
+        var board = await _client.GetFromJsonAsync<System.Text.Json.JsonElement>(
+            "/api/leaderboards/pobrawl?limit=50");
+        var entries = board.GetProperty("entries").EnumerateArray().ToList();
+        entries.Should().NotBeEmpty();
 
-        var mine = entries!.Single(e => e.GetProperty("playerName").GetString() == name);
-        mine.GetProperty("presidentsBeaten").GetInt32()
+        var mine = entries.Single(e => e.GetProperty("name").GetString() == name);
+        mine.GetProperty("value").GetDouble()
             .Should().Be(4, because: "a worse later run must not overwrite the best");
-        entries!.Should().ContainSingle(e => e.GetProperty("playerName").GetString() == name,
+        entries.Should().ContainSingle(e => e.GetProperty("name").GetString() == name,
             because: "the ladder keeps one row per player");
+        mine.GetProperty("displayValue").GetString()
+            .Should().Be($"4/{PoBrawlRoster.Count}",
+                because: "the rung denominator tracks the roster, never a literal");
 
         // Ranked by presidents beaten, descending.
-        var beaten = entries!.Select(e => e.GetProperty("presidentsBeaten").GetInt32()).ToList();
+        var beaten = entries.Select(e => e.GetProperty("value").GetDouble()).ToList();
         beaten.Should().BeInDescendingOrder(because: "most presidents beaten ranks first");
 
         // Bad input is rejected: empty name and an out-of-range count.

@@ -129,13 +129,33 @@ public class AuthStateService
         catch (ApiService.AuthHandshakeReauthRequiredException)
         {
             // 2026-07-19 browser audit #3: the data-protection key ring was
-            // rebuilt (Azurite wipe, dev-box restart). The existing DevCookie
-            // can't be unprotected. Force a fresh dev login so the user
-            // isn't stranded on a stale identity, then fall through to the
-            // normal DevLoginEnabled branch below with the new identity.
+            // rebuilt (Azurite wipe, dev-box restart, or the host relaunched
+            // with a different content root — the dev ring is `keys/` *under
+            // the content root*, so `dotnet run --project src/PoMiniGames.API`
+            // and `dotnet bin/PoMiniGames.API.dll` from the repo root do not
+            // share one). The existing DevCookie can't be unprotected.
             await _api.DevLogoutAsync();
-            // Continue with handshake = null so we hit the DevLoginEnabled branch.
-            handshake = null;
+
+            // 2026-08-11: re-run the handshake now the stale cookie is cleared.
+            // This used to set `handshake = null` and fall through, but the
+            // `handshake is null` branch below nulls _config — which drops
+            // DevLoginEnabled and MicrosoftEnabled to false and renders the
+            // "Authentication is not configured on the server" dead end, with
+            // no Continue-as-Guest button and no way back. The comment claimed
+            // it fell through "to the DevLoginEnabled branch"; it never could,
+            // because that branch reads the _config this path had just cleared.
+            // One retry only — if the server still signals reauth, the cookie
+            // did not clear and looping would not help.
+            try
+            {
+                handshake = await _api.GetAuthHandshakeAsync();
+            }
+            catch (Exception ex) when (ex is ApiService.AuthHandshakeUnavailableException
+                                        or ApiService.AuthHandshakeReauthRequiredException)
+            {
+                _logger.LogDebug(ex, "Auth handshake still failing after clearing the stale cookie");
+                handshake = null;
+            }
         }
         if (handshake is null)
         {

@@ -390,7 +390,10 @@ export class Game {
       if (m.finished || m.eliminated) continue;
       if (!this.track.inBoost(m.s)) continue;
       const v = m.body.velocity;
-      if (v.length() < BOOST_MAX_SPEED) {
+      // A map may lower the ceiling. It has to be able to: the default is 150, but an authored
+      // course whose collider is a zero-thickness shell tunnels above ~120 u/s (see
+      // boostMaxSpeed in track-glb.js), and a marble that leaves through the floor is gone.
+      if (v.length() < (this.track.boostMaxSpeed || BOOST_MAX_SPEED)) {
         const d = this.track.dirAt(m.s);
         v.x += d.x * BOOST_ACCEL * sdt;
         v.y += d.y * BOOST_ACCEL * sdt;

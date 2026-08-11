@@ -1,9 +1,11 @@
-// bake-marble-track.mjs — offline baker for the PoMarbleRace course.
+// bake-marble-track.mjs — offline baker for the PoMarbleRace authored courses.
 //
-//   node scripts/bake-marble-track.mjs
+//   node scripts/bake-marble-track.mjs           # course1 — Spiral Works (map 2)
+//   node scripts/bake-marble-track.mjs course2   # course2 — Grand Spiral (map 3)
 //
-// Reads src/PoMiniGames.Client/wwwroot/models/marble_track.glb and writes
-// src/PoMiniGames.Client/wwwroot/js/pomarblerace/track-path.js.
+// Reads the selected course's GLB from src/PoMiniGames.Client/wwwroot/models/ and writes its
+// centerline + collision shell into src/PoMiniGames.Client/wwwroot/js/pomarblerace/. See the
+// COURSES registry below; everything after it is course-agnostic.
 //
 // WHY THIS EXISTS. The authored course descends in -Y along a winding XZ path and BRANCHES
 // (Split-A/B/C, the 3-wide Lane2 fan, the 3-wide hazard fan, and the Catch/Penalty pair). The
@@ -31,51 +33,110 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const GLB = path.join(ROOT, 'src/PoMiniGames.Client/wwwroot/models/marble_track.glb');
-const OUT = path.join(ROOT, 'src/PoMiniGames.Client/wwwroot/js/pomarblerace/track-path.js');
+const MODELS = 'src/PoMiniGames.Client/wwwroot/models';
+const JS = 'src/PoMiniGames.Client/wwwroot/js/pomarblerace';
 
-// The GLB is authored at roughly 1 unit = 1 "marble-ish"; the game world is 1 unit = 1 cm with a
-// radius-1 marble, and the raw lanes are only 4.25-24 units across. 4x puts the narrowest lane
-// (Lane2) at 17 units — eight marbles abreast — and the start straight at 40.
-const SCALE = 4;
-
-// Course order, resolved from exact endpoint coincidence (see the header notes). `main` names
-// the segment carrying the progress line; `alt` names segments that are collidable and rendered
-// but measured by projection onto the main line.
+// ── course registry ─────────────────────────────────────────────────────────────────────────
+// One entry per authored GLB course. Everything below this block is course-agnostic: the ring
+// decoding, the centerline bake, the splitter-mouth bridging and the collision shell all work off
+// whichever entry is selected, so adding a third course is an entry here plus a bake — no change
+// to the machinery.
 //
-// Split-A/B/C and Lane2 fan out and re-converge, so the main line takes one representative lane
-// through each. Catch is the high line over Penalty for marbles arriving fast; Penalty is the
-// through-line because it joins Merge's exit continuously (3 units) where Catch starts 8.5 units
-// clear of it. The three Haz-* panels are PARALLEL lanes (pegs / paddle / gates at z -139.8 /
-// -148.0 / -156.2), not a sequence — LowerB's 24-wide mouth feeds all three at once.
-const COURSE = [
-  { main: 'Track-Upper' },
-  { main: 'Track-Split-A-direct', alt: ['Track-Split-A-detour'] },
-  { main: 'Track-Mid' },
-  { main: 'Track-Split-B-inner', alt: ['Track-Split-B-outer'] },
-  { main: 'Track-Merge2' },
-  { main: 'Track-Split-C-short', alt: ['Track-Split-C-long'] },
-  { main: 'Track-Merge' },
-  { main: 'Track-Penalty', alt: ['Track-Catch'] },
-  { bowl: true },
-  { main: 'Track-LowerA' },
-  { main: 'Track-Lane2-mid', alt: ['Track-Lane2-inner', 'Track-Lane2-outer'] },
-  { main: 'Track-LowerB' },
-  { main: 'Track-Haz-paddle', alt: ['Track-Haz-pegs', 'Track-Haz-gates'] },
-  { main: 'Track-LowerC' },
-];
+//   node scripts/bake-marble-track.mjs           # course1, the default
+//   node scripts/bake-marble-track.mjs course2
+//
+// `scale` is per course: the game world is 1 unit = 1 cm with a radius-1 marble, so it converts
+// the authored units into something a marble fits in. `course` is the segment order, resolved
+// from exact endpoint coincidence — `main` names the segment carrying the progress line, `alt`
+// names segments that are collidable and rendered but measured by projecting onto the main line.
+const COURSES = {
+  // Spiral Works (map 2). Authored at roughly 1 unit = 1 "marble-ish", raw lanes 4.25-24 units
+  // across; 4x puts the narrowest lane (Lane2) at 17 units — eight marbles abreast — and the
+  // start straight at 40.
+  //
+  // Split-A/B/C and Lane2 fan out and re-converge, so the main line takes one representative lane
+  // through each. Catch is the high line over Penalty for marbles arriving fast; Penalty is the
+  // through-line because it joins Merge's exit continuously (3 units) where Catch starts 8.5
+  // units clear of it. The three Haz-* panels are PARALLEL lanes (pegs / paddle / gates at
+  // z -139.8 / -148.0 / -156.2), not a sequence — LowerB's 24-wide mouth feeds all three at once.
+  course1: {
+    model: 'marble_track.glb',
+    pathOut: 'track-path.js',
+    collisionOut: 'track-collision.js',
+    scale: 4,
+    course: [
+      { main: 'Track-Upper' },
+      { main: 'Track-Split-A-direct', alt: ['Track-Split-A-detour'] },
+      { main: 'Track-Mid' },
+      { main: 'Track-Split-B-inner', alt: ['Track-Split-B-outer'] },
+      { main: 'Track-Merge2' },
+      { main: 'Track-Split-C-short', alt: ['Track-Split-C-long'] },
+      { main: 'Track-Merge' },
+      { main: 'Track-Penalty', alt: ['Track-Catch'] },
+      { link: 'Track-Bowl' },
+      { main: 'Track-LowerA' },
+      { main: 'Track-Lane2-mid', alt: ['Track-Lane2-inner', 'Track-Lane2-outer'] },
+      { main: 'Track-LowerB' },
+      { main: 'Track-Haz-paddle', alt: ['Track-Haz-pegs', 'Track-Haz-gates'] },
+      { main: 'Track-LowerC' },
+    ],
+    // LINKS bridge a stretch with no swept geometry to read a centerline from. Track-Bowl is a
+    // funnel: rim at y 43.5 r 15.9 down to an open throat at y 32 r 2.5, centred on (-87.1,
+    // -114). Marbles arrive over the rim from Penalty/Catch, spiral, and drop through the throat
+    // onto Track-LowerA. Progress inside a funnel is genuinely ambiguous, so the main line takes
+    // the honest straight shot: rim entry -> throat -> LowerA's mouth. halfWidth is the bowl
+    // radius at that height, so the lateral gauge still reads sensibly while a marble circles.
+    links: {
+      'Track-Bowl': [
+        { p: [-80.7, 43.5, -114.0], up: [0, 1, 0], halfWidth: 15.9 },
+        { p: [-84.0, 37.0, -114.0], up: [0, 1, 0], halfWidth: 11.0 },
+        { p: [-87.1, 33.0, -114.0], up: [0, 1, 0], halfWidth: 3.0 },
+      ],
+    },
+  },
 
-// Track-Bowl is a funnel: rim at y 43.5 r 15.9 down to an open throat at y 32 r 2.5, centred on
-// (-87.1, -114). Marbles arrive over the rim from Penalty/Catch, spiral, and drop through the
-// throat onto Track-LowerA. There is no swept centerline to recover, and progress inside a
-// funnel is genuinely ambiguous, so the main line takes the honest straight shot: rim entry ->
-// throat -> LowerA's mouth. halfWidth is the bowl radius at that height, so the lateral gauge
-// still reads sensibly while a marble is circling.
-const BOWL_LINK = [
-  { p: [-80.7, 43.5, -114.0], up: [0, 1, 0], halfWidth: 15.9 },
-  { p: [-84.0, 37.0, -114.0], up: [0, 1, 0], halfWidth: 11.0 },
-  { p: [-87.1, 33.0, -114.0], up: [0, 1, 0], halfWidth: 3.0 },
-];
+  // Grand Spiral (map 3), generated by scripts/build-marble-track-2.py — that script is the
+  // source, not the GLB. Its course order, its two links (a funnel and a free fall) and its
+  // material zones all come from a SIDECAR the generator writes alongside the model, because
+  // every one of those is a fact about geometry the generator computed and this file would
+  // otherwise have to restate in agreement with it. It would not stay in agreement.
+  course2: {
+    model: 'marble_track_2.glb',
+    pathOut: 'track2-path.js',
+    collisionOut: 'track2-collision.js',
+    sidecar: 'marble_track_2.course.json',
+  },
+};
+
+const COURSE_ID = process.argv[2] || 'course1';
+const CFG = COURSES[COURSE_ID];
+if (!CFG) {
+  console.error(`unknown course "${COURSE_ID}" — expected one of: ${Object.keys(COURSES).join(', ')}`);
+  process.exit(1);
+}
+
+// A sidecar supplies scale / course / links / zones / boost; anything set directly on the entry
+// wins, so a course can be described inline (course1) or generated (course2) or a mix.
+if (CFG.sidecar) {
+  const sc = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', CFG.sidecar), 'utf8'));
+  for (const k of ['scale', 'course', 'links', 'zones', 'boost']) {
+    if (CFG[k] === undefined && sc[k] !== undefined) CFG[k] = sc[k];
+  }
+}
+
+const GLB = path.join(ROOT, MODELS, CFG.model);
+const OUT = path.join(ROOT, JS, CFG.pathOut);
+const SCALE = CFG.scale;
+const COURSE = CFG.course;
+const LINKS = CFG.links || {};
+// Zones re-map a stretch of a channel onto a different contact material. `rumble` (friction 0.3)
+// and `bump` (restitution 0.12) are declared in physics.js and, before Grand Spiral, were used by
+// nothing but the procedural chute. Ranges are fractions of the SEGMENT's own ring count, which
+// is the only addressing that works for both a main line and an alt lane.
+const ZONES = CFG.zones || [];
+const BOOST = CFG.boost || [];
+
+console.log(`course ${COURSE_ID}: ${CFG.model} -> ${CFG.pathOut} + ${CFG.collisionOut} (scale ${SCALE})\n`);
 
 // ── glTF plumbing ───────────────────────────────────────────────────────────────────────────
 const COMP = { 5120: Int8Array, 5121: Uint8Array, 5122: Int16Array, 5123: Uint16Array, 5125: Uint32Array, 5126: Float32Array };
@@ -219,9 +280,11 @@ const samples = [];
 const segRanges = [];
 for (const step of COURSE) {
   const from = samples.length;
-  if (step.bowl) {
-    for (const s of BOWL_LINK) samples.push({ ...s });
-    segRanges.push({ name: 'Track-Bowl', role: 'main', from, to: samples.length - 1 });
+  if (step.link) {
+    const link = LINKS[step.link];
+    if (!link) throw new Error(`course step references link "${step.link}" but no such entry exists`);
+    for (const s of link) samples.push({ ...s });
+    segRanges.push({ name: step.link, role: 'main', from, to: samples.length - 1 });
     continue;
   }
   let rings = ringsOf(g, bin, need(step.main), step.main);
@@ -450,8 +513,20 @@ for (let i = 1; i < COURSE.length; i++) {
 }
 
 const colVerts = [];
-const colIndices = [];
+// One index array per contact material. `surface` is the default and stays exported as INDICES so
+// a course with no zones emits exactly what it always did.
+const colByMaterial = { surface: [], rumble: [], bump: [] };
 const colSegments = [];
+
+/** Contact material for ring `r` of `name`, given the segment's total ring count. */
+function materialForRing(name, r, ringCount) {
+  const t = ringCount > 1 ? r / (ringCount - 1) : 0;
+  for (const z of ZONES) {
+    if (!z.segments.includes(name)) continue;
+    if (t >= z.from && t <= z.to) return z.material;
+  }
+  return 'surface';
+}
 
 for (const name of CHANNEL_SEGMENTS) {
   const rings = colRings.get(name);
@@ -461,8 +536,13 @@ for (const name of CHANNEL_SEGMENTS) {
   for (let r = 0; r < rings.length; r += COLLISION_STRIDE) kept.push(rings[r]);
   if (kept[kept.length - 1] !== rings[rings.length - 1]) kept.push(rings[rings.length - 1]);
 
-  const firstTri = colIndices.length / 3;
+  const firstTri = colByMaterial.surface.length / 3;
   const base = colVerts.length / 3;
+  // Ring index within the ORIGINAL sweep for each kept ring, so a zone expressed as a fraction of
+  // the segment still lands in the right place after decimation.
+  const keptRingIdx = [];
+  for (let r = 0; r < rings.length; r += COLLISION_STRIDE) keptRingIdx.push(r);
+  if (keptRingIdx[keptRingIdx.length - 1] !== rings.length - 1) keptRingIdx.push(rings.length - 1);
   for (const ring of kept) {
     // section = [wall-top, floor, floor, wall-top] across the U. Push the two wall tops further
     // from the floor edge they sit above; the floor itself is untouched.
@@ -483,19 +563,41 @@ for (const name of CHANNEL_SEGMENTS) {
   }
 
   for (let i = 0; i + 1 < kept.length; i++) {
+    // The quad strip between two rings takes the material of the earlier one.
+    const out = colByMaterial[materialForRing(name, keptRingIdx[i], rings.length)] || colByMaterial.surface;
     for (let k = 0; k < 3; k++) {          // 3 quads across the U: wall, floor, wall
       const p00 = base + i * 4 + k, p01 = base + i * 4 + k + 1;
       const p10 = base + (i + 1) * 4 + k, p11 = base + (i + 1) * 4 + k + 1;
-      if (flip) colIndices.push(p00, p10, p11, p00, p11, p01);
-      else colIndices.push(p00, p11, p10, p00, p01, p11);
+      if (flip) out.push(p00, p10, p11, p00, p11, p01);
+      else out.push(p00, p11, p10, p00, p01, p11);
     }
   }
-  colSegments.push({ name, tris: colIndices.length / 3 - firstTri, rings: rings.length, kept: kept.length });
+  colSegments.push({ name, tris: colByMaterial.surface.length / 3 - firstTri, rings: rings.length, kept: kept.length });
 }
 
-const colTris = colIndices.length / 3;
+const colTris = Object.values(colByMaterial).reduce((n, a) => n + a.length / 3, 0);
+for (const [m, arr] of Object.entries(colByMaterial)) {
+  if (m !== 'surface' && arr.length) console.log(`  zone ${m}: ${arr.length / 3} triangles`);
+}
 console.log(`\ncollision shell: ${colTris} triangles from ${colVerts.length / 3} vertices (stride ${COLLISION_STRIDE})`);
 console.log(`  vs ${VISUAL_CHANNEL_TRIS} visual triangles across the same ${CHANNEL_SEGMENTS.length} channels — ${(VISUAL_CHANNEL_TRIS / colTris).toFixed(1)}x fewer`);
+
+// ── boost bands ─────────────────────────────────────────────────────────────────────────────
+// Declared as a fraction of a named segment, resolved here into absolute arclength. Addressing
+// them by segment rather than by a global fraction means a band stays where it was authored even
+// after a section either side of it changes length.
+const boostBands = [];
+for (const b of BOOST) {
+  for (const segName of b.segments) {
+    const r = segRanges.find((x) => x.name === segName);
+    if (!r) throw new Error(`boost band references unknown segment "${segName}"`);
+    const a = cum[r.from], z = cum[r.to];
+    boostBands.push([a + (z - a) * b.from, a + (z - a) * b.to]);
+  }
+}
+if (boostBands.length) {
+  console.log(`\nboost bands: ${boostBands.map(([a, z]) => `${f2(a * SCALE)}..${f2(z * SCALE)}`).join(', ')} world units`);
+}
 
 // ── emit ────────────────────────────────────────────────────────────────────────────────────
 const num = (x) => {
@@ -504,9 +606,9 @@ const num = (x) => {
 };
 const flat = (key) => samples.map((s) => s[key].map(num).join(',')).join(', ');
 
-const out = `// track-path.js — GENERATED by scripts/bake-marble-track.mjs. Do not hand-edit.
+const out = `// ${CFG.pathOut} — GENERATED by scripts/bake-marble-track.mjs ${COURSE_ID}. Do not hand-edit.
 //
-// Baked centerline for wwwroot/models/marble_track.glb. The authored course descends in -Y along
+// Baked centerline for wwwroot/models/${CFG.model}. The authored course descends in -Y along
 // a winding XZ path and branches, so the game cannot use "progress = z" the way the old
 // procedural chute did. This is the single monotonic line every progress-keyed system now
 // projects onto: standings, camera framing, finish detection, out-of-bounds culling, the boost
@@ -546,6 +648,13 @@ export const HALF_WIDTHS = Float32Array.from([${samples.map((s) => num(s.halfWid
 export const CUM = Float32Array.from([${cum.map(num).join(', ')}]);
 
 /**
+ * Boost pads as [startS, endS] pairs in RAW arclength — track-glb.js scales them and exposes
+ * inBoost(s). These have NO collider: game.js reads the predicate each frame and accelerates
+ * whatever is on top, so a pad is a range plus a Deco ribbon, not a shape.
+ */
+export const BOOST_BANDS = ${JSON.stringify(boostBands.map((b) => b.map((v) => Number(num(v)))))};
+
+/**
  * Which authored segment covers which stretch of the line. \`alt\` entries share their \`from\`/\`to\`
  * with the main lane they parallel — they are branch lanes, not extra distance.
  */
@@ -555,9 +664,9 @@ export const SEGMENTS = ${JSON.stringify(segRanges, null, 2).replace(/\n/g, '\n'
 fs.writeFileSync(OUT, out);
 console.log(`\nwrote ${path.relative(ROOT, OUT)} (${(out.length / 1024).toFixed(1)} KB)`);
 
-const colOut = `// track-collision.js — GENERATED by scripts/bake-marble-track.mjs. Do not hand-edit.
+const colOut = `// ${CFG.collisionOut} — GENERATED by scripts/bake-marble-track.mjs ${COURSE_ID}. Do not hand-edit.
 //
-// Low-poly collision shell for the swept channels of wwwroot/models/marble_track.glb. This is
+// Low-poly collision shell for the swept channels of wwwroot/models/${CFG.model}. This is
 // NOT the mesh you see: the visual model still renders at its full ${VISUAL_CHANNEL_TRIS} channel triangles.
 // This is only what the marbles collide against, and it differs deliberately in two ways:
 //
@@ -577,12 +686,22 @@ const colOut = `// track-collision.js — GENERATED by scripts/bake-marble-track
 /** Vertex positions, xyz triples. */
 export const VERTICES = Float32Array.from([${colVerts.map(num).join(',')}]);
 
-/** Triangle indices into VERTICES. */
-export const INDICES = Uint32Array.from([${colIndices.join(',')}]);
+/** Triangle indices into VERTICES for the default 'surface' contact material. */
+export const INDICES = Uint32Array.from([${colByMaterial.surface.join(',')}]);
+
+/**
+ * Zoned triangles — the same vertex buffer, split out so track-glb.js can give them a different
+ * contact material. Empty on a course that declares no zones.
+ *   RUMBLE: friction 0.3, a floor that scrubs speed without ever being able to stop a marble
+ *           (the coefficient is held under the local tan(slope) — see physics.js).
+ *   BUMP:   restitution 0.12, the washboard ridges, low-bounce so they jostle without launching.
+ */
+export const RUMBLE_INDICES = Uint32Array.from([${colByMaterial.rumble.join(',')}]);
+export const BUMP_INDICES = Uint32Array.from([${colByMaterial.bump.join(',')}]);
 
 /** Per-segment triangle counts, for diagnostics. */
 export const SEGMENTS = ${JSON.stringify(colSegments)};
 `;
-const COL_OUT = path.join(ROOT, 'src/PoMiniGames.Client/wwwroot/js/pomarblerace/track-collision.js');
+const COL_OUT = path.join(ROOT, JS, CFG.collisionOut);
 fs.writeFileSync(COL_OUT, colOut);
 console.log(`wrote ${path.relative(ROOT, COL_OUT)} (${(colOut.length / 1024).toFixed(1)} KB)`);

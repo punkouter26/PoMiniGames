@@ -1,8 +1,9 @@
 // maps.js — the marble-race map registry, and the single track interface the game speaks to.
 //
 // Slots 1-9. Slot 1 is the original procedural chute, slot 2 is the authored marble_track.glb
-// course, and 3-9 are free for further GLB courses. TO ADD A MAP, see ADDING A GLB MAP below —
-// it is a handful of lines here plus one bake, with nothing to change in game.js.
+// course, slot 3 is marble_track_2.glb, and 4-9 are free for further GLB courses. TO ADD A MAP,
+// see ADDING A GLB MAP below — it is a handful of lines here plus one bake, with nothing to
+// change in game.js.
 //
 // ── THE TRACK INTERFACE ─────────────────────────────────────────────────────────────────────
 // The two existing maps are built on completely different premises. The procedural chute is a
@@ -33,7 +34,31 @@
 //   regenerate       true if asking for a new track means anything (procedural maps only)
 import * as THREE from 'three';
 import { generateTrack, TRACK as PROC_TRACK } from './track-procedural.js';
-import { loadTrackModel, buildTrack as buildGlbTrack } from './track-glb.js';
+import { createGlbCourse } from './track-glb.js';
+import * as SPIRAL_WORKS_PATH from './track-path.js';
+import * as SPIRAL_WORKS_COL from './track-collision.js';
+import * as GRAND_SPIRAL_PATH from './track2-path.js';
+import * as GRAND_SPIRAL_COL from './track2-collision.js';
+
+// ── authored courses ────────────────────────────────────────────────────────────────────────
+// One createGlbCourse() per GLB. The factory closes over that course's baked centerline and
+// collision shell, so the two share every line of the builder and cannot drift apart — see the
+// header of track-glb.js for why that mattered enough to refactor.
+const spiralWorks = createGlbCourse({
+  modelUrl: 'models/marble_track.glb',
+  path: SPIRAL_WORKS_PATH,
+  collision: SPIRAL_WORKS_COL,
+  // Track-Bowl is a funnel with no ring structure, so it collides against its own geometry.
+  bowlMeshName: 'Track-Bowl',
+});
+
+const grandSpiral = createGlbCourse({
+  modelUrl: 'models/marble_track_2.glb',
+  path: GRAND_SPIRAL_PATH,
+  collision: GRAND_SPIRAL_COL,
+  // Track-Bowl2 is this course's funnel — same deal as Spiral Works' Track-Bowl.
+  bowlMeshName: 'Track-Bowl2',
+});
 
 /** A fresh, zeroed projection record for a caller to own and reuse. */
 export const newProjection = () => ({ s: 0, index: -1, lateral: 0, height: 0 });
@@ -102,12 +127,16 @@ function adaptProceduralTrack(t) {
 
 // ── registry ────────────────────────────────────────────────────────────────────────────────
 //
-// ADDING A GLB MAP (slots 3-9):
-//   1. Drop the model in wwwroot/models/.
-//   2. Point scripts/bake-marble-track.mjs at it and run it — that emits the centerline and the
-//      collision shell the course needs. (The baker currently hard-codes the one model's paths
-//      and its course order; a second course means parameterising those.)
-//   3. Add an entry below with the next free `id`.
+// ADDING A GLB MAP (slots 4-9):
+//   1. Drop the model in wwwroot/models/. It must satisfy the ring-major swept-channel layout the
+//      baker asserts — see the EXPORT CONTRACT in scripts/build-marble-track-2.py, which
+//      generates a conforming course from scratch and is the easiest starting point.
+//   2. Add an entry to COURSES in scripts/bake-marble-track.mjs naming the model, its output
+//      files and its segment order, then run `node scripts/bake-marble-track.mjs <id>`. That
+//      emits the centerline and the collision shell. Check its slope table before going further:
+//      any segment it flags as below friction is a place the pack can stall.
+//   3. Import the two generated modules here, call createGlbCourse() with them, and add an entry
+//      below with the next free `id`.
 // `load` is awaited once before the first build and may return anything the map needs; whatever
 // it resolves to is handed back to `build` as `asset`.
 const MAPS = [
@@ -123,8 +152,15 @@ const MAPS = [
     id: 2,
     name: 'Spiral Works',
     blurb: 'An authored course: a four-turn descending helix into split lanes, a funnel, two banked loops and a hazard fan.',
-    load: () => loadTrackModel(),
-    build: (world, materials, marbleCount, asset) => buildGlbTrack(world, materials, marbleCount, asset),
+    load: () => spiralWorks.loadModel(),
+    build: (world, materials, marbleCount, asset) => spiralWorks.buildTrack(world, materials, marbleCount, asset),
+  },
+  {
+    id: 3,
+    name: 'Grand Spiral',
+    blurb: 'A wide-open descending weave: a safe-or-risky two-way split, an off-camber helix, washboard ridges, a gated terrace, a funnel, a five-lane fan, a free fall, and boost pads to the line.',
+    load: () => grandSpiral.loadModel(),
+    build: (world, materials, marbleCount, asset) => grandSpiral.buildTrack(world, materials, marbleCount, asset),
   },
 ];
 

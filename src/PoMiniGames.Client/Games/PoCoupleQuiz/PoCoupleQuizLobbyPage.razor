@@ -26,9 +26,9 @@
 <PageTitle>Couple Quiz · PoMiniGames</PageTitle>
 
 <GameShell Title=@TitleContent Player="@_playerName" BackTo="/">
-    @* OnePlayer is the "one person is reading this screen" intro mode — it
-       honours the player's ShowGameIntros setting. There is no Multiplayer
-       member; TwoPlayer means a shared-device ready-up, which this isn't.
+    @* OnePlayer is the "one person is reading this screen" intro mode. There is
+       no Multiplayer member; TwoPlayer means a shared-device ready-up, which
+       this isn't.
        This comment must stay OUTSIDE the <GameIntro /> attribute list — Razor
        otherwise parses the entire Razor-comment block as an attribute name,
        and the runtime throws InvalidCharacterError from setAttribute (taking

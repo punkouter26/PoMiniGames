@@ -60,19 +60,6 @@
             <div class="gps-intro-options">@Options</div>
         }
 
-        @* Only offered on the 1P card. The 2P card also carries character
-           selection, so skipping it would skip a required choice; the demo card
-           auto-starts on a timer and is never dismissed by hand. *@
-        @if (Mode == IntroMode.OnePlayer)
-        {
-            @* stopPropagation so ticking the box does not also trip the
-               overlay's tap-to-dismiss and launch the game (audit #6). *@
-            <label class="gps-intro-skip" @onclick:stopPropagation="true">
-                <input type="checkbox" checked="@_dontShowAgain" @onchange="OnDontShowAgainChanged" />
-                <span>Don't show this again</span>
-            </label>
-        }
-
         <div class="gps-intro-actions">
             @switch (Mode)
             {
@@ -160,23 +147,10 @@
     /// </summary>
     [Parameter] public string? CueScope { get; set; }
 
-    /// <summary>
-    /// 2026-08-10 audit: when false, the Settings → "Show game intros" toggle
-    /// does NOT auto-skip this card. FunQuiz's 2-player and online-multiplayer
-    /// intros pass <c>IntroMode.OnePlayer</c> because they want the standard
-    /// card chrome, but they should still surface every time — the toggle is
-    /// labelled "Show the controls card before each 1-player game" and that
-    /// is the contract. Defaults true so existing 1P games inherit the
-    /// behaviour unchanged.
-    /// </summary>
-    [Parameter] public bool RespectSkipToggle { get; set; } = true;
-
     [Inject] private Services.UiFeedbackService Feedback { get; set; } = null!;
-    [Inject] private Services.SettingsService Settings { get; set; } = null!;
 
     private ElementReference _root;
     private bool _started;
-    private bool _dontShowAgain;
     private Timer? _demoTimer;
 
     private string ModeClass => Mode switch
@@ -190,16 +164,10 @@
     {
         if (!firstRender) return;
 
-        // A returning player who ticked "Don't show this again" goes straight
-        // into the game. Checked here rather than in each page so all nine 1P
-        // games inherit it from the one component they already share.
-        // RespectSkipToggle lets modes that pass IntroMode.OnePlayer for layout
-        // reasons (FunQuiz's 2P/multiplayer intros) opt out of the global skip.
-        if (RespectSkipToggle && Mode == IntroMode.OnePlayer && !Settings.ShowGameIntros)
-        {
-            await StartAsync();
-            return;
-        }
+        // 2026-08-11: the "Don't show this again" opt-out (and the /settings
+        // toggle that was the only way back from it) is gone — the card now
+        // shows on every load of every 1P game. It is one tap / any key to
+        // dismiss, and it is the only place a game's controls are written down.
 
         // Focus the overlay so Enter/Space (1P) and the per-player select keys
         // (2P) land here without the player having to click first.
@@ -267,14 +235,6 @@
         {
             await StartAsync();
         }
-    }
-
-    private void OnDontShowAgainChanged(ChangeEventArgs e)
-    {
-        _dontShowAgain = e.Value is true;
-        // Persisted immediately rather than on dismiss, so the choice survives a
-        // player who ticks the box and then navigates away instead of pressing OK.
-        Settings.SetShowGameIntros(!_dontShowAgain);
     }
 
     public void Dispose()

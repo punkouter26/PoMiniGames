@@ -469,10 +469,11 @@
 /* The top-bar quick switcher (.gl-games-switcher*) was removed on 2026-08-10 along
    with its markup in MainLayout — see the comment there. Its rules lived here. */
 
-/* ── FPS pill (shared style, used by top-bar FpsCounter and SettingsPanel preview).
-   Moved here (audit #16) from FpsCounter.razor.css where it wass component-scoped
-   and so could not be reused by the SettingsPanel preview chip. The runtime
-   sampler lives in FpsCounter; only the visual rules live here. */
+/* ── FPS pill (top-bar FpsCounter, on every route).
+   Lives here rather than in FpsCounter.razor.css because the three layouts that
+   render the counter (MainLayout, BareLayout, PoSurviveLayout) style the rail
+   around it here. The runtime sampler lives in FpsCounter; only the visual rules
+   live here. */
 .gl-fps {
     display: inline-flex;
     align-items: center;
@@ -503,22 +504,9 @@
     }
 }
 
-/* ── FPS preview chip (settings page) ──────────────────────────────────────
-   Audit #4: when the badge is OFF the preview rendered a literal "— FPS"
-   string that read as a stray data field on the row. The OFF state now
-   renders an empty placeholder box (no text), so the preview matches the
-   toggle's visual off-state instead of leaking the placeholder text. */
-.gl-fps--preview {
-    min-width: 4.4rem;
-    justify-content: center;
-}
-
-.gl-fps--preview-off {
-    background: transparent;
-    border-style: dashed;
-    color: transparent;
-    pointer-events: none;
-}
+/* The .gl-fps--preview chip belonged to the settings page's FPS-badge row and
+   went with that page on 2026-08-11. The badge is unconditional now, so the
+   live chip in the top bar is the only one. */
 
 /* ── Footer landmark ────────────────────────────────────────────────────────
    2026-08-10 audit: every page rendered <header>, <nav>, and <main> but no

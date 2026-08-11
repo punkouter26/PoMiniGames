@@ -453,31 +453,9 @@
   color: var(--color-text-secondary);
 }
 
-/* "Don't show this again" — 1P only. Deliberately quiet: it sits below the
-   controls and above the OK button, so it reads as a footnote to the card
-   rather than competing with the primary action (browser audit #4). */
-/* audit #5: the label is the tap target — clicking anywhere on it toggles the
-   box — so it carries the 44px minimum, not the 16px input. Padding rather than
-   min-height so the text and box stay vertically centred together. */
-.gps-intro-skip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  min-height: 44px;
-  padding: 0 0.5rem;
-  font-size: 0.8rem;
-  color: var(--color-text-secondary);
-  cursor: pointer;
-  user-select: none;
-}
-
-.gps-intro-skip input {
-  /* 1rem = 16px was under WCAG 2.5.8's 24px floor even as a secondary target. */
-  width: 1.5rem;
-  height: 1.5rem;
-  accent-color: var(--color-accent);
-  cursor: pointer;
-}
+/* .gps-intro-skip — the "Don't show this again" tick-box — was removed on
+   2026-08-11 (user request) along with the /settings toggle that was the only
+   way to undo it. The controls card now opens every 1-player game. */
 
 .gps-intro-demo-hint {
   display: inline-flex;

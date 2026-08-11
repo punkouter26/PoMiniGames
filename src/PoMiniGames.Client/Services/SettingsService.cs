@@ -13,33 +13,38 @@ public enum ThemeMode
 
 /// <summary>
 /// Global app settings shared by every game: colour scheme, master mute and
-/// volume, haptics, reduced motion, and FPS-badge visibility. Persisted as plain
-/// localStorage values (<c>pomini_muted</c>, <c>pomini_showfps</c>,
-/// <c>pomini_theme</c>, <c>pomini_volume</c>, <c>pomini_haptics</c>,
-/// <c>pomini_reducedmotion</c>) so JS modules (uiAudio.js, audioBus.js, the
-/// index.html pre-paint theme script, game engines) can read them directly
-/// without an interop round-trip.
+/// volume, haptics and reduced motion. Persisted as plain localStorage values
+/// (<c>pomini_muted</c>, <c>pomini_theme</c>, <c>pomini_volume</c>,
+/// <c>pomini_haptics</c>, <c>pomini_reducedmotion</c>) so JS modules (uiAudio.js,
+/// audioBus.js, the index.html pre-paint theme script, game engines) can read
+/// them directly without an interop round-trip.
 /// </summary>
 /// <remarks>
-/// Two of these settings are enforced entirely on the JS side and are read from
-/// storage there rather than pushed from here:
-/// <list type="bullet">
-/// <item>volume — audioBus.js reads it when it builds the graph, which can
-/// happen before this service has run any interop.</item>
-/// <item>haptics — uiAudio.js reads it per vibration.</item>
-/// </list>
-/// The setters below still call into JS so a change applies to the <i>live</i>
-/// audio graph immediately instead of only after the next reload.
+/// <para>
+/// 2026-08-11 (user request): the /settings page and its SettingsPanel were
+/// removed, so nothing in the app writes these any more — this is now a
+/// read-and-apply service. It still exists rather than being folded into
+/// constants because the values it reads are the ones JS already owns:
+/// audioBus.js writes <c>pomini_muted</c>/<c>pomini_volume</c> as it builds the
+/// audio graph, and the pre-paint script reads <c>pomini_theme</c>. Anything a
+/// player set before the page was removed is therefore still honoured; a fresh
+/// browser gets the defaults below (Auto theme, unmuted, full volume, haptics on,
+/// motion unreduced).
+/// </para>
+/// <para>
+/// The FPS badge used to be gated here too (<c>pomini_showfps</c>, default off).
+/// It is now unconditional in the top bar, so the flag is gone — see
+/// Components/FpsCounter.razor. The "show game intros" flag went the same way:
+/// the controls card now opens every 1-player game.
+/// </para>
 /// </remarks>
 public sealed class SettingsService : IAsyncDisposable
 {
     private const string MutedKey = "pomini_muted";
-    private const string ShowFpsKey = "pomini_showfps";
     private const string ThemeKey = "pomini_theme";
     private const string VolumeKey = "pomini_volume";
     private const string HapticsKey = "pomini_haptics";
     private const string ReducedMotionKey = "pomini_reducedmotion";
-    private const string ShowGameIntrosKey = "pomini_showgameintros";
 
     private readonly Lazy<Task<IJSObjectReference>> _prefs;
     private bool _disposed;
@@ -50,16 +55,7 @@ public sealed class SettingsService : IAsyncDisposable
             js.InvokeAsync<IJSObjectReference>("import", "./js/appPrefs.js").AsTask());
     }
 
-    /// <summary>Raised after any setting changes so UI and game pages can react.</summary>
-    public event Action? Changed;
-
     public bool Muted { get; private set; }
-
-    // FPS badge. OFF by default: it is a developer diagnostic, and defaulting it on
-    // put a rendering counter in the centre of the top bar — the most valuable chrome
-    // on every page — for every player, most of whom have no use for it. Opt in via
-    // /settings; /diag reports the same number for one-off checks.
-    public bool ShowFps { get; private set; }
 
     /// <summary>Colour scheme. <see cref="ThemeMode.Auto"/> tracks the OS.</summary>
     public ThemeMode Theme { get; private set; } = ThemeMode.Auto;
@@ -73,21 +69,10 @@ public sealed class SettingsService : IAsyncDisposable
     /// <summary>
     /// The user's own request for less motion. Independent of the OS
     /// <c>prefers-reduced-motion</c> setting, which always applies on its own —
-    /// turning this off never re-enables motion for someone whose OS asked to
+    /// this being false never re-enables motion for someone whose OS asked to
     /// reduce it.
     /// </summary>
     public bool ReducedMotion { get; private set; }
-
-    /// <summary>
-    /// Whether the controls card opens each single-player game. ON by default —
-    /// a first-time player needs the rules — but a returning player replaying the
-    /// same game had to dismiss the identical card on every single load
-    /// (2026-08-07 browser audit #4). Ticking "Don't show this again" on the card
-    /// clears this; /settings turns it back on. Two-player intros ignore the flag
-    /// because that card also carries character selection, and demos already
-    /// auto-start on a timer.
-    /// </summary>
-    public bool ShowGameIntros { get; private set; } = true;
 
     /// <summary>Read persisted values. Call once JS interop is available.</summary>
     public void Load()
@@ -95,16 +80,10 @@ public sealed class SettingsService : IAsyncDisposable
         try
         {
             Muted = LocalStorageService.GetItem<string>(MutedKey) == "1";
-            // Default off; an explicit "1" is the only thing that shows the badge, so
-            // a user who opted in keeps it across reloads.
-            ShowFps = LocalStorageService.GetItem<string>(ShowFpsKey) == "1";
             Theme = ParseTheme(LocalStorageService.GetItem<string>(ThemeKey));
             Volume = ParseVolume(LocalStorageService.GetItem<string>(VolumeKey));
             Haptics = LocalStorageService.GetItem<string>(HapticsKey) != "0";
             ReducedMotion = LocalStorageService.GetItem<string>(ReducedMotionKey) == "1";
-            // Default ON: only an explicit "0" (the player ticking "Don't show
-            // this again") suppresses the controls card.
-            ShowGameIntros = LocalStorageService.GetItem<string>(ShowGameIntrosKey) != "0";
         }
         catch { /* pre-render — defaults stand */ }
     }
@@ -133,81 +112,6 @@ public sealed class SettingsService : IAsyncDisposable
         ThemeMode.Dark => "dark",
         _ => "auto",
     };
-
-    public async Task SetMutedAsync(bool muted)
-    {
-        Muted = muted;
-        // audioBus.setMuted owns the storage key, same as volume — it writes
-        // through on its way to the live gain node.
-        Changed?.Invoke();
-        await InvokeAsync("applyMuted", muted);
-    }
-
-    public void SetShowFps(bool show)
-    {
-        ShowFps = show;
-        LocalStorageService.SetItem(ShowFpsKey, show ? "1" : "0");
-        Changed?.Invoke();
-    }
-
-    public async Task SetThemeAsync(ThemeMode mode)
-    {
-        Theme = mode;
-        LocalStorageService.SetItem(ThemeKey, ThemeToStorage(mode));
-        Changed?.Invoke();
-        await InvokeAsync("applyTheme", ThemeToStorage(mode));
-    }
-
-    public async Task SetVolumeAsync(int percent)
-    {
-        Volume = Math.Clamp(percent, 0, 100);
-        // audioBus.setVolume writes the storage key itself (it is the owner of
-        // both the gain node and the persisted value), so this does not also
-        // write it here — two writers would be a chance for them to disagree.
-        Changed?.Invoke();
-        await InvokeAsync("applyVolume", Volume / 100.0);
-    }
-
-    public void SetHaptics(bool enabled)
-    {
-        Haptics = enabled;
-        LocalStorageService.SetItem(HapticsKey, enabled ? "1" : "0");
-        Changed?.Invoke();
-    }
-
-    public void SetShowGameIntros(bool show)
-    {
-        ShowGameIntros = show;
-        LocalStorageService.SetItem(ShowGameIntrosKey, show ? "1" : "0");
-        Changed?.Invoke();
-    }
-
-    public async Task SetReducedMotionAsync(bool reduce)
-    {
-        ReducedMotion = reduce;
-        LocalStorageService.SetItem(ReducedMotionKey, reduce ? "1" : "0");
-        Changed?.Invoke();
-        await InvokeAsync("applyReducedMotion", reduce);
-    }
-
-    /// <summary>
-    /// True when the OS itself asks for reduced motion, in which case the app is
-    /// already calmer regardless of <see cref="ReducedMotion"/>. Used only to
-    /// explain that in the settings UI.
-    /// </summary>
-    public async Task<bool> OsPrefersReducedMotionAsync()
-    {
-        if (_disposed) return false;
-        try
-        {
-            var module = await _prefs.Value;
-            return await module.InvokeAsync<bool>("prefersReducedMotion");
-        }
-        catch
-        {
-            return false;
-        }
-    }
 
     /// <summary>
     /// Push the persisted values into the DOM and audio graph. Call once after

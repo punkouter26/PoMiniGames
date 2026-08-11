@@ -536,25 +536,5 @@
 .prf-h2h-badge--microsoft { background: rgba(0,120,212,0.2); color: #4aa8ff; }
 .prf-h2h-badge--guest { background: rgba(148,163,184,0.18); color: var(--color-text-secondary); }
 
-/* Preferences moved to /settings (the panel used to be inlined at the bottom of
-   this page, which made app configuration reachable only by scrolling past your
-   match record). This is the pointer that keeps the old path discoverable. */
-.prf-settings-link {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.45rem;
-    padding: 0.65rem 1rem;
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-lg);
-    background: var(--surface-raised);
-    color: var(--color-text-primary);
-    font-size: 0.9rem;
-    font-weight: 600;
-    text-decoration: none;
-    transition: border-color 0.18s var(--ease-standard), transform 0.18s var(--ease-standard);
-}
-
-.prf-settings-link:hover {
-    border-color: var(--color-accent);
-    transform: translateY(-1px);
-}
+/* .prf-settings-link (the pointer out to /settings) was removed on 2026-08-11
+   along with the settings page itself. */

@@ -54,16 +54,16 @@
    the PoSurvive rail ~22px tall and the intro card's opt-out checkbox 16×16.
    That is below Apple's 44pt guidance and WCAG 2.5.8's 24px floor.
 
-   Two mechanisms, and which one applies is a real decision, not a style choice:
+   The fix is to GROW THE CONTROL (`min-height`) — it is the honest one, because
+   the thing you aim at is the thing you hit.
 
-   1. GROW THE CONTROL (`min-height`) wherever the control is a text button or
-      link. It is the honest fix — the thing you aim at is the thing you hit.
-   2. OVERLAY AN INVISIBLE EXPANSION (`::after`) only for controls whose painted
-      size is part of the design (the settings switch, the intro checkbox).
-      This is deliberately NOT applied broadly: an invisible 44px box on a chip
-      that sits 8px from its neighbour overlaps that neighbour and silently
-      steals its taps, which is a worse bug than the one being fixed. Both
-      controls below are alone in their row.
+   A second mechanism used to live here: an invisible `::after` expansion for the
+   two controls whose painted size was part of the design (the settings switch
+   and the intro card's opt-out checkbox). Both were removed on 2026-08-11 with
+   the settings page and the "Don't show this again" tick-box, so the rules went
+   with them. If you ever need it again, note it must stay narrowly scoped — an
+   invisible 44px box on a chip 8px from its neighbour overlaps that neighbour
+   and silently steals its taps, which is a worse bug than the one being fixed.
 
    Scoped to `pointer: coarse` so mouse-driven desktop layouts keep their
    current density. */
@@ -72,7 +72,7 @@
            .gl-overflow-item,
            .gps-back-link, .gps-btn, .gps-intro-btn,
            .home-mode-chip, .home-action, .home-card-head,
-           .prefs-seg-btn, .hp-refresh, .prf-settings-link,
+           .hp-refresh,
            .sp-btn-primary, .sp-btn-secondary, .sp-back,
            .app-notfound__link, .app-fallback-link,
            .fq-option,
@@ -83,14 +83,14 @@
     /* Height alone is not a 44px target — these are the controls narrow enough
        that the horizontal axis was still the limiting one (the 🎮 switcher at
        42px, the 1P/2P mode chips at 37px, the PoSurvive speed chips at 43px). */
-    :where(.gl-overflow-trigger, .home-mode-chip, .sv-chip, .prefs-seg-btn) {
+    :where(.gl-overflow-trigger, .home-mode-chip, .sv-chip) {
         min-width: 44px;
     }
 
     /* min-height is inert on an inline box, and several of the above are plain
        <a>. Flex centring makes the extra height actually surround the label. */
     :where(.gl-brand, .gl-skip-link, .gps-back-link, .home-mode-chip,
-           .prf-settings-link, .sp-btn-primary, .sp-btn-secondary, .sp-back) {
+           .sp-btn-primary, .sp-btn-secondary, .sp-back) {
         display: inline-flex;
         align-items: center;
         justify-content: center;
@@ -100,20 +100,6 @@
        the element height leaves the painted track/chevron centred inside it. */
     :where(input[type="range"], select, input[type="text"], input[type="number"]) {
         min-height: 44px;
-    }
-
-    /* Mechanism 2 — see note above. */
-    :where(.prefs-toggle, .gps-intro-skip input[type="checkbox"]) {
-        position: relative;
-    }
-    :where(.prefs-toggle, .gps-intro-skip input[type="checkbox"])::after {
-        content: "";
-        position: absolute;
-        left: 50%;
-        top: 50%;
-        width: max(100%, 44px);
-        height: max(100%, 44px);
-        transform: translate(-50%, -50%);
     }
 }
 

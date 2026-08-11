@@ -1,12 +1,21 @@
 // gl-fps.js — global requestAnimationFrame-driven FPS sampler.
 // Drives the top-nav <FpsCounter /> on every page. Self-stops on `beforeunload`
-// so navigating away doesn't leak a callback. Single-instance: if `glFps.start`
-// is called twice (e.g. multiple <FpsCounter /> re-mounts), we no-op.
+// so navigating away doesn't leak a callback.
+//
+// Single-instance, but *last writer wins*: `start` adopts the newest ref rather
+// than no-op'ing on a second call, and `stop(token)` only tears the loop down if
+// the caller still owns it. The badge is unconditional as of 2026-08-11, and the
+// app swaps whole layouts (MainLayout ↔ PoSurviveLayout ↔ BareLayout) on
+// navigation — each carrying its own <FpsCounter />. With a first-writer-wins
+// start and an unconditional stop, an incoming counter that mounted before the
+// outgoing one disposed would be silently killed by its predecessor's stop and
+// the badge would stay blank until a full reload.
 
 (function () {
   let raf = 0;
   let last = 0;
   let dotnetRef = null;
+  let owner = 0;
 
   function tick(now) {
     if (!dotnetRef) return;
@@ -22,19 +31,22 @@
   }
 
   window.glFps = {
-    start(ref) {
-      if (dotnetRef) return; // already running
+    start(ref, token) {
       dotnetRef = ref;
+      owner = token;
       last = 0;
-      raf = requestAnimationFrame(tick);
+      if (!raf) raf = requestAnimationFrame(tick);
     },
-    stop() {
+    // token omitted (or 0) means "stop regardless" — used by beforeunload.
+    stop(token) {
+      if (token && token !== owner) return;
       if (raf) cancelAnimationFrame(raf);
       raf = 0;
       dotnetRef = null;
+      owner = 0;
       last = 0;
     },
   };
 
-  window.addEventListener('beforeunload', () => window.glFps.stop());
+  window.addEventListener('beforeunload', () => window.glFps.stop(0));
 })();

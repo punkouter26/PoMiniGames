@@ -1,9 +1,9 @@
 /* FPS pill — runtime instance.
 
    The shared visual rules live in app-shell.css (`.gl-fps`, tiers, mobile
-   sizing) so the SettingsPanel can mirror the chip in a preview without
-   re-introducing component-scoped hashes. This file only carries the
-   ‹centered› variant used by FpsCounter itself — the top bar centre rail
+   sizing), next to the top-bar rail rules that position the chip. This file
+   only carries the ‹centered› variant used by FpsCounter itself — the top bar
+   centre rail
    moves the chip to the middle of the rail, distinct from a left-anchored
    desktop variant. */
 .gl-fps--centered {

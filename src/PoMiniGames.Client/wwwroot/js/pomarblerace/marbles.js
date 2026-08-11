@@ -2,11 +2,21 @@
 // tracking.
 //
 // The field is one RED marble the player steers against a pack of 100 rivals, each with its own
-// colour (PACK_PALETTE) and its own procedural glass pattern (the atlas below). Every marble is
-// physically identical (same radius/mass/damping), so a race is decided purely by steering skill
-// and the scramble of the pack — there's no per-marble build to pick. The pack shares one
-// geometry and one material and carries no trails/blobs/shadows; only the red player marble gets
-// the full treatment (own material, motion trail, contact blob, collision sparks).
+// colour (PACK_PALETTE) and its own procedural glass pattern (the atlas below). The pack shares
+// one geometry and one material and carries no trails/blobs/shadows; only the red player marble
+// gets the full treatment (own material, motion trail, contact blob, collision sparks).
+//
+// MASS. Every marble used to be physically identical so a race was decided purely by steering
+// skill. The pack now carries a small spread of MASS only — same radius, same damping, and the
+// PLAYER marble is pinned to exactly 1.0 — see PACK_MASS_SPREAD. The reason is that mass had
+// become a silent no-op in two systems that were written to use it: game.js divides the kicker
+// impulse and the steering force by it, so with a uniform field a kicker shoved all 101 marbles
+// by precisely the same amount and the scramble it is supposed to cause was the same scramble
+// every time. Radius is deliberately NOT varied: the pack is one InstancedMesh over a shared
+// SphereGeometry, and the collision radius would then disagree with what is drawn.
+//
+// This does not make the race a build-picker — you do not choose your marble, and yours is always
+// the baseline. It only stops the rivals from behaving like one rigid body.
 //
 // GFX #1 — INSTANCING. Sharing a geometry and a material still cost 100 separate draw calls and
 // 100 scene-graph nodes walked per frame, because they were 100 separate Mesh objects. The pack
@@ -74,10 +84,23 @@ export function marbleColor(index) {
 // at 100-113 u/s — roughly three times the speed the course's banked turns are shaped for, and
 // fast enough to step straight through the floor between physics ticks. Drag gives them a
 // terminal velocity instead, which is what a real marble run has and what this track assumes.
+// Half-width of the pack's mass spread, as a fraction of the baseline. 0.25 gives rivals 0.75x to
+// 1.25x — enough that a kicker fans them out and a heavy marble bullies its way through traffic,
+// while staying far too small to read as a handicap. Set to 0 to restore a physically uniform
+// field. The spread is DETERMINISTIC (a hash of the index, not Math.random) so a marble's mass is
+// a stable property of its slot rather than something that re-rolls every race.
+export const PACK_MASS_SPREAD = 0.25;
+
+const packMass = (i) => {
+  if (i === PLAYER_INDEX) return 1.0;              // the player is always the baseline
+  const h = Math.sin(i * 12.9898) * 43758.5453;
+  return 1.0 + (2 * (h - Math.floor(h)) - 1) * PACK_MASS_SPREAD;
+};
+
 export const MARBLE_ROSTER = Array.from({ length: MARBLE_COUNT }, (_, i) => ({
   name: i === PLAYER_INDEX ? 'You' : 'Marble',
   color: marbleColor(i),
-  radius: 1.0, mass: 1.0, linDamp: 0.04, angDamp: 0.002,
+  radius: 1.0, mass: packMass(i), linDamp: 0.04, angDamp: 0.002,
 }));
 
 // Hard ceiling on marble speed, world units/s. This is a SAFETY interlock, not a game feel knob.

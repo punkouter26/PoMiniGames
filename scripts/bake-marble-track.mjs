@@ -105,6 +105,10 @@ const COURSES = {
     pathOut: 'track2-path.js',
     collisionOut: 'track2-collision.js',
     sidecar: 'marble_track_2.course.json',
+    // wallGain is available (see WALL_GAIN) but deliberately left at the 2.6 default. Raising it
+    // to 4.2 was tried and made things WORSE — 2 of 16 marbles finishing instead of 7. Taller
+    // invisible walls between ADJACENT split lanes give the pack one more thing to wedge against
+    // at a mouth, and this course's losses are marbles piling up, not marbles falling out.
   },
 };
 
@@ -119,7 +123,7 @@ if (!CFG) {
 // wins, so a course can be described inline (course1) or generated (course2) or a mix.
 if (CFG.sidecar) {
   const sc = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', CFG.sidecar), 'utf8'));
-  for (const k of ['scale', 'course', 'links', 'zones', 'boost']) {
+  for (const k of ['scale', 'course', 'links', 'zones', 'boost', 'kickers']) {
     if (CFG[k] === undefined && sc[k] !== undefined) CFG[k] = sc[k];
   }
 }
@@ -135,6 +139,7 @@ const LINKS = CFG.links || {};
 // is the only addressing that works for both a main line and an alt lane.
 const ZONES = CFG.zones || [];
 const BOOST = CFG.boost || [];
+const KICKERS = CFG.kickers || [];
 
 console.log(`course ${COURSE_ID}: ${CFG.model} -> ${CFG.pathOut} + ${CFG.collisionOut} (scale ${SCALE})\n`);
 
@@ -397,7 +402,12 @@ const SPLIT_MOUTH_TAPER = 6;
 // Raising the wall in the COLLISION shell only keeps them in. The visible rim is unchanged, so on
 // the fastest turns a marble can ride a little above it; that is a far smaller price than most of
 // the field disappearing, and it only shows where marbles are already pinned to the outside.
-const WALL_GAIN = 2.6;
+//
+// PER COURSE, via `wallGain`. Grand Spiral needs more than Spiral Works' 2.6: it banks harder on
+// wider channels and adds a near-vertical loop, an ice plate that stops marbles steering, and
+// kickers that punch them sideways on purpose — every one of which drives the field UP the wall.
+// It is collision-only, so raising it costs nothing visually.
+const WALL_GAIN = CFG.wallGain ?? 2.6;
 
 const floorMid = (ring) => mid(ring.section[1], ring.section[2]);
 
@@ -515,7 +525,7 @@ for (let i = 1; i < COURSE.length; i++) {
 const colVerts = [];
 // One index array per contact material. `surface` is the default and stays exported as INDICES so
 // a course with no zones emits exactly what it always did.
-const colByMaterial = { surface: [], rumble: [], bump: [] };
+const colByMaterial = { surface: [], rumble: [], bump: [], ice: [] };
 const colSegments = [];
 
 /** Contact material for ring `r` of `name`, given the segment's total ring count. */
@@ -599,6 +609,22 @@ if (boostBands.length) {
   console.log(`\nboost bands: ${boostBands.map(([a, z]) => `${f2(a * SCALE)}..${f2(z * SCALE)}`).join(', ')} world units`);
 }
 
+// Kicker bands, emitted as NORMALIZED fractions of the course rather than arclength. That is not
+// an inconsistency with the boost bands above — game.js's _fireKicker tests `m.s / track.length`
+// while _applyBoost tests `m.s` directly, so each is baked in the unit its consumer already uses.
+const kickerBands = [];
+for (const k of KICKERS) {
+  for (const segName of k.segments) {
+    const r = segRanges.find((x) => x.name === segName);
+    if (!r) throw new Error(`kicker band references unknown segment "${segName}"`);
+    const a = cum[r.from], z = cum[r.to];
+    kickerBands.push([(a + (z - a) * k.from) / total, (a + (z - a) * k.to) / total]);
+  }
+}
+if (kickerBands.length) {
+  console.log(`kicker bands: ${kickerBands.map(([a, z]) => `${f2(a * 100)}%..${f2(z * 100)}%`).join(', ')}`);
+}
+
 // ── emit ────────────────────────────────────────────────────────────────────────────────────
 const num = (x) => {
   const v = Math.round(x * 1000) / 1000;
@@ -655,6 +681,12 @@ export const CUM = Float32Array.from([${cum.map(num).join(', ')}]);
 export const BOOST_BANDS = ${JSON.stringify(boostBands.map((b) => b.map((v) => Number(num(v)))))};
 
 /**
+ * Kicker bands as [startFrac, endFrac] of the whole course, 0..1 — the unit game.js's
+ * _fireKicker compares against. Each pairs with the Deco-Kicker-N mesh of the same index.
+ */
+export const KICKER_BANDS = ${JSON.stringify(kickerBands.map((b) => b.map((v) => Math.round(v * 1e5) / 1e5)))};
+
+/**
  * Which authored segment covers which stretch of the line. \`alt\` entries share their \`from\`/\`to\`
  * with the main lane they parallel — they are branch lanes, not extra distance.
  */
@@ -695,9 +727,12 @@ export const INDICES = Uint32Array.from([${colByMaterial.surface.join(',')}]);
  *   RUMBLE: friction 0.3, a floor that scrubs speed without ever being able to stop a marble
  *           (the coefficient is held under the local tan(slope) — see physics.js).
  *   BUMP:   restitution 0.12, the washboard ridges, low-bounce so they jostle without launching.
+ *   ICE:    friction 0.02 — far under the (2/7)*tan(slope) needed to roll, so marbles skid: they
+ *           keep their speed but lose the grip to hold a line into the next turn.
  */
 export const RUMBLE_INDICES = Uint32Array.from([${colByMaterial.rumble.join(',')}]);
 export const BUMP_INDICES = Uint32Array.from([${colByMaterial.bump.join(',')}]);
+export const ICE_INDICES = Uint32Array.from([${colByMaterial.ice.join(',')}]);
 
 /** Per-segment triangle counts, for diagnostics. */
 export const SEGMENTS = ${JSON.stringify(colSegments)};

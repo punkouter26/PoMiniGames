@@ -51,6 +51,7 @@ export function createWorld() {
   const rumble = new CANNON.Material('rumble');      // high-friction floor bands (slow zones)
   const bump = new CANNON.Material('bump');          // washboard ridges — low bounce so they don't launch marbles
   const spinner = new CANNON.Material('spinner');    // motorised paddles — the one surface that hits back
+  const ice = new CANNON.Material('ice');            // near-frictionless plates — marbles skid instead of rolling
 
   // Floor + walls. This coefficient is bracketed from both sides and the bracket MOVED when the
   // procedural chute was replaced by the authored course (2026-08-10), so it is not a free knob:
@@ -84,8 +85,15 @@ export function createWorld() {
   // of shoving it. The bounce is the drama — the one contact tuned to make things worse.
   world.addContactMaterial(new CANNON.ContactMaterial(marble, spinner,
     { friction: 0.15, restitution: 0.6 }));
+  // Ice: the OPPOSITE end of the bracket from rumble. Rolling without slipping needs friction
+  // >= (2/7)*tan(slope); at 0.02 a marble on any real gradient here is well under that, so it
+  // stops rolling and SKIDS — it keeps its speed but loses the grip to hold a line, and arrives
+  // at the next turn carrying momentum it cannot steer. Being far below tan(slope) it also can
+  // never trap: on ice gravity always wins by a wide margin.
+  world.addContactMaterial(new CANNON.ContactMaterial(marble, ice,
+    { friction: 0.02, restitution: 0.22 }));
 
-  return { world, materials: { marble, surface, obstacle, rumble, bump, spinner } };
+  return { world, materials: { marble, surface, obstacle, rumble, bump, spinner, ice } };
 }
 
 export function stepWorld(world, dt) {

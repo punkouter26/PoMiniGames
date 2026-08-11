@@ -69,6 +69,11 @@ const OOB_LATERAL = 20;
 // Uniform grid cell for the cold-start centerline lookup, world units.
 const GRID_CELL = 48;
 
+// Sweep rate of a timed gate, rad/s. Deliberately far slower than a paddle (1.5): at 0.55 a bar
+// takes about 5.7 s per turn, so the lane behind it is open for roughly three seconds at a time —
+// long enough to read and aim for, short enough to matter.
+const GATE_SPIN = 0.55;
+
 // How far either side of the hint to scan. A marble travelling 150 u/s covers 1.25 world units
 // per physics step and samples are ~4 units apart, so ±24 is generous even after several frames
 // without an update.
@@ -184,6 +189,38 @@ function worldBox(mesh) {
   return mesh.geometry.boundingBox.clone().applyMatrix4(mesh.matrixWorld);
 }
 
+
+// World units per chequer cell on the finish banner.
+const CHECKER_SIZE = 8;
+
+let _checkerTex = null;
+
+/**
+ * Black-and-white chequer, generated once and shared by every course.
+ *
+ * NearestFilter and no mipmaps on purpose: this is a hard-edged graphic, and letting it filter
+ * turns the far end of the banner into flat grey exactly where it is read as "the line".
+ */
+function checkerTexture() {
+  if (_checkerTex) return _checkerTex;
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d');
+  const n = 8, cell = 64 / n;
+  for (let y = 0; y < n; y++) {
+    for (let x = 0; x < n; x++) {
+      g.fillStyle = ((x + y) & 1) ? '#f2f2f2' : '#0b0b0b';
+      g.fillRect(x * cell, y * cell, cell, cell);
+    }
+  }
+  _checkerTex = new THREE.CanvasTexture(c);
+  _checkerTex.wrapS = _checkerTex.wrapT = THREE.RepeatWrapping;
+  _checkerTex.magFilter = THREE.NearestFilter;
+  _checkerTex.minFilter = THREE.LinearMipmapLinearFilter;
+  _checkerTex.anisotropy = THREE.Texture.DEFAULT_ANISOTROPY;
+  return _checkerTex;
+}
+
 /** A fresh, zeroed projection record for a caller to own and reuse. */
 export const newProjection = () => ({ s: 0, index: -1, lateral: 0, height: 0 });
 
@@ -198,6 +235,8 @@ export const newProjection = () => ({ s: 0, index: -1, lateral: 0, height: 0 });
  *   faces only, because it is a funnel with no ring structure to loft a shell from
  * @param {number} [opts.finishBackoff] world units to pull the finish back from the end of the
  *   line, so a marble is scored while it is still ON the floor rather than as it drops past it
+ * @param {number|null} [opts.finishS] absolute world arclength of the finish, ending the race
+ *   early. Overrides finishBackoff. Use when a stretch of authored course is not raceable
  * @param {number} [opts.paddleSpeed] rad/s for Obs-Paddle props
  */
 export function createGlbCourse({
@@ -206,6 +245,7 @@ export function createGlbCourse({
   collision: COL,
   bowlMeshName = null,
   finishBackoff = 16,
+  finishS = null,
   paddleSpeed = 1.5,
 }) {
   const { SCALE, COUNT, ARCLENGTH, POINTS, DIRS, UPS, RIGHTS, HALF_WIDTHS, CUM } = PATH;
@@ -214,6 +254,11 @@ export function createGlbCourse({
   // Boost pads, converted once from the baked raw units into the world units `s` is measured in.
   // A course that declares none simply has no inBoost, and game.js feature-detects it away.
   const BOOST_BANDS = (PATH.BOOST_BANDS || []).map(([a, b]) => [a * SCALE, b * SCALE]);
+  // Kicker bands are already NORMALIZED fractions — see the kicker block in buildTrack.
+  const KICKER_BANDS = PATH.KICKER_BANDS || [];
+  // Seconds per charge->fire cycle. Deliberately coprime-ish so two kickers on the same course
+  // drift out of phase with each other instead of firing in lockstep every time.
+  const KICKER_PERIODS = [2.6, 3.1, 2.2];
 
   const TRACK = {
     SCALE,
@@ -221,7 +266,18 @@ export function createGlbCourse({
     LENGTH: ARCLENGTH * SCALE,
     FINISH_BACKOFF: finishBackoff,
   };
-  TRACK.FINISH_S = TRACK.LENGTH - TRACK.FINISH_BACKOFF;
+  // A course may end EARLY, short of where its geometry stops. Spiral Works needs this: its
+  // Track-LowerA loop climbs 23 world units, which takes ~59 u/s at the foot just to crest, and
+  // in practice the field piles up there and the race is decided by a timeout rather than by a
+  // finish. Cutting the line in front of the loop turns the raceable part of the course into the
+  // whole race. LENGTH follows finishS so the HUD's progress still reads 100% at the line rather
+  // than stopping at 61%.
+  if (finishS != null) {
+    TRACK.LENGTH = finishS;
+    TRACK.FINISH_S = finishS;
+  } else {
+    TRACK.FINISH_S = TRACK.LENGTH - TRACK.FINISH_BACKOFF;
+  }
 
   // The baked paddles turn at ±0.121 rad/s (four revolutions across a 208-second Blender preview
   // clip), which is imperceptible at race pace. Any animation in the GLB is discarded and the
@@ -435,6 +491,7 @@ export function createGlbCourse({
     const bodies = [];
     const paddles = [];   // { body, mesh } — visual node driven from its kinematic body each frame
     const motors = [];
+    const kickers = [];   // telegraphed push bands, driven by game.js _applyKickers
 
     // One shared instance of the model per page: clone so a rebuild cannot mutate the cache.
     const scene = model.clone(true);
@@ -451,6 +508,7 @@ export function createGlbCourse({
 
     const trackMeshes = [];
     const propNodes = [];
+    const kickerNodes = [];
     scene.traverse((o) => {
       if (!o.isMesh) return;
       o.castShadow = true;
@@ -465,7 +523,30 @@ export function createGlbCourse({
       }
       if (/^Track-/.test(o.name)) trackMeshes.push(o);
       else if (/^Obs-/.test(o.name)) propNodes.push(o);
+      else if (/^Deco-Kicker/.test(o.name)) kickerNodes.push(o);
     });
+
+    // ── kickers ──
+    // A telegraphed, push-only band: it brightens as it charges (the TELL), then fires, shoving
+    // whatever is crossing it sideways — alternating by marble index so a shot SPLITS the pack
+    // rather than moving it. game.js owns all of that (_applyKickers / _fireKicker); the course
+    // only supplies the band and something to light up.
+    //
+    // Bands are NORMALIZED fractions of the course, not world arclength — _fireKicker compares
+    // against `m.s / this.track.length`. That is the opposite convention to inBoost(s), which
+    // takes world units, and getting them the wrong way round silently fires the kicker at the
+    // wrong end of the course rather than erroring.
+    //
+    // The material is CLONED per kicker. GLTFLoader hands every mesh sharing one Blender material
+    // the same instance, so without this, charging one band would light all of them at once.
+    kickerNodes.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+    for (let i = 0; i < kickerNodes.length && i < KICKER_BANDS.length; i++) {
+      const mesh = kickerNodes[i];
+      const mat = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
+      const own = mat ? mat.clone() : new THREE.MeshStandardMaterial();
+      mesh.material = own;
+      kickers.push({ band: KICKER_BANDS[i], mesh, mat: own, period: KICKER_PERIODS[i % KICKER_PERIODS.length], _lastPhase: 0 });
+    }
 
     // ── static track surfaces ──
     // One body per CHUNK, not per authored segment — see chunkedTrimeshes for why that distinction
@@ -500,6 +581,7 @@ export function createGlbCourse({
         [COL.INDICES, materials.surface],
         [COL.RUMBLE_INDICES, materials.rumble],
         [COL.BUMP_INDICES, materials.bump],
+        [COL.ICE_INDICES, materials.ice],
       ];
       for (const [indices, material] of zoned) {
         if (!indices || !indices.length) continue;
@@ -544,6 +626,30 @@ export function createGlbCourse({
         body.position.set(centre.x, centre.y, centre.z);
         world.addBody(body);
         bodies.push(body);
+      } else if (/^Obs-TimedGate/.test(node.name)) {
+        // A bar that sweeps across the lane, blocking it for half of each turn — so a route is
+        // only open part of the time.
+        //
+        // IT ROTATES; IT DOES NOT RISE AND FALL. A lift was the obvious build and it is a marble
+        // trap: a kinematic slab has infinite mass, and on its downstroke the contact normal
+        // against a marble already resting on the floor points straight down, so the marble has
+        // nowhere to be pushed and is simply pinned. Measured in simulation, marbles parked under
+        // the descending gates and the field stopped there. A body that SWEEPS always clears
+        // again by construction — the same reason the paddles are built this way — so the lane
+        // reopens no matter what is in it.
+        const pivot = new THREE.Vector3().setFromMatrixPosition(node.matrixWorld);
+        const body = new CANNON.Body({ mass: 0, type: CANNON.Body.KINEMATIC, material: materials.obstacle });
+        body.addShape(new CANNON.Box(new CANNON.Vec3(size.x / 2, size.y / 2, size.z / 2)));
+        body.position.set(pivot.x, pivot.y, pivot.z);
+        const sign = /-1$/.test(node.name) ? -1 : 1;
+        body.angularVelocity.set(0, sign * GATE_SPIN, 0);
+        world.addBody(body);
+        bodies.push(body);
+        motors.push({ body, speed: sign * GATE_SPIN });
+        node.removeFromParent();
+        node.scale.setScalar(SCALE);
+        group.add(node);
+        paddles.push({ body, mesh: node });
       } else if (/^Obs-Paddle/.test(node.name)) {
         // Two crossed blades, each 5.8 x 1.6 x 0.3 in authored units, sitting ABOVE the node
         // origin (the mesh spans y 0..1.6), so the pivot is the node position and the shapes are
@@ -582,6 +688,59 @@ export function createGlbCourse({
     }
 
     group.add(scene);
+
+    // ── finish line ──
+    // A chequered banner laid across the channel at FINISH_S, built at RUNTIME from the baked
+    // centerline rather than modelled into the GLB. Two reasons it has to work this way: map 2
+    // has no source .blend to add a stripe to, and its finish has since MOVED to the foot of the
+    // Track-LowerA loop (finishS in maps.js), so anything modelled in would now be in the wrong
+    // place. Generated from FINISH_S it is correct on every course by construction, and it
+    // follows the channel's real width and banking instead of being a flat quad laid over them.
+    //
+    // Decorative only — no collider. It is lifted clear of the floor and given a polygon offset
+    // so it cannot z-fight the surface it sits on.
+    {
+      const STEPS = 8, LIFT = 0.35, BAND = 26;
+      const s0 = Math.max(0, TRACK.FINISH_S - BAND * 0.5);
+      const pos = [], uv = [], idx = [];
+      const c = new THREE.Vector3(), r = new THREE.Vector3(), u = new THREE.Vector3();
+      for (let i = 0; i <= STEPS; i++) {
+        const along = (BAND * i) / STEPS;
+        const s = s0 + along;
+        centerAt(s, c); rightAt(s, r); upAt(s, u);
+        const hw = halfWidthAt(s);
+        for (const side of [-1, 1]) {
+          pos.push(
+            c.x + r.x * hw * side + u.x * LIFT,
+            c.y + r.y * hw * side + u.y * LIFT,
+            c.z + r.z * hw * side + u.z * LIFT,
+          );
+          // U spans the real channel width so the squares stay square however wide it is.
+          uv.push(side < 0 ? 0 : (hw * 2) / CHECKER_SIZE, along / CHECKER_SIZE);
+        }
+      }
+      for (let i = 0; i < STEPS; i++) {
+        const a = i * 2;
+        idx.push(a, a + 1, a + 3, a, a + 3, a + 2);
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+      geo.setIndex(idx);
+      geo.computeVertexNormals();
+      const banner = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
+        map: checkerTexture(),
+        roughness: 0.72,
+        metalness: 0.0,
+        side: THREE.DoubleSide,
+        polygonOffset: true,
+        polygonOffsetFactor: -2,
+        polygonOffsetUnits: -2,
+      }));
+      banner.receiveShadow = true;
+      banner.name = 'FinishBanner';
+      group.add(banner);
+    }
 
     // ── starting grid ──
     // Laid out across the start straight in rows, widest first: the field has to fit the AUTHORED
@@ -629,6 +788,9 @@ export function createGlbCourse({
       group,
       bodies,
       paddles,
+      // OPTIONAL on the track interface, like inBoost — omitted entirely when the course has no
+      // kicker bands so game.js's feature detection keeps working.
+      ...(kickers.length ? { kickers } : {}),
       startPositions,
       length: TRACK.LENGTH,
       finishS: TRACK.FINISH_S,

@@ -47,6 +47,12 @@ export const CUM = Float32Array.from([0, 0.74, 1.48, 2.22, 2.96, 3.701, 4.441, 5
 export const BOOST_BANDS = [];
 
 /**
+ * Kicker bands as [startFrac, endFrac] of the whole course, 0..1 — the unit game.js's
+ * _fireKicker compares against. Each pairs with the Deco-Kicker-N mesh of the same index.
+ */
+export const KICKER_BANDS = [];
+
+/**
  * Which authored segment covers which stretch of the line. `alt` entries share their `from`/`to`
  * with the main lane they parallel — they are branch lanes, not extra distance.
  */

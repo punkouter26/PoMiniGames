@@ -29,9 +29,12 @@ export const INDICES = Uint32Array.from([0,5,4,0,1,5,1,6,5,1,2,6,2,7,6,2,3,7,4,9
  *   RUMBLE: friction 0.3, a floor that scrubs speed without ever being able to stop a marble
  *           (the coefficient is held under the local tan(slope) — see physics.js).
  *   BUMP:   restitution 0.12, the washboard ridges, low-bounce so they jostle without launching.
+ *   ICE:    friction 0.02 — far under the (2/7)*tan(slope) needed to roll, so marbles skid: they
+ *           keep their speed but lose the grip to hold a line into the next turn.
  */
 export const RUMBLE_INDICES = Uint32Array.from([]);
 export const BUMP_INDICES = Uint32Array.from([]);
+export const ICE_INDICES = Uint32Array.from([]);
 
 /** Per-segment triangle counts, for diagnostics. */
 export const SEGMENTS = [{"name":"Track-Bumper","tris":576,"rings":192,"kept":97},{"name":"Track-Catch","tris":60,"rings":20,"kept":11},{"name":"Track-Haz-gates","tris":150,"rings":50,"kept":26},{"name":"Track-Haz-paddle","tris":150,"rings":50,"kept":26},{"name":"Track-Haz-pegs","tris":150,"rings":50,"kept":26},{"name":"Track-Lane2-inner","tris":132,"rings":45,"kept":23},{"name":"Track-Lane2-mid","tris":132,"rings":45,"kept":23},{"name":"Track-Lane2-outer","tris":132,"rings":45,"kept":23},{"name":"Track-LowerA","tris":594,"rings":199,"kept":100},{"name":"Track-LowerB","tris":420,"rings":140,"kept":71},{"name":"Track-LowerC","tris":144,"rings":48,"kept":25},{"name":"Track-Merge","tris":84,"rings":28,"kept":15},{"name":"Track-Merge2","tris":30,"rings":10,"kept":6},{"name":"Track-Mid","tris":480,"rings":161,"kept":81},{"name":"Track-Penalty","tris":72,"rings":24,"kept":13},{"name":"Track-Split-A-detour","tris":66,"rings":23,"kept":12},{"name":"Track-Split-A-direct","tris":66,"rings":23,"kept":12},{"name":"Track-Split-B-inner","tris":132,"rings":45,"kept":23},{"name":"Track-Split-B-outer","tris":132,"rings":45,"kept":23},{"name":"Track-Split-C-long","tris":66,"rings":22,"kept":12},{"name":"Track-Split-C-short","tris":66,"rings":22,"kept":12},{"name":"Track-Upper","tris":738,"rings":247,"kept":124}];

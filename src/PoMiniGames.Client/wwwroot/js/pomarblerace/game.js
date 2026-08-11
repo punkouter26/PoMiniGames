@@ -1,5 +1,6 @@
 // game.js — orchestration: phase machine, scoring, the camera director, the rAF loop,
 // and C# callbacks.
+import * as THREE from 'three';
 import { createScene } from './scene.js';
 import { createWorld, stepWorld } from './physics.js';
 import { mapById, DEFAULT_MAP_ID } from './maps.js';
@@ -66,6 +67,17 @@ const SHOT_LEAD_MARGIN = 14;  // units the leader must be up on the current subj
 // Ceiling on a reported time gap; beyond this the HUD shows "+60s" rather than a number
 // whose precision it hasn't earned. See _gapSeconds.
 const GAP_MAX = 60;
+
+// How far the camera anchor is pulled from the subject marble back toward the road centreline.
+// 0 = lock dead on the marble (jittery — it inherits per-frame physics noise); 1 = the old
+// road-only framing, which loses the marble entirely on a 160-unit-wide channel.
+const ROAD_BIAS = 0.35;
+
+// Camera anchor scratch. This runs once a frame and both vectors are consumed immediately, but
+// centerAt() hands back a SHARED scratch unless given an output, so _camRoad has to be its own
+// object or the lerp would read the vector it is writing into.
+const _camAnchor = new THREE.Vector3();
+const _camRoad = new THREE.Vector3();
 
 export class Game {
   /**
@@ -200,12 +212,18 @@ export class Game {
     // A lateral acceleration (÷ mass so it's independent of the mass unit), applied along the
     // track's local right vector.
     //
-    // NOT negated, unlike the procedural chute this replaced. The baked basis defines
-    // right = dir x up, and the chase camera looks ALONG dir with roughly world up — and a
-    // camera's own screen-right is likewise forward x up. So track-right is screen-right at
-    // every point on the course, including through the inverted-feeling banked loops, and the
-    // sign correction the old flat +Z chute needed is no longer correct here.
-    const dv = (STEER_ACCEL / m.body.mass) * dir * sdt;
+    // NEGATED. This carried the opposite sign and a confident derivation for it: the baked basis
+    // defines right = dir x up, a camera's screen-right is likewise forward x up, so track-right
+    // ought to be screen-right and no correction should be needed. On the actual chase camera it
+    // steers backwards — press right, go left — which is what players report and what settles it.
+    //
+    // The derivation only holds while the camera's forward really is the track tangent at the
+    // marble. It is not: scene.js aims the shot at the ROAD AHEAD rather than along the marble's
+    // own tangent, so on this course's reversing weave and banked turns the camera's forward and
+    // the local dir disagree by enough to flip which way `right` reads on screen. Steering is a
+    // feel property of the CAMERA, not of the track basis, so it is fixed empirically here rather
+    // than re-derived. Flip this sign back only alongside a change to how the camera is aimed.
+    const dv = (STEER_ACCEL / m.body.mass) * -dir * sdt;
     m.body.velocity.x += rb.x * dv;
     m.body.velocity.y += rb.y * dv;
     m.body.velocity.z += rb.z * dv;
@@ -564,17 +582,25 @@ export class Game {
       // cut. Lerping between two marbles 200 units apart reads as the camera losing the race.
       const focus = this._pickShot(order);
       if (focus) {
-        // Frame the ROAD, not the marble. The shot is anchored to the track centerline at the
-        // subject's down-track position, so the chute stays horizontally centred however far
-        // across it the marble has drifted — anchoring on the marble itself slid the road to
-        // whichever side of frame the marble wasn't on. The marble's lateral offset now reads
-        // as its position WITHIN the framed road, which is what you steer by anyway. Bonus: the
-        // anchor no longer inherits per-frame physics jitter from the marble.
-        // Also feed the camera the heading (so it looks along the track ahead, #2) and the
-        // subject's speed (so the FOV widens with pace, #4).
+        // Frame the SUBJECT, biased toward the road.
+        //
+        // This used to anchor purely on the track centerline at the subject's down-track
+        // position, on the reasoning that the road should stay horizontally centred however far
+        // across it the marble drifted. That held while the only course was the procedural
+        // chute, whose channel is 64 units wide — road-centre and marble were near enough the
+        // same point. It does not hold now: the authored courses run up to 160 units across at
+        // the catch pans, so a marble on the outside of a banked turn sat far out of frame and
+        // the camera appeared to be watching the track rather than the racer.
+        //
+        // The anchor is now the marble's own position pulled ROAD_BIAS of the way back toward
+        // the centerline. At 0.35 the subject stays framed on every course while the road keeps
+        // enough weight to damp the per-frame physics jitter that made a pure marble anchor
+        // wobble — which is the problem the centerline anchor was solving in the first place.
         const fs = focus.s;
         const fwd = this.track.dirAt(fs);
-        this.scene.followTarget(this.track.centerAt(fs), dt, focus !== this._lastFocus, fwd, focus.speed);
+        const anchor = _camAnchor.copy(focus.mesh.position)
+          .lerp(this.track.centerAt(fs, _camRoad), ROAD_BIAS);
+        this.scene.followTarget(anchor, dt, focus !== this._lastFocus, fwd, focus.speed);
         this._lastFocus = focus;
       }
 

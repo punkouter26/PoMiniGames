@@ -128,13 +128,31 @@ RUNS = [
     {
         "name": "run1",
         "sections": [
-            {"name": "Start",     "len": 60,  "slope": None, "radius": +90.0, "bank": 0.35, "width": (22.0, 20.0)},
-            {"name": "HelixA",    "len": 190, "slope": 0.28, "radius": +44.0, "bank": 1.00, "width": 20.0, "pinch": True},
-            {"name": "SplitA",    "len": 110, "slope": 0.26, "radius": +40.0, "bank": 1.00, "width": 20.0, "split": "SplitA"},
-            {"name": "Washboard", "len": 50,  "slope": 0.22, "radius": +90.0, "bank": 0.30, "width": 20.0, "ripple": 0.08},
-            {"name": "HelixB",    "len": 170, "slope": 0.30, "radius": -38.0, "bank": 1.00, "width": 20.0, "camber": True},
-            {"name": "SplitB",    "len": 110, "slope": 0.27, "radius": -36.0, "bank": 1.00, "width": 20.0, "split": "SplitB"},
-            {"name": "TerraceB",  "len": 90,  "slope": 0.16, "radius": +90.0, "bank": 0.20, "width": 22.0},
+            {"name": "Start",     "len": 50,  "slope": None, "radius": +90.0, "bank": 0.35, "width": (22.0, 20.0)},
+            {"name": "HelixA",    "len": 140, "slope": 0.28, "radius": +44.0, "bank": 1.00, "width": 20.0, "pinch": True},
+            {"name": "SplitA",    "len": 85,  "slope": 0.26, "radius": +40.0, "bank": 1.00, "width": 20.0, "split": "SplitA"},
+            {"name": "Washboard", "len": 40,  "slope": 0.22, "radius": +90.0, "bank": 0.30, "width": 20.0, "ripple": 0.08},
+            # WALL OF DEATH. A tight radius with the bank scale pushed past 1 stands the channel
+            # up near vertical, so marbles ride the wall instead of the floor. bank 2.2 at R 26
+            # gives ~62 degrees. This is the one section whose geometry depends on marbles
+            # ARRIVING FAST — the same property that forces map 2's MAX_SPEED floor of ~75 — so it
+            # is placed straight after the washboard run rather than after anything that scrubs
+            # speed, and it is kept short so a slow marble sags to the floor rather than stalling.
+            {"name": "Loop",      "len": 60,  "slope": 0.29, "radius": -26.0, "bank": 2.20, "width": 16.0},
+            {"name": "HelixB",    "len": 110, "slope": 0.30, "radius": -38.0, "bank": 1.00, "width": 20.0, "camber": True},
+            # CROSSOVER. Two lanes trade sides, one of them over a bridge — see the Weave entry in
+            # SPLITS for why the bridge has to be there at all.
+            # bank 0.5, not 1.0. A bowing lane's floor height is lateral*sin(bank), so the bow
+            # itself bleeds slope: at full bank (32 deg, sin 0.53) a +-5 bow over 120 stations ate
+            # this section down to a local 0.08 and the baker flagged it. Halving the bank halves
+            # sin, and halving the bow halves the lateral rate — together they cut the loss by 4x.
+            {"name": "Weave",     "len": 120, "slope": 0.31, "radius": -34.0, "bank": 0.50, "width": 20.0, "split": "Weave"},
+            # Same sign as the Weave feeding it. A reversal here would land on the split's exit,
+            # and an off-centre lane tilting through a bank swing loses slope — the rule recorded
+            # under `radius` above. Putting TerraceB at +90 cost the Weave 0.08 local slope and
+            # the baker flagged it; the reversal lives at Washboard -> Loop instead, between two
+            # full-width channels.
+            {"name": "TerraceB",  "len": 75,  "slope": 0.16, "radius": -90.0, "bank": 0.20, "width": 22.0},
         ],
     },
     {
@@ -146,15 +164,19 @@ RUNS = [
             # with an 18-wide mouth, nine of sixteen marbles shot clean past the channel and fell
             # out of the world — measured 23 raw units off the centerline while dropping 22. The
             # pan has to be wider than that sideways throw.
-            {"name": "LowerA", "len": 80, "slope": 0.26, "radius": -40.0, "bank": 1.00, "width": (40.0, 20.0)},
-            {"name": "SplitC", "len": 90, "slope": 0.25, "radius": -42.0, "bank": 1.00, "width": 20.0, "split": "SplitC"},
+            {"name": "LowerA", "len": 65, "slope": 0.26, "radius": -40.0, "bank": 1.00, "width": (40.0, 30.0)},
+            {"name": "SplitC", "len": 75, "slope": 0.25, "radius": -42.0, "bank": 1.00, "width": 20.0, "split": "SplitC"},
         ],
     },
     {
         "name": "run3",
         "sections": [
-            # Also a catch basin — see the drop link — so it opens wide and narrows to the line.
-            {"name": "Finish", "len": 70, "slope": 0.20, "radius": +90.0, "bank": 0.30, "width": (32.0, 24.0)},
+            # Catch basin AND single-file finish: it opens at 32 to take the whole spread coming
+            # off the drop, then squeezes to 9 at the line so the pack has to queue and the
+            # photo-finish director has something to shoot. The taper is late and after the last
+            # hazard on purpose — this is the shape that jammed map 2 when it happened early and
+            # over a splitter.
+            {"name": "Finish", "len": 65, "slope": 0.20, "radius": +90.0, "bank": 0.30, "width": (32.0, 9.0)},
         ],
     },
 ]
@@ -178,20 +200,50 @@ SPLITS = {
         {"tag": "mid",   "offset": 0.0,  "bow": 0.0,  "width": 6.0},
         {"tag": "right", "offset": +6.5, "bow": +5.0, "width": 6.0},
     ],
+    # WEAVE — a two-lane fan, NOT the crossover it was meant to be. Recording why, because the
+    # obvious fix does not work.
+    #
+    # A true crossover needs the lanes to swap sides, so they must pass through each other, so one
+    # needs a bridge. The bridge has to clear the other lane's COLLISION wall, which the baker
+    # lofts at WALL_GAIN = 2.6, i.e. 6.5 raw units — not the 2.5 that is drawn. Clearing 6.5 costs
+    # 9 units of rise, and the rise has to be paid back out of the section's slope: 9 over 60
+    # stations is 0.15, which already forces this section to 0.30 and 120 long just to stay above
+    # the 0.09 stall floor.
+    #
+    # That much was buildable. What is not is the approach: with lanes 7 wide and centres 11 apart
+    # they overlap laterally for most of the crossing, and the bridge is only at full height in
+    # the middle — so the two collision envelopes interfere either side of the crossing point,
+    # where the bridge is still low. Measured: 9 of 16 marbles stopped in the weave. Making the
+    # bridge rise fast enough to clear the interference makes the ramp into it steep enough to
+    # stall marbles instead, and widening the lane spacing enough to avoid the overlap needs more
+    # width than the channel has.
+    #
+    # A real crossover needs the collision wall height to be per-segment so the under-lane can be
+    # lofted low, which is a change to the BAKER, not to this file. Until then this is an honest
+    # two-lane fan: two routes of different length that split and merge, with no bridge.
+    "Weave": [
+        {"tag": "under", "offset": -6.5, "bow": -3.0, "width": 6.0},
+        {"tag": "over", "offset": +6.5, "bow": +3.0, "width": 6.0},
+    ],
     # Five lanes. The baker's mouth bridging takes any lane count; three was only ever what it
     # had been fed.
+    # Five lanes at 5.4 wide, fed by a 30-wide channel — NOT 3.6 fed by 20. At 3.6 raw a lane is
+    # 14.4 world, about seven marbles abreast, and on a banked turn the field simply rode over the
+    # walls: six of sixteen marbles were lost across this fan in simulation. Lane count is not the
+    # problem, lane WIDTH is, so the feeding channel was widened to pay for it. Bows are small for
+    # the same reason SplitA's are — a bowing lane bleeds slope through the bank tilt.
     "SplitC": [
-        {"tag": "l2", "offset": -8.0, "bow": -6.0, "width": 3.6},
-        {"tag": "l1", "offset": -4.0, "bow": -2.5, "width": 3.6},
-        {"tag": "m",  "offset": 0.0,  "bow": 0.0,  "width": 3.6},
-        {"tag": "r1", "offset": +4.0, "bow": +2.5, "width": 3.6},
-        {"tag": "r2", "offset": +8.0, "bow": +6.0, "width": 3.6},
+        {"tag": "l2", "offset": -11.0, "bow": -3.0, "width": 5.4},
+        {"tag": "l1", "offset": -5.5,  "bow": -1.5, "width": 5.4},
+        {"tag": "m",  "offset": 0.0,   "bow": 0.0,  "width": 5.4},
+        {"tag": "r1", "offset": +5.5,  "bow": +1.5, "width": 5.4},
+        {"tag": "r2", "offset": +11.0, "bow": +3.0, "width": 5.4},
     ],
 }
 
 # The MAIN lane of each split — the one carrying the progress line. Everything else is an `alt`:
 # collidable and rendered, but measured by projecting onto this one.
-SPLIT_MAIN = {"SplitA": "safe", "SplitB": "mid", "SplitC": "m"}
+SPLIT_MAIN = {"SplitA": "safe", "Weave": "under", "SplitC": "m"}
 
 # Pinch-and-flare on HelixA: squeeze the channel to compress the pack, then release it. This is
 # exactly the shape that BROKE map 2 — a 40->24 world taper jammed the field and lost 53 marbles
@@ -211,15 +263,39 @@ RIPPLE_PERIOD = 8.0
 # and, before this course, used by nothing but the procedural chute.
 ZONES = [
     {"segments": ["Track-Washboard"], "from": 0.04, "to": 0.96, "material": "bump"},
-    {"segments": ["Track-TerraceB"], "from": 0.12, "to": 0.46, "material": "rumble"},
+    # RUMBLE IS A STRIP, NOT A STRETCH, and the length is a physics constraint. Its friction is
+    # 0.3, which is higher than the tan(slope) of EVERY section on this course (the steepest is
+    # HelixB at 0.30) — physics.js's rule is that a drag surface must stay under the local slope
+    # or gravity stops winning. Kept short, a marble crosses it on momentum and only loses speed;
+    # made long, it becomes somewhere the pack can come to rest and never restart. Widening this
+    # band means lowering the rumble coefficient, which is shared with the procedural chute.
+    {"segments": ["Track-TerraceB"], "from": 0.16, "to": 0.30, "material": "rumble"},
+    # ICE, placed on the run INTO the crossover. Friction 0.02 is far below the (2/7)*tan(slope)
+    # needed to roll, so a marble stops rolling and skids: it keeps its speed but loses the grip
+    # to pick a line, and arrives at the weave carrying momentum it cannot steer. Being far under
+    # tan(slope) it can never trap — on ice gravity always wins.
+    {"segments": ["Track-HelixB"], "from": 0.55, "to": 0.90, "material": "ice"},
 ]
 
 # Boost pads. No collider — game.js reads inBoost(s) each frame and accelerates whatever is on
 # top, so these are a predicate plus a Deco ribbon. Placed on the two stretches where a marble is
 # travelling straightest, because BOOST_ACCEL fires along the track tangent.
 BOOST = [
-    {"segments": ["Track-TerraceB"], "from": 0.60, "to": 0.90},
-    {"segments": ["Track-Finish"], "from": 0.10, "to": 0.42},
+    {"segments": ["Track-TerraceB"], "from": 0.62, "to": 0.92},
+    {"segments": ["Track-Finish"], "from": 0.10, "to": 0.40},
+]
+
+# Kicker bands: telegraphed, push-only shoves. game.js owns the whole behaviour (_applyKickers
+# brightens the pad over the last third of each cycle as a TELL, then _fireKicker punches marbles
+# sideways, alternating direction by index so the pack SPLITS rather than slides). The course only
+# supplies the band and a Deco ribbon to light up.
+#
+# ORDER IS THE CONTRACT: the Nth entry here pairs with Deco-Kicker-N, because track-glb.js zips
+# the sorted kicker meshes against the baked KICKER_BANDS array. Placed on wide, near-level
+# stretches — a sideways punch on a narrow banked lane just deletes marbles.
+KICKERS = [
+    {"segments": ["Track-Washboard"], "from": 0.30, "to": 0.62},
+    {"segments": ["Track-TerraceB"], "from": 0.44, "to": 0.60},
 ]
 
 
@@ -430,6 +506,35 @@ def build_channel(name, centres, ups, half_widths, material):
     me = bpy.data.meshes.new(name)
     me.from_pydata(verts, [], faces)
     me.update()
+
+    # ── UVs ──
+    # V runs along the sweep and U around the cross-section, BOTH measured in real raw units and
+    # divided by TEX_TILE, so the tread is the same physical size everywhere: it does not stretch
+    # where the channel widens into a catch pan (40 units) or squeezes to the single-file finish
+    # (9). Building UVs from the outline's own edge lengths is what buys that — a naive
+    # index-based U would smear the pattern across a wide floor and bunch it on a narrow one.
+    #
+    # Faces were appended in (ring, outline-edge) order as quads, so loop index is
+    # face*4 + corner and the corners follow the same (a+p, a+q, b+q, b+p) order used above.
+    uvl = me.uv_layers.new(name="UVMap").data
+    sweep = [0.0]
+    for i in range(1, n):
+        sweep.append(sweep[-1] + _len(_sub(centres[i], centres[i - 1])))
+    fi = 0
+    for i in range(n - 1):
+        ring_a = verts[i * 8:(i + 1) * 8]
+        perim = [0.0]
+        for k in range(len(OUTLINE)):
+            a = ring_a[OUTLINE[k]]
+            b = ring_a[OUTLINE[(k + 1) % len(OUTLINE)]]
+            perim.append(perim[-1] + _len(_sub(b, a)))
+        v0, v1 = sweep[i] / TEX_TILE, sweep[i + 1] / TEX_TILE
+        for k in range(len(OUTLINE)):
+            u0, u1 = perim[k] / TEX_TILE, perim[k + 1] / TEX_TILE
+            for c, uv in enumerate(((u0, v0), (u1, v0), (u1, v1), (u0, v1))):
+                uvl[fi * 4 + c].uv = uv
+            fi += 1
+
     me.materials.append(material)
     ob = bpy.data.objects.new(name, me)
     bpy.context.scene.collection.objects.link(ob)
@@ -469,7 +574,8 @@ def build_ribbon(name, centres, ups, half_widths, material, lift=0.06, inset=0.7
     return ob
 
 
-def build_bowl(name, centre, rim_r, throat_r, rim_z, throat_z, material, segs=18, rings=10):
+def build_bowl(name, centre, rim_r, throat_r, rim_z, throat_z, material, segs=18, rings=10,
+               slots=((0.0, 2), (math.pi, 2)), slot_rings=(6, 8)):
     """
     The funnel. Marbles arrive over the rim, spiral, and drop through the open throat.
 
@@ -509,8 +615,25 @@ def build_bowl(name, centre, rim_r, throat_r, rim_z, throat_z, material, segs=18
         p11 = base + (r + 1) * segs + s2
         return (p00, p10, p11, p01) if flip else (p00, p01, p11, p10)
 
+    # MULTIPLE THROATS. `slots` opens gaps in the cone wall at given angles over the `slot_rings`
+    # band, so marbles spiralling down drop through whichever gap they reach first rather than all
+    # funnelling to one exit — the funnel becomes a randomiser, which is what a funnel is for.
+    # Both the inner surface AND the outer shell are skipped, or the hole would be capped from
+    # below by the solid's underside and nothing would fall through.
+    def in_slot(r, sg):
+        if not (slot_rings[0] <= r < slot_rings[1]):
+            return False
+        a = 2.0 * math.pi * sg / segs
+        for centre_a, half in slots:
+            d = abs((a - centre_a + math.pi) % (2.0 * math.pi) - math.pi)
+            if d <= (2.0 * math.pi * half / segs):
+                return True
+        return False
+
     for r in range(rings):
         for s in range(segs):
+            if in_slot(r, s):
+                continue
             faces.append(quad(0, r, s, False))       # inner surface
             faces.append(quad(inner, r, s, True))    # outer shell
     # close the rim and the throat so the solid is sealed
@@ -527,6 +650,59 @@ def build_bowl(name, centre, rim_r, throat_r, rim_z, throat_z, material, segs=18
     ob = bpy.data.objects.new(name, me)
     bpy.context.scene.collection.objects.link(ob)
     return ob
+
+
+# Raw units per texture repeat. 4.0 puts one tread cell every 16 world units — about eight marble
+# diameters — which reads as surface grain at race pace rather than as a pattern.
+TEX_TILE = 4.0
+
+
+def make_ramp_texture(name, tint, size=128):
+    """
+    A procedural tread plate, generated per tint.
+
+    Generating one image PER MATERIAL rather than one shared image plus a tint node is deliberate:
+    it keeps every material a single Image Texture wired straight to Base Color, which is the one
+    shape the glTF exporter always round-trips cleanly. Mixing nodes export as baked approximations
+    or not at all depending on the graph.
+    """
+    img = bpy.data.images.get(name)
+    if img:
+        bpy.data.images.remove(img)
+    img = bpy.data.images.new(name, size, size)
+    px = [0.0] * (size * size * 4)
+    for y in range(size):
+        for x in range(size):
+            # transverse ridges along the direction of travel, plus a faint lengthwise seam
+            ridge = 0.20 if (y % 16) < 3 else 0.0
+            seam = 0.10 if (x % 32) < 2 else 0.0
+            # deterministic grain — no Math.random equivalent needed, and it keeps re-runs stable
+            h = math.sin((x * 12.9898 + y * 78.233)) * 43758.5453
+            grain = ((h - math.floor(h)) - 0.5) * 0.10
+            k = 1.0 + ridge + seam + grain
+            i = (y * size + x) * 4
+            px[i] = max(0.0, min(1.0, tint[0] * k))
+            px[i + 1] = max(0.0, min(1.0, tint[1] * k))
+            px[i + 2] = max(0.0, min(1.0, tint[2] * k))
+            px[i + 3] = 1.0
+    img.pixels = px
+    img.pack()
+    return img
+
+
+def make_textured_material(name, tint, rough=0.62, metal=0.0):
+    """Principled BSDF with a generated tread image on Base Color."""
+    mat = bpy.data.materials.new(name)
+    mat.use_nodes = True
+    nt = mat.node_tree
+    bsdf = nt.nodes["Principled BSDF"]
+    tex = nt.nodes.new("ShaderNodeTexImage")
+    tex.image = make_ramp_texture(name + "Tex", tint)
+    tex.location = (-320, 220)
+    nt.links.new(bsdf.inputs["Base Color"], tex.outputs["Color"])
+    bsdf.inputs["Roughness"].default_value = rough
+    bsdf.inputs["Metallic"].default_value = metal
+    return mat
 
 
 def make_material(name, rgba, rough=0.55, metal=0.0, emit=None, emit_strength=1.0):
@@ -662,12 +838,15 @@ def check_overlap(all_pts, near=26.0, skip=60):
 def run():
     clear_previous()
 
-    mat_track = make_material("TrackSurface", (0.42, 0.47, 0.56, 1.0), rough=0.62)
-    mat_lane = make_material("TrackLane", (0.36, 0.42, 0.52, 1.0), rough=0.62)
-    mat_risk = make_material("TrackRisk", (0.52, 0.34, 0.34, 1.0), rough=0.60)
-    mat_bowl = make_material("TrackBowl", (0.38, 0.40, 0.50, 1.0), rough=0.45, metal=0.2)
+    # The RAMP surfaces are textured; props and Deco overlays stay flat colour so they read as
+    # markings rather than as more track.
+    mat_track = make_textured_material("TrackSurface", (0.42, 0.47, 0.56), rough=0.62)
+    mat_lane = make_textured_material("TrackLane", (0.34, 0.40, 0.50), rough=0.62)
+    mat_risk = make_textured_material("TrackRisk", (0.54, 0.33, 0.32), rough=0.58)
+    mat_bowl = make_textured_material("TrackBowl", (0.36, 0.39, 0.50), rough=0.45, metal=0.2)
     mat_peg = make_material("ObsPeg", (0.86, 0.44, 0.18, 1.0), rough=0.40, metal=0.25)
     mat_gate = make_material("ObsGate", (0.80, 0.30, 0.42, 1.0), rough=0.45, metal=0.20)
+    mat_timed = make_material("ObsTimedGate", (0.95, 0.72, 0.15, 1.0), rough=0.35, metal=0.45)
     mat_paddle = make_material("ObsPaddle", (0.22, 0.68, 0.72, 1.0), rough=0.35, metal=0.35)
     mat_boost = make_material("DecoBoost", (0.03, 0.30, 0.38, 1.0), rough=0.40,
                               emit=(0.13, 0.83, 0.93, 1.0), emit_strength=2.2)
@@ -675,6 +854,13 @@ def run():
                                emit=(0.95, 0.62, 0.16, 1.0), emit_strength=0.6)
     mat_bump = make_material("DecoBump", (0.28, 0.24, 0.32, 1.0), rough=0.80,
                              emit=(0.72, 0.62, 0.95, 1.0), emit_strength=0.5)
+    # Magenta so a kicker never reads as a friendly cyan boost pad. track-glb.js CLONES this per
+    # band at load, because GLTFLoader would otherwise hand every ribbon the same material
+    # instance and charging one would light them all.
+    mat_kicker = make_material("DecoKicker", (0.23, 0.04, 0.32, 1.0), rough=0.50,
+                               emit=(0.91, 0.47, 0.98, 1.0), emit_strength=1.4)
+    mat_ice = make_material("DecoIce", (0.62, 0.80, 0.92, 1.0), rough=0.05, metal=0.1,
+                            emit=(0.40, 0.70, 0.95, 1.0), emit_strength=0.35)
 
     made = []
     course = []
@@ -799,8 +985,15 @@ def run():
                     lc, lu, lw = [], [], []
                     for i in range(lo, hi + 1):
                         u01 = (i - lo) / float(sec["len"])
-                        lat = lane["offset"] + lane["bow"] * math.sin(math.pi * u01)
-                        lc.append(_add(pts[i], _mul(rights[i], lat)))
+                        if lane.get("cross"):
+                            lat = lane["offset"] * math.cos(math.pi * u01)
+                        else:
+                            lat = lane["offset"] + lane["bow"] * math.sin(math.pi * u01)
+                        c = _add(pts[i], _mul(rights[i], lat))
+                        rise = lane.get("height", 0.0)
+                        if rise:
+                            c = _add(c, _mul(ups[i], rise * math.sin(math.pi * u01)))
+                        lc.append(c)
                         lu.append(ups[i])
                         lw.append(lane["width"])
                     mat = mat_track if lane["tag"] == main_tag else (
@@ -838,13 +1031,16 @@ def run():
             ws.append(section_width(sec, (i - lo) / float(sec["len"])))
         made.append(build_ribbon(f"Deco-{tag}-{idx}", cs, us, ws, material))
 
+    zone_mat = {"rumble": mat_rumble, "bump": mat_bump, "ice": mat_ice}
     for i, z in enumerate(ZONES):
         for seg in z["segments"]:
-            strip("Rumble" if z["material"] == "rumble" else "Bump", seg, z["from"], z["to"],
-                  mat_rumble if z["material"] == "rumble" else mat_bump, i)
+            strip(z["material"].capitalize(), seg, z["from"], z["to"], zone_mat[z["material"]], i)
     for i, b in enumerate(BOOST):
         for seg in b["segments"]:
             strip("Boost", seg, b["from"], b["to"], mat_boost, i)
+    for i, k in enumerate(KICKERS):
+        for seg in k["segments"]:
+            strip("Kicker", seg, k["from"], k["to"], mat_kicker, i)
 
     # ── props ──
     # Pegs and paddles only on the level terraces and the finish basin, never in a split lane: a
@@ -852,22 +1048,36 @@ def run():
     peg_n = gate_n = 0
     m1 = marched["run1"]
     tb_run, tb_lo, tb_hi = section_index["Track-TerraceB"]
-    for i in range(tb_lo + 50, tb_hi - 4, 11):
-        for lat in (-6.0, 6.0):
+    for i in range(tb_lo + 58, tb_hi - 3, 7):
+        for lat in (-4.5, 4.5):
             add_peg(f"Obs-Peg-{peg_n}", _add(m1["pts"][i], _mul(m1["rights"][i], lat)), mat_peg)
             peg_n += 1
     # Gates: a chicane that pinches alternately left then right, so the pack has to weave.
-    for k, (station, lat) in enumerate(((tb_lo + 14, -5.0), (tb_lo + 26, 5.0), (tb_lo + 38, -5.0))):
+    # ONE static gate, not a chicane. The terrace is only 75 stations long and already carries a
+    # sweeping bar, two counter-rotating paddles, a peg field and a rumble strip; adding a
+    # staggered pair of fixed blockers on top of that gave the pack nowhere to go and marbles
+    # piled up here in simulation. Hazards need room between them to be hazards rather than a wall.
+    for k, (station, lat) in enumerate(((tb_lo + 12, -6.5),)):
         add_gate(f"Obs-Gate-{gate_n}", _add(m1["pts"][station], _mul(m1["rights"][station], lat)), mat_gate)
         gate_n += 1
+    # TIMED gate: a long bar on the centreline that track-glb.js spins slowly about world Y, so it
+    # rakes across the terrace and the lane behind it is open for roughly half of each turn. It
+    # SWEEPS rather than rising and falling — a lifting slab pinned marbles against the floor on
+    # its downstroke and stopped the field dead. See the Obs-TimedGate branch in track-glb.js.
+    timed_n = 0
+    for station, lat in ((tb_lo + 30, 0.0),):
+        add_gate(f"Obs-TimedGate-{timed_n}",
+                 _add(m1["pts"][station], _mul(m1["rights"][station], lat)), mat_timed,
+                 size=(7.0, 1.2, 2.4))
+        timed_n += 1
     # Counter-rotating paddles — the trailing -1 is what makes the pair sweep opposite ways.
-    for idx, station in enumerate((tb_lo + 62, tb_lo + 78)):
+    for idx, station in enumerate((tb_lo + 46, tb_lo + 58)):
         add_paddle(f"Obs-Paddle-{idx}", m1["pts"][station], mat_paddle)
 
     m3 = marched["run3"]
     f_run, f_lo, f_hi = section_index["Track-Finish"]
-    for i in range(f_lo + 46, f_hi - 4, 9):
-        for lat in (-7.0, 0.0, 7.0):
+    for i in range(f_lo + 28, f_lo + 52, 8):
+        for lat in (-5.0, 0.0, 5.0):
             add_peg(f"Obs-Peg-{peg_n}", _add(m3["pts"][i], _mul(m3["rights"][i], lat)), mat_peg)
             peg_n += 1
 
@@ -894,6 +1104,7 @@ def run():
         "links": links,
         "zones": ZONES,
         "boost": BOOST,
+        "kickers": KICKERS,
     }
     sc_path = os.path.join(root, SIDECAR_REL.replace("/", os.sep))
     with open(sc_path, "w", encoding="utf-8") as fh:
@@ -915,6 +1126,7 @@ def run():
         "channels": len(made),
         "pegs": peg_n,
         "gates": gate_n,
+        "timed_gates": timed_n,
         "swept_stations": stations,
         "drop_raw": round(drop, 2),
         "section_slopes": per_section,

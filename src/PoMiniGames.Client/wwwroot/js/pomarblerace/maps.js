@@ -50,6 +50,13 @@ const spiralWorks = createGlbCourse({
   collision: SPIRAL_WORKS_COL,
   // Track-Bowl is a funnel with no ring structure, so it collides against its own geometry.
   bowlMeshName: 'Track-Bowl',
+  // FINISH EARLY, at the foot of the Track-LowerA loop (world s 2270.7, 62.3% of the geometry).
+  // That loop climbs 23.3 world units and needs ~59 u/s at the bottom simply to crest, so the
+  // field bunches there and almost nothing gets over — the race was being decided by game.js's
+  // RACE_TIMEOUT instead of by anyone crossing a line. Everything before it descends cleanly, so
+  // the line moves to 2230 (40 units clear of the climb) and the raceable course becomes the
+  // race. The geometry beyond is still built and still rendered; it is simply past the line now.
+  finishS: 2230,
 });
 
 const grandSpiral = createGlbCourse({

@@ -570,8 +570,10 @@
     // lives there and always did. Removing the GL layer is what makes it
     // visible again; nothing had to be rebuilt to replace it.
     //
-    // boardGl.js itself stays in the repo: TicTacToe still mounts it, and the
-    // 3x3 stamped-mark case never had this problem.
+    // boardGl.js was kept in the repo at the time because TicTacToe still mounted
+    // it. It did have the same problem there — on a 6×6 grid it drew the marks as
+    // scattered single slashes straddling cell borders — so TicTacToe dropped the
+    // GL layer too (2026-08-10) and the now-unused renderer was deleted with it.
     //
 
     private void HandleDrop(int col)

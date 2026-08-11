@@ -85,7 +85,9 @@ export async function createRenderer(opts) {
     // component renders; a canvas three.js created has no such attribute, so
     // every scoped rule silently stops matching it. Copying className across —
     // which is what the old swap did — preserves the selector but not the scope,
-    // so the rule still cannot match. See boardGl.mount.
+    // so the rule still cannot match. (boardGl.js was the worked example here; it
+    // was deleted 2026-08-10 when the last board dropped its GL layer. The
+    // constraint is unchanged — it applies to every Blazor-hosted canvas.)
     const canvas = o.canvas || undefined;
 
     if (o.preferWebGPU !== false) {

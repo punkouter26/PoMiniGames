@@ -36,12 +36,13 @@
         <GameIntro CueScope="pobrawl"
                    Title="@TitleContent"
                    Objective="@IntroObjective"
-                   Controls="@HowToPlayContent"
+                   Controls="@IntroControlsContent"
                    Mode="@_introMode"
                    Options="@IntroOptions"
                    StartEnabled="@(_mode != "2p" || _twoPlayerReady)"
                    StartLabel="@(_mode == "2p" ? "FIGHT" : "OK")"
-                   StartHint="@(_mode == "2p" ? "Both players lock in to fight" : null)"
+                   StartHint="@TwoPlayerStartHint"
+                   DialogLabel="@IntroDialogLabel"
                    CaptureKeys="@(_mode == "2p")"
                    OnKey="OnIntroKey"
                    OnStart="OnIntroStartAsync" />
@@ -138,7 +139,10 @@
         @* @-prefixed: Player1Id/Player2Id are string parameters, and Razor passes a quoted
            value to a string parameter as a literal — "_p1Char" would reach the board as
            that text and the "fighting now" highlight would silently never match. *@
-        <PoBrawlEloBoard Ratings="@_fighterRatings" Player1Id="@_p1Char" Player2Id="@_p2Char" />
+        <PoBrawlEloBoard Ratings="@_fighterRatings"
+                 Player1Id="@_p1Char"
+                 Player2Id="@_p2Char"
+                 ContextHint="Live fighters are marked as now." />
     }
 </GameShell>
 
@@ -302,6 +306,37 @@
 
     private RenderFragment TitleContent => @<span><span aria-hidden="true">🥊</span> Brawl</span>;
 
+    private string IntroDialogLabel => _mode switch
+    {
+        "2p" => "Brawl two-player setup",
+        "demo" => "Brawl demo intro",
+        _ => "Brawl intro",
+    };
+
+    private string? TwoPlayerStartHint => _mode != "2p"
+        ? null
+        : _twoPlayerReady
+            ? "Both players are ready. Press FIGHT or wait for auto-start."
+            : $"Waiting: {ReadyLabel(1)} and {ReadyLabel(2)}";
+
+    private string ReadyLabel(int side)
+    {
+        var ready = side == 1 ? _p1Locked : _p2Locked;
+        return ready ? $"Player {side} ready" : $"Player {side} not ready";
+    }
+
+    private RenderFragment IntroControlsContent => _mode == "2p" ? TwoPlayerQuickControls : HowToPlayContent;
+
+    private RenderFragment TwoPlayerQuickControls => @<div>
+        <p>Best of @MaxRounds rounds. Pick fighters, lock in, then fight.</p>
+        <ul>
+            <li>Player 1: <kbd>A</kbd>/<kbd>D</kbd> choose, <kbd>F</kbd> lock, <kbd>S</kbd> block</li>
+            <li>Player 2: <kbd>←</kbd>/<kbd>→</kbd> choose, <kbd>K</kbd> lock, <kbd>↓</kbd> block</li>
+            <li>Attacks: P1 <kbd>F</kbd>/<kbd>G</kbd>, P2 <kbd>K</kbd>/<kbd>L</kbd> (hold to charge)</li>
+            <li>Supers: P1 <kbd>E</kbd>, P2 <kbd>O</kbd> when the purple meter is full</li>
+        </ul>
+    </div>;
+
     private RenderFragment HowToPlayContent => @<div>
         <p>Knock out your opponent — charge attacks and block at the right moment.</p>
         <ul>
@@ -423,8 +458,9 @@
     // keyboard. The keys still work exactly as before and remain the fast path;
     // this only adds the pointer route that was missing.
     private RenderFragment SelectContent => @<div class="gps-intro-versus">
+        <p class="pb-intro-ready" role="status">@TwoPlayerStartHint</p>
         <div>
-            <div class="gps-intro-side-title">Player 1</div>
+            <div class="gps-intro-side-title">Player 1 <span class="pb-intro-side-state">@(_p1Locked ? "Ready" : "Picking")</span></div>
             <div class="gps-intro-side-keys">A / D move · F lock in — or tap a name</div>
             <ul class="gps-intro-roster">
                 @for (int i = 0; i < PickableRoster.Length; i++)
@@ -447,7 +483,7 @@
         </div>
         <div class="gps-intro-vs-divider">VS</div>
         <div>
-            <div class="gps-intro-side-title">Player 2</div>
+            <div class="gps-intro-side-title">Player 2 <span class="pb-intro-side-state">@(_p2Locked ? "Ready" : "Picking")</span></div>
             <div class="gps-intro-side-keys">← / → move · K lock in — or tap a name</div>
             <ul class="gps-intro-roster">
                 @for (int i = 0; i < PickableRoster.Length; i++)
@@ -478,7 +514,7 @@
         }
         @if (_mode == "1p")
         {
-            <div>ELO @_rating.Elo (@(_lastEloDelta >= 0 ? "+" : "")@_lastEloDelta) vs @CharName(_p2Char) @PresidentElo(LadderRungOf(_p2Char))</div>
+            <div>Elo @_rating.Elo (@(_lastEloDelta >= 0 ? "+" : "")@_lastEloDelta) vs @CharName(_p2Char) @PresidentElo(LadderRungOf(_p2Char))</div>
             @if (_champion)
             {
                 <div>🏆 Ladder complete — every president is down! Starting over at @Roster[0].Name.</div>
@@ -517,7 +553,10 @@
         @* Roster tier list. Fed only by demo matches, but shown to everyone — this
            is the answer to "who is actually good?", which is a question only the
            players picking fighters ever ask. *@
-        <PoBrawlEloBoard Ratings="@_fighterRatings" Player1Id="@_p1Char" Player2Id="@_p2Char" />
+        <PoBrawlEloBoard Ratings="@_fighterRatings"
+                 Player1Id="@_p1Char"
+                 Player2Id="@_p2Char"
+                 ContextHint="Current matchup is highlighted as now." />
     </div>;
 
     protected override void OnInitialized()
@@ -982,7 +1021,7 @@
         var bucket = _gameStats.GetDifficultyBucket(_stats, Difficulty.Medium);
         _statItems = _mode == "1p"
             ? GameStatsPanel.Build(bucket, includeDraws: false, includeElo: false,
-                ("ELO", _rating.Elo.ToString()),
+                ("Elo", _rating.Elo.ToString()),
                 ("Best KO", _bestKo > 0 ? $"{_bestKo:0.00}s" : "0s"))
             : GameStatsPanel.Build(bucket, includeDraws: false, includeElo: true,
                 ("Best KO", _bestKo > 0 ? $"{_bestKo:0.00}s" : "0s"));

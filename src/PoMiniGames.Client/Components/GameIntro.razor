@@ -31,11 +31,12 @@
    NOT applied to TwoPlayer: that card carries character selection, so a stray
    tap would start the match before both players have chosen. Demo is included —
    it is already auto-starting on a timer, so a tap only skips the wait. *@
-<div class="gps-intro-overlay" role="dialog" aria-modal="true" aria-label="Game intro"
+<div class="gps-intro-overlay" role="dialog" aria-modal="true" aria-label="@(string.IsNullOrWhiteSpace(DialogLabel) ? "Game intro" : DialogLabel)"
      @ref="_root" tabindex="0"
      @onclick="HandleOverlayClick"
      @onkeydown="HandleKey" @onkeydown:preventDefault="CaptureKeys">
-    <div class="gps-intro-card gps-intro-card--@ModeClass">
+    <div class="gps-intro-card gps-intro-card--@ModeClass"
+        @onclick:stopPropagation="@(Mode == IntroMode.TwoPlayer)">
         @if (Title != null)
         {
             <div class="gps-intro-title">@Title</div>
@@ -133,6 +134,13 @@
 
     /// <summary>How long the demo card flashes before auto-starting.</summary>
     [Parameter] public int DemoDelayMs { get; set; } = 2000;
+
+    /// <summary>
+    /// Optional accessible label for the modal dialog. Games can provide a
+    /// mode-specific label (for example, "Brawl two-player setup") so screen-reader
+    /// users get immediate context.
+    /// </summary>
+    [Parameter] public string? DialogLabel { get; set; }
 
     /// <summary>Forward keydowns to the host (TwoPlayer option selection).</summary>
     [Parameter] public bool CaptureKeys { get; set; }

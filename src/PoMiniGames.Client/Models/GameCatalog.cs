@@ -119,12 +119,15 @@ public static class GameCatalog
         // so suppressing its chip left the row reading "2P Demo" — a player looking
         // for a solo game scanned the chips, saw no 1P, and concluded Brawl needed a
         // second person. It does not: /pobrawl/1player is the fifteen-president
-        // ladder, the only ELO-rated and leaderboard-backed mode the game has.
+        // ladder, the only Elo-rated and leaderboard-backed mode the game has.
+        //
+        // Auth consistency: every PoBrawl entry point opts into autoGuest so
+        // 1P, 2P and demo all land the same way for anonymous visitors.
         new(GameKeys.PoBrawl, "Brawl", "🥊",
         [
-            new(GameMode.OnePlayer, "/pobrawl/1player"),
-            new(GameMode.TwoPlayer, "/pobrawl/2player"),
-            new(GameMode.Demo, "/pobrawl/demo"),
+            new(GameMode.OnePlayer, "/pobrawl/1player?autoGuest=1"),
+            new(GameMode.TwoPlayer, "/pobrawl/2player?autoGuest=1"),
+            new(GameMode.Demo, "/pobrawl/demo?autoGuest=1"),
         ]) { ChipPrimary = true },
 
         // ChipPrimary: 1P is the card head, so the chip row would otherwise read

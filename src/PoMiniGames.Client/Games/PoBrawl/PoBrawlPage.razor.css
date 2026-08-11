@@ -747,6 +747,38 @@
     pointer-events: none;
 }
 
+.pb-intro-ready {
+    grid-column: 1 / -1;
+    margin: 0 0 0.3rem;
+    padding: 0.45rem 0.55rem;
+    border-radius: 8px;
+    font-size: 0.78rem;
+    color: var(--color-text-secondary);
+    background: rgba(148, 163, 184, 0.12);
+    border: 1px solid rgba(148, 163, 184, 0.28);
+}
+
+.pb-intro-side-state {
+    margin-left: 0.4rem;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--color-text-secondary);
+}
+
+@media (max-width: 640px) {
+    .pb-intro-ready {
+        font-size: 0.72rem;
+        padding: 0.38rem 0.45rem;
+    }
+
+    .pb-intro-side-state {
+        display: block;
+        margin: 0.18rem 0 0;
+    }
+}
+
 /* ── Character select overlay ────────────────────────── */
 
 .pb-overlay {

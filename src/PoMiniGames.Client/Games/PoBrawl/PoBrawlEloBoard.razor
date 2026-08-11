@@ -15,6 +15,10 @@
 
 <section class="pb-elo" aria-labelledby="pb-elo-title">
     <h2 id="pb-elo-title" class="gps-phase-h pb-elo-title">Fighter Ratings — Top 10</h2>
+    @if (!string.IsNullOrWhiteSpace(ContextHint))
+    {
+        <p class="pb-elo-context">@ContextHint</p>
+    }
     @if (Ratings is null)
     {
         <p class="pb-elo-empty">Loading ratings…</p>
@@ -46,7 +50,13 @@
                     var isLive = r.FighterId == Player1Id || r.FighterId == Player2Id;
                     <tr class="@(isLive ? "pb-elo-live" : "")">
                         <td class="pb-elo-rank">@(i + 1)</td>
-                        <td>@r.DisplayName @if (isLive) { <span class="pb-elo-now" aria-label="fighting now">● now</span> }</td>
+                        <td>
+                            <span class="pb-elo-name">@r.DisplayName</span>
+                            @if (isLive)
+                            {
+                                <span class="pb-elo-now" aria-label="fighting now">now</span>
+                            }
+                        </td>
                         <td class="pb-elo-num pb-elo-score">@r.Elo</td>
                         <td class="pb-elo-num">@r.Wins</td>
                         <td class="pb-elo-num">@r.Losses</td>
@@ -70,6 +80,11 @@
 
     /// <summary>Right fighter currently on screen.</summary>
     [Parameter] public string? Player2Id { get; set; }
+
+    /// <summary>
+    /// Optional helper copy that ties the live match context to the highlighted rows.
+    /// </summary>
+    [Parameter] public string? ContextHint { get; set; }
 
     private PoBrawlFighterRating[]? _renderedRatings;
     private string? _renderedP1;

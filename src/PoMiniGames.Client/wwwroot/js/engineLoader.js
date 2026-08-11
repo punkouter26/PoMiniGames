@@ -135,14 +135,26 @@ export async function loadEngine(name) {
  * Reload" bar with no explanation. GameShell probes this first and shows a real
  * message instead.
  *
- * The probe result is cached: creating and discarding contexts is not free, and
- * WebGL availability cannot change within a page lifetime. The throwaway canvas
- * is never attached to the DOM, and we explicitly lose the context so the probe
- * does not consume one of the browser's small pool of live contexts.
+ * Only a POSITIVE result is cached. Creating and discarding contexts is not
+ * free, so a "yes" is remembered for the page lifetime — but a "no" is NOT
+ * durable the way this once assumed. `getContext` returns null on transient
+ * conditions too: the browser is at its live-context ceiling at that instant
+ * (Chrome allows ~16 per renderer process, and every 3D game in this SPA holds
+ * one while it is mounted), or the GPU process is mid-restart. Caching that
+ * answer pinned "This game needs 3D graphics" onto every three.js game for the
+ * rest of the tab's life, with a hard reload as the only way out — the failure
+ * looked permanent and machine-wide when it was neither.
+ *
+ * Re-probing on a negative costs one throwaway canvas per navigation into a 3D
+ * game, which is nothing next to the engine boot that follows it.
+ *
+ * The throwaway canvas is never attached to the DOM, and we explicitly lose the
+ * context so the probe does not itself consume one of the pool slots it is
+ * competing for.
  */
 let _webglSupported = null;
 export function isWebGlAvailable() {
-    if (_webglSupported !== null) return _webglSupported;
+    if (_webglSupported === true) return true;
     try {
         const c = document.createElement('canvas');
         const gl = c.getContext('webgl2') || c.getContext('webgl');

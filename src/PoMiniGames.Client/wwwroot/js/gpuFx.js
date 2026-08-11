@@ -333,6 +333,13 @@ function teardown() {
         if (instanceBuffer) gl.deleteBuffer(instanceBuffer);
         if (vao) gl.deleteVertexArray(vao);
         if (prog) gl.deleteProgram(prog);
+        // Give the context back too, not just its objects. Removing the canvas
+        // below detaches it but leaves the context live until GC, and the
+        // browser's live-context pool (~16 per renderer process in Chrome) is
+        // shared with every 3D game in this SPA — a leaked slot here is a
+        // getContext() that returns null in PoBrawl later. See engineLoader's
+        // isWebGlAvailable().
+        gl.getExtension('WEBGL_lose_context')?.loseContext();
     }
     if (canvas && canvas.parentNode) canvas.parentNode.removeChild(canvas);
     gl = null; prog = null; vao = null; instanceBuffer = null; canvas = null;

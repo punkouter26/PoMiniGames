@@ -80,7 +80,14 @@
         @* Games that cannot render without WebGL get an explanation instead of a
            crash (browser audit #5). ChildContent is not rendered at all, so the
            engine's container never exists and its `init` bails on "container not
-           found" rather than throwing from inside three.js. *@
+           found" rather than throwing from inside three.js.
+
+           Browser audit #7 (2026-08-10): the only escape was "← Back to all games",
+           which dropped the player on the catalog grid and made them re-pick a
+           game — fine for a desktop, but a phone user who came here from a deep
+           link had to back up twice to find a non-WebGL game. Surface the two
+           2D classics right in the alert so the player never has to make a
+           second choice. *@
         @if (RequiresWebGl && _webGlChecked && !_webGlAvailable)
         {
             <div class="gps-nogl" role="alert">
@@ -91,7 +98,12 @@
                     Turning on hardware acceleration in your browser settings usually
                     fixes it — or try a different browser or device.
                 </p>
-                <a class="gps-nogl-link" href="/">← Back to all games</a>
+                <div class="gps-nogl-actions">
+                    <a class="gps-nogl-link" href="/">← Back to all games</a>
+                    <span class="gps-nogl-or">or play a 2D game now:</span>
+                    <a class="gps-nogl-link gps-nogl-link--chip" href="/tictactoe/1player">❌ Tic-Tac-Toe</a>
+                    <a class="gps-nogl-link gps-nogl-link--chip" href="/connectfive/1player">🔴 Connect Five</a>
+                </div>
             </div>
         }
         else

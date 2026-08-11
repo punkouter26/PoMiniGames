@@ -167,6 +167,28 @@
   color: var(--color-accent-contrast);
 }
 
+/* Browser audit #7 (2026-08-10): secondary escape row so a player on a non-WebGL
+   device can pick a 2D game without backing up to the catalog grid first. */
+.gps-nogl-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+.gps-nogl-or {
+  font-size: 0.8rem;
+  color: var(--color-text-soft);
+  margin: 0 0.15rem;
+}
+
+.gps-nogl-link--chip {
+  margin-top: 0;
+  background: var(--surface-2);
+}
+
 /* Visually hidden but still in the accessibility tree — the clip-rect technique
    rather than `display:none`/`visibility:hidden`, both of which would stop screen
    readers announcing the live region entirely (browser audit #6). */

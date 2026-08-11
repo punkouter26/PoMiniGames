@@ -31,14 +31,23 @@
     }
     @* §9 mock banner — desktop gets the full-width shimmer banner; mobile gets
        a tappable dot that expands to the same label. Keeps the safety guard
-       visible without sacrificing ~36 px of chrome on portrait phones. *@
+       visible without sacrificing ~36 px of chrome on portrait phones.
+
+       Browser audit #5 (2026-08-10): the full-width banner read as an error/
+       warning to a first-time visitor who hit "Continue as Guest" on a sign-in
+       page that was already gated on auth being disabled. The mock data flag
+       is a server-side concern (Storage is in dev or a CI stub), not a user
+       concern. Surface it as a tiny dev-only corner pill with a tooltip; the
+       full banner + dot stays as a tooltip-driven secondary affordance for
+       devs who actually want to see why /leaderboards is empty. *@
     @if (AuthState.UsingMockData)
     {
-        <div class="gl-mock-banner" role="status" aria-live="polite">USING MOCK DATA</div>
-        <details class="gl-mock-banner--dot" aria-label="Mock data active — tap for details">
-            <summary aria-label="Mock data active"></summary>
-            <span>USING MOCK DATA</span>
-        </details>
+        <div class="gl-mock-banner">
+            <span class="gl-mock-banner__pill" title="Mock data backend — leadboards may be empty. This is a developer / preview-build signal, not an error." aria-label="Mock data backend active for this build">
+                <span aria-hidden="true">🧪</span> Dev build
+            </span>
+            <span class="gl-mock-banner__detail">Mock data backend — leaderboards may be empty</span>
+        </div>
     }
     <header class="gl-top-bar">
         @* 2026-08-08 audit #10: <nav> landmark. The brand link and the game

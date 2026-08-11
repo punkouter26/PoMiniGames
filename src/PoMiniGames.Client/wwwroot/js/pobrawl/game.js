@@ -5272,6 +5272,15 @@ export class BrawlGame {
     this._rigLenses = null;
     if (this.renderer) {
       this.renderer.dispose();
+      // dispose() frees the GPU objects three.js allocated; it does NOT release
+      // the WebGL context itself, which stays live until the detached canvas is
+      // garbage collected. This is an SPA — the player walks between the 3D
+      // games without a page load — so those zombie contexts accumulate against
+      // the browser's per-process ceiling (~16 in Chrome). Past it, the next
+      // getContext() can come back null and GameShell's probe reports "This game
+      // needs 3D graphics" on a machine that renders 3D fine.
+      // forceContextLoss() is WebGL-only; the WebGPU renderer has no such method.
+      try { this.renderer.forceContextLoss?.(); } catch { /* context already gone */ }
       this.renderer.domElement.remove();
     }
     if (this.banner) this.banner.remove();

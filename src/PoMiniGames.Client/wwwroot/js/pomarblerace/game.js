@@ -212,18 +212,21 @@ export class Game {
     // A lateral acceleration (÷ mass so it's independent of the mass unit), applied along the
     // track's local right vector.
     //
-    // NEGATED. This carried the opposite sign and a confident derivation for it: the baked basis
-    // defines right = dir x up, a camera's screen-right is likewise forward x up, so track-right
-    // ought to be screen-right and no correction should be needed. On the actual chase camera it
-    // steers backwards — press right, go left — which is what players report and what settles it.
+    // NOT negated. The sign has now been flipped twice and the history is the useful part:
     //
-    // The derivation only holds while the camera's forward really is the track tangent at the
-    // marble. It is not: scene.js aims the shot at the ROAD AHEAD rather than along the marble's
-    // own tangent, so on this course's reversing weave and banked turns the camera's forward and
-    // the local dir disagree by enough to flip which way `right` reads on screen. Steering is a
-    // feel property of the CAMERA, not of the track basis, so it is fixed empirically here rather
-    // than re-derived. Flip this sign back only alongside a change to how the camera is aimed.
-    const dv = (STEER_ACCEL / m.body.mass) * -dir * sdt;
+    //   1. Originally un-negated, derived from first principles — the baked basis defines
+    //      right = dir x up, a camera's screen-right is likewise forward x up, so track-right
+    //      should already be screen-right.
+    //   2. Negated, because players reported steering backwards. It was, at the time.
+    //   3. Un-negated again — because between (2) and now the CAMERA changed. It used to frame
+    //      the road centreline; it now anchors on the marble itself (see ROAD_BIAS). Reframing
+    //      the shot changed which way `right` reads on screen and undid the correction.
+    //
+    // The lesson worth keeping: steering feel is a property of the CAMERA, not of the track
+    // basis. The derivation in (1) is sound and holds whenever the shot is anchored on the
+    // subject. Do not re-derive this — if it ever feels backwards again, look first at what
+    // changed about the camera, then flip the sign and record why here.
+    const dv = (STEER_ACCEL / m.body.mass) * dir * sdt;
     m.body.velocity.x += rb.x * dv;
     m.body.velocity.y += rb.y * dv;
     m.body.velocity.z += rb.z * dv;

@@ -599,6 +599,11 @@ export function createScene(container) {
       gtao?.dispose?.();
       composer.dispose();
       renderer.dispose();
+      // …and hand the context back. dispose() only frees what three.js
+      // allocated inside it; the context survives on the detached canvas until
+      // GC runs, so hopping between the 3D games leaks one slot per visit out of
+      // the browser's ~16 (see pobrawl/game.js dispose()).
+      try { renderer.forceContextLoss?.(); } catch { /* context already gone */ }
       if (renderer.domElement && renderer.domElement.parentNode) {
         renderer.domElement.parentNode.removeChild(renderer.domElement);
       }

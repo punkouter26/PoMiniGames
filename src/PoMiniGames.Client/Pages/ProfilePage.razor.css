@@ -274,6 +274,32 @@
     margin-bottom: 0.875rem;
 }
 
+/* Browser audit #9 (2026-08-10): a heading row that pairs the section title
+   with a small inline legend. Used by the H2H section to explain the G / MS
+   chips, which previously had only a hover tooltip. */
+.prf-section-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 0.875rem;
+}
+
+.prf-section-head .prf-section-title { margin-bottom: 0; }
+
+.prf-h2h-legend {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.72rem;
+    color: var(--color-text-soft);
+}
+
+.prf-h2h-legend .prf-h2h-badge { cursor: default; }
+
+.prf-h2h-legend-lbl + .prf-h2h-badge { margin-left: 0.5rem; }
+
 /* ── Game grid ── */
 .prf-game-grid {
     display: grid;

@@ -133,6 +133,11 @@ export class SportsGame {
     if (this._onRemoteKey) window.removeEventListener('keydown', this._onRemoteKey);
     this._touchPad?.dispose();
     this.renderer.dispose();
+    // Release the context, not just the GPU objects — see the note in
+    // pobrawl/game.js dispose(). Without this the context outlives the game and
+    // eats a slot in the browser's small live-context pool for the rest of the
+    // SPA session. Optional-call: WebGPURenderer has no forceContextLoss.
+    try { this.renderer.forceContextLoss?.(); } catch { /* context already gone */ }
     this.canvas.remove();
     sprites.unloadAll();
   }

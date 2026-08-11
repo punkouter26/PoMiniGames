@@ -291,6 +291,12 @@ export function stop() {
     boundCanvas = null;
 
     disposeGl(gl, uniforms);
+    // disposeGl only deletes the program and VAO. Drop the context itself as
+    // well: the home page mounts and unmounts on every navigation, so without
+    // this each round trip to a game and back strands another live context, and
+    // the pool it is drawing from (~16 per renderer process in Chrome) is the
+    // same one the three.js games need. See engineLoader's isWebGlAvailable().
+    if (gl) gl.getExtension('WEBGL_lose_context')?.loseContext();
     uniforms = null;
     gl = null;
 }

@@ -349,6 +349,13 @@ function teardownGl() {
         if (tex) gl.deleteTexture(tex);
         if (vao) gl.deleteVertexArray(vao);
         if (prog) gl.deleteProgram(prog);
+        // Deleting the objects is not the same as giving the context back:
+        // detaching the canvas leaves the context live until GC collects it,
+        // and the browser's live-context pool is small (~16 per renderer
+        // process in Chrome). In an SPA that pool is shared with every other 3D
+        // game the player visits, and exhausting it makes the NEXT getContext()
+        // return null — which surfaces as GameShell's "needs 3D graphics" notice.
+        gl.getExtension('WEBGL_lose_context')?.loseContext();
     }
     if (glCanvas && glCanvas.parentNode) glCanvas.parentNode.removeChild(glCanvas);
     if (sceneCanvas) sceneCanvas.style.opacity = '';

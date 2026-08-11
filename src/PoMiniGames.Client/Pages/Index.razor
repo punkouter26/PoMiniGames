@@ -160,9 +160,11 @@
                            "Couple Quiz", a generic "How to play" pill read as a
                            missing link. The chip carries the mode label so a
                            player landing on the card knows the game is online
-                           multiplayer. *@
+                           multiplayer. Browser audit #2 (2026-08-10): prefer the
+                           chip's ChipUrl so the chip destination is distinct
+                           from the head's URL even on a single-mode card. *@
                         <a class="home-mode-chip home-mode-chip--@game.Primary.Mode.ToString().ToLowerInvariant()"
-                           href="@game.Primary.Url"
+                           href="@(game.Primary.ChipUrl ?? game.Primary.Url)"
                            title="@($"{game.Title} — {GameModes.ToDescription(game.Primary.Mode)}")"
                            aria-label="@($"{game.Title}, {GameModes.ToDescription(game.Primary.Mode)}")">@GameModes.ToLabel(game.Primary.Mode)</a>
                     }
@@ -213,7 +215,7 @@
     private RenderFragment ModeChip(CatalogGame game, CatalogMode m) =>
         IsPlayable(m)
             ? @<a class="home-mode-chip home-mode-chip--@(m.Mode.ToString().ToLowerInvariant())"
-                  href="@m.Url"
+                  href="@(m.ChipUrl ?? m.Url)"
                   title="@($"{game.Title} — {GameModes.ToDescription(m.Mode)}")"
                   aria-label="@($"{game.Title}, {GameModes.ToDescription(m.Mode)}")">@GameModes.ToLabel(m.Mode)</a>
             : @<span class="home-mode-chip home-mode-chip--offline"

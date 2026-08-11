@@ -28,7 +28,14 @@
                    OnStart="DismissIntro" />
     }
     <div class="pojoker-root">
-        <JesterStage AutoStart="true" Loop="@_isDemo" OnShowComplete="HandleShowComplete" />
+        @* Browser audit #1 (2026-08-10): do NOT auto-start the show on /pojoker
+           while the intro modal is up. AutoStart=true was arming the
+           beforeunload guard before the player had even read the controls —
+           click the brand link while the intro is up, browser prompts
+           "Leave site? Changes you made may not be saved." for a show that
+           hasn't begun. Demo mode keeps AutoStart=true because the kiosk
+           has nobody to dismiss anything. *@
+        <JesterStage AutoStart="@(_isDemo || _introDone)" Loop="@_isDemo" OnShowComplete="HandleShowComplete" />
     </div>
 </GameShell>
 
@@ -66,7 +73,15 @@
     // chose Joker from the home page had the card yanked away after two seconds
     // before they could read it (2026-08-07 browser audit #10).
     private bool _introDone;
-    private void DismissIntro() => _introDone = true;
+    private void DismissIntro()
+    {
+        _introDone = true;
+        // Re-render so the now-changed AutoStart flag re-evaluates inside
+        // JesterStage. Without this, AutoStart was already consumed as
+        // `false` on first render (intro up) and the show would not start
+        // even after dismissal.
+        StateHasChanged();
+    }
 
     protected override void OnInitialized() =>
         // Both routes render this page; only /pojoker/demo is the unattended one.

@@ -82,17 +82,35 @@
                home, picking Fun Quiz, picking 2P, dismissing the intro. Four
                taps to do what "Play again" should be one tap. The button is
                only shown when the page opts in via PlayAgain (default null
-               = OK only, preserving every other game's flow). *@
+               = OK only, preserving every other game's flow).
+
+               Browser audit #10 (2026-08-10): the "OK" label was a Windows
+               dialog relic — every game ends on this modal and most players
+               had no idea what OK was confirming. Two-button layout, plain
+               English, consistent across all 9 games: when PlayAgain is
+               present the primary is "Play again" and "Back" returns home;
+               when it isn't (solo), the primary is "Back to all games".
+               The keyboard focus lives on the primary action. *@
             @if (PlayAgain.HasDelegate)
             {
                 <button class="gps-play-again-btn gps-play-again-btn--secondary"
-                        @onclick="() => PlayAgain.InvokeAsync()">
+                        @onclick="Back">
+                    Back to @(BackTo == "/" ? "all games" : BackTo.TrimStart('/'))
+                </button>
+                <button class="gps-play-again-btn gps-play-again-btn--primary"
+                        @onclick="() => PlayAgain.InvokeAsync()"
+                        autofocus>
                     Play again
                 </button>
             }
-            <button class="gps-play-again-btn gps-play-again-btn--primary" @onclick="Ok" autofocus>
-                OK
-            </button>
+            else
+            {
+                <button class="gps-play-again-btn gps-play-again-btn--primary"
+                        @onclick="Back"
+                        autofocus>
+                    Back to all games
+                </button>
+            }
         </div>
     </div>
 </div>
@@ -317,4 +335,14 @@
         if (OnOk.HasDelegate) await OnOk.InvokeAsync();
         Navigation.NavigateTo(BackTo);
     }
+
+    /// <summary>
+    /// Browser audit #10 (2026-08-10): a single "Back" action used by both
+    /// modal CTAs (Back to all games / Back to X). Fires <see cref="OnOk"/>
+    /// first so a game holding end-of-match state outside the page still
+    /// gets a clean teardown before the navigation. Renamed from <c>Ok</c>
+    /// because the button label is no longer "OK" — calling a method <c>Ok</c>
+    /// that navigates was a relic of the old label.
+    /// </summary>
+    private Task Back() => Ok();
 }

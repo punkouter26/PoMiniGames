@@ -81,10 +81,11 @@
                to screen readers; default <h1> margins are stripped in games.css. *@
             <div class="gps-header-slot">
                 <h1 class="gps-game-title">🛡️ Survive</h1>
-                @* Audit #6: every game page gets an explicit "← Home" affordance
-                   next to its title, so a returning player on a small phone does
-                   not have to find the 14×14 brand mark in the corner. *@
-                <a class="gps-back-link" href="/" aria-label="Back to home" title="Back to home">← Home</a>
+                @* Browser audit #4 (2026-08-10): the "← Home" pill next to the
+                   game title duplicated the brand link in the top-left — same
+                   destination, two tab stops. The brand already gets every
+                   player home in one click and is the app-wide navigation
+                   affordance, so this strip is gone. *@
             </div>
 
             @* ── Natural-language AI status pill ── *@

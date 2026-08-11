@@ -16,16 +16,23 @@
             // which read as a missing leaderboard rather than a missing game.
             // PoSurvive is demo-only by design (it has no 1P scored mode — see
             // UnifiedLeaderboardEndpoints), so it is one of the 10 catalog
-            // games with no board. Surface that as a feature, not a gap:
-            //   • all 9 ranked games       (rankedCount of totalGames-1)
-            //   • 1 of 10 is demo-only      (PoSurvive)
+            // games with no board. Browser audit #8 (2026-08-10): the "demo-only"
+            // word still implied a leaderboard is missing because the game is
+            // limited. The Survive page is fully playable — its 1P mode is
+            // scored locally as a session count, not a competitive number, so
+            // there is nothing to rank. New copy: "{ranked} with leaderboards ·
+            // {remaining} no-leaderboard yet", and the title attribute points
+            // at the Survive card so the curious visitor can find the page.
             var rankedCount = _boards.Count;
             var totalGames = GameCatalog.All.Count;
-            var demoOnlyCount = totalGames - rankedCount;
-            string label = totalGames > 0 && demoOnlyCount == 0
+            var noBoardCount = totalGames - rankedCount;
+            string label = totalGames > 0 && noBoardCount == 0
                 ? $"{rankedCount} ranked games"
-                : $"{rankedCount} ranked games · {demoOnlyCount} demo-only";
-            <span class="lb-count" title="@demoOnlyCount of @totalGames games are demo-only by design and have no leaderboard">@label</span>
+                : $"{rankedCount} with leaderboards · {noBoardCount} no-leaderboard yet";
+            string title = noBoardCount == 0
+                ? $"{rankedCount} games contribute scores to a global leaderboard."
+                : $"{rankedCount} of {totalGames} games contribute scores to a global leaderboard. {noBoardCount} are still preview/session-counted — playable, not ranked.";
+            <span class="lb-count" title="@title">@label</span>
         }
     </header>
 

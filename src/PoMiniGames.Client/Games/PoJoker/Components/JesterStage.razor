@@ -71,17 +71,40 @@
     {
         if (firstRender)
         {
+            // Browser audit #1 (2026-08-10): the global beforeunload handler used to
+            // be registered unconditionally and gated on a window-scoped flag set to
+            // true the instant StartPerformance ran — so navigating away from /pojoker
+            // before the first joke arrived (or in Demo, at any point — looping shows
+            // never have work to lose) fired the "Leave site?" prompt on every link.
+            // Now the listener function is defined up front, but it is only *attached*
+            // once a 1-player show is mid-flight (see StartPerformance), and removed
+            // the moment it ends, so leaving the page is friction-free before Start,
+            // after Stop, on completion, and in Loop mode.
             await JS.InvokeVoidAsync("eval", @"window.__pojokerBeforeUnload = function(e) {
                 if (window.__pojokerShowRunning) { e.preventDefault(); e.returnValue = ''; }
-            };
-            window.addEventListener('beforeunload', window.__pojokerBeforeUnload);");
+            };");
 
             if (AutoStart && !_orchestrator.IsRunning)
             {
                 _ = StartPerformance();
             }
         }
+
+        // Browser audit #1 (2026-08-10): start the show on a false→true
+        // transition of AutoStart. The first-render check above covers the
+        // Demo case (AutoStart=true on first paint); this covers the
+        // post-intro case where the page flips AutoStart to true after the
+        // player dismisses the controls card. Without it, a 1-player show
+        // that waited for intro dismissal would never actually start.
+        if (AutoStart && !_firstAutoStartSeen && !_orchestrator.IsRunning)
+        {
+            _firstAutoStartSeen = true;
+            _ = StartPerformance();
+        }
+        _firstAutoStartSeen = _firstAutoStartSeen || AutoStart;
     }
+
+    private bool _firstAutoStartSeen;
 
     private async Task StartPerformance()
     {
@@ -101,7 +124,25 @@
         _orchestrator.SelectedCategory = "Dark";
         _orchestrator.SelectedSafeMode = false;
         _orchestrator.SelectedMoodLabel = "Random";
-        await JS.InvokeVoidAsync("eval", "window.__pojokerShowRunning = true;");
+
+        // Browser audit #1 (2026-08-10): arm the beforeunload guard ONLY for a
+        // non-loop 1-player show that has actually begun delivering jokes. Loop /
+        // demo shows never have work to lose (they auto-restart), and arming
+        // before the first joke arrived fired the prompt on every navigation.
+        // The listener function is installed once on first render; here we
+        // attach it and flip the gate flag. The finally block below detaches
+        // it and clears the flag when the show is no longer running.
+        bool armGuard = !Loop;
+        if (armGuard)
+        {
+            await JS.InvokeVoidAsync("eval",
+                "window.__pojokerShowRunning = true; window.addEventListener('beforeunload', window.__pojokerBeforeUnload);");
+        }
+        else
+        {
+            await JS.InvokeVoidAsync("eval", "window.__pojokerShowRunning = false;");
+        }
+
         try
         {
             // Iterative, not recursive: an attract screen can run for days, and each show
@@ -124,9 +165,13 @@
         }
         finally
         {
-            if (!_disposed)
+            if (!_disposed && armGuard)
             {
-                try { await JS.InvokeVoidAsync("eval", "window.__pojokerShowRunning = false;"); }
+                try
+                {
+                    await JS.InvokeVoidAsync("eval",
+                        "window.__pojokerShowRunning = false; window.removeEventListener('beforeunload', window.__pojokerBeforeUnload);");
+                }
                 catch { /* JS interop may be unavailable during teardown */ }
             }
         }
@@ -134,7 +179,15 @@
 
     private async Task StopPerformance()
     {
-        await JS.InvokeVoidAsync("eval", "window.__pojokerShowRunning = false;");
+        // Browser audit #1 (2026-08-10): clear the guard flag AND remove the
+        // listener so a manual Stop leaves the page navigable without prompt,
+        // not just "armed but with a flag that would block if anything re-arms".
+        try
+        {
+            await JS.InvokeVoidAsync("eval",
+                "window.__pojokerShowRunning = false; window.removeEventListener('beforeunload', window.__pojokerBeforeUnload);");
+        }
+        catch { /* JS interop may be unavailable during teardown */ }
         await _orchestrator.StopAsync();
     }
 

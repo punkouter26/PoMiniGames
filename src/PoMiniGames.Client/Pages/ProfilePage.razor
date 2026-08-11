@@ -41,8 +41,23 @@ else
             <p class="prf-handle" aria-label="Display name">@_playerName</p>
             <div class="prf-chips">
                 <div class="prf-chip">
+                    @* Browser audit #6 (2026-08-10): the "Games" counter only
+                       counted FINISHED, PERSISTED matches (CpuWins/Losses/Draws
+                       from the server). A guest playing Tic-Tac-Toe against the
+                       CPU right now saw "0 Games" — misleading. The headline
+                       number keeps meaning "matches that count toward W/L",
+                       relabelled to "Saved Matches" so the distinction is
+                       explicit, and an inline ("+ N sessions") pill surfaces
+                       the unsynced play count from GameStatsService so the
+                       player knows their playtime is being captured. *@
                     <span class="prf-chip-val">@_totalGames</span>
-                    <span class="prf-chip-lbl">Games</span>
+                    <span class="prf-chip-lbl">Saved Matches</span>
+                    @if (_unsyncedSessions > 0)
+                    {
+                        <span class="prf-chip-hint" title="This-session plays counted locally — they'll roll into Saved Matches on the next sync.">
+                            + @_unsyncedSessions session@(_unsyncedSessions == 1 ? "" : "s") this visit
+                        </span>
+                    }
                 </div>
                 <div class="prf-chip">
                     <span class="prf-chip-val">@(_totalGames > 0 ? $"{_totalWins * 100 / _totalGames}%" : "— not played —")</span>
@@ -97,7 +112,20 @@ else
 
     <!-- ── Head-to-head record vs named opponents ── -->
     <div class="prf-section">
-        <h2 class="prf-section-title">Head-to-Head · People You Played</h2>
+        <div class="prf-section-head">
+            <h2 class="prf-section-title">Head-to-Head · People You Played</h2>
+            @* Browser audit #9 (2026-08-10): the G / MS chips next to each
+               opponent name had no legend, and the title= tooltip was a
+               hover-only affordance — on touch devices a player never saw
+               the meaning of either badge. Inline legend right under the
+               heading, visible to all users, screen readers included. *@
+            <span class="prf-h2h-legend" aria-label="Badge legend">
+                <span class="prf-h2h-badge prf-h2h-badge--guest" aria-hidden="true">G</span>
+                <span class="prf-h2h-legend-lbl">Guest</span>
+                <span class="prf-h2h-badge prf-h2h-badge--microsoft" aria-hidden="true">MS</span>
+                <span class="prf-h2h-legend-lbl">Microsoft</span>
+            </span>
+        </div>
         @if (_matchesLoading)
         {
             <p class="prf-h2h-note">Loading match history…</p>
@@ -354,6 +382,11 @@ else
     private string _initials   = "P";
     private int _totalGames, _totalWins, _totalLosses, _totalDraws;
     private int _bestStreak, _topElo;
+    // Browser audit #6 (2026-08-10): the friendlier partial-session count
+    // shown under the "Saved Matches" chip. Built from GameStatsService's
+    // per-game local counts in LoadStats so it picks up the visitor's
+    // in-session play activity without conflating it with the saved W/L.
+    private int _unsyncedSessions;
     private GameEntry? _bestEntry, _nemesisEntry;
     private List<GameEntry> _entries = new();
 
@@ -623,6 +656,7 @@ else
         _entries = new();
         _totalGames = _totalWins = _totalLosses = _totalDraws = 0;
         _bestStreak = 0;
+        _unsyncedSessions = 0;
         // 2026-07-26 browser audit #8: seed _topElo at the AdaptiveRating
         // starting value (1200 — see GameModels.cs) so a fresh guest sees
         // "— not played —" via the chip's `> 1200` gate. Anything above this
@@ -646,6 +680,17 @@ else
             };
 
             _entries.Add(entry);
+
+            // Browser audit #6 (2026-08-10): the "session" count shown under
+            // the "Saved Matches" chip. PlayCountOnly games (Joker, Survive)
+            // contribute their full local play count; rated games contribute
+            // only the un-PERMANENTED remainder above what's saved server-side
+            // so the chip doesn't double-count. Best-effort: if the server
+            // snapshot is missing, count the local value as "all unsynced".
+            if (entry.Kind == RatingKind.PlayCountOnly)
+            {
+                _unsyncedSessions += entry.PlayCount;
+            }
 
             // Only games carrying a real W/L record feed the headline aggregates. A
             // Joker session is not a match and must never dilute the overall win rate

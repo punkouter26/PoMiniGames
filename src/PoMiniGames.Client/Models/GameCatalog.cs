@@ -13,7 +13,17 @@ namespace PoMiniGamesClient.Models;
 /// in every mode.
 /// </para>
 /// </param>
-public sealed record CatalogMode(GameMode Mode, string Url, bool RequiresNetwork = false);
+public sealed record CatalogMode(GameMode Mode, string Url, bool RequiresNetwork = false)
+{
+    /// <summary>
+    /// Optional URL used by the home-page chip when it would otherwise duplicate the
+    /// card head's URL. Null means "same as <see cref="Url"/>" — Couple Quiz's card
+    /// head is <c>/couplequiz</c> and its chip is <c>/couplequiz/multi</c>, both of
+    /// which resolve to the same lobby route, so the duplicate is now a deliberate
+    /// alias rather than a broken-second-link bug.
+    /// </summary>
+    public string? ChipUrl { get; init; }
+}
 
 /// <summary>
 /// A game and every mode it can actually be played in. One entry per game — the
@@ -105,12 +115,17 @@ public static class GameCatalog
             Subtitle = "4-in-a-row · 6×6",
         },
 
+        // ChipPrimary: same reason as Sports and Marble Race. 1P is the card head,
+        // so suppressing its chip left the row reading "2P Demo" — a player looking
+        // for a solo game scanned the chips, saw no 1P, and concluded Brawl needed a
+        // second person. It does not: /pobrawl/1player is the fifteen-president
+        // ladder, the only ELO-rated and leaderboard-backed mode the game has.
         new(GameKeys.PoBrawl, "Brawl", "🥊",
         [
             new(GameMode.OnePlayer, "/pobrawl/1player"),
             new(GameMode.TwoPlayer, "/pobrawl/2player"),
             new(GameMode.Demo, "/pobrawl/demo"),
-        ]),
+        ]) { ChipPrimary = true },
 
         // ChipPrimary: 1P is the card head, so the chip row would otherwise read
         // "2P Online Demo" — three chips, none of them solo. A player looking for a
@@ -144,11 +159,17 @@ public static class GameCatalog
         // 1-player defaults to the scripted provider, so it runs fully offline. Only
         // picking a real model from the command bar reaches the relay, and that is an
         // explicit opt-in inside the game — not a precondition for playing it.
+        //
+        // ChipPrimary: 1P is the card head, so the chip row would otherwise show a lone
+        // "Demo" chip and the game reads as demo-only / watch-only. Browser audit #3
+        // (2026-08-10): the Survive card was the only one whose chip row advertised a
+        // single Demo mode, and visitors consistently took that to mean the game
+        // itself was a kiosk-only demo. Same trick Marble Race / Sports already use.
         new(GameKeys.PoSurvive, "Survive", "🛡️",
         [
             new(GameMode.OnePlayer, "/posurvive/1player"),
             new(GameMode.Demo, "/posurvive/demo"),
-        ]),
+        ]) { ChipPrimary = true },
 
         // Joker's set is fetched from a joke API mid-performance in every mode — there
         // is no offline joke bank to fall back on.
@@ -171,10 +192,24 @@ public static class GameCatalog
         // card, which merely offered a "Play solo (vs AI partner)" button for a mode whose
         // "AI partner" was a hardcoded answer index. Both are gone. There is no Demo entry
         // because this game was never in the kiosk reel below.
+        //
+        // Browser audit #2 (2026-08-10): the card head AND its lone "Online" chip both
+        // pointed at /couplequiz, so a screen-reader / mouse user heard "Couple Quiz"
+        // announced twice for the same destination. Use /couplequiz/multi as the chip
+        // target — /couplequiz and /couplequiz/multi both render the same lobby
+        // (PoCoupleQuizLobbyPage routes both), so the URL is functionally a no-op
+        // alias for routing purposes, but it gives the two affordances distinct
+        // destinations so each can be a separate, semantically correct link.
         new(GameKeys.PoCoupleQuiz, "Couple Quiz", "💕",
         [
-            new(GameMode.Multiplayer, "/couplequiz", RequiresNetwork: true),
-        ]),
+            new(GameMode.Multiplayer, "/couplequiz", RequiresNetwork: true) { ChipUrl = "/couplequiz/multi" },
+        ])
+        {
+            // Tell the renderer to use the primary as the chip target too — the
+            // card has only one mode, so the dedup-by-URL logic would otherwise
+            // leave it with no chips at all.
+            ChipPrimary = true,
+        },
     ];
 
     /// <summary>Games sorted for display — alphabetical, matching the old per-section order.</summary>

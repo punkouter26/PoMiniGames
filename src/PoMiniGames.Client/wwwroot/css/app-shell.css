@@ -81,26 +81,50 @@
 }
 
 .gl-mock-banner {
+    /* Browser audit #5 (2026-08-10): a full-width hazard-stripe banner that
+       shimmers reads as an error to the first-time visitor who hit "Continue as
+       Guest" on a sign-in page that was already gated on auth being disabled.
+       The mock-data flag is a server-side concern (Storage is in dev or a CI
+       stub), not a user concern. Container now hosts a quiet pill + an
+       unobtrusive secondary label; the banner is no longer the loud element
+       it used to be. The shimmer animation is gone, the warning yellow is
+       gone, and the pill matches the chrome palette. */
     width: 100%;
-    text-align: center;
-    padding: var(--space-2) var(--space-4);
-    font-weight: 800;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: var(--mock-ink);
-    background: linear-gradient(90deg,
-        var(--mock-lo) 0%,
-        var(--mock-hi) 35%,
-        var(--mock-lo) 65%,
-        var(--mock-hi) 100%);
-    background-size: 200% 100%;
-    border-bottom: 2px solid rgba(0, 0, 0, 0.85);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-3);
+    padding: var(--space-1) var(--space-4);
+    background: var(--surface-bar);
+    border-bottom: 1px solid var(--border-subtle);
+    color: var(--color-text-soft);
+    font-size: 0.75rem;
     position: sticky;
     top: 0;
     z-index: var(--z-banner);
-    animation: gl-mock-shimmer 3.5s linear infinite;
-    /* No permanent will-change: the background-position shimmer composites fine
-       without reserving a GPU layer for the banner's entire lifetime. */
+}
+
+.gl-mock-banner__pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.15rem 0.55rem;
+    border-radius: var(--radius-pill);
+    background: var(--surface-2);
+    color: var(--color-text);
+    border: 1px solid var(--border-subtle);
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    cursor: help;
+}
+
+.gl-mock-banner__detail {
+    color: var(--color-text-soft);
+    font-weight: 400;
+}
+
+@media (max-width: 640px) {
+    .gl-mock-banner__detail { display: none; }
 }
 
 @keyframes gl-mock-shimmer {

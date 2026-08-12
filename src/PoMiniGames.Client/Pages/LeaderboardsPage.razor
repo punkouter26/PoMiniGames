@@ -117,7 +117,13 @@
                                      class="lb-rows">
                                     <div role="row" class="lb-row lb-row--head">
                                         <span role="columnheader" class="lb-rank" aria-label="Rank">#</span>
-                                        <span role="columnheader" class="lb-name">Player</span>
+                                        @* 2026-08-12 audit #2: the Joker board ranks best
+                                           JOKES, not sessions — using "Player" as the
+                                           column header was misleading because the visible
+                                           text was a joke setup. The header is per-board
+                                           so each game has a label that matches its row
+                                           content. *@
+                                        <span role="columnheader" class="lb-name">@NameLabelFor(board.GameKey)</span>
                                         <span role="columnheader" class="lb-value" aria-label="@board.Unit">@board.Unit</span>
                                     </div>
                                     @* §5: <Virtualize> keeps the DOM flat even when
@@ -169,6 +175,17 @@
     // identity chip and stops looking like a debugger trace.
     private static readonly System.Text.RegularExpressions.Regex ShortHexName =
         new("^[0-9a-fA-F]{6,16}$", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    // 2026-08-12 audit #2: column header must match what the row actually
+    // represents. PoJoker ranks jokes, not sessions, so its row "Name" is
+    // the joke setup — the visible header "Player" was misleading. Every
+    // other board shows a person / session, so "Player" stays the default.
+    private static string NameLabelFor(string gameKey) => gameKey switch
+    {
+        "pojoker"      => "Joke",
+        "pobrawldemo"  => "Fighter",
+        _              => "Player",
+    };
 
     private static string DisplayName(string? raw)
     {

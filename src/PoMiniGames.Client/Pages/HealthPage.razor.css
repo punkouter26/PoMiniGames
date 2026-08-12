@@ -133,3 +133,25 @@
   font-family: var(--font-mono);
   font-size: var(--text-xs);
 }
+
+/* 2026-08-12 audit #7: the "developer endpoints" disclosure is a tiny
+   text-style button, not a primary action. It should read as a footnote,
+   not compete with the Refresh button above. */
+.hp-link-btn {
+    background: transparent;
+    border: 0;
+    padding: 0;
+    color: var(--color-accent, var(--accent-ink, currentColor));
+    font: inherit;
+    font-size: var(--text-sm);
+    cursor: pointer;
+    text-decoration: underline;
+}
+
+.hp-link-btn:hover,
+.hp-link-btn:focus { text-decoration: none; }
+
+.hp-foot-divider {
+    color: var(--color-text-secondary);
+    margin: 0 0.3rem;
+}

@@ -15,15 +15,18 @@
 
 <PageTitle>Connect Five · PoMiniGames</PageTitle>
 
+@* 2026-08-12 audit #1: hold the modal for 5 s after a win so the cascading
+   highlight can play out on the board before the dialog covers it. The
+   cascade is a 0.45 s keyframe; 5 s leaves generous room for the eye to
+   track the line and for the end-of-game ELO change to register. Razor
+   block comments placed between attributes of an element are parsed
+   as attribute names and crash the page at runtime (see 2026-08-10 audit).
+   Comment lives OUTSIDE the tag. *@
 <GameShell
     Title=@TitleContent
     Player="@_playerName"
     BackTo="@_backTo"
     GameOver="@_isGameOver"
-    @* 2026-08-11: hold the modal for 5 s after a win so the cascading
-       highlight can play out on the board before the dialog covers it. The
-       cascade is a 0.45 s keyframe; 5 s leaves generous room for the eye to
-       track the line and for the end-of-game ELO change to register. *@
     GameOverDelayMs="5000"
     Elo="@(PlayMode == "ai" ? _rating.Elo : (int?)null)"
     GameKey="@(PlayMode == "ai" ? "connectfive" : null)"

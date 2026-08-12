@@ -120,6 +120,11 @@ public static class GameCatalog
         ])
         {
             Subtitle = "4-in-a-row · 6×6",
+            // 1P is the card head, so the dedup-by-URL filter would hide the 1P
+            // chip and leave the row reading "2P Demo" — a player looking for a
+            // solo game sees no 1P and assumes the game is 2-player only. Same
+            // reason Connect Five / Brawl / Sports / Marble Race set it.
+            ChipPrimary = true,
         },
 
         // ChipPrimary: same reason as Sports and Marble Race. 1P is the card head,
@@ -138,14 +143,14 @@ public static class GameCatalog
         ]) { ChipPrimary = true },
 
         // ChipPrimary: 1P is the card head, so the chip row would otherwise read
-        // "2P Online Demo" — three chips, none of them solo. A player looking for a
-        // game to play on their own scans the chips and concludes Sports needs a
-        // second person or a lobby. It does not: /posports/1player is a full meet
-        // against CPU family members.
+        // "Online Demo" — Solo + Online + Demo, no 2P. 2P removed from the home card
+        // on 2026-08-12 at the player's request; the /posports/2player route still
+        // works for old bookmarks, but local same-keyboard split-keyboard play is no
+        // longer advertised from the home grid (the same 2P is still offered for
+        // Brawl / Connect Five / Tic-Tac-Toe / Fun Quiz).
         new(GameKeys.PoSports, "Sports", "🏃",
         [
             new(GameMode.OnePlayer, "/posports/1player"),
-            new(GameMode.TwoPlayer, "/posports/2player"),
             new(GameMode.Multiplayer, "/posports/multi", RequiresNetwork: true),
             new(GameMode.Demo, "/posports/demo"),
         ]) { ChipPrimary = true },
@@ -166,20 +171,19 @@ public static class GameCatalog
             new(GameMode.Demo, "/pomarblerace/demo"),
         ]) { ChipPrimary = true },
 
-        // 1-player defaults to the scripted provider, so it runs fully offline. Only
-        // picking a real model from the command bar reaches the relay, and that is an
-        // explicit opt-in inside the game — not a precondition for playing it.
-        //
-        // ChipPrimary: 1P is the card head, so the chip row would otherwise show a lone
-        // "Demo" chip and the game reads as demo-only / watch-only. Browser audit #3
-        // (2026-08-10): the Survive card was the only one whose chip row advertised a
-        // single Demo mode, and visitors consistently took that to mean the game
-        // itself was a kiosk-only demo. Same trick Marble Race / Sports already use.
+        // 2026-08-12: PoSurvive is a CPU-vs-CPU simulation, not a player-controlled
+        // game — there is no input agency, only a command bar for switching models
+        // and re-launching. The "1P" entry was added on 2026-08-10 (audit #3) to
+        // stop visitors reading the lone Demo chip as "demo-only", but the same
+        // simulation runs at /posurvive with the player as a spectator either way;
+        // the chip was a label, not a separate code path. Removing it per the
+        // user's product decision — the card is honest now: one mode, one chip.
+        // The bare /posurvive route is unchanged; the page launches the same
+        // scripted simulation regardless of whether the URL carried a mode segment.
         new(GameKeys.PoSurvive, "Survive", "🛡️",
         [
-            new(GameMode.OnePlayer, "/posurvive/1player"),
             new(GameMode.Demo, "/posurvive/demo"),
-        ]) { ChipPrimary = true },
+        ]),
 
         // Joker's set is fetched from a joke API mid-performance in every mode — there
         // is no offline joke bank to fall back on.

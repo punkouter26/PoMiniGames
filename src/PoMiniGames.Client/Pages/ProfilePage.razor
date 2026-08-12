@@ -34,7 +34,12 @@ else
     <!-- ── Hero ── -->
     <div class="prf-hero">
         <div class="prf-avatar" aria-hidden="true">
-            <span class="prf-avatar-text">@_initials</span>
+            @* 2026-08-12 audit #10: the avatar text is a 4-char fragment of
+               the player name ("G4" from "Guest..."), which read as a debug
+               value to a first-time visitor. Add a tooltip that explains
+               what the badge is — the start of the signed-in name — so the
+               mystery of the four letters is at least resolvable on hover. *@
+            <span class="prf-avatar-text" title="@($"Initials of {_playerName}")">@_initials</span>
         </div>
         <div class="prf-hero-body">
             <h1 class="prf-name">My Stats</h1>
@@ -54,7 +59,20 @@ else
                     <span class="prf-chip-lbl">Saved Matches</span>
                     @if (_unsyncedSessions > 0)
                     {
-                        <span class="prf-chip-hint" title="This-session plays counted locally — they'll roll into Saved Matches on the next sync.">
+                        @* 2026-08-12 audit #10: the previous copy implied these
+                           session counts would "roll into Saved Matches on the
+                           next sync", but for a guest user (who has no
+                           authenticated session) they won't sync anywhere —
+                           they only flush on sign-in. Surface that distinction
+                           in the tooltip so a guest doesn't wait for a sync
+                           that will never arrive.
+                           We detect guest by the display-name prefix the
+                           dev-login build stamps on every bypassed session —
+                           see DevLoginIntake.BuildProfile. *@
+                        var isGuest = AuthState.User?.DisplayName?.StartsWith("Guest", StringComparison.Ordinal) ?? true;
+                        <span class="prf-chip-hint" title="@(isGuest
+                                ? "Guest plays are kept locally on this device. Sign in to save them to your leaderboard."
+                                : "This-session plays counted locally — they'll roll into Saved Matches on the next sync.")">
                             + @_unsyncedSessions session@(_unsyncedSessions == 1 ? "" : "s") this visit
                         </span>
                     }
@@ -94,6 +112,18 @@ else
 
     <!-- ── 1-Player high scores (best available per game) ── -->
     <div class="prf-section">
+        @* 2026-08-12 audit #3: surface a highscore-fetch failure explicitly
+           so the player knows the "Not played yet" placeholders aren't the
+           truth — one or more of the server endpoints failed and the saved
+           row lookup never ran. *@
+        @if (_highScoreLoadFailed)
+        {
+            <div class="prf-error" role="alert">
+                <span class="prf-error-icon" aria-hidden="true">⚠️</span>
+                <span class="prf-error-text">Couldn't load saved high scores — the leaderboard endpoints didn't respond. Your local stats above are still accurate.</span>
+                <button class="prf-error-retry" @onclick="() => _ = LoadHighScoresAsync()">Retry</button>
+            </div>
+        }
         <h2 class="prf-section-title">High Scores · 1 Player</h2>
         <div class="prf-hs-grid">
             @foreach (var h in _highScores)
@@ -112,20 +142,31 @@ else
 
     <!-- ── Head-to-head record vs named opponents ── -->
     <div class="prf-section">
-        <div class="prf-section-head">
+        @* 2026-08-12 audit #8: the badge legend was rendered above the empty
+           state — when there are no opponents the legend is the only visible
+           content in the section, reading as a placeholder rather than as an
+           explanation. Only show it when there IS something to explain. *@
+        @if (_localOpponents.Count > 0 || _onlineOpponents.Count > 0 || _matchesLoading)
+        {
+            <div class="prf-section-head">
+                <h2 class="prf-section-title">Head-to-Head · People You Played</h2>
+                @* Browser audit #9 (2026-08-10): the G / MS chips next to each
+                   opponent name had no legend, and the title= tooltip was a
+                   hover-only affordance — on touch devices a player never saw
+                   the meaning of either badge. Inline legend right under the
+                   heading, visible to all users, screen readers included. *@
+                <span class="prf-h2h-legend" aria-label="Badge legend">
+                    <span class="prf-h2h-badge prf-h2h-badge--guest" aria-hidden="true">G</span>
+                    <span class="prf-h2h-legend-lbl">Guest</span>
+                    <span class="prf-h2h-badge prf-h2h-badge--microsoft" aria-hidden="true">MS</span>
+                    <span class="prf-h2h-legend-lbl">Microsoft</span>
+                </span>
+            </div>
+        }
+        else
+        {
             <h2 class="prf-section-title">Head-to-Head · People You Played</h2>
-            @* Browser audit #9 (2026-08-10): the G / MS chips next to each
-               opponent name had no legend, and the title= tooltip was a
-               hover-only affordance — on touch devices a player never saw
-               the meaning of either badge. Inline legend right under the
-               heading, visible to all users, screen readers included. *@
-            <span class="prf-h2h-legend" aria-label="Badge legend">
-                <span class="prf-h2h-badge prf-h2h-badge--guest" aria-hidden="true">G</span>
-                <span class="prf-h2h-legend-lbl">Guest</span>
-                <span class="prf-h2h-badge prf-h2h-badge--microsoft" aria-hidden="true">MS</span>
-                <span class="prf-h2h-legend-lbl">Microsoft</span>
-            </span>
-        </div>
+        }
         @if (_matchesLoading)
         {
             <p class="prf-h2h-note">Loading match history…</p>
@@ -264,22 +305,37 @@ else
                     }
                     else if (g.Kind == RatingKind.HighScoreOnly)
                     {
-                        <p class="prf-game-note">Score-based — see leaderboard</p>
+                        @* 2026-08-12 audit #5: "see leaderboard" was misleading
+                           even when the user HAD a row on the global leaderboard.
+                           Now a link to /leaderboards so they can see themselves
+                           ranked, not just a bare text hint that sends them hunting. *@
+                        <p class="prf-game-note">
+                            Score-based — <a class="prf-game-link" href="/leaderboards">see leaderboard</a>
+                        </p>
                     }
                     else if (g.Kind == RatingKind.PlayCountOnly)
                     {
-                        @* No win condition and no score (Joker, Survive) — a session
-                           count is the only stat these can report truthfully. *@
+                        @* 2026-08-12 audit #5: a session count is the only stat
+                           Joker / Survive can report. The "8 sessions" line was
+                           ambiguous to a first-time visitor who had never clicked
+                           Play — they assumed the counter was broken or belonged
+                           to someone else. Add an inline caption that says these
+                           are demo plays the visitor can launch from the catalog,
+                           and a primary CTA so they don't have to navigate away
+                           to find them. *@
                         @if (g.PlayCount > 0)
                         {
                             <p class="prf-game-plays">
                                 <span class="prf-game-plays-val">@g.PlayCount</span>
                                 <span class="prf-game-plays-lbl">@(g.PlayCount == 1 ? "session" : "sessions")</span>
                             </p>
+                            <p class="prf-game-hint">Auto-counted while you watched demos</p>
+                            <a class="prf-game-link" href="@DemoUrl(g.Key)">Watch again →</a>
                         }
                         else
                         {
                             <p class="prf-game-unplayed">Not played yet</p>
+                            <a class="prf-game-link" href="@DemoUrl(g.Key)">Try the demo →</a>
                         }
                     }
                     else
@@ -388,6 +444,24 @@ else
     private sealed record HighScoreEntry(string Game, string Icon, string Value, string Sub, bool HasValue);
     private List<HighScoreEntry> _highScores = new();
 
+    // 2026-08-12 audit #5: the Game Breakdown card needs to know whether
+    // a score-based game has a row on the leaderboard, so it can show a
+    // link to /leaderboards instead of the static "see leaderboard" copy.
+    // The HsDefs keys (e.g. "pomarblerace") line up with the GameDefs keys,
+    // so this lookup is just the zip of those two arrays.
+    private Dictionary<string, HighScoreEntry> _highScoresByKey
+    {
+        get
+        {
+            var map = new Dictionary<string, HighScoreEntry>(StringComparer.OrdinalIgnoreCase);
+            for (var i = 0; i < HsDefs.Length && i < _highScores.Count; i++)
+            {
+                map[HsDefs[i].Key] = _highScores[i];
+            }
+            return map;
+        }
+    }
+
     private static readonly (string Key, string Title, string Icon, string Kind)[] HsDefs =
     {
         ("pomarblerace", "Marble Race",  "🔮", "marble"),
@@ -457,6 +531,9 @@ else
         // tool) never flashes the previous user's stats before the new ones
         // arrive.
         _loading = true;
+        // Reset the failure flag so the old banner doesn't linger when the
+        // new identity triggers a fresh fetch.
+        _highScoreLoadFailed = false;
         _ = LoadHighScoresAsync();
         _ = LoadMatchesAsync();
         InvokeAsync(StateHasChanged);
@@ -517,20 +594,39 @@ else
         // page also keeps a personal best visible when it sits outside the global top ten.
         // The three boards are independent reads — fetch them concurrently rather than
         // serially stacking three round-trips behind the profile skeleton.
+        //
+        // 2026-08-12 audit #3: a swallowed HTTP error here silently showed "Not played
+        // yet" even for players who DID have a saved row on the public leaderboard.
+        // Detect the failure path explicitly so the user sees a banner that names the
+        // failed endpoint and offers a retry — without it, the page is indistinguishable
+        // from a profile of someone who has never played.
         var marbleTask = ApiService.GetMarbleRaceHighScoresAsync(100);
         var sportsTask = ApiService.GetPoSportsHighScoresAsync(100);
         var brawlTask  = ApiService.GetPoBrawlHighScoresAsync(100);
         await Task.WhenAll(marbleTask, sportsTask, brawlTask);
 
+        var marbleResult = marbleTask.Result;
+        var sportsResult = sportsTask.Result;
+        var brawlResult  = brawlTask.Result;
+
+        // Count actually-loaded boards so we can name the failures precisely.
+        // The three task results have different element types (different DTOs),
+        // so the array can't infer a single element type — use object and cast.
+        var loaded = new object?[] { marbleResult, sportsResult, brawlResult }.Count(r => r is not null);
+        if (loaded < 3)
+        {
+            _highScoreLoadFailed = true;
+        }
+
         var mine = new Dictionary<string, HighScoreEntry>(StringComparer.Ordinal)
         {
-            ["Marble Race"] = FindMine(marbleTask.Result, "Marble Race", "🔮",
+            ["Marble Race"] = FindMine(marbleResult, "Marble Race", "🔮",
                 s => s.UserId, s => s.PlayerInitials, s => s.BestScore.ToString("N0")),
-            ["Sports"] = FindMine(sportsTask.Result, "Sports", "🏃",
+            ["Sports"] = FindMine(sportsResult, "Sports", "🏃",
                 s => s.UserId, s => s.PlayerName, s => $"{s.TotalTimeSeconds:0.00}s"),
             // PoBrawlHighScore carries no UserId — unlike the Marble and Sports rows,
             // the server never stamps one on this board. Name matching is all there is.
-            ["Brawl"] = FindMine(brawlTask.Result, "Brawl", "🥊",
+            ["Brawl"] = FindMine(brawlResult, "Brawl", "🥊",
                 userIdOf: null, s => s.PlayerInitials, s => $"{s.KoTimeSeconds:0.00}s"),
         };
 
@@ -540,6 +636,12 @@ else
         }
         StateHasChanged();
     }
+
+    // 2026-08-12 audit #3: a banner explaining a failed leaderboard fetch.
+    // The fetch can fail (network offline, API down, antiforgery 403) and we
+    // cannot tell from a null result alone. The user sees this banner above
+    // the high-scores grid instead of an unexplained "Not played yet" list.
+    private bool _highScoreLoadFailed;
 
     /// <summary>
     /// Resolve the current player's own best row out of a board response.
@@ -725,6 +827,12 @@ else
         RatingKind.HighScoreOnly => false,
         _ => g.TotalGames == 0,
     };
+
+    // 2026-08-12 audit #5: every PlayCountOnly game (Joker, Survive today) is
+    // a demo-only experience — the only entry point on the catalog is its
+    // /demo route, so a "Try the demo" CTA from the profile card takes the
+    // user straight to it without bouncing through the home page first.
+    private static string DemoUrl(string gameKey) => $"/{gameKey}/demo";
 
     /// <summary>
     /// A game rated by a single adaptive ELO against a rating-matched CPU. The whole

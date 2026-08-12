@@ -69,6 +69,39 @@
                 <span class="gl-brand-text">PoMiniGames</span>
             </a>
 
+            @* 2026-08-12 audit #4: the only routes reachable from a game's header
+               were Home (the brand) and the footer Status link. Players had to
+               use the browser back button to reach /leaderboards or /profile —
+               especially painful on mobile where the back button is sometimes
+               modal (PWA install prompt, address-bar collapse). A compact
+               Browse menu gives one-tap access to the three persistent pages
+               that aren't a game in progress. Uses the same popover pattern as
+               the ANON overflow menu so we don't introduce a new component or
+               trap focus in a new stacking context. *@
+            <button class="gl-nav-trigger" popovertarget="gl-nav-popover"
+                    aria-label="Browse site pages" title="Browse site pages">
+                <span aria-hidden="true">☰</span>
+                <span class="gl-nav-trigger-label">Browse</span>
+            </button>
+            <div id="gl-nav-popover" popover="auto" class="gl-nav-popover">
+                <a class="gl-nav-item" href="/"
+                   popovertarget="gl-nav-popover" popovertargetaction="hide">
+                    <span aria-hidden="true">🏠</span><span>All games</span>
+                </a>
+                <a class="gl-nav-item" href="/leaderboards"
+                   popovertarget="gl-nav-popover" popovertargetaction="hide">
+                    <span aria-hidden="true">🏆</span><span>Leaderboards</span>
+                </a>
+                <a class="gl-nav-item" href="/profile"
+                   popovertarget="gl-nav-popover" popovertargetaction="hide">
+                    <span aria-hidden="true">📊</span><span>My Stats</span>
+                </a>
+                <a class="gl-nav-item" href="/health"
+                   popovertarget="gl-nav-popover" popovertargetaction="hide">
+                    <span aria-hidden="true">❤️</span><span>Service health</span>
+                </a>
+            </div>
+
             @* The 🎮 "Games" quick-switcher popover was removed on 2026-08-10 (user
                request). It sat next to the brand wordmark on every non-home route and
                duplicated its destination: the brand already returns to the catalog grid,

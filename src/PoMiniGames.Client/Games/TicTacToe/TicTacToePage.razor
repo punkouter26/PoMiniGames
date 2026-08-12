@@ -21,13 +21,16 @@
    so the live rating shows next to the signed-in identity on 1P AI. *@
 <PageTitle>Tic-Tac-Toe · PoMiniGames</PageTitle>
 
+@* 2026-08-12 audit #1: same 5 s post-win pause as Connect Five — let the winning
+   line flash on the board before the modal covers it. Razor block comments
+   placed between attributes of an element are parsed as attribute names and
+   crash the page at runtime (see 2026-08-10 audit). Comment lives OUTSIDE
+   the tag. *@
 <GameShell
     Title=@TitleContent
     Player="@_playerName"
     BackTo="@_backTo"
     GameOver="@_isGameOver"
-    @* 2026-08-11: same 5 s post-win pause as Connect Five — let the winning
-       line flash on the board before the modal covers it. *@
     GameOverDelayMs="5000"
     GameKey="@(PlayMode == "ai" ? "tictactoe" : null)"
     Outcome="@OutcomeForCue"

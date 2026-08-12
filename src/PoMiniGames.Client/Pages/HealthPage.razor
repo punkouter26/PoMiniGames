@@ -77,9 +77,30 @@
         @* The /diag Razor page was removed 2026-08-07. It was 505 lines of developer
            chrome shipped in every player's WASM bundle, and every section of it only
            rendered JSON that these endpoints already return. Pointing at the JSON
-           directly keeps the capability and drops the payload. *@
-        Machine-readable report at <code>/api/health</code>. Configuration diagnostics:
-        <code>/api/diag</code>, <code>/api/mockables</code>, <code>/api/logs/tail</code>.
+           directly keeps the capability and drops the payload.
+           2026-08-12 audit #7: the developer endpoints (diag / mockables / logs/tail)
+           were shown to every visitor as plain mono-spaced text, no context. They
+           leak internal infrastructure to anyone who hits /health, and a curious
+           user clicking them gets a JSON dump with no UI. Hide them behind an
+           explicit "show developer details" disclosure — same affordance, but
+           opt-in. *@
+        Machine-readable report at <code>/api/health</code>.
+        @if (_showDeveloperLinks)
+        {
+            <button class="hp-link-btn" @onclick="() => _showDeveloperLinks = false" aria-label="Hide developer endpoints">hide developer endpoints</button>
+            <span class="hp-foot-divider">·</span>
+            <span class="hp-foot-devlinks">
+                @foreach (var ep in _developerEndpoints)
+                {
+                    <code>@ep</code>
+                }
+            </span><text>.</text>
+        }
+        else
+        {
+            <span class="hp-foot-divider">·</span>
+            <button class="hp-link-btn" @onclick="() => _showDeveloperLinks = true">developer endpoints</button>
+        }
     </p>
 </div>
 
@@ -88,6 +109,13 @@
     private string? _error;
     private DateTimeOffset? _checkedAt;
     private bool _loading;
+
+    // 2026-08-12 audit #7: developer endpoints are hidden behind this toggle
+    // so the user-facing /health page doesn't leak /api/diag and friends to
+    // every visitor. Default off; a click reveals them in place.
+    private bool _showDeveloperLinks;
+    private static readonly string[] _developerEndpoints =
+        ["/api/diag", "/api/mockables", "/api/logs/tail"];
 
     // Polling keeps an on-call tab current without a manual refresh. 15s is slow enough
     // that a parked tab costs the API almost nothing and fast enough to catch a dependency

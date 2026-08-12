@@ -44,7 +44,28 @@ import { Cinematics } from './cinematics.js';
 import { SIM_DT, MAX_HP } from './constants.js';
 
 const MAX_FRAME_DT = 0.05;
-const TIME_LIMIT = 99;
+
+// One round, sixty seconds. The UI and end condition now read as a countdown
+// from 60 down to 0, but the raw engine clock still tracks elapsed fight time
+// so KO / timeout decisions and replay capture remain stable.
+const TIME_LIMIT = 60;
+
+// Lateral orbit speed for the circle keys, in the same units as the 2.4 / 1.9
+// forward / backward walk. Slightly under the advance so that closing distance
+// is still the faster way to cross the ring and circling reads as positioning
+// rather than a second, better run.
+const CIRCLE_SPEED = 2.0;
+
+// How close the two health bars have to be at TIME! for the decision to be a
+// draw rather than a win, in HP points out of MAX_HP (100) — so this reads as
+// "within a tenth of a bar".
+//
+// It is a band, not an exact tie. An exact-equal-HP requirement is what the old
+// rule effectively had, and it made draws unreachable: two fighters who traded
+// for a minute land a couple of points apart, and awarding that the full win
+// misrepresents a fight nobody won. Ten points is roughly one clean hit, which
+// is the smallest margin a player can actually see on the bars.
+const DRAW_HP_BAND = 10;
 
 // ── Spawn X by HUD side ────────────────────────────────────────────────────
 // Each fighter spawns at the X that lines up with the side their energy bar
@@ -104,8 +125,8 @@ const INK_POWER = 2.6;      // Fresnel exponent — higher = tighter line
 // distance ≈ limb extension + lunge. The old values assumed a half-meter of
 // invisible forward reach.
 const ATTACKS = {
-  punch: { name: 'punch', windup: 0.08, active: 0.10, recover: 0.22, dmg: 10, reach: 1.2,
-           cancelInto: { idle: 0.30, punch: 0.20, kick: 0.26, block: 0.32 } },
+  punch: { name: 'punch', windup: 0.06, active: 0.06, recover: 0.15, dmg: 7.5, reach: 1.2,
+           cancelInto: { idle: 0.22, punch: 0.16, kick: 0.20, block: 0.24 } },
   kick:  { name: 'kick',  windup: 0.12, active: 0.12, recover: 0.30, dmg: 15, reach: 1.45,
            cancelInto: { idle: 0.42, punch: 0.34, kick: 0.36, block: 0.40 } },
 };
@@ -146,12 +167,12 @@ const ARM_SPLASH_FRAC = 0.7;
 
 // ── Hold-to-charge (Urban Champion style) ────────────────────────────────
 // Press-and-hold punch/kick winds the attack up; release throws it. Charge
-// scales damage/knockback 1x → CHARGE_MAX_MUL over CHARGE_TIME seconds of
-// hold; the fighter is rooted while charging and can hold at max forever
-// (at the cost of eating anything the opponent throws — a hit drops the
-// stored charge).
+// scales damage/knockback from a quick tap (1x) to a full hold (CHARGE_MAX_MUL)
+// over CHARGE_TIME seconds. Held attacks are intentionally a huge upgrade over
+// quick taps, so the timing reward is clear and the choice to commit to a full
+// charge feels meaningful.
 const CHARGE_TIME = 1.0;
-const CHARGE_MAX_MUL = 2.0;
+const CHARGE_MAX_MUL = 4.0;
 
 // ── Energy meter ─────────────────────────────────────────────────────────
 // One 0..1 pool per fighter, shown under the HP bar in the Blazor HUD. It IS
@@ -1060,7 +1081,7 @@ export class BrawlGame {
     g.textAlign = 'left';
     g.fillText('PO BRAWL', 8, 9);
     g.textAlign = 'right';
-    g.fillText(`${Math.floor(this.clock || 0)}"`, W - 8, 9);
+    g.fillText(`${Math.ceil(Math.max(0, TIME_LIMIT - (this.clock || 0)))}"`, W - 8, 9);
 
     // Two name plates with live HP.
     const names = this.fighters.map((f) => (f.rig.config.name || '').toUpperCase());
@@ -1487,7 +1508,8 @@ export class BrawlGame {
         vel: new THREE.Vector3(),
         targetVel: new THREE.Vector3(),
         knockback: new THREE.Vector3(),
-        sideVel: new THREE.Vector3(),
+        // sideVel removed 2026-08-11: the sidestep impulse it carried became
+        // held circling, which steers through `vel` like ordinary movement.
         // ── Per-region damage ─────────────────────────────────────────
         regionDmg: { head: 0, torso: 0, arms: 0, legs: 0 },
         // ── Dismemberment ─────────────────────────────────────────────
@@ -1698,14 +1720,21 @@ export class BrawlGame {
       this._tickCombos();
       if (this.clock >= TIME_LIMIT && this.phase === 'fighting') {
         const h1 = this._hp(this.fighters[0]), h2 = this._hp(this.fighters[1]);
-        // Per user request: a no-KO finish always has a winner. The fighter
-        // with more energy left takes the decision; only an exact-equal
-        // (literally the same HP to the unit) is a draw — and even then
-        // we still pick a winner by index rather than call it a draw.
+        // Decision on health. A clear health lead wins; bars within DRAW_HP_BAND
+        // of each other is a DRAW.
+        //
+        // This reverses the previous rule, which forced a winner out of every
+        // no-KO finish and broke exact ties toward P1 by index. That rule made
+        // the 60 seconds decide something the fight had not: a one-point gap
+        // after a minute of even trading was reported as a victory, and in 1P it
+        // advanced the ladder on the strength of rounding.
+        const margin = Math.abs(h1 - h2);
         let winner;
-        if (h1 > h2) winner = 1;
-        else if (h2 > h1) winner = 2;
-        else winner = 1; // exact tie → P1 by default; never report 0 here
+        if (margin <= DRAW_HP_BAND) winner = 0;   // too close to call
+        else winner = h1 > h2 ? 1 : 2;
+        // 'TIME!' is the flash on the way out, not the final word: _endMatch
+        // calls _reportResult synchronously and that sets the real banner —
+        // 'DRAW' for winner 0, '<NAME> WINS!' otherwise.
         this._endMatch(winner, 'TIME!');
       }
     } else if (this.phase === 'ko') {
@@ -1822,9 +1851,17 @@ export class BrawlGame {
     if (this.hitstopT > 0) return;
 
     for (const f of this.fighters) {
+      if (f.blockStunT > 0) {
+        f.blockStunT = Math.max(0, f.blockStunT - dt);
+        f.vel.multiplyScalar(0.2);
+        f.knockback.multiplyScalar(0.25);
+      }
       const opp = f === f1 ? f2 : f1;
       const ctx = this._aiContext(f, opp, dt);
       let intent = f.controller.update(ctx);
+      if (f.blockStunT > 0) {
+        intent = { ...intent, punch: false, kick: false, block: false, side: 0 };
+      }
       // ── Nixon "I Am Not a Crook" eye-gouge ──────────────────────────
       // 30% of block presses drop during the 0.3 s blind window. The simplest
       // realization is to clear the `block` flag with miss-rate probability.
@@ -2133,24 +2170,58 @@ export class BrawlGame {
     const incapacitated = f.state === 'ko';
     // Charging roots the fighter — all the weight is loaded into the coil.
     const rooted = f.state === 'charge';
-    if (intent.move !== 0 && !incapacitated && !rooted) {
-      const toward = opp.rig.root.position.clone().sub(pos);
-      toward.y = 0;
-      if (toward.lengthSq() > 1e-6) toward.normalize();
-      // Biden "The Big Guy" slow-on-charge: halved moveMul while the slow
-      // window is live. Defaults to 1.0 (no slowdown).
-      // JFK "PT-109 Survivor" dash speed boost: +30% for 4 s when below 50%.
-      // FDR "Four-Term Foundation" startup boost: +10% for first 3 s.
-      const slow = f.slowMul || 1.0;
-      let passiveMul = 1.0;
-      const per = f.personality;
-      if (per?.jfkDashUntil && this.t < per.jfkDashUntil) passiveMul *= 1.30;
-      if (per?.fdrStartupUntil && this.t < per.fdrStartupUntil
-          && PERSONALITIES.fdr?.startupBoost) {
-        passiveMul *= PERSONALITIES.fdr.startupBoost.speedMul || 1.10;
-      }
-      desired.add(toward.multiplyScalar(intent.move * moveSpeed * effect.moveMul * slow * passiveMul));
+    const canSteer = !incapacitated && !rooted;
+
+    // Unit vector toward the opponent. Hoisted out of the move branch below
+    // because circling needs it too: an orbit is defined by the line between
+    // the fighters, so both axes of movement derive from it.
+    const toward = opp.rig.root.position.clone().sub(pos);
+    toward.y = 0;
+    if (toward.lengthSq() > 1e-6) toward.normalize();
+
+    // Speed modifiers, hoisted for the same reason — a slowed or dashing
+    // fighter should circle slowed or dashing too.
+    // Biden "The Big Guy" slow-on-charge: halved moveMul while the slow
+    // window is live. Defaults to 1.0 (no slowdown).
+    // JFK "PT-109 Survivor" dash speed boost: +30% for 4 s when below 50%.
+    // FDR "Four-Term Foundation" startup boost: +10% for first 3 s.
+    const slow = f.slowMul || 1.0;
+    let passiveMul = 1.0;
+    const per = f.personality;
+    if (per?.jfkDashUntil && this.t < per.jfkDashUntil) passiveMul *= 1.30;
+    if (per?.fdrStartupUntil && this.t < per.fdrStartupUntil
+        && PERSONALITIES.fdr?.startupBoost) {
+      passiveMul *= PERSONALITIES.fdr.startupBoost.speedMul || 1.10;
+    }
+
+    if (intent.move !== 0 && canSteer) {
+      desired.add(toward.clone().multiplyScalar(
+        intent.move * moveSpeed * effect.moveMul * slow * passiveMul));
       f.speedAmt = Math.min(1, Math.abs(intent.move));
+    }
+
+    // ── Circling (camera depth) ───────────────────────────────────────
+    // `intent.side` is a HELD direction along the CAMERA's forward axis
+    // (W/↑ = +1, into the screen; S/↓ = −1, out toward the viewer), not the
+    // edge-triggered dodge it used to be. Because the fighters stand side-on to
+    // the camera, walking that axis is what carries you around your opponent.
+    //
+    // Screen-relative, deliberately. The first cut derived the axis from the
+    // line between the fighters — rotationally consistent, but it flipped on
+    // screen whenever the two swapped sides of the ring, so the same key walked
+    // you into the screen in one exchange and out of it in the next. A movement
+    // key that reverses under the player is worse than one that is merely
+    // arbitrary, so the axis is the one the player can see.
+    //
+    // It feeds `desired` — the same lerped velocity `move` uses — rather than
+    // the old `sideVel` impulse. That impulse was sized for a single tap; held
+    // down it accumulated against its own decay and converged on several times
+    // sprint speed.
+    if (intent.side !== 0 && canSteer) {
+      const camFwd = this._cameraForward();
+      desired.add(camFwd.multiplyScalar(
+        intent.side * CIRCLE_SPEED * effect.moveMul * slow * passiveMul));
+      f.speedAmt = Math.max(f.speedAmt, Math.min(1, Math.abs(intent.side)));
     }
     // Move slowly even in hitstun/attack windup — the player is "shuffling".
     if (f.state === 'hitstun') desired.multiplyScalar(0.2);
@@ -2160,17 +2231,14 @@ export class BrawlGame {
     const k = 1 - Math.exp(-dt * a);
     f.vel.lerp(desired, k);
 
-    // Knockback + sidestep impulses.
+    // Knockback impulse. The `sideVel` term that used to sit beside it is gone:
+    // circling is steering now, so it belongs in `desired` above rather than in
+    // a separate decaying impulse channel.
     f.knockback.multiplyScalar(Math.max(0, 1 - dt * 8));
-    f.sideVel.multiplyScalar(Math.max(0, 1 - dt * 10));
-    if (intent.side !== 0 && !incapacitated && !rooted) {
-      const camDir = this._sideDirection();
-      f.sideVel.add(camDir.multiplyScalar(intent.side * 5.5));
-    }
 
     // Integrate position.
-    pos.x += (f.vel.x + f.knockback.x + f.sideVel.x) * dt;
-    pos.z += (f.vel.z + f.knockback.z + f.sideVel.z) * dt;
+    pos.x += (f.vel.x + f.knockback.x) * dt;
+    pos.z += (f.vel.z + f.knockback.z) * dt;
 
     // ── State machine ────────────────────────────────────────────────
     switch (f.state) {
@@ -2185,10 +2253,22 @@ export class BrawlGame {
           this._enterCharge(f, name);
           break;
         }
-        // Signature super activation: edge-triggered, only from idle so the
-        // pose read is clean ("He lines up. He fires."). No-op if the meter
-        // isn't full or this fighter has no onSuper config.
-        if (intent.super) this._fireSuper(f);
+        // Signature super activation: only from idle so the pose read is clean
+        // ("He lines up. He fires."). No-op if the meter isn't full or this
+        // fighter has no onSuper config.
+        //
+        // 2026-08-11: the super key and the HUD's super bar are gone — the game
+        // is down to two bars, health and energy. A HUMAN fighter therefore
+        // fires the instant the meter fills; there is no longer any input that
+        // could spend it, so holding it back would strand the mechanic exactly
+        // the way the dead E/O key used to.
+        //
+        // The AI deliberately keeps its own gate (see ai.js: rung-scaled chance
+        // plus a 4 s cooldown) rather than auto-firing too. That pacing is a
+        // DIFFICULTY knob — low rungs hoard the meter, high rungs spend it well
+        // — and firing every CPU the moment it filled would make the early
+        // ladder harder, which is the opposite of simplifying the game.
+        if (intent.super || this._autoSuperReady(f)) this._fireSuper(f);
         if (intent.block) {
           f.state = 'block';
           f.animator.setBlocking(true);
@@ -2531,12 +2611,22 @@ export class BrawlGame {
   }
 
 
-  _sideDirection() {
+  // The camera's forward direction, flattened to the ground plane: the axis the
+  // circle keys walk along. +1 on `intent.side` follows this vector (into the
+  // screen, away from the viewer); −1 walks back against it, toward the viewer.
+  //
+  // Was named _sideDirection and used to aim a one-shot sidestep impulse; it is
+  // now the steering axis for held circling. The fallback matters on the first
+  // frame or two, before the camera has been aimed at the ring — returning a
+  // zero vector there would drop the input silently instead of picking a
+  // direction the player can correct.
+  _cameraForward() {
     const dir = new THREE.Vector3();
     this.camera.getWorldDirection(dir);
     dir.y = 0;
     return dir.lengthSq() > 1e-6 ? dir.normalize() : new THREE.Vector3(0, 0, -1);
   }
+
 
   _tryHit(attacker, defender, attack, contact = null) {
     // Capsule-vs-capsule polygon hit detection. We test the attacker's
@@ -2635,6 +2725,14 @@ export class BrawlGame {
       // attacking), but a clean block still absorbs the blow.
       const blockDamp = 1 / defMass;
       defender.knockback.add(knockDir.clone().multiplyScalar(2.0 * blockDamp * chargeMul));
+      if (attack.name === 'punch') {
+        attacker.blockStunT = 0.5;
+        attacker.state = 'idle';
+        attacker.stateT = 0;
+        attacker.attack = null;
+        attacker.animator.setCharge(null, 0);
+        attacker.animator.play('idle');
+      }
       this._spawnSparks(hit.point, 0x9ad0ff, 6, 1.0);
       this._flashImpactLight(hit.point, 3, 0x9ad0ff, 0.1);
       // Visible absorb: the attacker's arm bounces off the guard; the
@@ -3551,9 +3649,10 @@ export class BrawlGame {
 
   // ── Touch controls ───────────────────────────────────────────────────
   // Fixed to the bottom of the viewport (the empty strip below the canvas
-  // on portrait phones). Left cluster: movement. Right cluster: step-in,
-  // block (hold — same tap-vs-hold semantics as the S key), punch, kick
-  // (hold to charge). Synthetic key events feed the normal input path.
+  // on portrait phones). Left cluster: walk in/out plus the two circle keys.
+  // Right cluster: block (hold), punch, kick (hold to charge). Synthetic key
+  // events feed the normal input path, so the touch panel has no control
+  // semantics of its own — rebinding a key in input.js rebinds the button.
   _buildTouchControls() {
     const panel = document.createElement('div');
     panel.className = 'pb-touch';
@@ -3589,38 +3688,47 @@ export class BrawlGame {
       b.addEventListener('contextmenu', (e) => e.preventDefault());
       return b;
     };
+    // Left cluster is the movement axis: walk in/out, and the two circle keys
+    // beside them. All four are hold-to-act, matching the keyboard exactly —
+    // these dispatch synthetic keydown/keyup for the very same codes.
     const left = document.createElement('div');
     left.className = 'pb-touch-cluster';
-    left.append(mk('KeyA', '◀'), mk('KeyD', '▶'));
+    left.append(mk('KeyA', '◀'), mk('KeyD', '▶'),
+      mk('KeyW', '↺', true), mk('KeyS', '↻', true));
     const right = document.createElement('div');
     right.className = 'pb-touch-cluster';
-    // The super button (KeyE) is only reachable by touch through this panel —
-    // there is no on-canvas gesture for it — so without it a phone player could
-    // fill the meter and never spend it. `pb-touch-super` is styled to light up
-    // when the meter is ready; setSuperReady drives that class from the HUD tick.
-    this._touchSuperBtn = mk('KeyE', '⚡', true);
-    this._touchSuperBtn.classList.add('pb-touch-super');
-    right.append(mk('KeyW', '⬆', true), mk('KeyS', '🛡', true),
-      this._touchSuperBtn, mk('KeyF', '👊'), mk('KeyG', '🦵'));
+    // 2026-08-11: the ⚡ super button went with the super key it pressed, and
+    // the 🛡 moved from KeyS to KeyR — S is a circle key now, so leaving the
+    // shield on it would have had touch players orbiting when they meant to
+    // guard, with no way to block at all.
+    right.append(mk('KeyR', '🛡', true),
+      mk('KeyF', '👊'), mk('KeyG', '🦵'));
     panel.append(left, right);
     this.container.appendChild(panel);
     this.touchEl = panel;
   }
 
-  // Mirrors P1's super state onto the touch button so it matches the HUD bar:
-  // hidden outright for a fighter with no signature move (BOB), dim while the
-  // meter is filling, lit once it is armed. Called from _pushHud, which already
-  // runs on the 4 Hz HUD cadence — cheap because classList.toggle is a no-op
-  // when the state has not changed.
-  _syncTouchSuper(f) {
-    const btn = this._touchSuperBtn;
-    if (!btn || !f) return;
-    const hasSuper = !!PERSONALITIES[f.charId]?.onSuper;
-    btn.classList.toggle('pb-touch-super--absent', !hasSuper);
-    btn.classList.toggle('pb-touch-super--ready',
-      hasSuper && (f.personality?.superMeter || 0) >= 1.0);
-  }
+  // _syncTouchSuper removed 2026-08-11 with the touch ⚡ button it drove. It
+  // mirrored the super meter onto that button the way the HUD bar mirrored it
+  // for keyboard players; with the meter no longer surfaced anywhere, there is
+  // nothing to mirror.
 
+  // Should this fighter's signature super fire on its own this frame?
+  //
+  // True only for HUMAN-driven fighters with a full meter. Since the super key
+  // was removed there is no input that can spend the meter, so a human's super
+  // fires automatically — the president still does their signature thing, the
+  // player just doesn't manage a third resource. AI fighters return false here
+  // and keep firing through `intent.super`, which preserves ai.js's rung-scaled
+  // pacing (see the note at the call site in _tickFighter).
+  //
+  // `_fireSuper` re-checks the meter and the onSuper config and no-ops if
+  // either is missing, so BOB — who has no signature move by design — can never
+  // trigger anything here.
+  _autoSuperReady(f) {
+    return f?.controller?.isHuman === true
+      && (f.personality?.superMeter || 0) >= 1.0;
+  }
 
   // Can this fighter still throw a punch? The engine only ever swings the RIGHT
   // arm, so a punch needs the right arm attached. (The left arm always tears off
@@ -3821,7 +3929,6 @@ export class BrawlGame {
     if (!this.hudDirty && this.hudTimer < 0.25) return;
     this.hudTimer = 0;
     this.hudDirty = false;
-    this._syncTouchSuper(this.fighters[0]);
     if (this.dotnet) {
       // Region damage rides along as [head, torso, arms, legs] per fighter so
       // the Blazor HUD can render the body-diagram damage readout.
@@ -3829,37 +3936,24 @@ export class BrawlGame {
         Math.round(f.regionDmg.head), Math.round(f.regionDmg.torso),
         Math.round(f.regionDmg.arms), Math.round(f.regionDmg.legs),
       ];
-      // Super meter per fighter, plus a 1/0 "armed" flag the HUD uses to show
-      // the "PRESS E/O" prompt.
+      // ARITY CONTRACT with PoBrawlPage.OnHud — seven arguments, and both sides
+      // move together or the HUD dies silently. invokeMethodAsync rejects on an
+      // argument-count mismatch and this call swallows it in .catch(() => {}),
+      // so a mismatch produces no console error and no exception: just a HUD
+      // frozen at its C# field initializers. That has already happened once,
+      // when the four super arguments below were ADDED here and not there.
       //
-      // Sourced from personality state — see the superMeterFull note in
-      // _fighterCtx for why the same-named fighter field was the wrong (and
-      // always-zero) one.
-      //
-      // -1 means "this fighter has no signature super", which is NOT the same
-      // as an empty meter and must not render as one. Only fighters with an
-      // onSuper config can ever fill (_tickSuperMeter pins the rest to zero).
-      //
-      // BOB is the one who cannot, and that is DELIBERATE, not a gap waiting to
-      // be filled: he is the generic avatar the presidents are characterised
-      // against, so he has no signature move by design. Do not add an `onSuper`
-      // for him in personalities.js — the fifteen presidents each having one and
-      // BOB having none is the point of the roster.
-      //
-      // Hence the -1 rather than 0: sending 0 would draw a bar that never moves
-      // next to a documented key that does nothing, which is the exact failure
-      // this whole feature exists to remove. The HUD omits the bar entirely.
-      const superPct = (f) => (PERSONALITIES[f.charId]?.onSuper
-        ? Math.round((f.personality?.superMeter || 0) * 100)
-        : -1);
-      const superReady = (f) => ((PERSONALITIES[f.charId]?.onSuper
-        && (f.personality?.superMeter || 0) >= 1.0) ? 1 : 0);
+      // 2026-08-11: those same four (superPct/superReady per fighter) are now
+      // REMOVED, in step with the C# signature, because the super bar they fed
+      // is gone — the HUD is health and energy only. The meter still exists in
+      // the engine and still gates the signature moves; it simply is no longer
+      // a number the player is shown. Do not re-add an argument here without
+      // widening OnHud in the same commit.
+      const timeLeft = Math.max(0, TIME_LIMIT - (this.clock || 0));
       this.dotnet.invokeMethodAsync('OnHud',
-        this._hp(this.fighters[0]), this._hp(this.fighters[1]), Math.round(this.clock * 10) / 10,
+        this._hp(this.fighters[0]), this._hp(this.fighters[1]), Math.round(timeLeft * 10) / 10,
         regions(this.fighters[0]), regions(this.fighters[1]),
-        Math.round(this.fighters[0].energy * 100), Math.round(this.fighters[1].energy * 100),
-        superPct(this.fighters[0]), superPct(this.fighters[1]),
-        superReady(this.fighters[0]), superReady(this.fighters[1]))
+        Math.round(this.fighters[0].energy * 100), Math.round(this.fighters[1].energy * 100))
         .catch(() => {});
     }
   }

@@ -106,26 +106,10 @@
         transform: scale(1.08);
     }
 
-    /* The super button is the only touch affordance for a key that does nothing
-       most of the time, so it stays dim until the meter is actually armed —
-       otherwise it reads as a broken button for the first half of every fight. */
-    .pb-canvas-host ::deep .pb-touch button.pb-touch-super {
-        border-color: rgba(168, 85, 247, 0.45);
-        opacity: 0.5;
-    }
-
-    /* Fighters with no signature move (BOB) get no button at all, matching the
-       HUD, which draws no super bar for them. */
-    .pb-canvas-host ::deep .pb-touch button.pb-touch-super--absent {
-        display: none;
-    }
-
-    .pb-canvas-host ::deep .pb-touch button.pb-touch-super--ready {
-        opacity: 1;
-        border-color: rgba(240, 171, 252, 0.9);
-        background: rgba(124, 58, 237, 0.55);
-        box-shadow: 0 0 12px rgba(217, 130, 255, 0.8);
-    }
+    /* The .pb-touch-super rules (dim / --absent / --ready) were removed
+       2026-08-11 along with the ⚡ button itself: with supers firing on their
+       own there is no super key for a touch player to reach. The cluster is
+       back to step-in, block, punch, kick. */
 }
 
 /* ── Floating hit feedback (engine-created; see game.js `this.fx`) ─────
@@ -212,10 +196,9 @@
         animation: pb-dmg-fade 0.6s linear forwards;
     }
 
+    /* The three .pb-su-* selectors that used to be listed here went with the
+       super bar (2026-08-11) — nothing renders them any more. */
     .pb-canvas-host ::deep .pb-combo--on,
-    .pb-canvas-host ::deep .pb-su-fill--ready,
-    .pb-su-fill--ready,
-    .pb-su-prompt,
     .pb-rung--now {
         animation: none;
     }
@@ -520,97 +503,19 @@
     box-shadow: 0 0 6px rgba(255, 210, 87, 0.75);
 }
 
-/* ── Super meter ──────────────────────────────────────────────────────
-   Third bar in the stack: health (thick) → energy (thin, gold when banked)
-   → super (thin, violet). Violet because both existing bars are already
-   spoken for — green/red is "how alive am I", gold is "how hard is my next
-   hit" — and the super is neither; it is a one-shot the player either holds
-   or does not. The ready state is the load-bearing part of this bar, so it
-   gets a pulse rather than just a colour change.
+/* ── Super meter — REMOVED 2026-08-11 ─────────────────────────────────
+   The .pb-su / .pb-su-track / .pb-su-fill / .pb-su-fill--ready / .pb-su-prompt
+   rules and their two keyframes (pb-su-sweep, pb-su-pulse) lived here. The HUD
+   is two bars now — health and energy — so the violet third track, its conic
+   "armed" sweep and the "⚡ PRESS E/O" prompt all went with the markup in
+   PoBrawlPage.razor. Signature moves still fire; they just fire themselves.
 
-   Colours are raw hex, like the rest of this HUD: .pb-hud floats over the
-   scheme-invariant arena, so it must not follow the theme. See the long note
-   on .pb-hp-name — that mistake has already been made here once. */
-.pb-su {
-    /* .pb-hp-right sets align-items:flex-end, which shrink-wraps any child
-       without an explicit width — the track would then be 100% of nothing. */
-    width: 100%;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-}
+   The stack is now: health (thick, green/red) → energy (thin, gold when
+   banked).
 
-.pb-hp-right .pb-su {
-    align-items: flex-end;
-}
-
-.pb-su-track {
-    width: 100%;
-    height: 5px;
-    border-radius: 3px;
-    background: rgba(4, 7, 18, 0.62);
-    overflow: hidden;
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.55);
-}
-
-.pb-su-fill {
-    height: 100%;
-    width: var(--su, 0%);
-    background: linear-gradient(90deg, #7c3aed, #c084fc);
-    transition: width 0.25s linear;
-}
-
-.pb-hp-right .pb-su-fill {
-    margin-left: auto;
-}
-
-/* Ready state: a CONIC gradient swept around the fill, so the charge reads as
-   circulating energy rather than a bar that changed colour. This is the one
-   place in the HUD that animates, and it earns it — "your super is available"
-   is the single most actionable piece of information on screen, and the old
-   opacity blink was easy to miss against a moving arena.
-
-   Rotating a conic gradient is a paint-only animation, so it is declared on a
-   registered-style custom property... which CSS cannot do without @property
-   support. Instead the ELEMENT rotates a wider-than-needed background via
-   background-position, which stays on the compositor. */
-.pb-su-fill--ready {
-    background: conic-gradient(from 0deg,
-        #a855f7, #f0abfc, #ffffff, #f0abfc, #a855f7, #7c3aed, #a855f7);
-    box-shadow:
-        0 0 8px rgba(217, 130, 255, 0.9),
-        0 0 calc(4px + var(--audio-bass, 0) * 16px) rgba(240, 171, 252, 0.85);
-    animation: pb-su-sweep 1.6s linear infinite;
-}
-
-@keyframes pb-su-sweep {
-    from { filter: hue-rotate(0deg) brightness(1); }
-    50%  { filter: hue-rotate(18deg) brightness(1.35); }
-    to   { filter: hue-rotate(0deg) brightness(1); }
-}
-
-@keyframes pb-su-pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.55; }
-}
-
-.pb-su-prompt {
-    font-family: 'Bungee', 'Russo One', 'Impact', sans-serif;
-    font-size: 0.62rem;
-    letter-spacing: 0.08em;
-    color: #f0abfc;
-    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
-    animation: pb-su-pulse 0.85s ease-in-out infinite;
-}
-
-.pb-su-prompt kbd {
-    font: inherit;
-    background: rgba(124, 58, 237, 0.35);
-    border: 1px solid rgba(240, 171, 252, 0.6);
-    border-radius: 3px;
-    padding: 0 3px;
-}
+   Note for anyone re-adding a third readout: the ladder pip (.pb-rung--now)
+   used to borrow this block's `pb-su-pulse` keyframe. It owns a `pb-rung-pulse`
+   copy now, so deleting this section again cannot silently stop that pulse. */
 
 /* ── Centre column: clock + best-of-three score ───────────────────────── */
 
@@ -621,25 +526,10 @@
     gap: 3px;
 }
 
-.pb-rounds {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    font-size: 0.62rem;
-    letter-spacing: 0.1em;
-    color: #f4f6ff;
-    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.85);
-}
-
-.pb-rounds-pips {
-    letter-spacing: 0.05em;
-    color: #ffd166;
-}
-
-.pb-rounds-label {
-    font-family: 'Bungee', 'Russo One', 'Impact', sans-serif;
-    opacity: 0.75;
-}
+/* .pb-rounds / -pips / -label removed 2026-08-11 with the 2P best-of-three
+   scoreboard. Every mode is one round now, so the centre column carries the
+   clock alone. Not to be confused with .pb-ladder below, which is the 1P
+   gauntlet rail and is still very much in use. */
 
 /* ── 1P ladder rail ───────────────────────────────────────────────────
    Fifteen pips under the HUD: cleared, current, still to come. Sits in the
@@ -685,10 +575,19 @@
     background: linear-gradient(180deg, #22c55e, #16a34a);
 }
 
+/* The pulse was `pb-su-pulse`, borrowed from the super bar. That bar and its
+   keyframes were removed 2026-08-11, which would have silently killed this
+   animation — an undefined animation-name is not an error, the pip just stops
+   pulsing. Own keyframe now, named for the thing that actually uses it. */
+@keyframes pb-rung-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.55; }
+}
+
 .pb-rung--now {
     background: #ffd166;
     box-shadow: 0 0 7px rgba(255, 209, 102, 0.9);
-    animation: pb-su-pulse 1.4s ease-in-out infinite;
+    animation: pb-rung-pulse 1.4s ease-in-out infinite;
 }
 
 .pb-ladder-now {

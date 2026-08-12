@@ -107,12 +107,19 @@ export class AiController {
     this.holdName = null;
     this.holdUntil = 0;
     this.chargeP = Math.min(0.6, 0.14 + 0.06 * level);
-    // Optional cooldown-timer fields for personality-driven AI cadences:
-    //   bidenChargeReadyAt — wall-clock time the next Biden charge swing is allowed
-    //   obamaComboReadyAt  — wall-clock time the next Obama punch+kick string is fired
-    // The engine sets t=0 at fight start; they're per-AI-instance.
-    this.bidenChargeReadyAt = 0;
-    this.obamaComboReadyAt = 0;
+    // Signature pattern state (see _runPattern). `_pat` is the phrase currently
+    // playing out, `_patReadyAt` the wall-clock time the next one may open.
+    //
+    // These replace the old bidenChargeReadyAt / obamaComboReadyAt pair. Those
+    // were two hand-written `if (this.charId === 'x')` blocks — the only two
+    // presidents whose fighting STYLE differed at all, which is why the other
+    // thirteen were mechanically interchangeable at a given rung. Both are now
+    // ordinary rows in the same data table as everyone else.
+    this._pat = null;
+    // Stagger the first opening so a fighter does not lead with its signature
+    // before the player has seen it fight normally — and so demo pairings do
+    // not open in lockstep. Seeded RNG, so replays stay deterministic.
+    this._patReadyAt = 1.2 + this.rng.random() * 1.5;
     // Pre-planned punch→kick cancel string (rungs 7+): fire the kick edge when
     // t reaches comboAt, drop the plan if the window is missed.
     this.comboAt = 0;
@@ -131,6 +138,11 @@ export class AiController {
     if (this.recentHits.length >= 2) this.retreatUntil = this.t + 0.7;
     // Taking a hit dumps any charge the engine was holding for us.
     this.holdName = null;
+    // ...and breaks the signature phrase. This is the counterplay: every
+    // pattern has a moment where it is committed and open, and a player who has
+    // learned to read it gets to cut it off there. Without this the phrase
+    // would play through the interruption and reading it would earn nothing.
+    this._pat = null;
   }
 
   /**
@@ -168,6 +180,106 @@ export class AiController {
     return Math.max(0, this.oppAtkN / this.clockT - SPAM_THRESHOLD);
   }
 
+  // ── Signature pattern runner ──────────────────────────────────────────
+  // Every president owns one scripted phrase (personalities.js `aiPattern`)
+  // that it replays on a fixed cadence for the whole fight. This is the layer
+  // that makes the roster feel like fifteen fighters instead of one fighter in
+  // fifteen skins: the rung table below decides how SHARP a president is, and
+  // the pattern decides how it FIGHTS.
+  //
+  // The design constraint is learnability, so the script is deliberately not
+  // randomised. Same trigger, same order, same rhythm, every time — that is
+  // what lets a player who has lost to Nixon four times notice he always backs
+  // off a beat before he lunges, and start punishing the retreat. A pattern
+  // that varied would just read as noise.
+  //
+  // Three properties keep it fair rather than oppressive:
+  //   • it only starts in range and off cooldown, so it cannot chase you down;
+  //   • landing a hit CANCELS it (see notifyHit) — every phrase has a window
+  //     where interrupting beats it, which is the reward for reading it;
+  //   • it is a phrase, not a loop, so there is always recovery time after.
+  _patternDue(ctx) {
+    const pat = PERSONALITIES[this.charId]?.aiPattern;
+    if (!pat || this.holdName || this.t < this.retreatUntil) return false;
+    if (this.t < this._patReadyAt) return false;
+    // Range gate: measured against the pattern's own reach so a crowding
+    // phrase (LBJ) can open from further out than a counter-punch (Bush Sr.).
+    return ctx.distance < ctx.kickRange * (pat.range || 1.2);
+  }
+
+  _startPattern(ctx) {
+    const pat = PERSONALITIES[this.charId].aiPattern;
+    this._pat = { steps: pat.steps, i: 0, until: 0, fired: false };
+    // Cadence is measured from the START of the phrase, so the gap a player
+    // learns to count is the gap between openings, not between endings.
+    this._patReadyAt = this.t + (pat.everySecs || 5);
+    // A phrase supersedes any half-formed plan from the random layer.
+    this.baitArmed = false;
+    this.comboAt = 0;
+    this.comboUntil = 0;
+  }
+
+  // Returns an intent while the phrase is mid-flight, or null once it ends
+  // (letting the normal decision loop resume on the same tick).
+  _runPattern(ctx) {
+    const p = this._pat;
+    const step = p.steps[p.i];
+    if (!step) { this._pat = null; return null; }
+
+    // Entering a step: stamp its dwell and let this tick carry the press edge.
+    if (p.until === 0) {
+      p.until = this.t + (step.secs || 0.2);
+      p.fired = false;
+    }
+
+    const done = this.t >= p.until;
+    const out = this._stepIntent(step, p.fired);
+    p.fired = true;
+
+    if (done) {
+      p.i += 1;
+      p.until = 0;
+      // Dropping the held flag on the frame a `charge` step ends is what makes
+      // the engine release the strike — the release is the step boundary.
+      if (p.i >= p.steps.length) {
+        this._pat = null;
+        this.sinceDecision = 0;
+      }
+    }
+    return out;
+  }
+
+  // One step → one intent. `edgeSpent` suppresses the press edge on every frame
+  // after the first: punch/kick are edge-triggered, and re-pressing each frame
+  // would restart the swing the moment the engine returned to idle.
+  _stepIntent(step, edgeSpent) {
+    const base = { move: 0, side: 0, punch: false, kick: false, block: false, super: false };
+    const atk = step.attack || 'punch';
+    switch (step.act) {
+      case 'punch':
+      case 'kick':
+        return edgeSpent ? base : { ...base, [step.act]: true };
+      case 'charge': {
+        // Press once, then hold. The engine charges for as long as *Held is
+        // set and throws the strike when it drops — see _tickFighter's charge
+        // case — so the visible coil IS this step's duration.
+        const out = { ...base, [atk + 'Held']: true };
+        if (!edgeSpent) out[atk] = true;
+        return out;
+      }
+      case 'block':    return { ...base, block: true };
+      case 'advance':  return { ...base, move: 1 };
+      case 'retreat':  return { ...base, move: -1 };
+      // Held for the step's whole duration, not edge-triggered: `side` became a
+      // sustained orbit when the circle keys landed, so a one-frame pulse would
+      // have quietly turned every sidestep phrase (Obama, Clinton, JFK) into a
+      // pause the player could not see.
+      case 'sidestep': return { ...base, side: step.dir || -1 };
+      case 'wait':
+      default:         return base;
+    }
+  }
+
   update(ctx) {
     this.t += ctx.dt;
     this.sinceDecision += ctx.dt * 1000;
@@ -184,41 +296,17 @@ export class AiController {
     // Edge-triggered flags are consumed each read; holds (move/block) persist.
     const intent = { ...this.current, punch: false, kick: false, side: 0 };
 
-    // ── Personality cadences ────────────────────────────────────────
-    // Biden "The Big Guy": every ~5.5 s a charged biden commits a heavy
-    // charge-up (realized as the AI holding punch/kick for 1.0 s). The engine
-    // honors the chargeWindupMul by scaling the visible coil duration.
-    if (this.charId === 'biden' && PERSONALITIES.biden?.chargeEverySecs
-        && this.t >= this.bidenChargeReadyAt
-        && ctx.distance < ctx.kickRange * 1.2) {
-      const cfg = PERSONALITIES.biden;
-      this.holdName = this.rng.random() < 0.5 ? 'kick' : 'punch';
-      this.holdUntil = this.t + (cfg.chargeHoldSecs || 1.0);
-      this.bidenChargeReadyAt = this.t + (cfg.chargeEverySecs || 5.5);
-      this.baitArmed = false;
-      this.comboAt = 0;
-      this.comboUntil = 0;
-      const out = { move: 0, side: 0, punch: false, kick: false, block: false };
-      out[this.holdName] = true;
-      out[this.holdName + 'Held'] = true;
-      return out;
-    }
-
-    // Obama "No-Drama Open" / "Drone Strike": every ~4 s commit to a
-    // pre-planned punch→kick string. The existing comboAt/comboUntil fields
-    // already implement this for rungs 7+, so we just commit to a punch and
-    // arm the combo. Lower-level Obama (rung <= 6) is missing the cancel
-    // table — we emulate by re-arming comboAt/comboUntil directly.
-    if (this.charId === 'obama' && PERSONALITIES.obama?.comboEverySecs
-        && this.t >= this.obamaComboReadyAt
-        && ctx.distance < ctx.kickRange * 1.2) {
-      this.comboAt = this.t + ctx.ownAttacks.punch.cancelInto.kick + 0.04;
-      this.comboUntil = this.comboAt + 0.15;
-      this.obamaComboReadyAt = this.t + (PERSONALITIES.obama.comboEverySecs || 4);
-      const out = { move: 0, side: 0, punch: true, kick: false, block: false };
-      this.current = { move: 0, side: 0, punch: false, kick: false, block: false };
-      this.sinceDecision = 0;
-      return out;
+    // ── Signature pattern ───────────────────────────────────────────
+    // A running script owns the fighter outright until it finishes or is
+    // interrupted, so it plays out as one readable phrase rather than being
+    // diluted by the random weights below.
+    if (this._pat) {
+      const out = this._runPattern(ctx);
+      if (out) return out;
+    } else if (this._patternDue(ctx)) {
+      this._startPattern(ctx);
+      const out = this._runPattern(ctx);
+      if (out) return out;
     }
 
     // ── Active charge hold ──────────────────────────────────────────────
@@ -320,12 +408,18 @@ export class AiController {
       return out;
     }
 
-    // ── Out of range: approach, occasionally sidestep ───────────────────
+    // ── Out of range: approach, occasionally circle in ──────────────────
+    // The circle is now stored ON this.current rather than tacked onto the
+    // returned copy. `side` used to be an edge-triggered dart, so one frame of
+    // it was a whole sidestep; it is a held orbit direction now, and a single
+    // frame of that is an imperceptible nudge. Keeping it on `current` means it
+    // persists until the next decision tick, which is what makes the AI arc in
+    // rather than walk a straight line.
     if (ctx.distance > ctx.kickRange) {
       const side = this.rng.random() < 0.18 ? (this.rng.random() < 0.5 ? 1 : -1) : 0;
-      this.current = { move: 1, side: 0, punch: false, kick: false, block: false };
+      this.current = { move: 1, side, punch: false, kick: false, block: false };
       this.baitArmed = false;
-      return { ...this.current, side };
+      return { ...this.current };
     }
 
     // ── In range: frame-data aware choices ──────────────────────────────

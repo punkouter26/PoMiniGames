@@ -1038,6 +1038,48 @@
     font-size: 0.9rem;
 }
 
+/* ── Minimal place pill (2026-08-11) ──
+   Replaces the multi-row telemetry HUD with a single "Place P3 / 86" chip.
+   Pinned top-left of the canvas. Same glass treatment as the rest of the
+   chrome so it sits on the track without competing with it. */
+.mr-place {
+    position: absolute;
+    top: 14px;
+    left: 14px;
+    z-index: 4;
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.4rem;
+    padding: 6px 12px;
+    border-radius: 9999px;
+    background: rgba(8, 12, 24, 0.72);
+    border: 1px solid rgba(34, 211, 238, 0.3);
+    box-shadow: 0 4px 14px rgba(2, 6, 18, 0.45);
+    backdrop-filter: blur(8px) saturate(1.15);
+    -webkit-backdrop-filter: blur(8px) saturate(1.15);
+    color: #e2e8f0;
+    font-family: var(--font-display);
+    pointer-events: none;
+}
+
+.mr-place-label {
+    font-size: 0.7rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #94a3b8;
+}
+
+.mr-place-value {
+    font-size: 1.05rem;
+    font-weight: 800;
+    color: #e2e8f0;
+}
+
+.mr-place-field {
+    font-size: 0.75rem;
+    color: #94a3b8;
+}
+
 .mr-mapsel-blurb {
     margin: 8px 0 0;
     font-size: 0.78rem;

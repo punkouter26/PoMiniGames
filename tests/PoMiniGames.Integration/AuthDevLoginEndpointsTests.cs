@@ -45,7 +45,11 @@ public class AuthDevLoginEndpointsTests : IClassFixture<LocalAuthWebApplicationF
         var profile = await client.GetFromJsonAsync<AuthUserProfile>("/api/auth/me");
         profile.Should().NotBeNull();
         profile!.UserId.Should().Be("dev-user-a");
-        profile.DisplayName.Should().Be("Dev User A");
+        // DevLoginIntake (2026-08-10) appends a random 6-digit suffix to every dev display
+        // name so two tabs of the same browser produce distinct identities. Assert on the
+        // prefix + suffix shape rather than the literal name.
+        profile.DisplayName.Should().MatchRegex(@"^Dev User A-\d{6}$",
+            because: "every dev login is suffixed with a random 6-digit id to avoid session collisions");
 
         // Re-arm: the token issued before login was bound to the anonymous principal, and
         // this POST now carries the session cookie. That identity change is exactly what

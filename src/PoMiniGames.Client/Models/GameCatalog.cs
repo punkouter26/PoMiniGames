@@ -94,7 +94,14 @@ public static class GameCatalog
             new(GameMode.OnePlayer, "/connectfive/1player"),
             new(GameMode.TwoPlayer, "/connectfive/2player"),
             new(GameMode.Demo, "/connectfive/demo"),
-        ]),
+        ])
+        {
+            // ChipPrimary: 1P is the card head (the adaptive ELO ladder), so the
+            // chip row would otherwise read "2P Demo" — players looking for a solo
+            // game would scan the chips, see no 1P, and conclude the game is
+            // unplayable alone. Same fix applied to Brawl / Sports / Marble Race.
+            ChipPrimary = true,
+        },
 
         // 2026-07-19 browser audit #8: the grid dimension (6×6 / 4-in-a-row) was
         // leaking into the product name as "TicTacToe6". Surface the classic product

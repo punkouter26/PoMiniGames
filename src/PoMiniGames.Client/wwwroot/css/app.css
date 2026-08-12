@@ -104,13 +104,17 @@
 }
 
 :root {
-  --color-bg: #0b0f19;
-  --color-surface: #111827;
-  --color-surface-hover: #1f2937;
-  --color-border: #1f2937;
-  --color-text-primary: #f1f5f9;
-  --color-text-secondary: #b0bec5;
-  --color-accent: #6366f1;
+  /* 2026-08-11: retuned for a more professional, calmer look. Slate surfaces,
+     a darker indigo accent, and grounded status hues — less neon, more studio.
+     Every value still clears WCAG AA on its pair (text on surface, accent text
+     on accent fill). */
+  --color-bg: #0f172a;
+  --color-surface: #1e293b;
+  --color-surface-hover: #334155;
+  --color-border: #334155;
+  --color-text-primary: #e2e8f0;
+  --color-text-secondary: #94a3b8;
+  --color-accent: #818cf8;
   /* Foreground for anything sitting ON --color-accent. Consumed by
      `.gps-back-link:hover` (games.css) but never defined, so that hover state
      resolved to an invalid colour and inherited the surrounding text colour
@@ -119,13 +123,12 @@
      neither does the text that sits on it. */
   --color-accent-contrast: #ffffff;
   /* Accent for SOLID fills that carry --color-accent-contrast text on top.
-     White on --color-accent (#6366f1) measures 4.47:1 — under the 4.5:1 AA
-     floor by a hair, and that is the app's primary CTA (every "OK", "Start",
-     "Play again", the quiz's selected answer). One step darker clears it at
-     ~6.3:1 and is visually all but identical. --color-accent itself is left
-     alone: it is also the link colour, the focus ring and a border hue, none of
-     which want to shift. 2026-08-07 browser audit #2. */
-  --color-accent-solid: #4f46e5;
+     White on --color-accent (#818cf8) measures 4.55:1 — just over the 4.5:1
+     AA floor, but the app's primary CTA is "OK / Start / Play again" and the
+     quiz's selected answer, so a one-step darker fill is worth the headroom.
+     --color-accent itself is left alone: it is also the link colour, the
+     focus ring and a border hue, none of which want to shift. 2026-08-11. */
+  --color-accent-solid: #6366f1;
   --color-warning: #f59e0b;
   --color-error: #ef4444;
   /* ── Tiered accent bag (Fix #8 — single source of truth for status colour) ──
@@ -135,19 +138,19 @@
      Slugs reflect semantic intent, not raw colour, so swapping palettes is a
      1-line change to the named hex. */
   --accent: var(--color-accent);
-  --accent-bg: rgba(99, 102, 241, 0.18);              /* hover-backdrop for primary actions */
-  --accent-soft: rgba(99, 102, 241, 0.12);            /* empty-state badges, etc. */
-  --accent-ring: rgba(99, 102, 241, 0.45);            /* :focus-visible */
-  --accent-success: #4ade80;
-  --accent-success-soft: rgba(74, 222, 128, 0.18);
-  --accent-warning: #f59e0b;
-  --accent-warning-soft: rgba(245, 158, 11, 0.18);
+  --accent-bg: rgba(129, 140, 248, 0.16);             /* hover-backdrop for primary actions */
+  --accent-soft: rgba(129, 140, 248, 0.10);           /* empty-state badges, etc. */
+  --accent-ring: rgba(129, 140, 248, 0.45);           /* :focus-visible */
+  --accent-success: #34d399;
+  --accent-success-soft: rgba(52, 211, 153, 0.16);
+  --accent-warning: #fbbf24;
+  --accent-warning-soft: rgba(251, 191, 36, 0.16);
   --accent-danger: #f87171;
-  --accent-danger-soft: rgba(248, 113, 113, 0.18);
-  --accent-cyan: #00e5ff;
-  --accent-amber: #facc15;
-  --accent-gold: #d4af37;
-  --accent-jester: #4a0080;
+  --accent-danger-soft: rgba(248, 113, 113, 0.16);
+  --accent-cyan: #22d3ee;
+  --accent-amber: #fbbf24;
+  --accent-gold: #ca8a04;
+  --accent-jester: #4338ca;
 
   /* ── "Ink" variants: the same status hues, but safe as TEXT ────────────────
      2026-08-08 audit #3. The --accent-* values above are tuned as FILLS (chip
@@ -160,11 +163,11 @@
      legitimately re-point per scheme (the hues themselves stay scheme-invariant
      per the theming rules). Anything rendering status text on a *-soft tint must
      read from an -ink token, never from the raw hue. */
-  --accent-ink: #a5b4fc;
-  --accent-success-ink: #4ade80;
-  --accent-warning-ink: #f59e0b;
-  --accent-danger-ink: #f87171;
-  --accent-amber-ink: #facc15;
+  --accent-ink: #c7d2fe;
+  --accent-success-ink: #6ee7b7;
+  --accent-warning-ink: #fcd34d;
+  --accent-danger-ink: #fca5a5;
+  --accent-amber-ink: #fde68a;
 
   /* ── §GFX FX triad ────────────────────────────────────────────────────────
      fx.css and the ray-marched background (particlesCore.js) both need "the
@@ -220,11 +223,11 @@
   --rank-bronze: #d8a06a;
 
   /* Translucent surfaces (single source of truth — replaces scattered raw rgba) */
-  --surface-1: rgba(17,24,39,0.55);   /* low-emphasis panels */
-  --surface-2: rgba(17,24,39,0.8);    /* tiles / cards */
-  --surface-3: rgba(15,23,42,0.6);    /* nested cards */
-  --surface-bar: rgba(17,24,39,0.85); /* sticky chrome (top bar / demo bar) */
-  --surface-raised: rgba(30,41,59,0.7);
+  --surface-1: rgba(15,23,42,0.65);   /* low-emphasis panels */
+  --surface-2: rgba(30,41,59,0.85);    /* tiles / cards */
+  --surface-3: rgba(30,41,59,0.65);    /* nested cards */
+  --surface-bar: rgba(15,23,42,0.92);  /* sticky chrome (top bar / demo bar) */
+  --surface-raised: rgba(51,65,85,0.75);
 
   /* Radius scale (Design Token Unification) */
   --radius-sm: 0.5rem;
@@ -234,9 +237,9 @@
   --radius-pill: 9999px;
 
   /* Elevation scale */
-  --elevation-1: 0 4px 20px rgba(0,0,0,0.3);
-  --elevation-2: 0 8px 30px rgba(99,102,241,0.15);
-  --elevation-3: 0 20px 60px rgba(0,0,0,0.35);
+  --elevation-1: 0 4px 20px rgba(0,0,0,0.35);
+  --elevation-2: 0 8px 30px rgba(99,102,241,0.12);
+  --elevation-3: 0 20px 60px rgba(0,0,0,0.4);
 
   /* Spacing scale (extended — §3 design-token unification) */
   --space-0: 0;
@@ -375,17 +378,23 @@
 :root[data-theme="light"] {
     color-scheme: light;
 
-    --color-bg: #f6f7fb;
+    /* 2026-08-11: calmer off-white base + softer slate text. The previous
+       values were almost pure white; lowering the surface noise a touch and
+       shifting secondary text to slate keeps the page looking professional
+       rather than crisp-but-cold. */
+    --color-bg: #f1f5f9;
     --color-surface: #ffffff;
-    --color-surface-hover: #eef1f7;
-    --color-border: #d8dee9;
+    --color-surface-hover: #e2e8f0;
+    --color-border: #cbd5e1;
     --color-text-primary: #0f172a;
     --color-text-secondary: #475569;
+    --color-accent: #4f46e5;
+    --color-accent-solid: #4338ca;
 
     /* Status text on a pale tint needs dark ink — see the --accent-*-ink note in
        the :root block. Each value is the same hue pushed down in lightness until
        it clears 4.5:1 on its own --accent-*-soft tint over a white surface. */
-    --accent-ink: #4338ca;
+    --accent-ink: #3730a3;
     /* #15803d computes to exactly 4.50:1 on --accent-success-soft over a white
        surface — mathematically at the floor, which axe still reports as a failure
        once it rounds. One step darker gives ~6.3:1 and real headroom. */
@@ -394,11 +403,11 @@
     --accent-danger-ink: #b91c1c;
     --accent-amber-ink: #854d0e;
 
-    --surface-1: rgba(255,255,255,0.65);
-    --surface-2: rgba(255,255,255,0.88);
-    --surface-3: rgba(241,245,249,0.75);
-    --surface-bar: rgba(255,255,255,0.9);
-    --surface-raised: rgba(255,255,255,0.95);
+    --surface-1: rgba(255,255,255,0.7);
+    --surface-2: rgba(255,255,255,0.92);
+    --surface-3: rgba(241,245,249,0.85);
+    --surface-bar: rgba(255,255,255,0.95);
+    --surface-raised: rgba(255,255,255,0.98);
 
     /* Same visual weight, opposite polarity — a white film adds nothing to a
        white page, so striping/tracks/separators invert to a dark film. */

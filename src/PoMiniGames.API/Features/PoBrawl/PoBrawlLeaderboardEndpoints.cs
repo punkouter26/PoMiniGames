@@ -63,10 +63,13 @@ public static class PoBrawlLeaderboardEndpoints
         // standings are already served by the unified board:
         // UnifiedLeaderboardEndpoints.BuildPoBrawlAsync reads the same PoBrawlLadder
         // table through IStorageService and exposes it at /api/leaderboards/pobrawl,
-        // which is what GameOverModal's "Top 3 / Best rung" panel and the leaderboards
-        // list both render. A dedicated GET here existed for months with no caller in
-        // the client at all; it was removed 2026-08-11. If you need to read the ladder,
-        // use the unified route — do not add a second one.
+        // which the /leaderboards page renders. A dedicated GET here existed for months
+        // with no caller in the client at all; it was removed 2026-08-11. If you need to
+        // read the ladder, use the unified route — do not add a second one.
+        //
+        // The 1P end-of-match modal no longer shows this board: it moved to the
+        // fastest-KO view at /api/leaderboards/pobrawlko (BuildPoBrawlKoAsync), which
+        // ranks the GET above's data rather than the ladder's.
         ladder.MapPost("",
             async (PoBrawlLadderEntry entry, IStorageService storage) =>
             {

@@ -110,53 +110,16 @@
                already decided. *@
             @if (_phase == "racing" && !_demo)
             {
-                @* GFX #6: --mr-heat (0..1) rides leader progress and drives the panel's warm
-                   overlay via an opacity-only transition, so the glass warms up in sympathy with
-                   the WebGL colour grade (scene.js GRADES) as the race resolves. --spd feeds the
-                   conic-gradient speed ring around the clock. *@
-                <div class="mr-telemetry" role="status" aria-live="off"
-                     style="--mr-heat:@HeatValue; --spd:@SpeedPct; --spd-deg:@SpeedDeg">
-                    @* The "YOU · <name>" identification row that sat here is gone with the rest of
-                       the marker chrome. Your marble is the only red one and the camera is locked
-                       to it, so the panel is now purely telemetry: clock, place, gap, edge. *@
-                    <div class="mr-tel-dial">
-                        <span class="mr-tel-dial-needle" aria-hidden="true"></span>
-                        <div class="mr-tel-clock">@_clock.ToString("0.00")</div>
-                        <div class="mr-tel-speed">@((int)Math.Round(_mySpeed))<span class="mr-tel-speed-unit">u/s</span></div>
-                    </div>
-                    <div class="mr-tel-row">
-                        <span class="mr-tel-pos">P@(_myPlace > 0 ? _myPlace.ToString() : "–")<span class="mr-tel-field">/@(_myField > 0 ? _myField.ToString() : "101")</span></span>
-                        <span class="mr-tel-gap">@GapText()</span>
-                    </div>
-                    @* #3 edge gauge: where your marble sits across the channel. The marker slides
-                       from left rail to right rail; it flashes red near an edge so you know to
-                       steer back before you fall off. *@
-                    <div class="mr-tel-edge @(EdgeDanger ? "mr-tel-edge--danger" : "")" aria-label="Track position">
-                        <div class="mr-tel-edge-track">
-                            <span class="mr-tel-edge-center"></span>
-                            <span class="mr-tel-edge-marker" style="--c:@ColorOf(_chosen); left:@EdgePct"></span>
-                        </div>
-                        <span class="mr-tel-edge-cap">@(EdgeDanger ? "⚠ EDGE" : "TRACK")</span>
-                    </div>
-                    @if (_streak > 0)
-                    {
-                        <div class="mr-tel-streak @(_streak >= 3 ? "mr-tel-streak--hot" : "")">@FlameIcon <span>@_streak · @MultiplierText()</span></div>
-                    }
+                @* 2026-08-11: reduced HUD per user request — the dial, gap, edge
+                   gauge and hot-streak panel were noise compared to "what place
+                   am I in?". A single place pill answers the only question that
+                   matters mid-race. *@
+                <div class="mr-place" role="status" aria-live="polite"
+                     aria-label="@($"Your current position: {_myPlace} of {_myField}")">
+                    <span class="mr-place-label">Place</span>
+                    <span class="mr-place-value">P@(_myPlace > 0 ? _myPlace.ToString() : "–")</span>
+                    <span class="mr-place-field">/@(_myField > 0 ? _myField.ToString() : "—")</span>
                 </div>
-
-                @* #10 FINAL STRETCH klaxon: once the leader is through the hazard fan and onto
-                   the run to the line, the stakes are set — shout it so the ending has weight. *@
-                @if (_progress >= 0.86)
-                {
-                    <div class="mr-final" role="status" aria-live="polite">@FlagIcon <span>FINAL STRETCH</span></div>
-                }
-
-                @* #10 hot-streak fire: at a 2× multiplier or better the screen edges catch fire,
-                   so a run that's worth real points looks like it. *@
-                @if (_streak >= 3)
-                {
-                    <div class="mr-fire" aria-hidden="true"></div>
-                }
 
                 @* The ON AIR badge that used to sit here is gone, along with the in-world YOU /
                    ON AIR pins (marbles.js). The camera is locked to your marble for the whole

@@ -20,6 +20,11 @@
     Player="@_playerName"
     BackTo="@_backTo"
     GameOver="@_isGameOver"
+    @* 2026-08-11: hold the modal for 5 s after a win so the cascading
+       highlight can play out on the board before the dialog covers it. The
+       cascade is a 0.45 s keyframe; 5 s leaves generous room for the eye to
+       track the line and for the end-of-game ELO change to register. *@
+    GameOverDelayMs="5000"
     Elo="@(PlayMode == "ai" ? _rating.Elo : (int?)null)"
     GameKey="@(PlayMode == "ai" ? "connectfive" : null)"
     Outcome="@OutcomeForCue"
@@ -316,7 +321,14 @@
     };
     private void DismissIntro() => _introDone = true;
 
-    private RenderFragment TitleContent => @<span><span aria-hidden="true">🔴</span> Connect Five</span>;
+    private string ActiveModeLabel => PlayMode switch
+    {
+        "demo" => "Demo",
+        "2p" => "2 Players",
+        _ => "1 Player",
+    };
+
+    private RenderFragment TitleContent => @<span><span aria-hidden="true">🔴</span> Connect Five · @ActiveModeLabel</span>;
 
     // Audit #5: mode-specific HowToPlay. 1P talks about the CPU and ELO, 2P
     // talks about two players and a hot seat, and the demo explains it is a
@@ -340,7 +352,7 @@
             </ul>
         </div>,
         _ => @<div>
-            <p>Get five discs in a row — horizontally, vertically or diagonally.</p>
+            <p>1 Player vs CPU — get five discs in a row, horizontally, vertically or diagonally.</p>
             <ul>
                 <li>Click or tap a column to drop your disc</li>
                 <li>The CPU is matched to your ELO: win and it gets stronger, lose and it eases off</li>

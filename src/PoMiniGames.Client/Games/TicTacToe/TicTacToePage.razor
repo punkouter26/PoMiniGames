@@ -26,6 +26,9 @@
     Player="@_playerName"
     BackTo="@_backTo"
     GameOver="@_isGameOver"
+    @* 2026-08-11: same 5 s post-win pause as Connect Five — let the winning
+       line flash on the board before the modal covers it. *@
+    GameOverDelayMs="5000"
     GameKey="@(PlayMode == "ai" ? "tictactoe" : null)"
     Outcome="@OutcomeForCue"
     Stats="@(PlayMode == "ai" ? _statItems : null)"

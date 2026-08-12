@@ -7,8 +7,15 @@ namespace PoMiniGamesClient.Games.PoBrawl;
 /// visual tell that says an attack is coming.
 /// </summary>
 /// <param name="SuperName">The super's in-fiction name, as the engine's flavour comments call it.</param>
-/// <param name="SuperEffect">What pressing the super key actually buys, in one line.</param>
-/// <param name="Tell">The thing to watch for — the read that turns the fight into a puzzle.</param>
+/// <param name="SuperEffect">What the signature move does when it fires, in one line. (It fires
+/// itself now — there is no super key — so this reads as a warning, not an instruction.)</param>
+/// <param name="Tell">
+/// The opening beat of this president's signature phrase (personalities.js <c>aiPattern</c>) and
+/// the lesson it teaches. Deliberately names the TELL and the counter without listing the whole
+/// script: the phrase is fixed and repeats all fight, so a player who is given the first beat can
+/// still discover what follows by fighting it. Spelling out every step would remove the discovery
+/// this card exists to seed.
+/// </param>
 public sealed record PoBrawlDossierEntry(string SuperName, string SuperEffect, string Tell);
 
 /// <summary>
@@ -39,49 +46,49 @@ public static class PoBrawlDossier
         {
             ["trump"] = new("THE WALL",
                 "Banks every knockdown he's taken into one short window where every swing hits far harder.",
-                "Throws far more swings than anyone else — roughly one in five is a committed haymaker."),
+                "Two quick jabs, then he loads up. It's the third swing in the string that hurts."),
             ["biden"] = new("THE BIG GUY",
                 "Skips the wind-up: his next strike lands fully charged and slows you on impact.",
-                "Winds up a long telegraphed charge every few seconds. That is your block cue."),
+                "He goes still for a beat, then winds the longest charge on the roster. That pause is your block cue."),
             ["obama"] = new("DRONE STRIKE",
                 "A moment of untouchable frames, then one surgical swing at multiplied damage.",
-                "Counter-puncher. He leans out of attacks about a fifth of the time — bait, don't spam."),
+                "Circles out before he commits, then strikes from the new angle. He also leans out of a fifth of your attacks."),
             ["bush"] = new("DECIDER MODE",
                 "Commits to a permanent damage-and-speed buff for the rest of the round.",
-                "Below 40% health he freezes to 'decide', then comes back faster and harder."),
+                "He stops dead to decide — the longest pause on the roster. Punish it and the quick two-hit answer never comes."),
             ["clinton"] = new("SAX SOLO",
                 "Arms an amplified swing that automatically chains into a flurry of follow-ups.",
-                "His wind-up is noticeably longer than everyone else's — the sway before the solo."),
+                "Watch the sway. He rocks side to side before the big one, and his wind-up is longer than anyone's."),
             ["bushsr"] = new("VOODOO ECONOMICS",
                 "A burst of guaranteed feints, then several swings that all carry bonus damage.",
-                "The best block-punisher on the roster. A third of his wind-ups are fakes."),
+                "His opening jab is bait — he wants you to swing back. The guard behind it is where the counter comes from."),
             ["reagan"] = new("MORNING IN AMERICA",
-                "Bigger damage and faster movement for several seconds, on demand.",
-                "Once a round he plants a guard that reflects part of your damage back at you."),
+                "Bigger damage and faster movement for several seconds.",
+                "He plants and waits, daring you to hit the guard. Once a round that guard reflects your damage back."),
             ["carter"] = new("MALAISE SPEECH",
                 "Untouchable frames, and his next landed hit slows you down.",
-                "Each hit he lands extends his next string — break the rhythm or it grows."),
+                "A ladder of jabs, each faster than the last. Break the rhythm early or it keeps growing."),
             ["ford"] = new("PARDON ME",
                 "Blinds your controls for a second — most of your inputs simply drop.",
-                "He trips over himself on some swings. Punishing the stumble arms his counter-window."),
+                "He barges in and swings wild from too close. The lurch is a free window — step out instead of trading."),
             ["nixon"] = new("I AM NOT A CROOK",
                 "His next few swings cut through your block, and the first one blinds you.",
-                "A quarter of his attacks already ignore much of your guard. Blocking is not enough."),
+                "He breaks off like he's disengaging, then comes straight back. Don't chase — that's the trap."),
             ["lbj"] = new("THE TREATMENT",
                 "Opens a long window where any whiff of yours arms his next swing with huge knockback.",
-                "He feeds on your misses. Whiffing a charged swing near him is the real mistake."),
+                "He walks you down without guarding or swinging. Backing out beats it; panicking into a swing feeds him."),
             ["jfk"] = new("PROFILES IN COURAGE",
                 "Untouchable frames followed by a heavily amplified swing.",
-                "Every fourth hit he lands is a crowning blow. Count them."),
+                "The fastest opener on the roster — he steps around and is on you before you've turned. Every fourth hit is a crowning blow."),
             ["eisenhower"] = new("OPERATION OVERLORD",
                 "The biggest single swing any president can buy, plus untouchable frames.",
-                "Long wind-up, short active window — block it and the punish is enormous."),
+                "The longest preparation in the game: guard, then an enormous coil. Block it and the punish is enormous too."),
             ["truman"] = new("THE BUCK STOPS HERE",
                 "Cashes everything he's absorbed this fight into one enormous swing.",
-                "The longer he's been taking punishment, the more his next hit is worth. Don't let him bank."),
+                "He walks in with his hands down and lets you hit him. Every hit you land makes his answer bigger — stop swinging."),
             ["fdr"] = new("DAY OF INFAMY",
                 "A long stretch of elevated damage, with no health condition to wait for.",
-                "Opens every round already warmed up, and slips brief untouchable frames in on a cycle."),
+                "He settles and pauses to address the room. Swing into the pause and you hit nothing — and the kick after it reaches further than it should."),
         };
 
     /// <summary>The scouting report for a fighter, or <c>null</c> when there is none (BOB).</summary>

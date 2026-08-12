@@ -5,48 +5,88 @@
 // The press edge starts a charge; the engine releases the attack when the
 // matching *Held flag drops — hold longer for a more powerful strike.
 //
-// Layout 1 (P1): A/D move · W step in · S tap step out, hold = block · F punch · G kick · E super
-// Layout 2 (P2): ←/→ move · ↑ step in · ↓ tap step out, hold = block · K punch · L kick · O super
+// Layout 1 (P1): A/D move · W away / S toward camera · R block (hold) · F punch · G kick
+// Layout 2 (P2): ←/→ move · ↑ away / ↓ toward camera · ; block (hold) · K punch · L kick
+//
+// 2026-08-11 control rework. Was: W stepped in, and S did double duty as a
+// tap-to-sidestep / hold-to-block key separated by a 120 ms timer. Now:
+//   • W and S move along the CAMERA's depth axis — W into the screen, S out
+//     toward the viewer — which is how a fighter circles their opponent here.
+//     `side` is no longer an edge-triggered dart; it is held.
+//   • R is block, on its own key. The tap-vs-hold split is gone entirely, and
+//     with it a real ambiguity: a short block read as a sidestep, so guarding
+//     late against a fast swing sometimes stepped you into it instead.
+// P2's block moved off ↓ (now a circle key) onto `;`, beside its K/L attacks.
+//
+// 2026-08-11: the super keys (E / O) are gone. The game is down to two bars —
+// health and energy — so there is no super meter on screen for a key to spend,
+// and a signature move now fires by itself the moment a human's meter fills
+// (game.js `_autoSuperReady`). `super` stays in the intent shape because ai.js
+// still sets it: the CPU keeps its own rung-paced activation. A keyboard
+// controller now always publishes `super: false` — explicitly, not by omission,
+// because an absent field reads as `undefined` at the engine's `intent.super`
+// check, and that silent read is precisely what kept the feature dead before.
 //
 // `left`/`right` are SCREEN-relative: the left key always walks the fighter
 // toward the left edge of the screen, the right key toward the right edge,
 // no matter which side of the ring the fighter is standing on. update() folds
 // the fighter's facing back in to produce the engine's opponent-relative
 // `move` (+1 = toward opponent).
+// `depthAway` / `depthToward` publish `side` = +1 / −1, which the engine applies
+// along the CAMERA's forward axis: +1 walks into the screen, −1 walks out toward
+// the viewer. Because the fighters stand side-on to the camera, that axis is
+// also the one that carries you around your opponent — this is the circle
+// control, expressed in the frame the player actually sees.
+//
+// Camera-relative is the point, not an implementation detail. The first cut of
+// this derived the axis from the line between the fighters, which is consistent
+// in ROTATIONAL terms but flips on screen the moment the two swap sides of the
+// ring: the same key would walk you into the screen in one exchange and out of
+// it in the next. Screen-relative never inverts.
 const LAYOUTS = {
-  1: { left: 'KeyA', right: 'KeyD', stepIn: 'KeyW', stepOutOrBlock: 'KeyS', punch: 'KeyF', kick: 'KeyG', super: 'KeyE' },
-  2: { left: 'ArrowLeft', right: 'ArrowRight', stepIn: 'ArrowUp', stepOutOrBlock: 'ArrowDown', punch: 'KeyK', kick: 'KeyL', super: 'KeyO' },
+  1: {
+    left: 'KeyA', right: 'KeyD',
+    depthAway: 'KeyW', depthToward: 'KeyS',
+    block: 'KeyR', punch: 'KeyF', kick: 'KeyG',
+  },
+  2: {
+    left: 'ArrowLeft', right: 'ArrowRight',
+    depthAway: 'ArrowUp', depthToward: 'ArrowDown',
+    block: 'Semicolon', punch: 'KeyK', kick: 'KeyL',
+  },
 };
 
-const BLOCK_HOLD_MS = 120;
-
 export class KeyboardController {
+  // Marks this fighter as driven by a person at the keyboard. game.js reads it
+  // (`_autoSuperReady`) to decide who gets an automatic signature super: humans
+  // do, because they no longer have a key for it; AI fighters do not, because
+  // ai.js paces its own activation as a difficulty knob.
+  isHuman = true;
+
   constructor(layout) {
     this.map = LAYOUTS[layout];
     this.down = new Set();
     this.punchQueued = false;
     this.kickQueued = false;
-    this.sideQueued = 0;
-    this.superQueued = false;
-    this.blockKeyDownAt = 0;
 
+    // Circling and blocking are pure held-key state read straight off `down` in
+    // update(), so neither needs a queue or a timer here. The sideQueued /
+    // blockKeyDownAt pair that used to live here existed only to disambiguate
+    // the old tap-vs-hold S key.
     this._onDown = (e) => {
+      // Let any modified chord through untouched. This matters now that block
+      // is KeyR: Ctrl+R / Cmd+R is reload, and swallowing it would leave a
+      // player unable to refresh the page while the fight has focus. No binding
+      // in either layout uses a modifier, so nothing is lost by ignoring them.
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
       if (Object.values(this.map).includes(e.code)) e.preventDefault();
       if (e.repeat) return;
       this.down.add(e.code);
       if (e.code === this.map.punch) this.punchQueued = true;
       else if (e.code === this.map.kick) this.kickQueued = true;
-      else if (e.code === this.map.stepIn) this.sideQueued = 1;
-      else if (e.code === this.map.stepOutOrBlock) this.blockKeyDownAt = performance.now();
-      else if (e.code === this.map.super) this.superQueued = true;
     };
     this._onUp = (e) => {
       this.down.delete(e.code);
-      if (e.code === this.map.stepOutOrBlock) {
-        // Quick tap = sidestep out; a longer hold was a block, not a step.
-        if (performance.now() - this.blockKeyDownAt < BLOCK_HOLD_MS) this.sideQueued = -1;
-        this.blockKeyDownAt = 0;
-      }
     };
     window.addEventListener('keydown', this._onDown);
     window.addEventListener('keyup', this._onUp);
@@ -60,10 +100,16 @@ export class KeyboardController {
     // engine's toward/away `move`. Defaults to +1 when facing is unknown.
     const towardX = (ctx && ctx.towardX) || 1;
     const move = worldDir * towardX;
-    const block = this.blockKeyDownAt > 0 && performance.now() - this.blockKeyDownAt >= BLOCK_HOLD_MS;
+    // Held, not tapped, and deliberately NOT folded through towardX the way
+    // `move` is: this axis is screen-relative by design, so W walks into the
+    // screen whichever side of the ring the fighter is standing on. Folding
+    // facing in here would reintroduce exactly the inversion this scheme fixes.
+    const circle = (this.down.has(this.map.depthAway) ? 1 : 0)
+      - (this.down.has(this.map.depthToward) ? 1 : 0);
+    const block = this.down.has(this.map.block);
     const intent = {
       move,
-      side: this.sideQueued,
+      side: circle,
       punch: this.punchQueued,
       kick: this.kickQueued,
       // Held flags keep a charge alive; the `|| queued` term guarantees a
@@ -71,19 +117,15 @@ export class KeyboardController {
       punchHeld: this.down.has(this.map.punch) || this.punchQueued,
       kickHeld: this.down.has(this.map.kick) || this.kickQueued,
       block,
-      // Edge-triggered, exactly like punch/kick. Its absence here is what made
-      // the signature-super system unreachable for human players: `superQueued`
-      // was set on the E/O keydown but never published on the intent and never
-      // cleared, so `_tickFighter`'s `if (intent.super)` branch read undefined
-      // on every frame of every match. The AI path was dead for a different
-      // reason (see game.js `superMeterFull`); both are fixed together, because
-      // fixing either alone still leaves the HUD advertising a dead key.
-      super: this.superQueued,
+      // Always false for a human — no key maps to it any more. Published
+      // explicitly rather than dropped: `intent.super` is read unguarded in
+      // _tickFighter, and an omitted field reading `undefined` there is the
+      // exact silent failure that kept this system dead for its whole life.
+      // A human's super now fires from game.js `_autoSuperReady` instead.
+      super: false,
     };
     this.punchQueued = false;
     this.kickQueued = false;
-    this.sideQueued = 0;
-    this.superQueued = false;
     return intent;
   }
 

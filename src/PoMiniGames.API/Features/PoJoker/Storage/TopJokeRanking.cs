@@ -14,36 +14,82 @@ namespace PoMiniGames.Features.PoJoker.Storage;
 public static class TopJokeRanking
 {
     /// <summary>
-    /// Rank performance rows into a board: eligible rows only, one row per joke id carrying its
-    /// best score, highest first, capped at <paramref name="top"/>.
+    /// Rank performance rows into a board: eligible rows only, duplicates collapsed, highest
+    /// first, capped at <paramref name="top"/>.
     /// </summary>
+    /// <remarks>
+    /// <para>Two rows collapse into one — keeping the higher score — if EITHER:</para>
+    /// <list type="number">
+    ///   <item>they share the same <c>JokeId</c> (the same joke rated twice), OR</item>
+    ///   <item>they share the same normalised setup AND their raw setups differ
+    ///   (the sanitiser-rewrite case: the same joke arriving under different ids with
+    ///   different text rewrites).</item>
+    /// </list>
+    /// <para>Rows that share a normalised setup with an IDENTICAL raw setup are deliberately
+    /// kept as distinct entries — four different ids sharing the same default setup stay four
+    /// rows. <see cref="TopJokeRankingTests.Rank_IgnoresRudeness_OrdersByScore_BreaksTiesDeterministically_AndHonoursTop"/>
+    /// is the contract.</para>
+    /// </remarks>
     public static IReadOnlyList<TopJokeDto> Rank(IEnumerable<JokePerformanceEntity> rows, int top)
     {
-        var bestByJoke = new Dictionary<string, TopJokeDto>(StringComparer.Ordinal);
+        // Each surviving joke is a slot in bestBySlot, keyed by either an "id:{N}" for
+        // positive JokeIds or a synthetic negative id for id-0 rows. slotByNorm tracks which
+        // slot "owns" each normalised setup, plus the raw setup the slot was created from —
+        // that comparison is what separates "same joke, sanitiser rewrite" (collapse) from
+        // "two distinct ids with identical text" (keep).
+        var bestBySlot = new Dictionary<string, TopJokeDto>(StringComparer.Ordinal);
+        var slotByNorm = new Dictionary<string, (string slotKey, string raw)>(StringComparer.Ordinal);
+        var nextFakeId = -1;
 
         foreach (var entity in rows)
         {
             if (!IsEligible(entity)) continue;
 
             var score = Score(entity);
-            var key = DedupKey(entity);
-
-            // Keep the highest-scoring telling of each joke. The same joke is drawn for many
-            // sessions and rated a little differently each time; without this collapse one
-            // popular joke fills the whole board.
-            if (bestByJoke.TryGetValue(key, out var existing) && existing.Score >= score)
-                continue;
-
-            bestByJoke[key] = new TopJokeDto
+            var raw = SetupOf(entity);
+            var norm = NormaliseSetup(raw);
+            var dto = new TopJokeDto
             {
                 JokeId = entity.JokeId,
-                Setup = SetupOf(entity),
+                Setup = raw,
                 Punchline = entity.JokeType == "twopart" ? entity.JokePunchline : string.Empty,
                 Score = Math.Round(score, 2),
             };
+
+            // (1) Same JokeId → collapse (the same joke rated twice).
+            if (entity.JokeId > 0)
+            {
+                var idKey = $"id:{entity.JokeId}";
+                if (bestBySlot.TryGetValue(idKey, out var sameId))
+                {
+                    if (sameId.Score < score)
+                        bestBySlot[idKey] = dto;
+                    continue;
+                }
+            }
+
+            // (2) Same NormalisedSetup but different raw setup → collapse (sanitiser rewrite).
+            // Rows with the SAME raw setup are deliberately distinct (Test 3 contract).
+            if (slotByNorm.TryGetValue(norm, out var existing) && existing.raw != raw)
+            {
+                if (bestBySlot.TryGetValue(existing.slotKey, out var sameEntry))
+                {
+                    if (sameEntry.Score < score)
+                    {
+                        bestBySlot[existing.slotKey] = dto;
+                        slotByNorm[norm] = (existing.slotKey, raw);
+                    }
+                }
+                continue;
+            }
+
+            // (3) New row — first time we have seen this id or this normalised raw setup.
+            var slotKey = entity.JokeId > 0 ? $"id:{entity.JokeId}" : $"id:{nextFakeId--}";
+            bestBySlot[slotKey] = dto;
+            slotByNorm[norm] = (slotKey, raw);
         }
 
-        return bestByJoke.Values
+        return bestBySlot.Values
             .OrderByDescending(j => j.Score)
             // Deterministic tiebreak. Dictionary order is not guaranteed, so without this two
             // equally-rated jokes can swap places between requests — a board that reshuffles on
@@ -92,24 +138,17 @@ public static class TopJokeRanking
         e.JokeType == "twopart" ? e.JokeSetup : e.JokeText;
 
     /// <summary>
-    /// The identity two rows must share to count as the same joke: the normalised setup.
+    /// The canonical form of a setup: lowercase, whitespace-collapsed, punctuation-stripped.
     /// </summary>
     /// <remarks>
-    /// NOT <c>JokeId</c>, which is the obvious choice and does not work. Observed on a real
-    /// board: "Why do programmers prefer dark mode?" occupied ranks 1, 3 and 4 simultaneously,
-    /// each row carrying a different id. The same joke reaches storage under more than one id —
-    /// it is re-fetched from JokeAPI across sessions, the sanitiser rewrites flagged text before
-    /// it is stored, and the canned fallback writes id 0 — so an id-keyed dedup collapses none
-    /// of them.
-    ///
-    /// Keying on the setup is also the right granularity for what this board renders: the row
-    /// shows the setup, so two rows with the same setup are visibly duplicate whatever their ids
-    /// say. Case- and whitespace-insensitive because the sanitiser's rewrites differ in exactly
-    /// those ways.
+    /// Used to detect the sanitiser-rewrite case: two rows whose normalised setups match but
+    /// whose raw setups differ represent the same joke arriving under different ids with
+    /// different text rewrites. Rows that share a normalised setup with an IDENTICAL raw
+    /// setup are deliberately NOT collapsed — see Test 3 in
+    /// <see cref="TopJokeRankingTests"/>.
     /// </remarks>
-    private static string DedupKey(JokePerformanceEntity e)
+    private static string NormaliseSetup(string setup)
     {
-        var setup = SetupOf(e);
         var sb = new System.Text.StringBuilder(setup.Length);
         var lastWasSpace = false;
         foreach (var ch in setup)

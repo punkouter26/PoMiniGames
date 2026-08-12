@@ -109,7 +109,10 @@ public sealed class AppUpdateService : IAsyncDisposable
             var href = _js.InvokeAsync<string>("eval", "location.href").AsTask().GetAwaiter().GetResult();
             var host = new Uri(href).Host;
             return host.Equals("localhost", StringComparison.OrdinalIgnoreCase)
-                || host.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase);
+                || host.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase)
+                || host.StartsWith("192.168.", StringComparison.OrdinalIgnoreCase)
+                || host.EndsWith(".local", StringComparison.OrdinalIgnoreCase)
+                || host.Contains("localhost", StringComparison.OrdinalIgnoreCase);
         }
         catch
         {

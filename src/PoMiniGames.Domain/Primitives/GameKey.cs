@@ -107,6 +107,14 @@ public readonly record struct GameKey(string Value) : IComparable<GameKey>
     // though the fight rankings are independent of the presidents-ladder board.
     public static readonly GameKey PoBrawlDemo = new("pobrawldemo");
 
+    // PoBrawlKo is the fastest-KO view of the same players' 1P runs, and exists for the
+    // same mechanical reason as PoBrawlDemo above: /api/leaderboards/{game} runs every
+    // input through TryParse, so a board without an entry here 404s no matter what the
+    // unified endpoint's switch says. It IS a player board (unlike PoBrawlDemo), but it
+    // carries no PlayerStats shadow of its own — PoBrawl already owns those stats; this
+    // key only ever names a leaderboard view of them.
+    public static readonly GameKey PoBrawlKo = new("pobrawlko");
+
     // This catalogue gates PlayerStats reads/writes (PlayerStatsEndpoints uses TryParse as
     // the §8 allowlist), so it must cover every game the client can mirror stats for —
     // it had drifted behind the client's GameKeys list (poracer/pobrawl/posports missing),
@@ -115,7 +123,7 @@ public readonly record struct GameKey(string Value) : IComparable<GameKey>
     {
         CoupleQuiz, FunQuiz, Face, Joker, Survive,
         ConnectFive, TicTacToe, PoMarbleRace,
-        PoRacer, PoBrawl, PoBrawlDemo, PoSports,
+        PoRacer, PoBrawl, PoBrawlDemo, PoBrawlKo, PoSports,
     };
 
     private static readonly string[] WellKnownNames = All.Select(k => k.Value).ToArray();

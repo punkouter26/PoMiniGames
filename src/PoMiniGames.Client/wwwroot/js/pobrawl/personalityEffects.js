@@ -162,10 +162,11 @@ class PersonalityEffectsMethods {
 
   // ── SUPER METER ────────────────────────────────────────────────────────
   // The comeback super meter is a per-fighter 0..1 pool that fills passively
-  // by taking damage (see the damage roll in _tryHit). When ≥ 1.0 the player
-  // can press their Super key (or, for the AI, the controller emits
-  // `intent.super = true` after the AI's gating checks). Firing calls
-  // `_fireSuper`, which:
+  // by taking damage (see the damage roll in _tryHit). When ≥ 1.0 it fires:
+  // for a HUMAN fighter automatically and immediately (game.js
+  // `_autoSuperReady` — there is no super key any more, and no bar for it in
+  // the HUD), and for the AI when its own rung-paced gating emits
+  // `intent.super = true`. Firing calls `_fireSuper`, which:
   //   1. consumes the meter to zero (one-shot),
   //   2. routes through PERSONALITIES[id].onSuper to set the right runtime
   //      fields (mode, iframes, dirty count, swing bonus, etc.),
@@ -175,21 +176,20 @@ class PersonalityEffectsMethods {
   // comeback mechanic — you earn the super by being on the wrong end of a
   // beatdown, so the burst is the response that turns the round around.
   //
-  // Per-frame: nothing happens unless the meter just hit 1.0, in which case
-  // we set superUntil = now + 1.6 s — the HUD reads it as the "PRESS SUPER"
-  // flash window. We don't tick down the meter otherwise; it stays at 1.0
-  // until consumed by a fire (or reset on round reset).
+  // Per-frame: the meter does not tick down. It stays at 1.0 until consumed by
+  // a fire (or wiped on round reset).
+  //
+  // The `superUntil` write that used to live here is gone (2026-08-11). It
+  // opened a 1.6 s "PRESS SUPER" flash window for the HUD — and the HUD no
+  // longer has a super bar to flash. Nothing else ever read it.
   _tickSuperMeter(f, opp, dt) {
     const per = f.personality;
     if (!per) return;
     // Cap at 1.0 — the meter is binary "ready or not".
     if (per.superMeter > 1.0) per.superMeter = 1.0;
-    if (per.superMeter >= 1.0 && this.t > (per.superUntil || 0)) {
-      per.superUntil = this.t + 1.6;
-    }
-    // Defensive: if the personality has no onSuper config, never let the
-    // meter fill past 0 — the player shouldn't see a "press super" prompt
-    // that does nothing.
+    // Defensive: a personality with no onSuper config must never accumulate a
+    // meter. This is what keeps BOB — who has no signature move by design —
+    // from auto-firing an undefined super the instant he takes a hit.
     if (!PERSONALITIES[f.charId]?.onSuper) per.superMeter = 0;
   }
 

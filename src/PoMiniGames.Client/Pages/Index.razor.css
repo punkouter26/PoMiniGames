@@ -169,8 +169,8 @@
     align-items: center;
     gap: 0.6rem;
     color: var(--color-text-primary);
-    text-decoration: none;
-    transition: color 0.18s var(--ease-standard);
+    /* The heading is a static label now; no underline, no accent on hover. */
+    transition: opacity 0.18s var(--ease-standard);
     /* Let the title/subtitle pair drop to a second line rather than shooting
        past the card edge on a 390px phone (browser audit #7). */
     flex-wrap: wrap;
@@ -179,8 +179,6 @@
 /* Without this the title is a flex item at its max-content width and refuses to
    wrap, pushing the nowrap subtitle chip outside the card. */
 .home-card-title { min-width: 0; }
-
-.home-card-head:hover { color: var(--color-accent); }
 
 .home-card-icon { font-size: 1.6rem; line-height: 1; }
 
@@ -218,17 +216,19 @@
    what will be available once they reconnect. */
 .home-card-head--offline {
     opacity: 0.45;
-    cursor: not-allowed;
 }
 
-.home-card-head--offline:hover { color: var(--color-text-primary); }
-
-/* ── Mode chips ──────────────────────────────────────────────────────────── */
+/* ── Mode chips ────────────────────────────────────────────────────────────
+   One chip per mode. The chip row is now the sole owner of the 1P / 2P /
+   Online / Demo labels — the card heading stays a static label so no card
+   duplicates its own mode. */
 .home-card-modes {
     display: flex;
     flex-wrap: wrap;
     gap: 0.35rem;
     margin-top: auto;
+    min-height: 1.85rem; /* stable row height across cards with 1 vs. 3 chips */
+    align-items: center;
 }
 
 .home-mode-chip {

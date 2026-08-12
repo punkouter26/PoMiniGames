@@ -122,6 +122,9 @@ public static class UnifiedLeaderboardEndpoints
             "poracer" => await BuildPoRacerAsync(storage, limit),
             "posports" => await BuildPoSportsAsync(storage, limit),
             "pobrawl" => await BuildPoBrawlAsync(storage, limit),
+            // By-id only, not in BuildAllAsync — see BuildPoBrawlKoAsync's remarks. This is
+            // the board the 1P end-of-match modal renders.
+            "pobrawlko" => await BuildPoBrawlKoAsync(storage, limit),
             // 2026-08-11: dedicated top-3 board for the PoBrawl demo-mode fighter ELO.
             // Ratings characters, not players — see BuildPoBrawlDemoAsync's docstring —
             // so the board shares storage with the existing /api/pobrawl/elo read but
@@ -295,6 +298,53 @@ public static class UnifiedLeaderboardEndpoints
             .ToList();
         PadWithPlaceholders(entries, limit, $"0/{PoBrawlRoster.Count}");
         return new GameLeaderboardDto("pobrawl", "Brawl", "Best rung", HigherIsBetter: true, entries);
+    }
+
+    /// <summary>
+    /// PoBrawl fastest-KO board: lowest time to put a president down, in seconds.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Same <c>PoBrawlHighScore</c> partition that <see cref="BuildPoBrawlAsync"/> reads for
+    /// its tiebreak, ranked on that value instead of using it to break ladder ties. This is
+    /// what the 1-player end-of-match modal shows: between rungs the interesting number is
+    /// how fast you put the last one down, not a standings table of how far other players
+    /// have climbed.
+    /// </para>
+    /// <para>
+    /// <b>Deliberately not in <c>BuildAllAsync</c>.</b> It is reachable by id only, so the
+    /// /leaderboards page still carries exactly one Brawl player board (the ladder) plus the
+    /// demo Elo board. Adding it there would put two boards fed by the same players' runs
+    /// side by side on that page, which is the duplication the unified endpoint exists to
+    /// avoid. Add it to the array if the page should list it — that is a product call, not
+    /// an oversight.
+    /// </para>
+    /// <para>
+    /// <c>HigherIsBetter: false</c> — this is the only PoBrawl board where lower wins, and
+    /// GameOverModal reads that flag to decide which end of the list is rank 1.
+    /// </para>
+    /// </remarks>
+    private static async Task<GameLeaderboardDto> BuildPoBrawlKoAsync(IStorageService storage, int limit)
+    {
+        var kos = await storage.GetPoBrawlHighScoresAsync(100);
+
+        // One row per player: the table keeps every submitted time, and a player who has
+        // beaten twenty presidents would otherwise fill the whole top three themselves.
+        var entries = kos
+            .Where(k => k.KoTimeSeconds > 0 && !string.IsNullOrWhiteSpace(k.PlayerInitials))
+            .GroupBy(k => k.PlayerInitials)
+            .Select(g => new { Name = g.Key, Best = g.Min(k => k.KoTimeSeconds) })
+            .OrderBy(x => x.Best)
+            .Take(limit)
+            .Select((x, i) => new LeaderboardEntryDto(
+                i + 1, x.Name, (int)Math.Round(x.Best * 100),
+                x.Best.ToString("0.00", CultureInfo.InvariantCulture) + "s"))
+            .ToList();
+
+        // "—" rather than a 0.00s that would sort as the best possible time if any caller
+        // ever ranked the padded rows instead of filtering them.
+        PadWithPlaceholders(entries, limit, "—");
+        return new GameLeaderboardDto("pobrawlko", "Brawl — Fastest KO", "Time", HigherIsBetter: false, entries);
     }
 
     /// <summary>

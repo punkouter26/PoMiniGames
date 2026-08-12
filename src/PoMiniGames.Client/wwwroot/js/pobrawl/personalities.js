@@ -15,13 +15,54 @@
 //   onSwingP          — (0..1) chance to throw a "haymaker"/"dirty"/"stumble"
 //   onKoReceived      — increments a counter (per charId, e.g. koStacks for trump)
 //   activeFor(t)      — effect auto-clears after t seconds
-//   onSuper           — ON-DEMAND signature move. The player builds a comeback
-//                       super meter by taking damage and presses their Super
-//                       key to fire this effect immediately (no HP gate). The
-//                       engine consumes the meter in `_fireSuper`.
+//   onSuper           — signature move. Fires automatically once the comeback
+//                       meter (filled by TAKING damage) reaches 1.0 — for a
+//                       human the instant it fills, for the AI when its own
+//                       rung-paced gate opens. The engine consumes the meter in
+//                       `_fireSuper`. There is no super key or super bar.
+//   aiPattern         — see below.
 //
 // All HP thresholds are PERCENT (0..1). The engine passes the live value at
 // trigger evaluation time so an effect can be HP-conditional.
+//
+// ── aiPattern: the president's signature phrase ────────────────────────────
+// Everything above changes what a president's hits DO. `aiPattern` changes how
+// the president FIGHTS, and it is the only field a player can learn by playing.
+//
+// Before this existed, thirteen of the fifteen shared one identical decision
+// profile — at a given rung they all picked punch/kick/block from the same
+// weighted roll, and only Biden and Obama had hand-written cadences. Fighting
+// Ford felt exactly like fighting Truman. Now each president replays one
+// scripted phrase on a fixed cadence, and that phrase is the thing you come to
+// recognise: "he always steps back right before he lunges."
+//
+// Shape:
+//   { everySecs, range, steps: [{ act, secs, attack?, dir? }, …] }
+//     everySecs — seconds between OPENINGS (timed from the phrase's start, so
+//                 the rhythm a player counts is opening-to-opening)
+//     range     — multiple of kickRange the phrase may open from
+//     act       — 'punch' | 'kick'    press edge
+//                 'charge'            press and hold `attack`; the strike is
+//                                     thrown when the step ends, so `secs` IS
+//                                     the visible coil the player blocks on
+//                 'block'             stand guarding
+//                 'advance'|'retreat' walk toward / away
+//                 'sidestep'          one lateral step (`dir`)
+//                 'wait'              stand still — a beat, and usually the
+//                                     most readable part of a phrase
+//
+// Design rules, learned the hard way and worth keeping:
+//   • Never randomise a phrase. Consistency is the whole feature — a varying
+//     script is indistinguishable from the random layer it sits on top of.
+//   • Open with a non-damaging beat (wait / retreat / sidestep / advance). The
+//     tell has to arrive BEFORE the hit or there is nothing to react to.
+//   • Give every phrase an interruptible moment. Landing a hit cancels it
+//     (ai.js notifyHit), so a long commit is the player's reward for reading.
+//   • Keep everySecs in the 4–7 s band: often enough to be noticed inside one
+//     round, rare enough that the fight is not just the phrase on loop.
+//   • Make the phrase echo the president's existing mechanic, so the tell and
+//     the payoff teach the same lesson (Nixon's sneak sets up his dirty hits;
+//     Truman's walk-in feeds the stack he builds by being hit).
 
 export const PERSONALITIES = {
   // ── Trump — "THE WALL" → after every KO, +5% damage per stack (5 max) ──
@@ -37,6 +78,18 @@ export const PERSONALITIES = {
     // (1 + koStacks × 0.05) damage on EVERY swing for the next 3 s. Visually
     // identical to the per-stack ramp but compressed into one dramatic burst.
     onSuper: { mode: 'theWall', durationSecs: 3.0 },
+    // PATTERN — "the volley": two quick jabs, then the haymaker. The jabs are
+    // cheap and land; the third is a long coil that hurts. The lesson is to
+    // stop trading after the second — his haymaker chance already makes any
+    // committed swing of his the dangerous one.
+    aiPattern: {
+      everySecs: 4.8, range: 1.15,
+      steps: [
+        { act: 'punch', secs: 0.26 },
+        { act: 'punch', secs: 0.28 },
+        { act: 'charge', attack: 'punch', secs: 0.75 },
+      ],
+    },
   },
 
   // ── Biden — "The Big Guy" charge ─────────────────────────────────────
@@ -52,6 +105,17 @@ export const PERSONALITIES = {
     // bar to CHARGE_MAX_MUL and arms the next punch/kick for the next 1.5 s
     // (no need to wind up by hand). The hit lands with the Biden slow effect.
     onSuper: { mode: 'bigGuy', lockSecs: 1.5 },
+    // PATTERN — "the wind-up": a beat of stillness, then the longest single
+    // coil in the roster. This is the phrase the old hardcoded Biden cadence
+    // used to produce; the leading `wait` is new, and it is what turns a swing
+    // that simply happened to you into one you can see coming.
+    aiPattern: {
+      everySecs: 5.5, range: 1.2,
+      steps: [
+        { act: 'wait', secs: 0.30 },
+        { act: 'charge', attack: 'kick', secs: 1.0 },
+      ],
+    },
   },
 
   // ── Obama — "No-Drama Open" / "Drone Strike" combo ─────────────────
@@ -64,6 +128,17 @@ export const PERSONALITIES = {
     // SUPER — "DRONE STRIKE": 1.5 s of perfect iframes + next swing deals
     // 2.5× damage (the surgical strike). Plays a cool teal flicker on Obama.
     onSuper: { mode: 'droneStrike', iframesSecs: 1.5, nextSwingAtkMul: 2.5 },
+    // PATTERN — "no drama": circle out, then the clean punch→kick string. The
+    // sidestep is the tell and it also repositions him, so the answer is to
+    // turn and guard low rather than swing at where he was.
+    aiPattern: {
+      everySecs: 4.4, range: 1.2,
+      steps: [
+        { act: 'sidestep', dir: -1, secs: 0.24 },
+        { act: 'punch', secs: 0.30 },
+        { act: 'kick', secs: 0.34 },
+      ],
+    },
   },
 
   // ── Bush (W.) — "Decider Mode" ─────────────────────────────────────
@@ -78,6 +153,20 @@ export const PERSONALITIES = {
     // trigger, but fired on demand. No freeze window — straight into the
     // atkMul/speedMul buff for the rest of the round.
     onSuper: { mode: 'deciderManual', durationSecs: 30 },
+    // PATTERN — "the decider": the longest dead stop in the game, then a fast
+    // two-hit answer. Deliberately the mirror of Biden, who opens with a SHORT
+    // pause into the longest coil: same opening beat, opposite payoff, so the
+    // pair teaches the player to read what follows the pause rather than the
+    // pause itself. The stop is free real estate — punish it and the answer
+    // never comes. Rhymes with his passive freeze at 40% HP.
+    aiPattern: {
+      everySecs: 5.0, range: 1.15,
+      steps: [
+        { act: 'wait', secs: 0.70 },
+        { act: 'punch', secs: 0.26 },
+        { act: 'kick', secs: 0.32 },
+      ],
+    },
   },
 
   // ── Clinton — "Sax Solo" + "I Feel Your Pain" elbow flurry ─────────
@@ -90,6 +179,18 @@ export const PERSONALITIES = {
     // (4 hits). Same feel as the passive chain but the windup is doubled
     // (the visual tells the opponent a sax solo is coming).
     onSuper: { mode: 'saxSolo', nextSwingAtkMul: 1.6, chainHits: 4, saxSoloWindupMul: 2.0 },
+    // PATTERN — "the sax sway": he rocks side to side, then swings. Two
+    // sidesteps in opposite directions is a rhythm rather than a pose, which
+    // suits a president whose whole gimmick is a 1.5× longer windup — you have
+    // time to count the sway, and the swing it feeds chains into his flurry.
+    aiPattern: {
+      everySecs: 5.2, range: 1.2,
+      steps: [
+        { act: 'sidestep', dir: -1, secs: 0.22 },
+        { act: 'sidestep', dir: 1, secs: 0.22 },
+        { act: 'charge', attack: 'punch', secs: 0.60 },
+      ],
+    },
   },
 
   // ── Bush Sr. — "Read My Lips" + "Voodoo Economics" feints ──────────
@@ -103,6 +204,18 @@ export const PERSONALITIES = {
     // signature feint loop, but armed by the player as a human-only burst)
     // + next 3 swings carry 1.4× damage (the voodoo tax).
     onSuper: { mode: 'voodoo', feintSecs: 1.2, swingCount: 3, swingAtkMul: 1.4 },
+    // PATTERN — "read my lips": a jab that is really bait, straight into guard,
+    // then the counter the moment you answer it. He is the roster's counter-
+    // fighter (+30% baitP), so his phrase punishes the reflex to trade. The
+    // lesson is the opposite of everyone else's: do NOT swing at the opening.
+    aiPattern: {
+      everySecs: 4.6, range: 1.1,
+      steps: [
+        { act: 'punch', secs: 0.20 },
+        { act: 'block', secs: 0.55 },
+        { act: 'punch', secs: 0.30 },
+      ],
+    },
   },
 
   // ── Reagan — "Morning in America" + "Tear Down This Wall" ──────────
@@ -123,6 +236,17 @@ export const PERSONALITIES = {
     // gated mode but fired on demand. +40% dmg + 20% speed for 6 s, no HP
     // gate. Consumes the super meter even if HP is full.
     onSuper: { mode: 'morningInAmerica', atkMul: 1.4, speedMul: 1.2, durationSecs: 6 },
+    // PATTERN — "tear down this wall": he plants and holds guard, inviting the
+    // swing, then answers it. Pairs with his once-per-round reflect guard, so
+    // the phrase teaches exactly the habit that his reflect punishes — hitting
+    // a planted Reagan is how you lose health to your own attack.
+    aiPattern: {
+      everySecs: 5.6, range: 1.15,
+      steps: [
+        { act: 'block', secs: 0.95 },
+        { act: 'kick', secs: 0.34 },
+      ],
+    },
   },
 
   // ── Carter — "Malaise Speech" + "Habitat for Humanity" ──────────────
@@ -143,6 +267,26 @@ export const PERSONALITIES = {
     // SUPER — "MALAISE SPEECH" (manual): 1.5 s iframes + the next landed hit
     // applies a 0.5 s slow (Carter's wagging-finger energy hits the defender).
     onSuper: { mode: 'malaiseSpeech', iframesSecs: 1.5, slowSecs: 0.5, slowMul: 0.55 },
+    // PATTERN — "the finger wag": a beat to raise the finger, then four jabs on
+    // an accelerating rhythm. No charge and no heavy — the threat is the ladder,
+    // because his passive grows the combo by one for every hit he lands in a
+    // row. Break the rhythm early and the ladder resets; let all four through
+    // and the next phrase starts higher.
+    //
+    // The leading `wait` is not decoration. Every phrase needs its tell to
+    // arrive before the first hit does, or there is nothing to react to — this
+    // one opened on the jab and was the only phrase in the roster you could not
+    // see coming.
+    aiPattern: {
+      everySecs: 5.0, range: 1.1,
+      steps: [
+        { act: 'wait', secs: 0.30 },
+        { act: 'punch', secs: 0.30 },
+        { act: 'punch', secs: 0.26 },
+        { act: 'punch', secs: 0.22 },
+        { act: 'punch', secs: 0.20 },
+      ],
+    },
   },
 
   // ── Ford — "Ford Stumble" + "Pardoning Nixon" ──────────────────────
@@ -156,6 +300,18 @@ export const PERSONALITIES = {
     // move inputs drop 60% of the time). Ford stumbles through the gap and
     // takes advantage.
     onSuper: { mode: 'pardonMe', blindSecs: 1.0, blindMissRate: 0.60 },
+    // PATTERN — "the lurch": he barges in and throws a wild kick from too
+    // close. Clumsy on purpose — the advance overshoots, and his 15% stumble
+    // means the phrase sometimes collapses on its own. The read is that the
+    // lurch is a free punish window if you step out instead of trading.
+    aiPattern: {
+      everySecs: 4.5, range: 1.35,
+      steps: [
+        { act: 'advance', secs: 0.40 },
+        { act: 'kick', secs: 0.32 },
+        { act: 'punch', secs: 0.28 },
+      ],
+    },
   },
 
   // ── Nixon — "Tricky Dick" + "I Am Not a Crook" ────────────────────
@@ -174,6 +330,18 @@ export const PERSONALITIES = {
     // 40% of block absorb) + the FIRST one applies 0.5 s opponent blind on
     // landing (a doubled-up eye-gouge for the meter cost).
     onSuper: { mode: 'notACrook', dirtySwings: 3, dirtyBlockFraction: 0.40, blindSecs: 0.5 },
+    // PATTERN — "the sneak": he breaks off as though disengaging, then comes
+    // straight back in. The retreat is the tell, and it is a trap for the
+    // instinct to follow — chase him and you arrive exactly as the punch does.
+    // Fits the president whose swings already ignore 40% of your block.
+    aiPattern: {
+      everySecs: 4.7, range: 1.25,
+      steps: [
+        { act: 'retreat', secs: 0.42 },
+        { act: 'advance', secs: 0.22 },
+        { act: 'punch', secs: 0.30 },
+      ],
+    },
   },
 
   // ── LBJ — "The Johnson Treatment" + "All the Way with LBJ" ──────────
@@ -194,6 +362,19 @@ export const PERSONALITIES = {
     // (any opponent-miss within range → next LBJ swing +50% knockback).
     // The player CHOOSES when to arm it, instead of waiting passively.
     onSuper: { mode: 'treatmentManual', kbMul: 1.5, windowSecs: 8.0 },
+    // PATTERN — "the treatment": he walks you down. Two advances with no guard
+    // and no swing, closing until he is on top of you, then a heavy. The whole
+    // phrase is pressure — and because his passive arms a +50% knockback swing
+    // off any miss of yours, panicking into a swing as he crowds you is the
+    // worst possible answer. Backing out beats it; swinging feeds it.
+    aiPattern: {
+      everySecs: 6.0, range: 1.6,
+      steps: [
+        { act: 'advance', secs: 0.35 },
+        { act: 'advance', secs: 0.35 },
+        { act: 'charge', attack: 'kick', secs: 0.55 },
+      ],
+    },
   },
 
   // ── JFK — "PT-109 Survivor" + "Profiles in Courage" + "Camelot Glint"
@@ -222,6 +403,20 @@ export const PERSONALITIES = {
     // passive, but the player chooses when — and it's larger (0.6 s iframes
     // + next swing 1.5× damage instead of the passive 0.45 s / 1.25×).
     onSuper: { mode: 'profilesInCourage', iframesSecs: 0.6, nextSwingAtkMul: 1.5 },
+    // PATTERN — "the dash": circle out, then back in from the other angle and
+    // strike. The quickest phrase in the roster, matching the president whose
+    // passive is a speed dash — you do not get long to read it, and every
+    // fourth landed hit of his is a 1.4× Camelot Glint, so letting the string
+    // connect repeatedly is how the round gets away from you.
+    aiPattern: {
+      everySecs: 4.2, range: 1.25,
+      steps: [
+        { act: 'sidestep', dir: 1, secs: 0.20 },
+        { act: 'advance', secs: 0.18 },
+        { act: 'punch', secs: 0.24 },
+        { act: 'kick', secs: 0.28 },
+      ],
+    },
   },
 
   // ── Eisenhower — "Operation Overlord" + "Atoms for Peace" ─────────
@@ -250,6 +445,17 @@ export const PERSONALITIES = {
     // and grants 1.0 s of iframes immediately. The biggest one-shot swing
     // any president can buy with a super meter.
     onSuper: { mode: 'overlord', nextSwingAtkMul: 2.2, iframesSecs: 1.0 },
+    // PATTERN — "Overlord": the longest preparation in the game. He guards,
+    // then coils for a full 1.3 s before the swing lands. Slowest phrase, and
+    // the one most worth blocking rather than dodging — his 1.5× windup /
+    // 0.5× active frames mean the swing you block leaves him wide open.
+    aiPattern: {
+      everySecs: 6.5, range: 1.15,
+      steps: [
+        { act: 'block', secs: 0.45 },
+        { act: 'charge', attack: 'punch', secs: 1.30 },
+      ],
+    },
   },
 
   // ── Truman — "The Buck Stops Here" + "Give 'em Hell" ──────────────
@@ -274,6 +480,19 @@ export const PERSONALITIES = {
     // for the next swing, then resets stacks to zero. The longer the player
     // let it build, the bigger the payoff — up to +180% dmg at cap.
     onSuper: { mode: 'buckStopsHere', stackMul: 3.0 },
+    // PATTERN — "the buck stops here": he walks in with his hands down and
+    // eats what you throw, then answers with a heavy. Standing still in range
+    // and NOT guarding is the tell, and it is bait in the most literal sense —
+    // every hit he takes adds +2% to that answering swing (up to +60%). The
+    // counter-intuitive read: stop hitting Truman and let the phrase expire.
+    aiPattern: {
+      everySecs: 5.4, range: 1.4,
+      steps: [
+        { act: 'advance', secs: 0.35 },
+        { act: 'wait', secs: 0.45 },
+        { act: 'charge', attack: 'punch', secs: 0.65 },
+      ],
+    },
   },
 
   // ── FDR — "Four-Term Foundation" + "Fireside Chat" + "Day of Infamy" ──
@@ -302,6 +521,20 @@ export const PERSONALITIES = {
     // SUPER — "DAY OF INFAMY" (manual): same +35% dmg buff as the HP-gated
     // mode, but fired on demand and lasting 8 s instead of 5. No HP gate.
     onSuper: { mode: 'dayOfInfamy', atkMul: 1.35, durationSecs: 8.0 },
+    // PATTERN — "the fireside chat": he settles, pauses to address the room,
+    // then reaches further than he should be able to. The stillness is the
+    // tell and it lines up with his periodic 0.4 s iframe window, so swinging
+    // into the pause is how you hit nothing; the kick that follows carries the
+    // +25% reach, which is why spacing that felt safe suddenly is not.
+    aiPattern: {
+      everySecs: 6.0, range: 1.45,
+      steps: [
+        { act: 'block', secs: 0.30 },
+        { act: 'wait', secs: 0.50 },
+        { act: 'advance', secs: 0.20 },
+        { act: 'kick', secs: 0.34 },
+      ],
+    },
   },
 };
 
@@ -348,7 +581,8 @@ export function makePersonalityState(id) {
     // one-shot: firing consumes the meter to zero regardless of how full it
     // was, encouraging the player to time the activation, not stockpile.
     superMeter: 0,
-    superUntil: 0,              // flicker window — visual "PRESS SUPER" hint while > 1.0 + post-fire cooldown
+    // superUntil removed 2026-08-11 — it only ever drove the HUD's "PRESS SUPER"
+    // flash, and the super bar it flashed on is gone. Nothing read it otherwise.
     superActiveMode: null,      // mode name currently being delivered (for AI + UI)
     superFiredAt: 0,            // wall-clock t when last fired (preventing AI back-to-back spam)
     // Per-super scratch state slots — each president's on-super writes here.

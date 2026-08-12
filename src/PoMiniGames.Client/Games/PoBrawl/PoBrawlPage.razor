@@ -27,7 +27,7 @@
            BackTo="/"
            Stats="@_statItems"
            GameOver="@(_phase == "result" && !_demo)"
-           GameKey="@(_mode == "1p" ? "pobrawl" : null)"
+           GameKey="@(_mode == "1p" ? "pobrawlko" : null)"
            Outcome="@OutcomeForCue"
            RequiresWebGl="true"
            GameSummary="@GameSummaryContent">
@@ -39,11 +39,11 @@
                    Controls="@IntroControlsContent"
                    Mode="@_introMode"
                    Options="@IntroOptions"
-                   StartEnabled="@(_mode != "2p" || _twoPlayerReady)"
+                   StartEnabled="true"
                    StartLabel="@(_mode == "2p" ? "FIGHT" : "OK")"
-                   StartHint="@TwoPlayerStartHint"
+                   StartHint="@null"
                    DialogLabel="@IntroDialogLabel"
-                   CaptureKeys="@(_mode == "2p")"
+                   CaptureKeys="false"
                    OnKey="OnIntroKey"
                    OnStart="OnIntroStartAsync" />
     }
@@ -54,7 +54,10 @@
         <div id="pobrawl-container" class="pb-canvas-host"
              role="img" aria-label="Brawl arena — the fight renders here"></div>
 
-        @* HP bar HUD, fed by the JS engine's OnHud callback *@
+        @* Two-bar HUD, fed by the JS engine's OnHud callback: health, then energy.
+           The third bar (violet super meter) was removed 2026-08-11 — signature
+           moves still fire, they just fire themselves now. See _autoSuperReady in
+           game.js and the note on SuperBar's removal below. *@
         @if (_phase == "fighting" || _demo)
         {
             <div class="pb-hud">
@@ -62,29 +65,19 @@
                     <span class="pb-hp-name">@CharName(_p1Char)</span>
                     <div class="pb-hp-track"><div class="pb-hp-fill pb-hp-p1" style="--hp: @(_p1Hp)%;"></div></div>
                     <div class="pb-en-track" title="Energy — attack power"><div class="pb-en-fill @(_p1Energy > 50 ? "pb-en-hot" : "")" style="--en: @(_p1Energy)%;"></div></div>
-                    @SuperBar(_p1Super, _p1SuperReady, "E", 1)
                 </div>
                 @BodyDiagram(_p1Regions)
                 <div class="pb-centre">
-                    <div class="pb-clock">@_elapsed.ToString("0")</div>
-                    @* Best-of-three scoreboard. 2-player only: the 1P ladder is a
-                       single-elimination gauntlet and demo never replays a pairing. *@
-                    @if (_mode == "2p")
-                    {
-                        <div class="pb-rounds" role="img"
-                             aria-label="Round @_round of @MaxRounds. Rounds won: player 1 @_p1Rounds, player 2 @_p2Rounds.">
-                            <span class="pb-rounds-pips">@RoundPips(_p1Rounds)</span>
-                            <span class="pb-rounds-label">R@_round</span>
-                            <span class="pb-rounds-pips">@RoundPips(_p2Rounds)</span>
-                        </div>
-                    }
+                    @* Counts DOWN from the 60 s limit (game.js TIME_LIMIT). The
+                       best-of-three pip scoreboard that used to sit under it went
+                       with the rounds themselves — every mode is one round now. *@
+                    <div class="pb-clock" title="Seconds remaining — the round ends at 0">@_elapsed.ToString("0")</div>
                 </div>
                 @BodyDiagram(_p2Regions)
                 <div class="pb-hp-side pb-hp-right">
                     <span class="pb-hp-name">@CharName(_p2Char)</span>
                     <div class="pb-hp-track"><div class="pb-hp-fill pb-hp-p2" style="--hp: @(_p2Hp)%;"></div></div>
                     <div class="pb-en-track" title="Energy — attack power"><div class="pb-en-fill @(_p2Energy > 50 ? "pb-en-hot" : "")" style="--en: @(_p2Energy)%;"></div></div>
-                    @SuperBar(_p2Super, _p2SuperReady, "O", 2)
                 </div>
             </div>
 
@@ -201,9 +194,15 @@
     private GameIntro.IntroMode _introMode => _demo
         ? GameIntro.IntroMode.Demo
         : _mode == "2p" ? GameIntro.IntroMode.TwoPlayer : GameIntro.IntroMode.OnePlayer;
+    // The 1P line's second sentence ("Charge attacks, block on their wind-up") was the third
+    // statement of the same instruction on one card — the controls bullets directly beneath
+    // carry both halves, with the keys attached. Objective now states the goal only.
+    // The 60-second limit belongs in the objective, not the controls list: it is
+    // the shape of the whole match, and a player who does not know the clock is
+    // a deadline reads a decision loss as the game ending arbitrarily.
     private string IntroObjective => _mode == "2p"
-        ? "Two fighters enter — knock out your opponent. Each player picks below."
-        : "Knock out your opponent before they knock out you. Charge attacks, block on their wind-up.";
+        ? "Two fighters enter — one round, 60 seconds. Each player picks below."
+        : "Knock them out inside 60 seconds. Closest health at the bell is a draw.";
     // "fighting" | "result". There is no longer a "select" phase — every route
     // drops straight into the fight (see OnInitialized).
     private string _phase = "fighting";
@@ -215,18 +214,10 @@
     // (game.js ENERGY_DEFAULT); only winding up or attacking moves it.
     private int _p1Energy = 33;
     private int _p2Energy = 33;
-    // Super meters + armed flags, fed by the same OnHud pump. The engine has
-    // always sent these; nothing rendered them until now, and because the engine
-    // was reading a dead field they were always zero anyway — see the
-    // superMeterFull note in game.js.
-    //
-    // Seeded to -1 ("this fighter has no super"), not 0, so no bar is drawn in
-    // the window between the HUD appearing and the engine's first pump. 0 would
-    // flash an empty meter for BOB, who never gets one.
-    private int _p1Super = -1;
-    private int _p2Super = -1;
-    private bool _p1SuperReady;
-    private bool _p2SuperReady;
+    // The super meter/armed fields that used to sit here are gone (2026-08-11).
+    // The engine still runs the meter — it is what gates each president's
+    // signature move — but it is no longer pushed over OnHud or drawn, so the
+    // page holds no copy of it. Two bars, two numbers.
     private double _elapsed;
     private int _winner;
     private double _lastKo;
@@ -249,16 +240,18 @@
     private int _lastEloDelta;
     private string LadderKey => $"pobrawl_ladder_{_playerName}";
 
-    // ── 2-player best-of-three ────────────────────────────────────────────
-    // The marquee local-multiplayer mode used to end on a single KO, which makes
-    // a fighter's whole personality (comeback supers, HP-gated triggers) a coin
-    // flip nobody sees twice. Rounds are driven entirely from here: the engine
-    // just replays a match via PoBrawl.next, the same call the 1P ladder uses.
-    private const int RoundsToWin = 2;
-    private const int MaxRounds = 3;
-    private int _round = 1;
-    private int _p1Rounds;
-    private int _p2Rounds;
+    // ── 2-player: one round ───────────────────────────────────────────────
+    // Best-of-three is gone (2026-08-11, by request): every mode is now a single
+    // round of 60 seconds (game.js TIME_LIMIT), won by KO or by the health
+    // decision at TIME — and drawn outright when the bars finish within
+    // game.js DRAW_HP_BAND of each other.
+    //
+    // The RoundsToWin/MaxRounds/_round/_p1Rounds/_p2Rounds state that lived here
+    // drove the pip scoreboard and the PoBrawl.next rematch loop; both are gone.
+    // Note what this restores: a 2P fight is once again decided in one round, so
+    // a fighter's comeback super and HP-gated triggers get one chance to matter
+    // rather than three. That was the original argument FOR best-of-three, and
+    // the 60-second limit is now what bounds the fight instead.
 
     // ── Fight recap ───────────────────────────────────────────────────────
     // Accumulated across every round of the match (a 2P best-of-three) and every
@@ -328,94 +321,69 @@
     private RenderFragment IntroControlsContent => _mode == "2p" ? TwoPlayerQuickControls : HowToPlayContent;
 
     private RenderFragment TwoPlayerQuickControls => @<div>
-        <p>Best of @MaxRounds rounds. Pick fighters, lock in, then fight.</p>
+        <p>One round, 60 seconds. Pick fighters, lock in, then fight.</p>
         <ul>
-            <li>Player 1: <kbd>A</kbd>/<kbd>D</kbd> choose, <kbd>F</kbd> lock, <kbd>S</kbd> block</li>
-            <li>Player 2: <kbd>←</kbd>/<kbd>→</kbd> choose, <kbd>K</kbd> lock, <kbd>↓</kbd> block</li>
+            <li>Player 1: <kbd>A</kbd>/<kbd>D</kbd> choose, <kbd>F</kbd> lock · <kbd>W</kbd>/<kbd>S</kbd> circle, <kbd>R</kbd> block</li>
+            <li>Player 2: <kbd>←</kbd>/<kbd>→</kbd> choose, <kbd>K</kbd> lock · <kbd>↑</kbd>/<kbd>↓</kbd> circle, <kbd>;</kbd> block</li>
             <li>Attacks: P1 <kbd>F</kbd>/<kbd>G</kbd>, P2 <kbd>K</kbd>/<kbd>L</kbd> (hold to charge)</li>
-            <li>Supers: P1 <kbd>E</kbd>, P2 <kbd>O</kbd> when the purple meter is full</li>
+            @* The super-key line went with the super bar (2026-08-11). Signature
+               moves now fire on their own once a fighter has taken enough damage,
+               so there is no key to teach and no meter to watch. *@
+            <li>Take enough punishment and your president's signature move fires itself</li>
         </ul>
     </div>;
 
+    // 2026-08-11: consolidated by request. Three things went, none of them information:
+    //
+    //  • The lead paragraph ("Knock out your opponent — charge attacks and block at the
+    //    right moment") restated IntroObjective almost verbatim, two lines below it on the
+    //    same card — GameIntro renders Objective directly above this fragment.
+    //  • "Watch for the coil wind-up" was a fifth bullet saying what the block bullet and
+    //    the objective both already said. It is now the tail of the block line, stated once.
+    //  • The two `_mode == "2p"` branches were UNREACHABLE: IntroControlsContent hands 2P
+    //    TwoPlayerQuickControls, so this fragment only ever renders for 1P and demo. The
+    //    super key and P2's keymap are documented there (and only there) — dead code here.
+    //
+    // One correction rather than a cut: blocking has NOT banked energy since game.js:2634
+    // ("Blocking no longer banks energy — the bar only moves via winding up / attacking"),
+    // so the old "blocked hits charge your ⚡ energy" was teaching a mechanic that does not
+    // exist. Energy is described where it is true, on the attack line.
     private RenderFragment HowToPlayContent => @<div>
-        <p>Knock out your opponent — charge attacks and block at the right moment.</p>
         <ul>
-            <li><kbd>A</kbd>/<kbd>D</kbd> move · <kbd>W</kbd> step in · tap <kbd>S</kbd> sidestep</li>
-            <li><b>Hold</b> <kbd>S</kbd> to block — blocked hits charge your ⚡ energy</li>
+            <li><kbd>A</kbd>/<kbd>D</kbd> move in and out · <kbd>W</kbd>/<kbd>S</kbd> circle back and forward</li>
+            <li><b>Hold</b> <kbd>R</kbd> to block — their coil wind-up is your cue</li>
             <li><kbd>F</kbd> punch · <kbd>G</kbd> kick — <b>hold</b> to charge, release to strike</li>
-            <li>Energy is your power: spend it all on one big hit (watch the bar under your health)</li>
-            @* The super key was undocumented for the whole life of the feature — and
-               unreachable besides (see input.js). Both are fixed; this is the line that
-               tells the player the mechanic exists at all.
-
-               Only shown where it is TRUE. Signature supers belong to the presidents;
-               BOB is the generic avatar and has none by design, so 1P names the key
-               nowhere and draws you no super bar. What the president across the ring
-               can do to you is covered instead by the scouting card (ScoutingContent),
-               which is the 1P player's side of this mechanic. *@
-            @if (_mode == "2p")
-            {
-                <li><kbd>E</kbd> <b>SUPER</b> — the purple bar fills as you <em>take</em> damage.
-                    Full means your president's signature move is armed. (BOB has none.)</li>
-            }
-            <li>Watch for the coil wind-up — that's your cue to block!</li>
+            <li>⚡ Energy is your hit power — one swing spends it all</li>
+            <li>⏱ 60 seconds. No KO? Most health wins — level bars are a draw</li>
         </ul>
-        @if (_mode == "2p")
-        {
-            <p>Player 2: <kbd>←</kbd>/<kbd>→</kbd> move · <kbd>↑</kbd> step in · <kbd>↓</kbd> block ·
-                <kbd>K</kbd> punch · <kbd>L</kbd> kick · <kbd>O</kbd> super. Best of @MaxRounds.</p>
-        }
     </div>;
 
-    // ── Super meter bar ───────────────────────────────────────────────────
-    // Third bar under health and energy. The fill is not the interesting part —
-    // the armed prompt is: the meter fills by TAKING damage, so a player who is
-    // losing needs to be told, at the moment it happens, that they now hold a
-    // comeback move. The prompt is suppressed for CPU-driven sides (both fighters
-    // in demo, P2 in 1P) because naming a key nobody can press there is a lie.
+    // ── Super meter bar — REMOVED 2026-08-11 ──────────────────────────────
+    // The HUD is deliberately two bars now: health, and the energy you build by
+    // holding punch/kick. The violet super meter was a third resource stacked
+    // under them, and IsHumanSide existed only to decide whether to print its
+    // "⚡ PRESS E/O" prompt.
     //
-    // A NEGATIVE value means the fighter has no signature super at all — see the
-    // -1 contract in game.js _pushHud, which is distinct from an empty meter.
+    // The MECHANIC survives the bar. Every president still has a signature move
+    // and still spends a meter that fills by taking damage; what changed is who
+    // presses the button. A human's super now fires by itself the moment the
+    // meter fills (game.js `_autoSuperReady`), and the CPU keeps firing through
+    // its own rung-paced logic in ai.js. Nothing about the roster's identity is
+    // lost — see the dossier on the 1P scouting card, which still tells you what
+    // the president across the ring is about to do to you.
     //
-    // Only the presidents have one. BOB is the generic avatar they are
-    // characterised against and has no signature move BY DESIGN, so in 1P no
-    // bar is drawn on the left at all and the E key is named nowhere. That is
-    // the intended end state, not a placeholder: an always-empty meter beside a
-    // documented key that does nothing is the same class of mistake this
-    // feature exists to undo.
-    @* The wrapper carries width:100% deliberately: .pb-hp-right sets
-       align-items:flex-end, which shrink-wraps any child that does not claim a
-       width — the track inside would then be 100% of nothing. *@
-    private RenderFragment SuperBar(int value, bool ready, string key, int side) => @<div class="pb-su">
-        @if (value >= 0)
-        {
-            <div class="pb-su-track" title="Super — fills as you take damage">
-                <div class="pb-su-fill @(ready ? "pb-su-fill--ready" : "")" style="--su: @(value)%;"></div>
-            </div>
-            @if (ready && IsHumanSide(side))
-            {
-                <span class="pb-su-prompt" role="status">⚡ PRESS <kbd>@key</kbd></span>
-            }
-        }
-    </div>;
+    // Do not reintroduce a bar here without also restoring the OnHud arguments
+    // and the engine's `_pushHud` arguments together — see the arity note on
+    // OnHud for what happens when those two drift apart.
 
-    /// <summary>True when <paramref name="side"/> (1 or 2) is driven by a person at this keyboard.</summary>
-    private bool IsHumanSide(int side) => _mode switch
-    {
-        "2p" => true,
-        "1p" => side == 1,
-        _ => false,   // demo is CPU vs CPU
-    };
+    // RoundPips removed with the best-of-three scoreboard it drew (2026-08-11).
 
-    // Filled pip per round won, hollow for the rest. Rendered as text rather than
-    // elements so it stays on one line inside the narrow centre column.
-    private static string RoundPips(int won) => new string('●', won) + new string('○', Math.Max(0, RoundsToWin - won));
-
-    // 2P gets the character select; 1P gets the scouting report on the president it
-    // is about to fight. Demo gets neither — nobody is reading it.
+    // 2P is fixed as Bob vs Bob, so there is no fighter select to render. 1P gets the
+    // scouting report on the president it is about to fight. Demo gets neither — nobody is
+    // reading it.
     private RenderFragment? IntroOptions => _mode switch
     {
-        "2p" => SelectContent,
+        "2p" => null,
         "1p" => ScoutingContent,
         _ => null,
     };
@@ -531,7 +499,7 @@
         @if (_recap is { } r)
         {
             <table class="pb-recap">
-                <caption>Fight recap@(_mode == "2p" ? $" — best of {MaxRounds}" : "")</caption>
+                <caption>Fight recap</caption>
                 <thead>
                     <tr>
                         <th scope="col" class="pb-recap-stat">Stat</th>
@@ -550,19 +518,27 @@
             </table>
         }
 
-        @* Roster tier list. Fed only by demo matches, but shown to everyone — this
-           is the answer to "who is actually good?", which is a question only the
-           players picking fighters ever ask. *@
-        <PoBrawlEloBoard Ratings="@_fighterRatings"
-                 Player1Id="@_p1Char"
-                 Player2Id="@_p2Char"
-                 ContextHint="Current matchup is highlighted as now." />
+        @* 2026-08-11: the roster tier list (demo fighter Elo, top 10) was removed from this
+           modal by request. It answers "who is actually good?" — a roster-balance question
+           about CHARACTERS, not an account of the match the player just finished, so it
+           padded the post-match summary with ten rows nobody had asked for. Its home is the
+           "Brawl Demo" board on /leaderboards (UnifiedLeaderboardEndpoints.BuildPoBrawlDemoAsync,
+           grouped under 1 Player next to the Brawl ladder board), which is where a player
+           comparing fighters is already looking. The live board under the arena in DEMO mode
+           (see the PoBrawlEloBoard above .pb-wrap) stays — demo never shows this modal, and
+           the kiosk screen is the one place the standings are the point. *@
 
-        @* No ladder board here on purpose. The presidents-ladder standings ARE shown on
-           this modal — GameOverModal renders them as its "🏆 Top 3 / Best rung" panel,
-           fed by /api/leaderboards/pobrawl (UnifiedLeaderboardEndpoints.BuildPoBrawlAsync
-           reads the same PoBrawlLadder table). A dedicated board here was added and removed
-           on 2026-08-11 after it turned out to duplicate that panel a few rows further up. *@
+        @* No board markup here on purpose — GameOverModal already renders one above this
+           content, from whatever GameKey the shell was given. For 1P that is now
+           "pobrawlko" (UnifiedLeaderboardEndpoints.BuildPoBrawlKoAsync): 🏆 Top 3 by
+           FASTEST KO, matching the "KO in N.NNs" line this summary opens with.
+
+           It used to be the presidents-ladder standings ("Best rung", from
+           /api/leaderboards/pobrawl). That board is unchanged and still on the
+           /leaderboards page; it simply is not what a player wants between rungs. A
+           dedicated board in this fragment was added and removed on 2026-08-11 after it
+           turned out to duplicate the modal's panel a few rows further up — that still
+           applies, whichever board the panel is showing. *@
     </div>;
 
     protected override void OnInitialized()
@@ -581,6 +557,11 @@
             _ladder = LoadLadder();
             _p1Char = Bob.Id;
             _p2Char = Roster[_ladder].Id;
+        }
+        else if (_mode == "2p")
+        {
+            _p1Char = Bob.Id;
+            _p2Char = Bob.Id;
         }
         UpdateStats();
 
@@ -674,8 +655,8 @@
         }
         else if (_mode == "2p")
         {
-            _p1Char = PickableRoster[_p1Sel].Id;
-            _p2Char = PickableRoster[_p2Sel].Id;
+            _p1Char = Bob.Id;
+            _p2Char = Bob.Id;
         }
         // 1P keeps the ladder matchup chosen in OnInitialized (BOB vs the rung).
 
@@ -698,10 +679,6 @@
         _p2Hp = 100;
         _p1Energy = 33;
         _p2Energy = 33;
-        _p1Super = -1;
-        _p2Super = -1;
-        _p1SuperReady = false;
-        _p2SuperReady = false;
         _elapsed = 0;
         _p1Regions = new int[4];
         _p2Regions = new int[4];
@@ -767,25 +744,21 @@
     /// bars never move" report was this, not the energy model.
     /// </para>
     /// <para>
-    /// The four super values are now rendered (the super bar under each energy bar). They
-    /// were accepted and discarded for the whole life of the regression above, which is why
-    /// nobody noticed that the engine was sourcing them from a dead field as well — see the
-    /// <c>superMeterFull</c> note in game.js.
+    /// 2026-08-11: the four super values were removed from this signature and from the
+    /// engine's call in the same change — the HUD is health and energy only now. The engine
+    /// still keeps a super meter internally to gate the signature moves; it is simply no
+    /// longer a number the player is shown. Widening this list again means editing
+    /// <c>game.js _pushHud</c> in the same commit, or the HUD goes silently dead.
     /// </para>
     /// </remarks>
     [JSInvokable]
     public void OnHud(int p1Hp, int p2Hp, double elapsed, int[]? p1Regions, int[]? p2Regions,
-        int p1Energy, int p2Energy,
-        int p1Super, int p2Super, int p1SuperReady, int p2SuperReady)
+        int p1Energy, int p2Energy)
     {
         _p1Hp = p1Hp;
         _p2Hp = p2Hp;
         _p1Energy = p1Energy;
         _p2Energy = p2Energy;
-        _p1Super = p1Super;
-        _p2Super = p2Super;
-        _p1SuperReady = p1SuperReady != 0;
-        _p2SuperReady = p2SuperReady != 0;
         _elapsed = elapsed;
         if (p1Regions is { Length: 4 }) _p1Regions = p1Regions;
         if (p2Regions is { Length: 4 }) _p2Regions = p2Regions;
@@ -862,35 +835,15 @@
             return;
         }
 
-        // ── 2-player: best of three ───────────────────────────────────────
+        // ── 2-player: one round, then the result ──────────────────────────
+        // The best-of-three loop that used to live here (score the round, call
+        // PoBrawl.next for the next one, stop at two wins or three rounds) is
+        // gone. One round decides it — by KO, by health decision at 60 s, or as
+        // a draw when the bars are within the engine's DRAW_HP_BAND.
         if (_mode == "2p")
         {
-            if (winner == 1) _p1Rounds++;
-            else if (winner == 2) _p2Rounds++;
-
-            // A round is spent either way. The MaxRounds guard is what makes that
-            // safe: the engine's time-out path always names a winner, so a draw is
-            // very nearly unreachable, but without the cap a run of them would loop
-            // rounds forever waiting for a second win that never lands.
-            if (_p1Rounds < RoundsToWin && _p2Rounds < RoundsToWin && _round < MaxRounds)
-            {
-                _round++;
-                ResetRoundHud();
-                await InvokeAsync(StateHasChanged);
-                try
-                {
-                    // Null fighter/difficulty keeps both players' picks — only the
-                    // splash heading changes, so the players can see which round
-                    // is starting rather than a generic "NEXT ROUND".
-                    await JSRuntime.InvokeVoidAsync("PoBrawl.next", null, null, $"ROUND {_round}");
-                }
-                catch (Exception ex) { Console.Error.WriteLine($"[PoBrawl] next-round failed: {ex.Message}"); }
-                return;
-            }
-
             _phase = "result";
             await InvokeAsync(StateHasChanged);
-            await LoadFighterRatingsAsync();
             return;
         }
 
@@ -972,11 +925,12 @@
 
         _phase = "result";
         await InvokeAsync(StateHasChanged);
-        // Fetched AFTER the modal is on screen, not before: the board is the last
-        // thing in the summary and it renders its own "Loading ratings…" line, so
-        // waiting on a network round-trip here would only delay the result the
-        // player is actually waiting for.
-        await LoadFighterRatingsAsync();
+        // No fighter-Elo fetch here any more. It existed solely to fill the tier list
+        // that used to close the summary modal; with that board moved to /leaderboards
+        // (see GameSummaryContent) the ratings have no reader on a 1P/2P result screen,
+        // and GET /api/pobrawl/elo after every match was a request whose response was
+        // rendered nowhere. Demo mode keeps its own fetches — OnInitializedAsync seeds
+        // the live board and RecordDemoFighterEloAsync refreshes it from the POST reply.
     }
 
     /// <summary>
@@ -1035,18 +989,17 @@
 
     private string ResultLine()
     {
-        // 2P reports the MATCH, not the last round — a player who lost the final
-        // round 2-1 still won, and naming the round winner would read as a loss.
+        // 2P is one round now, so the round winner IS the match winner — the old
+        // "takes the match 2–1" tallying has nothing left to count.
         if (_mode == "2p")
         {
-            var champ = _p1Rounds > _p2Rounds ? 1 : _p2Rounds > _p1Rounds ? 2 : 0;
-            var hi = Math.Max(_p1Rounds, _p2Rounds);
-            var lo = Math.Min(_p1Rounds, _p2Rounds);
-            if (champ == 0) return $"🤝 Match drawn {hi}–{lo}";
-            return $"🏆 {CharName(champ == 1 ? _p1Char : _p2Char)} takes the match {hi}–{lo} — Player {champ}!";
+            if (_winner == 0) return "🤝 Too close to call — draw!";
+            return $"🏆 {CharName(_winner == 1 ? _p1Char : _p2Char)} wins — Player {_winner}!";
         }
 
-        if (_winner == 0) return "🤝 Draw!";
+        // A 1P draw ends the run without advancing the ladder: the president is
+        // still standing, so the rung is not cleared.
+        if (_winner == 0) return $"🤝 Too close to call — {CharName(_p2Char)} holds the rung.";
         return _winner == 1
             ? $"🏆 BOB knocked out {CharName(_p2Char)}!"
             : $"💀 {CharName(_p2Char)} beat BOB — rematch!";

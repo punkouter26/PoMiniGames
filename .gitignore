@@ -157,3 +157,12 @@ ehthumbs.db
 .cmake/
 CMakeCache.txt
 .absolute-work/
+
+# ─── Art sources ─────────────────────────────────────────────────────
+# Master renders kept locally for re-export only. The PoJoker Grandma portraits
+# arrived as 21 × 1024² PNGs (21 MB); wwwroot ships the 512² WebP derivatives
+# (~740 KB total) instead. Committing the masters would put 21 MB into every
+# clone and every deploy package for pixels nothing renders.
+# Re-export: ffmpeg -i "<name>.png" -vf scale=512:512:flags=lanczos \
+#            -c:v libwebp -pix_fmt yuva420p -quality 82 grandma-<emotion>.webp
+assets/

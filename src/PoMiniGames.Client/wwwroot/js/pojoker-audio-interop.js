@@ -7,6 +7,14 @@
 // Audio context singleton (created on first user interaction)
 let audioContext = null;
 
+// Live AudioBufferSourceNodes (drum roll, cymbal) — these can be cancelled.
+// Oscillators (fanfare, trombone) auto-stop on their envelope, but buffer
+// sources would otherwise run to completion. A Set keeps both stoppable and
+// lets stopAll() tear the current cue down on demand when the orchestrator
+// advances to the next state or the player hits Stop — without this, a drum
+// roll started 1.9s before Stop would ring over the idle screen.
+const liveSources = new Set();
+
 /**
  * Get or create the audio context
  * Must be called after user interaction due to browser autoplay policies
@@ -18,13 +26,42 @@ function getAudioContext() {
         audioContext = (window.PoAudioBus && window.PoAudioBus.contextSync())
             || new (window.AudioContext || window.webkitAudioContext)();
     }
-    
+
     // Resume if suspended (happens after page load before user interaction)
     if (audioContext.state === 'suspended') {
         audioContext.resume();
     }
-    
+
     return audioContext;
+}
+
+/**
+ * Connect a generated node graph to the shared audio bus instead of the raw
+ * `ctx.destination`. The bus carries per-category gain and the master mute/volume
+ * from the player's settings, so a muted player hears silence whether the cue
+ * is the Jester's fanfare, the narrator's drum roll, or anything else.
+ * @param {AudioNode} tail the last node in the source graph
+ * @returns {AudioNode} the tail node (for chaining) or `destination` fallback
+ */
+function connectToBus(tail) {
+    const bus = window.PoAudioBus && window.PoAudioBus.busSync('sfx');
+    if (bus) {
+        tail.connect(bus);
+    } else {
+        tail.connect(audioContext.destination);
+    }
+    return tail;
+}
+
+/**
+ * Register a BufferSourceNode so stopAll() can interrupt it. The nodes are
+ * one-shot — once they finish naturally they're removed from the Set so the
+ * Set doesn't grow across a full 10-joke show.
+ * @param {AudioBufferSourceNode} node
+ */
+function trackSource(node) {
+    liveSources.add(node);
+    node.onended = () => liveSources.delete(node);
 }
 
 /**
@@ -75,15 +112,16 @@ async function playDrumRoll(duration = 2.0, volume = 0.5) {
     gainNode.gain.linearRampToValueAtTime(volume, now + duration * 0.8);
     gainNode.gain.linearRampToValueAtTime(volume * 1.2, now + duration);
     
-    // Connect nodes
+    // Connect nodes — through the shared sfx bus so master mute/volume apply.
     noiseSource.connect(bandpass);
     bandpass.connect(highpass);
     highpass.connect(gainNode);
-    gainNode.connect(ctx.destination);
-    
+    connectToBus(gainNode);
+
     // Play
     noiseSource.start(now);
     noiseSource.stop(now + duration);
+    trackSource(noiseSource);
     
     return new Promise(resolve => {
         setTimeout(resolve, duration * 1000);
@@ -139,18 +177,18 @@ async function playTrombone(volume = 0.6) {
         gainNode.gain.setValueAtTime(volume, startTime + noteDuration * 0.7);
         gainNode.gain.linearRampToValueAtTime(0, startTime + noteDuration);
         
-        // Connect
+        // Connect — through the shared sfx bus so master mute/volume apply.
         osc.connect(filter);
         filter.connect(gainNode);
-        gainNode.connect(ctx.destination);
-        
+        connectToBus(gainNode);
+
         // Play
         osc.start(startTime);
         osc.stop(startTime + noteDuration);
         vibrato.start(startTime);
         vibrato.stop(startTime + noteDuration);
     });
-    
+
     return new Promise(resolve => {
         setTimeout(resolve, totalDuration * 1000);
     });
@@ -195,8 +233,8 @@ async function playFanfare(volume = 0.5) {
         
         osc.connect(filter);
         filter.connect(gainNode);
-        gainNode.connect(ctx.destination);
-        
+        connectToBus(gainNode);
+
         osc.start(startTime);
         osc.stop(startTime + noteDuration + 0.1);
     });
@@ -240,10 +278,11 @@ async function playCymbal(volume = 0.4) {
     
     source.connect(highpass);
     highpass.connect(gainNode);
-    gainNode.connect(ctx.destination);
-    
+    connectToBus(gainNode);
+
     source.start(now);
     source.stop(now + duration);
+    trackSource(source);
     
     return new Promise(resolve => {
         setTimeout(resolve, duration * 1000);
@@ -256,14 +295,37 @@ window.poJokerAudio = {
     playTrombone,
     playFanfare,
     playCymbal,
-    
+
     /**
      * Initialize audio context (call on user interaction)
      */
     init: function() {
         getAudioContext();
     },
-    
+
+    /**
+     * Stop every currently-playing cue. Safe to call repeatedly — the Set is
+     * the source of truth and `stop()` on an already-ended source is a no-op.
+     * Oscillator-based cues (fanfare, trombone) finish their envelope on their
+     * own and don't need this; buffer-based cues (drum roll, cymbal) would
+     * otherwise ring out across state transitions or after Stop.
+     */
+    stopAll: function() {
+        for (const node of liveSources) {
+            try { node.stop(); } catch { /* already ended */ }
+            liveSources.delete(node);
+        }
+    },
+
+    /**
+     * How many buffer-source cues are currently live (drum roll / cymbal).
+     * Exposed for browser-side tests verifying the audio boundary; not used
+     * by production code.
+     */
+    _liveCount: function() {
+        return liveSources.size;
+    },
+
     /**
      * Check if Web Audio API is supported
      * @returns {boolean}

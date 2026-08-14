@@ -1,3 +1,32 @@
+/* Joke card + audience portrait. The card keeps its natural width and the crowd
+   takes a fixed slot beside it; `min-width: 0` is what stops a long setup line from
+   pushing the portrait off the stage (a flex item's default min-width is auto, i.e.
+   its content, so it refuses to shrink without this). */
+.joke-with-audience {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    width: 100%;
+}
+
+.joke-with-audience ::deep .joke-card {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+/* Left of the card, facing the material — but second in the DOM so a screen
+   reader reaches the joke before the reaction to it. */
+.joke-with-audience ::deep .audience {
+    order: -1;
+}
+
+@media (max-width: 760px) {
+    .joke-with-audience {
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+}
+
 /* Rating score chips shown during punchline reveal */
 .rating-scores {
     display: flex;

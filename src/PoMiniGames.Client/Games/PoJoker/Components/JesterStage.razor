@@ -23,7 +23,8 @@
                         CurrentAnalysis="@_orchestrator.CurrentAnalysis"
                         JokesDisplayed="@_orchestrator.JokesDisplayed"
                         TopJokes="@_orchestrator.TopJokes"
-                        SessionTriumphs="@_orchestrator.SessionTriumphs" />
+                        SessionTriumphs="@_orchestrator.SessionTriumphs"
+                        PunchlineRevealed="@_orchestrator.PunchlineRevealed" />
 
     <PerformanceControls IsRunning="@_orchestrator.IsRunning"
                          OnStart="@StartPerformance"
@@ -199,6 +200,19 @@
             _completeRaised = true;
             InvokeAsync(() => OnShowComplete.InvokeAsync(_orchestrator.SessionTriumphs));
         }
+        // Dev introspection: publish a live snapshot of the orchestrator's state
+        // so browser-side tests can verify the audio/UI sync directly instead of
+        // inferring it from DOM mutation timing. A Try/catch around the JS
+        // interop keeps teardown paths (where the runtime may already be gone)
+        // from throwing on cleanup.
+        try
+        {
+            var state = _orchestrator.CurrentState.ToString();
+            var punchline = _orchestrator.PunchlineRevealed ? "true" : "false";
+            _ = JS.InvokeVoidAsync("eval",
+                $"window.__poJokerDebug = {{ state:'{state}', punchlineRevealed:{punchline} }};");
+        }
+        catch { /* JS interop may be unavailable during teardown */ }
         InvokeAsync(StateHasChanged);
     }
 

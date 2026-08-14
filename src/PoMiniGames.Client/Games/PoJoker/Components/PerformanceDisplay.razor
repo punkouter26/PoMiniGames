@@ -21,7 +21,10 @@
                 <div class="progress-fill" style="width: @(progressPercent)%"></div>
                 <span class="progress-text">Joke @displayedJokeNumber of 10</span>
             </div>
+            @* The crowd stays on stage between jokes rather than blinking out with the
+               card — she leans in with anticipation while the next joke is fetched. *@
             <div class="loading-state">
+                <AudienceReaction State="@CurrentState" />
                 <div class="loading-jester"></div>
                 <p>Summoning the Digital Jester...</p>
             </div>
@@ -36,14 +39,27 @@
             </div>
             @if (CurrentJoke is not null)
             {
-                <JokeCard Joke="@CurrentJoke"
-                          ShowSetup="@(CurrentState >= PerformanceState.ShowingSetup)"
-                          ShowPunchline="@(CurrentState >= PerformanceState.RevealingPunchline)"
-                          ShowCategory="true"
-                          AiGuess="@(CurrentState >= PerformanceState.ShowingAiGuess ? CurrentAnalysis?.AiPunchline : null)"
-                          IsThinking="@(CurrentState == PerformanceState.ShowingSetup)"
-                          IsTriumph="@(CurrentState >= PerformanceState.RevealingPunchline ? CurrentAnalysis?.IsTriumph : null)"
-                          ShowResult="@(CurrentState >= PerformanceState.RevealingPunchline)" />
+                @* Card and crowd share a row on a wide stage and stack on a narrow one.
+                   The portrait is the second child so a screen reader reaches the joke
+                   first; `order` puts it on the left visually, facing the material. *@
+                <div class="joke-with-audience">
+                    <JokeCard Joke="@CurrentJoke"
+                              ShowSetup="@(CurrentState >= PerformanceState.ShowingSetup)"
+                              ShowPunchline="@(CurrentState >= PerformanceState.RevealingPunchline && PunchlineRevealed)"
+                              ShowCategory="true"
+                              AiGuess="@(CurrentState >= PerformanceState.ShowingAiGuess ? CurrentAnalysis?.AiPunchline : null)"
+                              IsThinking="@(CurrentState == PerformanceState.ShowingSetup)"
+                              IsTriumph="@(CurrentState >= PerformanceState.RevealingPunchline && PunchlineRevealed ? CurrentAnalysis?.IsTriumph : null)"
+                              ShowResult="@(CurrentState >= PerformanceState.RevealingPunchline && PunchlineRevealed)" />
+
+                    @* Same reveal gate as the punchline text and ratings below: the
+                       crowd's topic reaction IS reveal-frame content, and un-gated it
+                       flipped to the joke's subject a beat before the punchline it is
+                       reacting to appeared. *@
+                    <AudienceReaction State="@CurrentState"
+                                      TopicEmotion="@CurrentAnalysis?.Rating?.Emotion"
+                                      PunchlineRevealed="@PunchlineRevealed" />
+                </div>
 
                 @if (CurrentState == PerformanceState.ShowingAiGuess && CurrentAnalysis?.IsTriumph == null)
                 {
@@ -52,7 +68,12 @@
                     </div>
                 }
 
-                @if (CurrentState >= PerformanceState.RevealingPunchline && CurrentAnalysis?.Rating is not null)
+                @* Ratings + commentary belong to the punchline frame and only
+                   appear once the reveal audio starts. Revealing them earlier
+                   collides with the breathing-beat silence before the speech. *@
+                @if (CurrentState >= PerformanceState.RevealingPunchline
+                    && PunchlineRevealed
+                    && CurrentAnalysis?.Rating is not null)
                 {
                     <div class="analysis-details">
                         <div class="rating-badges" aria-label="Joke ratings">
@@ -130,4 +151,12 @@
     [Parameter] public int JokesDisplayed { get; set; }
     [Parameter] public List<JokeAnalysisDto> TopJokes { get; set; } = [];
     [Parameter] public int SessionTriumphs { get; set; }
+
+    /// <summary>
+    /// Whether the punchline text + ratings + commentary have been revealed.
+    /// The orchestrator sets this true at the same instant it starts the
+    /// punchline speech, so the visual appears in lockstep with the audio
+    /// instead of two seconds earlier when the fanfare was still playing.
+    /// </summary>
+    [Parameter] public bool PunchlineRevealed { get; set; }
 }

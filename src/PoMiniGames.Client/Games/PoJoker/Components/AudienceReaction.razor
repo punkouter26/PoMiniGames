@@ -1,0 +1,94 @@
+@* PoJoker — the crowd. A single audience member whose face tracks the show:
+   she thinks along with the setup, concentrates through the Jester's guess, and
+   reacts on the reveal to what the joke was actually ABOUT (the emotion the rating
+   model picked from the joke's subject matter, not to whether the Jester landed it). *@
+
+@* Deliberately NOT aria-live. A demo show swaps expression roughly every three
+   seconds for as long as the kiosk runs; announcing each one would talk over the
+   joke text that is the actual content. The alt text still describes the portrait
+   to anyone who reaches it in reading order. *@
+<figure class="audience">
+    @* @key forces a fresh element per emotion so the fade-in animation replays on
+       every change. Without it Blazor patches the src in place and the swap is a
+       hard cut mid-show. *@
+    <img @key="_emotion"
+         class="audience-portrait"
+         src="@JokerEmotions.ImagePath(_emotion)"
+         alt="@AltText"
+         width="512" height="512"
+         draggable="false" />
+
+    <figcaption class="audience-caption">
+        <span class="audience-who">The crowd</span>
+        <span class="audience-mood">@Humanize(_emotion)</span>
+    </figcaption>
+
+    @* Fetch the reveal portrait while the drum roll is still running. The emotion is
+       known the moment the analysis lands (during ShowingAiGuess) but is not shown
+       until several seconds later, so this turns a cold request on the reveal frame
+       into a warm cache hit. Off-screen rather than hidden: `display:none` images are
+       not guaranteed to be fetched. *@
+    @if (_preload is not null)
+    {
+        <img class="audience-preload" src="@JokerEmotions.ImagePath(_preload)" alt="" aria-hidden="true" />
+    }
+</figure>
+
+@code {
+    /// <summary>Which act of the show is on stage — drives everything below.</summary>
+    [Parameter] public PerformanceState State { get; set; } = PerformanceState.Idle;
+
+    /// <summary>
+    /// The reaction this joke's subject matter calls for, from the rating model.
+    /// Null until the analysis lands; normalized here because it originates with an LLM.
+    /// </summary>
+    [Parameter] public string? TopicEmotion { get; set; }
+
+    /// <summary>
+    /// True once the punchline is actually on screen and being spoken. The reveal act
+    /// opens with a fanfare beat before that, so without this the crowd would react to
+    /// a punchline the audience has not heard yet.
+    /// </summary>
+    [Parameter] public bool PunchlineRevealed { get; set; }
+
+    private string _emotion = JokerEmotions.Neutral;
+    private string? _preload;
+
+    protected override void OnParametersSet()
+    {
+        var topic = JokerEmotions.Normalize(TopicEmotion);
+
+        _emotion = State switch
+        {
+            // Waiting for the courier: leaning forward for the next joke.
+            PerformanceState.Fetching => "anticipation",
+            // Reading the setup along with everyone else.
+            PerformanceState.ShowingSetup => JokerEmotions.Thinking,
+            // Drum roll — has the Jester got it?
+            PerformanceState.ShowingAiGuess => JokerEmotions.Concentrating,
+            // The only frame that reflects the joke itself — and only once the
+            // punchline is on screen. Through the fanfare beat before that she is
+            // still holding her breath on the guess.
+            PerformanceState.RevealingPunchline => PunchlineRevealed ? topic : JokerEmotions.Concentrating,
+            // Composure returns between jokes.
+            PerformanceState.Transitioning => JokerEmotions.Neutral,
+            PerformanceState.Complete => "joy",
+            _ => JokerEmotions.Neutral,
+        };
+
+        // Only worth warming while the reveal is still ahead and the portrait differs
+        // from the one already on screen.
+        _preload = State == PerformanceState.ShowingAiGuess && topic != _emotion ? topic : null;
+    }
+
+    private string AltText => State == PerformanceState.RevealingPunchline
+        ? $"An audience member reacting to the joke: {Humanize(_emotion).ToLowerInvariant()}"
+        : $"An audience member watching the show: {Humanize(_emotion).ToLowerInvariant()}";
+
+    /// <summary>"eye-roll" → "Eye roll". The slugs are lowercase words joined by hyphens.</summary>
+    private static string Humanize(string slug)
+    {
+        var spaced = slug.Replace('-', ' ');
+        return char.ToUpperInvariant(spaced[0]) + spaced[1..];
+    }
+}

@@ -105,6 +105,15 @@ public sealed record JokeRatingDto
     /// <summary>AI Jester's personality-driven commentary on the joke.</summary>
     public string Commentary { get; init; } = string.Empty;
 
+    /// <summary>
+    /// The audience portrait this joke's subject matter calls for — a slug from
+    /// <see cref="JokerEmotions.All"/>. The rating model picks it from the joke's topic, not from
+    /// how the Jester performed, so a joke about death reads <c>dying</c> whether or not the
+    /// punchline was guessed. Defaults to <see cref="JokerEmotions.Neutral"/> so a rating that
+    /// predates this field (or came back unreadable) still renders a portrait.
+    /// </summary>
+    public string Emotion { get; init; } = JokerEmotions.Neutral;
+
     /// <summary>Average of all scores.</summary>
     public double Average => (Cleverness + Rudeness + Complexity + Difficulty) / 4.0;
 }

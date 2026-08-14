@@ -80,9 +80,50 @@ public sealed class MockAnalysisService(ILogger<MockAnalysisService> logger) : I
             Rudeness = _random.Next(1, 5),
             Complexity = _random.Next(1, 11),
             Difficulty = _random.Next(1, 11),
-            Commentary = "A jest of reasonable mirth!"
+            Commentary = "A jest of reasonable mirth!",
+            Emotion = MockEmotion(joke),
         };
     }
+
+    /// <summary>
+    /// A stand-in for the rating model's topic read, so a developer without a foundry still sees
+    /// the audience change expression instead of a show of 10 identical neutral portraits.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately NOT random: the same joke must draw the same face every time, or a re-fetch of
+    /// a joke already seen this session contradicts itself on stage. Keyword-then-hash, so even a
+    /// joke matching nothing still lands somewhere stable and non-neutral.
+    /// </remarks>
+    private static string MockEmotion(JokeDto joke)
+    {
+        var text = joke.FullText.ToLowerInvariant();
+
+        foreach (var (needle, emotion) in MockEmotionKeywords)
+        {
+            if (text.Contains(needle, StringComparison.Ordinal))
+                return emotion;
+        }
+
+        // Stable spread over the whole portrait set. string.GetHashCode is randomized per process,
+        // so it would give the same joke a different face on every restart — sum the chars instead.
+        var seed = 0;
+        foreach (var c in text) seed = unchecked(seed + c);
+        return JokerEmotions.All[Math.Abs(seed) % JokerEmotions.All.Length];
+    }
+
+    private static readonly (string Needle, string Emotion)[] MockEmotionKeywords =
+    [
+        ("dead", "dying"), ("death", "dying"), ("grave", "dying"), ("funeral", "dying"),
+        ("drunk", "drunk"), ("beer", "drunk"), ("bar", "drunk"), ("wine", "drunk"),
+        ("wife", "blushing"), ("sex", "blushing"), ("date", "blushing"),
+        ("toilet", "disgust"), ("fart", "disgust"), ("smell", "disgust"),
+        ("scared", "fear"), ("ghost", "fear"), ("spider", "fear"),
+        ("doctor", "wounded"), ("hospital", "wounded"), ("hurt", "wounded"),
+        ("sleep", "unconscious"), ("bed", "unconscious"),
+        ("police", "stealthy"), ("steal", "stealthy"), ("thief", "stealthy"),
+        ("program", "concentrating"), ("code", "concentrating"), ("computer", "concentrating"),
+        ("why did", "thinking"), ("what do you call", "thinking"), ("knock knock", "eye-roll"),
+    ];
 
     public async Task<(JokeAnalysisDto Analysis, JokeRatingDto Rating)> AnalyzeJokeAsync(JokeDto joke, CancellationToken cancellationToken = default)
     {

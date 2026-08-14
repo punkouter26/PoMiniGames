@@ -54,6 +54,16 @@ public sealed class PerformanceOrchestrator : IAsyncDisposable
     public bool IsShowComplete { get; private set; }
     public List<JokeAnalysisDto> TopJokes { get; } = [];
 
+    /// <summary>
+    /// True once the punchline text has been revealed on screen. Decoupled
+    /// from <see cref="PerformanceState.RevealingPunchline"/> so the visual
+    /// reveal can be locked to the moment the speech begins (see
+    /// <c>RevealPunchlineAsync</c>) instead of flashing in immediately while
+    /// the fanfare/breathing-beat still plays — that flash was the UI being
+    /// out of sync with the audio.
+    /// </summary>
+    public bool PunchlineRevealed { get; private set; }
+
     // Error handling state.
     public bool ShowNetworkOverlay { get; private set; }
     public string NetworkStatusText { get; private set; } = "Searching for a path to the server...";
@@ -93,6 +103,11 @@ public sealed class PerformanceOrchestrator : IAsyncDisposable
         finally
         {
             _isRunning = false;
+            // Belt-and-braces: a cancelled run can leave a buffer-source cue
+            // (drum roll, cymbal) ringing, and the orchestrator may have just
+            // transitioned past one. Clear them so nothing bleeds into Idle.
+            try { await _audioService.StopAllAsync(); } catch { /* non-essential */ }
+            try { await _speechService.StopAsync(); } catch { /* non-essential */ }
             NotifyStateChanged();
         }
     }
@@ -102,9 +117,14 @@ public sealed class PerformanceOrchestrator : IAsyncDisposable
         _isRunning = false;
         _cts?.Cancel();
         CurrentState = PerformanceState.Idle;
+        PunchlineRevealed = false;
 
         try { await _speechService.StopAsync(); }
         catch { /* ignore errors during stop */ }
+
+        // Same teardown as the natural end-of-show: cancel any audio cue that
+        // is still playing so the Idle screen is silent, not still ringing.
+        try { await _audioService.StopAllAsync(); } catch { /* non-essential */ }
 
         if (_performanceLoopTask is not null)
         {
@@ -123,6 +143,7 @@ public sealed class PerformanceOrchestrator : IAsyncDisposable
         JokesDisplayed = 0;
         IsShowComplete = false;
         TopJokes.Clear();
+        PunchlineRevealed = false;
         ShowNetworkOverlay = false;
         RetryCount = 0;
         NotifyStateChanged();
@@ -147,6 +168,7 @@ public sealed class PerformanceOrchestrator : IAsyncDisposable
         JokesDisplayed = 0;
         IsShowComplete = false;
         TopJokes.Clear();
+        PunchlineRevealed = false;
 
         while (!cancellationToken.IsCancellationRequested && JokesDisplayed < MaxJokesPerShow)
         {
@@ -175,6 +197,12 @@ public sealed class PerformanceOrchestrator : IAsyncDisposable
                 {
                     await TransitionAsync(cancellationToken);
                 }
+
+                // Tear down any leftover cue between jokes. Buffer-source sounds
+                // (drum roll, cymbal) finish on `stop()`; oscillators (fanfare,
+                // trombone) are already gone. Without this, the next joke's setup
+                // narration could begin on top of a tail that was still ringing.
+                try { await _audioService.StopAllAsync(); } catch { /* non-essential */ }
             }
             catch (HttpRequestException)
             {
@@ -195,6 +223,7 @@ public sealed class PerformanceOrchestrator : IAsyncDisposable
         {
             IsShowComplete = true;
             CurrentState = PerformanceState.Complete;
+            PunchlineRevealed = false;
             NotifyStateChanged();
         }
     }
@@ -261,6 +290,13 @@ public sealed class PerformanceOrchestrator : IAsyncDisposable
 
         if (CurrentJoke is not null)
         {
+            // Belt-and-braces: ensure no leftover cue from the previous phase
+            // is still ringing when the setup speech begins. Without this, a
+            // 2s drum roll that finished its JS-side promise 5ms before
+            // speech starts could still produce audible noise under the first
+            // syllable (Web Audio's `stop()` is bounded by the audio clock,
+            // not the wall clock, and they drift by several ms).
+            try { await _audioService.StopAllAsync(); } catch { /* non-essential */ }
             await _speechService.SpeakAsync(CurrentJoke.Setup, rate: 0.9, pitch: 1.1);
         }
 
@@ -273,6 +309,10 @@ public sealed class PerformanceOrchestrator : IAsyncDisposable
         CurrentAnalysis = null;
         NotifyStateChanged();
 
+        // Drum roll in parallel with the analyze call. We tear it down on the
+        // path out so it can't bleed into the next phase — without this a 1.9s
+        // drum roll surviving a fast analysis response would overlap the
+        // "Jester guesses:" speech that begins a few ms later.
         var drumRollTask = _audioService.PlayDrumRollAsync(2.0, 0.4);
 
         var request = new HttpRequestMessage(HttpMethod.Post, "/api/joker/analyze");
@@ -303,6 +343,8 @@ public sealed class PerformanceOrchestrator : IAsyncDisposable
         if (analysisResponse is not null && (int)analysisResponse.StatusCode == 451)
         {
             analysisResponse.Dispose();
+            try { await drumRollTask; } catch { /* cancellation is fine */ }
+            try { await _audioService.StopAllAsync(); } catch { /* non-essential */ }
             return;
         }
 
@@ -313,14 +355,19 @@ public sealed class PerformanceOrchestrator : IAsyncDisposable
         }
         analysisResponse?.Dispose();
 
+        // Cut the drum roll hard before the speech starts. The JS-side
+        // `setTimeout(resolve, 2000)` is wall-clock and can race ahead of the
+        // audio clock by a few ms on slower devices — without this explicit
+        // stop the speech would begin on top of the drum roll's tail.
+        try { await _audioService.StopAllAsync(); } catch { /* non-essential */ }
         await drumRollTask;
+        NotifyStateChanged();
 
         if (CurrentAnalysis?.AiPunchline is not null)
         {
             await _speechService.SpeakAsync($"The Jester guesses: {CurrentAnalysis.AiPunchline}", rate: 0.9, pitch: 1.0);
         }
 
-        NotifyStateChanged();
         await Task.Delay(TimeSpan.FromSeconds(_settings.PredictionDurationSeconds), cancellationToken);
     }
 
@@ -347,27 +394,57 @@ public sealed class PerformanceOrchestrator : IAsyncDisposable
 
     private async Task RevealPunchlineAsync(CancellationToken cancellationToken)
     {
+        // Flip into the reveal state but DO NOT show the punchline text yet.
+        // The fanfare + a brief breathing beat play first; without this guard,
+        // the punchline text flashed on screen 2+ seconds before the speech
+        // that was supposed to accompany it — the audience read the punchline
+        // and then heard it after the joke had already landed.
         CurrentState = PerformanceState.RevealingPunchline;
+        PunchlineRevealed = false;
         NotifyStateChanged();
 
         var isTriumph = CurrentAnalysis?.IsTriumph == true;
         if (isTriumph)
         {
             SessionTriumphs++;
-            await _audioService.PlayFanfareAsync(0.5);
         }
         else
         {
             SessionDefeats++;
-            await _audioService.PlayTromboneAsync(0.5);
         }
+
+        // Run the pre-roll audio in parallel with the breathing beat. We
+        // await BOTH (Task.WhenAll) so the speech only starts after the
+        // longer of the two — the fanfare (~1.0s) typically wins, the
+        // trombone (~1.6s) wins on defeats — and the pre-roll cannot bleed
+        // into the speech.
+        Task preRoll = isTriumph
+            ? _audioService.PlayFanfareAsync(0.5)
+            : _audioService.PlayTromboneAsync(0.5);
+        var breathingBeat = Task.Delay(
+            TimeSpan.FromSeconds(_settings.PunchlineDelaySeconds), cancellationToken);
+        await Task.WhenAll(preRoll, breathingBeat).WaitAsync(cancellationToken);
+
+        // Hard-cut any residual pre-roll audio (oscillators finish on their
+        // envelope but the bus takes a few ms to fully release under the
+        // reverb send; cutting the source guarantees the speech opens on a
+        // silent bus).
+        try { await _audioService.StopAllAsync(); } catch { /* non-essential */ }
 
         if (CurrentJoke?.Punchline is not null)
         {
-            await Task.Delay(TimeSpan.FromSeconds(_settings.PunchlineDelaySeconds), cancellationToken);
-            await _speechService.SpeakAsync($"The actual punchline is: {CurrentJoke.Punchline}", rate: 0.85, pitch: 1.0);
+            // NOW the punchline text appears, in lockstep with the speech.
+            // NotifyStateChanged first so the UI has the text on screen by the
+            // time the first syllable lands; the speech service kicks off
+            // immediately after.
+            PunchlineRevealed = true;
+            NotifyStateChanged();
+            await _speechService.SpeakAsync(
+                $"The actual punchline is: {CurrentJoke.Punchline}", rate: 0.85, pitch: 1.0);
         }
 
+        // Final hold so the player can read the punchline after the speech has
+        // finished (the speech's own length is additional time on top of this).
         await Task.Delay(TimeSpan.FromSeconds(_settings.PunchlineDurationSeconds), cancellationToken);
     }
 

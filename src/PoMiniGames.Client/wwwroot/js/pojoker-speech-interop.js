@@ -8,6 +8,40 @@
 let cachedVoice = null;
 let voicesLoaded = false;
 
+// Sequential utterance queue.
+//
+// Chromium has a well-known race (chromium bug 1133733 and friends) where
+// `speechSynthesis.cancel()` followed by `speechSynthesis.speak()` drops the
+// first few words of the new utterance — the call resolves `onend` almost
+// immediately because Chrome treats the queue as already-empty. The previous
+// implementation called cancel() at the start of every SpeakAsync, so whenever
+// the orchestrator queued a second utterance within ~1s of the previous one
+// (the AI-guess speech followed by the punchline, the punchline followed by
+// the next show's setup, …) the new speech got cut off mid-sentence.
+//
+// The fix is to never cancel-and-replace; treat the synthesizer as a single
+// sequential resource. Every SpeakAsync call queues an utterance; the queue
+// advances when the previous utterance's `onend` fires. A `stop()` call drops
+// the pending utterances AND sends `cancel()` to flush the live one.
+const speechQueue = [];
+let speechRunning = false;
+
+function drainSpeechQueue() {
+    if (speechRunning) return;
+    const next = speechQueue.shift();
+    if (!next) return;
+    speechRunning = true;
+    try {
+        window.speechSynthesis.speak(next.utterance);
+    } catch (ex) {
+        // speak() can throw if the API is in a bad state; the queued utterance
+        // never gets an `onend` so the caller would hang. Resolve and advance.
+        speechRunning = false;
+        next.resolve();
+        drainSpeechQueue();
+    }
+}
+
 /**
  * Get the preferred British male voice or best fallback
  * @returns {SpeechSynthesisVoice|null}
@@ -101,43 +135,68 @@ window.poJokerSpeech = {
             console.warn('Speech synthesis not supported');
             return;
         }
-        
+
+        if (!text || !text.trim()) return;
         await initVoices();
-        
-        // Cancel any ongoing speech
-        window.speechSynthesis.cancel();
-        
+
         return new Promise((resolve, reject) => {
             const utterance = new SpeechSynthesisUtterance(text);
-            
+
             const voice = getPreferredVoice();
             if (voice) {
                 utterance.voice = voice;
             }
-            
+
             utterance.rate = Math.max(0.1, Math.min(10, rate));
             utterance.pitch = Math.max(0, Math.min(2, pitch));
             utterance.volume = 1.0;
-            
-            utterance.onend = () => resolve();
+
+            // Wire up the resolve hooks BEFORE pushing into the queue — if the
+            // utterance is dequeued and `speak()` invoked synchronously, the
+            // hooks must already be attached or the first utterance can fire
+            // `onend` before listeners exist (Chromium's TTS queueing has that
+            // happen across hot reloads / rapid remounts).
+            utterance.onend = () => {
+                speechRunning = false;
+                resolve();
+                drainSpeechQueue();
+            };
             utterance.onerror = (event) => {
+                speechRunning = false;
                 if (event.error === 'canceled' || event.error === 'interrupted') {
-                    resolve(); // Treat cancellation/interruption as success
+                    // Caller asked us to stop, or replaced the queue with stop();
+                    // either way, resolve so the orchestrator unblocks.
+                    resolve();
                 } else {
                     reject(new Error(`Speech error: ${event.error}`));
                 }
+                drainSpeechQueue();
             };
-            
-            window.speechSynthesis.speak(utterance);
+
+            speechQueue.push({ utterance, resolve, reject });
+            drainSpeechQueue();
         });
     },
-    
+
     /**
-     * Stop any ongoing speech
+     * Stop any ongoing speech. Drops the pending utterances AND cancels the
+     * live one so the in-flight SpeakAsync promise resolves immediately,
+     * letting the orchestrator move on without waiting for Chrome to finish
+     * a sentence nobody will hear.
      */
     stop: function() {
-        if (window.speechSynthesis) {
+        if (!window.speechSynthesis) return;
+        // Drain the queue first so callers waiting on those promises unblock.
+        while (speechQueue.length > 0) {
+            const queued = speechQueue.shift();
+            // Resolution (not rejection) — `stop` is treated as success by
+            // the orchestrator, which is just abandoning the line.
+            queued.resolve();
+        }
+        if (speechRunning) {
             window.speechSynthesis.cancel();
+            // The cancel() will fire `onerror` with 'canceled' on the live
+            // utterance, which already clears `speechRunning` and resolves.
         }
     },
     

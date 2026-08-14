@@ -1,0 +1,104 @@
+/* The audience portrait. Colours come from the .pojoker-root token block
+   (pojoker-theme.css) so this stays on the game's medieval-dark palette. */
+
+.audience {
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.6rem;
+    /* Reserve the portrait's box up front. The image is the only element here
+       whose size depends on a network fetch, and without a fixed slot the joke
+       card next to it jumps sideways the first time each new emotion loads. */
+    width: clamp(140px, 22vw, 220px);
+    flex: 0 0 auto;
+}
+
+.audience-portrait {
+    width: 100%;
+    /* Load-bearing. The element carries width/height="512" attributes so the browser
+       reserves the right box before the image decodes; with `width` set in CSS but
+       `height` left alone, the attribute wins and the box becomes 220×512 — the
+       portrait letterboxes inside it via object-fit and the caption is shoved 300px
+       clear of the picture. `height: auto` hands the ratio back to aspect-ratio. */
+    height: auto;
+    aspect-ratio: 1;
+    object-fit: contain;
+    /* The source art is a cut-out on transparency, so it sits directly on the
+       stage gradient rather than in a card. The shadow grounds it. */
+    filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.55));
+    animation: audienceIn 0.45s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes audienceIn {
+    from {
+        opacity: 0;
+        transform: scale(0.94) translateY(6px);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
+}
+
+/* A show runs ~10 expression changes a minute unattended. Anyone who has asked
+   for less motion gets the swap, not the pop. */
+@media (prefers-reduced-motion: reduce) {
+    .audience-portrait {
+        animation: none;
+    }
+}
+
+.audience-caption {
+    text-align: center;
+    line-height: 1.3;
+}
+
+/* On a phone the crowd stacks ABOVE the joke (see PerformanceDisplay's media query),
+   so a 140px portrait plus caption spent ~190px of an 844px viewport before the setup
+   line even started. Same content, laid out as a horizontal strip: about a third of
+   the height, and the joke stays above the fold. */
+@media (max-width: 760px) {
+    .audience {
+        width: auto;
+        flex-direction: row;
+        align-items: center;
+        gap: 0.75rem;
+    }
+
+    .audience-portrait {
+        width: 84px;
+    }
+
+    .audience-caption {
+        text-align: left;
+    }
+}
+
+.audience-who {
+    display: block;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-secondary);
+    opacity: 0.7;
+}
+
+.audience-mood {
+    display: block;
+    font-family: 'Cinzel', serif;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--gold-accent);
+}
+
+/* Parked off-screen rather than display:none — a non-rendered image is not
+   reliably fetched, and fetching is the entire point of this element. */
+.audience-preload {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+    left: -9999px;
+}

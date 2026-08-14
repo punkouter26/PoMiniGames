@@ -58,4 +58,10 @@ public sealed class JokerAudioService(IJSRuntime jsRuntime, ILogger<JokerAudioSe
         try { await _jsRuntime.InvokeVoidAsync("poJokerAudio.playCymbal", volume); }
         catch (JSException ex) { _logger.LogWarning(ex, "Failed to play cymbal"); }
     }
+
+    public async Task StopAllAsync()
+    {
+        try { await _jsRuntime.InvokeVoidAsync("poJokerAudio.stopAll"); }
+        catch (JSException ex) { _logger.LogWarning(ex, "Failed to stop PoJoker audio"); }
+    }
 }

@@ -38,8 +38,8 @@ public sealed class AiJesterService : IAnalysisService
     /// <summary>Output ceiling for a predicted punchline. It is one line by contract.</summary>
     private const int PunchlineMaxTokens = 120;
 
-    /// <summary>Output ceiling for a rating. Three numbers.</summary>
-    private const int RatingMaxTokens = 80;
+    /// <summary>Output ceiling for a rating. Three numbers and a one-word emotion slug.</summary>
+    private const int RatingMaxTokens = 110;
 
     /// <summary>Output ceiling for an explanation. Two sentences by contract.</summary>
     private const int ExplanationMaxTokens = 250;
@@ -249,11 +249,18 @@ public sealed class AiJesterService : IAnalysisService
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         cts.CancelAfter(TimeSpan.FromSeconds(_timeoutSeconds));
 
-        const string ratingPrompt =
+        // The emotion rides on the rating call rather than getting one of its own: it is the same
+        // pure function of the same joke text, so it caches on the same key and costs no extra
+        // request. See RatingSchema for the vocabulary the model must answer from.
+        var ratingPrompt =
             "You rate jokes. Score each dimension from 0.0 to 1.0:\n" +
             "- originality: how unique and creative the joke is\n" +
             "- cleverness: how smart or witty the wordplay is\n" +
             "- humor: how funny it is overall\n" +
+            "Also pick 'emotion': the face an audience member would pull at this joke's SUBJECT " +
+            "MATTER — what the joke is about, not how good it is. A joke about death is 'dying'; " +
+            "about drinking, 'drunk'; a groan-worthy pun, 'eye-roll'; something crude, 'blushing' " +
+            "or 'disgust'; a riddle, 'thinking'. Choose exactly one value from the schema's enum.\n" +
             "Emit only the JSON object described by the schema. " +
             AiPrompt.FencingInstruction;
 
@@ -289,20 +296,35 @@ public sealed class AiJesterService : IAnalysisService
         return ParseRating(response.Text, joke.Id, _logger);
     }
 
-    /// <summary>Rating reply shape: three bounded numbers.</summary>
+    /// <summary>
+    /// Rating reply shape: three bounded numbers and one audience reaction.
+    /// </summary>
+    /// <remarks>
+    /// The emotion enum is projected from <see cref="JokerEmotions.All"/> rather than written out
+    /// here, so the model can only name a portrait that exists on disk. Spelling the list twice is
+    /// how it would eventually come back with a reaction the client has no image for.
+    /// </remarks>
     public static JsonElement RatingSchema { get; } = JsonDocument.Parse(
-        """
+        $$"""
         {
           "type": "object",
           "properties": {
             "originality": { "type": "number", "minimum": 0, "maximum": 1 },
             "cleverness":  { "type": "number", "minimum": 0, "maximum": 1 },
-            "humor":       { "type": "number", "minimum": 0, "maximum": 1 }
+            "humor":       { "type": "number", "minimum": 0, "maximum": 1 },
+            "emotion":     { "type": "string", "enum": [{{EmotionEnumJson}}] }
           },
-          "required": ["originality", "cleverness", "humor"],
+          "required": ["originality", "cleverness", "humor", "emotion"],
           "additionalProperties": false
         }
         """).RootElement.Clone();
+
+    /// <summary>
+    /// The portrait vocabulary as a JSON string-array body (no brackets). Quoted by hand: every
+    /// slug is lowercase ASCII with hyphens, so there is nothing for an escaper to do.
+    /// </summary>
+    private static string EmotionEnumJson =>
+        string.Join(", ", JokerEmotions.All.Select(e => $"\"{e}\""));
 
     private static JokeRatingDto ParseRating(string? raw, int jokeId, ILogger logger)
     {
@@ -341,6 +363,13 @@ public sealed class AiJesterService : IAnalysisService
             Difficulty = ToTenPointScale(humor),
             Rudeness = 1,
             Commentary = "Rated by the Digital Jester's discerning wit.",
+            // Unlike the scores above, a missing or invented emotion is not grounds to discard the
+            // rating — it only costs the audience one expressive frame. Normalize silently to
+            // neutral rather than throwing away three scores the model got right.
+            Emotion = JokerEmotions.Normalize(
+                root.TryGetProperty("emotion", out var emotionEl) && emotionEl.ValueKind == JsonValueKind.String
+                    ? emotionEl.GetString()
+                    : null),
         };
     }
 

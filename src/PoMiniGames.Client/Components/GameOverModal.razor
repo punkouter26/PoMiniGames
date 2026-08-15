@@ -15,12 +15,10 @@
    ───────────────────────────────────────────────────────────────────────── *@
 
 <div class="gps-modal-overlay" role="presentation" tabindex="0" @onkeydown="HandleKey">
-    @* data-fx-tilt: a small pointer-tracked tilt (fxTilt.js) plus the glare in
-       glass.css. Written to the independent `rotate` property, so it composes
-       with the gps-modal-pop entry animation's transform rather than fighting
-       it. Perspective is on .gps-modal-overlay. *@
     <div class="gps-modal" role="dialog" aria-modal="true" aria-label="Game over" data-fx-tilt="5">
-        <div class="gps-modal-title">@Title</div>
+        <header class="gps-modal-header">
+            <div class="gps-modal-title">@Title</div>
+        </header>
 
         @if (GameSummary != null)
         {
@@ -68,8 +66,6 @@
                     {
                         <li class="gps-modal-board-row gps-modal-board-row--@e.Rank @(IsMe(e) ? "gps-modal-board-row--me" : null)">
                             <span class="gps-modal-board-rank">@e.Rank</span>
-                            @* See LeaderboardsPage: Detail is the un-clipped text for boards
-                               whose Name had to be truncated (PoJoker), null for every other. *@
                             <span class="gps-modal-board-name" title="@e.Detail">@e.Name</span>
                             <span class="gps-modal-board-value">@e.DisplayValue</span>
                         </li>
@@ -78,31 +74,19 @@
             </div>
         }
 
-        <div class="gps-play-again-actions">
-            @* 2026-08-10 audit: local 2-player FunQuiz had no Play Again —
-               repeating a split-screen round meant leaving the modal, going
-               home, picking Fun Quiz, picking 2P, dismissing the intro. Four
-               taps to do what "Play again" should be one tap. The button is
-               only shown when the page opts in via PlayAgain (default null
-               = OK only, preserving every other game's flow).
-
-               Browser audit #10 (2026-08-10): the "OK" label was a Windows
-               dialog relic — every game ends on this modal and most players
-               had no idea what OK was confirming. Two-button layout, plain
-               English, consistent across all 9 games: when PlayAgain is
-               present the primary is "Play again" and "Back" returns home;
-               when it isn't (solo), the primary is "Back to all games".
-               The keyboard focus lives on the primary action. *@
+        <footer class="gps-play-again-actions">
             @if (PlayAgain.HasDelegate)
             {
                 <button class="gps-play-again-btn gps-play-again-btn--secondary"
                         @onclick="Back">
-                    Back to @(BackTo == "/" ? "all games" : BackTo.TrimStart('/'))
+                    <span>Back</span>
+                    <kbd class="gps-kbd">Esc</kbd>
                 </button>
                 <button class="gps-play-again-btn gps-play-again-btn--primary"
                         @onclick="() => PlayAgain.InvokeAsync()"
                         autofocus>
-                    Play again
+                    <span>Play again</span>
+                    <kbd class="gps-kbd gps-kbd--primary">↵</kbd>
                 </button>
             }
             else
@@ -110,10 +94,11 @@
                 <button class="gps-play-again-btn gps-play-again-btn--primary"
                         @onclick="Back"
                         autofocus>
-                    Back to all games
+                    <span>Back to all games</span>
+                    <kbd class="gps-kbd gps-kbd--primary">Esc</kbd>
                 </button>
             }
-        </div>
+        </footer>
     </div>
 </div>
 

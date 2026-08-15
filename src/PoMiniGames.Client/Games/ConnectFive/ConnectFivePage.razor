@@ -33,7 +33,8 @@
     Outcome="@OutcomeForCue"
     Stats="@(PlayMode == "ai" ? _statItems : null)"
     Announcement="@Announcement"
-    GameSummary="@GameSummaryContent">
+    GameSummary="@GameSummaryContent"
+    PlayAgain="RestartMatch">
 
     @if (!_introDone)
     {
@@ -749,4 +750,18 @@
         Piece.Yellow => "Yellow piece",
         _ => "Empty cell"
     };
+
+    private void RestartMatch()
+    {
+        _board = new ConnectFiveBoard();
+        _gameResult = GameResult.InProgress;
+        _winCells.Clear();
+        _winCascadePlayed = false;
+        _isAiTurn = false;
+        _matchRecorded = false;
+        _current2pPlayer = Player.Red;
+        _hoverCol = -1;
+        _cpuElo = _rating.Elo;
+        StateHasChanged();
+    }
 }

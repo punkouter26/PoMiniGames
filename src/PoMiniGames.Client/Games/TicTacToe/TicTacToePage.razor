@@ -37,7 +37,8 @@
     Stats="@(PlayMode == "ai" ? _statItems : null)"
     Elo="@(PlayMode == "ai" ? _rating.Elo : (int?)null)"
     Announcement="@Announcement"
-    GameSummary="@GameSummaryContent">
+    GameSummary="@GameSummaryContent"
+    PlayAgain="RestartMatch">
     @if (!_introDone)
     {
         <GameIntro CueScope="tictactoe"
@@ -557,4 +558,18 @@
         CellValue.O => "O",
         _ => "Empty cell"
     };
+
+    private void RestartMatch()
+    {
+        _board = new TicTacToeBoard();
+        _gameResult = GameResult.InProgress;
+        _winCells.Clear();
+        _isAiTurn = false;
+        _matchRecorded = false;
+        _current2pToken = CellValue.X;
+        _lastMove = null;
+        _gameId++;
+        _cpuElo = _rating.Elo;
+        StateHasChanged();
+    }
 }

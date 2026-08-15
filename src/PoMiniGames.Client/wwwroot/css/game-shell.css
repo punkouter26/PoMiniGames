@@ -27,46 +27,66 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 1rem;
-  background: rgba(2, 6, 23, 0.62);
-  backdrop-filter: blur(3px);
-  -webkit-backdrop-filter: blur(3px);
+  padding: 1.25rem;
+  background: rgba(4, 8, 20, 0.72);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   pointer-events: auto;
-  animation: gps-modal-fade 0.2s ease-out both;
+  animation: gps-modal-fade 0.22s ease-out both;
 }
 
 .gps-modal {
   pointer-events: auto;
-  width: min(92vw, 380px);
-  max-height: calc(100dvh - 2rem);
+  width: min(94vw, 440px);
+  max-height: calc(100dvh - 2.5rem);
   overflow-y: auto;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.85rem;
-  padding: 1.25rem 1.5rem;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 16px;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
-  animation: gps-modal-pop 0.25s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  gap: 1.1rem;
+  padding: 1.6rem 1.6rem 1.4rem;
+  background: rgba(18, 24, 38, 0.92);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 20px;
+  box-shadow: 
+    0 24px 60px -8px rgba(0, 0, 0, 0.7),
+    0 0 0 1px rgba(255, 255, 255, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  animation: gps-modal-pop 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.gps-modal-header {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
 }
 
 .gps-modal-title {
-  font-size: 1.3rem;
+  font-size: 1.35rem;
   font-weight: 800;
   text-align: center;
+  letter-spacing: -0.015em;
   color: var(--color-text-primary);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
 }
 
-/* ── Result line ──
-   First line is the headline; any follow-up lines (PoBrawl's ELO / next-match
-   detail) render smaller and muted so the card reads headline → details. */
+/* ── Result line ── */
 .gps-game-summary {
-  font-size: 1rem;
-  font-weight: 700;
+  width: 100%;
+  font-size: 0.95rem;
+  font-weight: 600;
   text-align: center;
   line-height: 1.45;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .gps-game-summary > div > div:not(:first-child) {
@@ -75,42 +95,55 @@
   color: var(--color-text-secondary);
 }
 
-/* ── Stats grid ── one even row of value-over-label cells. */
+/* ── Stats grid ── responsive telemetry tiles */
 .gps-modal-stats {
   width: 100%;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(3rem, 1fr));
-  gap: 0.6rem 0.25rem;
-  padding-top: 0.75rem;
-  border-top: 1px solid var(--color-border);
+  grid-template-columns: repeat(auto-fit, minmax(62px, 1fr));
+  gap: 0.5rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .gps-stat {
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   text-align: center;
+  padding: 0.55rem 0.35rem;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+
+.gps-stat:hover {
+  background: rgba(255, 255, 255, 0.06);
+  transform: translateY(-1px);
 }
 
 .gps-stat-value {
-  font-size: 1.1rem;
-  font-weight: 700;
+  font-size: 1.15rem;
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
   color: var(--color-text-primary);
+  font-variant-numeric: tabular-nums;
 }
 
 .gps-stat-label {
   font-size: 0.65rem;
+  font-weight: 700;
   color: var(--color-text-secondary);
   text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-top: 0.2rem;
+  opacity: 0.8;
 }
 
-/* ── Top-3 board ──
-   Populated from the unified leaderboard read-model via GameShell's GameKey.
-   Hidden entirely when the game has no board, so these rules never need a
-   per-game override. */
-/* Where the player landed on this game's board. Sits above the top 3, since
-   "you are #4" is the more personal fact. Absent entirely when they have no row
-   on the board — see GameOverModal's _myRank. */
+/* ── Top-3 board ── */
 .gps-modal-rank {
   display: flex;
   align-items: baseline;
@@ -132,8 +165,6 @@
   color: var(--color-text-secondary);
 }
 
-/* Only ever shown for an improvement, so it is unconditionally the success
-   colour — there is no "down" variant to pair with it. */
 .gps-modal-rank-delta {
   font-size: 0.75rem;
   font-weight: 700;
@@ -149,27 +180,31 @@
 
 .gps-modal-board {
   width: 100%;
-  padding-top: 0.75rem;
-  border-top: 1px solid var(--color-border);
+  padding-top: 0.85rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .gps-modal-board-head {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  margin-bottom: 0.4rem;
+  margin-bottom: 0.45rem;
+  padding: 0 0.25rem;
 }
 
 .gps-modal-board-title {
-  font-size: 0.8rem;
-  font-weight: 700;
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
   color: var(--color-text-primary);
 }
 
 .gps-modal-board-unit {
   font-size: 0.65rem;
+  font-weight: 600;
   color: var(--color-text-secondary);
   text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 .gps-modal-board-rows {
@@ -178,27 +213,37 @@
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: 0.35rem;
 }
 
 .gps-modal-board-row {
   display: grid;
-  grid-template-columns: 1.25rem 1fr auto;
+  grid-template-columns: 1.4rem 1fr auto;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.3rem 0.5rem;
-  border-radius: 6px;
+  padding: 0.4rem 0.65rem;
+  border-radius: 10px;
   font-size: 0.85rem;
-  background: rgba(148, 163, 184, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
-.gps-modal-board-row--1 { background: rgba(250, 204, 21, 0.14); }
-.gps-modal-board-row--2 { background: rgba(203, 213, 225, 0.12); }
-.gps-modal-board-row--3 { background: rgba(217, 119, 6, 0.12); }
+.gps-modal-board-row--1 {
+  background: linear-gradient(90deg, rgba(234, 179, 8, 0.16), rgba(234, 179, 8, 0.05));
+  border-color: rgba(234, 179, 8, 0.35);
+}
+.gps-modal-board-row--2 {
+  background: linear-gradient(90deg, rgba(203, 213, 225, 0.14), rgba(203, 213, 225, 0.04));
+  border-color: rgba(203, 213, 225, 0.3);
+}
+.gps-modal-board-row--3 {
+  background: linear-gradient(90deg, rgba(217, 119, 6, 0.14), rgba(217, 119, 6, 0.04));
+  border-color: rgba(217, 119, 6, 0.3);
+}
 
-/* The signed-in player's own row, so they can find themselves at a glance. */
 .gps-modal-board-row--me {
-  outline: 1px solid var(--color-accent);
+  border-color: var(--color-accent-solid);
+  box-shadow: 0 0 12px var(--color-accent-soft);
 }
 
 .gps-modal-board-rank {
@@ -218,43 +263,74 @@
   color: var(--color-text-primary);
 }
 
-/* ── Actions ──
-   One button: OK → home. Kept as a flex row so the rule still holds if a
-   game ever legitimately needs a second action. */
+/* ── Actions ── */
 .gps-play-again-actions {
+  width: 100%;
   display: flex;
+  align-items: center;
   justify-content: center;
   gap: 0.75rem;
+  margin-top: 0.4rem;
 }
 
 .gps-play-again-btn {
-  padding: 0.6rem 1.25rem;
-  border-radius: 8px;
-  font-size: 0.9rem;
-  font-weight: 600;
-  transition: filter 0.2s, border-color 0.2s, color 0.2s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.65rem 1.25rem;
+  border-radius: 12px;
+  font-size: 0.92rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.12s ease, filter 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+}
+
+.gps-play-again-btn:active {
+  transform: scale(0.97);
 }
 
 .gps-play-again-btn--primary {
-  background: var(--color-accent-solid);
-  border: none;
-  color: white;
-  min-width: 7rem;
+  flex: 1.2;
+  background: linear-gradient(135deg, var(--color-accent-solid, #3b82f6), #2563eb);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.35);
 }
 
 .gps-play-again-btn--primary:hover {
-  filter: brightness(1.1);
+  filter: brightness(1.12);
+  box-shadow: 0 6px 18px rgba(37, 99, 235, 0.45);
 }
 
 .gps-play-again-btn--secondary {
-  background: transparent;
-  border: 1px solid var(--color-border);
-  color: var(--color-text-secondary);
+  flex: 1;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--color-text-primary);
 }
 
 .gps-play-again-btn--secondary:hover {
-  border-color: var(--color-text-secondary);
-  color: var(--color-text-primary);
+  background: rgba(255, 255, 255, 0.09);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.gps-kbd {
+  font-family: inherit;
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 0.15rem 0.4rem;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: var(--color-text-secondary);
+  line-height: 1;
+}
+
+.gps-kbd--primary {
+  background: rgba(255, 255, 255, 0.25);
+  border-color: rgba(255, 255, 255, 0.4);
+  color: #ffffff;
 }
 
 /* 2026-07-19 browser audit #6: the intro OK button used to share

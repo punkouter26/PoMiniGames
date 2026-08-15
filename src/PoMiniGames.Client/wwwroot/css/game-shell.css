@@ -348,6 +348,25 @@
   animation: gps-modal-pop 0.25s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
+@media (max-width: 520px) {
+  .gps-intro-overlay {
+    align-items: flex-end;
+    padding: 0;
+  }
+  .gps-intro-card {
+    width: 100%;
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+    padding: 1.25rem 1.25rem calc(1.25rem + env(safe-area-inset-bottom));
+    animation: gps-sheet-up 0.25s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  }
+}
+
+@keyframes gps-sheet-up {
+  from { opacity: 0; transform: translateY(100%); }
+  to   { opacity: 1; transform: none; }
+}
+
 /* Two-player select wants more room for its side-by-side rosters. */
 .gps-intro-card--twoplayer {
   width: min(96vw, 620px);

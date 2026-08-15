@@ -1,4 +1,4 @@
-﻿@namespace PoMiniGamesClient.Components
+@namespace PoMiniGamesClient.Components
 
 @* ─────────────────────────────────────────────────────────────────────────
    The one end-of-game modal for every game in PoMiniGames.
@@ -14,7 +14,7 @@
    hand-rolling a lookalike. Styling lives in wwwroot/css/game-shell.css.
    ───────────────────────────────────────────────────────────────────────── *@
 
-<div class="gps-modal-overlay" role="presentation">
+<div class="gps-modal-overlay" role="presentation" tabindex="0" @onkeydown="HandleKey">
     @* data-fx-tilt: a small pointer-tracked tilt (fxTilt.js) plus the glare in
        glass.css. Written to the independent `rotate` property, so it composes
        with the gps-modal-pop entry animation's transform rather than fighting
@@ -347,4 +347,23 @@
     /// that navigates was a relic of the old label.
     /// </summary>
     private Task Back() => Ok();
+
+    private async Task HandleKey(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
+    {
+        if (e.Key is "Enter" or " ")
+        {
+            if (PlayAgain.HasDelegate)
+            {
+                await PlayAgain.InvokeAsync();
+            }
+            else
+            {
+                await Back();
+            }
+        }
+        else if (e.Key is "Escape")
+        {
+            await Back();
+        }
+    }
 }

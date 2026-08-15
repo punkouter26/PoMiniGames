@@ -289,12 +289,34 @@ async function playCymbal(volume = 0.4) {
     });
 }
 
+/**
+ * Play procedural audience laughter
+ * @param {number} volume - Volume 0-1 (default 0.45)
+ */
+async function playLaughter(volume = 0.45) {
+    if (window.PoCue) {
+        window.PoCue.fire('pojoker', 'laugh', { gain: volume });
+    }
+}
+
+/**
+ * Play a classic comedic rimshot (snare hit + punch + cymbal tap)
+ * @param {number} volume - Volume 0-1 (default 0.5)
+ */
+async function playRimshot(volume = 0.5) {
+    if (window.PoCue) {
+        window.PoCue.fire('pojoker', 'rimshot', { gain: volume });
+    }
+}
+
 // Expose to global scope for Blazor interop
 window.poJokerAudio = {
     playDrumRoll,
     playTrombone,
     playFanfare,
     playCymbal,
+    playLaughter,
+    playRimshot,
 
     /**
      * Initialize audio context (call on user interaction)

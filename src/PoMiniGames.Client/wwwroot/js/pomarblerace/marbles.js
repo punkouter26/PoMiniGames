@@ -385,6 +385,18 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
       .replace(
         '#include <uv_vertex>',
         `#include <uv_vertex>\n\tvMapUv = vMapUv * vec2(${cellU.toFixed(6)}, ${cellV.toFixed(6)}) + aUvOffset;`);
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <dithering_fragment>', `
+        #include <dithering_fragment>
+        // Iridescent glass caustics & chromatic rim sheen
+        vec3 normW = normalize(vNormal);
+        vec3 vW = normalize(vViewPosition);
+        float fres = pow(1.0 - max(dot(normW, vW), 0.0), 3.0);
+        vec3 irid = vec3(sin(fres * 6.28 + 0.0) * 0.5 + 0.5,
+                         sin(fres * 6.28 + 2.09) * 0.5 + 0.5,
+                         sin(fres * 6.28 + 4.18) * 0.5 + 0.5);
+        gl_FragColor.rgb += irid * fres * 0.32;
+      `);
   };
 
   // Scratch objects for composing instance matrices — allocated once, reused every frame for

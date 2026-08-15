@@ -18,8 +18,10 @@
 
     function ensureLib() {
         if (typeof msal === "undefined" || !msal.PublicClientApplication) {
-            throw new Error("MSAL library failed to load (network/CDN blocked).");
+            console.warn("MSAL library not available (CDN unavailable or offline mode).");
+            return false;
         }
+        return true;
     }
 
     function loginScopes(scope) {
@@ -28,7 +30,7 @@
     }
 
     async function acquireToken(account, scope) {
-        if (!scope || !account) return null;
+        if (!scope || !account || !app) return null;
         try {
             const res = await app.acquireTokenSilent({ account, scopes: [scope] });
             return res.accessToken;
@@ -52,7 +54,7 @@
 
     window.poAuth = {
         init: function (clientId, authority, redirectPath) {
-            ensureLib();
+            if (!ensureLib()) return;
             apiScope = null;
             // Stash for the in-flight-lock recovery path in signIn().
             window.__poAuthLastClientId = clientId;

@@ -80,11 +80,12 @@
     to   { opacity: 1; transform: none; }
 }
 
-/* ── Marks (self-drawing SVG X / O) ── */
+/* ── Marks (self-drawing SVG X / O with holographic neon bloom) ── */
 .ttt-mark {
     width: 62%;
     height: 62%;
     overflow: visible;
+    filter: drop-shadow(0 0 6px rgba(0, 229, 255, 0.45));
 }
 
 .ttt-mark line,
@@ -94,8 +95,8 @@
     stroke-linecap: round;
 }
 
-.ttt-mark--x line { stroke: var(--ttt-x); }
-.ttt-mark--o circle { stroke: var(--ttt-o); }
+.ttt-mark--x line { stroke: var(--ttt-x); filter: drop-shadow(0 0 6px #ff6b6b); }
+.ttt-mark--o circle { stroke: var(--ttt-o); filter: drop-shadow(0 0 6px #00e5ff); }
 
 /* Placement draw-in: each stroke reveals via stroke-dashoffset. The X's two
    strokes fire one-two; the O sweeps closed. */
@@ -127,14 +128,15 @@
 }
 .ttt-mark--ghost line,
 .ttt-mark--ghost circle { stroke-dashoffset: 0; }
-.ttt-cell:not(.disabled):hover .ttt-mark--ghost { opacity: 0.22; }
+.ttt-cell:not(.disabled):hover .ttt-mark--ghost { opacity: 0.25; }
 
 /* ── Last-move indicator ── */
 .ttt-cell.last-move::before {
     content: '';
     position: absolute;
     inset: 3px;
-    border: 2px solid rgba(255, 255, 255, 0.55);
+    border: 2px solid rgba(255, 255, 255, 0.65);
+    box-shadow: 0 0 8px rgba(255, 255, 255, 0.4);
     border-radius: var(--radius-sm);
     pointer-events: none;
     animation: ttt-lastmove 0.4s var(--ease-out) both;
@@ -145,30 +147,29 @@
     to   { opacity: 1; transform: scale(1); }
 }
 
-/* ── Winning cells + strike line ── */
+/* ── Winning cells + strike line (holographic neon laser ray) ── */
 .ttt-cell.win-cell {
-    background: rgba(0, 229, 255, 0.14);
-    border-color: rgba(0, 229, 255, 0.7);
-    box-shadow: 0 0 15px rgba(0, 229, 255, 0.4);
-    animation: ttt-win-glow 1.5s ease-in-out infinite;
+    background: rgba(0, 229, 255, 0.22);
+    border-color: rgba(0, 229, 255, 0.9);
+    box-shadow: 0 0 24px rgba(0, 229, 255, 0.6), inset 0 0 12px rgba(0, 229, 255, 0.4);
+    animation: ttt-win-glow 1.2s ease-in-out infinite;
     z-index: 2;
 }
 
 @keyframes ttt-win-glow {
-    0%, 100% { box-shadow: 0 0 15px rgba(0, 229, 255, 0.4); }
-    50%      { box-shadow: 0 0 26px rgba(0, 229, 255, 0.75); }
+    0%, 100% { box-shadow: 0 0 18px rgba(0, 229, 255, 0.5), inset 0 0 8px rgba(0, 229, 255, 0.3); }
+    50%      { box-shadow: 0 0 32px rgba(0, 229, 255, 0.9), inset 0 0 16px rgba(0, 229, 255, 0.6); }
 }
 
 /* §2 strike line — anchored at the first winning cell centre, rotated + scaled
-   from left. All geometry comes from the shared --ttt-* tokens (computed in the
-   .razor), so it stays aligned on desktop and mobile alike. */
+   from left. Holographic electric laser beam. */
 .ttt-winline {
     position: absolute;
-    height: 7px;
-    margin-top: -3.5px;
+    height: 8px;
+    margin-top: -4px;
     border-radius: var(--radius-pill);
     background: var(--wl-color, var(--accent-cyan));
-    box-shadow: 0 0 12px var(--wl-color, var(--accent-cyan));
+    box-shadow: 0 0 18px var(--wl-color, var(--accent-cyan)), 0 0 36px var(--wl-color, var(--accent-cyan));
     transform-origin: left center;
     transform: rotate(var(--wl-angle, 0deg));
     pointer-events: none;
@@ -177,8 +178,8 @@
 }
 
 @keyframes ttt-winline-draw {
-    from { transform: rotate(var(--wl-angle, 0deg)) scaleX(0); }
-    to   { transform: rotate(var(--wl-angle, 0deg)) scaleX(1); }
+    from { transform: rotate(var(--wl-angle, 0deg)) scaleX(0); opacity: 0.4; }
+    to   { transform: rotate(var(--wl-angle, 0deg)) scaleX(1); opacity: 1; }
 }
 
 /* ── §6 AI-thinking state: pulsing inset ring so the hand-off feels alive

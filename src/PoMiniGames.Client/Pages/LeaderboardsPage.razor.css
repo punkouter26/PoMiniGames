@@ -217,12 +217,43 @@
     font-weight: 700;
     color: var(--color-text-secondary);
     text-align: center;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.6rem;
+    height: 1.4rem;
+    border-radius: 4px;
 }
 
 .lb-row--top .lb-rank { color: var(--color-text-primary); }
-.lb-row--1 .lb-rank { color: var(--rank-gold); }
-.lb-row--2 .lb-rank { color: var(--rank-silver); }
-.lb-row--3 .lb-rank { color: var(--rank-bronze); }
+.lb-row--1 .lb-rank {
+    background: linear-gradient(135deg, #fcd34d, #f59e0b);
+    color: #1e1b4b;
+    font-weight: 800;
+    box-shadow: 0 0 8px rgba(250, 204, 21, 0.4);
+}
+.lb-row--2 .lb-rank {
+    background: linear-gradient(135deg, #e2e8f0, #94a3b8);
+    color: #0f172a;
+    font-weight: 800;
+    box-shadow: 0 0 6px rgba(203, 213, 225, 0.35);
+}
+.lb-row--3 .lb-rank {
+    background: linear-gradient(135deg, #fdba74, #ea580c);
+    color: #1e1b4b;
+    font-weight: 800;
+    box-shadow: 0 0 6px rgba(249, 115, 22, 0.35);
+}
+
+.lb-board {
+    transition: transform 0.2s var(--ease-standard), border-color 0.2s var(--ease-standard), box-shadow 0.2s var(--ease-standard);
+}
+
+.lb-board:hover {
+    transform: translateY(-2px);
+    border-color: var(--accent-cyan, #22d3ee);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3), 0 0 16px rgba(34, 211, 238, 0.08);
+}
 
 .lb-name {
     color: var(--color-text-primary);

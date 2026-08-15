@@ -69,17 +69,34 @@ public sealed class AzureOpenAIService : IOpenAIService
         _foundryOptions = foundryOptions;
     }
 
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<QuestionCategory, List<QuizQuestion>> QuestionPoolCache = new();
+
     public async Task<IReadOnlyList<QuizQuestion>> GenerateQuizQuestionsAsync(
         QuestionCategory category, int count, CancellationToken cancellationToken = default)
     {
         if (count <= 0) return Array.Empty<QuizQuestion>();
         count = Math.Min(count, MaxQuestionsPerCall); // hard cap
 
+        // Fast path: check warm semantic question cache pool
+        if (QuestionPoolCache.TryGetValue(category, out var pool) && pool.Count >= count)
+        {
+            lock (pool)
+            {
+                if (pool.Count >= count)
+                {
+                    var shuffled = pool.OrderBy(_ => Random.Shared.Next()).Take(count).ToList();
+                    return shuffled;
+                }
+            }
+        }
+
         var useMock = _configuration.GetValue<bool>("PoFunQuiz:Features:UseMockAI");
         if (useMock && IsNonProduction())
         {
             _logger.MockEnabled(_environment.EnvironmentName);
-            return MockOpenAIService.GenerateQuestions(category, count);
+            var mockQuestions = MockOpenAIService.GenerateQuestions(category, count);
+            QuestionPoolCache.AddOrUpdate(category, _ => new List<QuizQuestion>(mockQuestions), (_, existing) => { lock(existing) { existing.AddRange(mockQuestions); } return existing; });
+            return mockQuestions;
         }
 
         var deployment = _clients.DeploymentFor(AIFoundryOptions.Games.FunQuiz);
@@ -98,6 +115,8 @@ public sealed class AzureOpenAIService : IOpenAIService
                 $"PoFunQuiz: AIFoundry not configured. Set {AIFoundryOptions.SectionName} in Key Vault (kv-poshared).");
         }
 
+        // Batch pre-generation to minimize total cloud calls
+        var batchCount = Math.Max(count, 12);
         var systemPrompt =
             "You generate multiple-choice trivia questions. Every question has exactly 4 options and " +
             "exactly one correct answer, identified by its zero-based index. Vary difficulty across " +
@@ -107,7 +126,7 @@ public sealed class AzureOpenAIService : IOpenAIService
             "\"correctOptionIndex\":<0-3>,\"difficulty\":\"Easy|Medium|Hard\"}]}.";
 
         // The category is one of our own enum values, not user text, so it needs no fencing.
-        var userPrompt = $"Generate {count} trivia questions in the category: {category}.";
+        var userPrompt = $"Generate {batchCount} trivia questions in the category: {category}.";
 
         try
         {
@@ -120,13 +139,18 @@ public sealed class AzureOpenAIService : IOpenAIService
             var options = AiDecisionChatOptions.ForStructuredJson(
                 QuestionsSchema,
                 schemaName: "quiz_questions",
-                maxOutputTokens: EnvelopeTokens + (count * TokensPerQuestion),
+                maxOutputTokens: EnvelopeTokens + (batchCount * TokensPerQuestion),
                 deployment: deployment,
                 schemaDescription: "A batch of four-option multiple-choice trivia questions.",
                 capabilityOverrides: _clients.CapabilityOverrides);
 
             var response = await chatClient.GetResponseAsync(messages, options, cancellationToken);
-            return ParseQuestions(response.Text, category, count, _logger);
+            var parsed = ParseQuestions(response.Text, category, batchCount, _logger);
+            if (parsed.Count > 0)
+            {
+                QuestionPoolCache.AddOrUpdate(category, _ => new List<QuizQuestion>(parsed), (_, existing) => { lock (existing) { existing.AddRange(parsed); } return existing; });
+            }
+            return parsed.Take(count).ToList();
         }
         catch (Exception ex)
         {

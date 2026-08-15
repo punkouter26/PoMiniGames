@@ -1,4 +1,4 @@
-﻿@inherits LayoutComponentBase
+@inherits LayoutComponentBase
 @implements IDisposable
 @using PoMiniGamesClient.Models
 @inject AuthStateService AuthState
@@ -43,10 +43,10 @@
     @if (AuthState.UsingMockData)
     {
         <div class="gl-mock-banner">
-            <span class="gl-mock-banner__pill" title="Mock data backend — leadboards may be empty. This is a developer / preview-build signal, not an error." aria-label="Mock data backend active for this build">
-                <span aria-hidden="true">🧪</span> Dev build
+            <span class="gl-mock-banner__pill" title="Mock data backend — leaderboards may be empty. This is a developer / preview-build signal, not an error." aria-label="Mock data backend active for this build">
+                <span aria-hidden="true">🧪</span> USING MOCK DATA
             </span>
-            <span class="gl-mock-banner__detail">Mock data backend — leaderboards may be empty</span>
+            <span class="gl-mock-banner__detail">USING MOCK DATA — leaderboards may be empty</span>
         </div>
     }
     <header class="gl-top-bar">

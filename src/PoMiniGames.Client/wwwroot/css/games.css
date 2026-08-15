@@ -846,17 +846,41 @@
 
 /* Buttons consolidated into `.gps-btn*` above (NET_CLEAN_10). */
 .fq-error { color: #fca5a5; font-weight: 600; }
-.fq-question { display: flex; flex-direction: column; gap: 0.75rem; }
+.fq-question {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  perspective: 1000px;
+}
 .fq-text { font-size: 1.05rem; margin: 0.25rem 0 0.75rem; }
 .fq-options { display: grid; gap: 0.5rem; }
 .fq-option {
+  position: relative;
   display: inline-flex; align-items: center; justify-content: flex-start; gap: 0.4rem;
   padding: 0.6rem 1.25rem; border-radius: var(--radius-sm); font-size: 0.9rem; font-weight: 600;
-  cursor: pointer; transition: filter 0.18s ease, background 0.18s ease, color 0.18s ease, border-color 0.18s ease; border: 1px solid var(--color-border);
+  cursor: pointer; transition: filter 0.18s ease, background 0.18s ease, color 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+  border: 1px solid var(--color-border);
   background: var(--color-surface-hover); color: var(--color-text-primary);
   width: 100%; text-align: left;
+  overflow: hidden;
 }
-.fq-option:hover { filter: brightness(1.1); }
+.fq-option::before {
+  content: '';
+  position: absolute;
+  top: 0; left: -120%; width: 60%; height: 100%;
+  background: linear-gradient(120deg, transparent, rgba(255, 255, 255, 0.14), transparent);
+  transform: skewX(-25deg);
+  transition: left 0.45s ease;
+  pointer-events: none;
+}
+.fq-option:hover:not(:disabled)::before {
+  left: 150%;
+}
+.fq-option:hover:not(:disabled) {
+  filter: brightness(1.1);
+  transform: translateY(-1px);
+  border-color: var(--accent-cyan);
+}
 .fq-option:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* 2026-08-10: solo/2p-shared-screen answer reveal. The pre-audit code had
@@ -865,13 +889,15 @@
    options so the eye finds the answer. Demo mode never enters this state
    (the page sets showReveal=false there). */
 .fq-option--correct {
-  background: rgba(74, 222, 128, 0.18);
-  border-color: rgba(74, 222, 128, 0.6);
+  background: rgba(74, 222, 128, 0.22);
+  border-color: rgba(74, 222, 128, 0.8);
+  box-shadow: 0 0 14px rgba(74, 222, 128, 0.35);
   color: var(--color-text-primary);
 }
 .fq-option--wrong {
-  background: rgba(248, 113, 113, 0.18);
-  border-color: rgba(248, 113, 113, 0.6);
+  background: rgba(248, 113, 113, 0.22);
+  border-color: rgba(248, 113, 113, 0.8);
+  box-shadow: 0 0 14px rgba(248, 113, 113, 0.35);
   color: var(--color-text-primary);
 }
 .fq-option--muted { opacity: 0.45; }

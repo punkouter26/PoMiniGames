@@ -231,7 +231,7 @@ public class AuthStateService
             // per-tab suffix so the rate limiter can't collapse two different kiosk
             // browsers into the same bucket (which previously let one browser's burst
             // DOS another browser's legitimate guest actions).
-            if (_config.AutoGuestLogin && IsAutoGuestOptIn(queryString))
+            if ((_config.AutoGuestLogin || _config.DevLoginEnabled) && IsAutoGuestOptIn(queryString))
             {
                 var sessionTag = await JsSessionTagAsync();
                 var profile = await _api.DevBypassAsync($"Guest-{sessionTag}");

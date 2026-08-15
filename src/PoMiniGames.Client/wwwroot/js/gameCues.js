@@ -87,13 +87,27 @@ const CUES = {
         open: { voices: [v('sine', 320, 0.22, 0.05, { freqEnd: 720, sweep: 0.2, decay: 0.2 })], feel: null },
         close: { voices: [v('sine', 720, 0.18, 0.045, { freqEnd: 300, sweep: 0.16, decay: 0.16 })], feel: null },
         focus: { voices: [v('sine', 1320, 0.025, 0.028, { decay: 0.02 })], feel: null, jitter: 0 },
+        subdrop: {
+            voices: [
+                v('sine', 110, 0.70, 0.42, { freqEnd: 36, sweep: 0.65, decay: 0.65 }),
+                v('noise', 0, 0.20, 0.12, { decay: 0.18, cutoff: 600, cutoffEnd: 80, q: 2 }),
+            ],
+            feel: 'heavy', scale: 1.5, fx: { preset: 'impact', scale: 1.3 }, duck: 0.5,
+        },
+        chime: {
+            voices: [
+                v('sine', 1046, 0.15, 0.12, { decay: 0.14 }),
+                v('sine', 1318, 0.15, 0.12, { decay: 0.14, delay: 0.06 }),
+                v('sine', 1567, 0.35, 0.14, { decay: 0.32, delay: 0.12 }),
+            ],
+            feel: 'select', fx: { preset: 'sparks', scale: 0.7 },
+        },
     },
 
-    // ── TicTacToe — struck wood ────────────────────────────────────────
+    // ── TicTacToe — struck wood & neon laser ───────────────────────────
     tictactoe: {
         placeX: {
-            // Marimba: a pitched body with a hard noise transient on top. The
-            // transient is what makes it "struck" rather than "played".
+            // Marimba: a pitched body with a hard noise transient on top.
             voices: [
                 v('triangle', 523, 0.20, 0.16, { decay: 0.18, cutoff: 2400, q: 1.4 }),
                 v('sine', 1046, 0.09, 0.06, { decay: 0.08 }),
@@ -102,14 +116,19 @@ const CUES = {
             feel: 'light', fx: { preset: 'dust', scale: 0.6 },
         },
         placeO: {
-            // Same instrument, a minor third down. Two players must be
-            // distinguishable by ear alone on a shared screen.
             voices: [
                 v('triangle', 440, 0.22, 0.16, { decay: 0.20, cutoff: 2200, q: 1.4 }),
                 v('sine', 880, 0.10, 0.06, { decay: 0.09 }),
                 v('noise', 0, 0.02, 0.05, { decay: 0.015, cutoff: 4600, q: 1.5 }),
             ],
             feel: 'light', fx: { preset: 'dust', scale: 0.6 },
+        },
+        laserLine: {
+            voices: [
+                v('saw', 440, 0.40, 0.16, { freqEnd: 1760, sweep: 0.35, decay: 0.35, cutoff: 3600, q: 4, drive: 0.3 }),
+                v('sine', 880, 0.35, 0.14, { freqEnd: 2640, sweep: 0.32, decay: 0.32 }),
+            ],
+            feel: 'select', fx: { preset: 'sparks', scale: 1.2 },
         },
         win: {
             voices: [
@@ -129,24 +148,26 @@ const CUES = {
         },
     },
 
-    // ── ConnectFive — hard plastic ─────────────────────────────────────
+    // ── ConnectFive — hard plastic & resonant drops ─────────────────────
     connectfive: {
         hover: { voices: [v('sine', 700, 0.03, 0.03, { decay: 0.025 })], feel: null, bus: 'ui' },
         drop: {
-            // The slide down the slot. Bandpassed noise sweeping downward reads
-            // as something travelling along a surface.
             voices: [v('noise', 0, 0.30, 0.10, { decay: 0.28, cutoff: 1600, cutoffEnd: 420, q: 1.2, sweep: 0.3 })],
             feel: null,
         },
         land: {
-            // Body + contact click. `landRow` shifts the body pitch: a chip
-            // landing high on the stack has less material under it and rings
-            // thinner. Applied by the caller via `opts.pitch`.
             voices: [
                 v('sine', 150, 0.12, 0.22, { freqEnd: 110, sweep: 0.1, decay: 0.11 }),
                 v('noise', 0, 0.05, 0.10, { decay: 0.04, cutoff: 3000, q: 0.9 }),
             ],
             feel: 'light', scale: 0.8, fx: { preset: 'dust', scale: 0.5 },
+        },
+        laserLine: {
+            voices: [
+                v('saw', 523, 0.45, 0.18, { freqEnd: 2093, sweep: 0.40, decay: 0.40, cutoff: 4000, q: 5, drive: 0.35 }),
+                v('sine', 1046, 0.40, 0.15, { freqEnd: 3136, sweep: 0.38, decay: 0.38 }),
+            ],
+            feel: 'select', fx: { preset: 'sparks', scale: 1.4 },
         },
         win: {
             voices: [
@@ -176,9 +197,14 @@ const CUES = {
             ],
             feel: 'heavy', fx: { preset: 'impact', scale: 1.4 }, duck: 0.35,
         },
+        shockwave: {
+            voices: [
+                v('sine', 90, 0.50, 0.38, { freqEnd: 32, sweep: 0.45, decay: 0.45, drive: 0.8 }),
+                v('noise', 0, 0.30, 0.22, { decay: 0.28, cutoff: 1800, cutoffEnd: 120, q: 3 }),
+            ],
+            feel: 'heavy', scale: 1.5, fx: { preset: 'impact', scale: 1.8 }, duck: 0.5,
+        },
         block: {
-            // Metallic: a high resonant filter ringing on a noise burst. The
-            // resonance is doing the work — this is a filter singing, not a tone.
             voices: [v('noise', 0, 0.16, 0.16, { decay: 0.15, cutoff: 2800, cutoffEnd: 2200, q: 12 })],
             feel: 'light', scale: 0.6, fx: { preset: 'sparks', scale: 0.8 },
         },
@@ -202,8 +228,6 @@ const CUES = {
             feel: null, jitter: 1.6,
         },
         collide: {
-            // Glass: two inharmonic partials. Harmonic ratios sound like a
-            // musical instrument; inharmonic ones sound like an object.
             voices: [
                 v('sine', 1650, 0.14, 0.13, { decay: 0.13 }),
                 v('sine', 2810, 0.10, 0.07, { decay: 0.09, delay: 0.003 }),
@@ -221,11 +245,24 @@ const CUES = {
         },
     },
 
-    // ── PoRacer — motorised, no melody ─────────────────────────────────
+    // ── PoRacer — motorised, synthwave engine ───────────────────────────
     poracer: {
         shift: {
             voices: [v('saw', 220, 0.09, 0.10, { freqEnd: 340, sweep: 0.08, decay: 0.08, cutoff: 1400, q: 3, drive: 0.4 })],
             feel: 'tick',
+        },
+        rev: {
+            voices: [
+                v('saw', 90, 0.25, 0.16, { freqEnd: 240, sweep: 0.22, decay: 0.22, cutoff: 1800, q: 2, drive: 0.5 }),
+            ],
+            feel: null,
+        },
+        turbo: {
+            voices: [
+                v('noise', 0, 0.25, 0.12, { decay: 0.22, cutoff: 4000, cutoffEnd: 8000, q: 4, sweep: 0.2 }),
+                v('sine', 880, 0.20, 0.08, { freqEnd: 1760, sweep: 0.18, decay: 0.18 }),
+            ],
+            feel: 'tick', fx: { preset: 'sparks', scale: 0.8 },
         },
         skid: {
             voices: [v('noise', 0, 0.42, 0.13, { decay: 0.40, cutoff: 2600, cutoffEnd: 900, q: 6, sweep: 0.4 })],
@@ -254,7 +291,7 @@ const CUES = {
         },
     },
 
-    // ── PoSports — rubber and air ──────────────────────────────────────
+    // ── PoSports — rubber, air & stadium crowd ─────────────────────────
     posports: {
         kick: {
             voices: [
@@ -262,6 +299,20 @@ const CUES = {
                 v('noise', 0, 0.03, 0.08, { decay: 0.025, cutoff: 2600, q: 1.2 }),
             ],
             feel: 'light', jitter: 1.2,
+        },
+        stride: {
+            voices: [
+                v('noise', 0, 0.04, 0.06, { decay: 0.035, cutoff: 1400, q: 1.2 }),
+                v('sine', 160, 0.04, 0.08, { decay: 0.035 }),
+            ],
+            feel: null, fx: { preset: 'dust', scale: 0.3 },
+        },
+        crowdCheer: {
+            voices: [
+                v('noise', 0, 0.65, 0.16, { decay: 0.60, cutoff: 1800, cutoffEnd: 3200, q: 1.8, sweep: 0.55 }),
+                v('triangle', 330, 0.40, 0.08, { decay: 0.35, delay: 0.1 }),
+            ],
+            feel: 'select', duck: 0.2,
         },
         bounce: {
             voices: [v('sine', 620, 0.05, 0.12, { freqEnd: 380, sweep: 0.045, decay: 0.045 })],
@@ -276,7 +327,6 @@ const CUES = {
             feel: 'win', fx: { preset: 'confetti', scale: 0.9 }, duck: 0.4,
         },
         whistle: {
-            // Two close tones plus a wobble — a pea whistle is exactly that.
             voices: [
                 v('sine', 2100, 0.35, 0.09, { decay: 0.33, lfoRate: 26, lfoDepth: 0.5 }),
                 v('sine', 2640, 0.35, 0.06, { decay: 0.33, lfoRate: 26, lfoDepth: 0.5 }),
@@ -285,7 +335,7 @@ const CUES = {
         },
     },
 
-    // ── PoJoker — courtly ──────────────────────────────────────────────
+    // ── PoJoker — comedy stage & responsive crowd ──────────────────────
     pojoker: {
         deal: {
             voices: [v('noise', 0, 0.06, 0.08, { decay: 0.05, cutoff: 4200, cutoffEnd: 2200, q: 1.6, sweep: 0.05 })],
@@ -295,6 +345,29 @@ const CUES = {
             voices: [v('square', 784, 0.05, 0.07, { decay: 0.04, cutoff: 3000 })],
             feel: 'select', bus: 'ui',
         },
+        giggle: {
+            voices: [
+                v('sine', 600, 0.08, 0.08, { decay: 0.07, lfoRate: 14, lfoDepth: 0.6 }),
+                v('sine', 750, 0.08, 0.08, { decay: 0.07, delay: 0.09, lfoRate: 16, lfoDepth: 0.6 }),
+                v('sine', 900, 0.12, 0.09, { decay: 0.10, delay: 0.18, lfoRate: 18, lfoDepth: 0.6 }),
+            ],
+            feel: null,
+        },
+        laugh: {
+            voices: [
+                v('noise', 0, 0.55, 0.14, { decay: 0.50, cutoff: 1400, cutoffEnd: 2600, q: 2 }),
+                v('triangle', 440, 0.35, 0.09, { decay: 0.32, lfoRate: 12, lfoDepth: 0.7, delay: 0.05 }),
+            ],
+            feel: 'select', fx: { preset: 'coins', scale: 0.8 },
+        },
+        rimshot: {
+            voices: [
+                v('noise', 0, 0.08, 0.22, { decay: 0.07, cutoff: 4800, q: 1.2 }),
+                v('sine', 280, 0.09, 0.20, { freqEnd: 120, sweep: 0.07, decay: 0.08 }),
+                v('noise', 0, 0.35, 0.16, { decay: 0.32, cutoff: 7200, q: 2, delay: 0.12 }),
+            ],
+            feel: 'tick', fx: { preset: 'sparks', scale: 0.6 },
+        },
         coin: {
             voices: [
                 v('sine', 2093, 0.09, 0.10, { decay: 0.08 }),
@@ -303,8 +376,6 @@ const CUES = {
             feel: 'tick', jitter: 2.4, fx: { preset: 'coins', scale: 0.7 },
         },
         fanfare: {
-            // Dotted rhythm, square waves: the closest a two-oscillator voice
-            // gets to a herald trumpet.
             voices: [
                 v('square', 523, 0.14, 0.11, { decay: 0.12, cutoff: 2600, drive: 0.25 }),
                 v('square', 523, 0.07, 0.11, { decay: 0.06, cutoff: 2600, drive: 0.25, delay: 0.16 }),
@@ -321,8 +392,22 @@ const CUES = {
         },
     },
 
-    // ── PoSurvive — dark and unresolved ────────────────────────────────
+    // ── PoSurvive — dark, unresolved & tension heartbeat ───────────────
     posurvive: {
+        heartbeat: {
+            voices: [
+                v('sine', 65, 0.09, 0.32, { freqEnd: 42, sweep: 0.08, decay: 0.08 }),
+                v('sine', 55, 0.11, 0.24, { freqEnd: 38, sweep: 0.09, decay: 0.09, delay: 0.12 }),
+            ],
+            feel: 'tick',
+        },
+        hazard: {
+            voices: [
+                v('saw', 85, 0.40, 0.22, { freqEnd: 35, sweep: 0.35, decay: 0.35, cutoff: 600, q: 3, drive: 0.6 }),
+                v('noise', 0, 0.30, 0.12, { decay: 0.28, cutoff: 1200, cutoffEnd: 200, q: 2 }),
+            ],
+            feel: 'medium', scale: 1.1, duck: 0.3,
+        },
         forage: {
             voices: [
                 v('noise', 0, 0.18, 0.08, { decay: 0.16, cutoff: 1800, cutoffEnd: 700, q: 2, sweep: 0.17 }),
@@ -331,7 +416,6 @@ const CUES = {
             feel: 'tick',
         },
         alert: {
-            // A tritone. There is no more unresolved interval in the system.
             voices: [
                 v('triangle', 233, 0.5, 0.09, { decay: 0.45, cutoff: 1400, lfoRate: 5.5, lfoDepth: 0.35 }),
                 v('triangle', 330, 0.5, 0.09, { decay: 0.45, cutoff: 1400, lfoRate: 5.5, lfoDepth: 0.35 }),
@@ -347,12 +431,19 @@ const CUES = {
         },
     },
 
-    // ── Quizzes — unambiguous bells ────────────────────────────────────
+    // ── Quizzes — unambiguous bells & harmonic streaks ──────────────────
     quiz: {
         tick: { voices: [v('sine', 1400, 0.02, 0.035, { decay: 0.015 })], feel: null, jitter: 0 },
+        streakChime: {
+            voices: [
+                v('sine', 523, 0.08, 0.10, { decay: 0.07 }),
+                v('sine', 659, 0.08, 0.10, { decay: 0.07, delay: 0.05 }),
+                v('sine', 784, 0.08, 0.10, { decay: 0.07, delay: 0.10 }),
+                v('sine', 1046, 0.35, 0.12, { decay: 0.32, delay: 0.15 }),
+            ],
+            feel: 'select', fx: { preset: 'sparks', scale: 1.1 },
+        },
         correct: {
-            // Rising major third then fifth. The single most legible "yes" in
-            // Western tonality; do not get clever here.
             voices: [
                 v('sine', 880, 0.10, 0.11, { decay: 0.09 }),
                 v('sine', 1109, 0.10, 0.11, { decay: 0.09, delay: 0.07 }),

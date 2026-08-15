@@ -364,6 +364,17 @@ if (typeof window !== 'undefined') {
     for (const evt of ['pointerdown', 'keydown', 'touchstart']) {
         window.addEventListener(evt, kick, { once: false, passive: true });
     }
+
+    // Battery-saving visibility listener: suspend AudioContext when tab is backgrounded
+    document.addEventListener('visibilitychange', () => {
+        if (!_ctx) return;
+        if (document.hidden && _ctx.state === 'running') {
+            try { _ctx.suspend(); } catch {}
+        } else if (!document.hidden && _ctx.state === 'suspended') {
+            try { _ctx.resume(); } catch {}
+        }
+    }, { passive: true });
+
     // Cross-module access for the non-ESM interop files.
     // contextSync/busSync MUST be here: pojoker-audio-interop.js,
     // pobrawl/audio.js, pomarblerace/audio.js and posurvive/audioEngine.js all

@@ -209,5 +209,13 @@ export class TrackRenderer {
         }
       }
     }
+
+    // ── Volumetric stadium floodlights & Track Atmosphere ──
+    const lightGrd = ctx.createLinearGradient(0, 0, 0, h);
+    lightGrd.addColorStop(0, 'rgba(255, 255, 230, 0.12)');
+    lightGrd.addColorStop(0.35, 'rgba(255, 255, 255, 0.04)');
+    lightGrd.addColorStop(1, 'rgba(0, 0, 0, 0.08)');
+    ctx.fillStyle = lightGrd;
+    ctx.fillRect(0, 0, w, h);
   }
 }

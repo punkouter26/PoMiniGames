@@ -128,49 +128,37 @@ void main() {
     // switches the whole GL layer off on the low tier (see the guard in installGl()).
     vec3 col = texture(tScene, uv).rgb;
 
-    // ── Chromatic aberration ───────────────────────────────────────────
-    // Radial, scaled by the same radius mask, so the frame edges fringe and the
-    // centre stays clean — which is how a real wide lens behaves.
-    float ca = (uSpeed * 0.0016 + uPunch * 0.0060) * smoothstep(0.1, 0.9, r);
+    // ── Chromatic aberration (cyberpunk lens flare on speed and punch) ──
+    float ca = (uSpeed * 0.0028 + uPunch * 0.0090) * smoothstep(0.08, 0.92, r);
     if (ca > 0.00002) {
         vec2 dir = r > 0.0001 ? toC / r : vec2(0.0);
         col.r = texture(tScene, uv - dir * ca).r;
-        col.b = texture(tScene, uv + dir * ca).b;
+        col.b = texture(tScene, uv + dir * ca * 1.15).b;
     }
 
-    // ── Bright-pass bloom ──────────────────────────────────────────────
-    // Four wide taps rather than a separable gaussian in its own pass: at this
-    // radius the difference is invisible over a scene that is mostly dark
-    // asphalt, and it saves two full-screen render targets.
+    // ── Bright-pass bloom & Neon track reflections ────────────────────
     vec3 bloom = vec3(0.0);
-    vec2 px = 2.5 / uRes;
-    bloom += texture(tScene, uv + vec2( px.x,  px.y) * 3.0).rgb;
-    bloom += texture(tScene, uv + vec2(-px.x,  px.y) * 3.0).rgb;
-    bloom += texture(tScene, uv + vec2( px.x, -px.y) * 3.0).rgb;
-    bloom += texture(tScene, uv + vec2(-px.x, -px.y) * 3.0).rgb;
+    vec2 px = 2.8 / uRes;
+    bloom += texture(tScene, uv + vec2( px.x,  px.y) * 3.2).rgb;
+    bloom += texture(tScene, uv + vec2(-px.x,  px.y) * 3.2).rgb;
+    bloom += texture(tScene, uv + vec2( px.x, -px.y) * 3.2).rgb;
+    bloom += texture(tScene, uv + vec2(-px.x, -px.y) * 3.2).rgb;
     bloom *= 0.25;
-    // Only what is already bright blooms. Without the threshold the whole image
-    // just gets a soft glow, which reads as an out-of-focus screen.
-    bloom = max(bloom - 0.62, 0.0) * 1.9;
+    bloom = max(bloom - 0.58, 0.0) * 2.2;
     col += bloom;
 
-    // ── Speed lines ────────────────────────────────────────────────────
-    // Radial streaks hashed by angle so they are stable frame to frame at a
-    // given angle but irregular around the circle. Gated hard on speed: at a
-    // standstill they must be completely absent, not merely faint.
-    float sl = smoothstep(0.55, 1.0, uSpeed);
+    // ── Speed warp and speed streaks ──────────────────────────────────
+    float sl = smoothstep(0.48, 1.0, uSpeed);
     if (sl > 0.001) {
         float ang = atan(toC.y, toC.x);
-        float lane = floor(ang * 26.0);
-        float streak = step(0.82, hash11(lane + floor(uTime * 22.0)));
-        float mask = smoothstep(0.28, 0.85, r) * streak * sl;
-        col += vec3(0.85, 0.92, 1.0) * mask * 0.16;
+        float lane = floor(ang * 32.0);
+        float streak = step(0.78, hash11(lane + floor(uTime * 26.0)));
+        float mask = smoothstep(0.24, 0.90, r) * streak * sl;
+        col += vec3(0.0, 0.95, 1.0) * mask * 0.20 + vec3(1.0, 0.35, 0.85) * mask * 0.12;
     }
 
-    // ── Speed vignette ─────────────────────────────────────────────────
-    // Tunnel vision at speed. A constant vignette is a look; one that closes in
-    // as you accelerate is information.
-    col *= 1.0 - smoothstep(0.35, 0.95, r) * (0.18 + uSpeed * 0.22);
+    // ── Speed vignette & Contrast tuning ──────────────────────────────
+    col *= 1.0 - smoothstep(0.32, 0.96, r) * (0.16 + uSpeed * 0.26);
 
     frag = vec4(col, 1.0);
 }`;

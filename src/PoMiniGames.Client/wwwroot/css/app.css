@@ -1,20 +1,22 @@
 /* ── Reset & Base ── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-/* ── Global keyboard focus ring (2026-08-08 audit #10) ──
+/* ── Global keyboard focus ring (WCAG AAA High Contrast) ──
    Applies to every interactive element by default. The :focus-visible selector
    excludes mouse clicks, so the ring never flashes on tap — only on Tab/Space/
-   Enter navigation. --accent-ring resolves to an indigo halo that hits the AA
-   floor against both surface tokens; per-element overrides in components/*.css
-   keep winning where they exist (chip focus halos, settings panel, etc.).
-   Element-specific selectors intentionally list a handful of the common
-   focusables — full universal selector is left to the existing h1/h2/h3 rule
-   below — so a stray decorative <div tabindex> doesn't paint a phantom ring. */
+   Enter navigation. Resolves to high-contrast cyan/indigo halo with offset. */
 :where(a, button, [role="button"], [role="link"], [role="menuitem"], [role="tab"],
        input, select, textarea, summary, label[tabindex]):focus-visible {
-    outline: 2px solid var(--accent-ring);
+    outline: 2px solid var(--accent-cyan, #22d3ee);
     outline-offset: 2px;
     border-radius: var(--radius-sm);
+    box-shadow: 0 0 0 4px rgba(34, 211, 238, 0.25);
+}
+
+/* Tabular figures for numbers, counters, leaderboards & timestamps to avoid layout jitter */
+:where(.gps-stat-value, .lb-val, .lb-rank, .prf-chip-val, .racer-hud, .ps-hud, .gl-fps, .sv-score, .timer, [data-tabular]) {
+    font-variant-numeric: tabular-nums lining-nums;
+    font-feature-settings: "tnum" 1, "lnum" 1;
 }
 
 /* ── Skip link (browser audit #9; moved here from MainLayout.razor.css by the
@@ -46,6 +48,72 @@
     transform: translateY(0);
     outline: 2px solid var(--color-text-primary);
     outline-offset: 2px;
+}
+
+/* ── App Loading Spinner & Blazor Error UI ── */
+.loading-progress {
+    position: absolute;
+    display: block;
+    width: 5rem;
+    height: 5rem;
+    inset: 38vh 0 auto 0;
+    margin: 0 auto;
+}
+.loading-progress circle {
+    fill: none;
+    stroke: rgba(148, 163, 184, 0.2);
+    stroke-width: 0.5rem;
+    transform-origin: 50% 50%;
+    transform: rotate(-90deg);
+}
+.loading-progress circle:last-child {
+    stroke: var(--accent-cyan, #22d3ee);
+    stroke-dasharray: calc(3.141 * var(--blazor-load-percentage, 0%) * 0.8), 500%;
+    transition: stroke-dasharray 0.05s ease-in-out;
+}
+.loading-progress-text {
+    position: absolute;
+    text-align: center;
+    font-weight: 600;
+    font-size: 0.85rem;
+    color: var(--color-text-secondary, #94a3b8);
+    inset: calc(38vh + 6rem) 0 auto 0;
+}
+.loading-progress-text:after {
+    content: var(--blazor-load-percentage-text, "Loading…");
+}
+
+#blazor-error-ui {
+    background: #450a0a;
+    color: #fca5a5;
+    border-top: 1px solid #7f1d1d;
+    box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.4);
+    box-sizing: border-box;
+    display: none;
+    left: 0;
+    bottom: 0;
+    padding: 0.75rem 1.25rem;
+    position: fixed;
+    width: 100%;
+    z-index: var(--z-error-overlay, 10000);
+    align-items: center;
+    justify-content: space-between;
+    font-size: 0.9rem;
+}
+#blazor-error-ui a.reload {
+    color: #ffffff;
+    background: #dc2626;
+    padding: 0.35rem 0.85rem;
+    border-radius: 6px;
+    text-decoration: none;
+    font-weight: 600;
+    margin-left: 0.5rem;
+}
+#blazor-error-ui .dismiss {
+    cursor: pointer;
+    margin-left: auto;
+    padding: 0.25rem 0.5rem;
+    font-size: 1.1rem;
 }
 
 /* ── Minimum touch target (2026-08-08 audit #5) ────────────────────────────────

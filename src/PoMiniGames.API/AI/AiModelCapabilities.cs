@@ -93,10 +93,17 @@ public static class AiModelCapabilities
             return Reasoning;
         }
 
-        if (deployment.StartsWith("gpt-4", StringComparison.OrdinalIgnoreCase))
+        if (deployment.StartsWith("gpt-4", StringComparison.OrdinalIgnoreCase)
+            || deployment.StartsWith("gemini-", StringComparison.OrdinalIgnoreCase)
+            || deployment.StartsWith("qwen", StringComparison.OrdinalIgnoreCase)
+            || deployment.StartsWith("llama", StringComparison.OrdinalIgnoreCase)
+            || deployment.StartsWith("mistral", StringComparison.OrdinalIgnoreCase)
+            || deployment.StartsWith("claude-", StringComparison.OrdinalIgnoreCase))
+        {
             return Conventional;
+        }
 
-        // Phi-4, Phi-4-mini-instruct, and anything unrecognised.
+        // Phi-3.5/4, SmolLM, and unrecognised local/basic models default to Basic (json_object mode).
         return Basic;
     }
 

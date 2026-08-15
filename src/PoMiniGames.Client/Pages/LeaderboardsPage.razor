@@ -36,6 +36,33 @@
         }
     </header>
 
+    @* Filter tabs: instant category switching without endless scrolling *@
+    @if (!_loading && !_error && _boards.Count > 0)
+    {
+        <div class="lb-chips" role="tablist" aria-label="Filter leaderboards">
+            <button role="tab" class="lb-chip @(_activeFilter == "all" ? "lb-chip--on" : "")"
+                    aria-selected="@(_activeFilter == "all")"
+                    @onclick='() => _activeFilter = "all"'>
+                All Modes <span class="lb-chip-n">@_boards.Count</span>
+            </button>
+            <button role="tab" class="lb-chip @(_activeFilter == "1p" ? "lb-chip--on" : "")"
+                    aria-selected="@(_activeFilter == "1p")"
+                    @onclick='() => _activeFilter = "1p"'>
+                1-Player Solo
+            </button>
+            <button role="tab" class="lb-chip @(_activeFilter == "2p" ? "lb-chip--on" : "")"
+                    aria-selected="@(_activeFilter == "2p")"
+                    @onclick='() => _activeFilter = "2p"'>
+                2-Player Local
+            </button>
+            <button role="tab" class="lb-chip @(_activeFilter == "online" ? "lb-chip--on" : "")"
+                    aria-selected="@(_activeFilter == "online")"
+                    @onclick='() => _activeFilter = "online"'>
+                Multiplayer Online
+            </button>
+        </div>
+    }
+
     @* Audit fix #8: hero call-to-action that gives first-time visitors an
        immediate next step instead of a wall of "no scores yet" placeholders.
        Hidden when the user already has a #1 ranked score on any board. *@
@@ -73,10 +100,8 @@
     }
     else
     {
-        @* Audit fix #8: group leaderboards by category so the 13 stacked
-           boards collapse into 3 sections (1P · 2P · Online) with chips
-           inside. *@
-        @foreach (var group in _groupedBoards)
+        @* Group leaderboards by category and active tab filter *@
+        @foreach (var group in _groupedBoards.Where(g => _activeFilter == "all" || g.Key == _activeFilter))
         {
             // 2026-08-10 audit #7: previous `<h2>1 PLAYER</h2>` was a styled
             // heading with no useful screen-reader label. aria-label here
@@ -152,6 +177,7 @@
     private bool _loading = true;
     private bool _error;
     private List<GameLeaderboardDto> _boards = [];
+    private string _activeFilter = "all";
 
     // Audit fix #8: hero card highlights the user's best score.
     private string? _topGameKey;

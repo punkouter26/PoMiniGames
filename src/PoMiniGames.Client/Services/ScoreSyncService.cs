@@ -81,6 +81,11 @@ public sealed class ScoreSyncService
     private void Enqueue(PendingScoreKind kind, string payloadJson)
     {
         var items = _store.Load();
+        if (items.Any(i => i.Kind == kind && string.Equals(i.PayloadJson, payloadJson, StringComparison.Ordinal)))
+        {
+            return;
+        }
+
         items.Add(new PendingScore
         {
             Kind = kind,

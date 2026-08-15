@@ -637,10 +637,19 @@
                 _score += q.BasePoints + StreakBonus();
                 _streak++;
                 if (_streak > _maxStreak) _maxStreak = _streak;
+                if (_streak >= 3)
+                {
+                    _ = Feedback.CueAsync("quiz", "streakChime");
+                }
+                else
+                {
+                    _ = Feedback.CueAsync("quiz", "correct");
+                }
             }
             else
             {
                 _streak = 0;
+                _ = Feedback.CueAsync("quiz", "wrong");
             }
         }
 

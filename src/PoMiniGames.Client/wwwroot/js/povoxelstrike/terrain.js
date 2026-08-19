@@ -40,7 +40,11 @@ const DIRT_BAND = 10;            // levels of dirt (1 unit) before digging hits 
 // above the real ground and a crater you had just dug did not exist to physics at all.
 // 4 columns is 0.4 m, a 5x refinement, and the sample is the exact column height rather
 // than a max.
-const PHYS_STRIDE = 4;
+// MEASURED: 4 (0.4 m elements) cost ~12 ms of every physics step, because cannon builds a
+// convex prism per heightfield cell a body overlaps and a 2 m chunk of debris overlaps 25
+// of them. 10 gives 1 m elements — still twice as fine as the 2 m this started at, and
+// well inside the 0.25 m voxels anything actually stands on.
+const PHYS_STRIDE = 10;
 const PHYS_N = CELLS / PHYS_STRIDE;
 
 const GRASS = new THREE.Color(0x4c8f46);
@@ -51,6 +55,25 @@ const SHADES = 8;                // quantized jitter steps (coarse patches share
 // 0.2 grid had; leaving it at 5 would halve the patch and re-introduce the per-cell
 // noise the quantization exists to remove.
 const SHADE_SHIFT = 6;
+
+// Terrain level of detail: columns merged per rendered quad, by distance in metres. The
+// ground is greedy-meshed already, but at 0.1 m columns its contour risers alone were
+// ~930 k triangles — most of them steps a few centimetres tall, a hundred metres away.
+// Physics never sees this: the heightfield collider is always built from the real column
+// grid, so LOD changes the picture and not where anything stands.
+const TERRAIN_LOD_BANDS = [
+  { near: 0, step: 1 },
+  { near: 40, step: 4 },
+  { near: 90, step: 12 },
+];
+const TERRAIN_LOD_HYSTERESIS_M = 8;
+
+// Chunks per merged mesh, per axis. Chunks stay small so a dig re-meshes 12 m of ground
+// and not the whole map, but they are DRAWN in groups: 225 chunk meshes was 225 draw
+// calls a frame, and this makes it 25. Re-merging a group is a memcpy over vertex data
+// that is already built, which is nothing next to re-meshing it.
+const GROUP_CHUNKS = 3;
+const GROUPS = Math.ceil(CHUNKS / GROUP_CHUNKS);
 
 // Perimeter wall: a stone ring around the arena so the player and enemies stay
 // inside. Thickness is in cells (BLOCK units). Height is in world units so it reads
@@ -83,8 +106,12 @@ export class Terrain {
     this.originalLevels = null;
 
     this.group = null;
-    this.chunkMeshes = new Map(); // "ci,cj" -> Mesh
-    this.dirtyChunks = new Set();
+    this.chunkData = new Map();         // "ci,cj" -> { positions, normals, colors } | null
+    this.groupMeshes = new Map();       // "gi,gj" -> Mesh
+    this.dirtyGroups = new Set();
+    this.dirtyChunks = new Set();       // dig-driven: rebuilt promptly
+    this.lodDirtyChunks = new Set();    // distance-driven: rebuilt on a budget
+    this.chunkLod = new Map();          // "ci,cj" -> step
     this.material = null;
     this.body = null;
     this.colliderDirty = false;
@@ -261,22 +288,94 @@ export class Terrain {
     if (j % CHUNK_CELLS === CHUNK_CELLS - 1) this.dirtyChunks.add(`${ci},${cj + 1}`);
   }
 
-  rebuildDirty() {
-    for (const key of this.dirtyChunks) {
-      const [ci, cj] = key.split(',').map(Number);
-      if (ci < 0 || cj < 0 || ci >= CHUNKS || cj >= CHUNKS) continue;
-      const old = this.chunkMeshes.get(key);
-      if (old) { this.group.remove(old); old.geometry.dispose(); this.chunkMeshes.delete(key); }
-      const geometry = this._buildChunkGeometry(ci * CHUNK_CELLS, cj * CHUNK_CELLS);
-      if (!geometry) continue;
-      const mesh = new THREE.Mesh(geometry, this.material);
-      // Ground receives building/debris shadows; casting from 810k m² of terrain would
-      // only cost shadow-map fill for self-shadowing the height steps barely show.
-      mesh.receiveShadow = true;
-      this.group.add(mesh);
-      this.chunkMeshes.set(key, mesh);
-    }
+  /**
+   * @param budget LOD-driven chunks to re-mesh this call. Dig-driven chunks ignore it —
+   *   a crater has to appear on the frame you dug it.
+   */
+  rebuildDirty(budget = Infinity) {
+    for (const key of this.dirtyChunks) this._meshChunk(key);
     this.dirtyChunks.clear();
+
+    let spent = 0;
+    for (const key of this.lodDirtyChunks) {
+      if (spent >= budget) break;
+      this._meshChunk(key);
+      this.lodDirtyChunks.delete(key);
+      spent++;
+    }
+    for (const key of this.dirtyGroups) this._mergeGroup(key);
+    this.dirtyGroups.clear();
+    return spent;
+  }
+
+  _meshChunk(key) {
+    const [ci, cj] = key.split(',').map(Number);
+    if (ci < 0 || cj < 0 || ci >= CHUNKS || cj >= CHUNKS) return;
+    const step = this.chunkLod.get(key) ?? 1;
+    this.chunkData.set(key, this._buildChunkGeometry(ci * CHUNK_CELLS, cj * CHUNK_CELLS, step));
+    this.dirtyGroups.add(
+      `${Math.floor(ci / GROUP_CHUNKS)},${Math.floor(cj / GROUP_CHUNKS)}`);
+  }
+
+  /** Concatenate a group's chunk vertex data into the one mesh that group draws. */
+  _mergeGroup(key) {
+    const [gi, gj] = key.split(',').map(Number);
+    let total = 0;
+    const parts = [];
+    for (let cj = gj * GROUP_CHUNKS; cj < Math.min(CHUNKS, (gj + 1) * GROUP_CHUNKS); cj++) {
+      for (let ci = gi * GROUP_CHUNKS; ci < Math.min(CHUNKS, (gi + 1) * GROUP_CHUNKS); ci++) {
+        const data = this.chunkData.get(`${ci},${cj}`);
+        if (data) { parts.push(data); total += data.positions.length; }
+      }
+    }
+    const old = this.groupMeshes.get(key);
+    if (old) { this.group.remove(old); old.geometry.dispose(); this.groupMeshes.delete(key); }
+    if (total === 0) return;
+
+    const positions = new Float32Array(total);
+    const normals = new Float32Array(total);
+    const colors = new Float32Array(total);
+    let at = 0;
+    for (const d of parts) {
+      positions.set(d.positions, at);
+      normals.set(d.normals, at);
+      colors.set(d.colors, at);
+      at += d.positions.length;
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
+    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    const mesh = new THREE.Mesh(geometry, this.material);
+    // Ground receives building/debris shadows; casting from 810k m² of terrain would
+    // only cost shadow-map fill for self-shadowing the height steps barely show.
+    mesh.receiveShadow = true;
+    this.group.add(mesh);
+    this.groupMeshes.set(key, mesh);
+  }
+
+  /** Assign an LOD band per chunk from the camera position; queue changes for re-mesh. */
+  updateLod(cameraPosition) {
+    const half = CHUNK_CELLS * BLOCK * 0.5;
+    for (let cj = 0; cj < CHUNKS; cj++) {
+      const cz = -ARENA_HALF + cj * CHUNK_CELLS * BLOCK + half;
+      for (let ci = 0; ci < CHUNKS; ci++) {
+        const cx = -ARENA_HALF + ci * CHUNK_CELLS * BLOCK + half;
+        const key = `${ci},${cj}`;
+        const current = this.chunkLod.get(key) ?? 1;
+        const d = Math.hypot(cameraPosition.x - cx, cameraPosition.z - cz);
+        let step = current;
+        for (let b = TERRAIN_LOD_BANDS.length - 1; b >= 0; b--) {
+          const bias = TERRAIN_LOD_BANDS[b].step > current
+            ? TERRAIN_LOD_HYSTERESIS_M : -TERRAIN_LOD_HYSTERESIS_M;
+          if (d >= TERRAIN_LOD_BANDS[b].near + bias) { step = TERRAIN_LOD_BANDS[b].step; break; }
+        }
+        if (step !== current) {
+          this.chunkLod.set(key, step);
+          this.lodDirtyChunks.add(key);
+        }
+      }
+    }
   }
 
   /**
@@ -373,14 +472,51 @@ export class Terrain {
       .multiplyScalar(0.92 + (shade / SHADES) * 0.16);
   }
 
-  _buildChunkGeometry(i0, j0) {
-    const w = Math.min(CHUNK_CELLS, CELLS - i0);
-    const h = Math.min(CHUNK_CELLS, CELLS - j0);
+  /**
+   * @param step LOD stride in columns. Everything below works in COARSE indices — the
+   *   helpers convert — so the greedy merge and the wall-run code are identical at every
+   *   level of detail and there is only one mesher to keep correct.
+   */
+  _buildChunkGeometry(i0, j0, step = 1) {
+    const st = Math.max(1, step | 0);
+    const i0c = Math.floor(i0 / st);
+    const j0c = Math.floor(j0 / st);
+    const w = Math.ceil(Math.min(CHUNK_CELLS, CELLS - i0) / st);
+    const h = Math.ceil(Math.min(CHUNK_CELLS, CELLS - j0) / st);
     const positions = [], normals = [], colors = [];
-    const levelOf = (i, j) =>
-      (i < 0 || j < 0 || i >= CELLS || j >= CELLS) ? 0 : this.levels[i + j * CELLS];
-    const wx = (i) => -ARENA_HALF + i * BLOCK;
-    const wz = (j) => -ARENA_HALF + j * BLOCK;
+
+    // Coarse column height = MAX of the block. Taking the max keeps a decimated hill
+    // standing slightly proud of the real one; taking the average or the min would sink
+    // ridge lines below the collider and open gaps you can see under.
+    const levelOf = (ci, cj) => {
+      const fi0 = ci * st, fj0 = cj * st;
+      if (fi0 < 0 || fj0 < 0 || fi0 >= CELLS || fj0 >= CELLS) return 0;
+      if (st === 1) return this.levels[fi0 + fj0 * CELLS];
+      let best = 0;
+      const fi1 = Math.min(CELLS, fi0 + st), fj1 = Math.min(CELLS, fj0 + st);
+      for (let fj = fj0; fj < fj1; fj++) {
+        const row = fj * CELLS;
+        for (let fi = fi0; fi < fi1; fi++) {
+          const v = this.levels[fi + row];
+          if (v > best) best = v;
+        }
+      }
+      return best;
+    };
+    const wx = (ci) => -ARENA_HALF + ci * st * BLOCK;
+    const wz = (cj) => -ARENA_HALF + cj * st * BLOCK;
+    // Colour and dug-material bucket come from the block's first column; the level comes
+    // from the block max, so the key stays consistent with the geometry it describes.
+    const topKeyC = (ci, cj) => {
+      const fi = Math.min(CELLS - 1, ci * st), fj = Math.min(CELLS - 1, cj * st);
+      const idx = fi + fj * CELLS;
+      const dug = this.originalLevels[idx] - this.levels[idx];
+      const bucket = dug <= 0 ? 0 : dug <= DIRT_BAND ? 1 : 2;
+      const shade = Math.floor(hash(fi >> SHADE_SHIFT, fj >> SHADE_SHIFT, this.seed ^ 0x51ed2701) * SHADES);
+      return (levelOf(ci, cj) * 3 + bucket) * SHADES + shade;
+    };
+    const topColorC = (ci, cj, out) =>
+      this._topColor(Math.min(CELLS - 1, ci * st), Math.min(CELLS - 1, cj * st), out);
 
     const quad = (corners, normal, color) => {
       for (const c of [0, 1, 2, 0, 2, 3]) {
@@ -395,7 +531,7 @@ export class Terrain {
     const keys = new Int32Array(w * h);
     for (let j = 0; j < h; j++) {
       for (let i = 0; i < w; i++) {
-        keys[i + j * w] = this._topKey(i0 + i, j0 + j);
+        keys[i + j * w] = topKeyC(i0c + i, j0c + j);
       }
     }
     const done = new Uint8Array(w * h);
@@ -414,9 +550,9 @@ export class Terrain {
         }
         for (let jj = 0; jj < rh; jj++) for (let ii = 0; ii < rw; ii++) done[i + ii + (jj + j) * w] = 1;
 
-        const y = levelOf(i0 + i, j0 + j) * BLOCK;
-        this._topColor(i0 + i, j0 + j, tint);
-        const x0 = wx(i0 + i), x1 = wx(i0 + i + rw), z0 = wz(j0 + j), z1 = wz(j0 + j + rh);
+        const y = levelOf(i0c + i, j0c + j) * BLOCK;
+        topColorC(i0c + i, j0c + j, tint);
+        const x0 = wx(i0c + i), x1 = wx(i0c + i + rw), z0 = wz(j0c + j), z1 = wz(j0c + j + rh);
         quad([[x0, y, z1], [x1, y, z1], [x1, y, z0], [x0, y, z0]], [0, 1, 0], tint);
       }
     }
@@ -441,18 +577,18 @@ export class Terrain {
 
     // X-facing walls: boundary owned by the higher cell inside this chunk; runs along j.
     for (let i = 0; i < w; i++) {
-      const gi = i0 + i;
+      const gi = i0c + i;
       for (const side of [1, -1]) {
         let j = 0;
         while (j < h) {
-          const L = levelOf(gi, j0 + j), N = levelOf(gi + side, j0 + j);
+          const L = levelOf(gi, j0c + j), N = levelOf(gi + side, j0c + j);
           if (L <= N) { j++; continue; }
           let run = 1;
           while (j + run < h
-            && levelOf(gi, j0 + j + run) === L
-            && levelOf(gi + side, j0 + j + run) === N) run++;
+            && levelOf(gi, j0c + j + run) === L
+            && levelOf(gi + side, j0c + j + run) === N) run++;
           const xB = side === 1 ? wx(gi + 1) : wx(gi);
-          const za = wz(j0 + j), zb = wz(j0 + j + run);
+          const za = wz(j0c + j), zb = wz(j0c + j + run);
           if (side === 1) wall(N, L, [xB, zb], [xB, za], [1, 0, 0]);
           else wall(N, L, [xB, za], [xB, zb], [-1, 0, 0]);
           j += run;
@@ -461,18 +597,18 @@ export class Terrain {
     }
     // Z-facing walls: runs along i.
     for (let j = 0; j < h; j++) {
-      const gj = j0 + j;
+      const gj = j0c + j;
       for (const side of [1, -1]) {
         let i = 0;
         while (i < w) {
-          const L = levelOf(i0 + i, gj), N = levelOf(i0 + i, gj + side);
+          const L = levelOf(i0c + i, gj), N = levelOf(i0c + i, gj + side);
           if (L <= N) { i++; continue; }
           let run = 1;
           while (i + run < w
-            && levelOf(i0 + i + run, gj) === L
-            && levelOf(i0 + i + run, gj + side) === N) run++;
+            && levelOf(i0c + i + run, gj) === L
+            && levelOf(i0c + i + run, gj + side) === N) run++;
           const zB = side === 1 ? wz(gj + 1) : wz(gj);
-          const xa = wx(i0 + i), xb = wx(i0 + i + run);
+          const xa = wx(i0c + i), xb = wx(i0c + i + run);
           if (side === 1) wall(N, L, [xa, zB], [xb, zB], [0, 0, 1]);
           else wall(N, L, [xb, zB], [xa, zB], [0, 0, -1]);
           i += run;
@@ -481,19 +617,16 @@ export class Terrain {
     }
 
     if (positions.length === 0) return null;
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
-    geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-    return geometry;
+    return { positions, normals, colors };
   }
 
   dispose(scene, physicsWorld) {
-    for (const mesh of this.chunkMeshes.values()) {
+    for (const mesh of this.groupMeshes.values()) {
       this.group.remove(mesh);
       mesh.geometry.dispose();
     }
-    this.chunkMeshes.clear();
+    this.groupMeshes.clear();
+    this.chunkData.clear();
     this.material?.dispose();
     if (this.group) scene.remove(this.group);
     if (this.body) physicsWorld.removeBody(this.body);

@@ -69,6 +69,22 @@ const HUD_INTERVAL_S = 0.1;
 // survival run tops out around 20 k, and a siege that ends in a breach should always read
 // as the better result on the board.
 const VICTORY_BONUS = 25000;
+// Chunks the whole fortress may re-mesh per frame for LOD changes. Greedy meshing made a
+// chunk cheap, but 44 structures changing band at once is still 800 of them.
+const REMESH_CHUNKS_PER_FRAME = 6;
+// Half-width of the sun's shadow window, in metres, centred ahead of the player.
+const SHADOW_HALF_M = 45;
+// Physics streaming: static collider bodies further than this from the player are taken
+// out of the world entirely, and re-added on approach. Measured first at 120 m, which
+// combined with each piece's own extent covered the whole 180 m arena and streamed out
+// precisely nothing. 70 m is past anything the player is standing on or that debris near
+// them can reach; carving and shooting are unaffected either way, because those read the
+// voxel grid directly rather than the physics world.
+const PHYSICS_STREAM_RADIUS_M = 70;
+const PHYSICS_STREAM_INTERVAL_S = 0.5;
+// Floor for dynamic resolution. Below this the picture is soft enough that the frames are
+// not worth having.
+const MIN_RENDER_SCALE = 0.6;
 // Kiosk siege AI (demo mode). Tuned so the attract loop reads clearly from across a room:
 // the bot should visibly stop at a wall, chew through it, and walk in.
 const DEMO_PROBE_RANGE = 14;        // metres of "is something in my way"
@@ -202,10 +218,14 @@ export class Engine {
     // voxel aesthetic — and cheap enough that collapsing towers cast moving shadows.
     sun.castShadow = true;
     sun.shadow.mapSize.set(this.q.shadowMapSize, this.q.shadowMapSize);
-    sun.shadow.camera.left = -130;
-    sun.shadow.camera.right = 130;
-    sun.shadow.camera.top = 130;
-    sun.shadow.camera.bottom = -130;
+    // The shadow camera FOLLOWS the player (see _updateShadowCamera) instead of covering
+    // the whole 260 m arena from a fixed box. Same map resolution over a 70 m window is
+    // ~7x finer per texel AND rasterises a fraction of the geometry, because everything
+    // outside the window is culled out of the shadow pass entirely.
+    sun.shadow.camera.left = -SHADOW_HALF_M;
+    sun.shadow.camera.right = SHADOW_HALF_M;
+    sun.shadow.camera.top = SHADOW_HALF_M;
+    sun.shadow.camera.bottom = -SHADOW_HALF_M;
     sun.shadow.camera.near = 10;
     sun.shadow.camera.far = 280;
     sun.shadow.bias = -0.0004;
@@ -220,6 +240,7 @@ export class Engine {
     // Time-of-day owns the sun and the hemisphere fill from here on: it repaints their
     // colour and intensity every frame, so the literals set above are only the values
     // that hold for the first frame.
+    this.sun = sun;
     this.vfx.attachSun(sun, hemi, ambient);
     this.skyEnv = new SkyEnvironment(this.renderer, this.scene, this.q);
     this.skyEnv.update(0, this.vfx.skyKey, this.vfx._sunDir, true);
@@ -276,6 +297,17 @@ export class Engine {
       },
     }, this.physicsMaterials);
     this.debris.structures = this.structures; // blast shielding needs the occluders
+    // The structural solve runs in a worker now, so detached mass arrives a frame or two
+    // after the shot that caused it rather than as a return value. This is the delivery
+    // point; scoring still counts every voxel, just slightly later.
+    for (const s of this.structures) {
+      s.onClusters = (structure, clusters) => {
+        for (const c of clusters) {
+          this.voxelsDestroyed += c.voxels.length;
+          this.debris.spawnCluster(structure, c);
+        }
+      };
+    }
     this.enemies = new EnemyManager(this.scene, this.structures, this.debris, this.terrain, {
       demo: this.demo,
       onPlayerDamage: (amount) => this._damagePlayer(amount),
@@ -503,11 +535,18 @@ export class Engine {
       // would leave the kiosk sitting on a game-over screen.
       if (playing && !this.demo && this.chalice.reached(this.player.position)) this._claimChalice();
       if (playing) this._checkPlayerCrush(dt);
+      // One re-mesh budget shared by the whole fortress. A carve's own chunks always
+      // rebuild immediately (a hole must appear on the frame you made it); LOD band
+      // changes are lazy and draw from this, so crossing a distance boundary spreads a
+      // building's re-mesh over several frames instead of spiking one.
+      let remeshBudget = REMESH_CHUNKS_PER_FRAME;
       for (const s of this.structures) {
-        s.rebuildDirtyChunks();
+        s.updateLod(this.camera.position);
+        remeshBudget -= s.rebuildDirtyChunks(Math.max(0, remeshBudget));
         s.rebuildCollider(); // no-op unless flagged dirty by a carve
       }
-      this.terrain.rebuildDirty();     // both no-ops unless a dig landed this frame
+      this.terrain.updateLod(this.camera.position);
+      this.terrain.rebuildDirty(Math.max(0, remeshBudget)); // no-op unless a dig landed
       this.terrain.rebuildCollider();
     }
 
@@ -519,6 +558,9 @@ export class Engine {
     this.particles.update(dt);
     this.decals.update(dt);
     this.shrapnel.update(dt);
+    this._updateShadowCamera();
+    this._streamColliders(dt);
+    this._updateRenderScale(dt);
     this.skyEnv.update(dt, this.vfx.skyKey, this.vfx._sunDir);
     if (this.audio) {
       // The listener must follow the SHAKEN camera: the shake is what the player sees,
@@ -575,6 +617,72 @@ export class Engine {
    * Reverb zone probe. Throttled to 4 Hz: it walks every structure, and the answer only
    * has to beat the 250 ms crossfade in setSpace() to feel instant.
    */
+  /**
+   * Keep the sun's shadow box centred just ahead of the player. A directional light's
+   * shadow camera is an orthographic box: making it cover the arena means every texel is
+   * 6-13 cm and every wall in the fortress is rasterised into it every frame. A 90 m box
+   * that travels with the player renders a handful of buildings at a much finer texel.
+   */
+  _updateShadowCamera() {
+    if (!this.sun?.castShadow) return;
+    const p = this.player.position;
+    // Snap to texel-sized steps. Without this the whole shadow map shimmers as the box
+    // slides, because every texel lands on different geometry each frame.
+    const texel = (SHADOW_HALF_M * 2) / this.q.shadowMapSize;
+    const cx = Math.round(p.x / texel) * texel;
+    const cz = Math.round(p.z / texel) * texel;
+    this.sun.position.set(cx + this.vfx._sunDir.x * 120,
+      p.y + this.vfx._sunDir.y * 120, cz + this.vfx._sunDir.z * 120);
+    this.sun.target.position.set(cx, p.y, cz);
+    this.sun.target.updateMatrixWorld();
+    this.sun.shadow.camera.updateProjectionMatrix();
+  }
+
+  /**
+   * Add and remove static collider bodies by distance. The fortress puts ~7 700 collision
+   * shapes in the world; the broadphase sorts and the narrowphase bounding-sphere-tests
+   * all of them forever, even the far side of the keep that nothing can reach. Streaming
+   * keeps only what is near the player resident. Accuracy is untouched — a body is either
+   * fully present or too far away to be touched.
+   */
+  _streamColliders(dt) {
+    this._streamClock = (this._streamClock ?? 0) - dt;
+    if (this._streamClock > 0) return;
+    this._streamClock = PHYSICS_STREAM_INTERVAL_S;
+    const p = this.player.position;
+    for (const s of this.structures) {
+      const dx = s.group.position.x - p.x;
+      const dz = s.group.position.z - p.z;
+      // Reach includes the piece's own extent: a 116 m curtain wall is "near" long before
+      // its centre is.
+      const reach = PHYSICS_STREAM_RADIUS_M + Math.max(s.dims[0], s.dims[2]) * s.scale * 0.5;
+      s.setColliderActive(dx * dx + dz * dz <= reach * reach);
+    }
+  }
+
+  /**
+   * Dynamic resolution. Every post-processing pass costs per pixel, so when frames run
+   * long the cheapest lever is to render fewer of them and let SMAA clean up the edges.
+   * Physics and simulation are untouched — this only changes how many pixels are shaded.
+   */
+  _updateRenderScale(dt) {
+    if (!this.q.dynamicResolution) return;
+    this._frameAvg = this._frameAvg === undefined ? dt : this._frameAvg * 0.9 + dt * 0.1;
+    this._scaleClock = (this._scaleClock ?? 0) - dt;
+    if (this._scaleClock > 0) return;
+    this._scaleClock = 0.5;
+
+    const target = 1 / 60;
+    let scale = this._renderScale ?? 1;
+    if (this._frameAvg > target * 1.35) scale -= 0.1;
+    else if (this._frameAvg < target * 1.05) scale += 0.05;
+    scale = Math.min(1, Math.max(MIN_RENDER_SCALE, scale));
+    if (Math.abs(scale - (this._renderScale ?? 1)) < 0.01) return;
+    this._renderScale = scale;
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2) * scale);
+    this._resize();
+  }
+
   _updateSpace(dt) {
     this._spaceClock -= dt;
     if (this._spaceClock > 0) return;

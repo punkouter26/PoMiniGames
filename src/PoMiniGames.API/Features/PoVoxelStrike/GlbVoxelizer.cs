@@ -7,8 +7,11 @@ namespace PoMiniGames.Features.PoVoxelStrike;
 /// GLB triangle mesh → palette-indexed voxel volume. Fixed detail: the model's longest
 /// axis becomes <see cref="PoVoxelStrikeOptions.VoxelResolution"/> voxels.
 ///
-/// v1 deliberately samples material <b>base-color factors</b> only — texture sampling
-/// needs an image decoder and is a post-v1 milestone (PRD §7). Surface voxels are marked
+/// Colour comes from the material's base-color factor AND, when the material has one, its
+/// base-color <b>texture</b>: the PNG is decoded by <see cref="PngDecoder"/> and sampled at
+/// each triangle's centroid UV. Without that step a textured model — which is what any
+/// character export is — voxelised to flat white, because its base-color factor is white
+/// and all of its actual colour lives in the image. Surface voxels are marked
 /// by barycentric sampling at half-voxel pitch (robust for arbitrary triangle soups
 /// without a SAT triangle/box test); the interior is closed by an outside flood fill so
 /// carved structures read as solid mass, not shells.
@@ -19,6 +22,52 @@ public static class GlbVoxelizer
     // M2 stress solver has plausible constants to start from.
     private static readonly PvxMaterial DefaultMaterial = new(
         Density: 600f, CompressiveStrength: 5_000_000f, TensileStrength: 2_000_000f);
+
+    /// <summary>
+    /// Per-triangle colour source for one primitive: a flat factor, optionally modulated
+    /// by a decoded base-color texture sampled at the triangle centroid.
+    /// </summary>
+    private sealed class ColorSampler
+    {
+        public required Vector4 Factor { get; init; }
+        public PngDecoder.Image? Texture { get; init; }
+        public IList<Vector2>? Uv { get; init; }
+
+        public Vector4 Sample(int ia, int ib, int ic)
+        {
+            if (Texture is null || Uv is null)
+            {
+                return Factor;
+            }
+            // Centroid sampling: one colour per triangle, which is all the voxel grid can
+            // hold anyway — a voxel is coarser than any triangle worth texturing.
+            var u = (Uv[ia].X + Uv[ib].X + Uv[ic].X) / 3f;
+            var v = (Uv[ia].Y + Uv[ib].Y + Uv[ic].Y) / 3f;
+            // Repeat wrap. glTF's other wrap modes only matter for UVs outside 0..1, which
+            // is rare in a baked character atlas, and clamping vs repeating there changes
+            // one voxel's colour at worst.
+            u -= MathF.Floor(u);
+            v -= MathF.Floor(v);
+            var x = Math.Clamp((int)(u * Texture.Width), 0, Texture.Width - 1);
+            var y = Math.Clamp((int)(v * Texture.Height), 0, Texture.Height - 1);
+            var o = (y * Texture.Width + x) * 4;
+            // glTF base-color TEXTURES are sRGB-encoded; base-color FACTORS are linear, and
+            // the two are multiplied in linear space. The palette this feeds is consumed as
+            // three.js vertex colours, which are also linear — so decode here or every
+            // textured asset renders washed out next to every untextured one.
+            return new Vector4(
+                SrgbToLinear(Texture.Rgba[o]) * Factor.X,
+                SrgbToLinear(Texture.Rgba[o + 1]) * Factor.Y,
+                SrgbToLinear(Texture.Rgba[o + 2]) * Factor.Z,
+                (Texture.Rgba[o + 3] / 255f) * Factor.W);
+        }
+
+        private static float SrgbToLinear(byte channel)
+        {
+            var c = channel / 255f;
+            return c <= 0.04045f ? c / 12.92f : MathF.Pow((c + 0.055f) / 1.055f, 2.4f);
+        }
+    }
 
     public static PvxVolume Voxelize(string glbPath, int resolution, PvxSidecar? overrides = null)
     {
@@ -41,6 +90,9 @@ public static class GlbVoxelizer
         {
             return triangles;
         }
+        // Decoded once per image, not per primitive: a character atlas is a few megabytes
+        // and the same texture is shared by every primitive of the mesh.
+        var decoded = new Dictionary<SharpGLTF.Schema2.Image, PngDecoder.Image?>();
 
         foreach (var node in scene.VisualChildren)
         {
@@ -60,14 +112,14 @@ public static class GlbVoxelizer
                     {
                         continue;
                     }
-                    var color = BaseColorOf(primitive.Material);
+                    var sampler = SamplerFor(primitive, decoded);
                     foreach (var (ia, ib, ic) in primitive.GetTriangleIndices())
                     {
                         triangles.Add(new Triangle(
                             Vector3.Transform(positions[ia], world),
                             Vector3.Transform(positions[ib], world),
                             Vector3.Transform(positions[ic], world),
-                            color));
+                            sampler.Sample(ia, ib, ic)));
                     }
                 }
             }
@@ -82,6 +134,42 @@ public static class GlbVoxelizer
     {
         var channel = material?.FindChannel("BaseColor");
         return channel?.Color ?? new Vector4(0.72f, 0.72f, 0.75f, 1f);
+    }
+
+    /// <summary>
+    /// Build the colour source for one primitive. Falls back to the flat factor whenever
+    /// anything is missing or unreadable — no texture, no UV set, a JPEG or an interlaced
+    /// PNG — so an exotic asset degrades to the old behaviour instead of failing to ingest.
+    /// </summary>
+    private static ColorSampler SamplerFor(MeshPrimitive primitive,
+        Dictionary<SharpGLTF.Schema2.Image, PngDecoder.Image?> cache)
+    {
+        var factor = BaseColorOf(primitive.Material);
+        var channel = primitive.Material?.FindChannel("BaseColor");
+        var image = channel?.Texture?.PrimaryImage;
+        if (image is null)
+        {
+            return new ColorSampler { Factor = factor };
+        }
+
+        if (!cache.TryGetValue(image, out var bitmap))
+        {
+            var content = image.Content;
+            bitmap = content.IsPng ? PngDecoder.TryDecode(content.Content.Span) : null;
+            cache[image] = bitmap;
+        }
+        if (bitmap is null)
+        {
+            return new ColorSampler { Factor = factor };
+        }
+
+        var set = channel?.TextureCoordinate ?? 0;
+        var uv = primitive.GetVertexAccessor($"TEXCOORD_{set}")?.AsVector2Array();
+        if (uv is null)
+        {
+            return new ColorSampler { Factor = factor };
+        }
+        return new ColorSampler { Factor = factor, Texture = bitmap, Uv = uv };
     }
 
     internal static PvxVolume Voxelize(IReadOnlyList<Triangle> triangles, int resolution, PvxSidecar? overrides = null)
@@ -115,13 +203,21 @@ public static class GlbVoxelizer
         foreach (var t in triangles)
         {
             var index = palette.IndexOf(t.Color);
+            // IndexOf returns a ONE-BASED palette index, because 0 is the empty-cell value
+            // in the voxel grid. Entries is a plain zero-based List, so the re-stamp below
+            // must subtract one. It did not: every GLB threw IndexOutOfRange on its very
+            // first triangle (index 1 into a list of length 1), which meant NO new asset
+            // could be ingested at all. It went unnoticed because the sample models were
+            // already converted and are cached by content hash, so nothing re-entered this
+            // path until a new .glb was dropped in.
+            var slot = index - 1;
             // Re-stamp the palette entry's MaterialId from the sidecar when the GLB color
             // matches one of the sidecar's palette overrides. Without this, every palette
             // entry would point at MaterialId=1 and the override table would be inert.
             var remapped = ResolveMaterialId(t.Color, overrides, materials.Count);
-            if (remapped != palette.Entries[index].MaterialId)
+            if (remapped != palette.Entries[slot].MaterialId)
             {
-                palette.Entries[index] = palette.Entries[index] with { MaterialId = remapped };
+                palette.Entries[slot] = palette.Entries[slot] with { MaterialId = remapped };
             }
             MarkTriangle(t, index);
         }
@@ -271,9 +367,15 @@ public static class GlbVoxelizer
 
         public byte IndexOf(Vector4 color)
         {
-            var r = ToByte(color.X);
-            var g = ToByte(color.Y);
-            var b = ToByte(color.Z);
+            // Quantise to 5 bits per channel before keying. The palette holds 255 entries;
+            // a textured character yields thousands of distinct texel colours, and without
+            // this the first 255 triangles IN FILE ORDER take every slot (so one sleeve
+            // could own the whole palette) and everything else snaps to the nearest of
+            // those. Merging near-identical colours first spreads the palette across the
+            // whole model, and 32 levels per channel is well beyond what a voxel reads as.
+            var r = Quantise(ToByte(color.X));
+            var g = Quantise(ToByte(color.Y));
+            var b = Quantise(ToByte(color.Z));
             var a = ToByte(color.W);
             var key = (uint)(r << 24 | g << 16 | b << 8 | a);
             if (_lookup.TryGetValue(key, out var existing))
@@ -324,5 +426,8 @@ public static class GlbVoxelizer
         }
 
         private static byte ToByte(float channel) => (byte)Math.Clamp((int)(channel * 255f + 0.5f), 0, 255);
+
+        /// <summary>Snap to 32 levels, keeping 0 and 255 exact so black and white survive.</summary>
+        private static byte Quantise(byte v) => (byte)((v >> 3) * 255 / 31);
     }
 }

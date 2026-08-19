@@ -12,6 +12,7 @@ import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 import { createVoxelMaterial } from './materials.js';
 import { greedyBoxes } from './voxelboxes.js';
+import { greedyMesh } from './greedymesh.js';
 import { GRAVITY, materialFor, surfaceOf, MATERIAL_PRESETS } from './physics.js';
 
 // Render-mesh rebuild granularity, in voxels. Doubled alongside world.js's REFINE = 2 to
@@ -23,7 +24,67 @@ const CHUNK = 32;
 // static body per chunk, rather than stamping a box wherever an 8-voxel block had
 // anything in it. That old lattice was 2 m across on a 0.25 m wall, so a blasted opening
 // still collided as solid for two metres in every direction.
-const COLLIDER_BOX_BUDGET = 96;   // per chunk; voxelboxes.js coarsens rather than truncates
+const COLLIDER_BOX_BUDGET = 48;   // per chunk; voxelboxes.js coarsens rather than truncates
+
+// Collider chunking is SEPARATE from render chunking, and much finer.
+//
+// cannon's narrowphase tests every shape pair of two overlapping bodies, rejecting each
+// by bounding sphere. A collider body covering a 32-voxel (8 m) chunk carries a hundred
+// or more boxes, so any debris within 8 m of it paid for all of them — measured at 53 ms
+// per physics step with the shrapnel removed, against ~95 dynamic bodies, which is not a
+// solver cost at all. Splitting the same geometry into 4 m bodies lets the broadphase
+// discard almost all of it, because a falling brick only overlaps one or two of them.
+// The shapes are identical; only how they are grouped changes.
+// MEASURED, not guessed: 16 was tried and made things worse. It split the fortress into
+// 2 314 collider bodies and the physics step went from 81 ms to 121 ms — the broadphase's
+// per-body sort cost more than the narrowphase saved. 32 keeps bodies chunky and few.
+const COLLIDER_CHUNK = 32;
+
+// Level of detail, in voxels per rendered quad, by distance from the camera in metres.
+// Collision is NEVER decimated -- voxelboxes.js always works from the real grid -- so
+// this trades silhouette precision at range for triangles, and nothing else. Bands carry
+// hysteresis so a player standing on a boundary does not thrash a whole building's mesh.
+const LOD_BANDS = [
+  { near: 0, step: 1 },
+  { near: 55, step: 2 },
+  { near: 110, step: 4 },
+];
+const LOD_HYSTERESIS_M = 10;
+
+/**
+ * One worker shared by every structure. The solve is single-threaded either way, so a
+ * pool would only let two collapses overlap; what matters is that none of them run on
+ * the frame thread. Created lazily and once — a worker per structure would be 44 of them.
+ * If the environment refuses a module worker (older Safari, a file:// page, a locked-down
+ * CSP) this stays null and every structure falls back to solving inline, exactly as before.
+ */
+let supportWorker;
+let supportWorkerFailed = false;
+const supportJobs = new Map(); // job id -> Structure
+let supportJobId = 0;
+
+function getSupportWorker() {
+  if (supportWorker || supportWorkerFailed) return supportWorker ?? null;
+  try {
+    supportWorker = new Worker(new URL('./supportWorker.js', import.meta.url), { type: 'module' });
+    supportWorker.onmessage = (e) => {
+      const { id, generation, failing } = e.data;
+      const structure = supportJobs.get(id);
+      supportJobs.delete(id);
+      structure?._applySolve(failing, generation);
+    };
+    supportWorker.onerror = (err) => {
+      console.warn('[povoxelstrike/structure] support worker failed; solving inline:', err);
+      supportWorkerFailed = true;
+      supportWorker = null;
+    };
+  } catch (err) {
+    console.warn('[povoxelstrike/structure] support worker unavailable; solving inline:', err);
+    supportWorkerFailed = true;
+    supportWorker = null;
+  }
+  return supportWorker;
+}
 
 // Bucket range for the support solve. Lateral step cost is derived per material from its
 // bending capacity, so this is a resolution, not a distance: a material that cantilevers
@@ -66,14 +127,6 @@ function cantileverVoxels(material, scale) {
   return Math.max(1, Math.sqrt((tensile * depth) / (3 * density * GRAVITY)) / scale);
 }
 
-const FACES = [
-  { d: [1, 0, 0], n: [1, 0, 0], c: [[1, 0, 0], [1, 1, 0], [1, 1, 1], [1, 0, 1]] },
-  { d: [-1, 0, 0], n: [-1, 0, 0], c: [[0, 0, 1], [0, 1, 1], [0, 1, 0], [0, 0, 0]] },
-  { d: [0, 1, 0], n: [0, 1, 0], c: [[0, 1, 0], [0, 1, 1], [1, 1, 1], [1, 1, 0]] },
-  { d: [0, -1, 0], n: [0, -1, 0], c: [[0, 0, 0], [1, 0, 0], [1, 0, 1], [0, 0, 1]] },
-  { d: [0, 0, 1], n: [0, 0, 1], c: [[1, 0, 1], [1, 1, 1], [0, 1, 1], [0, 0, 1]] },
-  { d: [0, 0, -1], n: [0, 0, -1], c: [[0, 0, 0], [0, 1, 0], [1, 1, 0], [1, 0, 0]] },
-];
 
 export class Structure {
   /**
@@ -112,17 +165,27 @@ export class Structure {
     this.inverseMatrix = this.group.matrixWorld.clone().invert();
 
     this.material = createVoxelMaterial();
-    this.chunkMeshes = new Map(); // chunkKey -> Mesh
-    this.dirtyChunks = new Set();
+    // Chunk GEOMETRY is kept (so a carve re-meshes only what it touched) but chunks are
+    // no longer separate Meshes: their vertex data is concatenated into ONE mesh per
+    // structure. 44 structures at ~18 chunks each was ~780 draw calls a frame; this is 44.
+    // Concatenation is a memcpy over already-built arrays, which is far cheaper than
+    // re-meshing a whole building, so the incremental win survives.
+    this.chunkData = new Map();   // chunkKey -> { positions, normals, colors } | null
+    this.dirtyChunks = new Set();       // carve-driven: rebuilt promptly
+    this.lodDirtyChunks = new Set();    // LOD-driven: rebuilt on a budget
+    this.lodStep = 1;
+    this._lodDistance = 0;
+    this.mergeDirty = true;
+    this.mesh = null;
     for (const key of this._allChunkKeys()) this.dirtyChunks.add(key);
     this.rebuildDirtyChunks();
 
     // One static body PER CHUNK rather than one for the whole structure: the broadphase
     // can cull a chunk, and a carve rebuilds only the chunks it touched instead of
     // regenerating the entire collider on every shot.
-    this.colliderBodies = new Map(); // chunkKey -> CANNON.Body
+    this.colliderBodies = new Map(); // collider chunk key -> CANNON.Body
     this.colliderDirtyChunks = new Set();
-    for (const key of this._allChunkKeys()) this.colliderDirtyChunks.add(key);
+    for (const key of this._allColliderKeys()) this.colliderDirtyChunks.add(key);
     this.colliderDirty = true;
 
     // Per-palette-entry tables for the stress solve. There are a handful of palette
@@ -148,6 +211,13 @@ export class Structure {
     }
     this.surface = surfaceOf(this.materialTable[0]);
     this.physicsMaterial = physicsMaterials ? physicsMaterials[this.surface] : undefined;
+
+    // Async solve bookkeeping. `onClusters` is set by the engine and is how detached mass
+    // reaches the debris system now that the answer arrives a frame or two after the shot.
+    this.onClusters = null;
+    this.solveGeneration = 0;
+    this.solveInFlight = false;
+    this.solveAgain = false;
 
     this.rebuildCollider();
   }
@@ -202,8 +272,11 @@ export class Structure {
     }
     if (removed.length === 0) return { removed, clusters: [] };
 
-    const clusters = this._detachUnsupported();
     this.colliderDirty = true;
+    // The structural solve is dispatched, not awaited. Detached mass arrives through
+    // onClusters within a frame or two; the crater itself is already in the grid, so what
+    // the player sees on the trigger pull is unchanged.
+    const clusters = this._requestSolve();
     return { removed, clusters };
   }
 
@@ -302,6 +375,21 @@ export class Structure {
         }
       }
     }
+    if (failing.length === 0) return clusters;
+
+    return this._clusterFailing(failing);
+  }
+
+  /**
+   * Turn a flat list of failing cell indices into connected clusters, removing them from
+   * the grid. Shared by the inline and the worker paths.
+   */
+  _clusterFailing(failingInput) {
+    const [nx, ny, nz] = this.dims;
+    const layer = nx * ny;
+    const clusters = [];
+    const failing = [];
+    for (const i of failingInput) if (this.cells[i] !== 0) failing.push(i);
     if (failing.length === 0) return clusters;
 
     const failSet = new Uint8Array(this.cells.length);
@@ -407,6 +495,58 @@ export class Structure {
    * structure was dug (undermining). Returns detached clusters exactly like
    * carveSphere's second half; the caller turns them into debris.
    */
+  /**
+   * Kick off a solve. Returns clusters immediately ONLY on the inline fallback path;
+   * with a worker it returns empty and the result is delivered to `onClusters`.
+   */
+  _requestSolve() {
+    const worker = getSupportWorker();
+    if (!worker) return this._detachUnsupported();
+
+    if (this.solveInFlight) {
+      // Coalesce: one solve in flight per structure. Sustained fire would otherwise queue
+      // a full solve per shot and the worker would fall behind the grid it is solving.
+      this.solveAgain = true;
+      return [];
+    }
+    this.solveInFlight = true;
+    this.solveAgain = false;
+
+    const [nx, , nz] = this.dims;
+    const grounded = new Uint8Array(nx * nz);
+    for (let z = 0; z < nz; z++) {
+      for (let x = 0; x < nx; x++) {
+        if (this.cells[x + z * nx * this.dims[1]] !== 0 && this._groundIntact(x, z)) {
+          grounded[x + z * nx] = 1;
+        }
+      }
+    }
+
+    const id = ++supportJobId;
+    supportJobs.set(id, this);
+    const snapshot = this.cells.slice(); // transferred; the structure keeps its own grid
+    worker.postMessage({
+      id, generation: this.solveGeneration, dims: this.dims, cells: snapshot, grounded,
+      stepCost: this.stepCost, crushStress: this.crushStress, voxelWeight: this.voxelWeight,
+      scale: this.scale, resolution: SUPPORT_RESOLUTION,
+    }, [snapshot.buffer, grounded.buffer]);
+    return [];
+  }
+
+  /**
+   * Apply a worker result. Indices that are already empty are skipped — the grid may have
+   * been carved further while the solve ran, and a result from a MORE solid grid can only
+   * be incomplete, never wrong (see the note in supportWorker.js).
+   */
+  _applySolve(failing, generation) {
+    this.solveInFlight = false;
+    if (generation !== this.solveGeneration) { failing = failing.filter(() => true); }
+
+    const clusters = failing.length > 0 ? this._clusterFailing(failing) : [];
+    if (clusters.length > 0) this.onClusters?.(this, clusters);
+    if (this.solveAgain) { this.solveAgain = false; this._requestSolve(); }
+  }
+
   recheckSupport() {
     if (this.solidCount === 0) return [];
     const clusters = this._detachUnsupported();
@@ -524,11 +664,7 @@ export class Structure {
     // re-meshed and an unrelated one did. The hole existed in the grid and in the
     // collider, but not on screen.
     const cxk = Math.floor(x / CHUNK), cyk = Math.floor(y / CHUNK), czk = Math.floor(z / CHUNK);
-    const mark = (a, b, c) => {
-      const key = `${a},${b},${c}`;
-      this.dirtyChunks.add(key);
-      this.colliderDirtyChunks.add(key);
-    };
+    const mark = (a, b, c) => this.dirtyChunks.add(`${a},${b},${c}`);
     mark(cxk, cyk, czk);
     // A face on a chunk border changes the neighbour chunk's visible faces too.
     const lx = x % CHUNK, ly = y % CHUNK, lz = z % CHUNK;
@@ -538,7 +674,19 @@ export class Structure {
     if (ly === CHUNK - 1) mark(cxk, cyk + 1, czk);
     if (lz === 0) mark(cxk, cyk, czk - 1);
     if (lz === CHUNK - 1) mark(cxk, cyk, czk + 1);
+    // Colliders are chunked separately and finer; only the touched one changes, since a
+    // collider box never depends on a neighbouring chunk's contents.
+    this.colliderDirtyChunks.add(
+      `${Math.floor(x / COLLIDER_CHUNK)},${Math.floor(y / COLLIDER_CHUNK)},${Math.floor(z / COLLIDER_CHUNK)}`);
     this.colliderDirty = true;
+  }
+
+  *_allColliderKeys() {
+    const [nx, ny, nz] = this.dims;
+    for (let z = 0; z < Math.ceil(nz / COLLIDER_CHUNK); z++)
+      for (let y = 0; y < Math.ceil(ny / COLLIDER_CHUNK); y++)
+        for (let x = 0; x < Math.ceil(nx / COLLIDER_CHUNK); x++)
+          yield `${x},${y},${z}`;
   }
 
   *_allChunkKeys() {
@@ -549,54 +697,134 @@ export class Structure {
           yield `${x},${y},${z}`;
   }
 
-  rebuildDirtyChunks() {
+  /**
+   * Re-mesh what changed and re-upload the merged geometry.
+   *
+   * @param budget max LOD-driven chunks to re-mesh this call. Carve-driven chunks ignore
+   *   the budget: a hole has to appear on the frame you made it. LOD chunks do not, and a
+   *   whole building changing band would otherwise re-mesh every chunk in one frame —
+   *   which is the stutter this budget exists to spread out.
+   * @returns how much of the budget was spent, so the caller can share one across the
+   *   whole fortress rather than letting each structure spend it in full.
+   */
+  rebuildDirtyChunks(budget = Infinity) {
+    let spent = 0;
     for (const key of this.dirtyChunks) {
-      const [ckx, cky, ckz] = key.split(',').map(Number);
-      if (ckx < 0 || cky < 0 || ckz < 0) continue;
-      const old = this.chunkMeshes.get(key);
-      if (old) { this.group.remove(old); old.geometry.dispose(); this.chunkMeshes.delete(key); }
-
-      const geometry = this._buildChunkGeometry(ckx * CHUNK, cky * CHUNK, ckz * CHUNK);
-      if (!geometry) continue;
-      const mesh = new THREE.Mesh(geometry, this.material);
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-      this.group.add(mesh);
-      this.chunkMeshes.set(key, mesh);
+      this._meshChunk(key);
+      this.lodDirtyChunks.delete(key); // just rebuilt at the current step
     }
-    this.dirtyChunks.clear();
+    if (this.dirtyChunks.size > 0) { this.dirtyChunks.clear(); this.mergeDirty = true; }
+
+    if (this.lodDirtyChunks.size > 0 && budget > 0) {
+      for (const key of this.lodDirtyChunks) {
+        if (spent >= budget) break;
+        this._meshChunk(key);
+        this.lodDirtyChunks.delete(key);
+        spent++;
+      }
+      this.mergeDirty = true;
+    }
+
+    if (this.mergeDirty) this._merge();
+    return spent;
   }
 
-  _buildChunkGeometry(x0, y0, z0) {
-    const [nx, ny, nz] = this.dims;
-    const positions = [], normals = [], colors = [];
-    for (let z = z0; z < Math.min(z0 + CHUNK, nz); z++) {
-      for (let y = y0; y < Math.min(y0 + CHUNK, ny); y++) {
-        for (let x = x0; x < Math.min(x0 + CHUNK, nx); x++) {
-          const value = this.at(x, y, z);
-          if (value === 0) continue;
-          const p = (value - 1) * 4;
-          const r = this.palette[p] / 255, g = this.palette[p + 1] / 255, b = this.palette[p + 2] / 255;
-          for (const face of FACES) {
-            if (this.at(x + face.d[0], y + face.d[1], z + face.d[2]) !== 0) continue;
-            for (const i of [0, 1, 2, 0, 2, 3]) {
-              positions.push(x + face.c[i][0] - this.cx, y + face.c[i][1], z + face.c[i][2] - this.cz);
-              normals.push(face.n[0], face.n[1], face.n[2]);
-              colors.push(r, g, b);
-            }
-          }
-        }
-      }
+  _meshChunk(key) {
+    const [ckx, cky, ckz] = key.split(',').map(Number);
+    if (ckx < 0 || cky < 0 || ckz < 0) { this.chunkData.delete(key); return; }
+    this.chunkData.set(key, this._buildChunkData(ckx * CHUNK, cky * CHUNK, ckz * CHUNK));
+  }
+
+  /** Concatenate every chunk's vertex data into the single mesh this structure draws. */
+  _merge() {
+    this.mergeDirty = false;
+    let total = 0;
+    for (const data of this.chunkData.values()) if (data) total += data.positions.length;
+
+    if (total === 0) {
+      if (this.mesh) { this.group.remove(this.mesh); this.mesh.geometry.dispose(); this.mesh = null; }
+      return;
     }
-    if (positions.length === 0) return null;
+
+    const positions = new Float32Array(total);
+    const normals = new Float32Array(total);
+    const colors = new Float32Array(total);
+    let at = 0;
+    for (const data of this.chunkData.values()) {
+      if (!data) continue;
+      positions.set(data.positions, at);
+      normals.set(data.normals, at);
+      colors.set(data.colors, at);
+      at += data.positions.length;
+    }
+
     const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
-    geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-    return geometry;
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
+    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    if (this.mesh) { this.group.remove(this.mesh); this.mesh.geometry.dispose(); }
+    this.mesh = new THREE.Mesh(geometry, this.material);
+    this.mesh.castShadow = true;
+    this.mesh.receiveShadow = true;
+    this.group.add(this.mesh);
+  }
+
+  /**
+   * Pick an LOD band for this structure and, when it changes, queue every chunk for a
+   * lazy re-mesh. Called per frame with the camera position; the distance test is a
+   * subtraction, so the per-frame cost is nothing and the work only happens on a change.
+   */
+  updateLod(cameraPosition) {
+    const d = this.group.position.distanceTo(cameraPosition);
+    // Hysteresis: only accept a band change once the camera is clearly past the boundary
+    // in the direction it is moving, so walking along a wall does not re-mesh it repeatedly.
+    let step = this.lodStep;
+    for (let i = LOD_BANDS.length - 1; i >= 0; i--) {
+      const edge = LOD_BANDS[i].near;
+      const bias = LOD_BANDS[i].step > this.lodStep ? LOD_HYSTERESIS_M : -LOD_HYSTERESIS_M;
+      if (d >= edge + bias) { step = LOD_BANDS[i].step; break; }
+    }
+    if (step === this.lodStep) return;
+    this.lodStep = step;
+    for (const key of this._allChunkKeys()) this.lodDirtyChunks.add(key);
+  }
+
+  /**
+   * Merged vertex data for one chunk. The per-voxel face loop this replaces emitted a
+   * quad for every exposed face — a 100-voxel run of flat wall was 10 000 identical
+   * coplanar quads instead of one.
+   */
+  _buildChunkData(x0, y0, z0) {
+    const [nx, ny, nz] = this.dims;
+    return greedyMesh({
+      // Reads the FULL grid, not the chunk: a face on a chunk boundary is only hidden if
+      // the neighbour's voxel is solid, and a chunk blind to its neighbours would seal
+      // itself into a box.
+      get: (x, y, z) => this.at(x, y, z),
+      min: [x0, y0, z0],
+      max: [Math.min(x0 + CHUNK, nx), Math.min(y0 + CHUNK, ny), Math.min(z0 + CHUNK, nz)],
+      palette: this.palette,
+      offset: [this.cx, 0, this.cz],
+      step: this.lodStep,
+    });
   }
 
   // ── Static collision (exact, greedy-merged, one body per chunk) ────────
+
+  /**
+   * Add or remove this structure's collider bodies from the physics world wholesale.
+   * Used by the engine's distance streaming: a building on the far side of the fortress
+   * still has an exact collider, it just is not resident in the broadphase until you are
+   * close enough for it to matter.
+   */
+  setColliderActive(active) {
+    if (active === (this.colliderActive ?? true)) return;
+    this.colliderActive = active;
+    for (const body of this.colliderBodies.values()) {
+      if (active) this.physicsWorld.addBody(body);
+      else this.physicsWorld.removeBody(body);
+    }
+  }
 
   /**
    * Rebuild collision for the chunks a carve touched. Each chunk becomes one static body
@@ -609,7 +837,9 @@ export class Structure {
     if (this.colliderDirtyChunks.size === 0) return;
 
     const [nx, ny, nz] = this.dims;
-    const cx = Math.ceil(nx / CHUNK), cy = Math.ceil(ny / CHUNK), cz = Math.ceil(nz / CHUNK);
+    const cx = Math.ceil(nx / COLLIDER_CHUNK);
+    const cy = Math.ceil(ny / COLLIDER_CHUNK);
+    const cz = Math.ceil(nz / COLLIDER_CHUNK);
     const px = this.group.position, ry = this.group.rotation.y;
 
     for (const key of this.colliderDirtyChunks) {
@@ -618,8 +848,10 @@ export class Structure {
       if (old) { this.physicsWorld.removeBody(old); this.colliderBodies.delete(key); }
       if (ci < 0 || cj < 0 || ck < 0 || ci >= cx || cj >= cy || ck >= cz) continue;
 
-      const x0 = ci * CHUNK, y0 = cj * CHUNK, z0 = ck * CHUNK;
-      const w = Math.min(CHUNK, nx - x0), h = Math.min(CHUNK, ny - y0), d = Math.min(CHUNK, nz - z0);
+      const x0 = ci * COLLIDER_CHUNK, y0 = cj * COLLIDER_CHUNK, z0 = ck * COLLIDER_CHUNK;
+      const w = Math.min(COLLIDER_CHUNK, nx - x0);
+      const h = Math.min(COLLIDER_CHUNK, ny - y0);
+      const d = Math.min(COLLIDER_CHUNK, nz - z0);
       const sub = new Uint8Array(w * h * d);
       let any = false;
       for (let z = 0; z < d; z++) {
@@ -647,7 +879,9 @@ export class Structure {
       }
       body.position.set(px.x, px.y, px.z);
       body.quaternion.setFromEuler(0, ry, 0);
-      this.physicsWorld.addBody(body);
+      // Respect the streaming state: a chunk rebuilt while this structure is streamed out
+      // must stay out, or carving something distant would quietly resurrect it.
+      if (this.colliderActive ?? true) this.physicsWorld.addBody(body);
       this.colliderBodies.set(key, body);
     }
     this.colliderDirtyChunks.clear();
@@ -667,8 +901,8 @@ export class Structure {
   }
 
   dispose() {
-    for (const mesh of this.chunkMeshes.values()) { this.group.remove(mesh); mesh.geometry.dispose(); }
-    this.chunkMeshes.clear();
+    if (this.mesh) { this.group.remove(this.mesh); this.mesh.geometry.dispose(); this.mesh = null; }
+    this.chunkData.clear();
     this.material.dispose();
     this.scene.remove(this.group);
     // Per-chunk collider bodies, not the single `this.body` that used to exist. Removing

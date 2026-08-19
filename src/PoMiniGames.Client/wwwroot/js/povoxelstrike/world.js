@@ -59,6 +59,16 @@ const REFINE = 2;
 // alone, which therefore has the coarsest voxels in the fortress (0.5 vs 0.25 units).
 const REFINE_CELL_BUDGET = 1_200_000;
 
+// Refining is pointless below this world voxel size and actively harmful: a life-size
+// import is already at ~0.03 m per voxel, and doubling that grid would put a 2 m figure
+// on a finer lattice than the 116 m curtain wall while multiplying its cell count by
+// eight — cells the stress solver walks on every nearby carve.
+const MIN_REFINE_VOXEL_M = 0.12;
+
+/** Life-size. See the import placement block for why height, not longest axis. */
+const IMPORT_HEIGHT_M = 1.9;
+const IMPORT_COPIES = 2;
+
 function refine(volume) {
   if (REFINE <= 1) return volume;
   const [nx, ny, nz] = volume.dims;
@@ -205,29 +215,46 @@ export function buildWorld(scene, physicsWorld, volumes, seed, physicsMaterials 
     }
   }
 
-  // Imported GLB assets are scattered as siege dressing OUTSIDE the walls, where they
-  // cannot wall off a gate or bury the chalice.
+  // ── Imported GLB assets: the fortress garrison ────────────────────────────
+  //
+  // Imports stand INSIDE the walls, in the two wards, at life size.
+  //
+  // Height, not longest-axis size. Every other volume here is architecture and is scaled
+  // by its biggest dimension, but an import is usually a character or an object with a
+  // known real height, and "make the longest axis 8-14 m" turns a person into a 14 m
+  // colossus lying about how big the fortress is. Scaling by the Y extent to
+  // IMPORT_HEIGHT_M means an imported human is exactly as tall as the player, which is
+  // the whole point of putting one in a courtyard: the 15 m curtain wall only reads as
+  // 15 m if there is something of KNOWN size standing next to it.
+  const importSpots = [];
+  for (let i = 0; i < volumes.length * IMPORT_COPIES; i++) {
+    // Alternate wards so the garrison is spread through the fortress rather than ringed
+    // at one radius, and walk the angle by the golden ratio so copies never line up.
+    const inner = i % 2 === 1;
+    const radius = inner
+      ? (INNER_HALF + KEEP_HALF) / 2
+      : (OUTER_HALF + INNER_HALF) / 2;
+    const angle = i * 2.39996 + rand() * 0.5;
+    const r = radius + (rand() - 0.5) * 6;
+    importSpots.push({ x: Math.cos(angle) * r, z: Math.sin(angle) * r });
+  }
+
+  let spot = 0;
   for (const volume of volumes) {
-    const [lo, hi] = volume.sizeRange ?? [8, 14];
-    const target = lo + rand() * (hi - lo);
-    const maxDim = Math.max(...volume.dims);
-    for (let i = 0; i < 2; i++) {
-      // Retry rather than accept: the spawn apron is a narrow band of the ring, and a
-      // crate dropped on it fills the entire first frame with one asset instead of the
-      // fortress. Give up after a few tries and skip the copy.
-      let x = 0, z = 0, ok = false;
-      for (let attempt = 0; attempt < 12 && !ok; attempt++) {
-        const angle = rand() * Math.PI * 2;
-        const r = OUTER_HALF + 8 + rand() * (ARENA_HALF - OUTER_HALF - 16);
-        x = Math.cos(angle) * r;
-        z = Math.sin(angle) * r;
-        ok = Math.hypot(x - 0, z - SPAWN_Z) > 26;
-      }
-      if (!ok) continue;
+    const height = Math.max(1, volume.dims[1]);
+    for (let i = 0; i < IMPORT_COPIES; i++) {
+      const at = importSpots[spot++];
+      if (!at) continue;
+      // Keep both gate passages walkable — a figure is small, but a figure standing in a
+      // doorway is still the one thing between the player and the route in.
+      if (Math.abs(at.x) < 8 && Math.abs(Math.abs(at.z) - OUTER_HALF) < 10) continue;
+      if (Math.abs(at.x) < 8 && Math.abs(Math.abs(at.z) - INNER_HALF) < 9) continue;
       placements.push({
-        volume, x, z,
-        rotationY: Math.floor(rand() * 4) * Math.PI / 2,
-        tag: 'siege', explicitScale: target / maxDim,
+        volume, x: at.x, z: at.z,
+        // Face the keep. A garrison that all looks the same way reads as staged; a
+        // garrison facing the thing they are guarding reads as a garrison.
+        rotationY: Math.atan2(-at.x, -at.z) + (rand() - 0.5) * 0.6,
+        tag: 'import', explicitScale: IMPORT_HEIGHT_M / height,
       });
     }
   }
@@ -236,9 +263,13 @@ export function buildWorld(scene, physicsWorld, volumes, seed, physicsMaterials 
   // Wall pads first, then the perimeter wall, then the mesh — the terrain mesh is built
   // exactly once and every heightmap edit has to land before it.
   for (const p of placements) {
-    if (p.tag === 'ward' || p.tag === 'siege') {
+    if (p.tag === 'ward') {
       const maxDim = Math.max(...p.volume.dims);
       p.y = terrain.flatten(p.x, p.z, maxDim * p.explicitScale * 0.6);
+    } else if (p.tag === 'import') {
+      // Imports stand on the plateau the fortress is built on. No pad: a 2 m figure does
+      // not need one, and flattening a disc under each would pock the courtyards.
+      p.y = terrain.heightAt(p.x, p.z);
     } else {
       p.y = plateau; // ring pieces share the plateau height by construction
     }
@@ -248,7 +279,10 @@ export function buildWorld(scene, physicsWorld, volumes, seed, physicsMaterials 
 
   const structures = [];
   for (const p of placements) {
-    const refined = refine(p.volume);
+    // Decide on refining from the size the voxels would END UP, which needs the unrefined
+    // scale first — hence computing it before refine() rather than after.
+    const baseScale = p.explicitScale !== undefined ? p.explicitScale : FORTRESS_SCALE;
+    const refined = baseScale >= MIN_REFINE_VOXEL_M ? refine(p.volume) : p.volume;
     const scale = p.explicitScale !== undefined
       ? p.explicitScale * (p.volume.dims[0] / refined.dims[0])
       : scaleFor(p.volume, refined);

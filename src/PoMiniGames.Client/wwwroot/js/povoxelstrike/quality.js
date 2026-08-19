@@ -73,13 +73,20 @@ export function resolveQuality(tier = detectTier()) {
     envMap: at('high'),
     shadowMapSize: at('ultra') ? 4096 : at('high') ? 2048 : 1024,
     timeOfDay: true,                // pure uniform updates; free at every tier
+    // Renders fewer pixels when frames run long, then hands them back when they do not.
+    // Off at ultra: a machine on that tier asked for the picture, not the frame rate.
+    dynamicResolution: !at('ultra'),
     // Content
     particles: at('low') ? (at('high') ? 4000 : 1200) : 0,
     decals: at('medium') ? (at('ultra') ? 120 : 48) : 0,
     // Simulated voxels in flight. These are real rigid bodies, so this is the single
     // most CPU-expensive setting in the file: every one of them is a broadphase entry
     // and a contact solve. Low tier keeps the old vanish-with-a-puff behaviour.
-    shrapnel: at('medium') ? (at('ultra') ? 260 : at('high') ? 180 : 90) : 0,
+    // MEASURED against the physics step, not guessed. Every one of these is a rigid body
+    // in cannon, and cannon costs roughly 0.15 ms per dynamic body per step in JS: 180 of
+    // them measured 28 ms of an 81 ms step, on their own. These counts keep the effect —
+    // stone visibly leaving the wall — at a price the simulation can pay.
+    shrapnel: at('medium') ? (at('ultra') ? 140 : at('high') ? 90 : 48) : 0,
     // Audio (cost is CPU on the audio thread, not GPU, but it tiers the same way)
     spatialAudio: true,
     convolutionReverb: at('medium'),

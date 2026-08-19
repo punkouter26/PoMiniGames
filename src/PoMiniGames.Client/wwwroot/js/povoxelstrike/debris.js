@@ -14,7 +14,10 @@ import { createVoxelMaterial } from './materials.js';
 import { greedyBoxes } from './voxelboxes.js';
 import { materialFor, massOf, surfaceOf, MATERIAL_PRESETS } from './physics.js';
 
-export const MAX_BODIES = 150;
+// Dynamic rigid bodies are the dominant physics cost (see quality.js). 150 debris pieces
+// plus a shrapnel field put ~300 dynamic bodies in the world and the step measured 81 ms;
+// this is the debris half of bringing that back under control.
+export const MAX_BODIES = 90;
 const MAX_PARTICLES = 2000;
 const FRAG_FLOOR = 14;        // voxels; smaller clusters burst straight to particles
 const FRAG_IMPACT_SPEED = 8;  // m/s relative velocity that fragments on impact
@@ -29,7 +32,9 @@ const GRAVITY = -9.81;
 // Compound-collider budget per falling piece. A cluster is usually a handful of boxes
 // after greedy merging; the cap is there so one enormous collapse cannot put a thousand
 // shapes on a single body.
-const PIECE_BOX_BUDGET = 24;
+// Compound shapes per falling piece. 24 was tried first and cost more than it bought:
+// an L-shaped cornice reads as an L with six boxes just as well as with twenty-four.
+const PIECE_BOX_BUDGET = 6;
 // What survives a wall. Not zero: a blast big enough to breach masonry still shakes what
 // is behind it, and a hard zero makes rubble in the lee of a wall look frozen.
 const BLAST_SHIELDING = 0.18;

@@ -303,7 +303,11 @@ export class Vfx {
       this.combinePass.material.uniforms.shaftEnabled.value = this.q.godRays ? 1 : 0;
       this.composer.addPass(this.combinePass);
 
-      this.bloomPass = new UnrealBloomPass(new THREE.Vector2(w, h), 0.35, 0.5, 0.82);
+      // Bloom at HALF resolution. Its mip chain is the most expensive thing in the
+      // chain, it is a low-frequency effect by definition, and at half res nobody has
+      // ever picked it out of a line-up.
+      this.bloomPass = new UnrealBloomPass(
+        new THREE.Vector2(Math.max(1, w >> 1), Math.max(1, h >> 1)), 0.35, 0.5, 0.82);
       this.composer.addPass(this.bloomPass);
       this.composer.addPass(new OutputPass());
       if (this.q.smaa) {

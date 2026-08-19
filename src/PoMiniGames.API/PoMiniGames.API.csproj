@@ -34,6 +34,18 @@
     <PackageReference Include="MinVer" PrivateAssets="all" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- PoVoxelStrike author-time voxel assets (PRD §5.4): the drop folder ships INSIDE
+         the deployment package (WEBSITE_RUN_FROM_PACKAGE mounts it read-only; ingestion
+         output goes to the writable path from config). Without this include a publish
+         carries no GLBs and every deployed arena silently falls back to procedural
+         primitives. drop/ only — converted/ is a build product and stays out of both
+         git and the package. -->
+    <Content Include="App_Data\povoxelstrike\drop\**"
+             CopyToOutputDirectory="Never"
+             CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <!-- Expose internals (e.g. PoRacerSim) to the unit-test tier so the AI sim can be
        driven headlessly in a bot-only race for regression testing. -->
   <ItemGroup>
@@ -59,6 +71,8 @@
     <PackageReference Include="Microsoft.Extensions.Caching.Hybrid" />
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" />
     <PackageReference Include="Scalar.AspNetCore" />
+    <!-- PoVoxelStrike: GLB → voxel ingestion (Features/PoVoxelStrike/GlbVoxelizer). -->
+    <PackageReference Include="SharpGLTF.Core" />
     <!-- Logging / Telemetry -->
     <PackageReference Include="Azure.Monitor.OpenTelemetry.AspNetCore" />
     <PackageReference Include="Serilog.AspNetCore" />

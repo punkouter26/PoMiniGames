@@ -95,7 +95,7 @@ public sealed class AzureOpenAIService : IOpenAIService
         {
             _logger.MockEnabled(_environment.EnvironmentName);
             var mockQuestions = MockOpenAIService.GenerateQuestions(category, count);
-            QuestionPoolCache.AddOrUpdate(category, _ => new List<QuizQuestion>(mockQuestions), (_, existing) => { lock(existing) { existing.AddRange(mockQuestions); } return existing; });
+            QuestionPoolCache.AddOrUpdate(category, _ => new List<QuizQuestion>(mockQuestions), (_, existing) => { lock (existing) { existing.AddRange(mockQuestions); } return existing; });
             return mockQuestions;
         }
 

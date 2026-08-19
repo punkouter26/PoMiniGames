@@ -15,52 +15,43 @@ public class DevLoginIntakeTests
     // instead of colliding on one name-keyed session (see DevLoginIntake). These
     // assertions therefore pin the stem and the shape of the suffix, never the
     // whole literal — the suffix is Random.Shared and differs per call.
-    [Fact]
-    public void BuildProfile_WithNoInput_UsesLocalDeveloperFallback()
+    [Theory]
+    // No input at all → the Local Developer fallback. UserId and Email are slugged from
+    // the suffixed display name, so they carry the same suffix — that is what keeps the
+    // two tabs distinct all the way down to the leaderboard row.
+    [InlineData(false, null, null, null, null,
+        "^Local Developer-[0-9]{6}$", "^dev-local-developer-[0-9]{6}$", @"^local-developer-[0-9]{6}@local\.dev$")]
+    // A signed-in userName seeds the stem; ANON still gets the six-digit suffix appended.
+    [InlineData(false, null, null, null, "ANON",
+        "^ANON[0-9]{6}$", "^dev-anon", null)]
+    // Disallowed characters are stripped from the display name, not escaped — and nothing
+    // of the tag survives between the stem and the suffix.
+    [InlineData(true, null, "Bob<script>", null, null,
+        "^Bobscript-[0-9]{6}$", null, null)]
+    // An explicit UserId/Email is taken verbatim (trimmed) and never suffixed — the caller
+    // asked for that exact identity. Only the display name, which the caller does not own
+    // the uniqueness of, picks up the suffix.
+    [InlineData(true, "  custom-id ", "Alice", " alice@x.io ", null,
+        "^Alice-[0-9]{6}$", "^custom-id$", @"^alice@x\.io$")]
+    public void BuildProfile_SanitisesNames_SuffixesDisplayName_AndSlugsDerivedFields(
+        bool sendRequest, string? requestUserId, string? requestDisplayName, string? requestEmail,
+        string? userName, string displayNamePattern, string? userIdPattern, string? emailPattern)
     {
-        var profile = DevLoginIntake.BuildProfile(request: null, userName: null);
+        var request = sendRequest
+            ? new DevLoginRequest(UserId: requestUserId, DisplayName: requestDisplayName, Email: requestEmail)
+            : null;
 
-        profile.DisplayName.Should().MatchRegex(@"^Local Developer-[0-9]{6}$");
-        // UserId and Email are slugged from the suffixed display name, so they
-        // carry the same suffix — that is what keeps the two tabs distinct all
-        // the way down to the leaderboard row.
-        profile.UserId.Should().MatchRegex(@"^dev-local-developer-[0-9]{6}$");
-        profile.Email.Should().MatchRegex(@"^local-developer-[0-9]{6}@local\.dev$");
-    }
+        var profile = DevLoginIntake.BuildProfile(request, userName);
 
-    [Fact]
-    public void BuildProfile_WithAnon_AppendsSixDigitSuffix()
-    {
-        var profile = DevLoginIntake.BuildProfile(request: null, userName: "ANON");
-
-        profile.DisplayName.Should().MatchRegex("^ANON[0-9]{6}$");
-        profile.UserId.Should().StartWith("dev-anon");
-    }
-
-    [Fact]
-    public void BuildProfile_StripsDisallowedCharactersFromDisplayName()
-    {
-        var profile = DevLoginIntake.BuildProfile(
-            new DevLoginRequest(UserId: null, DisplayName: "Bob<script>", Email: null), userName: null);
-
-        // The angle brackets are stripped, not escaped — and nothing of the tag
-        // survives between the stem and the suffix.
-        profile.DisplayName.Should().MatchRegex(@"^Bobscript-[0-9]{6}$");
-    }
-
-    [Fact]
-    public void BuildProfile_PrefersExplicitRequestFields()
-    {
-        var profile = DevLoginIntake.BuildProfile(
-            new DevLoginRequest(UserId: "  custom-id ", DisplayName: "Alice", Email: " alice@x.io "),
-            userName: null);
-
-        // An explicit UserId/Email is taken verbatim (trimmed) and never suffixed —
-        // the caller asked for that exact identity. Only the display name, which
-        // the caller does not own the uniqueness of, picks up the suffix.
-        profile.UserId.Should().Be("custom-id");
-        profile.DisplayName.Should().MatchRegex(@"^Alice-[0-9]{6}$");
-        profile.Email.Should().Be("alice@x.io");
+        profile.DisplayName.Should().MatchRegex(displayNamePattern);
+        if (userIdPattern is not null)
+        {
+            profile.UserId.Should().MatchRegex(userIdPattern);
+        }
+        if (emailPattern is not null)
+        {
+            profile.Email.Should().MatchRegex(emailPattern);
+        }
     }
 
     [Fact]

@@ -24,6 +24,10 @@
     <!-- §3.4 Native HybridCache (stampede protection + L1/L2). Memoizes expensive
          Azure OpenAI generations at the slice boundary. -->
     <PackageVersion Include="Microsoft.Extensions.Caching.Hybrid" Version="10.7.0" />
+    <!-- Transitive pin: Microsoft.AspNetCore.OpenApi pulls Microsoft.OpenApi; with
+         CentralPackageTransitivePinningEnabled this holds it at a current version so
+         the NuGet CVE audit (which fails the build) can't be tripped by an old
+         transitive. No project references it directly. -->
     <PackageVersion Include="Microsoft.OpenApi" Version="2.7.5" />
     <PackageVersion Include="Scalar.AspNetCore" Version="2.13.10" />
     <!-- IdentityModel — security-pinned transitive deps (CVE mitigation, upgrade from 8.0.1) -->
@@ -59,6 +63,9 @@
          stumbled and cannot predict.]" rather than a startup failure. Bump both together. -->
     <PackageVersion Include="Azure.AI.OpenAI" Version="2.9.0-beta.1" />
     <!-- Health Checks -->
+    <!-- PoVoxelStrike asset pipeline: GLB parsing for the startup voxelizer. API-side
+         only — must never be referenced from the Client, whose publish is trim-audited. -->
+    <PackageVersion Include="SharpGLTF.Core" Version="1.0.6" />
     <!-- Testing -->
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageVersion Include="xunit" Version="2.9.3" />

@@ -19,14 +19,24 @@ public sealed class AntiforgeryGateTests : IClassFixture<TestWebApplicationFacto
     public AntiforgeryGateTests(TestWebApplicationFactory factory) => _factory = factory;
 
     /// <summary>
-    /// The core guarantee: a state-changing call with no token is refused. Asserting on the
-    /// typed error code as well as the status matters — a plain 403 could equally come from
-    /// the authorization gate, which would let an antiforgery regression pass unnoticed.
+    /// The core guarantee: a state-changing call without a VALID token is refused. Asserting
+    /// on the typed error code as well as the status matters — a plain 403 could equally come
+    /// from the authorization gate, which would let an antiforgery regression pass unnoticed.
     /// </summary>
-    [Fact]
-    public async Task Post_WithoutToken_IsRefusedByTheAntiforgeryGate()
+    [Theory]
+    // No token at all.
+    [InlineData(null)]
+    // A forged token must not be accepted either. Guards against a future "if a header is
+    // present, wave it through" shortcut, which would satisfy the no-token case while
+    // providing no protection at all.
+    [InlineData("not-a-real-token")]
+    public async Task Post_WithoutValidToken_IsRefusedByTheAntiforgeryGate(string? forgedToken)
     {
         using var client = _factory.CreateClient();
+        if (forgedToken is not null)
+        {
+            client.DefaultRequestHeaders.Add("X-CSRF-TOKEN", forgedToken);
+        }
 
         var response = await client.PostAsJsonAsync("/api/pobrawl/highscores", new
         {
@@ -62,28 +72,6 @@ public sealed class AntiforgeryGateTests : IClassFixture<TestWebApplicationFacto
         // own terms. The assertion that matters is that it got *past* the CSRF gate.
         response.StatusCode.Should().NotBe(HttpStatusCode.Forbidden,
             because: "a valid synchroniser token must let the request reach its endpoint");
-    }
-
-    /// <summary>
-    /// A forged token must not be accepted. Guards against a future "if a header is present,
-    /// wave it through" shortcut, which would satisfy the two tests above while providing no
-    /// protection at all.
-    /// </summary>
-    [Fact]
-    public async Task Post_WithGarbageToken_IsStillRefused()
-    {
-        using var client = _factory.CreateClient();
-        client.DefaultRequestHeaders.Add("X-CSRF-TOKEN", "not-a-real-token");
-
-        var response = await client.PostAsJsonAsync("/api/pobrawl/highscores", new
-        {
-            PlayerInitials = "BAD",
-            KoTimeSeconds = 1.0,
-            Character = "obama",
-            Date = DateTime.UtcNow.ToString("o"),
-        });
-
-        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
 
     /// <summary>

@@ -13,7 +13,8 @@ public enum PendingScoreKind
     PoBrawl,
     /// <summary>A PlayerStats PUT (adaptive-ELO games mirror their rating into it).</summary>
     PlayerStats,
-    PoSports
+    PoSports,
+    PoVoxelStrike
 }
 
 /// <summary>
@@ -74,6 +75,9 @@ public sealed class ScoreSyncService
 
     public void EnqueuePoSports(PoSportsHighScore entry) =>
         Enqueue(PendingScoreKind.PoSports, JsonSerializer.Serialize(entry, ApiJsonContext.Default.PoSportsHighScore));
+
+    public void EnqueuePoVoxelStrike(PoVoxelStrikeRunRequest entry) =>
+        Enqueue(PendingScoreKind.PoVoxelStrike, JsonSerializer.Serialize(entry, ApiJsonContext.Default.PoVoxelStrikeRunRequest));
 
     public void EnqueuePlayerStats(PendingPlayerStats entry) =>
         Enqueue(PendingScoreKind.PlayerStats, JsonSerializer.Serialize(entry, ApiJsonContext.Default.PendingPlayerStats));
@@ -167,8 +171,19 @@ public sealed class ScoreSyncService
                 ? Disposition.Synced : Disposition.Retry,
         PendingScoreKind.PlayerStats => await SubmitPlayerStatsAsync(item.PayloadJson),
         PendingScoreKind.PoSports => await SubmitPoSportsAsync(item.PayloadJson),
+        PendingScoreKind.PoVoxelStrike => await SubmitPoVoxelStrikeAsync(item.PayloadJson),
         _ => Disposition.Drop, // unknown kind: drop rather than wedge the queue forever
     };
+
+    private async Task<Disposition> SubmitPoVoxelStrikeAsync(string payloadJson)
+    {
+        var request = JsonSerializer.Deserialize(payloadJson, ApiJsonContext.Default.PoVoxelStrikeRunRequest);
+        if (request is null) return Disposition.Drop; // malformed: unreplayable
+
+        var result = await _api.SubmitPoVoxelStrikeRunAsync(request);
+        if (result.IsSaved) return Disposition.Synced;
+        return result.ShouldRetry ? Disposition.Retry : Disposition.Drop;
+    }
 
     private async Task<Disposition> SubmitPoSportsAsync(string payloadJson)
     {

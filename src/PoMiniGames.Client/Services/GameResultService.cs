@@ -211,6 +211,28 @@ public sealed class GameResultService
             },
             () => _sync.EnqueuePoSports(highScore!));
 
+    /// <summary>Records the PoVoxelStrike run locally and submits it to the board together.</summary>
+    /// <remarks>Every finished run submits — the server descriptor ratchets to the player's
+    /// best, so a lower score is an accepted no-op rather than a rejection.
+    /// <paramref name="onNewBest"/> fires only on a confirmed server save whose stored row
+    /// carries this run's score — i.e. the ratchet advanced. A parked (offline) submit never
+    /// fires it: no confirmation, no badge.</remarks>
+    public Task<PlayerStats> RecordAndSubmitPoVoxelStrikeAsync(
+        string playerName, GameResult result, PoVoxelStrikeRunRequest? run,
+        Action<bool>? onNewBest = null) =>
+        RecordAndSubmitCoreAsync("povoxelstrike", playerName, result, run is not null,
+            async () =>
+            {
+                var submitted = await _api.SubmitPoVoxelStrikeRunAsync(run!);
+                if (submitted.IsSaved)
+                {
+                    onNewBest?.Invoke(submitted.Value is { } saved && saved.Score == run!.Score);
+                    return SubmitOutcome.Saved;
+                }
+                return submitted.ShouldRetry ? SubmitOutcome.Park : SubmitOutcome.Rejected;
+            },
+            () => _sync.EnqueuePoVoxelStrike(run!));
+
     /// <summary>Records the PoBrawl outcome locally and submits the fastest-KO score together.</summary>
     /// <remarks>The PoBrawl submit API only signals reachability (null response), so a
     /// failure always parks for replay — there is no explicit-rejection path here.</remarks>

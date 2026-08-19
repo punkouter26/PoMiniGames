@@ -35,8 +35,9 @@ internal static class TelemetryExtensions
             // Exceptions are always emitted at Error level so failures remain fully visible.
             // SamplingRatio is the documented control surface on AzureMonitorOptions for
             // AdaptiveSampling; the path-level Filter below is what stops a 5× burst on
-            // a single endpoint from blowing the ingestion budget. A safety-net alert
-            // (alerts.bicep `IngestionBudget`) fires if HourlyCount exceeds 50k.
+            // a single endpoint from blowing the ingestion budget. (A safety-net
+            // `IngestionBudget` alert is AUTHORED in infra/alerts.bicep but that file is
+            // not wired into main.bicep — no such alert is live in Azure today.)
             var samplingRatio = builder.Environment.IsProduction() ? 0.1f : 1.0f;
 
             builder.Services.AddOpenTelemetry()

@@ -59,16 +59,23 @@ public class AuthDevLoginEndpointsTests : IClassFixture<LocalAuthWebApplicationF
         logoutResponse.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
-    [Fact]
-    public async Task DevLogin_WithValidCredentials_PersistsAcrossRequests()
+    [Theory]
+    // Session persistence: consecutive /api/auth/me calls stay authenticated.
+    [InlineData("persistent-user", "Persistent User", "persistent@test.local")]
+    // Dev login accepts various input patterns in development.
+    [InlineData("dev-user-empty-test", "Test User", "test@local.dev")]
+    // The email claim survives the cookie round-trip and comes back on /api/auth/me.
+    [InlineData("email-test-user", "Email Test User", "test@example.com")]
+    public async Task DevLogin_PersistsSessionAcrossRequests_WithUserIdAndEmail(
+        string userId, string displayName, string email)
     {
         var client = await CreateCookieClientAsync();
 
         var loginResponse = await client.PostAsJsonAsync("/api/auth/dev-login", new
         {
-            userId = "persistent-user",
-            displayName = "Persistent User",
-            email = "persistent@test.local",
+            userId,
+            displayName,
+            email,
         });
         loginResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -81,24 +88,9 @@ public class AuthDevLoginEndpointsTests : IClassFixture<LocalAuthWebApplicationF
         secondAuth.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var profile = await client.GetFromJsonAsync<AuthUserProfile>("/api/auth/me");
-        profile!.UserId.Should().Be("persistent-user");
-    }
-
-    [Fact]
-    public async Task DevLogin_InvalidRequest_AllowsPartialData()
-    {
-        var client = await CreateCookieClientAsync();
-
-        // Dev login accepts various input patterns in development
-        var loginResponse = await client.PostAsJsonAsync("/api/auth/dev-login", new
-        {
-            userId = "dev-user-empty-test",
-            displayName = "Test User",
-            email = "test@local.dev",
-        });
-
-        // Should accept the request
-        loginResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        profile.Should().NotBeNull();
+        profile!.UserId.Should().Be(userId);
+        profile.Email.Should().Be(email);
     }
 
     [Fact]
@@ -142,23 +134,8 @@ public class AuthDevLoginEndpointsTests : IClassFixture<LocalAuthWebApplicationF
         logoutResponse.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NoContent);
     }
 
-    [Fact]
-    public async Task AuthMe_WithCookie_RetainsEmailField()
-    {
-        var client = await CreateCookieClientAsync();
-
-        var loginResponse = await client.PostAsJsonAsync("/api/auth/dev-login", new
-        {
-            userId = "email-test-user",
-            displayName = "Email Test User",
-            email = "test@example.com",
-        });
-        loginResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-
-        var profile = await client.GetFromJsonAsync<AuthUserProfile>("/api/auth/me");
-        profile.Should().NotBeNull();
-        profile!.Email.Should().Be("test@example.com");
-    }
+    // AuthMe_WithCookie_RetainsEmailField was a verbatim subset of the theory above —
+    // its scenario survives as the "email-test-user" row.
 
     // §2 CSRF: /api/auth/dev-login and /dev-logout are POSTs under /api/*, so they now sit
     // behind the antiforgery gate like every other write. HandleCookies is what makes the

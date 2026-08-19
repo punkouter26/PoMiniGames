@@ -61,6 +61,14 @@
          regenerate the .webp too or the game falls back to colored rectangles. -->
     <Content Remove="wwwroot\images\PoSports\**\frames\**" />
     <Content Remove="wwwroot\images\PoSports\**\spritesheet.png" />
+    <!-- 3. *-spritesheet/ (2026-08-18 cleanup audit): the capitalized
+         Kim-/Matt-/Mom-/Nick-/Tong-spritesheet dirs are the raw export source that
+         scripts/posports-assets.ps1 maps INTO the lowercase runtime dirs.
+         js/posports/sprites.js reads only the lowercase paths, but the source
+         tree's webp+atlas copies (~18.3 MB) were still being published and
+         precached. Exclude the whole source tree; it stays in the repo for
+         re-exports only. -->
+    <Content Remove="wwwroot\images\PoSports\*-spritesheet\**" />
   </ItemGroup>
 
   <ItemGroup>

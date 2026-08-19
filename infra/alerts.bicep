@@ -1,3 +1,7 @@
+// NOT DEPLOYED (2026-08-18 audit): this file is not a `module` in main.bicep and no
+// pipeline references it, so none of these alerts exist in Azure. To activate, add a
+// module block in main.bicep and pass the four params below — do not assume any alert
+// here is live until that lands.
 targetScope = 'resourceGroup'
 
 param location string = 'westus2'

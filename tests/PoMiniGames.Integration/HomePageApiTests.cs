@@ -43,31 +43,22 @@ public sealed class HomePageApiTests : IClassFixture<TestWebApplicationFactory>,
         return Task.CompletedTask;
     }
 
-    // ── Leaderboard returns OK for every game ────────────────────────────────
-
-    [Theory]
-    [InlineData("connectfive")]
-    [InlineData("tictactoe")]
-    [InlineData("couplequiz")]
-    [InlineData("funquiz")]
-    public async Task GetLeaderboard_ReturnsOk_ForEachGame(string gameId)
-    {
-        var response = await _client.GetAsync($"/api/{gameId}/statistics/leaderboard");
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-    }
-
-    // ── Leaderboard read contract: JSON array, content-type, limit ───────────
+    // ── Leaderboard read contract: OK per game, JSON array, content-type, limit ──
 
     /// <summary>
     /// The whole read contract for a game leaderboard in one place: 200, a JSON
     /// content-type, a JSON array body, and a row count that honours the limit (10 by
-    /// default, or whatever <c>?limit=</c> asked for).
+    /// default, or whatever <c>?limit=</c> asked for) — for every game shown on the
+    /// Home page.
     /// </summary>
     /// <remarks>
     /// Consolidated from four methods (empty-array / explicit-limit / default-limit /
     /// content-type) that each re-issued the same GET and asserted one facet of the same
     /// response. The Integration tier is at its 50-method ceiling (100/50/25/25 rule) and
     /// the slots were needed for the PoSurvive balance tests; coverage is unchanged.
+    /// The former GetLeaderboard_ReturnsOk_ForEachGame theory (status code only, one row
+    /// per Home-page game) also folded in here: its couplequiz/funquiz rows appear below,
+    /// and connectfive/tictactoe were already covered.
     /// </remarks>
     [Theory]
     // Default limit is 10. connectfive is never written to by this suite (the round-trip
@@ -77,6 +68,10 @@ public sealed class HomePageApiTests : IClassFixture<TestWebApplicationFactory>,
     [InlineData("connectfive", 5, 5, true)]
     // Second game, default limit — the contract is per-game, not per-route-instance.
     [InlineData("tictactoe", null, 10, false)]
+    // Remaining Home-page games. Keep in sync with AllGameIds / GameKey.WellKnown.
+    // Not asserted empty: other suites sharing the Azurite backend may have written rows.
+    [InlineData("couplequiz", null, 10, false)]
+    [InlineData("funquiz", null, 10, false)]
     public async Task GetLeaderboard_ReturnsJsonArray_HonouringLimit(
         string gameId, int? limit, int expectedMaxRows, bool expectEmpty)
     {
@@ -115,14 +110,21 @@ public sealed class HomePageApiTests : IClassFixture<TestWebApplicationFactory>,
 
     // ── Round-trip: save stats → player appears on leaderboard ───────────────
 
-    [Fact]
-    public async Task SavePlayerStats_ThenLeaderboard_ContainsPlayer()
+    /// <summary>
+    /// Save stats → the player surfaces on the leaderboard AND the per-player stats GET
+    /// answers its contract. Was two facts (leaderboard-contains / stats-get) that each did
+    /// the identical PUT against a different game; both read-backs now run for both games.
+    /// </summary>
+    [Theory]
+    [InlineData("pomarblerace", 8, 2, 3)]
+    [InlineData("poracer", 5, 5, 2)]
+    public async Task SavePlayerStats_ThenLeaderboardAndPlayerStats_RoundTrip(
+        string game, int wins, int losses, int winStreak)
     {
         // Isolation comes from a unique PLAYER, not a unique game. An invented game id
         // ("roundtrip_leaderboard") cannot work: PlayerStatsEndpoints runs every game id
         // through GameKey.TryParse as its §8 allowlist, so an off-catalogue key 400s before
         // any storage is touched. Pick a real key and make the row unique instead.
-        const string game = "pomarblerace";
         var player = $"HomePageIntegrationPlayer-{Guid.NewGuid():N}";
 
         // Build a minimal valid PlayerStats payload
@@ -130,7 +132,7 @@ public sealed class HomePageApiTests : IClassFixture<TestWebApplicationFactory>,
         {
             PlayerId = Guid.NewGuid().ToString(),
             PlayerName = player,
-            Easy = new { Wins = 8, Losses = 2, Draws = 0, TotalGames = 10, WinStreak = 3 },
+            Easy = new { Wins = wins, Losses = losses, Draws = 0, TotalGames = wins + losses, WinStreak = winStreak },
             Medium = new { Wins = 0, Losses = 0, Draws = 0, TotalGames = 0, WinStreak = 0 },
             Hard = new { Wins = 0, Losses = 0, Draws = 0, TotalGames = 0, WinStreak = 0 },
         };
@@ -146,26 +148,6 @@ public sealed class HomePageApiTests : IClassFixture<TestWebApplicationFactory>,
         entries.Should().NotBeNull();
         entries!.Should().NotBeEmpty(
             because: "the saved player should appear on the leaderboard");
-    }
-
-    [Fact]
-    public async Task SavePlayerStats_ThenGetPlayerStats_MatchesSavedData()
-    {
-        // Real GameKey + unique player, for the same allowlist reason as above.
-        const string game = "poracer";
-        var player = $"HomePageStatsRoundTrip-{Guid.NewGuid():N}";
-
-        var stats = new
-        {
-            PlayerId = Guid.NewGuid().ToString(),
-            PlayerName = player,
-            Easy = new { Wins = 5, Losses = 5, Draws = 0, TotalGames = 10, WinStreak = 2 },
-            Medium = new { Wins = 0, Losses = 0, Draws = 0, TotalGames = 0, WinStreak = 0 },
-            Hard = new { Wins = 0, Losses = 0, Draws = 0, TotalGames = 0, WinStreak = 0 },
-        };
-
-        var put = await _client.PutAsJsonAsync($"/api/{game}/players/{player}/stats", stats);
-        put.IsSuccessStatusCode.Should().BeTrue();
 
         var get = await _client.GetAsync($"/api/{game}/players/{player}/stats");
         get.StatusCode.Should().BeOneOf(

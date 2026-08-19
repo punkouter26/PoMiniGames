@@ -60,6 +60,11 @@ public sealed class PoSportsRaceServiceTests
         public Task<List<PoBrawlFighterRating>> RecordPoBrawlDemoResultAsync(
             string winnerFighterId, string loserFighterId, bool isDraw) =>
             Task.FromResult(new List<PoBrawlFighterRating>());
+
+        public Task<List<PoVoxelStrikeHighScore>> GetPoVoxelStrikeHighScoresAsync(int limit = 10) =>
+            Task.FromResult(new List<PoVoxelStrikeHighScore>());
+        public Task<PoVoxelStrikeHighScore> SavePoVoxelStrikeHighScoreAsync(PoVoxelStrikeHighScore entry) =>
+            Task.FromResult(entry);
     }
 
     private static (PoSportsRaceService race, PoSportsLobbyService lobby, CapturingStorage storage) StartedRace()

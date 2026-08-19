@@ -13,6 +13,7 @@ using PoMiniGames.Features.PoFunQuiz;
 using PoMiniGames.Features.PoJoker;
 using PoMiniGames.Features.PoRacer;
 using PoMiniGames.Features.PoSurvive;
+using PoMiniGames.Features.PoVoxelStrike;
 
 namespace PoMiniGames.Infrastructure;
 
@@ -43,7 +44,9 @@ internal static class EndpointRouteExtensions
         app.MapAiUsageEndpoints();
         app.MapDiagEndpoints();
         app.MapMockablesEndpoints();
-        app.MapTelemetryStatusEndpoints();
+        // MapTelemetryStatusEndpoints removed 2026-08-18: /api/diag/telemetry had zero
+        // consumers — no client call, no test, no doc. /api/diag already reports the
+        // telemetry configuration state.
         // MapTestHarnessEndpoints removed 2026-08-07. The three /test/* routes
         // (offline-mode, render-diagnostics, api-timeout) returned instructions for a
         // developer to follow by hand, and their only consumer was Pages/TestPage.razor,
@@ -59,6 +62,10 @@ internal static class EndpointRouteExtensions
         // them on sign-in), so anonymous read never becomes anonymous write.
         app.MapGetLeaderboard();
         app.MapUnifiedLeaderboardEndpoints();
+        // PoVoxelStrike voxel assets are read-only game content (content-addressed,
+        // immutable), so they sit with the anonymous reads; the M4 run-submission POST
+        // will join the authenticated group below instead.
+        app.MapPoVoxelStrikeAssetEndpoints();
 
         // ── Authenticated game API ─────────────────────────────────────────
         // All game-data endpoints require a valid session. Per-endpoint rate
@@ -78,6 +85,7 @@ internal static class EndpointRouteExtensions
         gameApi.MapPoRacerScoreEndpoints();
         gameApi.MapPoSportsHighScoresEndpoints();
         gameApi.MapPoSurviveEndpoints(app.Configuration);
+        gameApi.MapPoVoxelStrikeScoreEndpoints();
 
         // ── SignalR hubs (auth required; not part of MapGroup) ────────────
         app.MapHub<CoupleQuizHub>("/couplequiz/hubs/game").RequireAuthorization();

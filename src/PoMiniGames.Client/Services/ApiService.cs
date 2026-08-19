@@ -302,6 +302,48 @@ public class ApiService
         }
     }
 
+    public async Task<PoMiniGames.Domain.Models.PoVoxelStrikeHighScore[]?> GetPoVoxelStrikeHighScoresAsync(int count = 10)
+    {
+        try
+        {
+            return await _http.GetFromJsonAsync(
+                $"/api/povoxelstrike/highscores?count={count}", ApiJsonContext.Default.PoVoxelStrikeHighScoreArray);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Submits a finished PoVoxelStrike run. Same outcome contract as the Marble submit
+    /// above: Saved / Rejected (4xx — never retry) / Unavailable (park and replay).
+    /// </summary>
+    public async Task<ScoreSubmitResult<PoMiniGames.Domain.Models.PoVoxelStrikeHighScore>> SubmitPoVoxelStrikeRunAsync(
+        PoVoxelStrikeRunRequest entry)
+    {
+        try
+        {
+            var response = await _http.PostAsJsonAsync(
+                "/api/povoxelstrike/highscores", entry, ApiJsonContext.Default.PoVoxelStrikeRunRequest);
+
+            if (response.IsSuccessStatusCode)
+            {
+                var saved = await response.Content.ReadFromJsonAsync(ApiJsonContext.Default.PoVoxelStrikeHighScore);
+                return ScoreSubmitResult<PoMiniGames.Domain.Models.PoVoxelStrikeHighScore>.Saved(saved);
+            }
+
+            if ((int)response.StatusCode is >= 400 and < 500)
+                return ScoreSubmitResult<PoMiniGames.Domain.Models.PoVoxelStrikeHighScore>.Rejected(response.StatusCode);
+
+            return ScoreSubmitResult<PoMiniGames.Domain.Models.PoVoxelStrikeHighScore>.Unavailable(response.StatusCode);
+        }
+        catch
+        {
+            return ScoreSubmitResult<PoMiniGames.Domain.Models.PoVoxelStrikeHighScore>.Unavailable(null);
+        }
+    }
+
     public async Task<PoBrawlHighScore[]?> GetPoBrawlHighScoresAsync(int count = 10)
     {
         try

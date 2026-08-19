@@ -25,33 +25,27 @@ namespace PoMiniGames.Unit.Infrastructure;
 /// </summary>
 public sealed class AIFoundryCentralizationTests
 {
-    [Fact]
-    public void AIFoundryOptions_ResolveDeployment_FallsBackToDefault_WhenGameKeyMissing()
+    [Theory]
+    // A configured game key resolves to its deployment; unknown or empty keys fall
+    // back to the default rather than throwing.
+    [InlineData("couplequiz", "couplequiz", "gpt-4o")]
+    [InlineData("couplequiz", "unknown", "gpt-4o-mini")]
+    [InlineData("couplequiz", "", "gpt-4o-mini")]
+    // Per-game deployment keys are case-insensitive, in both directions of the
+    // casing mismatch (configured PascalCase vs. looked-up lower/upper).
+    [InlineData("CoupleQuiz", "couplequiz", "gpt-4o")]
+    [InlineData("CoupleQuiz", "COUPLEQUIZ", "gpt-4o")]
+    public void AIFoundryOptions_ResolveDeployment_FallsBackToDefault_AndIsCaseInsensitive(
+        string configuredKey, string lookupKey, string expectedDeployment)
     {
         var opts = new AIFoundryOptions
         {
             Endpoint = "https://cog-pominigames-shared.openai.azure.com",
             DefaultDeployment = "gpt-4o-mini",
         };
-        opts.Deployments["couplequiz"] = "gpt-4o";
+        opts.Deployments[configuredKey] = "gpt-4o";
 
-        opts.ResolveDeployment("couplequiz").Should().Be("gpt-4o");
-        opts.ResolveDeployment("unknown").Should().Be("gpt-4o-mini");
-        opts.ResolveDeployment("").Should().Be("gpt-4o-mini");
-    }
-
-    [Fact]
-    public void AIFoundryOptions_ResolveDeployment_IsCaseInsensitive()
-    {
-        var opts = new AIFoundryOptions
-        {
-            Endpoint = "https://cog-pominigames-shared.openai.azure.com",
-            DefaultDeployment = "gpt-4o-mini",
-        };
-        opts.Deployments["CoupleQuiz"] = "gpt-4o";
-
-        opts.ResolveDeployment("couplequiz").Should().Be("gpt-4o");
-        opts.ResolveDeployment("COUPLEQUIZ").Should().Be("gpt-4o");
+        opts.ResolveDeployment(lookupKey).Should().Be(expectedDeployment);
     }
 
     [Fact]

@@ -1,24 +1,19 @@
-# Scripts
+# scripts/
 
-This folder contains PowerShell utility scripts for the PoMiniGames project.
+Working scripts only — the one-off debug files that used to live here were removed in
+the 2026-08-18 cleanup (they referenced files that no longer exist and had no callers).
 
-| Script | Purpose |
-|--------|---------|
-| `poshared-dryrun.ps1` | Dry-run scan of PoShared candidate orphan Azure resources. Outputs a go/no-go matrix and safe deletion commands for resources unused in the last 90 days. Does **not** delete anything. Run before any manual cleanup of the shared resource group. |
-| `smoke-local.ps1` | Quick smoke-test that verifies the locally running API responds on port 5000 (`/health`, `/api/health`, `/diag`). Requires the app to already be running. |
+| Script | Purpose | Called from |
+|---|---|---|
+| `test-all.ps1` | Full CI-equivalent test run (Unit → Integration → E2E-API → E2E-UI); frees port 5000, starts Azurite, installs Playwright | CLAUDE.md, E2E-UI csproj, deploy.yml (policy) |
+| `setup.ps1` | One-time dev-machine setup | CLAUDE.md, E2E-API fixture docs |
+| `smoke-local.ps1` | Local smoke of the running app | `.vscode/tasks.json` |
+| `deploy-preflight.ps1` | Pre-`azd up` checks | CLAUDE.md |
+| `branch-hygiene.ps1` | Branch policy helper | deploy.yml (policy comment) |
+| `_count-tests.ps1` | Counts `[Fact]`/`[Theory]` methods per tier (the 100/50/25/25 rule) | docs |
+| `coverage-matrix.ps1` | Coverage matrix for the PRD | docs/PRD_Master.md |
+| `posports-assets.ps1` | Re-exports PoSports sprite sheets: `*-spritesheet/` source dirs → lowercase runtime dirs (`atlas.json` + `spritesheet.webp`) | PoMiniGamesClient.csproj comment |
+| `bake-marble-track.mjs` / `build-marble-track-2.py` / `marble_track_2.course.json` | PoMarbleRace track baking pipeline | js/pomarblerace/* |
 
-## Usage
-
-```powershell
-# Scan PoShared for orphan resources (read-only)
-./scripts/poshared-dryrun.ps1
-
-# Smoke-test the locally running app
-./scripts/smoke-local.ps1
-```
-
-## Requirements
-
-- **Azure CLI** (`az`) logged in with an account that has read access to the `PoShared` resource group.
-- **PowerShell 7+** (the `pwsh` executable).
-- The app running locally on http://localhost:5000 for `smoke-local.ps1`.
+Languages are mixed on purpose (PowerShell, Node, Python) — each pipeline uses
+whatever its toolchain needs. Development is Windows/`pwsh`.

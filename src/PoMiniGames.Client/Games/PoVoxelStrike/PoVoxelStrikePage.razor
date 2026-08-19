@@ -1,0 +1,382 @@
+@page "/povoxelstrike"
+@page "/povoxelstrike/{Mode}"
+@using PoMiniGamesClient.Components
+@using PoMiniGamesClient.Enums
+@using PoMiniGamesClient.Models
+@using PoMiniGamesClient.Services
+@implements IAsyncDisposable
+@inject PlayerNameService PlayerNameService
+@inject GameResultService GameResults
+@inject IJSRuntime JSRuntime
+@inject NavigationManager Navigation
+
+<PageTitle>Voxel Strike · PoMiniGames</PageTitle>
+
+<GameShell Title=@TitleContent
+           Player="@_playerName"
+           BackTo="/"
+           GameOver="@(_phase == Phase.Dead && !_demo)"
+           GameOverDelayMs="1200"
+           Outcome="@(_phase == Phase.Dead ? GameOutcome.Loss : GameOutcome.Unknown)"
+           GameKey="povoxelstrike"
+           RequiresWebGl="true"
+           PlayAgain="RestartAsync"
+           GameSummary="@GameSummaryContent">
+    @* Pointer lock + keyboard are the whole control scheme, so a touch-only device gets
+       a plain notice instead of a canvas it cannot drive. Pure CSS gate (hover/pointer
+       media query) — no interop, no engine download on phones. *@
+    <div class="pvs-touch-fallback" role="note">
+        <div class="pvs-touch-card">
+            <h2>🖱️ Keyboard + mouse needed</h2>
+            <p>Voxel Strike aims with pointer lock and digs from the keyboard — a touch screen cannot drive it. Open it on a desktop or laptop to play.</p>
+            <a class="pvs-btn pvs-btn-primary" href="/">Back to the games</a>
+        </div>
+    </div>
+
+    <div class="pvs-game">
+    @if (_phase == Phase.Intro)
+    {
+        <GameIntro CueScope="povoxelstrike"
+                   Title="@TitleContent"
+                   Objective="Survive the arena. Carve the world apart and drop it on whatever chases you — but what falls crushes you too."
+                   Controls="@HowToPlayContent"
+                   Mode="@(_demo ? GameIntro.IntroMode.Demo : GameIntro.IntroMode.OnePlayer)"
+                   OnStart="OnIntroStartAsync" />
+    }
+
+    <div class="pvs-wrap">
+        <div id="povoxelstrike-container" class="pvs-canvas-host"
+             role="img" aria-label="Voxel arena — the game renders here">
+
+            @* HUD only while control is (or was) live — not under the click-to-play
+               veil, not behind the game-over modal. *@
+            @if (!_demo && _phase is Phase.Playing or Phase.Paused)
+            {
+                <div class="pvs-hud" aria-hidden="true">
+                    <div class="pvs-hud-left">
+                        <div class="pvs-bar @(_hp <= 30 ? "pvs-bar-low" : null)">
+                            <span class="pvs-bar-label">HP</span>
+                            <div class="pvs-bar-track"><div class="pvs-bar-fill pvs-bar-hp" style="--fill: @(_hp)%"></div></div>
+                            <span class="pvs-bar-value">@_hp</span>
+                        </div>
+                        <div class="pvs-bar">
+                            <span class="pvs-bar-label">HEAT</span>
+                            <div class="pvs-bar-track"><div class="pvs-bar-fill @(_heatLocked ? "pvs-bar-heat-locked" : "pvs-bar-heat")" style="--fill: @(_heatPct)%"></div></div>
+                        </div>
+                        <div class="pvs-bar">
+                            <span class="pvs-bar-label">BLAST</span>
+                            <div class="pvs-bar-track"><div class="pvs-bar-fill pvs-bar-alt" style="--fill: @(_altPct)%"></div></div>
+                        </div>
+                    </div>
+                    <div class="pvs-hud-right">
+                        <div class="pvs-hud-score-wrap">
+                            @foreach (var pop in _popups)
+                            {
+                                <span class="pvs-pop" @key="pop.Id">+@pop.Amount</span>
+                            }
+                            <div class="pvs-hud-score">@_score.ToString("N0")</div>
+                        </div>
+                        <div class="pvs-hud-meta">@FormatTime(_elapsed) · @_kills kills · @_enemyCount hostiles</div>
+                    </div>
+                </div>
+            }
+
+            @if (!_demo && _phase is Phase.Ready or Phase.Playing or Phase.Paused)
+            {
+                <button class="pvs-fs-btn" type="button" title="Fullscreen (Esc exits)"
+                        aria-label="Toggle fullscreen" @onclick="ToggleFullscreenAsync">⛶</button>
+            }
+
+            @if (_phase == Phase.Paused)
+            {
+                <div class="pvs-pause" role="dialog" aria-label="Game paused">
+                    <div class="pvs-pause-card">
+                        <h2>Paused</h2>
+                        <p>The arena holds its breath while the mouse is free.</p>
+                        <div class="pvs-pause-stats">
+                            <div><span>@_score.ToString("N0")</span><small>score</small></div>
+                            <div><span>@FormatTime(_elapsed)</span><small>time</small></div>
+                            <div><span>@_kills</span><small>kills</small></div>
+                        </div>
+                        <ul class="pvs-pause-controls">
+                            <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move · <kbd>Shift</kbd> run · mouse to look</li>
+                            <li>Hold <kbd>F</kbd> to dig · <kbd>G</kbd> to blast — mouse buttons work too</li>
+                        </ul>
+                        <div class="pvs-pause-actions">
+                            <button class="pvs-btn pvs-btn-primary" @onclick="ResumeAsync">Resume</button>
+                            <button class="pvs-btn" @onclick="RestartAsync">Restart</button>
+                            <button class="pvs-btn" @onclick="@(() => Navigation.NavigateTo("/"))">Quit</button>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+
+        <div class="pvs-status" role="status" aria-live="polite">
+            @if (_fatalError is not null)
+            {
+                <span class="pvs-status-error">The arena could not start: @_fatalError</span>
+            }
+            else if (_phase == Phase.Loading)
+            {
+                <span>Building the arena…</span>
+            }
+            else if (_phase is Phase.Ready or Phase.Playing or Phase.Paused)
+            {
+                <span>
+                    @(_assetCount > 0
+                        ? $"{_assetCount} imported asset{(_assetCount == 1 ? "" : "s")}"
+                        : "No imported assets — procedural arena")
+                    · @_structureCount structures · hold <kbd>F</kbd> to dig, <kbd>G</kbd> to blast, drop buildings on what chases you.
+                </span>
+            }
+        </div>
+    </div>
+    </div>
+</GameShell>
+
+@code {
+    [Parameter] public string? Mode { get; set; }
+    [SupplyParameterFromQuery(Name = "mode")] public string? ModeQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "demo")] public int Demo { get; set; }
+
+    // One lifecycle machine (PRD §4.2), replacing the four booleans that used to
+    // approximate it (_introDone/_engineStarted/_engineReady + implicit veil state).
+    // Intro → Loading → Ready → Playing ⇄ Paused → Dead; Restart re-enters Loading.
+    // Ready = engine built, veil up, pointer not yet locked; the JS engine reports
+    // the Ready→Playing edge via OnResumed when pointer lock is acquired.
+    private enum Phase { Intro, Loading, Ready, Playing, Paused, Dead }
+
+    private string _playerName = "";
+    private bool _demo;
+    private int _assetCount;
+    private int _structureCount;
+    private string? _fatalError;
+    private Phase _phase = Phase.Intro;
+    private DotNetObjectReference<PoVoxelStrikePage>? _ref;
+
+    // HUD snapshot, updated by the engine's 10 Hz pump.
+    private int _hp = 100;
+    private int _heatPct;
+    private bool _heatLocked;
+    private int _altPct = 100;
+    private int _score;
+    private int _elapsed;
+    private int _kills;
+    private int _enemyCount;
+
+    // Final run summary.
+    private double _finalSurvival;
+    private int _finalBruteKills;
+    private int _finalCrushKills;
+    private int _finalVoxels;
+    private string _finalSeed = "";
+    private bool _isNewBest;
+
+    // Floating "+N" score popups. Spawned on HUD ticks whose score delta beats the
+    // passive time drip (kills/crushes, not the +10/s clock), pruned on later ticks
+    // after their CSS animation has finished.
+    private readonly record struct ScorePop(long Id, int Amount, long BornAt);
+    private readonly List<ScorePop> _popups = new();
+    private long _popId;
+    private int _lastScore;
+
+    private RenderFragment TitleContent => @<span>🧱 Voxel Strike</span>;
+
+    private RenderFragment HowToPlayContent => @<div>
+        <p>Endless survival. Swarmers rush you, Spitters shoot from range, Brutes smash through walls. Falling debris crushes them — and you.</p>
+        <ul>
+            <li>Click the arena to take control (pointer lock)</li>
+            <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move · trackpad or mouse to look · <kbd>Shift</kbd> run</li>
+            <li>Hold <kbd>F</kbd> to dig (watch the heat) · <kbd>G</kbd> for an explosive blast — mouse buttons work too</li>
+            <li><kbd>Esc</kbd> pauses and frees the mouse</li>
+        </ul>
+    </div>;
+
+    private RenderFragment GameSummaryContent => @<div class="pvs-summary">
+        @if (_isNewBest)
+        {
+            <div class="pvs-best-badge">🏆 New personal best!</div>
+        }
+        <div class="pvs-tiles">
+            <div class="pvs-tile"><span class="pvs-tile-icon">💀</span><span class="pvs-tile-value">@_score.ToString("N0")</span><span class="pvs-tile-label">score</span></div>
+            <div class="pvs-tile"><span class="pvs-tile-icon">⏱️</span><span class="pvs-tile-value">@FormatTime((int)_finalSurvival)</span><span class="pvs-tile-label">survived</span></div>
+            <div class="pvs-tile"><span class="pvs-tile-icon">⚔️</span><span class="pvs-tile-value">@_kills</span><span class="pvs-tile-label">kills</span></div>
+            <div class="pvs-tile"><span class="pvs-tile-icon">🟣</span><span class="pvs-tile-value">@_finalBruteKills</span><span class="pvs-tile-label">brutes</span></div>
+            <div class="pvs-tile"><span class="pvs-tile-icon">🧱</span><span class="pvs-tile-value">@_finalCrushKills</span><span class="pvs-tile-label">crushed</span></div>
+            <div class="pvs-tile"><span class="pvs-tile-icon">⛏️</span><span class="pvs-tile-value">@_finalVoxels.ToString("N0")</span><span class="pvs-tile-label">voxels</span></div>
+        </div>
+        @if (_finalSeed.Length > 0)
+        {
+            <div class="pvs-seed">arena seed @_finalSeed</div>
+        }
+    </div>;
+
+    protected override void OnInitialized()
+    {
+        _demo = GameModes.Parse(Mode, ModeQuery, Demo) == GameMode.Demo;
+        _playerName = PlayerNameService.GetPlayerName();
+    }
+
+    // The engine boots only after the intro card is dismissed — same gate as the other
+    // 3D games, so nothing renders (or requests pointer lock) behind the welcome.
+    private async Task OnIntroStartAsync()
+    {
+        if (_phase != Phase.Intro) return; // intro renders once; guard a double click
+        _phase = Phase.Loading;
+        await InvokeAsync(StateHasChanged);
+        _ref = DotNetObjectReference.Create(this);
+        await StartEngineAsync();
+    }
+
+    private async Task StartEngineAsync()
+    {
+        try
+        {
+            if (!await JSRuntime.InvokeAsync<bool>("loadEngine", "povoxelstrike"))
+            {
+                _fatalError = "the 3D engine failed to load. Check your connection and try again.";
+                return;
+            }
+            await JSRuntime.InvokeVoidAsync("PoVoxelStrike.start", "povoxelstrike-container", _ref, _demo);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[PoVoxelStrike] JS init failed: {ex.Message}");
+            _fatalError = "the 3D engine failed to start.";
+        }
+    }
+
+    private async Task ResumeAsync()
+    {
+        _phase = Phase.Playing;
+        try { await JSRuntime.InvokeVoidAsync("PoVoxelStrike.resume"); }
+        catch (Exception ex) { Console.Error.WriteLine($"[PoVoxelStrike] resume failed: {ex.Message}"); }
+    }
+
+    private async Task ToggleFullscreenAsync()
+    {
+        try { await JSRuntime.InvokeVoidAsync("PoVoxelStrike.toggleFullscreen"); }
+        catch (Exception ex) { Console.Error.WriteLine($"[PoVoxelStrike] fullscreen failed: {ex.Message}"); }
+    }
+
+    private async Task RestartAsync()
+    {
+        _phase = Phase.Loading;
+        _hp = 100; _heatPct = 0; _heatLocked = false; _altPct = 100;
+        _score = 0; _elapsed = 0; _kills = 0; _enemyCount = 0;
+        _isNewBest = false;
+        _popups.Clear();
+        _lastScore = 0;
+        StateHasChanged();
+        try
+        {
+            // Fast path: the JS side reuses the already-decoded voxel volumes and only
+            // rebuilds the world (new seed) — no manifest fetch, no asset decode.
+            await JSRuntime.InvokeVoidAsync("PoVoxelStrike.restart");
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[PoVoxelStrike] restart failed: {ex.Message}");
+            _fatalError = "restart failed — reload the page.";
+        }
+    }
+
+    [JSInvokable]
+    public void OnReady(int assetCount, int structureCount)
+    {
+        _phase = Phase.Ready;
+        _assetCount = assetCount;
+        _structureCount = structureCount;
+        StateHasChanged();
+    }
+
+    /// <summary>Pointer lock acquired — first click on the veil, or Resume.</summary>
+    [JSInvokable]
+    public void OnResumed()
+    {
+        if (_phase is Phase.Ready or Phase.Paused) _phase = Phase.Playing;
+        StateHasChanged();
+    }
+
+    // Flat positional primitives by design — the platform interop convention (no DTO
+    // deserialization on a hot-ish path; see PoMarbleRace's parallel-array contract).
+    [JSInvokable]
+    public void OnHudTick(int hp, int heatPct, bool heatLocked, int altPct, int score,
+        int elapsed, int kills, int enemyCount, int bodies, int particles)
+    {
+        _hp = hp;
+        _heatPct = heatPct;
+        _heatLocked = heatLocked;
+        _altPct = altPct;
+        // A tick's passive drip is ≤ +20 (two 10-point clock seconds can land in one
+        // 100 ms tick after a stall); anything above it means kills/crushes landed.
+        var delta = score - _lastScore;
+        _lastScore = score;
+        if (delta > 20)
+        {
+            _popups.Add(new ScorePop(++_popId, delta, Environment.TickCount64));
+        }
+        _popups.RemoveAll(p => Environment.TickCount64 - p.BornAt > 900);
+        _score = score;
+        _elapsed = elapsed;
+        _kills = kills;
+        _enemyCount = enemyCount;
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public void OnPaused(string reason)
+    {
+        if (_phase == Phase.Playing) _phase = Phase.Paused;
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public async Task OnGameOver(int score, double survivalSeconds, int kills, int bruteKills,
+        int crushKills, int voxelsDestroyed, string seed)
+    {
+        _phase = Phase.Dead;
+        _finalSeed = seed;
+        _score = score;
+        _kills = kills;
+        _finalSurvival = survivalSeconds;
+        _finalBruteKills = bruteKills;
+        _finalCrushKills = crushKills;
+        _finalVoxels = voxelsDestroyed;
+        StateHasChanged();
+
+        if (_demo) return;
+        try
+        {
+            // Every finished run submits — the server ratchets to the best. A failed submit
+            // parks in the offline queue (guests included) and flushes on sign-in/reconnect.
+            await GameResults.RecordAndSubmitPoVoxelStrikeAsync(_playerName, GameResult.Loss,
+                new PoVoxelStrikeRunRequest(score, survivalSeconds, kills, bruteKills, crushKills, voxelsDestroyed),
+                onNewBest: isNewBest =>
+                {
+                    _isNewBest = isNewBest;
+                });
+            StateHasChanged(); // the game-over modal may already be up — repaint the badge in
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[PoVoxelStrike] run submit failed: {ex.Message}");
+        }
+    }
+
+    [JSInvokable]
+    public void OnFatalError(string message)
+    {
+        _fatalError = message;
+        StateHasChanged();
+    }
+
+    private static string FormatTime(int seconds) => $"{seconds / 60}:{seconds % 60:00}";
+
+    public async ValueTask DisposeAsync()
+    {
+        try { await JSRuntime.InvokeVoidAsync("PoVoxelStrike.stop"); } catch { }
+        _ref?.Dispose();
+    }
+}

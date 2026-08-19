@@ -11,57 +11,33 @@ public sealed class PrefixKeyVaultSecretManagerTests
 
     // ─── Load ────────────────────────────────────────────────────────────
 
-    [Fact]
-    public void Load_ReturnsTrue_WhenSecretNameStartsWithPrefix()
+    [Theory]
+    [InlineData("PoMiniGames--ConnectionStrings--Default", true)] // exact prefix loads
+    [InlineData("OtherApp--ConnectionStrings--Default", false)]   // another app's prefix does not
+    [InlineData("pominiGAMES--SomeKey", true)]                    // prefix match is case-insensitive
+    [InlineData("NoPrefix", false)]                               // no prefix separator at all
+    public void Load_AcceptsOnlySecretsWithThePrefix_CaseInsensitively(string secretName, bool expected)
     {
-        var props = new SecretProperties("PoMiniGames--ConnectionStrings--Default");
-        _sut.Load(props).Should().BeTrue();
-    }
-
-    [Fact]
-    public void Load_ReturnsFalse_WhenSecretNameHasDifferentPrefix()
-    {
-        var props = new SecretProperties("OtherApp--ConnectionStrings--Default");
-        _sut.Load(props).Should().BeFalse();
-    }
-
-    [Fact]
-    public void Load_IsCaseInsensitive()
-    {
-        var props = new SecretProperties("pominiGAMES--SomeKey");
-        _sut.Load(props).Should().BeTrue();
-    }
-
-    [Fact]
-    public void Load_ReturnsFalse_WhenSecretNameIsEmpty()
-    {
-        var props = new SecretProperties("NoPrefix");
-        _sut.Load(props).Should().BeFalse();
+        var props = new SecretProperties(secretName);
+        _sut.Load(props).Should().Be(expected);
     }
 
     // ─── GetKey ──────────────────────────────────────────────────────────
 
-    [Fact]
-    public void GetKey_ReplacesDoubleDashWithColon()
+    [Theory]
+    // Double-dash becomes the configuration delimiter, one per segment.
+    [InlineData("PoMiniGames--ConnectionStrings--Default", "PoMiniGames:ConnectionStrings:Default")]
+    // A single segment still yields prefix + key.
+    [InlineData("PoMiniGames--ApiKey", "PoMiniGames:ApiKey")]
+    // The prefix is preserved in the configuration key (it is the section name).
+    [InlineData("PoMiniGames--ApplicationInsights--ConnectionString", "PoMiniGames:ApplicationInsights:ConnectionString")]
+    public void GetKey_ReplacesDoubleDashWithDelimiter_AndPreservesPrefix(string secretName, string expectedKeyColonForm)
     {
-        var secret = new KeyVaultSecret("PoMiniGames--ConnectionStrings--Default", "value");
+        var secret = new KeyVaultSecret(secretName, "value");
         var key = _sut.GetKey(secret);
-        key.Should().Be($"PoMiniGames{ConfigurationPath.KeyDelimiter}ConnectionStrings{ConfigurationPath.KeyDelimiter}Default");
-    }
-
-    [Fact]
-    public void GetKey_SingleSegment_ReturnsPrefixAndKey()
-    {
-        var secret = new KeyVaultSecret("PoMiniGames--ApiKey", "value");
-        var key = _sut.GetKey(secret);
-        key.Should().Be($"PoMiniGames{ConfigurationPath.KeyDelimiter}ApiKey");
-    }
-
-    [Fact]
-    public void GetKey_PreservesPrefix_InConfigurationKey()
-    {
-        var secret = new KeyVaultSecret("PoMiniGames--ApplicationInsights--ConnectionString", "value");
-        var key = _sut.GetKey(secret);
-        key.Should().StartWith("PoMiniGames:");
+        // Expected values are written with ':' for readability; compare against the
+        // real delimiter so the test survives a (theoretical) delimiter change.
+        key.Should().Be(expectedKeyColonForm.Replace(":", ConfigurationPath.KeyDelimiter));
+        key.Should().StartWith($"PoMiniGames{ConfigurationPath.KeyDelimiter}");
     }
 }

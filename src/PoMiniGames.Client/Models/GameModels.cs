@@ -105,6 +105,13 @@ public class PoBrawlHighScore
 // already references that assembly (via PoMiniGames.Application), so a hand-kept mirror
 // only bought silent drift: a renamed server field still deserialized, just as null.
 
+// PoVoxelStrike board rows likewise use PoMiniGames.Domain.Models.PoVoxelStrikeHighScore
+// directly. The submission below is a client mirror of the API slice's wire shape
+// (PoVoxelStrikeRunRequest in Features/PoVoxelStrike) — identity and timestamp are
+// server-derived, so there is no field here to forge them in.
+public sealed record PoVoxelStrikeRunRequest(
+    int Score, double SurvivalSeconds, int Kills, int BruteKills, int CrushKills, int VoxelsDestroyed);
+
 public class PoBrawlLadderEntry
 {
     public string PlayerName { get; set; } = "";

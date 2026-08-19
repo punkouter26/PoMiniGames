@@ -420,6 +420,7 @@ else
         ("poracer",      "Racer",         "🏎️", RatingKind.Difficulty),
         ("pocouplequiz", "Couple Quiz",   "💕",  RatingKind.Difficulty),
         ("pomarblerace", "Marble Race",   "🔮",  RatingKind.HighScoreOnly),
+        ("povoxelstrike", "Voxel Strike", "🧱",  RatingKind.HighScoreOnly),
         // No win condition and no score: PoJoker is an AI-jester/joke-API experience,
         // PoSurvive is a simulation. A session count is the only honest stat here.
         ("pojoker",      "Joker",         "🃏",  RatingKind.PlayCountOnly),
@@ -465,6 +466,7 @@ else
     private static readonly (string Key, string Title, string Icon, string Kind)[] HsDefs =
     {
         ("pomarblerace", "Marble Race",  "🔮", "marble"),
+        ("povoxelstrike", "Voxel Strike", "🧱", "voxel"),
         ("posports",     "Sports",       "🏃", "sports"),
         ("pobrawl",      "Brawl",        "🥊", "brawl"),
         ("tictactoe",    "Tic-Tac-Toe",   "❌", "ai"),
@@ -601,19 +603,21 @@ else
         // failed endpoint and offers a retry — without it, the page is indistinguishable
         // from a profile of someone who has never played.
         var marbleTask = ApiService.GetMarbleRaceHighScoresAsync(100);
+        var voxelTask  = ApiService.GetPoVoxelStrikeHighScoresAsync(100);
         var sportsTask = ApiService.GetPoSportsHighScoresAsync(100);
         var brawlTask  = ApiService.GetPoBrawlHighScoresAsync(100);
-        await Task.WhenAll(marbleTask, sportsTask, brawlTask);
+        await Task.WhenAll(marbleTask, voxelTask, sportsTask, brawlTask);
 
         var marbleResult = marbleTask.Result;
+        var voxelResult  = voxelTask.Result;
         var sportsResult = sportsTask.Result;
         var brawlResult  = brawlTask.Result;
 
         // Count actually-loaded boards so we can name the failures precisely.
-        // The three task results have different element types (different DTOs),
+        // The task results have different element types (different DTOs),
         // so the array can't infer a single element type — use object and cast.
-        var loaded = new object?[] { marbleResult, sportsResult, brawlResult }.Count(r => r is not null);
-        if (loaded < 3)
+        var loaded = new object?[] { marbleResult, voxelResult, sportsResult, brawlResult }.Count(r => r is not null);
+        if (loaded < 4)
         {
             _highScoreLoadFailed = true;
         }
@@ -622,6 +626,8 @@ else
         {
             ["Marble Race"] = FindMine(marbleResult, "Marble Race", "🔮",
                 s => s.UserId, s => s.PlayerInitials, s => s.BestScore.ToString("N0")),
+            ["Voxel Strike"] = FindMine(voxelResult, "Voxel Strike", "🧱",
+                s => s.UserId, s => s.PlayerName, s => s.Score.ToString("N0")),
             ["Sports"] = FindMine(sportsResult, "Sports", "🏃",
                 s => s.UserId, s => s.PlayerName, s => $"{s.TotalTimeSeconds:0.00}s"),
             // PoBrawlHighScore carries no UserId — unlike the Marble and Sports rows,

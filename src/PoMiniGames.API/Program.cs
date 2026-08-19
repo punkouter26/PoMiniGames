@@ -258,10 +258,15 @@ if (app.Environment.IsDevelopment())
     app.Use(async (ctx, next) =>
     {
         var path = ctx.Request.Path.Value ?? "/";
-        var noCache = path.StartsWith("/_framework", StringComparison.OrdinalIgnoreCase)
+        // /api/* is not the boot chain: the extensionless heuristic below used to catch
+        // API routes whose last segment has no dot (e.g. the content-addressed
+        // /api/povoxelstrike/assets/{hash}) and this OnStarting overwrote the immutable
+        // cache header the handler had set — dev silently diverged from production.
+        var noCache = !path.StartsWith("/api/", StringComparison.OrdinalIgnoreCase)
+            && (path.StartsWith("/_framework", StringComparison.OrdinalIgnoreCase)
             || !System.IO.Path.HasExtension(path)                       // SPA shell routes ("/", "/connectfive/1")
             || path.EndsWith(".css", StringComparison.OrdinalIgnoreCase)
-            || path.EndsWith(".js", StringComparison.OrdinalIgnoreCase);
+            || path.EndsWith(".js", StringComparison.OrdinalIgnoreCase));
         if (noCache)
         {
             ctx.Response.OnStarting(() =>

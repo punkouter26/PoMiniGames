@@ -90,6 +90,7 @@ public static class UnifiedLeaderboardEndpoints
             BuildPoBrawlDemoAsync(storage, limit),
             BuildFunQuizAsync(funQuiz, limit),
             BuildPoJokerAsync(joker, limit),
+            BuildPoVoxelStrikeAsync(storage, limit),
         };
 
         var result = (await Task.WhenAll(winRateTasks.Concat(boardTasks))).ToList();
@@ -136,6 +137,7 @@ public static class UnifiedLeaderboardEndpoints
             // the storage key the client writes stats under.
             "couplequiz" => await BuildWinRateAsync(storage, "pocouplequiz", "Couple Quiz", limit),
             "joker" => await BuildPoJokerAsync(joker, limit),
+            "povoxelstrike" => await BuildPoVoxelStrikeAsync(storage, limit),
             _ => null,
         };
     }
@@ -377,6 +379,22 @@ public static class UnifiedLeaderboardEndpoints
             .ToList();
         PadWithPlaceholders(entries, limit, "0");
         return new GameLeaderboardDto("pobrawldemo", "Brawl Demo", "ELO", HigherIsBetter: true, entries);
+    }
+
+    /// <summary>
+    /// PoVoxelStrike ranks by best run score. The descriptor keeps one ratcheted row per
+    /// player, so the read is already one-best-per-player, ranked descending.
+    /// </summary>
+    private static async Task<GameLeaderboardDto> BuildPoVoxelStrikeAsync(IStorageService storage, int limit)
+    {
+        var scores = await storage.GetPoVoxelStrikeHighScoresAsync(limit);
+        var entries = scores
+            .Select((s, i) => new LeaderboardEntryDto(
+                i + 1, s.PlayerName, s.Score, s.Score.ToString("N0", CultureInfo.InvariantCulture)))
+            .ToList();
+        PadWithPlaceholders(entries, limit, "0");
+        // Unit "Score" from the closed vocabulary above — a plain point total, higher wins.
+        return new GameLeaderboardDto("povoxelstrike", "Voxel Strike", "Score", HigherIsBetter: true, entries);
     }
 
     /// <summary>

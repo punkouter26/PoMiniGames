@@ -1,0 +1,555 @@
+.pvs-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+/* ── Touch-only gate ─────────────────────────────────────────────────────
+   The game is unplayable without pointer lock + keyboard. On touch-only devices
+   swap the whole game block for a notice — CSS media query, no JS, no engine
+   download. Hybrid laptops (hover: hover) keep the game. */
+
+.pvs-touch-fallback {
+    display: none;
+}
+
+@media (hover: none) and (pointer: coarse) {
+    .pvs-game { display: none; }
+
+    .pvs-touch-fallback {
+        display: grid;
+        place-items: center;
+        min-height: 40vh;
+        padding: 1rem;
+    }
+}
+
+.pvs-touch-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    align-items: center;
+    max-width: 26rem;
+    padding: 1.5rem;
+    border-radius: 12px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    text-align: center;
+}
+
+.pvs-touch-card h2 {
+    margin: 0;
+    font-size: var(--text-lg);
+    color: var(--color-text-primary);
+}
+
+.pvs-touch-card p {
+    margin: 0;
+    font-size: var(--text-sm);
+    color: var(--color-text-secondary);
+}
+
+.pvs-touch-card a {
+    text-decoration: none;
+}
+
+.pvs-canvas-host {
+    position: relative;
+    width: 100%;
+    height: min(68vh, 640px);
+    border-radius: 12px;
+    overflow: hidden;
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+}
+
+.pvs-canvas-host:fullscreen {
+    height: 100%;
+    border-radius: 0;
+    border: none;
+}
+
+.pvs-status {
+    font-size: var(--text-sm);
+    color: var(--color-text-secondary);
+    min-height: 1.25rem;
+    text-align: center;
+}
+
+.pvs-status-error {
+    color: var(--accent-danger-ink);
+}
+
+/* The click-to-play veil is created by the JS engine inside the canvas host, so it needs
+   ::deep to escape CSS isolation (JS-injected nodes carry no scope attribute). */
+.pvs-canvas-host ::deep .pvs-veil {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    background: rgba(15, 23, 42, 0.55);
+    cursor: pointer;
+    z-index: 2;
+}
+
+.pvs-canvas-host ::deep .pvs-veil-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    align-items: center;
+    padding: 1rem 1.5rem;
+    border-radius: 10px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    color: var(--color-text-primary);
+    font-size: var(--text-base);
+    text-align: center;
+}
+
+.pvs-canvas-host ::deep .pvs-veil-card span {
+    font-size: var(--text-sm);
+    color: var(--color-text-secondary);
+}
+
+/* ── HUD overlay (Razor-rendered, so no ::deep) ─────────────────────────── */
+
+.pvs-hud {
+    position: absolute;
+    /* safe-area: notched phones in landscape put a camera housing where the HUD sits */
+    inset: calc(0.75rem + env(safe-area-inset-top, 0px))
+        calc(0.75rem + env(safe-area-inset-right, 0px))
+        calc(0.75rem + env(safe-area-inset-bottom, 0px))
+        calc(0.75rem + env(safe-area-inset-left, 0px));
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    pointer-events: none;
+    z-index: 1;
+}
+
+.pvs-hud-left {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    min-width: clamp(140px, 24vw, 200px);
+}
+
+.pvs-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+/* Over-canvas text is ALWAYS light-on-dark: the 3D scene behind it is dark in both
+   site themes, so theme tokens are wrong here — in light mode they resolve to dark
+   text and the labels vanished against the arena (found in the 2026-08-18 runtime
+   review). Fixed colors, not tokens, for everything drawn on top of the canvas. */
+.pvs-bar-label {
+    width: 3.2rem;
+    font-size: var(--text-xs);
+    letter-spacing: 0.08em;
+    color: rgba(232, 238, 248, 0.85);
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+.pvs-bar-track {
+    flex: 1;
+    height: 8px;
+    border-radius: 4px;
+    background: rgba(15, 23, 42, 0.65);
+    overflow: hidden;
+}
+
+.pvs-bar-fill {
+    height: 100%;
+    width: var(--fill, 0%);
+    border-radius: 4px;
+    transition: width 120ms linear;
+}
+
+.pvs-bar-hp { background: var(--accent-success); }
+
+/* Colorblind support: the three bars differ by texture, not only hue — heat is
+   striped, blast is dotted, HP is solid (and carries a number). */
+.pvs-bar-heat {
+    background: repeating-linear-gradient(
+        -45deg,
+        var(--accent-warning) 0 4px,
+        color-mix(in srgb, var(--accent-warning) 55%, transparent) 4px 7px);
+}
+
+.pvs-bar-heat-locked {
+    background: repeating-linear-gradient(
+        -45deg,
+        var(--accent-danger) 0 4px,
+        color-mix(in srgb, var(--accent-danger) 55%, transparent) 4px 7px);
+    animation: pvs-pulse 0.6s ease-in-out infinite;
+}
+
+.pvs-bar-alt {
+    background: repeating-linear-gradient(
+        90deg,
+        var(--accent-cyan) 0 5px,
+        color-mix(in srgb, var(--accent-cyan) 55%, transparent) 5px 8px);
+}
+
+.pvs-bar-value {
+    min-width: 2ch;
+    font-size: var(--text-xs);
+    font-variant-numeric: tabular-nums;
+    color: rgba(232, 238, 248, 0.75);
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+/* Low-HP alarm: the whole HP row pulses and the number goes hot. */
+.pvs-bar-low .pvs-bar-fill { background: var(--accent-danger); }
+.pvs-bar-low { animation: pvs-pulse 0.8s ease-in-out infinite; }
+.pvs-bar-low .pvs-bar-value { color: #ff8484; font-weight: 700; }
+
+@keyframes pvs-pulse {
+    50% { opacity: 0.55; }
+}
+
+.pvs-hud-right {
+    text-align: right;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+}
+
+.pvs-hud-score-wrap {
+    position: relative;
+}
+
+.pvs-hud-score {
+    font-size: clamp(1rem, 2.6vw, var(--text-xl));
+    font-weight: 700;
+    color: #f4f7fd;
+    font-variant-numeric: tabular-nums;
+}
+
+/* "+N" kill popups drifting up and away from the score. */
+.pvs-pop {
+    position: absolute;
+    right: 0;
+    top: 100%;
+    font-size: var(--text-base);
+    font-weight: 700;
+    color: var(--accent-warning);
+    font-variant-numeric: tabular-nums;
+    animation: pvs-pop-drift 0.85s ease-out forwards;
+    pointer-events: none;
+}
+
+@keyframes pvs-pop-drift {
+    from { transform: translateY(0); opacity: 1; }
+    to { transform: translateY(-1.6rem); opacity: 0; }
+}
+
+.pvs-hud-meta {
+    font-size: clamp(0.68rem, 1.8vw, var(--text-sm));
+    color: rgba(232, 238, 248, 0.72);
+    font-variant-numeric: tabular-nums;
+}
+
+/* ── Fullscreen toggle ──────────────────────────────────────────────────── */
+
+.pvs-fs-btn {
+    position: absolute;
+    right: 0.6rem;
+    bottom: 0.6rem;
+    z-index: 2;
+    width: 2.1rem;
+    height: 2.1rem;
+    display: grid;
+    place-items: center;
+    border-radius: 8px;
+    border: 1px solid rgba(232, 238, 248, 0.25);
+    background: rgba(15, 23, 42, 0.55);
+    color: rgba(232, 238, 248, 0.75);
+    font-size: 1rem;
+    cursor: pointer;
+}
+
+.pvs-fs-btn:hover { color: #f4f7fd; background: rgba(15, 23, 42, 0.8); }
+
+.pvs-fs-btn:focus-visible {
+    outline: 2px solid var(--accent-ring);
+    outline-offset: 2px;
+}
+
+/* ── Pause overlay ──────────────────────────────────────────────────────── */
+
+.pvs-pause {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    background: rgba(15, 23, 42, 0.45);
+    z-index: 3;
+}
+
+/* Glass card: the frozen arena stays visible, blurred, behind the sheet. */
+.pvs-pause-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    align-items: center;
+    padding: 1.25rem 1.75rem;
+    border-radius: 14px;
+    background: color-mix(in srgb, var(--color-surface) 62%, transparent);
+    -webkit-backdrop-filter: blur(14px) saturate(1.2);
+    backdrop-filter: blur(14px) saturate(1.2);
+    border: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
+    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+    color: var(--color-text-primary);
+    text-align: center;
+}
+
+.pvs-pause-card h2 {
+    margin: 0;
+    font-size: var(--text-lg);
+}
+
+.pvs-pause-card p {
+    margin: 0;
+    font-size: var(--text-sm);
+    color: var(--color-text-secondary);
+}
+
+.pvs-pause-stats {
+    display: flex;
+    gap: 1.4rem;
+    margin: 0.35rem 0;
+}
+
+.pvs-pause-stats > div {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.pvs-pause-stats span {
+    font-size: var(--text-lg);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
+.pvs-pause-stats small {
+    font-size: var(--text-xs);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-text-secondary);
+}
+
+.pvs-pause-controls {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    font-size: var(--text-sm);
+    color: var(--color-text-secondary);
+}
+
+.pvs-pause-actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+}
+
+/* ── Game-over summary tiles (rendered inside the shared GameShell modal) ── */
+
+.pvs-summary {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    align-items: center;
+}
+
+.pvs-best-badge {
+    padding: 0.3rem 0.9rem;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--accent-warning) 18%, transparent);
+    border: 1px solid var(--accent-warning);
+    color: var(--accent-warning);
+    font-size: var(--text-sm);
+    font-weight: 700;
+    animation: pvs-badge-pop 0.45s cubic-bezier(0.2, 1.6, 0.4, 1);
+}
+
+@keyframes pvs-badge-pop {
+    from { transform: scale(0.6); opacity: 0; }
+}
+
+.pvs-tiles {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(5.2rem, 1fr));
+    gap: 0.5rem;
+    width: 100%;
+}
+
+.pvs-tile {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.1rem;
+    padding: 0.55rem 0.4rem;
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--color-surface-hover) 70%, transparent);
+    border: 1px solid var(--color-border);
+    animation: pvs-tile-in 0.35s ease-out backwards;
+}
+
+.pvs-tile:nth-child(2) { animation-delay: 0.05s; }
+.pvs-tile:nth-child(3) { animation-delay: 0.1s; }
+.pvs-tile:nth-child(4) { animation-delay: 0.15s; }
+.pvs-tile:nth-child(5) { animation-delay: 0.2s; }
+.pvs-tile:nth-child(6) { animation-delay: 0.25s; }
+
+@keyframes pvs-tile-in {
+    from { transform: translateY(0.5rem); opacity: 0; }
+}
+
+.pvs-tile-icon { font-size: var(--text-base); }
+
+.pvs-tile-value {
+    font-size: var(--text-base);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--color-text-primary);
+}
+
+.pvs-tile-label {
+    font-size: var(--text-xs);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-text-secondary);
+}
+
+/* PRD §F3: the run's world seed, for bragging/reproduction. Modal context, so theme
+   tokens are correct here (unlike the over-canvas HUD). */
+.pvs-seed {
+    font-family: var(--font-mono, monospace);
+    font-size: var(--text-xs);
+    color: var(--color-text-secondary);
+    letter-spacing: 0.05em;
+}
+
+.pvs-btn {
+    padding: 0.45rem 1.1rem;
+    border-radius: 8px;
+    border: 1px solid var(--color-border);
+    background: var(--color-surface-hover);
+    color: var(--color-text-primary);
+    font-size: var(--text-sm);
+    cursor: pointer;
+}
+
+.pvs-btn:hover { background: var(--color-border); }
+
+.pvs-btn:focus-visible {
+    outline: 2px solid var(--accent-ring);
+    outline-offset: 2px;
+}
+
+.pvs-btn-primary {
+    background: var(--color-accent-solid);
+    border-color: var(--color-accent-solid);
+    color: var(--color-accent-contrast);
+}
+
+.pvs-btn-primary:hover { filter: brightness(1.1); }
+
+/* Crosshair, JS-injected like the veil (hence ::deep); visible only under pointer lock. */
+.pvs-canvas-host ::deep .pvs-crosshair {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 14px;
+    height: 14px;
+    margin: -7px 0 0 -7px;
+    pointer-events: none;
+    z-index: 2;
+}
+
+.pvs-canvas-host ::deep .pvs-crosshair::before,
+.pvs-canvas-host ::deep .pvs-crosshair::after {
+    content: "";
+    position: absolute;
+    background: rgba(255, 255, 255, 0.85);
+}
+
+.pvs-canvas-host ::deep .pvs-crosshair::before {
+    left: 6px;
+    top: 0;
+    width: 2px;
+    height: 14px;
+}
+
+.pvs-canvas-host ::deep .pvs-crosshair::after {
+    left: 0;
+    top: 6px;
+    width: 14px;
+    height: 2px;
+}
+
+/* Crosshair status rings (JS-injected, --p is 0..100 from the engine's HUD pump):
+   inner ring = weapon heat, outer ring = blast cooldown. Conic fill masked to a thin
+   annulus. 10 Hz stepping is fine — heat moves slowly. */
+.pvs-canvas-host ::deep .pvs-ring {
+    position: absolute;
+    border-radius: 50%;
+    pointer-events: none;
+    --deg: calc(var(--p) * 3.6deg);
+}
+
+.pvs-canvas-host ::deep .pvs-ring-heat {
+    inset: -14px;
+    background: conic-gradient(var(--accent-warning) var(--deg), rgba(255, 255, 255, 0.14) var(--deg));
+    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px));
+    mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px));
+}
+
+.pvs-canvas-host ::deep .pvs-ring-heat.pvs-ring-locked {
+    background: conic-gradient(var(--accent-danger) var(--deg), rgba(255, 255, 255, 0.14) var(--deg));
+    animation: pvs-pulse 0.6s ease-in-out infinite;
+}
+
+.pvs-canvas-host ::deep .pvs-ring-alt {
+    inset: -21px;
+    opacity: 0.85;
+    background: conic-gradient(var(--accent-cyan) var(--deg), rgba(255, 255, 255, 0.1) var(--deg));
+    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1px));
+    mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1px));
+}
+
+.pvs-canvas-host ::deep .pvs-ring-alt.pvs-ring-ready {
+    filter: drop-shadow(0 0 4px var(--accent-cyan));
+}
+
+/* Damage vignette (JS-injected; the engine drives opacity, CSS owns the look). */
+.pvs-canvas-host ::deep .pvs-hit {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 2;
+    background: radial-gradient(ellipse at center, transparent 52%, rgba(220, 38, 38, 0.6) 100%);
+}
+
+/* Reduced motion: the engine already skips shake and the damage flash; this kills
+   the remaining CSS movement (pulses, popups drift, tile/badge entrances). */
+@media (prefers-reduced-motion: reduce) {
+    .pvs-bar-low,
+    .pvs-bar-heat-locked,
+    .pvs-canvas-host ::deep .pvs-ring-heat.pvs-ring-locked {
+        animation: none;
+    }
+
+    .pvs-pop,
+    .pvs-tile,
+    .pvs-best-badge {
+        animation: none;
+    }
+
+    .pvs-pop { opacity: 0; } /* no drift animation → don't stack static +N labels */
+}

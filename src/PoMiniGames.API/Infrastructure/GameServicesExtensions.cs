@@ -202,6 +202,13 @@ internal static class GameServicesExtensions
         services.AddSingleton<PoMiniGames.Features.PoSports.PoSportsLobbyService>();
         services.AddSingleton<PoMiniGames.Features.PoSports.PoSportsRaceRegistry>();
 
+        // PoVoxelStrike — startup GLB → voxel ingestion plus the in-memory asset catalog
+        // the manifest/payload endpoints read. See Features/PoVoxelStrike/.
+        services.AddOptions<PoMiniGames.Features.PoVoxelStrike.PoVoxelStrikeOptions>()
+            .BindConfiguration(PoMiniGames.Features.PoVoxelStrike.PoVoxelStrikeOptions.SectionName);
+        services.AddSingleton<PoMiniGames.Features.PoVoxelStrike.VoxelAssetCatalog>();
+        services.AddHostedService<PoMiniGames.Features.PoVoxelStrike.AssetIngestionHostedService>();
+
         services.ConfigureHttpJsonOptions(options =>
         {
             options.SerializerOptions.Converters.Add(

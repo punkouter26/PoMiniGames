@@ -27,17 +27,14 @@ x86/
 # ─── Runtime / framework caches ─────────────────────────────────────
 # Files the host or framework writes at run-time (never commit).
 # ASP.NET DataProtection key ring contains XML-wrapped key material that
-# would let an attacker forge the BFF's auth cookies. Cover BOTH the
-# per-project path AND the repo-root path — a run from the repo root writes
-# keys/ + logs/ there, and the root key was committed before this rule.
+# would let an attacker forge the BFF's auth cookies. Unanchored patterns cover
+# every keys/ + logs/ dir wherever the host is run from (repo root or project dir).
+# (The explicit src/PoMiniGames/ variants were removed 2026-08-18 — that project
+# path no longer exists and the unanchored rules already covered it.)
 keys/
 keys/**
 logs/
 logs/**
-src/PoMiniGames/keys/
-src/PoMiniGames/keys/**
-src/PoMiniGames/logs/
-src/PoMiniGames/logs/**
 
 # ─── IDE / editor state ──────────────────────────────────────────────
 .vs/
@@ -131,7 +128,6 @@ skills/
 # ─── SQLite runtime files (defensive — none today) ───────────────────
 *.sqlite3
 *.db-shm
-LLMDOCS/
 *.db-wal
 
 # ─── Generated documentation (Mermaid HTML export) ────────────────────
@@ -153,11 +149,6 @@ ehthumbs.db
 .hidden
 .nfs*
 
-# ─── Build tool caches ───────────────────────────────────────────────
-.cmake/
-CMakeCache.txt
-.absolute-work/
-
 # ─── Art sources ─────────────────────────────────────────────────────
 # Master renders kept locally for re-export only. The PoJoker Grandma portraits
 # arrived as 21 × 1024² PNGs (21 MB); wwwroot ships the 512² WebP derivatives
@@ -166,3 +157,8 @@ CMakeCache.txt
 # Re-export: ffmpeg -i "<name>.png" -vf scale=512:512:flags=lanczos \
 #            -c:v libwebp -pix_fmt yuva420p -quality 82 grandma-<emotion>.webp
 assets/
+
+# PoVoxelStrike: converted voxel volumes are build product derived from the GLBs in
+# the drop folder — regenerated on any API start. The drop folder itself IS source
+# (authored GLBs ship with the app), so only the output is ignored.
+src/PoMiniGames.API/App_Data/povoxelstrike/converted/

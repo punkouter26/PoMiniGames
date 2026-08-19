@@ -50,4 +50,8 @@ public interface IStorageService
     // PoSports High Scores (lowest combined meet time wins, one row per player)
     Task<List<PoSportsHighScore>> GetPoSportsHighScoresAsync(int limit = 10);
     Task<PoSportsHighScore> SavePoSportsHighScoreAsync(PoSportsHighScore entry);
+
+    // PoVoxelStrike High Scores (highest run score wins, one ratcheted row per player)
+    Task<List<PoVoxelStrikeHighScore>> GetPoVoxelStrikeHighScoresAsync(int limit = 10);
+    Task<PoVoxelStrikeHighScore> SavePoVoxelStrikeHighScoreAsync(PoVoxelStrikeHighScore entry);
 }

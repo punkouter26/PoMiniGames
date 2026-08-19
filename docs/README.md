@@ -1,13 +1,16 @@
-# PoMiniGames — DOCS report suite
+# PoMiniGames — docs report suite
 
-Eight self-contained HTML reports auditing the real source in `src/PoMiniGames/...`. Every asset is inlined — no CDN for Chart.js, Mermaid, fonts or CSS — so the files open safely over `file://`.
+Seven self-contained HTML reports auditing the real source in `src/PoMiniGames.API/...`
+(paths below are relative to that project unless rooted). Every asset is inlined — no
+CDN for Chart.js, Mermaid, fonts or CSS — so the files open safely over `file://`.
+Built `*.html` output is gitignored; run the build to produce it.
 
 ## Layout
 
 ```
-DOCS/
+docs/
 ├── README.md                    # this file
-├── build.mjs                    # assembles DOCS/*.html from _src/pages/*.html
+├── build.mjs                    # assembles docs/*.html from _src/pages/*.html
 ├── _src/
 │   ├── partials/
 │   │   ├── theme.css            # tokens + .card / .tiles / .chip / .sec + Okabe-Ito palette
@@ -24,14 +27,14 @@ DOCS/
 | `<!--@STYLE-->` | Inlined `_src/partials/theme.css` |
 | `<!--@SHELL-->` | Inlined `_src/partials/shell.js` |
 | `<!--@SVG:name-->` | Inlined `_src/diagrams/<name>.svg` |
-| `<!--@RAIL:file-->` | Inlined `_src/rails/<file>` raw text (for code excerpts) |
-| `<!--@HISTORY-->` | Inlined `diagnostic_history.json` if present; otherwise a labelled gap marker |
+| `<!--@RAIL:file-->` | Inlined `_src/rails/<file>` raw text — no `_src/rails/` exists today, so this marker is currently unused |
+| `<!--@HISTORY-->` | Inlined `diagnostic_history.json` if present (it is not, today); otherwise a labelled gap marker |
 
 ## Build
 
 ```
-node DOCS/build.mjs --no-mmd   # offline; uses pre-stored SVGs only
-node DOCS/build.mjs            # also runs `mmdc` on any *.mmd in _src/diagrams/ if installed
+node docs/build.mjs --no-mmd   # offline; uses pre-stored SVGs only
+node docs/build.mjs            # also runs `mmdc` on any *.mmd in _src/diagrams/ if installed
 ```
 
 ## Themes
@@ -40,7 +43,7 @@ Dark by default. Toggle in the top-right persists per browser via `localStorage`
 
 ## Report contract
 
-Every report is grounded in real source paths in `src/PoMiniGames/...`. Invented numbers are never used; gaps are surfaced as findings.
+Every report is grounded in real source paths in `src/PoMiniGames.API/...`. Invented numbers are never used; gaps are surfaced as findings.
 
 | Report | Source audit |
 | --- | --- |
@@ -55,15 +58,15 @@ Every report is grounded in real source paths in `src/PoMiniGames/...`. Invented
 
 ## If `collect-vitals.mjs` is missing
 
-The DIAGNOSTIC_METRICS report reads `DOCS/diagnostic_history.json` via `<!--@HISTORY-->`. If that JSON is absent (this workspace), the build emits a labelled gap token and the page shows:
+It is missing in this workspace — the DIAGNOSTIC_METRICS report reads `docs/diagnostic_history.json` via `<!--@HISTORY-->`; that JSON is also absent, so the build emits a labelled gap token and the page shows:
 
 - Three empty charts (interactiveMs, CLS, WASM memory) with a clear "no samples" badge.
-- A live inventory of what the app *does* instrument (`/api/diag`, `/api/diag/telemetry`, `/api/health`, `/api/mockables`, `/api/logs/tail`) — all configuration/status, no client-runtime TTFB/CLS/JS-heap.
+- A live inventory of what the app *does* instrument (`/api/diag`, `/api/health`, `/api/mockables`, `/api/logs/tail`) — all configuration/status, no client-runtime TTFB/CLS/JS-heap. (`/api/diag/telemetry` was removed 2026-08-18: zero consumers.)
 
-The pipeline is **not** rebuilt from scratch. To populate it, write a `DOCS/collect-vitals.mjs` that:
+The pipeline is **not** rebuilt from scratch. To populate it, write a `docs/collect-vitals.mjs` that:
 
 1. Starts Azurite + the API host if they aren't already up (idempotent).
 2. Navigates to representative routes with Playwright, recording `performance.now()` deltas around the `load` event, the WASM `interactiveMs` baseline (e.g. the time the Blazor runtime raises `enhancedload` or the first `render` of the root component), CLS via `PerformanceObserver`, and `performance.memory.usedJSHeapSize` snapshots every 250 ms.
-3. Appends samples to `DOCS/diagnostic_history.json` with `runs >= 8` per prompt Step 0.
+3. Appends samples to `docs/diagnostic_history.json` with `runs >= 8` per prompt Step 0.
 
 Until that script exists, the report is honest about its absence.

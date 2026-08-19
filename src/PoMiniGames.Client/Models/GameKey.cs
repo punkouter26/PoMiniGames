@@ -53,4 +53,6 @@ public static class GameKeys
     // /leaderboards page currently reaches the board via the all-boards response, so
     // this constant is for forward use rather than for the current render path.
     public static readonly GameKey PoBrawlDemo = new("pobrawldemo");
+
+    public static readonly GameKey PoVoxelStrike = new("povoxelstrike");
 }

@@ -29,6 +29,7 @@ public class StorageService : IStorageService
     private const string PoBrawlEloTable = "PoBrawlFighterRatings";
     private const string PoRacerTable = "PoRacerHighScores";
     private const string PoSportsTable = "PoSportsHighScores";
+    private const string PoVoxelStrikeTable = "PoVoxelStrikeHighScores";
 
     // High scores share a single partition per game so a leaderboard is one partition scan.
     private const string MarbleRacePartition = "marblerace";
@@ -37,6 +38,7 @@ public class StorageService : IStorageService
     private const string PoBrawlEloPartition = "pobrawlelo";
     private const string PoRacerPartition = "poracer";
     private const string PoSportsPartition = "posports";
+    private const string PoVoxelStrikePartition = "povoxelstrike";
 
     private readonly TableServiceClient _serviceClient;
     private readonly EloCalculator _eloCalculator;
@@ -91,7 +93,7 @@ public class StorageService : IStorageService
     /// </summary>
     public void Initialize()
     {
-        foreach (var table in new[] { PlayerStatsTable, MarbleRaceTable, PoBrawlTable, PoBrawlLadderTable, PoBrawlEloTable, PoRacerTable, PoSportsTable })
+        foreach (var table in new[] { PlayerStatsTable, MarbleRaceTable, PoBrawlTable, PoBrawlLadderTable, PoBrawlEloTable, PoRacerTable, PoSportsTable, PoVoxelStrikeTable })
         {
             try { Table(table); } catch { /* ensured lazily on first use */ }
         }
@@ -389,6 +391,65 @@ public class StorageService : IStorageService
         RowKeyFields: ["Character", "KoTimeSeconds", "PlayerInitials"],
         // Fastest KO wins, oldest first as the tiebreaker.
         Rank: s => s.OrderBy(x => x.KoTimeSeconds).ThenBy(x => x.Date));
+
+    private static readonly HighScoreDescriptor<PoVoxelStrikeHighScore> PoVoxelStrikeScores = new(
+        Table: PoVoxelStrikeTable,
+        Partition: PoVoxelStrikePartition,
+        Sanitize: e => e with
+        {
+            PlayerName = DisplayName24(e.PlayerName),
+            UserId = e.UserId ?? "",
+            Score = PoVoxelStrikeScore.Clamp(e.Score),
+            SurvivalSeconds = Math.Clamp(e.SurvivalSeconds, 0, 14_400),
+            Kills = Math.Max(0, e.Kills),
+            BruteKills = Math.Max(0, e.BruteKills),
+            CrushKills = Math.Max(0, e.CrushKills),
+            VoxelsDestroyed = Math.Max(0, e.VoxelsDestroyed),
+            AchievedAtUtc = e.AchievedAtUtc == default ? DateTimeOffset.UtcNow : e.AchievedAtUtc,
+        },
+        ToFields: e => new Dictionary<string, object?>
+        {
+            ["PlayerName"] = e.PlayerName,
+            ["UserId"] = e.UserId,
+            ["IsGuest"] = e.IsGuest,
+            ["Score"] = e.Score,
+            ["SurvivalSeconds"] = e.SurvivalSeconds,
+            ["Kills"] = e.Kills,
+            ["BruteKills"] = e.BruteKills,
+            ["CrushKills"] = e.CrushKills,
+            ["VoxelsDestroyed"] = e.VoxelsDestroyed,
+            // ISO-8601 string, matching every sibling board's date convention.
+            ["Date"] = e.AchievedAtUtc.ToString("yyyy-MM-ddTHH:mm:ssZ"),
+        },
+        FromEntity: e => new PoVoxelStrikeHighScore
+        {
+            PlayerName = e.GetString("PlayerName") ?? "",
+            UserId = e.GetString("UserId") ?? "",
+            IsGuest = e.GetBoolean("IsGuest") ?? true,
+            Score = e.GetInt32("Score") ?? 0,
+            SurvivalSeconds = e.GetDouble("SurvivalSeconds") ?? 0d,
+            Kills = e.GetInt32("Kills") ?? 0,
+            BruteKills = e.GetInt32("BruteKills") ?? 0,
+            CrushKills = e.GetInt32("CrushKills") ?? 0,
+            VoxelsDestroyed = e.GetInt32("VoxelsDestroyed") ?? 0,
+            AchievedAtUtc = DateTimeOffset.TryParse(e.GetString("Date"), out var d) ? d : default,
+        },
+        // Identity is the player (mirrors MarbleRaceScores): one row per (name, account,
+        // guest-ness), never keyed on the score — every run submits, and score-keyed rows
+        // would let one player fill the whole board.
+        RowKeyFields: ["PlayerName", "UserId", "IsGuest"],
+        Rank: s => s.OrderByDescending(x => x.Score).ThenBy(x => x.AchievedAtUtc))
+    {
+        // Best-result ratchet: a later, worse run must not erase a better one.
+        ShouldOverwrite = (existing, incoming) =>
+            (incoming.TryGetValue("Score", out var v) ? v as int? ?? 0 : 0) > (existing.GetInt32("Score") ?? -1),
+    };
+
+    public Task<List<PoVoxelStrikeHighScore>> GetPoVoxelStrikeHighScoresAsync(int limit = 10) =>
+        GetHighScoresAsync(PoVoxelStrikeScores, limit);
+
+    public Task<PoVoxelStrikeHighScore> SavePoVoxelStrikeHighScoreAsync(PoVoxelStrikeHighScore entry) =>
+        SaveHighScoreAsync(PoVoxelStrikeScores, entry);
 
     public Task<List<MarbleRaceHighScore>> GetMarbleRaceHighScoresAsync(int limit = 10) =>
         GetHighScoresAsync(MarbleRaceScores, limit);

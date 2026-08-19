@@ -185,6 +185,15 @@ public static class GameCatalog
             new(GameMode.Demo, "/posurvive/demo"),
         ]),
 
+        // Voxel assets stream from /api/povoxelstrike/assets on first load (Cache API
+        // holds them after that), so the first run needs a server — but the mode itself
+        // is offline-capable once cached, matching the other single-player 3D games.
+        new(GameKeys.PoVoxelStrike, "Voxel Strike", "🧱",
+        [
+            new(GameMode.OnePlayer, "/povoxelstrike/1player"),
+            new(GameMode.Demo, "/povoxelstrike/demo"),
+        ]) { ChipPrimary = true },
+
         // Joker's set is fetched from a joke API mid-performance in every mode — there
         // is no offline joke bank to fall back on.
         new(GameKeys.PoJoker, "Joker", "🃏",
@@ -252,7 +261,7 @@ public static class GameCatalog
         .. new[]
         {
             GameKeys.TicTacToe, GameKeys.ConnectFive, GameKeys.PoRacer, GameKeys.PoMarbleRace,
-            GameKeys.PoJoker, GameKeys.PoBrawl, GameKeys.PoSurvive, GameKeys.PoSports,
+            GameKeys.PoVoxelStrike, GameKeys.PoJoker, GameKeys.PoBrawl, GameKeys.PoSurvive, GameKeys.PoSports,
         }
         .Select(key => All.First(g => g.Key == key))
         .Select(g =>

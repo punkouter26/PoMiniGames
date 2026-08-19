@@ -25,13 +25,23 @@ const ALT_BLAST_RADIUS = 12;
 const ALT_BLAST_STRENGTH = 9;
 const ALT_ENEMY_DAMAGE = 70;
 const MAX_RANGE = 160;
+// Voxel shrapnel. Budgets are per shot, not per second: a primary carve removes on the
+// order of 1500 cells at 0.25-unit voxels and an alt blast tens of thousands, so what is
+// thrown is always a sample. Power is the metres/second at the blast centre.
+const PRIMARY_SHRAPNEL_BUDGET = 24;
+const PRIMARY_SHRAPNEL_POWER = 9;
+const ALT_SHRAPNEL_BUDGET = 130;
+const ALT_SHRAPNEL_POWER = 15;
+const DIRT_CLOD_SIZE = 0.32;
 
 // Terrain voxels are 0.2u — much smaller than structure voxels — so raw dig counts
 // would swamp the score. Divide for parity with structure carving.
 const TERRAIN_SCORE_DIVISOR = 8;
 
 export class Weapon {
-  constructor(scene, camera, structures, terrain, debris, enemies, onCarve, fx = null) {
+  constructor(scene, camera, structures, terrain, debris, enemies, onCarve, fx = null,
+    shrapnel = null) {
+    this.shrapnel = shrapnel;
     this.scene = scene;
     this.camera = camera;
     this.structures = structures;
@@ -155,16 +165,26 @@ export class Weapon {
   }
 
   _detonate(point) {
+    // The blast's shrapnel budget is shared across every structure it touches, so a shot
+    // into a corner where three walls meet does not spawn three full bursts.
+    let budget = ALT_SHRAPNEL_BUDGET;
     for (const s of this.structures) {
       const { removed, clusters } = s.carveSphere(point, ALT_CARVE_RADIUS);
       let clusterVoxels = 0;
       for (const c of clusters) { clusterVoxels += c.voxels.length; this.debris.spawnCluster(s, c); }
       if (removed.length > 0) this.onCarve?.(removed.length, clusterVoxels);
+      if (removed.length > 0 && budget > 0) {
+        const share = Math.min(budget, Math.ceil(ALT_SHRAPNEL_BUDGET / 2));
+        this.shrapnel?.spawnFromCarve(s, removed, point, ALT_SHRAPNEL_POWER, share);
+        budget -= share;
+      }
     }
     const dug = this.terrain.dig(point, ALT_DIG_RADIUS);
     if (dug > 0) {
       this.onCarve?.(Math.max(1, Math.round(dug / TERRAIN_SCORE_DIVISOR)), 0);
       this._recheckUndermined(point, ALT_DIG_RADIUS);
+      this.shrapnel?.spawnBurst(point, 34, DIRT_CLOD_SIZE,
+        new THREE.Color(0x6d5138), ALT_SHRAPNEL_POWER * 0.8);
     }
 
     // Unfreeze BEFORE the blast so settled ruins take the impulse too — applyBlast
@@ -193,16 +213,26 @@ export class Weapon {
       let clusterVoxels = 0;
       for (const c of clusters) { clusterVoxels += c.voxels.length; this.debris.spawnCluster(hit.structure, c); }
       if (removed.length > 0) this.onCarve?.(removed.length, clusterVoxels);
+      // The stone this shot knocked loose, thrown as real bodies.
+      this.shrapnel?.spawnFromCarve(hit.structure, removed, hit.point,
+        PRIMARY_SHRAPNEL_POWER, PRIMARY_SHRAPNEL_BUDGET);
       this.debris.burstAt(hit.point, new THREE.Color(0xd9d9df), 4, 0.35);
       this.debris.wakeNear(hit.point, PRIMARY_CARVE_RADIUS + 3); // ledge shot from under a resting chunk
+      this.fx?.impact(hit.point, 'structure', hit.normal);
     } else if (hit.kind === 'terrain') {
       const dug = this.terrain.dig(hit.point, PRIMARY_DIG_RADIUS);
       if (dug > 0) {
         this.onCarve?.(Math.max(1, Math.round(dug / TERRAIN_SCORE_DIVISOR)), 0);
         this._recheckUndermined(hit.point, PRIMARY_DIG_RADIUS);
+        // Terrain voxels are 0.1 units -- far too small to be worth a rigid body each, so
+        // the ground throws clods at DIRT_CLOD_SIZE instead of true voxel size. It is the
+        // one place the simulation is deliberately coarser than the grid.
+        this.shrapnel?.spawnBurst(hit.point, 10, DIRT_CLOD_SIZE,
+          new THREE.Color(0x6d5138), PRIMARY_SHRAPNEL_POWER * 0.7);
       }
       this.debris.burstAt(hit.point, new THREE.Color(0x6d5138), 5, 0.4); // dirt spray
       this.debris.wakeNear(hit.point, PRIMARY_DIG_RADIUS + 3); // dug the floor from under debris
+      this.fx?.impact(hit.point, 'terrain', hit.normal);
     } else if (hit.kind === 'debris') {
       this.debris.fragment(hit.piece);
     } else {

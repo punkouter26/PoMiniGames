@@ -1,0 +1,78 @@
+using Microsoft.AspNetCore.SignalR;
+using PoMiniGames.Shared.Games;
+
+namespace PoMiniGames.Features.PoVoxelStrike;
+
+/// <summary>
+/// Drains every active lockstep session once per <see cref="PoVoxelStrikeLockstepService.TickIntervalMs"/>
+/// and broadcasts the resulting frame to the session's SignalR group. Replaces the
+/// earlier "host polls <c>PumpFrame</c>" model, which silently stalled when the host's
+/// websocket reconnected (the 60s client timeout path cleared the lobby before the
+/// race sim hit its safety cap; same recovery bug that PoRacer fixed in 2026-07-18).
+/// </summary>
+/// <remarks>
+/// <para><b>2026-08-18 — host-independent pump:</b> the original hub method depended on
+/// the host's SignalR connection to fire the timer; a transient host disconnect
+/// silently froze every peer's input application. Moving the pump to a hosted service
+/// means the timer survives a host reconnect — peers see a brief gap in frames, not
+/// a dead simulation.</para>
+/// </remarks>
+public sealed class PoVoxelStrikeLockstepPump : BackgroundService
+{
+    private readonly PoVoxelStrikeLockstepService _lockstep;
+    private readonly IHubContext<PoVoxelStrikeLockstepHub> _hubContext;
+    private readonly ILogger<PoVoxelStrikeLockstepPump> _log;
+
+    public PoVoxelStrikeLockstepPump(
+        PoVoxelStrikeLockstepService lockstep,
+        IHubContext<PoVoxelStrikeLockstepHub> hubContext,
+        ILogger<PoVoxelStrikeLockstepPump> log)
+    {
+        _lockstep = lockstep;
+        _hubContext = hubContext;
+        _log = log;
+    }
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        var interval = TimeSpan.FromMilliseconds(PoVoxelStrikeLockstepService.TickIntervalMs);
+        // Drift-corrected loop: Period is the deadline, not the sleep. Without this,
+        // a 1–2 ms drift per tick accumulates to ~80 ms lost over 20 minutes — visible
+        // as the simulation gradually falling behind reality under sustained play.
+        using var timer = new PeriodicTimer(interval);
+        _log.LogInformation("PoVoxelStrike lockstep pump started; tick={Ms}ms",
+            PoVoxelStrikeLockstepService.TickIntervalMs);
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            try
+            {
+                await PumpOnceAsync(stoppingToken);
+            }
+            catch (OperationCanceledException) { break; }
+            catch (Exception ex)
+            {
+                // Never let a single broadcast exception kill the pump — the next tick
+                // will pick up the queued inputs and clients will desync-detect at worst.
+                _log.LogError(ex, "PoVoxelStrike lockstep pump tick failed; continuing.");
+            }
+            try { await timer.WaitForNextTickAsync(stoppingToken); }
+            catch (OperationCanceledException) { break; }
+        }
+        _log.LogInformation("PoVoxelStrike lockstep pump stopped.");
+    }
+
+    /// <summary>Drain every session and broadcast a frame. Returns the number of frames pushed.</summary>
+    public async Task<int> PumpOnceAsync(CancellationToken ct)
+    {
+        var pushed = 0;
+        foreach (var session in _lockstep.Sessions)
+        {
+            var frame = session.DrainFrame();
+            if (frame is null) continue;
+            var group = PoVoxelStrikeLockstepService.GroupPrefix + "-" + session.GameCode;
+            await _hubContext.Clients.Group(group).SendAsync("frame", frame, ct);
+            pushed++;
+        }
+        return pushed;
+    }
+}

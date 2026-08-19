@@ -13,10 +13,13 @@ let startToken = 0;
 // re-decoding assets — "Play again" costs one world build, not a full boot.
 let lastStart = null; // { containerId, dotnetRef, demo, volumes }
 
-function boot(host, dotnetRef, demo, volumes) {
+async function boot(host, dotnetRef, demo, volumes) {
+  // Engine.start() is async: the renderer factory awaits WebGPU adapter init before it
+  // can fall back. The await has to be INSIDE the try or a rejected start would surface
+  // as an unhandled rejection instead of OnFatalError.
   try {
     engine = new Engine(host, dotnetRef, demo, volumes);
-    engine.start();
+    await engine.start();
   } catch (err) {
     console.error('[PoVoxelStrike] engine boot failed:', err);
     try { dotnetRef.invokeMethodAsync('OnFatalError', String(err?.message ?? err)); } catch { }

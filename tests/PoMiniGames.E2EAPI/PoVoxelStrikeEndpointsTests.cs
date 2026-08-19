@@ -50,6 +50,21 @@ public class PoVoxelStrikeEndpointsTests
             payload.Headers.CacheControl!.ToString().Should().Contain("immutable");
             var bytes = await payload.Content.ReadAsByteArrayAsync();
             bytes.Take(4).Should().Equal("PVX1"u8.ToArray());
+
+            // Voxel painter (#9) — every manifest entry carries a materials array. The
+            // shape is additive and backwards-compatible: assets without a sidecar ship
+            // a one-element table with the default "concrete" constants. Entries with a
+            // sidecar expose the author's names + per-material physics overrides.
+            var first = entries[0];
+            first.TryGetProperty("materials", out var materials).Should().BeTrue(
+                "every manifest entry must include a materials[] (default or override)");
+            materials.ValueKind.Should().Be(JsonValueKind.Array);
+            var firstMaterial = materials.EnumerateArray().First();
+            firstMaterial.GetProperty("materialId").GetInt32().Should().BeGreaterThan(0);
+            firstMaterial.GetProperty("displayName").GetString().Should().NotBeNullOrEmpty();
+            firstMaterial.GetProperty("density").GetDouble().Should().BeGreaterThan(0);
+            firstMaterial.GetProperty("compressiveStrength").GetDouble().Should().BeGreaterThan(0);
+            firstMaterial.GetProperty("tensileStrength").GetDouble().Should().BeGreaterThan(0);
         }
     }
 

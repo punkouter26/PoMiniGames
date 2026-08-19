@@ -41,7 +41,15 @@
          carries no GLBs and every deployed arena silently falls back to procedural
          primitives. drop/ only — converted/ is a build product and stays out of both
          git and the package. -->
-    <Content Include="App_Data\povoxelstrike\drop\**"
+<Content Include="App_Data/povoxelstrike/drop/*.glb"
+             CopyToOutputDirectory="Never"
+             CopyToPublishDirectory="PreserveNewest" />
+    <!-- Voxel painter (#9): author sidecars ship with the GLBs. The SDK auto-globs every
+         file under App_Data/ as Content (EnableDefaultContentItems=true); without the
+         explicit <Content Remove> an NETSDK1022 "Duplicate Content items" error fires.
+         The Remove uses the same path the SDK computed, leaving only the explicit one. -->
+    <Content Remove="App_Data/povoxelstrike/drop/Box.glb.pvx-mat.json" />
+    <Content Include="App_Data/povoxelstrike/drop/Box.glb.pvx-mat.json"
              CopyToOutputDirectory="Never"
              CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>

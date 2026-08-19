@@ -20,7 +20,7 @@ public static class GlbVoxelizer
     private static readonly PvxMaterial DefaultMaterial = new(
         Density: 600f, CompressiveStrength: 5_000_000f, TensileStrength: 2_000_000f);
 
-    public static PvxVolume Voxelize(string glbPath, int resolution)
+    public static PvxVolume Voxelize(string glbPath, int resolution, PvxSidecar? overrides = null)
     {
         var model = ModelRoot.Load(glbPath);
         var triangles = CollectTriangles(model);
@@ -28,7 +28,7 @@ public static class GlbVoxelizer
         {
             throw new InvalidDataException("GLB contains no triangle geometry.");
         }
-        return Voxelize(triangles, resolution);
+        return Voxelize(triangles, resolution, overrides);
     }
 
     internal readonly record struct Triangle(Vector3 A, Vector3 B, Vector3 C, Vector4 Color);
@@ -84,7 +84,7 @@ public static class GlbVoxelizer
         return channel?.Color ?? new Vector4(0.72f, 0.72f, 0.75f, 1f);
     }
 
-    internal static PvxVolume Voxelize(IReadOnlyList<Triangle> triangles, int resolution)
+    internal static PvxVolume Voxelize(IReadOnlyList<Triangle> triangles, int resolution, PvxSidecar? overrides = null)
     {
         var min = new Vector3(float.MaxValue);
         var max = new Vector3(float.MinValue);
@@ -109,9 +109,20 @@ public static class GlbVoxelizer
         var cells = new byte[nx * ny * nz];
         var palette = new PaletteBuilder();
 
+        // Material table: sidecar overrides take precedence; the default is the floor.
+        var materials = BuildMaterialTable(overrides);
+
         foreach (var t in triangles)
         {
             var index = palette.IndexOf(t.Color);
+            // Re-stamp the palette entry's MaterialId from the sidecar when the GLB color
+            // matches one of the sidecar's palette overrides. Without this, every palette
+            // entry would point at MaterialId=1 and the override table would be inert.
+            var remapped = ResolveMaterialId(t.Color, overrides, materials.Count);
+            if (remapped != palette.Entries[index].MaterialId)
+            {
+                palette.Entries[index] = palette.Entries[index] with { MaterialId = remapped };
+            }
             MarkTriangle(t, index);
         }
 
@@ -122,10 +133,47 @@ public static class GlbVoxelizer
             DimX = nx,
             DimY = ny,
             DimZ = nz,
-            Palette = palette.Entries,
-            Materials = [DefaultMaterial],
+            Palette = palette.Entries.ToList(),
+            Materials = materials,
             Cells = cells,
         };
+
+        static byte ResolveMaterialId(Vector4 color, PvxSidecar? sidecar, int materialCount)
+        {
+            if (sidecar is null) return 1;
+            var tol = sidecar.Tolerance == 0 ? (byte)8 : sidecar.Tolerance;
+            foreach (var entry in sidecar.PaletteEntries)
+            {
+                if (Math.Abs(color.X * 255 - entry.R) <= tol
+                    && Math.Abs(color.Y * 255 - entry.G) <= tol
+                    && Math.Abs(color.Z * 255 - entry.B) <= tol
+                    && Math.Abs(color.W * 255 - entry.A) <= tol)
+                {
+                    return entry.MaterialId;
+                }
+            }
+            return 1;
+        }
+
+        IReadOnlyList<PvxMaterial> BuildMaterialTable(PvxSidecar? sidecar)
+        {
+            if (sidecar is null || sidecar.Materials.Count == 0)
+            {
+                return [DefaultMaterial];
+            }
+            var table = new List<PvxMaterial>(sidecar.Materials.Count);
+            foreach (var m in sidecar.Materials.OrderBy(x => x.MaterialId))
+            {
+                table.Add(new PvxMaterial(
+                    m.Density ?? DefaultMaterial.Density,
+                    m.CompressiveStrength ?? DefaultMaterial.CompressiveStrength,
+                    m.TensileStrength ?? DefaultMaterial.TensileStrength));
+            }
+            // Pad with the default up to the highest MaterialId so palette entries that
+            // point beyond the override range still resolve to something sensible.
+            while (table.Count < sidecar.Materials.Count) table.Add(DefaultMaterial);
+            return table;
+        }
 
         void MarkTriangle(in Triangle t, byte paletteIndex)
         {
@@ -219,7 +267,7 @@ public static class GlbVoxelizer
         private readonly List<PvxPaletteEntry> _entries = [];
         private readonly Dictionary<uint, byte> _lookup = [];
 
-        public IReadOnlyList<PvxPaletteEntry> Entries => _entries;
+        public List<PvxPaletteEntry> Entries => _entries;
 
         public byte IndexOf(Vector4 color)
         {

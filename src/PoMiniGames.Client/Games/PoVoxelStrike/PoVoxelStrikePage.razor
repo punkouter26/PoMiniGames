@@ -38,7 +38,7 @@
     {
         <GameIntro CueScope="povoxelstrike"
                    Title="@TitleContent"
-                   Objective="Survive the arena. Carve the world apart and drop it on whatever chases you — but what falls crushes you too."
+                   Objective="Storm the fortress. Blast through the curtain walls, the inner ward and the great keep to reach the golden chalice — while the guns on the battlements shoot back."
                    Controls="@HowToPlayContent"
                    Mode="@(_demo ? GameIntro.IntroMode.Demo : GameIntro.IntroMode.OnePlayer)"
                    OnStart="OnIntroStartAsync" />
@@ -53,7 +53,7 @@
             @if (!_demo && _phase is Phase.Playing or Phase.Paused)
             {
                 <div class="pvs-hud" aria-hidden="true">
-                    <div class="pvs-hud-left">
+                    <div class="pvs-hud-left pvs-glass">
                         <div class="pvs-bar @(_hp <= 30 ? "pvs-bar-low" : null)">
                             <span class="pvs-bar-label">HP</span>
                             <div class="pvs-bar-track"><div class="pvs-bar-fill pvs-bar-hp" style="--fill: @(_hp)%"></div></div>
@@ -68,7 +68,7 @@
                             <div class="pvs-bar-track"><div class="pvs-bar-fill pvs-bar-alt" style="--fill: @(_altPct)%"></div></div>
                         </div>
                     </div>
-                    <div class="pvs-hud-right">
+                    <div class="pvs-hud-right pvs-glass">
                         <div class="pvs-hud-score-wrap">
                             @foreach (var pop in _popups)
                             {
@@ -76,7 +76,7 @@
                             }
                             <div class="pvs-hud-score">@_score.ToString("N0")</div>
                         </div>
-                        <div class="pvs-hud-meta">@FormatTime(_elapsed) · @_kills kills · @_enemyCount hostiles</div>
+                        <div class="pvs-hud-meta">@FormatTime(_elapsed) · @_kills kills · @_structureCount pieces standing</div>
                     </div>
                 </div>
             }
@@ -127,7 +127,8 @@
                     @(_assetCount > 0
                         ? $"{_assetCount} imported asset{(_assetCount == 1 ? "" : "s")}"
                         : "No imported assets — procedural arena")
-                    · @_structureCount structures · hold <kbd>F</kbd> to dig, <kbd>G</kbd> to blast, drop buildings on what chases you.
+                    · @_structureCount fortress pieces · the guns on the walls are shooting at you.
+                    Hold <kbd>F</kbd> to dig, <kbd>G</kbd> to blast. Breach the walls, reach the golden chalice in the keep.
                 </span>
             }
         </div>
@@ -172,6 +173,7 @@
     private int _finalVoxels;
     private string _finalSeed = "";
     private bool _isNewBest;
+    private bool _won;   // set by OnVictory; a loss never clears it mid-run, only a restart does
 
     // Floating "+N" score popups. Spawned on HUD ticks whose score delta beats the
     // passive time drip (kills/crushes, not the +10/s clock), pruned on later ticks
@@ -184,7 +186,7 @@
     private RenderFragment TitleContent => @<span>🧱 Voxel Strike</span>;
 
     private RenderFragment HowToPlayContent => @<div>
-        <p>Endless survival. Swarmers rush you, Spitters shoot from range, Brutes smash through walls. Falling debris crushes them — and you.</p>
+        <p>One fortress, two rings of wall and a keep at the centre. The chalice is in the vault. Every wall is destructible, so there is always a way in — you just have to make it. Wall-mounted guns track you across open ground; carve the masonry out from under one and it falls silent. Falling debris crushes you too.</p>
         <ul>
             <li>Click the arena to take control (pointer lock)</li>
             <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move · trackpad or mouse to look · <kbd>Shift</kbd> run</li>
@@ -194,6 +196,10 @@
     </div>;
 
     private RenderFragment GameSummaryContent => @<div class="pvs-summary">
+        @if (_won)
+        {
+            <div class="pvs-win-badge">🏆 The chalice is yours — the fortress has fallen!</div>
+        }
         @if (_isNewBest)
         {
             <div class="pvs-best-badge">🏆 New personal best!</div>
@@ -262,6 +268,7 @@
 
     private async Task RestartAsync()
     {
+        _won = false;
         _phase = Phase.Loading;
         _hp = 100; _heatPct = 0; _heatLocked = false; _altPct = 100;
         _score = 0; _elapsed = 0; _kills = 0; _enemyCount = 0;
@@ -330,6 +337,20 @@
     {
         if (_phase == Phase.Playing) _phase = Phase.Paused;
         StateHasChanged();
+    }
+
+    /// <summary>
+    /// The chalice was taken: the siege was won. Same payload and the same submit path as
+    /// <see cref="OnGameOver"/> -- only <c>_won</c> differs, which is what the summary
+    /// reads to choose its banner. Keeping one submit path is deliberate: a second one is
+    /// how a win would eventually stop reaching the leaderboard.
+    /// </summary>
+    [JSInvokable]
+    public Task OnVictory(int score, double survivalSeconds, int kills, int bruteKills,
+        int crushKills, int voxelsDestroyed, string seed)
+    {
+        _won = true;
+        return OnGameOver(score, survivalSeconds, kills, bruteKills, crushKills, voxelsDestroyed, seed);
     }
 
     [JSInvokable]

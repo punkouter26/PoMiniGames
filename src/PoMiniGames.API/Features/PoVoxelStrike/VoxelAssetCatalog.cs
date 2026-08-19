@@ -10,7 +10,18 @@ public sealed record VoxelAssetInfo(
     int DimY,
     int DimZ,
     long SizeBytes,
-    string PayloadPath);
+    string PayloadPath,
+    /// <summary>Material entries the M2 stress solver uses (density, compressive, tensile).
+    /// Empty when no sidecar was provided at ingest time — the voxelizer falls back to
+    /// the "concrete-ish" default and the client infers the same default from an
+    /// empty table.</summary>
+    IReadOnlyList<VoxelAssetMaterial> Materials = null!,
+    /// <summary>Optional display names keyed by material id (the sidecar's <c>DisplayName</c>).
+    /// Empty when no sidecar was provided.</summary>
+    IReadOnlyDictionary<byte, string> MaterialNames = null!);
+
+/// <summary>One material entry surfaced in the manifest. MaterialId is 1-based (0 = unused).</summary>
+public sealed record VoxelAssetMaterial(byte MaterialId, string DisplayName, float Density, float CompressiveStrength, float TensileStrength);
 
 /// <summary>
 /// In-memory index of converted voxel assets. Filled by <see cref="AssetIngestionHostedService"/>

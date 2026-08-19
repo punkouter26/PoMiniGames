@@ -10,6 +10,9 @@
 
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
+import { createVoxelMaterial } from './materials.js';
+import { greedyBoxes } from './voxelboxes.js';
+import { materialFor, massOf, surfaceOf, MATERIAL_PRESETS } from './physics.js';
 
 export const MAX_BODIES = 150;
 const MAX_PARTICLES = 2000;
@@ -22,12 +25,21 @@ const MAX_FRAG_DEPTH = 3;
 const FRAG_MIN_AGE_S = 0.4;   // newborn halves overlap for a frame — don't re-split on it
 const REST_FREEZE_S = 8;
 const PARTICLE_LIFE_S = 1.3;
-const GRAVITY = -20;
+const GRAVITY = -9.81;
+// Compound-collider budget per falling piece. A cluster is usually a handful of boxes
+// after greedy merging; the cap is there so one enormous collapse cannot put a thousand
+// shapes on a single body.
+const PIECE_BOX_BUDGET = 24;
+// What survives a wall. Not zero: a blast big enough to breach masonry still shakes what
+// is behind it, and a hard zero makes rubble in the lee of a wall look frozen.
+const BLAST_SHIELDING = 0.18;
 
 export class DebrisManager {
-  constructor(scene, physicsWorld, fx = null) {
+  constructor(scene, physicsWorld, fx = null, physicsMaterials = null) {
     this.scene = scene;
     this.world = physicsWorld;
+    this.physicsMaterials = physicsMaterials;
+    this.structures = null; // set by the engine; used for blast line-of-sight
     this.fx = fx;           // { collapse(voxels, pos), impact(mass, pos, speed) } | null
     this.pieces = [];       // { mesh, body, voxels:count, color, scale, age, restTime, frozen, fragCooldown }
     this._pendingFragments = [];
@@ -35,7 +47,7 @@ export class DebrisManager {
     // Particle pool: one InstancedMesh of unit cubes, slots reused oldest-first.
     this.particleMesh = new THREE.InstancedMesh(
       new THREE.BoxGeometry(1, 1, 1),
-      new THREE.MeshLambertMaterial(),
+      createVoxelMaterial({ vertexColors: false }),
       MAX_PARTICLES);
     this.particleMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.particleMesh.count = MAX_PARTICLES;
@@ -79,41 +91,61 @@ export class DebrisManager {
       this._paletteColor(structure.palette, cluster.voxels[0].value),
       Math.min(14, 4 + (cluster.voxels.length >> 5)), structure.scale);
 
+    const material = materialFor(structure.volume, cluster.voxels[0].value);
     this._spawnPiece({
       cells, dims: [nx, ny, nz], palette: structure.palette,
       scale: structure.scale, rotationY: structure.group.rotation.y,
       position: centerWorld, velocity: new THREE.Vector3(), impulse,
-      voxels: cluster.voxels.length, fragDepth: 0,
+      voxels: cluster.voxels.length, fragDepth: 0, material,
     });
   }
 
-  _spawnPiece({ cells, dims, palette, scale, rotationY, position, velocity, impulse, voxels, fragDepth }) {
+  _spawnPiece({ cells, dims, palette, scale, rotationY, position, velocity, impulse, voxels,
+    fragDepth, material }) {
+    const mat = material ?? MATERIAL_PRESETS.stone;
     this._enforceBodyCap();
 
     const geometry = buildCenteredGeometry(cells, dims, palette);
-    const mesh = new THREE.Mesh(geometry, new THREE.MeshLambertMaterial({ vertexColors: true }));
+    const mesh = new THREE.Mesh(geometry, createVoxelMaterial());
     mesh.scale.setScalar(scale);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     this.scene.add(mesh);
 
-    const half = new CANNON.Vec3(dims[0] * scale / 2, dims[1] * scale / 2, dims[2] * scale / 2);
-    const density = 600; // kg/m³ nominal; materials[].density when multi-material lands
-    const mass = Math.min(500, Math.max(2, voxels * scale ** 3 * density / 100));
+    // Real mass. The old formula divided rho*V by 100 and then capped the result at
+    // 500 kg, so a collapsing tower section weighed about as much as a bag of sand and
+    // bounced accordingly. A cubic metre of stone is 2400 kg and it is allowed to be.
+    const mass = massOf(voxels, scale, mat.density ?? 2400);
     const body = new CANNON.Body({
       mass,
-      shape: new CANNON.Box(half),
       position: new CANNON.Vec3(position.x, position.y, position.z),
       velocity: new CANNON.Vec3(velocity.x, velocity.y, velocity.z),
       angularDamping: 0.35,
       linearDamping: 0.05,
+      material: this.physicsMaterials ? this.physicsMaterials[surfaceOf(mat)] : undefined,
     });
+    // Shape: the piece's own voxels, greedy-merged, offset to the mesh's centre. The
+    // single AABB box this replaces meant an L-shaped cornice tumbled and stacked like a
+    // rectangular brick, and a hollow arch collided as if it were filled in.
+    const { boxes, count } = greedyBoxes(cells, dims, PIECE_BOX_BUDGET);
+    const ox = dims[0] / 2, oy = dims[1] / 2, oz = dims[2] / 2;
+    for (let i = 0; i < count; i++) {
+      const o = i * 6;
+      body.addShape(
+        new CANNON.Box(new CANNON.Vec3(
+          Math.max(1e-3, boxes[o + 3] * scale),
+          Math.max(1e-3, boxes[o + 4] * scale),
+          Math.max(1e-3, boxes[o + 5] * scale))),
+        new CANNON.Vec3(
+          (boxes[o] - ox) * scale, (boxes[o + 1] - oy) * scale, (boxes[o + 2] - oz) * scale));
+    }
+    body.updateMassProperties();
     body.quaternion.setFromEuler(0, rotationY, 0);
     if (impulse) body.applyImpulse(new CANNON.Vec3(impulse.x * mass, impulse.y * mass, impulse.z * mass));
     this.world.addBody(body);
 
     const piece = {
-      mesh, body, cells, dims, palette, scale, voxels,
+      mesh, body, cells, dims, palette, scale, voxels, material: mat,
       age: 0, restTime: 0, frozen: false, fragCooldown: 0, fragDepth: fragDepth ?? 0,
     };
     // Impacts fragment (PRD attrition): queue rather than mutate inside cannon's
@@ -186,6 +218,7 @@ export class DebrisManager {
         velocity: new THREE.Vector3(
           piece.body.velocity.x + spread.x, piece.body.velocity.y + 1, piece.body.velocity.z + spread.z),
         impulse: null, voxels: sub.voxels, fragDepth: piece.fragDepth + 1,
+        material: piece.material,
       });
       // Keep the parent's orientation on the halves.
       const spawned = this.pieces[this.pieces.length - 1];
@@ -226,16 +259,37 @@ export class DebrisManager {
   }
 
   /** Radial blast: impulse on every piece within radius (alt-fire, PRD §F4). */
+  /**
+   * Radial impulse from a detonation.
+   *
+   * Two things are physical here that were not before. Falloff is 1/r² over the
+   * unobstructed part of the blast rather than linear, because that is how the energy of
+   * an expanding shell actually thins out. And the line from the charge to each piece is
+   * TRACED: masonry in the way absorbs the front, so a wall now shields whatever is
+   * behind it instead of the explosion reaching through it as if it were not there.
+   */
   applyBlast(center, radius, strength) {
+    const dir = new THREE.Vector3();
+    const from = new THREE.Vector3(center.x, center.y, center.z);
     for (const piece of this.pieces) {
       if (piece.frozen) continue;
       const d = new THREE.Vector3(
         piece.body.position.x - center.x, piece.body.position.y - center.y, piece.body.position.z - center.z);
       const dist = d.length();
       if (dist > radius) continue;
-      const falloff = 1 - dist / radius;
-      d.normalize().multiplyScalar(strength * falloff * piece.body.mass);
-      d.y += strength * falloff * piece.body.mass * 0.4; // lift so blasts read as blasts
+      // Inverse-square, normalised so a contact blast is 1 and the shell edge is ~0.
+      const falloff = Math.max(0, (1 / (1 + (dist / radius) * 3) ** 2 - 0.0625) / 0.9375);
+      let shield = 1;
+      if (this.structures && dist > 0.5) {
+        dir.copy(d).divideScalar(dist);
+        for (const st of this.structures) {
+          const hit = st.raycast(from, dir, dist);
+          if (hit && hit.distance < dist - 0.4) { shield = BLAST_SHIELDING; break; }
+        }
+      }
+      const j = strength * falloff * shield * piece.body.mass;
+      d.normalize().multiplyScalar(j);
+      d.y += j * 0.4; // lift so blasts read as blasts
       piece.body.wakeUp();
       piece.body.applyImpulse(new CANNON.Vec3(d.x, d.y, d.z));
     }

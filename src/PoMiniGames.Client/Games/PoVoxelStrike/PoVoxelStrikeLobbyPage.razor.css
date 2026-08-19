@@ -1,0 +1,115 @@
+/* PoVoxelStrike co-op lobby — mirrors the PoSports lobby visual shape so the platform
+   has one consistent lobby look. Token-driven like the rest of the theme; no raw hex. */
+
+.pvs-lobby-page {
+    display: flex;
+    justify-content: center;
+    padding: 2rem 1rem;
+    color: var(--surface-text, #f0f0f0);
+}
+
+.pvs-lobby-card {
+    width: 100%;
+    max-width: 36rem;
+    background: var(--surface-1, #1a1d24);
+    border: 1px solid var(--surface-border, #2c2f38);
+    border-radius: 12px;
+    padding: 1.5rem;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+.pvs-lobby-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 0.5rem;
+}
+
+.pvs-lobby-back {
+    background: transparent;
+    border: 1px solid var(--surface-border, #2c2f38);
+    color: var(--surface-text, #f0f0f0);
+    padding: 0.4rem 0.8rem;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.9rem;
+}
+
+    .pvs-lobby-back:hover {
+        background: var(--surface-2, #232730);
+    }
+
+.pvs-lobby-title {
+    margin: 0;
+    font-size: 1.4rem;
+    font-weight: 600;
+}
+
+.pvs-lobby-subtitle {
+    margin: 0.5rem 0 0.25rem;
+    color: var(--surface-text-muted, #9aa0aa);
+    font-size: 0.9rem;
+}
+
+.pvs-lobby-hint {
+    margin: 0.25rem 0 1rem;
+    color: var(--surface-text-muted, #9aa0aa);
+    font-size: 0.85rem;
+}
+
+.pvs-lobby-section {
+    margin-top: 1rem;
+}
+
+.pvs-lobby-h {
+    margin: 0 0 0.5rem;
+    font-size: 1rem;
+    font-weight: 500;
+    color: var(--accent, #f0a830);
+}
+
+.pvs-lobby-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+    .pvs-lobby-list li {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.5rem 0.75rem;
+        border: 1px solid var(--surface-border, #2c2f38);
+        border-radius: 6px;
+        margin-bottom: 0.4rem;
+    }
+
+        .pvs-lobby-list li.is-you {
+            border-color: var(--accent, #f0a830);
+            background: rgba(240, 168, 48, 0.05);
+        }
+
+.pvs-lobby-btn-primary {
+    background: var(--accent, #f0a830);
+    color: var(--on-accent, #1a1d24);
+    border: none;
+    padding: 0.6rem 1.2rem;
+    border-radius: 6px;
+    font-weight: 600;
+    cursor: pointer;
+    margin-right: 0.5rem;
+}
+
+    .pvs-lobby-btn-primary:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+    }
+
+.pvs-lobby-btn-secondary {
+    background: transparent;
+    color: var(--surface-text, #f0f0f0);
+    border: 1px solid var(--surface-border, #2c2f38);
+    padding: 0.6rem 1.2rem;
+    border-radius: 6px;
+    cursor: pointer;
+}

@@ -11,8 +11,17 @@
 //
 // The escalation curve is continuous (endless survival, PRD §F7): spawn interval
 // shrinks and the archetype mix hardens with elapsed time; there are no wave breaks.
+//
+// SIEGE RETHEME (2026-08-19): roaming enemies are OFF. The fortress guns are the threat
+// now, and chasing blocks pulled the player's attention away from the walls -- the thing
+// the whole game is about. `ENEMIES_ENABLED` is the switch: everything below still works
+// and is still wired into the HUD, scoring and crush plumbing, so flipping it back on
+// restores the survival mode without touching another file. Deleting the archetypes
+// instead would have taken the debris-crush kill path and the threat-perception code
+// with them, and both are load-bearing for the destruction sandbox.
 
 import * as THREE from 'three';
+import { createActorMaterial } from './materials.js';
 
 const ARCHETYPES = {
   swarmer: {
@@ -29,6 +38,8 @@ const ARCHETYPES = {
     preferredRange: [22, 34], spitInterval: 3, spitDamage: 8, spitSpeed: 26, score: 25,
   },
 };
+
+const ENEMIES_ENABLED = false;
 
 const CRUSH_MIN_SPEED = 5;
 const FLEE_PROBE_RADIUS = 10;
@@ -60,6 +71,7 @@ export class EnemyManager {
   // ── Spawn director (continuous escalation) ─────────────────────────────
 
   updateSpawning(dt, elapsed, playerPos, cameraForward) {
+    if (!ENEMIES_ENABLED) return;
     this.spawnClock -= dt;
     if (this.spawnClock > 0) return;
     const maxAlive = Math.min(40, 6 + elapsed / 15);
@@ -91,7 +103,7 @@ export class EnemyManager {
     }
     if (!pos) pos = new THREE.Vector3(82, this.terrain.heightAt(82, 0) + def.height / 2, 0);
 
-    const mesh = new THREE.Mesh(this.geometries[type], new THREE.MeshLambertMaterial({ color: def.color }));
+    const mesh = new THREE.Mesh(this.geometries[type], createActorMaterial({ color: def.color }));
     mesh.position.copy(pos);
     mesh.castShadow = true;
     this.scene.add(mesh);

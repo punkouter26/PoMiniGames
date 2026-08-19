@@ -1,0 +1,6 @@
+{
+  "materials": [
+    { "materialId": 1, "displayName": "Box plastic", "density": 950.0, "compressiveStrength": 9000000.0, "tensileStrength": 4000000.0 }
+  ],
+  "tolerance": 8
+}

@@ -208,6 +208,13 @@ internal static class GameServicesExtensions
             .BindConfiguration(PoMiniGames.Features.PoVoxelStrike.PoVoxelStrikeOptions.SectionName);
         services.AddSingleton<PoMiniGames.Features.PoVoxelStrike.VoxelAssetCatalog>();
         services.AddHostedService<PoMiniGames.Features.PoVoxelStrike.AssetIngestionHostedService>();
+        // PoVoxelStrike co-op: same single-lobby process-local shape as PoRacer/PoFunQuiz.
+        // The lobby service is the in-memory registry; the lockstep service owns the
+        // per-game input batching; the pump broadcasts frames on a drift-corrected
+        // 50 ms timer (host-independent — survives host websocket reconnects).
+        services.AddSingleton<PoMiniGames.Features.PoVoxelStrike.PoVoxelStrikeLobbyService>();
+        services.AddSingleton<PoMiniGames.Features.PoVoxelStrike.PoVoxelStrikeLockstepService>();
+        services.AddHostedService<PoMiniGames.Features.PoVoxelStrike.PoVoxelStrikeLockstepPump>();
 
         services.ConfigureHttpJsonOptions(options =>
         {

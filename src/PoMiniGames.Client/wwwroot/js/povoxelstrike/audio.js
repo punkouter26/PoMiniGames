@@ -6,6 +6,17 @@
 //
 // Every public method is throttle-guarded and mute-safe, so the engine can call them
 // from hot paths (collapse spawns, debris collide events) without its own bookkeeping.
+//
+// SOUND pass (2026-08-19), two additions:
+//   * True 3D positional audio. Every cue that used to take a stereo pan scalar now takes
+//     a world position and routes through an HRTF PannerNode, so a brute behind you is
+//     behind you and a tower collapsing overhead is overhead. setListener() feeds the
+//     camera transform to the AudioContext listener once per frame.
+//   * Convolution reverb zones. Two procedurally-generated impulse responses (open field,
+//     stone interior) run in parallel on a send from the SFX bus; setSpace() crossfades
+//     between them, so stepping through a castle gate audibly changes the room.
+// Both are tier-gated by quality.js -- a low-end machine keeps the old stereo path, which
+// is why _pan() still accepts a plain number.
 
 const NOISE_SECONDS = 2;
 
@@ -20,6 +31,28 @@ function makeNoiseBuffer(ctx) {
     const white = Math.random() * 2 - 1;
     last = (last + 0.18 * white) / 1.18; // low-passed: "rubble", not hiss
     data[i] = last;
+  }
+  return buf;
+}
+
+/**
+ * Procedural impulse response: exponentially-decaying noise run through a one-pole
+ * lowpass whose coefficient sets how dark the tail is. Cheap, deterministic in shape, and
+ * no IR file to ship - which matters because this game deliberately loads no audio
+ * assets at all. `decay` is seconds, `curve` how fast the tail falls, `dark` is 0..1 tone.
+ */
+function makeImpulse(ctx, decay, curve, dark) {
+  const len = Math.max(1, Math.floor(ctx.sampleRate * decay));
+  const buf = ctx.createBuffer(2, len, ctx.sampleRate);
+  const a = Math.max(0.001, 1 - dark); // one-pole coefficient: smaller = darker
+  for (let ch = 0; ch < 2; ch++) {
+    const d = buf.getChannelData(ch);
+    let last = 0;
+    for (let i = 0; i < len; i++) {
+      const t = i / len;
+      last = last * (1 - a) + (Math.random() * 2 - 1) * a;
+      d[i] = last * Math.pow(1 - t, curve);
+    }
   }
   return buf;
 }
@@ -42,6 +75,9 @@ export class VoxelAudio {
     this.noise = null;
     this.musicNodes = null;
     this._paused = false;
+    this.spatial = true;      // cleared by setQuality() on the low tier
+    this.reverbZones = true;
+    this._space = 0;          // 0 = open field, 1 = stone interior
     // Per-category throttles (seconds of ctx.currentTime).
     this._next = { collapse: 0, impact: 0, cue: 0, crush: 0 };
   }
@@ -79,9 +115,30 @@ export class VoxelAudio {
 
       this.noise = makeNoiseBuffer(ctx);
 
-      // Outdoor arena: near-dry global reverb — the default small-room tail reads as
-      // "indoors" under every rumble.
-      bus?.setReverb?.(0.05);
+      // Reverb zones. The platform bus reverb is turned OFF here rather than layered
+      // under these: it is one global tail with no notion of where the player is
+      // standing, and running both smears each other. This graph owns the space.
+      //   sfx --+--------------------------------> filter (dry)
+      //         +-- send --+-- convolver(open)  --> wetOpen  --+
+      //                    +-- convolver(stone) --> wetStone --+--> filter
+      bus?.setReverb?.(0.0);
+      if (this.reverbZones && ctx.createConvolver) {
+        this.revSend = ctx.createGain();
+        this.revSend.gain.value = 1;
+        this.sfx.connect(this.revSend);
+
+        this.convOpen = ctx.createConvolver();
+        this.convOpen.buffer = makeImpulse(ctx, 0.55, 5.2, 0.35);   // short, bright slap
+        this.wetOpen = ctx.createGain();
+        this.wetOpen.gain.value = 0.16;
+        this.revSend.connect(this.convOpen).connect(this.wetOpen).connect(this.filter);
+
+        this.convStone = ctx.createConvolver();
+        this.convStone.buffer = makeImpulse(ctx, 2.3, 1.6, 0.75);   // long, dark stone tail
+        this.wetStone = ctx.createGain();
+        this.wetStone.gain.value = 0;
+        this.revSend.connect(this.convStone).connect(this.wetStone).connect(this.filter);
+      }
       return true;
     } catch (e) {
       this._failed = true;
@@ -104,17 +161,87 @@ export class VoxelAudio {
     return true;
   }
 
-  /** StereoPanner (pan −1..1) already wired into the SFX chain. */
-  _pan(pan) {
+  /**
+   * Destination node for one cue, already wired into the SFX chain.
+   * @param where a world position ({x,y,z}) for HRTF 3D placement, or a -1..1 stereo pan
+   *   scalar for the fallback path. A number always gets stereo, so the low tier and any
+   *   caller that only knows a pan keep working unchanged.
+   */
+  _pan(where) {
+    if (this.spatial && where && typeof where === 'object' && this.ctx.createPanner) {
+      const p = this.ctx.createPanner();
+      p.panningModel = 'HRTF';
+      p.distanceModel = 'inverse';
+      // refDistance is deliberately large: the arena is 180 units across, and a realistic
+      // 1-unit reference makes everything past the courtyard inaudible.
+      p.refDistance = 8;
+      p.maxDistance = 220;
+      p.rolloffFactor = 0.9;
+      if (p.positionX) {
+        p.positionX.value = where.x; p.positionY.value = where.y; p.positionZ.value = where.z;
+      } else {
+        p.setPosition(where.x, where.y, where.z); // Safari < 16
+      }
+      p.connect(this.sfx);
+      return p;
+    }
+    const pan = typeof where === 'number' ? where : 0;
     if (this.ctx.createStereoPanner) {
       const p = this.ctx.createStereoPanner();
-      p.pan.value = clamp(pan || 0, -1, 1) * 0.8; // never hard-panned into one ear
+      p.pan.value = clamp(pan, -1, 1) * 0.8; // never hard-panned into one ear
       p.connect(this.sfx);
       return p;
     }
     const g = this.ctx.createGain();
     g.connect(this.sfx);
     return g;
+  }
+
+  /** Apply the resolved GFX/SFX tier. Call before the first cue. */
+  setQuality(quality) {
+    this.spatial = !!quality.spatialAudio;
+    this.reverbZones = !!quality.convolutionReverb;
+  }
+
+  /**
+   * Move the AudioContext listener onto the camera. Call once per frame - a listener left
+   * at the origin makes HRTF place every sound relative to the arena centre, which is
+   * worse than no HRTF at all.
+   */
+  setListener(camera) {
+    if (!this.spatial || !this._ready()) return;
+    const l = this.ctx.listener;
+    const p = camera.position;
+    const m = camera.matrixWorld.elements;
+    const fx = -m[8], fy = -m[9], fz = -m[10];   // -Z column: the camera forward axis
+    const ux = m[4], uy = m[5], uz = m[6];
+    if (l.positionX) {
+      l.positionX.value = p.x; l.positionY.value = p.y; l.positionZ.value = p.z;
+      l.forwardX.value = fx; l.forwardY.value = fy; l.forwardZ.value = fz;
+      l.upX.value = ux; l.upY.value = uy; l.upZ.value = uz;
+    } else {
+      l.setPosition(p.x, p.y, p.z);
+      l.setOrientation(fx, fy, fz, ux, uy, uz);
+    }
+  }
+
+  /**
+   * Crossfade the reverb between open field (0) and stone interior (1). Smoothed over
+   * 250 ms: an instant swap at a doorway clicks, and the player straddles the threshold
+   * for several frames while walking through it.
+   */
+  setSpace(indoorness) {
+    if (!this._ready() || !this.wetOpen) return;
+    const t = clamp(indoorness, 0, 1);
+    if (Math.abs(t - this._space) < 0.02) return;
+    this._space = t;
+    const now = this.ctx.currentTime, ramp = now + 0.25;
+    for (const g of [this.wetOpen.gain, this.wetStone.gain]) {
+      g.cancelScheduledValues(now);
+      g.setValueAtTime(g.value, now);
+    }
+    this.wetOpen.gain.linearRampToValueAtTime(0.16 * (1 - t), ramp);
+    this.wetStone.gain.linearRampToValueAtTime(0.42 * t, ramp);
   }
 
   _noiseSrc(playSeconds) {
@@ -173,14 +300,19 @@ export class VoxelAudio {
     this._burst(this.sfx, { freq: 420, sweepTo: 1500, q: 1.4, dur: 0.3, gain: 0.09 });
   }
 
-  /** Alt-fire detonation. Ducks the music for a beat. */
-  explosion(pan = 0) {
+  /**
+   * Alt-fire detonation. WebAudio has no true sidechain, so the bus duck IS the
+   * sidechain; its depth now tracks proximity, and a blast across the arena no longer
+   * flattens the score as hard as one at your feet.
+   */
+  explosion(where = 0, proximity = 1) {
     if (!this._ready()) return;
-    const dest = this._pan(pan);
+    const dest = this._pan(where);
     this._tone(dest, { from: rand(110, 135), to: 30, dur: 0.75, gain: 0.5, attack: 0.008 });
     this._burst(dest, { filterType: 'lowpass', freq: 950, dur: 0.6, gain: 0.4 });
     this._burst(dest, { filterType: 'highpass', freq: 3000, dur: 0.35, gain: 0.08 });
-    window.PoAudioBus?.duck?.(0.35, 350);
+    const p = clamp(proximity, 0, 1);
+    window.PoAudioBus?.duck?.(0.25 + 0.35 * p, 250 + 350 * p);
   }
 
   /** Weapon overheated: a steam vent while it cools. */
@@ -205,12 +337,16 @@ export class VoxelAudio {
       gain: 0.1 + 0.42 * s, attack: 0.02,
     });
     this._tone(dest, { from: 60, to: 32, dur: 0.35 + 0.6 * s, gain: 0.1 + 0.3 * s, attack: 0.015 });
+    // A tower coming down deserves the room in the mix an explosion gets.
+    if (s > 0.55) window.PoAudioBus?.duck?.(0.3 * s, 500 * s);
   }
 
   /** A debris chunk landed hard. Throttled — a rockslide is not 40 thuds. */
   debrisHit(mass, pan = 0) {
     if (!this._ready() || !this._gate('impact', 0.09)) return;
-    const s = clamp(mass / 300, 0.15, 1);
+    // Recalibrated for real masses (physics.js): a chunk that used to report 7 kg now
+    // reports 750, so the old /300 saturated on every single impact.
+    const s = clamp(mass / 2500, 0.12, 1);
     const dest = this._pan(pan);
     this._tone(dest, { from: rand(80, 105), to: 42, dur: 0.16 + 0.1 * s, gain: 0.1 + 0.2 * s });
   }

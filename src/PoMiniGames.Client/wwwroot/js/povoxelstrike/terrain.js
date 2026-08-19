@@ -1,14 +1,14 @@
 // terrain.js — fine-grained, DIGGABLE block terrain for the arena (seeded).
 //
-// 0.2-unit voxels on a 900×900 column grid (10× the detail of the original 2-unit
-// blocks). At this density a naive face-per-block mesh is ~5M triangles, so each chunk
+// 0.1-unit voxels on a 1800×1800 column grid (20× the detail of the original 2-unit
+// blocks). At this density a naive face-per-block mesh is ~20M triangles, so each chunk
 // is GREEDY-MESHED: same-height, same-tint top areas merge into single quads and cliff
 // walls merge into runs — flat meadows cost almost nothing, and only the contour edges
 // spend triangles. Color jitter is quantized to coarse patches for the same reason.
 //
-// Collision stays a cannon-es Heightfield sampled at a 10-cell stride (2-unit elements,
-// height = MAX of the covered columns) — debris does not need 0.2-unit fidelity, and a
-// 900² heightfield would be megabytes of pillar cache.
+// Collision stays a cannon-es Heightfield sampled at a 20-cell stride (2-unit elements,
+// height = MAX of the covered columns) — debris does not need 0.1-unit fidelity, and a
+// 1800² heightfield would be megabytes of pillar cache.
 //
 // Weapons dig it: dig() drops columns inside a carve sphere, dug ground exposes dirt
 // (top metre) then stone, and only touched chunks re-mesh. Gameplay reads the surface
@@ -16,35 +16,66 @@
 
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
+import { createVoxelMaterial } from './materials.js';
 
 // Declared here (not world.js) so this module has no import back into world.js — world.js
 // imports Terrain, and a top-level back-reference would hit the TDZ mid-evaluation.
 export const ARENA_HALF = 90; // playable square is [-ARENA_HALF, ARENA_HALF] on X/Z
 
-const BLOCK = 0.2;               // world units per voxel (cube side)
-const MAX_LEVEL = 50;            // tallest hill = 10 world units, in 0.2 steps
-const CELLS = Math.round((ARENA_HALF * 2) / BLOCK); // 900 → 900×900 columns
-const CHUNK_CELLS = 60;          // 12×12 world units per chunk → 15×15 chunks
+// Voxel size halved (0.2 → 0.1): every constant below that is expressed in CELLS rather
+// than world units doubles with it, so the arena, hill height, chunk size, dirt band,
+// physics element size and wall thickness all keep their world-space dimensions and only
+// the granularity changes. Do not tune one of these without its partner.
+const BLOCK = 0.1;               // world units per voxel (cube side)
+const MAX_LEVEL = 100;           // tallest hill = 10 world units, in 0.1 steps
+const CELLS = Math.round((ARENA_HALF * 2) / BLOCK); // 1800 → 1800×1800 columns
+const CHUNK_CELLS = 120;         // 12×12 world units per chunk → 15×15 chunks
 const CHUNKS = Math.ceil(CELLS / CHUNK_CELLS);
-const DIRT_BAND = 5;             // levels of dirt (1 unit) before digging hits stone
-const PHYS_STRIDE = 10;          // heightfield samples every 10 columns (2-unit elements)
+const DIRT_BAND = 10;            // levels of dirt (1 unit) before digging hits stone
+// Heightfield resolution, in columns per physics element. The terrain model IS a
+// heightmap by construction -- dig() only ever LOWERS a column's top, so it can never
+// produce an overhang and a heightfield is the exactly-right collider for it. The only
+// error was resolution: at a 20-column stride the collision surface was 2 m blocky over
+// 0.1 m voxels, and it took the MAXIMUM of each cell, so debris rested up to two metres
+// above the real ground and a crater you had just dug did not exist to physics at all.
+// 4 columns is 0.4 m, a 5x refinement, and the sample is the exact column height rather
+// than a max.
+const PHYS_STRIDE = 4;
 const PHYS_N = CELLS / PHYS_STRIDE;
 
 const GRASS = new THREE.Color(0x4c8f46);
 const DIRT = new THREE.Color(0x6d5138);
 const STONE = new THREE.Color(0x63656b);
 const SHADES = 8;                // quantized jitter steps (coarse patches share a shade)
+// Shade patches are keyed off (i >> SHADE_SHIFT). 6 keeps the 6.4-world-unit patch the
+// 0.2 grid had; leaving it at 5 would halve the patch and re-introduce the per-cell
+// noise the quantization exists to remove.
+const SHADE_SHIFT = 6;
+
+// Perimeter wall: a stone ring around the arena so the player and enemies stay
+// inside. Thickness is in cells (BLOCK units). Height is in world units so it reads
+// as a fortress wall against the 10-unit-tall terrain. Greedy merge keeps the inner
+// and outer faces as 2 large quads per edge regardless of height.
+export const WALL_THICKNESS = 4; // cells; 4 × 0.1 = 0.4 world units
+export const WALL_HEIGHT = 15;    // world units; 75 cells
+
+/** World units of clearance the wall occupies; used by world.js to keep structures out. */
+export const WALL_INSET = WALL_THICKNESS * BLOCK;
 
 export class Terrain {
   constructor(seed) {
     this.seed = seed >>> 0;
-    this.levels = new Int8Array(CELLS * CELLS);
+    // Int16, not Int8: at BLOCK = 0.1 the perimeter wall is WALL_HEIGHT / BLOCK = 150
+    // levels, which overflows Int8Array's 127 and wraps the wall to a trench.
+    this.levels = new Int16Array(CELLS * CELLS);
     for (let j = 0; j < CELLS; j++) {
       for (let i = 0; i < CELLS; i++) {
         // Same world-space wavelengths as the coarse terrain (32u hills + 11u detail).
-        const n = 0.7 * valueNoise(i / 160, j / 160, this.seed)
-          + 0.3 * valueNoise(i / 55, j / 55, this.seed ^ 0x9e3779b9);
-        this.levels[i + j * CELLS] = Math.min(MAX_LEVEL, Math.max(0, Math.round(n * (MAX_LEVEL + 10) - 2.5)));
+        // Divisors doubled with CELLS so the hills keep the same 32u / 11u world-space
+        // wavelengths instead of shrinking to half-size bumps.
+        const n = 0.7 * valueNoise(i / 320, j / 320, this.seed)
+          + 0.3 * valueNoise(i / 110, j / 110, this.seed ^ 0x9e3779b9);
+        this.levels[i + j * CELLS] = Math.min(MAX_LEVEL, Math.max(0, Math.round(n * (MAX_LEVEL + 20) - 5)));
       }
     }
     // Frozen pre-dig snapshot: original surface keeps grass; dug ground exposes dirt,
@@ -71,6 +102,54 @@ export class Terrain {
   heightAt(x, z) {
     const [i, j] = this._cell(x, z);
     return this.levels[i + j * CELLS] * BLOCK;
+  }
+
+  /**
+   * Raise the 4 edge strips of the arena to WALL_HEIGHT, in cell space. Snapshots
+   * `originalLevels` to the same value so the wall surface tints as stone, not grass,
+   * and digging it reads as excavating stone rather than revealing dirt underneath.
+   * Marks every border chunk dirty so the next rebuildDirty picks it up.
+   */
+  buildPerimeterWall() {
+    const wallCells = Math.max(1, Math.round(WALL_HEIGHT / BLOCK));
+    const W = WALL_THICKNESS;
+    const last = CELLS - 1;
+    for (let j = 0; j < CELLS; j++) {
+      for (let i = 0; i < W; i++) {
+        this.levels[i + j * CELLS] = wallCells;
+        this.levels[(last - i) + j * CELLS] = wallCells;
+      }
+    }
+    for (let i = 0; i < CELLS; i++) {
+      for (let j = 0; j < W; j++) {
+        this.levels[i + j * CELLS] = wallCells;
+        this.levels[i + (last - j) * CELLS] = wallCells;
+      }
+    }
+    // Baseline must match the wall or the first dig would expose "dirt" on day one.
+    if (!this.originalLevels) this.originalLevels = new Int16Array(this.levels);
+    for (let j = 0; j < CELLS; j++) {
+      for (let i = 0; i < W; i++) {
+        this.originalLevels[i + j * CELLS] = wallCells;
+        this.originalLevels[(last - i) + j * CELLS] = wallCells;
+      }
+    }
+    for (let i = 0; i < CELLS; i++) {
+      for (let j = 0; j < W; j++) {
+        this.originalLevels[i + j * CELLS] = wallCells;
+        this.originalLevels[i + (last - j) * CELLS] = wallCells;
+      }
+    }
+    // Every chunk that touches the perimeter (4 strips of chunks) is dirty.
+    for (let ci = 0; ci < CHUNKS; ci++) {
+      this.dirtyChunks.add(`${ci},0`);
+      this.dirtyChunks.add(`${ci},${CHUNKS - 1}`);
+    }
+    for (let cj = 0; cj < CHUNKS; cj++) {
+      this.dirtyChunks.add(`0,${cj}`);
+      this.dirtyChunks.add(`${CHUNKS - 1},${cj}`);
+    }
+    this.colliderDirty = true;
   }
 
   /**
@@ -120,7 +199,12 @@ export class Terrain {
         this._markDirty(i, j);
       }
     }
-    if (removed > 0) this.colliderDirty = true;
+    if (removed > 0) {
+      this.colliderDirty = true;
+      this._markPhysDirty(
+        Math.max(0, ci - r), Math.max(0, cj - r),
+        Math.min(CELLS - 1, ci + r), Math.min(CELLS - 1, cj + r));
+    }
     return removed;
   }
 
@@ -147,11 +231,12 @@ export class Terrain {
 
   // ── Meshes (chunked + greedy) + collider ───────────────────────────────
 
-  build(scene, physicsWorld) {
+  build(scene, physicsWorld, physicsMaterial = undefined) {
     this.scene = scene;
     this.physicsWorld = physicsWorld;
-    this.originalLevels = new Int8Array(this.levels); // grass baseline, frozen post-pads
-    this.material = new THREE.MeshLambertMaterial({ vertexColors: true });
+    this.physicsMaterial = physicsMaterial;
+    this.originalLevels = new Int16Array(this.levels); // grass baseline, frozen post-pads
+    this.material = createVoxelMaterial();
     this.group = new THREE.Group();
     scene.add(this.group);
 
@@ -194,37 +279,80 @@ export class Terrain {
     this.dirtyChunks.clear();
   }
 
+  /**
+   * Build or refresh the heightfield collider.
+   *
+   * A full rebuild is 451² samples; digging happens seven times a second while the
+   * trigger is held, so after the first build only the dug rectangle is re-sampled and
+   * the cached pillar geometry for those cells is dropped. Cost then scales with the size
+   * of the crater instead of the size of the map.
+   */
   rebuildCollider() {
     if (!this.colliderDirty || !this.physicsWorld) return;
     this.colliderDirty = false;
-    if (this.body) this.physicsWorld.removeBody(this.body);
 
-    // Vertex (i,j) covers fine columns [ (i-1)·S, i·S ] × the j-flipped row band —
-    // the same corner mapping the coarse terrain used, scaled by the stride. MAX over
-    // the region keeps debris resting ON block tops, never sunk into stair edges.
-    const data = [];
-    for (let i = 0; i <= PHYS_N; i++) {
-      const column = [];
-      for (let j = 0; j <= PHYS_N; j++) {
-        let max = 0;
-        const fi0 = Math.max(0, (i - 1) * PHYS_STRIDE), fi1 = Math.min(CELLS - 1, i * PHYS_STRIDE);
-        const fj0 = Math.max(0, CELLS - j * PHYS_STRIDE - PHYS_STRIDE), fj1 = Math.min(CELLS - 1, CELLS - j * PHYS_STRIDE);
-        for (let fj = fj0; fj <= fj1; fj++) {
-          for (let fi = fi0; fi <= fi1; fi++) {
-            const v = this.levels[fi + fj * CELLS];
-            if (v > max) max = v;
-          }
-        }
-        column.push(max * BLOCK);
+    if (!this.body) {
+      const data = [];
+      for (let i = 0; i <= PHYS_N; i++) {
+        const column = new Array(PHYS_N + 1);
+        for (let j = 0; j <= PHYS_N; j++) column[j] = this._physSample(i, j);
+        data.push(column);
       }
-      data.push(column);
+      this.physData = data;
+      this.physShape = new CANNON.Heightfield(data, { elementSize: PHYS_STRIDE * BLOCK });
+      this.body = new CANNON.Body({ type: CANNON.Body.STATIC, material: this.physicsMaterial });
+      this.body.addShape(this.physShape);
+      this.body.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
+      this.body.position.set(-ARENA_HALF, 0, ARENA_HALF);
+      this.physicsWorld.addBody(this.body);
+      this.physDirty = null;
+      return;
     }
-    const shape = new CANNON.Heightfield(data, { elementSize: PHYS_STRIDE * BLOCK });
-    this.body = new CANNON.Body({ type: CANNON.Body.STATIC });
-    this.body.addShape(shape);
-    this.body.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
-    this.body.position.set(-ARENA_HALF, 0, ARENA_HALF);
-    this.physicsWorld.addBody(this.body);
+
+    const d = this.physDirty;
+    if (!d) return;
+    this.physDirty = null;
+    for (let i = d.i0; i <= d.i1; i++) {
+      const column = this.physData[i];
+      for (let j = d.j0; j <= d.j1; j++) column[j] = this._physSample(i, j);
+    }
+    // cannon caches the two triangle prisms it builds per cell; a changed height makes
+    // every cached pillar in the region stale. Dropping the whole cache is one object
+    // assignment and the cells rebuild lazily on next contact.
+    this.physShape.updateMinValue();
+    this.physShape.updateMaxValue();
+    // `_cachedPillars` is cannon's per-cell prism cache and is the only thing that goes
+    // stale when a height changes. `pillarConvex` / `pillarOffset` are scratch that cannon
+    // rebuilds on every cache miss -- replacing those was pointless and, with an empty
+    // ConvexPolyhedron, a good way to hand the narrowphase geometry with no faces.
+    this.physShape._cachedPillars = {};
+  }
+
+  /**
+   * Height at heightfield vertex (i, j). Vertex (i,j) sits on the column grid directly —
+   * at a 4-column stride the vertex spacing is 0.4 m, so a plain sample of the nearest
+   * column is both exact enough and 16x cheaper than the max-over-cell the coarse
+   * heightfield needed to avoid sinking debris into stair edges.
+   */
+  _physSample(i, j) {
+    const fi = Math.min(CELLS - 1, i * PHYS_STRIDE);
+    const fj = Math.min(CELLS - 1, Math.max(0, CELLS - 1 - j * PHYS_STRIDE));
+    return this.levels[fi + fj * CELLS] * BLOCK;
+  }
+
+  /** Union the dug cell rectangle into the pending heightfield refresh. */
+  _markPhysDirty(i0, j0, i1, j1) {
+    const a = Math.max(0, Math.floor(i0 / PHYS_STRIDE) - 1);
+    const b = Math.min(PHYS_N, Math.ceil(i1 / PHYS_STRIDE) + 1);
+    // The heightfield's j axis runs opposite the column grid's (see _physSample).
+    const c = Math.max(0, Math.floor((CELLS - 1 - j1) / PHYS_STRIDE) - 1);
+    const e = Math.min(PHYS_N, Math.ceil((CELLS - 1 - j0) / PHYS_STRIDE) + 1);
+    if (!this.physDirty) this.physDirty = { i0: a, i1: b, j0: c, j1: e };
+    else {
+      const d = this.physDirty;
+      d.i0 = Math.min(d.i0, a); d.i1 = Math.max(d.i1, b);
+      d.j0 = Math.min(d.j0, c); d.j1 = Math.max(d.j1, e);
+    }
   }
 
   /** Top-face merge key: level + dug-material bucket + quantized shade patch. */
@@ -233,14 +361,14 @@ export class Terrain {
     const level = this.levels[idx];
     const dug = this.originalLevels[idx] - level;
     const bucket = dug <= 0 ? 0 : dug <= DIRT_BAND ? 1 : 2;
-    const shade = Math.floor(hash(i >> 5, j >> 5, this.seed ^ 0x51ed2701) * SHADES);
+    const shade = Math.floor(hash(i >> SHADE_SHIFT, j >> SHADE_SHIFT, this.seed ^ 0x51ed2701) * SHADES);
     return (level * 3 + bucket) * SHADES + shade;
   }
 
   _topColor(i, j, tint) {
     const idx = i + j * CELLS;
     const dug = this.originalLevels[idx] - this.levels[idx];
-    const shade = Math.floor(hash(i >> 5, j >> 5, this.seed ^ 0x51ed2701) * SHADES);
+    const shade = Math.floor(hash(i >> SHADE_SHIFT, j >> SHADE_SHIFT, this.seed ^ 0x51ed2701) * SHADES);
     tint.copy(dug <= 0 ? GRASS : dug <= DIRT_BAND ? DIRT : STONE)
       .multiplyScalar(0.92 + (shade / SHADES) * 0.16);
   }

@@ -7,23 +7,38 @@
 // They are deliberately HOLLOW — door openings are sized so the player fits through at
 // the placed scale, and cutting a wall open reveals rooms, not solid fill.
 
-const MATERIALS = [{ density: 600, compressive: 5e6, tensile: 2e6 }];
+import { buildMaterialTable } from './physics.js';
 
+// Per-colour materials, so a cottage's plaster crumbles at a quarter of the load its
+// timber frame carries and a slate roof weighs what slate weighs.
+const KINDS = {
+  castle: ['stone', 'stone', 'wood', 'slate'],
+  keepTower: ['stone', 'stone', 'slate'],
+  cottage0: ['plaster', 'wood', 'terracotta'],
+  cottage1: ['brick', 'wood', 'slate'],
+  fortWall: ['stone', 'stone', 'wood'],
+};
+
+// Instance counts are doubled from the original settlement (castle 1 → 2, everything
+// else 1-2 → 2-4). findSpot's attempt budget was raised to match — at this density the
+// old 40 tries ran out and structures silently vanished instead of being placed.
 /** @returns volumes with sizeRange (world units for the longest axis) and instances [min,max]. */
 export function builtinVolumes() {
   return [castle(), keepTower(), cottage(0), cottage(1), fortWall()];
 }
 
-function makeVol(name, nx, ny, nz, colors, sizeRange, instances) {
+function makeVol(name, nx, ny, nz, colors, sizeRange, instances, kinds) {
   const palette = new Uint8Array(colors.length * 4);
   colors.forEach(([r, g, b], i) => palette.set([r, g, b, 255], i * 4));
+  const { materials, paletteMaterial } = buildMaterialTable(
+    kinds ?? colors.map(() => 'stone'));
   return {
     name,
     dims: [nx, ny, nz],
     cells: new Uint8Array(nx * ny * nz),
     palette,
-    paletteMaterial: new Uint8Array(colors.length),
-    materials: MATERIALS,
+    paletteMaterial,
+    materials,
     sizeRange,
     instances,
   };
@@ -53,7 +68,7 @@ function castle() {
   const S = 56, H = 24;
   const v = makeVol('Castle', S, H, S,
     [[168, 170, 178], [128, 132, 142], [104, 76, 48], [84, 88, 100]], // light stone, dark stone, wood, slate
-    [30, 34], [1, 1]);
+    [30, 34], [2, 2], KINDS.castle);
   const LIGHT = 1, DARK = 2, WOOD = 3, SLATE = 4;
   const in0 = 4, in1 = S - 1 - 4, wallH = 9;
 
@@ -120,7 +135,7 @@ function castle() {
 function keepTower() {
   const S = 15, H = 30;
   const v = makeVol('Keep Tower', S, H, S,
-    [[150, 152, 162], [116, 120, 130], [84, 88, 100]], [16, 20], [1, 2]);
+    [[150, 152, 162], [116, 120, 130], [84, 88, 100]], [16, 20], [2, 4], KINDS.keepTower);
   const LIGHT = 1, DARK = 2, SLATE = 3;
   const c = Math.floor(S / 2), r = 6;
 
@@ -151,7 +166,7 @@ function cottage(variant) {
     [[172, 148, 122], [84, 62, 40], [104, 108, 120]], // stone, dark timber, slate roof
   ];
   const v = makeVol(variant === 0 ? 'Cottage' : 'Stone Cottage', W, H, D,
-    palettes[variant], [9, 12], [1, 2]);
+    palettes[variant], [9, 12], [2, 4], variant === 0 ? KINDS.cottage0 : KINDS.cottage1);
   const WALL = 1, TIMBER = 2, ROOF = 3;
   const wallH = 7;
 
@@ -186,7 +201,7 @@ function cottage(variant) {
 function fortWall() {
   const W = 44, H = 13, D = 7;
   const v = makeVol('Fort Wall', W, H, D,
-    [[150, 152, 162], [116, 120, 130], [104, 76, 48]], [22, 26], [1, 2]);
+    [[150, 152, 162], [116, 120, 130], [104, 76, 48]], [22, 26], [2, 4], KINDS.fortWall);
   const LIGHT = 1, DARK = 2, WOOD = 3;
   const wallH = 8;
 

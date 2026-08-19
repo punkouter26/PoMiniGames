@@ -20,7 +20,11 @@ internal static class PoVoxelStrikeEndpoints
         group.MapGet("/assets", (VoxelAssetCatalog catalog) =>
                 Results.Ok(catalog.All.Select(a => new VoxelAssetManifestEntry(
                     a.Hash, a.Name, [a.DimX, a.DimY, a.DimZ], a.SizeBytes,
-                    $"api/povoxelstrike/assets/{a.Hash}"))))
+                    $"api/povoxelstrike/assets/{a.Hash}",
+                    (a.Materials ?? Array.Empty<VoxelAssetMaterial>())
+                        .Select(m => new VoxelAssetMaterialDto(m.MaterialId, m.DisplayName,
+                            m.Density, m.CompressiveStrength, m.TensileStrength))
+                        .ToList()))))
             .WithName("GetPoVoxelStrikeAssetManifest")
             .WithSummary("Lists every converted voxel asset (grows while startup ingestion is still running).")
             .Produces<IEnumerable<VoxelAssetManifestEntry>>(StatusCodes.Status200OK)
@@ -169,7 +173,12 @@ internal static partial class PoVoxelStrikeLog
 }
 
 /// <summary>Manifest row for one converted asset. <c>Url</c> is base-relative so the WASM client resolves it against its own origin.</summary>
-public sealed record VoxelAssetManifestEntry(string Hash, string Name, int[] Dims, long SizeBytes, string Url);
+public sealed record VoxelAssetManifestEntry(string Hash, string Name, int[] Dims, long SizeBytes, string Url,
+    IReadOnlyList<VoxelAssetMaterialDto> Materials);
+
+/// <summary>Wire shape for one material entry — kept distinct from the catalog record so
+/// changes to the in-memory representation don't ripple into the wire contract.</summary>
+public sealed record VoxelAssetMaterialDto(byte MaterialId, string DisplayName, float Density, float CompressiveStrength, float TensileStrength);
 
 /// <summary>
 /// Rejects malformed hashes before the handler runs. The hash is the only client-supplied

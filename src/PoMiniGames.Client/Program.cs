@@ -113,6 +113,10 @@ builder.Services.AddScoped<CoupleQuizHubService>();
 builder.Services.AddScoped<FunQuizHubService>();
 // PoSports: SignalR client wrapper for /posports/lobby-hub + /posports/race-hub.
 builder.Services.AddScoped<PoMiniGamesClient.Games.PoSports.Services.PoSportsHubService>();
+// PoVoxelStrike co-op: SignalR client wrapper for /povoxelstrike/lobby-hub +
+// /povoxelstrike/lockstep-hub. Scoped like every other hub service so the connection
+// is bound to the user's Blazor session lifetime.
+builder.Services.AddScoped<PoMiniGamesClient.Games.PoVoxelStrike.Services.PoVoxelStrikeMultiplayerClient>();
 
 // ─── PoJoker (demo-only autonomous comedy show) ──────────────────────
 // TTS + Web-Audio effects run via JS interop

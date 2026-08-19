@@ -11,6 +11,14 @@
 // lifecycle events OnReady / OnResumed / OnPaused / OnGameOver / OnFatalError. Never
 // per-frame.
 //
+// Co-op mode (multiplayer slice, 2026-08-18): when the engine is constructed with
+// `mode: 'multi'`, the local player's inputs are sampled at the platform's lockstep
+// tick rate (20 Hz) and shipped to `multiplayerSink(batch)`. The server stamps a tick
+// number and relays every peer's batch back; the engine applies the batches in
+// PlayerNumber order. The server is NOT authoritative for the simulation — clients
+// run identical local engines, the server just relays inputs. Determinism is the
+// client's responsibility.
+//
 // ARG ORDER IS A CONTRACT. The positional lists below mirror [JSInvokable] methods in
 // PoVoxelStrikePage.razor — reorder/insert on BOTH sides or the binder mis-assigns:
 //   OnHudTick(hp, heatPct, heatLocked, altPct, score, elapsed, kills, enemyCount,
@@ -28,22 +36,67 @@ import { Weapon } from './combat.js';
 import { EnemyManager } from './enemies.js';
 import { VoxelAudio } from './audio.js';
 import { Vfx } from './vfx.js';
+import { resolveQuality, createRenderer } from './quality.js';
+import { setQuality, createActorMaterial, SkyEnvironment } from './materials.js';
+import { ParticleSystem } from './particles.js';
+import { DecalField } from './decals.js';
+import { FortressGuns, Chalice } from './fortress.js';
+import { ShrapnelField } from './shrapnel.js';
+import { createPhysicsWorld, PHYSICS_STEP as SI_PHYSICS_STEP } from './physics.js';
 
 const EYE_HEIGHT = 1.6;
 const CAM_DISTANCE = 7;
 const WALK_SPEED = 9;
 const RUN_SPEED = 16;
-const PHYSICS_STEP = 1 / 60;
+const PHYSICS_STEP = SI_PHYSICS_STEP;
+// The player is a rigid body now (see _buildPlayerBody). A sphere, not a capsule:
+// cannon-es has no capsule primitive, and a single sphere at the hips with a ground probe
+// underneath is the standard, robust way to do this — it cannot catch its corners on a
+// voxel edge the way a box does, and every FPS controller built on cannon works this way.
+const PLAYER_RADIUS = 0.45;
+const PLAYER_MASS = 80;                 // kg
+const PLAYER_EYE_ABOVE_CENTRE = 0.75;
+// How high a ledge the player walks up without jumping. 0.6 m is a tall step; the old
+// code allowed 2.2 m, which is a wall.
+const STEP_HEIGHT = 0.6;
+const GROUND_PROBE = PLAYER_RADIUS + 0.25;
+// Collision groups. Everything in the world is group 1; the player alone is group 2, so
+// the ground probe can ray against the world without hitting the body it starts inside.
+const WORLD_GROUP = 1;
+const PLAYER_GROUP = 2;
 const HUD_INTERVAL_S = 0.1;
+// Taking the chalice is the win, so it has to out-score any amount of grinding: a long
+// survival run tops out around 20 k, and a siege that ends in a breach should always read
+// as the better result on the board.
+const VICTORY_BONUS = 25000;
+// Kiosk siege AI (demo mode). Tuned so the attract loop reads clearly from across a room:
+// the bot should visibly stop at a wall, chew through it, and walk in.
+const DEMO_PROBE_RANGE = 14;        // metres of "is something in my way"
+const DEMO_BLAST_RANGE = 11;        // only lob the blast ball at something it can reach
+const DEMO_BLAST_COOLDOWN_S = 4;
+const DEMO_REACH_RADIUS = 5.5;      // close enough to the chalice to count as taken
+// How far ahead the bot digs when it is stuck and the probe rays found nothing.
+const DEMO_FORCE_DISTANCE = 4;
+const DEMO_TRIUMPH_S = 5;
 const PLAYER_MAX_HP = 100;
 const PLAYER_CRUSH_MIN_SPEED = 5;
 
 export class Engine {
-  constructor(host, dotnetRef, demo, volumes) {
+  constructor(host, dotnetRef, demo, volumes, mode = 'solo') {
     this.host = host;
     this.dotnetRef = dotnetRef;
     this.demo = demo;
     this.volumes = volumes;
+    // 'solo' (default) or 'multi'. Multi enables the lockstep input shipper.
+    this.mode = mode === 'multi' ? 'multi' : 'solo';
+    this.multiplayerSink = null;
+    this.multiplayerPlayerNumber = 1;
+    this._lockstepClock = 0;
+    this._lockstepTick = 0;
+    // Multiplayer slice, 2026-08-18: same tick rate as the server pump
+    // (PoVoxelStrikeLockstepService.TickIntervalMs = 50). Drift-corrected in the frame
+    // loop below — see _frame().
+    this._lockstepIntervalMs = 50;
 
     this.disposed = false;
     this.running = false;
@@ -91,15 +144,38 @@ export class Engine {
     };
   }
 
-  start() {
+  /**
+   * Async because the renderer is: the WebGPU path has to await adapter init before it
+   * can report whether it came up. index.js awaits this; nothing else may assume the
+   * engine is usable the instant the constructor returns.
+   */
+  async start() {
     const width = this.host.clientWidth || 800;
     const height = this.host.clientHeight || 480;
 
-    this.renderer = new THREE.WebGLRenderer({ antialias: true });
+    // Resolve the GFX tier FIRST and publish it: world geometry is built further down
+    // this method and every material it creates reads the tier through materials.js.
+    this.q = resolveQuality();
+    setQuality(this.q);
+
+    // MSAA is redundant once SMAA is in the chain, and the two together cost twice for
+    // one result — so the tier that turns SMAA on turns hardware AA off.
+    const built = await createRenderer({ antialias: !this.q.smaa });
+    if (this.disposed) { built.renderer.dispose?.(); return; }
+    this.renderer = built.renderer;
+    this.rendererApi = built.api;
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setSize(width, height);
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // PBR wants a filmic curve and a linear working space; without tone mapping the
+    // sun-lit faces of a white cottage clip to flat white the moment the sun is up.
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    // ACES rolls highlights off hard, so a "correct" exposure of 1.0 reads as gloomy in a
+    // scene made almost entirely of mid-grey stone. 1.2 puts the walls in the upper
+    // midtones where the damage is readable; 1.45 (tried first) clipped stone and sky to
+    // flat white, which is not "brighter", it is less picture.
+    this.renderer.toneMappingExposure = 1.2;
     this.canvas = this.renderer.domElement;
     this.canvas.style.display = 'block';
     this.host.appendChild(this.canvas);
@@ -108,14 +184,24 @@ export class Engine {
     // Dusk-blue palette so the grass terrain reads as outdoors while staying on the
     // platform's dark theme. The gradient sky dome (vfx.buildSky) replaces the flat
     // clear color; the fog is tuned to the dome's horizon so distance melts into sky.
-    this.scene.fog = new THREE.Fog(0x3d4961, 70, 230);
-    this.scene.add(new THREE.HemisphereLight(0xbfc8dd, 0x2c2e33, 1.6));
+    // Fog range is tuned to the FORTRESS, not to the old scattered settlement: the outer
+    // wall is 116 units across and the keep sits 58 units behind the gate, so the previous
+    // 70/230 range dissolved the objective into haze from the moment you could see it.
+    // Start the falloff past the far wall and end it past the arena boundary.
+    this.scene.fog = new THREE.Fog(0x3d4961, 150, 520);
+    const hemi = new THREE.HemisphereLight(0xbfc8dd, 0x2c2e33, 1.6);
+    this.scene.add(hemi);
+    // Unshadowed interior fill. The keep is a roofed stone box: without this the vault
+    // holding the chalice — the place the whole game points at — was lit only by the
+    // chalice's own lamp.
+    const ambient = new THREE.AmbientLight(0xc8d4e8, 0.7);
+    this.scene.add(ambient);
     const sun = new THREE.DirectionalLight(0xfff2df, 2.2);
     sun.position.set(40, 80, 25);
     // One 2048 shadow map over the whole arena: ~13 cm texels, chunky but exactly the
     // voxel aesthetic — and cheap enough that collapsing towers cast moving shadows.
     sun.castShadow = true;
-    sun.shadow.mapSize.set(2048, 2048);
+    sun.shadow.mapSize.set(this.q.shadowMapSize, this.q.shadowMapSize);
     sun.shadow.camera.left = -130;
     sun.shadow.camera.right = 130;
     sun.shadow.camera.top = 130;
@@ -129,11 +215,22 @@ export class Engine {
 
     this.camera = new THREE.PerspectiveCamera(70, width / height, 0.1, 500);
 
-    this.vfx = new Vfx(this.renderer, this.scene, this.camera, this.host);
+    this.vfx = new Vfx(this.renderer, this.scene, this.camera, this.host, this.q);
     this.vfx.buildSky();
+    // Time-of-day owns the sun and the hemisphere fill from here on: it repaints their
+    // colour and intensity every frame, so the literals set above are only the values
+    // that hold for the first frame.
+    this.vfx.attachSun(sun, hemi, ambient);
+    this.skyEnv = new SkyEnvironment(this.renderer, this.scene, this.q);
+    this.skyEnv.update(0, this.vfx.skyKey, this.vfx._sunDir, true);
+    this.particles = new ParticleSystem(this.scene, this.q.particles);
+    this.particles.setViewportHeight(this.renderer.getSize(new THREE.Vector2()).y);
+    this.decals = new DecalField(this.scene, this.q.decals);
+    this._spaceClock = 0;
     // Demo (kiosk) keeps the visuals but stays silent — there is no user gesture to
     // unlock an AudioContext, and the catalog page should not hum on its own.
     this.audio = this.demo ? null : new VoxelAudio();
+    this.audio?.setQuality(this.q); // before startMusic: it decides the reverb graph
     this.audio?.startMusic();
     this._prevLocked = false;
     this._cueClock = 1.5;
@@ -141,29 +238,44 @@ export class Engine {
 
     // Physics: cannon-es (the platform's physics engine — PoRacer/PoMarbleRace ship it
     // via the same import map).
-    this.physicsWorld = new CANNON.World({ gravity: new CANNON.Vec3(0, -20, 0) });
-    this.physicsWorld.allowSleep = true;
+    // SI units, sweep-and-prune broadphase and the full per-material contact table all
+    // come from physics.js — there is one definition of what stone-on-stone means.
+    const built2 = createPhysicsWorld();
+    this.physicsWorld = built2.world;
+    this.physicsMaterials = built2.materials;
     this.physicsAccumulator = 0;
 
-    const { structures, terrain } = buildWorld(
-      this.scene, this.physicsWorld, this.volumes, this.seed);
+    const { structures, terrain, spawn, chaliceSpot, turretMounts } = buildWorld(
+      this.scene, this.physicsWorld, this.volumes, this.seed, this.physicsMaterials);
     this.structures = structures;
     this.terrain = terrain;
+    this.spawnPoint = spawn;
 
+    this.shrapnel = new ShrapnelField(this.scene, this.physicsWorld, this.q.shrapnel,
+      { terrain: this.terrain, structures: this.structures }, this.physicsMaterials.stone);
     this.debris = new DebrisManager(this.scene, this.physicsWorld, {
       collapse: (voxels, position) => {
-        this.audio?.collapse(voxels, this._panFor(position));
+        this.audio?.collapse(voxels, position);
         // Shake scales with tonnage and falls off with distance; a truly big fall
         // close by also rings the ears.
         const d = this.player.position.distanceTo(position);
         const proximity = Math.max(0, 1 - d / 50);
         this.vfx.addShake(Math.min(0.5, voxels / 700) * proximity);
         if (voxels > 250 && d < 18) this.audio?.concussion(0.5);
+        // Masonry dust: count tracks tonnage so a cornice puffs and a tower billows.
+        this.particles.emit(position, Math.min(90, 6 + (voxels >> 2)), {
+          color: 0xb9ab95, speed: 1.6, spread: 3, size: 0.9,
+          life: 2.6, upward: 0.7,
+        });
       },
       impact: (mass, position) => {
-        this.audio?.debrisHit(mass, this._panFor(position));
+        this.audio?.debrisHit(mass, position);
+        this.particles.emit(position, Math.min(10, 2 + (mass / 60) | 0), {
+          color: 0x9c8f79, speed: 1.1, spread: 1, size: 0.5, life: 1.1, upward: 0.5,
+        });
       },
-    });
+    }, this.physicsMaterials);
+    this.debris.structures = this.structures; // blast shielding needs the occluders
     this.enemies = new EnemyManager(this.scene, this.structures, this.debris, this.terrain, {
       demo: this.demo,
       onPlayerDamage: (amount) => this._damagePlayer(amount),
@@ -174,9 +286,14 @@ export class Engine {
       },
       onCarve: (removed, clusterVoxels) => { this.voxelsDestroyed += removed + clusterVoxels; },
       fx: {
-        spit: (position) => this.audio?.spit(this._panFor(position),
-          Math.max(0.2, 1 - this.player.position.distanceTo(position) / 45)),
-        enemyDeath: (type, position) => this.audio?.enemyDeath(type, this._panFor(position)),
+        spit: (position) => this.audio?.spit(position, 1),
+        enemyDeath: (type, position) => {
+          this.audio?.enemyDeath(type, position);
+          this.particles.emit(position, 14, {
+            color: type === 'brute' ? 0x8a6a4a : 0x7dffb0,
+            speed: 3.2, spread: 1.2, size: 0.45, life: 0.9, upward: 1.0,
+          });
+        },
       },
     });
     this.weapon = new Weapon(this.scene, this.camera, this.structures, this.terrain, this.debris,
@@ -185,19 +302,73 @@ export class Engine {
         shot: (muzzle) => { this.audio?.shot(); this.vfx.muzzleFlash(muzzle); },
         altLaunch: () => this.audio?.altLaunch(),
         detonate: (point) => {
-          this.audio?.explosion(this._panFor(point));
+          const near = Math.max(0, 1 - this.player.position.distanceTo(point) / 55);
+          this.audio?.explosion(point, near);
           this.vfx.shockwave(point);
           this.vfx.addShake(0.45);
+          this.particles.emit(point, 70, {
+            color: 0x6b6157, speed: 7, spread: 2, size: 1.4, life: 2.4, upward: 1.1,
+          });
+          this.particles.emit(point, 26, {
+            color: 0xffb066, speed: 10, spread: 1, size: 0.7, life: 0.5, upward: 1.4,
+          });
+          this.decals.stamp(point, this._surfaceNormal(point), { radius: 3.4, color: 0x140f0b });
         },
-      });
+        // Primary-fire contact: a small puff and a small burn, so sustained digging
+        // leaves a visible trench rather than a clean hole.
+        impact: (point, kind, normal) => {
+          this.particles.emit(point, 6, {
+            color: kind === 'terrain' ? 0x6d5138 : 0xc9c6c0,
+            speed: 2.2, spread: 0.6, size: 0.32, life: 0.8, upward: 0.9,
+          });
+          this.decals.stamp(point, normal ?? this._surfaceNormal(point),
+            { radius: 0.85, color: 0x1c1712, life: 26 });
+        },
+      },
+      this.shrapnel);
 
     this.player = new THREE.Mesh(
       new THREE.CapsuleGeometry(0.4, 1.0, 4, 12),
-      new THREE.MeshLambertMaterial({ color: 0xe4572e }),
+      createActorMaterial({ color: 0xe4572e }),
     );
-    this.player.position.set(0, this.terrain.heightAt(0, 0) + 0.9, 0);
+    // Spawn is OUTSIDE the outer wall. The origin is the middle of the keep now, and a
+    // player who starts on the objective has not besieged anything.
+    this.player.position.copy(this.spawnPoint);
+    this._prevPlayerPos = this.player.position.clone();
+    this._playerVel = new THREE.Vector3();
+    this._buildPlayerBody();
     this.player.castShadow = true;
     this.scene.add(this.player);
+
+    // ── The siege fixtures ──────────────────────────────────────────────
+    this.chalice = new Chalice(this.scene, chaliceSpot, this.q);
+    this.guns = new FortressGuns(this.scene, this.structures, this.terrain, {
+      onPlayerDamage: (amount) => this._damagePlayer(amount),
+      fx: {
+        fire: (position) => {
+          this.audio?.shot();
+          this.vfx.muzzleFlash(position);
+          this.particles.emit(position, 5, {
+            color: 0xffd9a0, speed: 3.4, spread: 0.4, size: 0.35, life: 0.4, upward: 0.6,
+          });
+        },
+        hit: (position) => {
+          this.particles.emit(position, 7, {
+            color: 0xc9c6c0, speed: 2.6, spread: 0.5, size: 0.3, life: 0.6, upward: 1.0,
+          });
+          this.decals.stamp(position, this._surfaceNormal(position),
+            { radius: 0.6, color: 0x241c14, life: 18 });
+        },
+        // A gun going quiet is the reward for demolition, so it gets its own beat.
+        destroyed: (position) => {
+          this.audio?.collapse(180, position);
+          this.particles.emit(position, 30, {
+            color: 0x8d8478, speed: 4.5, spread: 1.5, size: 0.8, life: 1.8, upward: 1.2,
+          });
+        },
+      },
+    });
+    for (const mount of turretMounts) this.guns.add(mount.position, mount.structure);
 
     this._buildVeil();
     this._buildCrosshair();
@@ -243,6 +414,12 @@ export class Engine {
 
     this.audio?.dispose();
     this.vfx?.dispose();
+    this.particles?.dispose();
+    this.decals?.dispose();
+    this.skyEnv?.dispose();
+    this.guns?.dispose();
+    this.chalice?.dispose();
+    this.shrapnel?.dispose();
     this.weapon?.dispose();
     this.enemies?.dispose();
     this.debris?.dispose();
@@ -282,17 +459,28 @@ export class Engine {
       this.elapsed += dt;
       if (this.demo) this._updateDemo(dt);
       else if (this._locked()) this._move(dt);
-      // Follow the block terrain: quick exponential settle onto the stepped surface, so
-      // walking up a block reads as Minecraft's auto-step rather than a teleport.
-      const groundY = this.terrain.heightAt(this.player.position.x, this.player.position.z) + 0.9;
-      this.player.position.y += (groundY - this.player.position.y) * Math.min(1, 14 * dt);
+      // Height is the physics body's business now — the mesh is synced from it after the
+      // step. The exponential settle onto terrain.heightAt() that used to live here was
+      // what made the player float over craters and up two-metre ledges.
     }
 
     if (simulating) {
       this.physicsAccumulator = Math.min(this.physicsAccumulator + dt, 0.1);
       while (this.physicsAccumulator >= PHYSICS_STEP) {
+        // Swept contacts run BEFORE the step, on the motion the step is about to take.
+        this.shrapnel.sweep(PHYSICS_STEP);
         this.physicsWorld.step(PHYSICS_STEP);
         this.physicsAccumulator -= PHYSICS_STEP;
+      }
+      if (this.playerBody) {
+        this.onGround = this._probeGround();
+        // Keep the player inside the arena. This is the one hard constraint left on the
+        // body: the perimeter wall is terrain and can be dug through, and falling off the
+        // edge of the heightfield is not a failure state anyone asked for.
+        const b = this.playerBody.position;
+        b.x = THREE.MathUtils.clamp(b.x, -ARENA_HALF + 1, ARENA_HALF - 1);
+        b.z = THREE.MathUtils.clamp(b.z, -ARENA_HALF + 1, ARENA_HALF - 1);
+        this.player.position.set(b.x, b.y - PLAYER_RADIUS + 0.9, b.z);
       }
 
       this.weapon.update(dt, this._muzzle());
@@ -304,6 +492,16 @@ export class Engine {
         dt, this.elapsed, this.player.position, this.camera.getWorldDirection(new THREE.Vector3()));
       this.enemies.update(dt, this.player.position);
       this.enemies.checkCrush(this.debris.pieces);
+      // Velocity is differenced, not integrated: _move() writes the position directly, so
+      // this is the only honest source for the turrets' lead calculation.
+      this._playerVel.copy(this.player.position).sub(this._prevPlayerPos)
+        .divideScalar(Math.max(dt, 1e-4));
+      this._prevPlayerPos.copy(this.player.position);
+      this.guns.update(dt, this.player.position, this._playerVel);
+      this.chalice.update(dt);
+      // Demo runs its own celebrate-and-restart loop (see _updateDemo); ending the run
+      // would leave the kiosk sitting on a game-over screen.
+      if (playing && !this.demo && this.chalice.reached(this.player.position)) this._claimChalice();
       if (playing) this._checkPlayerCrush(dt);
       for (const s of this.structures) {
         s.rebuildDirtyChunks();
@@ -318,11 +516,35 @@ export class Engine {
     this._followCamera(dt);
     this.vfx.update(dt);
     this.vfx.applyShake(); // AFTER lookAt so the shake never fights the follow lerp
+    this.particles.update(dt);
+    this.decals.update(dt);
+    this.shrapnel.update(dt);
+    this.skyEnv.update(dt, this.vfx.skyKey, this.vfx._sunDir);
+    if (this.audio) {
+      // The listener must follow the SHAKEN camera: the shake is what the player sees,
+      // so it is also what the player should hear.
+      this.camera.updateMatrixWorld();
+      this.audio.setListener(this.camera);
+      this._updateSpace(dt);
+    }
 
     this.hudClock -= dt;
     if (this.hudClock <= 0 && this.state !== 'dead') {
       this.hudClock = HUD_INTERVAL_S;
       this._pumpHud();
+    }
+
+    // Multiplayer slice (2026-08-18): drift-corrected 50 ms lockstep tick. Drains any
+    // accumulated time so a stutter frame doesn't double-ship a batch; an idle frame
+    // catches up. The server is the source of truth for the tick number — we ship a
+    // monotonic local counter purely so the wrapper knows which tick each batch belongs
+    // to if it wants to surface it in dev consoles.
+    if (this.mode === 'multi' && this.multiplayerSink) {
+      this._lockstepClock += dt * 1000;
+      while (this._lockstepClock >= this._lockstepIntervalMs) {
+        this._lockstepClock -= this._lockstepIntervalMs;
+        this._shipLockstepBatch();
+      }
     }
 
     this.vfx.render();
@@ -349,6 +571,42 @@ export class Engine {
   }
 
   /** Stereo pan (−1..1) of a world position relative to the camera. */
+  /**
+   * Reverb zone probe. Throttled to 4 Hz: it walks every structure, and the answer only
+   * has to beat the 250 ms crossfade in setSpace() to feel instant.
+   */
+  _updateSpace(dt) {
+    this._spaceClock -= dt;
+    if (this._spaceClock > 0) return;
+    this._spaceClock = 0.25;
+    const head = this._headVec ??= new THREE.Vector3();
+    head.copy(this.player.position);
+    let indoors = 0;
+    for (const s of this.structures) {
+      // Cheap reject first: outside the building's own radius it cannot enclose anyone.
+      const reach = Math.max(s.dims[0], s.dims[2]) * s.scale * 0.75;
+      if (head.distanceToSquared(s.group.position) > reach * reach) continue;
+      indoors = Math.max(indoors, s.indoorAt(head));
+      if (indoors >= 1) break;
+    }
+    this.audio.setSpace(indoors);
+  }
+
+  /**
+   * Best-guess surface normal at a contact point, for orienting a decal. Sampling the
+   * terrain height on a small cross is exact for the stepped heightfield and good enough
+   * on a wall, where the gradient saturates and the mark ends up near-vertical.
+   */
+  _surfaceNormal(point) {
+    const n = this._normVec ??= new THREE.Vector3();
+    const e = 0.6;
+    const hL = this.terrain.heightAt(point.x - e, point.z);
+    const hR = this.terrain.heightAt(point.x + e, point.z);
+    const hD = this.terrain.heightAt(point.x, point.z - e);
+    const hU = this.terrain.heightAt(point.x, point.z + e);
+    return n.set(hL - hR, 2 * e, hD - hU).normalize();
+  }
+
   _panFor(position) {
     const v = this._panVec ??= new THREE.Vector3();
     const right = this._panRight ??= new THREE.Vector3();
@@ -388,6 +646,84 @@ export class Engine {
       + this.crushKills * 40 + Math.floor(this.voxelsDestroyed / 20);
   }
 
+  /**
+   * The chalice is in hand: the run ends in a win. Deliberately shares the teardown with
+   * death (same pointer-lock release, same HUD pump) so there is one end-of-run path and
+   * only the notification differs.
+   */
+  _claimChalice() {
+    this.state = 'dead';
+    this.won = true;
+    this.chalice.group.visible = false;
+    this.audio?.explosion(this.chalice.position, 1);
+    this.vfx.addShake(0.6);
+    this.vfx.shockwave(this.chalice.position);
+    this.particles.emit(this.chalice.position, 120, {
+      color: 0xffd05a, speed: 8, spread: 1.5, size: 0.7, life: 2.2, upward: 1.6,
+    });
+    this.weapon.setPrimaryHeld(false);
+    if (this._locked()) document.exitPointerLock();
+    this._pumpHud();
+    this._notify('OnVictory',
+      this._score() + VICTORY_BONUS, Math.round(this.elapsed * 10) / 10,
+      this.kills, this.bruteKills, this.crushKills, this.voxelsDestroyed,
+      this.seed.toString(16).padStart(8, '0'));
+  }
+
+  /**
+   * Put the player in the physics world.
+   *
+   * They used to be outside it entirely: position was written directly, the ground was a
+   * height lookup with a 2.2 m auto-step, and walls were a hand-rolled probe of five
+   * points at three heights. That could not be pushed, buried, knocked down a slope or
+   * hit by a falling wall, and it walked up two-metre ledges.
+   *
+   * Now: a sphere body with rotation locked, driven by setting horizontal velocity while
+   * gravity and contacts do the rest. Friction against the world is zero by design (see
+   * the contact table in physics.js) so the player never sticks to a wall; braking is
+   * done by writing velocity, which is what every responsive FPS controller does.
+   */
+  _buildPlayerBody() {
+    const p = this.player.position;
+    this.playerBody = new CANNON.Body({
+      mass: PLAYER_MASS,
+      shape: new CANNON.Sphere(PLAYER_RADIUS),
+      position: new CANNON.Vec3(p.x, p.y + PLAYER_RADIUS, p.z),
+      material: this.physicsMaterials.player,
+      linearDamping: 0.0,
+      angularDamping: 1.0,
+      allowSleep: false,
+      collisionFilterGroup: PLAYER_GROUP,
+      collisionFilterMask: WORLD_GROUP | PLAYER_GROUP,
+    });
+    this.playerBody.fixedRotation = true;   // no tumbling; the camera owns orientation
+    this.playerBody.updateMassProperties();
+    this.physicsWorld.addBody(this.playerBody);
+    this._groundRay = { from: new CANNON.Vec3(), to: new CANNON.Vec3() };
+    this.onGround = false;
+  }
+
+  /**
+   * Is there world within GROUND_PROBE below the player? Uses the physics world's own
+   * raycast, so it sees the terrain heightfield, the fortress colliders AND the rubble —
+   * standing on a pile of your own debris counts as standing on something.
+   */
+  _probeGround() {
+    if (!this.playerBody) return false;
+    const b = this.playerBody.position;
+    this._groundRay.from.set(b.x, b.y, b.z);
+    this._groundRay.to.set(b.x, b.y - GROUND_PROBE, b.z);
+    const result = this._rayResult ??= new CANNON.RaycastResult();
+    result.reset();
+    // The ray starts at the body's own centre, so without a filter it can hit the player
+    // sphere first and report "airborne" while standing still. Filtering by group is the
+    // fix; treating a self-hit as not-grounded (the first attempt) meant the step assist
+    // never ran and ground movement permanently used the sluggish in-air control factor.
+    this.physicsWorld.raycastClosest(this._groundRay.from, this._groundRay.to,
+      { skipBackfaces: true, collisionFilterMask: WORLD_GROUP }, result);
+    return result.hasHit;
+  }
+
   _damagePlayer(amount) {
     if (this.demo || this.state !== 'playing') return;
     this.hp -= amount;
@@ -422,7 +758,12 @@ export class Engine {
       if (d < reach + 0.7) {
         piece.crushCd = 0.6;
         this.audio?.crush(0);
-        this._damagePlayer(Math.min(50, Math.max(6, piece.body.mass * speed * 0.015)));
+        // Momentum, rescaled for REAL masses. The old coefficient was tuned when debris
+        // weighed 1% of what it should, so once physics.js fixed the units every pebble
+        // hit the 50-damage cap and a single collapse was instant death. Now a 300 kg
+        // chunk at 8 m/s does about 29, and a falling tower section still kills you.
+        const momentum = piece.body.mass * speed;   // kg m/s
+        this._damagePlayer(Math.min(60, Math.max(2, momentum * 0.012)));
       }
     }
   }
@@ -437,85 +778,183 @@ export class Engine {
   // ground — and digs/shoots at it in bursts, with the occasional blast ball. Shots aim
   // through weapon.aimOverride since the kiosk has no mouse.
 
+  /**
+   * Kiosk siege AI.
+   *
+   * The demo used to amble to random points and shoot whatever happened to be nearby,
+   * which showed off the destruction but not the GAME. It now plays the actual objective:
+   * march on the keep, blast a way through whatever stands between it and the chalice,
+   * and go inside. Losing does not apply — when it reaches the prize it celebrates and
+   * starts a fresh assault, so the attract loop never ends on a dead screen.
+   *
+   * There is no pathfinding, deliberately. The bot walks the straight line to the chalice
+   * and treats anything on that line as a wall to be removed, because that IS the game:
+   * the fortress has no route in that does not go through masonry. When it stops making
+   * progress it sidesteps, and if that fails too it blasts the obstruction.
+   */
   _updateDemo(dt) {
     const st = this.demoState ??= {
-      wander: null, wanderT: 0, aim: null, aimT: 0, burstT: 1.5, firing: false, altT: 4,
+      phase: 'advance',       // 'advance' | 'breach' | 'triumph'
+      aim: null,
+      burstT: 1.2, firing: false, altT: 2,
+      strafe: 0, strafeT: 0,
+      stuckT: 0, lastX: 0, lastZ: 0, progressT: 0,
+      triumphT: 0,
     };
     const p = this.player.position;
+    const goal = this.chalice.position;
 
-    // Wander: amble toward a random point; re-roll when reached or stale.
-    st.wanderT -= dt;
-    if (!st.wander || st.wanderT <= 0 || Math.hypot(st.wander.x - p.x, st.wander.z - p.z) < 3) {
-      st.wander = new THREE.Vector3((Math.random() * 2 - 1) * 60, 0, (Math.random() * 2 - 1) * 60);
-      st.wanderT = 6 + Math.random() * 5;
-    }
-    const toW = new THREE.Vector3(st.wander.x - p.x, 0, st.wander.z - p.z);
-    if (toW.lengthSq() > 1) {
-      toW.normalize();
-      const step = WALK_SPEED * 0.7 * dt;
-      const tryX = THREE.MathUtils.clamp(p.x + toW.x * step, -ARENA_HALF, ARENA_HALF);
-      const tryZ = THREE.MathUtils.clamp(p.z + toW.z * step, -ARENA_HALF, ARENA_HALF);
-      if (!this._blockedAt(tryX, tryZ)) { p.x = tryX; p.z = tryZ; }
-      else st.wanderT = 0; // walked into a wall — pick somewhere else next frame
-    }
-
-    // Aim: re-pick a target every few seconds — enemies first, else a building or dirt.
-    st.aimT -= dt;
-    if (st.aimT <= 0) {
-      st.aimT = 2 + Math.random() * 2.5;
-      st.aim = this._pickDemoTarget();
-    }
-
-    if (st.aim) {
-      // Face it (camera follows yaw), and hand the weapon the exact firing ray.
-      const toA = new THREE.Vector3().subVectors(st.aim, this._muzzle());
-      const targetYaw = Math.atan2(-toA.x, -toA.z);
-      let d = targetYaw - this.yaw;
-      while (d > Math.PI) d -= 2 * Math.PI;
-      while (d < -Math.PI) d += 2 * Math.PI;
-      this.yaw += d * Math.min(1, 6 * dt);
-      this.player.rotation.y = this.yaw;
-      this.weapon.aimOverride = { origin: this._muzzle(), direction: toA.normalize() };
-    } else {
+    if (st.phase === 'triumph') {
+      // Stand in the vault for a beat, then re-arm and walk back out to do it again.
+      st.triumphT -= dt;
+      this.weapon.setPrimaryHeld(false);
       this.weapon.aimOverride = null;
+      if (st.triumphT <= 0) this._restartDemoSiege();
+      return;
     }
 
-    // Fire in bursts; lob a blast ball now and then.
+    // ── Where am I going, and what is in the way? ──────────────────────────
+    const toGoal = this._demoVec ??= new THREE.Vector3();
+    toGoal.set(goal.x - p.x, 0, goal.z - p.z);
+    const distance = toGoal.length();
+    if (distance > 0.001) toGoal.divideScalar(distance);
+
+    // Probe straight ahead at chest height. Whatever it hits first is the obstacle; if it
+    // hits nothing within the probe, the way is clear and the bot just walks.
+    const muzzle = this._muzzle();
+    const eye = this._demoEye ??= new THREE.Vector3();
+    eye.copy(muzzle);
+    const obstacle = this._demoObstacle(eye, toGoal, DEMO_PROBE_RANGE);
+
+    // ── Aim ───────────────────────────────────────────────────────────────
+    // At the obstruction when there is one, otherwise at the chalice itself, which keeps
+    // the camera pointed at the objective and makes the attract loop legible.
+    //
+    // `forced` is the backstop for the case the rays cannot see: if the bot has stopped
+    // gaining ground it digs straight ahead regardless of what the probe thinks. Progress
+    // is the ground truth here, not the raycast.
+    const forced = st.stuckT >= 1 && !obstacle;
+    if (forced) {
+      const ahead = this._demoForce ??= new THREE.Vector3();
+      ahead.copy(toGoal).multiplyScalar(DEMO_FORCE_DISTANCE).add(eye);
+      st.aim = ahead;
+    } else {
+      st.aim = obstacle ? obstacle.point : goal;
+    }
+    st.phase = (obstacle || forced) ? 'breach' : 'advance';
+
+    const toA = this._demoAim ??= new THREE.Vector3();
+    toA.subVectors(st.aim, muzzle);
+    const targetYaw = Math.atan2(-toA.x, -toA.z);
+    let dy = targetYaw - this.yaw;
+    while (dy > Math.PI) dy -= 2 * Math.PI;
+    while (dy < -Math.PI) dy += 2 * Math.PI;
+    this.yaw += dy * Math.min(1, 5 * dt);
+    this.player.rotation.y = this.yaw;
+    this.weapon.aimOverride = { origin: muzzle, direction: toA.clone().normalize() };
+
+    // ── Move ──────────────────────────────────────────────────────────────
+    // Advance while the way is clear, and while breaching keep pressing forward so the
+    // bot walks through the hole the instant it opens. A slow oscillating sidestep stops
+    // it grinding a corner forever.
+    st.strafeT -= dt;
+    if (st.strafeT <= 0) {
+      st.strafeT = 1.6 + Math.random() * 1.4;
+      st.strafe = (Math.random() * 2 - 1) * 0.55;
+    }
+    const speed = st.phase === 'breach' ? WALK_SPEED * 0.35 : WALK_SPEED * 0.8;
+    const wishX = (toGoal.x + -toGoal.z * st.strafe) * speed;
+    const wishZ = (toGoal.z + toGoal.x * st.strafe) * speed;
+    const v = this.playerBody.velocity;
+    const control = this.onGround ? 1 : 0.18;
+    v.x += (wishX - v.x) * control;
+    v.z += (wishZ - v.z) * control;
+    this._stepUp(wishX, wishZ);
+
+    // ── Stuck detection ───────────────────────────────────────────────────
+    // Measured over a second of real movement, not per frame: a bot pressed against a
+    // wall it is actively demolishing is not stuck, it is working.
+    st.progressT += dt;
+    if (st.progressT >= 1) {
+      const moved = Math.hypot(p.x - st.lastX, p.z - st.lastZ);
+      st.lastX = p.x; st.lastZ = p.z;
+      st.progressT = 0;
+      st.stuckT = moved < 1.2 ? st.stuckT + 1 : 0;
+      if (st.stuckT === 1) st.altT = 0;   // first stalled second: blast now, not in four
+      if (st.stuckT >= 3) {
+        // Three seconds without ground gained: sidestep as well, in case the bot is
+        // grinding a corner that digging straight ahead will never clear.
+        st.strafe = (Math.random() < 0.5 ? -1 : 1) * 0.9;
+        st.strafeT = 2.5;
+      }
+    }
+
+    // ── Fire ──────────────────────────────────────────────────────────────
+    // Dig continuously while breaching, in bursts otherwise. The blast ball goes on a
+    // cooldown and is spent on whatever is blocking the path -- never on open air, which
+    // is what the old random-target version did most of the time.
     st.burstT -= dt;
     if (st.burstT <= 0) {
       st.firing = !st.firing;
-      st.burstT = st.firing ? 1 + Math.random() * 1.2 : 0.6 + Math.random() * 1.2;
+      st.burstT = st.firing ? 1.4 + Math.random() : 0.5 + Math.random() * 0.8;
     }
-    this.weapon.setPrimaryHeld(st.firing && st.aim !== null);
+    this.weapon.setPrimaryHeld(st.phase === 'breach' ? true : st.firing);
     st.altT -= dt;
-    if (st.altT <= 0 && st.aim) {
-      st.altT = 5 + Math.random() * 4;
-      this.weapon.fireAlt(this._muzzle());
+    const worthBlasting = (obstacle && obstacle.distance < DEMO_BLAST_RANGE) || forced;
+    if (st.altT <= 0 && worthBlasting) {
+      st.altT = DEMO_BLAST_COOLDOWN_S;
+      this.weapon.fireAlt(muzzle);
+    }
+
+    // ── Win ───────────────────────────────────────────────────────────────
+    if (distance < DEMO_REACH_RADIUS && Math.abs(p.y - goal.y) < 6) {
+      st.phase = 'triumph';
+      st.triumphT = DEMO_TRIUMPH_S;
+      this.weapon.setPrimaryHeld(false);
+      this.audio?.explosion(goal, 1);
+      this.vfx.addShake(0.6);
+      this.vfx.shockwave(goal);
+      this.particles.emit(goal, 140, {
+        color: 0xffd05a, speed: 9, spread: 1.6, size: 0.75, life: 2.4, upward: 1.7,
+      });
     }
   }
 
-  _pickDemoTarget() {
-    const p = this.player.position;
-    // Nearest enemy wins when one is close enough to be interesting.
-    let nearest = null, nearestD = 55;
-    for (const e of this.enemies.enemies) {
-      const d = e.mesh.position.distanceTo(p);
-      if (d < nearestD) { nearest = e; nearestD = d; }
+  /**
+   * First structure surface on the ray, or null. Only structures are probed: terrain in
+   * the way is a slope the bot walks up, not something it needs to shoot through, and
+   * treating every hillside as an obstruction had it digging craters in the approach
+   * instead of getting on with the assault.
+   */
+  _demoObstacle(origin, direction, range) {
+    // THREE rays, not one: chest, knee and head. A single chest-height ray threads a
+    // doorway or an arrow slit and reports "clear" while the bot's body is hard against
+    // the jamb beside it — which is exactly how it spent 85 seconds parked 10 m from the
+    // chalice with a clear line of sight to it.
+    const probe = this._demoProbe ??= new THREE.Vector3();
+    let best = null;
+    for (const dy of [0, -0.9, 0.7]) {
+      probe.set(origin.x, origin.y + dy, origin.z);
+      for (const s of this.structures) {
+        const hit = s.raycast(probe, direction, range);
+        if (hit && (!best || hit.distance < best.distance)) best = hit;
+      }
     }
-    if (nearest && Math.random() < 0.6) return nearest.mesh.position.clone();
+    return best;
+  }
 
-    // Otherwise a building mid-section, or a patch of ground to dig.
-    if (this.structures.length > 0 && Math.random() < 0.6) {
-      const s = this.structures[Math.floor(Math.random() * this.structures.length)];
-      return new THREE.Vector3(
-        s.group.position.x, s.group.position.y + s.dims[1] * s.scale * (0.2 + Math.random() * 0.5),
-        s.group.position.z);
-    }
-    const a = Math.random() * Math.PI * 2;
-    const r = 8 + Math.random() * 14;
-    const gx = THREE.MathUtils.clamp(p.x + Math.cos(a) * r, -ARENA_HALF, ARENA_HALF);
-    const gz = THREE.MathUtils.clamp(p.z + Math.sin(a) * r, -ARENA_HALF, ARENA_HALF);
-    return new THREE.Vector3(gx, this.terrain.heightAt(gx, gz) + 0.2, gz);
+  /** Reset the attract loop: chalice back on its plinth, bot back outside the walls. */
+  _restartDemoSiege() {
+    this.chalice.taken = false;
+    this.chalice.group.visible = true;
+    const s = this.spawnPoint;
+    this.playerBody.position.set(s.x, s.y + PLAYER_RADIUS, s.z);
+    this.playerBody.velocity.set(0, 0, 0);
+    this.demoState.phase = 'advance';
+    this.demoState.stuckT = 0;
+    this.demoState.progressT = 0;
+    this.demoState.lastX = s.x;
+    this.demoState.lastZ = s.z;
   }
 
   _move(dt) {
@@ -530,43 +969,45 @@ export class Engine {
     const len = Math.hypot(fwd, strafe);
     const sin = Math.sin(this.yaw), cos = Math.cos(this.yaw);
     // Move in the camera's ground frame: forward is where the camera looks on XZ.
-    const dx = (fwd * -sin + strafe * cos) / len * speed * dt;
-    const dz = (fwd * -cos + strafe * -sin) / len * speed * dt;
+    const wishX = (fwd * -sin + strafe * cos) / len * speed;
+    const wishZ = (fwd * -cos + strafe * -sin) / len * speed;
 
-    // Voxel walls and cliff faces stop the player (axis-separated so walls slide).
-    const tryX = THREE.MathUtils.clamp(this.player.position.x + dx, -ARENA_HALF, ARENA_HALF);
-    const tryZ = THREE.MathUtils.clamp(this.player.position.z + dz, -ARENA_HALF, ARENA_HALF);
-    if (!this._blockedAt(tryX, tryZ)) {
-      this.player.position.x = tryX; this.player.position.z = tryZ;
-    } else if (!this._blockedAt(tryX, this.player.position.z)) {
-      this.player.position.x = tryX;
-    } else if (!this._blockedAt(this.player.position.x, tryZ)) {
-      this.player.position.z = tryZ;
-    }
+    // Horizontal velocity is COMMANDED, vertical is left to gravity and contacts. That
+    // split is what keeps the controls crisp while still letting the world push back:
+    // walls stop you because the solver says so, not because a probe vetoed the move.
+    const v = this.playerBody.velocity;
+    // In the air the player keeps most of their momentum — you cannot turn on a sixpence
+    // mid-fall — while on the ground the command wins outright.
+    const control = this.onGround ? 1 : 0.18;
+    v.x += (wishX - v.x) * control;
+    v.z += (wishZ - v.z) * control;
+    this._stepUp(wishX, wishZ);
     this.player.rotation.y = this.yaw;
   }
 
-  _blockedAt(x, z) {
-    // Auto-step height (the follow lerp climbs it); anything taller is a cliff wall.
-    const groundHere = this.terrain.heightAt(this.player.position.x, this.player.position.z);
-    if (this.terrain.heightAt(x, z) - groundHere > 2.2) return true;
-    const ground = this.terrain.heightAt(x, z);
+  /**
+   * Step assist. A sphere resting on the ground cannot climb a sharp 0.4 m voxel ledge —
+   * it just presses into the face — so a short forward probe at ankle height looks for a
+   * step whose top is within STEP_HEIGHT and lifts the body onto it. Anything taller is a
+   * wall, and a wall is supposed to stop you: that is the entire premise of the siege.
+   */
+  _stepUp(wishX, wishZ) {
+    if (!this.onGround) return;
+    const speed = Math.hypot(wishX, wishZ);
+    if (speed < 0.1) return;
+    const b = this.playerBody.position;
+    const ahead = this._stepVec ??= new THREE.Vector3();
+    ahead.set(wishX / speed, 0, wishZ / speed).multiplyScalar(PLAYER_RADIUS + 0.25);
 
-    // Capsule-aware probing: the player has a 0.4 radius, so testing only the centre
-    // point let the shoulders clip through walls. Probe the centre + four rim points,
-    // each at shin/waist/head height, against every structure's voxel grid.
-    const probe = this._probeVec ??= new THREE.Vector3();
-    for (const [ox, oz] of [[0, 0], [0.35, 0], [-0.35, 0], [0, 0.35], [0, -0.35]]) {
-      for (const h of [0.5, 1.1, 1.7]) {
-        probe.set(x + ox, ground + h, z + oz);
-        for (const s of this.structures) {
-          if (s.solidAtWorld(probe)) return true;
-        }
-      }
+    const footY = b.y - PLAYER_RADIUS;
+    const ground = this.terrain.heightAt(b.x + ahead.x, b.z + ahead.z);
+    const rise = ground - footY;
+    if (rise > 0.02 && rise <= STEP_HEIGHT) {
+      this.playerBody.position.y = ground + PLAYER_RADIUS + 0.02;
+      if (this.playerBody.velocity.y < 0) this.playerBody.velocity.y = 0;
     }
-
-    return this._blockedByDebris(x, z, ground);
   }
+
 
   /**
    * Settled debris is solid scenery: a frozen (or resting) chunk of a collapsed
@@ -574,31 +1015,6 @@ export class Engine {
    * check is what punishes standing under it — and pebbles too small to read as an
    * obstacle are ignored.
    */
-  _blockedByDebris(x, z, ground) {
-    const torsoY = ground + 0.9;
-    const v = this._debrisVec ??= new THREE.Vector3();
-    const q = this._debrisQuat ??= new THREE.Quaternion();
-    for (const piece of this.debris.pieces) {
-      if (piece.voxels < 30) continue;
-      if (!piece.frozen && piece.body.velocity.lengthSquared() > 0.5) continue; // cannon Vec3, not THREE
-
-      // Cheap sphere reject before the exact oriented-box test.
-      const b = piece.body.position;
-      const reach = Math.max(piece.dims[0], piece.dims[1], piece.dims[2]) * piece.scale * 0.87 + 1;
-      const dx = x - b.x, dy = torsoY - b.y, dz = z - b.z;
-      if (dx * dx + dy * dy + dz * dz > reach * reach) continue;
-
-      // Player torso point into the piece's local frame → axis-aligned box test.
-      q.set(piece.body.quaternion.x, piece.body.quaternion.y, piece.body.quaternion.z, piece.body.quaternion.w);
-      v.set(dx, dy, dz).applyQuaternion(q.conjugate());
-      if (Math.abs(v.x) <= piece.dims[0] * piece.scale / 2 + 0.4
-        && Math.abs(v.y) <= piece.dims[1] * piece.scale / 2 + 0.9
-        && Math.abs(v.z) <= piece.dims[2] * piece.scale / 2 + 0.4) {
-        return true;
-      }
-    }
-    return false;
-  }
 
   _look(mx, my) {
     if (!this._locked()) return;
@@ -636,6 +1052,7 @@ export class Engine {
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(width, height);
     this.vfx?.resize(width, height);
+    this.particles?.setViewportHeight(height * Math.min(window.devicePixelRatio, 2));
   }
 
   // ── Pointer lock ───────────────────────────────────────────────────────

@@ -94,7 +94,15 @@ internal sealed partial class AssetIngestionHostedService(
             }
 
             var name = Path.GetFileNameWithoutExtension(glbPath);
-            var volume = await Task.Run(() => GlbVoxelizer.Voxelize(glbPath, options.Value.VoxelResolution), ct);
+            // Voxel painter (#9): the optional sidecar <name>.glb.pvx-mat.json sits next
+            // to the GLB in the drop folder. A malformed file logs and is skipped — never
+            // blocks ingestion (PRD §F1). Identity is GLB-content hash, not sidecar, so
+            // a stray sidecar edit doesn't invalidate the existing .pvx on a restart.
+            var sidecarPath = glbPath + ".pvx-mat.json";
+            var sidecar = File.Exists(sidecarPath)
+                ? PvxSidecarLoader.TryLoad(sidecarPath, logger)
+                : null;
+            var volume = await Task.Run(() => GlbVoxelizer.Voxelize(glbPath, options.Value.VoxelResolution, sidecar), ct);
 
             var tmpPath = pvxPath + ".tmp";
             await using (var stream = File.Create(tmpPath))
@@ -103,8 +111,14 @@ internal sealed partial class AssetIngestionHostedService(
             }
             File.Move(tmpPath, pvxPath, overwrite: true);
 
+            // Build the catalog row from the resolved material table so the manifest can
+            // surface author names + override constants. Without a sidecar the table
+            // is just the default "concrete" material.
+            var materials = BuildAssetMaterials(volume, sidecar);
+            var names = sidecar?.Materials.ToDictionary(m => m.MaterialId, m => m.DisplayName)
+                ?? new Dictionary<byte, string>();
             var info = new VoxelAssetInfo(hash, name, volume.DimX, volume.DimY, volume.DimZ,
-                new FileInfo(pvxPath).Length, pvxPath);
+                new FileInfo(pvxPath).Length, pvxPath, materials, names);
             WriteSidecar(info);
             catalog.Add(info);
             Log.Converted(logger, name, hash, volume.DimX, volume.DimY, volume.DimZ, info.SizeBytes);
@@ -119,6 +133,19 @@ internal sealed partial class AssetIngestionHostedService(
             Log.ConversionFailed(logger, Path.GetFileName(glbPath), ex);
             return ConversionOutcome.Failed;
         }
+    }
+
+    private static IReadOnlyList<VoxelAssetMaterial> BuildAssetMaterials(PvxVolume volume, PvxSidecar? sidecar)
+    {
+        var result = new List<VoxelAssetMaterial>(volume.Materials.Count);
+        for (var i = 0; i < volume.Materials.Count; i++)
+        {
+            var m = volume.Materials[i];
+            var id = (byte)(i + 1);
+            var displayName = sidecar?.Materials.FirstOrDefault(x => x.MaterialId == id)?.DisplayName ?? $"Material {id}";
+            result.Add(new VoxelAssetMaterial(id, displayName, m.Density, m.CompressiveStrength, m.TensileStrength));
+        }
+        return result;
     }
 
     /// <summary>
@@ -140,13 +167,16 @@ internal sealed partial class AssetIngestionHostedService(
                     && JsonSerializer.Deserialize(File.ReadAllText(sidecarPath), PvxJsonContext.Default.SidecarMeta) is { } meta)
                 {
                     info = new VoxelAssetInfo(hash, meta.Name, meta.DimX, meta.DimY, meta.DimZ,
-                        new FileInfo(pvxPath).Length, pvxPath);
+                        new FileInfo(pvxPath).Length, pvxPath,
+                        meta.Materials ?? Array.Empty<VoxelAssetMaterial>(),
+                        meta.MaterialNames ?? new Dictionary<byte, string>());
                 }
                 else
                 {
                     using var stream = File.OpenRead(pvxPath);
                     var (dx, dy, dz) = PvxSerializer.ReadDimensions(stream);
-                    info = new VoxelAssetInfo(hash, hash[..8], dx, dy, dz, new FileInfo(pvxPath).Length, pvxPath);
+                    info = new VoxelAssetInfo(hash, hash[..8], dx, dy, dz, new FileInfo(pvxPath).Length, pvxPath,
+                        Array.Empty<VoxelAssetMaterial>(), new Dictionary<byte, string>());
                     WriteSidecar(info);
                 }
                 catalog.Add(info);
@@ -163,7 +193,8 @@ internal sealed partial class AssetIngestionHostedService(
         var sidecarPath = info.PayloadPath + ".json";
         var tmp = sidecarPath + ".tmp";
         File.WriteAllText(tmp, JsonSerializer.Serialize(
-            new SidecarMeta(info.Name, info.DimX, info.DimY, info.DimZ), PvxJsonContext.Default.SidecarMeta));
+            new SidecarMeta(info.Name, info.DimX, info.DimY, info.DimZ, info.Materials, info.MaterialNames),
+            PvxJsonContext.Default.SidecarMeta));
         File.Move(tmp, sidecarPath, overwrite: true);
     }
 
@@ -177,7 +208,9 @@ internal sealed partial class AssetIngestionHostedService(
         return Convert.ToHexStringLower(hash);
     }
 
-    internal sealed record SidecarMeta(string Name, int DimX, int DimY, int DimZ);
+    internal sealed record SidecarMeta(string Name, int DimX, int DimY, int DimZ,
+    IReadOnlyList<VoxelAssetMaterial>? Materials = null,
+    IReadOnlyDictionary<byte, string>? MaterialNames = null);
 
     private static partial class Log
     {
@@ -201,4 +234,5 @@ internal sealed partial class AssetIngestionHostedService(
 }
 
 [System.Text.Json.Serialization.JsonSerializable(typeof(AssetIngestionHostedService.SidecarMeta))]
+[System.Text.Json.Serialization.JsonSerializable(typeof(PvxSidecar))]
 internal sealed partial class PvxJsonContext : System.Text.Json.Serialization.JsonSerializerContext;

@@ -94,6 +94,11 @@ internal static class EndpointRouteExtensions
         app.MapHub<PoRacerRaceHub>("/poracer/race-hub").RequireAuthorization();
         app.MapHub<PoMiniGames.Features.PoSports.PoSportsLobbyHub>("/posports/lobby-hub").RequireAuthorization();
         app.MapHub<PoMiniGames.Features.PoSports.PoSportsRaceHub>("/posports/race-hub").RequireAuthorization();
+        // PoVoxelStrike co-op: lobby hub for the ready/start room, lockstep hub for the
+        // active run. Both follow the platform pattern (auth required, separate from
+        // MapGroup because MapHub returns IHubEndpointConventionBuilder).
+        app.MapHub<PoMiniGames.Features.PoVoxelStrike.PoVoxelStrikeLobbyHub>("/povoxelstrike/lobby-hub").RequireAuthorization();
+        app.MapHub<PoMiniGames.Features.PoVoxelStrike.PoVoxelStrikeLockstepHub>("/povoxelstrike/lockstep-hub").RequireAuthorization();
 
         return app;
     }

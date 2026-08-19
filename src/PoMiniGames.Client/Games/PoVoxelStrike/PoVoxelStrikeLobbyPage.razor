@@ -1,0 +1,220 @@
+@page "/povoxelstrike/multi"
+@page "/povoxelstrike/lobby"
+@using PoMiniGames.Shared.Games
+@using PoMiniGamesClient.Components
+@using PoMiniGamesClient.Games.PoVoxelStrike.Services
+@inject AuthStateService AuthState
+@inject NavigationManager Nav
+@inject ApiService Api
+@inject ToastService ToastService
+@inject PoVoxelStrikeMultiplayerClient Hub
+@implements IAsyncDisposable
+
+<PageTitle>Voxel Strike — Lobby · PoMiniGames</PageTitle>
+
+<SectionContent SectionName="game-header">
+    <div class="gps-header-slot">
+        <h1 class="gps-game-title">@TitleContent</h1>
+        <a class="gps-back-link" href="/" aria-label="Back to home" title="Back to home">← Home</a>
+    </div>
+</SectionContent>
+
+@if (!_introDone)
+{
+    <GameIntro CueScope="povoxelstrike"
+               Title="@TitleContent"
+               Objective="Survive the arena together. Carve the world apart and drop it on whatever chases you — debris crushes the lot of you, friend or foe."
+               Controls="@HowToPlayContent"
+               Mode="GameIntro.IntroMode.OnePlayer"
+               OnStart="OnIntroStartAsync" />
+}
+else
+{
+<div class="pvs-lobby-page">
+    <div class="pvs-lobby-card">
+        <div class="pvs-lobby-header">
+            <button class="pvs-lobby-back" @onclick="LeaveAsync">← Back</button>
+            <h1 class="pvs-lobby-title">Voxel Strike — Co-op</h1>
+        </div>
+
+        <p class="pvs-lobby-subtitle">
+            Status:
+            @if (!_connected)
+            {
+                <span class="po-pill po-pill--muted">connecting…</span>
+            }
+            else
+            {
+                <span class="po-pill po-pill--ok">connected</span>
+            }
+        </p>
+
+        <p class="pvs-lobby-hint">Single shared room — first to arrive becomes host. Up to 6.</p>
+
+        <section class="pvs-lobby-section">
+            <h2 class="pvs-lobby-h">Survivors · @(_state?.Players.Count ?? 0)/@(_state?.MaxPlayers ?? 6)</h2>
+            @if (_state is null)
+            {
+                <div class="app-loading"><span class="app-loading__spinner" aria-hidden="true"></span><span>Loading lobby…</span></div>
+            }
+            else if (_state.Players.Count == 0)
+            {
+                <p>No one's here yet. Be the first.</p>
+            }
+            else
+            {
+                <ol class="pvs-lobby-list">
+                    @foreach (var p in _state.Players)
+                    {
+                        var isYou = p.ConnectionId == Hub.LobbyConnectionId;
+                        var isHost = p.ConnectionId == _state.HostConnectionId;
+                        <li class="@(isYou ? "is-you" : "")">
+                            <span>P@(p.PlayerNumber) · @p.DisplayName @(isYou ? "(you)" : "")</span>
+                            @if (isHost) { <span class="po-pill po-pill--accent">host</span> }
+                            @if (p.IsGuest) { <span class="po-pill po-pill--muted">guest</span> }
+                            @if (p.IsReady) { <span class="po-pill po-pill--ok">ready</span> }
+                        </li>
+                    }
+                </ol>
+            }
+        </section>
+
+        <section class="pvs-lobby-section">
+            @if (_state is null)
+            {
+                <p class="pvs-lobby-hint">Connecting to the lobby hub…</p>
+            }
+            else if (IsHost)
+            {
+                @if (!CanStart)
+                {
+                    <p class="pvs-lobby-hint">Waiting for everyone to mark Ready…</p>
+                }
+                <button class="pvs-lobby-btn-primary" @onclick="StartAsync" disabled="@(!CanStart)">Start the Run</button>
+                <button class="pvs-lobby-btn-secondary" @onclick="LeaveAsync">Leave</button>
+            }
+            else
+            {
+                <button class="pvs-lobby-btn-primary" @onclick="ToggleReadyAsync">
+                    @(_myReady ? "Not Ready" : "Ready!")
+                </button>
+                <button class="pvs-lobby-btn-secondary" @onclick="LeaveAsync">Leave</button>
+            }
+        </section>
+    </div>
+</div>
+}
+
+@code {
+    private bool _introDone;
+    private bool _connected;
+    private PoVoxelStrikeLobbyState? _state;
+    private bool _myReady;
+    /// <summary>Set by Leave/Back — DisposeAsync must not leave twice.</summary>
+    private bool _leaving;
+    /// <summary>Set when navigating to the engine — that nav must KEEP the lobby seat.</summary>
+    private bool _starting;
+
+    private RenderFragment TitleContent => @<span><span aria-hidden="true">🧱</span> Voxel Strike · Co-op</span>;
+
+    private RenderFragment HowToPlayContent => @<div>
+        <p>You and your crew carve the world apart — debris crushes everyone.</p>
+        <ul>
+            <li>Mouse aims, <kbd>WASD</kbd> moves, <kbd>Shift</kbd> runs</li>
+            <li>Hold <kbd>Click</kbd> to carve; <kbd>R</kbd> or right-click lobs a blast ball</li>
+            <li>Pointer-lock lost (Esc, tab) pauses for everyone in the room</li>
+        </ul>
+    </div>;
+
+    private bool IsHost =>
+        _state is not null && _state.HostConnectionId == Hub.LobbyConnectionId;
+
+    private bool CanStart =>
+        _state is not null
+        && _state.Players.Count > 0
+        && _state.Players.All(p => p.ConnectionId == _state.HostConnectionId || p.IsReady);
+
+    private async Task OnIntroStartAsync()
+    {
+        _introDone = true;
+        StateHasChanged();
+
+        if (!await Api.IsAvailableAsync())
+        {
+            ToastService.Show("Server unavailable. Try Single Player mode.", ToastType.Error);
+            return;
+        }
+
+        Hub.LobbyUpdated += OnLobbyUpdated;
+        Hub.LobbyEvent += OnLobbyEvent;
+        Hub.GameStarted += OnGameStarted;
+
+        var displayName = AuthState.User?.DisplayName ?? "Player";
+        var isGuest = !AuthState.IsAuthenticated;
+        _state = await Hub.ConnectLobbyAsync(displayName, isGuest);
+        _connected = true;
+        StateHasChanged();
+    }
+
+    private void OnLobbyUpdated(PoVoxelStrikeLobbyState state)
+    {
+        _state = state;
+        var me = state.Players.FirstOrDefault(p => p.ConnectionId == Hub.LobbyConnectionId);
+        if (me is not null) _myReady = me.IsReady;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void OnLobbyEvent(PoVoxelStrikeLobbyEvent ev)
+    {
+        ToastService.Show(ev.Message, ev.Kind switch
+        {
+            "left" => ToastType.Warning,
+            "ready" => ToastType.Info,
+            "starting" => ToastType.Success,
+            _ => ToastType.Info
+        });
+    }
+
+    private void OnGameStarted(string gameCode)
+    {
+        // The host pressed Start — every peer navigates to the engine in multiplayer mode.
+        _starting = true;
+        _ = Hub.StopLockstepAsync(); // no-op; included for symmetry with PoSports.
+        Nav.NavigateTo($"/povoxelstrike/multi/{gameCode}");
+    }
+
+    private async Task ToggleReadyAsync()
+    {
+        await Hub.ToggleReadyAsync();
+    }
+
+    private async Task StartAsync()
+    {
+        await Hub.StartGameAsync();
+    }
+
+    private async Task LeaveAsync()
+    {
+        if (_leaving) return;
+        _leaving = true;
+        try
+        {
+            await Hub.LeaveLobbyAsync();
+        }
+        catch { /* socket may already be closed */ }
+        Nav.NavigateTo("/povoxelstrike");
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        // If we navigated to the engine, KEEP the lobby seat (the engine tear-down
+        // explicitly leaves when the run ends). Otherwise (back button / tab close),
+        // the wrapper's DisposeAsync closes the socket and OnDisconnectedAsync runs
+        // Leave on the server — exactly what we want.
+        if (!_starting)
+        {
+            try { await Hub.LeaveLobbyAsync(); } catch { /* socket may already be closed */ }
+        }
+        await Hub.DisposeAsync();
+    }
+}

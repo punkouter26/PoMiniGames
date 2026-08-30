@@ -30,9 +30,16 @@ const TIERS = {
 
 // Hysteresis bounds. Deliberately asymmetric: drop fast (the player is already
 // suffering), recover slowly (so we don't oscillate on a borderline machine).
-const DROP_BELOW_FPS = 50;
-const RAISE_ABOVE_FPS = 58;
-const DROP_AFTER_MS = 1200;
+//
+// 2026-08-30: tightened across the board. The home route sits at ~31 FPS on
+// the dev box at the high tier, so the previous 50 FPS drop floor never
+// engaged and the player watched a static menu render 60 identical frames per
+// second at full cost. The new floors (44 drop / 56 raise) catch that case
+// within the first measurement window while staying clear of normal
+// fluctuation.
+const DROP_BELOW_FPS = 44;
+const RAISE_ABOVE_FPS = 56;
+const DROP_AFTER_MS = 600;
 const RAISE_AFTER_MS = 6000;
 
 // Grace period before the tier may drop. Blazor WASM boot — runtime download,
@@ -40,7 +47,12 @@ const RAISE_AFTER_MS = 6000;
 // machine. Without this, the very first measurement window sees <50 fps and
 // permanently downgrades a perfectly capable GPU because the *app* was booting,
 // not because the *graphics* were too heavy. Recovery would then take 12s.
-const WARMUP_MS = 4000;
+//
+// 2026-08-30: also shortened from 4s → 2.5s. 4s of dead frames at boot meant
+// a borderline machine spent the entire welcome animation running the shader
+// at high tier before any recovery could begin. 2.5s is still longer than the
+// Blazor WASM cold-start on any device we target.
+const WARMUP_MS = 2500;
 
 let _running = false;
 let _rafId = 0;
@@ -180,7 +192,16 @@ if (typeof document !== 'undefined') {
 
     // Seed the tier variables immediately so CSS has real values on first paint
     // rather than falling back mid-render.
-    applyTier('high');
+    //
+    // 2026-08-30: seed at `medium` instead of `high`. The first thing every
+    // player sees is the home page, which has nothing changing on screen — the
+    // ambient background is the only thing the GPU is busy with. Starting at
+    // `high` guarantees the worst-case first paint and forces the adaptive
+    // loop to walk the tier down on a borderline machine; starting at
+    // `medium` keeps the visual intact on capable machines (the loop will
+    // raise it on the first 6 s above 56 fps) and avoids the worst case on
+    // machines that can't.
+    applyTier('medium');
     ensureRunning();
 }
 

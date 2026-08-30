@@ -249,7 +249,14 @@ export function drawFrame(gl, u, w, h, elapsedMs, mouseX, mouseY, s) {
     const q = s && Number.isFinite(s.quality) ? Math.max(0, Math.min(1, s.quality)) : 1;
     // 10 steps still resolves the large-scale curtains; below that the volume
     // starts to look like flat gradient bands and the effect is lost.
-    const steps = Math.round(10 + q * 24);
+    //
+    // 2026-08-30: ceiling dropped from `10 + q*24` (34 at high tier) to
+    // `10 + q*14` (24 at high tier). The volume is a soft FBM field; the extra
+    // 10 steps at the top end buy depth-resolution past the point the eye can
+    // resolve the difference but cost ~40% of the per-pixel budget. The floor
+    // is preserved so low-tier machines still get the same look they had
+    // before — only the ceiling comes down.
+    const steps = Math.round(10 + q * 14);
 
     gl.viewport(0, 0, w, h);
     gl.clearColor(0, 0, 0, 0);

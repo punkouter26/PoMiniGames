@@ -42,7 +42,12 @@ let bandTimer = 0;
 // backing store is deliberately smaller than the display. The volume has no
 // hard edges — there is nothing in it that a human can see aliasing on — which
 // is exactly the case where rendering under-resolution is free quality.
-const MAX_DPR = 1.25;
+//
+// 2026-08-30: dropped from 1.25 → 1.0. At 1.25 the high-tier pixel count grew
+// 56% over 1.0 with no visible quality change on the soft volume — the home
+// route sat at ~31 FPS on the dev box until this and the initial-steps change
+// below landed together.
+const MAX_DPR = 1.0;
 
 // Analyser → worker at ~15 Hz. The worker interpolates between messages, so the
 // visual is smooth; posting per frame would clone a message 60×/s for 3 floats.

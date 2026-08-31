@@ -233,6 +233,15 @@ public static class GameCatalog
             // leave it with no chips at all.
             ChipPrimary = true,
         },
+
+        new(GameKeys.SubSurface, "Project Sub-Surface", "⛏️",
+        [
+            new(GameMode.OnePlayer, "/subsurface"),
+        ])
+        {
+            Subtitle = "2D Physical Sandbox: Soil arching, rigid concrete, fluid & ordnance",
+            ChipPrimary = true,
+        },
     ];
 
     /// <summary>Games sorted for display — alphabetical, matching the old per-section order.</summary>

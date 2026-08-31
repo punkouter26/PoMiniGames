@@ -1,0 +1,54 @@
+@page "/subsurface"
+@page "/subsurface/{Mode}"
+@using PoMiniGamesClient.Components
+@using PoMiniGamesClient.Services
+@inject NavigationManager Navigation
+@inject PlayerNameService PlayerNameService
+
+<PageTitle>Project Sub-Surface · Sandbox</PageTitle>
+
+<GameShell Title=@TitleContent
+           Player="@_playerName"
+           BackTo="/"
+           GameKey="subsurface">
+
+    @if (!_introDismissed)
+    {
+        <GameIntro CueScope="subsurface"
+                   Title=@TitleContent
+                   Objective="Excavate terrain, breach reservoirs, trigger Mohr-Coulomb soil avalanches, undermine concrete bars, and launch ballistic ordnance."
+                   Controls=@HowToPlayContent
+                   Mode="GameIntro.IntroMode.OnePlayer"
+                   OnStart="@(() => _introDismissed = true)" />
+    }
+
+    <div class="subsurface-page-layout">
+        <SubSurfaceSandbox />
+    </div>
+</GameShell>
+
+@code {
+    [Parameter] public string? Mode { get; set; }
+
+    private string _playerName = "";
+    private bool _introDismissed;
+
+    private RenderFragment TitleContent => @<span><span aria-hidden="true">⛏️</span> Project Sub-Surface · 2D Physics Sandbox</span>;
+
+    private RenderFragment HowToPlayContent => @<div>
+        <p><strong>Multi-Material Physics Sandbox Controls:</strong></p>
+        <ul>
+            <li><strong>Dig Vacuum:</strong> Erase sand and water without harming concrete or bedrock.</li>
+            <li><strong>Sand Brush:</strong> Paint cohesive granular soil with Mohr-Coulomb self-supporting arching.</li>
+            <li><strong>Concrete Bar:</strong> Paint rigid structural bars that collapse as whole solid islands when undermined.</li>
+            <li><strong>Water:</strong> Paint incompressible fluid with mass-conserving flow and lateral drainage.</li>
+            <li><strong>5s TNT Ordnance:</strong> Drag in the Sky to slingshot bombs. 5-second dry acoustic blast vs. water submersion fuse extinguish.</li>
+            <li><strong>Water Balloon:</strong> Slingshot impact-detonated fluid burst.</li>
+        </ul>
+    </div>;
+
+    protected override void OnInitialized()
+    {
+        _playerName = PlayerNameService.GetPlayerName();
+    }
+}

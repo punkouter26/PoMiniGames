@@ -55,4 +55,5 @@ public static class GameKeys
     public static readonly GameKey PoBrawlDemo = new("pobrawldemo");
 
     public static readonly GameKey PoVoxelStrike = new("povoxelstrike");
+    public static readonly GameKey SubSurface = new("subsurface");
 }

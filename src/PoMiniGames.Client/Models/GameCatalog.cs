@@ -225,7 +225,7 @@ public static class GameCatalog
         // destinations so each can be a separate, semantically correct link.
         new(GameKeys.PoCoupleQuiz, "Couple Quiz", "💕",
         [
-            new(GameMode.Multiplayer, "/couplequiz", RequiresNetwork: true) { ChipUrl = "/couplequiz/multi" },
+            new(GameMode.Multiplayer, "/couplequiz", RequiresNetwork: true),
         ])
         {
             // Tell the renderer to use the primary as the chip target too — the

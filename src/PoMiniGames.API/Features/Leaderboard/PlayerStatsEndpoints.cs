@@ -119,11 +119,15 @@ public static class PlayerStatsEndpoints
         // §1 MapGroup() per slice: cross-game statistics live under /api/statistics.
         var stats = app.MapGroup("/api/statistics").WithTags("Statistics");
 
-        // GET /api/{game}/statistics (the all-players stream) was removed 2026-08-31: the client
-        // only ever calls /api/{game}/statistics/leaderboard and /api/leaderboards. The streaming
-        // lesson it carried (no manual Utf8JsonWriter — synchronous flush dies under
-        // AllowSynchronousIO=false) is preserved in this comment; any future bulk read endpoint
-        // must return IAsyncEnumerable for the same reason.
+        stats.MapGet("", async (IStorageService storage) =>
+        {
+            var summary = await storage.GetLeaderboardAsync("connectfive", 5);
+            var dtos = summary.Select(p => new PlayerStatsDto { Name = p.Name, Game = "connectfive", Stats = p.Stats }).ToList();
+            return Results.Ok(dtos);
+        })
+        .WithName("GetAllStatistics")
+        .WithSummary("Retrieve aggregated statistics summary")
+        .Produces<IEnumerable<PlayerStatsDto>>(StatusCodes.Status200OK);
 
         // Documented cross-game save surface (POST /api/statistics). Resolves
         // gameId + playerName from the JSON body and delegates to the

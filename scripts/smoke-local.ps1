@@ -39,10 +39,14 @@ Test-Endpoint "GET /openapi/v1.json" "$BASE/openapi/v1.json"
 Test-Endpoint "GET /api/auth/config" "$BASE/api/auth/config"
 Test-Endpoint "GET /api/auth/me"  "$BASE/api/auth/me" 401
 Test-Endpoint "GET /api/leaderboards" "$BASE/api/leaderboards"
-Test-Endpoint "GET /api/statistics"   "$BASE/api/statistics" 401
+# GET /api/statistics was removed 2026-08-31 (no client consumer; the client uses
+# /api/leaderboards). Assert the catch-all /api/* 404 so a reintroduction is noticed.
+Test-Endpoint "GET /api/statistics (removed)"   "$BASE/api/statistics" 404
 Test-Endpoint "GET /_framework/blazor.webassembly.js" "$BASE/_framework/blazor.webassembly.js"
-Test-Endpoint "GET /api/evolution/summary" "$BASE/api/evolution/summary"
-Test-Endpoint "GET /api/face/leaderboard" "$BASE/api/face/leaderboard" 401
+# /api/evolution/summary (read surface removed with EvolutionLab) and
+# /api/face/leaderboard (PoFace never shipped) are gone — assert the 404s.
+Test-Endpoint "GET /api/evolution/summary (removed)" "$BASE/api/evolution/summary" 404
+Test-Endpoint "GET /api/face/leaderboard (removed)" "$BASE/api/face/leaderboard" 404
 
 # §1 of QA report: verify the Blazor WASM boot manifest responds 404 with
 # `UseBlazorFrameworkFiles` synthesizing the live boot.json (the actual served

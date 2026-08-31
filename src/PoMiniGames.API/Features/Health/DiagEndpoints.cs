@@ -196,23 +196,9 @@ public static class DiagEndpoints
         .WithName("GetDiagnostics")
         .WithSummary("Exposes a development-focused diagnostic summary without raw secret values");
 
-        // Bug fix QA #7: a tiny endpoint that echoes the current request's
-        // correlation + session IDs so the SPA can show them on /diag and let
-        // users grep server logs for "their" request without digging in the
-        // Serilog console.
-        diag.MapGet("/correlation", (HttpContext context) =>
-        {
-            return Results.Ok(new
-            {
-                correlationId = context.TraceIdentifier,
-                sessionId = context.Items[RequestLogContextMiddleware.SessionItemKey]?.ToString() ?? "",
-                userId = context.User?.Identity?.IsAuthenticated == true
-                    ? context.User.Identity?.Name ?? "authenticated"
-                    : "anonymous",
-            });
-        })
-        .WithName("GetDiagnosticsCorrelation")
-        .WithSummary("Echoes the current request's correlation + session IDs for log correlation");
+        // GET /api/diag/correlation was removed 2026-08-31: its only consumer was the Blazor
+        // /diag page, which was deleted 2026-08-07. Correlation ids remain on every response
+        // via RequestLogContextMiddleware.
 
         // Note: /diag is NOT registered as an API endpoint to avoid conflicting with
         // the Blazor page route at /diag. Use /api/diag for programmatic access.

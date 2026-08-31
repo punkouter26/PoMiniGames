@@ -202,7 +202,7 @@ public static class InferEndpoints
             InferenceResult result;
 
             // Use model-aware path when the service supports per-request deployment selection
-            if (inferenceService is AzureOpenAIInferenceService azureSvc && !string.IsNullOrWhiteSpace(request.ModelId))
+            if (inferenceService is AiInferenceRelayService azureSvc && !string.IsNullOrWhiteSpace(request.ModelId))
                 result = await azureSvc.InferWithModelAsync(request.GridJson, request.Dna, request.ModelId, budget.Token);
             else
                 result = await inferenceService.InferAsync(request.GridJson, request.Dna, budget.Token);
@@ -279,5 +279,5 @@ public static class InferEndpoints
     /// </summary>
     private static long EstimatedTokens(InferRequestDto request, InferenceResult result)
         => ((request.GridJson.Length + result.Thought.Length + result.Action.Length) / 4)
-           + AzureOpenAIInferenceService.MaxOutputTokens;
+           + AiInferenceRelayService.MaxOutputTokens;
 }

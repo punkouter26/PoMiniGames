@@ -19,23 +19,14 @@
    captured (no backdrop-dismiss — OK is the only exit). This replaces the
    pre-2026-07-16 behaviour where the overlay was docked to the top with
    `pointer-events: none` and no backdrop, which left every game's "modal"
-   floating over a still-interactive board. */
-.gps-modal-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: var(--z-modal);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 1.25rem;
-  background: rgba(4, 8, 20, 0.72);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  pointer-events: auto;
-  animation: gps-modal-fade 0.22s ease-out both;
-}
-
-.gps-modal {
+   floating over a still-interactive board.
+   Option #9: this is now a native <dialog>, not a <div>. The dialog places
+   itself in the top layer (above fx overlays, particles, toasts) and traps
+   focus inside — properties Blazor's previous <div role="dialog"> wrapper
+   had to hand-roll. The dim layer is the browser-provided `::backdrop`
+   pseudo-element below, no longer a sibling <div>. The .gps-modal selector
+   still owns the visible card itself (size, surface, padding, animation). */
+dialog.gps-modal {
   pointer-events: auto;
   width: min(94vw, 440px);
   max-height: calc(100dvh - 2.5rem);
@@ -375,10 +366,32 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .gps-modal-overlay,
-  .gps-modal {
+  dialog.gps-modal,
+  dialog.gps-modal::backdrop {
     animation: none;
   }
+}
+
+/* Option #9: the native <dialog>::backdrop pseudo-element. What used to be
+   a sibling <div class="gps-modal-overlay"> carrying the dim + blur is now
+   styled here on the browser-rendered backdrop. The dialog's own top-layer
+   rendering already hides the rest of the page behind a translucent layer;
+   the blur + tint just match the look the old overlay had. */
+dialog.gps-modal::backdrop {
+    background: rgba(4, 8, 20, 0.72);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    animation: gps-modal-fade 0.22s ease-out both;
+}
+
+/* Reset native dialog defaults so our .gps-modal styles are the only
+   positioning source. The user-agent stylesheet sets border, padding, and
+   margin on every <dialog>, which fight our card surface unless overridden.
+   Background is left to the main rule above so the card's translucent
+   surface + backdrop-filter stack the same way as before. */
+dialog.gps-modal {
+    margin: auto;
+    color: var(--color-text-primary);
 }
 
 /* ─────────────────────────────────────────────────────────────────────────

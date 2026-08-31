@@ -104,29 +104,10 @@ public static class FunQuizEndpoints
         .RequireAuthorization()
         .WithName("FunQuiz_SubmitLeaderboard");
 
-        // ── Runtime status (drives the per-game "USING MOCK DATA" banner) ──
-
-        group.MapGet("/runtime/status", (IHostEnvironment env, IConfiguration cfg) =>
-        {
-            var useMock = cfg.GetValue<bool>("PoFunQuiz:Features:UseMockAI");
-            return Results.Ok(new
-            {
-                game = "pofunquiz",
-                isMockData = useMock && (env.IsDevelopment() || env.IsEnvironment("Test")),
-                useMockAi = useMock,
-                environment = env.EnvironmentName
-            });
-        })
-        .WithName("FunQuiz_RuntimeStatus");
-
-        // ── Open games (lobby browser) ─────────────────────────────────────
-
-        group.MapGet("/lobby/open", (MultiplayerLobbyService lobby) =>
-        {
-            return Results.Ok(lobby.ListOpen());
-        })
-        .WithName("FunQuiz_ListOpenGames")
-        .WithSummary("List PoFunQuiz games waiting for a second player");
+        // GET /runtime/status and GET /lobby/open were removed 2026-08-31: neither had a client
+        // or test consumer. The mock-data banner reads AuthState.UsingMockData (server-injected),
+        // not a per-game probe, and the lobby browser surfaces open games through the SignalR
+        // hub rather than this REST list.
 
         return app;
     }

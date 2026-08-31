@@ -32,7 +32,7 @@ namespace PoMiniGames.Features.PoFunQuiz;
 /// JSON-object-mode reply and silently dropped by the parser when it was not.
 /// </para>
 /// </remarks>
-public sealed class AzureOpenAIService : IOpenAIService
+public sealed class AiQuizGeneratorService : IOpenAIService
 {
     /// <summary>
     /// Output ceiling for a generation call, scaled by how many questions were asked for.
@@ -51,22 +51,28 @@ public sealed class AzureOpenAIService : IOpenAIService
 
     private readonly IConfiguration _configuration;
     private readonly IHostEnvironment _environment;
-    private readonly ILogger<AzureOpenAIService> _logger;
+    private readonly ILogger<AiQuizGeneratorService> _logger;
     private readonly GameChatClientFactory _clients;
     private readonly IOptionsMonitor<AIFoundryOptions> _foundryOptions;
+    private readonly IAiDecisionOptionsCache _optionsCache;
+    private readonly Microsoft.Extensions.Caching.Hybrid.HybridCache _hybridCache;
 
-    public AzureOpenAIService(
+    public AiQuizGeneratorService(
         IConfiguration configuration,
         IHostEnvironment environment,
-        ILogger<AzureOpenAIService> logger,
+        ILogger<AiQuizGeneratorService> logger,
         GameChatClientFactory clients,
-        IOptionsMonitor<AIFoundryOptions> foundryOptions)
+        IOptionsMonitor<AIFoundryOptions> foundryOptions,
+        IAiDecisionOptionsCache optionsCache,
+        Microsoft.Extensions.Caching.Hybrid.HybridCache hybridCache)
     {
         _configuration = configuration;
         _environment = environment;
         _logger = logger;
         _clients = clients;
         _foundryOptions = foundryOptions;
+        _optionsCache = optionsCache;
+        _hybridCache = hybridCache;
     }
 
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<QuestionCategory, List<QuizQuestion>> QuestionPoolCache = new();
@@ -117,6 +123,66 @@ public sealed class AzureOpenAIService : IOpenAIService
 
         // Batch pre-generation to minimize total cloud calls
         var batchCount = Math.Max(count, 12);
+
+        // ── Durable batch cache (HybridCache) ─────────────────────────────
+        // The prompt for a (category, batchCount) pair is IDENTICAL every time — the model is
+        // being asked the same question, and paying generation rates for the same answer is the
+        // exact waste this layer exists to prevent. HybridCache gives in-process hits plus an
+        // optional distributed backplane, and its stampede protection collapses N concurrent
+        // identical requests into ONE model call.
+        //
+        // Keyed on (category, batchCount) — the prompt fingerprint. NOT on the caller identity:
+        // trivia questions are shared content, and one player's generation serves everyone.
+        // TTL 6h: long enough to absorb a day's repeated requests for popular categories, short
+        // enough that a deployment/model swap in configuration refreshes content within hours.
+        var cacheKey = $"funquiz:questions:{category}:{batchCount}";
+        var identity = PoMiniGames.AI.AiUsageScope.CurrentIdentity;
+
+        var cached = await _hybridCache.GetOrCreateAsync(
+            cacheKey,
+            (Service: this, Category: category, BatchCount: batchCount, Deployment: deployment, Identity: identity),
+            static async (state, ct) =>
+            {
+                using var scope = PoMiniGames.AI.AiUsageScope.Restore(state.Identity);
+                return await state.Service.GenerateBatchUncachedAsync(state.Category, state.BatchCount, state.Deployment, ct);
+            },
+            new Microsoft.Extensions.Caching.Hybrid.HybridCacheEntryOptions
+            {
+                Expiration = TimeSpan.FromHours(6),
+                LocalCacheExpiration = TimeSpan.FromMinutes(30),
+            },
+            cancellationToken: cancellationToken);
+
+        if (cached.Count > 0)
+        {
+            QuestionPoolCache.AddOrUpdate(category, _ => new List<QuizQuestion>(cached), (_, existing) => { lock (existing) { existing.AddRange(cached); } return existing; });
+        }
+        return cached.Take(count).ToList();
+    }
+
+    /// <summary>
+    /// One model call for a batch of questions. Extracted from <see cref="GenerateQuizQuestionsAsync"/>
+    /// so it can sit behind the HybridCache factory — the cache needs a pure (state, ct) → result
+    /// function, and the identity scope is restored by the caller's state, not ambient flow.
+    /// </summary>
+    private async Task<IReadOnlyList<QuizQuestion>> GenerateBatchUncachedAsync(
+        QuestionCategory category, int batchCount, string deployment, CancellationToken cancellationToken)
+    {
+        var chatClient = _foundryOptions.CurrentValue.IsConfigured
+            ? _clients.ForDeployment(AIFoundryOptions.Games.FunQuiz, deployment)
+            : null;
+
+        if (chatClient is null)
+        {
+            if (IsNonProduction())
+            {
+                _logger.NotConfigured(_environment.EnvironmentName);
+                return MockOpenAIService.GenerateQuestions(category, batchCount);
+            }
+            throw new InvalidOperationException(
+                $"PoFunQuiz: AIFoundry not configured. Set {AIFoundryOptions.SectionName} in Key Vault (kv-poshared).");
+        }
+
         var systemPrompt =
             "You generate multiple-choice trivia questions. Every question has exactly 4 options and " +
             "exactly one correct answer, identified by its zero-based index. Vary difficulty across " +
@@ -136,26 +202,30 @@ public sealed class AzureOpenAIService : IOpenAIService
                 new(ChatRole.User, userPrompt),
             };
 
-            var options = AiDecisionChatOptions.ForStructuredJson(
-                QuestionsSchema,
+            var options = _optionsCache.GetOrBuild(
+                gameKey: AIFoundryOptions.Games.FunQuiz,
+                deployment: deployment,
+                capabilityOverrides: _clients.CapabilityOverrides,
+                schema: QuestionsSchema,
                 schemaName: "quiz_questions",
                 maxOutputTokens: EnvelopeTokens + (batchCount * TokensPerQuestion),
-                deployment: deployment,
                 schemaDescription: "A batch of four-option multiple-choice trivia questions.",
-                capabilityOverrides: _clients.CapabilityOverrides);
+                factory: (d, ov) => AiDecisionChatOptions.ForStructuredJson(
+                    QuestionsSchema,
+                    schemaName: "quiz_questions",
+                    maxOutputTokens: EnvelopeTokens + (batchCount * TokensPerQuestion),
+                    deployment: d ?? string.Empty,
+                    schemaDescription: "A batch of four-option multiple-choice trivia questions.",
+                    capabilityOverrides: ov));
 
             var response = await chatClient.GetResponseAsync(messages, options, cancellationToken);
             var parsed = ParseQuestions(response.Text, category, batchCount, _logger);
-            if (parsed.Count > 0)
-            {
-                QuestionPoolCache.AddOrUpdate(category, _ => new List<QuizQuestion>(parsed), (_, existing) => { lock (existing) { existing.AddRange(parsed); } return existing; });
-            }
-            return parsed.Take(count).ToList();
+            return parsed;
         }
         catch (Exception ex)
         {
-            _logger.GenerationFailed(ex, category, count);
-            if (IsNonProduction()) return MockOpenAIService.GenerateQuestions(category, count);
+            _logger.GenerationFailed(ex, category, batchCount);
+            if (IsNonProduction()) return MockOpenAIService.GenerateQuestions(category, batchCount);
             throw;
         }
     }
@@ -331,7 +401,7 @@ public sealed class AzureOpenAIService : IOpenAIService
          : text.Length <= max ? text
          : text[..max] + "…";
 
-    private bool IsNonProduction() => _environment.IsDevelopment() || _environment.IsEnvironment("Test");
+    private bool IsNonProduction() => Features.Shared.AiMockFallback.IsNonProduction(_environment);
 }
 
 /// <summary>

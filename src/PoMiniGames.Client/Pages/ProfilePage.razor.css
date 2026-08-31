@@ -30,20 +30,55 @@
     width: 72px;
     height: 72px;
     border-radius: 50%;
-    background: linear-gradient(135deg, #6366f1, #06b6d4);
+    /* Option #5: scheme-aware gradient. The previous `linear-gradient(135deg,
+       #6366f1, #06b6d4)` was a hard-coded indigo→cyan pair that disappeared
+       into a light page. Reading from the design tokens keeps the avatar
+       visible on both schemes while keeping the colour identity. */
+    background: linear-gradient(135deg, var(--color-accent-solid, #6366f1), var(--accent-cyan, #22d3ee));
     display: flex;
     align-items: center;
     justify-content: center;
     box-shadow: 0 0 24px rgba(99, 102, 241, 0.45);
-    border: 2px solid rgba(255, 255, 255, 0.2);
+    border: 2px solid var(--hairline, rgba(255, 255, 255, 0.2));
+    position: relative;
 }
+
+/* Option #5: tiny "guest" or "MS" badge anchored to the avatar's
+   bottom-right corner so a guest player can tell at a glance this profile is
+   a temporary one. Without it the only signal was the unusual handle
+   ("Guest598152-133895"), which reads as a debug value on first load. */
+.prf-avatar-badge {
+    position: absolute;
+    right: -4px;
+    bottom: -4px;
+    min-width: 22px;
+    height: 22px;
+    padding: 0 6px;
+    border-radius: var(--radius-pill);
+    background: var(--color-surface);
+    color: var(--color-text-primary);
+    border: 1px solid var(--color-border);
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+.prf-avatar-badge--guest { color: var(--accent-warning-ink); }
+.prf-avatar-badge--microsoft { color: var(--accent-ink); }
 
 .prf-avatar-text {
     font-size: 1.6rem;
     font-weight: 800;
-    color: #fff;
+    /* Option #5: white reads fine on both gradient stops in dark mode, and on
+       the slightly darker light-mode tokens. text-shadow lifts the letters
+       off the gradient in both schemes. */
+    color: var(--color-accent-contrast, #ffffff);
     letter-spacing: -0.05em;
     font-family: var(--font-display);
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
 }
 
 .prf-hero-body {
@@ -77,17 +112,29 @@
     display: flex;
     flex-wrap: wrap;
     gap: 0.5rem;
+    /* Option #4: equalise the visual rhythm across the four chips. Without
+       align-items: stretch + min-height: 0, the two chips with a hint
+       ("Best Streak", "Top ELO") render at 101px and the other two at 54px —
+       a ragged two-row layout that reads as broken. With min-height set to
+       the tallest chip's natural height, every chip is the same size and the
+       hint sits at the bottom of the column where there is room. */
+    align-items: stretch;
 }
 
 .prf-chip {
     display: flex;
     flex-direction: column;
     align-items: center;
+    justify-content: space-between;
     background: var(--surface-1);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-md);
     padding: 0.5rem 0.85rem;
     min-width: 75px;
+    /* Tallest natural chip (val + label + hint) measured ~101px; pin the
+       floor so the four always agree. label and hint sit in their own block
+       so the spacing inside is consistent. */
+    min-height: 5.5rem;
     transition: transform 0.18s var(--ease-standard), border-color 0.18s var(--ease-standard), box-shadow 0.18s var(--ease-standard);
 }
 

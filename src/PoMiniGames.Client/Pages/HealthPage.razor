@@ -63,9 +63,13 @@
                 @foreach (var check in _report.Checks)
                 {
                     <tr>
-                        <th scope="row" class="hp-name">@check.Name</th>
-                        <td><span class="hp-dot hp-dot--@Slug(check.Status)" aria-hidden="true"></span>@check.Status</td>
-                        <td class="hp-detail">@(string.IsNullOrWhiteSpace(check.Description) ? "—" : check.Description)</td>
+                        @* data-label renders as the small uppercase caption next to
+                           each value when the table reflows into cards on phones
+                           (HealthPage.razor.css, @media max-width 640px). Desktop
+                           ignores the attribute. *@
+                        <th scope="row" class="hp-name" data-label="Connection">@check.Name</th>
+                        <td data-label="Status"><span class="hp-dot hp-dot--@Slug(check.Status)" aria-hidden="true"></span>@check.Status</td>
+                        <td class="hp-detail" data-label="Detail">@(string.IsNullOrWhiteSpace(check.Description) ? "—" : check.Description)</td>
                     </tr>
                 }
             </tbody>

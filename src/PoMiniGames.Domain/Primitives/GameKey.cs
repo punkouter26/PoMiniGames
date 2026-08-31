@@ -88,7 +88,6 @@ public readonly record struct GameKey(string Value) : IComparable<GameKey>
 
     public static readonly GameKey CoupleQuiz = new("couplequiz");
     public static readonly GameKey FunQuiz = new("funquiz");
-    public static readonly GameKey Face = new("face");
     public static readonly GameKey Joker = new("joker");
     public static readonly GameKey Survive = new("survive");
 
@@ -123,7 +122,7 @@ public readonly record struct GameKey(string Value) : IComparable<GameKey>
     // which 400'd their stats and leaderboard calls.
     private static readonly GameKey[] All =
     {
-        CoupleQuiz, FunQuiz, Face, Joker, Survive,
+        CoupleQuiz, FunQuiz, Joker, Survive,
         ConnectFive, TicTacToe, PoMarbleRace,
         PoRacer, PoBrawl, PoBrawlDemo, PoBrawlKo, PoSports,
         PoVoxelStrike,

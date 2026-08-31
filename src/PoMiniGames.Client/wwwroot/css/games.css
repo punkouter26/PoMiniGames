@@ -23,6 +23,14 @@
   flex: 1 0 auto;
   min-height: 0;
   background: var(--color-bg);
+  /* Option #1: turn .gps-shell into a container so per-game components
+     (Marble Race's canvas, Racer's HUD, etc.) can react to their own slot
+     width via @container, instead of every game carrying its own
+     `@media (max-width: 640px)` block. `inline-size` (not `size`) avoids
+     re-layout when the height changes — only the inline axis is observed,
+     which is what every current consumer wants. */
+  container-type: inline-size;
+  container-name: gps;
 }
 
 /* Universal game title — every game page binds `<Title>` to a fragment that
@@ -263,8 +271,11 @@
    games.css is the right home for this rule: .gps-game-area is the parent
    shell, not a scoped-by-component element, so a razor-scoped stylesheet
    cannot reach it. The `--fullscreen` modifier already cleared the
-   padding; this overrides the centering to let the child fill both axes. */
-@media (max-width: 640px) {
+   padding; this overrides the centering to let the child fill both axes.
+   Option #1: also @container, so the same logic triggers when the SHELL
+   (not the viewport) is narrow — a side panel on desktop squeezes the game
+   to phone-shaped and the canvas now stretches to fill it. */
+@container gps (max-width: 40rem) {
   .gps-game-area--fullscreen {
     align-items: stretch;
     justify-content: stretch;

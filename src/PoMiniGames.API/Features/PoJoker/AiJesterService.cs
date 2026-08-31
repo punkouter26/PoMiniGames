@@ -50,6 +50,7 @@ public sealed class AiJesterService : IAnalysisService
     private readonly GameChatClientFactory _clients;
     private readonly IOptionsMonitor<AIFoundryOptions> _foundryOptions;
     private readonly HybridCache _cache;
+    private readonly IAiDecisionOptionsCache _optionsCache;
     private readonly int _timeoutSeconds;
 
     private const string SystemPrompt = """
@@ -67,7 +68,8 @@ public sealed class AiJesterService : IAnalysisService
         ILogger<AiJesterService> logger,
         GameChatClientFactory clients,
         IOptionsMonitor<AIFoundryOptions> foundryOptions,
-        HybridCache cache)
+        HybridCache cache,
+        IAiDecisionOptionsCache optionsCache)
     {
         _logger = logger;
         _environment = environment;
@@ -75,10 +77,11 @@ public sealed class AiJesterService : IAnalysisService
         _clients = clients;
         _foundryOptions = foundryOptions;
         _cache = cache;
+        _optionsCache = optionsCache;
         _timeoutSeconds = configuration.GetValue("PoJoker:AzureOpenAI:TimeoutSeconds", 30);
     }
 
-    private bool IsNonProduction() => _environment.IsDevelopment() || _environment.IsEnvironment("Test");
+    private bool IsNonProduction() => Features.Shared.AiMockFallback.IsNonProduction(_environment);
 
     /// <summary>The decorated client for a key, or null when the foundry is unconfigured.</summary>
     private IChatClient? ResolveClient(string key)
@@ -132,7 +135,13 @@ public sealed class AiJesterService : IAnalysisService
 
             var response = await chat.GetResponseAsync(
                 messages,
-                AiDecisionChatOptions.ForBoundedText(PunchlineMaxTokens, deployment, _clients.CapabilityOverrides),
+                _optionsCache.GetOrBuildText(
+                    gameKey: AIFoundryOptions.Games.Joker,
+                    deployment: deployment,
+                    capabilityOverrides: _clients.CapabilityOverrides,
+                    maxOutputTokens: PunchlineMaxTokens,
+                    factory: (d, ov) => AiDecisionChatOptions.ForBoundedText(
+                        PunchlineMaxTokens, d ?? string.Empty, ov ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase))),
                 cts.Token);
 
             var filtered = WasContentFiltered(response);
@@ -278,13 +287,21 @@ public sealed class AiJesterService : IAnalysisService
 
         var response = await chat.GetResponseAsync(
             messages,
-            AiDecisionChatOptions.ForStructuredJson(
-                RatingSchema,
+            _optionsCache.GetOrBuild(
+                gameKey: AIFoundryOptions.Tasks.JokerRating,
+                deployment: deployment,
+                capabilityOverrides: _clients.CapabilityOverrides,
+                schema: RatingSchema,
                 schemaName: "joke_rating",
                 maxOutputTokens: RatingMaxTokens,
-                deployment: deployment,
                 schemaDescription: "Originality, cleverness and humour scores from 0.0 to 1.0.",
-                capabilityOverrides: _clients.CapabilityOverrides),
+                factory: (d, ov) => AiDecisionChatOptions.ForStructuredJson(
+                    RatingSchema,
+                    schemaName: "joke_rating",
+                    maxOutputTokens: RatingMaxTokens,
+                    deployment: d ?? string.Empty,
+                    schemaDescription: "Originality, cleverness and humour scores from 0.0 to 1.0.",
+                    capabilityOverrides: ov)),
             cts.Token);
 
         if (WasContentFiltered(response))
@@ -456,7 +473,13 @@ public sealed class AiJesterService : IAnalysisService
 
         var response = await chat.GetResponseAsync(
             messages,
-            AiDecisionChatOptions.ForBoundedText(ExplanationMaxTokens, deployment, _clients.CapabilityOverrides),
+            _optionsCache.GetOrBuildText(
+                gameKey: AIFoundryOptions.Games.Joker,
+                deployment: deployment,
+                capabilityOverrides: _clients.CapabilityOverrides,
+                maxOutputTokens: ExplanationMaxTokens,
+                factory: (d, ov) => AiDecisionChatOptions.ForBoundedText(
+                    ExplanationMaxTokens, d ?? string.Empty, ov ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase))),
             cts.Token);
 
         if (WasContentFiltered(response))

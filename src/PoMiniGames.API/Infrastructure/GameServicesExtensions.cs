@@ -75,6 +75,12 @@ internal static class GameServicesExtensions
         services.AddSingleton<AiUsageAccumulator>();
         services.AddOptions<AiTokenBudgetOptions>().BindConfiguration(AiTokenBudgetOptions.SectionName);
         services.AddSingleton<AiTokenBudget>();
+        // Memoizes per-(game, deployment) ChatOptions so the JSON-element cloning and the
+        // raw-representation factory allocation happen once per pair rather than once per call.
+        // Pure-local hot-path win; no network effect. Registered as the interface too so the
+        // game services that inject IAiDecisionOptionsCache resolve the same singleton.
+        services.AddSingleton<AiDecisionOptionsCache>();
+        services.AddSingleton<IAiDecisionOptionsCache>(sp => sp.GetRequiredService<AiDecisionOptionsCache>());
         // Embeddings for the similarity-scoring path. Dormant unless
         // PoMiniGames:AI:EmbeddingDeployment names a deployment — the shared account currently has
         // none, so PoCoupleQuiz still scores via chat; see AiEmbeddingService.
@@ -84,6 +90,10 @@ internal static class GameServicesExtensions
             client.Timeout = TimeSpan.FromSeconds(10);
         });
         services.AddHostedService<FoundryDeploymentValidator>();
+        // Keeps the default deployment warm with one minimal call every 30 minutes, so the
+        // first player-facing AI interaction of a cold period pays steady-state latency rather
+        // than the cold-start penalty. Idles silently when the foundry is unconfigured.
+        services.AddHostedService<AiWarmupService>();
         // Every AI-consuming slice now resolves its chat client through GameChatClientFactory, so
         // each gets the resilience pipeline, the spend ceiling and the telemetry by construction.
         // Registering the keys here (rather than in each slice) keeps the set in one place and
@@ -144,14 +154,14 @@ internal static class GameServicesExtensions
         // The round timer lives in CoupleQuizRoundDirector below.
         // Every consumer injects IGameSessionManager; nothing resolves the concrete type, so
         // the previous concrete-forwarding registration was dead and has been removed.
-        services.AddSingleton<IQuestionService, AzureOpenAIQuestionService>();
+        services.AddSingleton<IQuestionService, AiQuestionService>();
         services.AddSingleton<MockQuestionService>();
         // Owns the round clock. A Hub instance lives for one invocation and cannot hold a
         // timer, so rounds are driven from this singleton over a long-lived IHubContext.
         services.AddSingleton<CoupleQuizRoundDirector>();
 
         // PoFunQuiz — Phase 2 of the consolidation. See Features/PoFunQuiz/.
-        // AzureOpenAIService is the production path; mock fallback is gated to Dev/Test
+        // AiQuizGeneratorService is the production path; mock fallback is gated to Dev/Test
         // inside the service. The leaderboard repository writes to the
         // PoFunQuizPlayers table (PartitionKey = Category, RowKey = Guid).
         // MultiplayerLobbyService is the in-memory registry for the SignalR hub
@@ -160,7 +170,7 @@ internal static class GameServicesExtensions
         // Azure OpenAI calls (answer-similarity scoring + question generation).
         // Shared by PoCoupleQuiz (answer similarity) and PoFunQuiz (question list).
         services.AddHybridCache();
-        services.AddSingleton<IOpenAIService, AzureOpenAIService>();
+        services.AddSingleton<IOpenAIService, AiQuizGeneratorService>();
         services.AddSingleton<PoMiniGames.Features.PoFunQuiz.Storage.ILeaderboardRepository,
             PoMiniGames.Features.PoFunQuiz.Storage.LeaderboardRepository>();
         services.AddSingleton<MultiplayerLobbyService>();

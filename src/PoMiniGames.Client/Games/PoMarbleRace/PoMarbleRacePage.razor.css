@@ -955,8 +955,14 @@
     border-color: rgba(100, 116, 139, 0.4);
 }
 
-@media (max-width: 640px) {
-    /* NetRun10 audit #5: phone-sized viewport. Pull the HUD to the bottom
+/* Option #1: container query against .gps-shell. The shell declares
+   `container-type: inline-size; container-name: gps;` in games.css, so this
+   rule responds to the SHELL'S width, not the viewport's. A desktop window
+   with a side panel that squeezes the shell below 40rem triggers the same
+   fullscreen canvas treatment a phone does — the rule is now about "is the
+   game playing in a narrow slot?", not "is the user on a phone?". */
+@container gps (max-width: 40rem) {
+    /* NetRun10 audit #5: narrow game slot. Pull the HUD to the bottom
        so it doesn't cover the chute, shrink the pick balls, and let the
        canvas fill the remaining vertical space minus chrome.
        2026-08-18 mobile-fullscreen: the canvas now claims the whole mobile

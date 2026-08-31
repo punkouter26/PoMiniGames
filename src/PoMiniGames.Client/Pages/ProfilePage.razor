@@ -1,4 +1,5 @@
 @page "/profile"
+@using Microsoft.AspNetCore.Components
 @using PoMiniGamesClient.Models
 @using PoMiniGamesClient.Services
 @inject PlayerNameService PlayerNameService
@@ -34,16 +35,28 @@ else
     <!-- ── Hero ── -->
     <div class="prf-hero">
         <div class="prf-avatar" aria-hidden="true">
-            @* 2026-08-12 audit #10: the avatar text is a 4-char fragment of
-               the player name ("G4" from "Guest..."), which read as a debug
-               value to a first-time visitor. Add a tooltip that explains
-               what the badge is — the start of the signed-in name — so the
-               mystery of the four letters is at least resolvable on hover. *@
+            @* Option #5: avatar text + provider badge. The initials ("G1"
+               from "Guest598152-133895", "JD" from "Jane Doe") read as a
+               debug fragment because they carry no context. The badge in
+               the avatar's bottom-right ("Guest" or "MS") makes it
+               instantly clear what kind of identity this is. *@
             <span class="prf-avatar-text" title="@($"Initials of {_playerName}")">@_initials</span>
+            <span class="prf-avatar-badge prf-avatar-badge--@(_accountKind.ToString().ToLowerInvariant())"
+                  title="@(_accountKind == AccountKind.Guest ? "Guest profile — sign in with Microsoft to make it permanent." : "Microsoft account")">
+                @(_accountKind == AccountKind.Guest ? "Guest" : "MS")
+            </span>
         </div>
         <div class="prf-hero-body">
             <h1 class="prf-name">My Stats</h1>
-            <p class="prf-handle" aria-label="Display name">@_playerName</p>
+            <p class="prf-handle" aria-label="Display name" title="@_playerName">
+                @* Option #5: trim the displayed guest handle to first 6 chars
+                   + ellipsis when it's the long auto-generated form
+                   ("Guest598152-133895" → "Guest5…"). The full name still
+                   lives in the title= attribute for hover, and the chip card
+                   carries the readable label. Without this the handle runs
+                   past the avatar's right edge on a 375px portrait. *@
+                @DisplayHandle(_playerName)
+            </p>
             <div class="prf-chips">
                 <div class="prf-chip">
                     @* Browser audit #6 (2026-08-10): the "Games" counter only
@@ -431,6 +444,11 @@ else
     private bool _loading = true;
     private string _playerName = "Player";
     private string _initials   = "P";
+    // Option #5: which kind of account owns this profile. Drives the
+    // "Guest" / "MS" badge in the avatar's bottom-right corner. Default
+    // Guest until AuthState tells us otherwise — same defensive default the
+    // page already uses for the rest of the chrome.
+    private AccountKind _accountKind = AccountKind.Guest;
     private int _totalGames, _totalWins, _totalLosses, _totalDraws;
     private int _bestStreak, _topElo;
     // Browser audit #6 (2026-08-10): the friendlier partial-session count
@@ -440,6 +458,11 @@ else
     private int _unsyncedSessions;
     private GameEntry? _bestEntry, _nemesisEntry;
     private List<GameEntry> _entries = new();
+
+    // Option #5: Guest vs Microsoft sign-in — drives the avatar badge.
+    // Mirrors the Kind values used elsewhere in the auth surface so the two
+    // surfaces stay in sync if either grows new kinds.
+    private enum AccountKind { Guest, Microsoft }
 
     // ── High scores (best available per 1P game) ──────────────────
     private sealed record HighScoreEntry(string Game, string Icon, string Value, string Sub, bool HasValue);
@@ -517,16 +540,29 @@ else
     private async Task LoadStatsAsync()
     {
         _playerName = PlayerNameService.GetPlayerName();
+        // Option #5: derive the account kind from AuthState so the avatar
+        // badge matches the actual sign-in. AuthenticatedUserProfile carries
+        // no Kind field, so the same DisplayName-prefix heuristic the rest of
+        // the page uses (line ~84) decides it. Microsoft sign-ins have a real
+        // human name ("Jane Doe"), guests have the auto-generated "GuestNNNN-"
+        // string. Anything else (no user at all, or a name without the
+        // "Guest" prefix) is treated as Microsoft — covers the unlikely case
+        // of a future third sign-in kind without a code change here.
+        _accountKind = IsGuestUser() ? AccountKind.Guest : AccountKind.Microsoft;
         LoadStats();
         BuildLocalHighScores();
         await Task.CompletedTask;
     }
+
+    private bool IsGuestUser()
+        => AuthState.User?.DisplayName?.StartsWith("Guest", StringComparison.Ordinal) ?? true;
 
     public void Dispose() => PlayerNameService.StateChanged -= OnNameChanged;
 
     private void OnNameChanged()
     {
         _playerName = PlayerNameService.GetPlayerName();
+        _accountKind = IsGuestUser() ? AccountKind.Guest : AccountKind.Microsoft;
         LoadStats();
         BuildLocalHighScores();
         // Re-show the skeleton so a "Switch user" mid-session (see top-bar dev
@@ -887,6 +923,20 @@ else
         return parts.Length >= 2
             ? $"{parts[0][0]}{parts[1][0]}".ToUpperInvariant()
             : (name.Length >= 2 ? name[..2].ToUpperInvariant() : name.ToUpperInvariant());
+    }
+
+    // Option #5: trim long auto-generated guest handles in the displayed
+    // `.prf-handle` line. A real Microsoft sign-in name ("Jane Doe", 8 chars)
+    // is left untouched; only the "Guest598152-133895" form (16+ chars) is
+    // shortened, and only when it's a guest — Microsoft's display names are
+    // always short by convention. The full name still appears in the title=
+    // attribute and the auth state for any code that needs the real value.
+    private static MarkupString DisplayHandle(string name)
+    {
+        const int TrimTo = 6;
+        if (string.IsNullOrEmpty(name) || name.Length <= TrimTo + 1) return (MarkupString)name;
+        if (!name.StartsWith("Guest", StringComparison.Ordinal)) return (MarkupString)name;
+        return (MarkupString)($"{name[..TrimTo]}…");
     }
 
     // ── Radar SVG ────────────────────────────────────────────────

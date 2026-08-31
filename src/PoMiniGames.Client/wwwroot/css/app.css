@@ -13,8 +13,19 @@
     box-shadow: 0 0 0 4px rgba(34, 211, 238, 0.25);
 }
 
-/* Tabular figures for numbers, counters, leaderboards & timestamps to avoid layout jitter */
-:where(.gps-stat-value, .lb-val, .lb-rank, .prf-chip-val, .racer-hud, .ps-hud, .gl-fps, .sv-score, .timer, [data-tabular]) {
+/* Tabular figures for numbers, counters, leaderboards & timestamps to avoid layout jitter.
+   Option #8: broaden from an explicit class list to the wider "this surface holds
+   numbers" pattern — every HUD chip, score tile, time display, badge, and
+   percentage cell — so a new HUD that ships tomorrow inherits this without
+   having to be added to a list. `:where()` keeps specificity at zero so a
+   component can still opt OUT by declaring its own font-variant. */
+:where(.gps-stat-value, .lb-val, .lb-rank, .prf-chip-val, .racer-hud, .ps-hud,
+       .gl-fps, .sv-score, .timer, [data-tabular],
+       /* Generic "this surface holds a number" hooks — match by suffix so
+          HUDs that surface scores (".xx-score"), ELOs (".xx-elo"), times
+          (".xx-time"), and counts (".xx-count") inherit without being added. */
+       [class$="-score"], [class$="-elo"], [class$="-time"], [class$="-count"],
+       [class$="-val"], [class$="-rank"], [class$="-rating"], [class$="-pct"]) {
     font-variant-numeric: tabular-nums lining-nums;
     font-feature-settings: "tnum" 1, "lnum" 1;
 }
@@ -262,25 +273,29 @@
      Previously each component hand-rolled its own mono stack. */
   --font-mono: ui-monospace, 'Cascadia Code', 'Consolas', 'SFMono-Regular', 'Menlo', monospace;
 
-  /* Type scale */
-  --text-xs: 0.75rem;
-  --text-sm: 0.875rem;
-  --text-base: 1rem;
-  --text-lg: 1.25rem;
-  --text-xl: 1.5rem;
-  --text-2xl: 2rem;
-  --text-3xl: 3rem;
+  /* Type scale — fluid (Option #6).
+     clamp(min, fluid, max) so headings grow with the viewport between phone
+     and desktop without per-component media queries. Floor values hold at 360px
+     (xs phone), ceiling at 1280px (small desktop). Above 1280 the type stops
+     growing — a 27" monitor should not render headings larger than a 24". */
+  --text-xs:   0.75rem;
+  --text-sm:   clamp(0.85rem, 0.83rem + 0.1vw, 0.9rem);
+  --text-base: clamp(0.95rem, 0.92rem + 0.15vw, 1rem);
+  --text-lg:   clamp(1.1rem, 1.05rem + 0.25vw, 1.25rem);
+  --text-xl:   clamp(1.3rem, 1.2rem + 0.5vw, 1.5rem);
+  --text-2xl:  clamp(1.65rem, 1.45rem + 1vw, 2rem);
+  --text-3xl:  clamp(2rem, 1.6rem + 2vw, 3rem);
 
   /* ── Tints & hairlines ─────────────────────────────────────────────────────
      Zebra striping, inset meter tracks and 1px separators were authored across
      the page stylesheets as rgba(255,255,255,0.02…0.08) — a white film that is
      literally invisible on a light surface, so tables lost their striping and
-     meters lost their track. Routing them through tokens is what lets the light
-     block below flip them to a dark film of the same weight. */
-  --tint-subtle: rgba(255,255,255,0.02);
-  --tint-soft:   rgba(255,255,255,0.04);
-  --tint-medium: rgba(255,255,255,0.08);
-  --hairline:    rgba(255,255,255,0.06);
+     meters lost their track. Option #2: each is a light-dark() pair so the
+     light-theme override below no longer needs to mirror them. */
+  --tint-subtle: light-dark(rgba(15,23,42,0.03), rgba(255,255,255,0.02));
+  --tint-soft:   light-dark(rgba(15,23,42,0.05), rgba(255,255,255,0.04));
+  --tint-medium: light-dark(rgba(15,23,42,0.09), rgba(255,255,255,0.08));
+  --hairline:    light-dark(rgba(15,23,42,0.08), rgba(255,255,255,0.06));
 
   /* Podium ranks. Semantic (gold/silver/bronze reads as 1st/2nd/3rd), but unlike
      the status accents these are NOT legible on both surfaces — pale gold on
@@ -290,12 +305,18 @@
   --rank-silver: #cbd5e1;
   --rank-bronze: #d8a06a;
 
-  /* Translucent surfaces (single source of truth — replaces scattered raw rgba) */
-  --surface-1: rgba(15,23,42,0.65);   /* low-emphasis panels */
-  --surface-2: rgba(30,41,59,0.85);    /* tiles / cards */
-  --surface-3: rgba(30,41,59,0.65);    /* nested cards */
-  --surface-bar: rgba(15,23,42,0.92);  /* sticky chrome (top bar / demo bar) */
-  --surface-raised: rgba(51,65,85,0.75);
+  /* Translucent surfaces (single source of truth — replaces scattered raw rgba).
+     Option #2: each surface is a light-dark() pair declared ONCE; the
+     `:root[data-theme="light"]` override no longer has to mirror them.
+     `light-dark(light, dark)` resolves against the element's `color-scheme`,
+     which we set to "light dark" below — so the browser picks the right half
+     automatically. Tokens that need to stay identical across schemes
+     (the accent hues, the toast hues) keep their plain declarations. */
+  --surface-1: light-dark(rgba(255,255,255,0.7), rgba(15,23,42,0.65));
+  --surface-2: light-dark(rgba(255,255,255,0.92), rgba(30,41,59,0.85));
+  --surface-3: light-dark(rgba(241,245,249,0.85), rgba(30,41,59,0.65));
+  --surface-bar: light-dark(rgba(255,255,255,0.95), rgba(15,23,42,0.92));
+  --surface-raised: light-dark(rgba(255,255,255,0.98), rgba(51,65,85,0.75));
 
   /* Radius scale (Design Token Unification) */
   --radius-sm: 0.5rem;
@@ -304,10 +325,10 @@
   --radius-xl: 1.25rem;
   --radius-pill: 9999px;
 
-  /* Elevation scale */
-  --elevation-1: 0 4px 20px rgba(0,0,0,0.35);
-  --elevation-2: 0 8px 30px rgba(99,102,241,0.12);
-  --elevation-3: 0 20px 60px rgba(0,0,0,0.4);
+  /* Elevation scale (Option #2: light-dark() pairs) */
+  --elevation-1: light-dark(0 4px 20px rgba(15,23,42,0.08), 0 4px 20px rgba(0,0,0,0.35));
+  --elevation-2: light-dark(0 8px 30px rgba(99,102,241,0.12), 0 8px 30px rgba(99,102,241,0.12));
+  --elevation-3: light-dark(0 20px 60px rgba(15,23,42,0.12), 0 20px 60px rgba(0,0,0,0.4));
 
   /* Spacing scale (extended — §3 design-token unification) */
   --space-0: 0;
@@ -340,11 +361,12 @@
   --z-fx-particles: 9991;
   --z-error-overlay: 9999;
 
-  /* Glassmorphism primitives (§3 — one source of truth for translucent chrome) */
+  /* Glassmorphism primitives (§3 — one source of truth for translucent chrome).
+     The blur strengths are scheme-invariant; only the tint flips per scheme. */
   --glass-1: blur(8px) saturate(140%);
   --glass-2: blur(12px) saturate(160%);
   --glass-3: blur(20px) saturate(180%);
-  --glass-tint: rgba(15, 23, 42, 0.6);
+  --glass-tint: light-dark(rgba(255,255,255,0.6), rgba(15, 23, 42, 0.6));
 
   /* Motion tokens (paired with the prefers-reduced-motion guard below) */
   --dur-fast: 0.15s;
@@ -411,9 +433,13 @@
   /* §3 Tell the UA which schemes this document supports, so native chrome the
      stylesheet cannot reach — scrollbars, <select> popups, date pickers, form
      control borders, the canvas behind an overscroll — is painted to match
-     instead of staying stark white against a dark page. The light override
-     below re-declares this so each branch advertises only what it renders. */
-  color-scheme: dark;
+     instead of staying stark white against a dark page.
+     Option #2: `light dark` (not just `dark`) is the prerequisite for
+     `light-dark()` to resolve — see the surface/tint/elevation/glass tokens
+     above. The user-facing light-mode toggle (Profile → Preferences) still
+     flips `data-theme` and overrides the few tokens that can't be expressed as
+     light-dark pairs below. */
+  color-scheme: light dark;
 }
 
 /* ── §3 Light theme ─────────────────────────────────────────────────────────
@@ -471,29 +497,16 @@
     --accent-danger-ink: #b91c1c;
     --accent-amber-ink: #854d0e;
 
-    --surface-1: rgba(255,255,255,0.7);
-    --surface-2: rgba(255,255,255,0.92);
-    --surface-3: rgba(241,245,249,0.85);
-    --surface-bar: rgba(255,255,255,0.95);
-    --surface-raised: rgba(255,255,255,0.98);
-
-    /* Same visual weight, opposite polarity — a white film adds nothing to a
-       white page, so striping/tracks/separators invert to a dark film. */
-    --tint-subtle: rgba(15,23,42,0.03);
-    --tint-soft:   rgba(15,23,42,0.05);
-    --tint-medium: rgba(15,23,42,0.09);
-    --hairline:    rgba(15,23,42,0.08);
+    /* Option #2: --surface-*, --tint-*, --elevation-*, --glass-tint no longer
+       need to be re-declared here. They are `light-dark()` pairs in :root,
+       which resolve against the element's `color-scheme` — and the very first
+       rule in this block sets `color-scheme: light`, so each token picks the
+       light half automatically. */
 
     /* Darkened to keep the podium readable on a light surface (see note above). */
     --rank-gold:   #b45309;
     --rank-silver: #64748b;
     --rank-bronze: #9a5b2d;
-
-    --elevation-1: 0 4px 20px rgba(15,23,42,0.08);
-    --elevation-2: 0 8px 30px rgba(99,102,241,0.12);
-    --elevation-3: 0 20px 60px rgba(15,23,42,0.12);
-
-    --glass-tint: rgba(255,255,255,0.6);
 
     /* Toasts keep their hue but invert lightness: the dark theme's near-black
        tinted backgrounds with pale text are unreadable on a light page. */

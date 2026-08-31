@@ -89,7 +89,12 @@ internal static class PngDecoder
 
         var channels = colorType switch
         {
-            0 => 1, 2 => 3, 3 => 1, 4 => 2, 6 => 4, _ => 0,
+            0 => 1,
+            2 => 3,
+            3 => 1,
+            4 => 2,
+            6 => 4,
+            _ => 0,
         };
         if (channels == 0)
         {

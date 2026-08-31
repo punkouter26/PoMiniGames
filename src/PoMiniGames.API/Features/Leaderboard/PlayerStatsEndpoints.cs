@@ -119,24 +119,11 @@ public static class PlayerStatsEndpoints
         // §1 MapGroup() per slice: cross-game statistics live under /api/statistics.
         var stats = app.MapGroup("/api/statistics").WithTags("Statistics");
 
-        // §8: stream the response so the network and heap track page size, not row count.
-        // Returning the IAsyncEnumerable directly is what makes that true — minimal APIs
-        // serialise it to a JSON array incrementally, entirely through async writes.
-        //
-        // This replaced a hand-rolled Utf8JsonWriter loop that was subtly broken: the
-        // JsonSerializer.Serialize(writer, value) overload FLUSHES the writer, and that
-        // flush is synchronous. Synchronous IO is disallowed by default on both Kestrel
-        // (AllowSynchronousIO=false) and TestServer, so once the payload grew past a single
-        // buffer the request died with "Synchronous operations are disallowed" — i.e. the
-        // endpoint failed in exactly the many-players case it was written to stream, while
-        // passing every small-payload test. Do not reintroduce a manual writer here.
-        stats.MapGet("", (IStorageService storage, CancellationToken ct) =>
-                storage.GetAllPlayerStatsAsync(ct))
-            .RequireAuthorization()
-            .WithName("GetAllPlayerStatistics")
-            .WithSummary("All player statistics across every game")
-            .Produces<IEnumerable<PlayerStatsDto>>(StatusCodes.Status200OK)
-            .ProducesProblem(StatusCodes.Status401Unauthorized);
+        // GET /api/{game}/statistics (the all-players stream) was removed 2026-08-31: the client
+        // only ever calls /api/{game}/statistics/leaderboard and /api/leaderboards. The streaming
+        // lesson it carried (no manual Utf8JsonWriter — synchronous flush dies under
+        // AllowSynchronousIO=false) is preserved in this comment; any future bulk read endpoint
+        // must return IAsyncEnumerable for the same reason.
 
         // Documented cross-game save surface (POST /api/statistics). Resolves
         // gameId + playerName from the JSON body and delegates to the

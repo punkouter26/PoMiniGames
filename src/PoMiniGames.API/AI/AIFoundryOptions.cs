@@ -100,7 +100,6 @@ public sealed class AIFoundryOptions
     {
         public const string CoupleQuiz = "couplequiz";
         public const string FunQuiz = "funquiz";
-        public const string Face = "face";
         public const string Joker = "joker";
         public const string Survive = "survive";
     }

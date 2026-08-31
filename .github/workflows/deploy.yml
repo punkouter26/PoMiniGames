@@ -25,7 +25,9 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  DOTNET_VERSION: '10.0.x'
+  # Pinned to match global.json (10.0.203) so CI builds on the same SDK as local.
+  # A floating '10.0.x' let CI drift onto a newer patch than the lockfile allows.
+  DOTNET_VERSION: '10.0.203'
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   # `az deployment sub what-if` requires --location (the deployment record
   # region; *not* the resource region, which lives in main.parameters.json).
@@ -117,7 +119,7 @@ jobs:
       # paint on phones. Fail the build if it regresses past the budget so a new
       # reflection-heavy DTO can't silently bloat the download. Baseline 2026-07-04
       # ≈ 20 MB uncompressed — inherent to shipping the PoSurvive client-side
-      # simulation engine (by design; see AGENT.MD). Budget set with headroom to
+      # simulation engine (by design). Budget set with headroom to
       # catch regression, not to squeeze the baseline.
       - name: WASM bundle-size budget
         shell: bash

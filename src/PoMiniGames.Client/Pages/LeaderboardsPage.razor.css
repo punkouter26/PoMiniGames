@@ -266,6 +266,14 @@
     font-variant-numeric: tabular-nums;
     font-weight: 700;
     color: var(--color-text-primary);
+    /* Option #10: a Marble Race finish time like "12.345s" or a long score
+       (e.g., a Joker rating 6+ digits) used to overflow the right cell on a
+       360px-wide board. `overflow-wrap: anywhere` lets the cell break the
+       number at any digit rather than push the column wider; combined with
+       tabular-nums (already set above) the break lands on a digit boundary
+       and stays aligned. */
+    overflow-wrap: anywhere;
+    text-align: right;
 }
 
 .lb-board-empty,

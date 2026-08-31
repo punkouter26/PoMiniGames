@@ -201,23 +201,6 @@ public class ApiService
         }
     }
 
-    public async Task<PlayerStatsDto[]?> GetLeaderboardAsync(string game, int limit = 10, string? difficulty = null)
-    {
-        try
-        {
-            var query = $"?limit={limit}";
-            if (!string.IsNullOrEmpty(difficulty) && difficulty != "all")
-                query += $"&difficulty={difficulty}";
-
-            return await _http.GetFromJsonAsync(
-                $"/api/{game}/statistics/leaderboard{query}", ApiJsonContext.Default.PlayerStatsDtoArray);
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
     /// <summary>Normalized leaderboards for every game in one round-trip (home preview, /leaderboards hub).</summary>
     public async Task<GameLeaderboardDto[]?> GetAllLeaderboardsAsync(int limit = 5)
     {

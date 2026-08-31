@@ -12,6 +12,21 @@
 (function () {
     'use strict';
 
+    // Option #7: skip ALL of the heavier GFX/audio systems when the user
+    // opted into reduced motion (Profile → Preferences) or the OS asked for
+    // it. The app.css blanket rule handles CSS animations, but JS-driven
+    // effects (WebGPU particles, glass captures, ambient music, the music
+    // director) don't see a CSS rule — they have to gate themselves, and
+    // this is the one place that decides whether they get loaded at all.
+    //
+    // The data-motion attribute is set on <html> by the pre-paint script in
+    // index.html, so it's available here BEFORE Blazor boots. Reading the
+    // dataset is a synchronous attribute lookup — no race with the inline
+    // script. The check is inverted (opt-out rather than opt-in) because
+    // every script load below is a separate request that costs the catalog
+    // a round-trip even if the user never sees the effect.
+    var reduceMotion = document.documentElement.dataset.motion === 'reduce';
+
     function load(src) {
         return new Promise(function (res) {
             const s = document.createElement('script');
@@ -22,20 +37,29 @@
     }
 
     // Order matters: quality first (everyone reads it), palette second (writes
-    // the vars readers consume), then the audio director.
-    load('js/qualityTiers.js')
-        .then(function () { return load('js/paletteBus.js'); })
-        .then(function () { return load('js/impactFx.js'); })
-        .then(function () { return load('js/spatialAudio.js'); })
-        .then(function () { return load('js/materialAudio.js'); })
-        .then(function () { return load('js/musicDirector.js'); })
-        .then(function () {
-            // WebGPU backend probes in the background; gpuFx consults it lazily
-            // so the catalog pays zero for the probe.
-            if (window.PoQuality.tier() !== 'low') {
-                load('js/gpuFxWebGPU.js').then(function () {
-                    window.PoGpuWebGPU && window.PoGpuWebGPU.probe();
-                });
-            }
-        });
+    // the vars readers consume), then the audio director. Reduce-motion users
+    // still load qualityTiers (chrome like the FPS meter reads it) and the
+    // palette bus (the route-accent pulse is theme-state, not motion) — the
+    // dropped modules are the ones whose effect IS motion: impact flashes,
+    // spatial / material audio, the music director, and the WebGPU
+    // compute-shader particle field.
+    var chain = load('js/qualityTiers.js')
+        .then(function () { return load('js/paletteBus.js'); });
+    if (!reduceMotion) {
+        chain = chain.then(function () { return load('js/impactFx.js'); })
+                     .then(function () { return load('js/spatialAudio.js'); })
+                     .then(function () { return load('js/materialAudio.js'); })
+                     .then(function () { return load('js/musicDirector.js'); });
+    }
+    chain.then(function () {
+        // WebGPU backend probes in the background; gpuFx consults it lazily
+        // so the catalog pays zero for the probe. Skip under reduce-motion
+        // — the WebGPU compute shader spins for tens of thousands of
+        // particles and is the single most motion-heavy thing on the page.
+        if (!reduceMotion && window.PoQuality && window.PoQuality.tier() !== 'low') {
+            load('js/gpuFxWebGPU.js').then(function () {
+                window.PoGpuWebGPU && window.PoGpuWebGPU.probe();
+            });
+        }
+    });
 })();

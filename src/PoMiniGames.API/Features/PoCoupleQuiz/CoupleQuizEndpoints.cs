@@ -28,21 +28,10 @@ public static class CoupleQuizEndpoints
     {
         var group = app.MapGroup("/api/couplequiz").WithTags("PoCoupleQuiz");
 
-        // ── Runtime status (drives the per-game "USING MOCK DATA" banner) ──
-
-        group.MapGet("/runtime/status", (IHostEnvironment env, IConfiguration cfg) =>
-        {
-            var useMockAi = cfg.GetValue<bool>("PoCoupleQuiz:Features:UseMockAI");
-            return Results.Ok(new
-            {
-                game = "pocouplequiz",
-                isMockData = useMockAi && (env.IsDevelopment() || env.IsEnvironment("Test")),
-                useMockAi,
-                environment = env.EnvironmentName
-            });
-        })
-        .WithName("CoupleQuiz_RuntimeStatus")
-        .WithSummary("PoCoupleQuiz runtime status (used by the mock-data banner)");
+        // The couplequiz game surface is SignalR-first: question generation, answer scoring and
+        // round flow all run inside CoupleQuizHub. The former GET /runtime/status probe (which
+        // drove a mock-data banner the client never read) was removed 2026-08-31 — zero client
+        // or test consumers.
 
         return app;
     }

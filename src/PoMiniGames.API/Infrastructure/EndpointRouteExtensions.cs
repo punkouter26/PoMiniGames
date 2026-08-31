@@ -69,7 +69,7 @@ internal static class EndpointRouteExtensions
 
         // ── Authenticated game API ─────────────────────────────────────────
         // All game-data endpoints require a valid session. Per-endpoint rate
-        // limits (highscores, ai-generation, face-analysis, infer) are declared
+        // limits (highscores, ai-generation, infer) are declared
         // inside each slice; the group adds the auth gate only.
         var gameApi = app.MapGroup("").RequireAuthorization();
 

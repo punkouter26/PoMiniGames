@@ -17,3 +17,8 @@ the 2026-08-18 cleanup (they referenced files that no longer exist and had no ca
 
 Languages are mixed on purpose (PowerShell, Node, Python) — each pipeline uses
 whatever its toolchain needs. Development is Windows/`pwsh`.
+
+`build-marble-track-2.py` is Python because it runs **inside Blender** (via the Blender MCP
+add-on) — it is the source-of-truth generator for the map-3 course geometry, and Blender's
+embedded interpreter only speaks Python. It is not a stray toolchain choice; do not port it
+to Node. See the file header for the run recipe and the export contract the baker asserts.

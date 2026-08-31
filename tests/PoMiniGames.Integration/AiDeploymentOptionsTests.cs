@@ -66,7 +66,7 @@ public class AiDeploymentOptionsTests
         deployment.Should().Be(expectedDeployment);
 
         var chatOptions = AiDecisionChatOptions.ForStructuredJson(
-            AzureOpenAIInferenceService.AgentDecisionSchema,
+            AiInferenceRelayService.AgentDecisionSchema,
             schemaName: "probe",
             maxOutputTokens: 128,
             deployment: deployment,

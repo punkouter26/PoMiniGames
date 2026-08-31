@@ -31,7 +31,7 @@ namespace PoMiniGames.Features.PoCoupleQuiz;
 /// <see cref="CheckAnswerSimilarityAsync"/>.
 /// </para>
 /// </remarks>
-public sealed class AzureOpenAIQuestionService : IQuestionService
+public sealed class AiQuestionService : IQuestionService
 {
     /// <summary>Output ceiling for one generated question. The reply is one short object.</summary>
     private const int QuestionMaxTokens = 200;
@@ -41,22 +41,24 @@ public sealed class AzureOpenAIQuestionService : IQuestionService
 
     private readonly IOptionsMonitor<CoupleQuizOptions> _optionsMonitor;
     private readonly IOptionsMonitor<AIFoundryOptions> _foundryOptions;
-    private readonly ILogger<AzureOpenAIQuestionService> _logger;
+    private readonly ILogger<AiQuestionService> _logger;
     private readonly IHostEnvironment _environment;
     private readonly HybridCache _cache;
     private readonly GameChatClientFactory _clients;
     private readonly AiEmbeddingService _embeddings;
     private readonly MockQuestionService _mock;
+    private readonly IAiDecisionOptionsCache _optionsCache;
 
-    public AzureOpenAIQuestionService(
+    public AiQuestionService(
         IOptionsMonitor<CoupleQuizOptions> optionsMonitor,
         IOptionsMonitor<AIFoundryOptions> foundryOptions,
         IHostEnvironment environment,
         HybridCache cache,
-        ILogger<AzureOpenAIQuestionService> logger,
+        ILogger<AiQuestionService> logger,
         GameChatClientFactory clients,
         AiEmbeddingService embeddings,
-        MockQuestionService mock)
+        MockQuestionService mock,
+        IAiDecisionOptionsCache optionsCache)
     {
         _optionsMonitor = optionsMonitor;
         _foundryOptions = foundryOptions;
@@ -66,6 +68,7 @@ public sealed class AzureOpenAIQuestionService : IQuestionService
         _clients = clients;
         _embeddings = embeddings;
         _mock = mock;
+        _optionsCache = optionsCache;
     }
 
     public async Task<Question> GenerateQuestionAsync(
@@ -108,13 +111,21 @@ public sealed class AzureOpenAIQuestionService : IQuestionService
                 new(ChatRole.User, userPrompt),
             };
 
-            var chatOptions = AiDecisionChatOptions.ForStructuredJson(
-                QuestionSchema,
+            var chatOptions = _optionsCache.GetOrBuild(
+                gameKey: AIFoundryOptions.Games.CoupleQuiz,
+                deployment: deployment,
+                capabilityOverrides: _clients.CapabilityOverrides,
+                schema: QuestionSchema,
                 schemaName: "couple_question",
                 maxOutputTokens: QuestionMaxTokens,
-                deployment: deployment,
                 schemaDescription: "One playful question for couples, with its category.",
-                capabilityOverrides: _clients.CapabilityOverrides);
+                factory: (d, ov) => AiDecisionChatOptions.ForStructuredJson(
+                    QuestionSchema,
+                    schemaName: "couple_question",
+                    maxOutputTokens: QuestionMaxTokens,
+                    deployment: d ?? string.Empty,
+                    schemaDescription: "One playful question for couples, with its category.",
+                    capabilityOverrides: ov));
 
             var response = await chatClient.GetResponseAsync(messages, chatOptions, cancellationToken);
             return ParseQuestion(response.Text, _logger);
@@ -268,13 +279,21 @@ public sealed class AzureOpenAIQuestionService : IQuestionService
                 new(ChatRole.User, userPrompt),
             };
 
-            var chatOptions = AiDecisionChatOptions.ForStructuredJson(
-                SimilaritySchema,
+            var chatOptions = _optionsCache.GetOrBuild(
+                gameKey: AIFoundryOptions.Tasks.CoupleQuizSimilarity,
+                deployment: deployment,
+                capabilityOverrides: _clients.CapabilityOverrides,
+                schema: SimilaritySchema,
                 schemaName: "answer_similarity",
                 maxOutputTokens: SimilarityMaxTokens,
-                deployment: deployment,
                 schemaDescription: "Semantic similarity of two short answers, 0.0 to 1.0.",
-                capabilityOverrides: _clients.CapabilityOverrides);
+                factory: (d, ov) => AiDecisionChatOptions.ForStructuredJson(
+                    SimilaritySchema,
+                    schemaName: "answer_similarity",
+                    maxOutputTokens: SimilarityMaxTokens,
+                    deployment: d ?? string.Empty,
+                    schemaDescription: "Semantic similarity of two short answers, 0.0 to 1.0.",
+                    capabilityOverrides: ov));
 
             var response = await chat.GetResponseAsync(messages, chatOptions, cancellationToken);
             return ParseSimilarity(response.Text, _logger);
@@ -388,7 +407,7 @@ public sealed class AzureOpenAIQuestionService : IQuestionService
          : text.Length <= max ? text
          : text[..max] + "…";
 
-    private bool IsNonProduction() => _environment.IsDevelopment() || _environment.IsEnvironment("Test");
+    private bool IsNonProduction() => Features.Shared.AiMockFallback.IsNonProduction(_environment);
 }
 
 /// <summary>

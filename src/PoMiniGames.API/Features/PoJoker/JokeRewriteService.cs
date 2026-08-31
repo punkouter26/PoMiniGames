@@ -36,6 +36,7 @@ public sealed class JokeRewriteService : IJokeRewriteService
     private readonly IHostEnvironment _environment;
     private readonly GameChatClientFactory _clients;
     private readonly IOptionsMonitor<AIFoundryOptions> _foundryOptions;
+    private readonly IAiDecisionOptionsCache _optionsCache;
     private readonly int _timeoutSeconds;
 
     // Asks for a replacement joke rather than a cleaned copy of the original: the
@@ -65,12 +66,14 @@ public sealed class JokeRewriteService : IJokeRewriteService
         IHostEnvironment environment,
         ILogger<JokeRewriteService> logger,
         GameChatClientFactory clients,
-        IOptionsMonitor<AIFoundryOptions> foundryOptions)
+        IOptionsMonitor<AIFoundryOptions> foundryOptions,
+        IAiDecisionOptionsCache optionsCache)
     {
         _logger = logger;
         _environment = environment;
         _clients = clients;
         _foundryOptions = foundryOptions;
+        _optionsCache = optionsCache;
         // Deliberately NOT the shared PoJoker:AzureOpenAI:TimeoutSeconds (30s) that
         // analysis uses. Analysis runs while the joke is already on screen, so it can
         // afford to wait; this call blocks the fetch, so every second is dead air
@@ -116,13 +119,21 @@ public sealed class JokeRewriteService : IJokeRewriteService
 
             var response = await chatClient.GetResponseAsync(
                 messages,
-                AiDecisionChatOptions.ForStructuredJson(
-                    RewriteSchema,
+                _optionsCache.GetOrBuild(
+                    gameKey: AIFoundryOptions.Tasks.JokerRewrite,
+                    deployment: deployment,
+                    capabilityOverrides: _clients.CapabilityOverrides,
+                    schema: RewriteSchema,
                     schemaName: "joke_rewrite",
                     maxOutputTokens: RewriteMaxTokens,
-                    deployment: deployment,
                     schemaDescription: "A clean replacement joke, or a refusal.",
-                    capabilityOverrides: _clients.CapabilityOverrides),
+                    factory: (d, ov) => AiDecisionChatOptions.ForStructuredJson(
+                        RewriteSchema,
+                        schemaName: "joke_rewrite",
+                        maxOutputTokens: RewriteMaxTokens,
+                        deployment: d ?? string.Empty,
+                        schemaDescription: "A clean replacement joke, or a refusal.",
+                        capabilityOverrides: ov)),
                 cts.Token);
 
             if (response.FinishReason == ChatFinishReason.ContentFilter)

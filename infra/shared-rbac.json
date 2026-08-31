@@ -1,0 +1,47 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.46.1.21595",
+      "templateHash": "17064993863954607566"
+    }
+  },
+  "parameters": {
+    "sharedResourceGroupName": {
+      "type": "string",
+      "defaultValue": "PoShared",
+      "metadata": {
+        "description": "Resource group containing the shared AI Foundry hub"
+      }
+    },
+    "sharedAIFoundryName": {
+      "type": "string",
+      "metadata": {
+        "description": "Name of the shared AI Foundry account (kind=AIServices)"
+      }
+    },
+    "webAppPrincipalId": {
+      "type": "string",
+      "metadata": {
+        "description": "ObjectId of the Web App's system-assigned MI"
+      }
+    }
+  },
+  "variables": {
+    "cognitiveServicesUserRoleId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'a97b65f3-24c7-47ba-9cc6-fcb3e1e0d1cf')]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "name": "[guid(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('sharedResourceGroupName')), 'Microsoft.CognitiveServices/accounts', parameters('sharedAIFoundryName')), parameters('webAppPrincipalId'), variables('cognitiveServicesUserRoleId'))]",
+      "properties": {
+        "principalId": "[parameters('webAppPrincipalId')]",
+        "roleDefinitionId": "[variables('cognitiveServicesUserRoleId')]",
+        "principalType": "ServicePrincipal"
+      }
+    }
+  ]
+}

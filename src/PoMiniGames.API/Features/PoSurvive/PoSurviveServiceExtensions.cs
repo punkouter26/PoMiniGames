@@ -41,6 +41,8 @@ public static class PoSurviveServiceExtensions
                 services.AddSingleton<IInferenceService>(sp =>
                 {
                     var chatClient = sp.GetRequiredKeyedService<IChatClient>(AIFoundryOptions.Games.Survive);
+                    var optionsMonitor = sp.GetRequiredService<Microsoft.Extensions.Options.IOptionsMonitor<AIFoundryOptions>>();
+                    var defaultDeployment = optionsMonitor.CurrentValue.ResolveDeployment(AIFoundryOptions.Games.Survive);
 
                     // Per-request model selection: only ids on this allowlist may pick a
                     // deployment, and each resolves to its own cached client. The relay used to
@@ -51,14 +53,23 @@ public static class PoSurviveServiceExtensions
                     // deployment's client must carry the same resilience and telemetry decorators
                     // as the game's default one. Going to the cache directly silently opted every
                     // model-selecting call — i.e. all of them — out of both.
-                    var deploymentMap = ReadRemoteModelAllowlist(configuration);
+                    //
+                    // The allowlist is read through a live provider rather than captured once:
+                    // adding a model id in configuration previously required a process restart
+                    // before /api/infer/status would advertise it. The provider re-reads the
+                    // section on every call — a dictionary build over a handful of entries, and
+                    // the relay is rate-limited to 10 req/s, so the cost is noise.
                     var clients = sp.GetRequiredService<GameChatClientFactory>();
+                    var allowlistProvider = new LiveRemoteModelAllowlist(configuration);
 
-                    return new AzureOpenAIInferenceService(
+                    return new AiInferenceRelayService(
                         chat: chatClient,
-                        deploymentMap: deploymentMap,
-                        logger: sp.GetRequiredService<ILogger<AzureOpenAIInferenceService>>(),
-                        clientForDeployment: d => clients.ForDeployment(AIFoundryOptions.Games.Survive, d));
+                        deploymentMap: allowlistProvider.Snapshot(),
+                        logger: sp.GetRequiredService<ILogger<AiInferenceRelayService>>(),
+                        clientForDeployment: d => clients.ForDeployment(AIFoundryOptions.Games.Survive, d),
+                        optionsCache: sp.GetRequiredService<AiDecisionOptionsCache>(),
+                        capabilityOverrides: optionsMonitor.CurrentValue.ModelCapabilityOverrides,
+                        defaultDeploymentName: defaultDeployment);
                 });
             }
             else
@@ -85,10 +96,11 @@ public static class PoSurviveServiceExtensions
                     var azure = sp.GetRequiredService<Azure.AI.OpenAI.AzureOpenAIClient>()
                         .GetChatClient(defaultDeployment)
                         .AsIChatClient();
-                    return new AzureOpenAIInferenceService(
+                    return new AiInferenceRelayService(
                         chat: azure,
                         deploymentMap: deploymentMap,
-                        logger: sp.GetRequiredService<ILogger<AzureOpenAIInferenceService>>());
+                        logger: sp.GetRequiredService<ILogger<AiInferenceRelayService>>(),
+                        defaultDeploymentName: defaultDeployment);
                 });
             }
         }
@@ -103,16 +115,38 @@ public static class PoSurviveServiceExtensions
     /// forwarded, so a caller can never address an arbitrary deployment.
     /// </summary>
     private static Dictionary<string, string> ReadRemoteModelAllowlist(IConfiguration configuration)
+        => new LiveRemoteModelAllowlist(configuration).Snapshot();
+
+    /// <summary>
+    /// Live view over <c>Inference:RemoteModelOptions</c>. Re-reads the configuration section on
+    /// every <see cref="Snapshot"/> call, so a model id added in configuration (or in Key Vault,
+    /// which feeds the same providers) becomes selectable without a process restart.
+    /// </summary>
+    /// <remarks>
+    /// Previously the map was built once at startup and captured in the
+    /// <see cref="AzureOpenAIInferenceService"/> constructor — the operational gap this closes.
+    /// The re-read is a dictionary build over a handful of entries per relay call; the relay is
+    /// rate-limited to 10 req/s, so the cost is noise against the multi-second model call it
+    /// precedes.
+    /// </remarks>
+    private sealed class LiveRemoteModelAllowlist
     {
-        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var child in configuration.GetSection("Inference:RemoteModelOptions").GetChildren())
+        private readonly IConfiguration _configuration;
+
+        public LiveRemoteModelAllowlist(IConfiguration configuration) => _configuration = configuration;
+
+        public Dictionary<string, string> Snapshot()
         {
-            var id = child["Id"];
-            var deployment = child["DeploymentName"] ?? child["Id"];
-            if (!string.IsNullOrWhiteSpace(id) && !string.IsNullOrWhiteSpace(deployment))
-                map[id!] = deployment!;
+            var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var child in _configuration.GetSection("Inference:RemoteModelOptions").GetChildren())
+            {
+                var id = child["Id"];
+                var deployment = child["DeploymentName"] ?? child["Id"];
+                if (!string.IsNullOrWhiteSpace(id) && !string.IsNullOrWhiteSpace(deployment))
+                    map[id!] = deployment!;
+            }
+            return map;
         }
-        return map;
     }
 
     /// <summary>Maps PoSurvive minimal-API endpoints. /api/infer is mapped only when cloud fallback is enabled.</summary>

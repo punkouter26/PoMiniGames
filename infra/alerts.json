@@ -1,0 +1,217 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.46.1.21595",
+      "templateHash": "17950488662887350292"
+    }
+  },
+  "parameters": {
+    "location": {
+      "type": "string",
+      "defaultValue": "westus2"
+    },
+    "appName": {
+      "type": "string"
+    },
+    "appServiceName": {
+      "type": "string"
+    },
+    "logAnalyticsWorkspaceName": {
+      "type": "string"
+    },
+    "sharedResourceGroupName": {
+      "type": "string",
+      "defaultValue": "PoShared"
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Insights/actionGroups",
+      "apiVersion": "2023-01-01",
+      "name": "PoMiniGamesAlerts",
+      "location": "global",
+      "properties": {
+        "groupShortName": "PoMiniAlert",
+        "enabled": true,
+        "emailReceivers": [
+          {
+            "name": "AdminEmail",
+            "emailAddress": "admin@example.com",
+            "useCommonAlertSchema": true
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.Insights/scheduledQueryRules",
+      "apiVersion": "2021-02-01-preview",
+      "name": "[format('{0}-AppDown', parameters('appName'))]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "enabled": true,
+        "frequency": 1,
+        "windowSize": 5,
+        "severity": 1,
+        "evaluationFrequency": 1,
+        "criteria": {
+          "allOf": [
+            {
+              "query": "AppServiceHttp2xxCount\n| where TimeGenerated > ago(5m)\n| where AppName == '${appServiceName}'\n| summarize TotalRequests = sum(Count) by bin(Timestamp, 1m)\n| where TotalRequests == 0\n",
+              "timeAggregation": "Count",
+              "operator": "GreaterThanOrEqual",
+              "threshold": 1,
+              "failingPeriods": {
+                "numberOfEvaluationPeriods": 5,
+                "minFailingPeriodsToAlert": 3
+              }
+            }
+          ]
+        },
+        "actions": [
+          {
+            "actionGroupId": "[resourceId('Microsoft.Insights/actionGroups', 'PoMiniGamesAlerts')]"
+          }
+        ],
+        "scopes": [
+          "[subscription().id]"
+        ],
+        "targetResourceTypes": [
+          "Microsoft.Web/sites"
+        ],
+        "autoMitigate": true
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Insights/actionGroups', 'PoMiniGamesAlerts')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Insights/scheduledQueryRules",
+      "apiVersion": "2021-02-01-preview",
+      "name": "[format('{0}-HighErrorRate', parameters('appName'))]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "enabled": true,
+        "frequency": 1,
+        "windowSize": 5,
+        "severity": 2,
+        "evaluationFrequency": 1,
+        "criteria": {
+          "allOf": [
+            {
+              "query": "AppServiceHttp2xxCount\n| where TimeGenerated > ago(5m)\n| where AppName == '${appServiceName}'\n| summarize TotalRequests = sum(Count) by bin(Timestamp, 1m)\n| join kind=inner (\n    AppServiceHttp4xxCount\n    | where TimeGenerated > ago(5m)\n    | where AppName == '${appServiceName}'\n    | summarize ErrorRequests = sum(Count) by bin(Timestamp, 1m)\n) on Timestamp\n| extend ErrorRate = ErrorRequests * 100.0 / TotalRequests\n| where ErrorRate > 5 // More than 5% error rate\n",
+              "timeAggregation": "Count",
+              "operator": "GreaterThanOrEqual",
+              "threshold": 1,
+              "failingPeriods": {
+                "numberOfEvaluationPeriods": 5,
+                "minFailingPeriodsToAlert": 3
+              }
+            }
+          ]
+        },
+        "actions": [
+          {
+            "actionGroupId": "[resourceId('Microsoft.Insights/actionGroups', 'PoMiniGamesAlerts')]"
+          }
+        ],
+        "scopes": [
+          "[subscription().id]"
+        ],
+        "targetResourceTypes": [
+          "Microsoft.Web/sites"
+        ],
+        "autoMitigate": true
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Insights/actionGroups', 'PoMiniGamesAlerts')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Insights/scheduledQueryRules",
+      "apiVersion": "2021-02-01-preview",
+      "name": "[format('{0}-SlowResponse', parameters('appName'))]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "enabled": true,
+        "frequency": 1,
+        "windowSize": 5,
+        "severity": 3,
+        "evaluationFrequency": 1,
+        "criteria": {
+          "allOf": [
+            {
+              "query": "AppServiceResponseTime\n| where TimeGenerated > ago(5m)\n| where AppName == '${appServiceName}'\n| summarize AvgResponseTime = avg(ResponseTime) by bin(Timestamp, 1m)\n| where AvgResponseTime > 3000 // More than 3 seconds\n",
+              "timeAggregation": "Average",
+              "operator": "GreaterThanOrEqual",
+              "threshold": 3000,
+              "failingPeriods": {
+                "numberOfEvaluationPeriods": 5,
+                "minFailingPeriodsToAlert": 3
+              }
+            }
+          ]
+        },
+        "actions": [
+          {
+            "actionGroupId": "[resourceId('Microsoft.Insights/actionGroups', 'PoMiniGamesAlerts')]"
+          }
+        ],
+        "scopes": [
+          "[subscription().id]"
+        ],
+        "targetResourceTypes": [
+          "Microsoft.Web/sites"
+        ],
+        "autoMitigate": true
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Insights/actionGroups', 'PoMiniGamesAlerts')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Insights/scheduledQueryRules",
+      "apiVersion": "2021-02-01-preview",
+      "name": "[format('{0}-IngestionBudget', parameters('appName'))]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "enabled": true,
+        "frequency": 15,
+        "windowSize": 60,
+        "severity": 3,
+        "evaluationFrequency": 15,
+        "criteria": {
+          "allOf": [
+            {
+              "query": "AppMetrics\n| where TimeGenerated > ago(1h)\n| where Name == \"traceCount\" or Name == \"requestCount\"\n| summarize HourlyCount = sum(Sum) by bin(TimeGenerated, 1h), Name\n| where HourlyCount > 50000\n",
+              "timeAggregation": "Count",
+              "operator": "GreaterThanOrEqual",
+              "threshold": 1,
+              "failingPeriods": {
+                "numberOfEvaluationPeriods": 1,
+                "minFailingPeriodsToAlert": 1
+              }
+            }
+          ]
+        },
+        "actions": [
+          {
+            "actionGroupId": "[resourceId('Microsoft.Insights/actionGroups', 'PoMiniGamesAlerts')]"
+          }
+        ],
+        "scopes": [
+          "[subscription().id]"
+        ],
+        "targetResourceTypes": [
+          "Microsoft.Insights/components"
+        ],
+        "autoMitigate": true
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Insights/actionGroups', 'PoMiniGamesAlerts')]"
+      ]
+    }
+  ]
+}

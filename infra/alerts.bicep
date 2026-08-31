@@ -175,9 +175,6 @@ AppServiceResponseTime
   }
 }
 
-// Output the action group ID for use in other deployments
-output actionGroupId string = actionGroup.id
-
 // Ingestion-budget alert: flags hourly spike > 50k items so a runaway loop
 // can't silently exhaust the App Insights budget. The hard ceiling
 // (MaxTelemetryItemsPerSecond = 5 in Production, set in TelemetryExtensions.cs)

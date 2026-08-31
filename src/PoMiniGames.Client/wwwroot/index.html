@@ -245,10 +245,15 @@
          background-probes WebGPU for the particle backend. Everything heavier
          (glass captures, weather, props) stays lazy in the games that use it. -->
     <script src="js/fxBootstrap.js" defer></script>
+    <!-- Native <dialog> interop (Option #9). showModal / close are HTMLDialogElement
+         methods Blazor's ElementReference doesn't bind directly, so a tiny shim
+         exposes them on `window.PoDialogInterop`. Must be present BEFORE the
+         GameOverModal renders; defer keeps it off the critical render path. -->
+    <script src="js/dialogInterop.js" defer></script>
     <!-- PWA: service worker registration + connectivity signals. Registration is
          kicked off from MainLayout (not here) so the update toast has a live Blazor
          renderer to display into. -->
-    <script src="js/pwa.js"></script>
+    <script src="js/pwa.js" defer></script>
 </body>
 
 </html>

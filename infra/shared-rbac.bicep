@@ -49,5 +49,3 @@ resource webAppAIFoundryRoleAssignment 'Microsoft.Authorization/roleAssignments@
     principalType: 'ServicePrincipal'
   }
 }
-
-output AI_FOUNDRY_ROLE_ASSIGNMENT_NAME string = webAppAIFoundryRoleAssignment.name

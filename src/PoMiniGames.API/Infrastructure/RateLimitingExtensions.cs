@@ -81,18 +81,6 @@ internal static class RateLimitingExtensions
                         QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
                         QueueLimit = 0,
                     }));
-
-            opts.AddPolicy("face-analysis", ctx =>
-                RateLimitPartition.GetFixedWindowLimiter(
-                    partitionKey: BuildPartitionKey(ctx),
-                    factory: _ => new FixedWindowRateLimiterOptions
-                    {
-                        Window = TimeSpan.FromSeconds(10),
-                        PermitLimit = 2,
-                        AutoReplenishment = true,
-                        QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
-                        QueueLimit = 0,
-                    }));
         });
 
         return services;

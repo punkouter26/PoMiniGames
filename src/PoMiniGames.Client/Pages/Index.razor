@@ -5,6 +5,7 @@
 @inject ActivityFeedService ActivityFeed
 @inject UiFeedbackService Feedback
 @inject OnlineStatusService OnlineStatus
+@inject IWebAssemblyHostEnvironment Env
 @implements IAsyncDisposable
 
 @* ─────────────────────────────────────────────────────────────────────────
@@ -162,6 +163,33 @@
             </article>
         }
     </div>
+
+    @* Dev tools section — meta surfaces (not games) that don't belong in the
+       playable catalogue. Demo-only surfaces are flagged with a "demo" badge
+       and only appear when the host's FeatureFlags enable them, so a production
+       deployment can suppress them without code changes. *@
+    <section class="home-devtools" aria-label="Demo and developer tools">
+        <h2 class="home-devtools__title">Demo &amp; developer tools</h2>
+        <ul class="home-devtools__list" role="list">
+            @if (Env.IsDevelopment())
+            {
+                @* FeatureFlags:EnableGallery defaults to IsDevelopment() on the API,
+                   so this link only matters in dev. The badge tells the visitor
+                   why a non-game card lives here. *@
+                <li>
+                    <a class="home-devtools__card" href="/pogallery"
+                       title="Procedural Three.js models reconstructed from reference images (img2threejs pipeline). Demo only — visible in Development.">
+                        <span class="home-devtools__icon" aria-hidden="true">🎨</span>
+                        <span class="home-devtools__body">
+                            <span class="home-devtools__name">PoGallery</span>
+                            <span class="home-devtools__sub">Procedural Three.js models from reference images</span>
+                        </span>
+                        <span class="home-devtools__badge">Demo only</span>
+                    </a>
+                </li>
+            }
+        </ul>
+    </section>
 
     @* §9 home page activity feed: surfaces the player's most recent matches
        so the page never feels empty even on a fresh install. Pulled from the

@@ -111,8 +111,7 @@
         @* Preset strip — curated reference images. Click POSTs the image through
            the same /api/gallery/upload path as the drag-and-drop upload, so the
            heightfield renders identically to a real user upload. *@
-        var presets = _manifest.Models.Where(m => m.Kind == "preset").ToList();
-        @if (presets.Count > 0)
+        @if (_manifest.Models.Any(m => m.Kind == "preset"))
         {
             <section class="pg-presets" aria-label="Preset reference images">
                 <div class="pg-presets-head">
@@ -123,7 +122,7 @@
                     </p>
                 </div>
                 <ul class="pg-preset-row" role="list">
-                    @foreach (var preset in presets)
+                    @foreach (var preset in _manifest.Models.Where(m => m.Kind == "preset"))
                     {
                         <li>
                             <button type="button"

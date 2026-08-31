@@ -413,3 +413,89 @@
 
     .home-container { padding-top: 0.7rem; padding-bottom: max(env(safe-area-inset-bottom, 0px), 0.75rem); }
 }
+
+/* ── Demo & developer tools ─────────────────────────────────────────────────
+   Section underneath the main game grid for meta surfaces (PoGallery, etc.)
+   that aren't games and don't belong in the playable catalogue. A "demo" or
+   similar badge tells visitors why a non-game card lives here. */
+.home-devtools {
+    margin-top: var(--space-7, 2rem);
+}
+
+.home-devtools__title {
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--color-text-secondary);
+    margin: 0 0 var(--space-3, 0.75rem);
+}
+
+.home-devtools__list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    gap: 0.6rem;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+}
+
+.home-devtools__card {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.85rem 1rem;
+    background: var(--surface-raised);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md, 10px);
+    text-decoration: none;
+    color: inherit;
+    transition: border-color 0.18s var(--ease-standard),
+                background 0.18s var(--ease-standard),
+                transform 0.18s var(--ease-standard);
+}
+
+.home-devtools__card:hover {
+    border-color: var(--pg-accent, #3b82f6);
+    transform: translateY(-1px);
+}
+
+.home-devtools__icon {
+    font-size: 1.4rem;
+    line-height: 1;
+    flex: 0 0 auto;
+}
+
+.home-devtools__body {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.home-devtools__name {
+    font-weight: 600;
+    font-size: 0.95rem;
+}
+
+.home-devtools__sub {
+    font-size: 0.8rem;
+    color: var(--color-text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.home-devtools__badge {
+    flex: 0 0 auto;
+    padding: 3px 8px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    background: rgba(255, 200, 100, 0.15);
+    color: #ffc864;
+    border: 1px solid rgba(255, 200, 100, 0.3);
+    border-radius: 999px;
+}

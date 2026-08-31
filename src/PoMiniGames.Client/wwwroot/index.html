@@ -125,6 +125,7 @@
          reason — the swap would reinsert it at its original position anyway,
          but a render-blocking load also avoids a flash of unglassed chrome. -->
     <link rel="stylesheet" href="css/glass.css" />
+    <link rel="stylesheet" href="_content/Radzen.Blazor/css/dark-base.css" />
     <script type="importmap">
     {
       "imports": {
@@ -253,7 +254,10 @@
     <!-- PWA: service worker registration + connectivity signals. Registration is
          kicked off from MainLayout (not here) so the update toast has a live Blazor
          renderer to display into. -->
+    <!-- PWA: service worker registration + connectivity signals -->
     <script src="js/pwa.js" defer></script>
+    <!-- Radzen Blazor Component Scripts -->
+    <script src="_content/Radzen.Blazor/Radzen.Blazor.js"></script>
 </body>
 
 </html>

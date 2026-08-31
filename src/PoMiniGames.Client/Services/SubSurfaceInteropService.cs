@@ -1,0 +1,100 @@
+using Microsoft.AspNetCore.Components;
+using Microsoft.JSInterop;
+using PoMiniGamesClient.Models.SubSurface;
+
+namespace PoMiniGamesClient.Services;
+
+public sealed class SubSurfaceInteropService : IAsyncDisposable
+{
+    private readonly IJSRuntime _jsRuntime;
+    private IJSObjectReference? _module;
+    private DotNetObjectReference<SubSurfaceInteropService>? _dotNetHelper;
+
+    public event Action<SubSurfaceDiagnostics>? OnMetricsReceived;
+
+    public SubSurfaceInteropService(IJSRuntime jsRuntime)
+    {
+        _jsRuntime = jsRuntime;
+    }
+
+    public async ValueTask InitializeAsync(ElementReference canvas)
+    {
+        _dotNetHelper = DotNetObjectReference.Create(this);
+        _module = await _jsRuntime.InvokeAsync<IJSObjectReference>(
+            "import", "./js/subsurface/subsurface-engine.js");
+
+        await _module.InvokeVoidAsync("initSubSurface", canvas, _dotNetHelper);
+    }
+
+    public async ValueTask SetToolAsync(SubSurfaceTool tool)
+    {
+        if (_module is not null)
+        {
+            await _module.InvokeVoidAsync("setSubSurfaceTool", (byte)tool);
+        }
+    }
+
+    public async ValueTask SetBrushRadiusAsync(int radius)
+    {
+        if (_module is not null)
+        {
+            await _module.InvokeVoidAsync("setSubSurfaceBrushRadius", radius);
+        }
+    }
+
+    public async ValueTask SetPausedAsync(bool isPaused)
+    {
+        if (_module is not null)
+        {
+            await _module.InvokeVoidAsync("setSubSurfacePaused", isPaused);
+        }
+    }
+
+    public async ValueTask StepOnceAsync()
+    {
+        if (_module is not null)
+        {
+            await _module.InvokeVoidAsync("stepSubSurface");
+        }
+    }
+
+    public async ValueTask LoadPresetAsync(SubSurfacePreset preset)
+    {
+        if (_module is not null)
+        {
+            await _module.InvokeVoidAsync("loadSubSurfacePreset", preset.ToString());
+        }
+    }
+
+    public async ValueTask ResetAsync()
+    {
+        if (_module is not null)
+        {
+            await _module.InvokeVoidAsync("resetSubSurface");
+        }
+    }
+
+    [JSInvokable]
+    public void OnEngineMetricsUpdate(SubSurfaceDiagnostics diagnostics)
+    {
+        OnMetricsReceived?.Invoke(diagnostics);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_module is not null)
+        {
+            try
+            {
+                await _module.InvokeVoidAsync("disposeSubSurface");
+                await _module.DisposeAsync();
+            }
+            catch (JSDisconnectedException)
+            {
+                // Circuit or page was disconnected
+            }
+        }
+
+        _dotNetHelper?.Dispose();
+    }
+}

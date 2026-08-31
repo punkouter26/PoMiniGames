@@ -470,6 +470,15 @@ export function createScene(container) {
   }
   resize();
   window.addEventListener('resize', resize);
+  // The window resize event only fires for viewport changes — it misses the
+  // container growing/shrinking in place, which is exactly what happens when the
+  // Blazor layout settles after init (fonts, intro card unmounting, the shell's
+  // flex height). That race once left the canvas sized for a stale first
+  // measurement. ResizeObserver covers both sources; the guard is for ancient
+  // browsers where the window listener alone still works.
+  if (typeof ResizeObserver !== 'undefined') {
+    new ResizeObserver(resize).observe(container);
+  }
 
   // Smoothly move the camera to orbit-and-follow `pos`. With no drag this is the default
   // above-and-behind view; left-drag adds a yaw/pitch offset that rotates around the target.

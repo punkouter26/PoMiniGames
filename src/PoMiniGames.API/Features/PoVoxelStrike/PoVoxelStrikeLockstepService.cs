@@ -41,6 +41,12 @@ public sealed class PoVoxelStrikeLockstepService
         return _sessions.GetOrAdd(gameCode, code => new PoVoxelStrikeLockstepSession(code, players, _log));
     }
 
+    /// <summary>True while no lockstep session exists. The pump polls this to
+    /// idle at a fraction of the tick rate instead of waking 20×/sec for the
+    /// whole process lifetime (audit 2026-08-30 #7). ConcurrentDictionary.IsEmpty
+    /// is O(1) and allocation-free, unlike <see cref="Sessions"/>.</summary>
+    public bool IsIdle => _sessions.IsEmpty;
+
     /// <summary>Look up the session a connection is currently in, or null if none.</summary>
     public PoVoxelStrikeLockstepSession? GetByConnection(string connectionId)
     {

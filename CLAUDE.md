@@ -19,7 +19,7 @@ dotnet format PoMiniGames.slnx
 # clone. Do not remove it, and do not "fix" a CRLF diff by hand.
 
 # Full CI-equivalent test suite (Unit → Integration → E2E-API → E2E-UI).
-# Handles preflight itself: frees port 5000, starts Azurite, installs Playwright.
+# Handles preflight itself: frees port 5080, starts Azurite, installs Playwright.
 pwsh scripts/test-all.ps1
 
 # Single tier
@@ -32,7 +32,7 @@ dotnet test tests/PoMiniGames.Unit/PoMiniGames.Unit.csproj --filter "FullyQualif
 # Local storage emulator (required — API boot is slow/errors on ports 10000-10002 without it)
 docker compose up -d azurite
 
-# Run the app: one host serves API + Blazor WASM client at http://localhost:5000
+# Run the app: one host serves API + Blazor WASM client at http://localhost:5080
 dotnet run --project src/PoMiniGames.API/PoMiniGames.API.csproj
 # `dotnet run` recompiles and can thrash while .razor files are being edited; for a
 # stable instance, build once and run the compiled DLL from src/PoMiniGames.API/bin directly.
@@ -63,7 +63,7 @@ The format check is non-blocking; a missing `v*` tag at HEAD is a warning, not a
 
 ## Architecture
 
-Instant-play mini-games platform: .NET 10 Minimal API host that also serves the Blazor WebAssembly client (single origin, port 5000), with SignalR for real-time multiplayer and Azure Table Storage for persistence.
+Instant-play mini-games platform: .NET 10 Minimal API host that also serves the Blazor WebAssembly client (single origin, port 5080), with SignalR for real-time multiplayer and Azure Table Storage for persistence.
 
 ### Projects (`src/`)
 

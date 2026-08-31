@@ -36,8 +36,10 @@
         }
     </header>
 
-    @* Filter tabs: instant category switching without endless scrolling *@
-    @if (!_loading && !_error && _boards.Count > 0)
+    @* Filter tabs: instant category switching without endless scrolling.
+       Narrow viewports swap these for the per-game picker below — with one
+       board on screen at a time, a mode filter has nothing to filter. *@
+    @if (!_loading && !_error && _boards.Count > 0 && !_isNarrow)
     {
         <div class="lb-chips" role="tablist" aria-label="Filter leaderboards">
             <button role="tab" class="lb-chip @(_activeFilter == "all" ? "lb-chip--on" : "")"
@@ -100,8 +102,28 @@
     }
     else
     {
-        @* Group leaderboards by category and active tab filter *@
-        @foreach (var group in _groupedBoards.Where(g => _activeFilter == "all" || g.Key == _activeFilter))
+        @* 2026-08-30 audit #2: a phone stacked all 11 boards — 1927px of page at
+           375×844, over a screen of pure scrolling. Narrow viewports get a
+           per-game picker (one chip row, one board) instead; the mode filter
+           above is hidden with it, because a single visible board leaves it
+           nothing to filter. *@
+        @if (_isNarrow)
+        {
+            <div class="lb-chips" role="tablist" aria-label="Pick a game">
+                @foreach (var b in FlatBoards)
+                {
+                    <button role="tab" class="lb-chip @(b.GameKey == _selectedGame ? "lb-chip--on" : "")"
+                            aria-selected="@(b.GameKey == _selectedGame)"
+                            @onclick='() => _selectedGame = b.GameKey'>
+                        @b.Title
+                    </button>
+                }
+            </div>
+        }
+
+        @* Group leaderboards by category and active tab filter (desktop), or
+           render just the picked game's board (narrow) *@
+        @foreach (var group in VisibleGroups())
         {
             // 2026-08-10 audit #7: previous `<h2>1 PLAYER</h2>` was a styled
             // heading with no useful screen-reader label. aria-label here
@@ -188,6 +210,35 @@
     private record BoardGroup(string Key, string Title, IReadOnlyList<GameLeaderboardDto> Boards);
     private List<BoardGroup> _groupedBoards = new();
 
+    // 2026-08-30 audit #2: narrow viewports render a per-game picker instead of
+    // every group at once. _isNarrow starts false so the first (desktop-ish)
+    // paint uses the grouped view, then OnAfterRenderAsync corrects it after the
+    // live viewport read — same pattern the BoardRowLimit split used (NetRun10
+    // audit #6).
+    private bool _isNarrow;
+    private string? _selectedGame;
+
+    private IEnumerable<GameLeaderboardDto> FlatBoards =>
+        _groupedBoards.SelectMany(g => g.Boards);
+
+    /// <summary>Groups to render: the mode-filtered set on wide viewports, or a
+    /// single pseudo-group holding only the picked game's board on narrow ones.</summary>
+    private IEnumerable<BoardGroup> VisibleGroups()
+    {
+        if (!_isNarrow)
+            return _groupedBoards.Where(g => _activeFilter == "all" || g.Key == _activeFilter);
+
+        if (_selectedGame is null)
+            return [];
+
+        var owner = _groupedBoards.FirstOrDefault(g => g.Boards.Any(b => b.GameKey == _selectedGame));
+        var board = owner?.Boards.FirstOrDefault(b => b.GameKey == _selectedGame);
+        if (owner is null || board is null)
+            return [];
+
+        return [new BoardGroup(owner.Key, owner.Title, [board])];
+    }
+
     // The server pads every unified board to the requested limit with dummy
     // "XXX" rows. By request we now KEEP them so every board fills out to its
     // row limit — real scores rank first, then "XXX" placeholders. The server
@@ -259,6 +310,11 @@
             // NetRun10 audit #6: pull the live viewport width so the
             // BoardRowLimit() branches between top-3 (mobile) and top-10 (desktop).
             await Viewport.RefreshAsync();
+            // Audit #2 (2026-08-30): branch the layout between the grouped
+            // desktop view and the per-game picker, and seed the picker with
+            // the first board so it is never empty.
+            _isNarrow = Viewport.IsNarrow;
+            _selectedGame ??= FlatBoards.FirstOrDefault()?.GameKey;
             StateHasChanged();
         }
     }
@@ -327,6 +383,12 @@
             new BoardGroup("multi",   "Multiplayer",    Claim(b => mpKeys.Contains(b.GameKey))),
             new BoardGroup("other",   "Other",          Claim(_ => true)),
         }.Where(g => g.Boards.Count > 0).ToList();
+
+        // Audit #2 (2026-08-30): seed the narrow-mode picker here, not in
+        // OnAfterRenderAsync — the boards frequently land AFTER the first
+        // viewport read, and a picker seeded against an empty group list stays
+        // null forever, leaving narrow viewports with chips but no board.
+        _selectedGame ??= _groupedBoards.SelectMany(g => g.Boards).FirstOrDefault()?.GameKey;
     }
 
     private void BuildHero()

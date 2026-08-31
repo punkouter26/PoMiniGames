@@ -164,3 +164,11 @@ export function applyCameraShake(camera, nowSec, amplitude) {
 // nothing here is left unreachable. The `three` import went with it: THREE was
 // referenced at runtime only by that function's PlaneGeometry, everywhere else in
 // this module it appears solely in JSDoc types.
+
+// §GFX-14: window alias so non-module scripts (impactFx.js) can drive the
+// punch effects without an import — this file is an ES module and impactFx is
+// a classic script loaded before Blazor boots.
+window.PoThreeFx = {
+    tier, allowHeavy,
+    punchAberration, punchRadial, applyCameraShake,
+};

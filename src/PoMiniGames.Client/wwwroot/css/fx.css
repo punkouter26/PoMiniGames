@@ -299,3 +299,23 @@
 @media (prefers-reduced-motion: reduce) { .fx-pop{
         animation: none !important;
     }}
+/* ===== §GFX-16 scene-composited glass =======================================
+ * glassFx.js captures the live game canvas into a small blurred thumbnail and
+ * hands it to the panel as --glass-capture. It paints UNDER the panel's own
+ * translucent tint, so the blur reads as refraction of the scene rather than a
+ * flat smear. Without the attribute (low tier, reduced motion, tainted canvas)
+ * the panel keeps its plain backdrop-filter look — same family, no capture.
+ */
+[data-glass-live] {
+    background-image: var(--glass-capture, none);
+    background-size: cover;
+    background-position: center;
+    background-blend-mode: luminosity;
+}
+
+/* ===== §GFX-17 weather overlay ==============================================
+ * The overlay canvas is positioned inline by weather.js; this only sets the
+ * blend so rain/snow read as light in the scene instead of grey scribbles.
+ * Fog type keeps its own normal-blend gradient (inline) for the milky look.
+ */
+.po-weather-canvas { mix-blend-mode: screen; }

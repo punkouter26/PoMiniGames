@@ -1,12 +1,27 @@
 /* ── Game Shell Styles ── */
+
+/* The SwipeBack wrapper is .gl-content's only child on game routes. Stretching it
+   across the content well lets .gps-shell (below) fill exactly that space. */
+.gps-shell-wrap {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
 .gps-shell {
   display: flex;
   flex-direction: column;
-  /* Dynamic viewport height: on mobile browsers the URL bar shrinks the visible
-     area, and static 100vh overshoots it — causing a scroll and the game content
-     to sit in a letterboxed band. 100dvh tracks the actual visible height so the
-     game area fills the screen the player sees. */
-  min-height: 100dvh;
+  /* Fill the content well instead of demanding a full viewport. This used to be
+     `min-height: 100dvh`, but the shell renders INSIDE .gl-content — below the
+     ~56px top bar and above the ~42px footer — so every game page carried
+     ~98px of dead vertical scroll on every viewport (measured 2026-08-30:
+     scrollHeight = viewport + 98 on desktop AND mobile). .gl-content is already
+     flex:1 of .gl-page (min-height: 100svh), so stretching to the well keeps the
+     game filling the visible screen minus real chrome, and the page only scrolls
+     when a game's content is genuinely taller than that. */
+  flex: 1 0 auto;
+  min-height: 0;
   background: var(--color-bg);
 }
 
@@ -239,6 +254,21 @@
    opting every inner element in. */
 .gps-game-area > * {
   pointer-events: auto;
+}
+
+/* 2026-08-18 mobile-fullscreen: a fullscreen game area on phones needs to
+   stretch its single child to fill the entire shell — the default
+   `align-items: center; justify-content: center` would letterbox a tall
+   vertical canvas (the Marble Race track) into a small box at the top.
+   games.css is the right home for this rule: .gps-game-area is the parent
+   shell, not a scoped-by-component element, so a razor-scoped stylesheet
+   cannot reach it. The `--fullscreen` modifier already cleared the
+   padding; this overrides the centering to let the child fill both axes. */
+@media (max-width: 640px) {
+  .gps-game-area--fullscreen {
+    align-items: stretch;
+    justify-content: stretch;
+  }
 }
 
 /* `.gps-game-summary` moved to game-shell.css (2026-07-16). */

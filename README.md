@@ -31,7 +31,7 @@ AI-powered games.
 # prerequisites: .NET SDK 10.0.203 (global.json), Docker
 docker compose up -d azurite                                  # local table storage
 dotnet run --project src/PoMiniGames.API/PoMiniGames.API.csproj
-# → http://localhost:5000  (API + client, one origin)
+# → http://localhost:5080  (API + client, one origin)
 
 pwsh scripts/test-all.ps1                                     # full test suite
 ```

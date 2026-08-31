@@ -127,7 +127,7 @@ builder.Services.Configure<Microsoft.AspNetCore.ResponseCompression.GzipCompress
 
 // ─── CORS — only registered in Development ───────────────────────────────
 // When the Blazor WASM client runs on its own Kestrel port (e.g. :5261 from
-// `dotnet run --project src/PoMiniGames.Client`) the API lives at :5000, so
+// `dotnet run --project src/PoMiniGames.Client`) the API lives at :5080, so
 // every /api/* fetch becomes a cross-origin request. The default browser
 // preflight would block it without Access-Control-Allow-Origin. We register
 // a Development-only policy permitting the two ports the client's
@@ -143,8 +143,8 @@ if (builder.Environment.IsDevelopment())
             policy.WithOrigins(
                     "http://localhost:5261",
                     "https://localhost:7208",
-                    "http://localhost:5000",
-                    "https://localhost:5000")
+                    "http://localhost:5080",
+                    "https://localhost:5080")
                 .AllowAnyHeader()
                 .AllowAnyMethod()
                 // The auth flow returns a bearer in JSON; allow credentials
@@ -432,7 +432,13 @@ app.MapFallbackToFile("index.html");
 
 try
 {
-    Log.Information("Starting PoMiniGames on port 5000");
+    // Log the actual bound addresses rather than a hardcoded port — the port is
+    // owned by launchSettings.json in dev and the platform (PORT/WEBSITE_*) in prod,
+    // and a stale constant here silently lies the first time either changes.
+    // app.Urls is only populated once the server has bound, so log on the
+    // ApplicationStarted signal, not before Run().
+    app.Lifetime.ApplicationStarted.Register(() =>
+        Log.Information("PoMiniGames listening on {Addresses}", string.Join(", ", app.Urls)));
     app.Run();
 }
 catch (Exception ex)

@@ -4,7 +4,7 @@
 		{
 			"label": "kill-dotnet",
 			"type": "shell",
-			"command": "taskkill /F /IM dotnet.exe /T 2>nul; $p=(netstat -aon | Select-String ':5000 ') -replace '.*\\s+(\\d+)$','$1' | Select-Object -First 1; if ($p) { taskkill /F /PID $p 2>nul }; $p=(netstat -aon | Select-String ':5000 ') -replace '.*\\s+(\\d+)$','$1' | Select-Object -First 1; if ($p) { taskkill /F /PID $p 2>nul }; exit 0",
+			"command": "Get-Process -Name 'PoMiniGames.API' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue; $p=(netstat -aon | Select-String ':5080 ') -replace '.*\\s+(\\d+)$','$1' | Select-Object -First 1; if ($p -and $p -ne '0') { Stop-Process -Id $p -Force -ErrorAction SilentlyContinue }; exit 0",
 			"presentation": {
 				"reveal": "silent",
 				"panel": "dedicated",

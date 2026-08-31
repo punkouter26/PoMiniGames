@@ -6,6 +6,10 @@ import { createWorld, stepWorld } from './physics.js';
 import { mapById, DEFAULT_MAP_ID } from './maps.js';
 import { createMarbles, MARBLE_COUNT } from './marbles.js';
 import { createAudio } from './audio.js';
+// §GFX-16/§GFX-17 — marble is the weather + glass launch consumer. Classic-style
+// IIFE modules imported as modules: they self-register on window and run once.
+import '../weather.js';
+import '../glassFx.js';
 
 const RESULT_MS = 3600;     // how long the result banner shows before next track
 const RACE_TIMEOUT = 180;   // s — failsafe, and now the only backstop for a marble that stalls
@@ -113,6 +117,21 @@ export class Game {
     // loads in the same second raced the identical track. Use the raw epoch ms.
     this.seed = ((Date.now() & 0xffffff) ^ 0x9e3779) >>> 0;
     this.track = null;
+
+    // §GFX-17: weather derives from the race seed, so every client of the same
+    // seed computes the same sky with zero network traffic. §GFX-19: the match
+    // state wakes the reactive soundtrack. Both are optional modules — a
+    // missing one costs atmosphere, never functionality. (Placed after the
+    // seed assignment: the seed IS the weather input.)
+    this._weatherType = window.PoWeather?.apply({ seed: String(this.seed), stage: this.container }) || 'clear';
+    window.PoMusicDirector?.match(true);
+    // §GFX-16: scene-composited glass behind the pick card and podium panels.
+    // Deferred a beat — the renderer canvas exists by now, but its first frame
+    // does not, and glassFx captures live so the panels update as the race runs.
+    setTimeout(() => {
+      const canvas = this.container.querySelector('canvas');
+      if (canvas) this._glassStop = window.PoGlass?.attachHud(canvas, '.mr-pick-card, .mr-place, .mr-podium');
+    }, 1200);
     this.marbleSet = null;
     this.raceClock = 0;
     this.tickAccum = 0;
@@ -257,6 +276,11 @@ export class Game {
     if (this.track) this.track.dispose();
     this.audio.dispose();
     this.scene.dispose();
+    // §GFX-16/§GFX-17 teardown: the glass capturer holds a capture interval and
+    // the weather overlay a rAF loop — both must die with the game.
+    if (this._glassStop) this._glassStop();
+    window.PoWeather?.stop();
+    window.PoMusicDirector?.match(false);
   }
 
   // ── internals ──
@@ -545,6 +569,9 @@ export class Game {
       if (justFinished.length && justFinished.some((m) => m.finishOrder === 0)) {
         this.scene.photoFinish();
         window.PoImpact?.impact('win', 1);
+        // §GFX-14/§GFX-18: photo-finish post preset + the finish-gate chime.
+        window.PoImpactFx?.win(1);
+        window.PoMaterialAudio?.hit('glass', 0.7);
       }
       // Podium: the moment the 3rd marble crosses, freeze the top-3 (winner + 2)
       // with their gaps behind the winner and push it to the HUD overlay.

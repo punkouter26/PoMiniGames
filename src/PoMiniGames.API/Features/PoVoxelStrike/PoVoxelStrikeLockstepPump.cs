@@ -55,7 +55,25 @@ public sealed class PoVoxelStrikeLockstepPump : BackgroundService
                 // will pick up the queued inputs and clients will desync-detect at worst.
                 _log.LogError(ex, "PoVoxelStrike lockstep pump tick failed; continuing.");
             }
-            try { await timer.WaitForNextTickAsync(stoppingToken); }
+
+            try
+            {
+                if (_lockstep.IsIdle)
+                {
+                    // Idle backoff (audit 2026-08-30 #7): the pump starts at process boot
+                    // but the co-op game is rarely in play, and a 50ms PeriodicTimer wake
+                    // with no session to drain is 20 pointless wakes/sec for the entire
+                    // process lifetime. With no session, sleep at 1/10th the tick rate;
+                    // the first GetOrCreateSession call lands a frame within 500ms, well
+                    // inside lobby/start tolerances. Once a session exists the drift-
+                    // corrected PeriodicTimer cadence below takes over again.
+                    await Task.Delay(interval * 10, stoppingToken);
+                }
+                else
+                {
+                    await timer.WaitForNextTickAsync(stoppingToken);
+                }
+            }
             catch (OperationCanceledException) { break; }
         }
         _log.LogInformation("PoVoxelStrike lockstep pump stopped.");

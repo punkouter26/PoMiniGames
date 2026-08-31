@@ -3,10 +3,10 @@
 .SYNOPSIS
   Smoke-tests the locally running PoMiniGames API.
   Verifies the health, diagnostics, and OpenAPI endpoints respond correctly.
-  Requires the app to be running on http://localhost:5000.
+  Requires the app to be running on http://localhost:5080.
 #>
 
-$BASE = "http://localhost:5000"
+$BASE = "http://localhost:5080"
 $PASS = 0
 $FAIL = 0
 

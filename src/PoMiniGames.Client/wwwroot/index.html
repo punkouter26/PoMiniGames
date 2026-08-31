@@ -239,6 +239,12 @@
     <!-- §GFX-6 pointer-tracked tilt for [data-fx-tilt] surfaces. One delegated
          listener; idle until something is hovered. -->
     <script type="module" src="js/fxTilt.js"></script>
+    <!-- §GFX-12…21 the quality/palette/sound bootstrap. Decides the device's
+         quality tier BEFORE any game asks for it, owns the dynamic accent
+         palette, arms the music director's audio-context gesture kick, and
+         background-probes WebGPU for the particle backend. Everything heavier
+         (glass captures, weather, props) stays lazy in the games that use it. -->
+    <script src="js/fxBootstrap.js" defer></script>
     <!-- PWA: service worker registration + connectivity signals. Registration is
          kicked off from MainLayout (not here) so the update toast has a live Blazor
          renderer to display into. -->

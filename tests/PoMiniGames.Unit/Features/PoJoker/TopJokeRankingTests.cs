@@ -82,17 +82,21 @@ public sealed class TopJokeRankingTests
         // and 4 at once, each row carrying a different JokeId. The same joke reaches storage
         // under several ids (re-fetched across sessions, rewritten by the sanitiser, or stored
         // as the id-0 fallback), so dedup keys on the normalised setup, not the id.
+        // 2026-08-30: byte-identical raw text under different ids collapses too — that exact
+        // shape was still visible live (same setup at ranks 1 and 3, 6.0 and 5.0).
         var rows = new[]
         {
             Row(jokeId: 11, humor: 4, cleverness: 4, originality: 4, setup: "Why do programmers prefer dark mode?"),
             Row(jokeId: 22, humor: 9, cleverness: 9, originality: 9, setup: "why do programmers prefer dark mode"),
             Row(jokeId: 33, humor: 6, cleverness: 6, originality: 6, setup: "Why  do programmers   prefer dark mode?!"),
-            Row(jokeId: 44, humor: 7, cleverness: 7, originality: 7, setup: "A genuinely different joke"),
+            // Identical raw text, yet another id, lower score — must not occupy a slot.
+            Row(jokeId: 44, humor: 5, cleverness: 5, originality: 5, setup: "Why do programmers prefer dark mode?"),
+            Row(jokeId: 55, humor: 7, cleverness: 7, originality: 7, setup: "A genuinely different joke"),
         };
 
         var board = TopJokeRanking.Rank(rows, top: 10);
 
-        board.Should().HaveCount(2, because: "case, spacing and punctuation must not split one joke into three rows");
+        board.Should().HaveCount(2, because: "case, spacing, punctuation or a plain regeneration must not split one joke into several rows");
         board[0].Score.Should().Be(9.0, because: "the best telling of the collapsed joke survives");
         board.Select(j => j.Setup).Should().OnlyHaveUniqueItems();
     }
@@ -106,10 +110,13 @@ public sealed class TopJokeRankingTests
 
         var rows = new[]
         {
-            Row(jokeId: 30, humor: 5, cleverness: 5, originality: 5),   // 5.0
-            Row(jokeId: 10, humor: 8, cleverness: 8, originality: 8),   // 8.0
-            Row(jokeId: 20, humor: 8, cleverness: 8, originality: 8),   // 8.0 — ties with 10
-            Row(jokeId: 40, humor: 1, cleverness: 1, originality: 1),   // 1.0
+            // Distinct setups: the dedup (2026-08-30) collapses shared text regardless of
+            // id, so these four must not lean on the Row() helper's default setup or the
+            // board they assert on would fold into a single slot.
+            Row(jokeId: 30, humor: 5, cleverness: 5, originality: 5, setup: "Joke A"),   // 5.0
+            Row(jokeId: 10, humor: 8, cleverness: 8, originality: 8, setup: "Joke B"),   // 8.0
+            Row(jokeId: 20, humor: 8, cleverness: 8, originality: 8, setup: "Joke C"),   // 8.0 — ties with 10
+            Row(jokeId: 40, humor: 1, cleverness: 1, originality: 1, setup: "Joke D"),   // 1.0
         };
 
         TopJokeRanking.Rank(rows, top: 10).Select(j => j.JokeId)

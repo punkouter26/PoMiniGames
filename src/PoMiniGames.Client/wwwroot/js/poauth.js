@@ -190,7 +190,25 @@
         signOut: async function () {
             if (!app) return;
             const account = app.getActiveAccount() || (app.getAllAccounts()[0]);
-            await app.logoutPopup({ account });
+            if (!account) return;
+            // Local sign-out only: logout() clears the MSAL account/token cache,
+            // and onRedirectNavigate returning false cancels the navigation to
+            // the Entra logout endpoint. logoutPopup() was tried first — in
+            // embedded browsers (VS Code simple browser) the popup window opens
+            // but its cross-origin navigation never completes, stranding a blank
+            // about:blank window that the user has to close by hand. The Entra
+            // SSO session itself stays alive: the app's real session is the
+            // bearer/dev-cookie, and a full identity logout can still be done
+            // directly at login.microsoftonline.com.
+            try {
+                await app.logout({
+                    account: account,
+                    onRedirectNavigate: function () { return false; }
+                });
+            } catch (e) {
+                // Best-effort: a failed local logout must never block the app's
+                // own sign-out (bearer/dev-cookie is already cleared by the C# side).
+            }
         }
     };
 })();

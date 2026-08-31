@@ -202,7 +202,9 @@
    line — used for variants whose product name does not by itself describe the
    rules (e.g. Tic-Tac-Toe is actually 4-in-a-row on a 6×6 grid). */
 .home-card-subtitle {
-    font-size: 0.72rem;
+    /* 0.75rem floor (a11y sweep 2026-08-30): 0.72rem measured 11.52px — below
+       the 12px legibility line the rest of the app holds. */
+    font-size: 0.75rem;
     font-weight: 500;
     color: var(--color-text-secondary);
     opacity: 0.85;
@@ -373,14 +375,41 @@
 
 /* ── Mobile ──────────────────────────────────────────────────────────────── */
 @media (max-width: 640px) {
-    /* Two cards per row on a ~360px column: the card is icon + short title +
-       chips, so it stays readable at half width and the whole catalog fits in
-       roughly one screen instead of four collapsed accordions. */
-    .home-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 0.6rem; }
-    .home-card { padding: 0.7rem; }
-    .home-card-icon { font-size: 1.35rem; }
-    .home-card-title { font-size: 0.9rem; }
-    .home-actions { gap: 0.45rem; }
+    /* One-page catalog. Two-up cards measured 1045px tall at 375×844 — ~200px
+       past the viewport, so the catalog always scrolled. A single-column
+       launch-list (icon | title | chips on one 44px row) fits the hero, the
+       action row, all 11 games, the activity feed (capped at 3) and the footer
+       inside one screen. The 44px row height doubles as the touch-target floor
+       (a11y audit 2026-08-30). */
+    .home-title { font-size: 1.5rem; margin-bottom: 0.25rem; }
+    .home-title-icon { font-size: 1.7rem; }
+    .home-title-icon svg { width: 28px; height: 28px; }
+    .home-subtitle { font-size: 0.95rem; margin-bottom: 0.75rem; }
+    .home-actions { gap: 0.45rem; margin-bottom: 0.75rem; }
     .home-action { flex: 1 1 auto; justify-content: center; padding: 0.55rem 0.7rem; font-size: 0.8rem; }
-    .home-container { padding-bottom: max(env(safe-area-inset-bottom, 0px), 1rem); }
+
+    .home-grid { grid-template-columns: 1fr; gap: 0.4rem; }
+    .home-card {
+        flex-direction: row;
+        align-items: center;
+        gap: 0.6rem;
+        padding: 0.4rem 0.65rem;
+        min-height: 44px;
+    }
+    /* The head and the chip row share the row: head takes what it needs, chips
+       hug the right edge. No wrapping — a wrap would push the row past 44px. */
+    .home-card-head { flex: 1 1 auto; flex-wrap: nowrap; gap: 0.45rem; min-width: 0; }
+    .home-card-icon { font-size: 1.25rem; }
+    .home-card-title { font-size: 0.88rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    /* The subtitle pill ("4-in-a-row · 6×6") is the one thing that does not
+       survive a 44px row — the chip row already advertises the modes. */
+    .home-card-subtitle { display: none; }
+    .home-card-modes { flex: 0 0 auto; flex-wrap: nowrap; margin-top: 0; min-height: 0; }
+    .home-mode-chip { padding: 0.25rem 0.55rem; font-size: 0.72rem; }
+
+    /* Keep the feed to three rows on phones so the page still ends inside the
+       first viewport; the full list remains on desktop. */
+    .home-activity__item:nth-child(n+4) { display: none; }
+
+    .home-container { padding-top: 0.7rem; padding-bottom: max(env(safe-area-inset-bottom, 0px), 0.75rem); }
 }

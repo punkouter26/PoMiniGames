@@ -548,9 +548,30 @@
   color: var(--color-text-secondary);
 }
 
-/* .gps-intro-skip — the "Don't show this again" tick-box — was removed on
-   2026-08-11 (user request) along with the /settings toggle that was the only
-   way to undo it. The controls card now opens every 1-player game. */
+/* .gps-intro-skip returned 2026-08-30 (audit #5). It was removed on 2026-08-11
+   along with the /settings toggle that was the only way to undo it, which made
+   every 1-player visit re-show the identical card. The opt-out is now a per-game
+   localStorage flag with no settings page: the tick-box itself is the switch,
+   and `?intro=1` on any game URL forces the card back and hides the box. */
+.gps-intro-skip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.55rem;
+  font-size: 0.78rem;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  user-select: none;
+  min-height: 24px; /* comfortable touch target for the whole label */
+}
+
+.gps-intro-skip input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  cursor: pointer;
+  accent-color: var(--color-accent);
+}
 
 .gps-intro-demo-hint {
   display: inline-flex;

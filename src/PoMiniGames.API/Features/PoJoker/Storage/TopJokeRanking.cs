@@ -21,24 +21,23 @@ public static class TopJokeRanking
     /// <para>Two rows collapse into one — keeping the higher score — if EITHER:</para>
     /// <list type="number">
     ///   <item>they share the same <c>JokeId</c> (the same joke rated twice), OR</item>
-    ///   <item>they share the same normalised setup AND their raw setups differ
-    ///   (the sanitiser-rewrite case: the same joke arriving under different ids with
-    ///   different text rewrites).</item>
+    ///   <item>they share the same normalised setup, whether or not the raw text matches
+    ///   exactly (the sanitiser-rewrite case AND the same-joke-regenerated case: the model
+    ///   re-emits an identical punchline under a fresh id, and a public board showing the
+    ///   same joke at ranks 1 and 3 reads as broken — measured live, 2026-08-30).</item>
     /// </list>
-    /// <para>Rows that share a normalised setup with an IDENTICAL raw setup are deliberately
-    /// kept as distinct entries — four different ids sharing the same default setup stay four
-    /// rows. <see cref="TopJokeRankingTests.Rank_IgnoresRudeness_OrdersByScore_BreaksTiesDeterministically_AndHonoursTop"/>
-    /// is the contract.</para>
+    /// <para>Each collapsed slot keeps its highest-scoring telling.
+    /// <see cref="TopJokeRankingTests.Rank_CollapsesTheSameJokeArrivingUnderDifferentIds"/>
+    /// is the contract, including the identical-raw case.</para>
     /// </remarks>
     public static IReadOnlyList<TopJokeDto> Rank(IEnumerable<JokePerformanceEntity> rows, int top)
     {
         // Each surviving joke is a slot in bestBySlot, keyed by either an "id:{N}" for
         // positive JokeIds or a synthetic negative id for id-0 rows. slotByNorm tracks which
-        // slot "owns" each normalised setup, plus the raw setup the slot was created from —
-        // that comparison is what separates "same joke, sanitiser rewrite" (collapse) from
-        // "two distinct ids with identical text" (keep).
+        // slot "owns" each normalised setup so any later row with the same text — same id,
+        // different id, identical or rewritten raw text — collapses into that slot.
         var bestBySlot = new Dictionary<string, TopJokeDto>(StringComparer.Ordinal);
-        var slotByNorm = new Dictionary<string, (string slotKey, string raw)>(StringComparer.Ordinal);
+        var slotByNorm = new Dictionary<string, string>(StringComparer.Ordinal);
         var nextFakeId = -1;
 
         foreach (var entity in rows)
@@ -56,37 +55,37 @@ public static class TopJokeRanking
                 Score = Math.Round(score, 2),
             };
 
-            // (1) Same JokeId → collapse (the same joke rated twice).
+            // (1) Same JokeId → collapse (the same joke rated twice). Register the slot's
+            // ownership of this text so different-id rows with the same joke also fold in.
             if (entity.JokeId > 0)
             {
                 var idKey = $"id:{entity.JokeId}";
                 if (bestBySlot.TryGetValue(idKey, out var sameId))
                 {
                     if (sameId.Score < score)
+                    {
                         bestBySlot[idKey] = dto;
+                        slotByNorm[norm] = idKey;
+                    }
                     continue;
                 }
             }
 
-            // (2) Same NormalisedSetup but different raw setup → collapse (sanitiser rewrite).
-            // Rows with the SAME raw setup are deliberately distinct (Test 3 contract).
-            if (slotByNorm.TryGetValue(norm, out var existing) && existing.raw != raw)
+            // (2) Same normalised setup → collapse into the owning slot (kept when the new
+            // telling scores higher). This covers the sanitiser rewrite (different raw text,
+            // same joke) and the regenerated identical text — both rendered as duplicate
+            // rows on the public board before this rule existed.
+            if (slotByNorm.TryGetValue(norm, out var owner) && bestBySlot.TryGetValue(owner, out var owned))
             {
-                if (bestBySlot.TryGetValue(existing.slotKey, out var sameEntry))
-                {
-                    if (sameEntry.Score < score)
-                    {
-                        bestBySlot[existing.slotKey] = dto;
-                        slotByNorm[norm] = (existing.slotKey, raw);
-                    }
-                }
+                if (owned.Score < score)
+                    bestBySlot[owner] = dto;
                 continue;
             }
 
-            // (3) New row — first time we have seen this id or this normalised raw setup.
+            // (3) New row — first time we have seen this id or this normalised text.
             var slotKey = entity.JokeId > 0 ? $"id:{entity.JokeId}" : $"id:{nextFakeId--}";
             bestBySlot[slotKey] = dto;
-            slotByNorm[norm] = (slotKey, raw);
+            slotByNorm[norm] = slotKey;
         }
 
         return bestBySlot.Values

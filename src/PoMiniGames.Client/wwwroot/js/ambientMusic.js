@@ -455,6 +455,16 @@ export function setTempo(bpm) {
 }
 
 /**
+ * Set the layer-mix intensity (0..1). The per-tick chase toward the layer
+ * targets picks this up automatically, so callers can ramp it freely — this is
+ * the handle the music director (§GFX-19) rides for menu/match/verdict states.
+ */
+export function setIntensity(v) {
+    if (!_state) return;
+    _state.intensity = Math.max(0, Math.min(1, v));
+}
+
+/**
  * Fade out and tear down. Always call on page teardown — an orphaned oscillator
  * keeps the audio thread alive for the life of the tab.
  * @param {number} [fadeSec=1.5]

@@ -5,7 +5,7 @@
   suite (Unit -> Integration -> E2E-API -> E2E-UI) the same way locally and in CI.
 .DESCRIPTION
   Preflight (idempotent):
-    1. Free the host lock — a running `dotnet run` host (port 5000) locks the build
+    1. Free the host lock — a running `dotnet run` host (port 5080) locks the build
        output DLLs and breaks a full-solution build. Kill only that host, never the
        unrelated dotnet processes (MCP servers, language servers).
     2. Bring up the shared Azurite container (the E2E-API tier binds 127.0.0.1:10002).
@@ -34,14 +34,14 @@ function Write-Warn([string]$m) { Write-Host "  [WARN] $m" -ForegroundColor Yell
 function Write-Err([string]$m)  { Write-Host "  [FAIL] $m" -ForegroundColor Red }
 
 # ── Preflight 1: free the host lock (scoped, not a blanket dotnet kill) ───────
-Write-Step 'Freeing host lock (port 5000 + PoMiniGames host process)'
+Write-Step 'Freeing host lock (port 5080 + PoMiniGames host process)'
 try {
-    $conns = Get-NetTCPConnection -LocalPort 5000 -State Listen -ErrorAction SilentlyContinue
+    $conns = Get-NetTCPConnection -LocalPort 5080 -State Listen -ErrorAction SilentlyContinue
     foreach ($c in $conns) {
         Stop-Process -Id $c.OwningProcess -Force -ErrorAction SilentlyContinue
-        Write-Ok "Stopped process $($c.OwningProcess) holding port 5000"
+        Write-Ok "Stopped process $($c.OwningProcess) holding port 5080"
     }
-} catch { Write-Warn "Port 5000 check skipped: $($_.Exception.Message)" }
+} catch { Write-Warn "Port 5080 check skipped: $($_.Exception.Message)" }
 Get-Process -Name 'PoMiniGames' -ErrorAction SilentlyContinue | ForEach-Object {
     Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue
     Write-Ok "Stopped host process PoMiniGames ($($_.Id))"

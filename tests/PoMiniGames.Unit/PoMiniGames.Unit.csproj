@@ -19,6 +19,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\PoMiniGames.API\PoMiniGames.API.csproj" />
+    <ProjectReference Include="..\..\src\PoMiniGames.Client\PoMiniGamesClient.csproj" />
   </ItemGroup>
 
   <ItemGroup>

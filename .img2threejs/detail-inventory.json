@@ -1,0 +1,86 @@
+{
+  "sourceImage": "C:\\Users\\punko\\Downloads\\pominigames\\src\\PoMiniGames.Client\\wwwroot\\games\\pogallery\\refs\\chair.png",
+  "zonesDir": "C:\\Users\\punko\\Downloads\\pominigames\\.img2threejs",
+  "scanMethod": "identity-defining-features",
+  "targetMinDetails": 6,
+  "notes": "Single-view inventory. Each detail maps to a component.localFeatures or material.localOverrides entry. Region coords are normalized (0..1) over the chair reference image; scale is in world units relative to seat-depth = 1.0.",
+  "details": [
+    {
+      "id": "detail-backrest-horizontal-seam",
+      "kind": "horizontal-seam",
+      "description": "Single horizontal parting line across the backrest at mid-height. The seam strip is a flat band of the same navy fabric, ~3% of backrest height tall, embedded as a sewn seam.",
+      "region": { "x": 0.18, "y": 0.27, "width": 0.52, "height": 0.03, "units": "normalized" },
+      "scale": { "worldWidth": 0.52, "worldHeight": 0.025, "worldDepth": 0.0, "units": "seat-depth-units" },
+      "affects": "backrest",
+      "mapsTo": { "type": "component.localFeatures", "ref": "backrest.seam" },
+      "evidenceRef": "single view, mid-back",
+      "confidence": 0.9
+    },
+    {
+      "id": "detail-seat-front-rounded-bevel",
+      "kind": "front-edge-rounded-bevel",
+      "description": "The seat's front edge is a soft forward bevel (not a sharp corner). Reads as a wider, softer curvature than the rear/side edges of the same panel.",
+      "region": { "x": 0.32, "y": 0.50, "width": 0.30, "height": 0.06, "units": "normalized" },
+      "scale": { "worldWidth": 0.4, "worldDepth": 0.05, "worldHeight": 0.0, "units": "seat-depth-units" },
+      "affects": "seat.cushion.front",
+      "mapsTo": { "type": "component.localFeatures", "ref": "seat.frontBevel" },
+      "evidenceRef": "single view, seat front",
+      "confidence": 0.8
+    },
+    {
+      "id": "detail-cantilever-sled-base",
+      "kind": "cantilever-frame",
+      "description": "The frame is a sled-base (cantilever): each leg is a single continuous tube that bends at the floor back up to the seat. The visible front rail under the seat front is the top cross-rail of the sled. No four-straight-leg pedestal.",
+      "region": { "x": 0.18, "y": 0.62, "width": 0.50, "height": 0.32, "units": "normalized" },
+      "scale": { "worldWidth": 0.55, "worldHeight": 0.4, "worldDepth": 0.6, "units": "seat-depth-units" },
+      "affects": "frame",
+      "mapsTo": { "type": "component.localFeatures", "ref": "frame.sledBase" },
+      "evidenceRef": "single view, lower half",
+      "confidence": 0.85
+    },
+    {
+      "id": "detail-no-arms",
+      "kind": "armless-silhouette",
+      "description": "The chair is armless — there is no horizontal arm-rest geometry between the seat and the backrest. This defines the chair's class (guest / office / stackable).",
+      "region": { "x": 0.18, "y": 0.45, "width": 0.02, "height": 0.10, "units": "normalized" },
+      "scale": { "worldWidth": 0.0, "worldHeight": 0.0, "worldDepth": 0.0, "units": "absence" },
+      "affects": "silhouette",
+      "mapsTo": { "type": "silhouette.exclusion", "ref": "no-arms" },
+      "evidenceRef": "single view, sides of seat",
+      "confidence": 0.95
+    },
+    {
+      "id": "detail-frame-brushed-anisotropy",
+      "kind": "vertical-brushing",
+      "description": "The metal frame has subtle vertical brush lines — anisotropic grain running top-to-bottom along each leg. Reads as light highlights shifted along the vertical axis of each leg.",
+      "region": { "x": 0.34, "y": 0.62, "width": 0.08, "height": 0.30, "units": "normalized" },
+      "scale": { "worldWidth": 0.04, "worldHeight": 0.30, "worldDepth": 0.04, "units": "seat-depth-units" },
+      "affects": "frame.material",
+      "mapsTo": { "type": "material.localOverrides", "ref": "frame.brushedAnisotropy" },
+      "evidenceRef": "single view, leg close-up",
+      "confidence": 0.65
+    },
+    {
+      "id": "detail-glides-on-leg-bottoms",
+      "kind": "foot-glides",
+      "description": "Each leg ends in a small dark plastic/rubber glide, ~5% of leg height, near-black matte. Visible at the floor contact on each leg.",
+      "region": { "x": 0.34, "y": 0.92, "width": 0.30, "height": 0.04, "units": "normalized" },
+      "scale": { "worldWidth": 0.04, "worldHeight": 0.02, "worldDepth": 0.04, "units": "seat-depth-units" },
+      "affects": "frame.glides",
+      "mapsTo": { "type": "component.localFeatures", "ref": "frame.glides" },
+      "evidenceRef": "single view, leg ends",
+      "confidence": 0.9
+    },
+    {
+      "id": "detail-upholstery-weave",
+      "kind": "fabric-weave-relief",
+      "description": "The upholstery shows a low-amplitude canvas / hopsack weave. Subtle but visible at the seat cushion's lit front edge. Drives a roughness micro-frequency band, not a base-color change.",
+      "region": { "x": 0.30, "y": 0.45, "width": 0.40, "height": 0.20, "units": "normalized" },
+      "scale": { "worldWidth": 1.0, "worldHeight": 1.0, "amplitude": 0.001, "units": "seat-depth-units" },
+      "affects": "upholstery.material",
+      "mapsTo": { "type": "material.localOverrides", "ref": "upholstery.weaveMicro" },
+      "evidenceRef": "single view, seat front lit edge",
+      "confidence": 0.6
+    }
+  ]
+}

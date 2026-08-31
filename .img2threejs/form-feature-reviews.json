@@ -1,0 +1,14 @@
+[
+  {
+    "id": "horizontal-back-seam",
+    "score": 0.85,
+    "visible": true,
+    "notes": "Seam band now casts a visible horizontal shadow line at mid-back after the refine-code correction (1mm -> 5mm proud). The reference seam reads slightly softer, but placement and proportion match."
+  },
+  {
+    "id": "seat-front-rounded-bevel",
+    "score": 0.7,
+    "visible": true,
+    "notes": "Bevel present at the seat front; subtle at review distance, matching the reference's soft rounding."
+  }
+]

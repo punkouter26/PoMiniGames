@@ -58,6 +58,11 @@ namespace PoMiniGamesClient.Services;
 [JsonSerializable(typeof(PendingPlayerStats))]
 [JsonSerializable(typeof(LeaderboardEntryDto))]
 [JsonSerializable(typeof(GameLeaderboardDto))]
+// PoGallery manifest endpoint (/api/diag/gallery). See Pages/PoGallery.razor.
+// Registered here to keep the GetFromJsonAsync call trim-safe (CLAUDE.md: PublishTrimmed
+// + TreatWarningsAsErrors fails on reflection-based JSON deserialization).
+[JsonSerializable(typeof(GalleryManifest))]
+[JsonSerializable(typeof(GalleryModel))]
 [JsonSerializable(typeof(GameLeaderboardDto[]))]
 // Matches
 [JsonSerializable(typeof(MatchRecordRequest))]

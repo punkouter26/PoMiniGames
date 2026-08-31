@@ -1,0 +1,299 @@
+/* PoGallery scoped styles. Token-driven via :root vars so light/dark theming
+   applies automatically (CLAUDE.md: theming is entirely token-driven). */
+
+.pg-page {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 24px 16px 48px;
+    color: var(--pg-fg, var(--color-text, #d0d4dc));
+}
+
+.pg-head {
+    margin-bottom: 24px;
+}
+
+.pg-title {
+    font-size: 28px;
+    font-weight: 700;
+    margin: 0 0 8px;
+}
+
+.pg-sub {
+    font-size: 14px;
+    line-height: 1.5;
+    margin: 0 0 8px;
+    opacity: 0.85;
+}
+
+.pg-sub code,
+.pg-env code,
+.pg-disabled code,
+.pg-card-desc code {
+    background: var(--pg-code-bg, rgba(255, 255, 255, 0.07));
+    padding: 1px 6px;
+    border-radius: 4px;
+    font: 12px/1.4 ui-monospace, monospace;
+}
+
+.pg-env {
+    font-size: 12px;
+    opacity: 0.7;
+    margin: 0;
+}
+
+.pg-muted,
+.pg-error {
+    padding: 16px;
+    border-radius: 8px;
+    font-size: 14px;
+}
+
+.pg-muted {
+    background: var(--pg-muted-bg, rgba(255, 255, 255, 0.04));
+    opacity: 0.7;
+}
+
+.pg-error {
+    background: rgba(220, 80, 80, 0.15);
+    color: #ffb4b4;
+}
+
+.pg-disabled {
+    background: var(--pg-disabled-bg, rgba(255, 200, 100, 0.08));
+    border-left: 4px solid var(--pg-disabled-accent, #ffc864);
+    padding: 16px 20px;
+    border-radius: 4px;
+}
+
+.pg-disabled h2 {
+    margin: 0 0 8px;
+    font-size: 18px;
+}
+
+.pg-disabled p {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.5;
+    opacity: 0.9;
+}
+
+.pg-grid {
+    display: grid;
+    gap: 24px;
+    grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.pg-card {
+    background: var(--pg-card-bg, rgba(255, 255, 255, 0.03));
+    border: 1px solid var(--pg-card-border, rgba(255, 255, 255, 0.08));
+    border-radius: 10px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.pg-preview {
+    aspect-ratio: 1 / 1;
+    background: #0e1117;
+    position: relative;
+}
+
+.pg-frame {
+    width: 100%;
+    height: 100%;
+    border: 0;
+    display: block;
+}
+
+.pg-card-body {
+    padding: 12px 16px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    flex: 1;
+}
+
+.pg-card-title {
+    font-size: 16px;
+    font-weight: 600;
+    margin: 0;
+}
+
+.pg-card-desc {
+    font-size: 13px;
+    line-height: 1.45;
+    margin: 0;
+    opacity: 0.85;
+}
+
+.pg-card-meta {
+    display: flex;
+    gap: 12px;
+    margin-top: auto;
+    font-size: 12px;
+}
+
+.pg-card-ref,
+.pg-card-src {
+    color: var(--pg-link, #7ab8ff);
+    text-decoration: none;
+}
+
+.pg-card-ref:hover,
+.pg-card-src:hover {
+    text-decoration: underline;
+}
+
+/* --- Upload panel --- */
+.pg-upload {
+    margin-bottom: 32px;
+    padding: 20px;
+    border: 1px solid var(--pg-border, rgba(255, 255, 255, 0.12));
+    background: var(--pg-surface-2, rgba(255, 255, 255, 0.03));
+    border-radius: 12px;
+}
+
+.pg-upload-title {
+    font-size: 17px;
+    font-weight: 600;
+    margin: 0 0 4px;
+}
+
+.pg-upload-sub {
+    font-size: 13px;
+    line-height: 1.5;
+    margin: 0 0 14px;
+    opacity: 0.85;
+}
+
+.pg-upload-row {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.pg-file {
+    flex: 1 1 260px;
+    max-width: 380px;
+    font-size: 13px;
+}
+
+.pg-upload-btn {
+    padding: 9px 18px;
+    font-size: 14px;
+    font-weight: 600;
+    color: #fff;
+    background: var(--pg-accent, #3b82f6);
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+}
+
+.pg-upload-btn:hover:not(:disabled) {
+    filter: brightness(1.08);
+}
+
+.pg-upload-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.pg-upload .pg-error {
+    margin: 12px 0 0;
+}
+
+/* --- Preset strip ---
+   Horizontal row of clickable thumbnails. One click POSTs the preset image
+   to /api/gallery/upload via the existing `SubmitUpload` path; the result
+   appears in the gallery grid below. Presets cover the luminance range the
+   heightfield sees (stark monochrome, geometric detail, photographic high
+   contrast, photographic low contrast). */
+.pg-presets {
+    margin-bottom: 32px;
+}
+
+.pg-presets-head {
+    margin-bottom: 12px;
+}
+
+.pg-presets-head h2 {
+    font-size: 17px;
+    font-weight: 600;
+    margin: 0 0 4px;
+}
+
+.pg-presets-head p {
+    font-size: 13px;
+    line-height: 1.5;
+    margin: 0;
+    opacity: 0.85;
+}
+
+.pg-preset-row {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.pg-preset {
+    appearance: none;
+    background: var(--pg-card-bg, rgba(255, 255, 255, 0.03));
+    border: 1px solid var(--pg-card-border, rgba(255, 255, 255, 0.08));
+    border-radius: 8px;
+    padding: 0;
+    cursor: pointer;
+    text-align: left;
+    color: inherit;
+    font: inherit;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    transition: border-color 120ms ease, transform 120ms ease;
+}
+
+.pg-preset:hover:not(:disabled) {
+    border-color: var(--pg-accent, #3b82f6);
+    transform: translateY(-1px);
+}
+
+.pg-preset:disabled {
+    cursor: progress;
+    opacity: 0.7;
+}
+
+.pg-preset-thumb {
+    aspect-ratio: 1 / 1;
+    background: #fff;
+    display: block;
+    width: 100%;
+    object-fit: contain;
+}
+
+.pg-preset-label {
+    padding: 8px 10px;
+    font-size: 12px;
+    line-height: 1.3;
+    background: var(--pg-card-bg, rgba(255, 255, 255, 0.03));
+}
+
+.pg-preset-title {
+    font-weight: 600;
+    font-size: 12px;
+    margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pg-preset-sub {
+    margin: 2px 0 0;
+    font-size: 11px;
+    opacity: 0.65;
+}

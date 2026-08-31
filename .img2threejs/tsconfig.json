@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ES2022",
+    "moduleResolution": "Bundler",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "allowImportingTsExtensions": false,
+    "noEmitOnError": true,
+    "outDir": "../src/PoMiniGames.Client/wwwroot/games/pogallery/models/chair",
+    "rootDir": "."
+  },
+  "include": ["createObjectModel.ts"]
+}

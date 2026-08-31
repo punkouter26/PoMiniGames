@@ -10,6 +10,7 @@
 @inject OnlineStatusService OnlineStatus
 @inject AppUpdateService AppUpdate
 @inject NavigationManager NavigationManager
+@inject IWebAssemblyHostEnvironment Env
 
 <div class="gl-page">
     @* 2026-08-07 browser audit #9: first tab stop on every route. The header is
@@ -186,6 +187,15 @@
         @* The Settings link went with the /settings page on 2026-08-11 (user
            request) — preferences now run on their defaults. *@
         <a class="gl-footer-link" href="/health" aria-label="Service health">Status</a>
+        @* PoGallery — dev-only demo surface for the img2threejs skill. The
+           manifest endpoint itself is gated on Development + FeatureFlags:
+           EnableGallery, but the footer link is gated only on env so a
+           Production deployment that opts in (FeatureFlags:EnableGallery=true)
+           still surfaces a navigable entry point. *@
+        @if (Env.IsDevelopment())
+        {
+            <a class="gl-footer-link" href="/pogallery" aria-label="PoGallery (dev)">PoGallery</a>
+        }
     </footer>
 </div>
 

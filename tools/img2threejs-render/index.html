@@ -1,0 +1,125 @@
+<!doctype html>
+<!--
+  Render harness for the img2threejs skill's vision-gate loop.
+  Loads any ES-module model factory from ?model=<path> and renders it into a
+  deterministic camera. The harness signals readiness via window.__modelReady
+  so Playwright knows when to screenshot.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>img2threejs render harness</title>
+  <style>
+    html, body { margin: 0; padding: 0; background: #ffffff; overflow: hidden; }
+    #stage { width: 100vw; height: 100vh; display: block; }
+    #err   { position: fixed; top: 0; left: 0; right: 0; background: #fee; color: #900;
+             padding: 8px; font: 12px monospace; white-space: pre-wrap; display: none; z-index: 10; }
+  </style>
+  <script type="importmap">
+    { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                   "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+                   "three/examples/jsm/": "https://unpkg.com/three@0.160.0/examples/jsm/" } }
+  </script>
+</head>
+<body>
+  <div id="err"></div>
+  <canvas id="stage"></canvas>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+    const errEl = document.getElementById('err');
+    const showErr = (msg) => { errEl.textContent = msg; errEl.style.display = 'block'; console.error(msg); };
+
+    window.__modelReady = false;
+    window.__consoleLog = [];
+
+    // Default camera framing — matches the chair.png reference (front-right isometric,
+    // slight downward tilt). Reused for every vision gate so screenshots are comparable.
+    const params = new URLSearchParams(location.search);
+    const modelUrl = params.get('model');
+    const cameraDistance = parseFloat(params.get('distance') || '2.6');
+    const cameraAzimuth = parseFloat(params.get('azimuth') || '35');   // degrees
+    const cameraElevation = parseFloat(params.get('elevation') || '-12'); // degrees
+    const bgColor = params.get('bg') || '#ffffff';
+
+    const canvas = document.getElementById('stage');
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
+    renderer.setPixelRatio(1);
+    renderer.setSize(window.innerWidth, window.innerHeight, false);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.0;
+    renderer.setClearColor(bgColor, 1);
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(bgColor);
+
+    // 3-point lighting — soft key, fill, rim. Constant per render so the comparison
+    // isn't perturbed by lighting drift between passes.
+    const key = new THREE.DirectionalLight(0xffffff, 1.6);
+    key.position.set(2.5, 3.5, 2.5); scene.add(key);
+    const fill = new THREE.DirectionalLight(0xffffff, 0.5);
+    fill.position.set(-2.5, 1.5, 1.5); scene.add(fill);
+    const rim = new THREE.DirectionalLight(0xffffff, 0.7);
+    rim.position.set(0, 2.0, -3.0); scene.add(rim);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.25));
+
+    // Camera positioned on a sphere around origin using azimuth/elevation/distance.
+    // Default framing tuned for the chair's bounding box (~1.7 units tall, center y≈0.4).
+    const camera = new THREE.PerspectiveCamera(35, window.innerWidth / window.innerHeight, 0.05, 50);
+    const az = THREE.MathUtils.degToRad(cameraAzimuth);
+    const el = THREE.MathUtils.degToRad(cameraElevation);
+    camera.position.set(
+      cameraDistance * Math.cos(el) * Math.sin(az),
+      cameraDistance * Math.sin(el) + 0.4,
+      cameraDistance * Math.cos(el) * Math.cos(az)
+    );
+    camera.lookAt(0, 0.4, 0);
+
+    // OrbitControls — used in interactive mode, but for screenshots we set a deterministic pose.
+    const controls = new OrbitControls(camera, canvas);
+    controls.enableDamping = false;
+    controls.target.set(0, 0.4, 0);
+    controls.update();
+
+    // Load the model module and call its default export to add to the scene.
+    // Convention: the module's default export is `async (scene, THREE) => Group` or
+    // a sync function returning a Group. We support both.
+    async function loadModel(url) {
+      const mod = await import(url);
+      const factory = mod.default ?? mod.createModel ?? mod.create;
+      if (typeof factory !== 'function') {
+        throw new Error(`Model module has no default/callable export: ${url}`);
+      }
+      const result = factory({ scene, THREE, camera, renderer });
+      // Allow either sync return or Promise.
+      return Promise.resolve(result);
+    }
+
+    (async () => {
+      try {
+        if (!modelUrl) {
+          // No model: render a placeholder cube so the harness can be smoke-tested
+          // without a real model. The cube is also useful for verifying camera framing.
+          const g = new THREE.BoxGeometry(0.6, 0.6, 0.6);
+          const m = new THREE.MeshStandardMaterial({ color: 0xc84a4a, roughness: 0.6 });
+          const mesh = new THREE.Mesh(g, m);
+          mesh.position.y = 0.3;
+          scene.add(mesh);
+          window.__placeholder = true;
+        } else {
+          await loadModel(modelUrl);
+        }
+        // Render a single deterministic frame; the vision gate compares this.
+        renderer.render(scene, camera);
+        window.__modelReady = true;
+      } catch (e) {
+        showErr('LOAD FAILED: ' + (e?.message || e));
+        window.__modelReady = false;
+      }
+    })();
+  </script>
+</body>
+</html>

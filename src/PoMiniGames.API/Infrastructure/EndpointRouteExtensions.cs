@@ -9,8 +9,7 @@ using PoMiniGames.Features.PoMarbleRace;   // moved out of Features.HighScores s
 using PoMiniGames.Features.Leaderboard;
 using PoMiniGames.Features.MatchHistory;
 using PoMiniGames.Features.PoCoupleQuiz;
-using PoMiniGames.Features.PoFunQuiz;
-using PoMiniGames.Features.PoJoker;
+using PoMiniGames.Features.PoFunQuiz;using PoMiniGames.Features.PoGallery;using PoMiniGames.Features.PoJoker;
 using PoMiniGames.Features.PoRacer;
 using PoMiniGames.Features.PoSurvive;
 using PoMiniGames.Features.PoVoxelStrike;
@@ -43,6 +42,9 @@ internal static class EndpointRouteExtensions
         // aggregate per-game counters plus the caller's own allowance.
         app.MapAiUsageEndpoints();
         app.MapDiagEndpoints();
+        // PoGallery — dev-only manifest endpoint. Same gating as /api/diag (FeatureFlags:EnableGallery,
+        // defaulting to IsDevelopment()). Static models live under wwwroot/games/pogallery/.
+        app.MapPoGalleryEndpoints();
         app.MapMockablesEndpoints();
         // MapTelemetryStatusEndpoints removed 2026-08-18: /api/diag/telemetry had zero
         // consumers — no client call, no test, no doc. /api/diag already reports the

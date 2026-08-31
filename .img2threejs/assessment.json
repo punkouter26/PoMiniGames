@@ -1,0 +1,250 @@
+{
+  "targetName": "Navy upholstered chair",
+  "sourceImage": "C:\\Users\\punko\\Downloads\\pominigames\\src\\PoMiniGames.Client\\wwwroot\\games\\pogallery\\refs\\chair.png",
+  "preSpecAssessment": {
+    "objectClass": {
+      "primaryType": "upholstered-side-chair",
+      "primaryDomain": "object",
+      "formLanguage": ["geometric", "rigid"],
+      "structureKind": ["cuboid-padded-cushion", "tubular-cantilever-frame"],
+      "motionPotential": ["none-static-prop"],
+      "materialFamilies": ["textile-upholstery", "brushed-metal", "matte-plastic"],
+      "notes": "Single-view front-right isometric photograph, 750x1020. Reference image is technically suitable (probe_image.py returned pass) and the object has rotational/bilateral symmetry sufficient to infer hidden geometry."
+    },
+    "complexity": {
+      "tier": "moderate",
+      "scores": {
+        "silhouetteComplexity": 0.45,
+        "componentCount": 0.55,
+        "hierarchyDepth": 0.50,
+        "repetitionDensity": 0.30,
+        "materialLayerCount": 0.50,
+        "localDetailDensity": 0.45,
+        "occlusionRisk": 0.55,
+        "actionReadinessNeed": 0.15
+      },
+      "estimatedCounts": {
+        "macroComponents": 3,
+        "mesoComponents": 6,
+        "microFeatureGroups": 5,
+        "materialLayers": 3,
+        "repetitionSystems": 1
+      },
+      "reasoning": [
+        "Three macro assemblies (backrest, seat, frame) plus one repetition system (4 legs).",
+        "Six meso parts: backrest-top, backrest-seam-strip, seat-top-cushion, seat-front-bevel, frame-front-rail, frame-legs+glides.",
+        "Five micro features: horizontal seam, front bevel, cantilever curve, brushed metal anisotropy, glide feet, fabric weave micro-relief (counted six — the threshold is five).",
+        "Three distinct materials: navy upholstery (matte cloth), brushed steel frame, near-black plastic glides.",
+        "Single-view occlusion risk is moderate: back face of backrest, inside faces of legs, and rear-left leg are inferred but not directly visible."
+      ]
+    },
+    "specDepthDecision": {
+      "requiredDepth": "moderate",
+      "minimumComponentLevels": ["macro", "meso"],
+      "needsRepetitionSystems": true,
+      "needsMaterialLocalOverrides": true,
+      "needsMultipleReviewViews": true,
+      "needsActionReadyHierarchy": false,
+      "rationale": "moderate complexity + bilateral symmetry justifies macro+meso hierarchy, repetition system for the 4 legs, and material local overrides for brushed anisotropy and weave micro-relief. No action rigging needed (chair is a static prop)."
+    },
+    "unknownsToResolveBeforeImplementation": [
+      {
+        "id": "unknown-back-face",
+        "description": "Back face of backrest not visible. Will be modeled as flat rear panel of same fabric (low confidence).",
+        "confidence": 0.4,
+        "severity": "low",
+        "action": "infer-as-flat-rear"
+      },
+      {
+        "id": "unknown-inside-leg-faces",
+        "description": "Inside faces of frame legs (the side facing chair center) not visible.",
+        "confidence": 0.5,
+        "severity": "low",
+        "action": "use-tube-geometry-symmetric"
+      },
+      {
+        "id": "unknown-rear-left-leg",
+        "description": "Rear-left leg entirely hidden behind the seat.",
+        "confidence": 0.6,
+        "severity": "low",
+        "action": "mirror-of-rear-right-leg"
+      },
+      {
+        "id": "unknown-leg-cross-section",
+        "description": "Leg cross-section could be round or rounded-rectangular; image suggests rounded-rectangular but not certain.",
+        "confidence": 0.55,
+        "severity": "low",
+        "action": "use-rounded-rectangular-extrude"
+      }
+    ],
+    "detailInventory": {
+      "scanMethod": "identity-defining-features",
+      "targetMinDetails": 6,
+      "note": "See detail-inventory.json for the full per-detail records. Seven identity-defining features enumerated, each mapping to a component.localFeatures or material.localOverrides entry.",
+      "details": [
+        { "id": "detail-backrest-horizontal-seam", "confidence": 0.9 },
+        { "id": "detail-seat-front-rounded-bevel", "confidence": 0.8 },
+        { "id": "detail-cantilever-sled-base", "confidence": 0.85 },
+        { "id": "detail-no-arms", "confidence": 0.95 },
+        { "id": "detail-frame-brushed-anisotropy", "confidence": 0.65 },
+        { "id": "detail-glides-on-leg-bottoms", "confidence": 0.9 },
+        { "id": "detail-upholstery-weave", "confidence": 0.6 }
+      ]
+    },
+    "anatomy": {
+      "applies": false,
+      "styleHeads": 0.0,
+      "proportions": { "headUnit": 0.0, "torso": 0.0, "legs": 0.0, "shoulderWidth": 0.0, "hipWidth": 0.0 },
+      "pose": { "type": "unassessed", "jointAngles": {} },
+      "faceLandmarks": { "eyeLine": 0.0, "eyeSpacing": 0.0, "noseBase": 0.0, "mouthLine": 0.0, "hairline": 0.0 },
+      "features": [],
+      "confidence": 0.0,
+      "note": "Object domain — anatomy section does not apply."
+    },
+    "sourceImage": "C:\\Users\\punko\\Downloads\\pominigames\\src\\PoMiniGames.Client\\wwwroot\\games\\pogallery\\refs\\chair.png"
+  },
+  "qualityContract": {
+    "qualityBar": "moderate",
+    "definitionOfDone": [
+      "Bilateral symmetry respected; silhouette matches the chair reference within moderate tolerance.",
+      "All five identity-defining features present and visible from the reference camera angle.",
+      "Three materials wired: navy upholstery, brushed metal frame, matte black glides.",
+      "Four legs visible as a repetition system; back-of-seat face and inside-leg faces flagged low-confidence in code comments."
+    ],
+    "minimumSpecDepth": {
+      "macroComponents": 3,
+      "mesoComponents": 6,
+      "microFeatureGroups": 5,
+      "materialLayers": 3,
+      "repetitionSystems": 1,
+      "reviewViewpoints": 3
+    },
+    "featureGroups": [
+      {
+        "id": "overall-silhouette",
+        "name": "Overall silhouette and proportions",
+        "required": true,
+        "qualityCriteria": [
+          "Aspect ratio taller-than-wide matches reference (back-height ~1.5x seat-depth).",
+          "Bilateral symmetry plane through seat centerline.",
+          "Backrest and seat combined into a single padded envelope above the sled frame."
+        ],
+        "evidenceRefs": ["full-object", "image-analysis.md"],
+        "failureModes": [
+          "model reads as a generic box",
+          "backrest and seat merged into single cushion without seam hint"
+        ]
+      },
+      {
+        "id": "primary-structure",
+        "name": "Primary structure and hierarchy",
+        "required": true,
+        "qualityCriteria": [
+          "Three macros: backrest, seat, frame.",
+          "Frame is parent of legs+rails+glides.",
+          "Backrest-top and backrest-seam are siblings under backrest.",
+          "Seat-top-cushion and seat-front-bevel are siblings under seat."
+        ],
+        "evidenceRefs": ["image-analysis.md"],
+        "failureModes": [
+          "frame and seat merged into single mesh",
+          "seam strip absent or floating"
+        ]
+      },
+      {
+        "id": "cantilever-frame",
+        "name": "Cantilever sled-base",
+        "required": true,
+        "qualityCriteria": [
+          "Each leg is a single bent tube (sled), not four straight legs.",
+          "Visible front cross-rail under seat front.",
+          "Four legs total: two front, two rear, mirror-placed."
+        ],
+        "evidenceRefs": ["image-analysis.md", "detail-cantilever-sled-base"],
+        "failureModes": [
+          "four straight legs instead of sled-base",
+          "front cross-rail absent"
+        ]
+      },
+      {
+        "id": "horizontal-back-seam",
+        "name": "Backrest horizontal seam",
+        "required": true,
+        "qualityCriteria": [
+          "Single horizontal seam at mid-height of backrest.",
+          "Seam strip is same navy fabric as backrest (not contrasting).",
+          "Seam visible from reference camera angle."
+        ],
+        "evidenceRefs": ["detail-backrest-horizontal-seam"],
+        "failureModes": [
+          "seam strip missing or wrong height",
+          "seam strip in contrasting color"
+        ]
+      },
+      {
+        "id": "upholstery-material-response",
+        "name": "Upholstery material response",
+        "required": true,
+        "qualityCriteria": [
+          "Albedo deep navy (~#1c2c52), matte (roughness ~0.85), dielectric.",
+          "Subtle weave micro-relief on seat front lit edge.",
+          "No specular highlights (cloth)."
+        ],
+        "evidenceRefs": ["detail-upholstery-weave"],
+        "failureModes": [
+          "upholstery reads as flat blue plastic",
+          "weave is omitted or overdone"
+        ]
+      },
+      {
+        "id": "frame-brushed-metal",
+        "name": "Frame brushed metal",
+        "required": true,
+        "qualityCriteria": [
+          "Brushed steel finish, light grey, anisotropic vertical brushing on legs.",
+          "Round-rectangular cross-section inferred (low confidence).",
+          "No painting / no contrast on the metal."
+        ],
+        "evidenceRefs": ["detail-frame-brushed-anisotropy"],
+        "failureModes": [
+          "frame reads as flat plastic",
+          "brushing absent or in wrong direction"
+        ]
+      },
+      {
+        "id": "glides",
+        "name": "Foot glides",
+        "required": true,
+        "qualityCriteria": [
+          "Small dark matte plastic feet at each leg end.",
+          "~5% of leg height, near-black."
+        ],
+        "evidenceRefs": ["detail-glides-on-leg-bottoms"],
+        "failureModes": [
+          "glides missing",
+          "glides too large"
+        ]
+      }
+    ],
+    "visualDeltaChecks": [
+      "silhouette and negative-space delta against chair.png",
+      "single horizontal seam visible at mid-back",
+      "cantilever sled-base geometry (not four-straight-leg pedestal)",
+      "navy upholstery albedo and matte roughness",
+      "brushed metal frame finish on legs"
+    ],
+    "antiShallowSpecRules": [
+      "Do not proceed to code if qualityBar is unassessed.",
+      "Do not proceed to code if only root component is authored (must have backrest/seat/frame macros).",
+      "Do not omit any of the five identity-defining features.",
+      "Do not reuse albedo for roughness or normal channels.",
+      "Do not merge frame and seat into one mesh."
+    ]
+  },
+  "localSpecSearch": {
+    "collection": "core_3d",
+    "query": "Navy upholstered chair",
+    "index": { "status": "hit", "reason": "current" },
+    "matches": []
+  }
+}

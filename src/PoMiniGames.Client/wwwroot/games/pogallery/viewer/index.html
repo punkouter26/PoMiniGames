@@ -1,0 +1,208 @@
+<!doctype html>
+<!--
+  PoGallery viewer — standalone Three.js scene that mounts a model module.
+  Query: ?model=<relative-or-absolute-URL-of-es-module>
+  The module's default export is invoked as `({ scene, THREE, camera, renderer }) => ?`
+  and may either return a Group (added by the viewer) or add geometry directly to scene.
+  Three.js is loaded from unpkg via importmap to avoid pulling it into the WASM bundle.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>PoGallery viewer</title>
+  <style>
+    html, body { margin: 0; padding: 0; background: #0e1117; overflow: hidden; height: 100%; font-family: system-ui, sans-serif; color: #d0d4dc; }
+    #stage { display: block; width: 100vw; height: 100vh; }
+    #overlay { position: fixed; top: 8px; left: 8px; background: rgba(0,0,0,0.55); padding: 6px 10px; border-radius: 6px; font: 12px/1.3 monospace; pointer-events: none; max-width: 60vw; }
+    #err { position: fixed; inset: 0; background: #2a0a0a; color: #ffb4b4; padding: 16px; font: 13px/1.4 monospace; white-space: pre-wrap; overflow: auto; display: none; }
+  </style>
+  <script type="importmap">
+    { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                   "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+                   "three/examples/jsm/": "https://unpkg.com/three@0.160.0/examples/jsm/" } }
+  </script>
+</head>
+<body>
+  <canvas id="stage"></canvas>
+  <div id="overlay">PoGallery · loading…</div>
+  <div id="err"></div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+    const overlay = document.getElementById('overlay');
+    const errEl = document.getElementById('err');
+    const showErr = (msg) => { errEl.textContent = msg; errEl.style.display = 'block'; console.error(msg); };
+
+    const params = new URLSearchParams(location.search);
+    const modelUrl = params.get('model');
+    const imageUrl = params.get('image');
+    const title = params.get('title') || 'PoGallery model';
+
+    // Two modes:
+    //   ?model=<es-module>   -> load a model module (default export takes {scene, THREE,...}).
+    //   ?image=<url>         -> sample the image and build a heightfield relief mesh client-side.
+    // Used for uploaded images: the API stores the file and hands back a ?image= viewer URL.
+
+    const canvas = document.getElementById('stage');
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight, false);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.0;
+    renderer.setClearColor(0x0e1117, 1);
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x0e1117);
+    scene.add(new THREE.GridHelper(4, 8, 0x303a4a, 0x222a36));
+
+    // Three-point lighting — matches the render harness so previews are consistent.
+    const key = new THREE.DirectionalLight(0xffffff, 1.6);
+    key.position.set(2.5, 3.5, 2.5); scene.add(key);
+    const fill = new THREE.DirectionalLight(0xffffff, 0.5);
+    fill.position.set(-2.5, 1.5, 1.5); scene.add(fill);
+    const rim = new THREE.DirectionalLight(0xffffff, 0.7);
+    rim.position.set(0, 2.0, -3.0); scene.add(rim);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.25));
+
+    const camera = new THREE.PerspectiveCamera(35, window.innerWidth / window.innerHeight, 0.05, 50);
+    // Framed for the chair's bounding box (~1.7 units tall, centered near y=0.4).
+    camera.position.set(2.2, 1.2, 2.2);
+    camera.lookAt(0, 0.4, 0);
+
+    const controls = new OrbitControls(camera, canvas);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+    controls.target.set(0, 0.4, 0);
+    controls.minDistance = 0.6;
+    controls.maxDistance = 8;
+
+    addEventListener('resize', () => {
+      renderer.setSize(window.innerWidth, window.innerHeight, false);
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+    });
+
+    async function loadModel(url) {
+      const mod = await import(url);
+      const factory = mod.default ?? mod.createModel ?? mod.create;
+      if (typeof factory !== 'function') {
+        throw new Error(`Model module has no callable export: ${url}`);
+      }
+      const result = factory({ scene, THREE, camera, renderer });
+      // Either sync return (Group) or void (model added directly to scene).
+      if (result && result.isObject3D) scene.add(result);
+    }
+
+    // Build a heightfield relief from an uploaded image: sample the image into a
+    // small grid, drive vertical displacement from luminance, and tint vertices
+    // with the sampled color. This is what turns an upload into a 3D object with
+    // no ML dependency — it is deterministic, fast, and runs in the browser.
+    async function loadImageRelief(url) {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = () => reject(new Error('Failed to load image: ' + url));
+        img.src = url;
+      });
+
+      // Sample down to a fixed grid so geometry stays small and deterministic.
+      const grid = 64;
+      const canvas = document.createElement('canvas');
+      canvas.width = grid;
+      canvas.height = grid;
+      const g = canvas.getContext('2d');
+      g.drawImage(img, 0, 0, grid, grid);
+      const data = g.getImageData(0, 0, grid, grid).data;
+
+      // First pass: collect luminance + per-channel RGB so we can normalize
+      // them in a second pass. Raw luminance leaves low-contrast images (e.g.
+      // a pizza on a white plate) nearly flat; a percentile stretch expands
+      // the real dynamic range to fill the [0,1] interval the relief uses.
+      const lumas = new Float32Array(grid * grid);
+      const rs = new Float32Array(grid * grid);
+      const gs = new Float32Array(grid * grid);
+      const bs = new Float32Array(grid * grid);
+      for (let j = 0; j < grid; j++) {
+        for (let i = 0; i < grid; i++) {
+          const p = (j * grid + i) * 4;
+          const r = data[p] / 255;
+          const gg = data[p + 1] / 255;
+          const b = data[p + 2] / 255;
+          rs[j * grid + i] = r;
+          gs[j * grid + i] = gg;
+          bs[j * grid + i] = b;
+          lumas[j * grid + i] = 0.2126 * r + 0.7152 * gg + 0.0722 * b;
+        }
+      }
+      // Robust percentile stretch: 5th–95th maps to [0,1], clipped at the
+      // extremes. Outliers (text overlays, watermarks) don't crush the range.
+      const sorted = Float32Array.from(lumas).sort();
+      const lo = sorted[Math.floor(sorted.length * 0.05)];
+      const hi = sorted[Math.floor(sorted.length * 0.95)];
+      const span = Math.max(1e-3, hi - lo);
+      const normalize = (v) => Math.min(1, Math.max(0, (v - lo) / span));
+
+      const plane = new THREE.PlaneGeometry(1.6, 1.6, grid - 1, grid - 1);
+      plane.rotateX(-Math.PI / 2); // lay flat, +Y up
+      const pos = plane.attributes.position;
+      const colors = new Float32Array(pos.count * 3);
+      const colorAttr = new THREE.BufferAttribute(colors, 3);
+
+      for (let i = 0; i < pos.count; i++) {
+        const x = pos.getX(i);
+        const z = pos.getZ(i);
+        // Map plane local [-0.8, 0.8] to grid [0, grid-1].
+        const gi = Math.round(((x + 0.8) / 1.6) * (grid - 1));
+        const gj = Math.round(((-z + 0.8) / 1.6) * (grid - 1));
+        const ic = Math.max(0, Math.min(grid - 1, gi));
+        const jc = Math.max(0, Math.min(grid - 1, gj));
+        const idx = jc * grid + ic;
+        pos.setY(i, normalize(lumas[idx]) * 0.35);
+        colors[i * 3] = rs[idx];
+        colors[i * 3 + 1] = gs[idx];
+        colors[i * 3 + 2] = bs[idx];
+      }
+      plane.setAttribute('color', colorAttr);
+      plane.computeVertexNormals();
+
+      const mat = new THREE.MeshStandardMaterial({
+        vertexColors: true,
+        roughness: 0.7,
+        metalness: 0.0,
+        side: THREE.DoubleSide,
+      });
+      const mesh = new THREE.Mesh(plane, mat);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      mesh.position.y = 0.0;
+      scene.add(mesh);
+      return mesh;
+    }
+
+    (async () => {
+      try {
+        if (!modelUrl && !imageUrl) {
+          overlay.textContent = 'No model specified. Append ?model=/games/pogallery/models/<name>/index.js or ?image=/games/pogallery/uploads/<id>/source.png';
+          return;
+        }
+        if (imageUrl) {
+          await loadImageRelief(imageUrl);
+        } else {
+          await loadModel(modelUrl);
+        }
+        overlay.textContent = `${title} · drag to orbit, scroll to zoom`;
+        controls.update();
+        const tick = () => { controls.update(); renderer.render(scene, camera); requestAnimationFrame(tick); };
+        tick();
+      } catch (e) {
+        showErr('LOAD FAILED\n' + (e?.stack || e?.message || e));
+      }
+    })();
+  </script>
+</body>
+</html>

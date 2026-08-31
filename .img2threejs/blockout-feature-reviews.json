@@ -1,0 +1,14 @@
+[
+  {
+    "id": "cantilever-sled-base",
+    "score": 0.78,
+    "visible": true,
+    "notes": "Four legs present with a down-and-back sweep to floor runners; bend depth is inferred from the single view so the curve is smoother than the reference's tighter cantilever."
+  },
+  {
+    "id": "armless-silhouette",
+    "score": 0.95,
+    "visible": true,
+    "notes": "Clearly armless: no arm-rest geometry between the backrest and seat from the reference camera angle."
+  }
+]

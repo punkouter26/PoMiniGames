@@ -82,6 +82,14 @@ public sealed class SubSurfaceInteropService : IAsyncDisposable
         }
     }
 
+    public async ValueTask SetAudioEnabledAsync(bool enabled)
+    {
+        if (_module is not null)
+        {
+            await _module.InvokeVoidAsync("setSubSurfaceAudio", enabled);
+        }
+    }
+
     [JSInvokable]
     public void OnEngineMetricsUpdate(SubSurfaceDiagnostics diagnostics)
     {

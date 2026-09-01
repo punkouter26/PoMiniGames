@@ -2,17 +2,26 @@
 // Sand Multi-Material Engine
 //
 // Cell packing (RGBA32F):
-//   SAND : G = looseness (1 loose grain -> 0 settled cohesive)  B = wetness 0..1, or -1 scorched  A = roof-span stress
+//   SAND : G = looseness (1 loose grain -> 0 settled cohesive)  B = wetness 0..1, or -1 scorched / -2 vitrified  A = roof-span stress
 //   WATER: G = flow momentum (-1 / 0 / +1)  A = hydrostatic head (pressure)  B unused
+//   LAVA : G = heat (1 molten -> 0 crusting); insulated cores never cool
+//   FIRE : G = remaining fuel/lifetime (non-conserved combustion gas)
 //   other: channels zero
 //
 // Donor/receiver pairing contract: every rule that moves matter is written twice —
 // once from the vacating cell and once from the receiving cell — over the SAME
 // neighbour reads and the same frame-parity direction, so a move is always a swap
-// and total sand/water mass is conserved. Water's momentum-steered lateral flow
-// additionally uses a left-donor-wins arbitration (lateralLeftDonorClaims) that
+// and total sand/water/lava/oil mass is conserved. Water's momentum-steered lateral
+// flow additionally uses a left-donor-wins arbitration (lateralLeftDonorClaims) that
 // BOTH the yielding donor and the receiver evaluate over identical samples.
 // Editing one side of any pair without its mirror re-introduces duplication.
+//
+// In-place TRANSFORMS (lava quenching to obsidian, lava crusting, oil combusting,
+// sand melting) are exempt from pairing only because every MOVEMENT receiver that
+// could take the transforming cell re-evaluates the same deterministic transform
+// predicate (lavaSolidifies / oilIgnites) and declines — a cell never transforms
+// and travels in the same pass. FIRE is deliberately non-conserved: flames spawn
+// from burning neighbours and decay to air.
 //
 // Concrete is inert here: rigid-body motion, stress fracture, and blast craters
 // are resolved on the CPU (subsurface-engine.js) against readback snapshots.
@@ -48,8 +57,16 @@ out vec4 fragColor;
 #define MAT_WATER     3.0
 #define MAT_BEDROCK   4.0
 #define MAT_DEBRIS    5.0
+#define MAT_LAVA      6.0
+#define MAT_OIL       7.0
+#define MAT_FIRE      8.0
+#define MAT_OBSIDIAN  9.0
 
 #define SPAN_NONE     999.0
+
+// Viscosity gates: probability per pass that a resting liquid creeps laterally.
+#define LAVA_VISC     0.22
+#define OIL_VISC      0.55
 
 vec4 getCell(vec2 coord) {
     if (coord.x < 0.0 || coord.x >= u_resolution.x || coord.y < 0.0 || coord.y >= u_resolution.y) {
@@ -65,7 +82,11 @@ float hash(vec2 p) {
 }
 
 bool isSolid(float m) {
-    return m == MAT_SAND || m == MAT_CONCRETE || m == MAT_BEDROCK || m == MAT_DEBRIS;
+    return m == MAT_SAND || m == MAT_CONCRETE || m == MAT_BEDROCK || m == MAT_DEBRIS || m == MAT_OBSIDIAN;
+}
+
+bool isLiquid(float m) {
+    return m == MAT_WATER || m == MAT_LAVA || m == MAT_OIL;
 }
 
 // Granular movers share the sand movement rules; debris (red bomb-casing
@@ -92,7 +113,7 @@ bool sandFalls(vec4 cell, float y) {
 
 // Lateral anchor stress contributed by a neighbour when this cell is a roof cell.
 float sideSupport(vec4 side) {
-    if (side.r == MAT_CONCRETE || side.r == MAT_BEDROCK) return 0.0;
+    if (side.r == MAT_CONCRETE || side.r == MAT_BEDROCK || side.r == MAT_OBSIDIAN) return 0.0;
     if (side.r == MAT_SAND) return side.a;
     return SPAN_NONE;
 }
@@ -118,6 +139,30 @@ float blastOcclusion(vec2 from, vec2 to) {
     return solidLen;
 }
 
+// Does the LAVA cell at pos freeze to obsidian this pass? Deterministic over
+// neighbour reads so movement receivers can mirror it exactly. Motion wins:
+// free-falling lava never crusts mid-air.
+bool lavaSolidifies(vec2 pos, vec4 cell) {
+    float dn = getCell(pos + vec2(0.0, -1.0)).r;
+    if (dn == MAT_AIR || dn == MAT_FIRE) return false;
+    vec4 up = getCell(pos + vec2(0.0, 1.0));
+    vec4 lf = getCell(pos + vec2(-1.0, 0.0));
+    vec4 rt = getCell(pos + vec2(1.0, 0.0));
+    if (up.r == MAT_WATER || dn == MAT_WATER || lf.r == MAT_WATER || rt.r == MAT_WATER) return true;
+    bool exposed = up.r == MAT_AIR || lf.r == MAT_AIR || rt.r == MAT_AIR;
+    return exposed && cell.g <= 0.001;
+}
+
+// Does the OIL cell at pos combust this pass? (fire or lava in contact)
+bool oilIgnites(vec2 pos) {
+    float up = getCell(pos + vec2(0.0, 1.0)).r;
+    float dn = getCell(pos + vec2(0.0, -1.0)).r;
+    float lf = getCell(pos + vec2(-1.0, 0.0)).r;
+    float rt = getCell(pos + vec2(1.0, 0.0)).r;
+    return up == MAT_FIRE || dn == MAT_FIRE || lf == MAT_FIRE || rt == MAT_FIRE ||
+           up == MAT_LAVA || dn == MAT_LAVA || lf == MAT_LAVA || rt == MAT_LAVA;
+}
+
 // Would a loose-sand grain slide diagonally (parity dir P) into receiver rPos?
 // Mirrored by the sand donor's slide rule; used by water claims as a guard.
 bool sandSlideTargets(vec2 rPos, float P) {
@@ -138,7 +183,7 @@ bool mudFlowTargets(vec2 rPos, float P) {
     if (!isSolid(getCell(dPos + vec2(0.0, -1.0)).r)) return false; // falls/swaps instead
     if (getCell(rPos + vec2(0.0, -1.0)).r == MAT_AIR) return false; // donor prefers diag slide
     vec4 rUp = getCell(rPos + vec2(0.0, 1.0));
-    if (rUp.r == MAT_WATER) return false;                          // yield to falling water
+    if (isLiquid(rUp.r)) return false;                             // yield to falling liquid
     if (isGranular(rUp.r) && sandFalls(rUp, rPos.y + 1.0)) return false; // yield to falling grains
     if (sandSlideTargets(rPos, P)) return false;                   // dry slide outranks
     // Viscosity: slurry creeps, it does not race
@@ -153,9 +198,10 @@ bool waterRiseTargets(vec2 rPos, float P) {
     if (getCell(rPos).r != MAT_AIR) return false;
     vec4 W = getCell(rPos + vec2(0.0, -1.0));
     if (W.r != MAT_WATER || W.a <= 3.0) return false;
-    if (getCell(rPos + vec2(0.0, -2.0)).r == MAT_AIR) return false; // donor falls instead
+    float b2 = getCell(rPos + vec2(0.0, -2.0)).r;
+    if (b2 == MAT_AIR || b2 == MAT_FIRE || b2 == MAT_OIL) return false; // donor falls or swaps instead
     vec4 rUp = getCell(rPos + vec2(0.0, 1.0));
-    if (rUp.r == MAT_WATER) return false;                           // yield to falling water
+    if (isLiquid(rUp.r)) return false;                              // yield to falling liquid
     if (isGranular(rUp.r) && sandFalls(rUp, rPos.y + 1.0)) return false;
     if (sandSlideTargets(rPos, P)) return false;
     if (mudFlowTargets(rPos, P)) return false;                      // mud creep outranks
@@ -169,7 +215,8 @@ bool waterDiagTargets(vec2 rPos, float P) {
     if (getCell(rPos).r != MAT_AIR) return false;
     if (getCell(rPos + vec2(0.0, 1.0)).r != MAT_AIR) return false;      // donor's parity side
     if (getCell(rPos + vec2(-P, 1.0)).r != MAT_WATER) return false;     // the donor
-    if (getCell(rPos + vec2(-P, 0.0)).r == MAT_AIR) return false;       // donor falls instead
+    float dB = getCell(rPos + vec2(-P, 0.0)).r;
+    if (dB == MAT_AIR || dB == MAT_FIRE || dB == MAT_OIL) return false; // donor falls or swaps instead
     vec4 dAbove = getCell(rPos + vec2(-P, 2.0));
     if (isGranular(dAbove.r) && sandFalls(dAbove, rPos.y + 2.0)) return false; // donor busy swapping
     if (mudFlowTargets(rPos, P)) return false;                      // mud creep outranks
@@ -189,7 +236,8 @@ bool lateralLeftDonorClaims(vec2 rPos, float P) {
     if (dirOfWater(L, P) < 0.0) return false;
     vec4 Lup = getCell(rPos + vec2(-1.0, 1.0));
     if (isGranular(Lup.r) && sandFalls(Lup, rPos.y + 1.0)) return false; // busy with buoyancy swap
-    if (getCell(rPos + vec2(-1.0, -1.0)).r == MAT_AIR) return false;    // falls instead
+    float Ldn = getCell(rPos + vec2(-1.0, -1.0)).r;
+    if (Ldn == MAT_AIR || Ldn == MAT_FIRE || Ldn == MAT_OIL) return false; // falls or swaps instead
     // Donor prefers its parity diagonal when open
     if (P > 0.0) {
         if (getCell(rPos + vec2(0.0, -1.0)).r == MAT_AIR) return false;
@@ -198,7 +246,7 @@ bool lateralLeftDonorClaims(vec2 rPos, float P) {
             getCell(rPos + vec2(-2.0, -1.0)).r == MAT_AIR) return false;
     }
     vec4 rUp = getCell(rPos + vec2(0.0, 1.0));
-    if (rUp.r == MAT_WATER || isGranular(rUp.r)) return false;          // receiver takes from above
+    if (isLiquid(rUp.r) || isGranular(rUp.r)) return false;             // receiver takes from above
     if (sandSlideTargets(rPos, P)) return false;                        // sand slide outranks
     if (mudFlowTargets(rPos, P)) return false;                          // mud creep outranks
     if (waterRiseTargets(rPos, P)) return false;                        // pressure rise outranks
@@ -216,7 +264,8 @@ bool lateralRightDonorClaims(vec2 rPos, float P) {
     if (dirOfWater(W, P) > 0.0) return false;
     vec4 Wup = getCell(rPos + vec2(1.0, 1.0));
     if (isGranular(Wup.r) && sandFalls(Wup, rPos.y + 1.0)) return false;
-    if (getCell(rPos + vec2(1.0, -1.0)).r == MAT_AIR) return false;
+    float Wdn = getCell(rPos + vec2(1.0, -1.0)).r;
+    if (Wdn == MAT_AIR || Wdn == MAT_FIRE || Wdn == MAT_OIL) return false; // falls or swaps instead
     if (P > 0.0) {
         if (getCell(rPos + vec2(2.0, 0.0)).r == MAT_AIR &&
             getCell(rPos + vec2(2.0, -1.0)).r == MAT_AIR) return false;
@@ -224,13 +273,40 @@ bool lateralRightDonorClaims(vec2 rPos, float P) {
         if (getCell(rPos + vec2(0.0, -1.0)).r == MAT_AIR) return false;
     }
     vec4 rUp = getCell(rPos + vec2(0.0, 1.0));
-    if (rUp.r == MAT_WATER || isGranular(rUp.r)) return false;
+    if (isLiquid(rUp.r) || isGranular(rUp.r)) return false;
     if (sandSlideTargets(rPos, P)) return false;
     if (mudFlowTargets(rPos, P)) return false;
     if (waterRiseTargets(rPos, P)) return false;
     if (waterDiagTargets(rPos, P)) return false;
     if (waterRiseTargets(rPos + vec2(1.0, 1.0), P)) return false;       // donor busy rising
     return true;
+}
+
+// Would the viscous liquid 'liq' at rPos+(-P,0) creep laterally into air rPos?
+// Shared verbatim by the liquid donor (self-claim) and the air receiver. Defers
+// to every sand/mud/water claim on rPos, so it can never race a water move.
+bool viscFlowTargets(vec2 rPos, float P, float liq, float visc) {
+    if (getCell(rPos).r != MAT_AIR) return false;
+    vec2 dPos = rPos + vec2(-P, 0.0);
+    vec4 D = getCell(dPos);
+    if (D.r != liq) return false;
+    float dBelow = getCell(dPos + vec2(0.0, -1.0)).r;
+    if (dBelow == MAT_AIR || dBelow == MAT_FIRE) return false;       // falls instead
+    if (liq == MAT_LAVA && lavaSolidifies(dPos, D)) return false;    // freezing in place
+    if (liq == MAT_OIL) {
+        if (oilIgnites(dPos)) return false;                          // combusting in place
+        if (getCell(dPos + vec2(0.0, 1.0)).r == MAT_WATER) return false; // busy buoyancy swap
+    }
+    vec4 rUp = getCell(rPos + vec2(0.0, 1.0));
+    if (isLiquid(rUp.r)) return false;                               // yield to falling liquid
+    if (isGranular(rUp.r) && sandFalls(rUp, rPos.y + 1.0)) return false;
+    if (sandSlideTargets(rPos, P)) return false;
+    if (mudFlowTargets(rPos, P)) return false;
+    if (waterRiseTargets(rPos, P)) return false;
+    if (waterDiagTargets(rPos, P)) return false;
+    if (lateralLeftDonorClaims(rPos, P)) return false;               // water outranks
+    if (lateralRightDonorClaims(rPos, P)) return false;
+    return hash(dPos * 3.7 + vec2(float(u_frame), float(u_subStep))) <= visc;
 }
 
 void main() {
@@ -246,7 +322,7 @@ void main() {
 
     // 2. Lateral Drainage Channels (Col 0 and Col 799): loose matter drains out
     if (coord.x <= 0.0 || coord.x >= u_resolution.x - 1.0) {
-        if (mat == MAT_WATER || isGranular(mat)) {
+        if (isLiquid(mat) || isGranular(mat) || mat == MAT_FIRE) {
             fragColor = vec4(MAT_AIR, 0.0, 0.0, 0.0);
             return;
         }
@@ -257,12 +333,14 @@ void main() {
         if (distance(coord, u_brush.xy) <= u_brush.z) {
             float bMat = u_brush.w;
             if (bMat == MAT_AIR) {
-                if (isGranular(mat) || mat == MAT_WATER) {
+                if (isGranular(mat) || isLiquid(mat) || mat == MAT_FIRE || mat == MAT_OBSIDIAN) {
                     fragColor = vec4(MAT_AIR, 0.0, 0.0, 0.0);
                     return;
                 }
             } else if (mat != MAT_BEDROCK && mat != MAT_CONCRETE) {
-                fragColor = vec4(bMat, bMat == MAT_SAND ? 1.0 : 0.0, 0.0, 0.0);
+                // Sand paints loose; lava paints fully molten (G is heat)
+                float g = (bMat == MAT_SAND || bMat == MAT_LAVA) ? 1.0 : 0.0;
+                fragColor = vec4(bMat, g, 0.0, 0.0);
                 return;
             } else if (bMat == MAT_CONCRETE && mat != MAT_BEDROCK) {
                 fragColor = vec4(MAT_CONCRETE, 0.0, 0.0, 0.0);
@@ -305,7 +383,7 @@ void main() {
     // ---- SAND / DEBRIS (granular donor side) --------------------------------
     if (isGranular(mat)) {
         bool falls = sandFalls(current, coord.y);
-        if (cellBelow.r == MAT_AIR && falls) {
+        if ((cellBelow.r == MAT_AIR || cellBelow.r == MAT_FIRE) && falls) {
             fragColor = vec4(MAT_AIR, 0.0, 0.0, 0.0);
             return;
         }
@@ -323,6 +401,17 @@ void main() {
         // Saturated slurry creeps laterally on flat ground (self-claim)
         if (mat == MAT_SAND && mudFlowTargets(coord + vec2(P, 0.0), P)) {
             fragColor = vec4(MAT_AIR, 0.0, 0.0, 0.0);
+            return;
+        }
+
+        // Lava contact melts SETTLED sand into fresh molten rock. In-place
+        // transform: safe without pairing because movement receivers only take
+        // FALLING or LOOSE grains (g > 0.5) and this requires settled g < 0.5.
+        bool nearLava = cellAbove.r == MAT_LAVA || cellBelow.r == MAT_LAVA ||
+                        cellLeft.r == MAT_LAVA || cellRight.r == MAT_LAVA;
+        if (mat == MAT_SAND && nearLava && isSolid(cellBelow.r) && current.g < 0.5 &&
+            hash(coord * 5.3 + vec2(float(u_frame), float(u_subStep))) < 0.0015) {
+            fragColor = vec4(MAT_LAVA, 1.0, 0.0, 0.0);
             return;
         }
 
@@ -349,14 +438,16 @@ void main() {
                        (cellAbove.r == MAT_WATER && abs(cellAbove.g) > 0.5);
         float wet = touchingWater ? 1.0 : (current.b > 0.0 ? current.b - 0.008 : current.b);
         if (concussed > 0.5 && wet > 0.0) wet = 0.0; // blast heat flash-dries the soil
+        if (nearLava && wet >= 0.0) wet = -1.0;      // radiant heat chars the contact face
         float loose = isSolid(cellBelow.r) ? max(0.0, current.g - 0.15) : current.g;
         loose = max(loose, max(concussed, scoured ? 1.0 : 0.0));
         fragColor = vec4(MAT_SAND, loose, wet, span);
         return;
     }
 
-    // ---- CONCRETE / BEDROCK: inert to the automaton (CPU island solver) -----
-    if (mat == MAT_CONCRETE || mat == MAT_BEDROCK) {
+    // ---- CONCRETE / BEDROCK / OBSIDIAN: inert to the automaton --------------
+    // (concrete islands move via the CPU solver; obsidian is fused in place)
+    if (mat == MAT_CONCRETE || mat == MAT_BEDROCK || mat == MAT_OBSIDIAN) {
         fragColor = current;
         return;
     }
@@ -368,8 +459,17 @@ void main() {
             fragColor = vec4(cellAbove.r, 1.0, cellAbove.r == MAT_SAND ? 1.0 : 0.0, 0.0);
             return;
         }
-        // 2. Fall into air below (momentum rides along via the receiver)
-        if (cellBelow.r == MAT_AIR) {
+        // 1.5 Oil below is lighter: swap it up through me (mirror of the oil
+        //     branch's rise rule — guards must match that side exactly)
+        if (cellBelow.r == MAT_OIL && !oilIgnites(coord + vec2(0.0, -1.0))) {
+            float b2 = getCell(coord + vec2(0.0, -2.0)).r;
+            if (b2 != MAT_AIR && b2 != MAT_FIRE) {
+                fragColor = vec4(MAT_OIL, 0.0, 0.0, 0.0);
+                return;
+            }
+        }
+        // 2. Fall into air (or through flame) below
+        if (cellBelow.r == MAT_AIR || cellBelow.r == MAT_FIRE) {
             fragColor = vec4(MAT_AIR, 0.0, 0.0, 0.0);
             return;
         }
@@ -411,6 +511,100 @@ void main() {
         head = max(head, cellBelow.r == MAT_WATER ? cellBelow.a - 1.0 : 0.0);
         head = clamp(head - 0.03, 0.0, 400.0);
         fragColor = vec4(MAT_WATER, m, 0.0, head);
+        return;
+    }
+
+    // ---- LAVA (viscous molten rock) -----------------------------------------
+    if (mat == MAT_LAVA) {
+        // Quench on water contact / crust when a cooled surface (in place;
+        // movement receivers mirror lavaSolidifies before taking this cell)
+        if (lavaSolidifies(coord, current)) {
+            fragColor = vec4(MAT_OBSIDIAN, 0.0, 0.0, 0.0);
+            return;
+        }
+        // Fall into air (or through flame) below
+        if (cellBelow.r == MAT_AIR || cellBelow.r == MAT_FIRE) {
+            fragColor = vec4(MAT_AIR, 0.0, 0.0, 0.0);
+            return;
+        }
+        // Viscous lateral creep (self-claim through the shared predicate)
+        if (viscFlowTargets(coord + vec2(P, 0.0), P, MAT_LAVA, LAVA_VISC)) {
+            fragColor = vec4(MAT_AIR, 0.0, 0.0, 0.0);
+            return;
+        }
+        // Stay: surface radiates heat away; insulated cores stay molten forever
+        float heat = current.g;
+        bool exposed = cellAbove.r == MAT_AIR || cellLeft.r == MAT_AIR || cellRight.r == MAT_AIR;
+        if (exposed) heat = max(0.0, heat - 0.0006);
+        fragColor = vec4(MAT_LAVA, heat, 0.0, 0.0);
+        return;
+    }
+
+    // ---- OIL (light flammable liquid) ---------------------------------------
+    if (mat == MAT_OIL) {
+        // Combustion (in place; movement receivers mirror oilIgnites)
+        if (oilIgnites(coord)) {
+            fragColor = vec4(MAT_FIRE, 1.0, 0.0, 0.0);
+            return;
+        }
+        // Fall into air (or through flame) below
+        if (cellBelow.r == MAT_AIR || cellBelow.r == MAT_FIRE) {
+            fragColor = vec4(MAT_AIR, 0.0, 0.0, 0.0);
+            return;
+        }
+        // Buoyant rise: water directly above swaps down through me (mirror of
+        // the water branch rule 1.5 — reaching here implies my below is not
+        // AIR/FIRE and I am not igniting, matching that side's guards)
+        if (cellAbove.r == MAT_WATER) {
+            vec4 above2 = getCell(coord + vec2(0.0, 2.0));
+            if (!(isGranular(above2.r) && sandFalls(above2, coord.y + 2.0))) {
+                fragColor = vec4(MAT_WATER, 0.0, 0.0, 0.0);
+                return;
+            }
+        }
+        // Lateral spread (self-claim through the shared predicate)
+        if (viscFlowTargets(coord + vec2(P, 0.0), P, MAT_OIL, OIL_VISC)) {
+            fragColor = vec4(MAT_AIR, 0.0, 0.0, 0.0);
+            return;
+        }
+        fragColor = vec4(MAT_OIL, 0.0, 0.0, 0.0);
+        return;
+    }
+
+    // ---- FIRE (non-conserved combustion gas) --------------------------------
+    if (mat == MAT_FIRE) {
+        // RECEIVES FIRST: falling matter snuffs the flame and takes the cell
+        // (mirrors each donor's below==FIRE vacate rule — a receive must never
+        // be preempted by the douse transform below, or the donor's matter is
+        // destroyed).
+        if (isGranular(cellAbove.r) && sandFalls(cellAbove, coord.y + 1.0)) {
+            fragColor = vec4(cellAbove.r, 1.0, cellAbove.r == MAT_SAND ? max(cellAbove.b, 0.0) : 0.0, 0.0);
+            return;
+        }
+        if (cellAbove.r == MAT_WATER) {
+            vec4 above2 = getCell(coord + vec2(0.0, 2.0));
+            if (!(isGranular(above2.r) && sandFalls(above2, coord.y + 2.0))) {
+                fragColor = vec4(MAT_WATER, cellAbove.g, 0.0, 0.0);
+                return;
+            }
+        }
+        if (cellAbove.r == MAT_LAVA && !lavaSolidifies(coord + vec2(0.0, 1.0), cellAbove)) {
+            fragColor = vec4(MAT_LAVA, cellAbove.g, 0.0, 0.0);
+            return;
+        }
+        // Doused by side/below water (in-place transform; water ABOVE was
+        // handled by the receive rule instead)
+        if (cellLeft.r == MAT_WATER || cellRight.r == MAT_WATER || cellBelow.r == MAT_WATER) {
+            fragColor = vec4(MAT_AIR, 0.0, 0.0, 0.0);
+            return;
+        }
+        // Burn down and go out
+        float fuel = current.g - 0.005;
+        if (fuel <= 0.0) {
+            fragColor = vec4(MAT_AIR, 0.0, 0.0, 0.0);
+            return;
+        }
+        fragColor = vec4(MAT_FIRE, fuel, 0.0, 0.0);
         return;
     }
 
@@ -458,6 +652,33 @@ void main() {
     }
     if (lateralRightDonorClaims(coord, P)) {
         fragColor = vec4(MAT_WATER, -1.0, 0.0, 0.0);
+        return;
+    }
+    // 6. Lava / oil falling straight in (donor vacates unconditionally when its
+    //    below is air — all higher-priority claims above declined because our
+    //    above cell is a liquid, so this receive is guaranteed to pair)
+    if (cellAbove.r == MAT_LAVA && !lavaSolidifies(coord + vec2(0.0, 1.0), cellAbove)) {
+        fragColor = vec4(MAT_LAVA, cellAbove.g, 0.0, 0.0);
+        return;
+    }
+    if (cellAbove.r == MAT_OIL && !oilIgnites(coord + vec2(0.0, 1.0))) {
+        fragColor = vec4(MAT_OIL, 0.0, 0.0, 0.0);
+        return;
+    }
+    // 7. Viscous lateral creep arrival (heat rides along with lava)
+    if (viscFlowTargets(coord, P, MAT_LAVA, LAVA_VISC)) {
+        fragColor = vec4(MAT_LAVA, getCell(coord + vec2(-P, 0.0)).g, 0.0, 0.0);
+        return;
+    }
+    if (viscFlowTargets(coord, P, MAT_OIL, OIL_VISC)) {
+        fragColor = vec4(MAT_OIL, 0.0, 0.0, 0.0);
+        return;
+    }
+    // 8. Flames lick upward from a burning cell below (fire is non-conserved
+    //    gas: spawned only after every matter claim declined, decays to air)
+    if (cellBelow.r == MAT_FIRE && cellBelow.g > 0.35 &&
+        hash(coord * 7.1 + vec2(float(u_frame), float(u_subStep))) < 0.35) {
+        fragColor = vec4(MAT_FIRE, cellBelow.g - 0.3, 0.0, 0.0);
         return;
     }
 

@@ -10,11 +10,16 @@
 //    Both share the grid through a periodic readPixels snapshot.
 
 import { vsQuadSource, fsPhysicsSource } from './subsurface-physics.glsl.js';
-import { fsRenderSource, vsGrainSource, fsGrainSource } from './subsurface-render.glsl.js';
+import {
+    fsRenderSource, vsGrainSource, fsGrainSource,
+    fsExtractSource, fsBlurSource, fsCompositeSource,
+    vsFxSource, fsFxSource
+} from './subsurface-render.glsl.js';
+import { SubSurfaceAudio } from './subsurface-audio.js';
 
-const MAT = { AIR: 0, SAND: 1, CONCRETE: 2, WATER: 3, BEDROCK: 4, DEBRIS: 5 };
+const MAT = { AIR: 0, SAND: 1, CONCRETE: 2, WATER: 3, BEDROCK: 4, DEBRIS: 5, LAVA: 6, OIL: 7, FIRE: 8, OBSIDIAN: 9 };
 const MAX_SHOCKWAVES = 4;
-const MAX_PROJECTILES = 16;
+const MAX_PROJECTILES = 24;
 const SNAPSHOT_INTERVAL = 4;   // frames between grid readbacks (~15 Hz)
 const ISLAND_FALL_STEP = 4;    // px an unsupported concrete island drops per solver tick
 const GRAVITY = 350.0;         // px/s^2
@@ -28,10 +33,35 @@ const CRATER_RADIUS = 145;        // px excavation radius (10x yield: r scales w
 const BLAST_SOLID_BUDGET = 90;    // px of solid a blast ray can chew through
 const EJECTA_SPEED = 680;         // px/s peak radial ejection speed
 const MAX_RENDER_GRAINS = 262144; // draw cap only; physics always integrates all
+const MAX_FX = 4096;              // cosmetic smoke/ember/spark particle cap
 
 function isSolidMat(m) {
-    return m === MAT.SAND || m === MAT.CONCRETE || m === MAT.BEDROCK || m === MAT.DEBRIS;
+    return m === MAT.SAND || m === MAT.CONCRETE || m === MAT.BEDROCK || m === MAT.DEBRIS || m === MAT.OBSIDIAN;
 }
+
+function isLiquidMat(m) {
+    return m === MAT.WATER || m === MAT.LAVA || m === MAT.OIL;
+}
+
+// Ordnance catalogue. Tool ids 4/5/8-11 are slingshot ordnance; the shader
+// renders each `kind`. BOMBLET is spawn-only (cluster payload).
+// scale multiplies the blast crater/shockwave; budget is the drill's solid
+// chew allowance in cell-cost units (concrete/obsidian cost 3x sand).
+const ORDNANCE_SPECS = {
+    TNT:     { radius: 6, timer: 5.0, kind: 0, scale: 1.0 },
+    BALLOON: { radius: 6, timer: Infinity, kind: 2 },
+    DRILL:   { radius: 5, timer: 6.0, kind: 3, scale: 1.0, budget: 1500 },
+    CLUSTER: { radius: 7, timer: 3.0, kind: 4, scale: 0.25 },
+    // Nuke crater worst case is ~140k ejecta grains (pi * 210^2), under the
+    // MAX_RENDER_GRAINS cap; heavy for a few seconds but transient.
+    NUKE:    { radius: 9, timer: 5.0, kind: 5, scale: 1.45 },
+    STICKY:  { radius: 5, timer: 4.0, kind: 6, scale: 1.0 },
+    BOMBLET: { radius: 3, timer: 1.0, kind: 0, scale: 0.4 },
+};
+const TOOL_ORDNANCE = { 4: 'TNT', 5: 'BALLOON', 8: 'DRILL', 9: 'CLUSTER', 10: 'NUKE', 11: 'STICKY' };
+// Brush tools paint the material with the same id (0 vacuum/air, 1 sand,
+// 2 concrete, 3 water, 6 lava, 7 oil).
+const BRUSH_TOOLS = new Set([0, 1, 2, 3, 6, 7]);
 
 export class SubSurfaceEngine {
     constructor(canvas, dotNetHelper) {
@@ -64,7 +94,7 @@ export class SubSurfaceEngine {
         // State variables
         this.isPaused = false;
         this.pendingStep = false;
-        this.currentTool = 0; // 0: DigVacuum, 1: Sand, 2: Concrete, 3: Water, 4: TNT, 5: WaterBalloon
+        this.currentTool = 0; // 0 DigVacuum, 1 Sand, 2 Concrete, 3 Water, 4 TNT, 5 Balloon, 6 Lava, 7 Oil, 8 Drill, 9 Cluster, 10 Nuke, 11 Sticky
         this.brushRadius = 8;
         this.isMouseDown = false;
         this.mousePos = { x: 0, y: 0 };
@@ -80,6 +110,21 @@ export class SubSurfaceEngine {
         // Ballistic ejecta grains { x, y, vx, vy, mat } displaced by blasts
         this.grains = [];
         this.grainBuffer = new Float32Array(MAX_RENDER_GRAINS * 3);
+
+        // Cosmetic FX particles (smoke/embers/sparks) — render-only, never
+        // enter the conservation grid. Types: 0 smoke, 1 ember, 2 spark.
+        this.fx = [];
+        this.fxBuffer = new Float32Array(MAX_FX * 4);
+        this.lavaSurface = [];   // sampled lava-with-air-above cells (ember sources)
+        this.firePositions = []; // sampled burning cells (smoke sources)
+        this.fireCellCount = 0;
+        this.lastObsidianCount = 0;
+
+        // Camera shake (applied as a CSS transform so sim coords stay exact)
+        this.shakeAmp = 0;
+
+        // Procedural audio (context unlocks on the first pointer gesture)
+        this.audio = new SubSurfaceAudio();
 
         // Demo auto-drop ordnance
         this.autoDropEnabled = false;
@@ -205,6 +250,67 @@ export class SubSurfaceEngine {
         }
 
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+        this.initPostFx();
+    }
+
+    // Post-processing chain: scene FBO -> bright extract -> blurred bloom ->
+    // composite (lighting, heat haze, god rays, vignette). Any failure here
+    // falls back to the original direct-to-canvas render path.
+    initPostFx() {
+        this.postFx = false;
+        const gl = this.gl;
+        try {
+            this.extractProgram = this.createProgram(vsQuadSource, fsExtractSource);
+            this.blurProgram = this.createProgram(vsQuadSource, fsBlurSource);
+            this.compositeProgram = this.createProgram(vsQuadSource, fsCompositeSource);
+            this.fxProgram = this.createProgram(vsFxSource, fsFxSource);
+            if (!this.extractProgram || !this.blurProgram || !this.compositeProgram || !this.fxProgram) {
+                return;
+            }
+
+            const locs = (prog, names) => Object.fromEntries(names.map(n => [n, gl.getUniformLocation(prog, n)]));
+            this.extractLocs = locs(this.extractProgram, ['u_scene']);
+            this.blurLocs = locs(this.blurProgram, ['u_tex', 'u_dir']);
+            this.compositeLocs = locs(this.compositeProgram, ['u_scene', 'u_bloom', 'u_state', 'u_resolution', 'u_time']);
+            this.fxLocs = locs(this.fxProgram, ['u_resolution']);
+
+            const makeTarget = (w, h) => {
+                const tex = gl.createTexture();
+                gl.bindTexture(gl.TEXTURE_2D, tex);
+                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                const fbo = gl.createFramebuffer();
+                gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+                gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+                const ok = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+                gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+                return ok ? { tex, fbo, w, h } : null;
+            };
+
+            this.sceneTarget = makeTarget(this.width, this.height);
+            this.bloomA = makeTarget(this.width / 2, this.height / 2);
+            this.bloomB = makeTarget(this.width / 2, this.height / 2);
+            if (!this.sceneTarget || !this.bloomA || !this.bloomB) return;
+
+            // FX particle point buffer
+            this.fxVAO = gl.createVertexArray();
+            gl.bindVertexArray(this.fxVAO);
+            this.fxVBO = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, this.fxVBO);
+            gl.bufferData(gl.ARRAY_BUFFER, this.fxBuffer.byteLength, gl.DYNAMIC_DRAW);
+            gl.enableVertexAttribArray(0);
+            gl.vertexAttribPointer(0, 4, gl.FLOAT, false, 0, 0);
+            gl.bindVertexArray(null);
+
+            this.postFx = true;
+        } catch (e) {
+            console.warn('SubSurface post-FX unavailable, falling back to direct render.', e);
+            this.postFx = false;
+        }
     }
 
     loadInitialScene(presetName) {
@@ -379,16 +485,42 @@ export class SubSurfaceEngine {
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
         this.snapshotFrame = this.frame;
 
-        // Diagnostics: live cell census piggybacks on the readback
-        let sand = 0, fluid = 0;
+        // Diagnostics + FX/audio census piggyback on the readback: cell
+        // counts, sampled ember/smoke emitter positions, quench detection.
+        let sand = 0, fluid = 0, fire = 0, obsidian = 0;
         const d = this.gridData;
+        const w = this.width, w4 = w * 4;
+        this.lavaSurface.length = 0;
+        this.firePositions.length = 0;
         for (let i = 0; i < d.length; i += 4) {
             const m = d[i];
             if (m === MAT.SAND) sand++;
-            else if (m === MAT.WATER) fluid++;
+            else if (isLiquidMat(m)) {
+                fluid++;
+                if (m === MAT.LAVA && d[i + w4] === MAT.AIR &&
+                    this.lavaSurface.length < 24 && Math.random() < 0.05) {
+                    const cell = i / 4;
+                    this.lavaSurface.push({ x: cell % w, y: (cell / w) | 0 });
+                }
+            } else if (m === MAT.FIRE) {
+                fire++;
+                if (this.firePositions.length < 24 && Math.random() < 0.1) {
+                    const cell = i / 4;
+                    this.firePositions.push({ x: cell % w, y: (cell / w) | 0 });
+                }
+            } else if (m === MAT.OBSIDIAN) {
+                obsidian++;
+            }
         }
         this.activeSandCells = sand;
         this.activeFluidCells = fluid;
+        this.fireCellCount = fire;
+        this.audio.setFireLevel(fire);
+        // A jump in obsidian means lava just quenched somewhere — sizzle
+        if (obsidian > this.lastObsidianCount + 6) {
+            this.audio.sizzle(this.lavaSurface[0]?.x ?? 400);
+        }
+        this.lastObsidianCount = obsidian;
     }
 
     // COHERENCE GUARD: every CPU mutation that later uploads a rect must run
@@ -450,7 +582,10 @@ export class SubSurfaceEngine {
 
                     const belowIdx = idx - w;
                     const belowMat = grid[belowIdx * 4];
-                    if (belowMat === MAT.SAND || belowMat === MAT.BEDROCK || belowMat === MAT.DEBRIS) {
+                    // Loose debris gravel is NOT support: a stray blast pebble
+                    // under a beam must not leave it hovering — rigid bodies
+                    // crush through gravel (see the drop path below).
+                    if (belowMat === MAT.SAND || belowMat === MAT.BEDROCK || belowMat === MAT.OBSIDIAN) {
                         supported = true;
                         if (cx < supMinX) supMinX = cx;
                         if (cx > supMaxX) supMaxX = cx;
@@ -495,7 +630,8 @@ export class SubSurfaceEngine {
                 }
 
                 // Find the largest coherent drop (up to ISLAND_FALL_STEP px):
-                // every cell's target must be air, water, or another island cell.
+                // every cell's target must be air, water, crushable debris
+                // gravel, or another island cell.
                 const inIsland = new Set(cells);
                 let drop = 0;
                 for (let d = ISLAND_FALL_STEP; d >= 1; d--) {
@@ -505,7 +641,7 @@ export class SubSurfaceEngine {
                         if (((t / w) | 0) <= 2) { ok = false; break; } // bedrock rows
                         if (inIsland.has(t)) continue;
                         const tm = grid[t * 4];
-                        if (tm !== MAT.AIR && tm !== MAT.WATER) { ok = false; break; }
+                        if (tm !== MAT.AIR && tm !== MAT.WATER && tm !== MAT.DEBRIS) { ok = false; break; }
                     }
                     if (ok) { drop = d; break; }
                 }
@@ -515,11 +651,21 @@ export class SubSurfaceEngine {
                 // Move the island: clear old cells, count displaced water at the
                 // targets, stamp concrete, then refill vacated cells with the
                 // displaced water (topmost vacated cells first — water rises).
+                // Debris gravel at the targets is CRUSHED aside as ballistic
+                // grains (conserved — the pebbles squirt out and land again).
                 let displacedWater = 0;
                 for (const idx of cells) grid[idx * 4] = MAT.AIR;
                 for (const idx of cells) {
                     const t = idx - drop * w;
                     if (grid[t * 4] === MAT.WATER) displacedWater++;
+                    else if (grid[t * 4] === MAT.DEBRIS) {
+                        this.grains.push({
+                            x: t % w, y: (t / w) | 0,
+                            vx: (Math.random() < 0.5 ? -1 : 1) * (40 + Math.random() * 110),
+                            vy: 40 + Math.random() * 100,
+                            mat: MAT.DEBRIS, dust: false, sub: false
+                        });
+                    }
                     grid[t * 4] = MAT.CONCRETE;
                     grid[t * 4 + 1] = 0;
                     grid[t * 4 + 2] = 0;
@@ -585,7 +731,7 @@ export class SubSurfaceEngine {
             const x = xs[i];
             const contiguous = i > 0 && xs[i - 1] === x - 1;
             const below = grid[((colBottom.get(x) - 1) * w + x) * 4];
-            const unsupported = below !== MAT.SAND && below !== MAT.BEDROCK && below !== MAT.CONCRETE && below !== MAT.DEBRIS;
+            const unsupported = below !== MAT.SAND && below !== MAT.BEDROCK && below !== MAT.CONCRETE && below !== MAT.OBSIDIAN;
             if (unsupported && (runStart >= 0 ? contiguous : true)) {
                 if (runStart < 0 || !contiguous) { runStart = i; runLen = 0; }
                 runLen++;
@@ -691,12 +837,13 @@ export class SubSurfaceEngine {
 
         const onPointerDown = (e) => {
             e.preventDefault();
+            this.audio.unlock(); // user gesture: allowed to start the AudioContext
             this.isMouseDown = true;
             const pt = getCanvasCoord(e);
             this.mousePos = pt;
 
             // Slingshot Aim in Sky (domY <= 299 or WebGL y >= 300)
-            if ((this.currentTool === 4 || this.currentTool === 5) && pt.domY <= 300) {
+            if (TOOL_ORDNANCE[this.currentTool] !== undefined && pt.domY <= 300) {
                 this.isSlingshotAiming = true;
                 this.slingshotOrigin = { x: pt.x, y: pt.y };
                 this.slingshotCurrent = { x: pt.x, y: pt.y };
@@ -718,19 +865,12 @@ export class SubSurfaceEngine {
                 const vx = (this.slingshotOrigin.x - this.slingshotCurrent.x) * LAUNCH_POWER;
                 const vy = (this.slingshotOrigin.y - this.slingshotCurrent.y) * LAUNCH_POWER;
 
-                if (Math.hypot(vx, vy) > 10.0 && this.projectiles.length < MAX_PROJECTILES) {
-                    this.projectiles.push({
-                        type: this.currentTool === 4 ? 'TNT' : 'BALLOON',
-                        x: this.slingshotOrigin.x,
-                        y: this.slingshotOrigin.y,
-                        vx: vx,
-                        vy: vy,
-                        radius: 6,
-                        timer: 5.0,
-                        angle: Math.PI / 2,
-                        omega: 0,
-                        splash: 0
-                    });
+                const power = Math.hypot(vx, vy);
+                if (power > 10.0 && this.projectiles.length < MAX_PROJECTILES) {
+                    this.spawnOrdnance(TOOL_ORDNANCE[this.currentTool] ?? 'TNT',
+                        this.slingshotOrigin.x, this.slingshotOrigin.y, vx, vy);
+                    this.audio.launch(power);
+                    this.addShake(1.2); // release recoil
                 }
                 this.isSlingshotAiming = false;
             }
@@ -814,15 +954,18 @@ export class SubSurfaceEngine {
         if (running) {
             this.updateProjectiles(0.0166);
             this.updateGrains(0.0166);
+            this.updateFx(0.0166);
         }
+        this.applyShake();
 
         // 2. Cellular Physics Sub-Steps
         gl.useProgram(this.physicsProgram);
         gl.bindVertexArray(this.quadVAO);
 
-        // Brush parameters: (x, y, radius, material)
+        // Brush parameters: (x, y, radius, material) — brush tool ids double as
+        // material ids (0 air, 1 sand, 2 concrete, 3 water, 6 lava, 7 oil)
         let brushUniform = [0, 0, 0, 0];
-        if (this.isMouseDown && !this.isSlingshotAiming && this.currentTool <= 3) {
+        if (this.isMouseDown && !this.isSlingshotAiming && BRUSH_TOOLS.has(this.currentTool)) {
             brushUniform = [this.mousePos.x, this.mousePos.y, this.brushRadius, this.currentTool];
         }
 
@@ -860,8 +1003,9 @@ export class SubSurfaceEngine {
             this.currentFboIndex = writeIndex;
         }
 
-        // 3. Render Pass to Canvas
-        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        // 3. Render Pass — into the offscreen scene target when post-FX is
+        // active, else straight to the canvas (fallback path)
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.postFx ? this.sceneTarget.fbo : null);
         gl.useProgram(this.renderProgram);
         gl.bindVertexArray(this.quadVAO);
 
@@ -877,7 +1021,7 @@ export class SubSurfaceEngine {
         const projCount = Math.min(this.projectiles.length, MAX_PROJECTILES);
         for (let i = 0; i < projCount; i++) {
             const p = this.projectiles[i];
-            const kind = p.type === 'BALLOON' ? 2 : 0;
+            const kind = ORDNANCE_SPECS[p.type]?.kind ?? 0;
             const TAU = Math.PI * 2;
             const ang = ((p.angle % TAU) + TAU) % TAU;
             projData.set([p.x, p.y, p.radius, kind * 10 + ang], i * 4);
@@ -908,7 +1052,157 @@ export class SubSurfaceEngine {
             gl.drawArrays(gl.POINTS, 0, grainCount);
         }
 
+        // 5. Post-FX: cosmetic particles into the scene, then bloom + composite
+        if (this.postFx) {
+            this.drawFxParticles();
+
+            gl.bindVertexArray(this.quadVAO);
+
+            // 5a. Bright-pass extract at half resolution
+            gl.useProgram(this.extractProgram);
+            gl.bindFramebuffer(gl.FRAMEBUFFER, this.bloomA.fbo);
+            gl.viewport(0, 0, this.bloomA.w, this.bloomA.h);
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, this.sceneTarget.tex);
+            gl.uniform1i(this.extractLocs.u_scene, 0);
+            gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+            // 5b. Two separable gaussian blur iterations (A->B->A ...)
+            gl.useProgram(this.blurProgram);
+            gl.uniform1i(this.blurLocs.u_tex, 0);
+            for (let it = 0; it < 2; it++) {
+                gl.bindFramebuffer(gl.FRAMEBUFFER, this.bloomB.fbo);
+                gl.bindTexture(gl.TEXTURE_2D, this.bloomA.tex);
+                gl.uniform2f(this.blurLocs.u_dir, 1.0 / this.bloomA.w, 0.0);
+                gl.drawArrays(gl.TRIANGLES, 0, 6);
+                gl.bindFramebuffer(gl.FRAMEBUFFER, this.bloomA.fbo);
+                gl.bindTexture(gl.TEXTURE_2D, this.bloomB.tex);
+                gl.uniform2f(this.blurLocs.u_dir, 0.0, 1.0 / this.bloomA.h);
+                gl.drawArrays(gl.TRIANGLES, 0, 6);
+            }
+
+            // 5c. Composite to canvas: lighting, haze, god rays, glow, vignette
+            gl.useProgram(this.compositeProgram);
+            gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+            gl.viewport(0, 0, this.width, this.height);
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, this.sceneTarget.tex);
+            gl.activeTexture(gl.TEXTURE1);
+            gl.bindTexture(gl.TEXTURE_2D, this.bloomA.tex);
+            gl.activeTexture(gl.TEXTURE2);
+            gl.bindTexture(gl.TEXTURE_2D, this.textures[this.currentFboIndex]);
+            gl.uniform1i(this.compositeLocs.u_scene, 0);
+            gl.uniform1i(this.compositeLocs.u_bloom, 1);
+            gl.uniform1i(this.compositeLocs.u_state, 2);
+            gl.uniform2f(this.compositeLocs.u_resolution, this.width, this.height);
+            gl.uniform1f(this.compositeLocs.u_time, timeSeconds);
+            gl.drawArrays(gl.TRIANGLES, 0, 6);
+            gl.activeTexture(gl.TEXTURE0);
+        }
+
         this.frame++;
+    }
+
+    // FX particles draw in two batches over the scene: smoke with standard
+    // alpha blending, embers/sparks additively so they read as incandescent.
+    drawFxParticles() {
+        const n = Math.min(this.fx.length, MAX_FX);
+        if (n === 0) return;
+        const gl = this.gl;
+        let smoke = 0;
+        let glow = n;
+        // Pack smoke first, then glow (embers + sparks), into one buffer
+        for (let i = 0; i < n; i++) {
+            const p = this.fx[i];
+            const lifeFrac = Math.max(0, Math.min(1, p.life / p.maxLife));
+            if (p.type === 0) {
+                const o = smoke++ * 4;
+                this.fxBuffer[o] = p.x; this.fxBuffer[o + 1] = p.y;
+                this.fxBuffer[o + 2] = p.type; this.fxBuffer[o + 3] = lifeFrac;
+            } else {
+                const o = --glow * 4;
+                this.fxBuffer[o] = p.x; this.fxBuffer[o + 1] = p.y;
+                this.fxBuffer[o + 2] = p.type; this.fxBuffer[o + 3] = lifeFrac;
+            }
+        }
+        gl.useProgram(this.fxProgram);
+        gl.bindVertexArray(this.fxVAO);
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.fxVBO);
+        gl.bufferSubData(gl.ARRAY_BUFFER, 0, this.fxBuffer.subarray(0, n * 4));
+        gl.uniform2f(this.fxLocs.u_resolution, this.width, this.height);
+        gl.enable(gl.BLEND);
+        if (smoke > 0) {
+            gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+            gl.drawArrays(gl.POINTS, 0, smoke);
+        }
+        if (glow < n) {
+            gl.blendFunc(gl.ONE, gl.ONE);
+            gl.drawArrays(gl.POINTS, glow, n - glow);
+        }
+        gl.disable(gl.BLEND);
+        gl.bindVertexArray(null);
+    }
+
+    spawnFx(type, x, y, vx, vy, life) {
+        if (this.fx.length >= MAX_FX) return;
+        this.fx.push({ type, x, y, vx, vy, life, maxLife: life });
+    }
+
+    updateFx(dt) {
+        // Continuous emitters: embers drift off molten surfaces, thin smoke
+        // curls off burning cells (positions sampled during the grid census)
+        if (this.lavaSurface.length > 0 && Math.random() < 0.5) {
+            const s = this.lavaSurface[(Math.random() * this.lavaSurface.length) | 0];
+            this.spawnFx(1, s.x + (Math.random() - 0.5) * 3, s.y + 1,
+                (Math.random() - 0.5) * 14, 18 + Math.random() * 30, 1.2 + Math.random() * 1.6);
+        }
+        if (this.firePositions.length > 0 && Math.random() < 0.6) {
+            const s = this.firePositions[(Math.random() * this.firePositions.length) | 0];
+            this.spawnFx(0, s.x + (Math.random() - 0.5) * 3, s.y + 2,
+                (Math.random() - 0.5) * 8, 22 + Math.random() * 20, 1.0 + Math.random() * 1.5);
+        }
+
+        for (let i = this.fx.length - 1; i >= 0; i--) {
+            const p = this.fx[i];
+            p.life -= dt;
+            if (p.type === 0) {
+                // Smoke: buoyant, wandering, air-dragged
+                p.vy += 26 * dt;
+                p.vx = p.vx * 0.985 + (Math.random() - 0.5) * 10 * dt;
+            } else if (p.type === 1) {
+                // Ember: rises on the thermal, flickers sideways
+                p.vy += 14 * dt;
+                p.vx = p.vx * 0.98 + (Math.random() - 0.5) * 30 * dt;
+            } else {
+                // Spark: ballistic and fast-burning
+                p.vy -= 500 * dt;
+            }
+            p.x += p.vx * dt;
+            p.y += p.vy * dt;
+            if (p.life <= 0 || p.x < 0 || p.x > this.width || p.y < 0 || p.y > this.height ||
+                (p.type !== 0 && isSolidMat(this.matAt(p.x, p.y)))) {
+                this.fx[i] = this.fx[this.fx.length - 1];
+                this.fx.pop();
+            }
+        }
+    }
+
+    // Camera shake is a CSS transform on the canvas so simulation/input
+    // coordinates stay exact; it decays exponentially each frame.
+    addShake(amp) {
+        this.shakeAmp = Math.min(14, this.shakeAmp + amp);
+    }
+
+    applyShake() {
+        if (this.shakeAmp > 0.15) {
+            const dx = (Math.random() - 0.5) * 2 * this.shakeAmp;
+            const dy = (Math.random() - 0.5) * 2 * this.shakeAmp;
+            this.canvas.style.transform = `translate(${dx.toFixed(1)}px, ${dy.toFixed(1)}px)`;
+            this.shakeAmp *= 0.88;
+        } else if (this.shakeAmp !== 0) {
+            this.shakeAmp = 0;
+            this.canvas.style.transform = '';
+        }
     }
 
     // ---- Blast ejecta -------------------------------------------------------
@@ -917,7 +1211,7 @@ export class SubSurfaceEngine {
     // ray reaches before it has chewed through BLAST_SOLID_BUDGET px of solid.
     // Cells beyond their ray's reach are shielded — blasts carve bowl craters,
     // channel through tunnels, and are stopped by concrete walls.
-    computeBlastReach(cx, cy, maxR) {
+    computeBlastReach(cx, cy, maxR, solidBudget = BLAST_SOLID_BUDGET) {
         const rays = 360;
         const reach = new Float32Array(rays);
         const step = (Math.PI * 2) / rays;
@@ -927,7 +1221,7 @@ export class SubSurfaceEngine {
             for (; t < maxR; t += 2) {
                 if (isSolidMat(this.matAt(cx + ux * t, cy + uy * t))) {
                     solid += 2;
-                    if (solid > BLAST_SOLID_BUDGET) break;
+                    if (solid > solidBudget) break;
                 }
             }
             reach[a] = t;
@@ -935,9 +1229,12 @@ export class SubSurfaceEngine {
         return reach;
     }
 
-    detonateBlast(cx, cy, exclude) {
+    // scale multiplies the crater radius / shockwave / ray budget (bomblets
+    // ~0.4, nuke ~1.45); bodyR is the casing radius shattered into red debris.
+    detonateBlast(cx, cy, exclude, scale = 1.0, bodyR = 6) {
         // Fresh snapshot so the crater is cut from the true current terrain
         this.ensureFreshSnapshot();
+        const submergedBlast = this.matAt(cx, cy) === MAT.WATER;
 
         const w = this.width, h = this.height, grid = this.gridData;
         // Depth of burial governs the blast's character: an airburst scours a
@@ -950,7 +1247,7 @@ export class SubSurfaceEngine {
         }
         const camouflet = burial > 70;
         const airburst = burial < 12;
-        const rScale = camouflet ? 0.55 : (airburst ? 0.75 : 1.0);
+        const rScale = (camouflet ? 0.55 : (airburst ? 0.75 : 1.0)) * scale;
         const spScale = camouflet ? 0.3 : 1.0;
         const upBias = camouflet ? 15 : (airburst ? 40 : 130);
 
@@ -958,7 +1255,7 @@ export class SubSurfaceEngine {
         const scorchR = sandR + 14;               // charred crater lining
         const waterR = Math.round(sandR * 1.4);   // water is thrown farther
         const ringR = sandR * 2;                  // surviving water gets outward surge
-        const reach = this.computeBlastReach(cx, cy, ringR);
+        const reach = this.computeBlastReach(cx, cy, ringR, BLAST_SOLID_BUDGET * scale);
 
         const x0 = Math.max(1, Math.round(cx - ringR)), x1 = Math.min(w - 2, Math.round(cx + ringR));
         const y0 = Math.max(3, Math.round(cy - ringR)), y1 = Math.min(h - 1, Math.round(cy + ringR));
@@ -977,11 +1274,21 @@ export class SubSurfaceEngine {
                 if (dist > ringR) continue;
                 const idx = (y * w + x) * 4;
                 const m = grid[idx];
-                if (m !== MAT.SAND && m !== MAT.WATER && m !== MAT.DEBRIS) continue; // concrete/bedrock immune
+                const solidLike = m === MAT.SAND || m === MAT.DEBRIS || m === MAT.OBSIDIAN;
+                const liquidLike = isLiquidMat(m);
+                if (!solidLike && !liquidLike && m !== MAT.FIRE) continue; // concrete/bedrock immune
 
                 let ai = Math.round(Math.atan2(dy, dx) * 180 / Math.PI);
                 if (ai < 0) ai += 360;
                 if (dist > reach[ai % 360]) continue;            // shielded
+
+                if (m === MAT.FIRE) {
+                    // The pressure wave blows flames out (non-conserved gas)
+                    grid[idx] = MAT.AIR;
+                    grid[idx + 1] = 0;
+                    touch(x, y);
+                    continue;
+                }
 
                 let ux, uy;
                 if (dist < 0.5) {
@@ -991,7 +1298,7 @@ export class SubSurfaceEngine {
                     ux = dx / dist; uy = dy / dist;
                 }
 
-                if (m === MAT.SAND || m === MAT.DEBRIS) {
+                if (solidLike) {
                     if (dist <= sandR) {
                         // Displace: eject as a ballistic grain (25% fine dust)
                         const dust = m === MAT.SAND && !camouflet && Math.random() < 0.25;
@@ -1015,18 +1322,18 @@ export class SubSurfaceEngine {
                         grid[idx + 2] = dist <= sandR + 5 ? -2 : -1;
                         touch(x, y);
                     }
-                } else if (m === MAT.WATER) {
+                } else {
                     if (dist <= waterR) {
-                        // Water column thrown up; near the core it flashes to
-                        // slow-drifting steam mist that condenses back down
-                        const steam = dist < 20;
+                        // Liquid column thrown up; near the core water flashes
+                        // to slow-drifting steam mist that condenses back down
+                        const steam = m === MAT.WATER && dist < 20;
                         const speed = EJECTA_SPEED * 1.1 * (0.35 + 0.65 * (1 - dist / waterR)) *
                                       (0.7 + Math.random() * 0.6);
                         this.grains.push({
                             x, y,
                             vx: ux * speed + (Math.random() - 0.5) * 80,
                             vy: uy * speed + 110 + Math.random() * 90 + (steam ? 220 : 0),
-                            mat: MAT.WATER,
+                            mat: m,
                             dust: steam,
                             sub: false
                         });
@@ -1035,9 +1342,16 @@ export class SubSurfaceEngine {
                         grid[idx + 2] = 0;
                         grid[idx + 3] = 0;
                         touch(x, y);
-                    } else {
+                    } else if (m === MAT.WATER) {
                         // Surviving outer water takes an outward surge impulse
                         grid[idx + 1] = dx >= 0 ? 1 : -1;
+                        touch(x, y);
+                    } else if (m === MAT.OIL) {
+                        // The fireball ignites the surviving oil ring
+                        grid[idx] = MAT.FIRE;
+                        grid[idx + 1] = 1;
+                        grid[idx + 2] = 0;
+                        grid[idx + 3] = 0;
                         touch(x, y);
                     }
                 }
@@ -1051,7 +1365,6 @@ export class SubSurfaceEngine {
         // The bomb's own matter survives: its casing shatters into red debris
         // grains (one per body cell) that fly with the blast and land as
         // permanent red gravel — nothing about the bomb vanishes.
-        const bodyR = 6;
         for (let dy = -bodyR; dy <= bodyR; dy++) {
             for (let dx = -bodyR; dx <= bodyR; dx++) {
                 const dist = Math.hypot(dx, dy);
@@ -1093,18 +1406,37 @@ export class SubSurfaceEngine {
             g.vy += ((g.y - cy) / d) * push * 0.5;
         }
 
-        // Air-blast impulse knocks nearby ordnance flying
+        // Air-blast impulse knocks nearby ordnance flying (and shakes stuck
+        // charges loose)
+        const kickR = 400 * Math.max(1, scale);
         for (const q of this.projectiles) {
             if (q === exclude) continue;
             const d = Math.hypot(q.x - cx, q.y - cy);
-            if (d > 400 || d < 0.5) continue;
-            const kick = 900 * (1 - d / 400);
+            if (d > kickR || d < 0.5) continue;
+            const kick = 900 * (1 - d / kickR);
+            q.stuck = false;
             q.vx += ((q.x - cx) / d) * kick;
             q.vy += ((q.y - cy) / d) * kick + 90;
         }
 
         if (this.shockwaves.length >= MAX_SHOCKWAVES) this.shockwaves.shift();
         this.shockwaves.push({ x: cx, y: cy, radius: 10, maxRadius: Math.round(340 * rScale), intensity: 1.0 });
+
+        // Juice: bang, kick, buzz, and a lingering smoke plume off the crater
+        this.audio.explosion(cx, scale, submergedBlast || camouflet);
+        this.addShake(4 * scale + 2);
+        try { navigator.vibrate?.(Math.min(220, Math.round(90 * scale))); } catch { /* unsupported */ }
+        if (!submergedBlast) {
+            const plumes = Math.round(50 * scale);
+            for (let i = 0; i < plumes; i++) {
+                const a = Math.random() * Math.PI;
+                const r = Math.random() * sandR * 0.6;
+                this.spawnFx(0,
+                    cx + Math.cos(a) * r, cy + Math.abs(Math.sin(a)) * r * 0.5 + 4,
+                    (Math.random() - 0.5) * 30, 20 + Math.random() * 55,
+                    1.5 + Math.random() * 2.5);
+            }
+        }
     }
 
     // Drop one grain back into the grid at its landing spot; grains landing on
@@ -1267,12 +1599,12 @@ export class SubSurfaceEngine {
     // ---- Ordnance -----------------------------------------------------------
 
     updateProjectiles(dt) {
-        // Auto-drop demo ordnance: rain a random TNT bomb from the sky every second
+        // Auto-drop demo ordnance: rain a random bomb from the sky every second
         if (this.autoDropEnabled) {
             this.autoDropTimer += dt;
             if (this.autoDropTimer >= 1.0) {
                 this.autoDropTimer -= 1.0;
-                this.spawnRandomTNT();
+                this.spawnRandomOrdnance();
             }
         }
 
@@ -1288,6 +1620,29 @@ export class SubSurfaceEngine {
 
         for (let i = this.projectiles.length - 1; i >= 0; i--) {
             const p = this.projectiles[i];
+
+            // Molten heat cooks off any ordnance instantly (balloon flashes to
+            // steam-spray; explosives sympathetically detonate)
+            if (this.matAt(p.x, p.y) === MAT.LAVA ||
+                this.matAt(p.x, p.y - p.radius) === MAT.LAVA) {
+                this.explodeProjectile(p);
+                this.projectiles.splice(i, 1);
+                continue;
+            }
+
+            // A stuck charge just counts down; it un-sticks if its anchor cell
+            // is dug or blasted away (or a nearby blast kicks it loose).
+            if (p.stuck) {
+                if (isSolidMat(this.matAt(p.ax, p.ay))) {
+                    p.timer -= dt;
+                    if (p.timer <= 0) {
+                        this.explodeProjectile(p);
+                        this.projectiles.splice(i, 1);
+                    }
+                    continue;
+                }
+                p.stuck = false;
+            }
 
             const inWater = this.matAt(p.x, p.y) === MAT.WATER ||
                             this.matAt(p.x, p.y - p.radius) === MAT.WATER;
@@ -1305,11 +1660,12 @@ export class SubSurfaceEngine {
             }
             p.wasInWater = inWater;
 
-            // Integrate: gravity (buoyant drag in water), substepped to avoid
-            // tunneling through thin terrain at slingshot speeds.
-            const gravity = inWater ? GRAVITY * 0.25 : GRAVITY;
+            // Integrate: gravity (buoyant drag in water/oil), substepped to
+            // avoid tunneling through thin terrain at slingshot speeds.
+            const inOil = !inWater && this.matAt(p.x, p.y) === MAT.OIL;
+            const gravity = inWater || inOil ? GRAVITY * 0.25 : GRAVITY;
             p.vy -= gravity * dt;
-            if (inWater) {
+            if (inWater || inOil) {
                 p.vx *= 0.92;
                 p.vy *= 0.92;
             }
@@ -1317,22 +1673,26 @@ export class SubSurfaceEngine {
             const moveLen = Math.hypot(p.vx, p.vy) * dt;
             const moveSteps = Math.max(1, Math.ceil(moveLen / 2.0));
             let burst = false;
+            if (p.type === 'DRILL') p.carving = false;
             for (let s = 0; s < moveSteps && !burst; s++) {
                 p.x += (p.vx * dt) / moveSteps;
                 p.y += (p.vy * dt) / moveSteps;
-                burst = this.resolveProjectileCollision(p);
+                burst = p.type === 'DRILL'
+                    ? this.drillStep(p)
+                    : this.resolveProjectileCollision(p);
             }
-            if (!burst && p.type === 'TNT') {
+            if (!burst && (p.type === 'TNT' || p.type === 'NUKE' ||
+                           p.type === 'CLUSTER' || p.type === 'BOMBLET')) {
                 this.rollOnSlope(p, dt);
             }
             // Spin: rotation follows contact velocity (set in rollOnSlope and
-            // at bounces); a tumbling sphere keeps its angular momentum in flight
-            p.angle += p.omega * dt;
+            // at bounces); the drill instead keeps its nose on the velocity
+            // vector (set in drillStep).
+            if (p.type !== 'DRILL') p.angle += p.omega * dt;
             p.splash = Math.max(0, p.splash - dt);
 
             if (burst) {
-                // Water balloon: instantaneous 360° pressurized fluid discharge
-                this.sprayWaterBurst(Math.round(p.x), Math.round(p.y), 16);
+                this.explodeProjectile(p);
                 this.projectiles.splice(i, 1);
                 continue;
             }
@@ -1343,23 +1703,133 @@ export class SubSurfaceEngine {
                 continue;
             }
 
-            // TNT fuse burns on land and underwater alike; a submerged blast
+            // Fuse burns on land and underwater alike; a submerged blast
             // ejects the surrounding water column and the remaining body of
             // water then pours into the freshly opened crater via the fluid CA.
-            if (p.type === 'TNT') {
+            // (Balloon has no fuse — it is purely impact-detonated.)
+            if (p.type !== 'BALLOON') {
                 p.timer -= dt;
                 if (p.timer <= 0) {
-                    this.detonateBlast(p.x, p.y, p);
+                    this.explodeProjectile(p);
                     this.projectiles.splice(i, 1);
                 }
             }
         }
+
+        // Drill grind loop follows whichever drill is actively boring
+        const activeDrill = this.projectiles.find(q => q.type === 'DRILL' && q.carving);
+        this.audio.drill(!!activeDrill, activeDrill ? activeDrill.x : 400);
+    }
+
+    explodeProjectile(p) {
+        const spec = ORDNANCE_SPECS[p.type] ?? ORDNANCE_SPECS.TNT;
+        switch (p.type) {
+            case 'BALLOON':
+                // Instantaneous 360° pressurized fluid discharge
+                this.sprayWaterBurst(Math.round(p.x), Math.round(p.y), 16);
+                this.audio.balloonPop(p.x);
+                break;
+            case 'CLUSTER':
+                this.popCluster(p);
+                break;
+            default:
+                this.detonateBlast(p.x, p.y, p, spec.scale ?? 1.0, p.radius);
+                break;
+        }
+    }
+
+    // Cluster shell: a small opening pop, then a fan of live bomblets that
+    // scatter, bounce, and detonate on short randomized fuses.
+    popCluster(p) {
+        this.detonateBlast(p.x, p.y, p, ORDNANCE_SPECS.CLUSTER.scale, p.radius);
+        const n = 7;
+        for (let i = 0; i < n; i++) {
+            if (this.projectiles.length >= MAX_PROJECTILES) break;
+            const a = Math.PI * (0.15 + 0.7 * (i / (n - 1)));
+            const sp = 160 + Math.random() * 180;
+            this.projectiles.push({
+                type: 'BOMBLET',
+                x: p.x, y: p.y + 4,
+                vx: Math.cos(a) * sp + p.vx * 0.3,
+                vy: Math.sin(a) * sp + 60,
+                radius: ORDNANCE_SPECS.BOMBLET.radius,
+                timer: 0.8 + Math.random() * 0.9,
+                angle: Math.PI / 2,
+                omega: (Math.random() - 0.5) * 20,
+                splash: 0,
+                stuck: false
+            });
+        }
+    }
+
+    // Bunker-buster: never bounces — it bores along its velocity vector,
+    // converting every carved cell into slow backward spoil grains (displaced,
+    // not destroyed) until its chew budget runs out, it stalls, or it meets
+    // bedrock; then it detonates at depth. Returns true when it should explode.
+    drillStep(p) {
+        const speed = Math.hypot(p.vx, p.vy);
+        if (speed > 1) p.angle = Math.atan2(p.vy, p.vx);
+        const ux = speed > 1 ? p.vx / speed : 0;
+        const uy = speed > 1 ? p.vy / speed : -1;
+        const tipM = this.matAt(p.x + ux * p.radius, p.y + uy * p.radius);
+        if (tipM === MAT.BEDROCK) return true;
+        if (!isSolidMat(tipM)) return false;      // free flight / liquid
+        if (speed < 60) return true;              // stalled in the ground
+
+        this.ensureFreshSnapshot();
+        const w = this.width, grid = this.gridData;
+        const R = 4;
+        const cx = Math.round(p.x + ux * p.radius), cy = Math.round(p.y + uy * p.radius);
+        let minX = w, maxX = -1, minY = this.height, maxY = -1;
+        for (let dy = -R; dy <= R; dy++) {
+            for (let dx = -R; dx <= R; dx++) {
+                if (Math.hypot(dx, dy) > R) continue;
+                const x = cx + dx, y = cy + dy;
+                if (x < 1 || x > w - 2 || y <= 3 || y >= this.height) continue;
+                const idx = (y * w + x) * 4;
+                const m = grid[idx];
+                if (!isSolidMat(m) || m === MAT.BEDROCK) continue;
+                p.budget -= (m === MAT.CONCRETE || m === MAT.OBSIDIAN) ? 3 : 1;
+                this.grains.push({
+                    x, y,
+                    vx: -ux * (40 + Math.random() * 90) + (Math.random() - 0.5) * 80,
+                    vy: -uy * (40 + Math.random() * 90) + 60 + Math.random() * 60,
+                    mat: m,
+                    dust: Math.random() < 0.5,
+                    sub: false
+                });
+                grid[idx] = MAT.AIR;
+                grid[idx + 1] = 0;
+                grid[idx + 2] = 0;
+                grid[idx + 3] = 0;
+                if (x < minX) minX = x;
+                if (x > maxX) maxX = x;
+                if (y < minY) minY = y;
+                if (y > maxY) maxY = y;
+            }
+        }
+        if (maxX >= 0) {
+            this.uploadRegion(minX, minY, maxX - minX + 1, maxY - minY + 1);
+            p.carving = true;
+            // White-hot chips fly back off the bit
+            for (let s = 0; s < 3; s++) {
+                this.spawnFx(2, cx - ux * 3, cy - uy * 3,
+                    -ux * (120 + Math.random() * 220) + (Math.random() - 0.5) * 120,
+                    -uy * (120 + Math.random() * 220) + 60 + Math.random() * 80,
+                    0.25 + Math.random() * 0.2);
+            }
+        }
+        // Boring bleeds momentum
+        p.vx *= 0.985;
+        p.vy *= 0.985;
+        return p.budget <= 0;
     }
 
     // Water-entry splash: convert the surface water the sphere punches through
     // into an upward/outward droplet plume. One cell = one droplet — conserved.
     splashWaterEntry(p) {
         this.ensureFreshSnapshot();
+        this.audio.splash(p.x, Math.min(1, Math.abs(p.vy) / 500));
         const w = this.width, grid = this.gridData;
         const r = p.radius + 2;
         const cx = Math.round(p.x), cy = Math.round(p.y);
@@ -1471,9 +1941,31 @@ export class SubSurfaceEngine {
         const solidRight = isSolidMat(this.matAt(p.x + r, p.y));
 
         if (p.type === 'BALLOON') {
-            // Ruptures on any collision with sand, concrete, bedrock, or water
+            // Ruptures on any collision with solids or liquid surfaces
             return solidBelow || solidAbove || solidLeft || solidRight ||
-                   this.matAt(p.x, p.y) === MAT.WATER;
+                   isLiquidMat(this.matAt(p.x, p.y));
+        }
+
+        const contact = solidBelow || solidAbove || solidLeft || solidRight;
+
+        if (p.type === 'STICKY') {
+            // Adheres to the first solid it touches; anchor cell is watched so
+            // the charge drops free if its support is dug or blasted away
+            if (contact) {
+                p.stuck = true;
+                p.vx = 0; p.vy = 0; p.omega = 0;
+                if (solidBelow)      { p.ax = Math.round(p.x); p.ay = Math.round(p.y - r); }
+                else if (solidAbove) { p.ax = Math.round(p.x); p.ay = Math.round(p.y + r); }
+                else if (solidLeft)  { p.ax = Math.round(p.x - r); p.ay = Math.round(p.y); }
+                else                 { p.ax = Math.round(p.x + r); p.ay = Math.round(p.y); }
+            }
+            return false;
+        }
+
+        // Cluster shell is impact-fused: a hard strike pops it open mid-air;
+        // a gentle landing lets it roll until the 3s fuse fires
+        if (p.type === 'CLUSTER' && contact && Math.hypot(p.vx, p.vy) > 140) {
+            return true;
         }
 
         if (solidBelow && p.vy < 0) {
@@ -1485,11 +1977,19 @@ export class SubSurfaceEngine {
                 p.splash = 0.3;
                 p.vy *= 0.5;
             }
-            // Un-embed, then bounce; contact torque spins the sphere
+            // Un-embed, then bounce; contact torque spins the sphere.
+            // Impact friction fires only on a real strike — resting contact
+            // re-triggers this branch EVERY frame (gravity), and scrubbing vx
+            // here each time froze spheres on slopes instead of letting
+            // rollOnSlope carry them downhill.
             let guard = 0;
             while (isSolidMat(this.matAt(p.x, p.y - r)) && guard++ < 8) p.y += 1;
-            p.vy = Math.abs(p.vy) > 60 ? -p.vy * 0.35 : 0;
-            p.vx *= 0.7;
+            const impact = Math.abs(p.vy) > 60;
+            if (impact) {
+                this.audio.bounce(p.x, Math.abs(p.vy));
+                p.vx *= 0.7;
+            }
+            p.vy = impact ? -p.vy * 0.35 : 0;
             p.omega = -p.vx / r;
         }
         if (solidAbove && p.vy > 0) {
@@ -1531,11 +2031,11 @@ export class SubSurfaceEngine {
         const sinTheta = slope / Math.hypot(1, slope);
 
         p.vx += -sinTheta * GRAVITY * 0.6 * dt;      // downhill acceleration
-        p.vx *= Math.pow(0.35, dt);                  // rolling friction
+        p.vx *= Math.pow(0.5, dt);                   // rolling friction (sole scrubber on the ground)
         p.omega = -p.vx / r;                         // rolling without slipping
 
         // Rest only when the ground is effectively flat AND motion has died out
-        if (Math.abs(sinTheta) < 0.08 && Math.abs(p.vx) < 1.5) {
+        if (Math.abs(sinTheta) < 0.06 && Math.abs(p.vx) < 3.0) {
             p.vx = 0;
             p.omega = 0;
         }
@@ -1608,24 +2108,31 @@ export class SubSurfaceEngine {
         this.autoDropTimer = 0;
     }
 
-    spawnRandomTNT() {
-        // Every bomb detonates within 5s (land or water), so the array
-        // self-clears; the cap only trips during extreme manual barrages.
-        if (this.projectiles.length >= MAX_PROJECTILES) return;
-        const x = 30 + Math.random() * (this.width - 60);
-        const y = this.height - 20; // top of the sky; the bomb free-falls into the terrain
+    spawnOrdnance(type, x, y, vx, vy) {
+        const spec = ORDNANCE_SPECS[type] ?? ORDNANCE_SPECS.TNT;
         this.projectiles.push({
-            type: 'TNT',
-            x: x,
-            y: y,
-            vx: 0,
-            vy: 0,
-            radius: 6,
-            timer: 5.0,
+            type,
+            x, y, vx, vy,
+            radius: spec.radius,
+            timer: spec.timer,
+            budget: spec.budget ?? 0,
             angle: Math.PI / 2,
             omega: 0,
-            splash: 0
+            splash: 0,
+            stuck: false
         });
+    }
+
+    spawnRandomOrdnance() {
+        // Every bomb detonates within its fuse (land or water), so the array
+        // self-clears; the cap only trips during extreme manual barrages.
+        if (this.projectiles.length >= MAX_PROJECTILES) return;
+        const r = Math.random();
+        const type = r < 0.70 ? 'TNT' : r < 0.85 ? 'CLUSTER' : r < 0.95 ? 'DRILL' : 'NUKE';
+        const x = 30 + Math.random() * (this.width - 60);
+        const y = this.height - 20; // top of the sky; the bomb free-falls into the terrain
+        // The drill needs entry speed to start boring
+        this.spawnOrdnance(type, x, y, 0, type === 'DRILL' ? -320 : 0);
     }
 
     setBrushRadius(radius) {
@@ -1656,6 +2163,8 @@ export class SubSurfaceEngine {
             cancelAnimationFrame(this.animationFrameId);
             this.animationFrameId = null;
         }
+        this.audio.dispose();
+        this.canvas.style.transform = '';
         const gl = this.gl;
         if (gl) {
             this.textures.forEach(t => gl.deleteTexture(t));
@@ -1666,6 +2175,14 @@ export class SubSurfaceEngine {
             if (this.grainVBO) gl.deleteBuffer(this.grainVBO);
             if (this.grainVAO) gl.deleteVertexArray(this.grainVAO);
             if (this.quadVAO) gl.deleteVertexArray(this.quadVAO);
+            for (const t of [this.sceneTarget, this.bloomA, this.bloomB]) {
+                if (t) { gl.deleteTexture(t.tex); gl.deleteFramebuffer(t.fbo); }
+            }
+            for (const prog of [this.extractProgram, this.blurProgram, this.compositeProgram, this.fxProgram]) {
+                if (prog) gl.deleteProgram(prog);
+            }
+            if (this.fxVBO) gl.deleteBuffer(this.fxVBO);
+            if (this.fxVAO) gl.deleteVertexArray(this.fxVAO);
         }
     }
 }
@@ -1707,6 +2224,14 @@ export function loadSubSurfacePreset(presetName) {
 
 export function resetSubSurface() {
     if (activeEngine) activeEngine.reset();
+}
+
+export function setSubSurfaceAudio(enabled) {
+    if (activeEngine) {
+        // The toggle click is itself a user gesture — try to unlock too
+        if (enabled) activeEngine.audio.unlock();
+        activeEngine.audio.setEnabled(enabled);
+    }
 }
 
 export function disposeSubSurface() {

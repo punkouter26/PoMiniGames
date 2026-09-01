@@ -14,6 +14,7 @@ public partial class SubSurfaceSandbox : ComponentBase, IAsyncDisposable
     protected int BrushRadius { get; set; } = 8;
     protected bool IsPaused { get; set; }
     protected bool AutoDrop { get; set; } = true;
+    protected bool SoundOn { get; set; } = true;
     protected SubSurfacePreset SelectedPreset { get; set; } = SubSurfacePreset.DefaultHorizon;
 
     protected static readonly IReadOnlyList<SubSurfacePreset> Presets =
@@ -23,14 +24,24 @@ public partial class SubSurfaceSandbox : ComponentBase, IAsyncDisposable
         SubSurfacePreset.SlingshotDemolition
     ];
 
-    protected static readonly IReadOnlyList<(SubSurfaceTool Tool, string Label, string Hint)> ToolButtons =
+    protected static readonly IReadOnlyList<(SubSurfaceTool Tool, string Label, string Hint)> MaterialButtons =
     [
-        (SubSurfaceTool.DigVacuum, "🌪️ Dig Vacuum", "Erases sand and water; preserves concrete"),
+        (SubSurfaceTool.DigVacuum, "🌪️ Dig", "Erases sand, liquids, fire, and obsidian; preserves concrete"),
         (SubSurfaceTool.Sand, "🏜️ Sand", "Paints cohesive granular soil"),
         (SubSurfaceTool.Concrete, "🧱 Concrete", "Paints rigid reinforced concrete bars"),
         (SubSurfaceTool.Water, "💧 Water", "Paints incompressible fluid"),
-        (SubSurfaceTool.TNTBomb, "💣 5s TNT", "Slingshot ordnance: 5s fuse; detonates on land or underwater, ejecting soil and water"),
-        (SubSurfaceTool.WaterBalloon, "🎈 Balloon", "Slingshot ordnance: bursts pressurized water on impact")
+        (SubSurfaceTool.Lava, "🌋 Lava", "Paints viscous molten rock: melts sand, ignites oil, quenches to obsidian in water"),
+        (SubSurfaceTool.Oil, "🛢️ Oil", "Paints flammable crude that floats on water and burns on contact with lava or fire")
+    ];
+
+    protected static readonly IReadOnlyList<(SubSurfaceTool Tool, string Label, string Hint)> OrdnanceButtons =
+    [
+        (SubSurfaceTool.TNTBomb, "💣 TNT", "5s fuse; detonates on land or underwater, ejecting soil and water"),
+        (SubSurfaceTool.WaterBalloon, "🎈 Balloon", "Bursts pressurized water on impact"),
+        (SubSurfaceTool.DrillBomb, "🗜️ Drill", "Bunker-buster: bores through soil and concrete, then detonates at depth"),
+        (SubSurfaceTool.ClusterBomb, "🧨 Cluster", "Pops on impact into a fan of live bomblets"),
+        (SubSurfaceTool.Nuke, "☢️ Nuke", "Massive-yield blast with a vitrified crater; use sparingly"),
+        (SubSurfaceTool.StickyBomb, "🟢 Sticky", "Adheres to the first surface it touches, then detonates on a 4s fuse")
     ];
 
     protected override void OnInitialized()
@@ -81,6 +92,12 @@ public partial class SubSurfaceSandbox : ComponentBase, IAsyncDisposable
     {
         AutoDrop = !AutoDrop;
         await Interop.SetAutoDropAsync(AutoDrop);
+    }
+
+    protected async Task ToggleSound()
+    {
+        SoundOn = !SoundOn;
+        await Interop.SetAudioEnabledAsync(SoundOn);
     }
 
     protected async Task StepOnce()

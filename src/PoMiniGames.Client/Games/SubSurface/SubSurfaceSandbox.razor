@@ -7,11 +7,28 @@
 <div class="subsurface-sandbox-container">
     @* Top Docked Toolbar (Command Deck) *@
     <div class="subsurface-toolbar">
-        @* Tool Select Bar *@
-        <div class="toolbar-group" role="radiogroup" aria-label="Tool">
-            <span class="toolbar-label">Tool:</span>
+        @* Material Brush Select Bar *@
+        <div class="toolbar-group" role="radiogroup" aria-label="Material brush">
+            <span class="toolbar-label">Brush:</span>
             <div class="tool-selectbar">
-                @foreach (var (tool, label, hint) in ToolButtons)
+                @foreach (var (tool, label, hint) in MaterialButtons)
+                {
+                    <button type="button"
+                            class="tool-btn @(SelectedTool == tool ? "active" : null)"
+                            title="@hint"
+                            aria-pressed="@(SelectedTool == tool)"
+                            @onclick="@(() => OnToolChanged(tool))">
+                        @label
+                    </button>
+                }
+            </div>
+        </div>
+
+        @* Slingshot Ordnance Select Bar *@
+        <div class="toolbar-group" role="radiogroup" aria-label="Slingshot ordnance">
+            <span class="toolbar-label">Ordnance:</span>
+            <div class="tool-selectbar">
+                @foreach (var (tool, label, hint) in OrdnanceButtons)
                 {
                     <button type="button"
                             class="tool-btn @(SelectedTool == tool ? "active" : null)"
@@ -62,6 +79,10 @@
             <button type="button" class="sim-btn @(AutoDrop ? "sim-danger" : null)" @onclick="ToggleAutoDrop">
                 @(AutoDrop ? "💣 Stop Bombs" : "💣 Auto Demo")
             </button>
+            <button type="button" class="sim-btn" @onclick="ToggleSound" aria-pressed="@SoundOn"
+                    title="Procedural sound effects and ambience">
+                @(SoundOn ? "🔊 Sound" : "🔇 Muted")
+            </button>
         </div>
     </div>
 
@@ -74,7 +95,9 @@
                 class="subsurface-canvas">
         </canvas>
 
-        @if (SelectedTool is SubSurfaceTool.TNTBomb or SubSurfaceTool.WaterBalloon)
+        @if (SelectedTool is SubSurfaceTool.TNTBomb or SubSurfaceTool.WaterBalloon
+             or SubSurfaceTool.DrillBomb or SubSurfaceTool.ClusterBomb
+             or SubSurfaceTool.Nuke or SubSurfaceTool.StickyBomb)
         {
             <div class="slingshot-hint">
                 🎯 <strong>Slingshot Mode:</strong> Click &amp; drag in the Sky (top half) to aim and release!

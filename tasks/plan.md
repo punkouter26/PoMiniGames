@@ -1,4 +1,4 @@
-# Project Sub-Surface Implementation Plan
+# Sand Implementation Plan
 
 ## 1. Architectural Decisions
 

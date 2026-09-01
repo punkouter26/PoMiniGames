@@ -8,18 +8,131 @@
 }
 
 .subsurface-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
     width: 100%;
-    background: rgba(15, 23, 42, 0.95);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 0.75rem;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
     border-radius: 12px;
-    backdrop-filter: blur(12px);
+}
+
+.toolbar-group {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
 }
 
 .toolbar-label {
+    color: var(--color-text-secondary);
     font-weight: 600;
     font-size: 0.85rem;
     text-transform: uppercase;
     letter-spacing: 0.05em;
+}
+
+.tool-selectbar {
+    display: flex;
+    flex-wrap: wrap;
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.tool-btn {
+    padding: 0.4rem 0.6rem;
+    background: transparent;
+    border: none;
+    border-right: 1px solid var(--color-border);
+    color: var(--color-text-primary);
+    font-size: 0.85rem;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.tool-btn:last-child {
+    border-right: none;
+}
+
+.tool-btn:hover {
+    background: var(--color-surface-hover);
+}
+
+.tool-btn.active {
+    background: var(--accent-bg);
+    color: var(--accent-ink);
+    font-weight: 600;
+}
+
+.tool-btn:focus-visible,
+.sim-btn:focus-visible {
+    outline: 2px solid var(--accent-ring);
+    outline-offset: -2px;
+}
+
+.toolbar-group input[type="range"] {
+    width: 110px;
+    accent-color: var(--color-accent-solid);
+}
+
+.toolbar-badge {
+    padding: 0.1rem 0.55rem;
+    background: var(--accent-soft);
+    color: var(--accent-ink);
+    border-radius: 999px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+.toolbar-group select {
+    padding: 0.35rem 0.5rem;
+    background: var(--color-bg);
+    color: var(--color-text-primary);
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    font-size: 0.85rem;
+}
+
+.sim-btn {
+    padding: 0.4rem 0.7rem;
+    background: var(--color-surface-hover);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    color: var(--color-text-primary);
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.sim-btn:hover:not(:disabled) {
+    background: var(--accent-bg);
+}
+
+.sim-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.sim-btn.sim-resume {
+    background: var(--accent-success-soft);
+    color: var(--accent-success-ink);
+    border-color: var(--accent-success);
+}
+
+.sim-btn.sim-pause {
+    background: var(--accent-warning-soft);
+    color: var(--accent-warning-ink);
+    border-color: var(--accent-warning);
+}
+
+.sim-btn.sim-danger {
+    background: var(--accent-danger-soft);
+    color: var(--accent-danger-ink);
+    border-color: var(--accent-danger);
 }
 
 .subsurface-canvas-wrapper {
@@ -49,8 +162,9 @@
 .slingshot-hint {
     position: absolute;
     top: 12px;
+    padding: 0.5rem;
     background: rgba(0, 0, 0, 0.75);
-    color: #38bdf8;
+    color: var(--accent-cyan);
     border: 1px solid rgba(56, 189, 248, 0.4);
     border-radius: 6px;
     font-size: 0.85rem;
@@ -65,8 +179,53 @@
 }
 
 .subsurface-hud {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
     width: 100%;
-    background: rgba(15, 23, 42, 0.8);
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    margin-top: 0.5rem;
+    padding: 0.5rem;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
     border-radius: 8px;
+}
+
+.hud-badges {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.hud-badge {
+    padding: 0.1rem 0.55rem;
+    background: var(--color-surface-hover);
+    color: var(--color-text-primary);
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+.hud-badge.hud-success {
+    background: var(--accent-success-soft);
+    color: var(--accent-success-ink);
+}
+
+.hud-badge.hud-info {
+    background: var(--accent-soft);
+    color: var(--accent-ink);
+}
+
+.hud-badge.hud-warning {
+    background: var(--accent-warning-soft);
+    color: var(--accent-warning-ink);
+}
+
+.hud-caption {
+    color: var(--color-text-secondary);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
 }

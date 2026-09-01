@@ -117,10 +117,6 @@ builder.Services.AddScoped<PoMiniGamesClient.Games.PoSports.Services.PoSportsHub
 // /povoxelstrike/lockstep-hub. Scoped like every other hub service so the connection
 // is bound to the user's Blazor session lifetime.
 builder.Services.AddScoped<PoMiniGamesClient.Games.PoVoxelStrike.Services.PoVoxelStrikeMultiplayerClient>();
-builder.Services.AddScoped<Radzen.DialogService>();
-builder.Services.AddScoped<Radzen.NotificationService>();
-builder.Services.AddScoped<Radzen.TooltipService>();
-builder.Services.AddScoped<Radzen.ContextMenuService>();
 builder.Services.AddScoped<SubSurfaceInteropService>();
 
 // ─── PoJoker (demo-only autonomous comedy show) ──────────────────────

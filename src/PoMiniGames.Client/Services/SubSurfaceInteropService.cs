@@ -34,6 +34,14 @@ public sealed class SubSurfaceInteropService : IAsyncDisposable
         }
     }
 
+    public async ValueTask SetAutoDropAsync(bool enabled)
+    {
+        if (_module is not null)
+        {
+            await _module.InvokeVoidAsync("setSubSurfaceAutoDrop", enabled);
+        }
+    }
+
     public async ValueTask SetBrushRadiusAsync(int radius)
     {
         if (_module is not null)

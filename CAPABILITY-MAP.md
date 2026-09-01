@@ -1,7 +1,7 @@
-# Capability Map — Project Sub-Surface
+# Capability Map — Sand
 
 ## Overview
-Project Sub-Surface decomposes into 8 independently testable capability modules.
+Sand decomposes into 8 independently testable capability modules.
 
 ```mermaid
 graph TD

@@ -1,4 +1,4 @@
-# Project Sub-Surface Tasks & Checklist
+# Sand Tasks & Checklist
 
 ## [x] Task 1: C# Domain Models, Enums & Grid Math
 - **Description:** Implement domain types, material enums, cell state definitions, Mohr-Coulomb stress thresholds, and coordinate conversion helpers.

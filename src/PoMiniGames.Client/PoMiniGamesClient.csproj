@@ -82,7 +82,6 @@
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" PrivateAssets="all" />
     <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" />
     <PackageReference Include="Microsoft.AspNetCore.Components.Authorization" />
-    <PackageReference Include="Radzen.Blazor" />
   </ItemGroup>
 
   <ItemGroup>

@@ -13,6 +13,7 @@ public partial class SubSurfaceSandbox : ComponentBase, IAsyncDisposable
     protected SubSurfaceTool SelectedTool { get; set; } = SubSurfaceTool.DigVacuum;
     protected int BrushRadius { get; set; } = 8;
     protected bool IsPaused { get; set; }
+    protected bool AutoDrop { get; set; } = true;
     protected SubSurfacePreset SelectedPreset { get; set; } = SubSurfacePreset.DefaultHorizon;
 
     protected static readonly IReadOnlyList<SubSurfacePreset> Presets =
@@ -20,6 +21,16 @@ public partial class SubSurfaceSandbox : ComponentBase, IAsyncDisposable
         SubSurfacePreset.DefaultHorizon,
         SubSurfacePreset.DeepCaverns,
         SubSurfacePreset.SlingshotDemolition
+    ];
+
+    protected static readonly IReadOnlyList<(SubSurfaceTool Tool, string Label, string Hint)> ToolButtons =
+    [
+        (SubSurfaceTool.DigVacuum, "🌪️ Dig Vacuum", "Erases sand and water; preserves concrete"),
+        (SubSurfaceTool.Sand, "🏜️ Sand", "Paints cohesive granular soil"),
+        (SubSurfaceTool.Concrete, "🧱 Concrete", "Paints rigid reinforced concrete bars"),
+        (SubSurfaceTool.Water, "💧 Water", "Paints incompressible fluid"),
+        (SubSurfaceTool.TNTBomb, "💣 5s TNT", "Slingshot ordnance: 5s fuse; detonates on land or underwater, ejecting soil and water"),
+        (SubSurfaceTool.WaterBalloon, "🎈 Balloon", "Slingshot ordnance: bursts pressurized water on impact")
     ];
 
     protected override void OnInitialized()
@@ -35,6 +46,7 @@ public partial class SubSurfaceSandbox : ComponentBase, IAsyncDisposable
             await Interop.InitializeAsync(_canvasRef);
             await Interop.SetToolAsync(SelectedTool);
             await Interop.SetBrushRadiusAsync(BrushRadius);
+            await Interop.SetAutoDropAsync(AutoDrop);
         }
     }
 
@@ -50,10 +62,13 @@ public partial class SubSurfaceSandbox : ComponentBase, IAsyncDisposable
         await Interop.SetToolAsync(tool);
     }
 
-    protected async Task OnBrushRadiusChanged(int radius)
+    protected async Task OnBrushRadiusInput(ChangeEventArgs args)
     {
-        BrushRadius = radius;
-        await Interop.SetBrushRadiusAsync(radius);
+        if (int.TryParse(args.Value?.ToString(), out var radius))
+        {
+            BrushRadius = Math.Clamp(radius, 1, 32);
+            await Interop.SetBrushRadiusAsync(BrushRadius);
+        }
     }
 
     protected async Task TogglePause()
@@ -62,14 +77,20 @@ public partial class SubSurfaceSandbox : ComponentBase, IAsyncDisposable
         await Interop.SetPausedAsync(IsPaused);
     }
 
+    protected async Task ToggleAutoDrop()
+    {
+        AutoDrop = !AutoDrop;
+        await Interop.SetAutoDropAsync(AutoDrop);
+    }
+
     protected async Task StepOnce()
     {
         await Interop.StepOnceAsync();
     }
 
-    protected async Task OnPresetChanged(object presetObj)
+    protected async Task OnPresetChanged(ChangeEventArgs args)
     {
-        if (presetObj is SubSurfacePreset preset)
+        if (Enum.TryParse<SubSurfacePreset>(args.Value?.ToString(), out var preset))
         {
             SelectedPreset = preset;
             await Interop.LoadPresetAsync(preset);

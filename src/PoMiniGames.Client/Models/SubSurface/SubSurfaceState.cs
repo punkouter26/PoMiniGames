@@ -18,4 +18,5 @@ public sealed record SubSurfaceDiagnostics(
     int ActiveProjectiles,
     int SubmergedTNTCount,
     int ActiveFluidCells,
-    int ActiveSandCells);
+    int ActiveSandCells,
+    int AirborneGrains = 0);

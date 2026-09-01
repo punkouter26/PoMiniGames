@@ -1,7 +1,7 @@
-# Specification — Project Sub-Surface
+# Specification — Sand
 
 ## 1. Objective & Overview
-**Project Sub-Surface** is a 2D high-performance multi-material physical simulation sandbox running client-side within the PoMiniGames Blazor WebAssembly arcade framework. The engine simulates 480,000 discrete simulation cells ($800 \times 600$ viewport) at **60 FPS**, modeling Mohr-Coulomb cohesive soil mechanics, connected rigid-body concrete structural collapse, mass-conserving Eulerian fluid dynamics, and ballistic slingshot ordnance (dry acoustic blast shockwaves vs. water-submerged fuse extinction).
+**Sand** is a 2D high-performance multi-material physical simulation sandbox running client-side within the PoMiniGames Blazor WebAssembly arcade framework. The engine simulates 480,000 discrete simulation cells ($800 \times 600$ viewport) at **60 FPS**, modeling Mohr-Coulomb cohesive soil mechanics, connected rigid-body concrete structural collapse, mass-conserving Eulerian fluid dynamics, and ballistic slingshot ordnance (dry acoustic blast shockwaves vs. water-submerged fuse extinction).
 
 ---
 

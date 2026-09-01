@@ -6,73 +6,64 @@
 
 <div class="subsurface-sandbox-container">
     @* Top Docked Toolbar (Command Deck) *@
-    <RadzenCard class="subsurface-toolbar rz-p-3 rz-shadow-4">
-        <div class="rz-d-flex rz-flex-wrap rz-align-items-center rz-justify-content-between rz-gap-3">
-            @* Tool Select Bar *@
-            <div class="rz-d-flex rz-align-items-center rz-gap-2">
-                <span class="toolbar-label rz-text-secondary">Tool:</span>
-                <RadzenSelectBar @bind-Value="SelectedTool"
-                                 TValue="SubSurfaceTool"
-                                 Change="@OnToolChanged"
-                                 Size="ButtonSize.Medium"
-                                 class="subsurface-selectbar">
-                    <Items>
-                        <RadzenSelectBarItem Value="SubSurfaceTool.DigVacuum" Text="🌪️ Dig Vacuum" title="Erases sand and water; preserves concrete" />
-                        <RadzenSelectBarItem Value="SubSurfaceTool.Sand" Text="🏜️ Sand" title="Paints cohesive granular soil" />
-                        <RadzenSelectBarItem Value="SubSurfaceTool.Concrete" Text="🧱 Concrete" title="Paints rigid reinforced concrete bars" />
-                        <RadzenSelectBarItem Value="SubSurfaceTool.Water" Text="💧 Water" title="Paints incompressible fluid" />
-                        <RadzenSelectBarItem Value="SubSurfaceTool.TNTBomb" Text="💣 5s TNT" title="Slingshot ordnance: 5s blast in dry tunnels; extinguished in water" />
-                        <RadzenSelectBarItem Value="SubSurfaceTool.WaterBalloon" Text="🎈 Balloon" title="Slingshot ordnance: bursts pressurized water on impact" />
-                    </Items>
-                </RadzenSelectBar>
-            </div>
-
-            @* Brush Size Slider *@
-            <div class="rz-d-flex rz-align-items-center rz-gap-2">
-                <span class="toolbar-label rz-text-secondary">Brush:</span>
-                <RadzenSlider @bind-Value="BrushRadius"
-                              TValue="int"
-                              Min="1"
-                              Max="32"
-                              Step="1"
-                              Change="@OnBrushRadiusChanged"
-                              Style="width: 110px;" />
-                <RadzenBadge BadgeStyle="BadgeStyle.Primary" IsPill="true" Text="@($"{BrushRadius}px")" />
-            </div>
-
-            @* Presets Dropdown *@
-            <div class="rz-d-flex rz-align-items-center rz-gap-2">
-                <span class="toolbar-label rz-text-secondary">Preset:</span>
-                <RadzenDropDown @bind-Value="SelectedPreset"
-                                TValue="SubSurfacePreset"
-                                Data="@Presets"
-                                Change="@OnPresetChanged"
-                                Style="width: 175px;" />
-            </div>
-
-            @* Simulation Controls (Play/Pause, Step, Reset) *@
-            <div class="rz-d-flex rz-align-items-center rz-gap-2">
-                <RadzenButton Icon="@(IsPaused ? "play_arrow" : "pause")"
-                              ButtonStyle="@(IsPaused ? ButtonStyle.Success : ButtonStyle.Warning)"
-                              Size="ButtonSize.Medium"
-                              Text="@(IsPaused ? "Resume" : "Pause")"
-                              Click="@TogglePause" />
-
-                <RadzenButton Icon="skip_next"
-                              ButtonStyle="ButtonStyle.Secondary"
-                              Size="ButtonSize.Medium"
-                              Disabled="@(!IsPaused)"
-                              Text="Step"
-                              Click="@StepOnce" />
-
-                <RadzenButton Icon="refresh"
-                              ButtonStyle="ButtonStyle.Danger"
-                              Size="ButtonSize.Medium"
-                              Text="Reset"
-                              Click="@ResetScene" />
+    <div class="subsurface-toolbar">
+        @* Tool Select Bar *@
+        <div class="toolbar-group" role="radiogroup" aria-label="Tool">
+            <span class="toolbar-label">Tool:</span>
+            <div class="tool-selectbar">
+                @foreach (var (tool, label, hint) in ToolButtons)
+                {
+                    <button type="button"
+                            class="tool-btn @(SelectedTool == tool ? "active" : null)"
+                            title="@hint"
+                            aria-pressed="@(SelectedTool == tool)"
+                            @onclick="@(() => OnToolChanged(tool))">
+                        @label
+                    </button>
+                }
             </div>
         </div>
-    </RadzenCard>
+
+        @* Brush Size Slider *@
+        <div class="toolbar-group">
+            <label class="toolbar-label" for="subsurface-brush">Brush:</label>
+            <input type="range"
+                   id="subsurface-brush"
+                   min="1"
+                   max="32"
+                   step="1"
+                   value="@BrushRadius"
+                   @oninput="OnBrushRadiusInput" />
+            <span class="toolbar-badge">@(BrushRadius)px</span>
+        </div>
+
+        @* Presets Dropdown *@
+        <div class="toolbar-group">
+            <label class="toolbar-label" for="subsurface-preset">Preset:</label>
+            <select id="subsurface-preset" value="@SelectedPreset" @onchange="OnPresetChanged">
+                @foreach (var preset in Presets)
+                {
+                    <option value="@preset">@preset</option>
+                }
+            </select>
+        </div>
+
+        @* Simulation Controls (Play/Pause, Step, Reset) *@
+        <div class="toolbar-group">
+            <button type="button" class="sim-btn @(IsPaused ? "sim-resume" : "sim-pause")" @onclick="TogglePause">
+                @(IsPaused ? "▶ Resume" : "⏸ Pause")
+            </button>
+            <button type="button" class="sim-btn" disabled="@(!IsPaused)" @onclick="StepOnce">
+                ⏭ Step
+            </button>
+            <button type="button" class="sim-btn sim-danger" @onclick="ResetScene">
+                ↻ Reset
+            </button>
+            <button type="button" class="sim-btn @(AutoDrop ? "sim-danger" : null)" @onclick="ToggleAutoDrop">
+                @(AutoDrop ? "💣 Stop Bombs" : "💣 Auto Demo")
+            </button>
+        </div>
+    </div>
 
     @* Simulation Viewport *@
     <div class="subsurface-canvas-wrapper">
@@ -85,27 +76,27 @@
 
         @if (SelectedTool is SubSurfaceTool.TNTBomb or SubSurfaceTool.WaterBalloon)
         {
-            <div class="slingshot-hint rz-p-2">
-                🎯 <strong>Slingshot Mode:</strong> Click & drag in the Sky (top half) to aim and release!
+            <div class="slingshot-hint">
+                🎯 <strong>Slingshot Mode:</strong> Click &amp; drag in the Sky (top half) to aim and release!
             </div>
         }
     </div>
 
     @* Bottom Telemetry HUD *@
-    <RadzenCard class="subsurface-hud rz-p-2 rz-mt-2 rz-shadow-2">
-        <div class="rz-d-flex rz-align-items-center rz-justify-content-between rz-flex-wrap rz-gap-3">
-            <div class="rz-d-flex rz-align-items-center rz-gap-2">
-                <RadzenBadge BadgeStyle="BadgeStyle.Success" Text="@($"FPS: {_diagnostics.Fps}")" />
-                <RadzenBadge BadgeStyle="BadgeStyle.Info" Text="Sub-steps: 2 / frame" />
-                <RadzenBadge BadgeStyle="BadgeStyle.Warning" Text="@($"Active Ordnance: {_diagnostics.ActiveProjectiles}")" />
-                @if (_diagnostics.SubmergedTNTCount > 0)
-                {
-                    <RadzenBadge BadgeStyle="BadgeStyle.Light" Text="@($"Submerged TNT (Extinguished): {_diagnostics.SubmergedTNTCount}")" />
-                }
-            </div>
-            <div class="rz-text-secondary rz-font-monospace rz-font-sm">
-                800×600 • 480,000 Cells • WebGL 2.0 Mohr-Coulomb & Eulerian Solver
-            </div>
+    <div class="subsurface-hud">
+        <div class="hud-badges">
+            <span class="hud-badge hud-success">FPS: @_diagnostics.Fps</span>
+            <span class="hud-badge hud-info">Sub-steps: @_diagnostics.SubSteps / frame</span>
+            <span class="hud-badge hud-warning">Active Ordnance: @_diagnostics.ActiveProjectiles</span>
+            <span class="hud-badge hud-info">Fluid: @_diagnostics.ActiveFluidCells.ToString("N0")</span>
+            <span class="hud-badge hud-info">Sand: @_diagnostics.ActiveSandCells.ToString("N0")</span>
+            @if (_diagnostics.AirborneGrains > 0)
+            {
+                <span class="hud-badge hud-warning">Ejecta: @_diagnostics.AirborneGrains.ToString("N0")</span>
+            }
         </div>
-    </RadzenCard>
+        <div class="hud-caption">
+            800×600 • 480,000 Cells • WebGL 2.0 Mohr-Coulomb &amp; Eulerian Solver
+        </div>
+    </div>
 </div>

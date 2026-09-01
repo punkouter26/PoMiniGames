@@ -234,7 +234,7 @@ public static class GameCatalog
             ChipPrimary = true,
         },
 
-        new(GameKeys.SubSurface, "Project Sub-Surface", "⛏️",
+        new(GameKeys.SubSurface, "Sand", "⛏️",
         [
             new(GameMode.OnePlayer, "/subsurface"),
         ])

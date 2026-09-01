@@ -5,7 +5,7 @@
 @inject NavigationManager Navigation
 @inject PlayerNameService PlayerNameService
 
-<PageTitle>Project Sub-Surface · Sandbox</PageTitle>
+<PageTitle>Sand · Sandbox</PageTitle>
 
 <GameShell Title=@TitleContent
            Player="@_playerName"
@@ -33,7 +33,7 @@
     private string _playerName = "";
     private bool _introDismissed;
 
-    private RenderFragment TitleContent => @<span><span aria-hidden="true">⛏️</span> Project Sub-Surface · 2D Physics Sandbox</span>;
+    private RenderFragment TitleContent => @<span><span aria-hidden="true">⛏️</span> Sand · 2D Physics Sandbox</span>;
 
     private RenderFragment HowToPlayContent => @<div>
         <p><strong>Multi-Material Physics Sandbox Controls:</strong></p>
@@ -42,7 +42,7 @@
             <li><strong>Sand Brush:</strong> Paint cohesive granular soil with Mohr-Coulomb self-supporting arching.</li>
             <li><strong>Concrete Bar:</strong> Paint rigid structural bars that collapse as whole solid islands when undermined.</li>
             <li><strong>Water:</strong> Paint incompressible fluid with mass-conserving flow and lateral drainage.</li>
-            <li><strong>5s TNT Ordnance:</strong> Drag in the Sky to slingshot bombs. 5-second dry acoustic blast vs. water submersion fuse extinguish.</li>
+            <li><strong>5s TNT Ordnance:</strong> Drag in the Sky to slingshot bombs. The 5-second fuse detonates on land or underwater, blasting soil and water outward as ballistic debris.</li>
             <li><strong>Water Balloon:</strong> Slingshot impact-detonated fluid burst.</li>
         </ul>
     </div>;

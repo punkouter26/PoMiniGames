@@ -1,6 +1,7 @@
 @page "/subsurface"
 @page "/subsurface/{Mode}"
 @using PoMiniGamesClient.Components
+@using PoMiniGamesClient.Models
 @using PoMiniGamesClient.Services
 @inject NavigationManager Navigation
 @inject PlayerNameService PlayerNameService
@@ -18,12 +19,12 @@
                    Title=@TitleContent
                    Objective="Excavate terrain, breach reservoirs, trigger Mohr-Coulomb soil avalanches, undermine concrete bars, and launch ballistic ordnance."
                    Controls=@HowToPlayContent
-                   Mode="GameIntro.IntroMode.OnePlayer"
+                   Mode="@(IsDemo ? GameIntro.IntroMode.Demo : GameIntro.IntroMode.OnePlayer)"
                    OnStart="@(() => _introDismissed = true)" />
     }
 
     <div class="subsurface-page-layout">
-        <SubSurfaceSandbox />
+        <SubSurfaceSandbox IsDemo="IsDemo" />
     </div>
 </GameShell>
 
@@ -32,6 +33,8 @@
 
     private string _playerName = "";
     private bool _introDismissed;
+
+    private bool IsDemo => GameModes.Parse(Mode) == GameMode.Demo;
 
     private RenderFragment TitleContent => @<span><span aria-hidden="true">⛏️</span> Sand · 2D Physics Sandbox</span>;
 

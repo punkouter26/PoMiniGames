@@ -10,10 +10,17 @@ public partial class SubSurfaceSandbox : ComponentBase, IAsyncDisposable
     private bool _initialized;
     private SubSurfaceDiagnostics _diagnostics = new(60.0, 2, 0, 0, 0, 0);
 
+    /// <summary>
+    /// Demo (kiosk/attract) mode: ordnance rains from the sky automatically.
+    /// 1-player starts with auto-drop off so the player aims every shot; the
+    /// toolbar toggle can still turn the rain on in either mode.
+    /// </summary>
+    [Parameter] public bool IsDemo { get; set; }
+
     protected SubSurfaceTool SelectedTool { get; set; } = SubSurfaceTool.DigVacuum;
     protected int BrushRadius { get; set; } = 8;
     protected bool IsPaused { get; set; }
-    protected bool AutoDrop { get; set; } = true;
+    protected bool AutoDrop { get; set; }
     protected bool SoundOn { get; set; } = true;
     protected SubSurfacePreset SelectedPreset { get; set; } = SubSurfacePreset.DefaultHorizon;
 
@@ -47,6 +54,7 @@ public partial class SubSurfaceSandbox : ComponentBase, IAsyncDisposable
     protected override void OnInitialized()
     {
         Interop.OnMetricsReceived += HandleMetricsUpdate;
+        AutoDrop = IsDemo;
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)

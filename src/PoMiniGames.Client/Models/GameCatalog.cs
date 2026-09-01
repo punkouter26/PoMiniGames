@@ -234,9 +234,13 @@ public static class GameCatalog
             ChipPrimary = true,
         },
 
+        // ChipPrimary: 1P is the card head (you pick and slingshot the ordnance
+        // yourself), so without it the chip row would read a lone "Demo" and the
+        // game would scan as watch-only — same rationale as Marble Race.
         new(GameKeys.SubSurface, "Sand", "⛏️",
         [
-            new(GameMode.OnePlayer, "/subsurface"),
+            new(GameMode.OnePlayer, "/subsurface/1player"),
+            new(GameMode.Demo, "/subsurface/demo"),
         ])
         {
             Subtitle = "2D Physical Sandbox: Soil arching, rigid concrete, fluid & ordnance",

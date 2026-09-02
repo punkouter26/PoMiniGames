@@ -2,8 +2,12 @@
 // Sand Multi-Material Engine
 //
 // Cell packing (RGBA32F):
-//   SAND : G = looseness (1 loose grain -> 0 settled cohesive)  B = wetness 0..1, or -1 scorched / -2 vitrified  A = roof-span stress
-//   WATER: G = flow momentum (-1 / 0 / +1)  A = hydrostatic head (pressure)  B unused
+//   SAND : G = looseness (>1.5 fast free-fall, 1 loose grain -> 0 settled,
+//              negative = overburden-compacted down to -0.5)
+//          B = wetness 0..1, or -1 scorched / -2 vitrified  A = roof-span stress
+//   WATER: G = flow momentum (-1 / 0 / +1)  A = hydrostatic head (pressure)
+//          B = flag pack (exact small ints): +1 suspended sediment load,
+//              +2 fell-last-pass (fast-fall). Written values: 0, 1, 2, 3.
 //   LAVA : G = heat (1 molten -> 0 crusting); insulated cores never cool
 //   FIRE : G = remaining fuel/lifetime (non-conserved combustion gas)
 //   other: channels zero
@@ -16,15 +20,30 @@
 // BOTH the yielding donor and the receiver evaluate over identical samples.
 // Editing one side of any pair without its mirror re-introduces duplication.
 //
-// In-place TRANSFORMS (lava quenching to obsidian, lava crusting, oil combusting,
-// sand melting) are exempt from pairing only because every MOVEMENT receiver that
-// could take the transforming cell re-evaluates the same deterministic transform
-// predicate (lavaSolidifies / oilIgnites) and declines — a cell never transforms
-// and travels in the same pass. FIRE is deliberately non-conserved: flames spawn
-// from burning neighbours and decay to air.
+// FAST FALL is a three-cell pairing: matter that fell last pass (fell flag /
+// g > 1.5) covers TWO cells of clear air per pass. The donor vacates exactly as
+// for a 1-cell fall; the intermediate air cell passes it through (declines to
+// receive because fastFallTargets holds for ITS below cell); the cell two down
+// receives. fastFallTargets is the highest-priority claim on an air receiver
+// and every other claim predicate declines when it holds.
 //
-// Concrete is inert here: rigid-body motion, stress fracture, and blast craters
-// are resolved on the CPU (subsurface-engine.js) against readback snapshots.
+// In-place TRANSFORMS (lava quenching to obsidian, lava crusting, oil combusting,
+// sand melting, bed erosion into suspended sediment, sediment deposition,
+// puddle infiltration) are exempt from pairing only because every MOVEMENT
+// receiver that could take the transforming cell re-evaluates the same
+// deterministic transform predicate (lavaSolidifies / oilIgnites / sandErodes /
+// waterMutates) and declines — a cell never transforms and travels in the same
+// pass. FIRE is deliberately non-conserved: flames spawn from burning
+// neighbours and decay to air. INFILTRATION is the second deliberate ledger
+// exception: a still surface puddle's water cell moves into the sand wetness
+// field (waterSoaksIn) and is not individually recoverable. EROSION carries the
+// sand ledger inside the water flag: pickup mints one water cell around the
+// suspended grain, deposition surrenders it back, so sand + water are conserved
+// across every complete erode->deposit cycle.
+//
+// Concrete is inert here: rigid-body motion, stress fracture, blast cratering
+// and blast damage are resolved on the CPU (subsurface-engine.js) against
+// readback snapshots.
 
 export const vsQuadSource = `#version 300 es
 in vec2 a_position;
@@ -95,6 +114,10 @@ bool isGranular(float m) {
     return m == MAT_SAND || m == MAT_DEBRIS;
 }
 
+// Water B flag pack accessors (values are exact small ints: 0, 1, 2, 3).
+float sedBit(float b)  { return (b == 1.0 || b == 3.0) ? 1.0 : 0.0; }
+float fellBit(float b) { return b >= 2.0 ? 1.0 : 0.0; }
+
 // Critical unsupported roof span before shear failure. Confinement makes deeper
 // soil hold longer spans; saturation (wetness) weakens cohesion toward mud.
 float critSpan(float y, float wetness) {
@@ -163,13 +186,103 @@ bool oilIgnites(vec2 pos) {
            up == MAT_LAVA || dn == MAT_LAVA || lf == MAT_LAVA || rt == MAT_LAVA;
 }
 
+// FAST FALL: does the air cell rPos receive the matter TWO cells above it this
+// pass? True when rPos and the cell above it are both clear air and the cell
+// two up is water or granular matter carrying the fell-last-pass mark. The
+// intermediate air cell evaluates this for ITS below cell and passes the
+// matter through; every other claim predicate declines when this one holds,
+// making it the highest-priority claim on an air receiver.
+bool fastFallTargets(vec2 rPos) {
+    if (getCell(rPos).r != MAT_AIR) return false;
+    if (getCell(rPos + vec2(0.0, 1.0)).r != MAT_AIR) return false;
+    vec4 D = getCell(rPos + vec2(0.0, 2.0));
+    if (D.r == MAT_WATER) {
+        if (fellBit(D.b) < 0.5) return false;
+        // Mirror the water donor's rule-1 preemption: a donor busy receiving
+        // a buoyancy swap from sinking grains above it does NOT vacate.
+        vec4 dUp = getCell(rPos + vec2(0.0, 3.0));
+        return !(isGranular(dUp.r) && sandFalls(dUp, rPos.y + 3.0));
+    }
+    if (isGranular(D.r)) return D.g > 1.5;
+    return false;
+}
+
+// Angle of repose: probability a loose grain actually takes its diagonal slide
+// this pass. Dry sand slides eagerly (shallow ~30 deg piles), damp sand clings
+// (steep sandcastle faces), saturated sand slumps, debris gravel always rolls.
+// Keyed on the DONOR position so donor, receiver, and every third-party
+// arbitration predicate roll the same dice.
+float slideProb(vec4 d) {
+    if (d.r != MAT_SAND) return 1.0;   // debris: cohesionless
+    if (d.b < 0.08) return 0.85;       // dry (scorched counts as dry)
+    if (d.b < 0.85) return 0.18;       // damp: holds near-vertical faces
+    return 0.75;                       // saturated: slumps
+}
+
+bool slideRolls(vec2 dPos, vec4 d) {
+    return hash(dPos * 4.7 + vec2(float(u_frame), float(u_subStep))) < slideProb(d);
+}
+
+// EROSION PICKUP: does the settled, saturated SAND bed cell at pos get swept
+// into suspension by fast water flowing past? In place: the cell becomes
+// sediment-laden water (the eroded grain rides the sediment flag; the minted
+// water cell is surrendered back when the load deposits). Pairing-safe without
+// mirrors because no movement receiver targets a settled, supported,
+// non-loose sand cell (mud creep requires a LOOSE donor).
+bool sandErodes(vec2 pos, vec4 cell) {
+    if (cell.r != MAT_SAND || cell.g >= 0.5 || cell.g < -0.15) return false; // settled, not packed
+    if (cell.b < 0.9) return false;                                          // saturated bed only
+    if (!isSolid(getCell(pos + vec2(0.0, -1.0)).r)) return false;
+    vec4 up = getCell(pos + vec2(0.0, 1.0));
+    vec4 lf = getCell(pos + vec2(-1.0, 0.0));
+    vec4 rt = getCell(pos + vec2(1.0, 0.0));
+    bool scoured = (up.r == MAT_WATER && abs(up.g) > 0.5) ||
+                   (lf.r == MAT_WATER && abs(lf.g) > 0.5) ||
+                   (rt.r == MAT_WATER && abs(rt.g) > 0.5);
+    if (!scoured) return false;
+    return hash(pos * 9.7 + vec2(float(u_frame), float(u_subStep))) < 0.10;
+}
+
+// DEPOSITION: a calm sediment-laden water cell resting on a solid bed drops
+// its load — the cell becomes fresh saturated sand.
+bool sedimentDeposits(vec2 pos, vec4 cell) {
+    if (sedBit(cell.b) < 0.5 || abs(cell.g) > 0.5) return false;
+    if (!isSolid(getCell(pos + vec2(0.0, -1.0)).r)) return false;
+    return hash(pos * 6.1 + vec2(float(u_frame), float(u_subStep))) < 0.02;
+}
+
+// INFILTRATION: a still surface puddle (air above, sand directly below, a dry
+// wetting front within 3 cells) soaks into the ground. Vitrified blast glass
+// is sealed. Deliberately non-conserving — the mass moves into sand wetness.
+bool waterSoaksIn(vec2 pos, vec4 cell) {
+    if (abs(cell.g) > 0.5) return false;
+    if (getCell(pos + vec2(0.0, 1.0)).r != MAT_AIR) return false;
+    vec4 b1 = getCell(pos + vec2(0.0, -1.0));
+    if (b1.r != MAT_SAND || b1.b < -1.5) return false;
+    vec4 b2 = getCell(pos + vec2(0.0, -2.0));
+    vec4 b3 = getCell(pos + vec2(0.0, -3.0));
+    bool dryFront = (b2.r == MAT_SAND && b2.b >= 0.0 && b2.b < 0.5) ||
+                    (b3.r == MAT_SAND && b3.b >= 0.0 && b3.b < 0.5);
+    if (!dryFront) return false;
+    return hash(pos * 8.3 + vec2(float(u_frame), float(u_subStep))) < 0.008;
+}
+
+// Combined in-place-transform predicate for WATER, mirrored by every movement
+// claim that could otherwise take the transforming cell as its donor.
+bool waterMutates(vec2 pos, vec4 cell) {
+    if (cell.r != MAT_WATER) return false;
+    return sedimentDeposits(pos, cell) || waterSoaksIn(pos, cell);
+}
+
 // Would a loose-sand grain slide diagonally (parity dir P) into receiver rPos?
 // Mirrored by the sand donor's slide rule; used by water claims as a guard.
 bool sandSlideTargets(vec2 rPos, float P) {
+    if (fastFallTargets(rPos)) return false;
     if (getCell(rPos + vec2(0.0, 1.0)).r != MAT_AIR) return false;
     vec4 d = getCell(rPos + vec2(-P, 1.0));
     if (!isGranular(d.r) || d.g <= 0.5) return false;
-    return isSolid(getCell(rPos + vec2(-P, 0.0)).r);
+    if (!isSolid(getCell(rPos + vec2(-P, 0.0)).r)) return false;
+    return slideRolls(rPos + vec2(-P, 1.0), d);
 }
 
 // Would saturated loose sand (mud) at rPos's parity-opposite side creep
@@ -177,6 +290,7 @@ bool sandSlideTargets(vec2 rPos, float P) {
 // a viscous liquid. Shared by the mud donor (self-claim) and the air receiver.
 bool mudFlowTargets(vec2 rPos, float P) {
     if (getCell(rPos).r != MAT_AIR) return false;
+    if (fastFallTargets(rPos)) return false;
     vec2 dPos = rPos + vec2(-P, 0.0);
     vec4 D = getCell(dPos);
     if (D.r != MAT_SAND || D.b < 0.9 || D.g < 0.5) return false;   // saturated + loose only
@@ -192,12 +306,14 @@ bool mudFlowTargets(vec2 rPos, float P) {
 }
 
 // Pressure-driven rise: a water cell whose stored hydrostatic head exceeds its
-// elevation pushes UP into the air above (communicating vessels level out;
-// tapped pressurized pockets jet). Donor is the cell below rPos.
+// elevation pushes UP into the air above (communicating vessels level out to
+// within ~1 cell; tapped pressurized pockets jet). Donor is the cell below rPos.
 bool waterRiseTargets(vec2 rPos, float P) {
     if (getCell(rPos).r != MAT_AIR) return false;
+    if (fastFallTargets(rPos)) return false;
     vec4 W = getCell(rPos + vec2(0.0, -1.0));
-    if (W.r != MAT_WATER || W.a <= 3.0) return false;
+    if (W.r != MAT_WATER || W.a <= 1.5) return false;
+    if (waterMutates(rPos + vec2(0.0, -1.0), W)) return false;      // donor transforming
     float b2 = getCell(rPos + vec2(0.0, -2.0)).r;
     if (b2 == MAT_AIR || b2 == MAT_FIRE || b2 == MAT_OIL) return false; // donor falls or swaps instead
     vec4 rUp = getCell(rPos + vec2(0.0, 1.0));
@@ -213,8 +329,11 @@ bool waterRiseTargets(vec2 rPos, float P) {
 // and the lateral claims below (which it outranks).
 bool waterDiagTargets(vec2 rPos, float P) {
     if (getCell(rPos).r != MAT_AIR) return false;
+    if (fastFallTargets(rPos)) return false;
     if (getCell(rPos + vec2(0.0, 1.0)).r != MAT_AIR) return false;      // donor's parity side
-    if (getCell(rPos + vec2(-P, 1.0)).r != MAT_WATER) return false;     // the donor
+    vec4 D = getCell(rPos + vec2(-P, 1.0));
+    if (D.r != MAT_WATER) return false;                                 // the donor
+    if (waterMutates(rPos + vec2(-P, 1.0), D)) return false;            // donor transforming
     float dB = getCell(rPos + vec2(-P, 0.0)).r;
     if (dB == MAT_AIR || dB == MAT_FIRE || dB == MAT_OIL) return false; // donor falls or swaps instead
     vec4 dAbove = getCell(rPos + vec2(-P, 2.0));
@@ -231,8 +350,10 @@ bool waterDiagTargets(vec2 rPos, float P) {
 // construction. Any asymmetry duplicates or destroys water.
 bool lateralLeftDonorClaims(vec2 rPos, float P) {
     if (getCell(rPos).r != MAT_AIR) return false;
+    if (fastFallTargets(rPos)) return false;
     vec4 L = getCell(rPos + vec2(-1.0, 0.0));
     if (L.r != MAT_WATER) return false;
+    if (waterMutates(rPos + vec2(-1.0, 0.0), L)) return false;          // donor transforming
     if (dirOfWater(L, P) < 0.0) return false;
     vec4 Lup = getCell(rPos + vec2(-1.0, 1.0));
     if (isGranular(Lup.r) && sandFalls(Lup, rPos.y + 1.0)) return false; // busy with buoyancy swap
@@ -259,8 +380,10 @@ bool lateralLeftDonorClaims(vec2 rPos, float P) {
 // (Only effective after the left donor declined — left donor wins ties.)
 bool lateralRightDonorClaims(vec2 rPos, float P) {
     if (getCell(rPos).r != MAT_AIR) return false;
+    if (fastFallTargets(rPos)) return false;
     vec4 W = getCell(rPos + vec2(1.0, 0.0));
     if (W.r != MAT_WATER) return false;
+    if (waterMutates(rPos + vec2(1.0, 0.0), W)) return false;           // donor transforming
     if (dirOfWater(W, P) > 0.0) return false;
     vec4 Wup = getCell(rPos + vec2(1.0, 1.0));
     if (isGranular(Wup.r) && sandFalls(Wup, rPos.y + 1.0)) return false;
@@ -287,6 +410,7 @@ bool lateralRightDonorClaims(vec2 rPos, float P) {
 // to every sand/mud/water claim on rPos, so it can never race a water move.
 bool viscFlowTargets(vec2 rPos, float P, float liq, float visc) {
     if (getCell(rPos).r != MAT_AIR) return false;
+    if (fastFallTargets(rPos)) return false;
     vec2 dPos = rPos + vec2(-P, 0.0);
     vec4 D = getCell(dPos);
     if (D.r != liq) return false;
@@ -350,6 +474,9 @@ void main() {
     }
 
     // 4. Acoustic blast concussion (crater excavation is CPU-side and conserving).
+    //    Rides the WAVEFRONT: only the expanding annulus of the pressure wave
+    //    destabilizes soil, so loosening visibly races outward over the frames
+    //    after a detonation instead of applying everywhere at once.
     //    CONSERVATION: must NOT early-return or change this pass's movement —
     //    the flag merges into the staying-put write and acts next pass so donor
     //    and receiver stay synchronized.
@@ -359,7 +486,8 @@ void main() {
             if (i >= u_shockwaveCount) break;
             vec4 sw = u_shockwaves[i];
             if (sw.w <= 0.0) continue;
-            if (distance(coord, sw.xy) > sw.z) continue;
+            float dsw = distance(coord, sw.xy);
+            if (dsw > sw.z || dsw < sw.z - 70.0) continue;
             if (blastOcclusion(sw.xy, coord) < 14.0) {
                 concussed = 1.0;
                 break;
@@ -389,18 +517,30 @@ void main() {
         }
         if (cellBelow.r == MAT_WATER && falls) {
             // Buoyancy swap: sand sinks, displaced water rises into this cell
-            fragColor = vec4(MAT_WATER, 0.0, 0.0, 0.0);
+            // (carrying its suspended-sediment flag so no load is lost)
+            fragColor = vec4(MAT_WATER, 0.0, sedBit(cellBelow.b), 0.0);
             return;
         }
-        // Angle-of-repose diagonal slide (parity dir): loose grains only
+        // Angle-of-repose diagonal slide (parity dir): loose grains only,
+        // gated by the wetness-graded repose dice (mirrored via slideRolls on
+        // the donor position) and yielding to a fast-fall claim on the target
         if (current.g > 0.5 && isSolid(cellBelow.r) &&
-            sideP.r == MAT_AIR && diagDownP.r == MAT_AIR) {
+            sideP.r == MAT_AIR && diagDownP.r == MAT_AIR &&
+            slideRolls(coord, current) &&
+            !fastFallTargets(coord + vec2(P, -1.0))) {
             fragColor = vec4(MAT_AIR, 0.0, 0.0, 0.0);
             return;
         }
         // Saturated slurry creeps laterally on flat ground (self-claim)
         if (mat == MAT_SAND && mudFlowTargets(coord + vec2(P, 0.0), P)) {
             fragColor = vec4(MAT_AIR, 0.0, 0.0, 0.0);
+            return;
+        }
+
+        // Erosion pickup: fast water sweeps a settled saturated bed cell into
+        // suspension. In-place transform (see sandErodes for the ledger).
+        if (mat == MAT_SAND && sandErodes(coord, current)) {
+            fragColor = vec4(MAT_WATER, 0.0, 1.0, 0.0);
             return;
         }
 
@@ -439,7 +579,15 @@ void main() {
         float wet = touchingWater ? 1.0 : (current.b > 0.0 ? current.b - 0.008 : current.b);
         if (concussed > 0.5 && wet > 0.0) wet = 0.0; // blast heat flash-dries the soil
         if (nearLava && wet >= 0.0) wet = -1.0;      // radiant heat chars the contact face
-        float loose = isSolid(cellBelow.r) ? max(0.0, current.g - 0.15) : current.g;
+        // Landing kills fall speed; settled grains then pack slowly under
+        // overburden (deeper packs harder — the floor deepens with burial).
+        // Blasts (concussion) and scour re-loosen packed ground.
+        float loose = current.g;
+        if (isSolid(cellBelow.r)) {
+            float floorG = -clamp((300.0 - coord.y) * 0.003, 0.0, 0.5);
+            loose = loose > 0.0 ? max(0.0, min(loose, 1.0) - 0.15)
+                                : max(floorG, loose - 0.0004);
+        }
         loose = max(loose, max(concussed, scoured ? 1.0 : 0.0));
         fragColor = vec4(MAT_SAND, loose, wet, span);
         return;
@@ -459,9 +607,11 @@ void main() {
             fragColor = vec4(cellAbove.r, 1.0, cellAbove.r == MAT_SAND ? 1.0 : 0.0, 0.0);
             return;
         }
-        // 1.5 Oil below is lighter: swap it up through me (mirror of the oil
-        //     branch's rise rule — guards must match that side exactly)
-        if (cellBelow.r == MAT_OIL && !oilIgnites(coord + vec2(0.0, -1.0))) {
+        // 1.5 Oil below is lighter: swap it up through me — declined while I
+        //     carry suspended sediment (the load cannot ride into oil; the oil
+        //     branch mirrors this sediment guard exactly)
+        if (cellBelow.r == MAT_OIL && sedBit(current.b) < 0.5 &&
+            !oilIgnites(coord + vec2(0.0, -1.0))) {
             float b2 = getCell(coord + vec2(0.0, -2.0)).r;
             if (b2 != MAT_AIR && b2 != MAT_FIRE) {
                 fragColor = vec4(MAT_OIL, 0.0, 0.0, 0.0);
@@ -473,8 +623,21 @@ void main() {
             fragColor = vec4(MAT_AIR, 0.0, 0.0, 0.0);
             return;
         }
+        // 2.2 In-place transforms (every claim that could take me mirrors
+        //     these through waterMutates): suspended load settles onto the bed
+        //     as fresh saturated sand...
+        if (sedimentDeposits(coord, current)) {
+            fragColor = vec4(MAT_SAND, 0.0, 1.0, 0.0);
+            return;
+        }
+        //     ...and a still surface puddle soaks into the dry bed below
+        //     (deliberate ledger exception: the mass moves into sand wetness)
+        if (waterSoaksIn(coord, current)) {
+            fragColor = vec4(MAT_AIR, 0.0, 0.0, 0.0);
+            return;
+        }
         // 2.5 Pressure rise: head above my elevation pushes me up (self-claim)
-        if (cellAbove.r == MAT_AIR && current.a > 3.0 &&
+        if (cellAbove.r == MAT_AIR && current.a > 1.5 &&
             waterRiseTargets(coord + vec2(0.0, 1.0), P)) {
             fragColor = vec4(MAT_AIR, 0.0, 0.0, 0.0);
             return;
@@ -503,6 +666,7 @@ void main() {
         // 5. Stay: momentum slowly dissipates; hydrostatic head relaxes toward
         //    (connected surface height - elevation) via max-propagation with a
         //    slow decay so stale head bleeds off after the geometry changes.
+        //    The fell flag clears (I did not fall); the sediment flag persists.
         float m = current.g;
         if (hash(coord * 1.7 + vec2(float(u_frame), float(u_subStep))) < 0.05) m = 0.0;
         float head = cellAbove.r == MAT_WATER ? cellAbove.a + 1.0 : 0.0;
@@ -510,7 +674,7 @@ void main() {
         head = max(head, cellRight.r == MAT_WATER ? cellRight.a : 0.0);
         head = max(head, cellBelow.r == MAT_WATER ? cellBelow.a - 1.0 : 0.0);
         head = clamp(head - 0.03, 0.0, 400.0);
-        fragColor = vec4(MAT_WATER, m, 0.0, head);
+        fragColor = vec4(MAT_WATER, m, sedBit(current.b), head);
         return;
     }
 
@@ -554,8 +718,9 @@ void main() {
         }
         // Buoyant rise: water directly above swaps down through me (mirror of
         // the water branch rule 1.5 — reaching here implies my below is not
-        // AIR/FIRE and I am not igniting, matching that side's guards)
-        if (cellAbove.r == MAT_WATER) {
+        // AIR/FIRE and I am not igniting, matching that side's guards; the
+        // sediment guard mirrors the water side declining while laden)
+        if (cellAbove.r == MAT_WATER && sedBit(cellAbove.b) < 0.5) {
             vec4 above2 = getCell(coord + vec2(0.0, 2.0));
             if (!(isGranular(above2.r) && sandFalls(above2, coord.y + 2.0))) {
                 fragColor = vec4(MAT_WATER, 0.0, 0.0, 0.0);
@@ -576,15 +741,15 @@ void main() {
         // RECEIVES FIRST: falling matter snuffs the flame and takes the cell
         // (mirrors each donor's below==FIRE vacate rule — a receive must never
         // be preempted by the douse transform below, or the donor's matter is
-        // destroyed).
+        // destroyed). Matter arriving through flame keeps its fall speed mark.
         if (isGranular(cellAbove.r) && sandFalls(cellAbove, coord.y + 1.0)) {
-            fragColor = vec4(cellAbove.r, 1.0, cellAbove.r == MAT_SAND ? max(cellAbove.b, 0.0) : 0.0, 0.0);
+            fragColor = vec4(cellAbove.r, 2.0, cellAbove.r == MAT_SAND ? max(cellAbove.b, 0.0) : 0.0, 0.0);
             return;
         }
         if (cellAbove.r == MAT_WATER) {
             vec4 above2 = getCell(coord + vec2(0.0, 2.0));
             if (!(isGranular(above2.r) && sandFalls(above2, coord.y + 2.0))) {
-                fragColor = vec4(MAT_WATER, cellAbove.g, 0.0, 0.0);
+                fragColor = vec4(MAT_WATER, cellAbove.g, sedBit(cellAbove.b) + 2.0, 0.0);
                 return;
             }
         }
@@ -609,14 +774,31 @@ void main() {
     }
 
     // ---- AIR (receiver side; priority mirrors the donors exactly) -----------
-    // 1. Granular matter falling straight down (wetness travels with sand)
-    if (isGranular(cellAbove.r) && sandFalls(cellAbove, coord.y + 1.0)) {
-        fragColor = vec4(cellAbove.r, 1.0, cellAbove.r == MAT_SAND ? max(cellAbove.b, 0.0) : 0.0, 0.0);
+    // 0. FAST FALL receive: matter that fell last pass covers two cells of
+    //    clear air this pass; the cell between us passes it through. Highest
+    //    priority — every claim predicate declines when this holds, so it is
+    //    checked once here and never re-tested below.
+    if (fastFallTargets(coord)) {
+        vec4 FD = getCell(coord + vec2(0.0, 2.0));
+        if (FD.r == MAT_WATER) {
+            fragColor = vec4(MAT_WATER, FD.g, sedBit(FD.b) + 2.0, 0.0);
+        } else {
+            fragColor = vec4(FD.r, 2.0, FD.r == MAT_SAND ? max(FD.b, 0.0) : 0.0, 0.0);
+        }
         return;
     }
-    // 2. Loose granular matter sliding diagonally down (parity dir)
+    // 1. Granular matter falling straight down (wetness travels with sand; the
+    //    fell mark primes next pass's fast fall). Declines when the cell below
+    //    me takes it at fast-fall speed instead (pass-through).
+    if (isGranular(cellAbove.r) && sandFalls(cellAbove, coord.y + 1.0) &&
+        !fastFallTargets(coord + vec2(0.0, -1.0))) {
+        fragColor = vec4(cellAbove.r, 2.0, cellAbove.r == MAT_SAND ? max(cellAbove.b, 0.0) : 0.0, 0.0);
+        return;
+    }
+    // 2. Loose granular matter sliding diagonally down (parity dir), gated by
+    //    the same repose dice the donor rolled on its own position
     if (cellAbove.r == MAT_AIR && isGranular(diagUpOpp.r) && diagUpOpp.g > 0.5 &&
-        isSolid(sideOpp.r)) {
+        isSolid(sideOpp.r) && slideRolls(coord + vec2(-P, 1.0), diagUpOpp)) {
         fragColor = vec4(diagUpOpp.r, 1.0, diagUpOpp.r == MAT_SAND ? max(diagUpOpp.b, 0.0) : 0.0, 0.0);
         return;
     }
@@ -626,32 +808,33 @@ void main() {
         return;
     }
     // 3. Water falling straight down. Mirror the donor: the water above does NOT
-    // vacate when it is busy swapping with sinking sand from ITS above cell.
-    if (cellAbove.r == MAT_WATER) {
+    // vacate when it is busy swapping with sinking sand from ITS above cell;
+    // and I pass it through when my below cell takes it at fast-fall speed.
+    if (cellAbove.r == MAT_WATER && !fastFallTargets(coord + vec2(0.0, -1.0))) {
         vec4 above2 = getCell(coord + vec2(0.0, 2.0));
         if (!(isGranular(above2.r) && sandFalls(above2, coord.y + 2.0))) {
-            fragColor = vec4(MAT_WATER, cellAbove.g, 0.0, 0.0);
+            fragColor = vec4(MAT_WATER, cellAbove.g, sedBit(cellAbove.b) + 2.0, 0.0);
             return;
         }
     }
-    // 3.5 Water rising under hydrostatic pressure from below
+    // 3.5 Water rising under hydrostatic pressure from below (sediment rides)
     if (waterRiseTargets(coord, P)) {
-        fragColor = vec4(MAT_WATER, 0.0, 0.0, 0.0);
+        fragColor = vec4(MAT_WATER, 0.0, sedBit(cellBelow.b), 0.0);
         return;
     }
     // 4. Water flowing diagonally down (parity dir; donor is up-opposite)
     if (waterDiagTargets(coord, P)) {
-        fragColor = vec4(MAT_WATER, P, 0.0, 0.0);
+        fragColor = vec4(MAT_WATER, P, sedBit(diagUpOpp.b), 0.0);
         return;
     }
     // 5. Lateral water arrival: left donor first, then right (same arbitration
     //    the donors themselves ran, over the same samples)
     if (lateralLeftDonorClaims(coord, P)) {
-        fragColor = vec4(MAT_WATER, 1.0, 0.0, 0.0);
+        fragColor = vec4(MAT_WATER, 1.0, sedBit(cellLeft.b), 0.0);
         return;
     }
     if (lateralRightDonorClaims(coord, P)) {
-        fragColor = vec4(MAT_WATER, -1.0, 0.0, 0.0);
+        fragColor = vec4(MAT_WATER, -1.0, sedBit(cellRight.b), 0.0);
         return;
     }
     // 6. Lava / oil falling straight in (donor vacates unconditionally when its

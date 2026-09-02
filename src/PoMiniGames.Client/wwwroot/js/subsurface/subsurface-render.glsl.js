@@ -86,6 +86,13 @@ float distToSegment(vec2 p, vec2 a, vec2 b) {
     return distance(p, a + ab * t);
 }
 
+vec4 cellAt(vec2 c) {
+    if (c.x < 0.0 || c.x >= u_resolution.x || c.y < 0.0 || c.y >= u_resolution.y) {
+        return vec4(0.0);
+    }
+    return texture(u_stateTexture, (c + 0.5) / u_resolution);
+}
+
 void main() {
     vec2 coord = floor(gl_FragCoord.xy);
     vec4 cell = texture(u_stateTexture, v_uv);
@@ -123,6 +130,14 @@ void main() {
             // Dark underground excavated cavern void
             col = vec3(0.06, 0.05, 0.09) + noise * 0.5;
         }
+        // Surface meniscus: an air notch with water below and water beside
+        // renders as part-filled water, visually smoothing the stair-stepped
+        // free surface into a level line (render-only; the cell stays air).
+        if (cellAt(coord + vec2(0.0, -1.0)).r == MAT_WATER &&
+            (cellAt(coord + vec2(-1.0, 0.0)).r == MAT_WATER ||
+             cellAt(coord + vec2(1.0, 0.0)).r == MAT_WATER)) {
+            col = mix(col, vec3(0.28, 0.60, 0.92), 0.6);
+        }
     } else if (mat == MAT_SAND) {
         // Warm light-brown cohesive sand pixel palette with organic grain variation
         vec3 sandLight = vec3(0.91, 0.78, 0.58);
@@ -130,7 +145,12 @@ void main() {
         float pattern = hash(coord * 1.5);
         col = mix(sandDark, sandLight, pattern) + noise;
         // Loose airborne/settling grains read slightly dusty
-        col = mix(col, vec3(0.82, 0.70, 0.52), cell.g * 0.35);
+        col = mix(col, vec3(0.82, 0.70, 0.52), clamp(cell.g, 0.0, 1.0) * 0.35);
+        // Overburden-compacted strata (negative looseness) read denser and
+        // darker — dig a shaft and the packed layers show as banding
+        if (cell.g < -0.05) {
+            col = mix(col, vec3(0.55, 0.43, 0.28), clamp(-cell.g * 1.6, 0.0, 0.8) * 0.55);
+        }
         if (cell.b < -1.5) {
             // Vitrified blast glass: fused, glossy, faintly green-black
             float sheen = hash(coord * 0.9) * 0.12;
@@ -160,6 +180,10 @@ void main() {
         waterCol += vec3(0.10, 0.14, 0.16) * max(ca, 0.0) * (1.0 - depth);
         if (abs(cell.g) > 0.5) {
             waterCol = mix(waterCol, vec3(0.75, 0.88, 0.97), 0.45); // rapids foam
+        }
+        if (cell.b == 1.0 || cell.b == 3.0) {
+            // Suspended sediment load: murky brown churn
+            waterCol = mix(waterCol, vec3(0.45, 0.36, 0.22), 0.45);
         }
         if (cell.a < 3.0) {
             float sp = hash(coord + floor(u_time * 8.0));

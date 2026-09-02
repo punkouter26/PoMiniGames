@@ -608,9 +608,14 @@ export class SubSurfaceEngine {
                 // Static equilibrium, not just contact: a piece whose centre of
                 // mass lies outside its footing's x-span topples — treat it as
                 // unsupported so it falls instead of levitating off one corner.
+                // A toppling piece also drifts one column toward its centre of
+                // mass per tick, pivoting off the footing edge instead of
+                // dropping straight down off one corner.
+                let toppleDir = 0;
                 if (supported) {
                     const comX = comSum / cells.length;
-                    if (comX < supMinX - 2 || comX > supMaxX + 2) supported = false;
+                    if (comX < supMinX - 2) { supported = false; toppleDir = -1; }
+                    else if (comX > supMaxX + 2) { supported = false; toppleDir = 1; }
                 }
 
                 if (supported) {
@@ -631,20 +636,31 @@ export class SubSurfaceEngine {
 
                 // Find the largest coherent drop (up to ISLAND_FALL_STEP px):
                 // every cell's target must be air, water, crushable debris
-                // gravel, or another island cell.
+                // gravel, or another island cell. A toppling island first tries
+                // the drop shifted one column toward its centre of mass.
                 const inIsland = new Set(cells);
-                let drop = 0;
-                for (let d = ISLAND_FALL_STEP; d >= 1; d--) {
-                    let ok = true;
-                    for (const idx of cells) {
-                        const t = idx - d * w;
-                        if (((t / w) | 0) <= 2) { ok = false; break; } // bedrock rows
-                        if (inIsland.has(t)) continue;
-                        const tm = grid[t * 4];
-                        if (tm !== MAT.AIR && tm !== MAT.WATER && tm !== MAT.DEBRIS) { ok = false; break; }
+                let drop = 0, dropDx = 0;
+                const tryDrop = (dx) => {
+                    for (let d = ISLAND_FALL_STEP; d >= 1; d--) {
+                        let ok = true;
+                        for (const idx of cells) {
+                            const cx2 = idx % w;
+                            if (cx2 + dx < 0 || cx2 + dx >= w) { ok = false; break; }
+                            const t = idx - d * w + dx;
+                            if (((t / w) | 0) <= 2) { ok = false; break; } // bedrock rows
+                            if (inIsland.has(t)) continue;
+                            const tm = grid[t * 4];
+                            if (tm !== MAT.AIR && tm !== MAT.WATER && tm !== MAT.DEBRIS) { ok = false; break; }
+                        }
+                        if (ok) return d;
                     }
-                    if (ok) { drop = d; break; }
+                    return 0;
+                };
+                if (toppleDir !== 0) {
+                    drop = tryDrop(toppleDir);
+                    if (drop > 0) dropDx = toppleDir;
                 }
+                if (drop === 0) drop = tryDrop(0);
                 if (drop === 0) continue;
                 anyActive = true;
 
@@ -656,7 +672,7 @@ export class SubSurfaceEngine {
                 let displacedWater = 0;
                 for (const idx of cells) grid[idx * 4] = MAT.AIR;
                 for (const idx of cells) {
-                    const t = idx - drop * w;
+                    const t = idx - drop * w + dropDx;
                     if (grid[t * 4] === MAT.WATER) displacedWater++;
                     else if (grid[t * 4] === MAT.DEBRIS) {
                         this.grains.push({
@@ -686,10 +702,39 @@ export class SubSurfaceEngine {
                 let minX = w, maxX = 0, minY = h, maxY = 0;
                 for (const idx of cells) {
                     const cx = idx % w, cy = (idx / w) | 0;
-                    if (cx < minX) minX = cx;
-                    if (cx > maxX) maxX = cx;
+                    if (cx + Math.min(dropDx, 0) < minX) minX = cx + Math.min(dropDx, 0);
+                    if (cx + Math.max(dropDx, 0) > maxX) maxX = cx + Math.max(dropDx, 0);
                     if (cy - drop < minY) minY = cy - drop;
                     if (cy > maxY) maxY = cy;
+                }
+
+                // Touchdown: an island whose full-speed drop was cut short is
+                // striking ground this tick. The impact jolt loosens the bed
+                // under the contact line (it splashes out from under the slab
+                // via the automaton), throws a dust line, and thuds.
+                if (drop < ISLAND_FALL_STEP && cells.length > 30) {
+                    let contacts = 0;
+                    for (const idx of cells) {
+                        const t = idx - drop * w + dropDx;
+                        const bx = t % w, by = (t / w) | 0;
+                        if (by - 1 <= 2) continue;
+                        const bi = ((by - 1) * w + bx) * 4;
+                        if (grid[bi] !== MAT.SAND) continue;
+                        contacts++;
+                        grid[bi + 1] = 1; // jolted loose
+                        const b2 = ((by - 2) * w + bx) * 4;
+                        if (by - 2 > 2 && grid[b2] === MAT.SAND) grid[b2 + 1] = 1;
+                        if (by - 2 < minY) minY = Math.max(3, by - 2);
+                        if (contacts % 7 === 0) {
+                            this.spawnFx(0, bx, by + 1,
+                                (Math.random() - 0.5) * 40, 15 + Math.random() * 30,
+                                0.6 + Math.random() * 0.8);
+                        }
+                    }
+                    if (contacts > 5) {
+                        this.addShake(Math.min(4, contacts / 60 + 1));
+                        this.audio.bounce((minX + maxX) / 2, 260);
+                    }
                 }
                 if (!dirty) dirty = { minX, maxX, minY, maxY };
                 else {
@@ -1253,7 +1298,9 @@ export class SubSurfaceEngine {
 
         const sandR = Math.round(CRATER_RADIUS * rScale);   // sand excavation
         const scorchR = sandR + 14;               // charred crater lining
-        const waterR = Math.round(sandR * 1.4);   // water is thrown farther
+        // Water is thrown farther; underwater the incompressible coupling
+        // (water hammer) carries the shock farther still
+        const waterR = Math.round(sandR * 1.4 * (submergedBlast ? 1.35 : 1.0));
         const ringR = sandR * 2;                  // surviving water gets outward surge
         const reach = this.computeBlastReach(cx, cy, ringR, BLAST_SOLID_BUDGET * scale);
 
@@ -1276,7 +1323,8 @@ export class SubSurfaceEngine {
                 const m = grid[idx];
                 const solidLike = m === MAT.SAND || m === MAT.DEBRIS || m === MAT.OBSIDIAN;
                 const liquidLike = isLiquidMat(m);
-                if (!solidLike && !liquidLike && m !== MAT.FIRE) continue; // concrete/bedrock immune
+                const concrete = m === MAT.CONCRETE;
+                if (!solidLike && !liquidLike && !concrete && m !== MAT.FIRE) continue; // bedrock immune
 
                 let ai = Math.round(Math.atan2(dy, dx) * 180 / Math.PI);
                 if (ai < 0) ai += 360;
@@ -1298,16 +1346,55 @@ export class SubSurfaceEngine {
                     ux = dx / dist; uy = dy / dist;
                 }
 
-                if (solidLike) {
-                    if (dist <= sandR) {
-                        // Displace: eject as a ballistic grain (25% fine dust)
-                        const dust = m === MAT.SAND && !camouflet && Math.random() < 0.25;
-                        const speed = EJECTA_SPEED * spScale * (0.35 + 0.65 * (1 - dist / sandR)) *
-                                      (0.7 + Math.random() * 0.6) * (dust ? 0.55 : 1.0);
+                if (concrete) {
+                    // Reinforced concrete is not immune, it fails like concrete:
+                    // pulverized to gravel-sized rubble in the fireball core
+                    // (radial cracking beyond is seeded after this loop). The
+                    // rubble grains are conserved and land as loose gravel.
+                    if (dist <= sandR * 0.45) {
+                        const speed = EJECTA_SPEED * spScale * 0.55 *
+                                      (0.35 + 0.65 * (1 - dist / (sandR * 0.45))) *
+                                      (0.7 + Math.random() * 0.6);
                         this.grains.push({
                             x, y,
                             vx: ux * speed + (Math.random() - 0.5) * 60,
-                            vy: uy * speed + upBias + Math.random() * 70,
+                            vy: uy * speed + upBias * 0.7 + Math.random() * 60,
+                            mat: MAT.DEBRIS,
+                            dust: Math.random() < 0.2,
+                            sub: false
+                        });
+                        grid[idx] = MAT.AIR;
+                        grid[idx + 1] = 0;
+                        grid[idx + 2] = 0;
+                        grid[idx + 3] = 0;
+                        touch(x, y);
+                    }
+                    continue;
+                }
+
+                if (solidLike) {
+                    if (dist <= sandR) {
+                        // Displace: eject as a ballistic grain (25% fine dust).
+                        // Overburden-compacted ground (negative looseness)
+                        // absorbs more of the shock: no dust, slower throw.
+                        const packed = m === MAT.SAND && grid[idx + 1] < -0.1;
+                        const dust = m === MAT.SAND && !camouflet && !packed && Math.random() < 0.25;
+                        // Inverted-cone ejection (~45 deg, like real crater
+                        // throw-out) with a slow "rim" fraction that lands at
+                        // the lip and builds the raised rim of the crater.
+                        let ex = ux, ey = uy;
+                        if (!camouflet) {
+                            ex = ux * 0.5 + (dx >= 0 ? 0.354 : -0.354);
+                            ey = uy * 0.5 + 0.354;
+                        }
+                        const rim = !camouflet && !dust && Math.random() < 0.30;
+                        const speed = EJECTA_SPEED * spScale * (0.35 + 0.65 * (1 - dist / sandR)) *
+                                      (0.7 + Math.random() * 0.6) * (dust ? 0.55 : 1.0) *
+                                      (packed ? 0.8 : 1.0) * (rim ? 0.32 : 1.0);
+                        this.grains.push({
+                            x, y,
+                            vx: ex * speed + (Math.random() - 0.5) * 60,
+                            vy: ey * speed + upBias + Math.random() * 70,
                             mat: m,
                             dust,
                             sub: false
@@ -1354,6 +1441,39 @@ export class SubSurfaceEngine {
                         grid[idx + 3] = 0;
                         touch(x, y);
                     }
+                }
+            }
+        }
+
+        // Blast cracking: radial fracture seams chew 1px lines through the
+        // concrete within range, splitting slabs into independent islands the
+        // rigid solver then drops, sags, topples, or snaps. Seam cells become
+        // conserved rubble grains, exactly like the stress-fracture seam.
+        if (!camouflet) {
+            const seams = 2 + Math.round(scale * 2);
+            for (let s = 0; s < seams; s++) {
+                const a = Math.random() * Math.PI * 2;
+                const sx = Math.cos(a), sy = Math.sin(a);
+                let chew = 0;
+                for (let t = 4; t < sandR && chew < 90; t += 1) {
+                    const x = Math.round(cx + sx * t), y = Math.round(cy + sy * t);
+                    if (x < 1 || x > w - 2 || y <= 3 || y >= h - 1) break;
+                    const idx = (y * w + x) * 4;
+                    if (grid[idx] !== MAT.CONCRETE) continue;
+                    chew++;
+                    this.grains.push({
+                        x, y,
+                        vx: (Math.random() - 0.5) * 160,
+                        vy: 60 + Math.random() * 120,
+                        mat: MAT.CONCRETE,
+                        dust: false,
+                        sub: false
+                    });
+                    grid[idx] = MAT.AIR;
+                    grid[idx + 1] = 0;
+                    grid[idx + 2] = 0;
+                    grid[idx + 3] = 0;
+                    touch(x, y);
                 }
             }
         }
@@ -1407,8 +1527,8 @@ export class SubSurfaceEngine {
         }
 
         // Air-blast impulse knocks nearby ordnance flying (and shakes stuck
-        // charges loose)
-        const kickR = 400 * Math.max(1, scale);
+        // charges loose). Water transmits the shock farther (incompressible).
+        const kickR = 400 * Math.max(1, scale) * (submergedBlast ? 1.4 : 1);
         for (const q of this.projectiles) {
             if (q === exclude) continue;
             const d = Math.hypot(q.x - cx, q.y - cy);
@@ -1789,7 +1909,10 @@ export class SubSurfaceEngine {
                 const idx = (y * w + x) * 4;
                 const m = grid[idx];
                 if (!isSolidMat(m) || m === MAT.BEDROCK) continue;
-                p.budget -= (m === MAT.CONCRETE || m === MAT.OBSIDIAN) ? 3 : 1;
+                // Overburden-compacted sand (negative looseness) bores at
+                // double cost — deep packed strata resist the bit
+                p.budget -= (m === MAT.CONCRETE || m === MAT.OBSIDIAN) ? 3
+                          : (m === MAT.SAND && grid[idx + 1] < -0.1) ? 2 : 1;
                 this.grains.push({
                     x, y,
                     vx: -ux * (40 + Math.random() * 90) + (Math.random() - 0.5) * 80,

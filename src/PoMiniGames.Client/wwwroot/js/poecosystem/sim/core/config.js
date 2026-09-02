@@ -50,3 +50,20 @@ export const PROP_SIZES = Object.freeze([
 
 // ── External modules (workers have no import map; see plan decision 2) ───
 export const CANNON_CDN_URL = 'https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js';
+
+// ── Flora (SPEC §7.6) ────────────────────────────────────────────────────
+export const FLORA = Object.freeze({
+  grassInit: Object.freeze({ grass: 0.8, forest: 0.5, hill: 0.4 }),
+  // Logistic regrowth rate per second, db/dt = r·(b + seed)·(1 − b); the seed term lets a
+  // grazed-bare or burnt tile recover instead of staying at zero forever.
+  grassRate: Object.freeze({ grass: 0.04, forest: 0.025, hill: 0.012 }),
+  grassSeed: 0.03,
+  maxBushes: 300,
+  bushChance: 0.25,          // per forest-edge tile, in index order, until the cap
+  bushRipenSeconds: 40,
+  bushFoodValue: 0.3,        // hunger removed by one stripped bush
+  treeDensity: 0.35,         // fraction of forest tiles carrying a tree
+  treeRegrowSeconds: 180,    // stump → standing
+  treeBurnRegrowMultiplier: 2,
+  logsPerTree: 3,
+});

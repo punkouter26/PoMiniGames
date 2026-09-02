@@ -16,7 +16,7 @@ A task touches only the files in its manifest (see `plan.md`) plus its own test 
 - [x] CP-A — 25 tests green, coverage 88 % lines, terrainHash(7) identical across two Node processes
 - [x] T4  Creatures A — species, drives, lifecycle (9 tests)
 - [x] T5  Creatures B — traits, genetics, names (6 tests)
-- [ ] T6  Flora — grass, bushes, trees
+- [x] T6  Flora — grass, bushes, trees (4 tests; sliced regrowth)
 - [ ] CP-B
 - [ ] T7  Behavior A — spatial, memory, steering, utility
 - [ ] T8  Behavior B — social, humans

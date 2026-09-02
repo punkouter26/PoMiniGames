@@ -93,6 +93,8 @@ Instant-play mini-games platform: .NET 10 Minimal API host that also serves the 
 
 ## Conventions and constraints
 
+- **Do not run test tiers after making changes** (`dotnet test`, `scripts/test-all.ps1`, single-filter runs included) unless the user explicitly asks for a test run. The tiers are slow (E2EAPI ≈ 13 min) and the user prefers to run them themselves. `dotnet build` is still fine — compile errors are not tests.
+
 - **No Radzen.Blazor** (or similar heavy component libraries) — deliberately rejected for bundle size (~1.2 MB). Use native Blazor (`<Virtualize>`, plain CSS). Note that the external NET_RULES doc mandates Radzen; this repo's rejection overrides it — do not reintroduce the dependency to satisfy that rule.
 - **Docs were rewritten in the 2026-08-18 cleanup.** `README.md` and `scripts/README.md` are now accurate summaries; `scripts/` holds working scripts only (the ~28 one-off debug files were deleted). The tree is still the truth when docs drift: trust `src/PoMiniGames.Client/Games/` and `src/PoMiniGames.API/Features/` over any doc table. `docs/*.html` report output is gitignored — build it via `node docs/build.mjs`.
 - Source comments reference an `AGENT.MD` that is not in this repo. It's a dangling pointer, not a file you failed to find.

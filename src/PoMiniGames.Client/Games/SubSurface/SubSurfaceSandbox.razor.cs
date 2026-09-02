@@ -9,6 +9,7 @@ public partial class SubSurfaceSandbox : ComponentBase, IAsyncDisposable
     private ElementReference _canvasRef;
     private bool _initialized;
     private SubSurfaceDiagnostics _diagnostics = new(60.0, 2, 0, 0, 0, 0);
+    private SubSurfaceRealismStatus _realism = new(SubSurfaceRealism.Medium, SubSurfaceRealism.None, true, false, 0, "");
 
     /// <summary>
     /// Demo (kiosk/attract) mode: ordnance rains from the sky automatically.
@@ -23,6 +24,21 @@ public partial class SubSurfaceSandbox : ComponentBase, IAsyncDisposable
     protected bool AutoDrop { get; set; }
     protected bool SoundOn { get; set; } = true;
     protected SubSurfacePreset SelectedPreset { get; set; } = SubSurfacePreset.DefaultHorizon;
+
+    /// <summary>
+    /// Medium by default: the highest tier seen to link everywhere (High hangs
+    /// the ANGLE/D3D11 shader compiler ~100 s and then fails on Snapdragon-class
+    /// GPUs). The engine bootstraps on Low and chases this tier in the
+    /// background; a failed upgrade snaps the selector back to the tier kept.
+    /// </summary>
+    protected SubSurfaceRealism SelectedRealism { get; set; } = SubSurfaceRealism.Medium;
+
+    protected static readonly IReadOnlyList<SubSurfaceRealism> RealismLevels =
+    [
+        SubSurfaceRealism.Low,
+        SubSurfaceRealism.Medium,
+        SubSurfaceRealism.High
+    ];
 
     protected static readonly IReadOnlyList<SubSurfacePreset> Presets =
     [
@@ -54,6 +70,7 @@ public partial class SubSurfaceSandbox : ComponentBase, IAsyncDisposable
     protected override void OnInitialized()
     {
         Interop.OnMetricsReceived += HandleMetricsUpdate;
+        Interop.OnRealismStatusReceived += HandleRealismStatus;
         AutoDrop = IsDemo;
     }
 
@@ -62,7 +79,7 @@ public partial class SubSurfaceSandbox : ComponentBase, IAsyncDisposable
         if (firstRender && !_initialized)
         {
             _initialized = true;
-            await Interop.InitializeAsync(_canvasRef);
+            await Interop.InitializeAsync(_canvasRef, SelectedRealism);
             await Interop.SetToolAsync(SelectedTool);
             await Interop.SetBrushRadiusAsync(BrushRadius);
             await Interop.SetAutoDropAsync(AutoDrop);
@@ -73,6 +90,26 @@ public partial class SubSurfaceSandbox : ComponentBase, IAsyncDisposable
     {
         _diagnostics = diagnostics;
         InvokeAsync(StateHasChanged);
+    }
+
+    private void HandleRealismStatus(SubSurfaceRealismStatus status)
+    {
+        _realism = status;
+        if (status.Failed && status.Effective != SubSurfaceRealism.None)
+        {
+            SelectedRealism = status.Effective;
+        }
+        InvokeAsync(StateHasChanged);
+    }
+
+    protected async Task OnRealismChanged(ChangeEventArgs args)
+    {
+        if (Enum.TryParse<SubSurfaceRealism>(args.Value?.ToString(), out var realism) &&
+            realism != SubSurfaceRealism.None)
+        {
+            SelectedRealism = realism;
+            await Interop.SetRealismAsync(realism);
+        }
     }
 
     protected async Task OnToolChanged(SubSurfaceTool tool)
@@ -130,6 +167,7 @@ public partial class SubSurfaceSandbox : ComponentBase, IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         Interop.OnMetricsReceived -= HandleMetricsUpdate;
+        Interop.OnRealismStatusReceived -= HandleRealismStatus;
         await Interop.DisposeAsync();
     }
 }

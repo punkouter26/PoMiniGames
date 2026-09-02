@@ -65,6 +65,18 @@
             </select>
         </div>
 
+        @* Physics realism tier (compile-time shader variant; the HUD shows the linked tier) *@
+        <div class="toolbar-group">
+            <label class="toolbar-label" for="subsurface-realism">Realism:</label>
+            <select id="subsurface-realism" value="@SelectedRealism" @onchange="OnRealismChanged"
+                    title="Physics fidelity. High runs the full erosion / pressure / creep chain; Medium and Low prune it so it links on GPUs that cannot compile the full chain.">
+                @foreach (var level in RealismLevels)
+                {
+                    <option value="@level">@level</option>
+                }
+            </select>
+        </div>
+
         @* Simulation Controls (Play/Pause, Step, Reset) *@
         <div class="toolbar-group">
             <button type="button" class="sim-btn @(IsPaused ? "sim-resume" : "sim-pause")" @onclick="TogglePause">
@@ -113,6 +125,10 @@
             <span class="hud-badge hud-warning">Active Ordnance: @_diagnostics.ActiveProjectiles</span>
             <span class="hud-badge hud-info">Fluid: @_diagnostics.ActiveFluidCells.ToString("N0")</span>
             <span class="hud-badge hud-info">Sand: @_diagnostics.ActiveSandCells.ToString("N0")</span>
+            <span class="hud-badge @(_realism.Failed ? "hud-warning" : _realism.Pending ? "hud-info" : "hud-success")"
+                  title="@_realism.Message">
+                Realism: @(_realism.Pending ? $"{_realism.Requested} (compiling…)" : _realism.Effective.ToString())
+            </span>
             @if (_diagnostics.AirborneGrains > 0)
             {
                 <span class="hud-badge hud-warning">Ejecta: @_diagnostics.AirborneGrains.ToString("N0")</span>
@@ -120,6 +136,10 @@
         </div>
         <div class="hud-caption">
             800×600 • 480,000 Cells • WebGL 2.0 Mohr-Coulomb &amp; Eulerian Solver
+            @if (!string.IsNullOrEmpty(_realism.Message))
+            {
+                <span> • @_realism.Message</span>
+            }
         </div>
     </div>
 </div>

@@ -9,7 +9,7 @@
 //    projectiles colliding against the real grid, and ordnance state machines.
 //    Both share the grid through a periodic readPixels snapshot.
 
-import { vsQuadSource, fsPhysicsSource } from './subsurface-physics.glsl.js';
+import { vsQuadSource, physicsSource, REALISM_LOW, REALISM_MEDIUM, REALISM_HIGH } from './subsurface-physics.glsl.js';
 import {
     fsRenderSource, vsGrainSource, fsGrainSource,
     fsExtractSource, fsBlurSource, fsCompositeSource,
@@ -63,10 +63,33 @@ const TOOL_ORDNANCE = { 4: 'TNT', 5: 'BALLOON', 8: 'DRILL', 9: 'CLUSTER', 10: 'N
 // 2 concrete, 3 water, 6 lava, 7 oil).
 const BRUSH_TOOLS = new Set([0, 1, 2, 3, 6, 7]);
 
+const REALISM_NAMES = { [REALISM_LOW]: 'Low', [REALISM_MEDIUM]: 'Medium', [REALISM_HIGH]: 'High' };
+function clampRealism(level) {
+    return Math.min(REALISM_HIGH, Math.max(REALISM_LOW, level | 0));
+}
+function realismName(level) {
+    return REALISM_NAMES[level] ?? 'None';
+}
+
 export class SubSurfaceEngine {
-    constructor(canvas, dotNetHelper) {
+    constructor(canvas, dotNetHelper, realism = REALISM_MEDIUM) {
         this.canvas = canvas;
         this.dotNetHelper = dotNetHelper;
+
+        // Physics realism tier (see subsurface-physics.glsl.js). A tier is a
+        // compile-time shader variant, so changing it means a relink. Startup
+        // bootstraps on Low (links in ~1 s everywhere) and then chases the
+        // requested tier in the background; the linked program keeps stepping
+        // until its replacement links, and a failed link (ANGLE/D3D11 hangs
+        // ~100 s on the High chain, then fails with an empty log) keeps the
+        // working tier — the page never dies on it.
+        this.realism = 0;                  // effective (linked) tier; 0 until the first link
+        this.requestedRealism = clampRealism(realism);
+        this.physicsBuild = null;          // in-flight { level, program, vs, fs, startedAt, valid }
+        this.parallelCompile = null;       // KHR_parallel_shader_compile, when present
+        this.lastCompileMs = 0;
+        this.physicsProgram = null;
+        this.physicsLocs = null;
         this.width = 800;
         this.height = 600;
 
@@ -205,8 +228,10 @@ export class SubSurfaceEngine {
         gl.enableVertexAttribArray(0);
         gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
 
-        // Compile Programs
-        this.physicsProgram = this.createProgram(vsQuadSource, fsPhysicsSource);
+        // Compile Programs. The physics program is tier-dependent and links
+        // through beginPhysicsBuild (asynchronously where the driver allows);
+        // render/grain link synchronously here.
+        this.parallelCompile = gl.getExtension('KHR_parallel_shader_compile');
         this.renderProgram = this.createProgram(vsQuadSource, fsRenderSource);
         this.grainProgram = this.createProgram(vsGrainSource, fsGrainSource);
 
@@ -222,10 +247,6 @@ export class SubSurfaceEngine {
 
         // Cache uniform locations (looked up once; set every frame)
         const locs = (prog, names) => Object.fromEntries(names.map(n => [n, gl.getUniformLocation(prog, n)]));
-        this.physicsLocs = locs(this.physicsProgram, [
-            'u_stateTexture', 'u_resolution', 'u_time', 'u_frame', 'u_subStep',
-            'u_brush', 'u_shockwaves', 'u_shockwaveCount'
-        ]);
         this.renderLocs = locs(this.renderProgram, [
             'u_stateTexture', 'u_resolution', 'u_time',
             'u_shockwaves', 'u_shockwaveCount',
@@ -252,6 +273,111 @@ export class SubSurfaceEngine {
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
         this.initPostFx();
+
+        // Bootstrap on Low so the grid moves at once; finishPhysicsBuild then
+        // chases requestedRealism and hot-swaps the program when it links.
+        this.beginPhysicsBuild(REALISM_LOW, true);
+    }
+
+    // ---- Physics realism tier ---------------------------------------------
+
+    beginPhysicsBuild(level, bootstrap = false) {
+        const gl = this.gl;
+        level = clampRealism(level);
+        if (this.physicsBuild) this.discardPhysicsBuild();
+        if (!bootstrap) this.requestedRealism = level;
+        const vs = this.createShader(gl.VERTEX_SHADER, vsQuadSource);
+        const fs = this.createShader(gl.FRAGMENT_SHADER, physicsSource(level));
+        const program = gl.createProgram();
+        if (vs) gl.attachShader(program, vs);
+        if (fs) gl.attachShader(program, fs);
+        gl.linkProgram(program);
+        this.physicsBuild = { level, program, vs, fs, startedAt: performance.now(), valid: !!(vs && fs) };
+        this.reportRealism(`Compiling ${realismName(level)} physics…`);
+        // Without the parallel-compile extension linkProgram already blocked;
+        // resolve now. With it, pollPhysicsBuild resolves from the frame loop.
+        if (!this.parallelCompile) this.finishPhysicsBuild();
+    }
+
+    pollPhysicsBuild() {
+        const b = this.physicsBuild;
+        if (!b) return;
+        if (this.parallelCompile &&
+            !this.gl.getProgramParameter(b.program, this.parallelCompile.COMPLETION_STATUS_KHR)) {
+            return; // still linking on the driver's worker; keep stepping the old tier
+        }
+        this.finishPhysicsBuild();
+    }
+
+    finishPhysicsBuild() {
+        const gl = this.gl;
+        const b = this.physicsBuild;
+        this.physicsBuild = null;
+        const ms = performance.now() - b.startedAt;
+        const linked = b.valid && gl.getProgramParameter(b.program, gl.LINK_STATUS);
+        if (b.vs) gl.deleteShader(b.vs);
+        if (b.fs) gl.deleteShader(b.fs);
+        if (linked) {
+            if (this.physicsProgram) gl.deleteProgram(this.physicsProgram);
+            this.physicsProgram = b.program;
+            this.physicsLocs = Object.fromEntries([
+                'u_stateTexture', 'u_resolution', 'u_time', 'u_frame', 'u_subStep',
+                'u_brush', 'u_shockwaves', 'u_shockwaveCount'
+            ].map(n => [n, gl.getUniformLocation(b.program, n)]));
+            this.realism = b.level;
+            this.lastCompileMs = ms;
+            this.reportRealism(`${realismName(b.level)} physics linked in ${Math.round(ms)} ms`);
+            if (this.requestedRealism !== this.realism) {
+                this.beginPhysicsBuild(this.requestedRealism);
+            }
+            return;
+        }
+        const log = gl.getProgramInfoLog(b.program) || '(empty log)';
+        gl.deleteProgram(b.program);
+        console.warn(`Sand: ${realismName(b.level)} physics failed to link after ${Math.round(ms)} ms: ${log}`);
+        if (this.physicsProgram) {
+            // A working tier is still bound: keep it and surface the failure.
+            this.requestedRealism = this.realism;
+            this.reportRealism(`${realismName(b.level)} failed to link on this GPU after ${Math.round(ms / 1000)} s; staying on ${realismName(this.realism)}`, true);
+            return;
+        }
+        this.reportRealism(`${realismName(b.level)} physics failed to link; the grid cannot advance`, true);
+    }
+
+    discardPhysicsBuild() {
+        const gl = this.gl;
+        const b = this.physicsBuild;
+        this.physicsBuild = null;
+        if (b.vs) gl.deleteShader(b.vs);
+        if (b.fs) gl.deleteShader(b.fs);
+        gl.deleteProgram(b.program);
+    }
+
+    setRealism(level) {
+        if (!this.gl) return;
+        level = clampRealism(level);
+        if (this.physicsBuild) {
+            if (this.physicsBuild.level === level) return;
+            this.discardPhysicsBuild();
+        }
+        if (level === this.realism) {
+            this.requestedRealism = level;
+            this.reportRealism(`${realismName(level)} physics active`);
+            return;
+        }
+        this.beginPhysicsBuild(level);
+    }
+
+    reportRealism(message, failed = false) {
+        if (!this.dotNetHelper) return;
+        this.dotNetHelper.invokeMethodAsync('OnRealismStatus', {
+            requested: this.requestedRealism,
+            effective: this.realism,
+            pending: !!this.physicsBuild,
+            failed,
+            compileMs: Math.round(this.lastCompileMs),
+            message
+        }).catch(() => {});
     }
 
     // Post-processing chain: scene FBO -> bright extract -> blurred bloom ->
@@ -912,10 +1038,20 @@ export class SubSurfaceEngine {
 
                 const power = Math.hypot(vx, vy);
                 if (power > 10.0 && this.projectiles.length < MAX_PROJECTILES) {
-                    this.spawnOrdnance(TOOL_ORDNANCE[this.currentTool] ?? 'TNT',
-                        this.slingshotOrigin.x, this.slingshotOrigin.y, vx, vy);
-                    this.audio.launch(power);
-                    this.addShake(1.2); // release recoil
+                    // The "sky" gate is a fixed row, but the sand horizon and
+                    // ejecta piles reach into it: a charge released inside the
+                    // ground would start embedded and appear to pass through
+                    // it. Lift the spawn point to the first clear cell above.
+                    const spec = ORDNANCE_SPECS[TOOL_ORDNANCE[this.currentTool] ?? 'TNT'];
+                    let sy = this.slingshotOrigin.y;
+                    let lift = 0;
+                    while (lift < 64 && isSolidMat(this.matAt(this.slingshotOrigin.x, sy - spec.radius))) { sy += 1; lift += 1; }
+                    if (lift < 64) {
+                        this.spawnOrdnance(TOOL_ORDNANCE[this.currentTool] ?? 'TNT',
+                            this.slingshotOrigin.x, sy, vx, vy);
+                        this.audio.launch(power);
+                        this.addShake(1.2); // release recoil
+                    }
                 }
                 this.isSlingshotAiming = false;
             }
@@ -1003,9 +1139,14 @@ export class SubSurfaceEngine {
         }
         this.applyShake();
 
-        // 2. Cellular Physics Sub-Steps
-        gl.useProgram(this.physicsProgram);
-        gl.bindVertexArray(this.quadVAO);
+        // 2. Cellular Physics Sub-Steps (skipped while no tier is linked —
+        //    the grid still renders, it just does not advance)
+        if (this.physicsBuild) this.pollPhysicsBuild();
+        const physicsReady = !!this.physicsProgram;
+        if (physicsReady) {
+            gl.useProgram(this.physicsProgram);
+            gl.bindVertexArray(this.quadVAO);
+        }
 
         // Brush parameters: (x, y, radius, material) — brush tool ids double as
         // material ids (0 air, 1 sand, 2 concrete, 3 water, 6 lava, 7 oil)
@@ -1022,18 +1163,22 @@ export class SubSurfaceEngine {
             shockwaveData.set([sw.x, sw.y, sw.radius, sw.intensity], i * 4);
         }
 
-        gl.uniform2f(this.physicsLocs.u_resolution, this.width, this.height);
-        gl.uniform1f(this.physicsLocs.u_time, timeSeconds);
-        gl.uniform1i(this.physicsLocs.u_frame, this.frame);
-        gl.uniform4fv(this.physicsLocs.u_brush, brushUniform);
-        gl.uniform4fv(this.physicsLocs.u_shockwaves, shockwaveData);
-        gl.uniform1i(this.physicsLocs.u_shockwaveCount, shockwaveCount);
+        if (physicsReady) {
+            gl.uniform2f(this.physicsLocs.u_resolution, this.width, this.height);
+            gl.uniform1f(this.physicsLocs.u_time, timeSeconds);
+            gl.uniform1i(this.physicsLocs.u_frame, this.frame);
+            gl.uniform4fv(this.physicsLocs.u_brush, brushUniform);
+            gl.uniform4fv(this.physicsLocs.u_shockwaves, shockwaveData);
+            gl.uniform1i(this.physicsLocs.u_shockwaveCount, shockwaveCount);
+        }
 
         gl.viewport(0, 0, this.width, this.height);
 
         // While paused, a held brush still paints with a single sub-step so the
         // sandbox stays editable frame-by-frame.
-        const effectiveSteps = subSteps || (this.isMouseDown && !this.isSlingshotAiming ? 1 : 0);
+        const effectiveSteps = physicsReady
+            ? (subSteps || (this.isMouseDown && !this.isSlingshotAiming ? 1 : 0))
+            : 0;
         for (let step = 0; step < effectiveSteps; step++) {
             const readIndex = this.currentFboIndex;
             const writeIndex = 1 - this.currentFboIndex;
@@ -2075,12 +2220,19 @@ export class SubSurfaceEngine {
             // Adheres to the first solid it touches; anchor cell is watched so
             // the charge drops free if its support is dug or blasted away
             if (contact) {
+                // Back the shell out of the cell it just overlapped (it moved
+                // in 2px substeps) so it sits ON the surface, not sunk into it
+                let guard = 0;
+                if (solidBelow)      while (guard++ < 12 && isSolidMat(this.matAt(p.x, p.y - r))) p.y += 1;
+                else if (solidAbove) while (guard++ < 12 && isSolidMat(this.matAt(p.x, p.y + r))) p.y -= 1;
+                else if (solidLeft)  while (guard++ < 12 && isSolidMat(this.matAt(p.x - r, p.y))) p.x += 1;
+                else                 while (guard++ < 12 && isSolidMat(this.matAt(p.x + r, p.y))) p.x -= 1;
                 p.stuck = true;
                 p.vx = 0; p.vy = 0; p.omega = 0;
-                if (solidBelow)      { p.ax = Math.round(p.x); p.ay = Math.round(p.y - r); }
-                else if (solidAbove) { p.ax = Math.round(p.x); p.ay = Math.round(p.y + r); }
-                else if (solidLeft)  { p.ax = Math.round(p.x - r); p.ay = Math.round(p.y); }
-                else                 { p.ax = Math.round(p.x + r); p.ay = Math.round(p.y); }
+                if (solidBelow)      { p.ax = Math.round(p.x); p.ay = Math.round(p.y - r - 1); }
+                else if (solidAbove) { p.ax = Math.round(p.x); p.ay = Math.round(p.y + r + 1); }
+                else if (solidLeft)  { p.ax = Math.round(p.x - r - 1); p.ay = Math.round(p.y); }
+                else                 { p.ax = Math.round(p.x + r + 1); p.ay = Math.round(p.y); }
             }
             return false;
         }
@@ -2092,21 +2244,28 @@ export class SubSurfaceEngine {
         }
 
         if (solidBelow && p.vy < 0) {
-            // Hard impact into loose sand: the sphere buries itself, throwing
-            // an impact splash of displaced grains (conserved) and losing the
-            // energy the ground absorbed
+            // Hard impact into loose sand: a dust puff and the energy the
+            // ground absorbed. This used to excavate a crater under the sphere
+            // (splashCrater) — the bomb sank into it, the ejecta rained back on
+            // top, and the charge went off buried, reading as "the bomb went
+            // through the sand". Ordnance now always stops AT the surface.
             if (p.vy < -320 && p.splash === 0 && this.matAt(p.x, p.y - r) === MAT.SAND) {
-                this.splashCrater(p.x, p.y - r, 7);
+                for (let k = 0; k < 6; k++) {
+                    this.spawnFx(0, p.x + (Math.random() - 0.5) * r * 2, p.y - r + 1,
+                        (Math.random() - 0.5) * 120, 20 + Math.random() * 60, 0.5 + Math.random() * 0.6);
+                }
                 p.splash = 0.3;
                 p.vy *= 0.5;
             }
-            // Un-embed, then bounce; contact torque spins the sphere.
+            // Un-embed (fully — a sphere buried by settling sand or ejecta must
+            // surface this frame, never sit inside the ground), then bounce;
+            // contact torque spins the sphere.
             // Impact friction fires only on a real strike — resting contact
             // re-triggers this branch EVERY frame (gravity), and scrubbing vx
             // here each time froze spheres on slopes instead of letting
             // rollOnSlope carry them downhill.
             let guard = 0;
-            while (isSolidMat(this.matAt(p.x, p.y - r)) && guard++ < 8) p.y += 1;
+            while (isSolidMat(this.matAt(p.x, p.y - r)) && guard++ < 48) p.y += 1;
             const impact = Math.abs(p.vy) > 60;
             if (impact) {
                 this.audio.bounce(p.x, Math.abs(p.vy));
@@ -2161,42 +2320,6 @@ export class SubSurfaceEngine {
         if (Math.abs(sinTheta) < 0.06 && Math.abs(p.vx) < 3.0) {
             p.vx = 0;
             p.omega = 0;
-        }
-    }
-
-    // Impact penetration splash: a fast sphere burying into loose sand throws
-    // the displaced grains outward (each cell becomes one grain — conserved).
-    splashCrater(cx, cy, radius) {
-        this.ensureFreshSnapshot();
-        const w = this.width, grid = this.gridData;
-        const x0 = Math.max(1, Math.round(cx - radius)), x1 = Math.min(w - 2, Math.round(cx + radius));
-        const y0 = Math.max(3, Math.round(cy - radius)), y1 = Math.min(this.height - 1, Math.round(cy + radius));
-        let minX = w, maxX = -1, minY = this.height, maxY = -1;
-        for (let y = y0; y <= y1; y++) {
-            for (let x = x0; x <= x1; x++) {
-                if (Math.hypot(x - cx, y - cy) > radius) continue;
-                const idx = (y * w + x) * 4;
-                if (grid[idx] !== MAT.SAND) continue;
-                this.grains.push({
-                    x, y,
-                    vx: (Math.random() - 0.5) * 260,
-                    vy: 50 + Math.random() * 150,
-                    mat: MAT.SAND,
-                    dust: Math.random() < 0.2,
-                    sub: false
-                });
-                grid[idx] = MAT.AIR;
-                grid[idx + 1] = 0;
-                grid[idx + 2] = 0;
-                grid[idx + 3] = 0;
-                if (x < minX) minX = x;
-                if (x > maxX) maxX = x;
-                if (y < minY) minY = y;
-                if (y > maxY) maxY = y;
-            }
-        }
-        if (maxX >= 0) {
-            this.uploadRegion(minX, minY, maxX - minX + 1, maxY - minY + 1);
         }
     }
 
@@ -2292,6 +2415,7 @@ export class SubSurfaceEngine {
         if (gl) {
             this.textures.forEach(t => gl.deleteTexture(t));
             this.fbos.forEach(f => gl.deleteFramebuffer(f));
+            if (this.physicsBuild) this.discardPhysicsBuild();
             if (this.physicsProgram) gl.deleteProgram(this.physicsProgram);
             if (this.renderProgram) gl.deleteProgram(this.renderProgram);
             if (this.grainProgram) gl.deleteProgram(this.grainProgram);
@@ -2313,12 +2437,18 @@ export class SubSurfaceEngine {
 // Module entry points for Blazor WASM interop
 let activeEngine = null;
 
-export function initSubSurface(canvas, dotNetHelper) {
+export function initSubSurface(canvas, dotNetHelper, realism) {
     if (activeEngine) {
         activeEngine.dispose();
     }
-    activeEngine = new SubSurfaceEngine(canvas, dotNetHelper);
+    activeEngine = new SubSurfaceEngine(canvas, dotNetHelper, realism);
+    // Debug handle for browser-driven diagnostics (same convention as PoVoxelStrike's window.__pvs)
+    window.__sand = activeEngine;
     return true;
+}
+
+export function setSubSurfaceRealism(level) {
+    if (activeEngine) activeEngine.setRealism(level);
 }
 
 export function setSubSurfaceTool(toolId) {

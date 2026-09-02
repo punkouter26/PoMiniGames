@@ -11,19 +11,28 @@ public sealed class SubSurfaceInteropService : IAsyncDisposable
     private DotNetObjectReference<SubSurfaceInteropService>? _dotNetHelper;
 
     public event Action<SubSurfaceDiagnostics>? OnMetricsReceived;
+    public event Action<SubSurfaceRealismStatus>? OnRealismStatusReceived;
 
     public SubSurfaceInteropService(IJSRuntime jsRuntime)
     {
         _jsRuntime = jsRuntime;
     }
 
-    public async ValueTask InitializeAsync(ElementReference canvas)
+    public async ValueTask InitializeAsync(ElementReference canvas, SubSurfaceRealism realism)
     {
         _dotNetHelper = DotNetObjectReference.Create(this);
         _module = await _jsRuntime.InvokeAsync<IJSObjectReference>(
             "import", "./js/subsurface/subsurface-engine.js");
 
-        await _module.InvokeVoidAsync("initSubSurface", canvas, _dotNetHelper);
+        await _module.InvokeVoidAsync("initSubSurface", canvas, _dotNetHelper, (byte)realism);
+    }
+
+    public async ValueTask SetRealismAsync(SubSurfaceRealism realism)
+    {
+        if (_module is not null)
+        {
+            await _module.InvokeVoidAsync("setSubSurfaceRealism", (byte)realism);
+        }
     }
 
     public async ValueTask SetToolAsync(SubSurfaceTool tool)
@@ -94,6 +103,12 @@ public sealed class SubSurfaceInteropService : IAsyncDisposable
     public void OnEngineMetricsUpdate(SubSurfaceDiagnostics diagnostics)
     {
         OnMetricsReceived?.Invoke(diagnostics);
+    }
+
+    [JSInvokable]
+    public void OnRealismStatus(SubSurfaceRealismStatus status)
+    {
+        OnRealismStatusReceived?.Invoke(status);
     }
 
     public async ValueTask DisposeAsync()

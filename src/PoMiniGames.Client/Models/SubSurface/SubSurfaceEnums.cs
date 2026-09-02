@@ -40,3 +40,14 @@ public enum SubSurfacePreset
     DeepCaverns,
     SlingshotDemolition
 }
+
+// Physics realism tier. Values are the shader's compile-time REALISM define
+// (wwwroot/js/subsurface/subsurface-physics.glsl.js documents what each tier
+// prunes and why). None = no tier has linked yet.
+public enum SubSurfaceRealism : byte
+{
+    None = 0,
+    Low = 1,
+    Medium = 2,
+    High = 3
+}

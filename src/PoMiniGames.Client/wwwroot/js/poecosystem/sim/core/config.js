@@ -67,3 +67,12 @@ export const FLORA = Object.freeze({
   treeBurnRegrowMultiplier: 2,
   logsPerTree: 3,
 });
+
+// ── Behaviour (SPEC §7.5) ────────────────────────────────────────────────
+export const MEMORY = Object.freeze({ foodSeconds: 120, waterSeconds: 240 });
+export const BEHAVIOR = Object.freeze({
+  spatialCell: 8,            // metres per spatial-hash cell (max perception 25 m = 4 cells)
+  goalHysteresis: 0.05,      // a new goal must beat the current one by this much
+  rescoreEveryTicks: 5,      // goals re-evaluated every N ticks, staggered by index
+  wanderTurn: 0.6,           // radians of yaw jitter per wander step
+});

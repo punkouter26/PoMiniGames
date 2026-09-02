@@ -17,8 +17,8 @@ A task touches only the files in its manifest (see `plan.md`) plus its own test 
 - [x] T4  Creatures A — species, drives, lifecycle (9 tests)
 - [x] T5  Creatures B — traits, genetics, names (6 tests)
 - [x] T6  Flora — grass, bushes, trees (4 tests; sliced regrowth)
-- [ ] CP-B
-- [ ] T7  Behavior A — spatial, memory, steering, utility
+- [x] CP-B — creatures 100 %, flora 99 % lines; Math.random absent from sim/ (ESLint gate)
+- [x] T7  Behavior A — spatial, memory, steering, utility (8 tests)
 - [ ] T8  Behavior B — social, humans
 - [ ] T9  World composition — world.js, frame.js (determinism + LONG population test)
 - [ ] CP-C (tune config.js)

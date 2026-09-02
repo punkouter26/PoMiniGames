@@ -12,7 +12,7 @@ export const NONE = -1;
 const F32 = ['x', 'y', 'z', 'yaw', 'vx', 'vz', 'age', 'hunger', 'thirst', 'health', 'scale', 'nudgeDelta'];
 const U8 = ['species', 'lifeStage', 'state', 'goal', 'sex', 'alive', 'lastThoughtSource'];
 const I8 = ['nudgeTrait'];
-const I32 = ['mother', 'father', 'target', 'leader', 'homeTile', 'memFoodTile', 'memFoodTick', 'memWaterTile', 'memWaterTick', 'birthTick', 'gestationEndTick', 'lastMateTick', 'goalSince', 'nudgeEndTick'];
+const I32 = ['mother', 'father', 'target', 'leader', 'homeTile', 'memFoodTile', 'memFoodTick', 'memWaterTile', 'memWaterTick', 'birthTick', 'gestationEndTick', 'lastMateTick', 'goalSince', 'nudgeEndTick', 'alertTick'];
 
 export function createEntities(cap) {
   const e = { cap, high: 0, count: 0 };

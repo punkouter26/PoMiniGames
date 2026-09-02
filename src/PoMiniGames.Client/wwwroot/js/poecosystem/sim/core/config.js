@@ -75,4 +75,11 @@ export const BEHAVIOR = Object.freeze({
   goalHysteresis: 0.05,      // a new goal must beat the current one by this much
   rescoreEveryTicks: 5,      // goals re-evaluated every N ticks, staggered by index
   wanderTurn: 0.6,           // radians of yaw jitter per wander step
+  alertTicks: 120,           // 6 s: how long a herd alarm keeps neighbours fleeing
+  orphanHungerMultiplier: 1.5,
+  herdRadius: 12,
+  packRadius: 12,
+  bedsPerHut: 4,
+  hutSiteRadius: 6,          // new huts stay within this many tiles of the first hut
+  firstHutWaterRadius: 4,    // the first hut is placed on grass within this many tiles of water
 });

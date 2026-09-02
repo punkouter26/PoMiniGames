@@ -19,7 +19,7 @@ A task touches only the files in its manifest (see `plan.md`) plus its own test 
 - [x] T6  Flora — grass, bushes, trees (4 tests; sliced regrowth)
 - [x] CP-B — creatures 100 %, flora 99 % lines; Math.random absent from sim/ (ESLint gate)
 - [x] T7  Behavior A — spatial, memory, steering, utility (8 tests)
-- [ ] T8  Behavior B — social, humans
+- [x] T8  Behavior B — social, humans (8 tests)
 - [ ] T9  World composition — world.js, frame.js (determinism + LONG population test)
 - [ ] CP-C (tune config.js)
 - [ ] T10 Physics — world, ragdoll, rocks, fallingTree, explosion

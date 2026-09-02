@@ -51,7 +51,14 @@ standing rules, then (4) start Task 1. No game code before the user's "approved"
    pivots computed from the live pose (pattern: `pobrawl/ragdollPhysics.js` L177-217). Sleep → STATIC
    carcass; `MAX_ACTIVE_RAGDOLLS = 16`, overflow spawns static `lyingPose`. Felled tree: trunk box on a
    1 s `HingeConstraint` at the stump, then free, sleep → STATIC log.
-8. **Picking** is screen-space nearest (16 px mouse / 28 px touch) over the last frame's positions.
+8. **Camera is a first-person god** (user decision 2026-09-02, replacing the top-down orbit):
+   pointer-lock mouse look, WASD walk over the heightmap (eye 1.7 m, capsule 0.4 m, gravity,
+   jump), Shift run, F fly (noclip, altitude clamp), swimming in deep water. The player is not a
+   sim entity; position lives in prefs. **Picking** is a camera→crosshair ray tested against
+   creature bounding spheres from the last interpolated frame (nearest within 60 m); E/click
+   inspects. A minimap (top-right) renders island tiles + species dots + player arrow from the
+   low-frequency `tiles`/`stats` channels plus the frame positions. HUD = layout concept C
+   (crosshair, sparkline, toasts, Tab dashboard overlay, popover inspector).
 9. **Blazor**: `PoEcosystemInteropService` mirrors `SubSurfaceInteropService` (DotNetObjectReference,
    `[JSInvokable]` → C# events, `JSDisconnectedException` on dispose) but calls `window.PoEcosystem.*`
    after `loadEngine('poecosystem')`. DTOs are flat records (trim-safe). Page follows
@@ -102,13 +109,13 @@ JS paths relative to `src/PoMiniGames.Client/wwwroot/js/poecosystem/`; Blazor pa
 | 14 | Persistence | `sim/persistence/snapshot.js`, `idb.js` (+ `memoryIdb`), `prefs.js`, `sim/world.js` (to/from) | Round-trip identical after +200 ticks; version/terrainHash mismatch ⇒ null | `npm test -- persistence` | 12, 13 |
 | 15 | Host runtime | `host/simRuntime.js`, `host/simWorker.js`, `host/simHost.js`, `index.js` | Fake-post tests: init→ready, frames, select→detail, recycle; worker failure → inline (`__poeco().mode`) | `npm test -- host`; manual console | 14 |
 | 16 | Thought worker | `thoughtWorker.js`, `host/thoughtBridge.js` | Schema mode once → free-form + `{…}` extraction on grammar error; one in flight; progress events; WebGPU probe | manual (LLM thought <15 s after load); `npm test -- thoughts` | 15 |
-| 17 | Renderer A | `render/renderer.js`, `terrainMesh.js`, `camera.js`, `lighting.js` | Island renders <2 s; orbit/pan/pinch; day/night 120 s; shadows off low-end | manual (`dotnet run`) | 15 |
-| 18 | Renderer B | `render/creatureMeshes.js`, `propMeshes.js`, `floraMeshes.js`, `picking.js` | ≥30 fps @400 + 20 bodies (`__poeco().fps`); click → detail <200 ms; outline + Follow | manual | 17 |
+| 17 | Renderer A | `render/renderer.js`, `terrainMesh.js`, `playerController.js` (pointer lock, WASD/run/jump/fly/swim, heightmap collision, touch fallback), `lighting.js` | Island renders <2 s; walk never falls through terrain; F flies; day/night 120 s; shadows off low-end; `__poeco().player` | manual (`dotnet run`) + Vitest on the pure controller math (`playerController` step is DOM-free) | 15 |
+| 18 | Renderer B | `render/creatureMeshes.js`, `propMeshes.js`, `floraMeshes.js`, `picking.js` (crosshair ray vs bounding spheres, highlight, Follow tether), `minimap.js` (2D canvas: tiles + dots + player arrow) | ≥30 fps @400 + 20 bodies (`__poeco().fps`); E/click → detail <200 ms; outline + Follow; minimap tracks player | manual | 17 |
 | 19 | Interop + registry | `Services/PoEcosystemInteropService.cs`, `Models/PoEcosystemDtos.cs`, `src/PoMiniGames.Client/Program.cs`, `wwwroot/js/engineLoader.js` | `dotnet build` zero warnings; `loadEngine('poecosystem')` true | `dotnet build` | 15 |
-| 20 | Page + viewer | `PoEcosystemPage.razor(.css)`, `PoEcosystemViewer.razor(.cs,.css)` | `/poecosystem`, `/poecosystem/demo` boot; Resume/New prompt; <2 s fresh (criterion 3) | `dotnet build`; manual | 19 |
-| 21 | Chart + speed | `Components/PopulationChart.razor(.css)`, `SpeedControls.razor(.css)` | Live per-species lines + aria-live summary; ⏸/1×/2×/4× | `dotnet build`; hex grep = 0 | 20 |
-| 22 | Log + inspector | `Components/EventLog.razor(.css)`, `InspectorPanel.razor(.css)` | All event kinds; all J2 fields, nudge highlight, source badge, Follow | `dotnet build`; manual | 21 |
-| 23 | Settings, banner, mobile | `Components/SettingsPanel.razor(.css)`, `EndBanner.razor(.css)`, `PoEcosystemViewer.razor.css` | LLM toggle greyed w/o WebGPU; model picker + progress; seed coercion; banners via `__poeco().debug('massKill')`; 390×844 no h-scroll | `dotnet build`; manual 390×844 | 22 |
+| 20 | Page + viewer | `PoEcosystemPage.razor(.css)`, `PoEcosystemViewer.razor(.cs,.css)` (full-bleed canvas host, HUD layer, crosshair, "click to look around" hint, key legend) | `/poecosystem`, `/poecosystem/demo` boot; Resume/New prompt; <2 s fresh (criterion 3) | `dotnet build`; manual | 19 |
+| 21 | HUD: sparkline, speed, clock, toasts | `Components/HudBar.razor(.css)` (clock + speed pills, keys 0–3), `Sparkline.razor(.css)`, `EventToasts.razor(.css)` | Live sparkline + aria-live summary; ⏸/1×/2×/4×; three fading toasts | `dotnet build`; hex grep = 0; bUnit renders | 20 |
+| 22 | Inspector popover + dashboard overlay | `Components/InspectorPopover.razor(.css)`, `DashboardOverlay.razor(.css)` (focus-trapped dialog: `PopulationChart`, `EventLog`), `PopulationChart.razor`, `EventLog.razor` | All J2 fields, nudge highlight, source badge, Follow; Tab/Esc; log shows all event kinds | `dotnet build`; bUnit; manual | 21 |
+| 23 | Settings, banner, touch fallback | `Components/SettingsPanel.razor(.css)`, `EndBanner.razor(.css)`, `PoEcosystemViewer.razor.css` (390 px reflow, on-screen move pad) | LLM toggle greyed w/o WebGPU; model picker + progress; seed coercion; banners via `__poeco().debug('massKill')`; 390×844 no h-scroll | `dotnet build`; manual 390×844 | 22 |
 | 24 | Catalog + tiers | `Models/GameKey.cs`, `Domain/Primitives/GameKey.cs`, `Models/GameCatalog.cs`, `tests/PoMiniGames.E2EUI/PoEcosystemUiTests.cs`, `scripts/test-all.ps1` | Card + Demo reel; E2E-UI count 11 ≤ 25; SimJs tier first in test-all | `dotnet build`; user runs `pwsh scripts/test-all.ps1` | 23 |
 
 ## Checkpoints

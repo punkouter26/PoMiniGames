@@ -7,7 +7,7 @@ A task touches only the files in its manifest (see `plan.md`) plus its own test 
 - [x] SPEC.md + CAPABILITY-MAP.md approved
 - [x] plan.md approved (plan mode)
 - [x] Top-50 libraries presented; 7 selected + integrated (Blazored.LocalStorage, Mapperly, NSubstitute, bUnit tier, ReportGenerator, Vitest+ESLint, Husky.Net); top-10 usage examples: pending
-- [ ] /design: 10 layout concepts; one chosen; component hierarchy confirmed
+- [x] /design: 10 layout concepts → user chose first-person god view + HUD concept C (2026-09-02); component hierarchy: pending confirmation
 
 ## Build
 - [x] T1  Vitest tooling — `package.json`, `vitest.config.js`, `eslint.config.js`, smoke test
@@ -31,14 +31,14 @@ A task touches only the files in its manifest (see `plan.md`) plus its own test 
 - [ ] T15 Host runtime — simRuntime, simWorker, simHost, index.js
 - [ ] CP-E
 - [ ] T16 Thought worker — thoughtWorker.js, thoughtBridge.js
-- [ ] T17 Renderer A — renderer, terrainMesh, camera, lighting
-- [ ] T18 Renderer B — creatureMeshes, propMeshes, floraMeshes, picking
+- [ ] T17 Renderer A — renderer, terrainMesh, playerController (first-person god: walk/run/jump/fly/swim), lighting
+- [ ] T18 Renderer B — creatureMeshes, propMeshes, floraMeshes, picking (crosshair ray), minimap
 - [ ] CP-F (record fps, screenshots)
 - [ ] T19 Interop + registry — InteropService, DTOs, Program.cs, engineLoader
 - [ ] T20 Page + viewer
-- [ ] T21 Chart + speed
-- [ ] T22 Log + inspector
-- [ ] T23 Settings, banner, mobile
+- [ ] T21 HUD — sparkline, speed/clock bar, event toasts
+- [ ] T22 Inspector popover + Tab dashboard overlay (chart, log)
+- [ ] T23 Settings, banner, touch fallback
 - [ ] T24 Catalog + tiers — GameKey ×2, GameCatalog, E2E-UI test, test-all.ps1
 - [ ] CP-G
 

@@ -18,22 +18,34 @@ the event log, then zooms in on individuals to see why.
 
 ## 2. User journeys
 
-### J1 — Watch the world (core)
+### J1 — Walk the world as an invisible god (core)
 1. Open `/poecosystem`. If a saved world exists: "Resume" / "New World" prompt; otherwise a new
-   seeded island appears within 2 s (no LLM wait).
-2. The camera sits above the island; drag to orbit/pan, wheel/pinch to zoom, touch works.
-3. Population chart (bottom-left) draws one line per species; event log (right) scrolls births,
-   deaths (with cause), extinctions, huts built, lightning, rockslides, eruptions.
-4. Speed buttons: ⏸ / 1× / 2× / 4×. A day/night light cycle passes every ~2 minutes.
-5. Leave it running. When one species remains, a "Last species standing: Wolves — year 412"
-   banner appears with **Restart**; the sim keeps running underneath.
+   seeded island appears within 2 s (no LLM wait). You spawn standing on the beach at eye height
+   (1.7 m), facing inland.
+2. Click the world to lock the pointer. Mouse/trackpad looks; **WASD** walks over the terrain
+   (heightmap collision, wading at the shore, swimming in deep water), **Shift** runs, **Space**
+   jumps, **F** toggles fly (noclip; Space/Ctrl for altitude) for an overview. Creatures neither
+   see nor collide with you.
+3. The HUD is minimal (concept C): crosshair centre; world clock and speed top-left; a species
+   sparkline bottom-left; the last three events fade in as toasts bottom-right; a **minimap**
+   top-right shows the island, species dots and your position/heading. A day/night light cycle
+   passes every ~2 minutes.
+4. **Tab** (or the dashboard button) opens a full-screen overlay: the full population chart, the
+   scrolling event log (births, deaths with cause, extinctions, huts, lightning, rockslides,
+   eruptions) and settings. **Esc** closes it and returns to the world (pointer re-locks on click).
+5. Speed: ⏸ / 1× / 2× / 4× via the HUD buttons or keys 0–3.
+6. Leave it running. When one species remains, a "Last species standing: Wolves — year 412"
+   lower-third banner appears with **Restart**; the sim keeps running underneath.
 
 ### J2 — Inspect a creature
-1. Click/tap any creature. The inspector shows name, species, age (years) and life stage,
+1. Look at a creature (it highlights under the crosshair) and press **E** or click. A popover
+   card beside the crosshair shows name, species, age (years) and life stage,
    hunger/thirst/health bars, five personality traits (with any active LLM nudge highlighted),
-   current goal ("Hunting deer #217 with pack"), last thought, mother/father names.
-2. The selected creature is outlined and the camera can "Follow" it.
-3. The selected creature jumps to the head of the thought queue, so its next thought arrives
+   current goal ("Hunting deer #217 with pack"), last thought (with its source: LLM/template),
+   mother/father names.
+2. The inspected creature keeps an outline; **Follow** (key **T**) tethers the camera behind it
+   at a fixed distance until you move.
+3. The inspected creature jumps to the head of the thought queue, so its next thought arrives
    within a few seconds when the LLM is on.
 
 ### J3 — Enable / choose AI thoughts
@@ -229,15 +241,42 @@ health; they can be chopped or burnt; fallen trees become logs; forests reseed s
 
 ## 8. UI
 
-- Panels are native Blazor components styled with the repo's CSS tokens (light/dark automatic).
-- Desktop: chart bottom-left, event log right, inspector left (when selected), settings gear
-  top-right, speed controls top-centre, world clock (year/day) top-left.
-- ≤ 768 px: panels collapse into a bottom sheet with tabs (Chart / Log / Inspector / Settings);
-  touch orbit/pan/zoom; creature cap lowered to 250 on `navigator.hardwareConcurrency ≤ 4`.
-- Keyboard: all panels tab-navigable, buttons have `aria-label`s, chart has a text summary
-  (`aria-live="polite"` population counts). `prefers-reduced-motion` disables UI transitions
-  only.
+- First-person world, full-bleed canvas; HUD and overlays are native Blazor components styled
+  with the repo's CSS tokens (light/dark automatic), layered over the canvas (concept C of the
+  layout canvas, 2026-09-02).
+- **HUD (always on):** crosshair; clock + speed pills top-left; species sparkline bottom-left;
+  three fading event toasts bottom-right; minimap top-right (200 px, island tiles + species dots
+  + player arrow, north-up); a small key legend that fades after 10 s (WASD · Shift · Space · F ·
+  E · Tab · M); dashboard button (for pointer/touch users).
+- **Inspector popover:** anchored beside the crosshair, max 320 px wide; closes on Esc, on
+  inspecting another creature, or when the creature dies (shows "died — cause" for 3 s first).
+- **Dashboard overlay (Tab):** full population chart with legend and text summary, event log
+  (last 200), settings (AI thoughts toggle, model picker + download progress, seed field, New
+  World, key bindings). Releases pointer lock while open.
+- **Lower-third banner:** "Last species standing" / "The island is silent" with Restart.
+- **Input:** pointer lock for look; keyboard for movement. Trackpad users get the same (two-finger
+  scroll is ignored). Touch devices are a secondary target: one-finger drag looks, a left
+  on-screen move pad walks, tap-with-crosshair-hover inspects; the dashboard opens from the HUD
+  button. No twin-stick polish is promised for v1.
+- Low-end (`navigator.hardwareConcurrency ≤ 4`): creature cap 250, shadows off.
+- Keyboard/a11y: every HUD button has an `aria-label`; the dashboard overlay is a focus-trapped
+  dialog, tab-navigable; the chart has an `aria-live="polite"` population summary; the toast
+  region is `aria-live="polite"`. `prefers-reduced-motion` disables UI transitions only (the
+  world still animates; head-bob is off by default).
 - `GameShell` provides the "needs 3D graphics" fallback when WebGL2 is unavailable.
+
+### 8.1 Camera and picking (normative)
+
+- Eye height 1.7 m above the heightmap; walk 3 m/s, run 6 m/s, fly 12 m/s; jump impulse gives
+  ~1 m; gravity 9.81 m/s²; capsule radius 0.4 m against terrain only (no creature/prop
+  collision). Water: surface at sea level; below 1.2 m depth the controller swims (slow, no
+  gravity, Space/Ctrl up/down).
+- Fly mode ignores terrain and clamps altitude to [1 m above terrain, 150 m].
+- Picking: a ray from the camera through the crosshair; the candidate is the nearest creature
+  whose bounding sphere (radius from species size) the ray passes within, up to 60 m. The
+  candidate highlights; E/click inspects it.
+- The player is not an entity: it is never in the sim snapshot, never seen by creatures, and its
+  position is saved in prefs (not the world snapshot) so Resume puts you back where you stood.
 
 ## 9. Testing strategy
 
@@ -287,6 +326,11 @@ triggers only).
 | Tab hidden | sim pauses (no catch-up burst), autosave on hide |
 | Mobile low-end | creature cap 250, shadows off, physics substeps 1 |
 | Seed field invalid | coerce via string hash; show effective seed |
+| Pointer lock refused / exited (Esc, browser policy, iframe) | HUD shows "click to look around"; movement keys still work; no crash |
+| Player walks off the island | Deep water → swimming; a soft boundary 20 m past the shore pushes back with a "the world ends here" toast |
+| Player under terrain after resume (terrain hash changed) | Snap to the nearest walkable tile at eye height |
+| Inspected creature dies | Popover shows the cause for 3 s, then closes; outline removed |
+| Tab overlay open while creature under crosshair | Highlight and E are suppressed until the overlay closes |
 
 ## 13. Success criteria (measurable)
 
@@ -300,8 +344,12 @@ triggers only).
    boom-bust (peak ≥ 1.5× trough) and no species goes extinct before minute 5 in ≥ 4 of 5 seeds.
 6. ≥ 30 fps on a mid laptop iGPU at 400 creatures with ≥ 20 active physics bodies (measured
    via the debug handle `window.__poeco.fps`).
-7. Clicking a creature opens the inspector with name, species, age, drives, five traits, goal,
-   last thought, and parents within 200 ms.
+7. Aiming the crosshair at a creature highlights it; E (or click) opens the inspector popover
+   with name, species, age, drives, five traits, goal, last thought (+ source), and parents
+   within 200 ms.
+7b. Walking: WASD moves at 3 m/s over terrain (6 m/s with Shift), Space jumps, F toggles fly;
+   the player never falls through the heightmap over a 5-minute scripted walk (debug handle
+   `__poeco().player` reports height above terrain ≥ 1.6 m while walking).
 8. Population chart and event log update live; extinctions and "last species standing" banner
    appear when triggered (verified by a scripted mass-kill via the debug handle).
 9. Death produces a ragdoll that comes to rest in ≤ 8 s; a felled tree comes to rest; lightning
@@ -313,7 +361,9 @@ triggers only).
 12. Reload resumes the same world (same creature names/ages continue) after an autosave; New World
     with a typed seed reproduces the same terrain.
 13. E2E-UI `PoEcosystemUiTests` passes; E2E-UI method count ≤ 25.
-14. Works at 390 × 844 viewport: bottom-sheet tabs, touch orbit/zoom, no horizontal scroll.
+14. Works at 390 × 844 viewport: HUD reflows, dashboard overlay is scrollable, one-finger drag
+    looks and the on-screen move pad walks; no horizontal scroll. (Secondary target — keyboard +
+    trackpad/mouse is primary.)
 15. Light and dark themes: no raw hex in the game's CSS (grep gate).
 
 ## 14. Open questions

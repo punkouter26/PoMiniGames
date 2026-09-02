@@ -79,10 +79,35 @@ $tiers = [ordered]@{
     'Integration' = @{ Project = 'tests/PoMiniGames.Integration/PoMiniGames.Integration.csproj';         Ceiling = 50 }
     'E2EAPI'      = @{ Project = 'tests/PoMiniGames.E2EAPI/PoMiniGames.E2EAPI.csproj';                  Ceiling = 25 }
     'E2EUI'       = @{ Project = 'tests/PoMiniGames.E2EUI/PoMiniGames.E2EUI.csproj';                    Ceiling = 25 }
+    # Component tier (bUnit, 2026-09-02): in-process Blazor component renders. Ceiling 25,
+    # guarded by ComponentTestCountCeilingTests. Runs last because it is the cheapest
+    # and never blocks the browser tiers from starting.
+    'Component'   = @{ Project = 'tests/PoMiniGames.Component/PoMiniGames.Component.csproj';            Ceiling = 25 }
 }
 
 $summary = @()
 $anyFailed = $false
+
+# ── SimJs tier (Vitest) ──────────────────────────────────────────────────────
+# The PoEcosystem simulation is pure JavaScript (tests/PoEcosystem.Sim), so it runs
+# under Vitest, first, because it is hermetic and finishes in seconds. It is NOT part
+# of the 100/50/25/25 rule — that rule counts xUnit methods — but its 80 % line
+# coverage threshold (vitest.config.js) fails the run on its own.
+if (Test-Path (Join-Path $repoRoot 'package.json')) {
+    Write-Step 'Running SimJs tier (Vitest)'
+    if (-not (Test-Path (Join-Path $repoRoot 'node_modules'))) {
+        npm ci --no-audit --no-fund 2>&1 | ForEach-Object { Write-Host $_ }
+    }
+    $jsOutput = npm run --silent test:coverage 2>&1
+    $jsOutput | ForEach-Object { Write-Host $_ }
+    $jsFailed = $LASTEXITCODE -ne 0
+    $jsLine = ($jsOutput | Select-String -Pattern 'Tests\s+(\d+) passed' | Select-Object -Last 1)
+    $jsPassed = 0
+    if ($jsLine -and $jsLine -match 'Tests\s+(\d+) passed') { $jsPassed = [int]$Matches[1] }
+    if ($jsFailed) { $anyFailed = $true; Write-Err 'SimJs: Vitest reported failures or coverage below threshold' }
+    else { Write-Ok "SimJs: $jsPassed passed" }
+    $summary += [pscustomobject]@{ Tier = 'SimJs'; Passed = $jsPassed; Failed = [int]$jsFailed; Total = $jsPassed; Ceiling = 'n/a' }
+}
 
 foreach ($name in $tiers.Keys) {
     $proj = $tiers[$name].Project

@@ -142,4 +142,14 @@
       Condition=" '$(Configuration)' == 'Debug' " />
   </Target>
 
+  <!-- Husky.Net (2026-09-02): installs the git pre-commit hook on restore so every
+       clone gets the staged-file `dotnet format` + ESLint + Vitest gate from
+       .husky/task-runner.json. CI's format step is non-blocking by design, so this
+       local hook is what actually keeps the tree formatted. Set HUSKY=0 to skip
+       (CI images, or a one-off restore without git). -->
+  <Target Name="HuskyInstall" BeforeTargets="Restore;CollectPackageReferences" Condition="'$(HUSKY)' != '0' AND '$(CI)' != 'true'">
+    <Exec Command="dotnet tool restore" StandardOutputImportance="Low" StandardErrorImportance="High" WorkingDirectory="$(MSBuildThisFileDirectory)..\.." ContinueOnError="true" />
+    <Exec Command="dotnet husky install" StandardOutputImportance="Low" StandardErrorImportance="High" WorkingDirectory="$(MSBuildThisFileDirectory)..\.." ContinueOnError="true" />
+  </Target>
+
 </Project>

@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk.Razor">
+
+  <PropertyGroup>
+    <!-- TFM / Nullable / ImplicitUsings inherited from Directory.Build.props -->
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <!-- Component tier: bUnit renders Blazor components in-process (no browser,
+         no Kestrel, milliseconds per test). It exists so component behaviour —
+         panels, charts, inspectors — can be asserted without spending one of the
+         25 E2E-UI slots per assertion. Ceiling 25, guarded by
+         ComponentTestCountCeilingTests, same rule as the other tiers. -->
+    <AssemblyName>PoMiniGames.Component</AssemblyName>
+    <RootNamespace>PoMiniGames.Component</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="bunit" />
+    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="NSubstitute" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\PoMiniGames.Client\PoMiniGamesClient.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+    <Using Include="FluentAssertions" />
+    <Using Include="Bunit" />
+  </ItemGroup>
+
+</Project>

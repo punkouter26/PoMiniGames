@@ -1,0 +1,26 @@
+{
+  "$schema": "https://alirezanet.github.io/Husky.Net/schema.json",
+  "tasks": [
+    {
+      "name": "dotnet-format-staged",
+      "group": "pre-commit",
+      "command": "dotnet",
+      "args": ["format", "PoMiniGames.slnx", "--verbosity", "quiet", "--include", "${staged}"],
+      "include": ["**/*.cs", "**/*.razor"]
+    },
+    {
+      "name": "eslint-staged",
+      "group": "pre-commit",
+      "command": "npx",
+      "args": ["eslint", "--max-warnings", "0", "${staged}"],
+      "include": ["src/PoMiniGames.Client/wwwroot/js/poecosystem/**/*.js", "tests/PoEcosystem.Sim/**/*.js"]
+    },
+    {
+      "name": "vitest",
+      "group": "pre-commit",
+      "command": "npx",
+      "args": ["vitest", "run", "--reporter=dot"],
+      "include": ["src/PoMiniGames.Client/wwwroot/js/poecosystem/**/*.js", "tests/PoEcosystem.Sim/**/*.js", "package.json", "vitest.config.js"]
+    }
+  ]
+}

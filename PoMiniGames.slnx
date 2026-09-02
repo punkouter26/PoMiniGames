@@ -13,5 +13,6 @@
     <Project Path="tests/PoMiniGames.E2EUI/PoMiniGames.E2EUI.csproj" />
     <Project Path="tests/PoMiniGames.Integration/PoMiniGames.Integration.csproj" />
     <Project Path="tests/PoMiniGames.Unit/PoMiniGames.Unit.csproj" />
+    <Project Path="tests/PoMiniGames.Component/PoMiniGames.Component.csproj" />
   </Folder>
 </Solution>

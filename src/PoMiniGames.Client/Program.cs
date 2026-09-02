@@ -1,3 +1,4 @@
+using Blazored.LocalStorage;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
@@ -95,6 +96,10 @@ builder.Services.AddScoped<PoRacerScoreApiClient>();
 builder.Services.AddScoped<UiFeedbackService>();
 // Global settings (master mute, FPS badge) shared by the layout and every game.
 builder.Services.AddScoped<SettingsService>();
+// Blazored.LocalStorage (2026-09-02). New code should take ILocalStorageService and use
+// the *AsString* members; the generic overloads go through reflection-based JSON that the
+// trim analyzer rejects. Existing raw `localStorage.getItem` interop is left as-is.
+builder.Services.AddBlazoredLocalStorage();
 // NetRun10 audit #6: viewport-width helper so leaderboards can render
 // top-3 on mobile and top-10 on desktop without a JS-only media query.
 builder.Services.AddScoped<BrowserViewport>();

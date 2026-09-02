@@ -83,3 +83,22 @@ export const BEHAVIOR = Object.freeze({
   hutSiteRadius: 6,          // new huts stay within this many tiles of the first hut
   firstHutWaterRadius: 4,    // the first hut is placed on grass within this many tiles of water
 });
+
+// ── World composition (SPEC §7.2 start population, §7.5/7.7 interaction rules) ──
+export const POPULATION = Object.freeze({ rabbits: 40, deer: 20, wolves: 6, humans: 8, huts: 3, initialAgeFraction: 0.6 });
+export const WORLD = Object.freeze({
+  grazeRate: 0.4,            // biomass (= hunger) per second while eating grass
+  drinkRate: 0.5,            // thirst per second while drinking
+  foodBiomassMin: 0.15,      // a tile counts as food above this biomass
+  foodScanTiles: 5,          // half-size of the square scanned for grass/bushes
+  treeScanTiles: 12,         // half-size of the square humans scan for a standing tree
+  carcassSeconds: 60,
+  carcassFoodFraction: 0.5,  // food left on a carcass after the kill is eaten
+  chopSeconds: 3,
+  reachPadding: 0.4,         // metres added to the radii for a bite/kill
+  interactDistance: 1.5,     // metres to eat a bush/carcass, drink, mate, enter a hut
+  fullLogCooldownSeconds: 60,
+  popSampleTicks: 20,        // one population sample per second
+  popHistoryMax: 1800,       // 30 minutes of samples
+  birthOffset: 1.0,          // metres offspring spawn from the mother
+});

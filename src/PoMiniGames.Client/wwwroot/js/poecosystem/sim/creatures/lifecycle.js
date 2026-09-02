@@ -7,13 +7,13 @@ export const LIFE_STAGE = Object.freeze({ JUVENILE: 0, ADULT: 1, ELDER: 2 });
 
 export const DEATH_CAUSE = Object.freeze({
   STARVATION: 'starvation', DEHYDRATION: 'dehydration', OLD_AGE: 'old_age', PREDATION: 'predation',
-  FIRE: 'fire', LIGHTNING: 'lightning', ROCKFALL: 'rockfall', ERUPTION: 'eruption', DROWNING: 'drowning',
+  FIRE: 'fire', LIGHTNING: 'lightning', ROCKFALL: 'rockfall', ERUPTION: 'eruption', DROWNING: 'drowning', DEBUG: 'debug',
 });
 
 export const CAUSE_TEXT = Object.freeze({
   starvation: 'starved', dehydration: 'died of thirst', old_age: 'died of old age', predation: 'was killed',
   fire: 'burned', lightning: 'was struck by lightning', rockfall: 'was crushed by a rock',
-  eruption: 'was caught in the eruption', drowning: 'drowned',
+  eruption: 'was caught in the eruption', drowning: 'drowned', debug: 'vanished (debug)',
 });
 
 /**

@@ -14,7 +14,7 @@ A task touches only the files in its manifest (see `plan.md`) plus its own test 
 - [x] T2  Sim core — config, prng, clock, entities, events (17 tests)
 - [x] T3  Terrain — noise, island, tiles, pathing (8 tests; walkable 0.48–0.56 on seeds 1–8)
 - [x] CP-A — 25 tests green, coverage 88 % lines, terrainHash(7) identical across two Node processes
-- [ ] T4  Creatures A — species, drives, lifecycle
+- [x] T4  Creatures A — species, drives, lifecycle (9 tests)
 - [ ] T5  Creatures B — traits, genetics, names
 - [ ] T6  Flora — grass, bushes, trees
 - [ ] CP-B

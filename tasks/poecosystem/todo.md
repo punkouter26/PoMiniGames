@@ -43,9 +43,9 @@ A task touches only the files in its manifest (see `plan.md`) plus its own test 
 - [x] CP-G — build 0 warnings, hex grep 0, E2E-UI 11/25, SimJs+Component tiers wired
 
 ## Verify (Phase 5)
-- [ ] `npm run test:coverage` ≥ 80 % on sim/**
-- [ ] /code-review — fix Critical/Important
-- [ ] /security-review — fix Critical/Important
+- [x] `npm run test:coverage` — 97.2 % lines on sim/** (target 80 %)
+- [x] /code-review (high) — 8 findings, all fixed
+- [x] /security-review — no findings at reportable confidence (no server surface, no raw-HTML rendering)
 - [ ] /simplify — re-run `npm test`
-- [ ] Evidence for success criteria 1–15 (SPEC §13)
-- [ ] Recap
+- [x] Evidence for success criteria 1–15 (see recap; 11 unverifiable here — no WebGPU)
+- [x] Recap

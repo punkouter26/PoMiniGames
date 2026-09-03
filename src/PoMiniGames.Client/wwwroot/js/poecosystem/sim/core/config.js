@@ -160,3 +160,13 @@ export const THOUGHTS = Object.freeze({
   maxThoughtChars: 120,
   templateEveryTicks: 40,    // with the LLM off (or between its answers) a template thought lands every 2 s
 });
+
+// ── Host / worker protocol (plan decision 3) ─────────────────────────────
+export const HOST = Object.freeze({
+  frameBuffers: 3,           // transferable frame pool; frames are skipped, never allocated, when empty
+  loopMs: 50,                // worker wake-up interval (one sim tick at 1×)
+  statsEveryTicks: 10,       // stats + drained events every 0.5 s
+  detailEveryTicks: 5,       // inspector refresh for the selected creature
+  tilesEveryTicks: 20,       // tile state / grass / tree state sync once per second
+  autosaveSeconds: 10,
+});

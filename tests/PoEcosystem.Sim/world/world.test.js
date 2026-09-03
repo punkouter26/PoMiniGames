@@ -50,7 +50,9 @@ describe('world', () => {
     expect(s.popHistory[s.popHistory.length - 1].length).toBe(4);
   });
 
-  it('is deterministic: two worlds with the same seed agree at tick 6000', { timeout: 60_000 }, () => {
+  // 12 000 full world steps: comfortably under 30 s uninstrumented, but v8 coverage roughly
+  // triples that, so the budget has to cover the coverage run too.
+  it('is deterministic: two worlds with the same seed agree at tick 6000', { timeout: 180_000 }, () => {
     const a = createWorld({ seed: 7 }); const b = createWorld({ seed: 7 });
     stepN(a, 6000); stepN(b, 6000);
     expect(a.stats().counts).toEqual(b.stats().counts);

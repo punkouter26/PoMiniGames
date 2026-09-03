@@ -41,7 +41,7 @@
                 <ol class="poeco-log">
                     @foreach (var ev in Events.AsEnumerable().Reverse().Take(60))
                     {
-                        <li><span class="poeco-log-tick">Y@Year(ev)</span> @ev.Text</li>
+                        <li><span class="poeco-log-tick">@($"Y{Year(ev)}")</span> @ev.Text</li>
                     }
                 </ol>
             </section>

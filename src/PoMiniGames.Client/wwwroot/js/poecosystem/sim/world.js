@@ -49,6 +49,7 @@ export function nullPhysics() {
     kind: 'null',
     onDeath() {}, fellTree() {}, spawnRocks() {}, explode() {},
     step() {}, readProps() { return 0; }, dispose() {},
+    snapshot() { return []; }, restore() {},
   };
 }
 
@@ -671,6 +672,54 @@ export function createWorld({ seed = 1, caps = {}, physics = null } = {}) {
     if (cmd.type === 'setSpeed') clock.setSpeed(cmd.speed);
   }
 
+  // ── save / restore (persistence/snapshot.js wraps these) ─────────────
+  const ENTITY_COLS = e.columns();
+  function getState() {
+    const cols = {};
+    for (const c of ENTITY_COLS) cols[c] = e[c].slice();
+    return {
+      clock: clock.getState(), rng: streams.getState(), namer: namer.getState(), log: log.getState(),
+      scheduler: scheduler.getState(), thoughtScheduler: thoughtScheduler.getState(), thoughtStats: { ...thoughtStats },
+      templateCursor, nextCarcassId, lastFullTick, naturalEvents: { ...naturalEvents }, extinct: extinct.slice(),
+      popHistory: popHistory.map(r => r.slice()),
+      tileState: tileState.slice(), fear: fear.slice(),
+      grass: { biomass: grass.biomass.slice(), cursor: grass.cursor },
+      bushes: bushes.ripeness.slice(), trees: { state: trees.state.slice(), regrow: trees.regrow.slice() },
+      settlement: { huts: settlement.huts.map(h => ({ ...h })), carried: settlement.carried.slice() },
+      entities: { high: e.high, count: e.count, free: e.getFreeList(), cols, names: e.names.slice(), lastThought: e.lastThought.slice() },
+      plans: plans.slice(0, e.high).map(p => ({ ...p })), dirty: dirty.slice(),
+      carcasses: carcasses.map(c => ({ ...c })), corridors: corridors.map(r => ({ ...r, corridor: r.corridor.slice() })),
+      boulders: boulders.map(b => ({ ...b })), fires: fires.map(f => ({ ...f })), burnt: burnt.map(b => ({ ...b })),
+      lava: world.lava ? { front: world.lava.front.slice(), tiles: world.lava.tiles.slice(), endTick: world.lava.endTick, nextCreep: world.lava.nextCreep } : null,
+    };
+  }
+  function setState(s) {
+    clock.setState(s.clock); streams.setState(s.rng); namer.setState(s.namer); log.setState(s.log);
+    scheduler.setState(s.scheduler); thoughtScheduler.setState(s.thoughtScheduler);
+    Object.assign(thoughtStats, s.thoughtStats); templateCursor = s.templateCursor | 0; nextCarcassId = s.nextCarcassId | 0; lastFullTick = s.lastFullTick;
+    Object.assign(naturalEvents, s.naturalEvents); for (let k = 0; k < 4; k++) extinct[k] = !!s.extinct[k];
+    popHistory.length = 0; for (const r of s.popHistory) popHistory.push(r.slice());
+    tileState.set(s.tileState); fear.set(s.fear);
+    grass.biomass.set(s.grass.biomass); grass.cursor = s.grass.cursor | 0;
+    bushes.ripeness.set(s.bushes); trees.state.set(s.trees.state); trees.regrow.set(s.trees.regrow);
+    settlement.huts.length = 0; for (const h of s.settlement.huts) settlement.huts.push({ ...h });
+    settlement.carried.set(s.settlement.carried);
+    for (const c of ENTITY_COLS) e[c].set(s.entities.cols[c]);
+    e.high = s.entities.high; e.count = s.entities.count; e.setFreeList(s.entities.free);
+    for (let i = 0; i < e.cap; i++) { e.names[i] = s.entities.names[i] ?? ''; e.lastThought[i] = s.entities.lastThought[i] ?? ''; }
+    for (let i = 0; i < e.cap; i++) { const p = plans[i]; for (const k of Object.keys(p)) delete p[k]; if (s.plans[i]) Object.assign(p, s.plans[i]); }
+    dirty.set(s.dirty);
+    carcasses.length = 0; for (const c of s.carcasses) carcasses.push({ ...c });
+    corridors.length = 0; for (const r of s.corridors) corridors.push({ ...r, corridor: r.corridor.slice() });
+    boulders.length = 0; for (const b of s.boulders) boulders.push({ ...b });
+    fires.length = 0; for (const f of s.fires) fires.push({ ...f });
+    burnt.length = 0; for (const b of s.burnt) burnt.push({ ...b });
+    world.lava = s.lava ? { front: s.lava.front.slice(), tiles: s.lava.tiles.slice(), endTick: s.lava.endTick, nextCreep: s.lava.nextCreep } : null;
+    recount();
+    rebuildShoreField();
+    spatial.rebuild(e);
+  }
+
   const world = {
     seed, terrain, tileState, fear, grass, bushes, trees, settlement, entities: e, clock, log, bus, spatial, namer, streams,
     get shoreField() { return shoreField; }, carcasses, physics: phys, popHistory,
@@ -695,7 +744,7 @@ export function createWorld({ seed = 1, caps = {}, physics = null } = {}) {
       stats() { return { ...thoughtStats }; },
       scheduler: thoughtScheduler,
     },
-    step, stats, detail, debug, applyCommand, kill, spawn, memory: MEMORY,
+    step, stats, detail, debug, applyCommand, kill, spawn, memory: MEMORY, getState, setState,
   };
   return world;
 }

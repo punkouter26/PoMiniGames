@@ -81,6 +81,7 @@ export function createPhysics(CANNON, terrain, opts = {}) {
       }
       const rag = buildRagdoll(CANNON, world, material, { group: G_RAGDOLL, mask: G_TERRAIN | G_PROP | G_RAGDOLL }, info, rng, launch, cfg);
       rag.born = time;
+      rag.info = { species: info.species, x: info.x, y: info.y, z: info.z, yaw: info.yaw, scale: info.scale };
       ragdolls.push(rag);
       for (const part of rag.parts) props.push({ ...part, born: time, settled: false, expires: Infinity, rag });
     },
@@ -144,6 +145,39 @@ export function createPhysics(CANNON, terrain, opts = {}) {
 
     settledCount() { return props.filter(p => p.settled).length; },
     get propCount() { return props.length; },
+
+    /**
+     * Save-file view: settled props with their remaining lifetime, plus unsettled ragdolls
+     * as static lying poses (a mid-fall body is never worth persisting). Bodies in flight
+     * are dropped — the sim's own plan (corridors) already owns their consequences.
+     */
+    snapshot() {
+      const out = [];
+      for (const p of props) {
+        if (!p.settled) continue;
+        const b = p.body;
+        out.push({ x: b.position.x, y: b.position.y, z: b.position.z, qx: b.quaternion.x, qy: b.quaternion.y, qz: b.quaternion.z, qw: b.quaternion.w, kind: p.kind, sizeIndex: p.sizeIndex, remaining: Math.max(1, p.expires - time) });
+      }
+      for (const rag of ragdolls) {
+        if (rag.settled || !rag.info) continue;
+        for (const pose of lyingPose(rag.info.species, rag.info.x, rag.info.y, rag.info.z, rag.info.yaw, rag.info.scale)) {
+          out.push({ x: pose.x, y: pose.y, z: pose.z, qx: pose.qx, qy: pose.qy, qz: pose.qz, qw: pose.qw, kind: Math.floor(pose.propKind / 8), sizeIndex: pose.propKind % 8, remaining: cfg.carcassSeconds });
+        }
+      }
+      return out;
+    },
+
+    /** Recreate saved props as static bodies with their remaining lifetimes. */
+    restore(list) {
+      for (const s of list ?? []) {
+        const body = new CANNON.Body({ mass: 0, type: CANNON.Body.STATIC, material, collisionFilterGroup: G_PROP, collisionFilterMask: G_PROP | G_RAGDOLL });
+        body.addShape(new CANNON.Box(new CANNON.Vec3(0.15, 0.15, 0.15)));
+        body.position.set(s.x, s.y, s.z);
+        body.quaternion.set(s.qx, s.qy, s.qz, s.qw);
+        world.addBody(body);
+        props.push({ body, kind: s.kind, sizeIndex: s.sizeIndex, born: time, settled: true, expires: time + (s.remaining ?? cfg.carcassSeconds) });
+      }
+    },
     dispose() {
       for (const p of props) world.removeBody(p.body);
       for (const t of trees) releaseTree(world, t);

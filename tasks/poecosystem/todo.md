@@ -27,7 +27,7 @@ A task touches only the files in its manifest (see `plan.md`) plus its own test 
 - [x] T12 Events B — volcano, fire (6 tests)
 - [x] CP-D — every event on, cannon vs null identical at tick 3000; 87 tests, 95 % lines
 - [x] T13 Thoughts — scheduler, prompt, templates, nudges (6 tests)
-- [ ] T14 Persistence — snapshot, idb, prefs
+- [x] T14 Persistence — snapshot, idb, prefs (5 tests; exact round trip incl. events, thoughts, plans)
 - [ ] T15 Host runtime — simRuntime, simWorker, simHost, index.js
 - [ ] CP-E
 - [ ] T16 Thought worker — thoughtWorker.js, thoughtBridge.js

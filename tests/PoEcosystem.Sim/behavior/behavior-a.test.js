@@ -147,7 +147,7 @@ describe('utility goals', () => {
   });
 
   it('keeps the current goal unless another beats it by the hysteresis margin', () => {
-    const { e, i } = make(SPECIES_ID.RABBIT, { hunger: 0.52, thirst: 0.5 });
+    const { e, i } = make(SPECIES_ID.RABBIT, { hunger: 0.52, thirst: 0.63 });
     const ctx = { ...ctxBase(), foodDist: 5, waterDist: 5 };
     const scores = scoreGoals(e, i, ctx);
     expect(Math.abs(scores[GOAL.EAT] - scores[GOAL.DRINK])).toBeLessThan(0.05);

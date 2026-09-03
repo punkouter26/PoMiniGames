@@ -161,20 +161,28 @@ needs recording (repo style). Every tunable number lives in `sim/core/config.js`
 
 ### 7.2 Species
 
-| Species | Max age (y) | Mature (y) | Speed walk/run (m/s) | Eats | Gestation (s) | Litter |
-|---------|-------------|------------|----------------------|------|---------------|--------|
-| Rabbit | 6 (≈3 min) | 1 | 3 / 6 | grass, berries | 20 | 2–4 |
-| Deer | 12 (≈6 min) | 2 | 4 / 8 | grass, berries | 30 | 1–2 |
-| Wolf | 12 (≈6 min) | 2 | 4.5 / 9 | rabbit, deer, carcass | 30 | 2–3 |
-| Human | 24 (≈12 min) | 4 | 1.5 / 3 | berries, rabbit, deer, carcass | 40 | 1 |
+| Species | Max age (y) | Mature (y) | Speed walk/run (m/s) | Eats | Gestation (s) | Litter | Mate cooldown (s) | Thirst 0→1 (s) |
+|---------|-------------|------------|----------------------|------|---------------|--------|-------------------|----------------|
+| Rabbit | 6 (≈3 min) | 1 | 3 / 6 | grass, berries | 20 | 1–3 | 60 | 120 |
+| Deer | 12 (≈6 min) | 2 | 4 / 8 | grass, berries | 30 | 1–2 | 40 | 90 |
+| Wolf | 12 (≈6 min) | 2 | 4.5 / 9 | rabbit, deer, carcass | 30 | 2–3 | 70 | 80 |
+| Human | 24 (≈12 min) | 4 | 2 / 4 | berries, rabbit, deer, carcass | 40 | 1 | 60 | 90 |
 
-Start population: 40 rabbits, 20 deer, 6 wolves, 8 humans + 3 huts. Hard cap 400 creatures
-(births suppressed above cap). Old age death is probabilistic after 85% of max age.
+Start population: 40 rabbits, 20 deer, 6 wolves (spawned as one pack), 8 humans + 3 huts.
+Hard cap 400 creatures (births suppressed above cap). Old age death is probabilistic after
+85% of max age. *(Litter, cooldown, thirst and human speed were tuned at plan checkpoint
+CP-C, 2026-09-02, against success criterion 5 — the original 2–4 / 1.5 m/s / 50 s values
+collapsed every seed.)*
+
+Predator–prey reach: a wolf kills within its radius + the prey's + 0.4 m; a human "throws a
+spear" from 5.5 m, which is how a 2 m/s biped ever eats a 6 m/s rabbit. Prey flee a wolf at
+9 m (rabbit) / 12 m (deer) but a human only at 4 m / 5 m; humans flee wolves at 8 m.
 
 ### 7.3 Drives and death
-Hunger, thirst ∈ [0,1] rise at species rates (starvation ≈ 75 s, dehydration ≈ 50 s from
-empty). Health drains above 0.9 on either. Causes of death recorded: starvation, dehydration,
-old age, predation, fire, lightning, rockfall, eruption, drowning (never enter deep water).
+Hunger rises at one rate for all species (starvation ≈ 75 s from empty); thirst rises at the
+per-species rate above (grazers take moisture from grass). Health drains above 0.9 on either
+and regenerates below 0.5 on both. Causes of death recorded: starvation, dehydration, old age,
+predation, fire, lightning, rockfall, eruption, drowning (creatures never enter water tiles).
 
 ### 7.4 Personality and genetics
 Five traits ∈ [0,1]: **boldness** (approach threats/predators), **sociability** (herd/pack

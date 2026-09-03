@@ -18,7 +18,7 @@ const near = (d, radius) => (d === Infinity || d === undefined ? 0 : d <= 0 ? 1 
 
 function fitToMate(e, i, tick) {
   if (e.lifeStage[i] === LIFE_STAGE.JUVENILE) return false;
-  if (e.hunger[i] >= 0.7 || e.thirst[i] >= 0.7 || e.health[i] <= 0.5) return false;
+  if (e.hunger[i] >= 0.6 || e.thirst[i] >= 0.6 || e.health[i] <= 0.5) return false;
   if (e.gestationEndTick[i] > tick) return false;
   const cooldown = Math.round(SPECIES[e.species[i]].mateCooldownSeconds / TICK_SECONDS);
   return e.lastMateTick[i] === NONE || tick - e.lastMateTick[i] >= cooldown;
@@ -43,25 +43,33 @@ export function scoreGoals(e, i, ctx) {
   const fear = ctx.fear ?? 0;
 
   s[GOAL.WANDER] = 0.15 + 0.15 * curious;
-  s[GOAL.REST] = (1 - h) * (1 - t) * 0.2 + (ctx.night ? 0.2 : 0);
+  // Resting is for the fed: a hungry creature never sleeps through a meal.
+  s[GOAL.REST] = (1 - h) * (1 - t) * (0.2 + (ctx.night ? 0.25 : 0));
 
-  if (ctx.threatDist !== Infinity) s[GOAL.FLEE] = (0.8 + 0.7 * near(ctx.threatDist, 20)) * (1.15 - 0.6 * bold);
+  // Flee peaks at 0.935 (bold 0.5) with the threat on top of the creature and falls off by
+  // 15 m, so a very thirsty animal will still risk the shore (drink can reach 1.0).
+  if (ctx.threatDist !== Infinity) s[GOAL.FLEE] = (0.5 + 1.0 * near(ctx.threatDist, 15)) * (1.15 - 0.6 * bold);
   s[GOAL.FLEE] += fear * 0.6;
 
   const foodDist = Math.min(ctx.foodDist ?? Infinity, carnivore ? (ctx.carcassDist ?? Infinity) : Infinity);
   if (foodDist !== Infinity) s[GOAL.EAT] = h * (0.45 + 0.55 * near(foodDist, 30)) * (1 + 0.1 * greed);
-  if (ctx.waterDist !== Infinity) s[GOAL.DRINK] = t * (0.45 + 0.55 * near(ctx.waterDist, 30));
+  // Thirst is convex so a half-thirsty animal keeps foraging instead of living on the shore.
+  if (ctx.waterDist !== Infinity) s[GOAL.DRINK] = Math.pow(t, 1.5) * (0.45 + 0.55 * near(ctx.waterDist, 30));
   if (carnivore && ctx.preyDist !== Infinity) s[GOAL.HUNT] = h * (0.5 + 0.5 * near(ctx.preyDist, 40)) + 0.1 * bold * h;
 
   if (ctx.mateDist !== Infinity && fitToMate(e, i, tick)) {
-    s[GOAL.MATE] = (0.35 + 0.25 * near(ctx.mateDist, 30) + 0.1 * social) * (1 - h) * (1 - t);
+    // Reproduction must beat wandering for a comfortably fed adult (≈0.48 at hunger 0.4)
+    // and lose to eating once hunger passes ~0.7 — that is what keeps a population going.
+    s[GOAL.MATE] = (0.45 + 0.25 * near(ctx.mateDist, 30) + 0.1 * social) * (1 - 0.8 * Math.max(h, t));
   }
   if (e.lifeStage[i] === LIFE_STAGE.JUVENILE && ctx.parentDist !== Infinity) {
-    s[GOAL.FOLLOW_PARENT] = 0.4 + 0.3 * near(ctx.parentDist, 30) + 0.1 * social;
+    // Low enough that a thirsty or hungry juvenile breaks off to drink or eat.
+    s[GOAL.FOLLOW_PARENT] = 0.3 + 0.25 * near(ctx.parentDist, 30) + 0.1 * social;
   }
 
   if (e.species[i] === SPECIES_ID.HUMAN && ctx.hasHome) {
-    s[GOAL.RETURN_HOME] = ctx.night ? 0.5 + 0.2 * near(ctx.homeDist, 60) : 0.05;
+    // Home at night, but never on an empty stomach: a hungry villager keeps foraging.
+    s[GOAL.RETURN_HOME] = ctx.night ? (0.35 + 0.2 * near(ctx.homeDist, 60)) * (1 - Math.max(h, t)) : 0.05;
     if (ctx.needsHut) {
       const logs = ctx.logsCarried ?? 0;
       if (logs >= 3) s[GOAL.BUILD] = 0.6 + 0.2 * near(ctx.homeDist, 50);

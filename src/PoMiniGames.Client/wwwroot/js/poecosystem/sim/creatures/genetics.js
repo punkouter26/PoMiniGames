@@ -28,7 +28,7 @@ export function litterSize(species, rng) {
 
 const fit = (e, i, tick, cooldownTicks) =>
   e.lifeStage[i] !== LIFE_STAGE.JUVENILE
-  && e.hunger[i] < 0.7 && e.thirst[i] < 0.7 && e.health[i] > 0.5
+  && e.hunger[i] < 0.6 && e.thirst[i] < 0.6 && e.health[i] > 0.5
   && e.gestationEndTick[i] <= tick
   && (e.lastMateTick[i] === NONE || tick - e.lastMateTick[i] >= cooldownTicks);
 

@@ -12,10 +12,10 @@ const spawn = (e, over = {}) => spawnCreature(e, { speciesId: SPECIES_ID.RABBIT,
 describe('species table (SPEC §7.2)', () => {
   it('matches the specification for the four species', () => {
     const rows = [
-      ['RABBIT', 6, 1, 3, 6, 20, [2, 4]],
+      ['RABBIT', 6, 1, 3, 6, 20, [1, 3]],
       ['DEER', 12, 2, 4, 8, 30, [1, 2]],
       ['WOLF', 12, 2, 4.5, 9, 30, [2, 3]],
-      ['HUMAN', 24, 4, 1.5, 3, 40, [1, 1]],
+      ['HUMAN', 24, 4, 2, 4, 40, [1, 1]],
     ];
     for (const [name, maxAge, mature, walk, run, gestation, litter] of rows) {
       const s = SPECIES[SPECIES_ID[name]];
@@ -38,18 +38,19 @@ describe('species table (SPEC §7.2)', () => {
 });
 
 describe('drives', () => {
-  it('starves in about 75 s and dehydrates in about 50 s from empty (SPEC §7.3)', () => {
+  it('starves in about 75 s and dehydrates at the species thirst rate from empty (SPEC §7.3)', () => {
+    const dehydrateSeconds = 1 / rabbit.thirstRate;
     const e = createEntities(4);
     const i = spawn(e);
     e.hunger[i] = 0; e.thirst[i] = 0;
     let t = 0; let hungerFull = null; let thirstFull = null;
-    while ((hungerFull === null || thirstFull === null) && t < 200) {
+    while ((hungerFull === null || thirstFull === null) && t < 300) {
       stepDrives(e, i, rabbit, TICK_SECONDS); t += TICK_SECONDS;
       if (hungerFull === null && e.hunger[i] >= 1) hungerFull = t;
       if (thirstFull === null && e.thirst[i] >= 1) thirstFull = t;
     }
     expect(hungerFull).toBeGreaterThan(72); expect(hungerFull).toBeLessThan(78);
-    expect(thirstFull).toBeGreaterThan(48); expect(thirstFull).toBeLessThan(52);
+    expect(thirstFull).toBeGreaterThan(dehydrateSeconds - 2); expect(thirstFull).toBeLessThan(dehydrateSeconds + 2);
   });
 
   it('drains health above 0.9 hunger or thirst and kills within a bounded time', () => {

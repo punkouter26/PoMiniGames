@@ -28,7 +28,6 @@ import { GOAL, GOAL_NAMES, chooseGoal } from './behavior/utility.js';
 import { herdCohesion, isAlerted, isOrphan, packLeader, raiseAlarm, scatterDirection, shareKill } from './behavior/social.js';
 import { addHut, buildHut, chooseHutSite, giveLogs, isNight, nearestHut, needsHut } from './behavior/humans.js';
 
-const THREATS = [[SPECIES_ID.WOLF, SPECIES_ID.HUMAN], [SPECIES_ID.WOLF, SPECIES_ID.HUMAN], [], [SPECIES_ID.WOLF]];
 const PREY = [[], [], [SPECIES_ID.RABBIT, SPECIES_ID.DEER], [SPECIES_ID.RABBIT, SPECIES_ID.DEER]];
 const GESTATION_TICKS = SPECIES.map(sp => Math.round(sp.gestationSeconds / TICK_SECONDS));
 
@@ -58,7 +57,13 @@ export function createWorld({ seed = 1, caps = {}, physics = null } = {}) {
   const bus = createBus();
   const spatial = createSpatialHash(size);
   const namer = createNamer(streams.names);
-  const shoreField = bfsDistanceField(terrain, shoreTiles(terrain), i => isWalkable(terrain.type[i]));
+  // Distance-to-drinkable-water field. Passability includes the tile state, so a hut
+  // (or later a boulder / lava) on a shore tile never becomes a route creatures can't
+  // take; it is rebuilt whenever such a tile changes (rare: huts, rockslides, eruptions).
+  const shore = shoreTiles(terrain);
+  const passableTile = (i) => isWalkable(terrain.type[i]) && tileState[i] !== TILE_STATE.HUT && tileState[i] !== TILE_STATE.BOULDER && tileState[i] !== TILE_STATE.LAVA;
+  let shoreField = bfsDistanceField(terrain, shore, passableTile);
+  const rebuildShoreField = () => { shoreField = bfsDistanceField(terrain, shore, passableTile); };
   const phys = physics ?? nullPhysics();
   const carcasses = [];
   let nextCarcassId = 1;
@@ -126,6 +131,7 @@ export function createWorld({ seed = 1, caps = {}, physics = null } = {}) {
       const site = chooseHutSite(settlement, terrain, tileState, streams.terrain);
       if (site !== NONE) addHut(settlement, terrain, tileState, site);
     }
+    rebuildShoreField();
     const grassTiles = []; const wildTiles = [];
     for (let i = 0; i < terrain.type.length; i++) {
       if (terrain.type[i] === TILE.GRASS && tileState[i] === TILE_STATE.NORMAL) grassTiles.push(i);
@@ -141,7 +147,17 @@ export function createWorld({ seed = 1, caps = {}, physics = null } = {}) {
     };
     place(SPECIES_ID.RABBIT, POPULATION.rabbits, grassTiles);
     place(SPECIES_ID.DEER, POPULATION.deer, grassTiles);
-    place(SPECIES_ID.WOLF, POPULATION.wolves, wildTiles.length ? wildTiles : grassTiles);
+    // Wolves start as one pack: scattered singles never meet a mate on a 200 m island.
+    const denPool = wildTiles.length ? wildTiles : grassTiles;
+    const den = denPool[streams.terrain.int(denPool.length)];
+    const pack = [];
+    for (let dz = -6; dz <= 6; dz++) for (let dx = -6; dx <= 6; dx++) {
+      const x = tileX(den, size) + dx; const z = tileZ(den, size) + dz;
+      if (x < 1 || z < 1 || x >= size - 1 || z >= size - 1) continue;
+      const t = z * size + x;
+      if (isWalkable(terrain.type[t]) && tileState[t] === TILE_STATE.NORMAL) pack.push(t);
+    }
+    place(SPECIES_ID.WOLF, POPULATION.wolves, pack.length ? pack : denPool);
     const village = [];
     if (settlement.huts.length) {
       const o = settlement.huts[0];
@@ -175,7 +191,7 @@ export function createWorld({ seed = 1, caps = {}, physics = null } = {}) {
     ctx.night = isNight(clock.dayFraction());
     ctx.fear = fear[t];
 
-    const threats = THREATS[sp.id]; const prey = PREY[sp.id];
+    const flees = sp.flees; const prey = PREY[sp.id];
     const juvenile = e.lifeStage[i] === LIFE_STAGE.JUVENILE;
     const mother = juvenile ? e.resolve(e.mother[i]) : NONE;
     const father = juvenile ? e.resolve(e.father[i]) : NONE;
@@ -183,15 +199,19 @@ export function createWorld({ seed = 1, caps = {}, physics = null } = {}) {
       if (j === i) return;
       const d = Math.sqrt(d2);
       const sj = e.species[j];
-      if (threats.includes(sj) && d < ctx.threatDist) { ctx.threatDist = d; ctx.threatX = e.x[j]; ctx.threatZ = e.z[j]; }
+      const fleeAt = flees[sj];
+      if (fleeAt !== undefined && d <= fleeAt && d < ctx.threatDist) { ctx.threatDist = d; ctx.threatX = e.x[j]; ctx.threatZ = e.z[j]; }
       if (prey.includes(sj) && d < ctx.preyDist) { ctx.preyDist = d; ctx.preyIdx = j; }
       if (sj === sp.id && e.sex[j] !== e.sex[i] && d < ctx.mateDist && !juvenile && canMate(e, i, j, tick)) { ctx.mateDist = d; ctx.mateIdx = j; }
       if ((j === mother || j === father) && d < ctx.parentDist) { ctx.parentDist = d; ctx.parentIdx = j; }
     });
+    // Carnivores remember where they last saw prey, so a hungry wolf with nothing in
+    // sight roams back toward the herds instead of random-walking the beach.
+    if (ctx.preyIdx !== NONE) remember(e, i, MEMORY_KIND.FOOD, tileOf(ctx.preyIdx), tick);
 
     // Food: grass and ripe bushes in a square around the creature (herbivores + humans for berries).
     if (sp.eats.grass || sp.eats.berries) {
-      const tx = tileX(t, size); const tz = tileZ(t, size); const r = WORLD.foodScanTiles;
+      const tx = tileX(t, size); const tz = tileZ(t, size); const r = sp.foodScanTiles || WORLD.foodScanTiles;
       for (let dz = -r; dz <= r; dz++) {
         for (let dx = -r; dx <= r; dx++) {
           const xx = tx + dx; const zz = tz + dz;
@@ -255,6 +275,20 @@ export function createWorld({ seed = 1, caps = {}, physics = null } = {}) {
     switch (goal) {
       case GOAL.REST: stop(e, i); return;
       case GOAL.WANDER: {
+        const carnivore = PREY[sp.id].length > 0;
+        if (carnivore && e.hunger[i] > 0.4) {
+          // Roam: head for the last place prey was seen, otherwise sweep in long straight
+          // lines at full walking speed so the search actually covers ground.
+          const mem = recall(e, i, MEMORY_KIND.FOOD, tick);
+          if (mem !== NONE) {
+            const [cx, cz] = centre(mem);
+            if (dist(i, cx, cz) < 4) forget(e, i, MEMORY_KIND.FOOD);
+            else { seekTo(e, i, cx, cz, sp.walkSpeed); return; }
+          }
+          e.yaw[i] += (streams.behavior.next() - 0.5) * 0.15;
+          e.vx[i] = Math.sin(e.yaw[i]) * sp.walkSpeed; e.vz[i] = Math.cos(e.yaw[i]) * sp.walkSpeed;
+          return;
+        }
         wander(e, i, streams.behavior, sp.walkSpeed * 0.6);
         const social = effectiveTrait(e, i, TRAIT.SOCIABILITY, tick);
         if (social > 0.3) {
@@ -277,8 +311,10 @@ export function createWorld({ seed = 1, caps = {}, physics = null } = {}) {
           if (k < 0) { dirty[i] = 1; stop(e, i); return; }
           const carc = carcasses[k];
           if (dist(i, carc.x, carc.z) <= WORLD.interactDistance) {
-            feed(e, i, carc.food);
-            carcasses.splice(k, 1);
+            const bite = Math.min(sp.mealValue, carc.food);
+            feed(e, i, bite);
+            carc.food -= bite;
+            if (carc.food <= 0.05) carcasses.splice(k, 1);
             dirty[i] = 1;
             stop(e, i);
           } else seekTo(e, i, carc.x, carc.z, sp.walkSpeed);
@@ -334,7 +370,7 @@ export function createWorld({ seed = 1, caps = {}, physics = null } = {}) {
         if (prey === NONE) { dirty[i] = 1; stop(e, i); return; }
         e.target[i] = e.handle(prey);
         const d = dist(i, e.x[prey], e.z[prey]);
-        if (d <= sp.radius + SPECIES[e.species[prey]].radius + WORLD.reachPadding) {
+        if (d <= sp.radius + SPECIES[e.species[prey]].radius + WORLD.reachPadding + sp.huntReach) {
           const food = SPECIES[e.species[prey]].foodValue;
           const preyName = nameOf(prey);
           kill(prey, DEATH_CAUSE.PREDATION, ` by ${nameOf(i)}`);
@@ -409,7 +445,8 @@ export function createWorld({ seed = 1, caps = {}, physics = null } = {}) {
         if (!o) { stop(e, i); return; }
         if (dist(i, o.x, o.z) <= BEHAVIOR.hutSiteRadius) {
           stop(e, i);
-          buildHut(e, i, settlement, terrain, tileState, streams.behavior, log, tick);
+          if (buildHut(e, i, settlement, terrain, tileState, streams.behavior, log, tick)) rebuildShoreField();
+          dirty[i] = 1;
         } else seekTo(e, i, o.x, o.z, sp.walkSpeed);
         return;
       }
@@ -542,7 +579,7 @@ export function createWorld({ seed = 1, caps = {}, physics = null } = {}) {
 
   return {
     seed, terrain, tileState, fear, grass, bushes, trees, settlement, entities: e, clock, log, bus, spatial, namer, streams,
-    shoreField, carcasses, physics: phys, popHistory,
+    get shoreField() { return shoreField; }, carcasses, physics: phys, popHistory,
     step, stats, detail, debug, applyCommand, kill, spawn, memory: MEMORY,
   };
 }

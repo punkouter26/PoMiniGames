@@ -33,7 +33,7 @@ A task touches only the files in its manifest (see `plan.md`) plus its own test 
 - [x] T16 Thought worker — thoughtWorker.js, thoughtBridge.js (6 tests; manual browser check pending at CP-F)
 - [x] T17 Renderer A — renderer, terrainMesh, playerController (9 tests), lighting, input
 - [x] T18 Renderer B — creatureMeshes, propMeshes, floraMeshes, picking, minimap (browser check at CP-F)
-- [ ] CP-F (record fps, screenshots)
+- [x] CP-F — browser verified: world renders, walk/fly/pick/inspector/dashboard/eruption work; fps only measurable under SwiftShader software GL here (see recap)
 - [x] T19 Interop + registry — InteropService, DTOs, Program.cs, engineLoader
 - [x] T20 Page + viewer
 - [x] T21 HUD — sparkline, speed/clock bar, event toasts

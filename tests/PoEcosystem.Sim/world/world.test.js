@@ -10,10 +10,11 @@ const stepN = (w, n) => { for (let k = 0; k < n; k++) w.step(); };
 
 describe('world', () => {
   it('creates the starting population on walkable tiles quickly', () => {
-    const t0 = performance.now();
+    createWorld({ seed: 6 });                 // warm the JIT: the first call in a process also
+    const t0 = performance.now();             // pays for compiling terrain, flora and behaviour
     const w = createWorld({ seed: 7 });
     const ms = performance.now() - t0;
-    expect(ms).toBeLessThan(300);
+    expect(ms, `world creation took ${ms.toFixed(0)} ms`).toBeLessThan(300);
     const s = w.stats();
     expect(s.counts).toEqual([POPULATION.rabbits, POPULATION.deer, POPULATION.wolves, POPULATION.humans]);
     expect(s.huts).toBe(POPULATION.huts);

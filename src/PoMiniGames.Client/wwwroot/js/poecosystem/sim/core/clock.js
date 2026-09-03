@@ -1,5 +1,5 @@
 // clock.js — fixed-step accumulator plus the world calendar.
-import { DAYS_PER_YEAR, DAY_SECONDS, MAX_STEPS_PER_TICK, SPEEDS, TICK_SECONDS, YEAR_SECONDS } from './config.js';
+import { DAYS_PER_YEAR, DAY_SECONDS, DAY_START_FRACTION, MAX_STEPS_PER_TICK, SPEEDS, TICK_SECONDS, YEAR_SECONDS } from './config.js';
 
 export function createClock({ tickSeconds = TICK_SECONDS, maxStepsPerTick = MAX_STEPS_PER_TICK } = {}) {
   let accumulator = 0;
@@ -30,7 +30,7 @@ export function createClock({ tickSeconds = TICK_SECONDS, maxStepsPerTick = MAX_
     /** 1-based day within the current year, for the HUD clock. */
     day() { return Math.floor((clock.simSeconds % YEAR_SECONDS) / YEAR_SECONDS * DAYS_PER_YEAR) + 1; },
     /** Position in the cosmetic light cycle, [0,1). */
-    dayFraction() { return (clock.simSeconds % DAY_SECONDS) / DAY_SECONDS; },
+    dayFraction() { return ((clock.simSeconds / DAY_SECONDS) + DAY_START_FRACTION) % 1; },
     getState() { return { tick: clock.tick, speed: clock.speed, accumulator }; },
     setState(s) {
       clock.tick = s.tick | 0;

@@ -99,9 +99,13 @@ describe('rockslide', () => {
     const endTile = r.corridor[r.corridor.length - 1];
     const roller = w.spawn(SPECIES_ID.RABBIT, tileX(endTile, w.terrain.size) + 0.5, tileZ(endTile, w.terrain.size) + 0.5);
     const safe = w.spawn(SPECIES_ID.RABBIT, 2.5, 2.5);
-    // Park them: no drives, no goals, no movement.
-    for (const i of [victim, roller, safe]) { w.entities.vx[i] = 0; w.entities.vz[i] = 0; }
-    const freezeAll = () => w.entities.forEachAlive(i => { w.entities.hunger[i] = 0.2; w.entities.thirst[i] = 0.2; w.entities.vx[i] = 0; w.entities.vz[i] = 0; });
+    // Pin the subjects in place every tick: goals still run, so without this the victim
+    // simply walks off the impact point before the rock lands.
+    const pin = [[victim, r.impactX, r.impactZ], [roller, tileX(endTile, w.terrain.size) + 0.5, tileZ(endTile, w.terrain.size) + 0.5], [safe, 2.5, 2.5]];
+    const freezeAll = () => {
+      w.entities.forEachAlive(i => { w.entities.hunger[i] = 0.2; w.entities.thirst[i] = 0.2; w.entities.vx[i] = 0; w.entities.vz[i] = 0; });
+      for (const [i, x, z] of pin) if (w.entities.alive[i]) { w.entities.x[i] = x; w.entities.z[i] = z; }
+    };
     while (w.clock.tick <= r.endTick + 1) { freezeAll(); w.step(); }
     expect(w.entities.alive[victim]).toBe(0);
     expect(w.log.all().filter(ev => ev.kind === 'death' && ev.cause === DEATH_CAUSE.ROCKFALL).length).toBeGreaterThanOrEqual(1);

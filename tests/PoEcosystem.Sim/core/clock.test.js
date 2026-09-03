@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createClock } from '../../../src/PoMiniGames.Client/wwwroot/js/poecosystem/sim/core/clock.js';
-import { DAY_SECONDS, MAX_STEPS_PER_TICK, TICK_SECONDS, YEAR_SECONDS } from '../../../src/PoMiniGames.Client/wwwroot/js/poecosystem/sim/core/config.js';
+import { DAY_SECONDS, DAY_START_FRACTION, MAX_STEPS_PER_TICK, TICK_SECONDS, YEAR_SECONDS } from '../../../src/PoMiniGames.Client/wwwroot/js/poecosystem/sim/core/config.js';
 
 describe('clock', () => {
   it('converts wall time into whole fixed steps and never exceeds the step cap', () => {
@@ -33,7 +33,7 @@ describe('clock', () => {
     expect(c.year()).toBe(2);
     expect(c.dayFraction()).toBeGreaterThanOrEqual(0);
     expect(c.dayFraction()).toBeLessThan(1);
-    expect(c.dayFraction()).toBeCloseTo(((stepsPerYear * 2 + 10) * TICK_SECONDS % DAY_SECONDS) / DAY_SECONDS, 6);
+    expect(c.dayFraction()).toBeCloseTo((((stepsPerYear * 2 + 10) * TICK_SECONDS / DAY_SECONDS) + DAY_START_FRACTION) % 1, 6);
     expect(c.day()).toBeGreaterThanOrEqual(1);
   });
 

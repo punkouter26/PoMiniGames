@@ -115,10 +115,10 @@ describe('nudges', () => {
 describe('world thought loop', () => {
   it('hands out prompts, accepts results, counts outcomes, and templates on its own cadence', () => {
     const w = createWorld({ seed: 4 });
-    for (let k = 0; k < THOUGHTS.templateEveryTicks * 3 + 1; k++) w.step();
+    for (let k = 0; k < THOUGHTS.templateEveryTicks * 8 + 1; k++) w.step();
     let templated = 0;
     w.entities.forEachAlive(i => { if (w.entities.lastThoughtSource[i] === THOUGHT_SOURCE.TEMPLATE) templated++; });
-    expect(templated).toBeGreaterThanOrEqual(3);
+    expect(templated).toBeGreaterThanOrEqual(3);   // 8 cadences, minus any that died meanwhile
     const req = w.thoughts.next(NONE);
     expect(req).not.toBe(null);
     expect(req.prompt.length).toBeGreaterThan(50);
@@ -135,5 +135,21 @@ describe('world thought loop', () => {
     expect(r2.handle).toBe(sel);
     w.thoughts.cancel();
     expect(w.thoughts.pending).toBe(NONE);
+  });
+});
+
+describe('inspecting a creature', () => {
+  it('gives it a thought immediately, without clobbering a live LLM one', async () => {
+    const { createWorld } = await import('../../../src/PoMiniGames.Client/wwwroot/js/poecosystem/sim/world.js');
+    const w = createWorld({ seed: 12 });
+    const h = w.entities.handle(9);
+    expect(w.entities.lastThought[9]).toBe('');
+    expect(w.thoughts.template(h)).toBe(true);
+    expect(w.entities.lastThought[9].length).toBeGreaterThan(8);
+    expect(w.entities.lastThoughtSource[9]).toBe(THOUGHT_SOURCE.TEMPLATE);
+    w.thoughts.apply(h, '{"thought":"Mine.","trait":"greed","delta":0.2}');
+    expect(w.thoughts.template(h)).toBe(false);        // a fresh LLM thought wins
+    expect(w.entities.lastThought[9]).toBe('Mine.');
+    expect(w.thoughts.template(NONE)).toBe(false);
   });
 });

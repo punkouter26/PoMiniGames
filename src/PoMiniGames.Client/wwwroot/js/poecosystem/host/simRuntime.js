@@ -169,7 +169,12 @@ export function createSimRuntime(post, deps = {}) {
         case 'setSpeed': world?.applyCommand({ type: 'setSpeed', speed: msg.speed }); return;
         case 'pause': paused = true; return;
         case 'resume': paused = false; lastWall = now(); return;
-        case 'select': selected = msg.handle ?? NONE; if (world) postDetail(); return;
+        case 'select':
+          selected = msg.handle ?? NONE;
+          // A creature the rotation has not reached yet would open with an empty quote.
+          if (world && selected !== NONE) world.thoughts.template(selected);
+          if (world) postDetail();
+          return;
         case 'setLlmEnabled': llmEnabled = !!msg.enabled; if (!llmEnabled && world) world.thoughts.cancel(); return;
         case 'thoughtResult': if (world) world.thoughts.apply(msg.handle, msg.text); return;
         case 'thoughtCancel': world?.thoughts.cancel(); return;

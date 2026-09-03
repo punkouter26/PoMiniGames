@@ -10,6 +10,8 @@ export const MAX_STEPS_PER_TICK = 4;       // accumulator cap: a hidden tab neve
 export const YEAR_SECONDS = 30;            // creature ages are displayed in years
 export const DAY_SECONDS = 120;            // cosmetic light cycle, not tied to years
 export const DAYS_PER_YEAR = 10;           // calendar days shown in the HUD clock (Year N · Day D)
+// Tick 0 is mid-morning, not midnight: a world that opens in the dark reads as broken.
+export const DAY_START_FRACTION = 0.32;
 export const SPEEDS = Object.freeze([0, 1, 2, 4]);
 
 // ── World ────────────────────────────────────────────────────────────────

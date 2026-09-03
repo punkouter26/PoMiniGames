@@ -12,12 +12,27 @@ import { NONE } from './sim/core/entities.js';
 
 let engine = null;
 
+// The HUD stylesheet is injected here rather than shipped as PoEcosystemViewer.razor.css:
+// the HUD is built from several components and Blazor's scoped CSS does not cross
+// component boundaries, so a scoped file would style the shell and nothing inside it.
+// Same approach as js/posurvive/theme.js. Loading it here also keeps it off every other
+// page — the game is route-gated through engineLoader.
+const STYLE_ID = 'poecosystem-css';
+function ensureStyles() {
+  if (typeof document === 'undefined' || document.getElementById(STYLE_ID)) return;
+  const link = document.createElement('link');
+  link.id = STYLE_ID;
+  link.rel = 'stylesheet';
+  link.href = new URL('css/poecosystem.css', document.baseURI).href;
+  document.head.appendChild(link);
+}
+
 function createEngine(container, dotnetRef, opts) {
   const state = {
     container, dotnetRef, opts, host: null, mode: 'starting', ready: false, seed: null,
     creatureCount: 0, fps: 0, simLag: 0, stats: null, llm: null, lastDetail: null, terrain: null, lastTiles: null,
     renderer: null, thoughts: null, selected: NONE, frames: 0, errors: [],
-    player: null,
+    player: null, msgCounts: {},
   };
 
   const invoke = async (method, ...args) => {
@@ -26,6 +41,9 @@ function createEngine(container, dotnetRef, opts) {
   };
 
   function onMessage(msg) {
+    // Per-type counters: the cheapest way to tell "the worker is silent" from "a handler
+    // threw", both from the console and from the E2E smoke.
+    state.msgCounts[msg.type] = (state.msgCounts[msg.type] ?? 0) + 1;
     switch (msg.type) {
       case 'ready':
         state.ready = true; state.seed = msg.seed; state.mode = state.host?.mode ?? state.mode;
@@ -161,6 +179,7 @@ const PoEcosystem = {
     try { const meta = await loadWorldMeta(await openWorldStore()); return meta ? { exists: true, ...meta } : { exists: false }; } catch { return { exists: false }; }
   },
   async start(containerId, dotnetRef, opts = {}) {
+    ensureStyles();
     if (engine) engine.stop();
     const container = typeof document !== 'undefined' ? document.getElementById(containerId) : null;
     engine = createEngine(container, dotnetRef, opts);

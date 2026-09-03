@@ -741,6 +741,19 @@ export function createWorld({ seed = 1, caps = {}, physics = null } = {}) {
         return r;
       },
       cancel() { thoughtScheduler.cancel(); },
+      /**
+       * Give one creature a template thought now. The rotation takes minutes to reach
+       * everyone, so the inspector would otherwise open on an empty quote for a creature
+       * that has not had its turn. Never overwrites a live LLM thought.
+       */
+      template(handle) {
+        const i = e.resolve(handle);
+        if (i === NONE) return false;
+        if (e.lastThoughtSource[i] === THOUGHT_SOURCE.LLM && e.nudgeEndTick[i] > clock.tick) return false;
+        e.lastThought[i] = templateThought(world, i, streams.cosmetic);
+        e.lastThoughtSource[i] = THOUGHT_SOURCE.TEMPLATE;
+        return true;
+      },
       stats() { return { ...thoughtStats }; },
       scheduler: thoughtScheduler,
     },

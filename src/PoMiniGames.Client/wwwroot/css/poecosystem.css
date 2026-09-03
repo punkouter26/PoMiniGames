@@ -1,3 +1,6 @@
+/* Loaded at runtime by js/poecosystem/index.js (same pattern as posurvive/theme.js).
+   NOT a Blazor scoped stylesheet: the HUD is built from several components, and scoped
+   CSS does not cross component boundaries — that is why this file lives here. */
 /* PoEcosystem HUD — layered over the full-bleed three.js canvas (layout concept C).
    Every colour reads through the app's tokens so light mode and forced-colors work;
    the world itself is drawn by WebGL and is scheme-invariant by design. */

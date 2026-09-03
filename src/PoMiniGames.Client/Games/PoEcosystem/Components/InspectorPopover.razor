@@ -1,0 +1,78 @@
+@using PoMiniGamesClient.Games.PoEcosystem.Models
+
+@* The creature under the crosshair (SPEC J2). Anchored beside the crosshair, never over it. *@
+<aside class="poeco-inspector" data-testid="poeco-inspector" role="dialog" aria-label="Creature details">
+    <header class="poeco-inspector-head">
+        <i class="poeco-species-chip" style="background: @Colour" aria-hidden="true"></i>
+        <div>
+            <h2>@Detail.Name</h2>
+            <p>@Detail.SpeciesName · @Detail.AgeYears.ToString("0.0") y · @Stage @Sex</p>
+        </div>
+        <button type="button" class="poeco-pill" @onclick="OnFollow" aria-label="Follow this creature">Follow <kbd>T</kbd></button>
+        <button type="button" class="poeco-icon-btn" @onclick="OnClose" aria-label="Close">✕</button>
+    </header>
+
+    <div class="poeco-bars">
+        @Bar("Hunger", Detail.Hunger, "var(--accent-warning)")
+        @Bar("Thirst", Detail.Thirst, "var(--accent-cyan)")
+        @Bar("Health", Detail.Health, "var(--accent-success)")
+    </div>
+
+    <h3 class="poeco-sub">Personality</h3>
+    <div class="poeco-traits">
+        @for (var k = 0; k < TraitNames.Length; k++)
+        {
+            var nudged = Detail.Nudge is not null && Detail.Nudge.Trait == TraitNames[k];
+            <div class="poeco-trait @(nudged ? "poeco-trait--nudged" : "")">
+                <span class="poeco-trait-name">@TraitNames[k]</span>
+                <span class="poeco-trait-track"><span class="poeco-trait-fill" style="width: @Pct(Detail.Traits[k])"></span></span>
+                <span class="poeco-trait-value">@Detail.Traits[k].ToString("0.00")</span>
+                @if (nudged)
+                {
+                    <span class="poeco-nudge">@(Detail.Nudge!.Delta >= 0 ? "+" : "")@Detail.Nudge.Delta.ToString("0.00")</span>
+                }
+            </div>
+        }
+    </div>
+
+    <p class="poeco-goal"><span>Goal</span> @Detail.Goal</p>
+
+    @if (!string.IsNullOrWhiteSpace(Detail.LastThought))
+    {
+        <blockquote class="poeco-thought">
+            “@Detail.LastThought”
+            <cite>@(Detail.LastThoughtSource == 2 ? "AI thought" : "instinct")</cite>
+        </blockquote>
+    }
+
+    <p class="poeco-parents">@Parents</p>
+</aside>
+
+@code {
+    private static readonly string[] TraitNames = ["boldness", "sociability", "curiosity", "greed", "diligence"];
+    private static readonly string[] SpeciesColours = ["var(--accent-warning)", "var(--accent-success)", "var(--accent-danger)", "var(--accent)"];
+
+    [Parameter, EditorRequired] public EcoDetail Detail { get; set; } = default!;
+    [Parameter] public EventCallback OnFollow { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private string Colour => SpeciesColours[Math.Clamp(Detail.Species, 0, SpeciesColours.Length - 1)];
+    private string Stage => Detail.LifeStage switch { 0 => "young", 2 => "old", _ => "adult" };
+    private string Sex => Detail.Sex == 1 ? "♀" : "♂";
+
+    private string Parents => (string.IsNullOrEmpty(Detail.Mother), string.IsNullOrEmpty(Detail.Father)) switch
+    {
+        (true, true) => "No known parents",
+        (false, true) => $"Mother: {Detail.Mother}",
+        (true, false) => $"Father: {Detail.Father}",
+        _ => $"Parents: {Detail.Mother} · {Detail.Father}",
+    };
+
+    private static string Pct(double v) => $"{Math.Clamp(v, 0, 1) * 100:0}%";
+
+    private RenderFragment Bar(string label, double value, string colour) => @<div class="poeco-bar">
+        <span class="poeco-bar-label">@label</span>
+        <span class="poeco-bar-track"><span class="poeco-bar-fill" style="width: @Pct(value); background: @colour"></span></span>
+        <span class="poeco-bar-value">@($"{value * 100:0}%")</span>
+    </div>;
+}

@@ -32,6 +32,7 @@ const REGISTRY = {
     posports: ['js/posports/index.js', 'PoSports'],
     poracer: ['js/poracerGl.js', 'PoRacerRender'],
     povoxelstrike: ['js/povoxelstrike/index.js', 'PoVoxelStrike'],
+    poecosystem: ['js/poecosystem/index.js', 'PoEcosystem'],
 };
 
 /**

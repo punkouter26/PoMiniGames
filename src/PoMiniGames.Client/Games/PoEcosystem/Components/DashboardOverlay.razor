@@ -1,0 +1,165 @@
+@using PoMiniGamesClient.Games.PoEcosystem.Models
+@using PoMiniGamesClient.Games.PoSurvive.Features.Charts
+
+@* Tab overlay: the full population chart, the world log and settings. Releases pointer
+   lock while open (the engine does that), and Esc closes it. *@
+<div class="poeco-overlay" role="dialog" aria-modal="true" aria-label="Dashboard" @onkeydown="OnKeyDown" tabindex="-1" @ref="_root">
+    <div class="poeco-overlay-card">
+        <header class="poeco-overlay-head">
+            <h2>Year @(Stats?.Year ?? 0) · Day @(Stats?.Day ?? 1)</h2>
+            <span class="poeco-badge">@(Stats?.Alive ?? 0) alive</span>
+            <span class="poeco-badge">@(Stats?.Huts ?? 0) huts</span>
+            <span class="poeco-spacer"></span>
+            <button type="button" class="poeco-pill" @onclick="OnClose" aria-label="Close the dashboard">Close <kbd>Esc</kbd></button>
+        </header>
+
+        <div class="poeco-overlay-grid">
+            <section class="poeco-panel poeco-panel--chart">
+                <h3>Population over time</h3>
+                <svg viewBox="0 0 320 160" preserveAspectRatio="none" class="poeco-chart" role="img" aria-label="@ChartSummary">
+                    <line x1="0" y1="159" x2="320" y2="159" class="poeco-chart-axis" />
+                    @for (var s = 0; s < SpeciesCount; s++)
+                    {
+                        var pts = Points(s);
+                        if (pts is not null)
+                        {
+                            <polyline class="poeco-chart-line" style="stroke: @Colours[s]" points="@pts" />
+                        }
+                    }
+                </svg>
+                <div class="poeco-tiles">
+                    @for (var s = 0; s < SpeciesCount; s++)
+                    {
+                        <div class="poeco-tile" style="border-top-color: @Colours[s]">
+                            <span>@Names[s]</span>
+                            <strong>@Count(s)</strong>
+                        </div>
+                    }
+                </div>
+                <p class="poeco-sr-only" aria-live="polite">@ChartSummary</p>
+            </section>
+
+            <section class="poeco-panel poeco-panel--log">
+                <h3>World log</h3>
+                <ol class="poeco-log">
+                    @foreach (var ev in Events.AsEnumerable().Reverse().Take(60))
+                    {
+                        <li><span class="poeco-log-tick">Y@(ev.Tick / 600)</span> @ev.Text</li>
+                    }
+                </ol>
+            </section>
+
+            <section class="poeco-panel poeco-panel--settings">
+                <h3>AI thoughts</h3>
+                @if (!WebGpu)
+                {
+                    <p class="poeco-note">This browser has no WebGPU, so creature thoughts come from instinct templates. Chrome or Edge on a desktop can run the model.</p>
+                }
+                else
+                {
+                    <label class="poeco-switch">
+                        <input type="checkbox" checked="@LlmOn" @onchange="ToggleLlm" />
+                        <span>Let creatures think (@ModelLabel)</span>
+                    </label>
+                    <label class="poeco-field">
+                        <span>Model</span>
+                        <select value="@SelectedModel" @onchange="ChangeModel">
+                            @foreach (var m in Models)
+                            {
+                                <option value="@m.Id">@m.Label — @(m.VramMb) MB</option>
+                            }
+                        </select>
+                    </label>
+                    @if (Llm is not null && Llm.State == "loading")
+                    {
+                        <div class="poeco-progress"><span style="width: @($"{Llm.Progress * 100:0}%")"></span></div>
+                        <p class="poeco-note">@Llm.Message</p>
+                    }
+                    else if (Llm is not null && !string.IsNullOrWhiteSpace(Llm.Message))
+                    {
+                        <p class="poeco-note">@Llm.Message</p>
+                    }
+                    @if (Stats?.Llm is { } counters)
+                    {
+                        <p class="poeco-note">@counters.Applied thoughts applied, @counters.Rejected rejected.</p>
+                    }
+                }
+
+                <h3>World</h3>
+                <label class="poeco-field">
+                    <span>Seed</span>
+                    <input type="text" value="@Seed" @oninput="e => SeedChanged.InvokeAsync(e.Value?.ToString() ?? string.Empty)" />
+                </label>
+                <button type="button" class="poeco-btn poeco-btn--primary" @onclick="() => OnNewWorld.InvokeAsync(Seed)">New world</button>
+
+                <h3>Speed</h3>
+                <div class="poeco-speed">
+                    @foreach (var s in new[] { 0, 1, 2, 4 })
+                    {
+                        <button type="button" class="poeco-pill @(Stats?.Speed == s ? "poeco-pill--on" : "")" @onclick="() => OnSpeed.InvokeAsync(s)">@(s == 0 ? "⏸" : $"{s}×")</button>
+                    }
+                </div>
+
+                <h3>Keys</h3>
+                <p class="poeco-note"><kbd>WASD</kbd> move · <kbd>Shift</kbd> run · <kbd>Space</kbd> jump · <kbd>F</kbd> fly · <kbd>E</kbd> inspect · <kbd>T</kbd> follow · <kbd>Tab</kbd> dashboard · <kbd>0-3</kbd> speed</p>
+            </section>
+        </div>
+    </div>
+</div>
+
+@code {
+    private const int SpeciesCount = 4;
+    private static readonly string[] Names = ["Rabbits", "Deer", "Wolves", "Humans"];
+    private static readonly string[] Colours = ["var(--accent-warning)", "var(--accent-success)", "var(--accent-danger)", "var(--accent)"];
+    private ElementReference _root;
+
+    [Parameter] public EcoStats? Stats { get; set; }
+    [Parameter] public IReadOnlyList<EcoEvent> Events { get; set; } = [];
+    [Parameter] public EcoLlmState? Llm { get; set; }
+    [Parameter] public IReadOnlyList<EcoModel> Models { get; set; } = [];
+    [Parameter] public bool WebGpu { get; set; }
+    [Parameter] public string Seed { get; set; } = "";
+    [Parameter] public EventCallback<string> SeedChanged { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback<int> OnSpeed { get; set; }
+    [Parameter] public EventCallback<(bool Enabled, string? ModelId)> OnLlmToggle { get; set; }
+    [Parameter] public EventCallback<string?> OnNewWorld { get; set; }
+
+    private bool LlmOn => Llm is not null && Llm.State is "loading" or "ready";
+    private string SelectedModel => Llm?.ModelId ?? Models.FirstOrDefault()?.Id ?? "";
+    private string ModelLabel => Models.FirstOrDefault(m => m.Id == SelectedModel)?.Label ?? "in-browser model";
+
+    private int Count(int species) => Stats?.Counts is { Length: SpeciesCount } c ? c[species] : 0;
+
+    private string ChartSummary => Stats is null
+        ? "Population chart, no data yet"
+        : $"Year {Stats.Year}: " + string.Join(", ", Enumerable.Range(0, SpeciesCount).Select(s => $"{Count(s)} {Names[s].ToLowerInvariant()}"));
+
+    private string? Points(int species)
+    {
+        var h = Stats?.PopHistory;
+        if (h is null || h.Length < SpeciesCount * 2) return null;
+        var samples = h.Length / SpeciesCount;
+        var max = 1;
+        for (var i = 0; i < h.Length; i++) if (h[i] > max) max = h[i];
+        var sb = new System.Text.StringBuilder(samples * 12);
+        for (var k = 0; k < samples; k++)
+        {
+            var x = samples == 1 ? 0 : 320.0 * k / (samples - 1);
+            var y = 158 - 156.0 * h[k * SpeciesCount + species] / max;
+            if (k > 0) sb.Append(' ');
+            sb.Append(ChartGeometry.N(x)).Append(',').Append(ChartGeometry.N(y));
+        }
+        return sb.ToString();
+    }
+
+    private Task ToggleLlm(ChangeEventArgs e) => OnLlmToggle.InvokeAsync((e.Value is true, SelectedModel));
+    private Task ChangeModel(ChangeEventArgs e) => OnLlmToggle.InvokeAsync((true, e.Value?.ToString()));
+
+    private Task OnKeyDown(KeyboardEventArgs e) => e.Key == "Escape" ? OnClose.InvokeAsync() : Task.CompletedTask;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) { try { await _root.FocusAsync(); } catch { /* the overlay may already be gone */ } }
+    }
+}

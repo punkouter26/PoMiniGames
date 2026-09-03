@@ -1,0 +1,38 @@
+@using PoMiniGamesClient.Games.PoEcosystem.Models
+
+@* Clock, speed and the dashboard button — top-left of the HUD (layout concept C). *@
+<div class="poeco-hudbar">
+    <span class="poeco-clock" aria-live="off">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>
+        Year @(Stats?.Year ?? 0) · Day @(Stats?.Day ?? 1)
+    </span>
+
+    <div class="poeco-speed" role="group" aria-label="Simulation speed">
+        @foreach (var s in Speeds)
+        {
+            <button type="button"
+                    class="poeco-pill @(Stats?.Speed == s ? "poeco-pill--on" : "")"
+                    aria-pressed="@(Stats?.Speed == s)"
+                    aria-label="@SpeedLabel(s)"
+                    @onclick="() => OnSpeed.InvokeAsync(s)">@SpeedText(s)</button>
+        }
+    </div>
+
+    <span class="poeco-badge" title="Creatures alive">@(Stats?.Alive ?? 0) alive</span>
+
+    <button type="button" class="poeco-pill poeco-dashboard-btn" @onclick="OnDashboard" aria-label="Open the dashboard">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true"><path d="M3 17l6-6 4 4 8-8" /></svg>
+        Dashboard <kbd>Tab</kbd>
+    </button>
+</div>
+
+@code {
+    private static readonly int[] Speeds = [0, 1, 2, 4];
+
+    [Parameter] public EcoStats? Stats { get; set; }
+    [Parameter] public EventCallback<int> OnSpeed { get; set; }
+    [Parameter] public EventCallback OnDashboard { get; set; }
+
+    private static string SpeedText(int s) => s == 0 ? "⏸" : $"{s}×";
+    private static string SpeedLabel(int s) => s == 0 ? "Pause" : $"Speed {s} times";
+}

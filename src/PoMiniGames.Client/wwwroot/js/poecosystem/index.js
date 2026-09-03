@@ -4,7 +4,9 @@
 // the engine object when present.
 import { createSimHost } from './host/simHost.js';
 import { LLM_STATE, MODELS, createThoughtBridge } from './host/thoughtBridge.js';
+import { createRenderer } from './render/renderer.js';
 import { openWorldStore, loadWorldMeta } from './sim/persistence/idb.js';
+import { createPrefs } from './sim/persistence/prefs.js';
 import { hashString } from './sim/core/prng.js';
 import { NONE } from './sim/core/entities.js';
 
@@ -76,6 +78,23 @@ function createEngine(container, dotnetRef, opts) {
   const api = {
     state,
     async start() {
+      const prefs = createPrefs(globalThis.localStorage);
+      state.prefs = prefs;
+      if (container) {
+        state.renderer = createRenderer(container, {
+          minimapCanvas: opts.minimapId ? document.getElementById(opts.minimapId) : null,
+          quality: { lowEnd: !!opts.lowEnd },
+          onFps: (fps) => { state.fps = fps; },
+          onPick: (handle) => { api.select(handle); invoke('OnPick', handle); },
+          onAction: (action, value) => {
+            if (action === 'speed') { api.setSpeed(value); invoke('OnSpeed', value); return; }
+            if (action === 'follow') { state.renderer.follow(state.selected); return; }
+            invoke('OnAction', action, value === undefined ? null : String(value));
+          },
+        });
+        state.renderer.setPose(prefs.get('player'));
+        state.poseTimer = setInterval(() => prefs.set('player', state.renderer.player), 5000);
+      }
       state.thoughts = createThoughtBridge({
         onResult: (handle, text) => state.host?.send({ type: 'thoughtResult', handle, text }),
         onState: (s) => { state.llmState = s; invoke('OnLlmState', JSON.stringify(s)); },
@@ -98,7 +117,13 @@ function createEngine(container, dotnetRef, opts) {
     },
     send: (msg, transfer) => state.host?.send(msg, transfer),
     setSpeed: (speed) => state.host?.send({ type: 'setSpeed', speed }),
-    select(handle) { state.selected = handle ?? NONE; state.host?.send({ type: 'select', handle: state.selected }); },
+    select(handle) {
+      state.selected = handle ?? NONE;
+      state.host?.send({ type: 'select', handle: state.selected });
+      state.renderer?.select(state.selected);
+      if (state.selected === NONE) state.renderer?.follow(NONE);
+    },
+    follow: (handle) => state.renderer?.follow(handle ?? state.selected),
     newWorld: (seed) => state.host?.send({ type: 'newWorld', seed: hashString(seed ?? '') }),
     async setLlm(enabled, modelId) {
       state.host?.send({ type: 'setLlmEnabled', enabled: !!enabled });
@@ -111,6 +136,8 @@ function createEngine(container, dotnetRef, opts) {
     attachRenderer(r) { state.renderer = r; if (state.terrain) r.setTerrain(state.terrain); if (state.lastTiles) r.setTiles(state.lastTiles); },
     attachThoughts(t) { state.thoughts = t; },
     stop() {
+      if (state.poseTimer) clearInterval(state.poseTimer);
+      if (state.renderer && state.prefs) state.prefs.set('player', state.renderer.player);
       if (state.onVisibility) document.removeEventListener('visibilitychange', state.onVisibility);
       state.host?.send({ type: 'saveNow', reason: 'stop' });
       state.thoughts?.dispose?.();
@@ -147,6 +174,11 @@ const PoEcosystem = {
   setLlm: (enabled, modelId) => engine?.setLlm(enabled, modelId),
   saveNow: () => engine?.saveNow(),
   debug: (op, arg) => engine?.debug(op, arg),
+  follow: (handle) => engine?.follow(handle),
+  toggleFly: () => engine?.state.renderer?.toggleFly(),
+  requestLock: () => engine?.state.renderer?.requestLock(),
+  touchMove: (x, z) => engine?.state.renderer?.touchMove(x, z),
+  touchRelease: () => engine?.state.renderer?.touchRelease(),
   models: () => MODELS.map(m => ({ ...m })),
   async webGpuAvailable() { const { hasWebGpuSupport } = await import('./host/thoughtBridge.js'); return hasWebGpuSupport(); },
 };

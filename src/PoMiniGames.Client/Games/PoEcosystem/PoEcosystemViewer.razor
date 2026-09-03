@@ -1,0 +1,96 @@
+@using PoMiniGamesClient.Games.PoEcosystem.Components
+@using PoMiniGamesClient.Games.PoEcosystem.Models
+@implements IAsyncDisposable
+
+<div class="poeco-root @(_narrow ? "poeco-narrow" : "")">
+
+    @* The three.js canvas is created by the engine inside this host. *@
+    <div id="poeco-world" class="poeco-world" role="img" aria-label="First-person view of the living island"></div>
+
+    @if (_resumePrompt is not null)
+    {
+        <div class="poeco-resume" role="dialog" aria-label="Resume or start a new world">
+            <h2>An island is waiting</h2>
+            <p>Year @_resumePrompt.Year, @Counts(_resumePrompt.Counts) — saved @Ago(_resumePrompt.SavedAt).</p>
+            <div class="poeco-resume-actions">
+                <button class="poeco-btn poeco-btn--primary" @onclick="() => BootAsync(resume: true)">Resume</button>
+                <button class="poeco-btn" @onclick="() => BootAsync(resume: false)">New world</button>
+            </div>
+        </div>
+    }
+
+    @if (_booted)
+    {
+        <div class="poeco-hud" aria-hidden="@(_dashboardOpen ? "true" : "false")">
+            <div class="poeco-crosshair" aria-hidden="true">
+                <svg viewBox="0 0 20 20" width="20" height="20"><circle cx="10" cy="10" r="1.5" fill="currentColor"></circle><path d="M10 2v4M10 14v4M2 10h4M14 10h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg>
+            </div>
+
+            <HudBar Stats="_stats" OnSpeed="SetSpeedAsync" OnDashboard="ToggleDashboard" />
+
+            <div class="poeco-minimap-wrap">
+                <canvas id="poeco-minimap" class="poeco-minimap" width="200" height="200" aria-label="Map of the island"></canvas>
+            </div>
+
+            <Sparkline Stats="_stats" />
+
+            <EventToasts Events="_toasts" />
+
+            @if (_showKeys)
+            {
+                <div class="poeco-keys" aria-hidden="true">
+                    @foreach (var (key, what) in KeyLegend)
+                    {
+                        <span><kbd>@key</kbd> @what</span>
+                    }
+                </div>
+            }
+
+            @if (!_pointerLocked && !_narrow)
+            {
+                <p class="poeco-lock-hint">Click to look around</p>
+            }
+
+            @if (_narrow)
+            {
+                <div class="poeco-touch">
+                    <div class="poeco-pad" @ontouchstart="TouchStart" @ontouchmove="TouchMove" @ontouchend="TouchEnd" aria-label="Move"></div>
+                    <div class="poeco-touch-buttons">
+                        <button class="poeco-btn poeco-btn--round" @onclick="() => Interop.ToggleFlyAsync()" aria-label="Toggle flying">F</button>
+                        <button class="poeco-btn poeco-btn--round" @onclick="InspectAsync" aria-label="Inspect what is ahead">E</button>
+                    </div>
+                </div>
+            }
+        </div>
+
+        @if (_detail is not null && !_dashboardOpen)
+        {
+            <InspectorPopover Detail="_detail" OnFollow="FollowAsync" OnClose="ClearSelectionAsync" />
+        }
+
+        @if (_banner is not null)
+        {
+            <EndBanner Text="@_banner" OnRestart="() => NewWorldAsync(null)" />
+        }
+
+        @if (_dashboardOpen)
+        {
+            <DashboardOverlay Stats="_stats"
+                              Events="_log"
+                              Llm="_llm"
+                              Models="_models"
+                              WebGpu="_webGpu"
+                              Seed="@_seedInput"
+                              SeedChanged="v => _seedInput = v"
+                              OnClose="ToggleDashboard"
+                              OnSpeed="SetSpeedAsync"
+                              OnLlmToggle="SetLlmAsync"
+                              OnNewWorld="NewWorldAsync" />
+        }
+    }
+
+    @if (_error is not null)
+    {
+        <p class="poeco-error" role="alert">@_error</p>
+    }
+</div>

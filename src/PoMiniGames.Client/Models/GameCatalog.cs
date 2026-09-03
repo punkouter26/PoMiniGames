@@ -246,6 +246,17 @@ public static class GameCatalog
             Subtitle = "2D Physical Sandbox: Soil arching, rigid concrete, fluid & ordnance",
             ChipPrimary = true,
         },
+
+        // Watch-first: the island runs itself, so Demo is the card head; 1-player is the
+        // same world with AI thoughts enabled by default.
+        new(GameKeys.PoEcosystem, "PoEcosystem", "🌿",
+        [
+            new(GameMode.OnePlayer, "/poecosystem/1player"),
+            new(GameMode.Demo, "/poecosystem/demo"),
+        ])
+        {
+            Subtitle = "A living island you walk through: creatures hunt, mate, age and die on their own",
+        },
     ];
 
     /// <summary>Games sorted for display — alphabetical, matching the old per-section order.</summary>

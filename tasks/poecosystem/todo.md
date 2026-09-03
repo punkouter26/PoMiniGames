@@ -34,11 +34,11 @@ A task touches only the files in its manifest (see `plan.md`) plus its own test 
 - [x] T17 Renderer A — renderer, terrainMesh, playerController (9 tests), lighting, input
 - [x] T18 Renderer B — creatureMeshes, propMeshes, floraMeshes, picking, minimap (browser check at CP-F)
 - [ ] CP-F (record fps, screenshots)
-- [ ] T19 Interop + registry — InteropService, DTOs, Program.cs, engineLoader
-- [ ] T20 Page + viewer
-- [ ] T21 HUD — sparkline, speed/clock bar, event toasts
-- [ ] T22 Inspector popover + Tab dashboard overlay (chart, log)
-- [ ] T23 Settings, banner, touch fallback
+- [x] T19 Interop + registry — InteropService, DTOs, Program.cs, engineLoader
+- [x] T20 Page + viewer
+- [x] T21 HUD — sparkline, speed/clock bar, event toasts
+- [x] T22 Inspector popover + Tab dashboard overlay (chart, log)
+- [x] T23 Settings, banner, touch fallback
 - [ ] T24 Catalog + tiers — GameKey ×2, GameCatalog, E2E-UI test, test-all.ps1
 - [ ] CP-G
 

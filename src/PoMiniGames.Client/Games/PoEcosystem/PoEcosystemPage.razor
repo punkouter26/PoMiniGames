@@ -1,0 +1,54 @@
+@page "/poecosystem"
+@page "/poecosystem/{Mode}"
+@using PoMiniGamesClient.Components
+@using PoMiniGamesClient.Models
+@inject PlayerNameService PlayerNameService
+
+<PageTitle>PoEcosystem · A living island</PageTitle>
+
+<GameShell Title=@TitleContent
+           Player="@_playerName"
+           BackTo="/"
+           GameKey="poecosystem"
+           RequiresWebGl="true"
+           Fullscreen="true">
+
+    @if (!_introDismissed)
+    {
+        <GameIntro CueScope="poecosystem"
+                   Title=@TitleContent
+                   Objective="Walk an island that lives without you. Rabbits graze, deer herd, wolves hunt in packs and a human tribe builds huts — all of them born, hungry, thirsty, mating, ageing and dying while you watch."
+                   Controls=@HowToPlayContent
+                   Mode="@(IsDemo ? GameIntro.IntroMode.Demo : GameIntro.IntroMode.OnePlayer)"
+                   OnStart="@(() => _introDismissed = true)" />
+    }
+    else
+    {
+        <PoEcosystemViewer IsDemo="IsDemo" />
+    }
+</GameShell>
+
+@code {
+    [Parameter] public string? Mode { get; set; }
+
+    private string _playerName = "";
+    private bool _introDismissed;
+
+    private bool IsDemo => GameModes.Parse(Mode) == GameMode.Demo;
+
+    private RenderFragment TitleContent => @<span><span aria-hidden="true">🌿</span> PoEcosystem · A living island</span>;
+
+    private RenderFragment HowToPlayContent => @<div>
+        <p><strong>You are an invisible god walking the island.</strong> No creature can see you.</p>
+        <ul>
+            <li><strong>Mouse:</strong> click the world to look around, move the mouse to turn.</li>
+            <li><strong>WASD:</strong> walk · <strong>Shift:</strong> run · <strong>Space:</strong> jump · <strong>F:</strong> fly.</li>
+            <li><strong>E</strong> or click: inspect the creature under the crosshair — name, age, drives, personality and its last thought. <strong>T</strong> follows it.</li>
+            <li><strong>Tab:</strong> the dashboard — population chart, world log and settings (AI thoughts, model, seed, New World).</li>
+            <li><strong>0 1 2 3:</strong> pause, 1×, 2×, 4× speed.</li>
+        </ul>
+        <p>Lightning, rockslides and the volcano happen on their own. The world keeps running and saves itself; it ends only when one species is left.</p>
+    </div>;
+
+    protected override void OnInitialized() => _playerName = PlayerNameService.GetPlayerName();
+}

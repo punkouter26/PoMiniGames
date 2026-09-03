@@ -56,4 +56,5 @@ public static class GameKeys
 
     public static readonly GameKey PoVoxelStrike = new("povoxelstrike");
     public static readonly GameKey SubSurface = new("subsurface");
+    public static readonly GameKey PoEcosystem = new("poecosystem");
 }

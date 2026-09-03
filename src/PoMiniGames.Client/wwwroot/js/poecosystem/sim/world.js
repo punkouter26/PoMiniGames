@@ -30,6 +30,13 @@ import { addHut, buildHut, chooseHutSite, giveLogs, isNight, nearestHut, needsHu
 import { EVENT_KIND, createEventScheduler } from './events/scheduler.js';
 import { pickStrikeTile, strikeLightning } from './events/lightning.js';
 import { stepCorridors, triggerRockslide } from './events/rockslide.js';
+import { stepFire } from './events/fire.js';
+import { erupt, stepLava } from './events/volcano.js';
+import { createThoughtScheduler } from './thoughts/scheduler.js';
+import { buildPrompt } from './thoughts/prompt.js';
+import { templateThought } from './thoughts/templates.js';
+import { THOUGHT_SOURCE, applyThought } from './thoughts/nudges.js';
+import { THOUGHTS } from './core/config.js';
 import { isFlammable } from './terrain/tiles.js';
 import { EVENTS } from './core/config.js';
 
@@ -101,6 +108,10 @@ export function createWorld({ seed = 1, caps = {}, physics = null } = {}) {
   const burnt = [];   // { tile, ticksLeft }
   const secsToTicks = (s) => Math.round(s / TICK_SECONDS);
   const naturalEvents = { lightning: 0, rockslide: 0, eruption: 0 };
+  // Thoughts: the LLM round-robin (driven by the host) and the template cadence (ours).
+  const thoughtScheduler = createThoughtScheduler();
+  const thoughtStats = { requested: 0, applied: 0, rejected: 0 };
+  let templateCursor = 0;
 
   const tileOf = (i) => tileIndex(e.x[i], e.z[i], size);
   const centre = (t) => [tileX(t, size) + 0.5, tileZ(t, size) + 0.5];
@@ -139,23 +150,6 @@ export function createWorld({ seed = 1, caps = {}, physics = null } = {}) {
     const k = trees.byTile[tile];
     if (k >= 0 && trees.state[k] === TREE_STATE.STANDING) { burnTree(trees, k, tileState); tileState[tile] = TILE_STATE.FIRE; }
     return true;
-  }
-
-  function stepFires() {
-    for (let k = fires.length - 1; k >= 0; k--) {
-      const f = fires[k];
-      if (--f.ticksLeft > 0) continue;
-      tileState[f.tile] = TILE_STATE.BURNT;
-      grass.biomass[f.tile] = 0;
-      burnt.push({ tile: f.tile, ticksLeft: secsToTicks(EVENTS.burntSeconds) });
-      fires.splice(k, 1);
-    }
-    for (let k = burnt.length - 1; k >= 0; k--) {
-      const b = burnt[k];
-      if (--b.ticksLeft > 0) continue;
-      if (tileState[b.tile] === TILE_STATE.BURNT) tileState[b.tile] = TILE_STATE.NORMAL;
-      burnt.splice(k, 1);
-    }
   }
 
   function fireNaturalEvent(kind) {
@@ -576,12 +570,28 @@ export function createWorld({ seed = 1, caps = {}, physics = null } = {}) {
     const due = scheduler.poll(tick);
     if (due) fireNaturalEvent(due);
     if (stepCorridors(world)) rebuildShoreField();
-    stepFires();
+    stepFire(world);
+    if (stepLava(world)) rebuildShoreField();
     if (tick % 20 === 0) {
       const decay = EVENTS.fearDecayPerSecond;
       for (let t = 0; t < fear.length; t++) if (fear[t] > 0) fear[t] = fear[t] > decay ? fear[t] - decay : 0;
     }
     phys.step(dt);
+
+    // A template thought lands on the next creature in turn every few seconds, so the
+    // inspector always has something to show even with the model off.
+    if (tick % THOUGHTS.templateEveryTicks === 0 && e.count > 0) {
+      for (let n = 0; n < e.cap; n++) {
+        const i = (templateCursor + n) % e.cap;
+        if (!e.alive[i]) continue;
+        templateCursor = (i + 1) % e.cap;
+        if (e.lastThoughtSource[i] !== THOUGHT_SOURCE.LLM || tick - e.nudgeEndTick[i] > 0) {
+          e.lastThought[i] = templateThought(world, i, streams.cosmetic);
+          e.lastThoughtSource[i] = THOUGHT_SOURCE.TEMPLATE;
+        }
+        break;
+      }
+    }
 
     // Extinctions, last species standing, population history.
     let living = 0; let lastId = NONE;
@@ -639,15 +649,18 @@ export function createWorld({ seed = 1, caps = {}, physics = null } = {}) {
         const tile = arg.tile ?? pickStrikeTile(terrain, streams.events);
         if (tile < 0) return false;
         scheduler.markFired(EVENT_KIND.LIGHTNING, clock.tick);
+        naturalEvents.lightning++;
         return strikeLightning(world, tile, streams.events);
       }
       case 'rockslide': {
         scheduler.markFired(EVENT_KIND.ROCKSLIDE, clock.tick);
+        naturalEvents.rockslide++;
         return triggerRockslide(world, streams.events);
       }
       case 'erupt': {
         if (!world.erupt) return false;
         scheduler.markFired(EVENT_KIND.ERUPTION, clock.tick);
+        naturalEvents.eruption++;
         return world.erupt();
       }
       default: return false;
@@ -661,7 +674,27 @@ export function createWorld({ seed = 1, caps = {}, physics = null } = {}) {
   const world = {
     seed, terrain, tileState, fear, grass, bushes, trees, settlement, entities: e, clock, log, bus, spatial, namer, streams,
     get shoreField() { return shoreField; }, carcasses, physics: phys, popHistory,
-    scheduler, corridors, boulders, fires, burnt, ignite, rebuildShoreField,
+    scheduler, corridors, boulders, fires, burnt, ignite, rebuildShoreField, lava: null,
+    erupt: () => erupt(world),
+    senses: (i) => ({ ...perceive(i) }),
+    thoughts: {
+      get pending() { return thoughtScheduler.pending; },
+      next(selected = NONE) {
+        const h = thoughtScheduler.next(e, selected);
+        if (h === NONE) return null;
+        thoughtStats.requested++;
+        return { handle: h, prompt: buildPrompt(world, e.resolve(h)) };
+      },
+      apply(handle, text) {
+        const r = applyThought(world, handle, text, THOUGHT_SOURCE.LLM);
+        thoughtScheduler.complete(handle);
+        if (r.applied) thoughtStats.applied++; else thoughtStats.rejected++;
+        return r;
+      },
+      cancel() { thoughtScheduler.cancel(); },
+      stats() { return { ...thoughtStats }; },
+      scheduler: thoughtScheduler,
+    },
     step, stats, detail, debug, applyCommand, kill, spawn, memory: MEMORY,
   };
   return world;

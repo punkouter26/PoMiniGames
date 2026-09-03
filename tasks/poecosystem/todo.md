@@ -26,7 +26,7 @@ A task touches only the files in its manifest (see `plan.md`) plus its own test 
 - [x] T11 Events A — scheduler, lightning, rockslide (6 tests; corridor kills identical cannon vs null)
 - [x] T12 Events B — volcano, fire (6 tests)
 - [x] CP-D — every event on, cannon vs null identical at tick 3000; 87 tests, 95 % lines
-- [ ] T13 Thoughts — scheduler, prompt, templates, nudges
+- [x] T13 Thoughts — scheduler, prompt, templates, nudges (6 tests)
 - [ ] T14 Persistence — snapshot, idb, prefs
 - [ ] T15 Host runtime — simRuntime, simWorker, simHost, index.js
 - [ ] CP-E

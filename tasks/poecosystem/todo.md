@@ -31,8 +31,8 @@ A task touches only the files in its manifest (see `plan.md`) plus its own test 
 - [x] T15 Host runtime — simRuntime, simWorker, simHost, index.js (6 tests)
 - [x] CP-E — LLM-off feature complete headless; snapshot exact; protocol tests pass (104 tests)
 - [x] T16 Thought worker — thoughtWorker.js, thoughtBridge.js (6 tests; manual browser check pending at CP-F)
-- [ ] T17 Renderer A — renderer, terrainMesh, playerController (first-person god: walk/run/jump/fly/swim), lighting
-- [ ] T18 Renderer B — creatureMeshes, propMeshes, floraMeshes, picking (crosshair ray), minimap
+- [x] T17 Renderer A — renderer, terrainMesh, playerController (9 tests), lighting, input
+- [x] T18 Renderer B — creatureMeshes, propMeshes, floraMeshes, picking, minimap (browser check at CP-F)
 - [ ] CP-F (record fps, screenshots)
 - [ ] T19 Interop + registry — InteropService, DTOs, Program.cs, engineLoader
 - [ ] T20 Page + viewer

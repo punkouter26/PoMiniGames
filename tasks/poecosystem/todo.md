@@ -46,6 +46,6 @@ A task touches only the files in its manifest (see `plan.md`) plus its own test 
 - [x] `npm run test:coverage` — 97.2 % lines on sim/** (target 80 %)
 - [x] /code-review (high) — 8 findings, all fixed
 - [x] /security-review — no findings at reportable confidence (no server surface, no raw-HTML rendering)
-- [ ] /simplify — re-run `npm test`
+- [x] /simplify — 4 review agents, ~30 fixes applied; 127 tests still green
 - [x] Evidence for success criteria 1–15 (see recap; 11 unverifiable here — no WebGPU)
 - [x] Recap

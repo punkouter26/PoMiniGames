@@ -39,8 +39,8 @@ A task touches only the files in its manifest (see `plan.md`) plus its own test 
 - [x] T21 HUD — sparkline, speed/clock bar, event toasts
 - [x] T22 Inspector popover + Tab dashboard overlay (chart, log)
 - [x] T23 Settings, banner, touch fallback
-- [ ] T24 Catalog + tiers — GameKey ×2, GameCatalog, E2E-UI test, test-all.ps1
-- [ ] CP-G
+- [x] T24 Catalog + tiers — GameKey ×2, GameCatalog, E2E-UI test (11/25 methods), test-all.ps1
+- [x] CP-G — build 0 warnings, hex grep 0, E2E-UI 11/25, SimJs+Component tiers wired
 
 ## Verify (Phase 5)
 - [ ] `npm run test:coverage` ≥ 80 % on sim/**

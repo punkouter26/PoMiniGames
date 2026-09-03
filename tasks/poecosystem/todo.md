@@ -30,7 +30,7 @@ A task touches only the files in its manifest (see `plan.md`) plus its own test 
 - [x] T14 Persistence — snapshot, idb, prefs (5 tests; exact round trip incl. events, thoughts, plans)
 - [x] T15 Host runtime — simRuntime, simWorker, simHost, index.js (6 tests)
 - [x] CP-E — LLM-off feature complete headless; snapshot exact; protocol tests pass (104 tests)
-- [ ] T16 Thought worker — thoughtWorker.js, thoughtBridge.js
+- [x] T16 Thought worker — thoughtWorker.js, thoughtBridge.js (6 tests; manual browser check pending at CP-F)
 - [ ] T17 Renderer A — renderer, terrainMesh, playerController (first-person god: walk/run/jump/fly/swim), lighting
 - [ ] T18 Renderer B — creatureMeshes, propMeshes, floraMeshes, picking (crosshair ray), minimap
 - [ ] CP-F (record fps, screenshots)

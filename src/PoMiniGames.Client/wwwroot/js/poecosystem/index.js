@@ -3,6 +3,7 @@
 // and the routing of its messages; the renderer (render/) and the thought bridge attach to
 // the engine object when present.
 import { createSimHost } from './host/simHost.js';
+import { LLM_STATE, MODELS, createThoughtBridge } from './host/thoughtBridge.js';
 import { openWorldStore, loadWorldMeta } from './sim/persistence/idb.js';
 import { hashString } from './sim/core/prng.js';
 import { NONE } from './sim/core/entities.js';
@@ -54,8 +55,9 @@ function createEngine(container, dotnetRef, opts) {
         invoke('OnDetail', msg.detail ? JSON.stringify(msg.detail) : null);
         return;
       case 'thoughtRequest':
-        if (state.thoughts) state.thoughts.request(msg);
-        else state.host.send({ type: 'thoughtCancel' });
+        // The bridge answers asynchronously; a refusal (busy / not ready) cancels the
+        // sim's in-flight slot so the round-robin can offer another creature.
+        if (!state.thoughts || !state.thoughts.request(msg)) state.host.send({ type: 'thoughtCancel' });
         return;
       case 'saved':
         invoke('OnSaved', msg.tick, msg.reason);
@@ -74,6 +76,11 @@ function createEngine(container, dotnetRef, opts) {
   const api = {
     state,
     async start() {
+      state.thoughts = createThoughtBridge({
+        onResult: (handle, text) => state.host?.send({ type: 'thoughtResult', handle, text }),
+        onState: (s) => { state.llmState = s; invoke('OnLlmState', JSON.stringify(s)); },
+      });
+      if (opts.llmEnabled) state.thoughts.start(opts.modelId ?? MODELS[0].id);
       state.host = await createSimHost({
         onMessage,
         importCannon: () => import('cannon-es'),
@@ -93,7 +100,11 @@ function createEngine(container, dotnetRef, opts) {
     setSpeed: (speed) => state.host?.send({ type: 'setSpeed', speed }),
     select(handle) { state.selected = handle ?? NONE; state.host?.send({ type: 'select', handle: state.selected }); },
     newWorld: (seed) => state.host?.send({ type: 'newWorld', seed: hashString(seed ?? '') }),
-    setLlm: (enabled) => state.host?.send({ type: 'setLlmEnabled', enabled: !!enabled }),
+    async setLlm(enabled, modelId) {
+      state.host?.send({ type: 'setLlmEnabled', enabled: !!enabled });
+      if (enabled) await state.thoughts?.start(modelId ?? state.thoughts.modelId);
+      else { state.thoughts?.dispose(); state.host?.send({ type: 'thoughtCancel' }); }
+    },
     thoughtResult: (handle, text) => state.host?.send({ type: 'thoughtResult', handle, text }),
     saveNow: () => state.host?.send({ type: 'saveNow', reason: 'manual' }),
     debug: (op, arg) => state.host?.send({ type: 'debug', op, arg }),
@@ -111,7 +122,7 @@ function createEngine(container, dotnetRef, opts) {
     get creatureCount() { return state.creatureCount; },
     get fps() { return state.renderer?.fps ?? 0; },
     get simLag() { return state.simLag; },
-    get llm() { return state.llm; },
+    get llm() { return { sim: state.llm, bridge: state.llmState ?? { state: LLM_STATE.OFF }, models: MODELS }; },
     get player() { return state.renderer?.player ?? null; },
   };
   return api;
@@ -133,9 +144,11 @@ const PoEcosystem = {
   setSpeed: (s) => engine?.setSpeed(s),
   select: (h) => engine?.select(h),
   newWorld: (seed) => engine?.newWorld(seed),
-  setLlm: (enabled) => engine?.setLlm(enabled),
+  setLlm: (enabled, modelId) => engine?.setLlm(enabled, modelId),
   saveNow: () => engine?.saveNow(),
   debug: (op, arg) => engine?.debug(op, arg),
+  models: () => MODELS.map(m => ({ ...m })),
+  async webGpuAvailable() { const { hasWebGpuSupport } = await import('./host/thoughtBridge.js'); return hasWebGpuSupport(); },
 };
 
 if (typeof window !== 'undefined') {

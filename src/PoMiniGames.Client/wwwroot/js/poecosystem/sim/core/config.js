@@ -102,3 +102,23 @@ export const WORLD = Object.freeze({
   popHistoryMax: 1800,       // 30 minutes of samples
   birthOffset: 1.0,          // metres offspring spawn from the mother
 });
+
+// ── Physics (SPEC §7.7). Cosmetic only: no rule reads a body. ───────────
+export const PHYSICS = Object.freeze({
+  gravity: 9.81,
+  substeps: 2,               // cannon steps per sim tick (1 on low-end devices)
+  solverIterations: 10,
+  maxActiveRagdolls: 16,     // ≈100 bodies; beyond this a death lies down statically
+  ragdollMaxSeconds: 8,      // a ragdoll is frozen into a carcass by then at the latest
+  carcassSeconds: 60,        // frozen carcass parts stay this long
+  logSeconds: 300,           // a settled log stays this long
+  rockSeconds: 120,          // a settled rock stays this long (SPEC: obstacle for 120 s)
+  settleTimeoutSeconds: 15,  // rocks/logs are frozen by then even if still twitching
+  treeHingeSeconds: 1,       // the trunk swings on its stump this long before breaking free
+  sleepSpeedLimit: 0.2,
+  sleepTimeLimit: 0.5,
+  linearDamping: 0.08,
+  angularDamping: 0.25,
+  friction: 0.6,
+  restitution: 0.15,
+});

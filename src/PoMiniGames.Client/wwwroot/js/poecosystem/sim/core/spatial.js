@@ -44,6 +44,10 @@ export function createSpatialHash(worldSize, cellSize = BEHAVIOR.spatialCell) {
           const c = cz * cells + cx;
           for (let k = cellStart[c]; k < cellStart[c + 1]; k++) {
             const i = entries[k];
+            // The grid is built once per tick, so an entity killed earlier in the same
+            // tick is still in it. Skip the dead: a corpse must not join a herd, lead a
+            // pack, take a share of a kill, or be chosen as prey or a mate.
+            if (!e.alive[i]) continue;
             const dx = e.x[i] - x; const dz = e.z[i] - z;
             const d2 = dx * dx + dz * dz;
             if (d2 <= r2) fn(i, d2);

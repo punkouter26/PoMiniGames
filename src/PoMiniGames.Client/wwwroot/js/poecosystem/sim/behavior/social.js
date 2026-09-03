@@ -8,13 +8,19 @@ import { feed } from '../creatures/drives.js';
 
 export const STATE = Object.freeze({ NORMAL: 0, ALERT: 1 });
 
-/** Mark `i` and same-species neighbours within `radius` as alerted at `tick`. */
-export function raiseAlarm(e, hash, i, radius, tick) {
+/**
+ * Mark `i` and same-species neighbours within `radius` as alerted at `tick`, and record
+ * WHERE the danger is (`threatX/threatZ`, defaulting to the spotter). Without that, an
+ * alerted creature that cannot see the predator itself has nothing to run away from.
+ */
+export function raiseAlarm(e, hash, i, radius, tick, threatX = e.x[i], threatZ = e.z[i]) {
   const sp = e.species[i];
   hash.forEachInRadius(e.x[i], e.z[i], radius, (j) => {
     if (e.species[j] !== sp) return;
     e.state[j] = STATE.ALERT;
     e.alertTick[j] = tick;
+    e.alertX[j] = threatX;
+    e.alertZ[j] = threatZ;
   });
 }
 

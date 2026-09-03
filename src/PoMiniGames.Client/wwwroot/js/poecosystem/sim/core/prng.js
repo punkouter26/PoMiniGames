@@ -68,14 +68,16 @@ export function createStreams(seed) {
 }
 
 /**
- * Coerce a seed the user typed into a uint32. Plain integers pass through so a
- * shared "seed 7" reproduces exactly; anything else is FNV-1a hashed.
+ * Coerce a seed the user typed into a uint32. Plain integers pass through so a shared
+ * "seed 7" reproduces exactly — including the NEGATIVE form the UI shows for a seed that
+ * came back from the sim as a signed int32, which must round-trip to the same island.
+ * Anything else is FNV-1a hashed.
  */
 export function hashString(text) {
   const s = String(text ?? '').trim();
-  if (/^\d{1,10}$/.test(s)) {
+  if (/^-?\d{1,10}$/.test(s)) {
     const n = Number(s);
-    if (n <= 0xFFFFFFFF) return n >>> 0;
+    if (n >= -0x80000000 && n <= 0xFFFFFFFF) return n >>> 0;
   }
   let h = 0x811C9DC5;
   for (let i = 0; i < s.length; i++) {

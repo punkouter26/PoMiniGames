@@ -155,3 +155,33 @@ describe('humans and huts', () => {
     expect(isNight(0.95)).toBe(true);
   });
 });
+
+describe('review fixes', () => {
+  it('an alarm records where the danger was, so a blind creature flees the right way', () => {
+    const e = createEntities(8); const hash = createSpatialHash(WORLD_SIZE);
+    const spotter = put(e, SPECIES_ID.DEER, 50, 50);
+    const blind = put(e, SPECIES_ID.DEER, 56, 50);
+    hash.rebuild(e);
+    raiseAlarm(e, hash, spotter, 15, 100, 40, 44);      // the wolf is over there
+    expect(e.alertX[blind]).toBe(40);
+    expect(e.alertZ[blind]).toBe(44);
+    expect(e.alertX[spotter]).toBe(40);
+    raiseAlarm(e, hash, spotter, 15, 200);              // no threat given → the spotter itself
+    expect(e.alertX[blind]).toBe(e.x[spotter]);
+  });
+
+  it('the spatial hash never reports a creature that died earlier in the same tick', () => {
+    const e = createEntities(8); const hash = createSpatialHash(WORLD_SIZE);
+    const a = put(e, SPECIES_ID.WOLF, 30, 30);
+    const b = put(e, SPECIES_ID.WOLF, 32, 30);
+    hash.rebuild(e);
+    const before = []; hash.forEachInRadius(30, 30, 10, i => before.push(i));
+    expect(before).toContain(b);
+    e.free(b);                                          // killed after the rebuild
+    const after = []; hash.forEachInRadius(30, 30, 10, i => after.push(i));
+    expect(after).toEqual([a]);
+    expect(packLeader(e, hash, a, 12)).toBe(a);
+    e.hunger[a] = 0.9;
+    expect(shareKill(e, hash, a, 12, 1)).toBe(1);       // no share for the dead
+  });
+});

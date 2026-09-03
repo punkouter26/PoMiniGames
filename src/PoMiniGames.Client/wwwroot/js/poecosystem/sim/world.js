@@ -439,7 +439,7 @@ export function createWorld({ seed = 1, caps = {}, physics = null } = {}) {
             const d = scatterDirection(e, i, c.threatX, c.threatZ, streams.behavior);
             e.vx[i] = d.x * sp.runSpeed; e.vz[i] = d.z * sp.runSpeed;
           } else fleeFrom(e, i, c.threatX, c.threatZ, sp.runSpeed);
-          if ((sp.id === SPECIES_ID.RABBIT || sp.id === SPECIES_ID.DEER) && !isAlerted(e, i, tick)) raiseAlarm(e, spatial, i, BEHAVIOR.herdRadius, tick);
+          if ((sp.id === SPECIES_ID.RABBIT || sp.id === SPECIES_ID.DEER) && !isAlerted(e, i, tick)) raiseAlarm(e, spatial, i, BEHAVIOR.herdRadius, tick, c.threatX, c.threatZ);
         } else if (Math.hypot(e.vx[i], e.vz[i]) < 0.1) {
           wander(e, i, streams.behavior, sp.runSpeed);
         }
@@ -557,7 +557,12 @@ export function createWorld({ seed = 1, caps = {}, physics = null } = {}) {
 
       if (dirty[i] || (tick + i) % BEHAVIOR.rescoreEveryTicks === 0) {
         const c = perceive(i);
-        if (isAlerted(e, i, tick) && c.threatDist === Infinity) c.threatDist = 15;
+        // Alerted but can't see the predator: run from where the alarm said it was, not
+        // from the origin of the map (which is what an unset threatX/threatZ would mean).
+        if (isAlerted(e, i, tick) && c.threatDist === Infinity) {
+          c.threatX = e.alertX[i]; c.threatZ = e.alertZ[i];
+          c.threatDist = Math.max(1, Math.hypot(e.x[i] - c.threatX, e.z[i] - c.threatZ));
+        }
         chooseGoal(e, i, c);
         commitPlan(i, c);
       }

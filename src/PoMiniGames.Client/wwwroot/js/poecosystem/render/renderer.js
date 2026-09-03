@@ -52,6 +52,8 @@ export function createRenderer(container, {
   let flora = null;
   let minimap = null;
   let player = createPlayer({ size: 200, heightAt: () => 0, type: new Uint8Array(200 * 200) });
+  let pendingPose = null;      // a pose set before the first terrain message
+  let terrainReady = false;
 
   // Two frames + their views, for interpolation.
   let prev = null; let curr = null; let prevAt = 0; let currAt = 0;
@@ -106,7 +108,13 @@ export function createRenderer(container, {
     scene.add(island.mesh, island.water);
     flora = createFloraMeshes(scene, terrainApi, { trees: msg.trees, bushes: msg.bushes });
     if (minimapCanvas) minimap = createMinimap(minimapCanvas, terrainApi);
+    // A pose set before the terrain arrived (Resume reads prefs synchronously at start)
+    // must survive the rebuild, or the god is teleported back to the island's centre.
+    const pending = pendingPose ?? (terrainReady ? player.pose() : null);
+    pendingPose = null;
+    terrainReady = true;
     player = createPlayer(terrainApi);
+    if (pending) player.setPose(pending);
   }
 
   function setTiles(msg) {
@@ -205,7 +213,7 @@ export function createRenderer(container, {
     setStats(s) { stats = s; },
     select(handle) { selectedHandle = handle ?? -1; },
     follow(handle) { followHandle = handle ?? -1; },
-    setPose(pose) { player.setPose(pose); },
+    setPose(pose) { if (terrainReady) player.setPose(pose); else pendingPose = pose; },
     touchMove: (x, z) => input.setTouchVector(x, z),
     touchRelease: () => input.releaseTouch(),
     toggleFly: () => player.toggleFly(),

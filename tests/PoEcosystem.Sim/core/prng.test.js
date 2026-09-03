@@ -54,3 +54,17 @@ describe('prng', () => {
     expect(h >>> 0).toBe(h);
   });
 });
+
+describe('seed round-trip', () => {
+  it('accepts the signed seed the UI displays, so New World reproduces the same island', () => {
+    // stats/ready report the seed as a signed int32; typing it back must land on the
+    // same world (hashString feeds createWorld directly).
+    const signed = -2128831035;
+    expect(hashString(String(signed))).toBe(signed >>> 0);
+    expect(hashString(String(signed >>> 0))).toBe(signed >>> 0);
+    expect(hashString('7')).toBe(7);
+    expect(hashString('-1')).toBe(0xFFFFFFFF);
+    expect(hashString('-99999999999')).not.toBe(0);      // out of range → hashed, not NaN
+    expect(Number.isInteger(hashString('-99999999999'))).toBe(true);
+  });
+});

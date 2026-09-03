@@ -13,10 +13,12 @@ const F32 = ['x', 'y', 'z', 'yaw', 'vx', 'vz', 'age', 'hunger', 'thirst', 'healt
 const U8 = ['species', 'lifeStage', 'state', 'goal', 'sex', 'alive', 'lastThoughtSource'];
 const I8 = ['nudgeTrait'];
 const I32 = ['mother', 'father', 'target', 'leader', 'homeTile', 'memFoodTile', 'memFoodTick', 'memWaterTile', 'memWaterTick', 'birthTick', 'gestationEndTick', 'lastMateTick', 'goalSince', 'nudgeEndTick', 'alertTick', 'pendingFather'];
+const F32_EXTRA = ['alertX', 'alertZ'];   // where the alarm came from (see behavior/social.js)
 
 export function createEntities(cap) {
   const e = { cap, high: 0, count: 0 };
   for (const c of F32) e[c] = new Float32Array(cap);
+  for (const c of F32_EXTRA) e[c] = new Float32Array(cap);
   for (const c of U8) e[c] = new Uint8Array(cap);
   for (const c of I8) e[c] = new Int8Array(cap);
   for (const c of I32) e[c] = new Int32Array(cap);
@@ -29,6 +31,7 @@ export function createEntities(cap) {
 
   function reset(i) {
     for (const c of F32) e[c][i] = 0;
+    for (const c of F32_EXTRA) e[c][i] = 0;
     for (const c of U8) e[c][i] = 0;
     for (const c of I8) e[c][i] = NONE;
     for (const c of I32) e[c][i] = NONE;
@@ -69,7 +72,7 @@ export function createEntities(cap) {
   };
 
   /** Typed-array column names, for the frame encoder and snapshot code. */
-  e.columns = () => [...F32, ...U8, ...I8, ...I32, 'traits', 'gen'];
+  e.columns = () => [...F32, ...F32_EXTRA, ...U8, ...I8, ...I32, 'traits', 'gen'];
 
   /** Snapshot support: the free list must be restored in order to stay deterministic. */
   e.getFreeList = () => free.slice();

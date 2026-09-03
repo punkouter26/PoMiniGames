@@ -10,11 +10,17 @@ const stepN = (w, n) => { for (let k = 0; k < n; k++) w.step(); };
 
 describe('world', () => {
   it('creates the starting population on walkable tiles quickly', () => {
-    createWorld({ seed: 6 });                 // warm the JIT: the first call in a process also
-    const t0 = performance.now();             // pays for compiling terrain, flora and behaviour
-    const w = createWorld({ seed: 7 });
-    const ms = performance.now() - t0;
-    expect(ms, `world creation took ${ms.toFixed(0)} ms`).toBeLessThan(300);
+    // Best of three: the first call in a process pays for JIT-compiling terrain, flora and
+    // behaviour, and a loaded CI box adds scheduler noise to any single sample. The best
+    // sample still catches a real regression (this is ~160 ms warm).
+    let best = Infinity;
+    let w = null;
+    for (let k = 0; k < 3; k++) {
+      const t0 = performance.now();
+      w = createWorld({ seed: 7 });
+      best = Math.min(best, performance.now() - t0);
+    }
+    expect(best, `fastest of 3 world creations took ${best.toFixed(0)} ms`).toBeLessThan(300);
     const s = w.stats();
     expect(s.counts).toEqual([POPULATION.rabbits, POPULATION.deer, POPULATION.wolves, POPULATION.humans]);
     expect(s.huts).toBe(POPULATION.huts);

@@ -53,7 +53,7 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
         Interop.DetailReceived += OnDetail;
         Interop.LlmStateReceived += OnLlmState;
         Interop.Picked += OnPicked;
-        Interop.SpeedChanged += _ => InvokeAsync(StateHasChanged);
+        Interop.SpeedChanged += OnSpeedChanged;
         Interop.ActionRequested += OnAction;
         Interop.EngineError += OnEngineError;
     }
@@ -140,6 +140,11 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
         _llm = state;
         InvokeAsync(StateHasChanged);
     }
+
+    // Named, not a lambda: the interop service outlives this component (scoped, and a WASM
+    // scope is the whole app), so an unremovable handler would raise StateHasChanged on a
+    // disposed component on the next visit.
+    private void OnSpeedChanged(int speed) => InvokeAsync(StateHasChanged);
 
     private void OnPicked(int handle)
     {
@@ -240,6 +245,7 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
         Interop.DetailReceived -= OnDetail;
         Interop.LlmStateReceived -= OnLlmState;
         Interop.Picked -= OnPicked;
+        Interop.SpeedChanged -= OnSpeedChanged;
         Interop.ActionRequested -= OnAction;
         Interop.EngineError -= OnEngineError;
         await Interop.DisposeAsync();

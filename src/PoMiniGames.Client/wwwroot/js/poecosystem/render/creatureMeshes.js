@@ -67,7 +67,10 @@ const JUVENILE_SCALE = 0.55;
 
 export function createCreatureMeshes(scene, cap) {
   const groups = [];
+  // Two reusable transforms: at 400 creatures × ~8 parts × 60 fps, allocating an
+  // Object3D per part per frame would be ~200k allocations a second.
   const dummy = new THREE.Object3D();
+  const local = new THREE.Object3D();
   const colour = new THREE.Color();
   for (const [id, rig] of Object.entries(RIGS)) {
     const material = new THREE.MeshLambertMaterial({ color: rig.colour, flatShading: true });
@@ -118,9 +121,8 @@ export function createCreatureMeshes(scene, cap) {
           dummy.rotation.set(0, view[o + 3], 0);
           dummy.scale.set(scale, scale, scale);
           dummy.updateMatrix();
-          const local = new THREE.Object3D();
           local.position.set(at[0], at[1], at[2] + (leg ? Math.sin(swing) * leg * 0.25 : 0));
-          if (leg) local.rotation.x = swing * leg;
+          local.rotation.x = leg ? swing * leg : 0;
           local.updateMatrix();
           local.matrix.premultiply(dummy.matrix);
           part.mesh.setMatrixAt(i, local.matrix);

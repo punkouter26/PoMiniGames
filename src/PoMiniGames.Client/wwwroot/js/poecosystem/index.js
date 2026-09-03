@@ -145,8 +145,13 @@ function createEngine(container, dotnetRef, opts) {
     newWorld: (seed) => state.host?.send({ type: 'newWorld', seed: hashString(seed ?? '') }),
     async setLlm(enabled, modelId) {
       state.host?.send({ type: 'setLlmEnabled', enabled: !!enabled });
+      // Always release the sim's in-flight slot: start() tears the worker down, so any
+      // request already handed to the model will never be answered, and the sim would
+      // otherwise wait for that creature forever.
+      state.thoughts?.cancel();
+      state.host?.send({ type: 'thoughtCancel' });
       if (enabled) await state.thoughts?.start(modelId ?? state.thoughts.modelId);
-      else { state.thoughts?.dispose(); state.host?.send({ type: 'thoughtCancel' }); }
+      else state.thoughts?.dispose();
     },
     thoughtResult: (handle, text) => state.host?.send({ type: 'thoughtResult', handle, text }),
     saveNow: () => state.host?.send({ type: 'saveNow', reason: 'manual' }),

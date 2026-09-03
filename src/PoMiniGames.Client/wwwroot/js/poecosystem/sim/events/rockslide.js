@@ -21,9 +21,15 @@ export function pickRidgeTile(terrain, rng) {
   return candidates.length ? candidates[rng.int(candidates.length)] : -1;
 }
 
-export function planRockslide(terrain, rng, tick, cfg = EVENTS.rockslide) {
+/**
+ * Plan a launch. `originTile` fixes where the rocks come from (the volcano crater passes
+ * its own tile); by default a random ridge is chosen. The impact points and corridors are
+ * derived FROM that origin, so they always match what the player sees flying.
+ */
+export function planRockslide(terrain, rng, tick, cfg = EVENTS.rockslide, originTile = -1) {
   const { size } = terrain;
-  const ridgeTile = pickRidgeTile(terrain, rng);
+  const ridgeTile = originTile >= 0 ? originTile : pickRidgeTile(terrain, rng);
+  if (ridgeTile < 0) return { ridgeTile, rocks: [] };
   const rx = tileX(ridgeTile, size) + 0.5; const rz = tileZ(ridgeTile, size) + 0.5;
   const ry = terrain.tileHeight(ridgeTile) + 1;
   const count = cfg.count[0] + rng.int(cfg.count[1] - cfg.count[0] + 1);

@@ -22,12 +22,13 @@ export function erupt(world, cfg = EVENTS.volcano) {
   for (const i of victims) world.kill(i, DEATH_CAUSE.ERUPTION);
   world.physics.explode({ x: cx, y: cy, z: cz, radius: cfg.blastRadius, strength: cfg.strength });
 
-  // Projectiles: planned exactly like a rockslide, from the crater, with eruption ranges.
+  // Projectiles: planned exactly like a rockslide but ANCHORED TO THE CRATER, so the
+  // analytic impact points and corridors match the arcs the player watches.
   const plan = planRockslide(terrain, streams.events, tick, {
     ...EVENTS.rockslide, count: cfg.projectiles, speed: cfg.speed, up: cfg.up,
-  });
-  for (const r of plan.rocks) { r.cause = DEATH_CAUSE.ERUPTION; r.x = cx; r.z = cz; r.y = cy + 1; world.corridors.push(r); }
-  world.physics.spawnRocks({ projectile: true, rocks: plan.rocks.map(r => ({ x: cx, y: cy + 1, z: cz, vx: r.vx, vy: r.vy, vz: r.vz, big: r.big })) }, streams.cosmetic);
+  }, v);
+  for (const r of plan.rocks) { r.cause = DEATH_CAUSE.ERUPTION; world.corridors.push(r); }
+  world.physics.spawnRocks({ projectile: true, rocks: plan.rocks.map(r => ({ x: r.x, y: r.y, z: r.z, vx: r.vx, vy: r.vy, vz: r.vz, big: r.big })) }, streams.cosmetic);
 
   // Lava starts in the crater and creeps downhill from there.
   world.lava = { front: [v], tiles: [], endTick: tick + secs(cfg.lavaSeconds), nextCreep: tick };

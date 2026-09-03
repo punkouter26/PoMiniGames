@@ -122,3 +122,21 @@ export const PHYSICS = Object.freeze({
   friction: 0.6,
   restitution: 0.15,
 });
+
+// ── Natural events (SPEC §7.7) ───────────────────────────────────────────
+export const EVENTS = Object.freeze({
+  minSpacingSeconds: 45,     // between any two natural events
+  intervalSeconds: Object.freeze({ lightning: [90, 240], rockslide: [120, 300], eruption: [240, 480] }),
+  lightning: Object.freeze({ killRadius: 6, treeRadius: 3, fearRadius: 10, strength: 40 }),
+  rockslide: Object.freeze({
+    count: [3, 8], speed: [3, 7], up: [2, 5],
+    rollTiles: 12,           // corridor length downhill from the impact tile
+    rollSeconds: 4,          // window during which corridor tiles are lethal
+    impactRadius: 1.5,       // metres around the analytic impact point that kill at impact tick
+    boulderSeconds: 120,     // the settled rock blocks the corridor's end tile this long
+    fearRadius: 12,
+  }),
+  fearDecayPerSecond: 0.15,  // fear painted on tiles fades at this rate
+  fireSeconds: 6,            // a tile burns this long (T12 fire spread builds on it)
+  burntSeconds: 60,          // burnt tiles recover to normal after this long
+});

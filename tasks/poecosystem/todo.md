@@ -23,7 +23,7 @@ A task touches only the files in its manifest (see `plan.md`) plus its own test 
 - [x] T9  World composition — world.js, frame.js (7 tests; determinism at tick 6000 passes; 0.13–0.76 ms/tick)
 - [x] CP-C — LONG population gate passes (4/5 seeds boom-bust, no extinction < 5 min); tuned species/utility/world (see SPEC §7.2 note)
 - [x] T10 Physics — world, ragdoll, rocks, fallingTree, explosion (8 tests; cannon-es heightfield verified to 6 mm)
-- [ ] T11 Events A — scheduler, lightning, rockslide
+- [x] T11 Events A — scheduler, lightning, rockslide (6 tests; corridor kills identical cannon vs null)
 - [ ] T12 Events B — volcano, fire
 - [ ] CP-D
 - [ ] T13 Thoughts — scheduler, prompt, templates, nudges

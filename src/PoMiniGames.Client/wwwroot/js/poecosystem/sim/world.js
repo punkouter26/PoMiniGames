@@ -15,7 +15,7 @@ import { bfsDistanceField, descendStep, shoreTiles } from './terrain/pathing.js'
 import { TILE, TILE_STATE, isWalkable, tileIndex, tileX, tileZ } from './terrain/tiles.js';
 import { createGrass, grazeAt, stepGrass } from './flora/grass.js';
 import { createBushes, isRipe, stepBushes, stripBush } from './flora/bushes.js';
-import { TREE_STATE, chopTree, createTrees, stepTrees } from './flora/trees.js';
+import { TREE_STATE, burnTree, chopTree, createTrees, stepTrees } from './flora/trees.js';
 import { SPECIES, SPECIES_ID } from './creatures/species.js';
 import { drink, feed, stepDrives } from './creatures/drives.js';
 import { DEATH_CAUSE, LIFE_STAGE, checkVitals, killCreature, oldAgeDeathChance, spawnCreature, updateLifeStage } from './creatures/lifecycle.js';
@@ -27,6 +27,11 @@ import { fleeFrom, moveCreature, seekTo, stop, wander } from './behavior/steerin
 import { GOAL, GOAL_NAMES, chooseGoal } from './behavior/utility.js';
 import { herdCohesion, isAlerted, isOrphan, packLeader, raiseAlarm, scatterDirection, shareKill } from './behavior/social.js';
 import { addHut, buildHut, chooseHutSite, giveLogs, isNight, nearestHut, needsHut } from './behavior/humans.js';
+import { EVENT_KIND, createEventScheduler } from './events/scheduler.js';
+import { pickStrikeTile, strikeLightning } from './events/lightning.js';
+import { stepCorridors, triggerRockslide } from './events/rockslide.js';
+import { isFlammable } from './terrain/tiles.js';
+import { EVENTS } from './core/config.js';
 
 const PREY = [[], [], [SPECIES_ID.RABBIT, SPECIES_ID.DEER], [SPECIES_ID.RABBIT, SPECIES_ID.DEER]];
 const GESTATION_TICKS = SPECIES.map(sp => Math.round(sp.gestationSeconds / TICK_SECONDS));
@@ -87,6 +92,15 @@ export function createWorld({ seed = 1, caps = {}, physics = null } = {}) {
   let lastFullTick = -1e9;
   let lastStanding = NONE;
   let silent = false;
+  // Natural events: the scheduler, rockslide corridors in flight, boulders blocking tiles,
+  // and burning / burnt tiles (T12's fire spread extends the same lists).
+  const scheduler = createEventScheduler(streams.events);
+  const corridors = [];
+  const boulders = [];
+  const fires = [];   // { tile, ticksLeft }
+  const burnt = [];   // { tile, ticksLeft }
+  const secsToTicks = (s) => Math.round(s / TICK_SECONDS);
+  const naturalEvents = { lightning: 0, rockslide: 0, eruption: 0 };
 
   const tileOf = (i) => tileIndex(e.x[i], e.z[i], size);
   const centre = (t) => [tileX(t, size) + 0.5, tileZ(t, size) + 0.5];
@@ -113,6 +127,47 @@ export function createWorld({ seed = 1, caps = {}, physics = null } = {}) {
     counts[speciesId]++;
     dirty[i] = 1;
     return i;
+  }
+
+  /** Set a flammable tile burning (lightning, later lava and spread). */
+  function ignite(tile, force = false) {
+    if (!isFlammable(terrain.type[tile])) return false;
+    const s = tileState[tile];
+    if (s !== TILE_STATE.NORMAL && s !== TILE_STATE.STUMP && !(force && s === TILE_STATE.BURNT)) return false;
+    tileState[tile] = TILE_STATE.FIRE;
+    fires.push({ tile, ticksLeft: secsToTicks(EVENTS.fireSeconds) });
+    const k = trees.byTile[tile];
+    if (k >= 0 && trees.state[k] === TREE_STATE.STANDING) { burnTree(trees, k, tileState); tileState[tile] = TILE_STATE.FIRE; }
+    return true;
+  }
+
+  function stepFires() {
+    for (let k = fires.length - 1; k >= 0; k--) {
+      const f = fires[k];
+      if (--f.ticksLeft > 0) continue;
+      tileState[f.tile] = TILE_STATE.BURNT;
+      grass.biomass[f.tile] = 0;
+      burnt.push({ tile: f.tile, ticksLeft: secsToTicks(EVENTS.burntSeconds) });
+      fires.splice(k, 1);
+    }
+    for (let k = burnt.length - 1; k >= 0; k--) {
+      const b = burnt[k];
+      if (--b.ticksLeft > 0) continue;
+      if (tileState[b.tile] === TILE_STATE.BURNT) tileState[b.tile] = TILE_STATE.NORMAL;
+      burnt.splice(k, 1);
+    }
+  }
+
+  function fireNaturalEvent(kind) {
+    naturalEvents[kind] = (naturalEvents[kind] ?? 0) + 1;
+    if (kind === EVENT_KIND.LIGHTNING) {
+      const tile = pickStrikeTile(terrain, streams.events);
+      if (tile >= 0) strikeLightning(world, tile, streams.events);
+    } else if (kind === EVENT_KIND.ROCKSLIDE) {
+      triggerRockslide(world, streams.events);
+    } else if (kind === EVENT_KIND.ERUPTION && world.erupt) {
+      world.erupt();
+    }
   }
 
   function kill(i, cause, extra = '') {
@@ -516,6 +571,16 @@ export function createWorld({ seed = 1, caps = {}, physics = null } = {}) {
     }
 
     for (let k = carcasses.length - 1; k >= 0; k--) if (carcasses[k].expires <= tick) carcasses.splice(k, 1);
+
+    // Natural events: scheduled strikes/slides, rolling rocks, fires, fading fear.
+    const due = scheduler.poll(tick);
+    if (due) fireNaturalEvent(due);
+    if (stepCorridors(world)) rebuildShoreField();
+    stepFires();
+    if (tick % 20 === 0) {
+      const decay = EVENTS.fearDecayPerSecond;
+      for (let t = 0; t < fear.length; t++) if (fear[t] > 0) fear[t] = fear[t] > decay ? fear[t] - decay : 0;
+    }
     phys.step(dt);
 
     // Extinctions, last species standing, population history.
@@ -540,6 +605,7 @@ export function createWorld({ seed = 1, caps = {}, physics = null } = {}) {
       year: clock.year(), day: clock.day(), dayFraction: clock.dayFraction(),
       counts: counts.slice(), alive: e.count, huts: settlement.huts.length,
       extinct: extinct.slice(), lastStanding, silent, popHistory, carcasses: carcasses.length,
+      naturalEvents: { ...naturalEvents },
     };
   }
 
@@ -569,6 +635,21 @@ export function createWorld({ seed = 1, caps = {}, physics = null } = {}) {
         for (const i of targets) kill(i, DEATH_CAUSE.DEBUG);
         return targets.length;
       }
+      case 'lightning': {
+        const tile = arg.tile ?? pickStrikeTile(terrain, streams.events);
+        if (tile < 0) return false;
+        scheduler.markFired(EVENT_KIND.LIGHTNING, clock.tick);
+        return strikeLightning(world, tile, streams.events);
+      }
+      case 'rockslide': {
+        scheduler.markFired(EVENT_KIND.ROCKSLIDE, clock.tick);
+        return triggerRockslide(world, streams.events);
+      }
+      case 'erupt': {
+        if (!world.erupt) return false;
+        scheduler.markFired(EVENT_KIND.ERUPTION, clock.tick);
+        return world.erupt();
+      }
       default: return false;
     }
   }
@@ -577,9 +658,11 @@ export function createWorld({ seed = 1, caps = {}, physics = null } = {}) {
     if (cmd.type === 'setSpeed') clock.setSpeed(cmd.speed);
   }
 
-  return {
+  const world = {
     seed, terrain, tileState, fear, grass, bushes, trees, settlement, entities: e, clock, log, bus, spatial, namer, streams,
     get shoreField() { return shoreField; }, carcasses, physics: phys, popHistory,
+    scheduler, corridors, boulders, fires, burnt, ignite, rebuildShoreField,
     step, stats, detail, debug, applyCommand, kill, spawn, memory: MEMORY,
   };
+  return world;
 }

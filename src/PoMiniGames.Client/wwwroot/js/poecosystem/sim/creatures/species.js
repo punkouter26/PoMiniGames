@@ -8,8 +8,16 @@ const STARVE_SECONDS = 75;   // hunger 0 → 1
 // 60 m from the shore is not a dead rabbit; big-bodied predators and humans drink more.
 const DEHYDRATE_SECONDS = Object.freeze([120, 90, 80, 90]);
 
+const PREY_OF = (eats) => Object.freeze([eats.rabbit ? 0 : -1, eats.deer ? 1 : -1].filter(i => i >= 0));
+
 function species(o) {
+  // Behaviour that used to be an `if (species === X)` in world.js is a capability here, so
+  // species.js stays the complete description of a species.
+  const prey = PREY_OF(o.eats);
   return Object.freeze({
+    prey,
+    carnivore: prey.length > 0,
+    packHunts: false, sharesKills: false, alarms: false, builds: false, fleeStyle: 'direct',
     hungerRate: 1 / STARVE_SECONDS,
     thirstRate: 1 / DEHYDRATE_SECONDS[o.id],
     starveDamage: 0.05,        // health per second while hunger or thirst > 0.9 (death in ~20 s)
@@ -28,6 +36,7 @@ export const SPECIES = Object.freeze([
     gestationSeconds: 20, litter: Object.freeze([1, 3]), mateCooldownSeconds: 60,
     radius: 0.25, mass: 2, perception: 12, mealValue: 0.35, foodValue: 0.5, sprintSeconds: 2,
     foodScanTiles: 5, huntReach: 0, flees: Object.freeze({ 2: 9, 3: 4 }),
+    alarms: true, fleeStyle: 'scatter',
   }),
   species({
     id: 1, name: 'Deer', plural: 'Deer',
@@ -36,6 +45,7 @@ export const SPECIES = Object.freeze([
     gestationSeconds: 30, litter: Object.freeze([1, 2]), mateCooldownSeconds: 40,
     radius: 0.6, mass: 60, perception: 18, mealValue: 0.3, foodValue: 1.0, sprintSeconds: 4,
     foodScanTiles: 6, huntReach: 0, flees: Object.freeze({ 2: 12, 3: 5 }),
+    alarms: true,
   }),
   species({
     id: 2, name: 'Wolf', plural: 'Wolves',
@@ -44,6 +54,7 @@ export const SPECIES = Object.freeze([
     gestationSeconds: 30, litter: Object.freeze([2, 3]), mateCooldownSeconds: 70,
     radius: 0.5, mass: 40, perception: 35, mealValue: 0.6, foodValue: 0.8, sprintSeconds: 5,
     foodScanTiles: 0, huntReach: 0.4, flees: Object.freeze({}),
+    packHunts: true, sharesKills: true,
   }),
   species({
     id: 3, name: 'Human', plural: 'Humans',
@@ -54,6 +65,7 @@ export const SPECIES = Object.freeze([
     // flees: threat species id → distance at which it triggers a flee (SPEC §7.5). Slow humans
     // only scare prey up close; huntReach is the extra kill distance (humans throw spears).
     foodScanTiles: 20, huntReach: 5.5, flees: Object.freeze({ 2: 8 }),
+    builds: true,
   }),
 ]);
 

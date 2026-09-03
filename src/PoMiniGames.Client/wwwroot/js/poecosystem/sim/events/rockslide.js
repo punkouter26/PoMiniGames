@@ -50,7 +50,7 @@ export function planRockslide(terrain, rng, tick, cfg = EVENTS.rockslide, origin
       if (y <= terrain.heightAt(x, z)) break;
     }
     const impactTile = tileIndex(x, z, size);
-    const corridor = [impactTile];
+    const corridor = [impactTile];   // a Set of the same tiles is built below for the per-creature test
     let cur = impactTile;
     for (let s = 0; s < cfg.rollTiles; s++) {
       const nxt = downhillNeighbour(terrain, cur);
@@ -59,7 +59,7 @@ export function planRockslide(terrain, rng, tick, cfg = EVENTS.rockslide, origin
       cur = nxt;
     }
     const impactTick = tick + ticks;
-    rocks.push({ x: rx, y: ry, z: rz, vx, vy, vz, big, impactX: x, impactZ: z, impactTick, corridor, endTick: impactTick + secs(cfg.rollSeconds) });
+    rocks.push({ x: rx, y: ry, z: rz, vx, vy, vz, big, impactX: x, impactZ: z, impactTick, corridor, corridorSet: new Set(corridor), endTick: impactTick + secs(cfg.rollSeconds) });
   }
   return { ridgeTile, rocks };
 }
@@ -92,10 +92,10 @@ export function stepCorridors(world, cfg = EVENTS.rockslide) {
       e.forEachAlive(i => { if (Math.hypot(e.x[i] - r.impactX, e.z[i] - r.impactZ) <= cfg.impactRadius) victims.push(i); });
     }
     if (tick <= r.endTick) {
+      const tiles = r.corridorSet ?? (r.corridorSet = new Set(r.corridor));
       e.forEachAlive(i => {
         if (victims.includes(i)) return;
-        const t = tileIndex(e.x[i], e.z[i], terrain.size);
-        if (r.corridor.includes(t)) victims.push(i);
+        if (tiles.has(tileIndex(e.x[i], e.z[i], terrain.size))) victims.push(i);
       });
     }
     victims.sort((a, b) => a - b);

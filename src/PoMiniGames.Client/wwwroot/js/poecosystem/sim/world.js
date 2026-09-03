@@ -4,7 +4,7 @@
 // Determinism contract (SPEC §13 criterion 4): every rule below reads only sim state
 // and the seeded streams. `physics` is write-only — the world tells it about deaths,
 // felled trees and rocks and reads back prop poses for the frame, never for a rule.
-import { BEHAVIOR, CREATURE_CAP, FLORA, MEMORY, POPULATION, TICK_SECONDS, TRAITS, WORLD } from './core/config.js';
+import { BEHAVIOR, CREATURE_CAP, EVENTS, FLORA, POPULATION, THOUGHTS, TICK_SECONDS, TRAITS, WORLD } from './core/config.js';
 import { createClock } from './core/clock.js';
 import { NONE, createEntities } from './core/entities.js';
 import { createBus, createEventLog } from './core/events.js';
@@ -12,7 +12,7 @@ import { createStreams } from './core/prng.js';
 import { createSpatialHash } from './core/spatial.js';
 import { generateIsland } from './terrain/island.js';
 import { bfsDistanceField, descendStep, shoreTiles } from './terrain/pathing.js';
-import { TILE, TILE_STATE, isWalkable, tileIndex, tileX, tileZ } from './terrain/tiles.js';
+import { TILE, TILE_STATE, isFlammable, isWalkable, tileIndex, tileX, tileZ } from './terrain/tiles.js';
 import { createGrass, grazeAt, stepGrass } from './flora/grass.js';
 import { createBushes, isRipe, stepBushes, stripBush } from './flora/bushes.js';
 import { TREE_STATE, burnTree, chopTree, createTrees, stepTrees } from './flora/trees.js';
@@ -26,7 +26,7 @@ import { MEMORY_KIND, forget, recall, remember } from './behavior/memory.js';
 import { fleeFrom, moveCreature, seekTo, stop, wander } from './behavior/steering.js';
 import { GOAL, GOAL_NAMES, chooseGoal } from './behavior/utility.js';
 import { herdCohesion, isAlerted, isOrphan, packLeader, raiseAlarm, scatterDirection, shareKill } from './behavior/social.js';
-import { addHut, buildHut, chooseHutSite, giveLogs, isNight, nearestHut, needsHut } from './behavior/humans.js';
+import { addHut, buildHut, chooseHutSite, createSettlement, giveLogs, isNight, nearestHut, needsHut } from './behavior/humans.js';
 import { EVENT_KIND, createEventScheduler } from './events/scheduler.js';
 import { pickStrikeTile, strikeLightning } from './events/lightning.js';
 import { stepCorridors, triggerRockslide } from './events/rockslide.js';
@@ -36,34 +36,29 @@ import { createThoughtScheduler } from './thoughts/scheduler.js';
 import { buildPrompt } from './thoughts/prompt.js';
 import { templateThought } from './thoughts/templates.js';
 import { THOUGHT_SOURCE, applyThought } from './thoughts/nudges.js';
-import { THOUGHTS } from './core/config.js';
-import { isFlammable } from './terrain/tiles.js';
-import { EVENTS } from './core/config.js';
+import { nullPhysics } from './physics/world.js';
 
-const PREY = [[], [], [SPECIES_ID.RABBIT, SPECIES_ID.DEER], [SPECIES_ID.RABBIT, SPECIES_ID.DEER]];
+export { nullPhysics };   // re-exported: createWorld's default physics lives beside it
+
 const GESTATION_TICKS = SPECIES.map(sp => Math.round(sp.gestationSeconds / TICK_SECONDS));
 
-/** Physics stand-in with the full surface; the real one (T10) has the same shape. */
-export function nullPhysics() {
-  return {
-    kind: 'null',
-    onDeath() {}, fellTree() {}, spawnRocks() {}, explode() {},
-    step() {}, readProps() { return 0; }, dispose() {},
-    snapshot() { return []; }, restore() {},
-  };
-}
-
-export function createWorld({ seed = 1, caps = {}, physics = null } = {}) {
+/**
+ * Build a world. `terrain` may be supplied when the caller has already generated the
+ * island for this seed (the host builds the physics heightfield from it first) — island
+ * generation is ~28 ms, so doing it twice per world is the single biggest avoidable cost
+ * on the boot path.
+ */
+export function createWorld({ seed = 1, caps = {}, physics = null, terrain: suppliedTerrain = null } = {}) {
   const cap = caps.creatureCap ?? CREATURE_CAP;
   const streams = createStreams(seed);
-  const terrain = generateIsland(seed);
+  const terrain = suppliedTerrain ?? generateIsland(seed);
   const { size } = terrain;
   const tileState = new Uint8Array(size * size);
   const fear = new Float32Array(size * size);
   const grass = createGrass(terrain);
   const bushes = createBushes(terrain, streams.terrain);
   const trees = createTrees(terrain, streams.terrain);
-  const settlement = { ...{ huts: [], carried: new Uint8Array(cap) } };
+  const settlement = createSettlement(cap);
   const e = createEntities(cap);
   const clock = createClock();
   const log = createEventLog(200);
@@ -150,6 +145,18 @@ export function createWorld({ seed = 1, caps = {}, physics = null } = {}) {
     fires.push({ tile, ticksLeft: secsToTicks(EVENTS.fireSeconds) });
     const k = trees.byTile[tile];
     if (k >= 0 && trees.state[k] === TREE_STATE.STANDING) { burnTree(trees, k, tileState); tileState[tile] = TILE_STATE.FIRE; }
+    return true;
+  }
+
+  /**
+   * One definition of "may I overwrite this creature's thought?": a live LLM thought (one
+   * whose nudge has not decayed yet) wins, anything else may be replaced by a template.
+   * The tick cadence, detail() and thoughts.template() all go through here.
+   */
+  function giveTemplateThought(i) {
+    if (e.lastThoughtSource[i] === THOUGHT_SOURCE.LLM && e.nudgeEndTick[i] > clock.tick) return false;
+    e.lastThought[i] = templateThought(world, i, streams.cosmetic);
+    e.lastThoughtSource[i] = THOUGHT_SOURCE.TEMPLATE;
     return true;
   }
 
@@ -241,7 +248,7 @@ export function createWorld({ seed = 1, caps = {}, physics = null } = {}) {
     ctx.night = isNight(clock.dayFraction());
     ctx.fear = fear[t];
 
-    const flees = sp.flees; const prey = PREY[sp.id];
+    const flees = sp.flees; const prey = sp.prey;
     const juvenile = e.lifeStage[i] === LIFE_STAGE.JUVENILE;
     const mother = juvenile ? e.resolve(e.mother[i]) : NONE;
     const father = juvenile ? e.resolve(e.father[i]) : NONE;
@@ -258,6 +265,13 @@ export function createWorld({ seed = 1, caps = {}, physics = null } = {}) {
     // Carnivores remember where they last saw prey, so a hungry wolf with nothing in
     // sight roams back toward the herds instead of random-walking the beach.
     if (ctx.preyIdx !== NONE) remember(e, i, MEMORY_KIND.FOOD, tileOf(ctx.preyIdx), tick);
+    // Alerted by a herd-mate but unable to see the predator: believe the alarm. This is a
+    // perception rule, so it belongs here — senses() feeds the LLM prompt from the same
+    // ctx, and would otherwise tell the model 'threat none' while the creature flees.
+    if (ctx.threatDist === Infinity && isAlerted(e, i, tick)) {
+      ctx.threatX = e.alertX[i]; ctx.threatZ = e.alertZ[i];
+      ctx.threatDist = Math.max(1, Math.hypot(x - ctx.threatX, z - ctx.threatZ));
+    }
 
     // Food: grass and ripe bushes in a square around the creature (herbivores + humans for berries).
     if (sp.eats.grass || sp.eats.berries) {
@@ -297,7 +311,7 @@ export function createWorld({ seed = 1, caps = {}, physics = null } = {}) {
       const mem = recall(e, i, MEMORY_KIND.WATER, tick);
       if (mem !== NONE) { const [cx, cz] = centre(mem); ctx.waterDist = dist(i, cx, cz); }
     }
-    if (sp.id === SPECIES_ID.HUMAN) {
+    if (sp.builds) {
       const h = nearestHut(settlement, x, z);
       ctx.hasHome = !!h;
       if (h) ctx.homeDist = dist(i, h.x, h.z);
@@ -325,8 +339,7 @@ export function createWorld({ seed = 1, caps = {}, physics = null } = {}) {
     switch (goal) {
       case GOAL.REST: stop(e, i); return;
       case GOAL.WANDER: {
-        const carnivore = PREY[sp.id].length > 0;
-        if (carnivore && e.hunger[i] > 0.4) {
+        if (sp.carnivore && e.hunger[i] > 0.4) {
           // Roam: head for the last place prey was seen, otherwise sweep in long straight
           // lines at full walking speed so the search actually covers ground.
           const mem = recall(e, i, MEMORY_KIND.FOOD, tick);
@@ -413,9 +426,9 @@ export function createWorld({ seed = 1, caps = {}, physics = null } = {}) {
       }
       case GOAL.HUNT: {
         let prey = e.resolve(c.prey);
-        if (sp.id === SPECIES_ID.WOLF) {
+        if (sp.packHunts) {
           const leader = packLeader(e, spatial, i, BEHAVIOR.packRadius);
-          if (leader !== i) { const lt = e.resolve(e.target[leader]); if (lt !== NONE && PREY[sp.id].includes(e.species[lt])) prey = lt; }
+          if (leader !== i) { const lt = e.resolve(e.target[leader]); if (lt !== NONE && sp.prey.includes(e.species[lt])) prey = lt; }
         }
         if (prey === NONE) { dirty[i] = 1; stop(e, i); return; }
         e.target[i] = e.handle(prey);
@@ -424,7 +437,7 @@ export function createWorld({ seed = 1, caps = {}, physics = null } = {}) {
           const food = SPECIES[e.species[prey]].foodValue;
           const preyName = nameOf(prey);
           kill(prey, DEATH_CAUSE.PREDATION, ` by ${nameOf(i)}`);
-          if (sp.id === SPECIES_ID.WOLF) shareKill(e, spatial, i, BEHAVIOR.packRadius, food);
+          if (sp.sharesKills) shareKill(e, spatial, i, BEHAVIOR.packRadius, food);
           else feed(e, i, Math.min(sp.mealValue, food));
           bus.emit('kill', { killer: i, preyName });
           e.target[i] = NONE;
@@ -435,11 +448,11 @@ export function createWorld({ seed = 1, caps = {}, physics = null } = {}) {
       }
       case GOAL.FLEE: {
         if (c.threatDist !== Infinity) {
-          if (sp.id === SPECIES_ID.RABBIT) {
+          if (sp.fleeStyle === 'scatter') {
             const d = scatterDirection(e, i, c.threatX, c.threatZ, streams.behavior);
             e.vx[i] = d.x * sp.runSpeed; e.vz[i] = d.z * sp.runSpeed;
           } else fleeFrom(e, i, c.threatX, c.threatZ, sp.runSpeed);
-          if ((sp.id === SPECIES_ID.RABBIT || sp.id === SPECIES_ID.DEER) && !isAlerted(e, i, tick)) raiseAlarm(e, spatial, i, BEHAVIOR.herdRadius, tick, c.threatX, c.threatZ);
+          if (sp.alarms && !isAlerted(e, i, tick)) raiseAlarm(e, spatial, i, BEHAVIOR.herdRadius, tick, c.threatX, c.threatZ);
         } else if (Math.hypot(e.vx[i], e.vz[i]) < 0.1) {
           wander(e, i, streams.behavior, sp.runSpeed);
         }
@@ -557,12 +570,6 @@ export function createWorld({ seed = 1, caps = {}, physics = null } = {}) {
 
       if (dirty[i] || (tick + i) % BEHAVIOR.rescoreEveryTicks === 0) {
         const c = perceive(i);
-        // Alerted but can't see the predator: run from where the alarm said it was, not
-        // from the origin of the map (which is what an unset threatX/threatZ would mean).
-        if (isAlerted(e, i, tick) && c.threatDist === Infinity) {
-          c.threatX = e.alertX[i]; c.threatZ = e.alertZ[i];
-          c.threatDist = Math.max(1, Math.hypot(e.x[i] - c.threatX, e.z[i] - c.threatZ));
-        }
         chooseGoal(e, i, c);
         commitPlan(i, c);
       }
@@ -591,10 +598,7 @@ export function createWorld({ seed = 1, caps = {}, physics = null } = {}) {
         const i = (templateCursor + n) % e.cap;
         if (!e.alive[i]) continue;
         templateCursor = (i + 1) % e.cap;
-        if (e.lastThoughtSource[i] !== THOUGHT_SOURCE.LLM || tick - e.nudgeEndTick[i] > 0) {
-          e.lastThought[i] = templateThought(world, i, streams.cosmetic);
-          e.lastThoughtSource[i] = THOUGHT_SOURCE.TEMPLATE;
-        }
+        giveTemplateThought(i);
         break;
       }
     }
@@ -628,6 +632,9 @@ export function createWorld({ seed = 1, caps = {}, physics = null } = {}) {
   function detail(handle) {
     const i = e.resolve(handle);
     if (i === NONE) return null;
+    // Every detail payload carries a quote: the template rotation takes minutes to reach
+    // every creature, so one is minted here rather than at any single call site.
+    if (!e.lastThought[i]) giveTemplateThought(i);
     const sp = SPECIES[e.species[i]]; const tick = clock.tick;
     const traits = []; const baseTraits = [];
     for (let k = 0; k < TRAITS.length; k++) { traits.push(effectiveTrait(e, i, k, tick)); baseTraits.push(e.traits[i * TRAITS.length + k]); }
@@ -753,16 +760,12 @@ export function createWorld({ seed = 1, caps = {}, physics = null } = {}) {
        */
       template(handle) {
         const i = e.resolve(handle);
-        if (i === NONE) return false;
-        if (e.lastThoughtSource[i] === THOUGHT_SOURCE.LLM && e.nudgeEndTick[i] > clock.tick) return false;
-        e.lastThought[i] = templateThought(world, i, streams.cosmetic);
-        e.lastThoughtSource[i] = THOUGHT_SOURCE.TEMPLATE;
-        return true;
+        return i === NONE ? false : giveTemplateThought(i);
       },
       stats() { return { ...thoughtStats }; },
       scheduler: thoughtScheduler,
     },
-    step, stats, detail, debug, applyCommand, kill, spawn, memory: MEMORY, getState, setState,
+    step, stats, detail, debug, applyCommand, kill, spawn, getState, setState,
   };
   return world;
 }

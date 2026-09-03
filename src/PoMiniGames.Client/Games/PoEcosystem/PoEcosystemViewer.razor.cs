@@ -63,11 +63,17 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
         if (!firstRender) return;
         await Viewport.RefreshAsync();
         _narrow = Viewport.IsNarrow;
-        _webGpu = await Interop.WebGpuAvailableAsync();
-        _models = await Interop.ModelsAsync();
 
-        // Demo mode always starts a fresh island; otherwise offer to resume a saved one.
-        var save = IsDemo ? new EcoSaveInfo(false, 0, 0, 0, 0, null) : await Interop.ProbeSaveAsync();
+        // Three independent interop round-trips (a WebGPU adapter request, the model list,
+        // and an IndexedDB probe) — run them together rather than one after another.
+        // Demo mode always starts a fresh island, so it skips the resume probe.
+        var webGpu = Interop.WebGpuAvailableAsync().AsTask();
+        var models = Interop.ModelsAsync().AsTask();
+        var probe = IsDemo ? Task.FromResult(new EcoSaveInfo(false, 0, 0, 0, 0, null)) : Interop.ProbeSaveAsync().AsTask();
+        await Task.WhenAll(webGpu, models, probe);
+        _webGpu = webGpu.Result;
+        _models = models.Result;
+        var save = probe.Result;
         if (save.Exists) _resumePrompt = save;
         else await BootAsync(resume: false);
         await InvokeAsync(StateHasChanged);
@@ -114,8 +120,7 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
         else if (stats.LastStanding >= 0 && stats.LastStanding != _lastStanding)
         {
             _lastStanding = stats.LastStanding;
-            var name = stats.LastStanding switch { 0 => "Rabbits", 1 => "Deer", 2 => "Wolves", _ => "Humans" };
-            _banner = $"Last species standing: {name} — year {stats.Year}";
+            _banner = $"Last species standing: {EcoSpeciesInfo.PluralOf(stats.LastStanding)} — year {stats.Year}";
         }
         else if (stats.LastStanding < 0 && !stats.Silent) _banner = null;
         InvokeAsync(StateHasChanged);
@@ -224,9 +229,11 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
 
     private Task TouchEnd(TouchEventArgs e) => Interop.TouchReleaseAsync().AsTask();
 
+    // The counts come from a saved world, so a snapshot written by another schema could
+    // carry a shorter array — checking the length keeps the resume prompt from throwing.
     private static string Counts(int[]? counts) =>
-        counts is null ? "an empty island"
-        : $"{counts[0]} rabbits, {counts[1]} deer, {counts[2]} wolves, {counts[3]} humans";
+        counts is not { Length: EcoSpeciesInfo.Count } c ? "an empty island"
+        : string.Join(", ", Enumerable.Range(0, EcoSpeciesInfo.Count).Select(s => $"{c[s]} {EcoSpeciesInfo.PluralOf(s).ToLowerInvariant()}"));
 
     private static string Ago(long savedAtMs)
     {

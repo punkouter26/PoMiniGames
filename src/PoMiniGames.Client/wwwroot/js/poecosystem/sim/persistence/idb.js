@@ -43,8 +43,12 @@ export function openWorldStore(indexedDbImpl = globalThis.indexedDB) {
 }
 
 export async function saveWorld(store, snapshot) {
-  await store.put(CURRENT, snapshot);
-  await store.put(META, { seed: snapshot.seed, tick: snapshot.tick, year: snapshot.year, savedAt: snapshot.savedAt, counts: snapshot.counts });
+  // Both writes go out together: they are independent keys, and an autosave should not
+  // pay two sequential transaction commits.
+  await Promise.all([
+    store.put(CURRENT, snapshot),
+    store.put(META, { seed: snapshot.seed, tick: snapshot.tick, year: snapshot.year, savedAt: snapshot.savedAt, counts: snapshot.counts }),
+  ]);
 }
 
 export const loadWorld = (store) => store.get(CURRENT);

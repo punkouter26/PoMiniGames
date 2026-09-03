@@ -10,11 +10,15 @@ import { CANNON_CDN_URL } from '../sim/core/config.js';
 const queue = [];
 self.onmessage = (e) => queue.push(e.data);
 
-let CANNON = null;
-try { CANNON = await import(/* @vite-ignore */ CANNON_CDN_URL); }
-catch (err) { self.postMessage({ type: 'error', where: 'cannon', message: String(err?.message ?? err) }); }
-
-const idb = await openWorldStore();
+// The CDN fetch and the IndexedDB open are independent — overlapping them makes the
+// worker responsive a full network round-trip sooner.
+const [CANNON, idb] = await Promise.all([
+  import(/* @vite-ignore */ CANNON_CDN_URL).catch((err) => {
+    self.postMessage({ type: 'error', where: 'cannon', message: String(err?.message ?? err) });
+    return null;
+  }),
+  openWorldStore(),
+]);
 const runtime = createSimRuntime((msg, transfer) => self.postMessage(msg, transfer ?? []), { CANNON, idb });
 
 self.onmessage = (e) => runtime.handle(e.data);

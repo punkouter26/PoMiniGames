@@ -1,4 +1,3 @@
-@using PoMiniGamesClient.Games.PoEcosystem.Models
 
 @* The creature under the crosshair (SPEC J2). Anchored beside the crosshair, never over it. *@
 <aside class="poeco-inspector" data-testid="poeco-inspector" role="dialog" aria-label="Creature details">
@@ -50,13 +49,12 @@
 
 @code {
     private static readonly string[] TraitNames = ["boldness", "sociability", "curiosity", "greed", "diligence"];
-    private static readonly string[] SpeciesColours = ["var(--accent-warning)", "var(--accent-success)", "var(--accent-danger)", "var(--accent)"];
 
     [Parameter, EditorRequired] public EcoDetail Detail { get; set; } = default!;
     [Parameter] public EventCallback OnFollow { get; set; }
     [Parameter] public EventCallback OnClose { get; set; }
 
-    private string Colour => SpeciesColours[Math.Clamp(Detail.Species, 0, SpeciesColours.Length - 1)];
+    private string Colour => EcoSpeciesInfo.ColourOf(Detail.Species);
     private string Stage => Detail.LifeStage switch { 0 => "young", 2 => "old", _ => "adult" };
     private string Sex => Detail.Sex == 1 ? "♀" : "♂";
 

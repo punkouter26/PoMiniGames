@@ -5,7 +5,7 @@
 import { BEHAVIOR, TICK_SECONDS } from '../core/config.js';
 import { NONE } from '../core/entities.js';
 import { LIFE_STAGE } from '../creatures/lifecycle.js';
-import { SPECIES, SPECIES_ID } from '../creatures/species.js';
+import { SPECIES } from '../creatures/species.js';
 import { TRAIT, effectiveTrait } from '../creatures/traits.js';
 
 export const GOAL = Object.freeze({
@@ -39,7 +39,6 @@ export function scoreGoals(e, i, ctx) {
   const curious = effectiveTrait(e, i, TRAIT.CURIOSITY, tick);
   const greed = effectiveTrait(e, i, TRAIT.GREED, tick);
   const diligent = effectiveTrait(e, i, TRAIT.DILIGENCE, tick);
-  const carnivore = sp.eats.rabbit || sp.eats.deer;
   const fear = ctx.fear ?? 0;
 
   s[GOAL.WANDER] = 0.15 + 0.15 * curious;
@@ -51,11 +50,11 @@ export function scoreGoals(e, i, ctx) {
   if (ctx.threatDist !== Infinity) s[GOAL.FLEE] = (0.5 + 1.0 * near(ctx.threatDist, 15)) * (1.15 - 0.6 * bold);
   s[GOAL.FLEE] += fear * 0.6;
 
-  const foodDist = Math.min(ctx.foodDist ?? Infinity, carnivore ? (ctx.carcassDist ?? Infinity) : Infinity);
+  const foodDist = Math.min(ctx.foodDist ?? Infinity, sp.carnivore ? (ctx.carcassDist ?? Infinity) : Infinity);
   if (foodDist !== Infinity) s[GOAL.EAT] = h * (0.45 + 0.55 * near(foodDist, 30)) * (1 + 0.1 * greed);
   // Thirst is convex so a half-thirsty animal keeps foraging instead of living on the shore.
   if (ctx.waterDist !== Infinity) s[GOAL.DRINK] = Math.pow(t, 1.5) * (0.45 + 0.55 * near(ctx.waterDist, 30));
-  if (carnivore && ctx.preyDist !== Infinity) s[GOAL.HUNT] = h * (0.5 + 0.5 * near(ctx.preyDist, 40)) + 0.1 * bold * h;
+  if (sp.carnivore && ctx.preyDist !== Infinity) s[GOAL.HUNT] = h * (0.5 + 0.5 * near(ctx.preyDist, 40)) + 0.1 * bold * h;
 
   if (ctx.mateDist !== Infinity && fitToMate(e, i, tick)) {
     // Reproduction must beat wandering for a comfortably fed adult (≈0.48 at hunger 0.4)
@@ -67,7 +66,7 @@ export function scoreGoals(e, i, ctx) {
     s[GOAL.FOLLOW_PARENT] = 0.3 + 0.25 * near(ctx.parentDist, 30) + 0.1 * social;
   }
 
-  if (e.species[i] === SPECIES_ID.HUMAN && ctx.hasHome) {
+  if (sp.builds && ctx.hasHome) {
     // Home at night, but never on an empty stomach: a hungry villager keeps foraging.
     s[GOAL.RETURN_HOME] = ctx.night ? (0.35 + 0.2 * near(ctx.homeDist, 60)) * (1 - Math.max(h, t)) : 0.05;
     if (ctx.needsHut) {

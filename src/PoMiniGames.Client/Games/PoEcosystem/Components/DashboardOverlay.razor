@@ -1,6 +1,3 @@
-@using PoMiniGamesClient.Games.PoEcosystem.Models
-@using PoMiniGamesClient.Games.PoSurvive.Features.Charts
-
 @* Tab overlay: the full population chart, the world log and settings. Releases pointer
    lock while open (the engine does that), and Esc closes it. *@
 <div class="poeco-overlay" role="dialog" aria-modal="true" aria-label="Dashboard" @onkeydown="OnKeyDown" tabindex="-1" @ref="_root">
@@ -18,25 +15,25 @@
                 <h3>Population over time</h3>
                 <svg viewBox="0 0 320 160" preserveAspectRatio="none" class="poeco-chart" role="img" aria-label="@ChartSummary">
                     <line x1="0" y1="159" x2="320" y2="159" class="poeco-chart-axis" />
-                    @for (var s = 0; s < SpeciesCount; s++)
+                    @for (var s = 0; s < EcoSpeciesInfo.Count; s++)
                     {
-                        var pts = Points(s);
-                        if (pts is not null)
+                        var pts = Series[s];
+                        if (pts.Length > 0)
                         {
-                            <polyline class="poeco-chart-line" style="stroke: @Colours[s]" points="@pts" />
+                            <polyline class="poeco-chart-line" style="stroke: @EcoSpeciesInfo.ColourOf(s)" points="@pts" />
                         }
                     }
                 </svg>
                 <div class="poeco-tiles">
-                    @for (var s = 0; s < SpeciesCount; s++)
+                    @for (var s = 0; s < EcoSpeciesInfo.Count; s++)
                     {
-                        <div class="poeco-tile" style="border-top-color: @Colours[s]">
-                            <span>@Names[s]</span>
+                        <div class="poeco-tile" style="border-top-color: @EcoSpeciesInfo.ColourOf(s)">
+                            <span>@EcoSpeciesInfo.PluralOf(s)</span>
                             <strong>@Count(s)</strong>
                         </div>
                     }
                 </div>
-                <p class="poeco-sr-only" aria-live="polite">@ChartSummary</p>
+                <p class="gps-sr-only" aria-live="polite">@ChartSummary</p>
             </section>
 
             <section class="poeco-panel poeco-panel--log">
@@ -44,7 +41,7 @@
                 <ol class="poeco-log">
                     @foreach (var ev in Events.AsEnumerable().Reverse().Take(60))
                     {
-                        <li><span class="poeco-log-tick">Y@(ev.Tick / 600)</span> @ev.Text</li>
+                        <li><span class="poeco-log-tick">Y@Year(ev)</span> @ev.Text</li>
                     }
                 </ol>
             </section>
@@ -108,9 +105,6 @@
 </div>
 
 @code {
-    private const int SpeciesCount = 4;
-    private static readonly string[] Names = ["Rabbits", "Deer", "Wolves", "Humans"];
-    private static readonly string[] Colours = ["var(--accent-warning)", "var(--accent-success)", "var(--accent-danger)", "var(--accent)"];
     private ElementReference _root;
 
     [Parameter] public EcoStats? Stats { get; set; }
@@ -129,29 +123,15 @@
     private string SelectedModel => Llm?.ModelId ?? Models.FirstOrDefault()?.Id ?? "";
     private string ModelLabel => Models.FirstOrDefault(m => m.Id == SelectedModel)?.Label ?? "in-browser model";
 
-    private int Count(int species) => Stats?.Counts is { Length: SpeciesCount } c ? c[species] : 0;
+    private int Count(int species) => Stats?.Counts is { Length: EcoSpeciesInfo.Count } c ? c[species] : 0;
 
-    private string ChartSummary => Stats is null
-        ? "Population chart, no data yet"
-        : $"Year {Stats.Year}: " + string.Join(", ", Enumerable.Range(0, SpeciesCount).Select(s => $"{Count(s)} {Names[s].ToLowerInvariant()}"));
+    private string[] Series => PopulationSeries.AllSeries(Stats?.PopHistory, 320, 156);
 
-    private string? Points(int species)
-    {
-        var h = Stats?.PopHistory;
-        if (h is null || h.Length < SpeciesCount * 2) return null;
-        var samples = h.Length / SpeciesCount;
-        var max = 1;
-        for (var i = 0; i < h.Length; i++) if (h[i] > max) max = h[i];
-        var sb = new System.Text.StringBuilder(samples * 12);
-        for (var k = 0; k < samples; k++)
-        {
-            var x = samples == 1 ? 0 : 320.0 * k / (samples - 1);
-            var y = 158 - 156.0 * h[k * SpeciesCount + species] / max;
-            if (k > 0) sb.Append(' ');
-            sb.Append(ChartGeometry.N(x)).Append(',').Append(ChartGeometry.N(y));
-        }
-        return sb.ToString();
-    }
+    private string ChartSummary => PopulationSeries.Summary(Stats);
+
+    // The log carries the tick; the year it fell in is derived from the sim's own clock
+    // constants rather than a hardcoded ticks-per-year in the markup.
+    private int Year(EcoEvent ev) => Stats is null || Stats.Tick <= 0 ? 0 : ev.Tick * Stats.Year / Math.Max(1, Stats.Tick);
 
     private Task ToggleLlm(ChangeEventArgs e) => OnLlmToggle.InvokeAsync((e.Value is true, SelectedModel));
     private Task ChangeModel(ChangeEventArgs e) => OnLlmToggle.InvokeAsync((true, e.Value?.ToString()));

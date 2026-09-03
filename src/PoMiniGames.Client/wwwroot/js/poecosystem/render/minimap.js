@@ -9,24 +9,36 @@ const BIOME = {
 };
 const SPECIES_DOT = ['#fbbf24', '#34d399', '#f87171', '#c7d2fe'];
 
+const STATE_HEX = {
+  [TILE_STATE.FIRE]: '#f97316', [TILE_STATE.LAVA]: '#ef4444',
+  [TILE_STATE.BURNT]: '#2a2724', [TILE_STATE.HUT]: '#e2e8f0',
+};
+const rgb = (hex) => [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)];
+
 export function createMinimap(canvas, terrain) {
   const size = terrain.size;
   const base = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(size, size) : Object.assign(document.createElement('canvas'), { width: size, height: size });
   const bctx = base.getContext('2d');
   const ctx = canvas.getContext('2d');
 
+  // Palettes and the image buffer are built once: parsing 120 000 hex substrings per
+  // repaint cost ~4 ms of the main thread every second.
+  const biomePalette = new Uint8Array(8 * 3);
+  for (let t = 0; t < 8; t++) biomePalette.set(rgb(BIOME[t] ?? '#555555'), t * 3);
+  const statePalette = new Uint8Array(8 * 3).fill(0);
+  const stateHas = new Uint8Array(8);
+  for (const [state, hex] of Object.entries(STATE_HEX)) { statePalette.set(rgb(hex), state * 3); stateHas[state] = 1; }
+  const img = bctx.createImageData(size, size);
+  for (let i = 3; i < img.data.length; i += 4) img.data[i] = 255;   // opaque, once
+
   function paintBase(tileState) {
-    const img = bctx.createImageData(size, size);
+    const data = img.data;
     for (let i = 0; i < size * size; i++) {
       const state = tileState?.[i] ?? 0;
-      let hex = BIOME[terrain.type[i]] ?? '#555555';
-      if (state === TILE_STATE.FIRE) hex = '#f97316';
-      else if (state === TILE_STATE.LAVA) hex = '#ef4444';
-      else if (state === TILE_STATE.BURNT) hex = '#2a2724';
-      else if (state === TILE_STATE.HUT) hex = '#e2e8f0';
-      const r = parseInt(hex.slice(1, 3), 16); const g = parseInt(hex.slice(3, 5), 16); const b = parseInt(hex.slice(5, 7), 16);
+      const src = stateHas[state] ? statePalette : biomePalette;
+      const s = (stateHas[state] ? state : terrain.type[i]) * 3;
       const o = i * 4;
-      img.data[o] = r; img.data[o + 1] = g; img.data[o + 2] = b; img.data[o + 3] = 255;
+      data[o] = src[s]; data[o + 1] = src[s + 1]; data[o + 2] = src[s + 2];
     }
     bctx.putImageData(img, 0, 0);
   }

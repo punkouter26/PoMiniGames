@@ -4,7 +4,7 @@
 import { EVENTS, TICK_SECONDS } from '../core/config.js';
 import { DEATH_CAUSE } from '../creatures/lifecycle.js';
 import { downhillNeighbour } from '../terrain/pathing.js';
-import { NEIGHBOURS8, TILE_STATE, isWalkable, isWater, tileX, tileZ } from '../terrain/tiles.js';
+import { NEIGHBOURS4, NEIGHBOURS8, TILE_STATE, isWalkable, isWater, tileX, tileZ } from '../terrain/tiles.js';
 import { paintFear } from './lightning.js';
 import { planRockslide } from './rockslide.js';
 
@@ -75,11 +75,12 @@ export function stepLava(world, cfg = EVENTS.volcano) {
   for (const cur of front) {
     if (lava.tiles.length >= cfg.maxLavaTiles) break;
     const nxt = downhillNeighbour(terrain, cur);
+    const x = tileX(cur, size); const z = tileZ(cur, size);
     const ok = (t) => t !== cur && !isWater(type[t]) && tileState[t] !== TILE_STATE.LAVA && tileState[t] !== TILE_STATE.COOLED;
     if (ok(nxt)) { placeLava(world, nxt); changed = true; }
     if (streams.events.next() < cfg.branchChance) {
       // A second, lower neighbour in fixed order: the first one below the current tile.
-      const x = tileX(cur, size); const z = tileZ(cur, size); const h = terrain.tileHeight(cur);
+      const h = terrain.tileHeight(cur);
       for (const [dx, dz] of NEIGHBOURS8) {
         const nx = x + dx; const nz = z + dz;
         if (nx < 1 || nz < 1 || nx >= size - 1 || nz >= size - 1) continue;
@@ -89,8 +90,7 @@ export function stepLava(world, cfg = EVENTS.volcano) {
       }
     }
     // Neighbouring flammable tiles catch fire from the heat.
-    const x = tileX(cur, size); const z = tileZ(cur, size);
-    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    for (const [dx, dz] of NEIGHBOURS4) {
       const nx = x + dx; const nz = z + dz;
       if (nx < 0 || nz < 0 || nx >= size || nz >= size) continue;
       const t = nz * size + nx;

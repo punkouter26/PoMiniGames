@@ -1,10 +1,6 @@
 // input.js — keyboard + pointer-lock mouse (and a touch fallback) feeding the player
 // controller. Keeps no three.js or sim state: it only produces the { forward, right, run,
 // jump, up } intent and calls back for one-shot actions (inspect, fly, dashboard, speed).
-export const KEY_HELP = Object.freeze([
-  ['WASD', 'move'], ['Shift', 'run'], ['Space', 'jump'], ['F', 'fly'], ['E', 'inspect'], ['Tab', 'dashboard'],
-]);
-
 export function createInput(canvas, { onAction = () => {}, onLook = () => {} } = {}) {
   const keys = new Set();
   const intent = { forward: 0, right: 0, run: false, jump: false, up: 0 };
@@ -26,6 +22,9 @@ export function createInput(canvas, { onAction = () => {}, onLook = () => {} } =
     if (touch.active) { intent.forward = touch.mz; intent.right = touch.mx; }
   }
 
+  // Digit keys map to the speed ladder; note 3 selects 4×.
+  const SPEED_KEYS = { Digit0: 0, Digit1: 1, Digit2: 2, Digit3: 4 };
+
   const onKeyDown = (e) => {
     if (isTyping(e) || disposed) return;
     const c = code(e);
@@ -38,10 +37,7 @@ export function createInput(canvas, { onAction = () => {}, onLook = () => {} } =
     if (c === 'KeyE') onAction('inspect');
     if (c === 'KeyT') onAction('follow');
     if (c === 'KeyM') onAction('map');
-    if (c === 'Digit0') onAction('speed', 0);
-    if (c === 'Digit1') onAction('speed', 1);
-    if (c === 'Digit2') onAction('speed', 2);
-    if (c === 'Digit3') onAction('speed', 4);
+    if (c in SPEED_KEYS) onAction('speed', SPEED_KEYS[c]);
     refresh();
   };
   const onKeyUp = (e) => { keys.delete(code(e)); if (code(e) === 'Space') intent.jump = false; refresh(); };

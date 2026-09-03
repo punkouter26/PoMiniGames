@@ -14,11 +14,17 @@ export const MODELS = Object.freeze([
   { id: 'Qwen3-0.6B-q4f16_1-MLC', label: 'Qwen3 0.6B', vramMb: 1403, note: 'Most recent of the three.' },
 ]);
 
+/**
+ * WebGPU probe. Prefers the app's shared gpuProbe (js/posurvive/gpuProbe.js), which also
+ * rejects software adapters and carries a Windows powerPreference workaround — reporting a
+ * CPU adapter as available would start a several-hundred-MB download that then crawls.
+ */
 export const hasWebGpuSupport = async () => {
   try {
+    const probe = globalThis.gpuProbe?.checkGpu;
+    if (probe) return !!(await probe()).available;
     if (!globalThis.navigator?.gpu) return false;
-    const adapter = await navigator.gpu.requestAdapter();
-    return !!adapter;
+    return !!(await navigator.gpu.requestAdapter());
   } catch { return false; }
 };
 

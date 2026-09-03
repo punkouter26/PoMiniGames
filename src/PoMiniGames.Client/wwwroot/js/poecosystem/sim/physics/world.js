@@ -13,6 +13,20 @@ import { buildRagdoll, freezeRagdoll, lyingPose, ragdollAsleep } from './ragdoll
 import { spawnFallingTree, releaseTree } from './fallingTree.js';
 import { spawnRocks } from './rocks.js';
 
+/**
+ * The no-physics implementation of the same surface. Kept beside createPhysics so the two
+ * cannot drift: every member here exists there, which is what lets world.js call the hook
+ * unconditionally.
+ */
+export function nullPhysics() {
+  return {
+    kind: 'null', propCount: 0, activeRagdolls: 0,
+    onDeath() {}, fellTree() {}, spawnRocks() {}, explode() {},
+    step() {}, readProps() { return 0; }, settledCount() { return 0; },
+    snapshot() { return []; }, restore() {}, dispose() {},
+  };
+}
+
 export const G_TERRAIN = 1;
 export const G_RAGDOLL = 2;
 export const G_PROP = 4;

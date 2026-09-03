@@ -14,7 +14,7 @@ import { createCreatureMeshes } from './creatureMeshes.js';
 import { createPropMeshes } from './propMeshes.js';
 import { createFloraMeshes } from './floraMeshes.js';
 import { createMinimap } from './minimap.js';
-import { createPlayer, stepPlayer, PLAYER } from './playerController.js';
+import { createPlayer, stepPlayer } from './playerController.js';
 import { createInput } from './input.js';
 import { pickCreature } from './picking.js';
 
@@ -30,7 +30,9 @@ export function createRenderer(container, {
   canvas.style.cssText = 'display:block;width:100%;height:100%;touch-action:none;cursor:crosshair;';
   container.appendChild(canvas);
 
-  const lowEnd = quality.lowEnd ?? ((navigator.hardwareConcurrency ?? 8) <= 4);
+  // PoQuality is the app's quality authority (?fx= override, reduced-motion cap, battery
+  // demotion, fps watchdog); the core count is only the fallback when it has not loaded.
+  const lowEnd = quality.lowEnd ?? (window.PoQuality ? window.PoQuality.tier() === 'low' : (navigator.hardwareConcurrency ?? 8) <= 4);
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: !lowEnd, powerPreference: 'high-performance' });
   const maxDpr = window.PoCanvasDpr?.ceiling ? window.PoCanvasDpr.ceiling(lowEnd ? 1 : 2) : Math.min(devicePixelRatio || 1, lowEnd ? 1 : 2);
   renderer.setPixelRatio(maxDpr);
@@ -129,7 +131,7 @@ export function createRenderer(container, {
     if (curr) { if (prev) recycle(prev.buffer); prev = curr; prevAt = currAt; }
     curr = { buffer, views };
     currAt = performance.now();
-    if (!prev) { prev = null; prevAt = currAt; }
+    if (!prev) prevAt = currAt;   // no previous frame: anchor the interpolation clock
   }
 
   function interpolate(now) {
@@ -229,5 +231,3 @@ export function createRenderer(container, {
     },
   };
 }
-
-export { PLAYER };

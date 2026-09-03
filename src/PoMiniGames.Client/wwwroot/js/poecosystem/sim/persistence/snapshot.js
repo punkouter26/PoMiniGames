@@ -4,6 +4,8 @@
 // generator is refused — the host then offers a New World rather than dropping
 // creatures onto ground that moved.
 import { createWorld } from '../world.js';
+import { generateIsland } from '../terrain/island.js';
+import { createPhysics } from '../physics/world.js';
 
 export const SNAPSHOT_VERSION = 1;
 
@@ -18,16 +20,26 @@ export function snapshotWorld(world) {
     year: world.clock.year(),
     counts: world.stats().counts,
     state: world.getState(),
-    props: world.physics.snapshot ? world.physics.snapshot() : [],
+    props: world.physics.snapshot(),
   };
 }
 
-/** Rebuild a world from a snapshot; null when the snapshot cannot be honoured. */
-export function restoreWorld(snap, { physics = null } = {}) {
+/**
+ * Rebuild a world from a snapshot; null when the snapshot cannot be honoured.
+ * Pass either a ready `physics` object or `CANNON`, in which case the island is generated
+ * once and shared between the heightfield and the simulation.
+ */
+export function restoreWorld(snap, { physics = null, CANNON = null, caps = {} } = {}) {
   if (!snap || typeof snap !== 'object' || snap.schemaVersion !== SNAPSHOT_VERSION || !snap.state) return null;
-  const world = createWorld({ seed: snap.seed, caps: { creatureCap: snap.cap }, physics });
+  const terrain = generateIsland(snap.seed);
+  if (terrain.hash !== snap.terrainHash) return null;
+  let phys = physics;
+  if (!phys && CANNON) {
+    try { phys = createPhysics(CANNON, terrain, { substeps: caps.substeps ?? 2 }); } catch { phys = null; }
+  }
+  const world = createWorld({ seed: snap.seed, caps: { creatureCap: snap.cap }, physics: phys, terrain });
   if (world.terrain.hash !== snap.terrainHash) return null;
   world.setState(snap.state);
-  if (world.physics.restore) world.physics.restore(snap.props ?? []);
+  world.physics.restore(snap.props ?? []);
   return world;
 }

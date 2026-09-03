@@ -8,6 +8,25 @@ namespace PoMiniGamesClient.Games.PoEcosystem.Models;
 /// <summary>One species column in the HUD and the dashboard chart.</summary>
 public enum EcoSpecies { Rabbit = 0, Deer = 1, Wolf = 2, Human = 3 }
 
+/// <summary>
+/// The species vocabulary the UI needs: the plural the sim uses in its log, and the token
+/// each species is drawn with. One table, so adding a species is one edit rather than five.
+/// </summary>
+public static class EcoSpeciesInfo
+{
+    public const int Count = 4;
+
+    public static readonly string[] Plural = ["Rabbits", "Deer", "Wolves", "Humans"];
+
+    public static readonly string[] Colour =
+    [
+        "var(--accent-warning)", "var(--accent-success)", "var(--accent-danger)", "var(--accent)",
+    ];
+
+    public static string PluralOf(int species) => Plural[Math.Clamp(species, 0, Count - 1)];
+    public static string ColourOf(int species) => Colour[Math.Clamp(species, 0, Count - 1)];
+}
+
 /// <summary>World counters pushed twice a second by the sim worker.</summary>
 public sealed record EcoStats(
     int Tick,

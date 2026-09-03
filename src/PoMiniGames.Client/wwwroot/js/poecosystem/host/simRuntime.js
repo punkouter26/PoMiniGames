@@ -15,7 +15,6 @@ import { generateIsland } from '../sim/terrain/island.js';
 import { restoreWorld, snapshotWorld } from '../sim/persistence/snapshot.js';
 import { deleteWorld, loadWorld, loadWorldMeta, saveWorld } from '../sim/persistence/idb.js';
 import { SYSTEM_PROMPT } from '../sim/thoughts/prompt.js';
-import { TREE_STATE } from '../sim/flora/trees.js';
 
 export function createSimRuntime(post, deps = {}) {
   const {
@@ -37,9 +36,16 @@ export function createSimRuntime(post, deps = {}) {
   let caps = {};
   let simLag = 0;
 
-  const physicsFor = (seed) => {
-    if (!CANNON) return null;
-    try { return createPhysics(CANNON, generateIsland(seed), { substeps: caps.substeps ?? 2 }); } catch (err) { post({ type: 'error', where: 'physics', message: String(err?.message ?? err) }); return null; }
+  // One island per world: the heightfield and the simulation share the same terrain
+  // object rather than generating it twice (~28 ms each).
+  const buildWorld = (seed) => {
+    const terrain = generateIsland(seed);
+    let phys = null;
+    if (CANNON) {
+      try { phys = createPhysics(CANNON, terrain, { substeps: caps.substeps ?? 2 }); }
+      catch (err) { post({ type: 'error', where: 'physics', message: String(err?.message ?? err) }); }
+    }
+    return createWorld({ seed, caps, physics: phys, terrain });
   };
 
   function terrainPayload() {
@@ -68,11 +74,11 @@ export function createSimRuntime(post, deps = {}) {
   function boot(msg) {
     caps = { creatureCap: msg.lowEnd ? LOW_END_CREATURE_CAP : (msg.caps?.creatureCap ?? CREATURE_CAP), substeps: msg.lowEnd ? 1 : (msg.caps?.substeps ?? 2) };
     llmEnabled = !!msg.llmEnabled;
-    const fresh = () => { world = createWorld({ seed: msg.seed | 0, caps, physics: physicsFor(msg.seed | 0) }); announce(false); };
+    const fresh = () => { world = buildWorld(msg.seed | 0); announce(false); };
     if (msg.resume && idb) {
       loadWorld(idb).then((snap) => {
         if (disposed) return;
-        const restored = snap ? restoreWorld(snap, { physics: physicsFor(snap.seed) }) : null;
+        const restored = snap ? restoreWorld(snap, { CANNON, caps }) : null;
         if (restored) { world = restored; announce(true); } else fresh();
       }).catch((err) => { post({ type: 'error', where: 'resume', message: String(err?.message ?? err) }); fresh(); });
       return;
@@ -162,19 +168,14 @@ export function createSimRuntime(post, deps = {}) {
         case 'init': boot(msg); return;
         case 'newWorld':
           if (idb) deleteWorld(idb).catch(() => {});
-          if (world?.physics?.dispose) world.physics.dispose();
-          world = createWorld({ seed: msg.seed | 0, caps, physics: physicsFor(msg.seed | 0) });
+          world?.physics.dispose();
+          world = buildWorld(msg.seed | 0);
           announce(false);
           return;
         case 'setSpeed': world?.applyCommand({ type: 'setSpeed', speed: msg.speed }); return;
         case 'pause': paused = true; return;
         case 'resume': paused = false; lastWall = now(); return;
-        case 'select':
-          selected = msg.handle ?? NONE;
-          // A creature the rotation has not reached yet would open with an empty quote.
-          if (world && selected !== NONE) world.thoughts.template(selected);
-          if (world) postDetail();
-          return;
+        case 'select': selected = msg.handle ?? NONE; if (world) postDetail(); return;
         case 'setLlmEnabled': llmEnabled = !!msg.enabled; if (!llmEnabled && world) world.thoughts.cancel(); return;
         case 'thoughtResult': if (world) world.thoughts.apply(msg.handle, msg.text); return;
         case 'thoughtCancel': world?.thoughts.cancel(); return;
@@ -188,11 +189,9 @@ export function createSimRuntime(post, deps = {}) {
     dispose() {
       disposed = true;
       if (timer) { cancel(timer); timer = null; }
-      if (world?.physics?.dispose) world.physics.dispose();
+      world?.physics.dispose();
       world = null;
     },
   };
   return runtime;
 }
-
-export { TREE_STATE };

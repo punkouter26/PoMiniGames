@@ -30,9 +30,8 @@ function ensureStyles() {
 function createEngine(container, dotnetRef, opts) {
   const state = {
     container, dotnetRef, opts, host: null, mode: 'starting', ready: false, seed: null,
-    creatureCount: 0, fps: 0, simLag: 0, stats: null, llm: null, lastDetail: null, terrain: null, lastTiles: null,
-    renderer: null, thoughts: null, selected: NONE, frames: 0, errors: [],
-    player: null, msgCounts: {},
+    creatureCount: 0, simLag: 0, stats: null, llm: null, lastDetail: null, terrain: null, lastTiles: null,
+    renderer: null, thoughts: null, selected: NONE, frames: 0, errors: [], msgCounts: {},
   };
 
   const invoke = async (method, ...args) => {
@@ -46,7 +45,7 @@ function createEngine(container, dotnetRef, opts) {
     state.msgCounts[msg.type] = (state.msgCounts[msg.type] ?? 0) + 1;
     switch (msg.type) {
       case 'ready':
-        state.ready = true; state.seed = msg.seed; state.mode = state.host?.mode ?? state.mode;
+        state.ready = true; state.seed = msg.seed;
         invoke('OnReady', msg.seed, msg.tick, msg.resumed, msg.physics);
         return;
       case 'terrain':
@@ -102,7 +101,6 @@ function createEngine(container, dotnetRef, opts) {
         state.renderer = createRenderer(container, {
           minimapCanvas: opts.minimapId ? document.getElementById(opts.minimapId) : null,
           quality: { lowEnd: !!opts.lowEnd },
-          onFps: (fps) => { state.fps = fps; },
           onPick: (handle) => { api.select(handle); invoke('OnPick', handle); },
           onAction: (action, value) => {
             if (action === 'speed') { api.setSpeed(value); invoke('OnSpeed', value); return; }
@@ -153,11 +151,8 @@ function createEngine(container, dotnetRef, opts) {
       if (enabled) await state.thoughts?.start(modelId ?? state.thoughts.modelId);
       else state.thoughts?.dispose();
     },
-    thoughtResult: (handle, text) => state.host?.send({ type: 'thoughtResult', handle, text }),
     saveNow: () => state.host?.send({ type: 'saveNow', reason: 'manual' }),
     debug: (op, arg) => state.host?.send({ type: 'debug', op, arg }),
-    attachRenderer(r) { state.renderer = r; if (state.terrain) r.setTerrain(state.terrain); if (state.lastTiles) r.setTiles(state.lastTiles); },
-    attachThoughts(t) { state.thoughts = t; },
     stop() {
       if (state.poseTimer) clearInterval(state.poseTimer);
       if (state.renderer && state.prefs) state.prefs.set('player', state.renderer.player);

@@ -49,7 +49,6 @@ export function createTerrainMesh(terrain) {
   water.name = 'water';
 
   const colour = new THREE.Color();
-  const scratch = new THREE.Color();
 
   /** Recolour every vertex from the tile type, its state and the grass biomass (0..255). */
   function paint(tileState, grass) {
@@ -62,10 +61,8 @@ export function createTerrainMesh(terrain) {
         if (stateColour !== undefined) colour.setHex(stateColour);
         else {
           colour.setHex(BIOME[terrain.type[t]] ?? 0x555555);
-          if (grass && (terrain.type[t] === TILE.GRASS || terrain.type[t] === TILE.HILL)) {
-            scratch.copy(DRY);
-            colour.lerp(scratch, 1 - grass[t] / 255);
-          }
+          // lerp does not mutate its argument, so the constant can be passed directly.
+          if (grass && (terrain.type[t] === TILE.GRASS || terrain.type[t] === TILE.HILL)) colour.lerp(DRY, 1 - grass[t] / 255);
         }
         colours.setXYZ(j * cs + i, colour.r, colour.g, colour.b);
       }

@@ -8,7 +8,6 @@ import { SPECIES } from '../sim/creatures/species.js';
 export const PICK = Object.freeze({
   maxDistance: 60,
   radiusPadding: 0.35,
-  touchPadding: 1.2,
   // Aim assist. A rabbit is a ~0.5 m sphere: at 30 m its angular size is under a degree,
   // which is unhittable with a mouse in a world where nothing stands still. The pick
   // radius therefore grows with distance (a cone), so the crosshair only has to be NEAR

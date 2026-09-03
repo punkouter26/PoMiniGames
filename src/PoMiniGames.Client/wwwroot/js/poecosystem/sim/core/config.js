@@ -136,7 +136,27 @@ export const EVENTS = Object.freeze({
     boulderSeconds: 120,     // the settled rock blocks the corridor's end tile this long
     fearRadius: 12,
   }),
+  fire: Object.freeze({
+    spreadPerSecond: Object.freeze({ grass: 0.08, forest: 0.1 }), // per flammable neighbour per second; grass scales with biomass, so ~0.4 offspring per burning tile and fires die out
+    maxBurning: 400,         // cap on simultaneously burning tiles (cost bound)
+  }),
+  volcano: Object.freeze({
+    blastRadius: 12, strength: 60,
+    projectiles: [8, 15], speed: [6, 14], up: [8, 16],
+    lavaSeconds: 30,         // lava creeps this long, then cools to rock
+    creepSeconds: 1,         // the lava front advances one tile per creep
+    branchChance: 0.4,       // chance a front tile also spills into a second lower neighbour
+    maxLavaTiles: 150,
+    fearRadius: 40,
+  }),
   fearDecayPerSecond: 0.15,  // fear painted on tiles fades at this rate
   fireSeconds: 6,            // a tile burns this long (T12 fire spread builds on it)
   burntSeconds: 60,          // burnt tiles recover to normal after this long
+});
+
+// ── Thoughts (SPEC §7.8) ─────────────────────────────────────────────────
+export const THOUGHTS = Object.freeze({
+  maxPromptChars: 600,
+  maxThoughtChars: 120,
+  templateEveryTicks: 40,    // with the LLM off (or between its answers) a template thought lands every 2 s
 });

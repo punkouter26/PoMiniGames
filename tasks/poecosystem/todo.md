@@ -24,8 +24,8 @@ A task touches only the files in its manifest (see `plan.md`) plus its own test 
 - [x] CP-C — LONG population gate passes (4/5 seeds boom-bust, no extinction < 5 min); tuned species/utility/world (see SPEC §7.2 note)
 - [x] T10 Physics — world, ragdoll, rocks, fallingTree, explosion (8 tests; cannon-es heightfield verified to 6 mm)
 - [x] T11 Events A — scheduler, lightning, rockslide (6 tests; corridor kills identical cannon vs null)
-- [ ] T12 Events B — volcano, fire
-- [ ] CP-D
+- [x] T12 Events B — volcano, fire (6 tests)
+- [x] CP-D — every event on, cannon vs null identical at tick 3000; 87 tests, 95 % lines
 - [ ] T13 Thoughts — scheduler, prompt, templates, nudges
 - [ ] T14 Persistence — snapshot, idb, prefs
 - [ ] T15 Host runtime — simRuntime, simWorker, simHost, index.js

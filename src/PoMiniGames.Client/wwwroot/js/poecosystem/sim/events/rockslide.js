@@ -93,7 +93,7 @@ export function stepCorridors(world, cfg = EVENTS.rockslide) {
       });
     }
     victims.sort((a, b) => a - b);
-    for (const i of victims) if (e.alive[i]) world.kill(i, 'rockfall');
+    for (const i of victims) if (e.alive[i]) world.kill(i, r.cause ?? 'rockfall');
     if (tick >= r.endTick) {
       const end = r.corridor[r.corridor.length - 1];
       if (isWalkable(terrain.type[end]) && tileState[end] === TILE_STATE.NORMAL) {

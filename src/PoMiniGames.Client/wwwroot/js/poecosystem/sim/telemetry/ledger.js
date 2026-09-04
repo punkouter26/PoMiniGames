@@ -33,21 +33,26 @@ export function createLedger({ cap = 20000 } = {}) {
     const s = rec.species;
     const age = Math.max(0, rec.ageYears);
     const speed = rec.distance / (Math.max(1, rec.diedTick - rec.bornTick) * TICK_SECONDS);
+    // Records keep raw values: setState rebuilds the rollups from these on Resume, and
+    // any rounding here would drift the re-derived means (e.g. avgLifespanYears, averages
+    // of hunger/thirst) by ±0.01 once hundreds of deaths accumulate. Rounding is the
+    // export layer's job — see exportCreature below.
     creatures.push({
       name: rec.name,
       species: SPECIES[s]?.name ?? String(s),
       sex: rec.sex === 1 ? 'female' : 'male',
       bornTick: rec.bornTick, diedTick: rec.diedTick,
-      ageYears: r2(age),
-      lifeFraction: rec.maxAgeYears > 0 ? r2(Math.min(1, age / rec.maxAgeYears)) : null,
+      ageYears: age,
+      lifeFraction: rec.maxAgeYears > 0 ? Math.min(1, age / rec.maxAgeYears) : null,
       cause: rec.cause,
       killer: rec.killer === null || rec.killer === undefined ? null : (SPECIES[rec.killer]?.name ?? String(rec.killer)),
       killerName: rec.killerName ?? null,
       offspring: rec.offspring | 0,
-      distanceM: r1(rec.distance),
-      avgSpeed: r2(speed),
-      hungerAtDeath: r2(rec.hunger), thirstAtDeath: r2(rec.thirst),
-      traits: rec.traits.map(r2),
+      distanceM: rec.distance,
+      avgSpeed: speed,
+      hungerAtDeath: rec.hunger,
+      thirstAtDeath: rec.thirst,
+      traits: Array.from(rec.traits),
     });
     if (creatures.length > cap) { creatures.shift(); dropped++; }
     fold(s, age, rec.distance, speed, rec.hunger, rec.thirst, rec.offspring | 0, rec.cause);
@@ -82,6 +87,20 @@ export function createLedger({ cap = 20000 } = {}) {
 
   const mean = (sum, s) => (diedCount[s] === 0 ? 0 : r2(sum[s] / diedCount[s]));
 
+  // Public view of a stored death record: round the float-bearing fields the way the
+  // consumer-facing JSON has always shown them. Stored records stay raw so setState's
+  // re-fold matches the original death() fold bit-for-bit.
+  const exportCreature = (c) => ({
+    ...c,
+    ageYears: r2(c.ageYears),
+    lifeFraction: c.lifeFraction === null ? null : r2(c.lifeFraction),
+    distanceM: r1(c.distanceM),
+    avgSpeed: r2(c.avgSpeed),
+    hungerAtDeath: r2(c.hungerAtDeath),
+    thirstAtDeath: r2(c.thirstAtDeath),
+    traits: c.traits.map(r2),
+  });
+
   return {
     get count() { return creatures.length; },
     get dropped() { return dropped; },
@@ -111,7 +130,7 @@ export function createLedger({ cap = 20000 } = {}) {
         traitNames: [...TRAITS],
         species: SPECIES.map(sp => ({ id: sp.id, name: sp.name, maxAgeYears: sp.maxAgeYears })),
         summary: { species: speciesSummary, diet: namedDiet() },
-        creatures,
+        creatures: creatures.map(exportCreature),
         recordsDropped: dropped,
       };
     },

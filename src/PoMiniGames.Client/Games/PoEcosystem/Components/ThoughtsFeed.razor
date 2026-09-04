@@ -1,0 +1,28 @@
+@* The island-wide thought stream (feature: thoughts feed). Newest first; clicking an
+   entry inspects that creature. Source badge distinguishes AI thoughts from instinct
+   templates — the same two sources the inspector popover marks. *@
+<ol class="poeco-thoughts" aria-label="Creature thoughts">
+    @if (Thoughts.Count == 0)
+    {
+        <li class="poeco-note">Thoughts appear here as creatures have them.</li>
+    }
+    else
+    {
+        @foreach (var t in Thoughts.AsEnumerable().Reverse().Take(60))
+        {
+            <li>
+                <button type="button" class="poeco-thought-item" title="Inspect @t.Name" @onclick="() => OnSelect.InvokeAsync(t.Handle)">
+                    <i class="poeco-species-chip" style="background: @EcoSpeciesInfo.ColourOf(t.Species)" aria-hidden="true"></i>
+                    <span class="poeco-thought-name">@t.Name</span>
+                    <span class="poeco-thought-src @(t.Source == 2 ? "poeco-thought-src--ai" : "")">@(t.Source == 2 ? "AI" : "instinct")</span>
+                    <span class="poeco-thought-text">“@t.Text”</span>
+                </button>
+            </li>
+        }
+    }
+</ol>
+
+@code {
+    [Parameter] public IReadOnlyList<EcoThought> Thoughts { get; set; } = [];
+    [Parameter] public EventCallback<int> OnSelect { get; set; }
+}

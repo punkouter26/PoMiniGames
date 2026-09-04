@@ -1,0 +1,116 @@
+@* Lifetime world records for the dashboard (feature: almanac). Data comes from the sim's
+   running counters (world.stats().almanac) — nothing here is computed client-side. *@
+<div class="poeco-almanac">
+    <div class="poeco-records">
+        <div class="poeco-record"><span>Oldest ever</span><strong>@OldestText</strong></div>
+        <div class="poeco-record"><span>Huts built</span><strong>@(A?.HutsBuilt ?? 0)</strong></div>
+        <div class="poeco-record"><span>Trees felled</span><strong>@(A?.TreesFelled ?? 0)</strong></div>
+        <div class="poeco-record"><span>Strikes · slides · eruptions</span><strong>@NatureText</strong></div>
+    </div>
+
+    <h3>Species totals</h3>
+    <table class="poeco-species-table">
+        <thead>
+            <tr><th scope="col"><span class="gps-sr-only">Species</span></th><th scope="col">Alive</th><th scope="col">Born</th><th scope="col">Died</th></tr>
+        </thead>
+        <tbody>
+            @for (var s = 0; s < EcoSpeciesInfo.Count; s++)
+            {
+                var id = s;
+                <tr>
+                    <th scope="row"><i class="poeco-species-chip" style="background: @EcoSpeciesInfo.ColourOf(id)" aria-hidden="true"></i> @EcoSpeciesInfo.PluralOf(id)</th>
+                    <td>@AliveOf(id)</td>
+                    <td>@BornOf(id)</td>
+                    <td>@DiedOf(id)</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    <h3>Causes of death</h3>
+    @if (Causes.Count == 0)
+    {
+        <p class="poeco-note">Nobody has died yet.</p>
+    }
+    else
+    {
+        <div class="poeco-causes">
+            @foreach (var (cause, n) in Causes)
+            {
+                <div class="poeco-cause">
+                    <span class="poeco-cause-label">@CauseLabel(cause)</span>
+                    <span class="poeco-cause-track"><span class="poeco-cause-fill" style="width: @Width(n)"></span></span>
+                    <span class="poeco-cause-n">@n</span>
+                </div>
+            }
+        </div>
+    }
+
+    <h3>Age structure</h3>
+    <div class="poeco-ages">
+        @for (var s = 0; s < EcoSpeciesInfo.Count; s++)
+        {
+            var id = s;
+            <div class="poeco-age-row">
+                <span class="poeco-age-label">@EcoSpeciesInfo.PluralOf(id)</span>
+                <span class="poeco-age-stack" role="img" aria-label="@AgesLabel(id)">
+                    <span class="poeco-age-seg poeco-age-seg--young" style="background: @EcoSpeciesInfo.ColourOf(id); width: @Seg(id, 0)%"></span>
+                    <span class="poeco-age-seg" style="background: @EcoSpeciesInfo.ColourOf(id); width: @Seg(id, 1)%"></span>
+                    <span class="poeco-age-seg poeco-age-seg--old" style="background: @EcoSpeciesInfo.ColourOf(id); width: @Seg(id, 2)%"></span>
+                </span>
+            </div>
+        }
+    </div>
+    <p class="poeco-note">Shades per row: light = young, full = adult, dark = old.</p>
+</div>
+
+@code {
+    private static readonly Dictionary<string, string> CauseLabels = new()
+    {
+        ["starvation"] = "Starved",
+        ["dehydration"] = "Thirst",
+        ["old_age"] = "Old age",
+        ["predation"] = "Predation",
+        ["fire"] = "Fire",
+        ["lightning"] = "Lightning",
+        ["rockfall"] = "Rockfall",
+        ["eruption"] = "Eruption",
+        ["drowning"] = "Drowned",
+        ["debug"] = "Debug",
+    };
+
+    [Parameter, EditorRequired] public EcoStats? Stats { get; set; }
+
+    private EcoAlmanac? A => Stats?.Almanac;
+
+    private string OldestText => string.IsNullOrWhiteSpace(A?.OldestName)
+        ? "—"
+        : $"{A!.OldestName} · {A.OldestAge:0.0} y";
+
+    private string NatureText => Stats?.NaturalEvents is { } n ? $"{n.Lightning} · {n.Rockslide} · {n.Eruption}" : "0 · 0 · 0";
+
+    private List<(string Cause, int N)> Causes => A?.ByCause is { Count: > 0 } byCause
+        ? byCause.OrderByDescending(kv => kv.Value).Select(kv => (kv.Key, kv.Value)).ToList()
+        : [];
+
+    private int AliveOf(int s) => Stats?.Counts is { Length: EcoSpeciesInfo.Count } c ? c[s] : 0;
+    private int BornOf(int s) => A?.Born is { Length: EcoSpeciesInfo.Count } b ? b[s] : 0;
+    private int DiedOf(int s) => A?.Died is { Length: EcoSpeciesInfo.Count } d ? d[s] : 0;
+    private int StageOf(int s, int stage) => A?.Stages is { Length: 12 } st ? st[s * 3 + stage] : 0;
+
+    private int Seg(int s, int stage)
+    {
+        var total = StageOf(s, 0) + StageOf(s, 1) + StageOf(s, 2);
+        return total == 0 ? 0 : (int)Math.Round(100.0 * StageOf(s, stage) / total);
+    }
+
+    private string AgesLabel(int s)
+    {
+        var (y, a, o) = (StageOf(s, 0), StageOf(s, 1), StageOf(s, 2));
+        return $"{EcoSpeciesInfo.PluralOf(s)}: {y} young, {a} adult, {o} old";
+    }
+
+    private string Width(int n) => $"{(Causes.Count == 0 ? 0 : Math.Max(4, 100 * n / Causes[0].N))}%";
+
+    private static string CauseLabel(string cause) => CauseLabels.GetValueOrDefault(cause, cause);
+}

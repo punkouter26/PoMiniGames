@@ -107,6 +107,21 @@ describe('first-person god controller', () => {
     expect(p.y - terrain.heightAt(p.x, p.z)).toBeCloseTo(PLAYER.eyeHeight, 1);
   });
 
+  it('can be created straight in float mode and never sinks into the ground', () => {
+    // Fresh players float (2026-09-02 user call): the renderer creates the god in fly
+    // mode, so nobody is stuck walking unless they press F.
+    const p = createPlayer(terrain, 'fly');
+    expect(p.mode).toBe('fly');
+    p.y = terrain.heightAt(p.x, p.z) + 25;
+    run(p, input(), 4);                                     // no input at all: pure hover
+    expect(p.mode).toBe('fly');
+    expect(p.y).toBeGreaterThan(terrain.heightAt(p.x, p.z) + 20);
+    // Rising works from the float default too.
+    const before = p.y;
+    run(p, input({ up: 1 }), 1);
+    expect(p.y - before).toBeGreaterThan(PLAYER.flySpeed * 0.8);
+  });
+
   it('is pushed back at the world boundary', () => {
     const p = createPlayer(terrain);
     p.mode = 'fly';

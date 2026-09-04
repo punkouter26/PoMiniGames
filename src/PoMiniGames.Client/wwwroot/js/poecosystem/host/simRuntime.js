@@ -3,9 +3,9 @@
 // runs it inline when workers fail, and Vitest drives it with a fake `post`.
 //
 // In:  probe · init · newWorld · setSpeed · pause · resume · select · setLlmEnabled ·
-//      thoughtResult · thoughtCancel · saveNow · recycle · debug · dispose
+//      thoughtResult · thoughtCancel · saveNow · recycle · debug · exportTelemetry · dispose
 // Out: probeResult · ready · terrain · frame (transferred) · tiles · stats · events ·
-//      detail · thoughtRequest · saved · debugResult · error
+//      thoughts · detail · thoughtRequest · saved · debugResult · telemetry · error
 import { CREATURE_CAP, HOST, LOW_END_CREATURE_CAP, PROP_CAP } from '../sim/core/config.js';
 import { NONE } from '../sim/core/entities.js';
 import { createFrameBuffer, encodeFrame, FRAME } from '../sim/frame.js';
@@ -97,6 +97,10 @@ export function createSimRuntime(post, deps = {}) {
     const events = world.log.drain();
     if (events.length) post({ type: 'events', events });
   }
+  function postThoughts() {
+    const thoughts = world.thoughtFeed.drain();
+    if (thoughts.length) post({ type: 'thoughts', thoughts });
+  }
   function postDetail() { post({ type: 'detail', detail: selected === NONE ? null : world.detail(selected) }); }
   function postTiles() {
     const n = world.tileState.length;
@@ -132,7 +136,7 @@ export function createSimRuntime(post, deps = {}) {
     for (let k = 0; k < steps; k++) {
       world.step();
       const tk = world.clock.tick;
-      if (tk % HOST.statsEveryTicks === 0) { postStats(); postEvents(); }
+      if (tk % HOST.statsEveryTicks === 0) { postStats(); postEvents(); postThoughts(); }
       if (selected !== NONE && tk % HOST.detailEveryTicks === 0) postDetail();
       if (tk % HOST.tilesEveryTicks === 0) postTiles();
     }
@@ -182,6 +186,9 @@ export function createSimRuntime(post, deps = {}) {
         case 'saveNow': lastSaveWall = now(); save(msg.reason ?? 'manual'); return;
         case 'recycle': if (msg.buffer && pool.length < HOST.frameBuffers) pool.push(msg.buffer); return;
         case 'debug': if (world) post({ type: 'debugResult', op: msg.op, result: world.debug(msg.op, msg.arg ?? {}) }); return;
+        case 'exportTelemetry':
+          if (world) post({ type: 'telemetry', payload: world.telemetry.export({ seed: world.seed, tick: world.clock.tick, year: world.clock.year(), alive: world.stats().counts }) });
+          return;
         case 'dispose': runtime.dispose(); return;
         default: post({ type: 'error', where: 'handle', message: `unknown message ${msg.type}` });
       }

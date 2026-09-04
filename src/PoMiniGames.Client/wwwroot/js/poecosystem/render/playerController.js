@@ -28,10 +28,11 @@ export const PLAYER = Object.freeze({
 const SEA_LEVEL = 0;
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 
-export function createPlayer(terrain, size = terrain?.size ?? WORLD_SIZE) {
+export function createPlayer(terrain, startMode = 'walk') {
+  const size = terrain?.size ?? WORLD_SIZE;
   const p = {
     x: size / 2, y: 0, z: size / 2, yaw: 0, pitch: 0,
-    vy: 0, mode: 'walk', grounded: false, blocked: false, size,
+    vy: 0, mode: startMode, grounded: false, blocked: false, size,
 
     /** Mouse/touch look: dx, dy in pixels. */
     look(dx, dy) {
@@ -47,21 +48,22 @@ export function createPlayer(terrain, size = terrain?.size ?? WORLD_SIZE) {
     toggleFly() { p.mode = p.mode === 'fly' ? 'walk' : 'fly'; p.vy = 0; },
     pose() { return { x: p.x, y: p.y, z: p.z, yaw: p.yaw, pitch: p.pitch, mode: p.mode }; },
     setPose(pose) {
-      if (!pose || !Number.isFinite(pose.x)) { placeOnLand(p, terrain); return; }
+      if (!pose || !Number.isFinite(pose.x)) { placeOnLand(p, terrain, p.mode === 'fly'); return; }
       p.x = pose.x; p.y = pose.y; p.z = pose.z; p.yaw = pose.yaw ?? 0; p.pitch = pose.pitch ?? 0;
       p.mode = pose.mode === 'fly' ? 'fly' : 'walk';
       p.vy = 0;
-      if (!inBounds(p.x, p.z, size) || !Number.isFinite(p.y)) placeOnLand(p, terrain);
+      if (!inBounds(p.x, p.z, size) || !Number.isFinite(p.y)) placeOnLand(p, terrain, p.mode === 'fly');
     },
   };
-  if (terrain) placeOnLand(p, terrain);
+  if (terrain) placeOnLand(p, terrain, startMode === 'fly');
   return p;
 }
 
 const inBounds = (x, z, size) => x > -PLAYER.boundary && z > -PLAYER.boundary && x < size + PLAYER.boundary && z < size + PLAYER.boundary;
 
-/** Drop the player on the nearest walkable tile to the map centre (spawn / recovery). */
-export function placeOnLand(p, terrain) {
+/** Drop the player on the nearest walkable tile to the map centre (spawn / recovery).
+ *  keepFly preserves a float mode that was requested before any terrain existed. */
+export function placeOnLand(p, terrain, keepFly = false) {
   const { size } = terrain;
   const c = size / 2;
   for (let r = 0; r < size / 2; r += 2) {
@@ -70,7 +72,7 @@ export function placeOnLand(p, terrain) {
       const x = c + Math.cos(ang) * r; const z = c + Math.sin(ang) * r;
       if (x < 1 || z < 1 || x >= size - 1 || z >= size - 1) continue;
       if (!isWalkable(terrain.type[tileIndex(x, z, size)])) continue;
-      p.x = x; p.z = z; p.y = terrain.heightAt(x, z) + PLAYER.eyeHeight; p.vy = 0; p.mode = 'walk'; p.grounded = true;
+      p.x = x; p.z = z; p.y = terrain.heightAt(x, z) + PLAYER.eyeHeight; p.vy = 0; p.mode = keepFly ? 'fly' : 'walk'; p.grounded = !keepFly;
       return p;
     }
   }

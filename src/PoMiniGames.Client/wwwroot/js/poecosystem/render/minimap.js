@@ -56,15 +56,20 @@ export function createMinimap(canvas, terrain) {
         ctx.fillStyle = SPECIES_DOT[view[o + 5] | 0] ?? '#ffffff';
         ctx.fillRect(view[o] * s - 1, view[o + 2] * s - 1, 2.5, 2.5);
       }
-      // Player arrow, pointing along the view direction.
+      // Player marker: a big white triangle pointing along the view direction (2026-09-02:
+      // user call — the small grey arrow was too easy to lose among the species dots).
       const px = player.x * s; const pz = player.z * s;
       ctx.save();
       ctx.translate(px, pz);
       ctx.rotate(-player.yaw);
-      ctx.fillStyle = '#e2e8f0';
       ctx.beginPath();
-      ctx.moveTo(0, -6); ctx.lineTo(4, 5); ctx.lineTo(0, 2.5); ctx.lineTo(-4, 5);
-      ctx.closePath(); ctx.fill();
+      ctx.moveTo(0, -9); ctx.lineTo(6.5, 7.5); ctx.lineTo(0, 3.5); ctx.lineTo(-6.5, 7.5);
+      ctx.closePath();
+      ctx.fillStyle = '#ffffff';
+      ctx.strokeStyle = 'rgba(15, 23, 42, 0.85)';
+      ctx.lineWidth = 1.5;
+      ctx.fill();
+      ctx.stroke();
       ctx.restore();
     },
     dispose() {},

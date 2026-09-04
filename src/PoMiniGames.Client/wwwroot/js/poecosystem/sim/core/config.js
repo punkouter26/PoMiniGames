@@ -161,6 +161,7 @@ export const THOUGHTS = Object.freeze({
   maxPromptChars: 600,
   maxThoughtChars: 120,
   templateEveryTicks: 40,    // with the LLM off (or between its answers) a template thought lands every 2 s
+  feedCap: 40,               // island-wide thought stream kept for the dashboard's feed panel
 });
 
 // ── Host / worker protocol (plan decision 3) ─────────────────────────────

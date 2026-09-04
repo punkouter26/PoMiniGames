@@ -57,4 +57,10 @@ public static class GameKeys
     public static readonly GameKey PoVoxelStrike = new("povoxelstrike");
     public static readonly GameKey SubSurface = new("subsurface");
     public static readonly GameKey PoEcosystem = new("poecosystem");
+
+    // Sand2 is a second, deliberately separate sandbox rather than a variant of
+    // SubSurface ("Sand"): the two engines diverged and neither is a superset of
+    // the other. Sand2 carries pore water, shallow-water pressure and the
+    // reservoir; Sand carries lava, oil and the wider ordnance set.
+    public static readonly GameKey Sand2 = new("sand2");
 }

@@ -1,0 +1,68 @@
+@* Sand2 — the Project Sub-Surface lineage ported in from the standalone
+   PoSandCL app. Deliberately a *sibling* of the Sand game rather than a
+   replacement: the two engines diverged and each carries physics the other
+   does not (Sand2 has pore water, shallow-water pressure + surge and the
+   reservoir; Sand has lava/oil, the wider ordnance set and realism tiers).
+
+   Blazor owns only the docked toolbar. Every pointer event and the 60 FPS
+   loop live in wwwroot/js/sand2/sand2-engine.js. *@
+
+<div class="sand2-root">
+    <div class="sand2-toolbar" role="toolbar" aria-label="Sand2 tools">
+        <span class="sand2-title">SUB-SURFACE</span>
+
+        @foreach (var t in ToolDefs)
+        {
+            <button type="button"
+                    class="sand2-btn @(ActiveTool == t.Id ? "active" : "")"
+                    title="@t.Hint"
+                    aria-pressed="@(ActiveTool == t.Id ? "true" : "false")"
+                    @onclick="() => SelectToolAsync(t.Id)">@t.Label</button>
+        }
+
+        <span class="sand2-sep" aria-hidden="true"></span>
+
+        <label class="sand2-brush-label" for="sand2-brush">Brush</label>
+        <input id="sand2-brush" type="range" min="1" max="32" value="@BrushSize"
+               aria-label="Brush size in pixels"
+               @oninput="OnBrushChangedAsync" class="sand2-slider" />
+        <span class="sand2-brush-val">@BrushSize px</span>
+
+        <span class="sand2-sep" aria-hidden="true"></span>
+
+        <button type="button" class="sand2-btn sand2-ctrl" aria-pressed="@(Paused ? "true" : "false")"
+                @onclick="TogglePauseAsync">@(Paused ? "► Run" : "❚❚ Pause")</button>
+        <button type="button" class="sand2-btn sand2-ctrl" disabled="@(!Paused)"
+                title="Advance a single simulation step (paused only)"
+                @onclick="StepAsync">Step</button>
+        <button type="button" class="sand2-btn sand2-ctrl @(DemoOn ? "active" : "")"
+                title="Rain a random TNT bomb every second"
+                aria-pressed="@(DemoOn ? "true" : "false")"
+                @onclick="ToggleDemoAsync">💣 Auto-drop</button>
+        <button type="button" class="sand2-btn sand2-ctrl sand2-danger"
+                title="Rebuild the world from scratch"
+                @onclick="ResetAsync">Reset</button>
+
+        <span class="sand2-sep" aria-hidden="true"></span>
+
+        <button type="button" class="sand2-btn sand2-ctrl"
+                title="@(AudioOn ? "Mute" : "Unmute")"
+                aria-label="@(AudioOn ? "Mute sound" : "Unmute sound")"
+                aria-pressed="@(AudioOn ? "true" : "false")"
+                @onclick="ToggleAudioAsync">@(AudioOn ? "🔊" : "🔇")</button>
+        <input type="range" min="0" max="100" value="@Volume"
+               aria-label="Volume"
+               @oninput="OnVolumeChangedAsync" class="sand2-slider sand2-vol" title="Volume" />
+    </div>
+
+    <div class="sand2-viewport">
+        @* Fixed 800x600 backing store; CSS scales the rendered box. The engine's
+           pointer math reads the bounding rect, so touch stays accurate at any
+           displayed size. *@
+        <canvas @ref="_canvas" width="800" height="600" aria-hidden="true"></canvas>
+        <canvas @ref="_overlay" width="800" height="600" class="sand2-overlay"
+                aria-label="Sand2 sandbox — drag to paint, drag in open air to slingshot ordnance"></canvas>
+    </div>
+
+    <div class="sand2-hint">@ActiveHint</div>
+</div>

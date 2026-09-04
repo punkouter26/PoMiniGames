@@ -174,32 +174,6 @@
 .poeco-spark-legend span { display: inline-flex; align-items: center; gap: 4px; }
 .poeco-spark-legend i { width: 8px; height: 8px; border-radius: var(--radius-pill); }
 
-/* ── event toasts ─────────────────────────────────────────────── */
-.poeco-toasts {
-    position: absolute;
-    right: var(--space-3);
-    bottom: var(--space-3);
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: var(--space-1);
-    max-width: min(420px, 45vw);
-}
-
-.poeco-toast {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-2);
-    padding: var(--space-1) var(--space-3);
-    border-radius: var(--radius-sm);
-    background: var(--surface-bar);
-    border: 1px solid var(--color-border);
-    font-size: var(--text-xs);
-    opacity: var(--fade, 1);
-}
-
-.poeco-dot { width: 6px; height: 6px; border-radius: var(--radius-pill); flex: none; }
-
 /* ── key legend and hints ─────────────────────────────────────── */
 .poeco-keys {
     position: absolute;
@@ -414,6 +388,66 @@
 .poeco-log { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; max-height: 420px; overflow: auto; font-size: var(--text-xs); }
 .poeco-log-tick { font-family: var(--font-mono); color: var(--color-text-secondary); margin-right: var(--space-1); }
 
+/* ── almanac ─────────────────────────────────────────────────── */
+.poeco-records { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); }
+.poeco-record {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-sm);
+    background: var(--surface-3);
+    border: 1px solid var(--color-border);
+}
+.poeco-record span { font-size: var(--text-xs); color: var(--color-text-secondary); }
+.poeco-record strong { font-size: var(--text-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.poeco-species-table { width: 100%; border-collapse: collapse; font-size: var(--text-xs); }
+.poeco-species-table th, .poeco-species-table td { padding: 3px var(--space-2); text-align: left; font-weight: inherit; }
+.poeco-species-table thead th { color: var(--color-text-secondary); border-bottom: 1px solid var(--color-border); }
+.poeco-species-table tbody th { display: flex; align-items: center; gap: var(--space-1); }
+.poeco-species-table td { font-family: var(--font-mono); }
+.poeco-species-table .poeco-species-chip,
+.poeco-thought-item .poeco-species-chip { width: 10px; height: 10px; border-radius: var(--radius-pill); align-self: center; }
+
+.poeco-causes { display: flex; flex-direction: column; gap: 4px; }
+.poeco-cause { display: grid; grid-template-columns: 88px 1fr 40px; align-items: center; gap: var(--space-2); font-size: var(--text-xs); }
+.poeco-cause-label { color: var(--color-text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.poeco-cause-track { display: block; height: 8px; border-radius: var(--radius-pill); background: var(--tint-medium); overflow: hidden; }
+.poeco-cause-fill { display: block; height: 100%; border-radius: var(--radius-pill); background: var(--accent-danger); }
+.poeco-cause-n { font-family: var(--font-mono); text-align: right; }
+
+.poeco-ages { display: flex; flex-direction: column; gap: 6px; }
+.poeco-age-row { display: grid; grid-template-columns: 88px 1fr; align-items: center; gap: var(--space-2); font-size: var(--text-xs); }
+.poeco-age-label { color: var(--color-text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.poeco-age-stack { display: flex; height: 10px; border-radius: var(--radius-pill); overflow: hidden; background: var(--tint-medium); }
+.poeco-age-seg { height: 100%; }
+.poeco-age-seg--young { opacity: 0.55; }
+.poeco-age-seg--old { filter: brightness(0.65); }
+
+/* ── thought feed ────────────────────────────────────────────── */
+.poeco-thoughts { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; max-height: 420px; overflow: auto; font-size: var(--text-xs); }
+.poeco-thought-item {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+    width: 100%;
+    padding: var(--space-1) var(--space-2);
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--color-text-primary);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+.poeco-thought-item:hover { background: var(--tint-soft); border-color: var(--color-border); }
+.poeco-thought-item:focus-visible { outline: 2px solid var(--accent-ring); outline-offset: 1px; }
+.poeco-thought-name { font-weight: 600; flex: none; }
+.poeco-thought-src { flex: none; padding: 0 var(--space-2); border-radius: var(--radius-pill); background: var(--tint-medium); color: var(--color-text-secondary); font-size: 10px; }
+.poeco-thought-src--ai { background: var(--accent); color: var(--color-bg); }
+.poeco-thought-text { color: var(--color-text-secondary); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+
 .poeco-note { margin: 0; font-size: var(--text-xs); color: var(--color-text-secondary); }
 .poeco-switch { display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-sm); }
 .poeco-field { display: flex; flex-direction: column; gap: 4px; font-size: var(--text-xs); color: var(--color-text-secondary); }
@@ -438,7 +472,6 @@
 /* ── narrow screens ───────────────────────────────────────────── */
 .poeco-narrow .poeco-minimap { width: 96px; height: 96px; }
 .poeco-narrow .poeco-spark { width: min(240px, 55vw); bottom: 160px; }
-.poeco-narrow .poeco-toasts { bottom: 160px; max-width: 60vw; }
 .poeco-narrow .poeco-hudbar { max-width: calc(100% - 120px); }
 .poeco-narrow .poeco-inspector { left: var(--space-2); right: var(--space-2); top: auto; bottom: 190px; width: auto; transform: none; max-height: 46%; }
 .poeco-narrow .poeco-overlay-grid { grid-template-columns: minmax(0, 1fr); }
@@ -448,4 +481,107 @@
 @media (prefers-reduced-motion: reduce) {
     .poeco-keys { animation: none; }
     .poeco-pill { transition: none; }
+}
+
+/* ── glass pass (GFX option 9) ────────────────────────────────────
+   The HUD used `--surface-bar`, which is ~92% opaque: a backdrop-filter behind it has
+   almost nothing to show through, so before this the game used `backdrop-filter` in
+   exactly two of ~480 lines and the rest of the chrome sat on the world as flat plates.
+
+   These tokens are LOCAL to .poeco-root on purpose. The app's `--surface-*` scale is
+   tuned for pages laid over a solid background; a HUD floating over a live 3D scene wants
+   a much thinner substrate, and changing the shared tokens to get it would repaint every
+   other game. The blur itself still goes through the app's `--glass-*` tokens, so the
+   app-wide `prefers-reduced-transparency` override in app.css strips it here too — and
+   the opacity block below finishes that job, because a translucent panel with the blur
+   removed is worse than no glass at all. */
+.poeco-root {
+    --poeco-glass: light-dark(rgba(255, 255, 255, 0.55), rgba(15, 23, 42, 0.52));
+    --poeco-glass-strong: light-dark(rgba(255, 255, 255, 0.74), rgba(15, 23, 42, 0.70));
+    --poeco-glass-border: light-dark(rgba(15, 23, 42, 0.10), rgba(255, 255, 255, 0.13));
+    /* The inset line along the top edge is what reads as "thickness" — without it a
+       blurred panel looks like a smudge rather than a pane. */
+    --poeco-glass-lip: inset 0 1px 0 light-dark(rgba(255, 255, 255, 0.85), rgba(255, 255, 255, 0.10));
+    --poeco-glass-cast: 0 8px 32px light-dark(rgba(15, 23, 42, 0.14), rgba(2, 6, 23, 0.42));
+}
+
+.poeco-clock,
+.poeco-speed,
+.poeco-badge,
+.poeco-dashboard-btn,
+.poeco-minimap-wrap,
+.poeco-spark,
+.poeco-lock-hint,
+.poeco-pad {
+    background: var(--poeco-glass);
+    backdrop-filter: var(--glass-2);
+    -webkit-backdrop-filter: var(--glass-2);
+    border-color: var(--poeco-glass-border);
+    box-shadow: var(--poeco-glass-lip), var(--poeco-glass-cast);
+}
+
+/* Panels carrying body text get the heavier tint: a name and five stat bars have to stay
+   legible over whatever the island happens to be doing behind them. */
+.poeco-inspector,
+.poeco-banner,
+.poeco-overlay-card {
+    background: var(--poeco-glass-strong);
+    backdrop-filter: var(--glass-3);
+    -webkit-backdrop-filter: var(--glass-3);
+    box-shadow: var(--poeco-glass-lip), var(--poeco-glass-cast);
+}
+
+/* The dashboard scrim sits between the world and the card, so it takes the blur and the
+   card above it only needs its own tint. */
+.poeco-overlay,
+.poeco-resume {
+    background: light-dark(rgba(248, 250, 252, 0.55), rgba(2, 6, 23, 0.55));
+    backdrop-filter: var(--glass-3);
+    -webkit-backdrop-filter: var(--glass-3);
+}
+
+.poeco-tile,
+.poeco-record {
+    background: var(--poeco-glass);
+    border-color: var(--poeco-glass-border);
+    box-shadow: var(--poeco-glass-lip);
+}
+
+/* Blur removed → transparency removed. Falling back to the opaque app tokens rather than
+   to a lighter tint keeps contrast at the same ratio the rest of the app is checked at. */
+@media (prefers-reduced-transparency: reduce) {
+    .poeco-root {
+        --poeco-glass: var(--surface-bar);
+        --poeco-glass-strong: var(--surface-2);
+        --poeco-glass-border: var(--color-border);
+        --poeco-glass-lip: none;
+    }
+
+    .poeco-overlay,
+    .poeco-resume {
+        background: var(--surface-1);
+    }
+}
+
+/* Forced-colors mode replaces the palette outright; a translucent substrate there is both
+   ignored and actively misleading, so the glass is dropped rather than approximated. */
+@media (forced-colors: active) {
+    .poeco-clock,
+    .poeco-speed,
+    .poeco-badge,
+    .poeco-dashboard-btn,
+    .poeco-minimap-wrap,
+    .poeco-spark,
+    .poeco-lock-hint,
+    .poeco-pad,
+    .poeco-inspector,
+    .poeco-banner,
+    .poeco-overlay-card,
+    .poeco-tile,
+    .poeco-record {
+        background: Canvas;
+        backdrop-filter: none;
+        -webkit-backdrop-filter: none;
+        box-shadow: none;
+    }
 }

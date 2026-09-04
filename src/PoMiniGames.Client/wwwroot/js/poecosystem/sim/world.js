@@ -36,6 +36,7 @@ import { createThoughtScheduler } from './thoughts/scheduler.js';
 import { buildPrompt } from './thoughts/prompt.js';
 import { templateThought } from './thoughts/templates.js';
 import { THOUGHT_SOURCE, applyThought } from './thoughts/nudges.js';
+import { createLedger } from './telemetry/ledger.js';
 import { nullPhysics } from './physics/world.js';
 
 export { nullPhysics };   // re-exported: createWorld's default physics lives beside it
@@ -108,6 +109,18 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
   const thoughtScheduler = createThoughtScheduler();
   const thoughtStats = { requested: 0, applied: 0, rejected: 0 };
   let templateCursor = 0;
+  // Almanac (dashboard): lifetime counters. Pure bookkeeping — no rule reads them and no
+  // RNG stream is touched, so a world stays bit-identical whether or not they run.
+  const almanac = {
+    born: [0, 0, 0, 0], died: [0, 0, 0, 0], byCause: {}, stages: new Array(12).fill(0),
+    hutsBuilt: 0, treesFelled: 0, oldestName: '', oldestSpecies: 0, oldestAge: 0,
+  };
+  // Thought feed (dashboard): every thought a creature has, drained by the host at the
+  // stats cadence. Reuses the event log so the id/drain machinery comes for free.
+  const thoughtFeed = createEventLog(THOUGHTS.feedCap);
+  // Lifetime animal telemetry: per-creature death records + the predation matrix. The
+  // snapshot carries it, so a resumed world keeps its whole history (telemetry/ledger.js).
+  const ledger = createLedger();
 
   const tileOf = (i) => tileIndex(e.x[i], e.z[i], size);
   const centre = (t) => [tileX(t, size) + 0.5, tileZ(t, size) + 0.5];
@@ -117,7 +130,8 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
   // ── population bookkeeping ───────────────────────────────────────────
   function recount() {
     counts.fill(0);
-    e.forEachAlive(i => counts[e.species[i]]++);
+    almanac.stages.fill(0);
+    e.forEachAlive((i) => { counts[e.species[i]]++; almanac.stages[e.species[i] * 3 + e.lifeStage[i]]++; });
   }
 
   function spawn(speciesId, x, z, { age = 0, traits = null, mother = NONE, father = NONE } = {}) {
@@ -157,6 +171,7 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
     if (e.lastThoughtSource[i] === THOUGHT_SOURCE.LLM && e.nudgeEndTick[i] > clock.tick) return false;
     e.lastThought[i] = templateThought(world, i, streams.cosmetic);
     e.lastThoughtSource[i] = THOUGHT_SOURCE.TEMPLATE;
+    thoughtFeed.push({ tick: clock.tick, kind: 'thought', handle: e.handle(i), name: nameOf(i), species: e.species[i], source: THOUGHT_SOURCE.TEMPLATE, text: e.lastThought[i] });
     return true;
   }
 
@@ -172,14 +187,30 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
     }
   }
 
-  function kill(i, cause, extra = '') {
+  function kill(i, cause, extra = '', killerIdx = NONE) {
     const sp = SPECIES[e.species[i]];
+    // Telemetry first: killCreature below clears the slot's liveness, and the record must
+    // capture the drives/position the creature had while it lived.
+    const ki = killerIdx !== NONE && e.alive[killerIdx] ? killerIdx : NONE;
+    ledger.death({
+      name: e.names[i] || `${sp.name} #${i}`,
+      species: sp.id, sex: e.sex[i],
+      bornTick: e.birthTick[i], diedTick: clock.tick,
+      ageYears: e.age[i], maxAgeYears: sp.maxAgeYears, cause,
+      killer: ki === NONE ? null : e.species[ki], killerName: ki === NONE ? null : nameOf(ki),
+      offspring: e.offspring[i], distance: e.dist[i],
+      hunger: e.hunger[i], thirst: e.thirst[i],
+      traits: Array.from(e.traits.subarray(i * TRAITS.length, (i + 1) * TRAITS.length)),
+    });
+    if (ki !== NONE) ledger.kill(e.species[ki], sp.id);
     carcasses.push({ id: nextCarcassId++, x: e.x[i], z: e.z[i], species: sp.id, food: sp.foodValue * WORLD.carcassFoodFraction, expires: clock.tick + Math.round(WORLD.carcassSeconds / TICK_SECONDS) });
     phys.onDeath({ x: e.x[i], y: e.y[i], z: e.z[i], yaw: e.yaw[i], species: sp.id, scale: e.scale[i], handle: e.handle(i) }, cause, streams.cosmetic);
     bus.emit('death', { index: i, handle: e.handle(i), species: sp.id, cause });
     killCreature(e, i, cause, log, clock.tick, extra);
     settlement.carried[i] = 0;
     counts[sp.id]--;
+    almanac.died[sp.id]++;
+    almanac.byCause[cause] = (almanac.byCause[cause] ?? 0) + 1;
   }
 
   // ── initial world ────────────────────────────────────────────────────
@@ -436,7 +467,7 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
         if (d <= sp.radius + SPECIES[e.species[prey]].radius + WORLD.reachPadding + sp.huntReach) {
           const food = SPECIES[e.species[prey]].foodValue;
           const preyName = nameOf(prey);
-          kill(prey, DEATH_CAUSE.PREDATION, ` by ${nameOf(i)}`);
+          kill(prey, DEATH_CAUSE.PREDATION, ` by ${nameOf(i)}`, i);
           if (sp.sharesKills) shareKill(e, spatial, i, BEHAVIOR.packRadius, food);
           else feed(e, i, Math.min(sp.mealValue, food));
           bus.emit('kill', { killer: i, preyName });
@@ -497,6 +528,7 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
               giveLogs(settlement, i, FLORA.logsPerTree);
               phys.fellTree({ x: cx, y: terrain.heightAt(cx, cz), z: cz, dirX: cx - e.x[i], dirZ: cz - e.z[i] }, streams.cosmetic);
               log.push({ tick, kind: 'chop', text: `${nameOf(i)} felled a tree`, tile: trees.tile[k] });
+              almanac.treesFelled++;
             }
             e.goalSince[i] = tick;
           }
@@ -508,7 +540,7 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
         if (!o) { stop(e, i); return; }
         if (dist(i, o.x, o.z) <= BEHAVIOR.hutSiteRadius) {
           stop(e, i);
-          if (buildHut(e, i, settlement, terrain, tileState, streams.behavior, log, tick)) rebuildShoreField();
+          if (buildHut(e, i, settlement, terrain, tileState, streams.behavior, log, tick)) { almanac.hutsBuilt++; rebuildShoreField(); }
           dirty[i] = 1;
         } else seekTo(e, i, o.x, o.z, sp.walkSpeed);
         return;
@@ -541,6 +573,8 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
       if (i < 0) break;
       log.push({ tick: clock.tick, kind: 'birth', species: sp.id, creature: e.handle(i), text: `${nameOf(i)} (${sp.name.toLowerCase()}) born to ${nameOf(mother)}${fatherName ? ' + ' + fatherName : ''}` });
       bus.emit('birth', { index: i, mother });
+      almanac.born[sp.id]++;
+      e.offspring[mother]++;
     }
     e.gestationEndTick[mother] = NONE;
     e.pendingFather[mother] = NONE;
@@ -561,6 +595,7 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
       stepDrives(e, i, sp, dt);
       if (isOrphan(e, i)) e.hunger[i] = Math.min(1, e.hunger[i] + sp.hungerRate * dt * (BEHAVIOR.orphanHungerMultiplier - 1));
       updateLifeStage(e, i, sp);
+      if (e.age[i] > almanac.oldestAge) { almanac.oldestAge = e.age[i]; almanac.oldestName = nameOf(i); almanac.oldestSpecies = sp.id; }
       if (tileState[tileOf(i)] === TILE_STATE.FIRE || tileState[tileOf(i)] === TILE_STATE.LAVA) e.health[i] -= 0.5 * dt;
       const vital = checkVitals(e, i);
       if (vital) { kill(i, tileState[tileOf(i)] === TILE_STATE.LAVA ? DEATH_CAUSE.ERUPTION : tileState[tileOf(i)] === TILE_STATE.FIRE ? DEATH_CAUSE.FIRE : vital); continue; }
@@ -573,8 +608,10 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
         chooseGoal(e, i, c);
         commitPlan(i, c);
       }
+      const px0 = e.x[i]; const pz0 = e.z[i];
       act(i, e.goal[i], plans[i], dt);
       moveCreature(e, i, terrain, tileState, dt);
+      e.dist[i] += Math.hypot(e.x[i] - px0, e.z[i] - pz0);   // lifetime metres (telemetry)
     }
 
     for (let k = carcasses.length - 1; k >= 0; k--) if (carcasses[k].expires <= tick) carcasses.splice(k, 1);
@@ -620,12 +657,23 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
 
   // ── reads ────────────────────────────────────────────────────────────
   function stats() {
+    // The age pyramid is recomputed here rather than maintained on every birth/death/age
+    // transition: one O(high) scan at the 2 Hz stats cadence is cheaper than three hooks
+    // that must each stay in sync with updateLifeStage.
+    almanac.stages.fill(0);
+    e.forEachAlive(i => almanac.stages[e.species[i] * 3 + e.lifeStage[i]]++);
     return {
       seed, terrainHash: terrain.hash, tick: clock.tick, speed: clock.speed,
       year: clock.year(), day: clock.day(), dayFraction: clock.dayFraction(),
       counts: counts.slice(), alive: e.count, huts: settlement.huts.length,
       extinct: extinct.slice(), lastStanding, silent, popHistory, carcasses: carcasses.length,
       naturalEvents: { ...naturalEvents },
+      almanac: {
+        born: almanac.born.slice(), died: almanac.died.slice(), byCause: { ...almanac.byCause }, stages: almanac.stages.slice(),
+        hutsBuilt: almanac.hutsBuilt, treesFelled: almanac.treesFelled,
+        oldestName: almanac.oldestName, oldestSpecies: almanac.oldestSpecies, oldestAge: almanac.oldestAge,
+      },
+      telemetryCount: ledger.count,
     };
   }
 
@@ -702,6 +750,12 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
       plans: plans.slice(0, e.high).map(p => ({ ...p })), dirty: dirty.slice(),
       carcasses: carcasses.map(c => ({ ...c })), corridors: corridors.map(r => ({ ...r, corridor: r.corridor.slice() })),
       boulders: boulders.map(b => ({ ...b })), fires: fires.map(f => ({ ...f })), burnt: burnt.map(b => ({ ...b })),
+      almanac: {
+        born: almanac.born.slice(), died: almanac.died.slice(), byCause: { ...almanac.byCause }, stages: almanac.stages.slice(),
+        hutsBuilt: almanac.hutsBuilt, treesFelled: almanac.treesFelled,
+        oldestName: almanac.oldestName, oldestSpecies: almanac.oldestSpecies, oldestAge: almanac.oldestAge,
+      },
+      telemetry: ledger.getState(),
       lava: world.lava ? { front: world.lava.front.slice(), tiles: world.lava.tiles.slice(), endTick: world.lava.endTick, nextCreep: world.lava.nextCreep } : null,
     };
   }
@@ -710,6 +764,16 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
     scheduler.setState(s.scheduler); thoughtScheduler.setState(s.thoughtScheduler);
     Object.assign(thoughtStats, s.thoughtStats); templateCursor = s.templateCursor | 0; nextCarcassId = s.nextCarcassId | 0; lastFullTick = s.lastFullTick;
     Object.assign(naturalEvents, s.naturalEvents); for (let k = 0; k < 4; k++) extinct[k] = !!s.extinct[k];
+    // Almanac/telemetry are additive: snapshots from before they existed restore with the
+    // counters zeroed rather than being refused (schemaVersion stays 1).
+    if (s.almanac) {
+      for (let k = 0; k < 4; k++) { almanac.born[k] = s.almanac.born[k] | 0; almanac.died[k] = s.almanac.died[k] | 0; }
+      almanac.byCause = { ...(s.almanac.byCause ?? {}) };
+      for (let k = 0; k < 12; k++) almanac.stages[k] = s.almanac.stages[k] | 0;
+      almanac.hutsBuilt = s.almanac.hutsBuilt | 0; almanac.treesFelled = s.almanac.treesFelled | 0;
+      almanac.oldestName = s.almanac.oldestName ?? ''; almanac.oldestSpecies = s.almanac.oldestSpecies | 0; almanac.oldestAge = s.almanac.oldestAge ?? 0;
+    }
+    if (s.telemetry) ledger.setState(s.telemetry);
     popHistory.length = 0; for (const r of s.popHistory) popHistory.push(r.slice());
     tileState.set(s.tileState); fear.set(s.fear);
     grass.biomass.set(s.grass.biomass); grass.cursor = s.grass.cursor | 0;
@@ -736,6 +800,7 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
     seed, terrain, tileState, fear, grass, bushes, trees, settlement, entities: e, clock, log, bus, spatial, namer, streams,
     get shoreField() { return shoreField; }, carcasses, physics: phys, popHistory,
     scheduler, corridors, boulders, fires, burnt, ignite, rebuildShoreField, lava: null,
+    thoughtFeed, telemetry: ledger,
     erupt: () => erupt(world),
     senses: (i) => ({ ...perceive(i) }),
     thoughts: {
@@ -750,6 +815,8 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
         const r = applyThought(world, handle, text, THOUGHT_SOURCE.LLM);
         thoughtScheduler.complete(handle);
         if (r.applied) thoughtStats.applied++; else thoughtStats.rejected++;
+        const i = e.resolve(handle);
+        if (i !== NONE) thoughtFeed.push({ tick: clock.tick, kind: 'thought', handle, name: nameOf(i), species: e.species[i], source: e.lastThoughtSource[i], text: e.lastThought[i] });
         return r;
       },
       cancel() { thoughtScheduler.cancel(); },

@@ -1427,19 +1427,37 @@ export class SubSurfaceEngine {
         const submergedBlast = this.matAt(cx, cy) === MAT.WATER;
 
         const w = this.width, h = this.height, grid = this.gridData;
-        // Depth of burial governs the blast's character: an airburst scours a
-        // shallow wide crater, a shallow burial throws the classic ejecta cone,
-        // and a deep burial (camouflet) just carves a sealed cavity with low
-        // ejection speeds — the surface heaves instead of erupting.
+        // Depth of burial governs the blast's character, and it does so as a
+        // continuous curve rather than in three bands (ported from Sand2; the
+        // old `burial > 70 ? … : burial < 12 ? … : …` step function made a
+        // charge 69 cells down behave exactly like a surface burst, then
+        // snapped to a camouflet one cell deeper).
+        //
+        // Crater volume peaks near 0.55 R of overburden. A surface burst vents
+        // its energy to the air — wide shallow scoop, big airblast, little
+        // ejecta; optimal burial couples the charge into the ground; a deeply
+        // buried shot vents nothing at all, sealing a camouflet cavity and
+        // lifting the ground above it into a heave dome instead of throwing
+        // ejecta. Sand2 measured 3518 cells dug at the surface, 8425 at
+        // optimal burial, 5261 deep.
         let burial = 0;
-        for (let t = 1; t <= 130; t++) {
+        for (let t = 1; t <= 220; t++) {
             if (isSolidMat(this.matAt(cx, cy + t))) burial++;
         }
-        const camouflet = burial > 70;
-        const airburst = burial < 12;
-        const rScale = (camouflet ? 0.55 : (airburst ? 0.75 : 1.0)) * scale;
-        const spScale = camouflet ? 0.3 : 1.0;
-        const upBias = camouflet ? 15 : (airburst ? 40 : 130);
+        const dob = burial / CRATER_RADIUS;                       // scaled depth of burst
+        const coupling = Math.exp(-Math.pow((dob - 0.55) / 0.45, 2));
+        const vent = Math.max(0, Math.min(1, 1.15 - dob * 1.05)); // fraction that escapes
+        // `camouflet` survives as the "nothing vents" predicate the rest of
+        // this method already branches on (no dust, no glass lining, no
+        // fracture seams, muffled report) — it is now a threshold on vent
+        // rather than a hard depth band.
+        const camouflet = vent < 0.12;
+        const rScale = (0.62 + 0.55 * coupling) * scale;
+        const spScale = 0.35 + 0.65 * vent;
+        const upBias = 15 + 115 * vent;
+        // Sand that cannot vent, collected during excavation and stacked back
+        // onto the surface below (heave dome).
+        const heave = [];
 
         const sandR = Math.round(CRATER_RADIUS * rScale);   // sand excavation
         const scorchR = sandR + 14;               // charred crater lining
@@ -1524,14 +1542,42 @@ export class SubSurfaceEngine {
                         // absorbs more of the shock: no dust, slower throw.
                         const packed = m === MAT.SAND && grid[idx + 1] < -0.1;
                         const dust = m === MAT.SAND && !camouflet && !packed && Math.random() < 0.25;
-                        // Inverted-cone ejection (~45 deg, like real crater
-                        // throw-out) with a slow "rim" fraction that lands at
-                        // the lip and builds the raised rim of the crater.
-                        let ex = ux, ey = uy;
-                        if (!camouflet) {
-                            ex = ux * 0.5 + (dx >= 0 ? 0.354 : -0.354);
-                            ey = uy * 0.5 + 0.354;
+                        grid[idx] = MAT.AIR;
+                        grid[idx + 1] = 0;
+                        grid[idx + 2] = 0;
+                        grid[idx + 3] = 0;
+                        touch(x, y);
+                        // Material that cannot vent does not erupt — it lifts
+                        // the overburden. Deferred to after this loop so the
+                        // excavation keeps reading the pre-blast terrain.
+                        if (m === MAT.SAND && Math.random() > vent) {
+                            heave.push(m);
+                            continue;
                         }
+                        // Inverted-cone ejection graded by radius: near-vertical
+                        // over the centre, ~45 deg at the rim, which is the
+                        // shape real crater throw-out leaves (from Sand2 — the
+                        // old fixed 45 deg threw the whole crater sideways, so
+                        // the centre never fountained). The slow "rim" fraction
+                        // lands at the lip and builds the raised crater rim.
+                        const tNorm = Math.min(1, dist / Math.max(1, sandR));
+                        const side = dx === 0 ? (Math.random() < 0.5 ? -1 : 1) : Math.sign(dx);
+                        // 70 deg over the centre grading to 45 deg at the rim.
+                        // Sand2 goes fully vertical (90 deg) at the centre; this
+                        // engine must not, because its sand is Mohr-Coulomb
+                        // cohesive and cements whatever lands on it, while
+                        // Sand2's relaxes to a 32 deg repose. Straight-up ejecta
+                        // falls back onto the columns it left and stands there.
+                        // Measured over 45 s of settling: full-vertical left
+                        // three sharp needles, 70 deg left two broader mounds.
+                        // Steep ejecta mounds are NOT new here — the pre-change
+                        // engine builds them too (verified against HEAD), so this
+                        // is a mitigation of a standing quirk, not a regression
+                        // fix. The real cure is a true angle of repose; see the
+                        // sand/water realism notes.
+                        const ang = Math.PI * 0.39 * (1 - tNorm) + Math.PI * 0.25 * tNorm;
+                        let ex = ux, ey = uy;
+                        if (!camouflet) { ex = Math.cos(ang) * side; ey = Math.sin(ang); }
                         const rim = !camouflet && !dust && Math.random() < 0.30;
                         const speed = EJECTA_SPEED * spScale * (0.35 + 0.65 * (1 - dist / sandR)) *
                                       (0.7 + Math.random() * 0.6) * (dust ? 0.55 : 1.0) *
@@ -1542,13 +1588,12 @@ export class SubSurfaceEngine {
                             vy: ey * speed + upBias + Math.random() * 70,
                             mat: m,
                             dust,
-                            sub: false
+                            sub: false,
+                            // Staged curtain: excavation flows outward over
+                            // ~10 frames rather than all at once, so the
+                            // throw-out grows instead of starbursting.
+                            delay: camouflet ? 0 : Math.round(tNorm * 8 + Math.random() * 2)
                         });
-                        grid[idx] = MAT.AIR;
-                        grid[idx + 1] = 0;
-                        grid[idx + 2] = 0;
-                        grid[idx + 3] = 0;
-                        touch(x, y);
                     } else if (m === MAT.SAND && dist <= scorchR && !camouflet) {
                         // Fireball fuses the inner lining to glass, chars the rest
                         grid[idx + 2] = dist <= sandR + 5 ? -2 : -1;
@@ -1586,6 +1631,33 @@ export class SubSurfaceEngine {
                         grid[idx + 3] = 0;
                         touch(x, y);
                     }
+                }
+            }
+        }
+
+        // Heave dome (from Sand2): the excavated mass that could not vent is
+        // stacked back onto the surface over the charge, so a deep shot mounds
+        // the ground instead of cratering it, and the sealed cavity is left
+        // below to collapse later. stampGrain walks up to the first air cell,
+        // so seeding it one cell above the pre-blast column top lands each
+        // grain on the surface rather than back inside the fresh crater.
+        if (heave.length) {
+            const hx0 = Math.max(1, Math.round(cx - sandR * 1.4));
+            const hx1 = Math.min(w - 2, Math.round(cx + sandR * 1.4));
+            const top = new Int32Array(Math.max(0, hx1 - hx0 + 1));
+            for (let x = hx0; x <= hx1; x++) {
+                let ty = h - 1;
+                while (ty > 3 && !isSolidMat(this.matAt(x, ty))) ty--;
+                top[x - hx0] = ty;
+            }
+            for (let i = 0; i < heave.length; i++) {
+                const hx = Math.max(hx0, Math.min(hx1,
+                    Math.round(cx + (Math.random() + Math.random() - 1) * sandR * 1.3)));
+                const k = hx - hx0;
+                const spot = this.stampGrain(hx, top[k] + 1, heave[i]);
+                if (spot) {
+                    touch(spot.x, spot.y);
+                    if (spot.y > top[k]) top[k] = spot.y;
                 }
             }
         }
@@ -1752,13 +1824,23 @@ export class SubSurfaceEngine {
 
         // Mid-air crowding: dense ejecta curtains jostle instead of ghosting
         // through each other — a grain entering an occupied cell loses speed.
+        // Grains still waiting on their staged-launch delay are not in flight
+        // yet, so they must not crowd: a big crater parks thousands of them on
+        // its own cells for a few frames, and counting those would damp every
+        // grain that flew through the crater mouth.
         const occ = new Set();
         for (const g of this.grains) {
+            if (g.delay > 0) continue;
             occ.add((Math.round(g.y) << 10) | Math.round(g.x));
         }
 
         for (let i = this.grains.length - 1; i >= 0; i--) {
             const g = this.grains[i];
+            // Staged ejecta curtain (from Sand2): a grain launched from the
+            // crater rim leaves later than one from the centre, so throw-out
+            // reads as an expanding curtain rather than one instantaneous
+            // starburst. Counted in frames, matching how it was authored.
+            if (g.delay > 0) { g.delay--; continue; }
             g.vy -= (g.sub ? GRAVITY * 0.3 : GRAVITY) * dt;
 
             if (g.dust) {

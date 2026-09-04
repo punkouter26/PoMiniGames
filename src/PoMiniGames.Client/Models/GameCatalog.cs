@@ -257,6 +257,21 @@ public static class GameCatalog
         {
             Subtitle = "A living island you walk through: creatures hunt, mate, age and die on their own",
         },
+
+        // Sibling of Sand, not a replacement — see GameKeys.Sand2. The subtitle has
+        // to earn the "2": two cards reading "physics sandbox" would otherwise look
+        // like a duplicate entry. ChipPrimary for the same reason as Sand: 1P is the
+        // card head, so without it the chip row reads a lone "Demo" and the game
+        // scans as watch-only.
+        new(GameKeys.Sand2, "Sand2", "🏜️",
+        [
+            new(GameMode.OnePlayer, "/sand2/1player"),
+            new(GameMode.Demo, "/sand2/demo"),
+        ])
+        {
+            Subtitle = "Wet sand: pore water, hydrostatic flow, buried charges and camouflet cavities",
+            ChipPrimary = true,
+        },
     ];
 
     /// <summary>Games sorted for display — alphabetical, matching the old per-section order.</summary>

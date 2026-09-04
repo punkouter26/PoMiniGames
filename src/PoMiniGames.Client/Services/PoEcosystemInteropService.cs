@@ -24,6 +24,7 @@ public sealed class PoEcosystemInteropService : IAsyncDisposable
     public event Action<int, int, bool, string>? Ready;          // seed, tick, resumed, physics kind
     public event Action<EcoStats>? StatsReceived;
     public event Action<IReadOnlyList<EcoEvent>>? EventsReceived;
+    public event Action<IReadOnlyList<EcoThought>>? ThoughtsReceived;   // island-wide thought feed
     public event Action<EcoDetail?>? DetailReceived;
     public event Action<EcoLlmState>? LlmStateReceived;
     public event Action<int>? Picked;
@@ -70,10 +71,20 @@ public sealed class PoEcosystemInteropService : IAsyncDisposable
     public ValueTask SetLlmAsync(bool enabled, string? modelId) => SafeInvokeAsync("PoEcosystem.setLlm", enabled, modelId);
     public ValueTask SaveNowAsync() => SafeInvokeAsync("PoEcosystem.saveNow");
     public ValueTask DebugAsync(string op) => SafeInvokeAsync("PoEcosystem.debug", op);
+    public ValueTask ExportTelemetryAsync() => SafeInvokeAsync("PoEcosystem.exportTelemetry");
+    public ValueTask SetSoundAsync(bool on) => SafeInvokeAsync("PoEcosystem.setSound", on);
     public ValueTask RequestLockAsync() => SafeInvokeAsync("PoEcosystem.requestLock");
     public ValueTask ToggleFlyAsync() => SafeInvokeAsync("PoEcosystem.toggleFly");
     public ValueTask TouchMoveAsync(double x, double z) => SafeInvokeAsync("PoEcosystem.touchMove", x, z);
     public ValueTask TouchReleaseAsync() => SafeInvokeAsync("PoEcosystem.touchRelease");
+
+    /// <summary>Current ambience preference (engine-side, persisted in localStorage).</summary>
+    public async ValueTask<bool> SoundEnabledAsync()
+    {
+        try { return await _js.InvokeAsync<bool>("PoEcosystem.soundEnabled"); }
+        catch (JSException) { return true; }
+        catch (JSDisconnectedException) { return true; }
+    }
 
     public async ValueTask<bool> WebGpuAvailableAsync()
     {
@@ -108,6 +119,13 @@ public sealed class PoEcosystemInteropService : IAsyncDisposable
     {
         var events = Deserialize(json, EcoJsonContext.Default.EcoEventArray);
         if (events is { Length: > 0 }) EventsReceived?.Invoke(events);
+    }
+
+    [JSInvokable]
+    public void OnThoughts(string json)
+    {
+        var thoughts = Deserialize(json, EcoJsonContext.Default.EcoThoughtArray);
+        if (thoughts is { Length: > 0 }) ThoughtsReceived?.Invoke(thoughts);
     }
 
     [JSInvokable]

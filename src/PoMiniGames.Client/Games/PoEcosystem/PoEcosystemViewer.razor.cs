@@ -13,8 +13,8 @@ namespace PoMiniGamesClient.Games.PoEcosystem;
 /// </summary>
 public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
 {
-    private const int ToastCount = 3;
     private const int LogCapacity = 200;
+    private const int ThoughtCapacity = 60;
 
     [Parameter] public bool IsDemo { get; set; }
 
@@ -23,11 +23,11 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
 
     private static readonly (string Key, string What)[] KeyLegend =
     [
-        ("WASD", "move"), ("Shift", "run"), ("Space", "jump"), ("F", "fly"), ("E", "inspect"), ("Tab", "dashboard"),
+        ("WASD", "move"), ("Shift", "run"), ("Space/Ctrl", "rise/sink"), ("F", "float/walk"), ("E", "inspect"), ("Tab", "dashboard"),
     ];
 
     private readonly List<EcoEvent> _log = new(LogCapacity);
-    private List<EcoEvent> _toasts = [];
+    private readonly List<EcoThought> _thoughts = [];
     private EcoStats? _stats;
     private EcoDetail? _detail;
     private EcoLlmState? _llm;
@@ -42,6 +42,7 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
     private bool _narrow;
     private bool _showKeys = true;
     private bool _webGpu;
+    private bool _sound = true;
     private int _selected = -1;
     private int _lastStanding = -1;
 
@@ -50,6 +51,7 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
         Interop.Ready += OnReady;
         Interop.StatsReceived += OnStats;
         Interop.EventsReceived += OnEvents;
+        Interop.ThoughtsReceived += OnThoughts;
         Interop.DetailReceived += OnDetail;
         Interop.LlmStateReceived += OnLlmState;
         Interop.Picked += OnPicked;
@@ -93,6 +95,7 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
             modelId: null,
             lowEnd: _narrow);
         if (!ok) _error = "The island engine could not start. Your browser may not support WebGL2.";
+        _sound = await Interop.SoundEnabledAsync();
         _ = HideKeysLaterAsync();
         await InvokeAsync(StateHasChanged);
     }
@@ -130,7 +133,13 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
     {
         _log.AddRange(events);
         if (_log.Count > LogCapacity) _log.RemoveRange(0, _log.Count - LogCapacity);
-        _toasts = _log.TakeLast(ToastCount).Reverse().ToList();
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void OnThoughts(IReadOnlyList<EcoThought> thoughts)
+    {
+        _thoughts.AddRange(thoughts);
+        if (_thoughts.Count > ThoughtCapacity) _thoughts.RemoveRange(0, _thoughts.Count - ThoughtCapacity);
         InvokeAsync(StateHasChanged);
     }
 
@@ -182,6 +191,22 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
     private Task SetSpeedAsync(int speed) => Interop.SetSpeedAsync(speed).AsTask();
     private Task InspectAsync() => Interop.SelectAsync(_selected).AsTask();
     private Task FollowAsync() => Interop.FollowAsync(_selected).AsTask();
+    private Task ToggleSoundAsync(bool on)
+    {
+        _sound = on;
+        return Interop.SetSoundAsync(on).AsTask();
+    }
+    private Task ExportTelemetryAsync() => Interop.ExportTelemetryAsync().AsTask();
+
+    /// <summary>A thought-feed click selects the thinker and leaves the dashboard so the
+    /// inspector popover is visible (it is suppressed while the overlay is open).</summary>
+    private async Task SelectThoughtAsync(int handle)
+    {
+        if (handle < 0) return;
+        _selected = handle;
+        _dashboardOpen = false;
+        await Interop.SelectAsync(handle);
+    }
 
     private async Task ClearSelectionAsync()
     {
@@ -202,7 +227,6 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
     {
         _banner = null;
         _log.Clear();
-        _toasts = [];
         _dashboardOpen = false;
         await Interop.NewWorldAsync(seed ?? _seedInput);
     }
@@ -249,6 +273,7 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
         Interop.Ready -= OnReady;
         Interop.StatsReceived -= OnStats;
         Interop.EventsReceived -= OnEvents;
+        Interop.ThoughtsReceived -= OnThoughts;
         Interop.DetailReceived -= OnDetail;
         Interop.LlmStateReceived -= OnLlmState;
         Interop.Picked -= OnPicked;

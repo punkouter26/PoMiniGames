@@ -6,6 +6,7 @@ export const PREF_DEFAULTS = Object.freeze({
   modelId: 'SmolLM2-360M-Instruct-q4f16_1-MLC',
   speed: 1,
   seed: '',
+  sound: true,           // procedural ambience (render/audio.js)
   player: null,          // { x, y, z, yaw, pitch, fly }
   keyLegendSeen: false,
 });

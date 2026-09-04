@@ -46,6 +46,21 @@
                 </ol>
             </section>
 
+            <section class="poeco-panel poeco-panel--almanac">
+                <h3>Almanac</h3>
+                <AlmanacPanel Stats="@Stats" />
+                <button type="button" class="poeco-btn" @onclick="OnExportTelemetry"
+                        title="Download every recorded life: lifespans, causes, movement, predation">
+                    Export telemetry (JSON)
+                </button>
+                <p class="poeco-note">One record per creature that ever lived — lifespan, cause of death, killer, distance travelled, offspring, drives and personality. Feed it to an AI to rebalance the island.</p>
+            </section>
+
+            <section class="poeco-panel poeco-panel--thoughts">
+                <h3>Thoughts</h3>
+                <ThoughtsFeed Thoughts="@Thoughts" OnSelect="@OnSelectThought" />
+            </section>
+
             <section class="poeco-panel poeco-panel--settings">
                 <h3>AI thoughts</h3>
                 @if (!WebGpu)
@@ -98,7 +113,7 @@
                 </div>
 
                 <h3>Keys</h3>
-                <p class="poeco-note"><kbd>WASD</kbd> move · <kbd>Shift</kbd> run · <kbd>Space</kbd> jump · <kbd>F</kbd> fly · <kbd>E</kbd> inspect · <kbd>T</kbd> follow · <kbd>Tab</kbd> dashboard · <kbd>0-3</kbd> speed</p>
+                <p class="poeco-note"><kbd>WASD</kbd> move · <kbd>Shift</kbd> run · <kbd>Space</kbd>/<kbd>Ctrl</kbd> rise/sink · <kbd>F</kbd> float/walk · <kbd>E</kbd> inspect · <kbd>T</kbd> follow · <kbd>Tab</kbd> dashboard · <kbd>0-3</kbd> speed</p>
             </section>
         </div>
     </div>
@@ -109,12 +124,15 @@
 
     [Parameter] public EcoStats? Stats { get; set; }
     [Parameter] public IReadOnlyList<EcoEvent> Events { get; set; } = [];
+    [Parameter] public IReadOnlyList<EcoThought> Thoughts { get; set; } = [];
     [Parameter] public EcoLlmState? Llm { get; set; }
     [Parameter] public IReadOnlyList<EcoModel> Models { get; set; } = [];
     [Parameter] public bool WebGpu { get; set; }
     [Parameter] public string Seed { get; set; } = "";
     [Parameter] public EventCallback<string> SeedChanged { get; set; }
     [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback OnExportTelemetry { get; set; }
+    [Parameter] public EventCallback<int> OnSelectThought { get; set; }
     [Parameter] public EventCallback<int> OnSpeed { get; set; }
     [Parameter] public EventCallback<(bool Enabled, string? ModelId)> OnLlmToggle { get; set; }
     [Parameter] public EventCallback<string?> OnNewWorld { get; set; }

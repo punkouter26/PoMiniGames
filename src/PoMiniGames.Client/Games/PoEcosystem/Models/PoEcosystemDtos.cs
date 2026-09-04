@@ -45,7 +45,26 @@ public sealed record EcoStats(
     bool LlmEnabled,
     EcoLlmCounters Llm,
     int[] PopHistory,
-    EcoNaturalEvents NaturalEvents);
+    EcoNaturalEvents NaturalEvents,
+    EcoAlmanac? Almanac = null);
+
+/// <summary>
+/// Lifetime world counters for the dashboard's almanac panel (sim/world.js). Stages is the
+/// age pyramid flattened species-major: [species * 3 + (0 young, 1 adult, 2 old)].
+/// </summary>
+public sealed record EcoAlmanac(
+    int[] Born,
+    int[] Died,
+    Dictionary<string, int> ByCause,
+    int[] Stages,
+    int HutsBuilt,
+    int TreesFelled,
+    string OldestName,
+    int OldestSpecies,
+    double OldestAge);
+
+/// <summary>One entry in the island-wide thought feed (dashboard).</summary>
+public sealed record EcoThought(int Id, int Tick, int Handle, string Name, int Species, int Source, string Text);
 
 public sealed record EcoLlmCounters(int Requested, int Applied, int Rejected);
 
@@ -95,5 +114,7 @@ public sealed record EcoSaveInfo(bool Exists, int Seed, int Tick, int Year, long
 [JsonSerializable(typeof(EcoLlmState))]
 [JsonSerializable(typeof(EcoModel[]))]
 [JsonSerializable(typeof(EcoSaveInfo))]
+[JsonSerializable(typeof(EcoAlmanac))]
+[JsonSerializable(typeof(EcoThought[]))]
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase, PropertyNameCaseInsensitive = true)]
 internal sealed partial class EcoJsonContext : System.Text.Json.Serialization.JsonSerializerContext;

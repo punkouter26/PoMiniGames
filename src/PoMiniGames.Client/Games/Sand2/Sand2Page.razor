@@ -1,0 +1,67 @@
+@page "/sand2"
+@page "/sand2/{Mode}"
+@using PoMiniGamesClient.Components
+@using PoMiniGamesClient.Models
+@using PoMiniGamesClient.Services
+@inject PlayerNameService PlayerNameService
+
+<PageTitle>Sand2 · Sub-Surface</PageTitle>
+
+@* Fullscreen: the sandbox sizes itself to the game area (see
+   Sand2Sandbox.razor.css) rather than sitting in a padded card, which is what
+   lets the canvas take the screen on a phone without the component having to
+   pin itself over the app top bar. *@
+<GameShell Title=@TitleContent
+           Player="@_playerName"
+           BackTo="/"
+           GameKey="sand2"
+           RequiresWebGl="true"
+           Fullscreen="true">
+
+    @* Gated rather than overlaid: the WebGL context, the rAF loop and the
+       AudioContext should not start behind the intro card. Starting on the
+       intro's own click also means the first audio call follows a real user
+       gesture, so nothing is created suspended. *@
+    @if (!_introDismissed)
+    {
+        <GameIntro CueScope="sand2"
+                   Title=@TitleContent
+                   Objective="A GPU cellular-automaton sandbox. Dig it, flood it, build in it, then blow it apart — sand arches and shears, water finds its level and soaks into the ground, and buried charges leave sealed cavities instead of craters."
+                   Controls=@HowToPlayContent
+                   Mode="@(IsDemo ? GameIntro.IntroMode.Demo : GameIntro.IntroMode.OnePlayer)"
+                   OnStart="@(() => _introDismissed = true)" />
+    }
+    else
+    {
+        <Sand2Sandbox IsDemo="IsDemo" />
+    }
+</GameShell>
+
+@code {
+    [Parameter] public string? Mode { get; set; }
+
+    private string _playerName = "";
+    private bool _introDismissed;
+
+    private bool IsDemo => GameModes.Parse(Mode) == GameMode.Demo;
+
+    private RenderFragment TitleContent => @<span><span aria-hidden="true">🏜️</span> Sand2 · Sub-Surface</span>;
+
+    private RenderFragment HowToPlayContent => @<div>
+        <p><strong>Pick a tool, then drag on the world:</strong></p>
+        <ul>
+            <li><strong>Dig Vacuum:</strong> Extract sand and water. Concrete and bedrock are immune.</li>
+            <li><strong>Sand:</strong> Pour cohesive soil. It stands in vertical cuts and roofs tunnels up to a critical span, then shears and avalanches.</li>
+            <li><strong>Concrete Bar:</strong> Place a rigid bar. Undermine it and it falls as one body; bending capacity goes with the square of its thickness, so the brush slider decides whether a span holds.</li>
+            <li><strong>Water:</strong> Pour fluid. It levels hydrostatically, soaks into the pore space of loose ground, builds a water table and weeps back out at the toe of a heap.</li>
+            <li><strong>TNT (5s):</strong> Drag in open air to slingshot a fused bomb. It burns underwater. Burial depth changes everything — a surface burst vents to the air, a deep one seals a cavity and heaves the ground above it.</li>
+            <li><strong>Water Balloon:</strong> Slingshot an impact-burst fluid charge.</li>
+        </ul>
+        <p><strong>Auto-drop</strong> rains a bomb every second. <strong>Pause</strong> then <strong>Step</strong> advances one frame at a time. <strong>Reset</strong> rebuilds the world.</p>
+    </div>;
+
+    protected override void OnInitialized()
+    {
+        _playerName = PlayerNameService.GetPlayerName();
+    }
+}

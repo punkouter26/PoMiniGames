@@ -1,4 +1,4 @@
-@namespace PoMiniGamesClient.Games.SubSurface
+﻿@namespace PoMiniGamesClient.Games.SubSurface
 @using PoMiniGamesClient.Models.SubSurface
 @using PoMiniGamesClient.Services
 @inject SubSurfaceInteropService Interop
@@ -133,6 +133,17 @@
             {
                 <span class="hud-badge hud-warning">Ejecta: @_diagnostics.AirborneGrains.ToString("N0")</span>
             }
+            @* Matter ledger. Reads neutral rather than as a pass/fail, because
+               drift here is not automatically a bug: the shader drains loose
+               matter off columns 0 and 799 itself and the CPU never sees those
+               cells leave. What it gives you is a number that holds still when
+               nothing is moving, and that can be compared across two runs of
+               the same scenario — which is what this engine could not do at all
+               before. *@
+            <span class="hud-badge @(LedgerSteady ? "hud-info" : "hud-warning")"
+                  title="Net matter that left the world by a path the CPU does not itemise, since load. Grains draining off the open lateral edges ARE counted; the shader's own edge drainage is not, so a settling world or ejecta thrown at an edge will show real movement here. Compare it across runs rather than expecting zero.">
+                Ledger: @($"{_diagnostics.ResidualSand:+#;-#;0} sand / {_diagnostics.ResidualWater:+#;-#;0} water")
+            </span>
         </div>
         <div class="hud-caption">
             800×600 • 480,000 Cells • WebGL 2.0 Mohr-Coulomb &amp; Eulerian Solver

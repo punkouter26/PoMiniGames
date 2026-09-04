@@ -19,7 +19,14 @@ public sealed record SubSurfaceDiagnostics(
     int SubmergedTNTCount,
     int ActiveFluidCells,
     int ActiveSandCells,
-    int AirborneGrains = 0);
+    int AirborneGrains = 0,
+    // Conservation audit: matter that neither the grid census nor a counted
+    // lateral drain accounts for, accumulated since load. 0 means the
+    // simulation has not lost or invented a cell. Ported in concept from
+    // Sand2's ledger — without it, a leaking blast is indistinguishable from
+    // ejecta that legitimately drained off the open edges.
+    int ResidualSand = 0,
+    int ResidualWater = 0);
 
 /// <summary>
 /// Engine report for a physics tier change. <see cref="Effective"/> is the tier

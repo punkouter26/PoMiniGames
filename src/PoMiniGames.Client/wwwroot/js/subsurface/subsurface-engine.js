@@ -34,6 +34,14 @@ const BLAST_SOLID_BUDGET = 90;    // px of solid a blast ray can chew through
 const EJECTA_SPEED = 680;         // px/s peak radial ejection speed
 const MAX_RENDER_GRAINS = 262144; // draw cap only; physics always integrates all
 const MAX_FX = 4096;              // cosmetic smoke/ember/spark particle cap
+// How long a background physics link may run before it is abandoned. This is a
+// hang-catcher, NOT a performance budget: a link that is merely slow must be
+// allowed to finish, because the tier it delivers is worth waiting for. Set
+// from measurement — under software GL (ANGLE/SwiftShader) even Medium needs
+// well over 20 s, and a 20 s deadline pinned the page to Low by cancelling
+// links that would have succeeded. Only a link still running after two full
+// minutes is treated as never going to complete.
+const BUILD_ABANDON_MS = 120000;
 
 function isSolidMat(m) {
     return m === MAT.SAND || m === MAT.CONCRETE || m === MAT.BEDROCK || m === MAT.DEBRIS || m === MAT.OBSIDIAN;
@@ -119,6 +127,32 @@ export class SubSurfaceEngine {
         this.pendingStep = false;
         this.currentTool = 0; // 0 DigVacuum, 1 Sand, 2 Concrete, 3 Water, 4 TNT, 5 Balloon, 6 Lava, 7 Oil, 8 Drill, 9 Cluster, 10 Nuke, 11 Sticky
         this.brushRadius = 8;
+
+        // ---- Matter ledger --------------------------------------------------
+        // Sand2 carries an audit; this engine had none, so a blast that lost
+        // matter was indistinguishable from one whose ejecta legitimately
+        // drained away. Measured on every grid readback:
+        //   actual   = grid census + airborne grains
+        //   expected = previous actual - grains drained since then
+        //
+        // What the residual means, precisely: matter that left by a path this
+        // counter does not itemise. That is NOT the same as a bug, because the
+        // shader drains loose matter off columns 0 and 799 on its own (see
+        // subsurface-physics.glsl.js, "Lateral Drainage Channels"), and the CPU
+        // never sees those cells go. So a world that has just settled, or a
+        // blast that threw ejecta at an edge, will show real drift.
+        //
+        // It is still the number worth watching: it is stable when nothing is
+        // moving, and a change in it across two runs of the same scenario is
+        // a change in conservation. Frames where the brush was live are
+        // skipped, since painting and digging change mass on purpose and the
+        // brush is a shader uniform the CPU cannot meter.
+        this.audit = {
+            prevSand: -1, prevWater: -1,
+            drainSand: 0, drainWater: 0,   // since the last readback
+            residualSand: 0, residualWater: 0,
+            brushDirty: false,
+        };
         this.isMouseDown = false;
         this.mousePos = { x: 0, y: 0 };
         this.isSlingshotAiming = false;
@@ -284,6 +318,21 @@ export class SubSurfaceEngine {
     beginPhysicsBuild(level, bootstrap = false) {
         const gl = this.gl;
         level = clampRealism(level);
+        // Refuse to build above Medium without KHR_parallel_shader_compile:
+        // linkProgram BLOCKS without it, and the High chain can pin the
+        // ANGLE/D3D11 compiler for ~100 s, which is a 100 s frozen tab. With
+        // the extension the link runs on the driver's threads, the already
+        // linked tier keeps stepping, and pollPhysicsBuild resolves it from the
+        // frame loop — so the tier is only ever offered when it is survivable.
+        //
+        // Note this guard is necessary but NOT sufficient: even with the
+        // extension the High chain has been measured never completing at all.
+        // That is why Medium remains the default (see SubSurfaceSandbox.razor.cs).
+        if (level > REALISM_MEDIUM && !this.parallelCompile) {
+            this.reportRealism(
+                `${realismName(level)} needs KHR_parallel_shader_compile to link without freezing the page; staying on ${realismName(REALISM_MEDIUM)}`);
+            level = REALISM_MEDIUM;
+        }
         if (this.physicsBuild) this.discardPhysicsBuild();
         if (!bootstrap) this.requestedRealism = level;
         const vs = this.createShader(gl.VERTEX_SHADER, vsQuadSource);
@@ -304,7 +353,23 @@ export class SubSurfaceEngine {
         if (!b) return;
         if (this.parallelCompile &&
             !this.gl.getProgramParameter(b.program, this.parallelCompile.COMPLETION_STATUS_KHR)) {
-            return; // still linking on the driver's worker; keep stepping the old tier
+            // Still linking on the driver's worker; keep stepping the old tier.
+            //
+            // But not forever. On the ANGLE/D3D11 path the High chain can churn
+            // indefinitely without ever reporting completion, and while it does
+            // the driver starves the frame loop — measured at 1 FPS, sustained,
+            // with the tier still reading "compiling" after 150 s. That is far
+            // worse than simply running the tier that already linked, so a
+            // build that misses this deadline is abandoned and the request is
+            // pinned back to what works. Without this, defaulting to High
+            // traded a working Medium for a permanently crawling page.
+            if (this.physicsProgram && performance.now() - b.startedAt > BUILD_ABANDON_MS) {
+                const level = b.level;
+                this.discardPhysicsBuild();
+                this.fallBackFrom(level,
+                    `${realismName(level)} did not link within ${Math.round(BUILD_ABANDON_MS / 1000)} s on this GPU`);
+            }
+            return;
         }
         this.finishPhysicsBuild();
     }
@@ -336,12 +401,29 @@ export class SubSurfaceEngine {
         gl.deleteProgram(b.program);
         console.warn(`Sand: ${realismName(b.level)} physics failed to link after ${Math.round(ms)} ms: ${log}`);
         if (this.physicsProgram) {
-            // A working tier is still bound: keep it and surface the failure.
-            this.requestedRealism = this.realism;
-            this.reportRealism(`${realismName(b.level)} failed to link on this GPU after ${Math.round(ms / 1000)} s; staying on ${realismName(this.realism)}`, true);
+            // A working tier is still bound: step down and try the next one.
+            this.fallBackFrom(b.level,
+                `${realismName(b.level)} failed to link on this GPU after ${Math.round(ms / 1000)} s`);
             return;
         }
         this.reportRealism(`${realismName(b.level)} physics failed to link; the grid cannot advance`, true);
+    }
+
+    // A tier that will not link must hand off to the NEXT ONE DOWN, not to
+    // whatever happens to be linked already. The engine bootstraps on Low, so
+    // pinning to "currently linked" on a failed High left the page running Low
+    // forever — worse than the Medium it used to settle on, and a silent
+    // downgrade at that. Stepping down retries Medium, and only a second
+    // failure keeps Low.
+    fallBackFrom(level, why) {
+        const next = clampRealism(level - 1);
+        if (next < level && next > this.realism) {
+            this.reportRealism(`${why}; trying ${realismName(next)}`, true);
+            this.beginPhysicsBuild(next);
+            return;
+        }
+        this.requestedRealism = this.realism;
+        this.reportRealism(`${why}; staying on ${realismName(this.realism)}`, true);
     }
 
     discardPhysicsBuild() {
@@ -613,7 +695,7 @@ export class SubSurfaceEngine {
 
         // Diagnostics + FX/audio census piggyback on the readback: cell
         // counts, sampled ember/smoke emitter positions, quench detection.
-        let sand = 0, fluid = 0, fire = 0, obsidian = 0;
+        let sand = 0, fluid = 0, fire = 0, obsidian = 0, debris = 0;
         const d = this.gridData;
         const w = this.width, w4 = w * 4;
         this.lavaSurface.length = 0;
@@ -636,6 +718,8 @@ export class SubSurfaceEngine {
                 }
             } else if (m === MAT.OBSIDIAN) {
                 obsidian++;
+            } else if (m === MAT.DEBRIS) {
+                debris++;
             }
         }
         this.activeSandCells = sand;
@@ -647,6 +731,30 @@ export class SubSurfaceEngine {
             this.audio.sizzle(this.lavaSurface[0]?.x ?? 400);
         }
         this.lastObsidianCount = obsidian;
+
+        // ---- Conservation residual ----------------------------------------
+        // Airborne grains are matter too: they left the grid but have not
+        // landed, so they belong on the actual side of the ledger.
+        let airSand = 0, airWater = 0;
+        for (const g of this.grains) {
+            if (g.mat === MAT.WATER) airWater++; else airSand++;
+        }
+        // Sand-family solids are all one ledger: a blast that turns sand into
+        // rubble or fuses it to glass has moved nothing. Landed DEBRIS has to
+        // be counted here because airborne debris grains are bucketed as sand
+        // above — without it every blast that makes rubble read as a loss.
+        const actualSand = sand + obsidian + debris + airSand;
+        const actualWater = fluid + airWater;
+        const a = this.audit;
+        if (a.prevSand >= 0 && !a.brushDirty) {
+            a.residualSand += actualSand - (a.prevSand - a.drainSand);
+            a.residualWater += actualWater - (a.prevWater - a.drainWater);
+        }
+        a.prevSand = actualSand;
+        a.prevWater = actualWater;
+        a.drainSand = 0;
+        a.drainWater = 0;
+        a.brushDirty = false;
     }
 
     // COHERENCE GUARD: every CPU mutation that later uploads a rect must run
@@ -1111,7 +1219,11 @@ export class SubSurfaceEngine {
                     submergedTNTCount: this.submergedTNTCount,
                     activeFluidCells: this.activeFluidCells,
                     activeSandCells: this.activeSandCells,
-                    airborneGrains: this.grains.length
+                    airborneGrains: this.grains.length,
+                    // Unexplained matter since load: 0 means every cell that
+                    // left the grid is accounted for by a lateral drain.
+                    residualSand: this.audit.residualSand,
+                    residualWater: this.audit.residualWater
                 }).catch(() => {});
             }
         }
@@ -1153,6 +1265,9 @@ export class SubSurfaceEngine {
         let brushUniform = [0, 0, 0, 0];
         if (this.isMouseDown && !this.isSlingshotAiming && BRUSH_TOOLS.has(this.currentTool)) {
             brushUniform = [this.mousePos.x, this.mousePos.y, this.brushRadius, this.currentTool];
+            // Painting/digging changes mass deliberately; exclude this
+            // interval from the conservation residual (see this.audit).
+            this.audit.brushDirty = true;
         }
 
         // Active shockwaves (up to MAX_SHOCKWAVES simultaneous blasts)
@@ -1867,7 +1982,14 @@ export class SubSurfaceEngine {
 
             for (let s = 0; s < steps; s++) {
                 const nx = g.x + sx, ny = g.y + sy;
-                if (nx < 1 || nx > w - 2) { gone = true; break; } // lateral drains: the one allowed loss
+                if (nx < 1 || nx > w - 2) {
+                    // Lateral drains: the one allowed loss. Counted so the
+                    // audit can tell this apart from an actual leak.
+                    if (g.mat === MAT.WATER) this.audit.drainWater++;
+                    else this.audit.drainSand++;
+                    gone = true;
+                    break;
+                }
                 if (ny < h && ny > 3) {
                     const m = this.matAt(nx, ny);
                     if (m === MAT.WATER) {

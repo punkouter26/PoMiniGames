@@ -374,6 +374,21 @@ float wetOf(vec4 c) {
 bool isAir(vec4 c) { return matOf(c) == AIR; }
 bool isGasAir(vec4 c) { return matOf(c) == AIR && c.g > 2.0 / 255.0; }
 bool isClearAir(vec4 c) { return matOf(c) == AIR && c.g <= 2.0 / 255.0; }
+// Capillary suction curve, replacing a hard step at wetOf 8. Cohesion is
+// negligible in bone-dry sand, peaks where menisci bridge the grains at about
+// a fifth saturation (this is the sandcastle), and collapses again once the
+// pores fill and the pore pressure goes positive. The step made the same grain
+// topple freely at wetOf 8 and cling at 9, and — backwards — made
+// pore-saturated sand LESS mobile than damp sand when a drowned slurry should
+// slump more readily, not less. s(1-s)^4 peaks at s = 0.2 and is zero at both
+// ends, so dry and saturated keep their free-flowing behaviour instead of
+// being dragged toward the damp minimum the way a bell curve would drag them.
+float toppleP(vec4 c) {
+    float s = clamp(wetOf(c) / 20.0, 0.0, 1.0);
+    float bridge = clamp(s * pow(1.0 - s, 4.0) * 12.207, 0.0, 1.0);
+    return mix(1.0, 0.22, bridge);
+}
+
 bool isGranular(vec4 c) { return matOf(c) == SAND && c.a < COHESION_THRESH; }
 // Permeable to percolating water: loose sand, and the saturated slurry that
 // loose sand becomes once it is waterlogged (support caps at 0.35 there, just
@@ -477,8 +492,8 @@ void main() {
     bool wtop1 = fract(rc * 29.7) < SINK_P;
     bool tgt10 = isAir(c10) || (matOf(c10) == WATER && wtop0);
     bool tgt00 = isAir(c00) || (matOf(c00) == WATER && wtop1);
-    bool topple01 = isGranular(c01) && !canSink(c01, c00, rs0) && tgt10 && (wetOf(c01) <= 8.0 || r2 < 0.35);
-    bool topple11 = isGranular(c11) && !canSink(c11, c10, rs1) && tgt00 && (wetOf(c11) <= 8.0 || r2 < 0.35);
+    bool topple01 = isGranular(c01) && !canSink(c01, c00, rs0) && tgt10 && r2 < toppleP(c01);
+    bool topple11 = isGranular(c11) && !canSink(c11, c10, rs1) && tgt00 && r2 < toppleP(c11);
     if (topple01 && topple11) { if (r < 0.5) topple11 = false; else topple01 = false; }
     if (topple01) { t = c01; c01 = c10; c10 = t; }
     else if (topple11) { t = c11; c11 = c00; c00 = t; }

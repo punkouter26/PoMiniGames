@@ -9,6 +9,17 @@ public partial class SubSurfaceSandbox : ComponentBase, IAsyncDisposable
     private ElementReference _canvasRef;
     private bool _initialized;
     private SubSurfaceDiagnostics _diagnostics = new(60.0, 2, 0, 0, 0, 0);
+
+    /// <summary>
+    /// True while the matter ledger is not moving much. Deliberately NOT named
+    /// "clean": the shader drains loose matter off the open edge columns
+    /// itself, so a settling world drifts for entirely legitimate reasons and a
+    /// non-zero reading is not by itself a defect. The threshold is generous
+    /// because the census is sampled every few frames — a grain mid-landing is
+    /// briefly on neither side of the books.
+    /// </summary>
+    private bool LedgerSteady =>
+        Math.Abs(_diagnostics.ResidualSand) <= 64 && Math.Abs(_diagnostics.ResidualWater) <= 64;
     private SubSurfaceRealismStatus _realism = new(SubSurfaceRealism.Medium, SubSurfaceRealism.None, true, false, 0, "");
 
     /// <summary>
@@ -26,10 +37,30 @@ public partial class SubSurfaceSandbox : ComponentBase, IAsyncDisposable
     protected SubSurfacePreset SelectedPreset { get; set; } = SubSurfacePreset.DefaultHorizon;
 
     /// <summary>
-    /// Medium by default: the highest tier seen to link everywhere (High hangs
-    /// the ANGLE/D3D11 shader compiler ~100 s and then fails on Snapdragon-class
-    /// GPUs). The engine bootstraps on Low and chases this tier in the
-    /// background; a failed upgrade snaps the selector back to the tier kept.
+    /// Medium by default — deliberately still Medium, after an attempt to make
+    /// it High was measured and backed out.
+    ///
+    /// High is where the water physics this game is built around actually
+    /// lives: hydrostatic rise and communicating vessels, erosion, suspended
+    /// sediment, infiltration, mud creep and fast fall are all
+    /// `#if REALISM >= 3`. So shipping Medium means shipping that switched off,
+    /// and it is worth wanting to fix.
+    ///
+    /// It cannot be fixed from here, though. Measured under software GL: the
+    /// High chain never reports completion at all — still "compiling" after
+    /// 150 s, with the simulation pinned at 1 FPS the whole time because the
+    /// driver starves the frame loop. Capping that wait then cancels Medium
+    /// too, which links but is also slow, leaving the page on Low: worse
+    /// again. Every lever available at this layer trades one regression for
+    /// another.
+    ///
+    /// The actual fix is to stop asking one enormous branchy shader to link at
+    /// all — split the physics into several small specialised passes, the way
+    /// the sibling Sand2 engine does. Until then Medium is the honest default.
+    ///
+    /// The engine bootstraps on Low and chases this tier in the background; a
+    /// failed upgrade now steps DOWN a tier rather than pinning to whatever is
+    /// linked, and a link still running after two minutes is abandoned.
     /// </summary>
     protected SubSurfaceRealism SelectedRealism { get; set; } = SubSurfaceRealism.Medium;
 

@@ -246,9 +246,28 @@ bool fastFallTargets(vec2 rPos) {
 // arbitration predicate roll the same dice.
 float slideProb(vec4 d) {
     if (d.r != MAT_SAND) return 1.0;   // debris: cohesionless
-    if (d.b < 0.08) return 0.85;       // dry (scorched counts as dry)
-    if (d.b < 0.85) return 0.18;       // damp: holds near-vertical faces
-    return 0.75;                       // saturated: slumps
+    // Capillary cohesion follows a suction curve, not three steps. It is
+    // negligible in bone-dry sand, peaks around a fifth saturation where
+    // menisci bridge the grains (this is the sandcastle), and collapses again
+    // as the pores fill and the pore pressure goes positive. The old bands
+    // made the same grain hold a vertical face at b = 0.849 and slump at
+    // 0.851, and gave a drying slope no gradual failure at all.
+    //
+    // s(1-s)^4 peaks at s = 0.2 and is zero at both ends by construction, so
+    // dry and saturated keep their old values instead of being dragged toward
+    // the damp minimum the way a Gaussian bell would drag them.
+    float sat = clamp(d.b, 0.0, 1.0);   // scorched (-1) / vitrified (-2) read as bone dry
+    float bridge = clamp(sat * pow(1.0 - sat, 4.0) * 12.207, 0.0, 1.0);
+    float base = mix(0.85, 0.80, smoothstep(0.80, 1.0, sat)); // dry -> slurry
+    // Reynolds dilatancy: dense sand cannot shear without first expanding, so
+    // a grain compacted under overburden has to lift its neighbours to move at
+    // all and starts later than a loose one. The other half of the effect was
+    // already here and only needed saying: a grain that does shear ARRIVES
+    // with looseness 1.0, which is precisely the dilation. This is also what
+    // lets a bed armour itself — see the Shields threshold, which reads the
+    // same packing channel.
+    float pack = clamp(-d.g, 0.0, 0.5);      // 0 loose .. 0.5 fully compacted
+    return mix(base, 0.15, bridge) * (1.0 - 1.2 * pack);
 }
 
 bool slideRolls(vec2 dPos, vec4 d) {
@@ -347,6 +366,46 @@ bool mudFlowTargets(vec2 rPos, float P) {
     if (sandSlideTargets(rPos, P)) return false;                   // dry slide outranks
     // Viscosity: slurry creeps, it does not race
     if (hash(dPos * 2.3 + vec2(float(u_frame), float(u_subStep))) > 0.4) return false;
+    return true;
+#else
+    return false;
+#endif
+}
+
+// Dry surface creep: the actual angle of repose.
+// A Margolus diagonal topple can only ever relax a slope to 45 degrees, so dry
+// sand here stood at 45 where real dry sand stands near 32-34, and slideProb
+// could only change how FAST a pile reached 45, never where it stopped. Loose
+// surface grains now also step sideways when the ground falls away faster than
+// the material can hold — measured geometrically rather than tuned: on a
+// uniform slope of s cells per column the cell at (+4, -2) from the donor is
+// air exactly when s >= (2 + 0.5) / 4, which is 32 degrees. (+2, 0) merely
+// keeps the path itself open. The probe is ported from Sand2.
+//
+// Sits at mud creep's priority and yields to exactly the rules mud creep
+// yields to (plus mud creep itself), so it cannot race a receiver claim that
+// mud creep could not already have raced.
+bool sandCreepTargets(vec2 rPos, float P) {
+#if REALISM >= 2
+    if (getCell(rPos).r != MAT_AIR) return false;
+    if (fastFallTargets(rPos)) return false;
+    vec2 dPos = rPos + vec2(-P, 0.0);
+    vec4 D = getCell(dPos);
+    if (D.r != MAT_SAND || D.g < 0.5) return false;                 // loose sand only
+    if (D.b >= 0.9) return false;                                   // saturated: mud creep's job
+    if (!isSolid(getCell(dPos + vec2(0.0, -1.0)).r)) return false;  // resting, not falling
+    if (getCell(rPos + vec2(0.0, -1.0)).r == MAT_AIR) return false; // donor prefers the diagonal
+    vec4 rUp = getCell(rPos + vec2(0.0, 1.0));
+    if (isLiquid(rUp.r)) return false;                              // yield to falling liquid
+    if (isGranular(rUp.r) && sandFalls(rUp, rPos.y + 1.0)) return false;
+    if (sandSlideTargets(rPos, P)) return false;                    // diagonal slide outranks
+    if (mudFlowTargets(rPos, P)) return false;                      // slurry creep outranks
+    // Repose probe: only creep where the surface really is steeper than ~32 deg.
+    if (getCell(dPos + vec2(2.0 * P, 0.0)).r != MAT_AIR) return false;
+    if (getCell(dPos + vec2(4.0 * P, -2.0)).r != MAT_AIR) return false;
+    // Creep rate scaled by cohesion, so a damp face still stands steeper than
+    // a dry one — slideProb already carries the suction curve.
+    if (hash(dPos * 5.9 + vec2(float(u_frame), float(u_subStep))) > 0.30 * slideProb(D)) return false;
     return true;
 #else
     return false;
@@ -695,6 +754,11 @@ void main() {
             fragColor = vec4(MAT_AIR, 0.0, 0.0, 0.0);
             return;
         }
+        // Dry surface creep down a >32 deg face: the angle of repose (self-claim)
+        if (mat == MAT_SAND && sandCreepTargets(coord + vec2(P, 0.0), P)) {
+            fragColor = vec4(MAT_AIR, 0.0, 0.0, 0.0);
+            return;
+        }
 
         // Erosion pickup: fast water sweeps a settled saturated bed cell into
         // suspension. In-place transform (see sandErodes for the ledger).
@@ -731,11 +795,38 @@ void main() {
         // load-bearing) instead of instantly liquefying over every reservoir.
         bool touchingWater = cellAbove.r == MAT_WATER ||
                              cellLeft.r == MAT_WATER || cellRight.r == MAT_WATER;
-        // Erosion: fast-flowing water scours the sand it rushes past
-        bool scoured = (cellLeft.r == MAT_WATER && abs(cellLeft.g) > 0.5) ||
-                       (cellRight.r == MAT_WATER && abs(cellRight.g) > 0.5) ||
-                       (cellAbove.r == MAT_WATER && abs(cellAbove.g) > 0.5);
-        float wet = touchingWater ? 1.0 : (current.b > 0.0 ? current.b - 0.008 : current.b);
+        // Erosion, as a threshold of motion rather than a speed switch.
+        // Shields: a grain leaves the bed when the flow's shear beats what the
+        // grain's own weight, its packing and its capillary cohesion resist.
+        // The old test fired whenever ANY adjacent water was moving at all, so
+        // a packed damp bed scoured exactly as readily as loose dry sand and
+        // no bed could ever armour itself. Driving shear is strongest from
+        // water passing over the bed, which is where the boundary layer bites.
+        float drive = 0.0;
+        if (cellLeft.r == MAT_WATER) drive += abs(cellLeft.g);
+        if (cellRight.r == MAT_WATER) drive += abs(cellRight.g);
+        if (cellAbove.r == MAT_WATER) drive += abs(cellAbove.g) * 1.4;
+        // Overburden-compacted bed armours; capillary cohesion resists (the
+        // suction curve in slideProb already says how much, so a bed under
+        // standing water — which has lost its menisci — stays mobile).
+        float packResist = max(0.0, -current.g) * 1.6;
+        float cohResist  = (1.0 - slideProb(current)) * 1.2;
+        bool scoured = drive > 0.5 + packResist + cohResist;
+        // Evaporation is a SURFACE process. The old rule dried every sand cell
+        // at a flat 0.008 per sub-step, so ground buried a hundred cells deep
+        // dried exactly as fast as an exposed beach and the water table
+        // quietly evaporated from under the map — wetness was a one-way
+        // ratchet with no way back in. Drying now needs an air face and scales
+        // with how much of the cell is exposed, which gives a real drying
+        // front working downward from the surface and leaves buried moisture
+        // where it belongs. Clamped at 0 so a drying cell can never drift into
+        // the negative sentinels (-1 scorched, -2 vitrified).
+        float airFaces = float(cellAbove.r == MAT_AIR)
+                       + float(cellLeft.r == MAT_AIR)
+                       + float(cellRight.r == MAT_AIR);
+        float dryRate = 0.004 * airFaces;   // 0 buried, ~0.012 on an exposed corner
+        float wet = touchingWater ? 1.0
+                  : (current.b > 0.0 ? max(0.0, current.b - dryRate) : current.b);
         if (concussed > 0.5 && wet > 0.0) wet = 0.0; // blast heat flash-dries the soil
         if (nearLava && wet >= 0.0) wet = -1.0;      // radiant heat chars the contact face
         // Landing kills fall speed; settled grains then pack slowly under
@@ -970,6 +1061,13 @@ void main() {
     // 2.5 Saturated slurry creeping in laterally (parity dir)
     if (mudFlowTargets(coord, P)) {
         fragColor = vec4(MAT_SAND, 1.0, 1.0, 0.0);
+        return;
+    }
+    // 2.6 Dry surface creep arriving laterally (parity dir). Carries the
+    //     donor's own wetness so a creeping face does not dry out as it moves.
+    if (sandCreepTargets(coord, P)) {
+        vec4 Dc = getCell(coord + vec2(-P, 0.0));
+        fragColor = vec4(MAT_SAND, 1.0, max(Dc.b, 0.0), 0.0);
         return;
     }
     // 3. Water falling straight down. Mirror the donor: the water above does NOT

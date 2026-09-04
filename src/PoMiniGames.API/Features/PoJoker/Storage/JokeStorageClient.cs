@@ -65,7 +65,10 @@ public sealed class JokeStorageClient : IJokeStorageClient
                 performances.Add(MapToDto(entity));
             }
         }
-        catch (RequestFailedException ex)
+        // Broadened from RequestFailedException to include TaskCanceledException (raised by
+        // the configured 2s network timeout) and any other transport-level failure so a
+        // storage outage never 500s the API.
+        catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to get performances for session {SessionId}; returning an empty result.", sessionId);
             return [];
@@ -99,7 +102,10 @@ public sealed class JokeStorageClient : IJokeStorageClient
                 );
             }
         }
-        catch (RequestFailedException ex)
+        // Broadened from RequestFailedException to also catch TaskCanceledException (raised
+        // by the configured 2s network timeout) and any other transport-level failure so a
+        // storage outage never 500s the API.
+        catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to get leaderboard from table storage; returning an empty leaderboard.");
             return [];
@@ -153,7 +159,10 @@ public sealed class JokeStorageClient : IJokeStorageClient
                 rows.Add(entity);
             }
         }
-        catch (RequestFailedException ex)
+        // Broadened from RequestFailedException to also catch TaskCanceledException (raised
+        // by the configured 2s network timeout) and any other transport-level failure so a
+        // storage outage never 500s the API.
+        catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to get top jokes from table storage; returning an empty board.");
             return [];

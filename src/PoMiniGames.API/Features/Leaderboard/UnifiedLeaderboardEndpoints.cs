@@ -75,22 +75,28 @@ public static class UnifiedLeaderboardEndpoints
         // §6: each board is an independent storage read, so fan them out concurrently instead
         // of awaiting one at a time. Wall-clock drops from the SUM of the per-board scans to
         // the slowest single one.
-        var winRateTasks = WinRateGames.Select(g => BuildWinRateAsync(storage, g.Key, g.Title, limit));
+        //
+        // Graceful degradation: every per-board build is wrapped in SafeAsync so a single
+        // board's storage failure (e.g., TaskCanceledException from the 2s network timeout
+        // against an unreachable Azurite) cannot 500 the whole /api/leaderboards endpoint.
+        // A failed board returns its title with placeholder rows, matching the "no scores
+        // yet" rendering the client already uses for empty boards.
+        var winRateTasks = WinRateGames.Select(g => SafeBuildWinRateAsync(storage, g.Key, g.Title, limit));
         var boardTasks = new[]
         {
-            BuildMarbleAsync(storage, limit),
-            BuildPoRacerAsync(storage, limit),
-            BuildPoSportsAsync(storage, limit),
-            BuildPoBrawlAsync(storage, limit),
+            SafeBuildMarbleAsync(storage, limit),
+            SafeBuildPoRacerAsync(storage, limit),
+            SafeBuildPoSportsAsync(storage, limit),
+            SafeBuildPoBrawlAsync(storage, limit),
             // 2026-08-11: dedicated top-3 board for the PoBrawl demo-mode fighter ELO.
             // Ratings characters, not players — see BuildPoBrawlDemoAsync's docstring —
             // so the board shares storage with the existing /api/pobrawl/elo read but
             // is served through the unified leaderboards so the /leaderboards page can
             // pick it up alongside the per-player boards.
-            BuildPoBrawlDemoAsync(storage, limit),
-            BuildFunQuizAsync(funQuiz, limit),
-            BuildPoJokerAsync(joker, limit),
-            BuildPoVoxelStrikeAsync(storage, limit),
+            SafeBuildPoBrawlDemoAsync(storage, limit),
+            SafeBuildFunQuizAsync(funQuiz, limit),
+            SafeBuildPoJokerAsync(joker, limit),
+            SafeBuildPoVoxelStrikeAsync(storage, limit),
         };
 
         var result = (await Task.WhenAll(winRateTasks.Concat(boardTasks))).ToList();
@@ -98,6 +104,57 @@ public static class UnifiedLeaderboardEndpoints
         // Boards with at least one REAL entry float to the top (every board is now
         // padded to `limit` with XXX placeholders, so raw count no longer ranks).
         return result.OrderByDescending(b => b.Entries.Count(e => e.Name != PlaceholderName)).ToList();
+    }
+
+    // Safe* wrappers around each board builder. A failed builder returns an empty-board
+    // GameLeaderboardDto so the fan-out can keep producing the rest of the page; matches
+    // the same "empty list, padded with XXX by the client" rendering the page already uses
+    // for genuinely empty boards. The board's title still surfaces so the user can see
+    // the section exists, just without rows.
+    private static async Task<GameLeaderboardDto> SafeBuildWinRateAsync(IStorageService storage, string key, string title, int limit)
+    {
+        try { return await BuildWinRateAsync(storage, key, title, limit); }
+        catch { return EmptyBoard(title); }
+    }
+    private static async Task<GameLeaderboardDto> SafeBuildMarbleAsync(IStorageService storage, int limit)
+    {
+        try { return await BuildMarbleAsync(storage, limit); }
+        catch { return EmptyBoard("Marble Race"); }
+    }
+    private static async Task<GameLeaderboardDto> SafeBuildPoRacerAsync(IStorageService storage, int limit)
+    {
+        try { return await BuildPoRacerAsync(storage, limit); }
+        catch { return EmptyBoard("Racer"); }
+    }
+    private static async Task<GameLeaderboardDto> SafeBuildPoSportsAsync(IStorageService storage, int limit)
+    {
+        try { return await BuildPoSportsAsync(storage, limit); }
+        catch { return EmptyBoard("Sports"); }
+    }
+    private static async Task<GameLeaderboardDto> SafeBuildPoBrawlAsync(IStorageService storage, int limit)
+    {
+        try { return await BuildPoBrawlAsync(storage, limit); }
+        catch { return EmptyBoard("Brawl"); }
+    }
+    private static async Task<GameLeaderboardDto> SafeBuildPoBrawlDemoAsync(IStorageService storage, int limit)
+    {
+        try { return await BuildPoBrawlDemoAsync(storage, limit); }
+        catch { return EmptyBoard("Brawl Demo"); }
+    }
+    private static async Task<GameLeaderboardDto> SafeBuildFunQuizAsync(ILeaderboardRepository repo, int limit)
+    {
+        try { return await BuildFunQuizAsync(repo, limit); }
+        catch { return EmptyBoard("Fun Quiz"); }
+    }
+    private static async Task<GameLeaderboardDto> SafeBuildPoJokerAsync(IJokeStorageClient client, int limit)
+    {
+        try { return await BuildPoJokerAsync(client, limit); }
+        catch { return EmptyBoard("Joker"); }
+    }
+    private static async Task<GameLeaderboardDto> SafeBuildPoVoxelStrikeAsync(IStorageService storage, int limit)
+    {
+        try { return await BuildPoVoxelStrikeAsync(storage, limit); }
+        catch { return EmptyBoard("Voxel Strike"); }
     }
 
     private static async Task<GameLeaderboardDto?> BuildOneAsync(
@@ -160,6 +217,19 @@ public static class UnifiedLeaderboardEndpoints
             entries.Add(new LeaderboardEntryDto(rank, PlaceholderName, 0, zeroDisplay));
         }
     }
+
+    /// <summary>
+    /// Builds a board with the title but no real rows — every slot is a placeholder.
+    /// Used by the Safe* wrappers when a per-board builder throws (storage unreachable,
+    /// transient SDK error). The board still appears on the page so the user can see
+    /// the game exists, just with no scores behind it.
+    /// </summary>
+    private static GameLeaderboardDto EmptyBoard(string title) => new(
+        GameKey: "unavailable",
+        Title: title,
+        Unit: "Score",
+        HigherIsBetter: true,
+        Entries: [new LeaderboardEntryDto(1, PlaceholderName, 0, "—")]);
 
     // ── The closed vocabulary for GameLeaderboardDto.Unit ─────────────────────
     // Unit is the label printed on each leaderboard card beside the game title.

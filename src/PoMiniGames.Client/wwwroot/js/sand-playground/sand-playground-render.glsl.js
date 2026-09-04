@@ -1,14 +1,13 @@
 // AUTO-WRAPPED GLSL — do not fetch this as a raw .glsl asset.
 //
-// The Sand2 page is routed at /sand2, so the standalone app's
-// `fetch('js/subsurface-render.glsl')` would resolve against the route, not the app root,
+// The SandPlayground page is routed at /sandplayground, so a relative shader fetch
+// would resolve against the route rather than the app root,
 // and 404. Shipping the shader source as an ES module also keeps it inside the
 // module graph, so it is fingerprinted and cached with the engine instead of
-// arriving as a second, uncacheable round-trip. Matches how the sibling Sand
-// game ships its shaders (wwwroot/js/subsurface/*.glsl.js).
+// arriving as a second, uncacheable round-trip.
 //
 // Sections are delimited by `//====== NAME ======` and split by parseSections()
-// in sand2-engine.js.
+// in sand-playground-engine.js.
 export const source = `
 //====== VERTEX ======
 #version 300 es
@@ -58,6 +57,15 @@ float wetOf(vec4 c) {
 }
 float shockOf(vec4 c) { return matOf(c) == AIR ? c.b : 0.0; }
 
+float waterMask(ivec2 p) { return matOf(get(p)) == WATER ? 1.0 : 0.0; }
+vec2 waterNormal(ivec2 p) {
+    float gx = waterMask(p + ivec2(-2, 0)) + 2.0 * waterMask(p + ivec2(-1, 0))
+             - waterMask(p + ivec2( 2, 0)) - 2.0 * waterMask(p + ivec2( 1, 0));
+    float gy = waterMask(p + ivec2(0, -2)) + 2.0 * waterMask(p + ivec2(0, -1))
+             - waterMask(p + ivec2(0,  2)) - 2.0 * waterMask(p + ivec2(0,  1));
+    return normalize(vec2(gx, gy) + vec2(0.0, 0.001));
+}
+
 float hash(vec2 q) {
     return fract(sin(dot(q, vec2(127.1, 311.7))) * 43758.5453123);
 }
@@ -105,6 +113,13 @@ void main() {
             vec3 caveCol = vec3(0.072, 0.068, 0.084) * (0.8 + 0.5 * g);
             col = mix(col, caveCol, cave * 0.94);
         }
+        // Sub-cell volume reconstruction: an air notch supported by water
+        // below and beside it is the upper fraction of the free surface, not
+        // a square hole. This visually preserves thin sheets and menisci while
+        // the conservative occupancy grid remains one-material-per-cell.
+        float partialWater = waterMask(p + ivec2(0, -1)) *
+            (0.28 + 0.22 * max(waterMask(p + ivec2(-1, 0)), waterMask(p + ivec2(1, 0))));
+        col = mix(col, vec3(0.30, 0.62, 0.82), partialWater);
     } else if (m == SAND) {
         float rb = floor(self.r * 255.0 + 0.5);
         float depth = clamp(1.0 - float(p.y) / 360.0, 0.0, 1.0);
@@ -118,8 +133,15 @@ void main() {
         if (self.a < COHESION_THRESH) col *= 1.10;
         // Damp sand reads darker and slightly richer.
         float wet = wetOf(self) / 20.0;
+        float shore = max(max(waterMask(p + ivec2(-1, 0)), waterMask(p + ivec2(1, 0))),
+                          max(waterMask(p + ivec2(0, 1)), waterMask(p + ivec2(0, 2)) * 0.55));
+        wet = max(wet, shore * 0.72);
         col = mix(col, col * vec3(0.62, 0.60, 0.66), wet);
         if (mu == AIR) col = mix(col, vec3(0.95, 0.83, 0.55) * (1.0 - 0.35 * wet), 0.55);
+        if (mu == AIR && wet > 0.15) {
+            float wetSpec = pow(max(0.0, sin(float(p.x) * 0.09 + u_time * 0.35)), 18.0);
+            col += vec3(0.10, 0.13, 0.14) * wetSpec * wet;
+        }
         // Submerged bed: dancing caustic light filtering through the water.
         if (mu == WATER) {
             float wdep = clamp(up.a * 255.0 / 34.0, 0.0, 1.0);
@@ -150,13 +172,19 @@ void main() {
         float vx = (self.g * 255.0 - 128.0) / 62.0;
         float vyv = (self.b * 255.0 - 128.0) / 62.0;
         float speed = clamp(length(vec2(vx, vyv)), 0.0, 2.0);
-        col = vec3(0.16, 0.42, 0.78);
         // Hydrostatic pressure = real depth below the connected surface.
         float depth = clamp(self.a * 255.0 / 45.0, 0.0, 1.0);
-        col = mix(col, vec3(0.05, 0.16, 0.42), depth * 0.8);
-        // Refraction wobble: peek along the flow vector; a solid neighbour
-        // seen through the moving water tints it (the bed shows through).
-        vec2 roff = vec2(vx * 2.5 + sin(u_time * 1.9 + float(p.y) * 0.13) * 1.3, vyv * 2.2);
+        vec2 normal = waterNormal(p);
+        float surface = float(mu != WATER || ml != WATER || mr != WATER);
+        // Beer-Lambert absorption in metres: red disappears first, leaving
+        // deep water blue-green without painting an arbitrary depth ramp.
+        float metres = self.a * 255.0 * 0.025;
+        vec3 transmittance = exp(-vec3(0.42, 0.16, 0.075) * metres);
+        vec3 shallow = vec3(0.18, 0.52, 0.72);
+        vec3 deep = vec3(0.018, 0.075, 0.16);
+        col = deep + shallow * transmittance;
+        // Refraction follows the reconstructed surface normal and local flow.
+        vec2 roff = normal * (1.2 + depth * 3.5) + vec2(vx, vyv) * 1.7;
         int rm = matOf(get(p + ivec2(roff)));
         if (rm == SAND) col = mix(col, vec3(0.40, 0.34, 0.24), 0.28);
         else if (rm == CONCRETE) col = mix(col, vec3(0.35, 0.38, 0.42), 0.25);
@@ -166,15 +194,22 @@ void main() {
                      + 0.7 * sin(float(p.x) * 0.083 - u_time * 1.15);
             col += vec3(0.08, 0.20, 0.24) * max(0.0, ca - 0.95) * (1.0 - depth / 0.55);
         }
-        // Fast water whitens into streaks along the flow.
-        col = mix(col, vec3(0.55, 0.78, 0.95), speed * 0.28);
+        float curvature = abs(waterMask(p + ivec2(-1, 0)) + waterMask(p + ivec2(1, 0))
+                            + waterMask(p + ivec2(0, -1)) + waterMask(p + ivec2(0, 1)) - 3.0);
+        float foam = surface * smoothstep(0.35, 1.35, speed + curvature * 0.18);
+        col = mix(col, vec3(0.72, 0.86, 0.94), foam * 0.72);
+        // Bed contact under energetic flow entrains a visible turbidity veil.
+        float bedContact = float(md == SAND || ml == SAND || mr == SAND);
+        col = mix(col, vec3(0.34, 0.29, 0.20), bedContact * smoothstep(0.25, 1.1, speed) * 0.35);
         // Animated sparkle, advected with the flow.
         float sp = fract(g * 91.7 + u_time * (0.35 + speed * 0.5) + float(p.x) * 0.013 - vx * 1.7);
         if (sp > 0.96) { col = mix(col, vec3(0.62, 0.85, 0.98), 0.8); emis += 0.10; }
         // Free surface: bright rim with a moving glint (cheap Fresnel).
         if (mu == AIR) {
             float glint = 0.75 + 0.25 * sin(float(p.x) * 0.35 + u_time * 2.4 + g * 6.28);
-            col = mix(vec3(0.62, 0.85, 0.98), vec3(0.95, 0.99, 1.0), glint * 0.5);
+            float fresnel = 0.02 + 0.98 * pow(1.0 - clamp(normal.y, 0.0, 1.0), 5.0);
+            vec3 skyReflection = mix(vec3(0.32, 0.58, 0.82), vec3(0.92, 0.97, 1.0), glint);
+            col = mix(col, skyReflection, clamp(fresnel + 0.18, 0.0, 0.82));
             emis += 0.12 * glint;
         } else if (ml == AIR || mr == AIR) {
             col = mix(col, vec3(0.55, 0.80, 0.95), 0.4);

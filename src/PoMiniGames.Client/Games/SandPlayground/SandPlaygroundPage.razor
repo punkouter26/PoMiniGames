@@ -1,20 +1,20 @@
-@page "/sand2"
-@page "/sand2/{Mode}"
+@page "/sandplayground"
+@page "/sandplayground/{Mode}"
 @using PoMiniGamesClient.Components
 @using PoMiniGamesClient.Models
 @using PoMiniGamesClient.Services
 @inject PlayerNameService PlayerNameService
 
-<PageTitle>Sand2 · Sub-Surface</PageTitle>
+<PageTitle>SandPlayground</PageTitle>
 
 @* Fullscreen: the sandbox sizes itself to the game area (see
-   Sand2Sandbox.razor.css) rather than sitting in a padded card, which is what
+   SandPlaygroundSandbox.razor.css) rather than sitting in a padded card, which is what
    lets the canvas take the screen on a phone without the component having to
    pin itself over the app top bar. *@
 <GameShell Title=@TitleContent
            Player="@_playerName"
            BackTo="/"
-           GameKey="sand2"
+           GameKey="sandplayground"
            RequiresWebGl="true"
            Fullscreen="true">
 
@@ -24,7 +24,7 @@
        gesture, so nothing is created suspended. *@
     @if (!_introDismissed)
     {
-        <GameIntro CueScope="sand2"
+        <GameIntro CueScope="sandplayground"
                    Title=@TitleContent
                    Objective="A GPU cellular-automaton sandbox. Dig it, flood it, build in it, then blow it apart — sand arches and shears, water finds its level and soaks into the ground, and buried charges leave sealed cavities instead of craters."
                    Controls=@HowToPlayContent
@@ -33,7 +33,7 @@
     }
     else
     {
-        <Sand2Sandbox IsDemo="IsDemo" />
+        <SandPlaygroundSandbox IsDemo="IsDemo" />
     }
 </GameShell>
 
@@ -45,7 +45,7 @@
 
     private bool IsDemo => GameModes.Parse(Mode) == GameMode.Demo;
 
-    private RenderFragment TitleContent => @<span><span aria-hidden="true">🏜️</span> Sand2 · Sub-Surface</span>;
+    private RenderFragment TitleContent => @<span><span aria-hidden="true">🏜️</span> SandPlayground</span>;
 
     private RenderFragment HowToPlayContent => @<div>
         <p><strong>Pick a tool, then drag on the world:</strong></p>

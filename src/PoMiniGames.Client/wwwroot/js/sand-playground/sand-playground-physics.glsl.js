@@ -1,14 +1,13 @@
 // AUTO-WRAPPED GLSL — do not fetch this as a raw .glsl asset.
 //
-// The Sand2 page is routed at /sand2, so the standalone app's
-// `fetch('js/subsurface-physics.glsl')` would resolve against the route, not the app root,
+// The SandPlayground page is routed at /sandplayground, so a relative shader fetch
+// would resolve against the route rather than the app root,
 // and 404. Shipping the shader source as an ES module also keeps it inside the
 // module graph, so it is fingerprinted and cached with the engine instead of
-// arriving as a second, uncacheable round-trip. Matches how the sibling Sand
-// game ships its shaders (wwwroot/js/subsurface/*.glsl.js).
+// arriving as a second, uncacheable round-trip.
 //
 // Sections are delimited by `//====== NAME ======` and split by parseSections()
-// in sand2-engine.js.
+// in sand-playground-engine.js.
 export const source = `
 //====== VERTEX ======
 #version 300 es
@@ -141,6 +140,11 @@ void main() {
     if (m == SAND) {
         float rnd = hash(vec2(p) * 0.173 + vec2(u_seed, u_seed * 1.31));
         float rbyte = floor(self.r * 255.0 + 0.5);
+        // Two persistent grain fractions live below the byte quantisation
+        // threshold. Coarse grains settle faster and resist entrainment;
+        // fine grains travel farther in turbidity plumes.
+        float grainFrac = fract(self.r * 255.0);
+        if (grainFrac < 0.05) grainFrac = rnd < 0.62 ? 0.12 : 0.36;
         bool glass = rbyte >= 81.0 && rbyte <= 84.0; // vitrified blast lining
         bool sat = rbyte >= 85.0;                    // pores hold a cell of water
 
@@ -189,6 +193,27 @@ void main() {
             float diag = max(supportOf(get(p + ivec2(-1, -1))), supportOf(get(p + ivec2(1, -1)))) - dDec;
             float target = clamp(max(below, max(lat, diag)), 0.0, 1.0);
             int waterNbrs = (mu == WATER ? 1 : 0) + (md == WATER ? 1 : 0) + (ml == WATER ? 1 : 0) + (mr == WATER ? 1 : 0);
+            float saturation = clamp(wet / 20.0, 0.0, 1.0);
+            float capillary = clamp(saturation * pow(1.0 - saturation, 4.0) * 12.207, 0.0, 1.0);
+            target = min(1.0, target + capillary * 0.18);
+            // Drucker-Prager-style yield envelope. Confinement raises shear
+            // strength, saturation lowers the friction angle, and capillary
+            // suction supplies the cohesion term for damp sand castles.
+            float normalStress = clamp(below * 0.7 + diag * 0.3, 0.0, 1.0);
+            float leftStress = clamp(supportOf(lf), 0.0, 1.0);
+            float rightStress = clamp(supportOf(rt), 0.0, 1.0);
+            float shearStress = abs(leftStress - rightStress) * 0.65 +
+                                (md == AIR || md == WATER ? 0.32 : 0.0);
+            float friction = mix(0.625, 0.510, saturation); // tan(32deg)..tan(27deg)
+            float yieldLimit = capillary * 0.24 + normalStress * friction;
+            if (!glass && shearStress > yieldLimit) target = min(target, 0.18);
+            // Terzaghi effective stress: pore pressure subtracts from the
+            // grain skeleton's load-bearing stress before full liquefaction.
+            float poreHead = 0.0;
+            if (mu == WATER) poreHead = max(poreHead, up.a);
+            if (ml == WATER) poreHead = max(poreHead, lf.a);
+            if (mr == WATER) poreHead = max(poreHead, rt.a);
+            target *= 1.0 - saturation * clamp(poreHead * 1.8, 0.0, 0.42);
             // Sand with standing water ON TOP of it is submerged, and
             // submerged sand has no capillary cohesion at all — the damp-sand
             // bridges that hold a bank up simply are not there once the pores
@@ -215,7 +240,7 @@ void main() {
         if (scorch > 0.0 && abs(scorch - self.b) < 9.0 / 255.0) scorch = 0.0;
         else if (scorch > 0.0 && fract(rnd * 23.11) < 0.23) scorch = max(scorch - 1.0 / 255.0, 0.0);
 
-        outColor = vec4((glass ? rbyte : (sat ? 85.0 : 60.0 + wet)) / 255.0, scorch, fall, a);
+        outColor = vec4((glass ? rbyte : (sat ? 85.0 : 60.0 + wet) + grainFrac) / 255.0, scorch, fall, a);
         return;
     }
 
@@ -314,12 +339,81 @@ void main() {
             vy = vy > 0.5 ? max(0.5, vy - dq) : min(0.5, vy + dq);
         }
 
+        // No-slip-ish boundary drag and two-way phase coupling. Flow next to
+        // a sand bed loses momentum to the grains; the erosion pass spends
+        // that transferred energy by mobilising them.
+        float sandFaces = float(md == SAND) +
+                          0.35 * float(ml == SAND || mr == SAND);
+        float drag = min(0.16, sandFaces * 0.035);
+        vx = mix(vx, 0.5, drag);
+        vy = mix(vy, 0.5, drag * 0.65);
+
         outColor = vec4(180.0 / 255.0, vx, vy, a);
         return;
     }
 
     // -------------------------------------------------- CONCRETE / BEDROCK --
     outColor = vec4(self.r, 0.0, 0.0, 1.0);
+}
+
+//====== RELAX ======
+#version 300 es
+// Continuous water correction layered over the conservative cellular moves.
+// Material occupancy still moves cell-for-cell, while velocity and pressure
+// are half-float fields on capable GPUs.  A Jacobi-like relaxation removes
+// checkerboard pressure, viscosity damps grid noise, and the pressure gradient
+// supplies the missing sub-cell response before the Margolus transport pass.
+precision highp float;
+precision highp int;
+
+uniform sampler2D u_state;
+uniform float u_dt;
+out vec4 outColor;
+
+const int W = 800, H = 600;
+const int WATER = 3;
+
+vec4 get(ivec2 p) {
+    p = clamp(p, ivec2(0), ivec2(W - 1, H - 1));
+    return texelFetch(u_state, p, 0);
+}
+int matOf(vec4 c) { return (int(floor(c.r * 255.0 + 0.5)) + 30) / 60; }
+vec2 vel(vec4 c) { return matOf(c) == WATER ? c.gb - vec2(0.5) : vec2(0.0); }
+float head(vec4 c, float fallback) { return matOf(c) == WATER ? c.a : fallback; }
+
+void main() {
+    ivec2 p = ivec2(gl_FragCoord.xy);
+    vec4 s = get(p);
+    if (matOf(s) != WATER) { outColor = s; return; }
+
+    vec4 l = get(p + ivec2(-1, 0)), r = get(p + ivec2(1, 0));
+    vec4 d = get(p + ivec2(0, -1)), u = get(p + ivec2(0, 1));
+    float wl = float(matOf(l) == WATER), wr = float(matOf(r) == WATER);
+    float wd = float(matOf(d) == WATER), wu = float(matOf(u) == WATER);
+    float n = max(1.0, wl + wr + wd + wu);
+
+    vec2 v = vel(s);
+    vec2 avgV = (vel(l) + vel(r) + vel(d) + vel(u)) / n;
+    v = mix(v, avgV, clamp(u_dt * 15.0, 0.0, 0.10));
+
+    float pL = head(l, s.a), pR = head(r, s.a);
+    float pD = head(d, s.a), pU = head(u, s.a);
+    vec2 gradP = vec2(pR - pL, pU - pD);
+    v -= gradP * clamp(u_dt * 24.0, 0.0, 0.16);
+
+    // Vorticity confinement restores a little rolling motion lost to the
+    // viscosity step, but only inside a body of water (never in a lone drop).
+    float curl = (vel(r).y - vel(l).y) - (vel(u).x - vel(d).x);
+    if (n > 2.5) v += vec2(-v.y, v.x) * curl * 0.018;
+
+    float hydro = (pL * wl + pR * wr +
+                   max(0.0, pD - 1.0 / 255.0) * wd +
+                   min(1.0, pU + 1.0 / 255.0) * wu) / n;
+    float divergence = ((vel(r).x - vel(l).x) + (vel(u).y - vel(d).y)) * 0.5;
+    float relaxedHead = mix(s.a, hydro, clamp(u_dt * 18.0, 0.0, 0.12));
+    relaxedHead = clamp(relaxedHead - divergence * 0.10, 0.0, 1.0);
+    v = clamp(v, vec2(-100.0 / 255.0), vec2(100.0 / 255.0));
+    outColor = vec4(s.r, v + vec2(0.5), relaxedHead);
 }
 
 //====== MOVE ======
@@ -401,6 +495,7 @@ float rbOf(vec4 c) { return floor(c.r * 255.0 + 0.5); }
 // recount() on the CPU counts it as water and every transition below is one
 // cell in, one cell out.
 bool isSat(vec4 c) { return matOf(c) == SAND && rbOf(c) >= 85.0; }
+float grainScale(vec4 c) { return fract(c.r * 255.0) < 0.24 ? 0.72 : 1.35; }
 // Able to take water in: loose or already-slurried ground, never vitrified
 // lining and never a grain that is already full. Packed strata sit at 1.0,
 // which is what keeps the cavern roofs and the reservoir bed sealed.
@@ -414,7 +509,7 @@ bool isMobile(vec4 c) { int m = matOf(c); return (m == SAND && c.a < COHESION_TH
 bool canSink(vec4 top, vec4 bot, float rnd) {
     int mb = matOf(bot);
     if (mb == AIR) return true;
-    if (mb == WATER && matOf(top) == SAND) return rnd < SINK_P;
+    if (mb == WATER && matOf(top) == SAND) return rnd < SINK_P * grainScale(top);
     return false;
 }
 
@@ -544,8 +639,16 @@ void main() {
     // Purely flow-driven: still water must not stir the bed at all, or a
     // quiet lake would slowly go turbid and creep its own bed upward.
     // Infiltration is the pore-water system(3e) job, not this one.
-    float pe0 = max(0.0, wsp0 - EROSION_V) * 4.0 * coh0;
-    float pe1 = max(0.0, wsp1 - EROSION_V) * 4.0 * coh1;
+    // Shields-style mobility: quadratic flow forcing, opposed by packing,
+    // capillary bridges and grain weight. Coarse grains armour the bed.
+    float sat0 = clamp(wetOf(c00) / 20.0, 0.0, 1.0);
+    float sat1 = clamp(wetOf(c10) / 20.0, 0.0, 1.0);
+    float cap0 = sat0 * pow(1.0 - sat0, 4.0) * 12.207;
+    float cap1 = sat1 * pow(1.0 - sat1, 4.0) * 12.207;
+    float pe0 = max(0.0, wsp0 * wsp0 - EROSION_V * EROSION_V) * 14.0 * coh0 /
+                (grainScale(c00) + cap0 * 0.8 + c00.a * 0.7);
+    float pe1 = max(0.0, wsp1 * wsp1 - EROSION_V * EROSION_V) * 14.0 * coh1 /
+                (grainScale(c10) + cap1 * 0.8 + c10.a * 0.7);
     if (matOf(c01) == WATER && matOf(c00) == SAND && re < pe0) { t = c01; c01 = c00; c00 = t; }
     else if (matOf(c11) == WATER && matOf(c10) == SAND && fract(re * 7.19) < pe1) { t = c11; c11 = c10; c10 = t; }
 

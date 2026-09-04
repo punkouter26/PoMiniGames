@@ -234,19 +234,6 @@ public static class GameCatalog
             ChipPrimary = true,
         },
 
-        // ChipPrimary: 1P is the card head (you pick and slingshot the ordnance
-        // yourself), so without it the chip row would read a lone "Demo" and the
-        // game would scan as watch-only — same rationale as Marble Race.
-        new(GameKeys.SubSurface, "Sand", "⛏️",
-        [
-            new(GameMode.OnePlayer, "/subsurface/1player"),
-            new(GameMode.Demo, "/subsurface/demo"),
-        ])
-        {
-            Subtitle = "2D Physical Sandbox: Soil arching, rigid concrete, fluid & ordnance",
-            ChipPrimary = true,
-        },
-
         // Watch-first: the island runs itself, so Demo is the card head; 1-player is the
         // same world with AI thoughts enabled by default.
         new(GameKeys.PoEcosystem, "PoEcosystem", "🌿",
@@ -258,15 +245,12 @@ public static class GameCatalog
             Subtitle = "A living island you walk through: creatures hunt, mate, age and die on their own",
         },
 
-        // Sibling of Sand, not a replacement — see GameKeys.Sand2. The subtitle has
-        // to earn the "2": two cards reading "physics sandbox" would otherwise look
-        // like a duplicate entry. ChipPrimary for the same reason as Sand: 1P is the
-        // card head, so without it the chip row reads a lone "Demo" and the game
-        // scans as watch-only.
-        new(GameKeys.Sand2, "Sand2", "🏜️",
+        // 1P is the card head, so ChipPrimary keeps the chip row from presenting
+        // this interactive sandbox as watch-only.
+        new(GameKeys.SandPlayground, "SandPlayground", "🏜️",
         [
-            new(GameMode.OnePlayer, "/sand2/1player"),
-            new(GameMode.Demo, "/sand2/demo"),
+            new(GameMode.OnePlayer, "/sandplayground/1player"),
+            new(GameMode.Demo, "/sandplayground/demo"),
         ])
         {
             Subtitle = "Wet sand: pore water, hydrostatic flow, buried charges and camouflet cavities",

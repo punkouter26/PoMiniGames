@@ -59,10 +59,10 @@ standing rules, then (4) start Task 1. No game code before the user's "approved"
    inspects. A minimap (top-right) renders island tiles + species dots + player arrow from the
    low-frequency `tiles`/`stats` channels plus the frame positions. HUD = layout concept C
    (crosshair, sparkline, toasts, Tab dashboard overlay, popover inspector).
-9. **Blazor**: `PoEcosystemInteropService` mirrors `SubSurfaceInteropService` (DotNetObjectReference,
-   `[JSInvokable]` → C# events, `JSDisconnectedException` on dispose) but calls `window.PoEcosystem.*`
-   after `loadEngine('poecosystem')`. DTOs are flat records (trim-safe). Page follows
-   `SubSurfacePage.razor` (GameShell `RequiresWebGl`, GameIntro, Demo mode). Chart reuses
+9. **Blazor**: `PoEcosystemInteropService` owns the DotNetObjectReference,
+   `[JSInvokable]` → C# events, and `JSDisconnectedException` handling on dispose, and calls
+   `window.PoEcosystem.*` after `loadEngine('poecosystem')`. DTOs are flat records (trim-safe).
+   The page uses GameShell `RequiresWebGl`, GameIntro, and Demo mode. Chart reuses
    `Games/PoSurvive/Features/Charts/ChartGeometry.cs` + `SvgText.razor`. Mobile bottom sheet is plain
    CSS radio-tabs in the viewer's scoped CSS (`--z-btb` slot 70) — no new shared component.
 
@@ -140,7 +140,7 @@ JS paths relative to `src/PoMiniGames.Client/wwwroot/js/poecosystem/`; Blazor pa
 | Autosave on tab kill | ≤10 s lost | Accepted by spec; `saveNow` fired synchronously on `visibilitychange` |
 | Root `package.json` `type: module` | Node default changes repo-wide | Verified: only `docs/build.mjs` and `tools/img2threejs` (own package.json) exist |
 | SwiftShader E2E slowness | Flaky smoke | Demo route: LLM off, 250 cap, no shadows when `navigator.webdriver`; wait on `__poeco()`; 60 s timeouts |
-| Trim analyzer on DTOs | IL2xxx fails build | Flat records with primitives/strings/arrays only (as `SubSurfaceDiagnostics`) |
+| Trim analyzer on DTOs | IL2xxx fails build | Flat records with primitives, strings, and arrays only |
 | Blast radius | Task edits outside manifest | Each task touches only its listed files (+ its test files); shared-file edits (Program.cs, engineLoader, GameKey×2, GameCatalog, test-all.ps1) are confined to T19/T24 |
 
 ## Verification (end-to-end)

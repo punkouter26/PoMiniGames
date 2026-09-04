@@ -1,5 +1,5 @@
 // ===========================================================================
-// Sand2 (Project Sub-Surface lineage) — native JS engine
+// SandPlayground — native JS engine
 //  - WebGL2 ping-pong cellular automata (support/stress pass + Margolus move
 //    pass, 2..4 sub-steps per frame) for sand / water / shockwaves
 //  - CPU-side rigid-body solver for connected concrete bars & inert bombs
@@ -7,9 +7,10 @@
 // All high-frequency input is handled here; Blazor only pushes tool state.
 // ===========================================================================
 
-import * as SFX from './sand2-audio.js';
-import { source as physicsSource } from './sand2-physics.glsl.js';
-import { source as renderSource } from './sand2-render.glsl.js';
+import * as SFX from './sand-playground-audio.js';
+import { source as physicsSource } from './sand-playground-physics.glsl.js';
+import { source as renderSource } from './sand-playground-render.glsl.js';
+import { SAND_PLAYGROUND_CALIBRATION, consumePhysicsSteps } from '../sand-playground-calibration.js';
 
 const W = 800, H = 600;
 const AIR = 0, SAND = 1, CONCRETE = 2, WATER = 3, BEDROCK = 4;
@@ -29,10 +30,12 @@ const BLAST_SOLID_BUDGET = 120;
 const BALLOON_R = 13;
 
 let gl = null, canvas = null, overlay = null, octx = null;
-let progSupport, progMove, progFall, progSurge, progRender;
+let progSupport, progRelax, progMove, progFall, progSurge, progRender;
 let progLight, progBright, progBlur, progComposite, progParticle;
 let tex = [null, null], fbo = [null, null], front = 0;
 let mirror = new Uint8Array(W * H * 4);
+let floatReadback = null;
+let useFloatState = false;
 
 // Post pipeline: scene FBO -> dynamic light field + bloom chain -> composite.
 const LW = 400, LH = 300;          // light/bloom working resolution
@@ -76,6 +79,7 @@ let disableFall = false, disableSurge = false, moveDisable = 0; // diagnostic to
 let quakes = [];       // expanding seismic tremor rings from big blasts
 let rafId = 0, disposed = false;
 let lastT = 0, avgDelta = 16.6, fps = 60, fpsFrames = 0, fpsTime = 0;
+let physicsAccumulator = 0;
 
 const mouse = { x: 0, y: 0, down: false, painting: false, lastX: 0, lastY: 0 };
 let aimOrigin = null;    // {x,y} slingshot anchor (texture coords)
@@ -98,14 +102,14 @@ export async function init(canvasEl, overlayEl) {
         return;
     }
 
-    // Shader sources arrive as ES modules (see sand2-*.glsl.js) rather than a
-    // runtime fetch: this page is routed at /sand2, so a relative 'js/…' fetch
+    // Shader sources arrive as ES modules (see sand-playground-*.glsl.js) rather than a
+    // runtime fetch: this page is routed at /sandplayground, so a relative 'js/…' fetch
     // would resolve against the route and 404.
     const phys = parseSections(physicsSource);
     const rend = parseSections(renderSource);
-    [progSupport, progMove, progFall, progSurge, progRender,
+    [progSupport, progRelax, progMove, progFall, progSurge, progRender,
         progLight, progBright, progBlur, progComposite, progParticle] = await buildPrograms([
-        [phys.VERTEX, phys.SUPPORT], [phys.VERTEX, phys.MOVE],
+        [phys.VERTEX, phys.SUPPORT], [phys.VERTEX, phys.RELAX], [phys.VERTEX, phys.MOVE],
         [phys.VERTEX, phys.FALL], [phys.VERTEX, phys.SURGE],
         [rend.VERTEX, rend.RENDER], [rend.VERTEX, rend.LIGHT],
         [rend.VERTEX, rend.BRIGHT], [rend.VERTEX, rend.BLUR],
@@ -138,6 +142,10 @@ export async function init(canvasEl, overlayEl) {
     gl.vertexAttribPointer(2, 4, gl.FLOAT, false, 28, 12);
     gl.bindVertexArray(vaoTri);
 
+    // Half-float state preserves sub-byte pressure and velocity changes.  The
+    // CPU mirror intentionally remains byte-packed for the existing material
+    // ledger and collision code; only readback/upload boundaries quantize.
+    useFloatState = !!gl.getExtension('EXT_color_buffer_float');
     for (let i = 0; i < 2; i++) {
         tex[i] = gl.createTexture();
         gl.bindTexture(gl.TEXTURE_2D, tex[i]);
@@ -145,7 +153,8 @@ export async function init(canvasEl, overlayEl) {
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, W, H, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+        gl.texImage2D(gl.TEXTURE_2D, 0, useFloatState ? gl.RGBA16F : gl.RGBA8,
+            W, H, 0, gl.RGBA, useFloatState ? gl.HALF_FLOAT : gl.UNSIGNED_BYTE, null);
         fbo[i] = gl.createFramebuffer();
         gl.bindFramebuffer(gl.FRAMEBUFFER, fbo[i]);
         gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex[i], 0);
@@ -180,11 +189,26 @@ export async function init(canvasEl, overlayEl) {
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, W, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
+    // Some nominally WebGL2 drivers expose the extension but cannot attach a
+    // half-float color target. Recreate both targets in the proven RGBA8 mode.
+    if (useFloatState && fbo.some(fb => {
+        gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+        return gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE;
+    })) {
+        useFloatState = false;
+        for (let i = 0; i < 2; i++) {
+            gl.bindTexture(gl.TEXTURE_2D, tex[i]);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, W, H, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+        }
+    }
+    floatReadback = useFloatState ? new Float32Array(W * H * 4) : null;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
     reset();
     // Probe the texSubImage2D round trip: some drivers (SwiftShader) swap
     // the G and B bytes of sub-rect uploads into an RGBA8 render-target
     // texture. Compensate in every stampRegion upload when detected.
-    {
+    if (!useFloatState) {
         const probe = new Uint8Array([240, 11, 13, 255]); // bedrock cell (3,3)
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, tex[front]);
@@ -194,7 +218,7 @@ export async function init(canvasEl, overlayEl) {
         gl.readPixels(3, 3, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, back);
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
         uploadSwapsGB = back[1] === 13 && back[2] === 11;
-        if (uploadSwapsGB) console.warn('[subsurface] driver swaps G/B on uploads; compensating');
+        if (uploadSwapsGB) console.warn('[sand-playground] driver swaps G/B on uploads; compensating');
         // Restore the probed bedrock cell (G=B=0, swap-invariant).
         gl.texSubImage2D(gl.TEXTURE_2D, 0, 3, 3, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE,
             new Uint8Array([240, 0, 0, 255]));
@@ -203,7 +227,7 @@ export async function init(canvasEl, overlayEl) {
     attachInput();
     // Debug/verification hook: lets automated tests sample the simulation
     // grid (material ids, texture coords y-up) without touching the pipeline.
-    window.__subsurface = {
+    window.__sandPlayground = {
         region: debugRegion,
         counts: debugCounts,
         projectiles: () => projectiles.map(p => ({ type: p.type, x: p.x, y: p.y, vx: p.vx, vy: p.vy })),
@@ -220,6 +244,7 @@ export async function init(canvasEl, overlayEl) {
         clearBodies: () => { for (const b of bodies) clearBody(b); bodies.length = 0; },
         paint: (x0, y0, w, h, mat, a) => stampRegion(x0, y0, w, h, () => [mat, a]),
         toggles: o => { disableFall = !!o.fall; disableSurge = !!o.surge; moveDisable = o.move | 0; },
+        calibration: () => ({ ...SAND_PLAYGROUND_CALIBRATION, floatState: useFloatState }),
         raw: (x0, y0, w, h) => {
             const out = new Array(w * h * 4);
             let i = 0;
@@ -283,6 +308,17 @@ export function setAudio(on, vol) {
 }
 export function dispose() { disposed = true; cancelAnimationFrame(rafId); SFX.dispose(); }
 
+function uploadStateBytes(texture, x, y, w, h, bytes) {
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    if (!useFloatState) {
+        gl.texSubImage2D(gl.TEXTURE_2D, 0, x, y, w, h, gl.RGBA, gl.UNSIGNED_BYTE, bytes);
+        return;
+    }
+    const normalized = new Float32Array(bytes.length);
+    for (let i = 0; i < bytes.length; i++) normalized[i] = bytes[i] / 255;
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, x, y, w, h, gl.RGBA, gl.FLOAT, normalized);
+}
+
 export function reset() {
     projectiles = [];
     grains = [];
@@ -293,12 +329,11 @@ export function reset() {
     shakeEnergy = 0;
     aimOrigin = null;
     barStart = null;
+    physicsAccumulator = 0;
     const data = buildScene();
     mirror.set(data);
-    gl.bindTexture(gl.TEXTURE_2D, tex[0]);
-    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, data);
-    gl.bindTexture(gl.TEXTURE_2D, tex[1]);
-    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, data);
+    uploadStateBytes(tex[0], 0, 0, W, H, data);
+    uploadStateBytes(tex[1], 0, 0, W, H, data);
     front = 0;
     for (const b of bodies) stampBody(b); // embed the concrete bars
 }
@@ -314,7 +349,7 @@ function parseSections(src) {
     return sections;
 }
 
-const UNIFORM_NAMES = ['u_state', 'u_seed', 'u_parity', 'u_time', 'u_wind', 'u_disable', 'u_surgeDir',
+const UNIFORM_NAMES = ['u_state', 'u_seed', 'u_parity', 'u_time', 'u_dt', 'u_wind', 'u_disable', 'u_surgeDir',
     'u_light', 'u_heights', 'u_prev', 'u_lights', 'u_nlights',
     'u_scene', 'u_bloom', 'u_dir', 'u_texel', 'u_rings', 'u_nrings',
     'u_shake', 'u_flash'];
@@ -389,6 +424,12 @@ function runSubstep() {
     gl.bindFramebuffer(gl.FRAMEBUFFER, fbo[1 - front]);
     drawPass(progSupport, pr => gl.uniform1f(pr.u_seed, Math.random() * 97.0));
     front = 1 - front;
+    // A small Eulerian relaxation pass retains the robust cellular material
+    // moves while smoothing velocity, hydrostatic head and divergence across
+    // connected water. This is the continuous-fluid half of the hybrid.
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo[1 - front]);
+    drawPass(progRelax, pr => gl.uniform1f(pr.u_dt, 1 / SAND_PLAYGROUND_CALIBRATION.physicsHz));
+    front = 1 - front;
     // Margolus movement pass.
     gl.bindFramebuffer(gl.FRAMEBUFFER, fbo[1 - front]);
     drawPass(progMove, pr => {
@@ -420,7 +461,14 @@ function runSubstep() {
 
 function readback() {
     gl.bindFramebuffer(gl.FRAMEBUFFER, fbo[front]);
-    gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, mirror);
+    if (useFloatState) {
+        gl.readPixels(0, 0, W, H, gl.RGBA, gl.FLOAT, floatReadback);
+        for (let i = 0; i < mirror.length; i++) {
+            mirror[i] = Math.round(Math.min(1, Math.max(0, floatReadback[i])) * 255);
+        }
+    } else {
+        gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, mirror);
+    }
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 }
 
@@ -507,8 +555,7 @@ function stampRegion(x0, y0, w, h, fn) {
         }
     }
     gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, tex[front]);
-    gl.texSubImage2D(gl.TEXTURE_2D, 0, x0, y0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+    uploadStateBytes(tex[front], x0, y0, w, h, buf);
 }
 
 // ---------------------------------------------------------------------------
@@ -2001,6 +2048,16 @@ function spawnBubbles(x, y, n) {
     }
 }
 
+function spawnFoam(x, y, vx) {
+    spawnP({
+        kind: 'foam', x, y: y + 0.35,
+        vx: vx * 0.025 + (Math.random() - 0.5) * 0.18,
+        vy: 0.02 + Math.random() * 0.06,
+        life: 35 + Math.random() * 55, age: 0,
+        size: 1.8 + Math.random() * 2.8,
+    });
+}
+
 function spawnBlastParticles(cx, cy, submerged, vent = 1) {
     // A camouflet barely shows above ground: almost no fire, mostly dust.
     const k = 0.2 + 0.8 * vent;
@@ -2026,12 +2083,21 @@ function updateParticles() {
                 p.vy = Math.min(p.vy + 0.05, 1.6);
                 p.vx = p.vx * 0.9 + (Math.random() - 0.5) * 0.3;
                 break;
+            case 'foam':
+                p.vx *= 0.97;
+                p.vy *= 0.82;
+                break;
         }
         p.x += p.vx; p.y += p.vy;
         if (p.x < 1 || p.x >= W - 1 || p.y < BEDROCK_TOP) { particles.splice(i, 1); continue; }
         const m = p.y < H ? matAt(Math.round(p.x), Math.round(p.y)) : AIR;
         if (p.kind === 'bubble') {
             if (m !== WATER) { particles.splice(i, 1); continue; } // surfaced/popped
+        } else if (p.kind === 'foam') {
+            if (m !== WATER && matAt(Math.round(p.x), Math.round(p.y - 1)) !== WATER) {
+                particles.splice(i, 1);
+                continue;
+            }
         } else if (isSolid(m)) {
             particles.splice(i, 1);
         } else if (m === WATER && p.kind === 'spark') {
@@ -2055,8 +2121,11 @@ function fillParticleData() {
             r = 0.45; g2 = 0.38; b = 0.28; a = 0.10 * k;
         } else if (p.kind === 'mist') {
             r = 0.55; g2 = 0.72; b = 0.85; a = 0.09 * k;
-        } else { // bubble
+        } else if (p.kind === 'bubble') {
             r = 0.5; g2 = 0.8; b = 0.95; a = 0.35;
+        } else { // foam
+            r = 0.82; g2 = 0.90; b = 0.94; a = 0.24 * k;
+            size *= 0.75 + 0.5 * k;
         }
         const o = n * 7;
         particleData[o] = p.x;
@@ -2102,7 +2171,12 @@ function sampleStats() {
         if (m === SAND) {
             if (mirror[i + 3] < 64 && matAt(x, y - 1) === AIR) loose++;
         } else if (m === WATER) {
-            if (Math.abs(mirror[i + 1] - 128) > 6 || Math.abs(mirror[i + 2] - 128) > 7) wmove++;
+            const vx = mirror[i + 1] - 128;
+            const vy = mirror[i + 2] - 128;
+            if (Math.abs(vx) > 6 || Math.abs(vy) > 7) wmove++;
+            if (matAt(x, y + 1) === AIR && Math.hypot(vx, vy) > 18 && Math.random() < 0.16) {
+                spawnFoam(x, y, vx);
+            }
             if (matAt(x, y - 1) === AIR) {
                 wfall++;
                 if (Math.random() < 0.5) spawnMist(x, y, 1);
@@ -2270,8 +2344,12 @@ function frame(t) {
         updateProjectiles(dt);
         updateGrains();
         updateQuakes();
-        // Dynamic sub-stepping against the 16.6ms budget.
-        const subs = avgDelta < 12 ? 4 : (avgDelta < 19 ? 3 : 2);
+        // Fixed-rate physics: display refresh rate no longer changes dam-break
+        // speed, repose or sediment settling. Catch-up is bounded by the
+        // shared calibration to avoid a spiral after a background-tab pause.
+        const consumed = consumePhysicsSteps(physicsAccumulator, dt, stepRequest);
+        physicsAccumulator = consumed.accumulator;
+        const subs = consumed.steps;
         for (let i = 0; i < subs; i++) runSubstep();
         readback();
         drainEdges();

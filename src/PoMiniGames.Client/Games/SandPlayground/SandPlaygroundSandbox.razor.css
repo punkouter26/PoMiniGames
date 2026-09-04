@@ -1,11 +1,11 @@
-/* Sand2 sandbox chrome.
+/* SandPlayground sandbox chrome.
    Ported from the standalone PoSandCL app and re-pointed at the app's theme
    tokens: the original hardcoded a dark palette in raw hex, which renders
    unthemed under `prefers-color-scheme: light`. Only the viewport interior
    stays literally black — that is the simulation's own sky, painted by the
    renderer, not app chrome. */
 
-.sand2-root {
+.sand-playground-root {
     display: inline-flex;
     flex-direction: column;
     background: color-mix(in srgb, var(--color-surface) 62%, transparent);
@@ -24,7 +24,7 @@
     box-sizing: border-box;
 }
 
-.sand2-toolbar {
+.sand-playground-toolbar {
     display: flex;
     align-items: center;
     gap: 6px;
@@ -32,7 +32,7 @@
     padding: 2px 4px 12px 4px;
 }
 
-.sand2-title {
+.sand-playground-title {
     color: var(--accent-amber);
     font-weight: bold;
     font-size: 13px;
@@ -41,7 +41,7 @@
     text-shadow: 0 0 14px color-mix(in srgb, var(--accent-amber) 45%, transparent);
 }
 
-.sand2-btn {
+.sand-playground-btn {
     background: var(--tint-soft);
     color: var(--color-text-primary);
     border: 1px solid var(--color-border);
@@ -56,20 +56,20 @@
     transition: background 120ms, transform 120ms, box-shadow 120ms, border-color 120ms;
 }
 
-.sand2-btn:hover {
+.sand-playground-btn:hover {
     background: var(--tint-medium);
     transform: translateY(-1px);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 5px 14px rgba(0, 0, 0, 0.3);
 }
 
-.sand2-btn:active { transform: translateY(1px); }
+.sand-playground-btn:active { transform: translateY(1px); }
 
-.sand2-btn:focus-visible {
+.sand-playground-btn:focus-visible {
     outline: 2px solid var(--accent-ring);
     outline-offset: 2px;
 }
 
-.sand2-btn.active {
+.sand-playground-btn.active {
     background: var(--accent-amber);
     color: #241305;
     border-color: color-mix(in srgb, var(--accent-amber) 85%, white);
@@ -82,66 +82,66 @@
 /* The original pulsed the active tool forever. Keep the cue, but respect a
    reduced-motion preference — this toolbar is on screen for a whole session. */
 @media (prefers-reduced-motion: no-preference) {
-    .sand2-btn.active { animation: sand2-active-glow 2.2s ease-in-out infinite; }
+    .sand-playground-btn.active { animation: sand-playground-active-glow 2.2s ease-in-out infinite; }
 }
 
-@keyframes sand2-active-glow {
+@keyframes sand-playground-active-glow {
     0%, 100% { box-shadow: 0 0 14px color-mix(in srgb, var(--accent-amber) 40%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.5); }
     50%      { box-shadow: 0 0 22px color-mix(in srgb, var(--accent-amber) 60%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.5); }
 }
 
-.sand2-btn:disabled {
+.sand-playground-btn:disabled {
     opacity: 0.35;
     cursor: default;
     transform: none;
 }
 
-.sand2-ctrl {
+.sand-playground-ctrl {
     background: var(--accent-success-soft);
     border-color: color-mix(in srgb, var(--accent-success) 30%, transparent);
 }
 
-.sand2-ctrl:hover:not(:disabled) {
+.sand-playground-ctrl:hover:not(:disabled) {
     background: color-mix(in srgb, var(--accent-success) 24%, transparent);
 }
 
-.sand2-danger {
+.sand-playground-danger {
     background: var(--accent-danger-soft);
     border-color: color-mix(in srgb, var(--accent-danger) 35%, transparent);
     color: var(--accent-danger-ink);
 }
 
-.sand2-danger:hover {
+.sand-playground-danger:hover {
     background: color-mix(in srgb, var(--accent-danger) 28%, transparent);
 }
 
-.sand2-sep {
+.sand-playground-sep {
     width: 1px;
     height: 22px;
     background: linear-gradient(180deg, transparent, var(--color-border), transparent);
     margin: 0 5px;
 }
 
-.sand2-brush-label {
+.sand-playground-brush-label {
     color: var(--color-text-secondary);
     font-size: 12px;
 }
 
-.sand2-slider {
+.sand-playground-slider {
     width: 110px;
     accent-color: var(--accent-amber);
 }
 
-.sand2-vol { width: 70px; }
+.sand-playground-vol { width: 70px; }
 
-.sand2-brush-val {
+.sand-playground-brush-val {
     color: var(--color-text-primary);
     font-size: 12px;
     min-width: 40px;
     text-align: right;
 }
 
-.sand2-viewport {
+.sand-playground-viewport {
     position: relative;
     width: 800px;
     max-width: 100%;
@@ -158,7 +158,7 @@
 /* The simulation canvas has a fixed 800x600 backing store (set in the markup,
    not by JS). To scale it down without re-tiling, keep the rendered box at the
    backing store's intrinsic ratio — width:100%, height:auto. */
-.sand2-viewport canvas {
+.sand-playground-viewport canvas {
     display: block;
     width: 100%;
     height: auto;
@@ -170,13 +170,13 @@
 }
 
 /* Both canvases stack; only the overlay takes pointer input. */
-.sand2-overlay {
+.sand-playground-overlay {
     position: absolute;
     inset: 0;
     cursor: crosshair;
 }
 
-.sand2-hint {
+.sand-playground-hint {
     color: var(--color-text-secondary);
     font-size: 11px;
     margin-top: 10px;
@@ -192,7 +192,7 @@
    way back. The shell already gives a fullscreen game area (GameShell
    Fullscreen="true"), so fill *it* instead. */
 @media (max-width: 700px), (pointer: coarse) and (max-aspect-ratio: 4/5) {
-    .sand2-root {
+    .sand-playground-root {
         display: flex;
         width: 100%;
         height: 100%;
@@ -205,7 +205,7 @@
         align-items: stretch;
     }
 
-    .sand2-title {
+    .sand-playground-title {
         font-size: 10px;
         letter-spacing: 1.5px;
         margin-right: 4px;
@@ -214,14 +214,14 @@
 
     /* Wraps to two rows on narrow phones: tools, then controls. Auto-height so
        every control stays reachable; the canvas absorbs what is left. */
-    .sand2-toolbar {
+    .sand-playground-toolbar {
         flex: 0 0 auto;
         gap: 2px;
         padding: 0 2px 2px 2px;
         justify-content: flex-start;
     }
 
-    .sand2-btn {
+    .sand-playground-btn {
         padding: 1px 6px;
         font-size: 10px;
         min-height: 24px;
@@ -229,7 +229,7 @@
         flex: 0 0 auto;
     }
 
-    .sand2-sep {
+    .sand-playground-sep {
         height: 12px;
         margin: 0 1px;
         flex: 0 0 auto;
@@ -237,17 +237,17 @@
 
     /* Drop the brush row on phones — 8 px is a sensible default and the space
        is worth more to the canvas. Volume stays. */
-    .sand2-brush-label,
-    .sand2-brush-val,
-    .sand2-toolbar > .sand2-slider:not(.sand2-vol) { display: none; }
+    .sand-playground-brush-label,
+    .sand-playground-brush-val,
+    .sand-playground-toolbar > .sand-playground-slider:not(.sand-playground-vol) { display: none; }
 
-    .sand2-slider { flex: 0 0 auto; }
-    .sand2-vol { width: 50px; }
+    .sand-playground-slider { flex: 0 0 auto; }
+    .sand-playground-vol { width: 50px; }
 
     /* Fill the remaining height. Strict 4:3 is traded away in portrait so the
        simulation gets the screen; the image is scaled, never tiled, and the
        engine's pointer math uses the bounding rect so touch stays accurate. */
-    .sand2-viewport {
+    .sand-playground-viewport {
         flex: 1 1 auto;
         width: 100%;
         min-height: 0;
@@ -255,7 +255,7 @@
         border-radius: 8px;
     }
 
-    .sand2-viewport canvas {
+    .sand-playground-viewport canvas {
         position: absolute;
         inset: 0;
         width: 100%;
@@ -264,20 +264,20 @@
     }
 
     /* The active tool's name is already legible in the toolbar. */
-    .sand2-hint { display: none; }
-    .sand2-overlay { cursor: default; }
+    .sand-playground-hint { display: none; }
+    .sand-playground-overlay { cursor: default; }
 }
 
 @media (max-width: 380px) {
-    .sand2-btn { padding: 3px 7px; font-size: 10px; min-height: 28px; }
-    .sand2-toolbar { gap: 2px; }
-    .sand2-vol { width: 44px; }
+    .sand-playground-btn { padding: 3px 7px; font-size: 10px; min-height: 28px; }
+    .sand-playground-toolbar { gap: 2px; }
+    .sand-playground-vol { width: 44px; }
 }
 
 /* Phone in landscape: keep the desktop layout, just tighten it. */
 @media (max-height: 500px) and (orientation: landscape) {
-    .sand2-root { padding: 6px; }
-    .sand2-toolbar { padding-bottom: 4px; }
-    .sand2-hint { margin-top: 4px; padding: 4px 10px; font-size: 10px; }
-    .sand2-btn { padding: 4px 8px; font-size: 11px; min-height: 28px; }
+    .sand-playground-root { padding: 6px; }
+    .sand-playground-toolbar { padding-bottom: 4px; }
+    .sand-playground-hint { margin-top: 4px; padding: 4px 10px; font-size: 10px; }
+    .sand-playground-btn { padding: 4px 8px; font-size: 11px; min-height: 28px; }
 }

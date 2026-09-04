@@ -5,9 +5,9 @@ using PoMiniGamesClient.Games.PoEcosystem.Models;
 namespace PoMiniGamesClient.Services;
 
 /// <summary>
-/// Bridge to <c>window.PoEcosystem</c> (wwwroot/js/poecosystem/index.js). Mirrors
-/// <see cref="SubSurfaceInteropService"/>: a <see cref="DotNetObjectReference{T}"/> is handed to
-/// the engine, its callbacks are re-raised as C# events, and dispose swallows
+/// Bridge to <c>window.PoEcosystem</c> (wwwroot/js/poecosystem/index.js). A
+/// <see cref="DotNetObjectReference{T}"/> is handed to the engine, its callbacks
+/// are re-raised as C# events, and dispose swallows
 /// <see cref="JSDisconnectedException"/> because the circuit may already be gone.
 ///
 /// The engine is loaded through <c>engineLoader.js</c> (route-gated), so nothing here runs

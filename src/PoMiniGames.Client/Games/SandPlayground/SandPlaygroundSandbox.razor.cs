@@ -1,14 +1,14 @@
 using Microsoft.AspNetCore.Components;
 using Microsoft.JSInterop;
 
-namespace PoMiniGamesClient.Games.Sand2;
+namespace PoMiniGamesClient.Games.SandPlayground;
 
 /// <summary>
-/// State container and JS-module lifecycle owner for the Sand2 sandbox.
+/// State container and JS-module lifecycle owner for SandPlayground.
 /// Blazor owns the docked toolbar; all high-frequency input and the 60 FPS
-/// simulation loop live in wwwroot/js/sand2/sand2-engine.js.
+/// simulation loop live in wwwroot/js/sand-playground/sand-playground-engine.js.
 /// </summary>
-public partial class Sand2Sandbox : ComponentBase, IAsyncDisposable
+public partial class SandPlaygroundSandbox : ComponentBase, IAsyncDisposable
 {
     [Inject] private IJSRuntime JS { get; set; } = default!;
 
@@ -52,7 +52,7 @@ public partial class Sand2Sandbox : ComponentBase, IAsyncDisposable
     {
         if (!firstRender) return;
 
-        _module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/sand2/sand2-engine.js");
+        _module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/sand-playground/sand-playground-engine.js");
         await _module.InvokeVoidAsync("init", _canvas, _overlay);
         await _module.InvokeVoidAsync("setTool", ActiveTool);
         await _module.InvokeVoidAsync("setBrush", BrushSize);

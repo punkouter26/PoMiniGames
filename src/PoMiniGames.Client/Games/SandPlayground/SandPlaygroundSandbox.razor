@@ -1,0 +1,63 @@
+@* SandPlayground — a GPU sand-and-water physics sandbox.
+   Blazor owns only the docked toolbar. Every pointer event and the 60 FPS
+   loop live in wwwroot/js/sand-playground/sand-playground-engine.js. *@
+
+<div class="sand-playground-root">
+    <div class="sand-playground-toolbar" role="toolbar" aria-label="SandPlayground tools">
+        <span class="sand-playground-title">SAND PLAYGROUND</span>
+
+        @foreach (var t in ToolDefs)
+        {
+            <button type="button"
+                    class="sand-playground-btn @(ActiveTool == t.Id ? "active" : "")"
+                    title="@t.Hint"
+                    aria-pressed="@(ActiveTool == t.Id ? "true" : "false")"
+                    @onclick="() => SelectToolAsync(t.Id)">@t.Label</button>
+        }
+
+        <span class="sand-playground-sep" aria-hidden="true"></span>
+
+        <label class="sand-playground-brush-label" for="sand-playground-brush">Brush</label>
+        <input id="sand-playground-brush" type="range" min="1" max="32" value="@BrushSize"
+               aria-label="Brush size in pixels"
+               @oninput="OnBrushChangedAsync" class="sand-playground-slider" />
+        <span class="sand-playground-brush-val">@BrushSize px</span>
+
+        <span class="sand-playground-sep" aria-hidden="true"></span>
+
+        <button type="button" class="sand-playground-btn sand-playground-ctrl" aria-pressed="@(Paused ? "true" : "false")"
+                @onclick="TogglePauseAsync">@(Paused ? "► Run" : "❚❚ Pause")</button>
+        <button type="button" class="sand-playground-btn sand-playground-ctrl" disabled="@(!Paused)"
+                title="Advance a single simulation step (paused only)"
+                @onclick="StepAsync">Step</button>
+        <button type="button" class="sand-playground-btn sand-playground-ctrl @(DemoOn ? "active" : "")"
+                title="Rain a random TNT bomb every second"
+                aria-pressed="@(DemoOn ? "true" : "false")"
+                @onclick="ToggleDemoAsync">💣 Auto-drop</button>
+        <button type="button" class="sand-playground-btn sand-playground-ctrl sand-playground-danger"
+                title="Rebuild the world from scratch"
+                @onclick="ResetAsync">Reset</button>
+
+        <span class="sand-playground-sep" aria-hidden="true"></span>
+
+        <button type="button" class="sand-playground-btn sand-playground-ctrl"
+                title="@(AudioOn ? "Mute" : "Unmute")"
+                aria-label="@(AudioOn ? "Mute sound" : "Unmute sound")"
+                aria-pressed="@(AudioOn ? "true" : "false")"
+                @onclick="ToggleAudioAsync">@(AudioOn ? "🔊" : "🔇")</button>
+        <input type="range" min="0" max="100" value="@Volume"
+               aria-label="Volume"
+               @oninput="OnVolumeChangedAsync" class="sand-playground-slider sand-playground-vol" title="Volume" />
+    </div>
+
+    <div class="sand-playground-viewport">
+        @* Fixed 800x600 backing store; CSS scales the rendered box. The engine's
+           pointer math reads the bounding rect, so touch stays accurate at any
+           displayed size. *@
+        <canvas @ref="_canvas" width="800" height="600" aria-hidden="true"></canvas>
+        <canvas @ref="_overlay" width="800" height="600" class="sand-playground-overlay"
+                aria-label="SandPlayground sandbox — drag to paint, drag in open air to slingshot ordnance"></canvas>
+    </div>
+
+    <div class="sand-playground-hint">@ActiveHint</div>
+</div>

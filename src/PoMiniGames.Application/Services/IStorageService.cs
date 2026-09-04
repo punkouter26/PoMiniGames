@@ -47,6 +47,13 @@ public interface IStorageService
     Task<List<PoBrawlFighterRating>> RecordPoBrawlDemoResultAsync(
         string winnerFighterId, string loserFighterId, bool isDraw);
 
+    /// <summary>
+    /// Bounded probe of the Table Storage backend. Returns <c>true</c> when the last attempt
+    /// succeeded; <c>false</c> when storage is unreachable so the caller can render a
+    /// "scores unavailable" state instead of letting an empty-list read mask the outage.
+    /// </summary>
+    bool IsStorageHealthy();
+
     // PoSports High Scores (lowest combined meet time wins, one row per player)
     Task<List<PoSportsHighScore>> GetPoSportsHighScoresAsync(int limit = 10);
     Task<PoSportsHighScore> SavePoSportsHighScoreAsync(PoSportsHighScore entry);

@@ -39,10 +39,15 @@ public sealed class JokeStorageClient : IJokeStorageClient
             // Already exists — idempotent retry path.
             _logger.LogDebug("Performance {PerformanceId} already persisted; treating duplicate submit as success.", performance.Id);
         }
+        // Graceful degradation: an unreachable Table Storage backend (Azurite down, missing
+        // connection string) must NOT 500 the demo orchestrator. Drop the write silently —
+        // matches StorageService.MarkUnavailable's policy on the high-score boards. The
+        // catch-Range for RequestFailedException is intentionally broader than the 409 above
+        // so a transport-level RequestFailedException (timeout, connection refused) is
+        // swallowed here and the demo keeps running.
         catch (RequestFailedException ex)
         {
-            _logger.LogError(ex, "Failed to save performance {PerformanceId}", performance.Id);
-            throw;
+            _logger.LogWarning(ex, "Failed to save performance {PerformanceId}; storage is unreachable, dropping the write silently.", performance.Id);
         }
     }
 

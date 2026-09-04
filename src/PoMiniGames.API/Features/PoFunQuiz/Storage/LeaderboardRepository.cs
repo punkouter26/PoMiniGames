@@ -62,6 +62,15 @@ public sealed class LeaderboardRepository(TableServiceClient tableServiceClient)
         {
             // Duplicate/retried submission with identical content — already recorded.
         }
+        // Graceful degradation: an unreachable Table Storage backend (Azurite down, missing
+        // connection string, dev machine without Docker) must NOT 500 the score-submit
+        // endpoint. Drop the write silently — the score still appears locally on the
+        // player's end-of-match UI; it just doesn't make it to the persistent board. The
+        // caller's high-score endpoint stays usable.
+        catch (Exception)
+        {
+            // Intentionally ignored: see StorageService.MarkUnavailable for the same pattern.
+        }
     }
 
     private static string DeterministicRowKey(string player, int score, int maxStreak, string category, DateTime datePlayed)
@@ -77,13 +86,25 @@ public sealed class LeaderboardRepository(TableServiceClient tableServiceClient)
     {
         top = Math.Clamp(top, 1, 100);
         var rows = new List<LeaderboardEntryEntity>();
-        // Table Storage has no server-side ORDER BY. Scan the partition and rank in memory.
-        await foreach (var entity in _table.QueryAsync<LeaderboardEntryEntity>(
-            filter: $"PartitionKey eq '{category.ToString().Replace("'", "''")}'",
-            maxPerPage: 1000,
-            cancellationToken: cancellationToken))
+        try
         {
-            rows.Add(entity);
+            // Table Storage has no server-side ORDER BY. Scan the partition and rank in memory.
+            await foreach (var entity in _table.QueryAsync<LeaderboardEntryEntity>(
+                filter: $"PartitionKey eq '{category.ToString().Replace("'", "''")}'",
+                maxPerPage: 1000,
+                cancellationToken: cancellationToken))
+            {
+                rows.Add(entity);
+            }
+        }
+        // Graceful degradation: an unreachable Table Storage backend (Azurite down, missing
+        // connection string) must NOT 500 the leaderboard endpoint. Return an empty list —
+        // the client pads every board to `limit` with "XXX" placeholders anyway, so the
+        // empty-list path renders identically to "no scores yet". Matches StorageService's
+        // behavior on the high-score boards (see StorageService.GetHighScoresAsync).
+        catch (Exception)
+        {
+            rows.Clear();
         }
         return rows
             .OrderByDescending(r => r.Score)

@@ -47,6 +47,27 @@ public class StorageService : IStorageService
     private readonly HashSet<string> _ensuredTables = new();
     private readonly object _ensureLock = new();
 
+    // Storage availability tracking for graceful degradation. When storage is unreachable
+    // (Azurite down, missing endpoint, etc.) every public method short-circuits with an
+    // empty result or a no-op write so the rest of the app keeps working — leaderboards
+    // render empty, score submissions are silently dropped, the games themselves are
+    // untouched. The flag flips to false on the first failed call and stays false until a
+    // throttled background probe (see IsStorageAvailable) confirms storage is reachable
+    // again, at which point the service auto-recovers without any external intervention.
+    private volatile bool _isStorageAvailable = true;
+    private DateTime _lastProbeAttemptUtc = DateTime.MinValue;
+    private readonly TimeSpan _probeBackoff = TimeSpan.FromSeconds(10);
+    private readonly object _probeLock = new();
+    private const string HealthProbeTableName = "__pominigames_storage_health_probe__";
+
+    // In-memory fallback used when Azure Table Storage is unreachable. Optional so test
+    // harnesses that build the service by hand keep working; the production container
+    // always wires one in (see StorageExtensions.AddPoMiniGamesStorage). Lives in process
+    // memory, so a restart starts the boards over — the in-memory shape is intentional,
+    // NOT a bug, and matches "use localstorage if small time storage is needed".
+    private readonly InMemoryStorageService? _inMemoryFallback;
+    private bool _loggedFallbackActivation;
+
     internal static readonly HashSet<char> _invalidChars =
         Path.GetInvalidFileNameChars()
             .Concat(new[] { '\'', '"', ';', '\\', '/', '#', '?', '\t', '\n', '\r' })
@@ -56,34 +77,46 @@ public class StorageService : IStorageService
         IConfiguration configuration,
         EloCalculator eloCalculator,
         PairwiseEloCalculator fighterElo,
-        ILogger<StorageService>? logger = null)
+        ILogger<StorageService>? logger = null,
+        InMemoryStorageService? inMemoryFallback = null)
     {
         _eloCalculator = eloCalculator;
         _fighterElo = fighterElo;
         // Optional so the test harnesses that construct this service by hand keep working;
         // the container always supplies one.
         _logger = logger ?? NullLogger<StorageService>.Instance;
+        _inMemoryFallback = inMemoryFallback;
 
         var section = configuration.GetSection("PoMiniGames:Storage:TableService");
         var connectionString = section["ConnectionString"];
         var endpoint = section["Endpoint"];
         var accountName = section["AccountName"];
 
+        // Fast-fail options: a 2s network timeout with no retries means a single unreachable
+        // backend (e.g., Docker not running so Azurite is not listening) surfaces within a
+        // couple of seconds per call rather than the SDK's default ~30s retry chain. The
+        // graceful-degradation path (MarkUnavailable + the in-memory fallback) takes over
+        // from there; the rest of the app never sees the wait.
+        var options = new TableClientOptions
+        {
+            Retry = { MaxRetries = 0, NetworkTimeout = TimeSpan.FromSeconds(2) },
+        };
+
         if (!string.IsNullOrWhiteSpace(connectionString))
         {
-            _serviceClient = new TableServiceClient(connectionString);
+            _serviceClient = new TableServiceClient(connectionString, options);
         }
         else if (!string.IsNullOrWhiteSpace(endpoint) || !string.IsNullOrWhiteSpace(accountName))
         {
             var serviceUri = !string.IsNullOrWhiteSpace(endpoint)
                 ? new Uri(endpoint!)
                 : new Uri($"https://{accountName}.table.core.windows.net");
-            _serviceClient = new TableServiceClient(serviceUri, new DefaultAzureCredential());
+            _serviceClient = new TableServiceClient(serviceUri, new DefaultAzureCredential(), options);
         }
         else
         {
             // Default to the Azurite emulator so local dev works out of the box.
-            _serviceClient = new TableServiceClient("UseDevelopmentStorage=true");
+            _serviceClient = new TableServiceClient("UseDevelopmentStorage=true", options);
         }
     }
 
@@ -93,9 +126,22 @@ public class StorageService : IStorageService
     /// </summary>
     public void Initialize()
     {
+        Exception? firstFailure = null;
         foreach (var table in new[] { PlayerStatsTable, MarbleRaceTable, PoBrawlTable, PoBrawlLadderTable, PoBrawlEloTable, PoRacerTable, PoSportsTable, PoVoxelStrikeTable })
         {
-            try { Table(table); } catch { /* ensured lazily on first use */ }
+            try { Table(table); }
+            catch (Exception ex)
+            {
+                firstFailure ??= ex;
+                /* ensured lazily on first use */
+            }
+        }
+
+        // If any table failed to ensure, flip the availability flag up front so the first
+        // real request short-circuits instead of waiting for the throttled re-probe.
+        if (firstFailure is not null)
+        {
+            MarkUnavailable(firstFailure);
         }
     }
 
@@ -115,6 +161,115 @@ public class StorageService : IStorageService
         return client;
     }
 
+    // ── Storage availability probe ───────────────────────────────────────
+    // Used by every public method to decide whether to attempt the call, and by the
+    // storage health check to report the actual state to /api/health. Probing is bounded
+    // by a 500 ms cancellation token so neither request threads nor the health endpoint
+    // hang when storage is unreachable.
+
+    /// <summary>
+    /// True if the most recent probe succeeded, or the most recent call succeeded. When
+    /// false, callers MUST short-circuit with their empty/no-op fallback. Re-probes are
+    /// throttled by <see cref="_probeBackoff"/> so a down storage isn't hammered.
+    /// </summary>
+    private bool IsStorageAvailable()
+    {
+        if (_isStorageAvailable) return true;
+
+        // Throttle re-probes while we're in the "unavailable" state so a downed Azurite
+        // doesn't get one probe per request.
+        if (DateTime.UtcNow - _lastProbeAttemptUtc < _probeBackoff) return false;
+
+        lock (_probeLock)
+        {
+            if (_isStorageAvailable) return true;
+            if (DateTime.UtcNow - _lastProbeAttemptUtc < _probeBackoff) return false;
+            _lastProbeAttemptUtc = DateTime.UtcNow;
+
+            try
+            {
+                using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
+                _serviceClient.GetTableClient(HealthProbeTableName)
+                    .CreateIfNotExistsAsync(cts.Token)
+                    .GetAwaiter()
+                    .GetResult();
+                _isStorageAvailable = true;
+                _logger.LogInformation("Azure Table Storage is reachable again; high score functionality restored.");
+                return true;
+            }
+            catch
+            {
+                // Stay unavailable. The next call after _probeBackoff will probe again.
+                return false;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Marks the storage backend as unreachable. Idempotent: the warning is logged only
+    /// on the healthy→unavailable transition so a long outage doesn't flood the log.
+    /// </summary>
+    private void MarkUnavailable(Exception ex)
+    {
+        if (_isStorageAvailable)
+        {
+            if (_inMemoryFallback is not null)
+            {
+                _logger.LogWarning(ex,
+                    "Azure Table Storage is unreachable. Falling back to in-memory storage for the lifetime of this process — scores will not survive a restart.");
+            }
+            else
+            {
+                _logger.LogWarning(ex,
+                    "Azure Table Storage is unreachable. Scores and leaderboards will be skipped until storage recovers. Will retry periodically.");
+            }
+        }
+        _isStorageAvailable = false;
+        _lastProbeAttemptUtc = DateTime.UtcNow;
+    }
+
+    /// <summary>
+    /// Logs the fallback-activation message once, the first time a method hands off to the
+    /// in-memory fallback. Kept separate from <see cref="MarkUnavailable"/> so that a flaky
+    /// backend that bounces healthy → unhealthy → healthy doesn't keep re-logging every
+    /// request — the operator sees one clear "you're on fallback now" line and that's it.
+    /// </summary>
+    private void NoteFallbackOnce()
+    {
+        if (_loggedFallbackActivation) return;
+        _loggedFallbackActivation = true;
+        _logger.LogInformation(
+            "High score and leaderboard writes are now being served by the in-memory fallback. Restarting the app will discard them.");
+    }
+
+    /// <summary>
+    /// Public probe used by the storage health check. Performs a short, bounded call so
+    /// /api/health responds quickly when storage is unreachable, and restores the
+    /// internal flag if the probe succeeds.
+    /// </summary>
+    public bool IsStorageHealthy()
+    {
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
+            _serviceClient.GetTableClient(HealthProbeTableName)
+                .CreateIfNotExistsAsync(cts.Token)
+                .GetAwaiter()
+                .GetResult();
+            if (!_isStorageAvailable)
+            {
+                _isStorageAvailable = true;
+                _logger.LogInformation("Azure Table Storage is reachable; high score functionality restored.");
+            }
+            return true;
+        }
+        catch (Exception ex)
+        {
+            MarkUnavailable(ex);
+            return false;
+        }
+    }
+
     // ── Player stats ──────────────────────────────────────────────────────
 
     /// <summary>
@@ -127,20 +282,71 @@ public class StorageService : IStorageService
     public async IAsyncEnumerable<PlayerStatsDto> GetAllPlayerStatsAsync(
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        var table = Table(PlayerStatsTable);
-        await foreach (var entity in table.QueryAsync<TableEntity>(maxPerPage: 1000, cancellationToken: cancellationToken))
+        // Stream from a list rather than yield inside the storage try block: C# forbids
+        // `yield` inside a try/catch, so the iteration lives in a non-yielding helper. The
+        // list is fully populated before any item is yielded, which trades a touch of
+        // memory for the ability to catch storage failures cleanly — the failure case is
+        // an empty list anyway, so the memory cost only appears when storage is healthy.
+        var rows = await ReadAllPlayerStatsAsync(cancellationToken).ConfigureAwait(false);
+        foreach (var row in rows)
         {
-            var json = entity.GetString("StatsJson");
-            if (string.IsNullOrEmpty(json)) continue;
-            var stats = JsonSerializer.Deserialize<PlayerStats>(json);
-            if (stats is null) continue;
-            yield return new PlayerStatsDto
-            {
-                Game = entity.PartitionKey,
-                Name = entity.RowKey,
-                Stats = stats,
-            };
+            yield return row;
         }
+    }
+
+    private async Task<List<PlayerStatsDto>> ReadAllPlayerStatsAsync(CancellationToken cancellationToken)
+    {
+        if (!IsStorageAvailable())
+        {
+            if (_inMemoryFallback is not null)
+            {
+                NoteFallbackOnce();
+                var fallbackRows = new List<PlayerStatsDto>();
+                await foreach (var row in _inMemoryFallback.GetAllPlayerStatsAsync(cancellationToken))
+                {
+                    fallbackRows.Add(row);
+                }
+                return fallbackRows;
+            }
+            return [];
+        }
+
+        var rows = new List<PlayerStatsDto>();
+        try
+        {
+            var table = Table(PlayerStatsTable);
+            await foreach (var entity in table.QueryAsync<TableEntity>(maxPerPage: 1000, cancellationToken: cancellationToken))
+            {
+                var json = entity.GetString("StatsJson");
+                if (string.IsNullOrEmpty(json)) continue;
+                var stats = JsonSerializer.Deserialize<PlayerStats>(json);
+                if (stats is null) continue;
+                rows.Add(new PlayerStatsDto
+                {
+                    Game = entity.PartitionKey,
+                    Name = entity.RowKey,
+                    Stats = stats,
+                });
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            MarkUnavailable(ex);
+            rows.Clear();
+            if (_inMemoryFallback is not null)
+            {
+                NoteFallbackOnce();
+                await foreach (var row in _inMemoryFallback.GetAllPlayerStatsAsync(cancellationToken))
+                {
+                    rows.Add(row);
+                }
+            }
+        }
+        return rows;
     }
 
     public async Task<PlayerStats?> GetPlayerStatsAsync(string game, string playerName)
@@ -152,6 +358,16 @@ public class StorageService : IStorageService
             return null;
         }
 
+        if (!IsStorageAvailable())
+        {
+            if (_inMemoryFallback is not null)
+            {
+                NoteFallbackOnce();
+                return await _inMemoryFallback.GetPlayerStatsAsync(game, playerName);
+            }
+            return null;
+        }
+
         try
         {
             var response = await Table(PlayerStatsTable).GetEntityAsync<TableEntity>(sanitizedGame, sanitizedName);
@@ -160,6 +376,16 @@ public class StorageService : IStorageService
         }
         catch (RequestFailedException ex) when (ex.Status == 404)
         {
+            return null;
+        }
+        catch (Exception ex)
+        {
+            MarkUnavailable(ex);
+            if (_inMemoryFallback is not null)
+            {
+                NoteFallbackOnce();
+                return await _inMemoryFallback.GetPlayerStatsAsync(game, playerName);
+            }
             return null;
         }
     }
@@ -179,6 +405,22 @@ public class StorageService : IStorageService
             throw new ArgumentException("Player name cannot be empty", nameof(playerName));
         }
 
+        // Storage unreachable: drop the write silently so the caller's endpoint still
+        // returns success and the app keeps working. The next call after the re-probe
+        // backoff will attempt storage again. When an in-memory fallback is wired in,
+        // we still try that — a session-only cache is better than a hard skip because
+        // it lets the user's own scores and leaderboard renders stay coherent for the
+        // page-load that submitted them.
+        if (!IsStorageAvailable())
+        {
+            if (_inMemoryFallback is not null)
+            {
+                NoteFallbackOnce();
+                await _inMemoryFallback.SavePlayerStatsAsync(game, playerName, stats);
+            }
+            return;
+        }
+
         // §9: clamp client-supplied values into their legitimate ranges before they touch
         // storage. EloRating is client-authoritative for adaptive games but must stay within
         // the same band the client clamps to (100–3000); the ceiling here rejects a tampered
@@ -195,26 +437,41 @@ public class StorageService : IStorageService
         // never lose accumulated wins/games.
         var partition = sanitizedGame;
         var rowKey = sanitizedName;
-        await TableConcurrency.UpdateWithRetryAsync<TableEntity>(
-            Table(PlayerStatsTable),
-            partitionKey: partition,
-            rowKey: rowKey,
-            factory: () => new TableEntity(partition, rowKey),
-            mutate: e =>
-            {
-                var existingJson = e.GetString("StatsJson");
-                var merged = stats;
-                if (!string.IsNullOrEmpty(existingJson))
+        try
+        {
+            await TableConcurrency.UpdateWithRetryAsync<TableEntity>(
+                Table(PlayerStatsTable),
+                partitionKey: partition,
+                rowKey: rowKey,
+                factory: () => new TableEntity(partition, rowKey),
+                mutate: e =>
                 {
-                    var existing = JsonSerializer.Deserialize<PlayerStats>(existingJson);
-                    if (existing is not null) merged = MergeStats(existing, stats);
-                }
-                var mergedJson = JsonSerializer.Serialize(merged);
-                if (existingJson == mergedJson) return false; // idempotent no-op
-                e["StatsJson"] = mergedJson;
-                e["UpdatedAt"] = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ");
-                return true;
-            });
+                    var existingJson = e.GetString("StatsJson");
+                    var merged = stats;
+                    if (!string.IsNullOrEmpty(existingJson))
+                    {
+                        var existing = JsonSerializer.Deserialize<PlayerStats>(existingJson);
+                        if (existing is not null) merged = MergeStats(existing, stats);
+                    }
+                    var mergedJson = JsonSerializer.Serialize(merged);
+                    if (existingJson == mergedJson) return false; // idempotent no-op
+                    e["StatsJson"] = mergedJson;
+                    e["UpdatedAt"] = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ");
+                    return true;
+                });
+        }
+        catch (Exception ex)
+        {
+            MarkUnavailable(ex);
+            if (_inMemoryFallback is not null)
+            {
+                NoteFallbackOnce();
+                await _inMemoryFallback.SavePlayerStatsAsync(game, playerName, stats);
+                return;
+            }
+            // Silent drop — matches the high-score save path's policy. The endpoint
+            // already validated the payload, so the failure is purely a transport issue.
+        }
     }
 
     // §9: clamp each difficulty bucket into its legitimate range. Counters are non-negative;
@@ -280,9 +537,21 @@ public class StorageService : IStorageService
             return [];
         }
 
+        if (!IsStorageAvailable())
+        {
+            if (_inMemoryFallback is not null)
+            {
+                NoteFallbackOnce();
+                return await _inMemoryFallback.GetLeaderboardAsync(game, limit, difficulty);
+            }
+            return [];
+        }
+
         // Table Storage has no server-side ordering, so scan the game's partition and rank in
         // memory. Leaderboards are small, so this is cheap.
         var rows = new List<(string Name, PlayerStats Stats)>();
+        try
+        {
         await foreach (var entity in Table(PlayerStatsTable).QueryAsync<TableEntity>(
             filter: $"PartitionKey eq '{sanitizedGame.Replace("'", "''")}'",
             maxPerPage: 1000))
@@ -313,6 +582,17 @@ public class StorageService : IStorageService
         };
 
         return ranked.Take(limit).ToList();
+        }
+        catch (Exception ex)
+        {
+            MarkUnavailable(ex);
+            if (_inMemoryFallback is not null)
+            {
+                NoteFallbackOnce();
+                return await _inMemoryFallback.GetLeaderboardAsync(game, limit, difficulty);
+            }
+            return [];
+        }
     }
 
     // ── High scores ───────────────────────────────────────────────────────
@@ -581,27 +861,50 @@ public class StorageService : IStorageService
 
     public async Task<List<PoBrawlLadderEntry>> GetPoBrawlLadderAsync(int limit = 10)
     {
-        var entries = new List<PoBrawlLadderEntry>();
-        await foreach (var e in Table(PoBrawlLadderTable).QueryAsync<TableEntity>(
-            filter: $"PartitionKey eq '{PoBrawlLadderPartition}'",
-            maxPerPage: 1000))
+        if (!IsStorageAvailable())
         {
-            entries.Add(new PoBrawlLadderEntry
+            if (_inMemoryFallback is not null)
             {
-                PlayerName = e.GetString("PlayerName") ?? "",
-                PresidentsBeaten = e.GetInt32("PresidentsBeaten") ?? 0,
-                Elo = e.GetInt32("Elo") ?? 0,
-                Date = e.GetString("Date") ?? "",
-            });
+                NoteFallbackOnce();
+                return await _inMemoryFallback.GetPoBrawlLadderAsync(limit);
+            }
+            return [];
         }
 
-        // Most presidents beaten first; higher Elo breaks ties, then earliest clear.
-        return entries
-            .OrderByDescending(x => x.PresidentsBeaten)
-            .ThenByDescending(x => x.Elo)
-            .ThenBy(x => x.Date)
-            .Take(limit)
-            .ToList();
+        var entries = new List<PoBrawlLadderEntry>();
+        try
+        {
+            await foreach (var e in Table(PoBrawlLadderTable).QueryAsync<TableEntity>(
+                filter: $"PartitionKey eq '{PoBrawlLadderPartition}'",
+                maxPerPage: 1000))
+            {
+                entries.Add(new PoBrawlLadderEntry
+                {
+                    PlayerName = e.GetString("PlayerName") ?? "",
+                    PresidentsBeaten = e.GetInt32("PresidentsBeaten") ?? 0,
+                    Elo = e.GetInt32("Elo") ?? 0,
+                    Date = e.GetString("Date") ?? "",
+                });
+            }
+
+            // Most presidents beaten first; higher Elo breaks ties, then earliest clear.
+            return entries
+                .OrderByDescending(x => x.PresidentsBeaten)
+                .ThenByDescending(x => x.Elo)
+                .ThenBy(x => x.Date)
+                .Take(limit)
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            MarkUnavailable(ex);
+            if (_inMemoryFallback is not null)
+            {
+                NoteFallbackOnce();
+                return await _inMemoryFallback.GetPoBrawlLadderAsync(limit);
+            }
+            return [];
+        }
     }
 
     public async Task<PoBrawlLadderEntry> SavePoBrawlLadderAsync(PoBrawlLadderEntry entry)
@@ -616,25 +919,48 @@ public class StorageService : IStorageService
             Date = DefaultDate(entry.Date),
         };
 
-        var rowKey = sanitized.PlayerName.ToLowerInvariant();
-        await TableConcurrency.UpdateWithRetryAsync<TableEntity>(
-            Table(PoBrawlLadderTable),
-            partitionKey: PoBrawlLadderPartition,
-            rowKey: rowKey,
-            factory: () => new TableEntity(PoBrawlLadderPartition, rowKey),
-            mutate: e =>
+        if (!IsStorageAvailable())
+        {
+            if (_inMemoryFallback is not null)
             {
-                var existingBest = e.GetInt32("PresidentsBeaten") ?? -1;
-                if (sanitized.PresidentsBeaten < existingBest)
+                NoteFallbackOnce();
+                await _inMemoryFallback.SavePoBrawlLadderAsync(entry);
+            }
+            return sanitized;
+        }
+
+        var rowKey = sanitized.PlayerName.ToLowerInvariant();
+        try
+        {
+            await TableConcurrency.UpdateWithRetryAsync<TableEntity>(
+                Table(PoBrawlLadderTable),
+                partitionKey: PoBrawlLadderPartition,
+                rowKey: rowKey,
+                factory: () => new TableEntity(PoBrawlLadderPartition, rowKey),
+                mutate: e =>
                 {
-                    return false; // A worse run never overwrites the best.
-                }
-                e["PlayerName"] = sanitized.PlayerName;
-                e["PresidentsBeaten"] = sanitized.PresidentsBeaten;
-                e["Elo"] = sanitized.Elo;
-                e["Date"] = sanitized.Date;
-                return true;
-            });
+                    var existingBest = e.GetInt32("PresidentsBeaten") ?? -1;
+                    if (sanitized.PresidentsBeaten < existingBest)
+                    {
+                        return false; // A worse run never overwrites the best.
+                    }
+                    e["PlayerName"] = sanitized.PlayerName;
+                    e["PresidentsBeaten"] = sanitized.PresidentsBeaten;
+                    e["Elo"] = sanitized.Elo;
+                    e["Date"] = sanitized.Date;
+                    return true;
+                });
+        }
+        catch (Exception ex)
+        {
+            MarkUnavailable(ex);
+            if (_inMemoryFallback is not null)
+            {
+                NoteFallbackOnce();
+                await _inMemoryFallback.SavePoBrawlLadderAsync(entry);
+            }
+            // Silent drop on no-fallback path — see SaveHighScoreAsync's matching block.
+        }
         return sanitized;
     }
 
@@ -647,23 +973,46 @@ public class StorageService : IStorageService
 
     public async Task<List<PoBrawlFighterRating>> GetPoBrawlFighterRatingsAsync(int limit = 10)
     {
-        var ratings = new List<PoBrawlFighterRating>();
-        await foreach (var e in Table(PoBrawlEloTable).QueryAsync<TableEntity>(
-            filter: $"PartitionKey eq '{PoBrawlEloPartition}'",
-            maxPerPage: 1000))
+        if (!IsStorageAvailable())
         {
-            ratings.Add(FighterRatingFrom(e));
+            if (_inMemoryFallback is not null)
+            {
+                NoteFallbackOnce();
+                return await _inMemoryFallback.GetPoBrawlFighterRatingsAsync(limit);
+            }
+            return [];
         }
 
-        // Highest rating first. Matches played breaks ties ahead of the name so a fighter
-        // with a real sample outranks one sitting on its seed rating, and the id is the
-        // final tiebreaker to keep the order stable between reads.
-        return ratings
-            .OrderByDescending(r => r.Elo)
-            .ThenByDescending(r => r.Matches)
-            .ThenBy(r => r.FighterId, StringComparer.Ordinal)
-            .Take(limit)
-            .ToList();
+        var ratings = new List<PoBrawlFighterRating>();
+        try
+        {
+            await foreach (var e in Table(PoBrawlEloTable).QueryAsync<TableEntity>(
+                filter: $"PartitionKey eq '{PoBrawlEloPartition}'",
+                maxPerPage: 1000))
+            {
+                ratings.Add(FighterRatingFrom(e));
+            }
+
+            // Highest rating first. Matches played breaks ties ahead of the name so a fighter
+            // with a real sample outranks one sitting on its seed rating, and the id is the
+            // final tiebreaker to keep the order stable between reads.
+            return ratings
+                .OrderByDescending(r => r.Elo)
+                .ThenByDescending(r => r.Matches)
+                .ThenBy(r => r.FighterId, StringComparer.Ordinal)
+                .Take(limit)
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            MarkUnavailable(ex);
+            if (_inMemoryFallback is not null)
+            {
+                NoteFallbackOnce();
+                return await _inMemoryFallback.GetPoBrawlFighterRatingsAsync(limit);
+            }
+            return [];
+        }
     }
 
     public async Task<List<PoBrawlFighterRating>> RecordPoBrawlDemoResultAsync(
@@ -679,58 +1028,99 @@ public class StorageService : IStorageService
             throw new ArgumentException("A fighter cannot fight itself.", nameof(loserFighterId));
         }
 
+        if (!IsStorageAvailable())
+        {
+            // Storage is down: skip the Azure-side match write. With the in-memory fallback
+            // wired in, hand off so the Elo board keeps moving for whoever's running the
+            // demo; without it, return an empty board so the client can render
+            // "leaderboard unavailable" rather than a stale snapshot.
+            if (_inMemoryFallback is not null)
+            {
+                NoteFallbackOnce();
+                return await _inMemoryFallback.RecordPoBrawlDemoResultAsync(
+                    winnerFighterId, loserFighterId, isDraw);
+            }
+            return [];
+        }
+
         var table = Table(PoBrawlEloTable);
 
-        // Snapshot both ratings to price the match. Read together: they are distinct rows that
-        // cannot be read atomically in any case, so sequencing them buys nothing — which is
-        // exactly why the delta is applied as an increment below rather than as an absolute.
-        var before = await Task.WhenAll(
-            ReadFighterEloAsync(table, winnerId),
-            ReadFighterEloAsync(table, loserId));
-
-        var delta = _fighterElo.Delta(before[0], before[1], isDraw);
-        var stamp = DateTime.UtcNow.ToString("o");
-
-        // Two distinct rows, each with its own optimistic-concurrency loop. The increments
-        // commute, so these COULD run together — but they must not. A rating change is
-        // zero-sum by construction (+delta / -delta), and PairwiseEloCalculator documents the
-        // pool as conserved exactly; running them under Task.WhenAll lets one side land while
-        // the other throws (503, timeout, or the 412 loop exhausting its attempts), which
-        // silently drains or inflates the pool with no record that it happened. Sequencing
-        // them means a failure on the first aborts before the second is ever attempted.
-        // The residual window — first write commits, second fails — is unavoidable without a
-        // cross-partition transaction Table Storage does not offer, so it is compensated below.
-        await ApplyFighterDeltaAsync(table, winnerId, delta, isDraw ? MatchResult.Draw : MatchResult.Win, stamp);
         try
         {
-            await ApplyFighterDeltaAsync(table, loserId, -delta, isDraw ? MatchResult.Draw : MatchResult.Loss, stamp);
-        }
-        catch
-        {
-            // Undo the half-applied match so the pool stays conserved. The compensation is
-            // itself an increment, so it composes with any concurrent match the same way the
-            // forward write does. If it also fails there is nothing further to try — the
-            // original exception still propagates and the caller sees the match as dropped.
+            // Snapshot both ratings to price the match. Read together: they are distinct rows that
+            // cannot be read atomically in any case, so sequencing them buys nothing — which is
+            // exactly why the delta is applied as an increment below rather than as an absolute.
+            var before = await Task.WhenAll(
+                ReadFighterEloAsync(table, winnerId),
+                ReadFighterEloAsync(table, loserId));
+
+            var delta = _fighterElo.Delta(before[0], before[1], isDraw);
+            var stamp = DateTime.UtcNow.ToString("o");
+
+            // Two distinct rows, each with its own optimistic-concurrency loop. The increments
+            // commute, so these COULD run together — but they must not. A rating change is
+            // zero-sum by construction (+delta / -delta), and PairwiseEloCalculator documents the
+            // pool as conserved exactly; running them under Task.WhenAll lets one side land while
+            // the other throws (503, timeout, or the 412 loop exhausting its attempts), which
+            // silently drains or inflates the pool with no record that it happened. Sequencing
+            // them means a failure on the first aborts before the second is ever attempted.
+            // The residual window — first write commits, second fails — is unavoidable without a
+            // cross-partition transaction Table Storage does not offer, so it is compensated below.
             try
             {
-                await ApplyFighterDeltaAsync(
-                    table, winnerId, -delta, isDraw ? MatchResult.Draw : MatchResult.Win, stamp, undo: true);
+                await ApplyFighterDeltaAsync(table, winnerId, delta, isDraw ? MatchResult.Draw : MatchResult.Win, stamp);
+                await ApplyFighterDeltaAsync(table, loserId, -delta, isDraw ? MatchResult.Draw : MatchResult.Loss, stamp);
             }
-            catch (Exception compensationFailure)
+            catch
             {
-                _logger.LogError(
-                    compensationFailure,
-                    "PoBrawl Elo: failed to compensate a half-applied demo match for {WinnerId}; the rating pool is off by {Delta}.",
-                    winnerId, delta);
+                // Undo the half-applied match so the pool stays conserved. The compensation is
+                // itself an increment, so it composes with any concurrent match the same way the
+                // forward write does. If the compensation ALSO fails — almost always because
+                // storage just went down — the residual half-applied row sits there until a
+                // later match compensates naturally; we still mark storage unavailable so the
+                // graceful-degradation path takes over for subsequent calls.
+                try
+                {
+                    await ApplyFighterDeltaAsync(
+                        table, winnerId, -delta, isDraw ? MatchResult.Draw : MatchResult.Win, stamp, undo: true);
+                }
+                catch (Exception compensationFailure)
+                {
+                    MarkUnavailable(compensationFailure);
+                    _logger.LogError(
+                        compensationFailure,
+                        "PoBrawl Elo: failed to compensate a half-applied demo match for {WinnerId}; the rating pool is off by {Delta}.",
+                        winnerId, delta);
+                    return [];
+                }
+                // Compensation succeeded but the forward path failed — fall through to the
+                // outer catch, which marks storage unavailable and returns an empty board
+                // so the endpoint still answers 200 with usable shape.
+                throw;
             }
-            throw;
-        }
 
-        // Return the re-ranked board, not the two rows just written. A rating only means
-        // anything against the ranking, so every caller wanted the board and had to fetch it
-        // in a second round-trip; one bounded partition query replaces two point read-backs
-        // here and an entire HTTP call at the client.
-        return await GetPoBrawlFighterRatingsAsync();
+            // Return the re-ranked board, not the two rows just written. A rating only means
+            // anything against the ranking, so every caller wanted the board and had to fetch it
+            // in a second round-trip; one bounded partition query replaces two point read-backs
+            // here and an entire HTTP call at the client.
+            return await GetPoBrawlFighterRatingsAsync();
+        }
+        catch (Exception ex)
+        {
+            // Anything that escaped the inner compensation (mid-match storage failure,
+            // unanticipated SDK error, etc.) lands here. Mark storage unavailable so the
+            // graceful-degradation path takes over and try the in-memory fallback if it's
+            // wired in — the demo loop can keep running, and the user re-submitting after
+            // storage recovers retries cleanly.
+            MarkUnavailable(ex);
+            if (_inMemoryFallback is not null)
+            {
+                NoteFallbackOnce();
+                return await _inMemoryFallback.RecordPoBrawlDemoResultAsync(
+                    winnerFighterId, loserFighterId, isDraw);
+            }
+            return [];
+        }
     }
 
     private enum MatchResult { Win, Loss, Draw }
@@ -820,15 +1210,64 @@ public class StorageService : IStorageService
     // The one shared high-score read: scan the game's partition, rebuild entries, rank, take.
     private async Task<List<T>> GetHighScoresAsync<T>(HighScoreDescriptor<T> descriptor, int limit)
     {
-        var scores = new List<T>();
-        await foreach (var e in Table(descriptor.Table).QueryAsync<TableEntity>(
-            filter: $"PartitionKey eq '{descriptor.Partition}'",
-            maxPerPage: 1000))
+        if (!IsStorageAvailable())
         {
-            scores.Add(descriptor.FromEntity(e));
+            return await ReadHighScoresFromFallbackAsync(descriptor, limit);
         }
 
-        return descriptor.Rank(scores).Take(limit).ToList();
+        var scores = new List<T>();
+        try
+        {
+            await foreach (var e in Table(descriptor.Table).QueryAsync<TableEntity>(
+                filter: $"PartitionKey eq '{descriptor.Partition}'",
+                maxPerPage: 1000))
+            {
+                scores.Add(descriptor.FromEntity(e));
+            }
+
+            return descriptor.Rank(scores).Take(limit).ToList();
+        }
+        catch (Exception ex)
+        {
+            MarkUnavailable(ex);
+            return await ReadHighScoresFromFallbackAsync(descriptor, limit);
+        }
+    }
+
+    // Per-board in-memory read. Dispatches on the descriptor's Partition (the only
+    // field that uniquely identifies which of the five game boards we're reading) so
+    // the 10 high-score public methods don't each need their own switch.
+    private async Task<List<T>> ReadHighScoresFromFallbackAsync<T>(HighScoreDescriptor<T> descriptor, int limit)
+    {
+        if (_inMemoryFallback is null) return [];
+        NoteFallbackOnce();
+
+        if (descriptor.Partition == MarbleRacePartition)
+        {
+            var rows = await _inMemoryFallback.GetMarbleRaceHighScoresAsync(limit);
+            return rows.Cast<T>().ToList();
+        }
+        if (descriptor.Partition == PoBrawlPartition)
+        {
+            var rows = await _inMemoryFallback.GetPoBrawlHighScoresAsync(limit);
+            return rows.Cast<T>().ToList();
+        }
+        if (descriptor.Partition == PoRacerPartition)
+        {
+            var rows = await _inMemoryFallback.GetPoRacerHighScoresAsync(limit);
+            return rows.Cast<T>().ToList();
+        }
+        if (descriptor.Partition == PoSportsPartition)
+        {
+            var rows = await _inMemoryFallback.GetPoSportsHighScoresAsync(limit);
+            return rows.Cast<T>().ToList();
+        }
+        if (descriptor.Partition == PoVoxelStrikePartition)
+        {
+            var rows = await _inMemoryFallback.GetPoVoxelStrikeHighScoresAsync(limit);
+            return rows.Cast<T>().ToList();
+        }
+        return [];
     }
 
     // The one shared high-score write: normalise, map to a row, upsert idempotently.
@@ -838,7 +1277,16 @@ public class StorageService : IStorageService
     // memory (see GetHighScoresAsync), so RowKey ordering is irrelevant to correctness.
     private async Task<T> SaveHighScoreAsync<T>(HighScoreDescriptor<T> descriptor, T entry)
     {
+        // Always sanitize first so the caller still gets a normalised entry back even when
+        // storage is down — the endpoint's 201 Created response shape stays unchanged.
         var sanitized = descriptor.Sanitize(entry);
+
+        if (!IsStorageAvailable())
+        {
+            await WriteHighScoresFromFallbackAsync(descriptor, sanitized);
+            return sanitized;
+        }
+
         var fields = descriptor.ToFields(sanitized);
 
         // §9.1 chaos-engineering hardening: hash the row's identity fields only (submitter,
@@ -850,30 +1298,68 @@ public class StorageService : IStorageService
 
         // Concurrency-safe upsert: read existing, merge, write with ETag. Bounded retry on
         // 412/409 (see TableConcurrency).
-        await TableConcurrency.UpdateWithRetryAsync<TableEntity>(
-            Table(descriptor.Table),
-            partitionKey: descriptor.Partition,
-            rowKey: rowKey,
-            factory: () => new TableEntity(descriptor.Partition, rowKey),
-            mutate: e =>
-            {
-                if (descriptor.ShouldOverwrite is not null && !descriptor.ShouldOverwrite(e, fields))
+        try
+        {
+            await TableConcurrency.UpdateWithRetryAsync<TableEntity>(
+                Table(descriptor.Table),
+                partitionKey: descriptor.Partition,
+                rowKey: rowKey,
+                factory: () => new TableEntity(descriptor.Partition, rowKey),
+                mutate: e =>
                 {
-                    return false;
-                }
-
-                var changed = false;
-                foreach (var (key, value) in fields)
-                {
-                    if (!e.TryGetValue(key, out var existing) || !Equals(existing, value))
+                    if (descriptor.ShouldOverwrite is not null && !descriptor.ShouldOverwrite(e, fields))
                     {
-                        e[key] = value;
-                        changed = true;
+                        return false;
                     }
-                }
-                return changed;
-            });
+
+                    var changed = false;
+                    foreach (var (key, value) in fields)
+                    {
+                        if (!e.TryGetValue(key, out var existing) || !Equals(existing, value))
+                        {
+                            e[key] = value;
+                            changed = true;
+                        }
+                    }
+                    return changed;
+                });
+        }
+        catch (Exception ex)
+        {
+            MarkUnavailable(ex);
+            await WriteHighScoresFromFallbackAsync(descriptor, sanitized);
+            // Returning the sanitized entry keeps the response shape stable so the client
+            // doesn't have to special-case "Azurite down".
+        }
         return sanitized;
+    }
+
+    // Per-board in-memory write. Mirrors ReadHighScoresFromFallbackAsync's dispatch table.
+    private async Task WriteHighScoresFromFallbackAsync<T>(HighScoreDescriptor<T> descriptor, T entry)
+    {
+        if (_inMemoryFallback is null) return;
+        NoteFallbackOnce();
+
+        if (descriptor.Partition == MarbleRacePartition)
+        {
+            await _inMemoryFallback.SaveMarbleRaceHighScoreAsync((MarbleRaceHighScore)(object)entry!);
+        }
+        else if (descriptor.Partition == PoBrawlPartition)
+        {
+            await _inMemoryFallback.SavePoBrawlHighScoreAsync((PoBrawlHighScore)(object)entry!);
+        }
+        else if (descriptor.Partition == PoRacerPartition)
+        {
+            await _inMemoryFallback.SavePoRacerHighScoreAsync((PoRacerHighScore)(object)entry!);
+        }
+        else if (descriptor.Partition == PoSportsPartition)
+        {
+            await _inMemoryFallback.SavePoSportsHighScoreAsync((PoSportsHighScore)(object)entry!);
+        }
+        else if (descriptor.Partition == PoVoxelStrikePartition)
+        {
+            await _inMemoryFallback.SavePoVoxelStrikeHighScoreAsync((PoVoxelStrikeHighScore)(object)entry!);
+        }
     }
 
     // Stable content hash over the row's identity fields → idempotent, retry-safe RowKey.

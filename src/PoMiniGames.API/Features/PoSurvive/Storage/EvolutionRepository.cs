@@ -87,6 +87,13 @@ public sealed class EvolutionRepository(TableServiceClient tableServiceClient) :
         {
             return null;
         }
+        // Graceful degradation: an unreachable Table Storage backend (Azurite down, missing
+        // connection string) must NOT 500 the API. Return null so the caller can render
+        // "no record found" rather than crash the page. Matches StorageService.MarkUnavailable.
+        catch (Exception)
+        {
+            return null;
+        }
     }
 
     public async Task<IReadOnlyList<EvolutionRecord>> GetAllAsync(CancellationToken ct = default)
@@ -94,20 +101,27 @@ public sealed class EvolutionRepository(TableServiceClient tableServiceClient) :
         var tableClient = await EnsuredTableAsync(ct);
 
         var results = new List<EvolutionRecord>();
-        var pages = tableClient.QueryAsync<TableEntity>(
-            filter: "PartitionKey eq 'evolution'",
-            maxPerPage: 1000,
-            cancellationToken: ct);
-
-        await foreach (var page in pages)
+        try
         {
-            results.Add(MapFromEntity(page));
-        }
+            var pages = tableClient.QueryAsync<TableEntity>(
+                filter: "PartitionKey eq 'evolution'",
+                maxPerPage: 1000,
+                cancellationToken: ct);
 
-        return results
-            .OrderByDescending(r => r.Generation)
-            .ThenByDescending(r => r.WinCount)
-            .ToList();
+            await foreach (var page in pages)
+            {
+                results.Add(MapFromEntity(page));
+            }
+
+            return results
+                .OrderByDescending(r => r.Generation)
+                .ThenByDescending(r => r.WinCount)
+                .ToList();
+        }
+        catch (Exception)
+        {
+            return [];
+        }
     }
 
     public async Task<IReadOnlyList<EvolutionRecord>> GetByGenerationAsync(
@@ -116,17 +130,24 @@ public sealed class EvolutionRepository(TableServiceClient tableServiceClient) :
         var tableClient = await EnsuredTableAsync(ct);
 
         var results = new List<EvolutionRecord>();
-        var pages = tableClient.QueryAsync<TableEntity>(
-            filter: $"PartitionKey eq 'evolution' and Generation eq {generation}",
-            maxPerPage: 1000,
-            cancellationToken: ct);
-
-        await foreach (var page in pages)
+        try
         {
-            results.Add(MapFromEntity(page));
-        }
+            var pages = tableClient.QueryAsync<TableEntity>(
+                filter: $"PartitionKey eq 'evolution' and Generation eq {generation}",
+                maxPerPage: 1000,
+                cancellationToken: ct);
 
-        return results;
+            await foreach (var page in pages)
+            {
+                results.Add(MapFromEntity(page));
+            }
+
+            return results;
+        }
+        catch (Exception)
+        {
+            return [];
+        }
     }
 
     public async Task DeleteAllAsync(CancellationToken ct = default)

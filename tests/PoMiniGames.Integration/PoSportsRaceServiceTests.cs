@@ -65,6 +65,8 @@ public sealed class PoSportsRaceServiceTests
             Task.FromResult(new List<PoVoxelStrikeHighScore>());
         public Task<PoVoxelStrikeHighScore> SavePoVoxelStrikeHighScoreAsync(PoVoxelStrikeHighScore entry) =>
             Task.FromResult(entry);
+
+        public bool IsStorageHealthy() => true;
     }
 
     private static (PoSportsRaceService race, PoSportsLobbyService lobby, CapturingStorage storage) StartedRace()

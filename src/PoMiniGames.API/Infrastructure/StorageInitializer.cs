@@ -57,39 +57,53 @@ public sealed class StorageInitializer
         var endpoint = section["Endpoint"];
         var accountName = section["AccountName"];
 
+        // Same fast-fail options as StorageExtensions.ResolveTableServiceClient. Without them,
+        // a single unreachable backend in this initializer would tie up the host's startup
+        // for the SDK's default retry chain (Exponential, 4+ retries, ~30s+ per attempt).
+        var tableOptions = new TableClientOptions
+        {
+            Retry = { MaxRetries = 0, NetworkTimeout = TimeSpan.FromSeconds(2) },
+        };
+
         if (!string.IsNullOrWhiteSpace(connectionString))
         {
-            _tableServiceClient = new TableServiceClient(connectionString);
+            _tableServiceClient = new TableServiceClient(connectionString, tableOptions);
         }
         else if (!string.IsNullOrWhiteSpace(endpoint) || !string.IsNullOrWhiteSpace(accountName))
         {
             var serviceUri = !string.IsNullOrWhiteSpace(endpoint)
                 ? new Uri(endpoint!)
                 : new Uri($"https://{accountName}.table.core.windows.net");
-            _tableServiceClient = new TableServiceClient(serviceUri, new DefaultAzureCredential());
+            _tableServiceClient = new TableServiceClient(serviceUri, new DefaultAzureCredential(), tableOptions);
         }
         else
         {
-            _tableServiceClient = new TableServiceClient("UseDevelopmentStorage=true");
+            _tableServiceClient = new TableServiceClient("UseDevelopmentStorage=true", tableOptions);
         }
 
         // Blob service: same credential path; falls back to the dev emulator. Lazy-initialized
         // so a missing blob endpoint is non-fatal (PoCoupleQuiz / PoFunQuiz don't need it).
+        // Same fast-fail options as the table client for the same reason.
+        var blobOptions = new BlobClientOptions
+        {
+            Retry = { MaxRetries = 0, NetworkTimeout = TimeSpan.FromSeconds(2) },
+        };
         var blobConnectionString = section["BlobConnectionString"];
         var blobEndpoint = section["BlobEndpoint"];
         if (!string.IsNullOrWhiteSpace(blobConnectionString))
         {
-            _blobServiceClient = new BlobServiceClient(blobConnectionString);
+            _blobServiceClient = new BlobServiceClient(blobConnectionString, blobOptions);
         }
         else if (!string.IsNullOrWhiteSpace(blobEndpoint))
         {
-            _blobServiceClient = new BlobServiceClient(new Uri(blobEndpoint), new DefaultAzureCredential());
+            _blobServiceClient = new BlobServiceClient(new Uri(blobEndpoint), new DefaultAzureCredential(), blobOptions);
         }
         else if (!string.IsNullOrWhiteSpace(accountName))
         {
             _blobServiceClient = new BlobServiceClient(
                 new Uri($"https://{accountName}.blob.core.windows.net"),
-                new DefaultAzureCredential());
+                new DefaultAzureCredential(),
+                blobOptions);
         }
     }
 

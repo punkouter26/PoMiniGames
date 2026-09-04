@@ -59,13 +59,34 @@ internal static class StorageExtensions
             connectionString, endpoint, accountName, sp.GetService<IHostEnvironment>()));
         services.AddSingleton(_ => ResolveBlobServiceClient(connectionString, endpoint, accountName));
 
-        services.AddSingleton<StorageService>();
+        services.AddSingleton<StorageService>(sp =>
+        {
+            // StorageService needs the in-memory fallback wired in so it can hand off when
+            // Azure is unreachable. ActivatorUtilities fills the four required dependencies
+            // (IConfiguration, EloCalculator, PairwiseEloCalculator, ILogger) from the
+            // container, and we append the optional fallback as the trailing arg.
+            return ActivatorUtilities.CreateInstance<StorageService>(
+                sp,
+                sp.GetRequiredService<InMemoryStorageService>());
+        });
         services.AddSingleton<IStorageService>(sp => sp.GetRequiredService<StorageService>());
+
+        // In-memory fallback for when Azure Table Storage is unreachable (e.g., Azurite
+        // not running because Docker isn't installed on the dev machine). The fallback
+        // service is always registered; StorageService decides at request time whether
+        // to delegate to it. Singleton so all calls within a single process share the
+        // same in-memory state — a save + leaderboard read on the same session see the
+        // same row, and the demo Elo board stays internally consistent across calls.
+        services.AddSingleton<InMemoryStorageService>();
 
         services.AddHealthChecks()
             .AddCheck<StorageHealthCheck>(
                 "Storage",
-                failureStatus: HealthStatus.Unhealthy,
+                // Degraded, not Unhealthy: storage failure means leaderboards/scores are
+                // skipped, but the rest of the app keeps serving requests. Reporting
+                // Unhealthy would 503 /api/health and trip monitors whenever Azurite is
+                // unreachable in dev — a condition the app explicitly tolerates.
+                failureStatus: HealthStatus.Degraded,
                 tags: new[] { "critical" })
             .AddCheck<AzureTableStorageHealthCheck>(
                 "AzureTableStorage",
@@ -81,9 +102,22 @@ internal static class StorageExtensions
         string? accountName,
         IHostEnvironment? environment)
     {
+        // Pin a fast, predictable network timeout on every client. The Azure SDK's default
+        // retry chain (Exponential, 4+ retries, network timeout per attempt) drags the total
+        // time-to-failure for an unreachable backend to well over 30 seconds — long enough
+        // that startup blocks on a single failed `CreateIfNotExistsAsync`. With NetworkTimeout
+        // set to 2s and MaxRetries to 0, an unreachable Azurite fails in well under 2s and
+        // the graceful-degradation path takes over immediately. Production deploys hit a real
+        // account; a 2s network timeout is generous for a healthy endpoint and still bounds
+        // the worst-case wait on a flapping backend.
+        var options = new TableClientOptions
+        {
+            Retry = { MaxRetries = 0, NetworkTimeout = TimeSpan.FromSeconds(2) },
+        };
+
         if (!string.IsNullOrWhiteSpace(connectionString))
         {
-            return new TableServiceClient(connectionString);
+            return new TableServiceClient(connectionString, options);
         }
 
         if (!string.IsNullOrWhiteSpace(endpoint) || !string.IsNullOrWhiteSpace(accountName))
@@ -91,7 +125,7 @@ internal static class StorageExtensions
             var serviceUri = !string.IsNullOrWhiteSpace(endpoint)
                 ? new Uri(endpoint!)
                 : new Uri($"https://{accountName}.table.core.windows.net");
-            return new TableServiceClient(serviceUri, new DefaultAzureCredential());
+            return new TableServiceClient(serviceUri, new DefaultAzureCredential(), options);
         }
 
         // In production, silently falling through to the emulator turns a missing
@@ -109,7 +143,7 @@ internal static class StorageExtensions
         // works out of the box. UseDevelopmentStorage=true resolves to the
         // well-known dev account on 127.0.0.1; using "localhost" can hit a
         // stalled IPv6 stack.
-        return new TableServiceClient(AzuriteDevConnectionString);
+        return new TableServiceClient(AzuriteDevConnectionString, options);
     }
 
     private static BlobServiceClient ResolveBlobServiceClient(

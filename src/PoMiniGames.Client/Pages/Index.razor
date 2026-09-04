@@ -5,6 +5,7 @@
 @inject ActivityFeedService ActivityFeed
 @inject UiFeedbackService Feedback
 @inject OnlineStatusService OnlineStatus
+@inject ToastService Toasts
 @inject IWebAssemblyHostEnvironment Env
 @implements IAsyncDisposable
 
@@ -76,6 +77,25 @@
             </span>
             @(Kiosk.IsActive ? "Stop demos" : "Watch all demos")
         </button>
+
+        @* Start from N — lands on the chosen demo (PoSurvive, PoVoxelStrike, etc.)
+           and starts the reel from there. The "Watch all demos" button always
+           opens on TicTacToe, which is the cheapest game but not the most
+           visually striking — a museum visitor who wants to see PoSurvive's
+           creature island doesn't want to wait the full ~3-minute loop. *@
+        @if (!Kiosk.IsActive && GameCatalog.Demo.Count > 1)
+        {
+            <label class="home-action home-action--startfrom" title="Open the auto-rotating reel at a specific demo">
+                <span class="home-action-icon" aria-hidden="true">⤓</span>
+                <span>Start from</span>
+                <select class="home-action-select" @bind="_startFromIndex" @bind:after="OnStartFromChanged" aria-label="Choose which demo to start the reel from">
+                    @for (var i = 0; i < GameCatalog.Demo.Count; i++)
+                    {
+                        <option value="@i">@(GameCatalog.Demo[i].Title)</option>
+                    }
+                </select>
+            </label>
+        }
 
         <a class="home-action" href="/leaderboards">
             <span class="home-action-icon" aria-hidden="true">🏆</span>Leaderboards
@@ -221,6 +241,11 @@
     // §9: activity feed (recent matches).
     private IReadOnlyList<ActivityFeedService.FeedItem> _activity = Array.Empty<ActivityFeedService.FeedItem>();
 
+    // 2026-09-04: index of the demo the user picked in the "Start from" dropdown.
+    // Defaults to 0 (TicTacToe) so the first pick matches the "Watch all demos"
+    // behaviour; the user can change it to land on PoSurvive, PoVoxelStrike, etc.
+    private int _startFromIndex;
+
     // Offline, a hub-backed or API-backed mode is not playable: with the service
     // worker installed the shell loads fine without a network, so leaving these
     // navigable would drop the player into a lobby that can never connect. Modes
@@ -328,17 +353,46 @@
             Kiosk.Stop();
             return;
         }
+        await BeginKioskFromAsync(0);
+    }
 
+    /// <summary>
+    /// Start the kiosk reel at the chosen demo index. Used by both the "Watch
+    /// all demos" button (which always passes 0) and the "Start from" dropdown
+    /// (which passes the user's pick).
+    /// </summary>
+    private async Task BeginKioskFromAsync(int index)
+    {
         var demos = GameCatalog.Demo;
         if (demos.Count == 0) return;
+        if (index < 0 || index >= demos.Count) index = 0;
 
         Kiosk.RegisterEntries(demos.Select(d => new Services.DemoEntry(d.Key, d.Url, d.Title, d.Icon)));
-        var first = demos[0];
-        var sep = first.Url.Contains('?') ? '&' : '?';
-        // Display index 0 with advance pointer 0 so the first rotation lands on index 1
-        // (TicTacToe). Starting at 1 skipped the second demo on every lap.
-        Kiosk.Start(0);
-        NavigationManager.NavigateTo($"{first.Url}{sep}kiosk=0");
+        // Clear every active toast before entering the reel — the PWA "Update now"
+        // prompt and any error toast are persistent (ShowAction never auto-expires) and
+        // would otherwise follow the user into the loop and steal taps from the reel
+        // controls. One-shot entry, not per-game.
+        Toasts.DismissAll();
+        var entry = demos[index];
+        var sep = entry.Url.Contains('?') ? '&' : '?';
+        // Display index `index` with advance pointer `index` so the first rotation
+        // lands on `index + 1`. Starting at 1 instead of 0 used to skip the second
+        // demo on every lap; the same logic has to work for non-zero starts.
+        Kiosk.Start(index);
+        NavigationManager.NavigateTo($"{entry.Url}{sep}kiosk={index}");
+    }
+
+    /// <summary>
+    /// "Start from" dropdown changed — enter the kiosk reel at the chosen index.
+    /// Lives next to the "Watch all demos" button so a passer-by can pick a
+    /// visually striking demo (PoVoxelStrike, PoSurvive) instead of always
+    /// opening on TicTacToe.
+    /// </summary>
+    private async Task OnStartFromChanged()
+    {
+        await Feedback.TapAsync();
+        if (Kiosk.IsActive) Kiosk.Stop();
+        await BeginKioskFromAsync(_startFromIndex);
     }
 
     public async ValueTask DisposeAsync()

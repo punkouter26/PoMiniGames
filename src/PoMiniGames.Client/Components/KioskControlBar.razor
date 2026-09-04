@@ -2,6 +2,7 @@
 @using PoMiniGamesClient.Services
 @inject KioskCoordinator Kiosk
 @inject UiFeedbackService Feedback
+@inject IJSRuntime JS
 @implements IDisposable
 
 @* ─────────────────────────────────────────────────────────────────────────
@@ -36,6 +37,20 @@
             @(Kiosk.IsPaused ? "paused" : $"{Kiosk.SecondsUntilAdvance}s")
         </span>
 
+        @* Demo N of M pill: anchors repeat viewers on where they are in the loop.
+           Hidden until a demo page reports itself via SetCurrent (so we don't
+           show "0 of 9" for the first paint before the destination page boots). *@
+        @if (Kiosk.CurrentIndex >= 0 && Kiosk.TotalCount > 0)
+        {
+            <span class="kiosk-bar-progress" aria-hidden="true">
+                Demo @(Kiosk.CurrentIndex + 1) of @(Kiosk.TotalCount)
+            </span>
+        }
+
+        <button type="button" class="kiosk-bar-btn"
+                aria-label="Go to the previous demo" title="Previous demo"
+                @onclick="PreviousAsync">⏮</button>
+
         <button type="button" class="kiosk-bar-btn"
                 aria-label="@(Kiosk.IsPaused ? "Resume the demo reel" : "Pause the demo reel")"
                 title="@(Kiosk.IsPaused ? "Resume" : "Pause")"
@@ -44,6 +59,15 @@
         <button type="button" class="kiosk-bar-btn"
                 aria-label="Skip to the next demo" title="Next demo"
                 @onclick="SkipAsync">⏭</button>
+
+        @* Audio mute toggle. Persistent via localStorage so a 5-minute museum loop
+           at full volume doesn't become a problem on the second run. Surfaces a
+           single global "MuteAudio" / "UnmuteAudio" event the JS audioBus picks
+           up — that is the canonical channel for ALL audio mute in the app. *@
+        <button type="button" class="kiosk-bar-btn kiosk-bar-btn--mute"
+                aria-label="@(_muted ? "Unmute audio" : "Mute audio")"
+                title="@(_muted ? "Unmute" : "Mute")"
+                @onclick="ToggleMuteAsync">@(_muted ? "🔇" : "🔊")</button>
 
         <button type="button" class="kiosk-bar-btn kiosk-bar-btn--exit"
                 aria-label="Stop watching demos and return home" title="Exit"
@@ -79,6 +103,53 @@
     {
         await Feedback.SwipeBackAsync();
         Kiosk.Exit();
+    }
+
+    private async Task PreviousAsync()
+    {
+        await Feedback.TapAsync();
+        Kiosk.PreviousDemo();
+    }
+
+    // ── Audio mute ────────────────────────────────────────────────────────
+    // The kiosk bar owns the mute button because audio is part of the watch
+    // experience, but the underlying preference is global. We use the same
+    // localStorage key the rest of the app reads ("pomini_muted") and surface
+    // a one-off CustomEvent the JS audioBus subscribes to so the master gain
+    // drops instantly. The setting persists across page navigations — closing
+    // a kiosk loop and reopening it does not unmute.
+    private const string MuteKey = "pomini_muted";
+    private bool _muted;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try
+        {
+            var stored = await JS.InvokeAsync<string?>("localStorage.getItem", MuteKey);
+            _muted = !string.IsNullOrEmpty(stored) && stored.Contains('1');
+            StateHasChanged();
+        }
+        catch { /* private mode / blocked — default is unmuted */ }
+    }
+
+    private async Task ToggleMuteAsync()
+    {
+        _muted = !_muted;
+        try
+        {
+            await JS.InvokeVoidAsync("localStorage.setItem", MuteKey, _muted ? "1" : "0");
+        }
+        catch { /* best-effort persistence */ }
+        try
+        {
+            // Fire a CustomEvent the JS audioBus listens to. Using a DOM event
+            // (instead of JS interop into the bus directly) keeps the C# side
+            // free of references to specific JS module paths.
+            await JS.InvokeVoidAsync("eval",
+                $"document.dispatchEvent(new CustomEvent('po-audio-mute', {{ detail: {{ muted: {(_muted ? "true" : "false")} }} }}))");
+        }
+        catch { /* fire-and-forget; the storage write above is the source of truth */ }
     }
 
     public void Dispose()

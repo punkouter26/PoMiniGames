@@ -67,6 +67,19 @@ public class ToastService
         StateChanged?.Invoke();
     }
 
+    /// <summary>
+    /// Dismiss every active toast. Used by the kiosk reel's entry point so a
+    /// persistent toast (the PWA "Update now" prompt, an error toast from the
+    /// previous page) does not survive into the attract loop and compete for
+    /// taps with the reel's Skip/Exit controls.
+    /// </summary>
+    public void DismissAll()
+    {
+        if (_toasts.Count == 0) return;
+        _toasts.Clear();
+        StateChanged?.Invoke();
+    }
+
     private async Task RemoveAfterDelay(int id, int delayMs)
     {
         await Task.Delay(delayMs);

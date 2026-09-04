@@ -196,6 +196,21 @@
 
     protected override async Task OnInitializedAsync()
     {
+        // 2026-09-04 kiosk reel polish: when the URL carries ?kiosk=N (the "Watch
+        // all demos" attract loop) we skip the intro card entirely. Every demo
+        // page reads the same kiosk query param, so the first 2s × 9 games of a
+        // loop used to be spent on the same dialog flashing back at the viewer.
+        // Also covers repeat viewers: every loop iteration re-enters the page
+        // with the kiosk param set, so the dialog stays suppressed.
+        // Only applies to Demo mode — OnePlayer / TwoPlayer still want the card.
+        if (Mode == IntroMode.Demo &&
+            new Uri(Navigation.Uri).Query.Contains("kiosk=", StringComparison.OrdinalIgnoreCase))
+        {
+            _skipDecision = true;
+            await StartAsync();
+            return;
+        }
+
         if (!SkipCapable)
         {
             _skipDecision = false;

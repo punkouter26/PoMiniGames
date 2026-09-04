@@ -55,18 +55,28 @@ public sealed class KioskCoordinator : IDisposable
     public int SecondsUntilAdvance { get; private set; } = 20;
     public const int AdvanceSeconds = 20;
 
+    /// <summary>0-based index of the demo currently on screen. -1 before the first page reports itself.</summary>
+    public int CurrentIndex => _currentIndex;
+    /// <summary>Total demos in the reel.</summary>
+    public int TotalCount => _entries.Count;
+
     // Per-game dwell: fast games (a rhythm tap, a quick round) get a shorter slice so the
     // reel doesn't sit on a restart; slower ones (a full race, a comedy bit) get longer.
     // Keyed by the catalog GameKey (DemoEntry.Key). Anything unmapped uses AdvanceSeconds.
+    //
+    // 2026-09-04 calibration: PoSurvive's scripted 900ms/turn × ~25 turns plus
+    // post-mortem easily runs ~35s, and PoJoker's 10-joke set with crowd
+    // reactions runs ~30s. The previous 24s dwell on both jumped mid-match
+    // (audit #10). PoRacer stays at 18s — it ends after one race, not loops.
     private static readonly Dictionary<string, int> DwellByKey = new(StringComparer.OrdinalIgnoreCase)
     {
         ["tictactoe"] = 12,
         ["connectfive"] = 14,
         ["poracer"] = 18,
         ["pomarblerace"] = 22,
-        ["pojoker"] = 24,
+        ["pojoker"] = 32,
         ["pobrawl"] = 22,
-        ["posurvive"] = 24,
+        ["posurvive"] = 38,
     };
 
     private int DwellFor(int index) =>
@@ -87,7 +97,11 @@ public sealed class KioskCoordinator : IDisposable
         _currentKey = key;
         CurrentGameName = _entries.FirstOrDefault(e => e.Key == key)?.DisplayName;
         _currentIndex = _entries.FindIndex(e => e.Key == key);
-        SecondsUntilAdvance = AdvanceSeconds;
+        // Use the per-game dwell so the on-screen countdown matches the actual
+        // dwell the coordinator is going to honour. Without this the bar would
+        // say "20s" for PoJoker (dwell 24s) and the bar's countdown would always
+        // overshoot the real rotation by a few seconds.
+        SecondsUntilAdvance = DwellFor(_currentIndex);
         Changed?.Invoke();
     }
 
@@ -121,6 +135,65 @@ public sealed class KioskCoordinator : IDisposable
         var sep = nextEntry.Path.Contains('?') ? '&' : '?';
         _navigation.NavigateTo($"{nextEntry.Path}{sep}kiosk={next}", forceLoad: false);
         Changed?.Invoke();
+    }
+
+    /// <summary>
+    /// Jump to the previous demo in the reel. Symmetric with <see cref="SkipNext"/> —
+    /// decrements with wrap-around so a museum visitor who missed PoSurvive doesn't
+    /// have to wait the full ~3-minute loop to see it again.
+    /// </summary>
+    public void PreviousDemo()
+    {
+        if (_entries.Count == 0) return;
+        _timer?.Dispose();
+        _timer = null;
+        var prev = (_advanceIndex - 1 + _entries.Count) % _entries.Count;
+        var prevEntry = _entries[prev];
+        var sep = prevEntry.Path.Contains('?') ? '&' : '?';
+        _navigation.NavigateTo($"{prevEntry.Path}{sep}kiosk={prev}", forceLoad: false);
+        Changed?.Invoke();
+    }
+
+    /// <summary>
+    /// Demo pages call this when their match ends (post-mortem screen, game-over
+    /// modal, race finished, etc.) so the reel advances immediately instead of
+    /// sitting on the "Game over" screen for the rest of the per-game dwell. The
+    /// effect is identical to <see cref="SkipNext"/> from the viewer's point of
+    /// view — both rotate the reel — but it lives here so a per-game page can
+    /// opt in without having to know the timer internals.
+    /// </summary>
+    public void MarkFinished()
+    {
+        if (!IsActive) return;
+        if (_entries.Count == 0) return;
+        // Drop straight to the next demo. We deliberately do NOT pause first —
+        // a finished match that then sits paused is the same visual problem as
+        // one that sits on the timer, just with a different cause.
+        SkipNext();
+    }
+
+    /// <summary>
+    /// Jump directly to a specific demo by its catalog index. Used by the home page's
+    /// "start here" affordance so a passer-by can land on the most visually striking
+    /// demo (PoVoxelStrike) instead of always opening on TicTacToe.
+    /// </summary>
+    public void JumpTo(int index)
+    {
+        if (_entries.Count == 0) return;
+        if (index < 0 || index >= _entries.Count) return;
+        // Resume the reel if it was already active; if not, take it from index 0 and
+        // rotate forward from the chosen entry.
+        if (_timer is null) Start(index);
+        else
+        {
+            _timer.Dispose();
+            _timer = null;
+            _advanceIndex = index;
+            var entry = _entries[index];
+            var sep = entry.Path.Contains('?') ? '&' : '?';
+            _navigation.NavigateTo($"{entry.Path}{sep}kiosk={index}", forceLoad: false);
+            Changed?.Invoke();
+        }
     }
 
     public void Exit()

@@ -832,6 +832,12 @@
             // human-driven, which measures the players, not the roster.
             await RecordDemoFighterEloAsync(winner);
             await InvokeAsync(StateHasChanged);
+            // 2026-09-04: demo ended — tell the kiosk reel the post-game phase is up so it
+            // can rotate immediately. Without this the reel sits on the result screen
+            // for the rest of the per-game dwell (audit #10 — wired the API but skipped
+            // the call sites). A short on-screen dwell on the result before rotation is
+            // fine; we let the reel's normal rotation take it from there.
+            Kiosk.MarkFinished();
             return;
         }
 

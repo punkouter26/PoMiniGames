@@ -11,6 +11,7 @@
 @inject GameResultService GameResults
 @inject IJSRuntime JSRuntime
 @inject NavigationManager Navigation
+@inject KioskCoordinator Kiosk
 
 <PageTitle>Marble Race · PoMiniGames</PageTitle>
 
@@ -708,6 +709,10 @@
             UpdateStats();
         }
         await InvokeAsync(StateHasChanged);
+        // 2026-09-04: signal the kiosk reel that the demo race is over. No-op outside
+        // the kiosk reel so the standalone /pomarblerace route is unaffected. Without
+        // this the reel sits on the result screen until the 22s dwell expires.
+        if (_demo) Kiosk.MarkFinished();
     }
 
     private void UpdateStats()

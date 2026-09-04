@@ -524,6 +524,11 @@
         }
         if (!ct.IsCancellationRequested && _gameResult != GameResult.InProgress)
         {
+            // 2026-09-04: signal the kiosk reel that the demo match is done. Without this
+            // it sits on the post-game win cascade until the 14s dwell expires; with it
+            // the reel rotates ~3s after the last piece drops. No-op when the kiosk is
+            // inactive so the standalone /connectfive route is unaffected.
+            Kiosk.MarkFinished();
             // Audit #9: keep the 3-second "view the win" window, but the win
             // cascade is now a one-shot (.cf-cell.win-cell animation runs once
             // and settles via `forwards`). After 3s the page resets and the

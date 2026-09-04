@@ -4,6 +4,7 @@
 @using PoMiniGamesClient.Games.PoJoker.Components
 @inject NavigationManager Navigation
 @inject GameStatsService GameStats
+@inject PoMiniGamesClient.Services.KioskCoordinator Kiosk
 
 <PageTitle>Joker · PoMiniGames</PageTitle>
 
@@ -123,5 +124,10 @@
             new StatItem { Value = $"{Math.Round(triumphs * 100.0 / JokesPerShow)}%", Label = "Rate" },
         ];
         _showComplete = true;
+        // 2026-09-04: end-of-set signal for the kiosk reel. Only fired in demo
+        // mode — on /pojoker the player is still here and the OK button on
+        // GameOverModal owns the next action. Without this the reel waits the
+        // full 32s dwell on a finished set.
+        if (_isDemo) Kiosk.MarkFinished();
     }
 }

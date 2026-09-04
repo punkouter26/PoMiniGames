@@ -427,6 +427,10 @@
             l.SprintSeconds, l.HurdlesSeconds,
             l.SprintSeconds + l.HurdlesSeconds, l.Placing))];
         _phase = "podium";
+        // 2026-09-04: signal the kiosk reel that the demo meet is over. The podium
+        // otherwise lingers for the full 20s dwell — the demo attract loop sees a
+        // frozen results screen between meets.
+        if (_demo) Kiosk.MarkFinished();
         // The SERVER persisted online scores — no client submit here.
         InvokeAsync(StateHasChanged);
     }

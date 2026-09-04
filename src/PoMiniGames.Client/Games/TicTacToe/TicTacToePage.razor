@@ -400,6 +400,12 @@
         }
         if (!ct.IsCancellationRequested && _gameResult != GameResult.InProgress)
         {
+            // 2026-09-04: signal the kiosk reel that the demo match is done. Without this
+            // it sits on the post-game screen until the 12s dwell expires; with it the
+            // reel rotates ~2.5s after the last move (the post-game linger). MarkFinished is
+            // a no-op when the kiosk is inactive, so the standalone /tictactoe route is
+            // unaffected.
+            Kiosk.MarkFinished();
             await Task.Delay(2500, ct);
             if (!ct.IsCancellationRequested)
                 await InvokeAsync(ResetGame);

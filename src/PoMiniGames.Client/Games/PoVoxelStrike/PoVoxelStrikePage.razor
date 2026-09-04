@@ -9,6 +9,7 @@
 @inject GameResultService GameResults
 @inject IJSRuntime JSRuntime
 @inject NavigationManager Navigation
+@inject KioskCoordinator Kiosk
 
 <PageTitle>Voxel Strike · PoMiniGames</PageTitle>
 
@@ -367,7 +368,14 @@
         _finalVoxels = voxelsDestroyed;
         StateHasChanged();
 
-        if (_demo) return;
+        if (_demo)
+        {
+            // 2026-09-04: signal the kiosk reel that the demo run is over. The death
+            // screen otherwise lingers for the full 20s dwell while the attract loop
+            // sits on a frozen game-over modal.
+            Kiosk.MarkFinished();
+            return;
+        }
         try
         {
             // Every finished run submits — the server ratchets to the best. A failed submit

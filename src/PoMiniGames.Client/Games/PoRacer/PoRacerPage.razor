@@ -580,6 +580,9 @@
             var outcome = Player?.Position == 1 ? GameResult.Win : GameResult.Loss;
             _ = GameResults.RecordAsync("poracer", _playerName, Difficulty.Medium, outcome);
         }
+        // 2026-09-04: signal the kiosk reel that the demo race is over. The race HUD
+        // lingers on the "FINAL" screen for the rest of the 18s dwell otherwise.
+        if (_isDemo) Kiosk.MarkFinished();
         InvokeAsync(StateHasChanged);
     }
 

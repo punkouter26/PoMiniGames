@@ -200,6 +200,11 @@
     transition: transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1),
                 border-color 0.22s var(--ease-standard),
                 box-shadow 0.22s var(--ease-standard);
+    /* 2026-09-04 UI sweep: containment — each card is a self-contained layout
+       so a hover/focus repaint on one card never reaches the rest of the grid.
+       Pure additive (the existing transform/transition behaviour is unchanged);
+       on a 6-card row this is a noticeable scroll-paint win on low-end phones. */
+    contain: layout paint;
 }
 
 .home-card:hover {

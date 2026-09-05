@@ -107,6 +107,11 @@
     font-size: var(--text-sm);
     white-space: nowrap;
     min-height: 40px; /* touch target */
+    /* 2026-09-04 UI sweep: containment — a chip's pill never paints outside
+       its own box, and its label/text reflow does not affect the siblings in
+       the filter row. Lets the browser promote each chip to its own layer
+       when the row is animating between filter states. */
+    contain: layout paint;
 }
 
 .lb-chip--on {

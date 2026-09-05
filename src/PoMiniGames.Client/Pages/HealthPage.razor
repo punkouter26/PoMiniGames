@@ -37,17 +37,32 @@
     {
         @* An unreachable /api/health is itself the answer, and the most important one this
            page can give — surface it as the result rather than as an empty table. *@
-        <p class="hp-error" role="alert">
-            Could not reach the health endpoint: @_error
-        </p>
+        @* 2026-09-04 UI sweep: migrated to <ErrorState> with the existing RefreshAsync
+           callback wired to OnRetry. The underlying `_error` message stays in the body
+           so the on-call engineer can read it without expanding a details element. *@
+        <ErrorState Icon="📡"
+                    Title="Could not reach the health endpoint"
+                    OnRetry="RefreshAsync">
+            @_error
+        </ErrorState>
     }
     else if (_report is null)
     {
-        <p class="hp-muted">Contacting the API…</p>
+        @* 2026-09-04 UI sweep: shared `.app-loading` primitive — same centered spinner
+           + muted label as the leaderboards / lobbies. The page's own `.hp-muted`
+           text style stays in use elsewhere (the footer line, the empty-checks case). *@
+        <div class="app-loading" role="status" aria-live="polite">
+            <div class="app-loading__spinner" aria-hidden="true"></div>
+            <span>Contacting the API…</span>
+        </div>
     }
     else if (_report.Checks.Count == 0)
     {
-        <p class="hp-muted">The API is reachable but reports no registered dependency checks.</p>
+        @* 2026-09-04 UI sweep: shared <EmptyState> primitive. *@
+        <EmptyState Icon="🩺"
+                    Title="No registered dependency checks">
+            The API is reachable but reports no registered dependency checks.
+        </EmptyState>
     }
     else
     {

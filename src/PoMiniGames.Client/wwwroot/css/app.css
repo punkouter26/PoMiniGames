@@ -155,7 +155,16 @@
            .sp-btn-primary, .sp-btn-secondary, .sp-back,
            .app-notfound__link, .app-fallback-link,
            .fq-option,
-           .sv-btn, .sv-chip, .sv-rail__tab, .reload) {
+           .sv-btn, .sv-chip, .sv-rail__tab, .reload,
+           /* 2026-09-04 UI sweep: button classes that landed after the original
+              list was written. Same `.pvs-btn` family is used for every
+              interaction in PoVoxelStrike's lobby + game; `.retry-button` is
+              the one PoJoker's network-awaiting surface renders on a transient
+              disconnect. Without these two the buttons would render at their
+              intrinsic height (~28px) and miss the 44px floor on portrait
+              phones. */
+           .pvs-btn, .pvs-btn-primary,
+           .retry-button) {
         min-height: 44px;
     }
 

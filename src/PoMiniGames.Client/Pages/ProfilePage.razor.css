@@ -136,6 +136,9 @@
        so the spacing inside is consistent. */
     min-height: 5.5rem;
     transition: transform 0.18s var(--ease-standard), border-color 0.18s var(--ease-standard), box-shadow 0.18s var(--ease-standard);
+    /* 2026-09-04 UI sweep: containment — the four chips reflow independently
+       (a new hint inside one chip does not re-layout the others). */
+    contain: layout paint;
 }
 
 .prf-chip:hover {

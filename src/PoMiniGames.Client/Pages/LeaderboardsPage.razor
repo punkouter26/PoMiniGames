@@ -78,10 +78,22 @@
     }
     else if (!_loading && !_error && _boards.Count == 0)
     {
-        <div class="lb-empty">
-            <p>No scores yet. Be the first on the board!</p>
-            <button class="lb-retry" @onclick='() => NavigationManager.NavigateTo("/")'>Pick a game →</button>
-        </div>
+        @* 2026-09-04 UI sweep: migrated from inline `.lb-empty` markup to the
+           shared <EmptyState> primitive. Visual treatment is identical (the
+           primitive is the source of truth) and a future tweak to empty-state
+           copy / icon lands in one place. *@
+        <EmptyState Icon="🏆"
+                    Title="No scores yet">
+            Be the first on the board. Play any 1-player mode to claim a spot —
+            your best score auto-submits when you finish.
+            <Action>
+                <button class="app-btn app-btn--primary"
+                        type="button"
+                        @onclick='() => NavigationManager.NavigateTo("/")'>
+                    Pick a game
+                </button>
+            </Action>
+        </EmptyState>
     }
 
     @if (_loading)
@@ -95,10 +107,15 @@
     }
     else if (_error)
     {
-        <div class="lb-empty">
-            <p>Backend offline — leaderboards can't load right now.</p>
-            <button class="lb-retry" @onclick="Load">Retry</button>
-        </div>
+        @* 2026-09-04 UI sweep: shared <ErrorState> with a Retry callback. The
+           retry button uses the universal `.app-btn--primary` so the call to
+           action matches every other failure surface in the app. *@
+        <ErrorState Icon="📡"
+                    Title="Backend offline"
+                    OnRetry="Load">
+            Leaderboards can't load right now. Your scores are safe — they'll
+            sync the next time the API is reachable.
+        </ErrorState>
     }
     else
     {

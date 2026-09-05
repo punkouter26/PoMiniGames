@@ -131,11 +131,18 @@ else
            row lookup never ran. *@
         @if (_highScoreLoadFailed)
         {
-            <div class="prf-error" role="alert">
-                <span class="prf-error-icon" aria-hidden="true">⚠️</span>
-                <span class="prf-error-text">Couldn't load saved high scores — the leaderboard endpoints didn't respond. Your local stats above are still accurate.</span>
-                <button class="prf-error-retry" @onclick="() => _ = LoadHighScoresAsync()">Retry</button>
-            </div>
+            @* 2026-09-04 UI sweep: migrated to <ErrorState> with a Retry callback.
+               The `OnRetry` delegate runs the same `LoadHighScoresAsync` private
+               that the inline retry button used; the visual treatment comes
+               from app.css and is consistent with the leaderboards and health
+               failure surfaces. *@
+            <ErrorState Icon="⚠️"
+                        Title="Couldn't load saved high scores"
+                        OnRetry="() => LoadHighScoresAsync()">
+                The leaderboard endpoints didn't respond. Your local stats above
+                are still accurate — only the cross-device saved scores are
+                affected.
+            </ErrorState>
         }
         <h2 class="prf-section-title">High Scores · 1 Player</h2>
         <div class="prf-hs-grid">
@@ -222,11 +229,18 @@ else
        A single CTA card replaces the entire charts row. *@
     @if (_totalGames == 0)
     {
-        <div class="prf-chart-card prf-chart-card--empty">
-            <h3 class="prf-chart-title">No games played yet</h3>
-            <p class="prf-chart-empty-text">Win rates, charts, and head-to-head records unlock after your first match.</p>
-            <a href="/" class="sp-btn-primary">Pick a game →</a>
-        </div>
+        @* 2026-09-04 UI sweep: migrated from inline `.prf-chart-card--empty`
+           markup to the shared <EmptyState> primitive. The styling comes from
+           app.css; the home-CTA link below picks up the universal
+           `.app-btn--primary` class so it matches every other CTA in the app. *@
+        <EmptyState Icon="📊"
+                    Title="No games played yet">
+            Win rates, charts, and head-to-head records unlock after your first
+            match.
+            <Action>
+                <a href="/" class="app-btn app-btn--primary">Pick a game</a>
+            </Action>
+        </EmptyState>
     }
     else
     {

@@ -403,6 +403,26 @@ dialog.gps-modal {
    --z-modal) so a game that somehow ends instantly still surfaces its result
    on top.
    ───────────────────────────────────────────────────────────────────────── */
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Contract: --gps-area-h (2026-09-04 UI sweep, Option 1 + 5).
+
+   The CSS variable `--gps-area-h` is published by `.gps-shell` (in games.css)
+   as `min(100dvh, max(18rem, 100dvh - var(--gps-topbar-h) - var(--gps-bar-h, 0px)))`.
+   Game descendants should read it directly instead of computing their own
+   `calc(100vh - NNNpx)` arithmetic:
+
+     .my-game-canvas { height: min(var(--gps-area-h), 820px); }
+
+   Layouts with extra rail chrome (PoSurviveLayout's `.sv-bar`) override the
+   `--gps-bar-h` token from their own CSS so the subtraction stays accurate
+   without each game having to know which layout it sits under.
+
+   The earlier approach (each game independently computing `min(86vh, 820px)`
+   or `min(calc(100vh - 96px), 92vh)`) gave 7 different answers across the
+   tree. Centralising the arithmetic means a future chrome change (a new
+   top-bar row, a layout-specific drawer) only has to update one token.
+   ───────────────────────────────────────────────────────────────────────── */
 .gps-intro-overlay {
   position: fixed;
   inset: 0;

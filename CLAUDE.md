@@ -86,10 +86,10 @@ Instant-play mini-games platform: .NET 10 Minimal API host that also serves the 
 - **PoSurvive inference has two backends and defaults to neither.** Client-side `Inference:UseMock` defaults to **true** to avoid a multi-hundred-MB WebLLM download; set it false to activate `InferenceRouter` (in-browser WebLLM ↔ server relay). Server-side, `Inference:UseCloudFallback` gates whether `POST /api/infer` is mapped at all, and `Inference:RemoteModelOptions` is an allowlist of model ids a client may name, mapped to real deployments. `/api/infer/status` reports the truth either way. If the PoSurvive AI appears to do nothing, check these before assuming a bug.
 - **PWA / offline resilience.** `service-worker.js` + `service-worker.published.js`, `manifest.webmanifest`, with `OnlineStatusService` (offline banner) and `AppUpdateService` (new-version prompt) initialized once from `MainLayout`. Score submission is durable: `PendingScoreStore` (localStorage queue) → `ScoreSyncService` (flusher) → `GameResultService`. A failed leaderboard submit is parked, not lost. This is also why anonymous leaderboard *reads* never became anonymous writes — guests park scores locally and flush them on sign-in.
 - `GET /health` serves two audiences by `Accept`: `text/html` returns the Blazor shell so `Pages/HealthPage.razor` renders the human status page; anything else (monitors, `HttpClient`, the deploy smoke tests) keeps the legacy JSON report. Content negotiation exists because server routes match ahead of `MapFallbackToFile`, so a Blazor `@page "/health"` would otherwise be permanently shadowed. `/api/health/*` is the canonical JSON surface; `/api/diag` is the developer configuration dump (JSON-only — the Blazor `/diag` page was deliberately removed 2026-08-07 because it shipped 505 lines of developer chrome in every player's WASM bundle and only rendered JSON the API endpoints already expose).
-- Storage tables are created automatically on startup; dev uses `UseDevelopmentStorage=true` against Azurite, production uses Managed Identity. Application Insights is intentionally NOT configured in local dev (`PoMiniGames:ApplicationInsights:ConnectionString` empty by design — same standing exception as `dotnet user-secrets`): the connection string is treated as a Key Vault secret, never committed, and `/api/diag` reports `applicationInsightsConfigured: not-configured`. Local telemetry goes to console / Serilog only; trace a session locally with logs + the existing health snapshot.
+- Storage tables are created automatically on startup; dev uses `UseDevelopmentStorage=true` against Azurite, production uses Managed Identity. Application Insights is intentionally NOT configured in local dev (`PoMiniGames:ApplicationInsights:ConnectionString` empty by design): the connection string is treated as a Key Vault secret, never committed, and `/api/diag` reports `applicationInsightsConfigured: not-configured`. Local telemetry goes to console / Serilog only; trace a session locally with logs + the existing health snapshot.
 - SignalR hubs are per-game (`/couplequiz/hubs/game`, `/funquiz/gamehub`, `/poracer/lobby-hub`, …) and all require auth; JSON protocol uses camelCase string enums.
 - Central package management via `Directory.Packages.props`; versioning via MinVer from git tags.
-- `dotnet user-secrets` (id `pomini-games-secret-id`) holds dev auth ClientIds; Key Vault load in dev is non-fatal. (The external NET_RULES doc forbids user-secrets in favour of Key Vault everywhere; this repo keeps them for local dev. Treat that as a standing exception, not an unfixed violation.)
+- Local configuration lives in `appsettings.json` (overrides in `appsettings.Development.json` for local-only values) or Azure Key Vault. `dotnet user-secrets` is not used; see `## NET_AGENTS rules` below. Key Vault load in dev is non-fatal.
 
 ## Conventions and constraints
 
@@ -102,3 +102,17 @@ Instant-play mini-games platform: .NET 10 Minimal API host that also serves the 
 - `style="..."` in `.razor` files is acceptable **only** to pass a runtime value into a CSS custom property (`style="--hp: @Percent%"`); the static rule still belongs in the scoped `.razor.css`.
 - Default branch is `master`. Development is on Windows; repo scripts are PowerShell (`pwsh`).
 - Comments in this codebase are dense and contract-oriented (audit/bug-fix annotations); match that style only when a real constraint needs recording.
+
+---
+
+## NET_AGENTS rules
+
+These apply on top of the conventions above. They are intentionally short and absolute.
+
+- **Branch policy.** Work only on `master`. Use a different branch only if explicitly asked.
+- **Restart + verify after a code change.** Rebuild and restart the API host (`dotnet run --project src/PoMiniGames.API/PoMiniGames.API.csproj`) after any code change and confirm it boots cleanly — a successful 200 from `GET /health` (or a "Now listening on" log line) is the bar. Do not report a change as done while the running instance is stale.
+- **Read the docs first.** Before starting a task, scan `docs/` (lowercase) — start with `docs/PRD_Master.md`, and pull `docs/poecosystem/SPEC.md` / `docs/PoVoxelStrike-PRD.md` / `docs/poecosystem/CAPABILITY-MAP.md` as relevant. The tree under `src/PoMiniGames.Client/Games/` and `src/PoMiniGames.API/Features/` is the source of truth when docs drift.
+- **No `dotnet user-secrets` for local config.** Put settings in `appsettings.json` (with `appsettings.Development.json` for local-only overrides) or Azure Key Vault. The previous standing exception is removed as of 2026-09-04.
+- **Never push without an explicit ask.** Local commits and merges are fine; `git push` (to any remote) requires the user to say so first.
+- **Commit message style.** Keep commits short, casual, American-English, and human-sounding (e.g. "wires the kiosk reel into the post-match handler", not "Implement MarkFinished integration"). Avoid emoji, ticket IDs, and 50-word subject lines.
+- **TL;DR on long replies.** Any response longer than 100 words ends with a `**TL;DR** …` line of roughly 20 words.

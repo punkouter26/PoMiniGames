@@ -12,6 +12,7 @@
 @inject KioskCoordinator Kiosk;
 @inject UiFeedbackService Feedback;
 @inject GameResultService GameResults;
+@inject IJSRuntime JS;
 
 <PageTitle>Connect Five · PoMiniGames</PageTitle>
 
@@ -240,6 +241,12 @@
     // Player 1's display name resolves asynchronously; fall back to "Player 1" until it does.
     private string P1Name => string.IsNullOrWhiteSpace(_playerName) ? "Player 1" : _playerName;
     private List<(int Row, int Col)> _winCells = new();
+    // §CF-1 §GFX matter.js physics drop. True once engineLoader has fetched
+    // matter-js (CDN classic script) and our connectfive/index.js has set up
+    // the engine + measured the live grid. Until then, the existing CSS
+    // cf-slide-down keyframe runs unchanged — and continues to run as the
+    // fallback on every failure path (CDN blocked, reduced motion, low tier).
+    private bool _engineReady;
     // vs-AI W/L/D/ELO stats surfaced in the end-of-game modal (1-player only).
     private List<StatItem> _statItems = new();
     // Adaptive 1-player rating. The CPU is matched to _cpuElo — the player's
@@ -503,6 +510,7 @@
             _board = _board.Place(rr, rc, Player.Red);
             _demoPly++;
             _ = Feedback.ChipDropAsync(rr); // demo was silent before — now each CPU drop plays the slide + thud
+            TryDrop(rc, rr, "red"); // §CF-1 physics-driven visual drop (demo Red)
             var redWin = _board.CheckWin(Player.Red);
             if (redWin.Won) { _gameResult = GameResult.Win; _winCells = redWin.Cells; OnWinDetected(); }
             else if (_board.IsFull()) { _gameResult = GameResult.Draw; }
@@ -514,6 +522,7 @@
             var (yr, yc) = DemoMove(_board, Player.Yellow);
             _board = _board.Place(yr, yc, Player.Yellow);
             _demoPly++;
+            TryDrop(yc, yr, "yellow"); // §CF-1 physics-driven visual drop (demo Yellow)
             _ = Feedback.ChipDropAsync(yr); // demo CPU #2 — same realistic cue
             var yellowWin = _board.CheckWin(Player.Yellow);
             if (yellowWin.Won) { _gameResult = GameResult.Loss; _winCells = yellowWin.Cells; OnWinDetected(); }
@@ -564,11 +573,55 @@
         return _ai.GetMove(board, player, Difficulty.Hard);
     }
 
+    // §CF-1 Lazy-load the matter.js physics engine on first render. Failure is
+    // silent — the CSS keyframe drop is the fallback in every error case, and
+    // that is the same behaviour this page shipped with before this section.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _engineReady) return;
+        try
+        {
+            // loadEngine injects the matter.js classic <script> from CDN, then
+            // dynamically imports js/connectfive/index.js which registers
+            // window.PoConnectFive.
+            await JS.InvokeAsync<object>("loadEngine", "connectfive");
+            await JS.InvokeAsync<object>("PoConnectFive.init", ".cf-board");
+            _engineReady = true;
+        }
+        catch
+        {
+            // matter.js unavailable (CDN blocked / offline / old browser) —
+            // leave _engineReady false; every drop falls through to the CSS keyframe.
+        }
+    }
+
+    /// <summary>
+    /// Fire-and-forget the JS-side physics for a placed disc. Visual only; the
+    /// C# chip-drop audio is already in flight from <see cref="UiFeedbackService"/>.
+    /// Returns immediately; failures (engine torn down, etc.) are silently
+    /// absorbed because the CSS keyframe is the implicit fallback — the cell
+    /// will reveal its static disc whether or not JS takes ownership of the drop.
+    /// </summary>
+    private void TryDrop(int col, int targetRow, string color)
+    {
+        if (!_engineReady) return;
+        _ = JS.InvokeVoidAsync("PoConnectFive.dropDisc", col, targetRow, color);
+    }
+
+    // §CF-1 Reset the physics engine when the page tears down. Fire-and-forget;
+    // a navigation that wins the race against the JS call is fine because the
+    // engine's bodies are recreated on the next init() anyway.
     public void Dispose()
     {
         _demoCts?.Cancel();
         _aiMoveCts?.Cancel();
         _aiMoveCts?.Dispose();
+        if (_engineReady)
+        {
+            try { _ = JS.InvokeVoidAsync("PoConnectFive.reset"); }
+            catch { /* page is going away */ }
+            _engineReady = false;
+        }
         // BUG FIX (#1): _kioskTimer removed; KioskCoordinator owns it.
     }
 
@@ -609,6 +662,7 @@
 
         _board = _board.Place(targetRow, col, Player.Red);
         _ = Feedback.ChipDropAsync(targetRow); // realistic slide + thud, synced to the drop animation
+        TryDrop(col, targetRow, "red"); // §CF-1 physics-driven visual drop
 
         var winCheck = _board.CheckWin(Player.Red);
         if (winCheck.Won)
@@ -656,6 +710,7 @@
             var (ar, ac) = _ai.GetAdaptiveMove(_board, Player.Yellow, _cpuElo);
             _board = _board.Place(ar, ac, Player.Yellow);
             _ = Feedback.ChipDropAsync(ar); // AI's disc lands with the same realistic cue
+            TryDrop(ac, ar, "yellow"); // §CF-1 physics-driven visual drop (AI)
             var aiWin = _board.CheckWin(Player.Yellow);
             if (aiWin.Won)
             {
@@ -691,6 +746,7 @@
         var player = _current2pPlayer;
         _board = _board.Place(targetRow, col, player);
         _ = Feedback.ChipDropAsync(targetRow); // realistic slide + thud, 2P
+        TryDrop(col, targetRow, player == Player.Red ? "red" : "yellow"); // §CF-1 physics-driven visual drop
 
         var winCheck = _board.CheckWin(player);
         if (winCheck.Won)

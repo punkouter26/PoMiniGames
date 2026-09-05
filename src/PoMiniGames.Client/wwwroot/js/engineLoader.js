@@ -33,6 +33,11 @@ const REGISTRY = {
     poracer: ['js/poracerGl.js', 'PoRacerRender'],
     povoxelstrike: ['js/povoxelstrike/index.js', 'PoVoxelStrike'],
     poecosystem: ['js/poecosystem/index.js', 'PoEcosystem'],
+    // §CF-1 ConnectFive physics. matter.js drives the disc drop + chain-reaction
+    // collision with existing discs in the same column; the CSS keyframe drop
+    // remains the fallback when matter.js fails to load or reduced-motion /
+    // low-quality tier opts the page out.
+    connectfive: ['js/connectfive/index.js', 'PoConnectFive'],
 };
 
 /**
@@ -58,6 +63,11 @@ function resolve(path) {
 // load rather than imported.
 const CLASSIC_DEPS = {
     poracer: ['js/racingInterop.js'],
+    // §CF-1 matter.js (UMD, ~85 KB gz) is injected as a classic script so its
+    // `window.Matter` global is what the connectfive module reads. Loading via
+    // the importmap would require an ESM build; matter-js only ships UMD, and
+    // a wrapper shim would just bloat the bundle for no benefit.
+    connectfive: ['https://cdn.jsdelivr.net/npm/matter-js@0.20.0/build/matter.min.js'],
 };
 
 const _pending = new Map();

@@ -323,3 +323,24 @@
    live here blanked these DOM sockets and discs so the rendered board could
    show through; with no canvas to defer to they would only hide the board. */
 
+/* ── §CF-1 Physics-driven drop ───────────────────────────────────────────
+   matter.js drives the disc visually from above the board to its target cell
+   via a floating clone rendered on document.body. While the drop is in flight
+   the static DOM disc MUST be hidden — otherwise the player sees a disc
+   already in its cell AND a falling clone on top of it. The class is added
+   by js/connectfive/index.js dropDisc() and removed on settle (or on any
+   failure path via cancelDrop), so the cell returns to its normal
+   grid-laid-out state on the very next paint.
+
+   `visibility: hidden` (not `display: none`) keeps the cell measurable so
+   the physics module can still read .cf-cell offsets via querySelectorAll
+   when ghosts are spawned for chain-reaction collision.
+
+   `animation: none !important` overrides the cf-slide-down keyframe that
+   would otherwise play a parallel CSS drop behind the matter.js one — that
+   double-drop is the visual glitch a half-broken integration produces. */
+.cf-board--physics-active .cf-cell .piece {
+  visibility: hidden;
+  animation: none !important;
+}
+

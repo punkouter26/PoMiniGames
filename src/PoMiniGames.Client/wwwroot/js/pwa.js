@@ -78,5 +78,44 @@ window.poPwa = (() => {
             window.addEventListener('offline', push);
             return navigator.onLine;
         },
+
+        // ── Install prompt (2026-09-04 UI sweep, Option 9) ─────────────────
+        // The browser fires `beforeinstallprompt` once per page load when the app
+        // meets PWA installability criteria (manifest, SW, HTTPS, engagement). We
+        // capture it here so a future install button can request it on demand via
+        // `promptInstall()`; the user only sees the browser's native sheet, never a
+        // custom modal that would feel like an ad. The `appinstalled` event clears
+        // the deferred prompt — a second tap is meaningless once the app is on the
+        // home screen.
+        let deferredInstallPrompt = null;
+        let installed = false;
+
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredInstallPrompt = e;
+        });
+        window.addEventListener('appinstalled', () => {
+            installed = true;
+            deferredInstallPrompt = null;
+        });
+
+        // True iff the browser has offered an install. Returns false on browsers
+        // without PWA support (Firefox desktop, in-app browsers) — callers should
+        // hide the install affordance rather than rendering a button that does
+        // nothing.
+        canInstall() { return !!deferredInstallPrompt; },
+        wasInstalled() { return installed; },
+
+        // Show the browser's native install sheet. Resolves to 'accepted',
+        // 'dismissed', or 'unavailable' (no prompt is queued). Safe to call when
+        // canInstall() is false — it just resolves 'unavailable' and the UI can
+        // degrade gracefully.
+        async promptInstall() {
+            if (!deferredInstallPrompt) return 'unavailable';
+            deferredInstallPrompt.prompt();
+            const choice = await deferredInstallPrompt.userChoice;
+            deferredInstallPrompt = null;
+            return choice.outcome; // 'accepted' or 'dismissed'
+        },
     };
 })();

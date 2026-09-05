@@ -31,6 +31,16 @@
      which is what every current consumer wants. */
   container-type: inline-size;
   container-name: gps;
+  /* Publish `--gps-area-h` so descendants can `min()` against a single
+     source of truth instead of computing their own `100vh - 220px` style
+     arithmetic. Default: viewport minus top-bar. Layouts with their own
+     rail (PoSurvive's `.sv-bar`) publish `--gps-bar-h` from their own CSS,
+     which this calc honours automatically. `100dvh` (not `100vh`) because
+     mobile URL bars inflate `vh` by ~80-120px on portrait phones.
+     The `min()` clamp at 18rem prevents the area collapsing on a fully
+     split-screen mobile where `100dvh` can briefly go < 100px during a
+     keyboard-driven viewport resize. */
+  --gps-area-h: min(100dvh, max(18rem, 100dvh - var(--gps-topbar-h) - var(--gps-bar-h, 0px)));
 }
 
 /* Universal game title — every game page binds `<Title>` to a fragment that

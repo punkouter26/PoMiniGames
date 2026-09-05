@@ -846,3 +846,428 @@ h3[tabindex="0"]:focus-visible {
    The per-component `@media (prefers-reduced-motion: reduce)` opt-outs elsewhere
    (the spinner, the mock banner, the view transition) are narrow and still stand
    on their own — they are not universal selectors. */
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Universal primitives (2026-09-04 UI sweep, options 1/2/3/4/7/8).
+
+   Everything below this line is a CONSUMABLE — pages and components should
+   prefer these classes/tokens over inventing per-component CSS. Where a page
+   still has its own copy of a primitive (e.g. a `.app-loading` variant),
+   it is being phased in via per-game refactors; do not write new ones.
+
+   Sections:
+     · Viewport-fit helpers     (--gps-area-h, .gl-viewport)
+     · State primitives         (.app-loading, .app-empty-state, .app-error-state)
+     · Component primitives     (.app-card, .app-btn, .app-chip, .app-link)
+     · Containment              (.app-contain — the "opt in" helper)
+     · Typography defaults      (text-wrap balance/pretty, fluid-scale anchors)
+     · Touch target floor       (extended selector list under @media coarse)
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* ── Viewport-fit helpers ────────────────────────────────────────────────────
+   Mobile portrait fit is the brief's #1 explicit ask: "fit content within
+   the viewport to eliminate vertical scrolling in mobile portrait without
+   truncation". Each game/canvas page used to compute its own height from
+   `100vh - NNNpx` arithmetic, which gave 7 different answers across the
+   tree. Centralising the arithmetic here lets GameShell publish a single
+   `--gps-area-h` value that descendants can `min(...)` against.
+
+   `100dvh` is used in preference to `100vh` because `dvh` excludes the
+   on-screen keyboard and address-bar UI on phones — `vh` over-allocates by
+   ~80-120px on portrait phones and pushes the game board off the fold. The
+   existing `100svh` rules stay where they are (they govern the page shell,
+   not the game area). */
+:root {
+  /* The height GameShell computes for the game area: viewport minus the
+     top-bar (sticky, ~56px) minus any layout-specific rail. Pages read it
+     as `min(var(--gps-area-h), NNNpx)` so the area can never exceed the
+     available space, but will also shrink on a tall narrow phone where the
+     keyboard is open. Default: full dynamic viewport. */
+  --gps-area-h: 100dvh;
+  --gps-topbar-h: 3.5rem;
+  /* Bottom safe-area for iOS notch / gesture bar; honoured by the `.gl-page`
+     padding and the GameShell's `--gps-area-h` calc. */
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-top: env(safe-area-inset-top, 0px);
+}
+
+/* Drop-in viewport-fit helper. Wrap any page whose content should NOT
+   overflow the visible area on a portrait phone — typically a profile,
+   health, or leaderboard page whose content is short and where scrolling
+   is a bug, not a feature. Pairs with `.app-card` (below) for the body. */
+.gl-viewport {
+  display: flex;
+  flex-direction: column;
+  min-height: calc(var(--gps-area-h) - var(--gps-topbar-h));
+  max-height: calc(var(--gps-area-h) - var(--gps-topbar-h));
+  overflow-y: auto;
+  overflow-x: clip;
+  padding-block: var(--space-4);
+  padding-inline: var(--space-4);
+  padding-bottom: calc(var(--space-6) + var(--safe-bottom));
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Compact variant: drops the safe-area inset on small phones so a one-screen
+   page fits without a phantom 24px gap below the last row. */
+@media (max-width: 640px) {
+  .gl-viewport {
+    padding-block: var(--space-3);
+    padding-bottom: calc(var(--space-4) + var(--safe-bottom));
+  }
+}
+
+/* ── State primitives ─────────────────────────────────────────────────────
+   Three viewable outcomes every list/lobby/leaderboard can be in:
+     loading   — a spinner + muted label, single source of truth (was scattered
+                 across the tree as ad-hoc <p>Loading...</p>)
+     empty     — an illustration slot + headline + optional CTA
+     error     — a recoverable failure, with retry button when a callback
+                 is supplied
+
+   Pages that currently roll their own (`<p>Loading…</p>` etc.) should
+   migrate to these. */
+.app-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  padding: var(--space-6) var(--space-4);
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+  text-align: center;
+}
+
+.app-loading__spinner {
+  width: 1.75rem;
+  height: 1.75rem;
+  border: 3px solid var(--color-border);
+  border-top-color: var(--color-accent);
+  border-radius: var(--radius-pill);
+  animation: app-spin 0.8s linear infinite;
+}
+
+@keyframes app-spin { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .app-loading__spinner { animation: none; }
+}
+
+/* Empty state — the "no rows yet" view on a leaderboard/lobby. Composition:
+   an icon (emoji, supplied by caller), a headline, a body sentence, an
+   optional action button. The icon is large (clamp-scaled) and dimmed so
+   the headline reads first. */
+.app-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  padding: var(--space-7) var(--space-4);
+  text-align: center;
+  color: var(--color-text-secondary);
+  /* Keep empty states inside the viewport on a portrait phone — an empty
+     board should never have to scroll to read. */
+  min-height: clamp(12rem, 40dvh, 22rem);
+}
+
+.app-empty-state__icon {
+  font-size: clamp(2.5rem, 5vw, 3.5rem);
+  opacity: 0.55;
+  line-height: 1;
+  /* `text-wrap: balance` below keeps a multi-line emoji string from
+     collapsing to its widest glyph and clipping on narrow viewports. */
+}
+
+.app-empty-state__title {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: 700;
+  color: var(--color-text-primary);
+  font-family: var(--font-display);
+  letter-spacing: -0.01em;
+}
+
+.app-empty-state__body {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  max-width: 32ch;
+  color: var(--color-text-secondary);
+}
+
+.app-empty-state__action {
+  margin-top: var(--space-2);
+}
+
+/* Error state — recoverable failure. Renders an alert icon + headline +
+   a retry button that fires `OnRetry` (rendered as a real <button> by the
+   component, this rule only styles it). */
+.app-error-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  padding: var(--space-6) var(--space-4);
+  text-align: center;
+  color: var(--color-text-secondary);
+  /* Soft danger tint so the eye lands here before the headline. */
+  background: var(--accent-danger-soft);
+  border: 1px solid color-mix(in srgb, var(--accent-danger) 35%, transparent);
+  border-radius: var(--radius-lg);
+}
+
+.app-error-state__icon {
+  font-size: clamp(2rem, 4vw, 2.5rem);
+  line-height: 1;
+}
+
+.app-error-state__title {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: 700;
+  color: var(--accent-danger-ink);
+  font-family: var(--font-display);
+}
+
+.app-error-state__body {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  max-width: 38ch;
+  color: var(--color-text-primary);
+}
+
+.app-error-state__action {
+  margin-top: var(--space-2);
+}
+
+/* ── Component primitives ──────────────────────────────────────────────────
+   Drop-in classes for buttons, cards, chips, and links. Pages should prefer
+   these over per-page copies — both for bundle size (the WASM trim audit
+   removes duplicated CSS) and for the visual cohesion the brief asks for.
+
+   Where a game needs a different visual treatment (PoSurvive C64, PoJoker
+   medieval, Sand Playground sand palette), it can declare its own
+   `--color-accent-solid` and `--accent-cyan` inside its theme root; the
+   primitives below pick the new hues up automatically. */
+
+/* Card: the universal "panel" — translucent surface, 1px border, soft shadow.
+   Use for any grouped content (a leaderboard row cluster, a profile stat
+   block, a settings section). */
+.app-card {
+  background: var(--surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  box-shadow: var(--elevation-1);
+  backdrop-filter: var(--glass-2);
+  -webkit-backdrop-filter: var(--glass-2);
+}
+
+.app-card--flat {
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.app-card--compact {
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+}
+
+/* Button: four variants. The 44px floor is set in the @media (pointer: coarse)
+   block below; this rule only governs the visual treatment. */
+.app-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.55rem 1.1rem;
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  line-height: 1.2;
+  font-family: var(--font-body);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--color-text-primary);
+  cursor: pointer;
+  user-select: none;
+  text-decoration: none;
+  transition: background var(--dur-fast) var(--ease-standard),
+              border-color var(--dur-fast) var(--ease-standard),
+              transform var(--dur-fast) var(--ease-standard),
+              filter var(--dur-fast) var(--ease-standard);
+  /* Containment: this button never paints outside its own box, so the
+     browser can promote it to a layer without re-rasterising its parents. */
+  contain: layout paint;
+}
+
+.app-btn:active { transform: scale(0.97); }
+.app-btn:disabled,
+.app-btn[aria-disabled="true"] {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.app-btn--primary {
+  background: var(--color-accent-solid);
+  color: var(--color-accent-contrast);
+  border-color: rgba(255, 255, 255, 0.18);
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--color-accent-solid) 35%, transparent);
+}
+
+.app-btn--primary:hover {
+  filter: brightness(1.1);
+  border-color: rgba(255, 255, 255, 0.28);
+}
+
+.app-btn--secondary {
+  background: var(--surface-1);
+  border-color: var(--color-border);
+  color: var(--color-text-primary);
+}
+
+.app-btn--secondary:hover {
+  background: var(--color-surface-hover);
+  border-color: var(--color-text-secondary);
+}
+
+.app-btn--ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--color-text-secondary);
+}
+
+.app-btn--ghost:hover {
+  background: var(--tint-soft);
+  color: var(--color-text-primary);
+}
+
+.app-btn--danger {
+  background: var(--accent-danger);
+  color: #ffffff;
+  border-color: color-mix(in srgb, var(--accent-danger) 60%, #000);
+}
+
+.app-btn--danger:hover { filter: brightness(1.1); }
+
+/* Size modifiers — applied via the same `app-btn` class. */
+.app-btn--sm { padding: 0.35rem 0.75rem; font-size: var(--text-xs); }
+.app-btn--lg { padding: 0.75rem 1.4rem; font-size: var(--text-base); }
+
+/* Chip: small status / filter pill. Matches the existing `.gl-overflow-item`
+   styling so a chip and a menu item read as the same family. */
+.app-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.65rem;
+  border-radius: var(--radius-pill);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  background: var(--surface-1);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+  text-decoration: none;
+  white-space: nowrap;
+  contain: layout paint;
+}
+
+.app-chip--accent {
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--color-accent) 30%, transparent);
+  color: var(--accent-ink);
+}
+
+.app-chip--success {
+  background: var(--accent-success-soft);
+  border-color: color-mix(in srgb, var(--accent-success) 30%, transparent);
+  color: var(--accent-success-ink);
+}
+
+.app-chip--warning {
+  background: var(--accent-warning-soft);
+  border-color: color-mix(in srgb, var(--accent-warning) 30%, transparent);
+  color: var(--accent-warning-ink);
+}
+
+.app-chip--danger {
+  background: var(--accent-danger-soft);
+  border-color: color-mix(in srgb, var(--accent-danger) 30%, transparent);
+  color: var(--accent-danger-ink);
+}
+
+/* Link: underlined accent link with the same focus ring as everything else.
+   Use for inline body links; for nav links inside the top bar, keep the
+   `.gl-brand` selector (it carries its own padding/touch target). */
+.app-link {
+  color: var(--color-accent);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.2em;
+  font-weight: 600;
+}
+
+.app-link:hover { filter: brightness(1.15); }
+
+/* ── Containment helper ─────────────────────────────────────────────────────
+   Opt-in `contain: layout paint` for any block whose internal reflow should
+   never repaint its parents. Use on virtualized rows, leaderboard rows,
+   card grids. Pure additive; promotes a node to its own paint layer. */
+.app-contain { contain: layout paint; }
+
+/* ── Typography defaults ───────────────────────────────────────────────────
+   `text-wrap: balance` for headings and `text-wrap: pretty` for body copy
+   eliminates orphan / widow lines without any JS or layout work. Applied
+   globally so a new component inherits it for free.
+
+   Both are CSS Text Module Level 4; baseline support is safe enough now
+   (Chrome 114+, Firefox 121+, Safari 17.5+). Browsers that don't recognise
+   the property silently ignore it — the property is a layout hint, not a
+   transform, so a no-op render is identical to today's. */
+h1, h2, h3, h4, h5, h6,
+.app-empty-state__title,
+.app-error-state__title,
+.gps-modal-title,
+.gps-game-title {
+  text-wrap: balance;
+}
+
+p, li, dd, blockquote,
+.app-empty-state__body,
+.app-error-state__body,
+.gps-game-summary,
+.gps-intro-objective {
+  text-wrap: pretty;
+}
+
+/* The `:where()` selector list above is the same idea as the touch-target
+   rule below: zero specificity, easy to opt out by setting `text-wrap: wrap`
+   in a component rule if a balance wraps the wrong element. */
+
+/* ── Touch target floor — extension (2026-09-04 UI sweep) ──────────────────
+   The 2026-08-08 audit added the first 44px floor with an explicit selector
+   list. Since then several new component primitives have landed (the
+   `.app-btn` family above, the `.app-chip`, the `.app-link`), and they
+   would otherwise have to be appended to the older list. Easier: route
+   them through this `:where()` extension list so the floor applies to every
+   new component without re-editing the older rule. The two rules compose —
+   the older list still sets its selectors to 44px; this list adds the new
+   primitives so they inherit the same behaviour. */
+@media (pointer: coarse) {
+  :where(.app-btn, .app-chip, .app-link,
+         /* New: EmptyState / ErrorState actions. The component renders the
+            retry / CTA as `.app-btn` already, but the older selectors do
+            not enumerate these so we list them here for safety in case a
+            page rolls a plain <button> inside an empty/error state. */
+         .app-empty-state__action button,
+         .app-error-state__action button) {
+    min-height: 44px;
+  }
+}

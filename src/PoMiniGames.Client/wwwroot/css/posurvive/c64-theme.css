@@ -206,6 +206,13 @@ html, body {
        out below so it matches the other games exactly. */
     font-family: var(--font-ui);
     font-size: var(--font-size-base);
+
+    /* Option #1 (2026-09-04 UI sweep): publish `--gps-bar-h` so the universal
+       `--gps-area-h` contract in games.css subtracts this game's control rail
+       from the viewport. PoSurvive has its own secondary chrome (`.sv-bar` +
+       the Advanced drawer anchor), so its descendants can't just read the
+       default `--gps-area-h` without a layout-specific correction. */
+    --gps-bar-h: var(--bar-h);
 }
 
 /* The shared top bar is platform chrome and must look identical in every game.

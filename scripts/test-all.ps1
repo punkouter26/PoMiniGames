@@ -62,6 +62,28 @@ if (Get-Command docker -ErrorAction SilentlyContinue) {
 Write-Step 'Building the solution (warnings are errors)'
 dotnet build $slnx -c Debug --nologo -v minimal
 
+# ── Preflight 3b: bundle-size snapshot (non-blocking) ────────────────────────
+# Cheap check: if the previous Release publish still exists under
+# src/PoMiniGames.Client/bin/Release/net10.0/wwwroot/_framework, print its
+# current size so a developer iterating on UI changes can spot regressions
+# without paying for a fresh publish. The full report (top-DLLs + per-CSS
+# breakdown) lives in scripts/bundle-report.ps1 and runs on demand.
+Write-Step 'Bundle-size snapshot (non-blocking)'
+$frameworkDir = Join-Path $repoRoot 'src/PoMiniGames.Client/bin/Release/net10.0/wwwroot/_framework'
+if (Test-Path $frameworkDir) {
+    $size = (Get-ChildItem -Path $frameworkDir -Recurse -File |
+        Measure-Object -Property Length -Sum).Sum
+    $sizeMb = [math]::Round($size / 1MB, 2)
+    $budget = 25
+    if ($sizeMb -gt $budget) {
+        Write-Warn "_framework is $sizeMb MB — over the $budget MB cap. Run scripts/bundle-report.ps1 for the top-DLL breakdown."
+    } else {
+        Write-Ok "_framework is $sizeMb MB / $budget MB cap (headroom $([math]::Round($budget - $sizeMb, 2)) MB)"
+    }
+} else {
+    Write-Warn "No Release publish output at $frameworkDir — run scripts/bundle-report.ps1 to populate."
+}
+
 # ── Preflight 4: Playwright browsers ─────────────────────────────────────────
 if (-not $SkipPlaywrightInstall) {
     Write-Step 'Ensuring Playwright Chromium (E2E-UI tier)'

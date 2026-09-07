@@ -22,7 +22,7 @@ internal static class TelemetryExtensions
     public static WebApplicationBuilder AddPoMiniGamesTelemetry(this WebApplicationBuilder builder)
     {
         var appInsightsConnString = builder.Configuration["PoMiniGames:ApplicationInsights:ConnectionString"]
-            ?? builder.Configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"]
+            ?? PoPlatform.ResolveAppInsightsConnectionString(builder.Configuration)
             ?? builder.Configuration["APPINSIGHTS_CONNECTIONSTRING"];
 
         if (!string.IsNullOrEmpty(appInsightsConnString))

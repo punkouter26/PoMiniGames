@@ -149,6 +149,16 @@ internal static class AuthExtensions
 
                         return Task.CompletedTask;
                     },
+
+                    // Canonical UserSignedIn record. A bearer token is validated on EVERY request,
+                    // so dedupe:true collapses an active SPA session down to one record per user
+                    // per window instead of hundreds.
+                    OnTokenValidated = context =>
+                    {
+                        SignInTelemetry.TrackFrom(
+                            context.HttpContext, context.Principal, "PoMiniGames", dedupe: true);
+                        return Task.CompletedTask;
+                    },
                 };
             });
 

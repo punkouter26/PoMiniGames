@@ -9,7 +9,9 @@ using PoMiniGames.Features.PoMarbleRace;   // moved out of Features.HighScores s
 using PoMiniGames.Features.Leaderboard;
 using PoMiniGames.Features.MatchHistory;
 using PoMiniGames.Features.PoCoupleQuiz;
-using PoMiniGames.Features.PoFunQuiz;using PoMiniGames.Features.PoGallery;using PoMiniGames.Features.PoJoker;
+using PoMiniGames.Features.PoFunQuiz;
+using PoMiniGames.Features.PoGallery;
+using PoMiniGames.Features.PoJoker;
 using PoMiniGames.Features.PoRacer;
 using PoMiniGames.Features.PoSurvive;
 using PoMiniGames.Features.PoVoxelStrike;
@@ -37,6 +39,9 @@ internal static class EndpointRouteExtensions
         // and is itself exempt from the validation gate it feeds.
         app.MapAntiforgeryEndpoints();
         app.MapHealthEndpoints();
+        // Uniform cross-app liveness probe (see PoPlatform). Same shape in every Po app, which
+        // is what lets the portfolio dashboard poll them all and render one uptime grid.
+        app.MapPoLiveness();
         // AI usage read-model. Grouped with the health probes rather than behind the game-API auth
         // gate because it is a diagnostics surface, and it reports no other identity's spend — only
         // aggregate per-game counters plus the caller's own allowance.

@@ -25,9 +25,11 @@
 <div class="gl-viewport">
     <EmptyState Icon="📡"
                 Title="You're offline">
-        We can't load new data while you're disconnected. Cached games still work —
-        head back to the home page and pick one. If your scores don't show up yet,
-        they'll sync the next time you're online.
+        <ChildContent>
+            We can't load new data while you're disconnected. Cached games still work —
+            head back to the home page and pick one. If your scores don't show up yet,
+            they'll sync the next time you're online.
+        </ChildContent>
         <Action>
             <button class="app-btn app-btn--primary"
                     type="button"

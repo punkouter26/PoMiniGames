@@ -47,7 +47,14 @@ internal static class LoggingExtensions
                 // the console sink for container stdout capture.
                 configuration.WriteTo.Console();
             }
-        });
+        },
+        // writeToProviders:true is what makes the comment above TRUE. Serilog otherwise replaces
+        // the logging providers outright and becomes the only ILogger backend, so the Azure Monitor
+        // log exporter that UseAzureMonitor() registers is wired up but never receives a record —
+        // the traces table stays empty however much the app logs. With this flag Serilog forwards
+        // to the registered providers as well, so structured logs (the UserSignedIn record among
+        // them) reach App Insights through the OTel pipeline that already exists here.
+        writeToProviders: true);
 
         return builder;
     }

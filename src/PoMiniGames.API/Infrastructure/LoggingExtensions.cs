@@ -1,4 +1,5 @@
 using Serilog;
+using Serilog.Sinks.ApplicationInsights.TelemetryConverters;
 using Serilog.Events;
 using Serilog.Exceptions;
 
@@ -40,21 +41,20 @@ internal static class LoggingExtensions
             }
             else
             {
-                // Log export to Azure Application Insights is owned entirely by OpenTelemetry
-                // (UseAzureMonitor in TelemetryExtensions) — traces/metrics/dependencies AND the
-                // log stream flow through that single pipeline. The classic Serilog AI sink was
-                // removed to stop double-ingestion (and its per-log ingestion cost); Serilog keeps
-                // the console sink for container stdout capture.
+                // Console for container stdout capture.
                 configuration.WriteTo.Console();
             }
-        },
-        // writeToProviders:true is what makes the comment above TRUE. Serilog otherwise replaces
-        // the logging providers outright and becomes the only ILogger backend, so the Azure Monitor
-        // log exporter that UseAzureMonitor() registers is wired up but never receives a record —
-        // the traces table stays empty however much the app logs. With this flag Serilog forwards
-        // to the registered providers as well, so structured logs (the UserSignedIn record among
-        // them) reach App Insights through the OTel pipeline that already exists here.
-        writeToProviders: true);
+
+            // App Insights log export now matches every other Po app: the Serilog sink owns it.
+            // The OTel pipeline keeps traces/metrics/dependencies; logs deliberately do NOT ride it,
+            // which is why writeToProviders is back to its default of false — with both paths live,
+            // every record would be ingested twice.
+            var appInsightsConnectionString =
+                PoPlatform.ResolveAppInsightsConnectionString(context.Configuration);
+            configuration.WriteTo.Conditional(
+                _ => !string.IsNullOrWhiteSpace(appInsightsConnectionString),
+                sink => sink.ApplicationInsights(appInsightsConnectionString!, TelemetryConverter.Traces));
+        });
 
         return builder;
     }

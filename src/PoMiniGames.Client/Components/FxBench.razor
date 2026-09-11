@@ -1,0 +1,130 @@
+@implements IAsyncDisposable
+@inject UiFeedbackService Feedback
+@inject ScreenFxService ScreenFx
+@inject IJSRuntime JS
+
+@*
+    The FX bench (§GFX) — an audition surface for the platform's synthesised
+    feedback.
+
+    WHY THIS EXISTS. The app ships ten per-game cue tables, six particle presets
+    and a four-band master analyser, and none of it was discoverable: a player
+    heard a cue only by triggering the exact game event it belonged to, and the
+    analyser had no consumer at all. The bench makes the whole vocabulary audible
+    in one place, and the meter proves the audio graph is live — which is the
+    single most useful thing to see when a player reports "no sound" and the real
+    cause is an AudioContext that never got its first gesture.
+
+    DELIBERATELY READ-ONLY. This audits and demonstrates; it changes no setting.
+    The /settings page and its controls were removed on 2026-08-11 at the user's
+    request (see SettingsService), and a bench that quietly grew mute/volume/motion
+    toggles would be that page coming back through the side door. Muting still
+    belongs to audioBus and the values it reads from localStorage.
+*@
+
+<section class="fxb">
+    <h2 class="fxb-title">Sound &amp; effects</h2>
+    <p class="fxb-note">
+        Every sound in PoMiniGames is generated in your browser — there are no audio
+        files to download. Press a voice to hear what a game sounds like.
+    </p>
+
+    <div class="fxb-voices">
+        @foreach (var voice in Voices)
+        {
+            <button type="button" class="fxb-voice" @onclick="() => PlayVoiceAsync(voice)">
+                <span class="fxb-voice-icon" aria-hidden="true">@voice.Icon</span>
+                <span class="fxb-voice-name">@voice.Label</span>
+            </button>
+        }
+    </div>
+
+    @* The meter reads the master analyser, so it shows the particle presets below
+       as silent and every voice above as loud — which is exactly the distinction
+       it is there to make visible. *@
+    <div class="fxb-meter" data-fx-meter aria-hidden="true">
+        <span class="fxb-bar fxb-bar--bass"><i></i></span>
+        <span class="fxb-bar fxb-bar--mid"><i></i></span>
+        <span class="fxb-bar fxb-bar--treble"><i></i></span>
+        <span class="fxb-bar fxb-bar--peak"><i></i></span>
+    </div>
+    <p class="fxb-meter-label">Live output — bass · mid · treble · peak</p>
+
+    <div class="fxb-presets">
+        @foreach (var preset in Presets)
+        {
+            <button type="button" class="fxb-preset" data-fx-preset="@preset"
+                    @onclick="() => BurstAsync(preset)">@preset</button>
+        }
+    </div>
+</section>
+
+@code {
+    /// <summary>One auditionable game voice: a cue scope plus its signature cue.</summary>
+    private sealed record Voice(string Label, string Icon, string Scope, string Cue);
+
+    /// <summary>
+    /// The signature cue for each scope in <c>gameCues.js</c> — the one that best
+    /// characterises that game's timbre, rather than its most frequent sound.
+    /// Kept in sync with the CUES table there; an unknown name degrades to a plain
+    /// tone rather than to silence (see <see cref="UiFeedbackService.CueAsync"/>).
+    /// </summary>
+    private static readonly Voice[] Voices =
+    [
+        new("Interface",    "\U0001F518", "ui",            "chime"),
+        new("TicTacToe",    "❌",     "tictactoe",     "placeX"),
+        new("Connect Five", "\U0001F535", "connectfive",   "click"),
+        new("PoBrawl",      "\U0001F94A", "pobrawl",       "hitHeavy"),
+        new("Marble Race",  "\U0001F52E", "pomarblerace",  "collide"),
+        new("PoRacer",      "\U0001F3CE", "poracer",       "boost"),
+        new("PoSports",     "\U0001F3C3", "posports",      "crowdCheer"),
+        new("PoJoker",      "\U0001F0CF", "pojoker",       "fanfare"),
+        new("PoSurvive",    "\U0001F5A4", "posurvive",     "heartbeat"),
+        new("Quizzes",      "\U0001F9E0", "quiz",          "streakChime"),
+    ];
+
+    /// <summary>The particle presets declared by <c>gpuFx.js</c>.</summary>
+    private static readonly string[] Presets =
+    [
+        ScreenFxService.Sparks, ScreenFxService.Confetti, ScreenFxService.Dust,
+        ScreenFxService.Coins, ScreenFxService.Smoke, ScreenFxService.Impact,
+    ];
+
+    private bool _meterRunning;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try
+        {
+            await JS.InvokeVoidAsync("PoFxShowcase.start", "[data-fx-meter]");
+            _meterRunning = true;
+        }
+        catch
+        {
+            // No meter is acceptable; the voices below still work.
+        }
+    }
+
+    /// <summary>
+    /// Audition one game's voice. Panned slightly per press so repeated taps on the
+    /// same button are not identical — a cue that lands in exactly the same place
+    /// every time sounds like a recording, which is the opposite of the point.
+    /// </summary>
+    private async Task PlayVoiceAsync(Voice voice)
+    {
+        var pan = (Random.Shared.NextDouble() * 0.5) - 0.25;
+        await Feedback.CueAtAsync(voice.Scope, voice.Cue, pan: pan);
+    }
+
+    /// <summary>Burst a particle preset from the button that asked for it.</summary>
+    private Task BurstAsync(string preset) =>
+        ScreenFx.BurstAtAsync($"[data-fx-preset='{preset}']", preset, 1.1).AsTask();
+
+    public async ValueTask DisposeAsync()
+    {
+        if (!_meterRunning) return;
+        try { await JS.InvokeVoidAsync("PoFxShowcase.stop"); }
+        catch { /* page already gone */ }
+    }
+}

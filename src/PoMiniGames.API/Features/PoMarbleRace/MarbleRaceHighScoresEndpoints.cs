@@ -1,6 +1,8 @@
 using PoMiniGames.Application.Services;
 using PoMiniGames.Domain.Models;
+using PoMiniGames.Domain.Primitives;
 using PoMiniGames.Features.Auth;
+using PoMiniGames.Features.Integrity;
 
 // Namespace follows the folder (Features/PoMarbleRace). It previously said
 // Features.HighScores, which is a different slice that already exists — so this
@@ -30,6 +32,7 @@ public static class MarbleRaceHighScoresEndpoints
             async (MarbleRaceHighScoreRequest request,
                    HttpContext http,
                    IStorageService storage,
+                   IScoreIntegrityGuard integrity,
                    ILoggerFactory loggerFactory) =>
             {
                 var log = loggerFactory.CreateLogger("MarbleRaceHighScores");
@@ -51,10 +54,20 @@ public static class MarbleRaceHighScoresEndpoints
                 // signed-in caller is named by their claims, and everyone else is "Guest". Trusting
                 // a body-supplied name let an anonymous caller post under a real player's name and
                 // appear on the board as them.
+                // Plausibility, on top of the range check above: the guard measures how long
+                // this player's session has actually been open and rejects a point total that
+                // no run of that length could have produced. See ScoreIntegrityGuard.
+                var verdict = integrity.Inspect(http, GameKey.PoMarbleRace, score.Value);
+                if (!verdict.Allowed)
+                {
+                    return verdict.ToProblem();
+                }
+
                 var identity = RequestIdentity.Resolve(http.User);
-                var name = !string.IsNullOrWhiteSpace(identity.DisplayName)
-                    ? identity.DisplayName
-                    : identity.IsAuthenticated ? "Player" : "Guest";
+                var fallback = identity.IsAuthenticated ? "Player" : "Guest";
+                // Even a claim-derived name is player-chosen — an Entra display name is whatever
+                // the account holder typed — so it goes through moderation like any other.
+                var name = integrity.ResolveDisplayName(identity.DisplayName, fallback);
 
                 var saved = await storage.SaveMarbleRaceHighScoreAsync(new MarbleRaceHighScore
                 {

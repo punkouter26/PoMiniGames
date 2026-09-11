@@ -13,6 +13,27 @@ import { TrackRenderer } from './track.js';
 import * as sprites from './sprites.js';
 import { TouchPad, isTouchDevice } from './touch.js';
 
+// ── Audio (§GFX) ────────────────────────────────────────────────────────────
+// PoSports shipped silent: there was no AudioContext anywhere under posports/,
+// even though gameCues.js has carried a full 'posports' timbre table (rubber,
+// air and stadium crowd) since it was written. These are the call sites that
+// table was designed for. Going through PoCue rather than a local oscillator is
+// what keeps the meet on the shared mix — master mute, ducking and the sfx bus
+// all come for free, and a second AudioContext here would fight the first.
+//
+// Deliberately fire-and-forget and deliberately optional: PoCue is a module
+// global that may not have evaluated yet, and fxBootstrap prunes the motion-heavy
+// half of the stack entirely under reduced motion. A missing cue must cost the
+// meet nothing.
+function cue(name, opts) {
+    try { window.PoCue?.fire('posports', name, opts); } catch { /* feedback is never fatal */ }
+}
+
+// Strides fire per impulse, which at full typing speed is several per second per
+// lane. Two guards keep that from turning into a buzzsaw: only the nearest lanes
+// are audible at all (see laneGain) and a per-lane cooldown thins the rest.
+const STRIDE_COOLDOWN_MS = 110;
+
 const COUNTDOWN_SECONDS = 3;
 const PODIUM_SECONDS = 6;      // how long the podium holds before demo auto-restart
 const HUD_THROTTLE_MS = 250;
@@ -144,16 +165,52 @@ export class SportsGame {
 
   // ── Input events (human lanes) ────────────────────────────────────────
 
+  /**
+   * Cue options for a lane: panned to its position across the track and quieter
+   * for the lanes the camera is not following. Without this every runner's stride
+   * lands dead centre at full level and eight lanes read as one very loud runner.
+   * @param {{index: number, human: boolean}} lane
+   * @param {number} [gain=1] extra level multiplier for the specific cue
+   */
+  laneOpts(lane, gain = 1) {
+    const n = Math.max(1, this.lanes.length - 1);
+    // -0.8..0.8 rather than the full width: hard-panned mono cues vanish for
+    // anyone listening on a single speaker.
+    const pan = n === 0 ? 0 : ((lane.index / n) * 1.6) - 0.8;
+    // A human's own runner is the one they are listening for; rivals sit back.
+    return { pan, gain: gain * (lane.human ? 1 : 0.45) };
+  }
+
   onSequenceComplete(lane) {
     // Pre-gun presses never reach here — the tracker's gate turns each one into a false
     // start (see buildLane / SequenceTracker.injectKey).
     if (this.remote || this.phase !== 'racing') return;
     applyImpulse(lane.state);
+    this.strideCue(lane);
+  }
+
+  /**
+   * A footfall for one impulse, thinned by STRIDE_COOLDOWN_MS. The cooldown is
+   * per lane rather than global so a close race still sounds like several runners
+   * instead of one stuttering one.
+   */
+  strideCue(lane) {
+    const now = performance.now();
+    if (now < (lane.nextStrideAt || 0)) return;
+    lane.nextStrideAt = now + STRIDE_COOLDOWN_MS;
+    // Pitch rises with speed: the same footfall sample at 0 m/s and at top speed
+    // is the single biggest tell that a sound is canned.
+    const speed = lane.state.speed / Math.max(1, CONSTANTS.MAX_SPEED);
+    cue('stride', { ...this.laneOpts(lane, 0.9), pitch: 0.9 + (speed * 0.35) });
   }
 
   onJump(lane) {
     if (this.remote || this.phase !== 'racing') return;
-    startJump(lane.state);
+    // Only voice a jump that actually started — startJump refuses mid-air and in
+    // the air is exactly where a player mashes the key.
+    if (startJump(lane.state)) {
+      cue('bounce', this.laneOpts(lane));
+    }
   }
 
   // ── Local simulation ──────────────────────────────────────────────────
@@ -173,6 +230,10 @@ export class SportsGame {
             this.leg = 'hurdles';
             for (const l of this.lanes) { resetLane(l.state); l.tracker?.reset(); l.animTime = 0; }
           }
+          // The gun. Fired on the transition rather than in setPhase, which is
+          // also reached from the remote snapshot path and on the hurdles
+          // restart below — a whistle on every phase write would sound twice.
+          cue('whistle');
           this.setPhase('racing');
         }
         return;
@@ -205,14 +266,22 @@ export class SportsGame {
         });
       }
       const events = tickLane(l.state, dt, hurdles, legLength);
-      if (events.stumbled) l.animTime = 0;
+      if (events.stumbled) {
+        l.animTime = 0;
+        // Clipping a hurdle is the meet's only real collision — 'kick' is the
+        // table's rubber-on-air thud and reads as a shin hitting the bar.
+        cue('kick', this.laneOpts(l, 1.15));
+      }
       if (events.finished) {
         if (this.leg === 'sprint') l.sprintSeconds = l.state.legTime;
         else l.hurdlesSeconds = l.state.legTime;
+        // Crossing the line, per lane, so a photo finish sounds like one.
+        cue('bounce', { ...this.laneOpts(l, 0.8), pitch: 1.35 });
       }
     }
 
     this.renderer.updateCamera(dt, this.lanes.map((l) => l.state), legLength);
+    this.driveMusicTension(legLength);
 
     if (this.lanes.every((l) => l.state.finished)) {
       if (this.leg === 'sprint') {
@@ -225,11 +294,54 @@ export class SportsGame {
     }
   }
 
+  /**
+   * Push the meet's tension into the soundtrack (§GFX).
+   *
+   * The music director only knew 'menu' / 'lobby' / 'match', so a meet sounded the
+   * same on the blocks as on the line. Two signals combine here: how far the
+   * leader has run, and how tight the race is behind them — a runaway win should
+   * relax as it resolves, a photo finish should not.
+   *
+   * The director deadbands small changes internally, so calling this every tick is
+   * cheap and deliberately unthrottled.
+   */
+  driveMusicTension(legLength) {
+    const d = window.PoMusicDirector;
+    if (!d || !d.tension) return;
+
+    let lead = 0;
+    let second = 0;
+    for (const l of this.lanes) {
+      const p = l.state.position;
+      if (p > lead) { second = lead; lead = p; }
+      else if (p > second) { second = p; }
+    }
+
+    const progress = Math.max(0, Math.min(1, lead / Math.max(1, legLength)));
+    // Gap as a fraction of the track, inverted: shoulder-to-shoulder = 1.
+    const closeness = 1 - Math.max(0, Math.min(1, (lead - second) / (legLength * 0.12)));
+
+    // Progress dominates; closeness sharpens the end of a tight race. The hurdles
+    // leg carries a floor because it is the second half of the meet — the standings
+    // matter more there even early on.
+    const floor = this.leg === 'hurdles' ? 0.25 : 0;
+    d.tension(Math.max(floor, (progress * 0.65) + (closeness * progress * 0.35)));
+  }
+
   finishMeet() {
     const ranked = [...this.lanes].sort((a, b) =>
       (a.sprintSeconds + a.hurdlesSeconds) - (b.sprintSeconds + b.hurdlesSeconds) || a.index - b.index);
     ranked.forEach((l, i) => { l.placing = i + 1; });
     for (const l of this.lanes) l.animTime = 0;
+
+    // The crowd always reacts; the victory cue is reserved for a human winning,
+    // because 'goal' carries confetti and a demo-mode AI win throwing confetti
+    // on the attract loop would celebrate nothing.
+    cue('crowdCheer');
+    if (ranked[0]?.human) {
+        cue('goal');
+    }
+
     this.setPhase('podium');
     this.phaseClock = PODIUM_SECONDS;
     const results = this.lanes.map((l) => ({

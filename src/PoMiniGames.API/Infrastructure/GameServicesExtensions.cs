@@ -5,6 +5,7 @@ using PoMiniGames.Features.PoFunQuiz.Storage;
 using PoMiniGames.Features.PoJoker;
 using PoMiniGames.Features.PoJoker.Storage;
 using PoMiniGames.Features.PoRacer;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using PoMiniGames.Infrastructure.Services;
 
 namespace PoMiniGames.Infrastructure;
@@ -16,6 +17,23 @@ internal static class GameServicesExtensions
 {
     public static IServiceCollection AddPoMiniGamesGameServices(this IServiceCollection services)
     {
+        // ─── Score integrity + account data ─────────────────────────────────
+        // The guard is what stands between a public leaderboard and a client that can post any
+        // number it likes. Registered here rather than in its slice so the options binding,
+        // the session minter and the guard itself cannot be wired up half-way — a guard with
+        // no IPlaySessionService behind it silently degrades to range checks only.
+        services.AddOptions<PoMiniGames.Features.Integrity.IntegrityOptions>()
+            .BindConfiguration(PoMiniGames.Features.Integrity.IntegrityOptions.SectionName);
+        // TryAdd: TimeProvider.System is the default the framework registers in most hosts, but
+        // not all of them, and PlaySessionService's elapsed measurement is the whole mechanism.
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddSingleton<PoMiniGames.Features.Integrity.IPlaySessionService,
+                              PoMiniGames.Features.Integrity.PlaySessionService>();
+        services.AddSingleton<PoMiniGames.Features.Integrity.IScoreIntegrityGuard,
+                              PoMiniGames.Features.Integrity.ScoreIntegrityGuard>();
+        // Scoped: one cross-table scan per request, and it holds no state between them.
+        services.AddScoped<PoMiniGames.Features.Account.PlayerDataService>();
+
         // ─── Centralized Azure AI Foundry hub (PoShared RG) ─────────────────
         // One shared AzureOpenAIClient + per-deployment ChatClient cache. Every
         // game that needs an AI model resolves through AIFoundryChatClientCache

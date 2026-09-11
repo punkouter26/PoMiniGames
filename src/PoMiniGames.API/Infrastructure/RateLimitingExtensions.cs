@@ -58,6 +58,39 @@ internal static class RateLimitingExtensions
                         QueueLimit = 0,
                     }));
 
+            // Play-session minting. One mint per game the player opens, so a normal session
+            // spends a handful; 30/min leaves a browsing player untouched while capping the
+            // rate a script can farm signed sessions at. Cheaper than "highscores" work
+            // (a Protect call, no storage) but deliberately not unlimited: a session is a
+            // credential, and minting is the only way to get one.
+            opts.AddPolicy("play-session", ctx =>
+                RateLimitPartition.GetFixedWindowLimiter(
+                    partitionKey: BuildPartitionKey(ctx),
+                    factory: _ => new FixedWindowRateLimiterOptions
+                    {
+                        Window = TimeSpan.FromMinutes(1),
+                        PermitLimit = 30,
+                        AutoReplenishment = true,
+                        QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                        QueueLimit = 0,
+                    }));
+
+            // Account export / erase. The tightest policy in the app because each call is a
+            // full cross-table scan of every board's partition — by far the most expensive
+            // thing an authenticated caller can ask for on an F1 plan. A human does this once
+            // or twice, ever; 5/min is generous for that and useless as an amplifier.
+            opts.AddPolicy("account-data", ctx =>
+                RateLimitPartition.GetFixedWindowLimiter(
+                    partitionKey: BuildPartitionKey(ctx),
+                    factory: _ => new FixedWindowRateLimiterOptions
+                    {
+                        Window = TimeSpan.FromMinutes(1),
+                        PermitLimit = 5,
+                        AutoReplenishment = true,
+                        QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                        QueueLimit = 0,
+                    }));
+
             opts.AddPolicy("infer", ctx =>
                 RateLimitPartition.GetFixedWindowLimiter(
                     partitionKey: BuildPartitionKey(ctx),

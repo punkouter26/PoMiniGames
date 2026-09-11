@@ -54,7 +54,7 @@
             @if (!_demo && _phase is Phase.Playing or Phase.Paused)
             {
                 <div class="pvs-hud" aria-hidden="true">
-                    <div class="pvs-hud-left pvs-glass">
+                    <div class="pvs-hud-left pvs-glass" data-glass>
                         <div class="pvs-bar @(_hp <= 30 ? "pvs-bar-low" : null)">
                             <span class="pvs-bar-label">HP</span>
                             <div class="pvs-bar-track"><div class="pvs-bar-fill pvs-bar-hp" style="--fill: @(_hp)%"></div></div>
@@ -69,7 +69,7 @@
                             <div class="pvs-bar-track"><div class="pvs-bar-fill pvs-bar-alt" style="--fill: @(_altPct)%"></div></div>
                         </div>
                     </div>
-                    <div class="pvs-hud-right pvs-glass">
+                    <div class="pvs-hud-right pvs-glass" data-glass>
                         <div class="pvs-hud-score-wrap">
                             @foreach (var pop in _popups)
                             {

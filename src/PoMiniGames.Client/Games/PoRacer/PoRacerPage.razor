@@ -41,6 +41,7 @@
 @inject ApiService Api
 @inject ApiEndpoints Endpoints
 @inject ToastService ToastService
+@inject UiFeedbackService Feedback
 @implements IAsyncDisposable
 
 <PageTitle>Racer · PoMiniGames</PageTitle>
@@ -155,7 +156,7 @@
     @if (Phase == GamePhase.Racing && _countdownMs == 0)
     {
         <div class="racer-hud" aria-live="polite" aria-atomic="false">
-            <div class="hud-panel hud-left">
+            <div class="hud-panel hud-left" data-glass>
                 @* §2026-07-16: demo mode is a spectator (no IsPlayer car), so the
                    left panel collapses to a "Spectator" badge + the race clock
                    instead of fabricating a fake player position from a null car. *@
@@ -192,7 +193,7 @@
                 @* FPS row removed — the shared top-bar FpsCounter badge covers it. *@
             </div>
 
-            <div class="hud-panel hud-right">
+            <div class="hud-panel hud-right" data-glass>
                 <div class="hud-label">Standings</div>
                 @foreach (var c in Standings.Take(8))
                 {
@@ -319,6 +320,53 @@
     private IEnumerable<Standing> Standings => _standings;
     private double _elapsedRaceTime;
     private int _countdownMs;
+
+    // ── Race audio (§GFX) ───────────────────────────────────────────────────
+    // PoRacer shipped silent. racingInterop.js is a pure renderer and poracerGl.js
+    // only picks an acoustic space, so nothing ever made a sound — while
+    // gameCues.js has carried a full 'poracer' table (shift / rev / turbo / skid /
+    // boost / crash / checkpoint) the whole time.
+    //
+    // The cues are driven from the snapshot stream rather than from input, because
+    // this is a server-authoritative race: the player's own key press is a request,
+    // and what actually happened to the car only arrives here. Driving audio off
+    // input would voice boosts that the server refused.
+    //
+    // These track the previous snapshot so edges can be detected — a cue belongs on
+    // the transition, not on every frame that reports the same state at 20 Hz.
+    private int _lastLap;
+    private int _lastPosition;
+    private bool _wasBoosting;
+    private bool _wasSkidding;
+    private bool _gunFired;
+    private DateTime _lastSkidCueUtc = DateTime.MinValue;
+
+    /// <summary>
+    /// Skids are continuous, so the rising edge alone would retrigger every time
+    /// the intensity dipped under the threshold and back. This floor keeps a long
+    /// drift to one tyre squeal rather than a stutter of them.
+    /// </summary>
+    private static readonly TimeSpan SkidCueCooldown = TimeSpan.FromMilliseconds(450);
+
+    /// <summary>
+    /// World-unit radius inside which a rival car is close enough to hear go past.
+    /// </summary>
+    private const double PassAudioRange = 9.0;
+
+    /// <summary>Per-rival cooldown, so one long side-by-side battle is not a siren.</summary>
+    private static readonly TimeSpan PassCueCooldown = TimeSpan.FromMilliseconds(900);
+    private readonly Dictionary<int, DateTime> _lastPassCueUtc = [];
+
+    /// <summary>
+    /// Re-entrancy guard for the audio pass. Snapshots arrive at ~20 Hz and
+    /// <see cref="VoiceSnapshotAsync"/> is fired without awaiting (it must not delay
+    /// the renderer), so a slow interop call would let the next snapshot start a
+    /// second pass that interleaves with the first — and the edge detectors below
+    /// (_wasBoosting, _lastLap, _lastPosition) would then be written out of order,
+    /// retriggering cues that had already fired. Dropping the newer snapshot is the
+    /// right trade: the next one is 50 ms away and carries fresher state anyway.
+    /// </summary>
+    private bool _voicing;
     private double _timeOfDay = 0.5;
 
     // Local-input state (read by the JS thin-client bridge; sent to server via SignalR).
@@ -547,6 +595,7 @@
         Cars = snap.Cars.ToList();
         _elapsedRaceTime = snap.ElapsedRaceTime;
         ComputeStandings();
+        _ = VoiceSnapshotAsync(snap);
         // Pump the JS renderer with the latest snapshot.
         try
         {
@@ -573,6 +622,203 @@
             Phase = GamePhase.Finished;
         }
         InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>
+    /// Turn one snapshot into race audio: the gun, gear-style lap ticks, boost and
+    /// tyre squeal, and an overtake cue — each on its transition, not per frame.
+    /// </summary>
+    /// <remarks>
+    /// Everything here is keyed off the <i>player's</i> car. A spectator demo has no
+    /// player car, so the method falls out early and the attract loop stays quiet
+    /// apart from the gun — which is correct: the kiosk reel plays unattended and a
+    /// CPU race squealing to itself would be noise, not atmosphere.
+    /// </remarks>
+    private async Task VoiceSnapshotAsync(PoRacerRaceSnapshot snap)
+    {
+        if (_voicing || _disposed) return;
+        _voicing = true;
+        try
+        {
+            await VoiceSnapshotCoreAsync(snap);
+        }
+        finally
+        {
+            _voicing = false;
+        }
+    }
+
+    private async Task VoiceSnapshotCoreAsync(PoRacerRaceSnapshot snap)
+    {
+        // The gun, once: countdown has run out and the pack is released.
+        if (!_gunFired && snap.CountdownMs == 0 && !snap.Finished)
+        {
+            _gunFired = true;
+            await Feedback.CueAtAsync("poracer", "rev", gain: 1.1);
+        }
+
+        var me = Player;
+        if (me is null) return;
+
+        if (_lastLap == 0) _lastLap = me.Lap;
+        if (_lastPosition == 0) _lastPosition = me.Position;
+
+        // Crossing the line onto a new lap. Pitched up slightly on the last lap so
+        // the player hears which lap they are on instead of having to read it.
+        if (me.Lap > _lastLap)
+        {
+            var finalLap = me.Lap >= TotalLaps;
+            await Feedback.CueAtAsync("poracer", "checkpoint", pitch: finalLap ? 1.25 : 1.0);
+            _lastLap = me.Lap;
+        }
+
+        // Gaining a place. 'shift' is the table's gear-change blip — short, and it
+        // reads as progress. Losing a place is deliberately silent: the race already
+        // feels bad enough without being told.
+        if (me.Position < _lastPosition)
+        {
+            await Feedback.CueAtAsync("poracer", "shift", gain: 0.85);
+        }
+        _lastPosition = me.Position;
+
+        // Boost: rising edge only, or the 20 Hz snapshot rate would retrigger it
+        // for the whole duration of the boost.
+        var boosting = me.BoostGlow > 0.15;
+        if (boosting && !_wasBoosting)
+        {
+            await Feedback.CueAtAsync("poracer", "boost");
+        }
+        _wasBoosting = boosting;
+
+        // Tyre squeal, gated by both an edge and a cooldown (see SkidCueCooldown).
+        // Level follows how hard the car is actually sliding.
+        var skidding = me.SkidIntensity > 0.35;
+        if (skidding && !_wasSkidding && DateTime.UtcNow - _lastSkidCueUtc > SkidCueCooldown)
+        {
+            _lastSkidCueUtc = DateTime.UtcNow;
+            await Feedback.CueAtAsync("poracer", "skid", gain: Math.Min(1.2, me.SkidIntensity));
+        }
+        _wasSkidding = skidding;
+
+        await VoicePassingCarsAsync(me);
+        await DriveMusicTensionAsync(me);
+    }
+
+    /// <summary>
+    /// Push the race's tension into the soundtrack: how far through the race the
+    /// player is, and how close the nearest rival is.
+    /// </summary>
+    /// <remarks>
+    /// The music director had only three states — menu, lobby, match — so a race
+    /// sounded identical on the first corner and the last. ambientMusic has always
+    /// had a live intensity mixer; this is one of the signals it was waiting for.
+    /// Lap progress dominates and proximity adds to it, which is the right ordering:
+    /// a last lap alone is tense, and a last lap with someone on your bumper is the
+    /// most tense thing the game has.
+    /// </remarks>
+    private async Task DriveMusicTensionAsync(PoRacerCarState me)
+    {
+        var lapProgress = Math.Clamp((me.Lap - 1) / (double)Math.Max(1, TotalLaps), 0, 1);
+
+        // Nearest rival within the same range the pass cues use, so the two effects
+        // agree about what "close" means.
+        var nearestDistSq = double.MaxValue;
+        foreach (var car in Cars)
+        {
+            if (car.IsPlayer || car.Finished) continue;
+            var dx = car.X - me.X;
+            var dy = car.Y - me.Y;
+            nearestDistSq = Math.Min(nearestDistSq, (dx * dx) + (dy * dy));
+        }
+
+        var proximity = 0.0;
+        if (nearestDistSq < PassAudioRange * PassAudioRange)
+        {
+            proximity = 1.0 - (Math.Sqrt(nearestDistSq) / PassAudioRange);
+        }
+
+        var tension = Math.Clamp((lapProgress * 0.7) + (proximity * 0.4), 0, 1);
+        try
+        {
+            // The director deadbands this internally, so calling it per snapshot is
+            // cheap and no throttle is needed here.
+            await JS.InvokeVoidAsync("PoMusicDirector.tension", tension);
+        }
+        catch
+        {
+            // No soundtrack is a fine soundtrack.
+        }
+    }
+
+    /// <summary>
+    /// A rival engine, placed in the stereo field and doppler-shifted — the sound of
+    /// a car coming past you.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Goes through <c>PoSpatial.cue2D</c>, which pans from the lateral offset and
+    /// applies <c>PoAcoustics.dopplerRatio2D</c> in one interop call. Both of those
+    /// were written for this game and had never been called by anything — which is
+    /// why, until now, a rival passing at 40 m/s sounded exactly like a rival parked
+    /// beside you.
+    /// </para>
+    /// <para>
+    /// Only the closest rival is voiced per snapshot. Eight cars each firing an
+    /// engine cue at 20 Hz would be 160 voices a second, and they would sum into
+    /// noise rather than into a field — the nearest car is the one carrying the
+    /// information anyway.
+    /// </para>
+    /// </remarks>
+    private async Task VoicePassingCarsAsync(PoRacerCarState me)
+    {
+        PoRacerCarState? nearest = null;
+        var nearestDistSq = double.MaxValue;
+
+        foreach (var car in Cars)
+        {
+            if (car.IsPlayer || car.Finished) continue;
+            var dx = car.X - me.X;
+            var dy = car.Y - me.Y;
+            var distSq = (dx * dx) + (dy * dy);
+            if (distSq < nearestDistSq) { nearestDistSq = distSq; nearest = car; }
+        }
+
+        if (nearest is null || nearestDistSq > PassAudioRange * PassAudioRange) return;
+
+        var now = DateTime.UtcNow;
+        if (_lastPassCueUtc.TryGetValue(nearest.Id, out var last) && now - last < PassCueCooldown) return;
+        _lastPassCueUtc[nearest.Id] = now;
+
+        // Velocity from heading and speed — the snapshot carries no vector, and the
+        // doppler needs one. Relative to the player's own motion, because what the
+        // player hears is closing speed, not ground speed: two cars side by side at
+        // 50 m/s should have no shift at all.
+        var rivalVx = Math.Cos(nearest.Heading) * nearest.Speed;
+        var rivalVy = Math.Sin(nearest.Heading) * nearest.Speed;
+        var myVx = Math.Cos(me.Heading) * me.Speed;
+        var myVy = Math.Sin(me.Heading) * me.Speed;
+
+        // Quieter with distance — cue2D deliberately leaves attenuation to the
+        // caller so a wrong-sounding result is attributable to one concern.
+        var dist = Math.Sqrt(nearestDistSq);
+        var gain = Math.Clamp(1.0 - (dist / PassAudioRange), 0.15, 1.0) * 0.8;
+
+        try
+        {
+            await JS.InvokeVoidAsync("PoSpatial.cue2D", "poracer", "rev", new
+            {
+                dx = nearest.X - me.X,
+                dy = nearest.Y - me.Y,
+                vx = rivalVx - myVx,
+                vy = rivalVy - myVy,
+                spread = PassAudioRange,
+                gain,
+            });
+        }
+        catch
+        {
+            // Spatial audio is an enhancement; a missing module costs the race nothing.
+        }
     }
 
     private void OnFinished(PoRacerFinalResult result)

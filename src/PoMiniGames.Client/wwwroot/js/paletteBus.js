@@ -46,7 +46,12 @@
         // Readers pick the change up on their next cadence; nudge the two we
         // know about so the shift is immediate.
         if (window.PoAmbient?.refreshTint) window.PoAmbient.refreshTint();
-        if (window.PoGpuFx?.invalidateTint) window.PoGpuFx.invalidateTint();
+        // gpuFx.js exposes itself as window.PoFx — this read was `window.PoGpuFx`
+        // for the module's whole life, which is a name nothing ever defined, so
+        // the particle tint silently kept the accent it booted with and never
+        // followed a route change. Kept optional: gpuFx is a module script and
+        // may not have evaluated yet on the first palette write.
+        if (window.PoFx?.invalidateTint) window.PoFx.invalidateTint();
     }
 
     function gameFromPath() {

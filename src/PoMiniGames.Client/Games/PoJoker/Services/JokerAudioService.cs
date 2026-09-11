@@ -59,6 +59,33 @@ public sealed class JokerAudioService(IJSRuntime jsRuntime, ILogger<JokerAudioSe
         catch (JSException ex) { _logger.LogWarning(ex, "Failed to play cymbal"); }
     }
 
+    public async Task PlayLaughterAsync(double volume = 0.45)
+    {
+        try { await _jsRuntime.InvokeVoidAsync("poJokerAudio.playLaughter", volume); }
+        catch (JSException ex) { _logger.LogWarning(ex, "Failed to play laughter"); }
+    }
+
+    public async Task PlayRimshotAsync(double volume = 0.5)
+    {
+        try { await _jsRuntime.InvokeVoidAsync("poJokerAudio.playRimshot", volume); }
+        catch (JSException ex) { _logger.LogWarning(ex, "Failed to play rimshot"); }
+    }
+
+    /// <summary>
+    /// The titter. Goes straight to the cue vocabulary rather than through the
+    /// PoJoker interop module: 'giggle' needs no bespoke synthesis on top of the
+    /// table entry, and adding a pass-through to poJokerAudio for it would be a
+    /// wrapper around a wrapper.
+    /// </summary>
+    public async Task PlayGiggleAsync(double volume = 0.4)
+    {
+        try
+        {
+            await _jsRuntime.InvokeVoidAsync("PoCue.fire", "pojoker", "giggle", new { gain = volume });
+        }
+        catch (JSException ex) { _logger.LogWarning(ex, "Failed to play giggle"); }
+    }
+
     public async Task StopAllAsync()
     {
         try { await _jsRuntime.InvokeVoidAsync("poJokerAudio.stopAll"); }

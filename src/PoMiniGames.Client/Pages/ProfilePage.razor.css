@@ -707,3 +707,115 @@
 
 /* .prf-settings-link (the pointer out to /settings) was removed on 2026-08-11
    along with the settings page itself. */
+
+/* ── Your data (export / erase) ─────────────────────────────────────────
+   Deliberately the plainest block on the page: no gradient, no elevation,
+   no accent fill. Everything above it is a score to enjoy looking at; this
+   is an account control, and dressing it up the same way invites the tap
+   it must not get by accident. Colour is carried entirely through the
+   theme tokens so it re-points correctly in light mode. */
+.prf-data {
+    margin-top: 1.5rem;
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--color-border);
+}
+
+.prf-data-blurb {
+    margin: 0 0 0.875rem;
+    font-size: 0.82rem;
+    line-height: 1.5;
+    color: var(--color-text-secondary);
+    max-width: 52ch;
+}
+
+.prf-data-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.prf-data-btn {
+    appearance: none;
+    border: 1px solid var(--color-border);
+    background: var(--color-surface);
+    color: var(--color-text-secondary);
+    font: inherit;
+    font-size: 0.8rem;
+    font-weight: 600;
+    padding: 0.5rem 0.9rem;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.prf-data-btn:hover:not(:disabled) {
+    background: var(--color-surface-hover);
+}
+
+.prf-data-btn:focus-visible {
+    outline: 2px solid var(--accent-ring);
+    outline-offset: 2px;
+}
+
+.prf-data-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* --accent-danger-ink rather than --accent-danger: the -ink variants are the
+   ones tuned for text contrast in both schemes (see the note in app.css). */
+.prf-data-btn--danger {
+    color: var(--accent-danger-ink);
+    border-color: var(--accent-danger-soft);
+}
+
+.prf-data-btn--danger:hover:not(:disabled) {
+    background: var(--accent-danger-soft);
+}
+
+.prf-data-btn--quiet {
+    border-color: transparent;
+    background: transparent;
+}
+
+.prf-data-confirm {
+    margin-top: 0.875rem;
+    padding: 0.875rem;
+    border: 1px solid var(--accent-danger-soft);
+    border-radius: var(--radius-sm);
+    background: var(--accent-danger-soft);
+}
+
+.prf-data-warn {
+    margin: 0 0 0.75rem;
+    font-size: 0.8rem;
+    line-height: 1.5;
+    color: var(--accent-danger-ink);
+    max-width: 52ch;
+}
+
+.prf-data-confirm-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.prf-data-input {
+    flex: 1 1 8rem;
+    min-width: 0;
+    font: inherit;
+    font-size: 0.8rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 0.5rem 0.7rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--color-border);
+    background: var(--color-surface);
+    color: var(--color-text);
+}
+
+.prf-data-input:focus-visible {
+    outline: 2px solid var(--accent-ring);
+    outline-offset: 1px;
+}

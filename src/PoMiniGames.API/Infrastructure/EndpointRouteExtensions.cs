@@ -1,6 +1,8 @@
+using PoMiniGames.Features.Account;
 using PoMiniGames.Features.Auth;
 using PoMiniGames.Features.Diagnostics;
 using PoMiniGames.Features.Health;
+using PoMiniGames.Features.Integrity;
 using PoMiniGames.Features.HighScores;     // PoSports mapper
 using PoMiniGames.Features.PoBrawl;        // moved out of Features.HighScores 2026-08-11,
                                            // same correction PoMarbleRace already had
@@ -73,6 +75,9 @@ internal static class EndpointRouteExtensions
         // immutable), so they sit with the anonymous reads; the M4 run-submission POST
         // will join the authenticated group below instead.
         app.MapPoVoxelStrikeAssetEndpoints();
+        // Score-integrity posture. Anonymous because it reports configuration, not data, and
+        // the client reads it before sign-in to decide whether to run the session machinery.
+        app.MapIntegrityStatusEndpoint();
 
         // ── Authenticated game API ─────────────────────────────────────────
         // All game-data endpoints require a valid session. Per-endpoint rate
@@ -80,6 +85,13 @@ internal static class EndpointRouteExtensions
         // inside each slice; the group adds the auth gate only.
         var gameApi = app.MapGroup("").RequireAuthorization();
 
+        // Play sessions: minted per game opened, redeemed by the score guard on submission.
+        // Authenticated because a session is bound to an identity — there is nothing to bind
+        // for an anonymous caller, and an unbound session is a token anyone could spend.
+        gameApi.MapPlaySessionEndpoints();
+        // Self-service data export + erase. In the authenticated group for the obvious reason:
+        // the subject is always the caller's own claim identity.
+        gameApi.MapAccountEndpoints();
         gameApi.MapGetPlayerStats();
         gameApi.MapSavePlayerStats();
         gameApi.MapGetAllPlayerStatistics();

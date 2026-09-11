@@ -65,6 +65,20 @@ public sealed class ScoreSyncService
     /// <summary>Raised whenever the pending count changes so UI (the sync pill) can react.</summary>
     public event Action? Changed;
 
+    /// <summary>
+    /// Raised with the number of scores that just landed, after a flush that synced
+    /// at least one. Separate from <see cref="Changed"/> because the two answer
+    /// different questions: <see cref="Changed"/> means "the queue is a different
+    /// size, redraw the pill", while this means "the player's parked runs just
+    /// reached the leaderboard" — a moment, and the only one worth celebrating.
+    /// </summary>
+    /// <remarks>
+    /// The event carries the count rather than having subscribers read
+    /// <see cref="PendingCount"/>, which is already back to zero by the time this
+    /// fires and so cannot tell anyone how much was saved.
+    /// </remarks>
+    public event Action<int>? Flushed;
+
     public int PendingCount => _store.Load().Count;
 
     public void EnqueueMarbleRace(MarbleRaceHighScoreRequest entry) =>
@@ -155,7 +169,11 @@ public sealed class ScoreSyncService
             _flushing = false;
         }
 
-        if (synced > 0) Changed?.Invoke();
+        if (synced > 0)
+        {
+            Changed?.Invoke();
+            Flushed?.Invoke(synced);
+        }
         return synced;
     }
 

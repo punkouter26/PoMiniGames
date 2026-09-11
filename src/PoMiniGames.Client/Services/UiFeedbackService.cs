@@ -87,6 +87,51 @@ public sealed class UiFeedbackService : IAsyncDisposable
     }
 
     /// <summary>
+    /// Fire a cue with placement and pitch — the expressive form of
+    /// <see cref="CueAsync(string, string, int[])"/>. Named separately rather than
+    /// overloaded: a two-argument call would be ambiguous against it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The cue vocabulary has always accepted these (see <c>gameCues.fire</c>), but
+    /// until now only the JS engines could pass them, so every cue fired from C#
+    /// landed dead centre at a fixed pitch. That is survivable for UI chrome and
+    /// wrong for a game: eight runners in eight lanes, or a rival car passing on
+    /// the left, are spatial events, and a cue that ignores the speed it was fired
+    /// at is the single biggest tell that a sound is canned.
+    /// </para>
+    /// <para>
+    /// <paramref name="pitch"/> shifts frequency for pitched voices and brightness
+    /// (filter cutoff) for noise voices, because scaling the frequency of a noise
+    /// source is a no-op — <c>gameCues</c> handles that split internally.
+    /// </para>
+    /// </remarks>
+    /// <param name="scope">Cue scope — a game key, or "ui".</param>
+    /// <param name="name">Cue name within that scope.</param>
+    /// <param name="pan">-1 (hard left) .. 1 (hard right).</param>
+    /// <param name="pitch">Frequency multiplier; 1 is the cue as written.</param>
+    /// <param name="gain">Level multiplier; 1 is the cue as written.</param>
+    /// <param name="scale">Impact and particle strength multiplier.</param>
+    /// <returns>True if a cue matched; false if the name is unknown to the table.</returns>
+    public async ValueTask<bool> CueAtAsync(
+        string scope, string name, double pan = 0, double pitch = 1, double gain = 1, double scale = 1)
+    {
+        if (_disposed) return false;
+        try
+        {
+            var module = await _module.Value;
+            // Anonymous object, matching ChipDropAsync below — the JS side reads
+            // these by name off an options bag.
+            return await module.InvokeAsync<bool>("cue", scope, name, new { pan, pitch, gain, scale });
+        }
+        catch
+        {
+            // Best-effort — never throw from a feedback path.
+            return false;
+        }
+    }
+
+    /// <summary>
     /// Fire the first cue in <paramref name="names"/> that this scope actually
     /// defines. Outcome cues are not named uniformly across games — a win is
     /// "win" in TicTacToe, "ko" in Brawl, "finish" in Marble Race, "goal" in

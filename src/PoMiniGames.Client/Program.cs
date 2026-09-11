@@ -50,27 +50,42 @@ if (string.IsNullOrWhiteSpace(apiBase))
 // not only the JS monkey-patch, and so transient GET failures get a bounded
 // retry (TransientRetryHandler), and so §2 CSRF tokens are attached without every
 // call site remembering to (AntiforgeryHandler). Order (outer → inner):
-//   TransientRetryHandler → AntiforgeryHandler → IncludeCredentialsHandler → HttpClientHandler
+//   TransientRetryHandler → PlaySessionHandler → AntiforgeryHandler
+//     → IncludeCredentialsHandler → HttpClientHandler
 // Retry is outermost so each replayed clone passes back through
 // IncludeCredentialsHandler and gets the credentials mode re-applied before it
 // reaches the browser transport (HttpClientHandler backs the WASM fetch shim).
-// AntiforgeryHandler sits directly beneath it, and ABOVE IncludeCredentialsHandler:
-// the token fetch it makes must carry credentials, because the response sets the
-// paired antiforgery cookie the server validates the header against.
+// PlaySessionHandler sits directly under the retry for the same reason the retry is
+// outermost: a replayed score submission must be re-stamped with the play session, or
+// the retry itself would look to the server like a submission with no session at all.
+// It is above AntiforgeryHandler because it makes no request of its own and needs no
+// cookie — it only copies a header onto the outbound message.
+// AntiforgeryHandler sits ABOVE IncludeCredentialsHandler: the token fetch it makes must
+// carry credentials, because the response sets the paired antiforgery cookie the server
+// validates the header against.
 builder.Services.AddScoped(sp => new HttpClient(
     new TransientRetryHandler
     {
-        InnerHandler = new AntiforgeryHandler
+        InnerHandler = new PlaySessionHandler(sp.GetRequiredService<PlaySessionStore>())
         {
-            InnerHandler = new IncludeCredentialsHandler
+            InnerHandler = new AntiforgeryHandler
             {
-                InnerHandler = new HttpClientHandler()
+                InnerHandler = new IncludeCredentialsHandler
+                {
+                    InnerHandler = new HttpClientHandler()
+                }
             }
         }
     })
 {
     BaseAddress = new Uri(apiBase)
 });
+// Score integrity: the store holds the current play session (and depends on nothing, which
+// is what lets the handler above resolve it while the HttpClient is still being built), the
+// service mints one per game route the player opens. Registered before ApiService so the
+// ordering reads the way the pipeline runs.
+builder.Services.AddScoped<PlaySessionStore>();
+builder.Services.AddScoped<PlaySessionService>();
 builder.Services.AddScoped<ApiService>();
 // §Absolute API endpoints: resolved once from configuration + host env so
 // SignalR and other string-URL transports can target the API host (:5000)
@@ -94,6 +109,11 @@ builder.Services.AddScoped<PoRacerScoreApiClient>();
 // §5 Native Web Audio micro-feedback — shared across every game so the platform
 // has a consistent sound vocabulary. Lazily resolves the AudioContext on first call.
 builder.Services.AddScoped<UiFeedbackService>();
+// The silent, visual-only half of the feedback stack: particles and screen feel
+// without a sound. Separate from UiFeedbackService because anything that should
+// make a noise belongs in the cue vocabulary instead, where the sound and the
+// visual stay welded together.
+builder.Services.AddScoped<ScreenFxService>();
 // Global settings (master mute, FPS badge) shared by the layout and every game.
 builder.Services.AddScoped<SettingsService>();
 // Blazored.LocalStorage (2026-09-02). New code should take ILocalStorageService and use

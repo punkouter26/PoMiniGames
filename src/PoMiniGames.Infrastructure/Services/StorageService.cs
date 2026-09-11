@@ -1389,6 +1389,15 @@ public class StorageService : IStorageService
     }
 
 
+    /// <summary>
+    /// The RowKey form of a player name, exposed for callers outside this assembly that must
+    /// find a player's stored rows without re-deriving the rule. Added for the account
+    /// export/erase path (Features/Account), which has to locate name-keyed rows exactly the
+    /// way <see cref="SavePlayerStatsAsync"/> wrote them — a second, drifting copy of this
+    /// normalisation would silently leave rows behind on an erase the player asked for.
+    /// </summary>
+    public static string NormalizePlayerKey(string input) => SanitizeName(input);
+
     internal static string SanitizeName(string input)
     {
         if (string.IsNullOrEmpty(input))

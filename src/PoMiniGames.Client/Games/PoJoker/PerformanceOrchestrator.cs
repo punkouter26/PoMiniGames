@@ -366,6 +366,11 @@ public sealed class PerformanceOrchestrator : IAsyncDisposable
         if (CurrentAnalysis?.AiPunchline is not null)
         {
             await _speechService.SpeakAsync($"The Jester guesses: {CurrentAnalysis.AiPunchline}", rate: 0.9, pitch: 1.0);
+            // A titter, not a laugh — the audience is reacting to the Jester's guess,
+            // and the real laugh is reserved for the punchline itself. Using the full
+            // 'laugh' here would spend the routine's biggest beat two phases early.
+            try { await _audioService.PlayGiggleAsync(0.35); }
+            catch { /* decoration only */ }
         }
 
         await Task.Delay(TimeSpan.FromSeconds(_settings.PredictionDurationSeconds), cancellationToken);
@@ -441,6 +446,23 @@ public sealed class PerformanceOrchestrator : IAsyncDisposable
             NotifyStateChanged();
             await _speechService.SpeakAsync(
                 $"The actual punchline is: {CurrentJoke.Punchline}", rate: 0.85, pitch: 1.0);
+        }
+
+        // The audience reacts. This is the beat the whole routine builds to and it
+        // was silent: the drum roll set it up, the fanfare or trombone called the
+        // verdict, the speech delivered the line — and then nothing. A triumph gets
+        // the laugh (with its coin burst); a flop gets the rimshot sting, which is
+        // the correct comedy grammar for a joke that died and is funnier than
+        // silence. Fired after the speech rather than under it so it reads as a
+        // reaction to the punchline instead of an interruption of it.
+        try
+        {
+            if (isTriumph) await _audioService.PlayLaughterAsync(0.5);
+            else await _audioService.PlayRimshotAsync(0.5);
+        }
+        catch
+        {
+            // Reaction audio is decoration — never let it break the routine.
         }
 
         // Final hold so the player can read the punchline after the speech has

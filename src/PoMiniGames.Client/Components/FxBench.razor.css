@@ -1,0 +1,141 @@
+/* FxBench — the sound & effects audition bench (§GFX).
+   Every colour goes through the app.css tokens: a raw hex here would be unthemed
+   in light mode, which is the one rule this codebase's theming is absolute about. */
+
+.fxb {
+    margin-top: var(--space-6, 1.5rem);
+    padding: var(--space-4, 1rem);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg, 12px);
+    background: var(--color-surface-raised, var(--color-surface));
+}
+
+.fxb-title {
+    margin: 0 0 var(--space-1, 0.25rem);
+    font-size: var(--text-lg, 1.125rem);
+    color: var(--color-text-primary);
+}
+
+.fxb-note {
+    margin: 0 0 var(--space-3, 0.75rem);
+    font-size: var(--text-sm, 0.875rem);
+    color: var(--color-text-secondary);
+    max-width: 52ch;
+}
+
+/* auto-fill rather than a fixed column count: the bench sits in a profile column
+   whose width varies, and ten voices have to wrap cleanly at phone width without
+   a media query per breakpoint. */
+.fxb-voices {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(7.5rem, 1fr));
+    gap: var(--space-2, 0.5rem);
+}
+
+.fxb-voice {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2, 0.5rem);
+    padding: 0.55rem 0.7rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md, 8px);
+    background: var(--color-surface);
+    color: var(--color-text-primary);
+    font-size: var(--text-sm, 0.875rem);
+    cursor: pointer;
+    /* Only transform and the tinted props animate — no layout-affecting property,
+       so a press cannot reflow the grid. */
+    transition: background 120ms ease, border-color 120ms ease, transform 120ms ease;
+}
+
+.fxb-voice:hover,
+.fxb-voice:focus-visible {
+    background: var(--accent-soft);
+    border-color: var(--accent);
+}
+
+.fxb-voice:active { transform: scale(0.97); }
+
+.fxb-voice-icon { font-size: 1.1rem; line-height: 1; }
+.fxb-voice-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── Meter ────────────────────────────────────────────────────────────────
+   Heights come from --lvl-* custom properties written every frame by
+   js/fxShowcase.js. The bars animate height only via the inline property, so
+   there is no CSS transition to fight the 60 Hz updates — a transition here
+   would lag the meter behind the sound it is reporting. */
+.fxb-meter {
+    display: flex;
+    align-items: flex-end;
+    gap: var(--space-2, 0.5rem);
+    height: 3rem;
+    margin-top: var(--space-4, 1rem);
+    padding: 0.35rem;
+    border-radius: var(--radius-md, 8px);
+    background: var(--tint-subtle, rgba(127, 127, 127, 0.08));
+}
+
+.fxb-bar {
+    position: relative;
+    flex: 1;
+    height: 100%;
+    border-radius: 3px;
+    background: var(--tint-subtle, rgba(127, 127, 127, 0.12));
+    overflow: hidden;
+}
+
+/* The filled portion. Anchored to the bottom so it grows upward like a meter
+   rather than from the centre. */
+.fxb-bar > i {
+    position: absolute;
+    inset-inline: 0;
+    bottom: 0;
+    display: block;
+    border-radius: 3px;
+    background: var(--accent);
+}
+
+.fxb-bar--bass   > i { height: var(--lvl-bass, 0%); background: var(--accent); }
+.fxb-bar--mid    > i { height: var(--lvl-mid, 0%); background: var(--accent-success, var(--accent)); }
+.fxb-bar--treble > i { height: var(--lvl-treble, 0%); background: var(--accent-warning, var(--accent)); }
+.fxb-bar--peak   > i { height: var(--lvl-peak, 0%); background: var(--color-text-primary); }
+
+.fxb-meter-label {
+    margin: var(--space-1, 0.25rem) 0 0;
+    font-size: var(--text-xs, 0.75rem);
+    color: var(--color-text-secondary);
+}
+
+/* ── Particle presets ─────────────────────────────────────────────────────── */
+.fxb-presets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2, 0.5rem);
+    margin-top: var(--space-4, 1rem);
+}
+
+.fxb-preset {
+    padding: 0.4rem 0.75rem;
+    border: 1px solid var(--color-border);
+    border-radius: 999px;
+    background: var(--color-surface);
+    color: var(--color-text-secondary);
+    font-size: var(--text-xs, 0.75rem);
+    text-transform: capitalize;
+    cursor: pointer;
+    transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.fxb-preset:hover,
+.fxb-preset:focus-visible {
+    background: var(--accent-soft);
+    border-color: var(--accent);
+    color: var(--color-text-primary);
+}
+
+/* The press feedback IS motion; the tint above carries the affordance without it. */
+@media (prefers-reduced-motion: reduce) {
+    .fxb-voice,
+    .fxb-preset { transition: none; }
+    .fxb-voice:active { transform: none; }
+}

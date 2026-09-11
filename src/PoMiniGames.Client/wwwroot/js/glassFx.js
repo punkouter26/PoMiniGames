@@ -85,11 +85,80 @@
         };
     }
 
+    // Auto-attach (§GFX). attachHud above needs the game to remember to call it
+    // with its own canvas, and for most of the module's life exactly one game did
+    // (PoMarbleRace) — so every other HUD in the app fell back to the plain
+    // backdrop-filter, which over a canvas blurs whatever is behind the element in
+    // DOM order and reads as a flat smear rather than as glass.
+    //
+    // This inverts the contract: a panel opts in by carrying data-glass, and the
+    // source canvas is discovered. A new game gets scene-composited glass by
+    // adding an attribute, with nothing to wire and nothing to tear down.
+    let _autoStop = null;
+    let _autoObserver = null;
+
+    function currentCanvas() {
+        // Largest canvas on the page, not the first: games mount minimaps, sprite
+        // atlases and offscreen scratch canvases alongside the scene, and the first
+        // in DOM order is regularly one of those. Area is a reliable proxy for
+        // "the one the player is looking at".
+        let best = null;
+        let bestArea = 0;
+        document.querySelectorAll('canvas').forEach(function (c) {
+            const area = (c.width || 0) * (c.height || 0);
+            if (area > bestArea) { bestArea = area; best = c; }
+        });
+        return best;
+    }
+
+    function syncAuto() {
+        const hasPanels = document.querySelector('[data-glass]') !== null;
+        const canvas = hasPanels ? currentCanvas() : null;
+
+        // Nothing to do, or the scene is gone (route change): release.
+        if (!canvas || !allowed()) {
+            if (_autoStop) { _autoStop(); _autoStop = null; }
+            return;
+        }
+        if (_autoStop) return;   // already running against a live canvas
+        _autoStop = attachHud(canvas, '[data-glass]');
+    }
+
+    /**
+     * Start watching the document for glass panels and a scene canvas. Idempotent —
+     * safe to call on every route change, and called once from fxBootstrap.
+     */
+    function auto() {
+        if (_autoObserver) { syncAuto(); return; }
+        syncAuto();
+        // Blazor swaps the page's DOM without a navigation event the module can
+        // hear, so the observer is what notices a new game's canvas and HUD
+        // mounting (and the old one leaving).
+        //
+        // Throttled, and that is not optional: a running game rewrites its HUD text
+        // every frame, so an unthrottled subtree observer would run syncAuto —
+        // two document-wide queries, one of them over every canvas — at frame rate,
+        // on the main thread, to discover nothing had changed. The work this module
+        // exists to do costs one 128px drawImage every 220 ms; paying more than
+        // that to decide whether to do it would make the effect a net loss.
+        let pending = 0;
+        _autoObserver = new MutationObserver(function () {
+            if (pending) return;
+            pending = setTimeout(function () { pending = 0; syncAuto(); }, 400);
+        });
+        _autoObserver.observe(document.body, { childList: true, subtree: true });
+    }
+
     const o_intervalMs = 220;
     const glassFx = {
         attachPanel: attachPanel,
         attachHud: attachHud,
-        stopAll: function () { _timers.forEach(function (id) { clearInterval(id); }); _timers.clear(); }
+        auto: auto,
+        stopAll: function () {
+            _timers.forEach(function (id) { clearInterval(id); });
+            _timers.clear();
+            if (_autoStop) { _autoStop(); _autoStop = null; }
+        }
     };
 
     window.PoGlass = glassFx;

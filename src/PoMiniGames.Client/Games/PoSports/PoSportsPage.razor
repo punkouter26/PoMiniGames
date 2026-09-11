@@ -81,7 +81,7 @@
         @* Meet HUD: per-human sequence progress + leg clock, fed by game.js OnHud. *@
         @if (_phase == "racing" || _phase == "interstitial" || _phase == "countdown")
         {
-            <div class="ps-hud">
+            <div class="ps-hud" data-glass>
                 <div class="ps-hud-leg">@(_leg == "hurdles" ? "🚧 110m Hurdles" : "🏃 100m Sprint")</div>
                 <div class="ps-hud-clock">@_clock.ToString("0.0")s</div>
                 @foreach (var lane in _humanLanes)

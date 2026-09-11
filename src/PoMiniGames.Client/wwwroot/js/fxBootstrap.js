@@ -51,6 +51,28 @@
                      .then(function () { return load('js/materialAudio.js'); })
                      .then(function () { return load('js/musicDirector.js'); });
     }
+    // The route wipe. Loaded for everyone including reduced-motion users: the
+    // module no-ops itself in that case, and MainLayout calls it unconditionally —
+    // a missing global there would mean every navigation paid for a failed lookup.
+    chain = chain.then(function () { return load('js/routeFx.js'); });
+
+    // The Profile page's FX bench meter. Loaded with the rest of the always-on
+    // chrome rather than lazily from the page: it is 70 lines, and a bench whose
+    // meter arrives a beat after the buttons looks broken on first paint.
+    chain = chain.then(function () { return load('js/fxShowcase.js'); });
+
+    // Scene-composited glass for any panel carrying data-glass. Loaded here rather
+    // than lazily per game because it is now an opt-in-by-attribute platform
+    // behaviour, not a game's own effect — and its own allowed() check plus the
+    // reduce-motion gate below mean the low tier pays nothing but the module fetch.
+    if (!reduceMotion) {
+        chain = chain.then(function () {
+            return load('js/glassFx.js').then(function () {
+                window.PoGlass && window.PoGlass.auto();
+            });
+        });
+    }
+
     chain.then(function () {
         // WebGPU backend probes in the background; gpuFx consults it lazily
         // so the catalog pays zero for the probe. Skip under reduce-motion

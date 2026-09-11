@@ -3,6 +3,8 @@
 @inject NavigationManager NavigationManager
 @inject BrowserViewport Viewport
 @inject PlayerNameService PlayerNameService
+@inject UiFeedbackService Feedback
+@inject ScreenFxService ScreenFx
 @implements IAsyncDisposable
 
 <PageTitle>Leaderboards · PoMiniGames</PageTitle>
@@ -195,7 +197,13 @@
                                     @* §5: <Virtualize> keeps the DOM flat even when
                                        a board's Top-N grows past the section cap. *@
                                     <Virtualize Items="@rows" Context="e" ItemSize="36">
-                                        <div role="row" class="lb-row @(e.Rank <= 3 && e.Name != PlaceholderName ? $"lb-row--top lb-row--{e.Rank}" : null)">
+                                        @* lb-row--me / data-lb-me: the player's own row is both the
+                                           row they look for first and the anchor the rank-change burst
+                                           fires from, so it needs a class for the highlight and an
+                                           addressable attribute for the FX pass. *@
+                                        <div role="row"
+                                             class="lb-row @(e.Rank <= 3 && e.Name != PlaceholderName ? $"lb-row--top lb-row--{e.Rank}" : null) @(IsMe(e.Name) ? "lb-row--me" : null)"
+                                             data-lb-me="@(IsMe(e.Name) ? board.GameKey : null)">
                                             <span role="cell" class="lb-rank" aria-label="@($"Rank {e.Rank}")">@e.Rank</span>
                                             @* title only when the row carries long-form text it
                                                had to clip (PoJoker jokes) — null everywhere else,
@@ -322,6 +330,128 @@
 
     protected override async Task OnInitializedAsync() => await Load();
 
+    // ── Rank-change feedback (§GFX) ─────────────────────────────────────────
+    // This page had no feedback of any kind — no sound, no particles, no
+    // highlight on the player's own row — even though rank movement is the whole
+    // emotional point of a leaderboard.
+    //
+    // "Changed since when?" is answered by localStorage: the rank the player was
+    // last *shown* per board. That makes the comparison honest about what the
+    // player has actually seen, which a server-side diff could not be — they may
+    // have climbed three places across two sessions and a week.
+    private const string RankMemoryKey = "pomini_seen_ranks";
+
+    /// <summary>Boards where the player climbed since they last looked, and by how much.</summary>
+    private readonly Dictionary<string, int> _rankGains = [];
+    private bool _rankFxPending;
+    private string _myNameLower = "";
+
+    /// <summary>
+    /// True if a leaderboard row belongs to the signed-in player. Reuses
+    /// <see cref="NameMatches"/> so the row highlight and the hero card agree on
+    /// identity — the board stores whatever the submitter passed (display name,
+    /// email slug or id slug), so neither can demand an exact match.
+    /// </summary>
+    private bool IsMe(string leaderName) =>
+        leaderName != PlaceholderName
+        && _myNameLower.Length > 0
+        && NameMatches(leaderName, _myNameLower);
+
+    /// <summary>
+    /// Compare every board's current personal rank against the last one shown,
+    /// record the climbs, and persist the new ranks.
+    /// </summary>
+    /// <remarks>
+    /// Only improvements are collected. A drop is deliberately silent: someone
+    /// else outscoring you is not your achievement to be notified about, and a
+    /// sad noise on a page you opened voluntarily is a reason not to open it again.
+    /// A board's first appearance is also silent — there is no "gain" from
+    /// unranked to ranked that this page can honestly quantify.
+    /// </remarks>
+    private void DetectRankChanges()
+    {
+        _rankGains.Clear();
+        _myNameLower = PlayerNameService.GetPlayerName()?.Trim().ToLowerInvariant() ?? string.Empty;
+        if (_myNameLower.Length == 0) return;
+
+        var seen = ParseSeenRanks(LocalStorageService.GetItem<string>(RankMemoryKey));
+        var next = new List<string>();
+
+        foreach (var board in _boards)
+        {
+            var mine = board.Entries.FirstOrDefault(e => IsMe(e.Name));
+            if (mine is null) continue;
+
+            if (seen.TryGetValue(board.GameKey, out var before) && mine.Rank < before)
+            {
+                _rankGains[board.GameKey] = before - mine.Rank;
+            }
+            next.Add($"{board.GameKey}:{mine.Rank}");
+        }
+
+        // Plain "key:rank|key:rank" rather than JSON: LocalStorageService's generic
+        // overloads go through reflection-based serialization that the trim
+        // analyzer rejects, and the string path is the documented safe one.
+        LocalStorageService.SetItem(RankMemoryKey, string.Join("|", next));
+        _rankFxPending = _rankGains.Count > 0;
+    }
+
+    private static Dictionary<string, int> ParseSeenRanks(string? raw)
+    {
+        var map = new Dictionary<string, int>(StringComparer.Ordinal);
+        if (string.IsNullOrWhiteSpace(raw)) return map;
+        foreach (var pair in raw.Split('|', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var sep = pair.LastIndexOf(':');
+            if (sep <= 0) continue;
+            if (int.TryParse(pair.AsSpan(sep + 1), out var rank))
+            {
+                map[pair[..sep]] = rank;
+            }
+        }
+        return map;
+    }
+
+    /// <summary>
+    /// Play the climbs: one rising cue per board, pitched by how far the player
+    /// moved, with a spark burst on their own row.
+    /// </summary>
+    /// <remarks>
+    /// Pitch carries the size of the climb so several boards in one visit are
+    /// distinguishable by ear, and the cues are staggered — fired together they
+    /// would sum into one chord rather than reading as separate achievements. The
+    /// whole pass is capped at three boards: past that it stops being a
+    /// celebration and becomes a jingle the player has to sit through.
+    /// </remarks>
+    private async Task PlayRankGainsAsync()
+    {
+        if (_rankGains.Count == 0) return;
+
+        // Note: the rows live inside <Virtualize>, which only renders what is in
+        // view, so a climb on a board the player has not scrolled to gets the cue
+        // but no burst — the selector simply matches nothing and gpuFx no-ops. That
+        // is the right degradation: the sound is the message, the particles are the
+        // decoration, and bursting at a position the row does not occupy would be
+        // worse than not bursting.
+        var climbs = _rankGains.OrderByDescending(kv => kv.Value).Take(3).ToList();
+        foreach (var (gameKey, places) in climbs)
+        {
+            // 1 place ≈ unison, a 10-place jump ≈ just over an octave. Capped so a
+            // first-time entry at rank 1 cannot shriek.
+            var pitch = Math.Min(2.1, 1.0 + (places * 0.11));
+            await Feedback.CueAtAsync("ui", "chime", pitch: pitch, gain: 0.9);
+            await ScreenFx.BurstAtAsync($"[data-lb-me='{gameKey}']", ScreenFxService.Sparks, 0.8);
+            await Task.Delay(220);
+        }
+
+        // The biggest climb of the visit also earns the accent pulse, which is what
+        // carries the moment to the soundtrack (paletteBus → musicDirector.verdict).
+        if (climbs[0].Value >= 3)
+        {
+            await ScreenFx.PulseAsync(ScreenFxService.Win);
+        }
+    }
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
@@ -335,6 +465,15 @@
             _isNarrow = Viewport.IsNarrow;
             _selectedGame ??= FlatBoards.FirstOrDefault()?.GameKey;
             StateHasChanged();
+        }
+
+        // After render, because the burst targets the player's own row and that row
+        // has to exist in the DOM first. The flag is lowered before awaiting so a
+        // re-render during the staggered playback cannot start it a second time.
+        if (_rankFxPending)
+        {
+            _rankFxPending = false;
+            await PlayRankGainsAsync();
         }
     }
 
@@ -356,6 +495,9 @@
             _boards = boards.ToList();
             BuildGrouped();
             BuildHero();
+            // Before the first render of the rows: IsMe() drives a class on every
+            // row, so _myNameLower has to be populated by the time they render.
+            DetectRankChanges();
         }
 
         _loading = false;

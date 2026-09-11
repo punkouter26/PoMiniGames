@@ -1,7 +1,9 @@
 using System.Text.RegularExpressions;
 using PoMiniGames.Application.Services;
 using PoMiniGames.Domain.Models;
+using PoMiniGames.Domain.Primitives;
 using PoMiniGames.Features.Auth;
+using PoMiniGames.Features.Integrity;
 
 namespace PoMiniGames.Features.PoVoxelStrike;
 
@@ -85,6 +87,7 @@ internal static class PoVoxelStrikeEndpoints
             async (PoVoxelStrikeRunRequest request,
                    HttpContext http,
                    IStorageService storage,
+                   IScoreIntegrityGuard integrity,
                    ILoggerFactory loggerFactory) =>
             {
                 var log = loggerFactory.CreateLogger("PoVoxelStrikeHighScores");
@@ -120,11 +123,21 @@ internal static class PoVoxelStrikeEndpoints
                     return Results.ValidationProblem(errors);
                 }
 
+                // The stats-vs-score ceiling above proves the run is internally consistent; it
+                // cannot tell whether the run happened. The guard adds the missing half by
+                // measuring the submission against a clock the server owns.
+                var verdict = integrity.Inspect(http, GameKey.PoVoxelStrike, request.Score);
+                if (!verdict.Allowed)
+                {
+                    PoVoxelStrikeLog.ScoreRejected(log, request.Score, verdict.Code ?? "integrity");
+                    return verdict.ToProblem();
+                }
+
                 // Server-authoritative identity — the body carries no name to forge.
                 var identity = RequestIdentity.Resolve(http.User);
-                var name = !string.IsNullOrWhiteSpace(identity.DisplayName)
-                    ? identity.DisplayName
-                    : identity.IsAuthenticated ? "Player" : "Guest";
+                var name = integrity.ResolveDisplayName(
+                    identity.DisplayName,
+                    identity.IsAuthenticated ? "Player" : "Guest");
 
                 var saved = await storage.SavePoVoxelStrikeHighScoreAsync(new PoVoxelStrikeHighScore
                 {

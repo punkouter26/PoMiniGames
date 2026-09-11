@@ -201,6 +201,59 @@ public class ApiService
         }
     }
 
+    // ── Account data (export / erase) ─────────────────────────────────────
+    // Both are deliberately slow-path: they run a cross-table scan server-side, are rate
+    // limited to 5/min, and are only ever triggered by an explicit click on the profile page.
+
+    /// <summary>
+    /// Downloads every row the platform stores about the signed-in caller, as raw JSON.
+    /// </summary>
+    /// <remarks>
+    /// Returned as a string rather than a parsed object on purpose: the caller hands it straight
+    /// to the browser to save, and parsing it into a typed shape here would mean registering the
+    /// whole export schema with the source-generated context for no benefit — the client never
+    /// reads a field of it.
+    /// </remarks>
+    public async Task<string?> ExportAccountDataAsync()
+    {
+        try
+        {
+            // No timeout: unlike the 5s probes above, this scans every board's partition and a
+            // cold F1 instance can genuinely take longer than that to answer.
+            var response = await _http.GetAsync("/api/account/export");
+            return response.IsSuccessStatusCode
+                ? await response.Content.ReadAsStringAsync()
+                : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Permanently erases the caller's stored rows. Returns the per-table counts, or null when
+    /// the request did not reach the server — the distinction matters to the caller, which must
+    /// not report "erased" for a call that never landed.
+    /// </summary>
+    public async Task<AccountDeletionDto?> EraseAccountDataAsync()
+    {
+        try
+        {
+            var response = await _http.DeleteAsync("/api/account/data");
+            if (!response.IsSuccessStatusCode)
+            {
+                return null;
+            }
+
+            return await response.Content.ReadFromJsonAsync(ApiJsonContext.Default.AccountDeletionDto);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     /// <summary>Normalized leaderboards for every game in one round-trip (home preview, /leaderboards hub).</summary>
     public async Task<GameLeaderboardDto[]?> GetAllLeaderboardsAsync(int limit = 5)
     {

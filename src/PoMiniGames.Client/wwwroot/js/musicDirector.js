@@ -30,6 +30,19 @@
     let _starting = false;
     let _verdictUntil = 0;
 
+    // Continuous tension, 0..1, riding on top of the current state's base
+    // intensity (§GFX). The three states are a coarse instrument: a match is
+    // 'match' whether it is the first lap or the last corner, which means the
+    // soundtrack said the same thing for the whole of every game. ambientMusic
+    // has had a live intensity mixer the entire time — nothing drove it, and
+    // anything that tried was overwritten by the next apply().
+    let _tension = 0;
+
+    // How much of the remaining headroom tension can claim. Capped well under 1
+    // so the verdict stinger is still audibly above a maxed-out tense moment —
+    // if tension could reach the verdict level, winning would sound like playing.
+    const TENSION_CEILING = 0.85;
+
     function ensureGesture() {
         if (_gestureBound) return;
         _gestureBound = true;
@@ -48,7 +61,12 @@
         const cfg = STATES[_state] || STATES.menu;
         // A verdict window overrides the resting intensity briefly.
         const inVerdict = Date.now() < _verdictUntil;
-        const intensity = inVerdict ? 0.95 : cfg.intensity;
+        // Tension lifts the base toward the ceiling rather than replacing it, so a
+        // tense menu still sounds like a menu and a calm match still sounds like a
+        // match. A verdict overrides both — the result is the loudest thing that can
+        // happen.
+        const tense = cfg.intensity + ((TENSION_CEILING - cfg.intensity) * _tension);
+        const intensity = inVerdict ? 0.95 : Math.max(cfg.intensity, tense);
 
         try {
             if (!am.isPlaying()) {
@@ -58,13 +76,37 @@
                 Promise.resolve(am.start('default', 0.12)).catch(function () { }).finally(function () { _starting = false; });
             }
             am.setIntensity ? am.setIntensity(intensity) : null;
-            am.setTempo ? am.setTempo(inVerdict ? cfg.tempo + 8 : cfg.tempo) : null;
+            // Tempo follows tension as well as intensity: a mix that gets denser
+            // without getting faster reads as "more music", not as "more pressure".
+            const tempo = inVerdict ? cfg.tempo + 8 : Math.round(cfg.tempo + (_tension * 10));
+            am.setTempo ? am.setTempo(tempo) : null;
         } catch { /* the soundtrack must never be the thing that breaks */ }
     }
 
     function setState(s) {
         if (!STATES[s]) return;
+        // Tension belongs to the situation that produced it. Carrying it across a
+        // state change would leave the catalog humming at last-lap intensity after
+        // the player quit the race.
+        if (s !== _state) _tension = 0;
         _state = s;
+        apply(false);
+    }
+
+    /**
+     * Set the continuous tension, 0..1 — how close this moment is to the edge.
+     * Low health, the final lap, a countdown running out, a one-point deficit.
+     *
+     * Cheap to call often: a value that has not moved meaningfully is dropped
+     * without touching the audio graph, so a game may push this every frame.
+     * @param {number} v
+     */
+    function tension(v) {
+        const next = Math.max(0, Math.min(1, Number(v) || 0));
+        // 0.02 deadband: the layer mixer crossfades gain nodes, and nudging them
+        // on every frame for an inaudible delta is pure cost.
+        if (Math.abs(next - _tension) < 0.02) return;
+        _tension = next;
         apply(false);
     }
 
@@ -90,6 +132,8 @@
         match: function (on) { setState(on ? 'match' : 'menu'); },
         lobby: function () { setState('lobby'); },
         verdict: verdict,
-        state: function () { return _state; }
+        tension: tension,
+        state: function () { return _state; },
+        currentTension: function () { return _tension; }
     };
 })();

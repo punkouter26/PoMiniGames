@@ -300,6 +300,23 @@ export function pop(el) {
     el.classList.add('fx-pop');
 }
 
+/**
+ * Pop an element addressed by CSS selector. Blazor JS interop cannot hand an
+ * ElementReference to a non-module global without a per-call dynamic import, so
+ * C# callers (ScreenFxService) address the target the only way they cheaply can.
+ * A selector that matches nothing is a no-op, same as a null element.
+ * @param {string} selector
+ */
+export function popSelector(selector) {
+    if (typeof selector !== 'string' || !selector) return;
+    try {
+        pop(document.querySelector(selector));
+    } catch {
+        // An invalid selector is a caller bug, not a reason to throw into a
+        // feedback path.
+    }
+}
+
 /** Cancel everything immediately — used on game teardown and route change. */
 export function reset() {
     _trauma = _punch = _flash = 0;
@@ -331,6 +348,6 @@ if (typeof window !== 'undefined') {
     // which cannot import an ES module without a dynamic import per call.
     window.PoImpact = {
         impact, addTrauma, hitstop, getPunch, getShake, getTimeScale,
-        registerStage, unregisterStage, vibrate, pop, reset,
+        registerStage, unregisterStage, vibrate, pop, popSelector, reset,
     };
 }

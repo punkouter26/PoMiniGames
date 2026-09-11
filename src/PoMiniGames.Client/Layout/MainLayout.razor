@@ -6,9 +6,12 @@
 @inject KioskCoordinator Kiosk
 @inject ScoreSyncService ScoreSync
 @inject UiFeedbackService Feedback
+@inject ScreenFxService ScreenFx
+@inject IJSRuntime JS
 @inject SettingsService Settings
 @inject OnlineStatusService OnlineStatus
 @inject AppUpdateService AppUpdate
+@inject PlaySessionService PlaySessions
 @inject NavigationManager NavigationManager
 @inject IWebAssemblyHostEnvironment Env
 
@@ -154,7 +157,11 @@
         <div class="toast-stack" role="log" aria-live="polite" aria-label="Notifications">
             @foreach (var toast in ToastService.Toasts)
             {
-                <div class="toast toast--@toast.Type.ToString().ToLowerInvariant()" role="alert">
+                @* data-toast-id: the after-render FX pass needs to burst from THIS
+                   toast's box, and a selector on the class alone would always hit
+                   the oldest one in the stack. *@
+                <div class="toast toast--@toast.Type.ToString().ToLowerInvariant()"
+                     data-toast-id="@toast.Id" role="alert">
                     <span class="toast-msg">@toast.Message</span>
                     @if (toast.Action is not null)
                     {
@@ -212,6 +219,10 @@
 @code {
     private Action? _onAuthStateChanged;
     private Action? _onOnlineStateChanged;
+    private Action? _onToastsChanged;
+    private Action<int>? _onScoresFlushed;
+    private Action? _onOnlineFlush;
+    private EventHandler<LocationChangedEventArgs>? _onLocationChanged;
 
     // 2026-09-11 UI sweep: first path segment match — every game keeps all of
     // its routes under one segment (/pobrawl, /pobrawl/demo, /posports/lobby,
@@ -280,21 +291,149 @@
         _onOnlineStateChanged = () => InvokeAsync(StateHasChanged);
         OnlineStatus.StateChanged += _onOnlineStateChanged;
 
+        // The payoff moment for the whole offline-score story: parked runs reaching
+        // the board. Subscribed to the service rather than fired at the sign-in call
+        // site, because a flush now has three triggers (sign-in, app start,
+        // reconnect) and the celebration should not belong to whichever one the
+        // feature started life with.
+        _onScoresFlushed = count => InvokeAsync(() => CelebrateFlushAsync(count));
+        ScoreSync.Flushed += _onScoresFlushed;
+
+        // Coming back online is the canonical moment to drain the queue — the
+        // service's own summary has always promised "whenever the API is reachable
+        // again", but sign-in was the only thing that ever called it, so a player
+        // who went offline mid-session and came back had to sign out and in to get
+        // their runs onto the board.
+        _onOnlineFlush = () =>
+        {
+            if (OnlineStatus.IsOnline) _ = ScoreSync.FlushAsync();
+        };
+        OnlineStatus.StateChanged += _onOnlineFlush;
+
+        // The toast stack is rendered by THIS component but filled by services and
+        // by whatever page happens to be inside @Body. Blazor re-renders only the
+        // component that handled an event, so without this subscription a toast
+        // raised from a page or a background flush did not appear until something
+        // unrelated — an auth change, an online/offline flip — re-rendered the
+        // layout for other reasons.
+        _onToastsChanged = () => InvokeAsync(StateHasChanged);
+        ToastService.StateChanged += _onToastsChanged;
+
+        // Route-transition wipe, tinted to the destination's accent. Driven from here
+        // because Blazor WASM navigation raises no DOM event a JS module could hear —
+        // paletteBus only catches popstate, and the musicDirector polls at 1.2 s,
+        // which is far too coarse to start a 260 ms transition on.
+        _onLocationChanged = (_, args) => _ = PlayRouteWipeAsync(args.Location);
+        NavigationManager.LocationChanged += _onLocationChanged;
+
         Settings.Load();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        // Before the firstRender gate: a toast can arrive at any point in the
+        // session, so its entry effect has to be flushed on every render.
+        await FlushToastFxAsync();
+
         // JS interop is only legal after the first render on WASM. Both calls are
         // idempotent and swallow their own failures — offline support is an
         // enhancement, so a browser without service workers just gets the app.
         if (!firstRender) return;
         await OnlineStatus.InitializeAsync();
         await AppUpdate.InitializeAsync();
+        // Score integrity: subscribes to LocationChanged and mints a play session for whatever
+        // game route is showing. Started here, once, for the same reason the two above are —
+        // it is app-wide behaviour, and no individual game page should have to remember it.
+        await PlaySessions.InitializeAsync();
+        // Third flush trigger: a queue that survived a reload (localStorage-backed)
+        // should drain as soon as the app is up, without waiting for the player to
+        // sign in again. Deliberately not awaited — a slow or unreachable API must
+        // not delay the rest of this after-render pass, and FlushAsync is
+        // re-entrancy guarded so racing the reconnect handler is harmless.
+        _ = ScoreSync.FlushAsync();
         // The pre-paint script in index.html has already stamped the theme, so
         // this is not what avoids a flash. It attaches the OS-preference
         // listener that keeps "Auto" live when the system flips mid-session.
         await Settings.ApplyAsync();
+    }
+
+    /// <summary>
+    /// Fire the route wipe for a navigation. Best-effort and fire-and-forget: a
+    /// transition effect must never be able to delay or fail a navigation.
+    /// </summary>
+    private async Task PlayRouteWipeAsync(string location)
+    {
+        try
+        {
+            // routeFx wants a pathname, not the absolute URI the event carries.
+            var path = new Uri(location).AbsolutePath;
+            await JS.InvokeVoidAsync("PoRouteFx.play", path);
+        }
+        catch
+        {
+            // Module not loaded yet, or reduced motion pruned it — either way the
+            // navigation itself has already happened and nothing is owed.
+        }
+    }
+
+    /// <summary>
+    /// Celebrate a completed flush: a toast naming how many runs landed, plus
+    /// confetti scaled by the size of the backlog that just cleared.
+    /// </summary>
+    /// <remarks>
+    /// The scale is deliberately sub-linear and capped — a player returning from a
+    /// long offline stretch might flush a dozen runs, and a strictly proportional
+    /// celebration would bury the screen. Confetti is the one effect that delegates
+    /// to the WebGPU compute backend, so the big end of this range is also the
+    /// cheapest it could be.
+    /// </remarks>
+    private async Task CelebrateFlushAsync(int synced)
+    {
+        if (synced <= 0) return;
+
+        ToastService.Show(
+            synced == 1 ? "Your score was saved to the leaderboard." : $"{synced} scores saved to the leaderboard.",
+            ToastType.Success);
+
+        await ScreenFx.CelebrateAsync(Math.Min(1.8, 0.7 + (0.28 * synced)));
+        await Feedback.PersonalBestAsync();
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// Fire the entry effect for any toast that has been rendered but not yet
+    /// decorated. ToastService already played the sound on creation — this is the
+    /// half that needs the element to exist, so it runs here rather than there.
+    /// </summary>
+    /// <remarks>
+    /// Success gets particles from the toast's own box: it is the one outcome
+    /// worth a flourish, and the "chime" cue ToastService fires for it would
+    /// otherwise burst from the centre of the viewport (gameCues falls back to
+    /// screen centre when given no position), which reads as unrelated to the
+    /// notification that caused it. Every other type gets only the scale pop —
+    /// an error that threw confetti would be absurd, and an info toast is too
+    /// frequent to decorate at all.
+    /// </remarks>
+    private async Task FlushToastFxAsync()
+    {
+        // Snapshot before iterating. ToastService.Toasts is the live backing list and
+        // the 5-second auto-dismiss removes from it on a timer continuation — which,
+        // on WASM's single thread, lands during one of the awaits below. Enumerating
+        // the live list would then throw "collection was modified", from a decoration
+        // path, for every toast that happened to expire mid-effect.
+        foreach (var toast in ToastService.Toasts.ToArray())
+        {
+            if (!toast.FxPending) continue;
+            toast.FxPending = false;   // claim it before awaiting, so a re-entrant
+                                       // render cannot fire the same effect twice
+
+            var selector = $"[data-toast-id='{toast.Id}']";
+            await ScreenFx.PopAsync(selector);
+            if (toast.Type == ToastType.Success)
+            {
+                await ScreenFx.BurstAtAsync(selector, ScreenFxService.Sparks, 0.55);
+            }
+        }
     }
 
     // Dismiss first: the update action reloads the page, and leaving the toast up
@@ -320,13 +459,9 @@
         // they parked while playing as a guest so their board entries land now.
         if (!wasAuthenticated && AuthState.IsAuthenticated)
         {
-            var synced = await ScoreSync.FlushAsync();
-            if (synced > 0)
-            {
-                ToastService.Show(
-                    synced == 1 ? "Your score was saved to the leaderboard." : $"{synced} scores saved to the leaderboard.",
-                    ToastType.Success);
-            }
+            // The toast and the celebration now ride on ScoreSync.Flushed, so this
+            // only has to trigger the drain — see CelebrateFlushAsync.
+            await ScoreSync.FlushAsync();
         }
     }
 
@@ -351,6 +486,22 @@
         if (_onOnlineStateChanged is not null)
         {
             OnlineStatus.StateChanged -= _onOnlineStateChanged;
+        }
+        if (_onToastsChanged is not null)
+        {
+            ToastService.StateChanged -= _onToastsChanged;
+        }
+        if (_onScoresFlushed is not null)
+        {
+            ScoreSync.Flushed -= _onScoresFlushed;
+        }
+        if (_onOnlineFlush is not null)
+        {
+            OnlineStatus.StateChanged -= _onOnlineFlush;
+        }
+        if (_onLocationChanged is not null)
+        {
+            NavigationManager.LocationChanged -= _onLocationChanged;
         }
     }
 }

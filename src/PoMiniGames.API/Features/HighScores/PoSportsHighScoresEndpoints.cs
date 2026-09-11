@@ -1,6 +1,8 @@
 using PoMiniGames.Application.Services;
 using PoMiniGames.Domain.Models;
+using PoMiniGames.Domain.Primitives;
 using PoMiniGames.Features.Auth;
+using PoMiniGames.Features.Integrity;
 using PoMiniGames.Features.PoSports;
 
 namespace PoMiniGames.Features.HighScores;
@@ -28,7 +30,8 @@ public static class PoSportsHighScoresEndpoints
             .Produces<IEnumerable<PoSportsHighScore>>(StatusCodes.Status200OK);
 
         sports.MapPost("",
-            async (PoSportsHighScore entry, HttpContext http, IStorageService storage) =>
+            async (PoSportsHighScore entry, HttpContext http, IStorageService storage,
+                   IScoreIntegrityGuard integrity) =>
             {
                 if (string.IsNullOrWhiteSpace(entry.PlayerName))
                     return Results.BadRequest(new { error = "Player name is required" });
@@ -49,10 +52,25 @@ public static class PoSportsHighScoresEndpoints
                 if (!PoSportsConstants.Characters.Contains(entry.Character))
                     return Results.BadRequest(new { error = "Unknown character" });
 
+                // The meet time IS the ranked value, so the guard's check is exact: a meet
+                // cannot have taken longer than the session that produced it has existed.
+                var verdict = integrity.Inspect(http, GameKey.PoSports, entry.TotalTimeSeconds);
+                if (!verdict.Allowed)
+                {
+                    return verdict.ToProblem();
+                }
+
                 // Authoritative identity from the auth cookie — never trust the client.
                 var identity = RequestIdentity.Resolve(http.User);
                 entry.UserId = identity.UserId;
                 entry.IsGuest = identity.IsGuest;
+                // PlayerName is the one field here that is still client-chosen and ends up on a
+                // page anyone can read without signing in, so it is moderated before storage.
+                // The length cap above stays: it rejects early with a clearer message, and the
+                // sanitiser's truncation is a silent fallback rather than a contract.
+                entry.PlayerName = integrity.ResolveDisplayName(
+                    entry.PlayerName,
+                    identity.IsGuest ? "Guest" : "Player");
 
                 var saved = await storage.SavePoSportsHighScoreAsync(entry);
                 return Results.Created("/api/posports/highscores", saved);

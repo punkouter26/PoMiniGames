@@ -319,3 +319,54 @@
  * Fog type keeps its own normal-blend gradient (inline) for the milky look.
  */
 .po-weather-canvas { mix-blend-mode: screen; }
+
+/* ── Route-transition wipe (§GFX) ──────────────────────────────────────────
+   Driven by js/routeFx.js, tinted to the DESTINATION route's accent pair so the
+   transition introduces the page it reveals. See that file for why this is a DOM
+   overlay rather than a post-process pass.
+
+   Colours arrive as --wipe-a / --wipe-b set inline by routeFx (runtime values in
+   custom properties — the permitted use of inline style), with the neutral
+   accent tokens as the fallback so a wipe that fires before paletteBus has
+   written anything is still themed rather than black. */
+.po-route-wipe {
+    position: fixed;
+    inset: 0;
+    z-index: 9000;
+    /* Never an obstacle: it covers the viewport and must not eat a click, and it
+       is removed from the a11y tree by aria-hidden in routeFx.js. */
+    pointer-events: none;
+    opacity: 0;
+    background: linear-gradient(
+        115deg,
+        var(--wipe-a, var(--fx-accent, #818cf8)) 0%,
+        var(--wipe-b, var(--fx-accent-2, #c084fc)) 100%);
+    /* Painted on its own layer so the animation below never triggers layout or a
+       repaint of the page underneath — the whole point of animating only opacity
+       and transform. */
+    will-change: opacity, transform;
+    transform: translate3d(-101%, 0, 0);
+}
+
+.po-route-wipe.is-wiping {
+    animation: po-route-wipe 260ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+/* Sweeps across and off, peaking at partial opacity: a wipe that reached 1 would
+   be a full flash, which is both harsher and hides the destination's first paint
+   rather than revealing it. */
+@keyframes po-route-wipe {
+    0%   { opacity: 0;    transform: translate3d(-101%, 0, 0) skewX(-8deg); }
+    35%  { opacity: 0.55; }
+    100% { opacity: 0;    transform: translate3d(101%, 0, 0) skewX(-8deg); }
+}
+
+/* The wipe IS motion, so it has nothing to degrade to. routeFx.js already
+   refuses to run under reduced motion; this is the belt-and-braces half, for the
+   case where the OS preference flips after the module decided. */
+@media (prefers-reduced-motion: reduce) {
+    .po-route-wipe.is-wiping {
+        animation: none;
+        opacity: 0;
+    }
+}

@@ -1,7 +1,9 @@
 using System.Collections.Concurrent;
 using Microsoft.AspNetCore.Mvc;
 using PoMiniGames.Domain.Models;
+using PoMiniGames.Domain.Primitives;
 using PoMiniGames.Features.Auth;
+using PoMiniGames.Features.Integrity;
 using PoMiniGames.Infrastructure.Services;
 using PoMiniGames.Shared.Games;
 
@@ -48,6 +50,7 @@ public static class PoRacerScoreEndpoints
             [FromBody] PoRacerScoreDto dto,
             HttpContext http,
             StorageService storage,
+            IScoreIntegrityGuard integrity,
             ILoggerFactory loggerFactory,
             CancellationToken ct) =>
         {
@@ -63,6 +66,14 @@ public static class PoRacerScoreEndpoints
             if (errors.Count > 0)
             {
                 return Results.ValidationProblem(errors);
+            }
+
+            // Race time is the ranked value, so the guard compares the claim against the
+            // session's own age: a 90-second race cannot come out of a 20-second session.
+            var verdict = integrity.Inspect(http, GameKey.PoRacer, dto.TotalTimeSeconds);
+            if (!verdict.Allowed)
+            {
+                return verdict.ToProblem();
             }
 
             // Authoritative identity from the auth cookie — NEVER trust the client.
@@ -88,7 +99,7 @@ public static class PoRacerScoreEndpoints
 
             var saved = await storage.SavePoRacerHighScoreAsync(new PoRacerHighScore
             {
-                PlayerName = string.IsNullOrWhiteSpace(displayName) ? (isGuest ? "Guest" : "Player") : displayName,
+                PlayerName = integrity.ResolveDisplayName(displayName, isGuest ? "Guest" : "Player"),
                 UserId = userId,
                 TotalTimeSeconds = dto.TotalTimeSeconds,
                 FinalPosition = dto.FinalPosition,

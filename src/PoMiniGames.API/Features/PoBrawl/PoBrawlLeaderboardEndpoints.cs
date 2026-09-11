@@ -1,6 +1,8 @@
 using PoMiniGames.Application.Services;
 using PoMiniGames.Domain.Models;
 using PoMiniGames.Domain.Primitives;
+using PoMiniGames.Features.Auth;
+using PoMiniGames.Features.Integrity;
 
 namespace PoMiniGames.Features.PoBrawl;
 
@@ -32,7 +34,8 @@ public static class PoBrawlLeaderboardEndpoints
             .Produces<IEnumerable<PoBrawlHighScore>>(StatusCodes.Status200OK);
 
         brawl.MapPost("",
-            async (PoBrawlHighScore entry, IStorageService storage) =>
+            async (PoBrawlHighScore entry, HttpContext http, IStorageService storage,
+                   IScoreIntegrityGuard integrity) =>
             {
                 if (string.IsNullOrWhiteSpace(entry.PlayerInitials))
                     return Results.BadRequest(new { error = "Player name is required" });
@@ -43,7 +46,23 @@ public static class PoBrawlLeaderboardEndpoints
                 if (entry.KoTimeSeconds <= 0 || entry.KoTimeSeconds >= 600)
                     return Results.BadRequest(new { error = "KO time must be between 0 and 600 seconds" });
 
-                var saved = await storage.SavePoBrawlHighScoreAsync(entry);
+                // KO time is the ranked value, so the guard's duration check applies directly:
+                // a 4-second KO cannot come out of a session that has existed for one second.
+                var verdict = integrity.Inspect(http, GameKey.PoBrawl, entry.KoTimeSeconds);
+                if (!verdict.Allowed)
+                    return verdict.ToProblem();
+
+                // This board took its name entirely from the request body and consulted no
+                // identity at all, so any caller could post under any player's name. Prefer the
+                // claim identity, and moderate whatever is left.
+                var identity = RequestIdentity.Resolve(http.User);
+                var name = integrity.ResolveDisplayName(
+                    identity.IsAuthenticated && !string.IsNullOrWhiteSpace(identity.DisplayName)
+                        ? identity.DisplayName
+                        : entry.PlayerInitials,
+                    identity.IsGuest ? "Guest" : "Player");
+
+                var saved = await storage.SavePoBrawlHighScoreAsync(entry with { PlayerInitials = name });
                 return Results.Created("/api/pobrawl/highscores", saved);
             })
             .WithName("SavePoBrawlHighScore")
@@ -71,7 +90,8 @@ public static class PoBrawlLeaderboardEndpoints
         // fastest-KO view at /api/leaderboards/pobrawlko (BuildPoBrawlKoAsync), which
         // ranks the GET above's data rather than the ladder's.
         ladder.MapPost("",
-            async (PoBrawlLadderEntry entry, IStorageService storage) =>
+            async (PoBrawlLadderEntry entry, HttpContext http, IStorageService storage,
+                   IScoreIntegrityGuard integrity) =>
             {
                 if (string.IsNullOrWhiteSpace(entry.PlayerName))
                     return Results.BadRequest(new { error = "Player name is required" });
@@ -82,7 +102,18 @@ public static class PoBrawlLeaderboardEndpoints
                 if (entry.PresidentsBeaten < 0 || entry.PresidentsBeaten > PoBrawlRoster.Count)
                     return Results.BadRequest(new { error = $"Presidents beaten must be between 0 and {PoBrawlRoster.Count}" });
 
-                var saved = await storage.SavePoBrawlLadderAsync(entry);
+                // No score guard here on purpose: the ladder accumulates rungs beaten rather
+                // than points or a time, so there is no rate for ScoreRules to check and the
+                // rung ceiling above already IS its whole range. The name still reaches a
+                // public board, so it is moderated like everywhere else.
+                var identity = RequestIdentity.Resolve(http.User);
+                var name = integrity.ResolveDisplayName(
+                    identity.IsAuthenticated && !string.IsNullOrWhiteSpace(identity.DisplayName)
+                        ? identity.DisplayName
+                        : entry.PlayerName,
+                    identity.IsGuest ? "Guest" : "Player");
+
+                var saved = await storage.SavePoBrawlLadderAsync(entry with { PlayerName = name });
                 return Results.Created("/api/pobrawl/ladder", saved);
             })
             .WithName("SavePoBrawlLadder")

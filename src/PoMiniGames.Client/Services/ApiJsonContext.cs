@@ -33,6 +33,11 @@ namespace PoMiniGamesClient.Services;
 [JsonSerializable(typeof(AntiforgeryTokenDto))]
 // §2 /health status page
 [JsonSerializable(typeof(HealthReportDto))]
+// Score integrity + account data. Source-generated like everything else on this path:
+// the mint runs on the WASM HttpClient pipeline and the erase result is read back on the
+// profile page, both of which the trim analyzer sees.
+[JsonSerializable(typeof(PlaySessionTicketDto))]
+[JsonSerializable(typeof(AccountDeletionDto))]
 // Stats + leaderboards
 [JsonSerializable(typeof(PlayerStatsDto))]
 [JsonSerializable(typeof(PlayerStatsDto[]))]

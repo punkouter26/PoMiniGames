@@ -8,6 +8,8 @@
 @inject MatchHistoryService MatchHistory
 @inject NavigationManager NavigationManager
 @inject AuthStateService AuthState
+@inject ToastService Toasts
+@inject IJSRuntime JS
 @implements IDisposable
 
 <PageTitle>My Stats · PoMiniGames</PageTitle>
@@ -430,10 +432,169 @@ else
     @* The Preferences section (a link out to /settings) went with that page on
        2026-08-11 — see the note in SettingsService. This page is about the
        player's match record and now only carries that. *@
+
+    @* The FX bench is NOT that section coming back: it changes no setting and
+       writes nothing. It is an audition surface for the synthesised audio and
+       particle vocabulary, which was otherwise only reachable by triggering the
+       exact in-game event each cue belongs to. Unconditional — unlike the sections
+       above it does not depend on having played anything. *@
+    <FxBench />
+
+    @* ── Your data ──────────────────────────────────────────────────────────
+       Self-service export + erase. Gated on the same `nothingPlayed` flag as the
+       sections above, and for a stronger reason than layout: a profile with no
+       stored rows has literally nothing to download or delete, so the controls
+       would be two buttons that do nothing but look alarming. The moment there
+       IS data, the controls appear alongside it. *@
+    @if (!nothingPlayed)
+    {
+    <div class="prf-section prf-data">
+        <h2 class="prf-section-title">Your data</h2>
+        <p class="prf-data-blurb">
+            Scores, match history and player stats are stored against your
+            @(_accountKind == AccountKind.Guest ? "guest profile" : "Microsoft account").
+            You can take a copy or remove all of it.
+        </p>
+
+        <div class="prf-data-actions">
+            <button type="button" class="prf-data-btn" disabled="@_dataBusy" @onclick="ExportDataAsync">
+                @(_dataBusy && _busyAction == "export" ? "Preparing…" : "Download my data")
+            </button>
+
+            @if (!_eraseArmed)
+            {
+                <button type="button" class="prf-data-btn prf-data-btn--danger"
+                        disabled="@_dataBusy" @onclick="() => _eraseArmed = true">
+                    Erase my data
+                </button>
+            }
+        </div>
+
+        @if (_eraseArmed)
+        {
+            @* Type-to-confirm rather than a plain "are you sure?". This is irreversible and
+               deletes across every board at once, which is more than a stray tap should be
+               able to do — and a second button is exactly as easy to mis-tap as the first. *@
+            <div class="prf-data-confirm" role="group" aria-labelledby="prf-erase-label">
+                <p id="prf-erase-label" class="prf-data-warn">
+                    This permanently deletes your leaderboard entries, match history and stats.
+                    It cannot be undone. Type <strong>ERASE</strong> to confirm.
+                </p>
+                <div class="prf-data-confirm-row">
+                    <input class="prf-data-input" type="text" autocomplete="off" spellcheck="false"
+                           aria-label="Type ERASE to confirm" placeholder="ERASE"
+                           @bind="_eraseConfirm" @bind:event="oninput" />
+                    <button type="button" class="prf-data-btn prf-data-btn--danger"
+                            disabled="@(_dataBusy || !EraseConfirmed)" @onclick="EraseDataAsync">
+                        @(_dataBusy && _busyAction == "erase" ? "Erasing…" : "Erase everything")
+                    </button>
+                    <button type="button" class="prf-data-btn prf-data-btn--quiet"
+                            disabled="@_dataBusy" @onclick="CancelErase">
+                        Cancel
+                    </button>
+                </div>
+            </div>
+        }
+    </div>
+    }
 }
 </div>
 
 @code {
+    // ── Your data: export + erase ───────────────────────────────
+    // Both actions hit rate-limited, scan-heavy endpoints (5/min), so the UI serialises them
+    // behind one busy flag rather than letting a double-click queue a second full scan.
+    private bool _dataBusy;
+    private string? _busyAction;
+    private bool _eraseArmed;
+    private string _eraseConfirm = "";
+
+    /// <summary>Case-sensitive on purpose — a confirmation you can pass by accident is decoration.</summary>
+    private bool EraseConfirmed => _eraseConfirm.Trim() == "ERASE";
+
+    private async Task ExportDataAsync()
+    {
+        if (_dataBusy) return;
+        _dataBusy = true;
+        _busyAction = "export";
+        try
+        {
+            var json = await ApiService.ExportAccountDataAsync();
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                Toasts.Show("Couldn't prepare your data right now. Try again in a moment.", ToastType.Error);
+                return;
+            }
+
+            var module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/fileDownload.js");
+            await using (module)
+            {
+                await module.InvokeVoidAsync(
+                    "saveText",
+                    $"pominigames-data-{DateTime.UtcNow:yyyyMMdd}.json",
+                    json,
+                    "application/json");
+            }
+
+            Toasts.Show("Your data is downloading.", ToastType.Success);
+        }
+        catch
+        {
+            Toasts.Show("Couldn't prepare your data right now. Try again in a moment.", ToastType.Error);
+        }
+        finally
+        {
+            _dataBusy = false;
+            _busyAction = null;
+        }
+    }
+
+    private async Task EraseDataAsync()
+    {
+        if (_dataBusy || !EraseConfirmed) return;
+        _dataBusy = true;
+        _busyAction = "erase";
+        try
+        {
+            var result = await ApiService.EraseAccountDataAsync();
+            if (result is null)
+            {
+                // Null means the call did not land. Reporting success here would tell a player
+                // their data is gone when it is not — the one lie this screen must never tell.
+                Toasts.Show("Nothing was erased — the request didn't reach the server.", ToastType.Error);
+                return;
+            }
+
+            CancelErase();
+            Toasts.Show(
+                result.TotalRows == 0
+                    ? "Nothing left to erase — you had no stored rows."
+                    : $"Erased {result.TotalRows} stored row{(result.TotalRows == 1 ? "" : "s")}.",
+                ToastType.Success);
+
+            // Re-read rather than patching the view: the page is built from several sources and
+            // reconstructing "what an empty profile looks like" by hand would drift from the
+            // real empty state the loader already knows how to render.
+            await LoadStatsAsync();
+            await Task.WhenAll(LoadHighScoresAsync(), LoadMatchesAsync());
+        }
+        catch
+        {
+            Toasts.Show("Nothing was erased — the request didn't reach the server.", ToastType.Error);
+        }
+        finally
+        {
+            _dataBusy = false;
+            _busyAction = null;
+        }
+    }
+
+    private void CancelErase()
+    {
+        _eraseArmed = false;
+        _eraseConfirm = "";
+    }
+
     // ── Data model ──────────────────────────────────────────────
     private sealed class DiffEntry
     {

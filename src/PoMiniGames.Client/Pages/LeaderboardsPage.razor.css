@@ -319,3 +319,39 @@
     0% { background-position: 200% 0; }
     100% { background-position: -200% 0; }
 }
+
+/* ── The player's own row (§GFX) ───────────────────────────────────────────
+   This page had no way to find yourself on it: nine boards of ten rows and
+   nothing distinguished your line from the rest, so the one thing a player
+   opens a leaderboard to check was the one thing it did not show.
+
+   Colour comes through --accent / --accent-soft rather than raw hex so the
+   highlight re-points with the light-scheme block in app.css; a literal would
+   be unthemed in light mode. The inline-start border does the work at a glance
+   and the weight bump carries it for anyone who cannot separate the tints. */
+.lb-row--me {
+    background: var(--accent-soft);
+    box-shadow: inset 3px 0 0 0 var(--accent);
+    font-weight: 650;
+}
+
+/* The odd-row zebra stripe is a later rule with equal specificity, so without
+   this it wins on source order and erases the highlight on every other row. */
+.lb-row--me:nth-child(odd) {
+    background: var(--accent-soft);
+}
+
+.lb-row--me .lb-name {
+    color: var(--color-text-primary);
+}
+
+/* The rank numeral is brightened only on rows OUTSIDE the top three. A medal row
+   paints its own numeral (gold/silver/bronze gradient plus a dark ink colour for
+   contrast against it), and this file is appended after those rules at equal
+   specificity — so without the :not() guard the "you" highlight would win on
+   source order and repaint a gold medal's text into the body colour, which is
+   both wrong and unreadable on the gradient. The medal is the rarer signal; it
+   keeps the numeral, and the row border and tint still mark the row as yours. */
+.lb-row--me:not(.lb-row--top) .lb-rank {
+    color: var(--color-text-primary);
+}

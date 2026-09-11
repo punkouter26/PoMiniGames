@@ -15,7 +15,7 @@
      The ceiling is now 84px, which lets the height term actually decide, and the
      height reserve grows 240px -> 310px to pay for the status bar added above
      the board (plus the app header the old figure was already covering). */
-  --cf-cell: clamp(28px, min(calc((100dvh - 310px) / 9), calc((100dvw - 56px) / 9)), 84px);
+  --cf-cell: clamp(28px, min(calc((100dvh - 310px) / 9), calc((100dvw - 100px) / 9)), 84px);
   --cf-cell-stride: calc(var(--cf-cell) + 3px);
   /* Audit #2: every disc drops the full board depth (Rows), not (row + 1).
      Without this, a piece in row 0 only travels 1 cell (~50px) while a piece
@@ -283,11 +283,15 @@
    viewport height without a second nested border eating horizontal space. */
 @media (max-width: 640px) {
   .cf-layout {
-    /* Constrain by width AND height. The board chrome on phones is gap 2px×8
-       + frame 7px×2 = 30px; subtract ~40px (chrome + shell padding + a safety
-       margin against the scrollbar) so 9 cells + frame never exceed 100dvw and
-       the board can't clip off the right edge. */
-    --cf-cell: clamp(24px, min(calc((100dvh - 220px) / 9), calc((100dvw - 40px) / 9)), 44px);
+    /* Constrain by width AND height. 2026-09-11 fix: the width reserve was 40px
+       but the real chrome is .gps-game-area padding (1.5rem × 2 = 48px) + the
+       board frame (7px × 2 = 14px) + the cell gaps (2px × 8 = 16px) = 78px —
+       so a 390px phone got a 380px board in a 342px well and the 9th column
+       clipped off the right edge (measured: last cell right = 397.9px). The
+       reserve is now 86px (78px chrome + 8px safety), and because the grid
+       tracks derive from --cf-cell the whole board shrinks with it — the full
+       9 columns always fit. */
+    --cf-cell: clamp(24px, min(calc((100dvh - 220px) / 9), calc((100dvw - 86px) / 9)), 44px);
     --cf-cell-stride: calc(var(--cf-cell) + 2px);
   }
   .cf-board {
@@ -295,6 +299,12 @@
     padding: 7px;
     width: calc(var(--cf-cell) * 9 + 2px * 8 + 14px);
     border-radius: var(--radius-md);
+  }
+  /* Track the mobile board chrome (gaps 2×8 + frame 7×2), not the desktop
+     figure — the status bar used to come out 12px wider than the board it
+     labels. */
+  .cf-status {
+    width: calc(var(--cf-cell) * 9 + 2px * 8 + 14px);
   }
   .cf-cell { font-size: clamp(0.85rem, 2.6vmin, 1rem); }
 }

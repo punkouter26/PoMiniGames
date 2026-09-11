@@ -202,7 +202,12 @@
     // a deadline reads a decision loss as the game ending arbitrarily.
     private string IntroObjective => _mode == "2p"
         ? "Two fighters enter — one round, 60 seconds. Each player picks below."
-        : "Knock them out inside 60 seconds. Closest health at the bell is a draw.";
+        : _mode == "demo"
+            // 2026-09-11 UI sweep: the demo objective previously read as an
+            // instruction to the (nonexistent) player — a spectated exhibition
+            // should say what it is, not what you must do.
+            ? "Two CPU presidents go 60 seconds. Sit back — the fight runs itself."
+            : "KO inside 60 seconds — closest health at the bell is a draw.";
     // "fighting" | "result". There is no longer a "select" phase — every route
     // drops straight into the fight (see OnInitialized).
     private string _phase = "fighting";
@@ -318,7 +323,24 @@
         return ready ? $"Player {side} ready" : $"Player {side} not ready";
     }
 
-    private RenderFragment IntroControlsContent => _mode == "2p" ? TwoPlayerQuickControls : HowToPlayContent;
+    // 2026-09-11 UI sweep: demo previously fell through to HowToPlayContent, so a
+    // spectated CPU-vs-CPU fight taught keyboard controls nobody can use (same
+    // pattern TicTacToe/Joker/FunQuiz already fixed on their demos).
+    private RenderFragment IntroControlsContent => _mode switch
+    {
+        "2p" => TwoPlayerQuickControls,
+        "demo" => DemoQuickControls,
+        _ => HowToPlayContent,
+    };
+
+    private RenderFragment DemoQuickControls => @<div>
+        <p>Two CPU presidents fight a 60-second exhibition — sit back and watch.</p>
+        <ul>
+            <li>No controls — both corners are driven by the CPU</li>
+            <li>⚡ Energy still rules the exchanges — one swing spends it all</li>
+            <li>The Fighter Ratings board below fills in as demo fights finish</li>
+        </ul>
+    </div>;
 
     private RenderFragment TwoPlayerQuickControls => @<div>
         <p>One round, 60 seconds. Pick fighters, lock in, then fight.</p>
@@ -348,13 +370,14 @@
     // ("Blocking no longer banks energy — the bar only moves via winding up / attacking"),
     // so the old "blocked hits charge your ⚡ energy" was teaching a mechanic that does not
     // exist. Energy is described where it is true, on the attack line.
+    // 2026-09-11: word budget — the intro card is capped at 100 words (user
+    // request). The clock bullet went: IntroObjective already states the 60s
+    // limit and the draw rule, and the fourth bullet repeated both.
     private RenderFragment HowToPlayContent => @<div>
         <ul>
-            <li><kbd>A</kbd>/<kbd>D</kbd> move in and out · <kbd>W</kbd>/<kbd>S</kbd> circle back and forward</li>
-            <li><b>Hold</b> <kbd>R</kbd> to block — their coil wind-up is your cue</li>
-            <li><kbd>F</kbd> punch · <kbd>G</kbd> kick — <b>hold</b> to charge, release to strike</li>
-            <li>⚡ Energy is your hit power — one swing spends it all</li>
-            <li>⏱ 60 seconds. No KO? Most health wins — level bars are a draw</li>
+            <li><kbd>A</kbd>/<kbd>D</kbd> move · <kbd>W</kbd>/<kbd>S</kbd> circle · <b>hold</b> <kbd>R</kbd> to block their wind-up</li>
+            <li><kbd>F</kbd> punch · <kbd>G</kbd> kick — hold to charge, release to strike</li>
+            <li>⚡ Energy is hit power — one swing spends it all</li>
         </ul>
     </div>;
 

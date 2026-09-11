@@ -68,10 +68,10 @@ function getSupportWorker() {
   try {
     supportWorker = new Worker(new URL('./supportWorker.js', import.meta.url), { type: 'module' });
     supportWorker.onmessage = (e) => {
-      const { id, generation, failing } = e.data;
+      const { id, generation, failing, stressedIdx, stressedRatio } = e.data;
       const structure = supportJobs.get(id);
       supportJobs.delete(id);
-      structure?._applySolve(failing, generation);
+      structure?._applySolve(failing, generation, stressedIdx, stressedRatio);
     };
     supportWorker.onerror = (err) => {
       console.warn('[povoxelstrike/structure] support worker failed; solving inline:', err);
@@ -103,6 +103,20 @@ const FRACTURE_ROUGHNESS = 0.22;
 const FRACTURE_MIN_VOXELS = 220;      // below this the debris system bursts it anyway
 const FRACTURE_VOXELS_PER_PIECE = 190;
 const FRACTURE_MAX_PIECES = 8;        // caps the body count one collapse can produce
+
+// ── Stress & damage — the “stress simulation” half of the structural model ────
+//
+// The support solve answers “what stands”. These constants feed its second output: how
+// HARD every surviving voxel is working, as a fraction of the strength it has left.
+// A hit injects fatigue (applyImpact) around the crater; the solver then fails voxels
+// against their DAMAGED strength, so a column pounded by repeated shots sags, shows
+// stress tint, and finally gives way under loads it held comfortably two shots ago —
+// the progressive, cumulative failure the reference simulations are all about.
+// TINT_ONSET must match STRESS_ONSET in supportWorker.js (that file is
+// deliberately dependency-free and cannot import this one).
+const TINT_ONSET = 0.35;              // fraction of strength where stress shows on the mesh
+const DAMAGE_MAX = 1.25;              // fatigue saturation; beyond this more hits change nothing
+const STRENGTH_FLOOR = 0.85;          // max FRACTION of strength damage can remove (sync w/ worker)
 
 /** Stable 3D value hash in [0,1). Same generator as the terrain's, one dimension up. */
 function hash3(x, y, z) {
@@ -151,6 +165,22 @@ export class Structure {
     this.physicsWorld = physicsWorld;
     this.solidCount = 0;
     for (let i = 0; i < this.cells.length; i++) if (this.cells[i] !== 0) this.solidCount++;
+
+    // Stress bookkeeping, owned by the main thread (the worker only reads a snapshot).
+    // MUST precede the first rebuildDirtyChunks() below: meshing already consults the
+    // tint, and the very first mesh happens in this constructor.
+    //   damage     — per-voxel fatigue in [0, DAMAGE_MAX], allocated lazily because most
+    //                structures are never pounded; null until the first impact.
+    //   stress     — voxel index → load ratio from the last solve, ABOVE TINT_ONSET only.
+    //                Compact by construction: the worker ships just the loaded voxels.
+    //   _damaged   — indices damage has ever been written to, so stress absorption can
+    //                fold permanent cracks into the tint without a full-grid pass.
+    //   _stressBands — index → tint band currently meshed, so a solve whose stress picture
+    //                confirms the old one re-meshes nothing.
+    this.damage = null;
+    this.stress = new Map();
+    this._damaged = new Set();
+    this._stressBands = new Map();
 
     const [nx, , nz] = this.dims;
     this.cx = nx / 2;
@@ -214,6 +244,8 @@ export class Structure {
 
     // Async solve bookkeeping. `onClusters` is set by the engine and is how detached mass
     // reaches the debris system now that the answer arrives a frame or two after the shot.
+    // (The stress fields themselves are initialised near the top of the constructor —
+    // meshing reads them from the very first rebuild.)
     this.onClusters = null;
     this.solveGeneration = 0;
     this.solveInFlight = false;
@@ -280,6 +312,63 @@ export class Structure {
     return { removed, clusters };
   }
 
+  // ── Impact stress ─────────────────────────────────────────────────────────
+
+  /**
+   * Write impact fatigue into the structure around a world point — the half of a hit
+   * that the carve radius does not express. The crater removes material; this weakens
+   * what stayed, so the NEXT solve judges it against reduced strength. That is what
+   * makes failure cumulative: a column under a tower holds one shell fine, shows stress
+   * after the second, and drops the tower on the third.
+   *
+   * Peak damage falls off quadratically from the hit point (energy density spreads over
+   * a sphere) and scales with the same carve multiplier the crater uses, so plaster
+   * shatters further out than oak. Re-solving is what turns the written damage into
+   * visible collapse — a weakened member fails here, not on some future shot.
+   *
+   * @param worldPoint hit point
+   * @param radius metres of structure around it that takes stress
+   * @param peakDamage fatigue written at the centre, in [0, 1+] (fraction-of-strength units)
+   */
+  applyImpact(worldPoint, radius, peakDamage) {
+    if (peakDamage <= 0 || radius <= 0 || this.solidCount === 0) return;
+    const local = worldPoint.clone().applyMatrix4(this.inverseMatrix);
+    const vx = local.x + this.cx, vy = local.y, vz = local.z + this.cz;
+    const r = radius / this.scale;
+    const [nx, ny, nz] = this.dims;
+    const layer = nx * ny;
+    const damage = this.damage ??= new Float32Array(this.cells.length);
+
+    let hurt = 0;
+    for (let z = Math.max(0, Math.floor(vz - r)); z <= Math.min(nz - 1, Math.ceil(vz + r)); z++) {
+      for (let y = Math.max(0, Math.floor(vy - r)); y <= Math.min(ny - 1, Math.ceil(vy + r)); y++) {
+        for (let x = Math.max(0, Math.floor(vx - r)); x <= Math.min(nx - 1, Math.ceil(vx + r)); x++) {
+          const i = x + y * nx + z * layer;
+          const value = this.cells[i];
+          if (value === 0) continue;
+          const dx = x + 0.5 - vx, dy = y + 0.5 - vy, dz = z + 0.5 - vz;
+          const d2 = dx * dx + dy * dy + dz * dz;
+          if (d2 > r * r) continue;
+          const falloff = 1 - Math.sqrt(d2) / r;
+          const add = peakDamage * falloff * falloff * (this.carveMult[value] ?? 1);
+          if (add <= 0) continue;
+          const before = damage[i];
+          damage[i] = Math.min(DAMAGE_MAX, before + add);
+          if (damage[i] !== before) { hurt++; this._damaged.add(i); }
+        }
+      }
+    }
+    // Even a hit that severed nothing has changed the load/strength picture, so the
+    // solve runs here too — this is how a hit NEXT TO a cracked beam brings the beam
+    // down. The usual coalescing bounds the cost under sustained fire. With a worker the
+    // solve is async and detachments arrive through onClusters; the inline fallback
+    // returns them here, so they go out the same door instead of vanishing.
+    if (hurt > 0) {
+      const clusters = this._requestSolve();
+      if (clusters.length > 0) this.onClusters?.(this, clusters);
+    }
+  }
+
   // ── Structural support ─────────────────────────────────────────────────
 
   /**
@@ -341,10 +430,16 @@ export class Structure {
     }
 
     // Failing voxels → connected clusters (6-conn flood fill), removed from the grid.
+    // Survivors also seed a stress field from the bending budget they spent — same as
+    // the worker path, so tint and damage behave identically when the worker is absent.
+    const ratio = new Float32Array(this.cells.length);
     const clusters = [];
     const failing = [];
     for (let i = 0; i < this.cells.length; i++) {
-      if (this.cells[i] !== 0 && support[i] <= 0) failing.push(i);
+      if (this.cells[i] === 0) continue;
+      if (support[i] <= 0) { failing.push(i); continue; }
+      const r = 1 - support[i] / SUPPORT_RESOLUTION;
+      if (r > TINT_ONSET) ratio[i] = r;
     }
     // Compression pass over everything the load path DID reach.
     const area = this.scale * this.scale;
@@ -357,7 +452,11 @@ export class Structure {
           const v = this.cells[i];
           if (v === 0 || support[i] <= 0) continue;
           const carried = load[i] + this.voxelWeight[v];
-          if (carried / area > this.crushStress[v]) { failing.push(i); continue; }
+          const eff = this.crushStress[v]
+            * (1 - (this.damage ? Math.min(STRENGTH_FLOOR, this.damage[i]) : 0));
+          const stress = carried / area / eff;
+          if (stress > 1) { failing.push(i); continue; }
+          if (stress > ratio[i]) ratio[i] = stress;
           if (y === 0) continue;
           const below = i - nx;
           if (this.cells[below] !== 0) { load[below] += carried; continue; }
@@ -375,6 +474,13 @@ export class Structure {
         }
       }
     }
+    // Absorb the stress picture before cutting clusters, exactly like _applySolve.
+    const stressedIdx = [];
+    const stressedRatio = [];
+    for (let i = 0; i < this.cells.length; i++) {
+      if (ratio[i] > TINT_ONSET) { stressedIdx.push(i); stressedRatio.push(ratio[i]); }
+    }
+    this._absorbStress(stressedIdx, stressedRatio);
     if (failing.length === 0) return clusters;
 
     return this._clusterFailing(failing);
@@ -525,11 +631,12 @@ export class Structure {
     const id = ++supportJobId;
     supportJobs.set(id, this);
     const snapshot = this.cells.slice(); // transferred; the structure keeps its own grid
+    const damage = this.damage ? this.damage.slice() : new Float32Array(0); // transferred copy
     worker.postMessage({
       id, generation: this.solveGeneration, dims: this.dims, cells: snapshot, grounded,
       stepCost: this.stepCost, crushStress: this.crushStress, voxelWeight: this.voxelWeight,
-      scale: this.scale, resolution: SUPPORT_RESOLUTION,
-    }, [snapshot.buffer, grounded.buffer]);
+      scale: this.scale, resolution: SUPPORT_RESOLUTION, damage,
+    }, [snapshot.buffer, grounded.buffer, damage.buffer]);
     return [];
   }
 
@@ -538,13 +645,72 @@ export class Structure {
    * been carved further while the solve ran, and a result from a MORE solid grid can only
    * be incomplete, never wrong (see the note in supportWorker.js).
    */
-  _applySolve(failing, generation) {
+  _applySolve(failing, generation, stressedIdx = [], stressedRatio = []) {
     this.solveInFlight = false;
     if (generation !== this.solveGeneration) { failing = failing.filter(() => true); }
-
+    // Absorb the stress picture BEFORE detaching: the tint diff should include voxels
+    // that are about to leave (their chunks re-mesh anyway when the cluster is cut out).
+    this._absorbStress(stressedIdx, stressedRatio);
     const clusters = failing.length > 0 ? this._clusterFailing(failing) : [];
     if (clusters.length > 0) this.onClusters?.(this, clusters);
     if (this.solveAgain) { this.solveAgain = false; this._requestSolve(); }
+  }
+
+  /**
+   * Fold one solve's stress field into the tint state. Only voxels whose visible stress
+   * BAND changed mark their chunk dirty, so a solve that confirms the old picture costs
+   * a map rebuild and nothing else; entries the new solve no longer reports fade back to
+   * whatever permanent damage alone justifies — cracks stay after the load moves on.
+   */
+  _absorbStress(stressedIdx, stressedRatio) {
+    const next = new Map();
+    for (let k = 0; k < stressedIdx.length; k++) {
+      const i = stressedIdx[k];
+      if (this.cells[i] === 0) continue; // carved away while the solve ran
+      next.set(i, stressedRatio[k]);
+    }
+    // Permanent damage keeps tinting even where the current load is mild.
+    if (this.damage) {
+      for (const i of this._damaged) {
+        if (this.cells[i] === 0) { this._damaged.delete(i); continue; }
+        const d = Math.min(1, this.damage[i]);
+        if (d > TINT_ONSET && d > (next.get(i) ?? 0)) next.set(i, d);
+      }
+    }
+    for (const [i, r] of next) {
+      const band = this._bandOf(r);
+      if ((this._stressBands.get(i) ?? 0) !== band) {
+        this._stressBands.set(i, band);
+        this._dirtyTintChunk(i);
+      }
+    }
+    for (const [i] of this._stressBands) {
+      if (!next.has(i)) { this._stressBands.delete(i); this._dirtyTintChunk(i); }
+    }
+    this.stress = next;
+  }
+
+  /** Tint bands are coarse on purpose: re-mesh only on a visible step, not every ratio wiggle. */
+  _bandOf(v) {
+    return v <= TINT_ONSET ? 0 : Math.min(4, 1 + (((v - TINT_ONSET) / (1 - TINT_ONSET)) * 4 | 0));
+  }
+
+  /** A tint change only alters faces of the voxel's OWN chunk (each chunk meshes its own voxels). */
+  _dirtyTintChunk(i) {
+    const [nx, ny] = this.dims;
+    const x = i % nx, y = ((i / nx) | 0) % ny;
+    const z = (i / (nx * ny)) | 0;
+    this.dirtyChunks.add(
+      `${Math.floor(x / CHUNK)},${Math.floor(y / CHUNK)},${Math.floor(z / CHUNK)}`);
+  }
+
+  /** Visible stress at a voxel for the mesher: live load ratio, or the crack scar it left. */
+  _stressAt(x, y, z) {
+    const [nx, ny] = this.dims;
+    const i = x + y * nx + z * nx * ny;
+    let v = this.stress.get(i) ?? 0;
+    if (this.damage) { const d = this.damage[i]; if (d > v) v = d; }
+    return v;
   }
 
   recheckSupport() {
@@ -806,6 +972,8 @@ export class Structure {
       palette: this.palette,
       offset: [this.cx, 0, this.cz],
       step: this.lodStep,
+      // Stress/damage darkens the faces — damaged masonry reads as cracked masonry.
+      tint: (x, y, z) => this._stressAt(x, y, z),
     });
   }
 

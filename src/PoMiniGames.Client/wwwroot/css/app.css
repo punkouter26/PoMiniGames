@@ -893,7 +893,15 @@ h3[tabindex="0"]:focus-visible {
      available space, but will also shrink on a tall narrow phone where the
      keyboard is open. Default: full dynamic viewport. */
   --gps-area-h: 100dvh;
-  --gps-topbar-h: 3.5rem;
+  /* 2026-09-11: 3.5rem -> 4rem. Measured 64px — the token said 56px, so every
+     fullscreen game area over-reserved by -8px and the page scrolled by
+     exactly that much (PoMarbleRace demo measured scrollHeight = viewport+8). */
+  --gps-topbar-h: 4rem;
+  /* 2026-09-11 UI sweep: one content-well width for the full-width pages (home
+     catalog, leaderboards, profile, game shells). Was hardcoded per page as
+     900/920/960px — close enough to look unintentional, different enough to
+     read as drift when navigating. Pages may still opt narrower for prose. */
+  --content-max: 960px;
   /* Bottom safe-area for iOS notch / gesture bar; honoured by the `.gl-page`
      padding and the GameShell's `--gps-area-h` calc. */
   --safe-bottom: env(safe-area-inset-bottom, 0px);

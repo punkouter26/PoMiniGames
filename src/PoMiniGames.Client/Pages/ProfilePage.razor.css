@@ -3,7 +3,7 @@
    ══════════════════════════════════════════════ */
 
 .prf-page {
-    max-width: 900px;
+    max-width: var(--content-max, 960px);
     margin: 0 auto;
     padding: 1.5rem 1rem 5rem;
     display: flex;
@@ -200,7 +200,11 @@
 @media (max-width: 480px) {
     .prf-charts { grid-template-columns: 1fr; }
     .prf-game-grid { grid-template-columns: 1fr; }
-    .prf-page { gap: 1rem; padding: 1rem 0.75rem 3rem; }
+    /* 2026-09-11: bottom padding 3rem -> 1.25rem + safe inset. The empty
+       profile (hero + one empty-state card) measured 24px past the 844px fold
+       with the old 3rem; the padded slab was reserved for the deleted
+       bottom-tab bar (2026-07-05) and outlived its purpose. */
+    .prf-page { gap: 1rem; padding: 1rem 0.75rem calc(1.25rem + env(safe-area-inset-bottom, 0px)); }
 }
 
 .prf-chart-card {
@@ -296,6 +300,54 @@
 .prf-callout--nemesis {
     background: rgba(239, 68, 68, 0.08);
     border-color: rgba(239, 68, 68, 0.3);
+}
+
+/* ── Unplayed strip (2026-09-11 UI sweep) ──
+   Replaces the wall of "Not played yet" cards: one wrapped row of small chips
+   under the played-games grid. Colours come from the theme tokens so the strip
+   follows light/dark like the rest of the page. */
+.prf-unplayed {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-top: var(--space-2);
+    padding: 0.6rem 0.75rem;
+    border: 1px dashed var(--color-border);
+    border-radius: var(--radius-md);
+}
+
+.prf-unplayed-label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--color-text-secondary);
+    margin-right: 0.15rem;
+}
+
+.prf-unplayed-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    min-height: 44px; /* touch target */
+    padding: 0.25rem 0.7rem;
+    border-radius: var(--radius-pill);
+    border: 1px solid var(--color-border);
+    background: var(--tint-subtle);
+    color: var(--color-text-secondary);
+    font-size: 0.8rem;
+    white-space: nowrap;
+}
+
+.prf-unplayed-chip--link {
+    color: var(--color-accent);
+    text-decoration: none;
+}
+
+.prf-unplayed-chip--link:hover {
+    border-color: var(--color-accent);
+    color: var(--color-text-primary);
 }
 
 .prf-callout-icon {

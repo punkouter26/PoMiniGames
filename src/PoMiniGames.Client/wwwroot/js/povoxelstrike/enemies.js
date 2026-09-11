@@ -263,7 +263,12 @@ export class EnemyManager {
     const { removed, clusters } = structure.carveSphere(point, radius);
     let clusterVoxels = 0;
     for (const c of clusters) { clusterVoxels += c.voxels.length; this.debris.spawnCluster(structure, c); }
-    if (removed.length > 0) this.opts.onCarve?.(removed.length, clusterVoxels);
+    if (removed.length > 0) {
+      this.opts.onCarve?.(removed.length, clusterVoxels);
+      // A brute pounding a wall fatigues it like any other impact, just smaller:
+      // the collapse should track the beating, not only the bite marks.
+      structure.applyImpact(point, radius * 1.2, 0.22);
+    }
     this.debris.wakeNear(point, radius + 3); // a brute tunnels out someone's floor too
   }
 

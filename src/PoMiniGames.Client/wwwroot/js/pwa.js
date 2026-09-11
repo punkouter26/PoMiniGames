@@ -8,6 +8,24 @@ window.poPwa = (() => {
     let updateListener = null;   // DotNetObjectReference -> OnUpdateAvailable()
     let onlineListener = null;   // DotNetObjectReference -> OnConnectivityChanged(bool)
 
+    // Install-prompt state (2026-09-11 fix): these MUST live at IIFE scope.
+    // They were first written as `let` statements inside the returned object
+    // literal, which is a SyntaxError — the whole file failed to parse, so
+    // window.poPwa never existed and service-worker registration, the offline
+    // banner, the update prompt and the install prompt were all silently dead
+    // on every route.
+    let deferredInstallPrompt = null;
+    let installed = false;
+
+    window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault();
+        deferredInstallPrompt = e;
+    });
+    window.addEventListener('appinstalled', () => {
+        installed = true;
+        deferredInstallPrompt = null;
+    });
+
     function notifyUpdate() {
         if (updateListener) {
             updateListener.invokeMethodAsync('OnUpdateAvailable').catch(() => { });
@@ -86,18 +104,7 @@ window.poPwa = (() => {
         // `promptInstall()`; the user only sees the browser's native sheet, never a
         // custom modal that would feel like an ad. The `appinstalled` event clears
         // the deferred prompt — a second tap is meaningless once the app is on the
-        // home screen.
-        let deferredInstallPrompt = null;
-        let installed = false;
-
-        window.addEventListener('beforeinstallprompt', (e) => {
-            e.preventDefault();
-            deferredInstallPrompt = e;
-        });
-        window.addEventListener('appinstalled', () => {
-            installed = true;
-            deferredInstallPrompt = null;
-        });
+        // home screen. State + listeners live at IIFE scope above (2026-09-11 fix).
 
         // True iff the browser has offered an install. Returns false on browsers
         // without PWA support (Firefox desktop, in-app browsers) — callers should

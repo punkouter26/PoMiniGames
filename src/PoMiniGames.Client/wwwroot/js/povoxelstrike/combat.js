@@ -24,6 +24,15 @@ const ALT_DIG_RADIUS = 4.5;
 const ALT_BLAST_RADIUS = 12;
 const ALT_BLAST_STRENGTH = 9;
 const ALT_ENEMY_DAMAGE = 70;
+// Impact stress: the half of a hit the carve radius does not express. The crater removes
+// material; these write FATIGUE into a wider ring around it (see Structure.applyImpact),
+// so the structural solver judges what stayed against reduced strength. Peak values are
+// fraction-of-strength units: ~4 solid hits on one spot of a stone column start it
+// visibly sagging; an alt blast half-breaks everything within its ring at once.
+const PRIMARY_IMPACT_RADIUS = 2.6;
+const PRIMARY_IMPACT_DAMAGE = 0.3;
+const ALT_IMPACT_RADIUS = 6;
+const ALT_IMPACT_DAMAGE = 0.55;
 const MAX_RANGE = 160;
 // Voxel shrapnel. Budgets are per shot, not per second: a primary carve removes on the
 // order of 1500 cells at 0.25-unit voxels and an alt blast tens of thousands, so what is
@@ -172,7 +181,10 @@ export class Weapon {
       const { removed, clusters } = s.carveSphere(point, ALT_CARVE_RADIUS);
       let clusterVoxels = 0;
       for (const c of clusters) { clusterVoxels += c.voxels.length; this.debris.spawnCluster(s, c); }
-      if (removed.length > 0) this.onCarve?.(removed.length, clusterVoxels);
+      if (removed.length > 0) {
+        this.onCarve?.(removed.length, clusterVoxels);
+        s.applyImpact(point, ALT_IMPACT_RADIUS, ALT_IMPACT_DAMAGE);
+      }
       if (removed.length > 0 && budget > 0) {
         const share = Math.min(budget, Math.ceil(ALT_SHRAPNEL_BUDGET / 2));
         this.shrapnel?.spawnFromCarve(s, removed, point, ALT_SHRAPNEL_POWER, share);
@@ -213,6 +225,9 @@ export class Weapon {
       let clusterVoxels = 0;
       for (const c of clusters) { clusterVoxels += c.voxels.length; this.debris.spawnCluster(hit.structure, c); }
       if (removed.length > 0) this.onCarve?.(removed.length, clusterVoxels);
+      // Fatigue around the crater — repeated hits on one column progressively weaken it
+      // even where the carve itself removed nothing new.
+      hit.structure.applyImpact(hit.point, PRIMARY_IMPACT_RADIUS, PRIMARY_IMPACT_DAMAGE);
       // The stone this shot knocked loose, thrown as real bodies.
       this.shrapnel?.spawnFromCarve(hit.structure, removed, hit.point,
         PRIMARY_SHRAPNEL_POWER, PRIMARY_SHRAPNEL_BUDGET);

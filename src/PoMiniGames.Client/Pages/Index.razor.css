@@ -379,7 +379,7 @@
 .home-activity {
     margin-top: var(--space-6);
     width: 100%;
-    max-width: 920px;
+    max-width: var(--content-max, 960px);
 }
 
 .home-activity__title {
@@ -419,36 +419,52 @@
        launch-list (icon | title | chips on one 44px row) fits the hero, the
        action row, all 11 games, the activity feed (capped at 3) and the footer
        inside one screen. The 44px row height doubles as the touch-target floor
-       (a11y audit 2026-08-30). */
+       (a11y audit 2026-08-30).
+
+       2026-09-11 re-measure: with 13 games it no longer fit — 13 × 59px rows
+       (the app.css 44px chip floor inflates every row) + hero + actions +
+       devtools + footer = 1320px on a 915px viewport. The catalog is now
+       two-up: title row on top, mode chips beneath at a 30px floor — the CARD
+       stays the ≥44px touch target, chips stay ≥30px (above the WCAG 2.5.8
+       24px minimum, and spaced inside a 44px card). Measured: whole page ≈ 750px. */
     .home-title { font-size: 1.5rem; margin-bottom: 0.25rem; }
     .home-title-icon { font-size: 1.7rem; }
     .home-title-icon svg { width: 28px; height: 28px; }
     .home-subtitle { font-size: 0.95rem; margin-bottom: 0.75rem; }
     .home-actions { gap: 0.45rem; margin-bottom: 0.75rem; }
-    .home-action { flex: 1 1 auto; justify-content: center; padding: 0.55rem 0.7rem; font-size: 0.8rem; }
+    .home-action { flex: 1 1 auto; justify-content: center; padding: 0.45rem 0.6rem; font-size: 0.78rem; min-height: 40px; }
 
-    .home-grid { grid-template-columns: 1fr; gap: 0.4rem; }
+    .home-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.4rem; }
     .home-card {
-        flex-direction: row;
-        align-items: center;
-        gap: 0.6rem;
-        padding: 0.4rem 0.65rem;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.3rem;
+        padding: 0.4rem 0.55rem;
         min-height: 44px;
     }
-    /* The head and the chip row share the row: head takes what it needs, chips
-       hug the right edge. No wrapping — a wrap would push the row past 44px. */
-    .home-card-head { flex: 1 1 auto; flex-wrap: nowrap; gap: 0.45rem; min-width: 0; }
-    .home-card-icon { font-size: 1.25rem; }
-    .home-card-title { font-size: 0.88rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    /* The subtitle pill ("4-in-a-row · 6×6") is the one thing that does not
-       survive a 44px row — the chip row already advertises the modes. */
+    .home-card-head { flex: 0 0 auto; flex-wrap: nowrap; gap: 0.4rem; min-width: 0;
+        /* The app.css a11y floor gives the head a 44px min-height of its own;
+           in this two-up list the CARD is the 44px target and the head only
+           needs ~18px — leaving the floor on made every card ~30px taller. */
+        min-height: 0; }
+    .home-card-icon { font-size: 1.15rem; }
+    .home-card-title { font-size: 0.82rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    /* The subtitle pill ("4-in-a-row · 6×6") does not survive the compact card
+       — the chip row already advertises the modes. */
     .home-card-subtitle { display: none; }
-    .home-card-modes { flex: 0 0 auto; flex-wrap: nowrap; margin-top: 0; min-height: 0; }
-    .home-mode-chip { padding: 0.25rem 0.55rem; font-size: 0.72rem; }
+    .home-card-modes { flex: 0 0 auto; flex-wrap: wrap; gap: 0.25rem; margin-top: 0; min-height: 0; }
+    /* Overrides the app.css 44px chip floor for this dense list: chips shrink
+       to 30px so three of them fit a ~170px column; the surrounding card is
+       the actual 44px+ touch target. */
+    .home-mode-chip { padding: 0.12rem 0.45rem; font-size: 0.68rem; min-height: 30px; min-width: 0; }
 
-    /* Keep the feed to three rows on phones so the page still ends inside the
+    .home-devtools { margin-top: 0.75rem; }
+    .home-devtools__card { padding: 0.4rem 0.75rem; }
+
+    /* Keep the feed to two rows on phones so the page still ends inside the
        first viewport; the full list remains on desktop. */
-    .home-activity__item:nth-child(n+4) { display: none; }
+    .home-activity { margin-top: 0.75rem; }
+    .home-activity__item:nth-child(n+3) { display: none; }
 
     .home-container { padding-top: 0.7rem; padding-bottom: max(env(safe-area-inset-bottom, 0px), 0.75rem); }
 }

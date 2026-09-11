@@ -39,7 +39,7 @@
     {
         <GameIntro CueScope="povoxelstrike"
                    Title="@TitleContent"
-                   Objective="Storm the fortress. Blast through the curtain walls, the inner ward and the great keep to reach the golden chalice — while the guns on the battlements shoot back."
+                   Objective="Blast through the walls to the golden chalice — while the guns shoot back."
                    Controls="@HowToPlayContent"
                    Mode="@(_demo ? GameIntro.IntroMode.Demo : GameIntro.IntroMode.OnePlayer)"
                    OnStart="OnIntroStartAsync" />
@@ -187,11 +187,14 @@
     private RenderFragment TitleContent => @<span>🧱 Voxel Strike</span>;
 
     private RenderFragment HowToPlayContent => @<div>
-        <p>One fortress, two rings of wall and a keep at the centre. The chalice is in the vault. Every wall is destructible, so there is always a way in — you just have to make it. Wall-mounted guns track you across open ground; carve the masonry out from under one and it falls silent. Falling debris crushes you too.</p>
+        @* 2026-09-11: word budget — the intro card is capped at 100 words. The
+           prose paragraph carried the fortress layout in prose; the essentials
+           (destructible walls, turrets, crush danger) stay, the tour went. *@
+        <p>Every wall is destructible — there's always a way in. Turrets track you on open ground; drop the masonry on one and it falls silent.</p>
         <ul>
             <li>Click the arena to take control (pointer lock)</li>
-            <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move · trackpad or mouse to look · <kbd>Shift</kbd> run</li>
-            <li>Hold <kbd>F</kbd> to dig (watch the heat) · <kbd>G</kbd> for an explosive blast — mouse buttons work too</li>
+            <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move · mouse to look · <kbd>Shift</kbd> run</li>
+            <li>Hold <kbd>F</kbd> to dig · <kbd>G</kbd> for an explosive blast</li>
             <li><kbd>Esc</kbd> pauses and frees the mouse</li>
         </ul>
     </div>;

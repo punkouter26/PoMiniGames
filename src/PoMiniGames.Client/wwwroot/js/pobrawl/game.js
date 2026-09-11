@@ -1346,6 +1346,7 @@ export class BrawlGame {
         this._removeFighterPhysics(f);
         if (f.koRagdoll) f.koRagdoll.dispose();
         this.scene.remove(f.rig.root);
+        f.rig.disposePortrait?.();
         if (f.blob) {
           this.scene.remove(f.blob);
           f.blob.geometry.dispose();
@@ -1402,7 +1403,7 @@ export class BrawlGame {
       // dropped mid-match is picked up at the next spawn.
       const rig = buildFighter(resolvedId, {
         physicalMaterials: Quality.settings().physicalMaterials,
-      });
+      }, this.options.mode === '1p' && index === 1 ? this.options.playerHead : null);
       // #4 — must run before the first render: onBeforeCompile only fires on
       // initial program compile, so injecting after a material has been drawn
       // once does nothing until something else dirties it.

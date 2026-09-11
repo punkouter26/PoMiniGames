@@ -51,14 +51,20 @@
     let _walls = null;
     /** @type {{ new: Matter.Body, ghosts: Matter.Body[], col: number, targetRow: number, color: string }|null} */
     let _drop = null;
-    /** @type {HTMLElement|null} Floating clone rendered while a drop is in flight. */
-    let _clone = null;
+    // (vestigial module-scope `_clone` removed 2026-09-11 — nothing ever
+    // assigned it the live element, and step() now reads _drop.clone.)
     let _active = false;
     let _rafId = 0;
     /** Frame-counted stillness: how many consecutive frames the disc has been slow. */
     let _stillFrames = 0;
     /** rAF timestamp from last step; used for delta integration. */
     let _lastFrame = 0;
+    /** 2026-09-11 fix: _restX/_restY were assigned in dropDisc() and read by the
+        step loop's rest detection but never declared — under strict mode the
+        first assignment threw ReferenceError, dropDisc() caught it and fell back
+        to the CSS keyframe, so the matter.js drop never ran at all. */
+    let _restX = 0;
+    let _restY = 0;
 
     // ─── Quality gates ────────────────────────────────────────────────────
     function motionReduced() {
@@ -299,7 +305,12 @@
             // Write the body position into the clone's transform each frame.
             // translate3d puts the clone on its own compositor layer so this
             // is a GPU-side move — no layout, no paint.
-            _clone.style.transform = `translate3d(${b.position.x - r}px, ${b.position.y - r}px, 0)`;
+            // 2026-09-11 fix: this read the module-scope `_clone`, which nothing
+            // has ever assigned (the live clone is _drop.clone) — the first drop
+            // threw TypeError on every rAF frame from here on.
+            if (_drop.clone) {
+                _drop.clone.style.transform = `translate3d(${b.position.x - r}px, ${b.position.y - r}px, 0)`;
+            }
             if (isAtRest(b, _restY)) finalizeDrop();
         }
         _rafId = requestAnimationFrame(step);
@@ -313,7 +324,6 @@
         } catch { /* engine may have been torn down already */ }
         if (drop.clone && drop.clone.parentNode) drop.clone.parentNode.removeChild(drop.clone);
         _drop = null;
-        _clone = null;
         _stillFrames = 0;
         if (_board) _board.classList.remove('cf-board--physics-active');
         // §GFX-8 The landing event is observable to anyone else who wants to
@@ -335,7 +345,6 @@
             catch { /* engine may have been torn down already */ }
             if (_drop.clone && _drop.clone.parentNode) _drop.clone.parentNode.removeChild(_drop.clone);
             _drop = null;
-            _clone = null;
         }
         _stillFrames = 0;
         if (_board) _board.classList.remove('cf-board--physics-active');

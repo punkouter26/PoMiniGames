@@ -57,8 +57,12 @@
 {
     <GameIntro CueScope="poracer"
                    Title="@TitleContent"
-               Objective="Beat the pack to the finish line — 3 laps, first across wins."
-               Controls="@HowToPlayContent"
+               Objective="@(_isDemo
+                   // 2026-09-11 UI sweep: demo said "Beat the pack" to someone
+                   // with no steering wheel — describe the exhibition instead.
+                   ? "CPU cars over 3 laps — an exhibition of the racing line."
+                   : "Beat the pack to the finish line — 3 laps, first across wins.")"
+               Controls="@(_isDemo ? DemoQuickControls : HowToPlayContent)"
                Mode="@_introMode"
                OnStart="OnIntroStartAsync" />
 }
@@ -240,6 +244,15 @@
             <li><kbd>↑</kbd>/<kbd>W</kbd> accelerate · <kbd>↓</kbd>/<kbd>S</kbd> brake</li>
             <li><kbd>←</kbd>/<kbd>→</kbd> (or <kbd>A</kbd>/<kbd>D</kbd>) steer</li>
             <li>Best race times land on the leaderboard — smooth lines beat raw speed</li>
+        </ul>
+    </div>;
+
+    // 2026-09-11 UI sweep: demo previously rendered HowToPlayContent — keyboard
+    // controls for a race the viewer doesn't drive.
+    private RenderFragment DemoQuickControls => @<div>
+        <p>Every car is CPU-driven — no controls, just watch the racing line.</p>
+        <ul>
+            <li>Watch how the leaders take the hairpin — smooth beats fast</li>
         </ul>
     </div>;
 

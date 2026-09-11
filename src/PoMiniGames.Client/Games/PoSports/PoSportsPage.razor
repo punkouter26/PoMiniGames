@@ -30,12 +30,17 @@
            GameSummary="@GameSummaryContent">
     @if (!_introDone)
     {
+        @* 2026-09-11 UI sweep: the runner picker is a player choice; a demo
+           picks its lanes itself, so render no Options slot. NOTE: this comment
+           sits OUTSIDE the tag — a Razor comment inside an attribute list is
+           parsed as an attribute NAME and takes the page down (see the note on
+           the home action row in Index.razor). *@
         <GameIntro CueScope="posports"
                    Title="@TitleContent"
                    Objective="@IntroObjective"
-                   Controls="@HowToPlayContent"
+                   Controls="@(_demo ? DemoQuickControls : HowToPlayContent)"
                    Mode="@_introMode"
-                   Options="@SelectContent"
+                   Options="@(_demo ? null : SelectContent)"
                    StartEnabled="@(_demo || _mode != "2p" || (_p1Locked && _p2Locked))"
                    StartLabel="@(_mode == "2p" ? "RACE" : "OK")"
                    StartHint="@(_mode == "2p" ? "Both players lock in to race" : null)"
@@ -165,7 +170,13 @@
 
     private string IntroObjective => _mode switch
     {
-        "2p" => "Two runners, one track: sprint then hurdles, lowest combined time wins. Pick your family member below.",
+        // 2026-09-11: word budget — the intro card is capped at 100 words. The
+        // 2P card previously carried the objective + BOTH keymaps + three tips
+        // and measured 139 words.
+        "2p" => "Sprint then hurdles — lowest combined time wins.",
+        // 2026-09-11 UI sweep: the demo told a spectator to type Q/W/A/S —
+        // describe the meet instead of instructing someone who isn't racing.
+        _ when _demo => "Four CPU runners, two legs: 100m sprint then 110m hurdles. Lowest combined time tops the board.",
         _ => "A two-leg family track meet: 100m sprint, then 110m hurdles. Lowest combined time tops the board.",
     };
 
@@ -180,7 +191,7 @@
        to work out which row was theirs. Only 2P actually uses the second layout; 1P and
        online both run on layout 1 (see InitEngine and InitOnlineAsync). *@
     private RenderFragment HowToPlayContent => @<div>
-        <p>Type your four keys <b>in order</b> to sprint — every completed cycle is a burst of speed. A wrong key restarts the cycle!</p>
+        <p>Type your four keys in order to sprint — a wrong key restarts the cycle!</p>
         <ul>
             @foreach (var l in (_mode == "2p" ? PoSportsLayouts.All : [PoSportsLayouts.For(1)]))
             {
@@ -197,11 +208,22 @@
                     {
                         <kbd>@k</kbd><text> </text>
                     }
-                    in order · <kbd>@l.Jump</kbd> jumps
+                    sprint · <kbd>@l.Jump</kbd> jumps
                 </li>
             }
-            <li>Jump the hurdles on leg 2 — clipping one costs speed and +1.5s</li>
-            <li>Typing before the gun is a false start: half-second hold</li>
+            <li>Clip a hurdle and it costs +1.5s</li>
+        </ul>
+    </div>;
+
+    // 2026-09-11 UI sweep: demo previously rendered HowToPlayContent AND the
+    // OnePlayerSelect picker — a spectator was offered a runner they cannot
+    // control and keys nobody is typing. TicTacToe/Joker/FunQuiz demos already
+    // carry their own copy; this matches them.
+    private RenderFragment DemoQuickControls => @<div>
+        <p>All four runners are CPU-driven — no controls, just watch the meet.</p>
+        <ul>
+            <li>Sprint first, then hurdles — false starts still cost the CPUs</li>
+            <li>A clipped hurdle costs +1.5s — often the whole podium</li>
         </ul>
     </div>;
 
@@ -212,7 +234,9 @@
     private static string SelectHint(int layout)
     {
         var l = PoSportsLayouts.For(layout);
-        return $"{l.Sequence[0]} / {l.Sequence[1]} cycle · {l.Sequence[3]} lock in — or tap a name";
+        // 2026-09-11: word budget — this hint renders twice on the 2P intro
+        // card, so it reads as compactly as it teaches: keys only.
+        return $"{l.Sequence[0]}{l.Sequence[1]} cycle · {l.Sequence[3]} locks";
     }
 
     /// <summary>KeyboardEvent.code for a layout's Nth sequence key ("Q" → "KeyQ").</summary>

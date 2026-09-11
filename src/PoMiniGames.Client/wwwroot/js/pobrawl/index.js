@@ -1,15 +1,29 @@
 // index.js — public interop surface for PoBrawl. The Blazor page calls these.
 import { BrawlGame } from './game.js';
+import { loadPortraitHead } from './portraitHead.js';
 
 let game = null;
+let initGeneration = 0;
 
 window.PoBrawl = {
   /** options: { mode: '1p'|'2p'|'demo', p1Character, p2Character, difficulty } */
-  init(containerId, dotnetRef, options) {
+  async init(containerId, dotnetRef, options) {
+    const generation = ++initGeneration;
     if (game) { game.dispose(); game = null; }
+    window.PoBrawl._game = null;
     const el = document.getElementById(containerId);
     if (!el) { console.error('[PoBrawl] container not found:', containerId); return; }
-    game = new BrawlGame(el, dotnetRef, options || {});
+    const matchOptions = { ...options };
+    if (matchOptions.mode === '1p') {
+      try {
+        matchOptions.playerHead = await loadPortraitHead();
+      } catch (error) {
+        console.warn('[PoBrawl] Portrait unavailable; using the procedural head.', error);
+      }
+    }
+    // Navigation or a second init may have superseded the pending model load.
+    if (generation !== initGeneration || !el.isConnected) return;
+    game = new BrawlGame(el, dotnetRef, matchOptions);
     game.start();
     // Debug/automation handle (read-only introspection; not part of the API).
     window.PoBrawl._game = game;
@@ -37,5 +51,9 @@ window.PoBrawl = {
     game.resetMatch(false);
   },
   setMuted(muted) { if (game) game.setMuted(muted); },
-  destroy() { if (game) { game.dispose(); game = null; } },
+  destroy() {
+    ++initGeneration;
+    if (game) { game.dispose(); game = null; }
+    window.PoBrawl._game = null;
+  },
 };

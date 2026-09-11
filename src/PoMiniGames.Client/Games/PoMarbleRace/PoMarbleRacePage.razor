@@ -28,8 +28,12 @@
     {
         <GameIntro CueScope="pomarblerace"
                    Title="@TitleContent"
-                   Objective="You control the one RED marble in a pack of 101. Finish in the top 10 to score."
-                   Controls="@HowToPlayContent"
+                   Objective="@(_demo
+                       // 2026-09-11 UI sweep: the demo objective told a spectator
+                       // to control a marble they cannot steer — describe the show.
+                       ? "101 CPU marbles, one track. Top 10 scores — watch the pack work it out."
+                       : "You control the one RED marble in a pack of 101. Finish in the top 10 to score.")"
+                   Controls="@(_demo ? DemoQuickControls : HowToPlayContent)"
                    Mode="@_introMode"
                    OnStart="OnIntroStartAsync" />
     }
@@ -336,6 +340,16 @@
             <li><kbd>←</kbd>/<kbd>→</kbd> hold to steer your marble</li>
             <li><kbd>R</kbd> restart race · <kbd>M</kbd> mute</li>
             <li>String finishes together for a points multiplier — mind the edges</li>
+        </ul>
+    </div>;
+
+    // 2026-09-11 UI sweep: demo previously rendered HowToPlayContent — a spectator
+    // got steering/restart/mute keys for a marble nobody controls.
+    private RenderFragment DemoQuickControls => @<div>
+        <p>Every marble is CPU-driven — no controls, just watch the pack.</p>
+        <ul>
+            <li>Pile-ups at the pinch points decide the podium — that's the show</li>
+            <li>Top-10 finishes score; the reel restarts when the race ends</li>
         </ul>
     </div>;
 

@@ -17,7 +17,7 @@
     {
         <GameIntro CueScope="poecosystem"
                    Title=@TitleContent
-                   Objective="Walk an island that lives without you. Rabbits graze, deer herd, wolves hunt in packs and a human tribe builds huts — all of them born, hungry, thirsty, mating, ageing and dying while you watch."
+                   Objective="A living island that runs without you — creatures born, hungry and ageing while you watch."
                    Controls=@HowToPlayContent
                    Mode="@(IsDemo ? GameIntro.IntroMode.Demo : GameIntro.IntroMode.OnePlayer)"
                    OnStart="@(() => _introDismissed = true)" />
@@ -39,15 +39,17 @@
     private RenderFragment TitleContent => @<span><span aria-hidden="true">🌿</span> PoEcosystem · A living island</span>;
 
     private RenderFragment HowToPlayContent => @<div>
-        <p><strong>You are an invisible god floating over a living island.</strong> No creature can see you.</p>
+        @* 2026-09-11: word budget — the intro card is capped at 100 words. The
+           dashboard's full inventory (telemetry export, almanac, model picker)
+           is discoverable in situ; the card teaches movement + inspection only. *@
+        <p><strong>You are an invisible god floating over the island.</strong></p>
         <ul>
-            <li><strong>You float</strong> — WASD moves freely through the air, <strong>Space</strong>/<strong>Ctrl</strong> rise and sink, <strong>Shift</strong> for speed. <strong>F</strong> switches to walking on the ground.</li>
-            <li><strong>Mouse:</strong> click the world to look around, move the mouse to turn.</li>
-            <li><strong>E</strong> or click: inspect the creature under the crosshair — name, age, drives, personality and its last thought. <strong>T</strong> follows it.</li>
-            <li><strong>Tab:</strong> the dashboard — population chart, world log, almanac, creature thoughts, telemetry export and settings (AI thoughts, model, seed, New World).</li>
-            <li><strong>0 1 2 3:</strong> pause, 1×, 2×, 4× speed.</li>
+            <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> fly · <kbd>Space</kbd>/<kbd>Ctrl</kbd> rise and sink · <kbd>Shift</kbd> speed · <kbd>F</kbd> walk the ground</li>
+            <li><kbd>E</kbd> or click: inspect the creature under the crosshair — name, age, drives, last thought. <kbd>T</kbd> follows it.</li>
+            <li><kbd>Tab</kbd>: dashboard — population chart, world log, almanac, settings</li>
+            <li><kbd>0</kbd>–<kbd>3</kbd>: pause, 1×, 2×, 4× speed</li>
+            <li>Storms, rockslides and the volcano happen on their own</li>
         </ul>
-        <p>Lightning, rockslides and the volcano happen on their own. The world keeps running and saves itself; it ends only when one species is left.</p>
     </div>;
 
     protected override void OnInitialized() => _playerName = PlayerNameService.GetPlayerName();

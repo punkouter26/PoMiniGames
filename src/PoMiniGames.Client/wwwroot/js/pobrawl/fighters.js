@@ -1,5 +1,5 @@
 // fighters.js — the president caricatures as hierarchical three.js primitive rigs.
-// Everything is procedurally generated: no meshes, no textures on disk.
+// The 1P human can use an imported portrait; the roster uses procedural rigs.
 //
 // Likeness comes from four layers, all cheap primitives + canvas textures:
 //   1. Facial geometry — brows/eyes/nose/mouth/chin/jowls, parameterized per
@@ -23,6 +23,7 @@
 // map and react to the key/rim lights.
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { buildPortraitHead } from './portraitHead.js';
 
 // Face parameter reference (all optional, defaults in buildFace):
 //   brow:  { color, angle (rad; − = stern inner-down, + = raised), thick, w }
@@ -1081,8 +1082,9 @@ export function setExpression(rig, name) {
  * @param {{physicalMaterials?: boolean}} [quality]
  *        physicalMaterials: false swaps the whole wardrobe from
  *        MeshPhysicalMaterial to MeshStandardMaterial. See `dress()` below.
+ * @param {Array|null} [portraitParts] Loaded head geometry for the 1P human.
  */
-export function buildFighter(charId, quality = {}) {
+export function buildFighter(charId, quality = {}, portraitParts = null) {
   const c = CHARACTERS[charId];
   // ── Wardrobe material tier (2026-08-11 audit #5) ──────────────────────────
   // MeshPhysicalMaterial is three's heaviest lighting path: `sheen` and
@@ -1157,13 +1159,13 @@ export function buildFighter(charId, quality = {}) {
     clearcoat: 0.001, clearcoatRoughness: 0.28,
   });
   // Face-only skin: lets Trump's face run oranger than his hands.
-  const faceMat = c.faceTint
+  const faceMat = (c.faceTint || portraitParts)
     ? dress({
-        color: c.faceTint, roughness: 0.55, metalness: 0.0,
+        color: c.faceTint ?? c.skin, roughness: 0.55, metalness: 0.0,
         sheen: 0.32, sheenRoughness: 0.5, sheenColor: new THREE.Color(0xff7a55),
         roughnessMap: skinNoiseTexture(),
         normalMap: skinNormalTexture(),
-        normalScale: new THREE.Vector2(0.3, 0.3),
+        normalScale: new THREE.Vector2(portraitParts ? 0.06 : 0.3, portraitParts ? 0.06 : 0.3),
         clearcoat: 0.001, clearcoatRoughness: 0.28,
       })
     : skinMat;
@@ -1239,9 +1241,11 @@ export function buildFighter(charId, quality = {}) {
   }
 
   // Neck bridging the collar to the head.
-  const neck = capsule(0.055, 0.08, skinMat);
-  neck.position.y = 0.6;
-  torso.add(neck);
+  if (!portraitParts) {
+    const neck = capsule(0.055, 0.08, skinMat);
+    neck.position.y = 0.6;
+    torso.add(neck);
+  }
 
   // Suit-only dressing: dress-shirt panel, jacket buttons, and the tie.
   // A casual fighter (BOB) wears a plain tee — none of these apply.
@@ -1348,26 +1352,28 @@ export function buildFighter(charId, quality = {}) {
   // (swelling), so the group scale is safe to own here.
   if (c.headScale && c.headScale !== 1) head.scale.setScalar(c.headScale);
 
-  const skull = box(dims.w, dims.h, dims.d, faceMat);
+  const skull = portraitParts ? new THREE.Group() : box(dims.w, dims.h, dims.d, faceMat);
   skull.position.y = 0.16;
   head.add(skull);
   // Hair on its own pivot so it can flop with a subtler jiggle than the tie.
   const hairPivot = new THREE.Group();
   hairPivot.position.y = 0.3;
-  const hair = buildHair(c, hairMat, dims);
+  const hair = portraitParts ? new THREE.Group() : buildHair(c, hairMat, dims);
   hair.position.y = -0.3;
   hairPivot.add(hair);
   head.add(hairPivot);
 
   const earR = c.earR ?? 0.035;
-  for (const side of [-1, 1]) {
+  for (const side of (portraitParts ? [] : [-1, 1])) {
     const ear = sphere(earR, skinMat);
     ear.position.set(side * (dims.hw + 0.01), 0.16, 0);
     head.add(ear);
   }
 
   // Facial features + painted detail plate (returns the expression groups).
-  const face = buildFace(c, head, { faceMat, skinMat }, dims);
+  const face = portraitParts ? {} : buildFace(c, head, { faceMat, skinMat }, dims);
+  const portrait = portraitParts ? buildPortraitHead(portraitParts, c, dims, { faceMat, hairMat }) : null;
+  if (portrait) skull.add(portrait.mesh);
 
   // Cut decal above the brow — hidden until head damage passes the threshold
   // (the engine toggles refs.cut.visible).
@@ -1379,7 +1385,7 @@ export function buildFighter(charId, quality = {}) {
   cut.visible = false;
   head.add(cut);
 
-  if (c.aviators) {
+  if (c.aviators && !portraitParts) {
     const glassMat = new THREE.MeshStandardMaterial({
       color: 0x14161a, roughness: 0.1, metalness: 0.85,
     });
@@ -1511,7 +1517,8 @@ export function buildFighter(charId, quality = {}) {
     jiggles,
     // Direct mesh handles for the damage-visuals system (swelling, cut) and
     // the expression system (mouths — see setExpression).
-    refs: { skull, cut, hairPivot, mouths: face.mouths },
+    refs: { skull, cut, hairPivot, mouths: face.mouths, portraitHead: portrait?.mesh },
+    disposePortrait: portrait?.dispose,
     materials: { suitMat, skinMat, faceMat, plateMat: face.plateMat, tieMat, hairMat },
     config: c,
     baseColors: {

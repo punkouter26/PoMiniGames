@@ -31,6 +31,18 @@
 }
 else
 {
+    @* 2026-09-11 UI sweep: a brand-new profile rendered the hero, six "Not played
+       yet" high-score cards, a head-to-head section, AND the Game Breakdown's
+       ~11 placeholder cards — 2728px on a 390×844 phone (3+ screens of
+       placeholders repeating one fact). When nothing has been played anywhere
+       (no W/L matches, no saved server rows, no opponents, not still loading),
+       the High Scores / Head-to-Head / Breakdown sections step aside and the
+       page is hero + one empty-state CTA — a single portrait screen. *@
+    var nothingPlayed = _totalGames == 0
+        && !_matchesLoading
+        && _highScores.All(h => !h.HasValue)
+        && _localOpponents.Count == 0
+        && _onlineOpponents.Count == 0;
 
     <!-- ── Hero ── -->
     <div class="prf-hero">
@@ -124,6 +136,8 @@ else
     </div>
 
     <!-- ── 1-Player high scores (best available per game) ── -->
+    @if (!nothingPlayed)
+    {
     <div class="prf-section">
         @* 2026-08-12 audit #3: surface a highscore-fetch failure explicitly
            so the player knows the "Not played yet" placeholders aren't the
@@ -159,8 +173,11 @@ else
             }
         </div>
     </div>
+    }
 
     <!-- ── Head-to-head record vs named opponents ── -->
+    @if (!nothingPlayed)
+    {
     <div class="prf-section">
         @* 2026-08-12 audit #8: the badge legend was rendered above the empty
            state — when there are no opponents the legend is the only visible
@@ -223,6 +240,7 @@ else
             </div>
         }
     </div>
+    }
 
     <!-- ── Charts row ── -->
     @* §8: empty-state for first-time players — no charts means no signal.
@@ -293,10 +311,18 @@ else
     }
 
     <!-- ── Game Breakdown ── -->
+    @* 2026-09-11 UI sweep: this section rendered ALL games as full cards, so a
+       first-time player scrolled ~11 "Not played yet" placeholders (two-thirds
+       of the page's 2728px). Now only games with real activity keep their full
+       card; unplayed games collapse into one compact chip strip below them, and
+       when nothing is played at all the section steps aside entirely (the empty
+       state above already says it). *@
+    @if (!nothingPlayed && _entries.Any(g => !IsUnplayed(g)))
+    {
     <div class="prf-section">
         <h2 class="prf-section-title">Game Breakdown</h2>
         <div class="prf-game-grid">
-            @foreach (var g in _entries)
+            @foreach (var g in _entries.Where(g => !IsUnplayed(g)))
             {
                 @* "Unplayed" means no activity of the kind this game actually tracks:
                    matches for W/L games, sessions for play-count games. Keying purely
@@ -374,7 +400,32 @@ else
                 </div>
             }
         </div>
+        @if (_entries.Any(IsUnplayed))
+        {
+            @* Unplayed games as one compact strip — every chip is a tappable
+               demo entry for the play-count games (Joker/Survive), matching the
+               old per-card "Try the demo →" affordance they replaced. *@
+            <div class="prf-unplayed">
+                <span class="prf-unplayed-label">Not played yet:</span>
+                @foreach (var g in _entries.Where(IsUnplayed))
+                {
+                    @if (g.Kind == RatingKind.PlayCountOnly)
+                    {
+                        <a class="prf-unplayed-chip prf-unplayed-chip--link" href="@DemoUrl(g.Key)" title="Try the demo">@g.Icon @g.Label</a>
+                    }
+                    else if (g.Kind == RatingKind.HighScoreOnly)
+                    {
+                        <a class="prf-unplayed-chip prf-unplayed-chip--link" href="/leaderboards" title="See leaderboard">@g.Icon @g.Label</a>
+                    }
+                    else
+                    {
+                        <span class="prf-unplayed-chip">@g.Icon @g.Label</span>
+                    }
+                }
+            </div>
+        }
     </div>
+    }
 
     @* The Preferences section (a link out to /settings) went with that page on
        2026-08-11 — see the note in SettingsService. This page is about the

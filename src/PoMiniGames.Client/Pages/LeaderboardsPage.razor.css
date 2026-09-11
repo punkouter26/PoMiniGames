@@ -2,7 +2,7 @@
    table, not a stack of padded cards. Tokens inherited from css/app.css :root. */
 
 .lb-page {
-    max-width: 960px;
+    max-width: var(--content-max, 960px);
     margin: 0 auto;
     padding: var(--space-3) var(--space-4) var(--space-6);
     width: 100%;
@@ -83,15 +83,17 @@
     color: var(--color-text-secondary);
 }
 
-/* Filter chips — horizontal scroll on narrow screens, thumb-friendly. */
+/* Filter chips. 2026-09-11 UI sweep: the row was a single 1011px
+   `overflow-x: auto` strip on a 390px phone — sideways scrolling to reach a
+   filter violates the no-horizontal-scroll rule. `flex-wrap` folds the same
+   chips into 2–3 rows instead; with 11 chips the wrapped stack still fits the
+   portrait fold, so nothing is truncated and nothing scrolls. */
 .lb-chips {
     display: flex;
+    flex-wrap: wrap;
     gap: var(--space-2);
-    overflow-x: auto;
     padding-bottom: var(--space-2);
     margin-bottom: var(--space-3);
-    scrollbar-width: thin;
-    -webkit-overflow-scrolling: touch;
 }
 
 .lb-chip {
@@ -106,7 +108,7 @@
     color: var(--color-text-secondary);
     font-size: var(--text-sm);
     white-space: nowrap;
-    min-height: 40px; /* touch target */
+    min-height: 44px; /* touch target — WCAG 2.5.8 / platform 44pt norm */
     /* 2026-09-04 UI sweep: containment — a chip's pill never paints outside
        its own box, and its label/text reflow does not affect the siblings in
        the filter row. Lets the browser promote each chip to its own layer

@@ -455,8 +455,16 @@ export function createScene(container) {
   window.addEventListener('pointerup', onPointerUp);
 
   function resize() {
-    const w = container.clientWidth || 800;
-    const h = container.clientHeight || 540;
+    // 2026-09-11 fix: clamp the measured host to the viewport. If the host
+    // chain ever resolves content-driven (flex-basis:auto shell), sizing the
+    // buffer to the host makes the canvas attribute itself the host's content
+    // and the ResizeObserver doubles it every pass until the browser clamps
+    // at 2^26 — the page ends up 33M px tall. No legitimate render needs more
+    // than the viewport; three.js applies devicePixelRatio on top of this.
+    const capW = Math.max(320, Math.round(window.innerWidth * 1.5));
+    const capH = Math.max(320, Math.round(window.innerHeight * 1.5));
+    const w = Math.min(container.clientWidth || 800, capW);
+    const h = Math.min(container.clientHeight || 540, capH);
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();

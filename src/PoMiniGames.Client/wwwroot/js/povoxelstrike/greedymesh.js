@@ -61,9 +61,13 @@ const DIRECTIONS = [
  * @param opts.palette RGBA bytes, 4 per entry; entry i describes value i+1
  * @param opts.offset [x, y, z] subtracted from every vertex (the grid's centring)
  * @param opts.step LOD stride in voxels, 1 = exact
+ * @param opts.tint optional (x, y, z) -> stress fraction in [0, 1+]. Values above the
+ *   onset darken and gray the face, so a loaded wall reads as cracked masonry. Sampled
+ *   once per MERGED rectangle (fields feeding it vary smoothly, and the merge is what
+ *   makes the mesh cheap), at the rectangle's first voxel.
  * @returns {{positions:number[], normals:number[], colors:number[]}|null}
  */
-export function greedyMesh({ get, min, max, palette, offset = [0, 0, 0], step = 1 }) {
+export function greedyMesh({ get, min, max, palette, offset = [0, 0, 0], step = 1, tint = null }) {
   const positions = [], normals = [], colors = [];
   const s = Math.max(1, step | 0);
 
@@ -141,7 +145,22 @@ export function greedyMesh({ get, min, max, palette, offset = [0, 0, 0], step = 
           const plane = dir.plus ? sv + s - 1 : sv;
 
           const p = (value - 1) * 4;
-          const r = palette[p] / 255, g = palette[p + 1] / 255, b = palette[p + 2] / 255;
+          let r = palette[p] / 255, g = palette[p + 1] / 255, b = palette[p + 2] / 255;
+          // Stress tint. Onset matches STRESS_ONSET in supportWorker.js, which cannot
+          // import this file — the worker must stay dependency-free. Darkening is
+          // quadratic (cracks spread slowly at first, then fast) and the channels are
+          // not scaled equally so the face grays out like dust-covered broken stone
+          // rather than simply fading to black.
+          if (tint) {
+            const sp = [0, 0, 0];
+            sp[ai] = a0; sp[bi] = b0; sp[axis] = plane;
+            const t = tint(sp[0], sp[1], sp[2]);
+            if (t > 0.35) {
+              const u = Math.min(1, (t - 0.35) / 0.65);
+              const k = 1 - 0.55 * u * u;
+              r *= k; g *= k * (1 - 0.06 * u); b *= k * (1 - 0.12 * u);
+            }
+          }
           const quad = dir.corner(plane, a0, a1, b0, b1);
           for (const i of [0, 1, 2, 0, 2, 3]) {
             positions.push(

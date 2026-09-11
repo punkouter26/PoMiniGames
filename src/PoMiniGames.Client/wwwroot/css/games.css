@@ -267,6 +267,20 @@
   padding: 0;
 }
 
+/* 2026-09-11: Marble Race's canvas is appended by scene.js, so it carries no
+   razor scope attribute and the scoped `.mr-canvas-host canvas { width/height:
+   100% }` twin in PoMarbleRacePage.razor.css never matched it — the element
+   rendered at its ATTRIBUTE size (host height × devicePixelRatio) and the
+   host's overflow:hidden amputated everything past the first DPR-quadrant.
+   This unscoped rule sizes the element to its host; the backing store stays
+   at host × dpr (renderer.setSize with updateStyle=false), which is exactly
+   the crisp-DPR pairing the scoped rule was written for. */
+.mr-canvas-host > canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
 /* Every direct child of .gps-game-area should also pass clicks through so
    the lobby forms (which don't set --clickable) keep working without
    opting every inner element in. */

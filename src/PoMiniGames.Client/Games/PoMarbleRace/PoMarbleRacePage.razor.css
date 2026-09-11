@@ -983,6 +983,11 @@
         margin: 0;
         gap: 0;
         min-height: 0;
+        /* 2026-09-11: same feedback-loop guard as .mr-wrap below — the row must
+           never be taller than the shell's viewport budget, or the post-race
+           podium strip can push a few px of page scroll past the fold. */
+        max-height: var(--gps-area-h, 100dvh);
+        overflow: hidden;
         /* Anchor the absolutely-positioned HUD strip on mobile. */
         position: relative;
     }
@@ -991,6 +996,16 @@
         width: 100%;
         height: 100%;
         min-height: 0;
+        /* 2026-09-11 fix: `height: 100%` only resolves against a DEFINITE
+           parent. The parent chain (.mr-wrap-row -> .gps-game-area -> .gps-shell,
+           which is `flex: 1 0 auto` = content-sized) can resolve content-driven,
+           and then the canvas's backing-store attribute size becomes the wrap's
+           content — renderer sizes to host, host grows to canvas, the shell's
+           ResizeObserver refires, and the buffer doubles until the browser
+           clamps at 2^26 (measured: the page was 33,554,432px tall). Clamping
+           with the shell-published viewport budget breaks that loop regardless
+           of how the chain resolves. */
+        max-height: var(--gps-area-h, 100dvh);
         aspect-ratio: auto;
         border-radius: 0;
         /* Fill the row's full height (which is the game area's full height

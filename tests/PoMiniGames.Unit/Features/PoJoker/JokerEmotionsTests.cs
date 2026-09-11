@@ -36,13 +36,14 @@ public sealed class JokerEmotionsTests
 
     private static DirectoryInfo RepoRoot()
     {
-        // Walk up from the test bin dir to the repo root (global.json lives there).
+        // Walk up from the test bin dir to the repo root. PoMiniGames.slnx is the
+        // marker (global.json was retired 2026-09-11); it always sits at the root.
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "global.json")))
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "PoMiniGames.slnx")))
         {
             dir = dir.Parent;
         }
-        dir.Should().NotBeNull("the repo root (global.json) must be reachable from the test bin dir");
+        dir.Should().NotBeNull("the repo root (PoMiniGames.slnx) must be reachable from the test bin dir");
         return dir!;
     }
 

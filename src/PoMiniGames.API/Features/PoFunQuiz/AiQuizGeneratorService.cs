@@ -107,7 +107,7 @@ public sealed class AiQuizGeneratorService : IOpenAIService
         {
             _logger.MockEnabled(_environment.EnvironmentName);
             var mockQuestions = MockOpenAIService.GenerateQuestions(category, count);
-            QuestionPoolCache.AddOrUpdate(category, _ => new List<QuizQuestion>(mockQuestions), (_, existing) => { lock (existing) { existing.AddRange(mockQuestions); } return existing; });
+            MergeIntoPool(category, mockQuestions);
             return mockQuestions;
         }
 
@@ -172,9 +172,39 @@ public sealed class AiQuizGeneratorService : IOpenAIService
 
         if (cached.Count > 0)
         {
-            QuestionPoolCache.AddOrUpdate(category, _ => new List<QuizQuestion>(cached), (_, existing) => { lock (existing) { existing.AddRange(cached); } return existing; });
+            MergeIntoPool(category, cached);
         }
         return SelectVariedSet(cached, count);
+    }
+
+    /// <summary>
+    /// Fold a freshly-dealt batch into the warm pool, keeping the pool a SET of distinct questions.
+    /// </summary>
+    /// <remarks>
+    /// 2026-09-12: this was an <c>AddRange</c>. The batch it appends is almost always the SAME
+    /// 24 questions every time — the HybridCache above holds them for six hours and hands back
+    /// the identical list to every caller — so the pool grew by 24 copies of itself per request,
+    /// without bound, for the life of the process. The fast path at the top of
+    /// GenerateQuizQuestionsAsync then deals a random subset of pool POSITIONS out of that, which
+    /// is how a ten-question quiz can ask the same question twice: after N requests each question
+    /// occupies N positions, so a "distinct positions" draw is not a distinct-questions draw.
+    /// Deduplicating on question text keeps the pool the size of the distinct material actually
+    /// generated, which is what both the fast path and SelectVariedSet already assume.
+    /// </remarks>
+    private static void MergeIntoPool(QuestionCategory category, IReadOnlyList<QuizQuestion> batch)
+    {
+        var pool = QuestionPoolCache.GetOrAdd(category, _ => new List<QuizQuestion>());
+        lock (pool)
+        {
+            var seen = new HashSet<string>(pool.Select(q => q.Text), StringComparer.OrdinalIgnoreCase);
+            foreach (var question in batch)
+            {
+                if (seen.Add(question.Text))
+                {
+                    pool.Add(question);
+                }
+            }
+        }
     }
 
     /// <summary>How many questions one cached generation holds. See the note at its use site.</summary>

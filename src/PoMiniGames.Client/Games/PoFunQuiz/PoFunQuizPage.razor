@@ -520,13 +520,54 @@
         try
         {
             var url = $"/api/funquiz/quiz/questions?count=10&category={Uri.EscapeDataString(_category)}";
-            var questions = await Http.GetFromJsonAsync(url, ApiJsonContext.Default.ListQuizQuestion);
+            using var response = await Http.GetAsync(url);
+
+            // 2026-09-12: this was GetFromJsonAsync, so every non-2xx became an
+            // HttpRequestException whose Message is the framework's resource string —
+            // the player was shown "net_http_message_not_success_statuscode_reason, 429,
+            // Too Many Requests" on a card that offered only a Retry button, which at that
+            // moment was the one action guaranteed to fail again. 429 is the one status here
+            // that is purely a matter of waiting, so it gets a countdown and an automatic
+            // second attempt instead of a stack-trace fragment.
+            if ((int)response.StatusCode == 429)
+            {
+                var wait = RetryAfterSeconds(response);
+                // Only a SHORT advertised wait is worth sitting through: the API's sliding
+                // window replenishes every 10 s, so this is the normal case. A long one gets
+                // handed to the player instead of parking the card on a countdown they never
+                // asked for.
+                if (wait <= AutoRetryMaxWaitSeconds && _autoRetries < MaxAutoRetries)
+                {
+                    _autoRetries++;
+                    _error = $"The quiz service is busy. Retrying in {wait}s…";
+                    _isLoading = false;
+                    StateHasChanged();
+                    await Task.Delay(TimeSpan.FromSeconds(wait));
+                    if (_disposed) return;
+                    await StartGame();
+                    return;
+                }
+
+                _error = $"Too many quiz requests from this device. Wait about {wait}s, then hit Retry.";
+                _isLoading = false;
+                return;
+            }
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _error = $"Couldn't reach the quiz service ({(int)response.StatusCode}). Hit Retry in a moment.";
+                _isLoading = false;
+                return;
+            }
+
+            var questions = await response.Content.ReadFromJsonAsync(ApiJsonContext.Default.ListQuizQuestion);
             if (questions is null || questions.Count == 0)
             {
                 _error = "No questions available. Try a different category.";
                 _isLoading = false;
                 return;
             }
+            _autoRetries = 0;
             _questions = questions;
             ResetSplitState();
             _currentIndex = 0;
@@ -562,6 +603,27 @@
         {
             _isLoading = false;
         }
+    }
+
+    // Bounded so a genuinely saturated window cannot turn into an unattended poll loop:
+    // two automatic attempts, then the card goes back to a manual Retry.
+    private const int MaxAutoRetries = 2;
+    private const int AutoRetryMaxWaitSeconds = 15;
+    private int _autoRetries;
+
+    /// <summary>
+    /// Seconds to wait before replaying a rejected request. The API sets Retry-After from the
+    /// rate limiter's own replenishment clock; the clamp covers a missing or absurd header
+    /// (a proxy's HTTP-date form parses as no delta at all) so the countdown stays believable.
+    /// </summary>
+    private static int RetryAfterSeconds(HttpResponseMessage response)
+    {
+        var delta = response.Headers.RetryAfter?.Delta?.TotalSeconds;
+        if (delta is null && response.Headers.RetryAfter?.Date is { } date)
+        {
+            delta = (date - DateTimeOffset.UtcNow).TotalSeconds;
+        }
+        return (int)Math.Clamp(Math.Ceiling(delta ?? 5), 3, 60);
     }
 
     // Demo auto-pick loop (2026-08-07). Picks a random option, reveals, advances.

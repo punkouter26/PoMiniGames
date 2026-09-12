@@ -39,7 +39,11 @@ public static class FunQuizEndpoints
             CancellationToken cancellationToken) =>
         {
             if (count <= 0) count = 10;
-            if (count > 50) return Results.StatusCode(StatusCodes.Status429TooManyRequests);
+            // A too-large count is a malformed request, not a rate-limit hit. This returned 429
+            // until 2026-09-12, which put a second, unrelated meaning on the one status code
+            // the rate limiter owns — and the client surfaces 429 as "wait and retry", advice
+            // that would never make count=500 succeed.
+            if (count > 50) return Results.BadRequest(new { error = "count must be between 1 and 50." });
             if (string.Equals(category, "BrowserAI", StringComparison.OrdinalIgnoreCase))
             {
                 return Results.BadRequest(new { error = "BrowserAI must be invoked client-side; this endpoint serves server-side AI only." });

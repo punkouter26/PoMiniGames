@@ -103,17 +103,60 @@ internal static class RateLimitingExtensions
                         QueueLimit = 0,
                     }));
 
+            // AI-backed content generation (currently only PoFunQuiz question fetches).
+            //
+            // 2026-09-12: raised 5/min -> 8 per 15 s. The old figure priced this endpoint as if
+            // every call reached a model. It does not: AiQuizGeneratorService wraps the
+            // question POOL in a stampede-protected HybridCache (6 h, durable L2), so a
+            // (category, batchCount) pair costs exactly one generation per six hours and every
+            // other request is a cache read that deals a fresh hand out of it. What 5/min
+            // actually bounded was *starting a quiz* — and a player who opens solo, retries
+            // once, then opens 2-player has spent three of five permits inside one window, on
+            // an endpoint where at most one of those calls could have cost anything. That is
+            // the 429 the funquiz page was surfacing.
+            //
+            // Spend stays bounded by the three layers that can actually see cost: the pool
+            // cache above (one call per category per 6 h, and QuestionCategory is a small
+            // closed enum, so key rotation is bounded too), the durable per-identity token
+            // budget, and AiConcurrencyGate. Eight quiz starts in fifteen seconds is already
+            // faster than a human can read a question, and is still useless as an amplifier.
+            // A SHORT window, unlike every policy above it, because what hurt here was not the
+            // rate but the penalty: a one-minute window that trips on the fourth quiz start
+            // locks the game for the rest of the minute and can only advertise a 60 s
+            // Retry-After. 8 per 15 s is a higher sustained ceiling (32/min against the old
+            // 5/min) AND a wait short enough for the page to sit through and retry itself.
+            // A sliding window is not the fix — its permits come back one full window after
+            // they were taken, so it smooths the ceiling without shortening the lockout, and
+            // .NET's implementation publishes no Retry-After metadata to hand the client.
             opts.AddPolicy("ai-generation", ctx =>
                 RateLimitPartition.GetFixedWindowLimiter(
                     partitionKey: BuildPartitionKey(ctx),
                     factory: _ => new FixedWindowRateLimiterOptions
                     {
-                        Window = TimeSpan.FromMinutes(1),
-                        PermitLimit = 5,
+                        Window = TimeSpan.FromSeconds(15),
+                        PermitLimit = 8,
                         AutoReplenishment = true,
                         QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
                         QueueLimit = 0,
                     }));
+
+            // Every policy here is a fixed window with QueueLimit = 0, so a rejected caller has
+            // to guess how long to wait — and the client's own retry handler deliberately does
+            // not replay a 429. Hand back the window's remaining time as Retry-After so the UI
+            // can say "in 12s" instead of failing blind. The metadata is only present on
+            // limiters that know their replenishment schedule; absent it, say nothing rather
+            // than invent a number.
+            opts.OnRejected = (context, _) =>
+            {
+                if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
+                {
+                    context.HttpContext.Response.Headers.RetryAfter =
+                        ((int)Math.Ceiling(retryAfter.TotalSeconds)).ToString(
+                            System.Globalization.CultureInfo.InvariantCulture);
+                }
+
+                return ValueTask.CompletedTask;
+            };
         });
 
         return services;

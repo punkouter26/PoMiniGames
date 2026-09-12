@@ -59,25 +59,13 @@ internal static class StorageExtensions
             connectionString, endpoint, accountName, sp.GetService<IHostEnvironment>()));
         services.AddSingleton(_ => ResolveBlobServiceClient(connectionString, endpoint, accountName));
 
-        services.AddSingleton<StorageService>(sp =>
-        {
-            // StorageService needs the in-memory fallback wired in so it can hand off when
-            // Azure is unreachable. ActivatorUtilities fills the four required dependencies
-            // (IConfiguration, EloCalculator, PairwiseEloCalculator, ILogger) from the
-            // container, and we append the optional fallback as the trailing arg.
-            return ActivatorUtilities.CreateInstance<StorageService>(
-                sp,
-                sp.GetRequiredService<InMemoryStorageService>());
-        });
+        // Every dependency (IConfiguration, EloCalculator, PairwiseEloCalculator, ILogger)
+        // resolves from the container, so this is a plain registration. It used to go
+        // through ActivatorUtilities.CreateInstance to append an InMemoryStorageService as
+        // a trailing optional argument; that fallback was removed on 2026-09-11 (see the
+        // note at the top of StorageService) and the construction dance went with it.
+        services.AddSingleton<StorageService>();
         services.AddSingleton<IStorageService>(sp => sp.GetRequiredService<StorageService>());
-
-        // In-memory fallback for when Azure Table Storage is unreachable (e.g., Azurite
-        // not running because Docker isn't installed on the dev machine). The fallback
-        // service is always registered; StorageService decides at request time whether
-        // to delegate to it. Singleton so all calls within a single process share the
-        // same in-memory state — a save + leaderboard read on the same session see the
-        // same row, and the demo Elo board stays internally consistent across calls.
-        services.AddSingleton<InMemoryStorageService>();
 
         services.AddHealthChecks()
             .AddCheck<StorageHealthCheck>(

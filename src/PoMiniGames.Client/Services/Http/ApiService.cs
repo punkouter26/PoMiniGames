@@ -483,18 +483,6 @@ public class ApiService
 
     // ─── PoBrawl demo-mode fighter Elo ───────────────────────────────────
 
-    public async Task<PoBrawlFighterRating[]?> GetPoBrawlFighterRatingsAsync(int count = 10)
-    {
-        try
-        {
-            return await _http.GetFromJsonAsync(
-                $"/api/pobrawl/elo?count={count}", ApiJsonContext.Default.PoBrawlFighterRatingArray);
-        }
-        catch
-        {
-            return null;
-        }
-    }
 
     /// <summary>
     /// Reports one finished CPU-vs-CPU demo match. Returns the re-ranked board, or null when

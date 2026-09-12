@@ -1345,3 +1345,29 @@ p, li, dd, blockquote,
     align-self: center;
   }
 }
+
+/* ── Connect Five physics clone ──────────────────────────────────────────────
+   js/connectfive/index.js parents the falling disc to document.body so matter.js
+   can drive it in viewport coordinates without disturbing the grid. That puts it
+   OUTSIDE the ConnectFivePage scoped-CSS boundary: every disc rule there compiles
+   to `.cf-cell .piece[b-<hash>]`, and a body-parented div carries no scope
+   attribute, so the clone matched nothing and fell as a fully transparent box.
+   With its cell's static disc hidden for the flight, that is the whole reason the
+   board played the drop sound and showed nothing (2026-09-12). These rules are
+   global on purpose — the element cannot be scoped. Geometry (size, position,
+   transform) stays inline in the JS, which owns it per frame. */
+.cf-physics-clone {
+  border-radius: 50%;
+  font-size: 0;
+  box-shadow: var(--disc-shadow);
+}
+
+.cf-physics-clone.red-piece {
+  background: radial-gradient(circle at 34% 28%,
+    var(--disc-red-lit) 0%, var(--disc-red-mid) 46%, var(--disc-red-core) 100%);
+}
+
+.cf-physics-clone.yellow-piece {
+  background: radial-gradient(circle at 34% 28%,
+    var(--disc-yellow-lit) 0%, var(--disc-yellow-mid) 46%, var(--disc-yellow-core) 100%);
+}

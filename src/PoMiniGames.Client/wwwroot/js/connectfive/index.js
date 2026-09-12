@@ -59,6 +59,12 @@
     let _stillFrames = 0;
     /** rAF timestamp from last step; used for delta integration. */
     let _lastFrame = 0;
+    /** 2026-09-12: watchdog id. A disc that never satisfies isAtRest() (it rolled
+        off a circular ghost, the tab was throttled, the board was resized
+        mid-flight) used to leave its cell hidden forever. The drop is force-settled
+        after this long no matter what the physics thinks. */
+    let _watchdogId = 0;
+    const DROP_TIMEOUT_MS = 1400;
     /** 2026-09-11 fix: _restX/_restY were assigned in dropDisc() and read by the
         step loop's rest detection but never declared — under strict mode the
         first assignment threw ReferenceError, dropDisc() caught it and fell back
@@ -125,6 +131,13 @@
             cellSize, gap, paddingLeft, paddingTop, paddingRight, paddingBottom,
             gridLeft, gridTop, gridRight, gridBottom, stride, cells, boardRect: r,
         };
+    }
+
+    /** The .cf-cell element a drop is landing in (cells render row-major). */
+    function cellAt(row, col) {
+        if (!_board) return null;
+        const cells = _board.querySelectorAll('.cf-cell');
+        return cells.length < 81 ? null : cells[row * 9 + col];
     }
 
     // ─── Engine + walls ───────────────────────────────────────────────────
@@ -325,7 +338,8 @@
         if (drop.clone && drop.clone.parentNode) drop.clone.parentNode.removeChild(drop.clone);
         _drop = null;
         _stillFrames = 0;
-        if (_board) _board.classList.remove('cf-board--physics-active');
+        clearWatchdog();
+        revealCell(drop);
         // §GFX-8 The landing event is observable to anyone else who wants to
         // hook into it (audio syncing, particles, scoreboard shake). The page
         // already fires the chip-drop audio from Blazor — kept there so the
@@ -337,6 +351,57 @@
         } catch { /* CustomEvent unavailable on a very old browser */ }
     }
 
+    /**
+     * Hide the static disc of the cell this drop is landing in, so the player
+     * sees only the falling clone.
+     *
+     * Applied as an INLINE style on the disc, on the frame after dropDisc().
+     * Both halves of that matter:
+     *   • The disc does not exist yet when dropDisc() runs — the caller places
+     *     the piece in the board model and only then re-renders — so the hide
+     *     has to wait a frame for Blazor to paint it.
+     *   • The cell's `class` attribute is Blazor-managed (piece colour, win
+     *     cascade, disabled), so a class added here is wiped by the very next
+     *     diff. Blazor never sets a `style` attribute on the disc, so it leaves
+     *     an inline one alone.
+     * Every failure path clears it, and the watchdog guarantees one runs.
+     */
+    function hideCell(drop) {
+        if (!drop || !drop.cellEl) return;
+        requestAnimationFrame(() => {
+            // A drop that already settled (or was cancelled) inside this one
+            // frame must not hide the disc it just delivered.
+            if (_drop !== drop) return;
+            const disc = drop.cellEl.querySelector('.piece:not(.ghost-piece)');
+            if (!disc) return;
+            drop.hiddenEl = disc;
+            disc.style.visibility = 'hidden';
+            disc.style.animation = 'none';
+        });
+    }
+
+    function revealCell(drop) {
+        const disc = drop && drop.hiddenEl;
+        if (!disc) return;
+        disc.style.visibility = '';
+        disc.style.animation = '';
+    }
+
+    function clearWatchdog() {
+        if (_watchdogId) { clearTimeout(_watchdogId); _watchdogId = 0; }
+    }
+
+    /** Force-settle a drop that outlived its welcome, so the disc can never stay
+        hidden behind a clone that is still bouncing (or a rest test that will
+        never pass). */
+    function armWatchdog() {
+        clearWatchdog();
+        _watchdogId = setTimeout(() => {
+            _watchdogId = 0;
+            if (_drop) finalizeDrop();
+        }, DROP_TIMEOUT_MS);
+    }
+
     function cancelDrop() {
         // Reveal the static disc immediately on any failure path so a
         // mid-drop throw never leaves the cell visually blank.
@@ -344,10 +409,11 @@
             try { Matter.World.remove(_engine.world, [_drop.body, ..._drop.ghosts]); }
             catch { /* engine may have been torn down already */ }
             if (_drop.clone && _drop.clone.parentNode) _drop.clone.parentNode.removeChild(_drop.clone);
+            revealCell(_drop);
             _drop = null;
         }
         _stillFrames = 0;
-        if (_board) _board.classList.remove('cf-board--physics-active');
+        clearWatchdog();
     }
 
     // ─── Public API ───────────────────────────────────────────────────────
@@ -396,11 +462,18 @@
             const ghosts = spawnGhosts(col, targetRow);
             const { body, clone } = spawnFallingDisc(col, color);
             Matter.World.add(_engine.world, [body, ...ghosts]);
-            _drop = { body, ghosts, clone, col, targetRow, color };
+            // 2026-09-12: hide ONLY the cell being dropped into. This used to add
+            // .cf-board--physics-active to the board, whose rule hid all 81 discs
+            // for the duration of the flight — in the CPU-vs-CPU demo, where the
+            // next drop starts before the last one settles, that meant the board
+            // was blank essentially always.
+            const cellEl = cellAt(targetRow, col);
+            _drop = { body, ghosts, clone, col, targetRow, color, cellEl, hiddenEl: null };
+            hideCell(_drop);
             _restX = body.position.x;
             _restY = restYForRow(targetRow, col);
             _stillFrames = 0;
-            if (_board) _board.classList.add('cf-board--physics-active');
+            armWatchdog();
             return true;
         } catch (e) {
             console.warn('PoConnectFive.dropDisc failed:', e);
@@ -412,6 +485,7 @@
     /** Tear down the engine and any in-flight drop. Page calls this on Dispose. */
     function reset() {
         cancelDrop();
+        clearWatchdog();
         if (_rafId) cancelAnimationFrame(_rafId);
         _rafId = 0;
         _active = false;

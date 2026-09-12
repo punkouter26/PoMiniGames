@@ -339,22 +339,20 @@
 
 /* ── §CF-1 Physics-driven drop ───────────────────────────────────────────
    matter.js drives the disc visually from above the board to its target cell
-   via a floating clone rendered on document.body. While the drop is in flight
-   the static DOM disc MUST be hidden — otherwise the player sees a disc
-   already in its cell AND a falling clone on top of it. The class is added
-   by js/connectfive/index.js dropDisc() and removed on settle (or on any
-   failure path via cancelDrop), so the cell returns to its normal
-   grid-laid-out state on the very next paint.
+   via a floating clone parented to document.body, and hides that one cell's
+   static disc for the flight so the player does not see the disc already in
+   place with a clone falling onto it.
 
-   `visibility: hidden` (not `display: none`) keeps the cell measurable so
-   the physics module can still read .cf-cell offsets via querySelectorAll
-   when ghosts are spawned for chain-reaction collision.
+   There is deliberately no rule here for either half:
+   • The clone is body-parented, so it never carries this component's scope
+     attribute and no rule in this file can reach it. Its disc styling lives in
+     wwwroot/css/app.css under `.cf-physics-clone`.
+   • The hide is an inline style written by js/connectfive/index.js, because
+     the cell's `class` attribute is Blazor-managed and a class added from JS
+     is wiped by the next diff.
 
-   `animation: none !important` overrides the cf-slide-down keyframe that
-   would otherwise play a parallel CSS drop behind the matter.js one — that
-   double-drop is the visual glitch a half-broken integration produces. */
-.cf-board--physics-active .cf-cell .piece {
-  visibility: hidden;
-  animation: none !important;
-}
-
+   2026-09-12: this used to be `.cf-board--physics-active .cf-cell .piece`,
+   which hid all 81 discs for the duration of every flight. In the CPU-vs-CPU
+   demo the next drop starts before the previous one settles, so the board was
+   blank essentially always — you heard the drops and saw an empty grid. With
+   the clone unstyled (see above) there was nothing else on screen either. */

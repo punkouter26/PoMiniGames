@@ -9,7 +9,6 @@
    ambiguous. Same convention as ApiService.cs. *@
 @using PoBrawlFighter = PoMiniGames.Domain.Primitives.PoBrawlFighter
 @using PoBrawlRoster = PoMiniGames.Domain.Primitives.PoBrawlRoster
-@using PoBrawlFighterRating = PoMiniGames.Domain.Models.PoBrawlFighterRating
 @implements IAsyncDisposable
 @inject PlayerNameService PlayerNameService
 @inject ApiService ApiService
@@ -117,26 +116,6 @@
            the top 3 in the shared end-of-game modal. *@
     </div>
 
-    @* Fighter Elo board. Demo mode is the only thing that feeds it, so it lives here
-       rather than in the end-of-game modal (which demo never shows). Ratings are
-       head-to-head between presidents — both CPUs fight at the same difficulty, so this
-       measures roster balance, not anyone's skill.
-
-       Deliberately a SIBLING of .pb-wrap, not a child. .pb-wrap is the positioning
-       context for .pb-demo-badge (`position: absolute; bottom: 10px`), so a board nested
-       inside it grows the wrap and drops the badge on top of the table — which is exactly
-       what happened the first time. Keeping the board outside leaves the arena as the
-       badge's anchor. *@
-    @if (_demo)
-    {
-        @* @-prefixed: Player1Id/Player2Id are string parameters, and Razor passes a quoted
-           value to a string parameter as a literal — "_p1Char" would reach the board as
-           that text and the "fighting now" highlight would silently never match. *@
-        <PoBrawlEloBoard Ratings="@_fighterRatings"
-                 Player1Id="@_p1Char"
-                 Player2Id="@_p2Char"
-                 ContextHint="Live fighters are marked as now." />
-    }
 </GameShell>
 
 @code {
@@ -289,19 +268,6 @@
             Math.Max(a.P1BestCombo, b.P1BestCombo), Math.Max(a.P2BestCombo, b.P2BestCombo),
             Math.Max(a.P1BiggestHit, b.P1BiggestHit), Math.Max(a.P2BiggestHit, b.P2BiggestHit));
 
-    // ── Fighter Elo board ─────────────────────────────────────────────────
-    // Demo mode is still the only thing that FEEDS this board (CPU-vs-CPU matches are
-    // the only fair sample of roster balance), but every mode now READS it: demo shows
-    // it live under the arena, 1P and 2P show it in the end-of-game modal. It was
-    // demo-only before, which meant the head-to-head data was invisible to the players
-    // choosing fighters — the one audience it is useful to.
-    //
-    // Null until the first fetch resolves, so the board can tell "still loading" from
-    // "genuinely empty" — the two look identical if you seed with an empty array. Replaced
-    // wholesale on every refresh, never mutated: PoBrawlEloBoard.ShouldRender compares by
-    // reference, so an in-place edit would not repaint.
-    private PoBrawlFighterRating[]? _fighterRatings;
-
     private RenderFragment TitleContent => @<span><span aria-hidden="true">🥊</span> Brawl</span>;
 
     private string IntroDialogLabel => _mode switch
@@ -338,7 +304,6 @@
         <ul>
             <li>No controls — both corners are driven by the CPU</li>
             <li>⚡ Energy still rules the exchanges — one swing spends it all</li>
-            <li>The Fighter Ratings board below fills in as demo fights finish</li>
         </ul>
     </div>;
 
@@ -547,9 +512,9 @@
            padded the post-match summary with ten rows nobody had asked for. Its home is the
            "Brawl Demo" board on /leaderboards (UnifiedLeaderboardEndpoints.BuildPoBrawlDemoAsync,
            grouped under 1 Player next to the Brawl ladder board), which is where a player
-           comparing fighters is already looking. The live board under the arena in DEMO mode
-           (see the PoBrawlEloBoard above .pb-wrap) stays — demo never shows this modal, and
-           the kiosk screen is the one place the standings are the point. *@
+           comparing fighters is already looking. The live board that used to sit under the
+           arena in DEMO mode went the same way on 2026-09-12 — the arena now gets the whole
+           page. Demo still POSTs each result, so /leaderboards keeps filling in. *@
 
         @* No board markup here on purpose — GameOverModal already renders one above this
            content, from whatever GameKey the shell was given. For 1P that is now
@@ -595,13 +560,6 @@
     {
         if (!_demo) return;
 
-        // Show the standing board immediately rather than waiting for the first fight of this
-        // session to finish — the kiosk may only dwell here for one match. GET /api/pobrawl/elo
-        // is anonymous (§10: leaderboard reads are), so this needs no session and no retry: on
-        // a demo route AuthGate renders its children while the background guest sign-in is
-        // still in flight, and this page used to carry an auth subscription purely to recover
-        // from the 401 that window produced.
-        await LoadFighterRatingsAsync();
     }
 
     protected override void OnAfterRender(bool firstRender)
@@ -987,23 +945,13 @@
             LoserFighterId: leftWon ? _p2Char : _p1Char,
             IsDraw: winner == 0);
 
-        // The POST answers with the re-ranked board, so the ranking change this match caused
-        // arrives with it — no follow-up fetch.
-        await ApplyRatingsAsync(await ApiService.SubmitPoBrawlDemoResultAsync(request));
+        // Fire-and-forget as far as the UI is concerned: the POST answers with the
+        // re-ranked board, but since the on-page board was removed (2026-09-12) nothing
+        // here renders it. The write itself still matters — it is what feeds the
+        // "Brawl Demo" board on /leaderboards.
+        await ApiService.SubmitPoBrawlDemoResultAsync(request);
     }
 
-    private async Task LoadFighterRatingsAsync() =>
-        await ApplyRatingsAsync(await ApiService.GetPoBrawlFighterRatingsAsync(10));
-
-    private async Task ApplyRatingsAsync(PoBrawlFighterRating[]? ratings)
-    {
-        // A failed fetch leaves the previous board on screen (or the loading line on the
-        // very first attempt) instead of blanking it — an unattended screen should degrade
-        // to stale, not to empty.
-        if (ratings is null) return;
-        _fighterRatings = ratings;
-        await InvokeAsync(StateHasChanged);
-    }
 
     private void UpdateStats()
     {

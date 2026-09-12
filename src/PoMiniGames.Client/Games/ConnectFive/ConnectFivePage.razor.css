@@ -60,8 +60,12 @@
   gap: 0.4rem;
   min-width: 0;
   /* Dimmed until it is that player's move — the active side is the signal, so
-     the inactive one has to give up contrast for it to read as one. */
-  opacity: 0.45;
+     the inactive one has to give up contrast for it to read as one.
+     0.45 composited --color-text-primary down to #90949e on the light surface,
+     which measured 2.92:1 and failed WCAG AA outright — the waiting player's
+     name is still content, not decoration. 0.62 measures 4.65:1 and the
+     active/inactive distinction still reads clearly. 2026-09-11 UI audit. */
+  opacity: 0.62;
   transition: opacity var(--dur-fast) var(--ease-standard);
 }
 

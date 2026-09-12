@@ -15,6 +15,33 @@
          The dotnet.* runtime + native modules are emitted with content hashes
          and discovered at runtime by the Blazor loader — preloading them by
          their unhashed names 404s and pollutes DevTools with red noise. -->
+    <!-- The import map MUST stay above the modulepreload below, and above every
+         other module script on the page. Per the HTML spec an import map is
+         rejected once a module load has already been *triggered*, and a
+         `modulepreload` counts as triggering one — so while this block sat lower
+         in the head (next to glass.css, where it lived until 2026-09-11) Chrome
+         logged "An import map is added after module script load was triggered"
+         on EVERY page load and threw the whole map away.
+
+         That was not cosmetic: with no map, `import "three"` is a bare specifier
+         with nothing to resolve against, so engineLoader.js failed with
+         "Failed to resolve module specifier" and PoMarbleRace and PoVoxelStrike
+         rendered no canvas at all — both games were completely dead. Verified by
+         re-running both routes after the hoist: three.module.js, cannon-es and
+         ~20 addons fetch, the canvas renders, console is clean.
+
+         Anything that adds a module script earlier than this line reintroduces
+         the bug silently — the games just stop, with one console line. -->
+    <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/",
+        "cannon-es": "https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js"
+      }
+    }
+    </script>
+
     <link rel="modulepreload" href="_framework/blazor.webassembly.js" />
 
     <!-- Theme resolution, inline and render-blocking ON PURPOSE.
@@ -125,15 +152,6 @@
          reason — the swap would reinsert it at its original position anyway,
          but a render-blocking load also avoids a flash of unglassed chrome. -->
     <link rel="stylesheet" href="css/glass.css" />
-    <script type="importmap">
-    {
-      "imports": {
-        "three": "https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js",
-        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/",
-        "cannon-es": "https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js"
-      }
-    }
-    </script>
 
     <!-- Shared canvas resolution policy (audit #8). Not deferred and listed
          first among the game scripts: racingInterop.js and the engine modules

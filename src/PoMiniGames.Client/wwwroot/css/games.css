@@ -57,13 +57,27 @@
   color: var(--color-text-primary);
   white-space: nowrap;
   min-width: 0;
-  max-width: 14ch;
+  /* The cap USED to be a flat `max-width: 14ch` with no breakpoint, so it fired
+     at every width — "🔴 Connect Five · 1 Player" and "🌿 PoEcosystem · A living
+     island" were ellipsised on a 1440px desktop, and "🏜️ SandPlayground" lost its
+     last five pixels for no reason at all. 14ch is the right answer for a phone
+     and the wrong answer for everything else; it is now scoped to phone widths
+     by the media query below. 2026-09-11 UI audit. */
+  max-width: 34ch;
   overflow: hidden;
   text-overflow: ellipsis;
   /* Audit #7: this is now a real <h1> in the chrome slot. Strip the
      browser-default margins so it sits inline next to the back-link without
      re-flowing the bar. */
   margin: 0;
+}
+
+/* The narrow-screen half of the title cap above. On a phone the top bar also
+   carries the brand, the FPS pill and the auth controls, so the title genuinely
+   does have to yield — 14ch is what fits beside them. Above this breakpoint the
+   bar has room and the title shows in full. */
+@media (max-width: 640px) {
+  .gps-game-title { max-width: 14ch; }
 }
 
 /* Audit #6: explicit "← Home" affordance next to the game title in the

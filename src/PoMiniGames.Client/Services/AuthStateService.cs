@@ -455,14 +455,19 @@ public class AuthStateService
     public async Task SignInGuestAsync()
     {
         Error = null;
-        // Give every guest a unique "Guest######" name (6 random digits) so two
-        // anonymous players can be told apart. Name is the identity key in the
-        // multiplayer lobbies/scoring (Fun Quiz, Couple Quiz), so a shared "Guest"
-        // name collapsed distinct players into one (both crowned King/host). The
-        // server keys the guest identity off this name, and the session cookie
-        // persists it across navigations, so the name stays stable for the session.
-        var guestName = $"Guest{Random.Shared.Next(0, 1_000_000):D6}";
-        var profile = await _api.DevBypassAsync(guestName);
+        // Guests need a unique name — it is the identity key in the multiplayer
+        // lobbies/scoring (Fun Quiz, Couple Quiz), and a shared "Guest" collapsed
+        // distinct players into one (both crowned King/host). But the uniquifying
+        // is the SERVER's job and always has been: DevLoginIntake.BuildProfile
+        // appends its own random 6-digit suffix to every dev/guest login.
+        //
+        // Sending "Guest######" from here meant both suffixes were applied and
+        // every guest ended up named "Guest813527-519086" — 18 characters that
+        // read as a database key, clipped in the top bar at every width and
+        // truncated a second time inside the profile hero. Sending the bare
+        // "Guest" yields "Guest-519086": same uniqueness, same collision
+        // guarantee, and it actually fits. 2026-09-11 UI audit.
+        var profile = await _api.DevBypassAsync("Guest");
         if (profile != null)
         {
             _user = profile;

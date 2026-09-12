@@ -272,8 +272,37 @@ export function vibrate(pattern) {
         // the call entirely on any /{game}/demo or ?kiosk=N route — the
         // attract reel has no one to vibrate.
         if (isOnKioskRoute()) return;
+        // The kiosk guard above covers the attract reel but not every
+        // gesture-less caller. /login fires a cue while the sign-in gate is
+        // still mounting, and this — not uiAudio.js — was the call site still
+        // logging "Blocked call to navigator.vibrate because user hasn't tapped
+        // on the frame" on the app's entry page after the uiAudio fix.
+        // Same sticky-activation test, applied here too. 2026-09-11 UI audit.
+        if (!hasUserGestured()) return;
         if (navigator && typeof navigator.vibrate === 'function') navigator.vibrate(pattern);
     } catch { /* unsupported or storage blocked */ }
+}
+
+/**
+ * True once the user has interacted with the document in a way that satisfies
+ * the browser's sticky-activation requirement for navigator.vibrate. Mirrors
+ * the helper in uiAudio.js — the two modules are loaded independently (one is
+ * imported by UiFeedbackService, this one by index.html), so each carries its
+ * own copy rather than either taking a dependency on the other for six lines.
+ */
+let _gestured = false;
+function hasUserGestured() {
+    if (_gestured) return true;
+    if (navigator.userActivation && navigator.userActivation.hasBeenActive) {
+        _gestured = true;
+    }
+    return _gestured;
+}
+if (typeof document !== 'undefined') {
+    for (const evt of ['pointerdown', 'keydown', 'touchstart']) {
+        document.addEventListener(evt, () => { _gestured = true; },
+            { once: true, capture: true, passive: true });
+    }
 }
 
 // Cheap URL probe — kiosk coordinator decides whether the reel is running

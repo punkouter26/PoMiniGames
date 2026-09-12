@@ -37,6 +37,14 @@
         /after the context has been closed is not useful/i,
         /AudioContext.*was not allowed to start/i,
         /WebGL:.*context lost/i, // can fire when the GPU context tears down on navigation
+        // Chromium prints this from inside navigator.gpu.requestAdapter() on any
+        // machine without a WebGPU adapter. It is the EXPECTED answer for us —
+        // gpuFxWebGPU.probe() treats a missing adapter as "stay on WebGL2" and
+        // the particle backend works either way — but it lands as a red console
+        // line on every page load for those users. Ours is the warn immediately
+        // after it ("gpuFxWebGPU: WebGPU unavailable, staying on WebGL2"), which
+        // is now console.debug. 2026-09-11 UI audit.
+        /No available adapters/i,
     ];
 
     function shouldFilter(args) {

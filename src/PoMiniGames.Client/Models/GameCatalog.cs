@@ -242,7 +242,15 @@ public static class GameCatalog
             new(GameMode.Demo, "/poecosystem/demo"),
         ])
         {
-            Subtitle = "A living island you walk through: creatures hunt, mate, age and die on their own",
+            // Terse by design, like Tic-Tac-Toe's "4-in-a-row · 6×6" above. The
+            // subtitle renders as a single-line nowrap chip in the home card, so a
+            // 79-character blurb ("A living island you walk through: creatures
+            // hunt, mate, age and die on their own") was ellipsised to roughly its
+            // first forty characters even on a 1440px desktop — and it made this
+            // card 30px taller than the ten cards without a subtitle, which is
+            // what left the grid visibly ragged. Say the distinguishing thing and
+            // stop. 2026-09-11 UI audit.
+            Subtitle = "Creatures hunt, age, die",
         },
 
         // 1P is the card head, so ChipPrimary keeps the chip row from presenting
@@ -253,7 +261,8 @@ public static class GameCatalog
             new(GameMode.Demo, "/sandplayground/demo"),
         ])
         {
-            Subtitle = "Wet sand: pore water, hydrostatic flow, buried charges and camouflet cavities",
+            // Shortened for the same reason as PoEcosystem above.
+            Subtitle = "Wet sand · buried charges",
             ChipPrimary = true,
         },
     ];

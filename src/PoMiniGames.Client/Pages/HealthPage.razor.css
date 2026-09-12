@@ -8,6 +8,23 @@
   color: var(--color-text-primary);
 }
 
+/* The status page is a read-at-a-glance surface — it should not scroll to show
+   whether the app is healthy. It ran 81px past the fold on a 390×844 phone.
+   2026-09-11 UI audit. */
+@media (max-width: 640px), (max-height: 780px) {
+  .hp { padding: var(--space-3) var(--space-4); }
+  .hp-head { margin-bottom: var(--space-3) !important; }
+  .hp-foot { margin-top: var(--space-2) !important; line-height: 1.4; font-size: var(--text-xs); }
+  /* The detail column carries the checks' own prose, which is the one part of
+     this page whose length the layout does not control — "Table storage is
+     unavailable; scores and leaderboards are skipped…" is three lines on a
+     phone. Tightening the leading here is what keeps the page's height stable
+     across different check results rather than only on a healthy run. */
+  /* NB: cell padding for the stacked-card layout is set in the `max-width: 640px`
+     block further down, which comes later in source order and would override a
+     rule written here. Change it there, not here. */
+}
+
 .hp-head {
   display: flex;
   flex-wrap: wrap;
@@ -139,8 +156,13 @@
         background: var(--surface-2);
         border: 1px solid var(--color-border);
         border-radius: var(--radius-md);
-        padding: var(--space-3);
-        margin-bottom: var(--space-3);
+        /* --space-3 → --space-2 on both. Three check cards × (16px padding top
+           and bottom + 16px margin) was ~96px of the 604px table. The status
+           page should be readable at a glance without scrolling, and the
+           descriptions themselves are the content worth the space.
+           2026-09-11 UI audit. */
+        padding: var(--space-2);
+        margin-bottom: var(--space-2);
     }
     .hp-table tbody tr:last-child { margin-bottom: 0; }
     /* Each cell carries its own caption via `::before` content — the labels
@@ -148,8 +170,12 @@
        (we add them via the markup below). */
     .hp-table td,
     .hp-table th[scope="row"] {
-        padding: var(--space-2) 0;
+        /* --space-2 → --space-1: three cells per card × three cards × 16px of
+           vertical padding was ~144px. The caption blocks already separate the
+           fields visually; the padding was doubling that. */
+        padding: var(--space-1) 0;
         border: 0;
+        line-height: 1.4;
     }
     .hp-table th[scope="row"] {
         font-size: var(--text-base);
@@ -221,7 +247,13 @@
 .hp-link-btn {
     background: transparent;
     border: 0;
-    padding: 0;
+    /* Measured 358×18 on a touch context — the only control left in the app
+       under the 24px WCAG 2.5.8 floor after the app.css sweep, because it is a
+       bare <button> inside a paragraph and the floor's selector list covers
+       classes, not inline text buttons. Vertical padding gives it the hit area
+       without changing how the sentence reads. 2026-09-11 UI audit. */
+    padding: 0.25rem 0;
+    min-height: 24px;
     color: var(--color-accent, var(--accent-ink, currentColor));
     font: inherit;
     font-size: var(--text-sm);

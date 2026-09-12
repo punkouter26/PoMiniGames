@@ -3,17 +3,74 @@
    in light mode, which is the one rule this codebase's theming is absolute about. */
 
 .fxb {
-    margin-top: var(--space-6, 1.5rem);
+    /* --space-6 → --space-4: now that the bench is collapsed by default it is a
+       single 44px summary row, and a 32px gap above a 44px row read as a hole
+       in the page rather than as separation. */
+    margin-top: var(--space-4, 1rem);
     padding: var(--space-4, 1rem);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-lg, 12px);
     background: var(--color-surface-raised, var(--color-surface));
 }
 
+/* Short phones: the bench is an optional extra, and on a 375×667 screen it is
+   the one block on the profile whose absence costs the player nothing — the
+   page has to fit without scrolling and the stats are the reason to be here.
+   Every other size keeps it, collapsed. Matching the profile's own short-phone
+   block; it has to live here because `.fxb` carries THIS component's scope id,
+   so a `.prf-page .fxb` rule in ProfilePage.razor.css would never match. */
+@media (max-width: 640px) and (max-height: 780px) {
+    .fxb { display: none; }
+}
+
+/* The bench is a collapsed <details> (2026-09-11 viewport audit) — see the note
+   in FxBench.razor. The summary is the whole closed-state affordance, so it
+   carries the touch target and the disclosure marker. */
+.fxb-summary {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: var(--space-1, 0.25rem) var(--space-2, 0.5rem);
+    min-height: 44px;
+    align-content: center;
+    cursor: pointer;
+    list-style: none; /* Firefox */
+}
+
+/* Safari/Chrome render the marker via this pseudo-element, which `list-style`
+   alone does not suppress. Replaced below by our own rotating caret. */
+.fxb-summary::-webkit-details-marker { display: none; }
+
+.fxb-summary::after {
+    content: "›";
+    margin-left: auto;
+    font-size: 1.25rem;
+    line-height: 1;
+    color: var(--color-text-secondary);
+    transition: transform var(--dur-base, 0.2s) var(--ease-out, ease);
+}
+
+.fxb[open] > .fxb-summary::after { transform: rotate(90deg); }
+
+.fxb-summary:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm, 6px);
+}
+
+.fxb-summary-hint {
+    font-size: var(--text-sm, 0.875rem);
+    color: var(--color-text-secondary);
+}
+
+/* Hidden once open — the fuller .fxb-note below says the same thing at length. */
+.fxb[open] > .fxb-summary > .fxb-summary-hint { display: none; }
+
 .fxb-title {
-    margin: 0 0 var(--space-1, 0.25rem);
+    margin: 0;
     font-size: var(--text-lg, 1.125rem);
     color: var(--color-text-primary);
+    display: inline;
 }
 
 .fxb-note {

@@ -4,7 +4,9 @@
 .lb-page {
     max-width: var(--content-max, 960px);
     margin: 0 auto;
-    padding: var(--space-3) var(--space-4) var(--space-6);
+    /* Bottom --space-6 → --space-4: 32px of trailing padding under a grid that
+       was already overflowing on a 720p laptop. 2026-09-11 UI audit. */
+    padding: var(--space-3) var(--space-4) var(--space-4);
     width: 100%;
 }
 
@@ -36,12 +38,27 @@
 .lb-group {
     margin-top: var(--space-4);
 }
+/* Short viewports: two groups × 16px of top margin plus the chip row's own
+   spacing was the last 17px of overflow on a 1280×720 laptop. 2026-09-11. */
+@media (max-height: 780px) {
+    .lb-group { margin-top: var(--space-2); }
+    .lb-chips { padding-bottom: 0; margin-bottom: var(--space-2); gap: var(--space-1); }
+    .lb-page { padding-top: var(--space-2); padding-bottom: var(--space-2); }
+    .lb-head { margin-bottom: var(--space-2); }
+}
 .lb-group .gps-phase-h {
     margin-bottom: var(--space-2);
 }
 .lb-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    /* 260px → 210px, same reasoning as the home grid's 190px floor: the track
+       minimum sets the column count and the column count sets the row count,
+       which is the page height. At 260px a 1280×720 laptop fit three columns
+       and the 1-Player group alone ran 461px, putting the page 136px past the
+       fold. At 210px the same laptop gets four and the page fits.
+       `min(…, 100%)` so a narrow phone collapses the track instead of
+       overflowing sideways. 2026-09-11 UI audit. */
+    grid-template-columns: repeat(auto-fill, minmax(min(210px, 100%), 1fr));
     gap: var(--space-2);
 }
 

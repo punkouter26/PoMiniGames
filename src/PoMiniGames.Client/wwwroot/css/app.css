@@ -502,7 +502,11 @@
        surface — mathematically at the floor, which axe still reports as a failure
        once it rounds. One step darker gives ~6.3:1 and real headroom. */
     --accent-success-ink: #166534;
-    --accent-warning-ink: #a16207;
+    /* Same story as --accent-success-ink above: #a16207 on --accent-warning-soft
+       composites to 4.17:1 over a light surface, which axe reports as a failure
+       (seen live on .hp-badge--degraded at /health). One step darker measures
+       ~5.6:1. 2026-09-11 UI audit. */
+    --accent-warning-ink: #845104;
     --accent-danger-ink: #b91c1c;
     --accent-amber-ink: #854d0e;
 
@@ -981,12 +985,32 @@ h3[tabindex="0"]:focus-visible {
   align-items: center;
   justify-content: center;
   gap: var(--space-3);
-  padding: var(--space-7) var(--space-4);
+  /* --space-7 (40px) → --space-5 (24px). An empty state is a placeholder; at
+     40px top and bottom plus the min-height below it measured 288px on a 720p
+     laptop and 267px on an iPhone SE — for one icon, one line of title and two
+     lines of body. It was a third of /profile's overflow on both.
+     2026-09-11 UI audit. */
+  padding: var(--space-5) var(--space-4);
   text-align: center;
   color: var(--color-text-secondary);
   /* Keep empty states inside the viewport on a portrait phone — an empty
-     board should never have to scroll to read. */
-  min-height: clamp(12rem, 40dvh, 22rem);
+     board should never have to scroll to read. The 40dvh middle term was the
+     binding one on short viewports and is now 28dvh for the same reason as the
+     padding above: this is a placeholder, not a hero. */
+  min-height: clamp(9rem, 28dvh, 18rem);
+}
+
+/* Short viewports: the placeholder gives up its remaining generosity so the
+   page around it fits. The icon is decorative and the min-height is a comfort
+   floor, not content — both yield before anything with words in it does.
+   2026-09-11 UI audit. */
+@media (max-height: 780px) {
+  .app-empty-state {
+    padding: var(--space-3) var(--space-4);
+    min-height: 0;
+    gap: var(--space-2);
+  }
+  .app-empty-state__icon { font-size: 1.6rem; }
 }
 
 .app-empty-state__icon {
@@ -1286,5 +1310,38 @@ p, li, dd, blockquote,
          .app-empty-state__action button,
          .app-error-state__action button) {
     min-height: 44px;
+  }
+
+  /* ── 2026-09-11 UI audit: the native controls the lists above never covered.
+     Both rules above enumerate CLASSES, so anything rendered as a bare
+     <select>, <input type="range"> or a game-local button class was simply
+     never in the floor. Measured live at 390×844:
+
+       select.home-action-select         89 × 17
+       button.toast-close                12 × 18
+       input (TicTacToe)                 15 × 15
+       select#toolbar-model-select      142 × 17
+       input#speed-range                229 × 16
+       button.sv-rail__collapse          20 × 18
+       button.sv-btn--sm / --champion    90 × 22
+
+     `min-height` alone is not enough here: .toast-close and .sv-rail__collapse
+     fail on WIDTH too, so both axes are set. Still zero-specificity via
+     `:where()`, so any component rule can opt out by stating its own size. */
+  :where(select,
+         input[type="range"],
+         input[type="checkbox"],
+         input[type="radio"],
+         .toast-close,
+         .sv-btn,
+         .sv-rail__collapse) {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  /* A range input with a 44px min-height needs the track centred in it or the
+     thumb sits against the top edge of its own hit box. */
+  :where(input[type="range"]) {
+    align-self: center;
   }
 }

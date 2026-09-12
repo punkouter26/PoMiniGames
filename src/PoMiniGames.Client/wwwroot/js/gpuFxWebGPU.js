@@ -69,7 +69,10 @@ struct VOut { @builtin(position) pos: vec4f, @location(0) fade: f32, @location(1
 }`;
 
     function error(e) {
-        if (!_probed) console.warn('gpuFxWebGPU: WebGPU unavailable, staying on WebGL2 —', e && e.message);
+        // console.debug, not warn: falling back to WebGL2 is the designed path on
+        // the majority of machines, not a fault. As a warning it read as an error
+        // on every page load for anyone without a WebGPU adapter.
+        if (!_probed) console.debug('gpuFxWebGPU: WebGPU unavailable, staying on WebGL2 —', e && e.message);
         _active = false; _probed = true;
     }
 

@@ -22,8 +22,22 @@
     belongs to audioBus and the values it reads from localStorage.
 *@
 
-<section class="fxb">
-    <h2 class="fxb-title">Sound &amp; effects</h2>
+@* COLLAPSED BY DEFAULT (2026-09-11 viewport audit). Rendered open, this section is
+   504px tall — on a 390×844 phone it was 85% of the profile page's 587px of
+   vertical overflow, and it sat directly under an empty "No games played yet"
+   stats card. A sound bench is a nice thing to find, not a thing to scroll past
+   on the way to your match record.
+
+   <details> rather than a Blazor bool because the open/closed state then costs no
+   render and no field, and the summary is keyboard- and screen-reader-operable
+   for free. The meter is started on toggle instead of on first render (see
+   OnToggleAsync) — the old code ran a rAF analyser loop permanently on the
+   profile page whether or not anyone was looking at it. *@
+<details class="fxb">
+    <summary class="fxb-summary" @onclick="OnToggleAsync">
+        <h2 class="fxb-title">Sound &amp; effects</h2>
+        <span class="fxb-summary-hint">Hear what each game sounds like</span>
+    </summary>
     <p class="fxb-note">
         Every sound in PoMiniGames is generated in your browser — there are no audio
         files to download. Press a voice to hear what a game sounds like.
@@ -57,7 +71,7 @@
                     @onclick="() => BurstAsync(preset)">@preset</button>
         }
     </div>
-</section>
+</details>
 
 @code {
     /// <summary>One auditionable game voice: a cue scope plus its signature cue.</summary>
@@ -92,17 +106,38 @@
 
     private bool _meterRunning;
 
-    protected override async Task OnAfterRenderAsync(bool firstRender)
+    /// <summary>
+    /// Start the analyser only while the bench is actually open, and stop it again
+    /// when it closes. Previously this ran from <c>OnAfterRenderAsync(firstRender)</c>,
+    /// so visiting /profile left a rAF loop reading the master analyser for the life
+    /// of the page even though nothing was watching it.
+    /// <para>
+    /// Driven from the summary's click rather than <c>ontoggle</c>: Blazor does not
+    /// register <c>ontoggle</c> as a known event, so <c>@ontoggle</c> would compile
+    /// to a plain HTML attribute and never fire. Clicking the summary is what
+    /// toggles a native &lt;details&gt;, and keyboard Enter/Space on it dispatches a
+    /// click too, so this covers both. The handler runs BEFORE the browser applies
+    /// the new state, hence the flag is the source of truth, not <c>open</c>.
+    /// </para>
+    /// <para>Both JS calls stay best-effort — a missing meter is acceptable, the
+    /// voices below it still work.</para>
+    /// </summary>
+    private async Task OnToggleAsync()
     {
-        if (!firstRender) return;
-        try
+        if (!_meterRunning)
         {
-            await JS.InvokeVoidAsync("PoFxShowcase.start", "[data-fx-meter]");
-            _meterRunning = true;
+            try
+            {
+                await JS.InvokeVoidAsync("PoFxShowcase.start", "[data-fx-meter]");
+                _meterRunning = true;
+            }
+            catch { /* no meter is acceptable */ }
         }
-        catch
+        else
         {
-            // No meter is acceptable; the voices below still work.
+            try { await JS.InvokeVoidAsync("PoFxShowcase.stop"); }
+            catch { /* already gone */ }
+            _meterRunning = false;
         }
     }
 

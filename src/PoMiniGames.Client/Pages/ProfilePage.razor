@@ -17,7 +17,12 @@
 <div class="prf-page">
 @if (_loading)
 {
-    <div class="profile-skel" aria-busy="true" aria-label="Loading profile">
+    @* role="status" is required, not decorative: `aria-label` is prohibited on a
+       plain <div> with no role (axe: aria-prohibited-attr), so the label was
+       being dropped and the loading state announced as nothing at all. "status"
+       is the right role for a transient progress message and gives the label
+       somewhere to live. 2026-09-11 UI audit. *@
+    <div class="profile-skel" role="status" aria-busy="true" aria-label="Loading profile">
         <div class="profile-skel__header">
             <div class="profile-skel__avatar"></div>
             <div class="profile-skel__lines">
@@ -63,13 +68,15 @@ else
         <div class="prf-hero-body">
             <h1 class="prf-name">My Stats</h1>
             <p class="prf-handle" aria-label="Display name" title="@_playerName">
-                @* Option #5: trim the displayed guest handle to first 6 chars
-                   + ellipsis when it's the long auto-generated form
-                   ("Guest598152-133895" → "Guest5…"). The full name still
-                   lives in the title= attribute for hover, and the chip card
-                   carries the readable label. Without this the handle runs
-                   past the avatar's right edge on a 375px portrait. *@
-                @DisplayHandle(_playerName)
+                @* The DisplayHandle() trim that used to wrap this was removed on
+                   2026-09-11. It existed to cut the 18-character auto-generated
+                   handle ("Guest598152-133895") down to "Guest5…" so it would not
+                   run past the avatar on a 375px portrait. Guest handles are now
+                   minted as "Guest-219244" (12 chars — see SignInGuestAsync,
+                   which stopped double-suffixing), and that fits the hero body
+                   with room to spare. Showing the name beats showing six
+                   characters and an ellipsis. *@
+                @_playerName
             </p>
             <div class="prf-chips">
                 <div class="prf-chip">
@@ -1153,19 +1160,11 @@ else
             : (name.Length >= 2 ? name[..2].ToUpperInvariant() : name.ToUpperInvariant());
     }
 
-    // Option #5: trim long auto-generated guest handles in the displayed
-    // `.prf-handle` line. A real Microsoft sign-in name ("Jane Doe", 8 chars)
-    // is left untouched; only the "Guest598152-133895" form (16+ chars) is
-    // shortened, and only when it's a guest — Microsoft's display names are
-    // always short by convention. The full name still appears in the title=
-    // attribute and the auth state for any code that needs the real value.
-    private static MarkupString DisplayHandle(string name)
-    {
-        const int TrimTo = 6;
-        if (string.IsNullOrEmpty(name) || name.Length <= TrimTo + 1) return (MarkupString)name;
-        if (!name.StartsWith("Guest", StringComparison.Ordinal)) return (MarkupString)name;
-        return (MarkupString)($"{name[..TrimTo]}…");
-    }
+    // (DisplayHandle() removed 2026-09-11 — see the note at the .prf-handle call
+    // site. It trimmed the old 18-character double-suffixed guest handle down to
+    // "Guest5…"; handles are 12 characters now and fit, so the trim only hid the
+    // name. The .prf-handle CSS still ellipsises on overflow as a backstop for a
+    // long Microsoft display name.)
 
     // ── Radar SVG ────────────────────────────────────────────────
     private string BuildRadarSvg()

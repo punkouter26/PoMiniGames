@@ -80,7 +80,12 @@
 .pg-grid {
     display: grid;
     gap: 24px;
-    grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+    /* `min(360px, 100%)` rather than a bare 360px: a fixed track minimum cannot
+       shrink below itself, so on a 390px phone the 360px track plus the page's
+       own padding pushed the grid to 392px and /pogallery was the one route in
+       the app with real horizontal overflow. The min() lets the track collapse
+       to the column width on narrow screens and behave as 360px everywhere else. */
+    grid-template-columns: repeat(auto-fill, minmax(min(360px, 100%), 1fr));
     list-style: none;
     padding: 0;
     margin: 0;
@@ -95,8 +100,15 @@
     flex-direction: column;
 }
 
+/* 16/10 rather than the square it used to be. Each card is a live WebGL viewer,
+   so the card height sets the page height directly: at 1/1 on a 390px phone the
+   grid ran to 4543px (5.4 screens) and every model below the first was a scroll
+   away. A landscape preview is also the better framing for a single object on a
+   turntable. `max-width: 100%` because an aspect-ratio box is exactly the thing
+   that overflows a narrow column without it. 2026-09-11 UI audit. */
 .pg-preview {
-    aspect-ratio: 1 / 1;
+    aspect-ratio: 16 / 10;
+    max-width: 100%;
     background: #0e1117;
     position: relative;
 }

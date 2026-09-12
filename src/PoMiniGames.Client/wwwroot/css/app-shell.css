@@ -472,7 +472,11 @@
        the initial letter so the Sign out button can still fit. */
     .gl-auth-user {
         display: inline-block;
-        max-width: 6.5rem;
+        /* 8rem, up from 6.5rem. Guest handles are now "Guest-519086" (12 chars)
+           rather than "Guest813527-519086" (18) — see SignInGuestAsync — and
+           6.5rem clipped even the short form. This width shows it whole and
+           still leaves the Sign out button its row. 2026-09-11 UI audit. */
+        max-width: 8rem;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
@@ -503,9 +507,16 @@
     align-items: center;
     padding: 0.25rem 0.6rem;
     border-radius: var(--radius-pill);
-    background: rgba(10, 12, 24, 0.55);
+    /* Scheme-aware, and it has to be. The pill used a fixed translucent-dark
+       fill with a fixed neon `#6bff6b` on top. In light mode the fill composited
+       to ~#76777f and the pair measured 3.42:1 — under the 4.5:1 floor for
+       11.5px text, and it was the ONLY axe violation on 12 of the 14 routes
+       scanned in light theme, because this pill renders on every route.
+       Scheme-invariance is right for a canvas accent and wrong for small text on
+       chrome. The dark-mode appearance is unchanged. 2026-09-11 UI audit. */
+    background: light-dark(rgba(255, 255, 255, 0.78), rgba(10, 12, 24, 0.55));
     border: 1px solid var(--color-border);
-    color: #6bff6b;
+    color: light-dark(#116634, #6bff6b);
     font-family: var(--font-mono);
     font-size: 0.72rem;
     font-weight: 700;
@@ -517,8 +528,11 @@
     transition: color var(--dur-base) var(--ease-standard);
 }
 
-.gl-fps[data-tier="warn"] { color: #ffd24e; }
-.gl-fps[data-tier="bad"]  { color: #ff6b6b; }
+/* Same treatment for the two alert tiers — amber and red at this size fail on a
+   light fill just as the green did. The hue reads the same in both schemes; only
+   the lightness moves. */
+.gl-fps[data-tier="warn"] { color: light-dark(#8a5300, #ffd24e); }
+.gl-fps[data-tier="bad"]  { color: light-dark(#b3241c, #ff6b6b); }
 
 @media (max-width: 640px) {
     .gl-fps {
@@ -534,7 +548,11 @@
    yields. The guest name also gets a cap so "Sign out" keeps one row. */
 @media (max-width: 480px) {
     .gl-fps { display: none; }
-    .gl-auth-user { max-width: 6.5rem; }
+    /* 6.5rem → 8rem, matching the ≤640px rule above (which this one overrides by
+       source order — the earlier edit alone did nothing at this width). A
+       "Guest-219244" handle measures ~90px and was clipping at 104px while the
+       webfont was still swapping in. 2026-09-11 UI audit. */
+    .gl-auth-user { max-width: 8rem; }
 }
 
 /* The .gl-fps--preview chip belonged to the settings page's FPS-badge row and
@@ -558,6 +576,19 @@
     color: var(--color-text-secondary);
     font-size: var(--text-xs);
     flex-wrap: wrap;
+}
+
+/* The footer is persistent chrome on every route and cost a flat 53px. On a
+   short phone that is 8% of the viewport spent on a build stamp and two links,
+   and it was part of why the catalog did not fit on an iPhone SE. Tightened
+   here rather than hidden — the build number is genuinely useful when someone
+   reports a bug — and the links keep their 24px hit area via their own padding.
+   2026-09-11 UI audit. */
+@media (max-height: 780px), (max-width: 640px) {
+    .gl-footer {
+        padding: 0.35rem var(--space-3);
+        gap: var(--space-3);
+    }
 }
 
 .gl-footer-build {

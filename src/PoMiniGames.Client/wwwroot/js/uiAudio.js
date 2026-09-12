@@ -261,10 +261,41 @@ export async function vibrate(pattern) {
         // the real errors. No one is holding a kiosk screen, so skip entirely
         // on any ?kiosk=N or /{game}/demo route.
         if (isOnKioskRoute()) return;
+        // The kiosk guard above catches the attract reel, but not every
+        // gesture-less caller: /login fires a UI cue while the sign-in gate is
+        // still mounting, which produced "Blocked call to navigator.vibrate
+        // because user hasn't tapped on the frame" on the app's own entry page
+        // — one guaranteed console error for every visitor. The browser's rule
+        // is about a gesture having happened AT ALL, so track that directly
+        // rather than enumerating the routes where one has not. 2026-09-11.
+        if (!hasUserGestured()) return;
         if (navigator && typeof navigator.vibrate === 'function') {
             navigator.vibrate(pattern);
         }
     } catch { /* fail silently */ }
+}
+
+/**
+ * True once the user has interacted with the document in a way that satisfies
+ * the browser's sticky-activation requirement for navigator.vibrate.
+ * `navigator.userActivation` is the direct answer where it exists; elsewhere a
+ * set of one-shot listeners records the first real input.
+ */
+let _gestured = false;
+function hasUserGestured() {
+    if (_gestured) return true;
+    if (navigator.userActivation && navigator.userActivation.hasBeenActive) {
+        _gestured = true;
+    }
+    return _gestured;
+}
+if (typeof document !== 'undefined') {
+    // `once` so each listener detaches itself; capture so a handler that stops
+    // propagation cannot hide the gesture from us.
+    for (const evt of ['pointerdown', 'keydown', 'touchstart']) {
+        document.addEventListener(evt, () => { _gestured = true; },
+            { once: true, capture: true, passive: true });
+    }
 }
 
 // Cheap URL probe — the kiosk coordinator decides whether the reel is running

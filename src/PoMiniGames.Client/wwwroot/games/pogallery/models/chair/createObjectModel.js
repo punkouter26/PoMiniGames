@@ -232,7 +232,33 @@ function referenceMapUrl(spec, channel) {
         return null;
     const record = map;
     const url = typeof record.url === 'string' && record.url.trim() ? record.url : record.path;
-    return typeof url === 'string' && url.trim() ? url : null;
+    if (typeof url !== 'string' || !url.trim())
+        return null;
+    // The `path` fallback above carries whatever the img2threejs extractor wrote,
+    // and that is an absolute path on the GENERATOR'S machine — this file shipped
+    // with "C:\Users\punko\Downloads\pominigames\.img2threejs\pbr-extracted\*.png"
+    // in all fifteen map slots. The browser resolved those to file:// URLs and
+    // blocked every one, so /pogallery logged 16 "Not allowed to load local
+    // resource" errors per visit and the textures were inert anyway.
+    // Only same-origin/relative or http(s) URLs can ever load; anything else is
+    // generator-local and the caller falls back to the procedural channels, which
+    // is what was actually rendering all along. 2026-09-11 UI audit.
+    if (!isLoadableTextureUrl(url))
+        return null;
+    return url;
+}
+/**
+ * True only for URLs a browser can actually fetch from a page: a relative path,
+ * a root-relative path, an explicit http(s) URL, or an inline data URI.
+ * Rejects Windows drive letters ("C:\…", "C:/…"), file:// and every other scheme.
+ */
+function isLoadableTextureUrl(url) {
+    const trimmed = url.trim();
+    if (/^[a-zA-Z]:[\\/]/.test(trimmed))
+        return false;
+    if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(trimmed))
+        return /^(https?:|data:)/i.test(trimmed);
+    return !trimmed.includes('\\');
 }
 function createLoadedMapTexture(url, colorSpace, spec, options) {
     const texture = new THREE.TextureLoader().load(url);

@@ -552,36 +552,36 @@ public class StorageService : IStorageService
         var rows = new List<(string Name, PlayerStats Stats)>();
         try
         {
-        await foreach (var entity in Table(PlayerStatsTable).QueryAsync<TableEntity>(
-            filter: $"PartitionKey eq '{sanitizedGame.Replace("'", "''")}'",
-            maxPerPage: 1000))
-        {
-            var json = entity.GetString("StatsJson");
-            if (string.IsNullOrEmpty(json)) continue;
-            var stats = JsonSerializer.Deserialize<PlayerStats>(json) ?? new PlayerStats();
+            await foreach (var entity in Table(PlayerStatsTable).QueryAsync<TableEntity>(
+                filter: $"PartitionKey eq '{sanitizedGame.Replace("'", "''")}'",
+                maxPerPage: 1000))
+            {
+                var json = entity.GetString("StatsJson");
+                if (string.IsNullOrEmpty(json)) continue;
+                var stats = JsonSerializer.Deserialize<PlayerStats>(json) ?? new PlayerStats();
 
-            BackfillLegacyElo(stats);
+                BackfillLegacyElo(stats);
 
-            rows.Add((entity.RowKey, stats));
-        }
+                rows.Add((entity.RowKey, stats));
+            }
 
-        var diff = difficulty?.Trim().ToLowerInvariant();
-        IEnumerable<(string Name, PlayerStats Stats)> ranked = diff switch
-        {
-            "easy" => rows.Where(r => r.Stats.Easy.TotalGames > 0)
-                          .OrderByDescending(r => r.Stats.Easy.EloRating)
-                          .ThenByDescending(r => r.Stats.Easy.TotalGames),
-            "medium" => rows.Where(r => r.Stats.Medium.TotalGames > 0)
-                          .OrderByDescending(r => r.Stats.Medium.EloRating)
-                          .ThenByDescending(r => r.Stats.Medium.TotalGames),
-            "hard" => rows.Where(r => r.Stats.Hard.TotalGames > 0)
-                          .OrderByDescending(r => r.Stats.Hard.EloRating)
-                          .ThenByDescending(r => r.Stats.Hard.TotalGames),
-            _ => rows.OrderByDescending(r => r.Stats.WinRate)
-                     .ThenByDescending(r => r.Stats.TotalGames),
-        };
+            var diff = difficulty?.Trim().ToLowerInvariant();
+            IEnumerable<(string Name, PlayerStats Stats)> ranked = diff switch
+            {
+                "easy" => rows.Where(r => r.Stats.Easy.TotalGames > 0)
+                              .OrderByDescending(r => r.Stats.Easy.EloRating)
+                              .ThenByDescending(r => r.Stats.Easy.TotalGames),
+                "medium" => rows.Where(r => r.Stats.Medium.TotalGames > 0)
+                              .OrderByDescending(r => r.Stats.Medium.EloRating)
+                              .ThenByDescending(r => r.Stats.Medium.TotalGames),
+                "hard" => rows.Where(r => r.Stats.Hard.TotalGames > 0)
+                              .OrderByDescending(r => r.Stats.Hard.EloRating)
+                              .ThenByDescending(r => r.Stats.Hard.TotalGames),
+                _ => rows.OrderByDescending(r => r.Stats.WinRate)
+                         .ThenByDescending(r => r.Stats.TotalGames),
+            };
 
-        return ranked.Take(limit).ToList();
+            return ranked.Take(limit).ToList();
         }
         catch (Exception ex)
         {

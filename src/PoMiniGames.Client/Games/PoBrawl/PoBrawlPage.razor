@@ -211,7 +211,7 @@
     private const int EnergyHotPct = 50;
 
     private const string EnergyTip =
-        "Energy — strike power and stamina. Attacking drains it; blocking refills it. Too low and you cannot punch or kick.";
+        "Energy — strike power and stamina. Attacking drains it; blocking refills it, and a block timed on their wind-up refills it fastest. Too low and you cannot punch or kick.";
 
     private static string EnergyClass(int pct) =>
         pct < EnergySpentPct ? "pb-en-spent"
@@ -332,6 +332,7 @@
             <li>Player 1: <kbd>A</kbd>/<kbd>D</kbd> choose, <kbd>F</kbd> lock · <kbd>W</kbd>/<kbd>S</kbd> circle, <kbd>R</kbd> block</li>
             <li>Player 2: <kbd>←</kbd>/<kbd>→</kbd> choose, <kbd>K</kbd> lock · <kbd>↑</kbd>/<kbd>↓</kbd> circle, <kbd>;</kbd> block</li>
             <li>Attacks: P1 <kbd>F</kbd>/<kbd>G</kbd>, P2 <kbd>K</kbd>/<kbd>L</kbd> (hold to charge)</li>
+            <li>Guard as they wind up, not before — a PERFECT guard freezes them and arms your counter</li>
             @* The super-key line went with the super bar (2026-08-11). Signature
                moves now fire on their own once a fighter has taken enough damage,
                so there is no key to teach and no meter to watch. *@
@@ -360,12 +361,20 @@
     // punch as broken input. The block line earns back the "banks energy" claim
     // that was correctly deleted in 2026-09-11: under the reworked meter it is
     // true again, and it is the whole strategy.
+    //
+    // 2026-09-12 (later, same brief): the guard bullet now teaches the PERFECT
+    // guard explicitly, and it is the last bullet so it is the line the player
+    // is looking at when the card closes. The timing rule ("on their wind-up,
+    // not before") cannot be discovered from the HUD — nothing on screen counts
+    // the 0.22 s window (game.js PERFECT_GUARD_WINDOW) — so if this card does
+    // not say it, the mechanic is invisible and the whole reward loop that the
+    // presidents' coil-ending phrases are built around never starts.
     private RenderFragment HowToPlayContent => @<div>
         <ul>
-            <li><kbd>A</kbd>/<kbd>D</kbd> move · <kbd>W</kbd>/<kbd>S</kbd> circle · <b>hold</b> <kbd>R</kbd> to block their wind-up</li>
+            <li><kbd>A</kbd>/<kbd>D</kbd> move · <kbd>W</kbd>/<kbd>S</kbd> circle · <b>hold</b> <kbd>R</kbd> to block</li>
             <li><kbd>F</kbd> punch · <kbd>G</kbd> kick — hold to charge, release to strike</li>
-            <li>⚡ Energy is hit power <b>and</b> stamina — every swing spends it</li>
-            <li>Run it dry and you cannot strike at all. Blocking refills it fastest</li>
+            <li>⚡ Energy is hit power <b>and</b> stamina — every swing spends it. Run it dry and you cannot strike at all</li>
+            <li>🛡 Guard <b>as they wind up</b>, not before — that's a PERFECT guard: big energy back, they freeze, your answer hits harder</li>
         </ul>
     </div>;
 

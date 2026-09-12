@@ -253,6 +253,45 @@ const ENERGY_HITSTUN_REGEN_PER_SEC = 0.08;
 // branch of _applyHit.
 const BLOCK_ENERGY_REWARD = 0.06;
 
+// ── Perfect guard ────────────────────────────────────────────────────────
+// 2026-09-12, same brief as the energy rework above ("force the player to
+// learn to use the block action"). The energy economy already made blocking
+// the correct long-run play, but it paid the same whether you read the swing
+// or simply stood there holding guard all round — and a button you can hold is
+// not a skill anyone learns. So the reward is split in two:
+//
+//   • an ORDINARY block (guard already up when the strike lands) keeps exactly
+//     what it paid before: absorb the hit, bank BLOCK_ENERGY_REWARD × charge;
+//   • a PERFECT guard — the guard went up inside PERFECT_GUARD_WINDOW of the
+//     strike connecting, i.e. you reacted to the wind-up rather than camping —
+//     banks several times the energy, freezes the attacker long enough for a
+//     free answer, and arms a damage bonus on your next swing.
+//
+// The window is deliberately generous at 0.22 s. It is measured from the guard
+// going up, not from the strike's active frames, so it is a reaction test, not
+// a frame-perfect one: against a coil you can see coming, a player who guards
+// on the tell gets it every time and a player who holds guard from three
+// seconds out never does. That asymmetry is the whole mechanic — turtling
+// still survives, but only reading the fight wins it.
+const PERFECT_GUARD_WINDOW = 0.22;
+// Multiplies BLOCK_ENERGY_REWARD. A perfectly guarded full-power haymaker hands
+// back most of a bar, which is what pays for the counter the freeze opens up.
+const PERFECT_GUARD_ENERGY_MUL = 3.5;
+// How long the attacker is frozen out of their own recovery. Longer than the
+// 0.5 s an ordinary blocked punch already costs them, and unlike that one it
+// applies to kicks too — the point is that it is unambiguously YOUR turn now.
+// Deliberately not much longer: blockStunT suppresses the victim's guard as
+// well as their attacks, so this window is un-defendable, and anything past
+// ~0.7 s stops being "your turn" and becomes a free three-hit string. It is
+// sized for one counter plus whatever the hitstun off it chains into.
+const PERFECT_GUARD_STUN = 0.65;
+// The counter window a perfect guard arms, and what a swing inside it is worth.
+// Without this the reward is purely defensive and the correct follow-up to a
+// great block is still to back off; 1.5× for a second and a half makes the
+// block an opening rather than a survival.
+const COUNTER_WINDOW = 1.5;
+const COUNTER_ATK_MUL = 1.5;
+
 // Fighters never leave their feet before the final blow — heavy hits get a
 // hard stagger (extra knockback + lean) instead of a mid-fight knockdown.
 // The KO ragdoll is the only way to the canvas.
@@ -1539,6 +1578,15 @@ export class BrawlGame {
         chargeMul: 1,      // damage/knockback multiplier of the current swing
         energy: ENERGY_DEFAULT, // 0..1 strike power AND stamina (see the ENERGY_* block)
         gassed: false,     // true while under the floor: no punch, no kick (see _canAttack)
+        // ── Guard timing (see the PERFECT_GUARD_* block) ──────────────
+        // Engine time the guard last went UP. Every route into the 'block'
+        // state stamps it, and _applyHit compares it against the moment the
+        // strike connects to tell a read from a camp. -99 so a fighter who has
+        // not guarded yet can never score a perfect one off the initialiser.
+        guardAt: -99,
+        blockStunT: 0,     // frozen out of our own recovery by the guard we hit
+        counterUntil: -99, // perfect guard armed a bonus swing until this time
+
         // The super meter is NOT here. It lives on `personality.superMeter`
         // (makePersonalityState), which is where _applyHit fills it and
         // _fireSuper consumes it. A duplicate field on the fighter used to sit
@@ -2191,6 +2239,11 @@ export class BrawlGame {
       // earn the bar back.
       selfExhausted: !!f.gassed,
       selfEnergy: f.energy,
+      // The same gate read from the other side. A gassed opponent cannot throw
+      // anything until the bar recovers, and the guard is the fastest way back
+      // up it — so this is the AI's cue to load a full coil (ai.js `punishGas`)
+      // and ask the player whether they have learned to block yet.
+      opponentExhausted: !!opp.gassed,
     };
   }
 
@@ -2349,6 +2402,9 @@ export class BrawlGame {
         if (intent.super || this._autoSuperReady(f)) this._fireSuper(f);
         if (intent.block) {
           f.state = 'block';
+          // Stamp the moment the guard went up — this is what separates a read
+          // from a camp when a strike lands on it. See PERFECT_GUARD_WINDOW.
+          f.guardAt = this.t;
           f.animator.setBlocking(true);
         }
         break;
@@ -2411,7 +2467,8 @@ export class BrawlGame {
         if (intent.punch && this._canAttack(f) && this._canPunch(f) && f.stateT >= a.cancelInto.punch) this._enterCharge(f, 'punch');
         else if (intent.kick && this._canAttack(f) && f.stateT >= a.cancelInto.kick) this._enterCharge(f, 'kick');
         else if (intent.block && f.stateT >= a.cancelInto.block) {
-          f.state = 'block'; f.stateT = 0; f.animator.setBlocking(true);
+          f.state = 'block'; f.stateT = 0; f.guardAt = this.t;
+          f.animator.setBlocking(true);
           this._destroySwingPhysics(f);
         } else if (f.stateT >= a.windup + a.active + a.recover) {
           f.state = 'idle'; f.stateT = 0; f.attack = null;
@@ -2817,20 +2874,50 @@ export class BrawlGame {
       // defender the power for the counter out of the attacker's own commitment.
       // (This comment used to read "blocking no longer banks energy" — that was
       // true of the old spend-it-all meter, which the rework replaced.)
-      defender.energy = Math.min(1, defender.energy + BLOCK_ENERGY_REWARD * chargeMul);
+      //
+      // A PERFECT guard is that same absorb, paid at several times the rate,
+      // when the guard went up inside PERFECT_GUARD_WINDOW of the strike
+      // landing. See the constants block for why the reward is split this way:
+      // holding block all round must stay survivable but must not be the best
+      // play, or the block button is a toggle rather than a skill.
+      const perfect = (this.t - defender.guardAt) <= PERFECT_GUARD_WINDOW;
+      const reward = BLOCK_ENERGY_REWARD * chargeMul
+        * (perfect ? PERFECT_GUARD_ENERGY_MUL : 1);
+      defender.energy = Math.min(1, defender.energy + reward);
       this.hudDirty = true;
-      const blockDamp = 1 / defMass;
-      defender.knockback.add(knockDir.clone().multiplyScalar(2.0 * blockDamp * chargeMul));
-      if (attack.name === 'punch') {
-        attacker.blockStunT = 0.5;
+      // A perfect guard plants the defender: no shove at all, so a read is also
+      // the only block that does not cost you your spacing.
+      if (!perfect) {
+        const blockDamp = 1 / defMass;
+        defender.knockback.add(knockDir.clone().multiplyScalar(2.0 * blockDamp * chargeMul));
+      }
+      // Who eats the recovery. An ordinary blocked PUNCH already froze the
+      // attacker; a perfect guard freezes them longer and does it on kicks too,
+      // which is what turns the block into a turn rather than a reprieve.
+      if (perfect || attack.name === 'punch') {
+        attacker.blockStunT = perfect ? PERFECT_GUARD_STUN : 0.5;
         attacker.state = 'idle';
         attacker.stateT = 0;
         attacker.attack = null;
         attacker.animator.setCharge(null, 0);
         attacker.animator.play('idle');
       }
-      this._spawnSparks(hit.point, 0x9ad0ff, 6, 1.0);
-      this._flashImpactLight(hit.point, 3, 0x9ad0ff, 0.1);
+      if (perfect) {
+        // Arm the counter. Read in the damage roll below, so the answer the
+        // freeze just handed the defender also hits harder than a normal swing.
+        defender.counterUntil = this.t + COUNTER_WINDOW;
+        this._spawnSparks(hit.point, 0xffd257, 14, 1.8);
+        this._flashImpactLight(hit.point, 6, 0xffd257, 0.16);
+        this._spawnCallout(hit.point, 'PERFECT!');
+        if (this.audio) {
+          this.audio.block(hit.point);
+          this.audio.whoosh();
+        }
+      } else {
+        this._spawnSparks(hit.point, 0x9ad0ff, 6, 1.0);
+        this._flashImpactLight(hit.point, 3, 0x9ad0ff, 0.1);
+        this.audio.block(hit.point);
+      }
       // Visible absorb: the attacker's arm bounces off the guard; the
       // defender's guard compresses under the impact.
       attacker.animator.applyReaction('shoulderR', 4, 0, -3);
@@ -2842,7 +2929,6 @@ export class BrawlGame {
       // to the fighter whose swing it stopped.
       defender.stats.blocks += 1;
       this._hitFeedback(attack, false);
-      this.audio.block(hit.point);
       return;
     }
 
@@ -2952,6 +3038,18 @@ export class BrawlGame {
     // synchronously). The helper returns the residual personality dmg mul.
     const extraMul = this._applyOnHitPersonalities(attacker, defender, region, baseDmg, hit, attack);
     baseDmg *= extraMul;
+
+    // ── Perfect-guard counter ─────────────────────────────────────────
+    // Cashed here, after every personality mul, so it stacks with whatever the
+    // president was already carrying rather than being swallowed by it. One
+    // swing only: the window is consumed on the first hit that lands inside it,
+    // which is what makes a perfect guard an OPENING — throw the counter, not a
+    // flurry — instead of a second and a half of free damage.
+    if (attacker.counterUntil > this.t) {
+      attacker.counterUntil = -99;
+      baseDmg *= COUNTER_ATK_MUL;
+      this._spawnCallout(hit.point, 'COUNTER!');
+    }
 
     // Super meter fill on damage taken. Pure damage ratio: a hit that costs
     // 20% of HP fills ~ 1/5 of the meter — capped so a single massive hit
@@ -4033,7 +4131,27 @@ export class BrawlGame {
     }
   }
 
+  // A short word at a contact point, on the same lifecycle as a damage number
+  // (same layer, same rise animation, same eviction cap) — it is a damage
+  // number whose text happens to be a word. Used by the perfect guard and the
+  // counter it arms, which are the two events in the game that have to TEACH
+  // something: a block that pays double is worthless as a lesson if nothing on
+  // screen says it happened.
+  _spawnCallout(point, text) {
+    this._spawnFloater(point, text, 'pb-dmg--callout');
+  }
+
   _spawnDamageNumber(point, dmg, region) {
+    this._spawnFloater(point, String(Math.max(1, Math.round(dmg))),
+      (region === REGIONS.HEAD ? ' pb-dmg--head' : '')
+      + (dmg >= HEAVY_HIT_DMG ? ' pb-dmg--heavy' : ''));
+  }
+
+  // Project a world point to screen and float a DOM node up from it. Owns the
+  // projection guard, the jitter, the node cap and the animationend cleanup —
+  // all of which damage numbers and callouts have to get right identically, and
+  // only one of which is obvious enough to be re-derived correctly by hand.
+  _spawnFloater(point, text, extraClass) {
     if (!this.fx) return;
     const w = this.container.clientWidth, h = this.container.clientHeight;
     if (!w || !h) return;
@@ -4042,10 +4160,8 @@ export class BrawlGame {
     // so it would draw a number somewhere the hit did not happen. Skip it.
     if (_dmgProj.z > 1) return;
     const el = document.createElement('span');
-    el.className = 'pb-dmg'
-      + (region === REGIONS.HEAD ? ' pb-dmg--head' : '')
-      + (dmg >= HEAVY_HIT_DMG ? ' pb-dmg--heavy' : '');
-    el.textContent = String(Math.max(1, Math.round(dmg)));
+    el.className = 'pb-dmg' + (extraClass ? ' ' + extraClass.trim() : '');
+    el.textContent = text;
     // Horizontal jitter so a flurry into one capsule doesn't overprint into an
     // unreadable smear. Seeded RNG, so a demo replay jitters identically.
     el.style.left = `${(_dmgProj.x * 0.5 + 0.5) * w + (this.rng.random() - 0.5) * 26}px`;

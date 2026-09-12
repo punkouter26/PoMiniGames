@@ -20,24 +20,24 @@
 //                       human the instant it fills, for the AI when its own
 //                       rung-paced gate opens. The engine consumes the meter in
 //                       `_fireSuper`. There is no super key or super bar.
-//   aiPattern         — see below.
+//   aiPatterns        — see below.
 //
 // All HP thresholds are PERCENT (0..1). The engine passes the live value at
 // trigger evaluation time so an effect can be HP-conditional.
 //
-// ── aiPattern: the president's signature phrase ────────────────────────────
-// Everything above changes what a president's hits DO. `aiPattern` changes how
+// ── aiPatterns: the president's fighting repertoire ────────────────────────
+// Everything above changes what a president's hits DO. `aiPatterns` changes how
 // the president FIGHTS, and it is the only field a player can learn by playing.
 //
 // Before this existed, thirteen of the fifteen shared one identical decision
 // profile — at a given rung they all picked punch/kick/block from the same
 // weighted roll, and only Biden and Obama had hand-written cadences. Fighting
-// Ford felt exactly like fighting Truman. Now each president replays one
-// scripted phrase on a fixed cadence, and that phrase is the thing you come to
-// recognise: "he always steps back right before he lunges."
+// Ford felt exactly like fighting Truman. Now each president owns THREE scripted
+// phrases and replays them on a fixed cadence, and those phrases are the thing
+// you come to recognise: "he always steps back right before he lunges."
 //
-// Shape:
-//   { everySecs, range, steps: [{ act, secs, attack?, dir? }, …] }
+// Shape — an ordered array of phrases, hardest last:
+//   [{ everySecs, range, steps: [{ act, secs, attack?, dir? }, …] }, …]
 //     everySecs — seconds between OPENINGS (timed from the phrase's start, so
 //                 the rhythm a player counts is opening-to-opening)
 //     range     — multiple of kickRange the phrase may open from
@@ -51,18 +51,44 @@
 //                 'wait'              stand still — a beat, and usually the
 //                                     most readable part of a phrase
 //
+// ── Why three, and why ordered ────────────────────────────────────────────
+// The array is the LADDER's difficulty curve as much as the rung table in ai.js
+// is. ai.js unlocks entries by rung (`_unlockedPatterns`): the early rungs only
+// ever run phrase 0, the middle rungs alternate 0 and 1, the top rungs cycle all
+// three. So Trump at rung 1 has one phrase you learn in a round, while a
+// hypothetical Trump at rung 13 rotates a three-phrase song — same fighter,
+// genuinely more to read. Index 1 is therefore written as the answer to having
+// learned index 0, and index 2 as the answer to having learned both.
+//
+// The rotation is a fixed cycle, never a random pick, for the same reason the
+// steps inside a phrase are fixed: a shuffled repertoire reads as noise, and
+// noise is exactly what the random weight layer underneath already provides.
+//
 // Design rules, learned the hard way and worth keeping:
-//   • Never randomise a phrase. Consistency is the whole feature — a varying
-//     script is indistinguishable from the random layer it sits on top of.
-//   • Open with a non-damaging beat (wait / retreat / sidestep / advance). The
-//     tell has to arrive BEFORE the hit or there is nothing to react to.
+//   • Never randomise a phrase, or the order they are played in. Consistency is
+//     the whole feature — a varying script is indistinguishable from the random
+//     layer it sits on top of.
+//   • Open on a TELL, not on damage: wait / retreat / sidestep / advance / a
+//     guard, for every entry in the array and not just the first. The two
+//     standing exceptions are both still tells — a `charge` step, whose whole
+//     duration is a visible coil (Eisenhower "two fronts"), and a deliberate
+//     bait jab that the phrase then punishes you for answering (Trump's volley,
+//     Bush Sr. throughout). A phrase that simply opens on a real hit is the one
+//     shape to avoid: there is nothing there to read.
 //   • Give every phrase an interruptible moment. Landing a hit cancels it
 //     (ai.js notifyHit), so a long commit is the player's reward for reading.
 //   • Keep everySecs in the 4–7 s band: often enough to be noticed inside one
-//     round, rare enough that the fight is not just the phrase on loop.
+//     round, rare enough that the fight is not just the phrase on loop. ai.js
+//     scales the figure down by rung on top of this, so write the LOW-rung
+//     cadence here and let the rung tighten it.
 //   • Make the phrase echo the president's existing mechanic, so the tell and
 //     the payoff teach the same lesson (Nixon's sneak sets up his dirty hits;
 //     Truman's walk-in feeds the stack he builds by being hit).
+//   • Prefer a `charge` somewhere in the repertoire. The coil is the game's
+//     "you must guard this" beat. Obama and Carter are the deliberate
+//     exceptions — surgical strings and a jab ladder are their whole identity,
+//     and ai.js's own charge layer (the hitstun coil, and the punish it loads
+//     when you gas out) still makes them ask the question.
 
 export const PERSONALITIES = {
   // ── Trump — "THE WALL" → after every KO, +5% damage per stack (5 max) ──
@@ -78,18 +104,40 @@ export const PERSONALITIES = {
     // (1 + koStacks × 0.05) damage on EVERY swing for the next 3 s. Visually
     // identical to the per-stack ramp but compressed into one dramatic burst.
     onSuper: { mode: 'theWall', durationSecs: 3.0 },
-    // PATTERN — "the volley": two quick jabs, then the haymaker. The jabs are
-    // cheap and land; the third is a long coil that hurts. The lesson is to
-    // stop trading after the second — his haymaker chance already makes any
-    // committed swing of his the dangerous one.
-    aiPattern: {
-      everySecs: 4.8, range: 1.15,
-      steps: [
-        { act: 'punch', secs: 0.26 },
-        { act: 'punch', secs: 0.28 },
-        { act: 'charge', attack: 'punch', secs: 0.75 },
-      ],
-    },
+    // PATTERNS — volume. Every Trump phrase ends on a coil, so the whole
+    // repertoire teaches one lesson: the jabs are the toll you pay to still be
+    // standing there when the haymaker arrives. Guard the last beat.
+    aiPatterns: [
+      // "the volley": two quick jabs, then the haymaker. The jabs are cheap and
+      // land; the third is a long coil that hurts. Stop trading after the second.
+      { everySecs: 4.8, range: 1.15,
+        steps: [
+          { act: 'punch', secs: 0.26 },
+          { act: 'punch', secs: 0.28 },
+          { act: 'charge', attack: 'punch', secs: 0.75 },
+        ] },
+      // "the double down": the volley's answer to a player who learned to block
+      // the third beat — a jab BETWEEN two coils, so a guard dropped to counter
+      // after the first haymaker eats the second one clean.
+      { everySecs: 5.4, range: 1.1,
+        steps: [
+          { act: 'wait', secs: 0.35 },
+          { act: 'charge', attack: 'punch', secs: 0.55 },
+          { act: 'punch', secs: 0.24 },
+          { act: 'charge', attack: 'punch', secs: 0.60 },
+        ] },
+      // "the rally": he walks in behind three jabs and finishes on the longest
+      // coil he owns. Pure pressure — backing out mid-string is the read,
+      // because the coil is thrown whether or not you are still in front of it.
+      { everySecs: 6.2, range: 1.45,
+        steps: [
+          { act: 'advance', secs: 0.30 },
+          { act: 'punch', secs: 0.22 },
+          { act: 'punch', secs: 0.22 },
+          { act: 'punch', secs: 0.22 },
+          { act: 'charge', attack: 'punch', secs: 0.70 },
+        ] },
+    ],
   },
 
   // ── Biden — "The Big Guy" charge ─────────────────────────────────────
@@ -105,17 +153,36 @@ export const PERSONALITIES = {
     // bar to CHARGE_MAX_MUL and arms the next punch/kick for the next 1.5 s
     // (no need to wind up by hand). The hit lands with the Biden slow effect.
     onSuper: { mode: 'bigGuy', lockSecs: 1.5 },
-    // PATTERN — "the wind-up": a beat of stillness, then the longest single
-    // coil in the roster. This is the phrase the old hardcoded Biden cadence
-    // used to produce; the leading `wait` is new, and it is what turns a swing
-    // that simply happened to you into one you can see coming.
-    aiPattern: {
-      everySecs: 5.5, range: 1.2,
-      steps: [
-        { act: 'wait', secs: 0.30 },
-        { act: 'charge', attack: 'kick', secs: 1.0 },
-      ],
-    },
+    // PATTERNS — the charge, three ways. Every phrase he owns is a coil with a
+    // different approach in front of it, because a landed charge halves your
+    // movement for a second and the follow-up is what actually kills you.
+    aiPatterns: [
+      // "the wind-up": a beat of stillness, then the longest single coil in the
+      // roster. The leading `wait` is the tell that turns a swing which simply
+      // happened to you into one you can see coming.
+      { everySecs: 5.5, range: 1.2,
+        steps: [
+          { act: 'wait', secs: 0.30 },
+          { act: 'charge', attack: 'kick', secs: 1.0 },
+        ] },
+      // "the aviator shuffle": he slides off-angle and closes before he loads up,
+      // so the coil arrives from a side your guard was not facing.
+      { everySecs: 5.0, range: 1.3,
+        steps: [
+          { act: 'sidestep', dir: -1, secs: 0.22 },
+          { act: 'advance', secs: 0.18 },
+          { act: 'charge', attack: 'punch', secs: 0.70 },
+        ] },
+      // "the double tap": two coils back to back, low then high. The first is the
+      // one you block; the second catches a player already counter-swinging into
+      // the recovery that never came.
+      { everySecs: 6.2, range: 1.2,
+        steps: [
+          { act: 'wait', secs: 0.25 },
+          { act: 'charge', attack: 'kick', secs: 0.55 },
+          { act: 'charge', attack: 'punch', secs: 0.55 },
+        ] },
+    ],
   },
 
   // ── Obama — "No-Drama Open" / "Drone Strike" combo ─────────────────
@@ -128,17 +195,40 @@ export const PERSONALITIES = {
     // SUPER — "DRONE STRIKE": 1.5 s of perfect iframes + next swing deals
     // 2.5× damage (the surgical strike). Plays a cool teal flicker on Obama.
     onSuper: { mode: 'droneStrike', iframesSecs: 1.5, nextSwingAtkMul: 2.5 },
-    // PATTERN — "no drama": circle out, then the clean punch→kick string. The
-    // sidestep is the tell and it also repositions him, so the answer is to
-    // turn and guard low rather than swing at where he was.
-    aiPattern: {
-      everySecs: 4.4, range: 1.2,
-      steps: [
-        { act: 'sidestep', dir: -1, secs: 0.24 },
-        { act: 'punch', secs: 0.30 },
-        { act: 'kick', secs: 0.34 },
-      ],
-    },
+    // PATTERNS — angles. Every Obama phrase moves before it commits, so none of
+    // them can be answered by a guard held facing where he used to be.
+    aiPatterns: [
+      // "no drama": circle out, then the clean punch→kick string. The sidestep is
+      // the tell and it also repositions him — turn and guard rather than swing
+      // at where he was.
+      { everySecs: 4.4, range: 1.2,
+        steps: [
+          { act: 'sidestep', dir: -1, secs: 0.24 },
+          { act: 'punch', secs: 0.30 },
+          { act: 'kick', secs: 0.34 },
+        ] },
+      // "the pivot": two steps the SAME way, so the angle keeps moving through
+      // the string, and he leads with the kick — the beat a standing guard
+      // covers worst.
+      { everySecs: 4.8, range: 1.3,
+        steps: [
+          { act: 'sidestep', dir: 1, secs: 0.26 },
+          { act: 'sidestep', dir: 1, secs: 0.20 },
+          { act: 'kick', secs: 0.32 },
+          { act: 'punch', secs: 0.26 },
+        ] },
+      // "the long game": he gives ground, waits out your answer, then re-enters
+      // on his own terms. The retreat is bait for a chase; his passive leans out
+      // of a fifth of what you throw at the end of it.
+      { everySecs: 5.6, range: 1.5,
+        steps: [
+          { act: 'retreat', secs: 0.30 },
+          { act: 'wait', secs: 0.25 },
+          { act: 'advance', secs: 0.20 },
+          { act: 'punch', secs: 0.24 },
+          { act: 'kick', secs: 0.32 },
+        ] },
+    ],
   },
 
   // ── Bush (W.) — "Decider Mode" ─────────────────────────────────────
@@ -159,14 +249,33 @@ export const PERSONALITIES = {
     // pair teaches the player to read what follows the pause rather than the
     // pause itself. The stop is free real estate — punish it and the answer
     // never comes. Rhymes with his passive freeze at 40% HP.
-    aiPattern: {
-      everySecs: 5.0, range: 1.15,
-      steps: [
-        { act: 'wait', secs: 0.70 },
-        { act: 'punch', secs: 0.26 },
-        { act: 'kick', secs: 0.32 },
-      ],
-    },
+    aiPatterns: [
+      { everySecs: 5.0, range: 1.15,
+        steps: [
+          { act: 'wait', secs: 0.70 },
+          { act: 'punch', secs: 0.26 },
+          { act: 'kick', secs: 0.32 },
+        ] },
+      // "the resolve": the dead stop becomes a GUARD. Same silhouette of a pause,
+      // but swinging into it now feeds a block instead of landing free — and the
+      // answer out of it is a beat longer than the original.
+      { everySecs: 5.2, range: 1.15,
+        steps: [
+          { act: 'block', secs: 0.50 },
+          { act: 'punch', secs: 0.24 },
+          { act: 'punch', secs: 0.24 },
+          { act: 'kick', secs: 0.30 },
+        ] },
+      // "the surge": a short decision, then he closes the whole gap and coils.
+      // The pause is too brief to punish and the coil arrives from point-blank,
+      // so this is the phrase you have to guard rather than step out of.
+      { everySecs: 6.0, range: 1.4,
+        steps: [
+          { act: 'wait', secs: 0.40 },
+          { act: 'advance', secs: 0.25 },
+          { act: 'charge', attack: 'kick', secs: 0.70 },
+        ] },
+    ],
   },
 
   // ── Clinton — "Sax Solo" + "I Feel Your Pain" elbow flurry ─────────
@@ -183,14 +292,34 @@ export const PERSONALITIES = {
     // sidesteps in opposite directions is a rhythm rather than a pose, which
     // suits a president whose whole gimmick is a 1.5× longer windup — you have
     // time to count the sway, and the swing it feeds chains into his flurry.
-    aiPattern: {
-      everySecs: 5.2, range: 1.2,
-      steps: [
-        { act: 'sidestep', dir: -1, secs: 0.22 },
-        { act: 'sidestep', dir: 1, secs: 0.22 },
-        { act: 'charge', attack: 'punch', secs: 0.60 },
-      ],
-    },
+    aiPatterns: [
+      { everySecs: 5.2, range: 1.2,
+        steps: [
+          { act: 'sidestep', dir: -1, secs: 0.22 },
+          { act: 'sidestep', dir: 1, secs: 0.22 },
+          { act: 'charge', attack: 'punch', secs: 0.60 },
+        ] },
+      // "the encore": one sway, then the flurry his passive already wants — four
+      // strikes on a shortening beat. Every one that lands grows the chain, so
+      // the first block in the string is worth more than the last.
+      { everySecs: 5.6, range: 1.25,
+        steps: [
+          { act: 'sidestep', dir: 1, secs: 0.20 },
+          { act: 'punch', secs: 0.26 },
+          { act: 'punch', secs: 0.24 },
+          { act: 'punch', secs: 0.22 },
+          { act: 'kick', secs: 0.30 },
+        ] },
+      // "the slow jam": he stops swaying entirely, then loads the longest coil he
+      // owns off one lazy step. His 1.5x windup makes it look slower than it is —
+      // the timing that beat the sway arrives late here.
+      { everySecs: 6.2, range: 1.3,
+        steps: [
+          { act: 'wait', secs: 0.40 },
+          { act: 'sidestep', dir: -1, secs: 0.26 },
+          { act: 'charge', attack: 'kick', secs: 0.80 },
+        ] },
+    ],
   },
 
   // ── Bush Sr. — "Read My Lips" + "Voodoo Economics" feints ──────────
@@ -208,14 +337,35 @@ export const PERSONALITIES = {
     // then the counter the moment you answer it. He is the roster's counter-
     // fighter (+30% baitP), so his phrase punishes the reflex to trade. The
     // lesson is the opposite of everyone else's: do NOT swing at the opening.
-    aiPattern: {
-      everySecs: 4.6, range: 1.1,
-      steps: [
-        { act: 'punch', secs: 0.20 },
-        { act: 'block', secs: 0.55 },
-        { act: 'punch', secs: 0.30 },
-      ],
-    },
+    aiPatterns: [
+      { everySecs: 4.6, range: 1.1,
+        steps: [
+          { act: 'punch', secs: 0.20 },
+          { act: 'block', secs: 0.55 },
+          { act: 'punch', secs: 0.30 },
+        ] },
+      // "the second look": guard first, give a step, then counter off the
+      // retreat. Reverses the order of the original, so a player who learned to
+      // wait out his opening jab is now waiting through the guard instead.
+      { everySecs: 5.0, range: 1.2,
+        steps: [
+          { act: 'block', secs: 0.40 },
+          { act: 'retreat', secs: 0.24 },
+          { act: 'punch', secs: 0.26 },
+          { act: 'kick', secs: 0.30 },
+        ] },
+      // "no new taxes": two feints into guard, then the real one. The whole
+      // phrase is a promise he breaks — the third opening is the only one that
+      // is not bait, and it is the one carrying the coil.
+      { everySecs: 6.4, range: 1.1,
+        steps: [
+          { act: 'punch', secs: 0.18 },
+          { act: 'block', secs: 0.40 },
+          { act: 'punch', secs: 0.18 },
+          { act: 'block', secs: 0.40 },
+          { act: 'charge', attack: 'punch', secs: 0.60 },
+        ] },
+    ],
   },
 
   // ── Reagan — "Morning in America" + "Tear Down This Wall" ──────────
@@ -240,13 +390,33 @@ export const PERSONALITIES = {
     // swing, then answers it. Pairs with his once-per-round reflect guard, so
     // the phrase teaches exactly the habit that his reflect punishes — hitting
     // a planted Reagan is how you lose health to your own attack.
-    aiPattern: {
-      everySecs: 5.6, range: 1.15,
-      steps: [
-        { act: 'block', secs: 0.95 },
-        { act: 'kick', secs: 0.34 },
-      ],
-    },
+    aiPatterns: [
+      { everySecs: 5.6, range: 1.15,
+        steps: [
+          { act: 'block', secs: 0.95 },
+          { act: 'kick', secs: 0.34 },
+        ] },
+      // "the gipper": no guard at all — he walks on and coils. The president you
+      // learned to wait out is suddenly the one coming forward, which is the
+      // point: the planted guard was never the whole fighter.
+      { everySecs: 5.4, range: 1.35,
+        steps: [
+          { act: 'wait', secs: 0.35 },
+          { act: 'advance', secs: 0.22 },
+          { act: 'punch', secs: 0.24 },
+          { act: 'charge', attack: 'kick', secs: 0.60 },
+        ] },
+      // "tear down this wall": guard, swing, guard again, then the real answer.
+      // Two invitations in one phrase, and his once-per-round reflect means the
+      // greedier one costs you your own damage back.
+      { everySecs: 6.0, range: 1.15,
+        steps: [
+          { act: 'block', secs: 0.60 },
+          { act: 'punch', secs: 0.22 },
+          { act: 'block', secs: 0.50 },
+          { act: 'kick', secs: 0.32 },
+        ] },
+    ],
   },
 
   // ── Carter — "Malaise Speech" + "Habitat for Humanity" ──────────────
@@ -277,16 +447,38 @@ export const PERSONALITIES = {
     // arrive before the first hit does, or there is nothing to react to — this
     // one opened on the jab and was the only phrase in the roster you could not
     // see coming.
-    aiPattern: {
-      everySecs: 5.0, range: 1.1,
-      steps: [
-        { act: 'wait', secs: 0.30 },
-        { act: 'punch', secs: 0.30 },
-        { act: 'punch', secs: 0.26 },
-        { act: 'punch', secs: 0.22 },
-        { act: 'punch', secs: 0.20 },
-      ],
-    },
+    aiPatterns: [
+      { everySecs: 5.0, range: 1.1,
+        steps: [
+          { act: 'wait', secs: 0.30 },
+          { act: 'punch', secs: 0.30 },
+          { act: 'punch', secs: 0.26 },
+          { act: 'punch', secs: 0.22 },
+          { act: 'punch', secs: 0.20 },
+        ] },
+      // "the habitat frame": the same ladder built out of alternating punches and
+      // kicks, so a guard that answered four jabs no longer covers it — the kicks
+      // go under the forearms his jabs were feeding.
+      { everySecs: 5.6, range: 1.3,
+        steps: [
+          { act: 'advance', secs: 0.28 },
+          { act: 'punch', secs: 0.26 },
+          { act: 'kick', secs: 0.30 },
+          { act: 'punch', secs: 0.24 },
+          { act: 'kick', secs: 0.30 },
+        ] },
+      // "the peace talk": he guards, he pauses, and only then does the ladder
+      // start. Both opening beats are free for him and unpunishable for you,
+      // which means the ladder now starts with your energy bar already low.
+      { everySecs: 6.0, range: 1.1,
+        steps: [
+          { act: 'block', secs: 0.45 },
+          { act: 'wait', secs: 0.30 },
+          { act: 'punch', secs: 0.22 },
+          { act: 'punch', secs: 0.20 },
+          { act: 'punch', secs: 0.20 },
+        ] },
+    ],
   },
 
   // ── Ford — "Ford Stumble" + "Pardoning Nixon" ──────────────────────
@@ -304,14 +496,33 @@ export const PERSONALITIES = {
     // close. Clumsy on purpose — the advance overshoots, and his 15% stumble
     // means the phrase sometimes collapses on its own. The read is that the
     // lurch is a free punish window if you step out instead of trading.
-    aiPattern: {
-      everySecs: 4.5, range: 1.35,
-      steps: [
-        { act: 'advance', secs: 0.40 },
-        { act: 'kick', secs: 0.32 },
-        { act: 'punch', secs: 0.28 },
-      ],
-    },
+    aiPatterns: [
+      { everySecs: 4.5, range: 1.35,
+        steps: [
+          { act: 'advance', secs: 0.40 },
+          { act: 'kick', secs: 0.32 },
+          { act: 'punch', secs: 0.28 },
+        ] },
+      // "the trip": he overshoots, catches himself, then throws two kicks from
+      // inside your reach. The stumble beat looks exactly like his 15% self-stun,
+      // so the free punish and the trap wear the same face.
+      { everySecs: 4.8, range: 1.4,
+        steps: [
+          { act: 'advance', secs: 0.30 },
+          { act: 'wait', secs: 0.22 },
+          { act: 'kick', secs: 0.30 },
+          { act: 'kick', secs: 0.32 },
+        ] },
+      // "the pardon": he backs off as though he has had enough, then crosses the
+      // whole arena into a coil. The longest approach in his book — and hitting
+      // him during it arms the 2x retaliate window instead.
+      { everySecs: 5.8, range: 1.5,
+        steps: [
+          { act: 'retreat', secs: 0.30 },
+          { act: 'advance', secs: 0.35 },
+          { act: 'charge', attack: 'kick', secs: 0.65 },
+        ] },
+    ],
   },
 
   // ── Nixon — "Tricky Dick" + "I Am Not a Crook" ────────────────────
@@ -334,14 +545,35 @@ export const PERSONALITIES = {
     // straight back in. The retreat is the tell, and it is a trap for the
     // instinct to follow — chase him and you arrive exactly as the punch does.
     // Fits the president whose swings already ignore 40% of your block.
-    aiPattern: {
-      everySecs: 4.7, range: 1.25,
-      steps: [
-        { act: 'retreat', secs: 0.42 },
-        { act: 'advance', secs: 0.22 },
-        { act: 'punch', secs: 0.30 },
-      ],
-    },
+    aiPatterns: [
+      { everySecs: 4.7, range: 1.25,
+        steps: [
+          { act: 'retreat', secs: 0.42 },
+          { act: 'advance', secs: 0.22 },
+          { act: 'punch', secs: 0.30 },
+        ] },
+      // "the tapes": he slips sideways and stops, daring you to fill the silence,
+      // then runs three strikes off it. The pause is the same length as his
+      // retreat, so the two phrases open on an almost identical beat.
+      { everySecs: 5.2, range: 1.25,
+        steps: [
+          { act: 'sidestep', dir: -1, secs: 0.24 },
+          { act: 'wait', secs: 0.22 },
+          { act: 'punch', secs: 0.24 },
+          { act: 'punch', secs: 0.22 },
+          { act: 'kick', secs: 0.30 },
+        ] },
+      // "the cover-up": guard, break off, come back, coil. Four beats of
+      // misdirection for one swing — and a quarter of his swings ignore most of
+      // your block anyway, so guessing the guard is not enough here.
+      { everySecs: 6.0, range: 1.35,
+        steps: [
+          { act: 'block', secs: 0.40 },
+          { act: 'retreat', secs: 0.26 },
+          { act: 'advance', secs: 0.24 },
+          { act: 'charge', attack: 'punch', secs: 0.60 },
+        ] },
+    ],
   },
 
   // ── LBJ — "The Johnson Treatment" + "All the Way with LBJ" ──────────
@@ -367,14 +599,33 @@ export const PERSONALITIES = {
     // phrase is pressure — and because his passive arms a +50% knockback swing
     // off any miss of yours, panicking into a swing as he crowds you is the
     // worst possible answer. Backing out beats it; swinging feeds it.
-    aiPattern: {
-      everySecs: 6.0, range: 1.6,
-      steps: [
-        { act: 'advance', secs: 0.35 },
-        { act: 'advance', secs: 0.35 },
-        { act: 'charge', attack: 'kick', secs: 0.55 },
-      ],
-    },
+    aiPatterns: [
+      { everySecs: 6.0, range: 1.6,
+        steps: [
+          { act: 'advance', secs: 0.35 },
+          { act: 'advance', secs: 0.35 },
+          { act: 'charge', attack: 'kick', secs: 0.55 },
+        ] },
+      // "the corner": the same walk-down, but it cashes out in three fast strikes
+      // instead of one coil. Backing out still beats it; standing there and
+      // guarding no longer does, because the kick comes last.
+      { everySecs: 5.2, range: 1.5,
+        steps: [
+          { act: 'advance', secs: 0.30 },
+          { act: 'punch', secs: 0.24 },
+          { act: 'punch', secs: 0.22 },
+          { act: 'kick', secs: 0.32 },
+        ] },
+      // "the gavel": one beat of stillness, one step, and the heaviest coil on
+      // the ladder. He can open it from further out than anyone, so the space
+      // that felt safe against the walk-down is inside this one.
+      { everySecs: 6.6, range: 1.6,
+        steps: [
+          { act: 'wait', secs: 0.40 },
+          { act: 'advance', secs: 0.30 },
+          { act: 'charge', attack: 'punch', secs: 0.85 },
+        ] },
+    ],
   },
 
   // ── JFK — "PT-109 Survivor" + "Profiles in Courage" + "Camelot Glint"
@@ -408,15 +659,36 @@ export const PERSONALITIES = {
     // passive is a speed dash — you do not get long to read it, and every
     // fourth landed hit of his is a 1.4× Camelot Glint, so letting the string
     // connect repeatedly is how the round gets away from you.
-    aiPattern: {
-      everySecs: 4.2, range: 1.25,
-      steps: [
-        { act: 'sidestep', dir: 1, secs: 0.20 },
-        { act: 'advance', secs: 0.18 },
-        { act: 'punch', secs: 0.24 },
-        { act: 'kick', secs: 0.28 },
-      ],
-    },
+    aiPatterns: [
+      { everySecs: 4.2, range: 1.25,
+        steps: [
+          { act: 'sidestep', dir: 1, secs: 0.20 },
+          { act: 'advance', secs: 0.18 },
+          { act: 'punch', secs: 0.24 },
+          { act: 'kick', secs: 0.28 },
+        ] },
+      // "the new frontier": he steps, strikes, steps the other way and strikes
+      // again. The fastest phrase in the game and the only one that changes side
+      // mid-string, so a guard that tracks him is half a beat late.
+      { everySecs: 4.6, range: 1.3,
+        steps: [
+          { act: 'sidestep', dir: -1, secs: 0.18 },
+          { act: 'punch', secs: 0.22 },
+          { act: 'sidestep', dir: 1, secs: 0.18 },
+          { act: 'kick', secs: 0.28 },
+        ] },
+      // "the riptide": a flick of ground given back, then four beats straight
+      // through you into a coil. Two jabs feed the Camelot Glint count, which is
+      // exactly why the fourth landed hit of the phrase is the big one.
+      { everySecs: 5.6, range: 1.45,
+        steps: [
+          { act: 'retreat', secs: 0.24 },
+          { act: 'advance', secs: 0.20 },
+          { act: 'punch', secs: 0.20 },
+          { act: 'punch', secs: 0.20 },
+          { act: 'charge', attack: 'kick', secs: 0.50 },
+        ] },
+    ],
   },
 
   // ── Eisenhower — "Operation Overlord" + "Atoms for Peace" ─────────
@@ -449,13 +721,31 @@ export const PERSONALITIES = {
     // then coils for a full 1.3 s before the swing lands. Slowest phrase, and
     // the one most worth blocking rather than dodging — his 1.5× windup /
     // 0.5× active frames mean the swing you block leaves him wide open.
-    aiPattern: {
-      everySecs: 6.5, range: 1.15,
-      steps: [
-        { act: 'block', secs: 0.45 },
-        { act: 'charge', attack: 'punch', secs: 1.30 },
-      ],
-    },
+    aiPatterns: [
+      { everySecs: 6.5, range: 1.15,
+        steps: [
+          { act: 'block', secs: 0.45 },
+          { act: 'charge', attack: 'punch', secs: 1.30 },
+        ] },
+      // "the beachhead": he closes first and guards second, so the coil lands
+      // from point-blank where stepping out of it is no longer an option. Same
+      // preparation, delivered inside your reach instead of outside it.
+      { everySecs: 6.2, range: 1.4,
+        steps: [
+          { act: 'advance', secs: 0.30 },
+          { act: 'block', secs: 0.35 },
+          { act: 'charge', attack: 'kick', secs: 0.90 },
+        ] },
+      // "two fronts": coil, guard, coil. The guard between them is the trap — it
+      // is the exact moment a player who blocked the first one wants to counter,
+      // and his compressed active frames make that counter whiff.
+      { everySecs: 7.0, range: 1.2,
+        steps: [
+          { act: 'charge', attack: 'punch', secs: 0.70 },
+          { act: 'block', secs: 0.40 },
+          { act: 'charge', attack: 'kick', secs: 0.70 },
+        ] },
+    ],
   },
 
   // ── Truman — "The Buck Stops Here" + "Give 'em Hell" ──────────────
@@ -485,14 +775,34 @@ export const PERSONALITIES = {
     // and NOT guarding is the tell, and it is bait in the most literal sense —
     // every hit he takes adds +2% to that answering swing (up to +60%). The
     // counter-intuitive read: stop hitting Truman and let the phrase expire.
-    aiPattern: {
-      everySecs: 5.4, range: 1.4,
-      steps: [
-        { act: 'advance', secs: 0.35 },
-        { act: 'wait', secs: 0.45 },
-        { act: 'charge', attack: 'punch', secs: 0.65 },
-      ],
-    },
+    aiPatterns: [
+      { everySecs: 5.4, range: 1.4,
+        steps: [
+          { act: 'advance', secs: 0.35 },
+          { act: 'wait', secs: 0.45 },
+          { act: 'charge', attack: 'punch', secs: 0.65 },
+        ] },
+      // "give them hell": no invitation — he just opens up, and the coil at the
+      // end is paid for by whatever stack he is already carrying. This is the
+      // phrase that collects on the hits you fed the first one.
+      { everySecs: 5.4, range: 1.2,
+        steps: [
+          { act: 'wait', secs: 0.30 },
+          { act: 'punch', secs: 0.24 },
+          { act: 'punch', secs: 0.22 },
+          { act: 'charge', attack: 'punch', secs: 0.60 },
+        ] },
+      // "the whistle stop": the walk-in doubled and the stand-still lengthened,
+      // from the longest opening range he has. Every beat of it is an offer to
+      // hit him, and every hit you take him up on prices the coil.
+      { everySecs: 6.4, range: 1.6,
+        steps: [
+          { act: 'advance', secs: 0.30 },
+          { act: 'advance', secs: 0.30 },
+          { act: 'wait', secs: 0.35 },
+          { act: 'charge', attack: 'kick', secs: 0.75 },
+        ] },
+    ],
   },
 
   // ── FDR — "Four-Term Foundation" + "Fireside Chat" + "Day of Infamy" ──
@@ -526,15 +836,34 @@ export const PERSONALITIES = {
     // tell and it lines up with his periodic 0.4 s iframe window, so swinging
     // into the pause is how you hit nothing; the kick that follows carries the
     // +25% reach, which is why spacing that felt safe suddenly is not.
-    aiPattern: {
-      everySecs: 6.0, range: 1.45,
-      steps: [
-        { act: 'block', secs: 0.30 },
-        { act: 'wait', secs: 0.50 },
-        { act: 'advance', secs: 0.20 },
-        { act: 'kick', secs: 0.34 },
-      ],
-    },
+    aiPatterns: [
+      { everySecs: 6.0, range: 1.45,
+        steps: [
+          { act: 'block', secs: 0.30 },
+          { act: 'wait', secs: 0.50 },
+          { act: 'advance', secs: 0.20 },
+          { act: 'kick', secs: 0.34 },
+        ] },
+      // "the new deal": one pause, three strikes, no approach — thrown from
+      // wherever he already stands. His periodic reach bonus is what makes the
+      // spacing lie, and this phrase never steps forward to warn you.
+      { everySecs: 5.6, range: 1.4,
+        steps: [
+          { act: 'wait', secs: 0.40 },
+          { act: 'punch', secs: 0.24 },
+          { act: 'kick', secs: 0.32 },
+          { act: 'punch', secs: 0.24 },
+        ] },
+      // "day of infamy": the shortest tell he owns in front of the biggest coil.
+      // Guard up, one step, and it is on you — this is the phrase that closes
+      // rounds out once his sub-30% damage mode is running.
+      { everySecs: 6.8, range: 1.45,
+        steps: [
+          { act: 'block', secs: 0.35 },
+          { act: 'advance', secs: 0.25 },
+          { act: 'charge', attack: 'punch', secs: 0.90 },
+        ] },
+    ],
   },
 };
 

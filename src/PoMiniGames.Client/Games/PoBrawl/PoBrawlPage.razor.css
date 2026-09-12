@@ -149,6 +149,19 @@
     text-shadow: 0 2px 10px rgba(0, 0, 0, 0.9), 0 0 14px rgba(255, 85, 48, 0.5);
 }
 
+/* PERFECT! / COUNTER! — the same floating node as a damage number, carrying a
+   word instead of a figure (game.js `_spawnCallout`). Gold and wider-tracked so
+   it never reads as another number in a flurry: these two are the only pieces
+   of feedback in the game that exist to TEACH rather than to report, and a
+   player who does not notice the perfect guard land has not learned anything
+   from having made it. */
+.pb-canvas-host ::deep .pb-dmg--callout {
+    font-size: 1.25rem;
+    letter-spacing: 0.08em;
+    color: #ffd257;
+    text-shadow: 0 2px 10px rgba(0, 0, 0, 0.9), 0 0 16px rgba(255, 210, 87, 0.55);
+}
+
 @keyframes pb-dmg-rise {
     0%   { transform: translate(-50%, -50%) scale(0.6); opacity: 0; }
     18%  { transform: translate(-50%, -80%) scale(1.15); opacity: 1; }

@@ -6,12 +6,17 @@ import { PERSONALITIES } from './personalities.js';
 // Frame-data awareness: the AI receives the opponent's current attack phase
 // (windup/active/recover) and the recovery window of each of its own attacks.
 // It will:
-//   • block during opponent windup with probability by difficulty (reactive defense)
+//   • block during opponent windup with probability by difficulty, but only
+//     once the windup has been visible for this rung's reaction floor — so a
+//     jab is never reactively blocked and a held coil always is
 //   • throw its fastest attack when the opponent is in active/recover (whiff punish)
 //   • occasionally commit to a blocked attack then cancel into block (bait)
 //   • back off after taking quick consecutive hits (anti-stunlock)
 //   • occasionally wind up a held CHARGE attack while the opponent is stuck
 //     in hitstun (the coil pose is the player's tell to block the release)
+//   • load a full coil at an opponent who has GASSED their energy bar out —
+//     the punish for spending the whole bar on offence, and the reason the
+//     guard is worth learning, since blocking is what refills it
 //
 // In-match adaptation: the AI also reads the opponent's habits over a rolling
 // ~8-second window and shifts its weights —
@@ -22,30 +27,52 @@ import { PERSONALITIES } from './personalities.js';
 // Adaptation strength scales with the rung, so a level-2 president barely
 // adjusts while a level-9 one counters your gameplan within a few exchanges.
 
-// Fifteen numeric skill rungs for the 1-player presidents ladder. Level 1 is a
-// pushover (sluggish, near-blind defense, rarely swings); level 15 is a wall
-// (superhuman reactions, near-perfect blocking and whiff punishing, relentless).
+// Fifteen numeric skill rungs for the 1-player presidents ladder. Level 1 is
+// gentle but no longer a statue; level 15 is a wall (superhuman reactions,
+// near-perfect blocking and whiff punishing, relentless).
 // `aggro` scales how often the AI chooses to attack at all. `comboP` is the
 // chance a committed punch is pre-planned as a punch→kick cancel string —
-// only rungs 7+ know the cancel table exists. The top five rungs (LBJ-FDR)
+// only rungs 5+ know the cancel table exists. The top five rungs (LBJ-FDR)
 // tighten reactions past human reflexes and lean on more baits and combos
 // rather than just faster reads — diminishing returns on raw reactionMs.
+//
+// ── 2026-09-12 rebalance (user request: "more difficult, each level harder
+// than the last, force the player to learn to block") ─────────────────────
+// Two problems with the old curve. First, rungs 1-4 were not a difficulty ramp
+// so much as a tutorial that lasted four fights: at aggro 0.35 / blockP 0.03 a
+// rung-1 president mostly stood there, and a player could clear the first third
+// of the ladder mashing punch without ever pressing block. Second, the curve
+// went nearly flat above rung 10 — 11 through 15 differed by ~35 ms of reaction
+// and nothing else, so the last five fights felt like the same opponent.
+//
+// The floor is raised (rung 1 now guards and punishes a little, which is what
+// teaches the block button exists) and the top is pushed out along the axes
+// that still have room — aggro, comboP, baitP, and the two new columns:
+//
+//   chargeP  — how readily this rung commits to a HELD coil instead of a tap.
+//              This is the column that does the forcing: a coil is the one
+//              swing a player genuinely cannot trade with, so the guard is the
+//              only answer. It replaces the old formula-derived value.
+//   punishGas — chance per opening to load a full coil at an opponent who has
+//              gassed their energy bar out. Spending the bar on offence and
+//              then standing there is the mistake this punishes, and blocking
+//              is what refills it — so the counter and the lesson agree.
 const LEVELS = [
-  /*  1 */ { reactionMs: 780, blockP: 0.03, baitP: 0.00, punishP: 0.02, aggro: 0.35, comboP: 0.00 },
-  /*  2 */ { reactionMs: 640, blockP: 0.08, baitP: 0.00, punishP: 0.06, aggro: 0.50, comboP: 0.00 },
-  /*  3 */ { reactionMs: 540, blockP: 0.15, baitP: 0.00, punishP: 0.12, aggro: 0.62, comboP: 0.00 },
-  /*  4 */ { reactionMs: 460, blockP: 0.24, baitP: 0.02, punishP: 0.22, aggro: 0.74, comboP: 0.00 },
-  /*  5 */ { reactionMs: 380, blockP: 0.34, baitP: 0.04, punishP: 0.34, aggro: 0.85, comboP: 0.00 },
-  /*  6 */ { reactionMs: 320, blockP: 0.45, baitP: 0.06, punishP: 0.46, aggro: 0.95, comboP: 0.00 },
-  /*  7 */ { reactionMs: 270, blockP: 0.56, baitP: 0.08, punishP: 0.58, aggro: 1.05, comboP: 0.25 },
-  /*  8 */ { reactionMs: 225, blockP: 0.66, baitP: 0.10, punishP: 0.70, aggro: 1.12, comboP: 0.35 },
-  /*  9 */ { reactionMs: 185, blockP: 0.76, baitP: 0.13, punishP: 0.80, aggro: 1.20, comboP: 0.45 },
-  /* 10 */ { reactionMs: 150, blockP: 0.86, baitP: 0.16, punishP: 0.90, aggro: 1.28, comboP: 0.55 },
-  /* 11 */ { reactionMs: 130, blockP: 0.90, baitP: 0.19, punishP: 0.94, aggro: 1.32, comboP: 0.62 },
-  /* 12 */ { reactionMs: 118, blockP: 0.92, baitP: 0.21, punishP: 0.96, aggro: 1.36, comboP: 0.68 },
-  /* 13 */ { reactionMs: 108, blockP: 0.94, baitP: 0.23, punishP: 0.98, aggro: 1.40, comboP: 0.74 },
-  /* 14 */ { reactionMs: 100, blockP: 0.96, baitP: 0.25, punishP: 0.99, aggro: 1.43, comboP: 0.80 },
-  /* 15 */ { reactionMs: 95,  blockP: 0.97, baitP: 0.27, punishP: 1.00, aggro: 1.46, comboP: 0.86 },
+  /*  1 */ { reactionMs: 700, blockP: 0.10, baitP: 0.00, punishP: 0.08, aggro: 0.55, comboP: 0.00, chargeP: 0.12, punishGas: 0.15 },
+  /*  2 */ { reactionMs: 600, blockP: 0.18, baitP: 0.00, punishP: 0.16, aggro: 0.66, comboP: 0.00, chargeP: 0.16, punishGas: 0.22 },
+  /*  3 */ { reactionMs: 510, blockP: 0.27, baitP: 0.02, punishP: 0.26, aggro: 0.76, comboP: 0.00, chargeP: 0.20, punishGas: 0.30 },
+  /*  4 */ { reactionMs: 435, blockP: 0.36, baitP: 0.04, punishP: 0.37, aggro: 0.86, comboP: 0.00, chargeP: 0.24, punishGas: 0.38 },
+  /*  5 */ { reactionMs: 370, blockP: 0.45, baitP: 0.06, punishP: 0.47, aggro: 0.95, comboP: 0.15, chargeP: 0.28, punishGas: 0.46 },
+  /*  6 */ { reactionMs: 315, blockP: 0.54, baitP: 0.09, punishP: 0.57, aggro: 1.03, comboP: 0.25, chargeP: 0.32, punishGas: 0.54 },
+  /*  7 */ { reactionMs: 268, blockP: 0.62, baitP: 0.12, punishP: 0.66, aggro: 1.10, comboP: 0.35, chargeP: 0.36, punishGas: 0.62 },
+  /*  8 */ { reactionMs: 228, blockP: 0.70, baitP: 0.15, punishP: 0.74, aggro: 1.17, comboP: 0.44, chargeP: 0.40, punishGas: 0.69 },
+  /*  9 */ { reactionMs: 194, blockP: 0.77, baitP: 0.18, punishP: 0.81, aggro: 1.23, comboP: 0.52, chargeP: 0.44, punishGas: 0.75 },
+  /* 10 */ { reactionMs: 166, blockP: 0.83, baitP: 0.21, punishP: 0.87, aggro: 1.29, comboP: 0.59, chargeP: 0.48, punishGas: 0.80 },
+  /* 11 */ { reactionMs: 143, blockP: 0.88, baitP: 0.25, punishP: 0.91, aggro: 1.33, comboP: 0.66, chargeP: 0.52, punishGas: 0.85 },
+  /* 12 */ { reactionMs: 126, blockP: 0.91, baitP: 0.29, punishP: 0.94, aggro: 1.37, comboP: 0.72, chargeP: 0.56, punishGas: 0.89 },
+  /* 13 */ { reactionMs: 113, blockP: 0.93, baitP: 0.33, punishP: 0.96, aggro: 1.41, comboP: 0.78, chargeP: 0.60, punishGas: 0.92 },
+  /* 14 */ { reactionMs: 103, blockP: 0.95, baitP: 0.37, punishP: 0.98, aggro: 1.46, comboP: 0.84, chargeP: 0.64, punishGas: 0.95 },
+  /* 15 */ { reactionMs:  95, blockP: 0.97, baitP: 0.42, punishP: 1.00, aggro: 1.50, comboP: 0.90, chargeP: 0.68, punishGas: 0.98 },
 ];
 
 // Top-of-the-ladder rung count: rung index doubles as the CPU difficulty level
@@ -76,8 +103,48 @@ export class AiController {
     this.punishP = p.punishP;
     this.aggro = p.aggro;
     this.comboP = p.comboP;
+    this.punishGasP = p.punishGas;
     // How hard the habit reads bend the weights: level 1 ≈ 0.07, level 15 = 1.
     this.adapt = level / MAX_RUNG;
+
+    // ── Rung-scaled pattern delivery ──────────────────────────────────
+    // The phrases in personalities.js are written at their LOW-rung tempo; the
+    // rung decides how fast they are executed and how often they open. Without
+    // this a rung-15 president ran its signature at exactly the pace a rung-1
+    // one did, which is most of why the top of the ladder used to feel flat:
+    // the numbers got sharper but the fight did not get faster.
+    //
+    // 1.10 → 0.76 dwell: a top-rung coil is about a quarter shorter, which is
+    // still long enough to see and block. Going below ~0.7 starts eating the
+    // tell itself, and an unreadable phrase is just damage, not difficulty.
+    this.patTempo = 1.10 - 0.34 * ((level - 1) / (MAX_RUNG - 1));
+    // 1.20 → 0.68 cadence: the top of the ladder opens a phrase roughly every
+    // 3.5 s where the bottom takes 6.5 s, so pressure scales with the rung too.
+    this.patCadence = 1.20 - 0.52 * ((level - 1) / (MAX_RUNG - 1));
+
+    // ── Reactive-block reaction floor ─────────────────────────────────
+    // How long an opponent's wind-up must have been VISIBLE before the reactive
+    // block below is allowed to answer it. Without one the guard went up on the
+    // first frame of the wind-up, because the AI reads the state machine rather
+    // than the animation — at rung 15 that meant a 97% chance of blocking a jab
+    // whose entire wind-up is four frames, which is not a hard opponent so much
+    // as an unbeatable one. Worse under the perfect-guard rules the engine now
+    // applies to both sides (game.js PERFECT_GUARD_WINDOW): a frame-0 guard is
+    // always "perfect", so every jab you threw handed back a free counter.
+    //
+    // 0.28 s at rung 1 down to 0.09 s at rung 15, against the frame data in
+    // game.js ATTACKS (punch wind-up 0.06 s, kick 0.12 s, a held coil as long as
+    // it is held). The resulting rule is simple enough for a player to feel:
+    //   • nobody can react to a bare jab — trading jabs is always live;
+    //   • only the last two rungs get under a kick's 0.12 s wind-up;
+    //   • a held coil is long enough for anyone to answer, so whether it gets
+    //     guarded is down to blockP alone — which is the point of rolling that
+    //     once per swing rather than per tick (see the reactive-defense block).
+    this.reactFloor = 0.28 - 0.19 * ((level - 1) / (MAX_RUNG - 1));
+    // Engine time the opponent's current wind-up began, or -1 between swings,
+    // and whether this rung has already taken its single block roll on it.
+    this._oppWindupSince = -1;
+    this._windupRolled = false;
 
     // Personality (charId) layer. Optional additive AI knobs (e.g. HW Bush's
     // "Read My Lips" / "Voodoo Feints" — +12% blockP, +10% punishP, +30% baitP).
@@ -106,7 +173,7 @@ export class AiController {
     // rungs charge more often and wind up longer.
     this.holdName = null;
     this.holdUntil = 0;
-    this.chargeP = Math.min(0.6, 0.14 + 0.06 * level);
+    this.chargeP = p.chargeP;
     // Signature pattern state (see _runPattern). `_pat` is the phrase currently
     // playing out, `_patReadyAt` the wall-clock time the next one may open.
     //
@@ -116,11 +183,17 @@ export class AiController {
     // thirteen were mechanically interchangeable at a given rung. Both are now
     // ordinary rows in the same data table as everyone else.
     this._pat = null;
+    // Repertoire cursor. Every president owns an ordered array of phrases
+    // (personalities.js `aiPatterns`) and the rung decides how many of them are
+    // in play — see _unlockedPatterns. `_patIdx` walks that window in a fixed
+    // cycle, never a random pick, so the ORDER is learnable the same way the
+    // steps inside one phrase are.
+    this._patIdx = 0;
     // Stagger the first opening so a fighter does not lead with its signature
     // before the player has seen it fight normally — and so demo pairings do
     // not open in lockstep. Seeded RNG, so replays stay deterministic.
     this._patReadyAt = 1.2 + this.rng.random() * 1.5;
-    // Pre-planned punch→kick cancel string (rungs 7+): fire the kick edge when
+    // Pre-planned punch→kick cancel string (rungs 5+): fire the kick edge when
     // t reaches comboAt, drop the plan if the window is missed.
     this.comboAt = 0;
     this.comboUntil = 0;
@@ -150,6 +223,7 @@ export class AiController {
    *   { dt, distance, kickRange,
    *     opponentState, opponentStateT,           // 'punch'|'kick'|'hitstun'|...
    *     opponentWindup, opponentActive, opponentRecover, // booleans this tick
+   *     selfExhausted, opponentExhausted,        // energy gate, both sides
    *     ownAttacks: { punch: {...}, kick: {...} } // with windup/active/recover
    *   }
    */
@@ -164,7 +238,14 @@ export class AiController {
       + (inRange && ctx.opponentState === 'block' ? ctx.dt : 0);
     this.clockT = this.clockT * decay + ctx.dt;
     this.oppAtkN *= decay;
-    if (ctx.opponentWindup && !this.prevOppWindup) this.oppAtkN += 1;
+    if (ctx.opponentWindup && !this.prevOppWindup) {
+      this.oppAtkN += 1;
+      // Stamp the frame the wind-up became visible; the reactive block measures
+      // its reaction floor from here rather than firing on the same tick.
+      this._oppWindupSince = this.t;
+      this._windupRolled = false;
+    }
+    if (!ctx.opponentWindup) this._oppWindupSince = -1;
     this.prevOppWindup = ctx.opponentWindup;
   }
 
@@ -181,38 +262,66 @@ export class AiController {
   }
 
   // ── Signature pattern runner ──────────────────────────────────────────
-  // Every president owns one scripted phrase (personalities.js `aiPattern`)
-  // that it replays on a fixed cadence for the whole fight. This is the layer
-  // that makes the roster feel like fifteen fighters instead of one fighter in
-  // fifteen skins: the rung table below decides how SHARP a president is, and
-  // the pattern decides how it FIGHTS.
+  // Every president owns an ordered repertoire of scripted phrases
+  // (personalities.js `aiPatterns`) that it cycles on a fixed cadence for the
+  // whole fight. This is the layer that makes the roster feel like fifteen
+  // fighters instead of one fighter in fifteen skins: the rung table above
+  // decides how SHARP a president is, and the repertoire decides how it FIGHTS.
   //
-  // The design constraint is learnability, so the script is deliberately not
-  // randomised. Same trigger, same order, same rhythm, every time — that is
-  // what lets a player who has lost to Nixon four times notice he always backs
-  // off a beat before he lunges, and start punishing the retreat. A pattern
-  // that varied would just read as noise.
+  // The design constraint is learnability, so neither the script nor the order
+  // it is played in is randomised. Same trigger, same order, same rhythm, every
+  // time — that is what lets a player who has lost to Nixon four times notice
+  // he always backs off a beat before he lunges, and start punishing the
+  // retreat. A pattern that varied would just read as noise.
   //
   // Three properties keep it fair rather than oppressive:
   //   • it only starts in range and off cooldown, so it cannot chase you down;
   //   • landing a hit CANCELS it (see notifyHit) — every phrase has a window
   //     where interrupting beats it, which is the reward for reading it;
   //   • it is a phrase, not a loop, so there is always recovery time after.
+
+  /**
+   * How much of this president's repertoire this rung is allowed to use.
+   * Low rungs run one phrase, the middle alternates two, the top cycles all
+   * three. This is a difficulty axis the numeric table cannot express: a rung-2
+   * president is beaten by learning ONE tell, while a rung-13 one makes you
+   * learn a three-phrase song before the reads pay off. It is also why the
+   * entries in `aiPatterns` are ordered — index 1 is written as the answer to
+   * having learned index 0.
+   */
+  _unlockedPatterns() {
+    const all = PERSONALITIES[this.charId]?.aiPatterns;
+    if (!all || !all.length) return null;
+    // 1..5 → 1 phrase, 6..10 → 2, 11..15 → 3 (clamped to what exists).
+    const depth = Math.min(all.length, 1 + Math.floor((this.level - 1) / 5));
+    return all.slice(0, depth);
+  }
+
   _patternDue(ctx) {
-    const pat = PERSONALITIES[this.charId]?.aiPattern;
-    if (!pat || this.holdName || this.t < this.retreatUntil) return false;
+    const set = this._unlockedPatterns();
+    if (!set || this.holdName || this.t < this.retreatUntil) return false;
     if (this.t < this._patReadyAt) return false;
-    // Range gate: measured against the pattern's own reach so a crowding
+    // Range gate: measured against the NEXT phrase's own reach so a crowding
     // phrase (LBJ) can open from further out than a counter-punch (Bush Sr.).
+    const pat = set[this._patIdx % set.length];
     return ctx.distance < ctx.kickRange * (pat.range || 1.2);
   }
 
   _startPattern(ctx) {
-    const pat = PERSONALITIES[this.charId].aiPattern;
-    this._pat = { steps: pat.steps, i: 0, until: 0, fired: false };
+    const set = this._unlockedPatterns();
+    const pat = set[this._patIdx % set.length];
+    // Advance the cursor on OPEN, not on finish: a phrase that gets interrupted
+    // still counts as played, so cutting one off moves the fight on to the next
+    // one instead of replaying the phrase the player just proved they can read.
+    this._patIdx = (this._patIdx + 1) % set.length;
+    // Rung tempo scales the dwell of every step, so the same written phrase is
+    // a slow, obvious lesson low on the ladder and a tight one at the top.
+    this._pat = {
+      steps: pat.steps, i: 0, until: 0, fired: false, tempo: this.patTempo,
+    };
     // Cadence is measured from the START of the phrase, so the gap a player
     // learns to count is the gap between openings, not between endings.
-    this._patReadyAt = this.t + (pat.everySecs || 5);
+    this._patReadyAt = this.t + (pat.everySecs || 5) * this.patCadence;
     // A phrase supersedes any half-formed plan from the random layer.
     this.baitArmed = false;
     this.comboAt = 0;
@@ -227,8 +336,10 @@ export class AiController {
     if (!step) { this._pat = null; return null; }
 
     // Entering a step: stamp its dwell and let this tick carry the press edge.
+    // `tempo` is the rung's execution speed (see _startPattern) — the same
+    // written phrase, delivered faster the higher up the ladder you are.
     if (p.until === 0) {
-      p.until = this.t + (step.secs || 0.2);
+      p.until = this.t + (step.secs || 0.2) * p.tempo;
       p.fired = false;
     }
 
@@ -278,6 +389,33 @@ export class AiController {
       case 'wait':
       default:         return base;
     }
+  }
+
+  /**
+   * Commit to a held coil and return the intent that starts it.
+   *
+   * The engine charges for as long as `<name>Held` is set and throws the strike
+   * on the frame it drops, so the hold window IS the visible wind-up the player
+   * reads. One helper for all three coil triggers (gas punish, hitstun, open
+   * guard) because they differ only in how long they load and how much they
+   * favour the kick — inlining it three times is how the first two drifted
+   * apart on which plans they remembered to clear.
+   *
+   * @param kickBias 0..1 chance the coil is a kick rather than a punch.
+   * @param spread   seconds of extra hold on top of the 0.45 s base.
+   */
+  _loadCharge(kickBias, spread) {
+    const name = this.rng.random() < kickBias ? 'kick' : 'punch';
+    this.holdName = name;
+    this.holdUntil = this.t + 0.45 + this.rng.random() * spread;
+    this.baitArmed = false;
+    this.comboAt = 0;
+    this.comboUntil = 0;
+    this.current = { move: 0, side: 0, punch: false, kick: false, block: false };
+    const out = { ...this.current };
+    out[name] = true;            // press edge starts the charge
+    out[name + 'Held'] = true;   // and the hold keeps it winding
+    return out;
   }
 
   update(ctx) {
@@ -370,7 +508,7 @@ export class AiController {
       }
     }
 
-    // ── Pre-planned cancel string (rungs 7+) ────────────────────────────
+    // ── Pre-planned cancel string (rungs 5+) ────────────────────────────
     // A punch committed with a combo plan cancels into kick exactly when the
     // frame-data window opens. Fires outside the reaction gate — the string
     // was decided when the punch started, not as a reaction.
@@ -387,9 +525,23 @@ export class AiController {
     }
 
     // ── Reactive defense ────────────────────────────────────────────────
-    // Block during the opponent's windup if we can plausibly get there.
-    if (ctx.opponentWindup && ctx.distance < ctx.kickRange * 1.25 && !this.current.block) {
-      if (this.rng.random() < effBlockP) {
+    // Block during the opponent's windup, but only once it has been visible for
+    // this rung's reaction floor — see the constructor. A swing whose whole
+    // wind-up is shorter than the floor simply cannot be answered this way,
+    // which is what keeps fast pokes live against the top of the ladder.
+    //
+    // ONE roll per swing, not one per tick. This used to re-roll every frame the
+    // windup was up, which quietly made blockP a function of how long the swing
+    // took rather than of the rung: over the ~25 frames of a held coil even
+    // blockP 0.10 compounded to a ~93% guard, so a rung-1 president defended a
+    // haymaker about as well as a rung-15 one and the column did almost nothing
+    // where it mattered most. Rolled once, blockP means what its name says —
+    // the chance THIS swing gets guarded — and the ladder separates properly.
+    const windupSeen = this._oppWindupSince >= 0
+      && (this.t - this._oppWindupSince) >= this.reactFloor;
+    if (windupSeen && !this._windupRolled && ctx.distance < ctx.kickRange * 1.25) {
+      this._windupRolled = true;
+      if (!this.current.block && this.rng.random() < effBlockP) {
         this.current = { move: 0, side: 0, punch: false, kick: false, block: true };
         this.sinceDecision = 0;
         this.baitArmed = false;
@@ -408,23 +560,41 @@ export class AiController {
       return { ...this.current };
     }
 
+    // ── Gas punish: the opponent spent their bar, so make them pay ─────
+    // A gassed fighter cannot punch or kick at all until the bar recovers
+    // (game.js _canAttack), and the fastest route back up is the guard. So an
+    // opponent standing there gassed is either about to block — in which case a
+    // coil is the right call anyway, since a blocked charge is the one thing
+    // that refills them — or about to eat the biggest swing in the game.
+    //
+    // This is the sharpest end of "learn to block": a player who empties the
+    // bar mashing attack gets a fully loaded coil aimed at them for their
+    // trouble, and the only way out of it is the button they were not pressing.
+    // Ahead of the hitstun coil below because it is the better read of the two
+    // when both are true — hitstun lasts 0.35 s, the gas window lasts seconds.
+    if (ctx.opponentExhausted && ctx.distance < ctx.kickRange * 1.15
+        && this.rng.random() < this.punishGasP) {
+      return this._loadCharge(0.55, 0.55);
+    }
+
     // ── Charged attack: wind up while the opponent can't answer ────────
     // The opponent is stuck in hitstun and in range — occasionally commit to
     // a held charge instead of a tap. The visible coil is the player's cue
     // to block or interrupt when the stun wears off.
     if (ctx.opponentState === 'hitstun' && ctx.distance < ctx.kickRange
         && this.rng.random() < this.chargeP) {
-      const name = this.rng.random() < 0.45 ? 'kick' : 'punch';
-      this.holdName = name;
-      this.holdUntil = this.t + 0.45 + this.rng.random() * 0.5;
-      this.baitArmed = false;
-      this.comboAt = 0;
-      this.comboUntil = 0;
-      this.current = { move: 0, side: 0, punch: false, kick: false, block: false };
-      const out = { ...this.current };
-      out[name] = true;            // press edge starts the charge
-      out[name + 'Held'] = true;   // and the hold keeps it winding
-      return out;
+      return this._loadCharge(0.45, 0.5);
+    }
+
+    // ── Open-guard coil: punish a player who never blocks ──────────────
+    // The opponent is in range, doing nothing in particular, and NOT guarding.
+    // Higher rungs read that as an invitation and commit to a coil rather than
+    // a jab. The turtle read damps it — against a player who does guard there
+    // is no lesson left to teach here, and kicks are already the better answer
+    // (see the kick shift below), so the AI stops spending the wind-up.
+    if (ctx.opponentState === 'idle' && ctx.distance < ctx.kickRange
+        && this.rng.random() < this.chargeP * 0.5 * (1 - Math.min(1, turtle * 2))) {
+      return this._loadCharge(0.4, 0.45);
     }
 
     // ── Out of range: approach, occasionally circle in ──────────────────
@@ -472,7 +642,7 @@ export class AiController {
     if (r < pPunch) {
       this.current = { move: 0, side: 0, punch: false, kick: false, block: false };
       this.baitArmed = false;
-      // Rungs 7+ sometimes commit to the punch as the opener of a
+      // Rungs 5+ sometimes commit to the punch as the opener of a
       // punch→kick cancel string (see the combo block above).
       if (this.comboP > 0 && this.rng.random() < this.comboP) {
         this.comboAt = this.t + ctx.ownAttacks.punch.cancelInto.kick + 0.04;

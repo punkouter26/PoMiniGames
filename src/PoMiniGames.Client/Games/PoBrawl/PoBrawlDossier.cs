@@ -10,11 +10,19 @@ namespace PoMiniGamesClient.Games.PoBrawl;
 /// <param name="SuperEffect">What the signature move does when it fires, in one line. (It fires
 /// itself now — there is no super key — so this reads as a warning, not an instruction.)</param>
 /// <param name="Tell">
-/// The opening beat of this president's signature phrase (personalities.js <c>aiPattern</c>) and
+/// The opening beat of this president's signature phrase (personalities.js <c>aiPatterns</c>) and
 /// the lesson it teaches. Deliberately names the TELL and the counter without listing the whole
-/// script: the phrase is fixed and repeats all fight, so a player who is given the first beat can
+/// script: the phrases are fixed and repeat all fight, so a player who is given the first beat can
 /// still discover what follows by fighting it. Spelling out every step would remove the discovery
 /// this card exists to seed.
+/// <para>
+/// Each president owns three phrases, and the rung decides how many are in play (ai.js
+/// <c>_unlockedPatterns</c>: rungs 1-5 run one, 6-10 alternate two, 11-15 cycle all three).
+/// Because a president sits at exactly one rung of the ladder, that mapping is fixed per
+/// fighter — Trump is always a one-phrase fight, FDR is always a three-phrase one — so the
+/// back half of the roster gets a sentence warning that the read they just learned is not the
+/// whole fighter. Naming the COUNT is the useful part; naming the phrases is not.
+/// </para>
 /// </param>
 public sealed record PoBrawlDossierEntry(string SuperName, string SuperEffect, string Tell);
 
@@ -61,34 +69,34 @@ public static class PoBrawlDossier
                 "Watch the sway. He rocks side to side before the big one, and his wind-up is longer than anyone's."),
             ["bushsr"] = new("VOODOO ECONOMICS",
                 "A burst of guaranteed feints, then several swings that all carry bonus damage.",
-                "His opening jab is bait — he wants you to swing back. The guard behind it is where the counter comes from."),
+                "His opening jab is bait — he wants you to swing back. The guard behind it is where the counter comes from. He has a second string that opens on the guard instead."),
             ["reagan"] = new("MORNING IN AMERICA",
                 "Bigger damage and faster movement for several seconds.",
-                "He plants and waits, daring you to hit the guard. Once a round that guard reflects your damage back."),
+                "He plants and waits, daring you to hit the guard — once a round it reflects your damage back. He also has a string with no guard in it at all."),
             ["carter"] = new("MALAISE SPEECH",
                 "Untouchable frames, and his next landed hit slows you down.",
-                "A ladder of jabs, each faster than the last. Break the rhythm early or it keeps growing."),
+                "A ladder of jabs, each faster than the last. Break the rhythm early or it keeps growing — and he has a second ladder that mixes in kicks your guard won't catch."),
             ["ford"] = new("PARDON ME",
                 "Blinds your controls for a second — most of your inputs simply drop.",
-                "He barges in and swings wild from too close. The lurch is a free window — step out instead of trading."),
+                "He barges in and swings wild from too close. The lurch is a free window — step out instead of trading. His other approach ends in a coil, so read which one you got."),
             ["nixon"] = new("I AM NOT A CROOK",
                 "His next few swings cut through your block, and the first one blinds you.",
-                "He breaks off like he's disengaging, then comes straight back. Don't chase — that's the trap."),
+                "He breaks off like he's disengaging, then comes straight back. Don't chase — that's the trap. His second string opens on a sidestep and a silence instead."),
             ["lbj"] = new("THE TREATMENT",
                 "Opens a long window where any whiff of yours arms his next swing with huge knockback.",
-                "He walks you down without guarding or swinging. Backing out beats it; panicking into a swing feeds him."),
+                "He walks you down without guarding or swinging. Backing out beats it; panicking into a swing feeds him. Three different strings and the heaviest coil on the ladder — expect all of them."),
             ["jfk"] = new("PROFILES IN COURAGE",
                 "Untouchable frames followed by a heavily amplified swing.",
-                "The fastest opener on the roster — he steps around and is on you before you've turned. Every fourth hit is a crowning blow."),
+                "The fastest opener on the roster — he steps around and is on you before you've turned. Every fourth hit is a crowning blow, and he rotates three strings, so the angle changes every time."),
             ["eisenhower"] = new("OPERATION OVERLORD",
                 "The biggest single swing any president can buy, plus untouchable frames.",
-                "The longest preparation in the game: guard, then an enormous coil. Block it and the punish is enormous too."),
+                "The longest preparation in the game: guard, then an enormous coil. Block it and the punish is enormous too — but two of his three strings are coils, and one hides a guard between them."),
             ["truman"] = new("THE BUCK STOPS HERE",
                 "Cashes everything he's absorbed this fight into one enormous swing.",
-                "He walks in with his hands down and lets you hit him. Every hit you land makes his answer bigger — stop swinging."),
+                "He walks in with his hands down and lets you hit him. Every hit you land makes his answer bigger — stop swinging. All three of his strings end on a coil that is priced by what you fed him."),
             ["fdr"] = new("DAY OF INFAMY",
                 "A long stretch of elevated damage, with no health condition to wait for.",
-                "He settles and pauses to address the room. Swing into the pause and you hit nothing — and the kick after it reaches further than it should."),
+                "He settles and pauses to address the room. Swing into the pause and you hit nothing — and the kick after it reaches further than it should. Two more strings behind that one, one of them barely telegraphed."),
         };
 
     /// <summary>The scouting report for a fighter, or <c>null</c> when there is none (BOB).</summary>

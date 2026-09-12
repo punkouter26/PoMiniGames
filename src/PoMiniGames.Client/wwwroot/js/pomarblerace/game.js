@@ -240,11 +240,18 @@ export class Game {
     //   3. Un-negated again — because between (2) and now the CAMERA changed. It used to frame
     //      the road centreline; it now anchors on the marble itself (see ROAD_BIAS). Reframing
     //      the shot changed which way `right` reads on screen and undid the correction.
+    //   4. Still un-negated, and reported backwards again on 2026-09-12 — but the sign was not
+    //      the culprit this time and flipping it would have broken the other two maps. The
+    //      chute's generator was publishing -(dir x up) as its right vector while both baked
+    //      GLB courses published dir x up, so the SAME sign here steered correctly on the
+    //      authored courses and backwards on the chute. Fixed where the disagreement was:
+    //      maps.js adaptProceduralTrack now negates the chute's vector at the boundary.
     //
     // The lesson worth keeping: steering feel is a property of the CAMERA, not of the track
     // basis. The derivation in (1) is sound and holds whenever the shot is anchored on the
-    // subject. Do not re-derive this — if it ever feels backwards again, look first at what
-    // changed about the camera, then flip the sign and record why here.
+    // subject. Do not re-derive this — if it ever feels backwards again, check first whether it
+    // is backwards on EVERY map. If it is, look at the camera, then flip this sign and record
+    // why. If it is only one map, that map's basis is what disagrees.
     const dv = (STEER_ACCEL / m.body.mass) * dir * sdt;
     m.body.velocity.x += rb.x * dv;
     m.body.velocity.y += rb.y * dv;

@@ -70,10 +70,9 @@ public sealed class KioskCoordinator : IDisposable
     // reel doesn't sit on a restart; slower ones (a full race, a comedy bit) get longer.
     // Keyed by the catalog GameKey (DemoEntry.Key). Anything unmapped uses AdvanceSeconds.
     //
-    // 2026-09-04 calibration: PoSurvive's scripted 900ms/turn × ~25 turns plus
-    // post-mortem easily runs ~35s, and PoJoker's 10-joke set with crowd
-    // reactions runs ~30s. The previous 24s dwell on both jumped mid-match
-    // (audit #10). PoRacer stays at 18s — it ends after one race, not loops.
+    // 2026-09-04 calibration: PoJoker's 10-joke set with crowd reactions runs ~30s,
+    // and the previous 24s dwell jumped mid-bit (audit #10). PoRacer stays at 18s —
+    // it ends after one race, not loops.
     private static readonly Dictionary<string, int> DwellByKey = new(StringComparer.OrdinalIgnoreCase)
     {
         ["tictactoe"] = 12,
@@ -82,7 +81,6 @@ public sealed class KioskCoordinator : IDisposable
         ["pomarblerace"] = 22,
         ["pojoker"] = 32,
         ["pobrawl"] = 22,
-        ["posurvive"] = 38,
     };
 
     private int DwellFor(int index) =>
@@ -145,7 +143,7 @@ public sealed class KioskCoordinator : IDisposable
 
     /// <summary>
     /// Jump to the previous demo in the reel. Symmetric with <see cref="SkipNext"/> —
-    /// decrements with wrap-around so a museum visitor who missed PoSurvive doesn't
+    /// decrements with wrap-around so a museum visitor who missed a demo doesn't
     /// have to wait the full ~3-minute loop to see it again.
     /// </summary>
     public void PreviousDemo()

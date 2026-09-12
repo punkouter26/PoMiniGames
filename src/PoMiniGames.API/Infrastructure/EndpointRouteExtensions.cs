@@ -14,7 +14,6 @@ using PoMiniGames.Features.PoCoupleQuiz;  // CoupleQuizHub (the slice's only ser
 using PoMiniGames.Features.PoFunQuiz;
 using PoMiniGames.Features.PoJoker;
 using PoMiniGames.Features.PoRacer;
-using PoMiniGames.Features.PoSurvive;
 using PoMiniGames.Features.PoVoxelStrike;
 
 namespace PoMiniGames.Infrastructure;
@@ -116,7 +115,6 @@ internal static class EndpointRouteExtensions
         gameApi.MapPoJokerEndpoints();
         gameApi.MapPoRacerScoreEndpoints();
         gameApi.MapPoSportsHighScoresEndpoints();
-        gameApi.MapPoSurviveEndpoints(app.Configuration);
         gameApi.MapPoVoxelStrikeScoreEndpoints();
 
         // ── SignalR hubs (auth required; not part of MapGroup) ────────────

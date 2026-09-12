@@ -185,10 +185,9 @@ public partial class ProfilePage
         ("pocouplequiz", "Couple Quiz",   "💕",  RatingKind.Difficulty),
         ("pomarblerace", "Marble Race",   "🔮",  RatingKind.HighScoreOnly),
         ("povoxelstrike", "Voxel Strike", "🧱",  RatingKind.HighScoreOnly),
-        // No win condition and no score: PoJoker is an AI-jester/joke-API experience,
-        // PoSurvive is a simulation. A session count is the only honest stat here.
+        // No win condition and no score: PoJoker is an AI-jester/joke-API experience.
+        // A session count is the only honest stat here.
         ("pojoker",      "Joker",         "🃏",  RatingKind.PlayCountOnly),
-        ("posurvive",    "Survive",       "🛡️", RatingKind.PlayCountOnly),
     };
 
     // ── State ────────────────────────────────────────────────────
@@ -544,7 +543,7 @@ public partial class ProfilePage
             _entries.Add(entry);
 
             // Browser audit #6 (2026-08-10): the "session" count shown under
-            // the "Saved Matches" chip. PlayCountOnly games (Joker, Survive)
+            // the "Saved Matches" chip. PlayCountOnly games (Joker today)
             // contribute their full local play count; rated games contribute
             // only the un-PERMANENTED remainder above what's saved server-side
             // so the chip doesn't double-count. Best-effort: if the server
@@ -594,7 +593,7 @@ public partial class ProfilePage
         _ => g.TotalGames == 0,
     };
 
-    // 2026-08-12 audit #5: every PlayCountOnly game (Joker, Survive today) is
+    // 2026-08-12 audit #5: every PlayCountOnly game (Joker today) is
     // a demo-only experience — the only entry point on the catalog is its
     // /demo route, so a "Try the demo" CTA from the profile card takes the
     // user straight to it without bouncing through the home page first.
@@ -672,7 +671,7 @@ public partial class ProfilePage
         // and threw IndexOutOfRangeException, crashing the whole profile page.
         //
         // Only games with a win rate the player has actually earned are plotted.
-        // Score-based (Marble Race) and play-count-only (Joker, Survive) games have
+        // Score-based (Marble Race) and play-count-only (Joker) games have
         // no win rate: plotting them would pin those axes to zero and read as
         // catastrophic losses. Unplayed W/L games are excluded for the same reason.
         // Both live in the breakdown grid instead, which has a proper unplayed state.

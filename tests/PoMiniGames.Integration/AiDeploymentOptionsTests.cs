@@ -1,7 +1,7 @@
 using FluentAssertions;
 using Microsoft.Extensions.AI;
 using PoMiniGames.AI;
-using PoMiniGames.Features.PoSurvive.Storage;
+using PoMiniGames.Features.PoJoker;
 
 namespace PoMiniGames.Integration;
 
@@ -66,7 +66,7 @@ public class AiDeploymentOptionsTests
         deployment.Should().Be(expectedDeployment);
 
         var chatOptions = AiDecisionChatOptions.ForStructuredJson(
-            AiInferenceRelayService.AgentDecisionSchema,
+            AiJesterService.VerdictSchema,
             schemaName: "probe",
             maxOutputTokens: 128,
             deployment: deployment,

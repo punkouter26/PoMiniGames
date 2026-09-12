@@ -122,8 +122,8 @@ public sealed class AIFoundryOptions
 
     /// <summary>
     /// Game → deployment allowlist. Recognised game keys: <c>couplequiz</c>, <c>funquiz</c>,
-    /// <c>face</c>, <c>joker</c>, <c>survive</c>. Populated either from a nested configuration
-    /// section (<c>PoMiniGames:AI:Deployments:survive</c>) or from the flat Key Vault secret
+    /// <c>face</c>, <c>joker</c>. Populated either from a nested configuration
+    /// section (<c>PoMiniGames:AI:Deployments:joker</c>) or from the flat Key Vault secret
     /// <c>PoMiniGames--AI--Deployments</c> in the form <c>game=deployment,game=deployment</c>
     /// (parsed in <c>GameServicesExtensions</c>).
     /// </summary>
@@ -133,7 +133,7 @@ public sealed class AIFoundryOptions
     /// <see cref="StringComparer.OrdinalIgnoreCase"/> field, on the documented assumption that
     /// the configuration binder would populate the existing instance through the indexer and so
     /// preserve the comparer. It does not — measured 2026-07-29, with
-    /// <c>PoMiniGames:AI:Deployments:survive = gpt-5.4-nano</c> present in configuration,
+    /// <c>PoMiniGames:AI:Deployments:joker = gpt-5.4-nano</c> present in configuration,
     /// <see cref="ResolveDeployment"/> still returned <see cref="DefaultDeployment"/>. Nothing
     /// failed loudly: <em>every</em> game silently ran on the Key Vault default deployment while
     /// <c>/api/infer/status</c> reported the per-game name from a separate raw-config read, so the
@@ -186,7 +186,6 @@ public sealed class AIFoundryOptions
         public const string CoupleQuiz = "couplequiz";
         public const string FunQuiz = "funquiz";
         public const string Joker = "joker";
-        public const string Survive = "survive";
     }
 
     /// <summary>

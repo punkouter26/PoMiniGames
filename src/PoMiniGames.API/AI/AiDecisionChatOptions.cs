@@ -12,7 +12,7 @@ namespace PoMiniGames.AI;
 /// <para>
 /// This exists because "send no options at all" was, for a while, the documented position in
 /// <c>AzureOpenAIInferenceService</c>, and it was wrong in a way that took the game down. The
-/// deployment behind PoSurvive is a reasoning-family model (<c>gpt-5-nano</c> / <c>gpt-5.4-nano</c>),
+/// deployments in play are reasoning-family models (<c>gpt-5-nano</c> / <c>gpt-5.4-nano</c>),
 /// and the two obvious knobs each fail on their own:
 /// </para>
 /// <list type="bullet">
@@ -86,7 +86,7 @@ public static class AiDecisionChatOptions
     /// <remarks>
     /// <para>
     /// <see cref="ForStructuredDecision"/> hard-codes both wire fields, which is correct for
-    /// PoSurvive (pinned to a gpt-5 nano deployment) and wrong for anything that might be pointed
+    /// a caller pinned to a gpt-5 nano deployment and wrong for anything that might be pointed
     /// at <c>Phi-4-mini-instruct</c>: that deployment rejects <c>reasoning_effort</c> and does not
     /// implement <c>json_schema</c>. Each field is therefore attached only when
     /// <see cref="AiModelCapabilities"/> says the deployment takes it.

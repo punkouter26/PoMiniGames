@@ -5,8 +5,6 @@ using PoSportsHighScore = PoMiniGames.Domain.Models.PoSportsHighScore;
 using PoBrawlFighterRating = PoMiniGames.Domain.Models.PoBrawlFighterRating;
 using PoMiniGamesClient.Models;
 using PoMiniGames.Shared.Games;
-using PoMiniGamesClient.Games.PoSurvive.Services;
-using PoMiniGames.Shared.Simulation.Models;
 
 using PoMiniGamesClient.Services.Auth;
 using PoMiniGamesClient.Services.Http;
@@ -93,17 +91,6 @@ namespace PoMiniGamesClient.Services.Http;
 // PoRacer
 [JsonSerializable(typeof(PoRacerScoreDto))]
 [JsonSerializable(typeof(List<PoRacerScoreDto>))]
-// PoSurvive — inference
-[JsonSerializable(typeof(InferRequestDto))]
-[JsonSerializable(typeof(InferenceResult))]
-[JsonSerializable(typeof(InferenceStatusDto))]
-[JsonSerializable(typeof(PersonalityDnaDto))]
-[JsonSerializable(typeof(GridStateDto))]
-// PoSurvive — evolution
-// Only /api/evolution/record survives on the client; the state/tree/summary and
-// evolve/crossover contexts went out with EvolutionLab and its server endpoints.
-[JsonSerializable(typeof(RecordEvolutionRequest))]
-[JsonSerializable(typeof(AgentEvolutionResult))]
 internal partial class ApiJsonContext : JsonSerializerContext
 {
 }

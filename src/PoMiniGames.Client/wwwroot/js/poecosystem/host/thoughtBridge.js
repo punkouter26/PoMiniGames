@@ -15,16 +15,27 @@ export const MODELS = Object.freeze([
 ]);
 
 /**
- * WebGPU probe. Prefers the app's shared gpuProbe (js/posurvive/gpuProbe.js), which also
- * rejects software adapters and carries a Windows powerPreference workaround — reporting a
- * CPU adapter as available would start a several-hundred-MB download that then crawls.
+ * WebGPU probe. Reporting a software adapter as available would start a several-hundred-MB
+ * model download that then crawls on the CPU, so an adapter alone is not enough — it has to
+ * be a hardware one.
+ *
+ * This used to defer to a global gpuProbe loaded on every page (js/posurvive/gpuProbe.js),
+ * with this logic as its fallback. That script went with PoSurvive on 2026-09-12 and
+ * PoEcosystem was its only other caller, so the check lives here now — including the
+ * powerPreference quirk: passing 'high-performance' on Windows can hand back a discrete
+ * adapter the browser then fails to initialise, so the option is only set off Windows.
  */
 export const hasWebGpuSupport = async () => {
   try {
-    const probe = globalThis.gpuProbe?.checkGpu;
-    if (probe) return !!(await probe()).available;
     if (!globalThis.navigator?.gpu) return false;
-    return !!(await navigator.gpu.requestAdapter());
+    const isWindows = (navigator.userAgent ?? '').toLowerCase().includes('windows');
+    const adapter = await navigator.gpu.requestAdapter(
+      isWindows ? undefined : { powerPreference: 'high-performance' });
+    if (!adapter) return false;
+    const info = adapter.info ?? {};
+    const isSoftware = ['architecture', 'description', 'vendor']
+      .some(k => (info[k] ?? '').toLowerCase().includes('software'));
+    return !isSoftware;
   } catch { return false; }
 };
 

@@ -24,7 +24,7 @@ public sealed class HealthEndpointTests : IClassFixture<TestWebApplicationFactor
     /// caller reads. Consolidated from four single-route facts (ping / root health /
     /// liveness / mockables) into one parameterised method — they differed only in the route
     /// and which keys they asserted, and the Integration tier is at its 50-method ceiling
-    /// (100/50/25/25 rule), so the slots were needed for the PoSurvive balance tests.
+    /// (100/50/25/25 rule), so the slots were needed elsewhere.
     /// </summary>
     [Theory]
     // Bare reachability — the client's apiService.isAvailable() only reads the status code.

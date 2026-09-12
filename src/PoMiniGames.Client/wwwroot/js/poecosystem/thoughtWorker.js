@@ -1,6 +1,6 @@
-// thoughtWorker.js — WebLLM in its own module worker (pattern: posurvive/inferenceWorker.js).
+// thoughtWorker.js — WebLLM in its own module worker.
 //
-// Two things are learned from PoSurvive's experience with @mlc-ai/web-llm:
+// Two things are learned from earlier experience with @mlc-ai/web-llm:
 //   1. the module is imported from a list of CDN candidates, because one of them is often
 //      blocked and a single failure would take the whole feature down;
 //   2. JSON-schema ("grammar") mode crashes on some builds — we try it once, and on a

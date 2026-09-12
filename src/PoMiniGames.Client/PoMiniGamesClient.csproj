@@ -75,8 +75,12 @@
 
   <ItemGroup>
     <ProjectReference Include="..\PoMiniGames.Shared\PoMiniGames.Shared.csproj" />
-    <!-- PoSurvive: simulation domain/application logic runs in the browser -->
-    <ProjectReference Include="..\PoMiniGames.Application\PoMiniGames.Application.csproj" />
+    <!-- Domain models only: the board rows the leaderboard endpoints return are
+         deserialized straight into PoMiniGames.Domain.Models types rather than mirrored
+         here. This was a reference to PoMiniGames.Application, which pulled Domain in
+         transitively along with the server-side storage interfaces the browser has no
+         use for; PoSurvive's simulation engine was the reason it was there. -->
+    <ProjectReference Include="..\PoMiniGames.Domain\PoMiniGames.Domain.csproj" />
   </ItemGroup>
 
 </Project>

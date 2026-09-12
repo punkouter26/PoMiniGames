@@ -131,7 +131,7 @@ internal static class GameServicesExtensions
         // Every AI-consuming slice now resolves its chat client through GameChatClientFactory, so
         // each gets the resilience pipeline, the spend ceiling and the telemetry by construction.
         // Registering the keys here (rather than in each slice) keeps the set in one place and
-        // makes the health-tracker keys predictable. Idempotent — PoSurvive registers its own too.
+        // makes the health-tracker keys predictable. Idempotent.
         services.AddGameChatClient(AIFoundryOptions.Games.CoupleQuiz);
         services.AddGameChatClient(AIFoundryOptions.Games.FunQuiz);
         services.AddGameChatClient(AIFoundryOptions.Games.Joker);

@@ -9,7 +9,7 @@
    two copies byte-identical; they had already drifted apart, and because Blazor
    compiles this file as component-scoped CSS (`.gl-top-bar[b-xxxxx]`) the scoped
    copy only ever applied to MainLayout's own markup — EmptyLayout and
-   PoSurviveLayout render the same header and always read app-shell.css. Editing
+   EmptyLayout render the same header and always read app-shell.css. Editing
    the bar here would change one layout and silently not the other two.
 
    The test for whether a rule belongs in this file: does its markup appear ONLY
@@ -62,7 +62,7 @@
 /* ── Skip link ──
    The rule moved to wwwroot/css/app.css (2026-08-08 audit #9). It lived here, in
    a SCOPED stylesheet, which meant the class only worked inside MainLayout —
-   PoSurvive runs its own PoSurviveLayout, so its skip link would have rendered
+   A layout of its own would need its own skip link, which would have rendered
    as unstyled text sitting on top of the page. An accessibility affordance every
    layout is expected to carry cannot live in one layout's scoped file. */
 
@@ -85,7 +85,7 @@
 }
 
 /* ── Toast stack — rendered by MainLayout's @foreach toast loop, and only there.
-     (PoSurviveLayout has its own `.app-toast`.) ── */
+     ── */
 .toast-stack {
     position: fixed;
     bottom: 1.5rem;

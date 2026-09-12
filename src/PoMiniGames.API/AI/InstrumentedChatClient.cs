@@ -12,8 +12,8 @@ namespace PoMiniGames.AI;
 /// <c>ChatResponse.Usage</c> was discarded at every call site in the solution, so there was no
 /// way to answer "what does a match cost?", no per-deployment latency signal, and — the reason
 /// this matters most — no record that a deployment had stopped answering. A live 75-second
-/// PoSurvive session issued 15 relay calls and completed none of them without producing a single
-/// aggregate anyone could look at afterwards.
+/// session issued 15 relay calls and completed none of them without producing a single aggregate
+/// anyone could look at afterwards.
 /// </para>
 /// <para>
 /// GoF: Decorator, sitting inside <see cref="ResilientChatClient"/> so what it times is one

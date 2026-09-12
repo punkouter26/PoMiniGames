@@ -19,8 +19,8 @@ namespace PoMiniGames.AI;
 /// <para>
 /// So capability is resolved per deployment and the options builder degrades: schema where the
 /// model supports it, JSON-object mode plus a prompt-carried contract where it does not. The
-/// parsers downstream were already tolerant of the weaker mode — it is what every game except
-/// PoSurvive used before — so degrading is safe, it just stops being *enforced*.
+/// parsers downstream were already tolerant of the weaker mode — it is what most games used
+/// before — so degrading is safe, it just stops being *enforced*.
 /// </para>
 /// <para>
 /// <b>Heuristic, with an override.</b> Matching on the deployment name is inference, not fact: a

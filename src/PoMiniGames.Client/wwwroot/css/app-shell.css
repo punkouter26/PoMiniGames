@@ -3,7 +3,7 @@
 
    The `.gl-*` top-bar classes were authored only in MainLayout.razor.css, which
    Blazor compiles as *component-scoped* CSS (`.gl-top-bar[b-xxxxx]`). Any OTHER
-   layout that reuses the same markup — notably PoSurviveLayout.razor, which
+   layout that reuses the same markup — notably EmptyLayout.razor, which
    copies the `gl-top-bar` header verbatim — received NONE of those styles, so
    its top bar rendered unstyled (transparent bar, native-looking Sign out
    button, mis-tinted brand).
@@ -21,7 +21,7 @@
    the pre-token literals (8px, `0 8px 24px rgba(0,0,0,.3)`,
    `rgba(245,158,11,.14)`, #fecaca). Which one a user saw depended on which
    layout rendered the bar, because scoped CSS only ever applied to MainLayout's
-   own markup — PoSurviveLayout and EmptyLayout always read this file.
+   own markup — EmptyLayout always reads this file.
 
    So the rule is now structural rather than clerical: anything rendered by more
    than one layout lives HERE, and MainLayout.razor.css keeps only what is
@@ -499,7 +499,7 @@
 
 /* ── FPS pill (top-bar FpsCounter, on every route).
    Lives here rather than in FpsCounter.razor.css because the three layouts that
-   render the counter (MainLayout, BareLayout, PoSurviveLayout) style the rail
+   render the counter (MainLayout, BareLayout) style the rail
    around it here. The runtime sampler lives in FpsCounter; only the visual rules
    live here. */
 .gl-fps {

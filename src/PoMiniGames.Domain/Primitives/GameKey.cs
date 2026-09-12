@@ -89,7 +89,6 @@ public readonly record struct GameKey(string Value) : IComparable<GameKey>
     public static readonly GameKey CoupleQuiz = new("couplequiz");
     public static readonly GameKey FunQuiz = new("funquiz");
     public static readonly GameKey Joker = new("joker");
-    public static readonly GameKey Survive = new("survive");
 
     public static readonly GameKey ConnectFive = new("connectfive");
     public static readonly GameKey TicTacToe = new("tictactoe");
@@ -124,7 +123,7 @@ public readonly record struct GameKey(string Value) : IComparable<GameKey>
     // which 400'd their stats and leaderboard calls.
     private static readonly GameKey[] All =
     {
-        CoupleQuiz, FunQuiz, Joker, Survive,
+        CoupleQuiz, FunQuiz, Joker,
         ConnectFive, TicTacToe, PoMarbleRace,
         PoRacer, PoBrawl, PoBrawlDemo, PoBrawlKo, PoSports,
         PoVoxelStrike, PoEcosystem, SandPlayground,
@@ -161,7 +160,6 @@ public readonly record struct GameKey(string Value) : IComparable<GameKey>
         ["pocouplequiz"] = CoupleQuiz,
         ["pofunquiz"] = FunQuiz,
         ["pojoker"] = Joker,
-        ["posurvive"] = Survive,
         // Bare forms for keys this catalogue stores prefixed — the drift runs both ways.
         ["marblerace"] = PoMarbleRace,
         ["sports"] = PoSports,

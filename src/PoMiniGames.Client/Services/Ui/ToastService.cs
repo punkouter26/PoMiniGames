@@ -41,7 +41,7 @@ public class ToastItem
 /// <remarks>
 /// <para>
 /// <b>Why the cue lives here and not in the layout.</b> Four layouts render a
-/// toast stack (MainLayout, EmptyLayout, BareLayout, PoSurviveLayout) and a cue
+/// toast stack (MainLayout, EmptyLayout, BareLayout) and a cue
 /// fired from any one of them would be silent under the other three. Firing on
 /// creation instead makes the coverage structural: a toast cannot exist without
 /// having been announced.

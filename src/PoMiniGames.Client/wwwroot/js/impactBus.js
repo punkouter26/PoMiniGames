@@ -373,7 +373,7 @@ if (typeof document !== 'undefined') {
 
 if (typeof window !== 'undefined') {
     // Non-module access for the game engines that are plain scripts
-    // (racingInterop.js, posurvive/*, pojoker-*) and for Blazor JS interop,
+    // (racingInterop.js, pojoker-*) and for Blazor JS interop,
     // which cannot import an ES module without a dynamic import per call.
     window.PoImpact = {
         impact, addTrauma, hitstop, getPunch, getShake, getTimeScale,

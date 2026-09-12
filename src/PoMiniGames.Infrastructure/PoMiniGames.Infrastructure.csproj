@@ -7,7 +7,6 @@
     <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks" />
     <!-- §3 Resilience pipelines (retry + circuit breaker + timeout) used by AI Foundry calls. -->
     <PackageReference Include="Microsoft.Extensions.Http.Resilience" />
-    <!-- PoSurvive: server-side Azure OpenAI inference relay -->
     <PackageReference Include="Microsoft.Extensions.AI" />
     <PackageReference Include="Microsoft.Extensions.AI.OpenAI" />
     <PackageReference Include="Azure.AI.OpenAI" />

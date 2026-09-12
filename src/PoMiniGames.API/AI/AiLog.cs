@@ -7,7 +7,7 @@ namespace PoMiniGames.AI;
 /// </summary>
 /// <remarks>
 /// Every model invocation in the solution used to be invisible: <c>ChatResponse.Usage</c> was
-/// discarded at every call site, so nothing could answer "what did a PoSurvive match cost?" —
+/// discarded at every call site, so nothing could answer "what did that match cost?" —
 /// and nothing noticed when a deployment stopped answering entirely. Event ids start at 6200 to
 /// stay clear of <c>AuthLog</c>'s 61xx block.
 /// </remarks>

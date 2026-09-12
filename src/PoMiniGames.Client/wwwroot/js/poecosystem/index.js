@@ -17,7 +17,7 @@ let engine = null;
 // The HUD stylesheet is injected here rather than shipped as PoEcosystemViewer.razor.css:
 // the HUD is built from several components and Blazor's scoped CSS does not cross
 // component boundaries, so a scoped file would style the shell and nothing inside it.
-// Same approach as js/posurvive/theme.js. Loading it here also keeps it off every other
+// Loading it here keeps it off every other
 // page — the game is route-gated through engineLoader.
 const STYLE_ID = 'poecosystem-css';
 function ensureStyles() {

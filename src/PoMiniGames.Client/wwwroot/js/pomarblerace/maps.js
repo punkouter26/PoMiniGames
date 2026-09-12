@@ -75,6 +75,9 @@ export const newProjection = () => ({ s: 0, index: -1, lateral: 0, height: 0 });
 // monotonically in +Z, `s` and `z` are the same number, so this adapter is a thin translation
 // rather than a reimplementation — and the original generator is left exactly as it was.
 const _c = new THREE.Vector3(), _r = new THREE.Vector3(), _u = new THREE.Vector3(), _d = new THREE.Vector3();
+// Second right-vector scratch: upAt() derives up FROM right, and its caller may be holding
+// _r as its own result at the time — sharing one scratch across both would clobber it.
+const _r2 = new THREE.Vector3();
 
 // How far beneath the floor plane a marble may sit before it counts as off the chute. The
 // original test was `y < floorY(z) - 58` in WORLD space; in the local frame the banking is
@@ -83,11 +86,30 @@ const PROC_OOB_DROP = 34;
 const PROC_OOB_LATERAL = 26;
 
 function adaptProceduralTrack(t) {
+  // The generator's own right vector points the WRONG WAY for this interface, and this is
+  // where that gets corrected (2026-09-12).
+  //
+  // Every consumer of the interface — steering, the lateral sign, the edge gauge — assumes
+  // right = dir x up, which is the same vector a chase camera renders as screen-right, and is
+  // what both baked GLB courses store. The chute's generator instead derives its basis as
+  // `(1,0,0)` rotated by the quaternion that takes +Z onto dir, which is -(dir x up): with the
+  // marble running down +Z that is world +X, and a camera looking down +Z renders +X to
+  // screen-LEFT. So the right arrow key pushed the marble left, and only on this map.
+  //
+  // The fix lands here rather than in the generator because `rb` is also the basis every wall,
+  // kerb and obstacle is placed along; negating it there would mirror the whole course. The
+  // adapter already exists to translate this map's older conventions, so it translates one more.
+  //
+  // This is also what made the sibling `upAt` below wrong: right x dir recovers up only for a
+  // right-handed basis, and with the generator's vector it returned -up, which put a sign error
+  // straight into `height`, isOutOfBounds and floorPoint.
+  const rightAt = (s, out) => (out || _r).copy(t.rightAt(s)).negate();
+
   // up = right x dir. The generator publishes dir and right but not up, and for a right-handed
   // basis where right = dir x up, that cross product recovers up exactly.
   const upAt = (s, out) => {
-    const d = t.dirAt(s), r = t.rightAt(s);
-    return (out || _u).copy(r).cross(d).normalize();
+    const d = t.dirAt(s);
+    return (out || _u).copy(rightAt(s, _r2)).cross(d).normalize();
   };
   const halfWidthAt = (s) => t.halfWidthAt(s);
 
@@ -104,7 +126,7 @@ function adaptProceduralTrack(t) {
     project(pos, hint, out) {
       const o = out || newProjection();
       const s = Math.max(0, Math.min(t.length, pos.z));
-      const c = t.centerAt(s), r = t.rightAt(s);
+      const c = t.centerAt(s), r = rightAt(s, _r);
       upAt(s, _u);
       const dx = pos.x - c.x, dy = pos.y - c.y, dz = pos.z - c.z;
       o.s = s;
@@ -116,7 +138,7 @@ function adaptProceduralTrack(t) {
 
     centerAt: (s, out) => (out ? out.copy(t.centerAt(s)) : t.centerAt(s)),
     dirAt: (s, out) => (out ? out.copy(t.dirAt(s)) : t.dirAt(s)),
-    rightAt: (s, out) => (out ? out.copy(t.rightAt(s)) : t.rightAt(s)),
+    rightAt: (s, out) => rightAt(s, out),
     upAt,
     halfWidthAt,
     lateralOf: (proj) => Math.max(-1.4, Math.min(1.4, proj.lateral / Math.max(1, halfWidthAt(proj.s)))),

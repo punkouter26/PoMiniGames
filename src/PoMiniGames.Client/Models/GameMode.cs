@@ -36,7 +36,7 @@ public enum GameMode
 /// match <c>/connectfive/2PLAYER</c>. Case sensitivity varied within a single
 /// method.</item>
 /// <item>ConnectFive / TicTacToe / PoBrawl / PoSports / PoFunQuiz accepted the
-/// legacy <c>"1"</c> demo segment; PoMarbleRace / PoCoupleQuiz / PoSurvive did
+/// legacy <c>"1"</c> demo segment; PoMarbleRace / PoCoupleQuiz did
 /// not.</item>
 /// <item>Two different legacy query forms were in use for the same intent —
 /// <c>?mode=2p</c> in one half of the catalog and <c>?demo=1</c> in the other —

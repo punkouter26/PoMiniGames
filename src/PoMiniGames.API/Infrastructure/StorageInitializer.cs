@@ -28,12 +28,9 @@ public sealed class StorageInitializer
         // subsystem (2026-08-10): nothing in the game ever wrote a row to either, so both
         // tables were created on every boot and stayed empty for the life of the app.
         "PoFunQuizPlayers",
-        // PoSurvive persistence: backs /api/evolution/record. Without eager creation
-        // that endpoint returns 500 with "No Azure Table…". Name must match the
-        // constant in EvolutionRepository.
-        // "SimulationSessions" and "HeartbeatEvents" were dropped with the /api/sessions
-        // endpoint — nothing read them, and SaveHeartbeatBatchAsync never had a caller.
-        "EvolutionRecords",
+        // "EvolutionRecords" went with PoSurvive (2026-09-12), as did
+        // "SimulationSessions" and "HeartbeatEvents" before it. Existing rows are left
+        // in the account rather than dropped here — this list only creates tables.
         // PoJoker (demo-only): per-session joke-performance records that back the
         // /api/joker/leaderboard surface (PartitionKey = SessionId).
         "PoJokerPerformances",

@@ -21,7 +21,6 @@
 //   poracer     motorised — saws, filter sweeps, no pitched melody at all
 //   posports    rubber and air — bouncy sine blips, whistle
 //   pojoker     courtly brass and bells; square waves, dotted rhythms
-//   posurvive   dark, detuned, unresolved
 //   quiz        bright bell-tones, unambiguous right/wrong
 //
 // PITCH JITTER: every cue is detuned by a small random amount on each play.
@@ -389,45 +388,6 @@ const CUES = {
                 v('square', 330, 0.35, 0.11, { freqEnd: 110, sweep: 0.33, decay: 0.32, cutoff: 1400, q: 2, drive: 0.4 }),
             ],
             feel: 'lose', duck: 0.4,
-        },
-    },
-
-    // ── PoSurvive — dark, unresolved & tension heartbeat ───────────────
-    posurvive: {
-        heartbeat: {
-            voices: [
-                v('sine', 65, 0.09, 0.32, { freqEnd: 42, sweep: 0.08, decay: 0.08 }),
-                v('sine', 55, 0.11, 0.24, { freqEnd: 38, sweep: 0.09, decay: 0.09, delay: 0.12 }),
-            ],
-            feel: 'tick',
-        },
-        hazard: {
-            voices: [
-                v('saw', 85, 0.40, 0.22, { freqEnd: 35, sweep: 0.35, decay: 0.35, cutoff: 600, q: 3, drive: 0.6 }),
-                v('noise', 0, 0.30, 0.12, { decay: 0.28, cutoff: 1200, cutoffEnd: 200, q: 2 }),
-            ],
-            feel: 'medium', scale: 1.1, duck: 0.3,
-        },
-        forage: {
-            voices: [
-                v('noise', 0, 0.18, 0.08, { decay: 0.16, cutoff: 1800, cutoffEnd: 700, q: 2, sweep: 0.17 }),
-                v('triangle', 196, 0.22, 0.06, { decay: 0.2, cutoff: 900 }),
-            ],
-            feel: 'tick',
-        },
-        alert: {
-            voices: [
-                v('triangle', 233, 0.5, 0.09, { decay: 0.45, cutoff: 1400, lfoRate: 5.5, lfoDepth: 0.35 }),
-                v('triangle', 330, 0.5, 0.09, { decay: 0.45, cutoff: 1400, lfoRate: 5.5, lfoDepth: 0.35 }),
-            ],
-            feel: 'medium', scale: 0.7, duck: 0.35,
-        },
-        death: {
-            voices: [
-                v('saw', 147, 0.9, 0.16, { freqEnd: 36, sweep: 0.85, decay: 0.85, cutoff: 1200, cutoffEnd: 180, q: 2.5, drive: 0.4 }),
-                v('noise', 0, 0.7, 0.09, { decay: 0.68, cutoff: 800, cutoffEnd: 120, q: 1.2, sweep: 0.65 }),
-            ],
-            feel: 'lose', scale: 1.3, duck: 0.6,
         },
     },
 

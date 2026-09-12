@@ -22,7 +22,7 @@ const liveSources = new Set();
  */
 function getAudioContext() {
     if (!audioContext) {
-        // Shared context (js/audioBus.js) — see note in posurvive/audioEngine.js.
+        // Shared context (js/audioBus.js) — one AudioContext for the whole app.
         audioContext = (window.PoAudioBus && window.PoAudioBus.contextSync())
             || new (window.AudioContext || window.webkitAudioContext)();
     }

@@ -12,10 +12,6 @@ using PoMiniGamesClient.Services.Http;
 using PoMiniGamesClient.Services.Interop;
 using PoMiniGamesClient.Services.Play;
 using PoMiniGamesClient.Services.Ui;
-using PoMiniGames.Application.Simulation;
-using PoMiniGamesClient.Games.PoSurvive.Services;
-using PoMiniGamesClient.Games.PoSurvive.Store;
-using PoMiniGames.Shared.Simulation.Interfaces;
 
 var builder = WebAssemblyHostBuilder.CreateDefault(args);
 builder.RootComponents.Add<App>("#app");
@@ -157,81 +153,6 @@ builder.Services.AddScoped<PoMiniGamesClient.Games.PoJoker.IJokerSpeechService,
 builder.Services.AddScoped<PoMiniGamesClient.Games.PoJoker.IJokerAudioService,
     PoMiniGamesClient.Games.PoJoker.JokerAudioService>();
 builder.Services.AddSingleton<PoMiniGames.Shared.Games.PoJoker.PerformanceSettings>();
-
-// ─── PoSurvive (agent survival simulation) ───────────────────────────
-// State lives in SurviveStore — a plain observable store. This replaced Fluxor, whose
-// assembly scan, action/reducer/effect files, and package reference existed for this
-// one slice; no other game used it.
-
-// Simulation logic (runs in-browser via WASM).
-builder.Services.AddSingleton<CombatService>();
-builder.Services.AddSingleton<HungerService>();
-builder.Services.AddSingleton<GridService>();
-builder.Services.AddSingleton<NarrativeService>();
-builder.Services.AddSingleton<SimulationEngine>();
-// Scoped == app lifetime in WASM. The store assigns itself as the orchestrator's sink,
-// so both must share a lifetime.
-builder.Services.AddScoped<SimulationOrchestrator>();
-builder.Services.AddScoped<AudioCues>();
-builder.Services.AddScoped<SurviveStore>();
-
-// PoSurvive client-only services.
-builder.Services.AddScoped<SessionLogService>();
-builder.Services.AddScoped<AudioService>();
-builder.Services.AddScoped<SimulationLaunchService>();
-builder.Services.AddScoped<LocalModelBootstrapService>();
-builder.Services.AddScoped<DecisionInsightService>();
-builder.Services.AddScoped<EvolutionClientService>();
-// Brings inference online (cloud relay if the server has it, else the in-browser model).
-// Registered after IInferenceService is decided below — DI resolves lazily, so the order of
-// the AddScoped calls doesn't matter, but the dependency does: this is the only thing that
-// calls InitModelAsync / BootReady, which had no caller at all before.
-builder.Services.AddScoped<InferenceBootstrapper>();
-
-// The scripted provider, registered as itself in every build — not only when it is THE
-// provider. The orchestrator's scripted branch used to test `_inference is MockInferenceService`,
-// which outside a mock build is an InferenceRouter, so it always missed and every scripted
-// battle fell through to the trait-hash table's "standing by" filler. The picker's
-// "Scripted (no AI)" option now resolves this concrete type instead of guessing from the
-// IInferenceService registration.
-builder.Services.AddSingleton<MockInferenceService>();
-
-// Inference service. "Inference:UseMock" defaults to true to avoid a multi-GB model
-// download; set it false to activate the real WebLLM (local) + Azure relay (remote) router.
-var useMock = !bool.TryParse(builder.Configuration["Inference:UseMock"], out var _b0) || _b0;
-if (useMock)
-{
-    // Mock mode registers NO InferenceRouter. It previously registered one built from
-    // a WebLlmInferenceService(null!) and a RemoteRelayInferenceService pointed at
-    // http://localhost:0 — two deliberately unusable children, constructed only so the
-    // layout's `@inject InferenceRouter` would resolve. The layout now asks for the
-    // router optionally (GetService), which is what "may not exist" actually means.
-    builder.Services.AddSingleton<IInferenceService>(sp => sp.GetRequiredService<MockInferenceService>());
-}
-else
-{
-    var timeoutMs = int.TryParse(builder.Configuration["Inference:InferenceTimeoutMs"], out var _i1) ? _i1 : 15_000;
-    var maxRetryAttempts = int.TryParse(builder.Configuration["Inference:MaxRetryAttempts"], out var _i2) ? _i2 : 2;
-    var retryDelayMs = int.TryParse(builder.Configuration["Inference:RetryDelayMs"], out var _i3) ? _i3 : 500;
-    var retryOnCancellation = bool.TryParse(builder.Configuration["Inference:RetryOnCancellation"], out var _b4) && _b4;
-    var inferenceBaseAddress = builder.HostEnvironment.BaseAddress;
-
-    builder.Services.AddSingleton<WebLlmInferenceService>(sp => new WebLlmInferenceService(
-        js: sp.GetRequiredService<IJSRuntime>(),
-        inferenceTimeoutMs: timeoutMs,
-        maxRetryAttempts: maxRetryAttempts,
-        retryDelayMs: retryDelayMs,
-        retryOnCancellation: retryOnCancellation));
-
-    builder.Services.AddSingleton<RemoteRelayInferenceService>(
-        _ => new RemoteRelayInferenceService(new HttpClient { BaseAddress = new Uri(inferenceBaseAddress) }));
-
-    builder.Services.AddSingleton<InferenceRouter>(sp => new InferenceRouter(
-        sp.GetRequiredService<WebLlmInferenceService>(),
-        sp.GetRequiredService<RemoteRelayInferenceService>()));
-
-    builder.Services.AddSingleton<IInferenceService>(sp => sp.GetRequiredService<InferenceRouter>());
-}
 
 var host = builder.Build();
 

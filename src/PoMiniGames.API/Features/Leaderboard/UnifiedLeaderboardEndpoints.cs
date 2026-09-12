@@ -18,7 +18,7 @@ public static class UnifiedLeaderboardEndpoints
 {
     // Games ranked via the shared PlayerStats board: adaptive-ELO games rank by
     // rating. Every other board has a real score source and a dedicated builder
-    // below. PoSurvive is demo-only — no board.
+    // below.
     private static readonly (string Key, string Title)[] WinRateGames =
     [
         ("connectfive", "Connect Five"),

@@ -414,7 +414,7 @@ dialog.gps-modal {
 
      .my-game-canvas { height: min(var(--gps-area-h), 820px); }
 
-   Layouts with extra rail chrome (PoSurviveLayout's `.sv-bar`) override the
+   Layouts with extra rail chrome override the
    `--gps-bar-h` token from their own CSS so the subtraction stays accurate
    without each game having to know which layout it sits under.
 

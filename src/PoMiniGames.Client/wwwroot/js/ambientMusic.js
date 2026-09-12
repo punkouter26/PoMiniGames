@@ -72,7 +72,6 @@ const MODES = {
 
 // Per-game presets. Add a key here to give a game its own arrangement.
 const PRESETS = {
-    posurvive:    { root: 55.00, scale: 'minorPentatonic', cutoff: 520, drift: 0.045, pluck: 0.55, wave: 'sawtooth', space: 'cavern',   bpm: 76,  bassWave: 'square',   arpWave: 'triangle' },
     pojoker:      { root: 65.41, scale: 'dorian',          cutoff: 760, drift: 0.070, pluck: 0.85, wave: 'triangle', space: 'hall',     bpm: 96,  bassWave: 'triangle', arpWave: 'square' },
     poracer:      { root: 73.42, scale: 'wholeTone',       cutoff: 940, drift: 0.110, pluck: 0.25, wave: 'sawtooth', space: 'outdoor',  bpm: 132, bassWave: 'saw',      arpWave: 'square' },
     pomarblerace: { root: 49.00, scale: 'lydian',          cutoff: 640, drift: 0.050, pluck: 0.65, wave: 'triangle', space: 'tunnel',   bpm: 104, bassWave: 'triangle', arpWave: 'triangle' },
@@ -119,7 +118,7 @@ function layerTarget(name, intensity) {
 
 /**
  * Start (or switch to) an arrangement.
- * @param {string} presetName key of PRESETS, e.g. 'posurvive'
+ * @param {string} presetName key of PRESETS, e.g. 'pobrawl'
  * @param {number} [gain=0.14] overall level on the music bus (kept low on purpose)
  */
 export async function start(presetName, gain) {
@@ -406,7 +405,7 @@ function pluck() {
 }
 
 /**
- * Steer the arrangement from game state. PoSurvive drives this from
+ * Steer the arrangement from game state. A game drives this from
  * agents-remaining, so the music thickens as the battle thins out.
  * @param {number} value 0 (calm) .. 1 (tense)
  */

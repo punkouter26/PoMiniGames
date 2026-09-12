@@ -24,7 +24,6 @@
         pojoker:       ['#f59e0b', '#d946ef'],
         poracer:       ['#f0abfc', '#38bdf8'],   // synthwave
         posports:      ['#4ade80', '#facc15'],
-        posurvive:     ['#84cc16', '#f97316'],
         povoxelstrike: ['#fb923c', '#38bdf8'],
         couplequiz:    ['#f472b6', '#c084fc'],
         funquiz:       ['#fbbf24', '#818cf8'],

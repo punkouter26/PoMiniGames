@@ -9,8 +9,9 @@ namespace PoMiniGames.AI;
 /// <remarks>
 /// <para>
 /// <see cref="AiTokenBudget"/> existed but was consulted in exactly one place —
-/// <c>POST /api/infer</c> — so it bounded PoSurvive and nothing else. Every other AI surface in the
-/// host was unmetered: PoFunQuiz will generate up to 50 questions per request, PoCoupleQuiz scores
+/// the <c>POST /api/infer</c> relay — so it bounded one caller and nothing else. Every other AI
+/// surface in the host was unmetered: PoFunQuiz will generate up to 50 questions per request,
+/// PoCoupleQuiz scores
 /// a model call per answer pair per round, and PoJoker runs an autonomous show loop issuing two to
 /// three calls per joke. None of them charged a token.
 /// </para>

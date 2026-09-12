@@ -225,7 +225,7 @@ export function createAudio() {
     if (!ctx) {
       const AC = window.AudioContext || window.webkitAudioContext;
       if (!AC) return null;
-      // Shared context (js/audioBus.js) — see note in posurvive/audioEngine.js.
+      // Shared context (js/audioBus.js) — one AudioContext for the whole app.
       ctx = (window.PoAudioBus && window.PoAudioBus.contextSync()) || new AC();
 
       // #7 — master → compressor → destination. The compressor is the safety net that the old

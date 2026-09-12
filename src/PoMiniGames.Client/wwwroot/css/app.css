@@ -130,7 +130,7 @@
 /* ── Minimum touch target (2026-08-08 audit #5) ────────────────────────────────
    Every interactive control on every page measured under 44×44 CSS px on a
    390px viewport — the top bar's chips were 42×26, the game back-link 61×23,
-   the PoSurvive rail ~22px tall and the intro card's opt-out checkbox 16×16.
+   a game rail ~22px tall and the intro card's opt-out checkbox 16×16.
    That is below Apple's 44pt guidance and WCAG 2.5.8's 24px floor.
 
    The fix is to GROW THE CONTROL (`min-height`) — it is the honest one, because
@@ -155,7 +155,7 @@
            .sp-btn-primary, .sp-btn-secondary, .sp-back,
            .app-notfound__link, .app-fallback-link,
            .fq-option,
-           .sv-btn, .sv-chip, .sv-rail__tab, .reload,
+           .reload,
            /* 2026-09-04 UI sweep: button classes that landed after the original
               list was written. Same `.pvs-btn` family is used for every
               interaction in PoVoxelStrike's lobby + game; `.retry-button` is
@@ -170,8 +170,8 @@
 
     /* Height alone is not a 44px target — these are the controls narrow enough
        that the horizontal axis was still the limiting one (the 🎮 switcher at
-       42px, the 1P/2P mode chips at 37px, the PoSurvive speed chips at 43px). */
-    :where(.gl-overflow-trigger, .home-mode-chip, .sv-chip) {
+       42px, the 1P/2P mode chips at 37px). */
+    :where(.gl-overflow-trigger, .home-mode-chip) {
         min-width: 44px;
     }
 
@@ -220,7 +220,7 @@
   --color-warning: #f59e0b;
   --color-error: #ef4444;
   /* ── Tiered accent bag (Fix #8 — single source of truth for status colour) ──
-     Each game's own brand colour (PoJoker gold, PoSurvive amber,
+     Each game's own brand colour (PoJoker gold,
      etc.) stays scoped to its theme root, but every chip / button / focus ring
      reads from one of the tokens below so the universal chrome is identical.
      Slugs reflect semantic intent, not raw colour, so swapping palettes is a
@@ -431,10 +431,6 @@
      was on, because each page picked its own number. Everything on the old list
      was folded into the nearest tier above (560→480; 600/680/700/720/768→640).
 
-     Two documented exceptions, both in css/posurvive/c64-theme.css: `.sv-stage`
-     keeps 1100px and 860px. They are two distinct tiers of a dense two-column
-     tactical dashboard (wide → narrow columns → stacked), and collapsing both to
-     960px would merge them into one, dropping the intermediate layout entirely.
 
      Prefer a container query (`@container`) over any of these for a component
      that should react to its own slot rather than to the viewport. */
@@ -461,7 +457,7 @@
      • Accent hues (--accent, --accent-success/warning/danger, --accent-cyan…).
        They carry semantic meaning and are already AA-legible on both surfaces;
        re-hueing them per scheme would fork the status vocabulary in two.
-     • Game-piece and per-game theme tokens (--disc-*, PoJoker's gold, PoSurvive's
+     • Game-piece and per-game theme tokens (--disc-*, PoJoker's gold, PoEcosystem's
        amber). Those paint inside a canvas or a self-contained board that sets its
        own backdrop, so a light page around them changes nothing they render.
 
@@ -1090,7 +1086,7 @@ h3[tabindex="0"]:focus-visible {
    these over per-page copies — both for bundle size (the WASM trim audit
    removes duplicated CSS) and for the visual cohesion the brief asks for.
 
-   Where a game needs a different visual treatment (PoSurvive C64, PoJoker
+   Where a game needs a different visual treatment (PoJoker
    medieval, Sand Playground sand palette), it can declare its own
    `--color-accent-solid` and `--accent-cyan` inside its theme root; the
    primitives below pick the new hues up automatically. */
@@ -1317,24 +1313,18 @@ p, li, dd, blockquote,
      <select>, <input type="range"> or a game-local button class was simply
      never in the floor. Measured live at 390×844:
 
-       select.home-action-select         89 × 17
        button.toast-close                12 × 18
        input (TicTacToe)                 15 × 15
-       select#toolbar-model-select      142 × 17
        input#speed-range                229 × 16
-       button.sv-rail__collapse          20 × 18
-       button.sv-btn--sm / --champion    90 × 22
 
-     `min-height` alone is not enough here: .toast-close and .sv-rail__collapse
-     fail on WIDTH too, so both axes are set. Still zero-specificity via
-     `:where()`, so any component rule can opt out by stating its own size. */
+     `min-height` alone is not enough here: .toast-close fails on WIDTH too, so
+     both axes are set. Still zero-specificity via `:where()`, so any component
+     rule can opt out by stating its own size. */
   :where(select,
          input[type="range"],
          input[type="checkbox"],
          input[type="radio"],
-         .toast-close,
-         .sv-btn,
-         .sv-rail__collapse) {
+         .toast-close) {
     min-height: 44px;
     min-width: 44px;
   }

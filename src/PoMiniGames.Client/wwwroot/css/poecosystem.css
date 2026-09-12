@@ -1,4 +1,4 @@
-/* Loaded at runtime by js/poecosystem/index.js (same pattern as posurvive/theme.js).
+/* Loaded at runtime by js/poecosystem/index.js.
    NOT a Blazor scoped stylesheet: the HUD is built from several components, and scoped
    CSS does not cross component boundaries — that is why this file lives here. */
 /* PoEcosystem HUD — layered over the full-bleed three.js canvas (layout concept C).

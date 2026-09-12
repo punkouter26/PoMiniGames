@@ -67,9 +67,8 @@
     <PackageReference Include="Azure.Data.Tables" />
     <PackageReference Include="Azure.Storage.Blobs" />
     <PackageReference Include="Azure.AI.OpenAI" />
-    <!-- §2026-06-28 AI namespace consolidation: PoSurvive's AzureOpenAIInferenceService
-         now wraps an ME.AI IChatClient resolved from AIFoundryChatClientCache; the
-         .AsIChatClient() adapter extension lives in this package. -->
+    <!-- The chat clients wrap an ME.AI IChatClient resolved from
+         AIFoundryChatClientCache; the .AsIChatClient() adapter extension lives here. -->
     <PackageReference Include="Microsoft.Extensions.AI" />
     <PackageReference Include="Microsoft.Extensions.AI.OpenAI" />
     <!-- API -->
@@ -121,8 +120,8 @@
     <ItemGroup>
       <_BlazorClientWwwroot Include="..\PoMiniGames.Client\bin\$(Configuration)\net10.0\wwwroot\**\*.*" />
       <!-- The Blazor WASM SDK doesn't auto-copy wwwroot/appsettings*.json into the
-           build output, but the runtime needs them (PoSurvive reads Inference model
-           lists from these at startup). Copy them directly from the source. -->
+           build output, but the runtime needs them (the client reads its API base
+           address from them at startup). Copy them directly from the source. -->
       <_BlazorClientSettings Include="..\PoMiniGames.Client\wwwroot\appsettings.json"
                              Condition="Exists('..\PoMiniGames.Client\wwwroot\appsettings.json')" />
       <_BlazorClientSettingsDev Include="..\PoMiniGames.Client\wwwroot\appsettings.Development.json"

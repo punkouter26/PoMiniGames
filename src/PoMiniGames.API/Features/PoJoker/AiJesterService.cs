@@ -241,7 +241,7 @@ public sealed class AiJesterService : IAnalysisService
                 schemaDescription: SchemaDescription,
                 capabilityOverrides: ov));
 
-        // Streamed with early commit, the same trick PoSurvive's relay uses: stop reading -- and
+        // Streamed with early commit: stop reading -- and
         // stop the provider generating -- the moment the object is complete. A schema-constrained
         // reply is frequently followed by trailing whitespace or a stray token that is billed as
         // output and read by nobody. Falls through to the buffered call when streaming yields

@@ -2,7 +2,7 @@
 //
 // ── Why ────────────────────────────────────────────────────────────────────
 // index.html used to load every game engine eagerly on first paint: pomarblerace,
-// pobrawl, posports, poracer and posurvive, plus their three.js / cannon-es
+// pobrawl, posports and poracer, plus their three.js / cannon-es
 // imports. That is ~24,600 lines of JavaScript parsed and executed to render a
 // menu — and the overwhelming majority of sessions never open more than one
 // game, if any. On a mid-range phone it is the single largest cost between

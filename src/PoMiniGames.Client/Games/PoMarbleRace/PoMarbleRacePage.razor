@@ -422,13 +422,14 @@
     // #3 edge gauge: map lateral (−1..+1) to a 0..100% marker position, and flag the danger
     // band where the marble is close enough to a rail to risk falling off.
     //
-    // INVERTED on purpose. myLateral is measured along the track's LOCAL right vector
-    // (track.js lateralOf → frameAt.rb), but the chase camera sits behind the marble looking
-    // down +Z, and that local right vector renders toward screen-LEFT. So a positive lateral
-    // means the marble is drifting to the left of YOUR screen, and the marker has to travel
-    // left. The old (l + 1) / 2 sent it right, which put the gauge and the arrow keys in
-    // direct contradiction. Same root cause as the steering sign in game.js _applySteer.
-    private string EdgePct => $"{(int)(Math.Clamp((1 - _myLateral) / 2, 0, 1) * 100)}%";
+    // NOT inverted, as of 2026-09-12. This read `(1 - l) / 2` because the procedural chute's
+    // right vector pointed to screen-LEFT, so a positive lateral meant the marble was drifting
+    // left of frame. That was a bug in the chute rather than a property of the game: the two
+    // authored GLB courses always stored right = dir x up, which IS screen-right, so the very
+    // same expression sent the marker the wrong way on them. maps.js adaptProceduralTrack now
+    // corrects the chute's vector at the interface boundary, so lateral means the same thing on
+    // every map and the marker travels with the marble again.
+    private string EdgePct => $"{(int)(Math.Clamp((1 + _myLateral) / 2, 0, 1) * 100)}%";
     private bool EdgeDanger => Math.Abs(_myLateral) > 0.82;
 
     // ── GFX #6 gauge maths ──

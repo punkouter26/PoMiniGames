@@ -55,7 +55,7 @@ public sealed class HomePageApiTests : IClassFixture<TestWebApplicationFactory>,
     /// Consolidated from four methods (empty-array / explicit-limit / default-limit /
     /// content-type) that each re-issued the same GET and asserted one facet of the same
     /// response. The Integration tier is at its 50-method ceiling (100/50/25/25 rule) and
-    /// the slots were needed for the PoSurvive balance tests; coverage is unchanged.
+    /// the slots were needed elsewhere; coverage is unchanged.
     /// The former GetLeaderboard_ReturnsOk_ForEachGame theory (status code only, one row
     /// per Home-page game) also folded in here: its couplequiz/funquiz rows appear below,
     /// and connectfive/tictactoe were already covered.

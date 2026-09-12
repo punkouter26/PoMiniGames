@@ -20,8 +20,8 @@ namespace PoMiniGames.AI;
 /// </para>
 /// <para>
 /// <b>Two levels, not one.</b> Collapsing back to a single shared limiter would restore the
-/// ceiling and reintroduce the starvation bug the partitions fixed — PoSurvive's heartbeat loop
-/// would hold both permits continuously and PoJoker would queue behind it forever. So the pipeline
+/// ceiling and reintroduce the starvation bug the partitions fixed — one game's loop holding
+/// both permits continuously while another queues behind it forever. So the pipeline
 /// now stacks them: a per-game limiter for fairness (a game may not have more than
 /// <see cref="AzureOpenAIResilience.PerGameConcurrency"/> calls contending at once), and this
 /// single global limiter inside it for the real account ceiling.

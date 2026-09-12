@@ -1,4 +1,3 @@
-using PoMiniGames.Features.PoSurvive;  // AddPoSurvive
 using PoMiniGames.Features.Auth;       // Source-generated AuthLog + MicrosoftAuthOptionsBinder
 using PoMiniGames.Application.Diagnostics;
 using PoMiniGames.Infrastructure;
@@ -51,8 +50,7 @@ builder.Services.AddSingleton<IPostConfigureOptions<PoMiniGames.Features.Auth.Mi
 builder.Services.AddPoMiniGamesStorage(builder.Configuration)
     .AddPoMiniGamesAuth(builder.Environment, builder.Configuration)
     .AddPoMiniGamesGameServices()
-    .AddPoMiniGamesRateLimiting()
-    .AddPoSurvive(builder.Configuration);
+    .AddPoMiniGamesRateLimiting();
 builder.Services.AddSingleton<IDiagnosticsSnapshotProvider, ConfigurationDiagnosticsSnapshotProvider>();
 
 // ─── SignalR (shared by all multiplayer hubs) ─────────────────────────────────
@@ -291,8 +289,7 @@ app.UseBlazorFrameworkFiles();
 // Why this exists: the Blazor WASM runtime fetches /appsettings.json at startup
 // and treats a 404 as a fatal init error (MONO_WASM: download 'http://...
 // appsettings.json' ... failed 404). We therefore intercept the request and
-// serve ONLY the client's appsettings (PoSurvive model list, public API base
-// address) — the server's appsettings (Key Vault endpoints, secrets, AAD
+// serve ONLY the client's appsettings (public API base address, feature flags) — the server's appsettings (Key Vault endpoints, secrets, AAD
 // client ids) are never returned to a browser.
 //
 // MUST be registered before UseStaticFiles so the gate fires before the

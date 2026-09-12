@@ -16,15 +16,11 @@
         {
             // 2026-08-08 audit #11: previously read "9 ranked · 1 demo-only",
             // which read as a missing leaderboard rather than a missing game.
-            // PoSurvive is demo-only by design (it has no 1P scored mode — see
-            // UnifiedLeaderboardEndpoints), so it is one of the 10 catalog
-            // games with no board. Browser audit #8 (2026-08-10): the "demo-only"
-            // word still implied a leaderboard is missing because the game is
-            // limited. The Survive page is fully playable — its 1P mode is
-            // scored locally as a session count, not a competitive number, so
-            // there is nothing to rank. New copy: "{ranked} with leaderboards ·
-            // {remaining} no-leaderboard yet", and the title attribute points
-            // at the Survive card so the curious visitor can find the page.
+            // Browser audit #8 (2026-08-10): the "demo-only" word still implied a
+            // leaderboard is missing because the game is limited, when a game with
+            // no board is usually one whose result is a session count rather than a
+            // competitive number — nothing to rank. Copy is now "{ranked} with
+            // leaderboards · {remaining} no-leaderboard yet".
             var rankedCount = _boards.Count;
             var totalGames = GameCatalog.All.Count;
             var noBoardCount = totalGames - rankedCount;

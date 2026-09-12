@@ -38,11 +38,11 @@ public static class TestBudgetGuard
         ["PoJoker:Features:UseMockAI"] = "true",
 
         // ── Cloud inference relay ─────────────────────────────────────────
-        // PoSurvive's remote model relay; default off in Dev, but a developer's
-        // user-secrets may flip it. Pin it off here so neither the integration
-        // nor E2E-UI tier can dial Azure OpenAI.
+        // The relay went out with PoSurvive on 2026-09-12 and nothing reads these
+        // keys today. They stay pinned off because the cost of a stale key is one
+        // dictionary entry, while the cost of a re-added relay defaulting to on in
+        // a test host is a live Azure bill.
         ["Inference:UseCloudFallback"] = "false",
-        ["PoSurvive:Inference:UseCloudFallback"] = "false",
 
         // ── Browser-side guard ────────────────────────────────────────────
         // FeatureFlags.UseMockData drives the Blazor "USING MOCK DATA" banner.

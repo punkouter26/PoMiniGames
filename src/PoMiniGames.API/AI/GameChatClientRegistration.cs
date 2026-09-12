@@ -163,8 +163,8 @@ public static class GameChatClientRegistration
     /// <see cref="InferenceHealthTracker"/> for <paramref name="gameKey"/>.
     /// </summary>
     /// <remarks>
-    /// Idempotent. Every registration here is a <c>TryAdd</c> so the four slices that now call this
-    /// — plus PoSurvive, which called it first — cannot double-register a health tracker or fight
+    /// Idempotent. Every registration here is a <c>TryAdd</c> so the slices that call this
+    /// cannot double-register a health tracker or fight
     /// over the keyed client. Task-scoped clients (<c>joker.rating</c>) are NOT registered here:
     /// they share their game's tracker and are resolved from <see cref="GameChatClientFactory"/>
     /// directly, because a task is a call-site concern, not a dependency.

@@ -8,7 +8,7 @@ namespace PoMiniGamesClient.Models;
 /// playable and then fail at the point of no return (a lobby that never connects).
 /// Modes marked here are shown as unavailable while offline instead.
 /// <para>
-/// This is per-<i>mode</i>, not per-game: PoSurvive's 1-player runs entirely on the
+/// This is per-<i>mode</i>, not per-game: a game's 1-player mode can run entirely on the
 /// scripted provider and is fully offline-playable, while PoJoker needs the joke API
 /// in every mode.
 /// </para>
@@ -72,9 +72,9 @@ public sealed record CatalogEntry(
 /// </summary>
 /// <remarks>
 /// <para>
-/// Previously this was four hand-maintained per-mode lists, and they drifted: PoSurvive
-/// (the largest game in the repo) and PoJoker appeared <i>only</i> under Demo, so both
-/// were watch-only from the home page despite having working interactive routes. Fun
+/// Previously this was four hand-maintained per-mode lists, and they drifted: PoJoker
+/// appeared <i>only</i> under Demo, so it was watch-only from the home page despite
+/// having a working interactive route. Fun
 /// Quiz and Couple Quiz had the same gap for single-player. Modelling the game once,
 /// with its modes attached, is what makes that class of omission visible.
 /// </para>
@@ -170,20 +170,6 @@ public static class GameCatalog
             new(GameMode.OnePlayer, "/pomarblerace/1player"),
             new(GameMode.Demo, "/pomarblerace/demo"),
         ]) { ChipPrimary = true },
-
-        // 2026-08-12: PoSurvive is a CPU-vs-CPU simulation, not a player-controlled
-        // game — there is no input agency, only a command bar for switching models
-        // and re-launching. The "1P" entry was added on 2026-08-10 (audit #3) to
-        // stop visitors reading the lone Demo chip as "demo-only", but the same
-        // simulation runs at /posurvive with the player as a spectator either way;
-        // the chip was a label, not a separate code path. Removing it per the
-        // user's product decision — the card is honest now: one mode, one chip.
-        // The bare /posurvive route is unchanged; the page launches the same
-        // scripted simulation regardless of whether the URL carried a mode segment.
-        new(GameKeys.PoSurvive, "Survive", "🛡️",
-        [
-            new(GameMode.Demo, "/posurvive/demo"),
-        ]),
 
         // Voxel assets stream from /api/povoxelstrike/assets on first load (Cache API
         // holds them after that), so the first run needs a server — but the mode itself
@@ -286,14 +272,14 @@ public static class GameCatalog
     /// <summary>
     /// The kiosk reel, in rotation order. Deliberately NOT alphabetical and NOT derived
     /// from <see cref="For"/>: the reel opens on the two quickest-to-read board games so a
-    /// passer-by sees a full round early, and PoSurvive's long match sits late.
+    /// passer-by sees a full round early, and the longer 3D matches sit late.
     /// </summary>
     public static readonly IReadOnlyList<CatalogEntry> Demo =
     [
         .. new[]
         {
             GameKeys.TicTacToe, GameKeys.ConnectFive, GameKeys.PoRacer, GameKeys.PoMarbleRace,
-            GameKeys.PoVoxelStrike, GameKeys.PoJoker, GameKeys.PoBrawl, GameKeys.PoSurvive, GameKeys.PoSports,
+            GameKeys.PoVoxelStrike, GameKeys.PoJoker, GameKeys.PoBrawl, GameKeys.PoSports,
         }
         .Select(key => All.First(g => g.Key == key))
         .Select(g =>

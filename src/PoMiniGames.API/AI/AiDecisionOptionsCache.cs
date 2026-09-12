@@ -16,8 +16,8 @@ namespace PoMiniGames.AI;
 /// <see cref="Microsoft.Extensions.AI.ChatResponseFormat"/> (which clones a
 /// <see cref="JsonElement"/> onto its own buffer) and, on reasoning-family deployments, allocate a
 /// <see cref="ChatCompletionOptions"/> via the raw representation factory. Measured locally on a
-/// warm path, this is ~3–8 µs per call across the four games, and PoSurvive can issue hundreds of
-/// calls in a long session — the cost is per-call but non-trivial at the hot end of it.
+/// warm path, this is ~3–8 µs per call across the games, and a long session can issue hundreds
+/// of calls — the cost is per-call but non-trivial at the hot end of it.
 /// </para>
 /// <para>
 /// The cache is keyed on (game, deployment, schema-name) so a per-task deployment swap (e.g.

@@ -85,7 +85,7 @@ public static class AzureOpenAIResilience
     /// an AAD token and bypassing this app entirely: one call at a time returns in 1.0–2.6 s; two
     /// concurrent return in 3.6 s and 9.0 s; three concurrent complete <b>one</b> and drop the
     /// other two; a burst is then followed by immediate <c>429</c> on every subsequent call. The
-    /// account's quota simply does not serve a stampede, and PoSurvive was aiming three
+    /// account's quota simply does not serve a stampede, and one game was aiming three
     /// concurrent calls per heartbeat at it. Queueing behind a small permit count converts that
     /// into slightly slower answers instead of mostly-lost ones.
     /// </remarks>
@@ -125,16 +125,16 @@ public static class AzureOpenAIResilience
     /// </summary>
     /// <remarks>
     /// <para>
-    /// A single shared pipeline was correct while PoSurvive was the only consumer. It stops being
+    /// A single shared pipeline was correct while there was only one consumer. It stops being
     /// correct the moment the other four services join it, for two reasons:
     /// </para>
     /// <list type="bullet">
-    ///   <item><b>Concurrency.</b> <see cref="MaxConcurrentCalls"/> is 2 for the whole host. PoSurvive
+    ///   <item><b>Concurrency.</b> <see cref="MaxConcurrentCalls"/> is 2 for the whole host. A busy game
     ///   issues a call per agent per heartbeat and would hold both permits essentially continuously,
     ///   so PoJoker's two-calls-per-joke would spend its life in the queue and then be rejected by
     ///   <see cref="ConcurrencyQueueLimit"/>. Sharing a global permit count between a real-time loop
     ///   and an interactive request is a starvation bug, not a safety property.</item>
-    ///   <item><b>Circuit state.</b> One breaker across all games means PoSurvive failing 30% of a
+    ///   <item><b>Circuit state.</b> One breaker across all games means one game failing 30% of a
     ///   30-second window opens the circuit for PoFunQuiz too — a game that may be on a different
     ///   deployment entirely, and is fine. Failures should isolate to the game that produced them.</item>
     /// </list>
@@ -147,7 +147,6 @@ public static class AzureOpenAIResilience
     /// </remarks>
     public static readonly string[] PartitionedGames =
     [
-        AIFoundryOptions.Games.Survive,
         AIFoundryOptions.Games.CoupleQuiz,
         AIFoundryOptions.Games.FunQuiz,
         AIFoundryOptions.Games.Joker,
@@ -173,7 +172,7 @@ public static class AzureOpenAIResilience
             .TryAddSingleton<AiConcurrencyGate>(services);
 
         // The unpartitioned pipeline stays registered as the fallback for a game key that has no
-        // partition of its own (and for the legacy api-key path in PoSurviveServiceExtensions).
+        // partition of its own.
         services.AddResiliencePipeline(PipelineName, static (builder, context) =>
             ConfigurePipeline(builder, context.ServiceProvider.GetRequiredService<AiConcurrencyGate>()));
 

@@ -352,7 +352,7 @@ class AudioBus {
     try {
       const Ctor = window.AudioContext || window.webkitAudioContext;
       if (!Ctor) { this._ensureFailed = true; return false; }
-      // Shared context (js/audioBus.js) — see note in posurvive/audioEngine.js.
+      // Shared context (js/audioBus.js) — one AudioContext for the whole app.
       const ctx = (window.PoAudioBus && window.PoAudioBus.contextSync()) || new Ctor();
       this.ctx = ctx;
 

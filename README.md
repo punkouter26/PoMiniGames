@@ -22,7 +22,6 @@ AI-powered games.
 | PoMarbleRace | Physics marble race on baked GLB tracks |
 | PoRacer | 3D racer with multiplayer lobby |
 | PoSports | Sprite-based sports mini-game |
-| PoSurvive | Endless survival sim with in-browser (WebLLM) or relayed AI inference |
 | PoVoxelStrike | Third-person survival shooter with fully destructible voxel structures |
 
 ## Quick start
@@ -43,7 +42,7 @@ src/
 ├── PoMiniGames.API/            Host + vertical feature slices (Features/<Slice>)
 ├── PoMiniGames.Client/         Blazor WASM client (assembly: PoMiniGamesClient)
 ├── PoMiniGames.Infrastructure/ Table Storage, HighScoreDescriptor<T> leaderboards
-├── PoMiniGames.Application/    Application services (PoSurvive simulation engine)
+├── PoMiniGames.Application/    Storage interfaces + application DTOs
 ├── PoMiniGames.Domain/         Domain primitives (EloCalculator, GameKey, ...)
 └── PoMiniGames.Shared/         DTOs shared between client and server
 tests/

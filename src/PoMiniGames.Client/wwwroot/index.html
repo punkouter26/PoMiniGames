@@ -108,8 +108,8 @@
     <link rel="stylesheet" href="css/app.css" />
     <!-- app-shell.css: the SHARED, non-scoped top-bar chrome. Render-blocking so
          the header is styled on first paint. Non-scoped (unlike MainLayout's
-         component CSS) so every layout reusing the gl-top-bar markup — e.g.
-         PoSurviveLayout — inherits identical chrome instead of rendering bare. -->
+         component CSS) so every layout reusing the gl-top-bar markup inherits
+         identical chrome instead of rendering bare. -->
     <link rel="stylesheet" href="css/app-shell.css" />
     <!-- §3 Per-game stylesheets are non-render-blocking: each only matters once its
          game route is entered (by which point it's cached), so loading them async
@@ -194,7 +194,7 @@
          <script> tags, so every page in the app fetched and parsed ~39 KB of
          code that exactly one game (or one opt-out diagnostic) ever calls.
          Each is now imported at its point of use — see JokerAudioService,
-         JokerSpeechService, PoFunQuizPage, FpsCounter and PoSurviveLayout.
+         JokerSpeechService, PoFunQuizPage and FpsCounter.
          They assign their window.* globals on evaluation, so the existing
          InvokeVoidAsync("poJokerAudio.…") style call sites are unchanged. -->
     <script src="_framework/blazor.webassembly.js"></script>
@@ -216,34 +216,6 @@
          engineLoader.js's CLASSIC_DEPS. -->
     <script type="module" src="js/engineLoader.js"></script>
 
-    <!-- PoSurvive: inert global helpers (define window.* objects, no side effects until invoked)
-
-         Still loaded on every page, unlike the route-gated game engines above:
-         these six globals are reached from four independent C# services
-         (AudioService, SessionLogService, LocalModelBootstrapService,
-         InferenceBootstrapper) as well as PoSurviveLayout, so there is no single
-         bootstrap call to gate them on. Route-gating them properly means giving
-         PoSurvive one bootstrap entry point first — a refactor of the game, not of
-         the loading strategy. At ~1,500 lines they are ~6% of what the engine
-         deferral above removed.
-
-         They are, however, all `defer` as of 2026-09-11 (audioEngine.js already
-         was; the other five were render-blocking classic scripts, half the
-         blocking set on a page that loads no PoSurvive at all). `defer` keeps
-         them in document order and guarantees execution before DOMContentLoaded,
-         which is far earlier than anything that calls them: every call site is a
-         C# service or OnAfterRenderAsync, and Blazor's WASM boot only starts when
-         the classic blazor.webassembly.js tag above runs. The earlier note here
-         argued against gating in the layout — that hazard was about
-         OnAfterRenderAsync firing child-first, and it does not apply to `defer`,
-         which resolves before the renderer exists at all. Every call site is
-         best-effort try/catch regardless, so the failure mode stays silent. -->
-    <script src="js/posurvive/theme.js" defer></script>
-    <script src="js/posurvive/uiHelpers.js" defer></script>
-    <script src="js/posurvive/gpuProbe.js" defer></script>
-    <script src="js/posurvive/indexedDbStore.js" defer></script>
-    <script src="js/posurvive/inferenceWorkerBridge.js" defer></script>
-    <script src="js/posurvive/audioEngine.js" defer></script>
     <!-- §GFX/SOUND platform runtime (2026-07-29).
          audioBus.js owns the app's ONE AudioContext and the master/music/sfx/ui
          mix graph; five modules used to construct a context each. It must be

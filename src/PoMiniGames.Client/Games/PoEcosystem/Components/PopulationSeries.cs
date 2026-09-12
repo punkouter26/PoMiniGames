@@ -1,5 +1,5 @@
+using System.Globalization;
 using PoMiniGamesClient.Games.PoEcosystem.Models;
-using PoMiniGamesClient.Games.PoSurvive.Features.Charts;
 
 namespace PoMiniGamesClient.Games.PoEcosystem.Components;
 
@@ -10,6 +10,18 @@ namespace PoMiniGamesClient.Games.PoEcosystem.Components;
 /// </summary>
 internal static class PopulationSeries
 {
+    /// <summary>
+    /// Invariant-culture SVG coordinate. A comma decimal separator silently voids the whole
+    /// path, so the culture is pinned rather than left to the browser's locale.
+    /// </summary>
+    /// <remarks>
+    /// Inlined here on 2026-09-12. It used to come from PoSurvive's ChartGeometry, of which
+    /// this was the only piece PoEcosystem ever touched; the game and its chart suite were
+    /// removed and reviving that class for one formatter would have been the tail wagging
+    /// the dog.
+    /// </remarks>
+    private static string N(double value) => value.ToString("F2", CultureInfo.InvariantCulture);
+
     /// <summary>Largest count anywhere in the history, floored at 1 so the axis never divides by zero.</summary>
     public static int Max(int[]? history)
     {
@@ -36,7 +48,7 @@ internal static class PopulationSeries
             var x = samples == 1 ? 0 : width * k / (samples - 1);
             var y = height - height * history[k * EcoSpeciesInfo.Count + species] / max;
             if (sb.Length > 0) sb.Append(' ');
-            sb.Append(ChartGeometry.N(x)).Append(',').Append(ChartGeometry.N(y));
+            sb.Append(N(x)).Append(',').Append(N(y));
         }
         return sb.Length == 0 ? null : sb.ToString();
     }

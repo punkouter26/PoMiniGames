@@ -72,7 +72,7 @@ const SPACES = {
         taps: [[41, 0.16], [77, 0.09]],
         send: 0.11,
     },
-    /** PoSurvive. Cavernous, dark, slow — the space should feel oppressive. */
+    /** Cavernous, dark, slow — for a space that should feel oppressive. */
     cavern: {
         seconds: 3.4, decay: 2.0, damping: 0.62, predelay: 41,
         taps: [[38, 0.40], [67, 0.34], [103, 0.29], [158, 0.22], [216, 0.16]],

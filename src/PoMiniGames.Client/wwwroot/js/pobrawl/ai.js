@@ -296,6 +296,25 @@ export class AiController {
     // Edge-triggered flags are consumed each read; holds (move/block) persist.
     const intent = { ...this.current, punch: false, kick: false, side: 0 };
 
+    // ── Gassed out ──────────────────────────────────────────────────────
+    // Energy is under the floor, so the engine will refuse every punch and kick
+    // until the bar recovers (game.js _canAttack). Guard and hold — blocking is
+    // by far the fastest refill, so this is both the correct play and the way
+    // out. Placed ahead of the pattern runner and the charge hold deliberately:
+    // both of those would otherwise keep feeding attack inputs into a closed
+    // gate for the whole recovery, which looks like the CPU freezing up.
+    //
+    // Backing off while gassed keeps the CPU from simply standing in range
+    // eating a free combo, but it stays in the fight rather than fleeing.
+    if (ctx.selfExhausted) {
+      this._pat = null;
+      this.holdName = null;
+      this.sinceDecision = 0;
+      const backoff = ctx.distance < ctx.kickRange * 0.9 ? -1 : 0;
+      this.current = { move: backoff, side: 0, punch: false, kick: false, block: true };
+      return { ...this.current, super: false };
+    }
+
     // ── Signature pattern ───────────────────────────────────────────
     // A running script owns the fighter outright until it finishes or is
     // interrupted, so it plays out as one readable phrase rather than being

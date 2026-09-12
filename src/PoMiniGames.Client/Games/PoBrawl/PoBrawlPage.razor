@@ -63,7 +63,7 @@
                 <div class="pb-hp-side">
                     <span class="pb-hp-name">@CharName(_p1Char)</span>
                     <div class="pb-hp-track"><div class="pb-hp-fill pb-hp-p1" style="--hp: @(_p1Hp)%;"></div></div>
-                    <div class="pb-en-track" title="Energy — attack power"><div class="pb-en-fill @(_p1Energy > 50 ? "pb-en-hot" : "")" style="--en: @(_p1Energy)%;"></div></div>
+                    <div class="pb-en-track" title="@EnergyTip"><div class="pb-en-fill @EnergyClass(_p1Energy)" style="--en: @(_p1Energy)%;"></div></div>
                 </div>
                 @BodyDiagram(_p1Regions)
                 <div class="pb-centre">
@@ -76,7 +76,7 @@
                 <div class="pb-hp-side pb-hp-right">
                     <span class="pb-hp-name">@CharName(_p2Char)</span>
                     <div class="pb-hp-track"><div class="pb-hp-fill pb-hp-p2" style="--hp: @(_p2Hp)%;"></div></div>
-                    <div class="pb-en-track" title="Energy — attack power"><div class="pb-en-fill @(_p2Energy > 50 ? "pb-en-hot" : "")" style="--en: @(_p2Energy)%;"></div></div>
+                    <div class="pb-en-track" title="@EnergyTip"><div class="pb-en-fill @EnergyClass(_p2Energy)" style="--en: @(_p2Energy)%;"></div></div>
                 </div>
             </div>
 
@@ -194,10 +194,29 @@
     private string _p2Char = "biden";
     private int _p1Hp = 100;
     private int _p2Hp = 100;
-    // Energy meters (0-100) fed by the JS engine — starts at the 1/3 bank
-    // (game.js ENERGY_DEFAULT); only winding up or attacking moves it.
-    private int _p1Energy = 33;
-    private int _p2Energy = 33;
+    // Energy meters (0-100) fed by the JS engine. The bar is strike power AND
+    // stamina: winding up drains it into the swing, every swing costs a flat
+    // toll on top, blocking refills it fast and standing refills it slowly.
+    // Starts at game.js ENERGY_DEFAULT (1.0) — keep these two in step with it.
+    private int _p1Energy = 100;
+    private int _p2Energy = 100;
+
+    // Mirrors game.js ENERGY_RECOVER_TO (0.40). Below it a fighter is gassed and
+    // the engine refuses to start any punch or kick, so the bar is styled to say
+    // so; see .pb-en-spent. This is a display threshold only — the engine owns
+    // the real gate (and its hysteresis), and duplicating the number here is the
+    // lesser evil against widening the seven-argument OnHud arity contract just
+    // to carry one bool. It only has to be close enough to read correctly.
+    private const int EnergySpentPct = 40;
+    private const int EnergyHotPct = 50;
+
+    private const string EnergyTip =
+        "Energy — strike power and stamina. Attacking drains it; blocking refills it. Too low and you cannot punch or kick.";
+
+    private static string EnergyClass(int pct) =>
+        pct < EnergySpentPct ? "pb-en-spent"
+        : pct > EnergyHotPct ? "pb-en-hot"
+        : "";
     // The super meter/armed fields that used to sit here are gone (2026-08-11).
     // The engine still runs the meter — it is what gates each president's
     // signature move — but it is no longer pushed over OnHud or drawn, so the
@@ -303,7 +322,7 @@
         <p>Two CPU presidents fight a 60-second exhibition — sit back and watch.</p>
         <ul>
             <li>No controls — both corners are driven by the CPU</li>
-            <li>⚡ Energy still rules the exchanges — one swing spends it all</li>
+            <li>⚡ Energy still rules the exchanges — swings drain it, blocking refills it</li>
         </ul>
     </div>;
 
@@ -331,18 +350,22 @@
     //    TwoPlayerQuickControls, so this fragment only ever renders for 1P and demo. The
     //    super key and P2's keymap are documented there (and only there) — dead code here.
     //
-    // One correction rather than a cut: blocking has NOT banked energy since game.js:2634
-    // ("Blocking no longer banks energy — the bar only moves via winding up / attacking"),
-    // so the old "blocked hits charge your ⚡ energy" was teaching a mechanic that does not
-    // exist. Energy is described where it is true, on the attack line.
     // 2026-09-11: word budget — the intro card is capped at 100 words (user
     // request). The clock bullet went: IntroObjective already states the 60s
     // limit and the draw rule, and the fourth bullet repeated both.
+    //
+    // 2026-09-12: the energy line is now the most important thing on this card,
+    // because the bar became a hard gate rather than just a damage multiplier —
+    // a player who does not know that attacking drains it will read the refused
+    // punch as broken input. The block line earns back the "banks energy" claim
+    // that was correctly deleted in 2026-09-11: under the reworked meter it is
+    // true again, and it is the whole strategy.
     private RenderFragment HowToPlayContent => @<div>
         <ul>
             <li><kbd>A</kbd>/<kbd>D</kbd> move · <kbd>W</kbd>/<kbd>S</kbd> circle · <b>hold</b> <kbd>R</kbd> to block their wind-up</li>
             <li><kbd>F</kbd> punch · <kbd>G</kbd> kick — hold to charge, release to strike</li>
-            <li>⚡ Energy is hit power — one swing spends it all</li>
+            <li>⚡ Energy is hit power <b>and</b> stamina — every swing spends it</li>
+            <li>Run it dry and you cannot strike at all. Blocking refills it fastest</li>
         </ul>
     </div>;
 
@@ -658,8 +681,8 @@
     {
         _p1Hp = 100;
         _p2Hp = 100;
-        _p1Energy = 33;
-        _p2Energy = 33;
+        _p1Energy = 100;
+        _p2Energy = 100;
         _elapsed = 0;
         _p1Regions = new int[4];
         _p2Regions = new int[4];

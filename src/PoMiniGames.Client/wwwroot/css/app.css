@@ -240,6 +240,29 @@
   --accent-gold: #ca8a04;
   --accent-jester: #4338ca;
 
+  /* ── Player identity (2026-09-12) ──────────────────────────────────────
+     The two sides of any local-versus screen. These exist because the 2P
+     surfaces were each picking their own raw hex — the Fun Quiz split screen
+     used neon cyan (#38bdf8) against hot pink (#f472b6), which together with
+     the amber score and the yellow "VS" put four saturated, unrelated hues on
+     one screen and read as an arcade cabinet rather than a product.
+
+     Chosen as a muted pair a step off the existing indigo accent: still clearly
+     two different people at a glance (and never the ONLY signal — side, name
+     and key hints all carry it too), but low enough in saturation to sit inside
+     the slate/indigo system instead of fighting it. Scheme-invariant, like every
+     other accent hue. Anything showing "player 1 vs player 2" reads these. */
+  --player-1: #7f9cf5;
+  --player-2: #d98aa8;
+  /* Ink variants, same reasoning as the --accent-*-ink block below: the two hues
+     above are tuned as FILLS (a 4px border, a chip) against a dark page. Used as
+     TEXT on a white surface they collapse — the split-screen score measured
+     2.63:1 in light mode. These are the only player tokens that re-point per
+     scheme; the hues themselves stay scheme-invariant. Anything drawing a
+     player's colour as text reads an -ink token, never the raw hue. */
+  --player-1-ink: var(--player-1);
+  --player-2-ink: var(--player-2);
+
   /* ── "Ink" variants: the same status hues, but safe as TEXT ────────────────
      2026-08-08 audit #3. The --accent-* values above are tuned as FILLS (chip
      backgrounds, glows, borders) against a dark page. Used as a text colour on
@@ -489,6 +512,11 @@
     --color-text-secondary: #475569;
     --color-accent: #4f46e5;
     --color-accent-solid: #4338ca;
+
+    /* Player ink on a white surface — same hue family as --player-1/2, pushed
+       down in lightness until each clears its floor as text. */
+    --player-1-ink: #4338ca;
+    --player-2-ink: #be123c;
 
     /* Status text on a pale tint needs dark ink — see the --accent-*-ink note in
        the :root block. Each value is the same hue pushed down in lightness until

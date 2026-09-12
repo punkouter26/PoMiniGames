@@ -3,12 +3,21 @@
 // WHY THIS EXISTS
 // §GFX-1 brought the chip-drop audio + impact cue to ConnectFive but the visual
 // drop itself remained a CSS keyframe (cf-slide-down). That keyframe already
-// overshoots and squashes — it reads as "physical" for a single disc — but a
-// new disc falling onto existing ones in the same column does not interact
-// with them. The disc appears on top of its target cell regardless of what's
-// already there. matter.js gives the new disc a real collision body and the
-// existing discs become static "ghost" bodies, so the falling disc actually
-// bounces off them as it settles.
+// overshoots and squashes — it reads as "physical" for a single disc — but it
+// drops the same distance into every row, so a disc landing on a tall pile
+// falls through the discs already there. matter.js gives the new disc a real
+// collision body inside a real column, so it falls exactly as far as the pile
+// leaves it and thumps onto the stack.
+//
+// THE COLUMN IS THE MODEL (2026-09-12). Each drop builds three static bodies
+// around the falling disc: two walls on the column's own boundaries and one
+// support plank whose top face is the top of the pile. A single rigid body
+// cannot tell a plank from the discs it stands for — but it very much can tell
+// a FLAT surface from a round one, which is what the previous per-disc circular
+// "ghost" bodies were. A circle resting on a circle is unstable equilibrium, so
+// with no wall to stop it the disc rolled off the pile and drifted across the
+// board (measured: landing in column 3, coming to rest at column 3.54, with its
+// real cell still hidden behind it). Walls + a flat pile top is the whole fix.
 //
 // QUALITY GATES (same shape as impactBus.js / glassFx.js):
 //   • reduced motion      → fall back to the keyframe, never spawn the engine
@@ -47,10 +56,14 @@
     let _board = null;
     /** @type {object|null} Measured grid geometry — see measureBoard(). */
     let _layout = null;
-    /** @type {Matter.Body[]} Static walls + floor shared by every drop. */
-    let _walls = null;
-    /** @type {{ new: Matter.Body, ghosts: Matter.Body[], col: number, targetRow: number, color: string }|null} */
+    /** @type {{ body: Matter.Body, statics: Matter.Body[], clone: HTMLElement,
+        col: number, targetRow: number, color: string,
+        cellEl: HTMLElement|null, hiddenEl: HTMLElement|null }|null} */
     let _drop = null;
+    // There is no shared wall set any more. The floor a disc lands on depends on
+    // the target row, so it is built per drop together with the column walls —
+    // see spawnColumnBodies(). A board-wide floor pinned to row 8 was only ever
+    // correct for the first disc in a column.
     // (vestigial module-scope `_clone` removed 2026-09-11 — nothing ever
     // assigned it the live element, and step() now reads _drop.clone.)
     let _active = false;
@@ -64,7 +77,11 @@
         mid-flight) used to leave its cell hidden forever. The drop is force-settled
         after this long no matter what the physics thinks. */
     let _watchdogId = 0;
-    const DROP_TIMEOUT_MS = 1400;
+    /** Force-settle deadline. Deliberately BELOW the 850 ms demo cadence in
+        ConnectFivePage.RunDemoLoop: a drop that overstays must be finalized by
+        its own watchdog, not cancelled by the next drop, or the disc it was
+        delivering is revealed mid-flight while a new clone is already falling. */
+    const DROP_TIMEOUT_MS = 800;
     /** 2026-09-11 fix: _restX/_restY were assigned in dropDisc() and read by the
         step loop's rest detection but never declared — under strict mode the
         first assignment threw ReferenceError, dropDisc() caught it and fell back
@@ -98,39 +115,87 @@
      */
     function measureBoard(boardEl) {
         _board = boardEl;
-        const cs = getComputedStyle(_board);
-        // CSS custom property — `clamp(...)` already accounts for the viewport
-        // so this single number is correct on both phones and desktops.
-        const cellSize = parseFloat(cs.getPropertyValue('--cf-cell')) || 56;
-        const gap = parseFloat(cs.rowGap || cs.gap || '3') || 3;
-        const paddingLeft = parseFloat(cs.paddingLeft || '10') || 10;
-        const paddingTop = parseFloat(cs.paddingTop || '10') || 10;
-        const paddingRight = parseFloat(cs.paddingRight || paddingLeft) || paddingLeft;
-        const paddingBottom = parseFloat(cs.paddingBottom || paddingTop) || paddingTop;
+        const cellEls = _board.querySelectorAll('.cf-cell');
+        if (cellEls.length < 81) return false;
+
+        // ── Measure the CELLS, never the CSS variable (2026-09-12) ────────
+        // This used to read `--cf-cell` with
+        //     parseFloat(getComputedStyle(board).getPropertyValue('--cf-cell'))
+        // but that property is declared as
+        //     clamp(28px, min(calc((100dvh - 310px)/9), calc((100dvw - 100px)/9)), 84px)
+        // and getPropertyValue hands back a custom property's TOKENS, unresolved
+        // — the literal "clamp(28px, min(calc(..." string. parseFloat of that is
+        // NaN, so `|| 56` silently took over and the whole grid was modelled at
+        // 56px cells with a 59px pitch. Measured live, the cells are 65.55px on a
+        // 68.55px pitch: a 9.55px error per row that compounds to ~76px by row 8,
+        // i.e. MORE THAN A FULL ROW. That is the drift behind discs stopping in
+        // the wrong row, and it is invisible at any viewport where the clamp
+        // happens to land near 56px, which is why it survived.
+        //
+        // The cells are real laid-out elements, so their rects are the ground
+        // truth for size, pitch and origin at once — no variable parsing, no
+        // assumptions about gap or padding, and correct at every viewport.
+        const c0 = cellEls[0].getBoundingClientRect();
+        const c1 = cellEls[1].getBoundingClientRect();       // next column
+        const c9 = cellEls[9].getBoundingClientRect();       // next row
+        const cLast = cellEls[80].getBoundingClientRect();   // row 8, col 8
         const r = _board.getBoundingClientRect();
 
-        const gridLeft = r.left + paddingLeft;
-        const gridTop = r.top + paddingTop;
-        const gridRight = r.right - paddingRight;
-        const gridBottom = r.bottom - paddingBottom;
-        const stride = cellSize + gap;
+        const cellSize = c0.width;
+        const strideX = (c1.left - c0.left) || cellSize;
+        const strideY = (c9.top - c0.top) || cellSize;
+        const gap = strideY - cellSize;
+        const gridLeft = c0.left;
+        const gridTop = c0.top;
+        const gridRight = cLast.right;
+        const gridBottom = cLast.bottom;
+        const stride = strideY;
+        const paddingLeft = gridLeft - r.left;
+        const paddingTop = gridTop - r.top;
+        const paddingRight = r.right - gridRight;
+        const paddingBottom = r.bottom - gridBottom;
 
-        // Pre-compute cell centres (the matter.js bodies for both the falling
-        // disc and the ghost discs snap to these).
+        // Pre-compute cell centres. Every matter.js body — the falling disc, the
+        // column walls, the pile plank — is placed off these.
         const cells = [];
         for (let row = 0; row < 9; row++) {
             for (let col = 0; col < 9; col++) {
                 cells.push({
                     row, col,
-                    cx: gridLeft + col * stride + cellSize / 2,
-                    cy: gridTop + row * stride + cellSize / 2,
+                    cx: gridLeft + col * strideX + cellSize / 2,
+                    cy: gridTop + row * strideY + cellSize / 2,
                 });
             }
         }
+        // ── One radius, because the disc collides at the size it is drawn ──
+        // `.cf-cell .piece` is 84% of the cell, so 0.42 * cellSize.
+        //
+        // This briefly used a fatter collision radius of strideY/2 so that a
+        // column of stacked CIRCLES would settle on the grid pitch. Nothing
+        // stacks circles any more — the pile is one flat plank whose top face is
+        // placed off cellCy() — so the stacking pitch no longer depends on the
+        // radius at all, and a body fatter than its own sprite only wedged the
+        // disc against the column walls. The drawn radius is the honest one.
+        const visR = cellSize * 0.42;
+        const physR = visR;
         _layout = {
             cellSize, gap, paddingLeft, paddingTop, paddingRight, paddingBottom,
-            gridLeft, gridTop, gridRight, gridBottom, stride, cells, boardRect: r,
+            gridLeft, gridTop, gridRight, gridBottom, stride, strideX, strideY,
+            cells, visR, physR,
         };
+        return true;
+    }
+
+    /** Viewport y of the centre of `row` — the single source of truth for where
+        a disc in that row belongs, shared by the pile plank and the rest target
+        so they cannot disagree. */
+    function cellCy(row) {
+        return _layout.gridTop + row * _layout.strideY + _layout.cellSize / 2;
+    }
+
+    /** Viewport x of the centre of `col`. */
+    function cellCx(col) {
+        return _layout.gridLeft + col * _layout.strideX + _layout.cellSize / 2;
     }
 
     /** The .cf-cell element a drop is landing in (cells render row-major). */
@@ -142,111 +207,87 @@
 
     // ─── Engine + walls ───────────────────────────────────────────────────
     function buildEngine() {
-        _engine = Matter.Engine.create({ gravity: { x: 0, y: 1.55 } });
-        const l = _layout;
-
-        // Disc radius matches the CSS disc — 84% of cell width. The matter.js
-        // body fits inside its cell with a little slack, so two stacked discs
-        // do not visibly overlap.
-        const r = l.cellSize * 0.42;
-
-        // Walls sit OUTSIDE the grid so a disc cannot escape. The "floor"
-        // sits one radius below the bottom of the grid: at rest, the disc's
-        // bottom edge touches the grid bottom and its centre is gridBottom - r.
-        // Left/right walls sit one radius outside the grid edges.
-        const wallThickness = 200;
-        _walls = [
-            // Floor — beneath the grid, full board width, thick enough that a
-            // bouncing disc can never tunnel through it in a single timestep.
-            Matter.Bodies.rectangle(
-                (l.gridLeft + l.gridRight) / 2,
-                l.gridBottom + r,
-                l.gridRight - l.gridLeft + 2 * wallThickness,
-                wallThickness,
-                { isStatic: true, render: { visible: false } }
-            ),
-            // Left wall
-            Matter.Bodies.rectangle(
-                l.gridLeft - r,
-                (l.gridTop + l.gridBottom) / 2,
-                wallThickness,
-                l.gridBottom - l.gridTop + 2 * wallThickness,
-                { isStatic: true, render: { visible: false } }
-            ),
-            // Right wall
-            Matter.Bodies.rectangle(
-                l.gridRight + r,
-                (l.gridTop + l.gridBottom) / 2,
-                wallThickness,
-                l.gridBottom - l.gridTop + 2 * wallThickness,
-                { isStatic: true, render: { visible: false } }
-            ),
-        ];
-        Matter.World.add(_engine.world, _walls);
+        // Gravity is tuned so a full-height drop (nine rows) lands in ~450 ms,
+        // comfortably inside both the 0.55 s CSS keyframe this replaces and the
+        // 850 ms demo cadence. At the old 1.55 the same drop took past 1 s and
+        // the next demo move cancelled it in mid-air.
+        _engine = Matter.Engine.create({ gravity: { x: 0, y: 5 } });
     }
 
     // ─── Per-drop bodies ──────────────────────────────────────────────────
     /**
-     * Build ghost bodies for existing discs in the column above targetRow.
-     * The new disc collides with them as it falls, producing the chain-reaction
-     * feel — the new disc physically settles into the slot ABOVE the disc
-     * immediately below it.
+     * Build the three static bodies that make a column a column, for this drop:
+     * the two walls on its own boundaries and the plank the pile presents.
      *
-     * Cells are read directly from the DOM (cells are rendered row-major:
-     * index = row * 9 + col). We do NOT need data-row / data-col attributes.
+     * The plank's top face sits at cellCy(targetRow) + physR, so a disc resting
+     * on it has its centre exactly on the target cell's centre — the same place
+     * the static disc is drawn, which is why restYForRow() is just cellCy().
+     * targetRow already encodes where the pile ends (the caller derives it from
+     * the board model), so no DOM scan for existing discs is needed and none of
+     * this depends on Blazor having painted the new piece yet.
+     *
+     * The walls are what keep a disc in the column it was dropped into. Without
+     * them the disc wandered off the pile and settled between columns, or over a
+     * neighbouring column where there is nothing to catch it at all.
      */
-    function spawnGhosts(col, targetRow) {
+    function spawnColumnBodies(col, targetRow) {
         const l = _layout;
-        const r = l.cellSize * 0.42;
-        const ghosts = [];
-        const cellEls = _board ? _board.querySelectorAll('.cf-cell') : null;
-        if (!cellEls || cellEls.length < 81) return ghosts;
+        const r = l.physR;
+        const T = 200;            // wall thickness; only the inner face matters
+        const half = T / 2;
+        const cx = cellCx(col);
+        const halfCol = l.strideX / 2;
+        // Walls span from above the spawn height down past the bottom row, so a
+        // disc is inside the column from the instant it exists.
+        const top = spawnY() - l.strideY;
+        const height = (l.gridBottom + T) - top;
+        // Bodies are positioned by their CENTRE, so every surface is offset by
+        // half the thickness. Passing the surface coordinate directly put each
+        // wall 100px into the playfield — the 2026-09-12 "disc stops a row high
+        // and then jumps" bug.
+        return [
+            Matter.Bodies.rectangle(cx, cellCy(targetRow) + r + half, l.strideX, T,
+                { isStatic: true, render: { visible: false } }),
+            Matter.Bodies.rectangle(cx - halfCol - half, top + height / 2, T, height,
+                { isStatic: true, render: { visible: false } }),
+            Matter.Bodies.rectangle(cx + halfCol + half, top + height / 2, T, height,
+                { isStatic: true, render: { visible: false } }),
+        ];
+    }
 
-        // Existing discs in this column sit in rows BELOW targetRow (lower
-        // row index = higher on board, larger y in viewport coords). For each
-        // such row, add a ghost body ONLY if the cell actually holds a disc
-        // — empty cells produce no body, so the falling disc passes straight
-        // through them (which is what we want for the "first disc in column"
-        // case: targetRow is the bottom row, no ghosts above).
-        for (let row = targetRow + 1; row < 9; row++) {
-            const idx = row * 9 + col;
-            const cellEl = cellEls[idx];
-            if (!cellEl) continue;
-            const hasDisc = cellEl.querySelector('.piece:not(.ghost-piece)') !== null;
-            if (!hasDisc) continue;
-            const cx = l.gridLeft + col * l.stride + l.cellSize / 2;
-            const cy = l.gridTop + row * l.stride + l.cellSize / 2;
-            ghosts.push(Matter.Bodies.circle(cx, cy, r, {
-                isStatic: true,
-                render: { visible: false },
-            }));
-        }
-        return ghosts;
+    /** Viewport y the disc is released from — a constant distance above row 0, so
+        every drop reads as the same throw regardless of how full the column is. */
+    function spawnY() {
+        return cellCy(0) - _layout.strideY * 1.6;
     }
 
     /** Spawn the dynamic body + the floating clone that mirrors its position. */
     function spawnFallingDisc(col, color) {
         const l = _layout;
-        const r = l.cellSize * 0.42;
+        const r = l.physR;      // collision radius (grid pitch)
+        const vr = l.visR;      // drawn radius (matches the CSS disc)
         // Spawn JUST ABOVE the board top. The exact value doesn't matter as
         // long as it's clearly above; matter.js integrates gravity from here.
-        const cx = l.gridLeft + col * l.stride + l.cellSize / 2;
-        const cy = l.boardRect.top - r * 1.4;
+        const cx = cellCx(col);
+        const cy = spawnY();
 
         // Floating clone. position: fixed so it can move with the body without
         // affecting the grid layout. The clone's class matches the existing
         // .piece / .red-piece / .yellow-piece styling — no new CSS needed.
         const clone = document.createElement('div');
         clone.className = 'piece ' + (color === 'red' ? 'red-piece' : 'yellow-piece') + ' cf-physics-clone';
-        clone.style.width = (r * 2) + 'px';
-        clone.style.height = (r * 2) + 'px';
+        // Sized from the VISUAL radius: the body is deliberately fatter than
+        // the disc (see measureBoard), and drawing the clone at physR would
+        // make the falling piece visibly larger than every settled one.
+        clone.style.width = (vr * 2) + 'px';
+        clone.style.height = (vr * 2) + 'px';
         clone.style.position = 'fixed';
         clone.style.left = '0';
         clone.style.top = '0';
         clone.style.zIndex = '5';
         clone.style.pointerEvents = 'none';
         clone.style.willChange = 'transform';
-        clone.style.transform = `translate3d(${cx - r}px, ${cy - r}px, 0)`;
+        clone.style.transform = `translate3d(${cx - vr}px, ${cy - vr}px, 0)`;
         document.body.appendChild(clone);
 
         // Dynamic body. Restitution is intentionally low — the disc settles
@@ -255,32 +296,34 @@
         const body = Matter.Bodies.circle(cx, cy, r, {
             restitution: 0.18,
             friction: 0.05,
-            frictionAir: 0.012,
+            // Air drag is deliberately slight: enough to keep the settle calm,
+            // not enough to make a nine-row drop float. At 0.012 the disc lost
+            // most of the gravity increase above.
+            frictionAir: 0.004,
             density: 0.0022,
             render: { visible: false },
         });
-        // A tiny lateral kick keeps the column entry visually interesting
-        // (the disc never falls perfectly straight); zero on average.
-        Matter.Body.setVelocity(body, { x: (Math.random() - 0.5) * 0.5, y: 0 });
+        // A tiny lateral kick keeps the column entry visually interesting (the
+        // disc never falls perfectly straight); zero on average, and the column
+        // walls now bound where it can end up, so it cannot compound into drift.
+        Matter.Body.setVelocity(body, { x: (Math.random() - 0.5) * 0.4, y: 0 });
         return { body, clone };
     }
 
     // ─── Settle detection ─────────────────────────────────────────────────
     /**
-     * Where should the disc centre end up once at rest?
-     *   • If targetRow is the bottom row (8), it rests on the floor one
-     *     radius below the grid bottom.
-     *   • Otherwise it rests on top of the disc immediately below it (which
-     *     exists — the board enforces gravity, so targetRow is always the
-     *     bottommost empty row). Centre sits 2r above the lower disc's centre.
+     * Where should the disc centre end up once at rest? The centre of its own
+     * cell — the same place the static disc will be drawn.
+     *
+     * This is the same number spawnColumnBodies() places the pile plank against,
+     * so the physics and the grid cannot disagree about where a row is. Earlier
+     * revisions derived a separate answer here (gridBottom - r for the bottom
+     * row, lowerDiscCentre - 2r elsewhere); the disc then rested off-grid, the
+     * reveal snapped it into place, and isAtRest() was testing against a y the
+     * disc would never actually reach.
      */
-    function restYForRow(targetRow, col) {
-        const l = _layout;
-        const r = l.cellSize * 0.42;
-        if (targetRow === 8) return l.gridBottom - r;
-        const lowerRow = targetRow + 1;
-        const cy = l.gridTop + lowerRow * l.stride + l.cellSize / 2;
-        return cy - 2 * r;
+    function restYForRow(targetRow) {
+        return cellCy(targetRow);
     }
 
     /**
@@ -291,10 +334,13 @@
     function isAtRest(body, restY) {
         // Read _layout lazily — at module init time it is still null. The
         // layout is fixed for the engine's lifetime, but only after init().
-        const tol = _layout.cellSize;
-        const slow = Math.abs(body.velocity.y) < 0.5 && Math.abs(body.velocity.x) < 0.6;
-        const nearY = Math.abs(body.position.y - restY) < tol * 0.12;
-        const nearX = Math.abs(body.position.x - _restX) < tol * 0.08;
+        const slow = Math.abs(body.velocity.y) < 0.6 && Math.abs(body.velocity.x) < 0.8;
+        const nearY = Math.abs(body.position.y - restY) < _layout.cellSize * 0.12;
+        // The column walls leave exactly (strideX/2 - physR) of lateral play, so
+        // this can only fail while the disc is still bouncing off one of them —
+        // never because it has wandered into another column, which is what the
+        // old fixed 0.08*cellSize window could not distinguish.
+        const nearX = Math.abs(body.position.x - _restX) < (_layout.strideX / 2 - _layout.physR) + 1;
         if (slow && nearY && nearX) { _stillFrames++; return _stillFrames >= 4; }
         _stillFrames = 0;
         return false;
@@ -308,13 +354,15 @@
         if (!_engine) return;
         // Cap delta so a backgrounded tab returning mid-physics does not
         // dump 30+ steps into the engine in one frame.
+        if (!_drop) { _lastFrame = 0; _rafId = requestAnimationFrame(step); return; }
         const delta = Math.min(32, _lastFrame ? now - _lastFrame : 16.67);
         _lastFrame = now;
         Matter.Engine.update(_engine, delta);
 
-        if (_drop) {
+        {
             const b = _drop.body;
-            const r = b.circleRadius;
+            // Draw at the VISUAL radius, not the body's collision radius.
+            const r = _layout.visR;
             // Write the body position into the clone's transform each frame.
             // translate3d puts the clone on its own compositor layer so this
             // is a GPU-side move — no layout, no paint.
@@ -333,7 +381,7 @@
         if (!_drop) return;
         const drop = _drop;
         try {
-            Matter.World.remove(_engine.world, [drop.body, ...drop.ghosts]);
+            Matter.World.remove(_engine.world, [drop.body, ...drop.statics]);
         } catch { /* engine may have been torn down already */ }
         if (drop.clone && drop.clone.parentNode) drop.clone.parentNode.removeChild(drop.clone);
         _drop = null;
@@ -355,11 +403,14 @@
      * Hide the static disc of the cell this drop is landing in, so the player
      * sees only the falling clone.
      *
-     * Applied as an INLINE style on the disc, on the frame after dropDisc().
-     * Both halves of that matter:
+     * Applied as an INLINE style on the disc, and RETRIED until the disc shows
+     * up. Both halves of that matter:
      *   • The disc does not exist yet when dropDisc() runs — the caller places
      *     the piece in the board model and only then re-renders — so the hide
-     *     has to wait a frame for Blazor to paint it.
+     *     has to wait for Blazor to paint it. It used to wait exactly one frame
+     *     and silently give up; whenever the render landed a frame later the
+     *     cell kept its static disc AND grew a falling clone, which is the
+     *     "two discs at once" the drop was supposed to replace.
      *   • The cell's `class` attribute is Blazor-managed (piece colour, win
      *     cascade, disabled), so a class added here is wiped by the very next
      *     diff. Blazor never sets a `style` attribute on the disc, so it leaves
@@ -368,23 +419,75 @@
      */
     function hideCell(drop) {
         if (!drop || !drop.cellEl) return;
-        requestAnimationFrame(() => {
-            // A drop that already settled (or was cancelled) inside this one
-            // frame must not hide the disc it just delivered.
+        const deadline = performance.now() + DROP_TIMEOUT_MS;
+        const attempt = () => {
+            // A drop that already settled (or was cancelled) must not hide the
+            // disc it just delivered.
             if (_drop !== drop) return;
             const disc = drop.cellEl.querySelector('.piece:not(.ghost-piece)');
-            if (!disc) return;
+            if (!disc) {
+                if (performance.now() < deadline) requestAnimationFrame(attempt);
+                return;
+            }
             drop.hiddenEl = disc;
             disc.style.visibility = 'hidden';
             disc.style.animation = 'none';
-        });
+        };
+        requestAnimationFrame(attempt);
     }
 
+    /**
+     * Show the cell's static disc again, now that the clone has delivered it.
+     *
+     * `animation` stays pinned to none (2026-09-12). Clearing it handed the disc
+     * back to `.cf-cell .piece { animation: cf-slide-down … }`, and because the
+     * keyframe had been suppressed since the frame it was created, the browser
+     * started it HERE — so every move played twice: the clone fell and vanished,
+     * then a second disc dropped in from nine rows up. The physics flight IS this
+     * disc's drop animation; there is nothing left for the keyframe to do.
+     *
+     * The element is re-queried rather than trusted: a Blazor diff between the
+     * hide and the reveal can swap the span (ghost-piece → piece), which would
+     * leave the inline hide on a detached node and a hidden disc on screen.
+     */
     function revealCell(drop) {
-        const disc = drop && drop.hiddenEl;
-        if (!disc) return;
-        disc.style.visibility = '';
-        disc.style.animation = '';
+        if (!drop) return;
+        const live = drop.cellEl && drop.cellEl.querySelector('.piece:not(.ghost-piece)');
+        for (const disc of new Set([drop.hiddenEl, live])) {
+            if (!disc) continue;
+            disc.style.visibility = '';
+            disc.style.animation = 'none';
+        }
+    }
+
+    /**
+     * While physics owns the drop, `.cf-cell .piece`'s cf-slide-down keyframe is
+     * suppressed board-wide, because the flight IS the animation. Without this
+     * the disc Blazor has just rendered plays the keyframe for the frame or two
+     * before hideCell() finds it — a disc flashing in at the top of the board
+     * while an identical clone falls past it.
+     *
+     * It is a toggle, not a one-time flag, because `enabled()` can go false at
+     * any moment: the adaptive quality tier drops `data-gfx` to `low` under load
+     * and every later drop then falls through to the keyframe, which has to be
+     * there when it does. dropDisc() sets it either way on every call.
+     *
+     * The class goes on the BOARD, whose class attribute is a static literal in
+     * ConnectFivePage.razor and so is never re-emitted by a Blazor diff. (The
+     * per-cell class is diff-managed, which is why the hide itself is an inline
+     * style — see hideCell.)
+     */
+    function suppressKeyframe(on) {
+        if (!_board) return;
+        if (_board.classList.contains('cf-board--physics') === on) return;
+        if (!on) {
+            // Handing the keyframe back would restart it on every disc already
+            // on the board. Retire them first — they are long since settled.
+            for (const disc of _board.querySelectorAll('.cf-cell .piece:not(.ghost-piece)')) {
+                disc.style.animation = 'none';
+            }
+        }
+        _board.classList.toggle('cf-board--physics', on);
     }
 
     function clearWatchdog() {
@@ -406,7 +509,7 @@
         // Reveal the static disc immediately on any failure path so a
         // mid-drop throw never leaves the cell visually blank.
         if (_drop) {
-            try { Matter.World.remove(_engine.world, [_drop.body, ..._drop.ghosts]); }
+            try { Matter.World.remove(_engine.world, [_drop.body, ..._drop.statics]); }
             catch { /* engine may have been torn down already */ }
             if (_drop.clone && _drop.clone.parentNode) _drop.clone.parentNode.removeChild(_drop.clone);
             revealCell(_drop);
@@ -414,6 +517,17 @@
         }
         _stillFrames = 0;
         clearWatchdog();
+    }
+
+    /** Re-measure the grid and, if it has moved or resized, rebuild the static
+        walls around it. Returns false if the board is not currently measurable
+        (mid-render, or the page navigated away), in which case the caller falls
+        back to the CSS keyframe rather than dropping into stale geometry. */
+    function refreshLayout() {
+        if (!_board || !_engine) return false;
+        const prev = _layout;
+        if (!measureBoard(_board)) { _layout = prev; return !!prev; }
+        return true;
     }
 
     // ─── Public API ───────────────────────────────────────────────────────
@@ -433,7 +547,7 @@
             : boardElOrSelector;
         if (!board) return false;
         try {
-            measureBoard(board);
+            if (!measureBoard(board)) return false;
             buildEngine();
             _active = true;
             _lastFrame = 0;
@@ -452,45 +566,55 @@
      * available, reduced motion, etc.).
      */
     function dropDisc(col, targetRow, color) {
-        if (!enabled() || !_active || !_layout || !_engine) return false;
-        if (typeof col !== 'number' || col < 0 || col > 8) return false;
-        if (typeof targetRow !== 'number' || targetRow < 0 || targetRow > 8) return false;
+        const decline = () => { suppressKeyframe(false); return false; };
+        if (!enabled() || !_active || !_layout || !_engine) return decline();
+        if (typeof col !== 'number' || col < 0 || col > 8) return decline();
+        if (typeof targetRow !== 'number' || targetRow < 0 || targetRow > 8) return decline();
         // Cancel any in-flight drop. Two simultaneous drops would compete for
         // the clone element; the caller is responsible for not double-tapping.
         if (_drop) cancelDrop();
         try {
-            const ghosts = spawnGhosts(col, targetRow);
+            // Re-measure before every drop. --cf-cell is a clamp() over dvh/dvw,
+            // so a rotate, a resize or the browser chrome collapsing changes the
+            // cell size, and every static body below is placed off that geometry.
+            // Cheap (81 rects the browser has already laid out) and it removes a
+            // whole class of stale-layout bug.
+            if (!refreshLayout()) return decline();
+            suppressKeyframe(true);
+            const statics = spawnColumnBodies(col, targetRow);
             const { body, clone } = spawnFallingDisc(col, color);
-            Matter.World.add(_engine.world, [body, ...ghosts]);
-            // 2026-09-12: hide ONLY the cell being dropped into. This used to add
-            // .cf-board--physics-active to the board, whose rule hid all 81 discs
-            // for the duration of the flight — in the CPU-vs-CPU demo, where the
-            // next drop starts before the last one settles, that meant the board
-            // was blank essentially always.
+            Matter.World.add(_engine.world, [body, ...statics]);
+            // 2026-09-12: hide ONLY the cell being dropped into. The hide used
+            // to be a board-wide class whose rule hid all 81 discs for the
+            // duration of the flight — in the CPU-vs-CPU demo, where the next
+            // drop starts before the last one settles, that meant the board was
+            // blank essentially always. (suppressKeyframe above is board-wide by
+            // design: it suppresses an ANIMATION, and never visibility.)
             const cellEl = cellAt(targetRow, col);
-            _drop = { body, ghosts, clone, col, targetRow, color, cellEl, hiddenEl: null };
+            _drop = { body, statics, clone, col, targetRow, color, cellEl, hiddenEl: null };
             hideCell(_drop);
-            _restX = body.position.x;
-            _restY = restYForRow(targetRow, col);
+            _restX = cellCx(col);
+            _restY = restYForRow(targetRow);
             _stillFrames = 0;
+            _lastFrame = 0;
             armWatchdog();
             return true;
         } catch (e) {
             console.warn('PoConnectFive.dropDisc failed:', e);
             cancelDrop();
-            return false;
+            return decline();
         }
     }
 
     /** Tear down the engine and any in-flight drop. Page calls this on Dispose. */
     function reset() {
         cancelDrop();
+        suppressKeyframe(false);
         clearWatchdog();
         if (_rafId) cancelAnimationFrame(_rafId);
         _rafId = 0;
         _active = false;
         _engine = null;
-        _walls = null;
         _layout = null;
         _board = null;
     }

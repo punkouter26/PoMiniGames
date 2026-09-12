@@ -17,15 +17,25 @@ public static class FunQuizEndpoints
     {
         var group = app.MapGroup("/funquiz").WithTags("PoFunQuiz");
 
-        // ── Question generation (HybridCache memoizes the deterministic
-        //    (category, count) → questions tuple for 60s so identical
-        //    concurrent requests share one upstream OpenAI call) ────────────
+        // ── Question generation ──────────────────────────────────────────
+        // 2026-09-12: the 60-second HybridCache that used to wrap this call is GONE.
+        // It memoized the finished, already-dealt list of questions under
+        // `funquiz:q:{category}:{count}`, so every game started inside the same minute
+        // received a byte-identical quiz — same questions, same order, same option order.
+        // That defeated the per-game shuffling in AiQuizGeneratorService.SelectVariedSet
+        // and was a large part of why the quiz felt canned.
+        //
+        // Removing it costs nothing upstream, which is the point: the generator has its
+        // OWN HybridCache over the question POOL (6 h, stampede-protected), so concurrent
+        // requests still collapse into a single model call. The difference is that the
+        // layer which is allowed to cache now caches the raw material, and the dealing —
+        // which subset, in which order, with options shuffled — happens per request.
+        // Cache the pool, not the hand.
 
         group.MapGet("/quiz/questions", async (
             [FromQuery] int count,
             [FromQuery] string? category,
             IOpenAIService ai,
-            HybridCache cache,
             CancellationToken cancellationToken) =>
         {
             if (count <= 0) count = 10;
@@ -38,25 +48,12 @@ public static class FunQuizEndpoints
             var cat = Enum.TryParse<QuestionCategory>(category, ignoreCase: true, out var c)
                 ? c
                 : QuestionCategory.General;
-            var key = $"funquiz:q:{cat}:{count}";
-
-            // The identity travels in the factory's state because HybridCache does not run the
-            // factory on this flow — its stampede protection lets one factory serve several
-            // waiters, so the AsyncLocal the request middleware set does not reach inside it.
-            // Without this the generation call is recorded by the telemetry and charged to nobody:
-            // measured at 809 tokens spent against a 0-token budget entry.
-            var identity = AiUsageScope.CurrentIdentity;
-
-            var questions = await cache.GetOrCreateAsync(
-                key,
-                (Ai: ai, Cat: cat, Count: count, Identity: identity),
-                static async (state, ct) =>
-                {
-                    using var scope = AiUsageScope.Restore(state.Identity);
-                    return await state.Ai.GenerateQuizQuestionsAsync(state.Cat, state.Count, ct);
-                },
-                new HybridCacheEntryOptions { Expiration = TimeSpan.FromSeconds(60) },
-                cancellationToken: cancellationToken);
+            // Called directly. The AsyncLocal identity the request middleware set is still on
+            // this flow here — the note that used to sit here explained why it had to be carried
+            // in HybridCache factory state instead (the factory runs off-flow, so a generation
+            // was billed to nobody: measured at 809 tokens against a 0-token budget entry). That
+            // hazard belongs to the generator's internal cache now, which handles it there.
+            var questions = await ai.GenerateQuizQuestionsAsync(cat, count, cancellationToken);
             return Results.Ok(questions);
         })
         .RequireRateLimiting("ai-generation")

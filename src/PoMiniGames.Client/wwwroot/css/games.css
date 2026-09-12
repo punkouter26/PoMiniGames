@@ -400,8 +400,8 @@
 
 .fq-split__header {
   text-align: center;
-  background: rgba(99, 102, 241, 0.08);
-  border: 1px solid rgba(99, 102, 241, 0.25);
+  background: var(--accent-soft);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   padding: 0.75rem 1rem;
 }
@@ -422,12 +422,24 @@
   gap: 0.6rem;
   padding: 1rem;
   border-radius: 14px;
-  border: 1px solid var(--color-border, rgba(148, 163, 184, 0.25));
-  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid var(--color-border);
+  /* 2026-09-12 contrast fix: was rgba(15, 23, 42, 0.55) — a hardcoded dark navy.
+     The text on it reads --color-text-primary, which re-points to near-black in
+     light mode, so the panel stayed dark while its text went dark: measured at
+     1.45:1 for the answer options, against a 4.5:1 floor. This is exactly the
+     failure the theming rule exists to prevent ("components must read colour
+     through those variables, never raw hex, or they will be unthemed in light
+     mode"). Surface tokens flip with the scheme, so the pairing holds in both. */
+  background: var(--color-surface);
 }
 
-.fq-split__player--left  { border-left: 4px solid #38bdf8; }  /* cyan   = Player 1 */
-.fq-split__player--right { border-left: 4px solid #f472b6; }  /* pink   = Player 2 */
+/* Each side sets --player-hue once; the score and the picked-answer state below
+   inherit it, so a panel carries exactly ONE accent colour instead of a border in
+   one hue and a score in another. Tokens, not raw hex (see app.css --player-1). */
+.fq-split__player--left  { --player-hue: var(--player-1); --player-ink: var(--player-1-ink); }
+.fq-split__player--right { --player-hue: var(--player-2); --player-ink: var(--player-2-ink); }
+.fq-split__player--left,
+.fq-split__player--right { border-left: 4px solid var(--player-hue); }
 
 .fq-split__name {
   font-size: 1.05rem;
@@ -438,7 +450,11 @@
 .fq-split__score {
   font-size: 1.4rem;
   font-weight: 700;
-  color: var(--accent-amber);
+  /* Was --accent-amber on BOTH sides: a third hue that identified neither
+     player, while the borders did the identifying in two others. Tying the
+     number to its own side's hue removes a colour and adds information. */
+  /* -ink, not the raw hue: this is text. See --player-1-ink in app.css. */
+  color: var(--player-ink, var(--color-text-primary));
 }
 
 .fq-split__streak {
@@ -461,13 +477,16 @@
 .fq-split__keys kbd {
   display: inline-block;
   padding: 2px 8px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  /* White-alpha fills only read as "raised" on a dark page; over a white surface
+     they vanish, and the hardcoded near-white text below went with them (3.65:1).
+     Tokens give a real chip in both schemes. */
+  background: var(--color-surface-hover);
+  border: 1px solid var(--color-border);
   border-bottom-width: 2px;
   border-radius: 6px;
   font-family: ui-monospace, "JetBrains Mono", "SFMono-Regular", monospace;
   font-size: 0.8rem;
-  color: #f8fafc;
+  color: var(--color-text-primary);
 }
 
 .fq-split__options {
@@ -485,30 +504,39 @@
   padding: 0.7rem 0.9rem;
   font-size: 1rem;
   text-align: left;
-  background: rgba(30, 41, 59, 0.85);
-  color: var(--color-text-primary, #f8fafc);
-  border: 1px solid rgba(148, 163, 184, 0.25);
+  /* Was rgba(30, 41, 59, 0.85) — same dark-on-dark problem as the panel. Sits on
+     --color-surface, so it takes the adjacent elevation token to stay distinct
+     from the panel in both schemes. */
+  background: var(--color-surface-hover);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border);
   border-radius: 10px;
   cursor: pointer;
   transition: transform 0.08s ease, border-color 0.12s ease, background 0.12s ease;
 }
 
 .fq-split__opt:hover:not([disabled]) {
-  border-color: rgba(56, 189, 248, 0.65);
-  background: rgba(30, 58, 138, 0.55);
+  border-color: var(--player-hue, var(--accent));
+  background: var(--color-surface-hover);
 }
 
 .fq-split__opt:active:not([disabled]) { transform: scale(0.98); }
 
+/* 2026-09-12: 0.55 -> 0.78. These options are not decorative — a player reads the
+   other side's choices, and the text measured 3.77:1 against a 4.5:1 floor. Still
+   visibly inactive, now still legible. */
 .fq-split__opt[disabled] {
-  opacity: 0.55;
+  opacity: 0.78;
   cursor: not-allowed;
 }
 
+/* "Picked, not yet revealed" is a neutral state — the reveal that follows owns
+   green and red. It used to be a saturated amber fill with a bright inset ring,
+   which read louder than the correct/wrong result it precedes. */
 .fq-split__opt--picked {
-  border-color: var(--accent-amber);
-  background: rgba(250, 204, 21, 0.18);
-  box-shadow: 0 0 0 2px rgba(250, 204, 21, 0.45) inset;
+  border-color: var(--player-hue, var(--accent));
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 2px var(--accent-ring) inset;
 }
 
 /* 2026-08-10: 2P split-screen reveal treatment — the pre-audit code only
@@ -528,7 +556,11 @@
   background: rgba(248, 113, 113, 0.18);
   box-shadow: 0 0 0 2px rgba(248, 113, 113, 0.35) inset;
 }
-.fq-split__opt--muted { opacity: 0.45; }
+/* Post-reveal de-emphasis for options neither side picked. 0.45 put the text at
+   2.82:1 — the one state in this component that still failed outright after the
+   surfaces were tokenised. The answer the player just got wrong is exactly the
+   text they want to read, so it has to stay readable while still receding. */
+.fq-split__opt--muted { opacity: 0.72; }
 .fq-split__badge--wrong {
   background: var(--accent-danger, #f87171);
   color: #450a0a;
@@ -542,8 +574,9 @@
   height: 28px;
   font-family: ui-monospace, "JetBrains Mono", "SFMono-Regular", monospace;
   font-weight: 700;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  /* Same white-alpha problem as .fq-split__keys kbd above. */
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
 }
 
@@ -576,7 +609,9 @@
   font-size: 1.5rem;
   font-weight: 800;
   letter-spacing: 0.05em;
-  color: rgba(250, 204, 21, 0.85);
+  /* Was a hard yellow. This is a separator, not a result — it should read as
+     chrome between the two panels, not compete with either player's colour. */
+  color: var(--color-text-secondary);
   padding: 0 0.5rem;
 }
 

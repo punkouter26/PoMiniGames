@@ -83,15 +83,21 @@ public sealed class AiQuizGeneratorService : IOpenAIService
         if (count <= 0) return Array.Empty<QuizQuestion>();
         count = Math.Min(count, MaxQuestionsPerCall); // hard cap
 
-        // Fast path: check warm semantic question cache pool
+        // Fast path: check warm semantic question cache pool.
+        //
+        // 2026-09-12: this is the path most games actually take once the process is warm, so it
+        // has to deal the same way the cold path does. It used to shuffle only WHICH questions
+        // came back and hand out the pool's own QuizQuestion instances untouched — leaving each
+        // question's options in the order the model emitted them, correct answer included. See
+        // SelectVariedSet: it re-randomises the option order too, and copies, so the shared pool
+        // is never mutated.
         if (QuestionPoolCache.TryGetValue(category, out var pool) && pool.Count >= count)
         {
             lock (pool)
             {
                 if (pool.Count >= count)
                 {
-                    var shuffled = pool.OrderBy(_ => Random.Shared.Next()).Take(count).ToList();
-                    return shuffled;
+                    return SelectVariedSet(pool, count);
                 }
             }
         }
@@ -121,8 +127,19 @@ public sealed class AiQuizGeneratorService : IOpenAIService
                 $"PoFunQuiz: AIFoundry not configured. Set {AIFoundryOptions.SectionName} in Key Vault (kv-poshared).");
         }
 
-        // Batch pre-generation to minimize total cloud calls
-        var batchCount = Math.Max(count, 12);
+        // Batch pre-generation to minimize total cloud calls.
+        //
+        // 2026-09-12: raised from 12 to QuestionPoolSize. The cache below is keyed on
+        // (category, batchCount) with a 6 h TTL and a durable L2, and the caller then took
+        // the FIRST `count` — so with a 10-question game and a 12-question batch, every
+        // player in a six-hour window got the same ten questions in the same order. The
+        // first one was always the same, which is what makes the game feel canned.
+        //
+        // A bigger pool fixes that WITHOUT spending more: it is still exactly one model
+        // call per category per 6 h — only the output token count of that single call goes
+        // up — and SelectVariedSet below deals a different random hand out of it for every
+        // game. Pool 24 / deal 10 is over 1.9 million distinct combinations before ordering.
+        var batchCount = Math.Max(count, QuestionPoolSize);
 
         // ── Durable batch cache (HybridCache) ─────────────────────────────
         // The prompt for a (category, batchCount) pair is IDENTICAL every time — the model is
@@ -157,7 +174,75 @@ public sealed class AiQuizGeneratorService : IOpenAIService
         {
             QuestionPoolCache.AddOrUpdate(category, _ => new List<QuizQuestion>(cached), (_, existing) => { lock (existing) { existing.AddRange(cached); } return existing; });
         }
-        return cached.Take(count).ToList();
+        return SelectVariedSet(cached, count);
+    }
+
+    /// <summary>How many questions one cached generation holds. See the note at its use site.</summary>
+    private const int QuestionPoolSize = 24;
+
+    /// <summary>
+    /// Deal <paramref name="count"/> questions out of a cached pool so two games running off the
+    /// same generation do not play the same quiz.
+    ///
+    /// <para>Three independent shuffles, each closing a different way the game became guessable:</para>
+    /// <list type="number">
+    /// <item>WHICH questions — a random subset, not <c>Take(count)</c>, which always dealt the
+    /// same hand off the front of the pool.</item>
+    /// <item>Their ORDER — so even a repeated question does not land in the same slot.</item>
+    /// <item>The OPTION order within each question, with <c>CorrectOptionIndex</c> remapped to
+    /// follow the answer. Models place the correct answer at a favourite index far more often
+    /// than one-in-four; left alone that is a free point for anyone who notices, and it is the
+    /// one bias no prompt wording reliably removes.</item>
+    /// </list>
+    ///
+    /// <para>Returns NEW instances. The pool is the shared cache entry handed to every caller,
+    /// so shuffling its questions' option lists in place would corrupt it for everyone and
+    /// desynchronise <c>CorrectOptionIndex</c> from the options a later player is shown.</para>
+    /// </summary>
+    internal static List<QuizQuestion> SelectVariedSet(IReadOnlyList<QuizQuestion> pool, int count)
+    {
+        if (pool.Count == 0) return new List<QuizQuestion>();
+
+        // Partial Fisher-Yates over an index array: a subset AND an order in one pass, without
+        // copying the pool or risking the retry-until-unique pattern's worst case.
+        var idx = Enumerable.Range(0, pool.Count).ToArray();
+        var take = Math.Min(count, pool.Count);
+        for (var i = 0; i < take; i++)
+        {
+            var j = Random.Shared.Next(i, idx.Length);
+            (idx[i], idx[j]) = (idx[j], idx[i]);
+        }
+
+        var dealt = new List<QuizQuestion>(take);
+        for (var i = 0; i < take; i++) dealt.Add(ShuffleOptions(pool[idx[i]]));
+        return dealt;
+    }
+
+    /// <summary>Copy of <paramref name="q"/> with its options shuffled and the correct index moved
+    /// to wherever the correct option ended up.</summary>
+    private static QuizQuestion ShuffleOptions(QuizQuestion q)
+    {
+        var options = new List<string>(q.Options);
+        // Track the answer by position rather than by string: duplicate option text would make
+        // an IndexOf-based remap point at the wrong one.
+        var answer = q.CorrectOptionIndex;
+        for (var i = options.Count - 1; i > 0; i--)
+        {
+            var j = Random.Shared.Next(i + 1);
+            (options[i], options[j]) = (options[j], options[i]);
+            if (answer == i) answer = j;
+            else if (answer == j) answer = i;
+        }
+        return new QuizQuestion
+        {
+            Text = q.Text,
+            Options = options,
+            // Clamp defensively: a malformed cached entry must not hand the client an index
+            // outside its own options list.
+            CorrectOptionIndex = answer >= 0 && answer < options.Count ? answer : 0,
+            Category = q.Category,
+            Difficulty = q.Difficulty,
+        };
     }
 
     /// <summary>
@@ -183,16 +268,52 @@ public sealed class AiQuizGeneratorService : IOpenAIService
                 $"PoFunQuiz: AIFoundry not configured. Set {AIFoundryOptions.SectionName} in Key Vault (kv-poshared).");
         }
 
+        // ── Distractor quality is the whole game ──────────────────────────
+        // 2026-09-12 (user request: "make sure the multiple choices are close
+        // enough to be difficult to guess"). The old prompt asked only for "4
+        // options and exactly one correct answer" and said nothing about what
+        // the other three should be, so the model produced the laziest possible
+        // set — "What is the capital of France?" with Berlin / Madrid / Paris /
+        // Rome, where three options are eliminable by anyone who has heard of
+        // Europe. A four-option question whose distractors are obvious is a
+        // one-option question.
+        //
+        // The rules below target the specific ways a distractor gives itself
+        // away: wrong CATEGORY of thing, wrong order of magnitude, giveaway
+        // length or specificity (the correct answer is famously the longest and
+        // most qualified one), and the joke option. Asking for a plausible
+        // wrong answer someone could actually hold is what makes the other
+        // three cost the player something.
         var systemPrompt =
             "You generate multiple-choice trivia questions. Every question has exactly 4 options and " +
-            "exactly one correct answer, identified by its zero-based index. Vary difficulty across " +
-            "Easy, Medium and Hard unless asked otherwise. Do not repeat a question within one response. " +
+            "exactly one correct answer, identified by its zero-based index. Do not repeat a question " +
+            "within one response.\n" +
+            "The three wrong options are the hard part. They must be genuinely tempting:\n" +
+            "1. Every option must be the same KIND of thing as the answer, at the same level of " +
+            "specificity — if the answer is a year, all four are plausible nearby years; if it is a " +
+            "person, all four are people who could credibly have done it.\n" +
+            "2. A wrong option must be something a reasonably informed person might actually believe — " +
+            "a common misconception, a close contemporary, an adjacent result — never a throwaway, a " +
+            "joke, or something from an unrelated field.\n" +
+            "3. Keep the options similar in length, phrasing and detail. Do not let the correct answer " +
+            "be the longest, the most qualified or the most technical-sounding one.\n" +
+            "4. Numeric options stay within the same order of magnitude and use a consistent format.\n" +
+            "5. Never use 'All of the above', 'None of the above', or two options that mean the same thing.\n" +
+            "6. Someone who does not know the fact must not be able to eliminate ANY option on surface " +
+            "cues alone. If three options can be dismissed without knowing the answer, rewrite them.\n" +
+            "Prefer specific, less-famous facts over textbook questions everyone already knows, and " +
+            "spread the correct answer evenly across all four index positions.\n" +
+            "Vary difficulty across Easy, Medium and Hard unless asked otherwise. Easy means a widely " +
+            "known fact, NOT weak distractors — the wrong options are close at every difficulty.\n" +
             "No explanations, no commentary — emit only the JSON object described by the schema: " +
             "{\"questions\":[{\"text\":\"<q>\",\"options\":[\"a\",\"b\",\"c\",\"d\"]," +
             "\"correctOptionIndex\":<0-3>,\"difficulty\":\"Easy|Medium|Hard\"}]}.";
 
         // The category is one of our own enum values, not user text, so it needs no fencing.
-        var userPrompt = $"Generate {batchCount} trivia questions in the category: {category}.";
+        var userPrompt =
+            $"Generate {batchCount} trivia questions in the category: {category}. " +
+            "Remember: the three wrong options for each question must be close enough that the " +
+            "question cannot be answered by elimination.";
 
         try
         {

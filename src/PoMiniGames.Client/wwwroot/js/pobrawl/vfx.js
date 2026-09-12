@@ -8,7 +8,8 @@
 import * as THREE from 'three';
 import { SeveredArm } from './ragdollPhysics.js';
 import { stepWorld } from './physics.js';
-import { SIM_DT } from './constants.js';
+// SIM_DT went with the flat-white impact silhouette (2026-09-12) — it was only
+// ever used to express that effect's two-frame duration.
 
 // Scratch vector, reused so the trail sampler allocates nothing per frame.
 // Module-local: nothing outside this file reads it.
@@ -34,7 +35,9 @@ class VfxMethods {
     // Shared geometry — the per-ring material is what differs. Held so dispose
     // can release it once rather than three times through the traverse.
     this._shockGeo = geo;
-    this._flatT = 0;      // seconds left on the flat-white silhouette
+    // _flatT (the flat-white silhouette timer) went with the effect itself.
+    // The two below are still driven by the KO and the super cinematic; only
+    // the per-hit arming was removed. See _impactFrame.
     this._speedPulse = 0; // speedline intensity, decayed in _updateFx
     this._smearT = 0;     // seconds left on the afterimage smear
     this._smearAmt = 0;   // 0..1 target damp for the afterimage pass
@@ -46,13 +49,24 @@ class VfxMethods {
    */
   _impactFrame(point, power = 1) {
     const p = Math.max(0, Math.min(1, power));
-    // Flat silhouette for two frames. Longer and it stops reading as a single
-    // drawn frame and starts reading as the fighters turning white.
-    this._flatT = Math.max(this._flatT, SIM_DT * 2);
-    this._speedPulse = Math.max(this._speedPulse, 0.34 + 0.30 * p);
-    // A short smear so the recoil that follows the freeze has a tail on it.
-    this._smear(0.16 + 0.1 * p, 0.62 + 0.12 * p);
-
+    // ── 2026-09-12: the full-frame half of this effect is GONE ────────
+    // This used to fire three things on a heavy connect: a flat-white
+    // silhouette over both fighters (uFlat, 2 frames), a speedline fan raked
+    // across the frame, and an afterimage smear. All three were whole-image
+    // luminance changes on a per-HIT cadence, and the comment below them
+    // conceded the rule they broke — "anything this loud has to stay rare to
+    // stay readable". Heavy hits are not rare: HEAVY_HIT_DMG is 13 and a
+    // charged swing clears it easily, so in any real exchange these re-armed
+    // (via Math.max, before the previous had decayed) several times a second
+    // and the picture strobed. That is exactly why the bloom / exposure /
+    // radial pulses were deleted in 2026-08-07; these three simply survived
+    // that pass and went on doing the same thing.
+    //
+    // What remains is the shock ring below: it is anchored to the contact
+    // POINT in world space rather than painted over the whole frame, so it
+    // marks the hit without changing the brightness of everything else. The
+    // KO and the super cinematic keep their own flat/speedline/smear beats —
+    // those are one-off, and rare is what made them legible in the first place.
     if (!this._shockRings) return;
     const slot = this._shockRings[this._shockCursor++ % this._shockRings.length];
     slot.mesh.position.copy(point);
@@ -60,7 +74,11 @@ class VfxMethods {
     // this it edge-ons into an invisible line at exactly the wrong moment.
     slot.mesh.quaternion.copy(this.camera.quaternion);
     slot.mesh.scale.setScalar(0.25);
-    slot.mesh.material.opacity = 0.9;
+    // Peak opacity dropped 0.9 -> 0.5 in the same flicker pass. The ring is
+    // additive and the pool is 3, so in a flurry three of them overlap on top
+    // of the bloom threshold and the "local" stamp stops being local. At 0.5 it
+    // still reads as a snap of force without blowing out what is behind it.
+    slot.mesh.material.opacity = 0.5;
     slot.mesh.visible = true;
     slot.power = p;
     slot.dur = 0.2 + 0.08 * p;
@@ -74,14 +92,9 @@ class VfxMethods {
   }
 
   _updateImpactFrames(dt) {
-    // Flat-white silhouette timer → the per-fighter uFlat uniforms.
-    if (this._flatT > 0) {
-      this._flatT -= dt;
-      const on = this._flatT > 0 ? 1 : 0;
-      for (const f of this.fighters || []) {
-        for (const u of f.inkUniforms || []) u.uFlat.value = on;
-      }
-    }
+    // The flat-white silhouette timer that used to drive the per-fighter uFlat
+    // uniforms was removed with the uniform itself (2026-09-12) — see
+    // _impactFrame. Only the shock rings are left to advance.
     for (const s of this._shockRings || []) {
       if (s.life <= 0) continue;
       s.life -= dt;
@@ -90,7 +103,7 @@ class VfxMethods {
       // reads as a growing circle; this reads as a shockwave.
       const ease = 1 - Math.pow(1 - k, 3);
       s.mesh.scale.setScalar(0.25 + (2.6 + 1.8 * s.power) * ease);
-      s.mesh.material.opacity = 0.9 * (1 - ease);
+      s.mesh.material.opacity = 0.5 * (1 - ease);
       if (s.life <= 0) { s.mesh.visible = false; s.mesh.material.opacity = 0; }
     }
   }

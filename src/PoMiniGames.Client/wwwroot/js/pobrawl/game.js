@@ -174,29 +174,84 @@ const ARM_SPLASH_FRAC = 0.7;
 const CHARGE_TIME = 1.0;
 const CHARGE_MAX_MUL = 4.0;
 
-// ── Energy meter ─────────────────────────────────────────────────────────
-// One 0..1 pool per fighter, shown under the HP bar in the Blazor HUD. It IS
-// the stored attack power: a release spends ALL of it (chargeMul 1x when
-// empty → CHARGE_MAX_MUL when full). THREE things move the bar: winding up a
-// punch/kick (the charge state) fills it toward the peak, releasing the attack
-// empties it to zero, and it bleeds away on its own the rest of the time (see
-// ENERGY_DECAY_PER_SEC). Every fighter starts each match banked at 1/3. There
-// is still no block reward, and taking a hit doesn't touch it.
-const ENERGY_DEFAULT = 1 / 3;
+// ── Hit-pause ceiling ────────────────────────────────────────────────────
+// Hitstop freezes the entire fight sim (_tickFighting early-returns), so it is
+// the one effect that can be mistaken for the game locking up. 8 frames at
+// 60 Hz is 133 ms — enough to sell a heavy blow, short enough that input never
+// feels dropped. Charge adds only HITSTOP_CHARGE_BONUS of the base per point of
+// chargeMul rather than scaling it outright; see _hitFeedback.
+const HITSTOP_MAX_FRAMES = 8;
+const HITSTOP_CHARGE_BONUS = 0.35;
 
-// Idle bleed for the banked pool, as a fraction of a full bar per second. A
-// full coil left unspent empties in ~14 s, so banked power is a decaying asset
-// rather than something a fighter can hold indefinitely and open with whenever
-// it suits them: use it or lose it.
+// Ceiling on a per-hit impact PointLight's peak intensity. These relight real
+// geometry, and the pool holds 3, so an uncapped peak lets a flurry swing the
+// whole arena's exposure. The one-off KO (22) and clash (12) flashes are
+// deliberately exempt — they fire once, not several times a second.
+const IMPACT_LIGHT_MAX = 9;
+
+// ── Energy meter ─────────────────────────────────────────────────────────
+// One 0..1 pool per fighter — the blue bar under the HP bar in the Blazor HUD.
+// It is BOTH how hard this fighter's strikes land and whether they are allowed
+// to throw one at all.
 //
-// Applied everywhere EXCEPT the charge state (the wind-up is what fills the
-// pool — taxing it there would only slow the coil, which CHARGE_TIME already
-// governs) and the KO state (the match is decided; a bar still draining behind
-// the K.O. banner reads as a bug). Because the pool is spent in full on every
-// release, this only ever bites a fighter who is sitting on charge they never
-// threw — an attack at empty is still a legal attack at the 1x multiplier, so
-// the decay costs power, never the ability to fight.
-const ENERGY_DECAY_PER_SEC = 1 / 14;
+// 2026-09-12 rework (user request: "make blocking more rewarded and pure
+// offensive a bad strategy"). The old pool was filled by the wind-up itself and
+// emptied in full on release, which made offence free: an attack at an empty
+// bar was still a legal attack at the 1x multiplier, so mashing punch threw
+// unlimited weak strikes forever and there was no reason to ever stop swinging.
+// "Holding the attack button refills the bar" is also flatly incompatible with
+// "throwing lots of punches drains the bar", so the wind-up no longer creates
+// energy — it SPENDS it:
+//
+//   • winding up drains the pool into the strike (chargeAmt), so the coil is
+//     paid for out of the bar and the bar visibly empties as you load up;
+//   • releasing costs a further flat ATTACK_ENERGY_COST, which is what taxes
+//     tap-spam — a jab banks almost no charge but still pays the toll;
+//   • dropping under the floor GASSES the fighter: no punch, no kick, at all,
+//     until they have recovered back up to ENERGY_RECOVER_TO (see _canAttack);
+//   • blocking refills it fast, idling refills it slowly, and swinging refills
+//     it not at all.
+//
+// The net effect is that a pure-offence rush runs itself out of the ability to
+// fight inside a few seconds and then stands there defenceless, while guarding
+// is how a fighter buys the power for the next exchange.
+// Both fighters come out of the corner fresh. The old 1/3 bank made sense when
+// the wind-up REFILLED the bar (you were expected to charge it up yourself);
+// now that attacking is what drains it, opening at 1/3 would gas a fighter out
+// after two jabs before the round had really started. A full bar is worth
+// roughly four spammed punches, or one fully committed haymaker.
+const ENERGY_DEFAULT = 1.0;
+
+// Flat toll charged on every swing release, on top of whatever the wind-up
+// already drained. This is the anti-spam term: at 0.22 a fighter who only ever
+// taps gets roughly four strikes from a full bar before gassing out, and the
+// idle regen below cannot keep up with continuous mashing.
+const ATTACK_ENERGY_COST = 0.22;
+
+// Hysteresis band for the gate. Falling below ENERGY_ATTACK_FLOOR sets the
+// gassed flag; clearing it needs ENERGY_RECOVER_TO, which is deliberately
+// higher so an exhausted fighter cannot chip out one more jab the instant a
+// single frame of regen lands. That gap is the punishment window.
+const ENERGY_ATTACK_FLOOR = 0.22;
+const ENERGY_RECOVER_TO = 0.40;
+
+// Regen, as a fraction of a full bar per second, by state. Blocking is ~3.4x
+// idle: guarding is the deliberate, rewarded way back into the fight, which is
+// the whole point of the rework. Swinging (the punch/kick states) regenerates
+// nothing — you do not catch your breath mid-combination. The KO state is
+// exempt entirely; a bar still moving behind the K.O. banner reads as a bug.
+const ENERGY_REGEN_PER_SEC = 0.16;
+const ENERGY_BLOCK_REGEN_PER_SEC = 0.55;
+const ENERGY_HITSTUN_REGEN_PER_SEC = 0.08;
+
+// Bonus banked by the DEFENDER when a block actually connects, multiplied by
+// the attacker's chargeMul (1..CHARGE_MAX_MUL). A blocked jab pays 0.06; a
+// blocked full-power haymaker pays 0.24 — over a third of the bar, taken
+// straight out of the swing that was meant to end the round. Absorbing a big
+// commitment is therefore the fastest refill in the game, and the attacker has
+// paid their own energy for the privilege of donating it. See the blocked
+// branch of _applyHit.
+const BLOCK_ENERGY_REWARD = 0.06;
 
 // Fighters never leave their feet before the final blow — heavy hits get a
 // hard stagger (extra knockback + lean) instead of a mid-fight knockdown.
@@ -1166,22 +1221,16 @@ export class BrawlGame {
           // materials already carry makes the silhouette a branch in a shader
           // that was going to run anyway — and it masks perfectly, because only
           // the fighters have this injection at all.
-          uFlat: { value: 0 },
-          uFlatColor: { value: new THREE.Color(0xffffff) },
         };
         m.onBeforeCompile = (shader) => {
           shader.uniforms.uInk = u.uInk;
           shader.uniforms.uInkPower = u.uInkPower;
           shader.uniforms.uInkColor = u.uInkColor;
-          shader.uniforms.uFlat = u.uFlat;
-          shader.uniforms.uFlatColor = u.uFlatColor;
           shader.fragmentShader = shader.fragmentShader
             .replace('void main() {', /* glsl */`
               uniform float uInk;
               uniform float uInkPower;
               uniform vec3 uInkColor;
-              uniform float uFlat;
-              uniform vec3 uFlatColor;
               void main() {`)
             .replace('#include <opaque_fragment>', /* glsl */`
               #include <opaque_fragment>
@@ -1192,9 +1241,8 @@ export class BrawlGame {
                 float _facing = clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0);
                 float _ink = pow(1.0 - _facing, uInkPower) * uInk;
                 gl_FragColor.rgb = mix(gl_FragColor.rgb, uInkColor, clamp(_ink, 0.0, 1.0));
-                // Flat fill last, so an impact frame overrides the ink line too
-                // — a silhouette with its own edge drawn on reads as a mistake.
-                gl_FragColor.rgb = mix(gl_FragColor.rgb, uFlatColor, clamp(uFlat, 0.0, 1.0));
+                // The flat-white impact fill that used to close this block is
+                // gone (2026-09-12) — see _impactFrame in vfx.js for why.
               }`);
         };
         // Materials are cached by program key; two rigs whose materials differ
@@ -1487,9 +1535,10 @@ export class BrawlGame {
         hasHit: false,
         // ── Hold-to-charge ────────────────────────────────────────────
         chargeName: null,  // 'punch'|'kick' while state === 'charge'
-        chargeAmt: 0,      // 0..1 stored charge (mirrors energy while charging)
+        chargeAmt: 0,      // 0..1 charge drained out of `energy` while charging
         chargeMul: 1,      // damage/knockback multiplier of the current swing
-        energy: ENERGY_DEFAULT, // 0..1 banked attack power; starts at 1/3 (see ENERGY_DEFAULT)
+        energy: ENERGY_DEFAULT, // 0..1 strike power AND stamina (see the ENERGY_* block)
+        gassed: false,     // true while under the floor: no punch, no kick (see _canAttack)
         // The super meter is NOT here. It lives on `personality.superMeter`
         // (makePersonalityState), which is where _applyHit fills it and
         // _fireSuper consumes it. A duplicate field on the fighter used to sit
@@ -2134,28 +2183,53 @@ export class BrawlGame {
       // super in the game's history. The fighter-level `superMeter` field is
       // gone; personality state is the one home for it.
       superMeterFull: (f.personality?.superMeter || 0) >= 1.0,
+      // Energy gate (2026-09-12). The engine enforces this regardless — a
+      // gassed fighter's punch/kick intent is simply dropped in _tickFighter —
+      // but the AI needs to KNOW, or it spends the whole recovery mashing
+      // attack inputs into a closed gate and standing there wide open. Reading
+      // it lets the CPU do what a player should do here: put the guard up and
+      // earn the bar back.
+      selfExhausted: !!f.gassed,
+      selfEnergy: f.energy,
     };
   }
 
   _tickFighter(f, opp, intent, dt) {
     f.stateT += dt;
 
-    // ── Idle energy bleed ─────────────────────────────────────────────
-    // See ENERGY_DECAY_PER_SEC for the rationale and the exempt states.
+    // ── Energy regen ──────────────────────────────────────────────────
+    // Replaces the old idle bleed (2026-09-12). See the ENERGY_* block for the
+    // design: guarding refills fast, standing refills slowly, swinging refills
+    // nothing, and the charge state is exempt because it is actively DRAINING
+    // the pool into the strike — regenerating there would refund the wind-up.
+    //
     // No hudDirty here on purpose: _pushHud already flushes every 0.25 s, so a
-    // continuous drain reaches the HUD four times a second without flagging a
+    // continuous change reaches the HUD four times a second without flagging a
     // push on every single frame.
     //
-    // Biden's "THE BIG GUY" super is also exempt for the length of its lock
-    // window: its whole payload is a *guaranteed* max-power strike (it sets
-    // energy to 1.0 once on activation), and bleeding that back down before he
-    // can throw it would quietly convert a guarantee into "~0.9 if you're
-    // quick". Every other route to a full bar is a wind-up the fighter is
-    // holding, which is already exempt via the charge state.
+    // Biden's "THE BIG GUY" super is exempt for the length of its lock window:
+    // its whole payload is a *guaranteed* max-power strike (it sets energy to
+    // 1.0 once on activation), and letting the regen logic touch the bar before
+    // he can throw it risks quietly converting that guarantee into something
+    // less. Regen could only ever help him, but the gassed bookkeeping below
+    // must not fire mid-lock either, so the whole block is skipped.
     const bigGuyLocked = f.personality?._bigGuyLockUntil
       && this.t < f.personality._bigGuyLockUntil;
     if (f.state !== 'charge' && f.state !== 'ko' && !bigGuyLocked) {
-      f.energy = Math.max(0, f.energy - dt * ENERGY_DECAY_PER_SEC);
+      let regen = 0;
+      if (f.state === 'block') regen = ENERGY_BLOCK_REGEN_PER_SEC;
+      else if (f.state === 'hitstun') regen = ENERGY_HITSTUN_REGEN_PER_SEC;
+      else if (f.state !== 'punch' && f.state !== 'kick') regen = ENERGY_REGEN_PER_SEC;
+      if (regen > 0) f.energy = Math.min(1, f.energy + dt * regen);
+    }
+    // Gassed-out bookkeeping, with the hysteresis band from ENERGY_RECOVER_TO.
+    // Kept outside the exempt branch so a fighter can never be left flagged
+    // gassed while sitting on a full bar.
+    if (f.gassed) {
+      if (f.energy >= ENERGY_RECOVER_TO) { f.gassed = false; this.hudDirty = true; }
+    } else if (f.energy < ENERGY_ATTACK_FLOOR) {
+      f.gassed = true;
+      this.hudDirty = true;
     }
     const pos = f.rig.root.position;
     const effect = regionEffect(f.regionDmg);
@@ -2244,12 +2318,15 @@ export class BrawlGame {
     // ── State machine ────────────────────────────────────────────────
     switch (f.state) {
       case 'idle': {
-        // Energy is static while idle — it only moves via winding up (fill) or
-        // attacking (empty). No passive regen.
+        // Energy regenerates slowly here and fast in the 'block' case; the
+        // wind-up spends it and every release costs a flat toll on top. The
+        // regen itself is applied once, above the state machine.
         // A punch needs the striking (right) arm — a fighter that lost it can
         // only kick. Kick input still works with no arms.
-        const canPunch = intent.punch && this._canPunch(f);
-        if (canPunch || intent.kick) {
+        // The energy gate sits ahead of both: a gassed fighter throws nothing.
+        const hasEnergy = this._canAttack(f);
+        const canPunch = intent.punch && hasEnergy && this._canPunch(f);
+        if (canPunch || (intent.kick && hasEnergy)) {
           const name = canPunch ? 'punch' : 'kick';
           this._enterCharge(f, name);
           break;
@@ -2281,13 +2358,16 @@ export class BrawlGame {
         // CHARGE_TIME; you can hold at max forever). Release throws the
         // attack scaled by the stored charge.
         const held = f.chargeName === 'punch' ? intent.punchHeld : intent.kickHeld;
-        // Holding pumps the shared energy pool; the coil animation shows the
-        // TRUE banked power, so a fighter resuming a wind-up coils from
-        // whatever is still banked rather than from zero. (This used to read
-        // "idle regen + block rewards included" — both of those systems are
-        // gone; the pool now only fills here and bleeds off elsewhere.)
-        f.energy = Math.min(1, f.energy + dt / CHARGE_TIME);
-        f.chargeAmt = f.energy;
+        // Holding POURS the pool into the strike (2026-09-12 rework): the bar
+        // drains at the same rate the coil loads, so a fighter watching their
+        // own energy bar can see exactly what the swing is costing them, and a
+        // full-power release is only available to someone who banked a full
+        // bar by guarding for it. The drain is clamped to what is actually left,
+        // so the coil simply stops growing on an empty bar rather than loading
+        // power that was never paid for.
+        const drain = Math.min(dt / CHARGE_TIME, f.energy);
+        f.energy -= drain;
+        f.chargeAmt = Math.min(1, f.chargeAmt + drain);
         f.animator.setCharge(f.chargeName, f.chargeAmt);
         // Full-charge cue: one audible snap when the coil tops out.
         if (f.chargeAmt >= 1 && !f.chargeCued) {
@@ -2328,8 +2408,8 @@ export class BrawlGame {
         // Cancel windows: if the player input another action and we're past the
         // configured stateT threshold for that target, transition immediately.
         // Attack cancels re-enter the charge state so a held follow-up charges too.
-        if (intent.punch && this._canPunch(f) && f.stateT >= a.cancelInto.punch) this._enterCharge(f, 'punch');
-        else if (intent.kick && f.stateT >= a.cancelInto.kick) this._enterCharge(f, 'kick');
+        if (intent.punch && this._canAttack(f) && this._canPunch(f) && f.stateT >= a.cancelInto.punch) this._enterCharge(f, 'punch');
+        else if (intent.kick && this._canAttack(f) && f.stateT >= a.cancelInto.kick) this._enterCharge(f, 'kick');
         else if (intent.block && f.stateT >= a.cancelInto.block) {
           f.state = 'block'; f.stateT = 0; f.animator.setBlocking(true);
           this._destroySwingPhysics(f);
@@ -2358,7 +2438,10 @@ export class BrawlGame {
     f.state = 'charge';
     f.stateT = 0;
     f.chargeName = name;
-    f.chargeAmt = f.energy; // coil starts at the already-banked power
+    // Coil starts EMPTY and is filled out of the energy bar while the button is
+    // held (see the 'charge' case). It used to start at the already-banked
+    // power, back when the wind-up created energy rather than spending it.
+    f.chargeAmt = 0;
     f.chargeCued = false;
     f.chargeSparkT = 0;
     f.animator.setBlocking(false);
@@ -2391,10 +2474,13 @@ export class BrawlGame {
       f.swingWindupMul = PERSONALITIES.eisenhower.onSwingP.overWindupMul || 1.0;
       f.swingActiveMul = PERSONALITIES.eisenhower.onSwingP.overActiveMul || 1.0;
     }
-    // Spend-it-all: the swing consumes the whole energy pool. Winding up the
-    // next attack is the ONLY way to refill it — there is no idle regen and no
-    // block reward (both were removed), and the pool bleeds while idle.
-    f.energy = 0;
+    // The flat swing toll (2026-09-12 rework). The wind-up has already drained
+    // whatever charge this strike carries; this is the additional per-swing cost
+    // that makes tap-spam unsustainable, since a jab banks almost no charge but
+    // still pays it in full. Blocking and standing are what refill the bar —
+    // see the ENERGY_* block and the regen in _tickFighter.
+    f.energy = Math.max(0, f.energy - ATTACK_ENERGY_COST);
+    if (f.energy < ENERGY_ATTACK_FLOOR) f.gassed = true;
     this.hudDirty = true;
     f.animator.play(name);
 
@@ -2722,8 +2808,17 @@ export class BrawlGame {
       attacker._dirtySwing = false;
     }
     if (blocked) {
-      // Blocking no longer banks energy (the bar only moves via winding up /
-      // attacking), but a clean block still absorbs the blow.
+      // ── Block reward (2026-09-12) ─────────────────────────────────
+      // Holding guard already regenerates energy fastest of any state; landing
+      // an actual block pays a bonus on top, scaled by how hard the swing was.
+      // Absorbing a fully charged haymaker is the single best way to fill the
+      // bar in the game, which is the point: it makes reading an attack and
+      // eating it on the guard strictly better than trading, and it hands the
+      // defender the power for the counter out of the attacker's own commitment.
+      // (This comment used to read "blocking no longer banks energy" — that was
+      // true of the old spend-it-all meter, which the rework replaced.)
+      defender.energy = Math.min(1, defender.energy + BLOCK_ENERGY_REWARD * chargeMul);
+      this.hudDirty = true;
       const blockDamp = 1 / defMass;
       defender.knockback.add(knockDir.clone().multiplyScalar(2.0 * blockDamp * chargeMul));
       if (attack.name === 'punch') {
@@ -2971,8 +3066,18 @@ export class BrawlGame {
     };
     const hitColor = regionHitColors[region] || 0xffa050;
     const flashDur = region === REGIONS.HEAD ? 0.25 : 0.18;
+    // 2026-09-12 flicker pass: this peak used to be `(kick ? 12 : 8) * chargeMul`
+    // with chargeMul running 1..4, so a charged kick lit a 48-intensity point
+    // light next to the fighters. Three of these can be alight at once (the pool
+    // is 3) and each fades linearly over ~0.2 s, so a normal exchange swung the
+    // whole arena's brightness up and down several times a second — the single
+    // biggest contributor to the flicker, because unlike a screen-space effect
+    // it relights the actual geometry. Charge now adds a fraction of the base
+    // rather than multiplying it, capped at IMPACT_LIGHT_MAX, which keeps the
+    // local glow on the contact point without the room breathing.
     this._flashImpactLight(hit.point,
-      (attack.name === 'kick' ? 12 : 8) * chargeMul,
+      Math.min(IMPACT_LIGHT_MAX,
+        (attack.name === 'kick' ? 6 : 4) * (1 + 0.4 * (chargeMul - 1))),
       hitColor, flashDur);
     this._hitFeedback(attack, true, chargeMul);
     // Directional camera kick: the boom takes the hit's impulse and the
@@ -3170,8 +3275,22 @@ export class BrawlGame {
       return;
     }
     // Hit-pause scales with attack weight and stored charge — a fully charged
-    // release lands with roughly double the stop, shake and lens kick.
-    const frames = Math.round((attack.name === 'kick' ? 5 : 3) * chargeMul);
+    // release lands with a heavier stop, shake and lens kick.
+    //
+    // 2026-09-12: this used to be `round(base * chargeMul)` with chargeMul
+    // running 1..CHARGE_MAX_MUL (4). A fully charged kick therefore froze the
+    // match for round(5 * 4) = 20 frames = 333 ms, and a charged punch for
+    // 200 ms — _tickFighting returns outright while hitstopT > 0, so that is
+    // the WHOLE fight sim stopped, input included. It read as the game hanging
+    // mid-exchange rather than as impact weight (the comment claiming "roughly
+    // double" had quietly become quadruple). Charge now adds a fraction of the
+    // base instead of multiplying it, hard-capped at HITSTOP_MAX_FRAMES, so the
+    // worst case is 8 frames / 133 ms and a jab still stops for 3.
+    const base = attack.name === 'kick' ? 5 : 3;
+    const frames = Math.min(
+      HITSTOP_MAX_FRAMES,
+      Math.round(base * (1 + HITSTOP_CHARGE_BONUS * (chargeMul - 1)))
+    );
     this.hitstopT = frames * SIM_DT;
     // Random jitter is halved — the directional spring impulse (injected at
     // the _tryHit call site) now carries most of the camera reaction.
@@ -3291,14 +3410,21 @@ export class BrawlGame {
   }
 
   // ══ Anime impact frames (GFX/SOUND #3) ═══════════════════════════════
-  // On a heavy connect only — three things fire on the same frame the hitstop
-  // starts, and all three are gone within a fifth of a second:
-  //   • the fighters blow out to flat white silhouettes (uFlat, see _applyInkEdge)
-  //   • a shock ring snaps outward from the contact point in world space
-  //   • speedlines rake in from the frame edges
-  // Deliberately gated to heavy hits. The reason the old bloom/exposure pulses
-  // were deleted is that they fired on EVERY hit and overlapped into a
-  // continuous flicker; anything this loud has to stay rare to stay readable.
+  // On a heavy connect only. This used to fire three things on the frame the
+  // hitstop starts — a flat-white silhouette over both fighters, a shock ring,
+  // and speedlines raking in from the frame edges, plus an afterimage smear.
+  //
+  // 2026-09-12: everything except the shock ring is gone. The note that used to
+  // close this block said the bloom/exposure pulses had been deleted because
+  // "they fired on EVERY hit and overlapped into a continuous flicker; anything
+  // this loud has to stay rare to stay readable" — and then failed to notice
+  // that "heavy connect" is not rare. HEAVY_HIT_DMG is 13 out of 100 HP, which
+  // any charged swing clears, so these ran several times a second in a normal
+  // exchange and strobed the picture exactly as their predecessors had.
+  //
+  // The surviving ring is anchored to the contact point in world space, so it
+  // marks WHERE the hit landed instead of changing the brightness of the whole
+  // frame. See _impactFrame in vfx.js.
 
 
   // House-light choreography. Backlights track their fighters every frame for
@@ -3737,6 +3863,27 @@ export class BrawlGame {
   // the right is gone too it can only kick.)
   _canPunch(f) {
     return !f.armsLost || !f.armsLost.has('R');
+  }
+
+  /**
+   * The energy gate (2026-09-12). False means this fighter may not START a
+   * punch or kick — not a weaker one, none at all — because they have gassed
+   * themselves out. Blocking and movement are deliberately still allowed: the
+   * guard is the way back up the bar, so the punishment is "you must defend
+   * now", not "you are a statue".
+   *
+   * Checked on the three routes a fighter takes into a normal attack: the idle
+   * branch and the two mid-swing cancel-into-punch/kick windows.
+   *
+   * Deliberately NOT checked in _enterAttack. Supers go straight there, and a
+   * signature move is a rare earned payoff that should never be swallowed by
+   * the stamina economy — Biden's "THE BIG GUY" in particular sets energy to
+   * 1.0 and swings on the same frame, before the gassed flag has been
+   * recomputed, so a flag check there would eat exactly the strike the super
+   * exists to guarantee.
+   */
+  _canAttack(f) {
+    return !f.gassed;
   }
 
 

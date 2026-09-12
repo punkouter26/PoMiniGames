@@ -351,8 +351,23 @@
      the cell's `class` attribute is Blazor-managed and a class added from JS
      is wiped by the next diff.
 
-   2026-09-12: this used to be `.cf-board--physics-active .cf-cell .piece`,
+   2026-09-12: the hide used to be `.cf-board--physics-active .cf-cell .piece`,
    which hid all 81 discs for the duration of every flight. In the CPU-vs-CPU
    demo the next drop starts before the previous one settles, so the board was
    blank essentially always — you heard the drops and saw an empty grid. With
    the clone unstyled (see above) there was nothing else on screen either. */
+
+/* The one board-level rule that survives: while physics owns the drop, the
+   keyframe must not ALSO run. Blazor renders the settled disc a frame or two
+   before the JS hide can find it, and cf-slide-down starts the moment the
+   element exists — so the player saw a disc drop in at the top of the board
+   while an identical clone fell past it, then the clone land on top of it.
+
+   js/connectfive/index.js toggles this class per drop, and clears it whenever
+   it declines one (reduced motion, the adaptive tier dropping to `low`, matter.js
+   missing), so the keyframe is always available on exactly the drops that need
+   it. Discs already delivered carry an inline `animation: none` of their own, so
+   handing the keyframe back never restarts a settled disc. */
+.cf-board--physics .cf-cell .piece {
+  animation: none;
+}

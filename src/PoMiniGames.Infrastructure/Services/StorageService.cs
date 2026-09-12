@@ -58,7 +58,12 @@ public partial class StorageService : IStorageService
     private DateTime _lastProbeAttemptUtc = DateTime.MinValue;
     private readonly TimeSpan _probeBackoff = TimeSpan.FromSeconds(10);
     private readonly object _probeLock = new();
-    private const string HealthProbeTableName = "__pominigames_storage_health_probe__";
+    // Table names are alphanumeric-only and must start with a letter (3-63 chars). The
+    // underscore-wrapped sentinel this used to hold was rejected by the service with a
+    // 400 "resource name contains invalid characters", so the probe could never succeed:
+    // the first /health hit flipped storage to unavailable and the recovery probe, using
+    // the same name, could never flip it back. Keep this a legal table name.
+    private const string HealthProbeTableName = "PoMiniGamesStorageHealthProbe";
 
     // NOTE (2026-09-11): there is deliberately no in-memory fallback here any more.
     // StorageService used to hand off to an InMemoryStorageService whenever Table Storage

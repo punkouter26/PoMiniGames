@@ -503,6 +503,22 @@
     box-shadow: 0 0 6px rgba(255, 210, 87, 0.75);
 }
 
+/* Gassed out (2026-09-12). Under ~40% the engine refuses to start a punch or a
+   kick at all (game.js ENERGY_ATTACK_FLOOR / ENERGY_RECOVER_TO), so the bar has
+   to say so — otherwise a dead attack button reads as dropped input rather than
+   as a mechanic.
+
+   This carried a 0.7 s opacity pulse when it was added. It came straight back
+   out in the flicker pass later the same day: the whole point of that pass was
+   that PoBrawl blinks too much, and answering it by adding one more blinking
+   element — in the HUD, which is the part of the frame a player's eye rests on
+   — is the wrong trade. The colour change alone is unambiguous, and it is
+   already the only red bar on screen. */
+.pb-en-spent {
+    background: linear-gradient(90deg, #c2354a, #f2637a);
+    box-shadow: 0 0 6px rgba(242, 99, 122, 0.7);
+}
+
 /* ── Super meter — REMOVED 2026-08-11 ─────────────────────────────────
    The .pb-su / .pb-su-track / .pb-su-fill / .pb-su-fill--ready / .pb-su-prompt
    rules and their two keyframes (pb-su-sweep, pb-su-pulse) lived here. The HUD

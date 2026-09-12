@@ -24,9 +24,9 @@ namespace PoMiniGames.Unit.Features.PoJoker;
 /// </remarks>
 public sealed class JokerEmotionsTests
 {
-    /// <summary>The emotion enum as the rating model actually receives it.</summary>
+    /// <summary>The emotion enum as the verdict model actually receives it.</summary>
     private static readonly string[] SchemaEmotions =
-        AiJesterService.RatingSchema
+        AiJesterService.VerdictSchema
             .GetProperty("properties")
             .GetProperty("emotion")
             .GetProperty("enum")

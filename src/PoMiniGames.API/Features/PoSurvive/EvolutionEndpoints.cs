@@ -22,7 +22,7 @@ public static class EvolutionEndpoints
         // §1 NET_CLEAN_10: route prefix + OpenAPI tag + rate limit are declared once at
         // the group boundary, matching every other slice. Auth comes from the parent
         // `gameApi` group in EndpointRouteExtensions.
-        var group = routes.MapGroup("/api/evolution").WithTags("PoSurvive");
+        var group = routes.MapGroup("/evolution").WithTags("PoSurvive");
 
         group.MapPost("/record", RecordSessionOutcomeAsync)
              .WithName("EvolutionRecord")

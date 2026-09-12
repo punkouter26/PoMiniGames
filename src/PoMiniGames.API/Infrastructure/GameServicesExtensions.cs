@@ -92,7 +92,23 @@ internal static class GameServicesExtensions
         // startup check that every configured deployment name exists on the account.
         services.AddSingleton<AiUsageAccumulator>();
         services.AddOptions<AiTokenBudgetOptions>().BindConfiguration(AiTokenBudgetOptions.SectionName);
+        // Durable backing for the daily ceiling. Without it the ledger is a ConcurrentDictionary
+        // that an App Service F1 recycle (no AlwaysOn, so idle = recycle) resets to zero, which
+        // made "250k tokens per identity per day" mean "per identity per uptime".
+        services.AddSingleton<IAiTokenLedgerStore>(sp =>
+        {
+            // TableServiceClient is always registered (AddPoMiniGamesStorage), but a host built
+            // without storage — or with it unreachable — must still serve AI traffic, so the null
+            // store is the documented degradation rather than a startup failure.
+            var tables = sp.GetService<Azure.Data.Tables.TableServiceClient>();
+            return tables is null
+                ? NullAiTokenLedgerStore.Instance
+                : new TableAiTokenLedgerStore(tables, sp.GetRequiredService<ILogger<TableAiTokenLedgerStore>>());
+        });
         services.AddSingleton<AiTokenBudget>();
+        // Write-behind flusher: pushes accumulated spend to the ledger on an interval and once
+        // more on graceful shutdown. Idles immediately when the store is the null one.
+        services.AddHostedService<AiTokenBudgetFlushService>();
         // Memoizes per-(game, deployment) ChatOptions so the JSON-element cloning and the
         // raw-representation factory allocation happen once per pair rather than once per call.
         // Pure-local hot-path win; no network effect. Registered as the interface too so the
@@ -187,8 +203,23 @@ internal static class GameServicesExtensions
         // §3.4 HybridCache: stampede-protected memoization for deterministic, expensive
         // Azure OpenAI calls (answer-similarity scoring + question generation).
         // Shared by PoCoupleQuiz (answer similarity) and PoFunQuiz (question list).
+        // L2 for HybridCache. Registered BEFORE AddHybridCache so the hybrid layer picks it up:
+        // without an IDistributedCache the "L1/L2" above is L1 only, and every cached model
+        // generation is lost on the next F1 recycle and re-bought at generation rates.
+        // TryAdd so a test host that wires its own distributed cache keeps it.
+        Microsoft.Extensions.DependencyInjection.Extensions.ServiceCollectionDescriptorExtensions
+            .TryAddSingleton<Microsoft.Extensions.Caching.Distributed.IDistributedCache>(services, sp =>
+                new PoMiniGames.Infrastructure.TableDistributedCache(
+                    sp.GetRequiredService<Azure.Data.Tables.TableServiceClient>(),
+                    sp.GetRequiredService<ILogger<PoMiniGames.Infrastructure.TableDistributedCache>>()));
         services.AddHybridCache();
         services.AddSingleton<IOpenAIService, AiQuizGeneratorService>();
+        // Off-peak warm of the question cache. Disabled unless PoMiniGames:AI:QuizPrebake:Enabled
+        // is set — it is the one background job here that deliberately spends tokens, so it does
+        // not get to switch itself on. Only worth running because the HybridCache L2 above is now
+        // durable; against an in-process cache it would warm entries an F1 recycle then discards.
+        services.AddOptions<QuizPrebakeOptions>().BindConfiguration(QuizPrebakeOptions.SectionName);
+        services.AddHostedService<QuizPrebakeService>();
         services.AddSingleton<PoMiniGames.Features.PoFunQuiz.Storage.ILeaderboardRepository,
             PoMiniGames.Features.PoFunQuiz.Storage.LeaderboardRepository>();
         services.AddSingleton<MultiplayerLobbyService>();

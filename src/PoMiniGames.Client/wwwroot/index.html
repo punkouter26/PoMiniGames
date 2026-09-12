@@ -218,22 +218,31 @@
 
     <!-- PoSurvive: inert global helpers (define window.* objects, no side effects until invoked)
 
-         DELIBERATELY still eager, unlike the game engines above. These six globals
-         are reached from four independent C# services (AudioService,
-         SessionLogService, LocalModelBootstrapService, InferenceBootstrapper) as
-         well as PoSurviveLayout — there is no single bootstrap call to gate on, and
-         Blazor fires OnAfterRenderAsync child-first, so gating in the layout would
-         still let a page-level service call land before the scripts arrived. Every
-         one of those call sites is best-effort try/catch, so the failure mode is
-         silent (no audio, no session log) rather than loud.
-         Deferring these correctly means giving PoSurvive one bootstrap entry point
-         first; that is a refactor of the game, not of the loading strategy. At
-         ~1,500 lines they are ~6% of what the engine deferral above removed. -->
-    <script src="js/posurvive/theme.js"></script>
-    <script src="js/posurvive/uiHelpers.js"></script>
-    <script src="js/posurvive/gpuProbe.js"></script>
-    <script src="js/posurvive/indexedDbStore.js"></script>
-    <script src="js/posurvive/inferenceWorkerBridge.js"></script>
+         Still loaded on every page, unlike the route-gated game engines above:
+         these six globals are reached from four independent C# services
+         (AudioService, SessionLogService, LocalModelBootstrapService,
+         InferenceBootstrapper) as well as PoSurviveLayout, so there is no single
+         bootstrap call to gate them on. Route-gating them properly means giving
+         PoSurvive one bootstrap entry point first — a refactor of the game, not of
+         the loading strategy. At ~1,500 lines they are ~6% of what the engine
+         deferral above removed.
+
+         They are, however, all `defer` as of 2026-09-11 (audioEngine.js already
+         was; the other five were render-blocking classic scripts, half the
+         blocking set on a page that loads no PoSurvive at all). `defer` keeps
+         them in document order and guarantees execution before DOMContentLoaded,
+         which is far earlier than anything that calls them: every call site is a
+         C# service or OnAfterRenderAsync, and Blazor's WASM boot only starts when
+         the classic blazor.webassembly.js tag above runs. The earlier note here
+         argued against gating in the layout — that hazard was about
+         OnAfterRenderAsync firing child-first, and it does not apply to `defer`,
+         which resolves before the renderer exists at all. Every call site is
+         best-effort try/catch regardless, so the failure mode stays silent. -->
+    <script src="js/posurvive/theme.js" defer></script>
+    <script src="js/posurvive/uiHelpers.js" defer></script>
+    <script src="js/posurvive/gpuProbe.js" defer></script>
+    <script src="js/posurvive/indexedDbStore.js" defer></script>
+    <script src="js/posurvive/inferenceWorkerBridge.js" defer></script>
     <script src="js/posurvive/audioEngine.js" defer></script>
     <!-- §GFX/SOUND platform runtime (2026-07-29).
          audioBus.js owns the app's ONE AudioContext and the master/music/sfx/ui

@@ -42,33 +42,15 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- §GFX Sprite payload (2026-07-29). wwwroot/images/ was 145 MB and ALL of it
-         was being emitted as static web assets, which meant the PWA manifest
-         (ServiceWorkerAssetsManifest above) precached every byte on install.
-
-         Two categories are excluded here. Both stay in the repo as the source of
-         truth for re-exporting sheets; neither is fetched at runtime.
-
-         1. frames/**  — 1,948 individual PNGs, 100.2 MB. These are export
-            intermediates from scripts/posports-assets.ps1. js/posports/sprites.js
-            loads ONLY atlas.json + spritesheet.webp; nothing in the codebase has
-            ever referenced a frames/ path. This was pure dead payload.
-
-         2. spritesheet.png — superseded by spritesheet.webp (36.9 MB -> 24.4 MB,
-            identical dimensions so atlas.json stays valid).
-
-         Net published image payload: ~145 MB -> ~26 MB. If you re-export sheets,
-         regenerate the .webp too or the game falls back to colored rectangles. -->
-    <Content Remove="wwwroot\images\PoSports\**\frames\**" />
-    <Content Remove="wwwroot\images\PoSports\**\spritesheet.png" />
-    <!-- 3. *-spritesheet/ (2026-08-18 cleanup audit): the capitalized
-         Kim-/Matt-/Mom-/Nick-/Tong-spritesheet dirs are the raw export source that
-         scripts/posports-assets.ps1 maps INTO the lowercase runtime dirs.
-         js/posports/sprites.js reads only the lowercase paths, but the source
-         tree's webp+atlas copies (~18.3 MB) were still being published and
-         precached. Exclude the whole source tree; it stays in the repo for
-         re-exports only. -->
-    <Content Remove="wwwroot\images\PoSports\*-spritesheet\**" />
+    <!-- §GFX Sprite payload. wwwroot/images/ is now runtime-only: 32 atlas.json +
+         32 spritesheet.webp pairs, ~8 MB, all of it fetched by js/posports/sprites.js.
+         The export intermediates that used to live here (frames/**, spritesheet.png,
+         and the capitalized *-spritesheet/ source trees, ~160 MB) were deleted on
+         2026-09-11 along with the orphaned Mom character. They were retained "for
+         re-export" by scripts/posports-assets.ps1, which was itself deleted in b42fad4,
+         so nothing could consume them. Every file under wwwroot/images/ is now
+         published and precached deliberately — do not reintroduce a Content Remove
+         rule here; delete the unused asset instead. -->
   </ItemGroup>
 
   <ItemGroup>

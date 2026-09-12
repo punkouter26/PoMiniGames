@@ -22,7 +22,7 @@ public static class IntegrityEndpoints
     public static IEndpointRouteBuilder MapPlaySessionEndpoints(this IEndpointRouteBuilder app)
     {
         // §1 MapGroup() per slice: play sessions share /api/play.
-        var play = app.MapGroup("/api/play").WithTags("Integrity");
+        var play = app.MapGroup("/play").WithTags("Integrity");
 
         play.MapPost("/sessions/{game}",
             (string game, HttpContext http, IPlaySessionService sessions, IOptionsMonitor<IntegrityOptions> options) =>

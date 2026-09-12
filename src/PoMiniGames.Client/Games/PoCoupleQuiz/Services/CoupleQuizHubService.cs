@@ -1,6 +1,10 @@
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.SignalR.Client;
-using PoMiniGamesClient.Services;
+using PoMiniGamesClient.Services.Auth;
+using PoMiniGamesClient.Services.Http;
+using PoMiniGamesClient.Services.Interop;
+using PoMiniGamesClient.Services.Play;
+using PoMiniGamesClient.Services.Ui;
 
 namespace PoMiniGamesClient.Games.PoCoupleQuiz.Services;
 

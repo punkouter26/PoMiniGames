@@ -30,7 +30,7 @@ public static class PoRacerScoreEndpoints
 
     public static void MapPoRacerScoreEndpoints(this IEndpointRouteBuilder app)
     {
-        var scores = app.MapGroup("/api/poracer/scores");
+        var scores = app.MapGroup("/poracer/scores");
 
         scores.MapGet("", async (int? top, StorageService storage, CancellationToken ct) =>
         {

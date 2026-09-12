@@ -34,11 +34,8 @@ public sealed class AIFoundryChatClientCache
     /// game key. Returns <c>null</c> when the foundry client is not configured (caller must check).</summary>
     public ChatClient? Resolve(string gameKey)
     {
-        var foundry = _factory.Client;
-        if (foundry is null) return null;
-
         var deployment = _optionsMonitor.CurrentValue.ResolveDeployment(gameKey);
-        return _cache.GetOrAdd(deployment, foundry.GetChatClient(deployment));
+        return ResolveByDeployment(deployment);
     }
 
     /// <summary>Returns an <see cref="IChatClient"/> (ME.AI) wrapper around the cached
@@ -61,9 +58,23 @@ public sealed class AIFoundryChatClientCache
     /// </remarks>
     public IChatClient? ResolveDeploymentAsIChatClient(string deployment)
     {
-        var foundry = _factory.Client;
-        if (foundry is null || string.IsNullOrWhiteSpace(deployment)) return null;
+        return ResolveByDeployment(deployment)?.AsIChatClient();
+    }
 
-        return _cache.GetOrAdd(deployment, foundry.GetChatClient(deployment)).AsIChatClient();
+    /// <summary>
+    /// The cached client for an explicit deployment, from whichever provider is configured.
+    /// </summary>
+    /// <remarks>
+    /// Goes through <see cref="AIFoundryClientFactory.GetChatClient"/> rather than reaching for the
+    /// Azure-typed <c>Client</c> property, so an OpenAI-compatible backend (Ollama, Gemini) is
+    /// served by the same flyweight cache and the same downstream decorators.
+    /// </remarks>
+    private ChatClient? ResolveByDeployment(string deployment)
+    {
+        if (string.IsNullOrWhiteSpace(deployment)) return null;
+        if (_cache.TryGetValue(deployment, out var cached)) return cached;
+
+        var client = _factory.GetChatClient(deployment);
+        return client is null ? null : _cache.GetOrAdd(deployment, client);
     }
 }

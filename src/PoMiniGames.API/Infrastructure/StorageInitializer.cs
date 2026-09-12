@@ -37,6 +37,14 @@ public sealed class StorageInitializer
         // PoJoker (demo-only): per-session joke-performance records that back the
         // /api/joker/leaderboard surface (PartitionKey = SessionId).
         "PoJokerPerformances",
+        // Per-identity daily AI token spend (PartitionKey = yyyy-MM-dd, RowKey = identity hash).
+        // Ensured eagerly because the budget check runs on the first model call of a cold host,
+        // and a lazy create there would put a table-creation round trip inside a player's turn.
+        // Name must match TableAiTokenLedgerStore.TableName.
+        "AiTokenLedger",
+        // HybridCache L2. Ensured for the same reason: the first cache read of a cold host is on
+        // a request path. Name must match TableDistributedCache.TableName.
+        "PoMiniGamesCache",
     ];
 
     /// <summary>Blob containers used by the consolidated games (none beyond the base container set).</summary>

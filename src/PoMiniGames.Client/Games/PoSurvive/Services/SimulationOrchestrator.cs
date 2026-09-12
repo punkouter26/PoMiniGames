@@ -1,7 +1,11 @@
 namespace PoMiniGamesClient.Games.PoSurvive.Services;
 
 using System.Text.Json;
-using PoMiniGamesClient.Services;
+using PoMiniGamesClient.Services.Auth;
+using PoMiniGamesClient.Services.Http;
+using PoMiniGamesClient.Services.Interop;
+using PoMiniGamesClient.Services.Play;
+using PoMiniGamesClient.Services.Ui;
 using PoMiniGames.Application.Simulation;
 using PoMiniGamesClient.Games.PoSurvive.Store;
 using PoMiniGames.Domain.Entities.Simulation;

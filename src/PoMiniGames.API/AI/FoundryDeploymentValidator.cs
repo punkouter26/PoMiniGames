@@ -60,6 +60,17 @@ public sealed class FoundryDeploymentValidator : IHostedService
         if (!enabled || !opts.IsConfigured)
             return;
 
+        // The check is Azure-specific: it lists deployments from the data plane with a
+        // cognitiveservices token. An OpenAI-compatible backend (Ollama, Gemini) has no such
+        // surface and no such credential, so validating there would fail every boot on a
+        // configuration that is perfectly correct. Their equivalent of a typo is a 404 at first
+        // call, which the health check and the usage read-model already report.
+        if (!opts.IsAzureProvider)
+        {
+            _logger.DeploymentValidationSkipped(opts.Endpoint, $"provider:{opts.ResolvedProvider}");
+            return;
+        }
+
         var configured = opts.Deployments
             .Where(kv => !string.IsNullOrWhiteSpace(kv.Value))
             .ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase);

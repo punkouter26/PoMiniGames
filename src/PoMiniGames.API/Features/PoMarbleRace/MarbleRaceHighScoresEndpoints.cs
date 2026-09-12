@@ -15,7 +15,7 @@ public static class MarbleRaceHighScoresEndpoints
     public static IEndpointRouteBuilder MapMarbleRaceHighScoresEndpoints(this IEndpointRouteBuilder app)
     {
         // §1 MapGroup() per slice: PoMarbleRace high scores share /api/marblerace/highscores.
-        var marble = app.MapGroup("/api/marblerace/highscores").WithTags("HighScores");
+        var marble = app.MapGroup("/marblerace/highscores").WithTags("HighScores");
 
         marble.MapGet("",
             async (IStorageService storage, int count = 10) =>

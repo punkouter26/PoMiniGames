@@ -14,7 +14,7 @@ public static class MatchHistoryEndpoints
     public static IEndpointRouteBuilder MapMatchHistoryEndpoints(this IEndpointRouteBuilder app)
     {
         // §1 MapGroup() per slice: match history POST + GET share /api/matches.
-        var matches = app.MapGroup("/api/matches").WithTags("MatchHistory");
+        var matches = app.MapGroup("/matches").WithTags("MatchHistory");
 
         matches.MapPost("",
             async (MatchRecordRequest request, HttpContext http, MatchHistoryRepository repo,

@@ -163,8 +163,8 @@
     [Parameter] public Models.GameOutcome Outcome { get; set; } = Models.GameOutcome.Unknown;
 
     [Inject] private NavigationManager Navigation { get; set; } = null!;
-    [Inject] private Services.ApiService Api { get; set; } = null!;
-    [Inject] private Services.UiFeedbackService Feedback { get; set; } = null!;
+    [Inject] private Services.Http.ApiService Api { get; set; } = null!;
+    [Inject] private Services.Ui.UiFeedbackService Feedback { get; set; } = null!;
     [Inject] private IJSRuntime JS { get; set; } = null!;
 
     private Models.GameLeaderboardDto? _board;
@@ -335,14 +335,14 @@
         try
         {
             var key = RankKey(GameKey!);
-            var previous = Services.LocalStorageService.GetItem<string>(key);
+            var previous = Services.Play.LocalStorageService.GetItem<string>(key);
             // A smaller rank number is a better position, so the gain is
             // previous - current.
             if (int.TryParse(previous, out var prev) && prev > mine.Rank)
             {
                 _delta = prev - mine.Rank;
             }
-            Services.LocalStorageService.SetItem(key, mine.Rank.ToString());
+            Services.Play.LocalStorageService.SetItem(key, mine.Rank.ToString());
         }
         catch
         {

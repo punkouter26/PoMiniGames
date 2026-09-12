@@ -162,3 +162,12 @@ assets/
 # the drop folder — regenerated on any API start. The drop folder itself IS source
 # (authored GLBs ship with the app), so only the output is ignored.
 src/PoMiniGames.API/App_Data/povoxelstrike/converted/
+
+# Compiled ARM templates. infra/*.bicep is the source; `az bicep build` emits a
+# same-named .json beside it. Three of those (alerts, kv-secrets, shared-rbac) were
+# committed and went stale against their .bicep siblings — nothing deploys them,
+# since deploy.yml passes main.bicep straight to `az deployment sub create`.
+# main.parameters.json is NOT a build output (it is real deployment input), hence
+# the negation below.
+infra/*.json
+!infra/main.parameters.json

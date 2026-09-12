@@ -56,11 +56,6 @@
     // a missing global there would mean every navigation paid for a failed lookup.
     chain = chain.then(function () { return load('js/routeFx.js'); });
 
-    // The Profile page's FX bench meter. Loaded with the rest of the always-on
-    // chrome rather than lazily from the page: it is 70 lines, and a bench whose
-    // meter arrives a beat after the buttons looks broken on first paint.
-    chain = chain.then(function () { return load('js/fxShowcase.js'); });
-
     // Scene-composited glass for any panel carrying data-glass. Loaded here rather
     // than lazily per game because it is now an opt-in-by-attribute platform
     // behaviour, not a game's own effect — and its own allowed() check plus the

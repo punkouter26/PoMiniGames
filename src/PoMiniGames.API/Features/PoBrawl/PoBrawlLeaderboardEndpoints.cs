@@ -21,7 +21,7 @@ public static class PoBrawlLeaderboardEndpoints
     public static IEndpointRouteBuilder MapPoBrawlLeaderboardEndpoints(this IEndpointRouteBuilder app)
     {
         // §1 MapGroup() per slice: PoBrawl high scores share /api/pobrawl/highscores.
-        var brawl = app.MapGroup("/api/pobrawl/highscores").WithTags("HighScores");
+        var brawl = app.MapGroup("/pobrawl/highscores").WithTags("HighScores");
 
         brawl.MapGet("",
             async (IStorageService storage, int count = 10) =>
@@ -76,7 +76,7 @@ public static class PoBrawlLeaderboardEndpoints
         // PoBrawlRoster.Count, never a literal: the client ladder walks PoBrawlRoster.Fighters,
         // so a hardcoded 10 rejected every rung past the tenth once the roster grew to 15 —
         // and because the client discards the submit result, the board silently froze at 10.
-        var ladder = app.MapGroup("/api/pobrawl/ladder").WithTags("HighScores");
+        var ladder = app.MapGroup("/pobrawl/ladder").WithTags("HighScores");
 
         // WRITE ONLY, and deliberately so. There is no GET here because the ladder
         // standings are already served by the unified board:
@@ -124,7 +124,7 @@ public static class PoBrawlLeaderboardEndpoints
         // ── Demo-mode fighter Elo ─────────────────────────────────────────
         // Head-to-head ratings for the presidents, accumulated from CPU-vs-CPU demo
         // matches. Rates characters, not players — see PoBrawlFighterRating.
-        var elo = app.MapGroup("/api/pobrawl/elo").WithTags("HighScores");
+        var elo = app.MapGroup("/pobrawl/elo").WithTags("HighScores");
 
         elo.MapGet("",
             async (IStorageService storage, int count = 10) =>

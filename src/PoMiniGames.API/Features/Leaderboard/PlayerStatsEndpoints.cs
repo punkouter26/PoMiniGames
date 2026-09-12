@@ -17,7 +17,7 @@ public static class PlayerStatsEndpoints
     {
         // §1 MapGroup() per slice: /api/{game}/players/{playerName}/stats lives under
         // a per-game group so the {game} placeholder is captured once at the boundary.
-        var player = app.MapGroup("/api/{game}/players/{playerName}").WithTags("Players");
+        var player = app.MapGroup("/{game}/players/{playerName}").WithTags("Players");
 
         player.MapGet("/stats",
             async (string game, string playerName, IStorageService storage,
@@ -54,7 +54,7 @@ public static class PlayerStatsEndpoints
     {
         // §1 MapGroup() per slice: companion PUT to the GET above shares the
         // {game}/players/{playerName} prefix group so auth + tag apply once.
-        var player = app.MapGroup("/api/{game}/players/{playerName}").WithTags("Players");
+        var player = app.MapGroup("/{game}/players/{playerName}").WithTags("Players");
 
         player.MapPut("/stats",
             async (string game, string playerName, PlayerStats stats, HttpContext http,
@@ -109,6 +109,10 @@ public static class PlayerStatsEndpoints
     public static IEndpointRouteBuilder MapGetLeaderboard(this IEndpointRouteBuilder app)
     {
         // §1 MapGroup() per slice: per-game leaderboard under /api/{game}/statistics.
+        // NOTE the absolute "/api" here, unlike its three siblings in this file. This is
+        // the one endpoint in the class that EndpointRouteExtensions maps on `app` rather
+        // than on the authenticated gameApi group — leaderboard READS are anonymous (§10)
+        // — so it does not inherit the group's "/api" prefix and must spell it itself.
         var stats = app.MapGroup("/api/{game}/statistics").WithTags("Statistics");
 
         stats.MapGet("/leaderboard",
@@ -135,7 +139,7 @@ public static class PlayerStatsEndpoints
     public static IEndpointRouteBuilder MapGetAllPlayerStatistics(this IEndpointRouteBuilder app)
     {
         // §1 MapGroup() per slice: cross-game statistics live under /api/statistics.
-        var stats = app.MapGroup("/api/statistics").WithTags("Statistics");
+        var stats = app.MapGroup("/statistics").WithTags("Statistics");
 
         stats.MapGet("", async (IStorageService storage) =>
         {

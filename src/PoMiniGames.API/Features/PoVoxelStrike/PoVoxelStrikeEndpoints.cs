@@ -71,7 +71,7 @@ internal static class PoVoxelStrikeEndpoints
     /// </summary>
     public static IEndpointRouteBuilder MapPoVoxelStrikeScoreEndpoints(this IEndpointRouteBuilder app)
     {
-        var scores = app.MapGroup("/api/povoxelstrike/highscores").WithTags("HighScores");
+        var scores = app.MapGroup("/povoxelstrike/highscores").WithTags("HighScores");
 
         scores.MapGet("",
             async (IStorageService storage, int count = 10) =>

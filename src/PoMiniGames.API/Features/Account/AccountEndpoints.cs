@@ -40,7 +40,7 @@ public static class AccountEndpoints
     public static IEndpointRouteBuilder MapAccountEndpoints(this IEndpointRouteBuilder app)
     {
         // §1 MapGroup() per slice: account data lives under /api/account.
-        var account = app.MapGroup("/api/account").WithTags("Account");
+        var account = app.MapGroup("/account").WithTags("Account");
 
         account.MapGet("/export",
             async (HttpContext http, PlayerDataService data, CancellationToken ct) =>

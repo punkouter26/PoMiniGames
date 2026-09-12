@@ -36,6 +36,91 @@ public sealed class AIFoundryOptions
     public string DefaultDeployment { get; set; } = "gpt-4o-mini";
 
     /// <summary>
+    /// Which client to build for <see cref="Endpoint"/>: <c>azure</c> (Managed Identity against
+    /// Azure AI Foundry) or <c>openai</c> (any OpenAI-compatible endpoint with an API key). Empty
+    /// means infer — see <see cref="ResolvedProvider"/>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The <c>openai</c> provider is what makes a second, cheaper backend possible without a second
+    /// code path: the OpenAI SDK's <c>ChatClient</c> is the same type either client hands back, so
+    /// every decorator, the options cache, the capability table and the resilience pipeline apply
+    /// unchanged. Two backends this reaches today:
+    /// </para>
+    /// <list type="bullet">
+    ///   <item><b>Ollama</b> — <c>http://localhost:11434/v1</c>. Free local inference for
+    ///   development, so iterating on a prompt costs nothing and works offline.</item>
+    ///   <item><b>Google Gemini</b> — its OpenAI-compatibility endpoint,
+    ///   <c>https://generativelanguage.googleapis.com/v1beta/openai/</c>. The Flash-Lite tier is
+    ///   materially cheaper per token than the nano deployments on the shared Azure account, and
+    ///   it is a different quota, so it is also a fallback when that account throttles.</item>
+    /// </list>
+    /// <para>
+    /// Deployment names still resolve through <see cref="Deployments"/>, so moving one game to
+    /// another provider is a configuration change. What does <em>not</em> travel is the capability
+    /// heuristic: a local model's name rarely says what wire fields it accepts, so pair a new
+    /// provider with <see cref="ModelCapabilityOverrides"/> rather than trusting the guess.
+    /// </para>
+    /// </remarks>
+    public string Provider { get; set; } = string.Empty;
+
+    /// <summary>
+    /// API key for <see cref="Provider"/> <c>openai</c>. Ignored by the Azure path, which uses
+    /// Managed Identity and must never carry a key (the account sets <c>disableLocalAuth</c>).
+    /// </summary>
+    /// <remarks>
+    /// Local runtimes ignore the value entirely — Ollama accepts any non-empty string — so it is
+    /// left optional and a placeholder is sent when unset. A hosted provider will answer 401 to
+    /// that placeholder, which is the correct loud failure for a missing key.
+    /// </remarks>
+    public string ApiKey { get; set; } = string.Empty;
+
+    /// <summary>Recognised <see cref="Provider"/> values.</summary>
+    public static class Providers
+    {
+        /// <summary>Azure AI Foundry via <c>DefaultAzureCredential</c>.</summary>
+        public const string Azure = "azure";
+
+        /// <summary>Any OpenAI-compatible endpoint authenticated with an API key.</summary>
+        public const string OpenAICompatible = "openai";
+    }
+
+    /// <summary>
+    /// <see cref="Provider"/> if it names one, otherwise inferred from the endpoint.
+    /// </summary>
+    /// <remarks>
+    /// Inference exists so the existing Key Vault configuration — which has no <c>Provider</c>
+    /// secret — keeps resolving to Azure without an edit. An Azure AI endpoint is recognised by
+    /// host suffix; anything else is an OpenAI-compatible endpoint, because
+    /// <c>DefaultAzureCredential</c> has nothing to authenticate against a localhost Ollama or a
+    /// Google endpoint and would fail at first call rather than at configuration time.
+    /// </remarks>
+    public string ResolvedProvider
+    {
+        get
+        {
+            if (!string.IsNullOrWhiteSpace(Provider))
+                return Provider.Trim().ToLowerInvariant();
+
+            if (string.IsNullOrWhiteSpace(Endpoint))
+                return Providers.Azure;
+
+            return Uri.TryCreate(Endpoint, UriKind.Absolute, out var uri) && IsAzureAiHost(uri.Host)
+                ? Providers.Azure
+                : Providers.OpenAICompatible;
+        }
+    }
+
+    /// <summary>True when calls go to Azure AI Foundry with a token credential.</summary>
+    public bool IsAzureProvider => ResolvedProvider == Providers.Azure;
+
+    private static bool IsAzureAiHost(string host)
+        => host.EndsWith(".openai.azure.com", StringComparison.OrdinalIgnoreCase)
+            || host.EndsWith(".cognitiveservices.azure.com", StringComparison.OrdinalIgnoreCase)
+            || host.EndsWith(".services.ai.azure.com", StringComparison.OrdinalIgnoreCase)
+            || host.EndsWith(".inference.ai.azure.com", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
     /// Game → deployment allowlist. Recognised game keys: <c>couplequiz</c>, <c>funquiz</c>,
     /// <c>face</c>, <c>joker</c>, <c>survive</c>. Populated either from a nested configuration
     /// section (<c>PoMiniGames:AI:Deployments:survive</c>) or from the flat Key Vault secret

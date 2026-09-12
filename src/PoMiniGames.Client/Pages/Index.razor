@@ -184,11 +184,11 @@
         }
     </div>
 
-    @* Dev tools section removed 2026-09-11 (user request). PoGallery stays
-       reachable at /pogallery directly — the card on the home hub was a
-       dev-only surface that cost ~100px of portrait height on the one page
-       that most needs to fit the fold, and nothing else linked to it from
-       here. Its markup/styles live in git history if it ever returns. *@
+    @* Dev tools section removed 2026-09-11 (user request); PoGallery itself,
+       its API slice and its 1.1 MB of models followed later the same day. There
+       is no non-game surface on this page any more — if one ever returns, it
+       belongs behind a route, not a card on the one page that most needs to fit
+       the fold. Markup and styles live in git history. *@
 
     @* §9 home page activity feed: surfaces the player's most recent matches
        so the page never feels empty even on a fresh install. Pulled from the
@@ -346,7 +346,7 @@
         if (demos.Count == 0) return;
         if (index < 0 || index >= demos.Count) index = 0;
 
-        Kiosk.RegisterEntries(demos.Select(d => new Services.DemoEntry(d.Key, d.Url, d.Title, d.Icon)));
+        Kiosk.RegisterEntries(demos.Select(d => new Services.Play.DemoEntry(d.Key, d.Url, d.Title, d.Icon)));
         // Clear every active toast before entering the reel — the PWA "Update now"
         // prompt and any error toast are persistent (ShowAction never auto-expires) and
         // would otherwise follow the user into the loop and steal taps from the reel

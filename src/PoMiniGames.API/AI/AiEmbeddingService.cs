@@ -56,7 +56,7 @@ public sealed class AiEmbeddingService
     public string Deployment => _options.CurrentValue.EmbeddingDeployment;
 
     /// <summary>True when an embedding deployment is configured and the foundry client exists.</summary>
-    public bool IsConfigured => !string.IsNullOrWhiteSpace(Deployment) && _factory.Client is not null;
+    public bool IsConfigured => !string.IsNullOrWhiteSpace(Deployment) && _factory.IsAvailable;
 
     /// <summary>
     /// Cosine similarity of two texts in [0, 1], or null when embeddings are unavailable or the
@@ -100,7 +100,8 @@ public sealed class AiEmbeddingService
 
         // Same ceiling as chat calls. Embeddings are cheap, not free, and an uncapped cheap call
         // in a loop is how an unbounded bill happens.
-        if (!string.IsNullOrEmpty(identity) && _budget.Check(identity) is { Allowed: false } verdict)
+        if (!string.IsNullOrEmpty(identity)
+            && await _budget.CheckAsync(identity, cancellationToken) is { Allowed: false } verdict)
         {
             _logger.TokenBudgetExhausted(identity, verdict.Spent, verdict.Limit, verdict.ResetUtc);
             throw new AiTokenBudgetExceededException(verdict.Spent, verdict.Limit, verdict.ResetUtc);
@@ -109,7 +110,10 @@ public sealed class AiEmbeddingService
         var started = Stopwatch.GetTimestamp();
         try
         {
-            var client = _factory.Client!.GetEmbeddingClient(deployment);
+            // Provider-neutral: an OpenAI-compatible backend (Ollama serves nomic-embed-text and
+            // friends for free) satisfies this path exactly as the Azure account would.
+            var client = _factory.GetEmbeddingClient(deployment);
+            if (client is null) return null;
             var response = await client.GenerateEmbeddingsAsync(inputs, cancellationToken: cancellationToken);
             var elapsedMs = (long)Stopwatch.GetElapsedTime(started).TotalMilliseconds;
 

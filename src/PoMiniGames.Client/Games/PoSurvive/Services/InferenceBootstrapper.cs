@@ -3,7 +3,11 @@ namespace PoMiniGamesClient.Games.PoSurvive.Services;
 using System.Net.Http.Json;
 using Microsoft.JSInterop;
 using PoMiniGamesClient.Games.PoSurvive.Store;
-using PoMiniGamesClient.Services;
+using PoMiniGamesClient.Services.Auth;
+using PoMiniGamesClient.Services.Http;
+using PoMiniGamesClient.Services.Interop;
+using PoMiniGamesClient.Services.Play;
+using PoMiniGamesClient.Services.Ui;
 using PoMiniGames.Shared.Simulation.Interfaces;
 using PoMiniGames.Shared.Simulation.Models;
 
@@ -173,6 +177,21 @@ public sealed class InferenceBootstrapper : IAsyncDisposable
             return;
         }
 
+        // Deliberate pick, but the download is still several hundred megabytes and still unusable
+        // without a hardware WebGPU adapter. Refusing up front with the reason beats spending the
+        // player's bandwidth to fail at the end of it.
+        var gpuLabel = await ProbeGpuLabelAsync();
+        if (!string.Equals(gpuLabel, AcceleratedLabel, StringComparison.Ordinal))
+        {
+            _store.GpuProbeCompleted(gpuLabel, isMockProvider: true);
+            _store.InferenceInitFailed(
+                "This browser has no hardware WebGPU adapter, so an in-browser model cannot run here. "
+                + "Use a cloud model, or the scripted tactics.");
+            return;
+        }
+
+        _store.GpuProbeCompleted(gpuLabel, isMockProvider: false);
+
         if (_services.GetService<InferenceRouter>() is { } localRouter)
             localRouter.UseLocal();
 
@@ -288,6 +307,30 @@ public sealed class InferenceBootstrapper : IAsyncDisposable
         return true;
     }
 
+    /// <summary>
+    /// Label the GPU probe returns when a real hardware adapter is present. Any other value —
+    /// including a software adapter — means WebLLM would fall back to a CPU path that is far too
+    /// slow to drive a turn-based battle.
+    /// </summary>
+    private const string AcceleratedLabel = "ACCELERATED";
+
+    /// <summary>
+    /// Asks the browser whether WebGPU is actually usable here. Never throws: an environment
+    /// without the script, or one that blocks the call, reads as "no GPU", which is the safe
+    /// answer because it is the one that does not start a several-hundred-megabyte download.
+    /// </summary>
+    private async Task<string> ProbeGpuLabelAsync()
+    {
+        try
+        {
+            return await _js.InvokeAsync<string>("gpuProbe.checkGpuLabel") ?? "CPU FALLBACK";
+        }
+        catch (Exception)
+        {
+            return "CPU FALLBACK";
+        }
+    }
+
     private async Task StartLocalModelAsync()
     {
         var options = _models.ReadLocalModelOptions();
@@ -296,6 +339,25 @@ public sealed class InferenceBootstrapper : IAsyncDisposable
             _store.InferenceInitFailed("No in-browser model is configured.");
             return;
         }
+
+        // ── Probe before committing to the download ──────────────────────
+        // js/posurvive/gpuProbe.js has always existed and nothing in C# ever called it: the three
+        // GpuProbeCompleted call sites passed hardcoded labels, so the "GPU" line on the boot
+        // screen was a caption, not a measurement. The cost of not probing is not cosmetic — this
+        // path pulls a multi-hundred-MB model from a CDN, and on a browser with no WebGPU adapter
+        // (Safari before 26, most mobile, anything with hardware acceleration off) WebLLM cannot
+        // use it after it arrives. Probing first turns a long download ending in failure into an
+        // instant, honest fallback.
+        var gpuLabel = await ProbeGpuLabelAsync();
+        if (!string.Equals(gpuLabel, AcceleratedLabel, StringComparison.Ordinal))
+        {
+            _store.GpuProbeCompleted(gpuLabel, isMockProvider: true);
+            _store.ScriptedProviderSelected(ScriptedModelId, ScriptedLabel);
+            MarkReady();
+            return;
+        }
+
+        _store.GpuProbeCompleted(gpuLabel, isMockProvider: false);
 
         var modelId = _models.ResolveDefaultSelectedModelId(_store.Boot.ModelId, options);
         var chosen = options.FirstOrDefault(o => o.Id == modelId) ?? options[0];

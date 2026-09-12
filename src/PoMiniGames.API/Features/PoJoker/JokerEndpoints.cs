@@ -15,7 +15,7 @@ public static class JokerEndpoints
 
     public static IEndpointRouteBuilder MapPoJokerEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/joker").WithTags("PoJoker");
+        var group = app.MapGroup("/joker").WithTags("PoJoker");
 
         group.MapGet("/fetch", FetchJoke)
             .WithName("PoJokerFetchJoke")

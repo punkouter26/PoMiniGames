@@ -64,5 +64,20 @@
         }
     }
 
-    window.gpuProbe = { checkGpu };
+    /**
+     * The label only, as a plain string, for callers that cannot cheaply deserialize an object.
+     *
+     * Blazor WASM publishes trimmed with the trim analyzer on and warnings as errors, so an
+     * InvokeAsync<T> over a POCO needs a source-generated serializer context to stay warning-free.
+     * A string needs none. The label already carries the whole answer — 'ACCELERATED' is the only
+     * value that means "a real GPU adapter exists" — so nothing is lost by narrowing it.
+     *
+     * @returns {Promise<string>} 'ACCELERATED' or 'CPU FALLBACK'.
+     */
+    async function checkGpuLabel() {
+        const result = await checkGpu();
+        return result.label;
+    }
+
+    window.gpuProbe = { checkGpu, checkGpuLabel };
 })();

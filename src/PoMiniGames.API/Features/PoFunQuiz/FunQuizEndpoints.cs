@@ -15,7 +15,7 @@ public static class FunQuizEndpoints
 {
     public static IEndpointRouteBuilder MapFunQuizEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/funquiz").WithTags("PoFunQuiz");
+        var group = app.MapGroup("/funquiz").WithTags("PoFunQuiz");
 
         // ── Question generation (HybridCache memoizes the deterministic
         //    (category, count) → questions tuple for 60s so identical

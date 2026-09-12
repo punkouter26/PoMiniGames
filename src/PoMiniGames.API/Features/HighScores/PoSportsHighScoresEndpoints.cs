@@ -17,7 +17,7 @@ public static class PoSportsHighScoresEndpoints
     public static IEndpointRouteBuilder MapPoSportsHighScoresEndpoints(this IEndpointRouteBuilder app)
     {
         // §1 MapGroup() per slice: PoSports high scores share /api/posports/highscores.
-        var sports = app.MapGroup("/api/posports/highscores").WithTags("HighScores");
+        var sports = app.MapGroup("/posports/highscores").WithTags("HighScores");
 
         sports.MapGet("",
             async (IStorageService storage, int count = 10) =>

@@ -69,7 +69,10 @@ public sealed class BudgetedChatClient : DelegatingChatClient
             return await base.GetResponseAsync(messages, options, cancellationToken);
         }
 
-        if (_budget.Check(identity) is { Allowed: false } verdict)
+        // CheckAsync, not Check: the first call from this identity today hydrates their spend from
+        // the durable ledger, so an allowance already used up before the last host recycle is still
+        // spent. Check() would see an empty in-process dictionary and wave them through.
+        if (await _budget.CheckAsync(identity, cancellationToken) is { Allowed: false } verdict)
         {
             _logger.TokenBudgetExhausted(identity, verdict.Spent, verdict.Limit, verdict.ResetUtc);
             throw new AiTokenBudgetExceededException(verdict.Spent, verdict.Limit, verdict.ResetUtc);

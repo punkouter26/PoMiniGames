@@ -34,7 +34,7 @@ public static class InferEndpoints
         // §1 NET_CLEAN_10: single-endpoint slices still use MapGroup so the
         // route prefix + OpenAPI tag + auth gate are declared once at the group
         // boundary (mirrors the convention in every other slice).
-        var group = routes.MapGroup("/api/infer").WithTags("PoSurvive");
+        var group = routes.MapGroup("/infer").WithTags("PoSurvive");
 
         // Status is mapped unconditionally — including when the relay is OFF, which is the
         // case it exists to report. The client used to have no way to ask, so it assumed

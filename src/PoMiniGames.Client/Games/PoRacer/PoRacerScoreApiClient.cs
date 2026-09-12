@@ -1,5 +1,9 @@
 using System.Net.Http.Json;
-using PoMiniGamesClient.Services;
+using PoMiniGamesClient.Services.Auth;
+using PoMiniGamesClient.Services.Http;
+using PoMiniGamesClient.Services.Interop;
+using PoMiniGamesClient.Services.Play;
+using PoMiniGamesClient.Services.Ui;
 using PoMiniGames.Shared.Games;
 
 namespace PoMiniGamesClient.Games.PoRacer;

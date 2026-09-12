@@ -10,9 +10,8 @@ using PoMiniGames.Features.PoMarbleRace;   // moved out of Features.HighScores s
                                            // namespace matches its own slice folder
 using PoMiniGames.Features.Leaderboard;
 using PoMiniGames.Features.MatchHistory;
-using PoMiniGames.Features.PoCoupleQuiz;
+using PoMiniGames.Features.PoCoupleQuiz;  // CoupleQuizHub (the slice's only server surface)
 using PoMiniGames.Features.PoFunQuiz;
-using PoMiniGames.Features.PoGallery;
 using PoMiniGames.Features.PoJoker;
 using PoMiniGames.Features.PoRacer;
 using PoMiniGames.Features.PoSurvive;
@@ -25,9 +24,13 @@ namespace PoMiniGames.Infrastructure;
 /// Program.cs maps the whole surface with one <c>app.MapPoMiniGamesEndpoints()</c>
 /// call, so the route table is described in exactly one place.
 ///
-/// Groups use <c>MapGroup("")</c> (empty prefix) to preserve existing route paths
-/// while applying cross-cutting policies — auth and per-game rate limits — at the
-/// group boundary rather than per-endpoint. SignalR hubs are mapped directly on
+/// The authenticated game API is one <c>MapGroup("/api")</c>: the prefix is declared
+/// once here and every slice below mounts a relative group under it, so the shared
+/// <c>/api</c> segment and the auth gate that guards it are stated in the same place.
+/// (This was <c>MapGroup("")</c> until 2026-09-11, with all twenty-odd slice groups
+/// repeating the literal <c>/api</c> — which meant the boundary the antiforgery filter
+/// keys on was invisible at the registration site.) Anonymous surfaces below are mapped
+/// straight on <c>app</c> and therefore still spell their full path. SignalR hubs are mapped directly on
 /// <c>app</c> because <c>MapHub&lt;T&gt;</c> returns <c>IHubEndpointConventionBuilder</c>,
 /// which is not an <c>IEndpointConventionBuilder</c> and cannot be composed inside a group.
 /// </summary>
@@ -49,9 +52,12 @@ internal static class EndpointRouteExtensions
         // aggregate per-game counters plus the caller's own allowance.
         app.MapAiUsageEndpoints();
         app.MapDiagEndpoints();
-        // PoGallery — dev-only manifest endpoint. Same gating as /api/diag (FeatureFlags:EnableGallery,
-        // defaulting to IsDevelopment()). Static models live under wwwroot/games/pogallery/.
-        app.MapPoGalleryEndpoints();
+        // MapPoGalleryEndpoints removed 2026-09-11: /api/diag/gallery and
+        // /api/gallery/upload existed only to feed Pages/PoGallery.razor, a dev-only
+        // demo surface for the external img2threejs pipeline. The page shipped in every
+        // player's WASM bundle (plus 1.1 MB of models under wwwroot/games/pogallery)
+        // while the endpoints 404'd outside Development — same trade that retired the
+        // Blazor /diag page on 2026-08-07. Page, endpoints and assets all went together.
         app.MapMockablesEndpoints();
         // MapTelemetryStatusEndpoints removed 2026-08-18: /api/diag/telemetry had zero
         // consumers — no client call, no test, no doc. /api/diag already reports the
@@ -83,7 +89,11 @@ internal static class EndpointRouteExtensions
         // All game-data endpoints require a valid session. Per-endpoint rate
         // limits (highscores, ai-generation, infer) are declared
         // inside each slice; the group adds the auth gate only.
-        var gameApi = app.MapGroup("").RequireAuthorization();
+        //
+        // The "/api" prefix lives here, not in the slices: it is exactly the scope
+        // AntiforgeryExtensions validates, so the CSRF boundary, the auth boundary and
+        // the URL boundary are now one line instead of three separate conventions.
+        var gameApi = app.MapGroup("/api").RequireAuthorization();
 
         // Play sessions: minted per game opened, redeemed by the score guard on submission.
         // Authenticated because a session is bound to an identity — there is nothing to bind
@@ -98,7 +108,10 @@ internal static class EndpointRouteExtensions
         gameApi.MapMarbleRaceHighScoresEndpoints();
         gameApi.MapPoBrawlLeaderboardEndpoints();
         gameApi.MapMatchHistoryEndpoints();
-        gameApi.MapCoupleQuizEndpoints();
+        // MapCoupleQuizEndpoints removed 2026-09-11: it mapped no routes at all. Its last
+        // one (GET /runtime/status) went on 2026-08-31, leaving a method that built an
+        // empty MapGroup and returned it. PoCoupleQuiz is SignalR-first — CoupleQuizHub
+        // below is its entire server surface.
         gameApi.MapFunQuizEndpoints();
         gameApi.MapPoJokerEndpoints();
         gameApi.MapPoRacerScoreEndpoints();

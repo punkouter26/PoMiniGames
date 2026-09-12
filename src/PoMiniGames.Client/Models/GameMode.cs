@@ -43,9 +43,19 @@ public enum GameMode
 /// and no page accepted both.</item>
 /// </list>
 /// <para>
-/// Every legacy form is accepted here, case-insensitively, so old bookmarks keep
-/// working uniformly instead of per-game. New links should use the canonical
-/// slugs from <see cref="ToSlug"/>.
+/// The surviving legacy forms are accepted here, case-insensitively, so old bookmarks
+/// keep working uniformly instead of per-game. New links should use the canonical slugs
+/// from <see cref="ToSlug"/>.
+/// </para>
+/// <para>
+/// The <c>"multiplayer"</c> and <c>"lobby"</c> segments were dropped on 2026-09-11 with
+/// the five duplicate <c>@page</c> aliases that produced them (<c>/funquiz/multiplayer</c>,
+/// <c>/{couplequiz,poracer,posports,povoxelstrike}/lobby</c>). Each of those pages still
+/// answers on its canonical <c>/{game}/multi</c>. Keeping the words here would have been
+/// worse than dropping them: with the alias routes gone, the three games that also declare
+/// a <c>/{game}/{Mode}</c> catch-all would have swallowed the stale URL and parsed it as
+/// Multiplayer on a page that cannot host it. Unrecognised now means OnePlayer, which is
+/// exactly what the contract below promises.
 /// </para>
 /// </remarks>
 public static class GameModes
@@ -75,7 +85,7 @@ public static class GameModes
         if (IsAny(routeSegment, TwoPlayerSlug, "2p", "2ps") ||
             IsAny(modeQuery, "2p", "2ps")) return GameMode.TwoPlayer;
 
-        if (IsAny(routeSegment, MultiplayerSlug, "multiplayer", "lobby")) return GameMode.Multiplayer;
+        if (IsAny(routeSegment, MultiplayerSlug)) return GameMode.Multiplayer;
 
         return GameMode.OnePlayer;
     }

@@ -11,13 +11,13 @@
 
 <PageTitle>Voxel Strike — Lobby · PoMiniGames</PageTitle>
 
-<SectionContent SectionName="game-header">
-    <div class="gps-header-slot">
-        <h1 class="gps-game-title">@TitleContent</h1>
-        <a class="gps-back-link" href="/" aria-label="Back to home" title="Back to home">← Home</a>
-    </div>
-</SectionContent>
-
+@* 2026-09-13 UI unification: hosts <GameShell> like every other game route. The
+   hand-rolled top-bar slot, the duplicate "← Home" link and the in-card header
+   ("← Back" + an <h1>Voxel Strike — Co-op</h1>) all went with it — the shell
+   owns the title, the swipe-back gesture and the end-of-game modal, and the
+   in-card "Back" only ever called LeaveAsync, which the "Leave" button below
+   already does. *@
+<GameShell Title="@TitleContent" BackTo="/">
 @if (!_introDone)
 {
     <GameIntro CueScope="povoxelstrike"
@@ -31,11 +31,6 @@ else
 {
 <div class="pvs-lobby-page">
     <div class="pvs-lobby-card">
-        <div class="pvs-lobby-header">
-            <button class="pvs-lobby-back" @onclick="LeaveAsync">← Back</button>
-            <h1 class="pvs-lobby-title">Voxel Strike — Co-op</h1>
-        </div>
-
         <p class="pvs-lobby-subtitle">
             Status:
             @if (!_connected)
@@ -51,7 +46,7 @@ else
         <p class="pvs-lobby-hint">Single shared room — first to arrive becomes host. Up to 6.</p>
 
         <section class="pvs-lobby-section">
-            <h2 class="pvs-lobby-h">Survivors · @(_state?.Players.Count ?? 0)/@(_state?.MaxPlayers ?? 6)</h2>
+            <h2 class="pvs-lobby-h">Players · @(_state?.Players.Count ?? 0)/@(_state?.MaxPlayers ?? 6)</h2>
             @if (_state is null)
             {
                 <div class="app-loading"><span class="app-loading__spinner" aria-hidden="true"></span><span>Loading lobby…</span></div>
@@ -103,6 +98,7 @@ else
     </div>
 </div>
 }
+</GameShell>
 
 @code {
     private bool _introDone;
@@ -114,7 +110,10 @@ else
     /// <summary>Set when navigating to the engine — that nav must KEEP the lobby seat.</summary>
     private bool _starting;
 
-    private RenderFragment TitleContent => @<span><span aria-hidden="true">🧱</span> Voxel Strike · Co-op</span>;
+    // 2026-09-13 UI unification: "Co-op" was this page's own word for the mode every
+    // other lobby calls Multiplayer — the route is /povoxelstrike/multi and the catalog
+    // lists it as GameMode.Multiplayer. One name for it.
+    private RenderFragment TitleContent => @<span><span aria-hidden="true">🧱</span> Voxel Strike · Multiplayer</span>;
 
     private RenderFragment HowToPlayContent => @<div>
         <p>You and your crew carve the world apart — debris crushes everyone.</p>

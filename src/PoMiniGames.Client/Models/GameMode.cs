@@ -126,6 +126,26 @@ public static class GameModes
         _ => "1 player vs CPU",
     };
 
+    /// <summary>
+    /// Long-form mode name for a page heading (<c>Connect Five · 2 Players</c>).
+    /// </summary>
+    /// <remarks>
+    /// Distinct from <see cref="ToLabel"/>, which is the terse chip on the home card
+    /// ("2P") and is sized for a chip, not a title. Every game title should compose
+    /// through this so the mode is readable in the top bar: a heading that names the
+    /// game but not the mode cannot tell a player which of the three Connect Five
+    /// routes a shared link dropped them into. It exists because the pages had started
+    /// inventing their own headings — "Voxel Strike · Co-op", "PoEcosystem · A living
+    /// island" — which left twelve of sixteen games with no mode in the title at all.
+    /// </remarks>
+    public static string ToHeading(GameMode mode) => mode switch
+    {
+        GameMode.TwoPlayer => "2 Players",
+        GameMode.Multiplayer => "Multiplayer",
+        GameMode.Demo => "Demo",
+        _ => "1 Player",
+    };
+
     private static bool IsAny(string? value, params string[] candidates)
     {
         if (string.IsNullOrWhiteSpace(value)) return false;

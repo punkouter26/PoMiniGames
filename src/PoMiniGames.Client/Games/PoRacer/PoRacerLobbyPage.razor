@@ -11,21 +11,12 @@
 
 <PageTitle>Racer — Lobby · PoMiniGames</PageTitle>
 
-@* Header parity: this page hosts no <GameShell>, so nothing was projecting into
-   the top bar's game slot and the lobby was one of only two game routes showing
-   the bare brand with no game name. It already owns the right fragment for
-   GameIntro — the header slot gets the same one.
-
-   2026-08-07 browser audit #9: mirror GameShell exactly — an <h1> (this was a
-   styled <span>, so the page had no heading at all for a screen reader) plus the
-   same "← Home" affordance every GameShell game gets. *@
-<SectionContent SectionName="game-header">
-    <div class="gps-header-slot">
-        <h1 class="gps-game-title">@TitleContent</h1>
-        <a class="gps-back-link" href="/" aria-label="Back to home" title="Back to home">← Home</a>
-    </div>
-</SectionContent>
-
+@* 2026-09-13 UI unification: hosts <GameShell> like every other game route. The
+   hand-rolled top-bar slot, its duplicate "← Home" link, and the in-card header
+   ("Back" + an <h1>Racer Lobby</h1>) all went with it. The Back button only ever
+   did Nav.NavigateTo("/"), which the shell's brand and swipe-back already cover;
+   leaving the lobby properly is still the "Leave" button below. *@
+<GameShell Title="@TitleContent" BackTo="/">
 @if (!_introDone)
 {
     <GameIntro CueScope="poracer"
@@ -39,16 +30,6 @@ else
 {
 <div class="sp-page">
     <div class="sp-card">
-        <div class="sp-header">
-            <button class="sp-back" @onclick='() => Nav.NavigateTo("/")'>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="racer-lobby-ico">
-                    <polyline points="15 18 9 12 15 6"/>
-                </svg>
-                Back
-            </button>
-            <h1 class="sp-title">Racer Lobby</h1>
-        </div>
-
         <p class="sp-subtitle">
             Status:
             @if (_hub is null)
@@ -131,7 +112,7 @@ else
     </div>
 </div>
 }
-
+</GameShell>
 
 @code {
     private HubConnection? _hub;

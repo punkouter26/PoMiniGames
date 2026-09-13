@@ -11,20 +11,14 @@
 
 <PageTitle>Sports — Lobby · PoMiniGames</PageTitle>
 
-@* Header parity: this page hosts no <GameShell>, so nothing was projecting into
-   the top bar's game slot and the lobby was one of only two game routes showing
-   the bare brand with no game name. It already owns the right fragment for
-   GameIntro — the header slot gets the same one. *@
-@* 2026-08-07 browser audit #9: mirror GameShell exactly — an <h1> (this was a
-   styled <span>, so the page had no heading at all for a screen reader) plus the
-   same "← Home" affordance every GameShell game gets. *@
-<SectionContent SectionName="game-header">
-    <div class="gps-header-slot">
-        <h1 class="gps-game-title">@TitleContent</h1>
-        <a class="gps-back-link" href="/" aria-label="Back to home" title="Back to home">← Home</a>
-    </div>
-</SectionContent>
-
+@* 2026-09-13 UI unification: this page now hosts <GameShell> like every other
+   game route. It used to hand-roll the top-bar slot and carry its own "← Home"
+   link plus a second in-card header ("← Back" + an <h1>Sports Lobby</h1>) — three
+   lobbies each kept their own copy of that chrome, so none of the shell's
+   decisions reached them. GameShell owns the title, the swipe-back gesture and
+   the end-of-game modal; the in-card "Back" button went with it because it only
+   ever called LeaveAsync, which the "Leave" button below already does. *@
+<GameShell Title="@TitleContent" BackTo="/">
 @if (!_introDone)
 {
     <GameIntro CueScope="posports"
@@ -38,11 +32,6 @@ else
 {
 <div class="sp-page">
     <div class="sp-card">
-        <div class="sp-header">
-            <button class="sp-back" @onclick="LeaveAsync">← Back</button>
-            <h1 class="sp-title">Sports Lobby</h1>
-        </div>
-
         <p class="sp-subtitle">
             Status:
             @if (!_connected)
@@ -58,7 +47,7 @@ else
         <p class="ps-lobby-hint">Single shared room — first to arrive becomes host.</p>
 
         <section class="ps-lobby-section">
-            <h2 class="gps-phase-h">Runners · @(_state?.Members.Count ?? 0)/4</h2>
+            <h2 class="gps-phase-h">Players · @(_state?.Members.Count ?? 0)/4</h2>
             @if (_state is null)
             {
                 <div class="app-loading"><span class="app-loading__spinner" aria-hidden="true"></span><span>Loading lobby…</span></div>
@@ -131,6 +120,7 @@ else
     </div>
 </div>
 }
+</GameShell>
 
 @code {
     private bool _introDone;

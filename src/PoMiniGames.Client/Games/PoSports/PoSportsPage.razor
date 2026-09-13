@@ -41,7 +41,6 @@
                    Mode="@_introMode"
                    Options="@(_demo ? null : SelectContent)"
                    StartEnabled="@(_demo || _mode != "2p" || (_p1Locked && _p2Locked))"
-                   StartLabel="@(_mode == "2p" ? "RACE" : "OK")"
                    StartHint="@(_mode == "2p" ? "Both players lock in to race" : null)"
                    CaptureKeys="@(_mode == "2p")"
                    OnKey="OnIntroKey"

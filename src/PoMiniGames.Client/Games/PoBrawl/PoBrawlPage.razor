@@ -38,7 +38,6 @@
                    Mode="@_introMode"
                    Options="@IntroOptions"
                    StartEnabled="true"
-                   StartLabel="@(_mode == "2p" ? "FIGHT" : "OK")"
                    StartHint="@null"
                    DialogLabel="@IntroDialogLabel"
                    CaptureKeys="false"
@@ -298,7 +297,7 @@
     private string? TwoPlayerStartHint => _mode != "2p"
         ? null
         : _twoPlayerReady
-            ? "Both players are ready. Press FIGHT or wait for auto-start."
+            ? "Both players are ready. Press Start or wait for auto-start."
             : $"Waiting: {ReadyLabel(1)} and {ReadyLabel(2)}";
 
     private string ReadyLabel(int side)

@@ -36,7 +36,10 @@
 
     private bool IsDemo => GameModes.Parse(Mode) == GameMode.Demo;
 
-    private RenderFragment TitleContent => @<span><span aria-hidden="true">🌿</span> PoEcosystem · A living island</span>;
+    // 2026-09-13 UI unification: the title carried a marketing line ("A living island")
+    // where every other game puts its mode, so a shared /poecosystem/demo link read
+    // identically to /poecosystem/1player. The blurb lives on the home card as Subtitle.
+    private RenderFragment TitleContent => @<span><span aria-hidden="true">🌿</span> PoEcosystem · @GameModes.ToHeading(GameModes.Parse(Mode))</span>;
 
     private RenderFragment HowToPlayContent => @<div>
         @* 2026-09-11: word budget — the intro card is capped at 100 words. The

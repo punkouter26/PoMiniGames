@@ -1,9 +1,8 @@
 using System.Collections.Concurrent;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
-using PoMiniGames.Application.DTOs;
-using PoMiniGames.Application.Services;
 using PoMiniGames.Domain.Models;
+using PoMiniGames.Domain.Abstractions;
 using PoMiniGames.Features.PoSports;
 using PoMiniGames.Shared.Games;
 

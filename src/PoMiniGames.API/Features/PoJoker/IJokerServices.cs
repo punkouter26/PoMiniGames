@@ -21,11 +21,6 @@ public interface IAnalysisService
     Task<(JokeAnalysisDto Analysis, JokeRatingDto Rating)> AnalyzeJokeAsync(
         JokeDto joke,
         CancellationToken cancellationToken = default);
-
-    /// <summary>Returns a two-sentence explanation of the comedic mechanism of the given joke.</summary>
-    Task<string> ExplainJokeAsync(
-        JokeDto joke,
-        CancellationToken cancellationToken = default);
 }
 
 /// <summary>

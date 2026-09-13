@@ -1,4 +1,4 @@
-using PoMiniGamesClient.Enums;
+using PoMiniGamesClient.Models;
 
 namespace PoMiniGamesClient.Games.TicTacToe;
 

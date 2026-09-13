@@ -3,10 +3,12 @@
   Build one HTML coverage report from every tier that produced coverage.
 
 .DESCRIPTION
-  Collects coverlet Cobertura output from the xUnit tiers (dotnet test with
-  --collect:"XPlat Code Coverage") and the Vitest cobertura file for the
-  PoEcosystem simulation, then merges them with ReportGenerator
+  Collects coverlet Cobertura output from the four xUnit tiers (dotnet test
+  with --collect:"XPlat Code Coverage") and merges it with ReportGenerator
   (.config/dotnet-tools.json) into coverage/report/index.html.
+
+  Line coverage only. For the "which tier covers which route" view, that is
+  scripts/coverage-matrix.ps1 — a different question, not a duplicate.
 
   Run the tiers yourself first (see scripts/test-all.ps1); this script only
   renders what already exists so it never re-runs the slow tiers.
@@ -20,11 +22,9 @@ Set-Location $repoRoot
 
 $inputs = @()
 $inputs += Get-ChildItem -Path (Join-Path $repoRoot 'tests') -Recurse -Filter 'coverage.cobertura.xml' -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName }
-$vitest = Join-Path $repoRoot 'coverage/poecosystem/cobertura-coverage.xml'
-if (Test-Path $vitest) { $inputs += $vitest }
 
 if ($inputs.Count -eq 0) {
-    Write-Host 'No coverage files found. Run `npm run test:coverage` and/or `dotnet test --collect:"XPlat Code Coverage"` first.' -ForegroundColor Yellow
+    Write-Host 'No coverage files found. Run `dotnet test --collect:"XPlat Code Coverage"` first.' -ForegroundColor Yellow
     exit 1
 }
 

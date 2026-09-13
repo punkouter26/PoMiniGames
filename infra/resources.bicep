@@ -97,10 +97,6 @@ resource webApp 'Microsoft.Web/sites@2022-09-01' = {
           value: 'false'
         }
         {
-          name: 'WEBSITE_NODE_DEFAULT_VERSION'
-          value: ''
-        }
-        {
           name: 'ASPNETCORE_ENVIRONMENT'
           value: 'Production'
         }

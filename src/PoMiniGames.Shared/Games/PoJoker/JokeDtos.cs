@@ -180,12 +180,6 @@ public sealed record LeaderboardEntryDto
     public bool IsCurrentSession { get; init; }
 }
 
-/// <summary>Response DTO for the Comedy Coach explain endpoint.</summary>
-public sealed record JokeExplanationDto
-{
-    public required string Explanation { get; init; }
-}
-
 /// <summary>
 /// One joke on the "best jokes" board, ranked by how the AI Jester scored it.
 /// </summary>

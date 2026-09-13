@@ -1,4 +1,4 @@
-using PoMiniGames.Application.Services;
+using PoMiniGames.Domain.Abstractions;
 using PoMiniGames.Domain.Models;
 using PoMiniGames.Domain.Primitives;
 using PoMiniGames.Features.Auth;

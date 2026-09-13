@@ -1,7 +1,6 @@
 @page "/povoxelstrike"
 @page "/povoxelstrike/{Mode}"
 @using PoMiniGamesClient.Components
-@using PoMiniGamesClient.Enums
 @using PoMiniGamesClient.Models
 @using PoMiniGamesClient.Services
 @implements IAsyncDisposable
@@ -18,7 +17,7 @@
            BackTo="/"
            GameOver="@(_phase == Phase.Dead && !_demo)"
            GameOverDelayMs="1200"
-           Outcome="@(_phase == Phase.Dead ? GameOutcome.Loss : GameOutcome.Unknown)"
+           Outcome="@(_phase == Phase.Dead ? GameResult.Loss : GameResult.InProgress)"
            GameKey="povoxelstrike"
            RequiresWebGl="true"
            PlayAgain="RestartAsync"

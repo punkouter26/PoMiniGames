@@ -34,19 +34,20 @@ Write-Host "`nPoMiniGames smoke test against $BASE`n" -ForegroundColor Cyan
 Test-Endpoint "GET /health"        "$BASE/health"
 Test-Endpoint "GET /api/health"    "$BASE/api/health"
 Test-Endpoint "GET /api/health/ping" "$BASE/api/health/ping"
-Test-Endpoint "GET /diag"          "$BASE/diag"
+# /api/diag, not /diag: the Blazor diag page went on 2026-08-07, so a bare /diag now
+# falls through to MapFallbackToFile and returns the WASM shell with a vacuous 200.
+Test-Endpoint "GET /api/diag"      "$BASE/api/diag"
 Test-Endpoint "GET /openapi/v1.json" "$BASE/openapi/v1.json"
 Test-Endpoint "GET /api/auth/config" "$BASE/api/auth/config"
 Test-Endpoint "GET /api/auth/me"  "$BASE/api/auth/me" 401
 Test-Endpoint "GET /api/leaderboards" "$BASE/api/leaderboards"
-# GET /api/statistics was removed 2026-08-31 (no client consumer; the client uses
-# /api/leaderboards). Assert the catch-all /api/* 404 so a reintroduction is noticed.
-Test-Endpoint "GET /api/statistics (removed)"   "$BASE/api/statistics" 404
 Test-Endpoint "GET /_framework/blazor.webassembly.js" "$BASE/_framework/blazor.webassembly.js"
-# /api/evolution/summary (read surface removed with EvolutionLab) and
-# /api/face/leaderboard (PoFace never shipped) are gone — assert the 404s.
-Test-Endpoint "GET /api/evolution/summary (removed)" "$BASE/api/evolution/summary" 404
-Test-Endpoint "GET /api/face/leaderboard (removed)" "$BASE/api/face/leaderboard" 404
+
+# One assertion, not one per deleted route. This file had accumulated a tombstone per
+# removal (/api/statistics, /api/evolution/summary, /api/face/leaderboard) and the list
+# only ever grows; what they all actually checked is that an unmapped /api/* path 404s
+# rather than being swallowed by the SPA fallback, which this single probe covers.
+Test-Endpoint "GET /api/<unmapped> 404s (not SPA fallback)" "$BASE/api/definitely-not-a-route" 404
 
 # §1 of QA report: verify the Blazor WASM boot manifest responds 404 with
 # `UseBlazorFrameworkFiles` synthesizing the live boot.json (the actual served

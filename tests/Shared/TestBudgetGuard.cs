@@ -37,13 +37,6 @@ public static class TestBudgetGuard
         ["PoCoupleQuiz:Features:UseMockAI"] = "true",
         ["PoJoker:Features:UseMockAI"] = "true",
 
-        // ── Cloud inference relay ─────────────────────────────────────────
-        // The relay went out with PoSurvive on 2026-09-12 and nothing reads these
-        // keys today. They stay pinned off because the cost of a stale key is one
-        // dictionary entry, while the cost of a re-added relay defaulting to on in
-        // a test host is a live Azure bill.
-        ["Inference:UseCloudFallback"] = "false",
-
         // ── Browser-side guard ────────────────────────────────────────────
         // FeatureFlags.UseMockData drives the Blazor "USING MOCK DATA" banner.
         // E2E-UI's MockBannerUiTests flips this on via its fixture; everywhere

@@ -2,7 +2,6 @@
 @page "/connectfive/{Mode}"
 @implements IDisposable;
 @using PoMiniGamesClient.Components;
-@using PoMiniGamesClient.Enums;
 @using PoMiniGamesClient.Models;
 @using PoMiniGamesClient.Games.ConnectFive;
 @using PoMiniGamesClient.Services;
@@ -164,15 +163,9 @@
 
     // Outcome for the end-of-game cue (GameOverModal picks the sound from this).
     // Only the vs-CPU mode reports one: in local 2-player "you" is ambiguous —
-    // one of the two people at the keyboard just won — so it stays Unknown and
+    // one of the two people at the keyboard just won — so it stays InProgress and
     // the modal sounds the neutral round-over instead of celebrating at someone.
-    private GameOutcome OutcomeForCue => PlayMode != "ai" ? GameOutcome.Unknown : _gameResult switch
-    {
-        GameResult.Win => GameOutcome.Win,
-        GameResult.Loss => GameOutcome.Loss,
-        GameResult.Draw => GameOutcome.Draw,
-        _ => GameOutcome.Unknown,
-    };
+    private GameResult OutcomeForCue => PlayMode != "ai" ? GameResult.InProgress : _gameResult;
 
     // Spoken by GameShell's shared live region (browser audit #6). The board is a
     // role="grid" of labelled cells, so a screen reader can read the position —

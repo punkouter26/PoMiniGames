@@ -1,5 +1,5 @@
 using Microsoft.Extensions.Diagnostics.HealthChecks;
-using PoMiniGames.Application.Services;
+using PoMiniGames.Domain.Abstractions;
 
 namespace PoMiniGames.Infrastructure.HealthChecks;
 

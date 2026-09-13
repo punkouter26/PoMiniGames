@@ -12,7 +12,7 @@ the 2026-08-18 cleanup (they referenced files that no longer exist and had no ca
 | `branch-hygiene.ps1` | Branch policy helper | deploy.yml (policy comment) |
 | `bundle-report.ps1` | Trimmed WASM bundle size report (top-DLLs + per-CSS breakdown) | test-all.ps1 snapshot pointer |
 | `coverage-matrix.ps1` | Cross-tier route-coverage matrix over the four dotnet test tiers | on demand |
-| `coverage-report.ps1` | Collects/merges dotnet coverage runs into a report | on demand |
+| `coverage-report.ps1` | Merges the four tiers' Cobertura output into one HTML line-coverage report | on demand |
 
 The one-off asset pipelines (PoMarbleRace track baking, PoSports sprite-sheet
 re-export) and the counting helper were removed on 2026-09-11 — their inputs,

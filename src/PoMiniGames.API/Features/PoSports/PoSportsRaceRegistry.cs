@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
 using Microsoft.AspNetCore.SignalR;
-using PoMiniGames.Application.Services;
+using PoMiniGames.Domain.Abstractions;
 
 namespace PoMiniGames.Features.PoSports;
 

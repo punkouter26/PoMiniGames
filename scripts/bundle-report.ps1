@@ -4,10 +4,10 @@
   Publish the Blazor WASM client and report on bundle size + CSS footprint
   (2026-09-04 UI sweep, Option 10).
 .DESCRIPTION
-  The 25 MB `_framework` budget documented in CLAUDE.md is enforced by a CI
-  smoke step (`scripts/deploy-preflight.ps1`) but with no developer-side
-  feedback — a UI sweep can quietly bloat the bundle past the limit and only
-  fail master, where it is expensive to track down.
+  The 25 MB `_framework` budget documented in CLAUDE.md is enforced inline by
+  the "WASM bundle-size budget" step in .github/workflows/deploy.yml, with no
+  developer-side feedback — a UI sweep can quietly bloat the bundle past the
+  limit and only fail master, where it is expensive to track down.
 
   This script publishes the client to a temp location, measures:
     · total _framework size (the 25 MB cap)
@@ -18,7 +18,7 @@
 
   It is deliberately idempotent — no network, no Azurite, no Playwright —
   so a developer can run it locally between commits while iterating on UI
-  changes. The CI gate stays where it is (deploy-preflight); this is the
+  changes. The CI gate stays where it is (deploy.yml); this is the
   local-friendly mirror.
 
   The CSS-file size report is a soft check: there is no fixed CSS budget

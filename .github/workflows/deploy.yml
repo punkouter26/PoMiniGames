@@ -117,10 +117,19 @@ jobs:
 
       # §6.6 mobile-first budget: the trimmed WASM _framework payload gates first
       # paint on phones. Fail the build if it regresses past the budget so a new
-      # reflection-heavy DTO can't silently bloat the download. Baseline 2026-07-04
-      # ≈ 20 MB uncompressed — inherent to shipping the PoSurvive client-side
-      # simulation engine (by design). Budget set with headroom to
-      # catch regression, not to squeeze the baseline.
+      # reflection-heavy DTO can't silently bloat the download.
+      #
+      # Re-measured 2026-09-13: 20 MB uncompressed (20,156 KB), i.e. unchanged by
+      # PoSurvive's removal — the old note blamed that game's client-side simulation
+      # engine for the baseline and was simply wrong about where the bytes are. They
+      # are the runtime itself: dotnet.native.wasm ~2.9 MB, System.Private.CoreLib
+      # ~1.7 MB, the three icudt*.dat globalization bundles ~3 MB combined, and the
+      # pre-compressed .gz/.br twin of every one of those. PoMiniGamesClient.wasm is
+      # 1.4 MB of that 20 — deleting game code will not move this number much, so a
+      # regression here almost always means a new dependency or a lost trim.
+      #
+      # Budget stays 25 MB: ~5 MB of headroom to catch regression, not to squeeze
+      # the baseline.
       - name: WASM bundle-size budget
         shell: bash
         env:

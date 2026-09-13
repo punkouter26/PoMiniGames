@@ -156,11 +156,11 @@
 
     /// <summary>
     /// How the match ended, so the modal can sound the right cue. Left
-    /// <see cref="Models.GameOutcome.Unknown"/> by games that do not report it,
+    /// <see cref="Models.GameResult.InProgress"/> by games that do not report it,
     /// which sounds a neutral round-over rather than guessing — celebrating a
     /// loss is worse than saying nothing.
     /// </summary>
-    [Parameter] public Models.GameOutcome Outcome { get; set; } = Models.GameOutcome.Unknown;
+    [Parameter] public Models.GameResult Outcome { get; set; } = Models.GameResult.InProgress;
 
     [Inject] private NavigationManager Navigation { get; set; } = null!;
     [Inject] private Services.Http.ApiService Api { get; set; } = null!;
@@ -261,9 +261,9 @@
 
         var cues = Outcome switch
         {
-            Models.GameOutcome.Win => WinCues,
-            Models.GameOutcome.Loss => LossCues,
-            Models.GameOutcome.Draw => DrawCues,
+            Models.GameResult.Win => WinCues,
+            Models.GameResult.Loss => LossCues,
+            Models.GameResult.Draw => DrawCues,
             _ => null,
         };
 

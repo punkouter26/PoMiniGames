@@ -1,12 +1,11 @@
 @page "/pobrawl"
 @page "/pobrawl/{Mode}"
 @using PoMiniGamesClient.Components
-@using PoMiniGamesClient.Enums
 @using PoMiniGamesClient.Models
 @using PoMiniGamesClient.Services
-@* Aliases, not namespace imports: PoMiniGamesClient.Models mirrors several Domain types by
-   name (PlayerStats, GameOutcome), so importing either namespace wholesale makes them all
-   ambiguous. Same convention as ApiService.cs. *@
+@* Aliases, not namespace imports: PoMiniGamesClient.Models mirrors Domain types by
+   name (PlayerStats), so importing either namespace wholesale makes them ambiguous.
+   Same convention as ApiService.cs. *@
 @using PoBrawlFighter = PoMiniGames.Domain.Primitives.PoBrawlFighter
 @using PoBrawlRoster = PoMiniGames.Domain.Primitives.PoBrawlRoster
 @implements IAsyncDisposable
@@ -153,11 +152,11 @@
     // Outcome for the end-of-game cue. _winner is 1 for the local player and 2
     // for the opponent; only the 1P ladder has a "you" to win, so 2-player and
     // demo stay Unknown (see GameOverModal.Outcome).
-    private GameOutcome OutcomeForCue => _mode != "1p"
-        ? GameOutcome.Unknown
-        : _winner == 1 ? GameOutcome.Win
-        : _winner == 2 ? GameOutcome.Loss
-        : GameOutcome.Unknown;
+    private GameResult OutcomeForCue => _mode != "1p"
+        ? GameResult.InProgress
+        : _winner == 1 ? GameResult.Win
+        : _winner == 2 ? GameResult.Loss
+        : GameResult.InProgress;
 
 
     // ── Intro/welcome gate ──

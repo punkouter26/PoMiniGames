@@ -171,7 +171,7 @@
     // How the match ended, forwarded to GameOverModal so the closing cue matches
     // the result. Left Unknown by games that do not report it, which sounds a
     // neutral round-over instead of guessing.
-    [Parameter] public Models.GameOutcome Outcome { get; set; } = Models.GameOutcome.Unknown;
+    [Parameter] public Models.GameResult Outcome { get; set; } = Models.GameResult.InProgress;
     [Parameter] public RenderFragment? GameSummary { get; set; }
 
     /// <summary>

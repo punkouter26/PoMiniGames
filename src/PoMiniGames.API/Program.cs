@@ -1,5 +1,5 @@
 using PoMiniGames.Features.Auth;       // Source-generated AuthLog + MicrosoftAuthOptionsBinder
-using PoMiniGames.Application.Diagnostics;
+using PoMiniGames.Domain.Abstractions;
 using PoMiniGames.Infrastructure;
 using PoMiniGames.Infrastructure.Services;
 using Microsoft.Extensions.Options;

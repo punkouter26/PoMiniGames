@@ -5,7 +5,7 @@ namespace PoMiniGames.Features.PoJoker;
 
 /// <summary>
 /// Minimal-API surface for the PoJoker demo game: fetch a joke, analyze it with AI,
-/// optionally explain it, and read the session leaderboard. The original PoJoker app
+/// and read the session leaderboard. The original PoJoker app
 /// routed these through MediatR; here the handler logic is inlined as direct service
 /// calls to match the PoMiniGames per-game endpoint convention (no MediatR dependency).
 /// </summary>
@@ -28,11 +28,6 @@ public static class JokerEndpoints
             .WithSummary("Analyze a joke using AI to predict the punchline")
             .Produces<JokeAnalysisDto>()
             .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
-
-        group.MapPost("/explain", ExplainJoke)
-            .WithName("PoJokerExplainJoke")
-            .WithSummary("Get an AI explanation of why a joke is funny (Comedy Coach)")
-            .Produces<JokeExplanationDto>();
 
         group.MapGet("/leaderboard", GetLeaderboard)
             .WithName("PoJokerGetLeaderboard")
@@ -164,15 +159,6 @@ public static class JokerEndpoints
         }
 
         return Results.Ok(result);
-    }
-
-    private static async Task<IResult> ExplainJoke(
-        [FromBody] JokeDto joke,
-        IAnalysisService analysisService,
-        CancellationToken cancellationToken)
-    {
-        var explanation = await analysisService.ExplainJokeAsync(joke, cancellationToken);
-        return Results.Ok(new JokeExplanationDto { Explanation = explanation });
     }
 
     private static async Task<IResult> GetLeaderboard(

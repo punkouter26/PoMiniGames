@@ -25,7 +25,7 @@ internal static partial class AuthClientLog
     public static partial void SilentMsalRestoreFailed(this ILogger logger, string reason, Exception? ex);
 
     [LoggerMessage(EventId = 7103, Level = LogLevel.Warning,
-        Message = "Microsoft sign-in is not fully configured. Set PoMiniGames:MicrosoftAuth:ClientId and ApiClientId via `dotnet user-secrets set` (see appsettings.Development.json for the path).")]
+        Message = "Microsoft sign-in is not fully configured. Set PoMiniGames:MicrosoftAuth:ClientId and ApiClientId in appsettings.Development.json (local) or Key Vault (deployed).")]
     public static partial void MicrosoftSignInNotConfigured(this ILogger logger);
 
     [LoggerMessage(EventId = 7104, Level = LogLevel.Information,

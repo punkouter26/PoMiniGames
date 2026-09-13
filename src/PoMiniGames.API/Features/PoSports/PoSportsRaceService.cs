@@ -1,5 +1,5 @@
 using System.Collections.Concurrent;
-using PoMiniGames.Application.Services;
+using PoMiniGames.Domain.Abstractions;
 using PoMiniGames.Domain.Models;
 using PoMiniGames.Shared.Games;
 

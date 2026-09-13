@@ -47,9 +47,6 @@ public sealed class AiJesterService : IAnalysisService
     /// </remarks>
     private const int VerdictMaxTokens = 200;
 
-    /// <summary>Output ceiling for an explanation. Two sentences by contract.</summary>
-    private const int ExplanationMaxTokens = 250;
-
     private readonly ILogger<AiJesterService> _logger;
     private readonly IHostEnvironment _environment;
     private readonly MockAnalysisService _mock;
@@ -471,90 +468,6 @@ public sealed class AiJesterService : IAnalysisService
         Rudeness = 1,
         Commentary = commentary,
     };
-
-    private const string ExplainPrompt = """
-        You are a comedy analyst. Given a joke's setup and punchline, write exactly 2 sentences:
-        1. What expectation or misdirection the setup creates in the listener's mind.
-        2. How the punchline subverts that expectation to produce the comedic effect.
-        Be concise and insightful. Do not begin with "This joke" or repeat the joke text verbatim.
-        """ + "\n" + AiPrompt.FencingInstruction;
-
-    /// <summary>
-    /// Explains a joke's mechanism. Memoized for the same reason ratings are: the explanation of a
-    /// given joke does not change, and the Comedy Coach is invoked from a UI button players press
-    /// more than once.
-    /// </summary>
-    public async Task<string> ExplainJokeAsync(JokeDto joke, CancellationToken cancellationToken = default)
-    {
-        if (ResolveClient(AIFoundryOptions.Games.Joker) is null)
-        {
-            if (IsNonProduction())
-            {
-                return await _mock.ExplainJokeAsync(joke, cancellationToken);
-            }
-            throw new InvalidOperationException(
-                $"PoJoker: AIFoundry not configured. Set {AIFoundryOptions.SectionName} in Key Vault (kv-poshared).");
-        }
-
-        var identity = AiUsageScope.CurrentIdentity;
-        try
-        {
-            return await _cache.GetOrCreateAsync(
-                $"pojoker:explain:{Hash(joke.Setup, joke.Punchline)}",
-                (Service: this, joke, Identity: identity),
-                static async (state, ct) =>
-                {
-                    using var scope = AiUsageScope.Restore(state.Identity);
-                    return await state.Service.ExplainUncachedAsync(state.joke, ct);
-                },
-                new HybridCacheEntryOptions { Expiration = TimeSpan.FromHours(24) },
-                cancellationToken: cancellationToken);
-        }
-        catch (OperationCanceledException)
-        {
-            _logger.LogWarning("Joke explanation timeout for {JokeId}", joke.Id);
-            return "The Comedy Scholar fell asleep before finishing the explanation.";
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Joke explanation failed for {JokeId}", joke.Id);
-            return "The Comedy Scholar's notes were lost in a fire.";
-        }
-    }
-
-    private async ValueTask<string> ExplainUncachedAsync(JokeDto joke, CancellationToken cancellationToken)
-    {
-        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        cts.CancelAfter(TimeSpan.FromSeconds(_timeoutSeconds));
-
-        var deployment = _clients.DeploymentFor(AIFoundryOptions.Games.Joker);
-        var chat = _clients.ForDeployment(AIFoundryOptions.Games.Joker, deployment)!;
-
-        var messages = new List<ChatMessage>
-        {
-            new(ChatRole.System, ExplainPrompt),
-            new(ChatRole.User, AiPrompt.FenceAll(("Setup", joke.Setup), ("Punchline", joke.Punchline))),
-        };
-
-        var response = await chat.GetResponseAsync(
-            messages,
-            _optionsCache.GetOrBuildText(
-                gameKey: AIFoundryOptions.Games.Joker,
-                deployment: deployment,
-                capabilityOverrides: _clients.CapabilityOverrides,
-                maxOutputTokens: ExplanationMaxTokens,
-                factory: (d, ov) => AiDecisionChatOptions.ForBoundedText(
-                    ExplanationMaxTokens, d ?? string.Empty, ov ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase))),
-            cts.Token);
-
-        if (WasContentFiltered(response))
-            return "The Royal Censor has deemed this joke's mechanism too dangerous to explain.";
-
-        var text = (response.Text ?? string.Empty).Trim();
-        return string.IsNullOrEmpty(text)
-            ? "The Comedy Scholar stared at the page and wrote nothing."
-            : text;
-    }
 
     /// <summary>
     /// True when the provider stopped for its content filter.

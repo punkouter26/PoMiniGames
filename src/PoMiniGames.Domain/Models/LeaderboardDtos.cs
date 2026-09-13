@@ -1,4 +1,4 @@
-namespace PoMiniGames.Application.DTOs;
+namespace PoMiniGames.Domain.Models;
 
 /// <summary>
 /// One ranked row in a normalized leaderboard. <see cref="Value"/> is the raw comparable number;

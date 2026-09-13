@@ -1,5 +1,5 @@
 using Microsoft.Extensions.Diagnostics.HealthChecks;
-using PoMiniGames.Application.Diagnostics;
+using PoMiniGames.Domain.Abstractions;
 using PoMiniGames.Shared.Diagnostics;
 using PoMiniGames.Shared.Identity;
 

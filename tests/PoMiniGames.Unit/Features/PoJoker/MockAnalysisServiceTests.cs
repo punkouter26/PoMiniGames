@@ -44,13 +44,6 @@ public sealed class MockAnalysisServiceTests
     }
 
     [Fact]
-    public async Task ExplainJokeAsync_ReturnsNonEmptyExplanation()
-    {
-        var explanation = await _service.ExplainJokeAsync(SampleJoke());
-        explanation.Should().NotBeNullOrWhiteSpace();
-    }
-
-    [Fact]
     public async Task AnalyzeJokeAsync_HonoursCancellation()
     {
         using var cts = new CancellationTokenSource();

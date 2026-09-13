@@ -1,4 +1,4 @@
-namespace PoMiniGames.Application.Diagnostics;
+namespace PoMiniGames.Domain.Abstractions;
 
 public interface IDiagnosticsSnapshotProvider
 {

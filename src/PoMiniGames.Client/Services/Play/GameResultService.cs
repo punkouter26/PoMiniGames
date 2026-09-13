@@ -1,8 +1,7 @@
-using PoMiniGamesClient.Enums;
+using PoMiniGamesClient.Models;
 // Alias, not a namespace import: PoMiniGamesClient.Models mirrors several other Domain
 // types by name, so importing the namespace wholesale would make them all ambiguous.
 using PoSportsHighScore = PoMiniGames.Domain.Models.PoSportsHighScore;
-using PoMiniGamesClient.Models;
 
 using PoMiniGamesClient.Services.Auth;
 using PoMiniGamesClient.Services.Http;

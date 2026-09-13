@@ -1,7 +1,6 @@
-using PoMiniGames.Application.DTOs;
 using PoMiniGames.Domain.Models;
 
-namespace PoMiniGames.Application.Services;
+namespace PoMiniGames.Domain.Abstractions;
 
 /// <summary>
 /// Unified storage abstraction for player stats and remaining per-game high score boards.

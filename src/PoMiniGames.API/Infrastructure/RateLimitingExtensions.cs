@@ -91,18 +91,6 @@ internal static class RateLimitingExtensions
                         QueueLimit = 0,
                     }));
 
-            opts.AddPolicy("infer", ctx =>
-                RateLimitPartition.GetFixedWindowLimiter(
-                    partitionKey: BuildPartitionKey(ctx),
-                    factory: _ => new FixedWindowRateLimiterOptions
-                    {
-                        Window = TimeSpan.FromSeconds(1),
-                        PermitLimit = 10,
-                        AutoReplenishment = true,
-                        QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
-                        QueueLimit = 0,
-                    }));
-
             // AI-backed content generation (currently only PoFunQuiz question fetches).
             //
             // 2026-09-12: raised 5/min -> 8 per 15 s. The old figure priced this endpoint as if

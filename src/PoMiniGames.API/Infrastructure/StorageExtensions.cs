@@ -1,7 +1,7 @@
 using Azure.Data.Tables;
 using Azure.Identity;
 using Azure.Storage.Blobs;
-using PoMiniGames.Application.Services;
+using PoMiniGames.Domain.Abstractions;
 using PoMiniGames.Infrastructure.HealthChecks;
 using PoMiniGames.Infrastructure.Services;
 using Microsoft.Extensions.Configuration;

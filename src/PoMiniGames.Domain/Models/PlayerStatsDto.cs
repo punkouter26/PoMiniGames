@@ -1,6 +1,5 @@
-using PoMiniGames.Domain.Models;
 
-namespace PoMiniGames.Application.DTOs;
+namespace PoMiniGames.Domain.Models;
 
 /// <summary>
 /// Data transfer object for player statistics.

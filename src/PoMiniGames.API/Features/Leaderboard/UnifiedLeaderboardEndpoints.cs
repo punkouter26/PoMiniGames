@@ -1,6 +1,6 @@
 using System.Globalization;
-using PoMiniGames.Application.DTOs;
-using PoMiniGames.Application.Services;
+using PoMiniGames.Domain.Models;
+using PoMiniGames.Domain.Abstractions;
 using PoMiniGames.Features.PoFunQuiz;
 using PoMiniGames.Features.PoFunQuiz.Storage;
 using PoMiniGames.Features.PoJoker;

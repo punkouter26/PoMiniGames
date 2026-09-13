@@ -1,7 +1,6 @@
 using System.Text.Json;
-using PoMiniGames.Application.DTOs;
-using PoMiniGames.Application.Services;
 using PoMiniGames.Domain.Models;
+using PoMiniGames.Domain.Abstractions;
 using PoMiniGames.Domain.Primitives;
 using PoMiniGames.Features.Auth;
 using PoMiniGames.Features.Integrity;

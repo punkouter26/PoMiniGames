@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
-using PoMiniGames.Application.Diagnostics;
+using PoMiniGames.Domain.Abstractions;
 using PoMiniGames.Infrastructure;
 
 namespace PoMiniGames.Features.Health;

@@ -67,17 +67,6 @@ public sealed class PoJokerEndpointsTests : IClassFixture<TestWebApplicationFact
     }
 
     [Fact]
-    public async Task Explain_ReturnsNonEmptyExplanation()
-    {
-        var response = await _client.PostAsJsonAsync("/api/joker/explain", FakeJokeApiClient.CannedJoke);
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-
-        var explanation = await response.Content.ReadFromJsonAsync<JokeExplanationDto>();
-        explanation.Should().NotBeNull();
-        explanation!.Explanation.Should().NotBeNullOrWhiteSpace();
-    }
-
-    [Fact]
     public async Task Leaderboard_ReturnsOkArray()
     {
         var response = await _client.GetAsync("/api/joker/leaderboard?sortBy=Triumph&top=25");

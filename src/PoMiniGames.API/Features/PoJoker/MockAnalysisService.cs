@@ -131,10 +131,4 @@ public sealed class MockAnalysisService(ILogger<MockAnalysisService> logger) : I
         var rating = await RateJokeAsync(joke, cancellationToken);
         return (analysis, rating);
     }
-
-    public Task<string> ExplainJokeAsync(JokeDto joke, CancellationToken cancellationToken = default)
-        => Task.FromResult(
-            "The setup leads the listener to expect a conventional outcome, while the punchline reveals an " +
-            "absurd or literal interpretation that subverts that expectation for comic effect. " +
-            "[Mock explanation — connect Azure OpenAI to see real analysis.]");
 }

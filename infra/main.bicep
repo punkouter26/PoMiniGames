@@ -60,18 +60,15 @@ module kvAccess './kv-access.bicep' = {
   }
 }
 
-// Cross-RG role assignments live in their own module deployed at
-// subscription scope. resources.bicep is RG-scoped (PoMiniGames), so a
-// `scope: <PoShared-resource>` on a resource declaration there triggers
-// BCP139. The role-assignment module declares `targetScope='subscription'`
-// so it can grant on PoShared resources from a subscription-scoped
-// deployment while still being orchestrated by main.bicep (also
-// subscription-scoped). See shared-rbac.bicep header.
+// Cross-RG role assignments live in their own module deployed INTO PoShared.
+// resources.bicep is RG-scoped (PoMiniGames), so a `scope: <PoShared-resource>`
+// on a resource declaration there triggers BCP139; deploying the module at the
+// shared RG instead makes that account a local resource the assignment can
+// name. See shared-rbac.bicep header.
 module sharedRbac './shared-rbac.bicep' = {
   name: 'shared-rbac'
-  scope: subscription()
+  scope: resourceGroup(sharedResourceGroupName)
   params: {
-    sharedResourceGroupName: sharedResourceGroupName
     sharedAIFoundryName: resources.outputs.AI_FOUNDRY_NAME
     webAppPrincipalId: resources.outputs.WEB_APP_PRINCIPAL_ID
   }

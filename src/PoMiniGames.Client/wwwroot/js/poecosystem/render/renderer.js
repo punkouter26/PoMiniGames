@@ -21,7 +21,7 @@ import { createCreatureMeshes } from './creatureMeshes.js';
 import { createPropMeshes } from './propMeshes.js';
 import { createFloraMeshes } from './floraMeshes.js';
 import { createMinimap } from './minimap.js';
-import { createPlayer, stepPlayer } from './playerController.js';
+import { blockedTiles, createPlayer, stepPlayer } from './playerController.js';
 import { createInput } from './input.js';
 import { pickCreature } from './picking.js';
 import { createPostProcess } from './postProcess.js';
@@ -74,7 +74,7 @@ export function createRenderer(container, {
   const creatures = createCreatureMeshes(scene, cap);
   const props = createPropMeshes(scene, propCap);
   const particles = createParticles(scene, { tier });
-  const eventFx = createEventFx(scene, particles, audio, { tier });
+  const eventFx = createEventFx(particles, audio, { tier });
   const post = createPostProcess(renderer, scene, camera, {
     tier, width: container.clientWidth || 1, height: container.clientHeight || 1, pixelRatio: maxDpr,
   });
@@ -176,7 +176,12 @@ export function createRenderer(container, {
     const pending = pendingPose ?? (terrainReady ? player.pose() : null);
     pendingPose = null;
     terrainReady = true;
-    player = createPlayer(terrainApi, 'fly');
+    // Spawn clear of trees, bushes, huts and boulders: the terrain message carries all four,
+    // and the terrain is the only moment they are all in hand (see blockedTiles).
+    const blocked = msg.tileState
+      ? blockedTiles({ trees: msg.trees, bushes: msg.bushes, tileState: msg.tileState, size: terrainApi.size })
+      : null;
+    player = createPlayer(terrainApi, 'fly', blocked);
     if (pending) player.setPose(pending);
   }
 
@@ -321,7 +326,6 @@ export function createRenderer(container, {
     island?.update(timeSec, sky);
 
     eventFx.ambient(dt, { fireTiles, lavaTiles, player, dayFraction: stats?.dayFraction ?? 0.5 });
-    eventFx.update(dt);
     particles.update(dt, {
       fogColor: sky.sky, fogDensity: sky.fogDensity,
       pixelHeight: renderer.domElement.height, fov: camera.fov,
@@ -352,7 +356,7 @@ export function createRenderer(container, {
     get locked() { return input.locked; },
     setTerrain, setTiles, acceptFrame,
     setStats(s) { stats = s; },
-    /** A drained sim event: routed to particles, the flash light, the camera and the ear. */
+    /** A drained sim event: routed to particles, the camera and the ear. */
     onEvent(ev) {
       if (!ev || ev.tile === undefined || !terrainApi) return;
       eventFx.event(ev, eventFx.worldOf(ev.tile, terrainApi, terrainApi.size), player, post);
@@ -370,7 +374,7 @@ export function createRenderer(container, {
       window.removeEventListener('resize', resize);
       input.dispose();
       creatures.dispose(); props.dispose(); flora?.dispose(); island?.dispose(); lighting.dispose(); minimap?.dispose();
-      eventFx.dispose(); particles.dispose(); post.dispose();
+      particles.dispose(); post.dispose();
       renderer.dispose();
       canvas.remove();
     },

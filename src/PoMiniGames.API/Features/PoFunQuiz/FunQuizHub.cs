@@ -41,8 +41,34 @@ public class FunQuizHub : Hub<IFunQuizClient>
         }
         var cat = Enum.TryParse<QuestionCategory>(category, true, out var c) ? c : QuestionCategory.General;
         questionCount = Math.Clamp(questionCount, 1, 50);
-        var (game, created) = await _lobby.JoinOrCreateAsync(
-            Context.ConnectionId, playerName.Trim(), cat, questionCount, Context.ConnectionAborted);
+
+        // Opening a lobby generates its questions, which is a live model call — the one part of
+        // this method that can fail for reasons that have nothing to do with the caller (the
+        // account is rate limited, the identity's daily token budget is spent, the deployment
+        // rejects the request). Letting that escape hands the client SignalR's own generic
+        // "An unexpected error occurred invoking 'JoinLobby' on the server", which tells a
+        // player nothing and tells us nothing either — the server-side detail only ever reached
+        // the log. LobbyError is the channel the page already renders, so use it.
+        MultiplayerGame game;
+        bool created;
+        try
+        {
+            (game, created) = await _lobby.JoinOrCreateAsync(
+                Context.ConnectionId, playerName.Trim(), cat, questionCount, Context.ConnectionAborted);
+        }
+        catch (OperationCanceledException) when (Context.ConnectionAborted.IsCancellationRequested)
+        {
+            return; // Player navigated away mid-generation; nothing to report to a gone connection.
+        }
+        catch (Exception ex)
+        {
+            _logger.JoinLobbyFailed(ex, playerName, cat);
+            await Clients.Caller.LobbyError(new FunQuizLobbyError(
+                string.Empty,
+                "Couldn't start a quiz right now - the question generator is unavailable. Try again in a minute."));
+            return;
+        }
+
         await Groups.AddToGroupAsync(Context.ConnectionId, game.GameId);
 
         if (created)

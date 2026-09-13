@@ -98,10 +98,20 @@ const MIN_SEPARATION = 0.95;
 // ride the actual fist/shoe meshes (see hitboxes.js), so root-to-root hit
 // distance ≈ limb extension + lunge. The old values assumed a half-meter of
 // invisible forward reach.
+// 2026-09-13 (user request: "punch for speed, kick when they want a powerful
+// hit"). The punch is now HALF of what it was on both axes it competes on —
+// half the damage and half the energy toll (`energyMul`, applied to
+// ATTACK_ENERGY_COST at the swing) — so the two buttons stop being "the same
+// trade at two speeds" and become an actual choice: the punch buys tempo and
+// costs almost nothing to throw, the kick is the only way to take a real bite
+// out of the bar. Damage per unit of energy is deliberately left about even
+// between them; what differs is how much of the fight each swing commits to.
 const ATTACKS = {
-  punch: { name: 'punch', windup: 0.06, active: 0.06, recover: 0.15, dmg: 7.5, reach: 1.2,
+  punch: { name: 'punch', windup: 0.06, active: 0.06, recover: 0.15, dmg: 3.75, reach: 1.2,
+           energyMul: 0.5,
            cancelInto: { idle: 0.22, punch: 0.16, kick: 0.20, block: 0.24 } },
   kick:  { name: 'kick',  windup: 0.12, active: 0.12, recover: 0.30, dmg: 15, reach: 1.45,
+           energyMul: 1.0,
            cancelInto: { idle: 0.42, punch: 0.34, kick: 0.36, block: 0.40 } },
 };
 
@@ -198,8 +208,10 @@ const ENERGY_DEFAULT = 1.0;
 
 // Flat toll charged on every swing release, on top of whatever the wind-up
 // already drained. This is the anti-spam term: at 0.22 a fighter who only ever
-// taps gets roughly four strikes from a full bar before gassing out, and the
-// idle regen below cannot keep up with continuous mashing.
+// taps gets roughly four KICKS from a full bar before gassing out, and the idle
+// regen below cannot keep up with continuous mashing. Each attack scales it by
+// its own `energyMul`, so a punch pays half (≈ eight jabs to a bar) — see the
+// ATTACKS table for why the two buttons are priced apart.
 const ATTACK_ENERGY_COST = 0.22;
 
 // Hysteresis band for the gate. Falling below ENERGY_ATTACK_FLOOR sets the
@@ -2003,9 +2015,11 @@ export class BrawlGame {
     // The flat swing toll (2026-09-12 rework). The wind-up has already drained
     // whatever charge this strike carries; this is the additional per-swing cost
     // that makes tap-spam unsustainable, since a jab banks almost no charge but
-    // still pays it in full. Blocking and standing are what refill the bar —
-    // see the ENERGY_* block and the regen in _tickFighter.
-    f.energy = Math.max(0, f.energy - ATTACK_ENERGY_COST);
+    // still pays the toll. Scaled by the attack's own energyMul — a punch pays
+    // half a kick's, which is what makes it the tempo move. Blocking and
+    // standing are what refill the bar — see the ENERGY_* block and the regen
+    // in _tickFighter.
+    f.energy = Math.max(0, f.energy - ATTACK_ENERGY_COST * (f.attack.energyMul ?? 1));
     if (f.energy < ENERGY_ATTACK_FLOOR) f.gassed = true;
     this.hudDirty = true;
     f.animator.play(name);

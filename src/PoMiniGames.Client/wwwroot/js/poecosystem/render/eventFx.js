@@ -7,7 +7,7 @@
 //
 // It owns three things:
 //
-//   EVENTS    kind + tile → a world position → particles, a flash light, camera trauma via
+//   EVENTS    kind + tile → a world position → particles, camera trauma via
 //             the app-wide impact bus, a rack focus, and a positioned stinger. Everything
 //             scales with distance, so a far-off eruption is a rumble on the horizon and a
 //             near one takes the screen.
@@ -45,20 +45,20 @@ const PROP_MATERIAL = {
 
 // Per-event presets. `reach` is the distance at which the event stops shaking the camera.
 const EVENTS = {
-  lightning: { reach: 90, trauma: 'heavy', flash: 9, flashColor: 0xdfe9ff, rack: 0.9 },
-  rockslide: { reach: 70, trauma: 'medium', flash: 0, flashColor: 0xffffff, rack: 0.5 },
-  eruption: { reach: 200, trauma: 'heavy', flash: 5, flashColor: 0xff7a3c, rack: 1 },
+  lightning: { reach: 90, trauma: 'heavy', rack: 0.9 },
+  rockslide: { reach: 70, trauma: 'medium', rack: 0.5 },
+  eruption: { reach: 200, trauma: 'heavy', rack: 1 },
 };
 
-export function createEventFx(scene, particles, audio, { tier = 'high' } = {}) {
-  // One reusable flash light, left VISIBLE at zero intensity rather than hidden or
-  // created per strike. three counts only visible lights when it builds a shader
-  // permutation, so either alternative would recompile every material in the scene on the
-  // first lightning strike — a hitch on precisely the frame that has to look good.
-  const flash = new THREE.PointLight(0xdfe9ff, 0, 120, 2);
-  scene.add(flash);
-  let flashLevel = 0;
-  let flashPeak = 0;
+export function createEventFx(particles, audio, { tier = 'high' } = {}) {
+  // 2026-09-13: the lightning/eruption flash light lived here. It was one reusable
+  // THREE.PointLight driven to peak intensity 1980 (lightning, near-white) / 450 (eruption,
+  // orange) and decayed over ~180ms — a whole-screen strobe on every weather event, which
+  // reads as the screen flickering rather than as lightning. Removed outright rather than
+  // hidden behind the reduce-flashing preference, because the strobe WAS the effect: a
+  // strike still has its particles, its stinger and its camera trauma, and an eruption
+  // still has its ash column. The light was also this module's only use of the scene
+  // handle, so that parameter went with it.
 
   // Previous frame's props, for the impact watcher. Sized to the cap once: the frame can
   // never carry more rows than PROP_CAP, so this never reallocates.
@@ -99,16 +99,6 @@ export function createEventFx(scene, particles, audio, { tier = 'high' } = {}) {
       const scale = shake(dist, preset);
 
       audio?.stinger(ev.kind, at);
-
-      // A strobing point light is the one effect here that can genuinely hurt someone, so
-      // it answers to the reduce-flashing preference directly rather than through
-      // impactFx — that module gates the post-processing punch, not this light.
-      if (preset.flash > 0 && !window.PoQuality?.reduceFlashing?.()) {
-        flash.position.set(at.x, at.y + (ev.kind === 'lightning' ? 14 : 3), at.z);
-        flash.color.setHex(preset.flashColor);
-        flashPeak = preset.flash * (ev.kind === 'lightning' ? 220 : 90);
-        flashLevel = 1;
-      }
 
       // A rack focus is a full second scene re-render, so it is spent only on events the
       // player is close enough to be looking at.
@@ -237,16 +227,6 @@ export function createEventFx(scene, particles, audio, { tier = 'high' } = {}) {
       prevAt = now;
     },
 
-    /** Decays the flash light. Separate from event() so it runs at display rate. */
-    update(dt) {
-      if (flashLevel <= 0) return;
-      // Fast decay: lightning is a strobe, and anything slower reads as a lamp being
-      // switched on. Squared on the way out so the tail is short as well as fast.
-      flashLevel -= dt * 5.5;
-      if (flashLevel <= 0) { flashLevel = 0; flash.intensity = 0; return; }
-      flash.intensity = flashPeak * flashLevel * flashLevel;
-    },
-
     /**
      * Tile index → the world point a plume should rise from. Returns a SHARED vector:
      * callers consume it immediately (event() does) and must never hold on to it.
@@ -257,7 +237,5 @@ export function createEventFx(scene, particles, audio, { tier = 'high' } = {}) {
       tmp.set(x, terrainApi ? terrainApi.heightAt(x, z) : 0, z);
       return tmp;
     },
-
-    dispose() { scene.remove(flash); flash.dispose?.(); },
   };
 }

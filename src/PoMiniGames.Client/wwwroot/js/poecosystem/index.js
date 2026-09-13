@@ -82,7 +82,7 @@ function createEngine(container, dotnetRef, opts) {
         for (const ev of msg.events) {
           if (ev.kind !== 'lightning' && ev.kind !== 'rockslide' && ev.kind !== 'eruption') continue;
           state.eventPressure = Math.min(1, state.eventPressure + (ev.kind === 'eruption' ? 0.8 : 0.45));
-          // The renderer owns the whole reaction — particles, flash, camera, and the
+          // The renderer owns the whole reaction — particles, camera trauma, and the
           // POSITIONED stinger. Only a headless engine falls back to a centred one.
           if (state.renderer) state.renderer.onEvent(ev);
           else state.audio.stinger(ev.kind);

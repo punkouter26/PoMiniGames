@@ -5,7 +5,7 @@
 // The player is NOT a simulation entity: creatures never see it, it never enters a
 // snapshot, and its pose is kept in prefs so Resume puts you back where you stood.
 import { WORLD_SIZE } from '../sim/core/config.js';
-import { isWalkable, tileIndex } from '../sim/terrain/tiles.js';
+import { TILE_STATE, isWalkable, tileIndex } from '../sim/terrain/tiles.js';
 
 export const PLAYER = Object.freeze({
   eyeHeight: 1.7,
@@ -28,7 +28,7 @@ export const PLAYER = Object.freeze({
 const SEA_LEVEL = 0;
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 
-export function createPlayer(terrain, startMode = 'walk') {
+export function createPlayer(terrain, startMode = 'walk', blocked = null) {
   const size = terrain?.size ?? WORLD_SIZE;
   const p = {
     x: size / 2, y: 0, z: size / 2, yaw: 0, pitch: 0,
@@ -48,22 +48,62 @@ export function createPlayer(terrain, startMode = 'walk') {
     toggleFly() { p.mode = p.mode === 'fly' ? 'walk' : 'fly'; p.vy = 0; },
     pose() { return { x: p.x, y: p.y, z: p.z, yaw: p.yaw, pitch: p.pitch, mode: p.mode }; },
     setPose(pose) {
-      if (!pose || !Number.isFinite(pose.x)) { placeOnLand(p, terrain, p.mode === 'fly'); return; }
+      if (!pose || !Number.isFinite(pose.x)) { placeOnLand(p, terrain, p.mode === 'fly', blocked); return; }
       p.x = pose.x; p.y = pose.y; p.z = pose.z; p.yaw = pose.yaw ?? 0; p.pitch = pose.pitch ?? 0;
       p.mode = pose.mode === 'fly' ? 'fly' : 'walk';
       p.vy = 0;
-      if (!inBounds(p.x, p.z, size) || !Number.isFinite(p.y)) placeOnLand(p, terrain, p.mode === 'fly');
+      if (!inBounds(p.x, p.z, size) || !Number.isFinite(p.y)) placeOnLand(p, terrain, p.mode === 'fly', blocked);
+      // A pose saved before this rule existed can sit inside a tree, and keeping it would
+      // bury the camera again however good the spawn scan now is — so a blocked tile gets
+      // the same treatment as an out-of-bounds one.
+      else if (blocked && terrain && blocked[tileIndex(p.x, p.z, size)]) placeOnLand(p, terrain, p.mode === 'fly', blocked);
     },
   };
-  if (terrain) placeOnLand(p, terrain, startMode === 'fly');
+  if (terrain) placeOnLand(p, terrain, startMode === 'fly', blocked);
   return p;
 }
 
 const inBounds = (x, z, size) => x > -PLAYER.boundary && z > -PLAYER.boundary && x < size + PLAYER.boundary && z < size + PLAYER.boundary;
 
-/** Drop the player on the nearest walkable tile to the map centre (spawn / recovery).
+/**
+ * Tiles the god must not be dropped onto, as a Uint8Array indexed by tile.
+ *
+ * The spawn scan used to ask only whether a tile was *walkable*, and a forest floor is: so
+ * the god could be placed on a tile carrying a standing tree, putting the camera at eye
+ * height (1.7 m) inside the trunk and its canopy — the view fills with a green blob and
+ * nothing behind it is visible (reported 2026-09-13). Huts, boulders and lava are included
+ * because the sim's own passableTile() already treats them as solid; the god should not
+ * stand where a creature cannot walk.
+ *
+ * A tree tile blocks only while the tree STANDS — a chopped or burnt tree leaves a stump
+ * (see flora/trees.js) and tileState is the record of which it is. Without tileState every
+ * tree tile blocks, which is the safe direction to fall back to.
+ */
+export function blockedTiles({ trees, bushes, tileState, size }) {
+  const blocked = new Uint8Array(size * size);
+  if (tileState) {
+    for (let i = 0; i < tileState.length; i++) {
+      const s = tileState[i];
+      if (s === TILE_STATE.HUT || s === TILE_STATE.BOULDER || s === TILE_STATE.LAVA) blocked[i] = 1;
+    }
+  }
+  if (trees) {
+    for (let k = 0; k < trees.length; k++) {
+      const t = trees[k];
+      const s = tileState ? tileState[t] : TILE_STATE.NORMAL;
+      if (s !== TILE_STATE.STUMP && s !== TILE_STATE.BURNT) blocked[t] = 1;
+    }
+  }
+  // Berry bushes are knee-high and would not fill the view the way a tree does, but they
+  // cost nothing to avoid and the god has no business standing inside one either.
+  if (bushes) for (let k = 0; k < bushes.length; k++) blocked[bushes[k]] = 1;
+  return blocked;
+}
+
+/** Drop the player on the nearest walkable, unoccupied tile to the map centre (spawn /
+ *  recovery). `blocked` is blockedTiles() — walkable is not the same as clear.
  *  keepFly preserves a float mode that was requested before any terrain existed. */
-export function placeOnLand(p, terrain, keepFly = false) {
+export function placeOnLand(p, terrain, keepFly = false, blocked = null) {
   const { size } = terrain;
   const c = size / 2;
   for (let r = 0; r < size / 2; r += 2) {
@@ -71,7 +111,9 @@ export function placeOnLand(p, terrain, keepFly = false) {
       const ang = (a / 12) * Math.PI * 2;
       const x = c + Math.cos(ang) * r; const z = c + Math.sin(ang) * r;
       if (x < 1 || z < 1 || x >= size - 1 || z >= size - 1) continue;
-      if (!isWalkable(terrain.type[tileIndex(x, z, size)])) continue;
+      const i = tileIndex(x, z, size);
+      if (!isWalkable(terrain.type[i])) continue;
+      if (blocked && blocked[i]) continue;
       p.x = x; p.z = z; p.y = terrain.heightAt(x, z) + PLAYER.eyeHeight; p.vy = 0; p.mode = keepFly ? 'fly' : 'walk'; p.grounded = !keepFly;
       return p;
     }

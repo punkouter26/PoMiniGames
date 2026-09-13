@@ -253,6 +253,24 @@ const ENERGY_HITSTUN_REGEN_PER_SEC = 0.08;
 // branch of _applyHit.
 const BLOCK_ENERGY_REWARD = 0.06;
 
+// How long ANY blocked swing freezes the attacker out of their own recovery.
+//
+// 2026-09-13: this used to be spelled inline as a literal 0.5 guarded by
+// `attack.name === 'punch'`, so a blocked KICK cost the attacker nothing at all
+// — they recovered on their normal schedule and were free to swing again before
+// the defender could answer. That made the guard a coin-flip mechanic: reading a
+// punch was a turn, reading a kick was a shrug, and since kicks are also the
+// swing that beats a standing guard (the guard capsules only cover the forearms,
+// see testAttackBlocked) the AI's whole answer to a defensive player was the one
+// attack blocking did not punish. Every blocked swing now pays the same freeze.
+//
+// 0.5 s is roughly one attack's full cycle, so a block is unambiguously the
+// defender's turn: enough for a jab plus its recovery, not enough for a free
+// three-hit string. A PERFECT guard still buys more (PERFECT_GUARD_STUN) plus
+// the energy, the plant and the counter window — the read is still worth more
+// than the camp, which is the point of splitting the reward at all.
+const BLOCK_STUN = 0.5;
+
 // ── Perfect guard ────────────────────────────────────────────────────────
 // 2026-09-12, same brief as the energy rework above ("force the player to
 // learn to use the block action"). The energy economy already made blocking
@@ -278,8 +296,8 @@ const PERFECT_GUARD_WINDOW = 0.22;
 // back most of a bar, which is what pays for the counter the freeze opens up.
 const PERFECT_GUARD_ENERGY_MUL = 3.5;
 // How long the attacker is frozen out of their own recovery. Longer than the
-// 0.5 s an ordinary blocked punch already costs them, and unlike that one it
-// applies to kicks too — the point is that it is unambiguously YOUR turn now.
+// BLOCK_STUN an ordinary block already costs them — the point is that reading
+// the swing is unambiguously worth more than standing behind the guard.
 // Deliberately not much longer: blockStunT suppresses the victim's guard as
 // well as their attacks, so this window is un-defendable, and anything past
 // ~0.7 s stops being "your turn" and becomes a free three-hit string. It is
@@ -2891,17 +2909,24 @@ export class BrawlGame {
         const blockDamp = 1 / defMass;
         defender.knockback.add(knockDir.clone().multiplyScalar(2.0 * blockDamp * chargeMul));
       }
-      // Who eats the recovery. An ordinary blocked PUNCH already froze the
-      // attacker; a perfect guard freezes them longer and does it on kicks too,
-      // which is what turns the block into a turn rather than a reprieve.
-      if (perfect || attack.name === 'punch') {
-        attacker.blockStunT = perfect ? PERFECT_GUARD_STUN : 0.5;
-        attacker.state = 'idle';
-        attacker.stateT = 0;
-        attacker.attack = null;
-        attacker.animator.setCharge(null, 0);
-        attacker.animator.play('idle');
-      }
+      // Who eats the recovery. EVERY blocked swing freezes the attacker — see
+      // the BLOCK_STUN comment for why this used to be punch-only and why that
+      // made the guard worth about half of what it looked like it was worth. A
+      // perfect guard freezes them longer still, so the read stays the better
+      // outcome of the two.
+      attacker.blockStunT = perfect ? PERFECT_GUARD_STUN : BLOCK_STUN;
+      attacker.state = 'idle';
+      attacker.stateT = 0;
+      attacker.attack = null;
+      attacker.animator.setCharge(null, 0);
+      attacker.animator.play('idle');
+      // Jumping straight to 'idle' skips the swing's normal completion branch,
+      // which is where the striker body is normally torn down — there is no
+      // 'idle' case in _tickFighter to catch it. `hasHit` keeps the orphan from
+      // registering a second hit, so this was only ever a leaked body until the
+      // next swing, but it is one line and this branch now runs on every
+      // blocked attack rather than only on punches.
+      this._destroySwingPhysics(attacker);
       if (perfect) {
         // Arm the counter. Read in the damage roll below, so the answer the
         // freeze just handed the defender also hits harder than a normal swing.

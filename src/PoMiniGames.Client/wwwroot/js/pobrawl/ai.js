@@ -18,6 +18,19 @@ import { PERSONALITIES } from './personalities.js';
 //     the punish for spending the whole bar on offence, and the reason the
 //     guard is worth learning, since blocking is what refills it
 //
+// Three layers decide what the CPU does on a tick, in priority order:
+//   1. the signature PHRASE (personalities.js `aiPatterns`) — a fixed script
+//      that owns the fighter for a couple of seconds when it opens;
+//   2. the frame-data reactions below — block the wind-up, punish the whiff,
+//      coil at a gassed opponent — gated by the rung's reaction time;
+//   3. the signature FOOTWORK (personalities.js `footwork`) — a fixed cycle of
+//      move/orbit beats that fills everything else, which is most of a round.
+// Layers 1 and 3 are the learnable ones: neither is randomised, and layer 3
+// runs on an uninterrupted clock so the rhythm is countable. Layer 2 is the
+// difficulty dial. Before layer 3 existed all fifteen presidents moved
+// identically in neutral and only differed for the few seconds a phrase was
+// running — see the `footwork` doc block in personalities.js.
+//
 // In-match adaptation: the AI also reads the opponent's habits over a rolling
 // ~8-second window and shifts its weights —
 //   • turtles (blocking a big share of in-range time) draw more kicks, because
@@ -57,21 +70,58 @@ import { PERSONALITIES } from './personalities.js';
 //              gassed their energy bar out. Spending the bar on offence and
 //              then standing there is the mistake this punishes, and blocking
 //              is what refills it — so the counter and the lesson agree.
+//
+// ── 2026-09-13 low-rung pass (user request: "the first 6 presidents are too
+//    easy to beat, make them 50% more difficult") ───────────────────────────
+// Rungs 1-6 are Trump through Bush Sr., i.e. the whole first third of the
+// ladder, and they were still losing to a player who had learned nothing. The
+// 2026-09-12 pass had lifted the floor off zero but left the bottom six sitting
+// well under half the sharpness of the middle of the ladder.
+//
+// The lift is NOT ×1.5 on every column, and it is worth writing down why, since
+// that is the obvious reading of the request and it does not survive contact
+// with the table. Difficulty here is the PRODUCT of the columns, not their sum:
+// a president that blocks more AND punishes more AND reacts faster AND coils
+// more often compounds, so ×1.5 on each of six independent columns is nowhere
+// near 50% harder — it is several times harder. Worse, ×1.5 on rung 6's blockP
+// lands at 0.81, which is old rung 10, and rungs 7-15 would then have to fit
+// into the 0.81-0.97 band and become indistinguishable from each other. The
+// request was to fix the bottom of the ladder, not to flatten the top of it.
+//
+// So the lift is tapered: about +60% on rung 1 falling to about +20% by rung 6,
+// per column, which multiplies out to roughly "half again as hard" as a fight.
+// Concretely a rung-1 president now guards about one swing in six instead of
+// one in ten, punishes a whiff 14% of the time instead of 8%, reacts in 560 ms
+// instead of 700 ms, and coils at a gassed opponent 24% of the time instead of
+// 15% — it still cannot read a jab (see reactFloor) and still spends most of a
+// round not attacking, but it is a fight rather than a heavy bag.
+//
+// Rungs 7-10 are nudged up a few points purely to keep every column strictly
+// monotone after rung 6 moved; 11-15 are untouched except where a column had to
+// step around the rungs below it. The endpoints of the ladder are the same
+// fighter they were.
+//
+// comboP also starts earlier now: rungs 2-4 get a small cancel-string share
+// where they previously had none. That column is the sharpest single difficulty
+// jump in the table — a punch that cancels into a kick beats the guard, because
+// the guard capsules do not cover the legs — so handing the early ladder a
+// little of it is most of what makes rungs 2-4 feel like opponents. Rung 1 is
+// deliberately still zero: the first fight stays the one that teaches.
 const LEVELS = [
-  /*  1 */ { reactionMs: 700, blockP: 0.10, baitP: 0.00, punishP: 0.08, aggro: 0.55, comboP: 0.00, chargeP: 0.12, punishGas: 0.15 },
-  /*  2 */ { reactionMs: 600, blockP: 0.18, baitP: 0.00, punishP: 0.16, aggro: 0.66, comboP: 0.00, chargeP: 0.16, punishGas: 0.22 },
-  /*  3 */ { reactionMs: 510, blockP: 0.27, baitP: 0.02, punishP: 0.26, aggro: 0.76, comboP: 0.00, chargeP: 0.20, punishGas: 0.30 },
-  /*  4 */ { reactionMs: 435, blockP: 0.36, baitP: 0.04, punishP: 0.37, aggro: 0.86, comboP: 0.00, chargeP: 0.24, punishGas: 0.38 },
-  /*  5 */ { reactionMs: 370, blockP: 0.45, baitP: 0.06, punishP: 0.47, aggro: 0.95, comboP: 0.15, chargeP: 0.28, punishGas: 0.46 },
-  /*  6 */ { reactionMs: 315, blockP: 0.54, baitP: 0.09, punishP: 0.57, aggro: 1.03, comboP: 0.25, chargeP: 0.32, punishGas: 0.54 },
-  /*  7 */ { reactionMs: 268, blockP: 0.62, baitP: 0.12, punishP: 0.66, aggro: 1.10, comboP: 0.35, chargeP: 0.36, punishGas: 0.62 },
-  /*  8 */ { reactionMs: 228, blockP: 0.70, baitP: 0.15, punishP: 0.74, aggro: 1.17, comboP: 0.44, chargeP: 0.40, punishGas: 0.69 },
-  /*  9 */ { reactionMs: 194, blockP: 0.77, baitP: 0.18, punishP: 0.81, aggro: 1.23, comboP: 0.52, chargeP: 0.44, punishGas: 0.75 },
-  /* 10 */ { reactionMs: 166, blockP: 0.83, baitP: 0.21, punishP: 0.87, aggro: 1.29, comboP: 0.59, chargeP: 0.48, punishGas: 0.80 },
-  /* 11 */ { reactionMs: 143, blockP: 0.88, baitP: 0.25, punishP: 0.91, aggro: 1.33, comboP: 0.66, chargeP: 0.52, punishGas: 0.85 },
-  /* 12 */ { reactionMs: 126, blockP: 0.91, baitP: 0.29, punishP: 0.94, aggro: 1.37, comboP: 0.72, chargeP: 0.56, punishGas: 0.89 },
-  /* 13 */ { reactionMs: 113, blockP: 0.93, baitP: 0.33, punishP: 0.96, aggro: 1.41, comboP: 0.78, chargeP: 0.60, punishGas: 0.92 },
-  /* 14 */ { reactionMs: 103, blockP: 0.95, baitP: 0.37, punishP: 0.98, aggro: 1.46, comboP: 0.84, chargeP: 0.64, punishGas: 0.95 },
+  /*  1 */ { reactionMs: 560, blockP: 0.16, baitP: 0.02, punishP: 0.14, aggro: 0.72, comboP: 0.00, chargeP: 0.18, punishGas: 0.24 },
+  /*  2 */ { reactionMs: 490, blockP: 0.26, baitP: 0.04, punishP: 0.24, aggro: 0.81, comboP: 0.06, chargeP: 0.23, punishGas: 0.33 },
+  /*  3 */ { reactionMs: 428, blockP: 0.36, baitP: 0.06, punishP: 0.35, aggro: 0.89, comboP: 0.13, chargeP: 0.28, punishGas: 0.42 },
+  /*  4 */ { reactionMs: 375, blockP: 0.46, baitP: 0.08, punishP: 0.46, aggro: 0.97, comboP: 0.20, chargeP: 0.33, punishGas: 0.50 },
+  /*  5 */ { reactionMs: 328, blockP: 0.56, baitP: 0.10, punishP: 0.56, aggro: 1.04, comboP: 0.28, chargeP: 0.38, punishGas: 0.58 },
+  /*  6 */ { reactionMs: 288, blockP: 0.65, baitP: 0.13, punishP: 0.65, aggro: 1.10, comboP: 0.36, chargeP: 0.42, punishGas: 0.66 },
+  /*  7 */ { reactionMs: 252, blockP: 0.72, baitP: 0.16, punishP: 0.73, aggro: 1.16, comboP: 0.44, chargeP: 0.45, punishGas: 0.70 },
+  /*  8 */ { reactionMs: 220, blockP: 0.78, baitP: 0.19, punishP: 0.79, aggro: 1.21, comboP: 0.52, chargeP: 0.48, punishGas: 0.75 },
+  /*  9 */ { reactionMs: 192, blockP: 0.83, baitP: 0.22, punishP: 0.84, aggro: 1.26, comboP: 0.58, chargeP: 0.52, punishGas: 0.79 },
+  /* 10 */ { reactionMs: 166, blockP: 0.87, baitP: 0.25, punishP: 0.88, aggro: 1.31, comboP: 0.64, chargeP: 0.55, punishGas: 0.83 },
+  /* 11 */ { reactionMs: 143, blockP: 0.90, baitP: 0.28, punishP: 0.91, aggro: 1.35, comboP: 0.70, chargeP: 0.58, punishGas: 0.87 },
+  /* 12 */ { reactionMs: 126, blockP: 0.92, baitP: 0.31, punishP: 0.94, aggro: 1.39, comboP: 0.75, chargeP: 0.61, punishGas: 0.90 },
+  /* 13 */ { reactionMs: 113, blockP: 0.94, baitP: 0.34, punishP: 0.96, aggro: 1.43, comboP: 0.80, chargeP: 0.63, punishGas: 0.93 },
+  /* 14 */ { reactionMs: 103, blockP: 0.96, baitP: 0.38, punishP: 0.98, aggro: 1.47, comboP: 0.85, chargeP: 0.66, punishGas: 0.96 },
   /* 15 */ { reactionMs:  95, blockP: 0.97, baitP: 0.42, punishP: 1.00, aggro: 1.50, comboP: 0.90, chargeP: 0.68, punishGas: 0.98 },
 ];
 
@@ -84,6 +134,13 @@ export const MAX_RUNG = 15;
 const HABIT_TAU = 8;          // seconds of memory
 const TURTLE_THRESHOLD = 0.35; // fraction of in-range time spent blocking
 const SPAM_THRESHOLD = 0.5;    // opponent attacks per second
+
+// Longest a footwork signature may keep a fighter out of range before the AI
+// overrides it and closes. Every dance in personalities.js closes on its own
+// inside a second, but the clamp is not about them: a fighter parked at the far
+// rope by its own rhythm is not a pattern to read, it is a stalemate the player
+// cannot end either. One second is long enough that the beat still shows.
+const FOOT_STALL_MAX = 1.0;
 
 // Legacy string difficulties (used by demo / 2p fallbacks) map onto rungs.
 const NAMED_LEVELS = { easy: 2, medium: 5, hard: 8 };
@@ -114,13 +171,22 @@ export class AiController {
     // one did, which is most of why the top of the ladder used to feel flat:
     // the numbers got sharper but the fight did not get faster.
     //
-    // 1.10 → 0.76 dwell: a top-rung coil is about a quarter shorter, which is
+    // 1.02 → 0.76 dwell: a top-rung coil is about a quarter shorter, which is
     // still long enough to see and block. Going below ~0.7 starts eating the
     // tell itself, and an unreadable phrase is just damage, not difficulty.
-    this.patTempo = 1.10 - 0.34 * ((level - 1) / (MAX_RUNG - 1));
-    // 1.20 → 0.68 cadence: the top of the ladder opens a phrase roughly every
-    // 3.5 s where the bottom takes 6.5 s, so pressure scales with the rung too.
-    this.patCadence = 1.20 - 0.52 * ((level - 1) / (MAX_RUNG - 1));
+    this.patTempo = 1.02 - 0.26 * ((level - 1) / (MAX_RUNG - 1));
+    // 1.00 → 0.68 cadence: the top of the ladder opens a phrase roughly every
+    // 3.5 s where the bottom takes 5.4 s, so pressure scales with the rung too.
+    //
+    // 2026-09-13: both figures used to start at 1.10 / 1.20, which meant a
+    // rung-1 president ran its signature at 110% of its written dwell only once
+    // every ~6.5 s — long enough that a player could finish the fight having
+    // seen the phrase twice and read it as noise. The bottom of the ladder now
+    // plays its repertoire at roughly its written tempo and cadence: the same
+    // phrase, often enough to actually be learnable, which is both the low-rung
+    // difficulty lift and the point of having written the phrases at all. The
+    // top of the ladder is unchanged.
+    this.patCadence = 1.00 - 0.32 * ((level - 1) / (MAX_RUNG - 1));
 
     // ── Reactive-block reaction floor ─────────────────────────────────
     // How long an opponent's wind-up must have been VISIBLE before the reactive
@@ -132,15 +198,23 @@ export class AiController {
     // applies to both sides (game.js PERFECT_GUARD_WINDOW): a frame-0 guard is
     // always "perfect", so every jab you threw handed back a free counter.
     //
-    // 0.28 s at rung 1 down to 0.09 s at rung 15, against the frame data in
+    // 0.24 s at rung 1 down to 0.09 s at rung 15, against the frame data in
     // game.js ATTACKS (punch wind-up 0.06 s, kick 0.12 s, a held coil as long as
     // it is held). The resulting rule is simple enough for a player to feel:
     //   • nobody can react to a bare jab — trading jabs is always live;
-    //   • only the last two rungs get under a kick's 0.12 s wind-up;
+    //   • only the last three rungs (13-15) get under a kick's 0.12 s wind-up.
+    //     This line read "the last two" and was off by one against its own
+    //     formula both before and after the 2026-09-13 retune — rung 13 landed
+    //     at 0.117 s on the old numbers too. The boundary is the claim worth
+    //     keeping, so it is the comment that moved, not the curve;
     //   • a held coil is long enough for anyone to answer, so whether it gets
     //     guarded is down to blockP alone — which is the point of rolling that
     //     once per swing rather than per tick (see the reactive-defense block).
-    this.reactFloor = 0.28 - 0.19 * ((level - 1) / (MAX_RUNG - 1));
+    // The 0.24 s floor is deliberately still well above a kick's 0.12 s wind-up
+    // and four times a punch's: the low-rung lift buys the early ladder more
+    // reads, not superhuman ones, and "nothing below rung 13 can react to a
+    // poke" is an invariant a player can build a gameplan on.
+    this.reactFloor = 0.24 - 0.15 * ((level - 1) / (MAX_RUNG - 1));
     // Engine time the opponent's current wind-up began, or -1 between swings,
     // and whether this rung has already taken its single block roll on it.
     this._oppWindupSince = -1;
@@ -174,6 +248,26 @@ export class AiController {
     this.holdName = null;
     this.holdUntil = 0;
     this.chargeP = p.chargeP;
+
+    // ── Footwork signature (see personalities.js `footwork`) ──────────
+    // The president's neutral-game dance: a fixed cycle of move/orbit beats
+    // replayed on the engine clock for the whole fight. Deliberately NOT scaled
+    // by rung — the rung decides how sharp a president is, the dance decides who
+    // he is, and a tempo that moved with the ladder would invalidate the read a
+    // player learned three rungs earlier.
+    //
+    // Cached cycle length so `_footBeat` is a modulo rather than a scan-sum.
+    this.footwork = (this.charId && PERSONALITIES[this.charId]?.footwork) || null;
+    this._footCycle = this.footwork
+      ? this.footwork.reduce((s, b) => s + (b.secs || 0.3), 0) : 0;
+    // True while the last decision left the fighter in neutral (approaching,
+    // holding, giving ground) rather than committed to a swing, a guard or a
+    // charge. Only then are the feet refreshed every tick — see `update`.
+    this._footLive = true;
+    // Engine time we last managed to close ground. The dance may hold or give
+    // ground on its own beat, but it must never be able to stall a round out;
+    // see FOOT_STALL_MAX.
+    this._closedAt = 0;
     // Signature pattern state (see _runPattern). `_pat` is the phrase currently
     // playing out, `_patReadyAt` the wall-clock time the next one may open.
     //
@@ -261,6 +355,56 @@ export class AiController {
     return Math.max(0, this.oppAtkN / this.clockT - SPAM_THRESHOLD);
   }
 
+  // ── Footwork signature ────────────────────────────────────────────────
+  // The neutral-game counterpart to the pattern runner below. Where a phrase is
+  // a committed script that owns the fighter for a couple of seconds, this is
+  // the rhythm underneath it — the thing the player is watching for most of the
+  // round, and until 2026-09-13 the one part of a president that was identical
+  // across the whole roster.
+  //
+  // Keyed off `this.t` alone, so the cycle never resets: not on a hit, not on a
+  // phrase, not on a knockdown. A dance that restarted on contact would be
+  // unlearnable for exactly the reason a randomised phrase is.
+
+  /** The beat this president is on right now, or null when it has no dance. */
+  _footBeat() {
+    if (!this.footwork || this._footCycle <= 0) return null;
+    let u = this.t % this._footCycle;
+    for (const b of this.footwork) {
+      const s = b.secs || 0.3;
+      if (u < s) return b;
+      u -= s;
+    }
+    return this.footwork[this.footwork.length - 1];
+  }
+
+  /**
+   * The beat as a movement intent.
+   * @param close true when we are out of range. A retreat beat is clamped to a
+   *   hold, and if the dance has kept us out of range past FOOT_STALL_MAX we
+   *   close regardless of what the beat says. The orbit component is never
+   *   clamped, so the signature still reads at every distance.
+   */
+  _footIntent(close) {
+    const beat = this._footBeat();
+    // No signature — BOB, or a controller built without a charId (the demo and
+    // 2p fallbacks). Keep the pre-2026-09-13 behaviour rather than inventing
+    // one: walk in with an occasional random arc, give ground in neutral.
+    if (!beat) {
+      const side = this.rng.random() < 0.18 ? (this.rng.random() < 0.5 ? 1 : -1) : 0;
+      return { move: close ? 1 : -1, side: close ? side : 0 };
+    }
+    let move = beat.move ?? 0;
+    if (close) {
+      move = Math.max(0, move);
+      if (move > 0) this._closedAt = this.t;
+      else if (this.t - this._closedAt > FOOT_STALL_MAX) move = 1;
+    } else {
+      this._closedAt = this.t;
+    }
+    return { move, side: beat.side || 0 };
+  }
+
   // ── Signature pattern runner ──────────────────────────────────────────
   // Every president owns an ordered repertoire of scripted phrases
   // (personalities.js `aiPatterns`) that it cycles on a fixed cadence for the
@@ -292,8 +436,16 @@ export class AiController {
   _unlockedPatterns() {
     const all = PERSONALITIES[this.charId]?.aiPatterns;
     if (!all || !all.length) return null;
-    // 1..5 → 1 phrase, 6..10 → 2, 11..15 → 3 (clamped to what exists).
-    const depth = Math.min(all.length, 1 + Math.floor((this.level - 1) / 5));
+    // 1..3 → 1 phrase, 4..9 → 2, 10..15 → 3 (clamped to what exists).
+    //
+    // 2026-09-13: the boundaries were 5 and 10, so the first FIVE rungs were a
+    // one-phrase fight. Repertoire depth is the difficulty axis the numeric
+    // table cannot express — a second phrase is a second thing to learn before
+    // the reads pay off — and spending five of the fifteen rungs at depth 1 is
+    // most of why the bottom of the ladder felt like the same easy opponent
+    // five times. Rungs 1-3 still open at depth 1 so the ladder's first fights
+    // remain the ones that teach the mechanic.
+    const depth = Math.min(all.length, this.level >= 10 ? 3 : this.level >= 4 ? 2 : 1);
     return all.slice(0, depth);
   }
 
@@ -322,7 +474,10 @@ export class AiController {
     // Cadence is measured from the START of the phrase, so the gap a player
     // learns to count is the gap between openings, not between endings.
     this._patReadyAt = this.t + (pat.everySecs || 5) * this.patCadence;
-    // A phrase supersedes any half-formed plan from the random layer.
+    // A phrase supersedes any half-formed plan from the random layer, and owns
+    // the feet outright: its own advance/retreat/sidestep steps are the dance
+    // for as long as it runs.
+    this._footLive = false;
     this.baitArmed = false;
     this.comboAt = 0;
     this.comboUntil = 0;
@@ -408,6 +563,7 @@ export class AiController {
     const name = this.rng.random() < kickBias ? 'kick' : 'punch';
     this.holdName = name;
     this.holdUntil = this.t + 0.45 + this.rng.random() * spread;
+    this._footLive = false;   // a loaded coil roots the feet
     this.baitArmed = false;
     this.comboAt = 0;
     this.comboUntil = 0;
@@ -448,6 +604,7 @@ export class AiController {
       this._pat = null;
       this.holdName = null;
       this.sinceDecision = 0;
+      this._footLive = false;   // the dance is off while catching a breath
       const backoff = ctx.distance < ctx.kickRange * 0.9 ? -1 : 0;
       this.current = { move: backoff, side: 0, punch: false, kick: false, block: true };
       return { ...this.current, super: false };
@@ -544,6 +701,7 @@ export class AiController {
       if (!this.current.block && this.rng.random() < effBlockP) {
         this.current = { move: 0, side: 0, punch: false, kick: false, block: true };
         this.sinceDecision = 0;
+        this._footLive = false;
         this.baitArmed = false;
         this.comboAt = 0;
         this.comboUntil = 0;
@@ -551,12 +709,37 @@ export class AiController {
       }
     }
 
+    // ── Footwork between decisions ──────────────────────────────────────
+    // The feet run on the engine clock, not the decision clock. reactionMs
+    // gates DECISIONS — whether to swing, guard, back off — but the dance is a
+    // fixed rhythm the player is meant to count, and sampling it only once per
+    // reactionMs would drop a 0.25 s beat entirely at the bottom of the ladder
+    // and turn every signature into the same slow trudge. So while the fighter
+    // is in neutral, the feet are refreshed every tick.
+    //
+    // `_footLive` is what keeps that from overriding a commitment: it is
+    // cleared by every branch below that decides to swing, guard, bait or
+    // charge, and set again by the branches that decide to move. Without it a
+    // president who chose to plant and block would walk out of his own guard on
+    // the next tick.
+    if (this._footLive && this.footwork) {
+      const foot = this._footIntent(ctx.distance > ctx.kickRange);
+      this.current.move = foot.move;
+      this.current.side = foot.side;
+      intent.move = foot.move;
+      intent.side = foot.side;
+    }
+
     if (this.sinceDecision < this.reactionMs) return intent;
     this.sinceDecision = 0;
 
     // ── Anti-stunlock retreat ───────────────────────────────────────────
+    // Survival, not signature: the dance is suspended while backing out of a
+    // string. Coming out of it the feet pick the cycle back up wherever the
+    // engine clock has got to, which is the point of never resetting it.
     if (this.t < this.retreatUntil) {
       this.current = { move: -1, side: 0, punch: false, kick: false, block: false };
+      this._footLive = false;
       return { ...this.current };
     }
 
@@ -597,16 +780,25 @@ export class AiController {
       return this._loadCharge(0.4, 0.45);
     }
 
-    // ── Out of range: approach, occasionally circle in ──────────────────
-    // The circle is now stored ON this.current rather than tacked onto the
-    // returned copy. `side` used to be an edge-triggered dart, so one frame of
-    // it was a whole sidestep; it is a held orbit direction now, and a single
-    // frame of that is an imperceptible nudge. Keeping it on `current` means it
-    // persists until the next decision tick, which is what makes the AI arc in
-    // rather than walk a straight line.
+    // ── Out of range: close on this president's own footwork ────────────
+    // This used to be `move: 1` plus an 18% random sidestep, which is to say
+    // every president in the roster approached identically and the only thing
+    // separating them at range was noise. The approach is now the signature
+    // cycle (personalities.js `footwork`), clamped so it can only close or hold
+    // — Trump stalks straight in, Obama arcs, Carter comes on the metronome,
+    // JFK darts side to side — and it keeps updating between decisions via the
+    // per-tick refresh above, so the rhythm survives a 560 ms reaction gate.
+    //
+    // The circle is stored ON this.current rather than tacked onto the returned
+    // copy. `side` used to be an edge-triggered dart, so one frame of it was a
+    // whole sidestep; it is a held orbit direction now, and a single frame of
+    // that is an imperceptible nudge.
     if (ctx.distance > ctx.kickRange) {
-      const side = this.rng.random() < 0.18 ? (this.rng.random() < 0.5 ? 1 : -1) : 0;
-      this.current = { move: 1, side, punch: false, kick: false, block: false };
+      const foot = this._footIntent(true);
+      this.current = {
+        move: foot.move, side: foot.side, punch: false, kick: false, block: false,
+      };
+      this._footLive = true;
       this.baitArmed = false;
       return { ...this.current };
     }
@@ -619,6 +811,7 @@ export class AiController {
       // Cancel the bait into block — looks like the AI feinted.
       this.current = { move: 0, side: 0, punch: false, kick: false, block: true };
       this.baitArmed = false;
+      this._footLive = false;
       return { ...this.current };
     }
 
@@ -626,6 +819,7 @@ export class AiController {
       // Punch is the fastest move — best for punishing recovery.
       this.current = { move: 0, side: 0, punch: false, kick: false, block: false };
       this.baitArmed = false;
+      this._footLive = false;
       return { ...this.current, punch: true };
     }
 
@@ -642,7 +836,8 @@ export class AiController {
     if (r < pPunch) {
       this.current = { move: 0, side: 0, punch: false, kick: false, block: false };
       this.baitArmed = false;
-      // Rungs 5+ sometimes commit to the punch as the opener of a
+      this._footLive = false;
+      // Rungs 2+ sometimes commit to the punch as the opener of a
       // punch→kick cancel string (see the combo block above).
       if (this.comboP > 0 && this.rng.random() < this.comboP) {
         this.comboAt = this.t + ctx.ownAttacks.punch.cancelInto.kick + 0.04;
@@ -652,9 +847,11 @@ export class AiController {
     } else if (r < pPunch + pKick) {
       this.current = { move: 0, side: 0, punch: false, kick: false, block: false };
       this.baitArmed = false;
+      this._footLive = false;
       return { ...this.current, kick: true };
     } else if (r < pPunch + pKick + 0.15) {
       // Optionally arm a bait: start a punch, then cancel into block next tick.
+      this._footLive = false;
       if (this.rng.random() < effBaitP) {
         this.baitArmed = true;
         this.baitStartedAt = this.t;
@@ -662,13 +859,23 @@ export class AiController {
         return { ...this.current, punch: true };
       }
       this.current = { move: 0, side: 0, punch: false, kick: false, block: true };
-    } else if (r < pPunch + pKick + 0.15 + 0.15) {
-      // Fixed 15% retreat share; whatever probability the low rungs don't
-      // spend on attacking becomes idle time — a level-1 president mostly
-      // stands there being punchable.
-      this.current = { move: -1, side: 0, punch: false, kick: false, block: false };
     } else {
-      this.current = { move: 0, side: 0, punch: false, kick: false, block: false };
+      // ── Neutral share: walk the signature ─────────────────────────────
+      // The remaining probability used to split into a fixed 15% backpedal and
+      // an idle remainder, both of which looked the same from every president.
+      // It is one branch now and it hands the tick to the footwork cycle, so
+      // whatever the low rungs do not spend on attacking is spent visibly being
+      // Ford or Eisenhower rather than standing still being punchable.
+      //
+      // A fighter with no signature keeps the original split exactly: the first
+      // 0.15 of this share backpedals, the rest stands still.
+      const foot = this.footwork
+        ? this._footIntent(false)
+        : { move: r < pPunch + pKick + 0.30 ? -1 : 0, side: 0 };
+      this.current = {
+        move: foot.move, side: foot.side, punch: false, kick: false, block: false,
+      };
+      this._footLive = true;
     }
     this.baitArmed = false;
     return { ...this.current };

@@ -20,10 +20,46 @@
 //                       human the instant it fills, for the AI when its own
 //                       rung-paced gate opens. The engine consumes the meter in
 //                       `_fireSuper`. There is no super key or super bar.
+//   footwork          — see below.
 //   aiPatterns        — see below.
 //
 // All HP thresholds are PERCENT (0..1). The engine passes the live value at
 // trigger evaluation time so an effect can be HP-conditional.
+//
+// ── footwork: the president's neutral-game dance ───────────────────────────
+// `aiPatterns` is what a president does when he commits. `footwork` is what he
+// does the rest of the time, which is most of the round.
+//
+// Added 2026-09-13. Until then every president moved identically: ai.js walked
+// straight at you when out of range and picked a fixed 15% backpedal share when
+// in it, with an 18% random sidestep on top. So fifteen fighters with fifteen
+// distinct repertoires all approached the same way, and outside the four or
+// five seconds a phrase was actually running you were fighting the same
+// opponent every rung. The phrases were learnable; the neutral was not, and the
+// neutral is where the fight lives.
+//
+// Shape — a looping cycle of beats, replayed on the engine clock forever:
+//   [{ secs, move, side }, …]
+//     secs — how long this beat is held
+//     move — +1 close, 0 hold, −1 give ground   (toward/away from the opponent)
+//     side — −1 / +1 orbit, omitted for none    (lateral, camera-relative)
+//
+// Design rules, the same ones the phrases follow and for the same reason:
+//   • The cycle is FIXED and never randomised, and it runs on one uninterrupted
+//     clock all fight (ai.js `_footBeat` is `this.t % cycleLength`). That is the
+//     whole feature — a rhythm you can count is a rhythm you can time a swing
+//     into. A cycle that reset on state changes would be unreadable.
+//   • Keep the cycle in the 0.9–3.0 s band. Shorter and it reads as jitter;
+//     longer and a round ends before the player has seen it repeat enough.
+//   • Say something about the president. Trump's has no retreat beat at all;
+//     Carter's is a flat metronome; Truman walks straight in with his hands
+//     down because his passive is paid for by being hit.
+//   • Out of range a retreat beat is clamped to a hold (ai.js `_footIntent`), so
+//     a signature can never walk a fighter out of the fight — the orbit half of
+//     the beat still shows, so the dance stays recognisable at every distance.
+//   • Do NOT scale these by rung. The rung decides how sharp a president is;
+//     the dance is who he is, and a footwork tempo that changed with the ladder
+//     would mean the read you learned on rung 3 was wrong on rung 12.
 //
 // ── aiPatterns: the president's fighting repertoire ────────────────────────
 // Everything above changes what a president's hits DO. `aiPatterns` changes how
@@ -53,12 +89,16 @@
 //
 // ── Why three, and why ordered ────────────────────────────────────────────
 // The array is the LADDER's difficulty curve as much as the rung table in ai.js
-// is. ai.js unlocks entries by rung (`_unlockedPatterns`): the early rungs only
-// ever run phrase 0, the middle rungs alternate 0 and 1, the top rungs cycle all
-// three. So Trump at rung 1 has one phrase you learn in a round, while a
-// hypothetical Trump at rung 13 rotates a three-phrase song — same fighter,
-// genuinely more to read. Index 1 is therefore written as the answer to having
-// learned index 0, and index 2 as the answer to having learned both.
+// is. ai.js unlocks entries by rung (`_unlockedPatterns`): rungs 1-3 only ever
+// run phrase 0, rungs 4-9 alternate 0 and 1, rungs 10-15 cycle all three. So
+// Trump at rung 1 has one phrase you learn in a round, while a hypothetical
+// Trump at rung 13 rotates a three-phrase song — same fighter, genuinely more
+// to read. Index 1 is therefore written as the answer to having learned index
+// 0, and index 2 as the answer to having learned both.
+//
+// Those boundaries were 1-5 / 6-10 / 11-15 until 2026-09-13. Spending the first
+// five rungs at depth 1 was a third of the ladder with one thing to learn, and
+// a large part of why the early presidents played as the same easy fight.
 //
 // The rotation is a fixed cycle, never a random pick, for the same reason the
 // steps inside a phrase are fixed: a shuffled repertoire reads as noise, and
@@ -104,6 +144,10 @@ export const PERSONALITIES = {
     // (1 + koStacks × 0.05) damage on EVERY swing for the next 3 s. Visually
     // identical to the per-stack ramp but compressed into one dramatic burst.
     onSuper: { mode: 'theWall', durationSecs: 3.0 },
+    // FOOTWORK — "the stalk" — he never gives ground. Two long strides and a
+    // squared-up beat, forever. There is no retreat in the cycle at all, so the
+    // ring is his tool: he will walk you into a corner if you keep backing up.
+    footwork: [{ secs: 0.70, move: 1 }, { secs: 0.35, move: 0 }],
     // PATTERNS — volume. Every Trump phrase ends on a coil, so the whole
     // repertoire teaches one lesson: the jabs are the toll you pay to still be
     // standing there when the haymaker arrives. Guard the last beat.
@@ -153,6 +197,10 @@ export const PERSONALITIES = {
     // bar to CHARGE_MAX_MUL and arms the next punch/kick for the next 1.5 s
     // (no need to wind up by hand). The hit lands with the Biden slow effect.
     onSuper: { mode: 'bigGuy', lockSecs: 1.5 },
+    // FOOTWORK — "the shuffle" — a short step in, a long settle, a small step out.
+    // The settle is the same beat his signature phrase opens on, so his feet and
+    // his coil teach the same tell.
+    footwork: [{ secs: 0.40, move: 1 }, { secs: 0.70, move: 0 }, { secs: 0.35, move: -1 }],
     // PATTERNS — the charge, three ways. Every phrase he owns is a coil with a
     // different approach in front of it, because a landed charge halves your
     // movement for a second and the follow-up is what actually kills you.
@@ -195,6 +243,10 @@ export const PERSONALITIES = {
     // SUPER — "DRONE STRIKE": 1.5 s of perfect iframes + next swing deals
     // 2.5× damage (the surgical strike). Plays a cool teal flicker on Obama.
     onSuper: { mode: 'droneStrike', iframesSecs: 1.5, nextSwingAtkMul: 2.5 },
+    // FOOTWORK — "the perimeter" — he orbits, always the same way, closing in
+    // arcs rather than lines. Cut the ring off on that side and the whole
+    // repertoire loses the angle it is written around.
+    footwork: [{ secs: 0.60, move: 1, side: -1 }, { secs: 0.50, move: 0, side: -1 }, { secs: 0.40, move: -1, side: -1 }],
     // PATTERNS — angles. Every Obama phrase moves before it commits, so none of
     // them can be answered by a guard held facing where he used to be.
     aiPatterns: [
@@ -243,6 +295,10 @@ export const PERSONALITIES = {
     // trigger, but fired on demand. No freeze window — straight into the
     // atkMul/speedMul buff for the rest of the round.
     onSuper: { mode: 'deciderManual', durationSecs: 30 },
+    // FOOTWORK — "the two-step" — in, stop dead, in, stop dead, with the second
+    // stop the longest pause any president takes in neutral. Both stops are free
+    // windows; the long one is free enough to walk into and coil on.
+    footwork: [{ secs: 0.35, move: 1 }, { secs: 0.60, move: 0 }, { secs: 0.35, move: 1 }, { secs: 0.80, move: 0 }],
     // PATTERN — "the decider": the longest dead stop in the game, then a fast
     // two-hit answer. Deliberately the mirror of Biden, who opens with a SHORT
     // pause into the longest coil: same opening beat, opposite payoff, so the
@@ -288,6 +344,10 @@ export const PERSONALITIES = {
     // (4 hits). Same feel as the passive chain but the windup is doubled
     // (the visual tells the opponent a sax solo is coming).
     onSuper: { mode: 'saxSolo', nextSwingAtkMul: 1.6, chainHits: 4, saxSoloWindupMul: 2.0 },
+    // FOOTWORK — "the sway" — four beats rocking through both directions while
+    // barely closing. It is the same sway his phrase opens on, run continuously,
+    // so with Clinton the feet are the tell and the phrase is the punchline.
+    footwork: [{ secs: 0.45, move: 1, side: -1 }, { secs: 0.45, move: 0, side: 1 }, { secs: 0.45, move: 1, side: 1 }, { secs: 0.45, move: 0, side: -1 }],
     // PATTERN — "the sax sway": he rocks side to side, then swings. Two
     // sidesteps in opposite directions is a rhythm rather than a pose, which
     // suits a president whose whole gimmick is a 1.5× longer windup — you have
@@ -333,6 +393,10 @@ export const PERSONALITIES = {
     // signature feint loop, but armed by the player as a human-only burst)
     // + next 3 swings carry 1.4× damage (the voodoo tax).
     onSuper: { mode: 'voodoo', feintSecs: 1.2, swingCount: 3, swingAtkMul: 1.4 },
+    // FOOTWORK — "the measure" — steps to the edge of range and immediately back
+    // out of it. A range-finder, and it is why his counter phrase always opens
+    // from exactly the distance your jab falls short of.
+    footwork: [{ secs: 0.40, move: 1 }, { secs: 0.35, move: -1 }, { secs: 0.50, move: 0 }, { secs: 0.30, move: 1 }],
     // PATTERN — "read my lips": a jab that is really bait, straight into guard,
     // then the counter the moment you answer it. He is the roster's counter-
     // fighter (+30% baitP), so his phrase punishes the reflex to trade. The
@@ -386,6 +450,10 @@ export const PERSONALITIES = {
     // gated mode but fired on demand. +40% dmg + 20% speed for 6 s, no HP
     // gate. Consumes the super meter even if HP is full.
     onSuper: { mode: 'morningInAmerica', atkMul: 1.4, speedMul: 1.2, durationSecs: 6 },
+    // FOOTWORK — "the plant" — long stretches of standing still broken by a single
+    // stride. Standing is his whole game (the reflect guard punishes the swing
+    // you take at a planted Reagan), and his feet advertise it.
+    footwork: [{ secs: 0.90, move: 0 }, { secs: 0.50, move: 1 }, { secs: 0.50, move: 0 }, { secs: 0.30, move: 1 }],
     // PATTERN — "tear down this wall": he plants and holds guard, inviting the
     // swing, then answers it. Pairs with his once-per-round reflect guard, so
     // the phrase teaches exactly the habit that his reflect punishes — hitting
@@ -437,6 +505,10 @@ export const PERSONALITIES = {
     // SUPER — "MALAISE SPEECH" (manual): 1.5 s iframes + the next landed hit
     // applies a 0.5 s slow (Carter's wagging-finger energy hits the defender).
     onSuper: { mode: 'malaiseSpeech', iframesSecs: 1.5, slowSecs: 0.5, slowMul: 0.55 },
+    // FOOTWORK — "the metronome" — in, out, in, out, on a flat half-second beat and
+    // nothing else. The most countable footwork on the roster, which is the
+    // point: his phrases are jab ladders, and the ladder rides this tempo.
+    footwork: [{ secs: 0.50, move: 1 }, { secs: 0.50, move: -1 }],
     // PATTERN — "the finger wag": a beat to raise the finger, then four jabs on
     // an accelerating rhythm. No charge and no heavy — the threat is the ladder,
     // because his passive grows the combo by one for every hit he lands in a
@@ -492,6 +564,10 @@ export const PERSONALITIES = {
     // move inputs drop 60% of the time). Ford stumbles through the gap and
     // takes advantage.
     onSuper: { mode: 'pardonMe', blindSecs: 1.0, blindMissRate: 0.60 },
+    // FOOTWORK — "the lurch" — a long overshooting stride in, a beat of nothing,
+    // then a drift back out. He arrives closer than he meant to every time, and
+    // the drift is the window his stumble usually lands in.
+    footwork: [{ secs: 0.75, move: 1 }, { secs: 0.20, move: 0 }, { secs: 0.55, move: -1 }, { secs: 0.25, move: 0, side: 1 }],
     // PATTERN — "the lurch": he barges in and throws a wild kick from too
     // close. Clumsy on purpose — the advance overshoots, and his 15% stumble
     // means the phrase sometimes collapses on its own. The read is that the
@@ -541,6 +617,10 @@ export const PERSONALITIES = {
     // 40% of block absorb) + the FIRST one applies 0.5 s opponent blind on
     // landing (a doubled-up eye-gouge for the meter cost).
     onSuper: { mode: 'notACrook', dirtySwings: 3, dirtyBlockFraction: 0.40, blindSecs: 0.5 },
+    // FOOTWORK — "the sidle" — he creeps in sideways, breaks off, then resets on
+    // the other side. The break is the same trap his phrase is built on: it
+    // looks like a disengage and it is an invitation to follow.
+    footwork: [{ secs: 0.50, move: 0, side: -1 }, { secs: 0.40, move: 1, side: -1 }, { secs: 0.45, move: -1 }, { secs: 0.35, move: 0, side: 1 }],
     // PATTERN — "the sneak": he breaks off as though disengaging, then comes
     // straight back in. The retreat is the tell, and it is a trap for the
     // instinct to follow — chase him and you arrive exactly as the punch does.
@@ -594,6 +674,10 @@ export const PERSONALITIES = {
     // (any opponent-miss within range → next LBJ swing +50% knockback).
     // The player CHOOSES when to arm it, instead of waiting passively.
     onSuper: { mode: 'treatmentManual', kbMul: 1.5, windowSecs: 8.0 },
+    // FOOTWORK — "the walk-down" — nine-tenths forward pressure with two short
+    // leans, and not one retreat beat. Combined with a passive that arms off
+    // YOUR misses, the correct answer to these feet is to walk backwards, not swing.
+    footwork: [{ secs: 0.90, move: 1 }, { secs: 0.25, move: 0 }, { secs: 0.90, move: 1 }, { secs: 0.20, move: 0, side: -1 }],
     // PATTERN — "the treatment": he walks you down. Two advances with no guard
     // and no swing, closing until he is on top of you, then a heavy. The whole
     // phrase is pressure — and because his passive arms a +50% knockback swing
@@ -654,6 +738,10 @@ export const PERSONALITIES = {
     // passive, but the player chooses when — and it's larger (0.6 s iframes
     // + next swing 1.5× damage instead of the passive 0.45 s / 1.25×).
     onSuper: { mode: 'profilesInCourage', iframesSecs: 0.6, nextSwingAtkMul: 1.5 },
+    // FOOTWORK — "the dart" — short, fast, alternating angles. The quickest cycle
+    // on the roster (0.9 s end to end) for the president whose passive is a
+    // speed dash: he changes the side he is standing on twice a second.
+    footwork: [{ secs: 0.25, move: 1, side: -1 }, { secs: 0.22, move: 0 }, { secs: 0.25, move: 1, side: 1 }, { secs: 0.22, move: 0 }],
     // PATTERN — "the dash": circle out, then back in from the other angle and
     // strike. The quickest phrase in the roster, matching the president whose
     // passive is a speed dash — you do not get long to read it, and every
@@ -717,6 +805,10 @@ export const PERSONALITIES = {
     // and grants 1.0 s of iframes immediately. The biggest one-shot swing
     // any president can buy with a super meter.
     onSuper: { mode: 'overlord', nextSwingAtkMul: 2.2, iframesSecs: 1.0 },
+    // FOOTWORK — "the advance" — slow, deliberate, and every yard he takes he
+    // keeps. The longest single forward beat in the roster, matching the
+    // president who spends 1.3 s preparing a swing.
+    footwork: [{ secs: 1.10, move: 1 }, { secs: 0.70, move: 0 }, { secs: 0.60, move: 1 }, { secs: 0.50, move: 0 }],
     // PATTERN — "Overlord": the longest preparation in the game. He guards,
     // then coils for a full 1.3 s before the swing lands. Slowest phrase, and
     // the one most worth blocking rather than dodging — his 1.5× windup /
@@ -770,6 +862,10 @@ export const PERSONALITIES = {
     // for the next swing, then resets stacks to zero. The longer the player
     // let it build, the bigger the payoff — up to +180% dmg at cap.
     onSuper: { mode: 'buckStopsHere', stackMul: 3.0 },
+    // FOOTWORK — "the plain walk" — straight in, no angle, no retreat, hands down.
+    // The simplest footwork on the roster and the most dangerous to answer:
+    // every hit you land on the walk-in is priced into the swing at the end of it.
+    footwork: [{ secs: 1.20, move: 1 }, { secs: 0.40, move: 0 }],
     // PATTERN — "the buck stops here": he walks in with his hands down and
     // eats what you throw, then answers with a heavy. Standing still in range
     // and NOT guarding is the tell, and it is bait in the most literal sense —
@@ -831,6 +927,10 @@ export const PERSONALITIES = {
     // SUPER — "DAY OF INFAMY" (manual): same +35% dmg buff as the HP-gated
     // mode, but fired on demand and lasting 8 s instead of 5. No HP gate.
     onSuper: { mode: 'dayOfInfamy', atkMul: 1.35, durationSecs: 8.0 },
+    // FOOTWORK — "the pivot" — he holds the centre and turns you around it, both
+    // ways, closing only in short bursts. He is the one president who makes YOU
+    // travel, which is how his extra-reach kick keeps catching spacing that felt safe.
+    footwork: [{ secs: 0.70, move: 0, side: -1 }, { secs: 0.50, move: 1 }, { secs: 0.70, move: 0, side: 1 }, { secs: 0.40, move: 1 }],
     // PATTERN — "the fireside chat": he settles, pauses to address the room,
     // then reaches further than he should be able to. The stillness is the
     // tell and it lines up with his periodic 0.4 s iframe window, so swinging

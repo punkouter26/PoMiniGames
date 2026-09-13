@@ -410,8 +410,10 @@
 
     // ── "Know your opponent" scouting card ────────────────────────────────
     // personalities.js is 18 KB of per-president behaviour that the player could
-    // previously only learn by dying to it. This surfaces the two things that
-    // actually change how you play the rung: what their super does, and the tell.
+    // previously only learn by dying to it. This surfaces the three things that
+    // actually change how you play the rung: what their super does, the tell that
+    // opens their signature string, and the footwork they circle on in between —
+    // which is the one of the three that is running for most of the round.
     // Copy comes from PoBrawlDossier — see the note there on why it is prose and
     // not a mirror of the engine's numbers.
     private RenderFragment ScoutingContent => @<div class="pb-scout">
@@ -426,6 +428,8 @@
                 <dd><b>@dossier.SuperName</b> — @dossier.SuperEffect</dd>
                 <dt><span aria-hidden="true">👁</span> Watch for</dt>
                 <dd>@dossier.Tell</dd>
+                <dt><span aria-hidden="true">👣</span> Footwork</dt>
+                <dd>@dossier.Footwork</dd>
             </dl>
         }
     </div>;

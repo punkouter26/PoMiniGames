@@ -1,3 +1,5 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Http.Connections;
 using Microsoft.AspNetCore.SignalR.Client;
 
@@ -43,6 +45,17 @@ public static class HubConnectionFactory
             {
                 options.HttpMessageHandlerFactory = SignalRCredentialsHttpClientFactory.CreateHandler;
                 if (transports is { } restricted) options.Transports = restricted;
+            })
+            // §PoBrawlOnline (2026-09-14): the server-side hub protocol serialises
+            // enums as camelCase strings via JsonStringEnumConverter (Program.cs
+            // AddJsonProtocol). The SignalR client's default JSON uses numbers for
+            // enums, so deserialising PoBrawlSide etc. fails with
+            // "DeserializeUnableToConvertValue". Apply the same converter so the
+            // client and server agree on the wire format for every hub the app uses.
+            .AddJsonProtocol(options =>
+            {
+                options.PayloadSerializerOptions.Converters.Add(
+                    new JsonStringEnumConverter(JsonNamingPolicy.CamelCase));
             });
         builder = reconnectDelays is null
             ? builder.WithAutomaticReconnect()

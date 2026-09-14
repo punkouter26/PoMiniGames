@@ -109,12 +109,15 @@ else
             {
                 <p class="poracer-hint">Connecting to the lobby hub…</p>
             }
-            else if (_state.Players.Count >= PoBrawlLobbyState.MaxPlayers && IsHost)
+            else if (IsHost)
             {
                 @if (!EveryoneReady)
                 {
                     <p class="poracer-hint">Waiting for both players to mark Ready…</p>
                 }
+                <button class="sp-btn-primary" @onclick="ToggleReadyAsync" disabled="@(string.IsNullOrEmpty(_myFighterId))">
+                    @(_myReady ? "Not Ready" : "Ready!")
+                </button>
                 <button class="sp-btn-primary" @onclick="StartGameAsync" disabled="@(!EveryoneReady)">Start Fight</button>
                 <button class="sp-btn-secondary racer-leave-btn" @onclick="LeaveAsync">Leave</button>
             }

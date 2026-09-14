@@ -4,7 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Polly.Registry;
-using PoMiniGames.Shared.Simulation.Models;
+using PoMiniGames.Shared.Models;
 
 namespace PoMiniGames.AI;
 

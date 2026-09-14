@@ -1,11 +1,12 @@
 using System.Diagnostics;
 using Microsoft.Extensions.AI;
+using PoMiniGames.Shared.Models;
 
 namespace PoMiniGames.AI;
 
 /// <summary>
 /// Records token usage and latency for every model call, and reports the outcome to a
-/// per-game <see cref="PoMiniGames.Shared.Simulation.Models.InferenceHealthTracker"/>.
+/// per-game <see cref="InferenceHealthTracker"/>.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -26,7 +27,7 @@ public sealed class InstrumentedChatClient : DelegatingChatClient
     private readonly string _deployment;
     private readonly ILogger _logger;
     private readonly AiUsageAccumulator _usage;
-    private readonly PoMiniGames.Shared.Simulation.Models.InferenceHealthTracker _health;
+    private readonly InferenceHealthTracker _health;
 
     public InstrumentedChatClient(
         IChatClient innerClient,
@@ -34,7 +35,7 @@ public sealed class InstrumentedChatClient : DelegatingChatClient
         string deployment,
         ILogger logger,
         AiUsageAccumulator usage,
-        PoMiniGames.Shared.Simulation.Models.InferenceHealthTracker health)
+        InferenceHealthTracker health)
         : base(innerClient)
     {
         _game = game;

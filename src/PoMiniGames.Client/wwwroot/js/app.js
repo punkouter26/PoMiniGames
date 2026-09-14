@@ -1,4 +1,4 @@
-// View Transitions API + global keyboard shortcuts.
+// View Transitions API + WebGL2 capability probe.
 // Smooth page transitions for Chromium-based browsers; graceful
 // progressive enhancement for everyone else (no-op fall-through).
 (function () {
@@ -22,19 +22,7 @@
     });
   });
 
-  // ----- 2. (Removed) kiosk ESC handler -----
-  // `window.kioskRegisterEscHandler` had exactly one caller, KioskControlBar,
-  // which was dropped from MainLayout in the 2026-07-04 mobile-portrait cleanup
-  // and has now been deleted. Nothing ever registered a callback, so the ESC key
-  // already did nothing for kiosk mode — this only removes the dead scaffolding,
-  // not a working shortcut. It also leaked: every registration added another
-  // unremoved document keydown listener.
-  //
-  // If ESC-to-exit-demo is wanted again, it belongs on the page that starts the
-  // kiosk (Pages/Index.razor owns KioskCoordinator.Start/Stop) rather than on a
-  // floating bar, and can be a plain @onkeydown there with no JS interop at all.
-
-  // ----- 3. WebGL2 + device capability probe (callable from Blazor) -----
+  // ----- 2. WebGL2 + device capability probe (callable from Blazor) -----
   // §2: gates the home page ambient particle field. Skips WebGL entirely on
   // low-memory devices, when prefers-reduced-motion is set, or when WebGL2
   // is unavailable. Returns a boolean — caller falls back to the CSS gradient.
@@ -60,3 +48,4 @@
   };
 
 })();
+

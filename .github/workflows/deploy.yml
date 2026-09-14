@@ -278,26 +278,11 @@ jobs:
               "https://${APP_NAME}.azurewebsites.net${path}" || true
           done
 
-      - name: Smoke Test - Health Ping
+      - name: Smoke Tests (Health, Liveness, Diag)
         shell: bash
         run: |
-          curl -fsS --retry 6 --retry-all-errors --retry-delay 10 \
-            "https://${APP_NAME}.azurewebsites.net/api/health/ping" || exit 1
-
-      - name: Smoke Test - Health Liveness
-        shell: bash
-        run: |
-          curl -fsS --retry 6 --retry-all-errors --retry-delay 10 \
-            "https://${APP_NAME}.azurewebsites.net/api/health/liveness" || exit 1
-
-      - name: Smoke Test - Full Health
-        shell: bash
-        run: |
-          curl -fsS --retry 6 --retry-all-errors --retry-delay 10 \
-            "https://${APP_NAME}.azurewebsites.net/api/health" || exit 1
-
-      - name: Smoke Test - Diag (masked KV + subsystem integrations)
-        shell: bash
-        run: |
-          curl -fsS --retry 6 --retry-all-errors --retry-delay 10 \
-            "https://${APP_NAME}.azurewebsites.net/api/diag" || exit 1
+          for path in "/api/health/ping" "/api/health/liveness" "/api/health" "/api/diag"; do
+            echo "Smoke testing ${path}..."
+            curl -fsS --retry 6 --retry-all-errors --retry-delay 10 \
+              "https://${APP_NAME}.azurewebsites.net${path}" || exit 1
+          done

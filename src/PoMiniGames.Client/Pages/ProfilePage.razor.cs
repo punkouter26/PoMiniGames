@@ -24,100 +24,6 @@ namespace PoMiniGamesClient.Pages;
 /// </remarks>
 public partial class ProfilePage
 {
-    // ── Your data: export + erase ───────────────────────────────
-    // Both actions hit rate-limited, scan-heavy endpoints (5/min), so the UI serialises them
-    // behind one busy flag rather than letting a double-click queue a second full scan.
-    private bool _dataBusy;
-    private string? _busyAction;
-    private bool _eraseArmed;
-    private string _eraseConfirm = "";
-
-    /// <summary>Case-sensitive on purpose — a confirmation you can pass by accident is decoration.</summary>
-    private bool EraseConfirmed => _eraseConfirm.Trim() == "ERASE";
-
-    private async Task ExportDataAsync()
-    {
-        if (_dataBusy) return;
-        _dataBusy = true;
-        _busyAction = "export";
-        try
-        {
-            var json = await ApiService.ExportAccountDataAsync();
-            if (string.IsNullOrWhiteSpace(json))
-            {
-                Toasts.Show("Couldn't prepare your data right now. Try again in a moment.", ToastType.Error);
-                return;
-            }
-
-            var module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/fileDownload.js");
-            await using (module)
-            {
-                await module.InvokeVoidAsync(
-                    "saveText",
-                    $"pominigames-data-{DateTime.UtcNow:yyyyMMdd}.json",
-                    json,
-                    "application/json");
-            }
-
-            Toasts.Show("Your data is downloading.", ToastType.Success);
-        }
-        catch
-        {
-            Toasts.Show("Couldn't prepare your data right now. Try again in a moment.", ToastType.Error);
-        }
-        finally
-        {
-            _dataBusy = false;
-            _busyAction = null;
-        }
-    }
-
-    private async Task EraseDataAsync()
-    {
-        if (_dataBusy || !EraseConfirmed) return;
-        _dataBusy = true;
-        _busyAction = "erase";
-        try
-        {
-            var result = await ApiService.EraseAccountDataAsync();
-            if (result is null)
-            {
-                // Null means the call did not land. Reporting success here would tell a player
-                // their data is gone when it is not — the one lie this screen must never tell.
-                Toasts.Show("Nothing was erased — the request didn't reach the server.", ToastType.Error);
-                return;
-            }
-
-            CancelErase();
-            Toasts.Show(
-                result.TotalRows == 0
-                    ? "Nothing left to erase — you had no stored rows."
-                    : $"Erased {result.TotalRows} stored row{(result.TotalRows == 1 ? "" : "s")}.",
-                ToastType.Success);
-
-            // Re-read rather than patching the view: the page is built from several sources and
-            // reconstructing "what an empty profile looks like" by hand would drift from the
-            // real empty state the loader already knows how to render.
-            await LoadStatsAsync();
-            await Task.WhenAll(LoadHighScoresAsync(), LoadMatchesAsync());
-        }
-        catch
-        {
-            Toasts.Show("Nothing was erased — the request didn't reach the server.", ToastType.Error);
-        }
-        finally
-        {
-            _dataBusy = false;
-            _busyAction = null;
-        }
-    }
-
-    private void CancelErase()
-    {
-        _eraseArmed = false;
-        _eraseConfirm = "";
-    }
-
     // ── Data model ──────────────────────────────────────────────
     private sealed class DiffEntry
     {
@@ -208,11 +114,6 @@ public partial class ProfilePage
     private int _unsyncedSessions;
     private GameEntry? _bestEntry, _nemesisEntry;
     private List<GameEntry> _entries = new();
-
-    // Option #5: Guest vs Microsoft sign-in — drives the avatar badge.
-    // Mirrors the Kind values used elsewhere in the auth surface so the two
-    // surfaces stay in sync if either grows new kinds.
-    private enum AccountKind { Guest, Microsoft }
 
     // ── High scores (best available per 1P game) ──────────────────
     private sealed record HighScoreEntry(string Game, string Icon, string Value, string Sub, bool HasValue);

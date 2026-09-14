@@ -1,9 +1,8 @@
 using PoMiniGames.Features.Account;
 using PoMiniGames.Features.Auth;
-using PoMiniGames.Features.Diagnostics;
 using PoMiniGames.Features.Health;
 using PoMiniGames.Features.Integrity;
-using PoMiniGames.Features.HighScores;     // PoSports mapper
+using PoMiniGames.Features.PoSports;
 using PoMiniGames.Features.PoBrawl;        // moved out of Features.HighScores 2026-08-11,
                                            // same correction PoMarbleRace already had
 using PoMiniGames.Features.PoMarbleRace;   // moved out of Features.HighScores so the
@@ -57,7 +56,7 @@ internal static class EndpointRouteExtensions
         // player's WASM bundle (plus 1.1 MB of models under wwwroot/games/pogallery)
         // while the endpoints 404'd outside Development — same trade that retired the
         // Blazor /diag page on 2026-08-07. Page, endpoints and assets all went together.
-        app.MapMockablesEndpoints();
+        // MapMockablesEndpoints removed: IMockable interface retired.
         // MapTelemetryStatusEndpoints removed 2026-08-18: /api/diag/telemetry had zero
         // consumers — no client call, no test, no doc. /api/diag already reports the
         // telemetry configuration state.

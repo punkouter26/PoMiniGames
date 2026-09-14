@@ -1,3 +1,4 @@
+using PoMiniGames.Domain.Models;
 using PoMiniGames.Domain.Primitives;
 
 namespace PoMiniGames.Domain.Services;
@@ -78,10 +79,10 @@ public static class ScoreRules
         // Point boards. Max mirrors the value objects that already guard these two
         // (MarbleRaceScore, PoVoxelStrikeScore) so there is one number, not two that drift.
         [GameKey.PoMarbleRace] = new ScoreBounds(
-            Min: 0, Max: 1_000_000, LowerIsBetter: false, MinPlaySeconds: 5, MaxPerSecond: 20_000),
+            Min: MarbleRaceScore.Min, Max: MarbleRaceScore.Max, LowerIsBetter: false, MinPlaySeconds: 5, MaxPerSecond: 20_000),
 
         [GameKey.PoVoxelStrike] = new ScoreBounds(
-            Min: 0, Max: 10_000_000, LowerIsBetter: false, MinPlaySeconds: 5, MaxPerSecond: 50_000),
+            Min: PoVoxelStrikeScore.Min, Max: PoVoxelStrikeScore.Max, LowerIsBetter: false, MinPlaySeconds: 5, MaxPerSecond: 50_000),
 
         // Time boards. Max mirrors each endpoint's existing inline range check; MinPlaySeconds
         // is the floor for the whole session, which for a meet or a race is longer than one leg.

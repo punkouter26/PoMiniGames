@@ -448,54 +448,7 @@ else
        IS data, the controls appear alongside it. *@
     @if (!nothingPlayed)
     {
-    <div class="prf-section prf-data">
-        <h2 class="prf-section-title">Your data</h2>
-        <p class="prf-data-blurb">
-            Scores, match history and player stats are stored against your
-            @(_accountKind == AccountKind.Guest ? "guest profile" : "Microsoft account").
-            You can take a copy or remove all of it.
-        </p>
-
-        <div class="prf-data-actions">
-            <button type="button" class="prf-data-btn" disabled="@_dataBusy" @onclick="ExportDataAsync">
-                @(_dataBusy && _busyAction == "export" ? "Preparing…" : "Download my data")
-            </button>
-
-            @if (!_eraseArmed)
-            {
-                <button type="button" class="prf-data-btn prf-data-btn--danger"
-                        disabled="@_dataBusy" @onclick="() => _eraseArmed = true">
-                    Erase my data
-                </button>
-            }
-        </div>
-
-        @if (_eraseArmed)
-        {
-            @* Type-to-confirm rather than a plain "are you sure?". This is irreversible and
-               deletes across every board at once, which is more than a stray tap should be
-               able to do — and a second button is exactly as easy to mis-tap as the first. *@
-            <div class="prf-data-confirm" role="group" aria-labelledby="prf-erase-label">
-                <p id="prf-erase-label" class="prf-data-warn">
-                    This permanently deletes your leaderboard entries, match history and stats.
-                    It cannot be undone. Type <strong>ERASE</strong> to confirm.
-                </p>
-                <div class="prf-data-confirm-row">
-                    <input class="prf-data-input" type="text" autocomplete="off" spellcheck="false"
-                           aria-label="Type ERASE to confirm" placeholder="ERASE"
-                           @bind="_eraseConfirm" @bind:event="oninput" />
-                    <button type="button" class="prf-data-btn prf-data-btn--danger"
-                            disabled="@(_dataBusy || !EraseConfirmed)" @onclick="EraseDataAsync">
-                        @(_dataBusy && _busyAction == "erase" ? "Erasing…" : "Erase everything")
-                    </button>
-                    <button type="button" class="prf-data-btn prf-data-btn--quiet"
-                            disabled="@_dataBusy" @onclick="CancelErase">
-                        Cancel
-                    </button>
-                </div>
-            </div>
-        }
-    </div>
+        <AccountDataCard AccountKind="_accountKind" OnDataErased="LoadStatsAsync" />
     }
 }
 </div>

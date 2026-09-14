@@ -74,24 +74,18 @@ public sealed class FunQuizModelsTests
         session.Winner?.Name.Should().Be(expectedWinnerName);
     }
 
-    [Fact]
-    public void PlayerScoreState_StartsAtZero()
+    [Theory]
+    [InlineData(0, 0)]
+    [InlineData(50, 50)]
+    public void PlayerScoreState_InitialOrTimeBonus_ReflectsTotal(int timeBonus, int expectedTotal)
     {
         var s = new PlayerScoreState();
+        if (timeBonus > 0) s.SetTimeBonus(timeBonus);
         s.BaseScore.Should().Be(0);
         s.SpeedBonus.Should().Be(0);
         s.StreakBonus.Should().Be(0);
-        s.TimeBonus.Should().Be(0);
-        s.TotalScore.Should().Be(0);
-    }
-
-    [Fact]
-    public void PlayerScoreState_TimeBonus_SetExplicitly()
-    {
-        var s = new PlayerScoreState();
-        s.SetTimeBonus(50);
-        s.TimeBonus.Should().Be(50);
-        s.TotalScore.Should().Be(50);
+        s.TimeBonus.Should().Be(timeBonus);
+        s.TotalScore.Should().Be(expectedTotal);
     }
 
     [Theory]

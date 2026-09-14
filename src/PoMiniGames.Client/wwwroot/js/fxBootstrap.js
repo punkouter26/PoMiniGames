@@ -46,9 +46,7 @@
     var chain = load('js/qualityTiers.js')
         .then(function () { return load('js/paletteBus.js'); });
     if (!reduceMotion) {
-        chain = chain.then(function () { return load('js/impactFx.js'); })
-                     .then(function () { return load('js/spatialAudio.js'); })
-                     .then(function () { return load('js/materialAudio.js'); })
+        chain = chain.then(function () { return load('js/spatialAudio.js'); })
                      .then(function () { return load('js/musicDirector.js'); });
     }
     // The route wipe. Loaded for everyone including reduced-motion users: the

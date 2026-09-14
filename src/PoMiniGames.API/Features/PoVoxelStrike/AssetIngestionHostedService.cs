@@ -53,6 +53,12 @@ internal sealed partial class AssetIngestionHostedService(
         IndexExisting(convertedDir);
 
         var glbFiles = Directory.EnumerateFiles(dropDir, "*.glb", SearchOption.TopDirectoryOnly).ToList();
+        if (glbFiles.Count == 0)
+        {
+            Log.ScanComplete(logger, 0, 0, 0, 0, catalog.All.Count);
+            return;
+        }
+
         var converted = 0;
         var skipped = 0;
         var failed = 0;

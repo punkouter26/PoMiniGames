@@ -3,9 +3,8 @@ using PoMiniGames.Domain.Models;
 using PoMiniGames.Domain.Primitives;
 using PoMiniGames.Features.Auth;
 using PoMiniGames.Features.Integrity;
-using PoMiniGames.Features.PoSports;
 
-namespace PoMiniGames.Features.HighScores;
+namespace PoMiniGames.Features.PoSports;
 
 /// <summary>
 /// Minimal API endpoints for PoSports meet times (lower combined time is better).

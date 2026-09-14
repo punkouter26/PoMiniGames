@@ -1,4 +1,4 @@
-namespace PoMiniGames.Shared.Simulation.Models;
+namespace PoMiniGames.Shared.Models;
 
 /// <summary>
 /// Rolling health of whatever provider is currently answering inference calls, so the UI can

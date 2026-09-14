@@ -60,6 +60,18 @@ public sealed class PoSportsRaceServiceTests
             string winnerFighterId, string loserFighterId, bool isDraw) =>
             Task.FromResult(new List<PoBrawlFighterRating>());
 
+        // §PoBrawlOnline (2026-09-14): inert stubs for the new interface members.
+        // PoSports never touches the online player-Elo board, so these exist
+        // purely to keep the interface contract satisfied.
+        public Task<List<PoBrawlPlayerRating>> GetPoBrawlPlayerRatingsAsync(int limit = 10) =>
+            Task.FromResult(new List<PoBrawlPlayerRating>());
+        public Task<PoBrawlPlayerRating?> GetPoBrawlPlayerRatingAsync(string principalId) =>
+            Task.FromResult<PoBrawlPlayerRating?>(null);
+        public Task<List<PoBrawlPlayerRating>> RecordPoBrawlOnlineMatchAsync(
+            string winnerPrincipalId, string loserPrincipalId,
+            string winnerDisplayName, string loserDisplayName, bool isDraw) =>
+            Task.FromResult(new List<PoBrawlPlayerRating>());
+
         public Task<List<PoVoxelStrikeHighScore>> GetPoVoxelStrikeHighScoresAsync(int limit = 10) =>
             Task.FromResult(new List<PoVoxelStrikeHighScore>());
         public Task<PoVoxelStrikeHighScore> SavePoVoxelStrikeHighScoreAsync(PoVoxelStrikeHighScore entry) =>

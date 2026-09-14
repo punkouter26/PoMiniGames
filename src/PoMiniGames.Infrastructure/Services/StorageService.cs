@@ -26,6 +26,10 @@ public partial class StorageService : IStorageService
     private const string PoBrawlTable = "PoBrawlHighScores";
     private const string PoBrawlLadderTable = "PoBrawlLadder";
     private const string PoBrawlEloTable = "PoBrawlFighterRatings";
+    // §PoBrawlOnline (2026-09-14): the player-Elo table for live 1v1 over SignalR.
+    // Distinct from PoBrawlEloTable (which rates fighters from CPU-vs-CPU demo) —
+    // see PoBrawlPlayerRating's remarks for why a single table cannot serve both.
+    private const string PoBrawlPlayerEloTable = "PoBrawlPlayerRatings";
     private const string PoRacerTable = "PoRacerHighScores";
     private const string PoSportsTable = "PoSportsHighScores";
     private const string PoVoxelStrikeTable = "PoVoxelStrikeHighScores";
@@ -35,6 +39,7 @@ public partial class StorageService : IStorageService
     private const string PoBrawlPartition = "pobrawl";
     private const string PoBrawlLadderPartition = "pobrawlladder";
     private const string PoBrawlEloPartition = "pobrawlelo";
+    private const string PoBrawlPlayerEloPartition = "pobrawlplayerelo";
     private const string PoRacerPartition = "poracer";
     private const string PoSportsPartition = "posports";
     private const string PoVoxelStrikePartition = "povoxelstrike";
@@ -131,7 +136,7 @@ public partial class StorageService : IStorageService
     public void Initialize()
     {
         Exception? firstFailure = null;
-        foreach (var table in new[] { PlayerStatsTable, MarbleRaceTable, PoBrawlTable, PoBrawlLadderTable, PoBrawlEloTable, PoRacerTable, PoSportsTable, PoVoxelStrikeTable })
+        foreach (var table in new[] { PlayerStatsTable, MarbleRaceTable, PoBrawlTable, PoBrawlLadderTable, PoBrawlEloTable, PoBrawlPlayerEloTable, PoRacerTable, PoSportsTable, PoVoxelStrikeTable })
         {
             try { Table(table); }
             catch (Exception ex)

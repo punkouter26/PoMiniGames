@@ -91,6 +91,12 @@ namespace PoMiniGamesClient.Services.Http;
 // PoRacer
 [JsonSerializable(typeof(PoRacerScoreDto))]
 [JsonSerializable(typeof(List<PoRacerScoreDto>))]
+// §PoBrawlOnline (2026-09-14): match result ingest + the live player-Elo board.
+// The result POSTs through MatchHistory internally, so a generic MatchRecordRequest
+// already covers the read path; only the DTO shapes for the new endpoint are new here.
+[JsonSerializable(typeof(PoMiniGames.Shared.Games.PoBrawlMatchResultDto))]
+[JsonSerializable(typeof(PoMiniGames.Domain.Models.PoBrawlPlayerRating))]
+[JsonSerializable(typeof(List<PoMiniGames.Domain.Models.PoBrawlPlayerRating>))]
 internal partial class ApiJsonContext : JsonSerializerContext
 {
 }

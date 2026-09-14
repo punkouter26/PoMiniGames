@@ -5,6 +5,7 @@ using PoMiniGames.Features.Integrity;
 using PoMiniGames.Features.PoSports;
 using PoMiniGames.Features.PoBrawl;        // moved out of Features.HighScores 2026-08-11,
                                            // same correction PoMarbleRace already had
+using PoMiniGames.Features.PoBrawl.Online; // 2026-09-14: lobby hub + match hub + match ingest
 using PoMiniGames.Features.PoMarbleRace;   // moved out of Features.HighScores so the
                                            // namespace matches its own slice folder
 using PoMiniGames.Features.Leaderboard;
@@ -115,6 +116,9 @@ internal static class EndpointRouteExtensions
         gameApi.MapPoRacerScoreEndpoints();
         gameApi.MapPoSportsHighScoresEndpoints();
         gameApi.MapPoVoxelStrikeScoreEndpoints();
+        // PoBrawl online (lobby + match hub) — match result ingest endpoint. Same
+        // shape as PoRacer's score endpoints: authenticated, rate-limited highscores.
+        gameApi.MapPoBrawlOnlineMatchEndpoints();
 
         // ── SignalR hubs (auth required; not part of MapGroup) ────────────
         app.MapHub<CoupleQuizHub>("/couplequiz/hubs/game").RequireAuthorization();
@@ -128,6 +132,10 @@ internal static class EndpointRouteExtensions
         // MapGroup because MapHub returns IHubEndpointConventionBuilder).
         app.MapHub<PoMiniGames.Features.PoVoxelStrike.PoVoxelStrikeLobbyHub>("/povoxelstrike/lobby-hub").RequireAuthorization();
         app.MapHub<PoMiniGames.Features.PoVoxelStrike.PoVoxelStrikeLockstepHub>("/povoxelstrike/lockstep-hub").RequireAuthorization();
+        // PoBrawl online: lobby hub carries the ready/start room, match hub carries the
+        // per-tick combat state. Same platform conventions as every other live hub.
+        app.MapHub<PoMiniGames.Features.PoBrawl.Online.PoBrawlLobbyHub>("/pobrawl/lobby-hub").RequireAuthorization();
+        app.MapHub<PoMiniGames.Features.PoBrawl.Online.PoBrawlMatchHub>("/pobrawl/match-hub").RequireAuthorization();
 
         return app;
     }

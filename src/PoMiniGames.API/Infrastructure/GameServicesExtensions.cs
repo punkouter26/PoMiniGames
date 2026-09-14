@@ -255,6 +255,13 @@ internal static class GameServicesExtensions
         services.AddSingleton<PoMiniGames.Features.PoRacer.PoRacerLobbyService>();
         services.AddSingleton<PoMiniGames.Features.PoRacer.PoRacerRaceRegistry>();
 
+        // PoBrawl online — 1v1 SignalR-driven combat. Same single-lobby shape as
+        // PoRacer: in-memory lobby, in-memory match registry owning the simulation
+        // timer, hosted pump driving the per-tick frame broadcast.
+        services.AddSingleton<PoMiniGames.Features.PoBrawl.Online.PoBrawlLobbyService>();
+        services.AddSingleton<PoMiniGames.Features.PoBrawl.Online.PoBrawlMatchRegistry>();
+        services.AddHostedService<PoMiniGames.Features.PoBrawl.Online.PoBrawlMatchPump>();
+
         // PoSports — family track meet. Same single-lobby process-local shape as
         // PoRacer; the registry owns the meet sim timers and is DI-managed for
         // graceful-shutdown disposal.

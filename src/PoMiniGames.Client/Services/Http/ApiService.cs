@@ -513,6 +513,48 @@ public class ApiService
         }
     }
 
+    // ─── PoBrawl online 1v1 ──────────────────────────────────────────────
+
+    /// <summary>
+    /// Posts a finished 1v1 match result to /api/pobrawl/matches. The server records a
+    /// MatchHistory row and increments both players' Elo in one atomic call. Returns the
+    /// re-ranked online Elo board on success, or null on a transport failure.
+    /// </summary>
+    public async Task<List<PoMiniGames.Domain.Models.PoBrawlPlayerRating>?>
+        SubmitPoBrawlOnlineMatchAsync(PoMiniGames.Shared.Games.PoBrawlMatchResultDto result)
+    {
+        try
+        {
+            var response = await _http.PostAsJsonAsync(
+                "/api/pobrawl/matches", result,
+                ApiJsonContext.Default.PoBrawlMatchResultDto);
+            return response.IsSuccessStatusCode
+                ? await response.Content.ReadFromJsonAsync(
+                    ApiJsonContext.Default.ListPoBrawlPlayerRating)
+                : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Top-ranked online players. Same anonymous posture as the demo Elo board.</summary>
+    public async Task<List<PoMiniGames.Domain.Models.PoBrawlPlayerRating>?>
+        GetPoBrawlOnlineRatingsAsync(int count = 10)
+    {
+        try
+        {
+            return await _http.GetFromJsonAsync(
+                $"/api/pobrawl/matches?top={count}",
+                ApiJsonContext.Default.ListPoBrawlPlayerRating);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     // ─── Head-to-head match history ──────────────────────────────────────
 
     public async Task<bool> RecordMatchAsync(MatchRecordRequest request)

@@ -46,6 +46,34 @@ public interface IStorageService
     Task<List<PoBrawlFighterRating>> RecordPoBrawlDemoResultAsync(
         string winnerFighterId, string loserFighterId, bool isDraw);
 
+    // ── PoBrawl online player Elo (one row per principal, head-to-head over SignalR) ──
+    //
+    // Deliberately separate from the demo fighter board — see PoBrawlPlayerRating's
+    // remarks. The two share PairwiseEloCalculator for arithmetic but have nothing
+    // else in common: different row key (principal vs fighter id), different display
+    // name source, different sample population, different floor/seed policy.
+
+    /// <summary>Top-ranked online players by head-to-head Elo.</summary>
+    Task<List<PoBrawlPlayerRating>> GetPoBrawlPlayerRatingsAsync(int limit = 10);
+
+    /// <summary>Read one player's online Elo row, or null if they have never played online.</summary>
+    Task<PoBrawlPlayerRating?> GetPoBrawlPlayerRatingAsync(string principalId);
+
+    /// <summary>
+    /// Records one online 1v1 match and moves both players' ratings. The Elo arithmetic
+    /// runs through the same <see cref="Services.PairwiseEloCalculator"/> the demo board
+    /// uses, so the two rating systems cannot drift in their definition of "win".
+    /// </summary>
+    /// <param name="winnerPrincipalId">Principal id of the winner; either side when <paramref name="isDraw"/>.</param>
+    /// <param name="loserPrincipalId">Principal id of the loser; the other side when <paramref name="isDraw"/>.</param>
+    /// <param name="winnerDisplayName">Display name for the winner's row (claim identity at submit time).</param>
+    /// <param name="loserDisplayName">Display name for the loser's row.</param>
+    /// <returns>The re-ranked player board.</returns>
+    Task<List<PoBrawlPlayerRating>> RecordPoBrawlOnlineMatchAsync(
+        string winnerPrincipalId, string loserPrincipalId,
+        string winnerDisplayName, string loserDisplayName,
+        bool isDraw);
+
     /// <summary>
     /// Bounded probe of the Table Storage backend. Returns <c>true</c> when the last attempt
     /// succeeded; <c>false</c> when storage is unreachable so the caller can render a

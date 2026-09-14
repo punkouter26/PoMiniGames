@@ -256,7 +256,9 @@ public partial class StorageService
         }
     }
 
-    private enum MatchResult { Win, Loss, Draw }
+    // MatchResult lives on StorageService.PoBrawlOnline.cs now (was here); both partials
+    // see it because they share the same class. Keeping the declaration with the more
+    // recent file matches the convention of "newer partial owns shared nested types".
 
     /// <summary>
     /// Current stored rating for a fighter, or the configured seed when it has never fought.

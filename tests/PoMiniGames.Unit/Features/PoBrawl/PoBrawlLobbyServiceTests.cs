@@ -1,0 +1,80 @@
+using FluentAssertions;
+using PoMiniGames.Domain.Primitives;
+using PoMiniGames.Features.PoBrawl.Online;
+
+namespace PoMiniGames.Unit.Features.PoBrawl;
+
+/// <summary>
+/// State-machine tests for the live 1v1 lobby. Host assignment, cap-2 rejection,
+/// ready toggling, host migration, and the TryStart gates that protect the match
+/// service from launching on a half-formed roster.
+/// </summary>
+/// <remarks>
+/// Bundled into a handful of <c>[Fact]</c>s / <c>[Theory]</c>s so the Unit tier
+/// stays under its 100-method ceiling. Each test covers one observable behaviour.
+/// </remarks>
+public class PoBrawlLobbyServiceTests
+{
+    private static PoBrawlFighter AnyFighter => PoBrawlRoster.Bob;
+
+    [Fact]
+    public void Open_AssignsFirstArrivalAsHost()
+    {
+        var lobby = new PoBrawlLobbyService();
+        lobby.Open("conn-1", "alice", "Alice", isGuest: false, AnyFighter);
+        lobby.Open("conn-2", "bob", "Bob", isGuest: true, AnyFighter);
+        lobby.State.HostConnectionId.Should().Be("conn-1");
+        lobby.State.Players.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void ThirdJoin_BouncedAtCap()
+    {
+        var lobby = new PoBrawlLobbyService();
+        lobby.Open("conn-1", "alice", "Alice", isGuest: false, AnyFighter);
+        lobby.Open("conn-2", "bob", "Bob", isGuest: true, AnyFighter);
+        var (state, msg) = lobby.Open("conn-3", "eve", "Eve", isGuest: true, AnyFighter);
+        state.Players.Should().HaveCount(2);
+        msg.Should().Contain("full");
+    }
+
+    [Fact]
+    public void RejoinSameConnection_RefreshesPlayerRow_PreservesHost()
+    {
+        var lobby = new PoBrawlLobbyService();
+        lobby.Open("conn-1", "alice", "Alice", isGuest: false, AnyFighter);
+        lobby.ToggleReady("conn-1");
+        var (state, _) = lobby.Open("conn-1", "alice", "Alice2", isGuest: false, AnyFighter);
+        state.HostConnectionId.Should().Be("conn-1");
+        state.Players.Should().HaveCount(1);
+        state.Players[0].DisplayName.Should().Be("Alice2");
+    }
+
+    [Fact]
+    public void TryStart_RequiresHostAndAllReady_AndIsIdempotent()
+    {
+        var lobby = new PoBrawlLobbyService();
+        lobby.Open("conn-1", "alice", "Alice", isGuest: false, AnyFighter);
+        lobby.Open("conn-2", "bob", "Bob", isGuest: true, AnyFighter);
+        lobby.ToggleReady("conn-1");
+        lobby.TryStart("conn-2").Should().BeFalse("only the host can start");
+        lobby.TryStart("conn-1").Should().BeFalse("bob is not ready");
+        lobby.ToggleReady("conn-2");
+        lobby.TryStart("conn-1").Should().BeTrue();
+        lobby.TryStart("conn-1").Should().BeFalse("a second start cannot re-enter the gate");
+    }
+
+    [Fact]
+    public void EndMatch_ResetsReadyFlags_AndClearsStaleMatch()
+    {
+        var lobby = new PoBrawlLobbyService();
+        lobby.Open("conn-1", "alice", "Alice", isGuest: false, AnyFighter);
+        lobby.Open("conn-2", "bob", "Bob", isGuest: true, AnyFighter);
+        lobby.ToggleReady("conn-1");
+        lobby.ToggleReady("conn-2");
+        lobby.TryStart("conn-1");
+        lobby.EndMatch();
+        lobby.State.Players.Should().OnlyContain(p => !p.IsReady);
+        lobby.IsStarted.Should().BeFalse();
+    }
+}

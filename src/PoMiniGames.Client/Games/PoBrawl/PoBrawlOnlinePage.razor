@@ -1,0 +1,263 @@
+@page "/pobrawl/online"
+@using Microsoft.AspNetCore.SignalR.Client
+@using PoMiniGames.Shared.Games
+@using PoMiniGamesClient.Components
+@using PoMiniGamesClient.Services
+@inject AuthStateService AuthState
+@inject NavigationManager Nav
+@inject ApiService Api
+@inject ApiEndpoints Endpoints
+@inject ToastService ToastService
+@implements IAsyncDisposable
+
+<PageTitle>Brawl · Online · PoMiniGames</PageTitle>
+
+<GameShell Title="@TitleContent" BackTo="/">
+<div class="sp-page" tabindex="0" @onkeydown="OnKeyDown">
+    <div class="sp-card pobrawl-online">
+        <p class="sp-subtitle">
+            Status:
+            @if (_hub is null)
+            {
+                <span class="po-pill po-pill--muted">connecting…</span>
+            }
+            else if (_hub.State == HubConnectionState.Connected)
+            {
+                <span class="po-pill po-pill--ok">connected</span>
+            }
+            else
+            {
+                <span class="po-pill po-pill--warn">@_hub.State.ToString().ToLowerInvariant()</span>
+            }
+        </p>
+
+        <header class="pobrawl-online__header">
+            <div class="pobrawl-online__player">
+                <span class="pobrawl-online__name">@(_localSide == PoBrawlSide.Player1 ? _player1Name : _player2Name)</span>
+                <span class="po-pill po-pill--muted">you</span>
+                <span class="pobrawl-online__hp" style="--hp: @LocalHpPercent%"></span>
+                <span class="pobrawl-online__hp-label">@LocalHp / 100</span>
+            </div>
+            <div class="pobrawl-online__vs">
+                <span class="pobrawl-online__time">@($"{_elapsed:F1}s")</span>
+                @if (_match is { Finished: true })
+                {
+                    <span class="po-pill @OutcomePillClass">@OutcomeLabel</span>
+                }
+            </div>
+            <div class="pobrawl-online__player">
+                <span class="pobrawl-online__name">@(_localSide == PoBrawlSide.Player1 ? _player2Name : _player1Name)</span>
+                <span class="po-pill po-pill--muted">opponent</span>
+                <span class="pobrawl-online__hp" style="--hp: @OpponentHpPercent%"></span>
+                <span class="pobrawl-online__hp-label">@OpponentHp / 100</span>
+            </div>
+        </header>
+
+        @if (_match is { Finished: true })
+        {
+            <section class="pobrawl-online__result">
+                <h2>@OutcomeHeadline</h2>
+                <p>@OutcomeDetail</p>
+                <button class="sp-btn-primary" @onclick="LeaveAsync">Leave</button>
+            </section>
+        }
+        else if (_lastEvent is not "")
+        {
+            <p class="pobrawl-online__event">@EventLabel</p>
+        }
+
+        <section class="pobrawl-online__controls">
+            <p class="poracer-hint">
+                <kbd>A</kbd> move back · <kbd>D</kbd> move forward · <kbd>S</kbd> block · <kbd>F</kbd> punch · <kbd>G</kbd> kick · <kbd>H</kbd> special
+            </p>
+            <p class="pobrawl-online__energy">Energy: @LocalEnergy / 100</p>
+        </section>
+    </div>
+</div>
+</GameShell>
+
+@code {
+    private HubConnection? _hub;
+    private IDisposable? _stateSub;
+    private IDisposable? _finishedSub;
+    private PoBrawlMatchSnapshot? _snapshot;
+    private PoBrawlMatchState? _match;
+    private PoBrawlMatchResult? _result;
+    private string _player1Name = "Player 1";
+    private string _player2Name = "Player 2";
+    private double _elapsed;
+    private string _lastEvent = "";
+    private long _sequence;
+    private PoBrawlMatchInput? _lastSentInput;
+
+    private RenderFragment TitleContent => @<span><span aria-hidden="true">🥊</span> Brawl · Online</span>;
+
+    private PoBrawlSide _localSide => _snapshot?.LocalSide ?? PoBrawlSide.Player1;
+
+    private int LocalHp => _localSide == PoBrawlSide.Player1 ? (_match?.Player1Hp ?? 100) : (_match?.Player2Hp ?? 100);
+    private int OpponentHp => _localSide == PoBrawlSide.Player1 ? (_match?.Player2Hp ?? 100) : (_match?.Player1Hp ?? 100);
+    private int LocalEnergy => _localSide == PoBrawlSide.Player1 ? (_match?.Player1Energy ?? 0) : (_match?.Player2Energy ?? 0);
+    private int LocalHpPercent => Math.Clamp(LocalHp, 0, 100);
+    private int OpponentHpPercent => Math.Clamp(OpponentHp, 0, 100);
+
+    private string OutcomeLabel => _result?.Outcome switch
+    {
+        PoBrawlOutcome.Win => "Win",
+        PoBrawlOutcome.Loss => "Loss",
+        _ => "Draw",
+    };
+    private string OutcomePillClass => _result?.Outcome switch
+    {
+        PoBrawlOutcome.Win => "po-pill--ok",
+        PoBrawlOutcome.Loss => "po-pill--warn",
+        _ => "po-pill--muted",
+    };
+    private string OutcomeHeadline => _result?.Outcome switch
+    {
+        PoBrawlOutcome.Win => "You won!",
+        PoBrawlOutcome.Loss => "You lost.",
+        _ => "Time's up — draw.",
+    };
+    private string OutcomeDetail
+    {
+        get
+        {
+            if (_result is null) return "";
+            return _result.Outcome == PoBrawlOutcome.Draw
+                ? $"Both fighters survived to the buzzer. {_result.Player1Hp}-{_result.Player2Hp} on HP."
+                : $"{(_localSide == PoBrawlSide.Player1 ? _player1Name : _player2Name)} finished {_result.Player1Hp}-{_result.Player2Hp} on HP.";
+        }
+    }
+    private string EventLabel => _lastEvent switch
+    {
+        "p1-hit" or "p2-hit" => "Hit!",
+        "p1-special" or "p2-special" => "Special landed!",
+        "ko" => "Knockout!",
+        "time-up" => "Time's up.",
+        "time-up-draw" => "Draw — time ran out.",
+        _ => "",
+    };
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        _hub = HubConnectionFactory.Create(Endpoints.Hub("pobrawl/match-hub"));
+
+        _stateSub = _hub.On<PoBrawlMatchState>("matchState", s =>
+        {
+            _match = s;
+            _elapsed = s.ElapsedSeconds;
+            _lastEvent = s.LastEvent;
+            InvokeAsync(StateHasChanged);
+        });
+
+        _finishedSub = _hub.On<PoBrawlMatchResult>("matchFinished", async r =>
+        {
+            _result = r;
+            _match = new PoBrawlMatchState
+            {
+                MatchId = r.MatchId,
+                ElapsedSeconds = r.DurationSeconds,
+                Player1Hp = r.Player1Hp,
+                Player2Hp = r.Player2Hp,
+                Finished = true,
+                Winner = r.Outcome switch
+                {
+                    PoBrawlOutcome.Win => r.LocalSide,
+                    PoBrawlOutcome.Loss => r.LocalSide == PoBrawlSide.Player1 ? PoBrawlSide.Player2 : PoBrawlSide.Player1,
+                    _ => null,
+                },
+            };
+            await SubmitResultAsync(r);
+            await InvokeAsync(StateHasChanged);
+        });
+
+        await _hub.StartAsync();
+        _snapshot = await _hub.InvokeAsync<PoBrawlMatchSnapshot?>("JoinMatch", "BRAWL");
+        if (_snapshot is not null)
+        {
+            _player1Name = _snapshot.Player1.DisplayName;
+            _player2Name = _snapshot.Player2.DisplayName;
+        }
+    }
+
+    /// <summary>
+    /// Best-effort keyboard handler. Posts the latest "down" action on every key change —
+    /// the server aggregates by "most recent", so an up-key without a down is meaningless
+    /// and a missing up-key just leaves the opponent at "moving forward" until something else
+    /// arrives. No timer is started; the input is fire-and-forget.
+    /// </summary>
+    private async Task OnKeyDown(KeyboardEventArgs e)
+    {
+        var action = e.Key switch
+        {
+            "a" or "A" => PoBrawlMatchAction.MoveBack,
+            "d" or "D" => PoBrawlMatchAction.MoveForward,
+            "s" or "S" => PoBrawlMatchAction.Block,
+            "f" or "F" => PoBrawlMatchAction.Punch,
+            "g" or "G" => PoBrawlMatchAction.Kick,
+            "h" or "H" => PoBrawlMatchAction.Special,
+            _ => PoBrawlMatchAction.Idle,
+        };
+        await SendInputAsync(action);
+        await Task.CompletedTask;
+    }
+
+    private async Task SendInputAsync(PoBrawlMatchAction action)
+    {
+        if (_hub is null || _match is { Finished: true }) return;
+        _sequence++;
+        var input = new PoBrawlMatchInput
+        {
+            ActorSide = _localSide,
+            Action = action,
+            Sequence = _sequence,
+        };
+        _lastSentInput = input;
+        try { await _hub.InvokeAsync("SubmitInput", input); } catch { }
+    }
+
+    private async Task SubmitResultAsync(PoBrawlMatchResult r)
+    {
+        // Owner = me, Opponent = the server-stamped peer. The server validates identity
+        // from the auth cookie, so this client-supplied ownerId is only used for the
+        // MatchHistory partition when the caller is a guest — signed-in callers get their
+        // claim identity either way.
+        var dto = new PoBrawlMatchResultDto
+        {
+            MatchId = r.MatchId,
+            OwnerId = AuthState.User?.UserId ?? "",
+            OwnerDisplayName = AuthState.User?.DisplayName ?? "Player",
+            OpponentId = r.OpponentId,
+            OpponentDisplayName = r.OpponentDisplayName,
+            OwnerFighter = new PoMiniGames.Domain.Primitives.PoBrawlFighter("", ""),
+            OpponentFighter = new PoMiniGames.Domain.Primitives.PoBrawlFighter("", ""),
+            Outcome = r.Outcome,
+            DurationSeconds = r.DurationSeconds,
+        };
+        var board = await Api.SubmitPoBrawlOnlineMatchAsync(dto);
+        if (board is null)
+        {
+            ToastService.Show("Couldn't record the match — Elo didn't update.", ToastType.Warning);
+        }
+    }
+
+    private async Task LeaveAsync()
+    {
+        if (_hub is not null)
+        {
+            try { await _hub.InvokeAsync("LeaveMatch"); } catch { }
+        }
+        Nav.NavigateTo("/");
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_hub is not null)
+        {
+            _stateSub?.Dispose();
+            _finishedSub?.Dispose();
+            try { await _hub.DisposeAsync(); } catch { }
+        }
+    }
+}

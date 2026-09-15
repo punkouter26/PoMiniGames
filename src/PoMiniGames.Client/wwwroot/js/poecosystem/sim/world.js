@@ -40,6 +40,7 @@ import { templateThought } from './thoughts/templates.js';
 import { THOUGHT_SOURCE, applyThought } from './thoughts/nudges.js';
 import { createLedger } from './telemetry/ledger.js';
 import { nullPhysics } from './physics/world.js';
+import { createTribeStore } from './tribe/tribeStore.js';
 
 export { nullPhysics };   // re-exported: createWorld's default physics lives beside it
 
@@ -62,6 +63,7 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
   const bushes = createBushes(terrain, streams.terrain);
   const trees = createTrees(terrain, streams.terrain);
   const settlement = createSettlement(cap);
+  const tribeStore = createTribeStore(terrain, streams);
   const e = createEntities(cap);
   const clock = createClock();
   const log = createEventLog(200);
@@ -959,7 +961,7 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
       scheduler: thoughtScheduler,
     },
     step, stats, detail, debug, applyCommand, kill, spawn, getState, setState,
-    lineageOf, rename, setWatched,
+    lineageOf, rename, setWatched, tribeStore,
   };
   return world;
 }

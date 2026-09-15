@@ -68,6 +68,7 @@
          overloads serialise through reflection-based System.Text.Json, which the trim
          analyzer flags (IL2026) and the trimmer may break. -->
     <PackageReference Include="Blazored.LocalStorage" />
+    <PackageReference Include="Supercluster.KDTree.Standard" />
     <!-- Mapperly is a source generator: analyzer-only reference, nothing ships to the
          browser. Used for DTO <-> view-model mapping without reflection. -->
     <PackageReference Include="Riok.Mapperly" PrivateAssets="all" ExcludeAssets="runtime" />

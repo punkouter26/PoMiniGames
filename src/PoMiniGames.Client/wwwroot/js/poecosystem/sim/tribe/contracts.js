@@ -125,3 +125,4 @@ export const BUILDING_SPECS = Object.freeze({
     footprintRadius: 2.0,
   },
 });
+

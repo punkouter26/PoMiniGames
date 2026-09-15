@@ -16,7 +16,7 @@ Each task is a vertical slice touching &le; 5 files. All tasks follow strict TDD
 
 ---
 
-- [ ] **Task 2: Territory Boundaries & Resource Claim Zones (with KD-Tree Spatial Indexing)**
+- [x] **Task 2: Territory Boundaries & Resource Claim Zones (with KD-Tree Spatial Indexing)**
   - **Description**: Implement dynamic tribal borders, influence mapping from settlement centers, totem anchors, and resource node claiming using `Supercluster.KDTree` for O(log N) proximity queries.
   - **File Manifest** (&le; 5 files):
     1. `src/PoMiniGames.Client/wwwroot/js/poecosystem/sim/tribe/territory.js`

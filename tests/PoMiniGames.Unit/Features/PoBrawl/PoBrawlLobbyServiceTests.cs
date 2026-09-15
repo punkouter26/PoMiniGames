@@ -17,22 +17,17 @@ public class PoBrawlLobbyServiceTests
 {
     private static PoBrawlFighter AnyFighter => PoBrawlRoster.Bob;
 
+    // Host assignment and the cap-2 bounce share one arrangement, so they are one
+    // fact (2026-09-14: the slot went to the turn-match service tests).
     [Fact]
-    public void Open_AssignsFirstArrivalAsHost()
+    public void Open_AssignsFirstArrivalAsHost_AndBouncesThirdAtCap()
     {
         var lobby = new PoBrawlLobbyService();
         lobby.Open("conn-1", "alice", "Alice", isGuest: false, AnyFighter);
         lobby.Open("conn-2", "bob", "Bob", isGuest: true, AnyFighter);
         lobby.State.HostConnectionId.Should().Be("conn-1");
         lobby.State.Players.Should().HaveCount(2);
-    }
 
-    [Fact]
-    public void ThirdJoin_BouncedAtCap()
-    {
-        var lobby = new PoBrawlLobbyService();
-        lobby.Open("conn-1", "alice", "Alice", isGuest: false, AnyFighter);
-        lobby.Open("conn-2", "bob", "Bob", isGuest: true, AnyFighter);
         var (state, msg) = lobby.Open("conn-3", "eve", "Eve", isGuest: true, AnyFighter);
         state.Players.Should().HaveCount(2);
         msg.Should().Contain("full");

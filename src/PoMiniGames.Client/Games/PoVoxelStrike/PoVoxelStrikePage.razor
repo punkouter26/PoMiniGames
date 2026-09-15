@@ -1,14 +1,21 @@
 @page "/povoxelstrike"
 @page "/povoxelstrike/{Mode}"
+@* The lobby hands the squad here with the run's code (2026-09-14). This route never existed:
+   the lobby navigated to it and landed on Page not found. *@
+@page "/povoxelstrike/multi/{GameCode}"
 @using PoMiniGamesClient.Components
 @using PoMiniGamesClient.Models
 @using PoMiniGamesClient.Services
+@using PoMiniGamesClient.Games.PoVoxelStrike.Services
+@using PoMiniGames.Shared.Games
 @implements IAsyncDisposable
 @inject PlayerNameService PlayerNameService
 @inject GameResultService GameResults
 @inject IJSRuntime JSRuntime
 @inject NavigationManager Navigation
 @inject KioskCoordinator Kiosk
+@inject PoVoxelStrikeMultiplayerClient Hub
+@inject ToastService ToastService
 
 <PageTitle>Voxel Strike · PoMiniGames</PageTitle>
 
@@ -38,7 +45,7 @@
     {
         <GameIntro CueScope="povoxelstrike"
                    Title="@TitleContent"
-                   Objective="Blast through the walls to the golden chalice — while the guns shoot back."
+                   Objective="@(IsMulti ? "Same arena, whole squad: blast through the walls to the golden chalice — while the guns shoot back." : "Blast through the walls to the golden chalice — while the guns shoot back.")"
                    Controls="@HowToPlayContent"
                    Mode="@(_demo ? GameIntro.IntroMode.Demo : GameIntro.IntroMode.OnePlayer)"
                    OnStart="OnIntroStartAsync" />
@@ -76,7 +83,7 @@
                             }
                             <div class="pvs-hud-score">@_score.ToString("N0")</div>
                         </div>
-                        <div class="pvs-hud-meta">@FormatTime(_elapsed) · @_kills kills · @_structureCount pieces standing</div>
+                        <div class="pvs-hud-meta">@FormatTime(_elapsed) · @_kills kills · @_structureCount pieces standing@(IsMulti ? $" · P{_playerNumber} of {_squadSize}" : "")</div>
                     </div>
                 </div>
             }
@@ -138,6 +145,8 @@
 
 @code {
     [Parameter] public string? Mode { get; set; }
+    /// <summary>Run code from the lobby's <c>/povoxelstrike/multi/{code}</c> handoff; null for solo/demo.</summary>
+    [Parameter] public string? GameCode { get; set; }
     [SupplyParameterFromQuery(Name = "mode")] public string? ModeQuery { get; set; }
     [SupplyParameterFromQuery(Name = "demo")] public int Demo { get; set; }
 
@@ -150,6 +159,17 @@
 
     private string _playerName = "";
     private bool _demo;
+
+    // ── Online (co-presence over the lockstep hub) ──
+    // The session deals one seed so the squad shares an arena; each client ships its position
+    // at the lockstep rate and renders the others from theirs. See game.js, "Online".
+    private bool IsMulti => !string.IsNullOrEmpty(GameCode);
+    private int _playerNumber = 1;
+    private int _squadSize = 1;
+    private object? _onlineOpts;
+    private Task _applyFrameInFlight = Task.CompletedTask;
+    private Task _submitInFlight = Task.CompletedTask;
+    private bool _hubSubscribed;
     private int _assetCount;
     private int _structureCount;
     private string? _fatalError;
@@ -183,7 +203,7 @@
     private long _popId;
     private int _lastScore;
 
-    private RenderFragment TitleContent => @<span>🧱 Voxel Strike</span>;
+    private RenderFragment TitleContent => @<span>🧱 Voxel Strike@(IsMulti ? " · Online" : "")</span>;
 
     private RenderFragment HowToPlayContent => @<div>
         @* 2026-09-11: word budget — the intro card is capped at 100 words. The
@@ -235,7 +255,77 @@
         _phase = Phase.Loading;
         await InvokeAsync(StateHasChanged);
         _ref = DotNetObjectReference.Create(this);
+        if (IsMulti && !await JoinSessionAsync()) return;
         await StartEngineAsync();
+    }
+
+    /// <summary>Bind to the run the lobby started: our seat number and the shared seed.</summary>
+    private async Task<bool> JoinSessionAsync()
+    {
+        try
+        {
+            if (!_hubSubscribed)
+            {
+                _hubSubscribed = true;
+                Hub.FrameReceived += OnLockstepFrame;
+                Hub.RunEnded += OnRunEnded;
+                Hub.PlayerDropped += OnPlayerDropped;
+            }
+            var info = await Hub.JoinLockstepAsync(GameCode!);
+            if (info is null)
+            {
+                _fatalError = "that run is no longer open — go back to the lobby and start again.";
+                StateHasChanged();
+                return false;
+            }
+            var me = info.Players.FirstOrDefault(p => p.ConnectionId == Hub.LobbyConnectionId);
+            _playerNumber = me?.PlayerNumber ?? 1;
+            _squadSize = Math.Max(1, info.Players.Count);
+            _onlineOpts = new { playerNumber = _playerNumber, seed = info.Seed };
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[PoVoxelStrike] lockstep join failed: {ex.Message}");
+            _fatalError = "couldn't join the run — go back to the lobby and start again.";
+            StateHasChanged();
+            return false;
+        }
+    }
+
+    private void OnLockstepFrame(PoVoxelStrikeLockstepFrame frame)
+    {
+        // One-deep: a frame that lands while the previous interop call is still in flight is
+        // dropped, not queued — the next one is 50 ms away.
+        if (!_applyFrameInFlight.IsCompleted) return;
+        _applyFrameInFlight = ApplyFrameAsync(frame);
+    }
+
+    private async Task ApplyFrameAsync(PoVoxelStrikeLockstepFrame frame)
+    {
+        try { await JSRuntime.InvokeVoidAsync("PoVoxelStrike.applyFrame", frame); }
+        catch { /* engine torn down mid-frame */ }
+    }
+
+    private void OnRunEnded() =>
+        _ = InvokeAsync(() => ToastService.Show("The host ended the run.", ToastType.Info));
+
+    private void OnPlayerDropped(string connectionId) =>
+        _ = InvokeAsync(() => ToastService.Show("A squad member dropped.", ToastType.Warning));
+
+    /// <summary>The engine's lockstep batch for this tick; shipped through the hub, one at a time.</summary>
+    [JSInvokable]
+    public void OnLockstepBatch(PoVoxelStrikeInputBatch batch)
+    {
+        if (!IsMulti || !_submitInFlight.IsCompleted) return;
+        batch.PlayerNumber = _playerNumber;
+        _submitInFlight = SubmitQuietlyAsync(batch);
+    }
+
+    private async Task SubmitQuietlyAsync(PoVoxelStrikeInputBatch batch)
+    {
+        try { await Hub.SubmitInputsAsync(batch); }
+        catch { /* the hub's disconnect path reports a dead link */ }
     }
 
     private async Task StartEngineAsync()
@@ -247,7 +337,7 @@
                 _fatalError = "the 3D engine failed to load. Check your connection and try again.";
                 return;
             }
-            await JSRuntime.InvokeVoidAsync("PoVoxelStrike.start", "povoxelstrike-container", _ref, _demo);
+            await JSRuntime.InvokeVoidAsync("PoVoxelStrike.start", "povoxelstrike-container", _ref, _demo, _onlineOpts);
         }
         catch (Exception ex)
         {
@@ -408,6 +498,13 @@
     public async ValueTask DisposeAsync()
     {
         try { await JSRuntime.InvokeVoidAsync("PoVoxelStrike.stop"); } catch { }
+        if (_hubSubscribed)
+        {
+            Hub.FrameReceived -= OnLockstepFrame;
+            Hub.RunEnded -= OnRunEnded;
+            Hub.PlayerDropped -= OnPlayerDropped;
+            try { await Hub.StopLockstepAsync(); } catch { }
+        }
         _ref?.Dispose();
     }
 }

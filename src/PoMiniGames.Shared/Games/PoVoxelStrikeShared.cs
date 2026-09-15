@@ -50,6 +50,15 @@ public sealed class PoVoxelStrikeInput
 
     /// <summary>Pitch in degrees, [-89, 89]. Same source as Yaw.</summary>
     public float Pitch { get; set; }
+
+    /// <summary>
+    /// The player's world position at this tick. Added 2026-09-14 for co-presence: peers
+    /// render each other from these rather than re-simulating each other's movement, which
+    /// keeps the run playable without a deterministic engine (see game.js, "Online").
+    /// </summary>
+    public float X { get; set; }
+    public float Y { get; set; }
+    public float Z { get; set; }
 }
 
 /// <summary>
@@ -117,4 +126,6 @@ public sealed record PoVoxelStrikeLockstepSessionInfo(
     string GameCode,
     int TickHz,
     IReadOnlyList<PoVoxelStrikeLobbyPlayer> Players,
-    long StartedAtMs);
+    long StartedAtMs,
+    /// <summary>World seed shared by every client in the run, so the squad sees one arena.</summary>
+    int Seed);

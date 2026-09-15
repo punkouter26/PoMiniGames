@@ -102,6 +102,8 @@ public sealed class PoVoxelStrikeLockstepSession
     public string GameCode { get; }
     public IReadOnlyList<PoVoxelStrikeLobbyPlayer> Players { get; private set; }
     public int Fingerprint { get; private set; }
+    /// <summary>World seed for the run. Dealt once here so every client builds the same arena.</summary>
+    public int Seed { get; } = Random.Shared.Next(1, int.MaxValue);
 
     public PoVoxelStrikeLockstepSession(string gameCode, IReadOnlyList<PoVoxelStrikeLobbyPlayer> players, ILogger log)
     {

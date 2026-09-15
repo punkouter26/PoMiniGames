@@ -97,8 +97,23 @@ const DEMO_TRIUMPH_S = 5;
 const PLAYER_MAX_HP = 100;
 const PLAYER_CRUSH_MIN_SPEED = 5;
 
+// ── Online (co-presence) ──
+// 2026-09-14: the co-op slice above shipped inputs but never applied them — and could not
+// have: enemies, debris and the player controller all step with a variable dt and Math.random,
+// so two engines fed identical inputs diverge within seconds. What the run does instead is
+// co-presence: every client builds the SAME arena from the seed the session dealt, ships its
+// own position + yaw at the lockstep rate, and renders the other players as avatars at the
+// positions it is sent. Enemies and damage stay local to each client.
+const PEER_COLORS = [0x3b82f6, 0x22c55e, 0xf59e0b, 0xa855f7, 0x14b8a6, 0xec4899];
+// Seconds without a batch before a peer avatar is taken down.
+const PEER_STALE_S = 10;
+
 export class Engine {
-  constructor(host, dotnetRef, demo, volumes, mode = 'solo') {
+  /**
+   * @param {object|null} online null for solo/demo, else { playerNumber, seed } from the lockstep
+   *   session — see index.js start().
+   */
+  constructor(host, dotnetRef, demo, volumes, mode = 'solo', online = null) {
     this.host = host;
     this.dotnetRef = dotnetRef;
     this.demo = demo;
@@ -120,6 +135,10 @@ export class Engine {
     // World seed (PRD §F3): generated per run, surfaced in OnGameOver so the run
     // summary can show it. Hex keeps it short enough to read aloud.
     this.seed = (Math.random() * 0xffffffff) >>> 0;
+    // Online: the whole squad builds the arena the session dealt.
+    if (online && online.seed) this.seed = online.seed >>> 0;
+    if (online && online.playerNumber) this.multiplayerPlayerNumber = online.playerNumber | 0;
+    this.peers = new Map();   // playerNumber → { mesh, target, yaw, seenAt }
     this.everLocked = false;
     this.rafId = 0;
     this.lastTime = 0;
@@ -587,10 +606,81 @@ export class Engine {
         this._lockstepClock -= this._lockstepIntervalMs;
         this._shipLockstepBatch();
       }
+      this._updatePeers(dt);
     }
 
     this.vfx.render();
     this.rafId = requestAnimationFrame((t) => this._frame(t));
+  }
+
+  // ── Online ──
+
+  /** One lockstep batch: this tick's held movement keys, aim, and where this player is. */
+  _shipLockstepBatch() {
+    const p = this.player?.position;
+    if (!p || this.state === 'dead') return;
+    const k = this.keys;
+    const batch = {
+      connectionId: '',
+      playerNumber: this.multiplayerPlayerNumber,
+      tick: ++this._lockstepTick,
+      inputs: [{
+        forward: k.has('KeyW') || k.has('ArrowUp'),
+        back: k.has('KeyS') || k.has('ArrowDown'),
+        left: k.has('KeyA') || k.has('ArrowLeft'),
+        right: k.has('KeyD') || k.has('ArrowRight'),
+        fire: false,
+        altFire: false,
+        yaw: THREE.MathUtils.radToDeg(this.yaw),
+        pitch: THREE.MathUtils.radToDeg(this.pitch),
+        x: p.x, y: p.y, z: p.z,
+      }],
+    };
+    try { this.multiplayerSink(batch); } catch { /* the page reports a dead hub itself */ }
+  }
+
+  /** A relayed frame: every peer's latest batch. Ours is skipped; the rest move their avatars. */
+  applyLockstepFrame(frame) {
+    if (this.mode !== 'multi' || this.disposed || !frame || !Array.isArray(frame.batches)) return;
+    for (const b of frame.batches) {
+      if (!b || b.playerNumber === this.multiplayerPlayerNumber) continue;
+      const input = Array.isArray(b.inputs) && b.inputs.length ? b.inputs[b.inputs.length - 1] : null;
+      if (!input) continue;
+      let peer = this.peers.get(b.playerNumber);
+      if (!peer) peer = this._spawnPeer(b.playerNumber, input);
+      peer.target.set(input.x || 0, input.y || 0, input.z || 0);
+      peer.yaw = THREE.MathUtils.degToRad(input.yaw || 0);
+      peer.seenAt = performance.now();
+    }
+  }
+
+  _spawnPeer(playerNumber, input) {
+    const mesh = new THREE.Mesh(
+      new THREE.CapsuleGeometry(0.4, 1.0, 4, 12),
+      createActorMaterial({ color: PEER_COLORS[(playerNumber - 1) % PEER_COLORS.length] }),
+    );
+    mesh.castShadow = true;
+    mesh.position.set(input.x || 0, input.y || 0, input.z || 0);
+    this.scene.add(mesh);
+    const peer = { mesh, target: mesh.position.clone(), yaw: 0, seenAt: performance.now() };
+    this.peers.set(playerNumber, peer);
+    return peer;
+  }
+
+  _updatePeers(dt) {
+    if (!this.peers.size) return;
+    const k = Math.min(1, dt * 12);
+    const now = performance.now();
+    for (const [n, peer] of this.peers) {
+      peer.mesh.position.lerp(peer.target, k);
+      peer.mesh.rotation.y = peer.yaw;
+      if (now - peer.seenAt > PEER_STALE_S * 1000) {
+        this.scene.remove(peer.mesh);
+        peer.mesh.geometry.dispose();
+        peer.mesh.material.dispose();
+        this.peers.delete(n);
+      }
+    }
   }
 
   /** Enemy presence cues + music tension, on their own slow clocks. */

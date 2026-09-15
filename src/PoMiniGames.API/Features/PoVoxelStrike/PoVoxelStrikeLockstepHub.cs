@@ -55,7 +55,8 @@ public sealed class PoVoxelStrikeLockstepHub : Hub
             GameCode: gameCode,
             TickHz: PoVoxelStrikeLockstepService.TickHz,
             Players: session.Players,
-            StartedAtMs: DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+            StartedAtMs: DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            Seed: session.Seed);
     }
 
     /// <summary>Submit a batch of inputs for the current tick. The next frame will broadcast them to all peers.</summary>

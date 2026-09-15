@@ -1,100 +1,84 @@
+using System.Runtime.InteropServices;
+using PoMiniGames.Shared.Games;
 using PoMiniGamesClient.Models;
 
 namespace PoMiniGamesClient.Games.TicTacToe;
 
 public class TicTacToeBoard
 {
-    public const int Size = 6;
-    public const int WinLength = 4;
+    // Geometry and the win check come from the shared rules so the online match
+    // service (which applies moves through the same class) can never disagree
+    // with what this board draws. CellValue is byte-backed for exactly this handoff.
+    public const int Size = TicTacToeRules.BoardSize;
+    public const int WinLength = TicTacToeRules.BoardWinLength;
 
-    private readonly CellValue[][] _cells;
+    // Flat row-major storage (2026-09-14, online mode) — the jagged CellValue[][]
+    // it replaced could not be viewed as the byte span the shared rules read.
+    private readonly CellValue[] _cells;
 
     public TicTacToeBoard()
     {
-        _cells = new CellValue[Size][];
-        for (int r = 0; r < Size; r++)
-        {
-            _cells[r] = new CellValue[Size];
-        }
+        _cells = new CellValue[Size * Size];
     }
 
-    public CellValue Get(int row, int col) => _cells[row][col];
+    private TicTacToeBoard(CellValue[] cells)
+    {
+        _cells = cells;
+    }
+
+    /// <summary>
+    /// Rebuild a board from an authoritative flat cell array (the online match
+    /// state). Used when the local board is more than one move behind the server —
+    /// a rejoin, or a missed broadcast — so there is no placement to animate anyway.
+    /// </summary>
+    public static TicTacToeBoard FromCells(ReadOnlySpan<byte> cells)
+    {
+        if (cells.Length != Size * Size)
+        {
+            throw new ArgumentException($"Expected {Size * Size} cells, got {cells.Length}.", nameof(cells));
+        }
+        var values = new CellValue[Size * Size];
+        MemoryMarshal.Cast<byte, CellValue>(cells).CopyTo(values);
+        return new TicTacToeBoard(values);
+    }
+
+    public CellValue Get(int row, int col) => _cells[row * Size + col];
 
     public TicTacToeBoard Place(int row, int col, CellValue value)
     {
-        if (_cells[row][col] != CellValue.None)
+        if (_cells[row * Size + col] != CellValue.None)
         {
             throw new Exception($"Cell ({row}, {col}) is already occupied");
         }
 
-        var newBoard = new TicTacToeBoard();
-        for (int r = 0; r < Size; r++)
-        {
-            for (int c = 0; c < Size; c++)
-            {
-                newBoard._cells[r][c] = _cells[r][c];
-            }
-        }
-        newBoard._cells[row][col] = value;
-        return newBoard;
+        var cells = new CellValue[_cells.Length];
+        Array.Copy(_cells, cells, _cells.Length);
+        cells[row * Size + col] = value;
+        return new TicTacToeBoard(cells);
     }
 
     public WinResult CheckWin(CellValue player)
     {
-        var directions = new[] { (0, 1), (1, 0), (1, 1), (1, -1) };
-
-        for (int r = 0; r < Size; r++)
+        var line = TicTacToeRules.Instance.FindWin(MemoryMarshal.AsBytes<CellValue>(_cells), (byte)player);
+        if (line is null) return new WinResult { Won = false, Cells = new List<(int, int)>() };
+        var cells = new List<(int, int)>(WinLength);
+        foreach (var index in line)
         {
-            for (int c = 0; c < Size; c++)
-            {
-                foreach (var (dr, dc) in directions)
-                {
-                    var cells = new List<(int, int)>();
-                    bool valid = true;
-                    for (int i = 0; i < WinLength; i++)
-                    {
-                        var nr = r + dr * i;
-                        var nc = c + dc * i;
-                        if (nr < 0 || nr >= Size || nc < 0 || nc >= Size || _cells[nr][nc] != player)
-                        {
-                            valid = false;
-                            break;
-                        }
-                        cells.Add((nr, nc));
-                    }
-                    if (valid)
-                    {
-                        return new WinResult { Won = true, Cells = cells };
-                    }
-                }
-            }
+            cells.Add((index / Size, index % Size));
         }
-        return new WinResult { Won = false, Cells = new List<(int, int)>() };
+        return new WinResult { Won = true, Cells = cells };
     }
 
-    public bool IsFull()
-    {
-        for (int r = 0; r < Size; r++)
-        {
-            for (int c = 0; c < Size; c++)
-            {
-                if (_cells[r][c] == CellValue.None) return false;
-            }
-        }
-        return true;
-    }
+    public bool IsFull() => TicTacToeRules.Instance.IsFull(MemoryMarshal.AsBytes<CellValue>(_cells));
 
     public List<(int Row, int Col)> GetAvailableMoves()
     {
         var moves = new List<(int, int)>();
-        for (int r = 0; r < Size; r++)
+        for (int i = 0; i < _cells.Length; i++)
         {
-            for (int c = 0; c < Size; c++)
+            if (_cells[i] == CellValue.None)
             {
-                if (_cells[r][c] == CellValue.None)
-                {
-                    moves.Add((r, c));
-                }
+                moves.Add((i / Size, i % Size));
             }
         }
         return moves;

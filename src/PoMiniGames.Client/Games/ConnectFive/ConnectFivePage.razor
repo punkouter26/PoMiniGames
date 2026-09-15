@@ -5,7 +5,13 @@
 @using PoMiniGamesClient.Models;
 @using PoMiniGamesClient.Games.ConnectFive;
 @using PoMiniGamesClient.Services;
+@using PoMiniGames.Shared.Games;
+@using Microsoft.AspNetCore.SignalR;
+@using Microsoft.AspNetCore.SignalR.Client;
 @inject NavigationManager Navigation;
+@inject ApiEndpoints Endpoints;
+@inject AuthStateService AuthState;
+@inject ToastService Toasts;
 @inject PlayerNameService PlayerNameService;
 @inject MatchHistoryService MatchHistory;
 @inject KioskCoordinator Kiosk;
@@ -47,6 +53,58 @@
     }
 
     <div class="cf-layout">
+        @* Online quick-match panel. Sits above the status bar and only while there
+           is something to say that the board cannot: connecting, searching, a
+           dropped opponent, a pending rematch. During normal play it is absent
+           and the status bar below carries the turn. *@
+        @if (OnlinePanelVisible)
+        {
+            <div class="cf-online" role="status">
+                @if (_onlinePhase == OnlinePhase.Connecting)
+                {
+                    <div class="app-loading"><span class="app-loading__spinner" aria-hidden="true"></span><span>Connecting…</span></div>
+                }
+                else if (_onlinePhase == OnlinePhase.Searching)
+                {
+                    <div class="app-loading"><span class="app-loading__spinner" aria-hidden="true"></span><span>Looking for an opponent…</span></div>
+                    <p class="cf-online-note">You'll be paired with the next player who picks Online.</p>
+                    <div class="cf-online__actions">
+                        <button type="button" class="sp-btn-secondary" @onclick="LeaveOnline">Cancel</button>
+                    </div>
+                }
+                else if (_onlinePhase == OnlinePhase.Error)
+                {
+                    <p>Lost the connection to the game server.</p>
+                    <div class="cf-online__actions">
+                        <button type="button" class="sp-btn-primary" @onclick="RetryOnlineAsync">Try again</button>
+                        <button type="button" class="sp-btn-secondary" @onclick="LeaveOnline">Back</button>
+                    </div>
+                }
+                else if (_onlinePhase == OnlinePhase.Playing)
+                {
+                    <div class="app-loading"><span class="app-loading__spinner" aria-hidden="true"></span><span>@(_reconnecting ? "Reconnecting…" : $"{_opponentName} lost their connection — holding the game for 30 seconds…")</span></div>
+                }
+                else if (_opponentGone)
+                {
+                    <p>@_opponentName has left.</p>
+                    <div class="cf-online__actions">
+                        <button type="button" class="sp-btn-primary" @onclick="FindOpponentSafeAsync">Find another opponent</button>
+                        <button type="button" class="sp-btn-secondary" @onclick="LeaveOnline">Back</button>
+                    </div>
+                }
+                else if (_rematchRequested)
+                {
+                    <div class="app-loading"><span class="app-loading__spinner" aria-hidden="true"></span><span>Waiting for @_opponentName to accept the rematch…</span></div>
+                    <div class="cf-online__actions">
+                        <button type="button" class="sp-btn-secondary" @onclick="FindOpponentSafeAsync">Find another opponent</button>
+                    </div>
+                }
+                else
+                {
+                    <p>@_opponentName wants a rematch — press Play again to accept.</p>
+                }
+            </div>
+        }
         @* Visible turn/status bar.
 
            Whose turn it is already existed — but only as text inside GameShell's
@@ -165,13 +223,15 @@
     // Only the vs-CPU mode reports one: in local 2-player "you" is ambiguous —
     // one of the two people at the keyboard just won — so it stays InProgress and
     // the modal sounds the neutral round-over instead of celebrating at someone.
-    private GameResult OutcomeForCue => PlayMode != "ai" ? GameResult.InProgress : _gameResult;
+    private GameResult OutcomeForCue => PlayMode is "ai" or "online" ? _gameResult : GameResult.InProgress;
 
     // Spoken by GameShell's shared live region (browser audit #6). The board is a
     // role="grid" of labelled cells, so a screen reader can read the position —
     // what it could not tell was whose turn it is or that the game had ended.
     // Demo drives itself with nobody listening, so it announces nothing.
-    private string? Announcement => PlayMode == "demo" ? null : _gameResult switch
+    private string? Announcement => PlayMode == "demo" ? null
+        : IsOnline ? OnlineStatusText
+        : _gameResult switch
     {
         GameResult.Win => "You win.",
         GameResult.Loss => PlayMode == "ai" ? "You lose." : "Yellow wins.",
@@ -184,11 +244,17 @@
     // Deliberately derived from the SAME state the sr-only Announcement reads,
     // rather than tracking its own: two turn indicators that can disagree is
     // worse than one that is only spoken.
-    private string RedName => PlayMode == "demo" ? "Red" : P1Name;
+    private string RedName => PlayMode switch
+    {
+        "demo" => "Red",
+        "online" => OnlineSeatName(TurnMatchSide.First),
+        _ => P1Name,
+    };
     private string YellowName => PlayMode switch
     {
         "ai" => "CPU",
         "demo" => "Yellow",
+        "online" => OnlineSeatName(TurnMatchSide.Second),
         _ => _player2Name,
     };
 
@@ -198,6 +264,7 @@
     {
         "demo" => false,
         "ai" => !_isAiTurn,
+        "online" => _onlinePhase == OnlinePhase.Playing && _onlineTurn == TurnMatchSide.First,
         _ => _current2pPlayer == Player.Red,
     };
 
@@ -205,10 +272,11 @@
     {
         "demo" => false,
         "ai" => _isAiTurn,
+        "online" => _onlinePhase == OnlinePhase.Playing && _onlineTurn == TurnMatchSide.Second,
         _ => _current2pPlayer == Player.Yellow,
     };
 
-    private string StatusText => _gameResult switch
+    private string StatusText => IsOnline ? OnlineStatusText : _gameResult switch
     {
         GameResult.Win => PlayMode == "ai" ? "You win!" : $"{RedName} wins!",
         GameResult.Loss => PlayMode == "ai" ? "You lose" : $"{YellowName} wins!",
@@ -265,11 +333,16 @@
     private int _hoverTargetRow => _hoverCol >= 0 ? _board.GetTargetRow(_hoverCol) : -1;
     // The ghost only makes sense on a live human turn — not while the AI thinks,
     // not in demo, not after the game ends. CSS additionally hides it on touch.
-    private bool CanPreview => _gameResult == GameResult.InProgress && !_isAiTurn && PlayMode != "demo";
+    private bool CanPreview => IsOnline
+        ? IsMyOnlineTurn
+        : _gameResult == GameResult.InProgress && !_isAiTurn && PlayMode != "demo";
     // The ghost wears the colour of whoever is about to move.
-    private string GhostColorClass => PlayMode == "2p"
-        ? (_current2pPlayer == Player.Red ? "red-piece" : "yellow-piece")
-        : "red-piece";
+    private string GhostColorClass => PlayMode switch
+    {
+        "2p" => _current2pPlayer == Player.Red ? "red-piece" : "yellow-piece",
+        "online" => _mySide == TurnMatchSide.First ? "red-piece" : "yellow-piece",
+        _ => "red-piece",
+    };
 
     private void SetHover(int col)
     {
@@ -308,7 +381,9 @@
     }
 
     private string _backTo => "/";
-    private bool _isGameOver => _gameResult != GameResult.InProgress && PlayMode != "demo";
+    // Online: once Play Again has voted for a rematch the modal steps aside so the
+    // "waiting for <opponent>" panel above the board is readable.
+    private bool _isGameOver => _gameResult != GameResult.InProgress && PlayMode != "demo" && !(IsOnline && _rematchRequested);
 
     // Intro/welcome gate: the board is blocked behind the intro card until the
     // player dismisses it (OK), or the demo flashes it for 2s. Nothing on this
@@ -323,12 +398,19 @@
         "2p"   => GameIntro.IntroMode.TwoPlayer,
         _      => GameIntro.IntroMode.OnePlayer,
     };
-    private void DismissIntro() => _introDone = true;
+    private void DismissIntro()
+    {
+        _introDone = true;
+        // Online connects only once the player has read the intro: the queue is a
+        // promise to play, and nobody should be paired while still reading the rules.
+        if (IsOnline) _ = StartOnlineAsync();
+    }
 
     private string ActiveModeLabel => PlayMode switch
     {
         "demo" => "Demo",
         "2p" => "2 Players",
+        "online" => "Online",
         _ => "1 Player",
     };
 
@@ -345,6 +427,14 @@
                 <li>No input — the board runs itself for the duration of the demo reel</li>
                 <li>First to five discs in a row wins the round</li>
                 <li>The demo loops on the post-game screen until the reel advances</li>
+            </ul>
+        </div>,
+        "online" => @<div>
+            <p>Play another person over the internet — first to five in a row wins.</p>
+            <ul>
+                <li>You're paired with the next player who picks Online — no lobby, no codes</li>
+                <li>Who goes first is drawn at random and swaps on every rematch</li>
+                <li>The board lives on the server: drop a disc on your turn, then wait for theirs</li>
             </ul>
         </div>,
         "2p" => @<div>
@@ -366,7 +456,35 @@
     };
 
     private RenderFragment? GameSummaryContent => !_isGameOver ? null
-        : PlayMode == "2p" ? TwoPlayerSummary : AiSummary;
+        : PlayMode == "2p" ? TwoPlayerSummary
+        : PlayMode == "online" ? OnlineSummary
+        : AiSummary;
+
+    private RenderFragment OnlineSummary => @<div class="cf-ai-summary">
+        @if (_gameResult == GameResult.Win)
+        {
+            <div class="cf-result cf-result--win">🎉 You beat @_opponentName!</div>
+        }
+        else if (_gameResult == GameResult.Loss)
+        {
+            <div class="cf-result cf-result--loss">@_opponentName wins this one.</div>
+        }
+        else
+        {
+            <div class="cf-result cf-result--draw">🤝 It’s a draw!</div>
+        }
+        @if (_onlineEndReason == TurnMatchEndReason.Forfeit)
+        {
+            <div class="cf-online-note">@_opponentName left the game.</div>
+        }
+        else if (_onlineEndReason == TurnMatchEndReason.Disconnect)
+        {
+            <div class="cf-online-note">@_opponentName lost their connection.</div>
+        }
+        <div class="cf-online-note">
+            @(_opponentGone ? "Play again finds you a new opponent." : $"Play again asks {_opponentName} for a rematch — colours swap.")
+        </div>
+    </div>;
 
     private RenderFragment TwoPlayerSummary => _gameResult switch
     {
@@ -409,6 +527,7 @@
     {
         _playerName = PlayerNameService.GetPlayerName();
         if (RouteMode == GameMode.TwoPlayer) _playMode = "2p";
+        else if (RouteMode == GameMode.Multiplayer) _playMode = "online";
         ResetGame();
         if (IsDemo) Kiosk.SetCurrent("connectfive-demo");
     }
@@ -606,6 +725,9 @@
     // engine's bodies are recreated on the next init() anyway.
     public void Dispose()
     {
+        // Online: tell the server we left (forfeits an in-progress game) and drop
+        // the hub. Fire-and-forget — the server's disconnect grace is the fallback.
+        _ = TearDownOnlineAsync();
         _demoCts?.Cancel();
         _aiMoveCts?.Cancel();
         _aiMoveCts?.Dispose();
@@ -646,6 +768,12 @@
     private void HandleDrop(int col)
     {
         if (PlayMode == "demo") return;
+        if (IsOnline)
+        {
+            // The server decides; the local board only gates obvious no-ops.
+            if (IsMyOnlineTurn && _board.GetTargetRow(col) >= 0) _ = HandleOnlineDropAsync(col);
+            return;
+        }
         if (_gameResult != GameResult.InProgress || _isAiTurn) return;
 
         var targetRow = _board.GetTargetRow(col);
@@ -807,15 +935,323 @@
 
     private void RestartMatch()
     {
+        if (IsOnline)
+        {
+            // Play Again in an online game is a rematch vote (or a fresh search when
+            // the opponent has gone); the board resets when the server says so.
+            _ = RequestRematchAsync();
+            return;
+        }
+        ResetBoardState();
+        _cpuElo = _rating.Elo;
+        StateHasChanged();
+    }
+
+    /// <summary>Clear the board and every per-game flag; shared by Play Again and the online (re)start.</summary>
+    private void ResetBoardState()
+    {
         _board = new ConnectFiveBoard();
         _gameResult = GameResult.InProgress;
-        _winCells.Clear();
+        _winCells = new();
         _winCascadePlayed = false;
         _isAiTurn = false;
         _matchRecorded = false;
         _current2pPlayer = Player.Red;
         _hoverCol = -1;
-        _cpuElo = _rating.Elo;
+        _lastGhostRenderKey = -1;
+    }
+
+    // ── Online (quick-match over /connectfive/hub) ───────────────────────────
+    // The server owns the board. This page renders TurnMatchState snapshots and
+    // sends columns; the local ConnectFiveBoard is a render cache that applies
+    // LastMove when it is exactly one move behind (so the drop animates and
+    // sounds) and is rebuilt from Cells otherwise. Side mapping is fixed:
+    // First = Red, Second = Yellow — Red always opens, and a rematch swaps seats.
+    private enum OnlinePhase { Idle, Connecting, Searching, Playing, Over, Error }
+
+    private TurnMatchClient? _online;
+    private OnlinePhase _onlinePhase = OnlinePhase.Idle;
+    private TurnMatchStart? _seat;
+    private TurnMatchSide _mySide = TurnMatchSide.First;
+    private int _onlineGameNumber;
+    private int _onlineMoveCount;
+    private TurnMatchSide _onlineTurn = TurnMatchSide.First;
+    private TurnMatchEndReason _onlineEndReason;
+    private string _opponentName = "Opponent";
+    private bool _opponentConnected = true;
+    private bool _opponentWantsRematch;
+    private bool _rematchRequested;
+    private bool _opponentGone;
+    private bool _awaitingServer;
+    private bool _reconnecting;
+
+    private bool IsOnline => PlayMode == "online";
+    private bool IsMyOnlineTurn =>
+        IsOnline && _onlinePhase == OnlinePhase.Playing && _gameResult == GameResult.InProgress
+        && _onlineTurn == _mySide && !_awaitingServer && !_reconnecting;
+
+    private bool OnlinePanelVisible => IsOnline && _onlinePhase switch
+    {
+        OnlinePhase.Connecting or OnlinePhase.Searching or OnlinePhase.Error => true,
+        OnlinePhase.Playing => _reconnecting || !_opponentConnected,
+        OnlinePhase.Over => _opponentGone || _rematchRequested != _opponentWantsRematch,
+        _ => false,
+    };
+
+    private string OnlineSeatName(TurnMatchSide side)
+    {
+        if (_seat is null) return side == TurnMatchSide.First ? "Red" : "Yellow";
+        var seat = side == TurnMatchSide.First ? _seat.First : _seat.Second;
+        return side == _mySide ? $"{seat.DisplayName} (you)" : seat.DisplayName;
+    }
+
+    private string OnlineStatusText => _onlinePhase switch
+    {
+        OnlinePhase.Idle or OnlinePhase.Connecting => "Connecting…",
+        OnlinePhase.Searching => "Finding an opponent…",
+        OnlinePhase.Error => "Connection lost",
+        _ when _gameResult == GameResult.Win => _onlineEndReason switch
+        {
+            TurnMatchEndReason.Forfeit => $"{_opponentName} left — you win",
+            TurnMatchEndReason.Disconnect => $"{_opponentName} disconnected — you win",
+            _ => "You win!",
+        },
+        _ when _gameResult == GameResult.Loss => $"{_opponentName} wins",
+        _ when _gameResult == GameResult.Draw => "Draw",
+        _ when _reconnecting => "Reconnecting…",
+        _ when !_opponentConnected => $"{_opponentName} is reconnecting…",
+        _ when _awaitingServer => "Sending…",
+        _ when _onlineTurn == _mySide => "Your turn",
+        _ => $"{_opponentName}'s turn",
+    };
+
+    private async Task StartOnlineAsync()
+    {
+        _onlinePhase = OnlinePhase.Connecting;
+        _reconnecting = false;
         StateHasChanged();
+        try
+        {
+            if (_online is null)
+            {
+                _online = new TurnMatchClient(Endpoints, "connectfive/hub");
+                _online.MatchStarted += OnOnlineMatchStarted;
+                _online.StateChanged += OnOnlineState;
+                _online.ConnectionChanged += OnOnlineConnection;
+                _online.SeatLost += OnOnlineSeatLost;
+            }
+            await _online.ConnectAsync();
+            await FindOpponentAsync();
+        }
+        catch (Exception)
+        {
+            _onlinePhase = OnlinePhase.Error;
+            Toasts.Show("Couldn't reach the game server.", ToastType.Error);
+            StateHasChanged();
+        }
+    }
+
+    private async Task RetryOnlineAsync()
+    {
+        await TearDownOnlineAsync();
+        await StartOnlineAsync();
+    }
+
+    private async Task FindOpponentAsync()
+    {
+        if (_online is null) return;
+        // A seat in a finished match has to be given up before queueing again —
+        // the server refuses to queue a connection it still counts as seated.
+        if (_seat is not null) await _online.LeaveAsync();
+        _online.ForgetSeat();
+        _seat = null;
+        _opponentGone = false;
+        _rematchRequested = false;
+        _opponentWantsRematch = false;
+        _opponentConnected = true;
+        _onlineEndReason = TurnMatchEndReason.None;
+        _onlinePhase = OnlinePhase.Searching;
+        ResetBoardState();
+        StateHasChanged();
+        // matchStarted may fire before this returns (the server pairs inside the
+        // call), so the phase is only ever advanced by the event, never here.
+        await _online.FindMatchAsync(P1Name, !AuthState.IsAuthenticated);
+    }
+
+    private async Task FindOpponentSafeAsync()
+    {
+        try { await FindOpponentAsync(); }
+        catch (Exception)
+        {
+            _onlinePhase = OnlinePhase.Error;
+            StateHasChanged();
+        }
+    }
+
+    private void OnOnlineMatchStarted(TurnMatchStart start)
+    {
+        _seat = start;
+        _mySide = start.YourSide;
+        _onlineGameNumber = start.GameNumber;
+        _opponentName = (start.YourSide == TurnMatchSide.First ? start.Second : start.First).DisplayName;
+        _onlinePhase = OnlinePhase.Playing;
+        _rematchRequested = false;
+        _opponentWantsRematch = false;
+        _opponentGone = false;
+        _opponentConnected = true;
+        _onlineEndReason = TurnMatchEndReason.None;
+        _onlineMoveCount = 0;
+        _onlineTurn = TurnMatchSide.First;
+        _awaitingServer = false;
+        ResetBoardState();
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void OnOnlineState(TurnMatchState state)
+    {
+        if (_seat is null || state.MatchId != _seat.MatchId) return;
+        var opponent = state.OpponentOf(_mySide);
+        _opponentName = opponent.DisplayName;
+        _opponentConnected = opponent.Connected;
+        _opponentWantsRematch = opponent.WantsRematch;
+
+        var sameGame = state.GameNumber == _onlineGameNumber;
+        if (sameGame && state.MoveCount == _onlineMoveCount + 1 && state.LastMove is { } move
+            && _board.Get(move.Row, move.Col) == Piece.None)
+        {
+            var player = move.Side == TurnMatchSide.First ? Player.Red : Player.Yellow;
+            _board = _board.Place(move.Row, move.Col, player);
+            _ = Feedback.ChipDropAsync(move.Row);
+            TryDrop(move.Col, move.Row, player == Player.Red ? "red" : "yellow");
+        }
+        else if (!sameGame || state.MoveCount != _onlineMoveCount)
+        {
+            // Rejoin or a missed broadcast: rebuild silently, nothing to animate.
+            _board = ConnectFiveBoard.FromCells(state.Cells);
+            _onlineGameNumber = state.GameNumber;
+            _winCells = new();
+            _winCascadePlayed = false;
+            _gameResult = GameResult.InProgress;
+        }
+        _onlineMoveCount = state.MoveCount;
+        _onlineTurn = state.Turn;
+        _onlineEndReason = state.EndReason;
+        _hoverCol = -1;
+        _lastGhostRenderKey = -1;
+
+        if (state.Status != TurnMatchStatus.InProgress && _gameResult == GameResult.InProgress)
+        {
+            _gameResult = state.Status switch
+            {
+                TurnMatchStatus.Draw => GameResult.Draw,
+                TurnMatchStatus.FirstWon => _mySide == TurnMatchSide.First ? GameResult.Win : GameResult.Loss,
+                _ => _mySide == TurnMatchSide.Second ? GameResult.Win : GameResult.Loss,
+            };
+            _winCells = state.WinCells.Select(i => (i / ConnectFiveBoard.Cols, i % ConnectFiveBoard.Cols)).ToList();
+            if (_winCells.Count > 0) OnWinDetected();
+            if (_gameResult == GameResult.Win) _ = Feedback.CompleteAsync();
+            else if (_gameResult == GameResult.Loss) _ = Feedback.ErrorAsync();
+            _onlinePhase = OnlinePhase.Over;
+            RecordOnlineMatch();
+        }
+        if (_onlinePhase == OnlinePhase.Over && !opponent.Connected) _opponentGone = true;
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void OnOnlineConnection(HubConnectionState state)
+    {
+        _reconnecting = state == HubConnectionState.Reconnecting;
+        if (state == HubConnectionState.Disconnected && _onlinePhase is not (OnlinePhase.Idle or OnlinePhase.Error))
+        {
+            _onlinePhase = OnlinePhase.Error;
+        }
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void OnOnlineSeatLost()
+    {
+        Toasts.Show("Your seat expired while you were away — finding a new opponent.", ToastType.Warning);
+        _seat = null;
+        _ = InvokeAsync(FindOpponentSafeAsync);
+    }
+
+    private async Task HandleOnlineDropAsync(int col)
+    {
+        if (_online is null) return;
+        _awaitingServer = true;
+        _hoverCol = -1;
+        StateHasChanged();
+        try
+        {
+            // Row is resolved by the server (gravity); any value is accepted.
+            await _online.PlaceAsync(0, col);
+        }
+        catch (HubException ex)
+        {
+            Toasts.Show(ex.Message, ToastType.Warning);
+        }
+        catch (Exception)
+        {
+            Toasts.Show("That move didn't reach the server — try again.", ToastType.Warning);
+        }
+        finally
+        {
+            _awaitingServer = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task RequestRematchAsync()
+    {
+        if (_online is null) return;
+        try
+        {
+            if (_opponentGone)
+            {
+                await FindOpponentAsync();
+                return;
+            }
+            _rematchRequested = true;
+            StateHasChanged();
+            await _online.RequestRematchAsync();
+        }
+        catch (Exception)
+        {
+            _rematchRequested = false;
+            if (_online.State != HubConnectionState.Connected) _onlinePhase = OnlinePhase.Error;
+            Toasts.Show("Couldn't reach the server.", ToastType.Warning);
+            StateHasChanged();
+        }
+    }
+
+    // Online results go to the head-to-head history as Multiplayer; they never touch
+    // the adaptive vs-CPU rating, which is a measure of play against the AI only.
+    private void RecordOnlineMatch()
+    {
+        if (_matchRecorded) return;
+        _matchRecorded = true;
+        var outcome = _gameResult switch
+        {
+            GameResult.Win => MatchOutcome.Win,
+            GameResult.Loss => MatchOutcome.Loss,
+            _ => MatchOutcome.Draw
+        };
+        _ = MatchHistory.RecordAsync("connectfive", MatchMode.Multiplayer, _opponentName, outcome);
+    }
+
+    private void LeaveOnline() => Navigation.NavigateTo("/");
+
+    private async Task TearDownOnlineAsync()
+    {
+        var online = _online;
+        if (online is null) return;
+        _online = null;
+        online.MatchStarted -= OnOnlineMatchStarted;
+        online.StateChanged -= OnOnlineState;
+        online.ConnectionChanged -= OnOnlineConnection;
+        online.SeatLost -= OnOnlineSeatLost;
+        await online.LeaveAsync();
+        await online.DisposeAsync();
     }
 }
+

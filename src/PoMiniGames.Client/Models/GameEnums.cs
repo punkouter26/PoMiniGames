@@ -46,7 +46,8 @@ public enum GameResult
 }
 
 /// <summary>TicTacToe board cell. Kept separate from <see cref="Piece"/>: same shape, different game.</summary>
-public enum CellValue
+/// <remarks>Byte-backed for the same reason as <see cref="Piece"/>: the board hands its cells to the shared grid rules as bytes.</remarks>
+public enum CellValue : byte
 {
     None = 0,
     X = 1,

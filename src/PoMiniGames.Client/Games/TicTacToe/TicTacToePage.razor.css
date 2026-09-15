@@ -233,7 +233,69 @@
 }
 
 /* ── Responsive ── */
+/* ── Online quick-match panel / turn line ────────────────────────────────
+   Tic-Tac-Toe has no visible status bar (the turn is only spoken), so online
+   mode adds one above the board: a remote opponent's turn has to be visible or
+   the disabled board just looks unresponsive. Width tracks the board. */
+.ttt-online {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+  width: calc(6 * var(--ttt-cell) + 5 * var(--ttt-gap) + 2 * var(--ttt-pad));
+  --ttt-cell: clamp(44px, calc((100vh - 220px) / 6), 78px);
+  --ttt-gap: 4px;
+  --ttt-pad: 12px;
+  max-width: 100%;
+  margin: 0 auto 0.6rem;
+  padding: 0.7rem 1rem;
+  border-radius: var(--radius-lg);
+  background: var(--glass-tint);
+  -webkit-backdrop-filter: var(--glass-2);
+  backdrop-filter: var(--glass-2);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+  text-align: center;
+  font-size: 0.95rem;
+}
+
+.ttt-online p { margin: 0; }
+
+.ttt-online__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.ttt-online__turn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+}
+
+/* The local player's mark, as a small swatch next to the turn text. */
+.ttt-online__side {
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 50%;
+}
+.ttt-online__side--x { background: var(--ttt-x); }
+.ttt-online__side--o { background: var(--ttt-o); }
+
+/* Secondary line in the panel and on the end-of-game summary. */
+.ttt-online-note {
+  color: var(--color-text-secondary);
+  font-size: 0.85rem;
+}
+
 @media (max-width: 640px) {
+    .ttt-online {
+        --ttt-cell: clamp(40px, 13.5vw, 52px);
+        --ttt-gap: 3px;
+        --ttt-pad: 8px;
+    }
     .ttt-board {
         --ttt-cell: clamp(40px, 13.5vw, 52px);
         --ttt-gap: 3px;

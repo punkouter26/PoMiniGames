@@ -1,6 +1,7 @@
 using PoMiniGames.Features.Account;
 using PoMiniGames.Features.Auth;
 using PoMiniGames.Features.ConnectFive;  // ConnectFiveHub (the slice's only server surface)
+using PoMiniGames.Features.TicTacToe;    // TicTacToeHub (same)
 using PoMiniGames.Features.Health;
 using PoMiniGames.Features.Integrity;
 using PoMiniGames.Features.PoSports;
@@ -137,9 +138,13 @@ internal static class EndpointRouteExtensions
         // per-tick combat state. Same platform conventions as every other live hub.
         app.MapHub<PoMiniGames.Features.PoBrawl.Online.PoBrawlLobbyHub>("/pobrawl/lobby-hub").RequireAuthorization();
         app.MapHub<PoMiniGames.Features.PoBrawl.Online.PoBrawlMatchHub>("/pobrawl/match-hub").RequireAuthorization();
-        // ConnectFive online: one hub carries queue, moves, rematch and reconnect.
-        // SignalR-first like PoCoupleQuiz — the slice maps no HTTP routes at all.
+        // ConnectFive + TicTacToe online: one turn-match hub each carries queue, moves,
+        // rematch and reconnect. SignalR-first like PoCoupleQuiz — neither slice maps
+        // an HTTP route at all.
         app.MapHub<ConnectFiveHub>("/connectfive/hub").RequireAuthorization();
+        app.MapHub<TicTacToeHub>("/tictactoe/hub").RequireAuthorization();
+        // PoMarbleRace online: pairing + host→guest frame relay + guest→host steering.
+        app.MapHub<PoMarbleRaceOnlineHub>("/pomarblerace/hub").RequireAuthorization();
 
         return app;
     }

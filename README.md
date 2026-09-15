@@ -13,13 +13,13 @@ AI-powered games.
 
 | Game | One-liner |
 |---|---|
-| TicTacToe | Classic 3×3 vs AI |
-| ConnectFive | Five-in-a-row vs AI |
+| TicTacToe | 4-in-a-row on 6×6 vs AI, hot-seat, or online quick-match (SignalR) |
+| ConnectFive | Five-in-a-row vs AI, hot-seat, or online quick-match (SignalR) |
 | PoBrawl | Physics brawler with a presidents ladder + fighter Elo demo board |
 | PoCoupleQuiz | Two-player realtime couples quiz (SignalR) |
 | PoFunQuiz | AI-generated multiplayer quiz lobby |
 | PoJoker | AI joke judge with a grandma audience |
-| PoMarbleRace | Physics marble race on baked GLB tracks |
+| PoMarbleRace | Physics marble race on baked GLB tracks; online 2-player via host-streamed physics |
 | PoRacer | 3D racer with multiplayer lobby |
 | PoSports | Sprite-based sports mini-game |
 | PoVoxelStrike | Third-person survival shooter with fully destructible voxel structures |

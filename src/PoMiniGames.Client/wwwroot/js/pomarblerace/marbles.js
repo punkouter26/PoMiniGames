@@ -301,7 +301,7 @@ function blobTexture() {
  *   ONLY (realism pass #3). The scene has no global environment — see scene.js — so this is what
  *   gives the spheres a specular highlight without putting reflections on the track.
  */
-export function createMarbles(world, materials, startPositions, chosenIndex, onCollide, envMap) {
+export function createMarbles(world, materials, startPositions, chosenIndex, onCollide, envMap, colorOverrides) {
   // Set by updateProgress() from the active map; only used to normalise progress to 0..1.
   let courseLength = 1;
   const marbles = [];
@@ -535,7 +535,9 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
     if (m.packIndex < 0) continue;
     _m4.compose(m.mesh.position, m.mesh.quaternion, _scale);
     pack.setMatrixAt(m.packIndex, _m4);
-    _col.setHex(m.spec.color);
+    // Online mode recolours one pack marble for the guest (game.js GUEST_COLOR); everything
+    // else keeps its palette entry.
+    _col.setHex(colorOverrides && colorOverrides[m.index] !== undefined ? colorOverrides[m.index] : m.spec.color);
     pack.setColorAt(m.packIndex, _col);
     const cell = atlasCell(m.index);
     uvOffsets[m.packIndex * 2] = (cell % ATLAS_COLS) / ATLAS_COLS;

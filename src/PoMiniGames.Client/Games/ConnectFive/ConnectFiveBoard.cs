@@ -9,9 +9,9 @@ public class ConnectFiveBoard
     // Geometry and the win check come from the shared rules so the online match
     // service (which applies moves through the same class) can never disagree
     // with what this board draws. Piece is byte-backed for exactly this handoff.
-    public const int Rows = ConnectFiveRules.Rows;
-    public const int Cols = ConnectFiveRules.Cols;
-    public const int WinLength = ConnectFiveRules.WinLength;
+    public const int Rows = ConnectFiveRules.BoardRows;
+    public const int Cols = ConnectFiveRules.BoardCols;
+    public const int WinLength = ConnectFiveRules.BoardWinLength;
 
     // Audit #5: flat Piece[Rows * Cols] storage replaces the prior jagged
     // Piece[Rows][]. 81 contiguous pieces > 9 array headers; one allocation
@@ -144,7 +144,7 @@ public class ConnectFiveBoard
         // Delegated to the shared rules (2026-09-14, online mode). The full-window
         // scan and its off-by-one history now live there; the byte view of _cells
         // is free because Piece is byte-backed.
-        var line = ConnectFiveRules.FindWin(MemoryMarshal.AsBytes<Piece>(_cells), (byte)player);
+        var line = ConnectFiveRules.Instance.FindWin(MemoryMarshal.AsBytes<Piece>(_cells), (byte)player);
         if (line is null) return new WinResult { Won = false, Cells = new List<(int, int)>() };
         var cells = new List<(int, int)>(WinLength);
         foreach (var index in line)

@@ -18,7 +18,9 @@ window.PoMarbleRace = {
   // Async because a map may have to fetch an authored model before anything can be built. The
   // Blazor page calls this without awaiting; every other entry point below is a no-op until
   // `game` exists, which is the same guard they already had.
-  async start(containerId, dotnetRef, demo, mapId) {
+  // `online` is null for a local game, else { role: 'host'|'guest', seed, guestIndex } — see
+  // the Online section of game.js.
+  async start(containerId, dotnetRef, demo, mapId, online) {
     const token = ++startToken;
     if (game) { game.dispose(); game = null; }
     const el = document.getElementById(containerId);
@@ -33,7 +35,7 @@ window.PoMarbleRace = {
     }
     // A newer start() (or a stop()) landed while the map was in flight — stand down.
     if (token !== startToken) return;
-    game = new Game(containerId, dotnetRef, demo, map.id, asset);
+    game = new Game(containerId, dotnetRef, demo, map.id, asset, online || null);
     game.start();
   },
   // 2026-07-19 browser audit #1: host calls resume() after the intro OK is
@@ -50,6 +52,15 @@ window.PoMarbleRace = {
   beep(final) { if (game) game.beep(final); },
   regenerate() { if (game) game.regenerate(); },
   setMuted(muted) { if (game) game.setMuted(muted); },
+  // ── Online ──
+  // Host: the guest's held steering direction, relayed by the hub.
+  setGuestSteer(dir) { if (game) game.setGuestSteer(dir); },
+  // Guest: one streamed snapshot from the host (see game.js applyFrame for the argument list).
+  applyFrame(...args) { if (game) game.applyFrame(...args); },
+  // Guest: the host resolved the race; `won` is the guest's own top-10 verdict.
+  guestResult(won) { if (game) game.guestResult(won); },
+  // Guest: the host started the next race on this seed.
+  nextTrack(seed) { if (game) game.nextTrack(seed); },
   // Bumping the token here too, so a start() still waiting on the model fetch cannot install a
   // Game after the host has torn the page down.
   stop() { startToken++; if (game) { game.dispose(); game = null; } },

@@ -119,6 +119,8 @@ public static class GameCatalog
         [
             new(GameMode.OnePlayer, "/tictactoe/1player"),
             new(GameMode.TwoPlayer, "/tictactoe/2player"),
+            // Quick-match 1v1 over SignalR, same turn-match service as Connect Five.
+            new(GameMode.Multiplayer, "/tictactoe/multi", RequiresNetwork: true),
             new(GameMode.Demo, "/tictactoe/demo"),
         ])
         {
@@ -175,6 +177,9 @@ public static class GameCatalog
         new(GameKeys.PoMarbleRace, "Marble Race", "🔮",
         [
             new(GameMode.OnePlayer, "/pomarblerace/1player"),
+            // Host-authoritative 2-player race over SignalR: the host browser runs the
+            // physics and streams the pack, the guest steers the white marble.
+            new(GameMode.Multiplayer, "/pomarblerace/multi", RequiresNetwork: true),
             new(GameMode.Demo, "/pomarblerace/demo"),
         ]) { ChipPrimary = true },
 

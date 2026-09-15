@@ -4,6 +4,9 @@
 @using PoMiniGamesClient.Components
 @using PoMiniGamesClient.Models
 @using PoMiniGamesClient.Services
+@using PoMiniGamesClient.Games.PoMarbleRace.Services
+@using PoMiniGames.Shared.Games
+@using Microsoft.AspNetCore.SignalR.Client
 @implements IAsyncDisposable
 @inject PlayerNameService PlayerNameService
 @inject ApiService ApiService
@@ -11,6 +14,9 @@
 @inject IJSRuntime JSRuntime
 @inject NavigationManager Navigation
 @inject KioskCoordinator Kiosk
+@inject ApiEndpoints Endpoints
+@inject AuthStateService AuthState
+@inject ToastService ToastService
 
 <PageTitle>Marble Race · PoMiniGames</PageTitle>
 
@@ -27,12 +33,8 @@
     {
         <GameIntro CueScope="pomarblerace"
                    Title="@TitleContent"
-                   Objective="@(_demo
-                       // 2026-09-11 UI sweep: the demo objective told a spectator
-                       // to control a marble they cannot steer — describe the show.
-                       ? "101 CPU marbles, one track. Top 10 scores — watch the pack work it out."
-                       : "You control the one RED marble in a pack of 101. Finish in the top 10 to score.")"
-                   Controls="@(_demo ? DemoQuickControls : HowToPlayContent)"
+                   Objective="@IntroObjective"
+                   Controls="@(_demo ? DemoQuickControls : _online ? OnlineHowToPlayContent : HowToPlayContent)"
                    Mode="@_introMode"
                    OnStart="OnIntroStartAsync" />
     }
@@ -66,26 +68,88 @@
             @* Also held open while a track swap is in flight: the countdown is stopped for the
                duration, and without this the card would blink out mid-swap and take the picker
                with it. *@
-            @if (_introDone && _phase == "pick" && !_demo && (_pickCountdown > 0 || _switchingMap))
+            @* Online: everything before the engine is up (connecting, searching) and everything
+               that ends the session (peer left, connection lost) lives on this one card. *@
+            @if (_introDone && _online && _onlinePhase != OnlinePhase.Racing)
+            {
+                <div class="mr-overlay">
+                    <div class="mr-pick-card" role="status">
+                        @if (_onlinePhase == OnlinePhase.Connecting)
+                        {
+                            <h2 class="mr-pick-title">Connecting…</h2>
+                        }
+                        else if (_onlinePhase == OnlinePhase.Searching)
+                        {
+                            <h2 class="mr-pick-title">Looking for an opponent…</h2>
+                            <p class="mr-pick-sub">You'll be paired with the next player who picks Online. The first to arrive hosts the race and steers <span class="mr-pick-red">RED</span>; the second steers <span class="mr-pick-white">WHITE</span>.</p>
+                            <div class="mr-online-actions">
+                                <button type="button" class="sp-btn-secondary" @onclick="LeaveOnline">Cancel</button>
+                            </div>
+                        }
+                        else if (_onlinePhase == OnlinePhase.PeerLeft)
+                        {
+                            <h2 class="mr-pick-title">@_opponentName left the race</h2>
+                            <div class="mr-online-actions">
+                                <button type="button" class="sp-btn-primary" @onclick="FindOpponentSafeAsync">Find another opponent</button>
+                                <button type="button" class="sp-btn-secondary" @onclick="LeaveOnline">Back</button>
+                            </div>
+                        }
+                        else
+                        {
+                            <h2 class="mr-pick-title">Lost the connection</h2>
+                            <div class="mr-online-actions">
+                                <button type="button" class="sp-btn-primary" @onclick="RetryOnlineAsync">Try again</button>
+                                <button type="button" class="sp-btn-secondary" @onclick="LeaveOnline">Back</button>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+            @* The online guest has no countdown of its own — the host's pick phase is what it
+               waits on — so the card is held open for the whole pick phase on that side. *@
+            @if (_introDone && _phase == "pick" && !_demo && (!_online || _onlinePhase == OnlinePhase.Racing)
+                 && (_pickCountdown > 0 || _switchingMap || IsOnlineGuest))
             {
                 <div class="mr-overlay">
                     <div class="mr-pick-card">
-                        <h2 class="mr-pick-title">You're the <span class="mr-pick-red">RED</span> marble</h2>
-                        <p class="mr-pick-sub">
-                            100 rivals, every one a different colour. One red — yours. Steer with
-                            <kbd>←</kbd> <kbd>→</kbd> and finish in the top @ScoreTop to score.
-                        </p>
-                        @MapPickerContent
-                        <p class="mr-pick-sub">
-                            @if (_switchingMap)
+                        @if (IsOnlineGuest)
+                        {
+                            <h2 class="mr-pick-title">You're the <span class="mr-pick-white">WHITE</span> marble</h2>
+                            <p class="mr-pick-sub">
+                                @_opponentName hosts this race and steers the red one. Steer with
+                                <kbd>←</kbd> <kbd>→</kbd> and finish in the top @ScoreTop to score.
+                            </p>
+                            <p class="mr-pick-sub">Waiting for @_opponentName to start…</p>
+                        }
+                        else
+                        {
+                            <h2 class="mr-pick-title">You're the <span class="mr-pick-red">RED</span> marble</h2>
+                            <p class="mr-pick-sub">
+                                @if (_online)
+                                {
+                                    <text>@_opponentName steers the <span class="mr-pick-white">WHITE</span> one. Steer with</text>
+                                }
+                                else
+                                {
+                                    <text>100 rivals, every one a different colour. One red — yours. Steer with</text>
+                                }
+                                <kbd>←</kbd> <kbd>→</kbd> and finish in the top @ScoreTop to score.
+                            </p>
+                            @if (!_online)
                             {
-                                <span>Loading track…</span>
+                                @MapPickerContent
                             }
-                            else
-                            {
-                                <text>Starting in <strong class="mr-pick-count">@_pickCountdown</strong>…</text>
-                            }
-                        </p>
+                            <p class="mr-pick-sub">
+                                @if (_switchingMap)
+                                {
+                                    <span>Loading track…</span>
+                                }
+                                else
+                                {
+                                    <text>Starting in <strong class="mr-pick-count">@_pickCountdown</strong>…</text>
+                                }
+                            </p>
+                        }
                     </div>
                 </div>
             }
@@ -205,6 +269,26 @@
     private DotNetObjectReference<PoMarbleRacePage>? _ref;
     private bool _engineStarted;
 
+    // ── Online (host-authoritative relay over /pomarblerace/hub) ──
+    // The host browser runs the physics and streams the pack; the guest renders the stream and
+    // steers the white marble. This page is both roles; _onlineRole decides which interop calls
+    // are wired. See PoMarbleRaceShared.cs and the Online section of game.js.
+    private enum OnlinePhase { Idle, Connecting, Searching, Racing, PeerLeft, Error }
+    private bool _online;
+    private PoMarbleRaceOnlineClient? _onlineClient;
+    private OnlinePhase _onlinePhase = OnlinePhase.Idle;
+    private MarbleRaceRole _onlineRole = MarbleRaceRole.Host;
+    private string _opponentName = "Opponent";
+    private string _hostName = "Host";
+    private int _guestIndex = -1;
+    private int _opponentPlace;
+    private bool _opponentWon;
+    private bool _onlineResultKnown;
+    private Task _applyFrameInFlight = Task.CompletedTask;
+    private bool IsOnlineHost => _online && _onlinePhase == OnlinePhase.Racing && _onlineRole == MarbleRaceRole.Host;
+    private bool IsOnlineGuest => _online && _onlinePhase == OnlinePhase.Racing && _onlineRole == MarbleRaceRole.Guest;
+    private const string GuestColor = "#f8fafc";   // mirrors GUEST_COLOR in game.js
+
     // Colour + name are a pure function of the marble index (index 0 is the red player, every
     // other index is a blue AI marble), so neither is sent over interop on the per-tick path.
     // Mirrors marbles.js — the index is the contract.
@@ -225,11 +309,16 @@
         "#a5b4fc", "#c4b5fd", "#d8b4fe", "#f0abfc", "#f9a8d4", "#fdba74", "#fde68a", "#5eead4",
     };
 
-    private static string ColorOf(int index) =>
-        index == PlayerIndex ? RedColor : PackPalette[(index - 1) % PackPalette.Length];
+    private string ColorOf(int index) =>
+        index == PlayerIndex ? RedColor
+        : _online && index == _guestIndex ? GuestColor
+        : PackPalette[(index - 1) % PackPalette.Length];
 
-    private static string RosterName(int index) =>
-        index == PlayerIndex ? "You" : $"Marble {index + 1}";
+    // Online: the two human marbles carry the humans' names; "You" follows the local role.
+    private string RosterName(int index) =>
+        index == PlayerIndex ? (IsOnlineGuest ? _hostName : "You")
+        : _online && index == _guestIndex ? (IsOnlineGuest ? "You" : _opponentName)
+        : $"Marble {index + 1}";
 
     // Intro/welcome gate: the marble engine (and its race clock) only boots once
     // the intro card is dismissed (OK in 1P, 2s flash in demo). See OnIntroStartAsync.
@@ -238,7 +327,24 @@
         ? GameIntro.IntroMode.Demo
         : GameIntro.IntroMode.OnePlayer;
 
-    private RenderFragment TitleContent => @<span><span aria-hidden="true">🔮</span> Marble Race</span>;
+    private RenderFragment TitleContent => @<span><span aria-hidden="true">🔮</span> Marble Race@(_online ? " · Online" : "")</span>;
+
+    private string IntroObjective => _demo
+        // 2026-09-11 UI sweep: the demo objective told a spectator to control a marble they
+        // cannot steer — describe the show.
+        ? "101 CPU marbles, one track. Top 10 scores — watch the pack work it out."
+        : _online
+            ? "Race another player through a pack of 101. One of you steers RED, the other WHITE — finish in the top 10 to score."
+            : "You control the one RED marble in a pack of 101. Finish in the top 10 to score.";
+
+    private RenderFragment OnlineHowToPlayContent => @<div>
+        <p>Two humans, 99 CPU marbles, one track. Whoever arrives first hosts the race.</p>
+        <ul>
+            <li><kbd>←</kbd>/<kbd>→</kbd> hold to steer your marble — red for the host, white for the guest</li>
+            <li>The host's browser runs the physics; the guest sees the same race a beat behind</li>
+            <li>Finish in the top 10 to score; the next race starts automatically with the same opponent</li>
+        </ul>
+    </div>;
 
     // ── Map picker ──
     // MIRRORED IN JS: this list reproduces the registry in wwwroot/js/pomarblerace/maps.js, and
@@ -353,18 +459,32 @@
     </div>;
 
     private RenderFragment GameSummaryContent => @<div>
-        <div>@(_lastWon ? $"🏆 {Ordinal(_lastPlace)} place — +{_lastGained} points" : "💀 Run over")</div>
-        <div>
-            @(_lastPlace > 0
-                ? $"{RosterName(_chosen)} placed {Ordinal(_lastPlace)}"
-                : $"{RosterName(_chosen)} didn't finish")
-        </div>
-        <div>@(_lastWon ? $"Run: {_score} · Streak: {_streak}" : $"Best run: {_best}")</div>
+        @if (IsOnlineGuest)
+        {
+            <div>@(_lastWon ? $"🏆 {Ordinal(_lastPlace)} place" : "💀 Outside the top 10")</div>
+            <div>@(_lastPlace > 0 ? $"You placed {Ordinal(_lastPlace)}" : "You didn't finish")</div>
+        }
+        else
+        {
+            <div>@(_lastWon ? $"🏆 {Ordinal(_lastPlace)} place — +{_lastGained} points" : "💀 Run over")</div>
+            <div>
+                @(_lastPlace > 0
+                    ? $"{RosterName(_chosen)} placed {Ordinal(_lastPlace)}"
+                    : $"{RosterName(_chosen)} didn't finish")
+            </div>
+            <div>@(_lastWon ? $"Run: {_score} · Streak: {_streak}" : $"Best run: {_best}")</div>
+        }
+        @if (_online && _onlineResultKnown)
+        {
+            <div>@_opponentName @(_opponentPlace > 0 ? $"placed {Ordinal(_opponentPlace)}" : "didn't finish")</div>
+        }
     </div>;
 
     protected override void OnInitialized()
     {
-        _demo = GameModes.Parse(Mode, ModeQuery, Demo) == GameMode.Demo;
+        var mode = GameModes.Parse(Mode, ModeQuery, Demo);
+        _demo = mode == GameMode.Demo;
+        _online = mode == GameMode.Multiplayer;
         _playerName = PlayerNameService.GetPlayerName();
         _stats = _gameStats.GetStats("pomarblerace", _playerName);
         UpdateStats();
@@ -386,6 +506,13 @@
         _pickCountdown = PickSeconds;
         await InvokeAsync(StateHasChanged);
 
+        if (_online)
+        {
+            // The engine boots once a pair forms (OnRaceStarted) — it needs the dealt seed.
+            await StartOnlineAsync();
+            return;
+        }
+
         if (_engineStarted)
         {
             // The engine was already up (e.g. demo re-cycle) — just kick it.
@@ -393,8 +520,17 @@
             catch (Exception ex) { Console.Error.WriteLine($"[PoMarbleRace] resume failed: {ex.Message}"); }
             return;
         }
+        await BootEngineAsync(null);
+    }
+
+    /// <summary>
+    /// Load and start the engine. <paramref name="online"/> is null for a local game, else the
+    /// role/seed/guest-slot record game.js reads (see its Online section).
+    /// </summary>
+    private async Task BootEngineAsync(object? online)
+    {
         _engineStarted = true;
-        _ref = DotNetObjectReference.Create(this);
+        _ref ??= DotNetObjectReference.Create(this);
         try
         {
             // Route-gated engine load (see wwwroot/js/engineLoader.js). The engine is
@@ -406,13 +542,254 @@
                 return;
             }
 
-            await JSRuntime.InvokeVoidAsync("PoMarbleRace.start", "marble-race-container", _ref, _demo, _mapId);
+            await JSRuntime.InvokeVoidAsync("PoMarbleRace.start", "marble-race-container", _ref, _demo, _mapId, online);
             await JSRuntime.InvokeVoidAsync("PoMarbleRace.resume");
         }
         catch (Exception ex)
         {
             Console.Error.WriteLine($"[PoMarbleRace] JS init failed: {ex.Message}");
         }
+    }
+
+    // ── Online session ──
+
+    private async Task StartOnlineAsync()
+    {
+        _onlinePhase = OnlinePhase.Connecting;
+        await InvokeAsync(StateHasChanged);
+        try
+        {
+            if (_onlineClient is null)
+            {
+                _onlineClient = new PoMarbleRaceOnlineClient(Endpoints);
+                _onlineClient.RaceStarted += OnRaceStarted;
+                _onlineClient.FrameReceived += OnFrameReceived;
+                _onlineClient.PhaseReceived += OnPhaseReceived;
+                _onlineClient.PodiumReceived += OnPodiumReceived;
+                _onlineClient.ResultReceived += OnResultReceived;
+                _onlineClient.GuestSteerReceived += OnGuestSteerReceived;
+                _onlineClient.PeerLeft += OnPeerLeft;
+                _onlineClient.ConnectionChanged += OnOnlineConnection;
+            }
+            await _onlineClient.ConnectAsync();
+            await FindOpponentAsync();
+        }
+        catch (Exception)
+        {
+            _onlinePhase = OnlinePhase.Error;
+            ToastService.Show("Couldn't reach the game server.", ToastType.Error);
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task RetryOnlineAsync()
+    {
+        await TearDownOnlineAsync();
+        await StartOnlineAsync();
+    }
+
+    private async Task FindOpponentAsync()
+    {
+        if (_onlineClient is null) return;
+        await StopEngineAsync();
+        _onlinePhase = OnlinePhase.Searching;
+        _onlineResultKnown = false;
+        _phase = "pick";
+        _podium.Clear();
+        await InvokeAsync(StateHasChanged);
+        // raceStarted may fire before this returns (the server pairs inside the call), so the
+        // phase is only ever advanced by the event, never here.
+        await _onlineClient.FindRaceAsync(_playerName, !AuthState.IsAuthenticated, _mapId);
+    }
+
+    private async Task FindOpponentSafeAsync()
+    {
+        try { await FindOpponentAsync(); }
+        catch (Exception)
+        {
+            _onlinePhase = OnlinePhase.Error;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void OnRaceStarted(MarbleRaceStart start)
+    {
+        _ = InvokeAsync(async () =>
+        {
+            _onlineRole = start.YourRole;
+            _hostName = start.Host.DisplayName;
+            _opponentName = start.YourRole == MarbleRaceRole.Host ? start.Guest.DisplayName : start.Host.DisplayName;
+            _guestIndex = start.GuestMarbleIndex;
+            _mapId = start.MapId;
+            _onlinePhase = OnlinePhase.Racing;
+            _onlineResultKnown = false;
+            _phase = "pick";
+            _pickCountdown = PickSeconds;
+            StateHasChanged();
+            await BootEngineAsync(new
+            {
+                role = start.YourRole == MarbleRaceRole.Host ? "host" : "guest",
+                seed = start.Seed,
+                guestIndex = start.GuestMarbleIndex,
+            });
+        });
+    }
+
+    // Guest: hand the host's snapshot to the engine. One-deep: a frame that arrives while the
+    // previous interop call is still in flight is dropped, not queued — a late frame is worse
+    // than a missing one when the next is 66 ms away.
+    private void OnFrameReceived(MarbleRaceFrame f)
+    {
+        if (!IsOnlineGuest || !_engineStarted || !_applyFrameInFlight.IsCompleted) return;
+        _applyFrameInFlight = ApplyFrameAsync(f);
+    }
+
+    private async Task ApplyFrameAsync(MarbleRaceFrame f)
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("PoMarbleRace.applyFrame",
+                f.Tick, f.Clock, f.Phase, f.Positions, f.Flags,
+                f.GuestPlace, f.Field, f.GuestProgress, f.LeaderProgress, f.GuestGap, f.GuestSpeed, f.GuestLateral);
+        }
+        catch { /* engine torn down mid-frame */ }
+    }
+
+    private void OnPhaseReceived(MarbleRacePhase phase)
+    {
+        if (!IsOnlineGuest || phase.Phase != "pick") return;
+        // The host has moved on to the next race; rebuild on its seed. The engine's own
+        // OnPhase("pick") callback then resets the HUD exactly as it does for the host.
+        _ = InvokeAsync(async () =>
+        {
+            try { await JSRuntime.InvokeVoidAsync("PoMarbleRace.nextTrack", phase.Seed); } catch { }
+        });
+    }
+
+    private void OnPodiumReceived(MarbleRacePodium podium)
+    {
+        if (!IsOnlineGuest) return;
+        _ = InvokeAsync(() => OnPodium(podium.Indices, podium.Times, podium.Gaps));
+    }
+
+    private void OnResultReceived(MarbleRaceResult result)
+    {
+        if (!IsOnlineGuest) return;
+        _ = InvokeAsync(async () =>
+        {
+            _lastWon = result.GuestWon;
+            _lastPlace = result.GuestPlace;
+            _lastGained = 0;
+            _opponentWon = result.HostWon;
+            _opponentPlace = result.HostPlace;
+            _onlineResultKnown = true;
+            _phase = "result";
+            try { await JSRuntime.InvokeVoidAsync("PoMarbleRace.guestResult", result.GuestWon); } catch { }
+            // A win/loss for the local record; the run/score/high-score system stays 1P-only.
+            _gameStats.SaveLastPlayedGame("pomarblerace");
+            _stats = await GameResults.RecordAndSubmitMarbleRaceAsync(
+                _playerName, result.GuestWon ? GameResult.Win : GameResult.Loss, null);
+            UpdateStats();
+            StateHasChanged();
+        });
+    }
+
+    private void OnGuestSteerReceived(int dir)
+    {
+        if (!IsOnlineHost || !_engineStarted) return;
+        _ = InvokeAsync(async () =>
+        {
+            try { await JSRuntime.InvokeVoidAsync("PoMarbleRace.setGuestSteer", dir); } catch { }
+        });
+    }
+
+    private void OnPeerLeft()
+    {
+        _ = InvokeAsync(async () =>
+        {
+            if (_onlinePhase is OnlinePhase.Idle or OnlinePhase.Error) return;
+            ToastService.Show($"{_opponentName} left the race.", ToastType.Warning);
+            await StopEngineAsync();
+            _onlinePhase = OnlinePhase.PeerLeft;
+            _phase = "pick";
+            StateHasChanged();
+        });
+    }
+
+    private void OnOnlineConnection(HubConnectionState state)
+    {
+        if (state != HubConnectionState.Disconnected) return;
+        _ = InvokeAsync(async () =>
+        {
+            if (_onlinePhase is OnlinePhase.Idle or OnlinePhase.Error) return;
+            await StopEngineAsync();
+            _onlinePhase = OnlinePhase.Error;
+            _phase = "pick";
+            StateHasChanged();
+        });
+    }
+
+    // Host: the engine's snapshot for the guest. Fire-and-forget; the client drops a frame when
+    // the previous one is still on the wire.
+    [JSInvokable]
+    public void OnHostFrame(int tick, double clock, string phase, byte[] positions, byte[] flags,
+                            int guestPlace, int field, double guestProgress, double leaderProgress,
+                            double guestGap, double guestSpeed, double guestLateral)
+    {
+        if (!IsOnlineHost) return;
+        _onlineClient?.SendFrame(new MarbleRaceFrame
+        {
+            Tick = tick, Clock = clock, Phase = phase, Positions = positions, Flags = flags,
+            GuestPlace = guestPlace, Field = field, GuestProgress = guestProgress, LeaderProgress = leaderProgress,
+            GuestGap = guestGap, GuestSpeed = guestSpeed, GuestLateral = guestLateral,
+        });
+    }
+
+    // Guest: the engine's net steering direction (sent on change only, see game.js setSteer).
+    [JSInvokable]
+    public Task OnSteer(int dir) =>
+        IsOnlineGuest && _onlineClient is not null ? _onlineClient.SteerAsync(dir) : Task.CompletedTask;
+
+    // Host: the guest marble's standing, resolved alongside OnRaceResult. Relayed as one record
+    // with the host's own result so the guest's summary can show both.
+    [JSInvokable]
+    public async Task OnGuestResult(bool won, int place)
+    {
+        _opponentWon = won;
+        _opponentPlace = place;
+        _onlineResultKnown = true;
+        if (IsOnlineHost && _onlineClient is not null)
+        {
+            await _onlineClient.SendResultAsync(new MarbleRaceResult(_lastWon, _lastPlace, won, place));
+        }
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void LeaveOnline() => Navigation.NavigateTo("/");
+
+    private async Task StopEngineAsync()
+    {
+        StopPickCountdown();
+        if (!_engineStarted) return;
+        _engineStarted = false;
+        try { await JSRuntime.InvokeVoidAsync("PoMarbleRace.stop"); } catch { }
+    }
+
+    private async Task TearDownOnlineAsync()
+    {
+        var online = _onlineClient;
+        if (online is null) return;
+        _onlineClient = null;
+        online.RaceStarted -= OnRaceStarted;
+        online.FrameReceived -= OnFrameReceived;
+        online.PhaseReceived -= OnPhaseReceived;
+        online.PodiumReceived -= OnPodiumReceived;
+        online.ResultReceived -= OnResultReceived;
+        online.GuestSteerReceived -= OnGuestSteerReceived;
+        online.PeerLeft -= OnPeerLeft;
+        online.ConnectionChanged -= OnOnlineConnection;
+        await online.LeaveAsync();
+        await online.DisposeAsync();
     }
 
     // ── Display helpers ──
@@ -551,7 +928,7 @@
     }
 
     [JSInvokable]
-    public async Task OnPhase(string phase, int chosen, int score, int best, int streak)
+    public async Task OnPhase(string phase, int chosen, int score, int best, int streak, int seed)
     {
         _phase = phase;
         _chosen = chosen;
@@ -571,12 +948,19 @@
 
             // Give the player PickSeconds on the grid to claim a marble, then pick for them.
             // Demo mode does its own auto-pick on the JS side (after a short beat
-            // framing the start gate), so it never runs this countdown.
-            if (!_demo) StartPickCountdown();
+            // framing the start gate), so it never runs this countdown — and neither does
+            // an online guest, whose race starts when the host's does.
+            if (!_demo && !IsOnlineGuest) StartPickCountdown();
         }
         else
         {
             StopPickCountdown();
+        }
+        // Online host: the guest follows the host's phases; on "pick" the seed is what lets it
+        // build the same next course.
+        if (IsOnlineHost && _onlineClient is not null)
+        {
+            _ = _onlineClient.SendPhaseAsync(new MarbleRacePhase(phase, seed));
         }
         await InvokeAsync(StateHasChanged);
     }
@@ -605,6 +989,10 @@
             });
         }
         _podium = rows;
+        if (IsOnlineHost && _onlineClient is not null)
+        {
+            _ = _onlineClient.SendPodiumAsync(new MarbleRacePodium(indices, times, gaps));
+        }
         await InvokeAsync(StateHasChanged);
     }
 
@@ -746,6 +1134,8 @@
 
     public async ValueTask DisposeAsync()
     {
+        // Online: tell the peer we left and drop the hub before the engine goes.
+        await TearDownOnlineAsync();
         // Before the JS ref goes away — a pending tick would otherwise try to
         // Pick() through a disposed interop ref if the player leaves mid-countdown.
         StopPickCountdown();

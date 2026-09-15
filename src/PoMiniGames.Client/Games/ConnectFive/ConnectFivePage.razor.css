@@ -31,6 +31,43 @@
   min-width: 0;
 }
 
+/* ── Online quick-match panel ─────────────────────────────────────────────
+   Same width and glass as the status bar below it; only shown while there is
+   something the board cannot say (searching, dropped opponent, rematch vote). */
+.cf-online {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+  width: calc(var(--cf-cell) * 9 + 3px * 8 + 20px);
+  max-width: 100%;
+  margin: 0 auto 0.6rem;
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius-lg);
+  background: var(--glass-tint);
+  -webkit-backdrop-filter: var(--glass-2);
+  backdrop-filter: var(--glass-2);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+  text-align: center;
+  font-size: 0.95rem;
+}
+
+.cf-online p { margin: 0; }
+
+.cf-online__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+/* Secondary line in the panel and on the end-of-game summary. */
+.cf-online-note {
+  color: var(--color-text-secondary);
+  font-size: 0.85rem;
+}
+
 /* ── Turn / status bar ────────────────────────────────────────────────────
    Unlike PoBrawl's HUD, this one sits on the normal themed page rather than
    over a scheme-invariant canvas, so it reads its colours from the theme
@@ -307,7 +344,8 @@
   /* Track the mobile board chrome (gaps 2×8 + frame 7×2), not the desktop
      figure — the status bar used to come out 12px wider than the board it
      labels. */
-  .cf-status {
+  .cf-status,
+  .cf-online {
     width: calc(var(--cf-cell) * 9 + 2px * 8 + 14px);
   }
   .cf-cell { font-size: clamp(0.85rem, 2.6vmin, 1rem); }

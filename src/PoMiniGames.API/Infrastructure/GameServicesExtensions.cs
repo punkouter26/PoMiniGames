@@ -262,11 +262,24 @@ internal static class GameServicesExtensions
         services.AddSingleton<PoMiniGames.Features.PoBrawl.Online.PoBrawlMatchRegistry>();
         services.AddHostedService<PoMiniGames.Features.PoBrawl.Online.PoBrawlMatchPump>();
 
-        // ConnectFive online — turn-based 1v1 over SignalR. One singleton holds the
-        // quick-match queue and every authoritative board; there is no lobby service
-        // because a two-seat turn game has nothing to configure before play. See
-        // Features/ConnectFive/ConnectFiveMatchService.cs for the reconnect contract.
-        services.AddSingleton<PoMiniGames.Features.ConnectFive.ConnectFiveMatchService>();
+        // ConnectFive + TicTacToe online — turn-based 1v1 over SignalR. One shared
+        // TurnMatchService<THub> per hub holds that game's quick-match queue and every
+        // authoritative board; there is no lobby service because a two-seat turn game
+        // has nothing to configure before play. The rules instance is the only thing
+        // that differs. See Features/Shared/TurnMatch for the reconnect contract.
+        services.AddSingleton(sp => new PoMiniGames.Features.Shared.TurnMatch.TurnMatchService<PoMiniGames.Features.ConnectFive.ConnectFiveHub>(
+            PoMiniGames.Shared.Games.ConnectFiveRules.Instance,
+            sp.GetRequiredService<Microsoft.AspNetCore.SignalR.IHubContext<PoMiniGames.Features.ConnectFive.ConnectFiveHub>>(),
+            sp.GetRequiredService<ILogger<PoMiniGames.Features.Shared.TurnMatch.TurnMatchService<PoMiniGames.Features.ConnectFive.ConnectFiveHub>>>()));
+        services.AddSingleton(sp => new PoMiniGames.Features.Shared.TurnMatch.TurnMatchService<PoMiniGames.Features.TicTacToe.TicTacToeHub>(
+            PoMiniGames.Shared.Games.TicTacToeRules.Instance,
+            sp.GetRequiredService<Microsoft.AspNetCore.SignalR.IHubContext<PoMiniGames.Features.TicTacToe.TicTacToeHub>>(),
+            sp.GetRequiredService<ILogger<PoMiniGames.Features.Shared.TurnMatch.TurnMatchService<PoMiniGames.Features.TicTacToe.TicTacToeHub>>>()));
+
+        // PoMarbleRace online — host-authoritative 2-player race. The service is only a
+        // pairing registry and relay table: the host BROWSER is the simulation (see
+        // Shared/Games/PoMarbleRaceShared.cs for why lockstep was not an option).
+        services.AddSingleton<PoMiniGames.Features.PoMarbleRace.PoMarbleRaceOnlineService>();
 
         // PoSports — family track meet. Same single-lobby process-local shape as
         // PoRacer; the registry owns the meet sim timers and is DI-managed for

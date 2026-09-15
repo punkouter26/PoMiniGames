@@ -2,6 +2,7 @@
 // and C# callbacks.
 import * as THREE from 'three';
 import { createScene } from './scene.js';
+import * as CANNON from 'cannon-es';
 import { createWorld, stepWorld } from './physics.js';
 import { mapById, DEFAULT_MAP_ID } from './maps.js';
 import { createMarbles, MARBLE_COUNT } from './marbles.js';
@@ -83,6 +84,21 @@ const ROAD_BIAS = 0.35;
 const _camAnchor = new THREE.Vector3();
 const _camRoad = new THREE.Vector3();
 
+// ── Online (host-authoritative relay) ──
+// The host browser is the only simulation: it streams marble positions to the guest at NET_HZ
+// and applies the guest's steering to the guest's marble. The guest builds the same course from
+// the same seed and renders what it is sent. See PoMarbleRaceShared.cs for why not lockstep.
+const NET_HZ = 15;
+const NET_INTERVAL = 1 / NET_HZ;
+// The guest's marble. Not red (that is the host's, and PACK_PALETTE keeps clear of red for the
+// same reason) and not in the palette either: an off-white the pack never uses.
+export const GUEST_COLOR = 0xf8fafc;
+// Guest-side easing toward the last streamed position, per second: high enough that 15 Hz reads
+// as continuous, low enough that a late frame slides rather than snaps.
+const NET_SMOOTH = 14;
+const _rollAxis = new CANNON.Vec3();
+const _rollQ = new CANNON.Quaternion();
+
 export class Game {
   /**
    * @param {string} containerId
@@ -92,13 +108,24 @@ export class Game {
    * @param {*} asset whatever that map's load() resolved to — a parsed glTF scene for the GLB
    *   course, null for the procedural one. Loading happens BEFORE the Game is constructed so the
    *   frame loop never has to run trackless; index.js owns that await.
+   * @param {object|null} online null for a local game, else { role: 'host'|'guest', seed, guestIndex }.
    */
-  constructor(containerId, dotnetRef, demo, mapId, asset) {
+  constructor(containerId, dotnetRef, demo, mapId, asset, online) {
     this.container = document.getElementById(containerId);
     this.dotnet = dotnetRef || null;
     this.demo = !!demo;
     this.map = mapById(mapId === undefined ? DEFAULT_MAP_ID : mapId);
     this.mapAsset = asset;
+    // Online role, or null for a local game.
+    this.online = online || null;
+    this.isGuest = !!online && online.role === 'guest';
+    this.guestIndex = online ? online.guestIndex : -1;
+    this._guestSteer = 0;      // host: the guest's held direction as last relayed, -1/0/+1
+    this._sentSteer = 0;       // guest: last direction sent, so only changes cross the wire
+    this._netAccum = 0;
+    this._netTick = 0;
+    this._netFinish = 0;       // guest: finish order, in the order the host's frames report it
+    this._guestHud = null;
     this.scene = createScene(this.container);
     const w = createWorld();
     this.world = w.world;
@@ -116,6 +143,8 @@ export class Game {
     // Date.parse(new Date().toString()) round-trips through a second-precision string, so two
     // loads in the same second raced the identical track. Use the raw epoch ms.
     this.seed = ((Date.now() & 0xffffff) ^ 0x9e3779) >>> 0;
+    // Online: both browsers build the course from the seed the server dealt, not from the clock.
+    if (this.online) this.seed = this.online.seed >>> 0;
     this.track = null;
 
     // §GFX-17: weather derives from the race seed, so every client of the same
@@ -188,7 +217,7 @@ export class Game {
       this._paused = false;
       this._lastTs = 0; // discard the dt we accumulated while paused
       // Re-emit the current phase so the host can sync its overlay state.
-      this._invoke('OnPhase', this.phase, this.chosen, this.score, this.best, this.streak);
+      this._invoke('OnPhase', this.phase, this.chosen, this.score, this.best, this.streak, this.seed | 0);
     }
   }
 
@@ -215,7 +244,16 @@ export class Game {
   setSteer(dir, active) {
     if (dir < 0) this._steerLeft = !!active;
     else if (dir > 0) this._steerRight = !!active;
+    // Guest: the host applies the force, so what crosses the wire is the net held direction,
+    // and only when it changes — a held key must not stream a packet per keydown auto-repeat.
+    if (this.isGuest) {
+      const net = (this._steerRight ? 1 : 0) - (this._steerLeft ? 1 : 0);
+      if (net !== this._sentSteer) { this._sentSteer = net; this._invoke('OnSteer', net); }
+    }
   }
+
+  // Host: the guest's steering as relayed by the hub. Applied every physics step in _applySteer.
+  setGuestSteer(dir) { this._guestSteer = Math.max(-1, Math.min(1, dir | 0)); }
 
   // Applied once per physics step while racing. Left+right held cancel out. The push is along
   // the track's LOCAL right vector, so it stays intuitive through banked turns and hairpins
@@ -223,8 +261,17 @@ export class Game {
   _applySteer(sdt) {
     if (this.demo || this.phase !== 'racing') return;
     const dir = (this._steerRight ? 1 : 0) - (this._steerLeft ? 1 : 0);
-    if (!dir) return;
-    const m = this.marbleSet.marbles[this.chosen];
+    if (dir) this._pushMarble(this.marbleSet.marbles[this.chosen], dir, sdt);
+    // Online host: the guest's held direction drives the guest's marble through the SAME push
+    // below, so both humans steer with identical physics.
+    if (this.online && !this.isGuest && this._guestSteer) {
+      this._pushMarble(this.marbleSet.marbles[this.guestIndex], this._guestSteer, sdt);
+    }
+  }
+
+  // One steering push on one marble. Split out of _applySteer (2026-09-14, online mode) so the
+  // host can apply it to the guest's marble too. The sign history below is unchanged.
+  _pushMarble(m, dir, sdt) {
     if (!m || m.finished || m.eliminated) return;
 
     const rb = this.track.rightAt(m.s);
@@ -318,13 +365,18 @@ export class Game {
       },
       // Marble-only specular environment (realism pass #3). Bound as `envMap` on the marble
       // materials alone — deliberately NOT scene.environment, so the track stays matte.
-      this.scene.marbleEnv);
+      this.scene.marbleEnv,
+      // Online: the guest's marble is recoloured so both humans can find themselves in the pack.
+      this.online ? { [this.guestIndex]: GUEST_COLOR } : null);
     // One group, not 101 meshes: the pack is a single InstancedMesh now (marbles.js #1), and the
     // player's Mesh rides in the same group.
     this.scene.add(this.marbleSet.group);
     this.scene.add(this.marbleSet.decorations);
     this.chosen = -1;
     this.slowmo = false;
+    this._guestSteer = 0;
+    this._netFinish = 0;
+    this._guestHud = null;
     this._gradeState = '';        // #3 — force the next _setGrade through even if the name repeats
     // Drop the director's references into the marble set we just disposed — a stale _shotMarble
     // would keep the hysteresis holding a shot on a marble that is no longer in the world.
@@ -357,12 +409,15 @@ export class Game {
     // StartPickCountdown. The constructor's first _setPhase('pick') is
     // simply held until resume() flushes it.
     if (this._paused) return;
-    this._invoke('OnPhase', p, this.chosen, this.score, this.best, this.streak);
+    // The seed rides along (appended — positional contract) so an online host can relay it and
+    // the guest builds the same next course. Sent as int32; the receiver restores the uint32.
+    this._invoke('OnPhase', p, this.chosen, this.score, this.best, this.streak, this.seed | 0);
   }
 
-  _nextTrack() {
+  _nextTrack(seed) {
     if (this.marbleSet) { this.scene.remove(this.marbleSet.group); this.scene.remove(this.marbleSet.decorations); this.marbleSet.dispose(); }
-    this.seed = (this.seed * 1664525 + 1013904223) >>> 0;
+    // An online guest is handed the host's seed; everyone else rolls the LCG forward.
+    this.seed = seed !== undefined ? (seed >>> 0) : (this.seed * 1664525 + 1013904223) >>> 0;
     // Whether that seed produces a NEW track depends on the map — see _buildTrack.
     this._buildTrack();
     if (this.demo) this._autoPickSoon();
@@ -517,7 +572,10 @@ export class Game {
       this.pick(Math.floor(Math.random() * MARBLE_COUNT));
     }
 
-    if (this.phase === 'racing') {
+    if (this.phase === 'racing' && this.isGuest) {
+      // Guest: no physics, the host's frames are the truth. Everything else below is host-only.
+      this._guestRacingFrame(dt);
+    } else if (this.phase === 'racing') {
       const lbPre = this.marbleSet.leaderboard();
       const leaderPre = lbPre[0];
       // Slow-motion as the leader runs at the line. sdt scales the simulation, so finish
@@ -643,6 +701,7 @@ export class Game {
 
       this.tickAccum += dt;
       if (this.tickAccum >= TICK_INTERVAL) { this.tickAccum = 0; this._sendTick(); }
+      if (this.online && !this.isGuest) this._netSend(dt);
     } else if (this.phase === 'result') {
       // keep the paddles/marbles visually settled; advance after the banner
       this.marbleSet.sync(this.track);
@@ -652,7 +711,8 @@ export class Game {
         const ws = winner.s;
         this.scene.followTarget(this.track.centerAt(ws), dt, false, this.track.dirAt(ws));
       }
-      if (this.resultTimer <= 0) this._nextTrack();
+      // Guest: the host decides when the next race starts (nextTrack, with its seed).
+      if (this.resultTimer <= 0 && !this.isGuest) this._nextTrack();
     } else {
       // pick phase: gentle overview of the start gate. The heading matters here too — without
       // it the camera sat straight back in world -Z while the track headed off at an angle,
@@ -706,6 +766,14 @@ export class Game {
     this.audio.playSting(won);
     this._sendTick(); // final standings
     this._invoke('OnRaceResult', won, place, this.score, gained, this.streak, this.best);
+    // Online host: the guest's standing, for the page to relay. Same top-SCORE_TOP rule, no
+    // streak — the run/score system belongs to the host's own session.
+    if (this.online && !this.isGuest) {
+      const g = this.marbleSet.marbles[this.guestIndex];
+      const gFinished = !!g && g.finished && !g.eliminated;
+      const gPlace = gFinished ? g.place : -1;
+      this._invoke('OnGuestResult', gFinished && gPlace >= 1 && gPlace <= SCORE_TOP, gPlace);
+    }
   }
 
   // C# is handed parallel primitive arrays rather than a JSON string: the string form was
@@ -780,6 +848,155 @@ export class Game {
       // anywhere in this payload. Appended at the END: OnRaceTick is a positional contract, and
       // adding here means no existing argument shifts position.
       myLive ? Math.round(me.speed * 10) / 10 : 0);
+  }
+
+  // ── Online ──
+
+  // Host: stream the field to the guest. float32 x,y,z per marble in index order, one flag byte
+  // per marble (0 live, 1 finished, 2 eliminated), plus the guest marble's own HUD numbers so the
+  // guest page can show place and gap without a simulation of its own.
+  _netSend(dt) {
+    this._netAccum += dt;
+    if (this._netAccum < NET_INTERVAL) return;
+    this._netAccum = 0;
+    const ms = this.marbleSet.marbles;
+    const pos = new Float32Array(ms.length * 3);
+    const flags = new Uint8Array(ms.length);
+    for (let i = 0; i < ms.length; i++) {
+      const m = ms[i];
+      const p = m.body.position;
+      pos[i * 3] = p.x; pos[i * 3 + 1] = p.y; pos[i * 3 + 2] = p.z;
+      flags[i] = m.eliminated ? 2 : m.finished ? 1 : 0;
+    }
+    const order = this.marbleSet.leaderboard();
+    const leader = order[0];
+    const g = ms[this.guestIndex];
+    const gLive = !!g && !g.eliminated;
+    const round2 = (v) => Math.round(v * 100) / 100;
+    this._invoke('OnHostFrame',
+      ++this._netTick, round2(this.raceClock), this.phase,
+      new Uint8Array(pos.buffer), flags,
+      gLive ? g.place : -1, order.length,
+      gLive ? this.marbleSet.progressOf(g) : 0, this.marbleSet.progress(),
+      gLive ? round2(this._gapSeconds(g, leader)) : 0,
+      gLive ? Math.round(g.speed * 10) / 10 : 0,
+      (gLive && g.proj) ? Math.round(this.track.lateralOf(g.proj) * 1000) / 1000 : 0);
+  }
+
+  // Guest: a streamed snapshot from the host. Positions become easing targets (applied in
+  // _guestRacingFrame), flags fire the same finish/elimination cues the host saw, and the first
+  // racing frame is what starts the guest's race.
+  applyFrame(tick, clock, phase, positions, flags, guestPlace, field, guestProgress, leaderProgress, guestGap, guestSpeed, guestLateral) {
+    if (!this.isGuest || !this.marbleSet) return;
+    if (phase === 'racing' && this.phase === 'pick') this.pick(this.guestIndex);
+    if (this.phase !== 'racing') return;
+    const ms = this.marbleSet.marbles;
+    // The interop layer hands a byte[] over as a Uint8Array; view it as the float32 it carries.
+    const pos = new Float32Array(positions.buffer, positions.byteOffset, Math.floor(positions.byteLength / 4));
+    for (let i = 0; i < ms.length && i * 3 + 2 < pos.length; i++) {
+      const m = ms[i];
+      if (m.eliminated) continue;
+      if (!m.netTarget) {
+        m.netTarget = new THREE.Vector3(pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2]);
+        m.body.position.set(m.netTarget.x, m.netTarget.y, m.netTarget.z);
+      } else {
+        m.netTarget.set(pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2]);
+      }
+      const f = flags[i];
+      if (f === 2) { this.marbleSet.eliminate(m); continue; }
+      if (f === 1 && !m.finished) {
+        m.finished = true;
+        m.finishOrder = this._netFinish++;
+        m.finishTime = clock;
+        m.body.position.set(m.netTarget.x, m.netTarget.y, m.netTarget.z);
+        this.scene.burstConfetti(m.mesh.position);
+        this.audio.playFinish(this.scene.audioCue(m.mesh.position));
+        if (m.finishOrder === 0) this.scene.photoFinish();
+      }
+    }
+    this.raceClock = clock;
+    this._guestHud = { guestPlace, field, guestProgress, leaderProgress, guestGap, guestSpeed, guestLateral };
+  }
+
+  // Guest: no physics. Ease every live marble toward its streamed target, fake the roll from the
+  // distance covered, then run the same progress/sync/camera/HUD path as the host's frame.
+  _guestRacingFrame(dt) {
+    const k = Math.min(1, dt * NET_SMOOTH);
+    const inv = 1 / Math.max(dt, 1e-3);
+    for (const m of this.marbleSet.marbles) {
+      if (m.eliminated || m.finished || !m.netTarget) continue;
+      const p = m.body.position;
+      const dx = (m.netTarget.x - p.x) * k, dy = (m.netTarget.y - p.y) * k, dz = (m.netTarget.z - p.z) * k;
+      p.x += dx; p.y += dy; p.z += dz;
+      // sync() reads speed off the body's velocity; derive it from the easing step.
+      m.body.velocity.set(dx * inv, dy * inv, dz * inv);
+      // A rolling sphere turns by distance/radius about the axis perpendicular to its travel.
+      const dist = Math.hypot(dx, dy, dz);
+      if (dist > 1e-4) {
+        _rollAxis.set(dz, 0, -dx);
+        if (_rollAxis.lengthSquared() > 1e-8) {
+          _rollAxis.normalize();
+          _rollQ.setFromAxisAngle(_rollAxis, dist / m.radius);
+          _rollQ.mult(m.body.quaternion, m.body.quaternion);
+        }
+      }
+    }
+    this.marbleSet.updateProgress(this.track);
+    this.marbleSet.sync(this.track);
+    for (const p of this.track.paddles) { p.mesh.position.copy(p.body.position); p.mesh.quaternion.copy(p.body.quaternion); }
+
+    const order = this.marbleSet.leaderboard();
+    const leaderNow = order[0];
+    const nearRaw = leaderNow ? 1 - Math.max(0, Math.min(1, (this.track.finishS - leaderNow.s) / 300)) : 0;
+    this.audio.updateBeds(leaderNow ? leaderNow.speed : 0, Math.pow(nearRaw, 0.6), true);
+    this._setGrade(this.marbleSet.progress() >= 0.86 ? 'final' : 'racing');
+
+    const focus = this._pickShot(order);
+    if (focus) {
+      const fs = focus.s;
+      const anchor = _camAnchor.copy(focus.mesh.position).lerp(this.track.centerAt(fs, _camRoad), ROAD_BIAS);
+      this.scene.followTarget(anchor, dt, focus !== this._lastFocus, this.track.dirAt(fs), focus.speed);
+      this._lastFocus = focus;
+    }
+
+    this.tickAccum += dt;
+    if (this.tickAccum >= TICK_INTERVAL) { this.tickAccum = 0; this._sendGuestTick(order); }
+  }
+
+  // Guest: the HUD tick, with the guest marble's own numbers taken from the host's frame rather
+  // than measured here. Same positional OnRaceTick contract as _sendTick.
+  _sendGuestTick(order) {
+    if (!this.dotnet) return;
+    const h = this._guestHud || {};
+    const leader = order[0];
+    const shown = order.slice(0, LB_SHOWN);
+    const round2 = (v) => Math.round(v * 100) / 100;
+    this._invoke('OnRaceTick',
+      shown.map((m) => m.index),
+      shown.map((m) => Math.round(m.speed * 10) / 10),
+      shown.map((m) => m.finished),
+      shown.map((m) => (m.finished ? round2(m.finishTime) : 0)),
+      shown.map((m) => round2(this._gapSeconds(m, leader))),
+      h.leaderProgress || 0, h.guestProgress || 0, round2(this.raceClock),
+      h.guestLateral || 0, h.guestPlace ?? -1, h.field || order.length, h.guestGap || 0,
+      0, this._lastFocus ? this._lastFocus.index : -1, this.shotReason || 'LEADER',
+      h.guestSpeed || 0);
+  }
+
+  // Guest: the host resolved the race. Mirror _resolve's presentation without its scoring.
+  guestResult(won) {
+    if (!this.isGuest || this.phase !== 'racing') return;
+    this.audio.silenceBeds();
+    this.resultTimer = RESULT_MS / 1000;
+    this._setPhase('result');
+    this._setGrade(won ? 'win' : 'loss');
+    this.audio.playSting(!!won);
+  }
+
+  // Guest: the host has moved on to the next race, on this seed.
+  nextTrack(seed) {
+    if (!this.isGuest) return;
+    this._nextTrack(seed >>> 0);
   }
 
   _bindKeys() {

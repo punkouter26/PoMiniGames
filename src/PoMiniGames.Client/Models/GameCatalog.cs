@@ -93,6 +93,9 @@ public static class GameCatalog
         [
             new(GameMode.OnePlayer, "/connectfive/1player"),
             new(GameMode.TwoPlayer, "/connectfive/2player"),
+            // Quick-match 1v1 over SignalR: no lobby, the first two arrivals are
+            // paired. Server-authoritative board — see Features/ConnectFive.
+            new(GameMode.Multiplayer, "/connectfive/multi", RequiresNetwork: true),
             new(GameMode.Demo, "/connectfive/demo"),
         ])
         {

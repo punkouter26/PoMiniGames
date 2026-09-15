@@ -112,6 +112,7 @@ public sealed class PoBrawlLobbyHub : Hub
 
     public async Task StartGame()
     {
+        _log.LogInformation("PoBrawl StartGame conn={Conn}", Context.ConnectionId);
         if (!_lobby.TryStart(Context.ConnectionId)) return;
         // Capture the player list NOW. Same reasoning as PoRacer: the match
         // service owns the roster from Start time, not from the clients'

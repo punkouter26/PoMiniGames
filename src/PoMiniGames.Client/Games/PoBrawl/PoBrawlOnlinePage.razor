@@ -1,8 +1,8 @@
 @page "/pobrawl/online"
 @using Microsoft.AspNetCore.SignalR.Client
+@using Microsoft.JSInterop
 @using PoMiniGames.Shared.Games
 @using PoMiniGamesClient.Components
-@using PoMiniGamesClient.Services
 @inject AuthStateService AuthState
 @inject NavigationManager Nav
 @inject ApiService Api
@@ -13,7 +13,7 @@
 <PageTitle>Brawl · Online · PoMiniGames</PageTitle>
 
 <GameShell Title="@TitleContent" BackTo="/">
-<div class="sp-page" tabindex="0" @onkeydown="OnKeyDown">
+<div class="sp-page">
     <div class="sp-card pobrawl-online">
         <p class="sp-subtitle">
             Status:
@@ -33,7 +33,7 @@
 
         <header class="pobrawl-online__header">
             <div class="pobrawl-online__player">
-                <span class="pobrawl-online__name">@(_localSide == PoBrawlSide.Player1 ? _player1Name : _player2Name)</span>
+                <span class="pobrawl-online__name">@LocalName</span>
                 <span class="po-pill po-pill--muted">you</span>
                 <span class="pobrawl-online__hp" style="--hp: @LocalHpPercent%"></span>
                 <span class="pobrawl-online__hp-label">@LocalHp / 100</span>
@@ -46,7 +46,7 @@
                 }
             </div>
             <div class="pobrawl-online__player">
-                <span class="pobrawl-online__name">@(_localSide == PoBrawlSide.Player1 ? _player2Name : _player1Name)</span>
+                <span class="pobrawl-online__name">@OpponentName</span>
                 <span class="po-pill po-pill--muted">opponent</span>
                 <span class="pobrawl-online__hp" style="--hp: @OpponentHpPercent%"></span>
                 <span class="pobrawl-online__hp-label">@OpponentHp / 100</span>
@@ -68,7 +68,8 @@
 
         <section class="pobrawl-online__controls">
             <p class="poracer-hint">
-                <kbd>A</kbd> move back · <kbd>D</kbd> move forward · <kbd>S</kbd> block · <kbd>F</kbd> punch · <kbd>G</kbd> kick · <kbd>H</kbd> special
+                <kbd>A</kbd>/<kbd>D</kbd> move · <kbd>S</kbd> block ·
+                <kbd>F</kbd> punch · <kbd>G</kbd> kick · <kbd>H</kbd> special
             </p>
             <p class="pobrawl-online__energy">Energy: @LocalEnergy / 100</p>
         </section>
@@ -88,15 +89,22 @@
     private double _elapsed;
     private string _lastEvent = "";
     private long _sequence;
-    private PoBrawlMatchInput? _lastSentInput;
+
+    private DotNetObjectReference<PoBrawlOnlinePage>? _selfRef;
+
+    [Inject] private IJSRuntime JS { get; set; } = default!;
 
     private RenderFragment TitleContent => @<span><span aria-hidden="true">🥊</span> Brawl · Online</span>;
 
-    private PoBrawlSide _localSide => _snapshot?.LocalSide ?? PoBrawlSide.Player1;
+    // The match hub pins each connection to a side at JoinMatch. LocalName/OpponentName
+    // resolve from the snapshot so the UI never has to know the lobby roster order.
+    private PoBrawlSide LocalSide => _snapshot?.LocalSide ?? PoBrawlSide.Player1;
+    private string LocalName => LocalSide == PoBrawlSide.Player1 ? _player1Name : _player2Name;
+    private string OpponentName => LocalSide == PoBrawlSide.Player1 ? _player2Name : _player1Name;
 
-    private int LocalHp => _localSide == PoBrawlSide.Player1 ? (_match?.Player1Hp ?? 100) : (_match?.Player2Hp ?? 100);
-    private int OpponentHp => _localSide == PoBrawlSide.Player1 ? (_match?.Player2Hp ?? 100) : (_match?.Player1Hp ?? 100);
-    private int LocalEnergy => _localSide == PoBrawlSide.Player1 ? (_match?.Player1Energy ?? 0) : (_match?.Player2Energy ?? 0);
+    private int LocalHp => LocalSide == PoBrawlSide.Player1 ? (_match?.Player1Hp ?? 100) : (_match?.Player2Hp ?? 100);
+    private int OpponentHp => LocalSide == PoBrawlSide.Player1 ? (_match?.Player2Hp ?? 100) : (_match?.Player1Hp ?? 100);
+    private int LocalEnergy => LocalSide == PoBrawlSide.Player1 ? (_match?.Player1Energy ?? 0) : (_match?.Player2Energy ?? 0);
     private int LocalHpPercent => Math.Clamp(LocalHp, 0, 100);
     private int OpponentHpPercent => Math.Clamp(OpponentHp, 0, 100);
 
@@ -125,7 +133,7 @@
             if (_result is null) return "";
             return _result.Outcome == PoBrawlOutcome.Draw
                 ? $"Both fighters survived to the buzzer. {_result.Player1Hp}-{_result.Player2Hp} on HP."
-                : $"{(_localSide == PoBrawlSide.Player1 ? _player1Name : _player2Name)} finished {_result.Player1Hp}-{_result.Player2Hp} on HP.";
+                : $"{LocalName} finished {_result.Player1Hp}-{_result.Player2Hp} on HP.";
         }
     }
     private string EventLabel => _lastEvent switch
@@ -141,6 +149,14 @@
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender) return;
+
+        // Window-level key bridge — the canonical PoFunQuiz pattern. Razor can't
+        // subscribe to global keyboard events directly, so we register a tiny
+        // JS module that calls OnOnlineInputAsync on every relevant press.
+        _selfRef = DotNetObjectReference.Create(this);
+        await JS.InvokeAsync<IJSObjectReference>("import", "./js/pobrawlOnlineInput.js");
+        await JS.InvokeVoidAsync("pobrawlOnlineInput.register", _selfRef);
+
         _hub = HubConnectionFactory.Create(Endpoints.Hub("pobrawl/match-hub"));
 
         _stateSub = _hub.On<PoBrawlMatchState>("matchState", s =>
@@ -148,6 +164,7 @@
             _match = s;
             _elapsed = s.ElapsedSeconds;
             _lastEvent = s.LastEvent;
+            Console.WriteLine($"[PoBrawlOnline] matchState p1hp={s.Player1Hp} p2hp={s.Player2Hp} elapsed={s.ElapsedSeconds:F1}");
             InvokeAsync(StateHasChanged);
         });
 
@@ -178,51 +195,55 @@
         {
             _player1Name = _snapshot.Player1.DisplayName;
             _player2Name = _snapshot.Player2.DisplayName;
+            StateHasChanged();
         }
     }
 
     /// <summary>
-    /// Best-effort keyboard handler. Posts the latest "down" action on every key change —
-    /// the server aggregates by "most recent", so an up-key without a down is meaningless
-    /// and a missing up-key just leaves the opponent at "moving forward" until something else
-    /// arrives. No timer is started; the input is fire-and-forget.
+    /// Invoked from <c>pobrawlOnlineInput.js</c> on every relevant key press.
+    /// Maps the key to a <see cref="PoBrawlMatchAction"/> and forwards it to the
+    /// match hub. Up-keys intentionally don't send: the server keeps the last
+    /// action per side until the next press lands, so an "up" would just be a
+    /// no-op round trip.
     /// </summary>
-    private async Task OnKeyDown(KeyboardEventArgs e)
+    [JSInvokable]
+    public async Task OnOnlineInputAsync(string key)
     {
-        var action = e.Key switch
+        var action = key switch
         {
-            "a" or "A" => PoBrawlMatchAction.MoveBack,
-            "d" or "D" => PoBrawlMatchAction.MoveForward,
-            "s" or "S" => PoBrawlMatchAction.Block,
-            "f" or "F" => PoBrawlMatchAction.Punch,
-            "g" or "G" => PoBrawlMatchAction.Kick,
-            "h" or "H" => PoBrawlMatchAction.Special,
-            _ => PoBrawlMatchAction.Idle,
+            "a" => PoBrawlMatchAction.MoveBack,
+            "d" => PoBrawlMatchAction.MoveForward,
+            "s" => PoBrawlMatchAction.Block,
+            "f" => PoBrawlMatchAction.Punch,
+            "g" => PoBrawlMatchAction.Kick,
+            "h" => PoBrawlMatchAction.Special,
+            _ => (PoBrawlMatchAction?)null,
         };
-        await SendInputAsync(action);
-        await Task.CompletedTask;
+        if (action is null) return;
+        await SendInputAsync(action.Value);
     }
 
     private async Task SendInputAsync(PoBrawlMatchAction action)
     {
         if (_hub is null || _match is { Finished: true }) return;
         _sequence++;
-        var input = new PoBrawlMatchInput
+        try
         {
-            ActorSide = _localSide,
-            Action = action,
-            Sequence = _sequence,
-        };
-        _lastSentInput = input;
-        try { await _hub.InvokeAsync("SubmitInput", input); } catch { }
+            await _hub.InvokeAsync("SubmitInput", new PoBrawlMatchInput
+            {
+                ActorSide = LocalSide,
+                Action = action,
+                Sequence = _sequence,
+            });
+        }
+        catch
+        {
+            // Hub dropped mid-fight — leave the result handler to report loss.
+        }
     }
 
     private async Task SubmitResultAsync(PoBrawlMatchResult r)
     {
-        // Owner = me, Opponent = the server-stamped peer. The server validates identity
-        // from the auth cookie, so this client-supplied ownerId is only used for the
-        // MatchHistory partition when the caller is a guest — signed-in callers get their
-        // claim identity either way.
         var dto = new PoBrawlMatchResultDto
         {
             MatchId = r.MatchId,
@@ -253,11 +274,13 @@
 
     public async ValueTask DisposeAsync()
     {
+        _stateSub?.Dispose();
+        _finishedSub?.Dispose();
         if (_hub is not null)
         {
-            _stateSub?.Dispose();
-            _finishedSub?.Dispose();
             try { await _hub.DisposeAsync(); } catch { }
         }
+        try { await JS.InvokeVoidAsync("pobrawlOnlineInput.unregister"); } catch { }
+        _selfRef?.Dispose();
     }
 }

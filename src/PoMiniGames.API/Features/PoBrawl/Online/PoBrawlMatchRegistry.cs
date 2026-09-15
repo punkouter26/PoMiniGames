@@ -24,22 +24,20 @@ public sealed class PoBrawlMatchRegistry : IAsyncDisposable
 
     public async Task<PoBrawlMatchService> GetOrCreateAsync(string code, IReadOnlyList<PoBrawlLobbyPlayer> roster)
     {
+        var log = _loggerFactory.CreateLogger<PoBrawlMatchRegistry>();
+        log.LogInformation("GetOrCreateAsync code={Code} rosterSize={Size} current={Current}", code, roster.Count, _currentMatch?.MatchId ?? "null");
         lock (_createLock)
         {
             if (_currentMatch is { } existing && existing.GameCode == code) return existing;
         }
-        var log = _loggerFactory.CreateLogger<PoBrawlMatchService>();
         var matchId = Guid.NewGuid().ToString("N");
         var match = new PoBrawlMatchService(matchId, code, roster);
-        // Pin each lobby player to their side on the match service. The host is
-        // always P1, the challenger always P2 (matches the lobby's roster order).
-        for (var i = 0; i < roster.Count; i++)
-        {
-            var side = i == 0 ? PoBrawlSide.Player1 : PoBrawlSide.Player2;
-            match.RegisterConnection(roster[i].ConnectionId, side);
-            RegisterConnection(matchId, roster[i].ConnectionId);
-        }
+        // Side pinning happens lazily inside the match hub (JoinMatch), keyed by
+        // the player principal, not the lobby connection id — the match hub
+        // and lobby hub have separate connection-id spaces, so re-pinning here
+        // with the lobby conn id would never be useful.
         lock (_createLock) { _currentMatch = match; }
+        _connectionToMatchId.Clear();
         // Reset lobby ready flags + end-match state so the next fight needs a fresh Ready round.
         _lobby.EndMatch();
         return await Task.FromResult(match);

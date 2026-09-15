@@ -113,6 +113,28 @@ public sealed class PoBrawlMatchService : IAsyncDisposable
     public void RegisterConnection(string connectionId, PoBrawlSide side) =>
         _connections[connectionId] = side;
 
+    /// <summary>
+    /// Pin a connection by the player's lobby-side principal id. The match hub
+    /// and the lobby hub allocate separate connection ids, so we re-resolve the
+    /// side by walking the roster instead of relying on the lobby connection id
+    /// being passed through.
+    /// </summary>
+    public bool RegisterConnectionByPrincipal(string principalId, string connectionId)
+    {
+        if (string.IsNullOrEmpty(principalId)) return false;
+        // Roster[0] is Player1, Roster[1] is Player2 (host-first, matches the lobby).
+        for (var i = 0; i < Roster.Count; i++)
+        {
+            if (string.Equals(Roster[i].PrincipalId, principalId, StringComparison.Ordinal))
+            {
+                var side = i == 0 ? PoBrawlSide.Player1 : PoBrawlSide.Player2;
+                RegisterConnection(connectionId, side);
+                return true;
+            }
+        }
+        return false;
+    }
+
     public void UnregisterConnection(string connectionId) => _connections.TryRemove(connectionId, out _);
 
     /// <summary>

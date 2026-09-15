@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.SignalR;
+using PoMiniGames.Features.Auth;
 using PoMiniGames.Shared.Games;
 
 namespace PoMiniGames.Features.PoBrawl.Online;
@@ -42,10 +43,17 @@ public sealed class PoBrawlMatchHub : Hub
     /// </summary>
     public async Task<PoBrawlMatchSnapshot?> JoinMatch(string code)
     {
+        _log.LogInformation("PoBrawl match-hub JoinMatch conn={Conn} code={Code}", Context.ConnectionId, code);
         if (string.IsNullOrWhiteSpace(code)) return null;
         // Calling GetOrCreateAsync with an empty roster is a no-op if the lobby
         // already created the match — the registry returns the existing match.
         var match = await _registry.GetOrCreateAsync(code, Array.Empty<PoBrawlLobbyPlayer>());
+        // The lobby and match hubs allocate separate connection ids, so we
+        // pin THIS connection to a side by re-resolving its identity through
+        // the roster rather than trusting the lobby's connection id.
+        var identity = RequestIdentity.Resolve(Context.User);
+        match.RegisterConnectionByPrincipal(identity.UserId, Context.ConnectionId);
+        _registry.RegisterConnection(match.MatchId, Context.ConnectionId);
         await Groups.AddToGroupAsync(Context.ConnectionId, MatchGroup(match.MatchId));
         var side = match.SideFor(Context.ConnectionId);
         return new PoBrawlMatchSnapshot
@@ -59,6 +67,7 @@ public sealed class PoBrawlMatchHub : Hub
 
     public async Task SubmitInput(PoBrawlMatchInput input)
     {
+        _log.LogInformation("PoBrawl match-hub SubmitInput conn={Conn} action={Action} seq={Seq}", Context.ConnectionId, input.Action, input.Sequence);
         var matchId = _registry.MatchIdFor(Context.ConnectionId);
         if (matchId is null) return;
         var match = _registry.GetByMatchId(matchId);

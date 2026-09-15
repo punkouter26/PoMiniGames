@@ -54,6 +54,7 @@ public sealed class PoBrawlMatchPump : BackgroundService
         var match = _registry.Current;
         if (match is null) return;
         var snap = match.Tick();
+        _log.LogDebug("Tick matchId={MatchId} p1hp={Hp1} p2hp={Hp2} p1e={E1} p2e={E2} finished={Finished}", match.MatchId, snap?.Player1Hp ?? -1, snap?.Player2Hp ?? -1, snap?.Player1Energy ?? -1, snap?.Player2Energy ?? -1, snap?.Finished ?? false);
         if (snap is null) return; // already finished in a previous tick
         await _hubContext.Clients.Group(MatchGroup(match.MatchId))
             .SendAsync("matchState", snap, ct);

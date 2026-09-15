@@ -262,6 +262,12 @@ internal static class GameServicesExtensions
         services.AddSingleton<PoMiniGames.Features.PoBrawl.Online.PoBrawlMatchRegistry>();
         services.AddHostedService<PoMiniGames.Features.PoBrawl.Online.PoBrawlMatchPump>();
 
+        // ConnectFive online — turn-based 1v1 over SignalR. One singleton holds the
+        // quick-match queue and every authoritative board; there is no lobby service
+        // because a two-seat turn game has nothing to configure before play. See
+        // Features/ConnectFive/ConnectFiveMatchService.cs for the reconnect contract.
+        services.AddSingleton<PoMiniGames.Features.ConnectFive.ConnectFiveMatchService>();
+
         // PoSports — family track meet. Same single-lobby process-local shape as
         // PoRacer; the registry owns the meet sim timers and is DI-managed for
         // graceful-shutdown disposal.

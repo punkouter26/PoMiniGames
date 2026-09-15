@@ -54,7 +54,12 @@ public enum CellValue
 }
 
 /// <summary>ConnectFive disc colour. Kept separate from <see cref="CellValue"/>: same shape, different game.</summary>
-public enum Piece
+/// <remarks>
+/// Byte-backed, and the values match <c>ConnectFiveRules.Empty/Red/Yellow</c> in
+/// PoMiniGames.Shared: the board hands its cells to the shared rules as a byte span
+/// with no copy, and the online match state arrives as the same bytes.
+/// </remarks>
+public enum Piece : byte
 {
     None = 0,
     Red = 1,

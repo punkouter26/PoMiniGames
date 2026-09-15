@@ -1,12 +1,17 @@
+using System.Runtime.InteropServices;
+using PoMiniGames.Shared.Games;
 using PoMiniGamesClient.Models;
 
 namespace PoMiniGamesClient.Games.ConnectFive;
 
 public class ConnectFiveBoard
 {
-    public const int Rows = 9;
-    public const int Cols = 9;
-    public const int WinLength = 5;
+    // Geometry and the win check come from the shared rules so the online match
+    // service (which applies moves through the same class) can never disagree
+    // with what this board draws. Piece is byte-backed for exactly this handoff.
+    public const int Rows = ConnectFiveRules.Rows;
+    public const int Cols = ConnectFiveRules.Cols;
+    public const int WinLength = ConnectFiveRules.WinLength;
 
     // Audit #5: flat Piece[Rows * Cols] storage replaces the prior jagged
     // Piece[Rows][]. 81 contiguous pieces > 9 array headers; one allocation
@@ -33,6 +38,27 @@ public class ConnectFiveBoard
     {
         _cells = cells;
         _topRow = topRow;
+    }
+
+    /// <summary>
+    /// Rebuild a board from an authoritative flat cell array (the online match
+    /// state). Used when the local board is more than one move behind the server —
+    /// a rejoin, or a missed broadcast — so there is no drop to animate anyway.
+    /// </summary>
+    public static ConnectFiveBoard FromCells(ReadOnlySpan<byte> cells)
+    {
+        if (cells.Length != Rows * Cols)
+        {
+            throw new ArgumentException($"Expected {Rows * Cols} cells, got {cells.Length}.", nameof(cells));
+        }
+        var pieces = new Piece[Rows * Cols];
+        MemoryMarshal.Cast<byte, Piece>(cells).CopyTo(pieces);
+        var topRow = new int[Cols];
+        for (int c = 0; c < Cols; c++)
+        {
+            topRow[c] = ConnectFiveRules.TargetRow(cells, c);
+        }
+        return new ConnectFiveBoard(pieces, topRow);
     }
 
     public Piece Get(int row, int col) => _cells[row * Cols + col];
@@ -115,44 +141,17 @@ public class ConnectFiveBoard
             throw new ArgumentException("Cannot check win for Piece.None.", nameof(player));
         }
 
-        var directions = new[] { (0, 1), (1, 0), (1, 1), (1, -1) };
-
-        for (int r = 0; r < Rows; r++)
+        // Delegated to the shared rules (2026-09-14, online mode). The full-window
+        // scan and its off-by-one history now live there; the byte view of _cells
+        // is free because Piece is byte-backed.
+        var line = ConnectFiveRules.FindWin(MemoryMarshal.AsBytes<Piece>(_cells), (byte)player);
+        if (line is null) return new WinResult { Won = false, Cells = new List<(int, int)>() };
+        var cells = new List<(int, int)>(WinLength);
+        foreach (var index in line)
         {
-            for (int c = 0; c < Cols; c++)
-            {
-                foreach (var (dr, dc) in directions)
-                {
-                    bool valid = true;
-                    // Validate the FULL window starting at the anchor (i = 0). A
-                    // prior off-by-one started at i = 1, so the anchor cell (r,c)
-                    // was added to the win result but never checked against
-                    // `player`. That let a run of only 4 matching pieces report a
-                    // "win" whose 5th highlighted cell was empty or the opponent's
-                    // colour — 5 cells lit up, one the wrong colour.
-                    for (int i = 0; i < WinLength; i++)
-                    {
-                        var nr = r + dr * i;
-                        var nc = c + dc * i;
-                        if (nr < 0 || nr >= Rows || nc < 0 || nc >= Cols || _cells[nr * Cols + nc] != player)
-                        {
-                            valid = false;
-                            break;
-                        }
-                    }
-                    if (valid)
-                    {
-                        var cells = new List<(int, int)>(WinLength);
-                        for (int i = 0; i < WinLength; i++)
-                        {
-                            cells.Add((r + dr * i, c + dc * i));
-                        }
-                        return new WinResult { Won = true, Cells = cells };
-                    }
-                }
-            }
+            cells.Add((index / Cols, index % Cols));
         }
-        return new WinResult { Won = false, Cells = new List<(int, int)>() };
+        return new WinResult { Won = true, Cells = cells };
     }
 
     public bool IsFull()

@@ -60,3 +60,84 @@ public sealed record EcoChronicle(string Title, string Saga, string Epigraph, bo
 public sealed record EcoThoughtRequest(string System, string Prompt);
 
 public sealed record EcoThoughtReply(string Text, bool Mock);
+
+// ───────────────────────────  Multi-Tribe & Civilization Contracts  ───────────────────────────
+
+/// <summary>Diplomatic posture between two tribes.</summary>
+public enum TribeDiplomacy
+{
+    Neutral = 0,
+    Allied = 1,
+    Rival = 2,
+    War = 3
+}
+
+/// <summary>Evolutionary technology tiers for tribal civilizations.</summary>
+public enum TechTier
+{
+    Primitive = 0,
+    Toolcraft = 1,
+    Agrarian = 2,
+    Fortification = 3
+}
+
+/// <summary>Functional structures constructed in tribal settlements.</summary>
+public enum BuildingKind
+{
+    Hut = 0,
+    Granary = 1,
+    Watchtower = 2,
+    WarTotem = 3
+}
+
+/// <summary>Snapshot state of an individual tribe on the island.</summary>
+public sealed record TribeStateDto(
+    int Id,
+    string Name,
+    string BannerColor,
+    TechTier Tech,
+    int Population,
+    int Warriors,
+    int Wood,
+    int Stone,
+    int Food,
+    float CenterX,
+    float CenterZ,
+    float TerritoryRadius,
+    int[] Relations);
+
+/// <summary>Snapshot state of a settlement building.</summary>
+public sealed record BuildingStateDto(
+    int Id,
+    int TribeId,
+    BuildingKind Kind,
+    float X,
+    float Z,
+    float Progress,
+    float Health,
+    bool IsComplete);
+
+/// <summary>Real-time telemetry delta dispatched to the Blazor Analytics Dashboard.</summary>
+public sealed record EcosystemTelemetryDeltaDto(
+    int Year,
+    int Day,
+    int Tick,
+    IReadOnlyList<TribeStateDto> Tribes,
+    IReadOnlyList<BuildingStateDto> Buildings,
+    int RabbitCount,
+    int WolfCount,
+    int TotalHumanCount,
+    bool IsYearMilestone);
+
+[System.Text.Json.Serialization.JsonSerializable(typeof(EcoWorldMeta))]
+[System.Text.Json.Serialization.JsonSerializable(typeof(EcoSharedWorld))]
+[System.Text.Json.Serialization.JsonSerializable(typeof(EcoChronicleRequest))]
+[System.Text.Json.Serialization.JsonSerializable(typeof(EcoChronicle))]
+[System.Text.Json.Serialization.JsonSerializable(typeof(EcoThoughtRequest))]
+[System.Text.Json.Serialization.JsonSerializable(typeof(EcoThoughtReply))]
+[System.Text.Json.Serialization.JsonSerializable(typeof(TribeStateDto))]
+[System.Text.Json.Serialization.JsonSerializable(typeof(BuildingStateDto))]
+[System.Text.Json.Serialization.JsonSerializable(typeof(EcosystemTelemetryDeltaDto))]
+public partial class PoEcosystemJsonContext : System.Text.Json.Serialization.JsonSerializerContext
+{
+}

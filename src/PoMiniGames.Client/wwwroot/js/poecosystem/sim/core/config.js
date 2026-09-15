@@ -87,7 +87,21 @@ export const BEHAVIOR = Object.freeze({
 });
 
 // ── World composition (SPEC §7.2 start population, §7.5/7.7 interaction rules) ──
-export const POPULATION = Object.freeze({ rabbits: 40, deer: 20, wolves: 6, humans: 8, huts: 3, initialAgeFraction: 0.6 });
+export const POPULATION = Object.freeze({ rabbits: 40, deer: 20, wolves: 6, humans: 18, huts: 3, initialAgeFraction: 0.6 });
+export const TRIBES = Object.freeze({
+  count: 3,
+  humansPerTribe: 6,
+  territoryRadius: 28,
+  minTribeSeparation: 35,
+  telemetryThrottleSeconds: 0.5, // 2 Hz telemetry updates to Blazor
+  elderAgeYears: 25,
+  researchPerElderPerTick: 0.08,
+  researchBasePerTick: 0.02,
+  frictionBorderOverlapWeight: 1.5,
+  frictionScarcityWeight: 2.0,
+  warCasualtyThreshold: 0.35, // 35% losses prompts peace negotiation
+  peaceCooldownTicks: 600,     // 30 s peace treaty cooldown
+});
 export const WORLD = Object.freeze({
   grazeRate: 0.4,            // biomass (= hunger) per second while eating grass
   drinkRate: 0.5,            // thirst per second while drinking

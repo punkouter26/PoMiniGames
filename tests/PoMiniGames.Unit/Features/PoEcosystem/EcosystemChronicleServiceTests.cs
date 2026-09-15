@@ -21,10 +21,62 @@ public sealed class EcosystemChronicleServiceTests
     [InlineData("sanitize")]
     [InlineData("parse")]
     [InlineData("mock")]
+    [InlineData("contracts")]
     public void Chronicler_PureEdges_HoldTheirContracts(string edge)
     {
         switch (edge)
         {
+            case "contracts":
+                {
+                    // Multi-tribe telemetry and building contracts serialize cleanly with the source-generated context
+                    var tribe = new TribeStateDto(
+                        Id: 0,
+                        Name: "Amber Clan",
+                        BannerColor: "#d48806",
+                        Tech: TechTier.Primitive,
+                        Population: 8,
+                        Warriors: 2,
+                        Wood: 50,
+                        Stone: 20,
+                        Food: 120,
+                        CenterX: 10.5f,
+                        CenterZ: 15.2f,
+                        TerritoryRadius: 28.0f,
+                        Relations: [0, 1, 2]);
+
+                    var building = new BuildingStateDto(
+                        Id: 1,
+                        TribeId: 0,
+                        Kind: BuildingKind.Hut,
+                        X: 12.0f,
+                        Z: 14.5f,
+                        Progress: 1.0f,
+                        Health: 100.0f,
+                        IsComplete: true);
+
+                    var telemetry = new EcosystemTelemetryDeltaDto(
+                        Year: 3,
+                        Day: 4,
+                        Tick: 1200,
+                        Tribes: [tribe],
+                        Buildings: [building],
+                        RabbitCount: 35,
+                        WolfCount: 5,
+                        TotalHumanCount: 8,
+                        IsYearMilestone: false);
+
+                    var json = System.Text.Json.JsonSerializer.Serialize(telemetry, PoEcosystemJsonContext.Default.EcosystemTelemetryDeltaDto);
+                    json.Should().NotBeNullOrWhiteSpace();
+
+                    var restored = System.Text.Json.JsonSerializer.Deserialize(json, PoEcosystemJsonContext.Default.EcosystemTelemetryDeltaDto);
+                    restored.Should().NotBeNull();
+                    restored!.Tribes.Should().HaveCount(1);
+                    restored.Tribes[0].Name.Should().Be("Amber Clan");
+                    restored.Tribes[0].Tech.Should().Be(TechTier.Primitive);
+                    restored.Buildings.Should().HaveCount(1);
+                    restored.Buildings[0].Kind.Should().Be(BuildingKind.Hut);
+                    break;
+                }
             case "sanitize":
                 {
                     // Over-long logs and lines are clipped, counts are padded to four, the tribe is

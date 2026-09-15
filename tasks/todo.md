@@ -39,11 +39,11 @@ Each task is a vertical slice touching &le; 5 files. All tasks follow strict TDD
 
 ---
 
-- [ ] **Task 4: Settlement Construction & Building Lifecycles**
+- [x] **Task 4: Settlement Construction & Building Lifecycles**
   - **Description**: Autonomous construction system allowing humans to deposit wood/stone at designated building sites to construct Huts, Granaries, Watchtowers, and Totems.
   - **File Manifest** (&le; 5 files):
     1. `src/PoMiniGames.Client/wwwroot/js/poecosystem/sim/tribe/construction.js`
-    2. `src/PoMiniGames.Client/wwwroot/js/poecosystem/sim/behavior/humans.js`
+    2. `src/PoMiniGames.Client/wwwroot/js/poecosystem/sim/tribe/tribeStore.js`
     3. `src/PoMiniGames.Client/wwwroot/js/poecosystem/sim/world.js`
   - **Acceptance Criteria**: Site selection avoids water and steep slopes; construction progresses with material drops; completed huts increase tribal housing capacity.
   - **Verification**: `dotnet build PoMiniGames.slnx`

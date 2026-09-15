@@ -6,11 +6,14 @@ import { TRIBES } from '../core/config.js';
 import { TILE, isWater, tileIndex, tileX, tileZ } from '../terrain/tiles.js';
 import { createTerritoryManager } from './territory.js';
 import { createTechLadder } from './techLadder.js';
+import { createConstructionManager } from './construction.js';
+import { BUILDING_KIND, BUILDING_SPECS } from './contracts.js';
 
 export function createTribeStore(terrain, streams) {
   const { size, type } = terrain;
   const territory = createTerritoryManager(size);
   const techLadder = createTechLadder();
+  const construction = createConstructionManager();
 
   // Find candidate center settlement tiles across the island with separation
   const grassTiles = [];
@@ -130,6 +133,47 @@ export function createTribeStore(terrain, streams) {
       return false;
     },
 
+    stepConstruction(terrain, tileState, rng, log = null) {
+      construction.step(placedTribes);
+
+      // Every 5 seconds (100 ticks), evaluate whether to start new construction
+      for (const tribe of placedTribes) {
+        // Need hut if population > bed capacity
+        const totalBeds = tribe.huts.length * 4;
+        let neededKind = null;
+
+        if (tribe.population > totalBeds) {
+          neededKind = BUILDING_KIND.HUT;
+        } else if (tribe.wood >= 60 && tribe.stone >= 35 && tribe.buildings.filter(b => b.kind === BUILDING_KIND.WATCHTOWER).length === 0) {
+          neededKind = BUILDING_KIND.WATCHTOWER;
+        } else if (tribe.wood >= 50 && tribe.stone >= 20 && tribe.buildings.filter(b => b.kind === BUILDING_KIND.GRANARY).length === 0) {
+          neededKind = BUILDING_KIND.GRANARY;
+        }
+
+        if (neededKind !== null) {
+          const spec = BUILDING_SPECS[neededKind];
+          if (tribe.wood >= spec.cost.wood && tribe.stone >= spec.cost.stone) {
+            const site = construction.findBuildSite(terrain, tileState, tribe, neededKind, rng);
+            if (site !== null) {
+              tribe.wood -= spec.cost.wood;
+              tribe.stone -= spec.cost.stone;
+              const building = construction.createBuilding(tribe, neededKind, site, terrain);
+              if (log) {
+                log.push(`${tribe.name} began raising a ${spec.name}`);
+              }
+            }
+          }
+        }
+
+        // Progress incomplete buildings
+        for (const b of tribe.buildings) {
+          if (!b.isComplete) {
+            construction.deliverMaterial(b, 0.5, 0.25, tribe);
+          }
+        }
+      }
+    },
+
     toTelemetry() {
       return placedTribes.map(t => ({
         id: t.id,
@@ -146,6 +190,10 @@ export function createTribeStore(terrain, streams) {
         territoryRadius: t.territoryRadius,
         relations: [...t.relations],
       }));
+    },
+
+    getBuildingsTelemetry() {
+      return construction.toTelemetry();
     },
   };
 }

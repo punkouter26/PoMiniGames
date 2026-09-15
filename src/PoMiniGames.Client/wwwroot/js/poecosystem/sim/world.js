@@ -701,6 +701,7 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
     // anything the island has since buried.
     if (tick % 20 === 0) {
       tribeStore.stepTech(log);
+      tribeStore.stepConstruction(terrain, tileState, streams.behavior, log);
       const reached = advanceTech(world, { hutsBuilt: almanac.hutsBuilt, humans: counts[SPECIES_ID.HUMAN], year: clock.year() }, tribe);
       if (reached) {
         log.push({ tick, kind: 'tech', level: reached.level, tile: reached.tile, text: reached.text });
@@ -733,6 +734,7 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
       traitHistory,
       tech: { level: settlement.tech, name: TECH_NAMES[settlement.tech] ?? 'Camp', tribe, campfire: settlement.campfireTile !== NONE, tower: settlement.towerTile !== NONE, fields: settlement.fieldTiles.length },
       tribes: tribeStore.toTelemetry(),
+      buildings: tribeStore.getBuildingsTelemetry(),
       watched: watchedList(),
       lineageCount: lineage.count,
     };

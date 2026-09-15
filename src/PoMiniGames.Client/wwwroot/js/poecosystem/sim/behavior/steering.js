@@ -3,7 +3,8 @@
 // walkability probe ahead with two fallback headings so they slide along coasts and
 // cliffs instead of stopping dead.
 import { BEHAVIOR } from '../core/config.js';
-import { TILE_STATE, isWalkable, tileIndex } from '../terrain/tiles.js';
+import { TILE_STATE, isSolidState, isWalkable, tileIndex } from '../terrain/tiles.js';
+import { SPECIES_ID } from '../creatures/species.js';
 
 export function seekTo(e, i, tx, tz, speed) {
   const dx = tx - e.x[i]; const dz = tz - e.z[i];
@@ -28,12 +29,13 @@ export function wander(e, i, rng, speed) {
 
 export function stop(e, i) { e.vx[i] = 0; e.vz[i] = 0; }
 
-const blocked = (s) => s === TILE_STATE.LAVA || s === TILE_STATE.HUT || s === TILE_STATE.BOULDER;
+// A palisade (behavior/tech.js) is solid for every species but the one that built it.
+const blocked = (s, human) => isSolidState(s) || (s === TILE_STATE.FENCE && !human);
 
-export function isPassable(terrain, tileState, x, z) {
+export function isPassable(terrain, tileState, x, z, human = false) {
   if (x < 0.5 || z < 0.5 || x >= terrain.size - 0.5 || z >= terrain.size - 0.5) return false;
   const t = tileIndex(x, z, terrain.size);
-  return isWalkable(terrain.type[t]) && !blocked(tileState[t]);
+  return isWalkable(terrain.type[t]) && !blocked(tileState[t], human);
 }
 
 // Fallback headings tried when the straight line is blocked (radians; ± pairs).
@@ -44,14 +46,15 @@ export function moveCreature(e, i, terrain, tileState, dt) {
   const vx = e.vx[i]; const vz = e.vz[i];
   const speed = Math.hypot(vx, vz);
   if (speed < 1e-6) return false;
+  const human = e.species[i] === SPECIES_ID.HUMAN;
   let nx = e.x[i] + vx * dt; let nz = e.z[i] + vz * dt;
-  if (!isPassable(terrain, tileState, nx, nz)) {
+  if (!isPassable(terrain, tileState, nx, nz, human)) {
     const heading = Math.atan2(vx, vz);
     let found = false;
     for (const turn of TURNS) {
       const h = heading + turn;
       nx = e.x[i] + Math.sin(h) * speed * dt; nz = e.z[i] + Math.cos(h) * speed * dt;
-      if (isPassable(terrain, tileState, nx, nz)) { found = true; e.yaw[i] = h; break; }
+      if (isPassable(terrain, tileState, nx, nz, human)) { found = true; e.yaw[i] = h; break; }
     }
     if (!found) { stop(e, i); return false; }
   } else {

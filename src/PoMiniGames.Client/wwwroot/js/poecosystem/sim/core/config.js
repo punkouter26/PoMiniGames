@@ -103,6 +103,29 @@ export const WORLD = Object.freeze({
   popSampleTicks: 20,        // one population sample per second
   popHistoryMax: 1800,       // 30 minutes of samples
   birthOffset: 1.0,          // metres offspring spawn from the mother
+  traitSampleTicks: 200,     // per-species trait means sampled every 10 s (the evolution chart)
+  traitHistoryMax: 720,      // two hours of samples
+  lineageMax: 6000,          // dead lineage records kept before the oldest are forgotten
+  nameMaxChars: 24,          // a player-given creature name is clipped to this
+});
+
+// ── The tribe's works (behavior/tech.js) ────────────────────────────────
+// Each tier unlocks when every listed condition holds, checked once a second. Tiers are
+// cumulative and never lost; what they build can still burn or be buried.
+export const TECH = Object.freeze({
+  fire: Object.freeze({ hutsBuilt: 1, humans: 5 }),
+  palisade: Object.freeze({ hutsBuilt: 3, humans: 9 }),
+  farming: Object.freeze({ year: 4, humans: 11 }),
+  watchtower: Object.freeze({ year: 8, hutsBuilt: 5 }),
+  campfireScareRadius: 10,   // wolves treat a lit campfire inside this many metres as a threat
+  campfireWarmRadius: 6,     // humans this close regain health at night
+  campfireRegenPerSecond: 0.02,
+  fenceRadius: 8,            // tiles from the first hut to the palisade ring
+  fenceGateEvery: 6,         // every Nth ring tile is left open so the village stays reachable
+  fieldCount: 8,             // berry plots planted on farming
+  fieldRipenMultiplier: 3,   // a field ripens this many times faster than a wild bush
+  towerPerceptionMultiplier: 1.4,
+  towerHuntReachBonus: 1.5,
 });
 
 // ── Physics (SPEC §7.7). Cosmetic only: no rule reads a body. ───────────

@@ -37,6 +37,8 @@ export function createInput(canvas, { onAction = () => {}, onLook = () => {} } =
     if (c === 'KeyE') onAction('inspect');
     if (c === 'KeyT') onAction('follow');
     if (c === 'KeyM') onAction('map');
+    if (c === 'KeyC') onAction('director');
+    if (c === 'KeyP') onAction('pip');
     if (c in SPEED_KEYS) onAction('speed', SPEED_KEYS[c]);
     refresh();
   };

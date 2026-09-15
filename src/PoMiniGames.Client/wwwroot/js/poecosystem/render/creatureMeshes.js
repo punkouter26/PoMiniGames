@@ -65,8 +65,17 @@ const RIGS = {
 
 const JUVENILE_SCALE = 0.55;
 
+// The evolution tint: a creature's chosen base trait mapped cool → warm. Applied through
+// InstancedMesh.instanceColor, which multiplies the material colour, so the species
+// material goes white while a tint is on and back to its own colour when it is off.
+const TINT_LOW = new THREE.Color(0x2563eb);
+const TINT_HIGH = new THREE.Color(0xfbbf24);
+
 export function createCreatureMeshes(scene, cap) {
   const groups = [];
+  let tint = -1;               // trait index, -1 for none
+  let repaint = false;         // one pass back to white after the tint is switched off
+  const tintColour = new THREE.Color();
   // Two reusable transforms: at 400 creatures × ~8 parts × 60 fps, allocating an
   // Object3D per part per frame would be ~200k allocations a second.
   const dummy = new THREE.Object3D();
@@ -101,12 +110,22 @@ export function createCreatureMeshes(scene, cap) {
 
   return {
     outline,
+    /** Colour every creature by one base trait (0–4), or -1 to restore species colours. */
+    setTint(traitIndex) {
+      const next = Number.isInteger(traitIndex) && traitIndex >= 0 && traitIndex < 5 ? traitIndex : -1;
+      if (next === tint) return;
+      tint = next;
+      repaint = true;
+      for (const g of groups) if (g) g.material.color.setHex(tint >= 0 ? 0xffffff : g.rig.colour);
+    },
+    get tint() { return tint; },
     /**
      * Draw one frame. `view` is the interpolated creature array, `count` how many are live,
      * `selectedIndex` the row to outline (-1 for none), `time` seconds for the leg swing.
      */
     draw(view, count, selectedIndex, time, speeds) {
       for (const g of groups) if (g) g.count = 0;
+      const paint = tint >= 0 || repaint;
       for (let k = 0; k < count; k++) {
         const o = k * FRAME.CREATURE_STRIDE;
         const species = view[o + 5] | 0;
@@ -115,6 +134,11 @@ export function createCreatureMeshes(scene, cap) {
         const scale = g.rig.scale * (view[o + 7] === 0 ? JUVENILE_SCALE : 1) * (view[o + 4] || 1);
         const swing = Math.sin(time * 9 + k) * Math.min(0.5, (speeds?.[k] ?? 0) * 0.12);
         const i = g.count++;
+        if (paint) {
+          if (tint >= 0) tintColour.copy(TINT_LOW).lerp(TINT_HIGH, Math.max(0, Math.min(1, view[o + FRAME.TRAIT_OFFSET + tint])));
+          else tintColour.setRGB(1, 1, 1);
+          for (const part of g.parts) part.mesh.setColorAt(i, tintColour);
+        }
         for (const part of g.parts) {
           const { at, leg } = part.def;
           dummy.position.set(view[o], view[o + 1], view[o + 2]);
@@ -139,8 +163,12 @@ export function createCreatureMeshes(scene, cap) {
       if (selectedIndex < 0) outline.visible = false;
       for (const g of groups) {
         if (!g) continue;
-        for (const part of g.parts) { part.mesh.count = g.count; part.mesh.instanceMatrix.needsUpdate = true; }
+        for (const part of g.parts) {
+          part.mesh.count = g.count; part.mesh.instanceMatrix.needsUpdate = true;
+          if (paint && part.mesh.instanceColor) part.mesh.instanceColor.needsUpdate = true;
+        }
       }
+      if (tint < 0) repaint = false;
     },
     dispose() {
       for (const g of groups) {

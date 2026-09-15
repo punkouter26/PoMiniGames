@@ -2,6 +2,7 @@ using PoMiniGames.Domain.Services;
 using PoMiniGames.Features.PoCoupleQuiz;
 using PoMiniGames.Features.PoFunQuiz;
 using PoMiniGames.Features.PoFunQuiz.Storage;
+using PoMiniGames.Features.PoEcosystem;
 using PoMiniGames.Features.PoJoker;
 using PoMiniGames.Features.PoJoker.Storage;
 using PoMiniGames.Features.PoRacer;
@@ -135,6 +136,7 @@ internal static class GameServicesExtensions
         services.AddGameChatClient(AIFoundryOptions.Games.CoupleQuiz);
         services.AddGameChatClient(AIFoundryOptions.Games.FunQuiz);
         services.AddGameChatClient(AIFoundryOptions.Games.Joker);
+        services.AddGameChatClient(AIFoundryOptions.Games.Ecosystem);
         // /health gains an AI check, and /api/health/ai exposes the usage read-model that
         // AiUsageAccumulator has been filling with no reader.
         services.AddHealthChecks()
@@ -246,6 +248,12 @@ internal static class GameServicesExtensions
         // would report a joke as cleaned when it was not.
         services.AddSingleton<IJokeRewriteService, JokeRewriteService>();
         services.AddSingleton<IJokeStorageClient, JokeStorageClient>();
+
+        // PoEcosystem — cloud world slots + gallery (blob + table), and the chronicle /
+        // cloud-thought narrator. The store degrades to empty when storage is unreachable;
+        // the narrator follows the shared mock gate (PoEcosystem:Features:UseMockAI).
+        services.AddSingleton<EcosystemWorldStore>();
+        services.AddSingleton<IEcosystemChronicleService, EcosystemChronicleService>();
 
         // PoRacer — multiplayer racing. The lobby service is the in-memory
         // registry; the race registry + service own the per-game simulation

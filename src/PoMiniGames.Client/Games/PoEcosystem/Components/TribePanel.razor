@@ -1,0 +1,66 @@
+@using PoMiniGames.Shared.Games.PoEcosystem
+@* The tribe's ladder and the island's chronicle. The ladder is read straight from the sim
+   (sim/behavior/tech.js); the chronicle is a server-side model call, so it is written on
+   request — one saga per decade at most, and the button says so. *@
+<div class="poeco-tribe">
+    <h3>The @(Stats?.Tech?.Tribe ?? "island") tribe</h3>
+    <ol class="poeco-ladder" aria-label="The tribe's ladder">
+        @for (var k = 0; k < Tiers.Length; k++)
+        {
+            var level = Stats?.Tech?.Level ?? 0;
+            <li class="@(k <= level ? "poeco-ladder--done" : "") @(k == level + 1 ? "poeco-ladder--next" : "")">
+                <span class="poeco-ladder-name">@Tiers[k].Name</span>
+                <span class="poeco-ladder-what">@Tiers[k].What</span>
+            </li>
+        }
+    </ol>
+    @if (Stats?.Tech is { } tech)
+    {
+        <p class="poeco-note">
+            @(tech.Campfire ? "The fire is lit. " : "")@(tech.Fields > 0 ? $"{tech.Fields} field plots. " : "")@(tech.Tower ? "The tower stands." : "")
+        </p>
+    }
+
+    <h3>Chronicle</h3>
+    <div class="poeco-chronicle-actions">
+        <button type="button" class="poeco-btn poeco-btn--primary" disabled="@(Busy || Stats is null || Stats.Year <= FromYear)" @onclick="OnWrite">
+            @(Busy ? "The chronicler is writing…" : Stats is null || Stats.Year <= FromYear ? "Nothing new to chronicle yet" : $"Write the chronicle of years {FromYear}–{Stats.Year}")
+        </button>
+        <p class="poeco-note">A short saga of the island's recent history, written by a model from the world log. Spends a little of your daily AI allowance.</p>
+    </div>
+    @if (Chronicles.Count == 0)
+    {
+        <p class="poeco-note">No sagas yet.</p>
+    }
+    else
+    {
+        @foreach (var c in Chronicles)
+        {
+            <article class="poeco-saga">
+                <h4>@c.Title @if (c.Mock) { <span class="poeco-badge">mock</span> }</h4>
+                <p>@c.Saga</p>
+                @if (!string.IsNullOrWhiteSpace(c.Epigraph))
+                {
+                    <p class="poeco-saga-epigraph">— @c.Epigraph</p>
+                }
+            </article>
+        }
+    }
+</div>
+
+@code {
+    private static readonly (string Name, string What)[] Tiers =
+    [
+        ("Camp", "huts and hunting"),
+        ("Fire", "a hearth that scares wolves and warms the tribe at night"),
+        ("Palisade", "a fence with gates that keeps predators out of the village"),
+        ("Farming", "berry fields that ripen three times faster"),
+        ("Watchtower", "the tribe sees further and throws further"),
+    ];
+
+    [Parameter] public EcoStats? Stats { get; set; }
+    [Parameter] public IReadOnlyList<EcoChronicle> Chronicles { get; set; } = [];
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public int FromYear { get; set; }
+    [Parameter] public EventCallback OnWrite { get; set; }
+}

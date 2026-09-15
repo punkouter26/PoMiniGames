@@ -186,6 +186,8 @@ public sealed class AIFoundryOptions
         public const string CoupleQuiz = "couplequiz";
         public const string FunQuiz = "funquiz";
         public const string Joker = "joker";
+        /// <summary>PoEcosystem: the decade chronicle (and, via a task key, cloud thoughts).</summary>
+        public const string Ecosystem = "ecosystem";
     }
 
     /// <summary>
@@ -209,6 +211,9 @@ public sealed class AIFoundryOptions
 
         /// <summary>PoCoupleQuiz: scoring similarity between two answers (chat fallback path).</summary>
         public const string CoupleQuizSimilarity = "couplequiz.similarity";
+
+        /// <summary>PoEcosystem: one creature's one-sentence thought, for browsers without WebGPU. A cheap-model job.</summary>
+        public const string EcosystemThought = "ecosystem.thought";
     }
 
     /// <summary>

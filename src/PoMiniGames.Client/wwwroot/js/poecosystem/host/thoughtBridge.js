@@ -14,6 +14,13 @@ export const MODELS = Object.freeze([
   { id: 'Qwen3-0.6B-q4f16_1-MLC', label: 'Qwen3 0.6B', vramMb: 1403, note: 'Most recent of the three.' },
 ]);
 
+// The cloud "model": no worker, no WebGPU — each request is handed to the host (which
+// posts it to /api/ecosystem/thought) and the answer comes back through cloudResult().
+// Throttled hard because every call spends the caller's daily AI allowance: the browser
+// models answer as fast as the GPU allows, the cloud answers at most once per interval.
+export const CLOUD_MODEL_ID = 'cloud';
+export const CLOUD_MIN_INTERVAL_MS = 20_000;
+
 /**
  * WebGPU probe. Reporting a software adapter as available would start a several-hundred-MB
  * model download that then crawls on the CPU, so an adapter alone is not enough — it has to
@@ -41,9 +48,11 @@ export const hasWebGpuSupport = async () => {
 
 export function createThoughtBridge({
   WorkerCtor = globalThis.Worker, workerUrl = null, hasWebGpu = hasWebGpuSupport,
-  onResult = () => {}, onState = () => {},
+  onResult = () => {}, onState = () => {}, cloud = null, now = () => Date.now(),
 } = {}) {
   let worker = null;
+  let cloudMode = false;
+  let lastCloudAt = -Infinity;
   let state = LLM_STATE.OFF;
   let modelId = MODELS[0].id;
   let progress = 0;
@@ -85,6 +94,15 @@ export function createThoughtBridge({
 
     async start(id) {
       modelId = id ?? modelId;
+      if (modelId === CLOUD_MODEL_ID) {
+        bridge.dispose(false);
+        if (!cloud) { setState(LLM_STATE.ERROR, 'No cloud thought service is attached.'); return false; }
+        cloudMode = true;
+        progress = 1;
+        setState(LLM_STATE.READY, 'Thoughts come from the server model, one every twenty seconds.');
+        return true;
+      }
+      cloudMode = false;
       if (!(await hasWebGpu())) { setState(LLM_STATE.UNSUPPORTED, 'This browser has no WebGPU, so creature thoughts come from templates.'); return false; }
       bridge.dispose(false);
       try {
@@ -101,9 +119,22 @@ export function createThoughtBridge({
       return true;
     },
 
-    /** Send one prompt; false when unsupported, still loading, or one is already in flight. */
+    /** Send one prompt; false when unsupported, still loading, throttled, or one is already in flight. */
     request({ handle, prompt, system }) {
-      if (state !== LLM_STATE.READY || inFlight || !worker) return false;
+      if (state !== LLM_STATE.READY || inFlight) return false;
+      if (cloudMode) {
+        const t = now();
+        if (t - lastCloudAt < CLOUD_MIN_INTERVAL_MS) return false;
+        lastCloudAt = t;
+        const requestId = nextId++;
+        inFlight = { requestId, handle };
+        stats.requested++;
+        Promise.resolve(cloud(handle, system, prompt))
+          .then((text) => onWorkerMessage({ type: 'result', requestId, text: text ?? '' }))
+          .catch(() => onWorkerMessage({ type: 'inferError', requestId }));
+        return true;
+      }
+      if (!worker) return false;
       const requestId = nextId++;
       inFlight = { requestId, handle };
       stats.requested++;
@@ -116,6 +147,7 @@ export function createThoughtBridge({
     dispose(reset = true) {
       if (worker) { try { worker.terminate(); } catch { /* already gone */ } worker = null; }
       inFlight = null;
+      cloudMode = false;
       if (reset) setState(LLM_STATE.OFF);
     },
   };

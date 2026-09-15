@@ -23,6 +23,9 @@ public static class EcoSpeciesInfo
         "var(--accent-warning)", "var(--accent-success)", "var(--accent-danger)", "var(--accent)",
     ];
 
+    /// <summary>The five heritable traits, in the sim's index order (sim/core/config.js TRAITS).</summary>
+    public static readonly string[] Traits = ["boldness", "sociability", "curiosity", "greed", "diligence"];
+
     public static string PluralOf(int species) => Plural[Math.Clamp(species, 0, Count - 1)];
     public static string ColourOf(int species) => Colour[Math.Clamp(species, 0, Count - 1)];
 }
@@ -46,7 +49,13 @@ public sealed record EcoStats(
     EcoLlmCounters Llm,
     int[] PopHistory,
     EcoNaturalEvents NaturalEvents,
-    EcoAlmanac? Almanac = null);
+    EcoAlmanac? Almanac = null,
+    // Per-species trait means over time, flattened [sample * 20 + species * 5 + trait];
+    // -1 marks an extinct species in that sample (the evolution chart skips it).
+    double[]? TraitHistory = null,
+    EcoTech? Tech = null,
+    EcoWatched[]? Watched = null,
+    int LineageCount = 0);
 
 /// <summary>
 /// Lifetime world counters for the dashboard's almanac panel (sim/world.js). Stages is the
@@ -63,6 +72,12 @@ public sealed record EcoAlmanac(
     int OldestSpecies,
     double OldestAge);
 
+/// <summary>Where the tribe stands on its ladder (sim/behavior/tech.js).</summary>
+public sealed record EcoTech(int Level, string Name, string Tribe, bool Campfire, bool Tower, int Fields);
+
+/// <summary>One bookmarked creature, living or fallen.</summary>
+public sealed record EcoWatched(int Handle, string Name, int Species, bool Alive, double AgeYears, string Cause);
+
 /// <summary>One entry in the island-wide thought feed (dashboard).</summary>
 public sealed record EcoThought(int Id, int Tick, int Handle, string Name, int Species, int Source, string Text);
 
@@ -70,8 +85,11 @@ public sealed record EcoLlmCounters(int Requested, int Applied, int Rejected);
 
 public sealed record EcoNaturalEvents(int Lightning, int Rockslide, int Eruption);
 
-/// <summary>One line in the world log / HUD toasts.</summary>
-public sealed record EcoEvent(int Id, int Tick, string Kind, string Text, int? Species, string? Cause);
+/// <summary>
+/// One line in the world log / HUD toasts. Births carry the child (Creature) and both
+/// parents; deaths carry the creature — that is what lets the watch-list react.
+/// </summary>
+public sealed record EcoEvent(int Id, int Tick, string Kind, string Text, int? Species, string? Cause, int? Creature = null, int? Mother = null, int? Father = null, int? Level = null);
 
 /// <summary>Everything the inspector popover shows about the creature under the crosshair.</summary>
 public sealed record EcoDetail(
@@ -95,9 +113,27 @@ public sealed record EcoDetail(
     string Father,
     double X,
     double Y,
-    double Z);
+    double Z,
+    bool Watched = false,
+    int Children = 0,
+    int Descendants = 0,
+    int Generation = 0);
 
 public sealed record EcoNudge(string Trait, double Delta);
+
+/// <summary>One node of a family tree (sim/creatures/lineage.js).</summary>
+public sealed record EcoKin(int Handle, string Name, int Species, int Sex, bool Alive, string Cause, int BornTick, int DiedTick);
+
+/// <summary>A creature's family: two generations up, its children, and the headline counts.</summary>
+public sealed record EcoLineage(
+    EcoKin Self,
+    EcoKin? Mother,
+    EcoKin? Father,
+    EcoKin?[] Grandparents,
+    EcoKin[] Children,
+    int Siblings,
+    int Descendants,
+    int Generation);
 
 /// <summary>The in-browser model's state, for the settings panel.</summary>
 public sealed record EcoLlmState(string State, string ModelId, double Progress, string Message);
@@ -111,6 +147,7 @@ public sealed record EcoSaveInfo(bool Exists, int Seed, int Tick, int Year, long
 [JsonSerializable(typeof(EcoStats))]
 [JsonSerializable(typeof(EcoEvent[]))]
 [JsonSerializable(typeof(EcoDetail))]
+[JsonSerializable(typeof(EcoLineage))]
 [JsonSerializable(typeof(EcoLlmState))]
 [JsonSerializable(typeof(EcoModel[]))]
 [JsonSerializable(typeof(EcoSaveInfo))]

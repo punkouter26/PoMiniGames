@@ -84,7 +84,8 @@ export function blockedTiles({ trees, bushes, tileState, size }) {
   if (tileState) {
     for (let i = 0; i < tileState.length; i++) {
       const s = tileState[i];
-      if (s === TILE_STATE.HUT || s === TILE_STATE.BOULDER || s === TILE_STATE.LAVA) blocked[i] = 1;
+      if (s === TILE_STATE.HUT || s === TILE_STATE.BOULDER || s === TILE_STATE.LAVA
+        || s === TILE_STATE.TOWER || s === TILE_STATE.FENCE || s === TILE_STATE.CAMPFIRE) blocked[i] = 1;
     }
   }
   if (trees) {

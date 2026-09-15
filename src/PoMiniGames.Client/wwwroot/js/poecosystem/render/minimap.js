@@ -12,6 +12,7 @@ const SPECIES_DOT = ['#fbbf24', '#34d399', '#f87171', '#c7d2fe'];
 const STATE_HEX = {
   [TILE_STATE.FIRE]: '#f97316', [TILE_STATE.LAVA]: '#ef4444',
   [TILE_STATE.BURNT]: '#2a2724', [TILE_STATE.HUT]: '#e2e8f0',
+  [TILE_STATE.CAMPFIRE]: '#fb923c', [TILE_STATE.FENCE]: '#a16207', [TILE_STATE.FIELD]: '#a3e635', [TILE_STATE.TOWER]: '#f8fafc',
 };
 const rgb = (hex) => [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)];
 
@@ -25,8 +26,8 @@ export function createMinimap(canvas, terrain) {
   // repaint cost ~4 ms of the main thread every second.
   const biomePalette = new Uint8Array(8 * 3);
   for (let t = 0; t < 8; t++) biomePalette.set(rgb(BIOME[t] ?? '#555555'), t * 3);
-  const statePalette = new Uint8Array(8 * 3).fill(0);
-  const stateHas = new Uint8Array(8);
+  const statePalette = new Uint8Array(16 * 3).fill(0);
+  const stateHas = new Uint8Array(16);
   for (const [state, hex] of Object.entries(STATE_HEX)) { statePalette.set(rgb(hex), state * 3); stateHas[state] = 1; }
   const img = bctx.createImageData(size, size);
   for (let i = 3; i < img.data.length; i += 4) img.data[i] = 255;   // opaque, once

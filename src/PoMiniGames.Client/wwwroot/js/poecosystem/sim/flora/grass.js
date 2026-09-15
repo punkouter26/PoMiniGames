@@ -19,7 +19,8 @@ export function createGrass(terrain) {
 
 export const GRASS_SLICES = 20;
 
-const blocksGrowth = (s) => s === TILE_STATE.FIRE || s === TILE_STATE.BURNT || s === TILE_STATE.LAVA || s === TILE_STATE.HUT;
+const blocksGrowth = (s) => s === TILE_STATE.FIRE || s === TILE_STATE.BURNT || s === TILE_STATE.LAVA || s === TILE_STATE.HUT
+  || s === TILE_STATE.CAMPFIRE || s === TILE_STATE.FIELD || s === TILE_STATE.TOWER;
 
 export function stepGrass(grass, terrain, tileState, dt) {
   const { biomass, rate } = grass;

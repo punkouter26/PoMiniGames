@@ -1,0 +1,107 @@
+@* Visible evolution. Each species' mean of every heritable trait over time, one small chart
+   per trait, plus the tint picker that colours creatures in the world by that trait so
+   selection pressure is something you can see from the air, not only read here. *@
+<div class="poeco-evolution">
+    <label class="poeco-field poeco-field--row">
+        <span>Colour creatures by</span>
+        <select value="@Tint" @onchange="e => OnTint.InvokeAsync(int.TryParse(e.Value?.ToString(), out var v) ? v : -1)">
+            <option value="-1">species</option>
+            @for (var k = 0; k < EcoSpeciesInfo.Traits.Length; k++)
+            {
+                <option value="@k">@EcoSpeciesInfo.Traits[k]</option>
+            }
+        </select>
+        @if (Tint >= 0)
+        {
+            <span class="poeco-tint-scale" aria-hidden="true"><i></i> low → high</span>
+        }
+    </label>
+
+    @if (Samples < 2)
+    {
+        <p class="poeco-note">Trait means are sampled every ten seconds; the drift shows after a few minutes.</p>
+    }
+
+    <div class="poeco-evo-grid">
+        @for (var t = 0; t < EcoSpeciesInfo.Traits.Length; t++)
+        {
+            var trait = t;
+            <figure class="poeco-evo-chart">
+                <figcaption>@EcoSpeciesInfo.Traits[trait] <span class="poeco-note">@Delta(trait)</span></figcaption>
+                <svg viewBox="0 0 160 60" preserveAspectRatio="none" class="poeco-chart" role="img" aria-label="@Label(trait)">
+                    <line x1="0" y1="30" x2="160" y2="30" class="poeco-chart-axis" />
+                    @for (var s = 0; s < EcoSpeciesInfo.Count; s++)
+                    {
+                        var pts = Points(s, trait);
+                        if (pts.Length > 0)
+                        {
+                            <polyline class="poeco-chart-line" style="stroke: @EcoSpeciesInfo.ColourOf(s)" points="@pts" />
+                        }
+                    }
+                </svg>
+            </figure>
+        }
+    </div>
+    <p class="poeco-note">Offspring inherit the mean of their parents plus a little noise (σ 0.08). A line that climbs is a trait the island is selecting for.</p>
+</div>
+
+@code {
+    private const int TraitCount = 5;
+    private const double Width = 160, Height = 60;
+
+    [Parameter] public EcoStats? Stats { get; set; }
+    [Parameter] public int Tint { get; set; } = -1;
+    [Parameter] public EventCallback<int> OnTint { get; set; }
+
+    private double[] History => Stats?.TraitHistory ?? [];
+    private int Samples => History.Length / (EcoSpeciesInfo.Count * TraitCount);
+
+    private double? At(int sample, int species, int trait)
+    {
+        var v = History[sample * EcoSpeciesInfo.Count * TraitCount + species * TraitCount + trait];
+        return v < 0 ? null : v;
+    }
+
+    /// <summary>Polyline for one species × trait. The y axis is the full 0–1 trait range; gaps (extinct spans) break the line.</summary>
+    private string Points(int species, int trait)
+    {
+        var n = Samples;
+        if (n < 2) return string.Empty;
+        var step = Math.Max(1, (int)Math.Ceiling(n / Width));
+        var sb = new System.Text.StringBuilder();
+        for (var k = 0; k < n; k += step)
+        {
+            var v = At(k, species, trait);
+            if (v is null) continue;
+            var x = Width * k / (n - 1);
+            var y = Height - Height * v.Value;
+            if (sb.Length > 0) sb.Append(' ');
+            sb.Append(x.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)).Append(',').Append(y.ToString("F1", System.Globalization.CultureInfo.InvariantCulture));
+        }
+        return sb.ToString();
+    }
+
+    /// <summary>The biggest first-to-last drift of any species on this trait, as a sign of pressure.</summary>
+    private string Delta(int trait)
+    {
+        var n = Samples;
+        if (n < 2) return "";
+        double best = 0; var who = -1;
+        for (var s = 0; s < EcoSpeciesInfo.Count; s++)
+        {
+            var a = At(0, s, trait); var b = At(n - 1, s, trait);
+            if (a is null || b is null) continue;
+            var d = b.Value - a.Value;
+            if (Math.Abs(d) > Math.Abs(best)) { best = d; who = s; }
+        }
+        return who < 0 ? "" : $"{EcoSpeciesInfo.PluralOf(who)} {(best >= 0 ? "+" : "")}{best:0.00}";
+    }
+
+    private string Label(int trait)
+    {
+        var n = Samples;
+        if (n == 0) return $"{EcoSpeciesInfo.Traits[trait]}: no data yet";
+        var parts = Enumerable.Range(0, EcoSpeciesInfo.Count).Select(s => At(n - 1, s, trait) is { } v ? $"{EcoSpeciesInfo.PluralOf(s)} {v:0.00}" : null).Where(p => p is not null);
+        return $"{EcoSpeciesInfo.Traits[trait]} now: {string.Join(", ", parts)}";
+    }
+}

@@ -13,6 +13,7 @@ using PoMiniGames.Features.PoMarbleRace;   // moved out of Features.HighScores s
 using PoMiniGames.Features.Leaderboard;
 using PoMiniGames.Features.MatchHistory;
 using PoMiniGames.Features.PoCoupleQuiz;  // CoupleQuizHub (the slice's only server surface)
+using PoMiniGames.Features.PoEcosystem;   // cloud world slots, gallery, chronicle (2026-09-14)
 using PoMiniGames.Features.PoFunQuiz;
 using PoMiniGames.Features.PoJoker;
 using PoMiniGames.Features.PoRacer;
@@ -85,6 +86,9 @@ internal static class EndpointRouteExtensions
         // Score-integrity posture. Anonymous because it reports configuration, not data, and
         // the client reads it before sign-in to decide whether to run the session machinery.
         app.MapIntegrityStatusEndpoint();
+        // PoEcosystem gallery: shared islands are public by their owners' choice, and a visit
+        // is a read of bytes only the browser engine can interpret.
+        app.MapPoEcosystemGalleryEndpoints();
 
         // ── Authenticated game API ─────────────────────────────────────────
         // All game-data endpoints require a valid session. Per-endpoint rate
@@ -121,6 +125,8 @@ internal static class EndpointRouteExtensions
         // PoBrawl online (lobby + match hub) — match result ingest endpoint. Same
         // shape as PoRacer's score endpoints: authenticated, rate-limited highscores.
         gameApi.MapPoBrawlOnlineMatchEndpoints();
+        // PoEcosystem: the caller's three cloud slots, sharing, the chronicle and cloud thoughts.
+        gameApi.MapPoEcosystemEndpoints();
 
         // ── SignalR hubs (auth required; not part of MapGroup) ────────────
         app.MapHub<CoupleQuizHub>("/couplequiz/hubs/game").RequireAuthorization();

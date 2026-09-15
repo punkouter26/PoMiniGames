@@ -32,10 +32,13 @@ const BIOME = {
 const STATE_COLOUR = {
   [TILE_STATE.FIRE]: 0xf97316, [TILE_STATE.BURNT]: 0x2a2724, [TILE_STATE.LAVA]: 0xef4444,
   [TILE_STATE.COOLED]: 0x3f3a36, [TILE_STATE.BOULDER]: 0x8a8378,
+  // The tribe's works: sooted hearth, tilled earth, a packed-earth tower footing. A fence
+  // keeps the grass under it.
+  [TILE_STATE.CAMPFIRE]: 0x5a4030, [TILE_STATE.FIELD]: 0x7a5a32, [TILE_STATE.TOWER]: 0x6b5a45,
 };
 // How hard each state glows. Fire flickers (the renderer drives uGlowPulse); lava is
 // steady and hot; everything else is 0 and costs the shader a multiply.
-const STATE_GLOW = { [TILE_STATE.FIRE]: 1.0, [TILE_STATE.LAVA]: 0.85 };
+const STATE_GLOW = { [TILE_STATE.FIRE]: 1.0, [TILE_STATE.LAVA]: 0.85, [TILE_STATE.CAMPFIRE]: 0.45 };
 const DRY = new THREE.Color(0x8a7f4a);   // grass at zero biomass
 
 const COMMON_VERT = `

@@ -42,11 +42,17 @@ public sealed class StorageInitializer
         // HybridCache L2. Ensured for the same reason: the first cache read of a cold host is on
         // a request path. Name must match TableDistributedCache.TableName.
         "PoMiniGamesCache",
+        // PoEcosystem cloud slots + the public gallery index. Name must match
+        // EcosystemWorldStore.TableName.
+        "PoEcosystemWorlds",
     ];
 
-    /// <summary>Blob containers used by the consolidated games (none beyond the base container set).</summary>
+    /// <summary>Blob containers used by the consolidated games.</summary>
     public static readonly string[] AdditionalBlobContainers =
     [
+        // PoEcosystem world snapshots (gzip'd JSON, one blob per slot). Name must match
+        // EcosystemWorldStore.ContainerName.
+        "poecosystem-worlds",
     ];
 
     private readonly TableServiceClient _tableServiceClient;

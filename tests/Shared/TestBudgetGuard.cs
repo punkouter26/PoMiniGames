@@ -36,6 +36,7 @@ public static class TestBudgetGuard
         ["PoFunQuiz:Features:UseMockAI"] = "true",
         ["PoCoupleQuiz:Features:UseMockAI"] = "true",
         ["PoJoker:Features:UseMockAI"] = "true",
+        ["PoEcosystem:Features:UseMockAI"] = "true",
 
         // ── Browser-side guard ────────────────────────────────────────────
         // FeatureFlags.UseMockData drives the Blazor "USING MOCK DATA" banner.

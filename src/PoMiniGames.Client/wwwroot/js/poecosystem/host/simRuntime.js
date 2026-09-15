@@ -3,9 +3,11 @@
 // runs it inline when workers fail, and Vitest drives it with a fake `post`.
 //
 // In:  probe · init · newWorld · setSpeed · pause · resume · select · setLlmEnabled ·
-//      thoughtResult · thoughtCancel · saveNow · recycle · debug · exportTelemetry · dispose
+//      thoughtResult · thoughtCancel · saveNow · recycle · debug · exportTelemetry ·
+//      lineage · rename · watch · exportSnapshot · importSnapshot · dispose
 // Out: probeResult · ready · terrain · frame (transferred) · tiles · stats · events ·
-//      thoughts · detail · thoughtRequest · saved · debugResult · telemetry · error
+//      thoughts · detail · thoughtRequest · saved · debugResult · telemetry · lineage ·
+//      snapshotBytes (transferred) · error
 import { CREATURE_CAP, HOST, LOW_END_CREATURE_CAP, PROP_CAP } from '../sim/core/config.js';
 import { NONE } from '../sim/core/entities.js';
 import { createFrameBuffer, encodeFrame, FRAME } from '../sim/frame.js';
@@ -14,6 +16,7 @@ import { createPhysics } from '../sim/physics/world.js';
 import { generateIsland } from '../sim/terrain/island.js';
 import { restoreWorld, snapshotWorld } from '../sim/persistence/snapshot.js';
 import { deleteWorld, loadWorld, loadWorldMeta, saveWorld } from '../sim/persistence/idb.js';
+import { packSnapshot, unpackSnapshot } from '../sim/persistence/codec.js';
 import { SYSTEM_PROMPT } from '../sim/thoughts/prompt.js';
 
 export function createSimRuntime(post, deps = {}) {
@@ -35,6 +38,9 @@ export function createSimRuntime(post, deps = {}) {
   let disposed = false;
   let caps = {};
   let simLag = 0;
+  let lastBushCount = -1;   // the tiles message carries the bush list only when it changed
+  // A visited (shared) world is ephemeral: it runs, but never autosaves over the local one.
+  let ephemeral = false;
 
   // One island per world: the heightfield and the simulation share the same terrain
   // object rather than generating it twice (~28 ms each).
@@ -64,6 +70,7 @@ export function createSimRuntime(post, deps = {}) {
     pool = [];
     for (let k = 0; k < HOST.frameBuffers; k++) pool.push(createFrameBuffer(world.entities.cap, PROP_CAP));
     selected = NONE;
+    lastBushCount = world.bushes.count;   // the terrain payload just carried the list
     lastWall = now(); lastSaveWall = now();
     post({ type: 'ready', seed: world.seed, tick: world.clock.tick, resumed, terrainHash: world.terrain.hash, cap: world.entities.cap, physics: world.physics.kind });
     terrainPayload();
@@ -90,8 +97,11 @@ export function createSimRuntime(post, deps = {}) {
     const s = world.stats();
     const history = new Int16Array(s.popHistory.length * 4);
     for (let k = 0; k < s.popHistory.length; k++) for (let sp = 0; sp < 4; sp++) history[k * 4 + sp] = s.popHistory[k][sp];
-    const { popHistory: _ph, ...rest } = s;
-    post({ type: 'stats', stats: { ...rest, llm: world.thoughts.stats(), llmEnabled, simLag, popHistory: history } }, [history.buffer]);
+    // Per-species trait means over time, flattened [sample * 20 + species * 5 + trait].
+    const traits = new Float32Array(s.traitHistory.length * 20);
+    for (let k = 0; k < s.traitHistory.length; k++) traits.set(s.traitHistory[k], k * 20);
+    const { popHistory: _ph, traitHistory: _th, ...rest } = s;
+    post({ type: 'stats', stats: { ...rest, llm: world.thoughts.stats(), llmEnabled, simLag, popHistory: history, traitHistory: traits } }, [history.buffer, traits.buffer]);
   }
   function postEvents() {
     const events = world.log.drain();
@@ -109,8 +119,10 @@ export function createSimRuntime(post, deps = {}) {
     const bushRipe = new Uint8Array(world.bushes.count);
     for (let k = 0; k < world.bushes.count; k++) bushRipe[k] = Math.round(world.bushes.ripeness[k] * 255);
     const tileState = world.tileState.slice(); const treeState = world.trees.state.slice();
-    post({ type: 'tiles', tileState, grass, treeState, bushRipe, huts: world.settlement.huts.map(h => ({ tile: h.tile, x: h.x, z: h.z })), carcasses: world.carcasses.map(c => ({ x: c.x, z: c.z, species: c.species })) },
-      [tileState.buffer, grass.buffer, treeState.buffer, bushRipe.buffer]);
+    const msg = { type: 'tiles', tileState, grass, treeState, bushRipe, huts: world.settlement.huts.map(h => ({ tile: h.tile, x: h.x, z: h.z })), carcasses: world.carcasses.map(c => ({ x: c.x, z: c.z, species: c.species })) };
+    // Farming plants bushes at runtime; the renderer's list is refreshed only when it grew.
+    if (world.bushes.count !== lastBushCount) { lastBushCount = world.bushes.count; msg.bushes = Array.from(world.bushes.tile.subarray(0, world.bushes.count)); }
+    post(msg, [tileState.buffer, grass.buffer, treeState.buffer, bushRipe.buffer]);
   }
   function postFrame() {
     if (pool.length === 0) return;
@@ -119,7 +131,7 @@ export function createSimRuntime(post, deps = {}) {
     post({ type: 'frame', buffer }, [buffer]);
   }
   function save(reason) {
-    if (!idb || !world) return Promise.resolve(false);
+    if (!idb || !world || ephemeral) return Promise.resolve(false);
     const tick = world.clock.tick;
     return saveWorld(idb, snapshotWorld(world)).then(() => { post({ type: 'saved', tick, reason }); return true; })
       .catch((err) => { post({ type: 'error', where: 'save', message: String(err?.message ?? err) }); return false; });
@@ -171,10 +183,31 @@ export function createSimRuntime(post, deps = {}) {
           return;
         case 'init': boot(msg); return;
         case 'newWorld':
+          ephemeral = false;
           if (idb) deleteWorld(idb).catch(() => {});
           world?.physics.dispose();
           world = buildWorld(msg.seed | 0);
           announce(false);
+          return;
+        case 'exportSnapshot':
+          if (!world) return;
+          packSnapshot(snapshotWorld(world))
+            .then((bytes) => post({ type: 'snapshotBytes', slot: msg.slot ?? '', bytes: bytes.buffer }, [bytes.buffer]))
+            .catch((err) => post({ type: 'error', where: 'export', message: String(err?.message ?? err) }));
+          return;
+        case 'importSnapshot':
+          if (!msg.bytes) return;
+          unpackSnapshot(msg.bytes).then((snap) => {
+            if (disposed) return;
+            const restored = restoreWorld(snap, { CANNON, caps });
+            if (!restored) { post({ type: 'error', where: 'import', message: 'That save was written by a different island generator and cannot be loaded.' }); return; }
+            world?.physics.dispose();
+            world = restored;
+            ephemeral = !!msg.ephemeral;
+            if (!ephemeral && idb) deleteWorld(idb).catch(() => {});
+            announce(true);
+            if (!ephemeral) save('import');
+          }).catch((err) => post({ type: 'error', where: 'import', message: String(err?.message ?? err) }));
           return;
         case 'setSpeed': world?.applyCommand({ type: 'setSpeed', speed: msg.speed }); return;
         case 'pause': paused = true; return;
@@ -186,6 +219,9 @@ export function createSimRuntime(post, deps = {}) {
         case 'saveNow': lastSaveWall = now(); save(msg.reason ?? 'manual'); return;
         case 'recycle': if (msg.buffer && pool.length < HOST.frameBuffers) pool.push(msg.buffer); return;
         case 'debug': if (world) post({ type: 'debugResult', op: msg.op, result: world.debug(msg.op, msg.arg ?? {}) }); return;
+        case 'lineage': if (world) post({ type: 'lineage', handle: msg.handle, tree: world.lineageOf(msg.handle) }); return;
+        case 'rename': if (world && world.rename(msg.handle, msg.name)) { if (selected === msg.handle) postDetail(); } return;
+        case 'watch': if (world && world.setWatched(msg.handle, !!msg.on)) { if (selected === msg.handle) postDetail(); postStats(); } return;
         case 'exportTelemetry':
           if (world) post({ type: 'telemetry', payload: world.telemetry.export({ seed: world.seed, tick: world.clock.tick, year: world.clock.year(), alive: world.stats().counts }) });
           return;

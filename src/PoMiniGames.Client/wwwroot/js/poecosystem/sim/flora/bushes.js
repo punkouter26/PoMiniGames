@@ -19,15 +19,26 @@ export function createBushes(terrain, rng) {
   }
   const ripeness = new Float32Array(FLORA.maxBushes);
   for (let k = 0; k < count; k++) ripeness[k] = rng.next();
-  return { count, tile, byTile, ripeness };
+  // fast[k] = 1 marks a cultivated plot (behavior/tech.js farming): same bush, quicker crop.
+  const fast = new Uint8Array(FLORA.maxBushes);
+  return { count, tile, byTile, ripeness, fast };
 }
 
-export function stepBushes(bushes, dt) {
-  const { ripeness, count } = bushes;
+/** Plant a bush on a tile at runtime (farming). Returns its index, or -1 when full/occupied. */
+export function plantBush(bushes, tileIdx, { fast = false } = {}) {
+  if (bushes.count >= FLORA.maxBushes || bushes.byTile[tileIdx] >= 0) return -1;
+  const k = bushes.count++;
+  bushes.tile[k] = tileIdx; bushes.byTile[tileIdx] = k;
+  bushes.ripeness[k] = 0; bushes.fast[k] = fast ? 1 : 0;
+  return k;
+}
+
+export function stepBushes(bushes, dt, fastMultiplier = 1) {
+  const { ripeness, count, fast } = bushes;
   const step = dt / FLORA.bushRipenSeconds;
   for (let k = 0; k < count; k++) {
     if (ripeness[k] >= 1) continue;
-    const r = ripeness[k] + step;
+    const r = ripeness[k] + (fast && fast[k] ? step * fastMultiplier : step);
     ripeness[k] = r > 1 ? 1 : r;
   }
 }

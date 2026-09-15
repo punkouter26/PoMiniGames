@@ -143,6 +143,8 @@ builder.Services.AddScoped<PoMiniGamesClient.Games.PoSports.Services.PoSportsHub
 // is bound to the user's Blazor session lifetime.
 builder.Services.AddScoped<PoMiniGamesClient.Games.PoVoxelStrike.Services.PoVoxelStrikeMultiplayerClient>();
 builder.Services.AddScoped<PoEcosystemInteropService>();
+// PoEcosystem's server surface: cloud world slots, the gallery, the chronicle and cloud thoughts.
+builder.Services.AddScoped<PoMiniGamesClient.Games.PoEcosystem.Services.PoEcosystemApiClient>();
 
 // ─── PoJoker (demo-only autonomous comedy show) ──────────────────────
 // TTS + Web-Audio effects run via JS interop

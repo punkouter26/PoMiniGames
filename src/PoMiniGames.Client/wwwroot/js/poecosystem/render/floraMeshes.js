@@ -4,6 +4,7 @@
 import * as THREE from 'three';
 import { TILE_STATE, tileX, tileZ } from '../sim/terrain/tiles.js';
 import { TREE_STATE } from '../sim/flora/trees.js';
+import { FLORA } from '../sim/core/config.js';
 
 function instanced(scene, geo, colour, cap, name, { emissive = 0 } = {}) {
   const material = new THREE.MeshLambertMaterial({ color: colour, flatShading: true, emissive });
@@ -17,7 +18,10 @@ function instanced(scene, geo, colour, cap, name, { emissive = 0 } = {}) {
 export function createFloraMeshes(scene, terrain, { trees = [], bushes = [] } = {}) {
   const size = terrain.size;
   const treeCap = Math.max(1, trees.length);
-  const bushCap = Math.max(1, bushes.length);
+  // Farming plants bushes at runtime (behavior/tech.js), so the bush meshes are sized to
+  // the sim's cap rather than to the count the island started with.
+  let bushList = Array.from(bushes);
+  const bushCap = Math.max(1, FLORA.maxBushes);
   const trunk = instanced(scene, new THREE.CylinderGeometry(0.18, 0.24, 2.6, 5), 0x6b4423, treeCap, 'tree-trunk');
   const crown = instanced(scene, new THREE.ConeGeometry(1.5, 3.2, 6), 0x1f5c2a, treeCap, 'tree-crown');
   const stump = instanced(scene, new THREE.CylinderGeometry(0.26, 0.3, 0.5, 5), 0x4a3520, treeCap, 'tree-stump');
@@ -28,7 +32,15 @@ export function createFloraMeshes(scene, terrain, { trees = [], bushes = [] } = 
   const flame = instanced(scene, new THREE.ConeGeometry(0.5, 1.4, 5), 0xf97316, 4096, 'fire', { emissive: 0xf97316 });
   const lava = instanced(scene, new THREE.BoxGeometry(1, 0.3, 1), 0xef4444, 512, 'lava', { emissive: 0x991b1b });
   const carcass = instanced(scene, new THREE.BoxGeometry(0.7, 0.3, 1.0), 0x57534e, 256, 'carcass');
-  const all = [trunk, crown, stump, bush, berry, hutBase, hutRoof, flame, lava, carcass];
+  // The tribe's works (behavior/tech.js): fence posts and rails, the campfire's stone
+  // ring (its flame reuses `flame`), tilled field plots, and the watchtower.
+  const fencePost = instanced(scene, new THREE.BoxGeometry(0.22, 1.5, 0.22), 0x8b5a2b, 320, 'fence-post');
+  const fenceRail = instanced(scene, new THREE.BoxGeometry(1.0, 0.14, 0.14), 0xa16207, 320, 'fence-rail');
+  const hearth = instanced(scene, new THREE.CylinderGeometry(0.7, 0.8, 0.25, 8), 0x57534e, 4, 'campfire');
+  const field = instanced(scene, new THREE.BoxGeometry(0.92, 0.16, 0.92), 0x6b4f2a, 32, 'field');
+  const tower = instanced(scene, new THREE.BoxGeometry(1.1, 4.2, 1.1), 0x7c5c3a, 4, 'tower');
+  const towerTop = instanced(scene, new THREE.BoxGeometry(1.9, 0.35, 1.9), 0x5c4326, 4, 'tower-top');
+  const all = [trunk, crown, stump, bush, berry, hutBase, hutRoof, flame, lava, carcass, fencePost, fenceRail, hearth, field, tower, towerTop];
   const dummy = new THREE.Object3D();
 
   const place = (entry, i, x, y, z, scale = 1, rotY = 0) => {
@@ -43,6 +55,8 @@ export function createFloraMeshes(scene, terrain, { trees = [], bushes = [] } = 
   return {
     /** msg: the runtime's `tiles` message (tileState, treeState, bushRipe, huts, carcasses). */
     update(msg, time = 0) {
+      if (msg.bushes) bushList = Array.from(msg.bushes);
+      const bushes = bushList;
       let nTrunk = 0; let nStump = 0;
       for (let k = 0; k < trees.length; k++) {
         const [x, z] = centre(trees[k]);
@@ -72,20 +86,46 @@ export function createFloraMeshes(scene, terrain, { trees = [], bushes = [] } = 
       });
       hutBase.mesh.count = huts.length; hutRoof.mesh.count = huts.length;
 
-      let nFlame = 0; let nLava = 0;
+      let nFlame = 0; let nLava = 0; let nPost = 0; let nHearth = 0; let nField = 0; let nTower = 0;
       const state = msg.tileState;
       if (state) {
         for (let t = 0; t < state.length; t++) {
-          if (state[t] === TILE_STATE.FIRE && nFlame < 4096) {
+          const s = state[t];
+          if (s === TILE_STATE.NORMAL) continue;
+          if (s === TILE_STATE.FIRE && nFlame < 4096) {
             const [x, z] = centre(t);
             place(flame, nFlame++, x, terrain.heightAt(x, z) + 0.7 + Math.sin(time * 6 + t) * 0.15, z, 0.8 + Math.sin(time * 8 + t) * 0.2);
-          } else if (state[t] === TILE_STATE.LAVA && nLava < 512) {
+          } else if (s === TILE_STATE.LAVA && nLava < 512) {
             const [x, z] = centre(t);
             place(lava, nLava++, x, terrain.heightAt(x, z) + 0.15, z);
+          } else if (s === TILE_STATE.FENCE && nPost < 320) {
+            const [x, z] = centre(t);
+            const y = terrain.heightAt(x, z);
+            // The rail runs toward a fenced neighbour, east–west when there is one, else north–south.
+            const ew = state[t + 1] === TILE_STATE.FENCE || state[t - 1] === TILE_STATE.FENCE;
+            place(fencePost, nPost, x, y + 0.7, z);
+            place(fenceRail, nPost, x, y + 1.05, z, 1, ew ? 0 : Math.PI / 2);
+            nPost++;
+          } else if (s === TILE_STATE.CAMPFIRE && nHearth < 4) {
+            const [x, z] = centre(t);
+            const y = terrain.heightAt(x, z);
+            place(hearth, nHearth++, x, y + 0.1, z);
+            if (nFlame < 4096) place(flame, nFlame++, x, y + 0.55 + Math.sin(time * 7 + t) * 0.08, z, 0.45 + Math.sin(time * 9 + t) * 0.08);
+          } else if (s === TILE_STATE.FIELD && nField < 32) {
+            const [x, z] = centre(t);
+            place(field, nField++, x, terrain.heightAt(x, z) + 0.05, z);
+          } else if (s === TILE_STATE.TOWER && nTower < 4) {
+            const [x, z] = centre(t);
+            const y = terrain.heightAt(x, z);
+            place(tower, nTower, x, y + 2.1, z);
+            place(towerTop, nTower, x, y + 4.3, z, 1, Math.PI / 4);
+            nTower++;
           }
         }
       }
       flame.mesh.count = nFlame; lava.mesh.count = nLava;
+      fencePost.mesh.count = nPost; fenceRail.mesh.count = nPost; hearth.mesh.count = nHearth;
+      field.mesh.count = nField; tower.mesh.count = nTower; towerTop.mesh.count = nTower;
 
       const carcasses = msg.carcasses ?? [];
       carcasses.slice(0, 256).forEach((c, k) => place(carcass, k, c.x, terrain.heightAt(c.x, c.z) + 0.15, c.z, 0.6 + c.species * 0.2));

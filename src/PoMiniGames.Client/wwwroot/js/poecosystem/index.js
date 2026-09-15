@@ -3,7 +3,7 @@
 // and the routing of its messages; the renderer (render/) and the thought bridge attach to
 // the engine object when present.
 import { createSimHost } from './host/simHost.js';
-import { LLM_STATE, MODELS, createThoughtBridge } from './host/thoughtBridge.js';
+import { CLOUD_MODEL_ID, LLM_STATE, MODELS, createThoughtBridge } from './host/thoughtBridge.js';
 import { createRenderer } from './render/renderer.js';
 import { createAudio } from './render/audio.js';
 import { createMusic } from './render/music.js';
@@ -76,10 +76,20 @@ function createEngine(container, dotnetRef, opts) {
         state.audio.setDay(msg.stats.dayFraction);
         feedMusic(msg.stats);
         state.renderer?.setStats(msg.stats);
-        invoke('OnStats', JSON.stringify({ ...msg.stats, popHistory: Array.from(msg.stats.popHistory) }));
+        invoke('OnStats', JSON.stringify({ ...msg.stats, popHistory: Array.from(msg.stats.popHistory), traitHistory: Array.from(msg.stats.traitHistory ?? []) }));
+        return;
+      case 'lineage':
+        invoke('OnLineage', msg.handle, msg.tree ? JSON.stringify(msg.tree) : null);
+        return;
+      case 'snapshotBytes':
+        // A Uint8Array crosses to .NET as byte[] (no base64 detour), so a megabyte world
+        // costs one copy rather than a string a third bigger.
+        invoke('OnSnapshotBytes', msg.slot, new Uint8Array(msg.bytes));
         return;
       case 'events':
         for (const ev of msg.events) {
+          // A tech unlock is a cut for the director, not a stinger or a shake.
+          if (ev.kind === 'tech') { state.renderer?.onEvent(ev); continue; }
           if (ev.kind !== 'lightning' && ev.kind !== 'rockslide' && ev.kind !== 'eruption') continue;
           state.eventPressure = Math.min(1, state.eventPressure + (ev.kind === 'eruption' ? 0.8 : 0.45));
           // The renderer owns the whole reaction — particles, camera trauma, and the
@@ -174,8 +184,14 @@ function createEngine(container, dotnetRef, opts) {
           onAction: (action, value) => {
             if (action === 'speed') { api.setSpeed(value); invoke('OnSpeed', value); return; }
             if (action === 'follow') { state.renderer.follow(state.selected); return; }
+            // The director's subject becomes the inspected creature, so the popover names it.
+            if (action === 'directorSubject') { if (value !== state.selected) { api.select(value); invoke('OnPick', value); } return; }
+            if (action === 'director') { invoke('OnDirector', !!value, state.renderer?.directorCaption ?? ''); return; }
+            if (action === 'directorCaption') { invoke('OnDirector', true, value ?? ''); return; }
+            if (action === 'pip') { invoke('OnPip', !!value); return; }
             invoke('OnAction', action, value === undefined ? null : String(value));
           },
+          directorIdleSeconds: opts.demo ? 4 : 150,
         });
         state.renderer.setPose(prefs.get('player'));
         state.poseTimer = setInterval(() => prefs.set('player', state.renderer.player), 5000);
@@ -183,6 +199,9 @@ function createEngine(container, dotnetRef, opts) {
       state.thoughts = createThoughtBridge({
         onResult: (handle, text) => state.host?.send({ type: 'thoughtResult', handle, text }),
         onState: (s) => { state.llmState = s; invoke('OnLlmState', JSON.stringify(s)); },
+        // The cloud model: the Blazor side owns the API client, so each request round-trips
+        // through .NET and resolves with the server's text (null when refused or capped).
+        cloud: dotnetRef ? (handle, system, prompt) => dotnetRef.invokeMethodAsync('OnCloudThought', handle, system, prompt) : null,
       });
       if (opts.llmEnabled) state.thoughts.start(opts.modelId ?? MODELS[0].id);
       state.host = await createSimHost({
@@ -196,7 +215,13 @@ function createEngine(container, dotnetRef, opts) {
         lowEnd: !!opts.lowEnd,
       });
       if (typeof document !== 'undefined') {
-        state.onVisibility = () => { if (document.hidden) { state.host.send({ type: 'saveNow', reason: 'hidden' }); state.host.send({ type: 'pause' }); } else state.host.send({ type: 'resume' }); };
+        state.onVisibility = () => {
+          if (document.hidden) {
+            state.host.send({ type: 'saveNow', reason: 'hidden' });
+            // Popped out, the island is still being watched: keep it running.
+            if (!state.renderer?.pipActive) state.host.send({ type: 'pause' });
+          } else state.host.send({ type: 'resume' });
+        };
         document.addEventListener('visibilitychange', state.onVisibility);
       }
     },
@@ -221,6 +246,19 @@ function createEngine(container, dotnetRef, opts) {
       else state.thoughts?.dispose();
     },
     saveNow: () => state.host?.send({ type: 'saveNow', reason: 'manual' }),
+    exportSnapshot: (slot) => state.host?.send({ type: 'exportSnapshot', slot }),
+    importSnapshot(bytes, ephemeral) {
+      const u8 = bytes instanceof Uint8Array ? bytes : Uint8Array.from(bytes ?? []);
+      // Copy into a fresh buffer: the .NET-provided array may be a view the runtime reuses.
+      const copy = u8.slice();
+      state.host?.send({ type: 'importSnapshot', bytes: copy.buffer, ephemeral: !!ephemeral }, [copy.buffer]);
+    },
+    lineage: (handle) => state.host?.send({ type: 'lineage', handle }),
+    rename: (handle, name) => state.host?.send({ type: 'rename', handle, name }),
+    watch: (handle, on) => state.host?.send({ type: 'watch', handle, on: !!on }),
+    setTint: (traitIndex) => state.renderer?.setTint(traitIndex),
+    setDirector: (on) => state.renderer?.setDirector(!!on),
+    togglePip: () => state.renderer?.togglePip(),
     debug: (op, arg) => state.host?.send({ type: 'debug', op, arg }),
     exportTelemetry: () => state.host?.send({ type: 'exportTelemetry' }),
     setSound(on) {
@@ -283,11 +321,22 @@ const PoEcosystem = {
   setSound: (on) => engine?.setSound(on),
   soundEnabled: () => (engine ? engine.soundEnabled : true),
   follow: (handle) => engine?.follow(handle),
+  lineage: (handle) => engine?.lineage(handle),
+  exportSnapshot: (slot) => engine?.exportSnapshot(slot),
+  importSnapshot: (bytes, ephemeral) => engine?.importSnapshot(bytes, ephemeral),
+  cloudModelId: () => CLOUD_MODEL_ID,
+  rename: (handle, name) => engine?.rename(handle, name),
+  watch: (handle, on) => engine?.watch(handle, on),
+  setTint: (traitIndex) => engine?.setTint(traitIndex),
+  setDirector: (on) => engine?.setDirector(on),
+  togglePip: () => engine?.togglePip(),
   toggleFly: () => engine?.state.renderer?.toggleFly(),
   requestLock: () => engine?.state.renderer?.requestLock(),
   touchMove: (x, z) => engine?.state.renderer?.touchMove(x, z),
   touchRelease: () => engine?.state.renderer?.touchRelease(),
-  models: () => MODELS.map(m => ({ ...m })),
+  // The cloud entry is listed last: it needs no download and no WebGPU, but it spends the
+  // caller's daily allowance, so the settings panel presents it as its own switch.
+  models: () => [...MODELS.map(m => ({ ...m })), { id: CLOUD_MODEL_ID, label: 'Cloud model', vramMb: 0, note: 'Runs on the server; uses your daily AI allowance.' }],
   async webGpuAvailable() { const { hasWebGpuSupport } = await import('./host/thoughtBridge.js'); return hasWebGpuSupport(); },
 };
 

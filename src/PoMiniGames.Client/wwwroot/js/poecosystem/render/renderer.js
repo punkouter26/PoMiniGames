@@ -27,9 +27,13 @@ import { pickCreature } from './picking.js';
 import { createPostProcess } from './postProcess.js';
 import { createParticles } from './particles.js';
 import { createEventFx } from './eventFx.js';
+import { createDirector } from './director.js';
+import { createPip } from './pip.js';
 import { applyCameraShake } from '../../postFx.js';
 
 const TAU = Math.PI * 2;
+// What the auto-director calls a cut to an event tile.
+const EVENT_CAPTIONS = { lightning: 'Lightning strike', rockslide: 'Rockslide', eruption: 'The volcano erupts', tech: 'The tribe builds' };
 const shortestAngle = (a, b) => { let d = (b - a) % TAU; if (d > Math.PI) d -= TAU; else if (d < -Math.PI) d += TAU; return d; };
 const smoothstep = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
@@ -44,6 +48,9 @@ const DPR_UP_SECONDS = 6;      // and a long run of good ones before climbing ba
 export function createRenderer(container, {
   cap = CREATURE_CAP, propCap = PROP_CAP, minimapCanvas = null, quality = {}, audio = null,
   onPick = () => {}, onAction = () => {}, onFps = () => {},
+  // The auto-director takes the camera after this many seconds without input (0 = never);
+  // demo mode passes a few seconds, 1-player a couple of minutes.
+  directorIdleSeconds = 0,
 } = {}) {
   const canvas = document.createElement('canvas');
   canvas.className = 'poeco-canvas';
@@ -114,11 +121,40 @@ export function createRenderer(container, {
   const sunUv = new THREE.Vector2();
   const sunFromCam = new THREE.Vector3();
 
+  // The campfire's light (behavior/tech.js FIRE): one point light parked on the hearth,
+  // bright at night and a flicker by day. Zero intensity until the tribe has a fire.
+  const campfireLight = new THREE.PointLight(0xffa040, 0, 28, 1.7);
+  campfireLight.name = 'campfire';
+  scene.add(campfireLight);
+  let campfireAt = null;
+
+  // Auto-director + pop-out window. The director drives the same player pose the
+  // controller does; any real input hands the camera back (see noteInput).
+  const director = createDirector({
+    onSubject: (handle) => onAction('directorSubject', handle),
+    onCaption: (caption) => onAction('directorCaption', caption),
+  });
+  let lastInputAt = performance.now();
+  function setDirector(on) {
+    if (director.enabled === !!on) return;
+    director.setEnabled(on);
+    if (on) followHandle = -1;
+    onAction('director', !!on);
+  }
+  function noteInput(now = performance.now()) {
+    lastInputAt = now;
+    if (director.enabled) setDirector(false);
+  }
+  const pip = createPip(canvas, { onChange: (on) => onAction('pip', on) });
+
   const input = createInput(canvas, {
-    onLook: (dx, dy) => player.look(dx, dy),
+    onLook: (dx, dy) => { if (dx || dy) noteInput(); player.look(dx, dy); },
     onAction: (action, value) => {
-      if (action === 'fly') { player.toggleFly(); return; }
-      if (action === 'inspect') { onPick(hovered ? hovered.handle : -1); return; }
+      if (action === 'fly') { noteInput(); player.toggleFly(); return; }
+      if (action === 'inspect') { noteInput(); onPick(hovered ? hovered.handle : -1); return; }
+      if (action === 'director') { setDirector(!director.enabled); return; }
+      if (action === 'pip') { pip.toggle(); return; }
+      if (action === 'follow' || action === 'speed') noteInput();
       onAction(action, value);
     },
   });
@@ -193,17 +229,20 @@ export function createRenderer(container, {
 
     // One pass over the tile states per sync, converted straight to world points. Capped
     // because a full firestorm is 400 tiles and the emitter only ever samples a handful.
+    // The campfire joins the fire list (it smokes) and parks the point light.
     const state = msg.tileState;
-    fireTiles = []; lavaTiles = [];
+    fireTiles = []; lavaTiles = []; campfireAt = null;
     if (state && terrainApi) {
       const size = terrainApi.size;
       for (let t = 0; t < state.length; t++) {
         const s = state[t];
-        if (s !== TILE_STATE.FIRE && s !== TILE_STATE.LAVA) continue;
+        if (s !== TILE_STATE.FIRE && s !== TILE_STATE.LAVA && s !== TILE_STATE.CAMPFIRE) continue;
+        const x = (t % size) + 0.5; const z = Math.floor(t / size) + 0.5;
+        const y = terrainApi.heightAt(x, z);
+        if (s === TILE_STATE.CAMPFIRE) { if (!campfireAt) { campfireAt = { x, y, z }; fireTiles.push(campfireAt); } continue; }
         const list = s === TILE_STATE.FIRE ? fireTiles : lavaTiles;
         if (list.length >= 96) continue;
-        const x = (t % size) + 0.5; const z = Math.floor(t / size) + 0.5;
-        list.push({ x, y: terrainApi.heightAt(x, z), z });
+        list.push({ x, y, z });
       }
     }
   }
@@ -283,11 +322,20 @@ export function createRenderer(container, {
       else if (fastSeconds >= DPR_UP_SECONDS && dprScale < 1) { setDprScale(dprScale + 0.08); fastSeconds = 0; }
     }
 
-    // One direction() call per frame: it allocates, and the camera, the audio listener,
-    // the picker and the shaft projection all want the same answer.
+    interpolate(now);
+
+    // The director needs this frame's creature rows, so the pose is stepped after the
+    // interpolation and the direction is read once the pose is final.
+    if (terrainApi) {
+      const intent = input.consume();
+      if (intent.forward || intent.right || intent.up || intent.jump) noteInput(now);
+      else if (directorIdleSeconds > 0 && !director.enabled && now - lastInputAt > directorIdleSeconds * 1000) setDirector(true);
+      const driven = director.enabled && curr
+        && director.update(dt, timeSec, { player, terrain: terrainApi, interp, handles: curr.views.handles, count: interpCount });
+      if (!driven) stepPlayer(player, intent, dt, terrainApi);
+    }
     const dir = player.direction();
     if (terrainApi) {
-      stepPlayer(player, input.consume(), dt, terrainApi);
       camera.position.set(player.x, player.y, player.z);
       camera.lookAt(player.x + dir.x, player.y + dir.y, player.z + dir.z);
       // The listener follows the UNSHAKEN pose: a camera shake is a lens artefact, and
@@ -295,11 +343,9 @@ export function createRenderer(container, {
       audio?.setPlayer(player, dir);
     }
 
-    interpolate(now);
-
     if (curr) {
-      // Follow: gently tether the god behind the followed creature.
-      if (followHandle >= 0) {
+      // Follow: gently tether the god behind the followed creature (the director has its own tether).
+      if (followHandle >= 0 && !director.enabled) {
         for (let k = 0; k < interpCount; k++) {
           if (curr.views.handles[k] !== followHandle) continue;
           const o = k * FRAME.CREATURE_STRIDE;
@@ -324,6 +370,11 @@ export function createRenderer(container, {
     const sky = lighting.update(stats?.dayFraction ?? 0.5, player, timeSec);
     scene.background = sky.sky;
     island?.update(timeSec, sky);
+    if (campfireAt) {
+      campfireLight.position.set(campfireAt.x, campfireAt.y + 1.1, campfireAt.z);
+      const flicker = 0.85 + 0.15 * Math.sin(timeSec * 11.3) * Math.sin(timeSec * 7.1);
+      campfireLight.intensity = (14 + (sky.night ?? 0) * 70) * flicker;
+    } else campfireLight.intensity = 0;
 
     eventFx.ambient(dt, { fireTiles, lavaTiles, player, dayFraction: stats?.dayFraction ?? 0.5 });
     particles.update(dt, {
@@ -341,7 +392,10 @@ export function createRenderer(container, {
     // offset applied to a camera nobody is repositioning would accumulate.
     if (terrainApi) applyCameraShake(camera, timeSec, 0.55);
     post.render();
-    requestAnimationFrame(frame);
+    pip.mirror();
+    // While the world is popped out, the pop-out window's frame clock drives the loop:
+    // a hidden tab's own requestAnimationFrame never fires.
+    pip.raf(frame);
   }
   requestAnimationFrame(frame);
 
@@ -356,13 +410,22 @@ export function createRenderer(container, {
     get locked() { return input.locked; },
     setTerrain, setTiles, acceptFrame,
     setStats(s) { stats = s; },
-    /** A drained sim event: routed to particles, the camera and the ear. */
+    /** A drained sim event: routed to particles, the camera, the ear and the director. */
     onEvent(ev) {
-      if (!ev || ev.tile === undefined || !terrainApi) return;
-      eventFx.event(ev, eventFx.worldOf(ev.tile, terrainApi, terrainApi.size), player, post);
+      if (!ev || ev.tile === undefined || ev.tile < 0 || !terrainApi) return;
+      const at = eventFx.worldOf(ev.tile, terrainApi, terrainApi.size);
+      eventFx.event(ev, at, player, post);
+      if (director.enabled) director.cut(at.x, at.z, EVENT_CAPTIONS[ev.kind] ?? ev.text ?? '', lastTime / 1000);
     },
     select(handle) { selectedHandle = handle ?? -1; },
-    follow(handle) { followHandle = handle ?? -1; },
+    follow(handle) { if (handle >= 0) noteInput(); followHandle = handle ?? -1; },
+    setTint: (traitIndex) => creatures.setTint(traitIndex),
+    get tint() { return creatures.tint; },
+    setDirector,
+    get director() { return director.enabled; },
+    get directorCaption() { return director.caption; },
+    togglePip: () => pip.toggle(),
+    get pipActive() { return pip.active; },
     setPose(pose) { if (terrainReady) player.setPose(pose); else pendingPose = pose; },
     touchMove: (x, z) => input.setTouchVector(x, z),
     touchRelease: () => input.releaseTouch(),
@@ -373,6 +436,8 @@ export function createRenderer(container, {
       observer.disconnect();
       window.removeEventListener('resize', resize);
       input.dispose();
+      pip.dispose();
+      scene.remove(campfireLight);
       creatures.dispose(); props.dispose(); flora?.dispose(); island?.dispose(); lighting.dispose(); minimap?.dispose();
       particles.dispose(); post.dispose();
       renderer.dispose();

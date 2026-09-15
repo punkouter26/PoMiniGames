@@ -1,5 +1,11 @@
+@using PoMiniGames.Shared.Games.PoEcosystem
 @* Tab overlay: the full population chart, the world log and settings. Releases pointer
-   lock while open (the engine does that), and Esc closes it. *@
+   lock while open (the engine does that), and Esc closes it.
+
+   Five tabs since the lineage, evolution, tribe, chronicle and cloud panels arrived: one
+   grid of ten panels did not fit a laptop screen, and the original five are what a first
+   visit wants to see. The active tab is component state — the dashboard is reopened
+   often and remembers where it was. *@
 <div class="poeco-overlay" role="dialog" aria-modal="true" aria-label="Dashboard" @onkeydown="OnKeyDown" tabindex="-1" @ref="_root">
     <div class="poeco-overlay-card">
         <header class="poeco-overlay-head">
@@ -10,135 +16,210 @@
             <button type="button" class="poeco-pill" @onclick="OnClose" aria-label="Close the dashboard">Close <kbd>Esc</kbd></button>
         </header>
 
-        <div class="poeco-overlay-grid">
-            <section class="poeco-panel poeco-panel--chart">
-                <h3>Population over time</h3>
-                <svg viewBox="0 0 320 160" preserveAspectRatio="none" class="poeco-chart" role="img" aria-label="@ChartSummary">
-                    <line x1="0" y1="159" x2="320" y2="159" class="poeco-chart-axis" />
-                    @for (var s = 0; s < EcoSpeciesInfo.Count; s++)
-                    {
-                        var pts = Series[s];
-                        if (pts.Length > 0)
+        <nav class="poeco-tabs" role="tablist" aria-label="Dashboard sections">
+            @foreach (var (id, label) in Tabs)
+            {
+                <button type="button" role="tab" class="poeco-tab @(_tab == id ? "poeco-tab--on" : "")" aria-selected="@(_tab == id ? "true" : "false")" @onclick="() => _tab = id">@label</button>
+            }
+        </nav>
+
+        @if (_tab == "island")
+        {
+            <div class="poeco-overlay-grid">
+                <section class="poeco-panel poeco-panel--chart">
+                    <h3>Population over time</h3>
+                    <svg viewBox="0 0 320 160" preserveAspectRatio="none" class="poeco-chart" role="img" aria-label="@ChartSummary">
+                        <line x1="0" y1="159" x2="320" y2="159" class="poeco-chart-axis" />
+                        @for (var s = 0; s < EcoSpeciesInfo.Count; s++)
                         {
-                            <polyline class="poeco-chart-line" style="stroke: @EcoSpeciesInfo.ColourOf(s)" points="@pts" />
+                            var pts = Series[s];
+                            if (pts.Length > 0)
+                            {
+                                <polyline class="poeco-chart-line" style="stroke: @EcoSpeciesInfo.ColourOf(s)" points="@pts" />
+                            }
+                        }
+                    </svg>
+                    <div class="poeco-tiles">
+                        @for (var s = 0; s < EcoSpeciesInfo.Count; s++)
+                        {
+                            <div class="poeco-tile" style="border-top-color: @EcoSpeciesInfo.ColourOf(s)">
+                                <span>@EcoSpeciesInfo.PluralOf(s)</span>
+                                <strong>@Count(s)</strong>
+                            </div>
+                        }
+                    </div>
+                    <p class="gps-sr-only" aria-live="polite">@ChartSummary</p>
+                </section>
+
+                <section class="poeco-panel poeco-panel--log">
+                    <h3>World log</h3>
+                    <ol class="poeco-log">
+                        @foreach (var ev in Events.AsEnumerable().Reverse().Take(60))
+                        {
+                            <li><span class="poeco-log-tick">@($"Y{Year(ev)}")</span> @ev.Text</li>
+                        }
+                    </ol>
+                </section>
+
+                <section class="poeco-panel poeco-panel--almanac">
+                    <h3>Almanac</h3>
+                    <AlmanacPanel Stats="@Stats" />
+                    <button type="button" class="poeco-btn" @onclick="OnExportTelemetry"
+                            title="Download every recorded life: lifespans, causes, movement, predation">
+                        Export telemetry (JSON)
+                    </button>
+                    <p class="poeco-note">One record per creature that ever lived — lifespan, cause of death, killer, distance travelled, offspring, drives and personality. Feed it to an AI to rebalance the island.</p>
+                </section>
+            </div>
+        }
+        else if (_tab == "life")
+        {
+            <div class="poeco-overlay-grid">
+                <section class="poeco-panel poeco-panel--thoughts">
+                    <h3>Thoughts</h3>
+                    <ThoughtsFeed Thoughts="@Thoughts" OnSelect="@OnSelectThought" />
+                </section>
+                <section class="poeco-panel">
+                    <h3>Watching</h3>
+                    <WatchPanel Watched="@(Stats?.Watched ?? [])" OnSelect="@OnSelectKin" OnUnwatch="@OnUnwatch" />
+                </section>
+                <section class="poeco-panel poeco-panel--wide">
+                    <h3>Evolution</h3>
+                    <EvolutionPanel Stats="@Stats" Tint="@Tint" OnTint="@OnTint" />
+                </section>
+            </div>
+        }
+        else if (_tab == "tribe")
+        {
+            <div class="poeco-overlay-grid">
+                <section class="poeco-panel poeco-panel--wide">
+                    <TribePanel Stats="@Stats" Chronicles="@Chronicles" Busy="@ChronicleBusy" FromYear="@ChronicleFromYear" OnWrite="@OnWriteChronicle" />
+                </section>
+            </div>
+        }
+        else if (_tab == "cloud")
+        {
+            <div class="poeco-overlay-grid">
+                <section class="poeco-panel poeco-panel--wide">
+                    <CloudPanel Stats="@Stats" Worlds="@Worlds" Gallery="@Gallery" SignedIn="@SignedIn" Busy="@CloudBusy" Message="@CloudMessage"
+                                OnRefresh="@OnCloudRefresh" OnSave="@OnCloudSave" OnLoad="@OnCloudLoad" OnDelete="@OnCloudDelete" OnShare="@OnCloudShare" OnVisit="@OnVisit" />
+                </section>
+            </div>
+        }
+        else
+        {
+            <div class="poeco-overlay-grid">
+                <section class="poeco-panel poeco-panel--settings">
+                    <h3>AI thoughts</h3>
+                    @if (!WebGpu)
+                    {
+                        <p class="poeco-note">This browser has no WebGPU, so creature thoughts come from instinct templates — or from the cloud model below. Chrome or Edge on a desktop can run a model locally.</p>
+                    }
+                    else
+                    {
+                        <label class="poeco-switch">
+                            <input type="checkbox" checked="@LlmOn" @onchange="ToggleLlm" />
+                            <span>Let creatures think (@ModelLabel)</span>
+                        </label>
+                        <label class="poeco-field">
+                            <span>Model</span>
+                            <select value="@SelectedModel" @onchange="ChangeModel">
+                                @foreach (var m in Models.Where(m => m.Id != "cloud"))
+                                {
+                                    <option value="@m.Id">@m.Label — @(m.VramMb) MB</option>
+                                }
+                            </select>
+                        </label>
+                        @if (Llm is not null && Llm.State == "loading")
+                        {
+                            <div class="poeco-progress"><span style="width: @($"{Llm.Progress * 100:0}%")"></span></div>
+                            <p class="poeco-note">@Llm.Message</p>
+                        }
+                        else if (Llm is not null && !string.IsNullOrWhiteSpace(Llm.Message))
+                        {
+                            <p class="poeco-note">@Llm.Message</p>
                         }
                     }
-                </svg>
-                <div class="poeco-tiles">
-                    @for (var s = 0; s < EcoSpeciesInfo.Count; s++)
-                    {
-                        <div class="poeco-tile" style="border-top-color: @EcoSpeciesInfo.ColourOf(s)">
-                            <span>@EcoSpeciesInfo.PluralOf(s)</span>
-                            <strong>@Count(s)</strong>
-                        </div>
-                    }
-                </div>
-                <p class="gps-sr-only" aria-live="polite">@ChartSummary</p>
-            </section>
-
-            <section class="poeco-panel poeco-panel--log">
-                <h3>World log</h3>
-                <ol class="poeco-log">
-                    @foreach (var ev in Events.AsEnumerable().Reverse().Take(60))
-                    {
-                        <li><span class="poeco-log-tick">@($"Y{Year(ev)}")</span> @ev.Text</li>
-                    }
-                </ol>
-            </section>
-
-            <section class="poeco-panel poeco-panel--almanac">
-                <h3>Almanac</h3>
-                <AlmanacPanel Stats="@Stats" />
-                <button type="button" class="poeco-btn" @onclick="OnExportTelemetry"
-                        title="Download every recorded life: lifespans, causes, movement, predation">
-                    Export telemetry (JSON)
-                </button>
-                <p class="poeco-note">One record per creature that ever lived — lifespan, cause of death, killer, distance travelled, offspring, drives and personality. Feed it to an AI to rebalance the island.</p>
-            </section>
-
-            <section class="poeco-panel poeco-panel--thoughts">
-                <h3>Thoughts</h3>
-                <ThoughtsFeed Thoughts="@Thoughts" OnSelect="@OnSelectThought" />
-            </section>
-
-            <section class="poeco-panel poeco-panel--settings">
-                <h3>AI thoughts</h3>
-                @if (!WebGpu)
-                {
-                    <p class="poeco-note">This browser has no WebGPU, so creature thoughts come from instinct templates. Chrome or Edge on a desktop can run the model.</p>
-                }
-                else
-                {
                     <label class="poeco-switch">
-                        <input type="checkbox" checked="@LlmOn" @onchange="ToggleLlm" />
-                        <span>Let creatures think (@ModelLabel)</span>
+                        <input type="checkbox" checked="@CloudThoughts" @onchange="ToggleCloud" />
+                        <span>Cloud thoughts (@CloudThoughtsLeft left this session)</span>
                     </label>
-                    <label class="poeco-field">
-                        <span>Model</span>
-                        <select value="@SelectedModel" @onchange="ChangeModel">
-                            @foreach (var m in Models)
-                            {
-                                <option value="@m.Id">@m.Label — @(m.VramMb) MB</option>
-                            }
-                        </select>
-                    </label>
-                    @if (Llm is not null && Llm.State == "loading")
-                    {
-                        <div class="poeco-progress"><span style="width: @($"{Llm.Progress * 100:0}%")"></span></div>
-                        <p class="poeco-note">@Llm.Message</p>
-                    }
-                    else if (Llm is not null && !string.IsNullOrWhiteSpace(Llm.Message))
-                    {
-                        <p class="poeco-note">@Llm.Message</p>
-                    }
+                    <p class="poeco-note">Routes a creature's thought through the server model every twenty seconds. Works without WebGPU; spends your daily AI allowance, so it is capped.</p>
                     @if (Stats?.Llm is { } counters)
                     {
                         <p class="poeco-note">@counters.Applied thoughts applied, @counters.Rejected rejected.</p>
                     }
-                }
 
-                <h3>World</h3>
-                <label class="poeco-field">
-                    <span>Seed</span>
-                    <input type="text" value="@Seed" @oninput="e => SeedChanged.InvokeAsync(e.Value?.ToString() ?? string.Empty)" />
-                </label>
-                <button type="button" class="poeco-btn poeco-btn--primary" @onclick="() => OnNewWorld.InvokeAsync(Seed)">New world</button>
+                    <h3>World</h3>
+                    <label class="poeco-field">
+                        <span>Seed</span>
+                        <input type="text" value="@Seed" @oninput="e => SeedChanged.InvokeAsync(e.Value?.ToString() ?? string.Empty)" />
+                    </label>
+                    <button type="button" class="poeco-btn poeco-btn--primary" @onclick="() => OnNewWorld.InvokeAsync(Seed)">New world</button>
 
-                <h3>Speed</h3>
-                <div class="poeco-speed">
-                    @foreach (var s in new[] { 0, 1, 2, 4 })
-                    {
-                        <button type="button" class="poeco-pill @(Stats?.Speed == s ? "poeco-pill--on" : "")" @onclick="() => OnSpeed.InvokeAsync(s)">@(s == 0 ? "⏸" : $"{s}×")</button>
-                    }
-                </div>
+                    <h3>Speed</h3>
+                    <div class="poeco-speed">
+                        @foreach (var s in new[] { 0, 1, 2, 4 })
+                        {
+                            <button type="button" class="poeco-pill @(Stats?.Speed == s ? "poeco-pill--on" : "")" @onclick="() => OnSpeed.InvokeAsync(s)">@(s == 0 ? "⏸" : $"{s}×")</button>
+                        }
+                    </div>
 
-                <h3>Keys</h3>
-                <p class="poeco-note"><kbd>WASD</kbd> move · <kbd>Shift</kbd> run · <kbd>Space</kbd>/<kbd>Ctrl</kbd> rise/sink · <kbd>F</kbd> float/walk · <kbd>E</kbd> inspect · <kbd>T</kbd> follow · <kbd>Tab</kbd> dashboard · <kbd>0-3</kbd> speed</p>
-            </section>
-        </div>
+                    <h3>Keys</h3>
+                    <p class="poeco-note"><kbd>WASD</kbd> move · <kbd>Shift</kbd> run · <kbd>Space</kbd>/<kbd>Ctrl</kbd> rise/sink · <kbd>F</kbd> float/walk · <kbd>E</kbd> inspect · <kbd>T</kbd> follow · <kbd>C</kbd> cinematic · <kbd>P</kbd> pop out · <kbd>Tab</kbd> dashboard · <kbd>0-3</kbd> speed</p>
+                </section>
+            </div>
+        }
     </div>
 </div>
 
 @code {
+    private static readonly (string Id, string Label)[] Tabs =
+    [
+        ("island", "Island"), ("life", "Life"), ("tribe", "Tribe & chronicle"), ("cloud", "Cloud"), ("settings", "Settings"),
+    ];
+
     private ElementReference _root;
+    private string _tab = "island";
 
     [Parameter] public EcoStats? Stats { get; set; }
     [Parameter] public IReadOnlyList<EcoEvent> Events { get; set; } = [];
     [Parameter] public IReadOnlyList<EcoThought> Thoughts { get; set; } = [];
+    [Parameter] public IReadOnlyList<EcoChronicle> Chronicles { get; set; } = [];
+    [Parameter] public EcoWorldMeta[] Worlds { get; set; } = [];
+    [Parameter] public EcoSharedWorld[] Gallery { get; set; } = [];
     [Parameter] public EcoLlmState? Llm { get; set; }
     [Parameter] public IReadOnlyList<EcoModel> Models { get; set; } = [];
     [Parameter] public bool WebGpu { get; set; }
+    [Parameter] public bool CloudThoughts { get; set; }
+    [Parameter] public int CloudThoughtsLeft { get; set; }
+    [Parameter] public bool SignedIn { get; set; }
+    [Parameter] public bool CloudBusy { get; set; }
+    [Parameter] public string? CloudMessage { get; set; }
+    [Parameter] public bool ChronicleBusy { get; set; }
+    [Parameter] public int ChronicleFromYear { get; set; }
+    [Parameter] public int Tint { get; set; } = -1;
     [Parameter] public string Seed { get; set; } = "";
     [Parameter] public EventCallback<string> SeedChanged { get; set; }
     [Parameter] public EventCallback OnClose { get; set; }
     [Parameter] public EventCallback OnExportTelemetry { get; set; }
     [Parameter] public EventCallback<int> OnSelectThought { get; set; }
+    [Parameter] public EventCallback<int> OnSelectKin { get; set; }
+    [Parameter] public EventCallback<int> OnUnwatch { get; set; }
+    [Parameter] public EventCallback<int> OnTint { get; set; }
     [Parameter] public EventCallback<int> OnSpeed { get; set; }
     [Parameter] public EventCallback<(bool Enabled, string? ModelId)> OnLlmToggle { get; set; }
     [Parameter] public EventCallback<string?> OnNewWorld { get; set; }
+    [Parameter] public EventCallback OnWriteChronicle { get; set; }
+    [Parameter] public EventCallback OnCloudRefresh { get; set; }
+    [Parameter] public EventCallback<string> OnCloudSave { get; set; }
+    [Parameter] public EventCallback<string> OnCloudLoad { get; set; }
+    [Parameter] public EventCallback<string> OnCloudDelete { get; set; }
+    [Parameter] public EventCallback<(string Slot, bool Public)> OnCloudShare { get; set; }
+    [Parameter] public EventCallback<string> OnVisit { get; set; }
 
-    private bool LlmOn => Llm is not null && Llm.State is "loading" or "ready";
-    private string SelectedModel => Llm?.ModelId ?? Models.FirstOrDefault()?.Id ?? "";
+    private bool LlmOn => Llm is not null && Llm.State is "loading" or "ready" && Llm.ModelId != "cloud";
+    private string SelectedModel => Llm?.ModelId is { } id && id != "cloud" ? id : Models.FirstOrDefault()?.Id ?? "";
     private string ModelLabel => Models.FirstOrDefault(m => m.Id == SelectedModel)?.Label ?? "in-browser model";
 
     private int Count(int species) => Stats?.Counts is { Length: EcoSpeciesInfo.Count } c ? c[species] : 0;
@@ -149,9 +230,10 @@
 
     // The log carries the tick; the year it fell in is derived from the sim's own clock
     // constants rather than a hardcoded ticks-per-year in the markup.
-    private int Year(EcoEvent ev) => Stats is null || Stats.Tick <= 0 ? 0 : ev.Tick * Stats.Year / Math.Max(1, Stats.Tick);
+    private int Year(EcoEvent ev) => Stats is null || Stats.Tick <= 0 ? 0 : (int)((long)ev.Tick * Stats.Year / Math.Max(1, Stats.Tick));
 
     private Task ToggleLlm(ChangeEventArgs e) => OnLlmToggle.InvokeAsync((e.Value is true, SelectedModel));
+    private Task ToggleCloud(ChangeEventArgs e) => OnLlmToggle.InvokeAsync((e.Value is true, "cloud"));
     private Task ChangeModel(ChangeEventArgs e) => OnLlmToggle.InvokeAsync((true, e.Value?.ToString()));
 
     private Task OnKeyDown(KeyboardEventArgs e) => e.Key == "Escape" ? OnClose.InvokeAsync() : Task.CompletedTask;

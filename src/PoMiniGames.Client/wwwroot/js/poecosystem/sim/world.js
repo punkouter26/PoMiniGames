@@ -4,7 +4,7 @@
 // Determinism contract (SPEC §13 criterion 4): every rule below reads only sim state
 // and the seeded streams. `physics` is write-only — the world tells it about deaths,
 // felled trees and rocks and reads back prop poses for the frame, never for a rule.
-import { BEHAVIOR, CREATURE_CAP, EVENTS, FLORA, POPULATION, THOUGHTS, TICK_SECONDS, TRAITS, WORLD } from './core/config.js';
+import { BEHAVIOR, CREATURE_CAP, EVENTS, FLORA, POPULATION, TECH, THOUGHTS, TICK_SECONDS, TRAITS, WORLD } from './core/config.js';
 import { createClock } from './core/clock.js';
 import { NONE, createEntities } from './core/entities.js';
 import { createBus, createEventLog } from './core/events.js';
@@ -12,7 +12,7 @@ import { createStreams } from './core/prng.js';
 import { createSpatialHash } from './core/spatial.js';
 import { generateIsland } from './terrain/island.js';
 import { bfsDistanceField, descendStep, shoreTiles } from './terrain/pathing.js';
-import { TILE, TILE_STATE, isFlammable, isWalkable, tileIndex, tileX, tileZ } from './terrain/tiles.js';
+import { TILE, TILE_STATE, isFlammable, isSolidState, isWalkable, tileIndex, tileX, tileZ } from './terrain/tiles.js';
 import { createGrass, grazeAt, stepGrass } from './flora/grass.js';
 import { createBushes, isRipe, stepBushes, stripBush } from './flora/bushes.js';
 import { TREE_STATE, burnTree, chopTree, createTrees, stepTrees } from './flora/trees.js';
@@ -22,11 +22,13 @@ import { DEATH_CAUSE, LIFE_STAGE, checkVitals, killCreature, oldAgeDeathChance, 
 import { TRAIT, activeNudge, effectiveTrait, randomTraits } from './creatures/traits.js';
 import { canMate, chooseSex, inheritTraits, litterSize } from './creatures/genetics.js';
 import { createNamer } from './creatures/names.js';
+import { createLineage } from './creatures/lineage.js';
 import { MEMORY_KIND, forget, recall, remember } from './behavior/memory.js';
 import { fleeFrom, moveCreature, seekTo, stop, wander } from './behavior/steering.js';
 import { GOAL, GOAL_NAMES, chooseGoal } from './behavior/utility.js';
 import { herdCohesion, isAlerted, isOrphan, packLeader, raiseAlarm, scatterDirection, shareKill } from './behavior/social.js';
 import { addHut, buildHut, chooseHutSite, createSettlement, giveLogs, isNight, nearestHut, needsHut } from './behavior/humans.js';
+import { TECH_NAMES, advanceTech, campfireDistance, hasTower, maintainWorks, tribeName } from './behavior/tech.js';
 import { EVENT_KIND, createEventScheduler } from './events/scheduler.js';
 import { pickStrikeTile, strikeLightning } from './events/lightning.js';
 import { stepCorridors, triggerRockslide } from './events/rockslide.js';
@@ -70,7 +72,9 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
   // (or later a boulder / lava) on a shore tile never becomes a route creatures can't
   // take; it is rebuilt whenever such a tile changes (rare: huts, rockslides, eruptions).
   const shore = shoreTiles(terrain);
-  const passableTile = (i) => isWalkable(terrain.type[i]) && tileState[i] !== TILE_STATE.HUT && tileState[i] !== TILE_STATE.BOULDER && tileState[i] !== TILE_STATE.LAVA;
+  // A fence counts as solid here too: the field is species-agnostic, and the palisade has
+  // gates, so the village stays connected to water for its builders as well.
+  const passableTile = (i) => isWalkable(terrain.type[i]) && !isSolidState(tileState[i]) && tileState[i] !== TILE_STATE.FENCE;
   let shoreField = bfsDistanceField(terrain, shore, passableTile);
   const rebuildShoreField = () => { shoreField = bfsDistanceField(terrain, shore, passableTile); };
   const phys = physics ?? nullPhysics();
@@ -121,6 +125,12 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
   // Lifetime animal telemetry: per-creature death records + the predation matrix. The
   // snapshot carries it, so a resumed world keeps its whole history (telemetry/ledger.js).
   const ledger = createLedger();
+  // Family trees (creatures/lineage.js), the player's watch-list, and the per-species trait
+  // means over time (the evolution chart). All three are bookkeeping the rules never read.
+  const lineage = createLineage({ cap: WORLD.lineageMax });
+  const watched = new Set();
+  const traitHistory = [];
+  const tribe = tribeName(seed);
 
   const tileOf = (i) => tileIndex(e.x[i], e.z[i], size);
   const centre = (t) => [tileX(t, size) + 0.5, tileZ(t, size) + 0.5];
@@ -147,8 +157,24 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
     if (speciesId === SPECIES_ID.HUMAN) { const h = nearestHut(settlement, x, z); e.homeTile[i] = h ? h.tile : NONE; }
     counts[speciesId]++;
     dirty[i] = 1;
+    lineage.born({ handle: e.handle(i), name: e.names[i], species: speciesId, sex: e.sex[i], mother, father, tick: clock.tick });
     return i;
   }
+
+  /** Per-species mean of every base trait, -1 for an extinct species (the chart skips it). */
+  function sampleTraits() {
+    const sum = new Float64Array(4 * TRAITS.length); const n = [0, 0, 0, 0];
+    e.forEachAlive((i) => {
+      const s = e.species[i]; n[s]++;
+      for (let k = 0; k < TRAITS.length; k++) sum[s * TRAITS.length + k] += e.traits[i * TRAITS.length + k];
+    });
+    const row = new Float32Array(4 * TRAITS.length);
+    for (let s = 0; s < 4; s++) for (let k = 0; k < TRAITS.length; k++) row[s * TRAITS.length + k] = n[s] ? sum[s * TRAITS.length + k] / n[s] : -1;
+    traitHistory.push(row);
+    if (traitHistory.length > WORLD.traitHistoryMax) traitHistory.shift();
+  }
+
+  const campfireXZ = () => { const t = settlement.campfireTile; return t === NONE ? null : centre(t); };
 
   /** Set a flammable tile burning (lightning, later lava and spread). */
   function ignite(tile, force = false) {
@@ -203,6 +229,7 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
       traits: Array.from(e.traits.subarray(i * TRAITS.length, (i + 1) * TRAITS.length)),
     });
     if (ki !== NONE) ledger.kill(e.species[ki], sp.id);
+    lineage.died(e.handle(i), clock.tick, cause);
     carcasses.push({ id: nextCarcassId++, x: e.x[i], z: e.z[i], species: sp.id, food: sp.foodValue * WORLD.carcassFoodFraction, expires: clock.tick + Math.round(WORLD.carcassSeconds / TICK_SECONDS) });
     phys.onDeath({ x: e.x[i], y: e.y[i], z: e.z[i], yaw: e.yaw[i], species: sp.id, scale: e.scale[i], handle: e.handle(i) }, cause, streams.cosmetic);
     bus.emit('death', { index: i, handle: e.handle(i), species: sp.id, cause });
@@ -259,6 +286,7 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
     place(SPECIES_ID.HUMAN, POPULATION.humans, village.length ? village : grassTiles);
     recount();
     popHistory.push(counts.slice());
+    sampleTraits();
   }
 
   // ── perception ───────────────────────────────────────────────────────
@@ -283,7 +311,9 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
     const juvenile = e.lifeStage[i] === LIFE_STAGE.JUVENILE;
     const mother = juvenile ? e.resolve(e.mother[i]) : NONE;
     const father = juvenile ? e.resolve(e.father[i]) : NONE;
-    spatial.forEachInRadius(x, z, sp.perception, (j, d2) => {
+    // The watchtower (behavior/tech.js) lets the tribe see further while it stands.
+    const perception = sp.builds && hasTower(settlement) ? sp.perception * TECH.towerPerceptionMultiplier : sp.perception;
+    spatial.forEachInRadius(x, z, perception, (j, d2) => {
       if (j === i) return;
       const d = Math.sqrt(d2);
       const sj = e.species[j];
@@ -296,6 +326,12 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
     // Carnivores remember where they last saw prey, so a hungry wolf with nothing in
     // sight roams back toward the herds instead of random-walking the beach.
     if (ctx.preyIdx !== NONE) remember(e, i, MEMORY_KIND.FOOD, tileOf(ctx.preyIdx), tick);
+    // A lit campfire scares wolves off the village (behavior/tech.js FIRE). Only wolves:
+    // the herds are not afraid of a hearth, and the humans built it.
+    if (sp.id === SPECIES_ID.WOLF) {
+      const cd = campfireDistance(world, x, z);
+      if (cd <= TECH.campfireScareRadius && cd < ctx.threatDist) { const [cx, cz] = campfireXZ(); ctx.threatDist = Math.max(1, cd); ctx.threatX = cx; ctx.threatZ = cz; }
+    }
     // Alerted by a herd-mate but unable to see the predator: believe the alarm. This is a
     // perception rule, so it belongs here — senses() feeds the LLM prompt from the same
     // ctx, and would otherwise tell the model 'threat none' while the creature flees.
@@ -464,7 +500,8 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
         if (prey === NONE) { dirty[i] = 1; stop(e, i); return; }
         e.target[i] = e.handle(prey);
         const d = dist(i, e.x[prey], e.z[prey]);
-        if (d <= sp.radius + SPECIES[e.species[prey]].radius + WORLD.reachPadding + sp.huntReach) {
+        const reach = sp.huntReach + (sp.builds && hasTower(settlement) ? TECH.towerHuntReachBonus : 0);
+        if (d <= sp.radius + SPECIES[e.species[prey]].radius + WORLD.reachPadding + reach) {
           const food = SPECIES[e.species[prey]].foodValue;
           const preyName = nameOf(prey);
           kill(prey, DEATH_CAUSE.PREDATION, ` by ${nameOf(i)}`, i);
@@ -571,7 +608,7 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
       const traits = inheritTraits(e, mother, father, streams.genetics);
       const i = spawn(sp.id, x, z, { traits, mother: motherHandle, father: fatherHandle });
       if (i < 0) break;
-      log.push({ tick: clock.tick, kind: 'birth', species: sp.id, creature: e.handle(i), text: `${nameOf(i)} (${sp.name.toLowerCase()}) born to ${nameOf(mother)}${fatherName ? ' + ' + fatherName : ''}` });
+      log.push({ tick: clock.tick, kind: 'birth', species: sp.id, creature: e.handle(i), mother: motherHandle, father: fatherHandle, text: `${nameOf(i)} (${sp.name.toLowerCase()}) born to ${nameOf(mother)}${fatherName ? ' + ' + fatherName : ''}` });
       bus.emit('birth', { index: i, mother });
       almanac.born[sp.id]++;
       e.offspring[mother]++;
@@ -585,9 +622,10 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
     clock.step();
     const dt = TICK_SECONDS; const tick = clock.tick;
     stepGrass(grass, terrain, tileState, dt);
-    stepBushes(bushes, dt);
+    stepBushes(bushes, dt, TECH.fieldRipenMultiplier);
     stepTrees(trees, tileState, dt);
     spatial.rebuild(e);
+    const hearth = settlement.campfireTile !== NONE && isNight(clock.dayFraction());
 
     for (let i = 0; i < e.high; i++) {
       if (!e.alive[i]) continue;
@@ -597,6 +635,8 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
       updateLifeStage(e, i, sp);
       if (e.age[i] > almanac.oldestAge) { almanac.oldestAge = e.age[i]; almanac.oldestName = nameOf(i); almanac.oldestSpecies = sp.id; }
       if (tileState[tileOf(i)] === TILE_STATE.FIRE || tileState[tileOf(i)] === TILE_STATE.LAVA) e.health[i] -= 0.5 * dt;
+      // Warmth: a villager by the fire at night heals (behavior/tech.js FIRE).
+      else if (hearth && sp.builds && campfireDistance(world, e.x[i], e.z[i]) <= TECH.campfireWarmRadius) e.health[i] = Math.min(1, e.health[i] + TECH.campfireRegenPerSecond * dt);
       const vital = checkVitals(e, i);
       if (vital) { kill(i, tileState[tileOf(i)] === TILE_STATE.LAVA ? DEATH_CAUSE.ERUPTION : tileState[tileOf(i)] === TILE_STATE.FIRE ? DEATH_CAUSE.FIRE : vital); continue; }
       const oldAge = oldAgeDeathChance(e, i, sp, dt);
@@ -653,6 +693,19 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
       popHistory.push(counts.slice());
       if (popHistory.length > WORLD.popHistoryMax) popHistory.shift();
     }
+    if (tick % WORLD.traitSampleTicks === 0) sampleTraits();
+
+    // The tribe's ladder, once a second: climb a tier when its conditions hold, and rebuild
+    // anything the island has since buried.
+    if (tick % 20 === 0) {
+      const reached = advanceTech(world, { hutsBuilt: almanac.hutsBuilt, humans: counts[SPECIES_ID.HUMAN], year: clock.year() }, tribe);
+      if (reached) {
+        log.push({ tick, kind: 'tech', level: reached.level, tile: reached.tile, text: reached.text });
+        bus.emit('tech', reached);
+        if (reached.solidChanged) rebuildShoreField();
+      }
+      if (maintainWorks(world)) rebuildShoreField();
+    }
   }
 
   // ── reads ────────────────────────────────────────────────────────────
@@ -674,7 +727,53 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
         oldestName: almanac.oldestName, oldestSpecies: almanac.oldestSpecies, oldestAge: almanac.oldestAge,
       },
       telemetryCount: ledger.count,
+      traitHistory,
+      tech: { level: settlement.tech, name: TECH_NAMES[settlement.tech] ?? 'Camp', tribe, campfire: settlement.campfireTile !== NONE, tower: settlement.towerTile !== NONE, fields: settlement.fieldTiles.length },
+      watched: watchedList(),
+      lineageCount: lineage.count,
     };
+  }
+
+  /** The watch-list as the HUD shows it: living entries first, then the fallen. */
+  function watchedList() {
+    const out = [];
+    for (const h of watched) {
+      const i = e.resolve(h);
+      if (i !== NONE) { out.push({ handle: h, name: nameOf(i), species: e.species[i], alive: true, ageYears: e.age[i], cause: '' }); continue; }
+      const r = lineage.get(h);
+      out.push({ handle: h, name: r?.name ?? 'Unknown', species: r?.species ?? 0, alive: false, ageYears: r ? (r.died - r.born) * TICK_SECONDS / 30 : 0, cause: r?.cause ?? '' });
+    }
+    out.sort((a, b) => (a.alive === b.alive ? 0 : a.alive ? -1 : 1));
+    return out;
+  }
+
+  /** A family tree for the inspector, or null for a handle nothing remembers. */
+  function lineageOf(handle) {
+    const t = lineage.tree(handle);
+    if (!t) return null;
+    const pick = (r) => (r ? { handle: r.h, name: r.name, species: r.species, sex: r.sex, alive: e.resolve(r.h) !== NONE, cause: r.cause, bornTick: r.born, diedTick: r.died } : null);
+    return {
+      self: pick(t.self), mother: pick(t.mother), father: pick(t.father),
+      grandparents: t.grandparents.map(pick), children: t.children.map(pick),
+      siblings: t.siblings, descendants: t.descendants, generation: t.generation,
+    };
+  }
+
+  /** Player-given name: clipped, printable, and mirrored into the lineage record. */
+  function rename(handle, name) {
+    const i = e.resolve(handle);
+    if (i === NONE) return false;
+    const clean = String(name ?? '').replace(/[^\p{L}\p{N} '\-]/gu, '').trim().slice(0, WORLD.nameMaxChars);
+    if (!clean) return false;
+    e.names[i] = clean;
+    lineage.rename(handle, clean);
+    log.push({ tick: clock.tick, kind: 'rename', creature: handle, species: e.species[i], text: `${clean} was given a name` });
+    return true;
+  }
+
+  function setWatched(handle, on) {
+    if (on) { if (e.resolve(handle) === NONE && !lineage.get(handle)) return false; watched.add(handle); } else watched.delete(handle);
+    return true;
   }
 
   function detail(handle) {
@@ -688,9 +787,13 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
     for (let k = 0; k < TRAITS.length; k++) { traits.push(effectiveTrait(e, i, k, tick)); baseTraits.push(e.traits[i * TRAITS.length + k]); }
     const nudgeTrait = e.nudgeTrait[i];
     const nudge = nudgeTrait >= 0 && activeNudge(e, i, nudgeTrait, tick) !== 0 ? { trait: TRAITS[nudgeTrait], delta: activeNudge(e, i, nudgeTrait, tick) } : null;
-    const parentName = (h) => { const p = e.resolve(h); return p === NONE ? '' : nameOf(p); };
+    // Parents are looked up through the lineage first so a dead parent keeps its name in
+    // the inspector instead of vanishing the moment it dies.
+    const parentName = (h) => { const p = e.resolve(h); if (p !== NONE) return nameOf(p); return lineage.get(h)?.name ?? ''; };
+    const family = lineage.tree(handle);
     return {
       handle, name: nameOf(i), species: sp.id, speciesName: sp.name, sex: e.sex[i],
+      watched: watched.has(handle), children: family?.children.length ?? 0, descendants: family?.descendants ?? 0, generation: family?.generation ?? 0,
       ageYears: e.age[i], lifeStage: e.lifeStage[i], hunger: e.hunger[i], thirst: e.thirst[i], health: e.health[i],
       traits, baseTraits, nudge, goal: GOAL_NAMES[e.goal[i]] ?? 'Idle', goalSince: e.goalSince[i],
       lastThought: e.lastThought[i], lastThoughtSource: e.lastThoughtSource[i],
@@ -744,8 +847,13 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
       popHistory: popHistory.map(r => r.slice()),
       tileState: tileState.slice(), fear: fear.slice(),
       grass: { biomass: grass.biomass.slice(), cursor: grass.cursor },
-      bushes: bushes.ripeness.slice(), trees: { state: trees.state.slice(), regrow: trees.regrow.slice() },
-      settlement: { huts: settlement.huts.map(h => ({ ...h })), carried: settlement.carried.slice() },
+      bushes: { ripeness: bushes.ripeness.slice(), count: bushes.count, tile: bushes.tile.slice(), fast: bushes.fast.slice() },
+      trees: { state: trees.state.slice(), regrow: trees.regrow.slice() },
+      settlement: {
+        huts: settlement.huts.map(h => ({ ...h })), carried: settlement.carried.slice(),
+        tech: settlement.tech, campfireTile: settlement.campfireTile, towerTile: settlement.towerTile, fieldTiles: settlement.fieldTiles.slice(),
+      },
+      lineage: lineage.getState(), watched: [...watched], traitHistory: traitHistory.map(r => r.slice()),
       entities: { high: e.high, count: e.count, free: e.getFreeList(), cols, names: e.names.slice(), lastThought: e.lastThought.slice() },
       plans: plans.slice(0, e.high).map(p => ({ ...p })), dirty: dirty.slice(),
       carcasses: carcasses.map(c => ({ ...c })), corridors: corridors.map(r => ({ ...r, corridor: r.corridor.slice() })),
@@ -777,9 +885,23 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
     popHistory.length = 0; for (const r of s.popHistory) popHistory.push(r.slice());
     tileState.set(s.tileState); fear.set(s.fear);
     grass.biomass.set(s.grass.biomass); grass.cursor = s.grass.cursor | 0;
-    bushes.ripeness.set(s.bushes); trees.state.set(s.trees.state); trees.regrow.set(s.trees.regrow);
+    // Bushes were a bare ripeness array before farming could plant new ones; both forms load.
+    if (s.bushes && !ArrayBuffer.isView(s.bushes)) {
+      bushes.ripeness.set(s.bushes.ripeness);
+      bushes.byTile.fill(-1);
+      bushes.count = s.bushes.count | 0; bushes.tile.set(s.bushes.tile);
+      for (let k = 0; k < bushes.count; k++) bushes.byTile[bushes.tile[k]] = k;
+      if (s.bushes.fast) bushes.fast.set(s.bushes.fast); else bushes.fast.fill(0);
+    } else { bushes.ripeness.set(s.bushes); bushes.fast.fill(0); }
+    trees.state.set(s.trees.state); trees.regrow.set(s.trees.regrow);
     settlement.huts.length = 0; for (const h of s.settlement.huts) settlement.huts.push({ ...h });
     settlement.carried.set(s.settlement.carried);
+    settlement.tech = s.settlement.tech | 0;
+    settlement.campfireTile = s.settlement.campfireTile ?? NONE; settlement.towerTile = s.settlement.towerTile ?? NONE;
+    settlement.fieldTiles = (s.settlement.fieldTiles ?? []).slice();
+    lineage.setState(s.lineage);
+    watched.clear(); for (const h of s.watched ?? []) watched.add(h);
+    traitHistory.length = 0; for (const r of s.traitHistory ?? []) traitHistory.push(Float32Array.from(r));
     for (const c of ENTITY_COLS) e[c].set(s.entities.cols[c]);
     e.high = s.entities.high; e.count = s.entities.count; e.setFreeList(s.entities.free);
     for (let i = 0; i < e.cap; i++) { e.names[i] = s.entities.names[i] ?? ''; e.lastThought[i] = s.entities.lastThought[i] ?? ''; }
@@ -794,13 +916,17 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
     recount();
     rebuildShoreField();
     spatial.rebuild(e);
+    // A world saved before lineages existed: seed records for the living so trees start
+    // from here rather than from nothing.
+    if (lineage.count === 0) e.forEachAlive((i) => lineage.born({ handle: e.handle(i), name: e.names[i], species: e.species[i], sex: e.sex[i], mother: e.mother[i], father: e.father[i], tick: e.birthTick[i] }));
+    if (traitHistory.length === 0) sampleTraits();
   }
 
   const world = {
     seed, terrain, tileState, fear, grass, bushes, trees, settlement, entities: e, clock, log, bus, spatial, namer, streams,
     get shoreField() { return shoreField; }, carcasses, physics: phys, popHistory,
     scheduler, corridors, boulders, fires, burnt, ignite, rebuildShoreField, lava: null,
-    thoughtFeed, telemetry: ledger,
+    thoughtFeed, telemetry: ledger, lineage, tribe,
     erupt: () => erupt(world),
     senses: (i) => ({ ...perceive(i) }),
     thoughts: {
@@ -833,6 +959,7 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
       scheduler: thoughtScheduler,
     },
     step, stats, detail, debug, applyCommand, kill, spawn, getState, setState,
+    lineageOf, rename, setWatched,
   };
   return world;
 }

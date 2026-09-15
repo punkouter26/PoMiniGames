@@ -1,0 +1,30 @@
+@* The watch-list (feature: bookmarks). Living entries first; the fallen stay until dismissed,
+   with what got them. Clicking a living entry inspects it. *@
+<div class="poeco-watch">
+    @if (Watched.Count == 0)
+    {
+        <p class="poeco-note">Inspect a creature and press <strong>☆ Watch</strong> to get a toast when it dies or has young.</p>
+    }
+    else
+    {
+        <ul class="poeco-watch-list">
+            @foreach (var w in Watched)
+            {
+                <li class="@(w.Alive ? "" : "poeco-watch--dead")">
+                    <button type="button" class="poeco-thought-item" disabled="@(!w.Alive)" title="@(w.Alive ? $"Inspect {w.Name}" : "Gone")" @onclick="() => OnSelect.InvokeAsync(w.Handle)">
+                        <i class="poeco-species-chip" style="background: @EcoSpeciesInfo.ColourOf(w.Species)" aria-hidden="true"></i>
+                        <span class="poeco-thought-name">@w.Name</span>
+                        <span class="poeco-thought-text">@(w.Alive ? $"{w.AgeYears:0.0} y" : $"† {w.Cause.Replace('_', ' ')} at {w.AgeYears:0.0} y")</span>
+                    </button>
+                    <button type="button" class="poeco-icon-btn" aria-label="Stop watching @w.Name" title="Stop watching" @onclick="() => OnUnwatch.InvokeAsync(w.Handle)">✕</button>
+                </li>
+            }
+        </ul>
+    }
+</div>
+
+@code {
+    [Parameter] public IReadOnlyList<EcoWatched> Watched { get; set; } = [];
+    [Parameter] public EventCallback<int> OnSelect { get; set; }
+    [Parameter] public EventCallback<int> OnUnwatch { get; set; }
+}

@@ -6,7 +6,9 @@ import { SPECIES } from '../creatures/species.js';
 import { TILE, TILE_STATE, isWater, tileIndex, tileX, tileZ } from '../terrain/tiles.js';
 
 export function createSettlement(cap) {
-  return { huts: [], carried: new Uint8Array(cap) };
+  // tech / campfireTile / towerTile / fieldTiles are the tribe's works (tech.js); they are
+  // NONE / empty until the matching tier unlocks and snapshot as part of the settlement.
+  return { huts: [], carried: new Uint8Array(cap), tech: 0, campfireTile: NONE, towerTile: NONE, fieldTiles: [] };
 }
 
 export function addHut(settlement, terrain, tileState, tile) {

@@ -5,10 +5,12 @@ import { DEFAULT_TRIBES, TECH_TIER, TRIBE_DIPLOMACY } from './contracts.js';
 import { TRIBES } from '../core/config.js';
 import { TILE, isWater, tileIndex, tileX, tileZ } from '../terrain/tiles.js';
 import { createTerritoryManager } from './territory.js';
+import { createTechLadder } from './techLadder.js';
 
 export function createTribeStore(terrain, streams) {
   const { size, type } = terrain;
   const territory = createTerritoryManager(size);
+  const techLadder = createTechLadder();
 
   // Find candidate center settlement tiles across the island with separation
   const grassTiles = [];
@@ -92,6 +94,7 @@ export function createTribeStore(terrain, streams) {
   return {
     tribes: placedTribes,
     territory,
+    techLadder,
 
     getTribe(id) {
       return placedTribes.find(t => t.id === id) || null;
@@ -99,6 +102,15 @@ export function createTribeStore(terrain, streams) {
 
     getTribeAt(x, z) {
       return territory.getDominantTribe(x, z, placedTribes);
+    },
+
+    stepTech(log = null) {
+      for (const tribe of placedTribes) {
+        const event = techLadder.step(tribe, 1);
+        if (event && log) {
+          log.push(`Year ${event.tribeName} advanced to ${event.techName}`);
+        }
+      }
     },
 
     addResource(tribeId, resourceKind, amount) {

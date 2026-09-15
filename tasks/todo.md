@@ -28,12 +28,12 @@ Each task is a vertical slice touching &le; 5 files. All tasks follow strict TDD
 
 ---
 
-- [ ] **Task 3: 4-Tier Tech Ladder Progression**
+- [x] **Task 3: 4-Tier Tech Ladder Progression**
   - **Description**: Implement tech research points accumulation driven by tribe elders and population density, unlocking 4 progressive technology eras.
   - **File Manifest** (&le; 5 files):
     1. `src/PoMiniGames.Client/wwwroot/js/poecosystem/sim/tribe/techLadder.js`
     2. `src/PoMiniGames.Client/wwwroot/js/poecosystem/sim/tribe/tribeStore.js`
-    3. `src/PoMiniGames.Client/wwwroot/js/poecosystem/sim/behavior/humans.js`
+    3. `src/PoMiniGames.Client/wwwroot/js/poecosystem/sim/world.js`
   - **Acceptance Criteria**: Research points accumulate monotonically; tier prerequisites are strictly enforced; toolcraft unlocks accelerated gathering multipliers.
   - **Verification**: `dotnet build PoMiniGames.slnx`
 

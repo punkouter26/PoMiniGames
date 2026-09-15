@@ -700,6 +700,7 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
     // The tribe's ladder, once a second: climb a tier when its conditions hold, and rebuild
     // anything the island has since buried.
     if (tick % 20 === 0) {
+      tribeStore.stepTech(log);
       const reached = advanceTech(world, { hutsBuilt: almanac.hutsBuilt, humans: counts[SPECIES_ID.HUMAN], year: clock.year() }, tribe);
       if (reached) {
         log.push({ tick, kind: 'tech', level: reached.level, tile: reached.tile, text: reached.text });
@@ -731,6 +732,7 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
       telemetryCount: ledger.count,
       traitHistory,
       tech: { level: settlement.tech, name: TECH_NAMES[settlement.tech] ?? 'Camp', tribe, campfire: settlement.campfireTile !== NONE, tower: settlement.towerTile !== NONE, fields: settlement.fieldTiles.length },
+      tribes: tribeStore.toTelemetry(),
       watched: watchedList(),
       lineageCount: lineage.count,
     };

@@ -64,13 +64,13 @@ public sealed class PoSportsRaceService : IAsyncDisposable
         // Humans take the first lanes in join order; AI family members fill the rest
         // of the 4-lane track with characters nobody picked.
         var setups = new List<PoSportsSim.LaneSetup>();
-        foreach (var seat in seats.Take(PoSportsLobbyService.MaxPlayers))
+        foreach (var seat in seats.Take(PoSportsLobbyService.MaxPlayersPerMeet))
         {
             _seats[setups.Count] = seat;
             setups.Add(new PoSportsSim.LaneSetup(seat.DisplayName, seat.Character, IsAi: false));
         }
         var free = PoSportsConstants.Characters.Except(seats.Select(s => s.Character)).ToList();
-        for (var i = 0; setups.Count < PoSportsLobbyService.MaxPlayers && i < free.Count; i++)
+        for (var i = 0; setups.Count < PoSportsLobbyService.MaxPlayersPerMeet && i < free.Count; i++)
         {
             setups.Add(new PoSportsSim.LaneSetup($"CPU {free[i]}", free[i], IsAi: true));
         }
@@ -246,7 +246,7 @@ public sealed class PoSportsRaceService : IAsyncDisposable
             // Fire-and-forget with logging: a storage hiccup must not kill the podium.
             _ = PersistAsync(entry);
         }
-        _lobby.EndRace();
+        _lobby.End();
         Finished?.Invoke(final);
     }
 

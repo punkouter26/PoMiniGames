@@ -19,19 +19,19 @@ public class PoSportsLobbyServiceTests
         // First arrival becomes host.
         var (state, msg) = _lobby.Open("c1", "Alice", isGuest: true);
         state.HostConnectionId.Should().Be("c1");
-        state.Members.Should().ContainSingle(m => m.DisplayName == "Alice");
+        state.Players.Should().ContainSingle(m => m.DisplayName == "Alice");
         msg.Should().Be("Alice joined");
 
         // Long names are truncated to the shared 24-char display width.
         var (s2, _) = _lobby.Open("c2", new string('x', 40), true);
-        s2.Members.Single(m => m.ConnectionId == "c2").DisplayName.Should().HaveLength(24);
+        s2.Players.Single(m => m.ConnectionId == "c2").DisplayName.Should().HaveLength(24);
 
         // A fifth arrival is rejected — four lanes on the track.
         _lobby.Open("c3", "P3", true);
         _lobby.Open("c4", "P4", true);
         var (s5, m5) = _lobby.Open("c5", "P5", true);
         m5.Should().Be("Lobby is full");
-        s5.Members.Should().HaveCount(4);
+        s5.Players.Should().HaveCount(4);
     }
 
     [Fact]
@@ -78,9 +78,9 @@ public class PoSportsLobbyServiceTests
         _lobby.SetReady("c2", true);
         _lobby.TryStart("c1").Should().BeTrue();
 
-        // EndRace clears Ready flags for the next meet.
-        _lobby.EndRace();
-        _lobby.Members.Should().OnlyContain(m => !m.IsReady);
+        // End clears Ready flags for the next meet.
+        _lobby.End();
+        _lobby.Players.Should().OnlyContain(m => !m.IsReady);
 
         // Host leaving migrates host to the next member.
         _lobby.Leave("c1");
@@ -91,7 +91,7 @@ public class PoSportsLobbyServiceTests
         _lobby.TryStart("c2").Should().BeTrue();
         _lobby.Leave("c2");
         var (state, _) = _lobby.Open("c9", "Cara", true);
-        state.Phase.Should().Be("waiting");
+        _lobby.IsStarted.Should().BeFalse();
         state.HostConnectionId.Should().Be("c9");
     }
 }

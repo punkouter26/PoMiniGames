@@ -7,27 +7,15 @@ namespace PoMiniGames.Shared.Games;
 /// room (mirrors PoRacer/PoFunQuiz): first arrival becomes host, subsequent callers
 /// join until <see cref="PoVoxelStrikeLobbyState.MaxPlayers"/> is reached.
 /// </summary>
+// The lobby state and event records live in LobbyShared.cs (LobbyState<PoVoxelStrikeLobbyPlayer>,
+// LobbyEvent) since 2026-09-14 — one wire shape for every ready/start lobby.
 public sealed record PoVoxelStrikeLobbyPlayer(
     string ConnectionId,
     string DisplayName,
     bool IsGuest,
     bool IsReady,
     /// <summary>1-based seat. Stable for the lifetime of the lobby; the lockstep hub uses it to map inputs to actor ids.</summary>
-    int PlayerNumber);
-
-public sealed record PoVoxelStrikeLobbyState(
-    IReadOnlyList<PoVoxelStrikeLobbyPlayer> Players,
-    string? HostConnectionId,
-    string GameCode,
-    /// <summary>Configured max players (cap is 6 per the proposal). Constant for the lifetime of the lobby.</summary>
-    int MaxPlayers,
-    DateTimeOffset LastUpdatedUtc);
-
-/// <summary>Transient toast-style event surfaced by the lobby (join/leave/host-migrated/start).</summary>
-public sealed record PoVoxelStrikeLobbyEvent(
-    string Kind,
-    string Message,
-    DateTimeOffset AtUtc);
+    int PlayerNumber) : ILobbyPlayer;
 
 // ──────────────────────────────  PoVoxelStrike Lockstep  ──────────────────────────────
 

@@ -1,90 +1,33 @@
-using Microsoft.AspNetCore.SignalR;
+using PoMiniGames.Features.Shared.Lobby;
 using PoMiniGames.Shared.Games;
 
 namespace PoMiniGames.Features.PoRacer;
 
 /// <summary>
-/// Lobby hub for the single global PoRacer room. Connecting to this hub and
-/// calling <see cref="Join"/> puts the connection into the lobby — the host
-/// is the first arrival; subsequent arrivals join as players and the host's
-/// Start button waits for everyone to toggle Ready.
+/// The PoRacer room over the shared lobby hub. The only game-specific step is spinning
+/// the race up the instant the host starts (roster captured now, not at the clients'
+/// eventual JoinRace) and dropping a leaver's input from the sim.
 /// </summary>
-public sealed class PoRacerLobbyHub : Hub
+public sealed class PoRacerLobbyHub : LobbyHub<PoRacerLobbyPlayer, PoRacerLobbyService>
 {
-    private readonly PoRacerLobbyService _lobby;
     private readonly PoRacerRaceRegistry _races;
-    private readonly ILogger<PoRacerLobbyHub> _log;
-
-    private const string Group = "poracer-lobby";
 
     public PoRacerLobbyHub(PoRacerLobbyService lobby, PoRacerRaceRegistry races, ILogger<PoRacerLobbyHub> log)
+        : base(lobby, "poracer-lobby", log)
     {
-        _lobby = lobby;
         _races = races;
-        _log = log;
     }
 
-    public override async Task OnConnectedAsync()
-    {
-        await Groups.AddToGroupAsync(Context.ConnectionId, Group);
-        await base.OnConnectedAsync();
-    }
+    protected override string StartingMessage => "Race starting…";
 
-    public override async Task OnDisconnectedAsync(Exception? ex)
+    protected override (LobbyState<PoRacerLobbyPlayer> state, string message) OpenSeat(string displayName, bool isGuest) =>
+        Lobby.Open(Context.ConnectionId, displayName, isGuest);
+
+    protected override Task OnStartingAsync() => _races.GetOrCreateAsync(PoRacerLobbyService.GlobalCode);
+
+    protected override Task OnDisconnectedCoreAsync()
     {
-        var (ok, msg) = _lobby.Leave(Context.ConnectionId);
-        await Clients.Group(Group).SendAsync("lobbyState", _lobby.State);
-        if (ok && !string.IsNullOrEmpty(msg))
-        {
-            await Clients.Group(Group).SendAsync("lobbyEvent", new PoRacerLobbyEvent("left", msg, DateTimeOffset.UtcNow));
-        }
         _races.RemoveInput(Context.ConnectionId);
-        await base.OnDisconnectedAsync(ex);
-    }
-
-    /// <summary>Join the global lobby. First arrival becomes host.</summary>
-    public async Task<PoRacerLobbyState> Join(string displayName, bool isGuest)
-    {
-        var (state, msg) = _lobby.Open(Context.ConnectionId, displayName, isGuest);
-        _log.LogInformation("PoRacer lobby: conn={Conn} joined as {Name}; players={Count} host={Host}",
-            Context.ConnectionId, displayName, state.Players.Count, state.HostConnectionId);
-        await Clients.Group(Group).SendAsync("lobbyState", state);
-        await Clients.Group(Group).SendAsync("lobbyEvent",
-            new PoRacerLobbyEvent("joined", msg, DateTimeOffset.UtcNow));
-        return state;
-    }
-
-    public async Task ToggleReady()
-    {
-        // The service flips under its own lock and reports the state it stored — announcing
-        // a pre-toggle snapshot read outside the lock inverted every ready/not-ready toast.
-        var (ok, _, msg) = _lobby.ToggleReady(Context.ConnectionId);
-        if (!ok) return;
-        await Clients.Group(Group).SendAsync("lobbyState", _lobby.State);
-        await Clients.Group(Group).SendAsync("lobbyEvent",
-            new PoRacerLobbyEvent("ready", msg, DateTimeOffset.UtcNow));
-    }
-
-    public async Task LeaveLobby()
-    {
-        var (ok, msg) = _lobby.Leave(Context.ConnectionId);
-        await Clients.Group(Group).SendAsync("lobbyState", _lobby.State);
-        if (ok && !string.IsNullOrEmpty(msg))
-        {
-            await Clients.Group(Group).SendAsync("lobbyEvent", new PoRacerLobbyEvent("left", msg, DateTimeOffset.UtcNow));
-        }
-    }
-
-    public async Task StartGame()
-    {
-        if (!_lobby.TryStart(Context.ConnectionId)) return;
-        // Spin up the race IMMEDIATELY (capturing the current player list) so
-        // the race registry has the players at StartGame time — not at the
-        // client's eventual JoinRace call, by which point the SignalR WebSocket
-        // may have reconnected (60s client timeout) and cleared the lobby.
-        await _races.GetOrCreateAsync(PoRacerLobbyService.GlobalCode);
-        await Clients.Group(Group).SendAsync("lobbyEvent",
-            new PoRacerLobbyEvent("starting", "Race starting…", DateTimeOffset.UtcNow));
-        await Clients.Group(Group).SendAsync("gameStarted", PoRacerLobbyService.GlobalCode);
+        return Task.CompletedTask;
     }
 }

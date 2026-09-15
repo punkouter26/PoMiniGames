@@ -54,7 +54,7 @@ public sealed class PoSportsRaceRegistry : IAsyncDisposable
     /// Two rules keep the single-slot registry honest:
     /// a FINISHED race is never handed out (its podium phase is terminal, so a rematch
     /// inside the 30 s grace window would pin everyone to the previous meet's results),
-    /// and a race is only created while <see cref="PoSportsLobbyService.RaceStarted"/> is
+    /// and a race is only created while <see cref="PoSportsLobbyService.IsStarted"/> is
     /// set (otherwise any authenticated client could conjure a ghost meet by browsing to
     /// the race URL — which also called EndRace on the real lobby when it finished).
     /// Whenever a race IS displaced, it is disposed here: the delayed sweep skips
@@ -66,7 +66,7 @@ public sealed class PoSportsRaceRegistry : IAsyncDisposable
         lock (_createLock)
         {
             if (Reusable(code) is { } existing) return existing;
-            if (!_lobby.RaceStarted) return null;
+            if (!_lobby.IsStarted) return null;
         }
         var seats = _lobby.Seats;
         if (seats.Count == 0) return null;

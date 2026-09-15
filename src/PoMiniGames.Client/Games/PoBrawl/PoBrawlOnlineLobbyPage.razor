@@ -1,5 +1,4 @@
 @page "/pobrawl/multi"
-@using Microsoft.AspNetCore.SignalR.Client
 @using PoMiniGames.Shared.Games
 @using PoMiniGamesClient.Components
 @using PoBrawlFighter = PoMiniGames.Domain.Primitives.PoBrawlFighter
@@ -17,7 +16,7 @@
 @if (!_introDone)
 {
     <GameIntro CueScope="pobrawl"
-                   Title="@TitleContent"
+               Title="@TitleContent"
                Objective="Fight another player in a real-time 1v1 over SignalR. Server-authoritative HP — best of one 60-second round."
                Controls="@HowToPlayContent"
                Mode="GameIntro.IntroMode.OnePlayer"
@@ -25,129 +24,52 @@
 }
 else
 {
-<div class="sp-page">
-    <div class="sp-card">
-        <p class="sp-subtitle">
-            Status:
-            @if (_hub is null)
-            {
-                <span class="po-pill po-pill--muted">connecting…</span>
-            }
-            else if (_hub.State == HubConnectionState.Connected)
-            {
-                <span class="po-pill po-pill--ok">connected</span>
-            }
-            else
-            {
-                <span class="po-pill po-pill--warn">@_hub.State.ToString().ToLowerInvariant()</span>
-            }
-        </p>
-
-        <p class="poracer-hint">Single shared room — first to arrive becomes host. 1v1 only.</p>
-
-        <section class="racer-lobby-section">
-            <h2 class="gps-phase-h">Fighters</h2>
-            <div class="pobrawl-roster-picker">
-                <p class="poracer-hint">Pick your fighter before you mark ready. Both sides must pick before the host can start.</p>
-                <div class="pobrawl-roster-grid">
-                    @foreach (var f in RosterForPicker)
-                    {
-                        var isSelected = f.Id == _myFighterId;
-                        <button class="pobrawl-roster-card @(isSelected ? "is-selected" : "")"
-                                @onclick="() => SelectFighterAsync(f.Id)">
-                            <span class="pobrawl-roster-card__name">@f.Name</span>
-                            @if (isSelected)
-                            {
-                                <span class="po-pill po-pill--accent">selected</span>
-                            }
-                        </button>
-                    }
-                </div>
-            </div>
-        </section>
-
-        <section class="racer-lobby-section">
-            <h2 class="gps-phase-h">Players · @(_state?.Players.Count ?? 0)/2</h2>
-            @if (_state is null)
-            {
-                <div class="app-loading"><span class="app-loading__spinner" aria-hidden="true"></span><span>Loading players…</span></div>
-            }
-            else if (_state.Players.Count == 0)
-            {
-                <p>No one's here yet. Be the first.</p>
-            }
-            else
-            {
-                <ol class="poracer-lobby-list">
-                    @foreach (var p in _state.Players)
-                    {
-                        var isYou = p.ConnectionId == _localConnectionId;
-                        var isHost = p.ConnectionId == _state.HostConnectionId;
-                        <li class="@(isYou ? "is-you" : "") @(isHost ? "is-host" : "")">
-                            <span>@p.DisplayName @(isYou ? "(you)" : "")</span>
-                            <span class="po-pill po-pill--muted">@PoBrawlRoster.DisplayName(p.Fighter.Id)</span>
-                            @if (isHost)
-                            {
-                                <span class="po-pill po-pill--accent">host</span>
-                            }
-                            @if (p.IsGuest)
-                            {
-                                <span class="po-pill po-pill--muted">guest</span>
-                            }
-                            @if (p.IsReady)
-                            {
-                                <span class="po-pill po-pill--ok">ready</span>
-                            }
-                        </li>
-                    }
-                </ol>
-            }
-        </section>
-
-        <section>
-            @if (_state is null)
-            {
-                <p class="poracer-hint">Connecting to the lobby hub…</p>
-            }
-            else if (IsHost)
-            {
-                @if (!EveryoneReady)
+    @* 1v1: both seats ready up, host included, so the shared card shows the host a
+       Ready button too and the start gate is "two seats, both ready". *@
+    <LobbyPanel TPlayer="PoBrawlLobbyPlayer"
+                State="@_lobby.State"
+                LocalConnectionId="@_lobby.ConnectionId"
+                ConnectionState="@_lobby.ConnectionState"
+                Hint="Single shared room — first to arrive becomes host. 1v1 only."
+                MaxPlayersHint="2"
+                StartLabel="Start Fight"
+                HostReadies="true"
+                CanStart="@EveryoneReady"
+                WaitingHint="Waiting for both players to mark Ready…"
+                PickerTitle="Fighters"
+                OnReady="_lobby.ToggleReadyAsync"
+                OnStart="_lobby.StartGameAsync"
+                OnLeave="LeaveAsync">
+        <PlayerBadges Context="p">
+            <span class="lobby-pill lobby-pill--muted">@PoBrawlRoster.DisplayName(p.Fighter.Id)</span>
+        </PlayerBadges>
+        <Picker>
+            <p class="lobby__hint">Pick your fighter before you mark ready.</p>
+            <div class="lobby-pick-grid">
+                @foreach (var f in RosterForPicker)
                 {
-                    <p class="poracer-hint">Waiting for both players to mark Ready…</p>
+                    var mine = f.Id == MyFighterId;
+                    <button type="button"
+                            class="lobby-pick-card @(mine ? "lobby-pick-card--mine" : "")"
+                            @onclick="() => PickAsync(f.Id)">
+                        <span class="lobby-pick-card__name">@f.Name</span>
+                        @if (mine)
+                        {
+                            <span class="lobby-pill lobby-pill--accent">selected</span>
+                        }
+                    </button>
                 }
-                <button class="sp-btn-primary" @onclick="ToggleReadyAsync" disabled="@(string.IsNullOrEmpty(_myFighterId))">
-                    @(_myReady ? "Not Ready" : "Ready!")
-                </button>
-                <button class="sp-btn-primary" @onclick="StartGameAsync" disabled="@(!EveryoneReady)">Start Fight</button>
-                <button class="sp-btn-secondary racer-leave-btn" @onclick="LeaveAsync">Leave</button>
-            }
-            else
-            {
-                <button class="sp-btn-primary" @onclick="ToggleReadyAsync" disabled="@(string.IsNullOrEmpty(_myFighterId))">
-                    @(_myReady ? "Not Ready" : "Ready!")
-                </button>
-                <button class="sp-btn-secondary racer-leave-btn" @onclick="LeaveAsync">Leave</button>
-            }
-        </section>
-
-        <p class="racer-lobby-updated">Last update: @_lastUpdate</p>
-    </div>
-</div>
+            </div>
+        </Picker>
+    </LobbyPanel>
 }
 </GameShell>
 
 @code {
-    private HubConnection? _hub;
-    private PoBrawlLobbyState? _state;
-    private string _lastUpdate = "—";
-    private bool _myReady;
-    private IDisposable? _lobbySub;
-    private IDisposable? _gameStartedSub;
-    private IDisposable? _lobbyEventSub;
-    private string _localConnectionId = "";
-    private string _myFighterId = "";
-
+    private LobbyClient<PoBrawlLobbyPlayer> _lobby = null!;
     private bool _introDone;
+
+    protected override void OnInitialized() => _lobby = new LobbyClient<PoBrawlLobbyPlayer>(Endpoints, "pobrawl/lobby-hub");
 
     private RenderFragment TitleContent => @<span><span aria-hidden="true">🥊</span> Brawl · Online</span>;
     private RenderFragment HowToPlayContent => @<div>
@@ -163,120 +85,38 @@ else
     private static readonly IReadOnlyList<PoBrawlFighter> RosterForPicker =
         new[] { PoBrawlRoster.Bob }.Concat(PoBrawlRoster.Fighters).ToList();
 
-    private bool IsHost =>
-        _state is not null
-        && !string.IsNullOrEmpty(_state.HostConnectionId)
-        && _state.HostConnectionId == _localConnectionId;
+    private string MyFighterId => _lobby.Me?.Fighter.Id ?? "";
 
     private bool EveryoneReady =>
-        _state is not null
-        && _state.Players.Count == PoBrawlLobbyState.MaxPlayers
-        && _state.Players.All(p => p.IsReady);
-
-    private async Task SelectFighterAsync(string fighterId)
-    {
-        _myFighterId = fighterId;
-        // Re-Join so the server-side lobby record carries the new pick. A simple
-        // "I'm now fighting as X" call doesn't exist on the hub, so re-Join is
-        // the cheapest path: the service preserves the connection id and the
-        // host assignment, and just rewrites the player row.
-        await RejoinAsync();
-    }
-
-    private async Task RejoinAsync()
-    {
-        if (_hub is null || string.IsNullOrEmpty(_myFighterId)) return;
-        try
-        {
-            var displayName = AuthState.User?.DisplayName ?? "Player";
-            var isGuest = !AuthState.IsAuthenticated;
-            await _hub.InvokeAsync<PoBrawlLobbyState>("Join", displayName, isGuest, _myFighterId);
-        }
-        catch { /* server will broadcast the next state anyway */ }
-    }
+        _lobby.State is { } s && s.Players.Count == s.MaxPlayers && s.Players.All(p => p.IsReady);
 
     private async Task OnIntroStartAsync()
     {
         _introDone = true;
         StateHasChanged();
-
-        var isAvailable = await Api.IsAvailableAsync();
-        if (!isAvailable)
+        if (!await Api.IsAvailableAsync())
         {
             ToastService.Show("Server unavailable. Try Single Player mode.", ToastType.Error);
             return;
         }
-
-        _hub = HubConnectionFactory.Create(Endpoints.Hub("pobrawl/lobby-hub"));
-
-        _lobbySub = _hub.On<PoBrawlLobbyState>("lobbyState", state =>
-        {
-            _state = state;
-            _localConnectionId = _hub?.ConnectionId ?? _localConnectionId;
-            _lastUpdate = state.LastUpdatedUtc.LocalDateTime.ToString("HH:mm:ss");
-            var me = state.Players.FirstOrDefault(p => p.ConnectionId == _localConnectionId);
-            if (me is not null)
-            {
-                _myReady = me.IsReady;
-                _myFighterId = me.Fighter.Id;
-            }
-            InvokeAsync(StateHasChanged);
-        });
-
-        _lobbyEventSub = _hub.On<PoBrawlLobbyEvent>("lobbyEvent", ev =>
-        {
-            ToastService.Show(ev.Message, ev.Kind == "left" ? ToastType.Warning : ToastType.Info);
-        });
-
-        _gameStartedSub = _hub.On<string>("gameStarted", code =>
-        {
-            Nav.NavigateTo("/pobrawl/online");
-        });
-
-        await _hub.StartAsync();
-        _localConnectionId = _hub.ConnectionId ?? "";
-
-        var displayName = AuthState.User?.DisplayName ?? "Player";
-        var isGuest = !AuthState.IsAuthenticated;
-        var defaultFighter = string.IsNullOrEmpty(_myFighterId) ? PoBrawlRoster.Bob.Id : _myFighterId;
-        await _hub.InvokeAsync<PoBrawlLobbyState>("Join", displayName, isGuest, defaultFighter);
-
-        _hub.Reconnected += async (newId) =>
-        {
-            _localConnectionId = newId ?? _localConnectionId;
-            try { await _hub.InvokeAsync<PoBrawlLobbyState>("Join", displayName, isGuest, _myFighterId); } catch { }
-        };
+        _lobby.StateChanged += _ => InvokeAsync(StateHasChanged);
+        _lobby.ConnectionChanged += _ => InvokeAsync(StateHasChanged);
+        _lobby.EventReceived += ev => ToastService.Show(ev.Message, ev.Kind == "left" ? ToastType.Warning : ToastType.Info);
+        _lobby.GameStarted += _ => Nav.NavigateTo("/pobrawl/online");
+        await _lobby.ConnectAndJoinAsync(AuthState.User?.DisplayName ?? "Player", !AuthState.IsAuthenticated);
     }
 
-    private async Task ToggleReadyAsync()
+    private async Task PickAsync(string fighterId)
     {
-        if (_hub is null) return;
-        await _hub.InvokeAsync("ToggleReady");
-    }
-
-    private async Task StartGameAsync()
-    {
-        if (_hub is null) return;
-        await _hub.InvokeAsync("StartGame");
+        try { await _lobby.SendAsync("PickFighter", fighterId); }
+        catch (Exception ex) { ToastService.Show(ex.Message, ToastType.Warning); }
     }
 
     private async Task LeaveAsync()
     {
-        if (_hub is not null)
-        {
-            try { await _hub.InvokeAsync("LeaveLobby"); } catch { }
-        }
+        await _lobby.LeaveLobbyAsync();
         Nav.NavigateTo("/");
     }
 
-    public async ValueTask DisposeAsync()
-    {
-        if (_hub is not null)
-        {
-            _lobbySub?.Dispose();
-            _gameStartedSub?.Dispose();
-            _lobbyEventSub?.Dispose();
-            try { await _hub.DisposeAsync(); } catch { }
-        }
-    }
+    public ValueTask DisposeAsync() => _lobby.DisposeAsync();
 }

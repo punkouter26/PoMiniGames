@@ -18,28 +18,16 @@ namespace PoMiniGames.Shared.Games;
 /// is the SignalR connection id; <see cref="PrincipalId"/> is the stable auth-cookie
 /// subject id (server-canonical, server-supplied — the client never authors it).
 /// </summary>
+// The lobby state and event records live in LobbyShared.cs (LobbyState<PoBrawlLobbyPlayer>,
+// LobbyEvent) since 2026-09-14 — one wire shape for every ready/start lobby. The 1v1 cap
+// is PoBrawlLobbyService.Cap and arrives on the wire as LobbyState.MaxPlayers.
 public sealed record PoBrawlLobbyPlayer(
     string ConnectionId,
     string PrincipalId,
     string DisplayName,
     bool IsGuest,
     bool IsReady,
-    PoBrawlFighter Fighter);
-
-public sealed record PoBrawlLobbyState(
-    IReadOnlyList<PoBrawlLobbyPlayer> Players,
-    string? HostConnectionId,
-    string GameCode,
-    DateTimeOffset LastUpdatedUtc)
-{
-    /// <summary>1v1 cap — the lobby bounces the third arrival.</summary>
-    public const int MaxPlayers = 2;
-}
-
-public sealed record PoBrawlLobbyEvent(
-    string Kind,
-    string Message,
-    DateTimeOffset AtUtc);
+    PoBrawlFighter Fighter) : ILobbyPlayer;
 
 // ─────────────────────────  Match result  ───────────────────────────
 //

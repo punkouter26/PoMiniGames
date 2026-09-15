@@ -32,18 +32,14 @@ namespace PoMiniGamesClient.Games.PoVoxelStrike.Services;
 public sealed class PoVoxelStrikeMultiplayerClient : IAsyncDisposable
 {
     private readonly ApiEndpoints _endpoints;
-    private HubConnection? _lobby;
     private HubConnection? _lockstep;
-    private readonly List<IDisposable> _lobbySubs = new();
     private readonly List<IDisposable> _lockstepSubs = new();
-    private string _displayName = "Player";
-    private bool _isGuest = true;
     /// <summary>The game code this connection is bound to; surfaced for the lockstep reconnect handler.</summary>
     private string _gameCode = "";
 
-    public event Action<PoVoxelStrikeLobbyState>? LobbyUpdated;
-    public event Action<PoVoxelStrikeLobbyEvent>? LobbyEvent;
-    public event Action<string>? GameStarted;
+    /// <summary>The lobby half: the shared ready/start client (2026-09-14). Pages subscribe to its events directly.</summary>
+    public LobbyClient<PoVoxelStrikeLobbyPlayer> Lobby { get; }
+
     /// <summary>One tick of authoritative state; the engine applies each batch in order.</summary>
     public event Action<PoVoxelStrikeLockstepFrame>? FrameReceived;
     /// <summary>A peer dropped; payload is the connection id (informational only).</summary>
@@ -51,43 +47,24 @@ public sealed class PoVoxelStrikeMultiplayerClient : IAsyncDisposable
     /// <summary>The host ended the run; payload is empty.</summary>
     public event Action? RunEnded;
 
-    public string LobbyConnectionId => _lobby?.ConnectionId ?? "";
+    public string LobbyConnectionId => Lobby.ConnectionId;
 
-    public PoVoxelStrikeMultiplayerClient(ApiEndpoints endpoints) => _endpoints = endpoints;
+    public PoVoxelStrikeMultiplayerClient(ApiEndpoints endpoints)
+    {
+        _endpoints = endpoints;
+        Lobby = new LobbyClient<PoVoxelStrikeLobbyPlayer>(endpoints, "povoxelstrike/lobby-hub");
+    }
 
     // ── Lobby ─────────────────────────────────────────────────────────────
 
-    public async Task<PoVoxelStrikeLobbyState?> ConnectLobbyAsync(string displayName, bool isGuest)
-    {
-        _displayName = string.IsNullOrWhiteSpace(displayName) ? "Player" : displayName;
-        _isGuest = isGuest;
-        if (_lobby is not null) return await _lobby.InvokeAsync<PoVoxelStrikeLobbyState>("Join", _displayName, _isGuest);
+    public Task<LobbyState<PoVoxelStrikeLobbyPlayer>?> ConnectLobbyAsync(string displayName, bool isGuest) =>
+        Lobby.ConnectAndJoinAsync(displayName, isGuest);
 
-        _lobby = HubConnectionFactory.Create(_endpoints.Hub("povoxelstrike/lobby-hub"));
+    public Task ToggleReadyAsync() => Lobby.ToggleReadyAsync();
 
-        _lobbySubs.Add(_lobby.On<PoVoxelStrikeLobbyState>("lobbyState", s => LobbyUpdated?.Invoke(s)));
-        _lobbySubs.Add(_lobby.On<PoVoxelStrikeLobbyEvent>("lobbyEvent", e => LobbyEvent?.Invoke(e)));
-        _lobbySubs.Add(_lobby.On<string>("gameStarted", code => GameStarted?.Invoke(code)));
+    public Task StartGameAsync() => Lobby.StartGameAsync();
 
-        await _lobby.StartAsync();
-
-        // Re-join on every reconnect — the server ran Leave for the old connection id, so
-        // a fresh Join is the only way back into the lobby. The reconnect path is best
-        // effort; if it throws, the user's next manual action (toggle ready, leave)
-        // surfaces a normal error and they can recover.
-        _lobby.Reconnected += async _ =>
-        {
-            try { await _lobby.InvokeAsync<PoVoxelStrikeLobbyState>("Join", _displayName, _isGuest); } catch { /* surfaced on next user action */ }
-        };
-
-        return await _lobby.InvokeAsync<PoVoxelStrikeLobbyState>("Join", _displayName, _isGuest);
-    }
-
-    public Task ToggleReadyAsync() => _lobby?.InvokeAsync("ToggleReady") ?? Task.CompletedTask;
-
-    public Task StartGameAsync() => _lobby?.InvokeAsync("StartGame") ?? Task.CompletedTask;
-
-    public Task LeaveLobbyAsync() => _lobby?.InvokeAsync("LeaveLobby") ?? Task.CompletedTask;
+    public Task LeaveLobbyAsync() => Lobby.LeaveLobbyAsync();
 
     // ── Lockstep ──────────────────────────────────────────────────────────
 
@@ -149,12 +126,6 @@ public sealed class PoVoxelStrikeMultiplayerClient : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         await StopLockstepAsync();
-        if (_lobby is not null)
-        {
-            foreach (var s in _lobbySubs) s.Dispose();
-            _lobbySubs.Clear();
-            try { await _lobby.DisposeAsync(); } catch { /* socket may already be closed */ }
-            _lobby = null;
-        }
+        await Lobby.DisposeAsync();
     }
 }

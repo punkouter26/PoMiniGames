@@ -1,0 +1,98 @@
+@namespace PoMiniGamesClient.Components
+@using PoMiniGamesClient.Services.Play
+
+@* The quick-match status card: connecting, searching, a dropped opponent, a pending
+   rematch, a lost connection. Renders nothing while there is nothing to say, so a page
+   can leave it mounted above its board. Connect Five, Tic-Tac-Toe and Marble Race each
+   had their own copy of these branches until 2026-09-14. *@
+@if (Visible)
+{
+    <div class="qm" role="status">
+        @if (Phase == QuickMatchPhase.Connecting)
+        {
+            <div class="app-loading"><span class="app-loading__spinner" aria-hidden="true"></span><span>Connecting…</span></div>
+        }
+        else if (Phase == QuickMatchPhase.Searching)
+        {
+            <div class="app-loading"><span class="app-loading__spinner" aria-hidden="true"></span><span>Looking for an opponent…</span></div>
+            <p class="qm__note">@SearchingHint</p>
+            <div class="qm__actions">
+                <button type="button" class="sp-btn-secondary" @onclick="OnCancel">Cancel</button>
+            </div>
+        }
+        else if (Phase == QuickMatchPhase.Error)
+        {
+            <p>Lost the connection to the game server.</p>
+            <div class="qm__actions">
+                <button type="button" class="sp-btn-primary" @onclick="OnRetry">Try again</button>
+                <button type="button" class="sp-btn-secondary" @onclick="OnCancel">Back</button>
+            </div>
+        }
+        else if (Phase == QuickMatchPhase.Playing)
+        {
+            <div class="app-loading"><span class="app-loading__spinner" aria-hidden="true"></span><span>@(Reconnecting ? "Reconnecting…" : $"{OpponentName} lost their connection — holding the game for {GraceSeconds} seconds…")</span></div>
+        }
+        else if (OpponentGone)
+        {
+            <p>@OpponentName has left.</p>
+            <div class="qm__actions">
+                <button type="button" class="sp-btn-primary" @onclick="OnFindAnother">Find another opponent</button>
+                <button type="button" class="sp-btn-secondary" @onclick="OnCancel">Back</button>
+            </div>
+        }
+        else if (RematchRequested)
+        {
+            <div class="app-loading"><span class="app-loading__spinner" aria-hidden="true"></span><span>Waiting for @OpponentName to accept the rematch…</span></div>
+            <div class="qm__actions">
+                <button type="button" class="sp-btn-secondary" @onclick="OnFindAnother">Find another opponent</button>
+            </div>
+        }
+        else
+        {
+            <p>@OpponentName wants a rematch — press Play again to accept.</p>
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public QuickMatchPhase Phase { get; set; }
+    [Parameter] public string OpponentName { get; set; } = "Opponent";
+    [Parameter] public bool Reconnecting { get; set; }
+    [Parameter] public bool OpponentConnected { get; set; } = true;
+    [Parameter] public bool OpponentGone { get; set; }
+    [Parameter] public bool RematchRequested { get; set; }
+    [Parameter] public bool OpponentWantsRematch { get; set; }
+    /// <summary>How long the server holds a dropped seat; mirrors TurnMatchService.DisconnectGrace.</summary>
+    [Parameter] public int GraceSeconds { get; set; } = 30;
+    [Parameter] public string SearchingHint { get; set; } = "You'll be paired with the next player who picks Online.";
+
+    /// <summary>Cancel the search / go back.</summary>
+    [Parameter] public EventCallback OnCancel { get; set; }
+    /// <summary>Reconnect after a lost connection.</summary>
+    [Parameter] public EventCallback OnRetry { get; set; }
+    /// <summary>Give up on this opponent and queue again.</summary>
+    [Parameter] public EventCallback OnFindAnother { get; set; }
+
+    /// <summary>Convenience: bind every state field from a session in one go.</summary>
+    [Parameter] public OnlineTurnSession? Session { get; set; }
+
+    protected override void OnParametersSet()
+    {
+        if (Session is null) return;
+        Phase = Session.Phase;
+        OpponentName = Session.OpponentName;
+        Reconnecting = Session.Reconnecting;
+        OpponentConnected = Session.OpponentConnected;
+        OpponentGone = Session.OpponentGone;
+        RematchRequested = Session.RematchRequested;
+        OpponentWantsRematch = Session.OpponentWantsRematch;
+    }
+
+    private bool Visible => Phase switch
+    {
+        QuickMatchPhase.Connecting or QuickMatchPhase.Searching or QuickMatchPhase.Error => true,
+        QuickMatchPhase.Playing => Reconnecting || !OpponentConnected,
+        QuickMatchPhase.Over => OpponentGone || RematchRequested != OpponentWantsRematch,
+        _ => false,
+    };
+}

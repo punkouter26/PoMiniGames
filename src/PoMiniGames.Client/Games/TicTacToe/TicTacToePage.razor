@@ -6,8 +6,6 @@
 @using PoMiniGamesClient.Games.TicTacToe;
 @using PoMiniGamesClient.Services;
 @using PoMiniGames.Shared.Games;
-@using Microsoft.AspNetCore.SignalR;
-@using Microsoft.AspNetCore.SignalR.Client;
 @inject NavigationManager Navigation;
 @inject ApiEndpoints Endpoints;
 @inject AuthStateService AuthState;
@@ -62,53 +60,14 @@
        complete. The canvas was hiding it; removing the canvas makes it visible. *@
     @if (IsOnline)
     {
-        <div class="ttt-online" role="status">
-            @if (_onlinePhase == OnlinePhase.Connecting)
+        @* Tic-Tac-Toe has no visible status bar of its own (the turn is only spoken), so
+           online mode adds one under the shared quick-match card: a remote opponent's turn
+           has to be visible or the disabled board just looks unresponsive. *@
+        <div class="ttt-online">
+            <QuickMatchPanel Session="@_online" OnCancel="LeaveOnline" OnRetry="RetryOnlineAsync" OnFindAnother="FindOpponentSafeAsync" />
+            @if (_online?.Phase is QuickMatchPhase.Playing or QuickMatchPhase.Over)
             {
-                <div class="app-loading"><span class="app-loading__spinner" aria-hidden="true"></span><span>Connecting…</span></div>
-            }
-            else if (_onlinePhase == OnlinePhase.Searching)
-            {
-                <div class="app-loading"><span class="app-loading__spinner" aria-hidden="true"></span><span>Looking for an opponent…</span></div>
-                <p class="ttt-online-note">You'll be paired with the next player who picks Online.</p>
-                <div class="ttt-online__actions">
-                    <button type="button" class="sp-btn-secondary" @onclick="LeaveOnline">Cancel</button>
-                </div>
-            }
-            else if (_onlinePhase == OnlinePhase.Error)
-            {
-                <p>Lost the connection to the game server.</p>
-                <div class="ttt-online__actions">
-                    <button type="button" class="sp-btn-primary" @onclick="RetryOnlineAsync">Try again</button>
-                    <button type="button" class="sp-btn-secondary" @onclick="LeaveOnline">Back</button>
-                </div>
-            }
-            else if (_onlinePhase == OnlinePhase.Playing && (_reconnecting || !_opponentConnected))
-            {
-                <div class="app-loading"><span class="app-loading__spinner" aria-hidden="true"></span><span>@(_reconnecting ? "Reconnecting…" : $"{_opponentName} lost their connection — holding the game for 30 seconds…")</span></div>
-            }
-            else if (_onlinePhase == OnlinePhase.Over && _opponentGone)
-            {
-                <p>@_opponentName has left.</p>
-                <div class="ttt-online__actions">
-                    <button type="button" class="sp-btn-primary" @onclick="FindOpponentSafeAsync">Find another opponent</button>
-                    <button type="button" class="sp-btn-secondary" @onclick="LeaveOnline">Back</button>
-                </div>
-            }
-            else if (_onlinePhase == OnlinePhase.Over && _rematchRequested && !_opponentWantsRematch)
-            {
-                <div class="app-loading"><span class="app-loading__spinner" aria-hidden="true"></span><span>Waiting for @_opponentName to accept the rematch…</span></div>
-                <div class="ttt-online__actions">
-                    <button type="button" class="sp-btn-secondary" @onclick="FindOpponentSafeAsync">Find another opponent</button>
-                </div>
-            }
-            else if (_onlinePhase == OnlinePhase.Over && _opponentWantsRematch)
-            {
-                <p>@_opponentName wants a rematch — press Play again to accept.</p>
-            }
-            else
-            {
-                <div class="ttt-online__turn">
+                <div class="ttt-online__turn" role="status">
                     <span class="ttt-online__side @(_mySide == TurnMatchSide.First ? "ttt-online__side--x" : "ttt-online__side--o")" aria-hidden="true"></span>
                     <span>@OnlineStatusText</span>
                 </div>
@@ -247,7 +206,7 @@
     private string _backTo => "/";
     // Online: once Play Again has voted for a rematch the modal steps aside so the
     // "waiting for <opponent>" line above the board is readable.
-    private bool _isGameOver => _gameResult != GameResult.InProgress && PlayMode != "demo" && !(IsOnline && _rematchRequested);
+    private bool _isGameOver => _gameResult != GameResult.InProgress && PlayMode != "demo" && !(IsOnline && RematchRequested);
 
     // Intro/welcome gate — overlay blocks the board until dismissed (OK); demo
     // flashes it for 2s. Nothing auto-moves in human modes, so the overlay is
@@ -400,26 +359,26 @@
     private RenderFragment OnlineSummary => @<div>
         @if (_gameResult == GameResult.Win)
         {
-            <span class="cf-result cf-result--win">🎉 You beat @_opponentName!</span>
+            <span class="cf-result cf-result--win">🎉 You beat @OpponentName!</span>
         }
         else if (_gameResult == GameResult.Loss)
         {
-            <span class="cf-result cf-result--loss">@_opponentName wins this one.</span>
+            <span class="cf-result cf-result--loss">@OpponentName wins this one.</span>
         }
         else
         {
             <span class="cf-result cf-result--draw">🤝 Draw</span>
         }
-        @if (_onlineEndReason == TurnMatchEndReason.Forfeit)
+        @if (OnlineEndReason == TurnMatchEndReason.Forfeit)
         {
-            <div class="ttt-online-note">@_opponentName left the game.</div>
+            <div class="ttt-online-note">@OpponentName left the game.</div>
         }
-        else if (_onlineEndReason == TurnMatchEndReason.Disconnect)
+        else if (OnlineEndReason == TurnMatchEndReason.Disconnect)
         {
-            <div class="ttt-online-note">@_opponentName lost their connection.</div>
+            <div class="ttt-online-note">@OpponentName lost their connection.</div>
         }
         <div class="ttt-online-note">
-            @(_opponentGone ? "Play again finds you a new opponent." : $"Play again asks {_opponentName} for a rematch — marks swap.")
+            @(OpponentGone ? "Play again finds you a new opponent." : $"Play again asks {OpponentName} for a rematch — marks swap.")
         </div>
     </div>;
     
@@ -557,7 +516,7 @@
         {
             if (!IsMyOnlineTurn) return;
             if (_board.Get(row, col) != CellValue.None) { _ = Feedback.ErrorAsync(); return; }
-            _ = HandleOnlineMoveAsync(row, col);
+            _ = _online!.PlaceAsync(row, col);
             return;
         }
         if (_gameResult != GameResult.InProgress || _isAiTurn) return;
@@ -682,7 +641,7 @@
         {
             // Play Again in an online game is a rematch vote (or a fresh search when
             // the opponent has gone); the board resets when the server says so.
-            _ = RequestRematchAsync();
+            _ = _online?.PlayAgainAsync();
             return;
         }
         ResetBoardState();
@@ -704,277 +663,73 @@
     }
 
     // ── Online (quick-match over /tictactoe/hub) ─────────────────────────────
-    // The server owns the board. This page renders TurnMatchState snapshots and
-    // sends cells; the local TicTacToeBoard is a render cache that applies
-    // LastMove when it is exactly one move behind (so the mark draws itself and
-    // sounds) and is rebuilt from Cells otherwise. Side mapping is fixed:
-    // First = X, Second = O — X always opens, and a rematch swaps seats.
-    private enum OnlinePhase { Idle, Connecting, Searching, Playing, Over, Error }
-
-    private TurnMatchClient? _online;
-    private OnlinePhase _onlinePhase = OnlinePhase.Idle;
-    private TurnMatchStart? _seat;
-    private TurnMatchSide _mySide = TurnMatchSide.First;
-    private int _onlineGameNumber;
-    private int _onlineMoveCount;
-    private TurnMatchSide _onlineTurn = TurnMatchSide.First;
-    private TurnMatchEndReason _onlineEndReason;
-    private string _opponentName = "Opponent";
-    private bool _opponentConnected = true;
-    private bool _opponentWantsRematch;
-    private bool _rematchRequested;
-    private bool _opponentGone;
-    private bool _awaitingServer;
-    private bool _reconnecting;
+    // OnlineTurnSession owns the whole server conversation; this page only draws and
+    // sounds what it is told. Side mapping is fixed: First = X, Second = O — X always
+    // opens, and a rematch swaps seats.
+    private OnlineTurnSession? _online;
 
     private bool IsOnline => PlayMode == "online";
-    private bool IsMyOnlineTurn =>
-        IsOnline && _onlinePhase == OnlinePhase.Playing && _gameResult == GameResult.InProgress
-        && _onlineTurn == _mySide && !_awaitingServer && !_reconnecting;
+    private bool IsMyOnlineTurn => _online?.IsMyTurn ?? false;
+    private TurnMatchSide _mySide => _online?.MySide ?? TurnMatchSide.First;
+    private string OpponentName => _online?.OpponentName ?? "Opponent";
+    private bool OpponentGone => _online?.OpponentGone ?? false;
+    private bool RematchRequested => _online?.RematchRequested ?? false;
+    private TurnMatchEndReason OnlineEndReason => _online?.EndReason ?? TurnMatchEndReason.None;
+    private string OnlineStatusText => _online is null ? "Connecting…"
+        : _online.IsMyTurn ? $"Your turn — you're {(_mySide == TurnMatchSide.First ? "❌" : "⭕")}"
+        : _online.StatusText;
 
-    private string OnlineStatusText => _onlinePhase switch
+    private Task StartOnlineAsync()
     {
-        OnlinePhase.Idle or OnlinePhase.Connecting => "Connecting…",
-        OnlinePhase.Searching => "Finding an opponent…",
-        OnlinePhase.Error => "Connection lost",
-        _ when _gameResult == GameResult.Win => _onlineEndReason switch
+        if (_online is null)
         {
-            TurnMatchEndReason.Forfeit => $"{_opponentName} left — you win",
-            TurnMatchEndReason.Disconnect => $"{_opponentName} disconnected — you win",
-            _ => "You win!",
-        },
-        _ when _gameResult == GameResult.Loss => $"{_opponentName} wins",
-        _ when _gameResult == GameResult.Draw => "Draw",
-        _ when _reconnecting => "Reconnecting…",
-        _ when !_opponentConnected => $"{_opponentName} is reconnecting…",
-        _ when _awaitingServer => "Sending…",
-        _ when _onlineTurn == _mySide => $"Your turn — you're {(_mySide == TurnMatchSide.First ? "❌" : "⭕")}",
-        _ => $"{_opponentName}'s turn",
-    };
-
-    private async Task StartOnlineAsync()
-    {
-        _onlinePhase = OnlinePhase.Connecting;
-        _reconnecting = false;
-        StateHasChanged();
-        try
-        {
-            if (_online is null)
-            {
-                _online = new TurnMatchClient(Endpoints, "tictactoe/hub");
-                _online.MatchStarted += OnOnlineMatchStarted;
-                _online.StateChanged += OnOnlineState;
-                _online.ConnectionChanged += OnOnlineConnection;
-                _online.SeatLost += OnOnlineSeatLost;
-            }
-            await _online.ConnectAsync();
-            await FindOpponentAsync();
+            _online = new OnlineTurnSession(Endpoints, AuthState, Toasts, MatchHistory, "tictactoe/hub", "tictactoe", P1Name);
+            _online.Changed += () => _ = InvokeAsync(StateHasChanged);
+            _online.GameStarted += _ => ResetBoardState();
+            _online.MoveApplied += OnOnlineMove;
+            _online.BoardRebuilt += OnOnlineBoard;
+            _online.GameEnded += OnOnlineGameEnded;
         }
-        catch (Exception)
-        {
-            _onlinePhase = OnlinePhase.Error;
-            Toasts.Show("Couldn't reach the game server.", ToastType.Error);
-            StateHasChanged();
-        }
+        return _online.StartAsync();
     }
 
-    private async Task RetryOnlineAsync()
+    private Task RetryOnlineAsync() => _online?.RetryAsync() ?? Task.CompletedTask;
+    private Task FindOpponentSafeAsync() => _online?.FindOpponentSafeAsync() ?? Task.CompletedTask;
+
+    // Exactly one move behind the server: place it so the mark draws itself and sounds.
+    private void OnOnlineMove(TurnMatchMove move)
     {
-        await TearDownOnlineAsync();
-        await StartOnlineAsync();
+        if (_board.Get(move.Row, move.Col) != CellValue.None) return;
+        _board = _board.Place(move.Row, move.Col, move.Side == TurnMatchSide.First ? CellValue.X : CellValue.O);
+        _lastMove = (move.Row, move.Col);
+        _ = Feedback.DiscDropAsync();
     }
 
-    private async Task FindOpponentAsync()
+    // Rejoin or a missed broadcast: rebuild silently, nothing to animate.
+    private void OnOnlineBoard(byte[] cells)
     {
-        if (_online is null) return;
-        // A seat in a finished match has to be given up before queueing again —
-        // the server refuses to queue a connection it still counts as seated.
-        if (_seat is not null) await _online.LeaveAsync();
-        _online.ForgetSeat();
-        _seat = null;
-        _opponentGone = false;
-        _rematchRequested = false;
-        _opponentWantsRematch = false;
-        _opponentConnected = true;
-        _onlineEndReason = TurnMatchEndReason.None;
-        _onlinePhase = OnlinePhase.Searching;
-        ResetBoardState();
-        StateHasChanged();
-        // matchStarted may fire before this returns (the server pairs inside the
-        // call), so the phase is only ever advanced by the event, never here.
-        await _online.FindMatchAsync(P1Name, !AuthState.IsAuthenticated);
+        _board = TicTacToeBoard.FromCells(cells);
+        _lastMove = null;
+        _winCells = new();
+        _gameResult = GameResult.InProgress;
+        _gameId++;
     }
 
-    private async Task FindOpponentSafeAsync()
+    private void OnOnlineGameEnded(GameResult result, int[] winCells)
     {
-        try { await FindOpponentAsync(); }
-        catch (Exception)
-        {
-            _onlinePhase = OnlinePhase.Error;
-            StateHasChanged();
-        }
-    }
-
-    private void OnOnlineMatchStarted(TurnMatchStart start)
-    {
-        _seat = start;
-        _mySide = start.YourSide;
-        _onlineGameNumber = start.GameNumber;
-        _opponentName = (start.YourSide == TurnMatchSide.First ? start.Second : start.First).DisplayName;
-        _onlinePhase = OnlinePhase.Playing;
-        _rematchRequested = false;
-        _opponentWantsRematch = false;
-        _opponentGone = false;
-        _opponentConnected = true;
-        _onlineEndReason = TurnMatchEndReason.None;
-        _onlineMoveCount = 0;
-        _onlineTurn = TurnMatchSide.First;
-        _awaitingServer = false;
-        ResetBoardState();
-        _ = InvokeAsync(StateHasChanged);
-    }
-
-    private void OnOnlineState(TurnMatchState state)
-    {
-        if (_seat is null || state.MatchId != _seat.MatchId) return;
-        var opponent = state.OpponentOf(_mySide);
-        _opponentName = opponent.DisplayName;
-        _opponentConnected = opponent.Connected;
-        _opponentWantsRematch = opponent.WantsRematch;
-
-        var sameGame = state.GameNumber == _onlineGameNumber;
-        if (sameGame && state.MoveCount == _onlineMoveCount + 1 && state.LastMove is { } move
-            && _board.Get(move.Row, move.Col) == CellValue.None)
-        {
-            _board = _board.Place(move.Row, move.Col, move.Side == TurnMatchSide.First ? CellValue.X : CellValue.O);
-            _lastMove = (move.Row, move.Col);
-            _ = Feedback.DiscDropAsync();
-        }
-        else if (!sameGame || state.MoveCount != _onlineMoveCount)
-        {
-            // Rejoin or a missed broadcast: rebuild silently, nothing to animate.
-            _board = TicTacToeBoard.FromCells(state.Cells);
-            _onlineGameNumber = state.GameNumber;
-            _lastMove = state.LastMove is { } last ? (last.Row, last.Col) : null;
-            _winCells = new();
-            _gameResult = GameResult.InProgress;
-            _gameId++;
-        }
-        _onlineMoveCount = state.MoveCount;
-        _onlineTurn = state.Turn;
-        _onlineEndReason = state.EndReason;
-
-        if (state.Status != TurnMatchStatus.InProgress && _gameResult == GameResult.InProgress)
-        {
-            _gameResult = state.Status switch
-            {
-                TurnMatchStatus.Draw => GameResult.Draw,
-                TurnMatchStatus.FirstWon => _mySide == TurnMatchSide.First ? GameResult.Win : GameResult.Loss,
-                _ => _mySide == TurnMatchSide.Second ? GameResult.Win : GameResult.Loss,
-            };
-            _winCells = state.WinCells.Select(i => (i / TicTacToeBoard.Size, i % TicTacToeBoard.Size)).ToList();
-            if (_gameResult == GameResult.Win) _ = Feedback.PersonalBestAsync();
-            else if (_gameResult == GameResult.Loss) _ = Feedback.ErrorAsync();
-            else _ = Feedback.CompleteAsync();
-            _onlinePhase = OnlinePhase.Over;
-            RecordOnlineMatch();
-        }
-        if (_onlinePhase == OnlinePhase.Over && !opponent.Connected) _opponentGone = true;
-        _ = InvokeAsync(StateHasChanged);
-    }
-
-    private void OnOnlineConnection(HubConnectionState state)
-    {
-        _reconnecting = state == HubConnectionState.Reconnecting;
-        if (state == HubConnectionState.Disconnected && _onlinePhase is not (OnlinePhase.Idle or OnlinePhase.Error))
-        {
-            _onlinePhase = OnlinePhase.Error;
-        }
-        _ = InvokeAsync(StateHasChanged);
-    }
-
-    private void OnOnlineSeatLost()
-    {
-        Toasts.Show("Your seat expired while you were away — finding a new opponent.", ToastType.Warning);
-        _seat = null;
-        _ = InvokeAsync(FindOpponentSafeAsync);
-    }
-
-    private async Task HandleOnlineMoveAsync(int row, int col)
-    {
-        if (_online is null) return;
-        _awaitingServer = true;
-        StateHasChanged();
-        try
-        {
-            await _online.PlaceAsync(row, col);
-        }
-        catch (HubException ex)
-        {
-            Toasts.Show(ex.Message, ToastType.Warning);
-        }
-        catch (Exception)
-        {
-            Toasts.Show("That move didn't reach the server — try again.", ToastType.Warning);
-        }
-        finally
-        {
-            _awaitingServer = false;
-            await InvokeAsync(StateHasChanged);
-        }
-    }
-
-    private async Task RequestRematchAsync()
-    {
-        if (_online is null) return;
-        try
-        {
-            if (_opponentGone)
-            {
-                await FindOpponentAsync();
-                return;
-            }
-            _rematchRequested = true;
-            StateHasChanged();
-            await _online.RequestRematchAsync();
-        }
-        catch (Exception)
-        {
-            _rematchRequested = false;
-            if (_online.State != HubConnectionState.Connected) _onlinePhase = OnlinePhase.Error;
-            Toasts.Show("Couldn't reach the server.", ToastType.Warning);
-            StateHasChanged();
-        }
-    }
-
-    // Online results go to the head-to-head history as Multiplayer; they never touch
-    // the adaptive vs-CPU rating, which is a measure of play against the AI only.
-    private void RecordOnlineMatch()
-    {
-        if (_matchRecorded) return;
-        _matchRecorded = true;
-        var outcome = _gameResult switch
-        {
-            GameResult.Win => MatchOutcome.Win,
-            GameResult.Loss => MatchOutcome.Loss,
-            _ => MatchOutcome.Draw
-        };
-        _ = MatchHistory.RecordAsync("tictactoe", MatchMode.Multiplayer, _opponentName, outcome);
+        _gameResult = result;
+        _winCells = winCells.Select(i => (i / TicTacToeBoard.Size, i % TicTacToeBoard.Size)).ToList();
+        if (result == GameResult.Win) _ = Feedback.PersonalBestAsync();
+        else if (result == GameResult.Loss) _ = Feedback.ErrorAsync();
+        else _ = Feedback.CompleteAsync();
     }
 
     private void LeaveOnline() => Navigation.NavigateTo("/");
 
-    private async Task TearDownOnlineAsync()
+    private Task TearDownOnlineAsync()
     {
         var online = _online;
-        if (online is null) return;
         _online = null;
-        online.MatchStarted -= OnOnlineMatchStarted;
-        online.StateChanged -= OnOnlineState;
-        online.ConnectionChanged -= OnOnlineConnection;
-        online.SeatLost -= OnOnlineSeatLost;
-        await online.LeaveAsync();
-        await online.DisposeAsync();
+        return online?.TearDownAsync() ?? Task.CompletedTask;
     }
 }
-

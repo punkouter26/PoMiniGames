@@ -86,7 +86,7 @@ public sealed class PoVoxelStrikeLockstepHub : Hub
         await Clients.Group(PoVoxelStrikeLockstepService.GroupPrefix + "-" + session.GameCode)
             .SendAsync("runEnded");
         _lockstep.EndRun(session.GameCode);
-        _lobby.EndRun();
+        _lobby.End();
     }
 }
 

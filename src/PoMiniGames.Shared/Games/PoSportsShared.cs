@@ -67,27 +67,15 @@ public static class PoSportsLayouts
 
 // ──────────────────────────────  Lobby  ──────────────────────────────
 
+// The lobby state and event records live in LobbyShared.cs (LobbyState<PoSportsLobbyMember>,
+// LobbyEvent) since 2026-09-14 — one wire shape for every ready/start lobby.
 public sealed record PoSportsLobbyMember(
     string ConnectionId,
     string DisplayName,
     bool IsGuest,
     /// <summary>Character key (kim|matt|nick|tong), "" until picked. First-come lock.</summary>
     string Character,
-    bool IsReady);
-
-public sealed record PoSportsLobbyState(
-    IReadOnlyList<PoSportsLobbyMember> Members,
-    string? HostConnectionId,
-    string GameCode,
-    /// <summary>waiting | starting</summary>
-    string Phase,
-    DateTimeOffset LastUpdatedUtc);
-
-/// <summary>Transient toast-style event surfaced by the lobby (join/leave/pick/ready).</summary>
-public sealed record PoSportsLobbyEvent(
-    string Kind,
-    string Message,
-    DateTimeOffset AtUtc);
+    bool IsReady) : ILobbyPlayer;
 
 // ──────────────────────────────  Race  ──────────────────────────────
 

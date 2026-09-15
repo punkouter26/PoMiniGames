@@ -94,7 +94,7 @@ public sealed class PoRacerRaceService : IAsyncDisposable
             if (result is not null)
             {
                 // Reset the lobby so the next race needs a fresh Ready round.
-                _lobby.EndRace();
+                _lobby.End();
                 Finished?.Invoke(result);
             }
         }

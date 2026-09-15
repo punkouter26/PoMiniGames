@@ -18,9 +18,7 @@ namespace PoMiniGamesClient.Games.PoSports.Services;
 public sealed class PoSportsHubService : IAsyncDisposable
 {
     private readonly ApiEndpoints _endpoints;
-    private HubConnection? _lobby;
     private HubConnection? _race;
-    private readonly List<IDisposable> _subs = [];
     private readonly List<IDisposable> _raceSubs = [];
     private string _displayName = "Player";
     private bool _isGuest = true;
@@ -28,52 +26,36 @@ public sealed class PoSportsHubService : IAsyncDisposable
     private string _raceCode = "";
     private bool _raceAsPlayer;
 
-    public event Action<PoSportsLobbyState>? LobbyUpdated;
-    public event Action<PoSportsLobbyEvent>? LobbyEvent;
-    /// <summary>The host started the meet; payload is the race code to join.</summary>
-    public event Action<string>? GameStarted;
     public event Action<PoSportsSnapshot>? SnapshotReceived;
     public event Action<PoSportsSnapshot>? RaceFinished;
 
-    public string LobbyConnectionId => _lobby?.ConnectionId ?? "";
+    /// <summary>The lobby half: the shared ready/start client (2026-09-14). Pages subscribe to its events directly.</summary>
+    public LobbyClient<PoSportsLobbyMember> Lobby { get; }
 
-    public PoSportsHubService(ApiEndpoints endpoints) => _endpoints = endpoints;
+    public string LobbyConnectionId => Lobby.ConnectionId;
+
+    public PoSportsHubService(ApiEndpoints endpoints)
+    {
+        _endpoints = endpoints;
+        Lobby = new LobbyClient<PoSportsLobbyMember>(endpoints, "posports/lobby-hub");
+    }
 
     // ── Lobby ─────────────────────────────────────────────────────────────
 
-    public async Task<PoSportsLobbyState?> ConnectLobbyAsync(string displayName, bool isGuest)
+    public Task<LobbyState<PoSportsLobbyMember>?> ConnectLobbyAsync(string displayName, bool isGuest)
     {
         _displayName = string.IsNullOrWhiteSpace(displayName) ? "Player" : displayName;
         _isGuest = isGuest;
-        if (_lobby is not null) return await _lobby.InvokeAsync<PoSportsLobbyState>("Join", _displayName, _isGuest);
-
-        // Credentials handler + auto-reconnect come baked into the shared
-        // factory (see HubConnectionFactory for the §2026-07-16 cookie contract).
-        _lobby = HubConnectionFactory.Create(_endpoints.Hub("posports/lobby-hub"));
-
-        _subs.Add(_lobby.On<PoSportsLobbyState>("lobbyState", s => LobbyUpdated?.Invoke(s)));
-        _subs.Add(_lobby.On<PoSportsLobbyEvent>("lobbyEvent", e => LobbyEvent?.Invoke(e)));
-        _subs.Add(_lobby.On<string>("gameStarted", code => GameStarted?.Invoke(code)));
-
-        await _lobby.StartAsync();
-
-        // Re-join on every reconnect — the server ran Leave for the old connection id.
-        _lobby.Reconnected += async _ =>
-        {
-            try { await _lobby.InvokeAsync<PoSportsLobbyState>("Join", _displayName, _isGuest); } catch { }
-        };
-
-        return await _lobby.InvokeAsync<PoSportsLobbyState>("Join", _displayName, _isGuest);
+        return Lobby.ConnectAndJoinAsync(_displayName, _isGuest);
     }
 
-    public Task<bool> PickCharacterAsync(string character) =>
-        _lobby?.InvokeAsync<bool>("PickCharacter", character) ?? Task.FromResult(false);
+    public Task<bool> PickCharacterAsync(string character) => Lobby.InvokeAsync<bool>("PickCharacter", character);
 
-    public Task ToggleReadyAsync() => _lobby?.InvokeAsync("ToggleReady") ?? Task.CompletedTask;
+    public Task ToggleReadyAsync() => Lobby.ToggleReadyAsync();
 
-    public Task StartGameAsync() => _lobby?.InvokeAsync("StartGame") ?? Task.CompletedTask;
+    public Task StartGameAsync() => Lobby.StartGameAsync();
 
-    public Task LeaveLobbyAsync() => _lobby?.InvokeAsync("LeaveLobby") ?? Task.CompletedTask;
+    public Task LeaveLobbyAsync() => Lobby.LeaveLobbyAsync();
 
     // ── Race ──────────────────────────────────────────────────────────────
 
@@ -140,9 +122,6 @@ public sealed class PoSportsHubService : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         await StopRaceAsync();
-        foreach (var s in _subs) s.Dispose();
-        _subs.Clear();
-        if (_lobby is not null) { try { await _lobby.DisposeAsync(); } catch { } }
-        _lobby = null;
+        await Lobby.DisposeAsync();
     }
 }

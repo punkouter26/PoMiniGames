@@ -11,18 +11,11 @@
 
 <PageTitle>Sports — Lobby · PoMiniGames</PageTitle>
 
-@* 2026-09-13 UI unification: this page now hosts <GameShell> like every other
-   game route. It used to hand-roll the top-bar slot and carry its own "← Home"
-   link plus a second in-card header ("← Back" + an <h1>Sports Lobby</h1>) — three
-   lobbies each kept their own copy of that chrome, so none of the shell's
-   decisions reached them. GameShell owns the title, the swipe-back gesture and
-   the end-of-game modal; the in-card "Back" button went with it because it only
-   ever called LeaveAsync, which the "Leave" button below already does. *@
 <GameShell Title="@TitleContent" BackTo="/">
 @if (!_introDone)
 {
     <GameIntro CueScope="posports"
-                   Title="@TitleContent"
+               Title="@TitleContent"
                Objective="Race the family online — up to 4 runners. Pick a character, ready up, and the host fires the gun."
                Controls="@HowToPlayContent"
                Mode="GameIntro.IntroMode.OnePlayer"
@@ -30,104 +23,57 @@
 }
 else
 {
-<div class="sp-page">
-    <div class="sp-card">
-        <p class="sp-subtitle">
-            Status:
-            @if (!_connected)
+    <LobbyPanel TPlayer="PoSportsLobbyMember"
+                State="@Hub.Lobby.State"
+                LocalConnectionId="@Hub.LobbyConnectionId"
+                ConnectionState="@Hub.Lobby.ConnectionState"
+                MaxPlayersHint="4"
+                StartLabel="Start the Meet"
+                CanStart="@CanStart"
+                CanReady="@IHavePicked"
+                WaitingHint="Waiting for everyone to pick a runner and mark Ready…"
+                PickerTitle="Your runner"
+                OnReady="Hub.ToggleReadyAsync"
+                OnStart="Hub.StartGameAsync"
+                OnLeave="LeaveAsync">
+        <PlayerLabel Context="m">
+            <span aria-hidden="true">@PoSportsRoster.Emoji(m.Character)</span> @m.DisplayName
+        </PlayerLabel>
+        <PlayerBadges Context="m">
+            @if (string.IsNullOrEmpty(m.Character))
             {
-                <span class="po-pill po-pill--muted">connecting…</span>
+                <span class="lobby-pill lobby-pill--warn">picking…</span>
             }
-            else
-            {
-                <span class="po-pill po-pill--ok">connected</span>
-            }
-        </p>
-
-        <p class="ps-lobby-hint">Single shared room — first to arrive becomes host.</p>
-
-        <section class="ps-lobby-section">
-            <h2 class="gps-phase-h">Players · @(_state?.Members.Count ?? 0)/4</h2>
-            @if (_state is null)
-            {
-                <div class="app-loading"><span class="app-loading__spinner" aria-hidden="true"></span><span>Loading lobby…</span></div>
-            }
-            else if (_state.Members.Count == 0)
-            {
-                <p>No one's here yet. Be the first.</p>
-            }
-            else
-            {
-                <ol class="ps-lobby-list">
-                    @foreach (var m in _state.Members)
-                    {
-                        var isYou = m.ConnectionId == Hub.LobbyConnectionId;
-                        var isHost = m.ConnectionId == _state.HostConnectionId;
-                        <li class="@(isYou ? "is-you" : "")">
-                            <span>@PoSportsRoster.Emoji(m.Character) @m.DisplayName @(isYou ? "(you)" : "")</span>
-                            @if (isHost) { <span class="po-pill po-pill--accent">host</span> }
-                            @if (m.IsGuest) { <span class="po-pill po-pill--muted">guest</span> }
-                            @if (string.IsNullOrEmpty(m.Character)) { <span class="po-pill po-pill--warn">picking…</span> }
-                            @if (m.IsReady) { <span class="po-pill po-pill--ok">ready</span> }
-                        </li>
-                    }
-                </ol>
-            }
-        </section>
-
-        <section class="ps-lobby-section">
-            <h2 class="gps-phase-h">Your runner</h2>
-            <div class="ps-lobby-chars">
+        </PlayerBadges>
+        <Picker>
+            <div class="lobby-pick-grid">
                 @foreach (var c in PoSportsRoster.All)
                 {
-                    var takenBy = _state?.Members.FirstOrDefault(m => m.Character == c.Key);
+                    var takenBy = Hub.Lobby.State?.Players.FirstOrDefault(m => m.Character == c.Key);
                     var mine = takenBy?.ConnectionId == Hub.LobbyConnectionId;
                     var taken = takenBy is not null && !mine;
                     <button type="button"
-                            class="ps-lobby-char @(mine ? "ps-lobby-char--mine" : "") @(taken ? "ps-lobby-char--taken" : "")"
+                            class="lobby-pick-card @(mine ? "lobby-pick-card--mine" : "") @(taken ? "lobby-pick-card--taken" : "")"
                             disabled="@taken"
-                            @onclick="() => PickAsync(c.Key)">
-                        <span class="ps-lobby-char-emoji">@c.Emoji</span>
-                        <span>@c.Name</span>
-                        @if (taken) { <small>@takenBy!.DisplayName</small> }
+                            @onclick="() => Hub.PickCharacterAsync(c.Key)">
+                        <span class="lobby-pick-card__emoji">@c.Emoji</span>
+                        <span class="lobby-pick-card__name">@c.Name</span>
+                        @if (taken)
+                        {
+                            <small>@takenBy!.DisplayName</small>
+                        }
                     </button>
                 }
             </div>
-        </section>
-
-        <section>
-            @if (_state is null)
-            {
-                <p class="ps-lobby-hint">Connecting to the lobby hub…</p>
-            }
-            else if (IsHost)
-            {
-                @if (!CanStart)
-                {
-                    <p class="ps-lobby-hint">Waiting for everyone to pick a runner and mark Ready…</p>
-                }
-                <button class="sp-btn-primary" @onclick="StartAsync" disabled="@(!CanStart)">Start the Meet</button>
-                <button class="sp-btn-secondary" @onclick="LeaveAsync">Leave</button>
-            }
-            else
-            {
-                <button class="sp-btn-primary" @onclick="ToggleReadyAsync" disabled="@(!IHavePicked)">
-                    @(_myReady ? "Not Ready" : "Ready!")
-                </button>
-                <button class="sp-btn-secondary" @onclick="LeaveAsync">Leave</button>
-            }
-        </section>
-    </div>
-</div>
+        </Picker>
+    </LobbyPanel>
 }
 </GameShell>
 
 @code {
     private bool _introDone;
     private bool _connected;
-    private PoSportsLobbyState? _state;
-    private bool _myReady;
-    /// <summary>Set by the Leave/Back buttons — dispose must not leave twice.</summary>
+    /// <summary>Set by Leave — dispose must not leave twice.</summary>
     private bool _leaving;
     /// <summary>Set when navigating to the race page — that navigation must KEEP our lobby seat.</summary>
     private bool _starting;
@@ -142,57 +88,41 @@ else
         </ul>
     </div>;
 
-    private bool IsHost =>
-        _state is not null && _state.HostConnectionId == Hub.LobbyConnectionId;
-
-    private bool IHavePicked =>
-        _state?.Members.Any(m => m.ConnectionId == Hub.LobbyConnectionId && !string.IsNullOrEmpty(m.Character)) == true;
+    private bool IHavePicked => !string.IsNullOrEmpty(Hub.Lobby.Me?.Character);
 
     private bool CanStart =>
-        _state is not null
-        && _state.Members.Count > 0
-        && _state.Members.All(m => !string.IsNullOrEmpty(m.Character))
-        && _state.Members.All(m => m.ConnectionId == _state.HostConnectionId || m.IsReady);
+        Hub.Lobby.State is { } s
+        && s.Players.Count > 0
+        && s.Players.All(m => !string.IsNullOrEmpty(m.Character))
+        && s.Players.All(m => m.ConnectionId == s.HostConnectionId || m.IsReady);
 
     private async Task OnIntroStartAsync()
     {
         _introDone = true;
         StateHasChanged();
-
         if (!await Api.IsAvailableAsync())
         {
             ToastService.Show("Server unavailable. Try Single Player mode.", ToastType.Error);
             return;
         }
-
-        Hub.LobbyUpdated += OnLobbyUpdated;
-        Hub.LobbyEvent += OnLobbyEvent;
-        Hub.GameStarted += OnGameStarted;
-
-        var displayName = AuthState.User?.DisplayName ?? "Player";
-        var isGuest = !AuthState.IsAuthenticated;
-        _state = await Hub.ConnectLobbyAsync(displayName, isGuest);
+        Hub.Lobby.StateChanged += OnLobbyChanged;
+        Hub.Lobby.ConnectionChanged += OnConnectionChanged;
+        Hub.Lobby.EventReceived += OnLobbyEvent;
+        Hub.Lobby.GameStarted += OnGameStarted;
+        await Hub.ConnectLobbyAsync(AuthState.User?.DisplayName ?? "Player", !AuthState.IsAuthenticated);
         _connected = true;
         StateHasChanged();
     }
 
-    private void OnLobbyUpdated(PoSportsLobbyState state)
-    {
-        _state = state;
-        var me = state.Members.FirstOrDefault(m => m.ConnectionId == Hub.LobbyConnectionId);
-        if (me is not null) _myReady = me.IsReady;
-        InvokeAsync(StateHasChanged);
-    }
+    private void OnLobbyChanged(LobbyState<PoSportsLobbyMember> _) => InvokeAsync(StateHasChanged);
+    private void OnConnectionChanged(Microsoft.AspNetCore.SignalR.Client.HubConnectionState _) => InvokeAsync(StateHasChanged);
 
-    private void OnLobbyEvent(PoSportsLobbyEvent ev)
+    private void OnLobbyEvent(LobbyEvent ev) => ToastService.Show(ev.Message, ev.Kind switch
     {
-        ToastService.Show(ev.Message, ev.Kind switch
-        {
-            "left" => ToastType.Warning,
-            "pick-denied" => ToastType.Error,
-            _ => ToastType.Info,
-        });
-    }
+        "left" => ToastType.Warning,
+        "pick-denied" => ToastType.Error,
+        _ => ToastType.Info,
+    });
 
     private void OnGameStarted(string code)
     {
@@ -200,37 +130,27 @@ else
         Nav.NavigateTo($"/posports/race/{code}");
     }
 
-    private async Task PickAsync(string character)
-    {
-        await Hub.PickCharacterAsync(character);
-    }
-
-    private Task ToggleReadyAsync() => Hub.ToggleReadyAsync();
-
-    private Task StartAsync() => Hub.StartGameAsync();
-
     private async Task LeaveAsync()
     {
         _leaving = true;
-        try { await Hub.LeaveLobbyAsync(); } catch { }
+        await Hub.LeaveLobbyAsync();
         Nav.NavigateTo("/");
     }
 
     public async ValueTask DisposeAsync()
     {
-        Hub.LobbyUpdated -= OnLobbyUpdated;
-        Hub.LobbyEvent -= OnLobbyEvent;
-        Hub.GameStarted -= OnGameStarted;
-        // The hub service itself is scoped to the session — the race page reuses it — so
-        // nothing here closes the connection and the server never sees a disconnect. Leaving
-        // any other way (browser back, a link) must therefore tell the lobby explicitly, or
-        // the member lingers: holding its character lock, filling a slot, and blocking
-        // StartGame (which needs every non-host member Ready) until the tab is closed.
-        // _leaving covers the Leave/Back buttons, which already left; _starting covers the
-        // hop to the race page, where we must STAY in the lobby.
+        Hub.Lobby.StateChanged -= OnLobbyChanged;
+        Hub.Lobby.ConnectionChanged -= OnConnectionChanged;
+        Hub.Lobby.EventReceived -= OnLobbyEvent;
+        Hub.Lobby.GameStarted -= OnGameStarted;
+        // The hub service is scoped to the session — the race page reuses it — so nothing
+        // here closes the connection and the server never sees a disconnect. Leaving any
+        // other way (browser back, a link) must therefore tell the lobby explicitly, or the
+        // member lingers holding its character lock. _leaving covers the Leave button, which
+        // already left; _starting covers the hop to the race page, where we must STAY seated.
         if (!_leaving && !_starting && _connected)
         {
-            try { await Hub.LeaveLobbyAsync(); } catch { }
+            await Hub.LeaveLobbyAsync();
         }
     }
 }

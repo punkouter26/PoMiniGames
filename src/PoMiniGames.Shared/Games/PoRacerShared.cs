@@ -18,23 +18,13 @@ public sealed class PoRacerScoreDto
 
 // ──────────────────────────────  Lobby  ──────────────────────────────
 
+// The lobby state and event records live in LobbyShared.cs (LobbyState<PoRacerLobbyPlayer>,
+// LobbyEvent) since 2026-09-14 — one wire shape for every ready/start lobby.
 public sealed record PoRacerLobbyPlayer(
     string ConnectionId,
     string DisplayName,
     bool IsGuest,
-    bool IsReady);
-
-public sealed record PoRacerLobbyState(
-    IReadOnlyList<PoRacerLobbyPlayer> Players,
-    string? HostConnectionId,
-    string GameCode,
-    DateTimeOffset LastUpdatedUtc);
-
-/// <summary>Transient toast-style event surfaced by the lobby (join/leave/host-migrated).</summary>
-public sealed record PoRacerLobbyEvent(
-    string Kind,
-    string Message,
-    DateTimeOffset AtUtc);
+    bool IsReady) : ILobbyPlayer;
 
 // ──────────────────────────────  Race  ──────────────────────────────
 

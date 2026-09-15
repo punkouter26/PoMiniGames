@@ -68,7 +68,7 @@ public class PoBrawlLobbyServiceTests
         lobby.ToggleReady("conn-1");
         lobby.ToggleReady("conn-2");
         lobby.TryStart("conn-1");
-        lobby.EndMatch();
+        lobby.End();
         lobby.State.Players.Should().OnlyContain(p => !p.IsReady);
         lobby.IsStarted.Should().BeFalse();
     }

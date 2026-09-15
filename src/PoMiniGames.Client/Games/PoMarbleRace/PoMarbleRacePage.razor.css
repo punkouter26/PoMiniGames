@@ -412,14 +412,6 @@
     text-shadow: 0 0 12px rgba(248, 250, 252, 0.7);
 }
 
-/* Online session card buttons (cancel / find another / back). */
-.mr-online-actions {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: 0.5rem;
-    margin-top: 0.75rem;
-}
 
 .mr-pick-sub {
     margin: 0 0 10px;

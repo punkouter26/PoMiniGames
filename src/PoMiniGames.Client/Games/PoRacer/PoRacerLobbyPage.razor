@@ -1,5 +1,4 @@
 @page "/poracer/multi"
-@using Microsoft.AspNetCore.SignalR.Client
 @using PoMiniGames.Shared.Games
 @using PoMiniGamesClient.Components
 @inject AuthStateService AuthState
@@ -11,16 +10,11 @@
 
 <PageTitle>Racer — Lobby · PoMiniGames</PageTitle>
 
-@* 2026-09-13 UI unification: hosts <GameShell> like every other game route. The
-   hand-rolled top-bar slot, its duplicate "← Home" link, and the in-card header
-   ("Back" + an <h1>Racer Lobby</h1>) all went with it. The Back button only ever
-   did Nav.NavigateTo("/"), which the shell's brand and swipe-back already cover;
-   leaving the lobby properly is still the "Leave" button below. *@
 <GameShell Title="@TitleContent" BackTo="/">
 @if (!_introDone)
 {
     <GameIntro CueScope="poracer"
-                   Title="@TitleContent"
+               Title="@TitleContent"
                Objective="Race online against up to 8 players — first across the line after 3 laps wins."
                Controls="@HowToPlayContent"
                Mode="GameIntro.IntroMode.OnePlayer"
@@ -28,105 +22,24 @@
 }
 else
 {
-<div class="sp-page">
-    <div class="sp-card">
-        <p class="sp-subtitle">
-            Status:
-            @if (_hub is null)
-            {
-                <span class="po-pill po-pill--muted">connecting…</span>
-            }
-            else if (_hub.State == HubConnectionState.Connected)
-            {
-                <span class="po-pill po-pill--ok">connected</span>
-            }
-            else
-            {
-                <span class="po-pill po-pill--warn">@_hub.State.ToString().ToLowerInvariant()</span>
-            }
-        </p>
-
-        <p class="poracer-hint">Single shared room — first to arrive becomes host.</p>
-
-        <section class="racer-lobby-section">
-            <h2 class="gps-phase-h">Players · @(_state?.Players.Count ?? 0)/8</h2>
-            @if (_state is null)
-            {
-                <div class="app-loading"><span class="app-loading__spinner" aria-hidden="true"></span><span>Loading players…</span></div>
-            }
-            else if (_state.Players.Count == 0)
-            {
-                <p>No one's here yet. Be the first.</p>
-            }
-            else
-            {
-                <ol class="poracer-lobby-list">
-                    @foreach (var p in _state.Players)
-                    {
-                        var isYou = p.ConnectionId == _localConnectionId;
-                        var isHost = p.ConnectionId == _state.HostConnectionId;
-                        <li class="@(isYou ? "is-you" : "") @(isHost ? "is-host" : "")">
-                            <span>@p.DisplayName @(isYou ? "(you)" : "")</span>
-                            @if (isHost)
-                            {
-                                <span class="po-pill po-pill--accent">host</span>
-                            }
-                            @if (p.IsGuest)
-                            {
-                                <span class="po-pill po-pill--muted">guest</span>
-                            }
-                            @if (p.IsReady)
-                            {
-                                <span class="po-pill po-pill--ok">ready</span>
-                            }
-                        </li>
-                    }
-                </ol>
-            }
-        </section>
-
-        <section>
-            @if (_state is null)
-            {
-                <p class="poracer-hint">Connecting to the lobby hub…</p>
-            }
-            else if (IsHost)
-            {
-                @if (!EveryoneReady)
-                {
-                    <p class="poracer-hint">Waiting for everyone to mark Ready…</p>
-                }
-                <button class="sp-btn-primary" @onclick="StartGameAsync" disabled="@(!EveryoneReady)">Start Race</button>
-                <button class="sp-btn-secondary racer-leave-btn" @onclick="LeaveAsync">Leave</button>
-            }
-            else
-            {
-                <button class="sp-btn-primary" @onclick="ToggleReadyAsync">
-                    @(_myReady ? "Not Ready" : "Ready!")
-                </button>
-                <button class="sp-btn-secondary racer-leave-btn" @onclick="LeaveAsync">Leave</button>
-            }
-        </section>
-
-        <p class="racer-lobby-updated">Last update: @_lastUpdate</p>
-    </div>
-</div>
+    <LobbyPanel TPlayer="PoRacerLobbyPlayer"
+                State="@_lobby.State"
+                LocalConnectionId="@_lobby.ConnectionId"
+                ConnectionState="@_lobby.ConnectionState"
+                MaxPlayersHint="8"
+                StartLabel="Start Race"
+                OnReady="_lobby.ToggleReadyAsync"
+                OnStart="_lobby.StartGameAsync"
+                OnLeave="LeaveAsync" />
 }
 </GameShell>
 
 @code {
-    private HubConnection? _hub;
-    private PoRacerLobbyState? _state;
-    private string _lastUpdate = "—";
-    private bool _myReady;
-    private IDisposable? _lobbySub;
-    private IDisposable? _gameStartedSub;
-    private IDisposable? _lobbyEventSub;
-    private string _localConnectionId = "";
-
-    // Intro/welcome gate — the controls card shows first; only on OK do we connect
-    // to the lobby hub and Join, so the player appears to others only when ready.
+    private LobbyClient<PoRacerLobbyPlayer> _lobby = null!;
     private bool _introDone;
+
+    protected override void OnInitialized() => _lobby = new LobbyClient<PoRacerLobbyPlayer>(Endpoints, "poracer/lobby-hub");
+
     private RenderFragment TitleContent => @<span><span aria-hidden="true">🏎️</span> Racer · Multiplayer</span>;
     private RenderFragment HowToPlayContent => @<div>
         <p>Race online against up to 8 players. Ready up in the lobby, then the host starts the race.</p>
@@ -137,97 +50,29 @@ else
         </ul>
     </div>;
 
-    private bool IsHost =>
-        _state is not null
-        && !string.IsNullOrEmpty(_state.HostConnectionId)
-        && _state.HostConnectionId == _localConnectionId;
-
-    private bool EveryoneReady =>
-        _state is not null
-        && _state.Players.Count > 0
-        && _state.Players.All(p => p.ConnectionId == _state.HostConnectionId || p.IsReady);
-
-    // Connect + Join only after the intro is dismissed (see the OnStart binding).
+    // Connect + Join only after the intro is dismissed, so the player appears to others
+    // only once they are actually ready to play.
     private async Task OnIntroStartAsync()
     {
         _introDone = true;
         StateHasChanged();
-
-        var isAvailable = await Api.IsAvailableAsync();
-        if (!isAvailable)
+        if (!await Api.IsAvailableAsync())
         {
             ToastService.Show("Server unavailable. Try Single Player mode.", ToastType.Error);
             return;
         }
-
-        // Credentials handler + auto-reconnect come baked into the shared
-        // factory (see HubConnectionFactory for the §2026-07-16 cookie contract).
-        _hub = HubConnectionFactory.Create(Endpoints.Hub("poracer/lobby-hub"));
-
-        _lobbySub = _hub.On<PoRacerLobbyState>("lobbyState", state =>
-        {
-            _state = state;
-            _localConnectionId = _hub?.ConnectionId ?? _localConnectionId;
-            _lastUpdate = state.LastUpdatedUtc.LocalDateTime.ToString("HH:mm:ss");
-            var me = state.Players.FirstOrDefault(p => p.ConnectionId == _localConnectionId);
-            if (me is not null) _myReady = me.IsReady;
-            InvokeAsync(StateHasChanged);
-        });
-
-        _lobbyEventSub = _hub.On<PoRacerLobbyEvent>("lobbyEvent", ev =>
-        {
-            ToastService.Show(ev.Message, ev.Kind == "left" ? ToastType.Warning : ToastType.Info);
-        });
-
-        _gameStartedSub = _hub.On<string>("gameStarted", code =>
-        {
-            Nav.NavigateTo("/poracer");
-        });
-
-        await _hub.StartAsync();
-        _localConnectionId = _hub.ConnectionId ?? "";
-
-        var displayName = AuthState.User?.DisplayName ?? "Player";
-        var isGuest = !AuthState.IsAuthenticated;
-        await _hub.InvokeAsync<PoRacerLobbyState>("Join", displayName, isGuest);
-
-        // Re-join on every reconnect — SignalR hands us a NEW ConnectionId when
-        // the WebSocket drops and re-negotiates (every ~30s by default), and
-        // the server's disconnect handler will have run Leave on the old id.
-        _hub.Reconnected += async (newId) =>
-        {
-            _localConnectionId = newId ?? _localConnectionId;
-            try { await _hub.InvokeAsync<PoRacerLobbyState>("Join", displayName, isGuest); } catch { }
-        };
-    }
-
-    private async Task ToggleReadyAsync()
-    {
-        if (_hub is null) return;
-        await _hub.InvokeAsync("ToggleReady");
-    }
-
-    private async Task StartGameAsync()
-    {
-        if (_hub is null) return;
-        await _hub.InvokeAsync("StartGame");
+        _lobby.StateChanged += _ => InvokeAsync(StateHasChanged);
+        _lobby.ConnectionChanged += _ => InvokeAsync(StateHasChanged);
+        _lobby.EventReceived += ev => ToastService.Show(ev.Message, ev.Kind == "left" ? ToastType.Warning : ToastType.Info);
+        _lobby.GameStarted += _ => Nav.NavigateTo("/poracer");
+        await _lobby.ConnectAndJoinAsync(AuthState.User?.DisplayName ?? "Player", !AuthState.IsAuthenticated);
     }
 
     private async Task LeaveAsync()
     {
-        if (_hub is null) return;
-        try { await _hub.InvokeAsync("LeaveLobby"); } catch { }
+        await _lobby.LeaveLobbyAsync();
         Nav.NavigateTo("/");
     }
 
-    public async ValueTask DisposeAsync()
-    {
-        if (_hub is not null)
-        {
-            _lobbySub?.Dispose();
-            _gameStartedSub?.Dispose();
-            _lobbyEventSub?.Dispose();
-            try { await _hub.DisposeAsync(); } catch { }
-        }
-    }
+    public ValueTask DisposeAsync() => _lobby.DisposeAsync();
 }

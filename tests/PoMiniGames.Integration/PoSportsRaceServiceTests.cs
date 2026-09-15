@@ -169,7 +169,7 @@ public sealed class PoSportsRaceServiceTests
             && s.GameCode == "LOBBY");
 
         // The meet's end resets the lobby for the next ready round.
-        lobby.State.Phase.Should().Be("waiting");
+        lobby.IsStarted.Should().BeFalse();
     }
 
     [Fact]

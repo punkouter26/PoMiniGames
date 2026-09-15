@@ -92,7 +92,7 @@ public sealed class PoVoxelStrikeMultiplayerTests
 
         // Host ends the run; the session tears down and the lobby clears its started flag.
         lockstep.EndRun(PoVoxelStrikeLobbyService.GlobalCode);
-        lobby.EndRun();
+        lobby.End();
         lockstep.GetByConnection("conn-host").Should().BeNull("session torn down on EndRun");
         lockstep.Sessions.Should().BeEmpty();
         lobby.IsStarted.Should().BeFalse();

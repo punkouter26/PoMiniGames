@@ -69,39 +69,19 @@
                duration, and without this the card would blink out mid-swap and take the picker
                with it. *@
             @* Online: everything before the engine is up (connecting, searching) and everything
-               that ends the session (peer left, connection lost) lives on this one card. *@
+               that ends the session (peer left, connection lost) is the shared quick-match
+               card, inside this page's overlay. *@
             @if (_introDone && _online && _onlinePhase != OnlinePhase.Racing)
             {
                 <div class="mr-overlay">
-                    <div class="mr-pick-card" role="status">
-                        @if (_onlinePhase == OnlinePhase.Connecting)
-                        {
-                            <h2 class="mr-pick-title">Connecting…</h2>
-                        }
-                        else if (_onlinePhase == OnlinePhase.Searching)
-                        {
-                            <h2 class="mr-pick-title">Looking for an opponent…</h2>
-                            <p class="mr-pick-sub">You'll be paired with the next player who picks Online. The first to arrive hosts the race and steers <span class="mr-pick-red">RED</span>; the second steers <span class="mr-pick-white">WHITE</span>.</p>
-                            <div class="mr-online-actions">
-                                <button type="button" class="sp-btn-secondary" @onclick="LeaveOnline">Cancel</button>
-                            </div>
-                        }
-                        else if (_onlinePhase == OnlinePhase.PeerLeft)
-                        {
-                            <h2 class="mr-pick-title">@_opponentName left the race</h2>
-                            <div class="mr-online-actions">
-                                <button type="button" class="sp-btn-primary" @onclick="FindOpponentSafeAsync">Find another opponent</button>
-                                <button type="button" class="sp-btn-secondary" @onclick="LeaveOnline">Back</button>
-                            </div>
-                        }
-                        else
-                        {
-                            <h2 class="mr-pick-title">Lost the connection</h2>
-                            <div class="mr-online-actions">
-                                <button type="button" class="sp-btn-primary" @onclick="RetryOnlineAsync">Try again</button>
-                                <button type="button" class="sp-btn-secondary" @onclick="LeaveOnline">Back</button>
-                            </div>
-                        }
+                    <div class="mr-pick-card">
+                        <QuickMatchPanel Phase="@QuickPhase"
+                                         OpponentName="@_opponentName"
+                                         OpponentGone="@(_onlinePhase == OnlinePhase.PeerLeft)"
+                                         SearchingHint="The first to arrive hosts the race and steers RED; the second steers WHITE."
+                                         OnCancel="LeaveOnline"
+                                         OnRetry="RetryOnlineAsync"
+                                         OnFindAnother="FindOpponentSafeAsync" />
                     </div>
                 </div>
             }
@@ -285,6 +265,15 @@
     private bool _opponentWon;
     private bool _onlineResultKnown;
     private Task _applyFrameInFlight = Task.CompletedTask;
+    /// <summary>This page's host/guest phases mapped onto the shared quick-match card's vocabulary.</summary>
+    private QuickMatchPhase QuickPhase => _onlinePhase switch
+    {
+        OnlinePhase.Connecting => QuickMatchPhase.Connecting,
+        OnlinePhase.Searching => QuickMatchPhase.Searching,
+        OnlinePhase.PeerLeft => QuickMatchPhase.Over,
+        OnlinePhase.Error => QuickMatchPhase.Error,
+        _ => QuickMatchPhase.Idle,
+    };
     private bool IsOnlineHost => _online && _onlinePhase == OnlinePhase.Racing && _onlineRole == MarbleRaceRole.Host;
     private bool IsOnlineGuest => _online && _onlinePhase == OnlinePhase.Racing && _onlineRole == MarbleRaceRole.Guest;
     private const string GuestColor = "#f8fafc";   // mirrors GUEST_COLOR in game.js

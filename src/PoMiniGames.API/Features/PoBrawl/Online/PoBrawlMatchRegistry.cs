@@ -39,7 +39,7 @@ public sealed class PoBrawlMatchRegistry : IAsyncDisposable
         lock (_createLock) { _currentMatch = match; }
         _connectionToMatchId.Clear();
         // Reset lobby ready flags + end-match state so the next fight needs a fresh Ready round.
-        _lobby.EndMatch();
+        _lobby.End();
         return await Task.FromResult(match);
     }
 

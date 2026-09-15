@@ -16,6 +16,12 @@
 //            which is what gives the mountains an edge the vertex palette never had.
 //   WET      a darkening band either side of the waterline, so the beach meets the sea in
 //            a damp margin instead of at a hard colour boundary.
+//   SNOW     above a line set from the island's own peak height, jittered by noise and
+//            held only by gentle faces — the mountains get a cap, the cliffs stay bare.
+//   RIPPLES  wind lines on the beach shelf, a metre-scale sine bent by noise.
+//   BUMP     a noise-gradient perturbation of the fragment normal (Lambert lights per
+//            fragment since r155), so light rakes across ground that used to be one flat
+//            facet per triangle. Cheap: four noise taps, high tier only.
 //
 // Lava and fire additionally get a real EMISSIVE channel, via a per-vertex `aGlow`
 // attribute written by paint(). That is what makes them bloom in postProcess.js — before
@@ -53,6 +59,7 @@ const COMMON_FRAG = `
 #include <common>
 uniform float uGlowPulse;
 uniform float uDetail;      // 0 disables every injected term — the low-tier escape hatch
+uniform float uSnowLine;    // world y where snow starts; huge on an island with no peak
 varying vec3 vWorldPos;
 varying vec3 vWorldNormal;
 varying float vGlow;
@@ -91,13 +98,19 @@ export function createTerrainMesh(terrain, { tier = 'high' } = {}) {
   const material = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
   // Held outside onBeforeCompile so the renderer can drive them per frame: the callback
   // runs once, at first compile, and the uniform objects it captures are these.
+  // The snow line follows the island's own relief: a low island gets none, a tall one
+  // gets a cap on its top fifth. 1e6 disables the term without a branch in the shader.
+  let peak = 0;
+  for (let i = 0; i < height.length; i++) if (height[i] > peak) peak = height[i];
   const uniforms = {
     uGlowPulse: { value: 1 },
     uDetail: { value: tier === 'low' ? 0 : 1 },
+    uSnowLine: { value: peak > 16 ? peak * 0.78 : 1e6 },
   };
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uGlowPulse = uniforms.uGlowPulse;
     shader.uniforms.uDetail = uniforms.uDetail;
+    shader.uniforms.uSnowLine = uniforms.uSnowLine;
 
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', COMMON_VERT)
@@ -132,6 +145,28 @@ export function createTerrainMesh(terrain, { tier = 'high' } = {}) {
           // Wet margin: darker and slightly more saturated where the tide would reach.
           float wet = 1.0 - smoothstep(-0.15, 1.1, vWorldPos.y);
           diffuseColor.rgb *= 1.0 - wet * 0.34;
+
+          // Snow: a noise-jittered line, held only where the face is gentle enough.
+          float snowLine = uSnowLine + tNoise(vWorldPos.xz * 0.21) * 4.0;
+          float snow = smoothstep(snowLine, snowLine + 3.5, vWorldPos.y) * (1.0 - steep * 0.85);
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.93, 0.95, 0.98) * (0.9 + g * 0.1), snow);
+
+          // Sand ripples: wind lines on the flat of the beach, bent by the same noise.
+          float beach = smoothstep(-0.2, 0.4, vWorldPos.y) * (1.0 - smoothstep(1.2, 2.4, vWorldPos.y)) * (1.0 - steep);
+          float ripple = sin((vWorldPos.x * 0.9 + vWorldPos.z * 0.35 + tNoise(vWorldPos.xz * 0.5) * 2.0) * 6.0) * 0.5 + 0.5;
+          diffuseColor.rgb *= 1.0 - beach * ripple * 0.09;
+        }
+      `)
+      .replace('#include <normal_fragment_begin>', `
+        #include <normal_fragment_begin>
+        if (uDetail > 0.5) {
+          // Bump: the gradient of a world-space noise field, rotated into view space (the
+          // Lambert normal lives there), so the ground catches light unevenly.
+          float e = 0.35;
+          float hx = tNoise((vWorldPos.xz + vec2(e, 0.0)) * 1.9) - tNoise((vWorldPos.xz - vec2(e, 0.0)) * 1.9);
+          float hz = tNoise((vWorldPos.xz + vec2(0.0, e)) * 1.9) - tNoise((vWorldPos.xz - vec2(0.0, e)) * 1.9);
+          vec3 bump = mat3(viewMatrix) * vec3(-hx, 0.0, -hz);
+          normal = normalize(normal + bump * 0.55);
         }
       `)
       .replace('#include <emissivemap_fragment>', `

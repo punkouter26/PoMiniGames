@@ -58,6 +58,9 @@ uniform float uThreshold;   // luminance above which a pixel is treated as a lig
 uniform float uAberration;  // radial RGB split at the frame edge, in UV units
 uniform float uRadial;      // 0..1 zoom blur
 uniform float uVignette;
+uniform vec3 uGrade;        // per-channel multiplier: cool at night, warm at dusk
+uniform float uGrain;       // film grain amplitude, 0 = off
+uniform float uTime;
 varying vec2 vUv;
 
 float luma(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
@@ -106,6 +109,15 @@ void main() {
   }
 
   col *= 1.0 - uVignette * smoothstep(0.34, 0.92, r);
+
+  // Grade, then grain. The grade is a plain per-channel multiply — enough to make night
+  // read cool and dusk warm without a LUT. The grain is a per-pixel hash reseeded every
+  // frame, scaled down in the highlights so the sky does not sizzle.
+  col *= uGrade;
+  if (uGrain > 0.0001) {
+    float gr = fract(sin(dot(vUv * vec2(1213.0, 819.0) + fract(uTime) * 7.31, vec2(12.9898, 78.233))) * 43758.5453) - 0.5;
+    col += gr * uGrain * (1.0 - smoothstep(0.6, 1.4, luma(col)) * 0.7);
+  }
   gl_FragColor = vec4(col, 1.0);
 }
 `;
@@ -121,6 +133,9 @@ function atmosphereShader(taps) {
       uAberration: { value: 0 },
       uRadial: { value: 0 },
       uVignette: { value: 0.26 },
+      uGrade: { value: new THREE.Color(1, 1, 1) },
+      uGrain: { value: 0 },
+      uTime: { value: 0 },
     },
     vertexShader: ATMOSPHERE_VERT,
     fragmentShader: atmosphereFrag(taps),
@@ -177,6 +192,10 @@ export function createPostProcess(renderer, scene, camera, { tier = 'high', widt
   if (smaa) composer.addPass(smaa);
 
   const u = atmosphere.uniforms;
+  u.uGrain.value = tier === 'high' ? 0.028 : 0.016;
+  const NIGHT_GRADE = new THREE.Color(0.84, 0.9, 1.1);
+  const DUSK_GRADE = new THREE.Color(1.08, 0.97, 0.9);
+  const DAY_GRADE = new THREE.Color(1, 1, 1);
 
   return {
     enabled: true,
@@ -193,6 +212,7 @@ export function createPostProcess(renderer, scene, camera, { tier = 'high', widt
       rackFocus.update(dt);
       u.uAberration.value = punchAberration(1);
       u.uRadial.value = punchRadial(0.5);
+      u.uTime.value += dt;
     },
 
     /**
@@ -209,12 +229,14 @@ export function createPostProcess(renderer, scene, camera, { tier = 'high', widt
       if (tint) u.uShaftTint.value.copy(tint);
     },
 
-    /** dayFraction-driven look: bloom and vignette both lean on the night. */
-    setNight(night) {
+    /** dayFraction-driven look: bloom, vignette and the colour grade all lean on the hour. */
+    setNight(night, dusk = 0) {
       const n = Math.max(0, Math.min(1, night));
+      const d = Math.max(0, Math.min(1, dusk));
       bloom.strength = 0.32 + n * 0.5;
       bloom.threshold = 0.85 - n * 0.42;     // at night, far less has to be bright to glow
       u.uVignette.value = 0.22 + n * 0.2;
+      u.uGrade.value.copy(DAY_GRADE).lerp(NIGHT_GRADE, n).lerp(DUSK_GRADE, d * 0.6);
     },
 
     /** Rack the focus onto a world distance — the cinematic beat on a big event. */

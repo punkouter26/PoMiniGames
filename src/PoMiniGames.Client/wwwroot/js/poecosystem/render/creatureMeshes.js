@@ -5,6 +5,7 @@
 import * as THREE from 'three';
 import { FRAME } from '../sim/frame.js';
 import { SPECIES_ID } from '../sim/creatures/species.js';
+import { enhanceLambert } from './materials.js';
 
 // Part = box or cone offset from the creature's origin (feet), forward = +Z.
 const RIGS = {
@@ -82,7 +83,9 @@ export function createCreatureMeshes(scene, cap) {
   const local = new THREE.Object3D();
   const colour = new THREE.Color();
   for (const [id, rig] of Object.entries(RIGS)) {
-    const material = new THREE.MeshLambertMaterial({ color: rig.colour, flatShading: true });
+    // Fur/skin grain at a body scale, and a sky-tinted rim so a creature separates from the
+    // ground it stands on at a distance (materials.js).
+    const material = enhanceLambert(new THREE.MeshLambertMaterial({ color: rig.colour, flatShading: true }), { rim: 0.42, mottle: 0.16, mottleScale: 0.9 });
     const parts = rig.parts.map((p) => {
       const geo = p.shape === 'cone'
         ? new THREE.ConeGeometry(p.size[0], p.size[1], 5)

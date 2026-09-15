@@ -4,6 +4,7 @@
 import * as THREE from 'three';
 import { PROP_KIND, PROP_SIZES } from '../sim/core/config.js';
 import { FRAME } from '../sim/frame.js';
+import { enhanceLambert } from './materials.js';
 
 const KIND_COLOUR = {
   [PROP_KIND.ragdollPart]: 0x8a6f5a,
@@ -16,7 +17,7 @@ export function createPropMeshes(scene, propCap) {
   const buckets = [];
   const dummy = new THREE.Object3D();
   for (const kind of Object.values(PROP_KIND)) {
-    const material = new THREE.MeshLambertMaterial({ color: KIND_COLOUR[kind] ?? 0x888888, flatShading: true });
+    const material = enhanceLambert(new THREE.MeshLambertMaterial({ color: KIND_COLOUR[kind] ?? 0x888888, flatShading: true }), { rim: 0.3, mottle: 0.26, mottleScale: 0.5 });
     const perSize = PROP_SIZES.map((size, sizeIndex) => {
       const geo = kind === PROP_KIND.rock || kind === PROP_KIND.projectile
         ? new THREE.IcosahedronGeometry(size[0] * 0.6, 0)

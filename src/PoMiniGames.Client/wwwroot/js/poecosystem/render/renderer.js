@@ -29,6 +29,8 @@ import { createParticles } from './particles.js';
 import { createEventFx } from './eventFx.js';
 import { createDirector } from './director.js';
 import { createPip } from './pip.js';
+import { createSky } from './sky.js';
+import { materialClock, materialDetail } from './materials.js';
 import { applyCameraShake } from '../../postFx.js';
 
 const TAU = Math.PI * 2;
@@ -78,6 +80,10 @@ export function createRenderer(container, {
   // lighting owns scene.fog now: its colour and density both ride the same day/night curve
   // as the sky, and the water and particle shaders read the density back off it.
   const lighting = createLighting(scene, { shadows: !lowEnd, shadowMapSize: lowEnd ? 1024 : 2048, tier });
+  // The sky dome and clouds ride the camera; every hooked Lambert material (materials.js)
+  // reads one shared clock, set once per frame below.
+  const skyDome = createSky(scene, { tier });
+  materialDetail.value = tier === 'low' ? 0 : 1;
   const creatures = createCreatureMeshes(scene, cap);
   const props = createPropMeshes(scene, propCap);
   const particles = createParticles(scene, { tier });
@@ -369,6 +375,8 @@ export function createRenderer(container, {
 
     const sky = lighting.update(stats?.dayFraction ?? 0.5, player, timeSec);
     scene.background = sky.sky;
+    materialClock.value = timeSec;
+    skyDome.update(sky, player, timeSec);
     island?.update(timeSec, sky);
     if (campfireAt) {
       campfireLight.position.set(campfireAt.x, campfireAt.y + 1.1, campfireAt.z);
@@ -382,7 +390,7 @@ export function createRenderer(container, {
       pixelHeight: renderer.domElement.height, fov: camera.fov,
     });
 
-    post.setNight(sky.night);
+    post.setNight(sky.night, sky.dusk);
     updateShafts(sky, dir);
     post.update(dt);
     // Shake LAST, after everything that reads the camera has read it: applyCameraShake
@@ -438,7 +446,7 @@ export function createRenderer(container, {
       input.dispose();
       pip.dispose();
       scene.remove(campfireLight);
-      creatures.dispose(); props.dispose(); flora?.dispose(); island?.dispose(); lighting.dispose(); minimap?.dispose();
+      creatures.dispose(); props.dispose(); flora?.dispose(); island?.dispose(); lighting.dispose(); skyDome.dispose(); minimap?.dispose();
       particles.dispose(); post.dispose();
       renderer.dispose();
       canvas.remove();

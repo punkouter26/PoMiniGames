@@ -92,12 +92,35 @@ void main() {
   vec3 view = normalize(cameraPosition - vWorld);
   vec3 n = normalize(vNormal);
 
+  // Ripple detail: a fine drifting noise gradient on the normal, so the sun glint breaks
+  // into sparkle instead of one smooth lobe. Calmer at night, when the moon sheen wants
+  // to stay a line.
+  vec2 rp = vWorld.xz * 3.1 + vec2(uTime * 0.6, -uTime * 0.45);
+  float re = 0.08;
+  vec2 rg = vec2(noise(rp + vec2(re, 0.0)) - noise(rp - vec2(re, 0.0)), noise(rp + vec2(0.0, re)) - noise(rp - vec2(0.0, re)));
+  n = normalize(n + vec3(rg.x, 0.0, rg.y) * 0.35 * (1.0 - uNight * 0.5));
+
   // Fresnel (Schlick). Water's F0 is ~0.02: almost perfectly transparent head-on and
   // almost perfectly reflective at the horizon, which is the whole look.
   float fres = 0.02 + 0.98 * pow(1.0 - clamp(dot(n, view), 0.0, 1.0), 5.0);
 
   vec3 body = mix(uShallow, uDeep, smoothstep(0.02, 0.55, depth));
+
+  // Caustics: two counter-drifting noise fields multiplied, so bright cells form, split
+  // and vanish. Strongest where the bed is closest to the surface, and by day only.
+  float c1 = noise(vWorld.xz * 2.4 + vec2(uTime * 0.31, uTime * 0.17));
+  float c2 = noise(vWorld.xz * 2.1 - vec2(uTime * 0.23, -uTime * 0.29));
+  float caustic = pow(c1 * c2, 1.6) * (1.0 - smoothstep(0.0, 0.3, depth)) * inside;
+  body += uSunColor * caustic * 0.9 * (1.0 - uNight);
+
   vec3 col = mix(body, uSkyColor, fres * 0.85);
+
+  // The reflection warms toward the sun: looking sunward across the water, the grazing
+  // band takes the sun's colour rather than the zenith's.
+  vec3 vh = normalize(vec3(view.x, 0.0, view.z) + 1e-5);
+  vec3 sh = normalize(vec3(uSunDir.x, 0.0, uSunDir.z) + 1e-5);
+  float sunward = pow(max(dot(-vh, sh), 0.0), 3.0);
+  col = mix(col, uSunColor, fres * sunward * 0.35);
 
   // Blinn-Phong sun glint. Tightened at night so the moonlit sheen is a line rather than
   // a wash — the sun colour is already dimmed by lighting.js at that hour.

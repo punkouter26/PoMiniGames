@@ -5,9 +5,20 @@ import * as THREE from 'three';
 import { TILE_STATE, tileX, tileZ } from '../sim/terrain/tiles.js';
 import { TREE_STATE } from '../sim/flora/trees.js';
 import { FLORA } from '../sim/core/config.js';
+import { enhanceLambert } from './materials.js';
 
-function instanced(scene, geo, colour, cap, name, { emissive = 0 } = {}) {
-  const material = new THREE.MeshLambertMaterial({ color: colour, flatShading: true, emissive });
+// Per-instance colour jitter: a hash of the index picks a point between two tones, so a
+// forest is many greens rather than one. Applied through instanceColor when placing.
+const jitterColour = (() => {
+  const a = new THREE.Color(); const b = new THREE.Color(); const out = new THREE.Color();
+  return (k, hexA, hexB) => {
+    const h = Math.abs(Math.sin(k * 12.9898 + 78.233) * 43758.5453) % 1;
+    return out.copy(a.setHex(hexA)).lerp(b.setHex(hexB), h);
+  };
+})();
+
+function instanced(scene, geo, colour, cap, name, { emissive = 0, enhance = { rim: 0.22, mottle: 0.12, mottleScale: 1.0 } } = {}) {
+  const material = enhanceLambert(new THREE.MeshLambertMaterial({ color: colour, flatShading: true, emissive }), enhance);
   const mesh = new THREE.InstancedMesh(geo, material, Math.max(1, cap));
   mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   mesh.castShadow = true; mesh.count = 0; mesh.frustumCulled = false; mesh.name = name;
@@ -22,11 +33,13 @@ export function createFloraMeshes(scene, terrain, { trees = [], bushes = [] } = 
   // the sim's cap rather than to the count the island started with.
   let bushList = Array.from(bushes);
   const bushCap = Math.max(1, FLORA.maxBushes);
-  const trunk = instanced(scene, new THREE.CylinderGeometry(0.18, 0.24, 2.6, 5), 0x6b4423, treeCap, 'tree-trunk');
-  const crown = instanced(scene, new THREE.ConeGeometry(1.5, 3.2, 6), 0x1f5c2a, treeCap, 'tree-crown');
+  // Crowns sway (materials.js), trunks carry bark grain, bushes rustle a little. Crowns
+  // and bushes are white so the per-instance tint below is the whole colour.
+  const trunk = instanced(scene, new THREE.CylinderGeometry(0.18, 0.24, 2.6, 5), 0x6b4423, treeCap, 'tree-trunk', { enhance: { rim: 0.18, mottle: 0.3, mottleScale: 0.45 } });
+  const crown = instanced(scene, new THREE.ConeGeometry(1.5, 3.2, 6), 0xffffff, treeCap, 'tree-crown', { enhance: { rim: 0.3, mottle: 0.22, mottleScale: 1.3, sway: 0.16, swayHeight: 3.2 } });
   const stump = instanced(scene, new THREE.CylinderGeometry(0.26, 0.3, 0.5, 5), 0x4a3520, treeCap, 'tree-stump');
-  const bush = instanced(scene, new THREE.IcosahedronGeometry(0.55, 0), 0x2f6b34, bushCap, 'bush');
-  const berry = instanced(scene, new THREE.IcosahedronGeometry(0.6, 0), 0x9f1239, bushCap, 'bush-ripe');
+  const bush = instanced(scene, new THREE.IcosahedronGeometry(0.55, 0), 0xffffff, bushCap, 'bush', { enhance: { rim: 0.3, mottle: 0.2, mottleScale: 0.7, sway: 0.05, swayHeight: 1.1 } });
+  const berry = instanced(scene, new THREE.IcosahedronGeometry(0.6, 0), 0x9f1239, bushCap, 'bush-ripe', { enhance: { rim: 0.3, mottle: 0.2, mottleScale: 0.7, sway: 0.05, swayHeight: 1.1 } });
   const hutBase = instanced(scene, new THREE.BoxGeometry(2.2, 1.6, 2.2), 0xa8a29e, 32, 'hut');
   const hutRoof = instanced(scene, new THREE.ConeGeometry(1.9, 1.4, 4), 0x7c2d12, 32, 'hut-roof');
   const flame = instanced(scene, new THREE.ConeGeometry(0.5, 1.4, 5), 0xf97316, 4096, 'fire', { emissive: 0xf97316 });
@@ -64,6 +77,7 @@ export function createFloraMeshes(scene, terrain, { trees = [], bushes = [] } = 
         if ((msg.treeState?.[k] ?? TREE_STATE.STANDING) === TREE_STATE.STANDING) {
           place(trunk, nTrunk, x, y + 1.3, z, 1, (k % 7) * 0.4);
           place(crown, nTrunk, x, y + 3.4, z, 0.85 + (k % 5) * 0.06, (k % 7) * 0.4);
+          crown.mesh.setColorAt(nTrunk, jitterColour(k, 0x1a4f26, 0x4c8a2f));
           nTrunk++;
         } else { place(stump, nStump++, x, y + 0.25, z); }
       }
@@ -74,9 +88,11 @@ export function createFloraMeshes(scene, terrain, { trees = [], bushes = [] } = 
         const [x, z] = centre(bushes[k]);
         const y = terrain.heightAt(x, z);
         if ((msg.bushRipe?.[k] ?? 0) >= 128) place(berry, nBerry++, x, y + 0.5, z);
-        else place(bush, nBush++, x, y + 0.45, z);
+        else { bush.mesh.setColorAt(nBush, jitterColour(k + 977, 0x25602c, 0x4f8a3a)); place(bush, nBush++, x, y + 0.45, z); }
       }
       bush.mesh.count = nBush; berry.mesh.count = nBerry;
+      if (crown.mesh.instanceColor) crown.mesh.instanceColor.needsUpdate = true;
+      if (bush.mesh.instanceColor) bush.mesh.instanceColor.needsUpdate = true;
 
       const huts = msg.huts ?? [];
       huts.forEach((h, k) => {

@@ -109,7 +109,6 @@ export function createRenderer(container, {
   const speeds = new Float32Array(cap);
   let interpCount = 0;
   let propCount = 0;
-  let selectedHandle = -1;
   let hovered = null;
   let followHandle = -1;
   let stats = null;
@@ -143,15 +142,38 @@ export function createRenderer(container, {
     onCaption: (caption) => onAction('directorCaption', caption),
   });
   let lastInputAt = performance.now();
+  // Once the player has actually touched the camera, the director waits this long before
+  // taking it back — never the (much shorter) opening delay. Demo mode arms at 4 s so an
+  // untouched kiosk cuts to the drama almost at once, and that same 4 s used to apply
+  // after a look as well: the camera was yanked out of the player's hands a breath after
+  // they stopped moving the mouse, which reads as the mouse not working at all.
+  const DIRECTOR_RETAKE_SECONDS = 25;
+  let everInteracted = false;
+  // An explicit toggle-off (the 🎬 button, or C) is a preference, not a pause: without
+  // this the auto-arm below re-enabled the director on the very next frame in demo mode,
+  // because turning it off by hand never touched lastInputAt — so the switch did nothing
+  // at all. Touching the mouse still only defers it; only the switch retires it.
+  let directorDismissed = false;
   function setDirector(on) {
     if (director.enabled === !!on) return;
     director.setEnabled(on);
     if (on) followHandle = -1;
     onAction('director', !!on);
   }
-  function noteInput(now = performance.now()) {
+  /** Mark player input without deciding what it means for the director. */
+  function markInput(now = performance.now()) {
     lastInputAt = now;
+    everInteracted = true;
+  }
+  function noteInput(now = performance.now()) {
+    markInput(now);
     if (director.enabled) setDirector(false);
+  }
+  function toggleDirector() {
+    const next = !director.enabled;
+    markInput();
+    directorDismissed = !next;
+    setDirector(next);
   }
   const pip = createPip(canvas, { onChange: (on) => onAction('pip', on) });
 
@@ -160,7 +182,7 @@ export function createRenderer(container, {
     onAction: (action, value) => {
       if (action === 'fly') { noteInput(); player.toggleFly(); return; }
       if (action === 'inspect') { noteInput(); onPick(hovered ? hovered.handle : -1); return; }
-      if (action === 'director') { setDirector(!director.enabled); return; }
+      if (action === 'director') { toggleDirector(); return; }
       if (action === 'pip') { pip.toggle(); return; }
       if (action === 'follow' || action === 'speed') noteInput();
       onAction(action, value);
@@ -337,22 +359,26 @@ export function createRenderer(container, {
 
     // The director needs this frame's creature rows, so the pose is stepped after the
     // interpolation and the direction is read once the pose is final.
+    const intent = input.consume();
     if (terrainApi) {
-      const intent = input.consume();
       if (intent.forward || intent.right || intent.up || intent.jump) noteInput(now);
-      else if (directorIdleSeconds > 0 && !director.enabled && now - lastInputAt > directorIdleSeconds * 1000) setDirector(true);
+      else if (directorIdleSeconds > 0 && !director.enabled && !directorDismissed
+        && now - lastInputAt > (everInteracted ? Math.max(directorIdleSeconds, DIRECTOR_RETAKE_SECONDS) : directorIdleSeconds) * 1000) setDirector(true);
       const driven = director.enabled && curr
         && director.update(dt, timeSec, { player, terrain: terrainApi, interp, handles: curr.views.handles, count: interpCount });
       if (!driven) stepPlayer(player, intent, dt, terrainApi);
     }
+    // The camera is re-seated on EVERY frame, terrain or not. It used to live inside the
+    // branch above, which meant that while the world was still loading — or never arrived
+    // at all — look input moved the pose and nothing moved the camera, so the mouse read
+    // as broken rather than as early. The player exists from construction (a flat stand-in
+    // heightmap), so this is always a valid pose.
     const dir = player.direction();
-    if (terrainApi) {
-      camera.position.set(player.x, player.y, player.z);
-      camera.lookAt(player.x + dir.x, player.y + dir.y, player.z + dir.z);
-      // The listener follows the UNSHAKEN pose: a camera shake is a lens artefact, and
-      // panning the world's audio with it would make an eruption sound like vertigo.
-      audio?.setPlayer(player, dir);
-    }
+    camera.position.set(player.x, player.y, player.z);
+    camera.lookAt(player.x + dir.x, player.y + dir.y, player.z + dir.z);
+    // The listener follows the UNSHAKEN pose: a camera shake is a lens artefact, and
+    // panning the world's audio with it would make an eruption sound like vertigo.
+    if (terrainApi) audio?.setPlayer(player, dir);
 
     if (curr) {
       // Follow: gently tether the god behind the followed creature (the director has its own tether).
@@ -366,9 +392,7 @@ export function createRenderer(container, {
           break;
         }
       }
-      let selectedIndex = -1;
-      if (selectedHandle >= 0) for (let k = 0; k < interpCount; k++) if (curr.views.handles[k] === selectedHandle) { selectedIndex = k; break; }
-      creatures.draw(interp, interpCount, selectedIndex, timeSec, speeds);
+      creatures.draw(interp, interpCount, timeSec, speeds);
       props.draw(curr.views.props, propCount);
       // Only on a frame the sim actually produced: see eventFx.props for why feeding it
       // repeated rows would read every falling body as one that had just landed.
@@ -404,9 +428,9 @@ export function createRenderer(container, {
     post.update(dt);
     // Shake LAST, after everything that reads the camera has read it: applyCameraShake
     // offsets in the camera's own basis and is recomputed from scratch each frame, so it
-    // must not be applied before the audio listener or the shaft projection. Gated on
-    // terrainApi because that is the branch which re-seats the camera on the player — an
-    // offset applied to a camera nobody is repositioning would accumulate.
+    // must not be applied before the audio listener or the shaft projection. Still gated
+    // on terrainApi, though the re-seat above is now unconditional: every shake is raised
+    // by a sim event, and there are none before a world exists.
     if (terrainApi) applyCameraShake(camera, timeSec, 0.55);
     post.render();
     pip.mirror();
@@ -439,11 +463,16 @@ export function createRenderer(container, {
       eventFx.event(ev, at, player, post);
       if (director.enabled) director.cut(at.x, at.z, EVENT_CAPTIONS[ev.kind] ?? ev.text ?? '', lastTime / 1000);
     },
-    select(handle) { selectedHandle = handle ?? -1; },
+    // Selection is the sim's and the page's business, not the renderer's: nothing is
+    // drawn differently for the inspected creature since the wireframe box went
+    // (creatureMeshes.js). Kept as a no-op so the engine API stays one shape.
+    select() {},
     follow(handle) { if (handle >= 0) noteInput(); followHandle = handle ?? -1; },
     setTint: (traitIndex) => creatures.setTint(traitIndex),
     get tint() { return creatures.tint; },
-    setDirector,
+    // The page's 🎬 button goes through the same switch the C key does, so an explicit
+    // off is remembered rather than undone by the idle timer.
+    setDirector(on) { if (director.enabled === !!on) return; toggleDirector(); },
     get director() { return director.enabled; },
     get directorCaption() { return director.caption; },
     togglePip: () => pip.toggle(),

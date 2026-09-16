@@ -28,10 +28,6 @@ env:
   # Pinned to match global.json (10.0.203) so CI builds on the same SDK as local.
   # A floating '10.0.x' let CI drift onto a newer patch than the lockfile allows.
   DOTNET_VERSION: '10.0.203'
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  # `az deployment sub what-if` requires --location (the deployment record
-  # region; *not* the resource region, which lives in main.parameters.json).
-  # Must also match infra/main.bicep targetScope='subscription'.
   AZURE_LOCATION: 'westus2'
 
 jobs:
@@ -44,21 +40,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          # Required for MinVer to read the most recent v* tag (instead of
-          # stamping every build with 0.0.0-alpha.0.0). fetch-depth=0 is the
-          # cheapest setting that still gives MinVer a tag list.
           fetch-depth: 0
 
       - name: Check MinVer v* tag at HEAD
         shell: bash
         run: |
-          # MinVer stamps the assembly version from the nearest reachable v* tag.
-          # A tag exactly at HEAD produces a clean SemVer (e.g. v1.2.3); a commit
-          # ahead of the nearest tag produces a pre-release suffix (e.g. 1.2.4-alpha.1.0).
-          # Both are valid — pre-release builds are still identifiable in App Insights.
-          # We emit a warning (not a failure) when HEAD is untagged so hotfixes and
-          # config-only pushes are never blocked by a missing release tag.
-          git fetch --tags --force origin '+refs/tags/*:refs/tags/*'
           TAGS=$(git tag --points-at HEAD | grep -E '^v[0-9]' || true)
           if [ -z "$TAGS" ]; then
             echo "::warning::No v* tag at HEAD ($(git rev-parse --short HEAD)). MinVer will stamp this build with a pre-release version."
@@ -218,30 +204,6 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Bicep what-if (preview infra changes)
-        shell: bash
-        # Preview infra changes before any artifact reaches App Service. If
-        # Bicep would delete, recreate, or downgrade a shared resource (KV,
-        # App Insights, AI Foundry) we surface it in the run log here.
-        #
-        # continue-on-error: this is a SOFT gate. The deploy SP needs
-        # Microsoft.Authorization/roleAssignments/write on the target
-        # resources (and the subscription) to even *simulate* the
-        # assignments, and that permission is granted out-of-band on the
-        # Azure portal — bootstrapping it from CI is the chicken-and-egg
-        # problem that blocks the deploy entirely if this is a hard gate.
-        # A failed what-if is logged as a warning; a clean what-if shows
-        # the change set. Either way the App Service deploy proceeds.
-        run: |
-          az deployment sub what-if \
-            --location "${{ env.AZURE_LOCATION }}" \
-            --template-file infra/main.bicep \
-            --parameters infra/main.parameters.json \
-            --name "pominigames-preview-${{ github.run_id }}" \
-            --result-format FullResourcePayloads || \
-            echo "::warning::Bicep what-if failed (likely missing Microsoft.Authorization/roleAssignments/write on the deploy SP). The App Service deploy proceeds anyway."
-        continue-on-error: true
-
       - name: Deploy to App Service
         shell: bash
         run: |
@@ -266,17 +228,10 @@ jobs:
 
       - name: Prewarm (absorb F1 cold-start)
         shell: bash
-        # F1 cannot enable AlwaysOn; the first request after a fresh deploy pays
-        # the full cold-start tax (~10–30s on a Windows F1). Hammering the cold
-        # code paths here keeps the retry-loop failures out of the next four
-        # smoke steps. We probe ping (cheapest), liveness (alias), structured
-        # /api/health, and /api/diag in order — every health surface must be
-        # warmed before the smoke tests run.
         # Probe ping, liveness, health, and diag with a sensible retry backoff
         # to ensure the instance is active before running validation.
         run: |
           for path in "/api/health/ping" "/api/health/liveness" "/api/health" "/api/diag"; do
-            curl -fsS --retry 15 --retry-all-errors --retry-delay 15 \
             curl -fsS --retry 5 --retry-all-errors --retry-delay 5 \
               "https://${APP_NAME}.azurewebsites.net${path}" || true
           done
@@ -286,7 +241,6 @@ jobs:
         run: |
           for path in "/api/health/ping" "/api/health/liveness" "/api/health" "/api/diag"; do
             echo "Smoke testing ${path}..."
-            curl -fsS --retry 6 --retry-all-errors --retry-delay 10 \
             curl -fsS --retry 5 --retry-all-errors --retry-delay 5 \
               "https://${APP_NAME}.azurewebsites.net${path}" || exit 1
           done

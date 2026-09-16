@@ -43,13 +43,6 @@ public sealed class PairwiseEloCalculator
     public int SeedElo => _options.SeedElo;
 
     /// <summary>
-    /// Expected score for <paramref name="ratingA"/> against <paramref name="ratingB"/> —
-    /// the probability-like value in [0,1] that the standard logistic Elo curve predicts.
-    /// </summary>
-    private static double Expected(int ratingA, int ratingB) =>
-        1.0 / (1.0 + Math.Pow(10, (ratingB - ratingA) / 400.0));
-
-    /// <summary>
     /// Rating change for a single match between two rated fighters.
     /// </summary>
     /// <param name="winnerRating">Current rating of the fighter that won (or side A on a draw).</param>
@@ -62,13 +55,11 @@ public sealed class PairwiseEloCalculator
     /// </returns>
     public int Delta(int winnerRating, int loserRating, bool isDraw)
     {
-        var expected = Expected(winnerRating, loserRating);
         var expected = EloMath.ExpectedScore(winnerRating, loserRating);
         var actual = isDraw ? 0.5 : 1.0;
 
         // MidpointRounding.AwayFromZero so a ±0.5 delta is never rounded to nothing; banker's
         // rounding here would quietly discard the smallest real rating movements.
-        return (int)Math.Round(_options.K * (actual - expected), MidpointRounding.AwayFromZero);
         return EloMath.Delta(expected, actual, _options.K, MidpointRounding.AwayFromZero);
     }
 

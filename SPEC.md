@@ -49,7 +49,6 @@ All observer telemetry is exposed through a comprehensive **Native Blazor Analyt
 - **Simulation Worker**: Pure vanilla ECMAScript Web Worker (zero DOM dependencies)
 - **Local Persistence**: Browser `IndexedDB` (world state snapshots) + `localStorage` (user preferences)
 - **Cloud Persistence**: Azure Table Storage (`Azure.Data.Tables` `12.11.0`) with Azurite emulator
-- **Testing**: xUnit `2.9.3`, FluentAssertions `8.8.0`, Playwright `1.50.0`, Vitest (sim JS hermetic tests)
 - **Testing**: xUnit `2.9.3`, FluentAssertions `8.8.0`, Playwright `1.50.0`
 - **UI & Component Architecture**: Native Blazor (`<Virtualize>`, SVG charts, CSS design tokens in `wwwroot/css/app.css` and `poecosystem.css`). **No `Radzen.Blazor`** per `CLAUDE.md#L113`.
 
@@ -161,7 +160,6 @@ src/
 
 | Level | Framework | Scope | Pass Criteria |
 |---|---|---|---|
-| **JS Sim Tests** | Vitest / Node | `sim/tribe/**` (territory, tech tree, construction, diplomacy) | 100% deterministic logic; state transitions match test invariants. |
 | **JS Simulation Runtime** | Browser / Web Worker | `sim/tribe/**` (territory, tech tree, construction, diplomacy) | 100% deterministic logic; runtime state matches invariants. |
 | **Unit (C#)** | xUnit, FluentAssertions | `PoMiniGames.Unit/Features/PoEcosystem/` (Chronicle, DTOs, score rules) | All tests pass; tier count remains strictly **&le; 100 methods**. |
 | **Integration (C#)** | xUnit, Testcontainers Azurite | `PoMiniGames.Integration` (Cloud save/load endpoints) | Storage persistence verified; tier count remains strictly **&le; 50 methods**. |

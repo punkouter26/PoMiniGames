@@ -81,7 +81,6 @@ export function createCreatureMeshes(scene, cap) {
   // Object3D per part per frame would be ~200k allocations a second.
   const dummy = new THREE.Object3D();
   const local = new THREE.Object3D();
-  const colour = new THREE.Color();
   for (const [id, rig] of Object.entries(RIGS)) {
     // Fur/skin grain at a body scale, and a sky-tinted rim so a creature separates from the
     // ground it stands on at a distance (materials.js).
@@ -102,17 +101,12 @@ export function createCreatureMeshes(scene, cap) {
     groups[Number(id)] = { rig, parts, material, count: 0 };
   }
 
-  // Outline for the inspected creature: a wireframe box that follows it.
-  const outline = new THREE.Mesh(
-    new THREE.BoxGeometry(1, 1, 1),
-    new THREE.MeshBasicMaterial({ color: 0x22d3ee, wireframe: true, transparent: true, opacity: 0.9 }),
-  );
-  outline.visible = false;
-  outline.name = 'selection';
-  scene.add(outline);
+  // There is no selection outline. A cyan wireframe box used to track the inspected
+  // creature — and, because the auto-director inspected whatever it was filming, it sat
+  // around the subject of every cinematic shot. Removed 2026-09-16 at the user's request:
+  // the shot itself says what is being watched, and the popover names it.
 
   return {
-    outline,
     /** Colour every creature by one base trait (0–4), or -1 to restore species colours. */
     setTint(traitIndex) {
       const next = Number.isInteger(traitIndex) && traitIndex >= 0 && traitIndex < 5 ? traitIndex : -1;
@@ -124,9 +118,9 @@ export function createCreatureMeshes(scene, cap) {
     get tint() { return tint; },
     /**
      * Draw one frame. `view` is the interpolated creature array, `count` how many are live,
-     * `selectedIndex` the row to outline (-1 for none), `time` seconds for the leg swing.
+     * `time` seconds for the leg swing.
      */
-    draw(view, count, selectedIndex, time, speeds) {
+    draw(view, count, time, speeds) {
       for (const g of groups) if (g) g.count = 0;
       const paint = tint >= 0 || repaint;
       for (let k = 0; k < count; k++) {
@@ -154,16 +148,7 @@ export function createCreatureMeshes(scene, cap) {
           local.matrix.premultiply(dummy.matrix);
           part.mesh.setMatrixAt(i, local.matrix);
         }
-        if (k === selectedIndex) {
-          outline.visible = true;
-          outline.position.set(view[o], view[o + 1] + scale * 0.9, view[o + 2]);
-          outline.scale.set(scale * 1.4, scale * 1.9, scale * 1.9);
-          outline.rotation.set(0, view[o + 3], 0);
-          colour.setHex(0x22d3ee);
-          outline.material.color.copy(colour);
-        }
       }
-      if (selectedIndex < 0) outline.visible = false;
       for (const g of groups) {
         if (!g) continue;
         for (const part of g.parts) {
@@ -179,7 +164,6 @@ export function createCreatureMeshes(scene, cap) {
         for (const part of g.parts) { scene.remove(part.mesh); part.geo.dispose(); part.mesh.dispose(); }
         g.material.dispose();
       }
-      scene.remove(outline); outline.geometry.dispose(); outline.material.dispose();
     },
   };
 }

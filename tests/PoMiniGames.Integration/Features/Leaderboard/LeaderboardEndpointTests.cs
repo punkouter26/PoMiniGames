@@ -100,18 +100,15 @@ public sealed class LeaderboardEndpointTests : IClassFixture<TestWebApplicationF
         await rivalClient.ArmAntiforgeryAsync();
 
         // Best-progress semantics: 4 → then a worse run (2) must NOT overwrite it.
-        (await _client.PostAsJsonAsync("/api/pobrawl/ladder",
         (await nameClient.PostAsJsonAsync("/api/pobrawl/ladder",
             new { PlayerName = name, PresidentsBeaten = 4, Elo = 1300 })).StatusCode
             .Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.Created);
-        (await _client.PostAsJsonAsync("/api/pobrawl/ladder",
         (await nameClient.PostAsJsonAsync("/api/pobrawl/ladder",
             new { PlayerName = name, PresidentsBeaten = 2, Elo = 1250 })).StatusCode
             .Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.Created);
         // A full clear posts the whole roster, not a literal 10. The ceiling used to be
         // hardcoded at 10 while the client ladder walked all 15 fighters, so every rung past
         // the tenth 400'd and the board silently froze one rung short of the roster.
-        (await _client.PostAsJsonAsync("/api/pobrawl/ladder",
         (await rivalClient.PostAsJsonAsync("/api/pobrawl/ladder",
             new { PlayerName = rival, PresidentsBeaten = PoBrawlRoster.Count, Elo = 1700 })).StatusCode
             .Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.Created);

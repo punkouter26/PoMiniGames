@@ -21,21 +21,16 @@
 
     @if (_booted)
     {
-        <div class="poeco-hud" data-glass aria-hidden="@(_dashboardOpen ? "true" : "false")">
+        <div class="poeco-hud @(_directorOn ? "poeco-hud--cinematic" : "")" data-glass aria-hidden="@(_dashboardOpen ? "true" : "false")">
             <div class="poeco-crosshair" aria-hidden="true">
                 <svg viewBox="0 0 20 20" width="20" height="20"><circle cx="10" cy="10" r="1.5" fill="currentColor"></circle><path d="M10 2v4M10 14v4M2 10h4M14 10h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg>
             </div>
 
             <div class="poeco-hud-top">
+                @* Everything statistical lives behind the Tab dashboard now; the bar keeps
+                   only the status chip (one glance line, click = dashboard) and the pills. *@
                 <HudBar Stats="_stats" Sound="_sound" OnSound="ToggleSoundAsync" OnDashboard="ToggleDashboard"
                         Director="_directorOn" OnDirector="ToggleDirectorAsync" Pip="_pipOn" OnPip="TogglePipAsync" />
-
-                <div class="poeco-camera-dock" role="toolbar" aria-label="Camera presets">
-                    <button type="button" class="poeco-btn poeco-btn--sm" @onclick="() => SetCameraPresetAsync(CameraPreset.IslandOverview)" title="Overhead island overview">🏝️ Overview</button>
-                    <button type="button" class="poeco-btn poeco-btn--sm" @onclick="() => SetCameraPresetAsync(CameraPreset.AmberClan)" title="Focus Amber Clan">🟡 Amber</button>
-                    <button type="button" class="poeco-btn poeco-btn--sm" @onclick="() => SetCameraPresetAsync(CameraPreset.CobaltClan)" title="Focus Cobalt Clan">🔵 Cobalt</button>
-                    <button type="button" class="poeco-btn poeco-btn--sm" @onclick="() => SetCameraPresetAsync(CameraPreset.VerdantClan)" title="Focus Verdant Clan">🟢 Verdant</button>
-                </div>
             </div>
 
             @if (_directorOn)
@@ -56,10 +51,17 @@
             }
 
             <div class="poeco-minimap-wrap">
-                <canvas id="poeco-minimap" class="poeco-minimap" width="200" height="200" aria-label="Map of the island"></canvas>
+                <canvas id="poeco-minimap" class="poeco-minimap" width="200" height="200"
+                        aria-label="Map of the island — click near a tribe to fly there, or use the overview button"
+                        title="Click near a tribe's camp to fly to it" @onclick="MinimapClickAsync"></canvas>
+                <button type="button" class="poeco-minimap-overview" title="Island overview"
+                        aria-label="Fly to the island overview"
+                        @onclick="() => SetCameraPresetAsync(CameraPreset.IslandOverview)">⤢</button>
             </div>
 
-            <Sparkline Stats="_stats" />
+            @* The population sparkline is gone from the glass: stats are the dashboard's
+                job (Tab). The minimap stays — it is navigation, and it now doubles as the
+                camera-focus control. *@
 
             @if (_showKeys)
             {
@@ -71,20 +73,29 @@
                 </div>
             }
 
-            @if (!_pointerLocked && !_narrow && !_directorOn)
+            @if (!_pointerLocked && !_narrow && !_directorOn && !_showKeys && !_lockHintSeen)
             {
-                <p class="poeco-lock-hint">Click to look around</p>
+                <p class="poeco-lock-hint">Drag to look around · click for free-look</p>
             }
 
-            <div class="poeco-decree-dock" role="form" aria-label="Divine Decree Console">
-                <span class="poeco-decree-icon" aria-hidden="true">⚡</span>
-                <input type="text" class="poeco-decree-input" @bind="_decreeInput" @bind:event="oninput" @onkeydown="HandleDecreeKeyDownAsync"
-                       placeholder="Issue Divine Decree (e.g. 'Bless Amber with food', 'Summon rain')..."
-                       disabled="@_decreeBusy" />
-                <button type="button" class="poeco-btn poeco-btn--sm poeco-btn--primary" @onclick="SendDecreeAsync" disabled="@(_decreeBusy || string.IsNullOrWhiteSpace(_decreeInput))">
-                    @(_decreeBusy ? "..." : "Decree")
-                </button>
-            </div>
+            @if (!_decreeOpen)
+            {
+                <button type="button" class="poeco-pill poeco-decree-summon" title="Issue a Divine Decree (/)"
+                        @onclick="OpenDecreeAsync">⚡ <kbd>/</kbd></button>
+            }
+            else
+            {
+                <div class="poeco-decree-dock" role="form" aria-label="Divine Decree Console">
+                    <span class="poeco-decree-icon" aria-hidden="true">⚡</span>
+                    <input type="text" class="poeco-decree-input" @ref="_decreeInputRef" @bind="_decreeInput" @bind:event="oninput" @onkeydown="HandleDecreeKeyDownAsync"
+                           placeholder="Issue Divine Decree (e.g. 'Bless Amber with food', 'Summon rain')… (Esc to close)"
+                           disabled="@_decreeBusy" />
+                    <button type="button" class="poeco-btn poeco-btn--sm poeco-btn--primary" @onclick="SendDecreeAsync" disabled="@(_decreeBusy || string.IsNullOrWhiteSpace(_decreeInput))">
+                        @(_decreeBusy ? "..." : "Decree")
+                    </button>
+                </div>
+            }
+
             @if (!string.IsNullOrWhiteSpace(_decreeFeedback))
             {
                 <div class="poeco-decree-feedback" role="status">
@@ -104,7 +115,10 @@
             }
         </div>
 
-        @if (_detail is not null && !_dashboardOpen)
+        @* The inspector never rides over an auto-director shot: the director is a camera,
+           not a readout, and a panel left open from an earlier inspection would sit on top
+           of every cut that followed (2026-09-16). *@
+        @if (_detail is not null && !_dashboardOpen && !_directorOn)
         {
             <InspectorPopover Detail="_detail"
                               OnFollow="FollowAsync"

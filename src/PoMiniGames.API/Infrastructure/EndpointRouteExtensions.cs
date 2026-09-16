@@ -83,9 +83,6 @@ internal static class EndpointRouteExtensions
         // immutable), so they sit with the anonymous reads; the M4 run-submission POST
         // will join the authenticated group below instead.
         app.MapPoVoxelStrikeAssetEndpoints();
-        // Score-integrity posture. Anonymous because it reports configuration, not data, and
-        // the client reads it before sign-in to decide whether to run the session machinery.
-        app.MapIntegrityStatusEndpoint();
         // PoEcosystem gallery: shared islands are public by their owners' choice, and a visit
         // is a read of bytes only the browser engine can interpret.
         app.MapPoEcosystemGalleryEndpoints();

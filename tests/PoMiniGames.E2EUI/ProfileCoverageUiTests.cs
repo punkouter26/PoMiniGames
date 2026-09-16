@@ -74,7 +74,6 @@ public class ProfileCoverageUiTests
         // The whole point of the change: the profile used to report three of ten
         // games, so several games recorded stats no one could ever see.
         names.Should().Contain(["Tic-Tac-Toe", "Connect Five", "Brawl", "Sports",
-            "Fun Quiz", "Racer", "Couple Quiz", "Marble Race", "Joker", "Survive"]);
             "Fun Quiz", "Racer", "Couple Quiz", "Marble Race", "Joker", "Voxel Strike"]);
 
         // Joker carries a session count, not a win rate.

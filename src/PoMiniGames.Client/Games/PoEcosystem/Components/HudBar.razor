@@ -1,30 +1,27 @@
-@* Clock and the dashboard button — top-left of the HUD (layout concept C). Speed lives in
-   the dashboard (and on keys 0–3); the sound pill toggles the procedural ambience; the
-   cinematic pill hands the camera to the auto-director and the pop-out pill opens the
-   island in a Picture-in-Picture window. *@
+@* Top-left of the HUD. One status chip carries everything the clock block used to spread
+   over four badges (date, season, alive, tribe tier) — clicking it opens the dashboard,
+   which owns the detail. The sound / cinematic / pop-out pills are icon-only: labels and
+   shortcut keys live in the title tooltips and the key legend, not on the bar. Speed
+   stays on keys 0–3 inside the dashboard. *@
 <div class="poeco-hudbar">
-    <span class="poeco-clock" aria-live="off">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>
-        Year @(Stats?.Year ?? 0) · Day @(Stats?.Day ?? 1)
-    </span>
-
-    @{
-        var seasonBadge = (Stats?.Season ?? 0) switch
+    <button type="button" class="poeco-chip" title="Island status — click for the full dashboard"
+            aria-label="Island status: year @(Stats?.Year ?? 0), day @(Stats?.Day ?? 1), @(Stats?.Alive ?? 0) creatures alive@(Stats?.Tech is { } t ? $", {t.Tribe} tribe at {t.Name}" : "")"
+            @onclick="OnDashboard">
+        @{
+            var seasonIcon = (Stats?.Season ?? 0) switch
+            {
+                0 => "🌸", 1 => "☀️", 2 => "🍂", _ => "❄️",
+            };
+        }
+        <span class="poeco-chip-date">@seasonIcon Y@(Stats?.Year ?? 0)·D@(Stats?.Day ?? 1)</span>
+        <span class="poeco-chip-sep" aria-hidden="true">·</span>
+        <span>@(Stats?.Alive ?? 0) alive</span>
+        @if (Stats?.Tech is { } tech)
         {
-            0 => ("🌸 Spring", "poeco-badge--spring"),
-            1 => ("☀️ Summer", "poeco-badge--summer"),
-            2 => ("🍂 Autumn", "poeco-badge--autumn"),
-            _ => ("❄️ Winter", "poeco-badge--winter"),
-        };
-    }
-    <span class="poeco-badge @seasonBadge.Item2" title="Current climate season">@seasonBadge.Item1</span>
-
-    <span class="poeco-badge" title="Creatures alive">@(Stats?.Alive ?? 0) alive</span>
-
-    @if (Stats?.Tech is { } tech)
-    {
-        <span class="poeco-badge poeco-badge--tech" title="The tribe's ladder: Camp → Fire → Palisade → Farming → Watchtower">@tech.Tribe tribe · @tech.Name</span>
-    }
+            <span class="poeco-chip-sep" aria-hidden="true">·</span>
+            <span class="poeco-chip-tech" title="The tribe's ladder: Camp → Fire → Palisade → Farming → Watchtower">@tech.Name</span>
+        }
+    </button>
 
     <button type="button" class="poeco-pill poeco-sound-btn" aria-pressed="@(Sound ? "true" : "false")"
             aria-label="@(Sound ? "Mute ambience" : "Unmute ambience")"
@@ -32,18 +29,17 @@
             @onclick="() => OnSound.InvokeAsync(!Sound)">@(Sound ? "🔊" : "🔇")</button>
 
     <button type="button" class="poeco-pill @(Director ? "poeco-pill--on" : "")" aria-pressed="@(Director ? "true" : "false")"
-            title="Let the camera find the drama on its own" @onclick="OnDirector">
-        🎬 Cinematic <kbd>C</kbd>
-    </button>
+            title="Cinematic camera — let the director find the drama (C)"
+            @onclick="OnDirector">🎬</button>
 
     <button type="button" class="poeco-pill @(Pip ? "poeco-pill--on" : "")" aria-pressed="@(Pip ? "true" : "false")"
-            title="Pop the island out into a small always-on-top window" @onclick="OnPip">
-        ⧉ Pop out <kbd>P</kbd>
-    </button>
+            title="Pop the island out into a small always-on-top window (P)"
+            @onclick="OnPip">⧉</button>
 
-    <button type="button" class="poeco-pill poeco-dashboard-btn" @onclick="OnDashboard" aria-label="Open the dashboard">
+    <button type="button" class="poeco-pill poeco-dashboard-btn" @onclick="OnDashboard"
+            title="Dashboard — populations, tribe, chronicle, cloud saves (Tab)"
+            aria-label="Open the dashboard">
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true"><path d="M3 17l6-6 4 4 8-8" /></svg>
-        Dashboard <kbd>Tab</kbd>
     </button>
 </div>
 

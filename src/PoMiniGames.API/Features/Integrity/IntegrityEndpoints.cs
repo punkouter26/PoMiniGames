@@ -4,18 +4,11 @@ using PoMiniGames.Features.Auth;
 
 namespace PoMiniGames.Features.Integrity;
 
-/// <summary>What the client needs to know to decide whether to bother minting sessions.</summary>
-public sealed record IntegrityStatusDto(string Mode, int SessionTtlMinutes, bool EnforcesValueBounds, bool ModeratesDisplayNames);
-
 /// <summary>
-/// Endpoints for the score-integrity slice: mint a play session, and report the guard's posture.
 /// Endpoints for the score-integrity slice: mint a play session.
 /// </summary>
 /// <remarks>
 /// The mint endpoint sits in the authenticated group (see EndpointRouteExtensions) because a
-/// session is bound to an identity and there is nothing to bind for an anonymous caller. Status
-/// is anonymous — it reports configuration, not data, and the client reads it before sign-in to
-/// decide whether to run the session machinery at all.
 /// session is bound to an identity and there is nothing to bind for an anonymous caller.
 /// </remarks>
 public static class IntegrityEndpoints
@@ -56,27 +49,6 @@ public static class IntegrityEndpoints
             .Produces(StatusCodes.Status204NoContent)
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .RequireRateLimiting("play-session");
-
-        return app;
-    }
-
-    /// <summary>Status: anonymous configuration read, mapped with the other public endpoints.</summary>
-    public static IEndpointRouteBuilder MapIntegrityStatusEndpoint(this IEndpointRouteBuilder app)
-    {
-        app.MapGet("/api/play/status",
-            (IOptionsMonitor<IntegrityOptions> options) =>
-            {
-                var current = options.CurrentValue;
-                return Results.Ok(new IntegrityStatusDto(
-                    current.Mode.ToString(),
-                    current.SessionTtlMinutes,
-                    current.EnforceValueBounds,
-                    current.ModerateDisplayNames));
-            })
-            .WithTags("Integrity")
-            .WithName("GetIntegrityStatus")
-            .WithSummary("Report the score-integrity posture this deployment is running")
-            .Produces<IntegrityStatusDto>(StatusCodes.Status200OK);
 
         return app;
     }

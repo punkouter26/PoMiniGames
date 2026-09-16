@@ -9,10 +9,7 @@
          Blazored.LocalStorage is used through its string API only, and NSubstitute /
          bUnit never ship in the WASM bundle. -->
     <PackageVersion Include="Blazored.LocalStorage" Version="4.5.0" />
-    <PackageVersion Include="Riok.Mapperly" Version="4.3.1" />
     <PackageVersion Include="NSubstitute" Version="6.2.0" />
-    <PackageVersion Include="bunit" Version="2.9.0" />
-    <PackageVersion Include="Supercluster.KDTree.Standard" Version="1.0.5" />
     <!-- Azure -->
     <PackageVersion Include="Azure.Identity" Version="1.19.0" />
     <PackageVersion Include="Azure.Extensions.AspNetCore.Configuration.Secrets" Version="1.5.0" />

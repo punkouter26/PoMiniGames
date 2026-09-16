@@ -19,22 +19,51 @@ export function memoryIdb() {
   };
 }
 
-/** Open (or create) the IndexedDB-backed store; falls back to memory when unavailable. */
-export function openWorldStore(indexedDbImpl = globalThis.indexedDB) {
+/**
+ * Open (or create) the IndexedDB-backed store; falls back to memory when unavailable.
+ *
+ * "Unavailable" has to include *silent*, not just broken. `open()` fires neither success
+ * nor error when the upgrade is blocked by another tab holding the database (onblocked),
+ * and in a partitioned or storage-denied context it can throw outright or simply never
+ * answer. The sim worker awaits this before it will handle a single message, so a promise
+ * that never settles here is a world that never starts — hence the explicit onblocked
+ * branch and the wall clock behind it. Losing persistence costs an autosave; hanging
+ * costs the whole island.
+ */
+export function openWorldStore(indexedDbImpl = globalThis.indexedDB, { timeoutMs = 4000 } = {}) {
   if (!indexedDbImpl) return Promise.resolve(memoryIdb());
   return new Promise((resolve) => {
-    const req = indexedDbImpl.open(DB_NAME, 1);
+    let settled = false;
+    let timer = null;
+    const done = (store) => {
+      if (settled) return;
+      settled = true;
+      if (timer !== null) clearTimeout(timer);
+      resolve(store);
+    };
+    timer = setTimeout(() => done(memoryIdb()), timeoutMs);
+
+    let req;
+    try { req = indexedDbImpl.open(DB_NAME, 1); }
+    catch { done(memoryIdb()); return; }
+
     req.onupgradeneeded = () => { const db = req.result; if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE); };
-    req.onerror = () => resolve(memoryIdb());
+    // Another tab is still holding the old version open: that open will not proceed until
+    // it closes, which may be never.
+    req.onblocked = () => done(memoryIdb());
+    req.onerror = () => done(memoryIdb());
     req.onsuccess = () => {
       const db = req.result;
+      // An open that lands after the fallback was handed out has no reader: close it
+      // rather than leaving a connection that would block the NEXT tab's upgrade.
+      if (settled) { try { db.close(); } catch { /* already gone */ } return; }
       const run = (mode, fn) => new Promise((ok, fail) => {
         const tx = db.transaction(STORE, mode);
         const r = fn(tx.objectStore(STORE));
         r.onsuccess = () => ok(r.result === undefined ? null : r.result);
         r.onerror = () => fail(r.error);
       });
-      resolve({
+      done({
         kind: 'indexeddb',
         get: (key) => run('readonly', (s) => s.get(key)),
         put: (key, value) => run('readwrite', (s) => s.put(value, key)),

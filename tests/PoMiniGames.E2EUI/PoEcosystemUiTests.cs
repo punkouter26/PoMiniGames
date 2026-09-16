@@ -5,8 +5,6 @@ namespace PoMiniGames.E2EUI;
 /// <summary>
 /// PoEcosystem smoke through a real Chromium: the demo route boots the sim worker and the
 /// three.js renderer, the island fills with creatures, and the crosshair inspector opens.
-/// One method by design — the tier is capped at 25 (the 100/50/25/25 rule) and everything
-/// cheaper than a browser is already covered by the SimJs (Vitest) tier.
 /// One method by design — the tier is capped at 25 (the 100/50/25/25 rule) and exercises
 /// the end-to-end canvas rendering and UI dashboard components.
 /// </summary>

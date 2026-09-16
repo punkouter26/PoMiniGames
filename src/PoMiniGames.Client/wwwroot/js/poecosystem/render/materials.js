@@ -111,9 +111,17 @@ export function enhanceLambert(material, { rim = 0.35, rimColor = 0xbfd4ff, mott
           float m = mNoise(w.xz + w.y * 0.7) * 0.6 + mNoise(w.xz * 2.9 - w.y * 1.3) * 0.4;
           diffuseColor.rgb *= 1.0 - uMottle * 0.5 + m * uMottle;
         }
-        // Seasonal effects:
+      `)
+      // Seasonal effects need the surface normal, and three only declares `normal` in
+      // normal_fragment_begin — AFTER color_fragment. Injecting `normal.y` there made the
+      // whole instanced Lambert program fail to compile ('normal' : undeclared identifier),
+      // so every hooked creature/prop mesh drew as a garbage blob and flooded the console
+      // with useProgram warnings (found via renderer.info.programs diagnostics, 2026-09-16).
+      // normal is view-space; inverseTransformDirection (from <common>) gives world up.
+      .replace('#include <normal_fragment_begin>', `
+        #include <normal_fragment_begin>
         if (uSnow > 0.05) {
-          float upNorm = clamp(normal.y, 0.0, 1.0);
+          float upNorm = clamp(inverseTransformDirection(normal, viewMatrix).y, 0.0, 1.0);
           float snowFactor = smoothstep(0.2, 0.75, upNorm) * uSnow;
           diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.92, 0.95, 0.98), snowFactor * 0.85);
         } else if (uSeason > 1.5 && uSeason < 2.5) {

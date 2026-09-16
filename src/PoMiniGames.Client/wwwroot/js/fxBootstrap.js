@@ -66,17 +66,6 @@
         });
     }
 
-    chain.then(function () {
-        // WebGPU backend probes in the background; gpuFx consults it lazily
-        // so the catalog pays zero for the probe. Skip under reduce-motion
-        // — the WebGPU compute shader spins for tens of thousands of
-        // particles and is the single most motion-heavy thing on the page.
-        if (!reduceMotion && window.PoQuality && window.PoQuality.tier() !== 'low') {
-            load('js/gpuFxWebGPU.js').then(function () {
-                window.PoGpuWebGPU && window.PoGpuWebGPU.probe();
-            });
-        }
-    });
     // WebGPU compute shader probe is deferred to when 3D game engines initialize
     // so catalog navigation never pays for compute shader compilation.
 })();

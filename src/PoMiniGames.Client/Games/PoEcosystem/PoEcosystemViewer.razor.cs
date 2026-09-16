@@ -37,7 +37,7 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
 
     private static readonly (string Key, string What)[] KeyLegend =
     [
-        ("WASD", "move"), ("Shift", "run"), ("Space/Ctrl", "rise/sink"), ("F", "float/walk"), ("E", "inspect"), ("C", "cinematic"), ("Tab", "dashboard"),
+        ("WASD", "move"), ("Shift", "run"), ("Space/Ctrl", "rise/sink"), ("F", "float/walk"), ("E", "inspect"), ("C", "cinematic"), ("/", "decree"), ("Tab", "dashboard"),
     ];
 
     private readonly List<EcoEvent> _log = new(LogCapacity);
@@ -80,6 +80,9 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
     private string _decreeInput = "";
     private bool _decreeBusy;
     private string? _decreeFeedback;
+    private bool _decreeOpen;                       // the decree console is summoned, not parked
+    private ElementReference _decreeInputRef;
+    private bool _lockHintSeen;                     // the drag/free-look hint shows once per browser
     private List<EcoCultureProfile> _cultures = [];
 
     protected override void OnInitialized()
@@ -112,10 +115,12 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
         // Demo mode always starts a fresh island, so it skips the resume probe.
         var webGpu = Interop.WebGpuAvailableAsync().AsTask();
         var models = Interop.ModelsAsync().AsTask();
+        var lockHint = Interop.LockHintSeenAsync().AsTask();
         var probe = IsDemo ? Task.FromResult(new EcoSaveInfo(false, 0, 0, 0, 0, null)) : Interop.ProbeSaveAsync().AsTask();
-        await Task.WhenAll(webGpu, models, probe);
+        await Task.WhenAll(webGpu, models, lockHint, probe);
         _webGpu = webGpu.Result;
         _models = models.Result;
+        _lockHintSeen = lockHint.Result;
         var save = probe.Result;
         if (save.Exists) _resumePrompt = save;
         else await BootAsync(resume: false);
@@ -246,12 +251,25 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
         switch (action)
         {
             case "dashboard": _dashboardOpen = !_dashboardOpen; break;
+            case "decree":
+                _decreeOpen = !_decreeOpen;
+                if (_decreeOpen) _ = FocusDecreeInputAsync();
+                break;
             case "escape":
                 if (_lineageOpen) _lineageOpen = false;
                 else if (_dashboardOpen) _dashboardOpen = false;
+                else if (_decreeOpen) CloseDecree();
                 else _detail = null;
                 break;
-            case "pointerLock": _pointerLocked = value == "True" || value == "true"; break;
+            case "pointerLock":
+                _pointerLocked = value == "True" || value == "true";
+                // The lock hint retires itself after the very first successful lock.
+                if (_pointerLocked && !_lockHintSeen)
+                {
+                    _lockHintSeen = true;
+                    _ = Interop.MarkLockHintSeenAsync();
+                }
+                break;
             default: return;
         }
         InvokeAsync(StateHasChanged);
@@ -629,6 +647,53 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
         {
             await SendDecreeAsync();
         }
+        else if (e.Key == "Escape")
+        {
+            // input.js' own Escape handling is suppressed while an input is focused, so the
+            // console closes itself here.
+            CloseDecree();
+        }
+    }
+
+    private Task OpenDecreeAsync()
+    {
+        _decreeOpen = true;
+        return FocusDecreeInputAsync();
+    }
+
+    private void CloseDecree() => _decreeOpen = false;
+
+    private async Task FocusDecreeInputAsync()
+    {
+        await InvokeAsync(StateHasChanged);   // the input must exist before it can be focused
+        try { await _decreeInputRef.FocusAsync(); }
+        catch (InvalidOperationException) { /* the console was toggled shut again mid-render */ }
+    }
+
+    /// <summary>
+    /// The minimap is the camera control: click near a tribe's camp to fly to it, anywhere
+    /// else falls through to the island overview. The canvas is a 200×200 bitmap over the
+    /// 200 m world shown at 180 CSS px (96 on narrow), so scale by the rendered width —
+    /// poecosystem.css owns those two sizes; keep them in sync.
+    /// </summary>
+    private async Task MinimapClickAsync(MouseEventArgs e)
+    {
+        const double worldSize = 200;         // WORLD_SIZE in sim/core/config.js
+        var cssWidth = _narrow ? 96 : 180;
+        if (cssWidth <= 0) return;
+        var worldX = Math.Clamp(e.OffsetX, 0, cssWidth) * worldSize / cssWidth;
+        var worldZ = Math.Clamp(e.OffsetY, 0, cssWidth) * worldSize / cssWidth;
+
+        // Camp anchors mirror SetCameraPresetAsync's poses (x, z pairs).
+        (int Id, double X, double Z)[] camps = [(1, 50, 90), (2, 140, 90), (3, 100, 140)];
+        var nearest = camps
+            .Select(c => (c.Id, Dist: Math.Sqrt((c.X - worldX) * (c.X - worldX) + (c.Z - worldZ) * (c.Z - worldZ))))
+            .OrderBy(c => c.Dist)
+            .First();
+        if (nearest.Dist <= 40)
+            await SetCameraPresetAsync((CameraPreset)nearest.Id);
+        else
+            await SetCameraPresetAsync(CameraPreset.IslandOverview);
     }
 
     private async Task SendDecreeAsync()

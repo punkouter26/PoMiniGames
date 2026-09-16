@@ -33,9 +33,6 @@ public sealed class HealthEndpointTests : IClassFixture<TestWebApplicationFactor
     [InlineData("/health", "status", "checks", false)]
     // The canonical Kubernetes / App Service liveness probe; same body as /api/health.
     [InlineData("/api/health/liveness", "status", null, false)]
-    // §5: a well-formed JSON ARRAY of mock identifiers. Shape, not contents — the inventory
-    // depends on which game slices wired their IMockable into the test host.
-    [InlineData("/api/mockables", null, null, true)]
     public async Task DiagnosticRoutes_ReturnOk_WithExpectedJsonShape(
         string route, string? statusKey, string? checksKey, bool expectJsonArray)
     {

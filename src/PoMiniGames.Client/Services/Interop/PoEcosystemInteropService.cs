@@ -123,6 +123,18 @@ public sealed class PoEcosystemInteropService : IAsyncDisposable
         catch (JSDisconnectedException) { return true; }
     }
 
+    // ── HUD prefs (raw localStorage; the engine's createPrefs namespace is engine-owned) ──
+    /// <summary>Has this browser ever entered pointer lock? Fail-open: a broken storage
+    /// means the hint may re-show, never that it stays hidden forever.</summary>
+    public async ValueTask<bool> LockHintSeenAsync()
+    {
+        try { return await _js.InvokeAsync<string?>("localStorage.getItem", "poeco:lockHintSeen") == "1"; }
+        catch (JSException) { return true; }
+        catch (JSDisconnectedException) { return true; }
+    }
+
+    public ValueTask MarkLockHintSeenAsync() => SafeInvokeAsync("localStorage.setItem", "poeco:lockHintSeen", "1");
+
     public async ValueTask<bool> WebGpuAvailableAsync()
     {
         try { return await _js.InvokeAsync<bool>("PoEcosystem.webGpuAvailable"); }

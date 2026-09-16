@@ -16,7 +16,6 @@ window.PoBrawl = {
     const matchOptions = { ...options };
     if (matchOptions.mode === '1p') {
       try {
-        matchOptions.playerHead = await loadPortraitHead();
         const timeout = new Promise((resolve) => setTimeout(() => resolve(null), 1000));
         matchOptions.playerHead = await Promise.race([loadPortraitHead(), timeout]);
       } catch (error) {

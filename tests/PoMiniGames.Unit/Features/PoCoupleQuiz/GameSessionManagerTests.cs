@@ -88,7 +88,6 @@ public sealed class GameSessionManagerTests
     // ─── Game lifecycle ─────────────────────────────────────────────────
 
     [Fact]
-    public void StartGame_CreatesTheMatchAtTheChosenRoundCount_AndThrowsWithoutALobby()
     public void GameLifecycle_StartAndAdvanceRound_IncrementsRoundAndRotatesKing()
     {
         var empty = new GameSessionManager();
@@ -104,13 +103,6 @@ public sealed class GameSessionManagerTests
         game.Players.Should().HaveCount(2);
         game.KingPlayer!.Name.Should().Be("Alice", "round 0 puts the first player in the King seat");
         mgr.Current!.State.Should().Be(SessionState.InProgress);
-    }
-
-    [Fact]
-    public void AdvanceRound_IncrementsTheRoundAndRotatesTheKing()
-    {
-        var mgr = LobbyOf("Alice", "Bob");
-        mgr.StartGame("Q1?", "Hobbies");
 
         var next = mgr.AdvanceRound();
 
@@ -119,7 +111,6 @@ public sealed class GameSessionManagerTests
     }
 
     [Fact]
-    public void RoundCompletion_RoutesTheKingToTheSecret_AndWaitsForEveryGuess()
     public void RoundCompletion_RoutesTheKingToTheSecret_WaitsForGuesses_AndAppliesScores()
     {
         var mgr = LobbyOf("Alice", "Bob", "Carla"); // Alice is King for round 0
@@ -144,17 +135,9 @@ public sealed class GameSessionManagerTests
         q.KingPlayerAnswer.Should().Be("pizza");
         q.PlayerAnswers.Should().ContainKey("Bob").WhoseValue.Should().Be("pizza");
         q.PlayerAnswers.Should().NotContainKey("Alice", "the King's submission is the secret, not a guess");
-    }
-
-    [Fact]
-    public void ApplyRoundScores_UpdatesScoresAndStats()
-    {
-        var mgr = LobbyOf("Alice", "Bob");
-        var game = mgr.StartGame("Q?", "Hobbies");
 
         // Verify score application updates player stats
         mgr.ApplyRoundScores(new Dictionary<string, int> { ["Bob"] = 10 });
-
         var bob = game.Players.First(p => p.Name == "Bob");
         bob.Score.Should().Be(10);
         bob.TotalCorrectGuesses.Should().Be(1);

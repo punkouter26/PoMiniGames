@@ -33,7 +33,7 @@ function createEngine(container, dotnetRef, opts) {
   const state = {
     container, dotnetRef, opts, host: null, mode: 'starting', ready: false, seed: null,
     creatureCount: 0, simLag: 0, stats: null, llm: null, lastDetail: null, terrain: null, lastTiles: null,
-    renderer: null, thoughts: null, selected: NONE, frames: 0, errors: [], msgCounts: {},
+    renderer: null, thoughts: null, selected: NONE, directorSubject: NONE, frames: 0, errors: [], msgCounts: {},
     audio: createAudio(), sound: true, wakeAudio: null,
     music: null,
     // Music inputs. The sim reports CUMULATIVE births/deaths, so the score is driven from
@@ -177,6 +177,21 @@ function createEngine(container, dotnetRef, opts) {
         document.addEventListener('pointerdown', state.wakeAudio);
         document.addEventListener('keydown', state.wakeAudio);
       }
+      // HUD idle fade: after 5 s without player input the HUD chrome drops to a whisper;
+      // any input restores it. Toggled through a data attribute Blazor never renders, so
+      // component re-renders cannot clobber it (poecosystem.css styles [data-idle]).
+      state.hudIdle = {
+        timer: 0,
+        events: ['pointermove', 'pointerdown', 'keydown', 'wheel', 'touchstart'],
+        wake: () => {
+          const hud = document.querySelector('.poeco-hud');
+          if (hud) hud.removeAttribute('data-idle');
+          clearTimeout(state.hudIdle.timer);
+          state.hudIdle.timer = setTimeout(() => hud?.setAttribute('data-idle', ''), 5000);
+        },
+      };
+      for (const t of state.hudIdle.events) window.addEventListener(t, state.hudIdle.wake, { passive: true });
+      state.hudIdle.wake();
       if (container) {
         state.renderer = createRenderer(container, {
           minimapCanvas: opts.minimapId ? document.getElementById(opts.minimapId) : null,
@@ -185,9 +200,14 @@ function createEngine(container, dotnetRef, opts) {
           onPick: (handle) => { api.select(handle); invoke('OnPick', handle); },
           onAction: (action, value) => {
             if (action === 'speed') { api.setSpeed(value); invoke('OnSpeed', value); return; }
-            if (action === 'follow') { state.renderer.follow(state.selected); return; }
-            // The director's subject becomes the inspected creature, so the popover names it.
-            if (action === 'directorSubject') { if (value !== state.selected) { api.select(value); invoke('OnPick', value); } return; }
+            // Follow whatever the camera is actually on: the director's subject while it
+            // holds the camera, otherwise the creature the player inspected.
+            if (action === 'follow') { state.renderer.follow(state.selected !== NONE ? state.selected : state.directorSubject); return; }
+            // The director's subject is NOT selected. Selecting it opened the inspector
+            // popover over the shot and outlined the creature in wireframe, turning a
+            // cinematic camera into a stats readout; the shot is the point (2026-09-16).
+            // The handle is still remembered so T can follow what is on screen.
+            if (action === 'directorSubject') { state.directorSubject = value ?? NONE; return; }
             if (action === 'director') { invoke('OnDirector', !!value, state.renderer?.directorCaption ?? ''); return; }
             if (action === 'directorCaption') { invoke('OnDirector', true, value ?? ''); return; }
             if (action === 'pip') { invoke('OnPip', !!value); return; }
@@ -279,6 +299,12 @@ function createEngine(container, dotnetRef, opts) {
         document.removeEventListener('pointerdown', state.wakeAudio);
         document.removeEventListener('keydown', state.wakeAudio);
         state.wakeAudio = null;
+      }
+      if (state.hudIdle) {
+        clearTimeout(state.hudIdle.timer);
+        for (const t of state.hudIdle.events) window.removeEventListener(t, state.hudIdle.wake);
+        document.querySelector('.poeco-hud')?.removeAttribute('data-idle');
+        state.hudIdle = null;
       }
       state.music?.dispose();
       state.audio.dispose();

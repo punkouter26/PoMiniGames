@@ -33,7 +33,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
-import { createRackFocus, punchAberration, punchRadial } from '../../postFx.js';
+import { punchAberration, punchRadial } from '../../postFx.js';
 
 // Shaft taps per tier. The cost of the atmosphere pass is dominated by this loop, so it is
 // the first thing to give way — the aberration/blur/vignette terms are a handful of taps
@@ -180,10 +180,7 @@ export function createPostProcess(renderer, scene, camera, { tier = 'high', widt
   const atmosphere = new ShaderPass(atmosphereShader(SHAFT_TAPS[tier] ?? 14));
   composer.addPass(atmosphere);
 
-  // Transient depth of field. Disabled passes are skipped whole by EffectComposer, so the
-  // resting cost really is zero — see postFx.js for why it is never left on.
-  const rackFocus = createRackFocus(scene, camera, width, height);
-  composer.addPass(rackFocus.pass);
+  // Keep the island sharp during events and automatic camera shots.
 
   composer.addPass(new OutputPass());
 
@@ -209,7 +206,6 @@ export function createPostProcess(renderer, scene, camera, { tier = 'high', widt
      * accumulated, so there is never anything to unwind.
      */
     update(dt) {
-      rackFocus.update(dt);
       u.uAberration.value = punchAberration(1);
       u.uRadial.value = punchRadial(0.5);
       u.uTime.value += dt;
@@ -239,18 +235,16 @@ export function createPostProcess(renderer, scene, camera, { tier = 'high', widt
       u.uGrade.value.copy(DAY_GRADE).lerp(NIGHT_GRADE, n).lerp(DUSK_GRADE, d * 0.6);
     },
 
-    /** Rack the focus onto a world distance — the cinematic beat on a big event. */
-    rack(distance, hold, strength) { rackFocus.trigger(distance, hold, strength); },
+    // Keep the event facade compatible without changing camera focus.
+    rack() {},
 
     setSize(w, h) {
       composer.setSize(w, h);
       bloom.setSize(w, h);
-      rackFocus.setSize(w, h);
       smaa?.setSize(w, h);
     },
     setPixelRatio(dpr) { composer.setPixelRatio(dpr); },
     dispose() {
-      rackFocus.dispose();
       bloom.dispose?.();
       smaa?.dispose?.();
       composer.dispose();

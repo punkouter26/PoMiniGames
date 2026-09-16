@@ -27,7 +27,7 @@
         {
             <div class="poeco-overlay-grid poeco-analytics-grid">
                 <section class="poeco-panel poeco-panel--minimap">
-                    <TerritoryMinimap Tribes="@Stats?.Tribes" Buildings="@Stats?.Buildings" OnFocusTribe="@OnFocusTribe" />
+                    <TerritoryMinimap Tribes="@Stats?.Tribes" Buildings="@Stats?.Buildings" Caravans="@Stats?.Caravans" OnFocusTribe="@OnFocusTribe" />
                 </section>
                 <section class="poeco-panel poeco-panel--chart">
                     <PopulationChart Stats="@Stats" Tribes="@Stats?.Tribes" />
@@ -108,7 +108,7 @@
         {
             <div class="poeco-overlay-grid">
                 <section class="poeco-panel poeco-panel--wide">
-                    <TribePanel Stats="@Stats" Chronicles="@Chronicles" Busy="@ChronicleBusy" FromYear="@ChronicleFromYear" OnWrite="@OnWriteChronicle" />
+                    <TribePanel Stats="@Stats" Chronicles="@Chronicles" Busy="@ChronicleBusy" FromYear="@ChronicleFromYear" OnWrite="@OnWriteChronicle" OnFocusTribe="@OnFocusTribe" />
                 </section>
             </div>
         }

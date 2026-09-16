@@ -207,15 +207,77 @@ export function createAudio() {
     }
   }
 
-  /** dayFraction 0..1 (0 = midnight) — same curve lighting.js draws the sky with. */
-  function setDay(dayFraction) {
+  /** dayFraction 0..1 (0 = midnight); season: 0 = Spring, 1 = Summer, 2 = Autumn, 3 = Winter */
+  function setDay(dayFraction, season = 0) {
     if (!ctx) return;
     syncGlobalMute();
     const day = Math.max(0, Math.sin((dayFraction - 0.25) * Math.PI * 2));
     const t = ctx.currentTime;
-    birdGain?.gain.setTargetAtTime(smooth(day) * 0.9, t, 0.5);
-    cricketGain?.gain.setTargetAtTime(smooth(1 - day) * 0.035, t, 0.5);
-    if (day > 0.3 && t - lastChirpAt > 2.5 + Math.random() * 5) { lastChirpAt = t; chirp(t + 0.05); }
+    const isWinter = season === 3;
+    const birdLevel = isWinter ? 0 : smooth(day) * 0.9;
+    birdGain?.gain.setTargetAtTime(birdLevel, t, 0.5);
+    cricketGain?.gain.setTargetAtTime(isWinter ? 0 : smooth(1 - day) * 0.035, t, 0.5);
+    if (!isWinter && day > 0.3 && t - lastChirpAt > 2.5 + Math.random() * 5) { lastChirpAt = t; chirp(t + 0.05); }
+  }
+
+  /** Tribal war / peace drum pulse */
+  function tribalDrum(at, isWar = false) {
+    ensure();
+    if (!ctx || !enabled) return;
+    try {
+      const placed = at ? place(at.x, at.y, at.z, { ref: 18, rolloff: 1.1 }) : null;
+      if (at && !placed) return;
+      const dest = placed ? placed.node : master;
+      const when = ctx.currentTime + (placed ? placed.dist / SPEED_OF_SOUND : 0);
+      thump(dest, when, isWar ? 95 : 75, 38, isWar ? 0.22 : 0.35, isWar ? 0.6 : 0.4);
+      burst(dest, when, { type: 'bandpass', frequency: 180, Q: 1.5, level: 0.3, seconds: 0.08 });
+    } catch { /* best effort */ }
+  }
+
+  /** Dual detuned war horn fanfare */
+  function warHorn(at) {
+    ensure();
+    if (!ctx || !enabled) return;
+    try {
+      const placed = at ? place(at.x, at.y, at.z, { hrtf: true, wet: 0.45, ref: 25, rolloff: 0.85 }) : null;
+      if (at && !placed) return;
+      const dest = placed ? placed.node : master;
+      const when = ctx.currentTime + (placed ? placed.dist / SPEED_OF_SOUND : 0);
+      const osc1 = ctx.createOscillator();
+      const osc2 = ctx.createOscillator();
+      osc1.type = 'sawtooth';
+      osc2.type = 'sawtooth';
+      osc1.frequency.setValueAtTime(110, when);
+      osc2.frequency.setValueAtTime(113, when);
+      const filter = ctx.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(220, when);
+      filter.frequency.linearRampToValueAtTime(850, when + 0.4);
+      filter.frequency.exponentialRampToValueAtTime(320, when + 1.8);
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0, when);
+      gain.gain.linearRampToValueAtTime(0.45, when + 0.25);
+      gain.gain.exponentialRampToValueAtTime(0.0001, when + 2.0);
+      osc1.connect(filter);
+      osc2.connect(filter);
+      filter.connect(gain).connect(dest);
+      osc1.start(when); osc1.stop(when + 2.1);
+      osc2.start(when); osc2.stop(when + 2.1);
+    } catch { /* best effort */ }
+  }
+
+  /** Rhythmic mallet knock on construction sites */
+  function constructionMallet(at) {
+    ensure();
+    if (!ctx || !enabled) return;
+    try {
+      const placed = at ? place(at.x, at.y, at.z, { ref: 10, rolloff: 1.3 }) : null;
+      if (at && !placed) return;
+      const dest = placed ? placed.node : master;
+      const when = ctx.currentTime + (placed ? placed.dist / SPEED_OF_SOUND : 0);
+      thump(dest, when, 280, 110, 0.08, 0.5);
+      burst(dest, when, { type: 'bandpass', frequency: 520, Q: 1.8, level: 0.4, seconds: 0.05 });
+    } catch { /* best effort */ }
   }
 
   // The app-wide mixer owns the player's mute preference; this context is not on it, so it
@@ -356,6 +418,9 @@ export function createAudio() {
     setDay,
     stinger,
     impact,
+    tribalDrum,
+    warHorn,
+    constructionMallet,
     setPlayer,
     /** music.js builds its own graph on this context and mixes into the same master. */
     get context() { return ctx; },

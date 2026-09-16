@@ -58,7 +58,8 @@ export function createConstructionManager() {
       }
 
       if (candidates.length === 0) return null;
-      const idx = Math.floor(rng.uniform() * candidates.length);
+      const rVal = rng.next ? rng.next() : (rng.uniform ? rng.uniform() : Math.random());
+      const idx = Math.floor(rVal * candidates.length);
       return candidates[idx];
     },
 

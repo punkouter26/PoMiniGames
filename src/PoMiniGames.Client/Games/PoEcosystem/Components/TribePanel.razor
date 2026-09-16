@@ -21,6 +21,11 @@
         </p>
     }
 
+    @if (Stats?.Tribes is not null && Stats.Tribes.Length >= 2)
+    {
+        <DiplomacyWeb Tribes="@Stats.Tribes" Caravans="@Stats.Caravans" OnFocusTribe="@OnFocusTribe" />
+    }
+
     <h3>Chronicle</h3>
     <div class="poeco-chronicle-actions">
         <button type="button" class="poeco-btn poeco-btn--primary" disabled="@(Busy || Stats is null || Stats.Year <= FromYear)" @onclick="OnWrite">
@@ -63,4 +68,5 @@
     [Parameter] public bool Busy { get; set; }
     [Parameter] public int FromYear { get; set; }
     [Parameter] public EventCallback OnWrite { get; set; }
+    [Parameter] public EventCallback<int> OnFocusTribe { get; set; }
 }

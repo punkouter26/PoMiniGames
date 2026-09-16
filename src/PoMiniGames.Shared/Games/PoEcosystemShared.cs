@@ -117,6 +117,18 @@ public sealed record BuildingStateDto(
     float Health,
     bool IsComplete);
 
+/// <summary>Snapshot state of an active trade caravan traveling between tribes.</summary>
+public sealed record TradeCaravanDto(
+    int Id,
+    int FromTribeId,
+    int ToTribeId,
+    string CargoKind,
+    int Amount,
+    float X,
+    float Z,
+    float Progress,
+    bool Returning);
+
 /// <summary>Real-time telemetry delta dispatched to the Blazor Analytics Dashboard.</summary>
 public sealed record EcosystemTelemetryDeltaDto(
     int Year,
@@ -127,7 +139,10 @@ public sealed record EcosystemTelemetryDeltaDto(
     int RabbitCount,
     int WolfCount,
     int TotalHumanCount,
-    bool IsYearMilestone);
+    bool IsYearMilestone,
+    IReadOnlyList<TradeCaravanDto>? Caravans = null,
+    int Season = 0,
+    float SeasonProgress = 0f);
 
 [System.Text.Json.Serialization.JsonSerializable(typeof(EcoWorldMeta))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(EcoSharedWorld))]
@@ -137,6 +152,8 @@ public sealed record EcosystemTelemetryDeltaDto(
 [System.Text.Json.Serialization.JsonSerializable(typeof(EcoThoughtReply))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(TribeStateDto))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(BuildingStateDto))]
+[System.Text.Json.Serialization.JsonSerializable(typeof(TradeCaravanDto))]
+[System.Text.Json.Serialization.JsonSerializable(typeof(List<TradeCaravanDto>))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(EcosystemTelemetryDeltaDto))]
 public partial class PoEcosystemJsonContext : System.Text.Json.Serialization.JsonSerializerContext
 {

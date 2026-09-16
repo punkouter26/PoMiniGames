@@ -1,14 +1,13 @@
 // tribeStore.js — multi-tribe registry, settlement anchors, and inventory state.
 'use strict';
 
-import { DEFAULT_TRIBES, TECH_TIER, TRIBE_DIPLOMACY } from './contracts.js';
+import { DEFAULT_TRIBES, TECH_TIER, TRIBE_DIPLOMACY, BUILDING_KIND, BUILDING_SPECS } from './contracts.js';
 import { TRIBES } from '../core/config.js';
 import { TILE, isWater, tileIndex, tileX, tileZ } from '../terrain/tiles.js';
 import { createTerritoryManager } from './territory.js';
 import { createTechLadder } from './techLadder.js';
 import { createConstructionManager } from './construction.js';
 import { createDiplomacyManager } from './diplomacy.js';
-import { BUILDING_KIND, BUILDING_SPECS } from './contracts.js';
 
 export function createTribeStore(terrain, streams) {
   const { size, type } = terrain;
@@ -38,7 +37,7 @@ export function createTribeStore(terrain, streams) {
     let chosenTile = -1;
 
     // Search for grass tile with sufficient distance from already placed tribes
-    const offset = Math.floor(streams.terrain.uniform() * Math.max(1, grassTiles.length));
+    const offset = Math.floor(streams.terrain.next() * Math.max(1, grassTiles.length));
     for (let i = 0; i < grassTiles.length; i++) {
       const candidate = grassTiles[(offset + i) % grassTiles.length];
       const cx = tileX(candidate, size);
@@ -99,7 +98,9 @@ export function createTribeStore(terrain, streams) {
   return {
     tribes: placedTribes,
     territory,
+
     techLadder,
+    construction,
     diplomacy,
 
     getTribe(id) {
@@ -108,19 +109,6 @@ export function createTribeStore(terrain, streams) {
 
     getTribeAt(x, z) {
       return territory.getDominantTribe(x, z, placedTribes);
-    },
-
-    stepDiplomacy(log = null) {
-      return diplomacy.step(placedTribes, territory, log);
-    },
-
-    stepTech(log = null) {
-      for (const tribe of placedTribes) {
-        const event = techLadder.step(tribe, 1);
-        if (event && log) {
-          log.push(`Year ${event.tribeName} advanced to ${event.techName}`);
-        }
-      }
     },
 
     addResource(tribeId, resourceKind, amount) {
@@ -140,12 +128,24 @@ export function createTribeStore(terrain, streams) {
       return false;
     },
 
-    stepConstruction(terrain, tileState, rng, log = null) {
+    stepDiplomacy(log = null, tick = 0) {
+      return diplomacy.step(placedTribes, territory, log, tick);
+    },
+
+    stepTech(log = null, tick = 0) {
+      for (const tribe of placedTribes) {
+        const event = techLadder.step(tribe, 1);
+        if (event && log) {
+          log.push({ tick, kind: 'tech', text: `${tribe.name} advanced to ${event.techName}` });
+        }
+      }
+    },
+
+    stepConstruction(terrain, tileState, rng, log = null, tick = 0) {
       construction.step(placedTribes);
 
-      // Every 5 seconds (100 ticks), evaluate whether to start new construction
+      // Evaluate whether to start new construction
       for (const tribe of placedTribes) {
-        // Need hut if population > bed capacity
         const totalBeds = tribe.huts.length * 4;
         let neededKind = null;
 
@@ -166,7 +166,7 @@ export function createTribeStore(terrain, streams) {
               tribe.stone -= spec.cost.stone;
               const building = construction.createBuilding(tribe, neededKind, site, terrain);
               if (log) {
-                log.push(`${tribe.name} began raising a ${spec.name}`);
+                log.push({ tick, kind: 'construction', text: `${tribe.name} began raising a ${spec.name}` });
               }
             }
           }
@@ -179,6 +179,18 @@ export function createTribeStore(terrain, streams) {
           }
         }
       }
+    },
+
+    stepCaravans(log = null, tick = 0) {
+      return diplomacy.stepCaravans(placedTribes, territory, log, tick);
+    },
+
+    getBuildingsTelemetry() {
+      return construction.toTelemetry();
+    },
+
+    getCaravansTelemetry() {
+      return diplomacy.toTelemetry();
     },
 
     toTelemetry() {
@@ -197,10 +209,6 @@ export function createTribeStore(terrain, streams) {
         territoryRadius: t.territoryRadius,
         relations: [...t.relations],
       }));
-    },
-
-    getBuildingsTelemetry() {
-      return construction.toTelemetry();
     },
 
     getState() {
@@ -231,7 +239,7 @@ export function createTribeStore(terrain, streams) {
           id: b.id,
           tribeId: b.tribeId,
           kind: b.kind,
-          tileIndex: b.tileIndex,
+          tileIndex: b.tile,
           x: b.x,
           z: b.z,
           progress: b.progress,
@@ -240,6 +248,7 @@ export function createTribeStore(terrain, streams) {
           maxHealth: b.maxHealth,
           isComplete: b.isComplete,
         })),
+        caravans: diplomacy.getState(),
       };
     },
 
@@ -273,6 +282,10 @@ export function createTribeStore(terrain, streams) {
           construction.buildings.push({ ...sb });
         }
       }
+      if (s.caravans) {
+        diplomacy.setState(s.caravans);
+      }
     },
   };
 }
+

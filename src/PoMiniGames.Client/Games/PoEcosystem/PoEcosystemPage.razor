@@ -19,12 +19,12 @@
                    Title=@TitleContent
                    Objective="A living island that runs without you — creatures born, hungry and ageing while you watch."
                    Controls=@HowToPlayContent
-                   Mode="@(IsDemo ? GameIntro.IntroMode.Demo : GameIntro.IntroMode.OnePlayer)"
+                   Mode="@GameIntro.IntroMode.Demo"
                    OnStart="@(() => _introDismissed = true)" />
     }
     else
     {
-        <PoEcosystemViewer IsDemo="IsDemo" />
+        <PoEcosystemViewer IsDemo="true" />
     }
 </GameShell>
 
@@ -34,12 +34,9 @@
     private string _playerName = "";
     private bool _introDismissed;
 
-    private bool IsDemo => GameModes.Parse(Mode) == GameMode.Demo;
+    private bool IsDemo => true;
 
-    // 2026-09-13 UI unification: the title carried a marketing line ("A living island")
-    // where every other game puts its mode, so a shared /poecosystem/demo link read
-    // identically to /poecosystem/1player. The blurb lives on the home card as Subtitle.
-    private RenderFragment TitleContent => @<span><span aria-hidden="true">🌿</span> PoEcosystem · @GameModes.ToHeading(GameModes.Parse(Mode))</span>;
+    private RenderFragment TitleContent => @<span><span aria-hidden="true">🌿</span> PoEcosystem · Demo</span>;
 
     private RenderFragment HowToPlayContent => @<div>
         @* 2026-09-11: word budget — the intro card is capped at 100 words. The

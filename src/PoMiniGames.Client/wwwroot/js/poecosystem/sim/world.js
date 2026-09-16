@@ -707,6 +707,13 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
         if (reached.solidChanged) rebuildShoreField();
       }
       if (maintainWorks(world)) rebuildShoreField();
+
+      if (tribeStore) {
+        if (tribeStore.stepDiplomacy) tribeStore.stepDiplomacy(log, tick);
+        if (tribeStore.stepTech) tribeStore.stepTech(log, tick);
+        if (tribeStore.stepConstruction) tribeStore.stepConstruction(terrain, tileState, streams.behavior, log, tick);
+        if (tribeStore.stepCaravans) tribeStore.stepCaravans(log, tick);
+      }
     }
   }
 
@@ -720,6 +727,7 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
     return {
       seed, terrainHash: terrain.hash, tick: clock.tick, speed: clock.speed,
       year: clock.year(), day: clock.day(), dayFraction: clock.dayFraction(),
+      season: clock.season(), seasonProgress: clock.seasonProgress(),
       counts: counts.slice(), alive: e.count, huts: settlement.huts.length,
       extinct: extinct.slice(), lastStanding, silent, popHistory, carcasses: carcasses.length,
       naturalEvents: { ...naturalEvents },
@@ -733,6 +741,9 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
       tech: { level: settlement.tech, name: TECH_NAMES[settlement.tech] ?? 'Camp', tribe, campfire: settlement.campfireTile !== NONE, tower: settlement.towerTile !== NONE, fields: settlement.fieldTiles.length },
       watched: watchedList(),
       lineageCount: lineage.count,
+      tribes: tribeStore ? tribeStore.toTelemetry() : null,
+      buildings: tribeStore?.getBuildingsTelemetry ? tribeStore.getBuildingsTelemetry() : [],
+      caravans: tribeStore?.getCaravansTelemetry ? tribeStore.getCaravansTelemetry() : [],
     };
   }
 

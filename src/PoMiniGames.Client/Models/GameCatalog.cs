@@ -232,23 +232,14 @@ public static class GameCatalog
             ChipPrimary = true,
         },
 
-        // Watch-first: the island runs itself, so Demo is the card head; 1-player is the
-        // same world with AI thoughts enabled by default.
+        // PoEcosystem is autonomous simulation only — Demo mode only.
         new(GameKeys.PoEcosystem, "PoEcosystem", "🌿",
         [
-            new(GameMode.OnePlayer, "/poecosystem/1player"),
             new(GameMode.Demo, "/poecosystem/demo"),
         ])
         {
-            // Terse by design, like Tic-Tac-Toe's "4-in-a-row · 6×6" above. The
-            // subtitle renders as a single-line nowrap chip in the home card, so a
-            // 79-character blurb ("A living island you walk through: creatures
-            // hunt, mate, age and die on their own") was ellipsised to roughly its
-            // first forty characters even on a 1440px desktop — and it made this
-            // card 30px taller than the ten cards without a subtitle, which is
-            // what left the grid visibly ragged. Say the distinguishing thing and
-            // stop. 2026-09-11 UI audit.
-            Subtitle = "Creatures hunt, age, die",
+            Subtitle = "Autonomous tribal evolution",
+            ChipPrimary = true,
         },
 
         // 1P is the card head, so ChipPrimary keeps the chip row from presenting

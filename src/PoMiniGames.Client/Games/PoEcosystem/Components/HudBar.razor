@@ -8,6 +8,17 @@
         Year @(Stats?.Year ?? 0) · Day @(Stats?.Day ?? 1)
     </span>
 
+    @{
+        var seasonBadge = (Stats?.Season ?? 0) switch
+        {
+            0 => ("🌸 Spring", "poeco-badge--spring"),
+            1 => ("☀️ Summer", "poeco-badge--summer"),
+            2 => ("🍂 Autumn", "poeco-badge--autumn"),
+            _ => ("❄️ Winter", "poeco-badge--winter"),
+        };
+    }
+    <span class="poeco-badge @seasonBadge.Item2" title="Current climate season">@seasonBadge.Item1</span>
+
     <span class="poeco-badge" title="Creatures alive">@(Stats?.Alive ?? 0) alive</span>
 
     @if (Stats?.Tech is { } tech)

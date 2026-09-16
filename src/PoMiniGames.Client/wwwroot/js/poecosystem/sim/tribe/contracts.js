@@ -8,6 +8,13 @@ export const TRIBE_DIPLOMACY = Object.freeze({
   WAR: 3,
 });
 
+export const CARAVAN_STATUS = Object.freeze({
+  DISPATCHED: 0,
+  TRADING: 1,
+  RETURNING: 2,
+  AMBUSHED: 3,
+});
+
 export const TECH_TIER = Object.freeze({
   PRIMITIVE: 0,
   TOOLCRAFT: 1,

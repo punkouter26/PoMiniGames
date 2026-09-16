@@ -29,6 +29,15 @@ export function createClock({ tickSeconds = TICK_SECONDS, maxStepsPerTick = MAX_
     year() { return Math.floor(clock.simSeconds / YEAR_SECONDS); },
     /** 1-based day within the current year, for the HUD clock. */
     day() { return Math.floor((clock.simSeconds % YEAR_SECONDS) / YEAR_SECONDS * DAYS_PER_YEAR) + 1; },
+    /** Season: 0 = Spring, 1 = Summer, 2 = Autumn, 3 = Winter */
+    season() {
+      const d = clock.day();
+      if (d <= 2) return 0;
+      if (d <= 5) return 1;
+      if (d <= 7) return 2;
+      return 3;
+    },
+    seasonProgress() { return (clock.simSeconds % YEAR_SECONDS) / YEAR_SECONDS; },
     /** Position in the cosmetic light cycle, [0,1). */
     dayFraction() { return ((clock.simSeconds / DAY_SECONDS) + DAY_START_FRACTION) % 1; },
     getState() { return { tick: clock.tick, speed: clock.speed, accumulator }; },

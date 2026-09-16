@@ -31,6 +31,8 @@ export function createRng(seed) {
       t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
       return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
     },
+    /** Float in [0, 1). Alias for next(). */
+    uniform() { return rng.next(); },
     /** Integer in [0, n). */
     int(n) { return Math.floor(rng.next() * n); },
     /** Float in [lo, hi). */

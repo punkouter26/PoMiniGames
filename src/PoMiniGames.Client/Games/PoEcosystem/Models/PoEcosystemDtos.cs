@@ -58,7 +58,10 @@ public sealed record EcoStats(
     EcoWatched[]? Watched = null,
     int LineageCount = 0,
     TribeStateDto[]? Tribes = null,
-    BuildingStateDto[]? Buildings = null);
+    BuildingStateDto[]? Buildings = null,
+    TradeCaravanDto[]? Caravans = null,
+    int Season = 0,
+    double SeasonProgress = 0.0);
 
 /// <summary>
 /// Lifetime world counters for the dashboard's almanac panel (sim/world.js). Stages is the
@@ -160,5 +163,7 @@ public sealed record EcoSaveInfo(bool Exists, int Seed, int Tick, int Year, long
 [JsonSerializable(typeof(BuildingStateDto[]))]
 [JsonSerializable(typeof(TribeStateDto))]
 [JsonSerializable(typeof(BuildingStateDto))]
+[JsonSerializable(typeof(TradeCaravanDto[]))]
+[JsonSerializable(typeof(TradeCaravanDto))]
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase, PropertyNameCaseInsensitive = true)]
 internal sealed partial class EcoJsonContext : System.Text.Json.Serialization.JsonSerializerContext;

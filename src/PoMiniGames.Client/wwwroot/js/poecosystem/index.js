@@ -73,7 +73,7 @@ function createEngine(container, dotnetRef, opts) {
         return;
       case 'stats':
         state.stats = msg.stats; state.creatureCount = msg.stats.alive; state.simLag = msg.stats.simLag; state.llm = msg.stats.llm;
-        state.audio.setDay(msg.stats.dayFraction);
+        state.audio.setDay(msg.stats.dayFraction, msg.stats.season ?? 0);
         feedMusic(msg.stats);
         state.renderer?.setStats(msg.stats);
         invoke('OnStats', JSON.stringify({ ...msg.stats, popHistory: Array.from(msg.stats.popHistory), traitHistory: Array.from(msg.stats.traitHistory ?? []) }));
@@ -90,6 +90,8 @@ function createEngine(container, dotnetRef, opts) {
         for (const ev of msg.events) {
           // A tech unlock is a cut for the director, not a stinger or a shake.
           if (ev.kind === 'tech') { state.renderer?.onEvent(ev); continue; }
+          if (ev.kind === 'war_declared') { state.audio?.warHorn(); }
+          else if (ev.kind === 'peace_treaty') { state.audio?.tribalDrum(null, false); }
           if (ev.kind !== 'lightning' && ev.kind !== 'rockslide' && ev.kind !== 'eruption') continue;
           state.eventPressure = Math.min(1, state.eventPressure + (ev.kind === 'eruption' ? 0.8 : 0.45));
           // The renderer owns the whole reaction — particles, camera trauma, and the

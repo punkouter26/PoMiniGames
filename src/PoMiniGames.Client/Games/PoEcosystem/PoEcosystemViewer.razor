@@ -26,14 +26,16 @@
                 <svg viewBox="0 0 20 20" width="20" height="20"><circle cx="10" cy="10" r="1.5" fill="currentColor"></circle><path d="M10 2v4M10 14v4M2 10h4M14 10h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg>
             </div>
 
-            <HudBar Stats="_stats" Sound="_sound" OnSound="ToggleSoundAsync" OnDashboard="ToggleDashboard"
-                    Director="_directorOn" OnDirector="ToggleDirectorAsync" Pip="_pipOn" OnPip="TogglePipAsync" />
+            <div class="poeco-hud-top">
+                <HudBar Stats="_stats" Sound="_sound" OnSound="ToggleSoundAsync" OnDashboard="ToggleDashboard"
+                        Director="_directorOn" OnDirector="ToggleDirectorAsync" Pip="_pipOn" OnPip="TogglePipAsync" />
 
-            <div class="poeco-camera-dock" role="toolbar" aria-label="Camera presets">
-                <button type="button" class="poeco-btn poeco-btn--sm" @onclick="() => SetCameraPresetAsync(CameraPreset.IslandOverview)" title="Overhead island overview">🏝️ Overview</button>
-                <button type="button" class="poeco-btn poeco-btn--sm" @onclick="() => SetCameraPresetAsync(CameraPreset.AmberClan)" title="Focus Amber Clan">🟡 Amber</button>
-                <button type="button" class="poeco-btn poeco-btn--sm" @onclick="() => SetCameraPresetAsync(CameraPreset.CobaltClan)" title="Focus Cobalt Clan">🔵 Cobalt</button>
-                <button type="button" class="poeco-btn poeco-btn--sm" @onclick="() => SetCameraPresetAsync(CameraPreset.VerdantClan)" title="Focus Verdant Clan">🟢 Verdant</button>
+                <div class="poeco-camera-dock" role="toolbar" aria-label="Camera presets">
+                    <button type="button" class="poeco-btn poeco-btn--sm" @onclick="() => SetCameraPresetAsync(CameraPreset.IslandOverview)" title="Overhead island overview">🏝️ Overview</button>
+                    <button type="button" class="poeco-btn poeco-btn--sm" @onclick="() => SetCameraPresetAsync(CameraPreset.AmberClan)" title="Focus Amber Clan">🟡 Amber</button>
+                    <button type="button" class="poeco-btn poeco-btn--sm" @onclick="() => SetCameraPresetAsync(CameraPreset.CobaltClan)" title="Focus Cobalt Clan">🔵 Cobalt</button>
+                    <button type="button" class="poeco-btn poeco-btn--sm" @onclick="() => SetCameraPresetAsync(CameraPreset.VerdantClan)" title="Focus Verdant Clan">🟢 Verdant</button>
+                </div>
             </div>
 
             @if (_directorOn)

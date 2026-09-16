@@ -21,6 +21,8 @@ import * as THREE from 'three';
 
 export const materialClock = { value: 0 };
 export const materialDetail = { value: 1 };   // 0 on the low tier: every injected term collapses
+export const materialSeason = { value: 0 };   // 0 = Spring, 1 = Summer, 2 = Autumn, 3 = Winter
+export const materialSnow = { value: 0 };     // 0..1 snow coverage factor
 
 const NOISE = `
 float mHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -44,6 +46,8 @@ export function enhanceLambert(material, { rim = 0.35, rimColor = 0xbfd4ff, mott
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uMatTime = materialClock;
     shader.uniforms.uMatDetail = materialDetail;
+    shader.uniforms.uSeason = materialSeason;
+    shader.uniforms.uSnow = materialSnow;
     shader.uniforms.uRim = { value: rim };
     shader.uniforms.uRimColor = { value: rimCol };
     shader.uniforms.uMottle = { value: mottle };
@@ -93,6 +97,8 @@ export function enhanceLambert(material, { rim = 0.35, rimColor = 0xbfd4ff, mott
         uniform vec3 uRimColor;
         uniform float uMottle;
         uniform float uMottleScale;
+        uniform float uSeason;
+        uniform float uSnow;
         varying vec3 vMatWorld;
         ${NOISE}
       `)
@@ -104,6 +110,15 @@ export function enhanceLambert(material, { rim = 0.35, rimColor = 0xbfd4ff, mott
           vec3 w = vMatWorld * uMottleScale;
           float m = mNoise(w.xz + w.y * 0.7) * 0.6 + mNoise(w.xz * 2.9 - w.y * 1.3) * 0.4;
           diffuseColor.rgb *= 1.0 - uMottle * 0.5 + m * uMottle;
+        }
+        // Seasonal effects:
+        if (uSnow > 0.05) {
+          float upNorm = clamp(normal.y, 0.0, 1.0);
+          float snowFactor = smoothstep(0.2, 0.75, upNorm) * uSnow;
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.92, 0.95, 0.98), snowFactor * 0.85);
+        } else if (uSeason > 1.5 && uSeason < 2.5) {
+          // Warm amber shift in Autumn
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(diffuseColor.r * 1.25, diffuseColor.g * 0.8, diffuseColor.b * 0.45), 0.35);
         }
       `)
       // Rim after the lighting sum: an additive, view-dependent term on the silhouette.

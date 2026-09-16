@@ -30,7 +30,7 @@ import { createEventFx } from './eventFx.js';
 import { createDirector } from './director.js';
 import { createPip } from './pip.js';
 import { createSky } from './sky.js';
-import { materialClock, materialDetail } from './materials.js';
+import { materialClock, materialDetail, materialSeason, materialSnow } from './materials.js';
 import { applyCameraShake } from '../../postFx.js';
 import { createSettlementMeshes } from './settlementMesh.js';
 
@@ -380,6 +380,10 @@ export function createRenderer(container, {
     const sky = lighting.update(stats?.dayFraction ?? 0.5, player, timeSec);
     scene.background = sky.sky;
     materialClock.value = timeSec;
+    if (stats && stats.season !== undefined) {
+      materialSeason.value = stats.season;
+      materialSnow.value = stats.season === 3 ? 0.75 : (stats.season === 0 ? Math.max(0.0, 0.75 - (stats.seasonProgress ?? 0) * 2.5) : 0.0);
+    }
     skyDome.update(sky, player, timeSec);
     island?.update(timeSec, sky);
     if (campfireAt) {

@@ -77,4 +77,6 @@
             });
         }
     });
+    // WebGPU compute shader probe is deferred to when 3D game engines initialize
+    // so catalog navigation never pays for compute shader compilation.
 })();

@@ -2,6 +2,8 @@ using System.Net;
 using System.Net.Http.Json;
 using FluentAssertions;
 using PoMiniGames.Domain.Primitives;
+using PoMiniGames.Features.Auth;
+using PoMiniGames.TestUtilities;
 
 namespace PoMiniGames.Integration;
 
@@ -14,10 +16,12 @@ namespace PoMiniGames.Integration;
 /// </summary>
 public sealed class LeaderboardEndpointTests : IClassFixture<TestWebApplicationFactory>, IAsyncLifetime
 {
+    private readonly TestWebApplicationFactory _factory;
     private readonly HttpClient _client;
 
     public LeaderboardEndpointTests(TestWebApplicationFactory factory)
     {
+        _factory = factory;
         _client = factory.CreateClient();
     }
 
@@ -46,6 +50,8 @@ public sealed class LeaderboardEndpointTests : IClassFixture<TestWebApplicationF
     [Fact]
     public async Task PoBrawlHighScores_PostRanksAscending_AndRejectsBadInput()
     {
+        if (!_factory.DockerAvailable) return;
+
         // Two valid submissions; the faster KO should rank ahead of the slower one.
         var slow = new { PlayerInitials = "SLW", KoTimeSeconds = 42.5, Character = "trump", Date = DateTime.UtcNow.ToString("o") };
         var fast = new { PlayerInitials = "FST", KoTimeSeconds = 7.25, Character = "obama", Date = DateTime.UtcNow.ToString("o") };
@@ -78,20 +84,35 @@ public sealed class LeaderboardEndpointTests : IClassFixture<TestWebApplicationF
     [Fact]
     public async Task PoBrawlLadder_KeepsBestRunPerPlayer_RanksByPresidentsBeaten_AndRejectsBadInput()
     {
+        if (!_factory.DockerAvailable) return;
+
         var name = $"ladder_test_{Guid.NewGuid():N}"[..24];
         var rival = $"ladder_riva_{Guid.NewGuid():N}"[..24];
 
+        using var nameClient = _factory.CreateClient();
+        nameClient.DefaultRequestHeaders.Remove(FakeAuthHandler.UserHeader);
+        nameClient.DefaultRequestHeaders.Add(FakeAuthHandler.UserHeader, name);
+        await nameClient.ArmAntiforgeryAsync();
+
+        using var rivalClient = _factory.CreateClient();
+        rivalClient.DefaultRequestHeaders.Remove(FakeAuthHandler.UserHeader);
+        rivalClient.DefaultRequestHeaders.Add(FakeAuthHandler.UserHeader, rival);
+        await rivalClient.ArmAntiforgeryAsync();
+
         // Best-progress semantics: 4 → then a worse run (2) must NOT overwrite it.
         (await _client.PostAsJsonAsync("/api/pobrawl/ladder",
+        (await nameClient.PostAsJsonAsync("/api/pobrawl/ladder",
             new { PlayerName = name, PresidentsBeaten = 4, Elo = 1300 })).StatusCode
             .Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.Created);
         (await _client.PostAsJsonAsync("/api/pobrawl/ladder",
+        (await nameClient.PostAsJsonAsync("/api/pobrawl/ladder",
             new { PlayerName = name, PresidentsBeaten = 2, Elo = 1250 })).StatusCode
             .Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.Created);
         // A full clear posts the whole roster, not a literal 10. The ceiling used to be
         // hardcoded at 10 while the client ladder walked all 15 fighters, so every rung past
         // the tenth 400'd and the board silently froze one rung short of the roster.
         (await _client.PostAsJsonAsync("/api/pobrawl/ladder",
+        (await rivalClient.PostAsJsonAsync("/api/pobrawl/ladder",
             new { PlayerName = rival, PresidentsBeaten = PoBrawlRoster.Count, Elo = 1700 })).StatusCode
             .Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.Created);
 

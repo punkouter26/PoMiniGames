@@ -46,49 +46,26 @@ public sealed class EloCalculatorTests
         _ = expectedLowerBound; // reserved for future tighter assertions
     }
 
-    [Fact]
-    public void Compute_ReturnsReferenceElo_WhenNoGamesPlayed()
+    [Theory]
+    [InlineData(0, 0, 0, 800, 1000)] // no games -> reference
+    [InlineData(0, 0, 100, 800, 0)]   // 100 losses floored at zero
+    [InlineData(5, 2, 3, 1200, 1000)] // deterministic calculation
+    public void Compute_EdgeCases_ReturnExpectedRatings(int wins, int draws, int losses, int aiElo, int expectedMin)
     {
-        var ds = new DifficultyStats();
-        _calculator.Compute(ds, 800).Should().Be(1000);
+        var ds = new DifficultyStats { Wins = wins, Draws = draws, Losses = losses, TotalGames = wins + draws + losses };
+        var elo1 = _calculator.Compute(ds, aiElo);
+        var elo2 = _calculator.Compute(ds, aiElo);
+        elo1.Should().Be(elo2, "deterministic calculation for identical inputs");
+        if (wins + draws + losses == 0)
+            elo1.Should().Be(expectedMin);
+        else if (losses == 100)
+            elo1.Should().Be(expectedMin);
+        else
+            elo1.Should().BeGreaterThanOrEqualTo(expectedMin);
     }
 
     [Fact]
-    public void Compute_EloIsFloored_AtZero()
-    {
-        // 100 losses to easy AI: would go deeply negative without the floor
-        var ds = new DifficultyStats { Losses = 100, TotalGames = 100 };
-        _calculator.Compute(ds, 800).Should().Be(0);
-    }
-
-    [Fact]
-    public void Compute_IsDeterministic_ForSameInput()
-    {
-        var ds = new DifficultyStats { Wins = 5, Draws = 2, Losses = 3, TotalGames = 10 };
-        var first = _calculator.Compute(ds, 1200);
-        var second = _calculator.Compute(ds, 1200);
-        first.Should().Be(second);
-    }
-
-    [Fact]
-    public void ApplyAll_SetsEloOnAllThreeBuckets()
-    {
-        var stats = new PlayerStats
-        {
-            Easy = new DifficultyStats { Wins = 3, TotalGames = 3 },
-            Medium = new DifficultyStats { Wins = 1, TotalGames = 2 },
-            Hard = new DifficultyStats { Draws = 1, TotalGames = 1 },
-        };
-
-        _calculator.ApplyAll(stats);
-
-        stats.Easy.EloRating.Should().BePositive();
-        stats.Medium.EloRating.Should().BePositive();
-        stats.Hard.EloRating.Should().BePositive();
-    }
-
-    [Fact]
-    public void ApplyAll_ComputesEachDifficultyIndependently()
+    public void ApplyAll_ComputesAndSetsEloOnAllThreeBucketsIndependently()
     {
         var stats = new PlayerStats
         {
@@ -101,7 +78,6 @@ public sealed class EloCalculatorTests
 
         stats.Easy.EloRating.Should().BeGreaterThan(1000);
         stats.Medium.EloRating.Should().Be(1000);    // zero games → reference ELO
-        // Losing to hard AI costs almost nothing (player was expected to lose anyway)
         stats.Hard.EloRating.Should().BeInRange(980, 1000);
     }
 
@@ -117,7 +93,6 @@ public sealed class EloCalculatorTests
         var harderElo = _calculator.Compute(harderWin, opponentElo);
         harderElo.Should()
             .BeGreaterThan(easyElo, $"beating {opponentElo}-Elo AI yields a larger reward than 800");
-        // Sanity: a win against any AI should leave us above the 1000 reference ELO.
         harderElo.Should().BeGreaterThan(1000);
         _ = result;
     }

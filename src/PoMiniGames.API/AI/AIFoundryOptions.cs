@@ -214,6 +214,18 @@ public sealed class AIFoundryOptions
 
         /// <summary>PoEcosystem: one creature's one-sentence thought, for browsers without WebGPU. A cheap-model job.</summary>
         public const string EcosystemThought = "ecosystem.thought";
+
+        /// <summary>PoEcosystem: batched thoughts for multiple creatures in a single completion.</summary>
+        public const string EcosystemThoughtBatch = "ecosystem.thought.batch";
+
+        /// <summary>PoEcosystem: chieftain council diplomatic treaty negotiation.</summary>
+        public const string EcosystemTreaty = "ecosystem.treaty";
+
+        /// <summary>PoEcosystem: player natural language divine decree interpretation.</summary>
+        public const string EcosystemDecree = "ecosystem.decree";
+
+        /// <summary>PoEcosystem: historical oral legends commemorating civilization milestones.</summary>
+        public const string EcosystemMilestoneLore = "ecosystem.lore";
     }
 
     /// <summary>

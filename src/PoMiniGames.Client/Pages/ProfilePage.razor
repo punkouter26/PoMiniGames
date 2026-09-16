@@ -345,6 +345,15 @@ else
                                     <span class="prf-game-wr">@g.WinRate.ToString("P0")</span>
                                 }
                             </div>
+        <div class="prf-section">
+            <h2 class="prf-section-title">Game Breakdown</h2>
+            <div class="prf-game-grid">
+                @foreach (var g in _entries)
+                {
+                    <div class="prf-game-card @(IsUnplayed(g) ? "prf-game-card--unplayed" : "")">
+                        <div class="prf-game-header">
+                            <span class="prf-game-icon">@g.Icon</span>
+                            <span class="prf-game-name">@g.Label</span>
                             @if (g.TotalGames > 0)
                             {
                                 <div class="prf-bar" title="Win / Draw / Loss" style="--win-pct:@((int)g.WinPercent)%;--draw-pct:@((int)g.DrawPercent)%;--loss-pct:@((int)g.LossPercent)%">
@@ -365,6 +374,7 @@ else
                                         </div>
                                     }
                                 </div>
+                                <span class="prf-game-wr">@g.WinRate.ToString("P0")</span>
                             }
                             else if (g.Kind == RatingKind.HighScoreOnly)
                             {
@@ -375,6 +385,16 @@ else
                             else if (g.Kind == RatingKind.PlayCountOnly)
                             {
                                 @if (g.PlayCount > 0)
+                        </div>
+                        @if (g.TotalGames > 0)
+                        {
+                            <div class="prf-bar" title="Win / Draw / Loss" style="--win-pct:@((int)g.WinPercent)%;--draw-pct:@((int)g.DrawPercent)%;--loss-pct:@((int)g.LossPercent)%">
+                                <div class="prf-bar-win"></div>
+                                <div class="prf-bar-draw"></div>
+                                <div class="prf-bar-loss"></div>
+                            </div>
+                            <div class="prf-diffs">
+                                @foreach (var d in g.Difficulties.Where(x => x.TotalGames > 0))
                                 {
                                     <p class="prf-game-plays">
                                         <span class="prf-game-plays-val">@g.PlayCount</span>
@@ -382,6 +402,14 @@ else
                                     </p>
                                     <p class="prf-game-hint">Auto-counted while you watched demos</p>
                                     <a class="prf-game-link" href="@DemoUrl(g.Key)">Watch again →</a>
+                                    <div class="prf-diff-row">
+                                        <span class="prf-diff-name prf-diff-@d.Name.ToLowerInvariant()">@d.Name</span>
+                                        <span class="prf-diff-wld">@d.Wins W · @d.Losses L · @d.Draws D</span>
+                                        @if (d.EloRating != 1000)
+                                        {
+                                            <span class="prf-diff-elo">ELO @d.EloRating</span>
+                                        }
+                                    </div>
                                 }
                                 else
                                 {
@@ -401,10 +429,26 @@ else
                     <div class="prf-unplayed">
                         <span class="prf-unplayed-label">Not played yet:</span>
                         @foreach (var g in _entries.Where(IsUnplayed))
+                            </div>
+                        }
+                        else if (g.Kind == RatingKind.HighScoreOnly)
                         {
                             @if (g.Kind == RatingKind.PlayCountOnly)
+                            <p class="prf-game-note">
+                                Score-based — <a class="prf-game-link" href="/leaderboards">see leaderboard</a>
+                            </p>
+                        }
+                        else if (g.Kind == RatingKind.PlayCountOnly)
+                        {
+                            @if (g.PlayCount > 0)
                             {
                                 <a class="prf-unplayed-chip prf-unplayed-chip--link" href="@DemoUrl(g.Key)" title="Try the demo">@g.Icon @g.Label</a>
+                                <p class="prf-game-plays">
+                                    <span class="prf-game-plays-val">@g.PlayCount</span>
+                                    <span class="prf-game-plays-lbl">@(g.PlayCount == 1 ? "session" : "sessions")</span>
+                                </p>
+                                <p class="prf-game-hint">Auto-counted while you watched demos</p>
+                                <a class="prf-game-link" href="@DemoUrl(g.Key)">Watch again →</a>
                             }
                             else if (g.Kind == RatingKind.HighScoreOnly)
                             {
@@ -413,12 +457,19 @@ else
                             else
                             {
                                 <span class="prf-unplayed-chip">@g.Icon @g.Label</span>
+                                <p class="prf-game-unplayed">Not played yet</p>
+                                <a class="prf-game-link" href="@DemoUrl(g.Key)">Try the demo →</a>
                             }
+                        }
+                        else
+                        {
+                            <p class="prf-game-unplayed">Not played yet</p>
                         }
                     </div>
                 }
             </div>
         }
+        </div>
 
         <AccountDataCard AccountKind="_accountKind" OnDataErased="LoadStatsAsync" />
     </div>

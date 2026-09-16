@@ -18,12 +18,16 @@ Each task is a vertical slice touching &le; 5 files. All tasks follow strict TDD
 
 - [ ] **Task 2: Territory Boundaries & Resource Claim Zones (with KD-Tree Spatial Indexing)**
   - **Description**: Implement dynamic tribal borders, influence mapping from settlement centers, totem anchors, and resource node claiming using `Supercluster.KDTree` for O(log N) proximity queries.
+- [ ] **Task 2: Territory Boundaries & Resource Claim Zones**
+  - **Description**: Implement dynamic tribal borders, influence mapping from settlement centers, totem anchors, and resource node claiming using fast spatial proximity queries.
   - **File Manifest** (&le; 5 files):
     1. `src/PoMiniGames.Client/wwwroot/js/poecosystem/sim/tribe/territory.js`
     2. `src/PoMiniGames.Client/wwwroot/js/poecosystem/sim/tribe/tribeStore.js`
     3. `src/PoMiniGames.Client/Games/PoEcosystem/Services/TribalSpatialIndex.cs`
     4. `src/PoMiniGames.Client/wwwroot/js/poecosystem/sim/world.js`
   - **Acceptance Criteria**: KDTree indexes resource nodes and settlement centers; tribes establish distinct boundary hulls; resource claims prevent cross-tribe poaching unless at war.
+    3. `src/PoMiniGames.Client/wwwroot/js/poecosystem/sim/world.js`
+  - **Acceptance Criteria**: Resource nodes and settlement centers are indexed; tribes establish distinct boundary hulls; resource claims prevent cross-tribe poaching unless at war.
   - **Verification**: `dotnet build PoMiniGames.slnx`
 
 ---

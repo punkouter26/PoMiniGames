@@ -77,6 +77,10 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
     private int _chronicledToYear;          // the last year a saga covered (or was offered for)
     private int _chronicleOfferYear = -1;   // a decade rolled over and no saga was written yet
     private HashSet<int> _watched = [];
+    private string _decreeInput = "";
+    private bool _decreeBusy;
+    private string? _decreeFeedback;
+    private List<EcoCultureProfile> _cultures = [];
 
     protected override void OnInitialized()
     {
@@ -156,6 +160,7 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
         _chronicles.Clear();
         _chronicledToYear = 0;
         _chronicleOfferYear = -1;
+        _ = LoadCultureAsync();
         InvokeAsync(StateHasChanged);
     }
 
@@ -616,6 +621,66 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
             : span.TotalHours < 1 ? $"{(int)span.TotalMinutes} min ago"
             : span.TotalDays < 1 ? $"{(int)span.TotalHours} h ago"
             : $"{(int)span.TotalDays} d ago";
+    }
+
+    private async Task HandleDecreeKeyDownAsync(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await SendDecreeAsync();
+        }
+    }
+
+    private async Task SendDecreeAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_decreeInput) || _decreeBusy) return;
+        _decreeBusy = true;
+        _decreeFeedback = null;
+        StateHasChanged();
+
+        try
+        {
+            var seed = int.TryParse(_seedInput, out var s) ? s : 1;
+            var req = new EcoDecreeRequest(seed, _stats?.Year ?? 1, _decreeInput, null);
+            var reply = await Api.InterpretDecreeAsync(req);
+            if (reply is not null)
+            {
+                _decreeFeedback = $"{reply.DivineMessage} ({reply.Intent}: {reply.ActionType})";
+                _decreeInput = "";
+                Toasts.Show(reply.DivineMessage, ToastType.Success);
+                await Feedback.CueAsync("poecosystem", "shockwave");
+            }
+            else
+            {
+                _decreeFeedback = "The heavens were silent.";
+            }
+        }
+        catch
+        {
+            _decreeFeedback = "The decree was lost to the winds.";
+        }
+        finally
+        {
+            _decreeBusy = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadCultureAsync()
+    {
+        try
+        {
+            var seed = int.TryParse(_seedInput, out var s) ? s : 1;
+            var profiles = await Api.GetCultureAsync(seed);
+            if (profiles is not null)
+            {
+                _cultures = [.. profiles];
+            }
+        }
+        catch
+        {
+            // best-effort
+        }
     }
 
     public async ValueTask DisposeAsync()

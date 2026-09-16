@@ -18,7 +18,7 @@
 // time of day from the clock and drift out of step with the sky.
 import * as THREE from 'three';
 
-const SHADOW_HALF = 45;
+const SHADOW_HALF = 120; // Encloses the full 200m island (plus margins) to eliminate frustum clipping lines
 
 // Night is deliberately mild (2026-09-02: user call) — the sky darkens slightly and the
 // sun dims, but light floors stay high enough that creatures and terrain remain clearly
@@ -69,7 +69,6 @@ void main() {
   float above = 1.0 - smoothstep(3.0, 26.0, cameraPosition.y - vWorld.y);
 
   float a = n * far * above * uStrength;
-  if (a <= 0.004) discard;
   gl_FragColor = vec4(uColor, a);
 }
 `;
@@ -83,8 +82,8 @@ export function createLighting(scene, { shadows = true, shadowMapSize = 2048, ti
     sun.shadow.mapSize.set(shadowMapSize, shadowMapSize);
     sun.shadow.camera.left = -SHADOW_HALF; sun.shadow.camera.right = SHADOW_HALF;
     sun.shadow.camera.top = SHADOW_HALF; sun.shadow.camera.bottom = -SHADOW_HALF;
-    sun.shadow.camera.near = 1; sun.shadow.camera.far = 260;
-    sun.shadow.bias = -0.0006; sun.shadow.normalBias = 0.5;
+    sun.shadow.camera.near = 10; sun.shadow.camera.far = 420;
+    sun.shadow.bias = -0.00008; sun.shadow.normalBias = 0.04;
   }
   scene.add(hemi, ambient, sun, sun.target);
 
@@ -121,6 +120,7 @@ export function createLighting(scene, { shadows = true, shadowMapSize = 2048, ti
     mist = { plane, mat };
   }
 
+  const islandCenter = new THREE.Vector3(100, 0, 100);
   const sky = new THREE.Color();
   const sunColour = new THREE.Color();
   const sunDir = new THREE.Vector3(0, 1, 0);
@@ -131,6 +131,19 @@ export function createLighting(scene, { shadows = true, shadowMapSize = 2048, ti
     sun, hemi, ambient, fog,
     get mist() { return mist?.plane ?? null; },
 
+    setWorldSize(size) {
+      if (!size || size <= 0) return;
+      islandCenter.set(size / 2, 0, size / 2);
+      if (sun.shadow?.camera) {
+        const half = size * 0.6;
+        sun.shadow.camera.left = -half;
+        sun.shadow.camera.right = half;
+        sun.shadow.camera.top = half;
+        sun.shadow.camera.bottom = -half;
+        sun.shadow.camera.updateProjectionMatrix();
+      }
+    },
+
     /**
      * dayFraction 0..1 (0 = midnight). Returns the shared sky description: the renderer
      * uses `sky` for the clear colour, the water shader takes the sun and the night
@@ -139,11 +152,11 @@ export function createLighting(scene, { shadows = true, shadowMapSize = 2048, ti
     update(dayFraction, player, time = 0) {
       const angle = (dayFraction - 0.25) * Math.PI * 2;      // 0.25 = sunrise
       const elevation = Math.sin(angle);
-      const dist = 120;
-      sun.position.set(player.x + Math.cos(angle) * dist, Math.max(4, elevation * dist), player.z + 60);
-      sun.target.position.set(player.x, 0, player.z);
+      const dist = 180;
+      sun.position.set(islandCenter.x + Math.cos(angle) * dist, Math.max(12, elevation * dist), islandCenter.z + 60);
+      sun.target.position.set(islandCenter.x, 0, islandCenter.z);
       sun.target.updateMatrixWorld();
-      sunDir.set(sun.position.x - player.x, sun.position.y, sun.position.z - player.z).normalize();
+      sunDir.set(sun.position.x - islandCenter.x, sun.position.y, sun.position.z - islandCenter.z).normalize();
 
       const day = Math.max(0, elevation);
       const dusk = Math.max(0, 1 - Math.abs(elevation) * 4);  // brief warm band at the horizon

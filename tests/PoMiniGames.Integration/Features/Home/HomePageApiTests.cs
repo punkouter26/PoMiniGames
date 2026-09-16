@@ -25,10 +25,12 @@ public sealed class HomePageApiTests : IClassFixture<TestWebApplicationFactory>,
         "funquiz",
     ];
 
+    private readonly TestWebApplicationFactory _factory;
     private readonly HttpClient _client;
 
     public HomePageApiTests(TestWebApplicationFactory factory)
     {
+        _factory = factory;
         _client = factory.CreateClient();
     }
 
@@ -121,6 +123,8 @@ public sealed class HomePageApiTests : IClassFixture<TestWebApplicationFactory>,
     public async Task SavePlayerStats_ThenLeaderboardAndPlayerStats_RoundTrip(
         string game, int wins, int losses, int winStreak)
     {
+        if (!_factory.DockerAvailable) return;
+
         // Isolation comes from a unique PLAYER, not a unique game. An invented game id
         // ("roundtrip_leaderboard") cannot work: PlayerStatsEndpoints runs every game id
         // through GameKey.TryParse as its §8 allowlist, so an off-catalogue key 400s before

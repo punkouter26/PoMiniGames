@@ -9,9 +9,10 @@ export const LLM_STATE = Object.freeze({ OFF: 'off', UNSUPPORTED: 'unsupported',
 
 // Verified against @mlc-ai/web-llm 0.2.84 prebuiltAppConfig (2026-09-02).
 export const MODELS = Object.freeze([
-  { id: 'SmolLM2-360M-Instruct-q4f16_1-MLC', label: 'SmolLM2 360M', vramMb: 376, note: 'Smallest download — starts fastest.' },
+  { id: 'SmolLM2-135M-Instruct-q4f16_1-MLC', label: 'SmolLM2 135M', vramMb: 180, note: 'Instant edge download — starts fastest.' },
+  { id: 'SmolLM2-360M-Instruct-q4f16_1-MLC', label: 'SmolLM2 360M', vramMb: 376, note: 'Fast & responsive balanced model.' },
   { id: 'Llama-3.2-1B-Instruct-q4f16_1-MLC', label: 'Llama 3.2 1B', vramMb: 879, note: 'Better sentences, bigger download.' },
-  { id: 'Qwen3-0.6B-q4f16_1-MLC', label: 'Qwen3 0.6B', vramMb: 1403, note: 'Most recent of the three.' },
+  { id: 'Qwen3-0.6B-q4f16_1-MLC', label: 'Qwen3 0.6B', vramMb: 1403, note: 'High multilingual precision.' },
 ]);
 
 // The cloud "model": no worker, no WebGPU — each request is handed to the host (which
@@ -48,7 +49,7 @@ export const hasWebGpuSupport = async () => {
 
 export function createThoughtBridge({
   WorkerCtor = globalThis.Worker, workerUrl = null, hasWebGpu = hasWebGpuSupport,
-  onResult = () => {}, onState = () => {}, cloud = null, now = () => Date.now(),
+  onResult = () => {}, onState = () => {}, cloud = null, cloudBatch = null, now = () => Date.now(),
 } = {}) {
   let worker = null;
   let cloudMode = false;
@@ -140,6 +141,37 @@ export function createThoughtBridge({
       stats.requested++;
       worker.postMessage({ type: 'infer', requestId, prompt, system });
       return true;
+    },
+
+    /** Send a batch of creature prompts; optimizes throughput when using cloud thoughts. */
+    requestBatch(items) {
+      if (state !== LLM_STATE.READY || inFlight || !items || items.length === 0) return false;
+      if (cloudMode && cloudBatch) {
+        const t = now();
+        if (t - lastCloudAt < CLOUD_MIN_INTERVAL_MS) return false;
+        lastCloudAt = t;
+        const requestId = nextId++;
+        inFlight = { requestId, handle: items[0].handle };
+        stats.requested += items.length;
+        Promise.resolve(cloudBatch(items))
+          .then((batchResult) => {
+            inFlight = null;
+            if (batchResult && Array.isArray(batchResult.results)) {
+              for (const r of batchResult.results) {
+                stats.answered++;
+                onResult(r.id, JSON.stringify({ thought: r.thought, trait: r.trait, delta: r.delta }));
+              }
+            }
+            emit();
+          })
+          .catch(() => {
+            inFlight = null;
+            stats.failed += items.length;
+            emit();
+          });
+        return true;
+      }
+      return bridge.request(items[0]);
     },
 
     cancel() { inFlight = null; },

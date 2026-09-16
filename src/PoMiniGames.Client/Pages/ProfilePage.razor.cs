@@ -117,6 +117,7 @@ public partial class ProfilePage
     private GameEntry? _bestEntry, _nemesisEntry;
     private List<GameEntry> _entries = new();
     private string _activeTab = "overview";
+    private string _activeTab = "breakdown";
     private void SetTab(string tab) => _activeTab = tab;
 
     // ── High scores (best available per 1P game) ──────────────────

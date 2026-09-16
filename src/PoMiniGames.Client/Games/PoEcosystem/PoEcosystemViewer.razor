@@ -76,6 +76,22 @@
                 <p class="poeco-lock-hint">Click to look around</p>
             }
 
+            <div class="poeco-decree-dock" role="form" aria-label="Divine Decree Console">
+                <span class="poeco-decree-icon" aria-hidden="true">⚡</span>
+                <input type="text" class="poeco-decree-input" @bind="_decreeInput" @bind:event="oninput" @onkeydown="HandleDecreeKeyDownAsync"
+                       placeholder="Issue Divine Decree (e.g. 'Bless Amber with food', 'Summon rain')..."
+                       disabled="@_decreeBusy" />
+                <button type="button" class="poeco-btn poeco-btn--sm poeco-btn--primary" @onclick="SendDecreeAsync" disabled="@(_decreeBusy || string.IsNullOrWhiteSpace(_decreeInput))">
+                    @(_decreeBusy ? "..." : "Decree")
+                </button>
+            </div>
+            @if (!string.IsNullOrWhiteSpace(_decreeFeedback))
+            {
+                <div class="poeco-decree-feedback" role="status">
+                    <span>✨ @_decreeFeedback</span>
+                </div>
+            }
+
             @if (_narrow)
             {
                 <div class="poeco-touch">

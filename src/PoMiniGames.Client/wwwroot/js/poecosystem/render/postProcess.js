@@ -192,7 +192,7 @@ export function createPostProcess(renderer, scene, camera, { tier = 'high', widt
   if (smaa) composer.addPass(smaa);
 
   const u = atmosphere.uniforms;
-  u.uGrain.value = tier === 'high' ? 0.028 : 0.016;
+  u.uGrain.value = tier === 'high' ? 0.004 : 0.0;
   const NIGHT_GRADE = new THREE.Color(0.84, 0.9, 1.1);
   const DUSK_GRADE = new THREE.Color(1.08, 0.97, 0.9);
   const DAY_GRADE = new THREE.Color(1, 1, 1);

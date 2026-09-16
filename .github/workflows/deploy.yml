@@ -272,9 +272,12 @@ jobs:
         # smoke steps. We probe ping (cheapest), liveness (alias), structured
         # /api/health, and /api/diag in order — every health surface must be
         # warmed before the smoke tests run.
+        # Probe ping, liveness, health, and diag with a sensible retry backoff
+        # to ensure the instance is active before running validation.
         run: |
           for path in "/api/health/ping" "/api/health/liveness" "/api/health" "/api/diag"; do
             curl -fsS --retry 15 --retry-all-errors --retry-delay 15 \
+            curl -fsS --retry 5 --retry-all-errors --retry-delay 5 \
               "https://${APP_NAME}.azurewebsites.net${path}" || true
           done
 
@@ -284,5 +287,6 @@ jobs:
           for path in "/api/health/ping" "/api/health/liveness" "/api/health" "/api/diag"; do
             echo "Smoke testing ${path}..."
             curl -fsS --retry 6 --retry-all-errors --retry-delay 10 \
+            curl -fsS --retry 5 --retry-all-errors --retry-delay 5 \
               "https://${APP_NAME}.azurewebsites.net${path}" || exit 1
           done

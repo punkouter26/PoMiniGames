@@ -9,12 +9,14 @@ public sealed record IntegrityStatusDto(string Mode, int SessionTtlMinutes, bool
 
 /// <summary>
 /// Endpoints for the score-integrity slice: mint a play session, and report the guard's posture.
+/// Endpoints for the score-integrity slice: mint a play session.
 /// </summary>
 /// <remarks>
 /// The mint endpoint sits in the authenticated group (see EndpointRouteExtensions) because a
 /// session is bound to an identity and there is nothing to bind for an anonymous caller. Status
 /// is anonymous — it reports configuration, not data, and the client reads it before sign-in to
 /// decide whether to run the session machinery at all.
+/// session is bound to an identity and there is nothing to bind for an anonymous caller.
 /// </remarks>
 public static class IntegrityEndpoints
 {

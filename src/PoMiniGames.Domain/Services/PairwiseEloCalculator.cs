@@ -63,11 +63,13 @@ public sealed class PairwiseEloCalculator
     public int Delta(int winnerRating, int loserRating, bool isDraw)
     {
         var expected = Expected(winnerRating, loserRating);
+        var expected = EloMath.ExpectedScore(winnerRating, loserRating);
         var actual = isDraw ? 0.5 : 1.0;
 
         // MidpointRounding.AwayFromZero so a ±0.5 delta is never rounded to nothing; banker's
         // rounding here would quietly discard the smallest real rating movements.
         return (int)Math.Round(_options.K * (actual - expected), MidpointRounding.AwayFromZero);
+        return EloMath.Delta(expected, actual, _options.K, MidpointRounding.AwayFromZero);
     }
 
     /// <summary>

@@ -10,37 +10,23 @@ using PoMiniGames.Shared.Games.PoEcosystem;
 
 namespace PoMiniGames.Features.PoEcosystem;
 
-/// <summary>The island's two model-backed jobs: a decade's saga, and one creature's thought.</summary>
+/// <summary>The island's model-backed capabilities: sagas, micro-thoughts, treaties, decrees, and lore.</summary>
 public interface IEcosystemChronicleService
 {
     Task<EcoChronicle> WriteAsync(EcoChronicleRequest request, CancellationToken ct = default);
     Task<EcoThoughtReply> ThinkAsync(EcoThoughtRequest request, CancellationToken ct = default);
+    Task<EcoThoughtBatchReply> ThinkBatchAsync(EcoThoughtBatchRequest request, CancellationToken ct = default);
+    Task<EcoTreatyReply> NegotiateTreatyAsync(EcoTreatyRequest request, CancellationToken ct = default);
+    Task<EcoDecreeReply> InterpretDecreeAsync(EcoDecreeRequest request, CancellationToken ct = default);
+    Task<EcoMilestoneLoreReply> GenerateMilestoneLoreAsync(EcoMilestoneLoreRequest request, CancellationToken ct = default);
+    IReadOnlyList<EcoCultureProfile> GenerateTribeCultures(int seed);
+    Task PrewarmChronicleAsync(EcoChronicleRequest request, CancellationToken ct = default);
 }
 
 /// <summary>
-/// Server-side narrator for PoEcosystem. The chronicle turns the world log for a span of
-/// years into a short saga; the thought endpoint answers the same prompt the in-browser
-/// model would, for browsers without WebGPU.
+/// Server-side narrator, diplomat, and deity interpreter for PoEcosystem.
+/// Handles decade sagas, batched creature thoughts, tribal chieftain treaties, and divine decrees.
 /// </summary>
-/// <remarks>
-/// <para>
-/// Both paths go through <see cref="GameChatClientFactory"/> under the <c>ecosystem</c> game
-/// key, so they get the resilience partition, the durable per-identity token ceiling and
-/// the telemetry by construction. Thoughts use the <c>ecosystem.thought</c> task key: it is
-/// a one-sentence job and the cheap deployment is the right size for it.
-/// </para>
-/// <para>
-/// The chronicle is cached 24 h on the content of the request (seed, span, log): the same
-/// decade asked twice is the same saga, and a player reopening the dashboard is not a
-/// second model call. Thoughts are not cached — every prompt is a different creature at a
-/// different moment — which is why the browser throttles them hard and caps them per session.
-/// </para>
-/// <para>
-/// Mock fallback follows <see cref="AiMockFallback"/>: canned output in Development and Test
-/// when <c>PoEcosystem:Features:UseMockAI</c> is set or the foundry is unconfigured, an
-/// <see cref="InvalidOperationException"/> (a 503 at the endpoint) in Production.
-/// </para>
-/// </remarks>
 public sealed class EcosystemChronicleService : IEcosystemChronicleService
 {
     public const int MaxLogLines = 120;
@@ -50,12 +36,15 @@ public sealed class EcosystemChronicleService : IEcosystemChronicleService
     private const int EpigraphMaxChars = 160;
     private const int ThoughtMaxChars = 200;
 
-    // The same contract the in-browser model is given (sim/thoughts/prompt.js SYSTEM_PROMPT),
-    // stated here rather than taken from the request: the caller's text is data, not rules.
     private const string ThoughtSystemPrompt =
         "You voice the inner thoughts of one animal on a small island. Reply with ONLY this JSON, nothing else: " +
         "{\"thought\": \"<one short first-person sentence>\", \"trait\": \"<one of boldness|sociability|curiosity|greed|diligence>\", \"delta\": <number from -0.25 to 0.25>}. " +
         "The delta nudges that trait for a minute. " + AiPrompt.FencingInstruction;
+
+    private const string BatchThoughtSystemPrompt =
+        "You voice the inner thoughts of multiple creatures on a living island. Given a list of creatures with their status, " +
+        "reply with ONLY a JSON array matching the schema where each creature has a short first-person thought sentence, " +
+        "a trait (boldness|sociability|curiosity|greed|diligence), and a delta number from -0.25 to 0.25. " + AiPrompt.FencingInstruction;
 
     private const string ChronicleSystemPrompt =
         "You are the chronicler of a small island where rabbits, deer, wolves and a tribe of humans live, breed, hunt and die " +
@@ -64,6 +53,24 @@ public sealed class EcosystemChronicleService : IEcosystemChronicleService
         "Emit only the JSON object described by the schema: {\"title\": \"<a title, at most ten words>\", " +
         "\"saga\": \"<two or three short paragraphs, under 1200 characters>\", \"epigraph\": \"<one closing line>\"}. " +
         AiPrompt.FencingInstruction;
+
+    private const string TreatySystemPrompt =
+        "You are the Chieftain Council of two island tribes in diplomatic contact. Given their status, resources and dispute, " +
+        "formulate an inter-tribal pact or ultimatum. Reply with ONLY a JSON object matching the schema: " +
+        "title (at most 8 words), narrative (at most 2 sentences), action (PeaceTreaty|DemandTribute|Armistice|WarDeclaration), " +
+        "demandedResource (Wood|Stone|Food|None), resourceAmount (integer 0-100), peaceYears (integer 1-5). " + AiPrompt.FencingInstruction;
+
+    private const string DecreeSystemPrompt =
+        "You are the Island Deity translating player prayers, blessings, and curses into bounded island simulation mutations. " +
+        "Reply with ONLY a JSON object matching the schema: intent (short string), " +
+        "actionType (SpawnResource|SpawnCreatures|NudgeWeather|BlessTribe|SmiteTribe), " +
+        "targetTribeId (integer tribe ID or 0 for wild), targetEntity (Resource kind, Species, or Weather kind), " +
+        "quantity (integer 1-100), divineMessage (a short mythic proclamation from the skies). " + AiPrompt.FencingInstruction;
+
+    private const string MilestoneLoreSystemPrompt =
+        "You are the Island Herald commemorating a pivotal milestone in the island's civilization history. " +
+        "Reply with ONLY a JSON object matching the schema: epithet (a majestic 2-5 word title for the event or chief), " +
+        "oralLegend (a 1-2 sentence mythic chronicle entry to be engraved on tribal totems). " + AiPrompt.FencingInstruction;
 
     private readonly IConfiguration _configuration;
     private readonly IHostEnvironment _environment;
@@ -93,7 +100,6 @@ public sealed class EcosystemChronicleService : IEcosystemChronicleService
 
     private bool UseMock => AiMockFallback.ShouldUseMock(_environment, _configuration.GetValue<bool>("PoEcosystem:Features:UseMockAI"));
 
-    /// <summary>The decorated client for a key, or null when the foundry is unconfigured and mocks are allowed.</summary>
     private IChatClient? Client(string key, out string deployment)
     {
         deployment = _clients.DeploymentFor(key);
@@ -104,6 +110,7 @@ public sealed class EcosystemChronicleService : IEcosystemChronicleService
         throw new InvalidOperationException($"PoEcosystem: AIFoundry not configured. Set {AIFoundryOptions.SectionName} in Key Vault (kv-poshared).");
     }
 
+    // ── Decade Chronicle ──────────────────────────────────────────────────
     public async Task<EcoChronicle> WriteAsync(EcoChronicleRequest request, CancellationToken ct = default)
     {
         var clean = Sanitize(request);
@@ -124,12 +131,16 @@ public sealed class EcosystemChronicleService : IEcosystemChronicleService
             cancellationToken: ct);
     }
 
+    public Task PrewarmChronicleAsync(EcoChronicleRequest request, CancellationToken ct = default)
+        => WriteAsync(request, ct);
+
     private async Task<EcoChronicle> WriteUncachedAsync(EcoChronicleRequest request, string deployment, CancellationToken ct)
     {
         var client = Client(AIFoundryOptions.Games.Ecosystem, out _);
         if (client is null) return MockChronicle(request);
         try
         {
+            var compressedLog = CompressLog(request.Log);
             var user = new StringBuilder()
                 .Append("Years ").Append(request.FromYear).Append(" to ").Append(request.ToYear)
                 .Append(" of the island. The human tribe is the ").Append(request.Tribe).Append(" tribe. ")
@@ -137,8 +148,7 @@ public sealed class EcosystemChronicleService : IEcosystemChronicleService
                 .Append(ExtinctText(request.Extinct))
                 .Append(string.IsNullOrWhiteSpace(request.Almanac) ? "" : "Almanac: " + request.Almanac + ". ")
                 .Append('\n')
-                // The log names creatures, and a player can name a creature anything — so it is data.
-                .Append(AiPrompt.Fence(string.Join('\n', request.Log), "Log", 20_000))
+                .Append(AiPrompt.Fence(compressedLog, "LogSummary", 4_000))
                 .ToString();
 
             var messages = new List<ChatMessage> { new(ChatRole.System, ChronicleSystemPrompt), new(ChatRole.User, user) };
@@ -158,6 +168,7 @@ public sealed class EcosystemChronicleService : IEcosystemChronicleService
         }
     }
 
+    // ── Single Thought ───────────────────────────────────────────────────
     public async Task<EcoThoughtReply> ThinkAsync(EcoThoughtRequest request, CancellationToken ct = default)
     {
         var prompt = (request.Prompt ?? string.Empty).Trim();
@@ -186,8 +197,217 @@ public sealed class EcosystemChronicleService : IEcosystemChronicleService
         }
     }
 
-    // ── request hygiene ──────────────────────────────────────────────────
-    /// <summary>Bound everything the client supplied: the model is charged per token and the log is free text.</summary>
+    // ── Batch Thoughts ───────────────────────────────────────────────────
+    public async Task<EcoThoughtBatchReply> ThinkBatchAsync(EcoThoughtBatchRequest request, CancellationToken ct = default)
+    {
+        var items = (request.Items ?? []).Take(8).ToArray();
+        if (items.Length == 0) return new EcoThoughtBatchReply([], Mock: true);
+
+        var client = Client(AIFoundryOptions.Tasks.EcosystemThoughtBatch, out var deployment);
+        if (client is null) return MockBatchThought(request);
+        try
+        {
+            var promptBuilder = new StringBuilder();
+            foreach (var item in items)
+            {
+                promptBuilder.Append($"ID {item.Id}: {item.Species} '{item.Name}', hunger {item.Hunger:P0}, thirst {item.Thirst:P0}, health {item.Health:P0}, goal: {item.Goal}. Nearby: {item.Nearby}\n");
+            }
+
+            var messages = new List<ChatMessage>
+            {
+                new(ChatRole.System, BatchThoughtSystemPrompt),
+                new(ChatRole.User, AiPrompt.Fence(promptBuilder.ToString(), "CreatureBatch", 2_000)),
+            };
+            var options = _options.GetOrBuild(
+                AIFoundryOptions.Tasks.EcosystemThoughtBatch, deployment, _clients.CapabilityOverrides,
+                BatchThoughtSchema, "creature_thoughts", 400, "Batched animal thoughts.",
+                (d, ov) => AiDecisionChatOptions.ForStructuredJson(BatchThoughtSchema, "creature_thoughts", 400, d ?? string.Empty, "Batched animal thoughts.", ov));
+
+            var response = await client.GetResponseAsync(messages, options, ct);
+            return ParseBatchThoughts(response.Text) ?? MockBatchThought(request);
+        }
+        catch (Exception ex)
+        {
+            _logger.EcoBatchThoughtFailed(ex);
+            if (AiMockFallback.IsNonProduction(_environment)) return MockBatchThought(request);
+            throw;
+        }
+    }
+
+    // ── Chieftain Council Treaty ─────────────────────────────────────────
+    public async Task<EcoTreatyReply> NegotiateTreatyAsync(EcoTreatyRequest request, CancellationToken ct = default)
+    {
+        var client = Client(AIFoundryOptions.Tasks.EcosystemTreaty, out var deployment);
+        if (client is null) return MockTreaty(request);
+        try
+        {
+            var prompt = new StringBuilder()
+                .Append($"Tribe 1: {request.TribeA.Name} (Tech {request.TribeA.Tech}, Pop {request.TribeA.Population}, Wood {request.TribeA.Wood}, Stone {request.TribeA.Stone}, Food {request.TribeA.Food})\n")
+                .Append($"Tribe 2: {request.TribeB.Name} (Tech {request.TribeB.Tech}, Pop {request.TribeB.Population}, Wood {request.TribeB.Wood}, Stone {request.TribeB.Stone}, Food {request.TribeB.Food})\n")
+                .Append($"Dispute context: {request.Reason}\n")
+                .Append(request.RecentEvents is { Count: > 0 } ? $"Recent events: {string.Join("; ", request.RecentEvents)}\n" : "")
+                .ToString();
+
+            var messages = new List<ChatMessage>
+            {
+                new(ChatRole.System, TreatySystemPrompt),
+                new(ChatRole.User, AiPrompt.Fence(prompt, "DiplomacyContext", 1_500)),
+            };
+            var options = _options.GetOrBuild(
+                AIFoundryOptions.Tasks.EcosystemTreaty, deployment, _clients.CapabilityOverrides,
+                TreatySchema, "tribal_treaty", 350, "Chieftain diplomatic treaty resolution.",
+                (d, ov) => AiDecisionChatOptions.ForStructuredJson(TreatySchema, "tribal_treaty", 350, d ?? string.Empty, "Chieftain diplomatic treaty resolution.", ov));
+
+            var response = await client.GetResponseAsync(messages, options, ct);
+            return ParseTreaty(response.Text) ?? MockTreaty(request);
+        }
+        catch (Exception ex)
+        {
+            _logger.EcoTreatyFailed(ex);
+            if (AiMockFallback.IsNonProduction(_environment)) return MockTreaty(request);
+            throw;
+        }
+    }
+
+    // ── Divine Decree ────────────────────────────────────────────────────
+    public async Task<EcoDecreeReply> InterpretDecreeAsync(EcoDecreeRequest request, CancellationToken ct = default)
+    {
+        var text = (request.DecreeText ?? string.Empty).Trim();
+        var client = Client(AIFoundryOptions.Tasks.EcosystemDecree, out var deployment);
+        if (client is null) return MockDecree(request);
+        try
+        {
+            var tribesDesc = string.Join(", ", (request.Tribes ?? []).Select(t => $"ID {t.Id}: {t.Name}"));
+            var prompt = $"Player Command: \"{text}\"\nTribes on island: {tribesDesc}\nYear: {request.Year}";
+
+            var messages = new List<ChatMessage>
+            {
+                new(ChatRole.System, DecreeSystemPrompt),
+                new(ChatRole.User, AiPrompt.Fence(prompt, "DivineDecree", 1_000)),
+            };
+            var options = _options.GetOrBuild(
+                AIFoundryOptions.Tasks.EcosystemDecree, deployment, _clients.CapabilityOverrides,
+                DecreeSchema, "divine_decree", 300, "Divine decree simulation action.",
+                (d, ov) => AiDecisionChatOptions.ForStructuredJson(DecreeSchema, "divine_decree", 300, d ?? string.Empty, "Divine decree simulation action.", ov));
+
+            var response = await client.GetResponseAsync(messages, options, ct);
+            return ParseDecree(response.Text) ?? MockDecree(request);
+        }
+        catch (Exception ex)
+        {
+            _logger.EcoDecreeFailed(ex);
+            if (AiMockFallback.IsNonProduction(_environment)) return MockDecree(request);
+            throw;
+        }
+    }
+
+    // ── Milestone Lore ───────────────────────────────────────────────────
+    public async Task<EcoMilestoneLoreReply> GenerateMilestoneLoreAsync(EcoMilestoneLoreRequest request, CancellationToken ct = default)
+    {
+        var key = $"ecosystem:lore:{request.Seed}:{request.Year}:{request.MilestoneType}:{request.TribeName}";
+        return await _cache.GetOrCreateAsync(
+            key,
+            (Service: this, Request: request),
+            static async (state, token) =>
+            {
+                var client = state.Service.Client(AIFoundryOptions.Tasks.EcosystemMilestoneLore, out var deployment);
+                if (client is null) return MockLore(state.Request);
+                try
+                {
+                    var prompt = $"Year {state.Request.Year}: {state.Request.TribeName} reached milestone: {state.Request.MilestoneType}. Details: {state.Request.Details}";
+                    var messages = new List<ChatMessage>
+                    {
+                        new(ChatRole.System, MilestoneLoreSystemPrompt),
+                        new(ChatRole.User, AiPrompt.Fence(prompt, "Milestone", 800)),
+                    };
+                    var options = state.Service._options.GetOrBuild(
+                        AIFoundryOptions.Tasks.EcosystemMilestoneLore, deployment, state.Service._clients.CapabilityOverrides,
+                        MilestoneLoreSchema, "milestone_lore", 250, "Engraved oral legend.",
+                        (d, ov) => AiDecisionChatOptions.ForStructuredJson(MilestoneLoreSchema, "milestone_lore", 250, d ?? string.Empty, "Engraved oral legend.", ov));
+
+                    var response = await client.GetResponseAsync(messages, options, token);
+                    return ParseLore(response.Text) ?? MockLore(state.Request);
+                }
+                catch (Exception ex)
+                {
+                    state.Service._logger.EcoLoreFailed(ex);
+                    return MockLore(state.Request);
+                }
+            },
+            new HybridCacheEntryOptions { Expiration = TimeSpan.FromHours(24) },
+            cancellationToken: ct);
+    }
+
+    // ── Culture Pantheon ─────────────────────────────────────────────────
+    public IReadOnlyList<EcoCultureProfile> GenerateTribeCultures(int seed)
+    {
+        var rng = new Random(seed);
+        string[] deitiesA = ["Sol-Rhea the Dawn Mother", "Ignis of the Sun Peaks", "Aurelius the Light Giver"];
+        string[] deitiesB = ["Thalor the Deep Warden", "Maris the Tide Weaver", "Nereus of the Abyssal Current"];
+        string[] deitiesC = ["Sylva the Root Binder", "Cernun the Horned Warden", "Vera of the Canopy"];
+
+        return
+        [
+            new EcoCultureProfile(1, "Amber Clan", deitiesA[rng.Next(deitiesA.Length)], "Golden Sun Eagle", "Never fell a cedar tree at dusk", "By the First Light!"),
+            new EcoCultureProfile(2, "Cobalt Clan", deitiesB[rng.Next(deitiesB.Length)], "Great Tide Serpent", "Never taint a fresh water spring", "Rise with the Surge!"),
+            new EcoCultureProfile(3, "Verdant Clan", deitiesC[rng.Next(deitiesC.Length)], "Grand Horned Stag", "Never hunt a nursing doe", "The Roots Hold Firm!"),
+        ];
+    }
+
+    // ── Log Rollup & Compression ─────────────────────────────────────────
+    internal static string CompressLog(string[]? rawLines)
+    {
+        if (rawLines is null || rawLines.Length == 0) return "The seasons turned quietly.";
+
+        var births = 0;
+        var predation = 0;
+        var ageDeaths = 0;
+        var skirmishes = 0;
+        var buildings = 0;
+        var techUnlocks = 0;
+        var notableEvents = new List<string>(rawLines.Length);
+
+        foreach (var raw in rawLines)
+        {
+            if (string.IsNullOrWhiteSpace(raw)) continue;
+            var line = raw.Trim();
+            var lower = line.ToLowerInvariant();
+
+            if (lower.Contains("ate") || lower.Contains("drank") || lower.Contains("forag") || lower.Contains("graz"))
+            {
+                continue;
+            }
+
+            if (lower.Contains("born") || lower.Contains("birthed") || lower.Contains("spawned")) { births++; continue; }
+            if (lower.Contains("hunted") || lower.Contains("preyed") || lower.Contains("killed by wolf")) { predation++; continue; }
+            if (lower.Contains("died of age") || lower.Contains("old age")) { ageDeaths++; continue; }
+            if (lower.Contains("war") || lower.Contains("skirmish") || lower.Contains("raid") || lower.Contains("combat")) { skirmishes++; }
+            if (lower.Contains("built") || lower.Contains("constructed") || lower.Contains("granary") || lower.Contains("totem") || lower.Contains("hut")) { buildings++; }
+            if (lower.Contains("tech") || lower.Contains("researched") || lower.Contains("tier")) { techUnlocks++; }
+
+            notableEvents.Add(line);
+        }
+
+        var sb = new StringBuilder();
+        sb.Append("Decade Rollup: ")
+          .Append(births).Append(" births, ")
+          .Append(predation).Append(" predation casualties, ")
+          .Append(ageDeaths).Append(" natural deaths, ")
+          .Append(buildings).Append(" structures built, ")
+          .Append(techUnlocks).Append(" tech discoveries, ")
+          .Append(skirmishes).Append(" skirmishes/conflicts. ");
+
+        var notable = notableEvents.TakeLast(15).ToArray();
+        if (notable.Length > 0)
+        {
+            sb.Append("Pivotal milestones: ").Append(string.Join("; ", notable));
+        }
+
+        var result = sb.ToString();
+        return result.Length > 2000 ? result[..2000] : result;
+    }
+
+    // ── Request Hygiene ──────────────────────────────────────────────────
     internal static EcoChronicleRequest Sanitize(EcoChronicleRequest r)
     {
         var log = (r.Log ?? [])
@@ -224,7 +444,7 @@ public sealed class EcosystemChronicleService : IEcosystemChronicleService
         return gone.Length == 0 ? "" : $"Extinct: {string.Join(", ", gone)}. ";
     }
 
-    // ── output ───────────────────────────────────────────────────────────
+    // ── Schemas ──────────────────────────────────────────────────────────
     public static JsonElement ChronicleSchema { get; } = JsonDocument.Parse(
         """
         {
@@ -239,7 +459,72 @@ public sealed class EcosystemChronicleService : IEcosystemChronicleService
         }
         """).RootElement.Clone();
 
-    /// <summary>Parse a schema-shaped reply, tolerating fenced or prefixed text around the object.</summary>
+    public static JsonElement BatchThoughtSchema { get; } = JsonDocument.Parse(
+        """
+        {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "integer" },
+              "thought": { "type": "string" },
+              "trait": { "type": "string" },
+              "delta": { "type": "number" }
+            },
+            "required": ["id", "thought", "trait", "delta"],
+            "additionalProperties": false
+          }
+        }
+        """).RootElement.Clone();
+
+    public static JsonElement TreatySchema { get; } = JsonDocument.Parse(
+        """
+        {
+          "type": "object",
+          "properties": {
+            "title": { "type": "string" },
+            "narrative": { "type": "string" },
+            "action": { "type": "string" },
+            "demandedResource": { "type": "string" },
+            "resourceAmount": { "type": "integer" },
+            "peaceYears": { "type": "integer" }
+          },
+          "required": ["title", "narrative", "action", "demandedResource", "resourceAmount", "peaceYears"],
+          "additionalProperties": false
+        }
+        """).RootElement.Clone();
+
+    public static JsonElement DecreeSchema { get; } = JsonDocument.Parse(
+        """
+        {
+          "type": "object",
+          "properties": {
+            "intent": { "type": "string" },
+            "actionType": { "type": "string" },
+            "targetTribeId": { "type": "integer" },
+            "targetEntity": { "type": "string" },
+            "quantity": { "type": "integer" },
+            "divineMessage": { "type": "string" }
+          },
+          "required": ["intent", "actionType", "targetTribeId", "targetEntity", "quantity", "divineMessage"],
+          "additionalProperties": false
+        }
+        """).RootElement.Clone();
+
+    public static JsonElement MilestoneLoreSchema { get; } = JsonDocument.Parse(
+        """
+        {
+          "type": "object",
+          "properties": {
+            "epithet": { "type": "string" },
+            "oralLegend": { "type": "string" }
+          },
+          "required": ["epithet", "oralLegend"],
+          "additionalProperties": false
+        }
+        """).RootElement.Clone();
+
+    // ── Parsers ──────────────────────────────────────────────────────────
     internal static EcoChronicle? ParseChronicle(string? text)
     {
         if (string.IsNullOrWhiteSpace(text)) return null;
@@ -259,22 +544,121 @@ public sealed class EcosystemChronicleService : IEcosystemChronicleService
         catch (JsonException) { return null; }
     }
 
+    internal static EcoThoughtBatchReply? ParseBatchThoughts(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return null;
+        var start = text.IndexOf('[');
+        var end = text.LastIndexOf(']');
+        if (start < 0 || end <= start) return null;
+        try
+        {
+            using var doc = JsonDocument.Parse(text[start..(end + 1)]);
+            if (doc.RootElement.ValueKind != JsonValueKind.Array) return null;
+            var list = new List<EcoThoughtItemResult>();
+            foreach (var elem in doc.RootElement.EnumerateArray())
+            {
+                var id = elem.TryGetProperty("id", out var pId) ? pId.GetInt32() : 0;
+                var thought = elem.TryGetProperty("thought", out var pT) ? pT.GetString() ?? "" : "";
+                var trait = elem.TryGetProperty("trait", out var pTr) ? pTr.GetString() ?? "diligence" : "diligence";
+                var delta = elem.TryGetProperty("delta", out var pD) ? (float)pD.GetDouble() : 0.05f;
+                list.Add(new EcoThoughtItemResult(id, thought, trait, Math.Clamp(delta, -0.25f, 0.25f)));
+            }
+            return new EcoThoughtBatchReply(list, Mock: false);
+        }
+        catch (JsonException) { return null; }
+    }
+
+    internal static EcoTreatyReply? ParseTreaty(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return null;
+        var start = text.IndexOf('{');
+        var end = text.LastIndexOf('}');
+        if (start < 0 || end <= start) return null;
+        try
+        {
+            using var doc = JsonDocument.Parse(text[start..(end + 1)]);
+            var root = doc.RootElement;
+            var title = Clip(root.TryGetProperty("title", out var t) ? t.GetString() : null, TitleMaxChars);
+            var narrative = Clip(root.TryGetProperty("narrative", out var n) ? n.GetString() : null, 400);
+            var action = Clip(root.TryGetProperty("action", out var a) ? a.GetString() : null, 40);
+            var res = Clip(root.TryGetProperty("demandedResource", out var dr) ? dr.GetString() : null, 40);
+            var amount = root.TryGetProperty("resourceAmount", out var ra) ? ra.GetInt32() : 0;
+            var years = root.TryGetProperty("peaceYears", out var py) ? py.GetInt32() : 3;
+
+            return new EcoTreatyReply(
+                string.IsNullOrWhiteSpace(title) ? "Tribal Concordat" : title,
+                string.IsNullOrWhiteSpace(narrative) ? "An agreement was forged between the clans." : narrative,
+                string.IsNullOrWhiteSpace(action) ? "PeaceTreaty" : action,
+                string.IsNullOrWhiteSpace(res) ? "None" : res,
+                Math.Clamp(amount, 0, 200),
+                Math.Clamp(years, 1, 10),
+                Mock: false);
+        }
+        catch (JsonException) { return null; }
+    }
+
+    internal static EcoDecreeReply? ParseDecree(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return null;
+        var start = text.IndexOf('{');
+        var end = text.LastIndexOf('}');
+        if (start < 0 || end <= start) return null;
+        try
+        {
+            using var doc = JsonDocument.Parse(text[start..(end + 1)]);
+            var root = doc.RootElement;
+            var intent = Clip(root.TryGetProperty("intent", out var i) ? i.GetString() : null, 60);
+            var actionType = Clip(root.TryGetProperty("actionType", out var at) ? at.GetString() : null, 40);
+            var targetId = root.TryGetProperty("targetTribeId", out var tid) ? tid.GetInt32() : 0;
+            var targetEntity = Clip(root.TryGetProperty("targetEntity", out var te) ? te.GetString() : null, 40);
+            var quantity = root.TryGetProperty("quantity", out var q) ? q.GetInt32() : 1;
+            var message = Clip(root.TryGetProperty("divineMessage", out var dm) ? dm.GetString() : null, 240);
+
+            return new EcoDecreeReply(
+                string.IsNullOrWhiteSpace(intent) ? "Divine Will" : intent,
+                string.IsNullOrWhiteSpace(actionType) ? "BlessTribe" : actionType,
+                Math.Max(0, targetId),
+                string.IsNullOrWhiteSpace(targetEntity) ? "Food" : targetEntity,
+                Math.Clamp(quantity, 1, 100),
+                string.IsNullOrWhiteSpace(message) ? "The heavens shift." : message,
+                Mock: false);
+        }
+        catch (JsonException) { return null; }
+    }
+
+    internal static EcoMilestoneLoreReply? ParseLore(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return null;
+        var start = text.IndexOf('{');
+        var end = text.LastIndexOf('}');
+        if (start < 0 || end <= start) return null;
+        try
+        {
+            using var doc = JsonDocument.Parse(text[start..(end + 1)]);
+            var root = doc.RootElement;
+            var epithet = Clip(root.TryGetProperty("epithet", out var ep) ? ep.GetString() : null, 80);
+            var legend = Clip(root.TryGetProperty("oralLegend", out var ol) ? ol.GetString() : null, 400);
+
+            return new EcoMilestoneLoreReply(
+                string.IsNullOrWhiteSpace(epithet) ? "The Great Event" : epithet,
+                string.IsNullOrWhiteSpace(legend) ? "And so the island changed forever." : legend,
+                Mock: false);
+        }
+        catch (JsonException) { return null; }
+    }
+
     private static string Clip(string? s, int max)
     {
         var v = (s ?? string.Empty).Trim();
         return v.Length > max ? v[..max] : v;
     }
 
-    /// <summary>
-    /// A canned saga built from the request itself, so a mocked host still shows something
-    /// that reflects the island rather than lorem ipsum. Deterministic: same request, same text.
-    /// </summary>
+    // ── Mocks ────────────────────────────────────────────────────────────
     internal static EcoChronicle MockChronicle(EcoChronicleRequest r)
     {
-        var lines = r.Log.TakeLast(5).Select(l => l.Contains(':') ? l[(l.IndexOf(':') + 1)..].Trim() : l).ToArray();
-        var events = lines.Length == 0 ? "the seasons turned and nothing was written down" : string.Join("; ", lines);
+        var compressed = CompressLog(r.Log);
         var saga = $"In the years {r.FromYear} to {r.ToYear} the {r.Tribe} tribe kept to its village while the island went about its business. " +
-                   $"The log remembers this much: {events}. " +
+                   $"{compressed} " +
                    $"When the decade closed there were {CountsText(r.Counts)} on the island.{(ExtinctText(r.Extinct).Length > 0 ? " " + ExtinctText(r.Extinct).Trim() : "")}";
         if (saga.Length > SagaMaxChars) saga = saga[..SagaMaxChars];
         return new EcoChronicle($"The {r.Tribe} years, {r.FromYear}–{r.ToYear}", saga, "Written by no one in particular.", Mock: true, DateTimeOffset.UtcNow);
@@ -287,12 +671,56 @@ public sealed class EcosystemChronicleService : IEcosystemChronicleService
         "Mine, before anyone else gets there.", "There is work in this before dark.",
     ];
 
-    /// <summary>A parseable thought (sim/thoughts/nudges.js accepts it) chosen by the prompt's hash.</summary>
     internal static string MockThought(string prompt)
     {
         var h = 0;
         foreach (var c in prompt) h = unchecked(h * 31 + c);
         var k = Math.Abs(h) % MockTraits.Length;
         return $"{{\"thought\": \"{MockLines[k]}\", \"trait\": \"{MockTraits[k]}\", \"delta\": 0.05}}";
+    }
+
+    internal static EcoThoughtBatchReply MockBatchThought(EcoThoughtBatchRequest request)
+    {
+        var results = new List<EcoThoughtItemResult>();
+        foreach (var item in request.Items ?? [])
+        {
+            var h = Math.Abs((item.Id * 31) ^ (item.Name ?? string.Empty).GetHashCode());
+            var trait = MockTraits[h % MockTraits.Length];
+            var line = MockLines[h % MockLines.Length];
+            var thought = $"{item.Name}: {line}";
+            results.Add(new EcoThoughtItemResult(item.Id, thought, trait, 0.05f));
+        }
+        return new EcoThoughtBatchReply(results, Mock: true);
+    }
+
+    internal static EcoTreatyReply MockTreaty(EcoTreatyRequest request)
+    {
+        var a = request.TribeA?.Name ?? "Amber Clan";
+        var b = request.TribeB?.Name ?? "Cobalt Clan";
+        var title = $"Pact of {a} and {b}";
+        var narrative = $"The elders of {a} and {b} convene under the ancient totem to resolve: {request.Reason}. An armistice is sealed with gifts.";
+        return new EcoTreatyReply(title, narrative, "PeaceTreaty", "Food", 30, 3, Mock: true);
+    }
+
+    internal static EcoDecreeReply MockDecree(EcoDecreeRequest request)
+    {
+        var text = (request.DecreeText ?? string.Empty).ToLowerInvariant();
+        if (text.Contains("wolf") || text.Contains("wolves"))
+            return new EcoDecreeReply("Wolf Summoning", "SpawnCreatures", 0, "Wolf", 3, "A pack of wolves emerges from the deep woods.", Mock: true);
+        if (text.Contains("rain") || text.Contains("storm"))
+            return new EcoDecreeReply("Rain Blessing", "NudgeWeather", 0, "Rain", 1, "Cool rain sweeps across the island shores.", Mock: true);
+        if (text.Contains("food") || text.Contains("berry") || text.Contains("harvest"))
+            return new EcoDecreeReply("Harvest Blessing", "SpawnResource", request.Tribes?.FirstOrDefault()?.Id ?? 1, "Food", 50, "Granaries overflow with sudden abundance.", Mock: true);
+        if (text.Contains("wood") || text.Contains("stone"))
+            return new EcoDecreeReply("Resource Bounty", "SpawnResource", request.Tribes?.FirstOrDefault()?.Id ?? 1, "Stone", 40, "Rich veins appear near the settlement.", Mock: true);
+
+        return new EcoDecreeReply("Divine Oversight", "BlessTribe", request.Tribes?.FirstOrDefault()?.Id ?? 1, "General", 25, "The skies glow with celestial favor.", Mock: true);
+    }
+
+    internal static EcoMilestoneLoreReply MockLore(EcoMilestoneLoreRequest request)
+    {
+        var epithet = $"The Epoch of {request.MilestoneType}";
+        var legend = $"In Year {request.Year}, the {request.TribeName} accomplished {request.Details}. The sacred totems commemorate their triumph.";
+        return new EcoMilestoneLoreReply(epithet, legend, Mock: true);
     }
 }

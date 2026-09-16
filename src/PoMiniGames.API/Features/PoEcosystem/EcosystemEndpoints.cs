@@ -117,6 +117,65 @@ public static class EcosystemEndpoints
             .ProducesProblem(StatusCodes.Status503ServiceUnavailable)
             .RequireRateLimiting("ai-generation");
 
+        group.MapPost("/thoughts/batch", async (EcoThoughtBatchRequest request, IEcosystemChronicleService chronicler, CancellationToken ct) =>
+            {
+                if (request.Items is null || request.Items.Count == 0 || request.Items.Count > 16) return Results.BadRequest(new { error = "items required (1-16)" });
+                try { return Results.Ok(await chronicler.ThinkBatchAsync(request, ct)); }
+                catch (InvalidOperationException) { return Results.StatusCode(StatusCodes.Status503ServiceUnavailable); }
+            })
+            .WithName("PoEcosystemThoughtBatch")
+            .Produces<EcoThoughtBatchReply>()
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable)
+            .RequireRateLimiting("ai-generation");
+
+        group.MapPost("/treaty", async (EcoTreatyRequest request, IEcosystemChronicleService chronicler, CancellationToken ct) =>
+            {
+                if (request.TribeA is null || request.TribeB is null) return Results.BadRequest(new { error = "both tribes required" });
+                try { return Results.Ok(await chronicler.NegotiateTreatyAsync(request, ct)); }
+                catch (InvalidOperationException) { return Results.StatusCode(StatusCodes.Status503ServiceUnavailable); }
+            })
+            .WithName("PoEcosystemTreaty")
+            .Produces<EcoTreatyReply>()
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable)
+            .RequireRateLimiting("ai-generation");
+
+        group.MapPost("/decree", async (EcoDecreeRequest request, IEcosystemChronicleService chronicler, CancellationToken ct) =>
+            {
+                if (string.IsNullOrWhiteSpace(request.DecreeText) || request.DecreeText.Length > 300) return Results.BadRequest(new { error = "decree text required (1-300 chars)" });
+                try { return Results.Ok(await chronicler.InterpretDecreeAsync(request, ct)); }
+                catch (InvalidOperationException) { return Results.StatusCode(StatusCodes.Status503ServiceUnavailable); }
+            })
+            .WithName("PoEcosystemDecree")
+            .Produces<EcoDecreeReply>()
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable)
+            .RequireRateLimiting("ai-generation");
+
+        group.MapPost("/milestone-lore", async (EcoMilestoneLoreRequest request, IEcosystemChronicleService chronicler, CancellationToken ct) =>
+            {
+                if (string.IsNullOrWhiteSpace(request.MilestoneType)) return Results.BadRequest(new { error = "milestone type required" });
+                try { return Results.Ok(await chronicler.GenerateMilestoneLoreAsync(request, ct)); }
+                catch (InvalidOperationException) { return Results.StatusCode(StatusCodes.Status503ServiceUnavailable); }
+            })
+            .WithName("PoEcosystemMilestoneLore")
+            .Produces<EcoMilestoneLoreReply>()
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable)
+            .RequireRateLimiting("ai-generation");
+
+        group.MapGet("/culture/{seed:int}", (int seed, IEcosystemChronicleService chronicler) =>
+            {
+                return Results.Ok(chronicler.GenerateTribeCultures(seed));
+            })
+            .WithName("PoEcosystemCulture")
+            .Produces<EcoCultureProfile[]>();
+
+        group.MapPost("/chronicle/prewarm", async (EcoChronicleRequest request, IEcosystemChronicleService chronicler, CancellationToken ct) =>
+            {
+                await chronicler.PrewarmChronicleAsync(request, ct);
+                return Results.Accepted();
+            })
+            .WithName("PoEcosystemPrewarmChronicle")
+            .RequireRateLimiting("ai-generation");
+
         return app;
     }
 

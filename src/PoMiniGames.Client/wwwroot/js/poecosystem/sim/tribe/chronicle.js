@@ -29,3 +29,22 @@ export function createTribeChronicle() {
     },
   };
 }
+
+/** Check if decade pre-warming should trigger at Year 9.8 of each decade. */
+export function shouldPrewarmDecade(year, tick, ticksPerYear = 100) {
+  const decadeYear = year % 10;
+  return decadeYear === 9 && (tick % ticksPerYear) >= (ticksPerYear * 0.8);
+}
+
+/** Client-side log summary compressor to filter out mundane ticks. */
+export function compressLogSummary(events) {
+  if (!events || events.length === 0) return 'The island remained quiet.';
+  const notable = events
+    .filter(e => {
+      const txt = (typeof e === 'string' ? e : (e?.text || '')).toLowerCase();
+      return !txt.includes('ate') && !txt.includes('drank') && !txt.includes('graz') && !txt.includes('forag');
+    })
+    .slice(-25);
+  return notable.map(e => (typeof e === 'string' ? e : e?.text || '')).join('; ');
+}
+

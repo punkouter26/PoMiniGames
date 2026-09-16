@@ -89,6 +89,7 @@ public sealed class GameSessionManagerTests
 
     [Fact]
     public void StartGame_CreatesTheMatchAtTheChosenRoundCount_AndThrowsWithoutALobby()
+    public void GameLifecycle_StartAndAdvanceRound_IncrementsRoundAndRotatesKing()
     {
         var empty = new GameSessionManager();
         var act = () => empty.StartGame("Q?", "Hobbies");
@@ -119,6 +120,7 @@ public sealed class GameSessionManagerTests
 
     [Fact]
     public void RoundCompletion_RoutesTheKingToTheSecret_AndWaitsForEveryGuess()
+    public void RoundCompletion_RoutesTheKingToTheSecret_WaitsForGuesses_AndAppliesScores()
     {
         var mgr = LobbyOf("Alice", "Bob", "Carla"); // Alice is King for round 0
         var game = mgr.StartGame("Q?", "Hobbies");
@@ -150,6 +152,7 @@ public sealed class GameSessionManagerTests
         var mgr = LobbyOf("Alice", "Bob");
         var game = mgr.StartGame("Q?", "Hobbies");
 
+        // Verify score application updates player stats
         mgr.ApplyRoundScores(new Dictionary<string, int> { ["Bob"] = 10 });
 
         var bob = game.Players.First(p => p.Name == "Bob");

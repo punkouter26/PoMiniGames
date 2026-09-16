@@ -22,12 +22,15 @@ export function buildPrompt(world, i) {
   const traits = TRAITS.map((t, k) => `${t} ${effectiveTrait(e, i, k, tick).toFixed(2)}`).join(', ');
   const s = world.senses(i);
   const name = e.names[i];
+  const handle = e.handle(i);
+  const grievance = world.lineage?.getAncestorGrievance?.(handle);
   const recent = world.log.all().filter(ev => ev.text && ev.text.includes(name)).slice(-2).map(ev => ev.text).join('; ');
   let out = `${name}, ${STAGE[e.lifeStage[i]] ?? 'adult'} ${e.sex[i] === 1 ? 'female' : 'male'} ${sp.name.toLowerCase()}, ${e.age[i].toFixed(1)} years. `
     + `Traits: ${traits}. Hunger ${pct(e.hunger[i])}, thirst ${pct(e.thirst[i])}, health ${pct(e.health[i])}. `
     + `Now: ${GOAL_NAMES[e.goal[i]] ?? 'idle'}. Nearby: food ${m(s.foodDist)}, water ${m(s.waterDist)}, threat ${m(s.threatDist)}`
     + `${s.preyDist !== Infinity ? `, prey ${m(s.preyDist)}` : ''}${s.mateDist !== Infinity ? `, mate ${m(s.mateDist)}` : ''}. `
     + `${s.night ? 'It is night. ' : ''}${e.lifeStage[i] === LIFE_STAGE.JUVENILE ? 'Still a juvenile. ' : ''}`
+    + (grievance ? `Ancestry: ${grievance}. ` : '')
     + (recent ? `Recently: ${recent}.` : '');
   if (out.length > THOUGHTS.maxPromptChars) out = out.slice(0, THOUGHTS.maxPromptChars - 1) + '…';
   return out;

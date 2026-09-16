@@ -111,6 +111,59 @@ public sealed class PoEcosystemApiClient
         }
         catch { return null; }
     }
+
+    public async Task<EcoThoughtBatchReply?> ThinkBatchAsync(EcoThoughtBatchRequest request, CancellationToken ct = default)
+    {
+        try
+        {
+            using var response = await _http.PostAsJsonAsync("/api/ecosystem/thoughts/batch", request, EcoApiJsonContext.Default.EcoThoughtBatchRequest, ct);
+            if (!response.IsSuccessStatusCode) return null;
+            return await response.Content.ReadFromJsonAsync(EcoApiJsonContext.Default.EcoThoughtBatchReply, ct);
+        }
+        catch { return null; }
+    }
+
+    public async Task<EcoTreatyReply?> NegotiateTreatyAsync(EcoTreatyRequest request, CancellationToken ct = default)
+    {
+        try
+        {
+            using var response = await _http.PostAsJsonAsync("/api/ecosystem/treaty", request, EcoApiJsonContext.Default.EcoTreatyRequest, ct);
+            if (!response.IsSuccessStatusCode) return null;
+            return await response.Content.ReadFromJsonAsync(EcoApiJsonContext.Default.EcoTreatyReply, ct);
+        }
+        catch { return null; }
+    }
+
+    public async Task<EcoDecreeReply?> InterpretDecreeAsync(EcoDecreeRequest request, CancellationToken ct = default)
+    {
+        try
+        {
+            using var response = await _http.PostAsJsonAsync("/api/ecosystem/decree", request, EcoApiJsonContext.Default.EcoDecreeRequest, ct);
+            if (!response.IsSuccessStatusCode) return null;
+            return await response.Content.ReadFromJsonAsync(EcoApiJsonContext.Default.EcoDecreeReply, ct);
+        }
+        catch { return null; }
+    }
+
+    public async Task<EcoMilestoneLoreReply?> GenerateMilestoneLoreAsync(EcoMilestoneLoreRequest request, CancellationToken ct = default)
+    {
+        try
+        {
+            using var response = await _http.PostAsJsonAsync("/api/ecosystem/milestone-lore", request, EcoApiJsonContext.Default.EcoMilestoneLoreRequest, ct);
+            if (!response.IsSuccessStatusCode) return null;
+            return await response.Content.ReadFromJsonAsync(EcoApiJsonContext.Default.EcoMilestoneLoreReply, ct);
+        }
+        catch { return null; }
+    }
+
+    public async Task<EcoCultureProfile[]?> GetCultureAsync(int seed, CancellationToken ct = default)
+    {
+        try
+        {
+            return await _http.GetFromJsonAsync($"/api/ecosystem/culture/{seed}", EcoApiJsonContext.Default.EcoCultureProfileArray, ct);
+        }
+        catch { return null; }
+    }
 }
 
 [JsonSerializable(typeof(EcoWorldMeta))]
@@ -121,5 +174,18 @@ public sealed class PoEcosystemApiClient
 [JsonSerializable(typeof(EcoChronicle))]
 [JsonSerializable(typeof(EcoThoughtRequest))]
 [JsonSerializable(typeof(EcoThoughtReply))]
+[JsonSerializable(typeof(EcoThoughtPromptItem))]
+[JsonSerializable(typeof(EcoThoughtBatchRequest))]
+[JsonSerializable(typeof(EcoThoughtItemResult))]
+[JsonSerializable(typeof(EcoThoughtBatchReply))]
+[JsonSerializable(typeof(EcoTreatyRequest))]
+[JsonSerializable(typeof(EcoTreatyReply))]
+[JsonSerializable(typeof(EcoDecreeRequest))]
+[JsonSerializable(typeof(EcoDecreeReply))]
+[JsonSerializable(typeof(EcoMilestoneLoreRequest))]
+[JsonSerializable(typeof(EcoMilestoneLoreReply))]
+[JsonSerializable(typeof(EcoCultureProfile))]
+[JsonSerializable(typeof(EcoCultureProfile[]))]
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase, PropertyNameCaseInsensitive = true)]
 internal sealed partial class EcoApiJsonContext : JsonSerializerContext;
+

@@ -2,19 +2,13 @@ using FluentAssertions;
 using PoMiniGames.Features.PoJoker;
 using PoMiniGames.Shared.Games.PoJoker;
 
-namespace PoMiniGames.Integration;
+namespace PoMiniGames.Unit.Features.PoJoker;
 
 /// <summary>
 /// The Jester runs with JokeAPI safe-mode off, and harsh jokes are rewritten rather
 /// than skipped. These pin the rewrite rules: what triggers one, that only whole
 /// words are swapped, that capitalisation survives, and that a joke is never dropped.
 /// </summary>
-/// <remarks>
-/// Hermetic string logic that would naturally sit in the Unit tier, but that tier is
-/// at its 100-method ceiling, so it lives here per the 100/50/25/25 rule. Kept to a
-/// small number of theory-driven methods for the same reason — this tier's own cap is
-/// 50, and a theory counts as one method however many cases it carries.
-/// </remarks>
 public class JokeSanitizerTests
 {
     private static JokeDto Joke(string setup, string punchline, JokeFlags? flags = null) => new()
@@ -87,8 +81,6 @@ public class JokeSanitizerTests
         result.Setup.Should().Be("What the heck happened?");
         result.Punchline.Should().Be("It was a bless mess.");
         result.Sanitized.Should().BeTrue();
-        // The whole point of rewriting instead of blacklisting: the show always has
-        // something left to perform.
         result.Setup.Should().NotBeNullOrWhiteSpace();
         result.Punchline.Should().NotBeNullOrWhiteSpace();
     }
@@ -112,3 +104,4 @@ public class JokeSanitizerTests
         result.Sanitized.Should().BeFalse();
     }
 }
+

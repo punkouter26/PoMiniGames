@@ -56,6 +56,7 @@ public sealed class EloCalculator
 
         // Expected score for the player at the reference ELO vs this AI tier.
         double expected = 1.0 / (1.0 + Math.Pow(10, (aiElo - _options.PlayerReferenceElo) / 400.0));
+        double expected = EloMath.ExpectedScore(_options.PlayerReferenceElo, aiElo);
 
         double elo = _options.PlayerReferenceElo
             + ds.Wins * _options.K * (1.0 - expected) // Win actual=1

@@ -86,7 +86,8 @@ float noise(vec2 p) {
 void main() {
   // Outside the island's footprint there is no bake — that is open ocean, so clamp to full
   // depth rather than letting the sampler wrap a shoreline round the horizon.
-  float inside = step(0.0, vDepthUv.x) * step(vDepthUv.x, 1.0) * step(0.0, vDepthUv.y) * step(vDepthUv.y, 1.0);
+  float inside = smoothstep(0.0, 0.015, vDepthUv.x) * (1.0 - smoothstep(0.985, 1.0, vDepthUv.x))
+               * smoothstep(0.0, 0.015, vDepthUv.y) * (1.0 - smoothstep(0.985, 1.0, vDepthUv.y));
   float depth = mix(1.0, texture2D(uDepth, clamp(vDepthUv, 0.0, 1.0)).r, inside);
 
   vec3 view = normalize(cameraPosition - vWorld);

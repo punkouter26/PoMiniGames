@@ -44,6 +44,7 @@
 - **Context**: The solution enforces hard ceilings: Unit &le; 100, Integration &le; 50, E2E-API &le; 25, E2E-UI &le; 25 (`TierCeilingGuard.cs`).
 - **Decision**: Keep JS simulation logic covered hermetically via Vitest (which does not consume xUnit method counts). In `tests/PoMiniGames.Unit`, add parameterized `[Theory]` tests for DTO mappings, migration rules, and chronicle formatting to consume &le; 3 test slots.
 - **Rationale**: Ensures test coverage increases while ceiling guard tests pass unconditionally.
+- **Decision**: Cover C# DTO mappings, migration rules, and chronicle formatting using parameterized `[Theory]` tests to consume minimal test slots under the ceiling guard.
 
 ---
 
@@ -86,6 +87,7 @@ graph TD
 | **WASM Bundle Bloat** | High | Low | Enforce native Blazor components and plain SVG. Zero heavy third-party UI packages (`CLAUDE.md#L113`). |
 | **Worker Deserialization Lag** | Medium | Medium | Throttle dashboard telemetry to 2 Hz; send only delta changes for entity attributes; keep Three.js frames binary `Float32Array`. |
 | **Test Ceiling Breach** | High | Low | Parameterize all new C# unit tests into existing theory slots; use Vitest for core JS sim tests. |
+| **Test Ceiling Breach** | High | Low | Parameterize all new C# unit tests into existing theory slots to protect hard ceilings. |
 | **Tribal Extinction Snowball** | Medium | Medium | Implement minimum resilience reserves: defeated tribes can surrender or retreat, and wild humans can coalesce into a new tribe if one collapses. |
 | **Camera Clipping / Terrain Occlusion** | Low | Low | God-camera computes heightfield collision raycasts to clamp altitude above hills and volcanic peaks. |
 

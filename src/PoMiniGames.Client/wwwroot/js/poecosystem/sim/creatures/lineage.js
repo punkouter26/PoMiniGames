@@ -70,6 +70,26 @@ export function createLineage({ cap = 6000 } = {}) {
       for (let r = self; r && (r.mother !== NONE || r.father !== NONE) && generation < 40; generation++) r = rec(r.mother) ?? rec(r.father);
       return { self, mother, father, grandparents: grand, children: kids, siblings, descendants, generation };
     },
+    getAncestorGrievance(handle) {
+      const self = records.get(handle);
+      if (!self) return null;
+      const rec = (h) => (h === NONE || h === undefined ? null : records.get(h) ?? null);
+      const mother = rec(self.mother);
+      const father = rec(self.father);
+      if (mother && mother.died >= 0 && mother.cause && mother.cause.includes('wolf')) {
+        return `mother ${mother.name} was slain by wolves`;
+      }
+      if (father && father.died >= 0 && father.cause && father.cause.includes('wolf')) {
+        return `father ${father.name} was slain by wolves`;
+      }
+      if (mother && mother.died >= 0 && mother.cause && (mother.cause.includes('combat') || mother.cause.includes('war'))) {
+        return `mother ${mother.name} fell in tribal battle`;
+      }
+      if (father && father.died >= 0 && father.cause && (father.cause.includes('combat') || father.cause.includes('war'))) {
+        return `father ${father.name} fell in tribal battle`;
+      }
+      return null;
+    },
     getState() { return { records: [...records.values()].map(r => ({ ...r })), dead }; },
     setState(s) {
       records = new Map(); children = new Map(); dead = 0;

@@ -77,7 +77,7 @@ export function createRenderer(container, {
   renderer.toneMappingExposure = 1.15;
 
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(75, 1, 0.1, 700);
+  const camera = new THREE.PerspectiveCamera(75, 1, 0.5, 700);
   // lighting owns scene.fog now: its colour and density both ride the same day/night curve
   // as the sky, and the water and particle shaders read the density back off it.
   const lighting = createLighting(scene, { shadows: !lowEnd, shadowMapSize: lowEnd ? 1024 : 2048, tier });
@@ -211,6 +211,7 @@ export function createRenderer(container, {
       },
     };
     island = createTerrainMesh(terrainApi, { tier });
+    lighting.setWorldSize?.(msg.size);
     scene.add(island.mesh, island.water);
     flora = createFloraMeshes(scene, terrainApi, { trees: msg.trees, bushes: msg.bushes });
     if (minimapCanvas) minimap = createMinimap(minimapCanvas, terrainApi);

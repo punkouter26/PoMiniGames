@@ -47,6 +47,8 @@ export function createDiplomacyManager() {
                 tribeBId: tribeB.id,
                 tribeBName: tribeB.name,
                 text: `${tribeA.name} and ${tribeB.name} forged a lasting peace treaty`,
+                treatyPending: true,
+                reason: 'casualty armistice and resource depletion',
               };
               events.push(event);
               if (log) log.push({ tick, kind: 'diplomacy', text: event.text });

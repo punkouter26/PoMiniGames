@@ -11,6 +11,7 @@ import * as SFX from './sand-playground-audio.js';
 import { source as physicsSource } from './sand-playground-physics.glsl.js';
 import { source as renderSource } from './sand-playground-render.glsl.js';
 import { SAND_PLAYGROUND_CALIBRATION, consumePhysicsSteps } from '../sand-playground-calibration.js';
+import { SAND_PLAYGROUND_CALIBRATION, consumePhysicsSteps } from './sand-playground-calibration.js';
 
 const W = 800, H = 600;
 const AIR = 0, SAND = 1, CONCRETE = 2, WATER = 3, BEDROCK = 4;

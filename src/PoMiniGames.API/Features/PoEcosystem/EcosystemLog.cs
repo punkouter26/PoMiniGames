@@ -24,4 +24,21 @@ internal static partial class EcosystemLog
     [LoggerMessage(EventId = 4605, Level = LogLevel.Warning,
         Message = "PoEcosystem: cloud thought failed; the creature falls back to instinct.")]
     public static partial void EcoThoughtFailed(this ILogger logger, Exception ex);
+
+    [LoggerMessage(EventId = 4606, Level = LogLevel.Warning,
+        Message = "PoEcosystem: batch thought failed; creatures fall back to instinct.")]
+    public static partial void EcoBatchThoughtFailed(this ILogger logger, Exception ex);
+
+    [LoggerMessage(EventId = 4607, Level = LogLevel.Warning,
+        Message = "PoEcosystem: treaty negotiation failed; tribes maintain current status.")]
+    public static partial void EcoTreatyFailed(this ILogger logger, Exception ex);
+
+    [LoggerMessage(EventId = 4608, Level = LogLevel.Warning,
+        Message = "PoEcosystem: divine decree interpretation failed; decree dispersed into wind.")]
+    public static partial void EcoDecreeFailed(this ILogger logger, Exception ex);
+
+    [LoggerMessage(EventId = 4609, Level = LogLevel.Warning,
+        Message = "PoEcosystem: milestone lore generation failed.")]
+    public static partial void EcoLoreFailed(this ILogger logger, Exception ex);
 }
+

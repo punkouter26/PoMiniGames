@@ -2,6 +2,8 @@
 // the browser, or over a Map in tests and as a last-resort fallback. The sim worker owns
 // the store, so autosave never crosses a thread boundary.
 
+import { migrateSnapshot } from './codec.js';
+
 const DB_NAME = 'poecosystem';
 const STORE = 'worlds';
 const CURRENT = 'current';
@@ -47,10 +49,20 @@ export async function saveWorld(store, snapshot) {
   // pay two sequential transaction commits.
   await Promise.all([
     store.put(CURRENT, snapshot),
-    store.put(META, { seed: snapshot.seed, tick: snapshot.tick, year: snapshot.year, savedAt: snapshot.savedAt, counts: snapshot.counts }),
+    store.put(META, {
+      seed: snapshot.seed,
+      tick: snapshot.tick,
+      year: snapshot.year,
+      savedAt: snapshot.savedAt,
+      counts: snapshot.counts,
+      schemaVersion: snapshot.schemaVersion ?? 2,
+    }),
   ]);
 }
 
-export const loadWorld = (store) => store.get(CURRENT);
+export async function loadWorld(store) {
+  const snap = await store.get(CURRENT);
+  return snap ? migrateSnapshot(snap) : null;
+}
 export const loadWorldMeta = (store) => store.get(META);
 export async function deleteWorld(store) { await store.delete(CURRENT); await store.delete(META); }

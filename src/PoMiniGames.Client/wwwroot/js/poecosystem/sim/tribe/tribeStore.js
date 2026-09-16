@@ -202,5 +202,77 @@ export function createTribeStore(terrain, streams) {
     getBuildingsTelemetry() {
       return construction.toTelemetry();
     },
+
+    getState() {
+      return {
+        version: 2,
+        tribes: placedTribes.map(t => ({
+          id: t.id,
+          name: t.name,
+          bannerColor: t.bannerColor,
+          accentColor: t.accentColor,
+          motto: t.motto,
+          tech: t.tech,
+          researchPoints: t.researchPoints,
+          population: t.population,
+          warriors: t.warriors,
+          wood: t.wood,
+          stone: t.stone,
+          food: t.food,
+          centerTile: t.centerTile,
+          centerX: t.centerX,
+          centerZ: t.centerZ,
+          territoryRadius: t.territoryRadius,
+          relations: [...t.relations],
+          casualtyCount: t.casualtyCount ?? 0,
+          warCooldownTicks: t.warCooldownTicks ?? 0,
+        })),
+        buildings: construction.buildings.map(b => ({
+          id: b.id,
+          tribeId: b.tribeId,
+          kind: b.kind,
+          tileIndex: b.tileIndex,
+          x: b.x,
+          z: b.z,
+          progress: b.progress,
+          maxProgress: b.maxProgress,
+          health: b.health,
+          maxHealth: b.maxHealth,
+          isComplete: b.isComplete,
+        })),
+      };
+    },
+
+    setState(s) {
+      if (!s || typeof s !== 'object') return;
+      if (Array.isArray(s.tribes)) {
+        for (const st of s.tribes) {
+          const t = placedTribes.find(p => p.id === st.id);
+          if (t) {
+            if (st.name) t.name = st.name;
+            if (st.tech !== undefined) t.tech = st.tech;
+            if (st.researchPoints !== undefined) t.researchPoints = st.researchPoints;
+            if (st.population !== undefined) t.population = st.population;
+            if (st.warriors !== undefined) t.warriors = st.warriors;
+            if (st.wood !== undefined) t.wood = st.wood;
+            if (st.stone !== undefined) t.stone = st.stone;
+            if (st.food !== undefined) t.food = st.food;
+            if (st.centerX !== undefined) t.centerX = st.centerX;
+            if (st.centerZ !== undefined) t.centerZ = st.centerZ;
+            if (st.centerTile !== undefined) t.centerTile = st.centerTile;
+            if (st.territoryRadius !== undefined) t.territoryRadius = st.territoryRadius;
+            if (Array.isArray(st.relations)) t.relations = [...st.relations];
+            if (st.casualtyCount !== undefined) t.casualtyCount = st.casualtyCount;
+            if (st.warCooldownTicks !== undefined) t.warCooldownTicks = st.warCooldownTicks;
+          }
+        }
+      }
+      if (Array.isArray(s.buildings)) {
+        construction.buildings.length = 0;
+        for (const sb of s.buildings) {
+          construction.buildings.push({ ...sb });
+        }
+      }
+    },
   };
 }

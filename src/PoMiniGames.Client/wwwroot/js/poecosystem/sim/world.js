@@ -700,9 +700,6 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
     // The tribe's ladder, once a second: climb a tier when its conditions hold, and rebuild
     // anything the island has since buried.
     if (tick % 20 === 0) {
-      tribeStore.stepTech(log);
-      tribeStore.stepConstruction(terrain, tileState, streams.behavior, log);
-      tribeStore.stepDiplomacy(log);
       const reached = advanceTech(world, { hutsBuilt: almanac.hutsBuilt, humans: counts[SPECIES_ID.HUMAN], year: clock.year() }, tribe);
       if (reached) {
         log.push({ tick, kind: 'tech', level: reached.level, tile: reached.tile, text: reached.text });
@@ -734,8 +731,6 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
       telemetryCount: ledger.count,
       traitHistory,
       tech: { level: settlement.tech, name: TECH_NAMES[settlement.tech] ?? 'Camp', tribe, campfire: settlement.campfireTile !== NONE, tower: settlement.towerTile !== NONE, fields: settlement.fieldTiles.length },
-      tribes: tribeStore.toTelemetry(),
-      buildings: tribeStore.getBuildingsTelemetry(),
       watched: watchedList(),
       lineageCount: lineage.count,
     };
@@ -871,6 +866,7 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
         oldestName: almanac.oldestName, oldestSpecies: almanac.oldestSpecies, oldestAge: almanac.oldestAge,
       },
       telemetry: ledger.getState(),
+      tribes: tribeStore.getState(),
       lava: world.lava ? { front: world.lava.front.slice(), tiles: world.lava.tiles.slice(), endTick: world.lava.endTick, nextCreep: world.lava.nextCreep } : null,
     };
   }
@@ -889,6 +885,7 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
       almanac.oldestName = s.almanac.oldestName ?? ''; almanac.oldestSpecies = s.almanac.oldestSpecies | 0; almanac.oldestAge = s.almanac.oldestAge ?? 0;
     }
     if (s.telemetry) ledger.setState(s.telemetry);
+    if (s.tribes) tribeStore.setState(s.tribes);
     popHistory.length = 0; for (const r of s.popHistory) popHistory.push(r.slice());
     tileState.set(s.tileState); fear.set(s.fear);
     grass.biomass.set(s.grass.biomass); grass.cursor = s.grass.cursor | 0;

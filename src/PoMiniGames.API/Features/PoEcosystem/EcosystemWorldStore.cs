@@ -116,6 +116,7 @@ public sealed class EcosystemWorldStore
                 ["SizeBytes"] = (long)bytes.Length,
                 ["ShareCode"] = shareCode,
                 ["OwnerName"] = ownerName,
+                ["SchemaVersion"] = 2,
             };
             await _table.UpsertEntityAsync(entity, TableUpdateMode.Replace, ct);
             if (shareCode.Length > 0) await _table.UpsertEntityAsync(Mirror(shareCode, owner, entity), TableUpdateMode.Replace, ct);
@@ -269,6 +270,7 @@ public sealed class EcosystemWorldStore
         ["Counts"] = source.GetString("Counts") ?? "",
         ["SavedAt"] = source.GetDateTimeOffset("SavedAt") ?? DateTimeOffset.UtcNow,
         ["SizeBytes"] = source.GetInt64("SizeBytes") ?? 0L,
+        ["SchemaVersion"] = source.GetInt32("SchemaVersion") ?? 2,
     };
 
     private static EcoWorldMeta ToMeta(TableEntity e) => new(

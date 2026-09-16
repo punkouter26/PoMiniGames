@@ -32,9 +32,27 @@ export function encodeSnapshot(snapshot) {
   });
 }
 
+export const CODEC_VERSION = 2;
+
+/** Migrate snapshot schema: converts legacy v1 snapshots cleanly to v2. */
+export function migrateSnapshot(snap) {
+  if (!snap || typeof snap !== 'object') return snap;
+  if (!snap.schemaVersion || snap.schemaVersion < 2) {
+    snap.schemaVersion = 2;
+    if (snap.state && !snap.state.tribes) {
+      snap.state.tribes = {
+        version: 2,
+        tribes: [],
+        buildings: [],
+      };
+    }
+  }
+  return snap;
+}
+
 /** JSON text → snapshot, typed arrays restored. Throws on malformed input. */
 export function decodeSnapshot(text) {
-  return JSON.parse(text, (_, value) => {
+  const parsed = JSON.parse(text, (_, value) => {
     if (value && typeof value === 'object' && typeof value.$ta === 'string' && typeof value.$b64 === 'string') {
       const Ctor = CTORS[value.$ta];
       if (!Ctor) return value;
@@ -44,6 +62,7 @@ export function decodeSnapshot(text) {
     }
     return value;
   });
+  return migrateSnapshot(parsed);
 }
 
 /** Snapshot → gzip'd bytes (Uint8Array). */

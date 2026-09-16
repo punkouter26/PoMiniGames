@@ -16,7 +16,7 @@ Each task is a vertical slice touching &le; 5 files. All tasks follow strict TDD
 
 ---
 
-- [x] **Task 2: Territory Boundaries & Resource Claim Zones (with KD-Tree Spatial Indexing)**
+- [ ] **Task 2: Territory Boundaries & Resource Claim Zones (with KD-Tree Spatial Indexing)**
   - **Description**: Implement dynamic tribal borders, influence mapping from settlement centers, totem anchors, and resource node claiming using `Supercluster.KDTree` for O(log N) proximity queries.
   - **File Manifest** (&le; 5 files):
     1. `src/PoMiniGames.Client/wwwroot/js/poecosystem/sim/tribe/territory.js`
@@ -28,55 +28,55 @@ Each task is a vertical slice touching &le; 5 files. All tasks follow strict TDD
 
 ---
 
-- [x] **Task 3: 4-Tier Tech Ladder Progression**
+- [ ] **Task 3: 4-Tier Tech Ladder Progression**
   - **Description**: Implement tech research points accumulation driven by tribe elders and population density, unlocking 4 progressive technology eras.
   - **File Manifest** (&le; 5 files):
     1. `src/PoMiniGames.Client/wwwroot/js/poecosystem/sim/tribe/techLadder.js`
     2. `src/PoMiniGames.Client/wwwroot/js/poecosystem/sim/tribe/tribeStore.js`
-    3. `src/PoMiniGames.Client/wwwroot/js/poecosystem/sim/world.js`
+    3. `src/PoMiniGames.Client/wwwroot/js/poecosystem/sim/behavior/humans.js`
   - **Acceptance Criteria**: Research points accumulate monotonically; tier prerequisites are strictly enforced; toolcraft unlocks accelerated gathering multipliers.
   - **Verification**: `dotnet build PoMiniGames.slnx`
 
 ---
 
-- [x] **Task 4: Settlement Construction & Building Lifecycles**
+- [ ] **Task 4: Settlement Construction & Building Lifecycles**
   - **Description**: Autonomous construction system allowing humans to deposit wood/stone at designated building sites to construct Huts, Granaries, Watchtowers, and Totems.
   - **File Manifest** (&le; 5 files):
     1. `src/PoMiniGames.Client/wwwroot/js/poecosystem/sim/tribe/construction.js`
-    2. `src/PoMiniGames.Client/wwwroot/js/poecosystem/sim/tribe/tribeStore.js`
+    2. `src/PoMiniGames.Client/wwwroot/js/poecosystem/sim/behavior/humans.js`
     3. `src/PoMiniGames.Client/wwwroot/js/poecosystem/sim/world.js`
   - **Acceptance Criteria**: Site selection avoids water and steep slopes; construction progresses with material drops; completed huts increase tribal housing capacity.
   - **Verification**: `dotnet build PoMiniGames.slnx`
 
 ---
 
-- [x] **Task 5: Inter-Tribe Diplomacy & Skirmish Combat (with Stateless Machine)**
+- [ ] **Task 5: Inter-Tribe Diplomacy & Skirmish Combat (with Stateless Machine)**
   - **Description**: Dynamic diplomacy state machine governing peace treaties, border friction, skirmish squad formation, and combat resolution with casualty morale retreats.
   - **File Manifest** (&le; 5 files):
     1. `src/PoMiniGames.Client/wwwroot/js/poecosystem/sim/tribe/diplomacy.js`
     2. `src/PoMiniGames.Client/wwwroot/js/poecosystem/sim/behavior/combat.js`
-    3. `src/PoMiniGames.Client/wwwroot/js/poecosystem/sim/tribe/tribeStore.js`
-    4. `src/PoMiniGames.Client/wwwroot/js/poecosystem/sim/world.js`
+    3. `src/PoMiniGames.Client/wwwroot/js/poecosystem/sim/behavior/humans.js`
   - **Acceptance Criteria**: Border encroachment elevates tension; war state triggers skirmish parties; casualties &gt; 30% trigger surrender/peace negotiation cooldown.
   - **Verification**: `dotnet build PoMiniGames.slnx`
 
 ---
 
-- [x] **Task 6: Procedural 3D Settlement Structures & Banners**
+- [ ] **Task 6: Procedural 3D Settlement Structures & Banners**
   - **Description**: Three.js procedural rendering for thatched huts, stone granaries, watchtowers, campfires with flickering point lights, and tribal banner accents on human meshes.
   - **File Manifest** (&le; 5 files):
     1. `src/PoMiniGames.Client/wwwroot/js/poecosystem/render/settlementMesh.js`
-    2. `src/PoMiniGames.Client/wwwroot/js/poecosystem/render/renderer.js`
+    2. `src/PoMiniGames.Client/wwwroot/js/poecosystem/render/creatureMeshes.js`
+    3. `src/PoMiniGames.Client/wwwroot/js/poecosystem/render/renderer.js`
   - **Acceptance Criteria**: Instanced geometries batch efficiently; buildings render at appropriate coordinates; human meshes display distinct tribal banner colors.
   - **Verification**: `dotnet build PoMiniGames.slnx`
 
 ---
 
-- [x] **Task 7: Overhead God-Camera & Director Presets**
+- [ ] **Task 7: Overhead God-Camera & Director Presets**
   - **Description**: Overhead orbit/pan/zoom camera with terrain height clamping and smart tracking presets (Island Overview, Focus Tribe, Active Conflict, Milestone Focus).
   - **File Manifest** (&le; 5 files):
-    1. `src/PoMiniGames.Client/wwwroot/js/poecosystem/index.js`
-    2. `src/PoMiniGames.Client/Services/Interop/PoEcosystemInteropService.cs`
+    1. `src/PoMiniGames.Client/wwwroot/js/poecosystem/render/camera.js`
+    2. `src/PoMiniGames.Client/wwwroot/js/poecosystem/render/director.js`
     3. `src/PoMiniGames.Client/Games/PoEcosystem/PoEcosystemViewer.razor`
     4. `src/PoMiniGames.Client/Games/PoEcosystem/PoEcosystemViewer.razor.cs`
   - **Acceptance Criteria**: Camera smoothly interpolates between targets; terrain collision prevents clipping below ground; quick-action buttons switch modes seamlessly.
@@ -84,7 +84,7 @@ Each task is a vertical slice touching &le; 5 files. All tasks follow strict TDD
 
 ---
 
-- [x] **Task 8: Milestone Chronicle Generator & API Relay**
+- [ ] **Task 8: Milestone Chronicle Generator & API Relay**
   - **Description**: Generates procedural historical milestone logs (tech discovery, war outbreak, peace treaty, chief succession) and relays them to the backend chronicle service.
   - **File Manifest** (&le; 5 files):
     1. `src/PoMiniGames.Client/wwwroot/js/poecosystem/sim/tribe/chronicle.js`
@@ -96,7 +96,7 @@ Each task is a vertical slice touching &le; 5 files. All tasks follow strict TDD
 
 ---
 
-- [ ] **Task 9: Snapshot Codec v2 & Backward Migration**
+- [x] **Task 9: Snapshot Codec v2 & Backward Migration**
   - **Description**: Extend IndexedDB world state snapshot codec to serialize multi-tribe state, buildings, tech progress, and diplomatic matrix; migrate v1 saves cleanly.
   - **File Manifest** (&le; 5 files):
     1. `src/PoMiniGames.Client/wwwroot/js/poecosystem/sim/persistence/codec.js`

@@ -7,7 +7,7 @@ import { createWorld } from '../world.js';
 import { generateIsland } from '../terrain/island.js';
 import { createPhysics } from '../physics/world.js';
 
-export const SNAPSHOT_VERSION = 1;
+export const SNAPSHOT_VERSION = 2;
 
 export function snapshotWorld(world) {
   return {
@@ -30,7 +30,7 @@ export function snapshotWorld(world) {
  * once and shared between the heightfield and the simulation.
  */
 export function restoreWorld(snap, { physics = null, CANNON = null, caps = {} } = {}) {
-  if (!snap || typeof snap !== 'object' || snap.schemaVersion !== SNAPSHOT_VERSION || !snap.state) return null;
+  if (!snap || typeof snap !== 'object' || (snap.schemaVersion !== 1 && snap.schemaVersion !== SNAPSHOT_VERSION) || !snap.state) return null;
   const terrain = generateIsland(snap.seed);
   if (terrain.hash !== snap.terrainHash) return null;
   let phys = physics;

@@ -127,6 +127,8 @@
       <_BlazorClientSettingsDev Include="..\PoMiniGames.Client\wwwroot\appsettings.Development.json"
                                 Condition="Exists('..\PoMiniGames.Client\wwwroot\appsettings.Development.json')" />
     </ItemGroup>
+    <RemoveDir Directories="$(MSBuildThisFileDirectory)bin\$(Configuration)\net10.0\wwwroot\_framework"
+               Condition="Exists('$(MSBuildThisFileDirectory)bin\$(Configuration)\net10.0\wwwroot\_framework')" />
     <Copy
       SourceFiles="@(_BlazorClientWwwroot)"
       DestinationFiles="@(_BlazorClientWwwroot->'$(MSBuildThisFileDirectory)bin\$(Configuration)\net10.0\wwwroot\%(RecursiveDir)%(Filename)%(Extension)')"

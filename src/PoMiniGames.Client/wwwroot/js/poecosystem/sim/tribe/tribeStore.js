@@ -7,6 +7,7 @@ import { TILE, isWater, tileIndex, tileX, tileZ } from '../terrain/tiles.js';
 import { createTerritoryManager } from './territory.js';
 import { createTechLadder } from './techLadder.js';
 import { createConstructionManager } from './construction.js';
+import { createDiplomacyManager } from './diplomacy.js';
 import { BUILDING_KIND, BUILDING_SPECS } from './contracts.js';
 
 export function createTribeStore(terrain, streams) {
@@ -14,6 +15,7 @@ export function createTribeStore(terrain, streams) {
   const territory = createTerritoryManager(size);
   const techLadder = createTechLadder();
   const construction = createConstructionManager();
+  const diplomacy = createDiplomacyManager();
 
   // Find candidate center settlement tiles across the island with separation
   const grassTiles = [];
@@ -98,6 +100,7 @@ export function createTribeStore(terrain, streams) {
     tribes: placedTribes,
     territory,
     techLadder,
+    diplomacy,
 
     getTribe(id) {
       return placedTribes.find(t => t.id === id) || null;
@@ -105,6 +108,10 @@ export function createTribeStore(terrain, streams) {
 
     getTribeAt(x, z) {
       return territory.getDominantTribe(x, z, placedTribes);
+    },
+
+    stepDiplomacy(log = null) {
+      return diplomacy.step(placedTribes, territory, log);
     },
 
     stepTech(log = null) {

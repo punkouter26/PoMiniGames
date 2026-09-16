@@ -50,12 +50,13 @@ Each task is a vertical slice touching &le; 5 files. All tasks follow strict TDD
 
 ---
 
-- [ ] **Task 5: Inter-Tribe Diplomacy & Skirmish Combat (with Stateless Machine)**
+- [x] **Task 5: Inter-Tribe Diplomacy & Skirmish Combat (with Stateless Machine)**
   - **Description**: Dynamic diplomacy state machine governing peace treaties, border friction, skirmish squad formation, and combat resolution with casualty morale retreats.
   - **File Manifest** (&le; 5 files):
     1. `src/PoMiniGames.Client/wwwroot/js/poecosystem/sim/tribe/diplomacy.js`
     2. `src/PoMiniGames.Client/wwwroot/js/poecosystem/sim/behavior/combat.js`
-    3. `src/PoMiniGames.Client/wwwroot/js/poecosystem/sim/behavior/humans.js`
+    3. `src/PoMiniGames.Client/wwwroot/js/poecosystem/sim/tribe/tribeStore.js`
+    4. `src/PoMiniGames.Client/wwwroot/js/poecosystem/sim/world.js`
   - **Acceptance Criteria**: Border encroachment elevates tension; war state triggers skirmish parties; casualties &gt; 30% trigger surrender/peace negotiation cooldown.
   - **Verification**: `dotnet build PoMiniGames.slnx`
 

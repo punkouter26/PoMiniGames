@@ -702,6 +702,7 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
     if (tick % 20 === 0) {
       tribeStore.stepTech(log);
       tribeStore.stepConstruction(terrain, tileState, streams.behavior, log);
+      tribeStore.stepDiplomacy(log);
       const reached = advanceTech(world, { hutsBuilt: almanac.hutsBuilt, humans: counts[SPECIES_ID.HUMAN], year: clock.year() }, tribe);
       if (reached) {
         log.push({ tick, kind: 'tech', level: reached.level, tile: reached.tile, text: reached.text });

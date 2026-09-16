@@ -72,11 +72,11 @@ Each task is a vertical slice touching &le; 5 files. All tasks follow strict TDD
 
 ---
 
-- [ ] **Task 7: Overhead God-Camera & Director Presets**
+- [x] **Task 7: Overhead God-Camera & Director Presets**
   - **Description**: Overhead orbit/pan/zoom camera with terrain height clamping and smart tracking presets (Island Overview, Focus Tribe, Active Conflict, Milestone Focus).
   - **File Manifest** (&le; 5 files):
-    1. `src/PoMiniGames.Client/wwwroot/js/poecosystem/render/camera.js`
-    2. `src/PoMiniGames.Client/wwwroot/js/poecosystem/render/director.js`
+    1. `src/PoMiniGames.Client/wwwroot/js/poecosystem/index.js`
+    2. `src/PoMiniGames.Client/Services/Interop/PoEcosystemInteropService.cs`
     3. `src/PoMiniGames.Client/Games/PoEcosystem/PoEcosystemViewer.razor`
     4. `src/PoMiniGames.Client/Games/PoEcosystem/PoEcosystemViewer.razor.cs`
   - **Acceptance Criteria**: Camera smoothly interpolates between targets; terrain collision prevents clipping below ground; quick-action buttons switch modes seamlessly.

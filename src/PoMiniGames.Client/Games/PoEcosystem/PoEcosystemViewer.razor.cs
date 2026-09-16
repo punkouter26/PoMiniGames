@@ -338,6 +338,33 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
         await Interop.SelectAsync(-1);
     }
 
+    private enum CameraPreset
+    {
+        IslandOverview,
+        AmberClan,
+        CobaltClan,
+        VerdantClan
+    }
+
+    private async Task SetCameraPresetAsync(CameraPreset preset)
+    {
+        switch (preset)
+        {
+            case CameraPreset.IslandOverview:
+                await Interop.SetCameraPoseAsync(100, 110, 200, -0.85, 0);
+                break;
+            case CameraPreset.AmberClan:
+                await Interop.SetCameraPoseAsync(50, 45, 90, -0.65, 0);
+                break;
+            case CameraPreset.CobaltClan:
+                await Interop.SetCameraPoseAsync(140, 45, 90, -0.65, 0);
+                break;
+            case CameraPreset.VerdantClan:
+                await Interop.SetCameraPoseAsync(100, 45, 140, -0.65, 0);
+                break;
+        }
+    }
+
     private void ToggleDashboard()
     {
         _dashboardOpen = !_dashboardOpen;

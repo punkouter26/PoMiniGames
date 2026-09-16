@@ -29,6 +29,13 @@
             <HudBar Stats="_stats" Sound="_sound" OnSound="ToggleSoundAsync" OnDashboard="ToggleDashboard"
                     Director="_directorOn" OnDirector="ToggleDirectorAsync" Pip="_pipOn" OnPip="TogglePipAsync" />
 
+            <div class="poeco-camera-dock" role="toolbar" aria-label="Camera presets">
+                <button type="button" class="poeco-btn poeco-btn--sm" @onclick="() => SetCameraPresetAsync(CameraPreset.IslandOverview)" title="Overhead island overview">🏝️ Overview</button>
+                <button type="button" class="poeco-btn poeco-btn--sm" @onclick="() => SetCameraPresetAsync(CameraPreset.AmberClan)" title="Focus Amber Clan">🟡 Amber</button>
+                <button type="button" class="poeco-btn poeco-btn--sm" @onclick="() => SetCameraPresetAsync(CameraPreset.CobaltClan)" title="Focus Cobalt Clan">🔵 Cobalt</button>
+                <button type="button" class="poeco-btn poeco-btn--sm" @onclick="() => SetCameraPresetAsync(CameraPreset.VerdantClan)" title="Focus Verdant Clan">🟢 Verdant</button>
+            </div>
+
             @if (_directorOn)
             {
                 <p class="poeco-director" role="status">

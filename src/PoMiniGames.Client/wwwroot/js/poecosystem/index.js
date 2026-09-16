@@ -331,6 +331,7 @@ const PoEcosystem = {
   setDirector: (on) => engine?.setDirector(on),
   togglePip: () => engine?.togglePip(),
   toggleFly: () => engine?.state.renderer?.toggleFly(),
+  setPose: (pose) => engine?.state.renderer?.setPose(pose),
   requestLock: () => engine?.state.renderer?.requestLock(),
   touchMove: (x, z) => engine?.state.renderer?.touchMove(x, z),
   touchRelease: () => engine?.state.renderer?.touchRelease(),

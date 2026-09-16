@@ -89,6 +89,8 @@ public sealed class PoEcosystemInteropService : IAsyncDisposable
     public ValueTask SetSoundAsync(bool on) => SafeInvokeAsync("PoEcosystem.setSound", on);
     public ValueTask RequestLockAsync() => SafeInvokeAsync("PoEcosystem.requestLock");
     public ValueTask ToggleFlyAsync() => SafeInvokeAsync("PoEcosystem.toggleFly");
+    public ValueTask SetCameraPoseAsync(double x, double y, double z, double pitch, double yaw) =>
+        SafeInvokeAsync("PoEcosystem.setPose", new { x, y, z, pitch, yaw });
     public ValueTask TouchMoveAsync(double x, double z) => SafeInvokeAsync("PoEcosystem.touchMove", x, z);
     public ValueTask TouchReleaseAsync() => SafeInvokeAsync("PoEcosystem.touchRelease");
 

@@ -32,6 +32,7 @@ import { createPip } from './pip.js';
 import { createSky } from './sky.js';
 import { materialClock, materialDetail } from './materials.js';
 import { applyCameraShake } from '../../postFx.js';
+import { createSettlementMeshes } from './settlementMesh.js';
 
 const TAU = Math.PI * 2;
 // What the auto-director calls a cut to an event tile.
@@ -100,6 +101,7 @@ export function createRenderer(container, {
   let player = createPlayer({ size: 200, heightAt: () => 0, type: new Uint8Array(200 * 200) }, 'fly');
   let pendingPose = null;      // a pose set before the first terrain message
   let terrainReady = false;
+  let settlementMeshes = null;
 
   // Two frames + their views, for interpolation.
   let prev = null; let curr = null; let prevAt = 0; let currAt = 0;
@@ -212,6 +214,8 @@ export function createRenderer(container, {
     scene.add(island.mesh, island.water);
     flora = createFloraMeshes(scene, terrainApi, { trees: msg.trees, bushes: msg.bushes });
     if (minimapCanvas) minimap = createMinimap(minimapCanvas, terrainApi);
+    if (settlementMeshes) settlementMeshes.dispose();
+    settlementMeshes = createSettlementMeshes(scene, (x, z) => terrainApi.heightAt(x, z));
     // A pose set before the terrain arrived (Resume reads prefs synchronously at start)
     // must survive the rebuild, or the god is teleported back to the island's centre.
     // Fresh players float ('fly') until they press F to walk (2026-09-02 user call).
@@ -417,7 +421,12 @@ export function createRenderer(container, {
     get hovered() { return hovered; },
     get locked() { return input.locked; },
     setTerrain, setTiles, acceptFrame,
-    setStats(s) { stats = s; },
+    setStats(s) {
+      stats = s;
+      if (settlementMeshes && s?.buildings) {
+        settlementMeshes.syncBuildings(s.buildings);
+      }
+    },
     /** A drained sim event: routed to particles, the camera, the ear and the director. */
     onEvent(ev) {
       if (!ev || ev.tile === undefined || ev.tile < 0 || !terrainApi) return;
@@ -446,6 +455,7 @@ export function createRenderer(container, {
       input.dispose();
       pip.dispose();
       scene.remove(campfireLight);
+      settlementMeshes?.dispose();
       creatures.dispose(); props.dispose(); flora?.dispose(); island?.dispose(); lighting.dispose(); skyDome.dispose(); minimap?.dispose();
       particles.dispose(); post.dispose();
       renderer.dispose();

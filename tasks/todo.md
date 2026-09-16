@@ -62,12 +62,11 @@ Each task is a vertical slice touching &le; 5 files. All tasks follow strict TDD
 
 ---
 
-- [ ] **Task 6: Procedural 3D Settlement Structures & Banners**
+- [x] **Task 6: Procedural 3D Settlement Structures & Banners**
   - **Description**: Three.js procedural rendering for thatched huts, stone granaries, watchtowers, campfires with flickering point lights, and tribal banner accents on human meshes.
   - **File Manifest** (&le; 5 files):
     1. `src/PoMiniGames.Client/wwwroot/js/poecosystem/render/settlementMesh.js`
-    2. `src/PoMiniGames.Client/wwwroot/js/poecosystem/render/creatureMeshes.js`
-    3. `src/PoMiniGames.Client/wwwroot/js/poecosystem/render/renderer.js`
+    2. `src/PoMiniGames.Client/wwwroot/js/poecosystem/render/renderer.js`
   - **Acceptance Criteria**: Instanced geometries batch efficiently; buildings render at appropriate coordinates; human meshes display distinct tribal banner colors.
   - **Verification**: `dotnet build PoMiniGames.slnx`
 

@@ -120,7 +120,7 @@ Each task is a vertical slice touching &le; 5 files. All tasks follow strict TDD
 
 ---
 
-- [ ] **Task 11: End-to-End Verification, Ceilings & Smoke Test**
+- [x] **Task 11: End-to-End Verification, Ceilings & Smoke Test**
   - **Description**: Run smoke tests, verify ceiling compliance across all 4 tiers, verify API host boot, and audit bundle footprint.
   - **File Manifest** (&le; 5 files):
     1. `tests/PoMiniGames.E2EUI/PoEcosystemUiTests.cs`

@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using PoMiniGames.Shared.Games.PoEcosystem;
 
 namespace PoMiniGamesClient.Games.PoEcosystem.Models;
 
@@ -55,7 +56,9 @@ public sealed record EcoStats(
     double[]? TraitHistory = null,
     EcoTech? Tech = null,
     EcoWatched[]? Watched = null,
-    int LineageCount = 0);
+    int LineageCount = 0,
+    TribeStateDto[]? Tribes = null,
+    BuildingStateDto[]? Buildings = null);
 
 /// <summary>
 /// Lifetime world counters for the dashboard's almanac panel (sim/world.js). Stages is the
@@ -153,5 +156,9 @@ public sealed record EcoSaveInfo(bool Exists, int Seed, int Tick, int Year, long
 [JsonSerializable(typeof(EcoSaveInfo))]
 [JsonSerializable(typeof(EcoAlmanac))]
 [JsonSerializable(typeof(EcoThought[]))]
+[JsonSerializable(typeof(TribeStateDto[]))]
+[JsonSerializable(typeof(BuildingStateDto[]))]
+[JsonSerializable(typeof(TribeStateDto))]
+[JsonSerializable(typeof(BuildingStateDto))]
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase, PropertyNameCaseInsensitive = true)]
 internal sealed partial class EcoJsonContext : System.Text.Json.Serialization.JsonSerializerContext;

@@ -956,3 +956,369 @@
     .poeco-director-hint { display: none; }
     .poeco-lineage { left: 0.5rem; width: calc(100% - 1rem); max-height: 60%; }
 }
+
+/* ── Concept 3: Analytics Dashboard, Radar Minimap & Multi-Tribe Grid ── */
+
+.poeco-analytics-grid {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    grid-template-rows: auto auto;
+    gap: 1.2rem;
+}
+
+.poeco-panel--minimap {
+    grid-row: 1;
+    grid-column: 1;
+}
+
+.poeco-panel--chart {
+    grid-row: 1;
+    grid-column: 2;
+}
+
+.poeco-panel--wide {
+    grid-column: 1 / -1;
+}
+
+/* Radar Minimap */
+.poeco-minimap-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+}
+
+.poeco-minimap-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 0.85rem;
+}
+
+.poeco-minimap-title {
+    font-weight: 600;
+    color: var(--color-text-primary);
+}
+
+.poeco-minimap-coords {
+    font-size: 0.75rem;
+    color: var(--color-text-secondary);
+}
+
+.poeco-minimap-svg-container {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    border-radius: 0.5rem;
+    overflow: hidden;
+    background: #0d1b2a;
+    border: 1px solid var(--color-border);
+}
+
+.poeco-minimap-svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+.poeco-minimap-legend {
+    display: flex;
+    gap: 0.8rem;
+    font-size: 0.75rem;
+    color: var(--color-text-secondary);
+    justify-content: center;
+}
+
+.poeco-minimap-key {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+
+.poeco-key-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+}
+
+/* Population & Demographics Chart */
+.poeco-pop-chart-container {
+    display: flex;
+    flex-direction: column;
+    gap: 0.8rem;
+    height: 100%;
+}
+
+.poeco-chart-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.poeco-chart-title {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--color-text-primary);
+}
+
+.poeco-badge--live {
+    background: color-mix(in srgb, var(--accent-success) 20%, transparent);
+    color: var(--accent-success);
+    border: 1px solid var(--accent-success);
+    font-size: 0.72rem;
+    padding: 0.15rem 0.5rem;
+    border-radius: 999px;
+}
+
+.poeco-svg-chart-wrap {
+    width: 100%;
+    height: 140px;
+}
+
+.poeco-chart-legend {
+    display: flex;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+}
+
+.poeco-legend-item {
+    display: flex;
+    flex-direction: column;
+    padding: 0.2rem 0.5rem;
+    background: color-mix(in srgb, var(--color-surface) 60%, transparent);
+    border-radius: 0.3rem;
+    min-width: 68px;
+}
+
+.poeco-legend-label {
+    font-size: 0.7rem;
+    color: var(--color-text-secondary);
+}
+
+.poeco-legend-count {
+    font-size: 0.95rem;
+    color: var(--color-text-primary);
+}
+
+.poeco-tribe-bars-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+}
+
+.poeco-tribe-bars-title {
+    margin: 0;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-text-secondary);
+}
+
+.poeco-tribe-stacked-bar {
+    display: flex;
+    height: 18px;
+    border-radius: 4px;
+    overflow: hidden;
+    background: color-mix(in srgb, var(--color-surface) 80%, transparent);
+    border: 1px solid var(--color-border);
+}
+
+.poeco-tribe-bar-seg {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    transition: width 0.3s ease;
+    overflow: hidden;
+}
+
+.poeco-tribe-bar-text {
+    font-size: 0.65rem;
+    font-weight: 700;
+    color: #fff;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+    white-space: nowrap;
+    padding: 0 4px;
+}
+
+/* Tribe Comparison Cards */
+.poeco-tribe-grid-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 0.8rem;
+}
+
+.poeco-tribe-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 1rem;
+}
+
+.poeco-tribe-card {
+    background: color-mix(in srgb, var(--color-surface) 85%, transparent);
+    border: 1px solid var(--color-border);
+    border-top: 4px solid var(--accent);
+    border-radius: 0.6rem;
+    padding: 0.8rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+.poeco-tribe-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.poeco-tribe-title-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.poeco-tribe-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    display: inline-block;
+    box-shadow: 0 0 6px currentColor;
+}
+
+.poeco-tribe-name {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--color-text-primary);
+}
+
+.poeco-pill--focus {
+    font-size: 0.75rem;
+    padding: 0.2rem 0.6rem;
+    border-radius: 999px;
+    cursor: pointer;
+    background: transparent;
+    border: 1px solid var(--color-border);
+    color: var(--color-text-primary);
+    transition: background 0.15s ease;
+}
+
+.poeco-pill--focus:hover {
+    background: color-mix(in srgb, var(--color-surface) 70%, #fff 30%);
+}
+
+.poeco-tribe-stats-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.4rem;
+    background: color-mix(in srgb, var(--color-surface) 50%, transparent);
+    padding: 0.4rem;
+    border-radius: 0.4rem;
+    text-align: center;
+}
+
+.poeco-tribe-stat {
+    display: flex;
+    flex-direction: column;
+}
+
+.poeco-stat-lbl {
+    font-size: 0.65rem;
+    color: var(--color-text-secondary);
+    text-transform: uppercase;
+}
+
+.poeco-stat-val {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--color-text-primary);
+}
+
+.poeco-stat-sub {
+    font-size: 0.65rem;
+    color: var(--color-text-secondary);
+}
+
+.poeco-tribe-structures {
+    display: flex;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+}
+
+.poeco-struct-badge {
+    font-size: 0.75rem;
+    padding: 0.15rem 0.45rem;
+    background: color-mix(in srgb, var(--color-surface) 65%, transparent);
+    border-radius: 0.3rem;
+    border: 1px solid var(--color-border);
+    color: var(--color-text-primary);
+}
+
+.poeco-struct-badge--build {
+    border-color: var(--accent-warning);
+    color: var(--accent-warning);
+}
+
+.poeco-tribe-diplomacy-row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    border-top: 1px solid var(--color-border);
+    padding-top: 0.4rem;
+}
+
+.poeco-dip-lbl {
+    font-size: 0.7rem;
+    color: var(--color-text-secondary);
+}
+
+.poeco-dip-tags {
+    display: flex;
+    gap: 0.35rem;
+    flex-wrap: wrap;
+}
+
+.poeco-dip-tag {
+    font-size: 0.68rem;
+    padding: 0.15rem 0.4rem;
+    border-radius: 4px;
+    font-weight: 600;
+}
+
+.poeco-dip-tag--war {
+    background: color-mix(in srgb, var(--accent-danger) 25%, transparent);
+    color: var(--accent-danger);
+    border: 1px solid var(--accent-danger);
+}
+
+.poeco-dip-tag--rival {
+    background: color-mix(in srgb, var(--accent-warning) 25%, transparent);
+    color: var(--accent-warning);
+    border: 1px solid var(--accent-warning);
+}
+
+.poeco-dip-tag--allied {
+    background: color-mix(in srgb, var(--accent-success) 25%, transparent);
+    color: var(--accent-success);
+    border: 1px solid var(--accent-success);
+}
+
+.poeco-dip-tag--neutral {
+    background: color-mix(in srgb, var(--color-surface) 40%, transparent);
+    color: var(--color-text-secondary);
+    border: 1px solid var(--color-border);
+}
+
+@media (max-width: 860px) {
+    .poeco-analytics-grid {
+        grid-template-columns: 1fr;
+    }
+    .poeco-panel--minimap {
+        grid-column: 1;
+    }
+    .poeco-panel--chart {
+        grid-column: 1;
+    }
+}
+

@@ -1,0 +1,93 @@
+@using PoMiniGames.Shared.Games.PoEcosystem
+@using PoMiniGamesClient.Games.PoEcosystem.Models
+
+<div class="poeco-minimap-card" role="region" aria-label="Territory & Settlement Radar">
+    <div class="poeco-minimap-header">
+        <span class="poeco-minimap-title">🗺️ Island Territory</span>
+        <span class="poeco-minimap-coords">128 × 128 Grid</span>
+    </div>
+
+    <div class="poeco-minimap-svg-container">
+        <svg viewBox="0 0 128 128" class="poeco-minimap-svg" aria-label="Island territory hulls">
+            <!-- Ocean background -->
+            <rect width="128" height="128" fill="rgba(10, 25, 47, 0.7)" rx="8" />
+
+            <!-- Island landmass approximation -->
+            <ellipse cx="64" cy="64" rx="52" ry="50" fill="rgba(34, 139, 34, 0.25)" stroke="rgba(46, 204, 113, 0.4)" stroke-width="1.5" />
+
+            <!-- Tribal Territory Influence Zones -->
+            @if (Tribes is not null)
+            {
+                @foreach (var tribe in Tribes)
+                {
+                    <circle cx="@tribe.CenterX.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)"
+                            cy="@tribe.CenterZ.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)"
+                            r="@tribe.TerritoryRadius.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)"
+                            fill="@tribe.BannerColor"
+                            fill-opacity="0.22"
+                            stroke="@tribe.BannerColor"
+                            stroke-width="1.2"
+                            stroke-dasharray="3,2" />
+                }
+            }
+
+            <!-- Settlement Buildings -->
+            @if (Buildings is not null)
+            {
+                @foreach (var b in Buildings)
+                {
+                    var fill = b.Kind switch
+                    {
+                        BuildingKind.Watchtower => "#e74c3c",
+                        BuildingKind.Granary => "#f1c40f",
+                        BuildingKind.WarTotem => "#9b59b6",
+                        _ => "#ecf0f1",
+                    };
+                    <circle cx="@b.X.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)"
+                            cy="@b.Z.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)"
+                            r="1.8"
+                            fill="@fill"
+                            stroke="#111"
+                            stroke-width="0.5" />
+                }
+            }
+
+            <!-- Tribal Settlement Center Anchors -->
+            @if (Tribes is not null)
+            {
+                @foreach (var tribe in Tribes)
+                {
+                    <g @onclick="() => OnFocusTribe.InvokeAsync(tribe.Id)" style="cursor: pointer;">
+                        <circle cx="@tribe.CenterX.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)"
+                                cy="@tribe.CenterZ.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)"
+                                r="4.0"
+                                fill="@tribe.BannerColor"
+                                stroke="#ffffff"
+                                stroke-width="1.5" />
+                        <text x="@tribe.CenterX.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)"
+                              y="@((tribe.CenterZ - 5).ToString("F1", System.Globalization.CultureInfo.InvariantCulture))"
+                              fill="#ffffff"
+                              font-size="6"
+                              font-weight="bold"
+                              text-anchor="middle"
+                              filter="drop-shadow(0 1px 2px rgba(0,0,0,0.8))">
+                            @tribe.Name
+                        </text>
+                    </g>
+                }
+            }
+        </svg>
+    </div>
+
+    <div class="poeco-minimap-legend">
+        <span class="poeco-minimap-key"><span class="poeco-key-dot" style="background:#ecf0f1;"></span>Hut</span>
+        <span class="poeco-minimap-key"><span class="poeco-key-dot" style="background:#f1c40f;"></span>Granary</span>
+        <span class="poeco-minimap-key"><span class="poeco-key-dot" style="background:#e74c3c;"></span>Tower</span>
+    </div>
+</div>
+
+@code {
+    [Parameter] public IReadOnlyList<TribeStateDto>? Tribes { get; set; }
+    [Parameter] public IReadOnlyList<BuildingStateDto>? Buildings { get; set; }
+    [Parameter] public EventCallback<int> OnFocusTribe { get; set; }
+}

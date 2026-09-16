@@ -365,6 +365,18 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
         }
     }
 
+    private async Task FocusTribeByIdAsync(int tribeId)
+    {
+        var preset = tribeId switch
+        {
+            1 => CameraPreset.AmberClan,
+            2 => CameraPreset.CobaltClan,
+            3 => CameraPreset.VerdantClan,
+            _ => CameraPreset.IslandOverview,
+        };
+        await SetCameraPresetAsync(preset);
+    }
+
     private void ToggleDashboard()
     {
         _dashboardOpen = !_dashboardOpen;

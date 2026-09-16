@@ -107,7 +107,7 @@ Each task is a vertical slice touching &le; 5 files. All tasks follow strict TDD
 
 ---
 
-- [ ] **Task 10: Advanced Analytics Dashboard (LiveCharts2 & Blazor.Extensions.Canvas Minimap)**
+- [x] **Task 10: Advanced Analytics Dashboard (LiveCharts2 & Blazor.Extensions.Canvas Minimap)**
   - **Description**: Build comprehensive observer analytics HUD featuring reactive LiveCharts2 population/resource graphs, a hardware-accelerated 2D territory canvas minimap via `Blazor.Extensions.Canvas`, tribal comparison data grid, and historical event timeline.
   - **File Manifest** (&le; 5 files):
     1. `src/PoMiniGames.Client/Games/PoEcosystem/Components/DashboardOverlay.razor`

@@ -23,7 +23,22 @@
             }
         </nav>
 
-        @if (_tab == "island")
+        @if (_tab == "analytics")
+        {
+            <div class="poeco-overlay-grid poeco-analytics-grid">
+                <section class="poeco-panel poeco-panel--minimap">
+                    <TerritoryMinimap Tribes="@Stats?.Tribes" Buildings="@Stats?.Buildings" OnFocusTribe="@OnFocusTribe" />
+                </section>
+                <section class="poeco-panel poeco-panel--chart">
+                    <PopulationChart Stats="@Stats" Tribes="@Stats?.Tribes" />
+                </section>
+                <section class="poeco-panel poeco-panel--wide">
+                    <h3>Civilization Overview</h3>
+                    <TribeComparisonGrid Tribes="@Stats?.Tribes" Buildings="@Stats?.Buildings" OnSelectTribe="@OnFocusTribe" />
+                </section>
+            </div>
+        }
+        else if (_tab == "island")
         {
             <div class="poeco-overlay-grid">
                 <section class="poeco-panel poeco-panel--chart">
@@ -176,11 +191,11 @@
 @code {
     private static readonly (string Id, string Label)[] Tabs =
     [
-        ("island", "Island"), ("life", "Life"), ("tribe", "Tribe & chronicle"), ("cloud", "Cloud"), ("settings", "Settings"),
+        ("analytics", "Analytics"), ("island", "Island"), ("life", "Life"), ("tribe", "Tribe & chronicle"), ("cloud", "Cloud"), ("settings", "Settings"),
     ];
 
     private ElementReference _root;
-    private string _tab = "island";
+    private string _tab = "analytics";
 
     [Parameter] public EcoStats? Stats { get; set; }
     [Parameter] public IReadOnlyList<EcoEvent> Events { get; set; } = [];
@@ -202,6 +217,7 @@
     [Parameter] public string Seed { get; set; } = "";
     [Parameter] public EventCallback<string> SeedChanged { get; set; }
     [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback<int> OnFocusTribe { get; set; }
     [Parameter] public EventCallback OnExportTelemetry { get; set; }
     [Parameter] public EventCallback<int> OnSelectThought { get; set; }
     [Parameter] public EventCallback<int> OnSelectKin { get; set; }

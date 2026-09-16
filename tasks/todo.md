@@ -84,7 +84,7 @@ Each task is a vertical slice touching &le; 5 files. All tasks follow strict TDD
 
 ---
 
-- [ ] **Task 8: Milestone Chronicle Generator & API Relay**
+- [x] **Task 8: Milestone Chronicle Generator & API Relay**
   - **Description**: Generates procedural historical milestone logs (tech discovery, war outbreak, peace treaty, chief succession) and relays them to the backend chronicle service.
   - **File Manifest** (&le; 5 files):
     1. `src/PoMiniGames.Client/wwwroot/js/poecosystem/sim/tribe/chronicle.js`

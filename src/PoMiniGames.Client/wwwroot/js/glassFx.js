@@ -32,11 +32,36 @@
             const off = glassFx._off || (glassFx._off = document.createElement('canvas'));
             off.width = w; off.height = h;
             const g = off.getContext('2d');
-            g.filter = 'blur(5px) saturate(1.25) brightness(1.08)';
+            g.filter = 'blur(5px) saturate(1.28) brightness(1.10)';
             g.drawImage(sourceCanvas, 0, 0, w, h);
             g.filter = 'none';
+
+            // High-tier Caustic Refraction Sheen
+            const q = window.PoQuality;
+            if (q && q.tier() !== 'low') {
+                const t = performance.now() * 0.0012;
+                g.save();
+                g.globalCompositeOperation = 'screen';
+                const grad = g.createLinearGradient(0, 0, w, h);
+                const wave1 = 0.5 + 0.5 * Math.sin(t * 1.6);
+                const wave2 = 0.5 + 0.5 * Math.cos(t * 1.3);
+                grad.addColorStop(0, 'rgba(120, 190, 255, 0.16)');
+                grad.addColorStop(Math.min(0.85, Math.max(0.15, 0.35 + 0.25 * wave1)), 'rgba(255, 255, 255, 0.22)');
+                grad.addColorStop(Math.min(0.95, Math.max(0.25, 0.70 + 0.18 * wave2)), 'rgba(100, 240, 210, 0.14)');
+                grad.addColorStop(1, 'rgba(170, 130, 255, 0.10)');
+                g.fillStyle = grad;
+                g.fillRect(0, 0, w, h);
+                g.restore();
+            }
+
             panel.style.setProperty('--glass-capture', 'url("' + off.toDataURL('image/webp', 0.6) + '")');
-            panel.setAttribute('data-glass-live', '');
+            if (!panel.hasAttribute('data-glass-live')) {
+                panel.setAttribute('data-glass-live', '');
+                // Subtle crystalline resonance stinger on first live attachment
+                if (window.PoUiAudio && window.PoUiAudio.glassResonate) {
+                    window.PoUiAudio.glassResonate();
+                }
+            }
         } catch { /* tainted canvas or gone — the CSS fallback still applies */ }
     }
 
@@ -56,10 +81,7 @@
         return function () { clearInterval(id); _timers.delete(panel); panel.removeAttribute('data-glass-live'); };
     }
 
-    // Attach every element matching `selector` to a source canvas — including
-    // panels that mount LATER (pick card → place chip → podium swap as phases
-    // change), so the sweep rescans each tick and forgets disconnected ones.
-    // Games call this once after their canvas mounts.
+    // Attach every element matching `selector` to a source canvas
     function attachHud(sourceCanvas, selector) {
         const sel = selector || '[data-glass]';
         const tracked = new Set();

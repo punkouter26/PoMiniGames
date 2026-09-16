@@ -113,6 +113,37 @@
     margin-bottom: var(--space-3);
 }
 
+/* Narrow viewports: show per-game picker chips and only the selected board to eliminate CLS */
+@media (max-width: 640px) {
+    .lb-chips {
+        display: flex;
+    }
+    .lb-group {
+        display: none;
+    }
+    .lb-group:has(.lb-board[data-selected="true"]) {
+        display: block;
+    }
+    .lb-board {
+        display: none;
+    }
+    .lb-board[data-selected="true"] {
+        display: flex;
+    }
+}
+
+@media (min-width: 641px) {
+    .lb-chips {
+        display: none;
+    }
+    .lb-board {
+        display: flex;
+    }
+    .lb-group {
+        display: block;
+    }
+}
+
 .lb-chip {
     flex: 0 0 auto;
     display: inline-flex;

@@ -101,6 +101,31 @@ const CUES = {
             ],
             feel: 'select', fx: { preset: 'sparks', scale: 0.7 },
         },
+        crystalPing: {
+            voices: [
+                v('sine', 1760, 0.10, 0.16, { decay: 0.08 }),
+                v('sine', 3520, 0.06, 0.08, { decay: 0.04, delay: 0.002 }),
+            ],
+            feel: 'tick', jitter: 0.5,
+        },
+        magneticSnap: {
+            voices: [
+                v('square', 1400, 0.02, 0.04, { decay: 0.015, cutoff: 4000 }),
+                v('square', 1800, 0.02, 0.03, { decay: 0.015, cutoff: 5000, delay: 0.012 }),
+            ],
+            feel: 'tick', scale: 0.5,
+        },
+        fluidRipple: {
+            voices: [v('sine', 640, 0.06, 0.08, { freqEnd: 420, sweep: 0.05, decay: 0.05 })],
+            feel: 'tick', jitter: 1.0,
+        },
+        glassResonate: {
+            voices: [
+                v('sine', 523.25, 0.28, 0.12, { freqEnd: 526, sweep: 0.25, decay: 0.26 }),
+                v('sine', 1046.5, 0.20, 0.06, { decay: 0.18, delay: 0.01 }),
+            ],
+            feel: null, jitter: 0.2,
+        },
     },
 
     // ── TicTacToe — struck wood & neon laser ───────────────────────────
@@ -288,6 +313,19 @@ const CUES = {
             ],
             feel: 'select', fx: { preset: 'sparks', scale: 0.6 },
         },
+        speedDemon: {
+            voices: [
+                v('saw', 320, 0.35, 0.16, { freqEnd: 980, sweep: 0.32, decay: 0.32, cutoff: 3500, q: 4, drive: 0.5 }),
+                v('sine', 1400, 0.25, 0.08, { freqEnd: 2800, sweep: 0.22, decay: 0.22 }),
+            ],
+            feel: 'select', fx: { preset: 'sparks', scale: 1.3 }, duck: 0.3,
+        },
+        dopplerPass: {
+            voices: [
+                v('saw', 480, 0.40, 0.14, { freqEnd: 220, sweep: 0.35, decay: 0.38, cutoff: 2400, q: 3 }),
+            ],
+            feel: 'tick', jitter: 0.8,
+        },
     },
 
     // ── PoSports — rubber, air & stadium crowd ─────────────────────────
@@ -427,6 +465,193 @@ const CUES = {
         reveal: {
             voices: [v('sine', 660, 0.30, 0.08, { freqEnd: 1320, sweep: 0.28, decay: 0.27 })],
             feel: null,
+        },
+    },
+
+    // ── PoEcosystem — living biome, geopolitics & divine presence ─────
+    poecosystem: {
+        shockwave: {
+            voices: [
+                v('sine', 140, 0.55, 0.42, { freqEnd: 28, sweep: 0.5, decay: 0.5, drive: 0.8 }),
+                v('noise', 0, 0.28, 0.18, { decay: 0.25, cutoff: 1400, cutoffEnd: 100, q: 2.5 }),
+            ],
+            feel: 'heavy', scale: 1.6, fx: { preset: 'dust', scale: 1.5 }, duck: 0.45,
+        },
+        godFinger: {
+            voices: [
+                v('sine', 880, 0.12, 0.18, { freqEnd: 1760, sweep: 0.1, decay: 0.12 }),
+                v('triangle', 440, 0.22, 0.15, { decay: 0.2 }),
+            ],
+            feel: 'select', scale: 0.9, fx: { preset: 'sparks', scale: 1.1 },
+        },
+        diplomacyWar: {
+            voices: [
+                v('saw', 110, 0.65, 0.24, { freqEnd: 82, sweep: 0.6, decay: 0.6, cutoff: 900, q: 3, drive: 0.6 }),
+                v('sine', 77.78, 0.65, 0.28, { decay: 0.6, drive: 0.4 }),
+                v('noise', 0, 0.25, 0.12, { decay: 0.22, cutoff: 1200, q: 2 }),
+            ],
+            feel: 'heavy', scale: 1.4, fx: { preset: 'impact', scale: 1.4 }, duck: 0.5,
+        },
+        diplomacyAllied: {
+            voices: [
+                v('sine', 523.25, 0.25, 0.14, { decay: 0.22 }),
+                v('sine', 659.25, 0.35, 0.14, { decay: 0.32, delay: 0.06 }),
+                v('sine', 783.99, 0.55, 0.16, { decay: 0.50, delay: 0.12 }),
+                v('triangle', 1046.5, 0.70, 0.12, { decay: 0.65, delay: 0.18 }),
+            ],
+            feel: 'select', fx: { preset: 'confetti', scale: 0.9 }, duck: 0.25,
+        },
+        diplomacyTrade: {
+            voices: [
+                v('triangle', 880, 0.08, 0.12, { decay: 0.07 }),
+                v('triangle', 1174.66, 0.12, 0.12, { decay: 0.10, delay: 0.05 }),
+                v('sine', 1760, 0.35, 0.14, { decay: 0.32, delay: 0.10 }),
+            ],
+            feel: 'tick', fx: { preset: 'coins', scale: 0.8 },
+        },
+        caravanTransit: {
+            voices: [
+                v('sine', 1318.5, 0.06, 0.08, { decay: 0.05 }),
+                v('noise', 0, 0.03, 0.04, { decay: 0.025, cutoff: 3500 }),
+            ],
+            feel: 'tick', jitter: 1.2,
+        },
+        milestoneGong: {
+            voices: [
+                v('noise', 0, 0.09, 0.16, { decay: 0.08, cutoff: 5500, cutoffEnd: 800, q: 2 }),
+                v('sine', 110, 0.85, 0.35, { freqEnd: 105, sweep: 0.8, decay: 0.85, drive: 0.3 }),
+                v('sine', 303.6, 0.65, 0.22, { decay: 0.60, delay: 0.002 }),
+                v('sine', 595.1, 0.45, 0.15, { decay: 0.40, delay: 0.004 }),
+            ],
+            feel: 'win', fx: { preset: 'coins', scale: 1.3 }, duck: 0.45,
+        },
+        nightFall: {
+            voices: [
+                v('sine', 320, 0.80, 0.10, { freqEnd: 160, sweep: 0.75, decay: 0.75 }),
+                v('noise', 0, 0.80, 0.08, { decay: 0.75, cutoff: 800, cutoffEnd: 250, q: 1.5 }),
+            ],
+            feel: null, duck: 0.2,
+        },
+        sporePulse: {
+            voices: [
+                v('sine', 987.77, 0.18, 0.06, { decay: 0.16 }),
+                v('sine', 1479.98, 0.25, 0.05, { decay: 0.22, delay: 0.04 }),
+            ],
+            feel: null, jitter: 1.8,
+        },
+    },
+
+    // ── Dynasty — ancestral harp & genetic lineage ─────────────────────
+    dynasty: {
+        pluckAncestor: {
+            voices: [
+                v('triangle', 440, 0.45, 0.18, { decay: 0.42 }),
+                v('saw', 880, 0.18, 0.10, { decay: 0.14, cutoff: 3200, cutoffEnd: 600, q: 2 }),
+            ],
+            feel: 'select', scale: 0.6,
+        },
+        ancestorPass: {
+            voices: [
+                v('sine', 220, 0.75, 0.18, { freqEnd: 180, sweep: 0.7, decay: 0.72 }),
+                v('sine', 330, 0.65, 0.12, { decay: 0.60, delay: 0.05 }),
+            ],
+            feel: 'light', scale: 0.5, duck: 0.25,
+        },
+        geneMutate: {
+            voices: [
+                v('sine', 784, 0.08, 0.10, { decay: 0.07 }),
+                v('sine', 987, 0.08, 0.10, { decay: 0.07, delay: 0.05 }),
+                v('sine', 1318, 0.25, 0.12, { decay: 0.22, delay: 0.10 }),
+            ],
+            feel: 'select', fx: { preset: 'sparks', scale: 0.7 },
+        },
+    },
+
+    // ── SandPlayground — fluid bubbles, boiling steam & incandescence ──
+    sandplayground: {
+        bubble: {
+            voices: [v('sine', 1600, 0.05, 0.12, { freqEnd: 550, sweep: 0.045, decay: 0.045 })],
+            feel: 'tick', jitter: 2.2,
+        },
+        steamHiss: {
+            voices: [v('noise', 0, 0.22, 0.12, { decay: 0.20, cutoff: 4500, cutoffEnd: 2200, q: 1.8 })],
+            feel: null, fx: { preset: 'smoke', scale: 0.6 },
+        },
+        acidSizzle: {
+            voices: [v('noise', 0, 0.15, 0.14, { decay: 0.14, cutoff: 6200, q: 3.5, lfoRate: 35, lfoDepth: 0.6 })],
+            feel: 'tick', fx: { preset: 'sparks', scale: 0.5 },
+        },
+        ignite: {
+            voices: [
+                v('noise', 0, 0.18, 0.18, { decay: 0.16, cutoff: 2400, cutoffEnd: 600, q: 2 }),
+                v('sine', 180, 0.16, 0.22, { freqEnd: 65, sweep: 0.14, decay: 0.15 }),
+            ],
+            feel: 'light', fx: { preset: 'sparks', scale: 1.0 },
+        },
+    },
+
+    // ── PoVoxelStrike — kinetic destruction & granular scatter ────────
+    povoxelstrike: {
+        wallShatter: {
+            voices: [
+                v('noise', 0, 0.38, 0.35, { decay: 0.35, cutoff: 2800, cutoffEnd: 350, q: 2 }),
+                v('sine', 90, 0.30, 0.40, { freqEnd: 26, sweep: 0.25, decay: 0.28, drive: 0.8 }),
+                v('noise', 0, 0.20, 0.18, { decay: 0.18, cutoff: 5200, q: 1.5, delay: 0.04 }),
+            ],
+            feel: 'heavy', scale: 1.6, fx: { preset: 'impact', scale: 1.6 }, duck: 0.45,
+        },
+        voxelClusterCollapse: {
+            voices: [
+                v('noise', 0, 0.45, 0.25, { decay: 0.40, cutoff: 1800, cutoffEnd: 220, q: 1.8 }),
+                v('sine', 75, 0.40, 0.30, { freqEnd: 30, sweep: 0.35, decay: 0.38, drive: 0.6 }),
+            ],
+            feel: 'heavy', scale: 1.3, fx: { preset: 'dust', scale: 1.2 }, duck: 0.35,
+        },
+        granulateDebris: {
+            voices: [
+                v('noise', 0, 0.12, 0.16, { decay: 0.10, cutoff: 3800, q: 2.2 }),
+                v('noise', 0, 0.12, 0.12, { decay: 0.10, cutoff: 2600, q: 1.8, delay: 0.02 }),
+            ],
+            feel: 'light', scale: 0.7, fx: { preset: 'dust', scale: 0.5 },
+        },
+    },
+
+    // ── PoEcosystem — living geopolitical diplomacy & tribal trade ──
+    poecosystem: {
+        diplomacyWar: {
+            voices: [
+                v('sawtooth', 110, 0.45, 0.28, { freqEnd: 82, sweep: 0.35, decay: 0.40, drive: 0.5 }),
+                v('sine', 55, 0.50, 0.35, { decay: 0.45, drive: 0.7 }),
+                v('noise', 0, 0.25, 0.20, { decay: 0.20, cutoff: 1400, cutoffEnd: 200, q: 2 }),
+            ],
+            feel: 'heavy', scale: 1.2, fx: { preset: 'sparks', scale: 0.8 }, duck: 0.3,
+        },
+        diplomacyAllied: {
+            voices: [
+                v('sine', 523.25, 0.35, 0.22, { decay: 0.32 }),
+                v('sine', 659.25, 0.40, 0.20, { delay: 0.08, decay: 0.35 }),
+                v('sine', 783.99, 0.50, 0.18, { delay: 0.16, decay: 0.45 }),
+            ],
+            feel: 'light', scale: 0.8, fx: { preset: 'sparkle', scale: 0.8 },
+        },
+        diplomacyTrade: {
+            voices: [
+                v('sine', 880, 0.12, 0.20, { freqEnd: 440, sweep: 0.08, decay: 0.10 }),
+                v('sine', 1320, 0.15, 0.16, { delay: 0.05, decay: 0.12 }),
+            ],
+            feel: 'tick', scale: 0.6,
+        },
+    },
+
+    // ── DynastyTree — lineage, ancestral remembrance & genetics ──────
+    dynasty: {
+        ancestorPass: {
+            voices: [
+                v('sine', 220, 0.60, 0.22, { decay: 0.55 }),
+                v('sine', 329.63, 0.70, 0.18, { delay: 0.06, decay: 0.65 }),
+                v('sine', 110, 0.80, 0.25, { delay: 0.12, decay: 0.75, drive: 0.2 }),
+            ],
+            feel: 'light', scale: 0.7, fx: { preset: 'dust', scale: 0.6 },
         },
     },
 };

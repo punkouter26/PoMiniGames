@@ -337,6 +337,9 @@ export class VoxelAudio {
       gain: 0.1 + 0.42 * s, attack: 0.02,
     });
     this._tone(dest, { from: 60, to: 32, dur: 0.35 + 0.6 * s, gain: 0.1 + 0.3 * s, attack: 0.015 });
+    if (s > 0.35 && window.PoDsp?.playGranular) {
+      window.PoDsp.playGranular(1400, Math.round(8 * s), 0.35 * s, 0.25 * s, 'sfx');
+    }
     // A tower coming down deserves the room in the mix an explosion gets.
     if (s > 0.55) window.PoAudioBus?.duck?.(0.3 * s, 500 * s);
   }
@@ -349,6 +352,9 @@ export class VoxelAudio {
     const s = clamp(mass / 2500, 0.12, 1);
     const dest = this._pan(pan);
     this._tone(dest, { from: rand(80, 105), to: 42, dur: 0.16 + 0.1 * s, gain: 0.1 + 0.2 * s });
+    if (s > 0.4 && window.PoDsp?.playGranular) {
+      window.PoDsp.playGranular(2200, 4, 0.15, 0.18 * s, 'sfx');
+    }
   }
 
   /** Something got crushed under debris. */

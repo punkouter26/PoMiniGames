@@ -93,7 +93,9 @@ public partial class ProfilePage
         ("povoxelstrike", "Voxel Strike", "🧱",  RatingKind.HighScoreOnly),
         // No win condition and no score: PoJoker is an AI-jester/joke-API experience.
         // A session count is the only honest stat here.
-        ("pojoker",      "Joker",         "🃏",  RatingKind.PlayCountOnly),
+        ("pojoker",        "Joker",           "🃏",  RatingKind.PlayCountOnly),
+        ("poecosystem",    "PoEcosystem",     "🌿",  RatingKind.PlayCountOnly),
+        ("sandplayground", "SandPlayground",  "🏜️", RatingKind.PlayCountOnly),
     };
 
     // ── State ────────────────────────────────────────────────────
@@ -114,6 +116,8 @@ public partial class ProfilePage
     private int _unsyncedSessions;
     private GameEntry? _bestEntry, _nemesisEntry;
     private List<GameEntry> _entries = new();
+    private string _activeTab = "overview";
+    private void SetTab(string tab) => _activeTab = tab;
 
     // ── High scores (best available per 1P game) ──────────────────
     private sealed record HighScoreEntry(string Game, string Icon, string Value, string Sub, bool HasValue);

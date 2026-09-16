@@ -163,6 +163,21 @@ export function createEventFx(particles, audio, { tier = 'high' } = {}) {
       if (day > 0.45 && tier === 'high' && Math.random() < dt * 6) {
         particles.emit('pollen', player.x + (Math.random() - 0.5) * 40, player.y + Math.random() * 6 - 2, player.z + (Math.random() - 0.5) * 40, { count: 1 });
       }
+
+      // Nocturnal Bioluminescence: fireflies and mystical spores, pulsed by audio bass
+      const night = 1.0 - day;
+      if (night > 0.60 && tier !== 'low' && Math.random() < dt * 8) {
+        let bassBoost = 1.0;
+        try {
+          const b = parseFloat(document.documentElement.style.getPropertyValue('--audio-bass') || '0');
+          if (b > 0.2) bassBoost = 1.0 + b * 1.5;
+        } catch {}
+        if (Math.random() < 0.6) {
+          particles.emit('firefly', player.x + (Math.random() - 0.5) * 45, player.y + Math.random() * 4 + 0.5, player.z + (Math.random() - 0.5) * 45, { count: 1, scale: bassBoost });
+        } else {
+          particles.emit('spore', player.x + (Math.random() - 0.5) * 40, player.y + Math.random() * 5 + 0.2, player.z + (Math.random() - 0.5) * 40, { count: 1, scale: bassBoost });
+        }
+      }
     },
 
     /**

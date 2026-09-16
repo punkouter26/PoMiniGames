@@ -45,6 +45,10 @@ const PRESETS = {
   ember: { pool: 'glow', life: [1.6, 3.4], size: [0.10, 0.22], speed: [1.6, 4.2], spread: 1.0, drag: 1.1, gravity: 0.35, growth: 0, alpha: 1, sparkle: 1, colors: [0xff9d3c, 0xff5e1a, 0xffd27a] },
   spark: { pool: 'glow', life: [0.35, 0.8], size: [0.07, 0.14], speed: [6.0, 13.0], spread: 1.6, drag: 3.2, gravity: -9.0, growth: 0, alpha: 1, sparkle: 1, colors: [0xfff6d8, 0xffd27a] },
   lava: { pool: 'glow', life: [1.4, 2.8], size: [0.18, 0.4], speed: [3.0, 8.0], spread: 0.9, drag: 0.5, gravity: -9.0, growth: 0, alpha: 1, colors: [0xff4d2d, 0xffa032, 0xd42a12] },
+  // Nocturnal Bioluminescence: Fireflies wander and sparkle softly in the dark
+  firefly: { pool: 'glow', life: [4.0, 8.0], size: [0.14, 0.28], speed: [0.4, 1.2], spread: 1.8, drag: 0.35, gravity: 0.03, growth: 0.2, alpha: 0.95, sparkle: 1, colors: [0x66ff99, 0xaaff55, 0x33eebb, 0x88ffdd] },
+  // Bioluminescent spores float upward around settlements and ancient trees
+  spore: { pool: 'glow', life: [5.0, 9.5], size: [0.09, 0.20], speed: [0.3, 0.9], spread: 1.4, drag: 0.3, gravity: 0.08, growth: 0.4, alpha: 0.88, sparkle: 1, colors: [0x77ccff, 0x99eeff, 0xbbffff] },
 };
 
 const VERT = `

@@ -591,6 +591,13 @@
     }
 }
 
+/* Eliminate unwanted vertical scrolling on very short viewports (mobile landscape, small split views) */
+@media (max-height: 640px) {
+    .gl-footer {
+        display: none;
+    }
+}
+
 .gl-footer-build {
     font-weight: 700;
     color: var(--color-text-primary);

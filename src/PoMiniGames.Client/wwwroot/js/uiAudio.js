@@ -10,6 +10,7 @@
 
 import * as AudioBus from './audioBus.js';
 import * as Cue from './gameCues.js';
+import * as Dsp from './dsp.js';
 
 /**
  * Fire a named cue from the shared vocabulary (gameCues.js).
@@ -314,4 +315,46 @@ function isOnKioskRoute() {
 
 export function isAudioAvailable() {
     return !!(window.AudioContext || window.webkitAudioContext);
+}
+
+export function crystalPing(opts) {
+    return cue('ui', 'crystalPing', opts);
+}
+
+export function magneticSnap(opts) {
+    return cue('ui', 'magneticSnap', opts);
+}
+
+export function fluidRipple(opts) {
+    return cue('ui', 'fluidRipple', opts);
+}
+
+export function glassResonate(opts) {
+    return cue('ui', 'glassResonate', opts);
+}
+
+export async function pluck(freq, opts) {
+    const o = opts || {};
+    return Dsp.playPluck(freq, o.dur || 0.8, o.gain || 0.25, o.damp || 0.7, 'ui');
+}
+
+export async function gong(freq, opts) {
+    const o = opts || {};
+    return Dsp.playGong(freq || 110, o.dur || 3.5, o.gain || 0.35, 'sfx');
+}
+
+if (typeof window !== 'undefined') {
+    window.PoUiAudio = {
+        cue,
+        playTone,
+        playChord,
+        playSweep,
+        playArpeggio,
+        crystalPing,
+        magneticSnap,
+        fluidRipple,
+        glassResonate,
+        pluck,
+        gong,
+    };
 }

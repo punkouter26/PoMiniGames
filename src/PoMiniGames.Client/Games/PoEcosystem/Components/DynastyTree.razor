@@ -1,6 +1,8 @@
 @using System.Linq
 @using PoMiniGames.Shared.Games.PoEcosystem
 @using PoMiniGamesClient.Games.PoEcosystem.Models
+@using PoMiniGamesClient.Services.Ui
+@inject UiFeedbackService Feedback
 
 <div class="poeco-dynasty-wrap" role="region" aria-label="Dynasty Tree & Phenotype Lab">
     <!-- View Switcher -->
@@ -247,8 +249,17 @@
         ("Diligence", "Building construction rate and persistence", 0.90),
     ];
 
-    private void SetTreeTab() => _tab = "tree";
-    private void SetPhenotypeTab() => _tab = "phenotype";
+    private async Task SetTreeTab()
+    {
+        _tab = "tree";
+        await Feedback.FluidRippleAsync();
+    }
+
+    private async Task SetPhenotypeTab()
+    {
+        _tab = "phenotype";
+        await Feedback.CrystalPingAsync();
+    }
 
     private void ZoomIn() => _zoom = Math.Min(160, _zoom + 15);
     private void ZoomOut() => _zoom = Math.Max(60, _zoom - 15);
@@ -257,11 +268,25 @@
     private static string FormatName(string name) =>
         string.IsNullOrEmpty(name) ? "Unknown" : (name.Length > 12 ? name.Substring(0, 11) + "…" : name);
 
-    private void ClickKin(EcoKin? kin)
+    private async Task ClickKin(EcoKin? kin)
     {
-        if (kin != null && kin.Alive)
+        if (kin is null) return;
+        if (kin.Alive)
         {
-            OnSelect.InvokeAsync(kin.Handle);
+            var freq = kin.Species switch
+            {
+                0 => 293.66,
+                1 => 329.63,
+                2 => 392.00,
+                3 => 440.00,
+                _ => 523.25
+            };
+            await Feedback.PluckAsync(freq);
+            await OnSelect.InvokeAsync(kin.Handle);
+        }
+        else
+        {
+            await Feedback.CueAsync("dynasty", "ancestorPass");
         }
     }
 

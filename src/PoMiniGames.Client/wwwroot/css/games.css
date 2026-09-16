@@ -335,7 +335,7 @@
 }
 .cf-result--win  { color: #34d399; background: rgba(52, 211, 153, 0.12); border: 1px solid rgba(52, 211, 153, 0.35); box-shadow: 0 0 16px rgba(52, 211, 153, 0.15); }
 .cf-result--loss { color: #f87171; background: rgba(248, 113, 113, 0.12); border: 1px solid rgba(248, 113, 113, 0.3); box-shadow: 0 0 16px rgba(248, 113, 113, 0.1); }
-.cf-result--draw { color: #94a3b8; background: rgba(148, 163, 184, 0.1); border: 1px solid rgba(148, 163, 184, 0.25); }
+.cf-result--draw { color: var(--color-text-secondary); background: var(--color-surface-hover, rgba(148, 163, 184, 0.1)); border: 1px solid var(--color-border); }
 
 /* Adaptive-ELO change line under the 1-player result banner. */
 .cf-ai-summary { display: flex; flex-direction: column; align-items: center; gap: 0.65rem; width: 100%; }

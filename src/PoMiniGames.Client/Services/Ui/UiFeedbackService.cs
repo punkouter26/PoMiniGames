@@ -293,6 +293,44 @@ public sealed class UiFeedbackService : IAsyncDisposable
     /// </summary>
     public ValueTask MockDataAsync() => PlayToneAsync(174.61, 140, 0.14, "square");
 
+    /// <summary>Crystalline ping for high-gloss modals, gems, and achievements.</summary>
+    public async ValueTask CrystalPingAsync() => await CueAsync("ui", "crystalPing", HapticClick);
+
+    /// <summary>Crisp dual-micro-click for switches and pill controls.</summary>
+    public async ValueTask MagneticSnapAsync() => await CueAsync("ui", "magneticSnap", HapticClick);
+
+    /// <summary>Soft fluid frequency sweep for ripples, drops, and selections.</summary>
+    public async ValueTask FluidRippleAsync() => await CueAsync("ui", "fluidRipple", HapticTap);
+
+    /// <summary>Resonant crystal glass wine-rim shimmer for dashboard overlays.</summary>
+    public async ValueTask GlassResonateAsync() => await CueAsync("ui", "glassResonate", HapticTap);
+
+    /// <summary>Karplus-Strong physical modeling plucked string (pentatonic / ancestor tree).</summary>
+    public async ValueTask PluckAsync(double freq = 440)
+    {
+        if (_disposed) return;
+        try
+        {
+            var module = await _module.Value;
+            await module.InvokeVoidAsync("pluck", freq);
+            await VibrateAsync(HapticTap);
+        }
+        catch { /* best-effort */ }
+    }
+
+    /// <summary>Inharmonic bronze ceremonial gong with long resonant decay.</summary>
+    public async ValueTask GongAsync(double freq = 110)
+    {
+        if (_disposed) return;
+        try
+        {
+            var module = await _module.Value;
+            await module.InvokeVoidAsync("gong", freq);
+            await VibrateAsync(HapticComplete);
+        }
+        catch { /* best-effort */ }
+    }
+
     /// <summary>
     /// §7 Fire a raw haptic pattern (alternating vibrate/pause milliseconds, e.g.
     /// <c>[12, 40, 18]</c>). Gated on <c>navigator.vibrate</c> support and the

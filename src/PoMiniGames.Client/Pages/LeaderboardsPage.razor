@@ -90,25 +90,21 @@
     }
     else
     {
-        @* 2026-08-30 audit #2: a phone stacked all 11 boards — 1927px of page at
-           375×844, over a screen of pure scrolling. Narrow viewports get a
-           per-game picker (one chip row, one board) instead. *@
-        @if (_isNarrow)
-        {
-            <div class="lb-chips" role="tablist" aria-label="Pick a game">
-                @foreach (var b in FlatBoards)
-                {
-                    <button role="tab" class="lb-chip @(b.GameKey == _selectedGame ? "lb-chip--on" : "")"
-                            aria-selected="@(b.GameKey == _selectedGame)"
-                            @onclick='() => _selectedGame = b.GameKey'>
-                        @b.Title
-                    </button>
-                }
-            </div>
-        }
+        @* 2026-08-30 audit #2: narrow viewports get a per-game picker (one chip row, one board).
+           Rendered unconditionally and toggled via pure CSS to eliminate CLS. *@
+        <div class="lb-chips" role="tablist" aria-label="Pick a game">
+            @foreach (var b in FlatBoards)
+            {
+                <button role="tab" class="lb-chip @(b.GameKey == _selectedGame ? "lb-chip--on" : "")"
+                        aria-selected="@(b.GameKey == _selectedGame)"
+                        @onclick='() => _selectedGame = b.GameKey'>
+                    @b.Title
+                </button>
+            }
+        </div>
 
         @* Group leaderboards by category and active tab filter (desktop), or
-           render just the picked game's board (narrow) *@
+           render just the picked game's board (narrow via CSS) *@
         @foreach (var group in VisibleGroups())
         {
             // 2026-08-10 audit #7: previous `<h2>1 PLAYER</h2>` was a styled
@@ -124,7 +120,9 @@
                 <div class="lb-grid">
                     @foreach (var board in group.Boards)
                     {
-                        <article class="lb-board" aria-label="@($"{board.Title} leaderboard, scored by {board.Unit}")">
+                        <article class="lb-board"
+                                 data-selected="@(board.GameKey == _selectedGame ? "true" : "false")"
+                                 aria-label="@($"{board.Title} leaderboard, scored by {board.Unit}")">
                             <div class="lb-board-head">
                                 <h3 class="lb-board-title">@board.Title</h3>
                                 <span class="lb-unit">@board.Unit</span>
@@ -201,36 +199,13 @@
     private record BoardGroup(string Key, string Title, IReadOnlyList<GameLeaderboardDto> Boards);
     private List<BoardGroup> _groupedBoards = new();
 
-    // 2026-08-30 audit #2: narrow viewports render a per-game picker instead of
-    // every group at once. _isNarrow starts false so the first (desktop-ish)
-    // paint uses the grouped view, then OnAfterRenderAsync corrects it after the
-    // live viewport read — same pattern the BoardRowLimit split used (NetRun10
-    // audit #6).
-    private bool _isNarrow;
     private string? _selectedGame;
 
     private IEnumerable<GameLeaderboardDto> FlatBoards =>
         _groupedBoards.SelectMany(g => g.Boards);
 
-    /// <summary>Groups to render: every mode group on wide viewports, or a
-    /// single pseudo-group holding only the picked game's board on narrow ones.
-    /// The mode filter chips were removed on 2026-09-12 — the page always shows
-    /// all modes now, so there is nothing to filter on the wide path.</summary>
-    private IEnumerable<BoardGroup> VisibleGroups()
-    {
-        if (!_isNarrow)
-            return _groupedBoards;
-
-        if (_selectedGame is null)
-            return [];
-
-        var owner = _groupedBoards.FirstOrDefault(g => g.Boards.Any(b => b.GameKey == _selectedGame));
-        var board = owner?.Boards.FirstOrDefault(b => b.GameKey == _selectedGame);
-        if (owner is null || board is null)
-            return [];
-
-        return [new BoardGroup(owner.Key, owner.Title, [board])];
-    }
+    /// <summary>Groups to render: rendered cleanly with CSS toggles for narrow vs wide screens.</summary>
+    private IEnumerable<BoardGroup> VisibleGroups() => _groupedBoards;
 
     // The server pads every unified board to the requested limit with dummy
     // "XXX" rows. By request we now KEEP them so every board fills out to its
@@ -422,15 +397,8 @@
     {
         if (firstRender)
         {
-            // NetRun10 audit #6: pull the live viewport width so the
-            // BoardRowLimit() branches between top-3 (mobile) and top-10 (desktop).
             await Viewport.RefreshAsync();
-            // Audit #2 (2026-08-30): branch the layout between the grouped
-            // desktop view and the per-game picker, and seed the picker with
-            // the first board so it is never empty.
-            _isNarrow = Viewport.IsNarrow;
             _selectedGame ??= FlatBoards.FirstOrDefault()?.GameKey;
-            StateHasChanged();
         }
 
         // After render, because the burst targets the player's own row and that row

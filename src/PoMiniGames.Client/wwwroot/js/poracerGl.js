@@ -61,6 +61,7 @@
 //    the GL layer switches itself off on the low tier.
 
 import * as Impact from './impactBus.js';
+import * as Cue from './gameCues.js';
 
 const RENDER_DELAY_MS = 80;
 // Snapshots older than this are dropped: a tab that was backgrounded comes back
@@ -147,14 +148,15 @@ void main() {
     bloom = max(bloom - 0.58, 0.0) * 2.2;
     col += bloom;
 
-    // ── Speed warp and speed streaks ──────────────────────────────────
+    // ── Speed warp and relativistic speed streaks ─────────────────────
     float sl = smoothstep(0.48, 1.0, uSpeed);
     if (sl > 0.001) {
         float ang = atan(toC.y, toC.x);
-        float lane = floor(ang * 32.0);
-        float streak = step(0.78, hash11(lane + floor(uTime * 26.0)));
-        float mask = smoothstep(0.24, 0.90, r) * streak * sl;
-        col += vec3(0.0, 0.95, 1.0) * mask * 0.20 + vec3(1.0, 0.35, 0.85) * mask * 0.12;
+        float lane = floor(ang * 48.0);
+        float streak = step(0.74, hash11(lane + floor(uTime * 32.0)));
+        float mask = smoothstep(0.20, 0.88, r) * streak * sl;
+        vec3 neonStreak = mix(vec3(0.0, 0.95, 1.0), vec3(1.0, 0.30, 0.88), hash11(lane));
+        col += neonStreak * mask * 0.32;
     }
 
     // ── Speed vignette & Contrast tuning ──────────────────────────────
@@ -350,8 +352,18 @@ function teardownGl() {
     gl = null; prog = null; vao = null; tex = null; glCanvas = null; glReady = false;
 }
 
+let lastSpeedDemonTime = 0;
+
 function composite(speed01) {
     if (!glReady || !sceneCanvas) return;
+
+    if (speed01 > 0.88) {
+        const now = performance.now();
+        if (now - lastSpeedDemonTime > 4000) {
+            lastSpeedDemonTime = now;
+            Cue.fire('poracer', 'speedDemon', { scale: 1.1 });
+        }
+    }
     const w = sceneCanvas.width;
     const h = sceneCanvas.height;
     if (!w || !h) return;

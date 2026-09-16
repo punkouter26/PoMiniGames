@@ -1,4 +1,5 @@
 @using PoMiniGames.Shared.Games.PoEcosystem
+@inject UiFeedbackService Feedback
 @* The tribe's ladder and the island's chronicle. The ladder is read straight from the sim
    (sim/behavior/tech.js); the chronicle is a server-side model call, so it is written on
    request — one saga per decade at most, and the button says so. *@
@@ -28,7 +29,7 @@
 
     <h3>Chronicle</h3>
     <div class="poeco-chronicle-actions">
-        <button type="button" class="poeco-btn poeco-btn--primary" disabled="@(Busy || Stats is null || Stats.Year <= FromYear)" @onclick="OnWrite">
+        <button type="button" class="poeco-btn poeco-btn--primary" disabled="@(Busy || Stats is null || Stats.Year <= FromYear)" @onclick="HandleWriteAsync">
             @(Busy ? "The chronicler is writing…" : Stats is null || Stats.Year <= FromYear ? "Nothing new to chronicle yet" : $"Write the chronicle of years {FromYear}–{Stats.Year}")
         </button>
         <p class="poeco-note">A short saga of the island's recent history, written by a model from the world log. Spends a little of your daily AI allowance.</p>
@@ -41,7 +42,7 @@
     {
         @foreach (var c in Chronicles)
         {
-            <article class="poeco-saga">
+            <article class="poeco-saga" @onclick="async () => await Feedback.CrystalPingAsync()">
                 <h4>@c.Title @if (c.Mock) { <span class="poeco-badge">mock</span> }</h4>
                 <p>@c.Saga</p>
                 @if (!string.IsNullOrWhiteSpace(c.Epigraph))
@@ -69,4 +70,10 @@
     [Parameter] public int FromYear { get; set; }
     [Parameter] public EventCallback OnWrite { get; set; }
     [Parameter] public EventCallback<int> OnFocusTribe { get; set; }
+
+    private async Task HandleWriteAsync()
+    {
+        await Feedback.GongAsync(110);
+        await OnWrite.InvokeAsync();
+    }
 }

@@ -248,6 +248,112 @@ function playNodes(ctx, dest, v, when) {
     } catch { /* best-effort: feedback paths never throw */ }
 }
 
+/**
+ * Karplus-Strong / physical modeling plucked string emulation.
+ * Bright harmonic attack decaying into a warm sinusoidal fundamental.
+ * @param {number} freq  Frequency in Hz (e.g. 220, 440, 660)
+ * @param {number} [dur=0.8]  Ring duration in seconds
+ * @param {number} [gain=0.25] Amplitude 0..1
+ * @param {number} [damp=0.7]  Damping factor: higher = faster harmonic bleed
+ * @param {'music'|'sfx'|'ui'} [busName='ui']
+ */
+export async function playPluck(freq, dur = 0.8, gain = 0.25, damp = 0.7, busName = 'ui') {
+    const f = Math.max(40, freq || 440);
+    const voices = [
+        // Fundamental body
+        { wave: 'triangle', freq: f, dur: dur, gain: gain * 0.7, attack: 0.002, decay: dur * 0.85 },
+        // High harmonic pluck transient with rapid filter sweep
+        { wave: 'saw', freq: f * 2, dur: Math.min(dur * 0.4, 0.25), gain: gain * 0.45, attack: 0.001, decay: 0.12 * (1 - damp * 0.5), cutoff: 4800, cutoffEnd: f * 1.5, q: 2 },
+        // Subtle resonant 3rd harmonic
+        { wave: 'sine', freq: f * 3, dur: Math.min(dur * 0.3, 0.18), gain: gain * 0.25, attack: 0.001, decay: 0.08 },
+    ];
+    return playAll(voices, busName);
+}
+
+/**
+ * Inharmonic ceremonial gong / bronze bell using multi-voice inharmonic ratios.
+ * @param {number} [freq=110] Base fundamental Hz
+ * @param {number} [dur=3.5] Tail duration in seconds
+ * @param {number} [gain=0.35] Amplitude 0..1
+ * @param {'music'|'sfx'|'ui'} [busName='sfx']
+ */
+export async function playGong(freq = 110, dur = 3.5, gain = 0.35, busName = 'sfx') {
+    const f = Math.max(50, freq);
+    const voices = [
+        // Metallic attack clang
+        { wave: 'noise', freq: 0, dur: 0.08, gain: gain * 0.4, attack: 0.001, decay: 0.07, cutoff: 5500, cutoffEnd: 800, q: 2.5 },
+        // Deep fundamental boom
+        { wave: 'sine', freq: f, freqEnd: f * 0.98, dur: dur, gain: gain * 0.65, attack: 0.004, decay: dur * 0.9 },
+        // Inharmonic partial 1 (ratio 1 : 2.76)
+        { wave: 'sine', freq: f * 2.76, dur: dur * 0.7, gain: gain * 0.4, attack: 0.002, decay: dur * 0.65, delay: 0.002 },
+        // Inharmonic partial 2 (ratio 1 : 5.41)
+        { wave: 'sine', freq: f * 5.41, dur: dur * 0.45, gain: gain * 0.25, attack: 0.002, decay: dur * 0.4, delay: 0.004 },
+    ];
+    return playAll(voices, busName);
+}
+
+/**
+ * Granular noise cluster for structural fracture, rubble, and concrete shattering.
+ * @param {number} [freqBase=1200] Center frequency in Hz
+ * @param {number} [count=8] Number of micro-grains
+ * @param {number} [dur=0.35] Total burst duration
+ * @param {number} [gain=0.25] Master gain
+ * @param {'music'|'sfx'|'ui'} [busName='sfx']
+ */
+export async function playGranular(freqBase = 1200, count = 8, dur = 0.35, gain = 0.25, busName = 'sfx') {
+    const voices = [];
+    for (let i = 0; i < count; i++) {
+        const grainDur = 0.03 + Math.random() * 0.06;
+        const delay = Math.random() * Math.max(0.01, dur - grainDur);
+        const f = freqBase * (0.6 + Math.random() * 0.8);
+        voices.push({
+            wave: 'noise',
+            freq: 0,
+            dur: grainDur,
+            gain: (gain / Math.sqrt(count)) * (0.7 + Math.random() * 0.6),
+            attack: 0.002,
+            decay: grainDur * 0.85,
+            cutoff: f,
+            cutoffEnd: f * 0.5,
+            q: 2 + Math.random() * 4,
+            delay: delay,
+            pan: (Math.random() * 2 - 1) * 0.6,
+        });
+    }
+    return playAll(voices, busName);
+}
+
+/**
+ * Rapid frequency chirp for bubbles, liquid drops, and crystalline pings.
+ * @param {number} freqStart Start frequency Hz
+ * @param {number} freqEnd   Target frequency Hz
+ * @param {number} [dur=0.05] Duration in seconds
+ * @param {number} [gain=0.15] Gain 0..1
+ * @param {'music'|'sfx'|'ui'} [busName='ui']
+ */
+export async function playChirp(freqStart, freqEnd, dur = 0.05, gain = 0.15, busName = 'ui') {
+    return play({
+        wave: 'sine',
+        freq: freqStart,
+        freqEnd: freqEnd,
+        dur: dur,
+        sweep: dur,
+        gain: gain,
+        attack: 0.001,
+        decay: dur * 0.9,
+    }, busName);
+}
+
 if (typeof window !== 'undefined') {
-    window.PoDsp = { play, playAll, stopAll, ready, isWorkletActive };
+    window.PoDsp = {
+        play,
+        playAll,
+        stopAll,
+        ready,
+        isWorkletActive,
+        playPluck,
+        playGong,
+        playGranular,
+        playChirp
+    };
 }

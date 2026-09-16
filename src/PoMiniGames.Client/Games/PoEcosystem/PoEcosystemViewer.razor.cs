@@ -33,6 +33,7 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
     [Inject] private BrowserViewport Viewport { get; set; } = default!;
     [Inject] private ToastService Toasts { get; set; } = default!;
     [Inject] private AuthStateService Auth { get; set; } = default!;
+    [Inject] private UiFeedbackService Feedback { get; set; } = default!;
 
     private static readonly (string Key, string What)[] KeyLegend =
     [
@@ -348,6 +349,7 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
 
     private async Task SetCameraPresetAsync(CameraPreset preset)
     {
+        await Feedback.CueAsync("poecosystem", "godFinger");
         switch (preset)
         {
             case CameraPreset.IslandOverview:
@@ -377,11 +379,27 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
         await SetCameraPresetAsync(preset);
     }
 
-    private void ToggleDashboard()
+    private async Task ToggleDashboard()
     {
         _dashboardOpen = !_dashboardOpen;
-        if (_dashboardOpen) _ = RefreshCloudAsync(quiet: true);
-        else _ = Interop.RequestLockAsync();
+        if (_dashboardOpen)
+        {
+            await Feedback.GlassResonateAsync();
+            _ = RefreshCloudAsync(quiet: true);
+        }
+        else
+        {
+            await Feedback.FluidRippleAsync();
+            _ = Interop.RequestLockAsync();
+        }
+    }
+
+    private async Task TriggerShockwaveAsync()
+    {
+        if (_directorOn || !_pointerLocked)
+        {
+            await Feedback.CueAsync("poecosystem", "shockwave");
+        }
     }
 
     private Task SetLlmAsync((bool Enabled, string? ModelId) choice)

@@ -311,6 +311,32 @@
     background-size: cover;
     background-position: center;
     background-blend-mode: luminosity;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.26),
+                0 8px 32px -4px rgba(0, 0, 0, 0.38),
+                0 0 24px rgba(120, 200, 255, 0.08);
+}
+
+/* Specular gleam highlight tracking cursor on tilt & glass elements */
+[data-fx-tilt], [data-magnetic], .poeco-btn, .poeco-pill, .poeco-tab {
+    transition: translate 0.14s cubic-bezier(0.2, 0.9, 0.3, 1), rotate 0.14s cubic-bezier(0.2, 0.9, 0.3, 1);
+    will-change: translate, rotate;
+}
+
+[data-fx-tilt]::after, [data-magnetic]::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    background: radial-gradient(circle at calc(50% + var(--fx-mx, 0) * 45%) calc(50% + var(--fx-my, 0) * 45%),
+                rgba(255, 255, 255, 0.18) 0%,
+                transparent 65%);
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+[data-fx-tilt]:hover::after, [data-magnetic]:hover::after {
+    opacity: 1;
 }
 
 /* ===== §GFX-17 weather overlay ==============================================

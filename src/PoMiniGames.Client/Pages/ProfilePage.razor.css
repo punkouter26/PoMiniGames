@@ -924,3 +924,50 @@
     outline: 2px solid var(--accent-ring);
     outline-offset: 1px;
 }
+
+/* ── Radzen-inspired Segmented Tab Control ── */
+.prf-tabs {
+    display: flex;
+    gap: var(--space-2);
+    margin: var(--space-4) 0 var(--space-3);
+    border-bottom: 1px solid var(--color-border);
+    padding-bottom: var(--space-2);
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+.prf-tabs::-webkit-scrollbar {
+    display: none;
+}
+
+.prf-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.5rem 1rem;
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--color-text-secondary);
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    white-space: nowrap;
+    min-height: 40px;
+    transition: all var(--dur-fast) var(--ease-standard);
+}
+.prf-tab:hover {
+    color: var(--color-text-primary);
+    background: var(--surface-hover);
+}
+.prf-tab--active {
+    color: var(--color-accent-contrast, #fff);
+    background: var(--color-accent-solid, #4f46e5);
+    border-color: var(--color-accent-solid, #4f46e5);
+}
+
+.prf-tabpanel {
+    display: none;
+}
+.prf-tabpanel--active {
+    display: block;
+}

@@ -1,32 +1,34 @@
 @inherits LayoutComponentBase
+@implements IDisposable
 @using PoMiniGamesClient.Services
 @inject AuthStateService AuthState
 @inject KioskCoordinator Kiosk
 @inject ScoreSyncService ScoreSync
 @inject UiFeedbackService Feedback
+@inject ToastService ToastService
 @inject IWebAssemblyHostEnvironment HostEnvironment
 
 @*
    "Bare" layout used only by PoRacer — its canvas is `position: fixed;
-   inset: 0` so it must NOT sit inside MainLayout's `<main>` (that would
-   force the canvas into a content box). The top-bar chrome still renders
-   here as an overlay so PoRacer benefits from universal navigation
-   (brand / game-header slot / FPS / Sign in-out) just like every other
-   game. Pages opt into the game-header slot by setting SectionContent
-   inside `<GameShell>` — see PoRacerPage.
+   inset: 0`. The top-bar chrome still renders here as an overlay so PoRacer
+   benefits from universal navigation (brand / game-header slot / FPS / Sign in-out)
+   just like every other game.
 *@
 
 <div class="gl-page racer-with-chrome">
+    <a class="gl-skip-link" href="#main-content">Skip to content</a>
+
     @if (AuthState.UsingMockData)
     {
-        <div class="gl-mock-banner" role="status" aria-live="polite">USING MOCK DATA</div>
-        <details class="gl-mock-banner--dot" aria-label="Mock data active — tap for details">
-            <summary aria-label="Mock data active"></summary>
-            <span>USING MOCK DATA</span>
-        </details>
+        <div class="gl-mock-banner">
+            <span class="gl-mock-banner__pill" title="Mock data backend — leaderboards may be empty. This is a developer / preview-build signal, not an error." aria-label="Mock data backend active for this build">
+                <span aria-hidden="true">🧪</span> USING MOCK DATA
+            </span>
+            <span class="gl-mock-banner__detail">USING MOCK DATA — leaderboards may be empty</span>
+        </div>
     }
     <header class="gl-top-bar">
-        <div class="gl-top-bar-left">
+        <nav class="gl-top-bar-left" aria-label="Main">
             <a href="/" class="gl-brand">
                 <span class="gl-brand-icon">
                     <svg width="22" height="22" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -38,7 +40,7 @@
                 </span>
                 <span class="gl-brand-text">PoMiniGames</span>
             </a>
-        </div>
+        </nav>
         <div class="gl-top-bar-center">
             <FpsCounter />
             <div class="gl-top-bar-game">
@@ -58,20 +60,55 @@
             }
         </div>
     </header>
-    @Body
+
+    <main class="gl-content" id="main-content" tabindex="-1">
+        @Body
+    </main>
+
+    @if (ToastService.Toasts.Count > 0)
+    {
+        <div class="toast-stack" role="log" aria-live="polite" aria-label="Notifications">
+            @foreach (var toast in ToastService.Toasts)
+            {
+                <div class="toast toast--@toast.Type.ToString().ToLowerInvariant()"
+                     data-toast-id="@toast.Id" role="alert">
+                    <span class="toast-msg">@toast.Message</span>
+                    @if (toast.Action is not null)
+                    {
+                        <button class="toast-action" @onclick="() => RunToastAction(toast)">@toast.ActionLabel</button>
+                    }
+                    <button class="toast-close" @onclick="() => ToastService.Dismiss(toast.Id)" aria-label="Dismiss">×</button>
+                </div>
+            }
+        </div>
+    }
 </div>
 
 @code {
     [Inject] private NavigationManager Navigation { get; set; } = default!;
 
-    private async Task SignIn() => Navigation.NavigateTo("/auth/login/microsoft", forceLoad: true);
-    // §SignOut: route through AuthStateService.SignOutAsync (same as MainLayout
-    // and BareLayout). That service only invokes MSAL's logoutPopup when
-    // MicrosoftEnabled is true AND MSAL has actually been initialised in this
-    // browser — so a Guest / dev-bypass user (no Microsoft identity) gets a
-    // local-only logout and never sees the login.microsoftonline.com modal.
-    // Navigating straight to "/auth/logout" here used to bypass that gate and
-    // trigger the MSAL popup for any session that still had a cached account.
+    protected override void OnInitialized()
+    {
+        ToastService.StateChanged += OnToastsChanged;
+    }
+
+    private void OnToastsChanged() => InvokeAsync(StateHasChanged);
+
+    private async Task SignIn() => await AuthState.SignInMicrosoftAsync();
     private async Task SignOut() => await AuthState.SignOutAsync();
     private void SignInAnon() => Navigation.NavigateTo("/auth/login/fake", forceLoad: true);
+
+    private async Task RunToastAction(ToastItem toast)
+    {
+        ToastService.Dismiss(toast.Id);
+        if (toast.Action is not null)
+        {
+            await toast.Action();
+        }
+    }
+
+    public void Dispose()
+    {
+        ToastService.StateChanged -= OnToastsChanged;
+    }
 }

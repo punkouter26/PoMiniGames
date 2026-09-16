@@ -152,11 +152,12 @@ void main() {
             col += vec3(0.18, 0.34, 0.38) * max(0.0, ca - 1.15) * (1.0 - 0.85 * wdep);
             col = mix(col, col * vec3(0.72, 0.80, 0.92), 0.35);
         }
-        // Scorched blast debris: ember red, cooling back to sand over time.
+        // Scorched blast debris: blackbody radiation (cherry red -> molten gold -> incandescent white).
         float sc = self.g;
         if (sc > 0.02) {
-            col = mix(col, mix(vec3(0.82, 0.22, 0.10), vec3(1.0, 0.45, 0.14), sc), sc * 0.85);
-            emis += sc * 0.8;
+            vec3 blackbody = mix(vec3(0.85, 0.22, 0.08), mix(vec3(1.0, 0.65, 0.16), vec3(1.0, 0.98, 0.88), smoothstep(0.45, 0.95, sc)), smoothstep(0.08, 0.55, sc));
+            col = mix(col, blackbody, sc * 0.92);
+            emis += sc * 1.15;
         }
         // Saturated ground: pore water darkens it and adds a wet sheen.
         if (rb >= 85.0) {
@@ -374,8 +375,17 @@ void main() {
         vec2 d = px - r.xy;
         float dist = max(length(d), 0.6);
         float w = exp(-pow(dist - r.z, 2.0) / 260.0);
-        uv += (d / dist) * (w * r.w) / res;
+    // Thermal Heat-Shimmer Refraction above hot/molten regions
+    vec3 bloomSample = texture(u_bloom, uv).rgb;
+    float heat = clamp(bloomSample.r * 1.6 - bloomSample.b * 0.4, 0.0, 1.0);
+    if (heat > 0.04) {
+        vec2 shimmer = vec2(
+            sin(px.y * 0.14 + u_time * 7.5),
+            cos(px.x * 0.12 + u_time * 6.0)
+        ) * (heat * 0.0035);
+        uv += shimmer;
     }
+
     vec3 col = texture(u_scene, uv).rgb;
     col += texture(u_bloom, uv).rgb * 0.85;
     col += vec3(1.0, 0.86, 0.62) * u_flash;

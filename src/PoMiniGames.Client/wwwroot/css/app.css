@@ -596,7 +596,8 @@ html, body, #app {
 }
 
 /* §7 Cross-document navigation transition — uses the browser's native
-   View Transitions API where supported (Chrome/Edge 111+{
+   View Transitions API where supported (Chrome/Edge 111+). */
+@view-transition {
   navigation: auto;
 }
 
@@ -635,22 +636,6 @@ body {
 h1, h2, h3, h4, h5, h6 {
   font-family: var(--font-display);
 }
-
-#blazor-error-ui {
-  display: none;
-  position: fixed;
-  bottom: 1rem;
-  right: 1rem;
-  background: #7f1d1d;
-  color: #fca5a5;
-  border: 1px solid #ef4444;
-  border-radius: 0.5rem;
-  padding: 0.75rem 1rem;
-  font-size: 0.875rem;
-  z-index: var(--z-error-overlay);
-}
-#blazor-error-ui .reload { color: #fca5a5; text-decoration: underline; margin-left: 0.5rem; }
-#blazor-error-ui .dismiss { margin-left: 0.75rem; cursor: pointer; }
 
 a { color: var(--color-accent); text-decoration: none; }
 /* audit #7: the font-family was already inherited here, but not the SIZE — any

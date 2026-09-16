@@ -147,308 +147,281 @@ else
     <!-- ── 1-Player high scores (best available per game) ── -->
     @if (!nothingPlayed)
     {
-    <div class="prf-section">
-        @* 2026-08-12 audit #3: surface a highscore-fetch failure explicitly
-           so the player knows the "Not played yet" placeholders aren't the
-           truth — one or more of the server endpoints failed and the saved
-           row lookup never ran. *@
-        @if (_highScoreLoadFailed)
-        {
-            @* 2026-09-04 UI sweep: migrated to <ErrorState> with a Retry callback.
-               The `OnRetry` delegate runs the same `LoadHighScoresAsync` private
-               that the inline retry button used; the visual treatment comes
-               from app.css and is consistent with the leaderboards and health
-               failure surfaces. *@
-            <ErrorState Icon="⚠️"
-                        Title="Couldn't load saved high scores"
-                        OnRetry="() => LoadHighScoresAsync()">
-                The leaderboard endpoints didn't respond. Your local stats above
-                are still accurate — only the cross-device saved scores are
-                affected.
-            </ErrorState>
-        }
-        <h2 class="prf-section-title">High Scores · 1 Player</h2>
-        <div class="prf-hs-grid">
-            @foreach (var h in _highScores)
-            {
-                <div class="prf-hs-card @(h.HasValue ? "" : "prf-hs-card--empty")">
-                    <span class="prf-hs-icon">@h.Icon</span>
-                    <div class="prf-hs-body">
-                        <div class="prf-hs-game">@h.Game</div>
-                        <div class="prf-hs-value">@h.Value</div>
-                        <div class="prf-hs-sub">@h.Sub</div>
-                    </div>
-                </div>
-            }
-        </div>
+    <!-- ── Radzen-inspired Segmented Tabs ── -->
+    <div class="prf-tabs" role="tablist" aria-label="Profile views">
+        <button role="tab" class="prf-tab @(_activeTab == "overview" ? "prf-tab--active" : "")"
+                aria-selected="@(_activeTab == "overview")"
+                aria-controls="prf-panel-overview"
+                id="prf-tab-overview"
+                @onclick='() => SetTab("overview")'>
+            📊 Overview
+        </button>
+        <button role="tab" class="prf-tab @(_activeTab == "highscores" ? "prf-tab--active" : "")"
+                aria-selected="@(_activeTab == "highscores")"
+                aria-controls="prf-panel-highscores"
+                id="prf-tab-highscores"
+                @onclick='() => SetTab("highscores")'>
+            🏆 High Scores
+        </button>
+        <button role="tab" class="prf-tab @(_activeTab == "h2h" ? "prf-tab--active" : "")"
+                aria-selected="@(_activeTab == "h2h")"
+                aria-controls="prf-panel-h2h"
+                id="prf-tab-h2h"
+                @onclick='() => SetTab("h2h")'>
+            👥 Head-to-Head
+        </button>
+        <button role="tab" class="prf-tab @(_activeTab == "breakdown" ? "prf-tab--active" : "")"
+                aria-selected="@(_activeTab == "breakdown")"
+                aria-controls="prf-panel-breakdown"
+                id="prf-tab-breakdown"
+                @onclick='() => SetTab("breakdown")'>
+            🎮 Games & Data
+        </button>
     </div>
-    }
 
-    <!-- ── Head-to-head record vs named opponents ── -->
-    @if (!nothingPlayed)
-    {
-    <div class="prf-section">
-        @* 2026-08-12 audit #8: the badge legend was rendered above the empty
-           state — when there are no opponents the legend is the only visible
-           content in the section, reading as a placeholder rather than as an
-           explanation. Only show it when there IS something to explain. *@
-        @if (_localOpponents.Count > 0 || _onlineOpponents.Count > 0 || _matchesLoading)
+    <!-- ── Panel: Overview (Charts & Callouts) ── -->
+    <div id="prf-panel-overview" role="tabpanel" aria-labelledby="prf-tab-overview" class="prf-tabpanel @(_activeTab == "overview" ? "prf-tabpanel--active" : "")">
+        @if (_totalGames == 0)
         {
-            <div class="prf-section-head">
-                <h2 class="prf-section-title">Head-to-Head · People You Played</h2>
-                @* Browser audit #9 (2026-08-10): the G / MS chips next to each
-                   opponent name had no legend, and the title= tooltip was a
-                   hover-only affordance — on touch devices a player never saw
-                   the meaning of either badge. Inline legend right under the
-                   heading, visible to all users, screen readers included. *@
-                <span class="prf-h2h-legend" aria-label="Badge legend">
-                    <span class="prf-h2h-badge prf-h2h-badge--guest" aria-hidden="true">G</span>
-                    <span class="prf-h2h-legend-lbl">Guest</span>
-                    <span class="prf-h2h-badge prf-h2h-badge--microsoft" aria-hidden="true">MS</span>
-                    <span class="prf-h2h-legend-lbl">Microsoft</span>
-                </span>
-            </div>
+            <EmptyState Icon="📊"
+                        Title="No games played yet">
+                <ChildContent>
+                    Win rates, charts, and head-to-head records unlock after your first match.
+                </ChildContent>
+                <Action>
+                    <a href="/" class="app-btn app-btn--primary">Pick a game</a>
+                </Action>
+            </EmptyState>
         }
         else
         {
-            <h2 class="prf-section-title">Head-to-Head · People You Played</h2>
-        }
-        @if (_matchesLoading)
-        {
-            <p class="prf-h2h-note">Loading match history…</p>
-        }
-        else if (_localOpponents.Count == 0 && _onlineOpponents.Count == 0)
-        {
-            <p class="prf-h2h-note">No head-to-head matches recorded yet. Play an online multiplayer or local 2-player match and your record against each opponent shows up here.</p>
-        }
-        else
-        {
-            <div class="prf-h2h-cols">
-                <div class="prf-h2h-col">
-                    <h3 class="prf-h2h-mode">👥 2-Player (local)</h3>
-                    @if (_localOpponents.Count == 0)
-                    {
-                        <p class="prf-h2h-note">No local 2-player matches yet.</p>
-                    }
-                    else
-                    {
-                        @RenderOpponentTable(_localOpponents)
-                    }
+            <div class="prf-charts">
+                <div class="prf-chart-card">
+                    <h3 class="prf-chart-title">Win Rate by Game</h3>
+                    @((MarkupString)BuildRadarSvg())
                 </div>
-                <div class="prf-h2h-col">
-                    <h3 class="prf-h2h-mode">🌐 Online Multiplayer</h3>
-                    @if (_onlineOpponents.Count == 0)
-                    {
-                        <p class="prf-h2h-note">No online multiplayer matches yet.</p>
-                    }
-                    else
-                    {
-                        @RenderOpponentTable(_onlineOpponents)
-                    }
+                <div class="prf-chart-card">
+                    <h3 class="prf-chart-title">Overall Record</h3>
+                    @((MarkupString)BuildDonutSvg())
+                    <div class="prf-donut-legend">
+                        <span class="prf-legend-dot prf-legend-win"></span><span>Wins&nbsp;@_totalWins</span>
+                        <span class="prf-legend-dot prf-legend-draw"></span><span>Draws&nbsp;@_totalDraws</span>
+                        <span class="prf-legend-dot prf-legend-loss"></span><span>Losses&nbsp;@_totalLosses</span>
+                    </div>
                 </div>
             </div>
         }
-    </div>
-    }
 
-    <!-- ── Charts row ── -->
-    @* §8: empty-state for first-time players — no charts means no signal.
-       A single CTA card replaces the entire charts row. *@
-    @if (_totalGames == 0)
-    {
-        @* 2026-09-04 UI sweep: migrated from inline `.prf-chart-card--empty`
-           markup to the shared <EmptyState> primitive. The styling comes from
-           app.css; the home-CTA link below picks up the universal
-           `.app-btn--primary` class so it matches every other CTA in the app. *@
-        <EmptyState Icon="📊"
-                    Title="No games played yet">
-            <ChildContent>
-                Win rates, charts, and head-to-head records unlock after your first
-                match.
-            </ChildContent>
-            <Action>
-                <a href="/" class="app-btn app-btn--primary">Pick a game</a>
-            </Action>
-        </EmptyState>
-    }
-    else
-    {
-        <div class="prf-charts">
-            <div class="prf-chart-card">
-                <h3 class="prf-chart-title">Win Rate by Game</h3>
-                @((MarkupString)BuildRadarSvg())
-            </div>
-            <div class="prf-chart-card">
-                <h3 class="prf-chart-title">Overall Record</h3>
-                @((MarkupString)BuildDonutSvg())
-                <div class="prf-donut-legend">
-                    <span class="prf-legend-dot prf-legend-win"></span><span>Wins&nbsp;@_totalWins</span>
-                    <span class="prf-legend-dot prf-legend-draw"></span><span>Draws&nbsp;@_totalDraws</span>
-                    <span class="prf-legend-dot prf-legend-loss"></span><span>Losses&nbsp;@_totalLosses</span>
-                </div>
-            </div>
-        </div>
-    }
-
-    <!-- ── Callouts ── -->
-    @if (_bestEntry != null || _nemesisEntry != null)
-    {
-        <div class="prf-callouts">
-            @if (_bestEntry != null)
-            {
-                <div class="prf-callout prf-callout--best">
-                    <span class="prf-callout-icon">🏆</span>
-                    <div>
-                        <div class="prf-callout-lbl">Best Game</div>
-                        <div class="prf-callout-val">@_bestEntry.Label</div>
-                        <div class="prf-callout-sub">@(_bestEntry.WinRate.ToString("P0")) win rate · @_bestEntry.TotalGames played</div>
-                    </div>
-                </div>
-            }
-            @if (_nemesisEntry != null)
-            {
-                <div class="prf-callout prf-callout--nemesis">
-                    <span class="prf-callout-icon">💀</span>
-                    <div>
-                        <div class="prf-callout-lbl">Nemesis Game</div>
-                        <div class="prf-callout-val">@_nemesisEntry.Label</div>
-                        <div class="prf-callout-sub">@(_nemesisEntry.WinRate.ToString("P0")) win rate · @_nemesisEntry.TotalGames played</div>
-                    </div>
-                </div>
-            }
-        </div>
-    }
-
-    <!-- ── Game Breakdown ── -->
-    @* 2026-09-11 UI sweep: this section rendered ALL games as full cards, so a
-       first-time player scrolled ~11 "Not played yet" placeholders (two-thirds
-       of the page's 2728px). Now only games with real activity keep their full
-       card; unplayed games collapse into one compact chip strip below them, and
-       when nothing is played at all the section steps aside entirely (the empty
-       state above already says it). *@
-    @if (!nothingPlayed && _entries.Any(g => !IsUnplayed(g)))
-    {
-    <div class="prf-section">
-        <h2 class="prf-section-title">Game Breakdown</h2>
-        <div class="prf-game-grid">
-            @foreach (var g in _entries.Where(g => !IsUnplayed(g)))
-            {
-                @* "Unplayed" means no activity of the kind this game actually tracks:
-                   matches for W/L games, sessions for play-count games. Keying purely
-                   on TotalGames dimmed Joker/Survive cards that had real sessions,
-                   and dimmed Marble Race whose activity lives on the server board. *@
-                <div class="prf-game-card @(IsUnplayed(g) ? "prf-game-card--unplayed" : "")">
-                    <div class="prf-game-header">
-                        <span class="prf-game-icon">@g.Icon</span>
-                        <span class="prf-game-name">@g.Label</span>
-                        @if (g.TotalGames > 0)
-                        {
-                            <span class="prf-game-wr">@g.WinRate.ToString("P0")</span>
-                        }
-                    </div>
-                    @if (g.TotalGames > 0)
-                    {
-                        <div class="prf-bar" title="Win / Draw / Loss" style="--win-pct:@((int)g.WinPercent)%;--draw-pct:@((int)g.DrawPercent)%;--loss-pct:@((int)g.LossPercent)%">
-                            <div class="prf-bar-win"></div>
-                            <div class="prf-bar-draw"></div>
-                            <div class="prf-bar-loss"></div>
-                        </div>
-                        <div class="prf-diffs">
-                            @foreach (var d in g.Difficulties.Where(x => x.TotalGames > 0))
-                            {
-                                <div class="prf-diff-row">
-                                    <span class="prf-diff-name prf-diff-@d.Name.ToLowerInvariant()">@d.Name</span>
-                                    <span class="prf-diff-wld">@d.Wins W · @d.Losses L · @d.Draws D</span>
-                                    @if (d.EloRating != 1000)
-                                    {
-                                        <span class="prf-diff-elo">ELO @d.EloRating</span>
-                                    }
-                                </div>
-                            }
-                        </div>
-                    }
-                    else if (g.Kind == RatingKind.HighScoreOnly)
-                    {
-                        @* 2026-08-12 audit #5: "see leaderboard" was misleading
-                           even when the user HAD a row on the global leaderboard.
-                           Now a link to /leaderboards so they can see themselves
-                           ranked, not just a bare text hint that sends them hunting. *@
-                        <p class="prf-game-note">
-                            Score-based — <a class="prf-game-link" href="/leaderboards">see leaderboard</a>
-                        </p>
-                    }
-                    else if (g.Kind == RatingKind.PlayCountOnly)
-                    {
-                        @* 2026-08-12 audit #5: a session count is the only stat
-                           Joker / Survive can report. The "8 sessions" line was
-                           ambiguous to a first-time visitor who had never clicked
-                           Play — they assumed the counter was broken or belonged
-                           to someone else. Add an inline caption that says these
-                           are demo plays the visitor can launch from the catalog,
-                           and a primary CTA so they don't have to navigate away
-                           to find them. *@
-                        @if (g.PlayCount > 0)
-                        {
-                            <p class="prf-game-plays">
-                                <span class="prf-game-plays-val">@g.PlayCount</span>
-                                <span class="prf-game-plays-lbl">@(g.PlayCount == 1 ? "session" : "sessions")</span>
-                            </p>
-                            <p class="prf-game-hint">Auto-counted while you watched demos</p>
-                            <a class="prf-game-link" href="@DemoUrl(g.Key)">Watch again →</a>
-                        }
-                        else
-                        {
-                            <p class="prf-game-unplayed">Not played yet</p>
-                            <a class="prf-game-link" href="@DemoUrl(g.Key)">Try the demo →</a>
-                        }
-                    }
-                    else
-                    {
-                        <p class="prf-game-unplayed">Not played yet</p>
-                    }
-                </div>
-            }
-        </div>
-        @if (_entries.Any(IsUnplayed))
+        @if (_bestEntry != null || _nemesisEntry != null)
         {
-            @* Unplayed games as one compact strip — every chip is a tappable
-               demo entry for the play-count games (Joker/Survive), matching the
-               old per-card "Try the demo →" affordance they replaced. *@
-            <div class="prf-unplayed">
-                <span class="prf-unplayed-label">Not played yet:</span>
-                @foreach (var g in _entries.Where(IsUnplayed))
+            <div class="prf-callouts">
+                @if (_bestEntry != null)
                 {
-                    @if (g.Kind == RatingKind.PlayCountOnly)
-                    {
-                        <a class="prf-unplayed-chip prf-unplayed-chip--link" href="@DemoUrl(g.Key)" title="Try the demo">@g.Icon @g.Label</a>
-                    }
-                    else if (g.Kind == RatingKind.HighScoreOnly)
-                    {
-                        <a class="prf-unplayed-chip prf-unplayed-chip--link" href="/leaderboards" title="See leaderboard">@g.Icon @g.Label</a>
-                    }
-                    else
-                    {
-                        <span class="prf-unplayed-chip">@g.Icon @g.Label</span>
-                    }
+                    <div class="prf-callout prf-callout--best">
+                        <span class="prf-callout-icon">🏆</span>
+                        <div>
+                            <div class="prf-callout-lbl">Best Game</div>
+                            <div class="prf-callout-val">@_bestEntry.Label</div>
+                            <div class="prf-callout-sub">@(_bestEntry.WinRate.ToString("P0")) win rate · @_bestEntry.TotalGames played</div>
+                        </div>
+                    </div>
+                }
+                @if (_nemesisEntry != null)
+                {
+                    <div class="prf-callout prf-callout--nemesis">
+                        <span class="prf-callout-icon">💀</span>
+                        <div>
+                            <div class="prf-callout-lbl">Nemesis Game</div>
+                            <div class="prf-callout-val">@_nemesisEntry.Label</div>
+                            <div class="prf-callout-sub">@(_nemesisEntry.WinRate.ToString("P0")) win rate · @_nemesisEntry.TotalGames played</div>
+                        </div>
+                    </div>
                 }
             </div>
         }
     </div>
-    }
 
-    @* The Preferences section (a link out to /settings) went with that page on
-       2026-08-11 — see the note in SettingsService. This page is about the
-       player's match record and now only carries that. *@
+    <!-- ── Panel: High Scores ── -->
+    <div id="prf-panel-highscores" role="tabpanel" aria-labelledby="prf-tab-highscores" class="prf-tabpanel @(_activeTab == "highscores" ? "prf-tabpanel--active" : "")">
+        <div class="prf-section">
+            @if (_highScoreLoadFailed)
+            {
+                <ErrorState Icon="⚠️"
+                            Title="Couldn't load saved high scores"
+                            OnRetry="() => LoadHighScoresAsync()">
+                    The leaderboard endpoints didn't respond. Your local stats above
+                    are still accurate — only the cross-device saved scores are affected.
+                </ErrorState>
+            }
+            <h2 class="prf-section-title">High Scores · 1 Player</h2>
+            <div class="prf-hs-grid">
+                @foreach (var h in _highScores)
+                {
+                    <div class="prf-hs-card @(h.HasValue ? "" : "prf-hs-card--empty")">
+                        <span class="prf-hs-icon">@h.Icon</span>
+                        <div class="prf-hs-body">
+                            <div class="prf-hs-game">@h.Game</div>
+                            <div class="prf-hs-value">@h.Value</div>
+                            <div class="prf-hs-sub">@h.Sub</div>
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
 
-    @* ── Your data ──────────────────────────────────────────────────────────
-       Self-service export + erase. Gated on the same `nothingPlayed` flag as the
-       sections above, and for a stronger reason than layout: a profile with no
-       stored rows has literally nothing to download or delete, so the controls
-       would be two buttons that do nothing but look alarming. The moment there
-       IS data, the controls appear alongside it. *@
-    @if (!nothingPlayed)
-    {
+    <!-- ── Panel: Head-to-Head ── -->
+    <div id="prf-panel-h2h" role="tabpanel" aria-labelledby="prf-tab-h2h" class="prf-tabpanel @(_activeTab == "h2h" ? "prf-tabpanel--active" : "")">
+        <div class="prf-section">
+            @if (_localOpponents.Count > 0 || _onlineOpponents.Count > 0 || _matchesLoading)
+            {
+                <div class="prf-section-head">
+                    <h2 class="prf-section-title">Head-to-Head · People You Played</h2>
+                    <span class="prf-h2h-legend" aria-label="Badge legend">
+                        <span class="prf-h2h-badge prf-h2h-badge--guest" aria-hidden="true">G</span>
+                        <span class="prf-h2h-legend-lbl">Guest</span>
+                        <span class="prf-h2h-badge prf-h2h-badge--microsoft" aria-hidden="true">MS</span>
+                        <span class="prf-h2h-legend-lbl">Microsoft</span>
+                    </span>
+                </div>
+            }
+            else
+            {
+                <h2 class="prf-section-title">Head-to-Head · People You Played</h2>
+            }
+            @if (_matchesLoading)
+            {
+                <p class="prf-h2h-note">Loading match history…</p>
+            }
+            else if (_localOpponents.Count == 0 && _onlineOpponents.Count == 0)
+            {
+                <p class="prf-h2h-note">No head-to-head matches recorded yet. Play an online multiplayer or local 2-player match and your record against each opponent shows up here.</p>
+            }
+            else
+            {
+                <div class="prf-h2h-cols">
+                    <div class="prf-h2h-col">
+                        <h3 class="prf-h2h-mode">👥 2-Player (local)</h3>
+                        @if (_localOpponents.Count == 0)
+                        {
+                            <p class="prf-h2h-note">No local 2-player matches yet.</p>
+                        }
+                        else
+                        {
+                            @RenderOpponentTable(_localOpponents)
+                        }
+                    </div>
+                    <div class="prf-h2h-col">
+                        <h3 class="prf-h2h-mode">🌐 Online Multiplayer</h3>
+                        @if (_onlineOpponents.Count == 0)
+                        {
+                            <p class="prf-h2h-note">No online multiplayer matches yet.</p>
+                        }
+                        else
+                        {
+                            @RenderOpponentTable(_onlineOpponents)
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+
+    <!-- ── Panel: Breakdown & Data ── -->
+    <div id="prf-panel-breakdown" role="tabpanel" aria-labelledby="prf-tab-breakdown" class="prf-tabpanel @(_activeTab == "breakdown" ? "prf-tabpanel--active" : "")">
+        @if (_entries.Any(g => !IsUnplayed(g)))
+        {
+            <div class="prf-section">
+                <h2 class="prf-section-title">Game Breakdown</h2>
+                <div class="prf-game-grid">
+                    @foreach (var g in _entries.Where(g => !IsUnplayed(g)))
+                    {
+                        <div class="prf-game-card @(IsUnplayed(g) ? "prf-game-card--unplayed" : "")">
+                            <div class="prf-game-header">
+                                <span class="prf-game-icon">@g.Icon</span>
+                                <span class="prf-game-name">@g.Label</span>
+                                @if (g.TotalGames > 0)
+                                {
+                                    <span class="prf-game-wr">@g.WinRate.ToString("P0")</span>
+                                }
+                            </div>
+                            @if (g.TotalGames > 0)
+                            {
+                                <div class="prf-bar" title="Win / Draw / Loss" style="--win-pct:@((int)g.WinPercent)%;--draw-pct:@((int)g.DrawPercent)%;--loss-pct:@((int)g.LossPercent)%">
+                                    <div class="prf-bar-win"></div>
+                                    <div class="prf-bar-draw"></div>
+                                    <div class="prf-bar-loss"></div>
+                                </div>
+                                <div class="prf-diffs">
+                                    @foreach (var d in g.Difficulties.Where(x => x.TotalGames > 0))
+                                    {
+                                        <div class="prf-diff-row">
+                                            <span class="prf-diff-name prf-diff-@d.Name.ToLowerInvariant()">@d.Name</span>
+                                            <span class="prf-diff-wld">@d.Wins W · @d.Losses L · @d.Draws D</span>
+                                            @if (d.EloRating != 1000)
+                                            {
+                                                <span class="prf-diff-elo">ELO @d.EloRating</span>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                            }
+                            else if (g.Kind == RatingKind.HighScoreOnly)
+                            {
+                                <p class="prf-game-note">
+                                    Score-based — <a class="prf-game-link" href="/leaderboards">see leaderboard</a>
+                                </p>
+                            }
+                            else if (g.Kind == RatingKind.PlayCountOnly)
+                            {
+                                @if (g.PlayCount > 0)
+                                {
+                                    <p class="prf-game-plays">
+                                        <span class="prf-game-plays-val">@g.PlayCount</span>
+                                        <span class="prf-game-plays-lbl">@(g.PlayCount == 1 ? "session" : "sessions")</span>
+                                    </p>
+                                    <p class="prf-game-hint">Auto-counted while you watched demos</p>
+                                    <a class="prf-game-link" href="@DemoUrl(g.Key)">Watch again →</a>
+                                }
+                                else
+                                {
+                                    <p class="prf-game-unplayed">Not played yet</p>
+                                    <a class="prf-game-link" href="@DemoUrl(g.Key)">Try the demo →</a>
+                                }
+                            }
+                            else
+                            {
+                                <p class="prf-game-unplayed">Not played yet</p>
+                            }
+                        </div>
+                    }
+                </div>
+                @if (_entries.Any(IsUnplayed))
+                {
+                    <div class="prf-unplayed">
+                        <span class="prf-unplayed-label">Not played yet:</span>
+                        @foreach (var g in _entries.Where(IsUnplayed))
+                        {
+                            @if (g.Kind == RatingKind.PlayCountOnly)
+                            {
+                                <a class="prf-unplayed-chip prf-unplayed-chip--link" href="@DemoUrl(g.Key)" title="Try the demo">@g.Icon @g.Label</a>
+                            }
+                            else if (g.Kind == RatingKind.HighScoreOnly)
+                            {
+                                <a class="prf-unplayed-chip prf-unplayed-chip--link" href="/leaderboards" title="See leaderboard">@g.Icon @g.Label</a>
+                            }
+                            else
+                            {
+                                <span class="prf-unplayed-chip">@g.Icon @g.Label</span>
+                            }
+                        }
+                    </div>
+                }
+            </div>
+        }
+
         <AccountDataCard AccountKind="_accountKind" OnDataErased="LoadStatsAsync" />
+    </div>
     }
 }
 </div>

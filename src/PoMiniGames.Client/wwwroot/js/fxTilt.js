@@ -42,6 +42,8 @@ function tierAllows() {
     return document.documentElement.getAttribute('data-gfx') !== 'low';
 }
 
+let isMagnetic = false;
+
 function apply() {
     rafId = 0;
     if (!active) return;
@@ -51,6 +53,10 @@ function apply() {
     // keeps this to a single `rotate` value.
     const mag = Math.min(1, Math.hypot(pendingX, pendingY));
     active.style.rotate = `${-pendingY} ${pendingX} 0 ${(mag * maxDeg).toFixed(2)}deg`;
+    if (isMagnetic) {
+        const pull = 5.0; // px magnetic spring translation
+        active.style.translate = `${(pendingX * pull).toFixed(1)}px ${(pendingY * pull).toFixed(1)}px`;
+    }
     active.style.setProperty('--fx-mx', pendingX.toFixed(3));
     active.style.setProperty('--fx-my', pendingY.toFixed(3));
 }
@@ -62,6 +68,7 @@ function schedule() {
 function release(el) {
     if (!el) return;
     el.style.rotate = '';
+    el.style.translate = '';
     el.style.removeProperty('--fx-mx');
     el.style.removeProperty('--fx-my');
 }
@@ -84,10 +91,13 @@ function detach() {
     if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }
     release(active);
     active = null;
+    isMagnetic = false;
 }
 
 function onOver(e) {
-    const el = e.target && e.target.closest ? e.target.closest('[data-fx-tilt]') : null;
+    const el = e.target && e.target.closest
+        ? e.target.closest('[data-fx-tilt], [data-magnetic], .poeco-btn, .poeco-pill, .poeco-tab')
+        : null;
     if (el === active) return;
     detach();
     if (!el) return;
@@ -97,8 +107,13 @@ function onOver(e) {
     if (motionReduced() || !tierAllows()) return;
 
     active = el;
+    isMagnetic = el.hasAttribute('data-magnetic') ||
+                 el.classList.contains('poeco-btn') ||
+                 el.classList.contains('poeco-pill') ||
+                 el.classList.contains('poeco-tab');
+
     const attr = parseFloat(el.getAttribute('data-fx-tilt'));
-    maxDeg = Number.isFinite(attr) && attr > 0 ? Math.min(20, attr) : DEFAULT_MAX_DEG;
+    maxDeg = Number.isFinite(attr) && attr > 0 ? Math.min(20, attr) : (isMagnetic ? 4 : DEFAULT_MAX_DEG);
     window.addEventListener('pointermove', onMove, { passive: true });
 }
 
@@ -112,6 +127,16 @@ if (typeof document !== 'undefined') {
         // element (moving between its children) means this is not a real exit.
         if (e.relatedTarget && active.contains(e.relatedTarget)) return;
         detach();
+    }, { passive: true });
+
+    // Tactile micro-click feedback on magnetic/tilt elements
+    document.addEventListener('pointerdown', (e) => {
+        const el = e.target && e.target.closest
+            ? e.target.closest('[data-fx-tilt], [data-magnetic], .poeco-btn, .poeco-pill, .poeco-tab')
+            : null;
+        if (el && window.PoUiAudio && window.PoUiAudio.magneticSnap) {
+            window.PoUiAudio.magneticSnap();
+        }
     }, { passive: true });
 
     // Blazor can remove the hovered element mid-navigation without ever firing

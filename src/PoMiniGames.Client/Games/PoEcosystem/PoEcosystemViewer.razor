@@ -5,7 +5,7 @@
 <div class="poeco-root @(_narrow ? "poeco-narrow" : "")">
 
     @* The three.js canvas is created by the engine inside this host. *@
-    <div id="poeco-world" class="poeco-world" role="img" aria-label="First-person view of the living island"></div>
+    <div id="poeco-world" class="poeco-world" role="img" aria-label="First-person view of the living island" @onclick="TriggerShockwaveAsync"></div>
 
     @if (_resumePrompt is not null)
     {

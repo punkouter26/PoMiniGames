@@ -482,3 +482,35 @@ export function grainLand(hot) {
     tick(t, hot ? 1900 + Math.random() * 1900 : 850 + Math.random() * 800,
         2, hot ? 0.05 : 0.04, 0.025, route(0.15));
 }
+
+// Fluid bubble chirp (liquid boiling, water bubbling).
+export function bubble() {
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    const v = route(0.2);
+    const bo = ctx.createOscillator();
+    bo.type = 'sine';
+    const bf = 1200 + Math.random() * 800;
+    bo.frequency.setValueAtTime(bf, t);
+    bo.frequency.exponentialRampToValueAtTime(bf * 0.4, t + 0.04);
+    const bg = ctx.createGain();
+    env(bg, t, 0.002, 0.12, 0.04);
+    bo.connect(bg); bg.connect(v);
+    bo.start(t); bo.stop(t + 0.05);
+}
+
+// Sizzling steam or acid dissolution.
+export function sizzle() {
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    const v = route(0.25);
+    const n = nsrc(noiseBuf);
+    const f = ctx.createBiquadFilter();
+    f.type = 'bandpass';
+    f.frequency.setValueAtTime(4500 + Math.random() * 1500, t);
+    f.Q.value = 3;
+    const g = ctx.createGain();
+    env(g, t, 0.004, 0.15, 0.12);
+    n.connect(f); f.connect(g); g.connect(v);
+    n.start(t); n.stop(t + 0.14);
+}
